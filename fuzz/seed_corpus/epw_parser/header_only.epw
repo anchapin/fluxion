@@ -1,0 +1,8 @@
+LOCATION,Denver,CO,USA,TMY3,724690,39.83,-104.65,-7.0,1655.0,1991-2005
+DESIGN CONDITIONS,0
+EXTREME PERIODS,0
+TYPICAL/EXTREME PERIODS,0
+GROUND TEMPERATURES,0
+HOLIDAYS/DAYLIGHT SAVINGS,No,0,0,0
+COMMENTS 1,Seed corpus — fluxion fuzz/seed_corpus/epw_parser/header_only.epw (Issue #3461)
+COMMENTS 2,Exercises the location-header parse path; data-line counter never advances.

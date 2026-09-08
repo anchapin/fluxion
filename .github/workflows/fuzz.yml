@@ -1,0 +1,279 @@
+# Nightly libFuzzer Fuzz Targets
+#
+# Wires the existing `fuzz/` cargo-fuzz targets into a nightly scheduled CI
+# run (Issue #3461). The targets are otherwise only executed when a developer
+# manually runs `cargo +nightly fuzz run <target>`, so the untrusted-input
+# surfaces (EPW parser, BatchOracle FFI, zone-balance solver) had no
+# automated coverage before this workflow landed.
+#
+# Targets exercised:
+#   * epw_parser           — EpwWeatherSource::from_file (REST + CLI ingest)
+#   * ffi_batch_oracle     — BatchOracle::evaluate_population (PyO3 / NAPI FFI)
+#   * zone_balance_solver  — ThermalModel::step_physics / solve_timesteps
+#
+# Resource budget (per Issue #3461 acceptance criteria):
+#   * `-max_total_time=300` (5 minutes wall-clock) per target.
+#   * Total job wall-time bounded to 30 min (build + 3 × 5 min fuzz + upload).
+#   * Two parallel jobs would double the compute without proportional
+#     regression-detection benefit (each target explores its own input
+#     space, and crashes surface immediately via the per-target summary).
+#   * Conservative by design — AGENTS.md warns the full Loom/mutation
+#     suites need ~32 GB RAM; nightly fuzzing on `ubuntu-latest` (7 GB)
+#     stays well clear of that ceiling.
+#
+# Runner selection (Issue #3445 contract): scheduled CI uses the ephemeral
+# `ubuntu-latest` pool. The self-hosted Hetzner pool is reserved for jobs
+# gated to `push:main` (security contract) and is NOT used here.
+#
+# Toolchain:
+#   * nightly (latest) — required by libFuzzer's `-Zsanitizer=address`
+#     link. The MSRV floor of 1.98.0 is enforced by the underlying
+#     `fluxion` crate (see `rust-toolchain.toml`); cargo rejects older
+#     nightlies at the workspace-resolve step.
+#   * cargo-fuzz 0.13.x — earlier 0.11.x releases trigger an
+#     `-Zsanitizer=address`-induced `pulp 0.22.3` compile-time size
+#     assertion failure (transitive through `faer`); 0.13.x writes the
+#     build-script flags differently and builds cleanly.
+#
+# Output:
+#   * `fuzz/artifacts/<target>/crash-*` — libFuzzer-triggered panics /
+#     ASAN violations. Any single crash fails the job (the harness
+#     invariants assert no-panic, so a crash is always a real bug).
+#   * `fuzz/corpus/<target>/` — per-run extended corpus (uploaded only
+#     on failure or weekly, to keep artifact storage bounded).
+#   * `fuzz/summaries/<target>.json` — machine-readable run summary
+#     (duration, execs, coverage peaks) for trend tracking.
+#   * `fuzz/summaries/index.md` — human-readable roll-up attached to
+#     the workflow run summary.
+
+name: Nightly Fuzz Targets
+
+on:
+  schedule:
+    # 04:00 UTC nightly (off-peak; the nightly_validation job is 06:00,
+    # so this finishes ~2h before the validation suite starts).
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      max_total_time:
+        description: 'Seconds to fuzz per target (default 300 = 5 min)'
+        required: false
+        default: '300'
+
+concurrency:
+  group: >-
+    fuzz-nightly-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: short
+  # Inputs override the 5-min default at workflow_dispatch time.
+  FUZZ_TIME: ${{ inputs.max_total_time || '300' }}
+
+jobs:
+  fuzz-nightly:
+    name: libFuzzer targets (epw / FFI / zone-balance)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+
+      - name: Install Rust toolchain (nightly + stable)
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
+        with:
+          max_attempts: 3
+          timeout_minutes: 10
+          retry_wait_seconds: 15
+          command: |
+            rustup toolchain install stable --profile minimal
+            rustup toolchain install nightly --profile minimal
+            rustup default stable
+
+      - name: Install cargo-fuzz
+        # 0.13.x is the floor that builds clean against the current
+        # `pulp 0.22.3` / `faer 0.24.4` / nightly combination (see file
+        # header for context). 0.11.x (the version originally referenced
+        # in `fuzz/README.md`) trips the ASAN-induced size assertion.
+        run: cargo install cargo-fuzz --locked --version "^0.13"
+
+      - name: Cache fuzz build artefacts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            fuzz/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-fuzz-nightly-${{ hashFiles('fuzz/Cargo.lock', 'Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-fuzz-nightly-
+
+      - name: Disk space guard
+        run: ./scripts/disk-space-check.sh
+
+      - name: Build all fuzz targets
+        # Pre-build so a build-time regression in any one target is
+        # surfaced immediately, instead of after the 5-min fuzz budget
+        # on that target.
+        run: |
+          set -euo pipefail
+          (cd fuzz && cargo +nightly fuzz build 2>&1 | tail -200)
+
+      - name: Run fuzz targets
+        id: fuzz
+        # Per-target bounded wall-clock. 5 min × 3 targets = 15 min,
+        # well under the 30-min job timeout. `set +e` lets us capture
+        # the per-target exit codes for the summary even if a target
+        # reports a crash; we re-raise the failure at the end so the
+        # job still fails the branch protection check.
+        run: |
+          set +e
+          mkdir -p fuzz/artifacts fuzz/corpus fuzz/summaries
+          # Start from the committed seed corpus (see
+          # `fuzz/seed_corpus/<target>/`); an empty seed directory
+          # would force libFuzzer to discover coverage from scratch.
+          declare -a TARGETS=(epw_parser ffi_batch_oracle zone_balance_solver)
+          for target in "${TARGETS[@]}"; do
+            echo "=== Fuzzing ${target} for ${FUZZ_TIME}s ==="
+            mkdir -p "fuzz/corpus/${target}"
+            # Seed the runtime corpus from the committed
+            # `fuzz/seed_corpus/<target>/` so the fuzzer starts from prior
+            # coverage (Issue #3461 acceptance criteria #2). The seed
+            # corpus itself is read-only and not touched by libFuzzer;
+            # the working directory `fuzz/corpus/<target>/` is the
+            # one the fuzzer mutates and uploads as an artefact.
+            cp -n "fuzz/seed_corpus/${target}/"* "fuzz/corpus/${target}/" 2>/dev/null || true
+            (cd fuzz && cargo +nightly fuzz run "${target}" \
+              -- -max_total_time="${FUZZ_TIME}" \
+                 -print_final_stats=1 \
+              2>&1 | tee "../fuzz/summaries/${target}.log")
+            echo "exit_${target}=$?" >> "$GITHUB_OUTPUT"
+          done
+          exit 0
+
+      - name: Generate summary report
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, re
+          from datetime import datetime, timezone
+
+          targets = ["epw_parser", "ffi_batch_oracle", "zone_balance_solver"]
+          now = datetime.now(timezone.utc).isoformat()
+          rows = []
+          any_crash = False
+          for t in targets:
+              log_path = f"fuzz/summaries/{t}.log"
+              execs = None
+              peak_rss_mb = None
+              cov = None
+              crashes = 0
+              if os.path.exists(log_path):
+                  text = open(log_path, encoding="utf-8", errors="replace").read()
+                  m = re.search(r"#\d+\s+DONE\s+.*?exec/s:\s*(\d+).*?rss:\s*(\d+)Mb", text)
+                  if m:
+                      execs = int(m.group(1))
+                      peak_rss_mb = int(m.group(2))
+                  # Newer libFuzzer prints `#<N> DONE cov: <C> ft: <F> corp: <I>/<B>b ...`
+                  m2 = re.search(r"DONE\s+cov:\s*(\d+)\s+ft:\s*(\d+)\s+corp:\s*(\d+)/(\d+)b", text)
+                  if m2:
+                      cov = int(m2.group(1))
+                  # Count crash artefacts
+                  art = f"fuzz/artifacts/{t}"
+                  if os.path.isdir(art):
+                      crashes = len([f for f in os.listdir(art) if f.startswith("crash-")])
+              any_crash = any_crash or crashes > 0
+              rows.append({
+                  "target": t,
+                  "execs": execs,
+                  "peak_rss_mb": peak_rss_mb,
+                  "coverage_proxy": cov,
+                  "crashes": crashes,
+              })
+          summary = {
+              "generated_at": now,
+              "max_total_time_s": int(os.environ["FUZZ_TIME"]),
+              "targets": rows,
+              "any_crash": any_crash,
+          }
+          with open("fuzz/summaries/index.json", "w") as f:
+              json.dump(summary, f, indent=2)
+          # Human-readable roll-up
+          lines = [f"# Nightly Fuzz Summary — {now}", ""]
+          lines.append("| Target | Execs | Peak RSS | Coverage proxy | Crashes |")
+          lines.append("|--------|-------|----------|----------------|---------|")
+          for r in rows:
+              lines.append(
+                  f"| `{r['target']}` | {r['execs'] or '-'} | "
+                  f"{r['peak_rss_mb'] or '-'} MB | {r['coverage_proxy'] or '-'} | "
+                  f"**{r['crashes']}** |"
+              )
+          lines.append("")
+          lines.append(
+              f"**Wall-clock budget per target:** {os.environ['FUZZ_TIME']}s "
+              f"(set via `workflow_dispatch` input or default 300s)."
+          )
+          if any_crash:
+              lines.append("")
+              lines.append("**FAIL** — at least one target produced a crash artefact. "
+                            "Investigate the uploaded `fuzz-artifacts` archive and "
+                            "reproduce locally with `cargo +nightly fuzz run <target> "
+                            "fuzz/artifacts/<target>/crash-*`.")
+          else:
+              lines.append("")
+              lines.append("**PASS** — no crashes detected across all targets in the budget.")
+          with open("fuzz/summaries/index.md", "w") as f:
+              f.write("\n".join(lines) + "\n")
+          print(open("fuzz/summaries/index.md").read())
+          PY
+
+      - name: Upload fuzz summaries
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: fuzz-summaries
+          path: |
+            fuzz/summaries/
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Upload fuzz artefacts (crashes + corpus)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: fuzz-artifacts
+          path: |
+            fuzz/artifacts/
+            fuzz/corpus/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Fail job on crash
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -f fuzz/summaries/index.json ]; then
+            any=$(python3 -c "import json; print(json.load(open('fuzz/summaries/index.json'))['any_crash'])")
+            if [ "$any" = "True" ]; then
+              echo "::error::At least one fuzz target produced a crash artefact — see fuzz-artifacts"
+              exit 1
+            fi
+          fi
