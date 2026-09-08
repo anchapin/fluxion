@@ -215,18 +215,27 @@ print(f"3-zone annual energy (heating+cooling): {total_energy_kwh:.2f} kWh")
 
 ### 6. The `fluxion` CLI (OpenStudio-compatible workflow)
 
-The `fluxion` binary understands OpenStudio-style `.fwf` workflow
-files. JSON config files (e.g. `simple_config.json`) are **not**
-accepted by `fluxion run`; that path is reserved for the
-`SimulationSchemaV1` JSON consumed by `fluxion-rest`.
+The `fluxion` binary accepts OpenStudio-style `.fwf` workflow files,
+but **the workflow / direct-simulation paths are intentionally
+stubbed** in this release — they fail non-zero with a reference to
+issue `#2947`, by policy (`AGENTS.md:65`, enforced by
+`test_workflow_execution_is_gated_non_silent` in `src/bin/fluxion.rs`).
+The binary is shipped as-is so the stub stays loud; it is **not** a
+runnable surface, and the repo does not ship any `.fwf` example
+fixtures (e.g. `examples/workflow.fwf` does not exist — do not
+create one).
 
 ```bash
-# Build the CLI
-cargo build --bin fluxion
-
-# Run an OpenStudio-style workflow
-fluxion run -w examples/workflow.fwf
+# Demonstrating the fail-loud contract:
+$ fluxion run -w some.workflow.fwf
+error: workflow execution path is intentionally stubbed; see issue #2947
 ```
+
+If you want a CLI surface that is runnable end-to-end, use
+`fluxion-rest` from §4 above — it consumes the canonical
+`SimulationSchemaV1` JSON (e.g.
+[`tests/fixtures/single_zone.json`](../tests/fixtures/single_zone.json))
+and is the supported path for hands-on simulation.
 
 ## Your first configuration
 
