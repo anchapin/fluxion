@@ -127,7 +127,13 @@ env:
 jobs:
   probe-default:
     name: Fast-Math Probe (default features)
-    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    runs-on: >-
+      ${{
+        github.event_name == 'push'
+        && github.ref == 'refs/heads/main'
+        && vars.FLUXION_LINUX_RUNNER
+        || 'ubuntu-latest'
+      }}
     timeout-minutes: 30
 
     steps:
@@ -199,7 +205,13 @@ jobs:
 
   probe-fastmath:
     name: Fast-Math Probe (--features fast-math)
-    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    runs-on: >-
+      ${{
+        github.event_name == 'push'
+        && github.ref == 'refs/heads/main'
+        && vars.FLUXION_LINUX_RUNNER
+        || 'ubuntu-latest'
+      }}
     timeout-minutes: 30
 
     steps:
@@ -275,7 +287,13 @@ jobs:
   compare:
     name: Fast-Math Comparison (Δ loads + residual ceiling)
     needs: [probe-default, probe-fastmath]
-    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    runs-on: >-
+      ${{
+        github.event_name == 'push'
+        && github.ref == 'refs/heads/main'
+        && vars.FLUXION_LINUX_RUNNER
+        || 'ubuntu-latest'
+      }}
     timeout-minutes: 10
 
     steps:
@@ -488,7 +506,13 @@ jobs:
   fast-math-gh:
     name: Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH)
     needs: [compare]
-    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    runs-on: >-
+      ${{
+        github.event_name == 'push'
+        && github.ref == 'refs/heads/main'
+        && vars.FLUXION_LINUX_RUNNER
+        || 'ubuntu-latest'
+      }}
     timeout-minutes: 5
     if: always()
 

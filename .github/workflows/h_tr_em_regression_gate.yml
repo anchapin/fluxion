@@ -81,7 +81,13 @@ env:
 jobs:
   h-tr-em-regression-gate:
     name: h_tr_em Regression Gate (LIMIT-13)
-    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    runs-on: >-
+      ${{
+        github.event_name == 'push'
+        && github.ref == 'refs/heads/main'
+        && vars.FLUXION_LINUX_RUNNER
+        || 'ubuntu-latest'
+      }}
     timeout-minutes: 60
 
     steps:

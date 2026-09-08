@@ -86,6 +86,23 @@ jobs:
       - name: Run scripts/ pytest harness
         run: python3 -m pytest scripts/
 
+      # Issue #3531: runner-routing policy drift gate. The matcher in
+      # ``scripts/check_runner_routing_policy.py`` enforces ``docs/SECURITY.md
+      # §7`` (Issue #3445): every PR-triggered job that mentions
+      # ``vars.FLUXION_LINUX_RUNNER`` MUST use the guarded
+      # ``github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      # vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest'`` form (the canonical
+      # pattern already used by ``onnx-integrity.yml:92-98`` and
+      # ``python-tests.yml:49-55``). The unguarded ``vars.FLUXION_LINUX_RUNNER
+      # || 'ubuntu-latest'`` form silently routes PR-controlled code onto a
+      # persistent self-hosted runner, defeating the gate's own trust
+      # boundary. Workflows that don't trigger on PR (e.g. ``memory-budget.yml``)
+      # and jobs whose ``if:`` clause is strictly main-only are exempt — the
+      # unsafe ``runs-on`` is harmless there because the code never executes
+      # on PR-controlled code.
+      - name: Enforce runner-routing policy (Issue #3531)
+        run: python3 scripts/check_runner_routing_policy.py
+
       # Issue #3211 / #3393 / #3443: quarantine registry audit. Closes
       # the 149-vs-78 gap that Issue #3393 documented by scanning every
       # `#[ignore]` attribute under tests/ and cross-referencing it

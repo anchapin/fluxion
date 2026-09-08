@@ -137,7 +137,13 @@ env:
 jobs:
   strict-energy-gate:
     name: ASHRAE 140 Strict Energy Gate (Issue #1333)
-    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    runs-on: >-
+      ${{
+        github.event_name == 'push'
+        && github.ref == 'refs/heads/main'
+        && vars.FLUXION_LINUX_RUNNER
+        || 'ubuntu-latest'
+      }}
     timeout-minutes: 30
 
     steps:
