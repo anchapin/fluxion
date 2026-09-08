@@ -431,6 +431,139 @@ def gate_open(state: BetaSoakState) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# ADR-0007 Criterion 2 failures summary (Issue #3359)
+# ---------------------------------------------------------------------------
+#
+# The β-soak nightly's Criterion 2 (energy conservation,
+# ``tests/zone_balance_eplus_isolation.rs``) has been failing on a
+# stable set of two tests across every run since 2026-09-01. The
+# canonical list lives in
+# ``docs/agents/beta-soak-criterion-2-tracker.md``; this function is the
+# machine-readable mirror so the nightly workflow can emit the same
+# summary as a JSON artifact and the issue-tracking automation can pick
+# it up without parsing the markdown.
+#
+# The data below is intentionally a hard-coded list, not a live parser:
+# the §LIMIT-21 cohort is verified-identical across recent commits
+# (``fd7ef13^`` / HEAD ``0b54606``) and per RULES.md / ADR-0001 we
+# never tune / hide / quarantine to make the gate go green. The
+# canonical list IS the source of truth — any change must land as a
+# docs/PR update, not a code edit in isolation.
+#
+# Tracker doc: ``docs/agents/beta-soak-criterion-2-tracker.md``
+# Parent issue: #3359 / #3354 (gate-failure diagnostic)
+
+
+CRITERION_2_TRACKER_DOC = (
+    "docs/agents/beta-soak-criterion-2-tracker.md"
+)
+CRITERION_2_LIMIT_REF = "§LIMIT-21"
+CRITERION_2_LIMIT_OWNER = "#3297"
+
+
+def criterion_2_failures() -> dict[str, Any]:
+    """Return the canonical ADR-0007 Criterion 2 failures summary.
+
+    Schema (v1, owned by Issue #3359 / the tracker doc):
+
+    * ``schema_version`` — always ``"1"`` for this summary shape.
+    * ``tracker_doc`` — relative path to the canonical markdown tracker.
+    * ``limit_ref`` — the ``KNOWN_ISSUES.md`` §LIMIT-* reference that
+      owns the failure cohort.
+    * ``limit_owner_issue`` — the upstream tracking issue for the cohort.
+    * ``cross_references`` — list of related issue numbers + slugs.
+    * ``escape_hatch`` — the operational bypass mechanism reference.
+    * ``failures`` — ordered list of failing-test dicts, each with
+      ``name``, ``file``, ``panic_site``, ``symptom``, ``known_issues``.
+    * ``recovery_steps`` — human-readable ordered list.
+    * ``definition_of_done`` — ordered list of close conditions.
+
+    The list is hard-coded (mirrors the tracker doc) so the JSON
+    artefact does not require runtime IO; the workflow diffs the JSON
+    against the markdown via the ``check_doc_drift.py`` gate.
+    """
+    return {
+        "schema_version": "1",
+        "tracker_doc": CRITERION_2_TRACKER_DOC,
+        "limit_ref": CRITERION_2_LIMIT_REF,
+        "limit_owner_issue": CRITERION_2_LIMIT_OWNER,
+        "cross_references": [
+            {"issue": "3359", "slug": "this-tracker-issue"},
+            {"issue": "3354", "slug": "parent-workflow-diagnostic"},
+            {"issue": "3286", "slug": "beta-soak-gate-contract"},
+            {"issue": "3285", "slug": "beta-soak-escape-hatch"},
+            {"issue": "3284", "slug": "original-nightly-infra"},
+            {"issue": "3291", "slug": "phase-a8-default-flip-umbrella"},
+            {"issue": "3297", "slug": "limit-21-cohort-owner"},
+            {"issue": "1465", "slug": "phase-3-gauge-case-900-validation"},
+            {"issue": "1462", "slug": "phase-1b-gauge-shadow-mode"},
+            {"issue": "3072", "slug": "adr-0007-meta-issue"},
+        ],
+        "escape_hatch": {
+            "issue": "3285",
+            "doc": "docs/agents/beta-soak-escape-hatch.md",
+            "env_var": "BETA_SOAK_ESCAPE_AUTHORIZED_BY",
+            "allowlist": "scripts/beta_soak_admin_allowlist.txt",
+            "cli_flag": "--escape",
+            "note": (
+                "Dormant by design — not invoked by any PR in the "
+                "current wave. Owner: Issue #3285."
+            ),
+        },
+        "failures": [
+            {
+                "name": "test_physics_thermal_model_eplus_case_600_reference_csv",
+                "file": "tests/zone_balance_eplus_isolation.rs",
+                "fn_line": 187,
+                "panic_site": "tests/zone_balance_eplus_isolation.rs:298:5",
+                "symptom": (
+                    "Wild step-to-step oscillation, max ΔT = 34.007 °C; "
+                    "stdout: T_zone mean=-12.59°C, T_zone min=-32.52°C, "
+                    "T_zone max=7.15°C, |mean-20|=32.594°C"
+                ),
+                "case": "ASHRAE 140 Case 600 (low-mass conditioned)",
+                "known_issues": CRITERION_2_LIMIT_REF,
+            },
+            {
+                "name": "test_free_floating_case_900ff_isolation",
+                "file": "tests/zone_balance_eplus_isolation.rs",
+                "fn_line": 430,
+                "panic_site": "tests/zone_balance_eplus_isolation.rs:445:5",
+                "symptom": (
+                    "Numerical divergence to non-finite "
+                    "(T_min = −∞, T_max = +∞); "
+                    "assertion: min_900.is_finite() && max_900.is_finite()"
+                ),
+                "case": "ASHRAE 140 Case 900FF (high-mass free-floating)",
+                "known_issues": CRITERION_2_LIMIT_REF,
+            },
+        ],
+        "recovery_steps": [
+            "Close §LIMIT-21 by landing the air-trajectory fidelity "
+            "program (Issue #1465 / #1462 / #3059 — NOT a constant or "
+            "baseline change).",
+            "Verify nightly Criterion 2 goes green: cargo test --locked "
+            "--features gauge-solver --test zone_balance_eplus_isolation",
+            "Wait for 30 consecutive green nightly runs; the workflow "
+            "computes the streak from gh run list and writes "
+            "beta-soak-state.json.",
+            "PR-time gate trips open via "
+            "`python3 scripts/check_beta_soak_gate.py --gate enforce`.",
+        ],
+        "definition_of_done": [
+            "§LIMIT-21 air-trajectory program lands AND the 2 nightly "
+            "Criterion 2 tests start passing (resolves the gate as a "
+            "side effect), OR",
+            "Criterion 2 failure mode is migrated to a new ADR that "
+            "supersedes §LIMIT-21 for the β-soak context (e.g. ADR-0014), OR",
+            "A human owner explicitly closes Issue #3359 with "
+            "rationale for retiring the tracking surface (e.g., "
+            "β-soak paused pending §LIMIT-21 closure).",
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -486,6 +619,19 @@ def _build_parser() -> argparse.ArgumentParser:
             "idempotency boot path."
         ),
     )
+    parser.add_argument(
+        "--criterion-2-failures",
+        action="store_true",
+        help=(
+            "Emit the canonical ADR-0007 Criterion 2 failures summary "
+            "as JSON on stdout (Issue #3359 / the β-soak Criterion 2 "
+            "tracker). The summary mirrors "
+            "`docs/agents/beta-soak-criterion-2-tracker.md` and is "
+            "independent of the state file — it is the canonical list "
+            "of nightly Criterion 2 failures, used by the nightly "
+            "workflow's JSON artefact."
+        ),
+    )
     return parser
 
 
@@ -495,6 +641,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.target < 1:
         print(f"ERROR: --target must be >= 1, got {args.target}", file=sys.stderr)
         return 2
+
+    # Issue #3359 — emit the canonical ADR-0007 Criterion 2 failures
+    # summary as JSON. Independent of the state file (the list is the
+    # canonical §LIMIT-21 cohort mirrored from
+    # ``docs/agents/beta-soak-criterion-2-tracker.md``) so the nightly
+    # workflow can emit it on every run regardless of state validity.
+    if args.criterion_2_failures:
+        print(json.dumps(criterion_2_failures(), indent=2))
+        return 0
 
     if args.write_template is not None:
         state = write_template(args.write_template, target=args.target)
