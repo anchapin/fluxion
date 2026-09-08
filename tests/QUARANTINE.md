@@ -18,6 +18,15 @@ the `Owner` column) removes the `#[ignore]` attribute and updates the `Status` t
 - `hardware` — Requires special hardware (GPU) to run
 - `calibration` — Awaiting external data or calibration verification
 - `ci-broken` — CI infrastructure issue; test itself may be valid
+- `manual-baseline` — Manual baseline regeneration; not part of CI
+- `pending-data` — Awaiting pending reference CSV / data delivery
+- `other` — Other / unclassified (slow tests, env-required, etc.)
+
+**Audit invariant (Issue #3443)**: every `#[ignore]` attribute under `tests/**/*.rs`
+MUST have a corresponding row in this registry. The CI gate
+(`scripts/generate_quarantine_registry.py --strict`) enforces this with a downward-only
+ratchet mirroring the `BASELINE_KNOWN_ORPHANS` pattern from
+`scripts/check_orphan_modules.py` (Issue #3459).
 
 ---
 
@@ -28,17 +37,23 @@ manually for investigation. They are NOT part of CI gates.
 
 | Test File | Test Name | Blocking Issue | Un-Ignore Criteria | Status |
 |-----------|-----------|----------------|-------------------|--------|
-| `tests/diagnostics/diag_917_energy.rs` | `diag_917_energy` | #2536 | Add assertions; convert to CI gate | `pending` |
-| `tests/diagnostics/diag_917_solar.rs` | `diag_917_solar` | #2536 | Add assertions; convert to CI gate | `pending` |
-| `tests/diagnostics/diag_917_v2.rs` | `diag_917_v2` | #2536 | Add assertions; convert to CI gate | `pending` |
-| `tests/diagnostics/diag_check.rs` | `diag_check` | #2536 | Add assertions; convert to CI gate | `pending` |
-| `tests/diagnostics/diag_mass_traj.rs` | `diag_mass_traj` | #2536 | Add assertions; convert to CI gate | `pending` |
-| `tests/diagnostics/diag_phim.rs` | `diag_phim` | #2536 | Add assertions; convert to CI gate | `pending` |
-| `tests/diagnostics/diag_solar_hr.rs` | `diag_solar_hr` | #2536 | Add assertions; convert to CI gate | `pending` |
-| `tests/diagnostics/diag_solfields.rs` | `diag_solfields` | #2536 | Add assertions; convert to CI gate | `pending` |
-| `tests/diagnostics/case_920_orientation_attribution.rs` | `case_920_orientation_attribution` | #2454, #2536 | Add assertions; convert to CI gate | `pending` |
-| `tests/diagnostics/case_940_setback_diagnostic.rs` | `case_940_setback_*` (4 tests) | #2452, #3062 | Add assertions; convert to CI gate | `pending` |
-| `tests/diagnostics/case_195_weather_source_diagnostic.rs` | `case_195_weather_source_*` | #3060 (LIMIT-15) | Re-derive reference from E+ TMY3; add assertions | `pending` |
+| `tests/diagnostics/diag_917_energy.rs` | `diag_energy_balance_600ff` | #2536 | Add assertions; convert to CI gate | `pending` |
+| `tests/diagnostics/diag_917_solar.rs` | `diag_solar_gains_600ff` | #2536 | Add assertions; convert to CI gate | `pending` |
+| `tests/diagnostics/diag_917_v2.rs` | `diagnostic` | #2536 | Add assertions; convert to CI gate | `pending` |
+| `tests/diagnostics/diag_check.rs` | `check_temps` | #2536 | Add assertions; convert to CI gate | `pending` |
+| `tests/diagnostics/diag_mass_traj.rs` | `diag_mass_trajectory` | #2536 | Add assertions; convert to CI gate | `pending` |
+| `tests/diagnostics/diag_phim.rs` | `phi_m_diagnostic` | #2536 | Add assertions; convert to CI gate | `pending` |
+| `tests/diagnostics/diag_solar_hr.rs` | `solar_diagnostic` | #2536 | Add assertions; convert to CI gate | `pending` |
+| `tests/diagnostics/diag_solfields.rs` | `solar_fields` | #2536 | Add assertions; convert to CI gate | `pending` |
+| `tests/diagnostics/case_920_orientation_attribution.rs` | `test_case_920_per_orientation_solar_decomposition` | #2454, #2536 | Add assertions; convert to CI gate | `pending` |
+| `tests/diagnostics/case_940_setback_diagnostic.rs` | `test_case_940_setback_diagnostic` | #2452, #3062 | Add assertions; convert to CI gate | `pending` |
+| `tests/diagnostics/case_940_setback_diagnostic.rs` | `test_case_940_setback_controller_mode_trace` | #2452, #3062 | Add assertions; convert to CI gate | `pending` |
+| `tests/diagnostics/case_940_setback_diagnostic.rs` | `test_case_940_ctf_path_comparison` | #2452, #3062 | Add assertions; convert to CI gate | `pending` |
+| `tests/diagnostics/case_940_setback_diagnostic.rs` | `test_case_940_blind_vs_ctf_ratio_pinned` | #2452, #3062 | Add assertions; convert to CI gate | `pending` |
+| `tests/diagnostics/case_940_setback_diagnostic.rs` | `test_case_940_setback_recovery_window_diagnostic` | #2452, #3062 | Add assertions; convert to CI gate | `pending` |
+| `tests/diagnostics/case_195_weather_source_diagnostic.rs` | `test_case_195_weather_source_comparison` | #3060 (LIMIT-15) | Re-derive reference from E+ TMY3; add assertions | `pending` |
+| `tests/ashrae_140_case_920.rs` | `test_case_920_per_month_attribution` | #2454, #2536 | Add assertions; convert to CI gate | `pending` |
+| `tests/ashrae_140_case_920.rs` | `test_case_920_engine_vs_reference_per_month` | #2454, #2536 | Add assertions; convert to CI gate | `pending` |
 
 ---
 
@@ -51,28 +66,65 @@ documented in `docs/KNOWN_ISSUES.md`. They are tracked by LIMIT-* entries.
 
 | Test File | Test Name | Blocking Issue(s) | Un-Ignore Criteria | Status |
 |-----------|-----------|------------------|-------------------|--------|
-| `tests/ashrae_140_case_920.rs` | `test_ashrae_140_case_920_strict_band` | #2427, #2454, LIMIT-05 | GaugeSolver (#1465/#1462) ships and closes peak cooling gap | `pending` |
+| `tests/ashrae_140_case_920.rs` | `test_case_920_strict_annual_energy_within_band` | #2427, #2454, LIMIT-05 | GaugeSolver (#1465/#1462) ships and closes peak cooling gap | `pending` |
 | `tests/ashrae_140_case_920.rs` | `test_case_920_per_month_attribution` | #2454, LIMIT-05 | GaugeSolver (#1465/#1462) ships | `pending` |
-| `tests/ashrae_140_case_920.rs` | `test_case_920_reference_vs_engine_comparison` | #2454, LIMIT-05 | GaugeSolver (#1465/#1462) ships | `pending` |
-| `tests/limit_05_inversion_regression.rs` | `test_limit_05_*` (4 tests) | #1280, LIMIT-05 | GaugeSolver (#1465/#1462) ships; direction confirmed corrected | `pending` |
-| `tests/case_900_annual_energy_attribution.rs` | `test_case_900_series_strict_cooling_bands` | #2448, LIMIT-05 | GaugeSolver (#1465/#1462) ships | `pending` |
+| `tests/ashrae_140_case_920.rs` | `test_case_920_engine_vs_reference_per_month` | #2454, LIMIT-05 | GaugeSolver (#1465/#1462) ships | `pending` |
+| `tests/limit_05_inversion_regression.rs` | `test_limit_05_inversion_case_900_peak_cooling` | #1280, LIMIT-05 | GaugeSolver (#1465/#1462) ships; direction confirmed corrected | `pending` |
+| `tests/limit_05_inversion_regression.rs` | `test_limit_05_inversion_case_950_peak_cooling` | #1280, LIMIT-05 | GaugeSolver (#1465/#1462) ships; direction confirmed corrected | `pending` |
+| `tests/limit_05_inversion_regression.rs` | `test_limit_05_inversion_case_960_peak_cooling` | #1280, LIMIT-05 | GaugeSolver (#1465/#1462) ships; direction confirmed corrected | `pending` |
+| `tests/limit_05_inversion_regression.rs` | `test_limit_05_inversion_summary` | #1280, LIMIT-05 | GaugeSolver (#1465/#1462) ships; direction confirmed corrected | `pending` |
+| `tests/case_900_annual_energy_attribution.rs` | `test_issue_2448_case_910_shading_attribution` | #2448, LIMIT-05 | GaugeSolver (#1465/#1462) ships | `pending` |
 | `tests/case_900_series_seasonal_attribution.rs` | `test_case_900_series_seasonal_attribution` | #2453, LIMIT-05 | GaugeSolver (#1465/#1462) ships; bidirectional gap closed | `pending` |
 | `tests/case_900_multinode_validation.rs` | `test_case_900_peak_cooling_*` | #1356, LIMIT-05 | CTF transient wall modeling lands; peak cooling in band | `pending` |
-| `tests/zone_balance_eplus_isolation.rs` | `test_case_600_annual_cooling_within_ashrae140_band` | #2506, LIMIT-05 | GaugeSolver (#1465/#1462) ships; annual cooling in band | `pending` |
-| `tests/zone_balance_eplus_isolation.rs` | `test_case_900_annual_cooling_within_ashrae140_band` | #2506, LIMIT-05 | GaugeSolver (#1465/#1462) ships; annual cooling in band | `pending` |
-| `tests/known_issues_regression.rs` | `test_limit_05_*` (multiple) | LIMIT-05 | GaugeSolver (#1465/#1462) ships | `pending` |
-| `tests/known_issues_regression.rs` | `test_solar_02_*` | #275, SOLAR-02 | GaugeSolver (#1465/#1462) ships | `pending` |
-| `tests/known_issues_regression.rs` | `test_solar_03_*` | #276, SOLAR-03 | GaugeSolver (#1465/#1462) ships | `pending` |
-| `tests/known_issues_regression.rs` | `test_solar_04_*` | #276, SOLAR-04 | GaugeSolver (#1465/#1462) ships | `pending` |
-| `tests/known_issues_regression.rs` | `test_free_01_*` | FREE-01 | GaugeSolver (#1465/#1462) ships | `pending` |
-| `tests/known_issues_regression.rs` | `test_free_03_*` | FREE-03 | GaugeSolver (#1465/#1462) ships | `pending` |
-| `tests/known_issues_regression.rs` | `test_adr_0003_*` | ADR-0003 | GaugeSolver (#1465/#1462) ships | `pending` |
-| `tests/known_issues_regression.rs` | `test_issue_532_*` | #532 | Resolved or closed | `pending` |
-| `tests/known_issues_regression.rs` | `test_issue_533_*` | #533 | Resolved or closed | `pending` |
-| `tests/issue_1860_5r1c_time_constant_aware.rs` | `test_issue_1860_*` (4 tests) | #1860, LIMIT-05 | GaugeSolver (#1465/#1462) ships | `pending` |
+| `tests/zone_balance_eplus_isolation.rs` | `test_case_600_annual_energy_ashrae140_tolerance` | #2506, LIMIT-05 | GaugeSolver (#1465/#1462) ships; annual cooling in band | `pending` |
+| `tests/zone_balance_eplus_isolation.rs` | `test_case_900_annual_energy_ashrae140_tolerance` | #2506, LIMIT-05 | GaugeSolver (#1465/#1462) ships; annual cooling in band | `pending` |
+| `tests/known_issues_regression.rs` | `test_solar01_high_mass_peak_cooling_regression` | LIMIT-05 | GaugeSolver (#1465/#1462) ships | `pending` |
+| `tests/known_issues_regression.rs` | `test_solar02_high_mass_annual_cooling_regression` | #275, SOLAR-02 | GaugeSolver (#1465/#1462) ships | `pending` |
+| `tests/known_issues_regression.rs` | `test_solar03_shading_sensitivity_regression` | #276, SOLAR-03 | GaugeSolver (#1465/#1462) ships | `pending` |
+| `tests/known_issues_regression.rs` | `test_solar04_night_ventilation_regression` | #276, SOLAR-04 | GaugeSolver (#1465/#1462) ships | `pending` |
+| `tests/known_issues_regression.rs` | `test_free01_low_mass_max_temp_regression` | FREE-01 | GaugeSolver (#1465/#1462) ships | `pending` |
+| `tests/known_issues_regression.rs` | `test_free02_high_mass_min_temp_regression` | ADR-0003 | GaugeSolver (#1465/#1462) ships | `pending` |
+| `tests/known_issues_regression.rs` | `test_free03_temperature_swing_regression` | FREE-03 | GaugeSolver (#1465/#1462) ships | `pending` |
+| `tests/known_issues_regression.rs` | `test_limit05_high_mass_peak_cooling_model_limitation` | LIMIT-05 | GaugeSolver (#1465/#1462) ships | `pending` |
+| `tests/known_issues_regression.rs` | `test_issue532_case195_energy_regression` | #532 | Resolved or closed | `pending` |
+| `tests/known_issues_regression.rs` | `test_issue533_600_series_peak_load_regression` | #533 | Resolved or closed | `pending` |
+| `tests/issue_1860_5r1c_time_constant_aware.rs` | `test_case_600_annual_cooling_within_ashrae140_band` | #1860, LIMIT-05 | GaugeSolver (#1465/#1462) ships | `pending` |
+| `tests/issue_1860_5r1c_time_constant_aware.rs` | `test_case_600_annual_heating_within_ashrae140_band` | #1860, LIMIT-05 | GaugeSolver (#1465/#1462) ships | `pending` |
+| `tests/issue_1860_5r1c_time_constant_aware.rs` | `test_case_650_annual_cooling_within_ashrae140_band` | #1860, LIMIT-05 | GaugeSolver (#1465/#1462) ships | `pending` |
+| `tests/issue_1860_5r1c_time_constant_aware.rs` | `test_case_950_annual_cooling_within_ashrae140_band` | #1860, LIMIT-05 | GaugeSolver (#1465/#1462) ships | `pending` |
 | `tests/invariant_checker_test.rs` | `test_one_watt_artificial_gain_increases_imbalance` | #3103, LIMIT-19 | EnergyBalanceValidator (#1344) investigation resolves algebraic invariant confusion | `pending` |
-| `tests/validation/hvac_bestest/runner.rs` | `test_hvac_bestest_case_*_comparative` | LIMIT-05, SOLAR-02 | GaugeSolver (#1465/#1462) ships | `pending` |
-| `tests/ffd_cosimulation_validation.rs` | `ffd_cosimulation_validation` | #2612, FFD-02 | Real coupled BES↔FFD solver ships | `pending` |
+| `tests/validation/hvac_bestest/runner.rs` | `comparative_e200_cooling_vs_iea_task22_ensemble` | LIMIT-05, SOLAR-02 | GaugeSolver (#1465/#1462) ships; Case-600-class cooling closes | `pending` |
+| `tests/ffd_cosimulation_validation.rs` | `test_peak_cooling_load_tolerance` | #2612, FFD-02 | Real coupled BES↔FFD solver ships; stub `BuoyancyDrivenFfdSolver` replaced | `pending` |
+
+### Case 920 / 950 / 960 blind-mode cohort (Issue #1323 / #1213 / #3071 / #1422)
+
+| Test File | Test Name | Blocking Issue(s) | Un-Ignore Criteria | Status |
+|-----------|-----------|------------------|-------------------|--------|
+| `tests/ashrae_140_blind_validation.rs` | `test_blind_mode_case_960_infrastructure` | LIMIT-18, #1465/#1462 | GaugeSolver structural 5R1C multi-lumped-mass lands; Case 960 blind heating closes | `pending` |
+| `tests/ashrae_140_blind_validation.rs` | `test_blind_mode_case_920_annual_energy_within_band` | #1213, #1323, #1346 AC | Roof-solar / high-mass cooling physics fix (#1323) lands; Case 920 annual heating closes | `pending` |
+| `tests/ashrae_140_blind_validation.rs` | `test_blind_mode_case_950_annual_energy_within_band` | #1323, #1347 AC2 | Roof-solar / high-mass cooling physics fix (#1323) lands; Case 950 strict band closes | `pending` |
+| `tests/ashrae_140_blind_validation.rs` | `test_case_950_5r1c_free_float_uses_night_vent_overrides_issue_1422` | #3071, #1422, #1465/#1462 | GaugeSolver mass trajectory matches legacy night-flush pre-cool | `pending` |
+
+### Ashrae 140 Case 900 / 920 paired-comparison cohort (Issue #2490 / LIMIT-05)
+
+| Test File | Test Name | Blocking Issue(s) | Un-Ignore Criteria | Status |
+|-----------|-----------|------------------|-------------------|--------|
+| `tests/ashrae_140_case_900.rs` | `test_case_900_annual_cooling_within_reference_range` | LIMIT-05, #2490, #1465/#1462 | GaugeSolver ships; high-mass 9R4C over-damping closes | `pending` |
+| `tests/ashrae_140_case_900.rs` | `test_case_900_peak_cooling_within_reference_range` | LIMIT-05, #2490, #1465/#1462 | GaugeSolver ships; instantaneous peak cooling closes | `pending` |
+| `tests/ashrae_140_case_900.rs` | `test_case_900ff_max_temperature_within_reference_range` | LIMIT-05, #2490, #1465/#1462 | GaugeSolver ships; free-float max-temp closes | `pending` |
+| `tests/ashrae_140_case_900.rs` | `test_case_900_annual_cooling_energy_with_correction` | LIMIT-05, #2490, #1465/#1462 | GaugeSolver ships | `pending` |
+| `tests/ashrae_140_case_900.rs` | `test_case_600ff_vs_900ff_paired_comparison` | LIMIT-05, #2490, #1465/#1462 | GaugeSolver ships; 900FF paired-comparison closes | `pending` |
+| `tests/ashrae_140_case_900.rs` | `test_900_series_regression` | Test-pollution (superceded by individual case tests) | Investigate; either un-ignore after pollution fix or delete | `pending` |
+| `tests/ashrae_140_integration.rs` | `test_case_600_full_reference_tolerance` | #2683, SOLAR-02, LIMIT-05, #1465/#1462 | All four Case 600 metrics re-enter reference bands | `pending` |
+| `tests/ashrae_140_integration.rs` | `test_case_610_shading` | #62 | Issue #62 merges; shading test wired into strict gate | `pending` |
+
+### Case 195 / solid conduction cohort (Issue #3064 / LIMIT-20 / #3218)
+
+| Test File | Test Name | Blocking Issue(s) | Un-Ignore Criteria | Status |
+|-----------|-----------|------------------|-------------------|--------|
+| `tests/ashrae_140_solid_conduction_variants.rs` | `test_case_195_high_mass_walls` | #3064, LIMIT-11, #1465/#1462 | GaugeSolver ships; zero-energy assertion closes | `pending` |
+| `tests/ashrae_140_solid_conduction_variants.rs` | `test_solid_conduction_variants_integration` | LIMIT-20, #3218, LIMIT-11, #3064, #1465/#1462 | GaugeSolver ships; HighMass variant integration closes | `pending` |
+| `tests/gauge_validation_case_900.rs` | `test_case_900_gauge_fiver1c_diurnal_parity` | #1669 | GaugeSolver thermal mass implementation lands (Option A) | `pending` |
 
 ### LIMIT-22 (gauge-build-only, `cfg_attr(feature = "gauge-solver", ignore)`, Issue #3297)
 
@@ -99,12 +151,21 @@ unit-test CI. They are run manually for memory profiling.
 
 | Test File | Test Name | Blocking Issue | Un-Ignore Criteria | Status |
 |-----------|-----------|----------------|-------------------|--------|
-| `tests/dhat_alloc_budget.rs` | `test_dhat_*` | Performance | CI profile budget defined; run in perf CI | `pending` |
-| `tests/dhat_batched_surrogate_zero_growth.rs` | `test_dhat_*` (2 tests) | Performance | CI profile budget defined; run in perf CI | `pending` |
-| `tests/dhat_evaluate_population_numpy_zero_copy.rs` | `test_dhat_*` | Performance | CI profile budget defined; run in perf CI | `pending` |
-| `tests/dhat_hybrid_zero_alloc.rs` | `test_dhat_*` | Performance | CI profile budget defined; run in perf CI | `pending` |
-| `tests/dhat_step_physics_zero_alloc.rs` | `test_dhat_*` | Performance | CI profile budget defined; run in perf CI | `pending` |
-| `tests/dhat_zone_solar_gain_zero_alloc.rs` | `test_dhat_*` | Performance | CI profile budget defined; run in perf CI | `pending` |
+| `tests/dhat_alloc_budget.rs` | `batch_oracle_hot_loop_alloc_budget` | Performance | CI profile budget defined; run in perf CI | `pending` |
+| `tests/dhat_batched_surrogate_zero_growth.rs` | `predict_loads_batched_into_zero_steady_state_growth` | Performance | CI profile budget defined; run in perf CI | `pending` |
+| `tests/dhat_batched_surrogate_zero_growth.rs` | `submit_with_sender_pingpong_steady_state_floor` | Performance | CI profile budget defined; run in perf CI | `pending` |
+| `tests/dhat_evaluate_population_numpy_zero_copy.rs` | `evaluate_population_from_slice_zero_steady_state_growth` | Performance | CI profile budget defined; run in perf CI | `pending` |
+| `tests/dhat_hybrid_zero_alloc.rs` | `hybrid_solve_timesteps_surrogate_load_branch_zero_steady_state_growth` | Performance | CI profile budget defined; run in perf CI | `pending` |
+| `tests/dhat_step_physics_zero_alloc.rs` | `step_physics_day_mode_steady_state_alloc_budget` | Performance | CI profile budget defined; run in perf CI | `pending` |
+| `tests/dhat_zone_solar_gain_zero_alloc.rs` | `zone_solar_gain_zero_steady_state_alloc` | Performance | CI profile budget defined; run in perf CI | `pending` |
+
+### BDF / batch-oracle benchmarks (slow, manual)
+
+| Test File | Test Name | Blocking Issue | Un-Ignore Criteria | Status |
+|-----------|-----------|----------------|-------------------|--------|
+| `tests/bdf_solver_tests.rs` | `benchmark_bdf_stiff_network_100` | Performance (manual benchmark) | Run in perf CI under `--release` with `--nocapture` | `pending` |
+| `tests/bdf_solver_tests.rs` | `benchmark_bdf_stiff_network_100_throughput` | Performance (manual benchmark) | Run in perf CI under `--release` with `--nocapture` | `pending` |
+| `tests/lib_batch_oracle.rs` | `test_batch_oracle_*` (5 tests) | Slow (full-year simulation) | Integration CI profile; run on perf runner | `pending` |
 
 ---
 
@@ -124,11 +185,21 @@ These tests are `#[ignore]` because they await external calibration data or veri
 
 | Test File | Test Name | Blocking Issue | Un-Ignore Criteria | Status |
 |-----------|-----------|----------------|-------------------|--------|
-| `tests/solar_peak_cooling_tdd.rs` | `test_solar_peak_cooling_*` (2 tests) | Calibration | Expected values verified against ASHRAE 140 reference | `pending` |
-| `tests/thermal_comfort_prediction_validation.rs` | `test_thermal_comfort_*` | Data | EnergyPlus thermal comfort benchmark data available | `pending` |
-| `tests/test_statistical_validation.rs` | `test_statistical_*` | Environment | Compiled `fluxion` binary at `target/release/fluxion` | `pending` |
-| `tests/surface_flux_parity.rs` | `test_surface_flux_parity_post_1323` | #1323 | Post-#1323 roof-solar physics fix lands | `pending` |
-| `tests/gauge_validation_case_900.rs` | `test_gauge_solver_steady_state_option_a` | #1669 | GaugeSolver thermal mass implementation | `pending` |
+| `tests/solar_peak_cooling_tdd.rs` | `test_case_600_peak_cooling_red` | Calibration | Expected values verified against ASHRAE 140 reference | `pending` |
+| `tests/solar_peak_cooling_tdd.rs` | `test_case_900_peak_cooling_red` | Calibration | Expected values verified against ASHRAE 140 reference | `pending` |
+| `tests/thermal_comfort_prediction_validation.rs` | `test_eplus_thermal_comfort_reference_pending` | Data | EnergyPlus thermal comfort benchmark data available | `pending` |
+| `tests/thermal_comfort_prediction_validation.rs` | `test_eplus_thermal_comfort_reference_pending` | Data | EnergyPlus thermal comfort benchmark data available | `pending` |
+| `tests/test_statistical_validation.rs` | `test_cli_statistical_flag` | Environment | Compiled `fluxion` binary at `target/release/fluxion` | `pending` |
+| `tests/surface_flux_parity.rs` | `test_parity_roof_zero_followup_1323` | #1323 | Post-#1323 roof-solar physics fix lands | `pending` |
+| `tests/gauge_validation_case_900.rs` | `test_case_900_gauge_fiver1c_diurnal_parity` | #1669 | GaugeSolver thermal mass implementation | `pending` |
+
+### Pending reference CSVs (Issue #1331 / #1168 / #1166)
+
+| Test File | Test Name | Blocking Issue | Un-Ignore Criteria | Status |
+|-----------|-----------|----------------|-------------------|--------|
+| `tests/ashrae_140_blind_validation.rs` | `test_blind_mode_case_800_annual_energy_within_band` | #1331, #1168 | `case_800_energy_reference.csv` regenerated from EnergyPlus | `pending` |
+| `tests/ashrae_140_blind_validation.rs` | `test_blind_mode_case_810_annual_energy_within_band` | #1331, #1168 | `case_810_energy_reference.csv` regenerated from EnergyPlus | `pending` |
+| `tests/ashrae_140_blind_validation.rs` | `test_blind_mode_case_960_annual_energy_within_band` | #1331, #1168 | `case_960_energy_reference.csv` regenerated from EnergyPlus | `pending` |
 
 ---
 
@@ -138,7 +209,7 @@ These tests are `#[ignore]` because CI is broken, not because the test logic is 
 
 | Test File | Test Name | Blocking Issue | Un-Ignore Criteria | Status |
 |-----------|-----------|----------------|-------------------|--------|
-| `tests/idf_ashrae_140_acceptance.rs` | `test_idf_case_600_acceptance` | #1577 | CI fixed; develop CI can run tests to verify | `pending` |
+| `tests/idf_ashrae_140_acceptance.rs` | `idf_case_600_annual_heating_within_15_percent_strict` | #1577 | CI fixed; develop CI can run tests to verify | `pending` |
 
 ---
 
@@ -149,8 +220,8 @@ manually after legitimate changes.
 
 | Test File | Test Name | Blocking Issue | Un-Ignore Criteria | Status |
 |-----------|-----------|----------------|-------------------|--------|
-| `tests/surrogate_drift_fallback_regression.rs` | `test_surrogate_drift_fallback_baseline_regeneration` | Manual | Run manually after surrogate change; not in CI | `pending` |
-| `tests/surrogate_cold_start_test.rs` | `test_surrogate_cold_start_baseline_regeneration` | Manual | Run manually after ort version bump; not in CI | `pending` |
+| `tests/surrogate_drift_fallback_regression.rs` | `fallback_annual_hvac_diagnostic` | Manual | Run manually after surrogate change; not in CI | `pending` |
+| `tests/surrogate_cold_start_test.rs` | `diagnostic_print_cold_warm_cycles` | Manual | Run manually after ort version bump; not in CI | `pending` |
 
 ---
 
@@ -158,11 +229,16 @@ manually after legitimate changes.
 
 | Test File | Test Name | Blocking Issue | Un-Ignore Criteria | Status |
 |-----------|-----------|----------------|-------------------|--------|
-| `tests/lib_batch_oracle.rs` | `test_batch_oracle_*` (5 tests) | Slow | Full-year simulation; run in integration CI | `pending` |
+| `tests/lib_batch_oracle.rs` | `test_evaluate_population_u_value_impact` | Slow (full-year simulation) | Integration CI profile | `pending` |
+| `tests/lib_batch_oracle.rs` | `test_evaluate_population_setpoint_impact` | Slow (full-year simulation) | Integration CI profile | `pending` |
+| `tests/lib_batch_oracle.rs` | `test_evaluate_population_with_large_population` | Slow (full-year simulation) | Integration CI profile | `pending` |
+| `tests/lib_batch_oracle.rs` | `test_evaluate_population_with_surrogates_no_model` | Slow (hangs when surrogates=true without model loaded) | Investigate; either fix or delete | `pending` |
+| `tests/lib_batch_oracle.rs` | `test_evaluate_population_parallel_execution` | Slow (full-year simulation) | Integration CI profile | `pending` |
 | `tests/bdf_solver_tests.rs` | `test_bdf_*` (2 tests) | Unknown | Investigate; determine un-ignore criteria | `pending` |
-| `tests/weather_vs_energyplus.rs` | `test_derived_humidity_ratio_parity` | #2673 | Formula generator embedded; issue #2673 resolves | `pending` |
-| `tests/weather_vs_energyplus.rs` | `test_wet_bulb_vs_dry_bulb_scaling` | #2673 | Formula generator embedded; issue #2673 resolves | `pending` |
-| `tests/energyplus_comparison_tests.rs` | `test_energyplus_*` | Long-running | Run explicitly when needed; not in CI | `pending` |
+| `tests/weather_vs_energyplus.rs` | `test_humidity_ratio_psychrometrics_vs_energyplus` | #2673 | Formula generator embedded; issue #2673 resolves | `pending` |
+| `tests/weather_vs_energyplus.rs` | `test_synthetic_miami_tmy_matches_reference` | #2673 | Formula generator embedded; issue #2673 resolves | `pending` |
+| `tests/energyplus_comparison_tests.rs` | `test_900_series_comprehensive_comparison` | Long-running | Run explicitly when needed; not in CI | `pending` |
+| `tests/energyplus_comparison_tests.rs` | `test_900_series_comprehensive_comparison` | Long-running | Run explicitly when needed; not in CI | `pending` |
 
 ---
 
@@ -170,22 +246,27 @@ manually after legitimate changes.
 
 | Category | Count | Status |
 |----------|-------|--------|
-| Diagnostic tests (#2536) | 12 | `pending` |
-| Structural gaps (LIMIT-*) | ~43 (3 gauge-build-only, Issue #3297) | `pending` |
-| Performance/memory (dhat) | 9 | `pending` |
+| Diagnostic tests (#2536) | 13 | `pending` |
+| Structural gaps (LIMIT-*) | ~46 (3 gauge-build-only, Issue #3297) | `pending` |
+| Performance/memory (dhat + BDF + batch) | 17 | `pending` |
 | Hardware-dependent (GPU) | 1 | `pending` |
-| Calibration/pending data | 5 | `pending` |
-| CI infrastructure | 1 | `pending` |
-| Manual baseline regen | 2 | `pending` |
-| Other/unclassified | 8 | `pending` |
-| **Total** | **~78** | |
+| Calibration/pending data | 8 | `pending` |
+| Pending reference CSVs (#1331/#1168) | 3 | `pending` |
+| CI infrastructure | 2 | `pending` |
+| Manual baseline regen | 4 | `pending` |
+| Other/unclassified | 12 | `pending` |
+| **Total** | **~106** | |
+
+(82 orphan entries were triaged into this registry by Issue #3443; the totals
+above include the 23 pre-existing entries and the 82 newly-added ones. The 3
+gauge-build-only `cfg_attr(...)` ignores live in the structural-cohort section
+above; the audit scanner counts only unconditional `#[ignore]` attributes.)
 
 ---
 
 ## Un-Ignore Checklist
 
 When a blocking issue is resolved, the test owner should:
-
 1. Remove the `#[ignore]` attribute from the test
 2. Verify the test passes on CI
 3. Update this registry:
@@ -195,5 +276,5 @@ When a blocking issue is resolved, the test owner should:
 
 ---
 
-*Generated by `scripts/generate_quarantine_registry.py` (Issue #3211)*
-*Last Updated: 2026-09-03 (LIMIT-22 gauge-build-only quarantines added — Issue #3297)*
+*Generated by `scripts/generate_quarantine_registry.py` (Issue #3211, #3393, #3443)*
+*Last Updated: 2026-09-08 (Issue #3443: 82 orphan #[ignore] tests triaged into registry; strict ratchet wired)*
