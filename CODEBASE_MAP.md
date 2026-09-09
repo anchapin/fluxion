@@ -930,6 +930,8 @@ tests/reference_data/
 
 ## Build & Test Commands
 
+> **Workspace-scope rule (Issue #3587)** — The root crate is also workspace package `fluxion` with `default-members = ["."]`. A bare `cargo test` therefore runs the root crate ONLY and silently SKIPS sibling-crate tests. **Always use the workspace form below.** Full rationale + the opt-in pre-push hook: see `docs/agents/workspace-scope.md` (and `AGENTS.md` §"Commands That Are Easy to Guess Wrong").
+
 ```bash
 # Build Python bindings
 maturin develop
@@ -937,8 +939,9 @@ maturin develop
 # Build NAPI bindings
 cargo build --features napi-bindings
 
-# Run tests
-cargo test
+# Run tests (★ developer-facing default — see workspace-scope rule above)
+cargo test --workspace --exclude fluxion-tauri --no-fail-fast
+# ⚠ bare `cargo test` runs the root crate ONLY; do NOT rely on it as a green-light signal
 
 # Run with coverage
 cargo test --coverage
