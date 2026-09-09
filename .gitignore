@@ -97,6 +97,11 @@ Thumbs.db
 /.azure/
 /.env
 /.env.local
+# XDG state dir (e.g. .local/state/gh/device-id created by `gh auth login`).
+# Issue #3626: scripts/check_root_hygiene.py flags this as an unmanaged
+# dotdir; adding it here closes the gate. The `.local/` family follows
+# the XDG Base Directory spec (`$XDG_STATE_HOME` = `~/.local/state`).
+.local/
 *.copilotmd
 cobertura.xml
 /worktrees/
