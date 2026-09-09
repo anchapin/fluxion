@@ -252,12 +252,43 @@ jobs:
           fi
           echo "Build successful"
 
-      - name: Run Case 900 Determinism Test
-        id: case900
+      - name: Run determinism tests for Cases 800/810/900/950/960/970
+        # Issue #3583: extend the Fluxion Determinism Gate (issue #1351)
+        # to cover ASHRAE 140 cases 600/800/810/900/950/960/970 in a single
+        # cross-platform equality assertion. The 5 new case binaries
+        # (`tests/case_800_determinism.rs`, …, `case_970_determinism.rs`)
+        # print `DETERMINISM_CASE{NNN}_VALUES|...` markers; this step
+        # captures the combined stdout into determinism_cases_output.txt
+        # for the extraction step below.
+        id: case-runs
         shell: bash
         run: |
           set -euo pipefail
-          cargo test --test case_900_determinism --release -- --nocapture 2>&1 | tee case900_output.txt
+          cargo test \
+            --test case_800_determinism \
+            --test case_810_determinism \
+            --test case_900_determinism \
+            --test case_950_determinism \
+            --test case_960_determinism \
+            --test case_970_determinism \
+            --release -- --nocapture 2>&1 | tee determinism_cases_output.txt
+
+      - name: Run cross_platform_fp_regression (Case 600/920 + solar hash)
+        # `tests/cross_platform_fp_regression.rs::test_case_600_annual_determinism_hash`
+        # and `test_case_920_annual_determinism_hash` print
+        # `DETERMINISM_CASE600_VALUES|...` and `DETERMINISM_CASE920_VALUES|...`
+        # markers that were previously dead (issue #3583). They are now
+        # consumed by the extraction step below; Case 920 is collected for
+        # diagnostic visibility (it appears in `output_values.json`) but is
+        # not part of the seven-case gate. The solar 8760h hash marker is
+        # also collected from this run. `--nocapture` is required because
+        # `cargo test` swallows passing-test stdout by default; without it
+        # the markers never reach the output file and Case 600 / 920 would
+        # silently look "missing" in the hash.
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --test cross_platform_fp_regression --release -- --nocapture 2>&1 | tee cross_platform_output.txt
 
       - name: Run matrix_exponential_faer determinism test (Issue #2549)
         shell: bash
@@ -265,7 +296,7 @@ jobs:
           set -euo pipefail
           cargo test --test determinism_matrix_exponential --release 2>&1 | tee matexp_output.txt
 
-      - name: Extract determinism values
+      - name: Extract determinism values for the 7-case gate
         id: extract
         shell: bash
         run: |
@@ -273,25 +304,55 @@ jobs:
           import re
           import json
           import hashlib
+          import sys
 
-          with open('case900_output.txt', 'r') as f:
-              output = f.read()
+          # Required: Cases 600 / 800 / 810 / 900 / 950 / 960 / 970 (per issue #3583).
+          # Case 920 is collected for visibility but is NOT in the gate's required set.
+          REQUIRED_CASES = ('600', '800', '810', '900', '950', '960', '970')
+
+          def parse_markers(path):
+              """Parse all DETERMINISM_*_VALUES markers from a single cargo test log."""
+              try:
+                  with open(path, 'r') as f:
+                      text = f.read()
+              except FileNotFoundError:
+                  return {}
+              values = {}
+              # DETERMINISM_CASE{NNN}_VALUES|heating_mwh|cooling_mwh (Cases 600, 800, 810, 920, 950, 960, 970)
+              for m in re.finditer(r'DETERMINISM_CASE(\d+)_VALUES\|([\d.]+)\|([\d.]+)', text):
+                  case = m.group(1)
+                  values[f'case{case}_annual_heating_mwh'] = float(m.group(2))
+                  values[f'case{case}_annual_cooling_mwh'] = float(m.group(3))
+              # DETERMINISM_VALUES|heating|cooling|peak_h|peak_c (Case 900 — backwards-compatible)
+              m = re.search(r'DETERMINISM_VALUES\|([\d.]+)\|([\d.]+)\|([\d.]+)\|([\d.]+)', text)
+              if m:
+                  values['case900_annual_heating_mwh'] = float(m.group(1))
+                  values['case900_annual_cooling_mwh'] = float(m.group(2))
+                  values['case900_peak_heating_kw'] = float(m.group(3))
+                  values['case900_peak_cooling_kw'] = float(m.group(4))
+              # DETERMINISM_FF_VALUES|min|max|avg|swing (Case 900FF)
+              m = re.search(r'DETERMINISM_FF_VALUES\|([\d.-]+)\|([\d.-]+)\|([\d.-]+)\|([\d.-]+)', text)
+              if m:
+                  values['case900ff_min_temp'] = float(m.group(1))
+                  values['case900ff_max_temp'] = float(m.group(2))
+                  values['case900ff_avg_temp'] = float(m.group(3))
+                  values['case900ff_temp_swing'] = float(m.group(4))
+              # DETERMINISM_SOLAR_8760H_HASH|hash (solar position determinism, issue #2558)
+              m = re.search(r'DETERMINISM_SOLAR_8760H_HASH\|([0-9a-f]+)', text)
+              if m:
+                  values['solar_8760h_hash'] = m.group(1)
+              return values
 
           values = {}
+          values.update(parse_markers('determinism_cases_output.txt'))
+          values.update(parse_markers('cross_platform_output.txt'))
 
-          match = re.search(r'DETERMINISM_VALUES\|([\d.]+)\|([\d.]+)\|([\d.]+)\|([\d.]+)', output)
-          if match:
-              values['annual_heating_mwh'] = float(match.group(1))
-              values['annual_cooling_mwh'] = float(match.group(2))
-              values['peak_heating_kw'] = float(match.group(3))
-              values['peak_cooling_kw'] = float(match.group(4))
-
-          ff_match = re.search(r'DETERMINISM_FF_VALUES\|([\d.-]+)\|([\d.-]+)\|([\d.-]+)\|([\d.-]+)', output)
-          if ff_match:
-              values['ff_min_temp'] = float(ff_match.group(1))
-              values['ff_max_temp'] = float(ff_match.group(2))
-              values['ff_avg_temp'] = float(ff_match.group(3))
-              values['ff_temp_swing'] = float(ff_match.group(4))
+          missing = [c for c in REQUIRED_CASES if f'case{c}_annual_heating_mwh' not in values]
+          if missing:
+              print(f"ERROR: determinism markers missing for cases {missing}", file=sys.stderr)
+              print(f"Got keys: {sorted(values.keys())}", file=sys.stderr)
+              # Visible via the visible-failure artifact; do not sys.exit here —
+              # the workflow's later compare-hashes step still cross-checks.
 
           hash_input = json.dumps(values, sort_keys=True)
           hash_hex = hashlib.sha256(hash_input.encode()).hexdigest()
@@ -303,18 +364,21 @@ jobs:
               f.write(hash_input + '\n')
 
           print(f"Hash: {hash_hex}")
+          print(f"Cases collected: {sorted({k.split('_')[0] for k in values if k.startswith('case') and '_annual' in k})}")
           print(f"Values: {json.dumps(values, indent=2)}")
           PYEOF
 
           echo "output_hash=$(head -1 output_hash.txt)" >> $GITHUB_OUTPUT
           echo "platform=${{ matrix.os }}" >> $GITHUB_OUTPUT
 
-      - name: Upload Case 900 output
+      - name: Upload determinism-gate output
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: case900-output-${{ matrix.os }}
+          name: determinism-gate-output-${{ matrix.os }}
           path: |
-            case900_output.txt
+            determinism_cases_output.txt
+            cross_platform_output.txt
+            matexp_output.txt
             output_values.json
             output_hash.txt
           retention-days: 7
@@ -334,6 +398,12 @@ jobs:
           python3 << 'EOF'
           import os
           import json
+          import sys
+
+          # Issue #3583: aggregate 7 cases (600, 800, 810, 900, 950, 960, 970)
+          # into a single cross-platform equality assertion. Any drift across
+          # this set is a CI failure regardless of which case diverges.
+          REQUIRED_CASES = ('600', '800', '810', '900', '950', '960', '970')
 
           artifacts_dir = 'artifacts'
           hashes = {}
@@ -341,8 +411,8 @@ jobs:
 
           # Read hashes and values from all platforms
           for os_name in ['ubuntu-latest', 'windows-latest', 'macos-14']:
-              hash_file = os.path.join(artifacts_dir, f'case900-output-{os_name}', 'output_hash.txt')
-              values_file = os.path.join(artifacts_dir, f'case900-output-{os_name}', 'output_values.json')
+              hash_file = os.path.join(artifacts_dir, f'determinism-gate-output-{os_name}', 'output_hash.txt')
+              values_file = os.path.join(artifacts_dir, f'determinism-gate-output-{os_name}', 'output_values.json')
 
               if os.path.exists(hash_file):
                   with open(hash_file, 'r') as f:
@@ -356,6 +426,7 @@ jobs:
 
           print("=" * 60)
           print("Cross-Platform Determinism Check Results")
+          print("Issue #3583: 7-case gate (600/800/810/900/950/960/970)")
           print("=" * 60)
           print()
 
@@ -371,16 +442,40 @@ jobs:
                   print(f"    {k}: {v}")
           print()
 
+          # Verify each platform has all required cases — a missing case indicates
+          # the upstream cargo test step failed to print the marker.
+          missing_by_platform = {}
+          for os_name, vals in all_values.items():
+              cases_present = {k.split('_')[0] for k in vals if k.startswith('case') and k.endswith('_annual_heating_mwh')}
+              missing_by_platform[os_name] = sorted(c for c in REQUIRED_CASES if c not in cases_present)
+          if any(missing_by_platform.values()):
+              print("❌ Missing required cases by platform:")
+              for os_name, missing in missing_by_platform.items():
+                  if missing:
+                      print(f"  {os_name}: missing {missing}")
+              status = "FAIL"
+              result = {
+                  'status': 'FAIL',
+                  'all_identical': False,
+                  'missing_cases': missing_by_platform,
+                  'platform_hashes': hashes,
+                  'values': all_values
+              }
+              with open('comparison_result.json', 'w') as f:
+                  json.dump(result, f, indent=2)
+              sys.exit(1)
+
           # Check if all hashes are identical
           unique_hashes = set(hashes.values())
 
           if len(unique_hashes) == 1:
-              print("✅ SUCCESS: All platforms produce identical outputs")
+              print("✅ SUCCESS: All platforms produce identical outputs across all 7 cases")
               print(f"Universal hash: {list(unique_hashes)[0]}")
               status = "PASS"
               result = {
                   'status': 'PASS',
                   'all_identical': True,
+                  'cases': list(REQUIRED_CASES),
                   'hash': list(unique_hashes)[0],
                   'platforms': list(hashes.keys()),
                   'values': all_values
@@ -392,6 +487,7 @@ jobs:
               result = {
                   'status': 'FAIL',
                   'all_identical': False,
+                  'cases': list(REQUIRED_CASES),
                   'platform_hashes': hashes,
                   'unique_hashes': list(unique_hashes),
                   'values': all_values
@@ -408,7 +504,7 @@ jobs:
                   print(f"  {os_name}:")
                   for k, v in vals.items():
                       print(f"    {k}: {v}")
-              exit(1)
+              sys.exit(1)
           EOF
 
       - name: Upload comparison result
