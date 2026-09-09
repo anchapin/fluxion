@@ -1,0 +1,9 @@
+{
+  "history": [
+    {
+      "actual": 4057
+    }
+  ],
+  "max_lines": 4057,
+  "notes": "Issue #3574: extend module-size gate to src/sim/thermal_model_core/mod.rs, the largest child of the Issue #3543 decomposition (~4.1k LoC), still over the ratchet because of the bare impl ThermalModel<VectorField> block. Current size snapshotted as the historical maximum; the bound can only tighten (lowered via the YAML `max_lines` field). Companion cleanup work that decomposes this module is tracked separately and is out of scope for #3574."
+}
