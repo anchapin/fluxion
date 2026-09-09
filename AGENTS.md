@@ -14,25 +14,37 @@ Fluxion is a Rust-first building-energy-modeling engine with Python and Node bin
 
 ## Commands That Are Easy to Guess Wrong
 
+> **Workspace-scope rule (Issue #3587)** — The root crate is also workspace package `fluxion` with `default-members = ["."]`. The bare `cargo test` therefore runs the root crate ONLY (4,311 lib tests + the root `[[test]]` entries) and silently SKIPS the remaining 4,369 sibling-crate tests. **Always use the workspace form below** unless you have a deliberate reason to scope to one crate. See `docs/agents/workspace-scope.md` for the full rationale and `.githooks/pre-push` for the opt-in pre-push gate.
+
 ```bash
 ./scripts/disk-space-check.sh                         # before large builds/orchestration; 10 GB minimum (also the first half of the pre-push pair below)
 ./scripts/disk-space-check.sh && ./scripts/ci-local.sh   # pre-push: disk-space gate then curated `act` suite (default = scorecard-drift + docs-hygiene + architecture_drift + scripts-tests, ~3m total); catches CI-shape failures locally before burning a GH runner slot — see .actrc for image/arch pinning and docs/ci/local-validation.md for the full workflow (Issue #3577, PR #3568)
+cargo test --workspace --exclude fluxion-tauri --no-fail-fast   # ★ DEVELOPER-FACING DEFAULT ★ — full workspace (8,680 tests / 108 ignored) minus fluxion-tauri (its proc-macro build needs `npm run build` in fluxion-tauri/frontend/ to materialise ../frontend/dist — Issue #3126); this is the LOCAL-DEBUG equivalent of the CI `cargo nextest run --workspace --all-targets --test-threads=2 --no-fail-fast` (Issue #3366 / ADR-0014, PR #3369); both runners share `.config/nextest.toml::concurrency = 2` defaults. Install `.githooks/pre-push` (see below) to enforce this on `git push`.
 cargo nextest run --workspace --all-targets --test-threads=2 --no-fail-fast   # canonical CI command (Issue #3366 / ADR-0014, PR #3369); see docs/ci/nextest-rollout.md for rationale and .github/workflows/rust-tests.yml::test for the actual matrix invocation
-cargo test --workspace --exclude fluxion-tauri        # ALL workspace tests; --exclude fluxion-tauri is required because fluxion-tauri's proc-macro build needs `npm run build` in fluxion-tauri/frontend/ to materialise ../frontend/dist (Issue #3126). LOCAL-DEBUG ONLY — CI uses `cargo nextest` (see above); both runners share `.config/nextest.toml::concurrency = 2` defaults.
-cargo test                                           # root crate only (NOT the full suite)
-cargo test -p fluxion <test_name>                    # one named test
+cargo test                                           # ⚠ ROOT CRATE ONLY (NOT the full suite) — `default-members = ["."]` makes bare `cargo test` skip the 4,369 sibling-crate tests; do NOT rely on this as a green-light signal
+cargo test -p fluxion <test_name>                    # one named test (intentional single-crate scope)
 cargo test --test zone_balance_eplus_isolation       # energy-conservation gate
 cargo test --test ashrae_140_validation              # ASHRAE suite (one of several ashrae_140 binaries)
 cargo test --test integration-cli                    # CLI behavior/stub guards
 cargo test --profile ci                              # faster local iteration profile
-cargo check --workspace                              # all workspace siblings
+cargo check --workspace                              # all workspace siblings (build-only, no tests)
 cargo test -p fluxion-mcp                            # MCP package
 cargo test --features ort                            # ONNX runtime is opt-in
 python3 scripts/generate_test_inventory.py --verify   # regenerate tests/test_inventory.json — Issue #3442; cross-checks AST counts against cargo test -- --list
 python3 scripts/check_test_inventory_drift.py        # Issue #3442 drift gate; fails PRs that grow the test suite above the documented baseline without an explicit baseline bump
 ```
 
-**Test runner policy (Issue #3366 / ADR-0014, merged via PR #3369 on 2026-09-06):** CI uses `cargo nextest run` with per-binary `--test-threads=2` (matching GH free-runner vCPU count); local developers may continue to use `cargo test --workspace` for the local-debug equivalent. The nextest rollout runbook (`docs/ci/nextest-rollout.md`) is the source of truth for the audit, re-audit triggers, and `.config/nextest.toml` overrides. Do **not** relax ASHRAE 140 / energy-conservation / `h_tr_em` / surrogate-drift tolerance bands to compensate for any nextest race — tighten `.config/nextest.toml` instead (Issue #3366 §"Step 1 — Audit").
+**Pre-push gate (opt-in, Issue #3587 acceptance criterion #b)** — to stop a bare-`cargo test` local green from landing a PR that breaks siblings, install the opt-in hook once:
+
+```bash
+ln -s ../../.githooks/pre-push .git/hooks/pre-push    # opt-in; symlink-relative so a fresh clone picks it up
+# Skip a single push when the local suite is already green another way:
+FLUXION_SKIP_PRE_PUSH_TESTS=1 git push
+```
+
+The hook invokes `cargo test --workspace --exclude fluxion-tauri --no-fail-fast` and aborts the push on non-zero exit; it never modifies the working tree, never invokes `cargo nextest` (that's a CI-only runner choice, see Issue #3366), and never tightens test tolerance bands.
+
+**Test runner policy (Issue #3366 / ADR-0014, merged via PR #3369 on 2026-09-06):** CI uses `cargo nextest run` with per-binary `--test-threads=2` (matching GH free-runner vCPU count); local developers may continue to use `cargo test --workspace --exclude fluxion-tauri --no-fail-fast` (see the workspace-scope rule above — promoted via Issue #3587) for the local-debug equivalent. The nextest rollout runbook (`docs/ci/nextest-rollout.md`) is the source of truth for the audit, re-audit triggers, and `.config/nextest.toml` overrides. Do **not** relax ASHRAE 140 / energy-conservation / `h_tr_em` / surrogate-drift tolerance bands to compensate for any nextest race — tighten `.config/nextest.toml` instead (Issue #3366 §"Step 1 — Audit").
 
 **Test suite overview (Issue #3442 — citation source-of-truth = `tests/test_inventory.json`):** `cargo test --workspace --exclude fluxion-tauri` runs the inventory below; verify mode cross-checks against `cargo test --workspace --exclude fluxion-tauri -- --list` and prefers the cargo counts. The headline numbers are derived from the head commit's verified run; treat them as informational and cite the inventory JSON for the durable record. The ASHRAE 140 suite is distributed across multiple `--test` binaries (run `ls tests/ashrae_140*.rs` to see them all). Running `cargo test` without `--workspace` only runs the root crate tests and misses the full suite.
 

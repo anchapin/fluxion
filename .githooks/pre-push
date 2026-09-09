@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# .githooks/pre-push — opt-in pre-push gate that runs the full workspace test
+# suite (Issue #3587 acceptance criterion #b).
+#
+# Problem
+# -------
+# The root crate is also workspace package `fluxion` with
+# `default-members = ["."]` (root `Cargo.toml`). A developer who runs the
+# bare `cargo test` locally only exercises the root crate's 4,311 lib tests
+# + the explicit `[[test]]` entries; the remaining 4,369 sibling-crate tests
+# (including the MCP package's JSON-RPC harness, the grid solver, the city
+# radiation solver, the wasm build, and `fluxion-fluid`'s
+# `tests/integration/test_fluid_energy_conservation.rs` energy-conservation
+# gate) silently SKIP. A regression in a sibling crate therefore surfaces
+# only after CI, breaking the project's fast-iteration promise.
+#
+# Fix
+# ---
+# This hook is the companion to the workspace-scope rule at the top of
+# `AGENTS.md` §"Commands That Are Easy to Guess Wrong". When installed as
+# `.git/hooks/pre-push`, every `git push` first runs the local-debug
+# equivalent of the CI command:
+#
+#   cargo test --workspace --exclude fluxion-tauri --no-fail-fast
+#
+# so a bare-`cargo test` local green cannot land a PR that breaks siblings.
+#
+# Scope (intentionally narrow)
+# ----------------------------
+# - LOCAL-DEBUG ONLY — CI uses `cargo nextest run --workspace --all-targets
+#   --test-threads=2 --no-fail-fast` (Issue #3366 / ADR-0014, PR #3369).
+#   This hook deliberately uses `cargo test` (not `cargo nextest`) so the
+#   local signal stays comparable to what an engineer runs in their shell,
+#   and so the hook does not pull a second test-runner dependency.
+# - DOES NOT touch `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`
+#   or any other tolerance band (RULES.md forbids tuning constants to pass).
+# - DOES NOT modify the working tree.
+# - DOES NOT install anything globally. Opt-in via a single `ln -s`.
+#
+# Installation (one-time, per clone)
+# ----------------------------------
+#   ln -s ../../.githooks/pre-push .git/hooks/pre-push
+#
+# Skip for a single push (when the local suite is already green another way)
+# --------------------------------------------------------------------------
+#   FLUXION_SKIP_PRE_PUSH_TESTS=1 git push
+#
+# Exit codes
+# ----------
+# 0 — workspace tests passed (or the hook was explicitly skipped).
+# 1 — `cargo test --workspace --exclude fluxion-tauri --no-fail-fast`
+#     returned non-zero; the push is aborted and the developer is expected
+#     to read the failure output above.
+# 2 — environment error (e.g. `cargo` not in PATH); the push is aborted.
+
+set -euo pipefail
+
+if [ "${FLUXION_SKIP_PRE_PUSH_TESTS:-0}" = "1" ]; then
+  echo "[pre-push] FLUXION_SKIP_PRE_PUSH_TESTS=1 — skipping workspace tests (Issue #3587 hook)"
+  exit 0
+fi
+
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "[pre-push] ERR: 'cargo' not in PATH. Install rustup first." >&2
+  exit 2
+fi
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+echo "[pre-push] Issue #3587 workspace-scope gate"
+echo "[pre-push] running: cargo test --workspace --exclude fluxion-tauri --no-fail-fast"
+echo "[pre-push] (skip with FLUXION_SKIP_PRE_PUSH_TESTS=1; see .githooks/pre-push)"
+echo
+
+# --no-fail-fast surfaces every failing crate instead of bailing on the first;
+# the bash `set -e` above ensures any non-zero exit aborts the push.
+cargo test --workspace --exclude fluxion-tauri --no-fail-fast
+
+echo
+echo "[pre-push] workspace tests green — proceeding with push"
