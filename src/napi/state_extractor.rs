@@ -198,13 +198,14 @@ impl StateExtractor {
 
         let mass_temperatures = self.inner.get_temperatures();
 
-        let mut mass_flat = Vec::with_capacity(steps * self.num_zones);
-        for _t in 0..steps {
-            for z in 0..self.num_zones {
-                let idx = z.min(mass_temperatures.len() - 1);
-                mass_flat.push(mass_temperatures[idx]);
-            }
-        }
+        // Issue #3634: when `get_temperatures()` returns an empty Vec,
+        // `mass_temperatures.len() - 1` underflows on `usize` (panic in
+        // debug, wrap to `usize::MAX` in release, then out-of-bounds panic
+        // on the index). Route the flatten through a helper that uses
+        // `.get(...).copied().unwrap_or(20.0)` so empty mass_temperatures
+        // and zero num_zones both produce the same placeholder fill the
+        // zone_temperatures branch already does at line 183.
+        let mass_flat = flatten_mass_temperatures(&mass_temperatures, self.num_zones, steps);
 
         Ok(StateMatrices {
             zone_temperatures: into_zero_copy_float64_array(zone_temperatures),
@@ -292,9 +293,35 @@ fn check_solve_finite(eui: f64, caller: &str) -> napi::bindgen_prelude::Result<(
     }
 }
 
+/// Issue #3634 helper: flatten a `[zone]` mass-temperature vector into a
+/// `[timesteps * num_zones]` matrix, using `.get(idx).copied().unwrap_or(20.0)`
+/// so empty `mass_temperatures` and zero `num_zones` both produce the same
+/// placeholder fill the `zone_temperatures` branch already uses. The previous
+/// `z.min(mass_temperatures.len() - 1)` form panicked on `0_usize - 1` when
+/// `get_temperatures()` returned an empty Vec.
+fn flatten_mass_temperatures(
+    mass_temperatures: &[f64],
+    num_zones: usize,
+    steps: usize,
+) -> Vec<f64> {
+    let mut out = Vec::with_capacity(steps * num_zones);
+    for _t in 0..steps {
+        for z in 0..num_zones {
+            // `.get` returns None on either an empty slice or an out-of-range
+            // index — both safe-fall to the 20.0 default rather than panic.
+            out.push(mass_temperatures.get(z).copied().unwrap_or(20.0));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
-    use super::check_solve_finite;
+    use super::{check_solve_finite, flatten_mass_temperatures};
+
+    // ====================================================================
+    // Issue #3633 regression tests: solve_timesteps divergence propagation
+    // ====================================================================
 
     #[test]
     fn check_solve_finite_passes_finite_values() {
@@ -325,6 +352,50 @@ mod tests {
     #[test]
     fn check_solve_finite_rejects_neg_inf() {
         assert!(check_solve_finite(f64::NEG_INFINITY, "t").is_err());
+    }
+
+    // ====================================================================
+    // Issue #3634 regression tests: mass_temperatures flatten empty-slice safety
+    // ====================================================================
+
+    /// Issue #3634 regression: an empty `mass_temperatures` slice must not
+    /// panic the flatten. The old `z.min(len - 1)` form underflowed on
+    /// `0_usize - 1` (debug) or wrapped to `usize::MAX` (release) and
+    /// then panicked on the index. The new helper falls back to 20.0
+    /// for every cell, matching the `zone_temperatures` placeholder.
+    #[test]
+    fn flatten_mass_temperatures_handles_empty_slice() {
+        let out = flatten_mass_temperatures(&[], 3, 2);
+        assert_eq!(out.len(), 6);
+        assert!(out.iter().all(|&v| v == 20.0));
+    }
+
+    #[test]
+    fn flatten_mass_temperatures_handles_zero_zones() {
+        let out = flatten_mass_temperatures(&[1.0, 2.0, 3.0], 0, 5);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn flatten_mass_temperatures_handles_both_empty_and_zero_zones() {
+        let out = flatten_mass_temperatures(&[], 0, 4);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn flatten_mass_temperatures_repeats_per_zone() {
+        // 2 zones, 3 timesteps → 6 cells, each zone broadcast to its
+        // row. Zone 0 = 10.0, zone 1 = 22.0, no underflow risk here
+        // since `mass_temperatures.len() >= num_zones`.
+        let out = flatten_mass_temperatures(&[10.0, 22.0], 2, 3);
+        assert_eq!(out, vec![10.0, 22.0, 10.0, 22.0, 10.0, 22.0]);
+    }
+
+    #[test]
+    fn flatten_mass_temperatures_falls_back_when_num_zones_exceeds_slice() {
+        // 1 zone in the slice, 3 zones requested → zones 1, 2 use 20.0
+        let out = flatten_mass_temperatures(&[15.0], 3, 1);
+        assert_eq!(out, vec![15.0, 20.0, 20.0]);
     }
 }
 
