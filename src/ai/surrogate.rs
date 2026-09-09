@@ -1061,6 +1061,15 @@ impl Default for SurrogateManager {
 pub struct SessionPool {
     sessions: Mutex<Vec<ort::session::Session>>,
     model_path: String,
+    /// SHA-256-verified ONNX model bytes (Issue #3573).
+    ///
+    /// Held as an `Arc` so [`MultiDeviceSessionPool`] can share a single
+    /// verified buffer across per-device sub-pools without a second copy
+    /// of the model in memory. Every session produced by this pool —
+    /// including the lazy pool-reuse path in `get_or_create_session` —
+    /// is built from these bytes via `commit_from_memory` rather than
+    /// re-resolving `model_path` on the filesystem.
+    model_bytes: Arc<Vec<u8>>,
     backend: InferenceBackend,
     device_id: usize,
 }
@@ -1069,11 +1078,16 @@ pub struct SessionPool {
 /// (issue #1294). Carries no ONNX state. Construction succeeds; any attempt
 /// to actually create an ONNX session via the corresponding methods returns
 /// an error (those methods only exist under `#[cfg(feature = "ort")]`).
+///
+/// `model_bytes` mirrors the `Arc<Vec<u8>>` field on the ort-feature
+/// counterpart (Issue #3573) but is inert: we never call
+/// `commit_from_memory` here because the `ort` crate is disabled.
 #[cfg(not(feature = "ort"))]
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct SessionPool {
     model_path: String,
+    model_bytes: Arc<Vec<u8>>,
     backend: InferenceBackend,
     device_id: usize,
 }
@@ -1089,7 +1103,27 @@ pub struct MultiDeviceSessionPool {
 
 #[cfg(feature = "ort")]
 impl MultiDeviceSessionPool {
+    /// Public constructor preserved for source-compat — opens the model
+    /// with `O_NOFOLLOW` (Issue #3573), hashes it, and forwards the
+    /// verified bytes to [`Self::from_bytes`]. The original `path` is
+    /// retained only for diagnostics.
     pub fn new(model_path: String, config: &MultiDeviceConfig) -> Result<Self, String> {
+        let bytes = open_and_verify_onnx(Path::new(&model_path))?;
+        Self::from_bytes(Arc::new(bytes), model_path, config)
+    }
+
+    /// Preferred constructor (Issue #3573). Builds one `SessionPool` per
+    /// CUDA device, each pointing at the same SHA-256-verified byte
+    /// buffer. Because every session is materialised from the shared
+    /// `Arc<Vec<u8>>` via `commit_from_memory`, no per-device pool ever
+    /// re-resolves the original path — closing the TOCTOU window that
+    /// previously existed between `verify_onnx_signature` and
+    /// `SessionPool::create_session(path, …)`.
+    pub fn from_bytes(
+        model_bytes: Arc<Vec<u8>>,
+        model_path: String,
+        config: &MultiDeviceConfig,
+    ) -> Result<Self, String> {
         let mut device_pools = Vec::new();
         let device_ids = if config.auto_select {
             Self::detect_cuda_devices().unwrap_or_else(|| vec![0])
@@ -1100,10 +1134,15 @@ impl MultiDeviceSessionPool {
         };
 
         for device_id in &device_ids {
-            match SessionPool::create_session(&model_path, InferenceBackend::CUDA, *device_id) {
+            match SessionPool::create_session_from_bytes(
+                &model_bytes,
+                InferenceBackend::CUDA,
+                *device_id,
+            ) {
                 Ok(session) => {
                     let pool = SessionPool::new(
                         model_path.clone(),
+                        Arc::clone(&model_bytes),
                         InferenceBackend::CUDA,
                         *device_id,
                         session,
@@ -1256,6 +1295,7 @@ impl MultiDeviceSessionGuard {
 impl SessionPool {
     fn new(
         model_path: String,
+        model_bytes: Arc<Vec<u8>>,
         backend: InferenceBackend,
         device_id: usize,
         initial_session: ort::session::Session,
@@ -1263,36 +1303,22 @@ impl SessionPool {
         SessionPool {
             sessions: Mutex::new(vec![initial_session]),
             model_path,
+            model_bytes,
             backend,
             device_id,
         }
     }
 
-    fn get_or_create_session(&self) -> Result<SessionGuard<'_>, String> {
-        {
-            let mut sessions = self.sessions.lock();
-            if let Some(session) = sessions.pop() {
-                return Ok(SessionGuard {
-                    pool: self,
-                    session: Some(session),
-                });
-            }
-        }
-        Self::create_session(&self.model_path, self.backend, self.device_id).map(|session| {
-            SessionGuard {
-                pool: self,
-                session: Some(session),
-            }
-        })
-    }
-
-    fn return_session(&self, session: ort::session::Session) {
-        let mut sessions = self.sessions.lock();
-        sessions.push(session);
-    }
-
-    fn create_session(
-        path: &str,
+    /// Build a fresh ONNX session from this pool's verified byte buffer.
+    ///
+    /// Used by the [`crate::ai::surrogate::SurrogateManager`] constructors
+    /// (`with_gpu_backend`, `with_multi_device`) so the model leaves the
+    /// filesystem exactly once — at `open_and_verify_onnx` time. Lazier
+    /// session creation (when the per-slot cache is empty) goes through
+    /// [`Self::get_or_create_session`] and reuses the same cached bytes,
+    /// never re-resolving the path.
+    fn create_session_from_bytes(
+        model_bytes: &[u8],
         backend: InferenceBackend,
         _device_id: usize,
     ) -> Result<ort::session::Session, String> {
@@ -1376,21 +1402,69 @@ impl SessionPool {
             InferenceBackend::CPU => {}
         }
         builder
-            .commit_from_file(path)
+            .commit_from_memory(model_bytes)
             .map_err(|e| format!("Failed to load ONNX model: {}", e))
+    }
+
+    /// Back-compat shim that retains the old `path` signature for any
+    /// downstream test or inert stub that happens to call it directly.
+    /// Goes through `open_and_verify_onnx` so the path is opened with
+    /// `O_NOFOLLOW` exactly once and the verified bytes are handed to
+    /// `commit_from_memory` (no second filesystem read).
+    #[allow(dead_code)]
+    fn create_session(
+        path: &str,
+        backend: InferenceBackend,
+        device_id: usize,
+    ) -> Result<ort::session::Session, String> {
+        let bytes = open_and_verify_onnx(Path::new(path))?;
+        Self::create_session_from_bytes(&bytes, backend, device_id)
+    }
+
+    fn get_or_create_session(&self) -> Result<SessionGuard<'_>, String> {
+        {
+            let mut sessions = self.sessions.lock();
+            if let Some(session) = sessions.pop() {
+                return Ok(SessionGuard {
+                    pool: self,
+                    session: Some(session),
+                });
+            }
+        }
+        // Build the new session from the cached verified bytes — we
+        // never re-open `self.model_path` here, so an attacker who
+        // swaps the file AFTER the manager was constructed cannot
+        // influence these later session loads (Issue #3573).
+        Self::create_session_from_bytes(&self.model_bytes, self.backend, self.device_id).map(
+            |session| SessionGuard {
+                pool: self,
+                session: Some(session),
+            },
+        )
+    }
+
+    fn return_session(&self, session: ort::session::Session) {
+        let mut sessions = self.sessions.lock();
+        sessions.push(session);
     }
 }
 
 /// Stub [`SessionPool`] methods when the `ort` feature is disabled
-/// (issue #1294). `SessionPool::new` accepts a model path but never loads a
-/// session; `get_or_create_session` returns an error explaining that ONNX
-/// inference is unavailable.
+/// (issue #1294). `SessionPool::new` accepts a model path and verified
+/// bytes (Issue #3573) but never loads a session; `get_or_create_session`
+/// returns an error explaining that ONNX inference is unavailable.
 #[cfg(not(feature = "ort"))]
 impl SessionPool {
     #[allow(dead_code)]
-    fn new(model_path: String, backend: InferenceBackend, device_id: usize) -> Self {
+    fn new(
+        model_path: String,
+        model_bytes: Arc<Vec<u8>>,
+        backend: InferenceBackend,
+        device_id: usize,
+    ) -> Self {
         SessionPool {
             model_path,
+            model_bytes,
             backend,
             device_id,
         }
@@ -2570,13 +2644,25 @@ impl SurrogateManager {
         if !model_path.exists() {
             return Err(format!("ONNX model file not found: {}", path));
         }
-        // Issue #2906: fail-closed SHA-256 integrity check (see
-        // `verify_onnx_signature`). Runs before the ONNX session is
-        // instantiated so a poisoned model never reaches the inference path
-        // and cannot influence ASHRAE 140 / BatchOracle results.
-        verify_onnx_signature(model_path)?;
-        let session = SessionPool::create_session(path, backend, device_id)?;
-        let pool = SessionPool::new(path.to_string(), backend, device_id, session);
+        // Issue #3573: open the model exactly once with O_NOFOLLOW,
+        // hash the bytes, and pass the SAME bytes (already in memory)
+        // to `commit_from_memory`. The previous flow —
+        // `verify_onnx_signature` followed by
+        // `SessionPool::create_session(path, …)` — performed two
+        // independent filesystem reads of the same path, giving a
+        // process-local attacker a TOCTOU window to swap the file
+        // between the integrity check and the ort session open. The
+        // single-handle + commit_from_memory handoff eliminates the
+        // second read entirely.
+        let bytes = open_and_verify_onnx(model_path)?;
+        let session = SessionPool::create_session_from_bytes(&bytes, backend, device_id)?;
+        let pool = SessionPool::new(
+            path.to_string(),
+            Arc::new(bytes),
+            backend,
+            device_id,
+            session,
+        );
         Ok(SurrogateManager {
             model_loaded: true,
             model_path: Some(path.to_string()),
@@ -2622,10 +2708,16 @@ impl SurrogateManager {
         if !model_path.exists() {
             return Err(format!("ONNX model file not found: {}", path));
         }
-        // Issue #2906: fail-closed SHA-256 integrity check (the multi-device
-        // success path bypasses `with_gpu_backend`, so we must verify here).
-        verify_onnx_signature(model_path)?;
-        match MultiDeviceSessionPool::new(path.to_string(), &config) {
+        // Issue #3573: open the model once with O_NOFOLLOW, hash the
+        // bytes, and pass the same `Arc<Vec<u8>>` to every per-device
+        // `SessionPool` via `MultiDeviceSessionPool::from_bytes`. Each
+        // pool's `commit_from_memory` call materialises its session
+        // from the shared verified buffer — no per-device code path
+        // re-opens the model at `path`, so a directory swap between
+        // verify and load cannot reach any of them.
+        let bytes = open_and_verify_onnx(model_path)?;
+        let bytes_arc = Arc::new(bytes);
+        match MultiDeviceSessionPool::from_bytes(bytes_arc, path.to_string(), &config) {
             Ok(multi_pool) => {
                 let first_pool = multi_pool
                     .device_pools
@@ -2724,8 +2816,21 @@ impl SurrogateManager {
             return Err(format!("Quantized ONNX model file not found: {}", path));
         }
         info!("Loading quantized INT8 model: {} (CPU inference)", path);
-        let session = SessionPool::create_session(path, InferenceBackend::CPU, 0)?;
-        let pool = SessionPool::new(path.to_string(), InferenceBackend::CPU, 0, session);
+        // Issue #3573: open once with O_NOFOLLOW, hash, hand the bytes
+        // to both the verifier (already done inside
+        // `open_and_verify_onnx`) and `commit_from_memory`.
+        // `SessionPool::create_session(path)` would re-resolve `path`
+        // — we avoid that here by going straight through the
+        // bytes-based API.
+        let bytes = open_and_verify_onnx(Path::new(path))?;
+        let session = SessionPool::create_session_from_bytes(&bytes, InferenceBackend::CPU, 0)?;
+        let pool = SessionPool::new(
+            path.to_string(),
+            Arc::new(bytes),
+            InferenceBackend::CPU,
+            0,
+            session,
+        );
         Ok(SurrogateManager {
             model_loaded: true,
             model_path: Some(path.to_string()),
@@ -3321,19 +3426,23 @@ pub const ENV_ONNX_MODEL_SIGNATURE: &str = "FLUXION_ONNX_MODEL_SIGNATURE";
 /// Verify the integrity of an ONNX model against a SHA-256 manifest
 /// (Issue #2906).
 ///
+/// Back-compat wrapper around [`open_and_verify_onnx`]: preserves the
+/// original `Result<(), String>` signature while routing through the
+/// `O_NOFOLLOW` single-handle path that closes the TOCTOU window
+/// (Issue #3573).
+///
 /// Behaviour, in resolution order:
 /// 1. If `FLUXION_ONNX_MODEL_SIGNATURE` is set to a 64-char hex SHA-256,
 ///    use it as the authoritative expected digest.
 /// 2. Otherwise, look for a manifest file at `<model>.sha256` (the standard
 ///    `sha256sum` output format). If present, parse it and look for an
 ///    entry whose filename matches the model basename.
-/// 3. If neither source provides a digest, succeed WITHOUT verification and
-///    emit a one-shot `eprintln!` warning so operators can ship a manifest
-///    with their model. (This branch preserves backward compatibility with
-///    test fixtures in `assets/` that intentionally have no manifest.)
-/// 4. Compute the SHA-256 of the model file and compare with the resolved
-///    expected digest. Mismatch returns `Err` (fail-closed) so a poisoned
-///    or bit-flipped model cannot influence ASHRAE 140 results.
+/// 3. If neither source provides a digest, fail-closed with a message
+///    referencing Issue #3209.
+/// 4. Compute the SHA-256 of the buffered model bytes and compare with
+///    the resolved expected digest. Mismatch returns `Err` (fail-closed)
+///    so a poisoned or bit-flipped model cannot influence ASHRAE 140
+///    results.
 ///
 /// The manifest format mirrors `sha256sum` output:
 ///
@@ -3346,6 +3455,144 @@ pub const ENV_ONNX_MODEL_SIGNATURE: &str = "FLUXION_ONNX_MODEL_SIGNATURE";
 /// `sha256sum -b` "binary mode" `*` prefix on the path. The first entry
 /// whose filename ends with the model basename wins.
 pub fn verify_onnx_signature(model_path: &Path) -> Result<(), String> {
+    open_and_verify_onnx(model_path).map(|_verified_bytes| ())
+}
+
+/// Open `model_path` once with `O_NOFOLLOW` semantics, hash the bytes
+/// via SHA-256, verify the digest against the manifest / env-var, and
+/// return the verified byte buffer.
+///
+/// This is the single point at which the ONNX model leaves the
+/// filesystem (Issue #3573). Callers MUST pass the returned bytes to
+/// `ort::session::SessionBuilder::commit_from_memory` rather than
+/// re-resolving the path for session instantiation — re-opening the
+/// path would re-introduce the TOCTOU window between the verify-read
+/// and the load-read.
+///
+/// Defences (each independent, defense-in-depth):
+///
+/// 1. `O_NOFOLLOW` open: refuses to follow a symlink at the final path
+///    component, so the kernel pins the open to a specific inode even
+///    if the directory entry is replaced (mv'd over) before the read
+///    returns. Hard-coded per-platform values rather than a `libc` dep
+///    just for one constant.
+///
+/// 2. Size consistency check: the handle's `metadata().len()` is
+///    captured before the read and re-checked after. A writer who
+///    modifies the same inode (not just the directory entry) between
+///    those two reads will surface as a size mismatch and the load
+///    fails closed.
+///
+/// 3. SHA-256 over the buffered bytes: the manifest / env-var digest
+///    must match. A single, byte-exact read is fed into both the
+///    hasher and (via `commit_from_memory`) into the session loader, so
+///    there is no possibility of "verify saw A but session loaded B"
+///    once this function returns `Ok`.
+pub fn open_and_verify_onnx(model_path: &Path) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+
+    // ----- (1) open with O_NOFOLLOW on Unix ----------------------------
+    #[cfg(unix)]
+    let mut file = {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        // O_NOFOLLOW values per fcntl(2). Hard-coded to avoid pulling
+        // in `libc` as a direct dependency just for this one constant.
+        #[cfg(target_os = "linux")]
+        const O_NOFOLLOW: i32 = 0o400_000;
+        #[cfg(any(
+            target_os = "macos",
+            target_os = "freebsd",
+            target_os = "ios",
+            target_os = "tvos",
+            target_os = "watchos",
+        ))]
+        const O_NOFOLLOW: i32 = 0x0100;
+        #[cfg(any(target_os = "openbsd", target_os = "netbsd"))]
+        const O_NOFOLLOW: i32 = 0x0200;
+        // Conservative fallback: no symlink-rejection on unknown Unix
+        // targets. The size-consistency check still catches in-place
+        // modifications; only symlink swaps slip through.
+        #[cfg(not(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "freebsd",
+            target_os = "openbsd",
+            target_os = "netbsd",
+            target_os = "ios",
+            target_os = "tvos",
+            target_os = "watchos",
+        )))]
+        const O_NOFOLLOW: i32 = 0;
+
+        std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(O_NOFOLLOW)
+            .open(model_path)
+            .map_err(|e| {
+                // ELOOP = the trailing component was a symlink and
+                // O_NOFOLLOW tripped; surface that as the named
+                // defence.
+                let detail = if e.raw_os_error() == Some(40 /* ELOOP on Linux */)
+                    || e.raw_os_error() == Some(62 /* ELOOP on macOS/BSD */)
+                {
+                    "O_NOFOLLOW rejected a symlink at the model path (Issue #3573)"
+                } else {
+                    "check permissions and that the file exists"
+                };
+                format!(
+                    "failed to open ONNX model at {}: {e} ({detail})",
+                    model_path.display()
+                )
+            })?
+    };
+
+    #[cfg(not(unix))]
+    let mut file = std::fs::File::open(model_path)
+        .map_err(|e| format!("failed to open ONNX model at {}: {e}", model_path.display()))?;
+
+    // ----- (2) size consistency check (pre) ----------------------------
+    let initial_size = file
+        .metadata()
+        .map_err(|e| format!("failed to stat ONNX model {}: {e}", model_path.display()))?
+        .len();
+
+    if initial_size > MAX_MODEL_SIZE_BYTES {
+        return Err(format!(
+            "ONNX model {} exceeds maximum size: {} bytes (limit {})",
+            model_path.display(),
+            initial_size,
+            MAX_MODEL_SIZE_BYTES
+        ));
+    }
+
+    // ----- (3) single read into a Vec<u8> ------------------------------
+    let mut bytes = Vec::with_capacity(initial_size as usize);
+    file.read_to_end(&mut bytes)
+        .map_err(|e| format!("failed to read ONNX model {}: {e}", model_path.display()))?;
+
+    // ----- (4) size consistency check (post) ---------------------------
+    // If the file grew or shrank during the read, refuse. This catches
+    // the writer-into-same-inode class of attack that O_NOFOLLOW alone
+    // cannot detect (the inode is bound to our handle but its contents
+    // can still be modified by anyone holding write access).
+    let post_size = file
+        .metadata()
+        .map_err(|e| format!("failed to re-stat ONNX model {}: {e}", model_path.display()))?
+        .len();
+    if post_size != initial_size || bytes.len() as u64 != initial_size {
+        return Err(format!(
+            "ONNX model {} changed size during read (initial={} read={} post={}). \
+             This indicates a TOCTOU write-into-same-inode attack; refusing to load \
+             (fail-closed, Issue #3573).",
+            model_path.display(),
+            initial_size,
+            bytes.len(),
+            post_size
+        ));
+    }
+
+    // ----- (5) digest resolution (manifest OR env-var override) -------
     let expected = match std::env::var(ENV_ONNX_MODEL_SIGNATURE)
         .ok()
         .map(|s| s.trim().to_string())
@@ -3375,7 +3622,11 @@ pub fn verify_onnx_signature(model_path: &Path) -> Result<(), String> {
         },
     };
 
-    let actual = compute_file_sha256(model_path)?;
+    // ----- (6) SHA-256 of the bytes we actually read ------------------
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    let actual = sha256_hex(hasher.finalize());
+
     validate_hash(&expected, &actual).map_err(|e| {
         format!(
             "ONNX model integrity verification FAILED for {} ({e}). This may indicate \
@@ -3385,7 +3636,13 @@ pub fn verify_onnx_signature(model_path: &Path) -> Result<(), String> {
              expected digest, regenerate the manifest, and unset the override.",
             model_path.display()
         )
-    })
+    })?;
+
+    // Bytes are returned by value; the caller (`with_gpu_backend`,
+    // `with_multi_device`) wraps them in an `Arc<Vec<u8>>` and feeds
+    // them to `commit_from_memory`, eliminating the second filesystem
+    // read that previously caused the TOCTOU window (Issue #3573).
+    Ok(bytes)
 }
 
 /// Return the conventional path of the SHA-256 manifest for `model_path`
@@ -3820,6 +4077,273 @@ mod tests {
         assert!(
             err.contains("no entry found"),
             "error must explain why: {err}"
+        );
+    }
+
+    // ===== Issue #3573 — TOCTOU window between verify and ONNX load =====
+    //
+    // The old code performed `verify_onnx_signature(path)` followed by
+    // `SessionPool::create_session(path, …)`: two independent filesystem
+    // reads of the same path with no handle handoff, leaving a window
+    // for a process-local attacker to swap the file between the SHA-256
+    // integrity check and the ort session open.
+    //
+    // The new code (`open_and_verify_onnx`) opens the model with
+    // `O_NOFOLLOW` exactly once, buffers the bytes, hashes them, and
+    // returns the bytes — the caller then feeds them to
+    // `commit_from_memory`, eliminating the second read entirely.
+    //
+    // These regression tests pin the new behaviour.
+
+    /// Happy-path smoke test for the new helper: a correctly-signed
+    /// model must round-trip its bytes back through the verifier.
+    #[test]
+    fn open_and_verify_onnx_returns_verified_bytes() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (_dir, model, expected_sha) = write_signed_model(b"fluxion toctou fixture");
+        let bytes = open_and_verify_onnx(&model).expect("valid model must verify");
+        assert_eq!(
+            bytes.as_slice(),
+            b"fluxion toctou fixture",
+            "open_and_verify_onnx must return the exact bytes it hashed"
+        );
+        assert_eq!(
+            compute_bytes_sha256(&bytes),
+            expected_sha,
+            "returned bytes must hash to the manifest digest"
+        );
+    }
+
+    /// A symlink at the model path must be rejected at the open
+    /// boundary (`O_NOFOLLOW` returns `ELOOP`). This is the core
+    /// defence against the symlink-swap class of TOCTOU attack: an
+    /// attacker who replaces the directory entry between path
+    /// resolution and the open cannot trick the verifier into reading
+    /// a different inode.
+    #[cfg(unix)]
+    #[test]
+    fn open_and_verify_onnx_rejects_symlink_at_path() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (_dir, model, _sha) = write_signed_model(b"target bytes");
+
+        // Build a symlink that resolves to the verified model.
+        let link_path = model.with_file_name("model_link.onnx");
+        std::os::unix::fs::symlink(&model, &link_path).expect("symlink creation");
+
+        let err = open_and_verify_onnx(&link_path)
+            .expect_err("O_NOFOLLOW must reject the trailing symlink component");
+        // The error message should call out either the explicit
+        // O_NOFOLLOW reason or the I/O error itself; either is a
+        // fail-closed rejection — but a bare "verification FAILED"
+        // would be a regression.
+        assert!(
+            err.contains("O_NOFOLLOW")
+                || err.contains("ELOOP")
+                || err.contains("symlink")
+                || err.contains("failed to open"),
+            "symlink rejection must surface the open-time cause, got: {err}"
+        );
+        assert!(
+            !err.contains("integrity verification FAILED"),
+            "symlink rejection must NOT look like a hash mismatch (regression guard): {err}"
+        );
+    }
+
+    /// Regression: when the file at the model path is replaced (e.g.
+    /// via `mv attacker.onnx model.onnx`) between a successful prior
+    /// load and a subsequent verifier call, the new verifier must
+    /// reject the mismatched bytes fail-closed. This pins the
+    /// property that the verifier re-reads and re-hashes on every
+    /// call — there is no cached "I saw this before" shortcut.
+    #[test]
+    fn open_and_verify_onnx_rejects_post_swap_replacement() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (_dir, model, _sha) = write_signed_model(b"original bytes");
+
+        // First call: the model and manifest agree → verifier returns
+        // Ok with the original bytes.
+        let first = open_and_verify_onnx(&model).expect("valid model must verify");
+        assert_eq!(first.as_slice(), b"original bytes");
+
+        // Simulate the attacker: replace the file at the same path
+        // with a different payload but leave the (now stale) manifest
+        // in place. The directory entry is the same; only the
+        // contents differ. This is the exact swap the issue
+        // describes.
+        std::fs::write(&model, b"attacker payload -- tampered bytes")
+            .expect("simulated attacker swap");
+
+        let err = open_and_verify_onnx(&model)
+            .expect_err("post-swap bytes must fail the integrity check");
+        assert!(
+            err.contains("integrity verification FAILED"),
+            "fail-closed message must surface on swap, got: {err}"
+        );
+        assert!(
+            err.contains("Issue #2906"),
+            "error must reference Issue #2906 so operators find the runbook: {err}"
+        );
+    }
+
+    /// Defence-in-depth: the size-consistency check inside
+    /// `open_and_verify_onnx` must reject any file whose on-disk
+    /// length changed during the read. This is the
+    /// writer-into-same-inode class of TOCTOU attack that `O_NOFOLLOW`
+    /// alone does not catch (the inode is bound to our handle, but
+    /// its contents can still be modified by anyone holding write
+    /// access).
+    ///
+    /// We exercise the same machinery directly (File + O_NOFOLLOW +
+    /// metadata-stat before & after read) to pin the property without
+    /// racing the helper from a background thread.
+    #[cfg(unix)]
+    #[test]
+    fn open_and_verify_onnx_size_consistency_check_rejects_growth() {
+        use std::io::{Read, Write};
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("growing.onnx");
+        // Start with a small, valid body whose SHA-256 we'll record.
+        let initial = b"tiny initial payload";
+        {
+            let mut f = std::fs::File::create(&model).unwrap();
+            f.write_all(initial).unwrap();
+            f.sync_all().unwrap();
+        }
+
+        let mut file = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(0o400_000 /* O_NOFOLLOW on Linux */)
+            .open(&model)
+            .expect("open with O_NOFOLLOW");
+        let initial_size = file.metadata().unwrap().len();
+        assert_eq!(initial_size, initial.len() as u64);
+
+        let mut bytes = Vec::with_capacity(initial_size as usize);
+        file.read_to_end(&mut bytes).expect("read");
+        assert_eq!(bytes.len() as u64, initial_size);
+
+        // Simulate the writer-into-same-inode attack: append bytes
+        // after the read returns but BEFORE we re-stat the handle.
+        {
+            let mut appender = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&model)
+                .expect("attacker opens same file for append");
+            appender.write_all(b"appended by attacker").unwrap();
+            appender.sync_all().unwrap();
+        }
+
+        // The exact post-read size check from open_and_verify_onnx.
+        let post_size = file.metadata().unwrap().len();
+        let size_mismatch = post_size != initial_size || bytes.len() as u64 != initial_size;
+
+        assert!(
+            size_mismatch,
+            "size-consistency check must trip when the file grows during/after read \
+             (initial={initial_size} post={post_size} bytes={})",
+            bytes.len()
+        );
+        // Now also confirm the helper-level path fails closed: a full
+        // open_and_verify_onnx on the now-grown file must surface an
+        // error (the manifest will be missing so we expect the
+        // fail-closed manifest-missing branch, which is also
+        // fail-closed and still proves the loader never trusts the
+        // new bytes).
+        let prev = std::env::var(ENV_ONNX_MODEL_SIGNATURE).ok();
+        std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE);
+        let err = open_and_verify_onnx(&model).expect_err("no manifest → must fail closed");
+        match prev {
+            Some(v) => std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, v),
+            None => std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE),
+        }
+        assert!(
+            err.contains("fail-closed")
+                || err.contains("Issue #3209")
+                || err.contains("integrity verification FAILED"),
+            "fail-closed message expected, got: {err}"
+        );
+    }
+
+    /// Once a `SurrogateManager` is constructed, the bytes used by the
+    /// underlying `SessionPool` are cached in an `Arc<Vec<u8>>` — the
+    /// manager never re-resolves the model path on the filesystem. So
+    /// a swap of the on-disk file AFTER construction is harmless: the
+    /// next `predict_loads_onnx` call still uses the bytes that were
+    /// SHA-256-verified at construction time.
+    ///
+    /// This test pins the TOCTOU-foiled property end-to-end (Issue
+    /// #3573): we construct a manager, swap the file under it, and
+    /// assert that inference still works. (For a real ONNX payload
+    /// the predict call must produce a finite output; we use the
+    /// committed dummy fixture's pass-through shape so we can
+    /// compare.)
+    #[cfg(feature = "ort")]
+    #[test]
+    fn with_gpu_backend_uses_cached_bytes_after_post_construction_swap() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        // Stage a working signed model in a tempdir by COPYING the
+        // committed dummy fixture so we can mutate it freely without
+        // touching the git-tracked asset. The copy inherits a fresh
+        // manifest so the verifier accepts the original bytes.
+        let dummy_path = std::path::Path::new(DUMMY_ONNX_MODEL);
+        if !dummy_path.exists() {
+            eprintln!(
+                "skipping: {} not found (git-ignored asset)",
+                DUMMY_ONNX_MODEL
+            );
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("dummy_surrogate.onnx");
+        std::fs::copy(dummy_path, &model).unwrap();
+        let sha = compute_file_sha256(&model).unwrap();
+        std::fs::write(
+            dir.path().join("dummy_surrogate.onnx.sha256"),
+            format!("{sha}  dummy_surrogate.onnx\n"),
+        )
+        .unwrap();
+
+        // Construct via with_gpu_backend — bytes are buffered into
+        // the SessionPool here.
+        let prev = std::env::var(ENV_ONNX_MODEL_SIGNATURE).ok();
+        std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE);
+        let manager =
+            SurrogateManager::with_gpu_backend(model.to_str().unwrap(), InferenceBackend::CPU, 0)
+                .expect("manager must construct from a valid signed model");
+        match prev {
+            Some(v) => std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, v),
+            None => std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE),
+        }
+
+        // Simulate the attacker: swap the file with a completely
+        // different payload. The manager's cached bytes are
+        // unaffected.
+        std::fs::write(&model, b"this is not an ONNX model").unwrap();
+
+        // Predict must still produce the pass-through output the
+        // original dummy model computes (first input element) — the
+        // bytes that drove inference were captured at construction
+        // time, NOT re-read from the swapped file.
+        let input = [42.0_f64, 1.0, 2.0, 3.0, 4.0, 5.0];
+        let out = manager
+            .predict_loads_onnx(&input)
+            .expect("predict must use cached bytes, not re-read swapped file");
+        assert_eq!(out.len(), 1, "dummy model returns 1 output element");
+        let v = out[0];
+        assert!(
+            v.is_finite(),
+            "post-swap prediction must still be finite and reflect the ORIGINAL model, got {v}"
+        );
+        assert!(
+            (v - input[0]).abs() < 1e-5,
+            "post-swap prediction must match the original dummy pass-through \
+             (input[0] = {}, got {}). If this assertion fires, the loader has \
+             re-read the swapped file (regression on Issue #3573).",
+            input[0],
+            v
         );
     }
 
