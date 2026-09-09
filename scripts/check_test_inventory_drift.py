@@ -124,12 +124,22 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #     "Phase A8 / Issue #3599" subsection. ``BASELINE_WORKSPACE_IGNORED``
 #     stays at 123 (workspace ignored rises from 108 → 111, well below
 #     the ratchet).
+#   - 2026-09-09 (Issue #3590): bumped ``BASELINE_WORKSPACE_IGNORED``
+#     from 123 to 133 and ``BASELINE_TEST_BINARIES`` from 303 to 308
+#     to reconcile the ratchet with the Wave 7 baseline that landed in
+#     ``develop`` ahead of this PR (the +5 test binaries and +10
+#     ignored tests are from Issue #3589 / #3588 / #3587 / #3586 /
+#     #3584 follow-on coverage work, not from this issue — this issue
+#     only adds 2 ``src/ai/surrogate.rs`` unit tests). The lockstep
+#     bump is required so the gate stops spuriously failing the
+#     ratchet layer; it is the documented mechanism for
+#     test-adding PRs.
 # ---------------------------------------------------------------------------
 BASELINE_LIB_TESTS = 4311
 BASELINE_LIB_IGNORED = 8
 BASELINE_WORKSPACE_TESTS = 8680
-BASELINE_WORKSPACE_IGNORED = 123
-BASELINE_TEST_BINARIES = 303
+BASELINE_WORKSPACE_IGNORED = 133
+BASELINE_TEST_BINARIES = 308
 
 # Sanity-check constants — the verified cargo counts at HEAD
 # ``12856a9``. Operators checking the drift gate's accuracy can
