@@ -1,0 +1,105 @@
+{
+  "by_crate": {
+    "crates_fluxion-evaluator": {
+      "lib_ignored": 0,
+      "lib_tests": 33,
+      "test_binaries": 2
+    },
+    "crates_fluxion-toon": {
+      "lib_ignored": 0,
+      "lib_tests": 49,
+      "test_binaries": 1
+    },
+    "crates_fluxion-twin": {
+      "lib_ignored": 1,
+      "lib_tests": 45,
+      "test_binaries": 4
+    },
+    "fluxion": {
+      "lib_ignored": 5,
+      "lib_tests": 4007,
+      "test_binaries": 289
+    },
+    "fluxion-behavior": {
+      "lib_ignored": 0,
+      "lib_tests": 121,
+      "test_binaries": 1
+    },
+    "fluxion-cfd": {
+      "lib_ignored": 0,
+      "lib_tests": 47,
+      "test_binaries": 1
+    },
+    "fluxion-city": {
+      "lib_ignored": 0,
+      "lib_tests": 89,
+      "test_binaries": 0
+    },
+    "fluxion-core": {
+      "lib_ignored": 0,
+      "lib_tests": 426,
+      "test_binaries": 1
+    },
+    "fluxion-fluid": {
+      "lib_ignored": 11,
+      "lib_tests": 119,
+      "test_binaries": 1
+    },
+    "fluxion-grid": {
+      "lib_ignored": 0,
+      "lib_tests": 109,
+      "test_binaries": 1
+    },
+    "fluxion-mcp": {
+      "lib_ignored": 0,
+      "lib_tests": 26,
+      "test_binaries": 1
+    },
+    "fluxion-tauri_src-tauri": {
+      "lib_ignored": 0,
+      "lib_tests": 11,
+      "test_binaries": 0
+    },
+    "fluxion-wasm": {
+      "lib_ignored": 0,
+      "lib_tests": 6,
+      "test_binaries": 1
+    }
+  },
+  "generated_at": "2026-09-09T13:13:08.739312+00:00",
+  "repo_root": "unknown",
+  "schema_version": 1,
+  "scope": {
+    "workspace_exclude": [
+      "fluxion-tauri"
+    ]
+  },
+  "totals": {
+    "doc_tests": 0,
+    "lib_ignored_root": 5,
+    "lib_tests_root": 4007,
+    "test_binaries": 303,
+    "test_source_files": 347,
+    "workspace_ignored": 114,
+    "workspace_integration_ignored": 97,
+    "workspace_integration_tests": 3312,
+    "workspace_lib_ignored": 17,
+    "workspace_lib_tests": 5088,
+    "workspace_tests": 8400
+  },
+  "verify": {
+    "command": [
+      "cargo",
+      "test",
+      "--workspace",
+      "--exclude",
+      "fluxion-tauri",
+      "--",
+      "--list"
+    ],
+    "error": "cargo returned exit 101",
+    "executed_at": "2026-09-09T13:13:15.161293+00:00",
+    "matched": false,
+    "stderr_tail": "86_64-unknown-linux-gnu/lib\" \"-o\" \"/home/alex/Projects/worktrees/issue-3584-surrogate-mae-gate-extended/target/debug/deps/conduction_ctf_isolation-a2d4cf081504adb6\" \"-Wl,--gc-sections\" \"-pie\" \"-Wl,-z,relro,-z,now\" \"-nodefaultlibs\"\n  = note: some arguments are omitted. use `--verbose` to show all linker arguments\n  = note: rust-lld: error: failed to open /home/alex/Projects/worktrees/issue-3584-surrogate-mae-gate-extended/target/debug/deps/conduction_ctf_isolation-a2d4cf081504adb6: No space left on device\n          collect2: error: ld returned 1 exit status\n          \n\nerror: could not write output to /home/alex/Projects/worktrees/issue-3584-surrogate-mae-gate-extended/target/debug/deps/api_batch_spawn_blocking_test-c15033d9d4c5b633.e1z4ws1tsclba4k0rz9o42lb6.15znx1j.rcgu.o: No space left on device\n\nerror: could not compile `fluxion` (test \"conduction_ctf_isolation\") due to 1 previous error\nerror: could not compile `fluxion` (test \"api_batch_spawn_blocking_test\") due to 1 previous error\n"
+  }
+}
