@@ -681,4 +681,68 @@ describe('@fluxion/native', () => {
       assert.throws(() => fluxion.runSimulation('years'), /options object/);
     });
   });
+
+  // Issue #3595 — ASHRAE 140 FFI smoke test for the napi surface.
+  //
+  // Exercises `runSimulation({ years: 1 })` (which is the only
+  // annual-simulation path on the napi side and runs the ASHRAE 600
+  // baseline by construction — see `src/napi/state_extractor.rs:109`,
+  // `CaseBuilder::case_600_baseline()`) and asserts the per-timestep
+  // `heatingLoads` + `coolingLoads` sum to a `total_energy_kwh` that
+  // lies within the published ±15% annual-energy band. Fail-closed on
+  // a binding-only regression without modifying the Rust
+  // strict-energy-gate.
+  describe('ASHRAE 140 Case 600 baseline (issue #3595)', () => {
+    // ASHRAE 140 Case 600 published ±15% band (low-mass baseline).
+    // Source: tests/reference_data/zone_balance/case_600_energy_reference.csv
+    //   annual_heating: ref [4.36, 5.79] MWh, tolerance_pct=15
+    //                   → accept [4.314, 5.836] MWh = [4314.0, 5836.0] kWh
+    //   annual_cooling: ref [3.92, 6.14] MWh, tolerance_pct=15
+    //                   → accept [4.275, 5.784] MWh = [4275.0, 5784.0] kWh
+    const HEATING_MIN_KWH = 4314.0;
+    const HEATING_MAX_KWH = 5836.0;
+    const COOLING_MIN_KWH = 4275.0;
+    const COOLING_MAX_KWH = 5784.0;
+
+    it('runSimulation ASHRAE 600 baseline returns total_energy_kwh within the published ±15% band', () => {
+      // runSimulation() runs the native StateExtractor surface which is
+      // initialised from `CaseBuilder::case_600_baseline()` —
+      // `src/napi/state_extractor.rs:109` documents the wiring.
+      // The result includes 8760 hourly `heatingLoads` and
+      // `coolingLoads` entries (each entry is per-timestep power in W).
+      const result = fluxion.runSimulation({ years: 1 });
+      assert.strictEqual(result.timesteps, 8760);
+
+      // With 1-hour timesteps, sum(W) = Wh. Convert to kWh for
+      // direct comparison against the published band.
+      const heating_kwh = result.heatingLoads.reduce((s, w) => s + w, 0) / 1000.0;
+      const cooling_kwh = result.coolingLoads.reduce((s, w) => s + w, 0) / 1000.0;
+      const total_energy_kwh = heating_kwh + cooling_kwh;
+
+      // FFI-boundary sanity guards (issue #2911): reject NaN/Inf
+      // before the band check so a regression that leaks non-finite
+      // values through `heatingLoads` cannot bypass the ±15% gate.
+      assert.ok(
+        Number.isFinite(heating_kwh),
+        `heating_kwh must be finite, got ${heating_kwh}`,
+      );
+      assert.ok(
+        Number.isFinite(cooling_kwh),
+        `cooling_kwh must be finite, got ${cooling_kwh}`,
+      );
+      assert.ok(
+        total_energy_kwh > 0.0,
+        `total_energy_kwh must be positive, got ${total_energy_kwh}`,
+      );
+
+      assert.ok(
+        heating_kwh >= HEATING_MIN_KWH && heating_kwh <= HEATING_MAX_KWH,
+        `ASHRAE 600 annual heating ${heating_kwh.toFixed(2)} kWh outside ±15% published band [${HEATING_MIN_KWH}, ${HEATING_MAX_KWH}]`,
+      );
+      assert.ok(
+        cooling_kwh >= COOLING_MIN_KWH && cooling_kwh <= COOLING_MAX_KWH,
+        `ASHRAE 600 annual cooling ${cooling_kwh.toFixed(2)} kWh outside ±15% published band [${COOLING_MIN_KWH}, ${COOLING_MAX_KWH}]`,
+      );
+    });
+  });
 });
