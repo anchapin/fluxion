@@ -3595,6 +3595,14 @@ pub fn open_and_verify_onnx(model_path: &Path) -> Result<Vec<u8>, String> {
     }
 
     // ----- (5) digest resolution (manifest OR env-var override) -------
+    // Issue #3590: the `FLUXION_ONNX_MODEL_SIGNATURE` env override silently
+    // re-routes the integrity check to a different authoritative digest. We
+    // remember whether that branch was taken here so the post-compare warn
+    // (below) can echo the override hash, the manifest hash it bypassed (if
+    // any), and the model path, and so the
+    // `fluxion_surrogate_load_outcome_total{outcome="override_accepted"}`
+    // counter can be bumped for production dashboards.
+    let env_override: Option<String>;
     let expected = match std::env::var(ENV_ONNX_MODEL_SIGNATURE)
         .ok()
         .map(|s| s.trim().to_string())
@@ -3607,21 +3615,25 @@ pub fn open_and_verify_onnx(model_path: &Path) -> Result<Vec<u8>, String> {
                      digest; refusing to load (fail-closed, see Issue #2906)"
                 )
             })?;
-            digest.to_ascii_lowercase()
+            env_override = Some(digest.to_ascii_lowercase());
+            env_override.clone().unwrap()
         }
-        None => match read_manifest_hash(model_path) {
-            Some(Ok(hash)) => hash,
-            Some(Err(e)) => return Err(e),
-            None => {
-                return Err(format!(
-                    "no SHA-256 manifest at {} and {ENV_ONNX_MODEL_SIGNATURE} unset; \
-                     integrity verification impossible (fail-closed, Issue #3209). \
-                     Ship a <model>.sha256 alongside the .onnx file or set \
-                     {ENV_ONNX_MODEL_SIGNATURE}=<hex-digest> for rotated models.",
-                    manifest_path_for(model_path).display()
-                ));
+        None => {
+            env_override = None;
+            match read_manifest_hash(model_path) {
+                Some(Ok(hash)) => hash,
+                Some(Err(e)) => return Err(e),
+                None => {
+                    return Err(format!(
+                        "no SHA-256 manifest at {} and {ENV_ONNX_MODEL_SIGNATURE} unset; \
+                         integrity verification impossible (fail-closed, Issue #3209). \
+                         Ship a <model>.sha256 alongside the .onnx file or set \
+                         {ENV_ONNX_MODEL_SIGNATURE}=<hex-digest> for rotated models.",
+                        manifest_path_for(model_path).display()
+                    ));
+                }
             }
-        },
+        }
     };
 
     // ----- (6) SHA-256 of the bytes we actually read ------------------
@@ -3639,6 +3651,47 @@ pub fn open_and_verify_onnx(model_path: &Path) -> Result<Vec<u8>, String> {
             model_path.display()
         )
     })?;
+
+    // Issue #3590 — audit/observability for `FLUXION_ONNX_MODEL_SIGNATURE`.
+    // Every successful load that used the env override emits a `tracing::warn!`
+    // (target `fluxion::ai::surrogate::signature_override`) and bumps the
+    // `fluxion_surrogate_load_outcome_total{outcome="override_accepted"}`
+    // counter so production dashboards can detect stale overrides before
+    // they authorise a model the operator never intended. We also surface
+    // the manifest hash (if any) the override is bypassing, so an
+    // operator reviewing logs can see "the env var replaced manifest
+    // <hash> for <path> with <override>" without having to recompute it
+    // manually. A load that failed validation never reaches this line
+    // (the `?` above short-circuits), so the counter is incremented
+    // exactly once per successful override use, matching the CI
+    // assertion in `verify_onnx_signature_env_override_emits_warn_and_counter`.
+    if let Some(override_hash) = env_override.as_ref() {
+        // Manifest hash, if any, the override is bypassing. We do NOT
+        // surface a malformed-manifest error here — the override is the
+        // authoritative digest, so a broken or missing manifest is
+        // silently accepted on this path (that's the whole point of
+        // #2906). We only record what was there for the operator's
+        // audit log.
+        let manifest_hash: Option<String> = match read_manifest_hash(model_path) {
+            Some(Ok(h)) => Some(h),
+            _ => None,
+        };
+        let manifest_hash_display: &str = manifest_hash.as_deref().unwrap_or("<none>");
+        tracing::warn!(
+            target: "fluxion::ai::surrogate::signature_override",
+            FLUXION_ONNX_MODEL_SIGNATURE = %override_hash,
+            manifest_hash = %manifest_hash_display,
+            model_path = %model_path.display(),
+            "FLUXION_ONNX_MODEL_SIGNATURE env override accepted for ONNX model load; \
+             unset the variable once the rotated manifest is committed \
+             (see docs/AGENTS.md goal #5 and Issue #3590)",
+        );
+        metrics::counter!(
+            "fluxion_surrogate_load_outcome_total",
+            "outcome" => "override_accepted",
+        )
+        .increment(1);
+    }
 
     // Bytes are returned by value; the caller (`with_gpu_backend`,
     // `with_multi_device`) wraps them in an `Arc<Vec<u8>>` and feeds
@@ -4082,6 +4135,193 @@ mod tests {
         assert!(
             err.contains("not a valid"),
             "error must explain the rejection: {err}"
+        );
+    }
+
+    // ===== Issue #3590 — audit/observability for FLUXION_ONNX_MODEL_SIGNATURE =====
+    //
+    // `verify_onnx_signature` must emit a `tracing::warn!` (target
+    // `fluxion::ai::surrogate::signature_override`) exactly once per
+    // successful override use, and bump the
+    // `fluxion_surrogate_load_outcome_total{outcome="override_accepted"}`
+    // counter, so production dashboards can detect stale overrides. A
+    // load that *fails* validation must NOT emit the warn (the override
+    // wasn't accepted). The test mirrors the #2920 warn-capture pattern:
+    // a per-thread `tracing_subscriber::fmt` writer funnels WARN output
+    // into a shared buffer, and a per-thread `DebuggingRecorder` captures
+    // the `metrics::counter!` increments. Both are scoped to this test
+    // via `set_default` / `with_local_recorder`, so they never disturb
+    // sibling tests running in parallel.
+
+    /// Successful env-override load must emit the audit warn and bump the
+    /// counter exactly once. Pins Issue #3590 acceptance criterion.
+    #[test]
+    fn verify_onnx_signature_env_override_emits_warn_and_counter() {
+        use metrics_util::debugging::DebuggingRecorder;
+
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        // Per-thread warn-capture buffer (re-uses the local `WarnCaptureBuf`
+        // helper from the #2920 cluster above; declared in the same module).
+        let warn_buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+        let buf_for_writer = WarnCaptureBuf(warn_buf.clone());
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(buf_for_writer)
+            .with_max_level(tracing::Level::WARN)
+            .with_target(true)
+            .without_time()
+            .finish();
+        let _dispatch_guard = tracing::dispatcher::set_default(&tracing::Dispatch::new(subscriber));
+
+        // Per-thread metrics recorder: captures every `metrics::counter!`
+        // increment so we can assert exactly one bump with the right
+        // label set.
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+
+        // Build a signed model, then ROTATE the bytes so the manifest
+        // is stale (the situation the env override is designed for).
+        let (_dir, model, _stale_sha) = write_signed_model(b"original bytes");
+        std::fs::write(&model, b"rotated bytes -- manifest still says original").unwrap();
+        let rotated_sha = compute_bytes_sha256(b"rotated bytes -- manifest still says original");
+
+        // Snapshot env so we restore exactly what the caller had.
+        let prev = std::env::var(ENV_ONNX_MODEL_SIGNATURE).ok();
+        std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, &rotated_sha);
+
+        let res = metrics::with_local_recorder(&recorder, || verify_onnx_signature(&model));
+
+        match prev {
+            Some(v) => std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, v),
+            None => std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE),
+        }
+
+        assert!(
+            res.is_ok(),
+            "env override should accept the rotated model: {res:?}"
+        );
+
+        // ----- warn assertions: target + content + exactly-once --------
+        let captured = String::from_utf8(warn_buf.lock().unwrap().clone()).unwrap_or_default();
+        // Target: the canonical name from the issue.
+        assert!(
+            captured.contains("fluxion::ai::surrogate::signature_override"),
+            "warn must use the documented target; got: {captured:?}"
+        );
+        // Content: the override hash, the manifest hash it bypassed, and
+        // the model path must all be visible to the operator.
+        assert!(
+            captured.contains(&rotated_sha),
+            "warn must echo the override hash {rotated_sha}; got: {captured:?}"
+        );
+        assert!(
+            captured.contains("model.onnx"),
+            "warn must include the model path; got: {captured:?}"
+        );
+        // The stale manifest still names the original bytes; the warn
+        // must surface that hash so the operator can tell what the
+        // override replaced. (The manifest file is at
+        // `<dir>/model.onnx.sha256` and the per-line format is
+        // `<sha>  model.onnx` — the warn echoes just the hash.)
+        assert!(
+            captured.contains(&_stale_sha),
+            "warn must surface the manifest hash the override bypassed {_stale_sha}; got: {captured:?}"
+        );
+        // Exactly one override-accepted warn per successful call.
+        let override_accepted_count = captured
+            .matches("FLUXION_ONNX_MODEL_SIGNATURE env override accepted")
+            .count();
+        assert_eq!(
+            override_accepted_count, 1,
+            "warn must be emitted exactly once per successful override use; got {override_accepted_count} in {captured:?}"
+        );
+
+        // ----- counter assertions: exactly one bump, right labels ------
+        let map = snapshotter.snapshot().into_hashmap();
+        let matching_ck: Vec<_> = map
+            .keys()
+            .filter(|ck| {
+                ck.key().name() == "fluxion_surrogate_load_outcome_total"
+                    && ck
+                        .key()
+                        .labels()
+                        .any(|l| l.key() == "outcome" && l.value() == "override_accepted")
+            })
+            .collect();
+        assert_eq!(
+            matching_ck.len(),
+            1,
+            "expected exactly one fluxion_surrogate_load_outcome_total{{outcome=\"override_accepted\"}} key, got {}",
+            matching_ck.len()
+        );
+        let (_, _, debug_value) = map.get(matching_ck[0]).expect("counter value");
+        let counter_value = match debug_value {
+            metrics_util::debugging::DebugValue::Counter(v) => *v,
+            other => panic!("expected DebugValue::Counter for override_accepted, got {other:?}"),
+        };
+        assert_eq!(
+            counter_value, 1,
+            "override_accepted counter must increment exactly once per successful override use"
+        );
+    }
+
+    /// Failed env-override load (wrong digest) must NOT emit the audit warn
+    /// and must NOT bump the counter. The override was not accepted, so
+    /// dashboards should not see `override_accepted` increment for it.
+    #[test]
+    fn verify_onnx_signature_env_override_rejects_mismatch_does_not_warn() {
+        use metrics_util::debugging::DebuggingRecorder;
+
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        let warn_buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+        let buf_for_writer = WarnCaptureBuf(warn_buf.clone());
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(buf_for_writer)
+            .with_max_level(tracing::Level::WARN)
+            .with_target(true)
+            .without_time()
+            .finish();
+        let _dispatch_guard = tracing::dispatcher::set_default(&tracing::Dispatch::new(subscriber));
+
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+
+        let (_dir, model, _sha) = write_signed_model(b"original bytes");
+        let bogus = "f".repeat(64); // wrong digest
+        let prev = std::env::var(ENV_ONNX_MODEL_SIGNATURE).ok();
+        std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, &bogus);
+
+        let res = metrics::with_local_recorder(&recorder, || verify_onnx_signature(&model));
+
+        match prev {
+            Some(v) => std::env::set_var(ENV_ONNX_MODEL_SIGNATURE, v),
+            None => std::env::remove_var(ENV_ONNX_MODEL_SIGNATURE),
+        }
+
+        let err = res.expect_err("wrong env override must fail");
+        assert!(
+            err.contains("integrity verification FAILED"),
+            "wrong env override must still fail closed: {err}"
+        );
+
+        let captured = String::from_utf8(warn_buf.lock().unwrap().clone()).unwrap_or_default();
+        assert!(
+            !captured.contains("fluxion::ai::surrogate::signature_override"),
+            "a failed override must not emit the audit warn; got: {captured:?}"
+        );
+
+        let map = snapshotter.snapshot().into_hashmap();
+        let any_override_accepted = map.keys().any(|ck| {
+            ck.key().name() == "fluxion_surrogate_load_outcome_total"
+                && ck
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "outcome" && l.value() == "override_accepted")
+        });
+        assert!(
+            !any_override_accepted,
+            "a failed override must not bump fluxion_surrogate_load_outcome_total{{outcome=\"override_accepted\"}}"
         );
     }
 
