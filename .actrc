@@ -1,0 +1,24 @@
+# act configuration for fluxion local CI validation
+#
+# Usage:
+#   act -l                                    # list available jobs
+#   act -j fmt-clippy                         # run one job
+#   act                                       # run all triggered jobs for current event
+#
+# Why catthehacker/ubuntu:act-22.04 (medium image):
+# - Ships pre-installed rustup + cargo + node + python + common build tools
+# - Much faster than pulling plain ubuntu + apt-installing everything
+# - The :full-latest image pulls from ghcr.io which can hit anonymous rate limits;
+#   :act-22.04 is on Docker Hub which has more lenient limits.
+#
+# Pin the image so contributors don't hit "missing toolchain" CI-shape bugs.
+-P ubuntu-latest=catthehacker/ubuntu:act-22.04
+
+# Use linux/amd64 — avoids ARM emulation on Apple Silicon running x86 Docker
+--container-architecture linux/amd64
+
+# Default working directory inside the container matches GH Actions
+--defaultbranch develop
+
+# Verbose by default; pass -q to silence
+--verbose
