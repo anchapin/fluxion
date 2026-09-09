@@ -1,5 +1,84 @@
 # Fluxion Milestones
 
+## v1.3 Blind ASHRAE 140 Validation (Physics Only) — IN PROGRESS
+
+**Status:** 🚧 IN PROGRESS
+**Started:** 2026-04-19
+**Target close:** ≥80% case coverage on the ASHRAE 140-2023 blind-validation suite (no calibration factors, no case-ID hints, true reference values, ±15% annual / ±10% monthly / ±15% peak / ±1.0°C free-float gates). See `.planning/ASHRAE_140_BLIND_VALIDATION_PLAN.md` for the full spec.
+
+### Live state (as of 2026-09-09)
+
+- **Headline pass rate (metric-level):** **20.3%** (13/64) — release-gate target ≥60% (`release_gates.yaml → validation.individual`)
+- **Mean Absolute Error (MAE):** **55.09%** — target ≤50%
+- **Cases fully passing:** 1/18 (5.6%)
+- **Strict ±15% annual-energy gate (Cases 600/900):** *heating* passes for both cases; *cooling* remains an unresolved structural failure on the 2026-08-11 baseline (the two `#[ignore]`'d strict tests run with `--include-ignored` and compare against `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`)
+
+### Phase A8 — GaugeSolver production-path switchover (SHIPPED 2026-09-07)
+
+- **Issue #3291 / PR #3482** closed and merged on **2026-09-07** (commit `e811df6`).
+- `ThermalSelector::default()` resolves to `ZoneSolverKind::Gauge`; with `--features gauge-solver`, the dispatcher's `step_physics` routes to `GaugeSolver` unconditionally (no silent fall-through to legacy 5R1C/9R4C). `FiveROneC` and `NineRFourC` remain available as explicit opt-in legacy paths via `ThermalSelector`.
+- The `gauge-solver` cargo feature is intentionally retained as the production-path gate pending §LIMIT-21 (Issue #3297) closure — the β-soak gate (Issue #3286, `#3286 β-soak` convention in CI comment threads) is currently at **0/30 nights green**. Once green, the unconditional production default applies.
+- See `AGENTS.md:12`, `ARCHITECTURE.md:716-735` + `:1267-1269`, `docs/KNOWN_ISSUES.md` §LIMIT-21 + §LIMIT-22, and `src/sim/thermal_selector.rs`.
+
+### Phase A–E roadmap
+
+| Phase | Goal | Duration | Requirements | Status |
+|-------|------|----------|--------------|--------|
+| **A — Baseline Stripping** | Catalog and remove all correction infrastructure; measure the true physics-only baseline | 2 weeks | BASELINE-01, BASELINE-02, BASELINE-03 | 📋 in planning |
+| **B — Physics Fixes** | Solar distribution (ISO 13790), thermal-mass time constant, free-floating temperature fixes | 18 weeks (B.1/B.2/B.3) | PHYSICS-01, PHYSICS-02, PHYSICS-03 | 📋 in planning |
+| **C — Benchmark Correction** | Replace "calibrated for 5R1C" ranges with true EnergyPlus/ESP-r/TRNSYS reference values | 4 weeks | BENCH-01 | 📋 in planning |
+| **D — Blind Validation Pass** | Run the full blind suite targeting ≥80% pass | 4 weeks | VALIDATE-01 | 📋 in planning |
+| **E — Sustained Validation** | CI gate + regression tracking to hold the pass rate as code evolves | Ongoing | SUSTAIN-01, SUSTAIN-02 | 📋 in planning |
+
+**Definition of Done:** blind execution (no case ID / case-type hint), zero correction factors, true ASHRAE reference values, pass tolerances of ±15% annual energy / ±10% monthly energy / ±15% peak loads / ±1.0°C free-floating temperature, and ≥80% case coverage.
+
+### Linked ADRs and governance documents
+
+- **ADR-0007** — GaugeSolver structural work: aggressive-baseline cohort unblocker (status: Accepted; production-path switchover shipped 2026-09-07)
+- **ADR-0001** — No-Parameter-Tuning Rule (binding — fixes must address the underlying physics, not retune constants to make tests pass)
+- **ADR-0003** — 5R1C high-mass limitations (root cause of the Case 900-series structural failure)
+- `.planning/ASHRAE_140_BLIND_VALIDATION_PLAN.md` — full spec, roadmap, and test approach
+- `.planning/PROJECT.md` — live state mirror (v1.3 phase breakdown + requirements index)
+- `.planning/ROADMAP.md` — milestone timeline
+- `docs/KNOWN_ISSUES.md` — open physics limitations; the `*Last Updated*` line is enforced fresh by `scripts/check_known_issues_stale.py` (≤60-day window)
+- `SCORECARD.md` — auto-generated release-readiness snapshot (canonical status)
+- `docs/ASHRAE140_RESULTS.md` — validation snapshot
+- `release_gates.yaml` — required checks + thresholds (canonical source of truth for CI gates)
+
+### Key dependent issues (open + recently closed)
+
+| Issue | Status | Role in v1.3 |
+|-------|--------|--------------|
+| [#3291](https://github.com/anchapin/fluxion/issues/3291) | **Closed** (PR #3482, 2026-09-07) | Phase A8 GaugeSolver production-path switchover |
+| [#3482](https://github.com/anchapin/fluxion/pull/3482) | **Merged** (2026-09-07) | The merged PR for #3291 |
+| [#3297](https://github.com/anchapin/fluxion/issues/3297) | Closed (§LIMIT-21 mass-state exposure) | Gates the `gauge-solver` cargo feature → unconditional production default |
+| [#3290](https://github.com/anchapin/fluxion/issues/3290) | Open | Phase A8 PR4 follow-up: remove the `#[cfg(feature = "gauge-solver")]` cargo feature flag from `ConductionBackend` (gated behind the β-soak gate reaching 30/30 nights green) |
+| [#3573](https://github.com/anchapin/fluxion/issues/3573) | Closed (security) | TOCTOU window between `verify_onnx_signature` and ONNX session instantiation — fail-closed security contract across the surrogate load path |
+| [#3624](https://github.com/anchapin/fluxion/issues/3624) | Open (FFI) | Fix zeroed energy surfaces in `fluxion-wasm` and NAPI `state_extractor` (surfaced by #3595 regression tests) — required for wasm/napi to publish v1.3 metrics |
+| [#3286](https://github.com/anchapin/fluxion/issues/3286) | Open | β-soak gate; production-path switchover waits on `#3286 β-soak` reaching 30/30 nights green |
+| [#3172](https://github.com/anchapin/fluxion/issues/3172) | Open | ADR-0007 implementation plan tracker |
+| [#3072](https://github.com/anchapin/fluxion/issues/3072) | Open (meta) | Aggressive-baseline cohort (195 / 600 / 620 / 940 / 960) — unblocked by Phase A8 |
+| [#3511](https://github.com/anchapin/fluxion/issues/3511) | Open | Post-#3291 GaugeSolver status refresh |
+
+### Files of record
+
+- **Spec / roadmap:** `.planning/ASHRAE_140_BLIND_VALIDATION_PLAN.md`
+- **Project state mirror:** `.planning/PROJECT.md` (and `.planning/STATE.md`, refreshed by issue #3632)
+- **Validation status snapshot:** `SCORECARD.md`, `docs/ASHRAE140_RESULTS.md`
+- **Canonical CI gate list:** `release_gates.yaml` → `ci.required_checks`
+- **Architecture source of truth:** `ARCHITECTURE.md`, `CODEBASE_MAP.md`
+- **Hard constraints:** `RULES.md` (numerical-reasoning-via-code, energy balance, no parameter tuning)
+
+### Notes
+
+- Strict energy-conservation, `h_tr_em`, and surrogate-drift tolerance bands are *not* relaxed to compensate for nextest concurrency behavior — `scripts/ci/nextest-rollout.md` plus `.config/nextest.toml` are the canonical knobs (Issue #3366 / ADR-0014).
+- The strict ±15% Cases 600/900 annual-energy gate is transparent + regression-catching: the two strict tests are `#[ignore]`'d by default and run via `--include-ignored`; never raise `tests/reference_data/zone_balance/strict_energy_gate_baseline.json` to hide the cooling-side gap.
+- Goal #6 (contributor docs accurate) is the reason this entry exists: prior to issue #3632, `.planning/STATE.md` still described v1.2 as the current milestone and 2026-04-19 as the last update; this section re-establishes the canonical "current milestone page" for the work being done today.
+
+**Last updated:** 2026-09-09
+
+---
+
 ## v1.0 Multi-Zone Support (Shipped: 2026-04-07)
 
 **Phases completed:** 3 phases (M1-M3), 12 plans, 36 tasks
