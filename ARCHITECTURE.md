@@ -252,7 +252,7 @@ invariants and is wired into CI (run from repo root):
    `CaseBuilder`, `ASHRAE140Case`, `CommonWall`, `ConstructionSpec`) plus
    `validation::diagnostics` / `validation::config`, whether written as a
    `use` import or a fully-qualified path in a signature / match arm.
-4. `src/validation/**` → `crate::sim::*` (baseline 65).
+4. `src/validation/**` → `crate::sim::*` (baseline 67).
  5. `src/validation/**` → `crate::physics::*` (baseline 65).
  6. `src/validation/**` → `crate::weather::*` (baseline 25).
 
@@ -261,8 +261,8 @@ moved the 13 pure-data leaf types; the composite types (`ASHRAE140Case`,
 `CaseSpec`, `CaseBuilder`, `CommonWall`, `ConstructionSpec`) stayed in
 `validation::ashrae_140_cases` because they carry upward deps to
 `crate::sim::*` / `crate::physics::*`, and `src/validation/**` legitimately
-drives the engine, weather sources, and physics tensors. As a result ~254
-directional edges remain (99 sim→validation + 65 validation→sim + 65
+drives the engine, weather sources, and physics tensors. As a result ~256
+directional edges remain (99 sim→validation + 67 validation→sim + 65
 validation→physics + 25 validation→weather). The guard therefore mirrors
 `scripts/check_physics_sim_cycle.py`: it snapshots the current counts as
 baselines and **fails only on regression** (a count grows above baseline),
