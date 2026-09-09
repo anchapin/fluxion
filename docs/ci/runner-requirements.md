@@ -1,8 +1,17 @@
 # Linux Runner Requirements for Actions v5/v6/v7 (node24) — Issue #3312
 
-**Issue:** #3312  
-**Date:** 2026-09-01  
-**Status:** Verified — GitHub-hosted routing, nothing to upgrade
+**Issue:** #3312 (primary); refreshed for #3579 (alex-workstation runner)  
+**Date:** 2026-09-01; last refreshed 2026-09-09  
+**Status:** Verified — GitHub-hosted routing for the `fluxion-ci` pool; one
+diagnostic `alex-workstation` runner registered.
+
+This doc verifies that every Linux `runs-on:` label used in
+`.github/workflows/*.yml` resolves to a runner whose Actions agent meets
+the v2.327.1 minimum required by node24 action majors (checkout v7,
+cache v6, upload-artifact v7). It is the Issue #3312 acceptance doc
+and was refreshed by Issue #3579 to reflect PR #3569, which added the
+diagnostic `.github/workflows/alex-dev.yml` running on the local
+`alex-workstation` self-hosted runner.
 
 ## Why this matters
 
@@ -29,17 +38,30 @@ variable with a hosted fallback, e.g.
 runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
 ```
 
-Verified state of the repository on 2026-09-01:
+Verified state of the repository, last refreshed 2026-09-09:
 
 | Check | Command | Result |
 |-------|---------|--------|
 | Repo variables | `gh api repos/anchapin/fluxion/actions/variables` | `{"variables":[],"total_count":0}` — `FLUXION_LINUX_RUNNER` is **unset** |
-| Self-hosted runners | `gh api repos/anchapin/fluxion/actions/runners` | `{"total_count":0,"runners":[]}` — **zero** registered |
+| Self-hosted runners (Hetzner `fluxion-ci` pool) | `gh api repos/anchapin/fluxion/actions/runners?label=fluxion-ci` | `{"total_count":0}` — **zero** registered (Hetzner pool is documented but not active; see `docs/self-hosted-runners.md`) |
+| Self-hosted runners (local `alex-workstation`) | `gh api repos/anchapin/fluxion/actions/runners?label=alex-workstation` | `{"total_count":1,"runners":[{"name":"alex-workstation","os":"Linux","status":"online","version":"2.337.0","labels":["self-hosted","Linux","X64","alex-workstation"]}]}` — **one** registered (added by PR #3569, merged 2026-09-09) |
+| Diagnostic workflow `runs-on:` matrix | `.github/workflows/alex-dev.yml` (`diagnose` job) | `runs-on: [self-hosted, alex-workstation, linux, x64]` — fixed (no fallback) so the diagnostic always requires the registered `alex-workstation` runner |
 
-**Verdict:** with the variable unset, every `|| 'ubuntu-latest'` fallback
-resolves to the **GitHub-hosted** label. No self-hosted runner exists, so
-there is no runner service to upgrade. (The Hetzner provisioning path is
-documented in `docs/self-hosted-runners.md`; it is not currently active.)
+> **Note:** `FLUXION_LINUX_RUNNER` (the repository variable consumed by
+> `vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest'` in heavy CI workflows)
+> is **intentionally separate** from the per-workflow `runs-on:` matrix
+> in `alex-dev.yml`. The variable gates the Hetzner `fluxion-ci` pool;
+> `alex-dev.yml` targets the local workstation label directly. Setting
+> `FLUXION_LINUX_RUNNER` does **not** route `alex-dev.yml` anywhere new,
+> and the absence of the variable does not block `alex-dev.yml`.
+
+**Verdict:** with `FLUXION_LINUX_RUNNER` unset, every
+`|| 'ubuntu-latest'` fallback resolves to the **GitHub-hosted** label —
+no runner service to upgrade on that path. The
+`alex-workstation` self-hosted runner is online at Actions agent
+**v2.337.0**, comfortably above the v2.327.1 node24 minimum. (The
+Hetzner provisioning path is documented in `docs/self-hosted-runners.md`;
+it is not currently active.)
 
 ## Post-upgrade green-run evidence
 
@@ -70,17 +92,22 @@ step bootstrap:
    keeps self-hosted runners current automatically).
 3. Confirm with `./config.sh --version` and one green `push`-event run.
 
-## Acceptance criteria status (Issue #3312)
+## Acceptance criteria status (Issue #3312; refreshed for #3579)
 
 | Criterion | Status |
 |-----------|--------|
-| Confirm hosted vs self-hosted resolution | ✅ GitHub-hosted (variable unset, 0 self-hosted runners) |
-| Upgrade self-hosted runner ≥ 2.327.1 | N/A — no self-hosted runner exists |
+| Confirm hosted vs self-hosted resolution for `FLUXION_LINUX_RUNNER` | ✅ GitHub-hosted (variable unset, 0 `fluxion-ci` runners) |
+| Upgrade self-hosted runner ≥ 2.327.1 (Hetzner pool) | N/A — pool is not active |
 | Green post-upgrade `h_tr_em_regression_gate` run | ✅ Run 33480132457, success on `688fe78` |
+| Confirm diagnostic `alex-workstation` runner meets node24 minimum | ✅ v2.337.0 (≥ 2.327.1) on PR #3569 workflow |
+| `alex-dev.yml` `runs-on:` matrix documented in verification table | ✅ (this doc, refreshed 2026-09-09) |
 
 ## See Also
 
-- `docs/self-hosted-runners.md` — Hetzner provisioning and the variable's
-  routing semantics
+- `docs/self-hosted-runners.md` — Hetzner provisioning, the variable's
+  routing semantics, and the local workstation runner pattern
+  (`.github/workflows/alex-dev.yml`)
 - PR #3294 — the action-SHA bump that motivated this verification
+- PR #3569 — diagnostic workflow that registers the `alex-workstation`
+  runner (`alex-dev.yml`)
 - <https://github.com/actions/runner/releases> — runner version history

@@ -1,8 +1,18 @@
-# Self-Hosted Runners on Hetzner Cloud
+# Self-Hosted Runners on Hetzner Cloud and Local Workstations
 
 This guide covers provisioning cheap Hetzner Cloud VMs as GitHub Actions
 self-hosted runners for fluxion's heavy CI jobs, and explains the automatic
 fallback to GitHub-hosted runners when no self-hosted runner is available.
+It also documents the **local workstation runner** pattern used for
+end-to-end diagnostic workflows (e.g. `.github/workflows/alex-dev.yml`,
+targeting the `alex-workstation` label).
+
+This doc has two distinct runner patterns:
+
+| Pattern | Pool label | Provisioning | Active? | Doc section |
+|---|---|---|---|---|
+| Hetzner static pool | `self-hosted, linux, x86_64, fluxion-ci` | `scripts/provision-hetzner-runner.sh` | Documented but not active | this doc (Hetzner sections) |
+| Local workstation (diagnostic) | `self-hosted, alex-workstation, linux, x64` | `gh` CLI `actions/runner/registration-token` on the workstation | Active (one runner, registered 2026-09-09 by PR #3569) | "Local workstation runner (diagnostic)" |
 
 ## Overview
 
@@ -376,6 +386,145 @@ hcloud server delete <RUNNER_NAME>
 # 4. If this was your last runner, clear the repo variable
 gh variable delete FLUXION_LINUX_RUNNER --repo anchapin/fluxion
 ```
+
+---
+
+## Local workstation runner (diagnostic) — Issue #3579
+
+The Hetzner pool above is heavy infra for production CI. For
+**end-to-end smoke checks of the runner registration plumbing itself**
+(and a quick post-reboot "is the runner alive?" probe), fluxion registers
+a single self-hosted runner directly on the operator's workstation under
+the `alex-workstation` label. The canonical example is
+`.github/workflows/alex-dev.yml` (added by PR #3569, merged 2026-09-09).
+
+### Why this exists alongside (not instead of) the Hetzner pool
+
+- **Hetzner `fluxion-ci` pool** — production CI: gated by
+  `FLUXION_LINUX_RUNNER`, never used on PRs (Issue #3445 ephemeral-only
+  policy). Inactive today (no operators have run
+  `scripts/provision-hetzner-runner.sh` against this repo yet).
+- **Local `alex-workstation`** — diagnostic only. The workflow
+  (`alex-dev.yml`) is `workflow_dispatch` and exists to:
+  1. validate end-to-end that the registered runner actually picks up
+     jobs (vs. silently failing in queue),
+  2. provide a quick smoke check before/after workstation reboots,
+  3. demonstrate the pattern other workflows should use to opt in to
+     the local runner.
+
+### `runs-on:` matrix and the `FLUXION_LINUX_RUNNER` boundary
+
+`alex-dev.yml` targets the local runner **directly** — it does **not**
+consume `FLUXION_LINUX_RUNNER` and does **not** fall back to
+`ubuntu-latest`:
+
+```yaml
+jobs:
+  diagnose:
+    name: diagnostic
+    runs-on: [self-hosted, alex-workstation, linux, x64]   # fixed, no fallback
+    timeout-minutes: 5
+    steps:
+      - name: Print phrase
+        shell: bash
+        run: |
+          echo "${{ inputs.phrase }}"
+          ...
+```
+
+This is intentional. `FLUXION_LINUX_RUNNER` is the repository variable
+that gates the Hetzner `fluxion-ci` pool for production workflows; it is
+**intentionally separate** from the per-workflow `runs-on:` matrix in
+`alex-dev.yml`. Setting `FLUXION_LINUX_RUNNER` to anything
+(`fluxion-ci`, `ubuntu-latest`, …) does not change where `alex-dev.yml`
+runs, and the absence of `FLUXION_LINUX_RUNNER` does not block
+`alex-dev.yml`.
+
+> **Do not** add `|| 'ubuntu-latest'` to `alex-dev.yml`. The diagnostic
+> must always hit the registered `alex-workstation` runner so a "job
+> queued but never picked up" failure mode is impossible to misdiagnose.
+
+### Opt-in pattern for other workflows
+
+For workflows that **want** to prefer the local runner with GH-hosted
+fallback (when the workstation is off), the documented pattern is:
+
+```yaml
+runs-on: ${{ matrix.runner }}
+strategy:
+  fail-fast: false
+  matrix:
+    runner: [self-hosted, alex-workstation, ubuntu-latest]
+```
+
+That matrix tries the local runner first; falls through to GH-hosted
+when the workstation is off. `alex-dev.yml` deliberately does **not**
+use this fallback — see the note above.
+
+### Registering / deregistering the workstation runner
+
+```bash
+# 1. Obtain a registration token (single-use, 1h expiry)
+REG_TOKEN=$(gh api -X POST \
+  repos/anchapin/fluxion/actions/runners/registration-token \
+  --jq .token)
+
+# 2. Download and configure the runner on the workstation
+mkdir -p ~/actions-runner && cd ~/actions-runner
+curl -fsSL -o runner.tar.gz \
+  https://github.com/actions/runner/releases/download/v2.337.0/actions-runner-linux-x64-2.337.0.tar.gz
+tar xzf runner.tar.gz
+./config.sh \
+  --url    https://github.com/anchapin/fluxion \
+  --token  "$REG_TOKEN" \
+  --name   alex-workstation \
+  --labels self-hosted,alex-workstation,linux,x64 \
+  --work  _work \
+  --unattended \
+  --replace
+
+# 3. Install + start as a systemd user service (auto-restart on reboot)
+./svc.sh install
+./svc.sh start
+```
+
+The Actions agent version on the workstation must be ≥ 2.327.1 to
+satisfy the node24 action majors (checkout v7 / cache v6 /
+upload-artifact v7). The currently registered runner is at **v2.337.0**
+— see `docs/ci/runner-requirements.md` for the verification table.
+
+To deregister:
+
+```bash
+cd ~/actions-runner
+./svc.sh stop
+./svc.sh uninstall
+REMOVAL_TOKEN=$(gh api -X POST \
+  repos/anchapin/fluxion/actions/runners/remove-token \
+  --jq .token)
+./config.sh remove --token "$REMOVAL_TOKEN"
+```
+
+### Threat model
+
+The workstation runner **is a persistent agent on a developer machine**
+— it is materially different from the ephemeral Hetzner VM pool, which
+exists behind a firewall and runs only on `push:refs/heads/main`:
+
+- Treat the workstation as if every CI run is being executed by a
+  trusted human. Do **not** use `alex-workstation` for any workflow
+  triggered by `pull_request` from a fork (untrusted code on a
+  persistent host = trivial RCE).
+- The diagnostic workflow is `workflow_dispatch` only; there is no
+  `pull_request`, `push`, or `schedule` trigger that would route
+  attacker-controlled input to the runner.
+- The runner has unrestricted filesystem access to the workstation
+  user's home directory and the full Actions workspace. Do not store
+  production secrets in either location.
+
+See `docs/SECURITY.md` §"Self-hosted runner job execution policy" for
+the full policy and the hardening checklist that applies to both
+patterns.
 
 ---
 
