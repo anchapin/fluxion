@@ -93,7 +93,18 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #       ``src/validation/ashrae_140_validator/`` directory (mod.rs + tests).
 #       Largest child: mod.rs (~3.1k LoC).
 #     Two entries removed; baseline lowered by two.
-BASELINE_MODULE_SIZE_LIMITS = 9
+#   9 → 17 (Issue #3574): Issue #3543's decomposition of
+#     ``src/api/server.rs``, ``src/sim/thermal_model_core.rs``, and
+#     ``src/validation/ashrae_140_validator.rs`` (PR #3566) shrank three
+#     entries out of the LIMITS list but exposed eight additional files
+#     above the smallest ratcheted threshold (~2000 LoC) that were
+#     previously invisible to the gate. Each is added at its current line
+#     count plus a small buffer (max of +5% or +100 lines) so the gate
+#     passes immediately but tightens against any further growth.
+#     Companion cleanup PRs that decompose any of these files should
+#     remove the matching entry AND lower this baseline by one. Eight
+#     entries added; baseline raised by eight.
+BASELINE_MODULE_SIZE_LIMITS = 17
 
 # Freeze snapshot of the gated paths (Issue #3457 ratchet).
 #
@@ -124,6 +135,19 @@ _BASELINE_MODULE_SIZE_LIMITS_SET: frozenset[str] = frozenset(
         "src/interop/fmi/mod.rs",
         "src/sim/thermal_model.rs",
         "src/physics/multi_node_solver.rs",
+        # Issue #3574 — 8 files newly over the ~2000-LoC threshold after
+        # the Issue #3543 decomposition. Each is ratcheted at its current
+        # size plus a small buffer; companion cleanup PRs that decompose
+        # any of them should remove the matching entry AND lower
+        # BASELINE_MODULE_SIZE_LIMITS by one.
+        "src/api/security.rs",
+        "src/sim/thermal_model_core/mod.rs",
+        "src/validation/ashrae_140_validator/mod.rs",
+        "src/physics/geometry_tensor.rs",
+        "src/python/model_bindings.rs",
+        "src/validation/reporter.rs",
+        "fluxion-city/src/lib.rs",
+        "fluxion-mcp/src/tools.rs",
     }
 )
 
@@ -300,6 +324,142 @@ LIMITS: list[Limit] = [
         reason=(
             "Issue #3457: multi-node thermal solver ratcheted at current "
             "size (2664 lines)."
+        ),
+    ),
+    # ------------------------------------------------------------------
+    # Issue #3574 — extend gate to 8 files newly over the ~2000-LoC
+    # threshold after the Issue #3543 decomposition. ``max_lines`` is set
+    # to the file's CURRENT line count plus a small buffer (max of +5%
+    # or +100 lines, whichever is larger) so the gate passes immediately
+    # but tightens against any further growth. Companion cleanup PRs that
+    # decompose any of these files should remove the matching entry AND
+    # lower ``BASELINE_MODULE_SIZE_LIMITS`` by one.
+    # ------------------------------------------------------------------
+    Limit(
+        path=REPO_ROOT / "src" / "api" / "security.rs",
+        max_lines=2199,
+        ratchet_path=REPO_ROOT
+        / "tests"
+        / "reference_data"
+        / "module_size"
+        / "api_security_ratchet.json",
+        reason=(
+            "Issue #3574: ``src/api/security.rs`` crossed the smallest "
+            "ratcheted threshold (~2000 LoC) after the Issue #3543 "
+            "decomposition of ``src/api/server.rs``. Ratcheted at current "
+            "size 2094 lines + buffer (max of +5% or +100 lines = 2199); "
+            "decomposition tracked separately."
+        ),
+    ),
+    Limit(
+        path=REPO_ROOT / "src" / "sim" / "thermal_model_core" / "mod.rs",
+        max_lines=4260,
+        ratchet_path=REPO_ROOT
+        / "tests"
+        / "reference_data"
+        / "module_size"
+        / "thermal_model_core_mod_ratchet.json",
+        reason=(
+            "Issue #3574: ``src/sim/thermal_model_core/mod.rs`` is the "
+            "largest child of the Issue #3543 decomposition (~4.1k LoC), "
+            "still over the ratchet because of the bare "
+            "``impl ThermalModel<VectorField>`` block. Ratcheted at "
+            "current size 4057 lines + buffer (max of +5% or +100 lines = "
+            "4260); further decomposition tracked separately."
+        ),
+    ),
+    Limit(
+        path=REPO_ROOT
+        / "src"
+        / "validation"
+        / "ashrae_140_validator"
+        / "mod.rs",
+        max_lines=3247,
+        ratchet_path=REPO_ROOT
+        / "tests"
+        / "reference_data"
+        / "module_size"
+        / "ashrae_140_validator_mod_ratchet.json",
+        reason=(
+            "Issue #3574: ``src/validation/ashrae_140_validator/mod.rs`` "
+            "is the largest child of the Issue #3543 decomposition. "
+            "Ratcheted at current size 3092 lines + buffer (max of +5% or "
+            "+100 lines = 3247); further decomposition tracked separately."
+        ),
+    ),
+    Limit(
+        path=REPO_ROOT / "src" / "physics" / "geometry_tensor.rs",
+        max_lines=2610,
+        ratchet_path=REPO_ROOT
+        / "tests"
+        / "reference_data"
+        / "module_size"
+        / "geometry_tensor_ratchet.json",
+        reason=(
+            "Issue #3574: ``src/physics/geometry_tensor.rs`` crossed the "
+            "smallest ratcheted threshold after Issue #3543. Ratcheted at "
+            "current size 2486 lines + buffer (max of +5% or +100 lines = "
+            "2610); decomposition tracked separately."
+        ),
+    ),
+    Limit(
+        path=REPO_ROOT / "src" / "python" / "model_bindings.rs",
+        max_lines=2609,
+        ratchet_path=REPO_ROOT
+        / "tests"
+        / "reference_data"
+        / "module_size"
+        / "python_model_bindings_ratchet.json",
+        reason=(
+            "Issue #3574: ``src/python/model_bindings.rs`` crossed the "
+            "smallest ratcheted threshold after Issue #3543. Ratcheted at "
+            "current size 2485 lines + buffer (max of +5% or +100 lines = "
+            "2609); decomposition tracked separately."
+        ),
+    ),
+    Limit(
+        path=REPO_ROOT / "src" / "validation" / "reporter.rs",
+        max_lines=2292,
+        ratchet_path=REPO_ROOT
+        / "tests"
+        / "reference_data"
+        / "module_size"
+        / "validation_reporter_ratchet.json",
+        reason=(
+            "Issue #3574: ``src/validation/reporter.rs`` crossed the "
+            "smallest ratcheted threshold after Issue #3543. Ratcheted at "
+            "current size 2183 lines + buffer (max of +5% or +100 lines = "
+            "2292); decomposition tracked separately."
+        ),
+    ),
+    Limit(
+        path=REPO_ROOT / "fluxion-city" / "src" / "lib.rs",
+        max_lines=2814,
+        ratchet_path=REPO_ROOT
+        / "tests"
+        / "reference_data"
+        / "module_size"
+        / "fluxion_city_lib_ratchet.json",
+        reason=(
+            "Issue #3574: workspace sibling ``fluxion-city/src/lib.rs`` "
+            "crossed the smallest ratcheted threshold after Issue #3543. "
+            "Ratcheted at current size 2680 lines + buffer (max of +5% or "
+            "+100 lines = 2814); decomposition tracked separately."
+        ),
+    ),
+    Limit(
+        path=REPO_ROOT / "fluxion-mcp" / "src" / "tools.rs",
+        max_lines=1748,
+        ratchet_path=REPO_ROOT
+        / "tests"
+        / "reference_data"
+        / "module_size"
+        / "fluxion_mcp_tools_ratchet.json",
+        reason=(
+            "Issue #3574: workspace sibling ``fluxion-mcp/src/tools.rs`` "
+            "crossed the smallest ratcheted threshold after Issue #3543. "
+            "Ratcheted at current size 1648 lines + buffer (max of +5% or "
+            "+100 lines = 1748); decomposition tracked separately."
         ),
     ),
 ]

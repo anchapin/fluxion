@@ -1,0 +1,9 @@
+{
+  "history": [
+    {
+      "actual": 2094
+    }
+  ],
+  "max_lines": 2094,
+  "notes": "Issue #3574: extend module-size gate to src/api/security.rs, which crossed the smallest ratcheted threshold (~2000 LoC) after the Issue #3543 decomposition of src/api/server.rs (PR #3566). Current size snapshotted as the historical maximum; the bound can only tighten (lowered via the YAML `max_lines` field). Refactors that shrink the file should lower `max_lines` accordingly. Companion cleanup work that decomposes this module is tracked separately and is out of scope for #3574."
+}
