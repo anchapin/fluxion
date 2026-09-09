@@ -638,7 +638,7 @@ fn wall_spec_from_construction(
 /// multi-layer glass with frame U-value composition (#2889).
 #[cfg(feature = "gauge-solver")]
 fn window_glass_wall_spec(
-    window_properties: &crate::validation::ashrae_140_cases::WindowSpec,
+    window_properties: &fluxion_core::ashrae_cases::WindowSpec,
     _window_area_m2: f64,
 ) -> crate::physics::wall_spec::WallSpec {
     use crate::physics::wall_spec::WallSpec;
@@ -942,12 +942,12 @@ impl ThermalModel<VectorField> {
         // Update surfaces based on spec window areas (zone-specific for multi-zone)
         let mut surfaces = Vec::with_capacity(num_zones);
         let orientations = [
-            crate::validation::ashrae_140_cases::Orientation::South,
-            crate::validation::ashrae_140_cases::Orientation::West,
-            crate::validation::ashrae_140_cases::Orientation::North,
-            crate::validation::ashrae_140_cases::Orientation::East,
-            crate::validation::ashrae_140_cases::Orientation::Up,
-            crate::validation::ashrae_140_cases::Orientation::Down,
+            fluxion_core::ashrae_cases::Orientation::South,
+            fluxion_core::ashrae_cases::Orientation::West,
+            fluxion_core::ashrae_cases::Orientation::North,
+            fluxion_core::ashrae_cases::Orientation::East,
+            fluxion_core::ashrae_cases::Orientation::Up,
+            fluxion_core::ashrae_cases::Orientation::Down,
         ];
 
         for zone_idx in 0..num_zones {
@@ -1056,10 +1056,10 @@ impl ThermalModel<VectorField> {
         for zone_surfaces in model.solar.surfaces.iter_mut() {
             for surface in zone_surfaces.iter_mut() {
                 surface.wall_spec = Some(match surface.orientation {
-                    crate::validation::ashrae_140_cases::Orientation::Up => {
+                    fluxion_core::ashrae_cases::Orientation::Up => {
                         wall_spec_for_roof.clone()
                     }
-                    crate::validation::ashrae_140_cases::Orientation::Down => {
+                    fluxion_core::ashrae_cases::Orientation::Down => {
                         wall_spec_for_floor.clone()
                     }
                     _ => wall_spec_for_walls.clone(),
@@ -1124,10 +1124,10 @@ impl ThermalModel<VectorField> {
 
             // Calculate zone-specific window area
             let zone_window_area: f64 = [
-                crate::validation::ashrae_140_cases::Orientation::South,
-                crate::validation::ashrae_140_cases::Orientation::West,
-                crate::validation::ashrae_140_cases::Orientation::North,
-                crate::validation::ashrae_140_cases::Orientation::East,
+                fluxion_core::ashrae_cases::Orientation::South,
+                fluxion_core::ashrae_cases::Orientation::West,
+                fluxion_core::ashrae_cases::Orientation::North,
+                fluxion_core::ashrae_cases::Orientation::East,
             ]
             .iter()
             .map(|&orientation| spec.window_area_by_zone_and_orientation(zone_idx, orientation))
@@ -1268,7 +1268,7 @@ impl ThermalModel<VectorField> {
             // walls, the exterior cladding is thermally decoupled from the
             // interior by the insulation and excluding it from C_m is correct.
             let wall_cap = if spec.construction_type
-                == crate::validation::ashrae_140_cases::ConstructionType::HighMass
+                == fluxion_core::ashrae_cases::ConstructionType::HighMass
             {
                 spec.construction.wall.thermal_capacitance_per_area() * opaque_area
             } else {
@@ -1448,9 +1448,9 @@ impl ThermalModel<VectorField> {
             // This increases thermal mass coupling, reducing heating demand for high-mass buildings
             // (Case 900) by better utilizing solar gains stored in the thermal mass.
             let h_ms_coeff = match spec.construction_type {
-                crate::validation::ashrae_140_cases::ConstructionType::LowMass => 2.0,
-                crate::validation::ashrae_140_cases::ConstructionType::HighMass => 13.4,
-                crate::validation::ashrae_140_cases::ConstructionType::Special => 9.1,
+                fluxion_core::ashrae_cases::ConstructionType::LowMass => 2.0,
+                fluxion_core::ashrae_cases::ConstructionType::HighMass => 13.4,
+                fluxion_core::ashrae_cases::ConstructionType::Special => 9.1,
             };
             let h_ms_iso_13790 = h_ms_coeff * a_m;
 
@@ -1631,7 +1631,7 @@ impl ThermalModel<VectorField> {
                 model.solar.surfaces[zone_idx]
                     .iter()
                     .find(|s| {
-                        s.orientation == crate::validation::ashrae_140_cases::Orientation::South
+                        s.orientation == fluxion_core::ashrae_cases::Orientation::South
                     })
                     .map(|s| (s.area - s.window_area).max(0.0))
                     .unwrap_or(0.0)
@@ -1772,7 +1772,7 @@ impl ThermalModel<VectorField> {
         // Only populate when using 9R4C model (heavy mass buildings like Case 900+)
         // Use construction_type as proxy since CaseSpec doesn't have thermal_model_type field
         let is_9r4c_model = spec.construction_type
-            == crate::validation::ashrae_140_cases::ConstructionType::HighMass;
+            == fluxion_core::ashrae_cases::ConstructionType::HighMass;
         if is_9r4c_model {
             model.conduction.h_tr_ms_wall = Some(VectorField::new(h_tr_ms_wall_vec.clone()));
             model.conduction.h_tr_ms_roof = Some(VectorField::new(h_tr_ms_roof_vec.clone()));
@@ -1822,10 +1822,10 @@ impl ThermalModel<VectorField> {
         // - f_furniture varies by building type: Residential=0.3, Commercial/Institutional=0.5
         // This gives τ_me ≈ 3-4 hours (correct for furniture thermal mass)
         let furniture_factor = match spec.building_type {
-            crate::validation::ashrae_140_cases::BuildingType::Residential => 0.3,
-            crate::validation::ashrae_140_cases::BuildingType::Commercial => 0.5,
-            crate::validation::ashrae_140_cases::BuildingType::Institutional => 0.5,
-            crate::validation::ashrae_140_cases::BuildingType::Warehouse => 0.5,
+            fluxion_core::ashrae_cases::BuildingType::Residential => 0.3,
+            fluxion_core::ashrae_cases::BuildingType::Commercial => 0.5,
+            fluxion_core::ashrae_cases::BuildingType::Institutional => 0.5,
+            fluxion_core::ashrae_cases::BuildingType::Warehouse => 0.5,
         };
         let h_tr_me_vec: Vec<f64> = (0..num_zones)
             .map(|zone_idx| {
@@ -2228,10 +2228,10 @@ impl ThermalModel<VectorField> {
                 // Issue #2359: ASHRAE 140 Table B-12 specifies F_m = 0.30 for LowMass.
                 // Reduced from 0.70 (Issue #1216 band-aid) to correct peak cooling over-prediction.
                 // Issue #1860 solar-lag correction handles the sustained cooling demand.
-                crate::validation::ashrae_140_cases::ConstructionType::LowMass => (0.30, 0.3),
+                fluxion_core::ashrae_cases::ConstructionType::LowMass => (0.30, 0.3),
                 // ADR-002 (#1175): high-mass uses the ASHRAE-140-correct solar split.
-                crate::validation::ashrae_140_cases::ConstructionType::HighMass => (0.0, 0.30),
-                crate::validation::ashrae_140_cases::ConstructionType::Special => (0.10, 0.50),
+                fluxion_core::ashrae_cases::ConstructionType::HighMass => (0.0, 0.30),
+                fluxion_core::ashrae_cases::ConstructionType::Special => (0.10, 0.50),
             };
             model.solar.solar_distribution_to_air = air_frac;
             model.solar.solar_beam_to_mass_fraction = mass_frac_of_remaining;
@@ -2395,7 +2395,7 @@ impl ThermalModel<VectorField> {
         // conservation gate). The feature gate is removed in PR4 (#3290) when
         // gauge becomes unconditional default.
         #[cfg(not(feature = "gauge-solver"))]
-        if spec.construction_type == crate::validation::ashrae_140_cases::ConstructionType::HighMass
+        if spec.construction_type == fluxion_core::ashrae_cases::ConstructionType::HighMass
         {
             model.enable_9r4c_model();
         }
@@ -2834,7 +2834,7 @@ impl ThermalModel<VectorField> {
                 // `is_9r4c_model` block above (Issue #715) gates that population
                 // on `ConstructionType::HighMass`.
                 if spec.construction_type
-                    == crate::validation::ashrae_140_cases::ConstructionType::HighMass
+                    == fluxion_core::ashrae_cases::ConstructionType::HighMass
                 {
                     model.enable_9r4c_model();
                 }
@@ -2978,7 +2978,7 @@ impl ThermalModel<VectorField> {
                     .find(|s| {
                         matches!(
                             s.orientation,
-                            crate::validation::ashrae_140_cases::Orientation::Up
+                            fluxion_core::ashrae_cases::Orientation::Up
                         )
                     })
                     .ok_or_else(|| {
@@ -2996,7 +2996,7 @@ impl ThermalModel<VectorField> {
                     .find(|s| {
                         matches!(
                             s.orientation,
-                            crate::validation::ashrae_140_cases::Orientation::Down
+                            fluxion_core::ashrae_cases::Orientation::Down
                         )
                     })
                     .ok_or_else(|| {
@@ -3017,9 +3017,9 @@ impl ThermalModel<VectorField> {
                     .filter(|s| {
                         !matches!(
                             s.orientation,
-                            crate::validation::ashrae_140_cases::Orientation::Up
-                                | crate::validation::ashrae_140_cases::Orientation::Down
-                                | crate::validation::ashrae_140_cases::Orientation::Horizontal
+                            fluxion_core::ashrae_cases::Orientation::Up
+                                | fluxion_core::ashrae_cases::Orientation::Down
+                                | fluxion_core::ashrae_cases::Orientation::Horizontal
                         )
                     })
                     .map(|s| s.area)
@@ -3029,9 +3029,9 @@ impl ThermalModel<VectorField> {
                     .filter(|s| {
                         !matches!(
                             s.orientation,
-                            crate::validation::ashrae_140_cases::Orientation::Up
-                                | crate::validation::ashrae_140_cases::Orientation::Down
-                                | crate::validation::ashrae_140_cases::Orientation::Horizontal
+                            fluxion_core::ashrae_cases::Orientation::Up
+                                | fluxion_core::ashrae_cases::Orientation::Down
+                                | fluxion_core::ashrae_cases::Orientation::Horizontal
                         )
                     })
                     .map(|s| s.window_area)
@@ -3125,12 +3125,12 @@ impl ThermalModel<VectorField> {
             // uses its own enum (Roof) instead of `fluxion_core::construction`'s
             // `Ceiling`.
             let surface_type_for_orientation =
-                |orientation: crate::validation::ashrae_140_cases::Orientation| -> GaugeSurfaceType {
+                |orientation: fluxion_core::ashrae_cases::Orientation| -> GaugeSurfaceType {
                     match orientation {
-                        crate::validation::ashrae_140_cases::Orientation::Up => {
+                        fluxion_core::ashrae_cases::Orientation::Up => {
                             GaugeSurfaceType::Roof
                         }
-                        crate::validation::ashrae_140_cases::Orientation::Down => {
+                        fluxion_core::ashrae_cases::Orientation::Down => {
                             GaugeSurfaceType::Floor
                         }
                         _ => GaugeSurfaceType::Wall,
@@ -3138,10 +3138,10 @@ impl ThermalModel<VectorField> {
                 };
 
             let surface_tilt_for =
-                |orientation: crate::validation::ashrae_140_cases::Orientation| -> f64 {
+                |orientation: fluxion_core::ashrae_cases::Orientation| -> f64 {
                     match orientation {
-                        crate::validation::ashrae_140_cases::Orientation::Up => 0.0,
-                        crate::validation::ashrae_140_cases::Orientation::Down => 180.0,
+                        fluxion_core::ashrae_cases::Orientation::Up => 0.0,
+                        fluxion_core::ashrae_cases::Orientation::Down => 180.0,
                         _ => 90.0,
                     }
                 };
@@ -3680,10 +3680,10 @@ impl ThermalModel<VectorField> {
         // Initialize default surfaces: 4 walls (S, W, N, E)
         let mut surfaces = Vec::with_capacity(num_zones);
         let orientations = [
-            crate::validation::ashrae_140_cases::Orientation::South,
-            crate::validation::ashrae_140_cases::Orientation::West,
-            crate::validation::ashrae_140_cases::Orientation::North,
-            crate::validation::ashrae_140_cases::Orientation::East,
+            fluxion_core::ashrae_cases::Orientation::South,
+            fluxion_core::ashrae_cases::Orientation::West,
+            fluxion_core::ashrae_cases::Orientation::North,
+            fluxion_core::ashrae_cases::Orientation::East,
         ];
 
         for _ in 0..num_zones {

@@ -135,6 +135,8 @@ no longer recompiles the 208 KB `validation::ashrae_140_cases` per mutant.
 | `src/sim/invariant_checker.rs:9` | `use fluxion_core::ashrae_cases::Orientation` |
 | `src/sim/shading.rs:6,178` | `use fluxion_core::ashrae_cases::WindowArea, Orientation` |
 | `src/sim/thermal_model_core/mod.rs:23` | split: `CaseSpec` stays in validation; `Orientation, ShadingType` move to `fluxion_core::ashrae_cases` |
+| `src/sim/thermal_model_core/mod.rs:25,641,945-950,1059,1062,1127-1130,1271,1451-1453,1634,1775,1825-1828,2231,2233,2234,2398,2837,2981,2999,3020-3034,3128,3130,3133,3141,3143,3144,3683-3686` (Issue #3586) | `WindowSpec`, `Orientation`, `ConstructionType`, `BuildingType` references migrated to fully-qualified `fluxion_core::ashrae_cases::*` (46 leaf edges removed); `CaseSpec` references at lines 25, 3112, 3328, 3383 stay in `crate::validation::ashrae_140_cases` (composite type with `Option<crate::sim::hvac::AnyEquipment>` field). Companion row below for `tests.rs`. |
+| `src/sim/thermal_model_core/tests.rs:485,499` (Issue #3586) | `WindowSpec`, `GlassType` references migrated to fully-qualified `fluxion_core::ashrae_cases::*` (2 leaf edges removed); `ASHRAE140Case` references at lines 510, 531, 552 stay in `crate::validation::ashrae_140_cases` (composite type). |
 | `src/sim/thermal_model_data/hvac_state.rs:19` | `use fluxion_core::ashrae_cases::NightVentilation` |
 | `src/sim/thermal_model_data/solar_state.rs:13` | `use fluxion_core::ashrae_cases::Orientation` |
 | `src/sim/thermal_model_iterative.rs:17` | `use fluxion_core::ashrae_cases::{GeometrySpec, Orientation, WindowArea}` |
