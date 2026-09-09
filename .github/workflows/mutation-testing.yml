@@ -32,16 +32,9 @@ name: Mutation Testing
 on:
   push:
     branches: [main, develop]
-  pull_request:
-    types: [opened, synchronize, reopened]
-    paths:
-      - 'src/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.cargo/mutants.toml'
-      - '.cargo/config.toml'
-      - '.github/workflows/mutation-testing.yml'
-      - 'scripts/mutants_diff_files.sh'
+  # Issue #3567-tier: heavy validation moved off pull_request path to nightly + dispatch
+  schedule:
+    - cron: "17 5 * * *"
   workflow_dispatch:
     inputs:
       toolchain:
