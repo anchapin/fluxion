@@ -1,0 +1,62 @@
+# Diagnostic workflow for the local self-hosted runner
+# (anchapin/fluxion — issue #next-steps)
+#
+# This workflow ONLY runs on the `alex-workstation` runner. It is here to:
+#   1. Validate end-to-end that the registered runner picks up jobs
+#   2. Provide a quick smoke check before/after workstation reboots
+#   3. Demonstrate the pattern other workflows should use to opt in
+#
+# Usage:
+#   - Manual trigger: gh workflow run alex-dev -f phrase=hello
+#   - Watch the runner take the job within seconds (faster than GH-hosted queue)
+#
+# Other workflows wanting to opt into the local runner with fallback use:
+#   runs-on: ${{ matrix.runner }}
+#   strategy:
+#     fail-fast: false
+#     matrix:
+#       runner: [self-hosted, alex-workstation, ubuntu-latest]
+# That tries the local runner first; falls through to GH-hosted when the
+# workstation is off.
+
+name: Alex Dev (local self-hosted runner)
+
+on:
+  workflow_dispatch:
+    inputs:
+      phrase:
+        description: 'Phrase to print (proves the runner is alive)'
+        required: false
+        type: string
+        default: 'hello from alex-workstation'
+
+jobs:
+  diagnose:
+    name: diagnostic
+    runs-on: [self-hosted, alex-workstation, linux, x64]
+    timeout-minutes: 5
+    steps:
+      - name: Print phrase
+        shell: bash
+        run: |
+          echo "${{ inputs.phrase }}"
+          echo "---"
+          echo "runner.name = $(uname -n)"
+          echo "runner.os   = $(uname -srm)"
+          echo "runner.uptime = $(uptime -p)"
+          echo "runner.disk   = $(df -h /workspace 2>/dev/null || df -h /) | head -1"
+          echo "runner.mem    = $(free -h | head -2 | tail -1)"
+      - name: Verify cargo toolchain available
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo --version
+          rustc --version
+          python3 --version
+          node --version 2>/dev/null || echo "node not installed (ok for non-Node jobs)"
+          echo "OK: required toolchains present"
+      - name: Verify act label-resolver
+        shell: bash
+        run: |
+          # Round-trip the runner identity via the Actions API
+          gh api user --jq '.login' 2>/dev/null || echo "gh auth not configured (ok for CI runs)"
