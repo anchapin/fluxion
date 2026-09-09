@@ -8,14 +8,21 @@ name: Python Tests (OSimFlow)
 # credentials.
 #
 # Triggers:
-#   * pull_request: fast gate on every PR
+#   * pull_request: fast gate on PRs touching python bindings / crates / build config
 #   * push to develop: integration check before the next release
+#   * workflow_dispatch: manual re-run
 
 on:
   push:
     branches: [develop, main]
   pull_request:
     branches: [develop, main]
+    paths:
+      - 'src/python/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'pyproject.toml'
+      - '.github/workflows/python-*.yml'
   workflow_dispatch:
 
 concurrency:

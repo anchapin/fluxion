@@ -29,7 +29,11 @@ on:
     paths:
       - "SCORECARD.md"
       - "scripts/generate_scorecard.py"
+      - "scripts/regenerate_scorecard*.sh"
       - "docs/ASHRAE140_RESULTS.md"
+      - "docs/KNOWN_ISSUES.md"
+      - "docs/skill-snapshot/**"
+      - "docs/agents/**"
       - "docs/archive/ASHRAE140_RESULTS_v0.8.0.md"
       - "release_gates.yaml"
       - "README.md"

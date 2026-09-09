@@ -48,6 +48,9 @@ on:
       - "RULES.md"
       - "CHANGELOG.md"
       - "README.md"
+      - "KNOWN_ISSUES.md"
+      - "ASHRAE140_RESULTS.md"
+      - "*.mdx"
   push:
     branches:
       - develop

@@ -54,6 +54,9 @@ on:
       - 'models/surrogate_zone_thermal.onnx'
       - 'models/surrogate_zone_thermal.onnx.sha256'
       - 'src/ai/surrogate.rs'
+      - 'src/ai/**'
+      - 'crates/**'
+      - 'Cargo.toml'
       - '.github/workflows/onnx-integrity.yml'
   workflow_dispatch:
 
