@@ -105,7 +105,7 @@ BASELINE_SIM_TO_VALIDATION = 99  # src/sim/**    -> crate::validation::* (was 72
 # proxy). Lowering this baseline is still reserved for the companion
 # cycle-removal work; raising (as here) accommodates a one-shot
 # feature-driven growth with rationale.
-BASELINE_VALIDATION_TO_SIM = 65  # src/validation/** -> crate::sim::* (was 58; +7 for #3291)
+BASELINE_VALIDATION_TO_SIM = 67  # src/validation/** -> crate::sim::* (was 58; +7 for #3291, +2 for #3571)
 # Issue #3291: +7 validation->sim edges. Validation now imports
 # `crate::sim::thermal_selector::{ThermalSelector, ZoneSolverKind,
 # ConductionSolverKind}` to drive the per-case selector in
@@ -115,6 +115,16 @@ BASELINE_VALIDATION_TO_SIM = 65  # src/validation/** -> crate::sim::* (was 58; +
 # reduction requires moving composite validation types
 # (CaseSpec, etc.), which is out of scope for the gauge integration
 # tracked by #3291.
+# Issue #3571: +2 validation->sim edges from
+# `src/validation/ashrae_140_multi_zone.rs` lines 15-16
+# (`use crate::sim::engine::ThermalModel` and
+# `use crate::sim::thermal_selector::ThermalSelector`) added by the
+# Phase A8 follow-up #3276/#3277 `from_spec()` ->
+# `from_spec_with_selector()` migration (commit 396ef26), which
+# introduced `ThermalSelector::default()` construction at every
+# validator call site. These edges are intentional: the multi-zone
+# validator legitimately needs the engine entry point and selector
+# to drive the 8760-step Case 960/970 physics simulations.
 # Issue #2980: +3 physics / +2 weather to run the real 8760-step Case 970
 # physics simulation in `src/validation/ashrae_140_multi_zone.rs`
 # (`run_real_case_970_energy`). The new edges are intentional: the function

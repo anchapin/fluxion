@@ -1222,14 +1222,12 @@ The fix is **structural** — the `GaugeSolver` rework (#1465 / #1462) — and t
 | Free-Float (FREE) | 3 | 0 | 1 | 0 | 0 |
 | Temperature (TEMP) | 1 | 0 | 0 | 0 | 0 |
 | Multi-Zone (MULTI) | 4 | 3 | 0 | 0 | 0 |
-| Model Limits (LIMIT) | 23 | 2 | 0 | 2 | 2 |
-| Model Limits (LIMIT) | 23 | 2 | 0 | 1 | 2 |
+| Model Limits (LIMIT) | 24 | 2 | 0 | 2 | 2 |
 | Reporting (REPORT) | 4 | 0 | 4 | 0 | 0 |
 | CI/Infrastructure (CI) | 3 | 0 | 0 | 0 | 0 |
 | fluxion-fluid (FLUID) | 2 | 0 | 0 | 0 | 0 |
-| FFD/CFD (FFD) | 2 | 0 | 0 | 1 | 0 |
-| **Total** | **51** | **10** | **8** | **4** | **2** |
-| **Total** | **51** | **10** | **8** | **3** | **2** |
+| FFD/CFD (FFD) | 2 | 0 | 1 | 0 | 0 |
+| **Total** | **52** | **10** | **8** | **4** | **2** |
 
 *Counts derived from `grep -cE '^### CATEGORY-NN:' docs/KNOWN_ISSUES.md` via `scripts/check_known_issues_summary.py`; CI gate = `python3 scripts/check_known_issues_summary.py --check`. Status columns (`Fixed` / `Open` / `Partial` / `Won't Fix`) derive from each section's first `**Status:**` line. To regenerate: `python3 scripts/check_known_issues_summary.py --regen | sponge docs/KNOWN_ISSUES.md`.*
 
