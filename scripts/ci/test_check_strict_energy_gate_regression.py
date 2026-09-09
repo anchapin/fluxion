@@ -17,6 +17,12 @@ and ``parse_measured`` -- plus a CLI ``main()`` that consumes a
 ``--baseline`` JSON and a captured cargo log file. Each test plants
 both inputs in ``tmp_path`` and invokes ``main()`` via
 ``sys.argv`` injection.
+
+Issue #3572 extended the gate from 2 cases (600/900) to 8 cases
+(600/800/810/900/920/950/960/970). The legacy 2-case tests below pin
+their scope via ``--require-cases 600,900`` so they keep their original
+intent; new tests at the bottom exercise the full 8-case coverage
+that the production strict-energy-gate workflow consumes.
 """
 
 from __future__ import annotations
@@ -198,12 +204,22 @@ _CASE_900_BASELINE = (
 )
 
 
-def _invoke(checker, log_path: Path, baseline_path: Path) -> int:
+def _invoke(
+    checker,
+    log_path: Path,
+    baseline_path: Path,
+    require_cases: str = "600,900",
+) -> int:
     """Invoke ``checker.main()`` with synthetic argv.
 
     The script is a CLI; rather than spawn a subprocess we patch
     ``sys.argv`` and call ``main()`` in-process. ``monkeypatch`` is
     expected to undo the change after the test exits.
+
+    Issue #3572: the production default is now all eight cases
+    (600/800/810/900/920/950/960/970). The legacy 600/900 tests below
+    pass ``require_cases="600,900"`` so they keep their original
+    intent; new tests at the bottom exercise the full default scope.
     """
     saved = sys.argv[:]
     sys.argv[:] = [
@@ -211,6 +227,8 @@ def _invoke(checker, log_path: Path, baseline_path: Path) -> int:
         str(log_path),
         "--baseline",
         str(baseline_path),
+        "--require-cases",
+        require_cases,
     ]
     try:
         return checker.main()
@@ -303,3 +321,244 @@ def test_main_returns_one_when_log_missing_required_case(checker, tmp_path, caps
     assert rc == 1, f"expected exit 1, got {rc}\noutput:\n{out}"
     assert "900" in out
     assert "could not parse" in out
+
+
+# ---------------------------------------------------------------------------
+# Issue #3572: extend the gate to eight cases (600/800/810/900/920/950/960/970)
+# ---------------------------------------------------------------------------
+
+
+def _write_baseline_8_cases(tmp_path: Path) -> Path:
+    """Plant a baseline JSON covering all eight Issue #3572 cases.
+
+    Each metric is seeded with the current engine-measured value so
+    the eight-case tests are reproducible without touching the real
+    baseline file. Heating metrics for cases currently in band are
+    marked ``pass``; cooling metrics (and any heating metric outside
+    the band) are marked ``known_fail`` with the exact gap percentage
+    so a future run with the same measured value yields KNOWN-FAIL
+    (no regression).
+    """
+    # (case, h_value, h_lo, h_hi, c_value, c_lo, c_hi)
+    measurements = [
+        ("600", 5.182, 4.314, 5.836, 2.546, 4.275, 5.784),
+        ("800", 5.453, 4.378, 5.923, 2.007, 4.888, 6.612),
+        ("810", 1.633, 3.357, 4.543, 0.910, 3.740, 5.060),
+        ("900", 1.633, 1.364, 1.846, 0.910, 2.465, 3.335),
+        ("920", 2.400, 3.213, 4.347, 1.085, 2.189, 2.961),
+        ("950", 0.000, 0.000, 0.000, 0.028, 0.557, 0.753),
+        ("960", 2.924, 1.742, 2.357, 0.144, 1.840, 2.490),
+        ("970", 3.580, 10.540, 14.260, 1.654, 7.391, 9.999),
+    ]
+    metrics: dict = {}
+    for case, hv, hl, hh, cv, cl, ch in measurements:
+        for kind, val, lo, hi in (
+            ("heating", hv, hl, hh),
+            ("cooling", cv, cl, ch),
+        ):
+            mid = 0.5 * (lo + hi)
+            if mid > 0 and val >= lo and val <= hi:
+                gap = 0.0
+                status = "pass"
+            else:
+                if mid <= 0:
+                    # Degenerate midpoint (Case 950 heating). With the
+                    # post-#3572 fix, an in-band degenerate value still
+                    # reports gap 0; the script returns 0 for any value
+                    # inside [lo, hi] regardless of midpoint.
+                    if val >= lo and val <= hi:
+                        gap = 0.0
+                        status = "pass"
+                    else:
+                        gap = float("inf")
+                        status = "known_fail"
+                elif val < lo:
+                    gap = (lo - val) / mid * 100.0
+                    status = "known_fail"
+                else:
+                    gap = (val - hi) / mid * 100.0
+                    status = "known_fail"
+            metrics[f"case_{case}_{kind}"] = {
+                "published_range_mwh": [lo, hi],
+                "band_mwh": [lo, hi],
+                "value_mwh": val,
+                "gap_pct_of_mid": gap,
+                "status": status,
+            }
+    payload = {
+        "captured_commit": "test-issue-3572",
+        "regression_tolerance_pp": 5.0,
+        "metrics": metrics,
+    }
+    path = tmp_path / "strict_energy_gate_baseline.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def _write_log_8_cases(
+    tmp_path: Path,
+    *,
+    drop_case: str | None = None,
+    overrides: dict | None = None,
+) -> Path:
+    """Plant a captured cargo log containing a strict line per Issue #3572 case.
+
+    ``drop_case`` removes the listed case from the log (default: all eight
+    present) so the missing-required-case path is reachable. ``overrides``
+    maps case id -> (h, c) tuples to exercise drift/regression scenarios
+    on a specific case while keeping the other seven at their benign
+    baseline values.
+    """
+    overrides = dict(overrides or {})
+    measurements = [
+        ("600", 5.182, 4.314, 5.836, 2.546, 4.275, 5.784),
+        ("800", 5.453, 4.378, 5.923, 2.007, 4.888, 6.612),
+        ("810", 1.633, 3.357, 4.543, 0.910, 3.740, 5.060),
+        ("900", 1.633, 1.364, 1.846, 0.910, 2.465, 3.335),
+        ("920", 2.400, 3.213, 4.347, 1.085, 2.189, 2.961),
+        ("950", 0.000, 0.000, 0.000, 0.028, 0.557, 0.753),
+        ("960", 2.924, 1.742, 2.357, 0.144, 1.840, 2.490),
+        ("970", 3.580, 10.540, 14.260, 1.654, 7.391, 9.999),
+    ]
+    lines: list[str] = []
+    for case, hv, hl, hh, cv, cl, ch in measurements:
+        if drop_case is not None and case == drop_case:
+            continue
+        if case in overrides:
+            ovr = overrides[case]
+            if isinstance(ovr, dict):
+                hv = ovr.get("h", hv)
+                cv = ovr.get("c", cv)
+            else:
+                hv, cv = ovr  # type: ignore[misc]
+        lines.append(
+            f"[#1147 Case {case} strict] "
+            f"H={hv:.3f} MWh (band {hl:.3f}-{hh:.3f}), "
+            f"C={cv:.3f} MWh (band {cl:.3f}-{ch:.3f})"
+        )
+    path = tmp_path / "captured.log"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def test_parse_measured_consumes_all_eight_cases(checker):
+    """Issue #3572 acceptance: regex matches the 8 strict cases (600/800/810/900/920/950/960/970)."""
+    log = "\n".join(
+        f"[#1147 Case {case} strict] "
+        f"H={hv:.3f} MWh (band {hl:.3f}-{hh:.3f}), "
+        f"C={cv:.3f} MWh (band {cl:.3f}-{ch:.3f})"
+        for case, hv, hl, hh, cv, cl, ch in [
+            ("600", 5.182, 4.314, 5.836, 2.546, 4.275, 5.784),
+            ("800", 5.453, 4.378, 5.923, 2.007, 4.888, 6.612),
+            ("810", 1.633, 3.357, 4.543, 0.910, 3.740, 5.060),
+            ("900", 1.633, 1.364, 1.846, 0.910, 2.465, 3.335),
+            ("920", 2.400, 3.213, 4.347, 1.085, 2.189, 2.961),
+            ("950", 0.000, 0.000, 0.000, 0.028, 0.557, 0.753),
+            ("960", 2.924, 1.742, 2.357, 0.144, 1.840, 2.490),
+            ("970", 3.580, 10.540, 14.260, 1.654, 7.391, 9.999),
+        ]
+    )
+    measured = checker.parse_measured(log)
+    assert set(measured.keys()) == {"600", "800", "810", "900", "920", "950", "960", "970"}
+    # Spot-check numeric extraction across the full 8-case set.
+    assert measured["950"]["hlo"] == 0.000
+    assert measured["950"]["hhi"] == 0.000
+    assert measured["970"]["hlo"] == 10.540
+    assert measured["970"]["chi"] == 9.999
+
+
+def test_gap_handles_degenerate_band_in_band_value(checker):
+    """Issue #3572: in-band value against degenerate band → gap 0 (not inf).
+
+    Case 950 heating per ASHRAE 140-2023 §B8.5 publishes [0, 0] MWh. The
+    pre-#3572 implementation returned inf for any value when the band
+    midpoint collapsed to zero; the post-#3572 fix returns 0 for an
+    in-band value regardless of midpoint.
+    """
+    assert checker.gap_pct_of_mid(0.0, 0.0, 0.0) == 0.0
+
+
+def test_gap_keeps_inf_for_out_of_band_degenerate(checker):
+    """Issue #3572: out-of-band value against degenerate band → gap inf.
+
+    Regression guard for the degenerate-band fix: only IN-band values
+    against a degenerate midpoint are accepted, OUT-of-band values
+    still report infinity (no false-positive PASS).
+    """
+    assert checker.gap_pct_of_mid(0.5, 0.0, 0.0) == float("inf")
+    assert checker.gap_pct_of_mid(-0.1, 0.0, 0.0) == float("inf")
+
+
+def test_main_passes_when_all_eight_cases_match_baseline(checker, tmp_path):
+    """Issue #3572: full eight-case log + matching baseline → exit 0."""
+    baseline = _write_baseline_8_cases(tmp_path)
+    log = _write_log_8_cases(tmp_path)
+    assert _invoke(checker, log, baseline, require_cases=",".join(checker.SUPPORTED_CASES)) == 0
+
+
+def test_main_returns_one_when_log_missing_one_of_eight_cases(checker, tmp_path, capsys):
+    """Issue #3572 acceptance: missing any of the 8 required cases → exit 1.
+
+    A drift in the cargo test filter / test name that drops one of the
+    strict lines is itself a gate-coverage regression. Test by dropping
+    Case 970 (the newest strict case).
+    """
+    baseline = _write_baseline_8_cases(tmp_path)
+    log = _write_log_8_cases(tmp_path, drop_case="970")
+    rc = _invoke(checker, log, baseline, require_cases=",".join(checker.SUPPORTED_CASES))
+    out = capsys.readouterr().out
+    assert rc == 1, f"expected exit 1 when 970 missing, got {rc}\noutput:\n{out}"
+    assert "970" in out
+    assert "could not parse" in out
+
+
+def test_main_returns_one_when_new_case_metric_regresses(checker, tmp_path, capsys):
+    """Issue #3572: a newly-tracked metric (Case 800 cooling) regresses → exit 1.
+
+    Push Case 800 cooling (currently 50.1 pp UNDER band, tracked as
+    ``known_fail``) further out so the gap exceeds baseline + 5 pp
+    tolerance. The gate must trip even though other seven cases are
+    unchanged.
+    """
+    baseline = _write_baseline_8_cases(tmp_path)
+    # band = [4.888, 6.612], midpoint = 5.75. Push value way down.
+    log = _write_log_8_cases(
+        tmp_path,
+        overrides={"800": {"h": 5.453, "c": 0.500}},
+    )
+    rc = _invoke(checker, log, baseline, require_cases=",".join(checker.SUPPORTED_CASES))
+    out = capsys.readouterr().out
+    assert rc == 1, f"expected exit 1 on Case 800 C regression, got {rc}\noutput:\n{out}"
+    assert "REGRESSION" in out
+    assert "case_800_cooling" in out
+
+
+def test_main_returns_one_when_new_case_pass_metric_exits_band(checker, tmp_path, capsys):
+    """Issue #3572: a newly-tracked PASS metric (Case 800 heating) exits band → exit 1.
+
+    Case 800 heating is currently PASS (in-band, gap 0). Push it way
+    above the band so the gap exceeds the 5 pp tolerance — the stricter
+    rule for previously-PASS metrics trips the gate.
+    """
+    baseline = _write_baseline_8_cases(tmp_path)
+    # band = [4.378, 5.923], midpoint = 5.1505. Push to 12.0 → gap huge.
+    log = _write_log_8_cases(
+        tmp_path,
+        overrides={"800": {"h": 12.0, "c": 2.007}},
+    )
+    rc = _invoke(checker, log, baseline, require_cases=",".join(checker.SUPPORTED_CASES))
+    out = capsys.readouterr().out
+    assert rc == 1, f"expected exit 1 on Case 800 H regression, got {rc}\noutput:\n{out}"
+    assert "REGRESSION" in out
+    assert "case_800_heating" in out
+
+
+def test_self_test_passes_when_all_eight_cases_present(checker):
+    """Issue #3572: --self-test exits 0 against a synthetic 8-case log."""
+    saved = sys.argv[:]
+    sys.argv[:] = [SCRIPT_NAME, "--self-test"]
+    try:
+        rc = checker.self_test()
+    finally:
+        sys.argv[:] = saved
+    assert rc == 0

@@ -740,6 +740,84 @@ const CASE_900_REF: EnergyReference = EnergyReference {
     peak_cooling_max_kw: 2.10,
 };
 
+// Issue #3572: the strict ±15% annual-energy gate (Issue #1333 / #2506)
+// now extends to Cases 800 / 810 / 920 / 950 / 960 / 970. Raw bands come from
+// the corresponding `tests/reference_data/zone_balance/case_*_energy_reference.csv`
+// (matching `src/validation/benchmark.rs` for cases that ship there; matching
+// the ASHRAE 140-2023 Annex B / Annex B8 envelope for cases that do not).
+// `annual_heating_band()` / `annual_cooling_band()` compute midpoint ±15%.
+const CASE_800_REF: EnergyReference = EnergyReference {
+    case_id: "800",
+    annual_heating_min_mwh: 4.500,
+    annual_heating_max_mwh: 5.800,
+    annual_cooling_min_mwh: 5.000,
+    annual_cooling_max_mwh: 6.500,
+    peak_heating_min_kw: 2.800,
+    peak_heating_max_kw: 3.800,
+    peak_cooling_min_kw: 4.800,
+    peak_cooling_max_kw: 6.200,
+};
+const CASE_810_REF: EnergyReference = EnergyReference {
+    case_id: "810",
+    annual_heating_min_mwh: 3.400,
+    annual_heating_max_mwh: 4.500,
+    annual_cooling_min_mwh: 3.800,
+    annual_cooling_max_mwh: 5.000,
+    peak_heating_min_kw: 2.800,
+    peak_heating_max_kw: 3.800,
+    peak_cooling_min_kw: 4.800,
+    peak_cooling_max_kw: 6.200,
+};
+const CASE_920_REF: EnergyReference = EnergyReference {
+    case_id: "920",
+    annual_heating_min_mwh: 3.26,
+    annual_heating_max_mwh: 4.30,
+    annual_cooling_min_mwh: 1.84,
+    annual_cooling_max_mwh: 3.31,
+    peak_heating_min_kw: 2.10,
+    peak_heating_max_kw: 2.80,
+    peak_cooling_min_kw: 1.40,
+    peak_cooling_max_kw: 1.90,
+};
+// Case 950 disables heating per ASHRAE 140-2023 §B8.5 (night ventilation
+// only): the published envelope is degenerate [0.00, 0.00] MWh. The strict
+// `annual_heating_band()` would collapse to (0, 0); see the script's
+// degenerate-band handling in `gap_pct_of_mid` for how the gate treats
+// value=0 against that band.
+const CASE_950_REF: EnergyReference = EnergyReference {
+    case_id: "950",
+    annual_heating_min_mwh: 0.00,
+    annual_heating_max_mwh: 0.00,
+    annual_cooling_min_mwh: 0.39,
+    annual_cooling_max_mwh: 0.92,
+    peak_heating_min_kw: 0.00,
+    peak_heating_max_kw: 0.00,
+    peak_cooling_min_kw: 0.70,
+    peak_cooling_max_kw: 0.90,
+};
+const CASE_960_REF: EnergyReference = EnergyReference {
+    case_id: "960",
+    annual_heating_min_mwh: 1.65,
+    annual_heating_max_mwh: 2.45,
+    annual_cooling_min_mwh: 1.55,
+    annual_cooling_max_mwh: 2.78,
+    peak_heating_min_kw: 2.00,
+    peak_heating_max_kw: 8.00,
+    peak_cooling_min_kw: 0.00,
+    peak_cooling_max_kw: 4.00,
+};
+const CASE_970_REF: EnergyReference = EnergyReference {
+    case_id: "970",
+    annual_heating_min_mwh: 10.54,
+    annual_heating_max_mwh: 14.26,
+    annual_cooling_min_mwh: 7.39,
+    annual_cooling_max_mwh: 10.00,
+    peak_heating_min_kw: 4.00,
+    peak_heating_max_kw: 8.00,
+    peak_cooling_min_kw: 2.50,
+    peak_cooling_max_kw: 5.50,
+};
+
 /// Blind annual simulation — only the CaseSpec (no case ID) is passed to
 /// the engine. Returns (heating_MWh, cooling_MWh, peak_heat_kW, peak_cool_kW).
 ///
@@ -998,6 +1076,196 @@ fn test_case_900_annual_energy_ashrae140_tolerance() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Issue #3572: extend the strict ±15% annual-energy tolerance gate to Cases
+// 800 / 810 / 920 / 950 / 960 / 970 (mirror the Case 600 / Case 900 pattern).
+//
+// Like the Case 600/900 strict tests above, these are `#[ignore]`'d because
+// their gap is not yet closed — but the strict-energy-gate workflow now runs
+// them WITH `--include-ignored`, parses the printed H/C values, and compares
+// against `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`.
+// The gate fails ONLY on regression beyond `regression_tolerance_pp` or when
+// a metric line is missing (filter drift).
+//
+// Each `#[ignore = "..."]` note records the current `known_fail` rationale and
+// the relevant `docs/KNOWN_ISSUES.md` LIMIT entry where applicable.
+// ---------------------------------------------------------------------------
+
+#[ignore = "Issue #3572: kept #[ignore]'d while the strict-energy-gate gate \
+            observes the metric. Case 800 has no structural LIMIT entry in \
+            docs/KNOWN_ISSUES.md; baseline gap is the current measured value \
+            vs the raw ASHRAE 140-2023 Annex B envelope (±15% around midpoint). \
+            Lower the baseline in this file when the engine re-enters the band."]
+#[test]
+fn test_case_800_annual_energy_ashrae140_tolerance() {
+    let spec = ASHRAE140Case::Case800.spec();
+    let (h, c, _ph, _pc) =
+        run_blind_annual_energy(&spec, "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw");
+
+    let (h_lo, h_hi) = CASE_800_REF.annual_heating_band();
+    let (c_lo, c_hi) = CASE_800_REF.annual_cooling_band();
+
+    println!(
+        "[#1147 Case 800 strict] H={h:.3} MWh (band {h_lo:.3}-{h_hi:.3}), \
+         C={c:.3} MWh (band {c_lo:.3}-{c_hi:.3})"
+    );
+
+    assert!(
+        h >= h_lo && h <= h_hi,
+        "Case 800 annual heating {h:.3} MWh outside ±15% band [{h_lo:.3}, {h_hi:.3}]"
+    );
+    assert!(
+        c >= c_lo && c <= c_hi,
+        "Case 800 annual cooling {c:.3} MWh outside ±15% band [{c_lo:.3}, {c_hi:.3}]"
+    );
+}
+
+#[ignore = "Issue #3572: kept #[ignore]'d while the strict-energy-gate gate \
+            observes the metric. Case 810 has no structural LIMIT entry in \
+            docs/KNOWN_ISSUES.md; baseline gap is the current measured value \
+            vs the raw ASHRAE 140-2023 Annex B envelope (±15% around midpoint). \
+            Lower the baseline in this file when the engine re-enters the band."]
+#[test]
+fn test_case_810_annual_energy_ashrae140_tolerance() {
+    let spec = ASHRAE140Case::Case810.spec();
+    let (h, c, _ph, _pc) =
+        run_blind_annual_energy(&spec, "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw");
+
+    let (h_lo, h_hi) = CASE_810_REF.annual_heating_band();
+    let (c_lo, c_hi) = CASE_810_REF.annual_cooling_band();
+
+    println!(
+        "[#1147 Case 810 strict] H={h:.3} MWh (band {h_lo:.3}-{h_hi:.3}), \
+         C={c:.3} MWh (band {c_lo:.3}-{c_hi:.3})"
+    );
+
+    assert!(
+        h >= h_lo && h <= h_hi,
+        "Case 810 annual heating {h:.3} MWh outside ±15% band [{h_lo:.3}, {h_hi:.3}]"
+    );
+    assert!(
+        c >= c_lo && c <= c_hi,
+        "Case 810 annual cooling {c:.3} MWh outside ±15% band [{c_lo:.3}, {c_hi:.3}]"
+    );
+}
+
+#[ignore = "Issue #3572: kept #[ignore]'d while the strict-energy-gate gate \
+            observes the metric. Case 920 sits in the §LIMIT-05 UPDATE (#2453) \
+            900-series bidirectional annual-energy cohort (E/W window thermal \
+            dynamics). Baseline records the measured gap until the GaugeSolver \
+            rework (#1465 / #1462) closes it."]
+#[test]
+fn test_case_920_annual_energy_ashrae140_tolerance() {
+    let spec = ASHRAE140Case::Case920.spec();
+    let (h, c, _ph, _pc) =
+        run_blind_annual_energy(&spec, "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw");
+
+    let (h_lo, h_hi) = CASE_920_REF.annual_heating_band();
+    let (c_lo, c_hi) = CASE_920_REF.annual_cooling_band();
+
+    println!(
+        "[#1147 Case 920 strict] H={h:.3} MWh (band {h_lo:.3}-{h_hi:.3}), \
+         C={c:.3} MWh (band {c_lo:.3}-{c_hi:.3})"
+    );
+
+    assert!(
+        h >= h_lo && h <= h_hi,
+        "Case 920 annual heating {h:.3} MWh outside ±15% band [{h_lo:.3}, {h_hi:.3}]"
+    );
+    assert!(
+        c >= c_lo && c <= c_hi,
+        "Case 920 annual cooling {c:.3} MWh outside ±15% band [{c_lo:.3}, {c_hi:.3}]"
+    );
+}
+
+#[ignore = "Issue #3572: kept #[ignore]'d while the strict-energy-gate gate \
+            observes the metric. Case 950 (HVAC mode) annual cooling is ~14× \
+            UNDER band per docs/KNOWN_ISSUES.md §LIMIT-24 (#3551) and §LIMIT-17 \
+            (#3058, 950FF companion). Baseline records the measured gap until \
+            the GaugeSolver rework (#1465 / #1462) closes it."]
+#[test]
+fn test_case_950_annual_energy_ashrae140_tolerance() {
+    let spec = ASHRAE140Case::Case950.spec();
+    let (h, c, _ph, _pc) =
+        run_blind_annual_energy(&spec, "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw");
+
+    let (h_lo, h_hi) = CASE_950_REF.annual_heating_band();
+    let (c_lo, c_hi) = CASE_950_REF.annual_cooling_band();
+
+    println!(
+        "[#1147 Case 950 strict] H={h:.3} MWh (band {h_lo:.3}-{h_hi:.3}), \
+         C={c:.3} MWh (band {c_lo:.3}-{c_hi:.3})"
+    );
+
+    assert!(
+        h >= h_lo && h <= h_hi,
+        "Case 950 annual heating {h:.3} MWh outside ±15% band [{h_lo:.3}, {h_hi:.3}]"
+    );
+    assert!(
+        c >= c_lo && c <= c_hi,
+        "Case 950 annual cooling {c:.3} MWh outside ±15% band [{c_lo:.3}, {c_hi:.3}]"
+    );
+}
+
+#[ignore = "Issue #3572: kept #[ignore]'d while the strict-energy-gate gate \
+            observes the metric. Case 960 annual cooling + peak heating are \
+            below band per docs/KNOWN_ISSUES.md §LIMIT-14 (#3061, sunspace \
+            air-mass distribution). Baseline records the measured gap until \
+            the GaugeSolver rework (#1465 / #1462) closes it."]
+#[test]
+fn test_case_960_annual_energy_ashrae140_tolerance() {
+    let spec = ASHRAE140Case::Case960.spec();
+    let (h, c, _ph, _pc) =
+        run_blind_annual_energy(&spec, "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw");
+
+    let (h_lo, h_hi) = CASE_960_REF.annual_heating_band();
+    let (c_lo, c_hi) = CASE_960_REF.annual_cooling_band();
+
+    println!(
+        "[#1147 Case 960 strict] H={h:.3} MWh (band {h_lo:.3}-{h_hi:.3}), \
+         C={c:.3} MWh (band {c_lo:.3}-{c_hi:.3})"
+    );
+
+    assert!(
+        h >= h_lo && h <= h_hi,
+        "Case 960 annual heating {h:.3} MWh outside ±15% band [{h_lo:.3}, {h_hi:.3}]"
+    );
+    assert!(
+        c >= c_lo && c <= c_hi,
+        "Case 960 annual cooling {c:.3} MWh outside ±15% band [{c_lo:.3}, {c_hi:.3}]"
+    );
+}
+
+#[ignore = "Issue #3572: kept #[ignore]'d while the strict-energy-gate gate \
+            observes the metric. Case 970 (5-zone cross-coupling) annual \
+            heating + cooling both OVER per docs/KNOWN_ISSUES.md §LIMIT-23 \
+            (#3552, multi-zone air-mass distribution). Baseline records the \
+            measured gap until the GaugeSolver rework (#1465 / #1462) \
+            closes it."]
+#[test]
+fn test_case_970_annual_energy_ashrae140_tolerance() {
+    let spec = ASHRAE140Case::Case970.spec();
+    let (h, c, _ph, _pc) =
+        run_blind_annual_energy(&spec, "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw");
+
+    let (h_lo, h_hi) = CASE_970_REF.annual_heating_band();
+    let (c_lo, c_hi) = CASE_970_REF.annual_cooling_band();
+
+    println!(
+        "[#1147 Case 970 strict] H={h:.3} MWh (band {h_lo:.3}-{h_hi:.3}), \
+         C={c:.3} MWh (band {c_lo:.3}-{c_hi:.3})"
+    );
+
+    assert!(
+        h >= h_lo && h <= h_hi,
+        "Case 970 annual heating {h:.3} MWh outside ±15% band [{h_lo:.3}, {h_hi:.3}]"
+    );
+    assert!(
+        c >= c_lo && c <= c_hi,
+        "Case 970 annual cooling {c:.3} MWh outside ±15% band [{c_lo:.3}, {c_hi:.3}]"
+    );
+}
+
 /// Verify the reference CSV files are present and parseable (acceptance
 /// criterion: "tests/reference_data/zone_balance/ contains E+ reference CSV for
 /// Case 600 (and Case 900 if available)").
@@ -1014,11 +1282,52 @@ fn test_reference_csv_files_present_and_parseable() {
             "annual_heating",
             "annual_cooling",
         ),
+        // Issue #3572: extend reference-CSV presence/parseability check to
+        // the six additional cases the strict-energy-gate now consumes.
+        (
+            "case_800_energy_reference.csv",
+            "annual_heating",
+            "annual_cooling",
+        ),
+        (
+            "case_810_energy_reference.csv",
+            "annual_heating",
+            "annual_cooling",
+        ),
+        (
+            "case_920_energy_reference.csv",
+            "annual_heating",
+            "annual_cooling",
+        ),
+        (
+            "case_950_energy_reference.csv",
+            "annual_heating",
+            "annual_cooling",
+        ),
+        (
+            "case_960_energy_reference.csv",
+            "annual_heating",
+            "annual_cooling",
+        ),
+        (
+            "case_970_energy_reference.csv",
+            "annual_heating",
+            "annual_cooling",
+        ),
     ];
     for (csv, h_metric, c_metric) in cases {
         let (h_lo, h_hi) = read_reference_band(csv, h_metric);
         let (c_lo, c_hi) = read_reference_band(csv, c_metric);
-        assert!(h_lo > 0.0 && h_hi > h_lo, "{csv} heating band malformed");
+        // Issue #3572: Case 950 publishes a degenerate heating band
+        // ([0.00, 0.00] MWh per ASHRAE 140-2023 §B8.5 — heating OFF when
+        // night ventilation is the only conditioning), so accept either
+        // a strictly-positive min with a non-degenerate band, or a
+        // degenerate zero-width band (the latter signals "metric is OFF
+        // per spec").
+        let heating_well_formed = (h_lo > 0.0 && h_hi > h_lo)
+            || (h_lo == 0.0 && h_hi == 0.0)
+            || (h_lo == 0.0 && h_hi >= 0.0 && h_hi <= 0.015);
+        assert!(heating_well_formed, "{csv} heating band malformed [{h_lo}, {h_hi}]");
         assert!(c_lo > 0.0 && c_hi > c_lo, "{csv} cooling band malformed");
         println!("[#1147 {csv}] H=[{h_lo}, {h_hi}] MWh, C=[{c_lo}, {c_hi}] MWh");
     }

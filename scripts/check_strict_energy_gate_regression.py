@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 """Strict ±15% ASHRAE 140 energy-gate regression checker (issue #2506).
 
-The two strict tolerance tests
-(`test_case_{600,900}_annual_energy_ashrae140_tolerance`) are `#[ignore]`'d
-because the Case 600/900 annual COOLING physics gap is not yet closed
-(post-#1323 / #1213 / #1328 chain). Previously the strict-energy-gate workflow
-ran them WITHOUT `--include-ignored`, so they reported `ignored` and the gate
-was silently green on every PR — a regression that worsened the cooling gap
-would pass undetected (the core complaint of issue #2506).
+The strict tolerance tests
+(`test_case_{600,800,810,900,920,950,960,970}_annual_energy_ashrae140_tolerance`)
+are `#[ignore]`'d because the Case 600/900/950/960/970 annual-energy physics
+gaps are not yet closed (post-#1323 / #1213 / #1328 cooling chain, plus the
+§LIMIT-05 / §LIMIT-14 / §LIMIT-17 / §LIMIT-23 / §LIMIT-24 cohort tracked in
+`docs/KNOWN_ISSUES.md`). Previously the strict-energy-gate workflow ran the
+two Case 600/900 tests WITHOUT `--include-ignored`, so they reported
+`ignored` and the gate was silently green on every PR — a regression that
+worsened the cooling gap would pass undetected (the core complaint of
+issue #2506). Issue #3572 extends the gate to the six additional cases
+(800 / 810 / 920 / 950 / 960 / 970) whose reference CSVs are already
+committed; no baseline value is raised to hide a regression.
 
 This script implements the transparent, regression-catching gate:
 
-  1. The workflow runs the two ignored tests WITH `--include-ignored` so they
+  1. The workflow runs the ignored tests WITH `--include-ignored` so they
      execute and print their measured H/C values vs. the ±15% band:
        "[#1147 Case 600 strict] H=5.236 MWh (band 4.314-5.836), \
         C=2.455 MWh (band 4.275-5.784)"
@@ -22,12 +27,13 @@ This script implements the transparent, regression-catching gate:
   3. Verdict per metric:
        - PASS          : gap == 0 (within ±15% band)
        - KNOWN-FAIL    : gap > 0 but <= baseline_gap + regression_tolerance_pp
-                         (the documented structural cooling gap — tracked)
+                         (the documented structural gap — tracked)
        - REGRESSION    : gap > baseline_gap + regression_tolerance_pp, OR a
                          previously-`pass` metric whose gap now exceeds the
                          tolerance  →  exits 1, failing the gate
-  4. The script also enforces that BOTH cases were measured (a missing line
-     means the cargo filter / test name drifted — itself a regression).
+  4. The script also enforces that ALL required cases were measured (a
+     missing line means the cargo filter / test name drifted — itself a
+     regression).
 
 Improvements (gap shrinking vs. baseline) are reported but do not fail the
 gate; the engineer should lower the baseline in the same PR. Per RULES.md /
@@ -44,11 +50,14 @@ import re
 import sys
 from pathlib import Path
 
+# Issue #3572: the regex now matches all eight cases (600 / 800 / 810 /
+# 900 / 920 / 950 / 960 / 970) the strict ±15% annual-energy gate observes.
 # Match:  [#1147 Case 600 strict] H=5.236 MWh (band 4.314-5.836), C=2.455 MWh (band 4.275-5.784)
 # The H/C order is stable (the test prints H first, then C). Band edges are
 # formatted to 3 decimals by the Rust `:.3` formatter.
+SUPPORTED_CASES = ("600", "800", "810", "900", "920", "950", "960", "970")
 LINE_RE = re.compile(
-    r"Case\s+(?P<case>600|900)\s+strict.*?"
+    r"Case\s+(?P<case>(?:" + "|".join(SUPPORTED_CASES) + r"))\s+strict.*?"
     r"H=(?P<h>[-0-9.]+)\s+MWh\s+\(band\s+(?P<hlo>[-0-9.]+)-(?P<hhi>[-0-9.]+)\)"
     r".*?"
     r"C=(?P<c>[-0-9.]+)\s+MWh\s+\(band\s+(?P<clo>[-0-9.]+)-(?P<chi>[-0-9.]+)\)"
@@ -59,19 +68,26 @@ DEFAULT_BASELINE = REPO_ROOT / "tests/reference_data/zone_balance/strict_energy_
 
 
 def gap_pct_of_mid(value: float, band_lo: float, band_hi: float) -> float:
-    """0.0 inside [band_lo, band_hi]; otherwise distance outside, % of midpoint."""
-    mid = 0.5 * (band_lo + band_hi)
-    if mid <= 0:
-        return float("inf")
-    if value < band_lo:
-        return (band_lo - value) / mid * 100.0
-    if value > band_hi:
+    """0.0 inside [band_lo, band_hi]; otherwise distance outside, % of midpoint.
+
+    Degenerate bands (mid == 0, e.g. Case 950 heating per ASHRAE 140-2023 §B8.5
+    where heating is OFF and the published envelope collapses to [0, 0]) are
+    handled: if the value is inside the band the gap is 0 regardless of
+    midpoint; otherwise an out-of-band value against a degenerate midpoint is
+    reported as infinity (the previous behaviour).
+    """
+    if value < band_lo or value > band_hi:
+        mid = 0.5 * (band_lo + band_hi)
+        if mid <= 0:
+            return float("inf")
+        if value < band_lo:
+            return (band_lo - value) / mid * 100.0
         return (value - band_hi) / mid * 100.0
     return 0.0
 
 
 def parse_measured(log_text: str) -> dict[str, dict[str, float]]:
-    """Return {'600': {'H': v,'C': v, 'hlo':..,'hhi':..,'clo':..,'chi':..}, '900': {...}}."""
+    """Return {'600': {'H': v,'C': v, 'hlo':..,'hhi':..,'clo':..,'chi':..}, '900': {...}, ...}."""
     measured: dict[str, dict[str, float]] = {}
     for m in LINE_RE.finditer(log_text):
         case = m.group("case")
@@ -94,8 +110,9 @@ def main() -> int:
                     help="captured cargo test --include-ignored output (default: %(default)s)")
     ap.add_argument("--baseline", default=str(DEFAULT_BASELINE),
                     help="baseline JSON (default: %(default)s)")
-    ap.add_argument("--require-cases", default="600,900",
-                    help="comma-separated case ids that MUST appear in the log")
+    ap.add_argument("--require-cases", default=",".join(SUPPORTED_CASES),
+                    help="comma-separated case ids that MUST appear in the log "
+                         "(default: all eight supported cases)")
     args = ap.parse_args()
 
     log_text = Path(args.log).read_text(errors="replace")
@@ -194,10 +211,70 @@ def main() -> int:
               "physics, do NOT raise the baseline gap to hide this.")
         return 1
 
-    print("PASS: strict ±15% gate holds. Known 600/900 cooling structural "
-          "gap is tracked (not silently ignored); no regression detected.")
+    print("PASS: strict ±15% gate holds. Documented structural cooling "
+          "gaps (Cases 600/900/950/960/970 per docs/KNOWN_ISSUES.md §LIMIT-05 / "
+          "§LIMIT-14 / §LIMIT-17 / §LIMIT-23 / §LIMIT-24) are tracked (not "
+          "silently ignored); no regression detected.")
+    return 0
+
+
+def self_test() -> int:
+    """Regression test for the parser (Issue #3572 acceptance criterion).
+
+    Synthesises a measurement block with one strict line per supported case
+    (the eight cases 600 / 800 / 810 / 900 / 920 / 950 / 960 / 970), asserts
+    the regex consumes them all, and asserts the degenerate-band gap formula
+    returns 0 for in-band values even when the band midpoint collapses to
+    zero (Case 950 heating). Run via `python3 scripts/check_strict_energy_gate_regression.py --self-test`.
+    """
+    lines = [
+        "[#1147 Case 600 strict] H=5.182 MWh (band 4.314-5.836), C=2.546 MWh (band 4.275-5.784)",
+        "[#1147 Case 800 strict] H=5.453 MWh (band 4.378-5.923), C=2.007 MWh (band 4.888-6.612)",
+        "[#1147 Case 810 strict] H=1.633 MWh (band 3.357-4.543), C=0.910 MWh (band 3.740-5.060)",
+        "[#1147 Case 900 strict] H=1.633 MWh (band 1.364-1.846), C=0.910 MWh (band 2.465-3.335)",
+        "[#1147 Case 920 strict] H=2.400 MWh (band 3.213-4.347), C=1.085 MWh (band 2.189-2.961)",
+        "[#1147 Case 950 strict] H=0.000 MWh (band 0.000-0.000), C=0.028 MWh (band 0.557-0.753)",
+        "[#1147 Case 960 strict] H=2.924 MWh (band 1.742-2.357), C=0.144 MWh (band 1.840-2.490)",
+        "[#1147 Case 970 strict] H=3.580 MWh (band 10.540-14.260), C=1.654 MWh (band 7.391-9.999)",
+    ]
+    measured = parse_measured("\n".join(lines))
+    missing = [c for c in SUPPORTED_CASES if c not in measured]
+    if missing:
+        print(f"FAIL: parser dropped cases {missing} (regex/format drift)", file=sys.stderr)
+        return 1
+    for case in SUPPORTED_CASES:
+        for band_key in ("hlo", "hhi", "clo", "chi"):
+            if not isinstance(measured[case][band_key], (int, float)):
+                print(f"FAIL: {case}/{band_key} not numeric: {measured[case][band_key]!r}", file=sys.stderr)
+                return 1
+
+    # Degenerate-band coverage (Case 950 heating): value 0 inside [0, 0]
+    # must produce gap == 0 (not inf from the pre-#3572 implementation).
+    if gap_pct_of_mid(0.0, 0.0, 0.0) != 0.0:
+        print("FAIL: gap_pct_of_mid(0, 0, 0) != 0 (Case 950 H degenerate band)", file=sys.stderr)
+        return 1
+    # Out-of-band against a degenerate midpoint stays inf (unchanged behaviour).
+    if gap_pct_of_mid(0.5, 0.0, 0.0) != float("inf"):
+        print("FAIL: gap_pct_of_mid(0.5, 0, 0) != inf (out-of-band degenerate mid)", file=sys.stderr)
+        return 1
+    # Sanity: standard in-band value still returns 0 (regression guard for the
+    # degenerate-band fix above).
+    if gap_pct_of_mid(5.0, 4.5, 5.8) != 0.0:
+        print("FAIL: gap_pct_of_mid(5.0, 4.5, 5.8) != 0 (regression)", file=sys.stderr)
+        return 1
+    # Sanity: out-of-band UNDER returns a positive % of midpoint.
+    under_gap = gap_pct_of_mid(2.0, 4.5, 5.8)
+    if not (under_gap > 0 and abs(under_gap - (4.5 - 2.0) / 5.15 * 100.0) < 1e-6):
+        print(f"FAIL: under_gap formula drifted: got {under_gap}", file=sys.stderr)
+        return 1
+
+    print(f"PASS: self_test consumed all {len(SUPPORTED_CASES)} strict cases "
+          f"({', '.join(SUPPORTED_CASES)}) and gap_pct_of_mid invariants hold.")
     return 0
 
 
 if __name__ == "__main__":
+    if "--self-test" in sys.argv:
+        sys.argv.remove("--self-test")
+        sys.exit(self_test())
     sys.exit(main())
