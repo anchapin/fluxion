@@ -48,6 +48,9 @@ on:
       - "RULES.md"
       - "CHANGELOG.md"
       - "README.md"
+      - "KNOWN_ISSUES.md"
+      - "ASHRAE140_RESULTS.md"
+      - "*.mdx"
   push:
     branches:
       - develop
@@ -61,11 +64,7 @@ concurrency:
       github.event.pull_request.head.sha
       || github.ref
     }}
-  cancel-in-progress: >-
-    ${{
-      github.event_name == 'push'
-      && contains('refs/heads/main,refs/heads/develop', github.ref)
-    }}
+  cancel-in-progress: true   # Issue #3567-tier: cancel superseded PR runs to prevent backlog
 
 permissions:
   contents: read

@@ -8,14 +8,21 @@ name: Python Tests (OSimFlow)
 # credentials.
 #
 # Triggers:
-#   * pull_request: fast gate on every PR
+#   * pull_request: fast gate on PRs touching python bindings / crates / build config
 #   * push to develop: integration check before the next release
+#   * workflow_dispatch: manual re-run
 
 on:
   push:
     branches: [develop, main]
   pull_request:
     branches: [develop, main]
+    paths:
+      - 'src/python/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'pyproject.toml'
+      - '.github/workflows/python-*.yml'
   workflow_dispatch:
 
 concurrency:
@@ -26,11 +33,7 @@ concurrency:
       github.event.pull_request.head.sha
       || github.ref
     }}
-  cancel-in-progress: >-
-    ${{
-      github.event_name == 'push'
-      && contains('refs/heads/main,refs/heads/develop', github.ref)
-    }}
+  cancel-in-progress: true   # Issue #3567-tier: cancel superseded PR runs to prevent backlog
 
 permissions:
   contents: read
