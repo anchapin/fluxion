@@ -15,7 +15,8 @@ Fluxion is a Rust-first building-energy-modeling engine with Python and Node bin
 ## Commands That Are Easy to Guess Wrong
 
 ```bash
-./scripts/disk-space-check.sh                         # before large builds/orchestration; 10 GB minimum
+./scripts/disk-space-check.sh                         # before large builds/orchestration; 10 GB minimum (also the first half of the pre-push pair below)
+./scripts/disk-space-check.sh && ./scripts/ci-local.sh   # pre-push: disk-space gate then curated `act` suite (default = scorecard-drift + docs-hygiene + architecture_drift + scripts-tests, ~3m total); catches CI-shape failures locally before burning a GH runner slot — see .actrc for image/arch pinning and docs/ci/local-validation.md for the full workflow (Issue #3577, PR #3568)
 cargo nextest run --workspace --all-targets --test-threads=2 --no-fail-fast   # canonical CI command (Issue #3366 / ADR-0014, PR #3369); see docs/ci/nextest-rollout.md for rationale and .github/workflows/rust-tests.yml::test for the actual matrix invocation
 cargo test --workspace --exclude fluxion-tauri        # ALL workspace tests; --exclude fluxion-tauri is required because fluxion-tauri's proc-macro build needs `npm run build` in fluxion-tauri/frontend/ to materialise ../frontend/dist (Issue #3126). LOCAL-DEBUG ONLY — CI uses `cargo nextest` (see above); both runners share `.config/nextest.toml::concurrency = 2` defaults.
 cargo test                                           # root crate only (NOT the full suite)

@@ -118,6 +118,7 @@ If you see "module not found" or import errors, run `maturin develop` to rebuild
 ### Running CI locally with `act`
 
 - **Purpose:** Run GitHub Actions workflows locally using the `act` CLI to reproduce CI jobs (useful for fast iterations and debugging).
+- **Pre-push shortcut:** `./scripts/disk-space-check.sh && ./scripts/ci-local.sh` runs the curated default suite (`scorecard-drift`, `docs-hygiene`, `architecture_drift`, `scripts-tests`) inside the act container pinned by `.actrc` (catthehacker/ubuntu:act-22.04, `linux/amd64`, default branch `develop`). Run this before any push that touches `scripts/`, `.github/workflows/`, `.actrc`, or `docs/` to catch workflow-shape failures before they consume a GH-hosted runner slot. Full details, troubleshooting, and a per-workflow reference table are in [`docs/ci/local-validation.md`](ci/local-validation.md) (Issue #3577).
 - **Install:** Follow `act` installation instructions: https://github.com/nektos/act#installation
 - **Example (macOS on Apple Silicon / ARM):**
 
