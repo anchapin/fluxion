@@ -39,11 +39,13 @@ use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::sim::multi_zone_network::{MultiZoneAirflowNetwork, ZoneState};
 use fluxion::sim::thermal_selector::ThermalSelector;
+use fluxion::util::sha256_hex::sha256_hex;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::validation::ashrae_140_multi_zone::{Case970Reference, Case970Validator};
 use fluxion::validation::energy_balance::EnergyBalanceValidator;
 use fluxion::weather::epw::EpwWeatherSource;
 use fluxion::weather::WeatherSource;
+use sha2::{Digest, Sha256};
 
 /// Canonical ASHRAE 140-2017 §B6.7 Case 970 reference bands.
 ///
@@ -124,11 +126,9 @@ fn run_case_970_blind_energy(
 ) -> (f64, f64, f64, f64) {
     const J_TO_MWH: f64 = 1.0 / 3.6e9;
 
-    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
-        spec,
-        &ThermalSelector::default(),
-    )
-    .expect("default selector must initialize");
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = EpwWeatherSource::from_file(epw_path)
         .expect("EPW weather file must be present in assets/weather/");
 
@@ -614,8 +614,65 @@ fn test_case_970_multi_zone_network_e2e_conservation() {
         .expect("Case 970 5-zone post-run conservation must pass legacy 1.0 W tolerance");
 }
 
+/// Canonical metric identifiers for the Case 920 / 950 / 960 reference CSVs
+/// (per `PROVENANCE.md` and the column schema in each
+/// `*_energy_reference.csv` header). Order-independent — the test asserts
+/// all four are present, not that they appear in any specific order.
+const REQUIRED_METRICS: &[&str] = &[
+    "annual_heating",
+    "annual_cooling",
+    "peak_heating",
+    "peak_cooling",
+];
+
+/// Canonicalise CSV bytes for hashing so the SHA-256 is stable across
+/// platforms (line endings, trailing whitespace) without altering
+/// semantically meaningful content.
+///
+/// - Replaces CRLF and lone CR with LF.
+/// - Strips trailing whitespace from each line.
+/// - Drops trailing empty lines (the files all end in a single LF).
+/// - Appends exactly one trailing LF.
+fn canonicalise_for_hash(raw_bytes: &[u8]) -> Vec<u8> {
+    let text = std::str::from_utf8(raw_bytes).expect("CSV must be UTF-8");
+    let normalised = text.replace("\r\n", "\n").replace('\r', "\n");
+    let mut trimmed: Vec<&str> = normalised.split('\n').map(|l| l.trim_end()).collect();
+    while trimmed.last().copied().unwrap_or("").is_empty() {
+        trimmed.pop();
+    }
+    let mut out = String::with_capacity(normalised.len());
+    for (i, line) in trimmed.iter().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        out.push_str(line);
+    }
+    out.push('\n');
+    out.into_bytes()
+}
+
 /// Issue #1446 acceptance criterion #6 (regression): the existing Case
 /// 920/950/960 reference data files must remain unchanged on disk.
+///
+/// Issue #3594: the previous `path.exists()` + `lines().count() >= 5` check
+/// was silently permissive — a hand-edit that flipped the `accept_min`
+/// column to `0.0` for one case (hiding a regression) or truncated the
+/// metric rows down to five placeholder lines would still pass. The
+/// strict-energy-gate regression gate is calibrated against
+/// `strict_energy_gate_baseline.json`, not these CSVs, so the CSVs were
+/// only protected by this one test.
+///
+/// This strengthened test:
+///   1. Loads each CSV via `csv::ReaderBuilder`, skipping `#`-prefixed
+///      comment lines (which carry the schema header text but are not
+///      valid CSV records). Asserts every documented metric row
+///      (`annual_heating`, `annual_cooling`, `peak_heating`,
+///      `peak_cooling`) is present, with a numeric `ref_min` /
+///      `ref_max` / `ref_midpoint` and a valid unit (`MWh` or `kW`).
+///   2. Computes a SHA-256 over the canonicalised bytes (line endings
+///      normalised, trailing whitespace stripped, exactly one trailing
+///      LF) and compares against the committed `.csv.sha256` sidecar
+///      so any silent edit trips the gate at PR time.
 #[test]
 fn test_case_920_950_960_reference_files_unchanged() {
     let base =
@@ -631,11 +688,91 @@ fn test_case_920_950_960_reference_files_unchanged() {
             "Pre-existing Case 920/950/960 reference CSV must remain on disk: {}",
             path.display()
         );
-        let contents = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("{csv} must be readable: {e}"));
+        let raw = std::fs::read(&path).unwrap_or_else(|e| panic!("{csv} must be readable: {e}"));
+        let text =
+            std::str::from_utf8(&raw).unwrap_or_else(|e| panic!("{csv} must be valid UTF-8: {e}"));
+
+        // (1) Schema check via csv::ReaderBuilder. `#`-prefixed comment
+        // lines (carrying the schema header text) are stripped before
+        // parsing because the `csv` crate does not natively recognise
+        // them as comments.
+        let csv_body = text
+            .lines()
+            .filter(|line| !line.starts_with('#'))
+            .collect::<Vec<&str>>()
+            .join("\n");
+        let mut reader = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .flexible(true)
+            .from_reader(csv_body.as_bytes());
+        let mut found_metrics: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for (row_idx, record) in reader.records().enumerate() {
+            let record =
+                record.unwrap_or_else(|e| panic!("{csv}: malformed metric row #{row_idx}: {e}"));
+            let metric = record.get(0).unwrap_or("").to_string();
+            assert!(
+                !metric.is_empty(),
+                "{csv}: metric row #{row_idx} missing the `metric` column (col 0); \
+                 row = {record:?}"
+            );
+            assert!(
+                REQUIRED_METRICS.contains(&metric.as_str()),
+                "{csv}: unexpected metric `{metric}` on row #{row_idx}; allowed \
+                 metrics are {REQUIRED_METRICS:?}"
+            );
+            let unit = record.get(1).unwrap_or("");
+            assert!(
+                unit == "MWh" || unit == "kW",
+                "{csv}: metric `{metric}` on row #{row_idx} unit must be `MWh` \
+                 or `kW` per the PROVENANCE.md schema; got `{unit}`"
+            );
+            for (col_name, col_idx) in [("ref_min", 2usize), ("ref_max", 3), ("ref_midpoint", 4)] {
+                let cell = record.get(col_idx).unwrap_or("");
+                cell.parse::<f64>().unwrap_or_else(|e| {
+                    panic!(
+                        "{csv}: metric `{metric}` `{col_name}` must parse as f64 \
+                         per the PROVENANCE.md schema; got `{cell}`: {e}"
+                    )
+                });
+            }
+            found_metrics.insert(metric);
+        }
+        for required in REQUIRED_METRICS {
+            assert!(
+                found_metrics.contains(*required),
+                "{csv}: required metric `{required}` is missing from the CSV \
+                 per the PROVENANCE.md schema; found {found_metrics:?}"
+            );
+        }
+
+        // (2) SHA-256 content check over the canonicalised bytes. The
+        // sidecar is committed alongside each CSV (sha256sum format:
+        // `<hex>  <filename>`). Any silent edit — even a single byte —
+        // trips the gate at PR time.
+        let canonical_bytes = canonicalise_for_hash(&raw);
+        let mut hasher = Sha256::new();
+        Digest::update(&mut hasher, &canonical_bytes);
+        let actual_hex = sha256_hex(hasher.finalize());
+
+        let sidecar_path = base.join(format!("{csv}.sha256"));
         assert!(
-            contents.lines().count() >= 5,
-            "{csv} must still contain the metric rows (>= 5 lines incl. comments)"
+            sidecar_path.exists(),
+            "{csv}: committed SHA-256 sidecar must exist at {} \
+             (regenerate via `sha256sum {csv} > {csv}.sha256`)",
+            sidecar_path.display()
+        );
+        let sidecar = std::fs::read_to_string(&sidecar_path)
+            .unwrap_or_else(|e| panic!("{} must be readable: {e}", sidecar_path.display()));
+        let expected_hex = sidecar
+            .split_whitespace()
+            .next()
+            .unwrap_or_else(|| panic!("{}: sidecar is empty", sidecar_path.display()));
+        assert_eq!(
+            actual_hex, expected_hex,
+            "{csv}: SHA-256 mismatch — content has drifted from the committed \
+             reference. If this drift is intentional, regenerate the sidecar \
+             via `sha256sum {csv} > {csv}.sha256` and commit both. \
+             actual = {actual_hex}, expected = {expected_hex}"
         );
     }
 }
