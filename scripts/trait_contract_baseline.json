@@ -17,11 +17,32 @@
         ],
         "return_type": "-> Result<(), SolverError>"
       },
+      "step": {
+        "name": "step",
+        "receiver": "&mut self",
+        "params": [
+          "timestep: Time",
+          "T_interior: Temperature",
+          "T_exterior: Temperature",
+          "h_interior: HeatTransferCoefficient",
+          "h_exterior: HeatTransferCoefficient"
+        ],
+        "return_type": "-> Result<HeatFlux, SolverError>"
+      },
       "energy_storage_rate": {
         "name": "energy_storage_rate",
         "receiver": "&self",
         "params": [],
         "return_type": "-> f64"
+      },
+      "steady_state_flux": {
+        "name": "steady_state_flux",
+        "receiver": "&self",
+        "params": [
+          "T_interior: Temperature",
+          "T_exterior: Temperature"
+        ],
+        "return_type": "-> Result<HeatFlux, SolverError>"
       },
       "is_valid": {
         "name": "is_valid",
@@ -35,6 +56,18 @@
     "trait_name": "VentilationSchedule",
     "source_file": "src/sim/ventilation.rs",
     "methods": {
+      "get_ach": {
+        "name": "get_ach",
+        "receiver": "&self",
+        "params": [
+          "hour: usize",
+          "T_outdoor: f64",
+          "T_indoor: f64",
+          "wind_speed: f64",
+          "volume: f64"
+        ],
+        "return_type": "-> f64"
+      },
       "clone_box": {
         "name": "clone_box",
         "receiver": "&self",
@@ -80,6 +113,16 @@
           "mode: ThermalModelMode"
         ],
         "return_type": ""
+      },
+      "solve_timesteps": {
+        "name": "solve_timesteps",
+        "receiver": "&mut self",
+        "params": [
+          "steps: usize",
+          "surrogates: &SurrogateManager",
+          "use_surrogates: bool"
+        ],
+        "return_type": "-> f64"
       },
       "apply_parameters": {
         "name": "apply_parameters",
