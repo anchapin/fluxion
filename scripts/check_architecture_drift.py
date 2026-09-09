@@ -92,29 +92,67 @@ def parse_trait_methods(content: str, trait_name: str) -> dict[str, MethodSignat
         pos += 1
     trait_body = content[start:pos]
 
-    # Parse method signatures using a state machine that correctly handles
-    # both trait declarations (ending in `;`) and methods with bodies (ending in `{`).
-    # This avoids the regex bug where [^{{]+ greedily captures too much.
-    fn_lines = trait_body.split("\n")
-    for i, line in enumerate(fn_lines):
-        stripped = line.lstrip()
+    # Parse method signatures by accumulating multi-line `fn` declarations
+    # (issue #3575). The four Goal #5 swap-point traits — HeatConductionSolver,
+    # VentilationSchedule, ThermalModelTrait — use multi-line signatures with
+    # typed-unit parameters that span 6–8 lines. The previous single-line
+    # regex silently dropped every multi-line `fn`, so the baseline JSON
+    # only captured the pre-#1392 surface.
+    #
+    # Algorithm: walk lines, collect everything from `fn ... (` until the
+    # parameter list closes (paren_depth == 0), then continue until the
+    # signature terminator (`;` for required methods, `{` for default
+    # methods). After accumulation, the rest of the parsing logic operates
+    # on the joined single-line signature as before.
+    lines = trait_body.split("\n")
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].lstrip()
         if not stripped.startswith("fn ") or stripped.startswith("///"):
+            i += 1
             continue
 
-        # Extract fn name and params
-        fn_match = re.match(r"fn\s+(\w+)\s*\(([^)]*)\)", stripped)
+        # Start accumulating this fn signature.
+        accumulated = stripped
+        paren_depth = accumulated.count("(") - accumulated.count(")")
+        i += 1
+
+        # Continue until the parameter list closes (paren_depth == 0).
+        while i < len(lines) and paren_depth > 0:
+            accumulated += " " + lines[i].strip()
+            paren_depth += lines[i].count("(") - lines[i].count(")")
+            i += 1
+
+        if paren_depth > 0:
+            # Unbalanced parens — skip this signature and resync.
+            continue
+
+        # If the closing line hasn't already hit the terminator, keep
+        # reading until `;` (required method) or `{` (default method body)
+        # at the end of a line.
+        if not (
+            accumulated.rstrip().endswith(";") or accumulated.rstrip().endswith("{")
+        ):
+            while i < len(lines):
+                tail = lines[i].rstrip()
+                accumulated += " " + lines[i].strip()
+                i += 1
+                if tail.endswith(";") or tail.endswith("{"):
+                    break
+
+        # Extract fn name and params from the joined signature.
+        fn_match = re.match(r"fn\s+(\w+)\s*\(([^)]*)\)", accumulated)
         if not fn_match:
             continue
         fn_name = fn_match.group(1)
         params_str = fn_match.group(2)
 
-        # Find return type: scan from end of line backwards
+        # Find return type: scan from the closing paren forward.
         # For declarations: `-> Type;`  For bodies: `-> Type {`
         return_type = ""
-        arrow_pos = stripped.find("->")
+        arrow_pos = accumulated.find("->")
         if arrow_pos != -1:
-            ret_part = stripped[arrow_pos + 2 :].strip()
-            # Find the end of the return type
+            ret_part = accumulated[arrow_pos + 2 :].strip()
             if "{" in ret_part:
                 return_type = "-> " + ret_part[: ret_part.find("{")].strip()
             elif ";" in ret_part:
@@ -131,7 +169,7 @@ def parse_trait_methods(content: str, trait_name: str) -> dict[str, MethodSignat
 
         # Parse parameters (strip self variants)
         params = []
-        inner_params = params_str.strip("()")
+        inner_params = params_str.strip()
         if inner_params:
             for param in inner_params.split(","):
                 param = param.strip()
