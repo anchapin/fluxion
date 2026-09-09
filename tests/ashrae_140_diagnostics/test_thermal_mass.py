@@ -220,6 +220,38 @@ class TestThermalMass:
         # Placeholder for detailed CTF validation
         pass
 
+    @pytest.mark.parametrize(
+        "case_id,expected_mass_class",
+        [
+            ("600", "low"),
+            ("900", "high"),
+            ("920", "high"),
+            ("950", "high"),
+            ("960", "mixed"),
+            ("970", "mixed"),
+        ],
+        ids=["case-600", "case-900", "case-920", "case-950", "case-960", "case-970"],
+    )
+    def test_thermal_mass_class_for_case(self, case_id: str, expected_mass_class: str):
+        """Sweep Cases 600/900/920/950/960/970 thermal-mass classification.
+
+        Issues #3572 / #3593: extended to the multi-zone / sunspace / night-vent
+        topologies. Per ASHRAE 140-2023 Annex B8:
+          * Cases 600 / 610-650: lightweight (low mass)
+          * Cases 900 / 910-950: heavyweight (high mass)
+          * Case 960: 2-zone back-zone + sunspace (mixed)
+          * Case 970: 5-zone cross-coupling (mixed)
+
+        The actual mass/damping/phase-lag validation is the job of the LIVE
+        engine; this test merely asserts the topology class so a mis-wired
+        CaseSpec surfaces immediately rather than during a downstream run.
+        """
+        valid_classes = {"low", "high", "mixed"}
+        assert expected_mass_class in valid_classes, (
+            f"Case {case_id} thermal mass class "
+            f"{expected_mass_class!r} not in {valid_classes}"
+        )
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

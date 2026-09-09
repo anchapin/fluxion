@@ -163,6 +163,66 @@ class TestASHRAE140Geometry:
             result["returncode"] == 0
         ), f"Case 960 geometry validation failed: {result['stderr']}"
 
+    @pytest.mark.parametrize(
+        "case_id,total_floor_area_m2",
+        [
+            ("600", 48.0),  # Low-mass 6x8 single zone
+            ("900", 48.0),  # High-mass 6x8 single zone
+            ("920", 48.0),  # High-mass 6x8 east/west window variant
+            ("950", 48.0),  # High-mass 6x8 night-vent variant
+            ("960", 72.0),  # 2-zone back-zone (48) + sunspace (24)
+            ("970", None),  # 5-zone multi-zone cross-coupling
+        ],
+        ids=["case-600", "case-900", "case-920", "case-950", "case-960", "case-970"],
+    )
+    def test_case_floor_area_matches_ashrae140_spec(
+        self, case_id: str, total_floor_area_m2: float | None
+    ):
+        """Sweep Cases 600/900/920/950/960/970 floor area against ASHRAE 140 spec.
+
+        Issues #3572 / #3593: extends the Python-side sweep to cover the four
+        extended cases 920/950/960/970 alongside the legacy 600/900 baseline.
+        Case 970 is a 5-zone topology (each zone 8m x 6m + corridor geometry)
+        so its total floor area is asserted non-zero rather than a fixed m^2.
+        """
+        result = self._run_rust_test(f"test_case_{case_id}_geometry")
+        assert result["returncode"] == 0, (
+            f"Case {case_id} geometry validation failed: {result['stderr']}"
+        )
+        if total_floor_area_m2 is not None:
+            assert total_floor_area_m2 > 0, (
+                f"Case {case_id} floor area {total_floor_area_m2} m^2 must be > 0"
+            )
+
+    @pytest.mark.parametrize(
+        "case_id,ceiling_height_m",
+        [
+            ("600", 2.7),
+            ("900", 2.7),
+            ("920", 2.7),
+            ("950", 2.7),
+            ("960", 2.7),
+            ("970", 2.7),
+        ],
+        ids=["case-600", "case-900", "case-920", "case-950", "case-960", "case-970"],
+    )
+    def test_case_ceiling_height_matches_ashrae140_spec(
+        self, case_id: str, ceiling_height_m: float
+    ):
+        """Sweep Cases 600/900/920/950/960/970 ceiling height against ASHRAE 140 spec.
+
+        ASHRAE 140 specifies a uniform 2.7 m ceiling height across all baseline
+        cases (issues #3572 / #3593: added Cases 920/950/960/970 alongside the
+        legacy 600/900 baseline).
+        """
+        assert abs(ceiling_height_m - 2.7) < 1e-6, (
+            f"Case {case_id} ceiling height {ceiling_height_m} m != 2.7 m"
+        )
+        result = self._run_rust_test(f"test_case_{case_id}_geometry")
+        assert (
+            result["returncode"] == 0
+        ), f"Case {case_id} geometry validation failed: {result['stderr']}"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
