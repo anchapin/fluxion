@@ -14,14 +14,14 @@ Fluxion is a Rust-first building-energy-modeling engine with Python and Node bin
 
 ## Commands That Are Easy to Guess Wrong
 
-> **Workspace-scope rule (Issue #3587)** — The root crate is also workspace package `fluxion` with `default-members = ["."]`. The bare `cargo test` therefore runs the root crate ONLY (4,311 lib tests + the root `[[test]]` entries) and silently SKIPS the remaining 4,369 sibling-crate tests. **Always use the workspace form below** unless you have a deliberate reason to scope to one crate. See `docs/agents/workspace-scope.md` for the full rationale and `.githooks/pre-push` for the opt-in pre-push gate.
+> **Workspace-scope rule (Issue #3587)** — The root crate is also workspace package `fluxion` with `default-members = ["."]`. The bare `cargo test` therefore runs the root crate ONLY (4,007 lib tests + the root `[[test]]` entries) and silently SKIPS the remaining 4,398 sibling-crate tests. **Always use the workspace form below** unless you have a deliberate reason to scope to one crate. See `docs/agents/workspace-scope.md` for the full rationale and `.githooks/pre-push` for the opt-in pre-push gate.
 
 ```bash
 ./scripts/disk-space-check.sh                         # before large builds/orchestration; 10 GB minimum (also the first half of the pre-push pair below)
 ./scripts/disk-space-check.sh && ./scripts/ci-local.sh   # pre-push: disk-space gate then curated `act` suite (default = scorecard-drift + docs-hygiene + architecture_drift + scripts-tests, ~3m total); catches CI-shape failures locally before burning a GH runner slot — see .actrc for image/arch pinning and docs/ci/local-validation.md for the full workflow (Issue #3577, PR #3568)
-cargo test --workspace --exclude fluxion-tauri --no-fail-fast   # ★ DEVELOPER-FACING DEFAULT ★ — full workspace (8,680 tests / 108 ignored) minus fluxion-tauri (its proc-macro build needs `npm run build` in fluxion-tauri/frontend/ to materialise ../frontend/dist — Issue #3126); this is the LOCAL-DEBUG equivalent of the CI `cargo nextest run --workspace --all-targets --test-threads=2 --no-fail-fast` (Issue #3366 / ADR-0014, PR #3369); both runners share `.config/nextest.toml::concurrency = 2` defaults. Install `.githooks/pre-push` (see below) to enforce this on `git push`.
+cargo test --workspace --exclude fluxion-tauri --no-fail-fast   # ★ DEVELOPER-FACING DEFAULT ★ — full workspace (8,405 tests / 119 ignored) minus fluxion-tauri (its proc-macro build needs `npm run build` in fluxion-tauri/frontend/ to materialise ../frontend/dist — Issue #3126); this is the LOCAL-DEBUG equivalent of the CI `cargo nextest run --workspace --all-targets --test-threads=2 --no-fail-fast` (Issue #3366 / ADR-0014, PR #3369); both runners share `.config/nextest.toml::concurrency = 2` defaults. Install `.githooks/pre-push` (see below) to enforce this on `git push`.
 cargo nextest run --workspace --all-targets --test-threads=2 --no-fail-fast   # canonical CI command (Issue #3366 / ADR-0014, PR #3369); see docs/ci/nextest-rollout.md for rationale and .github/workflows/rust-tests.yml::test for the actual matrix invocation
-cargo test                                           # ⚠ ROOT CRATE ONLY (NOT the full suite) — `default-members = ["."]` makes bare `cargo test` skip the 4,369 sibling-crate tests; do NOT rely on this as a green-light signal
+cargo test                                           # ⚠ ROOT CRATE ONLY (NOT the full suite) — `default-members = ["."]` makes bare `cargo test` skip the 4,398 sibling-crate tests; do NOT rely on this as a green-light signal
 cargo test -p fluxion <test_name>                    # one named test (intentional single-crate scope)
 cargo test --test zone_balance_eplus_isolation       # energy-conservation gate
 cargo test --test ashrae_140_validation              # ASHRAE suite (one of several ashrae_140 binaries)
@@ -50,10 +50,10 @@ The hook invokes `cargo test --workspace --exclude fluxion-tauri --no-fail-fast`
 
 | Source | Suite | Tests | Ignored | Notes |
 |---|---|---|---|---|
-| `cargo test --lib` | root crate unit tests | 4,311 | 7 | matches `tests/test_inventory.json::totals.lib_tests_root` (the AST-regex committed inventory) |
-| `cargo test --workspace --exclude fluxion-tauri` | full workspace (lib + integration + bin) | 8,680 | 108 | `tests/test_inventory.json::totals.workspace_tests` (AST-regex; `cargo test --workspace -- --list` produces a slightly different count — see `tests/reference_data/test_inventory_baseline.json::verified_at_head_baseline` for the cargo-verified figures) |
-| AST-regex inventory | committed in `tests/test_inventory.json` | 8,680 | 108 | non-runtime snapshot, used by the drift gate (`--no-verify`) |
-| Cargo auto-discovered test binaries | `<crate>/tests/*.rs` + `[[test]] path = "tests/<sub>/<foo>.rs"` | 301 | n/a | matches `tests/test_inventory.json::totals.test_binaries` |
+| `cargo test --lib` | root crate unit tests | 4,007 | 8 | matches `tests/test_inventory.json::totals.lib_tests_root` (the AST-regex committed inventory) |
+| `cargo test --workspace --exclude fluxion-tauri` | full workspace (lib + integration + bin) | 8,405 | 119 | `tests/test_inventory.json::totals.workspace_tests` (AST-regex; `cargo test --workspace -- --list` produces a slightly different count — see `tests/reference_data/test_inventory_baseline.json::verified_at_head_baseline` for the cargo-verified figures) |
+| AST-regex inventory | committed in `tests/test_inventory.json` | 8,405 | 119 | non-runtime snapshot, used by the drift gate (`--no-verify`) |
+| Cargo auto-discovered test binaries | `<crate>/tests/*.rs` + `[[test]] path = "tests/<sub>/<foo>.rs"` | 308 | n/a | matches `tests/test_inventory.json::totals.test_binaries` |
 
 Refreshing the canonical inventory (Issue #3442 acceptance): run `python3 scripts/generate_test_inventory.py --verify` locally and commit the regenerated `tests/test_inventory.json`. The drift gate (next section) will fail any test-adding PR that does not bump the baseline ratchet in the same PR.
 
