@@ -770,9 +770,23 @@ pub struct SurrogateManager {
 ```rust
 pub trait HeatConductionSolver: Send + Sync {
     fn name(&self) -> &str;
-    fn initialize(&mut self, wall: &BuildingAssembly) -> Result<(), SolverError>;
-    fn step(&mut self, dt: f64, T_int: f64, T_ext: f64, h_int: f64, h_ext: f64) -> Result<f64, SolverError>;
+    fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError>;
+    fn step(
+        &mut self,
+        timestep: Time,
+        T_interior: Temperature,
+        T_exterior: Temperature,
+        h_interior: HeatTransferCoefficient,
+        h_exterior: HeatTransferCoefficient,
+    ) -> Result<HeatFlux, SolverError>;
     fn energy_storage_rate(&self) -> f64;
+    fn steady_state_flux(
+        &self,
+        T_interior: Temperature,
+        T_exterior: Temperature,
+    ) -> Result<HeatFlux, SolverError> {
+        ...
+    }
     fn is_valid(&self) -> bool;
 }
 ```
@@ -794,9 +808,14 @@ pub trait ThermalModelTrait: Send + Sync {
         surrogates: &SurrogateManager,
         use_surrogates: bool,
     ) -> f64;
+    fn apply_parameters(&mut self, params: &[f64]);
+    fn zone_area(&self) -> f64;
+    fn heating_setpoint(&self) -> f64;
+    fn cooling_setpoint(&self) -> f64;
+    fn hvac_power_demand(&self, timestep: usize, outdoor_temp: f64) -> f64;
+    fn is_valid(&self) -> bool;
+    fn get_comfort_metrics(&self) -> Vec<ZoneComfortMetrics>;
     fn set_twin_correction(&mut self, correction: &TwinCorrection);
-    // ... (per-timestep load/temperature setters live on the concrete
-    //      ThermalModel / ThermalModelData type, not on this trait.)
 }
 ```
 
@@ -805,9 +824,16 @@ pub trait ThermalModelTrait: Send + Sync {
 ### VentilationSchedule (sim/ventilation.rs)
 
 ```rust
-pub trait VentilationSchedule {
-    fn get_ach(&self, hour: usize) -> f64;
-    fn ach_to_conductance(ach: f64, volume: f64, rho: f64, cp: f64) -> f64;
+pub trait VentilationSchedule: Debug + Send + Sync {
+    fn get_ach(
+        &self,
+        hour: usize,
+        T_outdoor: f64,
+        T_indoor: f64,
+        wind_speed: f64,
+        volume: f64,
+    ) -> f64;
+    fn clone_box(&self) -> Box<dyn VentilationSchedule>;
 }
 ```
 

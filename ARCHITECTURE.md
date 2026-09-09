@@ -593,13 +593,26 @@ The standard formula's endpoint limits (0 at β=0 and ρ·GHI at β=180) are inv
 pub trait HeatConductionSolver: Send + Sync {
     fn name(&self) -> &str;
     fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError>;
-    fn step(&mut self, dt: f64, T_int: f64, T_ext: f64, h_int: f64, h_ext: f64) -> Result<f64, SolverError>;
+    fn step(
+        &mut self,
+        timestep: Time,
+        T_interior: Temperature,
+        T_exterior: Temperature,
+        h_interior: HeatTransferCoefficient,
+        h_exterior: HeatTransferCoefficient,
+    ) -> Result<HeatFlux, SolverError>;
     fn energy_storage_rate(&self) -> f64;
+    fn steady_state_flux(
+        &self,
+        T_interior: Temperature,
+        T_exterior: Temperature,
+    ) -> Result<HeatFlux, SolverError> {
+        // default returns SolverError::InvalidConfig
+        ...
+    }
     fn is_valid(&self) -> bool;
 }
 ```
-
-> _Note: the `step` line above is illustrative (primitive `f64`). The actual signature in `src/physics/solver_trait.rs` uses newtype units — `timestep: Time`, `T_interior: Temperature`, `h_interior: HeatTransferCoefficient` — and returns `Result<HeatFlux, SolverError>`. The `initialize` parameter is `&WallSpec` (not `&BuildingAssembly`)._
 
 > **Trait contract — query vs state-advancing separation** (added in #1392, fix for the pre-existing bug fixed by `steady_state_flux`):
 >
@@ -676,11 +689,20 @@ All conduction paths in Module 3 use a single source of truth for the exterior f
 **Key trait**: `VentilationSchedule`
 
 ```rust
-pub trait VentilationSchedule {
-    fn get_ach(&self, hour: usize) -> f64;
-    fn ach_to_conductance(ach: f64, volume: f64, rho: f64, cp: f64) -> f64;
+pub trait VentilationSchedule: Debug + Send + Sync {
+    fn get_ach(
+        &self,
+        hour: usize,
+        T_outdoor: f64,
+        T_indoor: f64,
+        wind_speed: f64,
+        volume: f64,
+    ) -> f64;
+    fn clone_box(&self) -> Box<dyn VentilationSchedule>;
 }
 ```
+
+> _Note: `ach_to_conductance` is a free associated function (`src/sim/ventilation.rs`), not a trait method — see "Key functions" below._
 
 **Key functions**:
 - `calculate_wind_infiltration_ach(wind_speed, height, shielding) -> f64`
@@ -744,7 +766,12 @@ pub trait ThermalModelTrait: Send + Sync {
     fn set_temperatures(&mut self, temperatures: &[f64]);
     fn mode(&self) -> ThermalModelMode;
     fn set_mode(&mut self, mode: ThermalModelMode);
-    fn solve_timesteps(&mut self, steps: usize, surrogates: &SurrogateManager, use_surrogates: bool) -> f64;
+    fn solve_timesteps(
+        &mut self,
+        steps: usize,
+        surrogates: &SurrogateManager,
+        use_surrogates: bool,
+    ) -> f64;
     fn apply_parameters(&mut self, params: &[f64]);
     fn zone_area(&self) -> f64;
     fn heating_setpoint(&self) -> f64;
@@ -752,6 +779,7 @@ pub trait ThermalModelTrait: Send + Sync {
     fn hvac_power_demand(&self, timestep: usize, outdoor_temp: f64) -> f64;
     fn is_valid(&self) -> bool;
     fn get_comfort_metrics(&self) -> Vec<ZoneComfortMetrics>;
+    fn set_twin_correction(&mut self, correction: &TwinCorrection);
 }
 ```
 

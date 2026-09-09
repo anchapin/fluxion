@@ -626,6 +626,253 @@ def check_cycle_edge_count_drift(arch_content: str) -> list[str]:
     return findings
 
 
+# Goal #5 swap-point traits whose doc code blocks must mirror the actual
+# source signatures (Issue #3576). The four traits AGENTS.md names as the
+# load-bearing swap-point contract for ML-surrogate runtime swapping. Any
+# change to the listed markdown doc blocks or to the listed source files
+# runs through `check_swap_point_doc_block_drift` below; a future silent
+# drift between docs and code fails this script (PR-blocking) instead of
+# only being caught when a reviewer happens to re-read both sides.
+SWAP_POINT_TRAIT_DOCS: list[tuple[str, Path]] = [
+    ("HeatConductionSolver", REPO_ROOT / "ARCHITECTURE.md"),
+    ("HeatConductionSolver", REPO_ROOT / "CODEBASE_MAP.md"),
+    ("VentilationSchedule", REPO_ROOT / "ARCHITECTURE.md"),
+    ("VentilationSchedule", REPO_ROOT / "CODEBASE_MAP.md"),
+    ("ThermalModelTrait", REPO_ROOT / "ARCHITECTURE.md"),
+    ("ThermalModelTrait", REPO_ROOT / "CODEBASE_MAP.md"),
+]
+
+
+def _extract_doc_block_methods(block: str) -> dict[str, str]:
+    """Parse a fenced ```rust code block and return `{fn_name: receiver}`.
+
+    Mirrors the multi-line `fn` accumulator in `parse_trait_methods` above
+    so doc-block methods use the same heuristics as source-code methods.
+    Returns receivers as ``"&self"``, ``"&mut self"``, or ``""`` (static).
+    The set of method names is the diff target for the swap-point drift
+    check; the receiver comparison is the secondary signal — a doc that
+    lists ``fn step(&self, ...)`` when the real trait has
+    ``fn step(&mut self, ...)`` is a hard regression because it changes
+    whether the caller can borrow or must mutably borrow the solver.
+    """
+    methods: dict[str, str] = {}
+    lines = block.split("\n")
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].lstrip()
+        if not stripped.startswith("fn ") or stripped.startswith("///"):
+            i += 1
+            continue
+        accumulated = stripped
+        paren_depth = accumulated.count("(") - accumulated.count(")")
+        i += 1
+        while i < len(lines) and paren_depth > 0:
+            accumulated += " " + lines[i].strip()
+            paren_depth += lines[i].count("(") - lines[i].count(")")
+            i += 1
+        if paren_depth > 0:
+            continue
+        if not (
+            accumulated.rstrip().endswith(";")
+            or accumulated.rstrip().endswith("{")
+            or accumulated.rstrip().endswith("...")
+        ):
+            while i < len(lines):
+                tail = lines[i].rstrip()
+                accumulated += " " + lines[i].strip()
+                i += 1
+                if (
+                    tail.endswith(";")
+                    or tail.endswith("{")
+                    or tail.endswith("...")
+                ):
+                    break
+        fn_match = re.match(r"fn\s+(\w+)\s*\(([^)]*)\)", accumulated)
+        if not fn_match:
+            continue
+        fn_name = fn_match.group(1)
+        params_str = fn_match.group(2)
+        receiver = ""
+        if "&mut self" in params_str:
+            receiver = "&mut self"
+        elif "&self" in params_str:
+            receiver = "&self"
+        methods[fn_name] = receiver
+    return methods
+
+
+def _extract_doc_block_trait_methods(
+    doc_path: Path, trait_name: str
+) -> dict[str, str] | None:
+    """Find every ``pub trait <TraitName>`` code block in `doc_path` and
+    union the methods from each occurrence. Returns ``None`` if the
+    doc has no ``pub trait <TraitName>`` block at all (e.g. the
+    swap-point was renamed or moved between doc files).
+    """
+    if not doc_path.exists():
+        return None
+    content = doc_path.read_text(encoding="utf-8")
+    blocks: list[str] = []
+    fence_re = re.compile(
+        r"```rust\s*\n(.*?)```", re.DOTALL
+    )
+    for m in fence_re.finditer(content):
+        block_body = m.group(1)
+        if re.search(rf"\bpub\s+trait\s+{re.escape(trait_name)}\b", block_body):
+            blocks.append(block_body)
+    if not blocks:
+        return None
+    merged: dict[str, str] = {}
+    for block in blocks:
+        for name, receiver in _extract_doc_block_methods(block).items():
+            merged[name] = receiver
+    return merged
+
+
+def _extract_doc_block_param_counts(
+    doc_path: Path, trait_name: str
+) -> dict[str, int] | None:
+    """Like `_extract_doc_block_trait_methods` but returns the parameter
+    *count* (excluding `self`) for each `fn`. Used by the swap-point
+    drift check to catch the cheaper form of param-list drift (e.g. a
+    doc that drops one of the typed-unit params) without doing full
+    type comparison. Returns ``None`` when no trait block is found.
+    """
+    if not doc_path.exists():
+        return None
+    content = doc_path.read_text(encoding="utf-8")
+    blocks: list[str] = []
+    fence_re = re.compile(r"```rust\s*\n(.*?)```", re.DOTALL)
+    for m in fence_re.finditer(content):
+        body = m.group(1)
+        if re.search(rf"\bpub\s+trait\s+{re.escape(trait_name)}\b", body):
+            blocks.append(body)
+    if not blocks:
+        return None
+    counts: dict[str, int] = {}
+    for block in blocks:
+        lines = block.split("\n")
+        i = 0
+        while i < len(lines):
+            stripped = lines[i].lstrip()
+            if not stripped.startswith("fn ") or stripped.startswith("///"):
+                i += 1
+                continue
+            accumulated = stripped
+            paren_depth = accumulated.count("(") - accumulated.count(")")
+            i += 1
+            while i < len(lines) and paren_depth > 0:
+                accumulated += " " + lines[i].strip()
+                paren_depth += lines[i].count("(") - lines[i].count(")")
+                i += 1
+            if paren_depth > 0:
+                continue
+            if not (
+                accumulated.rstrip().endswith(";")
+                or accumulated.rstrip().endswith("{")
+                or accumulated.rstrip().endswith("...")
+            ):
+                while i < len(lines):
+                    tail = lines[i].rstrip()
+                    accumulated += " " + lines[i].strip()
+                    i += 1
+                    if (
+                        tail.endswith(";")
+                        or tail.endswith("{")
+                        or tail.endswith("...")
+                    ):
+                        break
+            fn_match = re.match(r"fn\s+(\w+)\s*\(([^)]*)\)", accumulated)
+            if not fn_match:
+                continue
+            fn_name = fn_match.group(1)
+            params_str = fn_match.group(2).strip()
+            non_self = [
+                p
+                for p in params_str.split(",")
+                if p.strip()
+                and not p.strip().startswith("&mut self")
+                and not p.strip().startswith("&self")
+            ]
+            counts[fn_name] = len(non_self)
+    return counts
+
+
+def check_swap_point_doc_block_drift() -> list[str]:
+    """Issue #3576 — Goal #5 swap-point doc blocks must mirror the
+    actual Rust trait source. Diff method-name sets and receiver kinds
+    between each `(trait, markdown)` pair in `SWAP_POINT_TRAIT_DOCS` and
+    the parsed source contract; emit one finding per mismatch. The
+    check intentionally avoids `cargo expand` (which requires nightly
+    Rust and is not available in CI) — it re-uses the same parser the
+    baseline-vs-source comparison uses, so the comparison is symmetric.
+    """
+    findings: list[str] = []
+    contracts = extract_trait_contracts()
+    seen_pairs: set[tuple[str, Path]] = set()
+    for trait_name, doc_path in SWAP_POINT_TRAIT_DOCS:
+        if (trait_name, doc_path) in seen_pairs:
+            continue
+        seen_pairs.add((trait_name, doc_path))
+        rel_doc = doc_path.relative_to(REPO_ROOT)
+        doc_methods = _extract_doc_block_trait_methods(doc_path, trait_name)
+        if doc_methods is None:
+            findings.append(
+                f"DOC DRIFT: No `pub trait {trait_name}` code block "
+                f"found in {rel_doc} (Issue #3576 — Goal #5 swap-point "
+                f"must be documented)"
+            )
+            continue
+        contract = contracts.get(trait_name)
+        if contract is None:
+            continue
+        source_methods = {n: sig.receiver for n, sig in contract.methods.items()}
+        only_in_source = sorted(set(source_methods) - set(doc_methods))
+        only_in_doc = sorted(set(doc_methods) - set(source_methods))
+        for name in only_in_source:
+            findings.append(
+                f"DOC DRIFT: `{trait_name}::{name}` exists in "
+                f"{contract.source_file} but is missing from the "
+                f"{rel_doc} code block (Issue #3576)"
+            )
+        for name in only_in_doc:
+            findings.append(
+                f"DOC DRIFT: `{trait_name}::{name}` appears in the "
+                f"{rel_doc} code block but is not a method on the "
+                f"trait in {contract.source_file} (Issue #3576)"
+            )
+        for name in sorted(set(source_methods) & set(doc_methods)):
+            if source_methods[name] != doc_methods[name]:
+                findings.append(
+                    f"DOC DRIFT: `{trait_name}::{name}` receiver is "
+                    f"`{doc_methods[name]}` in {rel_doc} but "
+                    f"`{source_methods[name]}` in "
+                    f"{contract.source_file} (Issue #3576)"
+                )
+
+        # Param-count check: catches the cheaper form of param-list
+        # drift (e.g. a doc that drops one of the typed-unit params).
+        # The Issue #3576 acceptance criterion asks for "method names +
+        # receiver kinds"; this is a low-cost extension that catches
+        # the exact symptom the issue body calls out (5 typed-unit
+        # params collapsed to 5 f64 params — same count, but wrong
+        # count is the more common case the issue actually surfaced).
+        doc_counts = _extract_doc_block_param_counts(doc_path, trait_name)
+        if doc_counts is not None:
+            for method_name, source_sig in contract.methods.items():
+                if method_name not in doc_counts:
+                    continue
+                src_count = len(source_sig.params)
+                if doc_counts[method_name] != src_count:
+                    findings.append(
+                        f"DOC DRIFT: `{trait_name}::{method_name}` has "
+                        f"{doc_counts[method_name]} params in "
+                        f"{rel_doc} but {src_count} in "
+                        f"{contract.source_file} (Issue #3576)"
+                    )
+    return findings
+
+
 def check_drift() -> tuple[list[str], bool]:
     """Run all drift checks. Returns (findings, baseline_was_created)."""
     findings = []
@@ -744,6 +991,14 @@ def check_drift() -> tuple[list[str], bool]:
 
     # --- Check 6: cycle-edge count claims vs guard baselines (#3460) ---
     findings.extend(check_cycle_edge_count_drift(arch_content))
+
+    # --- Check 7: swap-point doc code blocks vs source signatures (#3576) ---
+    # The drift check above only compares against the baseline JSON; the
+    # trait code blocks in ARCHITECTURE.md / CODEBASE_MAP.md can silently
+    # diverge from the source without tripping the check. Goal #5 of
+    # AGENTS.md pins these four traits as the load-bearing swap-point
+    # contract, so any doc-block vs source drift fails the script.
+    findings.extend(check_swap_point_doc_block_drift())
 
     return findings, baseline_created
 
