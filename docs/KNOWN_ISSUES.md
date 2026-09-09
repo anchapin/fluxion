@@ -1204,7 +1204,7 @@ The fix is **structural** — the `GaugeSolver` rework (#1465 / #1462) — and t
 
 ### External references
 
-- `docs/ASHRAE140_RESULTS.md` — current pass-rate snapshot (`SCORECARD.md` Last Updated 2026-08-16: 14.3 % headline, MAE 51.03 %; refresh on every SCORECARD drift > `drift.max_pass_rate_change_pp = 2.0` per `release_gates.yaml`)
+- `docs/ASHRAE140_RESULTS.md` — current pass-rate snapshot. **Do not hard-code headline figures here** — see `SCORECARD.md` for the live `Last Updated` date, pass rate, and MAE (regenerate with `python3 scripts/generate_scorecard.py`); refresh on every SCORECARD drift > `drift.max_pass_rate_change_pp = 2.0` per `release_gates.yaml`. The `scripts/check_scorecard_data_sources_consistent.py` gate (Issue #3578) blocks this file from quoting stale tokens.
 - `docs/ASHRAE140_MULTI_ZONE_RESULTS.md` — Case 960 (sunspace 2-zone) and Case 970 (5-zone cross-coupling, post-#1446 / #1467) results. **Authoritative** for Cases 960 and 970. Case 970 currently fails 4 / 4 reference-band metrics on the 2026-08-16 snapshot — tracked under §LIMIT-23 / #3552.
 - `docs/adr/0007-gauge-solver-structural-work.md` — structural-work tracking stub (Status: Accepted — Phase A8 production-path switchover landed via Issue #3291 / PR #3482, gated on the `gauge-solver` cargo feature / §LIMIT-21 β-soak closure)
 - `docs/gauge_solver_scalability.md` — `MultiZoneGaugeSolver` scalability characterisation (Issue #1771)
