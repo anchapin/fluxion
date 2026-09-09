@@ -548,3 +548,124 @@ fn wasm_get_zone_temps_length_match() {
     assert_eq!(temps[1], 21.0);
     assert_eq!(temps[2], 24.0);
 }
+
+// ---------------------------------------------------------------------------
+// Issue #3595 — ASHRAE 140 FFI smoke test.
+//
+// Exercises `run_full_annual()` for the ASHRAE 600 baseline through the
+// wasm-binding surface and asserts the returned `total_energy_kwh` lies
+// within the published ±15% annual-energy band. Fail-closed on a
+// binding-only regression without modifying the Rust strict-energy-gate.
+// ---------------------------------------------------------------------------
+
+/// ASHRAE 140 Case 600 annual-energy band (low-mass baseline).
+///
+/// Source: `tests/reference_data/zone_balance/case_600_energy_reference.csv`
+///
+///   annual_heating: ref_midpoint=5.075 MWh, ref [4.36, 5.79], tolerance_pct=15 → accept [4.314, 5.836] MWh
+///   annual_cooling: ref_midpoint=5.030 MWh, ref [3.92, 6.14], tolerance_pct=15 → accept [4.275, 5.784] MWh
+///
+/// Converted to kWh for direct comparison against `total_energy_kwh`.
+mod ashrae_600_baseline_band {
+    /// Lower bound on annual heating (kWh) for the ±15% gate.
+    pub const ANNUAL_HEATING_MIN_KWH: f64 = 4314.0;
+    /// Upper bound on annual heating (kWh) for the ±15% gate.
+    pub const ANNUAL_HEATING_MAX_KWH: f64 = 5836.0;
+    /// Lower bound on annual cooling (kWh) for the ±15% gate.
+    pub const ANNUAL_COOLING_MIN_KWH: f64 = 4275.0;
+    /// Upper bound on annual cooling (kWh) for the ±15% gate.
+    pub const ANNUAL_COOLING_MAX_KWH: f64 = 5784.0;
+}
+
+/// Issue #3595 FFI smoke test — ASHRAE 600 baseline through the wasm
+/// binding.
+///
+/// Walks 8760 hourly `step()` calls (one year) on a 1-zone configuration
+/// that mirrors the published ASHRAE 140 Case 600 envelope (low-mass
+/// single-zone, heating setpoint 20°C, cooling setpoint 27°C), then sums
+/// `total_heating_kw` / `total_cooling_kw` returned by `step()` to
+/// compute `total_energy_kwh` and asserts it lies within the published
+/// ±15% annual-energy band.
+///
+/// The StepResult struct (defined in `src/lib.rs`) returns `kW` for the
+/// current timestep. With 1-hour timesteps, summing across 8760 steps
+/// yields kWh directly. The test is fail-closed — a binding-only
+/// regression that breaks ASHRAE 600 simulation through the wasm
+/// surface turns this test red.
+#[wasm_bindgen_test]
+fn wasm_run_full_annual_ashrae_600_baseline_total_energy_within_published_band() {
+    // ASHRAE 140 Case 600 is a single-zone, low-mass model with
+    // 20°C heating / 27°C cooling. The default FluidSimulationConfig
+    // defaults to num_zones=5 / 20°C heat / 24°C cool; we override to
+    // match the published ASHRAE 600 envelope exactly.
+    let config = FluidSimulationConfig {
+        building: "case_600".to_string(),
+        num_zones: 1,
+        weather: "ASHRAE_600".to_string(),
+        initial_temps: Some(vec![20.0]),
+        heating_setpoint: 20.0,
+        cooling_setpoint: 27.0,
+        ..Default::default()
+    };
+    let mut sim = FluidSimulation::new(&serde_json::to_string(&config).unwrap())
+        .expect("FluidSimulation::new(ASHRAE 600 baseline) must succeed");
+
+    // 8760 hourly timesteps = one full year (the ASHRAE 140 standard).
+    let steps = 8760_usize;
+    let mut total_heating_kwh = 0.0_f64;
+    let mut total_cooling_kwh = 0.0_f64;
+
+    for _ in 0..steps {
+        // step() returns a JSON string of StepResult { total_heating_kw,
+        // total_cooling_kw, ... }. With 1-hour timesteps, summing kW
+        // directly yields kWh (1 kW × 1 h = 1 kWh).
+        let result_js = sim.step(1.0).expect("step() must succeed");
+        let result_json: serde_json::Value = serde_json::from_str(
+            &result_js.as_string().expect("step() must return a string"),
+        )
+        .unwrap();
+        let h = result_json["total_heating_kw"].as_f64().unwrap();
+        let c = result_json["total_cooling_kw"].as_f64().unwrap();
+        // Reject NaN/Inf at the FFI boundary — these would silently
+        // corrupt the sum and bypass the ±15% gate (issue #2911).
+        assert!(h.is_finite(), "total_heating_kw must be finite, got {}", h);
+        assert!(c.is_finite(), "total_cooling_kw must be finite, got {}", c);
+        total_heating_kwh += h;
+        total_cooling_kwh += c;
+    }
+
+    // The 1-zone step() loop is the canonical "run_full_annual()" path
+    // for the wasm binding; current_hour() must agree with the step
+    // count.
+    assert_eq!(
+        sim.current_hour(),
+        steps as f64,
+        "current_hour must equal 8760 after stepping a full year"
+    );
+
+    let total_energy_kwh = total_heating_kwh + total_cooling_kwh;
+    // Always inside `[0, ∞)` for a valid ASHRAE 600 baseline. Catch
+    // silently-negative sums up front.
+    assert!(
+        total_energy_kwh.is_finite() && total_energy_kwh > 0.0,
+        "total_energy_kwh must be finite and positive, got {}",
+        total_energy_kwh
+    );
+
+    assert!(
+        total_heating_kwh >= ashrae_600_baseline_band::ANNUAL_HEATING_MIN_KWH
+            && total_heating_kwh <= ashrae_600_baseline_band::ANNUAL_HEATING_MAX_KWH,
+        "ASHRAE 600 annual heating {} kWh outside ±15% published band [{}, {}]",
+        total_heating_kwh,
+        ashrae_600_baseline_band::ANNUAL_HEATING_MIN_KWH,
+        ashrae_600_baseline_band::ANNUAL_HEATING_MAX_KWH,
+    );
+    assert!(
+        total_cooling_kwh >= ashrae_600_baseline_band::ANNUAL_COOLING_MIN_KWH
+            && total_cooling_kwh <= ashrae_600_baseline_band::ANNUAL_COOLING_MAX_KWH,
+        "ASHRAE 600 annual cooling {} kWh outside ±15% published band [{}, {}]",
+        total_cooling_kwh,
+        ashrae_600_baseline_band::ANNUAL_COOLING_MIN_KWH,
+        ashrae_600_baseline_band::ANNUAL_COOLING_MAX_KWH,
+    );
+}
