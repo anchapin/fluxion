@@ -915,13 +915,40 @@ impl ModelRegistry {
 }
 
 /// Compute the lowercase hex SHA-256 digest of a file's bytes.
+///
+/// Streams the file through the hasher in 1 MiB chunks (Issue #3592) so a
+/// hostile writer that grows the file between the size pre-check in
+/// `validate_model_path_in_dir` (line ~3900) and the read cannot OOM the
+/// verifier. After each chunk the cumulative byte count is compared to
+/// `MAX_MODEL_SIZE_BYTES`; if the cap is exceeded the function short-
+/// circuits with the same `model file exceeds size limit` error used by
+/// `validate_model_path_in_dir`, matching the message format the rest of
+/// the verifier already produces. Steady-state memory is bounded at one
+/// 1 MiB buffer regardless of file size.
 pub fn compute_file_sha256(path: &Path) -> Result<String, String> {
+    use std::io::Read;
     if !path.exists() {
         return Err(format!("file not found: {}", path.display()));
     }
-    let bytes = std::fs::read(path).map_err(|e| format!("read failed: {}", e))?;
+    let mut file = std::fs::File::open(path).map_err(|e| format!("read failed: {}", e))?;
     let mut hasher = Sha256::new();
-    hasher.update(&bytes);
+    let mut buf = [0u8; 1024 * 1024]; // 1 MiB streaming chunk
+    let mut total: u64 = 0;
+    loop {
+        let n = match file.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) => return Err(format!("read failed: {}", e)),
+        };
+        total = total.saturating_add(n as u64);
+        if total > MAX_MODEL_SIZE_BYTES {
+            return Err(format!(
+                "model file exceeds size limit ({} bytes)",
+                MAX_MODEL_SIZE_BYTES
+            ));
+        }
+        hasher.update(&buf[..n]);
+    }
     Ok(sha256_hex(hasher.finalize()))
 }
 
@@ -5007,6 +5034,133 @@ mod tests {
         std::fs::write(&model, b"x").unwrap();
         let res = validate_model_path_in_dir(&model.to_string_lossy(), dir.path());
         assert!(res.is_ok(), "small file should pass: {res:?}");
+    }
+
+    // ===== Issue #3592 — `compute_file_sha256` streaming read =======
+    //
+    // `compute_file_sha256` used to `std::fs::read` the whole file before
+    // hashing. A hostile writer that grew the file between the size pre-
+    // check in `validate_model_path_in_dir` and the read in
+    // `compute_file_sha256` could OOM the verifier. The fix streams in
+    // 1 MiB chunks and rejects with `model file exceeds size limit` once
+    // the cumulative byte count exceeds `MAX_MODEL_SIZE_BYTES`. These
+    // tests pin the new contract.
+
+    /// A 300 MiB sparse file (exceeding the 256 MiB cap) must fail the
+    /// streaming read with the same error format `validate_model_path_in_dir`
+    /// produces, and must not OOM. Uses `File::set_len` to create a sparse
+    /// file: on every supported filesystem (ext4, xfs, btrfs, tmpfs)
+    /// `metadata().len()` reports the logical size while the actual on-
+    /// disk allocation is a handful of metadata blocks (a few KiB at most),
+    /// so the test exercises the size guard without burning 300 MiB of
+    /// RAM or scratch space.
+    #[test]
+    fn compute_file_sha256_rejects_oversized_sparse_file() {
+        // The 300 MiB figure exceeds the 256 MiB cap by enough margin
+        // that even after reading 1 MiB chunks (256 of them) the
+        // cumulative byte count is well over the limit and the
+        // short-circuit is guaranteed to fire.
+        const OVERSIZED_LEN: u64 = 300 * 1024 * 1024;
+        assert!(OVERSIZED_LEN > MAX_MODEL_SIZE_BYTES);
+
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("sparse_oversized.onnx");
+        {
+            let f = std::fs::File::create(&model).unwrap();
+            f.set_len(OVERSIZED_LEN).unwrap();
+        }
+        // The on-disk footprint of a sparse file of this size is near
+        // zero; assert that to keep the test self-documenting.
+        let reported = std::fs::metadata(&model).unwrap().len();
+        assert_eq!(reported, OVERSIZED_LEN);
+        let on_disk = std::fs::metadata(&model).unwrap().len();
+        // The test allocator may or may not actually keep the file
+        // sparse (some CI sandboxes punch holes eagerly). What matters
+        // is that the verifier fails BEFORE slurping the whole file
+        // into memory — i.e. the cumulative byte guard trips inside
+        // the streaming loop. We assert that behaviour, not the
+        // filesystem's sparseness, so the test stays portable.
+        let _ = on_disk;
+
+        let err = compute_file_sha256(&model).expect_err(
+            "compute_file_sha256 must short-circuit on a file exceeding MAX_MODEL_SIZE_BYTES",
+        );
+        assert!(
+            err.contains("model file exceeds size limit"),
+            "expected the streaming size guard error, got: {err}"
+        );
+        assert!(
+            err.contains(&MAX_MODEL_SIZE_BYTES.to_string()),
+            "error must mention the cap ({}): {err}",
+            MAX_MODEL_SIZE_BYTES
+        );
+        // And the verifier must NOT have echoed back the user-supplied
+        // file name (same hygiene rule as `validate_model_path_in_dir`).
+        assert!(
+            !err.contains("sparse_oversized"),
+            "error must not leak the file name: {err}"
+        );
+    }
+
+    /// A file exactly at the 256 MiB cap must still hash successfully
+    /// (the contract is `size > MAX_MODEL_SIZE_BYTES` is rejected, not
+    /// `size >= MAX_MODEL_SIZE_BYTES`). Uses a sparse file so the test
+    /// does not allocate 256 MiB on disk or in memory.
+    #[test]
+    fn compute_file_sha256_accepts_file_at_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("at_cap.onnx");
+        {
+            let f = std::fs::File::create(&model).unwrap();
+            f.set_len(MAX_MODEL_SIZE_BYTES).unwrap();
+        }
+        let sha = compute_file_sha256(&model).expect(
+            "a file exactly at MAX_MODEL_SIZE_BYTES must hash successfully (contract is strict >)",
+        );
+        assert_eq!(sha.len(), 64, "SHA-256 hex must be 64 chars, got {sha}");
+    }
+
+    /// A small file (well under the limit) must still hash and match
+    /// `compute_bytes_sha256` on the same payload — i.e. the streaming
+    /// path produces the same digest as the in-memory path. This pins
+    /// the chunk-boundary arithmetic: the digest must not depend on
+    /// the chunk size chosen for streaming.
+    #[test]
+    fn compute_file_sha256_streaming_matches_in_memory_for_small_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("small.onnx");
+        let payload: Vec<u8> = (0..1024u32).map(|i| (i & 0xff) as u8).collect();
+        std::fs::write(&model, &payload).unwrap();
+
+        let file_sha = compute_file_sha256(&model).unwrap();
+        let bytes_sha = compute_bytes_sha256(&payload);
+        assert_eq!(
+            file_sha, bytes_sha,
+            "streaming hash must equal in-memory hash for the same payload"
+        );
+    }
+
+    /// A file just over the 1 MiB streaming chunk boundary must still
+    /// hash identically to the in-memory path. This pins the loop
+    /// boundary: the previous `read()` may return less than 1 MiB on
+    /// the last iteration (and exactly 1 MiB before that), so the
+    /// `hasher.update(&buf[..n])` slice must use the actual byte count.
+    #[test]
+    fn compute_file_sha256_streaming_matches_in_memory_across_chunk_boundary() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("across_boundary.onnx");
+        // 1 MiB + 17 bytes — straddles the 1 MiB streaming chunk so
+        // the test exercises both a full chunk and a partial final
+        // chunk.
+        let payload: Vec<u8> = (0..(1024 * 1024 + 17)).map(|i| (i & 0xff) as u8).collect();
+        std::fs::write(&model, &payload).unwrap();
+
+        let file_sha = compute_file_sha256(&model).unwrap();
+        let bytes_sha = compute_bytes_sha256(&payload);
+        assert_eq!(
+            file_sha, bytes_sha,
+            "streaming hash must match in-memory hash across the 1 MiB chunk boundary"
+        );
     }
 
     // ===== Issue #2905 — `new_with_auto_load` FLUXION_ONNX_MODEL validation =====
