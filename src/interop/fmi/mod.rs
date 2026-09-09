@@ -868,9 +868,30 @@ impl FmiImporter {
     ///
     /// Uses a streaming `quick-xml` reader so the full DOM is never
     /// materialised; only the elements Fluxion emits are recognised.
+    ///
+    /// # Security (issue #3591)
+    ///
+    /// The reader is hardened against XML External Entity (XXE) attacks:
+    ///
+    /// * `Config::expand_empty_elements` is explicitly disabled so a
+    ///   `<tag attr="…"/> ` self-closing tag can never silently expand to
+    ///   `<tag attr="…"></tag>` carrying injected content.
+    /// * Any `<!DOCTYPE …>` carrying a `SYSTEM` or `PUBLIC` keyword — or
+    ///   any DTD internal subset declaring an `<!ENTITY … SYSTEM "…">`
+    ///   or `<!NOTATION … SYSTEM "…">` external reference — is rejected
+    ///   with [`FmiError::ImportFailed`].
+    /// * Any general entity reference (`&name;`) other than the five
+    ///   XML-predefined entities (`&amp;`, `&lt;`, `&gt;`, `&quot;`,
+    ///   `&apos;`) or a numeric character reference (`&#10;`, `&#xA;`)
+    ///   is rejected — a custom entity could only originate from an
+    ///   external DTD that was already blocked above, but the check is
+    ///   kept as defense-in-depth.
     pub fn parse_model_description(xml: &str) -> Result<ImportedModelDescription, FmiError> {
         let mut reader = Reader::from_str(xml);
         reader.config_mut().trim_text(true);
+        // XXE guard (issue #3591): refuse to silently expand self-closing
+        // tags into open/close pairs.
+        reader.config_mut().expand_empty_elements = false;
 
         let mut desc = ImportedModelDescription::default();
         let mut buf = Vec::new();
@@ -885,6 +906,38 @@ impl FmiImporter {
                 .read_event_into(&mut buf)
                 .map_err(|e| FmiError::ImportFailed(format!("XML parse: {e}")))?;
             match event {
+                Event::DocType(ref dt) => {
+                    // XXE guard (issue #3591): reject any DTD that
+                    // references an external resource.  This covers
+                    // `<!DOCTYPE foo SYSTEM "…">`, `<!DOCTYPE foo PUBLIC
+                    // "…">`, `<!ENTITY x SYSTEM "…">`,
+                    // `<!ENTITY x PUBLIC "…">`, and `<!NOTATION y SYSTEM
+                    // "…">` because the SYSTEM/PUBLIC keywords are
+                    // reserved by the XML 1.0 spec and have no other
+                    // legitimate use inside a `modelDescription.xml`
+                    // (FMI 2.0 does not declare or require a DTD).
+                    let content = dt.as_ref();
+                    let upper = content.to_ascii_uppercase();
+                    if upper.contains("SYSTEM") || upper.contains("PUBLIC") {
+                        return Err(FmiError::ImportFailed(format!(
+                            "modelDescription.xml declares an external DTD or entity \
+                             reference (XXE guard, issue #3591): {content}"
+                        )));
+                    }
+                }
+                Event::GeneralRef(ref r) => {
+                    // XXE guard (issue #3591): only the five XML-predefined
+                    // entities and numeric character references are safe.
+                    let name = r.as_ref();
+                    let is_predefined = matches!(name, "amp" | "lt" | "gt" | "quot" | "apos");
+                    let is_numeric_ref = name.starts_with('#');
+                    if !is_predefined && !is_numeric_ref {
+                        return Err(FmiError::ImportFailed(format!(
+                            "modelDescription.xml references custom entity &{name}; \
+                             (XXE guard, issue #3591)"
+                        )));
+                    }
+                }
                 Event::Start(ref e) | Event::Empty(ref e) => {
                     let name = e.name();
                     match name.as_ref() {
