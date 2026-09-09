@@ -250,7 +250,46 @@ the campaign scripts touch (least privilege), e.g. `s3:PutObject` /
   pinned in this change. `git ls-remote <repo> refs/tags/<tag>` resolves a tag
   to its commit SHA before pinning.
 
-### 6. Adding a new workflow — checklist
+### 6. Docker base-image pinning (Issue #3580)
+
+The published `fluxion-rest` image is built from a multi-stage
+`Dockerfile`; both base images are pinned by SHA256 digest so a tag
+rotation upstream cannot silently swap the layer that lands inside the
+shipped image. CI enforces the pin fail-closed; the helper script
+keeps the pin fresh on a quarterly cadence.
+
+- **`Dockerfile` `FROM` lines use `@sha256:DIGEST` syntax**, with a
+  header comment documenting the upstream tag (`rust:1.87-bookworm` /
+  `debian:bookworm-slim`), the digest, and the date the pin was set.
+  Floating tags are not used for the build or runtime base images.
+- **`.github/workflows/docker.yml` `build-and-test` and `build-platform`
+  jobs** run a `Verify base image digest pins (Issue #3580)` step
+  *before* the build: `docker pull --quiet <image>@sha256:<pinned>`
+  followed by a `docker inspect --format='{{index .RepoDigests 0}}'`
+  cross-check. A digest drift fails the step with `::error::` and a
+  non-zero exit, halting the workflow before any build cost is paid.
+- **The `docker-compose.yml` local image tag** is `fluxion-rest:local`
+  (replacing the previous `fluxion-rest:latest`). The image is built
+  by the in-file `build:` block and is never pulled from a registry,
+  so there is no upstream digest to pin against — the `:local`
+  qualifier signals "build-only, not registry-tracked" so contributors
+  do not mistake it for an artifact with a published identity.
+- **Refresh cadence.** Re-run
+  `./scripts/pin_docker_base_images.sh` to bump the digests when the
+  upstream images are rebased. The script resolves
+  `RepoDigests[0]` from the local daemon, rewrites both `FROM` lines
+  in `Dockerfile`, and updates the matching `RUST_BUILDER_DIGEST` /
+  `DEBIAN_RUNTIME_DIGEST` env entries in `docker.yml` so the CI
+  assertion stays in lock-step with the Dockerfile. Wire
+  `pin_docker_base_images.sh --check` into a weekly cron job to
+  surface drift before it becomes a silent pin divergence.
+- **Out of scope for this control.** Intermediate package layers
+  installed via `apt-get install` inside the Dockerfile are not
+  pinned. The Debian/Ubuntu package manager pins are a separate
+  follow-up — for now, Trivy (`docker.yml::security`) catches
+  package-level CVEs.
+
+### 7. Adding a new workflow — checklist
 
 1. Add a top-level `permissions:` block. Start from `contents: read` and add a
    scope only if a step provably needs it.
@@ -264,7 +303,7 @@ the campaign scripts touch (least privilege), e.g. `s3:PutObject` /
 5. Never reference static cloud keys; use OIDC (`id-token: write` +
    `role-to-assume`) and document the required repo variable here.
 
-### 7. Self-hosted runner job execution policy (Issue #3445)
+### 8. Self-hosted runner job execution policy (Issue #3445)
 
 CI is the **enforcement layer** for every validation gate the project relies
 on — ASHRAE 140, energy conservation, nextest rollout, `h_tr_em`

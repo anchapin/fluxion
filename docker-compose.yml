@@ -5,7 +5,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: fluxion-rest:latest
+    # Image tag for the locally-built service (Issue #3580). The
+    # image is built by the `build:` block above — it is never pulled
+    # from a registry, so there is no upstream `@sha256:…` digest to
+    # pin. The `latest` floating tag is intentionally replaced with
+    # the explicit `local` qualifier so contributors reading this
+    # file cannot mistake it for a registry-tracked artifact; remote
+    # pinning is enforced on the build-time base images in the
+    # Dockerfile itself (`rust:1.87-bookworm`, `debian:bookworm-slim`).
+    image: fluxion-rest:local
     container_name: fluxion-rest
     restart: unless-stopped
     ports:
