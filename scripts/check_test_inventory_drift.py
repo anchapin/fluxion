@@ -115,9 +115,18 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #     ``src/validation/ashrae140/cases/build_case_routing_tests.rs``
 #     wired into the ``build_case`` router (Case 600 / 900 / 960 / 970
 #     regression of #3555 partial split).
+#   - 2026-09-09 (Issue #3599): bumped ``BASELINE_LIB_IGNORED`` from 7
+#     to 8 to accommodate 3 newly ``#[ignore]``-quarantined 9R4C
+#     legacy solver scratch-pool tests under Phase A8 / §LIMIT-21
+#     (Issue #3291). The 3 tests live in
+#     ``src/sim/thermal_model_physics/physics_impl/`` and panic on
+#     ``cargo test --features wiring-tracing`` — see QUARANTINE.md
+#     "Phase A8 / Issue #3599" subsection. ``BASELINE_WORKSPACE_IGNORED``
+#     stays at 123 (workspace ignored rises from 108 → 111, well below
+#     the ratchet).
 # ---------------------------------------------------------------------------
 BASELINE_LIB_TESTS = 4311
-BASELINE_LIB_IGNORED = 7
+BASELINE_LIB_IGNORED = 8
 BASELINE_WORKSPACE_TESTS = 8680
 BASELINE_WORKSPACE_IGNORED = 123
 BASELINE_TEST_BINARIES = 303
