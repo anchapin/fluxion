@@ -303,13 +303,9 @@ impl SurrogateInputs {
     /// NOTE: This generates placeholder synthetic values.
     /// Use `from_physics_data` for real physics-extracted training data.
     pub fn from_temps(temps: &[f64]) -> Self {
-        let hour_of_day = (std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-            / 3600) as usize
-            % 24;
-        let daily_cycle = (std::f64::consts::PI * (hour_of_day as f64 - 6.0) / 12.0).sin();
+        // Issue #3636: phase from input (matches analytical_loads #1335).
+        let phase = temps.first().copied().unwrap_or(12.0);
+        let daily_cycle = (std::f64::consts::PI * (phase - 6.0) / 12.0).sin();
         SurrogateInputs {
             exterior_temp: temps.first().copied().unwrap_or(20.0),
             zone_temp: temps.get(1).copied().unwrap_or(22.0),
