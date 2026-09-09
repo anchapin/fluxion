@@ -59,6 +59,29 @@ Use conventional commits:
 - All tests must pass before merge
 - Add tests for new functionality
 - Update tests when changing behavior
+- Quarantining a failing test? See [Quarantined tests](#quarantined-tests) below for the `tests/QUARANTINE.md` registry protocol.
+
+## Quarantined tests
+
+`tests/QUARANTINE.md` is the canonical registry of every `#[ignore]`-quarantined test in the workspace, mapped to its blocking issue, un-ignore criteria, owner, and status (Issue #3211 / #3393 / #3443). Without this registry, `#[ignore]` attributes accumulate silently and the actual CI coverage becomes opaque — that is exactly the regression Goal #7 (test correctness) is built to prevent.
+
+### When to add an entry
+
+When you push a PR that introduces a `#[ignore = "awaiting #N"]` (or the equivalent `#[ignore = "LIMIT-XX: …"]`) attribute — even temporarily — you MUST add a matching row to `tests/QUARANTINE.md` in the same PR. The `Issue` column must reference the blocker (a GitHub issue number or a `LIMIT-*` from `docs/KNOWN_ISSUES.md`), and the `Un-Ignore Criteria` column must describe what must be true before the `#[ignore]` is removed. Choose a `Category` from the list near the top of `tests/QUARANTINE.md` (`diagnostic`, `structural`, `performance`, `hardware`, `calibration`, `ci-broken`, `manual-baseline`, `pending-data`, `other`).
+
+When the blocking issue is later resolved, follow the Un-Ignore Checklist at the bottom of `tests/QUARANTINE.md`: remove the `#[ignore]`, verify CI is green, set `Status` to `closed`, and record the un-ignore PR in `Closed By`.
+
+### The auditor (`--strict`)
+
+`scripts/generate_quarantine_registry.py` scans `tests/**/*.rs` for `#[ignore]` attributes and cross-references them against `tests/QUARANTINE.md`. Default mode is informational (prints a report, exits 0). The **`--strict`** flag is the gate: it exits 1 when any orphan `#[ignore]` exists in code without a registry row, when any ghost row exists in the registry without a matching `#[ignore]`, or when the orphan / ghost count grows above the downward-only ratchet constants `BASELINE_ORPHANED_IGNORES` and `BASELINE_GHOST_ROWS` defined in `scripts/generate_quarantine_registry.py` (mirroring the `BASELINE_KNOWN_ORPHANS` / `BASELINE_WIRED_BUT_DEAD` pattern in `scripts/check_orphan_modules.py`, Issue #3459). Run it locally before pushing:
+
+```bash
+python3 scripts/generate_quarantine_registry.py --strict    # fail on orphan
+```
+
+The auditor’s per-row message includes the `(file, attribute-pattern)` key; when you fix a real orphan, the script will tell you exactly which line to delete from the registry AND which constant to lower (see also `tests/reference_data/test_inventory_baseline.json` and `docs/ci/nextest-rollout.md` line ~215 for the same downward-ratchet pattern applied to the test-inventory drift gate, Issue #3442).
+
+For the broader operational context (nextest rollout, suite overview, and how the quarantine counts feed into `tests/test_inventory.json`), see `docs/ci/nextest-rollout.md` and the `## Commands That Are Easy to Guess Wrong` section of `AGENTS.md`. For the structural-gap backstory on the `LIMIT-*` categories, see `docs/KNOWN_ISSUES.md` §1.1.
 
 ## Build Notes
 
