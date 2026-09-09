@@ -3452,8 +3452,10 @@ pub const ENV_ONNX_MODEL_SIGNATURE: &str = "FLUXION_ONNX_MODEL_SIGNATURE";
 /// ```
 ///
 /// Both single- and double-space separators are accepted, as is the
-/// `sha256sum -b` "binary mode" `*` prefix on the path. The first entry
-/// whose filename ends with the model basename wins.
+/// `sha256sum -b` "binary mode" `*` prefix on the path. The entry whose
+/// filename equals the model basename **exactly** wins (no
+/// `ends_with` matching either direction); see [`parse_sha256_manifest`]
+/// for the empty-filename rules. Issue #3582.
 pub fn verify_onnx_signature(model_path: &Path) -> Result<(), String> {
     open_and_verify_onnx(model_path).map(|_verified_bytes| ())
 }
@@ -3676,6 +3678,44 @@ fn read_manifest_hash(model_path: &Path) -> Option<Result<String, String>> {
 /// entry whose filename matches `model_path`. Accepts `# comment` lines,
 /// blank lines, single- or double-space separators, and the binary-mode
 /// `*` prefix on the filename.
+///
+/// ## Issue #3582 — strict filename binding
+///
+/// The previous implementation matched the entry's filename to the
+/// model basename with `filename.ends_with(expected_basename) ||
+/// expected_basename.ends_with(filename)`, and short-circuited on the
+/// first manifest entry that had no filename. That had two
+/// consequences:
+///
+/// 1. A manifest entry for `x.onnx` was accepted for any model whose
+///    basename ended with `x.onnx` (e.g. `evilx.onnx`,
+///    `attackx.onnx`). The bytes-hash check is the next line of
+///    defence, but the per-file binding is part of the contract on
+///    its own: AGENTS.md goal #5 (fail-closed) and `verify_onnx_signature`
+///    being the single point at which an ONNX model leaves the
+///    filesystem (#3573) both depend on the manifest entry naming the
+///    exact file being verified.
+///
+/// 2. The first manifest entry with no filename authorised every model
+///    that did not find a later basename-matching entry. A multi-entry
+///    manifest that starts with `<hash>` (no filename) would bind to
+///    whichever model was loaded first.
+///
+/// The rules below restore the per-file contract:
+///
+/// - The manifest entry's filename is reduced to its **basename**
+///   (last path component) and compared to `expected_basename` exactly.
+///   The previous `ends_with`/`starts_with` heuristic accepted
+///   `evilx.onnx` for an entry naming `x.onnx`; the basename-equality
+///   rule rejects that. The basename rule still accepts legitimate
+///   `sha256sum`-style entries whose path includes a relative directory
+///   prefix (e.g. `assets/dummy_surrogate.onnx` for model
+///   `dummy_surrogate.onnx`).
+/// - An empty `filename` is honoured only when the manifest holds
+///   exactly one entry AND `manifest_path.file_stem()` equals
+///   `expected_basename` (i.e. the manifest file is unambiguously named
+///   for this model). Otherwise the bare hash is rejected with a
+///   fail-closed error referencing Issue #3582.
 fn parse_sha256_manifest(
     manifest_path: &Path,
     contents: &str,
@@ -3691,6 +3731,16 @@ fn parse_sha256_manifest(
             model_path.display()
         ));
     }
+
+    // Two-pass: collect the first exact-match and the first
+    // empty-filename entry, then decide. Issue #3582. Returning
+    // eagerly on the first match would let a bare-hash entry earlier
+    // in the manifest shadow an exact match later, and would let a
+    // suffix-matching entry shadow an exact basename somewhere below.
+    let mut exact_match: Option<String> = None;
+    let mut empty_filename_hash: Option<String> = None;
+    let mut entry_count: usize = 0;
+
     for (lineno, raw) in contents.lines().enumerate() {
         let line = raw.trim_end();
         if line.is_empty() || line.starts_with('#') {
@@ -3703,7 +3753,7 @@ fn parse_sha256_manifest(
         let hash = split.next().unwrap_or("").trim();
         let filename_raw = split.next().unwrap_or("").trim();
         // sha256sum -b prefixes the path with `*`; strip it.
-        let filename = filename_raw
+        let filename_with_prefix = filename_raw
             .strip_prefix('*')
             .unwrap_or(filename_raw)
             .trim();
@@ -3726,14 +3776,69 @@ fn parse_sha256_manifest(
                 e
             ));
         }
-        if filename.is_empty() {
-            // No filename constraint — accept and require it be the only
-            // entry (typical for a single-model manifest).
-            return Ok(hash.to_ascii_lowercase());
+        entry_count += 1;
+        if filename_with_prefix.is_empty() {
+            // Remember the bare hash; honour it only at the end if the
+            // preconditions below are met (Issue #3582).
+            if empty_filename_hash.is_none() {
+                empty_filename_hash = Some(hash.to_ascii_lowercase());
+            }
+            continue;
         }
-        if filename.ends_with(expected_basename) || expected_basename.ends_with(filename) {
-            return Ok(hash.to_ascii_lowercase());
+        // Reduce the entry's filename to its basename before comparing.
+        // `sha256sum` writes the path as it was passed in (often a
+        // relative path like `assets/dummy_surrogate.onnx`); the binding
+        // contract is per-file, so directory prefixes are not part of
+        // the identity. Issue #3582: comparing full-path strings here
+        // would break legitimate `sha256sum` manifests, and comparing
+        // raw `ends_with` either-direction is exactly the bug being
+        // fixed. `Path::file_name()` strips any leading directory
+        // components and never panics on inputs without a separator.
+        let manifest_basename = std::path::Path::new(filename_with_prefix)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        if manifest_basename == expected_basename {
+            // Strict basename equality (Issue #3582). `x.onnx` does NOT
+            // match `evilx.onnx`, `attackx.onnx`, etc.
+            if exact_match.is_none() {
+                exact_match = Some(hash.to_ascii_lowercase());
+            }
         }
+        // Else: basename does not equal the model basename — ignore.
+        // The hash still has to match the bytes; we just refuse to
+        // bind the wrong filename.
+    }
+
+    if let Some(hash) = exact_match {
+        return Ok(hash);
+    }
+    if let Some(hash) = empty_filename_hash {
+        if entry_count == 1 {
+            // Single-entry bare-hash manifest — only safe to honour
+            // when the manifest file is unambiguously for THIS model
+            // (i.e. `manifest_path.file_stem() == expected_basename`).
+            // In normal usage `manifest_path` is built by
+            // `manifest_path_for(model_path)` and this condition holds
+            // automatically; the check is defence-in-depth against
+            // a manifest file being misnamed or being loaded for a
+            // different model.
+            let manifest_named_for_this_model =
+                manifest_path.file_stem().and_then(|s| s.to_str()) == Some(expected_basename);
+            if manifest_named_for_this_model {
+                return Ok(hash);
+            }
+        }
+        return Err(format!(
+            "{}: empty-filename entry cannot be bound to model {} \
+             (basename {:?}); manifest has {} entries and \
+             manifest_path.file_stem() does not equal the model basename \
+             (Issue #3582)",
+            manifest_path.display(),
+            model_path.display(),
+            expected_basename,
+            entry_count,
+        ));
     }
     Err(format!(
         "{}: no entry found for model {} (basename {:?})",
@@ -4077,6 +4182,166 @@ mod tests {
         assert!(
             err.contains("no entry found"),
             "error must explain why: {err}"
+        );
+    }
+
+    // ===== Issue #3582 — strict filename binding in parse_sha256_manifest =====
+    //
+    // The previous parser matched the manifest entry's filename to the
+    // model basename with `ends_with` either direction, and short-circuited
+    // on the first manifest entry that had no filename. That accepted
+    // `x.onnx` as authorisation for `evilx.onnx`, and let a multi-entry
+    // manifest with a leading bare-hash entry authorise whichever model
+    // was loaded first. These tests pin the strict, exact-match policy.
+
+    /// `evilx.onnx` MUST NOT match a manifest whose entry names `x.onnx`,
+    /// even though `evilx.onnx.ends_with("x.onnx")` is true. The old
+    /// `ends_with` heuristic accepted this; the strict parser must not.
+    #[test]
+    fn parse_sha256_manifest_rejects_suffix_collision_evilx() {
+        let manifest = Path::new("/tmp/x.onnx.sha256");
+        let model = Path::new("/tmp/evilx.onnx");
+        // Arbitrary 64-hex hash — we are testing the binding logic, not
+        // the byte-level integrity check (which `verify_onnx_signature`
+        // owns and which would also reject the case here).
+        let hash = "0".repeat(64);
+        let contents = format!("{hash}  x.onnx\n");
+
+        let err = parse_sha256_manifest(manifest, &contents, model)
+            .expect_err("evilx.onnx must NOT bind to a manifest entry for x.onnx (Issue #3582)");
+        assert!(
+            err.contains("no entry found"),
+            "expected no-match error, got: {err}"
+        );
+    }
+
+    /// Counter-test on the happy path: a manifest entry whose filename
+    /// equals the model basename exactly must still bind. This guards
+    /// against a regression on the strict equality check.
+    #[test]
+    fn parse_sha256_manifest_accepts_exact_basename_match() {
+        let manifest = Path::new("/tmp/x.onnx.sha256");
+        let model = Path::new("/tmp/x.onnx");
+        let hash = "1".repeat(64);
+        let contents = format!("{hash}  x.onnx\n");
+
+        let got = parse_sha256_manifest(manifest, &contents, model)
+            .expect("exact basename match must still bind (Issue #3582 regression guard)");
+        assert_eq!(got, hash);
+    }
+
+    /// The reverse-suffix case: a manifest entry whose basename is a
+    /// suffix of the model basename (e.g. entry for `y.onnx`, model
+    /// `evilx.onnx` — basename `evilx.onnx` ends with `y.onnx` only
+    /// if the model is `evilx.onnx` and the manifest names `evilx.onnx`
+    /// itself, which is a different file). The strict basename check
+    /// must reject it.
+    ///
+    /// The manifest uses a relative path prefix to also verify that the
+    /// basename extraction does not double-count directory components
+    /// (the old `ends_with` on the raw entry string would have rejected
+    /// or accepted depending on alignment; the strict basename rule
+    /// must always reject a wrong basename regardless of path prefix).
+    #[test]
+    fn parse_sha256_manifest_rejects_manifest_entry_for_different_basename() {
+        let manifest = Path::new("/tmp/evilx.onnx.sha256");
+        let model = Path::new("/tmp/evilx.onnx");
+        let hash = "2".repeat(64);
+        // Entry names a completely different file (`y.onnx`) at a
+        // relative path. Old code: `y.onnx.ends_with("evilx.onnx")` was
+        // false (good), but `expected_basename.ends_with(filename)` was
+        // also false, so it would have rejected this specific case too
+        // — but only by luck, not by the intended contract. The
+        // contract being pinned here is: basename equality is the only
+        // match criterion, full stop.
+        let contents = format!("{hash}  subdir/y.onnx\n");
+
+        let err = parse_sha256_manifest(manifest, &contents, model)
+            .expect_err("manifest entry for a different basename must NOT bind (Issue #3582)");
+        assert!(
+            err.contains("no entry found"),
+            "expected no-match error, got: {err}"
+        );
+    }
+
+    /// Counter-test on the relative-path case: a manifest entry whose
+    /// basename equals the model basename exactly but which carries a
+    /// relative directory prefix (the `sha256sum` output format) MUST
+    /// still bind. This pins the basename-extraction semantics and
+    /// protects the legitimate use of `sha256sum` for verifying the
+    /// committed `assets/dummy_surrogate.onnx` fixture (whose manifest
+    /// entry is `assets/dummy_surrogate.onnx`).
+    #[test]
+    fn parse_sha256_manifest_accepts_relative_path_with_matching_basename() {
+        let manifest = Path::new("/tmp/dummy_surrogate.onnx.sha256");
+        let model = Path::new("/tmp/dummy_surrogate.onnx");
+        let hash = "6".repeat(64);
+        let contents = format!("{hash}  assets/dummy_surrogate.onnx\n");
+
+        let got = parse_sha256_manifest(manifest, &contents, model)
+            .expect("relative-path manifest entry with matching basename must still bind");
+        assert_eq!(got, hash);
+    }
+
+    /// A multi-entry manifest whose first entry is a bare hash (no
+    /// filename) MUST NOT short-circuit and authorise an arbitrary
+    /// model. The old parser returned the first entry's hash
+    /// unconditionally when its filename was empty.
+    #[test]
+    fn parse_sha256_manifest_rejects_bare_hash_in_multi_entry_manifest() {
+        let manifest = Path::new("/tmp/evilx.onnx.sha256");
+        let model = Path::new("/tmp/evilx.onnx");
+        let hash = "3".repeat(64);
+        // First line: bare hash. Second line: entry for an unrelated
+        // file. Without the fix, the first entry's bare hash would
+        // short-circuit and `evilx.onnx` would bind.
+        let contents = format!("{hash}\n{hash}  unrelated.onnx\n");
+
+        let err = parse_sha256_manifest(manifest, &contents, model)
+            .expect_err("bare-hash entry in a multi-entry manifest must not bind (Issue #3582)");
+        assert!(
+            err.contains("Issue #3582"),
+            "error must reference Issue #3582 so operators find the runbook, got: {err}"
+        );
+    }
+
+    /// A single-entry bare-hash manifest whose filename matches the
+    /// model basename (`<model>.sha256` is the manifest for `<model>`)
+    /// MUST still bind. This preserves the single-model `<hash>`
+    /// manifest convention used by
+    /// `verify_onnx_signature_accepts_manifest_without_filename` and by
+    /// hand-written fixture sidecars.
+    #[test]
+    fn parse_sha256_manifest_accepts_single_bare_hash_when_manifest_named_for_model() {
+        let manifest = Path::new("/tmp/lonely.onnx.sha256");
+        let model = Path::new("/tmp/lonely.onnx");
+        let hash = "4".repeat(64);
+        let contents = format!("{hash}\n");
+
+        let got = parse_sha256_manifest(manifest, &contents, model).expect(
+            "single-entry bare-hash manifest whose stem matches the model basename must bind",
+        );
+        assert_eq!(got, hash);
+    }
+
+    /// A single-entry bare-hash manifest whose filename does NOT match
+    /// the model basename (e.g. a manifest generated for `benign.onnx`
+    /// loaded against `evil.onnx`) MUST NOT bind. Defence-in-depth
+    /// against misnamed manifest files.
+    #[test]
+    fn parse_sha256_manifest_rejects_single_bare_hash_for_other_model() {
+        let manifest = Path::new("/tmp/benign.onnx.sha256");
+        let model = Path::new("/tmp/evil.onnx");
+        let hash = "5".repeat(64);
+        let contents = format!("{hash}\n");
+
+        let err = parse_sha256_manifest(manifest, &contents, model).expect_err(
+            "single-entry bare-hash manifest must not bind to a model whose basename differs \
+                 (Issue #3582)",
+        );
+        assert!(
+            err.contains("Issue #3582"),
+            "error must reference Issue #3582, got: {err}"
         );
     }
 
