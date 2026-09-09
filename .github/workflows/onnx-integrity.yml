@@ -50,13 +50,14 @@ on:
   push:
     branches: [main, develop]
   pull_request:
+    # Issue #next-steps: scope the trigger narrowly to ONNX-relevant files
+    # only. The previous broader list (`src/ai/** + crates/** + Cargo.toml`)
+    # over-triggered on any Rust PR; the gate is only meaningful when the
+    # model, the manifest, or the surrogate load code path changes.
     paths:
       - 'models/surrogate_zone_thermal.onnx'
       - 'models/surrogate_zone_thermal.onnx.sha256'
       - 'src/ai/surrogate.rs'
-      - 'src/ai/**'
-      - 'crates/**'
-      - 'Cargo.toml'
       - '.github/workflows/onnx-integrity.yml'
   workflow_dispatch:
 
