@@ -1,0 +1,18 @@
+{
+  "_doc": "ASHRAE 140 Case 970 annual cooling reference for the surrogate-layer MAE gate (issue #3584). The surrogate's annual cooling kWh (solved by `SurrogateThermalModel::solve_timesteps`) is compared against the EnergyPlus published midpoint. The deviation is reported as a percentage of the band midpoint. The STRICT gate fires when an ONNX model is loaded and the deviation exceeds the 5% tolerance; the FALLBACK gate (no model loaded) reports the deviation informatively and exits 0 unless the deviation regresses beyond the recorded baseline beyond regression_tolerance_kwh. Update the `current_measured_kwh` / `current_gap_pct_of_mid` fields in the same PR that improves the engine (per RULES.md / AGENTS.md: never raise the baseline to hide a regression).",
+  "_source": "Extracted from tests/reference_data/zone_balance/case_970_energy_reference.csv (ASHRAE 140-2017 §B6.7 / ASHRAE 140-2023 Annex B8-3 inter-program envelope for the 5-zone cross-coupling case; validated across EnergyPlus 25.2.0, TRNSYS, ESP-r, DOE-2, BSIMAC, CSE, DeST). Same authoritative source as the strict ±15% annual-energy gate (issue #1333).",
+  "case_id": "970",
+  "description": "5-zone high-mass concrete 8m x 6m x 2.7m divided by interior partitions; multi-zone cross-coupling exercise (ASHRAE 140-2017 §B6.7); USA_CO_Golden-NREL.724666_TMY3.epw",
+  "metric": "annual_cooling_kwh",
+  "energyplus_reference_kwh": 8695.0,
+  "published_band_kwh": [7390.0, 10000.0],
+  "tolerance_pct": 5.0,
+  "_tolerance_pct_doc": "Strict ±5% gate vs. the EnergyPlus midpoint (Issue #2924 acceptance extended to all surrogate-routed cases per Issue #3584). When the ONNX model is loaded the gate fails on any deviation > 5% of |midpoint|. In fallback mode this becomes a regression ceiling instead (regression_tolerance_kwh below).",
+  "regression_tolerance_kwh": 500.0,
+  "_regression_tolerance_kwh_doc": "Fallback-mode regression ceiling. Larger than the 250 kWh ceiling used for the smaller-load cases because Case 970's absolute cooling load is the largest in the surrogate-routed set (8.695 MWh midpoint). 500 kWh is ≈5.7% of the midpoint, preserving the proportional regression guard at the same order of magnitude as the larger-load Cases 600/810/900.",
+  "current_measured_kwh": 0.0,
+  "_current_measured_kwh_doc": "Most recent measured surrogate value when the surrogate is in fallback mode (no trained ONNX model shipped). The surrogate's synthetic weather cycle (0–20 °C, see SurrogateThermalLoadAdapter::solve_timesteps in src/sim/thermal_model.rs) cannot reproduce the EnergyPlus outdoor temperature range that drives the published Case 970 cooling demand, so the measured kWh is 0 in the default build. The strict-ORT gate target is energyplus_reference_kwh × (1 ± tolerance_pct/100).",
+  "current_gap_pct_of_mid": 100.0,
+  "status": "known_fail",
+  "_status_doc": "Per AGENTS.md / RULES.md: this records the KNOWN gap from the EnergyPlus reference; it must never be loosened to hide a regression. Only lower the gap when the engine genuinely improves and commit the engine fix + baseline update together."
+}
