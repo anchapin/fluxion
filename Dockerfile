@@ -22,7 +22,12 @@
 # ============================================
 # Stage 1: Build the `fluxion-rest` binary
 # ============================================
-FROM rust:1.87-bookworm AS builder
+# Pinned base image — fail-closed supply-chain control (Issue #3580, Goal #5).
+#   * Tag:    rust:1.87-bookworm
+#   * Digest: sha256:251cec8da4689d180f124ef00024c2f83f79d9bf984e43c180a598119e326b84
+#   * Pinned: 2026-09-09
+#   * Refresh: re-run `scripts/pin_docker_base_images.sh` (quarterly cadence).
+FROM rust:1.87-bookworm@sha256:251cec8da4689d180f124ef00024c2f83f79d9bf984e43c180a598119e326b84 AS builder
 
 RUN apt-get update && apt-get install -y \
     pkg-config \
@@ -58,7 +63,12 @@ RUN cargo build --release --bin fluxion-rest --no-default-features
 # ============================================
 # Stage 2: Production runtime
 # ============================================
-FROM debian:bookworm-slim AS runtime
+# Pinned base image — fail-closed supply-chain control (Issue #3580, Goal #5).
+#   * Tag:    debian:bookworm-slim
+#   * Digest: sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
+#   * Pinned: 2026-09-09
+#   * Refresh: re-run `scripts/pin_docker_base_images.sh` (quarterly cadence).
+FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171 AS runtime
 
 RUN apt-get update && apt-get install -y \
     ca-certificates \

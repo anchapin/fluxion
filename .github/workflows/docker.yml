@@ -32,6 +32,16 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  # Fail-closed base-image digest pins (Issue #3580, Goal #5). Both
+  # digests are content-addressed; pulling by @sha256:DIGEST refuses
+  # any image whose registry manifest has a different digest than the
+  # pin, so a tag rotation upstream cannot silently swap the base
+  # layer that lands inside the published `fluxion-rest` image.
+  # Refresh with `scripts/pin_docker_base_images.sh` (quarterly).
+  RUST_BUILDER_IMAGE: rust:1.87-bookworm
+  RUST_BUILDER_DIGEST: sha256:251cec8da4689d180f124ef00024c2f83f79d9bf984e43c180a598119e326b84
+  DEBIAN_RUNTIME_IMAGE: debian:bookworm-slim
+  DEBIAN_RUNTIME_DIGEST: sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 
 # Least-privilege GITHUB_TOKEN default (Issue #2526). Each job that pushes to
 # ghcr.io or uploads SARIF escalates via its own job-level permissions block
@@ -72,6 +82,38 @@ jobs:
             type=ref,event=pr
             type=semver,pattern={{version}}
             type=sha
+
+      # Issue #3580 — pull each Dockerfile `FROM` base image by its
+      # pinned `@sha256:DIGEST` so a tag rotation upstream (or a
+      # compromised mirror serving a different manifest) cannot
+      # silently substitute the base layer. `docker pull --quiet` is
+      # fail-closed: a digest mismatch produces a non-zero exit and
+      # halts the workflow before any build runs.
+      - name: Verify base image digest pins (Issue #3580)
+        run: |
+          set -euo pipefail
+          echo "Pulling ${{ env.RUST_BUILDER_IMAGE }}@${{ env.RUST_BUILDER_DIGEST }}"
+          docker pull --quiet "${{ env.RUST_BUILDER_IMAGE }}@${{ env.RUST_BUILDER_DIGEST }}"
+          echo "Pulling ${{ env.DEBIAN_RUNTIME_IMAGE }}@${{ env.DEBIAN_RUNTIME_DIGEST }}"
+          docker pull --quiet "${{ env.DEBIAN_RUNTIME_IMAGE }}@${{ env.DEBIAN_RUNTIME_DIGEST }}"
+          # Defence-in-depth: confirm the local image ID matches the
+          # pinned digest. Pull-by-digest alone would catch a registry
+          # digest change, but a stale local cache or a re-tagged
+          # upstream mirror can still surface as an ID drift; this
+          # check catches that case explicitly.
+          for pair in \
+              "${{ env.RUST_BUILDER_IMAGE }}|${{ env.RUST_BUILDER_DIGEST }}" \
+              "${{ env.DEBIAN_RUNTIME_IMAGE }}|${{ env.DEBIAN_RUNTIME_DIGEST }}"; do
+            image="${pair%%|*}"
+            expected="${pair##*|}"
+            actual="$(docker inspect --format='{{index .RepoDigests 0}}' "$image" 2>/dev/null || true)"
+            actual_id="$(docker inspect --format='{{.Id}}' "$image")"
+            echo "$image -> RepoDigest=${actual:-<unset>}  Id=${actual_id}"
+            if [[ "${actual##*@}" != "$expected" ]]; then
+                echo "::error::Base image digest mismatch for $image: expected @$expected, got ${actual:-<unset>}" >&2
+                exit 1
+              fi
+          done
 
       - name: Build Docker image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
@@ -142,6 +184,31 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      # Issue #3580 — see the matching step in `build-and-test`.
+      # `docker pull --quiet` by digest is fail-closed: any upstream
+      # tag rotation that changes the manifest digest produces a
+      # non-zero exit and halts the build before the (expensive)
+      # multi-arch build starts.
+      - name: Verify base image digest pins (Issue #3580)
+        run: |
+          set -euo pipefail
+          echo "Pulling ${{ env.RUST_BUILDER_IMAGE }}@${{ env.RUST_BUILDER_DIGEST }}"
+          docker pull --quiet "${{ env.RUST_BUILDER_IMAGE }}@${{ env.RUST_BUILDER_DIGEST }}"
+          echo "Pulling ${{ env.DEBIAN_RUNTIME_IMAGE }}@${{ env.DEBIAN_RUNTIME_DIGEST }}"
+          docker pull --quiet "${{ env.DEBIAN_RUNTIME_IMAGE }}@${{ env.DEBIAN_RUNTIME_DIGEST }}"
+          for pair in \
+              "${{ env.RUST_BUILDER_IMAGE }}|${{ env.RUST_BUILDER_DIGEST }}" \
+              "${{ env.DEBIAN_RUNTIME_IMAGE }}|${{ env.DEBIAN_RUNTIME_DIGEST }}"; do
+            image="${pair%%|*}"
+            expected="${pair##*|}"
+            actual="$(docker inspect --format='{{index .RepoDigests 0}}' "$image" 2>/dev/null || true)"
+            echo "$image -> RepoDigest=${actual:-<unset>}"
+            if [[ "${actual##*@}" != "$expected" ]]; then
+                echo "::error::Base image digest mismatch for $image: expected @$expected, got ${actual:-<unset>}" >&2
+                exit 1
+              fi
+          done
 
       - name: Build and push platform image
         id: build
