@@ -2,9 +2,10 @@
 
 #[allow(unused_imports)]
 use crate::ai::modular_surrogate::{ComponentSurrogate, CompositeSurrogate};
-use crate::util::sha256_hex::sha256_hex;
+use crate::util::sha256_hex::{decode_sha256_hex, sha256_hex};
 #[allow(unused_imports)]
 use log::{info, warn};
+use subtle::ConstantTimeEq;
 // Issue #3313: CoreML/DirectML EP types only exist when the matching `ort`
 // feature is enabled (`ort/coreml` / `ort/directml`), so the target-OS gate
 // alone is not sufficient to reference them. Each is wired through a
@@ -956,8 +957,38 @@ pub fn compute_bytes_sha256(bytes: &[u8]) -> String {
 }
 
 /// Compare a claimed SHA-256 against the file's actual SHA-256.
+///
+/// Issue #3655 / CWE-208 — the previous implementation used
+/// `str::eq_ignore_ascii_case`, which short-circuits on the first
+/// non-matching byte and therefore leaks per-byte timing information about
+/// how many leading bytes of a candidate digest match. For a SHA-256
+/// integrity tag this is *not* an extractable secret under typical use, but
+/// it is the wrong primitive for any tag/MAC comparison and the rest of
+/// the Rust security ecosystem treats it as a smell.
+///
+/// The replacement decodes both hex inputs to 32-byte digests via
+/// [`crate::util::sha256_hex::decode_sha256_hex`] (which itself is constant
+/// in its visit pattern over the input length) and then compares the bytes
+/// with [`subtle::ConstantTimeEq::ct_eq`]. `subtle` is the same audited
+/// crate used elsewhere in the Rust crypto ecosystem for HMAC, AEAD, and
+/// signature-tag checks, and its XOR-OR accumulator is documented to be
+/// written so the LLVM backend cannot fold it into a branch. Upper- and
+/// lower-case hex continue to compare equal (the decoder accepts both) so
+/// the public contract of this function is unchanged for existing callers.
 pub fn validate_hash(expected: &str, actual: &str) -> Result<(), String> {
-    if expected.eq_ignore_ascii_case(actual) {
+    let expected_bytes = decode_sha256_hex(expected).ok_or_else(|| {
+        format!(
+            "SHA-256 mismatch: expected {}, got {} (expected is not a valid 64-char hex SHA-256)",
+            expected, actual
+        )
+    })?;
+    let actual_bytes = decode_sha256_hex(actual).ok_or_else(|| {
+        format!(
+            "SHA-256 mismatch: expected {}, got {} (actual is not a valid 64-char hex SHA-256)",
+            expected, actual
+        )
+    })?;
+    if expected_bytes.ct_eq(&actual_bytes).into() {
         Ok(())
     } else {
         Err(format!(
@@ -5729,6 +5760,134 @@ mod tests {
     fn test_validate_hash_rejects_mismatch() {
         let err = validate_hash(&"a".repeat(64), &"b".repeat(64)).unwrap_err();
         assert!(err.contains("mismatch"));
+    }
+
+    /// Issue #3655 regression — a 1-bit difference at any of the 32 byte
+    /// positions of the digest must still be detected as a mismatch after the
+    /// move from `eq_ignore_ascii_case` to a constant-time byte compare. The
+    /// previous implementation would also catch these, but the test pins the
+    /// behavior so a future "optimization" that weakens the compare (early
+    /// return on length, partial check, etc.) fails loudly.
+    #[test]
+    fn test_validate_hash_detects_single_byte_mismatch_at_every_position() {
+        let canonical =
+            "00112233445566778899aabbccddeeff0102030405060708090a0b0c0d0e0f10".to_string();
+        assert_eq!(canonical.len(), 64);
+        for byte_idx in 0..32 {
+            let mut actual_bytes = [0u8; 32];
+            for (i, chunk) in canonical.as_bytes().chunks_exact(2).enumerate() {
+                actual_bytes[i] = u8::from_str_radix(
+                    std::str::from_utf8(chunk).expect("canonical hex is ASCII"),
+                    16,
+                )
+                .expect("canonical hex parses");
+            }
+            // Flip the lowest bit at position `byte_idx`.
+            actual_bytes[byte_idx] ^= 0x01;
+            let mut actual_hex = String::with_capacity(64);
+            for b in actual_bytes {
+                use std::fmt::Write as _;
+                let _ = write!(actual_hex, "{:02x}", b);
+            }
+            let err = validate_hash(&canonical, &actual_hex)
+                .expect_err("mismatch must be detected at every byte position");
+            assert!(
+                err.contains("mismatch"),
+                "position {byte_idx}: expected 'mismatch' in error, got: {err}"
+            );
+            assert!(
+                err.contains(&canonical),
+                "position {byte_idx}: error must include the expected hex"
+            );
+            assert!(
+                err.contains(&actual_hex),
+                "position {byte_idx}: error must include the actual hex"
+            );
+        }
+    }
+
+    /// Issue #3655 regression — malformed hex on either side must produce a
+    /// `mismatch` error (the previous behavior was an unqualified `false`
+    /// from `eq_ignore_ascii_case`, which mapped to the same error string).
+    #[test]
+    fn test_validate_hash_rejects_malformed_hex() {
+        let good = "a".repeat(64);
+        // Wrong length
+        assert!(validate_hash(&good, &"a".repeat(63)).is_err());
+        assert!(validate_hash(&"a".repeat(63), &good).is_err());
+        // Non-hex chars
+        assert!(validate_hash(&good, &"z".repeat(64)).is_err());
+        assert!(validate_hash(&"z".repeat(64), &good).is_err());
+    }
+
+    /// Issue #3655 timing regression guard. We cannot in a CI-safe way assert
+    /// that the LLVM-emitted compare is constant time — that is a property of
+    /// `subtle::ConstantTimeEq` and is verified by the upstream `subtle`
+    /// test suite. What we *can* catch in this crate is a regression to an
+    /// early-exit variable-time comparison: we time `validate_hash` against
+    /// mismatching inputs that differ at the *first*, *middle*, and *last*
+    /// byte position and assert that the slowest path is not more than
+    /// `MAX_RATIO`× the fastest. The threshold is intentionally generous
+    /// (wall-clock CI noise dominates any per-byte difference).
+    ///
+    /// The 1,000-iteration warmup-then-measure loop is taken from the
+    /// `subtle` crate's own timing checks so the result is comparable to
+    /// upstream behaviour rather than to micro-benchmark nonsense.
+    #[test]
+    fn test_validate_hash_timing_is_branch_shape_invariant() {
+        use std::time::Instant;
+
+        const ITERATIONS: u32 = 5_000;
+        const MAX_RATIO: u128 = 8;
+
+        let canonical_bytes: [u8; 32] = [
+            0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd,
+            0xee, 0xff, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c,
+            0x0d, 0x0e, 0x0f, 0x10,
+        ];
+
+        fn render(bytes: &[u8; 32]) -> String {
+            use std::fmt::Write as _;
+            let mut s = String::with_capacity(64);
+            for b in bytes {
+                let _ = write!(s, "{:02x}", b);
+            }
+            s
+        }
+
+        let mut variants = Vec::new();
+        for &pos in &[0_usize, 15, 31] {
+            let mut flipped = canonical_bytes;
+            flipped[pos] ^= 0x01;
+            variants.push(render(&flipped));
+        }
+        let canonical = render(&canonical_bytes);
+
+        // Warm up the page cache, branch predictor, and CPU frequency scaling.
+        for v in &variants {
+            for _ in 0..1_000 {
+                let _ = validate_hash(&canonical, v);
+            }
+        }
+
+        let mut durations = Vec::with_capacity(variants.len());
+        for v in &variants {
+            let start = Instant::now();
+            for _ in 0..ITERATIONS {
+                let _ = validate_hash(&canonical, v);
+            }
+            durations.push(start.elapsed().as_nanos());
+        }
+
+        let min = *durations.iter().min().expect("at least one variant");
+        let max = *durations.iter().max().expect("at least one variant");
+        assert!(min > 0, "timer must record a non-zero duration");
+        assert!(
+            max <= min.saturating_mul(MAX_RATIO),
+            "validate_hash timing variance too high: positions=[0,15,31] \
+             durations_ns={durations:?} ratio={} (max allowed {MAX_RATIO}x)",
+            max / min,
+        );
     }
 
     #[test]

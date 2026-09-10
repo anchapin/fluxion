@@ -386,6 +386,13 @@ uuid = { workspace = true, features = ["serde", "v4"] }
 # `scripts/check_fluxion_core_dep_budget.py` for the regression gate.
 sha2 = "0.11"
 
+# Constant-time byte-slice equality for tag / MAC / digest verification
+# (Issue #3655, CWE-208). `subtle::ConstantTimeEq` is the audited primitive
+# referenced by the Rust security ecosystem and replaces the previous
+# `str::eq_ignore_ascii_case` compare in `src/ai/surrogate.rs::validate_hash`.
+# Pinned to 2.6.x (matches the version already in Cargo.lock).
+subtle = "2.6"
+
 # Numerical & Math
 faer = { workspace = true, default-features = false, features = ["std"] }
 nalgebra.workspace = true  # Linear algebra - matrix operations

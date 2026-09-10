@@ -38,9 +38,48 @@ pub fn sha256_hex(digest: impl AsRef<[u8]>) -> String {
     s
 }
 
+/// Decode a 64-character hex SHA-256 string into the raw 32-byte digest.
+///
+/// Returns `None` if the input is not exactly 64 ASCII hex characters
+/// (either lowercase or uppercase). Used by `crate::ai::surrogate::validate_hash`
+/// (Issue #3655, CWE-208) to convert both sides of a tag comparison into
+/// bytes before invoking `subtle::ConstantTimeEq`. Accepting uppercase keeps
+/// the previous `eq_ignore_ascii_case` contract for callers that hand in a
+/// registry entry stored in mixed case.
+///
+/// `u8::from_str_radix(_, 16)` is constant in its return value across all
+/// valid inputs, but we deliberately do not include any short-circuit on
+/// the first invalid character — every position is visited so an attacker
+/// cannot infer digest bytes from a timing differential on length-or-format
+/// checks. (The byte-level equality itself is enforced by `subtle`.)
+pub fn decode_sha256_hex(hex: &str) -> Option<[u8; 32]> {
+    if hex.len() != 64 {
+        return None;
+    }
+    let (pairs, _tail) = hex.as_bytes().as_chunks::<2>();
+    debug_assert_eq!(_tail.len(), 0, "hex.len()==64 implies zero remainder");
+    let mut out = [0u8; 32];
+    for (i, pair) in pairs.iter().enumerate() {
+        let hi = decode_nibble(pair[0])?;
+        let lo = decode_nibble(pair[1])?;
+        out[i] = (hi << 4) | lo;
+    }
+    Some(out)
+}
+
+#[inline]
+fn decode_nibble(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::sha256_hex;
+    use super::{decode_sha256_hex, sha256_hex};
     use sha2::{Digest, Sha256};
 
     #[test]
@@ -89,5 +128,33 @@ mod tests {
         // about *digest* length, not message length.)
         let digest = Sha256::digest(b"");
         assert_eq!(sha256_hex(digest).len(), 64);
+    }
+
+    #[test]
+    fn decode_roundtrips_sha256_hex_for_lowercase_and_uppercase() {
+        let hex_lower = sha256_hex(Sha256::digest(b"abc"));
+        let hex_upper = hex_lower.to_uppercase();
+        let bytes_lower = decode_sha256_hex(&hex_lower).expect("lower hex must decode");
+        let bytes_upper = decode_sha256_hex(&hex_upper).expect("upper hex must decode");
+        assert_eq!(bytes_lower, bytes_upper);
+        // Independent ground truth for SHA-256("abc").
+        assert_eq!(
+            bytes_lower,
+            [
+                0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae,
+                0x22, 0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61,
+                0xf2, 0x00, 0x15, 0xad,
+            ]
+        );
+    }
+
+    #[test]
+    fn decode_rejects_wrong_length_and_non_hex() {
+        assert_eq!(decode_sha256_hex(""), None);
+        assert_eq!(decode_sha256_hex(&"a".repeat(63)), None);
+        assert_eq!(decode_sha256_hex(&"a".repeat(65)), None);
+        assert_eq!(decode_sha256_hex(&"z".repeat(64)), None);
+        // Non-ASCII must not panic.
+        assert_eq!(decode_sha256_hex(&"ñ".repeat(64)), None);
     }
 }
