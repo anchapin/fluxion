@@ -32,6 +32,24 @@ informational job with a cargo-llvm-cov pipeline that:
    build if its line coverage drops more than 1% relative to the baseline.
    The baseline only ever moves upward.
 
+> **Docs-only carve-out (Issue #3662, Wave 8 / #3367 precedent).**
+> The workflow declares `on.pull_request.paths-ignore:` for the same
+> canonical documentation globs used by `.github/workflows/rust-tests.yml`
+> (Issue #3367, PR #3369): `docs/**`, `*.md`, `*.mdx`, and the root
+> markdown files. PRs that touch only those paths do not invoke the
+> `cargo llvm-cov` pipeline at all, so the 1%-relative ratchet cannot
+> fire on `cargo llvm-cov` measurement noise (e.g. PR #3660 — `+24 / -0`
+> lines in `CONTRIBUTING.md` / `AGENTS.md`, gate tripped at
+> `conduction_zone` branch coverage 65.51% < 65.62% ratchet floor, a
+> 0.11pp dip inside typical llvm-cov variance). The script
+> `scripts/coverage_critical_paths.py` is unchanged; the fix lives at
+> the workflow layer so docs-only PRs never reach the gate. The
+> carve-out is pinned by the regression test
+> `scripts/ci/test_check_code_coverage_docs_skip.py`, which asserts the
+> workflow carries the `paths-ignore:` block, that it stays in sync
+> with the `rust-tests.yml` set, and that no source-side pattern
+> (`src/**`, `Cargo.toml`, `scripts/**`, …) leaks into the carve-out.
+
 ## Reproducing a coverage run locally
 
 ```bash
