@@ -1317,7 +1317,20 @@ jobs:
   multi-zone-cold-start-gate:
     name: Multi-Zone Cold Start Gate (Issue #2919)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Issue #2919 gate timeout bumped 25 -> 45 min on 2026-09-10 (folded into
+    # chore PR #3668): the nightly `warm-cold-start-build` cache-prime only
+    # runs on `schedule` / `workflow_dispatch`, so PR builds pay the full
+    # cold-cache cost of compiling the `--features ort` transitive tree
+    # (~5+ min, trending upward with libonnxruntime + protobuf + ureq).
+    # Worst-case cold-cache build + 3 measurement runs + per-run relink
+    # was hitting the 25-min ceiling on the `60bcd4b` PR runs in 2026-09-10,
+    # blocking the gate with `cancel` conclusions (counts as failure for
+    # branch protection since the job is in `required_checks`).
+    # 45 min matches the `warm-cold-start-build` cache-prime timeout and
+    # gives comfortable headroom for the worst-case cold path. Warm-cache
+    # runs still finish in ~3 min — the bump only matters when the cache
+    # has been invalidated by a source change between nightly primes.
+    timeout-minutes: 45
     # NOTE: intentionally no `needs` — builds its own release test binary
     # and runs in parallel with `absolute-perf-gate` /
     # `multi-zone-perf-gate` / `hybrid-perf-gate` for a faster PR signal.
