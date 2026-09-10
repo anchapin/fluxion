@@ -5,8 +5,9 @@
 #                  Fluxion is Apache-2.0 and only permissive licenses are allowed.
 #   - [bans]       duplicate-version detection (start permissive: "warn") and a
 #                  documented denylist slot for banned crates.
-#   - [advisories] RustSec advisory DB scan; `ignore` list mirrored from
-#                  `.cargo/audit.toml` so the two tools agree.
+#   - [advisories] RustSec advisory DB scan; the `ignore` contract with
+#                  `.cargo/audit.toml` is gate-enforced (see #3654:
+#                  `scripts/check_audit_deny_agree.py`).
 #   - [sources]    flag crates from unexpected registries or git sources.
 #
 # Run locally:  cargo deny check
@@ -67,9 +68,15 @@ ignore = [
     #   - RUSTSEC-2026-0192 (ttf-parser, unmaintained) — transitive via
     #     plotters; same reasoning as RUSTSEC-2024-0436. STILL IGNORED in
     #     `.cargo/audit.toml`.
-    # The two `*.audit.toml` ignores are deliberately NOT mirrored here: doing
-    # so would re-introduce `advisory-not-detected` noise without changing
-    # cargo-deny's enforcement (transitive unmaintained is out of scope).
+    # The `.cargo/audit.toml` ignores are deliberately NOT mirrored here:
+    # doing so would re-introduce `advisory-not-detected` noise without
+    # changing cargo-deny's enforcement (they are transitive-unmaintained
+    # or fluxion-tauri GUI-only deps outside this scan's scope). Each
+    # audit.toml entry carries a machine-readable `deny-scope-exempt`
+    # marker; `scripts/check_audit_deny_agree.py` (#3654) enforces the
+    # cross-file contract: every deny.toml ignore must also appear in
+    # `.cargo/audit.toml`, and every audit-only ignore must carry that
+    # marker while this file keeps `unmaintained = "workspace"`.
 # --- REMOVED in #3451: Issue #2757 (rumqttc → rustls-webpki 0.102.8) ---
     # RUSTSEC-2026-0049, -0098, -0099, -0104 are RESOLVED by the
     # `[patch.crates-io]` pin on `anchapin/rumqtt.git` at the project-owner

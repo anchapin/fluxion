@@ -53,11 +53,19 @@ ignore = [
     # too. Removing them HERE would re-introduce unmaintained failures on
     # the cargo-audit gate.
     #
+    # Cross-file contract (#3654): every audit-only entry below carries the
+    # machine-readable `deny-scope-exempt` marker; the gate
+    # `scripts/check_audit_deny_agree.py` parses both ignore lists and
+    # enforces deny ⊆ audit plus this marker contract. Adding a new
+    # audit.toml ignore WITHOUT either a deny.toml counterpart or the
+    # marker fails that gate.
+    #
     # `paste` is unmaintained; transitive via gemm (linear-algebra path:
     # gemm <- faer/simba/nalgebra <- fluxion/statrs). No security vulnerability:
     # rustsec type is `unmaintained`, no patched versions exist. Drop this
     # ignore once the upstream chain migrates off paste (e.g. gemm/ndarray
     # adopt `pastey` or drop the proc-macro dependency).
+    # deny-scope-exempt (transitive-unmaintained)
     "RUSTSEC-2024-0436",
     # RUSTSEC-2026-0177 (PyCFunction::new_closure missing Sync bound) REMEDIATED
     # in #2585 by migrating PyO3 0.22 → 0.29. pyo3 0.29.0+ includes the Sync
@@ -72,6 +80,7 @@ ignore = [
     # 0.3.7. Removing ttf-parser from the dependency graph would require
     # switching plotters to its `ab_glyph` font feature and bundling a font
     # at build time, which exceeds the S/<=4h/low-risk scope of #1458.
+    # deny-scope-exempt (transitive-unmaintained)
     "RUSTSEC-2026-0192",
     # RUSTSEC-2025-0134 (rustls-pemfile is unmaintained) — Issue #2797.
     # Depth=1 transitive: rustls-pemfile v2.2.0 <- rumqttc v0.25.1 <-
@@ -99,6 +108,7 @@ ignore = [
     # >>> and `crates/fluxion-twin/Cargo.toml` is bumped to it. Coordinated
     # >>> with #2757 (rumqttc → rustls-webpki 0.102.8 cluster, same root
     # >>> cause); resolving #2757's webpki bump will resolve this too.
+    # deny-scope-exempt (transitive-unmaintained)
     "RUSTSEC-2025-0134",
 
     # --- TEMPORARY: Tauri 2.x → gtk-rs + unic unmaintained cluster --------
@@ -110,21 +120,28 @@ ignore = [
     # transitive deps with no fix short of a Tauri version bump or GTK3→GTK4
     # migration. Scope: fluxion-tauri GUI builds on Linux.
     # Tracking: https://github.com/nicbarker/cliff/issues/247
-    "RUSTSEC-2024-0411",  # gdkwayland-sys
-    "RUSTSEC-2024-0412",  # gdk
-    "RUSTSEC-2024-0413",  # atk
-    "RUSTSEC-2024-0414",  # gtk
-    "RUSTSEC-2024-0415",  # gtk-sys
-    "RUSTSEC-2024-0416",  # atk-sys
-    "RUSTSEC-2024-0417",  # gdkx11-sys
-    "RUSTSEC-2024-0418",  # gdk-sys
-    "RUSTSEC-2024-0419",  # gtk3-macros
-    "RUSTSEC-2024-0420",  # gtk-sys (additional advisory)
-    "RUSTSEC-2024-0370",  # proc-macro-error (used by gtk-rs proc-macros)
-    "RUSTSEC-2025-0081",  # unic-char-property
-    "RUSTSEC-2025-0075",  # unic-char-range
-    "RUSTSEC-2025-0080",  # unic-common
-    "RUSTSEC-2025-0100",  # unic-ucd-ident
-    "RUSTSEC-2025-0098",  # unic-ucd-version
-    "RUSTSEC-2024-0429",  # glib unsound (Iterator impls for VariantStrIter)
+    #
+    # Cross-file contract (#3654): these entries are deliberately NOT
+    # mirrored in deny.toml — the `Cargo Deny` CI check (all-features,
+    # ubuntu) does not encounter them at head, so a deny-side ignore would
+    # only emit `advisory-not-detected` noise. Each entry below carries the
+    # machine-readable `deny-scope-exempt` marker consumed by
+    # `scripts/check_audit_deny_agree.py`.
+    "RUSTSEC-2024-0411",  # gdkwayland-sys (deny-scope-exempt)
+    "RUSTSEC-2024-0412",  # gdk (deny-scope-exempt)
+    "RUSTSEC-2024-0413",  # atk (deny-scope-exempt)
+    "RUSTSEC-2024-0414",  # gtk (deny-scope-exempt)
+    "RUSTSEC-2024-0415",  # gtk-sys (deny-scope-exempt)
+    "RUSTSEC-2024-0416",  # atk-sys (deny-scope-exempt)
+    "RUSTSEC-2024-0417",  # gdkx11-sys (deny-scope-exempt)
+    "RUSTSEC-2024-0418",  # gdk-sys (deny-scope-exempt)
+    "RUSTSEC-2024-0419",  # gtk3-macros (deny-scope-exempt)
+    "RUSTSEC-2024-0420",  # gtk-sys (additional advisory) (deny-scope-exempt)
+    "RUSTSEC-2024-0370",  # proc-macro-error (used by gtk-rs proc-macros) (deny-scope-exempt)
+    "RUSTSEC-2025-0081",  # unic-char-property (deny-scope-exempt)
+    "RUSTSEC-2025-0075",  # unic-char-range (deny-scope-exempt)
+    "RUSTSEC-2025-0080",  # unic-common (deny-scope-exempt)
+    "RUSTSEC-2025-0100",  # unic-ucd-ident (deny-scope-exempt)
+    "RUSTSEC-2025-0098",  # unic-ucd-version (deny-scope-exempt)
+    "RUSTSEC-2024-0429",  # glib unsound (Iterator impls for VariantStrIter) (deny-scope-exempt)
 ]
