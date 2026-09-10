@@ -1012,9 +1012,21 @@ jobs:
           # All three tests must appear in the captured output. A missing
           # test name means a filter silently dropped it (Issue #1866) —
           # fail honestly rather than report a false PASS.
+          # Issue #3668 — regex relaxed from `(ok|ignored|FAILED)$` to
+          # `.*(ok|ignored|FAILED)$` to tolerate eprintln! output that
+          # the test emits between the cargo harness's "test X ..." header
+          # and the trailing "ok" result. With #3584 expanding the
+          # 2-case envelope to 8 cases, the test issues 8 eprintln!
+          # calls during the function body; even with `stdbuf -oL -eL`
+          # + `--test-threads=1`, those eprintln! lines land on the
+          # SAME captured line as "test X ..." (because cargo's harness
+          # prints "test X ..." without a trailing newline and only
+          # appends "ok" after the function returns). The relaxed
+          # `.*(ok|...)$` regex accepts any diagnostic text between
+          # the "..." separator and the result token.
           check_coverage() {
             local name="$1"
-            if grep -qE "(^|[^[:alnum:]_])test $name \.\.\. (ok|ignored|FAILED)" /tmp/surrogate_mae_gate_output.txt; then
+            if grep -qE "(^|[^[:alnum:]_])test $name \.\.\. .*(ok|ignored|FAILED)" /tmp/surrogate_mae_gate_output.txt; then
               echo "  COVERED: $name"
             else
               echo "  DROPPED FROM GATE: $name"
