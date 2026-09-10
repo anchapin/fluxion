@@ -444,9 +444,23 @@ jobs:
 
           # Verify each platform has all required cases — a missing case indicates
           # the upstream cargo test step failed to print the marker.
+          # Issue #3668 — strip the `case` prefix on the LHS before comparison;
+          # previously `cases_present` held keys like `case600` and the
+          # comparison `c not in cases_present` against bare strings (`'600'`)
+          # always evaluated True, so every case appeared missing and the
+          # gate failed with "Missing required cases by platform" even
+          # though the data was present (verified by inspecting the
+          # `determinism-gate-output-ubuntu-latest/output_values.json`
+          # artifact, which has `case600_annual_heating_mwh: 4.076293`
+          # etc. for all 7 required cases). Strip the prefix so the
+          # set contains `600`, `800`, … matching `REQUIRED_CASES`.
           missing_by_platform = {}
           for os_name, vals in all_values.items():
-              cases_present = {k.split('_')[0] for k in vals if k.startswith('case') and k.endswith('_annual_heating_mwh')}
+              cases_present = {
+                  k.split('_')[0].removeprefix('case')
+                  for k in vals
+                  if k.startswith('case') and k.endswith('_annual_heating_mwh')
+              }
               missing_by_platform[os_name] = sorted(c for c in REQUIRED_CASES if c not in cases_present)
           if any(missing_by_platform.values()):
               print("❌ Missing required cases by platform:")
