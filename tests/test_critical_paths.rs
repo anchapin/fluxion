@@ -95,6 +95,67 @@ fn test_thermal_model_apply_parameters_truncated_vector() {
     model.apply_parameters(&truncated_params);
 }
 
+// Issue #3668 / Code Coverage Gate (Issue #1932) — branches in
+// `src/sim/thermal_model_solvers.rs::apply_parameters` that exercise the
+// non-finite-input panic paths. Without these, the `conduction_zone` branch
+// coverage sits at 65.51% (961/1467), just under the 65.62% ratchet floor.
+// Hitting the NaN and Inf paths covers both `if !is_finite()` (true) and
+// `if is_nan()` (true and false) branches at L663 / L664, lifting the path
+// above the floor without raising the ratchet baseline.
+#[test]
+#[should_panic(expected = "Window U-value (index 0) is NaN")]
+fn test_thermal_model_apply_parameters_nan_u_value_panics() {
+    // NaN window U-value triggers the `if !u_value.is_finite()` (true) and
+    // `if u_value.is_nan()` (true) branches in `ThermalMethodSelector::
+    // apply_parameters` (`src/sim/thermal_model_solvers.rs:663-668`).
+    let mut model = ThermalModel::new(1);
+    model.apply_parameters(&[f64::NAN, 21.0, 22.0]);
+}
+
+#[test]
+#[should_panic(expected = "Window U-value (index 0) is infinite")]
+fn test_thermal_model_apply_parameters_inf_u_value_panics() {
+    // +Infinity window U-value triggers `if !u_value.is_finite()` (true)
+    // and `if u_value.is_nan()` (false → "infinite" error_type branch).
+    let mut model = ThermalModel::new(1);
+    model.apply_parameters(&[f64::INFINITY, 21.0, 22.0]);
+}
+
+#[test]
+#[should_panic(expected = "Heating setpoint (index 1) is NaN")]
+fn test_thermal_model_apply_parameters_nan_heating_panics() {
+    // NaN heating setpoint triggers the `if !heating_setpoint.is_finite()`
+    // (true) and `if heating_setpoint.is_nan()` (true) branches at L672/673.
+    let mut model = ThermalModel::new(1);
+    model.apply_parameters(&[1.5, f64::NAN, 22.0]);
+}
+
+#[test]
+#[should_panic(expected = "Heating setpoint (index 1) is infinite")]
+fn test_thermal_model_apply_parameters_inf_heating_panics() {
+    // +Infinity heating setpoint triggers the false side of
+    // `if heating_setpoint.is_nan()` (i.e., the "infinite" error_type
+    // branch) at L673.
+    let mut model = ThermalModel::new(1);
+    model.apply_parameters(&[1.5, f64::INFINITY, 22.0]);
+}
+
+#[test]
+#[should_panic(expected = "Cooling setpoint (index 2) is NaN")]
+fn test_thermal_model_apply_parameters_nan_cooling_panics() {
+    // NaN cooling setpoint triggers L685 / L686 (parallel to L672/673).
+    let mut model = ThermalModel::new(1);
+    model.apply_parameters(&[1.5, 21.0, f64::NAN]);
+}
+
+#[test]
+#[should_panic(expected = "Cooling setpoint (index 2) is infinite")]
+fn test_thermal_model_apply_parameters_inf_cooling_panics() {
+    // +Infinity cooling setpoint — the "infinite" branch at L686.
+    let mut model = ThermalModel::new(1);
+    model.apply_parameters(&[1.5, 21.0, f64::INFINITY]);
+}
+
 #[test]
 fn test_thermal_model_solve_timesteps_zero_steps() {
     // Test thermal model handles zero timesteps

@@ -620,10 +620,9 @@ fn wasm_run_full_annual_ashrae_600_baseline_total_energy_within_published_band()
         // total_cooling_kw, ... }. With 1-hour timesteps, summing kW
         // directly yields kWh (1 kW × 1 h = 1 kWh).
         let result_js = sim.step(1.0).expect("step() must succeed");
-        let result_json: serde_json::Value = serde_json::from_str(
-            &result_js.as_string().expect("step() must return a string"),
-        )
-        .unwrap();
+        let result_json: serde_json::Value =
+            serde_json::from_str(&result_js.as_string().expect("step() must return a string"))
+                .unwrap();
         let h = result_json["total_heating_kw"].as_f64().unwrap();
         let c = result_json["total_cooling_kw"].as_f64().unwrap();
         // Reject NaN/Inf at the FFI boundary — these would silently

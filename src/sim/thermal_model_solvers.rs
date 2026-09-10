@@ -802,3 +802,87 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         &self.0.hvac.timestep_mode
     }
 }
+
+// ---------------------------------------------------------------------------
+// Issue #3668 / Code Coverage Gate (Issue #1932) — inline library tests for
+// the non-finite-input panic paths in `apply_parameters`. The CI coverage
+// step runs `cargo llvm-cov --lib` (which excludes `tests/` integration
+// tests), so the coverage ratchet only sees inline `#[test]` functions in
+// the source crate. Without these, `conduction_zone` branch coverage sits
+// at 65.51% (961/1467), 0.11pp below the 65.62% ratchet floor.
+//
+// Each `apply_parameters` slot (window U-value, heating setpoint, cooling
+// setpoint) has two unhit branches:
+//   - `if !value.is_finite()` true path (L662 / L672 / L685 branch 1)
+//   - `if value.is_nan()` true and false paths (L663 / L673 / L686 branches 0/1)
+//
+// The 6 tests below hit all 6 of those branches, lifting coverage above
+// the ratchet floor without raising the ratchet baseline (per the user's
+// "don't relax baselines" constraint on `strict_energy_gate_baseline.json`).
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod apply_parameters_coverage_tests {
+    use super::*;
+
+    fn make_model() -> ThermalModel<VectorField> {
+        ThermalModel::<VectorField>::new(1)
+    }
+
+    // Window U-value (index 0)
+    #[test]
+    #[should_panic(expected = "Window U-value (index 0) is NaN")]
+    fn apply_parameters_nan_u_value_panics() {
+        // NaN u_value hits L662 branch 1 (!is_finite true) and L663 branch 0
+        // (is_nan true → "NaN").
+        let mut model = make_model();
+        model.apply_parameters(&[f64::NAN, 21.0, 22.0]);
+    }
+
+    #[test]
+    #[should_panic(expected = "Window U-value (index 0) is infinite")]
+    fn apply_parameters_inf_u_value_panics() {
+        // +Infinity u_value hits L662 branch 1 and L663 branch 1 (is_nan false
+        // → "infinite").
+        let mut model = make_model();
+        model.apply_parameters(&[f64::INFINITY, 21.0, 22.0]);
+    }
+
+    // Heating setpoint (index 1)
+    #[test]
+    #[should_panic(expected = "Heating setpoint (index 1) is NaN")]
+    fn apply_parameters_nan_heating_panics() {
+        let mut model = make_model();
+        model.apply_parameters(&[1.5, f64::NAN, 22.0]);
+    }
+
+    #[test]
+    #[should_panic(expected = "Heating setpoint (index 1) is infinite")]
+    fn apply_parameters_inf_heating_panics() {
+        let mut model = make_model();
+        model.apply_parameters(&[1.5, f64::INFINITY, 22.0]);
+    }
+
+    // Cooling setpoint (index 2)
+    #[test]
+    #[should_panic(expected = "Cooling setpoint (index 2) is NaN")]
+    fn apply_parameters_nan_cooling_panics() {
+        let mut model = make_model();
+        model.apply_parameters(&[1.5, 21.0, f64::NAN]);
+    }
+
+    #[test]
+    #[should_panic(expected = "Cooling setpoint (index 2) is infinite")]
+    fn apply_parameters_inf_cooling_panics() {
+        let mut model = make_model();
+        model.apply_parameters(&[1.5, 21.0, f64::INFINITY]);
+    }
+
+    // Baseline (finite) coverage — the existing test suite already exercises
+    // the finite path; this test just makes it explicit so a future
+    // coverage rerun shows the false paths of the `is_finite` checks too.
+    #[test]
+    fn apply_parameters_finite_inputs_succeed() {
+        let mut model = make_model();
+        model.apply_parameters(&[1.5, 21.0, 22.0]);
+    }
+}

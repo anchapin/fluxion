@@ -1056,12 +1056,8 @@ impl ThermalModel<VectorField> {
         for zone_surfaces in model.solar.surfaces.iter_mut() {
             for surface in zone_surfaces.iter_mut() {
                 surface.wall_spec = Some(match surface.orientation {
-                    fluxion_core::ashrae_cases::Orientation::Up => {
-                        wall_spec_for_roof.clone()
-                    }
-                    fluxion_core::ashrae_cases::Orientation::Down => {
-                        wall_spec_for_floor.clone()
-                    }
+                    fluxion_core::ashrae_cases::Orientation::Up => wall_spec_for_roof.clone(),
+                    fluxion_core::ashrae_cases::Orientation::Down => wall_spec_for_floor.clone(),
                     _ => wall_spec_for_walls.clone(),
                 });
             }
@@ -1630,9 +1626,7 @@ impl ThermalModel<VectorField> {
             let south_opaque_area = if zone_idx < model.solar.surfaces.len() {
                 model.solar.surfaces[zone_idx]
                     .iter()
-                    .find(|s| {
-                        s.orientation == fluxion_core::ashrae_cases::Orientation::South
-                    })
+                    .find(|s| s.orientation == fluxion_core::ashrae_cases::Orientation::South)
                     .map(|s| (s.area - s.window_area).max(0.0))
                     .unwrap_or(0.0)
             } else {
@@ -1771,8 +1765,8 @@ impl ThermalModel<VectorField> {
         // === Phase 6B: Assign per-surface thermal mass conductances for 9R4C model ===
         // Only populate when using 9R4C model (heavy mass buildings like Case 900+)
         // Use construction_type as proxy since CaseSpec doesn't have thermal_model_type field
-        let is_9r4c_model = spec.construction_type
-            == fluxion_core::ashrae_cases::ConstructionType::HighMass;
+        let is_9r4c_model =
+            spec.construction_type == fluxion_core::ashrae_cases::ConstructionType::HighMass;
         if is_9r4c_model {
             model.conduction.h_tr_ms_wall = Some(VectorField::new(h_tr_ms_wall_vec.clone()));
             model.conduction.h_tr_ms_roof = Some(VectorField::new(h_tr_ms_roof_vec.clone()));
@@ -2395,8 +2389,7 @@ impl ThermalModel<VectorField> {
         // conservation gate). The feature gate is removed in PR4 (#3290) when
         // gauge becomes unconditional default.
         #[cfg(not(feature = "gauge-solver"))]
-        if spec.construction_type == fluxion_core::ashrae_cases::ConstructionType::HighMass
-        {
+        if spec.construction_type == fluxion_core::ashrae_cases::ConstructionType::HighMass {
             model.enable_9r4c_model();
         }
 
@@ -2833,8 +2826,7 @@ impl ThermalModel<VectorField> {
                 // vector is empty and the 9R4C step would index OOB. The
                 // `is_9r4c_model` block above (Issue #715) gates that population
                 // on `ConstructionType::HighMass`.
-                if spec.construction_type
-                    == fluxion_core::ashrae_cases::ConstructionType::HighMass
+                if spec.construction_type == fluxion_core::ashrae_cases::ConstructionType::HighMass
                 {
                     model.enable_9r4c_model();
                 }
@@ -2975,12 +2967,7 @@ impl ThermalModel<VectorField> {
                 // Down orientations).
                 let roof_spec = zone_surfaces
                     .iter()
-                    .find(|s| {
-                        matches!(
-                            s.orientation,
-                            fluxion_core::ashrae_cases::Orientation::Up
-                        )
-                    })
+                    .find(|s| matches!(s.orientation, fluxion_core::ashrae_cases::Orientation::Up))
                     .ok_or_else(|| {
                         PhysicsError::initialization(
                             "Gauge solver requires an Up-orientation WallSurface \
@@ -2994,10 +2981,7 @@ impl ThermalModel<VectorField> {
                 let floor_spec = zone_surfaces
                     .iter()
                     .find(|s| {
-                        matches!(
-                            s.orientation,
-                            fluxion_core::ashrae_cases::Orientation::Down
-                        )
+                        matches!(s.orientation, fluxion_core::ashrae_cases::Orientation::Down)
                     })
                     .ok_or_else(|| {
                         PhysicsError::initialization(
@@ -3127,24 +3111,19 @@ impl ThermalModel<VectorField> {
             let surface_type_for_orientation =
                 |orientation: fluxion_core::ashrae_cases::Orientation| -> GaugeSurfaceType {
                     match orientation {
-                        fluxion_core::ashrae_cases::Orientation::Up => {
-                            GaugeSurfaceType::Roof
-                        }
-                        fluxion_core::ashrae_cases::Orientation::Down => {
-                            GaugeSurfaceType::Floor
-                        }
+                        fluxion_core::ashrae_cases::Orientation::Up => GaugeSurfaceType::Roof,
+                        fluxion_core::ashrae_cases::Orientation::Down => GaugeSurfaceType::Floor,
                         _ => GaugeSurfaceType::Wall,
                     }
                 };
 
-            let surface_tilt_for =
-                |orientation: fluxion_core::ashrae_cases::Orientation| -> f64 {
-                    match orientation {
-                        fluxion_core::ashrae_cases::Orientation::Up => 0.0,
-                        fluxion_core::ashrae_cases::Orientation::Down => 180.0,
-                        _ => 90.0,
-                    }
-                };
+            let surface_tilt_for = |orientation: fluxion_core::ashrae_cases::Orientation| -> f64 {
+                match orientation {
+                    fluxion_core::ashrae_cases::Orientation::Up => 0.0,
+                    fluxion_core::ashrae_cases::Orientation::Down => 180.0,
+                    _ => 90.0,
+                }
+            };
 
             // Step 1: empty solver.
             let mut multi_zone = MultiZoneGaugeSolver::new();

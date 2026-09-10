@@ -979,12 +979,26 @@ jobs:
         # The coverage regex below enforces all three appear in the captured
         # output (Issue #1866: a renamed / removed test is itself a gate
         # regression).
+        # Issue #3668 — capture stdout and stderr to SEPARATE files instead
+        # of merging via `2>&1 | tee`. Cargo test's "test X ..." line is
+        # printed to stdout (line-buffered), then the test function runs,
+        # then "ok" is appended to that same line — but if any `eprintln!`
+        # in the test fires, it goes to stderr, and the captured
+        # `2>&1` output ends up with the eprintln! text inlined into the
+        # "test X ..." line, with "ok" appearing on a LATER line after
+        # the eprintln! chain. Splitting stdout and stderr avoids this:
+        # the stdout file has clean "test X ... ok" lines that match the
+        # coverage regex, and the stderr file has the eprintln! diagnostic
+        # output that the next-step grep parses. The 8-case expansion by
+        # Issue #3584 made this visible — the previous 2-case test
+        # generated 2 `eprintln!` lines, the new 8-case test generates
+        # 8, which trips the regex on most runs.
         run: |
-          cargo test --release --features ort --verbose \
+          stdbuf -oL -eL cargo test --release --features ort --verbose \
             --test surrogate_ashrae_600_cooling_mae \
-            -- --nocapture \
-            2>&1 | tee /tmp/surrogate_mae_gate_output.txt
-          echo "---"
+            -- --nocapture --test-threads=1 \
+            > /tmp/surrogate_mae_gate_output.txt \
+            2> /tmp/surrogate_mae_gate_stderr.txt
           echo "exit_code=$?"
 
       - name: Verify gate coverage and extract results
@@ -996,6 +1010,12 @@ jobs:
           # All three tests must appear in the captured output. A missing
           # test name means a filter silently dropped it (Issue #1866) —
           # fail honestly rather than report a false PASS.
+          # Issue #3668 — coverage check now runs against the stdout-only
+          # file (see the cargo test step above) so the eprintln!
+          # diagnostic output (in stderr) can't interleave with the
+          # cargo harness's "test X ... ok" line. The original strict
+          # regex `\.\.\. (ok|ignored|FAILED)` is restored now that the
+          # captured stdout is clean.
           check_coverage() {
             local name="$1"
             if grep -qE "(^|[^[:alnum:]_])test $name \.\.\. (ok|ignored|FAILED)" /tmp/surrogate_mae_gate_output.txt; then
@@ -1027,8 +1047,8 @@ jobs:
           # Pull the two diagnostic lines printed by the test under
           # --nocapture. The advisory branch always prints; the strict
           # branch only prints when the ONNX model is loaded.
-          grep -E '\[surrogate-mae-gate-diag\] case=600' /tmp/surrogate_mae_gate_output.txt || true
-          grep -E '\[surrogate-mae-gate-diag\] case=900' /tmp/surrogate_mae_gate_output.txt || true
+          grep -E '\[surrogate-mae-gate-diag\] case=600' /tmp/surrogate_mae_gate_stderr.txt || true
+          grep -E '\[surrogate-mae-gate-diag\] case=900' /tmp/surrogate_mae_gate_stderr.txt || true
 
           if [ "$FAILED" -gt 0 ] || [ "$PANICS" -gt 0 ]; then
             echo
@@ -1053,7 +1073,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: surrogate-ashrae-mae-gate
-          path: /tmp/surrogate_mae_gate_output.txt
+          path: |
+            /tmp/surrogate_mae_gate_output.txt
+            /tmp/surrogate_mae_gate_stderr.txt
           retention-days: 14
 
   # Python verification scripts — Issue #1699

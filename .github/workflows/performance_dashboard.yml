@@ -1224,7 +1224,21 @@ jobs:
   warm-cold-start-build:
     name: Warm Cold Start Build (cache prime for #2919 gate)
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # Issue #3668 — also run on `pull_request` so the `ort-cold-start-build`
+    # cache namespace is primed BEFORE `multi-zone-cold-start-gate` runs.
+    # Without the PR trigger, the gate pays the cold-cache cost of
+    # building the `--features ort` transitive tree on every PR (~5+ min
+    # cold build, plus the measured cold-start time is inflated by the
+    # cache-miss cost). The 25% regression tolerance in
+    # `tests/reference_data/surrogate/cold_start_baseline.json` (recorded
+    # 2026-08-15 against a warm-cache median of 15 µs) then trips on every
+    # PR build. Running the warm-build on PR (and adding `needs:` below)
+    # keeps the cache fresh, so the gate measures a real cold-start delta
+    # rather than build overhead. On warm-cache the warm-build step
+    # finishes in ~3 min — net PR cost +~3-5 min, well inside the previous
+    # 25-min gate timeout that the cold-build was regularly blowing
+    # through.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     timeout-minutes: 45
 
     steps:
@@ -1317,10 +1331,32 @@ jobs:
   multi-zone-cold-start-gate:
     name: Multi-Zone Cold Start Gate (Issue #2919)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    # NOTE: intentionally no `needs` — builds its own release test binary
-    # and runs in parallel with `absolute-perf-gate` /
-    # `multi-zone-perf-gate` / `hybrid-perf-gate` for a faster PR signal.
+    # Issue #2919 gate timeout bumped 25 -> 45 min on 2026-09-10 (folded into
+    # chore PR #3668): the nightly `warm-cold-start-build` cache-prime only
+    # runs on `schedule` / `workflow_dispatch`, so PR builds pay the full
+    # cold-cache cost of compiling the `--features ort` transitive tree
+    # (~5+ min, trending upward with libonnxruntime + protobuf + ureq).
+    # Worst-case cold-cache build + 3 measurement runs + per-run relink
+    # was hitting the 25-min ceiling on the `60bcd4b` PR runs in 2026-09-10,
+    # blocking the gate with `cancel` conclusions (counts as failure for
+    # branch protection since the job is in `required_checks`).
+    # 45 min matches the `warm-cold-start-build` cache-prime timeout and
+    # gives comfortable headroom for the worst-case cold path. Warm-cache
+    # runs still finish in ~3 min — the bump only matters when the cache
+    # has been invalidated by a source change between nightly primes.
+    timeout-minutes: 45
+    # Issue #3668 — `needs: warm-cold-start-build` so the gate always runs
+    # against a warm `ort-cold-start-build` cache. The cache is now primed
+    # on PR (and push main, schedule, workflow_dispatch) by the updated
+    # `warm-cold-start-build` `if` clause above; the gate inherits the
+    # primed cache via the `shared-key: ort-cold-start-build` Swatinem/rust-cache
+    # namespace. The previous "intentionally no needs" comment is
+    # obsolete — the gate still builds its own release test binary
+    # (`cargo build --release --features ort --tests`), but the cache
+    # warm means it's a near-instant relink instead of a 5+ min cold build.
+    # The gate continues to run in parallel with the other perf gates
+    # (the warm-build runs before it, not alongside it).
+    needs: warm-cold-start-build
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
 
     steps:
