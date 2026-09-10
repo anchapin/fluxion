@@ -165,9 +165,16 @@ impl StateExtractor {
             ))
         })?;
 
-        let _eui = self
+        let eui = self
             .inner
             .solve_timesteps(steps, &surrogates, use_surrogates, None, None, None);
+        // Issue #3633: propagate divergence as Err instead of silently
+        // fabricating StateMatrices. `solve_timesteps` returns the EUI as
+        // f64; NaN / +-Inf indicate the inner physics step diverged.
+        // The `Some(_) / None` branch below is reached only when the
+        // simulation actually completed (with empty hourly temps in the
+        // None case) — never when it diverged.
+        check_solve_finite(eui, "run_simulation")?;
 
         let hourly_temps = self.inner.get_hourly_temperatures();
         let zone_temperatures = match hourly_temps {
@@ -234,9 +241,11 @@ impl StateExtractor {
             ))
         })?;
 
-        let _eui = self
+        let eui = self
             .inner
             .solve_timesteps(steps, &surrogates, use_surrogates, None, None, None);
+        // Issue #3633: same divergence check as `run_simulation` above.
+        check_solve_finite(eui, "extract_zone_temperatures")?;
 
         let hourly_temps = self.inner.get_hourly_temperatures();
         match hourly_temps {
@@ -264,6 +273,58 @@ impl StateExtractor {
 impl Default for StateExtractor {
     fn default() -> Self {
         Self::new(None).expect("Failed to create StateExtractor with default config")
+    }
+}
+
+/// Issue #3633 helper: validate that `solve_timesteps` returned a finite EUI.
+///
+/// `solve_timesteps` returns `f64` rather than `Result`; NaN / +Inf / -Inf
+/// are the divergence signal. Propagating the check through this helper
+/// keeps both `run_simulation` and `extract_zone_temperatures` consistent
+/// and lets us unit-test the rule without spinning up a full `StateExtractor`.
+fn check_solve_finite(eui: f64, caller: &str) -> napi::bindgen_prelude::Result<()> {
+    if eui.is_finite() {
+        Ok(())
+    } else {
+        Err(napi::bindgen_prelude::Error::from_reason(format!(
+            "solve_timesteps diverged in {caller} (eui={eui}); refusing to fabricate StateMatrices (Issue #3633)"
+        )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_solve_finite;
+
+    #[test]
+    fn check_solve_finite_passes_finite_values() {
+        assert!(check_solve_finite(0.0, "t").is_ok());
+        assert!(check_solve_finite(123.456, "t").is_ok());
+        assert!(check_solve_finite(-1.0e9, "t").is_ok());
+        assert!(check_solve_finite(f64::MIN_POSITIVE, "t").is_ok());
+        assert!(check_solve_finite(f64::MAX, "t").is_ok());
+    }
+
+    /// Issue #3633 regression: a NaN EUI from `solve_timesteps` must surface
+    /// as `Err` from the napi method, not as a fabricated `StateMatrices`.
+    #[test]
+    fn check_solve_finite_rejects_nan() {
+        let err = check_solve_finite(f64::NAN, "run_simulation").unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("diverged") && msg.contains("run_simulation") && msg.contains("#3633"),
+            "error message should name the divergence, caller, and issue: {msg}"
+        );
+    }
+
+    #[test]
+    fn check_solve_finite_rejects_pos_inf() {
+        assert!(check_solve_finite(f64::INFINITY, "t").is_err());
+    }
+
+    #[test]
+    fn check_solve_finite_rejects_neg_inf() {
+        assert!(check_solve_finite(f64::NEG_INFINITY, "t").is_err());
     }
 }
 
