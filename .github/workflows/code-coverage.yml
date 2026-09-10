@@ -29,6 +29,36 @@ name: Code Coverage
 
 on:
   pull_request:
+    # Issue #3662: skip the `Code Coverage Gate (Issue #1932)` workflow on
+    # docs-only PRs so the 1%-relative ratchet cannot fire on coverage
+    # measurement noise (e.g. PR #3660 — `+24 / -0` lines in
+    # CONTRIBUTING.md and AGENTS.md, zero code change, gate tripped at
+    # 65.51% < 65.62% ratchet floor on the conduction_zone branch
+    # metric, an ~0.11pp dip inside typical llvm-cov variance). The Wave
+    # 8 / #3367 pattern is identical to the one already in
+    # `.github/workflows/rust-tests.yml::on.pull_request.paths-ignore`:
+    # docs-only PRs do not need the cargo-llvm-cov long pole, and
+    # branch protection's `release_gates.yaml::ci.required_checks_
+    # workflow_only` set already covers docs PRs. The explicit root
+    # `.md` entries are defensive — `**.md` already matches them — and
+    # document which root files are considered "documentation" for this
+    # carve-out so a future contributor adding a new root `.md` file
+    # does not have to ask. The script itself
+    # (`scripts/coverage_critical_paths.py`) is unchanged; the fix lives
+    # at the workflow layer so docs-only PRs never reach it.
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - "**.mdx"
+      - "README.md"
+      - "ARCHITECTURE.md"
+      - "AGENTS.md"
+      - "RULES.md"
+      - "CODEBASE_MAP.md"
+      - "SCORECARD.md"
+      - "KNOWN_ISSUES.md"
+      - "ASHRAE140_RESULTS.md"
+      - "CONTRIBUTING.md"
   push:
     branches: [develop]
 
