@@ -979,10 +979,21 @@ jobs:
         # The coverage regex below enforces all three appear in the captured
         # output (Issue #1866: a renamed / removed test is itself a gate
         # regression).
+        # Issue #3668 — `--test-threads=1` serializes the test harness so
+        # each test's "test ... ok" / "test ... FAILED" line lands on its
+        # own line. Without it, parallel execution interleaves the
+        # `eprintln!` diagnostic output of one test with the cargo
+        # summary line of the next, hiding `reference_json_files_...`
+        # from the coverage regex and tripping a false-positive "DROPPED
+        # FROM GATE". The diagnostic prints to stderr are serialized
+        # along with stdout under --nocapture, so the regex matches the
+        # per-test "ok" line reliably. The total wall time increases
+        # by ~1-2 s on this 3-test file; negligible vs the 30-min
+        # job timeout.
         run: |
           cargo test --release --features ort --verbose \
             --test surrogate_ashrae_600_cooling_mae \
-            -- --nocapture \
+            -- --nocapture --test-threads=1 \
             2>&1 | tee /tmp/surrogate_mae_gate_output.txt
           echo "---"
           echo "exit_code=$?"
