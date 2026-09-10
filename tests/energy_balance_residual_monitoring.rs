@@ -184,3 +184,28 @@ fn test_surrogate_inputs_from_temps_for_residual_check() {
     assert!(inputs.solar_rad >= 0.0);
     assert!(inputs.occupancy >= 0.0);
 }
+
+/// Issue #3636: `SurrogateInputs::from_temps` previously derived the solar
+/// phase from `SystemTime::now()`, making it non-deterministic and breaking
+/// `surrogate_mae_drift_gate` whenever CI ran outside the wall-clock hour
+/// the baseline JSON was captured at. Asserts that two calls with the same
+/// input produce bit-identical `solar_rad` — a stronger property than
+/// `>= 0.0`, which only proved absence of NaN/Inf.
+#[test]
+fn test_surrogate_inputs_from_temps_is_deterministic_across_wall_clock() {
+    let temps: [f64; 2] = [15.0, 22.0];
+    let a = SurrogateInputs::from_temps(&temps);
+    let b = SurrogateInputs::from_temps(&temps);
+    assert_eq!(
+        a.solar_rad.to_bits(),
+        b.solar_rad.to_bits(),
+        "solar_rad must be bit-identical across calls (Issue #3636)"
+    );
+    // Also exercise the path that previously diverged by wall-clock hour
+    // (the old `hour_of_day` term), confirming the phase is now purely
+    // a function of `temps`.
+    let temps2: [f64; 2] = [0.0, 22.0];
+    let c = SurrogateInputs::from_temps(&temps2);
+    let d = SurrogateInputs::from_temps(&temps2);
+    assert_eq!(c.solar_rad.to_bits(), d.solar_rad.to_bits());
+}
