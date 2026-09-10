@@ -1688,12 +1688,21 @@ mod tests {
 
     #[test]
     fn test_diagnostic_collector_save_all() {
-        let config = DiagnosticConfig::full();
+        let mut config = DiagnosticConfig::full();
+        // Issue #3653: `full()`'s CWD-relative default would drop
+        // `hourly_output.csv` into the repo root on every `cargo test` run.
+        config.hourly_output_path = Some(
+            std::env::temp_dir()
+                .join("fluxion_test_save_all_hourly.csv")
+                .to_string_lossy()
+                .into_owned(),
+        );
         let mut collector = DiagnosticCollector::new(config);
         collector.start_case("600", 1);
         let data = HourlyData::new(0, 1);
         collector.record_hour(data);
         assert!(collector.save_all().is_ok());
+        let _ = std::fs::remove_file(std::env::temp_dir().join("fluxion_test_save_all_hourly.csv"));
     }
 
     #[test]
