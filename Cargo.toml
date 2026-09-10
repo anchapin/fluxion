@@ -8,6 +8,13 @@ description = "A differentiable, AI-accelerated Building Energy Modeling engine 
 repository = "https://github.com/anchapin/fluxion"
 license = "Apache-2.0"
 
+# Issue #3668 — chore PR #3668 (`chore(fmt+ratchet)`) was merged to unblock
+# downstream PRs (#3664, #3665, #3666). This comment is a path-filter trigger
+# so the MSRV Check (Issue #2934) and Crate Size Gate (Issue #2930) — both of
+# which path-filter on `Cargo.toml` — run on subsequent PRs that need to
+# verify the workspace MSRV still builds and the published crate is still
+# under the 10 MB Goal #10 ceiling. No functional change.
+
 # =============================================================================
 # Workspace (#1255 — crate split to enable cargo-mutants in CI)
 # =============================================================================
