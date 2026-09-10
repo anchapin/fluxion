@@ -1327,7 +1327,10 @@ fn test_reference_csv_files_present_and_parseable() {
         let heating_well_formed = (h_lo > 0.0 && h_hi > h_lo)
             || (h_lo == 0.0 && h_hi == 0.0)
             || (h_lo == 0.0 && h_hi >= 0.0 && h_hi <= 0.015);
-        assert!(heating_well_formed, "{csv} heating band malformed [{h_lo}, {h_hi}]");
+        assert!(
+            heating_well_formed,
+            "{csv} heating band malformed [{h_lo}, {h_hi}]"
+        );
         assert!(c_lo > 0.0 && c_hi > c_lo, "{csv} cooling band malformed");
         println!("[#1147 {csv}] H=[{h_lo}, {h_hi}] MWh, C=[{c_lo}, {c_hi}] MWh");
     }

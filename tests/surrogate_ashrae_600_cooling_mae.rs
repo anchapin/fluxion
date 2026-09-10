@@ -381,7 +381,8 @@ fn surrogate_annual_cooling_within_5pct_of_energyplus_when_model_loaded() {
         return;
     }
 
-    let mut measurements: Vec<CoolingMeasurement> = Vec::with_capacity(SURROGATE_ROUTED_CASES.len());
+    let mut measurements: Vec<CoolingMeasurement> =
+        Vec::with_capacity(SURROGATE_ROUTED_CASES.len());
     for (case_id, case_enum) in SURROGATE_ROUTED_CASES {
         let reference = load_reference(case_id);
         let m = evaluate_case(*case_enum, case_id, &reference, &surrogates);
@@ -448,7 +449,8 @@ fn surrogate_annual_cooling_fallback_advisory_report() {
         return;
     }
 
-    let mut measurements: Vec<CoolingMeasurement> = Vec::with_capacity(SURROGATE_ROUTED_CASES.len());
+    let mut measurements: Vec<CoolingMeasurement> =
+        Vec::with_capacity(SURROGATE_ROUTED_CASES.len());
     for (case_id, case_enum) in SURROGATE_ROUTED_CASES {
         let reference = load_reference(case_id);
         let m = evaluate_case(*case_enum, case_id, &reference, &surrogates);
