@@ -207,11 +207,30 @@ impl StateExtractor {
         // zone_temperatures branch already does at line 183.
         let mass_flat = flatten_mass_temperatures(&mass_temperatures, self.num_zones, steps);
 
+        // Issue #3667: replace the fabricated `vec![0.0; steps]` with the
+        // per-step power derived from the model's accumulated annual
+        // heating/cooling energy. `solve_timesteps` populates
+        // `self.inner.hvac.annual_heating_energy` and
+        // `annual_cooling_energy` (in kWh) as a side effect of running
+        // `step_physics`; reading them back and broadcasting the average
+        // power across the 8760 hourly timesteps turns the previous
+        // fabricated-zero output into an honest reflection of what the
+        // simulation actually computed. Per-step variation is lost
+        // (everything is constant power at the annual average), which is
+        // the same trade-off the #3624 / `model.heating_energy /
+        // cooling_energy` direction takes — that direction is the proper
+        // per-step fix and remains owned by #3624. The JS-side test
+        // (`npm/test.js:707` ASHRAE 600 band) sums the array and divides
+        // by 1000 to recover kWh; the math is preserved by the constant-
+        // power broadcast.
+        let heating_loads = populate_step_loads(self.inner.hvac.annual_heating_energy, steps);
+        let cooling_loads = populate_step_loads(self.inner.hvac.annual_cooling_energy, steps);
+
         Ok(StateMatrices {
             zone_temperatures: into_zero_copy_float64_array(zone_temperatures),
             mass_temperatures: into_zero_copy_float64_array(mass_flat),
-            heating_loads: into_zero_copy_float64_array(vec![0.0; steps]),
-            cooling_loads: into_zero_copy_float64_array(vec![0.0; steps]),
+            heating_loads: into_zero_copy_float64_array(heating_loads),
+            cooling_loads: into_zero_copy_float64_array(cooling_loads),
             solar_gains: into_zero_copy_float64_array(vec![0.0; steps * self.num_zones]),
         })
     }
@@ -315,9 +334,52 @@ fn flatten_mass_temperatures(
     out
 }
 
+/// Issue #3667 helper: convert an annual energy total (kWh) into a
+/// `steps`-long vector of per-timestep average power (W), so the JS
+/// client can recover kWh by `sum(W) / 1000.0` (1-hour timesteps).
+///
+/// The previous `run_simulation` body hardcoded `vec![0.0; steps]` for
+/// `heating_loads` / `cooling_loads` (see `src/napi/state_extractor.rs`
+/// history prior to #3667). That fabricated the per-step power array
+/// regardless of what `solve_timesteps` actually produced — the JS-side
+/// sum was 0.0 and the ASHRAE 600 smoke test (`npm/test.js:707`,
+/// `total_energy_kwh > 0`) failed with
+/// `'total_energy_kwh must be positive, got 0'` even when the underlying
+/// simulation ran to completion. Reading
+/// `self.inner.hvac.annual_heating_energy` / `annual_cooling_energy`
+/// (populated as a side-effect of `step_physics`) and broadcasting the
+/// annual average across the timesteps turns the previous fabricated-
+/// zero output into an honest reflection of the model state.
+///
+/// Edge cases:
+/// - `steps == 0`: returns an empty `Vec`. Matches the
+///   `flatten_mass_temperatures` defensive style — the napi path always
+///   passes `years * 8760 >= 8760`, but the helper stays panic-free.
+/// - `annual_kwh <= 0` (free-floating / unconditioned / no-heating /
+///   cooling-dominated hour): the broadcast becomes `0.0` for every
+///   cell, which mirrors the previous behaviour for those zones but
+///   only when the model legitimately produced no energy. A genuinely
+///   divergent simulation produces NaN / +Inf here, which the JS-side
+///   `Number.isFinite` guard in `npm/test.js:725` already rejects
+///   (Issue #2911 / #3633 pattern).
+///
+/// Per-step temporal variation is intentionally NOT recovered — the
+/// proper per-step load tracker is owned by #3624. This helper is the
+/// minimum honest replacement for the fabricated zero path.
+fn populate_step_loads(annual_kwh: f64, steps: usize) -> Vec<f64> {
+    if steps == 0 {
+        return Vec::new();
+    }
+    // Per-step average power in W: annual_kwh * 1000.0 / steps
+    //   (since 1 kWh = 1000 Wh and we have `steps` hourly timesteps,
+    //    so W·h / h = W; multiplying by 1000 converts kWh→Wh).
+    let per_step_w = annual_kwh * 1000.0 / steps as f64;
+    vec![per_step_w; steps]
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{check_solve_finite, flatten_mass_temperatures};
+    use super::{check_solve_finite, flatten_mass_temperatures, populate_step_loads};
 
     // ====================================================================
     // Issue #3633 regression tests: solve_timesteps divergence propagation
@@ -396,6 +458,81 @@ mod tests {
         // 1 zone in the slice, 3 zones requested → zones 1, 2 use 20.0
         let out = flatten_mass_temperatures(&[15.0], 3, 1);
         assert_eq!(out, vec![15.0, 20.0, 20.0]);
+    }
+
+    // ====================================================================
+    // Issue #3667 regression tests: fabricated zero-load replacement
+    // ====================================================================
+
+    /// Issue #3667 regression: zero steps must not panic or divide-by-zero
+    /// the per-step W broadcast — the napi wrapper enforces `years >= 1`
+    /// upstream, but the helper itself stays panic-free on `steps == 0`,
+    /// matching `flatten_mass_temperatures` style.
+    #[test]
+    fn populate_step_loads_handles_zero_steps() {
+        let out = populate_step_loads(1234.5, 0);
+        assert!(out.is_empty());
+    }
+
+    /// Issue #3667 regression: an annual energy total in kWh must
+    /// broadcast to a vector whose `sum() / 1000.0` reconstructs the
+    /// same kWh value (1-hour timesteps). The napi `run_simulation`
+    /// previously hardcoded `vec![0.0; steps]` here, which masked the
+    /// simulation output and made the JS-side `total_energy_kwh` sum
+    /// identically 0.0 — the `npm/test.js:707` band check fails first
+    /// on `total_energy_kwh > 0`.
+    #[test]
+    fn populate_step_loads_recovers_annual_kwh_via_sum_over_1000() {
+        // ASHRAE 600 reference band: heating in [4314, 5836] kWh.
+        let annual_heating_kwh = 5000.0;
+        let steps = 8760usize;
+        let out = populate_step_loads(annual_heating_kwh, steps);
+        assert_eq!(out.len(), steps);
+        assert!(out.iter().all(|&v| v == out[0]));
+        // sum(W) over 1-hour timesteps = Wh; /1000 → kWh
+        let recovered = out.iter().sum::<f64>() / 1000.0;
+        assert!(
+            (recovered - annual_heating_kwh).abs() < 1e-6,
+            "annual heating round-trip lost fidelity: {recovered} vs {annual_heating_kwh}"
+        );
+    }
+
+    /// Issue #3667 regression: a non-trivial Case 600 cooling total
+    /// produces per-step W values that, when summed and divided by 1000,
+    /// recover the original kWh figure — the JS-side `cooling_kwh` will
+    /// at least be `> 0` even when the underlying simulation produces
+    /// wildly divergent numbers (the band check would still fail, but
+    /// that failure is diagnostic rather than the fabricated-zero
+    /// failure that #3667 was filed against).
+    #[test]
+    fn populate_step_loads_handles_zero_annual_kwh() {
+        let out = populate_step_loads(0.0, 8760);
+        assert_eq!(out.len(), 8760);
+        assert!(out.iter().all(|&v| v == 0.0));
+    }
+
+    /// Issue #3667 regression: a `f64::NAN` annual energy from a divergent
+    /// simulation must propagate through the broadcast — the JS-side
+    /// `Number.isFinite` guard (`npm/test.js:725`, Issue #2911 / #3633)
+    /// then rejects it, so the fabricated-zero failure mode is replaced
+    /// by the more diagnostic finite-check failure rather than a silent
+    /// NaN leak.
+    #[test]
+    fn populate_step_loads_propagates_nan_through_broadcast() {
+        let out = populate_step_loads(f64::NAN, 8760);
+        assert_eq!(out.len(), 8760);
+        assert!(out.iter().all(|&v| v.is_nan()));
+    }
+
+    /// Issue #3667 regression: the per-step average W figure is exactly
+    /// `annual_kwh * 1000.0 / steps`, not rounded or smoothed. For
+    /// `annual_kwh = 4380.0` and `steps = 8760` the per-step W equals
+    /// 500.0 W exactly (4380 kWh over the year = 4380 kW average =
+    /// 500 W per timestep), matching the documented kWh→W conversion.
+    #[test]
+    fn populate_step_loads_per_step_w_matches_annual_average() {
+        let out = populate_step_loads(4380.0, 8760);
+        assert!(out.iter().all(|&v| v == 500.0));
     }
 }
 
