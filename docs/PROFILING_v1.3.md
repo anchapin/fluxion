@@ -59,8 +59,6 @@ Based on code analysis of `src/sim/thermal_model_physics/`, the following hot pa
 step_physics(timestep, outdoor_temp, dt_seconds)
 ├── calc_analytical_loads() [if weather.is_some()]
 ├── step_physics_9r4c() [if is_nine_r4c_model]
-├── step_physics_8r3c() [if is_8r3c_model]
-├── step_physics_6r2c() [if is_6r2c_model]
 └── step_physics_5r1c() [default]
 ```
 
