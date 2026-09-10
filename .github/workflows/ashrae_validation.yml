@@ -979,19 +979,24 @@ jobs:
         # The coverage regex below enforces all three appear in the captured
         # output (Issue #1866: a renamed / removed test is itself a gate
         # regression).
-        # Issue #3668 — `--test-threads=1` serializes the test harness so
-        # each test's "test ... ok" / "test ... FAILED" line lands on its
-        # own line. Without it, parallel execution interleaves the
-        # `eprintln!` diagnostic output of one test with the cargo
-        # summary line of the next, hiding `reference_json_files_...`
-        # from the coverage regex and tripping a false-positive "DROPPED
-        # FROM GATE". The diagnostic prints to stderr are serialized
-        # along with stdout under --nocapture, so the regex matches the
-        # per-test "ok" line reliably. The total wall time increases
-        # by ~1-2 s on this 3-test file; negligible vs the 30-min
-        # job timeout.
+        # Issue #3668 — `--test-threads=1` + `stdbuf -oL -eL` serializes the
+        # test harness AND forces line-buffered stdout/stderr so each
+        # test's "test ... ok" / "test ... FAILED" line lands on its own
+        # line. Without line buffering, the cargo test harness's
+        # line-buffered stdout ("test X ...") and the test's unbuffered
+        # `eprintln!` diagnostic (stderr, flushed per call) interleave
+        # across test boundaries: the captured `tee` file ends up with
+        # "test X ..." followed by another test's `eprintln!` text on
+        # the same line, with "ok" appearing on a LATER line. The
+        # coverage regex `(^|[^[:alnum:]_])test $name \.\.\. (ok|ignored|FAILED)`
+        # then fails to match. `stdbuf -oL -eL` forces BOTH streams to
+        # flush per `\n` so order is preserved. The 8-case expansion by
+        # Issue #3584 made this visible — the previous 2-case test
+        # generated 2 `eprintln!` lines, the new 8-case test generates
+        # 8, increasing the chance of mid-line flushes from
+        # `--show-output` parsing.
         run: |
-          cargo test --release --features ort --verbose \
+          stdbuf -oL -eL cargo test --release --features ort --verbose \
             --test surrogate_ashrae_600_cooling_mae \
             -- --nocapture --test-threads=1 \
             2>&1 | tee /tmp/surrogate_mae_gate_output.txt
