@@ -14,6 +14,9 @@ use std::sync::OnceLock;
 
 static PROFILE_CACHE: OnceLock<HashMap<BuildingType, ProfileBundle>> = OnceLock::new();
 
+#[cfg(test)]
+static PROFILE_FILE_READS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 /// Bundle of internal load profiles for a building type
 pub struct ProfileBundle {
     pub lighting: LightingSchedule,
@@ -96,35 +99,11 @@ struct OccupancyData {
     max_occupancy: f64,
 }
 
-/// Load building profile from JSON file with caching
-pub fn load_building_profile(building_type: BuildingType) -> Result<ProfileBundle, String> {
-    // Check cache first
-    if let Some(cache) = PROFILE_CACHE.get() {
-        if let Some(profile) = cache.get(&building_type) {
-            return Ok(profile.clone());
-        }
-    }
-
-    // Load from file
-    let profile_path = "data/building_profiles.json";
-    let content = fs::read_to_string(profile_path)
-        .map_err(|e| format!("Failed to read profile file {}: {}", profile_path, e))?;
-
-    let profiles: BuildingProfiles = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse profile JSON: {}", e))?;
-
-    let building_key = match building_type {
-        BuildingType::Office => "office",
-        BuildingType::Retail => "retail",
-        BuildingType::School => "school",
-        _ => return Err(format!("Unsupported building type: {:?}", building_type)),
-    };
-
-    let profile_data = profiles
-        .profiles
-        .get(building_key)
-        .ok_or_else(|| format!("Profile not found for building type: {}", building_key))?;
-
+/// Build the internal-load bundle for one building type from parsed JSON data.
+fn build_profile_bundle(
+    building_type: BuildingType,
+    profile_data: &BuildingProfileData,
+) -> Result<ProfileBundle, String> {
     // Build lighting schedule
     let lighting = LightingSchedule::new(
         profile_data.lighting.power_density_w_m2,
@@ -236,20 +215,72 @@ pub fn load_building_profile(building_type: BuildingType) -> Result<ProfileBundl
         _ => occupancy,
     };
 
-    let bundle = ProfileBundle {
+    Ok(ProfileBundle {
         lighting,
         equipment,
         occupancy,
+    })
+}
+
+/// Build bundles for every supported building type from one parsed profile file.
+fn build_all_bundles(
+    profiles: &BuildingProfiles,
+) -> Result<HashMap<BuildingType, ProfileBundle>, String> {
+    let mut bundles = HashMap::new();
+    for (building_type, building_key) in [
+        (BuildingType::Office, "office"),
+        (BuildingType::Retail, "retail"),
+        (BuildingType::School, "school"),
+    ] {
+        let profile_data = profiles
+            .profiles
+            .get(building_key)
+            .ok_or_else(|| format!("Profile not found for building type: {}", building_key))?;
+        bundles.insert(
+            building_type,
+            build_profile_bundle(building_type, profile_data)?,
+        );
+    }
+    Ok(bundles)
+}
+
+/// Load building profile from JSON file with caching
+///
+/// The cache is keyed by [`BuildingType`] and populated eagerly on first use:
+/// a single file read + parse produces bundles for every supported building
+/// type (issue #3649), so a request for one type can never be served another
+/// type's profile and the profile file is read at most once per process on
+/// the success path.
+pub fn load_building_profile(building_type: BuildingType) -> Result<ProfileBundle, String> {
+    // Fail fast on unsupported types without touching the cache or filesystem.
+    let building_key = match building_type {
+        BuildingType::Office => "office",
+        BuildingType::Retail => "retail",
+        BuildingType::School => "school",
+        _ => return Err(format!("Unsupported building type: {:?}", building_type)),
     };
 
-    // Cache for future use
-    PROFILE_CACHE.get_or_init(|| {
-        let mut cache = HashMap::new();
-        cache.insert(building_type, bundle.clone());
-        cache
-    });
+    let cache = match PROFILE_CACHE.get() {
+        Some(cache) => cache,
+        None => {
+            let profile_path = "data/building_profiles.json";
+            #[cfg(test)]
+            PROFILE_FILE_READS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let content = fs::read_to_string(profile_path)
+                .map_err(|e| format!("Failed to read profile file {}: {}", profile_path, e))?;
 
-    Ok(bundle)
+            let profiles: BuildingProfiles = serde_json::from_str(&content)
+                .map_err(|e| format!("Failed to parse profile JSON: {}", e))?;
+
+            let bundles = build_all_bundles(&profiles)?;
+            PROFILE_CACHE.get_or_init(|| bundles)
+        }
+    };
+
+    cache
+        .get(&building_type)
+        .cloned()
+        .ok_or_else(|| format!("Profile not found for building type: {}", building_key))
 }
 
 #[cfg(test)]
@@ -482,5 +513,51 @@ mod tests {
             max_occupancy: 150.0,
         };
         assert!((od.max_occupancy - 150.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_cache_serves_all_building_types_from_single_read() {
+        // Regression test for issue #3649: the cache used to store only the
+        // FIRST loaded building type, so requests for other types re-read the
+        // profile file on every call. The fix populates all known types from
+        // one read, so this sequence costs at most a single fs::read_to_string.
+        let reads_before = PROFILE_FILE_READS.load(std::sync::atomic::Ordering::Relaxed);
+
+        let office =
+            load_building_profile(BuildingType::Office).expect("Failed to load Office profile");
+        let retail =
+            load_building_profile(BuildingType::Retail).expect("Failed to load Retail profile");
+        let school =
+            load_building_profile(BuildingType::School).expect("Failed to load School profile");
+
+        // Each type must return its OWN data (source values differ per type).
+        assert_eq!(office.lighting.power_density, 10.0);
+        assert_eq!(retail.lighting.power_density, 12.0);
+        assert_eq!(school.lighting.power_density, 8.0);
+        assert_eq!(office.occupancy.max_occupancy, 100.0);
+        assert_eq!(retail.occupancy.max_occupancy, 50.0);
+        assert_eq!(school.occupancy.max_occupancy, 200.0);
+        assert_eq!(office.equipment.len(), 2);
+        assert_eq!(retail.equipment.len(), 1);
+        assert_eq!(school.equipment.len(), 1);
+
+        // Repeat loads must hit the cache — no additional file reads.
+        let _ = load_building_profile(BuildingType::Office)
+            .expect("Failed to reload Office profile from cache");
+        let _ = load_building_profile(BuildingType::Retail)
+            .expect("Failed to reload Retail profile from cache");
+        let _ = load_building_profile(BuildingType::School)
+            .expect("Failed to reload School profile from cache");
+
+        let reads_after = PROFILE_FILE_READS.load(std::sync::atomic::Ordering::Relaxed);
+        // The fix reads the file at most once per process; parallel tests may
+        // have already paid that single read. Pre-fix behavior re-read the
+        // file for every non-first type (>= 4 reads for this sequence).
+        let reads = reads_after.saturating_sub(reads_before);
+        assert!(
+            reads <= 1,
+            "expected at most 1 profile-file read for Office->Retail->School->all, got {}",
+            reads
+        );
     }
 }
