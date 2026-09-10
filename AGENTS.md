@@ -103,7 +103,7 @@ Runtime configuration knobs referenced above. All are fail-closed by design — 
 
 ## CI Gates You Can Run Locally
 
-Every active gate under `scripts/check_*.py` (38 scripts at head) is wired into a `.github/workflows/*.yml` job, a pre-commit hook, or a manual operator diagnostic. Run the matching local command before opening a PR to catch regressions the live workflow would otherwise surface as a CI failure. The 30 gates below join the 8 already named above (`check_architecture_drift`, `check_ashrae_cases_cycle`, `check_doc_inventory_fresh`, `check_docs_summaries`, `check_orphan_modules`, `check_physics_sim_cycle`, `check_root_hygiene`, `check_test_inventory_drift`); the table covers **all 38** for one-stop lookup, and matches the regex list in `release_gates.yaml -> ci.required_checks`. **Goal** numbering follows `SCORECARD.md` and `ARCHITECTURE.md` (key: **#1** ASHRAE 140 validation pass rate, **#5** module-size ratchet + cycle-break governance, **#6** contributor docs + CI hygiene).
+Every active gate under `scripts/check_*.py` (39 scripts at head) is wired into a `.github/workflows/*.yml` job, a pre-commit hook, or a manual operator diagnostic. Run the matching local command before opening a PR to catch regressions the live workflow would otherwise surface as a CI failure. The 31 gates below join the 8 already named above (`check_architecture_drift`, `check_ashrae_cases_cycle`, `check_doc_inventory_fresh`, `check_docs_summaries`, `check_orphan_modules`, `check_physics_sim_cycle`, `check_root_hygiene`, `check_test_inventory_drift`); the table covers **all 39** for one-stop lookup, and matches the regex list in `release_gates.yaml -> ci.required_checks`. **Goal** numbering follows `SCORECARD.md` and `ARCHITECTURE.md` (key: **#1** ASHRAE 140 validation pass rate, **#5** module-size ratchet + cycle-break governance, **#6** contributor docs + CI hygiene).
 
 | Gate | Purpose | Workflow / hook | Goal |
 |---|---|---|---|
@@ -112,6 +112,7 @@ Every active gate under `scripts/check_*.py` (38 scripts at head) is wired into 
 | `scripts/check_ashrae_cases_cycle.py` | `sim ↔ validation` cycle edge-count guard (#1441 / #2495) | `rust-tests.yml` | #5 |
 | `scripts/check_audit_config_unique.py` | Single canonical `cargo audit` config — rejects stray root-level `audit.toml` (#2773) | `security.yml` | #6 |
 | `scripts/check_audit_ignores_fresh.py` | `.cargo/audit.toml` ignore-block removal-condition audit (#2912) | `security.yml`, `rumqttc-upstream.yml` | #6 |
+| `scripts/check_audit_deny_agree.py` | `.cargo/audit.toml` ↔ `deny.toml` advisory-ignore drift gate: deny ⊆ audit + `deny-scope-exempt` marker contract (#3654) | `security.yml` | #6 |
 | `scripts/check_beta_soak_gate.py` | β-soak 30-night GaugeSolver production-path gate (Issue #3286) | `nightly-ashrae-140-gauge.yml` | #5 |
 | `scripts/check_branch_protection_diff.py` | `develop` branch-protection diagnostic vs. `release_gates.yaml` (#3383) — diagnostic half of `scripts/apply_branch_protection.py`, **does not** apply PUTs | operator diagnostic (run manually before/after a branch-protection PUT) | #6 |
 | `scripts/check_cli_doc_stubs.py` | `fluxion` CLI stub-path fail-loud contract per issue `#2947` (#3550) | `docs-hygiene.yml`, pre-commit (`manual`) | #6 |

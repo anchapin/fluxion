@@ -74,6 +74,27 @@ jobs:
       - name: Check .cargo/audit.toml ignore list freshness
         run: python3 scripts/check_audit_ignores_fresh.py
 
+  audit-deny-agree:
+    # Issue #3654: drift gate for the advisory-ignore contract between
+    # `.cargo/audit.toml` (cargo-audit) and `deny.toml` (cargo-deny).
+    # The two tools have deliberately different unmaintained scopes
+    # (`cargo audit --deny warnings` enforces transitive unmaintained;
+    # deny.toml scopes unmaintained to workspace members), so a naive
+    # set-equality check would fight the #2749 cleanup. The gate enforces
+    # the scoped contract instead: no duplicate ids per file, every
+    # deny.toml ignore mirrored in `.cargo/audit.toml`, every audit-only
+    # ignore carrying the machine-readable `deny-scope-exempt` marker,
+    # and exemptions valid only while `unmaintained = "workspace"`.
+    # Comment-only script (no toolchain needed) — network-free.
+    name: "Audit Deny Agree (Issue #3654)"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Check advisory-ignore agreement between audit.toml and deny.toml
+        run: python3 scripts/check_audit_deny_agree.py
+
   audit:
     name: Cargo Audit
     runs-on: ubuntu-latest
