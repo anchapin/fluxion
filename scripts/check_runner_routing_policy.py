@@ -190,7 +190,6 @@ def _split_jobs(jobs_block: str) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     lines = jobs_block.splitlines(keepends=True)
     current_id: str | None = None
-    current_start = -1
     body_start = -1
     for i, line in enumerate(lines):
         m = re.match(r"^  ([A-Za-z_][A-Za-z0-9_-]*):\s*$", line)
@@ -408,10 +407,10 @@ def main() -> int:
 
     if not all_findings:
         print(
-            f"[1/1] every PR-runnable job's ``runs-on:`` is guarded by the "
-            f"``github.event_name == 'push' && github.ref == "
-            f"'refs/heads/main'`` conjunction (or scoped main-only via "
-            f"``if:``) ..."
+            "[1/1] every PR-runnable job's ``runs-on:`` is guarded by the "
+            "``github.event_name == 'push' && github.ref == "
+            "'refs/heads/main'`` conjunction (or scoped main-only via "
+            "``if:``) ..."
         )
         print()
         print(
@@ -422,10 +421,10 @@ def main() -> int:
         return 0
 
     print(
-        f"[1/1] every PR-runnable job's ``runs-on:`` is guarded by the "
-        f"``github.event_name == 'push' && github.ref == "
-        f"'refs/heads/main'`` conjunction (or scoped main-only via "
-        f"``if:``) ..."
+        "[1/1] every PR-runnable job's ``runs-on:`` is guarded by the "
+        "``github.event_name == 'push' && github.ref == "
+        "'refs/heads/main'`` conjunction (or scoped main-only via "
+        "``if:``) ..."
     )
     print()
     print(

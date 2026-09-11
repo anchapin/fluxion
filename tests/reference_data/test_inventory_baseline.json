@@ -66,7 +66,7 @@
       "test_binaries": 1
     }
   },
-  "captured_at": "2026-09-11T15:27:25.342762+00:00",
+  "captured_at": "2026-09-11T19:01:04.389469+00:00",
   "captured_from": "tests/test_inventory.json",
   "metrics": {
     "lib_ignored": 8,

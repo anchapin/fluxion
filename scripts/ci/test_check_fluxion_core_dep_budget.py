@@ -23,7 +23,6 @@ unit-level correctness of the gating logic is what we pin here.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable
 
 import pytest
 
