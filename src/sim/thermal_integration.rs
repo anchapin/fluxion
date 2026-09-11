@@ -14,8 +14,32 @@
 //! Implicit methods (backward Euler, Crank-Nicolson) are unconditionally stable
 //! and handle stiff thermal systems robustly.
 
+use crate::api::error::FluxionError;
+
 #[cfg(test)]
 use std::f64::consts::PI;
+
+/// Validates the timestep / thermal-capacitance pair shared by every
+/// integrator in this module (Issue #3638).
+///
+/// A degenerate `dt` or `cm` (zero, negative, or non-finite — e.g. a faulty
+/// HVAC override driving `cm = 0` through an adaptive timestep) previously
+/// panicked mid-simulation and aborted the whole process. Every integrator
+/// now surfaces a typed [`FluxionError::Validation`] instead so callers on
+/// the production physics paths can degrade gracefully.
+fn validate_dt_cm(dt: f64, cm: f64) -> Result<(), FluxionError> {
+    if !dt.is_finite() || dt <= 0.0 {
+        return Err(FluxionError::Validation(format!(
+            "Time step dt must be positive and finite, got {dt}"
+        )));
+    }
+    if !cm.is_finite() || cm <= 0.0 {
+        return Err(FluxionError::Validation(format!(
+            "Thermal capacitance cm must be positive and finite, got {cm}"
+        )));
+    }
+    Ok(())
+}
 
 /// Thermal integration method for mass temperature updates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,7 +72,9 @@ pub enum ThermalIntegrationMethod {
 ///
 /// # Example
 /// ```
-/// use fluxion::sim::thermal_integration::select_integration_method;
+/// use fluxion::sim::thermal_integration::{
+///     select_integration_method, ThermalIntegrationMethod,
+/// };
 ///
 /// let method = select_integration_method(1000.0);
 /// assert_eq!(method, ThermalIntegrationMethod::CrankNicolson);
@@ -86,6 +112,10 @@ pub fn select_integration_method(cm: f64) -> ThermalIntegrationMethod {
 /// # Returns
 /// * New mass temperature (°C)
 ///
+/// # Errors
+/// * [`FluxionError::Validation`] when `dt <= 0.0`, `cm <= 0.0`, or either
+///   value is non-finite (Issue #3638 — was a `panic!`).
+///
 /// # Stability
 /// Unconditionally stable for any time step size.
 ///
@@ -105,7 +135,8 @@ pub fn select_integration_method(cm: f64) -> ThermalIntegrationMethod {
 ///     -5.0,   // t_ext
 ///     22.0,   // t_surface
 ///     500.0,  // phi_m
-/// );
+/// )
+/// .unwrap();
 /// ```
 #[allow(clippy::too_many_arguments)]
 pub fn backward_euler_update(
@@ -117,14 +148,8 @@ pub fn backward_euler_update(
     t_ext: f64,
     t_surface: f64,
     phi_m: f64,
-) -> f64 {
-    // Check for invalid inputs
-    if dt <= 0.0 {
-        panic!("Time step dt must be positive, got {}", dt);
-    }
-    if cm <= 0.0 {
-        panic!("Thermal capacitance cm must be positive, got {}", cm);
-    }
+) -> Result<f64, FluxionError> {
+    validate_dt_cm(dt, cm)?;
 
     // Calculate denominator: (Cm/dt + h_tr_em + h_tr_ms)
     let denom = cm / dt + h_tr_em + h_tr_ms;
@@ -133,7 +158,7 @@ pub fn backward_euler_update(
     let numer = cm / dt * tm_old + h_tr_em * t_ext + h_tr_ms * t_surface + phi_m;
 
     // Return new temperature
-    numer / denom
+    Ok(numer / denom)
 }
 
 /// ISO 13790 Crank-Nicolson mass temperature update (§C.4).
@@ -161,6 +186,13 @@ pub fn backward_euler_update(
 /// * `t_ext` - Exterior (sol-air) temperature driving the h_tr_em path (°C)
 /// * `t_sup` - Supply / surface temperature driving the h_tr_3 path (°C)
 /// * `phi_m_tot` - Total heat flow to mass node (W), includes HVAC via network
+///
+/// # Returns
+/// * New mass temperature (°C)
+///
+/// # Errors
+/// * [`FluxionError::Validation`] when `dt <= 0.0`, `cm <= 0.0`, or either
+///   value is non-finite (Issue #3638 — was a `panic!`).
 #[allow(clippy::too_many_arguments)]
 pub fn crank_nicolson_iso13790(
     tm_prev: f64,
@@ -171,13 +203,8 @@ pub fn crank_nicolson_iso13790(
     t_ext: f64,
     t_sup: f64,
     phi_m_tot: f64,
-) -> f64 {
-    if dt <= 0.0 {
-        panic!("Time step dt must be positive, got {}", dt);
-    }
-    if cm <= 0.0 {
-        panic!("Thermal capacitance cm must be positive, got {}", cm);
-    }
+) -> Result<f64, FluxionError> {
+    validate_dt_cm(dt, cm)?;
 
     let cm_dt = cm / dt;
     let half_cond = 0.5 * (h_tr_3 + h_tr_em);
@@ -188,11 +215,11 @@ pub fn crank_nicolson_iso13790(
     // Check for negative denominator (can happen if conductances > Cm/dt)
     if denom <= 0.0 {
         // Fall back to forward Euler to avoid instability
-        return tm_prev
-            + dt / cm * (h_tr_em * (t_ext - tm_prev) + h_tr_3 * (t_sup - tm_prev) + phi_m_tot);
+        return Ok(tm_prev
+            + dt / cm * (h_tr_em * (t_ext - tm_prev) + h_tr_3 * (t_sup - tm_prev) + phi_m_tot));
     }
 
-    numer / denom
+    Ok(numer / denom)
 }
 
 /// Backward Euler solver for thermal mass with 2 conductances (no exterior path).
@@ -220,6 +247,10 @@ pub fn crank_nicolson_iso13790(
 ///
 /// # Returns
 /// * New mass temperature (°C)
+///
+/// # Errors
+/// * [`FluxionError::Validation`] when `dt <= 0.0`, `cm <= 0.0`, or either
+///   value is non-finite (Issue #3638 — was a `panic!`).
 #[allow(clippy::too_many_arguments)]
 pub fn backward_euler_update_2cond(
     tm_old: f64,
@@ -230,14 +261,8 @@ pub fn backward_euler_update_2cond(
     t_surface: f64,
     t_int: f64,
     phi_m: f64,
-) -> f64 {
-    // Check for invalid inputs
-    if dt <= 0.0 {
-        panic!("Time step dt must be positive, got {}", dt);
-    }
-    if cm <= 0.0 {
-        panic!("Thermal capacitance cm must be positive, got {}", cm);
-    }
+) -> Result<f64, FluxionError> {
+    validate_dt_cm(dt, cm)?;
 
     // Calculate denominator: (Cm/dt + h_tr_ms + h_tr_me)
     let denom = cm / dt + h_tr_ms + h_tr_me;
@@ -246,7 +271,7 @@ pub fn backward_euler_update_2cond(
     let numer = cm / dt * tm_old + h_tr_ms * t_surface + h_tr_me * t_int + phi_m;
 
     // Return new temperature
-    numer / denom
+    Ok(numer / denom)
 }
 
 /// Backward Euler solver for thermal mass with 2 conductances using H_tr_3.
@@ -275,6 +300,10 @@ pub fn backward_euler_update_2cond(
 ///
 /// # Returns
 /// * New mass temperature (°C)
+///
+/// # Errors
+/// * [`FluxionError::Validation`] when `dt <= 0.0`, `cm <= 0.0`, or either
+///   value is non-finite (Issue #3638 — was a `panic!`).
 #[allow(clippy::too_many_arguments)]
 pub fn backward_euler_update_2cond_h_tr3(
     tm_old: f64,
@@ -283,14 +312,8 @@ pub fn backward_euler_update_2cond_h_tr3(
     h_tr_3: f64,
     t_zone: f64,
     phi_m: f64,
-) -> f64 {
-    // Check for invalid inputs
-    if dt <= 0.0 {
-        panic!("Time step dt must be positive, got {}", dt);
-    }
-    if cm <= 0.0 {
-        panic!("Thermal capacitance cm must be positive, got {}", cm);
-    }
+) -> Result<f64, FluxionError> {
+    validate_dt_cm(dt, cm)?;
 
     // Calculate denominator: (Cm/dt + h_tr_3)
     let denom = cm / dt + h_tr_3;
@@ -299,7 +322,7 @@ pub fn backward_euler_update_2cond_h_tr3(
     let numer = cm / dt * tm_old + h_tr_3 * t_zone + phi_m;
 
     // Return new temperature
-    numer / denom
+    Ok(numer / denom)
 }
 
 /// Crank-Nicolson solver for semi-implicit thermal mass update.
@@ -327,6 +350,10 @@ pub fn backward_euler_update_2cond_h_tr3(
 /// # Returns
 /// * New mass temperature (°C)
 ///
+/// # Errors
+/// * [`FluxionError::Validation`] when `dt <= 0.0`, `cm <= 0.0`, or either
+///   value is non-finite (Issue #3638 — was a `panic!`).
+///
 /// # Stability
 /// Unconditionally stable (A-stable).
 ///
@@ -346,7 +373,8 @@ pub fn backward_euler_update_2cond_h_tr3(
 ///     -5.0,   // t_ext
 ///     22.0,   // t_surface
 ///     500.0,  // phi_m
-/// );
+/// )
+/// .unwrap();
 /// ```
 #[allow(clippy::too_many_arguments)]
 pub fn crank_nicolson_update(
@@ -358,14 +386,8 @@ pub fn crank_nicolson_update(
     t_ext: f64,
     t_surface: f64,
     phi_m: f64,
-) -> f64 {
-    // Check for invalid inputs
-    if dt <= 0.0 {
-        panic!("Time step dt must be positive, got {}", dt);
-    }
-    if cm <= 0.0 {
-        panic!("Thermal capacitance cm must be positive, got {}", cm);
-    }
+) -> Result<f64, FluxionError> {
+    validate_dt_cm(dt, cm)?;
 
     // Calculate old heat flux
     let q_old = h_tr_em * (t_ext - tm_old) + h_tr_ms * (t_surface - tm_old) + phi_m;
@@ -383,7 +405,7 @@ pub fn crank_nicolson_update(
     let numer = cm / dt * tm_old + 0.5 * q_old + 0.5 * b;
 
     // Return new temperature
-    numer / denom
+    Ok(numer / denom)
 }
 
 /// Crank-Nicolson solver for semi-implicit thermal mass update with THREE conductances.
@@ -412,6 +434,10 @@ pub fn crank_nicolson_update(
 ///
 /// # Returns
 /// * New mass temperature (°C)
+///
+/// # Errors
+/// * [`FluxionError::Validation`] when `dt <= 0.0`, `cm <= 0.0`, or either
+///   value is non-finite (Issue #3638 — was a `panic!`).
 #[allow(clippy::too_many_arguments)]
 pub fn crank_nicolson_update_3cond(
     tm_old: f64,
@@ -424,14 +450,8 @@ pub fn crank_nicolson_update_3cond(
     t_surface: f64,
     t_int: f64,
     phi_m: f64,
-) -> f64 {
-    // Check for invalid inputs
-    if dt <= 0.0 {
-        panic!("Time step dt must be positive, got {}", dt);
-    }
-    if cm <= 0.0 {
-        panic!("Thermal capacitance cm must be positive, got {}", cm);
-    }
+) -> Result<f64, FluxionError> {
+    validate_dt_cm(dt, cm)?;
 
     // Calculate old heat flux from all three paths
     let q_old = h_tr_em * (t_ext - tm_old)
@@ -452,7 +472,7 @@ pub fn crank_nicolson_update_3cond(
     let numer = cm / dt * tm_old + 0.5 * q_old + 0.5 * b;
 
     // Return new temperature
-    numer / denom
+    Ok(numer / denom)
 }
 
 /// Explicit Euler solver for thermal mass update (forward method).
@@ -475,6 +495,10 @@ pub fn crank_nicolson_update_3cond(
 /// # Returns
 /// * New mass temperature (°C)
 ///
+/// # Errors
+/// * [`FluxionError::Validation`] when `dt <= 0.0`, `cm <= 0.0`, or either
+///   value is non-finite (Issue #3638 — was a `panic!`).
+///
 /// # Stability
 /// Conditionally stable when dt < Cm / (h_tr_em + h_tr_ms).
 /// For typical building parameters with Cm > 500 J/K and dt = 3600s,
@@ -496,7 +520,8 @@ pub fn crank_nicolson_update_3cond(
 ///     -5.0,   // t_ext
 ///     22.0,   // t_surface
 ///     500.0,  // phi_m
-/// );
+/// )
+/// .unwrap();
 /// ```
 #[allow(clippy::too_many_arguments)]
 pub fn explicit_euler_update(
@@ -508,20 +533,14 @@ pub fn explicit_euler_update(
     t_ext: f64,
     t_surface: f64,
     phi_m: f64,
-) -> f64 {
-    // Check for invalid inputs
-    if dt <= 0.0 {
-        panic!("Time step dt must be positive, got {}", dt);
-    }
-    if cm <= 0.0 {
-        panic!("Thermal capacitance cm must be positive, got {}", cm);
-    }
+) -> Result<f64, FluxionError> {
+    validate_dt_cm(dt, cm)?;
 
     // Calculate net heat flux
     let q_net = h_tr_em * (t_ext - tm_old) + h_tr_ms * (t_surface - tm_old) + phi_m;
 
     // Update temperature
-    tm_old + (q_net / cm) * dt
+    Ok(tm_old + (q_net / cm) * dt)
 }
 
 /// Checks if explicit Euler is stable for given parameters.
@@ -600,7 +619,8 @@ mod tests {
         let phi_m = 500.0;
 
         let tm_new =
-            backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m);
+            backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m)
+                .expect("valid thermal integration inputs");
 
         // Temperature should increase due to heating
         assert!(tm_new > tm_old);
@@ -621,7 +641,8 @@ mod tests {
         let phi_m = 0.0;
 
         let tm_new =
-            backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m);
+            backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m)
+                .expect("valid thermal integration inputs");
 
         // Temperature should decrease due to cooling
         assert!(tm_new < tm_old);
@@ -644,9 +665,11 @@ mod tests {
         let phi_m = 500.0;
 
         let tm_be =
-            backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m);
+            backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m)
+                .expect("valid thermal integration inputs");
         let tm_cn =
-            crank_nicolson_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m);
+            crank_nicolson_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m)
+                .expect("valid thermal integration inputs");
 
         // Both should give increasing temperatures
         assert!(tm_be > tm_old);
@@ -670,7 +693,8 @@ mod tests {
         let phi_m = 100.0;
 
         let tm_new =
-            explicit_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m);
+            explicit_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m)
+                .expect("valid thermal integration inputs");
 
         // Temperature should increase
         assert!(tm_new > tm_old);
@@ -696,15 +720,163 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Time step dt must be positive")]
-    fn test_backward_euler_invalid_dt() {
-        backward_euler_update(20.0, -1.0, 1000.0, 10.0, 100.0, -5.0, 22.0, 500.0);
+    fn test_backward_euler_invalid_dt_returns_typed_error() {
+        // Issue #3638: dt <= 0 must return a typed validation error, not panic.
+        for dt in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            let err = backward_euler_update(20.0, dt, 1000.0, 10.0, 100.0, -5.0, 22.0, 500.0)
+                .expect_err("invalid dt must yield Err");
+            assert!(
+                matches!(err, FluxionError::Validation(ref msg) if msg.contains("Time step dt")),
+                "dt={dt} produced wrong error: {err:?}"
+            );
+        }
     }
 
     #[test]
-    #[should_panic(expected = "Thermal capacitance cm must be positive")]
-    fn test_backward_euler_invalid_cm() {
-        backward_euler_update(20.0, 3600.0, -1000.0, 10.0, 100.0, -5.0, 22.0, 500.0);
+    fn test_backward_euler_invalid_cm_returns_typed_error() {
+        // Issue #3638: cm <= 0 must return a typed validation error, not panic.
+        for cm in [0.0, -1000.0, f64::NAN, f64::INFINITY] {
+            let err = backward_euler_update(20.0, 3600.0, cm, 10.0, 100.0, -5.0, 22.0, 500.0)
+                .expect_err("invalid cm must yield Err");
+            assert!(
+                matches!(err, FluxionError::Validation(ref msg) if msg.contains("Thermal capacitance cm")),
+                "cm={cm} produced wrong error: {err:?}"
+            );
+        }
+    }
+
+    /// Issue #3638 regression: every integrator returns a typed
+    /// `FluxionError::Validation` for degenerate `dt` values instead of
+    /// panicking. `dt = 0.0` is the exact scenario named in the issue.
+    #[test]
+    fn test_issue_3638_all_integrators_reject_degenerate_dt() {
+        let degenerate_dts = [0.0, -3600.0, f64::NAN, f64::INFINITY];
+
+        for &dt in &degenerate_dts {
+            let err = backward_euler_update(20.0, dt, 1000.0, 10.0, 100.0, -5.0, 22.0, 500.0)
+                .expect_err("backward_euler_update must reject degenerate dt");
+            assert!(matches!(err, FluxionError::Validation(_)));
+
+            let err = crank_nicolson_iso13790(20.0, dt, 1000.0, 40.0, 10.0, -5.0, 22.0, 500.0)
+                .expect_err("crank_nicolson_iso13790 must reject degenerate dt");
+            assert!(matches!(err, FluxionError::Validation(_)));
+
+            let err = backward_euler_update_2cond(20.0, dt, 1000.0, 100.0, 30.0, 22.0, 19.0, 500.0)
+                .expect_err("backward_euler_update_2cond must reject degenerate dt");
+            assert!(matches!(err, FluxionError::Validation(_)));
+
+            let err = backward_euler_update_2cond_h_tr3(20.0, dt, 1000.0, 40.0, 21.0, 500.0)
+                .expect_err("backward_euler_update_2cond_h_tr3 must reject degenerate dt");
+            assert!(matches!(err, FluxionError::Validation(_)));
+
+            let err = crank_nicolson_update(20.0, dt, 1000.0, 10.0, 100.0, -5.0, 22.0, 500.0)
+                .expect_err("crank_nicolson_update must reject degenerate dt");
+            assert!(matches!(err, FluxionError::Validation(_)));
+
+            let err = crank_nicolson_update_3cond(
+                20.0, dt, 1000.0, 10.0, 100.0, 30.0, -5.0, 22.0, 19.0, 500.0,
+            )
+            .expect_err("crank_nicolson_update_3cond must reject degenerate dt");
+            assert!(matches!(err, FluxionError::Validation(_)));
+
+            let err = explicit_euler_update(20.0, dt, 200.0, 5.0, 50.0, 25.0, 22.0, 100.0)
+                .expect_err("explicit_euler_update must reject degenerate dt");
+            assert!(matches!(err, FluxionError::Validation(_)));
+        }
+    }
+
+    /// Issue #3638 regression: every integrator returns a typed
+    /// `FluxionError::Validation` for degenerate `cm` values instead of
+    /// panicking. `cm = 0.0` via a faulty HVAC override is the exact
+    /// scenario named in the issue.
+    #[test]
+    fn test_issue_3638_all_integrators_reject_degenerate_cm() {
+        let degenerate_cms = [0.0, -1000.0, f64::NAN, f64::INFINITY];
+
+        for &cm in &degenerate_cms {
+            let err = backward_euler_update(20.0, 3600.0, cm, 10.0, 100.0, -5.0, 22.0, 500.0)
+                .expect_err("backward_euler_update must reject degenerate cm");
+            assert!(matches!(err, FluxionError::Validation(_)));
+
+            let err = crank_nicolson_iso13790(20.0, 3600.0, cm, 40.0, 10.0, -5.0, 22.0, 500.0)
+                .expect_err("crank_nicolson_iso13790 must reject degenerate cm");
+            assert!(matches!(err, FluxionError::Validation(_)));
+
+            let err = backward_euler_update_2cond(20.0, 3600.0, cm, 100.0, 30.0, 22.0, 19.0, 500.0)
+                .expect_err("backward_euler_update_2cond must reject degenerate cm");
+            assert!(matches!(err, FluxionError::Validation(_)));
+
+            let err = backward_euler_update_2cond_h_tr3(20.0, 3600.0, cm, 40.0, 21.0, 500.0)
+                .expect_err("backward_euler_update_2cond_h_tr3 must reject degenerate cm");
+            assert!(matches!(err, FluxionError::Validation(_)));
+
+            let err = crank_nicolson_update(20.0, 3600.0, cm, 10.0, 100.0, -5.0, 22.0, 500.0)
+                .expect_err("crank_nicolson_update must reject degenerate cm");
+            assert!(matches!(err, FluxionError::Validation(_)));
+
+            let err = crank_nicolson_update_3cond(
+                20.0, 3600.0, cm, 10.0, 100.0, 30.0, -5.0, 22.0, 19.0, 500.0,
+            )
+            .expect_err("crank_nicolson_update_3cond must reject degenerate cm");
+            assert!(matches!(err, FluxionError::Validation(_)));
+
+            let err = explicit_euler_update(20.0, 3600.0, cm, 5.0, 50.0, 25.0, 22.0, 100.0)
+                .expect_err("explicit_euler_update must reject degenerate cm");
+            assert!(matches!(err, FluxionError::Validation(_)));
+        }
+    }
+
+    /// Issue #3638 golden values: prove the `Result` conversion did not
+    /// alter valid-input numerics.
+    ///
+    /// Provenance: expected values computed with python3 (RULES.md Rule 0)
+    /// by mirroring the exact IEEE-754 operation order of each integrator
+    /// on the pre-#3638 implementation, then hardcoded here. Assertions
+    /// are exact (`assert_eq!`) — bit-identical — so any drift in the
+    /// arithmetic fails the test.
+    #[test]
+    fn test_issue_3638_golden_values_valid_inputs_bit_identical() {
+        // backward_euler_update: denom = 1000/3600 + 10 + 100,
+        // numer = (1000/3600)*20 + 10*(-5) + 100*22 + 500
+        let got =
+            backward_euler_update(20.0, 3600.0, 1000.0, 10.0, 100.0, -5.0, 22.0, 500.0).unwrap();
+        assert_eq!(got, 24.08060453400504);
+
+        // crank_nicolson_iso13790: cm_dt = 1000/3600, half_cond = 0.5*(40+10),
+        // numer = 20*(cm_dt - half_cond) + 10*(-5) + 40*22 + 500
+        let got =
+            crank_nicolson_iso13790(20.0, 3600.0, 1000.0, 40.0, 10.0, -5.0, 22.0, 500.0).unwrap();
+        assert_eq!(got, 33.05494505494505);
+
+        // backward_euler_update_2cond: denom = 1000/3600 + 100 + 30,
+        // numer = (1000/3600)*20 + 100*22 + 30*19 + 500
+        let got = backward_euler_update_2cond(20.0, 3600.0, 1000.0, 100.0, 30.0, 22.0, 19.0, 500.0)
+            .unwrap();
+        assert_eq!(got, 25.142857142857146);
+
+        // backward_euler_update_2cond_h_tr3: denom = 1000/3600 + 40,
+        // numer = (1000/3600)*20 + 40*21 + 500
+        let got =
+            backward_euler_update_2cond_h_tr3(20.0, 3600.0, 1000.0, 40.0, 21.0, 500.0).unwrap();
+        assert_eq!(got, 33.40689655172414);
+
+        // crank_nicolson_update: q_old = 10*(-25) + 100*2 + 500, a = 110,
+        // b = -50 + 2200 + 500, numer = (1000/3600)*20 + 0.5*q_old + 0.5*b
+        let got =
+            crank_nicolson_update(20.0, 3600.0, 1000.0, 10.0, 100.0, -5.0, 22.0, 500.0).unwrap();
+        assert_eq!(got, 28.14070351758794);
+
+        // crank_nicolson_update_3cond: q_old = 10*(-25) + 100*2 + 30*(-1) + 500,
+        // a = 140, b = -50 + 2200 + 570 + 500
+        let got = crank_nicolson_update_3cond(
+            20.0, 3600.0, 1000.0, 10.0, 100.0, 30.0, -5.0, 22.0, 19.0, 500.0,
+        )
+        .unwrap();
+        assert_eq!(got, 25.97628458498024);
+
+        // explicit_euler_update: q_net = 5*5 + 50*2 + 100, tm = 20 + (225/200)*3600
+        let got = explicit_euler_update(20.0, 3600.0, 200.0, 5.0, 50.0, 25.0, 22.0, 100.0).unwrap();
+        assert_eq!(got, 4070.0);
     }
 
     #[test]
@@ -726,7 +898,8 @@ mod tests {
             let t_ext = 20.0 + 10.0 * ((hour as f64 / 24.0) * 2.0 * PI).sin();
 
             let tm_old = tm;
-            tm = backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m);
+            tm = backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m)
+                .expect("valid thermal integration inputs");
         }
 
         // Over a full sinusoidal cycle, the net energy should be close to zero
