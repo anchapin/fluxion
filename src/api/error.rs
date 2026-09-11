@@ -45,8 +45,17 @@ create_exception!(fluxion, SurrogateError, PyFluxionError);
 create_exception!(fluxion, SimulationError, PyFluxionError);
 
 #[cfg(feature = "python-bindings")]
-impl From<FluxionError> for PyErr {
-    fn from(err: FluxionError) -> PyErr {
+// E0117 note: FluxionError now lives in fluxion-core (a foreign crate), so
+// `impl From<FluxionError> for PyErr` is an illegal orphan impl under the
+// python-bindings feature. Convert via the local helper instead:
+// `something.map_err(fluxion_err_to_pyerr)?`.
+#[cfg(feature = "python-bindings")]
+pub(crate) fn fluxion_err_to_pyerr(err: FluxionError) -> PyErr {
+    py_err_from_fluxion(err)
+}
+
+#[cfg(feature = "python-bindings")]
+fn py_err_from_fluxion(err: FluxionError) -> PyErr {
         match err {
             FluxionError::Validation(msg) => ValidationError::new_err(msg),
             FluxionError::Surrogate(msg) => SurrogateError::new_err(msg),
@@ -69,7 +78,6 @@ impl From<FluxionError> for PyErr {
                 py_err
             }),
         }
-    }
 }
 
 #[cfg(feature = "python-bindings")]

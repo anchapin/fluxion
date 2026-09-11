@@ -5,11 +5,11 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule};
 
 fn simulation_error(message: impl Into<String>) -> PyErr {
-    FluxionError::Simulation(message.into(), None).into()
+    crate::api::error::fluxion_err_to_pyerr(FluxionError::Simulation(message.into(), None))
 }
 
 fn validation_error(message: impl Into<String>) -> PyErr {
-    FluxionError::Validation(message.into()).into()
+    crate::api::error::fluxion_err_to_pyerr(FluxionError::Validation(message.into()))
 }
 
 fn osm_error(error: OsmError) -> PyErr {

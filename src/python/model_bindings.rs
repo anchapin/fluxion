@@ -1661,6 +1661,8 @@ mod tests {
 
 use crate::ai::surrogate::SurrogateManager;
 use crate::api::error::SurrogateError;
+#[cfg(feature = "python-bindings")]
+use crate::api::error::fluxion_err_to_pyerr;
 use crate::batch_oracle::BatchOracle;
 use crate::python::batch_oracle_bindings::ParameterBounds;
 use crate::weather::HourlyWeatherData;
@@ -2360,7 +2362,8 @@ impl Model {
     ///     # Output: Window U-value (index 0) is NaN (value: nan W/m²K). Cannot use in simulation.
     /// ```
     fn validate_parameters_py(&self, params: Vec<f64>) -> PyResult<()> {
-        BatchOracle::validate_parameters(&params)?;
+        BatchOracle::validate_parameters(&params)
+            .map_err(fluxion_err_to_pyerr)?;
         Ok(())
     }
 
