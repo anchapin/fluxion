@@ -86,9 +86,16 @@ Bindings are feature-gated: `maturin develop` for Python; run `npm run build` in
 
 ### Environment Variables
 
-Runtime configuration knobs referenced above. All are fail-closed by design — there are no runtime bypasses:
+Runtime configuration knobs referenced above and in `docs/FEATURES.md`. Defaults are fail-closed by design; documented escape hatches (`FLUXION_GPU=0`, `FLUXION_REST_ALLOW_INSECURE=1`) are called out inline (Issue #3646):
 
 - `FLUXION_ONNX_MODEL_SIGNATURE` — explicit digest override for the `<model>.sha256` verifier. Leave unset in production; ONNX loads are rejected if the on-disk signature does not match (`verify_onnx_signature`).
+- `FLUXION_ONNX_MODEL` — explicit ONNX model path for `--features ort` builds. Fail-closed: routed through `validate_model_path` (`FLUXION_MODEL_DIR` allow-list, `.onnx` extension check, 256 MiB size cap); an explicit path that fails validation errors out instead of falling back. Unset falls back to `models/surrogate_zone_thermal.onnx`, then mock mode (`src/ai/surrogate.rs`).
+- `FLUXION_ONNX_BACKEND` — ONNX inference backend selector for `--features ort` builds: `cpu | cuda | coreml | directml | openvino` (default `cpu`; unknown values fall back to `cpu`). A `cuda` request that resolves to CPU — backend not built, or `FLUXION_GPU` forcing CPU — emits a one-shot `tracing::warn!` naming requested vs. resolved backend (#2920).
+- `FLUXION_GPU` — `FLUXION_GPU=0|false|<empty>` is an explicit runtime bypass that forces CPU surrogate inference even when the `cuda` feature is built. Leave unset (or `1`) to honor the built backend.
+- `DWAVE_API_TOKEN` — D-Wave API token, required at runtime for the `dwave` feature. Fail-closed: the client errors with `DwaveError::MissingApiToken` when unset (`src/quantum/dwave_client.rs`). Never commit tokens; supply per environment.
+- `PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1` — build-time knob for `python-bindings` wheel builds (maturin/PyO3): enables abi3 forward compatibility so wheels built on a newer Python run on older interpreters. Set in the CI workflows that build or test Python bindings.
+- `RUST_MIN_STACK=33554432` — build-time companion of the flag above for `python-bindings` wheel builds; enlarges the thread stack (32 MiB) to avoid linker SIGSEGV during maturin builds (see `docs/FEATURES.md`).
+- `LOOM=1` — test-only: enables loom concurrency-model execution in `cargo test --features loom --test loom_concurrency_tests` (`.github/workflows/loom-stress.yml`). Manual-only locally; requires ~32 GB RAM.
 - `FLUXION_REST_ALLOW_INSECURE=1` — opt-in escape hatch for release REST builds that bind publicly without TLS or accepted-auth combinations. Leave unset for any release reachable from the public internet.
 - `FLUXION_REST_TRUSTED_PROXIES` — comma-separated CIDR list of proxies whose `Forwarded`/`X-Forwarded-*` headers may be honored for client-IP and TLS-terminated-auth context. Untrusted forwarded headers are always ignored outside this set.
 
