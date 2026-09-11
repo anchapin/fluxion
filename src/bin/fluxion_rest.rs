@@ -13,7 +13,10 @@
 //!   up below).
 //! - `FLUXION_AUDIT_LOG` — optional path; when set, `/v1/simulate` audit
 //!   events (`target = "audit"`) are tee'd to this file in addition to the
-//!   default stdout log (Issue #2546).
+//!   default stdout log (Issue #2546). The file is opened with the strict
+//!   fail-closed protocol from Issue #3639 (`O_NOFOLLOW`/`O_EXCL`, regular
+//!   files only, owner-only mode `0o600`); a refused path leaves audit
+//!   events on stdout only.
 //!
 //! # Security (Issue #2505)
 //!
@@ -117,17 +120,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // file as plain lines. When unset or unopenable, audit events still
     // flow to the default `fmt_layer` above via the bare `info` filter, so
     // nothing is silently dropped.
+    //
+    // Issue #3639 (CWE-732) — the open goes through
+    // [`fluxion::api::server::open_audit_log`], a fail-closed strict
+    // protocol: `O_CREAT|O_EXCL|O_APPEND` with mode `0o600` on creation,
+    // `O_NOFOLLOW` re-open of a pre-existing regular file (symlinks
+    // refused), a regular-file pin that refuses FIFOs/sockets/devices,
+    // and an `fchmod 0o600` tightening. On any failure the audit file is
+    // treated as unavailable — audit events stay on stdout only (announced
+    // loudly below); there is deliberately NO lax fallback open.
     let audit_path = std::env::var("FLUXION_AUDIT_LOG").ok();
     let audit_file = audit_path.as_ref().and_then(|p| {
-        match std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(p)
-        {
+        match fluxion::api::server::open_audit_log(std::path::Path::new(p)) {
             Ok(f) => Some(f),
             Err(e) => {
                 eprintln!(
-                    "fluxion-rest: FLUXION_AUDIT_LOG='{p}' open failed ({e}); audit events stay on stdout only"
+                    "fluxion-rest: FLUXION_AUDIT_LOG='{p}' strict open failed ({e}); audit events stay on stdout only (Issue #3639)"
                 );
                 None
             }
