@@ -200,6 +200,11 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
 
 ### `gauge-solver`
 
+- **Two axes (Issue #3643):** The `ZoneSolverKind::Gauge` selector is
+  the unconditional default; the cargo feature `gauge-solver`
+  separately gates whether the dispatcher's gauge arm runs
+  unconditionally or falls through to legacy 5R1C/9R4C. Canonical
+  wording: `Cargo.toml:208-225`.
 - **Enables:** the **production** `GaugeSolver` zone-solver gate
   (`ZoneSolverKind::Gauge`, Issue #2304 / #2686 / #3291). The
   `gauge_zone_solver` / `gauge_multi_zone_solver` fields on
