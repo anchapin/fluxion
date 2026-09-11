@@ -17,7 +17,10 @@ use std::sync::Arc;
 
 #[cfg(feature = "ort")]
 use super::integrity::open_and_verify_onnx;
-use super::integrity::{compute_file_sha256, validate_hash, validate_model_path, validate_semver, ModelRegistry, VersionError};
+use super::integrity::{
+    compute_file_sha256, validate_hash, validate_model_path, validate_semver, ModelRegistry,
+    VersionError,
+};
 // `verify_onnx_signature` is only called from the non-ort `with_gpu_backend`
 // arm (the ort arm routes through `open_and_verify_onnx`), so importing it
 // unconditionally trips `unused_imports` in `--features ort` builds.
