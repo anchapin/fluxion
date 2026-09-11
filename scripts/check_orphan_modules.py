@@ -437,27 +437,32 @@ def _walk_reachable(start: Path) -> set[Path]:
     # source text alongside the path so we can descend into inline mod
     # bodies without re-reading the file (and so the inline-body map is
     # available to the body walker below).
-    queue: list[Path] = [start]
+    # Queue items are (file, child_dir) pairs: `child_dir` is the directory a
+    # `mod name;` declaration inside `file` resolves against. For `dir/mod.rs`
+    # and for the crate root that is the file's own directory; for a file
+    # module `dir/foo.rs` (Rust 2018) it is `dir/foo/`. (Decompositions like
+    # `src/ai/surrogate.rs` + `src/ai/surrogate/` need the latter; resolving
+    # against the file's own directory misreported wired children as orphans.)
+    queue: list[tuple[Path, Path]] = [(start, start.parent)]
     visited: set[Path] = set()
     while queue:
-        current = queue.pop(0)
+        current, child_dir = queue.pop(0)
         if current in visited:
             continue
         visited.add(current)
-        parent_dir = current.parent
         out_of_line, inline_bodies = _collect_declared_mods(current)
         # Out-of-line mod declarations.
         for name in out_of_line:
-            for candidate in _candidate_paths_for_mod(name, parent_dir):
+            for candidate in _candidate_paths_for_mod(name, child_dir):
                 if candidate.exists() and candidate.is_file():
-                    queue.append(candidate)
+                    queue.append((candidate, child_dir / name))
                     break
         # Inline mod bodies: any out-of-line `mod bar;` declarations inside
         # them point at child files of the *inline namespace's* directory,
-        # which is `parent_dir/<inline_name>/`. We re-scan the inline body
+        # which is `child_dir/<inline_name>/`. We re-scan the inline body
         # with the same regex + resolver.
         for inline_name, body_text in inline_bodies.items():
-            inline_parent = parent_dir / inline_name
+            inline_parent = child_dir / inline_name
             body_cleaned = _clean_source(body_text)
             for match in _MOD_RE.finditer(body_cleaned):
                 name = match.group(1)
@@ -468,7 +473,7 @@ def _walk_reachable(start: Path) -> set[Path]:
                     continue
                 for candidate in _candidate_paths_for_mod(name, inline_parent):
                     if candidate.exists() and candidate.is_file():
-                        queue.append(candidate)
+                        queue.append((candidate, inline_parent / name))
                         break
     return visited
 
