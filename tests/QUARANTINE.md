@@ -281,7 +281,30 @@ manually after legitimate changes.
 | `tests/weather_vs_energyplus.rs` | `test_humidity_ratio_psychrometrics_vs_energyplus` | #2673 | Formula generator embedded; issue #2673 resolves | `pending` |
 | `tests/weather_vs_energyplus.rs` | `test_synthetic_miami_tmy_matches_reference` | #2673 | Formula generator embedded; issue #2673 resolves | `pending` |
 | `tests/energyplus_comparison_tests.rs` | `test_900_series_comprehensive_comparison` | Long-running | Run explicitly when needed; not in CI | `pending` |
+| `fluxion-wasm/tests/wasm_integration_tests.rs` | `wasm_run_full_annual_*` | #3703 (wasm step() toy model; #3595 smoke test) | wasm `FluidSimulation::step()` wired to the real engine (or test re-pointed at an engine-backed surface); then restore the published ±15% band assertion | `pending` |
 | `tests/energyplus_comparison_tests.rs` | `test_900_series_comprehensive_comparison` | Long-running | Run explicitly when needed; not in CI | `pending` |
+
+=======
+## Category: Strict-Energy-Gate & Structural Diagnostics (Issue #3443 reconciliation)
+
+> Reconciliation section: these 10 `#[ignore]` attributes landed on `develop`
+> (via #3572 / #3585 Wave-5/8 and the #3551/#3552 diagnostic placeholders)
+> without registry rows, tripping the Issue #3443 downward-only ratchet. This
+> section back-fills the missing rows and raises `BASELINE_ORPHANED_IGNORES`
+> to 10 with the freeze-set entries in `scripts/generate_quarantine_registry.py`.
+
+| Test File | Test Name | Blocking Issue | Un-Ignore Criteria | Status |
+|-----------|-----------|----------------|-------------------|--------|
+| `tests/zone_balance_eplus_isolation.rs` | `test_case_800_annual_energy_ashrae140_tolerance` | #3572 | Engine re-enters ±15% ASHRAE 140-2023 Annex B band; lower in-file baseline | `pending` |
+| `tests/zone_balance_eplus_isolation.rs` | `test_case_810_annual_energy_ashrae140_tolerance` | #3572 | Engine re-enters ±15% band; lower in-file baseline | `pending` |
+| `tests/zone_balance_eplus_isolation.rs` | `test_case_920_annual_energy_ashrae140_tolerance` | #3572 | Engine re-enters ±15% band; lower in-file baseline | `pending` |
+| `tests/zone_balance_eplus_isolation.rs` | `test_case_950_annual_energy_ashrae140_tolerance` | #3572 | Engine re-enters ±15% band; lower in-file baseline | `pending` |
+| `tests/zone_balance_eplus_isolation.rs` | `test_case_960_annual_energy_ashrae140_tolerance` | #3572 | Engine re-enters ±15% band; lower in-file baseline | `pending` |
+| `tests/zone_balance_eplus_isolation.rs` | `test_case_970_annual_energy_ashrae140_tolerance` | #3572 | Engine re-enters ±15% band; lower in-file baseline | `pending` |
+| `tests/ashrae_140_case_970_validation.rs` | `test_case_970_annual_energy_band` | #3585 / §LIMIT-23 (#3552) | Multi-zone air-mass distribution gap closed (GaugeSolver #1465/#1462 rework) | `pending` |
+| `tests/diagnostics/case_950_hvac_mode_seasonal_attribution.rs` | `test_case_950_hvac_mode_seasonal_attribution` | #3551 / §LIMIT-24 | Implement per-month attribution walk (follow-up PR, GaugeSolver #1465/#1462) | `pending` |
+| `tests/diagnostics/case_970_multi_zone_seasonal_attribution.rs` | `case_970_per_zone_seasonal_attribution_placeholder` | #3552 / §LIMIT-23 | Implement per-month per-zone attribution | `pending` |
+| `fluxion-wasm/tests/wasm_integration_tests.rs` | `wasm_run_full_annual_*` | #3703 (wasm step() toy model; #3595 smoke test) | wasm `FluidSimulation::step()` wired to the real engine (or test re-pointed at an engine-backed surface); then restore the published ±15% band assertion | `pending` |
 
 ---
 
@@ -298,7 +321,7 @@ manually after legitimate changes.
 | CI infrastructure | 2 | `pending` |
 | Manual baseline regen | 4 | `pending` |
 | Other/unclassified | 12 | `pending` |
-| **Total** | **~118** | |
+| **Total** | **~119** | |
 
 (82 orphan entries were triaged into this registry by Issue #3443; the totals
 above include the 23 pre-existing entries and the 82 newly-added ones. The 3
