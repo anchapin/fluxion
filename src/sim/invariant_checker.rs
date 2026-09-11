@@ -135,11 +135,35 @@ impl InvariantChecker {
 
         let balance = self.calculate_energy_imbalance(model, dt_seconds, outdoor_temp);
 
-        let violated = balance.abs() > self.tolerance;
+        // Issue #3637: the gate must fail on NaN/Inf mass temperatures at any
+        // step. Previously `NaN > tolerance` evaluated to `false`, so a 9R4C
+        // step that diverged to Inf/NaN mass temperatures passed silently.
+        // A non-finite balance is itself a hard violation, and any non-finite
+        // mass temperature necessarily produces a non-finite balance (the
+        // balance formula multiplies every mass temperature directly).
+        let mass_temps_finite = model
+            .mass
+            .mass_temperatures
+            .as_ref()
+            .iter()
+            .all(|t| t.is_finite());
+        let violated = !balance.is_finite() || !mass_temps_finite || balance.abs() > self.tolerance;
         if violated {
             self.violation_count += 1;
-            if balance.abs() > self.max_violation {
-                self.max_violation = balance.abs();
+            // NaN comparisons are always false, so track non-finite violations
+            // explicitly to keep max_violation informative.
+            let magnitude = if balance.is_finite() {
+                balance.abs()
+            } else {
+                f64::INFINITY
+            };
+            if magnitude > self.max_violation {
+                self.max_violation = magnitude;
+            }
+            if !balance.is_finite() || !mass_temps_finite {
+                log::error!(
+                    "Strict-energy gate: non-finite state at step (Issue #3637) — balance={balance} W, all mass temperatures finite={mass_temps_finite}",
+                );
             }
         }
 
@@ -593,7 +617,9 @@ impl InvariantChecker {
             zone_imbalances.push(zone_balance);
         }
 
-        let violated = total_balance.abs() > self.tolerance;
+        // Issue #3637: non-finite balances (NaN/Inf mass temperatures) are a
+        // hard violation — `NaN > tolerance` is false and would pass silently.
+        let violated = !total_balance.is_finite() || total_balance.abs() > self.tolerance;
 
         InvariantResult {
             balance: total_balance,
