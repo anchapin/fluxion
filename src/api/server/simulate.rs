@@ -33,6 +33,8 @@ use crate::api::server::state::AppState;
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
 use crate::sim::thermal_selector::ThermalSelector;
+use crate::util::sha256_hex::sha256_hex;
+use sha2::{Digest, Sha256};
 
 use super::X_REQUEST_ID;
 
@@ -541,6 +543,67 @@ pub(crate) fn schema_audit_hash(schema: &SimulationSchemaV1) -> String {
     format!("0x{:016x}", hasher.finish())
 }
 
+/// Per-deployment random salt for client-identifier fingerprinting.
+///
+/// Generated once per process from the OS CSPRNG (`rand::rng()`) so the
+/// same client string hashes differently across deployments and restarts,
+/// blocking cross-deployment correlation and dictionary precomputation,
+/// while remaining deterministic within a deployment (Issue #3652).
+fn deployment_salt() -> &'static [u8] {
+    use std::sync::OnceLock;
+    static SALT: OnceLock<[u8; 32]> = OnceLock::new();
+    SALT.get_or_init(|| {
+        use rand::RngCore;
+        let mut salt = [0u8; 32];
+        rand::rng().fill_bytes(&mut salt);
+        salt
+    })
+    .as_slice()
+}
+
+/// Fingerprint a request-derived client identifier for audit logging.
+///
+/// Issue #3652 (CWE-532): returns the first 32 hex characters (128 bits)
+/// of `SHA-256(per-deployment-salt || client_id)` so `target = "audit"`
+/// events can still correlate same-client events without ever persisting
+/// the raw token/header-derived string. `None` propagates for requests
+/// that carried no identifiable client header.
+pub(super) fn client_id_fingerprint(client_id: Option<&str>) -> Option<String> {
+    let client_id = client_id?;
+    let mut hasher = Sha256::new();
+    hasher.update(deployment_salt());
+    hasher.update(client_id.as_bytes());
+    let hex = sha256_hex(hasher.finalize());
+    Some(hex[..32].to_string())
+}
+
+/// Emit the `simulation_started` record on the `audit` target for
+/// `/v1/simulate` (Issue #2546 audit-log wiring).
+///
+/// Issue #3652 (CWE-532): only the salted fingerprint of the client
+/// identifier is recorded — the raw string is never written to any
+/// audit or stdout sink.
+pub(super) fn emit_simulation_started_audit(
+    request_id: &str,
+    schema_hash: &str,
+    num_zones: usize,
+    years: u32,
+    use_surrogates: bool,
+    client_id: Option<&str>,
+) {
+    let client_id_hash = client_id_fingerprint(client_id);
+    tracing::info!(
+        target: "audit",
+        event = "simulation_started",
+        request_id = %request_id,
+        schema_hash = %schema_hash,
+        num_zones = num_zones,
+        years = years,
+        use_surrogates = use_surrogates,
+        client_id_hash = %client_id_hash.as_deref().unwrap_or("unknown"),
+    );
+}
+
 #[tracing::instrument(skip_all, fields(request_id, num_zones, years))]
 pub async fn simulate(
     State(state): State<AppState>,
@@ -572,15 +635,13 @@ pub async fn simulate(
     tracing::Span::current().record("num_zones", num_zones);
     tracing::Span::current().record("years", years);
 
-    tracing::info!(
-        target: "audit",
-        event = "simulation_started",
-        request_id = %request_id,
-        schema_hash = %schema_hash,
-        num_zones = num_zones,
-        years = years,
-        use_surrogates = use_surrogates,
-        client_id = ?client_id,
+    emit_simulation_started_audit(
+        &request_id,
+        &schema_hash,
+        num_zones,
+        years,
+        use_surrogates,
+        client_id.as_deref(),
     );
 
     let started = std::time::Instant::now();

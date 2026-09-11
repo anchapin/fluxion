@@ -495,3 +495,115 @@ async fn zero_duration_timeout_fires_immediately() {
 
 const SHUTDOWN_TIMEOUT_ENV: &str = "FLUXION_REST_SHUTDOWN_TIMEOUT_SECS";
 static SHUTDOWN_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+// ===== Issue #3652 (CWE-532) — audit events fingerprint client_id =====
+//
+// `target = "audit"` events fan out to stdout AND the `FLUXION_AUDIT_LOG`
+// file (`src/bin/fluxion_rest.rs`), so anything recorded verbatim there is
+// persisted credential/PII material. The `simulation_started` record must
+// therefore carry only the per-deployment salted, truncated SHA-256
+// fingerprint of the client identifier — never the raw string.
+
+use crate::api::server::simulate;
+
+/// Capture buffer mirroring the `WarnCaptureBuf` pattern from
+/// `src/ai/surrogate.rs` (Issue #2920 / #3590 cluster): a per-test
+/// `tracing_subscriber::fmt` writer funnels emitted events into a shared
+/// buffer scoped via `dispatcher::set_default`, so parallel sibling tests
+/// on other threads are never disturbed.
+struct AuditCaptureBuf(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl Clone for AuditCaptureBuf {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl std::io::Write for AuditCaptureBuf {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for AuditCaptureBuf {
+    type Writer = AuditCaptureBuf;
+    fn make_writer(&'a self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+#[test]
+fn client_id_fingerprint_is_stable_truncated_hex() {
+    let raw = "fluxion-ci/1.0 (+https://example.invalid)";
+    let first = simulate::client_id_fingerprint(Some(raw)).expect("input yields fingerprint");
+    let second = simulate::client_id_fingerprint(Some(raw)).expect("input yields fingerprint");
+    assert_eq!(
+        first, second,
+        "same client string must fingerprint identically within a deployment"
+    );
+    assert_eq!(
+        first.len(),
+        32,
+        "fingerprint must be the issue-mandated 32-hex form"
+    );
+    assert!(
+        first
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        "fingerprint must be lowercase hex, got {first}"
+    );
+    assert!(
+        !raw.contains(first.as_str()) && !first.contains(raw),
+        "fingerprint must not embed the raw identifier"
+    );
+}
+
+#[test]
+fn client_id_fingerprint_distinguishes_distinct_clients() {
+    let a = simulate::client_id_fingerprint(Some("client-a")).unwrap();
+    let b = simulate::client_id_fingerprint(Some("client-b")).unwrap();
+    assert_ne!(
+        a, b,
+        "distinct client strings must produce distinct fingerprints"
+    );
+}
+
+#[test]
+fn client_id_fingerprint_is_none_for_absent_client() {
+    assert!(simulate::client_id_fingerprint(None).is_none());
+}
+
+#[test]
+fn simulation_started_audit_event_omits_raw_client_id() {
+    let raw = "fluxion-ci/1.0 credential-looking-string";
+    let buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(AuditCaptureBuf(buf.clone()))
+        .with_max_level(tracing::Level::INFO)
+        .with_target(false)
+        .with_ansi(false)
+        .without_time()
+        .finish();
+    let _dispatch_guard = tracing::dispatcher::set_default(&tracing::Dispatch::new(subscriber));
+
+    simulate::emit_simulation_started_audit("req-3652", "schema-hash", 3, 10, false, Some(raw));
+
+    let captured = String::from_utf8(buf.lock().unwrap().clone()).expect("fmt output is UTF-8");
+    assert!(
+        !captured.contains(raw),
+        "audit event must never contain the raw client_id; captured: {captured}"
+    );
+    assert!(
+        !captured.contains("client_id="),
+        "legacy client_id field must not reappear on the audit target; captured: {captured}"
+    );
+    let expected_hash = simulate::client_id_fingerprint(Some(raw)).unwrap();
+    assert!(
+        captured.contains(&format!("client_id_hash={expected_hash}")),
+        "audit event must carry the stable fingerprint; captured: {captured}"
+    );
+}
