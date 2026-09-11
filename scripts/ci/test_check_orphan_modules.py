@@ -248,25 +248,23 @@ def test_inline_mod_body_walks_nested_children(
 
     The script's BFS descends into inline bodies with the same
     ``_MOD_RE`` regex; the inline namespace's directory is the
-    out-of-line parent's directory + the inline name, so
+    file-module's own child directory + the inline name, so
     ``mod baz;`` inside ``src/foo.rs:mod bar { ... }`` resolves to
-    ``src/bar/baz.rs``. An unrelated orphan is also planted to
-    confirm the gate still fires on the rest of the tree.
+    ``src/foo/bar/baz.rs`` under the child-dir semantics this walker
+    implements (a file module ``dir/foo.rs`` resolves nested mods
+    against ``dir/foo/`` — the surrogate.rs + surrogate/ decomposition
+    in this branch depends on that). An unrelated orphan is also
+    planted to confirm the gate still fires on the rest of the tree.
     """
     src_dir = _redirect(checker, tmp_path, monkeypatch)
     _write(src_dir / "lib.rs", "mod foo;\n")
     # Inline body: `mod bar { mod baz; }` -> baz resolves under
-    # `parent_dir/foo_parent/bar/baz.rs`. Because `current` is
-    # `src/foo.rs` (parent_dir = `tmp_path/src`), the inline
-    # namespace's directory is `tmp_path/src/bar` and the `mod baz;`
-    # resolves to `tmp_path/src/bar/baz.rs`. This mirrors how
-    # `scripts/cycle_baseline_history.json` snapshots distinguish
-    # inline-body descent from out-of-line mod declarations.
+    # `child_dir/foo/bar/baz.rs` (see docstring above).
     _write(
         src_dir / "foo.rs",
         "pub mod bar { mod baz; }\n",
     )
-    _write(src_dir / "bar" / "baz.rs", "pub fn baz() {}\n")
+    _write(src_dir / "foo" / "bar" / "baz.rs", "pub fn baz() {}\n")
     # Unrelated orphan to confirm the gate still fires.
     _write(src_dir / "orphan.rs", "pub fn orphan() {}\n")
     _scrub_argv(monkeypatch)
