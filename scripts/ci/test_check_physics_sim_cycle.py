@@ -292,12 +292,12 @@ def test_phase2_scans_all_sim_files_in_real_repo(checker):
     asserting:
 
     * the offender count equals ``BASELINE_SIM_TO_PHYSICS`` (the snapshot
-      of 85 ``use crate::physics::`` edges across 26+ sim files — 83
-      pre-existing edges snapshotted at Issue #2766, minus the single edge
-      removed by PR #3020 / issue #2896 doc-only stub deletion, plus the
-      two new ``use crate::physics::exterior_convection::{...}`` edges
-      added by PR #3024 / issue #2891 for ASHRAE 140 §5.2.6 wind-
-      velocity-dependent exterior convection in the 5R1C path);
+      of 80 ``use crate::physics::`` edges across 26+ sim files — 83
+      pre-existing edges snapshotted at Issue #2766 (79 + the #3324
+      fast-math additions), lowered to 80 on 2026-09-11 after the
+      #3638/#3555-era sim refactors removed three edges; the equality
+      pin keeps the #2768 shrink-toward-zero invariant honest, so the
+      snapshot must follow every sanctioned reduction);
     * the offenders span many more than the 2 files the old guard saw;
     * the four documented re-export shims (assembly.rs,
       multi_node_thermal.rs, construction.rs, per_surface_conduction.rs)
