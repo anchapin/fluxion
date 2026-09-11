@@ -8,16 +8,6 @@ Be respectful and constructive in all interactions. We are committed to providin
 
 ## How to Contribute
 
-### Reporting Issues
-
-If you find a bug or have a feature request:
-
-1. Check existing issues to avoid duplicates
-2. Provide a clear, descriptive title
-3. Include steps to reproduce (for bugs)
-4. Specify your environment (OS, Rust version, Python version)
-5. Add relevant labels
-
 ### Submitting Pull Requests
 
 1. **Fork the repository** and create your branch from `develop`
@@ -32,6 +22,16 @@ If you find a bug or have a feature request:
 7. **Clean up temporary files** before committing (see Repository Hygiene)
 
 **Note**: All PRs should be created against the `develop` branch. The `main` branch is reserved for releases.
+
+## Filing bugs
+
+Report bugs on [GitHub Issues](https://github.com/anchapin/fluxion/issues) — via the web UI or `gh issue create`. Before filing:
+
+1. Search [existing issues](https://github.com/anchapin/fluxion/issues) to avoid duplicates
+2. Check [`docs/KNOWN_ISSUES.md`](KNOWN_ISSUES.md) — if the failure matches a documented limitation (e.g. a `LIMIT-*` or `SOLAR-*` section), reference that section in your report instead of reopening it as a new bug
+3. Include steps to reproduce and the expected vs. actual behavior
+4. Specify your environment (OS, Rust version, Python version)
+5. Provide a clear, descriptive title and add the `bug` label
 
 ## Development Setup
 
@@ -51,7 +51,7 @@ If you find a bug or have a feature request:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/fluxion.git
+git clone https://github.com/anchapin/fluxion.git
 cd fluxion
 
 # Ensure you're on the develop branch

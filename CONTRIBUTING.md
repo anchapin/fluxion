@@ -7,6 +7,24 @@ Companion to RULES.md (coding rules) and CODEBASE_MAP.md (code navigation).
 Status: Active — follows --no-ff merge policy and expedited hotfix process.
 Action: Use `gh pr create --base develop` for all changes; never push directly to main or develop.
 
+## Repository
+
+- **Upstream**: [`anchapin/fluxion`](https://github.com/anchapin/fluxion) — clone with:
+  ```bash
+  git clone https://github.com/anchapin/fluxion.git
+  ```
+- **Development branch**: `develop` (default) — create all feature branches from `develop` and target all PRs at `develop`; `main` is release-only. See [Branch Protection](#branch-protection) below.
+
+## Filing bugs
+
+Report bugs on [GitHub Issues](https://github.com/anchapin/fluxion/issues) — via the web UI or `gh issue create`. Before filing:
+
+1. Search existing issues to avoid duplicates
+2. Check [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) — if the failure matches a documented limitation (e.g. a `LIMIT-*` or `SOLAR-*` section), reference that section in your report instead of reopening it as a new bug
+3. Include steps to reproduce and the expected vs. actual behavior
+4. Specify your environment (OS, Rust toolchain version, Python version)
+5. Provide a clear, descriptive title and add the `bug` label
+
 ## Quick Rules
 
 1. **Never force-push `main` or `develop`**
@@ -250,4 +268,4 @@ See `docs/agents/scorecard-regen.md` for the full agent-facing reference.
 
 ## Questions?
 
-Open an issue or ask in the PR review.
+Open an [issue](https://github.com/anchapin/fluxion/issues) (see [Filing bugs](#filing-bugs)) or ask in the PR review.
