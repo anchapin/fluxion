@@ -1,10 +1,9 @@
-//! 5R1C/6R2C/8R3C/9R4C physics step implementations for `ThermalModel`.
+//! 5R1C/6R2C/9R4C physics step implementations for `ThermalModel`.
 //!
 //! Issue #3220: This file has been refactored to extract each physics step
 //! variant into its own module under `src/sim/thermal_model_physics/`:
 //! - [`step_5r1c`] — 5R1C single mass node implementation (~1700 lines)
 //! - [`step_6r2c`] — 6R2C two mass node implementation (~833 lines)
-//! - [`step_8r3c`] — 8R3C three mass node implementation (~102 lines)
 //! - [`step_9r4c`] — 9R4C four mass node implementation (~1486 lines)
 //! - [`step_common`] — Shared helpers like `step_wall_surface_ode`
 //!
@@ -16,7 +15,6 @@ use crate::physics::cta::VectorField;
 
 mod step_5r1c;
 mod step_6r2c;
-mod step_8r3c;
 mod step_9r4c;
 mod step_common;
 
