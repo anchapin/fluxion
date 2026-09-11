@@ -140,11 +140,17 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #     engine band. Verified workspace ignored count at HEAD is 118.
 #     (Merged resolution: #3650's test-count bumps land first; the
 #     burndown's ignore-ratchet reduction stacks on top of them.)
+#   - 2026-09-11 (PR #3704, stacked after the burndown): raised
+#     ``BASELINE_WORKSPACE_IGNORED`` from 118 back to 119 — the wasm
+#     FFI smoke-test quarantine (``fluxion-wasm/tests/
+#     wasm_integration_tests.rs``, Issue #3703) added one workspace
+#     ``#[ignore]`` on top of the burndown's reduction. Cargo-verified
+#     workspace ignored count at HEAD is 119.
 # ---------------------------------------------------------------------------
 BASELINE_LIB_TESTS = 4314
 BASELINE_LIB_IGNORED = 8
 BASELINE_WORKSPACE_TESTS = 8683
-BASELINE_WORKSPACE_IGNORED = 118
+BASELINE_WORKSPACE_IGNORED = 119
 # 2026-09-09 (Issue #3595): bumped from 303 to 308 to accommodate the
 # pre-existing test-binary count at HEAD (the prior regeneration missed
 # the new binaries that landed in PRs after #3546). The FFI smoke-test

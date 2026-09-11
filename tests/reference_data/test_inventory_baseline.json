@@ -72,7 +72,7 @@
     "lib_ignored": 8,
     "lib_tests": 4061,
     "test_binaries": 308,
-    "workspace_ignored": 118,
+    "workspace_ignored": 119,
     "workspace_tests": 8471
   },
   "ratchet": {
