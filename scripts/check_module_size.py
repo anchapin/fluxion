@@ -104,7 +104,17 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #     Companion cleanup PRs that decompose any of these files should
 #     remove the matching entry AND lower this baseline by one. Eight
 #     entries added; baseline raised by eight.
-BASELINE_MODULE_SIZE_LIMITS = 17
+#   17 → 16 (fmi/mod.rs decomposition, tracked under issue #3625):
+#     ``src/interop/fmi/mod.rs`` (3,246 lines) was decomposed into the
+#     ``src/interop/fmi/`` submodule tree (model_description, lifecycle,
+#     marshaling) behind a thin ``mod.rs`` facade (~90 lines). The entry
+#     is removed and ``fmi_mod_ratchet.json`` deleted per the
+#     companion-cleanup convention (cf. Issue #3543 and the surrogate.rs
+#     decomposition, which likewise added no child entries for their
+#     decomposed modules). The largest child,
+#     ``src/interop/fmi/model_description.rs`` (~2.3k LoC), is left
+#     ungated for a future #3574-style audit pass.
+BASELINE_MODULE_SIZE_LIMITS = 16
 
 # Freeze snapshot of the gated paths (Issue #3457 ratchet).
 #
@@ -132,7 +142,9 @@ _BASELINE_MODULE_SIZE_LIMITS_SET: frozenset[str] = frozenset(
         "src/validation/ashrae_140_cases.rs",
         "src/physics/state_space_ctf.rs",
         "src/validation/report.rs",
-        "src/interop/fmi/mod.rs",
+        # Removed in the fmi/mod.rs decomposition (issue #3625):
+        #   - ``src/interop/fmi/mod.rs`` — src/interop/fmi/ submodule tree
+        #     (model_description, lifecycle, marshaling)
         "src/sim/thermal_model.rs",
         "src/physics/multi_node_solver.rs",
         # Issue #3574 — 8 files newly over the ~2000-LoC threshold after
@@ -284,19 +296,6 @@ LIMITS: list[Limit] = [
         reason=(
             "Issue #3457: validation report module ratcheted at current "
             "size (4136 lines); consumed by ``ashrae_140_validator``."
-        ),
-    ),
-    Limit(
-        path=REPO_ROOT / "src" / "interop" / "fmi" / "mod.rs",
-        max_lines=3193,
-        ratchet_path=REPO_ROOT
-        / "tests"
-        / "reference_data"
-        / "module_size"
-        / "fmi_mod_ratchet.json",
-        reason=(
-            "Issue #3457: FMI interop ``mod.rs`` ratcheted at current "
-            "size (3193 lines)."
         ),
     ),
     Limit(
