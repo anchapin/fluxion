@@ -1,5 +1,6 @@
 //! 6R2C physics step implementation for `ThermalModel`.
 
+use crate::api::error::FluxionError;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::thermal_integration::{
     backward_euler_update_2cond, backward_euler_update_2cond_h_tr3, crank_nicolson_update,
@@ -18,7 +19,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         timestep: usize,
         outdoor_temp: f64,
         dt_seconds: f64,
-    ) -> f64 {
+    ) -> Result<f64, FluxionError> {
         let dt = dt_seconds; // Use provided timestep duration
 
         // Prepare sol-air temperature and calculate CTF/FD heat fluxes early to avoid borrow conflicts
@@ -640,6 +641,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         // This gives ~69 hour time constant instead of ~1.9 hours with h_tr_ms + h_tr_me
                         // Heat balance: Cm*(Tm_new - Tm_old)/dt = h_tr_3*(t_i - Tm_new) + phi_m
                         let t_i_zone = t_i_act.as_ref()[i];
+                        // Issue #3638: propagate a typed validation error
+                        // (degenerate dt/cm) instead of panicking.
                         backward_euler_update_2cond_h_tr3(
                             tm_env_old,
                             dt,
@@ -647,7 +650,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             h_tr_3,
                             t_i_zone,
                             phi_m_env_zone,
-                        )
+                        )?
                     } else {
                         // Standard 6R2C: Use h_tr_ms + h_tr_me for fast air-surface coupling
                         backward_euler_update_2cond(
@@ -659,7 +662,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             t_s,
                             tm_int,
                             phi_m_env_zone,
-                        )
+                        )?
                     }
                 }
                 ThermalIntegrationMethod::ExplicitEuler => {
@@ -682,6 +685,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // Use Crank-Nicolson for 2nd-order accuracy
                     // For 6R2C envelope mass: receives heat from exterior (h_tr_em),
                     // surface (h_tr_ms), and internal mass (h_tr_me)
+                    // Issue #3638: propagate a typed validation error
+                    // (degenerate dt/cm) instead of panicking.
                     crank_nicolson_update_3cond(
                         tm_env_old,
                         dt,
@@ -693,7 +698,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         t_s,     // surface temperature
                         tm_int,  // internal mass temperature
                         phi_m_env_zone,
-                    )
+                    )?
                 }
             };
 
@@ -738,6 +743,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 }
                 ThermalIntegrationMethod::CrankNicolson => {
                     // Use Crank-Nicolson for 2nd-order accuracy
+                    // Issue #3638: propagate a typed validation error
+                    // (degenerate dt/cm) instead of panicking.
                     crank_nicolson_update(
                         tm_int_old,
                         dt,
@@ -747,7 +754,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         tm_env_new,
                         0.0,
                         phi_m_int_zone,
-                    )
+                    )?
                 }
             };
 
@@ -846,6 +853,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // the same SmallVec capacity (zero steady-state allocation).
         self.0.hvac.scratch_pool.return_6r2c(scratch);
 
-        hvac_energy_for_step / 3.6e6 // Return kWh
+        Ok(hvac_energy_for_step / 3.6e6) // Return kWh
     }
 }
