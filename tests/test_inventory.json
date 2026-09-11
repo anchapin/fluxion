@@ -17,7 +17,7 @@
     },
     "fluxion": {
       "lib_ignored": 8,
-      "lib_tests": 4034,
+      "lib_tests": 4044,
       "test_binaries": 294
     },
     "fluxion-behavior": {
@@ -37,7 +37,7 @@
     },
     "fluxion-core": {
       "lib_ignored": 0,
-      "lib_tests": 426,
+      "lib_tests": 434,
       "test_binaries": 1
     },
     "fluxion-fluid": {
@@ -66,8 +66,8 @@
       "test_binaries": 1
     }
   },
-  "generated_at": "2026-09-10T16:59:11.294638+00:00",
-  "repo_root": "unknown",
+  "generated_at": "2026-09-11T03:56:08.391039+00:00",
+  "repo_root": "3f89f48e730a",
   "schema_version": 1,
   "scope": {
     "workspace_exclude": [
@@ -77,14 +77,28 @@
   "totals": {
     "doc_tests": 0,
     "lib_ignored_root": 8,
-    "lib_tests_root": 4034,
+    "lib_tests_root": 4044,
     "test_binaries": 308,
     "test_source_files": 352,
     "workspace_ignored": 119,
     "workspace_integration_ignored": 99,
     "workspace_integration_tests": 3328,
     "workspace_lib_ignored": 20,
-    "workspace_lib_tests": 5115,
-    "workspace_tests": 8443
+    "workspace_lib_tests": 5133,
+    "workspace_tests": 8461
+  },
+  "verify": {
+    "command": [
+      "cargo",
+      "test",
+      "--workspace",
+      "--exclude",
+      "fluxion-tauri",
+      "--",
+      "--list"
+    ],
+    "error": "FileNotFoundError: [Errno 2] No such file or directory: 'cargo'",
+    "executed_at": "2026-09-11T03:56:08.392221+00:00",
+    "matched": false
   }
 }

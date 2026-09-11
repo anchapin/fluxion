@@ -67,7 +67,7 @@ pub use batch_oracle::BatchOracle;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 pub use building_parameters::BuildingParameters;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
-pub use error::{FluxionError, SimulationError, SurrogateError, ValidationError};
+pub use error::{NapiFluxionError, SimulationError, SurrogateError, ValidationError};
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 pub use fmi_exporter::FmiExporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]

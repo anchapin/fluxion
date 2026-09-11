@@ -4,6 +4,15 @@
 //! actionable error messages to Python users. All exceptions inherit from
 //! a base FluxionError to enable structured error handling.
 //!
+//! The Rust-side error type ([`FluxionError`]) and [`SimulationDiagnostics`]
+//! are re-exported from the `fluxion-core` leaf crate
+//! ([`fluxion_core::error`]) — the ONE unified engine error type. The PyO3
+//! exception classes and the `From<FluxionError> for PyErr` mapping below
+//! are defined here and keep their exact historic behavior, so the Python
+//! `FluxionError` / `ValidationError` / `SurrogateError` /
+//! `SimulationError` hierarchy (including the `diagnostics` attribute on
+//! `SimulationError`, issue #2547) is unchanged.
+//!
 //! It also defines [`SimulationDiagnostics`] — a machine-readable record of
 //! why a simulation diverged (NaN, infinite temperature, energy-balance
 //! violation, non-convergent timestep). Issue #2547 surfaces this on the
@@ -11,116 +20,17 @@
 //! `SimulationError` exception so clients can attribute failure to a
 //! specific timestep / zone instead of receiving a bare string.
 
+// Re-exported from the unified leaf-crate error module so every binding
+// layer and engine caller shares one `FluxionError` type. The Python
+// exception mapping below is defined against this re-exported type.
+pub use fluxion_core::error::{FluxionError, SimulationDiagnostics};
+
 #[cfg(feature = "python-bindings")]
 use pyo3::create_exception;
 #[cfg(feature = "python-bindings")]
 use pyo3::exceptions::PyException;
 #[cfg(feature = "python-bindings")]
 use pyo3::prelude::*;
-use serde::{Deserialize, Serialize};
-
-/// Machine-readable divergence diagnostics for a failed simulation.
-///
-/// Populated from the data the simulation already computes while running
-/// (per-timestep zone temperatures, energy-balance residual). When the
-/// REST handler or Python binding detects divergence (NaN / infinity /
-/// energy-balance violation / non-convergence), it builds a
-/// `SimulationDiagnostics` from that data and threads it into
-/// `ApiError::SimulationFailed` (REST) and `FluxionError::Simulation`
-/// (Python) so clients get failing-timestep, failing-zone, residual and
-/// last-known-good-timestep attribution instead of a plain string.
-///
-/// All fields are `Serialize` so the struct embeds cleanly into the JSON
-/// error envelope; `failing_zone` is optional because single-zone models
-/// have no inter-zone attribution to report.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct SimulationDiagnostics {
-    /// First timestep index (0-based, hourly) at which divergence was
-    /// detected — a NaN / infinity in the zone temperature trace, or the
-    /// timestep at which the energy-balance residual exceeded tolerance.
-    pub failing_timestep: u64,
-    /// Zone identifier (1-based label, e.g. `"zone_0"`) attributed with
-    /// the divergence, when the diagnostician could isolate one. `None`
-    /// for whole-system residuals (e.g. global energy-balance violation)
-    /// or for single-zone models.
-    pub failing_zone: Option<String>,
-    /// Worst energy-balance residual observed across the run, expressed
-    /// as a percentage of the tolerance window (`residual / tolerance * 100`).
-    /// `0.0` when divergence was detected by NaN/inf scan rather than by
-    /// the residual check.
-    pub max_residual_pct: f64,
-    /// Last timestep index (0-based, hourly) for which all zone
-    /// temperatures were finite AND the energy-balance residual was
-    /// within tolerance. `0` if divergence was present from the first
-    /// timestep. Clients can use this as a safe restart point.
-    pub last_known_good_timestep: u64,
-}
-
-impl SimulationDiagnostics {
-    /// Construct a diagnostics record from the per-zone hourly temperature
-    /// trace that `ThermalModel::get_hourly_temperatures` already collects.
-    ///
-    /// Scans for the first (zone, timestep) cell containing NaN or
-    /// infinity, sets `failing_timestep` / `failing_zone` to that cell,
-    /// and `last_known_good_timestep` to the preceding timestep (clamped
-    /// to 0). `max_residual_pct` is `0.0` because the residual check is
-    /// not the source of this divergence.
-    ///
-    /// Returns `None` when no divergence is present in the trace (no NaN
-    /// and no infinity in any zone at any timestep).
-    pub fn from_temperature_trace(hourly: &[Vec<f64>]) -> Option<Self> {
-        let mut failing_timestep: Option<u64> = None;
-        let mut failing_zone: Option<String> = None;
-
-        for (zone_idx, zone_trace) in hourly.iter().enumerate() {
-            for (t, &temp) in zone_trace.iter().enumerate() {
-                if !temp.is_finite() {
-                    let t = t as u64;
-                    // Earliest divergence wins across zones — keep the
-                    // first (zone, timestep) we see so attribution is
-                    // deterministic across multi-zone models.
-                    if failing_timestep.is_none_or(|ft| t < ft) {
-                        failing_timestep = Some(t);
-                        failing_zone = Some(format!("zone_{}", zone_idx));
-                    }
-                }
-            }
-        }
-
-        let failing_timestep = failing_timestep?;
-        let last_known_good = failing_timestep.saturating_sub(1);
-
-        Some(SimulationDiagnostics {
-            failing_timestep,
-            failing_zone,
-            max_residual_pct: 0.0,
-            last_known_good_timestep: last_known_good,
-        })
-    }
-}
-
-/// Rust-side error enumeration for Fluxion.
-///
-/// This enum provides type-safe error handling within Rust code and
-/// automatically converts to appropriate Python exception via
-/// `From<FluxionError> for PyErr` implementation.
-#[derive(Debug, thiserror::Error)]
-pub enum FluxionError {
-    /// Parameter validation error (maps to ValidationError in Python)
-    #[error("Parameter validation error: {0}")]
-    Validation(String),
-
-    /// Surrogate model error (maps to SurrogateError in Python)
-    #[error("Surrogate model error: {0}")]
-    Surrogate(String),
-
-    /// Simulation error (maps to SimulationError in Python). Carries an
-    /// optional [`SimulationDiagnostics`] (Issue #2547) so the Python
-    /// exception can surface failing-timestep / failing-zone attribution
-    /// instead of a bare message string.
-    #[error("Simulation error: {0}")]
-    Simulation(String, Option<SimulationDiagnostics>),
-}
 
 #[cfg(feature = "python-bindings")]
 create_exception!(fluxion, PyFluxionError, PyException);
