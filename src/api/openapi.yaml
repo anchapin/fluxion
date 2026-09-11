@@ -107,7 +107,7 @@ paths:
                         detail: mock (no model loaded)
                       weather:
                         status: fail
-                        detail: "FLUXION_WEATHER_FILE='/etc/fluxion/weather.epw' not readable: No such file or directory"
+                        detail: "FLUXION_WEATHER_FILE not readable: entity not found"
                       appstate:
                         status: ok
                         detail: initialized

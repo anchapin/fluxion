@@ -618,15 +618,14 @@ impl MultiNodeSolver {
         // Use a relative tolerance because with large energy magnitudes
         // (~1e10 W) floating-point rounding can produce residuals up to
         // ~1e-9 * |value| while still being physically correct.
-        // Non-finite residuals (inf/nan) indicate a deeper physics divergence
-        // (e.g. Case 950 producing infinite temperatures) — skip the check
-        // here since the caller is better positioned to handle that failure.
         let residual = (q_net - delta_e_rate).abs();
         let scale = q_net.abs().max(delta_e_rate.abs()).max(1.0);
-        // Issue #2127: Replace debug_assert! with runtime check.
-        // Non-finite residuals (inf/nan) are skipped silently per Issue #2128.
-        // Finite but large residuals emit a warning instead of panicking.
-        if residual.is_finite() && residual >= 1e-9 * scale {
+        // Issue #2127: runtime check (was debug_assert!); large finite
+        // residuals warn. Issue #3637: non-finite residuals (NaN/±Inf) are a
+        // hard first-law violation — no longer skipped silently per #2128.
+        if !residual.is_finite() {
+            log::error!("Non-finite first-law residual — 9R4C diverged: residual={residual} W, net heat {q_net} W, storage-rate change {delta_e_rate} W (Issue #3637)");
+        } else if residual >= 1e-9 * scale {
             log::warn!(
                 "First Law violation: net heat ({q_net} W) != change in storage rate ({delta_e_rate} W) | residual={residual} W",
             );
