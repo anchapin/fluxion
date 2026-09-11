@@ -124,11 +124,18 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #     "Phase A8 / Issue #3599" subsection. ``BASELINE_WORKSPACE_IGNORED``
 #     stays at 123 (workspace ignored rises from 108 → 111, well below
 #     the ratchet).
+#   - 2026-09-11 (PR improve/quarantine-burndown): lowered
+#     ``BASELINE_WORKSPACE_IGNORED`` from 123 to 118 — the quarantine
+#     burndown un-ignored
+#     ``test_case_970_validator_accepts_canonical_midpoints``
+#     (``tests/ashrae_140_case_970_validation.rs``) after verifying it
+#     passes live; its assertions validate the validator, not the
+#     engine band. Verified workspace ignored count at HEAD is 118.
 # ---------------------------------------------------------------------------
 BASELINE_LIB_TESTS = 4311
 BASELINE_LIB_IGNORED = 8
 BASELINE_WORKSPACE_TESTS = 8680
-BASELINE_WORKSPACE_IGNORED = 123
+BASELINE_WORKSPACE_IGNORED = 118
 # 2026-09-09 (Issue #3595): bumped from 303 to 308 to accommodate the
 # pre-existing test-binary count at HEAD (the prior regeneration missed
 # the new binaries that landed in PRs after #3546). The FFI smoke-test

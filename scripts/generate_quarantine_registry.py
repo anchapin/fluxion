@@ -77,7 +77,14 @@ QUARANTINE_MD = REPO_ROOT / "tests" / "QUARANTINE.md"
 #     by one.
 # ---------------------------------------------------------------------------
 BASELINE_ORPHANED_IGNORES = 0
-BASELINE_GHOST_ROWS = 0
+# 2026-09-11 (Issue #3599, §LIMIT-21): raised from 0 to 3. The 3 ghost rows
+# are the Phase-A8 9R4C legacy scratch-pool unit tests quarantined in
+# `src/sim/thermal_model_physics/physics_impl/` (Issue #3599). The audit
+# scanner only covers `tests/**/*.rs`, so `src/` rows can never match a
+# scanned `#[ignore]` — they are permanent ghosts until the legacy 9R4C
+# dispatch is removed (un-ignore criterion in `tests/QUARANTINE.md` Phase A8
+# section). They are listed in the freeze set below.
+BASELINE_GHOST_ROWS = 3
 
 # Freeze snapshot of the orphan allowlist (Issue #3443 ratchet).
 #
@@ -98,7 +105,25 @@ _BASELINE_ORPHANED_IGNORES_SET: frozenset[tuple[str, str]] = frozenset()
 # "raise the ghost baseline" lever — any new ghost MUST be added here
 # AND to the registry (and `BASELINE_GHOST_ROWS` must be raised to
 # match), with a documenting comment naming the tracking issue.
-_BASELINE_GHOST_ROWS_SET: frozenset[tuple[str, str]] = frozenset()
+#
+# 2026-09-11 (Issue #3599): the 3 Phase-A8 `src/` scratch_pool rows —
+# permanent ghosts because the scanner only covers `tests/`.
+_BASELINE_GHOST_ROWS_SET: frozenset[tuple[str, str]] = frozenset(
+    {
+        (
+            "src/sim/thermal_model_physics/physics_impl/mod.rs",
+            "scratch_pool_9r4c_is_reused_across_timesteps",
+        ),
+        (
+            "src/sim/thermal_model_physics/physics_impl/mod.rs",
+            "scratch_pool_9r4c_restored_on_free_float_early_return",
+        ),
+        (
+            "src/sim/thermal_model_physics/physics_impl/step_9r4c.rs",
+            "scratch_pool_9r4c_is_reused_across_timesteps",
+        ),
+    }
+)
 
 # `#[ignore]` and `#[ignore = "reason"]` (with optional reason string).
 # Tolerant of whitespace and trailing comments.
