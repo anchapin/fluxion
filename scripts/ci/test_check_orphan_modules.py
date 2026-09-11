@@ -287,6 +287,61 @@ def test_inline_mod_body_walks_nested_children(
 
 
 # ---------------------------------------------------------------------------
+# Test 4b: out-of-line mod AFTER inline bodies is not dropped
+# (offset-desynchronisation regression)
+# ---------------------------------------------------------------------------
+
+
+def test_out_of_line_mod_after_inline_bodies_is_reached(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """A trailing out-of-line ``mod bar;`` in a file that ALSO has inline
+    ``mod tests { ... }`` bodies must still be resolved as wired.
+
+    Regression: ``_collect_declared_mods`` strips the inline bodies from the
+    scanned text but indexed the terminator character in the ORIGINAL text,
+    so every offset after the first stripped body was shifted and the
+    out-of-line declaration was silently dropped from `declared` — making
+    the declared child file look like a phantom orphan. Exactly the layout
+    ``PR #3688``'s extracted ``coverage_tests`` child modules hit: inline
+    ``mod tests { ... }`` / ``mod expm_debug_tests { ... }`` bodies followed
+    by ``#[cfg(test)] mod coverage_tests;`` at EOF.
+    """
+    src_dir = _redirect(checker, tmp_path, monkeypatch)
+    _write(src_dir / "lib.rs", "mod parent;\n")
+    _write(
+        src_dir / "parent" / "mod.rs",
+        "#[cfg(test)]\n"
+        "mod tests {\n"
+        "    #[test]\n"
+        "    fn t() {}\n"
+        "}\n"
+        "\n"
+        "#[cfg(test)]\n"
+        "mod more_tests {\n"
+        "    #[test]\n"
+        "    fn t2() {}\n"
+        "}\n"
+        "\n"
+        "#[cfg(test)]\n"
+        "mod coverage_tests;\n",
+    )
+    _write(
+        src_dir / "parent" / "coverage_tests.rs", "#[test]\nfn c() {}\n"
+    )
+    _scrub_argv(monkeypatch)
+
+    rc = checker.main()
+    out = capsys.readouterr().out
+
+    assert rc == 0, (
+        f"expected PASS (coverage_tests.rs is wired via the trailing "
+        f"out-of-line mod), got rc={rc}\noutput:\n{out}"
+    )
+    assert "coverage_tests.rs" not in out
+
+
+# ---------------------------------------------------------------------------
 # Test 5: `pub use` in mod.rs does NOT count as a mod declaration
 # ---------------------------------------------------------------------------
 

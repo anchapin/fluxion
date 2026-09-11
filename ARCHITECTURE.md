@@ -103,7 +103,7 @@ domain-type imports through `fluxion_core::assembly::*` instead of
 - `src/physics/method_selector.rs` — `use fluxion_core::assembly::BuildingAssembly`
 - `src/physics/wall_spec.rs` — same
 - `src/physics/solver_manager.rs` / `solver_registry.rs` — same
-- `src/physics/multi_node_solver.rs` — `use fluxion_core::multi_node::{MultiNodeThermalMass, ...}`
+- `src/physics/multi_node_solver/mod.rs` — `use fluxion_core::multi_node::{MultiNodeThermalMass, ...}`
 - `src/sim/multi_node_hvac_runner.rs` — `use fluxion_core::multi_node::ThermalMassNode`
 - `src/sim/thermal_model_core/` (mod.rs + tests.rs) / `thermal_model_data/` — `use fluxion_core::assembly::BuildingAssembly`
 
