@@ -64,7 +64,11 @@ concurrency:
       github.event.pull_request.head.sha
       || github.ref
     }}
-  cancel-in-progress: true   # Issue #3567-tier: cancel superseded PR runs to prevent backlog
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
 
 permissions:
   contents: read

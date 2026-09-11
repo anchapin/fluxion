@@ -10,7 +10,11 @@ concurrency:
       github.event.pull_request.head.sha
       || github.ref
     }}
-  cancel-in-progress: true   # Issue #3567-tier: cancel superseded PR runs to prevent backlog
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
 
 # Least-privilege GITHUB_TOKEN grants (Issue #2526). The Pages deploy step only
 # fires on push-to-main, but this workflow is pull_request-only, so in practice
