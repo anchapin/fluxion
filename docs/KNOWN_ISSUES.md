@@ -11,7 +11,7 @@ Action: Check this document before attributing validation failures to new issues
 including their blocking issues, un-ignore criteria, and status. The QUARANTINE.md registry is the
 canonical source for tracking when quarantined tests can be un-ignored (per Issue #3211).
 
-*Last Updated: 2026-09-08 (LIMIT-24 #3551 added — Case 950 HVAC-mode annual cooling 33.08 kWh vs [390, 920] kWh band, ~14× UNDER; docs-only structural entry companion to §LIMIT-17 #3058, routed to GaugeSolver #1465 / #1462)*
+*Last Updated: 2026-09-10 (LIMIT-27 #3647 added — 5R1C algebraic residual ~191 W documented as a test-infra tolerance; the stale `FREE-04` citation in tests/test_energy_conservation.rs repointed to §LIMIT-27, `check_known_issues_links.py` extended to validate every FREE-NN/LIMIT-NN token in tests/**/*.rs)*
 
 **LIMIT-14 added (Issue #3061):** After PR #3052's partial Case 960 inter-zone fix, raw annual cooling remains 0.63 MWh versus the 1.55–2.78 MWh reference band and peak heating remains 1.17 kW versus 2.0–8.0 kW. The 5R1C/9R4C air-mass distribution cannot accumulate enough back-zone cooling demand at the 27 °C setpoint through coupling to the free-floating sunspace; compliant closure is blocked on the GaugeSolver production-path work coordinated by #3059, not a sunspace HVAC control or gain-split tuning.
 
@@ -31,6 +31,8 @@ canonical source for tracking when quarantined tests can be un-ignored (per Issu
 
 **LIMIT-24 added (Issue #3551):** Case 950 HVAC-mode annual cooling measures **33.08 kWh vs the ASHRAE 140 reference band 390–920 kWh** (~14× UNDER, ~91 % below the lower bound); peak cooling 0.39 kW vs [0.70, 0.90] kW band (~44 % UNDER). Both metrics are fail-rows on the 84-metric scorecard. This entry is the docs-only structural companion to §LIMIT-17 / #3058 (Case 950FF night-vent free-floating min −23.92 °C vs [−20.20, −17.80] °C band, 3.72 °C outside). §LIMIT-17 records a **regression-avoidance clause** requiring any future solver change to "preserve Case 950 (HVAC mode) annual cooling in the 390–920 kWh band" — but the current HVAC-mode value (33.08 kWh) is already ~14× outside that band, so the preserved-HVAC target is far from the actual HVAC state, and the failure has no separate structural LIMIT entry to track it. The `MAX_CONVECTIVE_TO_AIR_MULTIPLIER = 2.0×` cap from PR #3041 closed Case 650 cooling OVER but did not transfer to Case 950 (HVAC) because Case 950's `h_ve_night ≈ 570.8 W/K` (18:00–07:00) deposits the cooling load into the **mass node (multi-node path)** rather than the **air node (5R1C path)** where the HVAC controller reads the setpoint signal; the derived-`h_tr_3` path that limits Case 950FF winter-min over-prediction (§LIMIT-17 root-cause) also deflects the summer peak away from the air node. The two signatures (HVAC cooling UP + FF min DOWN) are **bidirectionally coupled** — no parameter adjustment to `h_ve_night`, `MAX_CONVECTIVE_TO_AIR_MULTIPLIER`, or `solar_distribution_to_air` can close both at once without violating AGENTS.md / RULES.md / ADR-0001 ("no parameter tuning", "fix the underlying math"); per-case parameter tuning is explicitly out of scope. The architectural fix is routed to the GaugeSolver rework **#1465 / #1462** (both closed individually; production-path switchover staged via #3291 / PR #3482 — Phase A8 default flip, gated on the `gauge-solver` cargo feature and §LIMIT-21 β-soak closure). Sibling entries: §LIMIT-17 / #3058 (Case 950FF companion + regression-avoidance clause), §LIMIT-16 / #3059 (Cases 610/630/650 peak cooling OVER cohort), §LIMIT-05 UPDATE (#2453) (900-series bidirectional annual-energy cohort). Per-month attribution diagnostic `tests/diagnostics/case_950_hvac_mode_seasonal_attribution.rs` is wired into CI (`#[ignore]`-quarantined, runs `--ignored --nocapture`) per the Issue #3551 acceptance criterion; full implementation is a follow-up PR. See §LIMIT-24 for the per-metric engine-vs-reference table, the bidirectional-signature analysis, the §LIMIT-17 regression-avoidance-clause cross-reference, the four-test affected-tests list, and the closure-criterion statement that the same single solver change must close **both** Case 950 (HVAC) annual cooling (390–920 kWh) **and** Case 950FF min free-floating temperature ([−20.20, −17.80] °C) — i.e. the bidirectional fix requires GaugeSolver-style path splitting, not a per-parameter tuning.
 **LIMIT-23 added (Issue #3552):** Case 970 (5-zone multi-zone cross-coupling per ASHRAE 140-2017 §B6.7 / 140-2023 Annex B8-3, `sim::multi_zone_network::MultiZoneAirflowNetwork` with 5×5 symmetric inter-zone conductance matrix) reports 4/4 ASHRAE 140 reference-band metrics failing on the 2026-08-16 snapshot — annual heating 18.58 MWh vs reference band [10.54, 14.26] MWh (+30 % to +76 % OVER the band), annual cooling 21.07 MWh vs [7.39, 10.00] MWh (+110 % to +185 % OVER), peak heating 3.80 kW vs [4.00, 8.00] kW (5 % UNDER the low edge), peak cooling 2.58 kW vs [2.50, 5.50] kW (at the low edge). The bidirectional annual OVER signature (heating AND cooling simultaneously >+30 % above the reference band on a 5-zone topology) is consistent with the §LIMIT-05 UPDATE (#2453) 900-series bidirectional over-prediction mechanism — the 5R1C/9R4C air-mass distribution in a 5-zone coupling matrix amplifies the same solar mass-node over-charge that drives the 900-series and §LIMIT-14 / LIMIT-16 / LIMIT-17 cohorts. Reference bands are maintained in `validation::benchmark` and summarised in `docs/ASHRAE140_MULTI_ZONE_RESULTS.md` §"Case 970 Reference Data"; the per-metric engine-output table below is the full strict-gate view. **Documentation/tracking only entry; no physics-code change, no `inter_zone_conductance` / `solar_distribution_to_air` / `h_ms_coeff` change, no `tests/reference_data/zone_balance/case_970_energy_reference.csv` raise.** Case 970 is intentionally NOT added to the §LIMIT-05 / #3072 aggressive-baseline cohort table (per Issue #3552 acceptance criteria: "tracked separately; the cohort list is #3072's purview"); cohort-level tracking remains owned by Issue #3072 (Cases 195 / 600 / 620 / 940 / 960). See §LIMIT-23 for the per-metric engine-output vs reference-band table, the per-zone attribution test stub, and the cross-references to Issue #1446 (Case 970 multi-zone implementation, closed via #1467), §LIMIT-05 / LIMIT-14 / LIMIT-16 cohort, and #1465 / #1462 (GaugeSolver architectural unblocker).
+
+**LIMIT-27 added (Issue #3647):** `tests/test_energy_conservation.rs` cited "FREE-04 in docs/KNOWN_ISSUES.md" as the documented rationale for the 200 W `ENERGY_BALANCE_RESIDUAL_THRESHOLD` (the ~191 W systematic residual of the 5R1C `InvariantChecker` algebraic formulation, introduced by #2225 / PR #2230, commit `12425d8`) — but no `FREE-04` heading ever existed (the FREE-\* family covers free-floating temperature findings only). This is a doc-vs-code drift: someone assuming the citation was stale could delete the test and silently de-facto-relax the strict-energy guard. Fixed docs-side: the residual is now documented as **§LIMIT-27** (25/26 are reserved for the Cases 800 / 810 structural entries per the `strict_energy_gate_baseline.json` `_doc_issue3572` note), the test comment is repointed, and `scripts/check_known_issues_links.py` now validates every `FREE-NN` / `LIMIT-NN` token in `tests/**/*.rs` against actual `### TOKEN` headings. No physics-code change; no threshold change.
 
 **LIMIT-12 added (Issue #3062):** Case 940 annual heating is 5,158 kWh on the CTF validator path versus 1,289.9 kWh on the blind diagnostic path (per the §LIMIT-05 UPDATE #2452 measurement table, post-PR #3042); the remaining setback-recovery overshoot is structural and tracked without a production-physics change. (Historical: 7,487.81 kWh was the pre-§LIMIT-05-UPDATE snapshot; the latest measured value is 5.158 MWh. See §LIMIT-05 UPDATE (#2452) for the canonical per-path table.)
 
@@ -1222,12 +1224,12 @@ The fix is **structural** — the `GaugeSolver` rework (#1465 / #1462) — and t
 | Free-Float (FREE) | 3 | 0 | 1 | 0 | 0 |
 | Temperature (TEMP) | 1 | 0 | 0 | 0 | 0 |
 | Multi-Zone (MULTI) | 4 | 3 | 0 | 0 | 0 |
-| Model Limits (LIMIT) | 24 | 2 | 0 | 2 | 2 |
+| Model Limits (LIMIT) | 25 | 2 | 0 | 3 | 2 |
 | Reporting (REPORT) | 4 | 0 | 4 | 0 | 0 |
 | CI/Infrastructure (CI) | 3 | 0 | 0 | 0 | 0 |
 | fluxion-fluid (FLUID) | 2 | 0 | 0 | 0 | 0 |
 | FFD/CFD (FFD) | 2 | 0 | 1 | 0 | 0 |
-| **Total** | **52** | **10** | **8** | **4** | **2** |
+| **Total** | **53** | **10** | **8** | **5** | **2** |
 
 *Counts derived from `grep -cE '^### CATEGORY-NN:' docs/KNOWN_ISSUES.md` via `scripts/check_known_issues_summary.py`; CI gate = `python3 scripts/check_known_issues_summary.py --check`. Status columns (`Fixed` / `Open` / `Partial` / `Won't Fix`) derive from each section's first `**Status:**` line. To regenerate: `python3 scripts/check_known_issues_summary.py --regen | sponge docs/KNOWN_ISSUES.md`.*
 
@@ -3774,6 +3776,51 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
     attribution diagnostic stub (Issue #3552 acceptance criterion
     (c)); full implementation deferred to a follow-up PR.
 
+### LIMIT-27: 5R1C algebraic residual ~191 W — InvariantChecker evaluates gains at T_old while heat flows use T_new (Issue #3647)
+
+- **Description:** The `InvariantChecker`'s algebraic formulation for
+  5R1C has a known systematic residual of ~191 W due to evaluating
+  gains at `T_old` while heat flows use `T_new`. This is a
+  **test-infrastructure tolerance**, not a physics gate:
+  `tests/test_energy_conservation.rs` sets
+  `ENERGY_BALANCE_RESIDUAL_THRESHOLD: f64 = 200.0` (headroom above the
+  ~191 W residual) for the `InvariantChecker` algebraic-consistency
+  assertions across Cases 600 / 900 / 960 / 600FF. The actual energy
+  conservation of the simulation is validated by the zone balance
+  tests (`tests/zone_balance_eplus_isolation.rs`), which PASS with
+  zero violations.
+- **Affected Cases:** 600, 900, 960, 600FF (the
+  `test_case_*_energy_conservation_residual` family in
+  `tests/test_energy_conservation.rs`)
+- **Affected Metrics:** None — this is an algebraic-identity
+  tolerance on the `InvariantChecker`, not an ASHRAE 140 reported
+  metric.
+- **Severity:** Low
+- **GitHub Issue:** [#3647](https://github.com/anchapin/fluxion/issues/3647)
+  (doc-vs-code drift fix); original tolerance introduced by
+  [#2225](https://github.com/anchapin/fluxion/issues/2225) / PR
+  [#2230](https://github.com/anchapin/fluxion/pull/2230) (commit
+  `12425d8`, 2026-07-31)
+- **Status:** 🟡 **Docs-drift resolved (#3647); 5R1C algebraic residual remains a documented test-infra tolerance — structural fix routed to GaugeSolver #1465/#1462.**
+- **History / naming note:** The tolerance was introduced under the
+  citation "documented as FREE-04 in docs/KNOWN_ISSUES.md" (commit
+  `12425d8` / PR #2230), but no `FREE-04` entry ever existed — the
+  FREE-\* family in this document covers free-floating temperature
+  validation findings (FREE-01/02/03), not solver-checker algebraic
+  residuals. Issue #3647 repointed the test citation to this entry.
+  The `LIMIT-25` / `LIMIT-26` numbers are reserved for the Cases
+  800 / 810 structural entries requested by the
+  `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`
+  `_doc_issue3572` note (Issue #3572), hence `LIMIT-27`.
+- **Sibling framing:** Same `InvariantChecker` post-step
+  algebraic-invariant family as §LIMIT-19 / Issue #3103
+  (`test_one_watt_artificial_gain_increases_imbalance`) and
+  §MULTI-03 / Issue #3066 (the 88.7 W hand-balanced stub residual on
+  the 9R4C BE-implicit identity). Deleting or widening the 200 W
+  threshold would de-facto relax the strict-energy regression guard
+  (Issues #2506 / #3572) — treat threshold changes as gate changes,
+  not cleanup.
+
 ## fluxion-fluid Autodiff Issues (FLUID)
 
 ### FLUID-01: Analytical Jacobian Saturation/Clamping Errors
@@ -3924,6 +3971,7 @@ for the first time; the failures are latent (pre-existing), not regressions
 | #3058 | Case 950FF night-ventilation mass coupling overwhelms F_sky correction (#2872 partial follow-up) | 🟡 **Tracking stub shipped** — LIMIT-17 + ADR-0011 record the gap; PR #3040 moved Case 950FF min by 0.02 °C (−23.94 → −23.92 °C); still 3.72 °C outside the −20.20 to −17.80 °C band; root cause is `h_ve_night ≈ 570.8 W/K` overwhelming `h_tr_em_wall ≈ 71.6 W/K` by ~8×; three options (split air-node / surface-node mass coupling; reduce `h_ve_night` by F_sky; route `h_ve_night` only through air node) require solver code changes; per AGENTS.md / RULES.md / ADR-0001 no parameter tuning is permitted; fix routed to GaugeSolver #1465 / #1462 | §LIMIT-17, ADR-0011 |
 | #3297 | Multi-zone GaugeZoneSolver mass state exposure for 5R1C invariant compatibility | 🟡 **Proxy landed (`fd7ef13`) + aftermath documented** — exact-CN mass-state proxy drives strict-gate residuals to 0 (Case 600/900/960); remaining gauge-build state registered: §LIMIT-21 (pre-existing air-trajectory cohort across 5 binaries incl. the 2 zone_balance failures; β-soak #3286 blockers, deliberately NOT quarantined) and §LIMIT-22 (3 CN-proxy aftermath tests, feature-gated `cfg_attr` quarantines with live default-build assertions); unblocker #3291 / #1465 / #1462 | §LIMIT-21, §LIMIT-22 |
 | #3551 | Case 950 HVAC-mode annual cooling 33.08 kWh vs [390, 920] kWh band (~14× UNDER) — docs-only structural LIMIT entry companion to §LIMIT-17 / #3058 | 🟡 **Tracking stub shipped** — LIMIT-24 records the gap; no structural solver-code change (per AGENTS.md / RULES.md / ADR-0001 the bidirectional signature — HVAC cooling UP + FF min DOWN — cannot be closed by parameter tuning without violating the §LIMIT-17 regression-avoidance clause); per-month attribution diagnostic `tests/diagnostics/case_950_hvac_mode_seasonal_attribution.rs` is wired into CI (`#[ignore]`-quarantined, runs `--ignored --nocapture`); full implementation is a follow-up PR; fix routed to GaugeSolver #1465 / #1462 (production-path switchover staged via #3291 / PR #3482, gated on §LIMIT-21 β-soak closure); cross-references §LIMIT-17 / #3058 (Case 950FF companion + regression-avoidance clause), §LIMIT-16 / #3059 (Cases 610/630/650 peak cooling OVER cohort), §LIMIT-05 UPDATE (#2453) (900-series bidirectional annual-energy cohort), PR #3041 (the `MAX_CONVECTIVE_TO_AIR_MULTIPLIER = 2.0×` cap that closed Case 650 but not Case 950 HVAC because the cooling load deposits on the mass node rather than the air node), #1898 (the PR that introduced `h_ve_night`), #1422 (Case 950 5R1C night-vent override), #3072 (aggressive-baseline cohort tracking) | §LIMIT-24 |
+| #3647 | `tests/test_energy_conservation.rs` cites `FREE-04`, which has no entry in docs/KNOWN_ISSUES.md — doc-vs-code drift on the 5R1C `InvariantChecker` ~191 W algebraic residual behind the 200 W `ENERGY_BALANCE_RESIDUAL_THRESHOLD` | 🟡 **Docs + gate fix shipped** — residual documented as §LIMIT-27 (25/26 reserved for Cases 800/810 per the `strict_energy_gate_baseline.json` `_doc_issue3572` note); test citation repointed FREE-04 → LIMIT-27; `scripts/check_known_issues_links.py` extended to validate every `FREE-NN` / `LIMIT-NN` token in `tests/**/*.rs` resolves to a `### TOKEN` heading; no physics-code change, no threshold change | §LIMIT-27 |
 
 ## See also
 

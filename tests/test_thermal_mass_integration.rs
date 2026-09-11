@@ -91,6 +91,7 @@ fn explicit_euler_step(tm_old: f64, config: &ThermalCapacitanceConfig) -> f64 {
         config.t_surface,
         config.phi_m,
     )
+    .expect("valid thermal integration inputs (dt, cm > 0)")
 }
 
 /// Backward Euler integration (implicit, 1st-order, unconditionally stable)
@@ -107,6 +108,7 @@ fn backward_euler_step(tm_old: f64, config: &ThermalCapacitanceConfig) -> f64 {
         config.t_surface,
         config.phi_m,
     )
+    .expect("valid thermal integration inputs (dt, cm > 0)")
 }
 
 /// Crank-Nicolson integration (semi-implicit, 2nd-order, A-stable)
@@ -123,6 +125,7 @@ fn crank_nicolson_step(tm_old: f64, config: &ThermalCapacitanceConfig) -> f64 {
         config.t_surface,
         config.phi_m,
     )
+    .expect("valid thermal integration inputs (dt, cm > 0)")
 }
 
 /// Check if temperature change is physically reasonable

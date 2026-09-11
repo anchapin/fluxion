@@ -104,7 +104,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #     Companion cleanup PRs that decompose any of these files should
 #     remove the matching entry AND lower this baseline by one. Eight
 #     entries added; baseline raised by eight.
-#   17 → 16 (surrogate.rs decomposition, tracked under issue #3669):
+#   17 → 16 (Issue #3625): ``src/interop/fmi/mod.rs`` was decomposed into
+#     responsibility submodules under ``src/interop/fmi/`` (``common``,
+#     ``export``, ``import``, ``cosim``, ``xml``, ``ffd`` plus the
+#     ``tests``/``ffd_tests`` modules). Entry removed from ``LIMITS`` and
+#     from the freeze snapshot; baseline lowered by one. The largest
+#     child (``ffd.rs``, ~1.1k LoC) is well below the smallest ratcheted
+#     threshold (~2000 LoC), so no new entry is added — the
+#     decomposition itself is the ratchet-lowering event.
+#   16 → 15 (surrogate.rs decomposition, tracked under issue #3669):
 #     ``src/ai/surrogate.rs`` (6,909 lines) was decomposed into the
 #     ``src/ai/surrogate/`` submodule tree (session_pool, integrity,
 #     metrics, manager). The entry is removed and
@@ -113,7 +121,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #     for its decomposed modules). The largest child,
 #     ``src/ai/surrogate/manager.rs`` (~2.1k LoC), is left ungated for a
 #     future #3574-style audit pass.
-BASELINE_MODULE_SIZE_LIMITS = 16
+#     (Merge resolution: the #3625 fmi decomposition landed first; the
+#     surrogate lowering stacks on top of it.)
+BASELINE_MODULE_SIZE_LIMITS = 15
 
 # Freeze snapshot of the gated paths (Issue #3457 ratchet).
 #
@@ -143,7 +153,8 @@ _BASELINE_MODULE_SIZE_LIMITS_SET: frozenset[str] = frozenset(
         "src/validation/ashrae_140_cases.rs",
         "src/physics/state_space_ctf.rs",
         "src/validation/report.rs",
-        "src/interop/fmi/mod.rs",
+        # Removed in Issue #3625 (decomposed into src/interop/fmi/ submodules):
+        #   - ``src/interop/fmi/mod.rs`` — common/export/import/cosim/xml/ffd
         "src/sim/thermal_model.rs",
         "src/physics/multi_node_solver.rs",
         # Issue #3574 — 8 files newly over the ~2000-LoC threshold after
@@ -240,6 +251,10 @@ LIMITS: list[Limit] = [
     # passes immediately (no new failures) but tightens over time as
     # companion cleanup PRs decompose the file and lower ``max_lines``
     # alongside the ratchet JSON.
+    #
+    # ``src/interop/fmi/mod.rs`` was removed here in Issue #3625 (entry
+    # + freeze-snapshot line dropped, baseline lowered 17 → 16) after
+    # decomposition into ``src/interop/fmi/`` responsibility submodules.
     # ------------------------------------------------------------------
     Limit(
         path=REPO_ROOT / "src" / "validation" / "ashrae_140_cases.rs",
@@ -280,19 +295,6 @@ LIMITS: list[Limit] = [
         reason=(
             "Issue #3457: validation report module ratcheted at current "
             "size (4136 lines); consumed by ``ashrae_140_validator``."
-        ),
-    ),
-    Limit(
-        path=REPO_ROOT / "src" / "interop" / "fmi" / "mod.rs",
-        max_lines=3193,
-        ratchet_path=REPO_ROOT
-        / "tests"
-        / "reference_data"
-        / "module_size"
-        / "fmi_mod_ratchet.json",
-        reason=(
-            "Issue #3457: FMI interop ``mod.rs`` ratcheted at current "
-            "size (3193 lines)."
         ),
     ),
     Limit(

@@ -364,7 +364,10 @@ The body is a `ReadinessReport`:
 
 `status` is `"ok"` only when every check is `"ok"`; otherwise it is
 `"not ready"` and the HTTP status flips to 503 (the per-check `detail`
-explains which dependency failed). The probe logic lives in the pure
+explains which dependency failed). Details are deliberately coarse and
+never echo operator-supplied configuration values — in particular the
+`weather` check never interpolates the `FLUXION_WEATHER_FILE` path into
+its response (Issue #3650, CWE-209). The probe logic lives in the pure
 `run_readiness_probes_with` function so the HTTP handler and the
 `fluxion-rest` boot-time self-check share one definition of "ready".
 
