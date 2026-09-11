@@ -71,7 +71,12 @@ fn pyclass_name_map(root: &Path) -> std::collections::HashMap<String, String> {
         "src/api/parameters.rs",
         "src/python/bindings.rs",
         "src/python/hvac_bindings.rs",
-        "src/python/model_bindings.rs",
+        // model_bindings.rs was decomposed into the src/python/model_bindings/
+        // submodule tree (model, hvac, batch); the #[pyclass] attributes now
+        // live in the child files.
+        "src/python/model_bindings/model.rs",
+        "src/python/model_bindings/hvac.rs",
+        "src/python/model_bindings/batch.rs",
         "src/python/multi_node_bindings.rs",
         "src/python/osm_bindings.rs",
         "src/python/batch_oracle_bindings.rs",

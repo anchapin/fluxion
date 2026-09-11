@@ -20,7 +20,7 @@ What this measure does
 A note on field propagation
 ---------------------------
 Only ``heating_capacity`` and ``cooling_capacity`` currently round-trip into
-the underlying Rust ``ThermalModel`` (see ``src/python/model_bindings.rs``).
+the underlying Rust ``ThermalModel`` (see ``src/python/model_bindings/model.rs``).
 The VAV / economizer / supply-air fields are advisory snapshots — they are
 preserved through the Python save/load round-trip (``fluxion.measures``) and
 represent the modeller's intent, but the Rust simulation does not yet consume
