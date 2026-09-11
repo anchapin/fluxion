@@ -1,7 +1,7 @@
 # Workspace-scope rule (Issue #3587)
 
 The Fluxion root crate is also workspace package `fluxion` with `default-members = ["."]` (root `Cargo.toml`).
-A bare `cargo test` therefore runs the root crate ONLY (4,007 lib tests + the explicit `[[test]]` entries) and silently SKIPS the remaining 4,398 sibling-crate tests.
+A bare `cargo test` therefore runs the root crate ONLY (4,048 lib tests per `tests/test_inventory.json::totals.lib_tests_root` + the explicit `[[test]]` entries) and silently SKIPS the remaining 4,409 sibling-crate tests (`::totals.workspace_tests` minus `::totals.lib_tests_root`).
 The developer-facing default is `cargo test --workspace --exclude fluxion-tauri --no-fail-fast`; bare `cargo test` is footgun.
 The `.githooks/pre-push` hook is the opt-in companion that enforces this on `git push` so a root-only local green cannot land a PR that breaks siblings.
 This rule is the canonical reading of `AGENTS.md` §"Commands That Are Easy to Guess Wrong" and `CODEBASE_MAP.md` §"Build & Test Commands" — both were edited to point here as part of the Issue #3587 acceptance criteria.
@@ -26,7 +26,7 @@ cargo test --workspace --exclude fluxion-tauri --no-fail-fast
 | `--exclude fluxion-tauri` | skips the Tauri crate locally; CI uses a separate matrix entry. Issue #3126. |
 | `--no-fail-fast` | surfaces every failing crate instead of bailing on the first; matches CI's behaviour. |
 
-This command is the local-debug equivalent of the CI `cargo nextest run --workspace --all-targets --test-threads=2 --no-fail-fast` (Issue #3366 / ADR-0014, PR #3369). Both runners share `.config/nextest.toml::concurrency = 2` defaults; the test inventory (`tests/test_inventory.json`) reports 8,405 tests / 119 ignored for the workspace run.
+This command is the local-debug equivalent of the CI `cargo nextest run --workspace --all-targets --test-threads=2 --no-fail-fast` (Issue #3366 / ADR-0014, PR #3369). Both runners share `.config/nextest.toml::concurrency = 2` defaults; the test inventory reports 8,457 tests / 119 ignored for the workspace run (`tests/test_inventory.json::totals.workspace_tests` / `::totals.workspace_ignored`, mirrored in `tests/reference_data/test_inventory_baseline.json::totals`; regenerate with `python3 scripts/generate_test_inventory.py --verify` when the counts move).
 
 ## Opt-in pre-push gate
 
