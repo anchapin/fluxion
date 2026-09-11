@@ -3976,11 +3976,14 @@ pub fn validate_model_path(p: &str) -> Result<std::path::PathBuf, String> {
 /// Checks, in order:
 /// 1. `Path::new(p).is_file()` — existence (follows symlinks like the rest
 ///    of `std::fs`).
-/// 2. extension == `onnx`.
-/// 3. canonicalised path is inside `allowed_dir` (component-wise
+/// 2. `symlink_metadata()` refuses a symlink at the user-supplied path
+///    component (Issue #3651) — the same policy as
+///    `validate_epw_path_in_dir` (`fluxion-core/src/weather/epw.rs`).
+/// 3. extension == `onnx`.
+/// 4. canonicalised path is inside `allowed_dir` (component-wise
 ///    `starts_with` on canonical paths — blocks `..` traversal and symlinks
 ///    that escape the allow-list).
-/// 4. file size ≤ [`MAX_MODEL_SIZE_BYTES`].
+/// 5. file size ≤ [`MAX_MODEL_SIZE_BYTES`].
 pub fn validate_model_path_in_dir(
     p: &str,
     allowed_dir: &Path,
@@ -3988,6 +3991,18 @@ pub fn validate_model_path_in_dir(
     let raw = Path::new(p);
     if !raw.is_file() {
         return Err("model file not found".to_string());
+    }
+    // Refuse symlinks (Issue #3651). canonicalize() resolves symlinks to
+    // their targets, so checking symlink_metadata() here also rejects a
+    // symlink that points to a file *inside* the allow-list (belt-and-braces
+    // against future TOCTOU or symlink-swap attacks) — the same mechanism,
+    // ordering, and message pattern as `validate_epw_path_in_dir`. This is
+    // the only gate on platforms where the `O_NOFOLLOW` open fallback is a
+    // no-op (`const O_NOFOLLOW: i32 = 0`).
+    let link_meta = std::fs::symlink_metadata(raw)
+        .map_err(|_| "failed to read model file metadata".to_string())?;
+    if link_meta.file_type().is_symlink() {
+        return Err("model file path may not be a symbolic link".to_string());
     }
     if raw
         .extension()
@@ -5024,6 +5039,101 @@ mod tests {
                 || err == "model path outside allowed directory"
         );
         assert!(!err.contains("passwd"));
+    }
+
+    // ===== Issue #3651 — refuse symlinks in validate_model_path =====
+    //
+    // Mirrors the symlink policy of `validate_epw_path_in_dir`
+    // (`fluxion-core/src/weather/epw.rs`): the user-supplied final path
+    // component must be a regular file, checked via `symlink_metadata()`
+    // BEFORE the extension and canonicalisation checks.
+
+    /// A symlink at the model path is rejected even when it points at a
+    /// real `.onnx` file *inside* the allow-list (parity with the epw
+    /// validator's belt-and-braces symlink refusal).
+    #[cfg(unix)]
+    #[test]
+    fn validate_model_path_rejects_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real.onnx");
+        std::fs::write(&real, b"dummy").unwrap();
+        let link = dir.path().join("link.onnx");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let err = validate_model_path_in_dir(&link.to_string_lossy(), dir.path()).unwrap_err();
+        assert_eq!(err, "model file path may not be a symbolic link");
+        // Generic message: must not echo the user-supplied path.
+        assert!(!err.contains("link.onnx"));
+    }
+
+    /// Acceptance criterion from Issue #3651: `evil.onnx -> /etc/passwd`
+    /// is rejected even when `/etc/passwd` is readable and outside the
+    /// allow-list. `is_file()` follows the symlink, so without the
+    /// `symlink_metadata()` gate this path sailed through to the
+    /// allow-list rejection (or worse, through to a read on targets
+    /// where the `O_NOFOLLOW` open fallback is a no-op). Asserting the
+    /// exact symlink message also pins the check ordering: the symlink
+    /// refusal fires before the extension check.
+    #[cfg(unix)]
+    #[test]
+    fn validate_model_path_rejects_symlink_to_etc_passwd() {
+        // /etc/passwd exists on Linux/macOS; guard other platforms.
+        if !std::path::Path::new("/etc/passwd").is_file() {
+            eprintln!("skipping: /etc/passwd not present on this platform");
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let evil = dir.path().join("evil.onnx");
+        std::os::unix::fs::symlink("/etc/passwd", &evil).unwrap();
+        let err = validate_model_path_in_dir(&evil.to_string_lossy(), dir.path()).unwrap_err();
+        assert_eq!(err, "model file path may not be a symbolic link");
+        assert!(!err.contains("passwd"));
+        assert!(!err.contains("evil"));
+    }
+
+    /// A regular (non-symlink) file still passes — the check must only
+    /// refuse symlinks, not break the happy path.
+    #[cfg(unix)]
+    #[test]
+    fn validate_model_path_accepts_regular_non_symlink_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("regular.onnx");
+        std::fs::write(&model, b"dummy").unwrap();
+        // Sanity: the fixture really is a regular file, not a link.
+        let meta = std::fs::symlink_metadata(&model).unwrap();
+        assert!(!meta.file_type().is_symlink());
+        let res = validate_model_path_in_dir(&model.to_string_lossy(), dir.path());
+        assert!(res.is_ok(), "regular file must still pass: {res:?}");
+    }
+
+    /// Parity with the epw validator (Issue #3651): for the same
+    /// symlink-at-final-component scenario, `validate_model_path_in_dir`
+    /// and `validate_epw_path_in_dir` must agree on the verdict and use
+    /// the same message wording (asset name aside).
+    #[cfg(unix)]
+    #[test]
+    fn validate_model_path_symlink_parity_with_epw() {
+        let dir = tempfile::tempdir().unwrap();
+        let real_model = dir.path().join("real.onnx");
+        std::fs::write(&real_model, b"dummy").unwrap();
+        let link_model = dir.path().join("link.onnx");
+        std::os::unix::fs::symlink(&real_model, &link_model).unwrap();
+        let model_err =
+            validate_model_path_in_dir(&link_model.to_string_lossy(), dir.path()).unwrap_err();
+        assert_eq!(model_err, "model file path may not be a symbolic link");
+
+        let real_epw = dir.path().join("real.epw");
+        std::fs::write(&real_epw, b"x").unwrap();
+        let link_epw = dir.path().join("link.epw");
+        std::os::unix::fs::symlink(&real_epw, &link_epw).unwrap();
+        let epw_err =
+            crate::weather::epw::validate_epw_path_in_dir(&link_epw.to_string_lossy(), dir.path())
+                .unwrap_err();
+        assert_eq!(epw_err, "epw file path may not be a symbolic link");
+
+        // Same policy, parallel wording — only the asset name differs.
+        let model_suffix = model_err.strip_prefix("model ").unwrap();
+        let epw_suffix = epw_err.strip_prefix("epw ").unwrap();
+        assert_eq!(model_suffix, epw_suffix);
     }
 
     /// A file larger than [`MAX_MODEL_SIZE_BYTES`] (256 MiB) is rejected.

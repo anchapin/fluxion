@@ -1,10 +1,11 @@
 //! 5R1C physics step implementation for `ThermalModel`.
 
+use crate::api::error::FluxionError;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::hvac::{HVACMode as EquipmentHVACMode, VariableCapacityEquipment};
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::thermal_integration::{
-    crank_nicolson_iso13790_kernel, select_integration_method, ThermalIntegrationMethod,
+    crank_nicolson_iso13790, select_integration_method, ThermalIntegrationMethod,
 };
 use crate::sim::thermal_model_core::ThermalModel;
 
@@ -16,7 +17,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         timestep: usize,
         outdoor_temp: f64,
         dt_seconds: f64,
-    ) -> f64 {
+    ) -> Result<f64, FluxionError> {
         let dt = dt_seconds; // Use provided timestep duration
 
         // Prepare sol-air temperature and calculate CTF/FD heat fluxes early to avoid borrow conflicts
@@ -1737,10 +1738,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // from mass to zone air, which captures the cooling effect.
                     // Issue #2868: degenerate-`H_tr,3` fallback (see above).
                     let h_tr_3_with_vent = h_air_mass + h_vent_mass_zone;
-                    // Hot path: dt/cm were validated at the simulation call
-                    // boundary; the kernel re-checks via debug_assert! (zero
-                    // release cost) instead of returning Result per zone.
-                    crank_nicolson_iso13790_kernel(
+                    // Issue #3638: propagate a typed validation error (degenerate
+                    // dt/cm) instead of letting a panic abort the simulation.
+                    crank_nicolson_iso13790(
                         tm_old,
                         dt,
                         cm,
@@ -1749,7 +1749,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         t_sol_air[i],
                         t_i,
                         phi_m_zone,
-                    )
+                    )?
                 }
             };
 
@@ -1800,6 +1800,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // the same SmallVec capacity (zero steady-state allocation).
         self.0.hvac.scratch_pool.return_5r1c(scratch);
 
-        net_hvac_energy_for_step / 3.6e6 // Return kWh
+        Ok(net_hvac_energy_for_step / 3.6e6) // Return kWh
     }
 }
