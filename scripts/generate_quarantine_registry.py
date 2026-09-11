@@ -75,29 +75,54 @@ QUARANTINE_MD = REPO_ROOT / "tests" / "QUARANTINE.md"
 #     underlying tracking issue and un-ignoring the test) are expected
 #     to drop the matching entry AND lower `BASELINE_ORPHANED_IGNORES`
 #     by one.
+#   - 0 → 10 (Issue #3443 reconciliation): commits bfc9c55 (#3572 —
+#     strict-energy-gate baseline extension for cases 800/810/920/950/
+#     960/970) and the #3585 Wave-5/8 + #3551/#3552 diagnostic-placeholder
+#     commits added `#[ignore]`d tests under `tests/**` without registry
+#     rows, silently tripping this ratchet on `develop`. Back-fill adds
+#     the 10 rows to `tests/QUARANTINE.md` ("Strict-Energy-Gate &
+#     Structural Diagnostics" section) and raises this baseline to 10
+#     with the matching freeze-set entries below.
 # ---------------------------------------------------------------------------
-BASELINE_ORPHANED_IGNORES = 0
-# 2026-09-11 (Issue #3599, §LIMIT-21): raised from 0 to 3. The 3 ghost rows
-# are the Phase-A8 9R4C legacy scratch-pool unit tests quarantined in
-# `src/sim/thermal_model_physics/physics_impl/` (Issue #3599). The audit
-# scanner only covers `tests/**/*.rs`, so `src/` rows can never match a
-# scanned `#[ignore]` — they are permanent ghosts until the legacy 9R4C
-# dispatch is removed (un-ignore criterion in `tests/QUARANTINE.md` Phase A8
-# section). They are listed in the freeze set below.
-BASELINE_GHOST_ROWS = 3
+#   - 0 → 9 (Issue #3443 reconciliation, revised by PR improve/quarantine-burndown):
+#     commits bfc9c55 (#3572 — strict-energy-gate baseline extension for
+#     cases 800/810/920/950/960/970) and the #3585 Wave-5/8 +
+#     #3551/#3552 diagnostic-placeholder commits added `#[ignore]`d tests
+#     under `tests/**` without registry rows, silently tripping this
+#     ratchet on `develop`. Back-fill lands the 9 rows (the 10th ignored
+#     test, `test_case_970_validator_accepts_canonical_midpoints`, was
+#     verified live and un-ignored by the burndown PR) in
+#     `tests/QUARANTINE.md` ("Strict-energy-gate observation cohort" +
+#     Diagnostic sections) and raises this baseline to 9 with the
+#     matching freeze-set entries below.
+# ---------------------------------------------------------------------------
+BASELINE_ORPHANED_IGNORES = 9
+BASELINE_GHOST_ROWS = 0
 
 # Freeze snapshot of the orphan allowlist (Issue #3443 ratchet).
 #
 # Mirrors the `_BASELINE_KNOWN_ORPHANS_SET` / freeze-snapshot pattern
-# from `scripts/check_orphan_modules.py`. At the moment the ratchet
-# was introduced (Issue #3443) the orphan list is empty, so the
-# snapshot is an empty frozenset. Future cleanup PRs that resolve an
-# orphan will not need to touch this freeze set; only PRs that
-# reintroduce an orphan (e.g. by re-adding a `#[ignore]` attribute
-# without updating the registry) will fail the ratchet check, and
-# such PRs are the only ones that need to add the new entry to this
-# set AND raise `BASELINE_ORPHANED_IGNORES`.
-_BASELINE_ORPHANED_IGNORES_SET: frozenset[tuple[str, str]] = frozenset()
+# from `scripts/check_orphan_modules.py`. Populated by the Issue #3443
+# reconciliation (see the BASELINE_ORPHANED_IGNORES history above):
+# the 10 rows added to `tests/QUARANTINE.md` for the #3572 /
+# #3585 / #3551 / #3552 ignores that landed without registry rows.
+# Future cleanup PRs that resolve an orphan will not need to touch
+# this freeze set; only PRs that reintroduce an orphan (e.g. by
+# re-adding a `#[ignore]` attribute without updating the registry)
+# will fail the ratchet check, and such PRs are the only ones that
+# need to add the new entry to this set AND raise
+# `BASELINE_ORPHANED_IGNORES`.
+_BASELINE_ORPHANED_IGNORES_SET: frozenset[tuple[str, str]] = frozenset({
+    ("tests/zone_balance_eplus_isolation.rs", "test_case_800_annual_energy_ashrae140_tolerance"),
+    ("tests/zone_balance_eplus_isolation.rs", "test_case_810_annual_energy_ashrae140_tolerance"),
+    ("tests/zone_balance_eplus_isolation.rs", "test_case_920_annual_energy_ashrae140_tolerance"),
+    ("tests/zone_balance_eplus_isolation.rs", "test_case_950_annual_energy_ashrae140_tolerance"),
+    ("tests/zone_balance_eplus_isolation.rs", "test_case_960_annual_energy_ashrae140_tolerance"),
+    ("tests/zone_balance_eplus_isolation.rs", "test_case_970_annual_energy_ashrae140_tolerance"),
+    ("tests/ashrae_140_case_970_validation.rs", "test_case_970_annual_energy_band"),
+    ("tests/diagnostics/case_950_hvac_mode_seasonal_attribution.rs", "test_case_950_hvac_mode_seasonal_attribution"),
+    ("tests/diagnostics/case_970_multi_zone_seasonal_attribution.rs", "case_970_per_zone_seasonal_attribution_placeholder"),
+})
 
 # Freeze snapshot of the ghost rows (Issue #3443 ratchet). Same shape
 # as the orphan freeze set: a `frozenset` of `(file, function)` pairs
