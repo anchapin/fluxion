@@ -72,7 +72,6 @@ CRITICAL_PATHS: dict[str, list[str]] = {
     "weather_solar": [
         "fluxion-core/src/weather/**",
         "src/sim/solar.rs",
-        "src/sim/solar_gain_distribution.rs",
     ],
     "weather_ventilation": [
         "fluxion-core/src/weather/**",
@@ -81,7 +80,7 @@ CRITICAL_PATHS: dict[str, list[str]] = {
     "conduction_zone": [
         "src/physics/**",
         "src/sim/thermal_model.rs",
-        "src/sim/thermal_model_core.rs",
+        "src/sim/thermal_model_core/**",
         "src/sim/thermal_model_solvers.rs",
         "src/sim/thermal_model_iterative.rs",
         "src/sim/thermal_model_data/**",

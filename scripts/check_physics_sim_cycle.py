@@ -144,7 +144,9 @@ BASELINE_PHYSICS_TO_SIM = 0
 # that hoisted them to `fluxion-core` would also have to move the
 # helpers themselves. Companion cycle-removal work stays open under
 # the #2462 phase-3 sim->physics edge elision.
-BASELINE_SIM_TO_PHYSICS = 83  # src/sim/** -> crate::physics::* (was 79; +4 for #3324)
+BASELINE_SIM_TO_PHYSICS = 80  # src/sim/** -> crate::physics::* (was 79; +4 for #3324; -3 for
+                              # the #3638/#3555-era sim refactors that removed three
+                              # `use crate::physics::` edges — live scan at 80 on 2026-09-11)
 
 # Regex for Phase 2: match `use` or `pub use` against `crate::physics::`.
 # Mirrors `scan_sim_for_orientation_cycle` in check_ashrae_cases_cycle.py
