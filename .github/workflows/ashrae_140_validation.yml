@@ -12,13 +12,17 @@ on:
 
 concurrency:
   group: >-
-    ashrae-140-
+    ${{ github.workflow }}-
     ${{
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.sha
       || github.ref
     }}
-  cancel-in-progress: true   # Issue #3567-tier: cancel superseded PR runs to prevent backlog
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
 
 # Least-privilege GITHUB_TOKEN grants (Issue #2526): validation is read-only.
 permissions:
