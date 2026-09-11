@@ -48,7 +48,7 @@ pub enum ThermalIntegrationMethod {
 ///
 /// # Example
 /// ```
-/// use fluxion::sim::thermal_integration::select_integration_method;
+/// use fluxion::sim::thermal_integration::{select_integration_method, ThermalIntegrationMethod};
 ///
 /// let method = select_integration_method(1000.0);
 /// assert_eq!(method, ThermalIntegrationMethod::CrankNicolson);
@@ -63,6 +63,25 @@ pub fn select_integration_method(cm: f64) -> ThermalIntegrationMethod {
     } else {
         ThermalIntegrationMethod::ExplicitEuler
     }
+}
+
+/// Validates the time step and thermal capacitance shared by all integrators.
+///
+/// This is the fallible call-boundary check used by every public integrator in
+/// this module. Per-step hot paths instead call the infallible `*_kernel`
+/// variants below, which re-check the same invariants with `debug_assert!`
+/// (zero cost in release builds).
+///
+/// # Errors
+/// Returns `Err` when `dt <= 0.0` or `cm <= 0.0`.
+fn validate_integrator_inputs(dt: f64, cm: f64) -> Result<(), String> {
+    if dt <= 0.0 {
+        return Err(format!("Time step dt must be positive, got {dt}"));
+    }
+    if cm <= 0.0 {
+        return Err(format!("Thermal capacitance cm must be positive, got {cm}"));
+    }
+    Ok(())
 }
 
 /// Backward Euler solver for implicit thermal mass update.
@@ -84,7 +103,10 @@ pub fn select_integration_method(cm: f64) -> ThermalIntegrationMethod {
 /// * `phi_m` - Direct gains to thermal mass (W)
 ///
 /// # Returns
-/// * New mass temperature (°C)
+/// * `Ok(new_mass_temperature)` in °C
+///
+/// # Errors
+/// Returns `Err` when `dt <= 0.0` or `cm <= 0.0`.
 ///
 /// # Stability
 /// Unconditionally stable for any time step size.
@@ -105,7 +127,7 @@ pub fn select_integration_method(cm: f64) -> ThermalIntegrationMethod {
 ///     -5.0,   // t_ext
 ///     22.0,   // t_surface
 ///     500.0,  // phi_m
-/// );
+/// ).expect("valid dt and cm");
 /// ```
 #[allow(clippy::too_many_arguments)]
 pub fn backward_euler_update(
@@ -117,14 +139,37 @@ pub fn backward_euler_update(
     t_ext: f64,
     t_surface: f64,
     phi_m: f64,
+) -> Result<f64, String> {
+    validate_integrator_inputs(dt, cm)?;
+    Ok(backward_euler_kernel(
+        tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m,
+    ))
+}
+
+/// Infallible Backward Euler kernel for per-step hot paths.
+///
+/// The caller must guarantee `dt > 0.0` and `cm > 0.0` (validated once at the
+/// simulation call boundary); violations are caught by `debug_assert!`, which
+/// compiles to zero cost in release builds.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn backward_euler_kernel(
+    tm_old: f64,
+    dt: f64,
+    cm: f64,
+    h_tr_em: f64,
+    h_tr_ms: f64,
+    t_ext: f64,
+    t_surface: f64,
+    phi_m: f64,
 ) -> f64 {
-    // Check for invalid inputs
-    if dt <= 0.0 {
-        panic!("Time step dt must be positive, got {}", dt);
-    }
-    if cm <= 0.0 {
-        panic!("Thermal capacitance cm must be positive, got {}", cm);
-    }
+    debug_assert!(
+        dt > 0.0,
+        "backward_euler_kernel: dt must be positive, got {dt}"
+    );
+    debug_assert!(
+        cm > 0.0,
+        "backward_euler_kernel: cm must be positive, got {cm}"
+    );
 
     // Calculate denominator: (Cm/dt + h_tr_em + h_tr_ms)
     let denom = cm / dt + h_tr_em + h_tr_ms;
@@ -161,6 +206,9 @@ pub fn backward_euler_update(
 /// * `t_ext` - Exterior (sol-air) temperature driving the h_tr_em path (°C)
 /// * `t_sup` - Supply / surface temperature driving the h_tr_3 path (°C)
 /// * `phi_m_tot` - Total heat flow to mass node (W), includes HVAC via network
+///
+/// # Errors
+/// Returns `Err` when `dt <= 0.0` or `cm <= 0.0`.
 #[allow(clippy::too_many_arguments)]
 pub fn crank_nicolson_iso13790(
     tm_prev: f64,
@@ -171,13 +219,37 @@ pub fn crank_nicolson_iso13790(
     t_ext: f64,
     t_sup: f64,
     phi_m_tot: f64,
+) -> Result<f64, String> {
+    validate_integrator_inputs(dt, cm)?;
+    Ok(crank_nicolson_iso13790_kernel(
+        tm_prev, dt, cm, h_tr_3, h_tr_em, t_ext, t_sup, phi_m_tot,
+    ))
+}
+
+/// Infallible ISO 13790 Crank-Nicolson kernel for per-step hot paths.
+///
+/// The caller must guarantee `dt > 0.0` and `cm > 0.0` (validated once at the
+/// simulation call boundary); violations are caught by `debug_assert!`, which
+/// compiles to zero cost in release builds.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn crank_nicolson_iso13790_kernel(
+    tm_prev: f64,
+    dt: f64,
+    cm: f64,
+    h_tr_3: f64,
+    h_tr_em: f64,
+    t_ext: f64,
+    t_sup: f64,
+    phi_m_tot: f64,
 ) -> f64 {
-    if dt <= 0.0 {
-        panic!("Time step dt must be positive, got {}", dt);
-    }
-    if cm <= 0.0 {
-        panic!("Thermal capacitance cm must be positive, got {}", cm);
-    }
+    debug_assert!(
+        dt > 0.0,
+        "crank_nicolson_iso13790_kernel: dt must be positive, got {dt}"
+    );
+    debug_assert!(
+        cm > 0.0,
+        "crank_nicolson_iso13790_kernel: cm must be positive, got {cm}"
+    );
 
     let cm_dt = cm / dt;
     let half_cond = 0.5 * (h_tr_3 + h_tr_em);
@@ -219,7 +291,10 @@ pub fn crank_nicolson_iso13790(
 /// * `phi_m` - Direct gains to thermal mass (W)
 ///
 /// # Returns
-/// * New mass temperature (°C)
+/// * `Ok(new_mass_temperature)` in °C
+///
+/// # Errors
+/// Returns `Err` when `dt <= 0.0` or `cm <= 0.0`.
 #[allow(clippy::too_many_arguments)]
 pub fn backward_euler_update_2cond(
     tm_old: f64,
@@ -230,14 +305,37 @@ pub fn backward_euler_update_2cond(
     t_surface: f64,
     t_int: f64,
     phi_m: f64,
+) -> Result<f64, String> {
+    validate_integrator_inputs(dt, cm)?;
+    Ok(backward_euler_2cond_kernel(
+        tm_old, dt, cm, h_tr_ms, h_tr_me, t_surface, t_int, phi_m,
+    ))
+}
+
+/// Infallible 2-conductance Backward Euler kernel for per-step hot paths.
+///
+/// The caller must guarantee `dt > 0.0` and `cm > 0.0` (validated once at the
+/// simulation call boundary); violations are caught by `debug_assert!`, which
+/// compiles to zero cost in release builds.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn backward_euler_2cond_kernel(
+    tm_old: f64,
+    dt: f64,
+    cm: f64,
+    h_tr_ms: f64,
+    h_tr_me: f64,
+    t_surface: f64,
+    t_int: f64,
+    phi_m: f64,
 ) -> f64 {
-    // Check for invalid inputs
-    if dt <= 0.0 {
-        panic!("Time step dt must be positive, got {}", dt);
-    }
-    if cm <= 0.0 {
-        panic!("Thermal capacitance cm must be positive, got {}", cm);
-    }
+    debug_assert!(
+        dt > 0.0,
+        "backward_euler_2cond_kernel: dt must be positive, got {dt}"
+    );
+    debug_assert!(
+        cm > 0.0,
+        "backward_euler_2cond_kernel: cm must be positive, got {cm}"
+    );
 
     // Calculate denominator: (Cm/dt + h_tr_ms + h_tr_me)
     let denom = cm / dt + h_tr_ms + h_tr_me;
@@ -274,7 +372,10 @@ pub fn backward_euler_update_2cond(
 /// * `phi_m` - Direct gains to thermal mass (W)
 ///
 /// # Returns
-/// * New mass temperature (°C)
+/// * `Ok(new_mass_temperature)` in °C
+///
+/// # Errors
+/// Returns `Err` when `dt <= 0.0` or `cm <= 0.0`.
 #[allow(clippy::too_many_arguments)]
 pub fn backward_euler_update_2cond_h_tr3(
     tm_old: f64,
@@ -283,14 +384,35 @@ pub fn backward_euler_update_2cond_h_tr3(
     h_tr_3: f64,
     t_zone: f64,
     phi_m: f64,
+) -> Result<f64, String> {
+    validate_integrator_inputs(dt, cm)?;
+    Ok(backward_euler_2cond_h_tr3_kernel(
+        tm_old, dt, cm, h_tr_3, t_zone, phi_m,
+    ))
+}
+
+/// Infallible H_tr_3 Backward Euler kernel for per-step hot paths.
+///
+/// The caller must guarantee `dt > 0.0` and `cm > 0.0` (validated once at the
+/// simulation call boundary); violations are caught by `debug_assert!`, which
+/// compiles to zero cost in release builds.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn backward_euler_2cond_h_tr3_kernel(
+    tm_old: f64,
+    dt: f64,
+    cm: f64,
+    h_tr_3: f64,
+    t_zone: f64,
+    phi_m: f64,
 ) -> f64 {
-    // Check for invalid inputs
-    if dt <= 0.0 {
-        panic!("Time step dt must be positive, got {}", dt);
-    }
-    if cm <= 0.0 {
-        panic!("Thermal capacitance cm must be positive, got {}", cm);
-    }
+    debug_assert!(
+        dt > 0.0,
+        "backward_euler_2cond_h_tr3_kernel: dt must be positive, got {dt}"
+    );
+    debug_assert!(
+        cm > 0.0,
+        "backward_euler_2cond_h_tr3_kernel: cm must be positive, got {cm}"
+    );
 
     // Calculate denominator: (Cm/dt + h_tr_3)
     let denom = cm / dt + h_tr_3;
@@ -325,7 +447,10 @@ pub fn backward_euler_update_2cond_h_tr3(
 /// * `phi_m` - Direct gains to thermal mass (W)
 ///
 /// # Returns
-/// * New mass temperature (°C)
+/// * `Ok(new_mass_temperature)` in °C
+///
+/// # Errors
+/// Returns `Err` when `dt <= 0.0` or `cm <= 0.0`.
 ///
 /// # Stability
 /// Unconditionally stable (A-stable).
@@ -346,7 +471,7 @@ pub fn backward_euler_update_2cond_h_tr3(
 ///     -5.0,   // t_ext
 ///     22.0,   // t_surface
 ///     500.0,  // phi_m
-/// );
+/// ).expect("valid dt and cm");
 /// ```
 #[allow(clippy::too_many_arguments)]
 pub fn crank_nicolson_update(
@@ -358,14 +483,37 @@ pub fn crank_nicolson_update(
     t_ext: f64,
     t_surface: f64,
     phi_m: f64,
+) -> Result<f64, String> {
+    validate_integrator_inputs(dt, cm)?;
+    Ok(crank_nicolson_kernel(
+        tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m,
+    ))
+}
+
+/// Infallible Crank-Nicolson kernel for per-step hot paths.
+///
+/// The caller must guarantee `dt > 0.0` and `cm > 0.0` (validated once at the
+/// simulation call boundary); violations are caught by `debug_assert!`, which
+/// compiles to zero cost in release builds.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn crank_nicolson_kernel(
+    tm_old: f64,
+    dt: f64,
+    cm: f64,
+    h_tr_em: f64,
+    h_tr_ms: f64,
+    t_ext: f64,
+    t_surface: f64,
+    phi_m: f64,
 ) -> f64 {
-    // Check for invalid inputs
-    if dt <= 0.0 {
-        panic!("Time step dt must be positive, got {}", dt);
-    }
-    if cm <= 0.0 {
-        panic!("Thermal capacitance cm must be positive, got {}", cm);
-    }
+    debug_assert!(
+        dt > 0.0,
+        "crank_nicolson_kernel: dt must be positive, got {dt}"
+    );
+    debug_assert!(
+        cm > 0.0,
+        "crank_nicolson_kernel: cm must be positive, got {cm}"
+    );
 
     // Calculate old heat flux
     let q_old = h_tr_em * (t_ext - tm_old) + h_tr_ms * (t_surface - tm_old) + phi_m;
@@ -411,7 +559,10 @@ pub fn crank_nicolson_update(
 /// * `phi_m` - Direct gains to thermal mass (W)
 ///
 /// # Returns
-/// * New mass temperature (°C)
+/// * `Ok(new_mass_temperature)` in °C
+///
+/// # Errors
+/// Returns `Err` when `dt <= 0.0` or `cm <= 0.0`.
 #[allow(clippy::too_many_arguments)]
 pub fn crank_nicolson_update_3cond(
     tm_old: f64,
@@ -424,14 +575,39 @@ pub fn crank_nicolson_update_3cond(
     t_surface: f64,
     t_int: f64,
     phi_m: f64,
+) -> Result<f64, String> {
+    validate_integrator_inputs(dt, cm)?;
+    Ok(crank_nicolson_3cond_kernel(
+        tm_old, dt, cm, h_tr_em, h_tr_ms, h_tr_me, t_ext, t_surface, t_int, phi_m,
+    ))
+}
+
+/// Infallible 3-conductance Crank-Nicolson kernel for per-step hot paths.
+///
+/// The caller must guarantee `dt > 0.0` and `cm > 0.0` (validated once at the
+/// simulation call boundary); violations are caught by `debug_assert!`, which
+/// compiles to zero cost in release builds.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn crank_nicolson_3cond_kernel(
+    tm_old: f64,
+    dt: f64,
+    cm: f64,
+    h_tr_em: f64,
+    h_tr_ms: f64,
+    h_tr_me: f64,
+    t_ext: f64,
+    t_surface: f64,
+    t_int: f64,
+    phi_m: f64,
 ) -> f64 {
-    // Check for invalid inputs
-    if dt <= 0.0 {
-        panic!("Time step dt must be positive, got {}", dt);
-    }
-    if cm <= 0.0 {
-        panic!("Thermal capacitance cm must be positive, got {}", cm);
-    }
+    debug_assert!(
+        dt > 0.0,
+        "crank_nicolson_3cond_kernel: dt must be positive, got {dt}"
+    );
+    debug_assert!(
+        cm > 0.0,
+        "crank_nicolson_3cond_kernel: cm must be positive, got {cm}"
+    );
 
     // Calculate old heat flux from all three paths
     let q_old = h_tr_em * (t_ext - tm_old)
@@ -473,7 +649,10 @@ pub fn crank_nicolson_update_3cond(
 /// * `phi_m` - Direct gains to thermal mass (W)
 ///
 /// # Returns
-/// * New mass temperature (°C)
+/// * `Ok(new_mass_temperature)` in °C
+///
+/// # Errors
+/// Returns `Err` when `dt <= 0.0` or `cm <= 0.0`.
 ///
 /// # Stability
 /// Conditionally stable when dt < Cm / (h_tr_em + h_tr_ms).
@@ -496,7 +675,7 @@ pub fn crank_nicolson_update_3cond(
 ///     -5.0,   // t_ext
 ///     22.0,   // t_surface
 ///     500.0,  // phi_m
-/// );
+/// ).expect("valid dt and cm");
 /// ```
 #[allow(clippy::too_many_arguments)]
 pub fn explicit_euler_update(
@@ -508,14 +687,37 @@ pub fn explicit_euler_update(
     t_ext: f64,
     t_surface: f64,
     phi_m: f64,
+) -> Result<f64, String> {
+    validate_integrator_inputs(dt, cm)?;
+    Ok(explicit_euler_kernel(
+        tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m,
+    ))
+}
+
+/// Infallible explicit Euler kernel for per-step hot paths.
+///
+/// The caller must guarantee `dt > 0.0` and `cm > 0.0` (validated once at the
+/// simulation call boundary); violations are caught by `debug_assert!`, which
+/// compiles to zero cost in release builds.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn explicit_euler_kernel(
+    tm_old: f64,
+    dt: f64,
+    cm: f64,
+    h_tr_em: f64,
+    h_tr_ms: f64,
+    t_ext: f64,
+    t_surface: f64,
+    phi_m: f64,
 ) -> f64 {
-    // Check for invalid inputs
-    if dt <= 0.0 {
-        panic!("Time step dt must be positive, got {}", dt);
-    }
-    if cm <= 0.0 {
-        panic!("Thermal capacitance cm must be positive, got {}", cm);
-    }
+    debug_assert!(
+        dt > 0.0,
+        "explicit_euler_kernel: dt must be positive, got {dt}"
+    );
+    debug_assert!(
+        cm > 0.0,
+        "explicit_euler_kernel: cm must be positive, got {cm}"
+    );
 
     // Calculate net heat flux
     let q_net = h_tr_em * (t_ext - tm_old) + h_tr_ms * (t_surface - tm_old) + phi_m;
@@ -600,7 +802,8 @@ mod tests {
         let phi_m = 500.0;
 
         let tm_new =
-            backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m);
+            backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m)
+                .expect("valid test inputs");
 
         // Temperature should increase due to heating
         assert!(tm_new > tm_old);
@@ -621,7 +824,8 @@ mod tests {
         let phi_m = 0.0;
 
         let tm_new =
-            backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m);
+            backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m)
+                .expect("valid test inputs");
 
         // Temperature should decrease due to cooling
         assert!(tm_new < tm_old);
@@ -644,9 +848,11 @@ mod tests {
         let phi_m = 500.0;
 
         let tm_be =
-            backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m);
+            backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m)
+                .expect("valid test inputs");
         let tm_cn =
-            crank_nicolson_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m);
+            crank_nicolson_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m)
+                .expect("valid test inputs");
 
         // Both should give increasing temperatures
         assert!(tm_be > tm_old);
@@ -670,7 +876,8 @@ mod tests {
         let phi_m = 100.0;
 
         let tm_new =
-            explicit_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m);
+            explicit_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m)
+                .expect("valid test inputs");
 
         // Temperature should increase
         assert!(tm_new > tm_old);
@@ -696,15 +903,37 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Time step dt must be positive")]
     fn test_backward_euler_invalid_dt() {
-        backward_euler_update(20.0, -1.0, 1000.0, 10.0, 100.0, -5.0, 22.0, 500.0);
+        let err = backward_euler_update(20.0, -1.0, 1000.0, 10.0, 100.0, -5.0, 22.0, 500.0)
+            .expect_err("non-positive dt must return Err, not panic");
+        assert!(
+            err.contains("dt must be positive"),
+            "error must name dt, got: {err}"
+        );
     }
 
     #[test]
-    #[should_panic(expected = "Thermal capacitance cm must be positive")]
     fn test_backward_euler_invalid_cm() {
-        backward_euler_update(20.0, 3600.0, -1000.0, 10.0, 100.0, -5.0, 22.0, 500.0);
+        let err = backward_euler_update(20.0, 3600.0, -1000.0, 10.0, 100.0, -5.0, 22.0, 500.0)
+            .expect_err("non-positive cm must return Err, not panic");
+        assert!(
+            err.contains("cm must be positive"),
+            "error must name cm, got: {err}"
+        );
+
+        // Every other public integrator must likewise return Err (never panic)
+        // on non-positive dt/cm.
+        assert!(backward_euler_update_2cond(20.0, 0.0, 1000.0, 1.0, 1.0, 20.0, 20.0, 0.0).is_err());
+        assert!(backward_euler_update_2cond_h_tr3(20.0, 3600.0, 0.0, 40.0, 20.0, 0.0).is_err());
+        assert!(
+            crank_nicolson_iso13790(20.0, -3600.0, 1000.0, 40.0, 10.0, 0.0, 20.0, 0.0).is_err()
+        );
+        assert!(crank_nicolson_update(20.0, 3600.0, -1.0, 10.0, 100.0, 0.0, 20.0, 0.0).is_err());
+        assert!(crank_nicolson_update_3cond(
+            20.0, 0.0, 1000.0, 1.0, 1.0, 1.0, 0.0, 20.0, 20.0, 0.0
+        )
+        .is_err());
+        assert!(explicit_euler_update(20.0, 3600.0, 0.0, 10.0, 100.0, 0.0, 20.0, 0.0).is_err());
     }
 
     #[test]
@@ -726,7 +955,8 @@ mod tests {
             let t_ext = 20.0 + 10.0 * ((hour as f64 / 24.0) * 2.0 * PI).sin();
 
             let tm_old = tm;
-            tm = backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m);
+            tm = backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m)
+                .expect("valid test inputs");
         }
 
         // Over a full sinusoidal cycle, the net energy should be close to zero

@@ -123,7 +123,8 @@ mod setpoint_control {
             26.0, // cooling setpoint
             22,   // night start hour
             6,    // night end hour
-        );
+        )
+        .expect("valid test schedule");
 
         // Night period: zone at setback temperature
         let night_hour = 3;
@@ -713,7 +714,8 @@ mod schedule_control {
         // Create a schedule using setback_schedule for night hours
         let schedule = HVACSchedule::setback_schedule(
             20.0, 15.0, 26.0, 22, 6, // setback from 22:00 to 6:00
-        );
+        )
+        .expect("valid test schedule");
 
         // Validate occupied hours (7-21)
         for hour in 7..22 {
@@ -754,7 +756,8 @@ mod schedule_control {
             26.0, // occupied cooling
             22,   // night start
             6,    // night end
-        );
+        )
+        .expect("valid test schedule");
 
         let occupied_heating = 20.0;
         let occupied_cooling = 26.0;
@@ -780,7 +783,7 @@ mod schedule_control {
     /// DailySchedule should provide 24 hourly values.
     #[test]
     fn test_daily_schedule_constant() {
-        let schedule = DailySchedule::constant(20.0);
+        let schedule = DailySchedule::constant(20.0).expect("valid test schedule");
 
         for hour in 0..24 {
             assert_eq!(
@@ -854,13 +857,15 @@ mod control_integration {
             26.0, // cooling setpoint
             6,    // start hour
             14,   // end hour
-        );
+        )
+        .expect("valid test schedule");
 
         // Zone B: late occupancy (9 AM start)
         let zone_b_schedule = HVACSchedule::with_operating_hours(
             20.0, 26.0, 9,  // start hour
             17, // end hour
-        );
+        )
+        .expect("valid test schedule");
 
         // At 6 AM, Zone A needs heating but Zone B doesn't
         let hour = 6;

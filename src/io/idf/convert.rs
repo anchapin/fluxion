@@ -848,7 +848,8 @@ fn build_schedules(idf: &IdfFile, zone_name: &str) -> ScheduleSet {
     ScheduleSet {
         occupancy: DailySchedule::weekly("Occupancy".to_string()),
         lighting: DailySchedule::weekly("Lighting".to_string()),
-        hvac: HVACSchedule::constant_schedule(heat_sp, cool_sp),
+        hvac: HVACSchedule::constant_schedule(heat_sp, cool_sp)
+            .expect("constant_schedule on fresh daily schedules cannot fail"),
         infiltration: None,
     }
 }

@@ -225,7 +225,7 @@ fn handle_schedule(action: ScheduleAction) -> Result<(), String> {
 
     match action {
         ScheduleAction::Constant { heating, cooling } => {
-            let schedule = HVACSchedule::constant_schedule(heating, cooling);
+            let schedule = HVACSchedule::constant_schedule(heating, cooling)?;
             *schedule_lock = Some(schedule);
             println!(
                 "Created constant schedule: heating={}°C, cooling={}°C",
@@ -246,7 +246,7 @@ fn handle_schedule(action: ScheduleAction) -> Result<(), String> {
                 cooling,
                 night_start,
                 night_end,
-            );
+            )?;
             *schedule_lock = Some(schedule);
             println!(
                 "Created setback schedule: day={}°C, night={}°C ({}:00-{}:00), cooling={}°C",
@@ -261,7 +261,7 @@ fn handle_schedule(action: ScheduleAction) -> Result<(), String> {
             end_hour,
         } => {
             let schedule =
-                HVACSchedule::with_operating_hours(heating, cooling, start_hour, end_hour);
+                HVACSchedule::with_operating_hours(heating, cooling, start_hour, end_hour)?;
             *schedule_lock = Some(schedule);
             println!(
                 "Created operating hours schedule: heating={}°C, cooling={}°C ({}:00-{}:00)",
@@ -270,7 +270,7 @@ fn handle_schedule(action: ScheduleAction) -> Result<(), String> {
             Ok(())
         }
         ScheduleAction::FreeFloating => {
-            let schedule = HVACSchedule::free_floating();
+            let schedule = HVACSchedule::free_floating()?;
             *schedule_lock = Some(schedule);
             println!("Created free-floating schedule (no HVAC control)");
             Ok(())

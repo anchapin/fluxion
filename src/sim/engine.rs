@@ -325,9 +325,11 @@ mod tests {
     fn test_thermal_lag() {
         let mut model = ThermalModel::<VectorField>::new(1);
         model.setpoints.heating_setpoint = -100.0;
-        model.setpoints.heating_schedule = DailySchedule::constant(-100.0);
+        model.setpoints.heating_schedule =
+            DailySchedule::constant(-100.0).expect("valid constant schedule");
         model.setpoints.cooling_setpoint = 1000.0;
-        model.setpoints.cooling_schedule = DailySchedule::constant(1000.0);
+        model.setpoints.cooling_schedule =
+            DailySchedule::constant(1000.0).expect("valid constant schedule");
 
         let mut outdoor_temps = Vec::new();
         let mut indoor_temps = Vec::new();
@@ -386,9 +388,11 @@ mod tests {
                 (h_tr_em * outdoor_temp_heating + h_ms_is * setpoint_heating) / (h_tr_em + h_ms_is);
 
             model.setpoints.heating_setpoint = setpoint_heating;
-            model.setpoints.heating_schedule = DailySchedule::constant(setpoint_heating);
+            model.setpoints.heating_schedule =
+                DailySchedule::constant(setpoint_heating).expect("valid constant schedule");
             model.setpoints.cooling_setpoint = 100.0;
-            model.setpoints.cooling_schedule = DailySchedule::constant(100.0);
+            model.setpoints.cooling_schedule =
+                DailySchedule::constant(100.0).expect("valid constant schedule");
             model.setpoints.temperatures = VectorField::from_scalar(setpoint_heating, 1);
             model.mass.mass_temperatures = VectorField::from_scalar(t_m_steady_state_heating, 1);
 
@@ -428,9 +432,11 @@ mod tests {
 
             let outdoor_temp = 20.0;
             model.setpoints.heating_setpoint = 18.0;
-            model.setpoints.heating_schedule = DailySchedule::constant(18.0);
+            model.setpoints.heating_schedule =
+                DailySchedule::constant(18.0).expect("valid constant schedule");
             model.setpoints.cooling_setpoint = 22.0;
-            model.setpoints.cooling_schedule = DailySchedule::constant(22.0);
+            model.setpoints.cooling_schedule =
+                DailySchedule::constant(22.0).expect("valid constant schedule");
             model.setpoints.temperatures = VectorField::from_scalar(20.0, 1);
             model.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
 
@@ -454,9 +460,11 @@ mod tests {
             let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
             model.setpoints.heating_setpoint = 20.0;
-            model.setpoints.heating_schedule = DailySchedule::constant(20.0);
+            model.setpoints.heating_schedule =
+                DailySchedule::constant(20.0).expect("valid constant schedule");
             model.setpoints.cooling_setpoint = 27.0;
-            model.setpoints.cooling_schedule = DailySchedule::constant(27.0);
+            model.setpoints.cooling_schedule =
+                DailySchedule::constant(27.0).expect("valid constant schedule");
             model.setpoints.temperatures = VectorField::from_scalar(20.0, 1);
             model.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
             model.setpoints.loads = VectorField::from_scalar(0.0, 1);

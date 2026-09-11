@@ -4,7 +4,7 @@ use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::hvac::{HVACMode as EquipmentHVACMode, VariableCapacityEquipment};
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::thermal_integration::{
-    crank_nicolson_iso13790, select_integration_method, ThermalIntegrationMethod,
+    crank_nicolson_iso13790_kernel, select_integration_method, ThermalIntegrationMethod,
 };
 use crate::sim::thermal_model_core::ThermalModel;
 
@@ -1737,7 +1737,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // from mass to zone air, which captures the cooling effect.
                     // Issue #2868: degenerate-`H_tr,3` fallback (see above).
                     let h_tr_3_with_vent = h_air_mass + h_vent_mass_zone;
-                    crank_nicolson_iso13790(
+                    // Hot path: dt/cm were validated at the simulation call
+                    // boundary; the kernel re-checks via debug_assert! (zero
+                    // release cost) instead of returning Result per zone.
+                    crank_nicolson_iso13790_kernel(
                         tm_old,
                         dt,
                         cm,

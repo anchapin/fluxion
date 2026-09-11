@@ -13,23 +13,33 @@ pub use crate::sim::schedule::ScheduleValues;
 impl From<&crate::validation::ashrae_140_cases::HvacSchedule> for HVACSchedule {
     fn from(spec: &crate::validation::ashrae_140_cases::HvacSchedule) -> Self {
         if spec.is_free_floating() {
-            return HVACSchedule::free_floating();
+            return HVACSchedule::free_floating()
+                .expect("free_floating() on fresh daily schedules cannot fail");
         }
 
         let mut heating = DailySchedule::new();
         let mut cooling = DailySchedule::new();
 
-        heating.fill_range(0, 24, spec.heating_setpoint);
-        cooling.fill_range(0, 24, spec.cooling_setpoint);
+        // All fills below target fresh daily schedules, so they are infallible
+        // by construction; `expect` documents the invariant per the internal
+        // error-handling convention (CONVENTIONS.md).
+        heating
+            .fill_range(0, 24, spec.heating_setpoint)
+            .expect("fill_range on a fresh daily schedule cannot fail");
+        cooling
+            .fill_range(0, 24, spec.cooling_setpoint)
+            .expect("fill_range on a fresh daily schedule cannot fail");
 
         if let (Some(setback_setpoint), Some((setback_start, setback_end))) =
             (spec.setback_setpoint, spec.setback_hours)
         {
-            heating.fill_range(
-                setback_start as usize,
-                setback_end as usize,
-                setback_setpoint,
-            );
+            heating
+                .fill_range(
+                    setback_start as usize,
+                    setback_end as usize,
+                    setback_setpoint,
+                )
+                .expect("fill_range on a fresh daily schedule cannot fail");
         }
 
         let (op_start, op_end) = spec.operating_hours;
@@ -38,13 +48,25 @@ impl From<&crate::validation::ashrae_140_cases::HvacSchedule> for HVACSchedule {
             let disabled_cooling = 100.0;
 
             if op_end > op_start {
-                heating.fill_range(0, op_start as usize, disabled_heating);
-                heating.fill_range(op_end as usize, 24, disabled_heating);
-                cooling.fill_range(0, op_start as usize, disabled_cooling);
-                cooling.fill_range(op_end as usize, 24, disabled_cooling);
+                heating
+                    .fill_range(0, op_start as usize, disabled_heating)
+                    .expect("fill_range on a fresh daily schedule cannot fail");
+                heating
+                    .fill_range(op_end as usize, 24, disabled_heating)
+                    .expect("fill_range on a fresh daily schedule cannot fail");
+                cooling
+                    .fill_range(0, op_start as usize, disabled_cooling)
+                    .expect("fill_range on a fresh daily schedule cannot fail");
+                cooling
+                    .fill_range(op_end as usize, 24, disabled_cooling)
+                    .expect("fill_range on a fresh daily schedule cannot fail");
             } else {
-                heating.fill_range(op_end as usize, op_start as usize, disabled_heating);
-                cooling.fill_range(op_end as usize, op_start as usize, disabled_cooling);
+                heating
+                    .fill_range(op_end as usize, op_start as usize, disabled_heating)
+                    .expect("fill_range on a fresh daily schedule cannot fail");
+                cooling
+                    .fill_range(op_end as usize, op_start as usize, disabled_cooling)
+                    .expect("fill_range on a fresh daily schedule cannot fail");
             }
         }
 

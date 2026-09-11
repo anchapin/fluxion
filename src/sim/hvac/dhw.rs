@@ -362,7 +362,7 @@ mod tests {
         tank.supply_temp_C = 10.0;
 
         let mut draw_profile = DailySchedule::new();
-        draw_profile.fill_range(0, 24, 100.0);
+        draw_profile.fill_range(0, 24, 100.0).unwrap();
         tank.draw_profile = draw_profile;
 
         let result = tank.step(12, 3600.0);
@@ -390,7 +390,7 @@ mod tests {
         tank.supply_temp_C = 10.0;
 
         let mut draw_profile = DailySchedule::new();
-        draw_profile.fill_range(0, 24, 100.0);
+        draw_profile.fill_range(0, 24, 100.0).unwrap();
         tank.draw_profile = draw_profile;
 
         let result = tank.step(12, 3600.0);
@@ -416,7 +416,7 @@ mod tests {
         tank.supply_temp_C = 10.0;
 
         let mut draw_profile = DailySchedule::new();
-        draw_profile.fill_range(0, 24, 100.0);
+        draw_profile.fill_range(0, 24, 100.0).unwrap();
         tank.draw_profile = draw_profile;
 
         tank.step(12, 3600.0);
@@ -455,7 +455,7 @@ mod tests {
         tank.supply_temp_C = 10.0;
 
         let mut draw_profile = DailySchedule::new();
-        draw_profile.fill_range(0, 24, 100.0);
+        draw_profile.fill_range(0, 24, 100.0).unwrap();
         tank.draw_profile = draw_profile;
 
         tank.step(12, 3600.0);
@@ -492,9 +492,9 @@ mod tests {
         );
 
         let mut draw_profile = DailySchedule::new();
-        draw_profile.set_hour(7, 50.0);
-        draw_profile.set_hour(8, 100.0);
-        draw_profile.set_hour(9, 80.0);
+        draw_profile.set_hour(7, 50.0).unwrap();
+        draw_profile.set_hour(8, 100.0).unwrap();
+        draw_profile.set_hour(9, 80.0).unwrap();
         tank.draw_profile = draw_profile;
 
         assert_eq!(tank.draw_profile.value(7), 50.0);

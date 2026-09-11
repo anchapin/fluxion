@@ -2,8 +2,8 @@
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::thermal_integration::{
-    backward_euler_update_2cond, backward_euler_update_2cond_h_tr3, crank_nicolson_update,
-    crank_nicolson_update_3cond, select_integration_method, ThermalIntegrationMethod,
+    backward_euler_2cond_h_tr3_kernel, backward_euler_2cond_kernel, crank_nicolson_3cond_kernel,
+    crank_nicolson_kernel, select_integration_method, ThermalIntegrationMethod,
 };
 use crate::sim::thermal_model_core::ThermalModel;
 use smallvec::SmallVec;
@@ -639,8 +639,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         // Case 900+: Use H_tr_3 (≈ 40 W/K) for correct slow thermal coupling
                         // This gives ~69 hour time constant instead of ~1.9 hours with h_tr_ms + h_tr_me
                         // Heat balance: Cm*(Tm_new - Tm_old)/dt = h_tr_3*(t_i - Tm_new) + phi_m
+                        // Hot path: dt/cm validated at the simulation call
+                        // boundary; the kernel re-checks via debug_assert!
+                        // (zero release cost) instead of returning Result.
                         let t_i_zone = t_i_act.as_ref()[i];
-                        backward_euler_update_2cond_h_tr3(
+                        backward_euler_2cond_h_tr3_kernel(
                             tm_env_old,
                             dt,
                             cm_env,
@@ -650,7 +653,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         )
                     } else {
                         // Standard 6R2C: Use h_tr_ms + h_tr_me for fast air-surface coupling
-                        backward_euler_update_2cond(
+                        // (hot path: kernel + debug_assert!, see above)
+                        backward_euler_2cond_kernel(
                             tm_env_old,
                             dt,
                             cm_env,
@@ -682,7 +686,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // Use Crank-Nicolson for 2nd-order accuracy
                     // For 6R2C envelope mass: receives heat from exterior (h_tr_em),
                     // surface (h_tr_ms), and internal mass (h_tr_me)
-                    crank_nicolson_update_3cond(
+                    // (hot path: kernel + debug_assert!, see above)
+                    crank_nicolson_3cond_kernel(
                         tm_env_old,
                         dt,
                         cm_env,
@@ -738,7 +743,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 }
                 ThermalIntegrationMethod::CrankNicolson => {
                     // Use Crank-Nicolson for 2nd-order accuracy
-                    crank_nicolson_update(
+                    // For 6R2C envelope mass: receives heat from exterior (h_tr_em),
+                    // surface (h_tr_ms), and internal mass (h_tr_me)
+                    // (hot path: kernel + debug_assert!, see above)
+                    crank_nicolson_kernel(
                         tm_int_old,
                         dt,
                         cm_int,
