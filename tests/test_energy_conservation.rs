@@ -446,3 +446,66 @@ fn test_free_floating_energy_conservation_residual() {
         max_violation
     );
 }
+
+/// Issue #3637 regression: a 9R4C step with a non-finite mass-node temperature
+/// (`T_wall = f64::INFINITY`, the Case 950 divergence signature) must FAIL the
+/// strict-energy gate instead of passing silently.
+///
+/// Previously a NaN/Inf mass temperature produced a NaN balance, and
+/// `NaN > tolerance` evaluated to `false`, so the diverged step slipped through
+/// the gate while `check_energy_balance` skipped the non-finite residual.
+#[test]
+fn test_9r4c_infinite_wall_temperature_fails_strict_energy_gate() {
+    let spec = ASHRAE140Case::Case900.spec(); // high-mass → 9R4C multi-node
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
+    let weather = DenverTmyWeather::new();
+
+    let dt = 3600.0;
+
+    // One live step so the 9R4C multi-node path has initialized state.
+    let weather_data = weather.get_hourly_data(0).unwrap();
+    model.step_physics(0, weather_data.dry_bulb_temp, dt);
+
+    // Inject T_wall = +Inf into the zone-0 9R4C multi-node solver.
+    assert!(
+        !model.conduction.backend.multi_node_solvers.is_empty(),
+        "Case 900 (high-mass) must configure 9R4C multi-node solvers"
+    );
+    model.conduction.backend.multi_node_solvers[0]
+        .mass
+        .wall
+        .temperature = f64::INFINITY;
+
+    // Step the diverged solver: the first-law residual is now non-finite and
+    // must be reported loudly by check_energy_balance (error-level, #3637).
+    let weather_data = weather.get_hourly_data(1).unwrap();
+    model.step_physics(1, weather_data.dry_bulb_temp, dt);
+
+    // The strict-energy gate must FAIL this step rather than pass silently.
+    let tolerance = ENERGY_BALANCE_RESIDUAL_THRESHOLD;
+    let mut checker = InvariantChecker::new(tolerance);
+    let result = checker.check_invariant(&model, dt, weather_data.dry_bulb_temp);
+
+    assert!(
+        result.violated,
+        "Issue #3637: 9R4C step with T_wall=+Inf must fail the strict-energy gate (balance={}, mass temps finite={}) — not pass silently",
+        result.balance,
+        model
+            .mass
+            .mass_temperatures
+            .as_ref()
+            .iter()
+            .all(|t| t.is_finite())
+    );
+    assert!(
+        !result.balance.is_finite() || result.balance.abs() > tolerance,
+        "non-finite divergence must register as a gate violation"
+    );
+    assert_eq!(
+        checker.violation_count(),
+        1,
+        "the diverged step must be counted as a gate violation"
+    );
+}
