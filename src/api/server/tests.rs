@@ -607,3 +607,94 @@ fn simulation_started_audit_event_omits_raw_client_id() {
         "audit event must carry the stable fingerprint; captured: {captured}"
     );
 }
+
+// ===== Issue #3650 (CWE-209) — /v1/readyz must not echo the
+// FLUXION_WEATHER_FILE path =====
+//
+// `/v1/readyz` is `RouteTier::Public` (k8s probes hit it without auth), so
+// `probe_weather` must never interpolate the operator-supplied path — or
+// any fragment of it — into the `detail` it returns, in either the Ok or
+// the Err branch. Readiness semantics (readable → ready, unreadable →
+// degraded) are unchanged.
+
+use crate::api::server::health::probe_weather;
+use crate::api::server::run_readiness_probes_with;
+
+/// Distinctive per-test filename so an accidental echo cannot pass by
+/// colliding with some other path fragment in the response body.
+fn issue_3650_probe_path(dir: &std::path::Path, name: &str) -> String {
+    dir.join(format!("issue-3650-{name}.epw"))
+        .to_string_lossy()
+        .into_owned()
+}
+
+#[test]
+fn probe_weather_ok_detail_omits_operator_supplied_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = issue_3650_probe_path(dir.path(), "readable-secret");
+    std::fs::write(&path, b"placeholder").expect("write probe target");
+
+    let detail = probe_weather(Some(&path)).expect("readable file must pass the probe");
+    assert!(
+        !detail.contains(path.as_str()),
+        "Ok detail must not echo the configured path: {detail}"
+    );
+    assert!(
+        !detail.contains("issue-3650"),
+        "Ok detail must not echo any path fragment: {detail}"
+    );
+}
+
+#[test]
+fn probe_weather_err_detail_omits_operator_supplied_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = issue_3650_probe_path(dir.path(), "missing-secret"); // never created
+
+    let detail = probe_weather(Some(&path)).expect_err("missing file must fail the probe");
+    assert!(
+        !detail.contains(path.as_str()),
+        "Err detail must not echo the configured path: {detail}"
+    );
+    assert!(
+        !detail.contains(dir.path().to_string_lossy().as_ref()),
+        "Err detail must not echo the parent directory: {detail}"
+    );
+    assert!(
+        detail.contains("FLUXION_WEATHER_FILE"),
+        "Err detail must still name the failing dependency: {detail}"
+    );
+}
+
+#[test]
+fn readyz_weather_semantics_and_body_keep_path_private() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    // Broken weather file → degraded readiness (the 503 shape).
+    let missing = issue_3650_probe_path(dir.path(), "body-missing");
+    let degraded = run_readiness_probes_with(None, Some(&missing));
+    assert!(
+        !degraded.is_ready(),
+        "unreadable FLUXION_WEATHER_FILE must keep the server not-ready"
+    );
+    assert_eq!(degraded.checks.weather.status, "fail");
+    let body = serde_json::to_string(&degraded).expect("report serializes");
+    assert!(
+        !body.contains(missing.as_str()),
+        "serialized 503 body leaked the configured path: {body}"
+    );
+
+    // Healthy weather file → the weather check stays ok (the 200 shape).
+    let readable = issue_3650_probe_path(dir.path(), "body-readable");
+    std::fs::write(&readable, b"placeholder").expect("write probe target");
+    let healthy = run_readiness_probes_with(None, Some(&readable));
+    assert!(
+        healthy.checks.weather.is_ok(),
+        "readable FLUXION_WEATHER_FILE must keep its check ok"
+    );
+    assert_eq!(healthy.checks.weather.status, "ok");
+    let body = serde_json::to_string(&healthy).expect("report serializes");
+    assert!(
+        !body.contains(readable.as_str()),
+        "serialized 200 body leaked the configured path: {body}"
+    );
+}
