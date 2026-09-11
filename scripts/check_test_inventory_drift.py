@@ -124,9 +124,15 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #     "Phase A8 / Issue #3599" subsection. ``BASELINE_WORKSPACE_IGNORED``
 #     stays at 123 (workspace ignored rises from 108 → 111, well below
 #     the ratchet).
+#   - 2026-09-11 (Issue #3629): bumped ``BASELINE_LIB_IGNORED`` from 8
+#     to 9 to accommodate the newly ``#[ignore]``-quarantined
+#     ``test_thermal_mass_temperature_damping`` placeholder in
+#     ``src/validation/thermal_mass.rs`` (tracked in QUARANTINE.md
+#     under Other / Unclassified; the ignore is a ``src/`` unit test
+#     outside the auditor's ``tests/**`` scan).
 # ---------------------------------------------------------------------------
 BASELINE_LIB_TESTS = 4311
-BASELINE_LIB_IGNORED = 8
+BASELINE_LIB_IGNORED = 9
 BASELINE_WORKSPACE_TESTS = 8680
 BASELINE_WORKSPACE_IGNORED = 123
 # 2026-09-09 (Issue #3595): bumped from 303 to 308 to accommodate the
