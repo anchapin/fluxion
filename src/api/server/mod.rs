@@ -10,6 +10,7 @@
 //! per-feature logic live in:
 //!
 //! - [`api_error`] — `ApiError` + HTTP envelope
+//! - [`audit_log`] — strict `FLUXION_AUDIT_LOG` open (Issue #3639)
 //! - [`batch`] — `/v1/batch`, `/v1/simulation/{id}/status`
 //! - [`campaigns`] — `/v1/campaigns`, `/v1/campaigns/{id}/status`
 //! - [`constants`] — module-level constants (DoS, timeouts, id prefixes)
@@ -26,6 +27,7 @@
 //! continue to work without modification.
 
 pub mod api_error;
+pub mod audit_log;
 pub mod batch;
 pub mod campaigns;
 pub mod constants;
@@ -39,6 +41,7 @@ pub mod state;
 // Re-export the public API so the legacy `fluxion::api::server::*` paths
 // continue to resolve without modification.
 pub use api_error::ApiError;
+pub use audit_log::open_audit_log;
 pub use batch::{batch_simulate, get_simulation_status, BatchRequest, BatchResponse};
 pub use campaigns::{get_campaign_status, submit_campaign};
 pub use constants::{
