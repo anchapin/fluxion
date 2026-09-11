@@ -4,20 +4,24 @@ Fluxion ships with **no default features** (`default = []`); every capability be
 via `cargo build --features <flag>` (combine several with commas). This document enumerates each
 flag in `Cargo.toml`'s `[features]` table, cross-referenced with the toolchain notes in
 `AGENTS.md` §Toolchain, Security, and Generated Artifacts and the CI matrix in `.github/workflows/rust-tests.yml`.
-The canonical source of truth is always `Cargo.toml` — if this file disagrees with it,
-`Cargo.toml` wins and this doc is stale (please file a docs-hygiene issue).
+The canonical source of truth is always the `Cargo.toml` `[features]` table — if this
+file disagrees with it, `Cargo.toml` wins and this doc is stale (please file a
+docs-hygiene issue).
 
-*Last Updated: 2026-09-03*
+*Last Updated: 2026-09-11*
 
 ## Summary Table
 
 | Flag | Default | Enables | CI gate | Runtime config |
 |------|:-------:|---------|---------|----------------|
 | [`python-bindings`](#python-bindings) | off | PyO3 Python bindings (`pyo3`, `numpy`) | Python wheel build job | `PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1` |
+| [`python-extension`](#python-extension) | off | Build as a Python extension module (`pyo3/extension-module`, no libpython link) — pair with `python-bindings` for maturin wheel builds (#2532) | Python wheel build job | none |
 | [`napi-bindings`](#napi-bindings) | off | Node.js / NAPI bindings (`napi`, `napi-derive`) | Node wheel build job | `napi-build` at build time |
 | [`ort`](#ort--onnx) | off | ONNX Runtime AI surrogate inference (#1294) | `--features ort` mutation tests | `FLUXION_ONNX_MODEL`, `FLUXION_ONNX_BACKEND` |
 | [`onnx`](#ort--onnx) | off | Alias for `ort` (#1294) | same as `ort` | same as `ort` |
 | [`cuda`](#cuda) | off | CUDA / TensorRT execution providers for `ort` (#1294) | `CUDA Smoke Test` (#1603) | `FLUXION_ONNX_BACKEND=cuda`, `FLUXION_GPU=1` |
+| [`coreml`](#coreml) | off | CoreML execution provider for `ort` — macOS only (#3313) | none (manual; `docs/ORT_EP_VALIDATION.md` runbook) | `FLUXION_ONNX_BACKEND=coreml` |
+| [`directml`](#directml) | off | DirectML execution provider for `ort` — Windows only (#3313) | none (manual; `docs/ORT_EP_VALIDATION.md` runbook) | `FLUXION_ONNX_BACKEND=directml` |
 | [`wiring-tracing`](#wiring-tracing) | off | Wiring tracing in integration tests (Plan 21-10) | `Test` matrix variant `wiring-tracing` | none |
 | [`multi-zone`](#multi-zone) | off | Multi-zone thermal network coupling | `Test` matrix variant `multi-zone` | none |
 | [`ashrae_140_v2021`](#ashrae_140_v2021) | off | ASHRAE 140 v2021 reference constants | advisory ASHRAE variant | none |
@@ -25,16 +29,21 @@ The canonical source of truth is always `Cargo.toml` — if this file disagrees 
 | [`loom`](#loom) | off | `loom` concurrency model tests (#1065) | manual only; ~32 GB RAM | `LOOM=1` |
 | [`dwave`](#dwave) | off | D-Wave quantum annealer client (Phase 2c, #1609) | manual only | `DWAVE_API_TOKEN` (required at runtime) |
 | [`debug-physics`](#debug-physics) | off | Unconditional `eprintln!` in physics hot loops (#1967) | none | none |
+| [`tracing-subscriber-json`](#tracing-subscriber-json) | off | JSON-formatted per-case validation tracing for Loki/Elastic ingestion (#2500) | none (local / opt-in) | none |
 | [`kafka`](#kafka) | off | `rdkafka` telemetry consumer (#2056) | manual only | Kafka broker config |
+| [`tmy3-download`](#tmy3-download) | off | TMY3 weather download / on-disk cache via `fluxion-core` — keeps reqwest/tokio/rustls out of default builds (#3467) | none (opt-in integration tests) | none (caches to `~/.cache/fluxion/tmy3/`) |
 | [`fluid`](#fluid) | off | Acausal HVAC / fluid network modeling via `fluxion-fluid` (ADR-0005, #1980) | `fluxion-mcp` build (unconditional) | none |
 | [`gauge-solver`](#gauge-solver) | off | **Production** GaugeSolver zone-solver gate (Phase A8, Issue #3291 / PR #3482). With `--features gauge-solver` on, the dispatcher's gauge arm is unconditional and panics on missing gauge backend. Pending §LIMIT-21 (β-soak #3286). | advisory ASHRAE variant | none |
 | [`fluxion-city`](#fluxion-city) | off | Urban radiation solver wiring (#2344) | manual only | none |
 | [`dhat`](#dhat) | off | `dhat` heap allocation profiling (#2384) | manual only | `DHAT_ANALYSIS=1` |
 | [`fluxion-cfd`](#fluxion-cfd) | off | FFD / CFD loose-coupling co-simulation (#2460) | manual only | none |
 | [`fast-math`](#fast-math) | off | algebraic-FP helper layer (`src/physics/fp_algebraic.rs`, #3322); **non-deterministic** | none — never in CI | none |
+| [`deprecated-multinode-runner`](#deprecated-multinode-runner) | off | Compiles the deprecated `MultiNodeHvacRunner` migration path (#2877, ADR-002) | none — migration only | none |
+| [`simd-kernels`](#simd-kernels) | off | SIMD-kernel invariant-battery gate for the solar/radiation kernel conversion work — relaxes the 1e-9 tolerance to 1e-6 (#3338) | none — evaluation harness only | none |
 | [`fluxion`](#fluxion-internal-stub) | off | Internal stub for workspace feature resolution | none (never user-facing) | none |
 
-**Total: 19 user-facing flags** (counting `ort` and its `onnx` alias once) plus 1 internal stub.
+**Total: 26 user-facing feature flags** (25 distinct capabilities — `onnx` is an alias
+of `ort`) plus 1 internal stub (`fluxion`).
 Default build (`cargo build`) enables none of them and skips the ONNX runtime, producing the
 mock / analytical fallback in `src/ai/surrogate`.
 
@@ -48,6 +57,7 @@ mock / analytical fallback in `src/ai/surrogate`.
 | ONNX AI surrogate build | `cargo build --features ort` |
 | GPU inference | `cargo build --features cuda` |
 | Python bindings dev install | `cargo build --features python-bindings && maturin develop` |
+| Python wheel release build | `maturin build --release --features python-bindings,python-extension` |
 | Node bindings | `(cd npm/ && npm run build)` — internal `napi-bindings` |
 | Multi-zone test variant | `cargo test --features multi-zone` |
 | Concurrency tests | `LOOM=1 cargo test --features loom --test loom_concurrency_tests` |
@@ -56,6 +66,9 @@ mock / analytical fallback in `src/ai/surrogate`.
 | D-Wave client test | `cargo test --features dwave -p fluxion quantum::dwave_client` |
 | Kafka consumer test | `cargo test --features kafka -p fluxion twin::kafka_telemetry_consumer` |
 | Algebraic-FP helper smoke test | `cargo test --features fast-math -p fluxion physics::fp_algebraic` (**non-deterministic mode**) |
+| TMY3 download integration tests | `cargo test --features tmy3-download --test test_tmy3_download` |
+| JSON validation trace | `cargo test --features tracing-subscriber-json --test ashrae_140_validation` |
+| SIMD-kernel invariant battery | `cargo test --features simd-kernels --test solar_simd_evolution` |
 
 Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
 
@@ -72,6 +85,18 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
 - **CI implication:** Built by the Python wheel job; the default `cargo test` matrix
   variant (`no-default`) deliberately leaves it off for pure-Rust testing. CI sets
   `PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1` and `RUST_MIN_STACK=33554432` to avoid linker SIGSEGV.
+- **Default:** off.
+
+### `python-extension`
+
+- **Enables:** `pyo3/extension-module` on top of `python-bindings` — builds the crate as a
+  Python extension module that does **not** link libpython; the host interpreter provides
+  the CPython symbols at load time (Issue #2532).
+- **Build:** enable **in addition to** `python-bindings` when building the wheel with
+  maturin: `maturin build --release --features python-bindings,python-extension`.
+  Plain `maturin develop` / `cargo test --features python-bindings` must NOT enable it
+  (the test binary would fail to initialize its own interpreter).
+- **CI implication:** Python wheel build job; not in the default Rust test matrix.
 - **Default:** off.
 
 ### `napi-bindings`
@@ -95,6 +120,10 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
   `models/surrogate_zone_thermal.onnx`; mock fallback when unset);
   `FLUXION_ONNX_BACKEND` (`cpu | cuda | coreml | directml | openvino`, auto-downgrades to
   `cpu` if `cuda` feature not built); `FLUXION_GPU=0` forces CPU inference.
+  **Note:** selecting `coreml` or `directml` as the backend additionally requires the
+  matching cargo feature (`--features coreml` / `--features directml`) to be compiled in —
+  see the dedicated subsections below; `openvino` has no dedicated feature in this crate
+  (it requires an ONNX Runtime build that ships the OpenVINO EP).
   Silent CUDA→CPU downgrades now emit a one-shot `tracing::warn!` on target
   `fluxion::ai::surrogate::backend` from `SurrogateManager::resolve_backend_from_env`
   / `gpu_supported` (Issue #2920) — operators see the misconfiguration instead of paying
@@ -110,6 +139,30 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
   --test surrogate_cuda_smoke`. Skips gracefully on CPU-only runners.
 - **Runtime config:** set `FLUXION_ONNX_BACKEND=cuda` (or it falls back to `cpu`); set
   `FLUXION_GPU=0` / `FLUXION_GPU=false` to force CPU even when built with the feature.
+- **Default:** off.
+
+### `coreml`
+
+- **Enables:** the CoreML execution provider for `ort` (`ort/coreml`). Implies `ort`.
+  Only meaningful on **macOS** targets, where the prebuilt ONNX Runtime binaries ship
+  CoreML support (Issue #3313). On non-macOS builds the provider degrades gracefully
+  (see `surrogate::tests::coreml_session_request_degrades_gracefully_on_linux`).
+- **Build:** `cargo build --features coreml` (or `--features ort,coreml`).
+- **CI implication:** None — manual hardware validation only; follow the probe runbook in
+  `docs/ORT_EP_VALIDATION.md`.
+- **Runtime config:** set `FLUXION_ONNX_BACKEND=coreml`. Note that the backend value
+  alone is not enough — the matching cargo feature must be compiled in.
+- **Default:** off.
+
+### `directml`
+
+- **Enables:** the DirectML execution provider for `ort` (`ort/directml`). Implies `ort`.
+  Only meaningful on **Windows** targets with a DirectX 12 GPU (Issue #3313).
+- **Build:** `cargo build --features directml` (or `--features ort,directml`).
+- **CI implication:** None — manual hardware validation only; follow the probe runbook in
+  `docs/ORT_EP_VALIDATION.md`.
+- **Runtime config:** set `FLUXION_ONNX_BACKEND=directml`. As with `coreml`, the backend
+  value alone is not enough — the matching cargo feature must be compiled in.
 - **Default:** off.
 
 ### `wiring-tracing`
@@ -178,6 +231,17 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
   (`Fluxion Performance Gate`, Issue #1618) reflect production paths.
 - **Default:** off.
 
+### `tracing-subscriber-json`
+
+- **Enables:** `tracing-subscriber/json` — structured JSON-formatted tracing output from
+  the validation module, suitable for ingestion by Loki/Elastic (Issue #2500). Running
+  `cargo test --features tracing-subscriber-json --test ashrae_140_validation` emits
+  machine-parseable per-case pass/fail events (wired in
+  `tests/ashrae_140_validation.rs`).
+- **Build:** `cargo test --features tracing-subscriber-json --test ashrae_140_validation`.
+- **CI implication:** None — local / log-pipeline use only.
+- **Default:** off.
+
 ### `kafka`
 
 - **Enables:** `rdkafka`-based Kafka telemetry consumer for enterprise-scale telemetry
@@ -185,6 +249,19 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
 - **Build:** `cargo test --features kafka -p fluxion twin::kafka_telemetry_consumer`.
 - **CI implication:** Manual only — pulls in the native `librdkafka` build dependency.
 - **Runtime config:** standard Kafka broker connection (bootstrap servers, auth, etc.).
+- **Default:** off.
+
+### `tmy3-download`
+
+- **Enables:** the TMY3 weather-download / on-disk-cache module in `fluxion-core`
+  (`fluxion-core/src/weather/`, Issue #3467). Default **off** so the dependency-light
+  `fluxion-core` leaf does **not** compile `reqwest` / `hyper` / `tokio` / `rustls`;
+  only consumers that actually download TMY3 files (the CLI weather-download path and
+  `tests/test_tmy3_download.rs`) opt in. Mirrors the workspace's other opt-in
+  network/TLS features (`ort`, `fluid`, `fluxion-city`, `fluxion-cfd`).
+- **Build:** `cargo build --features tmy3-download`; tests via
+  `cargo test --features tmy3-download --test test_tmy3_download`.
+- **CI implication:** None as a matrix variant — the gated integration tests are opt-in.
 - **Default:** off.
 
 ### `fluid`
@@ -290,6 +367,32 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
   implicitly via `--all-features`; benchmarks tolerate last-ulp noise by design.
 - **Default:** off.
 
+### `deprecated-multinode-runner`
+
+- **Enables:** compilation of the long-deprecated `MultiNodeHvacRunner` (now
+  `DeprecatedMultiNodeHvacRunner`) at `src/sim/multi_node_hvac_runner.rs` (Issue #2877).
+  The default build does **not** compile this ~58.8K-character dead-code path; opt in
+  only when migrating a downstream consumer off the deprecated API. The canonical
+  replacement is ADR-002's 9R4C path (`ThermalModel::step_physics` →
+  `step_physics_9r4c`).
+- **Build:** `cargo build --features deprecated-multinode-runner`.
+- **CI implication:** None — migration aid only; never in the CI matrix.
+- **Default:** off.
+
+### `simd-kernels`
+
+- **Enables:** the `simd_kernels` invariant-battery gate for the solar / radiation
+  kernel-conversion work (Issue #3338) — consumed by `tests/solar_simd_evolution.rs`,
+  which covers the accumulation loops under evaluation (`perez_diffuse_tilted`,
+  `surface_radiative_exchange`, `net_lw_*`,
+  `SkyRadiationExchange::net_radiative_flux`). With the flag on, the battery's
+  `simd_kernels` tolerance widens from 1e-9 to 1e-6 to allow last-ulp
+  reassociation/contraction drift — **not** for energy-balance or ASHRAE 140 baselines.
+  Default-feature builds remain byte-identical to today.
+- **Build:** `cargo test --features simd-kernels --test solar_simd_evolution`.
+- **CI implication:** None — evaluation harness only; never in validation CI.
+- **Default:** off (must stay off outside kernel-conversion evaluation).
+
 ### `fluxion` (internal stub)
 
 - **Enables:** Nothing user-facing. This is a stub feature that exists purely so
@@ -321,6 +424,10 @@ Manual / advisory (not branch-protection gates):
 - `dwave`, `kafka` client tests (need live services / credentials)
 - `fluxion-city`, `fluxion-cfd`, `dhat`, `pr821-diag` (specialised analysis paths)
 - `fast-math` (algebraic-FP helper layer — non-deterministic, never in validation CI)
+- `coreml`, `directml` (manual hardware validation per `docs/ORT_EP_VALIDATION.md`)
+- `tmy3-download`, `tracing-subscriber-json`, `simd-kernels`,
+  `deprecated-multinode-runner` (opt-in helpers: weather download, log pipelines,
+  kernel-conversion evaluation, deprecated-API migration)
 
 ## See Also
 
