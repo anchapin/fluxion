@@ -15,14 +15,15 @@ use fluxion::weather::WeatherSource;
 ///
 /// The InvariantChecker's algebraic formulation for 5R1C has a known systematic
 /// residual of ~191 W due to evaluating gains at T_old while heat flows use T_new.
-/// This is documented as FREE-04 in docs/KNOWN_ISSUES.md.
+/// This is documented as LIMIT-27 in docs/KNOWN_ISSUES.md (the citation was
+/// previously a stale identifier with no docs entry — fixed per issue #3647).
 ///
 /// The physical energy conservation is validated by the zone balance tests
 /// (zone_balance_eplus_isolation.rs) which PASS with zero violations.
 ///
 /// This tolerance is NOT a physics gate - it tests the InvariantChecker's
 /// algebraic consistency, not the actual energy conservation of the simulation.
-const ENERGY_BALANCE_RESIDUAL_THRESHOLD: f64 = 200.0; // ~191 W residual (FREE-04 known limitation)
+const ENERGY_BALANCE_RESIDUAL_THRESHOLD: f64 = 200.0; // ~191 W residual (LIMIT-27 known limitation)
 
 #[test]
 fn test_energy_conservation() {
