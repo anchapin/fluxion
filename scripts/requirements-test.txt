@@ -23,4 +23,10 @@ pyyaml>=6.0
 # added by Issue #3454). Without it the Scripts Test Suite fails during
 # collection ("ModuleNotFoundError: No module named 'numpy'") before any
 # test runs. Keep aligned with the numpy pin in `requirements-dev.txt`.
-numpy
+numpy>=1.24.0
+
+# tqdm — imported by `scripts/generate_training_data.py` (progress bars,
+# Issue #3454's companion module). Its absence surfaces as an ERROR at
+# pytest *setup* of the generate-training-data tests even after numpy is
+# restored. Keep aligned with the tqdm>=4.65.0 pin in `requirements-dev.txt`.
+tqdm>=4.65.0
