@@ -19,6 +19,7 @@
 //! `is_6r2c_model()` checks are gone — `thermal_model_type` is set
 //! exclusively by the selector (Issue #3277).
 
+use crate::api::error::FluxionError;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::thermal_model_core::ThermalModel;
 use crate::sim::thermal_selector::ZoneSolverKind;
@@ -26,21 +27,20 @@ use crate::sim::thermal_selector::ZoneSolverKind;
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
     /// Solve physics for one timestep (assumes loads already set).
     ///
-    /// This method performs only the physics calculation portion of solve_single_step,
-    /// assuming that loads have already been set via set_loads() or calculated externally.
-    /// This enables batched inference: collect all temperatures, run one batched prediction,
-    /// distribute loads, then call this method in parallel.
+    /// Typed variant of [`ThermalModel::step_physics`] (Issue #3638): a
+    /// degenerate `dt <= 0` or `cm <= 0` reaching the thermal-mass
+    /// integrators surfaces as `Err(FluxionError::Validation)` instead of
+    /// aborting the process. Callers that cannot yet handle `Result` can
+    /// keep using [`ThermalModel::step_physics`], which applies the
+    /// issue-sanctioned numerical guard (log + zero energy for the step).
     ///
-    /// # Arguments
-    /// * `timestep` - Current timestep index (used for ground temperature)
-    /// * `outdoor_temp` - Outdoor air temperature (°C)
-    /// * `dt_seconds` - Timestep duration in seconds (default: 3600.0 for 1-hour timestep)
-    ///
-    /// # Returns
-    /// HVAC energy consumption for the timestep in kWh.
-    ///
-    /// Issue #351: Calculate solar gains internally if weather data is available
-    pub fn step_physics(&mut self, timestep: usize, outdoor_temp: f64, dt_seconds: f64) -> f64 {
+    /// See `step_physics` for the full contract documentation.
+    pub fn try_step_physics(
+        &mut self,
+        timestep: usize,
+        outdoor_temp: f64,
+        dt_seconds: f64,
+    ) -> Result<f64, FluxionError> {
         // Record call for wiring validation (Plan 21-10)
         #[cfg(feature = "wiring-tracing")]
         if let Some(ref tracer) = self.0.hvac.tracer {
@@ -104,13 +104,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // Issue #3305 — record that the gauge path genuinely ran so
                 // the REST `effective_solver` field reports the truth.
                 self.0.hvac.effective_zone_solver = ZoneSolverKind::Gauge;
-                return ekwh;
+                return Ok(ekwh);
             }
             if let Some(ekwh) =
                 self.try_run_gauge_multi_zone(timestep, outdoor_temp, dt_seconds, &gauge_inputs)
             {
                 self.0.hvac.effective_zone_solver = ZoneSolverKind::Gauge;
-                return ekwh;
+                return Ok(ekwh);
             }
             // Phase A8 (#3291): selector-driven dispatch is
             // unconditional — gauge MUST run when Gauge is selected.
@@ -147,7 +147,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 if self.is_nine_r4c_model() {
                     // Issue #3305 — record the effective legacy target.
                     self.0.hvac.effective_zone_solver = ZoneSolverKind::NineRFourC;
-                    self.step_physics_9r4c(timestep, outdoor_temp, dt_seconds)
+                    Ok(self.step_physics_9r4c(timestep, outdoor_temp, dt_seconds))
                 } else {
                     self.0.hvac.effective_zone_solver = ZoneSolverKind::FiveROneC;
                     self.step_physics_5r1c(timestep, outdoor_temp, dt_seconds)
@@ -159,7 +159,43 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
             ZoneSolverKind::NineRFourC => {
                 self.0.hvac.effective_zone_solver = ZoneSolverKind::NineRFourC;
-                self.step_physics_9r4c(timestep, outdoor_temp, dt_seconds)
+                Ok(self.step_physics_9r4c(timestep, outdoor_temp, dt_seconds))
+            }
+        }
+    }
+
+    /// Solve physics for one timestep (assumes loads already set).
+    ///
+    /// This method performs only the physics calculation portion of solve_single_step,
+    /// assuming that loads have already been set via set_loads() or calculated externally.
+    /// This enables batched inference: collect all temperatures, run one batched prediction,
+    /// distribute loads, then call this method in parallel.
+    ///
+    /// # Arguments
+    /// * `timestep` - Current timestep index (used for ground temperature)
+    /// * `outdoor_temp` - Outdoor air temperature (°C)
+    /// * `dt_seconds` - Timestep duration in seconds (default: 3600.0 for 1-hour timestep)
+    ///
+    /// # Returns
+    /// HVAC energy consumption for the timestep in kWh.
+    ///
+    /// Issue #351: Calculate solar gains internally if weather data is available
+    ///
+    /// Issue #3638 numerical guard: the underlying integrators now return
+    /// `Result` (see [`ThermalModel::try_step_physics`]). This legacy `f64`
+    /// entry point never panics on a degenerate `dt`/`cm`; on error it logs
+    /// the typed validation error and returns `0.0` kWh for the step (the
+    /// mass-state commit of the failed step is skipped by the propagating
+    /// `?` in the step implementations, mirroring the leave-state-untouched
+    /// guard in `write_gauge_mass_state_proxy`).
+    pub fn step_physics(&mut self, timestep: usize, outdoor_temp: f64, dt_seconds: f64) -> f64 {
+        match self.try_step_physics(timestep, outdoor_temp, dt_seconds) {
+            Ok(energy) => energy,
+            Err(error) => {
+                log::error!(
+                    "physics step degraded to zero HVAC energy for timestep {timestep}: {error}"
+                );
+                0.0
             }
         }
     }
@@ -746,5 +782,42 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 *t = t_mass_prev;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::error::FluxionError;
+
+    /// Issue #3638 acceptance criterion: feeding `dt = 0.0` to the engine
+    /// returns a typed `FluxionError::Validation` instead of panicking.
+    /// The mass capacitance is forced above the 500 J/K threshold so the
+    /// 5R1C mass update deterministically selects the Crank-Nicolson
+    /// integrator that validates `dt`.
+    #[test]
+    fn test_issue_3638_try_step_physics_dt_zero_returns_typed_error() {
+        let mut model = ThermalModel::<VectorField>::new(1);
+        model.0.mass.thermal_capacitance = VectorField::from_scalar(1_000_000.0, 1);
+
+        let err = model
+            .try_step_physics(0, 20.0, 0.0)
+            .expect_err("dt = 0.0 must yield a typed error, not a panic");
+        assert!(
+            matches!(err, FluxionError::Validation(ref msg) if msg.contains("Time step dt")),
+            "expected a dt validation error, got: {err:?}"
+        );
+    }
+
+    /// Issue #3638: the legacy `f64` entry point degrades via the
+    /// numerical guard (log + zero energy for the step) instead of
+    /// panicking on a degenerate `dt`.
+    #[test]
+    fn test_issue_3638_step_physics_dt_zero_degrades_without_panic() {
+        let mut model = ThermalModel::<VectorField>::new(1);
+        model.0.mass.thermal_capacitance = VectorField::from_scalar(1_000_000.0, 1);
+
+        let energy = model.step_physics(0, 20.0, 0.0);
+        assert_eq!(energy, 0.0);
     }
 }

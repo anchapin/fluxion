@@ -124,6 +124,13 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #     "Phase A8 / Issue #3599" subsection. ``BASELINE_WORKSPACE_IGNORED``
 #     stays at 123 (workspace ignored rises from 108 → 111, well below
 #     the ratchet).
+#   - 2026-09-11 (Issue #3650): bumped ``BASELINE_LIB_TESTS`` from 4311
+#     to 4314 and ``BASELINE_WORKSPACE_TESTS`` from 8680 to 8683 for the
+#     three new CWE-209 regression tests in ``src/api/server/tests.rs``
+#     (``probe_weather_ok_detail_omits_operator_supplied_path``,
+#     ``probe_weather_err_detail_omits_operator_supplied_path``, and
+#     ``readyz_weather_semantics_and_body_keep_path_private``). No new
+#     binaries and no ignore-count changes.
 #   - 2026-09-11 (PR improve/quarantine-burndown): lowered
 #     ``BASELINE_WORKSPACE_IGNORED`` from 123 to 118 — the quarantine
 #     burndown un-ignored
@@ -131,10 +138,12 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #     (``tests/ashrae_140_case_970_validation.rs``) after verifying it
 #     passes live; its assertions validate the validator, not the
 #     engine band. Verified workspace ignored count at HEAD is 118.
+#     (Merged resolution: #3650's test-count bumps land first; the
+#     burndown's ignore-ratchet reduction stacks on top of them.)
 # ---------------------------------------------------------------------------
-BASELINE_LIB_TESTS = 4311
+BASELINE_LIB_TESTS = 4314
 BASELINE_LIB_IGNORED = 8
-BASELINE_WORKSPACE_TESTS = 8680
+BASELINE_WORKSPACE_TESTS = 8683
 BASELINE_WORKSPACE_IGNORED = 118
 # 2026-09-09 (Issue #3595): bumped from 303 to 308 to accommodate the
 # pre-existing test-binary count at HEAD (the prior regeneration missed

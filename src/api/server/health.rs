@@ -148,11 +148,22 @@ pub(crate) fn probe_onnx(model_env: Option<&str>) -> Result<String, String> {
 /// is required for readiness. When `FLUXION_WEATHER_FILE` is set, however,
 /// the path must be readable so a misconfigured mount does not get traffic
 /// routed to a server that cannot load TMY data.
+///
+/// Both detail strings are deliberately coarse (Issue #3650, CWE-209):
+/// `/v1/readyz` is `RouteTier::Public`, so echoing the operator-supplied
+/// path — or the raw `io::Error`, which can embed it — would hand an
+/// unauthenticated caller a readable / not-readable filesystem oracle.
 pub(crate) fn probe_weather(weather_file: Option<&str>) -> Result<String, String> {
     match weather_file.filter(|p| !p.is_empty()) {
         Some(path) => match std::fs::File::open(path) {
-            Ok(_) => Ok(format!("readable: {path}")),
-            Err(e) => Err(format!("FLUXION_WEATHER_FILE='{path}' not readable: {e}")),
+            Ok(_) => Ok("readable".to_string()),
+            // ErrorKind only — never the path, never the raw error text
+            // (Issue #3650: closes the path-oracle window on the public
+            // readiness probe, matching `probe_onnx` / `validate_epw_path`).
+            Err(e) => {
+                let kind = e.kind();
+                Err(format!("FLUXION_WEATHER_FILE not readable: {kind}"))
+            }
         },
         None => Ok("no weather file configured".to_string()),
     }
