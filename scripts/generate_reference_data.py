@@ -5,7 +5,11 @@ Generate synthetic reference data for ASHRAE 140 Cases 800-810 (HVAC Equipment)
 
 import argparse
 import math
-import sys
+
+# `sys` is unused in-module but is re-exported here deliberately:
+# scripts/ci/test_generate_reference_data.py monkeypatches
+# `generator.sys.argv`, so the module attribute must exist.
+import sys  # noqa: F401
 
 
 def generate_hourly_temperature(hour, base_temp, seasonal_variation):

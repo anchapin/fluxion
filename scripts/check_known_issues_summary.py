@@ -207,9 +207,9 @@ def main() -> int:
         )
         if not m:
             print(
-                f"FAIL: could not parse the existing `## Summary` table — "
-                f"re-run `python3 scripts/check_known_issues_summary.py --regen | "
-                f"sponge docs/KNOWN_ISSUES.md`",
+                "FAIL: could not parse the existing `## Summary` table — "
+                "re-run `python3 scripts/check_known_issues_summary.py --regen | "
+                "sponge docs/KNOWN_ISSUES.md`",
                 file=sys.stderr,
             )
             return 2
