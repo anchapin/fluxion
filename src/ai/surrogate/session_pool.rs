@@ -211,7 +211,11 @@ pub struct SessionPool {
 #[allow(dead_code)]
 pub struct MultiDeviceSessionPool {
     #[allow(dead_code)]
-    device_pools: Vec<Arc<SessionPool>>,
+    // `pub(crate)`: pre-split this was a same-module field accessed from the
+    // manager code that now lives in `surrogate/manager.rs` (Issue #3669
+    // decomposition). Visibility widened one step so the ort-gated
+    // `from_bytes` consumer compiles exactly as before the split.
+    pub(crate) device_pools: Vec<Arc<SessionPool>>,
     _config: MultiDeviceConfig,
     _model_path: String,
 }
