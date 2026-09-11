@@ -417,7 +417,13 @@ def _collect_declared_mods(rs_file: Path) -> tuple[list[str], dict[str, str]]:
         name = match.group(1)
         end = match.end()
         terminator_index = end - 1
-        original_char = text[terminator_index]
+        # Index the SAME string the match offsets came from. Indexing the
+        # original `text` here desynchronises offsets once inline bodies have
+        # been stripped (`.replace(body, "")` shifts every later position),
+        # so a trailing out-of-line `mod foo;` in a file that also has
+        # inline `mod bar { ... }` test modules was silently dropped from
+        # `declared` — surfacing as a phantom orphan for the declared file.
+        original_char = text_without_inline[terminator_index]
         if original_char == ";":
             declared.append(name)
     return declared, inline_bodies

@@ -4342,3 +4342,6 @@ mod debug_new_expm_tests {
             .unwrap();
     }
 }
+
+#[cfg(test)]
+mod coverage_tests;

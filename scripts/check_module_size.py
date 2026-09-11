@@ -151,12 +151,12 @@ _BASELINE_MODULE_SIZE_LIMITS_SET: frozenset[str] = frozenset(
         #   - ``src/ai/surrogate.rs`` — src/ai/surrogate/ submodule tree
         #     (session_pool, integrity, metrics, manager)
         "src/validation/ashrae_140_cases.rs",
-        "src/physics/state_space_ctf.rs",
+        "src/physics/state_space_ctf/mod.rs",
         "src/validation/report.rs",
         # Removed in Issue #3625 (decomposed into src/interop/fmi/ submodules):
         #   - ``src/interop/fmi/mod.rs`` — common/export/import/cosim/xml/ffd
         "src/sim/thermal_model.rs",
-        "src/physics/multi_node_solver.rs",
+        "src/physics/multi_node_solver/mod.rs",
         # Issue #3574 — 8 files newly over the ~2000-LoC threshold after
         # the Issue #3543 decomposition. Each is ratcheted at its current
         # size plus a small buffer; companion cleanup PRs that decompose
@@ -271,8 +271,8 @@ LIMITS: list[Limit] = [
         ),
     ),
     Limit(
-        path=REPO_ROOT / "src" / "physics" / "state_space_ctf.rs",
-        max_lines=4344,
+        path=REPO_ROOT / "src" / "physics" / "state_space_ctf" / "mod.rs",
+        max_lines=4347,
         ratchet_path=REPO_ROOT
         / "tests"
         / "reference_data"
@@ -280,8 +280,12 @@ LIMITS: list[Limit] = [
         / "state_space_ctf_ratchet.json",
         reason=(
             "Issue #3457: state-space CTF (conduction transfer function) "
-            "module ratcheted at current size (4344 lines); referenced by "
-            "the 5R1C / 9R4C legacy dispatchers."
+            "module ratcheted at current size; referenced by the 5R1C / "
+            "9R4C legacy dispatchers. 2026-09-11 (PR #3688 coverage): "
+            "coverage tests extracted to the state_space_ctf/coverage_tests "
+            "child module; production content unchanged — ceiling raised "
+            "4344 -> 4347 to cover only the `#[cfg(test)] mod "
+            "coverage_tests;` wiring."
         ),
     ),
     Limit(
@@ -312,8 +316,8 @@ LIMITS: list[Limit] = [
         ),
     ),
     Limit(
-        path=REPO_ROOT / "src" / "physics" / "multi_node_solver.rs",
-        max_lines=2664,
+        path=REPO_ROOT / "src" / "physics" / "multi_node_solver" / "mod.rs",
+        max_lines=2666,
         ratchet_path=REPO_ROOT
         / "tests"
         / "reference_data"
@@ -321,7 +325,10 @@ LIMITS: list[Limit] = [
         / "multi_node_solver_ratchet.json",
         reason=(
             "Issue #3457: multi-node thermal solver ratcheted at current "
-            "size (2664 lines)."
+            "size. 2026-09-11 (PR #3688 coverage): coverage tests extracted "
+            "to the multi_node_solver/coverage_tests child module; "
+            "production content unchanged — ceiling raised 2664 -> 2666 to "
+            "cover only the `#[cfg(test)] mod coverage_tests;` wiring."
         ),
     ),
     # ------------------------------------------------------------------

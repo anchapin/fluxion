@@ -283,6 +283,7 @@ manually after legitimate changes.
 | `tests/ashrae_140_case_970_validation.rs` | `test_case_970_validator_accepts_canonical_midpoints` | #3585 / §LIMIT-23 (#3552) | Multi-zone air-mass distribution gap closed (GaugeSolver #1465/#1462 rework) | `pending` |
 | `tests/diagnostics/case_950_hvac_mode_seasonal_attribution.rs` | `test_case_950_hvac_mode_seasonal_attribution` | #3551 / §LIMIT-24 | Implement per-month attribution walk (follow-up PR, GaugeSolver #1465/#1462) | `pending` |
 | `tests/diagnostics/case_970_multi_zone_seasonal_attribution.rs` | `case_970_per_zone_seasonal_attribution_placeholder` | #3552 / §LIMIT-23 | Implement per-month per-zone attribution | `pending` |
+| `fluxion-wasm/tests/wasm_integration_tests.rs` | `wasm_run_full_annual_*` | #3703 (wasm step() toy model; #3595 smoke test) | wasm `FluidSimulation::step()` wired to the real engine (or test re-pointed at an engine-backed surface); then restore the published ±15% band assertion | `pending` |
 
 ---
 
