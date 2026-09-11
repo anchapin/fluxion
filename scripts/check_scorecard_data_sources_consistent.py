@@ -387,9 +387,9 @@ def main(argv: list[str] | None = None) -> int:
     print(
         "  1. If the divergence is real (the validation run actually moved):"
     )
-    print(f"     - regenerate docs/ASHRAE140_RESULTS.md from the latest run")
+    print("     - regenerate docs/ASHRAE140_RESULTS.md from the latest run")
     print(
-        f"       (the perf-history snapshot is canonical -- issue #3535 scope guard)."
+        "       (the perf-history snapshot is canonical -- issue #3535 scope guard)."
     )
     print("  2. If the snapshot is stale (validation run not yet snapshotted):")
     print(
@@ -400,8 +400,8 @@ def main(argv: list[str] | None = None) -> int:
         "  3. If the ASHRAE doc is stale and should NOT be regenerated:"
     )
     print(
-        f"     - regenerate the scorecard explicitly: "
-        f"`python3 scripts/generate_scorecard.py`."
+        "     - regenerate the scorecard explicitly: "
+        "`python3 scripts/generate_scorecard.py`."
     )
     print(
         "  4. Issue #3578 -- if KNOWN_ISSUES.md quotes a stale SCORECARD"
