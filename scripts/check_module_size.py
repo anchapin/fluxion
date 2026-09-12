@@ -112,7 +112,20 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #     child (``ffd.rs``, ~1.1k LoC) is well below the smallest ratcheted
 #     threshold (~2000 LoC), so no new entry is added — the
 #     decomposition itself is the ratchet-lowering event.
-BASELINE_MODULE_SIZE_LIMITS = 16
+#   16 → 15 (model_bindings.rs decomposition, final PR of the 8-PR
+#     improvement run):
+#     ``src/python/model_bindings.rs`` (2,485 lines) was decomposed into the
+#     ``src/python/model_bindings/`` submodule tree (model, hvac, batch)
+#     behind a thin facade (~30 lines). The entry is removed and
+#     ``python_model_bindings_ratchet.json`` deleted per the
+#     companion-cleanup convention (cf. Issue #3543 and the surrogate.rs /
+#     fmi/mod.rs decompositions, which likewise added no child entries for
+#     their decomposed modules). The largest child,
+#     ``src/python/model_bindings/model.rs`` (~2.1k LoC), is left ungated
+#     for a future #3574-style audit pass.
+#     (Merge resolution: the #3625 fmi decomposition landed first; the
+#     model_bindings lowering stacks on top of it.)
+BASELINE_MODULE_SIZE_LIMITS = 15
 
 # Freeze snapshot of the gated paths (Issue #3457 ratchet).
 #
@@ -153,7 +166,10 @@ _BASELINE_MODULE_SIZE_LIMITS_SET: frozenset[str] = frozenset(
         "src/sim/thermal_model_core/mod.rs",
         "src/validation/ashrae_140_validator/mod.rs",
         "src/physics/geometry_tensor.rs",
-        "src/python/model_bindings.rs",
+        # Removed in the model_bindings.rs decomposition (final PR of the
+        # 8-PR improvement run):
+        #   - ``src/python/model_bindings.rs`` — src/python/model_bindings/
+        #     submodule tree (model, hvac, batch)
         "src/validation/reporter.rs",
         "fluxion-city/src/lib.rs",
         "fluxion-mcp/src/tools.rs",
@@ -407,21 +423,6 @@ LIMITS: list[Limit] = [
             "smallest ratcheted threshold after Issue #3543. Ratcheted at "
             "current size 2486 lines + buffer (max of +5% or +100 lines = "
             "2610); decomposition tracked separately."
-        ),
-    ),
-    Limit(
-        path=REPO_ROOT / "src" / "python" / "model_bindings.rs",
-        max_lines=2609,
-        ratchet_path=REPO_ROOT
-        / "tests"
-        / "reference_data"
-        / "module_size"
-        / "python_model_bindings_ratchet.json",
-        reason=(
-            "Issue #3574: ``src/python/model_bindings.rs`` crossed the "
-            "smallest ratcheted threshold after Issue #3543. Ratcheted at "
-            "current size 2485 lines + buffer (max of +5% or +100 lines = "
-            "2609); decomposition tracked separately."
         ),
     ),
     Limit(
