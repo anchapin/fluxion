@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 
 fn create_test_oracle() -> BatchOracle {
     let model = ThermalModel::<VectorField>::new(1);
-    BatchOracle::from_model(model)
+    BatchOracle::from_model(model).unwrap()
 }
 
 /// Test: concurrent evaluate_population calls do not deadlock.

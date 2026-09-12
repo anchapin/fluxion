@@ -56,7 +56,7 @@ fn deterministic_population(n: usize) -> Vec<Vec<f64>> {
 
 #[test]
 fn analytical_path_eui_is_bit_identical_to_baseline() {
-    let oracle = BatchOracle::from_model(create_single_zone_model());
+    let oracle = BatchOracle::from_model(create_single_zone_model()).unwrap();
     let population = deterministic_population(3);
 
     // Analytical physics path (use_surrogates = false). Sequential per-config,
@@ -95,7 +95,7 @@ fn analytical_path_eui_is_bit_identical_to_baseline() {
 
 #[test]
 fn cpu_surrogate_mock_path_eui_is_bit_identical_to_baseline() {
-    let oracle = BatchOracle::from_model(create_single_zone_model());
+    let oracle = BatchOracle::from_model(create_single_zone_model()).unwrap();
     let population = deterministic_population(3);
 
     // CPU surrogate / mock path (use_surrogates = true, no ONNX model loaded).
@@ -130,7 +130,7 @@ fn hot_loop_is_deterministic_across_runs() {
     // if a buffer is ever read before being fully rewritten. Run the
     // analytical path twice and assert byte-for-byte identical output — this
     // catches any stale-buffer aliasing introduced by the #2687 reuse work.
-    let oracle = BatchOracle::from_model(create_single_zone_model());
+    let oracle = BatchOracle::from_model(create_single_zone_model()).unwrap();
     let population = deterministic_population(4);
 
     let a = oracle

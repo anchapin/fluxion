@@ -70,7 +70,7 @@ fn bench_batch_oracle_8760(c: &mut Criterion) {
         group.sample_size(10);
 
         let base_model = ThermalModel::<VectorField>::new(1);
-        let oracle = BatchOracle::from_model(base_model);
+        let oracle = BatchOracle::from_model(base_model).unwrap();
 
         let name = format!("population_{}", size);
         group.bench_function(&name, |b| {

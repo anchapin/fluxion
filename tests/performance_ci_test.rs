@@ -23,7 +23,7 @@ fn generate_synthetic_population(size: usize) -> Vec<Vec<f64>> {
 #[test]
 fn test_multi_zone_throughput() {
     let base_model = ThermalModel::<VectorField>::new(ZONE_COUNT);
-    let oracle = BatchOracle::from_model(base_model);
+    let oracle = BatchOracle::from_model(base_model).unwrap();
 
     let population = generate_synthetic_population(100);
 

@@ -48,7 +48,7 @@ fn generate_population_deterministic(size: usize) -> Vec<Vec<f64>> {
 /// configurations that produce invalid results.
 #[test]
 fn test_batch_oracle_deterministic_analytical() {
-    let oracle = fluxion::BatchOracle::from_model(create_base_model());
+    let oracle = fluxion::BatchOracle::from_model(create_base_model()).unwrap();
     let population = generate_population_deterministic(50);
 
     // Run evaluation 3 times and collect results
@@ -91,7 +91,7 @@ fn test_batch_oracle_deterministic_analytical() {
 /// configurations that produce invalid results.
 #[test]
 fn test_batch_oracle_deterministic_surrogates() {
-    let oracle = fluxion::BatchOracle::from_model(create_base_model());
+    let oracle = fluxion::BatchOracle::from_model(create_base_model()).unwrap();
     let population = generate_population_deterministic(50);
 
     // Check if surrogates are available
@@ -244,7 +244,7 @@ fn test_population_seeding_deterministic() {
 /// configurations that produce invalid results.
 #[test]
 fn test_batch_oracle_deterministic_large_population() {
-    let oracle = fluxion::BatchOracle::from_model(create_base_model());
+    let oracle = fluxion::BatchOracle::from_model(create_base_model()).unwrap();
     let population = generate_population_deterministic(200);
 
     // Run evaluation 3 times with large population

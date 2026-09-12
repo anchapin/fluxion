@@ -8,13 +8,13 @@ use fluxion::BatchOracle;
 
 fn create_test_oracle() -> BatchOracle {
     let model = ThermalModel::<VectorField>::new(1);
-    BatchOracle::from_model(model)
+    BatchOracle::from_model(model).unwrap()
 }
 
 #[test]
 fn test_batch_oracle_from_model() {
     let model = ThermalModel::<VectorField>::new(1);
-    let oracle = BatchOracle::from_model(model);
+    let oracle = BatchOracle::from_model(model).unwrap();
     // Oracle should be created successfully
     // We can't directly inspect fields, but we can use it
     let result = oracle.evaluate_population(vec![vec![1.5, 20.0, 27.0]], false);
@@ -24,7 +24,7 @@ fn test_batch_oracle_from_model() {
 #[test]
 fn test_batch_oracle_from_model_multiple_zones() {
     let model = ThermalModel::<VectorField>::new(5);
-    let oracle = BatchOracle::from_model(model);
+    let oracle = BatchOracle::from_model(model).unwrap();
     let result = oracle.evaluate_population(vec![vec![1.5, 20.0, 27.0]], false);
     assert!(result.is_ok());
 }

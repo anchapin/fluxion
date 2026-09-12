@@ -1503,7 +1503,8 @@ pub fn run_cli() -> Result<()> {
                 ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
                     .expect("default selector must initialize");
             // Create BatchOracle from the base model
-            let oracle = BatchOracle::from_model(base_model);
+            let oracle = BatchOracle::from_model(base_model)
+                .map_err(|e| anyhow!("Failed to create BatchOracle: {e}"))?;
             // Generate design matrix
             let design = match sens_config.method.as_str() {
                 "oat" => {

@@ -152,7 +152,7 @@ fn batch_oracle_hot_loop_alloc_budget() {
     let _profiler = dhat::Profiler::builder().testing().build();
 
     let base_model = create_single_zone_model();
-    let oracle = fluxion::BatchOracle::from_model(base_model);
+    let oracle = fluxion::BatchOracle::from_model(base_model).unwrap();
 
     // Deterministic, *always-valid* population: vary window U-value across a
     // fixed sweep, keep heating=20°C < cooling=26°C so every config passes

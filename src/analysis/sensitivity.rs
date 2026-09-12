@@ -400,7 +400,7 @@ mod tests {
         // Build a simple base model with 1 zone
         let base_model =
             crate::sim::engine::ThermalModel::<crate::physics::cta::VectorField>::new(1);
-        let oracle = crate::BatchOracle::from_model(base_model);
+        let oracle = crate::BatchOracle::from_model(base_model).unwrap();
         // Simple design: vary window U-value
         let design = vec![vec![1.5], vec![2.0]];
         // Run with surrogates disabled

@@ -53,7 +53,7 @@ fn test_batch_oracle_parallelism() {
         .expect("Invalid scenario");
 
     let model = scenario.create_model();
-    let oracle = BatchOracle::from_model(model);
+    let oracle = BatchOracle::from_model(model).unwrap();
 
     // Create a population of 100 configurations
     let population: Vec<Vec<f64>> = (0..100)

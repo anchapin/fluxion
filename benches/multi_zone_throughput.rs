@@ -75,7 +75,7 @@ fn generate_synthetic_population(size: usize) -> Vec<Vec<f64>> {
 /// dependency, matching `test_multi_zone_throughput`.
 fn bench_multi_zone_throughput(c: &mut Criterion) {
     let base_model = ThermalModel::<VectorField>::new(ZONE_COUNT);
-    let oracle = BatchOracle::from_model(base_model);
+    let oracle = BatchOracle::from_model(base_model).unwrap();
 
     let mut group = c.benchmark_group("multi_zone_throughput_10_zones");
 

@@ -55,7 +55,7 @@ fn generate_synthetic_population(size: usize) -> Vec<Vec<f64>> {
 /// replacement.
 fn bench_cpu_surrogate_population_10000(c: &mut Criterion) {
     let base_model = ThermalModel::<VectorField>::new(10);
-    let oracle = BatchOracle::from_model(base_model);
+    let oracle = BatchOracle::from_model(base_model).unwrap();
     let population = generate_synthetic_population(10_000);
 
     let mut group = c.benchmark_group("batch_oracle_chunks");
@@ -74,7 +74,7 @@ fn bench_cpu_surrogate_population_10000(c: &mut Criterion) {
 /// Sweep population sizes to characterize scaling on the new orchestrator.
 fn bench_cpu_surrogate_scaling(c: &mut Criterion) {
     let base_model = ThermalModel::<VectorField>::new(10);
-    let oracle = BatchOracle::from_model(base_model);
+    let oracle = BatchOracle::from_model(base_model).unwrap();
 
     let population_sizes = [100, 1_000, 10_000];
     for &size in &population_sizes {
@@ -100,7 +100,7 @@ fn bench_cpu_surrogate_scaling(c: &mut Criterion) {
 /// bench above but `use_surrogates=false`.
 fn bench_analytical_population_10000(c: &mut Criterion) {
     let base_model = ThermalModel::<VectorField>::new(10);
-    let oracle = BatchOracle::from_model(base_model);
+    let oracle = BatchOracle::from_model(base_model).unwrap();
     let population = generate_synthetic_population(10_000);
 
     let mut group = c.benchmark_group("batch_oracle_analytical_chunks");

@@ -181,7 +181,7 @@ fn run_performance_test(population_size: usize) -> PerformanceMetrics {
     use fluxion::BatchOracle;
 
     let base_model = ThermalModel::<VectorField>::new(1);
-    let oracle = BatchOracle::from_model(base_model);
+    let oracle = BatchOracle::from_model(base_model).unwrap();
 
     // Generate test population with valid parameters
     let population: Vec<Vec<f64>> = (0..population_size)
@@ -287,7 +287,7 @@ fn run_multi_zone_performance_test(population_size: usize) -> PerformanceMetrics
     use fluxion::BatchOracle;
 
     let base_model = ThermalModel::<VectorField>::new(MULTI_ZONE_GATE_ZONES);
-    let oracle = BatchOracle::from_model(base_model);
+    let oracle = BatchOracle::from_model(base_model).unwrap();
 
     let population = generate_multi_zone_population(population_size);
 
