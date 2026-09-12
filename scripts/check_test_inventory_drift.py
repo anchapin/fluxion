@@ -155,7 +155,7 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 BASELINE_LIB_TESTS = 4314
 BASELINE_LIB_IGNORED = 9
 BASELINE_WORKSPACE_TESTS = 8683
-BASELINE_WORKSPACE_IGNORED = 120
+BASELINE_WORKSPACE_IGNORED = 121
 # 2026-09-09 (Issue #3595): bumped from 303 to 308 to accommodate the
 # pre-existing test-binary count at HEAD (the prior regeneration missed
 # the new binaries that landed in PRs after #3546). The FFI smoke-test
@@ -545,3 +545,7 @@ if __name__ == "__main__":
 #   - 2026-09-11 (PR improve/quarantine-placeholder-test, final stack):
 #     119 -> 120 — the Issue #3629 thermal_mass placeholder quarantine
 #     adds one more workspace `#[ignore]` on top of the wasm quarantine.
+
+#   - 2026-09-12 (PR improve/quarantine-placeholder-test, Issue #3705):
+#     120 -> 121 — the flaky occupancy statistical test (OS-seeded 10k-step
+#     Markov assertion) quarantined per the Issue #3629 protocol.
