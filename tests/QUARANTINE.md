@@ -282,7 +282,7 @@ manually after legitimate changes.
 | `tests/weather_vs_energyplus.rs` | `test_synthetic_miami_tmy_matches_reference` | #2673 | Formula generator embedded; issue #2673 resolves | `pending` |
 | `tests/energyplus_comparison_tests.rs` | `test_900_series_comprehensive_comparison` | Long-running | Run explicitly when needed; not in CI | `pending` |
 | `src/validation/thermal_mass.rs` | `test_thermal_mass_*` | #3629 | Restore meaningful damping assertions after the Session-84 physics regression is fixed; wildcard per the src/ audit-invariant exception | `pending` |
-| `fluxion-behavior/src/occupancy.rs` | `test_statistical_validation_*` | #3705 (flaky: OS-seeded 10k-step Markov statistical assertion) | Fixed-seed sampling or variance-aware tolerance; keep the distribution check live in CI | `pending` |
+| `fluxion-behavior/src/occupancy.rs` | `test_statistical_validation_*` | #3705 (flaky: OS-seeded 10k-step Markov statistical assertion) | Fixed-seed sampling or variance-aware tolerance; keep the distribution check live in CI. Closed: fixed seeds (`SmallRng::seed_from_u64`, distinct per Monte Carlo trajectory); `#[ignore]` removed; 5% relative-error assertion kept (resolves #3705, absorbs duplicate #3683) | `closed` |
 | `fluxion-wasm/tests/wasm_integration_tests.rs` | `wasm_run_full_annual_*` | #3703 (wasm step() toy model; #3595 smoke test) | wasm `FluidSimulation::step()` wired to the real engine (or test re-pointed at an engine-backed surface); then restore the published ±15% band assertion | `pending` |
 | `tests/energyplus_comparison_tests.rs` | `test_900_series_comprehensive_comparison` | Long-running | Run explicitly when needed; not in CI | `pending` |
 
