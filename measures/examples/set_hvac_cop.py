@@ -14,7 +14,7 @@ Only ``heating_capacity`` and ``cooling_capacity`` are currently persisted by
 ``stages`` etc. are advisory and read-only snapshots. This example therefore
 mutates the capacities (which DO round-trip); COP mutations are still
 demonstrated to show the snapshot pattern but will not affect the underlying
-model. See ``src/python/model_bindings.rs`` for the full ownership story.
+model. See ``src/python/model_bindings/model.rs`` for the full ownership story.
 
 Run with::
 

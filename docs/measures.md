@@ -106,7 +106,7 @@ The on-disk schema is versioned (`schema_version: "1.0.0"`). It is currently a *
 3. Call `model.set_surfaces(snapshots)` to push mutations back.
 4. `model.hvac_system()` / `model.set_hvac_system(...)` follow the same pattern.
 
-Not all `HVACSystem` fields round-trip back to the model — see `src/python/model_bindings.rs` for the current ownership story. The `SetHVACCOP` example demonstrates the right pattern (mutate fields that do persist, document the advisory ones).
+Not all `HVACSystem` fields round-trip back to the model — see `src/python/model_bindings/model.rs` for the current ownership story. The `SetHVACCOP` example demonstrates the right pattern (mutate fields that do persist, document the advisory ones).
 
 ## Reference Material
 

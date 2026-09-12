@@ -373,7 +373,12 @@ def test_pyclass_sources_includes_expected_files(checker):
     assert "lib.rs" in sources
     assert "bindings.rs" in sources
     assert "hvac_bindings.rs" in sources
-    assert "model_bindings.rs" in sources
+    # Issue #2509 follow-up: model_bindings.rs was decomposed into the
+    # src/python/model_bindings/ submodule tree; the scan list tracks the
+    # child files instead of the removed parent file.
+    assert "model.rs" in sources
+    assert "hvac.rs" in sources
+    assert "batch.rs" in sources
     assert "multi_node_bindings.rs" in sources
     assert "osm_bindings.rs" in sources
     assert "parameters.rs" in sources
