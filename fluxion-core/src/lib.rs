@@ -30,7 +30,7 @@
 //! | `serde`      | `Serialize`/`Deserialize` derives on the data structs           |
 //! | `serde_json` | Weather-record JSON, hash digests, etc.                         |
 //! | `serde_yaml` | ASHRAE 140 assembly / materials YAML inputs                     |
-//! | `thiserror`  | `WeatherError` / `CarbonError` / assembly error types           |
+//! | `thiserror`  | `WeatherError` / `CarbonError` / assembly error types / unified `FluxionError` |
 //! | `log`        | Logging in `method_selector.rs` (#1349) and weather modules     |
 //!
 //! Anything heavier (HTTP client, FS project directories, async runtime,
@@ -72,6 +72,7 @@
 //! | `per_surface_conduction` | Moved (#2462) | `SurfaceKind`, `MassNode`, `SurfaceNode`, `PerSurfaceConductionSolver`. Breaks the remaining 2 `physics ↔ sim` cycle edges. |
 //! | `physics_constants` | Moved (#2462) | `STEFAN_BOLTZMANN`. Hoisted out of `sim::sky_radiation` so `physics::multi_node_solver` no longer imports from `sim`. |
 //! | `ashrae_cases`| Moved (#1441) | `Orientation`, `WindowArea`, `ConstructionType`, `ShadingType`, `ShadingDevice`, `GlassType`, `WindowSpec`, `InternalLoads`, `HvacSchedule`, `NightVentilation`, `BuildingType`, `GeometrySpec`, `ConductanceReferences` — pure-data leaf types from `validation::ashrae_140_cases`. Breaks the `sim ↔ validation` cycle (5 sim callers + 3 indirect sim callers). |
+//! | `error`       | New (error-unification PR) | `FluxionError` — the ONE unified engine error type (thiserror enum, `Clone` + `PartialEq`) replacing the fragmented `fluxion::api::error::FluxionError` / `fluxion::napi::error::FluxionError` pair — plus `SimulationDiagnostics` (issue #2547) and the `FluxionResult` alias. thiserror + serde only. |
 //!
 //! ## Cycle break (#1349)
 //!
@@ -122,7 +123,9 @@ pub mod ashrae_cases;
 pub mod assembly;
 pub mod construction;
 pub mod earth_tube;
-
+/// Unified engine error type ([`error::FluxionError`]) + [`error::SimulationDiagnostics`].
+/// Dependency-light (thiserror + serde only); shared by the Python and NAPI binding layers.
+pub mod error;
 pub mod multi_node;
 /// Parser size/depth/repetition limits — DoS hardening (issue #2527).
 /// Dependency-light leaf; must not import sim/physics/ai/validation.

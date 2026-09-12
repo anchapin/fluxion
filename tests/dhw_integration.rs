@@ -61,7 +61,9 @@ fn test_dhw_tank_heating_energy_100l_draw() {
     tank.supply_temp_C = 10.0;
 
     let mut draw_profile = DailySchedule::new();
-    draw_profile.fill_range(0, 24, 100.0);
+    draw_profile
+        .fill_range(0, 24, 100.0)
+        .expect("valid test schedule");
     tank.draw_profile = draw_profile;
 
     let result = tank.step(12, 3600.0);
@@ -92,7 +94,9 @@ fn test_dhw_tank_100l_draw_approx_5_8_kwh() {
     tank.supply_temp_C = 10.0;
 
     let mut draw_profile = DailySchedule::new();
-    draw_profile.fill_range(0, 24, 100.0);
+    draw_profile
+        .fill_range(0, 24, 100.0)
+        .expect("valid test schedule");
     tank.draw_profile = draw_profile;
 
     let result = tank.step(12, 3600.0);
@@ -118,7 +122,9 @@ fn test_dhw_tank_total_energy_accumulation() {
     tank.supply_temp_C = 10.0;
 
     let mut draw_profile = DailySchedule::new();
-    draw_profile.fill_range(0, 24, 100.0);
+    draw_profile
+        .fill_range(0, 24, 100.0)
+        .expect("valid test schedule");
     tank.draw_profile = draw_profile;
 
     let first_result = tank.step(12, 3600.0);
@@ -157,7 +163,9 @@ fn test_dhw_tank_reset() {
     tank.supply_temp_C = 10.0;
 
     let mut draw_profile = DailySchedule::new();
-    draw_profile.fill_range(0, 24, 100.0);
+    draw_profile
+        .fill_range(0, 24, 100.0)
+        .expect("valid test schedule");
     tank.draw_profile = draw_profile;
 
     tank.step(12, 3600.0);
@@ -194,9 +202,9 @@ fn test_dhw_tank_draw_profile_schedule() {
     );
 
     let mut draw_profile = DailySchedule::new();
-    draw_profile.set_hour(7, 50.0);
-    draw_profile.set_hour(8, 100.0);
-    draw_profile.set_hour(9, 80.0);
+    draw_profile.set_hour(7, 50.0).unwrap();
+    draw_profile.set_hour(8, 100.0).unwrap();
+    draw_profile.set_hour(9, 80.0).unwrap();
     tank.draw_profile = draw_profile;
 
     assert_eq!(tank.draw_profile.value(7), 50.0);
@@ -220,7 +228,9 @@ fn test_heating_source_default() {
 #[test]
 fn test_dhw_tank_with_draw_profile() {
     let mut draw_profile = DailySchedule::new();
-    draw_profile.fill_range(7, 22, 80.0);
+    draw_profile
+        .fill_range(7, 22, 80.0)
+        .expect("valid test schedule");
 
     let tank = DHWTank::with_draw_profile(
         "DHW-WithProfile".to_string(),
@@ -249,7 +259,9 @@ fn test_dhw_tank_zero_draw_no_heating_energy() {
     tank.supply_temp_C = 10.0;
 
     let mut draw_profile = DailySchedule::new();
-    draw_profile.fill_range(0, 24, 0.0);
+    draw_profile
+        .fill_range(0, 24, 0.0)
+        .expect("valid test schedule");
     tank.draw_profile = draw_profile;
 
     let result = tank.step(12, 3600.0);

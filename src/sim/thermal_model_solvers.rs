@@ -712,7 +712,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         if params.len() >= 2 {
             self.0.setpoints.heating_setpoint = params[1];
             self.0.setpoints.heating_schedule =
-                DailySchedule::constant(self.0.setpoints.heating_setpoint);
+                DailySchedule::constant(self.0.setpoints.heating_setpoint)
+                    .expect("constant() on a fresh daily schedule cannot fail");
             // Issue #2826: scalar → per-zone broadcast. The simulation
             // step now reads `heating_setpoints` (per zone) first with the
             // scalar as fallback; `apply_parameters` historically only
@@ -745,9 +746,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 );
             }
             self.0.setpoints.heating_schedule =
-                DailySchedule::constant(self.0.setpoints.heating_setpoint);
+                DailySchedule::constant(self.0.setpoints.heating_setpoint)
+                    .expect("constant() on a fresh daily schedule cannot fail");
             self.0.setpoints.cooling_schedule =
-                DailySchedule::constant(self.0.setpoints.cooling_setpoint);
+                DailySchedule::constant(self.0.setpoints.cooling_setpoint)
+                    .expect("constant() on a fresh daily schedule cannot fail");
             // Issue #2826: scalar → per-zone broadcast (see above).
             let cooling_vec = self.0.setpoints.cooling_setpoints.as_mut();
             for v in cooling_vec.iter_mut() {

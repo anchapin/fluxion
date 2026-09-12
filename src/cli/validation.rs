@@ -427,7 +427,8 @@ fn run_cross_validation(
 
     // Parse case number
     let case = parse_case_number(case_num)?;
-    let case_enum = ASHRAE140Case::from_case_id(&case.to_string()).expect("Invalid case number");
+    let case_enum = ASHRAE140Case::from_case_id(&case.to_string())
+        .ok_or_else(|| anyhow!("Invalid case number: {case}"))?;
 
     // Create output directory
     std::fs::create_dir_all(&output_dir)?;

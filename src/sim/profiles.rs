@@ -134,11 +134,13 @@ fn build_profile_bundle(
                     "daily" => {
                         let mut s = DailySchedule::new();
                         for hour in 8..=17 {
-                            s.set_hour(hour, 1.0);
+                            s.set_hour(hour, 1.0)
+                                .expect("set_hour on a fresh daily schedule cannot fail");
                         }
                         s
                     }
-                    "constant" => DailySchedule::constant(1.0),
+                    "constant" => DailySchedule::constant(1.0)
+                        .expect("constant() on a fresh daily schedule cannot fail"),
                     _ => DailySchedule::new(),
                 };
                 computers.schedule = schedule;
@@ -157,11 +159,13 @@ fn build_profile_bundle(
                     "daily" => {
                         let mut s = DailySchedule::new();
                         for hour in 8..=17 {
-                            s.set_hour(hour, 1.0);
+                            s.set_hour(hour, 1.0)
+                                .expect("set_hour on a fresh daily schedule cannot fail");
                         }
                         s
                     }
-                    "constant" => DailySchedule::constant(1.0),
+                    "constant" => DailySchedule::constant(1.0)
+                        .expect("constant() on a fresh daily schedule cannot fail"),
                     _ => DailySchedule::new(),
                 };
                 servers.schedule = schedule;
@@ -180,11 +184,13 @@ fn build_profile_bundle(
                     "daily" => {
                         let mut s = DailySchedule::new();
                         for hour in 8..=17 {
-                            s.set_hour(hour, 1.0);
+                            s.set_hour(hour, 1.0)
+                                .expect("set_hour on a fresh daily schedule cannot fail");
                         }
                         s
                     }
-                    "constant" => DailySchedule::constant(1.0),
+                    "constant" => DailySchedule::constant(1.0)
+                        .expect("constant() on a fresh daily schedule cannot fail"),
                     _ => DailySchedule::new(),
                 };
                 generic.schedule = schedule;

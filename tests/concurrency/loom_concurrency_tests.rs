@@ -1510,12 +1510,14 @@ fn test_two_zone_concurrent_step_with_shared_hvac_schedule_baseline() {
                     model_guard
                         .setpoints
                         .heating_schedule
-                        .fill_range(0, 12, 1.0);
+                        .fill_range(0, 12, 1.0)
+                        .expect("fill_range on a fresh daily schedule cannot fail");
                 } else {
                     model_guard
                         .setpoints
                         .cooling_schedule
-                        .fill_range(12, 24, 1.0);
+                        .fill_range(12, 24, 1.0)
+                        .expect("fill_range on a fresh daily schedule cannot fail");
                 }
                 let energy = model_guard.step_physics(step, 10.0, 3600.0);
                 assert!(energy.is_finite(), "energy must be finite");

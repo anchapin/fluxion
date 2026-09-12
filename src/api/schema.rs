@@ -216,7 +216,8 @@ impl Default for ScheduleSet {
         ScheduleSet {
             occupancy: DailySchedule::weekly("Occupancy".to_string()),
             lighting: DailySchedule::weekly("Lighting".to_string()),
-            hvac: HVACSchedule::constant_schedule(20.0, 24.0),
+            hvac: HVACSchedule::constant_schedule(20.0, 24.0)
+                .expect("constant_schedule on fresh daily schedules cannot fail"),
             infiltration: None,
         }
     }
@@ -468,7 +469,7 @@ mod tests {
 
     #[test]
     fn test_hvac_schedule_serialization() {
-        let schedule = HVACSchedule::constant_schedule(20.0, 24.0);
+        let schedule = HVACSchedule::constant_schedule(20.0, 24.0).unwrap();
         let json = serde_json::to_string(&schedule).unwrap();
         let deserialized: HVACSchedule = serde_json::from_str(&json).unwrap();
         assert_eq!(

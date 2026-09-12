@@ -11,6 +11,11 @@
 /// This is the parent class for all specific Fluxion error types and can be used
 /// for catch-all error handling.
 ///
+/// Named `NapiFluxionError` on the Rust side to avoid colliding with the
+/// unified engine error type [`fluxion_core::error::FluxionError`]; the
+/// `js_name` keeps the JavaScript/TypeScript class name exactly
+/// `FluxionError`, so the public JS API is unchanged.
+///
 /// # TypeScript Example
 /// ```typescript
 /// try {
@@ -24,23 +29,36 @@
 ///   }
 /// }
 /// ```
-#[napi_derive::napi]
-pub struct FluxionError {
+#[napi_derive::napi(js_name = "FluxionError")]
+pub struct NapiFluxionError {
     message: String,
 }
 
 #[napi_derive::napi]
-impl FluxionError {
+impl NapiFluxionError {
     /// Create a new FluxionError with a message.
     #[napi(constructor)]
     pub fn new(message: String) -> Self {
-        FluxionError { message }
+        NapiFluxionError { message }
     }
 
     /// Get the error message.
     #[napi(getter)]
     pub fn message(&self) -> String {
         self.message.clone()
+    }
+}
+
+/// Convert the unified engine error into the NAPI base error class.
+///
+/// Uses the engine error's `Display` text as the JavaScript error message,
+/// so NAPI binding code can propagate [`fluxion_core::error::FluxionError`]
+/// values directly instead of stringifying them at each call site.
+impl From<fluxion_core::error::FluxionError> for NapiFluxionError {
+    fn from(err: fluxion_core::error::FluxionError) -> Self {
+        NapiFluxionError {
+            message: err.to_string(),
+        }
     }
 }
 

@@ -281,12 +281,16 @@ impl PyDailySchedule {
     }
 
     pub fn set_hour(&mut self, hour: usize, value: f64) -> PyResult<()> {
-        self.inner.set_hour(hour, value);
+        self.inner
+            .set_hour(hour, value)
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
         Ok(())
     }
 
     pub fn fill_range(&mut self, start_hour: usize, end_hour: usize, value: f64) -> PyResult<()> {
-        self.inner.fill_range(start_hour, end_hour, value);
+        self.inner
+            .fill_range(start_hour, end_hour, value)
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
         Ok(())
     }
 
@@ -295,10 +299,11 @@ impl PyDailySchedule {
     }
 
     #[staticmethod]
-    pub fn constant(value: f64) -> Self {
-        PyDailySchedule {
-            inner: DailySchedule::constant(value),
-        }
+    pub fn constant(value: f64) -> PyResult<Self> {
+        Ok(PyDailySchedule {
+            inner: DailySchedule::constant(value)
+                .map_err(pyo3::exceptions::PyValueError::new_err)?,
+        })
     }
 }
 
@@ -318,10 +323,11 @@ impl PyHVACSchedule {
     }
 
     #[staticmethod]
-    pub fn constant_schedule(heating_sp: f64, cooling_sp: f64) -> Self {
-        PyHVACSchedule {
-            inner: HVACSchedule::constant_schedule(heating_sp, cooling_sp),
-        }
+    pub fn constant_schedule(heating_sp: f64, cooling_sp: f64) -> PyResult<Self> {
+        Ok(PyHVACSchedule {
+            inner: HVACSchedule::constant_schedule(heating_sp, cooling_sp)
+                .map_err(pyo3::exceptions::PyValueError::new_err)?,
+        })
     }
 
     #[staticmethod]
@@ -331,16 +337,17 @@ impl PyHVACSchedule {
         cool_sp: f64,
         night_start: usize,
         night_end: usize,
-    ) -> Self {
-        PyHVACSchedule {
+    ) -> PyResult<Self> {
+        Ok(PyHVACSchedule {
             inner: HVACSchedule::setback_schedule(
                 day_heat,
                 night_heat,
                 cool_sp,
                 night_start,
                 night_end,
-            ),
-        }
+            )
+            .map_err(pyo3::exceptions::PyValueError::new_err)?,
+        })
     }
 
     #[staticmethod]
@@ -349,17 +356,19 @@ impl PyHVACSchedule {
         cooling_sp: f64,
         start_hour: usize,
         end_hour: usize,
-    ) -> Self {
-        PyHVACSchedule {
-            inner: HVACSchedule::with_operating_hours(heating_sp, cooling_sp, start_hour, end_hour),
-        }
+    ) -> PyResult<Self> {
+        Ok(PyHVACSchedule {
+            inner: HVACSchedule::with_operating_hours(heating_sp, cooling_sp, start_hour, end_hour)
+                .map_err(pyo3::exceptions::PyValueError::new_err)?,
+        })
     }
 
     #[staticmethod]
-    pub fn free_floating() -> Self {
-        PyHVACSchedule {
-            inner: HVACSchedule::free_floating(),
-        }
+    pub fn free_floating() -> PyResult<Self> {
+        Ok(PyHVACSchedule {
+            inner: HVACSchedule::free_floating()
+                .map_err(pyo3::exceptions::PyValueError::new_err)?,
+        })
     }
 
     pub fn is_free_floating(&self) -> bool {
@@ -1475,7 +1484,7 @@ mod tests {
 
     #[test]
     fn daily_schedule_constant_sets_every_hour() {
-        let s = PyDailySchedule::constant(21.0);
+        let s = PyDailySchedule::constant(21.0).unwrap();
         for h in 0..24 {
             assert_eq!(s.value(h), 21.0, "hour {}", h);
         }
@@ -1508,7 +1517,7 @@ mod tests {
 
     #[test]
     fn hvac_schedule_constant_schedule_applies_to_every_hour() {
-        let s = PyHVACSchedule::constant_schedule(20.0, 24.0);
+        let s = PyHVACSchedule::constant_schedule(20.0, 24.0).unwrap();
         for h in 0..24 {
             assert_eq!(s.heating_setpoint(h), 20.0);
             assert_eq!(s.cooling_setpoint(h), 24.0);
@@ -1519,7 +1528,7 @@ mod tests {
     #[test]
     fn hvac_schedule_setback_overrides_night_window() {
         // Day = 21°C heating, setback 22..6 → 16°C, cooling always 26°C.
-        let s = PyHVACSchedule::setback_schedule(21.0, 16.0, 26.0, 22, 6);
+        let s = PyHVACSchedule::setback_schedule(21.0, 16.0, 26.0, 22, 6).unwrap();
         // Inside the setback window (22..24 and 0..6): 16°C
         for h in [22, 23, 0, 1, 2, 3, 4, 5] {
             assert_eq!(s.heating_setpoint(h), 16.0, "hour {} should be setback", h);
@@ -1537,7 +1546,7 @@ mod tests {
     #[test]
     fn hvac_schedule_operating_hours_only_actives_in_window() {
         // Heating = 20°C, cooling = 24°C only during 8..18.
-        let s = PyHVACSchedule::with_operating_hours(20.0, 24.0, 8, 18);
+        let s = PyHVACSchedule::with_operating_hours(20.0, 24.0, 8, 18).unwrap();
         for h in [8, 12, 17] {
             assert_eq!(s.heating_setpoint(h), 20.0, "hour {}", h);
             assert_eq!(s.cooling_setpoint(h), 24.0, "hour {}", h);
@@ -1552,10 +1561,10 @@ mod tests {
 
     #[test]
     fn hvac_schedule_free_floating_is_detected() {
-        let s = PyHVACSchedule::free_floating();
+        let s = PyHVACSchedule::free_floating().unwrap();
         assert!(s.is_free_floating());
         // A constant schedule is not free-floating.
-        let on = PyHVACSchedule::constant_schedule(20.0, 24.0);
+        let on = PyHVACSchedule::constant_schedule(20.0, 24.0).unwrap();
         assert!(!on.is_free_floating());
     }
 
