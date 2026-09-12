@@ -15,7 +15,7 @@ Be respectful and constructive in all interactions. We are committed to providin
 3. **Write or update tests** for your changes
 4. **Ensure all checks pass**:
    ```bash
-   cargo fmt && cargo clippy && cargo test
+   cargo fmt && cargo clippy && cargo test --workspace --exclude fluxion-tauri --no-fail-fast
    ```
 5. **Update documentation** if needed
 6. **Write a clear PR description** explaining the "why" behind your changes
@@ -93,8 +93,8 @@ cargo fmt
 # Check for linting issues
 cargo clippy
 
-# Run tests
-cargo test
+# Run tests (canonical workspace form — see § Running Tests for why bare `cargo test` is a footgun)
+cargo test --workspace --exclude fluxion-tauri --no-fail-fast
 
 # Build Python bindings
 maturin develop
@@ -119,6 +119,11 @@ If you see "module not found" or import errors, run `maturin develop` to rebuild
 
 - **Purpose:** Run GitHub Actions workflows locally using the `act` CLI to reproduce CI jobs (useful for fast iterations and debugging).
 - **Pre-push shortcut:** `./scripts/disk-space-check.sh && ./scripts/ci-local.sh` runs the curated default suite (`scorecard-drift`, `docs-hygiene`, `architecture_drift`, `scripts-tests`) inside the act container pinned by `.actrc` (catthehacker/ubuntu:act-22.04, `linux/amd64`, default branch `develop`). Run this before any push that touches `scripts/`, `.github/workflows/`, `.actrc`, or `docs/` to catch workflow-shape failures before they consume a GH-hosted runner slot. Full details, troubleshooting, and a per-workflow reference table are in [`docs/ci/local-validation.md`](ci/local-validation.md) (Issue #3577).
+- **Opt-in pre-push test gate (Issue #3587):** install once with
+  ```bash
+  ln -s ../../.githooks/pre-push .git/hooks/pre-push   # opt-in; symlink-relative so a fresh clone picks it up
+  ```
+  The hook runs `cargo test --workspace --exclude fluxion-tauri --no-fail-fast` and aborts the push on failure; skip a single push with `FLUXION_SKIP_PRE_PUSH_TESTS=1 git push`. See [`docs/agents/workspace-scope.md`](agents/workspace-scope.md) and [`AGENTS.md` § "Commands That Are Easy to Guess Wrong"](../AGENTS.md).
 - **Install:** Follow `act` installation instructions: https://github.com/nektos/act#installation
 - **Example (macOS on Apple Silicon / ARM):**
 
@@ -269,25 +274,29 @@ mod tests {
 
 ### Running Tests
 
-```bash
-# All tests
-cargo test
+**Run the full suite with `cargo test --workspace --exclude fluxion-tauri --no-fail-fast`.**
 
-# Specific test
-cargo test test_thermal_model_energy_conservation
+```bash
+# All tests (canonical — bare `cargo test` runs the ROOT crate only)
+cargo test --workspace --exclude fluxion-tauri --no-fail-fast
+
+# Specific test (intentional single-crate scope)
+cargo test -p fluxion test_thermal_model_energy_conservation
 
 # With output (useful for debugging)
-cargo test -- --nocapture
+cargo test --workspace --exclude fluxion-tauri -- --nocapture
 
 # Single-threaded (for debugging race conditions)
-cargo test -- --test-threads=1
+cargo test --workspace --exclude fluxion-tauri -- --test-threads=1
 
 # Run tests in release mode (faster for large test suites)
-cargo test --release
+cargo test --workspace --exclude fluxion-tauri --no-fail-fast --release
 
-# Run specific module tests
-cargo test tests::thermal_model
+# Run specific module tests (intentional single-crate scope)
+cargo test -p fluxion tests::thermal_model
 ```
+
+**Footgun**: bare `cargo test` (with or without `--release`) runs the root crate ONLY — `default-members = ["."]` in the root `Cargo.toml` makes it silently skip the ~4,400 sibling-crate tests while reporting green. Always use the workspace form above; see the workspace-scope rule in [`docs/agents/workspace-scope.md`](agents/workspace-scope.md) and [`AGENTS.md` § "Commands That Are Easy to Guess Wrong"](../AGENTS.md).
 
 ### ASHRAE 140 Validation
 
@@ -442,7 +451,7 @@ Examples of files to clean up:
 
 - [ ] Code formatted: `cargo fmt`
 - [ ] No clippy warnings: `cargo clippy`
-- [ ] All tests pass: `cargo test`
+- [ ] All tests pass: `cargo test --workspace --exclude fluxion-tauri --no-fail-fast`
 - [ ] Temporary files removed or moved to `tmp/`
 - [ ] Root directory clean (only `README.md` and config files)
 - [ ] Commit message follows convention
@@ -451,7 +460,7 @@ Examples of files to clean up:
 ## Pull Request Checklist
 
 - [ ] Tests added/updated for new functionality
-- [ ] All tests pass: `cargo test`
+- [ ] All tests pass: `cargo test --workspace --exclude fluxion-tauri --no-fail-fast`
 - [ ] Code formatted: `cargo fmt`
 - [ ] No clippy warnings: `cargo clippy`
 - [ ] Documentation updated (doc comments, README if applicable)
