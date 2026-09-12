@@ -76,6 +76,7 @@ Bindings are feature-gated: `maturin develop` for Python; run `npm run build` in
 - Diagnose bottom-up: Weather → Solar → Conduction → Ventilation → Zone Balance. Prefer the module-isolation tests under `tests/` before system-level ASHRAE runs.
 - Never raise `tests/reference_data/zone_balance/strict_energy_gate_baseline.json` to hide Case 600/900 regressions. The strict ±15% annual-energy tolerance is enforced by `scripts/check_strict_energy_gate_regression.py` (Issues #2506 / #3572) wired into `.github/workflows/ashrae_140_strict_energy_gate.yml` — see §"CI Gates You Can Run Locally" below. Check `SCORECARD.md`, `docs/ASHRAE140_RESULTS.md`, and `docs/KNOWN_ISSUES.md` before classifying a validation failure.
 - The `fluxion` help includes intentionally stubbed paths (direct simulation, workflow/measure execution, and diagnostic case ranges). They must fail non-zero with issue `#2947`; do not turn them into silent success. The removed `parallel-issue-workflow` binary must not be revived without its fail-closed source-diff requirement.
+- Registering a new ASHRAE 140 case end-to-end (case spec, validator registration, benchmark reference data plus optional monthly reference CSV, test instantiation, and CI gates) is documented in [`docs/contributing/ADDING_A_NEW_ASHRAE_140_CASE.md`](docs/contributing/ADDING_A_NEW_ASHRAE_140_CASE.md).
 
 ## Toolchain, Security, and Generated Artifacts
 
