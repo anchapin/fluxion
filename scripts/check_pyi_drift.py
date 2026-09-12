@@ -36,7 +36,12 @@ PYCLASS_SOURCES = [
     REPO_ROOT / "src" / "api" / "parameters.rs",
     REPO_ROOT / "src" / "python" / "bindings.rs",
     REPO_ROOT / "src" / "python" / "hvac_bindings.rs",
-    REPO_ROOT / "src" / "python" / "model_bindings.rs",
+    # Issue #2509 follow-up: model_bindings.rs was decomposed into the
+    # src/python/model_bindings/ submodule tree (model, hvac, batch); the
+    # #[pyclass] attributes now live in the child files.
+    REPO_ROOT / "src" / "python" / "model_bindings" / "model.rs",
+    REPO_ROOT / "src" / "python" / "model_bindings" / "hvac.rs",
+    REPO_ROOT / "src" / "python" / "model_bindings" / "batch.rs",
     REPO_ROOT / "src" / "python" / "multi_node_bindings.rs",
     REPO_ROOT / "src" / "python" / "osm_bindings.rs",
     # Issue #3402: files extracted by #2493 (BatchOracle pymethods /
