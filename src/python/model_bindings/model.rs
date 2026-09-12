@@ -780,26 +780,6 @@ pub fn reshape_surfaces_for_model(
 // (`#[pyclass]` with no `name` attribute => "Model").
 // =============================================================================
 
-<<<<<<< HEAD:src/python/model_bindings.rs
-use crate::ai::surrogate::SurrogateManager;
-use crate::api::error::SurrogateError;
-#[cfg(feature = "python-bindings")]
-use crate::api::error::fluxion_err_to_pyerr;
-use crate::batch_oracle::BatchOracle;
-use crate::python::batch_oracle_bindings::ParameterBounds;
-use crate::weather::HourlyWeatherData;
-
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
-
-use ndarray::Array2;
-use numpy::PyArrayMethods;
-
-#[allow(unused_imports)]
-use log::{debug, info};
-
-=======
->>>>>>> origin/develop:src/python/model_bindings/model.rs
 // =============================================================================
 // Default physics initialisation (Issue #2806)
 // ==============================================================================
@@ -1486,13 +1466,7 @@ impl Model {
     ///     # Output: Window U-value (index 0) is NaN (value: nan W/m²K). Cannot use in simulation.
     /// ```
     fn validate_parameters_py(&self, params: Vec<f64>) -> PyResult<()> {
-<<<<<<< HEAD:src/python/model_bindings.rs
-        BatchOracle::validate_parameters(&params)
-            .map_err(fluxion_err_to_pyerr)?;
-        Ok(())
-=======
         super::batch::validate_parameters(&params)
->>>>>>> origin/develop:src/python/model_bindings/model.rs
     }
 
     /// Set ground temperature model to constant value.
