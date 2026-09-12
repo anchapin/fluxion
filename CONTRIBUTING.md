@@ -74,6 +74,11 @@ Use conventional commits:
 
 ## Testing
 
+- **Run the full suite with `cargo test --workspace --exclude fluxion-tauri --no-fail-fast`.** Bare `cargo test` is a footgun: `default-members = ["."]` makes it run the root crate only, silently skipping the ~4,400 sibling-crate tests while reporting green. See the workspace-scope rule in [`docs/agents/workspace-scope.md`](docs/agents/workspace-scope.md) and [`AGENTS.md` § "Commands That Are Easy to Guess Wrong"](AGENTS.md).
+- Optional pre-push gate (skippable per-push with `FLUXION_SKIP_PRE_PUSH_TESTS=1`):
+  ```bash
+  ln -s ../../.githooks/pre-push .git/hooks/pre-push   # opt-in; symlink-relative so a fresh clone picks it up
+  ```
 - All tests must pass before merge
 - Add tests for new functionality
 - Update tests when changing behavior
@@ -112,7 +117,12 @@ with limited disk space or high memory pressure. This is an environmental issue
 builds by default.
 
 If you encounter a linker segfault during a debug build, use release builds
-for local development: `cargo build --release` / `cargo test --release`.
+for local development: `cargo build --release` and
+`cargo test --workspace --exclude fluxion-tauri --no-fail-fast --release`.
+Always use the workspace form for tests — bare `cargo test` runs the root
+crate only (see the workspace-scope rule in
+[`docs/agents/workspace-scope.md`](docs/agents/workspace-scope.md) and
+[`AGENTS.md` § "Commands That Are Easy to Guess Wrong"](AGENTS.md)).
 See also: `docs/KNOWN_ISSUES.md` §CI-02 (issue #2297).
 
 ### Profile-Guided Optimization (PGO) build
