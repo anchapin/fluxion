@@ -1,9 +1,9 @@
 // Multi-zone Python bindings for Fluxion
 // This module extends the existing Python API with multi-zone functionality
 
-use crate::api::error::FluxionError;
 #[cfg(feature = "python-bindings")]
 use crate::api::error::fluxion_err_to_pyerr;
+use crate::api::error::FluxionError;
 use crate::api::schema::{SimulationSchema, SimulationSchemaV1};
 use crate::interop::gbxml::{export_gbxml as export_gbxml_file, GbXmlError};
 use crate::interop::osm::{export_osm as export_osm_file, OsmError};

@@ -15,9 +15,9 @@
 #[cfg(feature = "python-bindings")]
 use crate::ai::surrogate::SurrogateManager;
 #[cfg(feature = "python-bindings")]
-use crate::api::error::SurrogateError;
-#[cfg(feature = "python-bindings")]
 use crate::api::error::fluxion_err_to_pyerr;
+#[cfg(feature = "python-bindings")]
+use crate::api::error::SurrogateError;
 #[cfg(feature = "python-bindings")]
 use crate::api::parameters::BuildingParameters;
 #[cfg(feature = "python-bindings")]
@@ -159,12 +159,10 @@ impl BatchOracle {
             .collect();
 
         // Call existing implementation
-        Ok(Self::evaluate_population(
-            self,
-            vec_population,
-            use_surrogates,
+        Ok(
+            Self::evaluate_population(self, vec_population, use_surrogates)
+                .map_err(fluxion_err_to_pyerr)?,
         )
-        .map_err(fluxion_err_to_pyerr)?)
     }
 
     /// Evaluate a population of building design configurations using numpy arrays.
@@ -230,13 +228,9 @@ impl BatchOracle {
         // 3N element copies, all of which the validator's contiguous slice
         // already represented. We now borrow row slices directly inside
         // `BatchOracle::evaluate_population_from_slice`'s per-row closure.
-        let results = self.evaluate_population_from_slice(
-            array_slice,
-            n_candidates,
-            n_params,
-            use_surrogates,
-        )
-        .map_err(fluxion_err_to_pyerr)?;
+        let results = self
+            .evaluate_population_from_slice(array_slice, n_candidates, n_params, use_surrogates)
+            .map_err(fluxion_err_to_pyerr)?;
 
         // Return as numpy array
         Ok(numpy::PyArray1::from_vec(py, results))
@@ -333,8 +327,7 @@ impl BatchOracle {
     ///     # Output: Window U-value (index 0) is NaN (value: nan W/m²K). Cannot use in simulation.
     /// ```
     fn validate_parameters_py(&self, params: Vec<f64>) -> PyResult<()> {
-        BatchOracle::validate_parameters(&params)
-            .map_err(fluxion_err_to_pyerr)?;
+        BatchOracle::validate_parameters(&params).map_err(fluxion_err_to_pyerr)?;
         Ok(())
     }
 }
