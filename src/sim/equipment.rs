@@ -126,7 +126,8 @@ impl ServerRack {
             id,
             rated_power_w,
             count,
-            schedule: DailySchedule::constant(1.0), // 24/7 by default
+            schedule: DailySchedule::constant(1.0)
+                .expect("constant() on a fresh daily schedule cannot fail"), // 24/7 by default
             radiative_fraction: 0.5,
             convective_fraction: 0.5,
             mass_coupling_factor: 0.8,
@@ -255,7 +256,8 @@ impl ITEquipmentLoad {
             ups_efficiency,
             standby_loss_w,
             count,
-            schedule: DailySchedule::constant(1.0),
+            schedule: DailySchedule::constant(1.0)
+                .expect("constant() on a fresh daily schedule cannot fail"),
             radiative_fraction: 0.0,
             convective_fraction: 1.0,
             mass_coupling_factor: 0.0,
@@ -366,7 +368,7 @@ mod tests {
     #[test]
     fn test_equipment_power_at_hour() {
         let mut computers = ComputerEquipment::new("Computers".to_string(), 150.0, 10);
-        computers.schedule = DailySchedule::constant(0.5);
+        computers.schedule = DailySchedule::constant(0.5).expect("valid test schedule");
 
         let hour = 100;
         let power = computers.power_at_hour(hour);
@@ -390,7 +392,7 @@ mod tests {
     #[test]
     fn test_mass_coupled_radiative() {
         let mut computers = ComputerEquipment::new("Computers".to_string(), 150.0, 10);
-        computers.schedule = DailySchedule::constant(0.5);
+        computers.schedule = DailySchedule::constant(0.5).expect("valid test schedule");
 
         let hour = 100;
         let radiative = computers.radiative_gains(hour);
@@ -445,7 +447,7 @@ mod tests {
 
     #[test]
     fn test_computer_equipment_with_schedule() {
-        let schedule = DailySchedule::constant(0.8);
+        let schedule = DailySchedule::constant(0.8).expect("valid test schedule");
         let computers =
             ComputerEquipment::new("Computers".to_string(), 100.0, 5).with_schedule(schedule);
         let power = computers.power_at_hour(100);
@@ -454,7 +456,7 @@ mod tests {
 
     #[test]
     fn test_server_rack_with_schedule() {
-        let schedule = DailySchedule::constant(0.5);
+        let schedule = DailySchedule::constant(0.5).expect("valid test schedule");
         let servers = ServerRack::new("Servers".to_string(), 200.0, 10).with_schedule(schedule);
         let power = servers.power_at_hour(500);
         assert!((power - 1000.0).abs() < 1e-10); // 200 * 10 * 0.5
@@ -470,7 +472,7 @@ mod tests {
 
     #[test]
     fn test_generic_equipment_with_schedule() {
-        let schedule = DailySchedule::constant(0.75);
+        let schedule = DailySchedule::constant(0.75).expect("valid test schedule");
         let generic =
             GenericEquipment::new("Generic".to_string(), 200.0, 4).with_schedule(schedule);
         let power = generic.power_at_hour(1000);
@@ -492,14 +494,14 @@ mod tests {
     #[test]
     fn test_equipment_power_off_schedule() {
         let mut computers = ComputerEquipment::new("Computers".to_string(), 150.0, 10);
-        computers.schedule = DailySchedule::constant(0.0);
+        computers.schedule = DailySchedule::constant(0.0).expect("valid test schedule");
         assert_eq!(computers.power_at_hour(100), 0.0);
     }
 
     #[test]
     fn test_equipment_hour_wraparound() {
         let mut computers = ComputerEquipment::new("Computers".to_string(), 100.0, 1);
-        computers.schedule = DailySchedule::constant(1.0);
+        computers.schedule = DailySchedule::constant(1.0).expect("valid test schedule");
         assert_eq!(computers.power_at_hour(24), computers.power_at_hour(0));
         assert_eq!(computers.power_at_hour(48), computers.power_at_hour(0));
     }
@@ -545,7 +547,7 @@ mod tests {
     #[test]
     fn test_equipment_gains_sum_to_power() {
         let mut computers = ComputerEquipment::new("Computers".to_string(), 100.0, 5);
-        computers.schedule = DailySchedule::constant(1.0);
+        computers.schedule = DailySchedule::constant(1.0).expect("valid test schedule");
 
         for hour in 0..24 {
             let power = computers.power_at_hour(hour);
@@ -619,7 +621,7 @@ mod tests {
     fn test_it_equipment_load_standby_loss_when_server_off() {
         let it = ITEquipmentLoad::new("IT".to_string(), 10000.0, 0.90, 5.0, 1);
         let hour_off = 100;
-        let schedule_off = DailySchedule::constant(0.0);
+        let schedule_off = DailySchedule::constant(0.0).expect("valid test schedule");
         let it_with_off_schedule = it.with_schedule(schedule_off);
         let gain_when_off = it_with_off_schedule.total_sensible_gain(hour_off);
         assert!((gain_when_off - 5.0).abs() < 1e-10);
@@ -628,7 +630,7 @@ mod tests {
     #[test]
     fn test_it_equipment_load_standby_plus_ups_loss_when_server_off() {
         let it = ITEquipmentLoad::new("IT".to_string(), 10000.0, 0.90, 5.0, 1);
-        let schedule_off = DailySchedule::constant(0.0);
+        let schedule_off = DailySchedule::constant(0.0).expect("valid test schedule");
         let it_off = it.with_schedule(schedule_off);
         let gain = it_off.total_sensible_gain(0);
         let ups_loss_when_off = it_off.ups_loss_at_hour(0);

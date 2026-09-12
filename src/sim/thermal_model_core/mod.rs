@@ -754,12 +754,17 @@ impl ThermalModel<VectorField> {
             model
                 .setpoints
                 .heating_schedule
-                .fill_range(0, 24, hvac.heating_setpoint); // Normal setpoint
-            model.setpoints.heating_schedule.fill_range(
-                setback_start as usize,
-                setback_end as usize,
-                setback_setpoint,
-            ); // Setback
+                .fill_range(0, 24, hvac.heating_setpoint)
+                .expect("fill_range on a fresh daily schedule cannot fail"); // Normal setpoint
+            model
+                .setpoints
+                .heating_schedule
+                .fill_range(
+                    setback_start as usize,
+                    setback_end as usize,
+                    setback_setpoint,
+                )
+                .expect("fill_range on a fresh daily schedule cannot fail"); // Setback
 
             // Handle cooling with operating hours
             let (cool_start, cool_end) = hvac.operating_hours;
@@ -767,7 +772,8 @@ impl ThermalModel<VectorField> {
             model
                 .setpoints
                 .cooling_schedule
-                .fill_range(0, 24, hvac.cooling_setpoint);
+                .fill_range(0, 24, hvac.cooling_setpoint)
+                .expect("fill_range on a fresh daily schedule cannot fail");
 
             // If operating hours specify when cooling should be active, zero it out outside those hours
             // This makes cooling effectively unavailable during non-operating hours
@@ -778,30 +784,35 @@ impl ThermalModel<VectorField> {
                 // Zero out cooling outside operating hours
                 if cool_end > cool_start {
                     // Normal range (e.g., 7-18)
-                    model.setpoints.cooling_schedule.fill_range(
-                        0,
-                        cool_start as usize,
-                        disabled_cooling_setpoint,
-                    );
-                    model.setpoints.cooling_schedule.fill_range(
-                        cool_end as usize,
-                        24,
-                        disabled_cooling_setpoint,
-                    );
+                    model
+                        .setpoints
+                        .cooling_schedule
+                        .fill_range(0, cool_start as usize, disabled_cooling_setpoint)
+                        .expect("fill_range on a fresh daily schedule cannot fail");
+                    model
+                        .setpoints
+                        .cooling_schedule
+                        .fill_range(cool_end as usize, 24, disabled_cooling_setpoint)
+                        .expect("fill_range on a fresh daily schedule cannot fail");
                 } else {
                     // Wrapping range (e.g., 18-7, active overnight)
-                    model.setpoints.cooling_schedule.fill_range(
-                        cool_end as usize,
-                        cool_start as usize,
-                        disabled_cooling_setpoint,
-                    );
+                    model
+                        .setpoints
+                        .cooling_schedule
+                        .fill_range(
+                            cool_end as usize,
+                            cool_start as usize,
+                            disabled_cooling_setpoint,
+                        )
+                        .expect("fill_range on a fresh daily schedule cannot fail");
                 }
             }
             // else: cool_start == cool_end means all-day operation, keep constant
         } else if let (Some(_), Some((_start, _end))) = (hvac.setback_setpoint, hvac.setback_hours)
         {
             // Partial setback info - use constant as fallback
-            model.setpoints.heating_schedule = DailySchedule::constant(hvac.heating_setpoint);
+            model.setpoints.heating_schedule = DailySchedule::constant(hvac.heating_setpoint)
+                .expect("constant() on a fresh daily schedule cannot fail");
 
             // Handle cooling with operating hours
             let (cool_start, cool_end) = hvac.operating_hours;
@@ -809,7 +820,8 @@ impl ThermalModel<VectorField> {
             model
                 .setpoints
                 .cooling_schedule
-                .fill_range(0, 24, hvac.cooling_setpoint);
+                .fill_range(0, 24, hvac.cooling_setpoint)
+                .expect("fill_range on a fresh daily schedule cannot fail");
 
             let disabled_cooling_setpoint = 100.0;
             // Only apply operating hours restriction if start != end (not all-day operation)
@@ -817,36 +829,42 @@ impl ThermalModel<VectorField> {
             if cool_start != cool_end {
                 if cool_end > cool_start {
                     // Normal range (e.g., 7-18): cooling 0-7 (disabled), cooling 7-18 (normal)
-                    model.setpoints.cooling_schedule.fill_range(
-                        0,
-                        cool_start as usize,
-                        disabled_cooling_setpoint,
-                    );
-                    model.setpoints.cooling_schedule.fill_range(
-                        cool_end as usize,
-                        24,
-                        disabled_cooling_setpoint,
-                    );
+                    model
+                        .setpoints
+                        .cooling_schedule
+                        .fill_range(0, cool_start as usize, disabled_cooling_setpoint)
+                        .expect("fill_range on a fresh daily schedule cannot fail");
+                    model
+                        .setpoints
+                        .cooling_schedule
+                        .fill_range(cool_end as usize, 24, disabled_cooling_setpoint)
+                        .expect("fill_range on a fresh daily schedule cannot fail");
                 } else {
                     // Wrapping range (e.g., 18-7): cooling 0-18 (normal), cooling 18-24 + 0-7 (disabled)
-                    model.setpoints.cooling_schedule.fill_range(
-                        cool_end as usize,
-                        cool_start as usize,
-                        disabled_cooling_setpoint,
-                    );
+                    model
+                        .setpoints
+                        .cooling_schedule
+                        .fill_range(
+                            cool_end as usize,
+                            cool_start as usize,
+                            disabled_cooling_setpoint,
+                        )
+                        .expect("fill_range on a fresh daily schedule cannot fail");
                 }
             }
             // else: cool_start == cool_end (e.g., 0, 24) means all-day operation, keep constant
         } else {
             // No setback - handle cooling with operating hours
-            model.setpoints.heating_schedule = DailySchedule::constant(hvac.heating_setpoint);
+            model.setpoints.heating_schedule = DailySchedule::constant(hvac.heating_setpoint)
+                .expect("constant() on a fresh daily schedule cannot fail");
 
             let (cool_start, cool_end) = hvac.operating_hours;
             model.setpoints.cooling_schedule = DailySchedule::new();
             model
                 .setpoints
                 .cooling_schedule
-                .fill_range(0, 24, hvac.cooling_setpoint);
+                .fill_range(0, 24, hvac.cooling_setpoint)
+                .expect("fill_range on a fresh daily schedule cannot fail");
 
             let disabled_cooling_setpoint = 100.0;
             // Only apply operating hours restriction if start != end (not all-day operation)
@@ -854,23 +872,27 @@ impl ThermalModel<VectorField> {
             if cool_start != cool_end {
                 if cool_end > cool_start {
                     // Normal range (e.g., 7-18): cooling 0-7 (disabled), cooling 7-18 (normal)
-                    model.setpoints.cooling_schedule.fill_range(
-                        0,
-                        cool_start as usize,
-                        disabled_cooling_setpoint,
-                    );
-                    model.setpoints.cooling_schedule.fill_range(
-                        cool_end as usize,
-                        24,
-                        disabled_cooling_setpoint,
-                    );
+                    model
+                        .setpoints
+                        .cooling_schedule
+                        .fill_range(0, cool_start as usize, disabled_cooling_setpoint)
+                        .expect("fill_range on a fresh daily schedule cannot fail");
+                    model
+                        .setpoints
+                        .cooling_schedule
+                        .fill_range(cool_end as usize, 24, disabled_cooling_setpoint)
+                        .expect("fill_range on a fresh daily schedule cannot fail");
                 } else {
                     // Wrapping range (e.g., 18-7): cooling 0-18 (normal), cooling 18-24 + 0-7 (disabled)
-                    model.setpoints.cooling_schedule.fill_range(
-                        cool_end as usize,
-                        cool_start as usize,
-                        disabled_cooling_setpoint,
-                    );
+                    model
+                        .setpoints
+                        .cooling_schedule
+                        .fill_range(
+                            cool_end as usize,
+                            cool_start as usize,
+                            disabled_cooling_setpoint,
+                        )
+                        .expect("fill_range on a fresh daily schedule cannot fail");
                 }
             }
             // else: cool_start == cool_end (e.g., 0, 24) means all-day operation, keep constant
@@ -885,8 +907,10 @@ impl ThermalModel<VectorField> {
         if spec.is_free_floating() {
             model.setpoints.heating_setpoint = -999.0;
             model.setpoints.cooling_setpoint = 999.0;
-            model.setpoints.heating_schedule = DailySchedule::constant(-999.0);
-            model.setpoints.cooling_schedule = DailySchedule::constant(999.0);
+            model.setpoints.heating_schedule = DailySchedule::constant(-999.0)
+                .expect("constant() on a fresh daily schedule cannot fail");
+            model.setpoints.cooling_schedule = DailySchedule::constant(999.0)
+                .expect("constant() on a fresh daily schedule cannot fail");
         } else {
             model.setpoints.heating_setpoint = hvac.heating_setpoint; // Direct access
             model.setpoints.cooling_setpoint = hvac.cooling_setpoint; // Direct access
@@ -3741,8 +3765,10 @@ impl ThermalModel<VectorField> {
                 cooling_setpoint: 27.0,
                 heating_setpoints: VectorField::from_scalar(20.0, num_zones),
                 cooling_setpoints: VectorField::from_scalar(27.0, num_zones),
-                heating_schedule: DailySchedule::constant(20.0),
-                cooling_schedule: DailySchedule::constant(27.0),
+                heating_schedule: DailySchedule::constant(20.0)
+                    .expect("constant() on a fresh daily schedule cannot fail"),
+                cooling_schedule: DailySchedule::constant(27.0)
+                    .expect("constant() on a fresh daily schedule cannot fail"),
                 zone_area: VectorField::from_scalar(zone_area, num_zones),
                 wall_area: VectorField::from_scalar(wall_area_calc, num_zones),
                 roof_area: VectorField::from_scalar(roof_area_calc, num_zones),

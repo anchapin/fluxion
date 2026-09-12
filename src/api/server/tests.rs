@@ -9,17 +9,7 @@
 
 #![allow(clippy::needless_range_loop)]
 
-use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Duration;
-
-use axum::{
-    body::Body,
-    extract::{ConnectInfo, Request},
-    http::{Method, StatusCode},
-};
-use serde_json::json;
-use std::net::SocketAddr;
 
 use crate::api::metrics;
 use crate::api::schema::{
@@ -27,14 +17,14 @@ use crate::api::schema::{
     SimulationSchemaV1, WeatherData,
 };
 use crate::api::server::ApiError;
-use crate::api::server::{
-    parse_selector_from_options, router, router_with_security, run_simulation, SimulateOptions,
-};
+use crate::api::server::{parse_selector_from_options, router, run_simulation, SimulateOptions};
 use crate::api::server::{
     AppState, InMemorySimulationStateStore, SimulationState, SimulationStateEnum,
     SimulationStateStore, MAX_BATCH_SIMULATIONS, MAX_CAMPAIGN_STEPS, MAX_YEARS,
 };
 use crate::sim::thermal_selector::ThermalSelector;
+use axum::{body::Body, extract::Request, http::StatusCode};
+use serde_json::json;
 
 fn default_schema_v1() -> SimulationSchemaV1 {
     SimulationSchemaV1 {

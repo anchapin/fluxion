@@ -78,13 +78,20 @@ impl DailySchedule {
     }
 
     /// Sets the value for a specific hour (for daily schedules).
-    pub fn set_hour(&mut self, hour: usize, value: f64) {
+    ///
+    /// # Errors
+    /// Returns `Err` when called on a weekly schedule (use
+    /// [`set_hour_for_day`](Self::set_hour_for_day) instead).
+    pub fn set_hour(&mut self, hour: usize, value: f64) -> Result<(), String> {
         if hour < 24 {
             match &mut self.values {
                 ScheduleValues::Daily(arr) => arr[hour] = value,
-                ScheduleValues::Weekly(_) => panic!("Use set_hour_for_day for weekly schedules"),
+                ScheduleValues::Weekly(_) => {
+                    return Err("Use set_hour_for_day for weekly schedules".to_string())
+                }
             }
         }
+        Ok(())
     }
 
     /// Sets the value for a specific hour on a specific day (for weekly schedules).
@@ -100,23 +107,33 @@ impl DailySchedule {
     ///
     /// Range is [start_hour, end_hour), wrapping around midnight if start > end.
     /// If start_hour == end_hour, no hours are filled.
-    pub fn fill_range(&mut self, start_hour: usize, end_hour: usize, value: f64) {
+    ///
+    /// # Errors
+    /// Returns `Err` when called on a weekly schedule (use
+    /// [`fill_range_for_day`](Self::fill_range_for_day) instead).
+    pub fn fill_range(
+        &mut self,
+        start_hour: usize,
+        end_hour: usize,
+        value: f64,
+    ) -> Result<(), String> {
         if start_hour == end_hour {
-            return;
+            return Ok(());
         }
         if start_hour < end_hour {
             for i in start_hour..end_hour {
-                self.set_hour(i, value);
+                self.set_hour(i, value)?;
             }
         } else {
             // Wraps midnight
             for i in start_hour..24 {
-                self.set_hour(i, value);
+                self.set_hour(i, value)?;
             }
             for i in 0..end_hour {
-                self.set_hour(i, value);
+                self.set_hour(i, value)?;
             }
         }
+        Ok(())
     }
 
     /// Fills a range of hours for a specific day with a specific value (for weekly schedules).
@@ -149,11 +166,15 @@ impl DailySchedule {
     }
 
     /// Creates a constant schedule for all 24 hours.
-    pub fn constant(value: f64) -> Self {
+    ///
+    /// # Errors
+    /// Returns `Err` if the underlying fill fails (unreachable for the fresh
+    /// daily schedule this constructor builds; propagated for API uniformity).
+    pub fn constant(value: f64) -> Result<Self, String> {
         let mut schedule = Self::new();
         schedule.schedule_type = ScheduleType::Constant;
-        schedule.fill_range(0, 24, value);
-        schedule
+        schedule.fill_range(0, 24, value)?;
+        Ok(schedule)
     }
 
     /// Returns the value for a given hour (for daily schedules).
@@ -287,45 +308,57 @@ impl HVACSchedule {
     }
 
     /// Creates a constant HVAC schedule.
-    pub fn constant_schedule(heating_sp: f64, cooling_sp: f64) -> Self {
-        Self {
-            heating: DailySchedule::constant(heating_sp),
-            cooling: DailySchedule::constant(cooling_sp),
-        }
+    ///
+    /// # Errors
+    /// Returns `Err` if either sub-schedule fails to build.
+    pub fn constant_schedule(heating_sp: f64, cooling_sp: f64) -> Result<Self, String> {
+        Ok(Self {
+            heating: DailySchedule::constant(heating_sp)?,
+            cooling: DailySchedule::constant(cooling_sp)?,
+        })
     }
 
     /// Creates a setback schedule.
+    ///
+    /// # Errors
+    /// Returns `Err` if any sub-schedule fill fails.
     pub fn setback_schedule(
         day_heat: f64,
         night_heat: f64,
         cool_sp: f64,
         night_start: usize,
         night_end: usize,
-    ) -> Self {
-        let mut heating = DailySchedule::constant(day_heat);
-        heating.fill_range(night_start, night_end, night_heat);
-        Self {
+    ) -> Result<Self, String> {
+        let mut heating = DailySchedule::constant(day_heat)?;
+        heating.fill_range(night_start, night_end, night_heat)?;
+        Ok(Self {
             heating,
-            cooling: DailySchedule::constant(cool_sp),
-        }
+            cooling: DailySchedule::constant(cool_sp)?,
+        })
     }
 
     /// Creates a schedule with operating hours.
+    ///
+    /// # Errors
+    /// Returns `Err` if any sub-schedule fill fails.
     pub fn with_operating_hours(
         heating_sp: f64,
         cooling_sp: f64,
         start_hour: usize,
         end_hour: usize,
-    ) -> Self {
-        let mut heating = DailySchedule::constant(-100.0);
-        let mut cooling = DailySchedule::constant(100.0);
-        heating.fill_range(start_hour, end_hour, heating_sp);
-        cooling.fill_range(start_hour, end_hour, cooling_sp);
-        Self { heating, cooling }
+    ) -> Result<Self, String> {
+        let mut heating = DailySchedule::constant(-100.0)?;
+        let mut cooling = DailySchedule::constant(100.0)?;
+        heating.fill_range(start_hour, end_hour, heating_sp)?;
+        cooling.fill_range(start_hour, end_hour, cooling_sp)?;
+        Ok(Self { heating, cooling })
     }
 
     /// Creates a free-floating schedule.
-    pub fn free_floating() -> Self {
+    ///
+    /// # Errors
+    /// Returns `Err` if the underlying operating-hours schedule fails to build.
+    pub fn free_floating() -> Result<Self, String> {
         Self::with_operating_hours(0.0, 0.0, 0, 0)
     }
 
@@ -636,7 +669,7 @@ mod tests {
 
     #[test]
     fn test_hvac_schedule_constant() {
-        let hvac = HVACSchedule::constant_schedule(20.0, 25.0);
+        let hvac = HVACSchedule::constant_schedule(20.0, 25.0).expect("valid schedule inputs");
         assert_eq!(hvac.heating_setpoint(10), 20.0);
         assert_eq!(hvac.cooling_setpoint(10), 25.0);
         assert_eq!(hvac.heating_setpoint(20), 20.0);
@@ -645,7 +678,8 @@ mod tests {
 
     #[test]
     fn test_hvac_schedule_setback() {
-        let hvac = HVACSchedule::setback_schedule(20.0, 15.0, 25.0, 22, 6);
+        let hvac =
+            HVACSchedule::setback_schedule(20.0, 15.0, 25.0, 22, 6).expect("valid schedule inputs");
         // Day hours (6-22): heating at 20
         assert_eq!(hvac.heating_setpoint(10), 20.0);
         // Night hours (22-6): heating at 15
@@ -657,7 +691,8 @@ mod tests {
 
     #[test]
     fn test_hvac_schedule_operating_hours() {
-        let hvac = HVACSchedule::with_operating_hours(20.0, 25.0, 8, 18);
+        let hvac =
+            HVACSchedule::with_operating_hours(20.0, 25.0, 8, 18).expect("valid schedule inputs");
         // Operating hours
         assert_eq!(hvac.heating_setpoint(10), 20.0);
         assert_eq!(hvac.cooling_setpoint(10), 25.0);
@@ -668,26 +703,27 @@ mod tests {
 
     #[test]
     fn test_hvac_schedule_free_floating() {
-        let hvac = HVACSchedule::free_floating();
+        let hvac = HVACSchedule::free_floating().expect("valid schedule inputs");
         assert!(hvac.is_free_floating());
     }
 
     #[test]
     fn test_hvac_schedule_not_free_floating() {
-        let hvac = HVACSchedule::constant_schedule(20.0, 25.0);
+        let hvac = HVACSchedule::constant_schedule(20.0, 25.0).expect("valid schedule inputs");
         assert!(!hvac.is_free_floating());
     }
 
     #[test]
     fn test_hvac_schedule_setback_not_free_floating() {
-        let hvac = HVACSchedule::setback_schedule(20.0, 15.0, 25.0, 22, 6);
+        let hvac =
+            HVACSchedule::setback_schedule(20.0, 15.0, 25.0, 22, 6).expect("valid schedule inputs");
         assert!(!hvac.is_free_floating());
     }
 
     #[test]
     fn test_daily_schedule_fill_range_wrap() {
         let mut schedule = DailySchedule::new();
-        schedule.fill_range(22, 6, 1.0);
+        schedule.fill_range(22, 6, 1.0).expect("valid fill range");
 
         assert_eq!(schedule.value(22), 1.0);
         assert_eq!(schedule.value(23), 1.0);
@@ -699,8 +735,8 @@ mod tests {
 
     #[test]
     fn test_daily_schedule_fill_range_same_start_end() {
-        let mut schedule = DailySchedule::constant(0.0);
-        schedule.fill_range(10, 10, 1.0);
+        let mut schedule = DailySchedule::constant(0.0).expect("valid test schedule");
+        schedule.fill_range(10, 10, 1.0).expect("valid fill range");
 
         // No hours should be filled
         assert_eq!(schedule.value(10), 0.0);
@@ -709,7 +745,7 @@ mod tests {
     #[test]
     fn test_daily_schedule_fill_range_normal() {
         let mut schedule = DailySchedule::new();
-        schedule.fill_range(8, 18, 1.0);
+        schedule.fill_range(8, 18, 1.0).expect("valid fill range");
 
         for hour in 8..18 {
             assert_eq!(schedule.value(hour), 1.0);
@@ -720,7 +756,7 @@ mod tests {
 
     #[test]
     fn test_daily_schedule_value_out_of_bounds() {
-        let schedule = DailySchedule::constant(5.0);
+        let schedule = DailySchedule::constant(5.0).expect("valid constant schedule");
         // Should wrap around (hour % 24)
         assert_eq!(schedule.value(24), 5.0);
         assert_eq!(schedule.value(48), 5.0);
@@ -728,7 +764,7 @@ mod tests {
 
     #[test]
     fn test_daily_schedule_constant() {
-        let schedule = DailySchedule::constant(10.0);
+        let schedule = DailySchedule::constant(10.0).expect("valid constant schedule");
         assert_eq!(schedule.schedule_type, ScheduleType::Constant);
         for hour in 0..24 {
             assert_eq!(schedule.value(hour), 10.0);
@@ -737,7 +773,7 @@ mod tests {
 
     #[test]
     fn test_hvac_schedule_clone() {
-        let hvac = HVACSchedule::constant_schedule(20.0, 25.0);
+        let hvac = HVACSchedule::constant_schedule(20.0, 25.0).expect("valid schedule inputs");
         let cloned = hvac.clone();
         assert_eq!(hvac.heating_setpoint(10), cloned.heating_setpoint(10));
         assert_eq!(hvac.cooling_setpoint(10), cloned.cooling_setpoint(10));
@@ -745,7 +781,7 @@ mod tests {
 
     #[test]
     fn test_daily_schedule_serialization() {
-        let schedule = DailySchedule::constant(10.0);
+        let schedule = DailySchedule::constant(10.0).expect("valid constant schedule");
         let json = serde_json::to_string(&schedule).unwrap();
         let deserialized: DailySchedule = serde_json::from_str(&json).unwrap();
         assert_eq!(schedule.value(10), deserialized.value(10));
@@ -753,7 +789,7 @@ mod tests {
 
     #[test]
     fn test_hvac_schedule_serialization() {
-        let hvac = HVACSchedule::constant_schedule(20.0, 25.0);
+        let hvac = HVACSchedule::constant_schedule(20.0, 25.0).expect("valid schedule inputs");
         let json = serde_json::to_string(&hvac).unwrap();
         let deserialized: HVACSchedule = serde_json::from_str(&json).unwrap();
         assert_eq!(hvac.heating_setpoint(10), deserialized.heating_setpoint(10));
@@ -790,15 +826,8 @@ mod tests {
     #[test]
     fn test_set_hour_for_daily_schedule() {
         let mut schedule = DailySchedule::new();
-        schedule.set_hour(10, 5.0);
+        schedule.set_hour(10, 5.0).expect("valid set_hour");
         assert_eq!(schedule.value(10), 5.0);
-    }
-
-    #[test]
-    fn test_set_hour_out_of_bounds() {
-        let mut schedule = DailySchedule::new();
-        schedule.set_hour(30, 5.0); // Should be ignored
-        assert_eq!(schedule.value(6), 0.0);
     }
 
     #[test]
@@ -806,12 +835,39 @@ mod tests {
         let mut schedule = DailySchedule::weekly("Test".to_string());
         schedule.set_hour_for_day(10, 10, 5.0); // day >= 7
         assert_eq!(schedule.value_for_day(DayType::Monday, 10), 0.0);
+
+        // Daily-only set_hour on a weekly schedule returns Err instead of panicking.
+        let err = schedule
+            .set_hour(10, 5.0)
+            .expect_err("set_hour on a weekly schedule must return Err, not panic");
+        assert!(
+            err.contains("set_hour_for_day"),
+            "error must point at set_hour_for_day, got: {err}"
+        );
+        // Nothing was written.
+        assert_eq!(schedule.value_for_day(DayType::Monday, 10), 0.0);
+    }
+
+    #[test]
+    fn test_set_hour_out_of_bounds() {
+        let mut schedule = DailySchedule::new();
+        schedule
+            .set_hour(30, 5.0)
+            .expect("out-of-range hour is ignored, not an error"); // Should be ignored
+        assert_eq!(schedule.value(6), 0.0);
     }
 
     #[test]
     fn test_fill_range_for_day_out_of_bounds_day() {
         let mut schedule = DailySchedule::weekly("Test".to_string());
         schedule.fill_range_for_day(10, 8, 18, 1.0); // day >= 7
+        assert_eq!(schedule.value_for_day(DayType::Monday, 10), 0.0);
+
+        // Daily-only fill_range on a weekly schedule returns Err instead of panicking.
+        assert!(
+            schedule.fill_range(8, 18, 1.0).is_err(),
+            "fill_range on a weekly schedule must return Err, not panic"
+        );
         assert_eq!(schedule.value_for_day(DayType::Monday, 10), 0.0);
     }
 

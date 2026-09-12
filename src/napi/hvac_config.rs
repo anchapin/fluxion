@@ -633,16 +633,27 @@ impl HvacDailySchedule {
     }
 
     /// Set the value for a single hour (0–23).
+    ///
+    /// Throws a JS error when called on a weekly schedule (use
+    /// `setHourForDay` instead).
     #[napi]
-    pub fn set_hour(&mut self, hour: u32, value: f64) {
-        self.inner.set_hour(hour as usize, value);
+    pub fn set_hour(&mut self, hour: u32, value: f64) -> napi::Result<()> {
+        self.inner
+            .set_hour(hour as usize, value)
+            .map_err(|e| napi::Error::new(napi::Status::InvalidArg, e))?;
+        Ok(())
     }
 
     /// Fill every hour in `[startHour, endHour)` with `value`.
+    ///
+    /// Throws a JS error when called on a weekly schedule (use
+    /// `fillRangeForDay` instead).
     #[napi]
-    pub fn fill_range(&mut self, start_hour: u32, end_hour: u32, value: f64) {
+    pub fn fill_range(&mut self, start_hour: u32, end_hour: u32, value: f64) -> napi::Result<()> {
         self.inner
-            .fill_range(start_hour as usize, end_hour as usize, value);
+            .fill_range(start_hour as usize, end_hour as usize, value)
+            .map_err(|e| napi::Error::new(napi::Status::InvalidArg, e))?;
+        Ok(())
     }
 
     /// Value for the given hour (0–23).
@@ -665,10 +676,11 @@ impl HvacDailySchedule {
 
     /// Build a constant schedule where every hour equals `value`.
     #[napi(factory)]
-    pub fn constant(value: f64) -> Self {
-        Self {
-            inner: DailySchedule::constant(value),
-        }
+    pub fn constant(value: f64) -> napi::Result<Self> {
+        Ok(Self {
+            inner: DailySchedule::constant(value)
+                .map_err(|e| napi::Error::new(napi::Status::GenericFailure, e))?,
+        })
     }
 }
 
@@ -697,10 +709,11 @@ impl HvacSchedule {
     /// * `heatingSp` - Heating setpoint [°C]
     /// * `coolingSp` - Cooling setpoint [°C]
     #[napi(factory)]
-    pub fn constant_schedule(heating_sp: f64, cooling_sp: f64) -> Self {
-        Self {
-            inner: HVACSchedule::constant_schedule(heating_sp, cooling_sp),
-        }
+    pub fn constant_schedule(heating_sp: f64, cooling_sp: f64) -> napi::Result<Self> {
+        Ok(Self {
+            inner: HVACSchedule::constant_schedule(heating_sp, cooling_sp)
+                .map_err(|e| napi::Error::new(napi::Status::GenericFailure, e))?,
+        })
     }
 
     /// Night-setback heating profile with constant cooling setpoint.
@@ -718,16 +731,17 @@ impl HvacSchedule {
         cool_sp: f64,
         night_start: u32,
         night_end: u32,
-    ) -> Self {
-        Self {
+    ) -> napi::Result<Self> {
+        Ok(Self {
             inner: HVACSchedule::setback_schedule(
                 day_heat,
                 night_heat,
                 cool_sp,
                 night_start as usize,
                 night_end as usize,
-            ),
-        }
+            )
+            .map_err(|e| napi::Error::new(napi::Status::GenericFailure, e))?,
+        })
     }
 
     /// Operating-hours profile: HVAC active only between `startHour` and
@@ -744,23 +758,25 @@ impl HvacSchedule {
         cooling_sp: f64,
         start_hour: u32,
         end_hour: u32,
-    ) -> Self {
-        Self {
+    ) -> napi::Result<Self> {
+        Ok(Self {
             inner: HVACSchedule::with_operating_hours(
                 heating_sp,
                 cooling_sp,
                 start_hour as usize,
                 end_hour as usize,
-            ),
-        }
+            )
+            .map_err(|e| napi::Error::new(napi::Status::GenericFailure, e))?,
+        })
     }
 
     /// Free-floating profile: no HVAC control at any hour.
     #[napi(factory)]
-    pub fn free_floating() -> Self {
-        Self {
-            inner: HVACSchedule::free_floating(),
-        }
+    pub fn free_floating() -> napi::Result<Self> {
+        Ok(Self {
+            inner: HVACSchedule::free_floating()
+                .map_err(|e| napi::Error::new(napi::Status::GenericFailure, e))?,
+        })
     }
 
     /// True when both heating and cooling are disabled for every hour.
@@ -1090,13 +1106,13 @@ mod tests {
     #[test]
     fn daily_schedule_round_trip() {
         let mut ds = HvacDailySchedule::new("occ".to_string(), "DailyCycle".to_string()).unwrap();
-        ds.fill_range(8, 18, 21.0);
+        ds.fill_range(8, 18, 21.0).unwrap();
         assert!((ds.value(12) - 21.0).abs() < 1e-9);
         assert!((ds.value(2) - 0.0).abs() < 1e-9);
         assert_eq!(ds.name(), "occ");
         assert_eq!(ds.schedule_type(), "DailyCycle");
 
-        let constant = HvacDailySchedule::constant(24.0);
+        let constant = HvacDailySchedule::constant(24.0).unwrap();
         assert!((constant.value(0) - 24.0).abs() < 1e-9);
         assert!((constant.value(23) - 24.0).abs() < 1e-9);
 
@@ -1105,21 +1121,21 @@ mod tests {
 
     #[test]
     fn hvac_schedule_profiles() {
-        let constant = HvacSchedule::constant_schedule(20.0, 24.0);
+        let constant = HvacSchedule::constant_schedule(20.0, 24.0).unwrap();
         assert!(!constant.is_free_floating());
         assert!((constant.heating_setpoint(5) - 20.0).abs() < 1e-9);
         assert!((constant.cooling_setpoint(5) - 24.0).abs() < 1e-9);
 
-        let setback = HvacSchedule::setback_schedule(20.0, 15.0, 25.0, 22, 6);
+        let setback = HvacSchedule::setback_schedule(20.0, 15.0, 25.0, 22, 6).unwrap();
         assert!((setback.heating_setpoint(2) - 15.0).abs() < 1e-9);
         assert!((setback.heating_setpoint(10) - 20.0).abs() < 1e-9);
 
-        let occ = HvacSchedule::with_operating_hours(20.0, 24.0, 8, 18);
+        let occ = HvacSchedule::with_operating_hours(20.0, 24.0, 8, 18).unwrap();
         assert!((occ.heating_setpoint(12) - 20.0).abs() < 1e-9);
         // Outside operating hours heating is disabled (-100)
         assert!((occ.heating_setpoint(2) - (-100.0)).abs() < 1e-9);
 
-        let ff = HvacSchedule::free_floating();
+        let ff = HvacSchedule::free_floating().unwrap();
         assert!(ff.is_free_floating());
 
         // Sub-schedules round-trip
