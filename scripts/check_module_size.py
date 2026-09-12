@@ -112,6 +112,17 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #     child (``ffd.rs``, ~1.1k LoC) is well below the smallest ratcheted
 #     threshold (~2000 LoC), so no new entry is added — the
 #     decomposition itself is the ratchet-lowering event.
+#   16 → 15 (surrogate.rs decomposition, tracked under issue #3669):
+#     ``src/ai/surrogate.rs`` (6,909 lines) was decomposed into the
+#     ``src/ai/surrogate/`` submodule tree (session_pool, integrity,
+#     metrics, manager). The entry is removed and
+#     ``surrogate_ratchet.json`` deleted per the companion-cleanup
+#     convention (cf. Issue #3543, which likewise added no child entries
+#     for its decomposed modules). The largest child,
+#     ``src/ai/surrogate/manager.rs`` (~2.1k LoC), is left ungated for a
+#     future #3574-style audit pass.
+#     (Merge resolution: the #3625 fmi decomposition landed first; the
+#     surrogate lowering stacks on top of it.)
 #   16 → 15 (model_bindings.rs decomposition, final PR of the 8-PR
 #     improvement run):
 #     ``src/python/model_bindings.rs`` (2,485 lines) was decomposed into the
@@ -125,7 +136,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #     for a future #3574-style audit pass.
 #     (Merge resolution: the #3625 fmi decomposition landed first; the
 #     model_bindings lowering stacks on top of it.)
-BASELINE_MODULE_SIZE_LIMITS = 15
+#     (Second merge resolution: the model_bindings lowering landed on
+#     develop first; the surrogate lowering stacks on top of it -> 14.)
+BASELINE_MODULE_SIZE_LIMITS = 14
 
 # Freeze snapshot of the gated paths (Issue #3457 ratchet).
 #
@@ -149,7 +162,9 @@ _BASELINE_MODULE_SIZE_LIMITS_SET: frozenset[str] = frozenset(
         #   - ``src/api/server.rs`` (part 1) — per-route submodule tree
         #   - ``src/sim/thermal_model_core.rs`` (part 2) — mod.rs + tests
         #   - ``src/validation/ashrae_140_validator.rs`` (part 3) — mod.rs + tests
-        "src/ai/surrogate.rs",
+        # Removed in the surrogate.rs decomposition (issue #3669):
+        #   - ``src/ai/surrogate.rs`` — src/ai/surrogate/ submodule tree
+        #     (session_pool, integrity, metrics, manager)
         "src/validation/ashrae_140_cases.rs",
         "src/physics/state_space_ctf/mod.rs",
         "src/validation/report.rs",
@@ -259,21 +274,6 @@ LIMITS: list[Limit] = [
     # + freeze-snapshot line dropped, baseline lowered 17 → 16) after
     # decomposition into ``src/interop/fmi/`` responsibility submodules.
     # ------------------------------------------------------------------
-    Limit(
-        path=REPO_ROOT / "src" / "ai" / "surrogate.rs",
-        max_lines=5726,
-        ratchet_path=REPO_ROOT
-        / "tests"
-        / "reference_data"
-        / "module_size"
-        / "surrogate_ratchet.json",
-        reason=(
-            "Issue #3457: surrogate module is the largest god-module in "
-            "``src/``; ratcheted at current size (5726 lines) so the gate "
-            "fails the moment it grows further. Decomposition is tracked "
-            "separately."
-        ),
-    ),
     Limit(
         path=REPO_ROOT / "src" / "validation" / "ashrae_140_cases.rs",
         max_lines=4764,
