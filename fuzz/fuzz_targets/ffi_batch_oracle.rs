@@ -83,7 +83,7 @@ fuzz_target!(|input: FfiInput| {
 
     let base_model =
         fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::new(num_zones);
-    let oracle = fluxion::BatchOracle::from_model(base_model);
+    let oracle = fluxion::BatchOracle::from_model(base_model).unwrap();
 
     // Bound the population so a single iteration cannot OOM on huge inputs.
     let population: Vec<Vec<f64>> = input

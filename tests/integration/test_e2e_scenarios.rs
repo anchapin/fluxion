@@ -19,7 +19,7 @@ fn test_batch_oracle_throughput() {
         .expect("Invalid scenario");
 
     let model = scenario.create_model();
-    let oracle = BatchOracle::from_model(model);
+    let oracle = BatchOracle::from_model(model).unwrap();
 
     // Generate 1000 configurations with known valid parameters
     let population: Vec<Vec<f64>> = (0..1000)
@@ -75,7 +75,7 @@ fn test_python_api_batch_oracle() {
         .expect("Invalid scenario");
 
     let model = scenario.create_model();
-    let oracle = BatchOracle::from_model(model);
+    let oracle = BatchOracle::from_model(model).unwrap();
 
     // Test with a small population
     let population = vec![vec![1.5, 20.0, 26.0], vec![2.0, 21.0, 25.0]];

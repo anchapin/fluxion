@@ -28,7 +28,7 @@ fn generate_synthetic_population(size: usize) -> Vec<Vec<f64>> {
 
 fn bench_batch_oracle_throughput(c: &mut Criterion) {
     let base_model = ThermalModel::<VectorField>::new(10);
-    let oracle = BatchOracle::from_model(base_model);
+    let oracle = BatchOracle::from_model(base_model).unwrap();
 
     // Test population sizes relevant to performance requirements
     // Target: >1000 configs/sec. We test 100-1000 configs to measure scaling.

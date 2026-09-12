@@ -19,7 +19,7 @@ fn test_population_evaluation_100() {
     model.setpoints.temperatures = VectorField::from_scalar(20.0, 1);
     model.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
 
-    let oracle = BatchOracle::from_model(model);
+    let oracle = BatchOracle::from_model(model).unwrap();
 
     // Generate 100 configurations with valid parameters
     let population: Vec<Vec<f64>> = (0..100)
@@ -53,7 +53,7 @@ fn test_population_evaluation_1000() {
     model.setpoints.temperatures = VectorField::from_scalar(20.0, 1);
     model.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
 
-    let oracle = BatchOracle::from_model(model);
+    let oracle = BatchOracle::from_model(model).unwrap();
 
     // Generate 1000 configurations with valid parameters
     let population: Vec<Vec<f64>> = (0..1000)
@@ -98,7 +98,7 @@ fn test_parameter_vector_semantics() {
     model.setpoints.temperatures = VectorField::from_scalar(20.0, 1);
     model.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
 
-    let oracle = BatchOracle::from_model(model);
+    let oracle = BatchOracle::from_model(model).unwrap();
 
     // Test valid parameters
     let valid_population = vec![
@@ -148,7 +148,7 @@ fn test_surrogate_integration() {
     model.setpoints.temperatures = VectorField::from_scalar(20.0, 1);
     model.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
 
-    let oracle = BatchOracle::from_model(model);
+    let oracle = BatchOracle::from_model(model).unwrap();
 
     // Test with surrogates disabled (analytical)
     let population = vec![vec![1.5, 20.0, 26.0], vec![2.0, 21.0, 25.0]];
@@ -178,7 +178,7 @@ fn test_parallelism_correctness() {
     model.setpoints.temperatures = VectorField::from_scalar(20.0, 1);
     model.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
 
-    let oracle = BatchOracle::from_model(model);
+    let oracle = BatchOracle::from_model(model).unwrap();
 
     // Test with a small population to verify parallelism
     let population: Vec<Vec<f64>> = (0..100).map(|_| vec![1.5, 20.0, 26.0]).collect();

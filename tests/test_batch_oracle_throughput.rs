@@ -47,7 +47,7 @@ fn generate_population(size: usize) -> Vec<Vec<f64>> {
 /// For full performance testing, run with: cargo test --release -- --nocapture
 #[test]
 fn test_throughput_analytical_1000_configs_sec() {
-    let oracle = fluxion::BatchOracle::from_model(create_base_model());
+    let oracle = fluxion::BatchOracle::from_model(create_base_model()).unwrap();
     let population = generate_population(100);
 
     let start = Instant::now();
@@ -83,7 +83,7 @@ fn test_throughput_analytical_1000_configs_sec() {
 /// primarily focuses on the analytical path.
 #[test]
 fn test_throughput_surrogates_1000_configs_sec() {
-    let oracle = fluxion::BatchOracle::from_model(create_base_model());
+    let oracle = fluxion::BatchOracle::from_model(create_base_model()).unwrap();
     let population = generate_population(2);
 
     let start = Instant::now();

@@ -82,7 +82,9 @@ impl BatchOracle {
             ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
                 .expect("default selector must initialize");
 
-        let inner = CoreBatchOracle::from_model(thermal_model);
+        let inner = CoreBatchOracle::from_model(thermal_model).map_err(|e| {
+            napi::bindgen_prelude::Error::from_reason(format!("Failed to create BatchOracle: {e}"))
+        })?;
         Ok(BatchOracle { inner })
     }
 

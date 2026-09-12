@@ -68,7 +68,7 @@ fn bench_thermal_model_solve(c: &mut Criterion) {
 /// Uses throughput measurement to quantify performance in terms of elements processed.
 fn bench_batch_oracle_throughput(c: &mut Criterion) {
     let base_model = ThermalModel::<VectorField>::new(10);
-    let oracle = BatchOracle::from_model(base_model);
+    let oracle = BatchOracle::from_model(base_model).unwrap();
 
     let population_sizes = [100, 1_000, 10_000];
 

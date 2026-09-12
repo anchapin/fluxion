@@ -73,7 +73,7 @@ fn test_allocation_count_batch_100() {
 
     // Build BatchOracle
     let base_model = create_single_zone_model();
-    let oracle = fluxion::BatchOracle::from_model(base_model);
+    let oracle = fluxion::BatchOracle::from_model(base_model).unwrap();
 
     // Generate synthetic population: [window_u_value, heating_setpoint, cooling_setpoint]
     let mut rng = StdRng::seed_from_u64(42);

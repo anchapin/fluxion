@@ -65,7 +65,7 @@ fn measure_throughput(oracle: &BatchOracle, population: &[Vec<f64>]) -> (f64, us
 /// and does not affect throughput measurement.
 #[test]
 fn test_batch_oracle_throughput_characterization() {
-    let oracle = BatchOracle::from_model(create_single_zone_model());
+    let oracle = BatchOracle::from_model(create_single_zone_model()).unwrap();
 
     let sizes = [10, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
 
@@ -112,7 +112,7 @@ fn test_batch_oracle_throughput_characterization() {
 /// for optimization workflows at the standard batch size.
 #[test]
 fn test_batch_oracle_throughput_1000() {
-    let oracle = BatchOracle::from_model(create_single_zone_model());
+    let oracle = BatchOracle::from_model(create_single_zone_model()).unwrap();
     let population = generate_population(1000);
 
     let warmup = vec![vec![1.5, 20.0, 26.0]];
@@ -144,7 +144,7 @@ fn test_batch_oracle_throughput_1000() {
 /// release gate was created.
 #[test]
 fn test_batch_oracle_throughput_100() {
-    let oracle = BatchOracle::from_model(create_single_zone_model());
+    let oracle = BatchOracle::from_model(create_single_zone_model()).unwrap();
     let population: Vec<Vec<f64>> = (0..100).map(|_| vec![1.5, 20.0, 26.0]).collect();
 
     let (throughput, count, _) = measure_throughput(&oracle, &population);
@@ -170,7 +170,7 @@ fn test_batch_oracle_throughput_100() {
 /// because multi-zone performance characterization was not yet implemented.
 #[test]
 fn test_batch_oracle_throughput_case_960() {
-    let oracle = BatchOracle::from_model(create_case_960_model());
+    let oracle = BatchOracle::from_model(create_case_960_model()).unwrap();
 
     let sizes = [100, 500, 1000];
 
@@ -210,7 +210,7 @@ fn test_batch_oracle_throughput_case_960() {
 /// previous measurements to detect performance regressions.
 #[test]
 fn test_throughput_regression_baseline() {
-    let oracle = BatchOracle::from_model(create_single_zone_model());
+    let oracle = BatchOracle::from_model(create_single_zone_model()).unwrap();
     let population = generate_population(1000);
 
     let (throughput, count, _) = measure_throughput(&oracle, &population);

@@ -63,6 +63,43 @@ pub struct BatchOracle {
     pub(crate) surrogates: SurrogateManager,
 }
 
+/// Issue #3635 test seam: `SurrogateManager::new()` is currently
+/// infallible in mock mode (it is `Ok(..)` unconditionally), which makes a
+/// real construction failure impossible to reproduce in a unit test.
+/// [`BatchOracle::from_model`] routes its call through this seam so the
+/// cfg(test) variant can deterministically inject a failure via a
+/// thread-local slot — safe under the parallel lib-test runner because the
+/// injection is only ever visible on the injecting test's own thread.
+/// `SurrogateManager` itself is untouched.
+#[cfg(not(test))]
+#[inline]
+fn surrogate_manager_new() -> Result<SurrogateManager, String> {
+    SurrogateManager::new()
+}
+
+#[cfg(test)]
+thread_local! {
+    static INJECTED_SURROGATE_FAILURE: std::cell::RefCell<Option<String>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn surrogate_manager_new() -> Result<SurrogateManager, String> {
+    let injected = INJECTED_SURROGATE_FAILURE.with(|slot| slot.borrow().clone());
+    match injected {
+        Some(msg) => Err(msg),
+        None => SurrogateManager::new(),
+    }
+}
+
+/// Arm the thread-local failure injection consumed by
+/// [`surrogate_manager_new`]. Test-only; never compiled into production
+/// builds (`#[cfg(test)]`-gated, mirroring the seam above).
+#[cfg(test)]
+fn inject_surrogate_new_failure(msg: &str) {
+    INJECTED_SURROGATE_FAILURE.with(|slot| *slot.borrow_mut() = Some(msg.to_string()));
+}
+
 impl BatchOracle {
     // Physical constraints for optimization parameters
     pub(crate) const MIN_U_VALUE: f64 = 0.1; // Minimum realistic U-value (W/m²K)
@@ -165,11 +202,25 @@ impl BatchOracle {
     }
 
     /// Creates a new BatchOracle from a base thermal model.
-    pub fn from_model(base_model: ThermalModel<VectorField>) -> Self {
-        BatchOracle {
+    ///
+    /// Issue #3635: construction of the surrogate manager is fallible
+    /// (`SurrogateManager::new() -> Result<Self, String>`), so this
+    /// constructor returns `Err(FluxionError::Surrogate(_))` instead of
+    /// panicking. FFI surfaces (python-bindings, napi, REST, parallel
+    /// harness) therefore get the documented error-return path rather than
+    /// an unwrap-equivalent panic crossing the boundary.
+    pub fn from_model(
+        base_model: ThermalModel<VectorField>,
+    ) -> Result<Self, crate::api::error::FluxionError> {
+        let surrogates = surrogate_manager_new().map_err(|e| {
+            crate::api::error::FluxionError::Surrogate(format!(
+                "Failed to create SurrogateManager: {e}"
+            ))
+        })?;
+        Ok(BatchOracle {
             base_model,
-            surrogates: SurrogateManager::new().expect("Failed to create SurrogateManager"),
-        }
+            surrogates,
+        })
     }
 
     /// Evaluate a population of building design configurations in parallel.
@@ -620,5 +671,37 @@ mod tests {
             .unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].is_finite());
+    }
+
+    // Issue #3635: `from_model` must return `Err(FluxionError::Surrogate(_))`
+    // instead of panicking when `SurrogateManager::new()` fails, so FFI
+    // callers (python-bindings, napi, REST, parallel harness) get the
+    // documented error-return path. Not feature-gated: `from_model` is part
+    // of the ungated public Rust API, unlike the pyo3 `BatchOracle::new`.
+    #[test]
+    fn test_from_model_returns_err_on_surrogate_manager_failure() {
+        use crate::api::error::FluxionError;
+
+        super::inject_surrogate_new_failure("injected: surrogate session init failed");
+        let model = super::ThermalModel::<super::VectorField>::new(1);
+        let result = super::BatchOracle::from_model(model);
+        match result {
+            Err(FluxionError::Surrogate(msg)) => {
+                assert!(
+                    msg.contains("Failed to create SurrogateManager"),
+                    "error must name the failing component, got: {msg}"
+                );
+                assert!(
+                    msg.contains("injected: surrogate session init failed"),
+                    "error must carry the source message, got: {msg}"
+                );
+            }
+            Ok(_) => panic!(
+                "from_model must return Err(FluxionError::Surrogate(_)) when SurrogateManager::new() fails (Issue #3635)"
+            ),
+            Err(other) => panic!(
+                "from_model must map SurrogateManager failures to FluxionError::Surrogate, got: {other:?}"
+            ),
+        }
     }
 }

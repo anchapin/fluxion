@@ -122,7 +122,7 @@ fn evaluate_population_from_slice_zero_steady_state_growth() {
     let _profiler = dhat::Profiler::builder().testing().build();
 
     let base_model = create_single_zone_model();
-    let oracle = fluxion::BatchOracle::from_model(base_model);
+    let oracle = fluxion::BatchOracle::from_model(base_model).unwrap();
 
     let flat = build_valid_flat_population();
     assert_eq!(flat.len(), N_CANDIDATES * N_PARAMS);
