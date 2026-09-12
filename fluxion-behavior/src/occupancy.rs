@@ -567,6 +567,23 @@ pub struct OccupancyValidationResult {
     pub state_distribution: HashMap<String, f64>,
 }
 
+/// Fixed seeds for the Monte Carlo validation utilities (#3705).
+///
+/// These utilities were previously seeded from OS entropy (`from_os_rng`),
+/// which made the statistical tests flaky under CI load: each run compared
+/// two *independent random* Monte Carlo estimates against a hard 5%
+/// relative-error band, which is occasionally violated by chance alone.
+/// Fixed seeds make every run reproducible while still exercising the full
+/// Markov sampling path, so the distribution check stays live in CI.
+///
+/// The two utilities intentionally use *different* seeds so
+/// `validate_occupancy` compares two independent Monte Carlo trajectories
+/// (see the "Two independent Monte Carlo trajectories" note on
+/// `test_issue_2046_commercial_statistical_validation`) rather than
+/// comparing a stream with itself.
+const VALIDATION_SEED_EXPECTED: u64 = 0x3705_0001;
+const VALIDATION_SEED_VALIDATE: u64 = 0x3705_0002;
+
 /// Compute expected occupancy fraction via Monte Carlo simulation.
 pub fn compute_expected_fraction(
     generator: &MarkovOccupancyGenerator,
@@ -576,7 +593,7 @@ pub fn compute_expected_fraction(
 ) -> f64 {
     let mut occupied_count = 0usize;
     let mut total_count = 0usize;
-    let mut rng = SmallRng::from_os_rng();
+    let mut rng = SmallRng::seed_from_u64(VALIDATION_SEED_EXPECTED);
     let mut current_state = OccupancyState::Vacant;
 
     const WARMUP_DAYS: usize = 500;
@@ -630,7 +647,7 @@ pub fn validate_occupancy(
     let mut vacant_count = 0usize;
     let mut total_count = 0usize;
 
-    let mut rng = SmallRng::from_os_rng();
+    let mut rng = SmallRng::seed_from_u64(VALIDATION_SEED_VALIDATE);
     let mut current_state = OccupancyState::Vacant;
 
     const WARMUP_DAYS: usize = 500;
@@ -737,7 +754,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "awaiting #3705 — flaky: OS-seeded 10k-step Markov sampling occasionally trips the hard 5% relative-error assertion under CI load; un-ignore when the test uses a fixed seed or a variance-aware tolerance"]
     fn test_statistical_validation_office() {
         let g = MarkovOccupancyGenerator::new(BuildingType::Office, 10, 100.0);
         let expected = compute_expected_fraction(&g, 9, DayOfWeek::Tuesday, 10000);
