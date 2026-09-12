@@ -2,6 +2,8 @@
 // This module extends the existing Python API with multi-zone functionality
 
 use crate::api::error::FluxionError;
+#[cfg(feature = "python-bindings")]
+use crate::api::error::fluxion_err_to_pyerr;
 use crate::api::schema::{SimulationSchema, SimulationSchemaV1};
 use crate::interop::gbxml::{export_gbxml as export_gbxml_file, GbXmlError};
 use crate::interop::osm::{export_osm as export_osm_file, OsmError};
@@ -327,18 +329,19 @@ impl PyMultiZoneThermalModel {
             if let Some(diag) =
                 crate::api::error::SimulationDiagnostics::from_temperature_trace(&hourly)
             {
-                return Err(crate::api::error::FluxionError::Simulation(
-                    format!(
-                        "simulation diverged at timestep {}{}",
-                        diag.failing_timestep,
-                        diag.failing_zone
-                            .as_ref()
-                            .map(|z| format!(" in zone {z}"))
-                            .unwrap_or_default()
+                return Err(fluxion_err_to_pyerr(
+                    crate::api::error::FluxionError::Simulation(
+                        format!(
+                            "simulation diverged at timestep {}{}",
+                            diag.failing_timestep,
+                            diag.failing_zone
+                                .as_ref()
+                                .map(|z| format!(" in zone {z}"))
+                                .unwrap_or_default()
+                        ),
+                        Some(diag),
                     ),
-                    Some(diag),
-                )
-                .into());
+                ));
             }
         }
 
@@ -1033,15 +1036,21 @@ pub fn multi_zone(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
 }
 
 fn validation_error(message: impl Into<String>) -> PyErr {
-    FluxionError::Validation(message.into()).into()
+    fluxion_err_to_pyerr(FluxionError::Validation(message.into()))
 }
 
 fn osm_error(error: OsmError) -> PyErr {
-    FluxionError::Simulation(format!("OSM interoperability error: {}", error), None).into()
+    fluxion_err_to_pyerr(FluxionError::Simulation(
+        format!("OSM interoperability error: {}", error),
+        None,
+    ))
 }
 
 fn gbxml_error(error: GbXmlError) -> PyErr {
-    FluxionError::Simulation(format!("gbXML interoperability error: {}", error), None).into()
+    fluxion_err_to_pyerr(FluxionError::Simulation(
+        format!("gbXML interoperability error: {}", error),
+        None,
+    ))
 }
 
 fn schema_from_json(content: &str) -> PyResult<SimulationSchemaV1> {

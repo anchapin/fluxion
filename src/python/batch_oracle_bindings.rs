@@ -17,6 +17,8 @@ use crate::ai::surrogate::SurrogateManager;
 #[cfg(feature = "python-bindings")]
 use crate::api::error::SurrogateError;
 #[cfg(feature = "python-bindings")]
+use crate::api::error::fluxion_err_to_pyerr;
+#[cfg(feature = "python-bindings")]
 use crate::api::parameters::BuildingParameters;
 #[cfg(feature = "python-bindings")]
 use crate::batch_oracle::BatchOracle;
@@ -109,7 +111,7 @@ impl BatchOracle {
         )
         .increment(1);
 
-        Ok(result?)
+        Ok(result.map_err(fluxion_err_to_pyerr)?)
     }
 
     /// Evaluate a population of building design configurations using BuildingParameters.
@@ -161,7 +163,8 @@ impl BatchOracle {
             self,
             vec_population,
             use_surrogates,
-        )?)
+        )
+        .map_err(fluxion_err_to_pyerr)?)
     }
 
     /// Evaluate a population of building design configurations using numpy arrays.
@@ -232,7 +235,8 @@ impl BatchOracle {
             n_candidates,
             n_params,
             use_surrogates,
-        )?;
+        )
+        .map_err(fluxion_err_to_pyerr)?;
 
         // Return as numpy array
         Ok(numpy::PyArray1::from_vec(py, results))
@@ -329,7 +333,8 @@ impl BatchOracle {
     ///     # Output: Window U-value (index 0) is NaN (value: nan W/m²K). Cannot use in simulation.
     /// ```
     fn validate_parameters_py(&self, params: Vec<f64>) -> PyResult<()> {
-        BatchOracle::validate_parameters(&params)?;
+        BatchOracle::validate_parameters(&params)
+            .map_err(fluxion_err_to_pyerr)?;
         Ok(())
     }
 }

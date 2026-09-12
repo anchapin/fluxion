@@ -34,6 +34,9 @@ fluxion-core/src/ashrae_cases/ # MOVED in #1441 (Orientation, WindowArea, Constr
                                #   ShadingType, ShadingDevice, GlassType, WindowSpec,
                                #   InternalLoads, HvacSchedule, NightVentilation,
                                #   BuildingType, GeometrySpec, ConductanceReferences)
+fluxion-core/src/error.rs      # NEW in error-unification PR (unified FluxionError +
+                               #   SimulationDiagnostics + FluxionResult alias; thiserror +
+                               #   serde only — converges the api/napi FluxionError pair)
 ```
 
 ### `fluxion-core` dependency budget (#3467)
@@ -48,7 +51,7 @@ The "dependency-light leaf" claim is enforced by
 | `serde`      | `Serialize`/`Deserialize` derives on data structs   |
 | `serde_json` | Weather-record JSON, hash digests, etc.             |
 | `serde_yaml` | ASHRAE 140 assembly / materials YAML inputs         |
-| `thiserror`  | `WeatherError` / `CarbonError` / assembly errors    |
+| `thiserror`  | `WeatherError` / `CarbonError` / assembly errors / unified `FluxionError` |
 | `log`        | Logging in `method_selector.rs` (#1349) and weather |
 
 Anything heavier (HTTP client, project-directories helper, async runtime,
