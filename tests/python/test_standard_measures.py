@@ -344,7 +344,7 @@ class TestReplaceHVACWithVAVIntegration:
     """End-to-end VAV retrofit on a real fluxion.Model.
 
     Only ``heating_capacity`` / ``cooling_capacity`` currently round-trip into
-    the underlying Rust ``ThermalModel`` (see ``src/python/model_bindings.rs``).
+    the underlying Rust ``ThermalModel`` (see ``src/python/model_bindings/model.rs``).
     The VAV / economizer / supply-air flags are advisory snapshots, matching
     the documented limitation in the ``SetHVACCOP`` example and
     ``docs/measures.md``. These tests assert the capacities + provenance.
