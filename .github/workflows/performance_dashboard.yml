@@ -1412,10 +1412,15 @@ jobs:
 
       # Median-of-3 noise suppression. Each run invokes the single
       # `test_surrogate_cold_start_under_100ms_or_2_5x_warm_median` test,
-      # which prints exactly one `Cold start:`, `Warm steady-state:`, and
-      # `Cold/warm ratio:` line (with a `[surrogate-cold-start-diag]`
-      # prefix). We tolerate a nonzero test exit with `|| true`; the
-      # metrics are printed BEFORE any assertion failure so partial
+      # which prints exactly one `Cold start:` and `Warm steady-state:`
+      # line, plus a `Cold/warm ratio:` line ONLY when the warm
+      # measurement is valid (Issue #3685: the ratio denominator is the
+      # p95 of epsilon-guarded warm samples; on the trivial 193-byte
+      # fixture the warm path sits below the 0.01 ms measurement floor,
+      # so the ratio line is expected to be absent and this aggregation
+      # records `cold_warm_ratio: null` for the checker — see the
+      # Evaluate step). We tolerate a nonzero test exit with `|| true`;
+      # the metrics are printed BEFORE any assertion failure so partial
       # diagnostics still surface in the gate output.
       #
       # `--test-threads=1` forces SEQUENTIAL execution — without it the
@@ -1425,10 +1430,11 @@ jobs:
       # execution matches the #2922 hybrid-gate pattern.
       #
       # Runtime budget: each cold/warm cycle builds a fresh
-      # `SurrogateManager` and runs 4 `predict_loads_onnx` calls. On
-      # ubuntu-latest the dummy fixture is ~1 ms per call. 1 test × 3
-      # runs × worst-case timing + ~5 min cold-cache ort build fits inside
-      # the 25-min job timeout with margin.
+      # `SurrogateManager`, runs 1 cold `predict_loads_onnx` call, then
+      # up to 3 batches x 9 warm calls (Issue #3685 bounded re-measure).
+      # On ubuntu-latest the dummy fixture is ~1 ms per call worst-case.
+      # 1 test × 3 runs × worst-case timing + ~5 min cold-cache ort build
+      # fits inside the 45-min job timeout with margin.
       - name: Run cold-start benchmark (median of 3, sequential)
         run: |
           rm -f run_*.txt
@@ -1459,15 +1465,25 @@ jobs:
               c = cold_re.findall(txt)
               w = warm_re.findall(txt)
               r = ratio_re.findall(txt)
-              if c and w and r:
+              # Issue #3685: the `Cold/warm ratio:` line is only printed
+              # when the test's epsilon-guarded warm measurement produced
+              # a valid p95 statistic. A run without it is NOT a harness
+              # failure — the warm path sat below the 0.01 ms measurement
+              # floor (expected on the trivial 193-byte fixture) and the
+              # ratio is UNMEASURABLE for that run. Only missing cold/warm
+              # lines indicate a broken harness (panic before measurement).
+              if c and w:
                   cold_samples.append(float(c[-1]))
                   warm_samples.append(float(w[-1]))
-                  ratio_samples.append(float(r[-1]))
-                  print(f"{path}: cold={c[-1]} ms, warm={w[-1]} ms, ratio={r[-1]}")
+                  ratio_samples.append(float(r[-1]) if r else None)
+                  print(f"{path}: cold={c[-1]} ms, warm={w[-1]} ms, ratio={r[-1] if r else 'unmeasurable (warm below epsilon measurement floor, Issue #3685)'}")
               else:
                   print(f"WARNING: {path} produced no parseable cold-start metrics (cold={c}, warm={w}, ratio={r})")
 
-          if len(cold_samples) < 2 or len(warm_samples) < 2 or len(ratio_samples) < 2:
+          # Fail-closed on harness breakage (unchanged): fewer than 2
+          # runs with parseable cold/warm metrics means the test binary
+          # could not even measure — compile error or runtime panic.
+          if len(cold_samples) < 2 or len(warm_samples) < 2:
               print("ERROR: fewer than 2 successful cold-start measurement runs; cannot compute a stable median.")
               print("This usually means a compile error or a runtime panic before measurement.")
               for path in sorted(glob.glob('run_*.txt')):
@@ -1477,14 +1493,31 @@ jobs:
 
           med_cold = statistics.median(cold_samples)
           med_warm = statistics.median(warm_samples)
-          med_ratio = statistics.median(ratio_samples)
+          # Issue #3685: a null (unmeasurable) ratio is a VALID outcome —
+          # write None so `release_gate_checker.py` skips the
+          # ratio-derived bounds (ratio <= 1.5 / baseline regression)
+          # instead of comparing a collapsed-denominator garbage figure
+          # (the 10-16x readings that failed 3 PRs spuriously). The
+          # checker FAILS CLOSED when cold >= trivial_fixture_ms and the
+          # ratio is unmeasurable, so this is never a vacuous pass on a
+          # real workload. At least 2 measurable ratios are required to
+          # form a stable median, mirroring the run-count floor above.
+          measurable_ratios = [r for r in ratio_samples if r is not None]
+          med_ratio = (
+              statistics.median(measurable_ratios)
+              if len(measurable_ratios) >= 2
+              else None
+          )
 
           print(f"\nSamples: cold_ms={cold_samples}")
           print(f"         warm_ms={warm_samples}")
           print(f"         ratio={ratio_samples}")
           print(f"Median cold-start:    {med_cold:.3f} ms")
           print(f"Median warm steady-state: {med_warm:.3f} ms")
-          print(f"Median cold/warm ratio:   {med_ratio:.3f}")
+          if med_ratio is not None:
+              print(f"Median cold/warm ratio:   {med_ratio:.3f}")
+          else:
+              print("Median cold/warm ratio:   unmeasurable (no run produced a valid warm statistic; expected on the trivial fixture — Issue #3685)")
 
           results = {
               "metrics": {
@@ -1496,6 +1529,11 @@ jobs:
                   # Throughput / latency are also populated so a future
                   # `--benchmark-gates` filter expansion picks them up
                   # without re-running the job.
+                  # Issue #3685: `cold_warm_ratio` is None (JSON null)
+                  # when no run measured a valid warm statistic; the
+                  # checker distinguishes null (unmeasurable) from a
+                  # missing key (0.0 default — still fails the
+                  # regression check, fail-closed preserved).
                   "cold_start_ms": med_cold,
                   "warm_steady_state_ms": med_warm,
                   "cold_warm_ratio": med_ratio,
@@ -1505,7 +1543,7 @@ jobs:
                   "warm_ms": warm_samples,
                   "ratio": ratio_samples,
                   "runs": len(cold_samples),
-                  "strategy": "median-of-3",
+                  "strategy": "median-of-3; ratio = median cold / p95 of epsilon-guarded warm samples (Issue #3685)",
                   "fixture": "assets/dummy_surrogate.onnx",
                   "feature": "ort",
               },
@@ -1518,8 +1556,12 @@ jobs:
       # Evaluate the cold-start gate from release_gates.yaml:
       # - absolute cold ≤ 100 ms (Issue #2919 acceptance criterion)
       # - cold/warm ratio ≤ 1.5 (CI gate, stricter than the test's lenient 2.5× bound)
+      #   — skipped when the ratio is unmeasurable (null, Issue #3685)
+      #   AND cold < trivial_fixture_ms; FAILED when the ratio is
+      #   unmeasurable on a non-trivial workload (cold ≥ trivial_fixture_ms)
       # - cold-start regression ≤ 25% relative to the stored baseline at
       #   `tests/reference_data/surrogate/cold_start_baseline.json`
+      #   — same null/unmeasurable handling as the ratio bound (Issue #3685)
       # `--benchmark-gates cold_start` restricts evaluation to this single
       # gate (Issue #2919); the checker exits 1 on any failure.
       # `--crate-size-gates 'skip'` suppresses the crate_size gate (issue #2930)
@@ -1542,7 +1584,7 @@ jobs:
           echo "- cold-start regression ≤ 25% relative to \`tests/reference_data/surrogate/cold_start_baseline.json\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Why:** the #2693 Absolute Perf Gate measures the warm steady-state path of \`BatchOracle::evaluate_population\`, which constructs its own models and never exercises the FIRST \`predict_loads_onnx\` call against a freshly constructed \`SurrogateManager\`. That first call pays the full cost of \`SessionPool::get_or_create_session\` (ort env init + model parse + session allocation), and at the API layer the first \`/v1/simulate\` request after a fresh process pays the same cost — easy > 500 ms on a 256 MiB shipped model. Before #2919 this regression was invisible to CI." >> $GITHUB_STEP_SUMMARY
-          echo "**Noise suppression:** median of 3 cold/warm cycles (\`surrogate_cold_start_test\` x3, release build, \`--features ort\`)." >> $GITHUB_STEP_SUMMARY
+          echo "**Noise suppression:** median of 3 cold/warm cycles (\`surrogate_cold_start_test\` x3, release build, \`--features ort\`). The cold/warm ratio denominator is the p95 of epsilon-guarded warm samples; when the warm path sits below the 0.01 ms measurement floor (expected on the trivial CI fixture) the ratio is reported as unmeasurable and the gate rests on the absolute bounds (Issue #3685)." >> $GITHUB_STEP_SUMMARY
           echo "**Runner:** \`ubuntu-latest\` (parity with \`absolute-perf-gate\` / \`multi-zone-perf-gate\` / \`hybrid-perf-gate\`; the 100 ms + 1.5× ratio floors were calibrated here)." >> $GITHUB_STEP_SUMMARY
           if [ -f gate_status.json ]; then
             echo '```json' >> $GITHUB_STEP_SUMMARY
