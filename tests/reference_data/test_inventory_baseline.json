@@ -17,11 +17,11 @@
     },
     "fluxion": {
       "lib_ignored": 9,
-      "lib_tests": 4102,
+      "lib_tests": 4107,
       "test_binaries": 295
     },
     "fluxion-behavior": {
-      "lib_ignored": 1,
+      "lib_ignored": 0,
       "lib_tests": 121,
       "test_binaries": 1
     },
@@ -62,40 +62,40 @@
     },
     "fluxion-wasm": {
       "lib_ignored": 0,
-      "lib_tests": 6,
+      "lib_tests": 12,
       "test_binaries": 1
     }
   },
-  "captured_at": "2026-09-12T12:39:57.429204+00:00",
+  "captured_at": "2026-09-12T19:54:27.746589+00:00",
   "captured_from": "tests/test_inventory.json",
   "metrics": {
-    "lib_ignored": 9,
-    "lib_tests": 4102,
+    "lib_ignored": 6,
+    "lib_tests": 3774,
     "test_binaries": 309,
-    "workspace_ignored": 121,
-    "workspace_tests": 8523
+    "workspace_ignored": 133,
+    "workspace_tests": 7859
   },
   "ratchet": {
     "BASELINE_LIB_IGNORED": 9,
     "BASELINE_LIB_TESTS": 4314,
     "BASELINE_TEST_BINARIES": 309,
-    "BASELINE_WORKSPACE_IGNORED": 134,
+    "BASELINE_WORKSPACE_IGNORED": 121,
     "BASELINE_WORKSPACE_TESTS": 8683
   },
   "ratchet_drift_tolerance_abs": 25,
   "ratchet_drift_tolerance_pct": 5.0,
   "schema_version": 1,
   "totals": {
-    "doc_tests": 0,
-    "lib_ignored_root": 9,
-    "lib_tests_root": 4102,
+    "doc_tests": 170,
+    "lib_ignored_root": 6,
+    "lib_tests_root": 3774,
     "test_binaries": 309,
     "test_source_files": 354,
-    "workspace_ignored": 121,
-    "workspace_integration_ignored": 99,
+    "workspace_ignored": 133,
+    "workspace_integration_ignored": 98,
     "workspace_integration_tests": 3332,
-    "workspace_lib_ignored": 22,
-    "workspace_lib_tests": 5191,
-    "workspace_tests": 8523
+    "workspace_lib_ignored": 21,
+    "workspace_lib_tests": 5202,
+    "workspace_tests": 7859
   }
 }

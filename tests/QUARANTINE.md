@@ -283,7 +283,7 @@ manually after legitimate changes.
 | `tests/energyplus_comparison_tests.rs` | `test_900_series_comprehensive_comparison` | Long-running | Run explicitly when needed; not in CI | `pending` |
 | `src/validation/thermal_mass.rs` | `test_thermal_mass_*` | #3629 | Restore meaningful damping assertions after the Session-84 physics regression is fixed; wildcard per the src/ audit-invariant exception | `pending` |
 | `fluxion-behavior/src/occupancy.rs` | `test_statistical_validation_*` | #3705 (flaky: OS-seeded 10k-step Markov statistical assertion) | Fixed-seed sampling or variance-aware tolerance; keep the distribution check live in CI. Closed: fixed seeds (`SmallRng::seed_from_u64`, distinct per Monte Carlo trajectory); `#[ignore]` removed; 5% relative-error assertion kept (resolves #3705, absorbs duplicate #3683) | `closed` |
-| `fluxion-wasm/tests/wasm_integration_tests.rs` | `wasm_run_full_annual_*` | #3703 (wasm step() toy model; #3595 smoke test) | wasm `FluidSimulation::step()` wired to the real engine (or test re-pointed at an engine-backed surface); then restore the published ±15% band assertion | `pending` |
+| `fluxion-wasm/tests/wasm_integration_tests.rs` | `wasm_run_full_annual_*` | #3703 (wasm step() toy model; #3595 smoke test) | RESOLVED via #3624: `step()` now drives the embedded WD600 annual weather schedule (`weather: "ASHRAE_600"`), test un-ignored. Cooling asserts the published ±15% band (satisfied); heating asserts a recorded regression band — the toy single-node RC model has no solar aperture, so published heating-band parity still requires an engine-backed wasm surface | `closed (resolve #3624)` |
 | `tests/energyplus_comparison_tests.rs` | `test_900_series_comprehensive_comparison` | Long-running | Run explicitly when needed; not in CI | `pending` |
 
 =======
@@ -306,7 +306,7 @@ manually after legitimate changes.
 | `tests/ashrae_140_case_970_validation.rs` | `test_case_970_annual_energy_band` | #3585 / §LIMIT-23 (#3552) | Multi-zone air-mass distribution gap closed (GaugeSolver #1465/#1462 rework) | `pending` |
 | `tests/diagnostics/case_950_hvac_mode_seasonal_attribution.rs` | `test_case_950_hvac_mode_seasonal_attribution` | #3551 / §LIMIT-24 | Implement per-month attribution walk (follow-up PR, GaugeSolver #1465/#1462) | `pending` |
 | `tests/diagnostics/case_970_multi_zone_seasonal_attribution.rs` | `case_970_per_zone_seasonal_attribution_placeholder` | #3552 / §LIMIT-23 | Implement per-month per-zone attribution | `pending` |
-| `fluxion-wasm/tests/wasm_integration_tests.rs` | `wasm_run_full_annual_*` | #3703 (wasm step() toy model; #3595 smoke test) | wasm `FluidSimulation::step()` wired to the real engine (or test re-pointed at an engine-backed surface); then restore the published ±15% band assertion | `pending` |
+| `fluxion-wasm/tests/wasm_integration_tests.rs` | `wasm_run_full_annual_*` | #3703 (wasm step() toy model; #3595 smoke test) | RESOLVED via #3624: `step()` now drives the embedded WD600 annual weather schedule (`weather: "ASHRAE_600"`), test un-ignored. Cooling asserts the published ±15% band (satisfied); heating asserts a recorded regression band — the toy single-node RC model has no solar aperture, so published heating-band parity still requires an engine-backed wasm surface | `closed (resolve #3624)` |
 
 ---
 

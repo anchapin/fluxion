@@ -19,6 +19,8 @@ use crate::napi::zero_copy_matrix::into_zero_copy_float64_array;
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
 use crate::sim::thermal_selector::ThermalSelector;
+use crate::weather::epw::EpwWeatherSource;
+use crate::weather::WeatherSource;
 use napi::bindgen_prelude::Float64Array;
 
 /// JavaScript-accessible StateExtractor for ML training data extraction.
@@ -149,6 +151,18 @@ impl StateExtractor {
     /// - `heatingLoads`: Heating energy demand [timesteps]
     /// - `coolingLoads`: Cooling energy demand [timesteps]
     /// - `solarGains`: Solar heat gains [timesteps x num_zones]
+    ///
+    /// # Issue #3624 — real per-step HVAC loads
+    ///
+    /// With `use_surrogates: false` (the default) the extractor runs the
+    /// same per-step physics loop the engine-side Case 600 validation suite
+    /// uses (`run_annual_simulation` in `tests/ashrae_140_case_600_series.rs`):
+    /// a 14-day ASHRAE 140 §B2 warm-up, then 8760 hourly `step_physics`
+    /// calls driven by the real `assets/weather/WD600.epw` dry-bulb schedule
+    /// (TMY repetition for multi-year requests). `heatingLoads` /
+    /// `coolingLoads` are the engine's own metered per-step energies —
+    /// nothing is broadcast, approximated, or fabricated. The legacy
+    /// surrogate path (below) keeps the #3667 annual-average broadcast.
     #[napi]
     pub fn run_simulation(
         &mut self,
@@ -158,6 +172,88 @@ impl StateExtractor {
         let steps = years as usize * 8760;
         self.steps = steps;
 
+        if use_surrogates {
+            self.run_simulation_surrogate_path(steps)
+        } else {
+            self.run_simulation_physics_path(steps)
+        }
+    }
+
+    /// Issue #3624 physics path: real per-step loads from `step_physics`,
+    /// driven by the WD600 (ASHRAE 140 §B2) weather schedule.
+    fn run_simulation_physics_path(
+        &mut self,
+        steps: usize,
+    ) -> napi::bindgen_prelude::Result<StateMatrices> {
+        let weather = load_wd600_epw()?;
+
+        // ASHRAE 140 §B2 warm-up (14 days) before the metered year —
+        // mirrors `run_annual_simulation` in
+        // `tests/ashrae_140_case_600_series.rs`. Warm-up energy is
+        // discarded, and the model's annual-energy trackers are reset so
+        // the model state stays consistent with the metered arrays below
+        // (the same "only this loop's energy is reported" contract
+        // `solve_timesteps` documents).
+        const WARMUP_STEPS: usize = 14 * 24;
+        for step in 0..WARMUP_STEPS {
+            let weather_data = weather
+                .get_hourly_data(step)
+                .map_err(|e| napi::bindgen_prelude::Error::from_reason(e.to_string()))?;
+            self.inner.solar.weather = Some(weather_data.clone());
+            let energy_kwh = self
+                .inner
+                .step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+            check_energy_finite(energy_kwh, "run_simulation")?;
+        }
+        self.inner.hvac.annual_heating_energy = 0.0;
+        self.inner.hvac.annual_cooling_energy = 0.0;
+
+        // Metered year: per-step engine energy (positive = heating,
+        // negative = cooling — the engine's own classification, see
+        // `run_annual_simulation`), plus per-step zone temperatures.
+        let mut zone_flat = Vec::with_capacity(steps * self.num_zones);
+        let mut heating_w = Vec::with_capacity(steps);
+        let mut cooling_w = Vec::with_capacity(steps);
+        for step in 0..steps {
+            // TMY repetition: `get_hourly_data` errors past hour 8759, so
+            // multi-year requests wrap modulo the schedule length.
+            let weather_data = weather
+                .get_hourly_data(step % 8760)
+                .map_err(|e| napi::bindgen_prelude::Error::from_reason(e.to_string()))?;
+            self.inner.solar.weather = Some(weather_data.clone());
+            let energy_kwh = self
+                .inner
+                .step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+            // Divergence guard (Issue #3633 contract, per step now).
+            check_energy_finite(energy_kwh, "run_simulation")?;
+            push_step_energy_kwh(&mut heating_w, &mut cooling_w, energy_kwh);
+
+            let temps = self.inner.get_temperatures();
+            for z in 0..self.num_zones {
+                zone_flat.push(temps.get(z).copied().unwrap_or(20.0));
+            }
+        }
+
+        let mass_temperatures = self.inner.get_temperatures();
+        let mass_flat = flatten_mass_temperatures(&mass_temperatures, self.num_zones, steps);
+
+        Ok(StateMatrices {
+            zone_temperatures: into_zero_copy_float64_array(zone_flat),
+            mass_temperatures: into_zero_copy_float64_array(mass_flat),
+            heating_loads: into_zero_copy_float64_array(heating_w),
+            cooling_loads: into_zero_copy_float64_array(cooling_w),
+            solar_gains: into_zero_copy_float64_array(vec![0.0; steps * self.num_zones]),
+        })
+    }
+
+    /// Legacy surrogate path (`use_surrogates: true`): `solve_timesteps`
+    /// with the #3667 annual-average broadcast. Kept so the documented
+    /// surrogate evaluation mode is preserved unchanged; the default
+    /// physics path (above) is where the real per-step loads live.
+    fn run_simulation_surrogate_path(
+        &mut self,
+        steps: usize,
+    ) -> napi::bindgen_prelude::Result<StateMatrices> {
         let surrogates = SurrogateManager::new().map_err(|e| {
             napi::bindgen_prelude::Error::from_reason(format!(
                 "Failed to create SurrogateManager: {}",
@@ -167,14 +263,11 @@ impl StateExtractor {
 
         let eui = self
             .inner
-            .solve_timesteps(steps, &surrogates, use_surrogates, None, None, None);
+            .solve_timesteps(steps, &surrogates, true, None, None, None);
         // Issue #3633: propagate divergence as Err instead of silently
         // fabricating StateMatrices. `solve_timesteps` returns the EUI as
         // f64; NaN / +-Inf indicate the inner physics step diverged.
-        // The `Some(_) / None` branch below is reached only when the
-        // simulation actually completed (with empty hourly temps in the
-        // None case) — never when it diverged.
-        check_solve_finite(eui, "run_simulation")?;
+        check_energy_finite(eui, "run_simulation")?;
 
         let hourly_temps = self.inner.get_hourly_temperatures();
         let zone_temperatures = match hourly_temps {
@@ -198,31 +291,12 @@ impl StateExtractor {
 
         let mass_temperatures = self.inner.get_temperatures();
 
-        // Issue #3634: when `get_temperatures()` returns an empty Vec,
-        // `mass_temperatures.len() - 1` underflows on `usize` (panic in
-        // debug, wrap to `usize::MAX` in release, then out-of-bounds panic
-        // on the index). Route the flatten through a helper that uses
-        // `.get(...).copied().unwrap_or(20.0)` so empty mass_temperatures
-        // and zero num_zones both produce the same placeholder fill the
-        // zone_temperatures branch already does at line 183.
         let mass_flat = flatten_mass_temperatures(&mass_temperatures, self.num_zones, steps);
 
-        // Issue #3667: replace the fabricated `vec![0.0; steps]` with the
-        // per-step power derived from the model's accumulated annual
-        // heating/cooling energy. `solve_timesteps` populates
-        // `self.inner.hvac.annual_heating_energy` and
-        // `annual_cooling_energy` (in kWh) as a side effect of running
-        // `step_physics`; reading them back and broadcasting the average
-        // power across the 8760 hourly timesteps turns the previous
-        // fabricated-zero output into an honest reflection of what the
-        // simulation actually computed. Per-step variation is lost
-        // (everything is constant power at the annual average), which is
-        // the same trade-off the #3624 / `model.heating_energy /
-        // cooling_energy` direction takes — that direction is the proper
-        // per-step fix and remains owned by #3624. The JS-side test
-        // (`npm/test.js:707` ASHRAE 600 band) sums the array and divides
-        // by 1000 to recover kWh; the math is preserved by the constant-
-        // power broadcast.
+        // Issue #3667: per-step power derived from the model's accumulated
+        // annual heating/cooling energy (constant-power broadcast). On this
+        // path only — the default physics path returns the engine's real
+        // per-step loads (Issue #3624).
         let heating_loads = populate_step_loads(self.inner.hvac.annual_heating_energy, steps);
         let cooling_loads = populate_step_loads(self.inner.hvac.annual_cooling_energy, steps);
 
@@ -265,7 +339,7 @@ impl StateExtractor {
             .inner
             .solve_timesteps(steps, &surrogates, use_surrogates, None, None, None);
         // Issue #3633: same divergence check as `run_simulation` above.
-        check_solve_finite(eui, "extract_zone_temperatures")?;
+        check_energy_finite(eui, "extract_zone_temperatures")?;
 
         let hourly_temps = self.inner.get_hourly_temperatures();
         match hourly_temps {
@@ -296,19 +370,68 @@ impl Default for StateExtractor {
     }
 }
 
-/// Issue #3633 helper: validate that `solve_timesteps` returned a finite EUI.
+/// Issue #3633 helper: validate that a simulation energy figure is finite.
 ///
-/// `solve_timesteps` returns `f64` rather than `Result`; NaN / +Inf / -Inf
-/// are the divergence signal. Propagating the check through this helper
-/// keeps both `run_simulation` and `extract_zone_temperatures` consistent
-/// and lets us unit-test the rule without spinning up a full `StateExtractor`.
-fn check_solve_finite(eui: f64, caller: &str) -> napi::bindgen_prelude::Result<()> {
-    if eui.is_finite() {
+/// `solve_timesteps` returns `f64` rather than `Result`, and the per-step
+/// `step_physics` energies are `f64` as well; NaN / +Inf / -Inf are the
+/// divergence signal. Propagating the check through this helper keeps
+/// `run_simulation` (both paths) and `extract_zone_temperatures`
+/// consistent and lets us unit-test the rule without spinning up a full
+/// `StateExtractor`.
+fn check_energy_finite(energy: f64, caller: &str) -> napi::bindgen_prelude::Result<()> {
+    if energy.is_finite() {
         Ok(())
     } else {
         Err(napi::bindgen_prelude::Error::from_reason(format!(
-            "solve_timesteps diverged in {caller} (eui={eui}); refusing to fabricate StateMatrices (Issue #3633)"
+            "simulation diverged in {caller} (energy={energy}); refusing to fabricate StateMatrices (Issue #3633)"
         )))
+    }
+}
+
+/// Issue #3624 helper: locate and parse the canonical WD600 (ASHRAE 140
+/// §B2) weather file — the same annual drive the engine-side Case 600
+/// validation suite uses (`tests/ashrae_140_case_600_series.rs` loads
+/// `assets/weather/WD600.epw` from the repo root).
+///
+/// Candidate paths cover both supported CWDs: the repo root (`cargo test`,
+/// `cargo run`) and the `npm/` package directory (`npm test` runs node with
+/// `working-directory: npm` in CI). The first readable candidate wins; a
+/// failure lists everything tried so operators can diagnose a missing
+/// checkout.
+fn load_wd600_epw() -> napi::bindgen_prelude::Result<EpwWeatherSource> {
+    const CANDIDATES: [&str; 2] = ["assets/weather/WD600.epw", "../assets/weather/WD600.epw"];
+    for candidate in CANDIDATES {
+        match EpwWeatherSource::from_file(candidate) {
+            Ok(source) => return Ok(source),
+            Err(_) => continue,
+        }
+    }
+    Err(napi::bindgen_prelude::Error::from_reason(format!(
+        "WD600 weather file not found (tried {:?} relative to the current \
+         directory). The napi StateExtractor's per-step physics path (Issue \
+         #3624) requires the canonical ASHRAE 140 §B2 weather fixture from \
+         the repository checkout — run from the repo root or the npm/ \
+         package directory.",
+        CANDIDATES
+    )))
+}
+
+/// Issue #3624 helper: classify one step's metered engine energy (kWh) and
+/// push it onto the per-step load arrays in watts (1-hour timesteps: W·h).
+///
+/// This is the engine's own classification — positive = heating, negative
+/// = cooling, zero = free-floating hour — identical to
+/// `run_annual_simulation` in `tests/ashrae_140_case_600_series.rs`. The
+/// JS client recovers kWh via `sum(W) / 1000.0` (see `npm/test.js`).
+fn push_step_energy_kwh(heating: &mut Vec<f64>, cooling: &mut Vec<f64>, energy_kwh: f64) {
+    if energy_kwh > 0.0 {
+        heating.push(energy_kwh * 1000.0);
+        cooling.push(0.0);
+    } else {
+        // Zero (free-floating hour) and negative (cooling) both land here;
+        // the cooling magnitude of 0.0 kWh is 0.0 W.
+        heating.push(0.0);
+        cooling.push((-energy_kwh) * 1000.0);
     }
 }
 
@@ -363,9 +486,11 @@ fn flatten_mass_temperatures(
 ///   `Number.isFinite` guard in `npm/test.js:725` already rejects
 ///   (Issue #2911 / #3633 pattern).
 ///
-/// Per-step temporal variation is intentionally NOT recovered — the
-/// proper per-step load tracker is owned by #3624. This helper is the
-/// minimum honest replacement for the fabricated zero path.
+/// Per-step temporal variation is intentionally NOT recovered on this
+/// helper — Issue #3624 added the real per-step physics path
+/// (`run_simulation_physics_path`) for that; this broadcast now serves only
+/// the legacy surrogate path (`use_surrogates: true`), where
+/// `solve_timesteps` exposes annual totals rather than a metered series.
 fn populate_step_loads(annual_kwh: f64, steps: usize) -> Vec<f64> {
     if steps == 0 {
         return Vec::new();
@@ -379,26 +504,29 @@ fn populate_step_loads(annual_kwh: f64, steps: usize) -> Vec<f64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{check_solve_finite, flatten_mass_temperatures, populate_step_loads};
+    use super::{
+        check_energy_finite, flatten_mass_temperatures, populate_step_loads, push_step_energy_kwh,
+    };
 
     // ====================================================================
-    // Issue #3633 regression tests: solve_timesteps divergence propagation
+    // Issue #3633 regression tests: divergence propagation
     // ====================================================================
 
     #[test]
-    fn check_solve_finite_passes_finite_values() {
-        assert!(check_solve_finite(0.0, "t").is_ok());
-        assert!(check_solve_finite(123.456, "t").is_ok());
-        assert!(check_solve_finite(-1.0e9, "t").is_ok());
-        assert!(check_solve_finite(f64::MIN_POSITIVE, "t").is_ok());
-        assert!(check_solve_finite(f64::MAX, "t").is_ok());
+    fn check_energy_finite_passes_finite_values() {
+        assert!(check_energy_finite(0.0, "t").is_ok());
+        assert!(check_energy_finite(123.456, "t").is_ok());
+        assert!(check_energy_finite(-1.0e9, "t").is_ok());
+        assert!(check_energy_finite(f64::MIN_POSITIVE, "t").is_ok());
+        assert!(check_energy_finite(f64::MAX, "t").is_ok());
     }
 
-    /// Issue #3633 regression: a NaN EUI from `solve_timesteps` must surface
-    /// as `Err` from the napi method, not as a fabricated `StateMatrices`.
+    /// Issue #3633 regression: a NaN energy from `solve_timesteps` or a
+    /// per-step `step_physics` call must surface as `Err` from the napi
+    /// method, not as a fabricated `StateMatrices`.
     #[test]
-    fn check_solve_finite_rejects_nan() {
-        let err = check_solve_finite(f64::NAN, "run_simulation").unwrap_err();
+    fn check_energy_finite_rejects_nan() {
+        let err = check_energy_finite(f64::NAN, "run_simulation").unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("diverged") && msg.contains("run_simulation") && msg.contains("#3633"),
@@ -407,13 +535,68 @@ mod tests {
     }
 
     #[test]
-    fn check_solve_finite_rejects_pos_inf() {
-        assert!(check_solve_finite(f64::INFINITY, "t").is_err());
+    fn check_energy_finite_rejects_pos_inf() {
+        assert!(check_energy_finite(f64::INFINITY, "t").is_err());
     }
 
     #[test]
-    fn check_solve_finite_rejects_neg_inf() {
-        assert!(check_solve_finite(f64::NEG_INFINITY, "t").is_err());
+    fn check_energy_finite_rejects_neg_inf() {
+        assert!(check_energy_finite(f64::NEG_INFINITY, "t").is_err());
+    }
+
+    // ====================================================================
+    // Issue #3624 regression tests: real per-step load classification
+    // ====================================================================
+
+    /// Positive engine energy is heating, expressed in W for the JS client
+    /// (`sum(W) / 1000.0` recovers kWh); the cooling array stays 0.0 for
+    /// that step.
+    #[test]
+    fn push_step_energy_kwh_classifies_positive_as_heating() {
+        let mut h = Vec::new();
+        let mut c = Vec::new();
+        push_step_energy_kwh(&mut h, &mut c, 2.5);
+        assert_eq!(h, vec![2500.0]);
+        assert_eq!(c, vec![0.0]);
+    }
+
+    /// Negative engine energy is cooling (magnitude in W); the heating
+    /// array stays 0.0 for that step.
+    #[test]
+    fn push_step_energy_kwh_classifies_negative_as_cooling() {
+        let mut h = Vec::new();
+        let mut c = Vec::new();
+        push_step_energy_kwh(&mut h, &mut c, -1.25);
+        assert_eq!(h, vec![0.0]);
+        assert_eq!(c, vec![1250.0]);
+    }
+
+    /// A free-floating (zero-energy) hour records zeros on both arrays —
+    /// same as the engine-side classification (`> 0` heating / `< 0`
+    /// cooling / otherwise uncounted).
+    #[test]
+    fn push_step_energy_kwh_records_zero_energy_hour_as_zeros() {
+        let mut h = Vec::new();
+        let mut c = Vec::new();
+        push_step_energy_kwh(&mut h, &mut c, 0.0);
+        assert_eq!(h, vec![0.0]);
+        assert_eq!(c, vec![0.0]);
+    }
+
+    /// Summing a year of classified steps and dividing by 1000 reconstructs
+    /// the metered kWh totals — the exact identity `npm/test.js` relies on.
+    #[test]
+    fn push_step_energy_kwh_round_trips_metered_kwh() {
+        let steps = [0.5, -0.25, 0.0, 1.0, -2.0];
+        let mut h = Vec::new();
+        let mut c = Vec::new();
+        for &e in &steps {
+            push_step_energy_kwh(&mut h, &mut c, e);
+        }
+        let heating_kwh = h.iter().sum::<f64>() / 1000.0;
+        let cooling_kwh = c.iter().sum::<f64>() / 1000.0;
+        assert!((heating_kwh - 1.5).abs() < 1e-12);
+        assert!((cooling_kwh - 2.25).abs() < 1e-12);
     }
 
     // ====================================================================

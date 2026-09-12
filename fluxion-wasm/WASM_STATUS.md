@@ -18,7 +18,7 @@
 | Method | ThermalModelTrait equivalent | Status | Notes |
 |--------|------------------------------|--------|-------|
 | `new(configJson)` | — | ✅ Complete | JSON-configured constructor |
-| `step(dtHours)` | `solve_timesteps` | ✅ Complete | Enhanced energy balance with per-zone thermal params |
+| `step(dtHours)` | `solve_timesteps` | ✅ Complete | Enhanced energy balance with per-zone thermal params; drives the annual outdoor-temperature schedule when the config names a weather preset (`"ASHRAE_600"` → embedded WD600 dry-bulb series) or passes `outdoorTemps` (Issue #3624) |
 | `get_zone_temps()` | `get_temperatures()` | ✅ Complete | Returns `Vec<f64>` → `Float64Array` |
 | `get_zone_temp(zoneId)` | `get_temperatures()[i]` | ✅ Complete | Bounds-checked single zone |
 | `set_temperatures(temps)` | `set_temperatures()` | ✅ Complete | Bulk temperature initializer |
