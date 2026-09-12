@@ -52,6 +52,8 @@ manually for investigation. They are NOT part of CI gates.
 | `tests/diagnostics/case_940_setback_diagnostic.rs` | `test_case_940_blind_vs_ctf_ratio_pinned` | #2452, #3062 | Add assertions; convert to CI gate | `pending` |
 | `tests/diagnostics/case_940_setback_diagnostic.rs` | `test_case_940_setback_recovery_window_diagnostic` | #2452, #3062 | Add assertions; convert to CI gate | `pending` |
 | `tests/diagnostics/case_195_weather_source_diagnostic.rs` | `test_case_195_weather_source_comparison` | #3060 (LIMIT-15) | Re-derive reference from E+ TMY3; add assertions | `pending` |
+| `tests/diagnostics/case_950_hvac_mode_seasonal_attribution.rs` | `test_case_950_hvac_mode_seasonal_attribution` | #3551, #2536 | Implement diagnostic per §LIMIT-24 table; add assertions; convert to CI gate | `pending` |
+| `tests/diagnostics/case_970_multi_zone_seasonal_attribution.rs` | `case_970_per_zone_seasonal_attribution_placeholder` | #3552, #2536 | Implement per-month per-zone attribution; add assertions; convert to CI gate | `pending` |
 | `tests/ashrae_140_case_920.rs` | `test_case_920_per_month_attribution` | #2454, #2536 | Add assertions; convert to CI gate | `pending` |
 | `tests/ashrae_140_case_920.rs` | `test_case_920_engine_vs_reference_per_month` | #2454, #2536 | Add assertions; convert to CI gate | `pending` |
 
@@ -125,6 +127,24 @@ documented in `docs/KNOWN_ISSUES.md`. They are tracked by LIMIT-* entries.
 | `tests/ashrae_140_solid_conduction_variants.rs` | `test_case_195_high_mass_walls` | #3064, LIMIT-11, #1465/#1462 | GaugeSolver ships; zero-energy assertion closes | `pending` |
 | `tests/ashrae_140_solid_conduction_variants.rs` | `test_solid_conduction_variants_integration` | LIMIT-20, #3218, LIMIT-11, #3064, #1465/#1462 | GaugeSolver ships; HighMass variant integration closes | `pending` |
 | `tests/gauge_validation_case_900.rs` | `test_case_900_gauge_fiver1c_diurnal_parity` | #1669 | GaugeSolver thermal mass implementation lands (Option A) | `pending` |
+
+### Strict-energy-gate observation cohort (Issue #3572)
+
+These tests are `#[ignore]`-quarantined because they assert the strict
+ASHRAE 140 ±15% annual-energy band while the engine's measured H/C sits
+outside it; the §3572 strict-energy-gate workflow observes the metric
+(the gate fails only on regression beyond `regression_tolerance_pp`).
+Baseline gap is recorded in each `#[ignore]` reason.
+
+| Test File | Test Name | Blocking Issue(s) | Un-Ignore Criteria | Status |
+|-----------|-----------|------------------|-------------------|--------|
+| `tests/zone_balance_eplus_isolation.rs` | `test_case_800_annual_energy_ashrae140_tolerance` | #3572 | Engine re-enters the ASHRAE 140-2023 Annex B ±15% band; lower the baseline in the test file when it does | `pending` |
+| `tests/zone_balance_eplus_isolation.rs` | `test_case_810_annual_energy_ashrae140_tolerance` | #3572 | Engine re-enters the ASHRAE 140-2023 Annex B ±15% band; lower the baseline in the test file when it does | `pending` |
+| `tests/zone_balance_eplus_isolation.rs` | `test_case_920_annual_energy_ashrae140_tolerance` | #3572, #2453, LIMIT-05 | GaugeSolver (#1465/#1462) ships; 900-series bidirectional annual-energy gap closed | `pending` |
+| `tests/zone_balance_eplus_isolation.rs` | `test_case_950_annual_energy_ashrae140_tolerance` | #3572, #3551, LIMIT-24, LIMIT-17 | GaugeSolver (#1465/#1462) ships; Case 950 (HVAC mode) annual cooling re-enters band (~14× under per §LIMIT-24) | `pending` |
+| `tests/zone_balance_eplus_isolation.rs` | `test_case_960_annual_energy_ashrae140_tolerance` | #3572, #3061, LIMIT-14 | GaugeSolver (#1465/#1462) ships; sunspace air-mass distribution gap closed | `pending` |
+| `tests/zone_balance_eplus_isolation.rs` | `test_case_970_annual_energy_ashrae140_tolerance` | #3572, #3552, LIMIT-23 | GaugeSolver (#1465/#1462) ships; multi-zone air-mass distribution gap closed | `pending` |
+| `tests/ashrae_140_case_970_validation.rs` | `test_case_970_annual_energy_band` | #3585, #3552, LIMIT-23 | GaugeSolver (#1465/#1462) ships; Case 970 H/C re-enters the ASHRAE 140-2017 §B6.7 envelope | `pending` |
 
 ### LIMIT-22 (gauge-build-only, `cfg_attr(feature = "gauge-solver", ignore)`, Issue #3297)
 
@@ -261,15 +281,11 @@ manually after legitimate changes.
 | `tests/weather_vs_energyplus.rs` | `test_humidity_ratio_psychrometrics_vs_energyplus` | #2673 | Formula generator embedded; issue #2673 resolves | `pending` |
 | `tests/weather_vs_energyplus.rs` | `test_synthetic_miami_tmy_matches_reference` | #2673 | Formula generator embedded; issue #2673 resolves | `pending` |
 | `tests/energyplus_comparison_tests.rs` | `test_900_series_comprehensive_comparison` | Long-running | Run explicitly when needed; not in CI | `pending` |
+| `src/validation/thermal_mass.rs` | `test_thermal_mass_*` | #3629 | Restore meaningful damping assertions after the Session-84 physics regression is fixed; wildcard per the src/ audit-invariant exception | `pending` |
+| `fluxion-wasm/tests/wasm_integration_tests.rs` | `wasm_run_full_annual_*` | #3703 (wasm step() toy model; #3595 smoke test) | wasm `FluidSimulation::step()` wired to the real engine (or test re-pointed at an engine-backed surface); then restore the published ±15% band assertion | `pending` |
 | `tests/energyplus_comparison_tests.rs` | `test_900_series_comprehensive_comparison` | Long-running | Run explicitly when needed; not in CI | `pending` |
-| `src/validation/thermal_mass.rs` | `test_thermal_mass_*` | #3629 | Restore meaningful damping assertions (original: mass temp within [-50, 100] °C after 24 timesteps) after the Session-84 physics regression is fixed — mass temperature reaches 141 °C with low target_tau_hours (2.0); placeholder body asserts nothing. Wildcard (not exact name) is deliberate: this is a `src/` unit test, outside the auditor's `tests/**` scan, so an exact name would be a structural ghost false-positive per the audit's own `*` convention | `pending` |
 
-> `src/` unit-test quarantines (like the Phase A8 section above) fall outside the
-> `tests/**` audit-invariant of this registry (Issue #3443) — the auditor scans
-> `tests/**/*.rs` only. They are tracked here for completeness. The `*` wildcard
-> on the test name above uses the audit's documented wildcard convention so the
-> row is not reported as a ghost (the scanner cannot see `src/` ignores).
-
+=======
 ## Category: Strict-Energy-Gate & Structural Diagnostics (Issue #3443 reconciliation)
 
 > Reconciliation section: these 10 `#[ignore]` attributes landed on `develop`
@@ -287,7 +303,6 @@ manually after legitimate changes.
 | `tests/zone_balance_eplus_isolation.rs` | `test_case_960_annual_energy_ashrae140_tolerance` | #3572 | Engine re-enters ±15% band; lower in-file baseline | `pending` |
 | `tests/zone_balance_eplus_isolation.rs` | `test_case_970_annual_energy_ashrae140_tolerance` | #3572 | Engine re-enters ±15% band; lower in-file baseline | `pending` |
 | `tests/ashrae_140_case_970_validation.rs` | `test_case_970_annual_energy_band` | #3585 / §LIMIT-23 (#3552) | Multi-zone air-mass distribution gap closed (GaugeSolver #1465/#1462 rework) | `pending` |
-| `tests/ashrae_140_case_970_validation.rs` | `test_case_970_validator_accepts_canonical_midpoints` | #3585 / §LIMIT-23 (#3552) | Multi-zone air-mass distribution gap closed (GaugeSolver #1465/#1462 rework) | `pending` |
 | `tests/diagnostics/case_950_hvac_mode_seasonal_attribution.rs` | `test_case_950_hvac_mode_seasonal_attribution` | #3551 / §LIMIT-24 | Implement per-month attribution walk (follow-up PR, GaugeSolver #1465/#1462) | `pending` |
 | `tests/diagnostics/case_970_multi_zone_seasonal_attribution.rs` | `case_970_per_zone_seasonal_attribution_placeholder` | #3552 / §LIMIT-23 | Implement per-month per-zone attribution | `pending` |
 | `fluxion-wasm/tests/wasm_integration_tests.rs` | `wasm_run_full_annual_*` | #3703 (wasm step() toy model; #3595 smoke test) | wasm `FluidSimulation::step()` wired to the real engine (or test re-pointed at an engine-backed surface); then restore the published ±15% band assertion | `pending` |
@@ -298,8 +313,8 @@ manually after legitimate changes.
 
 | Category | Count | Status |
 |----------|-------|--------|
-| Diagnostic tests (#2536) | 13 | `pending` |
-| Structural gaps (LIMIT-*) | ~49 (3 gauge-build-only, Issue #3297; 3 9R4C legacy pool, Issue #3599) | `pending` |
+| Diagnostic tests (#2536) | 15 | `pending` |
+| Structural gaps (LIMIT-*) | ~56 (3 gauge-build-only, Issue #3297; 3 9R4C legacy pool, Issue #3599; 7 strict-energy-gate / Case 970 cohort, Issue #3572 / #3585) | `pending` |
 | Performance/memory (dhat + BDF + batch) | 17 | `pending` |
 | Hardware-dependent (GPU) | 1 | `pending` |
 | Calibration/pending data | 8 | `pending` |
@@ -307,13 +322,18 @@ manually after legitimate changes.
 | CI infrastructure | 2 | `pending` |
 | Manual baseline regen | 4 | `pending` |
 | Other/unclassified | 13 | `pending` |
-| Strict-energy-gate & structural diagnostics (Issue #3443 reconciliation) | 10 | `pending` |
 | **Total** | **~120** | |
 
 (82 orphan entries were triaged into this registry by Issue #3443; the totals
 above include the 23 pre-existing entries and the 82 newly-added ones. The 3
 gauge-build-only `cfg_attr(...)` ignores live in the structural-cohort section
 above; the audit scanner counts only unconditional `#[ignore]` attributes.)
+
+2026-09-11 (PR improve/quarantine-burndown): 9 orphan `#[ignore]`s audited and
+registered — 7 strict-energy/Case-970 structural rows (Issue #3572 / #3585,
+LIMIT-05/14/17/23/24) and 2 diagnostic placeholder rows (Issue #3551 / #3552).
+`test_case_970_validator_accepts_canonical_midpoints` was un-ignored (its
+assertions validate the validator, not the engine band, and it passes).
 
 ---
 
@@ -330,4 +350,4 @@ When a blocking issue is resolved, the test owner should:
 ---
 
 *Generated by `scripts/generate_quarantine_registry.py` (Issue #3211, #3393, #3443)*
-*Last Updated: 2026-09-11 (Issue #3629: `test_thermal_mass_temperature_damping` quarantined — placeholder body asserts nothing, `src/` audit-invariant exception; Issue #3443 reconciliation: back-filled 10 missing rows for the #3572/#3585/#3551/#3552 ignores, wildcarded the 3 src/ 9R4C scratch_pool rows per the audit's wildcard convention)*
+*Last Updated: 2026-09-11 (Issue #3629: `test_thermal_mass_temperature_damping` quarantined, `src/` audit-invariant exception; PR improve/quarantine-burndown: 9 orphan `#[ignore]`s registered (Issues #3572/#3585/#3551/#3552) with the #3443 reconciliation's wildcard convention for the 3 src/ 9R4C scratch_pool rows; `test_case_970_validator_accepts_canonical_midpoints` un-ignored after verified pass)*
