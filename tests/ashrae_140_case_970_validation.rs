@@ -311,14 +311,13 @@ fn test_case_970_reference_data_loading() {
 
 /// `Case970Validator` consumes real engine output (not the band midpoint
 /// itself) and surfaces a finite gap.
-#[ignore = "Issue #3585: kept #[ignore]'d while the multi-zone air-mass \
-            distribution gap is open (docs/KNOWN_ISSUES.md §LIMIT-23, \
-            Issue #3552 — GaugeSolver #1465/#1462 architectural rework \
-            required to close the band). Re-runs the engine on the spec, \
-            drives Case970Validator with the measured H/C, and asserts the \
-            validator returns a finite non-negative error_pct consistent \
-            with the ±15% band comparator. To run: cargo test -p fluxion \
-            --test ashrae_140_case_970_validation -- --ignored"]
+///
+/// NOTE (2026-09-11, PR improve/quarantine-burndown): this test was
+/// `#[ignore]`-quarantined under Issue #3585 / §LIMIT-23, but its
+/// assertions validate the *validator* (finite non-negative error_pct,
+/// real engine output, never a hardcoded midpoint) — strict pass/fail on
+/// the engine band was deliberately removed, so the test passes
+/// independently of the open physics gap and is live in CI.
 #[test]
 fn test_case_970_validator_accepts_canonical_midpoints() {
     let spec = ASHRAE140Case::Case970.spec();
