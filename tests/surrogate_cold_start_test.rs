@@ -21,12 +21,35 @@
 //!    cold/warm ratio would otherwise slip through.
 //!
 //! 3. **The cold/warm ratio is bounded.** Across the median of 3
-//!    (cold, warm, cold, warm, cold, warm) cycles the cold-call latency must
-//!    stay within `MAX_COLD_WARM_RATIO` (default 1.5×) of the warm-call
-//!    latency. The previous Absolute Perf Gate (#2693) only measured the
+//!    (cold, warm) cycles the cold-call latency must stay within
+//!    `MAX_COLD_WARM_RATIO` (default 1.5×) of the warm-call latency.
+//!    The previous Absolute Perf Gate (#2693) only measured the
 //!    warm path, so a PR adding 400 ms to first-call cost passed without
 //!    tripping the gate — the post-deploy latency spike was invisible to
 //!    CI. This gate closes that gap.
+//!
+//! ## Issue #3685 hardening (warm-sample guard)
+//!
+//! On 2026-09-11 this gate failed spuriously on 3 PRs (#3670, #3678,
+//! #3679): the warm-time measurement intermittently read ~0.002–0.003
+//! ms on the trivial CI fixture, and dividing the healthy cold time by
+//! such a collapsed denominator inflated the cold/warm ratio to 10–16.
+//! The measurement is hardened accordingly:
+//!
+//! - **Epsilon guard** — warm samples below `WARM_EPSILON_MS` (0.01 ms)
+//!   are invalid and are never used as the ratio denominator.
+//! - **Bounded re-measure** — warm batches of `WARM_BATCH_SIZE` calls
+//!   are re-measured up to `WARM_MAX_BATCH_ATTEMPTS` times until enough
+//!   valid samples exist.
+//! - **Robust statistic** — the ratio denominator is the p95 of the
+//!   valid warm samples (see `tests/cold_start_guard/mod.rs`), not a
+//!   single reading.
+//! - **Unmeasurable ≠ failed, but never fabricated** — when valid warm
+//!   samples cannot be gathered, the `Cold/warm ratio:` line is omitted
+//!   from the parse contract and the CI checker treats the ratio as
+//!   null: skipped on the trivial fixture (cold < `trivial_fixture_ms`),
+//!   FAILED on a non-trivial workload where the ratio must be
+//!   verifiable.
 //!
 //! ## Acceptance criteria (Issue #2919)
 //!
@@ -77,6 +100,15 @@ use fluxion::ai::surrogate::SurrogateManager;
 use std::path::Path;
 use std::time::Instant;
 
+// Issue #3685 warm-sample guard: epsilon filter + bounded re-measure +
+// p95 robust statistic. The pure helpers live in a shared module so the
+// regression tests in `tests/cold_start_guard_test.rs` can exercise them
+// without the `ort` feature.
+#[path = "cold_start_guard/mod.rs"]
+mod cold_start_guard;
+
+use cold_start_guard::warm_p95_statistic;
+
 /// Path to the tiny pass-through ONNX fixture shipped under `assets/`.
 /// The model takes `float32[1, 6]` and returns the first input value as
 /// `float32[1, 1]` (deterministic pass-through used to keep measurement
@@ -114,6 +146,21 @@ const MAX_COLD_WARM_RATIO: f64 = 1.5;
 /// #2693 / #2772 / #2922 perf-gate convention.
 const NUM_CYCLES: usize = 3;
 
+/// Number of timed warm `predict_loads_onnx` calls per measurement batch
+/// (Issue #3685 fix #2: "run warm measurement with more iterations").
+/// The previous code took the median of just 3 warm calls per cycle;
+/// 9 per batch feeds the p95 robust statistic with a pool large enough
+/// that a minority of collapsed artifacts cannot dominate it.
+const WARM_BATCH_SIZE: usize = 9;
+
+/// Bounded re-measure attempts for the warm batch (Issue #3685 fix #1:
+/// "re-measure (bounded retries)"). After this many batches without
+/// gathering [`WARM_MIN_VALID_SAMPLES`] valid (>= `WARM_EPSILON_MS`)
+/// samples, the warm statistic is `None` — the ratio is reported as
+/// UNMEASURABLE and downstream gate checks treat an unmeasurable ratio
+/// on a non-trivial workload as a FAILURE (fail-closed).
+const WARM_MAX_BATCH_ATTEMPTS: usize = 3;
+
 /// Skip the calling test gracefully if the dummy ONNX fixture is missing.
 /// The fixture is git-ignored under certain packaging profiles (see
 /// `tests/surrogate_onnx_error_path_tests.rs`), so this keeps the test
@@ -135,8 +182,28 @@ macro_rules! skip_if_no_dummy {
     };
 }
 
-/// One cycle: construct a fresh manager, measure cold-start, then warm,
-/// then measure warm steady-state. Returns `(cold_ms, warm_ms)`.
+/// Per-cycle measurement outcome (Issue #3685 hardened).
+struct CycleMeasurement {
+    /// Cold-start latency of the FIRST predict on a fresh manager (ms).
+    cold_ms: f64,
+    /// Median of the RAW warm readings for this cycle (ms), unfiltered.
+    /// Always numeric — it feeds the `Warm steady-state:` parse contract
+    /// and the `warm_max_ms` absolute bound, both of which stay
+    /// meaningful even when the ratio is unmeasurable.
+    warm_raw_median_ms: f64,
+    /// p95 over the VALID warm samples (>= `WARM_EPSILON_MS`), or `None`
+    /// when bounded re-measure could not gather
+    /// [`WARM_MIN_VALID_SAMPLES`] valid samples (Issue #3685: collapsed
+    /// warm readings are discarded, never divided by).
+    warm_p95_ms: Option<f64>,
+    /// How many raw warm samples were gathered across all batch attempts.
+    warm_total: usize,
+    /// How many of those survived the epsilon guard.
+    warm_valid: usize,
+}
+
+/// One cycle: construct a fresh manager, measure cold-start, then measure
+/// warm steady-state with the Issue #3685 guard.
 ///
 /// We intentionally rebuild `SurrogateManager` per cycle — that is the
 /// whole point of the gate. `SurrogateManager::load_onnx` constructs a
@@ -145,7 +212,14 @@ macro_rules! skip_if_no_dummy {
 /// the full session-construction cost (ort environment init + model
 /// parse + session allocation). A reused manager would warm-pool a
 /// session and erase the cold-path signal.
-fn run_cold_warm_cycle(input: &[f64; 6]) -> (f64, f64) {
+///
+/// Warm measurement (Issue #3685): up to [`WARM_MAX_BATCH_ATTEMPTS`]
+/// batches of [`WARM_BATCH_SIZE`] timed calls (each batch preceded by one
+/// discarded residual-warm-up call). Samples below `WARM_EPSILON_MS` are
+/// invalid and never become the ratio denominator; once the pooled valid
+/// sample count reaches [`WARM_MIN_VALID_SAMPLES`], the p95 of the valid
+/// samples is the cycle's warm statistic.
+fn run_cold_warm_cycle(input: &[f64; 6]) -> CycleMeasurement {
     // ---- COLD: freshly constructed manager, first predict ----
     let mgr_cold =
         SurrogateManager::load_onnx(DUMMY_ONNX_MODEL).expect("cold: load_onnx must succeed");
@@ -172,32 +246,55 @@ fn run_cold_warm_cycle(input: &[f64; 6]) -> (f64, f64) {
     );
 
     // ---- WARM: reuse the same manager, measure steady-state ----
-    // Three warm calls — the first warm call still pays some residual
-    // allocator / page-cache cost, so we discard it and take the median
-    // of the next three to surface steady-state.
-    let _ = mgr_cold.predict_loads_onnx(input);
+    let mut pooled: Vec<f64> = Vec::with_capacity(WARM_BATCH_SIZE * WARM_MAX_BATCH_ATTEMPTS);
+    let mut warm_p95_ms = None;
+    for attempt in 1..=WARM_MAX_BATCH_ATTEMPTS {
+        // The first call of each batch still pays some residual
+        // allocator / page-cache cost — discard it unmeasured.
+        let _ = mgr_cold.predict_loads_onnx(input);
 
-    let mut warm_samples_ms = Vec::with_capacity(3);
-    for _ in 0..3 {
-        let warm_start = Instant::now();
-        let warm_output = mgr_cold
-            .predict_loads_onnx(input)
-            .expect("warm: predict_loads_onnx must succeed");
-        warm_samples_ms.push(warm_start.elapsed().as_secs_f64() * 1000.0);
-        assert!(
-            !warm_output.is_empty(),
-            "warm predict_loads_onnx returned empty output"
-        );
-        assert!(
-            warm_output.iter().all(|v| v.is_finite()),
-            "warm predict_loads_onnx returned non-finite value(s): {:?}",
-            warm_output
+        for _ in 0..WARM_BATCH_SIZE {
+            let warm_start = Instant::now();
+            let warm_output = mgr_cold
+                .predict_loads_onnx(input)
+                .expect("warm: predict_loads_onnx must succeed");
+            pooled.push(warm_start.elapsed().as_secs_f64() * 1000.0);
+            assert!(
+                !warm_output.is_empty(),
+                "warm predict_loads_onnx returned empty output"
+            );
+            assert!(
+                warm_output.iter().all(|v| v.is_finite()),
+                "warm predict_loads_onnx returned non-finite value(s): {:?}",
+                warm_output
+            );
+        }
+
+        warm_p95_ms = warm_p95_statistic(&pooled);
+        if warm_p95_ms.is_some() {
+            break;
+        }
+        eprintln!(
+            "[surrogate-cold-start-diag] warm batch attempt {attempt}/{} produced only {} \
+             valid sample(s) of {} (epsilon floor breached) — re-measuring",
+            WARM_MAX_BATCH_ATTEMPTS,
+            cold_start_guard::valid_warm_samples(&pooled).len(),
+            pooled.len()
         );
     }
-    warm_samples_ms.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let warm_ms = warm_samples_ms[warm_samples_ms.len() / 2]; // median of 3
 
-    (cold_ms, warm_ms)
+    let warm_valid = cold_start_guard::valid_warm_samples(&pooled).len();
+    let mut raw_sorted = pooled.clone();
+    raw_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let warm_raw_median_ms = raw_sorted[raw_sorted.len() / 2];
+
+    CycleMeasurement {
+        cold_ms,
+        warm_raw_median_ms,
+        warm_p95_ms,
+        warm_total: pooled.len(),
+        warm_valid,
+    }
 }
 
 /// Compute the median of an f64 slice. Panics if the slice is empty.
@@ -276,56 +373,61 @@ fn test_surrogate_cold_start_under_100ms_or_2_5x_warm_median() {
     let input = [42.0_f64, 1.0, 2.0, 3.0, 4.0, 5.0];
 
     let mut cold_samples: Vec<f64> = Vec::with_capacity(NUM_CYCLES);
-    let mut warm_samples: Vec<f64> = Vec::with_capacity(NUM_CYCLES);
-    let mut ratio_samples: Vec<f64> = Vec::with_capacity(NUM_CYCLES);
+    let mut warm_raw_medians: Vec<f64> = Vec::with_capacity(NUM_CYCLES);
+    // Per-cycle p95 statistics from cycles where the epsilon guard
+    // gathered enough valid samples (Issue #3685).
+    let mut warm_p95s: Vec<f64> = Vec::with_capacity(NUM_CYCLES);
+    let mut warm_total = 0usize;
+    let mut warm_valid = 0usize;
 
     for cycle in 1..=NUM_CYCLES {
-        let (cold_ms, warm_ms) = run_cold_warm_cycle(&input);
-        // On the 193-byte dummy CI fixture warm latency is sub-
-        // millisecond (sub-microsecond on a fast runner) because the
-        // pass-through model has no real cost. The cold/warm ratio is
-        // meaningless in that regime — we fall back to the absolute
-        // `COLD_START_MAX_MS` (100 ms) bound. On the real 256 MiB
-        // shipped model warm latency is ~5-10 ms and the ratio bound
-        // is the binding signal.
-        //
-        // We pick 0.001 ms (1 microsecond) as the "ratio meaningless"
-        // threshold. Anything below that is dominated by timer noise,
-        // not real ORT forward-pass cost.
-        let ratio = if warm_ms >= 0.001 {
-            cold_ms / warm_ms
-        } else {
-            f64::NAN
-        };
-
+        let m = run_cold_warm_cycle(&input);
         eprintln!(
-            "[surrogate-cold-start-diag] cycle={} cold_ms={:.3} warm_ms={:.3} ratio={}",
-            cycle, cold_ms, warm_ms, ratio
+            "[surrogate-cold-start-diag] cycle={} cold_ms={:.3} warm_raw_median_ms={:.3} \
+             warm_p95_ms={} valid={}/{}",
+            cycle,
+            m.cold_ms,
+            m.warm_raw_median_ms,
+            m.warm_p95_ms
+                .map(|v| format!("{v:.3}"))
+                .unwrap_or_else(|| "none".to_string()),
+            m.warm_valid,
+            m.warm_total
         );
-
-        cold_samples.push(cold_ms);
-        warm_samples.push(warm_ms);
-        ratio_samples.push(ratio);
+        cold_samples.push(m.cold_ms);
+        warm_raw_medians.push(m.warm_raw_median_ms);
+        warm_total += m.warm_total;
+        warm_valid += m.warm_valid;
+        if let Some(p95) = m.warm_p95_ms {
+            warm_p95s.push(p95);
+        }
     }
 
     let med_cold = median(&cold_samples);
-    let med_warm = median(&warm_samples);
-    let med_ratio_finite: Vec<f64> = ratio_samples
-        .iter()
-        .copied()
-        .filter(|r| r.is_finite())
-        .collect();
-    let med_ratio = if med_ratio_finite.is_empty() {
-        f64::NAN
+    let med_warm = median(&warm_raw_medians);
+
+    // Issue #3685: the ratio denominator is the ROBUST warm statistic
+    // (median of the per-cycle p95s over valid samples), never a single
+    // reading and never a collapsed sample. The ratio is only reported
+    // when at least 2 of the 3 cycles produced a valid warm statistic;
+    // otherwise it is UNMEASURABLE (absent from the parse contract) and
+    // the downstream gate falls back to the absolute bounds — or fails
+    // closed on a non-trivial workload (cold >= trivial_fixture_ms),
+    // where an unverifiable ratio is a failing gate.
+    let warm_stat = if warm_p95s.len() >= 2 {
+        Some(median(&warm_p95s))
     } else {
-        median(&med_ratio_finite)
+        None
     };
+    let med_ratio = warm_stat.map(|w| med_cold / w);
 
     // Stable parse contract for the GitHub Actions step:
     //   `Cold start: <median>ms`
     //   `Warm steady-state: <median>ms`
-    //   `Cold/warm ratio: <median>` (omitted if NaN — warm below the
-    //   1 µs noise floor, ratio is undefined)
+    //   `Cold/warm ratio: <median>` — ONLY when measurable (Issue
+    //   #3685: on the trivial CI fixture the warm path sits below the
+    //   0.01 ms measurement floor, so this line is expected to be
+    //   absent and the workflow/checker treat the ratio as null).
     // The Python parser in performance_dashboard.yml looks for these
     // exact prefixes.
     eprintln!(
@@ -334,13 +436,20 @@ fn test_surrogate_cold_start_under_100ms_or_2_5x_warm_median() {
         med_cold,
         COLD_START_MAX_MS,
         med_warm,
-        if med_ratio.is_finite() {
+        if let Some(ratio) = med_ratio {
             format!(
                 "\n[surrogate-cold-start-diag] Cold/warm ratio: {:.3} (test lenient {:.2}, CI strict {:.2})",
-                med_ratio, TEST_LENIENT_RATIO, MAX_COLD_WARM_RATIO
+                ratio, TEST_LENIENT_RATIO, MAX_COLD_WARM_RATIO
             )
         } else {
-            " (warm below 1 µs noise floor; ratio undefined on this fixture)".to_string()
+            format!(
+                "\n[surrogate-cold-start-diag] Cold/warm ratio: unmeasurable — only {} of {} \
+                 warm samples valid (epsilon {:.3} ms); ratio undefined on this fixture \
+                 (Issue #3685)",
+                warm_valid,
+                warm_total,
+                cold_start_guard::WARM_EPSILON_MS
+            )
         }
     );
 
@@ -348,11 +457,15 @@ fn test_surrogate_cold_start_under_100ms_or_2_5x_warm_median() {
     // cold-start latency is within `COLD_START_MAX_MS` (100 ms) OR the
     // cold/warm ratio is within `TEST_LENIENT_RATIO` (2.5×). On a real
     // 256 MiB shipped model the absolute bound is binding; on the
-    // 193-byte dummy CI fixture the ratio is undefined (warm below the
-    // 1 µs noise floor) and the absolute bound is the only signal —
-    // that's correct behaviour, the dummy fixture trivially meets it.
+    // 193-byte dummy CI fixture the ratio is unmeasurable (warm below
+    // the epsilon measurement floor, Issue #3685) and the absolute
+    // bound is the only signal — that's correct behaviour, the dummy
+    // fixture trivially meets it.
     let abs_ok = med_cold <= COLD_START_MAX_MS;
-    let ratio_ok = med_ratio.is_finite() && med_ratio <= TEST_LENIENT_RATIO;
+    let ratio_ok = match med_ratio {
+        Some(r) => r <= TEST_LENIENT_RATIO,
+        None => false,
+    };
     assert!(
         abs_ok || ratio_ok,
         "SURROGATE COLD-START GATE FAILED (Issue #2919)\n\
@@ -361,26 +474,29 @@ fn test_surrogate_cold_start_under_100ms_or_2_5x_warm_median() {
          \n\
          This is the cost of the FIRST `predict_loads_onnx` call on a\n\
          freshly constructed `SurrogateManager` — the ort session-pool\n\
-         `get_or_create_session` (`src/ai/surrogate.rs:1247`) constructs\n\
+         `get_or_create_session` (`src/ai/surrogate/manager.rs`) constructs\n\
          the session lazily on the first call. In production the first\n\
          `/v1/simulate` request after a fresh process pays this cost;\n\
          before #2919 only the warm path was gated, so a regression that\n\
          added 400 ms to first-call cost passed CI invisibly.\n\
          \n\
          Samples (cold_ms): {:?}\n\
-         Samples (warm_ms): {:?}\n\
-         Samples (ratio):   {:?}",
+         Samples (warm_raw_median_ms): {:?}\n\
+         Warm p95 statistic: {}\n\
+         Valid warm samples: {}/{}",
         med_cold,
         COLD_START_MAX_MS,
-        if med_ratio.is_finite() {
-            format!("{:.3}", med_ratio)
-        } else {
-            "NaN (warm below noise floor)".to_string()
-        },
+        med_ratio
+            .map(|r| format!("{r:.3}"))
+            .unwrap_or_else(|| "unmeasurable".to_string()),
         TEST_LENIENT_RATIO,
         cold_samples,
-        warm_samples,
-        ratio_samples,
+        warm_raw_medians,
+        warm_stat
+            .map(|w| format!("{w:.4} ms"))
+            .unwrap_or_else(|| "none (unmeasurable)".to_string()),
+        warm_valid,
+        warm_total,
     );
 }
 
@@ -407,25 +523,40 @@ fn diagnostic_print_cold_warm_cycles() {
 
     let mut cold_samples = Vec::with_capacity(NUM_CYCLES);
     let mut warm_samples = Vec::with_capacity(NUM_CYCLES);
+    let mut warm_p95s = Vec::with_capacity(NUM_CYCLES);
 
     for cycle in 1..=NUM_CYCLES {
-        let (cold_ms, warm_ms) = run_cold_warm_cycle(&input);
-        cold_samples.push(cold_ms);
-        warm_samples.push(warm_ms);
+        let m = run_cold_warm_cycle(&input);
+        cold_samples.push(m.cold_ms);
+        warm_samples.push(m.warm_raw_median_ms);
+        if let Some(p95) = m.warm_p95_ms {
+            warm_p95s.push(p95);
+        }
         eprintln!(
-            "[surrogate-cold-start-diag] cycle={} cold_ms={:.6} warm_ms={:.6}",
-            cycle, cold_ms, warm_ms
+            "[surrogate-cold-start-diag] cycle={} cold_ms={:.6} warm_ms={:.6} warm_p95={}",
+            cycle,
+            m.cold_ms,
+            m.warm_raw_median_ms,
+            m.warm_p95_ms
+                .map(|v| format!("{v:.6}"))
+                .unwrap_or_else(|| "none".to_string())
         );
     }
 
+    let warm_stat = if warm_p95s.len() >= 2 {
+        format!("{:.6}", median(&warm_p95s))
+    } else {
+        "unmeasurable".to_string()
+    };
     eprintln!(
-        "[surrogate-cold-start-diag] median cold_ms={:.6} median warm_ms={:.6} median ratio={:.6}\n\
+        "[surrogate-cold-start-diag] median cold_ms={:.6} median warm_ms={:.6} warm_p95_statistic={}\n\
          Update release_gates.yaml -> benchmark.cold_start if any of these drift:\n\
          - cold_start_max_ms: keep >= the measured median cold_ms (with margin)\n\
          - warm_max_ms:       keep >= the measured median warm_ms (with margin)\n\
-         - max_cold_warm_ratio: keep >= the measured median ratio (with margin)",
+         - max_cold_warm_ratio: keep >= the measured ratio (with margin; ratio uses the \
+         p95-of-valid-warm denominator, Issue #3685)",
         median(&cold_samples),
         median(&warm_samples),
-        median(&cold_samples) / median(&warm_samples),
+        warm_stat,
     );
 }

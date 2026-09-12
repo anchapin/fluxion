@@ -407,6 +407,23 @@ class ReleaseGateChecker:
         # path on `BatchOracle::evaluate_population`, never the FIRST
         # `predict_loads_onnx` call against a freshly constructed
         # `SurrogateManager`.
+        #
+        # Issue #3685 (unmeasurable-ratio handling): the benchmark now
+        # epsilon-guards its warm samples (readings below 0.01 ms are
+        # collapsed-measurement artifacts and are never used as the
+        # ratio denominator) and writes an explicit `cold_warm_ratio:
+        # null` when no valid warm statistic could be gathered. Null is
+        # distinguished from a missing key (which still defaults to 0.0
+        # and, as before, fails the regression check — fail-closed for
+        # broken pipelines):
+        #   - null ratio + cold < trivial_fixture_ms → the ratio-derived
+        #     bounds (2 and 3) are SKIPPED with a loud message; the
+        #     absolute cold/warm bounds remain the binding signal. This
+        #     is the expected steady state on the trivial CI fixture and
+        #     is what removes the spurious 10–16× failures.
+        #   - null ratio + cold ≥ trivial_fixture_ms → bounds 2 and 3
+        #     FAIL: on a real workload the ratio MUST be verifiable, and
+        #     an unverifiable gate is a failing gate (fail-closed).
         cold_ms = metrics.get("cold_start_ms", 0.0)
         max_cold_ms = cold_start_config.get(
             "max_ms", DEFAULTS["benchmark"]["cold_start"]["max_ms"]
@@ -416,6 +433,8 @@ class ReleaseGateChecker:
             "warm_max_ms", DEFAULTS["benchmark"]["cold_start"]["warm_max_ms"]
         )
         ratio = metrics.get("cold_warm_ratio", 0.0)
+        # Issue #3685: explicit null = unmeasurable ratio (never garbage).
+        ratio_unmeasurable = ratio is None
         max_ratio = cold_start_config.get(
             "max_cold_warm_ratio",
             DEFAULTS["benchmark"]["cold_start"]["max_cold_warm_ratio"],
@@ -429,20 +448,32 @@ class ReleaseGateChecker:
         # dominates the cold path and the ratio is naturally ~3× even
         # when no regression occurred. Below
         # `cold_start.trivial_fixture_ms` (default 5 ms) the absolute
-        # cold_ms + baseline-regression checks are the binding signal;
-        # the 1.5× ratio threshold is a sanity check reserved for real
-        # workloads where session construction is a small fraction of
-        # cold-path cost. On a 256 MiB shipped model (cold ≈ 400 ms) the
-        # ratio check fires normally and catches regressions that the
-        # absolute bound alone would miss.
+        # cold_ms + warm_ms checks are the binding signal (Issue #3685:
+        # the ratio-derived bounds — 1.5x ratio and ratio-vs-baseline
+        # regression — are runner-noise-dominated on the trivial fixture
+        # and are skipped there); the 1.5× ratio threshold is a sanity
+        # check reserved for real workloads where session construction
+        # is a small fraction of cold-path cost. On a 256 MiB shipped
+        # model (cold ≈ 400 ms) the ratio check fires normally and
+        # catches regressions that the absolute bound alone would miss.
         trivial_fixture_ms = cold_start_config.get(
             "trivial_fixture_ms",
             DEFAULTS["benchmark"]["cold_start"]["trivial_fixture_ms"],
         )
         ratio_check_applicable = cold_ms >= trivial_fixture_ms
-        ratio_passed = ratio <= max_ratio if max_ratio > 0 else True
-        if not ratio_check_applicable:
-            ratio_passed = True
+        if ratio_unmeasurable:
+            # Issue #3685 fail-closed semantics: on a non-trivial
+            # workload (cold >= trivial_fixture_ms) the 1.5x ratio bound
+            # is the binding regression signal, so an unmeasurable ratio
+            # FAILS the gate — an unverifiable gate is a failing gate.
+            # On the trivial fixture the bound is already skipped below
+            # and the unmeasurable ratio degrades to the absolute
+            # cold/warm bounds (the expected steady state there).
+            ratio_passed = not ratio_check_applicable
+        else:
+            ratio_passed = ratio <= max_ratio if max_ratio > 0 else True
+            if not ratio_check_applicable:
+                ratio_passed = True
 
         # Build a single composite "cold_start" gate that fails when ANY
         # of the three sub-bounds is breached. Mirrors how the
@@ -455,7 +486,19 @@ class ReleaseGateChecker:
             f"cold {cold_ms:.3f}ms (max {max_cold_ms:.1f}ms): {'PASS' if cold_abs_passed else 'FAIL'}",
             f"warm {warm_ms:.3f}ms (max {max_warm_ms:.1f}ms): {'PASS' if warm_abs_passed else 'FAIL'}",
         ]
-        if ratio_check_applicable:
+        if ratio_unmeasurable and ratio_check_applicable:
+            cold_start_message_parts.append(
+                "cold/warm ratio UNMEASURABLE: FAIL (no valid warm statistic above the "
+                "epsilon measurement floor; the ratio bound is binding on a non-trivial "
+                "workload, cold_ms >= trivial_fixture_ms — Issue #3685 fail-closed)"
+            )
+        elif ratio_unmeasurable:
+            cold_start_message_parts.append(
+                "cold/warm ratio UNMEASURABLE: SKIP (warm below the epsilon measurement "
+                "floor on the trivial fixture — absolute cold + warm bounds are the "
+                "binding signal; Issue #3685)"
+            )
+        elif ratio_check_applicable:
             cold_start_message_parts.append(
                 f"cold/warm ratio {ratio:.3f} (max {max_ratio:.2f}): {'PASS' if ratio_passed else 'FAIL'}"
             )
@@ -484,6 +527,7 @@ class ReleaseGateChecker:
                 "absolute_warm": warm_abs_passed,
                 "ratio": ratio_passed,
                 "ratio_check_applicable": ratio_check_applicable,
+                "ratio_unmeasurable": ratio_unmeasurable,
             },
         }
 
@@ -513,33 +557,65 @@ class ReleaseGateChecker:
                         baseline = json.load(f)
                     baseline_ratio = baseline.get("median_ratio")
                     if baseline_ratio and baseline_ratio > 0:
-                        ratio_change_pct = abs(
-                            (ratio - baseline_ratio) / baseline_ratio
-                        )
-                        baseline_regression_passed = (
-                            ratio_change_pct <= regression_tolerance
-                        )
-                        cold_start_details["baseline_ratio"] = baseline_ratio
-                        cold_start_details["ratio_change_pct"] = (
-                            ratio_change_pct * 100.0
-                        )
-                        cold_start_details["regression_tolerance"] = (
-                            regression_tolerance * 100.0
-                        )
-                        if not baseline_regression_passed:
+                        if not ratio_check_applicable:
+                            # Issue #3685: on the trivial fixture the
+                            # cold/warm ratio swings ~5.5x-18x with ZERO
+                            # code change (job-level cache/CPU modes; the
+                            # healthy and collapsed warm distributions
+                            # overlap), so a +/-25% band on the ratio is
+                            # indistinguishable from runner noise — it
+                            # is exactly what failed PRs #3670/#3678/
+                            # #3679 spuriously. The regression check
+                            # therefore applies ONLY on non-trivial
+                            # workloads (cold >= trivial_fixture_ms)
+                            # where the ratio is stable and the <=1.5
+                            # bound is active; there it is enforced
+                            # unchanged, plus fail-closed on an
+                            # unmeasurable ratio.
+                            baseline_regression_passed = True
                             cold_start_message += (
-                                f" | baseline regression: ratio changed "
-                                f"{ratio_change_pct * 100:.1f}% from baseline "
-                                f"{baseline_ratio:.3f} (tolerance "
-                                f"{regression_tolerance * 100:.1f}%) — FAIL"
+                                " | baseline regression: SKIP — cold_ms "
+                                f"{cold_ms:.3f} < trivial_fixture_ms "
+                                f"{trivial_fixture_ms:.1f} (ratio-vs-baseline is "
+                                "runner-noise-dominated on the trivial fixture; "
+                                "Issue #3685)"
+                            )
+                        elif ratio_unmeasurable:
+                            baseline_regression_passed = False
+                            cold_start_message += (
+                                " | baseline regression: FAIL — ratio unmeasurable "
+                                "(no valid warm statistic) on a non-trivial workload; "
+                                "cannot verify the <=25% tolerance (Issue #3685 "
+                                "fail-closed)"
                             )
                         else:
-                            cold_start_message += (
-                                f" | baseline regression: ratio changed "
-                                f"{ratio_change_pct * 100:.1f}% from baseline "
-                                f"{baseline_ratio:.3f} (tolerance "
-                                f"{regression_tolerance * 100:.1f}%) — PASS"
+                            ratio_change_pct = abs(
+                                (ratio - baseline_ratio) / baseline_ratio
                             )
+                            baseline_regression_passed = (
+                                ratio_change_pct <= regression_tolerance
+                            )
+                            cold_start_details["baseline_ratio"] = baseline_ratio
+                            cold_start_details["ratio_change_pct"] = (
+                                ratio_change_pct * 100.0
+                            )
+                            cold_start_details["regression_tolerance"] = (
+                                regression_tolerance * 100.0
+                            )
+                            if not baseline_regression_passed:
+                                cold_start_message += (
+                                    f" | baseline regression: ratio changed "
+                                    f"{ratio_change_pct * 100:.1f}% from baseline "
+                                    f"{baseline_ratio:.3f} (tolerance "
+                                    f"{regression_tolerance * 100:.1f}%) — FAIL"
+                                )
+                            else:
+                                cold_start_message += (
+                                    f" | baseline regression: ratio changed "
+                                    f"{ratio_change_pct * 100:.1f}% from baseline "
+                                    f"{baseline_ratio:.3f} (tolerance "
+                                    f"{regression_tolerance * 100:.1f}%) — PASS"
+                                )
                         cold_start_passed = (
                             cold_start_passed and baseline_regression_passed
                         )

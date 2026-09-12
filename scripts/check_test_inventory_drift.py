@@ -156,14 +156,14 @@ BASELINE_LIB_TESTS = 4314
 BASELINE_LIB_IGNORED = 9
 BASELINE_WORKSPACE_TESTS = 8683
 BASELINE_WORKSPACE_IGNORED = 121
-# 2026-09-09 (Issue #3595): bumped from 303 to 308 to accommodate the
-# pre-existing test-binary count at HEAD (the prior regeneration missed
-# the new binaries that landed in PRs after #3546). The FFI smoke-test
-# PR adds zero new binaries (it only extends the existing
-# fluxion-wasm/tests/wasm_integration_tests.rs); the bump is purely a
-# catch-up to the real source-tree state so the ratchet stops spuriously
-# failing subsequent test-adding PRs.
-BASELINE_TEST_BINARIES = 308
+# 2026-09-12 (Issue #3685): bumped from 308 to 309 for the new
+# ``tests/cold_start_guard_test.rs`` binary — the always-compiled
+# (feature-independent) unit tests for the Multi-Zone Cold Start
+# Gate's warm-sample epsilon guard (``tests/cold_start_guard/mod.rs``).
+# AST-scan test_binaries at HEAD is 309 (308 + this binary); no other
+# ratchet moves (lib/workspace/ignored AST counts are unchanged or
+# below their constants).
+BASELINE_TEST_BINARIES = 309
 
 # Sanity-check constants — the verified cargo counts at HEAD
 # ``12856a9``. Operators checking the drift gate's accuracy can

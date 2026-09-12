@@ -169,8 +169,12 @@ def _bench(
     cv_latency: float = 100.0,
     cold_start_ms: float = 0.0,
     warm_ms: float = 0.0,
-    cold_warm_ratio: float = 0.0,
+    cold_warm_ratio: float | None = 0.0,
 ) -> dict:
+    # Issue #3685: ``cold_warm_ratio=None`` models the explicit JSON null
+    # the cold-start job writes when its epsilon-guarded warm measurement
+    # produced no valid p95 statistic (ratio UNMEASURABLE). A missing key
+    # (pop by the caller) still models a broken pipeline.
     return {
         "metrics": {
             "throughput_configs_per_sec": throughput,
@@ -858,3 +862,181 @@ def test_defaults_is_a_dict_at_module_level(checker):
         assert (
             section in checker.DEFAULTS
         ), f"DEFAULTS is missing top-level section {section!r}"
+
+
+# ---------------------------------------------------------------------------
+# Cold-start gate: unmeasurable-ratio handling (Issue #3685)
+# ---------------------------------------------------------------------------
+
+
+def test_cold_start_unmeasurable_ratio_passes_on_trivial_fixture(checker, tmp_path):
+    """Null ratio + cold < trivial_fixture_ms → ratio bounds SKIP, gate PASS.
+
+    Issue #3685 regression: the failing CI jobs measured warm=0.002 ms
+    (below the 0.01 ms measurement floor), which the old code happily
+    divided by — inflating the ratio to 14-18 and spuriously failing the
+    ±25% baseline band. The job now writes ``cold_warm_ratio: null`` and
+    the checker must skip the ratio-derived bounds on the trivial fixture
+    while still enforcing the absolute cold/warm bounds.
+    """
+    config = {
+        "benchmark": {
+            "throughput": {"min_configs_per_sec": 150},
+            "cold_start": {
+                "max_ms": 100.0,
+                "warm_max_ms": 25.0,
+                "max_cold_warm_ratio": 1.5,
+                "trivial_fixture_ms": 5.0,
+                "regression_tolerance": 0.25,
+                # Baseline present — regression must SKIP, not compare.
+                "baseline_file": "cold_start_baseline.json",
+            },
+        }
+    }
+    (tmp_path / "cold_start_baseline.json").write_text('{"median_ratio": 7.537}')
+    rg = _make_checker(checker, tmp_path, config)
+    # The exact collapsed-mode shape from the failing 2026-09-12 job:
+    # cold healthy (0.04 ms << 100), warm collapsed (0.002 ms), ratio null.
+    results = rg.check_benchmark_gates(
+        _bench(cold_start_ms=0.040, warm_ms=0.002, cold_warm_ratio=None)
+    )
+    by_name = {r.name: r for r in results}
+    gate = by_name["cold_start"]
+    assert gate.passed is True, f"gate should PASS on trivial fixture: {gate.message}"
+    assert "UNMEASURABLE: SKIP" in gate.message
+    assert "baseline regression: SKIP" in gate.message
+    assert gate.details["sub_results"]["ratio_unmeasurable"] is True
+    assert gate.details["sub_results"]["ratio_check_applicable"] is False
+
+
+def test_cold_start_unmeasurable_ratio_fails_on_nontrivial_workload(checker, tmp_path):
+    """Null ratio + cold >= trivial_fixture_ms → FAIL (fail-closed).
+
+    On a real workload the ratio is the binding regression signal; an
+    unverifiable gate must be a failing gate (Issue #3685), never a
+    vacuous pass.
+    """
+    config = {
+        "benchmark": {
+            "throughput": {"min_configs_per_sec": 150},
+            "cold_start": {"trivial_fixture_ms": 5.0},
+        }
+    }
+    rg = _make_checker(checker, tmp_path, config)
+    # cold=50 ms: >= trivial_fixture_ms (5.0, ratio binding) but <= 100 ms
+    # (absolute cold passes), with collapsed warm so ONLY the
+    # unmeasurable-ratio clause fails.
+    results = rg.check_benchmark_gates(
+        _bench(cold_start_ms=50.0, warm_ms=0.002, cold_warm_ratio=None)
+    )
+    by_name = {r.name: r for r in results}
+    gate = by_name["cold_start"]
+    assert gate.passed is False, "unmeasurable ratio on non-trivial workload must FAIL"
+    assert "UNMEASURABLE: FAIL" in gate.message
+    assert gate.details["sub_results"]["ratio_unmeasurable"] is True
+    assert gate.details["sub_results"]["ratio_check_applicable"] is True
+
+
+def test_cold_start_numeric_ratio_regression_still_enforced_on_nontrivial(
+    checker, tmp_path
+):
+    """Measurable ratio on a real workload → ≤1.5 + ±25% regression enforced.
+
+    Pins that the Issue #3685 skip logic does NOT loosen the binding
+    regime: bounds 2 and 3 keep their pre-#3685 semantics whenever the
+    ratio is measurable and cold >= trivial_fixture_ms.
+    """
+    config = {
+        "benchmark": {
+            "throughput": {"min_configs_per_sec": 150},
+            "cold_start": {
+                "max_cold_warm_ratio": 1.5,
+                "trivial_fixture_ms": 5.0,
+                "regression_tolerance": 0.25,
+                "baseline_file": "cold_start_baseline.json",
+            },
+        }
+    }
+    (tmp_path / "cold_start_baseline.json").write_text('{"median_ratio": 1.0}')
+    rg = _make_checker(checker, tmp_path, config)
+
+    # cold=50 ms (>= 5.0 trivial floor, <= 100 ms absolute) isolates the
+    # ratio-derived bounds; warm/ratio inputs are independent metrics as
+    # reported by the benchmark.
+    # Within both bounds → PASS.
+    results = rg.check_benchmark_gates(
+        _bench(cold_start_ms=50.0, warm_ms=8.0, cold_warm_ratio=1.2)
+    )
+    gate = {r.name: r for r in results}["cold_start"]
+    assert gate.passed is True, gate.message
+    assert "baseline regression: ratio changed 20.0%" in gate.message
+
+    # Ratio above 1.5 → FAIL (unchanged absolute ratio bound).
+    results = rg.check_benchmark_gates(
+        _bench(cold_start_ms=50.0, warm_ms=8.0, cold_warm_ratio=3.0)
+    )
+    gate = {r.name: r for r in results}["cold_start"]
+    assert gate.passed is False
+    assert "cold/warm ratio 3.000 (max 1.50): FAIL" in gate.message
+
+    # Ratio within 1.5 but >25% off baseline → FAIL (unchanged regression).
+    results = rg.check_benchmark_gates(
+        _bench(cold_start_ms=50.0, warm_ms=8.0, cold_warm_ratio=1.4)
+    )
+    gate = {r.name: r for r in results}["cold_start"]
+    assert gate.passed is False
+    assert "baseline regression: ratio changed 40.0%" in gate.message
+
+
+def test_cold_start_missing_ratio_metric_still_fails_regression(checker, tmp_path):
+    """Missing ``cold_warm_ratio`` key ≠ null: still fails (fail-closed).
+
+    Issue #3685 distinguishes an explicit null (unmeasurable — measured,
+    but no valid warm statistic) from a MISSING metric (broken pipeline
+    that never computed one). Only the null form is eligible for the
+    skip; a missing key defaults to 0.0 and trips the regression check
+    exactly as before this issue.
+    """
+    config = {
+        "benchmark": {
+            "throughput": {"min_configs_per_sec": 150},
+            "cold_start": {
+                "trivial_fixture_ms": 5.0,
+                "regression_tolerance": 0.25,
+                "baseline_file": "cold_start_baseline.json",
+            },
+        }
+    }
+    (tmp_path / "cold_start_baseline.json").write_text('{"median_ratio": 1.0}')
+    rg = _make_checker(checker, tmp_path, config)
+    bench = _bench(cold_start_ms=50.0, warm_ms=8.0)
+    del bench["metrics"]["cold_warm_ratio"]  # simulate a broken pipeline
+    results = rg.check_benchmark_gates(bench)
+    gate = {r.name: r for r in results}["cold_start"]
+    assert gate.passed is False, "missing ratio metric must fail the regression check"
+    assert gate.details["sub_results"]["ratio_unmeasurable"] is False
+
+
+def test_cold_start_unmeasurable_ratio_does_not_poison_with_nan(checker, tmp_path):
+    """A null ratio must never reach the comparison as NaN.
+
+    Before #3685 a NaN ratio flowed into ``abs((ratio - baseline) /
+    baseline) <= tolerance``, and ``nan <= x`` is False in Python — i.e.
+    NaN silently FAILED the regression check. The explicit-null path now
+    bypasses the arithmetic entirely.
+    """
+    config = {
+        "benchmark": {
+            "throughput": {"min_configs_per_sec": 150},
+            "cold_start": {"trivial_fixture_ms": 5.0},
+        }
+    }
+    rg = _make_checker(checker, tmp_path, config)
+    results = rg.check_benchmark_gates(
+        _bench(cold_start_ms=0.030, warm_ms=0.003, cold_warm_ratio=None)
+    )
+    gate = {r.name: r for r in results}["cold_start"]
+    # Trivial fixture → the unmeasurable ratio degrades to the absolute
+    # bounds, which pass — no NaN-poisoned failure.
+    assert gate.passed is True, gate.message
+    assert "nan" not in gate.message.lower()
