@@ -56,28 +56,27 @@ pub(crate) fn fluxion_err_to_pyerr(err: FluxionError) -> PyErr {
 
 #[cfg(feature = "python-bindings")]
 fn py_err_from_fluxion(err: FluxionError) -> PyErr {
-        match err {
-            FluxionError::Validation(msg) => ValidationError::new_err(msg),
-            FluxionError::Surrogate(msg) => SurrogateError::new_err(msg),
-            // Issue #2547 — attach the diagnostics dict as a `diagnostics`
-            // attribute on the Python `SimulationError` so Python clients
-            // can read failing_timestep / failing_zone / max_residual_pct /
-            // last_known_good_timestep without parsing the error message.
-            FluxionError::Simulation(msg, diagnostics) => Python::attach(|py| {
-                let py_err = SimulationError::new_err(msg);
-                if let Some(diag) = diagnostics {
-                    let dict = pyo3::types::PyDict::new(py);
-                    let _ = dict.set_item("failing_timestep", diag.failing_timestep);
-                    let _ = dict.set_item("failing_zone", diag.failing_zone.as_deref());
-                    let _ = dict.set_item("max_residual_pct", diag.max_residual_pct);
-                    let _ =
-                        dict.set_item("last_known_good_timestep", diag.last_known_good_timestep);
-                    let bound = py_err.value(py);
-                    let _ = bound.setattr("diagnostics", dict);
-                }
-                py_err
-            }),
-        }
+    match err {
+        FluxionError::Validation(msg) => ValidationError::new_err(msg),
+        FluxionError::Surrogate(msg) => SurrogateError::new_err(msg),
+        // Issue #2547 — attach the diagnostics dict as a `diagnostics`
+        // attribute on the Python `SimulationError` so Python clients
+        // can read failing_timestep / failing_zone / max_residual_pct /
+        // last_known_good_timestep without parsing the error message.
+        FluxionError::Simulation(msg, diagnostics) => Python::attach(|py| {
+            let py_err = SimulationError::new_err(msg);
+            if let Some(diag) = diagnostics {
+                let dict = pyo3::types::PyDict::new(py);
+                let _ = dict.set_item("failing_timestep", diag.failing_timestep);
+                let _ = dict.set_item("failing_zone", diag.failing_zone.as_deref());
+                let _ = dict.set_item("max_residual_pct", diag.max_residual_pct);
+                let _ = dict.set_item("last_known_good_timestep", diag.last_known_good_timestep);
+                let bound = py_err.value(py);
+                let _ = bound.setattr("diagnostics", dict);
+            }
+            py_err
+        }),
+    }
 }
 
 #[cfg(feature = "python-bindings")]

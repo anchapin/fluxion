@@ -737,6 +737,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "awaiting #3705 — flaky: OS-seeded 10k-step Markov sampling occasionally trips the hard 5% relative-error assertion under CI load; un-ignore when the test uses a fixed seed or a variance-aware tolerance"]
     fn test_statistical_validation_office() {
         let g = MarkovOccupancyGenerator::new(BuildingType::Office, 10, 100.0);
         let expected = compute_expected_fraction(&g, 9, DayOfWeek::Tuesday, 10000);

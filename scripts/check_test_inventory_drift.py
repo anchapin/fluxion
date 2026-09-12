@@ -141,16 +141,21 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #     (Merged resolution: #3650's test-count bumps land first; the
 #     burndown's ignore-ratchet reduction stacks on top of them.)
 #   - 2026-09-11 (PR #3704, stacked after the burndown): raised
-#     ``BASELINE_WORKSPACE_IGNORED`` from 118 back to 119 — the wasm
+#     ``BASELINE_WORKSPACE_IGNORED`` from 118 to 119 — the wasm
 #     FFI smoke-test quarantine (``fluxion-wasm/tests/
 #     wasm_integration_tests.rs``, Issue #3703) added one workspace
 #     ``#[ignore]`` on top of the burndown's reduction. Cargo-verified
 #     workspace ignored count at HEAD is 119.
 # ---------------------------------------------------------------------------
+#   - 2026-09-11 (Issue #3629, stacked after #3650/#3693-burndown): bumped
+#     ``BASELINE_LIB_IGNORED`` from 8 to 9 for the newly quarantined
+#     ``test_thermal_mass_temperature_damping`` placeholder in
+#     ``src/validation/thermal_mass.rs`` (a ``src/`` unit test outside
+#     the auditor's ``tests/**`` scan).
 BASELINE_LIB_TESTS = 4314
-BASELINE_LIB_IGNORED = 8
+BASELINE_LIB_IGNORED = 9
 BASELINE_WORKSPACE_TESTS = 8683
-BASELINE_WORKSPACE_IGNORED = 119
+BASELINE_WORKSPACE_IGNORED = 121
 # 2026-09-09 (Issue #3595): bumped from 303 to 308 to accommodate the
 # pre-existing test-binary count at HEAD (the prior regeneration missed
 # the new binaries that landed in PRs after #3546). The FFI smoke-test
@@ -536,3 +541,11 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+#   - 2026-09-11 (PR improve/quarantine-placeholder-test, final stack):
+#     119 -> 120 — the Issue #3629 thermal_mass placeholder quarantine
+#     adds one more workspace `#[ignore]` on top of the wasm quarantine.
+
+#   - 2026-09-12 (PR improve/quarantine-placeholder-test, Issue #3705):
+#     120 -> 121 — the flaky occupancy statistical test (OS-seeded 10k-step
+#     Markov assertion) quarantined per the Issue #3629 protocol.

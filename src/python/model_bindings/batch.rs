@@ -17,6 +17,7 @@
 //! names, signatures, and docstrings — are unchanged and only the logic
 //! lives here.
 
+use crate::api::error::fluxion_err_to_pyerr;
 use crate::batch_oracle::BatchOracle;
 use crate::python::batch_oracle_bindings::ParameterBounds;
 use pyo3::prelude::*;
@@ -34,7 +35,7 @@ pub(crate) fn get_parameter_bounds() -> ParameterBounds {
 /// the `FluxionError` -> Python exception mapping) when a value is NaN,
 /// infinite, or out of range.
 pub(crate) fn validate_parameters(params: &[f64]) -> PyResult<()> {
-    BatchOracle::validate_parameters(params)?;
+    BatchOracle::validate_parameters(params).map_err(fluxion_err_to_pyerr)?;
     Ok(())
 }
 
