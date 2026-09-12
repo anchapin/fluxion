@@ -84,7 +84,19 @@ QUARANTINE_MD = REPO_ROOT / "tests" / "QUARANTINE.md"
 #     Structural Diagnostics" section) and raises this baseline to 10
 #     with the matching freeze-set entries below.
 # ---------------------------------------------------------------------------
-BASELINE_ORPHANED_IGNORES = 10
+#   - 0 → 9 (Issue #3443 reconciliation, revised by PR improve/quarantine-burndown):
+#     commits bfc9c55 (#3572 — strict-energy-gate baseline extension for
+#     cases 800/810/920/950/960/970) and the #3585 Wave-5/8 +
+#     #3551/#3552 diagnostic-placeholder commits added `#[ignore]`d tests
+#     under `tests/**` without registry rows, silently tripping this
+#     ratchet on `develop`. Back-fill lands the 9 rows (the 10th ignored
+#     test, `test_case_970_validator_accepts_canonical_midpoints`, was
+#     verified live and un-ignored by the burndown PR) in
+#     `tests/QUARANTINE.md` ("Strict-energy-gate observation cohort" +
+#     Diagnostic sections) and raises this baseline to 9 with the
+#     matching freeze-set entries below.
+# ---------------------------------------------------------------------------
+BASELINE_ORPHANED_IGNORES = 9
 BASELINE_GHOST_ROWS = 0
 
 # Freeze snapshot of the orphan allowlist (Issue #3443 ratchet).
@@ -108,7 +120,6 @@ _BASELINE_ORPHANED_IGNORES_SET: frozenset[tuple[str, str]] = frozenset({
     ("tests/zone_balance_eplus_isolation.rs", "test_case_960_annual_energy_ashrae140_tolerance"),
     ("tests/zone_balance_eplus_isolation.rs", "test_case_970_annual_energy_ashrae140_tolerance"),
     ("tests/ashrae_140_case_970_validation.rs", "test_case_970_annual_energy_band"),
-    ("tests/ashrae_140_case_970_validation.rs", "test_case_970_validator_accepts_canonical_midpoints"),
     ("tests/diagnostics/case_950_hvac_mode_seasonal_attribution.rs", "test_case_950_hvac_mode_seasonal_attribution"),
     ("tests/diagnostics/case_970_multi_zone_seasonal_attribution.rs", "case_970_per_zone_seasonal_attribution_placeholder"),
 })
@@ -119,7 +130,25 @@ _BASELINE_ORPHANED_IGNORES_SET: frozenset[tuple[str, str]] = frozenset({
 # "raise the ghost baseline" lever — any new ghost MUST be added here
 # AND to the registry (and `BASELINE_GHOST_ROWS` must be raised to
 # match), with a documenting comment naming the tracking issue.
-_BASELINE_GHOST_ROWS_SET: frozenset[tuple[str, str]] = frozenset()
+#
+# 2026-09-11 (Issue #3599): the 3 Phase-A8 `src/` scratch_pool rows —
+# permanent ghosts because the scanner only covers `tests/`.
+_BASELINE_GHOST_ROWS_SET: frozenset[tuple[str, str]] = frozenset(
+    {
+        (
+            "src/sim/thermal_model_physics/physics_impl/mod.rs",
+            "scratch_pool_9r4c_is_reused_across_timesteps",
+        ),
+        (
+            "src/sim/thermal_model_physics/physics_impl/mod.rs",
+            "scratch_pool_9r4c_restored_on_free_float_early_return",
+        ),
+        (
+            "src/sim/thermal_model_physics/physics_impl/step_9r4c.rs",
+            "scratch_pool_9r4c_is_reused_across_timesteps",
+        ),
+    }
+)
 
 # `#[ignore]` and `#[ignore = "reason"]` (with optional reason string).
 # Tolerant of whitespace and trailing comments.
