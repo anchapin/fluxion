@@ -24,6 +24,9 @@
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+mod wd600_data;
+pub mod weather;
+
 pub use fluxion_fluid::mediums::{Air, Medium, Water};
 pub use fluxion_fluid::ports::{AirPort, BoundaryConditions, HydronicPort};
 
@@ -136,6 +139,15 @@ pub struct FluidSimulationConfig {
     /// Internal gains per zone in W (equipment, lighting, occupants). Defaults to 200 W.
     #[serde(default)]
     pub internal_gains_w: Option<Vec<f64>>,
+
+    /// Explicit hourly outdoor dry-bulb temperature schedule in °C (Issue
+    /// #3624). When present, `step()` drives the energy balance with
+    /// `outdoor_temps[step_index]`, wrapping modulo the schedule length for
+    /// multi-year runs. Takes precedence over the named `weather` preset.
+    /// When neither this nor a recognized `weather` preset is present, the
+    /// pre-#3624 neutral 20 °C outdoor default applies.
+    #[serde(default)]
+    pub outdoor_temps: Option<Vec<f64>>,
 }
 
 fn default_num_zones() -> usize {
@@ -162,6 +174,7 @@ impl Default for FluidSimulationConfig {
             zone_conductance: None,
             infiltration_ach: None,
             internal_gains_w: None,
+            outdoor_temps: None,
         }
     }
 }
@@ -187,6 +200,13 @@ pub struct FluidSimulation {
     zone_conductance: Vec<f64>,
     infiltration_flow: Vec<f64>,
     internal_gains: Vec<f64>,
+    /// Annual outdoor dry-bulb schedule (°C). `None` selects the neutral
+    /// 20 °C default (pre-#3624 behavior). Issue #3624.
+    outdoor_schedule: Option<Vec<f64>>,
+    /// Number of completed `step()` calls — indexes `outdoor_schedule`
+    /// (the f64 `current_hour` accumulates `dt_hours` and is not a reliable
+    /// step counter for variable timesteps). Issue #3624.
+    steps_taken: usize,
 }
 
 #[wasm_bindgen]
@@ -242,11 +262,27 @@ impl FluidSimulation {
             .clone()
             .unwrap_or_else(|| vec![200.0; num_zones]);
 
+        // Issue #3624: resolve the outdoor-temperature drive. An explicit
+        // `outdoor_temps` schedule wins; otherwise a recognized `weather`
+        // preset ("ASHRAE_600" → the embedded WD600 annual dry-bulb series,
+        // the same drive the engine-side Case 600 validation tests use) is
+        // selected; anything else keeps the neutral 20 °C default.
+        let outdoor_schedule = match &config.outdoor_temps {
+            Some(temps) => {
+                for (i, t) in temps.iter().enumerate() {
+                    validate_finite(*t, &format!("outdoor_temps[{}]", i), -100.0, 100.0)?;
+                }
+                Some(temps.clone())
+            }
+            None => weather::preset_schedule(&config.weather).cloned(),
+        };
+
         console_log!(
-            "fluxion-wasm: FluidSimulation created with {} zones, heating={}°C, cooling={}°C",
+            "fluxion-wasm: FluidSimulation created with {} zones, heating={}°C, cooling={}°C, weather_drive={}",
             num_zones,
             heating_sp,
-            cooling_sp
+            cooling_sp,
+            if outdoor_schedule.is_some() { "annual schedule" } else { "neutral 20°C default" }
         );
 
         Ok(FluidSimulation {
@@ -263,6 +299,8 @@ impl FluidSimulation {
             zone_conductance,
             infiltration_flow,
             internal_gains,
+            outdoor_schedule,
+            steps_taken: 0,
         })
     }
 
@@ -281,7 +319,19 @@ impl FluidSimulation {
         self.timestep_hours = dt_hours;
         self.current_hour += dt_hours;
 
-        let outdoor_temp = 20.0;
+        // Issue #3624: drive the energy balance with the configured annual
+        // outdoor-temperature schedule (wrapping modulo the schedule length
+        // for multi-year runs). The previous `let outdoor_temp = 20.0;`
+        // hardcoded a neutral boundary that pinned the ASHRAE 600 envelope
+        // inside its 20–27 °C deadband and structurally produced zero HVAC
+        // energy. Configs without an explicit schedule or recognized
+        // weather preset keep the neutral 20 °C default (backward
+        // compatibility).
+        let outdoor_temp = match self.outdoor_schedule.as_deref() {
+            Some(schedule) => weather::schedule_outdoor_at(self.steps_taken, schedule),
+            None => 20.0,
+        };
+        self.steps_taken += 1;
         let air_density = 1.2;
         let specific_heat = 1006.0;
         let dt_s = dt_hours * 3600.0;
@@ -1265,6 +1315,72 @@ mod tests {
             assert!(sim.apply_parameters(vec![0.1, 10.0, 10.0]).is_ok());
             let mut sim = fresh_sim();
             assert!(sim.apply_parameters(vec![10.0, 40.0, 40.0]).is_ok());
+        }
+
+        /// Issue #3624: `weather: "ASHRAE_600"` must resolve the embedded
+        /// WD600 annual dry-bulb schedule and drive `step()` with it. With
+        /// hour-0 outdoor at -18 °C, a 22 °C zone loses heat fast (the
+        /// deadband branch drops it far below the neutral-20 °C result the
+        /// pre-#3624 hardcoded boundary produced).
+        #[wasm_bindgen_test]
+        fn step_uses_ashrae_600_weather_drive() {
+            let config = FluidSimulationConfig {
+                num_zones: 1,
+                weather: "ASHRAE_600".to_string(),
+                initial_temps: Some(vec![22.0]),
+                heating_setpoint: 20.0,
+                cooling_setpoint: 27.0,
+                ..Default::default()
+            };
+            let mut sim = FluidSimulation::new(&serde_json::to_string(&config).unwrap()).unwrap();
+            sim.step(1.0).unwrap();
+            let cold_drive_temp = sim.get_zone_temps()[0];
+
+            // Same config without a weather drive: outdoor stays at the
+            // neutral 20 °C default, so the zone barely moves.
+            let config_neutral = FluidSimulationConfig {
+                num_zones: 1,
+                weather: String::new(),
+                initial_temps: Some(vec![22.0]),
+                heating_setpoint: 20.0,
+                cooling_setpoint: 27.0,
+                ..Default::default()
+            };
+            let mut sim_neutral =
+                FluidSimulation::new(&serde_json::to_string(&config_neutral).unwrap()).unwrap();
+            sim_neutral.step(1.0).unwrap();
+            let neutral_temp = sim_neutral.get_zone_temps()[0];
+
+            assert!(
+                cold_drive_temp < 15.0,
+                "WD600 hour-0 outdoor (-18 °C) must pull the 22 °C zone down hard, got {cold_drive_temp}"
+            );
+            assert!(
+                (neutral_temp - 22.0).abs() < 1.0,
+                "neutral 20 °C outdoor default must keep the zone near 22 °C, got {neutral_temp}"
+            );
+        }
+
+        /// Issue #3624: an explicit `outdoor_temps` schedule overrides the
+        /// named weather preset and is honored by `step()`.
+        #[wasm_bindgen_test]
+        fn step_honors_explicit_outdoor_temps_schedule() {
+            let config = FluidSimulationConfig {
+                num_zones: 1,
+                weather: "ASHRAE_600".to_string(),
+                outdoor_temps: Some(vec![35.0]), // constant hot boundary
+                initial_temps: Some(vec![22.0]),
+                heating_setpoint: 20.0,
+                cooling_setpoint: 27.0,
+                ..Default::default()
+            };
+            let mut sim = FluidSimulation::new(&serde_json::to_string(&config).unwrap()).unwrap();
+            sim.step(1.0).unwrap();
+            let hot_drive_temp = sim.get_zone_temps()[0];
+            assert!(
+                hot_drive_temp > 22.0,
+                "35 °C explicit outdoor schedule must heat the zone above 22 °C, got {hot_drive_temp}"
+            );
         }
     }
 }

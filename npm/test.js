@@ -713,9 +713,14 @@ describe('@fluxion/native', () => {
     // closes.
     const HEATING_MIN_KWH = 4314.0;
     const HEATING_MAX_KWH = 5836.0;
-    // Recorded on develop CI (ubuntu-latest, default features), 2026-09-11:
-    // runSimulation() ASHRAE 600 annual cooling = 417.42 kWh.
-    const COOLING_RECORDED_KWH = 417.42;
+    // Recorded with the #3624 WD600 weather drive (ubuntu-latest, default
+    // features), 2026-09-12: runSimulation() ASHRAE 600 annual cooling =
+    // 3135.32 kWh. The #3624 fix replaced the #3667 synthetic-cycle
+    // annual-average broadcast (417.42 kWh) with the engine's real
+    // per-step metered loads driven by assets/weather/WD600.epw — the
+    // same drive as the engine-side Case 600 validation suite (which
+    // records 3299.30 kWh for the same case in docs/ASHRAE140_RESULTS.md).
+    const COOLING_RECORDED_KWH = 3135.32;
     const COOLING_REGRESSION_TOLERANCE = 0.15;
     const COOLING_MIN_KWH = COOLING_RECORDED_KWH * (1 - COOLING_REGRESSION_TOLERANCE);
     const COOLING_MAX_KWH = COOLING_RECORDED_KWH * (1 + COOLING_REGRESSION_TOLERANCE);
@@ -757,7 +762,7 @@ describe('@fluxion/native', () => {
       );
       assert.ok(
         cooling_kwh >= COOLING_MIN_KWH && cooling_kwh <= COOLING_MAX_KWH,
-        `ASHRAE 600 annual cooling ${cooling_kwh.toFixed(2)} kWh outside ±15% recorded-value regression band [${COOLING_MIN_KWH.toFixed(2)}, ${COOLING_MAX_KWH.toFixed(2)}] (recorded ${COOLING_RECORDED_KWH} kWh; published band [4275, 5784] deferred to the #2506 cooling-physics gap — see #3703)`,
+        `ASHRAE 600 annual cooling ${cooling_kwh.toFixed(2)} kWh outside ±15% recorded-value regression band [${COOLING_MIN_KWH.toFixed(2)}, ${COOLING_MAX_KWH.toFixed(2)}] (recorded ${COOLING_RECORDED_KWH} kWh; published band [4275, 5784] deferred to the #2506 cooling-physics gap — see #3703 / #3624)`,
       );
     });
   });
