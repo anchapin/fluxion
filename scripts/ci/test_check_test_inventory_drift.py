@@ -387,6 +387,158 @@ def test_update_baseline_rewrites_file(
 
 
 # ---------------------------------------------------------------------------
+# Test 5b: Mode-aware baseline selection (Issue #3711)
+# ---------------------------------------------------------------------------
+
+
+def test_mode_aware_baseline_selection(drift_gate, tmp_path, monkeypatch, capsys):
+    """AST live counts compare against ``metrics_ast``; verified live
+    counts compare against ``metrics`` (Issue #3711).
+
+    The two gate modes count differently by construction (~9% apart on
+    headline metrics), so a single baseline dict cannot serve both. The
+    baseline carries both snapshots; this pins the like-for-like
+    selection in each mode.
+    """
+    baseline = {
+        "schema_version": 1,
+        "metrics": {
+            "lib_tests": 3774,
+            "lib_ignored": 6,
+            "workspace_tests": 7859,
+            "workspace_ignored": 133,
+            "test_binaries": 10,
+        },
+        "metrics_ast": {
+            "lib_tests": 4107,
+            "lib_ignored": 9,
+            "workspace_tests": 8534,
+            "workspace_ignored": 119,
+            "test_binaries": 10,
+        },
+    }
+    ast_inventory = {
+        "schema_version": 1,
+        "totals": {
+            "lib_tests_root": 4107,
+            "lib_ignored_root": 9,
+            "workspace_tests": 8534,
+            "workspace_ignored": 119,
+            "test_binaries": 10,
+        },
+        "by_crate": {},
+    }
+    verified_inventory = {
+        "schema_version": 1,
+        "totals": {
+            "lib_tests_root": 3774,
+            "lib_ignored_root": 6,
+            "workspace_tests": 7859,
+            "workspace_ignored": 133,
+            "test_binaries": 10,
+        },
+        "by_crate": {},
+        "verify": {
+            "matched": True,
+            "lib_tests": 3774,
+            "lib_ignored": 6,
+            "workspace_tests": 7859,
+            "workspace_ignored": 133,
+        },
+    }
+    inventory_path, baseline_path = _redirect_paths(
+        drift_gate, tmp_path, monkeypatch, inventory=ast_inventory, baseline=baseline
+    )
+
+    # 1) AST-mode live counts (no verify block) must compare against
+    #    ``metrics_ast``: under the pre-#3711 single-dict behavior the
+    #    119 vs 133 gap (11.8% > 5% tolerance) would fail.
+    _scrub_argv(monkeypatch)
+    rc = drift_gate.main()
+    assert rc == 0, "AST live counts must compare against metrics_ast"
+
+    # 2) Verified live counts (verify.matched=True) must compare
+    #    against ``metrics``: the same live counts against metrics_ast
+    #    would trip the drift threshold in the other direction.
+    inventory_path.write_text(json.dumps(verified_inventory), encoding="utf-8")
+    _scrub_argv(monkeypatch)
+    rc = drift_gate.main()
+    assert rc == 0, "verified live counts must compare against metrics"
+
+    # 3) Cross-mode comparison still fails (the property that made the
+    #    gate red on develop pre-#3711): verified live counts must NOT
+    #    silently compare against metrics_ast when the baseline lacks
+    #    it — here we only pin that a genuinely mismatched pairing is
+    #    reported, via the AST inventory against the verified metrics
+    #    when metrics_ast is absent.
+    stripped_baseline = {k: v for k, v in baseline.items() if k != "metrics_ast"}
+    baseline_path.write_text(json.dumps(stripped_baseline), encoding="utf-8")
+    inventory_path.write_text(json.dumps(ast_inventory), encoding="utf-8")
+    _scrub_argv(monkeypatch)
+    rc = drift_gate.main()
+    assert rc == 1, "legacy single-dict baselines must keep prior behavior"
+    assert "Drift-threshold violations" in capsys.readouterr().out
+
+
+def test_update_baseline_records_ast_metrics_from_verified_inventory(
+    drift_gate, tmp_path, monkeypatch
+):
+    """``--update-baseline`` on a cargo-verified inventory records BOTH
+    the verified ``metrics`` and the AST-derived ``metrics_ast``
+    snapshot (Issue #3711) so the ``--no-verify`` CI fast path stays
+    like-for-like.
+    """
+    inventory = {
+        "schema_version": 1,
+        "totals": {
+            "lib_tests_root": 3774,
+            "lib_ignored_root": 6,
+            "workspace_tests": 7859,
+            "workspace_ignored": 133,
+            "test_binaries": 309,
+            "workspace_lib_tests": 5202,
+            "workspace_lib_ignored": 21,
+            "workspace_integration_tests": 3332,
+            "workspace_integration_ignored": 98,
+        },
+        "by_crate": {
+            "fluxion": {"lib_tests": 4107, "lib_ignored": 9, "test_binaries": 295}
+        },
+        "verify": {"matched": True},
+    }
+    initial_baseline = {
+        "schema_version": 1,
+        "metrics": {
+            "lib_tests": 4314,
+            "lib_ignored": 9,
+            "workspace_tests": 8683,
+            "workspace_ignored": 121,
+            "test_binaries": 309,
+        },
+    }
+    inventory_path, baseline_path = _redirect_paths(
+        drift_gate, tmp_path, monkeypatch, inventory=inventory, baseline=initial_baseline
+    )
+    monkeypatch.setattr(sys, "argv", [SCRIPT_NAME, "--update-baseline"])
+
+    rc = drift_gate.main()
+    assert rc == 0, "expected --update-baseline to exit 0"
+
+    updated = json.loads(baseline_path.read_text(encoding="utf-8"))
+    assert updated["metrics"]["workspace_ignored"] == 133
+    assert updated["metrics_ast"]["workspace_ignored"] == 119
+    assert updated["metrics_ast"]["workspace_tests"] == 8534
+    assert updated["metrics_ast"]["lib_tests"] == 4107
+    assert updated["metrics_ast"]["lib_ignored"] == 9
+    assert updated["metrics_ast"]["test_binaries"] == 309
+    assert updated["ratchet"]["BASELINE_LIB_TESTS"] == drift_gate.BASELINE_LIB_TESTS
+
+    # The AST inventory file must not leak the temp path into assertions
+    # below (unused but kept for symmetry with the other tests).
+    assert inventory_path.exists()
+
+
+# ---------------------------------------------------------------------------
 # Test 6: --json output shape
 # ---------------------------------------------------------------------------
 

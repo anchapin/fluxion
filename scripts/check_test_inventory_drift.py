@@ -152,10 +152,34 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #     ``test_thermal_mass_temperature_damping`` placeholder in
 #     ``src/validation/thermal_mass.rs`` (a ``src/`` unit test outside
 #     the auditor's ``tests/**`` scan).
+#   - 2026-09-12 (Issue #3711): raised ``BASELINE_WORKSPACE_IGNORED``
+#     from 121 to 133 — the cargo-verified count (``cargo test
+#     --workspace --exclude fluxion-tauri -- --list --ignored``), which
+#     the gate's canonical ``--verify`` mode prefers, has been 133 since
+#     Wave 8 (commit ``6bb98e1``, Issue #3590, 2026-09-09), when the
+#     ratchet was correctly set to 133. The subsequent 133 -> 123
+#     (#3595) -> 119 (#3693 burndown) -> 121 (#3689) recalibrations were
+#     matched against AST-mode captures (their committed inventories
+#     carry no ``verify`` block), and AST mode under-counts cargo by
+#     omitting the 38 `` ```ignore `` doc-comment tests and counting
+#     cfg/feature-gated ``#[ignore]``-shaped attributes a
+#     default-features build does not compile or ignore (e.g. the root
+#     lib's gauge-solver ``cfg_attr`` LIMIT-22 cohort: AST 9 vs cargo 6;
+#     net AST over-count 24: 119 + 38 - 24 = 133). Per-crate attribution
+#     of the verified 133 (lib + integration + ignored doctests):
+#     ``fluxion`` (root) 113 = 6 + 76 + 31; ``fluxion-fluid`` 16 =
+#     11 + 0 + 5; ``fluxion-core`` 2 = 0 + 0 + 2; ``fluxion-twin`` 2 =
+#     1 + 0 + 1; all other crates 0. No net quarantine growth since
+#     Wave 8: #3689's thermal_mass placeholder (+1) was offset by
+#     #3707/#3714 un-ignoring the occupancy statistical and wasm
+#     ``wasm_run_full_annual_*`` smoke tests. Issue #3711 is the
+#     required documentation for this bump.
 BASELINE_LIB_TESTS = 4314
 BASELINE_LIB_IGNORED = 9
 BASELINE_WORKSPACE_TESTS = 8683
-BASELINE_WORKSPACE_IGNORED = 121
+# 2026-09-12 (Issue #3711): 121 -> 133 — see the history entry above for
+# the per-crate attribution and the AST-vs-cargo calibration analysis.
+BASELINE_WORKSPACE_IGNORED = 133
 # 2026-09-12 (Issue #3685): bumped from 308 to 309 for the new
 # ``tests/cold_start_guard_test.rs`` binary — the always-compiled
 # (feature-independent) unit tests for the Multi-Zone Cold Start
@@ -381,8 +405,34 @@ def main() -> int:
     live_binaries = totals.get("test_binaries", 0)
 
     # Stage 2: baseline. For --update-baseline, skip the comparison
-    # entirely and rewrite the file with the live snapshot.
+    # entirely and rewrite the file with the live snapshot. Both the
+    # cargo-verified ``metrics`` and the AST-mode ``metrics_ast``
+    # snapshot are recorded so the gate can compare like-for-like in
+    # either mode (Issue #3711).
     if args.update_baseline:
+        live_is_ast = not bool((live.get("verify") or {}).get("matched"))
+        if live_is_ast:
+            metrics_ast = {
+                "lib_tests": live_lib,
+                "lib_ignored": live_lib_ignored,
+                "workspace_tests": live_workspace,
+                "workspace_ignored": live_workspace_ignored,
+                "test_binaries": live_binaries,
+            }
+        else:
+            # Verified overlay active: the AST counts survive in the
+            # per-crate table and the workspace_lib/integration split.
+            ast_totals = live["totals"]
+            ast_root = live.get("by_crate", {}).get("fluxion", {})
+            metrics_ast = {
+                "lib_tests": ast_root.get("lib_tests", 0),
+                "lib_ignored": ast_root.get("lib_ignored", 0),
+                "workspace_tests": ast_totals.get("workspace_lib_tests", 0)
+                + ast_totals.get("workspace_integration_tests", 0),
+                "workspace_ignored": ast_totals.get("workspace_lib_ignored", 0)
+                + ast_totals.get("workspace_integration_ignored", 0),
+                "test_binaries": ast_totals.get("test_binaries", 0),
+            }
         baseline_snapshot = {
             "schema_version": live.get("schema_version", 1),
             "captured_at": _now_iso(),
@@ -394,6 +444,7 @@ def main() -> int:
                 "workspace_ignored": live_workspace_ignored,
                 "test_binaries": live_binaries,
             },
+            "metrics_ast": metrics_ast,
             "ratchet": {
                 "BASELINE_LIB_TESTS": BASELINE_LIB_TESTS,
                 "BASELINE_LIB_IGNORED": BASELINE_LIB_IGNORED,
@@ -422,7 +473,23 @@ def main() -> int:
     if not baseline_path.is_absolute():
         baseline_path = REPO_ROOT / baseline_path
     baseline = _load_baseline(baseline_path)
+    # Mode-aware comparison (Issue #3711): the two gate modes count
+    # differently by construction (AST-regex scan vs cargo ``--list``
+    # cross-check), so a single baseline metrics dict cannot serve both
+    # — AST and verified counts differ by ~9% on the headline metrics,
+    # which is far beyond the 5% drift tolerance. When the baseline
+    # carries a ``metrics_ast`` snapshot, compare like-for-like: AST
+    # live counts (``--no-verify``, the CI fast path, or a ``--verify``
+    # run whose cargo cross-check failed) are compared against
+    # ``metrics_ast``, and cargo-verified live counts (``--verify`` with
+    # ``verify.matched``) against ``metrics``. Baselines without
+    # ``metrics_ast`` keep the previous single-dict behavior.
+    live_is_ast = (not args.verify) or not bool(
+        (live.get("verify") or {}).get("matched")
+    )
     baseline_metrics = baseline.get("metrics", {})
+    if live_is_ast and "metrics_ast" in baseline:
+        baseline_metrics = baseline["metrics_ast"]
     base_lib = baseline_metrics.get("lib_tests", 0)
     base_lib_ignored = baseline_metrics.get("lib_ignored", 0)
     base_workspace = baseline_metrics.get("workspace_tests", 0)
