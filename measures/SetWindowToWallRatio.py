@@ -175,7 +175,7 @@ class SetWindowToWallRatio(FluxionMeasure):
                 continue
             # Map the flat index back to a zone index using the per-zone
             # surface count (matches ``reshape_surfaces_for_model`` in
-            # src/python/model_bindings.rs).
+            # src/python/model_bindings/model.rs).
             surf_zone = i // per_zone
             if zone_index is not None and surf_zone != int(zone_index):
                 continue
