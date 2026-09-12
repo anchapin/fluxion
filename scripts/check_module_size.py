@@ -112,7 +112,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #     child (``ffd.rs``, ~1.1k LoC) is well below the smallest ratcheted
 #     threshold (~2000 LoC), so no new entry is added — the
 #     decomposition itself is the ratchet-lowering event.
-<<<<<<< HEAD
 #   16 → 15 (surrogate.rs decomposition, tracked under issue #3669):
 #     ``src/ai/surrogate.rs`` (6,909 lines) was decomposed into the
 #     ``src/ai/surrogate/`` submodule tree (session_pool, integrity,
@@ -124,7 +123,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #     future #3574-style audit pass.
 #     (Merge resolution: the #3625 fmi decomposition landed first; the
 #     surrogate lowering stacks on top of it.)
-=======
 #   16 → 15 (model_bindings.rs decomposition, final PR of the 8-PR
 #     improvement run):
 #     ``src/python/model_bindings.rs`` (2,485 lines) was decomposed into the
@@ -138,8 +136,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #     for a future #3574-style audit pass.
 #     (Merge resolution: the #3625 fmi decomposition landed first; the
 #     model_bindings lowering stacks on top of it.)
->>>>>>> origin/develop
-BASELINE_MODULE_SIZE_LIMITS = 15
+#     (Second merge resolution: the model_bindings lowering landed on
+#     develop first; the surrogate lowering stacks on top of it -> 14.)
+BASELINE_MODULE_SIZE_LIMITS = 14
 
 # Freeze snapshot of the gated paths (Issue #3457 ratchet).
 #
