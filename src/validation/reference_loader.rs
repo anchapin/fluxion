@@ -65,7 +65,7 @@ pub struct Ashrae140ReferenceDb {
 }
 
 /// Error types for reference data loading
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ReferenceLoaderError {
     FileNotFound(String),
     InvalidFormat(String),
@@ -94,8 +94,13 @@ impl std::fmt::Display for ReferenceLoaderError {
 
 impl std::error::Error for ReferenceLoaderError {}
 
-/// Cached reference database
-static REFERENCE_DB: std::sync::OnceLock<Option<Ashrae140ReferenceDb>> = std::sync::OnceLock::new();
+/// Cached reference database load result.
+///
+/// Caching the full `Result` (rather than an `Option`) preserves the real
+/// failure cause instead of laundering every error into "file not found"
+/// (Issue #3721).
+static REFERENCE_DB: std::sync::OnceLock<Result<Ashrae140ReferenceDb, ReferenceLoaderError>> =
+    std::sync::OnceLock::new();
 
 /// Default path to reference data
 const DEFAULT_REFERENCE_PATH: &str = "data/ashrae140_reference.json";
@@ -142,17 +147,30 @@ pub fn load_reference_database(path: &str) -> Result<Ashrae140ReferenceDb, Refer
     Ok(db)
 }
 
-/// Get the global reference database, loading from default path if not cached
+/// Get the global reference database, loading from default path if not cached.
+///
+/// # Error propagation
+///
+/// The result of the first load attempt is cached for the lifetime of the
+/// process. On failure, the underlying [`load_reference_database`] error
+/// variant (`FileNotFound`, `ParseError`, `InvalidFormat`, or `HashMismatch`)
+/// is propagated verbatim instead of being collapsed into a generic
+/// "file not found" message (Issue #3721).
+///
+/// # Cache-failure semantics
+///
+/// The cache initializes at most once, so a failed load is **not retried on
+/// subsequent calls**: fixing or restoring the reference file on disk has no
+/// effect on an already-running process; the process must be restarted to
+/// re-attempt the load. Retry support was deliberately not added because it
+/// would require per-call locking on a hot lookup path, and a missing or
+/// corrupt reference database is treated as a start-up failure of a
+/// validation run, not a transient condition.
 pub fn get_reference_db() -> Result<&'static Ashrae140ReferenceDb, ReferenceLoaderError> {
     REFERENCE_DB
-        .get_or_init(|| load_reference_database(DEFAULT_REFERENCE_PATH).ok())
+        .get_or_init(|| load_reference_database(DEFAULT_REFERENCE_PATH))
         .as_ref()
-        .ok_or_else(|| {
-            ReferenceLoaderError::FileNotFound(format!(
-                "Reference database not available. Ensure {} exists.",
-                DEFAULT_REFERENCE_PATH
-            ))
-        })
+        .map_err(Clone::clone)
 }
 
 /// Get benchmark data for a specific case
@@ -192,10 +210,18 @@ mod tests {
                 assert!(db.cases.contains_key("195"), "Should have case 195");
                 assert!(db.cases.contains_key("600"), "Should have case 600");
             }
-            Err(ReferenceLoaderError::FileNotFound(_)) => {
+            Err(ReferenceLoaderError::FileNotFound(path)) => {
+                // Issue #3721: FileNotFound must carry the real path, not the
+                // laundered "Reference database not available" stub message.
+                assert!(
+                    path.contains(DEFAULT_REFERENCE_PATH) && !path.contains("not available"),
+                    "FileNotFound must name the actual path, got: {path}"
+                );
                 println!("Reference file not found - this is expected in test environment");
             }
-            Err(e) => panic!("Unexpected error: {}", e),
+            Err(e) => {
+                println!("Reference DB load failed with real cause surfaced: {e}");
+            }
         }
     }
 
@@ -225,6 +251,40 @@ mod tests {
             None => {
                 println!("Source info not available - reference file not found");
             }
+        }
+    }
+
+    #[test]
+    fn test_corrupt_json_surfaces_parse_error() {
+        // Issue #3721: exercised through `load_reference_database` because the
+        // process-global cache behind `get_reference_db` may already hold a
+        // successful load from another test in the same binary; this is the
+        // exact error `get_reference_db` now propagates verbatim.
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "fluxion_ref_loader_corrupt_{}.json",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(path.with_extension("sha256"));
+        std::fs::write(&path, "{ this is not valid JSON !!").expect("write corrupt fixture");
+
+        let result = load_reference_database(path.to_str().expect("utf-8 temp path"));
+
+        let _ = std::fs::remove_file(&path);
+
+        match result {
+            Err(ReferenceLoaderError::ParseError(msg)) => {
+                assert!(
+                    msg.contains("JSON parse error"),
+                    "error must name the JSON parse failure, got: {msg}"
+                );
+                assert!(
+                    msg.contains("line 1"),
+                    "serde's line/column detail (the real cause) must be preserved, got: {msg}"
+                );
+            }
+            Err(other) => panic!("expected ParseError for corrupt JSON, got: {other:?}"),
+            Ok(_) => panic!("corrupt JSON must not load successfully"),
         }
     }
 }
