@@ -390,7 +390,8 @@ mod ocean {
                 }
             }
 
-            let token = std::env::var("DWAVE_API_TOKEN").unwrap();
+            let token =
+                std::env::var("DWAVE_API_TOKEN").map_err(|_| DwaveError::MissingApiToken)?;
             let base_url =
                 std::env::var("DWAVE_API_URL").unwrap_or_else(|_| SAPI_BASE_URL.to_string());
 
@@ -515,6 +516,90 @@ mod ocean {
 
         fn hardware_constraints(&self) -> crate::quantum::qubo_scaling::DwaveHardwareConstraints {
             crate::quantum::qubo_scaling::DwaveHardwareConstraints::advantage_system64()
+        }
+    }
+
+    /// Regression tests for the `DWAVE_API_TOKEN` contract (#3720): an absent
+    /// token must surface as [`DwaveError::MissingApiToken`], never a panic.
+    ///
+    /// These tests live inside `mod ocean` so they can construct
+    /// [`OceanDwaveClient`] via struct literal without `new()`, which would
+    /// require both a token and network access. With the token unset,
+    /// `submit_ising` fails at the credential read before issuing any HTTP
+    /// request, so no network is needed here.
+    #[cfg(test)]
+    mod missing_token_tests {
+        use super::*;
+
+        /// RAII guard: unsets `DWAVE_API_TOKEN` for the test body and restores
+        /// the original value (if any) on drop so the env var never leaks
+        /// across tests.
+        struct UnsetTokenGuard {
+            original: Option<String>,
+        }
+
+        impl UnsetTokenGuard {
+            fn unset() -> Self {
+                let original = std::env::var("DWAVE_API_TOKEN").ok();
+                std::env::remove_var("DWAVE_API_TOKEN");
+                Self { original }
+            }
+        }
+
+        impl Drop for UnsetTokenGuard {
+            fn drop(&mut self) {
+                match self.original.take() {
+                    Some(value) => std::env::set_var("DWAVE_API_TOKEN", value),
+                    None => std::env::remove_var("DWAVE_API_TOKEN"),
+                }
+            }
+        }
+
+        fn trivial_ising() -> IsingProblem {
+            IsingProblem {
+                h: vec![0.0; 4],
+                j: vec![0.0; 16],
+                c: 0.0,
+                num_variables: 4,
+            }
+        }
+
+        #[test]
+        fn test_submit_ising_returns_missing_api_token_when_env_unset() {
+            let client = OceanDwaveClient {
+                client: Arc::new(Client::new()),
+                solver: "test-solver".to_string(),
+                solver_name: "test-solver".to_string(),
+                max_variables: 8,
+            };
+            let _guard = UnsetTokenGuard::unset();
+
+            let result = client.submit_ising(&trivial_ising());
+
+            assert!(
+                matches!(result, Err(DwaveError::MissingApiToken)),
+                "expected Err(MissingApiToken) without DWAVE_API_TOKEN, got {result:?}"
+            );
+        }
+
+        #[test]
+        fn test_constructors_return_missing_api_token_when_env_unset() {
+            let _guard = UnsetTokenGuard::unset();
+
+            assert!(
+                matches!(
+                    OceanDwaveClient::new(None),
+                    Err(DwaveError::MissingApiToken)
+                ),
+                "new(None) must map the absent token to MissingApiToken"
+            );
+            assert!(
+                matches!(
+                    OceanDwaveClient::new_hybrid(),
+                    Err(DwaveError::MissingApiToken)
+                ),
+                "new_hybrid() must map the absent token to MissingApiToken"
+            );
         }
     }
 }
@@ -859,6 +944,14 @@ mod tests {
         fn is_connected(&self) -> bool {
             true
         }
+
+        fn max_variables(&self) -> usize {
+            usize::MAX
+        }
+
+        fn hardware_constraints(&self) -> crate::quantum::qubo_scaling::DwaveHardwareConstraints {
+            crate::quantum::qubo_scaling::DwaveHardwareConstraints::advantage_system64()
+        }
     }
 
     /// Greedy mock annealer that finds a local optimum via single-bit flips.
@@ -919,6 +1012,14 @@ mod tests {
 
         fn is_connected(&self) -> bool {
             true
+        }
+
+        fn max_variables(&self) -> usize {
+            usize::MAX
+        }
+
+        fn hardware_constraints(&self) -> crate::quantum::qubo_scaling::DwaveHardwareConstraints {
+            crate::quantum::qubo_scaling::DwaveHardwareConstraints::advantage_system64()
         }
     }
 
