@@ -82,9 +82,27 @@ fn analytical_path_eui_is_bit_identical_to_baseline() {
     // Updated 2026-08-28: The ThermalModelData refactoring in commit
     // 0545b03 (issue #2878) changed `model.zone_area` to
     // `model.setpoints.zone_area`. This altered the EUI output order due to
-    // the parallel collection ordering in the analytical evaluation path.
-    // New values: [2.099, 2.959, 0.0]. See issue #3232.
-    let golden = [2.099, 2.959, 0.0];
+    // the parallel collection ordering in the analytical evaluation path,
+    // and changed the EUI magnitudes (the moved field has a different
+    // default): [0.10639163960830303, 0.0, 2.3658276261447644] → the values
+    // below. See issue #3232.
+    //
+    // Corrected 2026-09-12 (issue #3708): PR #3243 (commit 8600e22) pasted
+    // these constants 3-decimal-truncated (`2.099`, `2.959`) instead of the
+    // full-precision f64 values, so this gate has been red since that PR
+    // merged — its test-suite CI jobs were in the cancelled-probe /
+    // Hetzner-overflow fallback state and the binary never executed there.
+    // This is a transcription fix, not a physics change: the analytical-path
+    // output was verified bit-identical (same
+    // [2.099433588906497, 2.9595394892940883, 0.0]) when running this exact
+    // test at 8600e22 (the #3232 golden-set commit) and at develop tip
+    // e8691c0, so no commit in that window — including c20e78a's
+    // deterministic occupancy seeding (#3707) and #3635's BatchOracle error
+    // propagation — perturbed the physics. Transcription deltas were
+    // +4.33588906497e-4 (+2.07e-4 relative) and +5.394892940883e-4
+    // (+1.82e-4 relative), exactly the 3-decimal truncation error of the
+    // committed literals.
+    let golden = [2.099433588906497, 2.9595394892940883, 0.0];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),
