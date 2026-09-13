@@ -64,7 +64,7 @@ Most functionality is behind cargo feature flags; default builds skip the ONNX r
 - **Telemetry / concurrency:** `kafka` (rdkafka telemetry), `loom` (concurrency fuzzing; needs ~32 GB).
 - **Bindings / interop:** `python-bindings`, `python-extension` (maturin wheel build, #2532), `napi-bindings`, `multi-zone`, `wiring-tracing`, `ashrae_140_v2021`, `dhat` (heap profiling).
 
-See [`AGENTS.md`](AGENTS.md) §Toolchain, Security, and Generated Artifacts for the complete, authoritative feature list and build commands.
+See [`docs/FEATURES.md`](docs/FEATURES.md) for the complete, authoritative cargo feature list and build commands; [`AGENTS.md`](AGENTS.md) §Toolchain, Security, and Generated Artifacts covers env vars and security tooling.
 
 ## 🛠 Installation
 
