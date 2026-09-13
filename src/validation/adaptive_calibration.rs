@@ -62,10 +62,14 @@ pub struct CalibrationState {
     pub solar_gain_multiplier: f64,
 }
 
-/// TODO-BLIND-VALIDATION: Calibration state default values represent empirical corrections.
-/// For blind validation: verify these defaults are not applied to validation runs.
-/// These values (thermal_conductivity: 0.16, specific_heat: 840.0, etc.) may need
-/// to be reset to physics-based defaults when running blind validation.
+/// TODO-BLIND-VALIDATION (#3719 — tracked; isolation enforced): these default values
+/// represent empirical corrections (`LEDGER: CAL_ADAPTIVE_*`) and are for operational
+/// (non-blind) calibration only. That they never reach an ASHRAE 140 validation run is
+/// enforced — not merely reviewed — by
+/// [`tests::blind_validation_run_path_is_isolated_from_adaptive_calibration`] in this
+/// file, which fails statically if the validator/case-builder/benchmark run path
+/// references `CalibrationState`, `AdaptiveHourlyCalibrator`, or the Case-195
+/// calibration module (see also the `#3719` note in `calibration_ledger.rs`).
 impl Default for CalibrationState {
     fn default() -> Self {
         Self {
@@ -709,5 +713,214 @@ mod tests {
 
         let result = AdaptiveCalibrationResult::from_calibrator(&calibrator);
         assert!(result.target_met || result.iterations > 0);
+    }
+
+    /// Blind-mode isolation gate (Issue #3719, acceptance criterion 1).
+    ///
+    /// The [`CalibrationState::default`] values (thermal_conductivity 0.16,
+    /// specific_heat 840.0, density 2400.0, infiltration_rate 0.5 — each tagged
+    /// `LEDGER: CAL_ADAPTIVE_*`) are empirical operational-calibration
+    /// corrections and must never reach an ASHRAE 140 validation run. The
+    /// validation run path (validator, case builders, benchmark reference data)
+    /// must construct models purely from `CaseSpec` physics and the raw
+    /// ASHRAE 140 reference tables.
+    ///
+    /// This gate statically scans every run-path source file (same
+    /// `include_str!` + scan pattern as
+    /// `calibration_ledger::tests::calibration_ledger_is_complete`) and fails
+    /// if any of them references the adaptive/Case-195 calibration machinery.
+    /// Threading `CalibrationState` — directly or via
+    /// [`AdaptiveHourlyCalibrator`] — into the blind path makes this test fail.
+    ///
+    /// Note: a value-equality guard would be unsound here because the
+    /// empirical numbers legitimately collide with standard material values
+    /// used by blind runs (gypsum k = 0.16 W/m·K, brick cp = 840 J/kg·K,
+    /// concrete ρ = 2400 kg/m³ in `ashrae140::ConstructionType`); the
+    /// symbol-level guard is the sound enforcement.
+    #[test]
+    fn blind_validation_run_path_is_isolated_from_adaptive_calibration() {
+        let run_path_sources: &[(&str, &str)] = &[
+            (
+                "ashrae_140_validator/mod.rs",
+                include_str!("ashrae_140_validator/mod.rs"),
+            ),
+            ("ashrae140/mod.rs", include_str!("ashrae140/mod.rs")),
+            (
+                "ashrae140/high_mass.rs",
+                include_str!("ashrae140/high_mass.rs"),
+            ),
+            (
+                "ashrae140/case_600.rs",
+                include_str!("ashrae140/case_600.rs"),
+            ),
+            (
+                "ashrae140/case_600_cz3.rs",
+                include_str!("ashrae140/case_600_cz3.rs"),
+            ),
+            (
+                "ashrae140/case_600_cz7.rs",
+                include_str!("ashrae140/case_600_cz7.rs"),
+            ),
+            (
+                "ashrae140/cases/mod.rs",
+                include_str!("ashrae140/cases/mod.rs"),
+            ),
+            (
+                "ashrae140/cases/series_195.rs",
+                include_str!("ashrae140/cases/series_195.rs"),
+            ),
+            (
+                "ashrae140/cases/series_600.rs",
+                include_str!("ashrae140/cases/series_600.rs"),
+            ),
+            (
+                "ashrae140/cases/series_800.rs",
+                include_str!("ashrae140/cases/series_800.rs"),
+            ),
+            (
+                "ashrae140/cases/series_900.rs",
+                include_str!("ashrae140/cases/series_900.rs"),
+            ),
+            (
+                "ashrae140/cases/series_960.rs",
+                include_str!("ashrae140/cases/series_960.rs"),
+            ),
+            (
+                "ashrae140/cases/series_970.rs",
+                include_str!("ashrae140/cases/series_970.rs"),
+            ),
+            (
+                "ashrae140/cases/build_case_routing_tests.rs",
+                include_str!("ashrae140/cases/build_case_routing_tests.rs"),
+            ),
+            ("benchmark.rs", include_str!("benchmark.rs")),
+        ];
+
+        // Symbols that would pull the empirical [`CalibrationState`] defaults
+        // (or the Case-195 regression over the same empirical constants) into
+        // a validation run. Intentionally symbol-precise: prose like
+        // "calibration-factor audit ledger" and `calibration_ledger`
+        // references (which ARE required in Blind mode per Issue #2516) must
+        // not trip this gate.
+        const FORBIDDEN: &[&str] = &[
+            "adaptive_calibration",
+            "case_195_calibration",
+            "AdaptiveHourlyCalibrator",
+            "CalibrationState",
+            "CalibrationParameters",
+            "CalibrationResult",
+            "run_calibration_loop",
+        ];
+
+        let mut violations: Vec<String> = Vec::new();
+        for (file_name, src) in run_path_sources {
+            for (lineno, line) in src.lines().enumerate() {
+                for token in FORBIDDEN {
+                    if line.contains(token) {
+                        violations.push(format!("{file_name}:{}: `{token}`", lineno + 1));
+                    }
+                }
+            }
+        }
+
+        assert!(
+            violations.is_empty(),
+            "blind validation run path references adaptive-calibration machinery \
+             (empirical CalibrationState defaults must never reach ASHRAE 140 runs, #3719):\n  - {}",
+            violations.join("\n  - ")
+        );
+    }
+
+    /// Audit-truthfulness pin (Issue #3719): the LEDGER-tagged empirical
+    /// values in [`CalibrationState::default`] must stay identical to the
+    /// `CAL_ADAPTIVE_*` entries in [`crate::validation::calibration_ledger`],
+    /// because Blind mode emits that ledger as the per-run audit trail. If a
+    /// contributor changes an empirical default, the ledger entry (and this
+    /// assertion) must change with it.
+    #[test]
+    fn default_state_values_match_calibration_ledger() {
+        use crate::validation::calibration_ledger;
+        let ledger_value = |id: &str| {
+            calibration_ledger::lookup(id)
+                .unwrap_or_else(|| panic!("ledger entry missing for {id}"))
+                .value
+        };
+
+        let state = CalibrationState::default();
+        assert_eq!(
+            state.thermal_conductivity,
+            ledger_value(calibration_ledger::CAL_ADAPTIVE_THERMAL_CONDUCTIVITY),
+            "CalibrationState::default().thermal_conductivity diverged from the audit ledger"
+        );
+        assert_eq!(
+            state.specific_heat,
+            ledger_value(calibration_ledger::CAL_ADAPTIVE_SPECIFIC_HEAT),
+            "CalibrationState::default().specific_heat diverged from the audit ledger"
+        );
+        assert_eq!(
+            state.density,
+            ledger_value(calibration_ledger::CAL_ADAPTIVE_DENSITY),
+            "CalibrationState::default().density diverged from the audit ledger"
+        );
+        assert_eq!(
+            state.infiltration_rate,
+            ledger_value(calibration_ledger::CAL_ADAPTIVE_INFILTRATION_RATE),
+            "CalibrationState::default().infiltration_rate diverged from the audit ledger"
+        );
+        assert_eq!(
+            state.internal_gain_multiplier,
+            ledger_value(calibration_ledger::CAL_ADAPTIVE_INTERNAL_GAIN_MULT),
+            "internal_gain_multiplier must stay the ledger-recorded unit gain"
+        );
+        assert_eq!(
+            state.solar_gain_multiplier,
+            ledger_value(calibration_ledger::CAL_ADAPTIVE_SOLAR_GAIN_MULT),
+            "solar_gain_multiplier must stay the ledger-recorded unit gain"
+        );
+    }
+
+    /// Entry-point pin (Issue #3719): both [`AdaptiveHourlyCalibrator`]
+    /// constructors seed the LEDGER-tagged empirical
+    /// [`CalibrationState::default`]. Combined with
+    /// [`Self::blind_validation_run_path_is_isolated_from_adaptive_calibration`],
+    /// this closes the loop — the only way the empirical values can enter any
+    /// run is through these constructors, and the structural gate forbids the
+    /// calibrator from the run path entirely.
+    #[test]
+    fn calibrator_constructors_seed_ledger_tagged_state() {
+        let reference = CalibrationState::default();
+        assert_eq!(reference.internal_gain_multiplier, 1.0);
+        assert_eq!(reference.solar_gain_multiplier, 1.0);
+
+        let from_new = AdaptiveHourlyCalibrator::new();
+        assert_eq!(
+            from_new.get_state().thermal_conductivity,
+            reference.thermal_conductivity
+        );
+        assert_eq!(from_new.get_state().specific_heat, reference.specific_heat);
+        assert_eq!(from_new.get_state().density, reference.density);
+        assert_eq!(
+            from_new.get_state().infiltration_rate,
+            reference.infiltration_rate
+        );
+        assert_eq!(from_new.get_state().internal_gain_multiplier, 1.0);
+        assert_eq!(from_new.get_state().solar_gain_multiplier, 1.0);
+
+        let from_config = AdaptiveHourlyCalibrator::with_config(10, 0.05, 0.2);
+        assert_eq!(
+            from_config.get_state().thermal_conductivity,
+            reference.thermal_conductivity
+        );
+        assert_eq!(
+            from_config.get_state().specific_heat,
+            reference.specific_heat
+        );
+        assert_eq!(from_config.get_state().density, reference.density);
+        assert_eq!(
+            from_config.get_state().infiltration_rate,
+            reference.infiltration_rate
+        );
+        assert_eq!(from_config.get_state().internal_gain_multiplier, 1.0);
+        assert_eq!(from_config.get_state().solar_gain_multiplier, 1.0);
     }
 }
