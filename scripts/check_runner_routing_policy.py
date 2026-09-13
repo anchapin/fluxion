@@ -38,7 +38,7 @@ drift but cannot catch this — the ``runs-on`` expression compiles fine
 and the runner variable resolves correctly; the security issue is that
 the *trust boundary is the wrong way around*.
 
-This script enforces two invariants:
+This script enforces three invariants:
 
 1. Every ``runs-on:`` line that contains ``vars.FLUXION_LINUX_RUNNER`` MUST
    be guarded by the ``github.event_name == 'push' && github.ref ==
@@ -50,6 +50,13 @@ This script enforces two invariants:
    ``runs-on``. A job that is main-only (``if: github.event_name == 'push'
    && github.ref == 'refs/heads/main'``) is permitted to use the unguarded
    pattern, because the job never executes on PR-controlled code.
+3. Any ``vars.FLUXION_LINUX_RUNNER`` occurrence inside a
+   ``strategy.matrix`` block of a PR-triggered workflow MUST carry the same
+   guard inside the matrix entry itself (Issue #3718). Matrix-indirect
+   routing — a matrix entry embedding the runner variable, consumed by a
+   job-level ``runs-on: ${{ matrix.<key> }}`` — is the same
+   trust-boundary inversion as invariant 1 and is invisible to a
+   ``runs-on:``-line scanner.
 
 To keep the parser simple and robust against arbitrary YAML structure
 (``${{ }}`` expressions, folded block scalars, comments between fields),
@@ -105,6 +112,12 @@ _UNSAFE_RUNS_ON_INLINE_RE = re.compile(
 # The continuation lines that hold the actual expression are matched
 # separately in ``_scan_runs_on_blocks``.
 _RUNS_ON_BLOCK_HEADER_RE = re.compile(r"^(?P<indent>\s*)runs-on:\s*[>\|][+-]?\s*$")
+
+# ``strategy.matrix`` block header. A matrix entry embedding
+# ``vars.FLUXION_LINUX_RUNNER`` is consumed by the job-level
+# ``runs-on: ${{ matrix.<key> }}`` indirection, which the
+# ``runs-on:``-line scanner cannot see (Issue #3718).
+_MATRIX_BLOCK_HEADER_RE = re.compile(r"^(?P<indent>\s*)matrix:\s*$")
 
 # Canonical guarded fragment. The OR form
 # (``&& vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest'``) and the AND-only
@@ -292,6 +305,49 @@ def _has_unsafe_runs_on(job_body: str) -> bool:
     return False
 
 
+def _unsafe_matrix_lines(job_body: str) -> list[str]:
+    """Return human-readable descriptions of ``strategy.matrix`` blocks
+    that reference ``vars.FLUXION_LINUX_RUNNER`` without the canonical
+    guard fragment, for error messages.
+
+    A matrix entry embedding the runner variable is consumed by the
+    job's ``runs-on: ${{ matrix.<key> }}`` and therefore routes
+    PR-controlled code onto the self-hosted runner exactly like the
+    direct ``runs-on:`` form (Issue #3718). Both the single-line guarded
+    form and the folded multi-line guarded form pass: the guard fragment
+    only has to appear somewhere in the joined block text.
+    """
+    out: list[str] = []
+    body_lines = job_body.splitlines(keepends=False)
+    for i, line in enumerate(body_lines):
+        m = _MATRIX_BLOCK_HEADER_RE.match(line)
+        if not m:
+            continue
+        indent = len(m.group("indent"))
+        collected = [line.strip()]
+        for j in range(i + 1, len(body_lines)):
+            next_line = body_lines[j]
+            leading = len(next_line) - len(next_line.lstrip(" "))
+            if leading <= indent:
+                break
+            collected.append(next_line.strip())
+        block_text = " ".join(collected)
+        if (
+            "vars.FLUXION_LINUX_RUNNER" in block_text
+            and not _GUARD_FRAGMENT_RE.search(block_text)
+        ):
+            out.append(block_text)
+    return out
+
+
+def _has_unsafe_matrix_ref(job_body: str) -> bool:
+    """Return True if the job body's ``strategy.matrix`` block references
+    ``vars.FLUXION_LINUX_RUNNER`` without the canonical guard fragment
+    (Issue #3718 matrix-indirect bypass).
+    """
+    return bool(_unsafe_matrix_lines(job_body))
+
+
 def _workflow_has_pull_request_trigger(text: str) -> bool:
     """Return True if the workflow declares a ``pull_request`` trigger in
     its top-level ``on:`` block.
@@ -360,8 +416,11 @@ def scan_workflow(path: Path) -> list[tuple[str, int, list[str]]]:
     for job_id, job_body in jobs:
         if not _job_is_pr_runnable(job_body):
             continue
-        if _has_unsafe_runs_on(job_body):
-            # Compute the line offset of the job's ``runs-on`` line.
+        unsafe_runs_on = _has_unsafe_runs_on(job_body)
+        unsafe_matrix = _has_unsafe_matrix_ref(job_body)
+        if unsafe_runs_on or unsafe_matrix:
+            # Compute the line offset of the job's first offending line
+            # (``runs-on`` or the ``matrix:`` block header).
             job_offset_in_block = jobs_block.find(job_body)
             job_block_start_line = jobs_header_line + (
                 jobs_block[:job_offset_in_block].count("\n") if job_offset_in_block > 0 else 0
@@ -369,10 +428,14 @@ def scan_workflow(path: Path) -> list[tuple[str, int, list[str]]]:
             run_on_line_offset = None
             body_lines = job_body.splitlines(keepends=False)
             for i, line in enumerate(body_lines):
-                if line.lstrip().startswith("runs-on:"):
+                if (
+                    line.lstrip().startswith("runs-on:")
+                    or _MATRIX_BLOCK_HEADER_RE.match(line)
+                ):
                     run_on_line_offset = job_block_start_line + i + 1
                     break
-            findings.append((job_id, run_on_line_offset or -1, _job_runs_on_lines(job_body)))
+            offending_lines = _job_runs_on_lines(job_body) + _unsafe_matrix_lines(job_body)
+            findings.append((job_id, run_on_line_offset or -1, offending_lines))
     return findings
 
 
@@ -407,7 +470,8 @@ def main() -> int:
 
     if not all_findings:
         print(
-            "[1/1] every PR-runnable job's ``runs-on:`` is guarded by the "
+            "[1/1] every PR-runnable job's ``runs-on:`` (direct or "
+            "``strategy.matrix``-indirect) is guarded by the "
             "``github.event_name == 'push' && github.ref == "
             "'refs/heads/main'`` conjunction (or scoped main-only via "
             "``if:``) ..."
@@ -416,12 +480,13 @@ def main() -> int:
         print(
             f"OK. Scanned {scanned} workflow file(s). No "
             f"vars.FLUXION_LINUX_RUNNER trust-boundary regressions "
-            f"detected (Issue #3531)."
+            f"detected (Issues #3531 / #3718)."
         )
         return 0
 
     print(
-        "[1/1] every PR-runnable job's ``runs-on:`` is guarded by the "
+        "[1/1] every PR-runnable job's ``runs-on:`` (direct or "
+        "``strategy.matrix``-indirect) is guarded by the "
         "``github.event_name == 'push' && github.ref == "
         "'refs/heads/main'`` conjunction (or scoped main-only via "
         "``if:``) ..."
@@ -444,9 +509,12 @@ def main() -> int:
     print()
     print(
         "Fix: every PR-triggered job that mentions "
-        "``vars.FLUXION_LINUX_RUNNER`` MUST use the guarded pattern "
+        "``vars.FLUXION_LINUX_RUNNER`` — directly in ``runs-on:`` or "
+        "indirectly via a ``strategy.matrix`` entry consumed by "
+        "``runs-on: ${{ matrix.<key> }}`` — MUST use the guarded pattern "
         "(folded block scalar form, mirroring onnx-integrity.yml / "
-        "python-tests.yml):"
+        "python-tests.yml; the guard lives inside the matrix entry "
+        "itself for the matrix-indirect form, Issue #3718):"
     )
     print()
     print("    runs-on: >-")

@@ -70,8 +70,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Linux honours the repo's FLUXION_LINUX_RUNNER routing var
-        # (defaults to ubuntu-latest); Windows is always GitHub-hosted.
+        # Linux honours the repo's FLUXION_LINUX_RUNNER routing var on
+        # main-merge pushes only — on pull_request events the expression
+        # MUST resolve to ubuntu-latest (docs/SECURITY.md §7; Issues
+        # #3531/#3718). Windows is always GitHub-hosted.
         # macos-latest is intentionally omitted here — `wasm-pack test
         # --node` on macOS has been a recurring flake source, and the
         # u+x w cross-platform interface contract is already covered by
@@ -79,7 +81,7 @@ jobs:
         # neutral (the underlying V8 is the same Node version), so the
         # 2-runner matrix is sufficient for the gate.
         os:
-          - ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+          - ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
           - windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
