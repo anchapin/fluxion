@@ -338,7 +338,8 @@ pub fn calculate_zone_energy(model: &ThermalModel<VectorField>) -> f64 {
 /// ```
 ///
 /// Where:
-/// - `energy_in`: Heating + Cooling + Solar + Infiltration (external inputs)
+/// - `energy_in`: Heating + Cooling + Solar (external inputs; infiltration is
+///   NOT currently tracked — known limitation, Issue #3722)
 /// - `energy_out`: HVAC demand (energy removed/rejected to maintain setpoints)
 /// - `mass_energy_change`: Cm × ΔTm (thermal capacitance × temperature change)
 ///
@@ -440,7 +441,19 @@ pub fn validate_energy_balance_over_year(
         } else {
             0.0
         };
-        let energy_infiltration = 0.0; // TODO: Add infiltration tracking if available
+        // Known limitation (Issue #3722): infiltration energy is NOT tracked in
+        // this ledger. The realized infiltration heat flow (h_ve × (T_out −
+        // T_air)) is computed implicitly inside the 5R1C/9R4C solver's linear
+        // system and is not exposed on ThermalModel after step_physics, so it
+        // cannot be accounted here without re-deriving solver physics in the
+        // validation layer. energy_in_total is therefore known-incomplete for
+        // cases with non-zero infiltration (ASHRAE 140 default 0.5 ACH): the
+        // missing infiltration energy is misattributed to unaccounted_energy
+        // in BuildingBalanceSummary. This behavior is pinned by
+        // tests::test_energy_in_total_ignores_infiltration_issue_3722 — update
+        // that test together with this line if infiltration tracking is ever
+        // plumbed in.
+        let energy_infiltration = 0.0;
 
         // Total energy entering system (all sources that add heat to the zone)
         // HVAC heating adds heat, cooling removes heat (so we only add hvac_energy when positive)
@@ -1376,5 +1389,118 @@ mod tests {
         }
 
         println!("\n✅ All free-floating cases passed phi_ia=phi_st=0 invariant");
+    }
+
+    /// Pin the known ledger limitation tracked by Issue #3722.
+    ///
+    /// The thermal-mass energy-in ledger does not track infiltration energy:
+    /// the realized infiltration heat flow (h_ve × (T_out − T_air)) is computed
+    /// implicitly inside the 5R1C/9R4C solver's linear system and is not
+    /// exposed on `ThermalModel` after `step_physics`, so the ledger cannot
+    /// account for it without re-deriving solver physics in the validation
+    /// layer. Consequently `energy_in_total` is structurally blind to
+    /// infiltration and the shortfall is misattributed to `unaccounted_energy`
+    /// in `BuildingBalanceSummary`.
+    ///
+    /// This test documents that behavior for a model with a non-zero
+    /// infiltration rate (the ASHRAE 140 default of 0.5 ACH): `energy_in_total`
+    /// must equal the solar + internal gains + HVAC-heating-only accumulation —
+    /// i.e. it must contain no infiltration contribution. If infiltration
+    /// tracking is ever plumbed into the ledger, this test fails by design and
+    /// must be updated together with the `#3722` ledger comment.
+    #[test]
+    fn test_energy_in_total_ignores_infiltration_issue_3722() {
+        use crate::weather::epw::EpwWeatherSource;
+        use crate::weather::WeatherSource;
+
+        println!("\n=== Pinning Issue #3722: energy_in_total ignores infiltration ===");
+
+        let spec = ASHRAE140Case::Case600.spec();
+
+        // Run the ledger under validation with non-zero infiltration.
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
+        model.setpoints.infiltration_rate = VectorField::from_scalar(0.5, model.hvac.num_zones);
+        let report = validate_energy_balance_over_year(&mut model);
+
+        // Independently re-run the identical year on a fresh model, mirroring
+        // the documented ledger formula (solar + internal + HVAC heating only;
+        // the infiltration term is structurally 0.0 — Issue #3722).
+        let mut mirror = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
+        mirror.setpoints.infiltration_rate = VectorField::from_scalar(0.5, mirror.hvac.num_zones);
+
+        let weather = EpwWeatherSource::from_file(
+            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        )
+        .expect("Failed to load EPW weather data");
+        let steps = 8760;
+        let dt = 3600.0;
+        let mut expected_energy_in_total = 0.0_f64;
+        for step in 0..steps {
+            let weather_data = weather.get_hourly_data(step).unwrap();
+            let dry_bulb_temp = weather_data.dry_bulb_temp;
+            mirror.solar.weather = Some(weather_data);
+
+            let hvac_energy = mirror.step_physics(step, dry_bulb_temp, dt);
+
+            let solar_slice = mirror.solar.solar_gains.as_slice();
+            let energy_solar = if step < solar_slice.len() {
+                solar_slice[step]
+            } else {
+                0.0
+            };
+            let loads_slice = mirror.setpoints.loads.as_slice();
+            let energy_internal = if step < loads_slice.len() {
+                loads_slice[step]
+            } else {
+                0.0
+            };
+            // Issue #3722: infiltration is not tracked by the ledger (see the
+            // ledger comment in validate_energy_balance_over_year).
+            let energy_infiltration = 0.0_f64;
+
+            let hvac_heating_only = hvac_energy.max(0.0);
+            let energy_in_watts =
+                energy_solar + energy_internal + hvac_heating_only + energy_infiltration;
+            expected_energy_in_total += energy_in_watts * dt;
+        }
+
+        println!(
+            "  Ledger energy_in_total:     {:.6e} J",
+            report.energy_in_total
+        );
+        println!(
+            "  Expected (no infiltration): {:.6e} J",
+            expected_energy_in_total
+        );
+
+        // The ledger total must match the solar+internal+HVAC-only accumulation
+        // despite 0.5 ACH infiltration being active in the model. The tight
+        // tolerance pins the limitation (an infiltration term would shift the
+        // total by ~1e9 J/year) while tolerating floating-point noise.
+        assert!(
+            (report.energy_in_total - expected_energy_in_total).abs()
+                <= 1e-9 * expected_energy_in_total.abs().max(1.0),
+            "energy_in_total ({:.6e} J) diverged from the solar+internal+HVAC-only \
+             expectation ({:.6e} J): the ledger no longer matches its documented \
+             #3722 known limitation",
+            report.energy_in_total,
+            expected_energy_in_total
+        );
+
+        // Sanity: the ledger is not vacuously zero for this case.
+        assert!(
+            report.energy_in_total > 0.0,
+            "energy_in_total must be positive for Case 600"
+        );
+
+        println!("✅ #3722 limitation pinned: energy_in_total excludes infiltration");
     }
 }
