@@ -17,7 +17,7 @@
     },
     "fluxion": {
       "lib_ignored": 9,
-      "lib_tests": 4112,
+      "lib_tests": 4113,
       "test_binaries": 295
     },
     "fluxion-behavior": {
@@ -66,21 +66,21 @@
       "test_binaries": 1
     }
   },
-  "captured_at": "2026-09-13T17:58:23.292654+00:00",
+  "captured_at": "2026-09-13T18:50:54.033430+00:00",
   "captured_from": "tests/test_inventory.json",
   "metrics": {
     "lib_ignored": 6,
-    "lib_tests": 3777,
+    "lib_tests": 3778,
     "test_binaries": 309,
     "workspace_ignored": 133,
-    "workspace_tests": 7862
+    "workspace_tests": 7863
   },
   "metrics_ast": {
     "lib_ignored": 9,
-    "lib_tests": 4112,
+    "lib_tests": 4113,
     "test_binaries": 309,
     "workspace_ignored": 119,
-    "workspace_tests": 8539
+    "workspace_tests": 8540
   },
   "ratchet": {
     "BASELINE_LIB_IGNORED": 9,
@@ -95,14 +95,14 @@
   "totals": {
     "doc_tests": 170,
     "lib_ignored_root": 6,
-    "lib_tests_root": 3777,
+    "lib_tests_root": 3778,
     "test_binaries": 309,
     "test_source_files": 354,
     "workspace_ignored": 133,
     "workspace_integration_ignored": 98,
     "workspace_integration_tests": 3332,
     "workspace_lib_ignored": 21,
-    "workspace_lib_tests": 5207,
-    "workspace_tests": 7862
+    "workspace_lib_tests": 5208,
+    "workspace_tests": 7863
   }
 }
