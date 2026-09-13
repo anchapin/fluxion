@@ -103,4 +103,19 @@ for wf in "${TARGETS[@]}"; do
   ARGS+=( -W ".github/workflows/$wf" )
 done
 
+# Issue #3766: wrap the act run in the memory-budget gate so a runaway
+# build halts before host memory/swap are exhausted (the gate's tree
+# monitor covers the act process itself; the system-headroom guard covers
+# container load that the process tree cannot see, since containers are
+# parented under dockerd, not act). Warn is a hard exit (1) here on
+# purpose: the wrapper exists to fail loudly, not to pass quietly. The
+# gate is skipped (fallback to bare act) when the script is missing or
+# not executable.
+MEM_GATE="$REPO_ROOT/scripts/memory-budget-gate.sh"
+if [[ -x "$MEM_GATE" ]]; then
+  echo "==> Wrapping act run in memory budget gate (warn 12 GB, exit 16 GB, headroom 2 GB)"
+  echo
+  exec "$MEM_GATE" --warn 12 --exit 16 --headroom 2 --command "act ${ARGS[*]}"
+fi
+
 exec act "${ARGS[@]}"
