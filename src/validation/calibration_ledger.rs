@@ -135,7 +135,7 @@ pub static LEDGER: Lazy<Vec<CalibrationFactor>> = Lazy::new(|| {
         mk(CAL_CASE195_THERMAL_CONDUCTIVITY,
             "case_195_calibration::CalibrationParameters::default",
             0.16,
-            "Case 195 empirical fit (W/m·K); flagged for blind-mode review per TODO-BLIND-VALIDATION"),
+            "Case 195 empirical fit (W/m·K); flagged for blind-mode review per TODO-BLIND-VALIDATION (#3719 — tracked; run-path isolation enforced by adaptive_calibration.rs tests)"),
         mk(CAL_CASE195_SPECIFIC_HEAT,
             "case_195_calibration::CalibrationParameters::default",
             840.0,
