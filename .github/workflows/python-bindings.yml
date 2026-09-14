@@ -281,5 +281,5 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --release --features python-bindings \
-            --test test_pyo3_bindings --test pyi_stub_completeness
+            --test all_tests test_pyo3_bindings:: --test all_tests pyi_stub_completeness::
 # trigger

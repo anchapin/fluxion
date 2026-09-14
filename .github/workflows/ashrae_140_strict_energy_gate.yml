@@ -204,7 +204,7 @@ jobs:
         run: |
           set +e
           cargo test --release --features ort --verbose \
-            --test zone_balance_eplus_isolation \
+            --test all_tests zone_balance_eplus_isolation:: \
             _annual_energy_ashrae140_tolerance \
             -- --include-ignored --nocapture \
             2>&1 | tee /tmp/strict_gate_output.txt
@@ -221,7 +221,7 @@ jobs:
         # a failure here is a real regression.
         run: |
           cargo test --release --features ort --verbose \
-            --test ashrae_140_blind_validation \
+            --test all_tests ashrae_140_blind_validation:: \
             _blind_mode_case_600_infrastructure \
             2>&1 | tee -a /tmp/strict_gate_output.txt
 
@@ -229,7 +229,7 @@ jobs:
         # Test 4/4: API-level infrastructure for Case 900 (already passing).
         run: |
           cargo test --release --features ort --verbose \
-            --test ashrae_140_blind_validation \
+            --test all_tests ashrae_140_blind_validation:: \
             _blind_mode_case_900_infrastructure \
             2>&1 | tee -a /tmp/strict_gate_output.txt
 

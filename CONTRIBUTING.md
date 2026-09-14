@@ -145,7 +145,7 @@ Useful flags:
 | Flag | Purpose |
 | --- | --- |
 | `--pgo-dir DIR` | Where to store profile data (default: `target/pgo`) |
-| `--train-workload CMD` | Override the training workload (default: `cargo test --profile release --test ashrae_140_validation -- --nocapture`) |
+| `--train-workload CMD` | Override the training workload (default: `cargo test --profile release --test all_tests ashrae_140_validation:: -- --nocapture`) |
 | `--skip-generate` | Reuse an existing instrumented binary |
 | `--skip-train` | Skip the training workload (use existing `.profraw` files) |
 | `--skip-use` | Generate-only; do not produce the optimized binary |

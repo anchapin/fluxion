@@ -164,7 +164,7 @@ jobs:
       - name: Run HVAC BESTEST Validation Tests
         id: validation
         run: |
-          cargo test --test hvac_bestest_validation --release 2>&1 | tee hvac_output.txt
+          cargo test --test all_tests hvac_bestest_validation:: --release 2>&1 | tee hvac_output.txt
           TEST_EXIT=$?
           echo "test_exit_code=$TEST_EXIT" >> $GITHUB_OUTPUT
           exit 0

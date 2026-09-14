@@ -695,7 +695,7 @@ jobs:
           rm -f run_*.txt
           for i in 1 2 3; do
             echo "=== measurement run ${i}/3 ==="
-            cargo test --test performance_regression_test --release test_performance_regression -- --nocapture > "run_${i}.txt" 2>&1 || true
+            cargo test --test all_tests performance_regression_test:: --release test_performance_regression -- --nocapture > "run_${i}.txt" 2>&1 || true
           done
 
           python3 << 'EOF'
@@ -876,7 +876,7 @@ jobs:
           rm -f run_*.txt
           for i in 1 2 3; do
             echo "=== measurement run ${i}/3 ==="
-            cargo test --test performance_regression_test --release test_multi_zone_performance_regression -- --nocapture > "run_${i}.txt" 2>&1 || true
+            cargo test --test all_tests performance_regression_test:: --release test_multi_zone_performance_regression -- --nocapture > "run_${i}.txt" 2>&1 || true
           done
 
           python3 << 'EOF'
@@ -1075,7 +1075,7 @@ jobs:
           rm -f run_*.txt
           for i in 1 2 3; do
             echo "=== measurement run ${i}/3 ==="
-            cargo test --test hybrid_perf_regression --release -- --nocapture --test-threads=1 > "run_${i}.txt" 2>&1 || true
+            cargo test --test all_tests hybrid_perf_regression:: --release -- --nocapture --test-threads=1 > "run_${i}.txt" 2>&1 || true
           done
 
           python3 << 'EOF'
@@ -1274,11 +1274,11 @@ jobs:
 
       # Pre-compile the release test binary for the cold-start gate. We
       # build ONLY the surrogate_cold_start_test test binary (via
-      # `--test surrogate_cold_start_test`) instead of all `--tests` to
+      # `--test all_tests surrogate_cold_start_test::`) instead of all `--tests` to
       # keep the warm-cache step under ~3 min. The full ort build still
       # runs once on the first cold-cache run after a content-hash change.
       - name: Build release test binary (--features ort)
-        run: cargo build --release -p fluxion --features ort --test surrogate_cold_start_test
+        run: cargo build --release -p fluxion --features ort --test all_tests surrogate_cold_start_test::
 
       - name: Summary
         if: always()
@@ -1443,7 +1443,7 @@ jobs:
           rm -f run_*.txt
           for i in 1 2 3; do
             echo "=== measurement run ${i}/3 ==="
-            cargo test --test surrogate_cold_start_test --release --features ort -- --nocapture --test-threads=1 > "run_${i}.txt" 2>&1 || true
+            cargo test --test all_tests surrogate_cold_start_test:: --release --features ort -- --nocapture --test-threads=1 > "run_${i}.txt" 2>&1 || true
           done
 
           python3 << 'EOF'

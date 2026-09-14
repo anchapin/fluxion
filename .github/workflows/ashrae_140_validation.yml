@@ -63,7 +63,7 @@ jobs:
       - name: Run ASHRAE 140 Validation Tests
         id: validation
         run: |
-          cargo test --test ashrae_140_validation --release -- --nocapture 2>&1 | tee validation_output.txt
+          cargo test --test all_tests ashrae_140_validation:: --release -- --nocapture 2>&1 | tee validation_output.txt
           TEST_EXIT=$?
           echo "test_exit_code=$TEST_EXIT" >> $GITHUB_OUTPUT
           exit 0  # Always continue to generate report
