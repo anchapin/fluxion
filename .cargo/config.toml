@@ -10,3 +10,28 @@
 # - CARGO_INCREMENTAL=0 disables incremental compilation, reducing disk usage during build
 # - Use ./scripts/disk-space-gate.sh to check available disk space before building
 # - Use ./scripts/cleanup-build.sh to free up space when disk is low
+
+# ---------------------------------------------------------------------------
+# Memory-safe build defaults (Issue #3765)
+# ---------------------------------------------------------------------------
+# On high-core hosts, GNU `ld` can consume multiple GB of RAM per Rust debug
+# link (full DWARF info is streamed through the linker), and Cargo happily
+# runs `nproc` links in parallel. The Linux-only target table below keeps
+# dev/test builds inside sane memory bounds without touching release profiles
+# (`Cargo.toml` sets its own `split-debuginfo = "packed"` for release) or any
+# other platform:
+#
+# 1. Low-memory linker — `.cargo/linker-wrapper.sh` prefers `mold`, then
+#    `lld`, and falls back to the system `cc` driver when neither is
+#    installed, so machines/CI images without them keep building unchanged.
+# 2. Debug-info splitting — `-C split-debuginfo=unpacked` keeps DWARF data in
+#    the `.o`/`.dwo` files beside the binary instead of pulling gigabytes of
+#    debug data through the linker. `test`/`bench` inherit `dev`'s setting;
+#    the `ci` profile builds with `debug = 0`, so this flag is a no-op there.
+#
+# NOTE: if you export `RUSTFLAGS` yourself, Cargo ignores the `rustflags`
+# entry below entirely (environment wins) — append the flag manually in that
+# case. See `docs/DEVELOPMENT.md` for jobs/concurrency guidance.
+[target.'cfg(target_os = "linux")']
+linker = ".cargo/linker-wrapper.sh"
+rustflags = ["-C", "split-debuginfo=unpacked"]
