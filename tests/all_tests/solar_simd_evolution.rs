@@ -45,15 +45,15 @@ use std::path::PathBuf;
 use fluxion_evaluator::invariant::{run_battery, DefaultInvariantCheck};
 use fluxion_evaluator::kernel::{EdgeCase, KernelInput, ReferenceOutput};
 
-#[path = "../tools/evolution/seeds/solar_simd/perez_diffuse_tilted.rs"]
+#[path = "../../tools/evolution/seeds/solar_simd/perez_diffuse_tilted.rs"]
 #[allow(dead_code)]
 mod perez_diffuse_tilted;
 
-#[path = "../tools/evolution/seeds/solar_simd/stefan_boltzmann_pair.rs"]
+#[path = "../../tools/evolution/seeds/solar_simd/stefan_boltzmann_pair.rs"]
 #[allow(dead_code)]
 mod stefan_boltzmann_pair;
 
-#[path = "../tools/evolution/seeds/solar_simd/sky_radiation_net_flux.rs"]
+#[path = "../../tools/evolution/seeds/solar_simd/sky_radiation_net_flux.rs"]
 #[allow(dead_code)]
 mod sky_radiation_net_flux;
 

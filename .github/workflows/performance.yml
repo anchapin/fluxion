@@ -143,12 +143,12 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Run performance tests
         run: |
-          cargo test --test performance_ci_test
-          cargo test --test performance_regression_test
+          cargo test --test all_tests performance_ci_test::
+          cargo test --test all_tests performance_regression_test::
 
       - name: Generate benchmark results
         run: |
-          cargo test --test performance_regression_test --release -- --nocapture 2>&1 | tee perf_output.txt
+          cargo test --test all_tests performance_regression_test:: --release -- --nocapture 2>&1 | tee perf_output.txt
 
           python3 << 'EOF'
           import re

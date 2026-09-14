@@ -219,7 +219,7 @@ run_validation_tests() {
     fi
 
     if [[ "$DRY_RUN" == true ]]; then
-        log_info "[DRY-RUN] Would run: cargo test --test ashrae_140_validation --release"
+        log_info "[DRY-RUN] Would run: cargo test --test all_tests ashrae_140_validation:: --release"
         return
     fi
 
@@ -229,7 +229,7 @@ run_validation_tests() {
     local json_file="${REPORT_DIR}/${YEAR}/validation_results.json"
 
     # Run tests and capture output
-    if cargo test --test ashrae_140_validation --release 2>&1 | tee "${output_file}"; then
+    if cargo test --test all_tests ashrae_140_validation:: --release 2>&1 | tee "${output_file}"; then
         log_success "Validation tests completed"
     else
         log_warning "Validation tests completed with some failures"

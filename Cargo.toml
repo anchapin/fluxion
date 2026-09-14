@@ -767,26 +767,6 @@ opt-level = 3
 
 # Explicitly include Phase 6 performance optimization test targets
 [[test]]
-name = "test_parallel_validation"
-path = "tests/test_parallel_validation.rs"
-harness = true
-
-[[test]]
-name = "test_result_aggregation"
-path = "tests/test_result_aggregation.rs"
-harness = true
-
-[[test]]
-name = "test_validation_report"
-path = "tests/test_validation_report.rs"
-harness = true
-
-[[test]]
-name = "test_modular_surrogates"
-path = "tests/test_modular_surrogates.rs"
-harness = true
-
-[[test]]
 name = "validation-multi_reference_integration"
 path = "tests/validation/multi_reference_integration.rs"
 harness = true
@@ -841,17 +821,6 @@ harness = true
 name = "solar_gain_unit_tests"
 path = "tests/solar_gain_unit_tests.rs"
 harness = true
-
-[[test]]
-name = "solar_distribution_tests"
-path = "tests/solar_distribution_tests.rs"
-harness = true
-
-[[test]]
-name = "thermal_mass_coupling_tests"
-path = "tests/thermal_mass_coupling_tests.rs"
-harness = true
-
 [[test]]
 name = "validation_case_900_peak_attribution"
 path = "tests/validation/case_900_peak_attribution.rs"
@@ -910,12 +879,6 @@ harness = true
 name = "validation_hybrid_empirical_test"
 path = "tests/validation/hybrid_empirical_test.rs"
 harness = true
-
-[[test]]
-name = "weather_epw_fields"
-path = "tests/weather_epw_fields.rs"
-harness = true
-
 # Loom concurrency tests (Issue #1065)
 [[test]]
 name = "loom_concurrency_tests"
@@ -929,19 +892,8 @@ harness = true
 name = "sqlite_lock_race_reproducer"
 path = "tests/concurrency/sqlite_lock_race_reproducer.rs"
 harness = true
-
-[[test]]
-name = "case_900_determinism"
-path = "tests/case_900_determinism.rs"
-harness = true
-
 # Issue #1348 — N-zone inter-zone thermal coupling network (E5).
 # `cargo test -p fluxion multi_zone_n_zone_network` runs this target.
-[[test]]
-name = "multi_zone_n_zone_network"
-path = "tests/multi_zone_n_zone_network.rs"
-harness = true
-
 # Issue #1427 — Multi-climate solar + ventilation reference data
 # (Miami 1A / Phoenix 2B / Chicago 5A-as-6A-proxy). Pinned under
 # tests/reference_data/ to live alongside the CSVs it validates.
@@ -956,14 +908,20 @@ name = "case_940_setback_diagnostic"
 path = "tests/diagnostics/case_940_setback_diagnostic.rs"
 harness = true
 
+# Issue #3764 — consolidated integration-test runner. The 263 former
+# standalone tests/*.rs binaries live here as modules (tests/all_tests/*.rs);
+# ten process-isolation binaries remain standalone in tests/ (env-var
+# mutation, #[global_allocator], std::process::exit). Module names equal the
+# former binary names, so `cargo test --test all_tests <former_name>::`
+# reproduces the old per-binary filter.
+[[test]]
+name = "all_tests"
+path = "tests/all_tests/main.rs"
+harness = true
+
 # Issue #1603 — GPU smoke test for InferenceBackend::CUDA.
 # Compiles under --features cuda and skips gracefully on CPU-only runners.
 # GPU runner executes the test with CUDA EP and verifies output matches CPU within 0.1%.
-[[test]]
-name = "surrogate_cuda_smoke"
-path = "tests/surrogate_cuda_smoke_test.rs"
-harness = true
-
 # Issue #2690 / #2757 / #3451 — supply-chain: rumqttc was previously
 # redirected via a `[patch.crates-io]` entry to a fork on a *personal*
 # GitHub account (anchapin/rumqtt, branch `fix/rustsec-2026-webpki`). A

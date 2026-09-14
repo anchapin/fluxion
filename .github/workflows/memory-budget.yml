@@ -76,7 +76,7 @@ jobs:
         run: |
           # Run the 10-zone test in background while monitoring RSS
           (
-            cargo test --release --features multi-zone --test multi_zone_n_zone_network -- multi_zone_n_zone_network_10_zone_round_trip --nocapture
+            cargo test --release --features multi-zone --test all_tests multi_zone_n_zone_network:: -- multi_zone_n_zone_network_10_zone_round_trip --nocapture
           ) &
           CARGO_PID=$!
 

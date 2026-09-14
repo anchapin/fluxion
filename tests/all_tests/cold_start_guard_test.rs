@@ -19,7 +19,7 @@
 //! they become a denominator — the first test below feeds exactly the
 //! observed collapsed readings and asserts no ratio is produced.
 
-#[path = "cold_start_guard/mod.rs"]
+#[path = "../cold_start_guard/mod.rs"]
 mod cold_start_guard;
 
 use cold_start_guard::{

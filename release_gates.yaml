@@ -984,8 +984,8 @@ ci:
       # Energy conservation gate (#1295). Listener job in
       # `.github/workflows/rust-tests.yml` under
       # `energy-conservation-gh` id. Triggers on the PR + push-to-main
-      # events; runs `cargo test --test test_energy_conservation` and
-      # `cargo test --test zone_balance_eplus_isolation` and fails the
+      # events; runs `cargo test --test all_tests test_energy_conservation::` and
+      # `cargo test --test all_tests zone_balance_eplus_isolation::` and fails the
       # PR when any "violated energy conservation" count > 0. The
       # Hetzner-overflow variant (`Energy Conservation (Hetzner
       # Overflow)`) is the same job on the self-hosted overflow runner
@@ -1050,7 +1050,7 @@ ci:
       # CUDA smoke test (#1603). Job in
       # `.github/workflows/rust-tests.yml` under `cuda-smoke` id.
       # Builds the root crate with `--features cuda` and runs
-      # `cargo test --test surrogate_cuda_smoke`. Auto-skips on
+      # `cargo test --test all_tests surrogate_cuda_smoke_test::`. Auto-skips on
       # CPU-only runners via the `cuda_available` step output
       # (issue #2962); non-zero exit on any CUDA regression on
       # GPU-enabled runners.
