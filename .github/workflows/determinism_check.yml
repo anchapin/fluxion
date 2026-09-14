@@ -268,14 +268,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Post-#3764 the six determinism modules are all children of the one
+          # `all_tests` target; cargo takes a single positional, so the six
+          # module filters go through `--` to libtest (which ORs filters).
           cargo test \
-            --test all_tests case_800_determinism:: \
-            --test all_tests case_810_determinism:: \
-            --test all_tests case_900_determinism:: \
-            --test all_tests case_950_determinism:: \
-            --test all_tests case_960_determinism:: \
-            --test all_tests case_970_determinism:: \
-            --release -- --nocapture 2>&1 | tee determinism_cases_output.txt
+            --test all_tests \
+            --release -- \
+            case_800_determinism:: \
+            case_810_determinism:: \
+            case_900_determinism:: \
+            case_950_determinism:: \
+            case_960_determinism:: \
+            case_970_determinism:: \
+            --nocapture 2>&1 | tee determinism_cases_output.txt
 
       - name: Run cross_platform_fp_regression (Case 600/920 + solar hash)
         # `tests/cross_platform_fp_regression.rs::test_case_600_annual_determinism_hash`
