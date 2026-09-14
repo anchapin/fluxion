@@ -73,7 +73,11 @@ Production-code callers are defined as:
   * Other ``src/**/*.rs`` files (outside the module's own subtree)
   * Top-level ``tests/*.rs`` (Cargo auto-discovered test targets per
     AGENTS.md — ``tests/<subdir>/*.rs`` are NOT Cargo targets and are
-    excluded)
+    excluded), PLUS the file universe of the root crate's explicit
+    ``[[test]] path = "tests/<sub>/<root>.rs"`` targets (Issue #3764
+    consolidated-harness convention): a harness root such as
+    ``tests/all_tests/main.rs`` and the sibling files it wires in via
+    ``mod`` declarations ARE compiled test code and count as callers
   * ``examples/*.rs`` (if any examples exist)
 
 Excluded from caller scope: ``benches/`` (intentional external consumers
@@ -132,6 +136,40 @@ from a looser raw-text match that included 3 sites inside
 ``#[cfg(test)]`` bodies; the canonical production-only scan seeds the
 baseline at 94 across 42 files.
 
+Per-module disposition registry (Issue #3748)
+---------------------------------------------
+A fourth companion check requires every ``WIRED_BUT_DEAD`` entry to
+carry an explicit, owner-assigned disposition in a checked-in registry
+— ``tests/reference_data/wired_but_dead_dispositions.json`` — mirroring
+the #3752 inventory pattern. The ``BASELINE_WIRED_BUT_DEAD`` ratchet is
+downward-only with no forcing function (the #3555 burn-down removed 11
+entries, but nothing scheduled the remaining 22); the registry is that
+forcing function. Allowed dispositions:
+
+  * ``wire-pending``  a production consumer is planned; the module
+    stays until the wiring lands (or the decision flips to reject).
+  * ``reject``        slated for deletion in a cleanup PR; that PR must
+    delete the module, drop the allowlist entry, lower
+    ``BASELINE_WIRED_BUT_DEAD`` by one, and drop the registry row.
+  * ``keep-dead``     intentional dead surface with a documented
+    rationale (e.g. a parked roadmap module, or a helper surface whose
+    callers are excluded from caller scope by design).
+
+Gate semantics (mirroring the lock-step convention of the dead-code
+inventory, Issue #3443's downward-only ratchet convention stays
+untouched):
+
+1. **Coverage** — every live wired-but-dead module AND every
+   ``WIRED_BUT_DEAD`` allowlist entry must have a registry row, and
+   each row must carry a ``disposition`` from the enum above plus
+   ``issue``, ``owner``, and a non-empty ``rationale``.
+2. **Lock-step** — a registry row whose module is no longer
+   wired-but-dead (it was wired up or deleted) fails CI; drop the row
+   in the same PR that resolves the module.
+3. The count ratchet itself remains ``BASELINE_WIRED_BUT_DEAD``
+   (downward-only, Issue #3458); the registry adds the per-module
+   wire-or-delete decision and owner the ratchet lacked.
+
 Usage
 -----
     python3 scripts/check_orphan_modules.py
@@ -139,12 +177,15 @@ Usage
 
 Exit codes
 ----------
-    0 — no NEW orphan modules, no NEW wired-but-dead modules, and the
-        dead-code-allow inventory is in lock-step at or below baseline
+    0 — no NEW orphan modules, no NEW wired-but-dead modules, the
+        dead-code-allow inventory is in lock-step at or below baseline,
+        and every wired-but-dead module carries a valid disposition
     1 — one or more NEW orphan modules / wired-but-dead modules / new or
-        stale dead-code-allow sites, or the production count grew above
+        stale dead-code-allow sites, a missing/stale/invalid
+        disposition registry row, or the production count grew above
         ``BASELINE_DEAD_CODE_ALLOWS``
-    2 — script error (e.g. ``src/lib.rs`` missing)
+    2 — script error (e.g. ``src/lib.rs`` missing, a required registry
+        file absent)
 """
 
 from __future__ import annotations
@@ -263,7 +304,6 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
         "coupled_solver",
         "distributed",
         "doe_reference",
-        "empirical_hybrid",
         "equipment_surrogate",
         "epjson",
         "fdd",
@@ -301,7 +341,15 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
 #     31-module cleanup into this PR. Companion cleanup PRs that
 #     delete each module are expected to drop the matching entry AND
 #     lower BASELINE_WIRED_BUT_DEAD by one.
-BASELINE_WIRED_BUT_DEAD = 22  # lowered from 33 → 22 in PR for fluxion-#3555
+#   22 → 21 (Issue #3748): the wired-but-dead caller scope now counts
+#     the root crate's explicit ``[[test]]`` target universes (the
+#     Issue #3764 consolidated-harness convention). That correction
+#     revealed ``empirical_hybrid``'s compiled harness consumer
+#     (``tests/validation/hybrid_empirical_test.rs``, the
+#     ``validation_hybrid_empirical_test`` target) — the module is no
+#     longer wired-but-dead, so its allowlist entry and its Issue
+#     #3748 disposition row are dropped in the same PR.
+BASELINE_WIRED_BUT_DEAD = 21  # lowered from 22 → 21 in PR for fluxion-#3748 (was 33 → 22 in PR for fluxion-#3555)
 
 # Downward-only ratchet for the orphan allowlist (Issue #3459).
 #
@@ -406,6 +454,33 @@ _CFG_TEST_BODY_RE = re.compile(
 #     comments stripped, occurrence-counted, cfg(test) bodies excluded)
 #     seeds at 94.
 BASELINE_DEAD_CODE_ALLOWS = 94
+
+# ---------------------------------------------------------------------------
+# Wired-but-dead disposition registry (Issue #3748).
+#
+# ``WIRED_BUT_DEAD_DISPOSITIONS_PATH`` is the checked-in registry giving
+# every ``WIRED_BUT_DEAD`` allowlist entry an explicit, owner-assigned
+# wire-or-delete decision — the per-module forcing function the
+# downward-only ``BASELINE_WIRED_BUT_DEAD`` ratchet lacked. Allowed
+# dispositions are ``wire-pending`` / ``reject`` / ``keep-dead`` (see the
+# module docstring). Resolving a module requires dropping its allowlist
+# entry, lowering ``BASELINE_WIRED_BUT_DEAD`` by one, AND dropping its
+# registry row in the same PR (lock-step, like the dead-code inventory).
+# ---------------------------------------------------------------------------
+WIRED_BUT_DEAD_DISPOSITIONS_PATH = (
+    REPO_ROOT / "tests" / "reference_data" / "wired_but_dead_dispositions.json"
+)
+
+# Governing issue for the seed registry (#3748). A follow-up issue that
+# takes ownership of one module's decision edits that row's ``issue``
+# field by hand.
+WIRED_BUT_DEAD_GOVERNING_ISSUE = 3748
+
+# The only dispositions the gate accepts; anything else is a schema
+# violation and fails the check.
+ALLOWED_DISPOSITIONS: frozenset[str] = frozenset(
+    {"wire-pending", "reject", "keep-dead"}
+)
 
 # Max characters stored per site signature — long function signatures are
 # truncated deterministically so the JSON diff stays reviewable.
@@ -717,6 +792,47 @@ def _enumerate_pub_mods() -> list[tuple[str, Path, Path]]:
     return out
 
 
+def _cargo_test_target_files() -> set[Path]:
+    """Return the file universe of the root crate's explicit ``[[test]]``
+    targets declared in ``Cargo.toml`` (Issue #3764 consolidation).
+
+    Each ``[[test]] path = "tests/<sub>/<root>.rs"`` entry contributes
+    its root file; a ``main.rs`` / ``mod.rs`` harness root (e.g.
+    ``tests/all_tests/main.rs``, which collapsed 263 standalone test
+    binaries into one target) additionally contributes the sibling
+    files it wires in via ``mod`` declarations — those siblings ARE
+    compiled by ``cargo test`` and therefore count as production-code
+    callers for the wired-but-dead detector. Ad-hoc ``tests/<sub>/``
+    files that no ``[[test]]`` target references remain excluded, per
+    AGENTS.md.
+    """
+    out: set[Path] = set()
+    manifest = REPO_ROOT / "Cargo.toml"
+    if not manifest.exists():
+        return out
+    text = manifest.read_text(encoding="utf-8", errors="replace")
+    for block_match in re.finditer(r"\[\[test\]\](.*?)(?=\n\[|\Z)", text, re.DOTALL):
+        path_match = re.search(r'path\s*=\s*"([^"]+)"', block_match.group(1))
+        if not path_match:
+            continue
+        root = (REPO_ROOT / path_match.group(1)).resolve()
+        if not root.is_file():
+            continue
+        out.add(root)
+        if root.name not in ("main.rs", "mod.rs"):
+            continue
+        cleaned = _clean_source(root.read_text(encoding="utf-8", errors="replace"))
+        for mod_match in _MOD_RE.finditer(cleaned):
+            if cleaned[mod_match.end() - 1] != ";":
+                continue
+            name = mod_match.group(1)
+            for candidate in _candidate_paths_for_mod(name, root.parent):
+                if candidate.exists() and candidate.is_file():
+                    out.add(candidate.resolve())
+                    break
+    return out
+
+
 def _production_caller_files() -> list[Path]:
     """Return the list of files whose contents count as production-code
     callers for the wired-but-dead detector.
@@ -727,7 +843,8 @@ def _production_caller_files() -> list[Path]:
       * ``tests/*.rs`` (top-level Cargo test targets per AGENTS.md;
         subdirectories like ``tests/validation/`` are NOT Cargo targets
         and are excluded so we don't false-positive on benchmark /
-        fixture helpers)
+        fixture helpers) — plus the explicit ``[[test]]`` target
+        universes from ``_cargo_test_target_files`` (Issue #3764)
       * ``examples/*.rs`` (Cargo's auto-discovery rule)
     """
     out: list[Path] = []
@@ -740,6 +857,7 @@ def _production_caller_files() -> list[Path]:
         for p in tests_dir.glob("*.rs"):
             if p.is_file():
                 out.append(p)
+    out.extend(sorted(_cargo_test_target_files()))
     examples_dir = REPO_ROOT / "examples"
     if examples_dir.exists():
         for p in examples_dir.glob("*.rs"):
@@ -1268,6 +1386,147 @@ def _check_dead_code_inventory(update: bool) -> int:
     return 0
 
 
+def _load_wired_but_dead_dispositions() -> list[dict[str, object]]:
+    """Load the checked-in disposition registry. Returns ``[]`` when the
+    file is missing so the gate can emit a single actionable message
+    instead of a traceback.
+    """
+    if not WIRED_BUT_DEAD_DISPOSITIONS_PATH.exists():
+        return []
+    payload = json.loads(
+        WIRED_BUT_DEAD_DISPOSITIONS_PATH.read_text(encoding="utf-8")
+    )
+    return list(payload.get("modules", []))
+
+
+def _check_wired_but_dead_dispositions(raw_wired_but_dead: list[str]) -> int:
+    """Run the Issue #3748 disposition gate. Returns the process exit
+    code for this section (0 pass / 1 fail / 2 missing registry).
+
+    Lock-step contract: the registry must cover every live wired-but-dead
+    module AND every ``WIRED_BUT_DEAD`` allowlist entry, carry a
+    disposition from ``ALLOWED_DISPOSITIONS`` plus ``issue`` / ``owner``
+    / non-empty ``rationale`` per row, and hold no rows for modules that
+    are no longer wired-but-dead (wired up or deleted).
+    """
+    print("--- Wired-but-dead dispositions (#3748) ---")
+    # Mock-repo guard: mirrors the dead-code gate above. The registry is
+    # checked into the real repo; scripts/ci/test_check_orphan_modules.py
+    # redirects REPO_ROOT at synthetic tmp_path trees whose live
+    # wired-but-dead set can never match the real registry. Skip whenever
+    # REPO_ROOT no longer points at this script's actual repository.
+    real_root = Path(__file__).resolve().parent.parent
+    if Path(REPO_ROOT).resolve() != real_root:
+        print(
+            "Skipped: REPO_ROOT redirected to a synthetic mock tree "
+            "(disposition gate is registry-relative to the real repo)."
+        )
+        return 0
+
+    rows = _load_wired_but_dead_dispositions()
+    if not rows and not WIRED_BUT_DEAD_DISPOSITIONS_PATH.exists():
+        print(
+            "ERROR: wired-but-dead disposition registry missing: "
+            f"{WIRED_BUT_DEAD_DISPOSITIONS_PATH}\n"
+            "Every WIRED_BUT_DEAD entry must carry an owner-assigned "
+            "wire-or-delete disposition (Issue #3748). Restore or create "
+            "the registry before landing."
+        )
+        return 2
+
+    live_set = set(raw_wired_but_dead)
+    failures = False
+
+    row_modules: set[str] = set()
+    invalid_rows: list[str] = []
+    for row in rows:
+        name = str(row.get("module", "")).strip()
+        row_modules.add(name)
+        disposition = str(row.get("disposition", "")).strip()
+        if disposition not in ALLOWED_DISPOSITIONS:
+            invalid_rows.append(
+                f"{name or '(blank module)'}: unknown disposition "
+                f"{disposition!r} (allowed: "
+                f"{sorted(ALLOWED_DISPOSITIONS)})"
+            )
+        issue = row.get("issue")
+        if not isinstance(issue, int):
+            invalid_rows.append(
+                f"{name}: missing/invalid 'issue' reference "
+                "(expected the governing or follow-up issue number)"
+            )
+        for field in ("owner", "rationale"):
+            if not str(row.get(field, "")).strip():
+                invalid_rows.append(f"{name}: missing '{field}'")
+
+    missing_live = sorted(live_set - row_modules)
+    missing_allowlist = sorted(set(WIRED_BUT_DEAD) - row_modules)
+    stale_rows = sorted(row_modules - live_set)
+    print(f"Live wired-but-dead modules: {len(live_set)}")
+    print(f"Allowlisted entries: {len(WIRED_BUT_DEAD)}")
+    print(f"Registry rows: {len(rows)}")
+    print(f"Rows missing for live modules: {len(missing_live)}")
+    print(f"Rows missing for allowlist entries: {len(missing_allowlist)}")
+    print(f"Stale rows (module no longer wired-but-dead): {len(stale_rows)}")
+    print(f"Invalid rows (schema violations): {len(invalid_rows)}")
+    print()
+
+    if missing_live or missing_allowlist:
+        failures = True
+        print(
+            "MISSING DISPOSITION ROWS DETECTED (CI FAILURE — Issue #3748):"
+        )
+        for name in sorted(set(missing_live) | set(missing_allowlist)):
+            print(f"  pub mod {name}; — no registry row")
+        print()
+        print(
+            "Every wired-but-dead module needs an owner-assigned\n"
+            "wire-or-delete disposition in\n"
+            "  tests/reference_data/wired_but_dead_dispositions.json\n"
+            "with one of: wire-pending / reject / keep-dead, a tracking\n"
+            "issue, an owner, and a rationale. Wire-up decisions without\n"
+            "a registry row are exactly the drift #3748 exists to stop."
+        )
+        print()
+
+    if invalid_rows:
+        failures = True
+        print("INVALID DISPOSITION ROWS DETECTED (CI FAILURE — Issue #3748):")
+        for problem in invalid_rows:
+            print(f"  {problem}")
+        print()
+        print(
+            "Each row must carry disposition (wire-pending | reject |\n"
+            "keep-dead), an integer issue reference, an owner, and a\n"
+            "non-empty rationale."
+        )
+        print()
+
+    if stale_rows:
+        failures = True
+        print("STALE DISPOSITION ROWS DETECTED (CI FAILURE — Issue #3748):")
+        for name in stale_rows:
+            print(f"  pub mod {name}; — no longer wired-but-dead")
+        print()
+        print(
+            "These registry rows point at modules that now have a\n"
+            "production caller or no longer exist. Keep the registry in\n"
+            "lock-step with the tree: drop the row in the same PR that\n"
+            "resolves the module, drop its WIRED_BUT_DEAD allowlist\n"
+            "entry, and lower BASELINE_WIRED_BUT_DEAD by one."
+        )
+        print()
+
+    if failures:
+        return 1
+
+    print(
+        f"Disposition registry in lock-step ({len(rows)} row(s), every "
+        "wired-but-dead module carries an owner-assigned decision)."
+    )
+    return 0
+
+
 def main() -> int:
     print(f"Orphan-modules detector (#2875) — repo: {REPO_ROOT}")
     print()
@@ -1441,6 +1700,18 @@ def main() -> int:
         "tracked in WIRED_BUT_DEAD and will be cleaned up in follow-up PRs.)"
     )
     print()
+
+    # ------------------------------------------------------------------
+    # Wired-but-dead disposition registry (Issue #3748).
+    #
+    # Fourth companion check: every WIRED_BUT_DEAD entry must carry an
+    # owner-assigned wire-or-delete disposition in the checked-in
+    # registry, and the registry must stay in lock-step with the live
+    # wired-but-dead set.
+    # ------------------------------------------------------------------
+    disposition_rc = _check_wired_but_dead_dispositions(raw_wired_but_dead)
+    if disposition_rc != 0:
+        return disposition_rc
 
     # ------------------------------------------------------------------
     # Dead-code-allow inventory (Issue #3752).
