@@ -447,7 +447,19 @@ impl BatchOracle {
                 // mock / analytical fallback there is no batch-dimension
                 // speedup, so the zero-coordinator `par_chunks` path is faster.
                 let final_worker_data = if self.surrogates.model_loaded {
-                    orchestrator.run_cpu_surrogate_batched(valid_configs, &self.surrogates)
+                    match orchestrator.run_cpu_surrogate_batched(valid_configs, &self.surrogates) {
+                        Ok(results) => results,
+                        Err(orch_err) => {
+                            // Issue #3754: a truncated population must never
+                            // masquerade as a legitimately smaller one —
+                            // surface the loss (partial results are described
+                            // in the error) instead of silently continuing.
+                            return Err(crate::api::error::FluxionError::Simulation(
+                                orch_err.to_string(),
+                                None,
+                            ));
+                        }
+                    }
                 } else {
                     orchestrator.run_cpu_surrogate(valid_configs, &self.surrogates)
                 };

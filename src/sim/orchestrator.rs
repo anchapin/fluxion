@@ -114,6 +114,43 @@ pub fn recommended_chunk_size(n_population: usize) -> usize {
 /// responsible for placing them at `results[idx]`.
 pub type CpuResult = (usize, f64);
 
+/// Worker batches that could not be delivered over the result channel
+/// (Issue #3754): `(worker_id, finished_batch)`.
+type DroppedBatches = Vec<(usize, Vec<CpuResult>)>;
+
+/// Error surfaced when a batched run cannot deliver every worker's
+/// results (Issue #3754).
+///
+/// Previously a failed `result_tx.send(results)` in the batched worker
+/// silently discarded the worker's entire evaluated batch, so a truncated
+/// population looked like a legitimately smaller one. Batches that cannot
+/// be delivered are now captured and surfaced here, alongside everything
+/// that WAS received, so callers can fail loudly without discarding
+/// completed work.
+#[derive(Debug, Clone)]
+pub struct BatchOrchestratorError {
+    /// Number of configs whose finished results were lost because the
+    /// result-channel receiver was dropped before delivery.
+    pub dropped_configs: usize,
+    /// Results that were received before the channel closed — preserved,
+    /// never silently discarded.
+    pub partial_results: Vec<CpuResult>,
+}
+
+impl std::fmt::Display for BatchOrchestratorError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "batched population run lost {} worker result(s) (result channel \
+             closed before delivery); {} result(s) were received",
+            self.dropped_configs,
+            self.partial_results.len()
+        )
+    }
+}
+
+impl std::error::Error for BatchOrchestratorError {}
+
 /// Trait abstracting the per-population compute pattern.
 ///
 /// Implementors decide *how* to schedule `Vec<ThermalModel>` evaluations
@@ -154,12 +191,22 @@ pub trait BatchOrchestrator: Send + Sync {
     /// analytical fallback there is no batch-dimension speedup and the
     /// unbatched `par_chunks` path is strictly faster (zero coordinator
     /// round-trips).
+    ///
+    /// # Error semantics (Issue #3754)
+    ///
+    /// If any worker's finished batch cannot be delivered because the
+    /// result-channel receiver was dropped mid-run (caller teardown, an
+    /// earlier error path), the loss is surfaced as
+    /// [`BatchOrchestratorError`] instead of silently truncating the
+    /// population. The error preserves every result that WAS received in
+    /// `partial_results` so callers can report partial output without
+    /// discarding completed work.
     fn run_cpu_surrogate_batched(
         &self,
         configs: Vec<(usize, ThermalModel<VectorField>)>,
         surrogates: &SurrogateManager,
-    ) -> Vec<CpuResult> {
-        self.run_cpu_surrogate(configs, surrogates)
+    ) -> Result<Vec<CpuResult>, BatchOrchestratorError> {
+        Ok(self.run_cpu_surrogate(configs, surrogates))
     }
 
     /// Evaluate `configs` (already validated and parameter-applied) on the
@@ -257,6 +304,71 @@ impl Default for RayonChunksOrchestrator {
     fn default() -> Self {
         Self::with_chunk_size(recommended_chunk_size(1024))
     }
+}
+
+/// Deliver a worker's finished batch to the coordinator (Issue #3754).
+///
+/// A failed send means the receiving side is gone (caller teardown, or an
+/// earlier error path dropping `result_rx`). The historic behavior —
+/// `let _ = result_tx.send(results);` — silently discarded the worker's
+/// entire evaluated batch, so a truncated population looked like a
+/// legitimately smaller one. Instead, the batch is recovered from the
+/// `SendError` via `into_inner`, captured into `dropped` so the final
+/// aggregation can fail loudly, and a `tracing::warn!` names the dropped
+/// batch size at the moment of loss.
+fn deliver_worker_results(
+    result_tx: &crossbeam::channel::Sender<Vec<CpuResult>>,
+    worker_id: usize,
+    results: Vec<CpuResult>,
+    dropped: &std::sync::Mutex<DroppedBatches>,
+) {
+    if let Err(err) = result_tx.send(results) {
+        let results = err.into_inner();
+        let batch_size = results.len();
+        tracing::warn!(
+            worker = worker_id,
+            dropped_batch_size = batch_size,
+            "BatchOracle result channel closed; worker batch captured for \
+             loud failure instead of silent drop (Issue #3754)"
+        );
+        dropped
+            .lock()
+            .expect("dropped-worker-results mutex poisoned")
+            .push((worker_id, results));
+    }
+}
+
+/// Drain `result_rx` and decide the batched run's outcome (Issue #3754).
+///
+/// Every chunk that arrived before the channel closed is preserved in
+/// arrival order. If any worker batch was captured by
+/// [`deliver_worker_results`], returns [`BatchOrchestratorError`] (after
+/// a `tracing::error!` naming the loss) carrying the received partial
+/// results plus the dropped-config count; otherwise returns the full
+/// result set.
+fn finalize_batched_results(
+    result_rx: crossbeam::channel::Receiver<Vec<CpuResult>>,
+    dropped_batches: DroppedBatches,
+) -> Result<Vec<CpuResult>, BatchOrchestratorError> {
+    let mut out: Vec<CpuResult> = Vec::new();
+    while let Ok(chunk) = result_rx.recv() {
+        out.extend(chunk);
+    }
+    if dropped_batches.is_empty() {
+        return Ok(out);
+    }
+    let dropped_configs = dropped_batches.iter().map(|(_, batch)| batch.len()).sum();
+    tracing::error!(
+        dropped_configs,
+        received_configs = out.len(),
+        dropped_workers = dropped_batches.len(),
+        "BatchOracle batched run lost worker results: result channel was \
+         closed before every worker could deliver (Issue #3754)"
+    );
+    Err(BatchOrchestratorError {
+        dropped_configs,
+        partial_results: out,
+    })
 }
 
 impl BatchOrchestrator for RayonChunksOrchestrator {
@@ -363,13 +475,13 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
         &self,
         configs: Vec<(usize, ThermalModel<VectorField>)>,
         surrogates: &SurrogateManager,
-    ) -> Vec<CpuResult> {
+    ) -> Result<Vec<CpuResult>, BatchOrchestratorError> {
         use crossbeam::channel;
         use std::thread;
 
         let n = configs.len();
         if n == 0 {
-            return Vec::new();
+            return Ok(Vec::new());
         }
 
         let n_cpus = thread::available_parallelism()
@@ -407,6 +519,11 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
         }
         // Result channel: workers -> coordinator, carrying finished (idx, eui).
         let (result_tx, result_rx) = channel::unbounded::<Vec<CpuResult>>();
+        // Issue #3754: captures any worker batch that cannot be delivered
+        // because the receiver was dropped mid-run, so the loss surfaces
+        // as an error instead of silently truncating the population.
+        let dropped_results =
+            std::sync::Arc::new(std::sync::Mutex::<DroppedBatches>::new(Vec::new()));
 
         let n_timesteps: usize = 8760;
 
@@ -417,6 +534,7 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
             for (wid, mut models) in slices.into_iter().enumerate() {
                 let work_tx = work_tx.clone();
                 let result_tx = result_tx.clone();
+                let dropped_results = std::sync::Arc::clone(&dropped_results);
                 let reply_rx = &reply_receivers[wid];
                 s.spawn(move || {
                     // Deterministic daily cycle — identical to `run_cpu_surrogate`,
@@ -505,7 +623,9 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
                             (idx, eui)
                         })
                         .collect();
-                    let _ = result_tx.send(results);
+                    // Issue #3754: never silently drop the finished batch if
+                    // the receiver is gone — capture it and fail loudly below.
+                    deliver_worker_results(&result_tx, wid, results, &dropped_results);
                 });
             }
 
@@ -586,12 +706,15 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
         // terminates.
         drop(result_tx);
 
-        // Collect worker results in arrival order; the caller maps by `idx`.
-        let mut out: Vec<CpuResult> = Vec::with_capacity(n);
-        while let Ok(chunk) = result_rx.recv() {
-            out.extend(chunk);
-        }
-        out
+        // Issue #3754: collect worker results in arrival order and fail
+        // loudly if any batch was lost to a closed channel — the received
+        // results are preserved in the error's `partial_results`.
+        let dropped_batches = std::mem::take(
+            &mut *dropped_results
+                .lock()
+                .expect("dropped-worker-results mutex poisoned"),
+        );
+        finalize_batched_results(result_rx, dropped_batches)
     }
 
     /// `par_chunks`-parallel analytical path (Issue #2769).
@@ -954,7 +1077,9 @@ mod tests {
     fn batched_empty_configs_returns_empty_results() {
         let surrogates = SurrogateManager::new().expect("SurrogateManager::new");
         let orchestrator = RayonChunksOrchestrator::default();
-        let result = orchestrator.run_cpu_surrogate_batched(Vec::new(), &surrogates);
+        let result = orchestrator
+            .run_cpu_surrogate_batched(Vec::new(), &surrogates)
+            .expect("empty batched run must succeed");
         assert!(result.is_empty());
     }
 
@@ -963,7 +1088,9 @@ mod tests {
         let surrogates = SurrogateManager::new().expect("SurrogateManager::new");
         let orchestrator = RayonChunksOrchestrator::for_population(16);
         let configs: Vec<_> = (0..16).map(make_dummy_config).collect();
-        let result = orchestrator.run_cpu_surrogate_batched(configs, &surrogates);
+        let result = orchestrator
+            .run_cpu_surrogate_batched(configs, &surrogates)
+            .expect("batched run must succeed with the receiver alive");
         assert_eq!(result.len(), 16);
         let mut indices: Vec<usize> = result.iter().map(|(i, _)| *i).collect();
         indices.sort_unstable();
@@ -991,7 +1118,9 @@ mod tests {
         };
 
         let mut unbatched = orchestrator.run_cpu_surrogate(make_pop(), &surrogates);
-        let mut batched = orchestrator.run_cpu_surrogate_batched(make_pop(), &surrogates);
+        let mut batched = orchestrator
+            .run_cpu_surrogate_batched(make_pop(), &surrogates)
+            .expect("batched run must succeed with the receiver alive");
         unbatched.sort_by_key(|(i, _)| *i);
         batched.sort_by_key(|(i, _)| *i);
 
@@ -1023,8 +1152,12 @@ mod tests {
                 .collect::<Vec<_>>()
         };
 
-        let mut r1 = orchestrator.run_cpu_surrogate_batched(make_pop(), &surrogates);
-        let mut r2 = orchestrator.run_cpu_surrogate_batched(make_pop(), &surrogates);
+        let mut r1 = orchestrator
+            .run_cpu_surrogate_batched(make_pop(), &surrogates)
+            .expect("first batched run must succeed");
+        let mut r2 = orchestrator
+            .run_cpu_surrogate_batched(make_pop(), &surrogates)
+            .expect("second batched run must succeed");
         r1.sort_by_key(|(i, _)| *i);
         r2.sort_by_key(|(i, _)| *i);
         for ((i1, v1), (i2, v2)) in r1.iter().zip(r2.iter()) {
@@ -1037,5 +1170,108 @@ mod tests {
                 v2
             );
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Issue #3754 — a closed result channel must fail loudly, never
+    // silently drop a finished worker batch.
+    // -----------------------------------------------------------------------
+
+    /// The exact mid-run delivery path the batched worker takes at the end
+    /// of its 8 760-step loop: dropping the receiver before delivery must
+    /// NOT silently discard the finished batch —
+    /// [`deliver_worker_results`] captures it intact into the dropped sink
+    /// (it is surfaced as an error by `finalize_batched_results`).
+    #[test]
+    fn batched_worker_batch_captured_when_receiver_dropped_mid_run() {
+        let (result_tx, result_rx) = crossbeam::channel::unbounded::<Vec<CpuResult>>();
+        // Simulate caller teardown: the receiving side goes away before the
+        // worker delivers its finished batch.
+        drop(result_rx);
+
+        let dropped: std::sync::Mutex<DroppedBatches> = std::sync::Mutex::new(Vec::new());
+        let batch: Vec<CpuResult> = vec![(3, 12.5), (7, 4.25), (11, 0.0)];
+        deliver_worker_results(&result_tx, 2, batch, &dropped);
+
+        let captured = dropped.into_inner().unwrap();
+        assert_eq!(captured.len(), 1, "exactly one worker batch captured");
+        let (worker_id, results) = &captured[0];
+        assert_eq!(*worker_id, 2, "captured batch tagged with its worker id");
+        assert_eq!(results.len(), 3, "captured batch must be intact");
+        assert_eq!(results[0], (3, 12.5));
+        assert_eq!(results[1], (7, 4.25));
+        assert_eq!(results[2], (11, 0.0));
+    }
+
+    /// Happy path of the delivery helper: receiver alive → the batch is
+    /// delivered over the channel and nothing lands in the dropped sink.
+    #[test]
+    fn batched_worker_batch_delivered_when_receiver_alive() {
+        let (result_tx, result_rx) = crossbeam::channel::unbounded::<Vec<CpuResult>>();
+        let dropped: std::sync::Mutex<DroppedBatches> = std::sync::Mutex::new(Vec::new());
+        deliver_worker_results(&result_tx, 1, vec![(5, 2.5)], &dropped);
+        assert!(dropped.into_inner().unwrap().is_empty());
+        assert_eq!(result_rx.recv().unwrap(), vec![(5, 2.5)]);
+    }
+
+    /// The aggregation fails loudly when any worker batch was lost AND
+    /// preserves the results that were already received in
+    /// `partial_results` (issue acceptance: outcome visible, not silent).
+    #[test]
+    fn batched_finalize_fails_loudly_preserving_received_results() {
+        let (result_tx, result_rx) = crossbeam::channel::unbounded::<Vec<CpuResult>>();
+        // Two workers delivered their batches before the channel closed...
+        result_tx.send(vec![(0, 1.0), (1, 2.0)]).unwrap();
+        result_tx.send(vec![(4, 8.0)]).unwrap();
+        drop(result_tx);
+        // ...one worker's batch could not be delivered.
+        let dropped: DroppedBatches = vec![(2, vec![(2, 3.0), (3, 4.0)])];
+
+        let outcome = finalize_batched_results(result_rx, dropped);
+        let err = outcome.expect_err("closed-channel loss must surface as Err");
+        assert_eq!(err.dropped_configs, 2, "dropped batch size is reported");
+        assert_eq!(
+            err.partial_results.len(),
+            3,
+            "results already received are preserved"
+        );
+        assert!(err.partial_results.contains(&(0, 1.0)));
+        assert!(err.partial_results.contains(&(1, 2.0)));
+        assert!(err.partial_results.contains(&(4, 8.0)));
+
+        // The Display carries both counts for caller error envelopes.
+        let msg = format!("{}", err);
+        assert!(msg.contains("2 worker result(s)"), "msg: {}", msg);
+        assert!(msg.contains("3 result(s) were received"), "msg: {}", msg);
+    }
+
+    /// Clean aggregation: every chunk delivered, nothing dropped → Ok with
+    /// the full result set in arrival order.
+    #[test]
+    fn batched_finalize_ok_when_nothing_dropped() {
+        let (result_tx, result_rx) = crossbeam::channel::unbounded::<Vec<CpuResult>>();
+        result_tx.send(vec![(9, 1.5)]).unwrap();
+        result_tx.send(vec![(2, 0.25), (7, 6.0)]).unwrap();
+        drop(result_tx);
+
+        let outcome = finalize_batched_results(result_rx, Vec::new());
+        let results = outcome.expect("no dropped batches → Ok");
+        assert_eq!(results, vec![(9, 1.5), (2, 0.25), (7, 6.0)]);
+    }
+
+    /// End-to-end signature-migration guard: the batched path returns
+    /// `Ok` with the full population when the receiver stays alive.
+    #[test]
+    fn batched_happy_path_returns_ok_with_full_population() {
+        let surrogates = SurrogateManager::new().expect("SurrogateManager::new");
+        let orchestrator = RayonChunksOrchestrator::with_chunk_size(4);
+        let configs: Vec<_> = (0..8).map(make_dummy_config).collect();
+        let result = orchestrator
+            .run_cpu_surrogate_batched(configs, &surrogates)
+            .expect("batched run must succeed with the receiver alive");
+        assert_eq!(result.len(), 8);
+        let mut indices: Vec<usize> = result.iter().map(|(i, _)| *i).collect();
+        indices.sort_unstable();
+        assert_eq!(indices, (0..8).collect::<Vec<_>>());
     }
 }
