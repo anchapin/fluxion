@@ -1126,6 +1126,20 @@ def _check_dead_code_inventory(update: bool) -> int:
     a ratchet-affecting regeneration is visible in the output.
     """
     print("--- Dead-code-allow inventory (#3752) ---")
+    # Mock-repo guard: scripts/ci/test_check_orphan_modules.py redirects the
+    # module-level REPO_ROOT at synthetic tmp_path trees whose fixture
+    # sources carry allow(dead_code) markers that can never appear in the
+    # real repo's checked-in inventory. Every other detector here is
+    # self-contained; this one is inherently registry-relative to the real
+    # repo, so skip it whenever REPO_ROOT no longer points at this script's
+    # actual repository.
+    real_root = Path(__file__).resolve().parent.parent
+    if Path(REPO_ROOT).resolve() != real_root:
+        print(
+            "Skipped: REPO_ROOT redirected to a synthetic mock tree "
+            "(dead-code gate is registry-relative to the real repo)."
+        )
+        return 0
     live_sites = _scan_dead_code_sites()
     live_count = len(live_sites)
     print(f"Production allow(dead_code) sites (live scan): {live_count}")
