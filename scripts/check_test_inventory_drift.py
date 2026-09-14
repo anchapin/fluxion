@@ -174,9 +174,18 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #     #3707/#3714 un-ignoring the occupancy statistical and wasm
 #     ``wasm_run_full_annual_*`` smoke tests. Issue #3711 is the
 #     required documentation for this bump.
-BASELINE_LIB_TESTS = 4314
+#   - 2026-09-13 (Issue #3754): bumped ``BASELINE_LIB_TESTS`` from 4314
+#     to 4319 and ``BASELINE_WORKSPACE_TESTS`` from 8683 to 8688 for the
+#     five new closed-channel tests in ``src/sim/orchestrator.rs``
+#     (``batched_worker_batch_captured_when_receiver_dropped_mid_run``,
+#     ``batched_worker_batch_delivered_when_receiver_alive``,
+#     ``batched_finalize_fails_loudly_preserving_received_results``,
+#     ``batched_finalize_ok_when_nothing_dropped``, and
+#     ``batched_happy_path_returns_ok_with_full_population``). No new
+#     binaries and no ignore-count changes.
+BASELINE_LIB_TESTS = 4319
 BASELINE_LIB_IGNORED = 9
-BASELINE_WORKSPACE_TESTS = 8683
+BASELINE_WORKSPACE_TESTS = 8688
 # 2026-09-12 (Issue #3711): 121 -> 133 — see the history entry above for
 # the per-crate attribution and the AST-vs-cargo calibration analysis.
 BASELINE_WORKSPACE_IGNORED = 133
