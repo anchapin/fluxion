@@ -139,7 +139,7 @@ Every active gate under `scripts/check_*.py` (39 scripts at head) is wired into 
 | `scripts/check_known_issues_summary.py` | `## Summary` table in `KNOWN_ISSUES.md` matches section headers (#3513) | `docs-hygiene.yml` | #6 |
 | `scripts/check_module_size.py` | Module-size ratchet — hard ceiling on the largest `.rs` files (Issues #2878 / #3457) | `architecture_drift.yml` | #5 |
 | `scripts/check_no_ignored_tracked_files.py` | Tracked file must not match any `.gitignore` pattern (#3174 / #3356) | `tracked-vs-ignored.yml` | #6 |
-| `scripts/check_orphan_modules.py` | Orphan Rust source file detector (#2875 / #3458 / #3459) | `architecture_drift.yml`, `scripts-tests.yml` | #5 |
+| `scripts/check_orphan_modules.py` | Orphan Rust source file detector (#2875 / #3458 / #3459) + production `allow(dead_code)` inventory gate with downward-only `BASELINE_DEAD_CODE_ALLOWS` ratchet (#3752; inventory at `tests/reference_data/dead_code_inventory.json`, regenerate via `--update-dead-code-inventory`) | `architecture_drift.yml`, `scripts-tests.yml` | #5 |
 | `scripts/check_osimflow_coverage.py` | OSimFlow per-file coverage thresholds (#1847 / #1864) | `python-tests.yml` | #6 |
 | `scripts/check_physics_sim_cycle.py` | `physics ↔ sim` cycle edge-count guard (#2463) | `rust-tests.yml` | #5 |
 | `scripts/check_pyi_drift.py` | `fluxion.pyi` stub ↔ `#[pyclass]` / `#[pyfunction]` drift (#2509) | run locally before editing Python bindings | #6 |
