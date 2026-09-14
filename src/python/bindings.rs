@@ -150,6 +150,23 @@ impl PyMultiZoneThermalModel {
         self.inner.hvac.num_zones
     }
 
+    /// Issue #3749 — read-only view of the zone solver the step dispatcher
+    /// ACTUALLY executed on the most recent `step_physics` step, using the
+    /// same lowercase vocabulary as the REST `effective_solver` field
+    /// (`"gauge"` | `"5r1c"` | `"9r4c"`; issue #3305).
+    ///
+    /// This is derived from the dispatcher's real per-step outcome, not
+    /// from the `zone_solver` requested via [`Self::from_case_spec`]:
+    /// bindings ship with root default features, where the `Gauge`
+    /// default selector silently falls through to legacy 5R1C/9R4C in
+    /// the dispatcher, and this accessor is how a Python consumer tells
+    /// the difference. (`Gauge` remains the unconditional default
+    /// selector; the `gauge-solver` cargo feature only gates whether the
+    /// dispatcher's gauge arm runs — issue #3291 / §LIMIT-21.)
+    pub fn effective_zone_solver(&self) -> String {
+        self.inner.effective_zone_solver().as_str().to_string()
+    }
+
     /// Get the number of zones from the inner ThermalModel
     pub fn get_inner_num_zones(&self) -> usize {
         self.inner.hvac.num_zones
@@ -1155,11 +1172,14 @@ mod tests {
     fn from_case_spec_accepts_canonical_ids() {
         // Spot-check one low-mass and one high-mass case — these exercise
         // `case_enum.spec()` + `ThermalModel::from_spec` end-to-end without
-        // touching Python.
-        let m900 = PyMultiZoneThermalModel::from_case_spec("Case900").expect("Case900 parses");
+        // touching Python. Rust callers must pass all three arguments
+        // (the `#[pyo3(signature)]` defaults apply to Python only).
+        let m900 =
+            PyMultiZoneThermalModel::from_case_spec("Case900", None, None).expect("Case900 parses");
         assert!(m900.num_zones() >= 1);
 
-        let m600 = PyMultiZoneThermalModel::from_case_spec("Case600").expect("Case600 parses");
+        let m600 =
+            PyMultiZoneThermalModel::from_case_spec("Case600", None, None).expect("Case600 parses");
         assert!(m600.num_zones() >= 1);
     }
 
@@ -1174,23 +1194,26 @@ mod tests {
             "Case_900",
             "case_9_0_0",
         ] {
-            let model = PyMultiZoneThermalModel::from_case_spec(input)
+            let model = PyMultiZoneThermalModel::from_case_spec(input, None, None)
                 .unwrap_or_else(|e| panic!("'{}' should parse: {}", input, e));
-            assert_eq!(model.hvac.num_zones(), 1, "input='{}'", input);
+            assert_eq!(model.inner.hvac.num_zones, 1, "input='{}'", input);
         }
     }
 
     #[test]
     fn from_case_spec_accepts_aliases() {
         // The short aliases for the Case195 variants must round-trip.
-        PyMultiZoneThermalModel::from_case_spec("Case195HM").expect("Case195HM alias parses");
-        PyMultiZoneThermalModel::from_case_spec("Case195NL").expect("Case195NL alias parses");
-        PyMultiZoneThermalModel::from_case_spec("Case195NS").expect("Case195NS alias parses");
+        PyMultiZoneThermalModel::from_case_spec("Case195HM", None, None)
+            .expect("Case195HM alias parses");
+        PyMultiZoneThermalModel::from_case_spec("Case195NL", None, None)
+            .expect("Case195NL alias parses");
+        PyMultiZoneThermalModel::from_case_spec("Case195NS", None, None)
+            .expect("Case195NS alias parses");
     }
 
     #[test]
     fn from_case_spec_rejects_unknown_id() {
-        let err = PyMultiZoneThermalModel::from_case_spec("CaseNotFound")
+        let err = PyMultiZoneThermalModel::from_case_spec("CaseNotFound", None, None)
             .err()
             .expect("unknown case id should error");
         // Error message should mention the bad id (normalized to upper case)
@@ -1202,6 +1225,69 @@ mod tests {
             msg.contains("Case600") || msg.contains("Case900"),
             "msg={}",
             msg
+        );
+    }
+
+    // -- effective_zone_solver (Issue #3749) -----------------------------
+
+    /// Issue #3749: the binding accessor must report the DISPATCHER's
+    /// outcome, not the requested selector. `from_case_spec` with the
+    /// `zone_solver` omitted carries the `Gauge` default selector
+    /// (`ThermalSelector::default()`), but with root default features the
+    /// dispatcher silently falls through to legacy 5R1C — the exact
+    /// silent-fall-through observability gap this issue closes for Python
+    /// consumers. After one real dispatcher step, the accessor must
+    /// feature-conditionally report `"5r1c"` (default build) or `"gauge"`
+    /// (`--features gauge-solver`, where the gauge arm runs
+    /// unconditionally — `Gauge` is the unconditional default selector;
+    /// the cargo feature only gates the dispatcher arm, issue #3291).
+    #[test]
+    fn effective_zone_solver_matches_dispatcher_for_default_selector() {
+        let mut model =
+            PyMultiZoneThermalModel::from_case_spec("Case600", None, None).expect("Case600 parses");
+        // One real dispatcher step moves `effective_zone_solver` off its
+        // constructor default — no weather / full-year run needed.
+        let _ = model.inner.step_physics(0, 20.0, 3600.0);
+
+        let reported = model.effective_zone_solver();
+        // The accessor must agree with the engine's own view and stay in
+        // the shared `as_str()` vocabulary.
+        assert_eq!(
+            reported,
+            model.inner.effective_zone_solver().as_str(),
+            "binding accessor must mirror ThermalModel::effective_zone_solver"
+        );
+        assert!(
+            ["gauge", "5r1c", "9r4c"].contains(&reported.as_str()),
+            "effective solver must use the shared as_str() vocabulary, got {reported}"
+        );
+        #[cfg(not(feature = "gauge-solver"))]
+        assert_eq!(
+            reported, "5r1c",
+            "default build: the Gauge default selector silently falls through to 5R1C — the binding must say so"
+        );
+        #[cfg(feature = "gauge-solver")]
+        assert_eq!(
+            reported, "gauge",
+            "gauge-solver build: the gauge arm ran unconditionally — the binding must say so"
+        );
+    }
+
+    /// Issue #3749: an explicit legacy `zone_solver="5r1c"` opt-in must be
+    /// reported verbatim in BOTH the default and `--features gauge-solver`
+    /// builds — the selector drives the dispatch in either feature state,
+    /// and the binding must never relabel an explicit request.
+    #[test]
+    fn effective_zone_solver_reports_explicit_legacy_selector() {
+        let mut model =
+            PyMultiZoneThermalModel::from_case_spec("Case600", Some("5r1c".to_string()), None)
+                .expect("Case600 + 5r1c parses");
+        let _ = model.inner.step_physics(0, 20.0, 3600.0);
+
+        assert_eq!(model.effective_zone_solver(), "5r1c");
+        assert_eq!(
+            model.inner.effective_zone_solver(),
+            crate::sim::thermal_selector::ZoneSolverKind::FiveROneC
         );
     }
 
