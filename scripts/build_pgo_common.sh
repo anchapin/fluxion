@@ -295,7 +295,7 @@ Options:
   --features LIST        Cargo --features list (default: empty)
   --profile NAME         Cargo profile name (default: release)
   --train-workload CMD   Override the training workload command.
-                         Default: cargo test --release --test ashrae_140_validation
+                         Default: cargo test --release --test all_tests ashrae_140_validation::
   --skip-generate        Skip the profile-generation build step
   --skip-train           Skip the training workload step (use existing .profraw)
   --skip-use             Skip the profile-use build step (generate-only)

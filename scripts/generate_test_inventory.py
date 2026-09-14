@@ -69,6 +69,21 @@ The inventory schema::
       }
     }
 
+Binary-count shapes counted as ``test_binaries`` (Issue #3764 update):
+
+* auto-discovered top-level files (``<pkg>/tests/*.rs``) — since the
+  consolidation these are only the process-isolation keepers (env-var
+  mutation, ``#[global_allocator]``, ``std::process::exit``) plus sibling
+  crates' files;
+* hand-wired ``[[test]] path = "<pkg>/tests/<sub>/<foo>.rs"`` entries —
+  which include the consolidated root runner
+  (``tests/all_tests/main.rs``, name ``all_tests``) whose 263 former
+  standalone binaries live as modules under ``tests/all_tests/``.
+
+Module files inside a consolidated runner (``tests/all_tests/*.rs``
+other than ``main.rs``) are counted under ``test_source_files`` only —
+they are not Cargo binaries.
+
 Exit codes
 ----------
   0 — inventory generated successfully

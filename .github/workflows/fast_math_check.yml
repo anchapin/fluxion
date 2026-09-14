@@ -167,7 +167,7 @@ jobs:
       - name: Build & run fast-math probe (default features)
         run: |
           set -uo pipefail
-          cargo test --test fast_math_probe --release -- --nocapture 2>&1 | tee probe_output.txt
+          cargo test --test all_tests fast_math_probe:: --release -- --nocapture 2>&1 | tee probe_output.txt
           TEST_EXIT=${PIPESTATUS[0]}
           echo "================================="
           echo "Probe exit status: ${TEST_EXIT}"
@@ -248,7 +248,7 @@ jobs:
       - name: Build & run fast-math probe (--features fast-math)
         run: |
           set -uo pipefail
-          cargo test --test fast_math_probe --release --features fast-math -- --nocapture 2>&1 | tee probe_output.txt
+          cargo test --test all_tests fast_math_probe:: --release --features fast-math -- --nocapture 2>&1 | tee probe_output.txt
           TEST_EXIT=${PIPESTATUS[0]}
           echo "================================="
           echo "Probe exit status: ${TEST_EXIT}"

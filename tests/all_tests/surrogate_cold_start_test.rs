@@ -104,7 +104,7 @@ use std::time::Instant;
 // p95 robust statistic. The pure helpers live in a shared module so the
 // regression tests in `tests/cold_start_guard_test.rs` can exercise them
 // without the `ort` feature.
-#[path = "cold_start_guard/mod.rs"]
+#[path = "../cold_start_guard/mod.rs"]
 mod cold_start_guard;
 
 use cold_start_guard::warm_p95_statistic;

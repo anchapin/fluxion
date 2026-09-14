@@ -158,7 +158,7 @@ cargo test --workspace --exclude fluxion-tauri --no-fail-fast
 ls tests/ashrae_140*.rs
 
 # Run one ASHRAE 140 binary with visible output; repeat per binary as needed
-cargo test --test ashrae_140_validation -- --nocapture
+cargo test --test all_tests ashrae_140_validation:: -- --nocapture
 ```
 Check the current pass rate and known failures in [`docs/ASHRAE140_RESULTS.md`](docs/ASHRAE140_RESULTS.md) and [`SCORECARD.md`](SCORECARD.md). The suite is not purely informational: the strict ±15% annual-energy regression gate is enforced in CI (`ashrae_140_strict_energy_gate.yml`; Issues #2506 / #3572), excluding the documented structural failures noted above. Required branch-protection checks are listed in `release_gates.yaml → ci.required_checks`.
 

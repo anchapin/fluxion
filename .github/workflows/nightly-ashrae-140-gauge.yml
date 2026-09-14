@@ -88,11 +88,11 @@ jobs:
 
       # ADR-0007 criterion 1 — strict ±15% annual-energy band gate.
       - name: Criterion 1 — ashrae_140_validation (strict ±15% band)
-        run: cargo test --locked --features gauge-solver --test ashrae_140_validation
+        run: cargo test --locked --features gauge-solver --test all_tests ashrae_140_validation::
 
       # ADR-0007 criterion 2 — energy conservation gate.
       - name: Criterion 2 — zone_balance_eplus_isolation (energy conservation)
-        run: cargo test --locked --features gauge-solver --test zone_balance_eplus_isolation
+        run: cargo test --locked --features gauge-solver --test all_tests zone_balance_eplus_isolation::
 
       # ADR-0007 criterion 3 — CLI behaviour / stub guards (includes the
       # Issue #3283 --zone-solver / --conduction-solver flag tests).
@@ -101,15 +101,15 @@ jobs:
 
       # ADR-0007 criterion 4 — Case 600 series.
       - name: Criterion 4 — ashrae_140_case_600_series
-        run: cargo test --locked -p fluxion --features gauge-solver --test ashrae_140_case_600_series
+        run: cargo test --locked -p fluxion --features gauge-solver --test all_tests ashrae_140_case_600_series::
 
       # ADR-0007 criterion 5 — quarantined Case 600 metrics tracking.
       - name: Criterion 5 — issue_1457_case_600_series_tracking
-        run: cargo test --locked --features gauge-solver --test known_issues_regression issue_1457_case_600_series_tracking
+        run: cargo test --locked --features gauge-solver --test all_tests known_issues_regression:: issue_1457_case_600_series_tracking
 
       # ADR-0007 criterion 6 — Case 900 high-mass validation harness.
       - name: Criterion 6 — gauge_validation_case_900
-        run: cargo test --locked --features gauge-solver --test gauge_validation_case_900
+        run: cargo test --locked --features gauge-solver --test all_tests gauge_validation_case_900::
 
       # Issue #3283 smoke — explicit `--zone-solver gauge` selection exits
       # through the (intentional, #2947) fail-closed stub, but the selection
