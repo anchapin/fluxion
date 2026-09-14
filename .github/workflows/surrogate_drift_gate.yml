@@ -217,19 +217,30 @@ jobs:
           set -euo pipefail
           # Synthetic interleaved lines mirroring the PR #2473 capture:
           #   `[drift-gate-diag] ... tolerance=test <name> ... ok`
+          # plus the module-qualified summary shape produced by the
+          # consolidated `tests/all_tests` harness (Issue #3764):
+          #   `test surrogate_drift_gate::test_<name> ... ok`
           ok_interleaved='[drift-gate-diag] context=Issue #1865 tolerance=test test_surrogate_drift_metric_definition ... ok'
           ok_plain='test test_surrogate_drift_metric_definition ... ok'
+          ok_qualified='test surrogate_drift_gate::test_surrogate_drift_metric_definition ... ok'
           fail_interleaved='some eprintln noise test surrogate_drift_gate_case_900_9r4c ... FAILED'
-          printf '%s\n%s\n%s\n' "$ok_interleaved" "$ok_plain" "$fail_interleaved" > /tmp/regex_selftest.txt
+          printf '%s\n%s\n%s\n%s\n' "$ok_interleaved" "$ok_plain" "$ok_qualified" "$fail_interleaved" > /tmp/regex_selftest.txt
 
           # check_coverage-style regex must find the specific test name even
           # behind an eprintln! prefix.
-          grep -qE '(^|[^[:alnum:]_])test test_surrogate_drift_metric_definition \.\.\. (ok|ignored|FAILED)' /tmp/regex_selftest.txt \
+          grep -qE '(^|[^[:alnum:]_])test ([a-z0-9_]+::)?test_surrogate_drift_metric_definition \.\.\. (ok|ignored|FAILED)' /tmp/regex_selftest.txt \
             || { echo "::error::coverage regex did not match interleaved ok line (#2487)"; exit 1; }
 
-          # PASSED extractor must count BOTH ok lines (plain + interleaved).
-          passed=$(grep -cE '(^|[^[:alnum:]_])test test_surrogate_drift_(gate|metric).* \.\.\. ok' /tmp/regex_selftest.txt)
-          [ "$passed" -eq 2 ] || { echo "::error::PASSED regex counted $passed (expected 2) for interleaved ok lines (#2487)"; exit 1; }
+          # ...and the module-qualified consolidation format must match on
+          # its own (Issue #3764): `test <module>::test_<name> ... ok`.
+          printf '%s\n' "$ok_qualified" \
+            | grep -qE '(^|[^[:alnum:]_])test ([a-z0-9_]+::)?test_surrogate_drift_metric_definition \.\.\. (ok|ignored|FAILED)' \
+            || { echo "::error::coverage regex did not match module-qualified ok line (#3764)"; exit 1; }
+
+          # PASSED extractor must count ALL THREE ok lines (plain +
+          # interleaved + module-qualified).
+          passed=$(grep -cE '(^|[^[:alnum:]_])test ([a-z0-9_]+::)?test_surrogate_drift_(gate|metric).* \.\.\. ok' /tmp/regex_selftest.txt)
+          [ "$passed" -eq 3 ] || { echo "::error::PASSED regex counted $passed (expected 3) for interleaved/qualified ok lines (#2487)"; exit 1; }
 
           # FAILED extractor must count the interleaved FAILED line.
           failed=$(grep -cE '(^|[^[:alnum:]_])test .* \.\.\. FAILED' /tmp/regex_selftest.txt)
@@ -355,7 +366,11 @@ jobs:
             # boundary before `test` so the match survives mid-line
             # interleaving (an unbuffered eprintln! glued onto the start of
             # libtest's `test <name> ... ok` summary line under --nocapture).
-            if grep -qE "(^|[^[:alnum:]_])test $name \\.\\.\\. (ok|ignored|FAILED)" "$file"; then
+            # Issue #3764: the consolidated `tests/all_tests` harness prints
+            # module-qualified names (`test <module>::<name> ... ok`), so an
+            # optional `<module>::` prefix is tolerated between `test ` and
+            # the test name.
+            if grep -qE "(^|[^[:alnum:]_])test ([a-z0-9_]+::)?$name \\.\\.\\. (ok|ignored|FAILED)" "$file"; then
               echo "  COVERED: $name (from $(basename "$file"))"
             else
               echo "  DROPPED FROM GATE: $name"
@@ -381,9 +396,11 @@ jobs:
           # unbuffered eprintln! diagnostic interleaves onto the same captured
           # line (e.g. `[drift-gate-diag] ... tolerance=test <name> ... ok`).
           # The word boundary prevents false positives like `latest ... FAILED`.
+          # Issue #3764: the PASSED extractor additionally tolerates the
+          # module-qualified consolidation format (`test <module>::<name>`).
           FAILED=$(grep -cE '(^|[^[:alnum:]_])test .* \.\.\. FAILED' /tmp/surrogate_drift_output.txt || true)
           PANICS=$(grep -cE 'panicked at' /tmp/surrogate_drift_output.txt || true)
-          PASSED=$(grep -cE '(^|[^[:alnum:]_])test (test_surrogate_drift_(gate|metric)|fallback_annual_hvac).* \.\.\. ok' /tmp/surrogate_drift_output.txt || true)
+          PASSED=$(grep -cE '(^|[^[:alnum:]_])test ([a-z0-9_]+::)?(test_surrogate_drift_(gate|metric)|fallback_annual_hvac).* \.\.\. ok' /tmp/surrogate_drift_output.txt || true)
 
           # Test self-reported mode + peak drift (printed via eprintln! under
           # --nocapture). Used to cross-check the independently resolved mode.

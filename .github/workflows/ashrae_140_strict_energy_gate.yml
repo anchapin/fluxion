@@ -245,10 +245,14 @@ jobs:
           # Coverage: the two infrastructure tests must appear as `ok`.
           # (The two strict tolerance tests are coverage-checked by the
           # Python parser, which fails if a case line is missing.)
+          # Issue #3764: the consolidated `tests/all_tests` harness prints
+          # module-qualified names (`test <module>::<name> ... ok`), so an
+          # optional `<module>::` prefix is tolerated between `test ` and
+          # the test name.
           for t in \
             test_blind_mode_case_600_infrastructure \
             test_blind_mode_case_900_infrastructure ; do
-            if grep -qE "^test $t \.\.\. ok$" /tmp/strict_gate_output.txt; then
+            if grep -qE "^test ([a-z0-9_]+::)?$t \.\.\. ok$" /tmp/strict_gate_output.txt; then
               echo "  COVERED (pass): $t"
             else
               echo "  DROPPED OR FAILING: $t"

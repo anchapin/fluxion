@@ -1027,9 +1027,13 @@ jobs:
           # cargo harness's "test X ... ok" line. The original strict
           # regex `\.\.\. (ok|ignored|FAILED)` is restored now that the
           # captured stdout is clean.
+          # Issue #3764 — the consolidated `tests/all_tests` harness prints
+          # module-qualified names (`test <module>::<name> ... ok`); an
+          # optional `<module>::` prefix is tolerated between `test ` and
+          # the test name.
           check_coverage() {
             local name="$1"
-            if grep -qE "(^|[^[:alnum:]_])test $name \.\.\. (ok|ignored|FAILED)" /tmp/surrogate_mae_gate_output.txt; then
+            if grep -qE "(^|[^[:alnum:]_])test ([a-z0-9_]+::)?$name \.\.\. (ok|ignored|FAILED)" /tmp/surrogate_mae_gate_output.txt; then
               echo "  COVERED: $name"
             else
               echo "  DROPPED FROM GATE: $name"
@@ -1045,9 +1049,11 @@ jobs:
 
           echo
           echo "=== Surrogate ASHRAE 140 MAE gate result extraction ==="
+          # Issue #3764: tolerate module-qualified names in the PASSED
+          # extractor (`test <module>::surrogate_annual_cooling_...`).
           FAILED=$(grep -cE '(^|[^[:alnum:]_])test .* \.\.\. FAILED' /tmp/surrogate_mae_gate_output.txt || true)
           PANICS=$(grep -cE 'panicked at' /tmp/surrogate_mae_gate_output.txt || true)
-          PASSED=$(grep -cE '(^|[^[:alnum:]_])test (surrogate_annual_cooling_|reference_json_files_).* \.\.\. ok' /tmp/surrogate_mae_gate_output.txt || true)
+          PASSED=$(grep -cE '(^|[^[:alnum:]_])test ([a-z0-9_]+::)?(surrogate_annual_cooling_|reference_json_files_).* \.\.\. ok' /tmp/surrogate_mae_gate_output.txt || true)
           RESOLVED_MODE="${{ steps.gate-mode.outputs.mode }}"
 
           echo "  Passed        : $PASSED"
