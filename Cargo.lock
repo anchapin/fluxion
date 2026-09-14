@@ -1731,7 +1731,7 @@ dependencies = [
  "fluxion-toon",
  "ndarray",
  "ort",
- "rand 0.9.5",
+ "rand 0.10.2",
  "rand_distr 0.6.0",
  "serde",
  "serial_test",

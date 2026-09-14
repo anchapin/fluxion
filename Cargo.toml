@@ -423,7 +423,9 @@ num_cpus = "1.16"
 plotters = "0.3.5"
 
 # Random number generation for uncertainty quantification.
-# rand 0.9 + rand_distr 0.5 (#3308) — aligned with fluxion-twin's rand_distr 0.5.
+# rand 0.9 + rand_distr 0.5 (#3308) for the root package. fluxion-twin and
+# fluxion-behavior moved to rand_distr 0.6 (which implements rand 0.10's
+# `Distribution` trait, PR #3774), so they track rand 0.10 directly.
 # The workspace still carries multiple rand majors transitively (0.10 via
 # statrs 0.19/nalgebra 0.35/tungstenite 0.30; 0.8.7 remains lock-resolved for
 # a non-host target), but the root package no longer pins the 0.8 family.
@@ -541,7 +543,7 @@ napi-build = { version = "2", optional = true }
 [dev-dependencies]
 criterion = "0.8"
 approx = "0.5"
-rstest = "0.26"
+rstest = "0.27"
 proptest = "1.5"
 noisy_float = "0.2"
 
