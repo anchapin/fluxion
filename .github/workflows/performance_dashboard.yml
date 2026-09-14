@@ -66,13 +66,16 @@ jobs:
   # =========================================================================
   # bench-default — REQUIRED PR check.
   # Builds with default features only (matches what a user gets from
-  # `cargo install fluxion`). Cold-cache compile time: ~3 min. Warm-cache:
-  # <1 min. This is the fast path the dashboard regression check consumes.
+  # `cargo install fluxion`). Cold-cache full-crate bench compile observed
+  # at 9-15 min on shared runners (2026-09-14: canceled at the old 15 min
+  # ceiling on PR #3772 after 13m02s on #3769); the 25 min budget absorbs
+  # runner variance. This is the fast path the dashboard regression check
+  # consumes.
   # =========================================================================
   bench-default:
     name: Bench (default features)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -193,7 +196,7 @@ jobs:
     name: Published Crate Bench
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    timeout-minutes: 15
+    timeout-minutes: 25 # same observed 9-15 min spread as bench-default (see above)
     needs: bench-default
 
     steps:

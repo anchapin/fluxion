@@ -123,6 +123,10 @@ If you only need `maturin` for quick builds or one-off development (and don't wa
 python -m pip install 'maturin>=1.0,<2.0'
 ```
 
+### Low-memory builds (Linux)
+
+Cargo builds pick up memory-safe defaults from [`.cargo/config.toml`](.cargo/config.toml): a linker wrapper that prefers `mold`, then `lld`, and falls back to the system `cc` driver when neither is installed, plus `split-debuginfo = "unpacked"` on dev/test builds so DWARF data never streams through the linker. Constrain parallelism on RAM-constrained machines with `cargo build -j <n>` or `[build] jobs` in `~/.cargo/config.toml` — see [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for details.
+
 ## 🌳 Contributing & Branching
 
 **Development Workflow**:
