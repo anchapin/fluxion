@@ -252,8 +252,7 @@ jobs:
         # line so the verify step can report the actual drift and operating mode.
         run: |
           cargo test --release --features ort --verbose \
-            --test all_tests surrogate_drift_gate:: \
-            _surrogate_drift_gate_case_900_9r4c \
+            --test all_tests _surrogate_drift_gate_case_900_9r4c \
             -- --nocapture \
             2>&1 | tee -a /tmp/surrogate_drift_output.txt
           echo "---"
@@ -263,8 +262,7 @@ jobs:
         # Test 2/4: 8760-timestep (annual) drift gate
         run: |
           cargo test --release --features ort --verbose \
-            --test all_tests surrogate_drift_gate:: \
-            _surrogate_drift_gate_annual_simulation \
+            --test all_tests _surrogate_drift_gate_annual_simulation \
             -- --nocapture \
             2>&1 | tee -a /tmp/surrogate_drift_output.txt
           echo "---"
@@ -294,8 +292,7 @@ jobs:
         # interleaving, and a self-test step guards against regressions.
         run: |
           cargo test --release --features ort --verbose \
-            --test all_tests surrogate_drift_gate:: \
-            _surrogate_drift_metric_definition \
+            --test all_tests _surrogate_drift_metric_definition \
             -- --nocapture \
             2>&1 | tee /tmp/surrogate_drift_metric.txt | tee -a /tmp/surrogate_drift_output.txt
           echo "---"
@@ -311,8 +308,7 @@ jobs:
         # `/tmp/surrogate_drift_lenient.txt`.
         run: |
           cargo test --release --features ort --verbose \
-            --test all_tests surrogate_drift_gate:: \
-            _lenient_fallback_contract \
+            --test all_tests _lenient_fallback_contract \
             -- --nocapture \
             2>&1 | tee /tmp/surrogate_drift_lenient.txt | tee -a /tmp/surrogate_drift_output.txt
           echo "---"
