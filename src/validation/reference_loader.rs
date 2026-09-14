@@ -22,15 +22,47 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-/// Metadata about the reference data source
+/// Provenance block nested under `_schema.source` in the shipped reference
+/// database.
+///
+/// Canonical shape: the nested-source layout emitted by the #667 generator
+/// (`data/ashrae140_reference.json`). Issue #3759 introduced this struct when
+/// the #748-era flat schema stopped matching the regenerated data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReferenceSource {
+    /// Standard the data was sourced from (e.g. "ASHRAE 140-2023").
+    pub standard: String,
+    /// Section of the standard the test cases come from.
+    pub section: String,
+    /// Reference programs included in the inter-program comparison.
+    pub programs: Vec<String>,
+    /// Published results file the ranges were transcribed from.
+    pub results_file: String,
+    /// Mapping of metric name to its source table in the standard.
+    pub tables: HashMap<String, String>,
+    /// Mapping of metric name to its unit.
+    pub units: HashMap<String, String>,
+}
+
+/// Metadata about the reference data source (`_schema` object).
+///
+/// Canonical shape: the nested-source layout emitted by the #667 generator;
+/// Issue #3759 aligned this struct (and [`ReferenceSource`]) to it after the
+/// shipped data stopped matching the #748-era flat schema.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReferenceSchema {
+    /// Schema version (e.g. "1.0").
     pub version: String,
-    pub source: String,
-    pub programs: Vec<String>,
-    pub tables: HashMap<String, String>,
-    pub units: HashMap<String, String>,
+    /// Date the file was generated (e.g. "2026-05-12").
+    pub generated: String,
+    /// Provenance of the reference data.
+    pub source: ReferenceSource,
+    /// Human-readable description of the data set.
+    pub description: String,
+    /// Number of cases shipped in `cases`.
     pub total_cases: usize,
+    /// Generator note about value sourcing.
+    pub note: String,
 }
 
 /// Inter-program range with min, max, mean values
@@ -41,13 +73,18 @@ pub struct MetricRange {
     pub mean: f64,
 }
 
-/// Case reference data from ASHRAE 140-2023
+/// Case reference data from ASHRAE 140-2023.
+///
+/// Load metrics are optional: free-float cases (`600FF`, `650FF`, `680FF`,
+/// `900FF`, `950FF`, `980FF`) ship only free-float temperature ranges and no
+/// heating/cooling loads, and case `960` ships only `ff_max_zone_temp_C`
+/// (Issue #3759 — schema aligned to the #667-generated data).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CaseReference {
-    pub annual_heating_MWh: MetricRange,
-    pub annual_cooling_MWh: MetricRange,
-    pub peak_heating_kW: MetricRange,
-    pub peak_cooling_kW: MetricRange,
+    pub annual_heating_MWh: Option<MetricRange>,
+    pub annual_cooling_MWh: Option<MetricRange>,
+    pub peak_heating_kW: Option<MetricRange>,
+    pub peak_cooling_kW: Option<MetricRange>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ff_max_zone_temp_C: Option<MetricRange>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -190,10 +227,11 @@ pub fn has_case(case_id: &str) -> bool {
 pub fn get_source_info() -> Option<String> {
     get_reference_db().ok().map(|db| {
         format!(
-            "ASHRAE 140-{} ({} programs: {})",
+            "{} (schema v{}, {} programs: {})",
+            db.schema.source.standard,
             db.schema.version,
-            db.schema.programs.len(),
-            db.schema.programs.join(", ")
+            db.schema.source.programs.len(),
+            db.schema.source.programs.join(", ")
         )
     })
 }
@@ -204,6 +242,32 @@ mod tests {
 
     #[test]
     fn test_reference_db_loading() {
+        // Issue #3759: the REAL shipped reference database must parse. Load it
+        // directly (independent of the process-global cache and of the test
+        // binary's working directory) via the manifest-relative path.
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let shipped_path = format!("{manifest_dir}/data/ashrae140_reference.json");
+        let db = load_reference_database(&shipped_path)
+            .expect("shipped data/ashrae140_reference.json must parse (Issue #3759)");
+        assert!(
+            db.schema.total_cases == db.cases.len(),
+            "schema total_cases ({}) must match cases map ({})",
+            db.schema.total_cases,
+            db.cases.len()
+        );
+        assert!(db.cases.contains_key("195"), "Should have case 195");
+        assert!(db.cases.contains_key("600"), "Should have case 600");
+        assert!(
+            db.cases.contains_key("600FF"),
+            "Should have free-float case 600FF"
+        );
+
+        // Through the cached public entry point. On success the known keys
+        // must resolve; any failure must surface its real cause verbatim —
+        // FileNotFound names the actual path rather than the laundered
+        // "Reference database not available" stub (Issue #3721), and a
+        // ParseError on the shipped data is the Issue #3759 regression and
+        // must fail this test loudly.
         match get_reference_db() {
             Ok(db) => {
                 assert!(db.schema.total_cases > 0, "Should have cases");
@@ -220,7 +284,7 @@ mod tests {
                 println!("Reference file not found - this is expected in test environment");
             }
             Err(e) => {
-                println!("Reference DB load failed with real cause surfaced: {e}");
+                panic!("Reference DB load failed with real cause surfaced: {e}");
             }
         }
     }
@@ -229,29 +293,33 @@ mod tests {
     fn test_has_case() {
         // Issue #837: An identifier that does not exist in the reference DB
         // (or any identifier when the DB is missing entirely) must report `false`.
-        // This is the only environment-independent invariant of `has_case`.
         assert!(
             !has_case("INVALID"),
             "has_case must return false for an identifier not in the reference DB"
         );
 
-        // The reference file may or may not be bundled in this environment;
-        // call the function on a few real case IDs only to exercise the lookup
-        // path without panicking. The return value is intentionally not asserted.
-        let _ = has_case("195");
-        let _ = has_case("600");
+        // Issue #3759: the shipped reference database parses, so real case
+        // keys must resolve through the public lookup path.
+        assert!(
+            has_case("195"),
+            "case 195 must resolve in the shipped reference DB"
+        );
+        assert!(
+            has_case("600"),
+            "case 600 must resolve in the shipped reference DB"
+        );
     }
 
     #[test]
     fn test_get_source_info() {
-        match get_source_info() {
-            Some(info) => {
-                assert!(info.contains("ASHRAE 140"));
-            }
-            None => {
-                println!("Source info not available - reference file not found");
-            }
-        }
+        // Issue #3759: the shipped DB parses, so source info must be
+        // available; `standard` lives in the nested `source` object (#667
+        // shape) and the formatted string must still name the standard.
+        let info = get_source_info().expect("shipped reference DB must load for source info");
+        assert!(
+            info.contains("ASHRAE 140"),
+            "source info must name the standard, got: {info}"
+        );
     }
 
     #[test]
