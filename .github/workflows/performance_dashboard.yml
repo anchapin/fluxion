@@ -695,7 +695,7 @@ jobs:
           rm -f run_*.txt
           for i in 1 2 3; do
             echo "=== measurement run ${i}/3 ==="
-            cargo test --test all_tests performance_regression_test:: --release test_performance_regression -- --nocapture > "run_${i}.txt" 2>&1 || true
+            cargo test --test all_tests performance_regression_test::test_performance_regression --release -- --nocapture > "run_${i}.txt" 2>&1 || true
           done
 
           python3 << 'EOF'
@@ -876,7 +876,7 @@ jobs:
           rm -f run_*.txt
           for i in 1 2 3; do
             echo "=== measurement run ${i}/3 ==="
-            cargo test --test all_tests performance_regression_test:: --release test_multi_zone_performance_regression -- --nocapture > "run_${i}.txt" 2>&1 || true
+            cargo test --test all_tests performance_regression_test::test_multi_zone_performance_regression --release -- --nocapture > "run_${i}.txt" 2>&1 || true
           done
 
           python3 << 'EOF'
@@ -1278,7 +1278,7 @@ jobs:
       # keep the warm-cache step under ~3 min. The full ort build still
       # runs once on the first cold-cache run after a content-hash change.
       - name: Build release test binary (--features ort)
-        run: cargo build --release -p fluxion --features ort --test all_tests surrogate_cold_start_test::
+        run: "cargo build --release -p fluxion --features ort --test all_tests surrogate_cold_start_test::"
 
       - name: Summary
         if: always()

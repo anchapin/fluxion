@@ -196,11 +196,16 @@ jobs:
             -p fluxion \
             --lib \
             --test all_tests surface_flux_provider_isolation:: \
-            --test all_tests regression_exterior_film_unification:: \
             --test validation_empirical_harness \
             --test hvac_bestest \
             -p fluxion-behavior --test lighting_occupancy_integration \
             -p fluxion-twin --test mqtt_ukf_integration --test ukf_covariance_stability --test ukf_van_der_pol --test websocket_memory_leak \
+            --test-threads=2 \
+            --no-fail-fast \
+            ${{ matrix.feature_set.flags }} && \
+          cargo nextest run \
+            -p fluxion \
+            --test all_tests regression_exterior_film_unification:: \
             --test-threads=2 \
             --no-fail-fast \
             ${{ matrix.feature_set.flags }}
@@ -792,7 +797,7 @@ jobs:
         run: cargo build --features cuda --verbose
       - name: Run CUDA smoke test
         if: steps.cuda.outputs.cuda_available == 'true'
-        run: cargo test --test all_tests surrogate_cuda_smoke_test:: --features cuda --verbose
+        run: "cargo test --test all_tests surrogate_cuda_smoke_test:: --features cuda --verbose"
         env:
           PYO3_PYTHON: /usr/bin/python3
 
@@ -850,7 +855,7 @@ jobs:
         run: cargo build --features cuda --features ort --verbose
       - name: Run CUDA parity test
         if: steps.cuda.outputs.cuda_available == 'true'
-        run: cargo test --test all_tests surrogate_backend_parity:: --features cuda --features ort -- --ignored
+        run: "cargo test --test all_tests surrogate_backend_parity:: --features cuda --features ort -- --ignored"
         env:
           PYO3_PYTHON: /usr/bin/python3
       - name: Upload parity test results

@@ -741,7 +741,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Run Weather Isolation Tests
-        run: cargo test --test all_tests weather_isolation:: --release
+        run: "cargo test --test all_tests weather_isolation:: --release"
 
   isolation-solar:
     name: Solar Isolation
@@ -772,7 +772,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Run Solar Isolation Tests
-        run: cargo test --test all_tests solar_isolation:: --release
+        run: "cargo test --test all_tests solar_isolation:: --release"
 
   isolation-conduction:
     name: Conduction Isolation
@@ -803,7 +803,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Run Conduction Isolation Tests
-        run: cargo test --test all_tests conduction_5r1c_isolation:: --release
+        run: "cargo test --test all_tests conduction_5r1c_isolation:: --release"
 
   isolation-ventilation:
     name: Ventilation Isolation
@@ -834,7 +834,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Run Ventilation Isolation Tests
-        run: cargo test --test all_tests ventilation_infiltration_vs_energyplus:: --release
+        run: "cargo test --test all_tests ventilation_infiltration_vs_energyplus:: --release"
 
   isolation-zone-balance:
     name: Zone Balance Isolation
@@ -865,7 +865,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Run Zone Balance Isolation Tests
-        run: cargo test --test all_tests zone_balance_eplus_isolation:: --release
+        run: "cargo test --test all_tests zone_balance_eplus_isolation:: --release"
 
   # =====================================================================
   # Issue #2924 — Surrogate ASHRAE 140 MAE Gate (Cases 600/900 cooling)
@@ -1122,7 +1122,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Run Quantum Python Verification
-        run: cargo test --test all_tests quantum_python_verification:: --release
+        run: "cargo test --test all_tests quantum_python_verification:: --release"
 
   gauge-python-diagnostic:
     name: Gauge Python Diagnostic
@@ -1153,7 +1153,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Run Gauge Python Diagnostic
-        run: cargo test --test all_tests gauge_python_diagnostic:: --release
+        run: "cargo test --test all_tests gauge_python_diagnostic:: --release"
 
 
   # =====================================================================
