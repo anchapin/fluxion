@@ -1027,6 +1027,23 @@ impl Model {
         self.inner.hvac.num_zones
     }
 
+    /// Issue #3749 — read-only view of the zone solver the step dispatcher
+    /// ACTUALLY executed on the most recent step, using the same lowercase
+    /// vocabulary as the REST `effective_solver` field (`"gauge"` |
+    /// `"5r1c"` | `"9r4c"`; issue #3305).
+    ///
+    /// `Model::new` builds on `ThermalModel::new`, which uses the legacy
+    /// 5R1C selector (issue #3508 — the gauge backend is not initialised
+    /// on this constructor), so this accessor reports the legacy outcome
+    /// (`"5r1c"`, or `"9r4c"` for 9R4C-promoted models) in both the
+    /// default and `--features gauge-solver` builds. The Gauge-selector
+    /// default/fall-through story applies to the `from_case_spec` /
+    /// `from_spec_with_selector` paths; the `gauge-solver` cargo feature
+    /// only gates whether the dispatcher's gauge arm runs (issue #3291).
+    fn effective_zone_solver(&self) -> String {
+        self.inner.effective_zone_solver().as_str().to_string()
+    }
+
     /// Get current zone temperatures.
     fn get_temperatures(&self) -> Vec<f64> {
         self.inner.get_temperatures()
@@ -1955,8 +1972,8 @@ mod tests {
         // populate_default_model_physics). If this ever changes, the regression
         // below needs revisiting.
         let raw = ThermalModel::<VectorField>::new(1);
-        assert_eq!(raw.thermal_capacitance[0], 1.0);
-        assert_eq!(raw.air_thermal_capacitance[0], 0.0);
+        assert_eq!(raw.mass.thermal_capacitance[0], 1.0);
+        assert_eq!(raw.mass.air_thermal_capacitance[0], 0.0);
     }
 
     #[test]
@@ -2201,5 +2218,41 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ========================================================================
+    // effective_zone_solver binding accessor (Issue #3749)
+    // ========================================================================
+
+    /// Issue #3749: the `Model` pyclass accessor must report the
+    /// dispatcher's outcome and agree with the engine's own
+    /// `effective_zone_solver` view. `Model::new` builds on
+    /// `ThermalModel::new`, which uses the legacy 5R1C selector
+    /// (issue #3508 — the gauge backend is not initialised on this
+    /// constructor), so the accessor must report `"5r1c"` in BOTH the
+    /// default and `--features gauge-solver` builds — an explicit legacy
+    /// selector is dispatched verbatim regardless of feature state.
+    #[test]
+    fn effective_zone_solver_reports_dispatcher_truth() {
+        let mut model = Model::new(1).expect("default Model builds");
+        // One real dispatcher step moves `effective_zone_solver` off its
+        // constructor default — no weather / full-year run needed.
+        let _ = model.inner.step_physics(0, 20.0, 3600.0);
+
+        let reported = model.effective_zone_solver();
+        assert_eq!(
+            reported,
+            model.inner.effective_zone_solver().as_str(),
+            "binding accessor must mirror ThermalModel::effective_zone_solver"
+        );
+        assert!(
+            ["gauge", "5r1c", "9r4c"].contains(&reported.as_str()),
+            "effective solver must use the shared as_str() vocabulary, got {reported}"
+        );
+        assert_eq!(
+            reported, "5r1c",
+            "Model::new uses the legacy 5R1C selector (issue #3508), so the \
+             dispatcher truth is 5R1C in both feature states"
+        );
     }
 }

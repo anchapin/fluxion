@@ -183,9 +183,20 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #     ``batched_finalize_ok_when_nothing_dropped``, and
 #     ``batched_happy_path_returns_ok_with_full_population``). No new
 #     binaries and no ignore-count changes.
-BASELINE_LIB_TESTS = 4319
+#   - 2026-09-14 (Issue #3749): bumped ``BASELINE_LIB_TESTS`` from 4319
+#     to 4325 and ``BASELINE_WORKSPACE_TESTS`` from 8688 to 8694 for the
+#     six new binding-level effective-solver truth tests (two in
+#     ``src/python/bindings.rs`` and one in
+#     ``src/python/model_bindings/model.rs`` for the PyO3 accessor, three
+#     in ``src/napi/state_extractor.rs`` for the ``StateMatrices``
+#     ``effective_solver`` field). Also un-blocked the latent compile
+#     breakage of the pre-existing ``python-bindings`` feature-gated test
+#     modules (stale one-arg ``from_case_spec`` calls and moved
+#     ``ThermalModel`` mass fields) so these tests actually run again.
+#     No new binaries and no ignore-count changes.
+BASELINE_LIB_TESTS = 4325
 BASELINE_LIB_IGNORED = 9
-BASELINE_WORKSPACE_TESTS = 8688
+BASELINE_WORKSPACE_TESTS = 8694
 # 2026-09-12 (Issue #3711): 121 -> 133 — see the history entry above for
 # the per-crate attribution and the AST-vs-cargo calibration analysis.
 BASELINE_WORKSPACE_IGNORED = 133
