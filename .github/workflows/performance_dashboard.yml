@@ -1272,13 +1272,14 @@ jobs:
           shared-key: ort-cold-start-build
           cache-on-failure: true
 
-      # Pre-compile the release test binary for the cold-start gate. We
-      # build ONLY the surrogate_cold_start_test test binary (via
-      # `--test all_tests surrogate_cold_start_test::`) instead of all `--tests` to
-      # keep the warm-cache step under ~3 min. The full ort build still
-      # runs once on the first cold-cache run after a content-hash change.
+      # Pre-compile the release test binary for the cold-start gate. Post-#3764
+      # every integration test lives in the single `all_tests` target, and
+      # `cargo build` takes no positional test filter — so we build that one
+      # target (via `--test all_tests`) instead of all `--tests`. It is also
+      # exactly the binary the cold-start gate executes. The full ort build
+      # still runs once on the first cold-cache run after a content-hash change.
       - name: Build release test binary (--features ort)
-        run: "cargo build --release -p fluxion --features ort --test all_tests surrogate_cold_start_test::"
+        run: "cargo build --release -p fluxion --features ort --test all_tests"
 
       - name: Summary
         if: always()
