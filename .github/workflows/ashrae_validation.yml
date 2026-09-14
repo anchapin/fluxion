@@ -596,7 +596,14 @@ jobs:
 
       - name: CI Gate Check
         id: gate
-        continue-on-error: true  # advisory on PRs; hard gate on push/schedule
+        # Issue #3763 audit (known-red validation site): the 80% pass-rate
+        # gate is expected-red until the §LIMIT-* cohort in
+        # docs/KNOWN_ISSUES.md closes (GaugeSolver routing #1465/#1462/#3297),
+        # so on pull_request events this is advisory only. It is NOT
+        # best-effort: the "Fail if validation gate failed (non-PR)" step
+        # below re-raises steps.gate.outcome == 'failure' on push/schedule
+        # events.
+        continue-on-error: true
         if: always()
         run: |
           python3 << 'PYEOF'
