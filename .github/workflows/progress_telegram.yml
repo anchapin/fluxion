@@ -1,0 +1,77 @@
+name: Weekly Progress Telegram
+
+# Plan pm-throughput-20260915 task T5 (ADR-0016 companion) — the weekly
+# "progress telegram" for the pinned v1.3 progress tracker issue #3804
+# (glossary: .planning/CONTEXT.md). Follows the stateless β-soak pattern
+# from nightly-ashrae-140-gauge.yml: no state is committed back; the
+# week-over-week deltas are parsed from the marker embedded in the
+# previous telegram comment on the tracker issue.
+#
+# Emits (scripts/progress_telegram.py): ASHRAE 140 pass-rate delta +
+# cases fully passing (canonical generated sources only), milestone vs
+# hygiene merge mix, lane cycle-time p50s, fix-loop rate, cancelled-run
+# share, and the LIMIT-gap count from docs/KNOWN_ISSUES.md.
+
+on:
+  schedule:
+    # Monday 07:00 UTC — start of the working week.
+    - cron: '0 7 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: >-
+    progress-telegram-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
+jobs:
+  progress-telegram:
+    name: Post weekly telegram to tracker issue
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+
+      # Offline fixture assertions first — a regression in the pure
+      # functions must fail the run BEFORE a malformed comment is posted
+      # to the tracker issue (fail-visible, never a fabricated telegram).
+      - name: Script selftest (offline fixtures)
+        run: python3 scripts/progress_telegram.py --selftest
+
+      - name: Render and post telegram
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # The script writes the exact posted body to stdout (status to
+          # stderr), so tee captures a byte-identical artifact copy.
+          python3 scripts/progress_telegram.py \
+            --weeks 1 \
+            --issue 3804 \
+            --repo "${GITHUB_REPOSITORY}" \
+            --output markdown \
+            | tee telegram.md
+
+      - name: Upload telegram artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: progress-telegram-${{ github.run_id }}
+          path: telegram.md
+          retention-days: 90
