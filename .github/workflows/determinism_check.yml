@@ -10,6 +10,18 @@ on:
   push:
     branches: [main, develop]
   pull_request:
+  # ADR-0016 lane 3 — nightly authority on develop. The determinism
+  # matrix was the only lane-3 gate without a schedule; this nightly run
+  # is the authoritative cross-platform floating-point verdict that the
+  # wave-orchestrator merge freeze consumes (per-PR runs remain, now
+  # non-blocking per ADR-0016). 03:30 UTC is deliberately offset from the
+  # existing nightly cohort (02:00 performance dashboard, 03:00
+  # architecture drift, 04:00 fast-math / 04:23 python-bindings) to avoid
+  # a simultaneous job stampede against the runner concurrency cap. The
+  # ADR-0015 per-head_sha concurrency block below is unchanged; schedule
+  # events resolve to github.ref of the default branch.
+  schedule:
+    - cron: "30 3 * * *"
   workflow_dispatch:
 
 concurrency:
