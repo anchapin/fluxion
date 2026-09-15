@@ -346,6 +346,98 @@ fn boot_guard_from_env_allow_insecure_opt_out() {
     );
 }
 
+// ---- Issue #3743: weak-token boot guard (min FLUXION_REST_AUTH_TOKEN length) ----
+
+/// Issue #3743 acceptance: the pure decision function flags `token`/`tls`
+/// with a *configured* token shorter than [`MIN_REST_AUTH_TOKEN_BYTES`]
+/// (boundary: 15 bytes insecure, 16 bytes fine), leaves `off` mode
+/// unaffected, treats an unset token as out of scope (the `require_auth`
+/// middleware already fails closed per-request), and honours
+/// `FLUXION_REST_ALLOW_INSECURE=1` as the explicit opt-out. The
+/// release-only wiring in [`check_boot_guard_from_env`] is exercised by
+/// the binary; unit tests target the decision function so they are
+/// deterministic in debug builds (mirroring the #2505 bind-guard test
+/// strategy).
+#[test]
+fn weak_token_boot_guard_boundary_and_mode_scoping() {
+    let ok = "a".repeat(MIN_REST_AUTH_TOKEN_BYTES); // exactly 16 bytes
+    let short = "a".repeat(MIN_REST_AUTH_TOKEN_BYTES - 1); // 15 bytes
+    assert_eq!(ok.len(), 16);
+    assert_eq!(short.len(), 15);
+
+    // `token` mode: 15 bytes → insecure, 16 bytes → fine.
+    assert!(is_weak_auth_token_configuration(
+        AuthMode::Token,
+        Some(&short),
+        false
+    ));
+    assert!(!is_weak_auth_token_configuration(
+        AuthMode::Token,
+        Some(&ok),
+        false
+    ));
+
+    // `tls` mode: the bearer token is the direct-client fallback — a
+    // configured short token is refused there too.
+    assert!(is_weak_auth_token_configuration(
+        AuthMode::Tls,
+        Some(&short),
+        false
+    ));
+    assert!(!is_weak_auth_token_configuration(
+        AuthMode::Tls,
+        Some(&ok),
+        false
+    ));
+
+    // `off` mode is unaffected: a short (or unset) token never trips the
+    // guard when auth is disabled.
+    assert!(!is_weak_auth_token_configuration(
+        AuthMode::Off,
+        Some(&short),
+        false
+    ));
+    assert!(!is_weak_auth_token_configuration(
+        AuthMode::Off,
+        None,
+        false
+    ));
+
+    // An unset token is out of scope for this guard: `token` mode fails
+    // closed per-request in [`require_auth`], and `tls` mode legitimately
+    // runs header-only. An empty *string* is zero bytes — flagged
+    // defensively — although the env-reading paths normalize empty to
+    // unset before the decision function ever sees it.
+    assert!(!is_weak_auth_token_configuration(
+        AuthMode::Token,
+        None,
+        false
+    ));
+    assert!(!is_weak_auth_token_configuration(
+        AuthMode::Tls,
+        None,
+        false
+    ));
+    assert!(is_weak_auth_token_configuration(
+        AuthMode::Token,
+        Some(""),
+        false
+    ));
+
+    // FLUXION_REST_ALLOW_INSECURE=1 is the explicit opt-out, mirroring the
+    // sibling bind/TLS boot guards.
+    assert!(!is_weak_auth_token_configuration(
+        AuthMode::Token,
+        Some(&short),
+        true
+    ));
+    assert!(!is_weak_auth_token_configuration(
+        AuthMode::Tls,
+        Some(&short),
+        true
+    ));
+}
+
 // ---- RateLimiter clamping edge ----
 
 #[test]

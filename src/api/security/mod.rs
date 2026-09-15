@@ -29,12 +29,16 @@
 //!   `FLUXION_REST_CORS_ORIGINS`; defaults to localhost dev origins. Never
 //!   `CorsLayer::permissive()`.
 //! - **Boot guard** ([`is_insecure_bind_configuration`] +
-//!   [`is_insecure_tls_configuration`]) — pure decision functions; the
+//!   [`is_insecure_tls_configuration`] +
+//!   [`is_weak_auth_token_configuration`]) — pure decision functions; the
 //!   binary refuses to start when `0.0.0.0` + `auth=off` coincide in a
 //!   release build unless `FLUXION_REST_ALLOW_INSECURE=1` (#2505), and
 //!   refuses `auth=tls` without a `FLUXION_REST_TRUSTED_PROXIES`
 //!   allow-list in *every* build (#2754) so the verified-client header
-//!   can never silently degrade to no-op.
+//!   can never silently degrade to no-op, and refuses a *configured*
+//!   `FLUXION_REST_AUTH_TOKEN` shorter than 16 bytes under `token`/`tls`
+//!   in release builds (#3743) so a trivially guessable bearer secret
+//!   cannot stand in for real authentication.
 //!
 //! All primitives are pure-library code so they are unit-testable from
 //! `cargo test -p fluxion --lib api` without spawning the binary.
@@ -193,7 +197,10 @@ impl RestSecurityConfig {
     ///   (e.g. a typo) is propagated as an `Err` so the server refuses to
     ///   boot rather than silently disabling auth (Issue #2689). Unset /
     ///   empty is the legitimate `off` default.
-    /// - `FLUXION_REST_AUTH_TOKEN` — bearer token (required for `token`)
+    /// - `FLUXION_REST_AUTH_TOKEN` — bearer token (required for `token`).
+    ///   A *configured* value shorter than [`MIN_REST_AUTH_TOKEN_BYTES`]
+    ///   refuses boot in release builds (Issue #3743, see
+    ///   [`check_boot_guard_from_env`]).
     /// - `FLUXION_REST_CORS_ORIGINS` — comma-separated origin allow-list
     /// - `FLUXION_REST_RATE_LIMIT_RPS` — sustained req/s per IP
     /// - `FLUXION_REST_RATE_LIMIT_BURST` — burst capacity per IP
@@ -1255,6 +1262,52 @@ pub fn is_insecure_tls_configuration(
     trusted_proxies.is_empty()
 }
 
+/// Minimum accepted `FLUXION_REST_AUTH_TOKEN` length **in bytes** when
+/// `FLUXION_REST_AUTH=token|tls` (Issue #3743).
+///
+/// Intentionally stricter than the outbound-email bearer floor
+/// (`BEARER_AUTH_HEADER_MIN_TOKEN_LEN = 8`,
+/// `src/api/email_notification.rs`): the REST token is the sole credential
+/// standing between an unauthenticated network peer and every `/v1/*`
+/// route, and a one-character token makes `token` mode little better than
+/// `off`.
+pub const MIN_REST_AUTH_TOKEN_BYTES: usize = 16;
+
+/// Pure decision function for the weak-token boot guard (Issue #3743).
+///
+/// Returns `true` when the configuration selects `token` / `tls` auth
+/// **and** a bearer token *is* configured but is shorter than
+/// [`MIN_REST_AUTH_TOKEN_BYTES`] — a trivially guessable secret that makes
+/// the selected mode little better than `off` against an unauthenticated
+/// network peer. The binary refuses to start in that case (release builds
+/// only) unless `allow_insecure` is `true`
+/// (`FLUXION_REST_ALLOW_INSECURE=1`), mirroring the sibling
+/// [`is_insecure_bind_configuration`] guard.
+///
+/// An **unset** token is deliberately *not* this guard's concern: in
+/// `token` mode the [`require_auth`] middleware already fails closed
+/// per-request (500), and `tls` mode legitimately runs header-only with no
+/// bearer fallback configured. `off` mode never trips the guard — a short
+/// token in the environment is simply ignored, exactly as today. (An empty
+/// *string* is zero bytes and is flagged defensively; the env-reading
+/// paths normalize empty to unset before this function is called.)
+pub fn is_weak_auth_token_configuration(
+    auth_mode: AuthMode,
+    auth_token: Option<&str>,
+    allow_insecure: bool,
+) -> bool {
+    if allow_insecure {
+        return false;
+    }
+    if !matches!(auth_mode, AuthMode::Token | AuthMode::Tls) {
+        return false;
+    }
+    match auth_token {
+        Some(t) => t.len() < MIN_REST_AUTH_TOKEN_BYTES,
+        None => false,
+    }
+}
+
 /// Convenience wrapper for the binary: reads the three inputs from the
 /// environment and returns an error message when boot should be refused
 /// (release builds). In debug builds the insecure-bind check is a no-op so
@@ -1306,6 +1359,31 @@ pub fn check_boot_guard_from_env() -> Result<(), String> {
                  while FLUXION_REST_AUTH=off. Set FLUXION_REST_AUTH=token (with \
                  FLUXION_REST_AUTH_TOKEN) or FLUXION_REST_AUTH=tls, bind to 127.0.0.1, or set \
                  FLUXION_REST_ALLOW_INSECURE=1 to explicitly opt in."
+            ));
+        }
+    }
+    // Release-only weak-token guard (Issue #3743): a *configured* bearer
+    // token shorter than [`MIN_REST_AUTH_TOKEN_BYTES`] makes `token`/`tls`
+    // auth little better than `off`, so release builds refuse to boot with
+    // a clear operator-facing error naming the minimum. Mirrors the
+    // release-only posture of the insecure-bind guard above; debug builds
+    // skip it so local `cargo run` and test harnesses keep working with
+    // placeholder tokens, and `FLUXION_REST_ALLOW_INSECURE=1` remains the
+    // explicit opt-out.
+    #[cfg(not(debug_assertions))]
+    {
+        let auth_token = std::env::var("FLUXION_REST_AUTH_TOKEN")
+            .ok()
+            .filter(|t| !t.is_empty());
+        if is_weak_auth_token_configuration(auth, auth_token.as_deref(), allow_insecure) {
+            let got = auth_token.as_deref().map(str::len).unwrap_or(0);
+            return Err(format!(
+                "fluxion-rest: refusing to boot — FLUXION_REST_AUTH_TOKEN is {got} byte(s), below \
+                 the {MIN_REST_AUTH_TOKEN_BYTES}-byte minimum required with \
+                 FLUXION_REST_AUTH=token|tls (Issue #3743): a trivially short bearer token is \
+                 little better than auth=off. Generate a stronger secret (e.g. \
+                 `openssl rand -base64 32`), or set FLUXION_REST_ALLOW_INSECURE=1 to explicitly \
+                 opt out."
             ));
         }
     }
