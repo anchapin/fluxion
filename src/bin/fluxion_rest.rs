@@ -7,7 +7,13 @@
 //! Defaults to `0.0.0.0:8080`; both bind address and port can be overridden
 //! by environment variables:
 //!
-//! - `FLUXION_REST_BIND` — default `0.0.0.0`
+//! - `FLUXION_REST_BIND` — default `0.0.0.0`. Must be a literal IP or
+//!   host:port socket address (hostnames such as `localhost` are **not**
+//!   resolved — Issue #3742): in release builds an unparseable value
+//!   aborts startup with the parse error instead of silently widening
+//!   the bind to `0.0.0.0`; debug builds warn and fall back, and
+//!   `FLUXION_REST_ALLOW_INSECURE=1` is the explicit opt-in to the
+//!   fallback in release builds.
 //! - `FLUXION_REST_PORT` — default `8080`
 //! - `RUST_LOG` — `tracing-subscriber` filter (forwarded into the layer set
 //!   up below).
@@ -44,7 +50,10 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
 
-use fluxion::api::security::{check_boot_guard_from_env, RestSecurityConfig};
+use fluxion::api::security::{
+    check_boot_guard_from_env, resolve_rest_bind_addr, RestSecurityConfig, DEFAULT_REST_BIND,
+    DEFAULT_REST_PORT,
+};
 use fluxion::api::server::{
     resolve_shutdown_timeout_secs, router_with_security, run_readiness_probes, AppState,
 };
@@ -52,41 +61,49 @@ use tokio::net::TcpListener;
 use tracing::Level;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-const DEFAULT_BIND: &str = "0.0.0.0";
-const DEFAULT_PORT: &str = "8080";
-
 fn resolve_bind() -> String {
-    std::env::var("FLUXION_REST_BIND").unwrap_or_else(|_| DEFAULT_BIND.to_string())
+    std::env::var("FLUXION_REST_BIND").unwrap_or_else(|_| DEFAULT_REST_BIND.to_string())
 }
 
 fn resolve_port() -> u16 {
-    let raw = std::env::var("FLUXION_REST_PORT").unwrap_or_else(|_| DEFAULT_PORT.to_string());
+    let raw = std::env::var("FLUXION_REST_PORT").unwrap_or_else(|_| DEFAULT_REST_PORT.to_string());
     match u16::from_str(&raw) {
         Ok(p) => p,
         Err(_) => {
             eprintln!(
-                "fluxion-rest: FLUXION_REST_PORT='{raw}' is not a valid u16; falling back to {DEFAULT_PORT}"
+                "fluxion-rest: FLUXION_REST_PORT='{raw}' is not a valid u16; falling back to {DEFAULT_REST_PORT}"
             );
-            DEFAULT_PORT
-                .parse::<u16>()
-                .expect("DEFAULT_PORT must parse")
+            DEFAULT_REST_PORT
         }
     }
 }
 
+/// Resolve the listener address from `FLUXION_REST_BIND` (default
+/// `0.0.0.0`) + `FLUXION_REST_PORT` (default `8080`) via the canonical
+/// [`resolve_rest_bind_addr`] — the **same** parsing path the boot guard
+/// judges (Issue #3742), so the address the guard assessed is exactly
+/// the address bound here.
+///
+/// On an unparseable / non-literal bind (most realistically the hostname
+/// `localhost`) this falls back to `0.0.0.0:{port}` **with a loud stderr
+/// warning**. That fallback is reachable only in debug builds or when
+/// the operator explicitly set `FLUXION_REST_ALLOW_INSECURE=1`: in
+/// release builds without that flag, [`check_boot_guard_from_env`] has
+/// already refused to start with the parse error (Issue #3742), so the
+/// pre-#3742 *silent* widening can no longer happen.
 fn resolve_addr() -> SocketAddr {
     let bind = resolve_bind();
     let port = resolve_port();
-    // Build a SocketAddr from `(bind, port)`. If the user gave a bare IPv4
-    // address without a port, the format!() below yields `addr:port` which
-    // FromStr accepts.
-    let s = format!("{bind}:{port}");
-    SocketAddr::from_str(&s).unwrap_or_else(|e| {
-        eprintln!(
-            "fluxion-rest: invalid bind '{bind}:{port}' ({e}); falling back to 0.0.0.0:{port}"
-        );
-        SocketAddr::from_str(&format!("0.0.0.0:{port}")).expect("fallback addr must parse")
-    })
+    match resolve_rest_bind_addr(&bind, port) {
+        Ok(addr) => addr,
+        Err(e) => {
+            eprintln!(
+                "fluxion-rest: {e}; falling back to {DEFAULT_REST_BIND}:{port} (Issue #3742)"
+            );
+            SocketAddr::from_str(&format!("{DEFAULT_REST_BIND}:{port}"))
+                .expect("fallback addr must parse")
+        }
+    }
 }
 
 #[tokio::main]
@@ -172,16 +189,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let addr = resolve_addr();
-
-    // Issue #2505 — release-build boot guard: refuse to start when binding
-    // all interfaces with authentication disabled (an anonymous network
-    // client could reach every `/v1/*` route). `check_boot_guard_from_env`
-    // is a no-op in debug builds so `cargo run` keeps working locally.
+    // Issue #2505 / #3742 — release-build boot guard, run *before* the
+    // listener address is resolved so a refused configuration aborts
+    // without first printing a fallback warning: refuse to start when
+    // binding all interfaces with authentication disabled (an anonymous
+    // network client could reach every `/v1/*` route), and refuse an
+    // unparseable / non-literal FLUXION_REST_BIND that the listener
+    // would otherwise silently widen to 0.0.0.0.
+    // `check_boot_guard_from_env` is a no-op for these checks in debug
+    // builds so `cargo run` keeps working locally.
     if let Err(msg) = check_boot_guard_from_env() {
         eprintln!("{msg}");
         std::process::exit(1);
     }
+
+    let addr = resolve_addr();
 
     // Issue #2505 — resolve the full security configuration from the
     // environment once and hand it to the router builder. `from_env` is
