@@ -192,8 +192,6 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -875,24 +873,24 @@ def _find_wired_but_dead() -> tuple[list[str], list[str]]:
     not present in the ``WIRED_BUT_DEAD`` allowlist — those are the
     regressions that should fail CI.
 
-    Performance: with ~300 module names and ~700 production files,
-    running ripgrep ONCE PER MODULE is the fastest correct approach
-    (~300 invocations × ~10 ms each ≈ 3 s). A single combined regex
-    over all 300 module names works for ripgrep but is too slow in
-    pure Python (the negative-lookbehind-per-alternation regex takes
-    ~20 s per file). Per-module ripgrep keeps total runtime well
-    under a few seconds while staying trivially correct.
+    Performance: the caller scan is pure Python (no external tool
+    dependency). A historical ripgrep fast path silently SKIPPED the
+    detector when rg was absent — e.g. on GitHub-hosted runners — which
+    zeroed the live set and made every disposition-registry row look
+    stale (Issue #3748 CI failure). The two-stage scan below (one
+    identifier-tokenization pass per file, then the precise caller-form
+    regex only for candidate names actually present) keeps the whole
+    detector deterministic across environments at ~5 s total runtime.
 
-    The caller-form patterns ripgrep applies per-module are:
+    The caller-form patterns applied per module are:
 
       * ``mod_name::Bar`` — qualified path usage.
-      * ``use mod_name;`` / ``use mod_name::{...}`` — leaf import.
-      * ``pub use mod_name;`` / ``pub use mod_name::{...}`` — re-export.
+      * ``use mod_name;`` / ``use mod_name::{...}`` — leaf import
+        (``pub use mod_name;`` is subsumed: the leading ``\b`` holds
+        after ``pub``).
 
-    Each is combined into one alternation pattern per module and
-    passed to ``rg -e``. We accept the small false-positive risk
-    (e.g. a doc-comment word matching) over the runtime cost of a
-    per-file attribution pass.
+    We accept the small false-positive risk (e.g. a doc-comment word
+    matching) over the runtime cost of a per-file attribution pass.
     """
     if not SRC_DIR.exists():
         return [], []
@@ -920,32 +918,49 @@ def _find_wired_but_dead() -> tuple[list[str], list[str]]:
     # tests/<subdir>/ files are NOT Cargo test targets.
     allowed_files = {p.resolve() for p in _production_caller_files()}
 
-    rg = shutil.which("rg")
-    if rg is None:
-        print(
-            "WARNING: ripgrep (rg) not found on PATH; wired-but-dead "
-            "detector requires ripgrep for acceptable performance.",
-            file=sys.stderr,
+    # Caller detection is pure Python on purpose: the historical ripgrep
+    # fast path silently SKIPPED the detector when rg was absent (e.g. on
+    # GitHub-hosted runners), zeroing the live set and making every
+    # disposition-registry row look stale (Issue #3748 CI failure). A
+    # two-stage scan — one identifier-tokenization pass per file, then the
+    # precise caller-form regex only for candidate names actually present —
+    # keeps the whole detector deterministic across environments and fast
+    # enough (a few seconds) without any external tool dependency.
+    token_re = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+    precise_re = {
+        name: re.compile(
+            rf"\b{re.escape(name)}::"
+            rf"|\buse\s+{re.escape(name)}\s*[;{{]"
         )
-        return [], []  # Skip the check; the orphan detector above still runs.
+        for name in unique_mod_names
+    }
+    hits_by_module: dict[str, set[Path]] = {
+        name: set() for name in unique_mod_names
+    }
+    name_set = set(unique_mod_names)
+    for path in sorted(allowed_files):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        # Stage 1: which module names appear as identifiers at all?
+        candidates = {t for t in token_re.findall(text) if t in name_set}
+        if not candidates:
+            continue
+        # Stage 2: precise caller-form verification for the candidates.
+        # ``pub use name;`` is subsumed by the ``use`` alternative (the
+        # ``\b`` holds after ``pub``).
+        for name in candidates:
+            if precise_re[name].search(text):
+                hits_by_module[name].add(path)
 
     # Track which modules have at least one caller outside their own
     # subtree.
-    has_caller: dict[str, bool] = {name: False for name in unique_mod_names}
-
+    has_caller: dict[str, bool] = {}
     for mod_name in unique_mod_names:
         subtree = canonical_subtree[mod_name]
-        # Caller-form pattern: matches ``mod_name::Bar``,
-        # ``use mod_name;``, ``pub use mod_name;``.
-        # ``\b`` at the start prevents matching ``xmod_name::Bar``.
-        caller_pattern = (
-            rf"\b{re.escape(mod_name)}::"
-            rf"|\buse\s+{re.escape(mod_name)}\s*[;{{]"
-            rf"|\bpub\s+use\s+{re.escape(mod_name)}\s*[;{{]"
-        )
-        hits = _rg_files_with_match(rg, caller_pattern, allowed_files)
         external_hit = False
-        for hit in hits:
+        for hit in hits_by_module[mod_name]:
             try:
                 hit.relative_to(subtree)
                 continue  # hit IS inside the module's subtree
@@ -958,140 +973,6 @@ def _find_wired_but_dead() -> tuple[list[str], list[str]]:
     raw = sorted(name for name in unique_mod_names if not has_caller[name])
     new = [m for m in raw if m not in WIRED_BUT_DEAD]
     return raw, new
-
-
-def _rg_files_with_match(
-    rg_path: str, pattern: str, allowed_files: set[Path]
-) -> set[Path]:
-    """Run ripgrep with ``--files-with-matches`` for a single pattern and
-    return the subset of matches that fall within ``allowed_files``.
-
-    Caller of this function is responsible for interpreting the result
-    (e.g. applying the per-module subtree filter); this function is a
-    thin wrapper that just runs rg and post-filters the hit list.
-    """
-    cmd = [
-        rg_path,
-        "--files-with-matches",
-        "--no-heading",
-        "--no-messages",
-        "--type", "rust",
-        "-e", pattern,
-        ".",
-    ]
-    proc = subprocess.run(
-        cmd,
-        cwd=str(REPO_ROOT),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if proc.returncode not in (0, 1):
-        raise RuntimeError(
-            f"ripgrep failed (exit {proc.returncode}): {proc.stderr.strip()}"
-        )
-    hits: set[Path] = set()
-    for line in proc.stdout.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        path = (REPO_ROOT / line).resolve()
-        if path in allowed_files:
-            hits.add(path)
-    return hits
-
-
-def _rg_scan(
-    rg_path: str, combined_pattern: str, allowed_files: set[Path]
-) -> set[Path]:
-    """Run ripgrep over the repo and return the set of files whose
-    contents match ``combined_pattern``, restricted to ``allowed_files``.
-
-    ``allowed_files`` is a set of resolved absolute paths so the
-    post-filter is a fast set membership check. The script restricts
-    the caller scope to src/, top-level tests/*.rs, and examples/*.rs;
-    benches/ and tests/<subdir>/ are deliberately excluded.
-    """
-    cmd = [
-        rg_path,
-        "--files-with-matches",
-        "--no-heading",
-        "--no-messages",
-        "--type", "rust",
-        "-e", combined_pattern,
-        ".",
-    ]
-    proc = subprocess.run(
-        cmd,
-        cwd=str(REPO_ROOT),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if proc.returncode not in (0, 1):
-        # ripgrep exits 1 when nothing matched; 0 when something did.
-        # Any other exit code is a real error — surface it.
-        raise RuntimeError(
-            f"ripgrep failed (exit {proc.returncode}): {proc.stderr.strip()}"
-        )
-    hits: set[Path] = set()
-    for line in proc.stdout.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        path = (REPO_ROOT / line).resolve()
-        if path in allowed_files:
-            hits.add(path)
-    return hits
-
-
-def _rg_scan(
-    rg_path: str, combined_pattern: str, allowed_files: set[Path]
-) -> set[Path]:
-    """Run ripgrep over the repo and return the set of files whose
-    contents match ``combined_pattern``, restricted to ``allowed_files``.
-
-    ``allowed_files`` is a set of resolved absolute paths so the
-    post-filter is a fast set membership check. The script restricts
-    the caller scope to src/, top-level tests/*.rs, and examples/*.rs;
-    benches/ and tests/<subdir>/ are deliberately excluded.
-    """
-    cmd = [
-        rg_path,
-        "--files-with-matches",
-        "--no-heading",
-        "--no-messages",
-        "--type", "rust",
-        "-e", combined_pattern,
-        ".",
-    ]
-    proc = subprocess.run(
-        cmd,
-        cwd=str(REPO_ROOT),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if proc.returncode not in (0, 1):
-        # ripgrep exits 1 when nothing matched; 0 when something did.
-        # Any other exit code is a real error — surface it.
-        raise RuntimeError(
-            f"ripgrep failed (exit {proc.returncode}): {proc.stderr.strip()}"
-        )
-    hits: set[Path] = set()
-    for line in proc.stdout.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        path = (REPO_ROOT / line).resolve()
-        if path in allowed_files:
-            hits.add(path)
-    return hits
-
-
-# ---------------------------------------------------------------------------
-# Dead-code-allow inventory detector (Issue #3752)
-# ---------------------------------------------------------------------------
 
 
 def _cfg_test_body_spans(text: str) -> list[tuple[int, int]]:
