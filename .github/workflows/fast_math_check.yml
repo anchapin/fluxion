@@ -88,6 +88,22 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+    # ADR-0016 lane 2 (deny-list semantics): this gate is skipped only
+    # when EVERY changed file is clearly irrelevant to the physics path
+    # class (docs/markdown/license/git-hygiene metadata). Any unexpected
+    # file type — any .rs anywhere, Cargo.toml/Cargo.lock, scripts/**,
+    # .github/workflows/** — still triggers this workflow. Fail-safe by
+    # construction: an unrecognized diff runs the gauntlet.
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '**.md'
+      - '**.mdx'
+      - 'LICENSE'
+      - '**/LICENSE'
+      - '.gitignore'
+      - '.gitattributes'
+      - '.editorconfig'
   workflow_dispatch:
   schedule:
     # Daily 04:00 UTC — off-peak slot (collision audit:
