@@ -1428,9 +1428,10 @@ pub fn check_boot_guard_from_env() -> Result<(), String> {
 
     // `FLUXION_REST_ALLOW_INSECURE` is the shared opt-out for both boot
     // guards. Read once here so every build path uses the same value.
-    let allow_insecure = std::env::var("FLUXION_REST_ALLOW_INSECURE")
-        .map(|v| matches!(v.trim(), "1" | "true" | "yes" | "on"))
-        .unwrap_or(false);
+    // Issue #3751: canonical env-bool tokens (case-insensitive
+    // `1|true|yes|on`); anything unrecognized warns and stays disabled —
+    // the insecure escape hatch fails closed on typos.
+    let allow_insecure = crate::util::env_bool::env_bool("FLUXION_REST_ALLOW_INSECURE", false);
 
     // Issue #2754 — fail-closed when `tls` mode is selected with no
     // trusted-proxy allow-list: the verified-client header could never be

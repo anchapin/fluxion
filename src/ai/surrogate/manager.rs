@@ -744,13 +744,15 @@ impl SurrogateManager {
             Some(InferenceBackend::CUDA) => {
                 #[cfg(feature = "cuda")]
                 {
-                    if matches!(
-                        std::env::var("FLUXION_GPU").as_deref(),
-                        Ok("0") | Ok("false") | Ok("")
-                    ) {
-                        InferenceBackend::CPU
-                    } else {
+                    // Issue #3751: canonical env-bool tokens. FLUXION_GPU is
+                    // an opt-out bypass — GPU stays honored unless explicitly
+                    // disabled with a falsy token (`0|false|no|off|<empty>`,
+                    // case-insensitive); unrecognized values warn and behave
+                    // as unset.
+                    if crate::util::env_bool::env_bool("FLUXION_GPU", true) {
                         InferenceBackend::CUDA
+                    } else {
+                        InferenceBackend::CPU
                     }
                 }
                 #[cfg(not(feature = "cuda"))]
@@ -1179,10 +1181,9 @@ impl SurrogateManager {
             if !matches!(self.backend, InferenceBackend::CUDA) {
                 return false;
             }
-            !matches!(
-                std::env::var("FLUXION_GPU").as_deref(),
-                Ok("0") | Ok("false") | Ok("")
-            )
+            // Issue #3751: canonical env-bool parse — same tokens as
+            // `resolve_backend_from_env` (opt-out bypass, default honored).
+            crate::util::env_bool::env_bool("FLUXION_GPU", true)
         }
         #[cfg(not(feature = "cuda"))]
         {
