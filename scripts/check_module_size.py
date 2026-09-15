@@ -303,7 +303,10 @@ LIMITS: list[Limit] = [
             "coverage tests extracted to the state_space_ctf/coverage_tests "
             "child module; production content unchanged — ceiling raised "
             "4344 -> 4347 to cover only the `#[cfg(test)] mod "
-            "coverage_tests;` wiring."
+            "coverage_tests;` wiring. Zero-headroom entry (Issue #3747): "
+            "decomposition tracked in #3787 — growth beyond the ceiling "
+            "goes through that split (or a documented protocol bump), not "
+            "a reflexive raise."
         ),
     ),
     Limit(
@@ -316,7 +319,10 @@ LIMITS: list[Limit] = [
         / "report_ratchet.json",
         reason=(
             "Issue #3457: validation report module ratcheted at current "
-            "size (4136 lines); consumed by ``ashrae_140_validator``."
+            "size (4136 lines); consumed by ``ashrae_140_validator``. "
+            "Zero-headroom entry (Issue #3747): decomposition tracked in "
+            "#3788 — growth beyond the ceiling goes through that split "
+            "(or a documented protocol bump), not a reflexive raise."
         ),
     ),
     Limit(
@@ -330,7 +336,11 @@ LIMITS: list[Limit] = [
         reason=(
             "Issue #3457: top-level thermal-model module ratcheted at "
             "current size (3061 lines); consumed by the physics↔sim "
-            "cycle guard."
+            "cycle guard. Zero-headroom entry (Issue #3747): hosts the "
+            "``ThermalModelTrait`` swap point the gauge dispatcher work "
+            "keeps touching; decomposition tracked in #3789 — growth "
+            "beyond the ceiling goes through that split (or a documented "
+            "protocol bump), not a reflexive raise."
         ),
     ),
     Limit(
@@ -346,7 +356,10 @@ LIMITS: list[Limit] = [
             "size. 2026-09-11 (PR #3688 coverage): coverage tests extracted "
             "to the multi_node_solver/coverage_tests child module; "
             "production content unchanged — ceiling raised 2664 -> 2666 to "
-            "cover only the `#[cfg(test)] mod coverage_tests;` wiring."
+            "cover only the `#[cfg(test)] mod coverage_tests;` wiring. "
+            "Zero-headroom entry (Issue #3747): decomposition tracked in "
+            "#3790 — growth beyond the ceiling goes through that split "
+            "(or a documented protocol bump), not a reflexive raise."
         ),
     ),
     # ------------------------------------------------------------------

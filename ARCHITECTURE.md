@@ -1899,6 +1899,19 @@ Snapshot 2026-09-13; run `python3 scripts/check_module_size.py --json` for curre
 
 The `LIMITS` list additionally retains two legacy entries whose paths no longer exist on disk (the gate skips missing files, so they are inert): the retired single-file layout of the ThermalModelData module (Issue #2878) and the flat form of the API security module, decomposed into `src/api/security/` by PR #3688. Both drop out via the decomposition protocol below.
 
+### Exact-ceiling entries and decomposition tracking (Issue #3747)
+
+Four of the Issue #3457-era entries sit at **exactly** their current line count — zero headroom — so any additive change inside them (even a new unit test or a doc-comment fix) is PR-blocking until either a decomposition lands or a narrowly-scoped protocol bump is justified. Unlike the Issue #3574 entries (current size + a max-of-+5%/+100-lines buffer), these carry no implicit slack; per Issue #3747 each now has an **explicit decomposition tracking issue** so the sanctioned path for growth is a split, never a reflexive ceiling bump:
+
+| Exact-ceiling file | Lines = ceiling | Decomposition tracking |
+|---|---:|---|
+| `src/physics/state_space_ctf/mod.rs` | 4347 | #3787 |
+| `src/validation/report.rs` | 4136 | #3788 |
+| `src/sim/thermal_model.rs` | 3061 | #3789 |
+| `src/physics/multi_node_solver/mod.rs` | 2666 | #3790 |
+
+`src/sim/thermal_model.rs` deserves particular attention: it hosts `ThermalModelTrait`, the swap point the gauge-dispatcher work keeps touching, making it the most likely of the four to collide with the gate. Each tracking issue stages the decomposition (inline-test extraction first — the PR #3688 `coverage_tests` precedent — then concern splits behind a facade) and records the protocol obligations above.
+
 ### Changing ceilings (protocol)
 
 - **Ceiling bump** — a gated file legitimately grows (e.g. test-module wiring): raise `max_lines` on the existing `LIMITS` entry and update its `reason` to name the PR/issue (precedent: PR #3688, which raised ceilings to cover only `#[cfg(test)] mod coverage_tests;` wiring). Ceilings are never raised to absorb unreviewed production growth.
