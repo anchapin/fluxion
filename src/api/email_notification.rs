@@ -153,11 +153,17 @@ pub struct EmailConfig {
     /// `None`, [`EmailNotifier`] still renders the body but skips delivery
     /// (test/preview mode).
     ///
-    /// **Security (Issue #2554):** the endpoint hostname is checked against
-    /// the `FLUXION_EMAIL_ENDPOINT_ALLOWLIST` env var when it is set (comma-
-    /// separated hostnames, e.g. `api.sendgrid.com,api.mailgun.net`). When
-    /// the env var is unset all `https://` endpoints are accepted. `http://`,
-    /// `file://`, `gopher://`, etc. are always rejected.
+    /// **Security (Issues #2554 / #3741):** the endpoint hostname is checked
+    /// against the `FLUXION_EMAIL_ENDPOINT_ALLOWLIST` env var (comma-
+    /// separated hostnames, e.g. `api.sendgrid.com,api.mailgun.net`).
+    /// Release builds refuse to enable notification when the allow-list is
+    /// unset, empty, or parses to zero hostnames — the pre-#3741 "unset ⇒
+    /// accept any `https://` host" default turned the notifier into a
+    /// credential-forwarding SSRF once the [`EMAIL_API_AUTH_ENV`]
+    /// credential was attached by [`resolve_auth_header`]. Debug builds
+    /// warn and proceed, and `FLUXION_REST_ALLOW_INSECURE=1` is the
+    /// explicit opt-out (see [`endpoint_allowlist_release_decision`]).
+    /// `http://`, `file://`, `gopher://`, etc. are always rejected.
     #[serde(default)]
     pub api_endpoint: Option<String>,
     /// Optional HTTP `Authorization` header value (e.g. `"Bearer SG.xxx"`).
@@ -213,6 +219,14 @@ pub const EMAIL_API_AUTH_ENV: &str = "FLUXION_EMAIL_API_AUTH";
 /// hostnames, e.g. `api.sendgrid.com,api.mailgun.net`.
 pub const EMAIL_ENDPOINT_ALLOWLIST_ENV: &str = "FLUXION_EMAIL_ENDPOINT_ALLOWLIST";
 
+/// The shared fail-closed-family opt-out (`FLUXION_REST_ALLOW_INSECURE`),
+/// owned by the release-gated boot guards in `src/api/security/mod.rs`
+/// (`check_boot_guard_from_env` there parses the same truthy set:
+/// `1` / `true` / `yes` / `on` after trimming). The Issue #3741 egress
+/// allow-list guard honours exactly the same escape hatch as its sibling
+/// guards — there is deliberately no email-specific bypass.
+const REST_ALLOW_INSECURE_ENV: &str = "FLUXION_REST_ALLOW_INSECURE";
+
 /// Validate that `value` is a safe `https://` URL.
 ///
 /// Rejects:
@@ -257,8 +271,104 @@ fn extract_url_host(url: &str) -> Option<String> {
     Some(host.to_ascii_lowercase())
 }
 
-/// Enforce the `FLUXION_EMAIL_ENDPOINT_ALLOWLIST` env var (if set) against
-/// the hostname of `endpoint`.
+/// Parse a raw `FLUXION_EMAIL_ENDPOINT_ALLOWLIST` value (comma-separated
+/// hostnames) into a trimmed, lower-cased host list. Empty and
+/// whitespace-only segments are dropped, so a value like `" , , "` parses
+/// to an empty list — exactly the "misconfigured" shape the Issue #3741
+/// release guard must refuse.
+fn parse_endpoint_allowlist(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_ascii_lowercase)
+        .collect()
+}
+
+/// Read the shared fail-closed-family opt-out
+/// ([`REST_ALLOW_INSECURE_ENV`]), parsing it exactly like the sibling boot
+/// guards in `src/api/security/mod.rs` (`check_boot_guard_from_env`).
+fn rest_allow_insecure_from_env() -> bool {
+    env::var(REST_ALLOW_INSECURE_ENV)
+        .map(|v| matches!(v.trim(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false)
+}
+
+/// Pure **release-decision function** for the outbound-email egress
+/// allow-list (Issue #3741), mirroring the boot-guard decision functions
+/// in `src/api/security/mod.rs` (`is_insecure_tls_configuration`,
+/// `is_weak_auth_token_configuration`): the inputs are plain values rather
+/// than env reads so the release verdict is unit-testable in every build,
+/// and `allow_insecure` is the explicit `FLUXION_REST_ALLOW_INSECURE=1`
+/// opt-out shared across the fail-closed guard family.
+///
+/// Returns `Err` exactly when a **release** build must refuse to enable
+/// email notification: an `api_endpoint` *is* configured (`endpoint ==
+/// None` is preview mode — no outbound request is made — and stays `Ok`)
+/// while `allowlist_raw` is unset, empty, or parses to zero hostnames.
+/// Under that default the pre-#3741 validator accepted any `https://`
+/// host, so [`resolve_auth_header`] attached the server-controlled
+/// [`EMAIL_API_AUTH_ENV`] credential to whatever destination influenced
+/// the config — a credential-forwarding SSRF.
+///
+/// Membership in a *configured*, non-empty allow-list is deliberately not
+/// this function's concern: [`validate_endpoint_host_allowlisted`]
+/// enforces it in every build (Issue #2554 semantics, unchanged). Debug
+/// builds consume this same verdict but downgrade it to a
+/// `tracing::warn!`.
+///
+/// Exposed (rather than kept private) for the same reason as
+/// [`resolve_auth_header`]: the Issue #3741 acceptance test pins the
+/// release verdict directly, without env mutation.
+pub fn endpoint_allowlist_release_decision(
+    endpoint: Option<&str>,
+    allowlist_raw: Option<&str>,
+    allow_insecure: bool,
+) -> Result<(), EmailError> {
+    if allow_insecure {
+        return Ok(());
+    }
+    let Some(endpoint) = endpoint else {
+        // Preview mode — no api_endpoint configured means the notifier
+        // renders only and never performs the outbound request.
+        return Ok(());
+    };
+    let allowlist_empty = allowlist_raw
+        .map(parse_endpoint_allowlist)
+        .is_none_or(|allowed| allowed.is_empty());
+    if !allowlist_empty {
+        // A real allow-list is configured; whether the endpoint's host is
+        // on it is the every-build membership check in
+        // [`validate_endpoint_host_allowlisted`] (Issue #2554), not the
+        // release decision.
+        return Ok(());
+    }
+    let host_display = extract_url_host(endpoint).unwrap_or_else(|| endpoint.to_string());
+    Err(EmailError::InvalidConfig(format!(
+        "`api_endpoint` host `{host_display}` cannot be verified: \
+         {EMAIL_ENDPOINT_ALLOWLIST_ENV} is unset or empty — release builds refuse to \
+         enable email notification without an egress allow-list (Issue #3741): under this \
+         default any https host is accepted and the {EMAIL_API_AUTH_ENV} credential is \
+         attached to it. Set the allow-list to your provider's hostnames (e.g. \
+         api.sendgrid.com,api.mailgun.net) or set {REST_ALLOW_INSECURE_ENV}=1 to \
+         explicitly opt out."
+    )))
+}
+
+/// Enforce the `FLUXION_EMAIL_ENDPOINT_ALLOWLIST` env var against the
+/// hostname of `endpoint`.
+///
+/// Two layers, in order:
+///
+/// 1. **Membership** (every build, Issue #2554, unchanged): when the env
+///    var holds a non-empty host list, the endpoint host must be on it.
+///
+/// 2. **Fail-closed default** (Issue #3741): when the env var is unset,
+///    empty, or parses to zero hosts, the pre-#3741 code returned `Ok` —
+///    accepting any `https://` host. Mirroring the release-gated boot
+///    guards in `src/api/security/mod.rs`, release builds return the
+///    [`endpoint_allowlist_release_decision`] verdict as an `Err`, while
+///    debug builds downgrade it to a `tracing::warn!` so local
+///    `cargo run` and the test harness keep working.
 fn validate_endpoint_host_allowlisted(endpoint: &str) -> Result<(), EmailError> {
     let host = match extract_url_host(endpoint) {
         Some(h) => h,
@@ -268,26 +378,39 @@ fn validate_endpoint_host_allowlisted(endpoint: &str) -> Result<(), EmailError> 
             ))
         }
     };
-    let allowlist = match env::var_os(EMAIL_ENDPOINT_ALLOWLIST_ENV) {
-        Some(v) => v,
-        None => return Ok(()), // no allow-list configured → accept any https host
-    };
-    let allowlist_str = allowlist.to_string_lossy();
-    let allowed: Vec<String> = allowlist_str
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_ascii_lowercase)
-        .collect();
-    if allowed.is_empty() {
+    let allowlist_raw =
+        env::var_os(EMAIL_ENDPOINT_ALLOWLIST_ENV).map(|v| v.to_string_lossy().into_owned());
+    let allowed = allowlist_raw
+        .as_deref()
+        .map(parse_endpoint_allowlist)
+        .unwrap_or_default();
+    if !allowed.is_empty() {
+        if !allowed.iter().any(|h| h == &host) {
+            return Err(EmailError::InvalidConfig(format!(
+                "`api_endpoint` host `{host}` is not in {EMAIL_ENDPOINT_ALLOWLIST_ENV} \
+                 (allowed: {})",
+                allowed.join(", ")
+            )));
+        }
         return Ok(());
     }
-    if !allowed.iter().any(|h| h == &host) {
-        return Err(EmailError::InvalidConfig(format!(
-            "`api_endpoint` host `{host}` is not in {EMAIL_ENDPOINT_ALLOWLIST_ENV} \
-             (allowed: {})",
-            allowed.join(", ")
-        )));
+    // Issue #3741 — allow-list unset / empty / misconfigured: release
+    // refuses, debug warns.
+    if let Err(err) = endpoint_allowlist_release_decision(
+        Some(endpoint),
+        allowlist_raw.as_deref(),
+        rest_allow_insecure_from_env(),
+    ) {
+        #[cfg(not(debug_assertions))]
+        {
+            return Err(err);
+        }
+        #[cfg(debug_assertions)]
+        {
+            tracing::warn!(
+                "{err} — debug build accepts https host `{host}`; release builds refuse"
+            );
+        }
     }
     Ok(())
 }
@@ -976,6 +1099,12 @@ impl Fnv1a {
 mod tests {
     use super::*;
 
+    /// Process-wide mutex serializing tests that mutate process env vars
+    /// (so parallel test threads don't race on the same var). Same
+    /// convention as `tests/email_notifier_header_safety.rs` and
+    /// `src/ai/surrogate.rs::tests` (Issue #3453).
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     /// Local helper — construct a stable email address at runtime so the
     /// literal `@` doesn't appear in source (avoids HTML/markdown
     /// auto-linkers that rewrite `local@domain` patterns).
@@ -1148,12 +1277,20 @@ mod tests {
 
     #[test]
     fn notifier_sends_via_mock_transport() {
+        // The endpoint-bearing tests configure FLUXION_EMAIL_ENDPOINT_ALLOWLIST
+        // explicitly (under ENV_LOCK) so they exercise the every-build
+        // membership path and stay green in BOTH profiles: in release builds
+        // an unset allow-list is refused outright (Issue #3741), so relying
+        // on the debug-only warn path would break `cargo test --release`.
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        env::set_var(EMAIL_ENDPOINT_ALLOWLIST_ENV, "api.example.com");
         let transport = MockEmailTransport::new();
         let notifier = EmailNotifier::new(transport);
         let mut cfg = sample_config();
         cfg.api_endpoint = Some("https://api.example.com/send".to_string());
 
         let sent = notifier.notify(&sample_completion(), &cfg).unwrap();
+        env::remove_var(EMAIL_ENDPOINT_ALLOWLIST_ENV);
         assert!(sent);
         let sent_inner = notifier.transport;
         assert_eq!(sent_inner.len(), 1);
@@ -1165,6 +1302,9 @@ mod tests {
 
     #[test]
     fn notifier_surfaces_transport_failure() {
+        // See notifier_sends_via_mock_transport for the allow-list pin.
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        env::set_var(EMAIL_ENDPOINT_ALLOWLIST_ENV, "api.example.com");
         let transport = MockEmailTransport::new();
         transport.fail_next(1);
         let notifier = EmailNotifier::new(transport);
@@ -1174,6 +1314,7 @@ mod tests {
         let err = notifier
             .notify(&sample_completion(), &cfg)
             .expect_err("should fail");
+        env::remove_var(EMAIL_ENDPOINT_ALLOWLIST_ENV);
         assert!(matches!(err, EmailError::Transport(_)));
     }
 
@@ -1190,12 +1331,16 @@ mod tests {
 
     #[test]
     fn cc_recipients_are_propagated() {
+        // See notifier_sends_via_mock_transport for the allow-list pin.
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        env::set_var(EMAIL_ENDPOINT_ALLOWLIST_ENV, "api.example.com");
         let transport = MockEmailTransport::new();
         let notifier = EmailNotifier::new(transport);
         let mut cfg = sample_config();
         cfg.cc = vec![addr("team", CC1_DOMAIN), addr("lead", CC2_DOMAIN)];
         cfg.api_endpoint = Some("https://api.example.com/send".to_string());
         notifier.notify(&sample_completion(), &cfg).unwrap();
+        env::remove_var(EMAIL_ENDPOINT_ALLOWLIST_ENV);
         let envelopes = notifier.transport.sent();
         assert_eq!(envelopes[0].cc.len(), 2);
         assert_eq!(envelopes[0].cc[0], addr("team", CC1_DOMAIN));
@@ -1252,5 +1397,85 @@ mod tests {
         let rendered = render_email(&cfg, &sample_completion()).unwrap();
         let err = transport.send(&cfg, &rendered).unwrap_err();
         assert!(err.to_string().contains("api_endpoint"));
+    }
+
+    // ---- Issue #3741: fail-closed egress allow-list (release decision) ----
+
+    /// Issue #3741 acceptance, pinned verbatim: "an unset allowlist yields
+    /// `Err` for a non-allowlisted host in the release-decision function".
+    /// The neighbouring verdicts ride along in the same test so the guard
+    /// cannot silently widen: empty/misconfigured lists fail closed too,
+    /// while preview mode (`api_endpoint == None`) and the
+    /// `FLUXION_REST_ALLOW_INSECURE=1` opt-out stay `Ok`.
+    #[test]
+    fn endpoint_allowlist_release_decision_table() {
+        // Acceptance row: unset allow-list + non-allow-listed host → Err.
+        let err = endpoint_allowlist_release_decision(
+            Some("https://api.not-allowlisted.example/send"),
+            None,
+            false,
+        )
+        .expect_err("unset allow-list must fail closed");
+        assert!(
+            matches!(err, EmailError::InvalidConfig(_)),
+            "wrong variant: {err:?}"
+        );
+        assert!(
+            err.to_string().contains("api.not-allowlisted.example"),
+            "error must name the host: {err}"
+        );
+        assert!(
+            err.to_string().contains(EMAIL_ENDPOINT_ALLOWLIST_ENV),
+            "error must name the env var: {err}"
+        );
+
+        // (endpoint, allowlist_raw, allow_insecure, expect_err)
+        let cases: &[(Option<&str>, Option<&str>, bool, bool)] = &[
+            // Unset with a legit-looking provider host is still Err — the
+            // decision cannot know what "looks like a provider".
+            (Some("https://api.sendgrid.com/v3/send"), None, false, true),
+            // Empty and misconfigured (parses to zero hosts) → Err.
+            (Some("https://api.example.com/send"), Some(""), false, true),
+            (
+                Some("https://api.example.com/send"),
+                Some(" , , "),
+                false,
+                true,
+            ),
+            // Preview mode — no endpoint configured, no egress → Ok.
+            (None, None, false, false),
+            // Explicit FLUXION_REST_ALLOW_INSECURE=1 opt-out → Ok.
+            (Some("https://api.example.com/send"), None, true, false),
+            // A configured non-empty allow-list → Ok here; membership is
+            // the every-build Issue #2554 check pinned by the integration
+            // tests in tests/email_notifier_header_safety.rs.
+            (
+                Some("https://api.example.com/send"),
+                Some("api.example.com,api.sendgrid.com"),
+                false,
+                false,
+            ),
+        ];
+        for (endpoint, allowlist_raw, allow_insecure, expect_err) in cases {
+            let verdict =
+                endpoint_allowlist_release_decision(*endpoint, *allowlist_raw, *allow_insecure);
+            if *expect_err {
+                let err = verdict.expect_err("must fail closed");
+                assert!(
+                    matches!(err, EmailError::InvalidConfig(_)),
+                    "wrong variant for case ({endpoint:?}, {allowlist_raw:?}): {err:?}"
+                );
+                assert!(
+                    err.to_string().contains(EMAIL_ENDPOINT_ALLOWLIST_ENV),
+                    "error must name the env var: {err}"
+                );
+            } else {
+                assert!(
+                    verdict.is_ok(),
+                    "unexpected Err for case ({endpoint:?}, {allowlist_raw:?}): {:?}",
+                    verdict.err()
+                );
+            }
+        }
     }
 }
