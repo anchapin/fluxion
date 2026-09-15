@@ -1021,28 +1021,49 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
 
 /// Returns benchmark data for a specific case.
 ///
-/// Returns `None` if the case is not found in the reference database.
-/// Prefer使用 JSON 文件中的数据（如果存在），否则回退到硬编码值。
+/// Returns `None` if the case is not found in either source.
+///
+/// # Precedence contract
+///
+/// The hardcoded table ([`get_all_benchmark_data`]) is checked FIRST and
+/// stays authoritative for the cases it covers: its values are pinned to the
+/// zone-balance blind-validation CSVs within 1e-6 by the #1408 / #1421
+/// consistency gates, and the ±15% / ±10% validator checks evaluate against
+/// them (RULES.md: tolerance semantics must not shift). The reference DB
+/// (`data/ashrae140_reference.json`, parsed again since Issue #3759) is the
+/// fallback that extends coverage to the remaining ASHRAE 140 Section 7
+/// cases the legacy table does not include.
 pub fn get_benchmark_data(case_id: &str) -> Option<BenchmarkData> {
+    if let Some(data) = get_all_benchmark_data().get(case_id) {
+        return Some(data.clone());
+    }
     if let Ok(Some(case_ref)) = reference_loader::get_reference_case(case_id) {
         return Some(convert_case_reference_to_benchmark_data(&case_ref));
     }
-    get_all_benchmark_data().get(case_id).cloned()
+    None
 }
 
-/// Convert CaseReference from JSON to BenchmarkData
+/// Convert CaseReference from JSON to BenchmarkData.
+///
+/// Metrics absent from the reference DB (free-float cases carry only
+/// free-float temperature ranges; see Issue #3759) fall back to the same 0.0
+/// sentinel the legacy hardcoded table used for not-applicable metrics.
 fn convert_case_reference_to_benchmark_data(
     case_ref: &reference_loader::CaseReference,
 ) -> BenchmarkData {
+    let load = |r: &Option<reference_loader::MetricRange>,
+                bound: fn(&reference_loader::MetricRange) -> f64| {
+        r.as_ref().map(bound).unwrap_or(0.0)
+    };
     BenchmarkData {
-        annual_heating_min: case_ref.annual_heating_MWh.min,
-        annual_heating_max: case_ref.annual_heating_MWh.max,
-        annual_cooling_min: case_ref.annual_cooling_MWh.min,
-        annual_cooling_max: case_ref.annual_cooling_MWh.max,
-        peak_heating_min: case_ref.peak_heating_kW.min,
-        peak_heating_max: case_ref.peak_heating_kW.max,
-        peak_cooling_min: case_ref.peak_cooling_kW.min,
-        peak_cooling_max: case_ref.peak_cooling_kW.max,
+        annual_heating_min: load(&case_ref.annual_heating_MWh, |r| r.min),
+        annual_heating_max: load(&case_ref.annual_heating_MWh, |r| r.max),
+        annual_cooling_min: load(&case_ref.annual_cooling_MWh, |r| r.min),
+        annual_cooling_max: load(&case_ref.annual_cooling_MWh, |r| r.max),
+        peak_heating_min: load(&case_ref.peak_heating_kW, |r| r.min),
+        peak_heating_max: load(&case_ref.peak_heating_kW, |r| r.max),
+        peak_cooling_min: load(&case_ref.peak_cooling_kW, |r| r.min),
+        peak_cooling_max: load(&case_ref.peak_cooling_kW, |r| r.max),
         min_free_float_min: case_ref
             .ff_min_zone_temp_C
             .as_ref()
