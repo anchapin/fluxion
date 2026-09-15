@@ -212,6 +212,37 @@ jobs:
         env:
           PYO3_PYTHON: /usr/bin/python3
 
+      # Issue #3755: the `python-bindings` feature set was invisible to the
+      # PR path — nothing in this workflow compiled `--features
+      # python-bindings`, so 10 compile errors from API drift (the #1773
+      # annealer-trait addition and an `hvac` field path change in the model
+      # bindings) accumulated silently on develop until the #3720 wave-1
+      # sub-agent tripped over them. PR #3782 (issue #3749) fixed the call
+      # sites mechanically; this step compiles the feature set and runs the
+      # `python::` lib tests (~161 tests) on every PR so the blind spot
+      # cannot reopen. The full OS x Python wheel + pytest matrices stay in
+      # python-bindings.yml (nightly + main, issue #3567 moved them off the
+      # PR path). Pinned to ONE matrix leg (Linux + "no-default") so the
+      # extra cargo build is paid once per PR, not three times; the
+      # lib-test compile covers every `#[cfg(feature = "python-bindings")]`
+      # module in src/python/ regardless of which tests the filter selects.
+      # Env mirrors the established python-bindings.yml pattern:
+      # PYO3_USE_ABI3_FORWARD_COMPATIBILITY is already workflow-level above;
+      # RUST_MIN_STACK enlarges the build thread stack (32 MiB) for the
+      # PyO3 link step, as in .github/workflows/python-bindings.yml.
+      - name: Python bindings feature tests (Issue #3755)
+        if: runner.os == 'Linux' && matrix.feature_set.name == 'no-default'
+        env:
+          RUST_MIN_STACK: 33554432
+        run: |
+          cargo nextest run \
+            -p fluxion \
+            --lib \
+            --features python-bindings \
+            python:: \
+            --test-threads=2 \
+            --no-fail-fast
+
   # ---------------------------------------------------------------------------
   # Issue #2133: Hetzner autoscaling overflow
   #
