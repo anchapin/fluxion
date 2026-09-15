@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """
-CI guard: verify that every integration test under ``tests/**/*.rs`` that
+CI guard: verify that every integration test under ``tests/**/*.rs`` --
+in the ROOT crate AND in every workspace member's ``tests/`` tree
+(``fluxion-core/tests/``, ``crates/*/tests/``, ...; Issue #3746) -- that
 mutates a process-wide env var (``std::env::set_var`` /
 ``std::env::remove_var``) serialises the mutation through a file-local
 mutex. Issue #3453 closes the ADR-0014 nextest-migration safety-net gap
 that let ``tests/ashrae_140_diagnostic_integration_test`` ship with
-unprotected env mutation under ``--test-threads=2``.
+unprotected env mutation under ``--test-threads=2``. Issue #3746 widens
+the scan from the root ``tests/`` tree alone to every sibling-crate
+``tests/`` tree: sibling crates run inside the same
+``cargo nextest run --workspace --all-targets`` invocation with the same
+in-binary parallelism, so an env-mutating test added there would race
+unchecked by a root-only gate.
 
 Companion to ``scripts/update_concurrency_keys.py`` -- that script applies
 the per-``head_sha`` concurrency template, this script enforces the
@@ -18,7 +25,10 @@ invariants are additionally covered by
 ``scripts/ci/test_check_env_setvar_serialized.py`` against hermetic
 ``tmp_path`` fixtures.
 
-For each ``tests/**/*.rs`` file:
+For each ``<workspace-member>/tests/**/*.rs`` file (the scan roots are
+the root ``tests/`` directory plus the ``tests/`` directory of every
+``[workspace].members`` entry in ``Cargo.toml`` that has one; the root
+crate is ``default-members = ["."]`` so it is always included):
 
   1. If the file does NOT call ``std::env::set_var`` /
      ``std::env::remove_var`` (or the unqualified ``env::set_var`` /
@@ -42,7 +52,7 @@ Usage:
     python3 scripts/check_env_setvar_serialized.py
 
 Exit codes:
-    0 -- every ``tests/**/*.rs`` that mutates env vars carries a
+    0 -- every scanned ``tests/**/*.rs`` that mutates env vars carries a
         file-local ``*_LOCK: ... Mutex ...`` declaration.
     1 -- one or more env-mutating tests lack the serialisation guard.
     2 -- script error (e.g. ``tests/`` missing).
@@ -56,6 +66,22 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TESTS_DIR = REPO_ROOT / "tests"
+
+# Parse ``[workspace].members`` out of Cargo.toml so the scan scope is
+# derived from the single source of truth (adding a workspace member
+# widens this gate automatically, with no hardcoded crate list to
+# forget). Mirrors ``scripts/generate_test_inventory.py::
+# _walk_workspace_members`` (Issue #3442).
+_WORKSPACE_MEMBERS_RE = re.compile(
+    r"\[workspace\][^\n]*\n(?:[^\[]+\n)*?\s*members\s*=\s*\[(.*?)\]",
+    re.MULTILINE,
+)
+
+# Sub-directory names skipped under EVERY tests/ root -- they contain
+# data fixtures and ASCII golden files, not Rust source. Applied
+# per-root (``<member>/tests/reference_data/`` etc.) so sibling crates
+# get the same exclusions as the root tree (Issue #3746).
+_SKIP_DIR_NAMES = {"reference_data", "fixtures"}
 
 # Match `env::set_var` / `env::remove_var` with optional `std::` prefix.
 # We intentionally do NOT match the `std::env` module declaration itself
@@ -79,21 +105,76 @@ _LOCK_DECL_RE = re.compile(
 )
 
 
-def iter_test_files(root: Path) -> list[Path]:
-    """Return every ``*.rs`` file under ``tests/`` (recursive).
+def workspace_member_tests_dirs(repo_root: Path) -> list[Path]:
+    """Return every ``[workspace].members`` entry's ``tests/`` directory
+    that exists on disk (Issue #3746).
 
-    Skips ``tests/reference_data/`` and ``tests/fixtures/`` because those
-    directories contain data fixtures and ASCII golden files, not
-    Rust source. The matcher is robust against false positives in those
-    files (the `_ENV_MUTATION_RE` matches call sites, not module-level
-    strings), but skipping them keeps the scan fast and the output
-    legible.
+    Parses ``Cargo.toml`` at ``repo_root`` with the same regex as
+    ``scripts/generate_test_inventory.py::_walk_workspace_members`` so
+    the sibling-crate scope tracks the workspace manifest instead of a
+    hardcoded crate list. Entries without a ``tests/`` directory (e.g.
+    ``fluxion-city``, ``fluxion-tauri/src-tauri``) are omitted; the root
+    crate is handled separately by :func:`scan_roots` because it is the
+    workspace ``default-members = ["."]`` package, not a ``members``
+    entry. Returns ``[]`` when ``Cargo.toml`` is missing or has no
+    parsable ``members`` list (e.g. hermetic ``tmp_path`` mock repos in
+    the pytest suite that only exercise the root-tree semantics).
     """
-    skip_dirs = {REPO_ROOT / "tests" / "reference_data",
-                 REPO_ROOT / "tests" / "fixtures"}
+    cargo_toml = repo_root / "Cargo.toml"
+    if not cargo_toml.exists():
+        return []
+    text = cargo_toml.read_text(encoding="utf-8")
+    members_match = _WORKSPACE_MEMBERS_RE.search(text)
+    if members_match is None:
+        return []
+    dirs: list[Path] = []
+    for entry in re.finditer(r'"([^"]+)"', members_match.group(1)):
+        rel = entry.group(1).rstrip("/")
+        if not rel:
+            continue
+        tests_dir = repo_root / rel / "tests"
+        if tests_dir.is_dir():
+            dirs.append(tests_dir)
+    return sorted(set(dirs))
+
+
+def scan_roots() -> list[Path]:
+    """Return every ``tests/`` root the gate must scan (Issue #3746).
+
+    The root crate's ``tests/`` first (it is the ``default-members``
+    package and must exist -- ``main()`` exits 2 otherwise), then each
+    workspace member's ``tests/`` directory, deduplicated and sorted for
+    deterministic output. A ``members`` entry of ``"."`` would resolve
+    back to the root ``tests/`` and is collapsed by the dedup.
+    """
+    roots = [TESTS_DIR]
+    for member_dir in workspace_member_tests_dirs(REPO_ROOT):
+        if member_dir not in roots:
+            roots.append(member_dir)
+    return roots
+
+
+def iter_test_files(root: Path) -> list[Path]:
+    """Return every ``*.rs`` file under a ``tests/`` root (recursive).
+
+    Skips ``reference_data/`` and ``fixtures/`` sub-directories under
+    that root because those directories contain data fixtures and ASCII
+    golden files, not Rust source. The skip is per-root (relative to
+    ``root``) so sibling-crate ``tests/`` trees get the same exclusions
+    as the root tree (Issue #3746), and a directory that merely happens
+    to be named ``fixtures`` ABOVE the tests root (e.g. a checkout under
+    ``~/fixtures/fluxion``) is not skipped. The matcher is robust
+    against false positives in those files (the ``_ENV_MUTATION_RE``
+    matches call sites, not module-level strings), but skipping them
+    keeps the scan fast and the output legible.
+    """
     out: list[Path] = []
     for path in sorted(root.rglob("*.rs")):
-        if any(parent in skip_dirs for parent in path.parents):
+        try:
+            rel_parts = path.relative_to(root).parts
+        except ValueError:
+            continue
+        if any(part in _SKIP_DIR_NAMES for part in rel_parts[:-1]):
             continue
         out.append(path)
     return out
@@ -154,7 +235,10 @@ def main() -> int:
         print(f"ERROR: {TESTS_DIR} not found", file=sys.stderr)
         return 2
 
-    files = iter_test_files(TESTS_DIR)
+    roots = scan_roots()
+    files: list[Path] = []
+    for root in roots:
+        files.extend(iter_test_files(root))
     if args.test:
         files = [f for f in files if f.name == args.test]
         if not files:
@@ -187,7 +271,8 @@ def main() -> int:
         return 1
 
     print(
-        f"OK: all {len(files)} test file(s) scanned; "
+        f"OK: all {len(files)} test file(s) scanned across "
+        f"{len(roots)} tests/ root(s); "
         f"{env_mutation_files} env-mutating file(s) carry the "
         "serialisation guard."
     )
