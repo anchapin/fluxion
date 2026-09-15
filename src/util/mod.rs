@@ -20,5 +20,8 @@
 //!   `AsRef<[u8]>`) digest as a lowercase hex string. Replaces the
 //!   `format!("{:x}", Sha256::digest(...))` pattern that the `sha2`
 //!   0.11 / `generic-array` new release made unavailable.
+//! - [`env_bool`] — Unified boolean env-var parsing with canonical
+//!   truthy/falsy token sets and warn-on-unrecognized-value (Issue #3751).
 
+pub mod env_bool;
 pub mod sha256_hex;
