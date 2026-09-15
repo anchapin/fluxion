@@ -45,10 +45,17 @@ Issue #3074 acceptance criteria are realised as seven scenarios:
 7. **``_all_rs_under_src`` excludes ``src/bin/``** -- each file under
    ``src/bin/`` is its own Cargo target root, not a child of the
    library module graph, and must not appear in the orphan universe.
+
+Issue #3748 adds the wired-but-dead disposition registry gate and its
+scenarios (8-13): lock-step pass, missing-row / stale-row /
+invalid-row / missing-registry failures, the mock-repo skip guard,
+and a real-repo coverage pin asserting every ``WIRED_BUT_DEAD``
+entry carries an owner-assigned wire-or-delete disposition.
 """
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -64,6 +71,12 @@ SCRIPT_NAME = "check_orphan_modules"
 # helper never touch this constant.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / f"{SCRIPT_NAME}.py"
+
+# Checked-in disposition registry (Issue #3748) backing the
+# wired-but-dead gate under test.
+DISPOSITION_REGISTRY = (
+    REPO_ROOT / "tests" / "reference_data" / "wired_but_dead_dispositions.json"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +170,10 @@ def test_script_exits_zero_on_real_repo():
     # The known-orphan baseline line is present (the script has 30
     # baseline entries as of the #2875 allowlist commit).
     assert "No new orphan modules" in result.stdout
+    # Issue #3748: the disposition gate section runs on the real repo
+    # and reports lock-step.
+    assert "Wired-but-dead dispositions (#3748)" in result.stdout
+    assert "Disposition registry in lock-step" in result.stdout
 
 
 # ---------------------------------------------------------------------------
@@ -465,3 +482,215 @@ def test_all_rs_under_src_excludes_bin(checker, tmp_path, monkeypatch):
     assert (src_dir / "ghost.rs") in all_rs
     # bin/ is excluded from the lib-module orphan universe.
     assert (src_dir / "bin" / "mybin.rs") not in all_rs
+
+
+# ---------------------------------------------------------------------------
+# Issue #3748: wired-but-dead disposition registry gate
+# ---------------------------------------------------------------------------
+
+
+def _real_registry_rows() -> list[dict]:
+    """The checked-in registry's rows, verbatim from the real repo."""
+    payload = json.loads(DISPOSITION_REGISTRY.read_text(encoding="utf-8"))
+    return list(payload["modules"])
+
+
+def _write_registry(tmp_path: Path, rows: list[dict]) -> Path:
+    """Serialise ``rows`` into a synthetic registry at ``tmp_path``."""
+    path = tmp_path / "wired_but_dead_dispositions.json"
+    payload = {
+        "schema_version": 1,
+        "description": "synthetic registry for pytest",
+        "governing_issue": 3748,
+        "module_count": len(rows),
+        "modules": rows,
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def test_disposition_gate_passes_in_lockstep(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """A registry covering exactly the live wired-but-dead set passes.
+
+    Mirrors the green state of the real repo: every live module has a
+    row, every allowlist entry has a row, no stale rows, and each row
+    carries a valid disposition / issue / owner / rationale.
+    """
+    names = ["ems", "topsis"]
+    rows = [r for r in _real_registry_rows() if r["module"] in set(names)]
+    assert len(rows) == 2, "seed rows for ems/topsis must exist"
+    monkeypatch.setattr(checker, "WIRED_BUT_DEAD", frozenset(names))
+    monkeypatch.setattr(
+        checker, "WIRED_BUT_DEAD_DISPOSITIONS_PATH", _write_registry(tmp_path, rows)
+    )
+    _scrub_argv(monkeypatch)
+
+    rc = checker._check_wired_but_dead_dispositions(names)
+    out = capsys.readouterr().out
+
+    assert rc == 0, f"expected PASS (lock-step), got rc={rc}\noutput:\n{out}"
+    assert "Disposition registry in lock-step (2 row(s)" in out
+
+
+def test_disposition_gate_fails_when_row_missing(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """A live wired-but-dead module without a registry row fails (exit 1).
+
+    This is the #3748 forcing function: an allowlist entry (or live
+    detection) without an owner-assigned wire-or-delete disposition is
+    exactly the drift the ratchet alone could not stop.
+    """
+    rows = [r for r in _real_registry_rows() if r["module"] == "ems"]
+    monkeypatch.setattr(checker, "WIRED_BUT_DEAD", frozenset({"ems", "topsis"}))
+    monkeypatch.setattr(
+        checker, "WIRED_BUT_DEAD_DISPOSITIONS_PATH", _write_registry(tmp_path, rows)
+    )
+    _scrub_argv(monkeypatch)
+
+    rc = checker._check_wired_but_dead_dispositions(["ems", "topsis"])
+    out = capsys.readouterr().out
+
+    assert rc == 1, f"expected FAIL (missing row), got rc={rc}\noutput:\n{out}"
+    assert "MISSING DISPOSITION ROWS DETECTED" in out
+    assert "topsis" in out
+
+
+def test_disposition_gate_fails_on_stale_row(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """A registry row whose module is no longer wired-but-dead fails.
+
+    Lock-step convention (same as the dead-code inventory): a cleanup
+    PR that wires up or deletes a module must drop its row in the same
+    PR, alongside the allowlist entry and the BASELINE_WIRED_BUT_DEAD
+    decrement.
+    """
+    rows = _real_registry_rows() + [
+        {
+            "module": "ghost_mod",
+            "disposition": "reject",
+            "issue": 3748,
+            "owner": "anchapin",
+            "rationale": "stale synthetic row",
+        }
+    ]
+    monkeypatch.setattr(checker, "WIRED_BUT_DEAD", frozenset({"ems", "topsis"}))
+    monkeypatch.setattr(
+        checker, "WIRED_BUT_DEAD_DISPOSITIONS_PATH", _write_registry(tmp_path, rows)
+    )
+    _scrub_argv(monkeypatch)
+
+    rc = checker._check_wired_but_dead_dispositions(["ems", "topsis"])
+    out = capsys.readouterr().out
+
+    assert rc == 1, f"expected FAIL (stale row), got rc={rc}\noutput:\n{out}"
+    assert "STALE DISPOSITION ROWS DETECTED" in out
+    assert "ghost_mod" in out
+
+
+def test_disposition_gate_fails_on_invalid_row(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Schema violations fail: unknown disposition enum, non-integer
+    issue reference, and a blank rationale are each rejected.
+    """
+    rows = [
+        {
+            "module": "ems",
+            "disposition": "delete-later",
+            "issue": "TBD",
+            "owner": "anchapin",
+            "rationale": "",
+        }
+    ]
+    monkeypatch.setattr(checker, "WIRED_BUT_DEAD", frozenset({"ems"}))
+    monkeypatch.setattr(
+        checker, "WIRED_BUT_DEAD_DISPOSITIONS_PATH", _write_registry(tmp_path, rows)
+    )
+    _scrub_argv(monkeypatch)
+
+    rc = checker._check_wired_but_dead_dispositions(["ems"])
+    out = capsys.readouterr().out
+
+    assert rc == 1, f"expected FAIL (invalid row), got rc={rc}\noutput:\n{out}"
+    assert "INVALID DISPOSITION ROWS DETECTED" in out
+    assert "unknown disposition 'delete-later'" in out
+    assert "missing/invalid 'issue' reference" in out
+    assert "missing 'rationale'" in out
+
+
+def test_disposition_gate_fails_when_registry_missing(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """A missing registry file is a hard error (exit 2), not a pass."""
+    monkeypatch.setattr(checker, "WIRED_BUT_DEAD", frozenset({"ems"}))
+    monkeypatch.setattr(
+        checker,
+        "WIRED_BUT_DEAD_DISPOSITIONS_PATH",
+        tmp_path / "does_not_exist.json",
+    )
+    _scrub_argv(monkeypatch)
+
+    rc = checker._check_wired_but_dead_dispositions(["ems"])
+    out = capsys.readouterr().out
+
+    assert rc == 2, f"expected ERROR (registry missing), got rc={rc}\noutput:\n{out}"
+    assert "disposition registry missing" in out
+
+
+def test_disposition_gate_skipped_on_mock_repo(checker, tmp_path, monkeypatch, capsys):
+    """The registry-relative gate skips synthetic mock trees (exit 0).
+
+    Same trade-off the #3752 dead-code gate accepted: the gate is
+    inherently registry-relative to the real repo, so redirecting
+    ``REPO_ROOT`` at a ``tmp_path`` fixture must short-circuit instead
+    of false-failing every synthetic-tree test in this harness.
+    """
+    monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
+    _scrub_argv(monkeypatch)
+
+    rc = checker._check_wired_but_dead_dispositions(["ems"])
+    out = capsys.readouterr().out
+
+    assert rc == 0, f"expected skip, got rc={rc}\noutput:\n{out}"
+    assert "Skipped: REPO_ROOT redirected to a synthetic mock tree" in out
+
+
+def test_real_registry_covers_real_allowlist(checker):
+    """Real-repo coverage pin: the checked-in registry and the
+    ``WIRED_BUT_DEAD`` allowlist are in exact lock-step, and every row
+    is schema-valid (disposition enum, integer issue, owner, rationale).
+
+    Catches allowlist edits that forget the registry row (and vice
+    versa) without paying for a full ripgrep sweep.
+    """
+    rows = _real_registry_rows()
+    by_module = {str(r["module"]): r for r in rows}
+    assert set(checker.WIRED_BUT_DEAD) == set(by_module), (
+        "WIRED_BUT_DEAD allowlist and disposition registry must match "
+        "exactly (Issue #3748 lock-step seed)"
+    )
+    for name, row in by_module.items():
+        assert row["disposition"] in checker.ALLOWED_DISPOSITIONS, name
+        assert isinstance(row["issue"], int), name
+        assert str(row["owner"]).strip(), name
+        assert str(row["rationale"]).strip(), name
+
+
+def test_disposition_gate_passes_on_real_allowlist(checker, capsys):
+    """The gate returns 0 when fed the real repo's live wired-but-dead
+    set (the allowlist itself) against the checked-in registry.
+
+    This is the in-process positive path: identical inputs to the
+    subprocess smoke test without re-paying the ripgrep sweep.
+    """
+    rc = checker._check_wired_but_dead_dispositions(sorted(checker.WIRED_BUT_DEAD))
+    out = capsys.readouterr().out
+
+    assert rc == 0, f"expected PASS on real repo, got rc={rc}\noutput:\n{out}"
+    assert "Rows missing for live modules: 0" in out
+    assert "Stale rows (module no longer wired-but-dead): 0" in out
+    assert "Disposition registry in lock-step (21 row(s)" in out

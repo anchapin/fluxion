@@ -2,6 +2,13 @@
 //!
 //! Computes HVAC equipment capacity by running simulations on extreme
 //! heating and cooling design days and applying ASHRAE-recommended safety factors.
+//!
+//! # Disposition (Issue #3748)
+//!
+//! Intentionally wired-but-dead: this sizing utility is parked until a CLI
+//! or reporting consumer exists. Tracked in
+//! `tests/reference_data/wired_but_dead_dispositions.json` — a cleanup PR
+//! must not delete it without flipping its `keep-dead` disposition first.
 
 use crate::physics::cta::VectorField;
 use crate::sim::thermal_model_core::ThermalModel;
