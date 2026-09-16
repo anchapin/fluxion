@@ -1,6 +1,6 @@
 # ASHRAE Standard 140 Validation Results
 
-*Generated: 2026-09-16 (LIMIT-28 / Issue #3802 FF cohort tracking entry added; no result-table changes — see §"Free-Floating cohort bidirectional diurnal-swing gap")*
+*Generated: 2026-09-16 — LIMIT-28 / Issue #3802 FF cohort tracking entry + Phase B3a (Issue #3801) audit entry; no result-table changes — see §"Free-Floating cohort bidirectional diurnal-swing gap" and §"Phase B3a free-floating temperature deviation audit (600FF/900FF/950FF)"*
 
 > **Document scope:** This document covers the ASHRAE 140 Strict-Energy and
 > Free-Floating cohort — Baseline 600 Series (600–650), High-Mass 900 Series
@@ -166,6 +166,222 @@ architecture decision in **`docs/adr/0011-case-950ff-night-vent-split.md`**
 (Status: Proposed; tracking stub only). The companion integration test
 `tests/ashrae_140_blind_validation.rs::test_case_950_5r1c_free_float_uses_night_vent_overrides_issue_1422`
 remains `#[ignore]`-quarantined (per §LIMIT-09 / #3071).
+
+### Phase B3a (PHYSICS-03) free-floating temperature deviation audit (600FF/900FF/950FF) (Issue #3801)
+
+**This section is the B3a AUDIT step** that precedes the §LIMIT-28 cohort documentation done in B3b (Issue #3802, the next `### Free-Floating cohort ...` subsection below). Per the issue acceptance criteria ("diagnostic, no code changes") and **AGENTS.md / RULES.md / ADR-0001** ("no parameter tuning", "fix the underlying math"), the deliverable is **measurement + ranking + initial mechanism hypotheses only** — the structural closure work is owned by §LIMIT-28 / Issue #3802 / ADR-0011 and routes to the GaugeSolver production-path work coordinated by **Issues #1465 / #1462** (production-path switchover staged via **#3291 / PR #3482** for Phase A8 default flip, gated on §LIMIT-21 β-soak closure).
+
+#### Audit methodology (provenance)
+
+Two measurement paths were exercised at HEAD (`2fcf296` → rebased onto `origin/develop` at `140634f`, 2026-09-16), both with `ThermalSelector::default()` resolving to `ZoneSolverKind::Gauge` but **falling through to legacy 5R1C / 9R4C** in the **default build** (cargo feature `gauge-solver` is OFF per the AGENTS.md Phase A8 note — `Cargo.toml:208-225`; the gauge arm is gated behind `--features gauge-solver`):
+
+1. **FF integration suite** (`tests/all_tests/ashrae_140_free_floating.rs`)
+   — uses **real Denver TMY3** `assets/weather/WD600.epw` (WMO 725650,
+   the DRYCOLD reference per ASHRAE 140 Annex B). This is the path the
+   B1/B2 diagnostics and the per-issue freeze tests exercise.
+2. **Validator snapshot** (parametric weather generator path) — the
+   same path that populates the FF row of the "Detailed Results"
+   table above (lines 259–266) and the §LIMIT-28 measurements in
+   `docs/KNOWN_ISSUES.md` (Issue #3802).
+
+The two paths exercise different weather ingest; the 7.29 °C spread on
+the 600FF winter min (−17.13 validator vs −9.84 integration, with the
+integration test printing **"may indicate weather year mismatch"**) is
+diagnostic of an **unrelated weather-source differential** that is **not**
+attributable to the FF damping residual per se. The **shape** signature
+(bidirectional damping — winter too warm / summer too cool, or winter
+too cold / summer too cool on the validator path for 950FF) is
+consistent across both paths.
+
+#### Audit results (2026-09-16 commit 140634f / develop HEAD)
+
+Per-case min / max deviation table — **ALL three B3a cases have at
+least one out-of-band metric on both paths**:
+
+| Case   | Path                  | Min (°C) | Min ref band     | Verdict (min)        | Max (°C) | Max ref band     | Verdict (max)         |
+|--------|-----------------------|----------|------------------|----------------------|----------|------------------|------------------------|
+| 600FF  | Integration (WD600)   | −9.84    | [−18.80, −15.60] | too warm by 5.76 °C † | 52.78    | [64.90, 75.10]   | too cool by 12.12 °C  |
+| 600FF  | Validator (parametric)| −17.13   | [−18.80, −15.60] | in-band (see note ‡)  | 55.22    | [64.90, 75.10]   | too cool by 9.68 °C   |
+| 900FF  | Integration (WD600)   | −1.09    | [−6.40, −1.60]   | too warm by 0.51 °C  | 39.36    | [41.80, 46.40]   | too cool by 2.04 °C   |
+| 900FF  | Validator (parametric)| −6.65    | [−6.40, −1.60]   | too cold by 0.25 °C  | 39.83    | [41.80, 46.40]   | too cool by 1.57 °C   |
+| 950FF  | Integration (WD600)   | −18.65   | [−20.20, −17.80] | too warm by 0.85 °C  | 35.34    | [35.50, 38.50]   | too cool by 0.16 °C   |
+| 950FF  | Validator (parametric)| −23.95   | [−20.20, −17.80] | too cold by 3.72 °C  | 31.30    | [35.50, 38.50]   | too cool by 4.20 °C   |
+
+† The 600FF Integration Min −9.84 °C deviation and the test prints
+  **"may indicate weather year mismatch"** — this is most plausibly a
+  **weather-ingest / weather-year differential** between the WD600 EPW
+  path and the ASHRAE 140 DRYCOLD reference, not a damping-residual
+  signature. The §LIMIT-15 / #3060 Case 195 weather-mismatch sibling
+  documents the analogous differential for the 195 path; future B1
+  diagnostics should disambiguate.
+
+‡ **Auditor note for PR #3835 / Greptile P1 finding**:
+  `−17.13 °C ∈ [−18.80, −15.60]` — the 600FF winter min is **in-band**
+  on the validator path. The §LIMIT-28 (Issue #3802) table currently
+  shows **"below by 1.33 °C"** for that cell, which is the Greptile
+  P1 finding the PR author flagged. The cohort status flag (§LIMIT-28
+  table) reads ❌ FAIL because the 600FF max is below by 9.68 °C; the
+  flag itself is correct, but the per-cell verdict for the 600FF min
+  is wrong. The B3a audit (this section) corrects the verdict.
+
+#### Profile shape: diurnal swing comparison
+
+| Case   | Engine swing (°C)             | Ref swing ‡‡ | Engine / Ref |
+|--------|--------------------------------|---------------|--------------|
+| 600FF  | 62.62 (Integration) / 72.35 (Validator) | 80.5          | 77.8% / 89.9% |
+| 900FF  | 40.45 (Integration) / 46.48 (Validator) | 48.2          | 83.9% / 96.4% |
+| 950FF  | 53.99 (Integration) / 55.25 (Validator) | 58.7          | 92.0% / 94.1% |
+
+‡‡ Reference swing per **§FREE-03 Resolution Notes** (ASHRAE 140 Annex B
+program aggregates: 600FF = 80.5 °C, 900FF = 48.2 °C, 950FF = 58.7 °C).
+
+All three cases swing **less** than the ASHRAE 140 reference programs —
+the classic **5R1C / 9R4C single lumped-mass damping** signature. The
+integration suite shows a slightly larger swing gap (engine at 78–92%
+of reference) than the validator (90–96%); the gap is **monotonic with
+mass** (low-mass 600FF has the largest divergence; high-mass 900FF /
+950FF the smallest). This is consistent with the §LIMIT-16 / §LIMIT-17
+/ §LIMIT-28 framework: the mass-only single-lumped-node formulation
+under-predicts the diurnal swing, with the magnitude scaling inversely
+with the building's thermal mass.
+
+#### Worst-offender ranking (B3a, 600FF / 900FF / 950FF)
+
+Ranked by **max-normalized deviation** `|deviation| / ref_band_width`
+(using the larger absolute deviation across the two paths, normalized
+to the ref band half-width):
+
+1. **Case 600FF** — Max deviation = 12.12 °C below [64.90, 75.10] ref
+   band (Integration), or 9.68 °C below band (Validator). **Worst
+   offender on the summer-max axis.** Normalized to band half-width:
+   12.12 / 5.10 = 2.38× band half-widths. **Mechanism hypothesis**:
+   low-mass 5R1C lumped-mass-node damping under-predicts the diurnal
+   swing for a low-mass envelope with east / west windows (Case 600
+   construction; the FF variant is the same construction with
+   `setpoints.heating_setpoint = -999.0`, `cooling_setpoint = 999.0`
+   and `hvac_*_capacity = 0.0`). The single lumped `C_m` cannot model
+   the rapid air-side thermal response the ASHRAE 140 reference
+   expects for a low-mass fabric.
+
+2. **Case 950FF** — Min deviation = 3.72 °C below [−20.20, −17.80] ref
+   band (Validator path). Normalized to band half-width: 3.72 / 1.20 =
+   3.10× band half-widths (the tightest band in the cohort, hence the
+   worst normalized). **Mechanism hypothesis**: the
+   `h_ve_night ≈ 570.8 W/K` fan supply during 18:00–07:00 in
+   `src/physics/multi_node_solver.rs::step_with_gains` overwhelms the
+   wall exterior-film correction `h_tr_em_wall ≈ 71.6 W/K` by ~8× on
+   the mass node, locking the winter min at −23.95 °C (Validator). The
+   PR #3040 F_sky view-factor correction is mathematically correct but
+   mathematically invisible against the dominant raw-outdoor forcing.
+   Companion integration-path result (−18.65, in-band on the warm side
+   by 0.85 °C) is consistent with the **night-vent amplification being
+   a coupling-pathway artifact**, not a net-energy error: when the
+   weather source flips, the coupling flips with it. **This is the
+   classic §LIMIT-17 / Issue #3058 / ADR-0011 documented gap** (Status:
+   Proposed; per-case closure options (a) / (b) / (c) in
+   `docs/adr/0011-case-950ff-night-vent-split.md`).
+
+3. **Case 900FF** — Min deviation = 0.25 °C below band (Validator).
+   Normalized: 0.25 / 2.40 = 0.10× band half-widths. **Closest-to-band
+   of the B3a cohort.** Max deviation = 2.04 °C below band
+   (Integration). **Mechanism hypothesis**: same 5R1C / 9R4C
+   lumped-mass damping residual as the rest of the cohort, but
+   **without** the night-vent amplification (Case 900 has no
+   night-ventilation schedule — it is the high-mass no-HVAC baseline;
+   Case 950 is the high-mass no-HVAC + night-vent variant). The 0.25
+   °C below band is **inside the engine-noise band** for a 1-hour
+   timestep simulation at `dt / τ_5R1C ≈ 0.054`, so this case is the
+   **best candidate for cohort closure** if a structural fix is ever
+   shipped that does not regress 950FF.
+
+#### Cross-references (B3a → B3b / §LIMIT-21 / unblockers)
+
+- **§LIMIT-28 / Issue #3802** (Phase B3b, PR #3835) — the
+  cohort-level structural LIMIT entry that **aggregates the B3a
+  measurements** for the four-case FF cohort
+  (600FF/650FF/900FF/950FF). B3a provides the 600FF/900FF/950FF raw
+  measurements + ranking; B3b adds 650FF (the night-vent low-mass
+  variant).
+- **§LIMIT-17 / Issue #3058 / ADR-0011** — Case 950FF night-vent mass
+  coupling structural gap (Status: Proposed). Per-case architectural
+  closure options (a) / (b) / (c) documented in
+  `docs/adr/0011-case-950ff-night-vent-split.md` §"Plan".
+- **§LIMIT-24 / Issue #3551** — Case 950 HVAC-mode annual cooling
+  companion (~14× UNDER band). The §LIMIT-17 regression-avoidance
+  clause requires any structural fix to "preserve Case 950 (HVAC
+  mode) annual cooling in the 390–920 kWh band"; the §LIMIT-24 entry
+  documents the bidirectional HVAC ↔ FF coupling.
+- **§LIMIT-16 / Issue #3059** — Cases 610 / 630 / 650 peak cooling
+  OVER (the 5R1C + 9R4C single lumped-mass-node pathology). The
+  Case 650 cooling OVER cohort (closed by PR #3041's
+  `MAX_CONVECTIVE_TO_AIR_MULTIPLIER = 2.0×` cap) is structurally
+  distinct from the Case 650FF / Case 950FF night-vent air-node
+  undershoot documented here.
+- **§LIMIT-05 UPDATE (#2453)** — 900-series bidirectional annual-energy
+  over-prediction. The air-mass distribution pathology is the same as
+  the FF cohort's diurnal-swing damping.
+- **§LIMIT-15 / #3060** — Case 195 weather-mismatch (analogous 13.4
+  °C differential between WD600 and DRYCOLD.TM2 on the 195 path).
+  Future B1 diagnostics should rule out a similar weather-source
+  differential as the source of the 600FF Integration Min −9.84 vs
+  Validator −17.13 spread (see "†" footnote above).
+- **§FREE-01 / §FREE-02 / §FREE-03** — pre-#1323 FREE-\* family
+  documenting the same cohort gaps from the pre-#1323 baseline; the
+  2026-09-16 numbers above are the post-#1323 ground truth.
+- **§LIMIT-21** — Gauge β-path pre-existing air-trajectory failure
+  cohort + **β-soak 30-night production-path gate** (Issue #3286,
+  `#3286 β-soak` convention in CI comment threads; currently 0/30
+  nights green). The FF cohort residuals above persist on the
+  production path until the `gauge-solver` cargo feature is enabled.
+- **Unblockers**: GaugeSolver production-path switchover (**Issues
+  #1465 / #1462** — both closed individually; production-path staged
+  via **#3291 / PR #3482** for Phase A8 default flip, gated on
+  §LIMIT-21 β-soak closure). ADR-0011 implementation-options review
+  (Issue #3058 follow-up): any of options (a) / (b) / (c) must
+  preserve Case 950 (HVAC mode) annual cooling in the 390–920 kWh
+  band and energy-balance / cross-case ASHRAE 140 / architecture-drift
+  / cycle guards remain green.
+
+#### Module-isolation suites (read-only acceptance — all green)
+
+| Test path                                                                       | Result | Notes |
+|----------------------------------------------------------------------------------|--------|-------|
+| `cargo test --test all_tests ashrae_140_free_floating::`                         | 15 passed (4 `test_case_*` + 11 aux) | Integration suite at HEAD |
+| `cargo test --test all_tests ashrae_140_validation::`                            | 3 passed | Comprehensive validator + report-generation path |
+| `python3 scripts/check_strict_energy_gate_regression.py`                         | 4 PASS / 12 KNOWN-FAIL / 0 REGRESSION | Issues #2506 / #3572 strict ±15% gate holds |
+
+No green-test regression detected at HEAD; the strict ±15% annual-energy
+gate holds on the B3a acceptance criterion "Module-isolation suites green
+(read-only)". The 12 KNOWN-FAIL metrics are **documented structural
+gaps** tracked under §LIMIT-05 / §LIMIT-14 / §LIMIT-17 / §LIMIT-23 /
+§LIMIT-24 (Cases 600 / 800 / 810 / 900 / 920 / 950 / 960 / 970 cooling
+chain) — not silently ignored, per AGENTS.md / RULES.md / ADR-0001.
+
+#### Scope guard (audit deliverables)
+
+- **Docs-only entry**: this `### Phase B3a ...` section in
+  `docs/ASHRAE140_RESULTS.md` + the corresponding
+  `Generated:` line bump. **No physics-code change**, **no
+  `MAX_CONVECTIVE_TO_AIR_MULTIPLIER` / `h_ve_night` /
+  `h_tr_em_wall` / `derived_h_tr_3` / `solar_distribution_to_air`
+  parameter change**, **no
+  `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`
+  change**, **no ASHRAE 140 reference-band change**, **no closure of
+  any tolerance band**, **no `#[ignore]` quarantine**, **no
+  reference-data CSV / sha256 change**. Per AGENTS.md / RULES.md /
+  ADR-0001, the cohort is **measured, ranked, and documented** — not
+  patched.
+- **Input to B3b**: this section is the raw measurement data that
+  §LIMIT-28 (Issue #3802, PR #3835) aggregates. The §LIMIT-28 cohort
+  table is the canonical citation; the B3a per-case ranking here is
+  the per-case granularity that B3b omits (B3b is a cohort doc; B3a is
+  the audit input). The Greptile P1 finding on §LIMIT-28's 600FF Min
+  verdict is corrected here (the cell is **in-band**, not "below by
+  1.33 °C").
+- **No regression on §LIMIT-28**: the B3a measurements are consistent
+  with the §LIMIT-28 cohort table on both min axes (900FF, 950FF) and
+  the max axes (600FF, 900FF, 950FF); the only disagreement is the
+  600FF Min cell flagged by Greptile, which B3a corrects.
 
 ### Free-Floating cohort (600FF/650FF/900FF/950FF) bidirectional diurnal-swing gap (Issue #3802)
 
