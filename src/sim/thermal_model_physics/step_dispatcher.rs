@@ -6,18 +6,20 @@
 //! `thermal_model_physics.rs` (Issue #898), extracted as part of the
 //! Issue #902 modular split.
 //!
-//! Issue #3280 / #3291: strict selector-driven dispatch. The
-//! [`ZoneSolverKind::Gauge`] selector is the **unconditional default**
-//! when the `gauge-solver` cargo feature is enabled — the gauge path
-//! runs every step with no fall-through to legacy 5R1C/9R4C. `FiveROneC`
-//! and `NineRFourC` selectors always route to the legacy physics.
-//! In the default build (no `gauge-solver` feature), the `Gauge`
-//! selector routes to 5R1C/9R4C via the `match` arm — the `gauge-solver`
-//! cargo feature remains the production gate pending §LIMIT-21 closure
-//! (Issue #3297); the unconditional default applies once the feature
-//! is on. The legacy `is_9r4c_model()` / `is_8r3c_model()` /
-//! `is_6r2c_model()` checks are gone — `thermal_model_type` is set
-//! exclusively by the selector (Issue #3277).
+//! Issue #3280 / #3291 / #3816: selector-driven dispatch with
+//! β-phase fall-through. The [`ZoneSolverKind::Gauge`] selector tries
+//! the gauge single- and multi-zone arms first; if neither backend is
+//! configured (silent-init failure from `from_spec_with_selector`),
+//! it falls back to legacy 5R1C / 9R4C dispatch via the `match` arm
+//! below, matching the AGENTS.md §Phase A8 documented posture for the
+//! default build (no `gauge-solver` feature). `FiveROneC` and
+//! `NineRFourC` selectors always route to the legacy physics. The
+//! `gauge-solver` cargo feature remains the production gate pending
+//! §LIMIT-21 closure (Issue #3297); once §LIMIT-21 closes, the
+//! fall-through goes away and gauge becomes unconditional. The legacy
+//! `is_9r4c_model()` / `is_8r3c_model()` / `is_6r2c_model()` checks
+//! are gone — `thermal_model_type` is set exclusively by the selector
+//! (Issue #3277).
 
 use crate::api::error::FluxionError;
 use crate::physics::cta::{ContinuousTensor, VectorField};
@@ -67,16 +69,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.calc_analytical_loads(timestep, true, dt_seconds);
         }
 
-        // Issue #3280 / #3291: strict selector-driven dispatch. The
-        // `Gauge` selector is the unconditional default when the
-        // `gauge-solver` cargo feature is on (no fall-through to legacy);
-        // `FiveROneC` and `NineRFourC` always go straight to their
-        // respective legacy physics. In the default build (no
-        // `gauge-solver` feature), the cfg-gated gauge block below is
-        // absent and the `Gauge` selector falls through to the `match`
-        // arm which routes to 5R1C/9R4C — the `gauge-solver` cargo
-        // feature remains the production gate pending §LIMIT-21 closure
-        // (Issue #3297).
+        // Issue #3280 / #3291 / #3816: selector-driven dispatch with
+        // β-phase fall-through. The `Gauge` selector tries the gauge
+        // single- and multi-zone arms first; if neither backend is
+        // configured (a silent-init failure from
+        // `from_spec_with_selector`), it falls back to legacy 5R1C /
+        // 9R4C dispatch via the `match` arm below, matching the
+        // AGENTS.md §Phase A8 documented posture for the default
+        // build (no `gauge-solver` feature). `FiveROneC` and
+        // `NineRFourC` selectors always go straight to their
+        // respective legacy physics. The `gauge-solver` cargo feature
+        // remains the production gate pending §LIMIT-21 closure
+        // (Issue #3297); once §LIMIT-21 closes, the fall-through goes
+        // away and gauge becomes unconditional.
         let selector_zone_solver = self.0.hvac.thermal_selector.zone_solver;
 
         // Collect gauge inputs once (immutable borrows that would
@@ -85,31 +90,30 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         #[cfg(feature = "gauge-solver")]
         let gauge_inputs = self.collect_gauge_inputs();
 
-        // Unconditional gauge dispatch when zone_solver == Gauge (gauge
-        // build). Try single-zone first; multi-zone specs (e.g. Case
-        // 960 sunspace) have `gauge_zone_solver == None` and are picked
-        // up by the multi-zone arm. Both arms write a 5R1C
-        // Crank-Nicolson mass-state proxy that satisfies the
-        // strict-energy-balance gate's invariant exactly (see
-        // `write_gauge_mass_state_proxy`, Issue #3297). Phase A8 (#3291):
-        // no fall-through — the selector exclusively drives the dispatch,
-        // and `from_spec_with_selector` initializes the matching gauge
-        // backend, so a selector=="Gauge" run without a configured
-        // backend is a programming error.
+// β-phase gauge dispatch (gauge-enabled build) with the
+        // #3817 heavyweight-spec exception. Try single-zone first;
+        // multi-zone specs (e.g. Case 960 sunspace) have
+        // `gauge_zone_solver == None` and are picked up by the
+        // multi-zone arm. Both arms write a 5R1C Crank-Nicolson
+        // mass-state proxy that satisfies the strict-energy-balance
+        // gate's invariant exactly (see `write_gauge_mass_state_proxy`,
+        // Issue #3297).
         //
-        // Issue #3817 — exception to the "unconditional gauge" rule: when
-        // the spec is heavyweight (`thermal_model_type == NineRFourC`,
-        // auto-promoted by `from_spec_with_selector` for HighMass
-        // construction in both the default and gauge builds) the gauge
-        // path is bypassed and the dispatch falls through to the legacy
-        // 9R4C arm below. The gauge solver has no thermal-mass modeling,
-        // so heavyweight free-floating specs (e.g. Case 900FF) cannot
-        // satisfy the `zone_balance_eplus_isolation` swing-reduction
-        // sanity bound without the 9R4C's wall/roof/floor mass nodes.
-        // This keeps the gauge as the default for light-mass specs while
-        // routing heavyweight specs to the physically-correct legacy
-        // solver — the same fall-through pattern PR #3818 introduced for
-        // missing-backend failures.
+        // Two fall-through paths reach the legacy `match` below:
+        // 1. Heavyweight specs (`is_nine_r4c_model()` — auto-promoted
+        //    by `from_spec_with_selector` for HighMass construction):
+        //    the gauge solver has no thermal-mass modeling, so
+        //    heavyweight free-floating specs (e.g. Case 900FF) cannot
+        //    satisfy the `zone_balance_eplus_isolation` swing-reduction
+        //    sanity bound without the 9R4C's wall/roof/floor mass nodes.
+        //    Routes directly to 9R4C. (Issue #3817.)
+        // 2. `Gauge` selector without a configured backend: log a
+        //    one-shot `warn!` and fall through. Restored by #3816 from
+        //    the post-`e811df66` unconditional-panic behaviour that
+        //    was breaking the ASHRAE 140 nightly on multi-zone specs
+        //    whose gauge backend silently failed to initialise.
+        //    §LIMIT-21 (Issue #3297) closure will flip this to
+        //    unconditional gauge dispatch.
         #[cfg(feature = "gauge-solver")]
         if selector_zone_solver == ZoneSolverKind::Gauge && !self.is_nine_r4c_model() {
             if let Some(ekwh) =
@@ -126,24 +130,28 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 self.0.hvac.effective_zone_solver = ZoneSolverKind::Gauge;
                 return Ok(ekwh);
             }
-            // Phase A8 (#3291): selector-driven dispatch is
-            // unconditional — gauge MUST run when Gauge is selected.
-            // `from_spec_with_selector` initializes exactly one gauge
-            // backend per spec (single-zone for `num_zones == 1`,
-            // multi-zone for `num_zones >= 2`), so reaching this point
-            // means either the gauge backend is missing (init failed
-            // silently — a constructor bug) or both single- and
-            // multi-zone calls returned `None` despite a configuration
-            // matching one of those branches. Either is a programming
-            // error worth surfacing loudly rather than masking via
-            // fall-through to legacy solvers.
-            panic!(
+            // β-phase fall-through (AGENTS.md §Phase A8, restored by #3816):
+            // the `gauge-solver` cargo feature gates whether dispatch
+            // is unconditional; until §LIMIT-21 (Issue #3297) closes,
+            // a `Gauge` selector without a configured backend routes
+            // to legacy 5R1C / 9R4C instead of panicking. The default
+            // build (feature OFF) already routes this way via the
+            // `match` arm below — this block mirrors it for the
+            // gauge-enabled build so the ASHRAE 140 validator (which
+            // passes `ThermalSelector::default()` at 5 call sites —
+            // see `src/validation/ashrae_140_validator/mod.rs:786,
+            // :1606, :1901, :2275, :2624, :2725, :2915` — and ends up
+            // with no configured gauge backend for some multi-zone
+            // specs) stops panicking on the nightly. A one-shot `warn!`
+            // is emitted so the silent-init failure remains visible in
+            // logs; the underlying spec-population bug is tracked
+            // separately (see #3816 follow-up).
+            log::warn!(
                 "ThermalSelector::Gauge selected but no gauge backend is configured \
-                 (single-zone and multi-zone both returned None). This is a \
-                 programming error: from_spec_with_selector must initialise the \
-                 matching gauge backend. Issue #3291 (Phase A8) makes gauge \
-                 the unconditional default — there is no fall-through to legacy \
-                 5R1C/9R4C in the gauge build."
+                 (single-zone and multi-zone both returned None); falling back to \
+                 legacy 5R1C/9R4C dispatch (β-phase semantics, Issue #3816). \
+                 §LIMIT-21 (Issue #3297) closure will flip this to unconditional \
+                 gauge dispatch."
             );
         }
 
