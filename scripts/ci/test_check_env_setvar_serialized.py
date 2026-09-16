@@ -1,4 +1,5 @@
-"""Tests for ``scripts/check_env_setvar_serialized.py`` -- Issue #3453.
+"""Tests for ``scripts/check_env_setvar_serialized.py`` -- Issues #3453
+and #3746.
 
 The guard enforces the ``ENV_LOCK`` (or any ``*_LOCK: ... Mutex ...``)
 serialisation convention on every ``tests/**/*.rs`` file that mutates a
@@ -7,7 +8,10 @@ Until #3453 the convention was carried by only three integration
 binaries (``onnx_signature_integration``, ``email_notifier_header_safety``,
 ``ai/surrogate.rs::tests``); the ``ashrae_140_diagnostic_integration_test``
 binary shipped with bare ``env::set_var`` / ``env::remove_var`` calls and
-fell through the ADR-0014 nextest-migration safety net.
+fell through the ADR-0014 nextest-migration safety net. Until #3746 the
+scan covered only the root ``tests/`` tree, leaving the sibling-crate
+``tests/`` directories (which run in the same
+``cargo nextest run --workspace --all-targets`` invocation) unguarded.
 
 These tests drive the matcher's documented invariants against hermetic
 ``tmp_path`` mock-repo fixtures so a regex regression (e.g. the env-mutation
@@ -21,6 +25,8 @@ Mirrors the ``load_script`` + ``tmp_path`` mock-repo pattern from
 * ``has_env_mutation`` / ``has_lock_declaration`` -- the regex primitives,
 * ``check_test_file`` -- per-file findings for each planted violation,
 * ``iter_test_files`` -- directory walk + skip-list semantics,
+* ``workspace_member_tests_dirs`` / ``scan_roots`` -- sibling-crate
+  scope derivation from ``[workspace].members`` (#3746),
 * ``main()`` exit-code contract: 0 clean / 1 drift / 2 script error.
 
 All fixture files are synthetic ``.rs`` files written under ``tmp_path`` --
@@ -363,6 +369,185 @@ def test_iter_test_files_walks_nested_dirs(
     nested.write_text(_COMPLIANT_FILE, encoding="utf-8")
     names = {p.name for p in checker.iter_test_files(tests_dir)}
     assert "nested.rs" in names
+
+
+def test_iter_test_files_sibling_skip_dirs(
+    checker, monkeypatch, tmp_path
+):
+    """Issue #3746: the reference_data/fixtures skip applies per tests/
+    root -- a sibling crate's ``tests/reference_data/`` is skipped the
+    same way the root tree's is."""
+    sibling_tests = tmp_path / "fluxion-fake" / "tests"
+    (sibling_tests / "reference_data").mkdir(parents=True)
+    (sibling_tests / "real.rs").write_text(_COMPLIANT_FILE, encoding="utf-8")
+    (sibling_tests / "reference_data" / "fixture.rs").write_text(
+        _UNGUARDED_FILE, encoding="utf-8"
+    )
+    names = {p.name for p in checker.iter_test_files(sibling_tests)}
+    assert "real.rs" in names
+    assert "fixture.rs" not in names
+
+
+# ---------------------------------------------------------------------------
+# workspace_member_tests_dirs / scan_roots -- sibling-crate scope (#3746)
+# ---------------------------------------------------------------------------
+
+# Synthetic minimal workspace manifest: `default-members = ["."]` root
+# package plus two members, one of which (fluxion-city-like) has no
+# tests/ directory on disk.
+_FAKE_CARGO_TOML = """\
+    [workspace]
+    members = ["fluxion-fake", "crates/nested-fake", "fluxion-notests"]
+
+    [workspace.package]
+    edition = "2021"
+"""
+
+
+def test_workspace_member_tests_dirs_returns_member_tests(
+    checker, monkeypatch, tmp_path
+):
+    """``workspace_member_tests_dirs`` lists each member's tests/ dir
+    that exists, sorted; members without tests/ are omitted."""
+    _redirect(checker, monkeypatch, tmp_path)
+    (tmp_path / "Cargo.toml").write_text(
+        textwrap.dedent(_FAKE_CARGO_TOML).lstrip("\n"), encoding="utf-8"
+    )
+    fluxion_fake = tmp_path / "fluxion-fake" / "tests"
+    nested_fake = tmp_path / "crates" / "nested-fake" / "tests"
+    fluxion_fake.mkdir(parents=True)
+    nested_fake.mkdir(parents=True)
+    (tmp_path / "fluxion-notests").mkdir()
+
+    dirs = checker.workspace_member_tests_dirs(tmp_path)
+
+    assert dirs == [nested_fake, fluxion_fake]  # sorted order
+
+
+def test_workspace_member_tests_dirs_no_cargo_toml(
+    checker, monkeypatch, tmp_path
+):
+    """A mock repo without Cargo.toml yields NO sibling roots -- the
+    scan degrades to the root tests/ tree only (hermetic-fixture
+    behaviour, also the pre-#3746 contract)."""
+    _redirect(checker, monkeypatch, tmp_path)
+    assert checker.workspace_member_tests_dirs(tmp_path) == []
+
+
+def test_workspace_member_tests_dirs_unparsable_manifest(
+    checker, monkeypatch, tmp_path
+):
+    """A Cargo.toml without a ``[workspace].members`` list yields no
+    sibling roots rather than raising."""
+    _redirect(checker, monkeypatch, tmp_path)
+    (tmp_path / "Cargo.toml").write_text(
+        "[package]\nname = \"x\"\n", encoding="utf-8"
+    )
+    assert checker.workspace_member_tests_dirs(tmp_path) == []
+
+
+def test_scan_roots_root_first_then_members_deduped(
+    checker, monkeypatch, tmp_path
+):
+    """``scan_roots`` is [root tests/] + member tests/ dirs, deduped
+    and sorted after the root; a ``"."`` member collapses into the root
+    entry instead of duplicating it."""
+    tests_dir = _redirect(checker, monkeypatch, tmp_path)
+    (tmp_path / "Cargo.toml").write_text(
+        textwrap.dedent(
+            """\
+            [workspace]
+            members = [".", "fluxion-fake"]
+            """
+        ).lstrip("\n"),
+        encoding="utf-8",
+    )
+    fluxion_fake = tmp_path / "fluxion-fake" / "tests"
+    fluxion_fake.mkdir(parents=True)
+
+    roots = checker.scan_roots()
+
+    assert roots == [tests_dir, fluxion_fake]
+    assert len(roots) == len(set(roots))
+
+
+def test_main_exit_1_on_sibling_crate_offender(
+    checker, monkeypatch, tmp_path, capsys
+):
+    """Issue #3746 acceptance: a synthetic sibling-crate offender (an
+    unguarded ``env::set_var`` under ``fluxion-fake/tests/``) IS
+    detected -- the root-only scan would have missed it."""
+    _redirect(checker, monkeypatch, tmp_path)
+    (tmp_path / "Cargo.toml").write_text(
+        textwrap.dedent(_FAKE_CARGO_TOML).lstrip("\n"), encoding="utf-8"
+    )
+    _write_test_file(tmp_path, "ok.rs", _COMPLIANT_FILE)
+    sibling_bad = tmp_path / "fluxion-fake" / "tests" / "bad.rs"
+    sibling_bad.parent.mkdir(parents=True, exist_ok=True)
+    sibling_bad.write_text(
+        textwrap.dedent(_UNGUARDED_FILE).lstrip("\n"), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        checker.sys, "argv", ["check_env_setvar_serialized.py"]
+    )
+    assert checker.main() == 1
+    err = capsys.readouterr().err
+    assert "ENV_LOCK drift detected" in err
+    assert "fluxion-fake/tests/bad.rs" in err
+    # The root-tree compliant file is NOT reported.
+    assert "tests/ok.rs" not in err
+
+
+def test_main_exit_0_when_sibling_crate_compliant(
+    checker, monkeypatch, tmp_path, capsys
+):
+    """A sibling-crate env-mutating test WITH the lock declaration
+    passes; the summary reports both roots and both env-mutating
+    files."""
+    _redirect(checker, monkeypatch, tmp_path)
+    (tmp_path / "Cargo.toml").write_text(
+        textwrap.dedent(_FAKE_CARGO_TOML).lstrip("\n"), encoding="utf-8"
+    )
+    _write_test_file(tmp_path, "a.rs", _COMPLIANT_FILE)
+    _write_test_file(tmp_path, "b.rs", _EXEMPT_FILE)
+    sibling_ok = tmp_path / "fluxion-fake" / "tests" / "ok.rs"
+    sibling_ok.parent.mkdir(parents=True, exist_ok=True)
+    sibling_ok.write_text(
+        textwrap.dedent(_COMPLIANT_FILE).lstrip("\n"), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        checker.sys, "argv", ["check_env_setvar_serialized.py"]
+    )
+    assert checker.main() == 0
+    out = capsys.readouterr().out
+    assert "OK" in out
+    assert "3 test file(s)" in out
+    assert "2 tests/ root(s)" in out
+    assert "2 env-mutating file(s)" in out
+
+
+def test_main_ignores_non_member_tests_dirs(
+    checker, monkeypatch, tmp_path
+):
+    """The widened scope is exactly the workspace members: a tests/
+    tree that does NOT belong to a ``[workspace].members`` entry (e.g.
+    ``api/tests/`` in the real repo, or an unpackaged scratch crate) is
+    NOT scanned."""
+    tests_dir = _redirect(checker, monkeypatch, tmp_path)
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "Cargo.toml").write_text(
+        textwrap.dedent(_FAKE_CARGO_TOML).lstrip("\n"), encoding="utf-8"
+    )
+    (tmp_path / "fluxion-fake" / "tests").mkdir(parents=True)
+    outsider = tmp_path / "api" / "tests" / "bad.rs"
+    outsider.parent.mkdir(parents=True)
+    outsider.write_text(
+        textwrap.dedent(_UNGUARDED_FILE).lstrip("\n"), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        checker.sys, "argv", ["check_env_setvar_serialized.py"]
+    )
+    assert checker.main() == 0
 
 
 # ---------------------------------------------------------------------------
