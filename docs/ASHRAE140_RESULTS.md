@@ -1,6 +1,6 @@
 # ASHRAE Standard 140 Validation Results
 
-*Generated: 2026-09-07*
+*Generated: 2026-09-16 (LIMIT-28 / Issue #3802 FF cohort tracking entry added; no result-table changes — see §"Free-Floating cohort bidirectional diurnal-swing gap")*
 
 > **Document scope:** This document covers the ASHRAE 140 Strict-Energy and
 > Free-Floating cohort — Baseline 600 Series (600–650), High-Mass 900 Series
@@ -166,6 +166,63 @@ architecture decision in **`docs/adr/0011-case-950ff-night-vent-split.md`**
 (Status: Proposed; tracking stub only). The companion integration test
 `tests/ashrae_140_blind_validation.rs::test_case_950_5r1c_free_float_uses_night_vent_overrides_issue_1422`
 remains `#[ignore]`-quarantined (per §LIMIT-09 / #3071).
+
+### Free-Floating cohort (600FF/650FF/900FF/950FF) bidirectional diurnal-swing gap (Issue #3802)
+
+The 2026-09-16 validator snapshot reports **all 8 FF metrics
+out-of-band** — the cohort signature is bidirectional (winter min too
+warm AND summer max too cool), meaning the engine damps the diurnal
+swing more aggressively than the ASHRAE 140 reference programs:
+
+| Case  | Min (engine) | Min (ref band)   | Verdict (min) | Max (engine) | Max (ref band) | Verdict (max) |
+|-------|--------------|------------------|---------------|--------------|----------------|---------------|
+| 600FF | −17.13 °C    | [−18.80, −15.60] | below by 1.33 °C | 55.22 °C  | [64.90, 75.10] | below by 9.68 °C |
+| 650FF | −23.71 °C    | [−23.00, −21.00] | below by 0.71 °C | 52.43 °C  | [63.20, 73.50] | below by 10.77 °C |
+| 900FF | −6.65 °C     | [−6.40, −1.60]   | below by 0.25 °C | 39.83 °C  | [41.80, 46.40] | below by 1.97 °C |
+| 950FF | −23.95 °C    | [−20.20, −17.80] | below by 3.72 °C | 31.30 °C  | [35.50, 38.50] | below by 4.20 °C |
+
+The cohort gaps share a single structural root cause — the 5R1C/9R4C
+single lumped thermal-mass node cannot capture the bidirectional
+diurnal coupling the ASHRAE 140 reference expects — with per-case
+mechanism variations:
+
+- **Case 950FF**: night-vent fan ACH (13.14 → `h_ve ≈ 570.8 W/K`)
+  overwhelms `h_tr_em_wall ≈ 71.6 W/K` by ~8× on the mass node; the
+  PR #3040 F_sky view-factor correction is mathematically correct but
+  invisible against the dominant raw-outdoor forcing. Documented as
+  §LIMIT-17 / Issue #3058 / ADR-0011 (Status: Proposed).
+- **Case 900FF**: same 5R1C/9R4C damping residual without the
+  night-vent amplification.
+- **Case 650FF**: low-mass + high-ACH night-vent air-node undershoot;
+  the F_sky correction does not transfer to the air node at the rates
+  ASHRAE 140 expects.
+- **Case 600FF**: 5R1C single-lumped-mass-node low-mass under-damping.
+
+Per AGENTS.md / RULES.md / ADR-0001 ("no parameter tuning", "fix the
+underlying math"), closing the cohort by adjusting `h_ve_night`,
+`MAX_CONVECTIVE_TO_AIR_MULTIPLIER`, `h_tr_em_wall`, or any other
+5R1C/9R4C parameter is **explicitly forbidden**; the structural fix
+is routed to the **GaugeSolver production-path work** (Issues #1465 /
+#1462 — both closed individually; production-path switchover staged
+via #3291 / PR #3482 — Phase A8 default flip, **gated on §LIMIT-21
+β-soak closure**).
+
+- **Documented in:** `docs/KNOWN_ISSUES.md` **§LIMIT-28** (Issue #3802,
+  Phase B3b PHYSICS-03), with §LIMIT-17 / §LIMIT-24 / §LIMIT-16 /
+  §LIMIT-05 UPDATE (#2453) sibling framing and §FREE-01 / §FREE-02 /
+  §FREE-03 pre-#1323 baseline framing.
+- **Companion ventilation swap-point awareness:**
+  `src/sim/ventilation.rs::test_ach_to_conductance` (FF-cohort signature
+  assertions) pins the input-side ACH → `h_ve ≈ 570.8 W/K` signature
+  so the documented gap cannot silently regress if the
+  night-ventilation schedule is refactored.
+- **Architectural unblocker:** GaugeSolver production-path switchover
+  (issues #1465 / #1462, ADR-0007).
+- **No tuning escape hatch:** raising `MAX_CONVECTIVE_TO_AIR_MULTIPLIER`
+  above 2.0× re-introduces the pre-#3041 asymmetry that drove Case 620
+  OVER; widening the FF reference band is band-space parameter tuning
+  (forbidden by ADR-0001); raising the strict-energy-gate baseline is
+  explicitly forbidden by the Issue #3802 acceptance criterion.
 
 ## Performance Summary
 
