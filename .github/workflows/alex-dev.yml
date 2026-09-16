@@ -50,11 +50,24 @@ jobs:
     name: diagnostic
     runs-on: [self-hosted, alex-workstation, linux, x64]
     timeout-minutes: 5
+    # Issue #3813 — explicit least-privilege permissions. The
+    # workflow inherits no scopes; every step that needs `gh api`
+    # auth uses the runner's locally-configured PAT (not the
+    # GITHUB_TOKEN, which would be empty under `permissions: {}`).
+    permissions: {}
+    env:
+      # Pass `workflow_dispatch.inputs.phrase` exclusively via env
+      # so the value never enters a `${{ inputs.* }}` interpolation
+      # inside a `run:` block (Issue #3813 — the canonical
+      # expression-injection pattern that converts repo-write
+      # privilege into arbitrary code execution on the
+      # alex-workstation self-hosted runner).
+      PHRASE: ${{ inputs.phrase }}
     steps:
       - name: Print phrase
         shell: bash
         run: |
-          echo "${{ inputs.phrase }}"
+          echo "${PHRASE}"
           echo "---"
           echo "runner.name = $(uname -n)"
           echo "runner.os   = $(uname -srm)"
@@ -73,5 +86,7 @@ jobs:
       - name: Verify act label-resolver
         shell: bash
         run: |
-          # Round-trip the runner identity via the Actions API
+          # Round-trip the runner identity via the Actions API. Uses
+          # the runner's locally-configured PAT (not GITHUB_TOKEN —
+          # `permissions: {}` zeroes the workflow token).
           gh api user --jq '.login' 2>/dev/null || echo "gh auth not configured (ok for CI runs)"

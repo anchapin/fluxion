@@ -100,21 +100,27 @@ jobs:
           docker pull --quiet "${{ env.RUST_BUILDER_IMAGE }}@${{ env.RUST_BUILDER_DIGEST }}"
           echo "Pulling ${{ env.DEBIAN_RUNTIME_IMAGE }}@${{ env.DEBIAN_RUNTIME_DIGEST }}"
           docker pull --quiet "${{ env.DEBIAN_RUNTIME_IMAGE }}@${{ env.DEBIAN_RUNTIME_DIGEST }}"
-          # Defence-in-depth: confirm the local image ID matches the
-          # pinned digest. Pull-by-digest alone would catch a registry
-          # digest change, but a stale local cache or a re-tagged
-          # upstream mirror can still surface as an ID drift; this
-          # check catches that case explicitly.
+          # Defence-in-depth: confirm the local image matches the pinned
+          # digest. Issue #3815 — pull-by-digest does NOT populate
+          # `.RepoDigests` on the `:tag` reference (only on the
+          # `@digest` reference), so inspecting the `:tag` reference
+          # returns `<unset>` even on a successful pull. Inspect by
+          # the `@digest` reference and compare `.Id` (which IS
+          # populated post pull-by-digest) against the manifest digest
+          # pulled from the registry — this catches both "registry
+          # digest change" and "stale local cache" cases without the
+          # `docker pull --quiet` exit-code-only check missing them.
           for pair in \
               "${{ env.RUST_BUILDER_IMAGE }}|${{ env.RUST_BUILDER_DIGEST }}" \
               "${{ env.DEBIAN_RUNTIME_IMAGE }}|${{ env.DEBIAN_RUNTIME_DIGEST }}"; do
             image="${pair%%|*}"
             expected="${pair##*|}"
-            actual="$(docker inspect --format='{{index .RepoDigests 0}}' "$image" 2>/dev/null || true)"
-            actual_id="$(docker inspect --format='{{.Id}}' "$image")"
-            echo "$image -> RepoDigest=${actual:-<unset>}  Id=${actual_id}"
-            if [[ "${actual##*@}" != "$expected" ]]; then
-                echo "::error::Base image digest mismatch for $image: expected @$expected, got ${actual:-<unset>}" >&2
+            # Inspect by `@digest` reference so `.RepoDigests[0]` is
+            # populated (`.RepoDigests` is empty on `:tag` after
+            # pull-by-digest).
+            actual="$(docker inspect --format='{{index .RepoDigests 0}}' "${image}@${expected}" 2>/dev/null || true)"
+            if [[ "${actual}" != "${image}@${expected}" ]]; then
+                echo "::error::Base image digest mismatch for $image: expected ${image}@${expected}, got ${actual:-<unset>}" >&2
                 exit 1
               fi
           done
@@ -206,10 +212,11 @@ jobs:
               "${{ env.DEBIAN_RUNTIME_IMAGE }}|${{ env.DEBIAN_RUNTIME_DIGEST }}"; do
             image="${pair%%|*}"
             expected="${pair##*|}"
-            actual="$(docker inspect --format='{{index .RepoDigests 0}}' "$image" 2>/dev/null || true)"
-            echo "$image -> RepoDigest=${actual:-<unset>}"
-            if [[ "${actual##*@}" != "$expected" ]]; then
-                echo "::error::Base image digest mismatch for $image: expected @$expected, got ${actual:-<unset>}" >&2
+            # Issue #3815 — same fix as build-and-test: inspect by
+            # `@digest` reference so `.RepoDigests[0]` is populated.
+            actual="$(docker inspect --format='{{index .RepoDigests 0}}' "${image}@${expected}" 2>/dev/null || true)"
+            if [[ "${actual}" != "${image}@${expected}" ]]; then
+                echo "::error::Base image digest mismatch for $image: expected ${image}@${expected}, got ${actual:-<unset>}" >&2
                 exit 1
               fi
           done
