@@ -153,6 +153,18 @@ jobs:
       - name: Enforce named action pinning refs (Issue #3530)
         run: python3 scripts/check_action_pinning.py
 
+      # Issue #3812: pin Python installs in credential-bearing workflow
+      # jobs (jobs with `secrets.*` env, `permissions: id-token: write`,
+      # or `permissions: contents: write`). Bare `pip install <pkg>` in
+      # such a job re-resolves the package on every run, exposing the
+      # credential scope to a compromised-transitive-dep / dependency-
+      # confusion PyPI artifact. The gate accepts `-r <pinned-file>` or
+      # `pip install name==X.Y.Z` and reports bare installs with a line
+      # ref so the contributor can update the workflow to use the
+      # committed `scripts/requirements-ci.txt` constraints file.
+      - name: Enforce pip pinning in credential-bearing workflows (Issue #3812)
+        run: python3 scripts/check_pip_pinning.py
+
       # Issue #3453: ENV_LOCK serialisation guard for env-mutating
       # integration tests. ``tests/ashrae_140_diagnostic_integration_test``
       # shipped with bare ``env::set_var`` / ``env::remove_var`` calls and

@@ -111,8 +111,12 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
+        # Issue #3812 — this job has `id-token: write` for AWS OIDC
+        # role assumption; a compromised `boto3` artifact would
+        # harvest STS credentials scoped to the campaign role. Pull
+        # from the pinned constraints file instead of a bare install.
         run: |
-          pip install boto3
+          pip install -r scripts/requirements-ci.txt
 
       - name: Configure AWS credentials via OIDC (no static secrets)
         uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c  # v6.2.4
@@ -149,8 +153,12 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
+        # Issue #3812 — this job has `id-token: write` for AWS OIDC
+        # role assumption; a compromised `boto3` artifact would
+        # harvest STS credentials scoped to the campaign role. Pull
+        # from the pinned constraints file instead of a bare install.
         run: |
-          pip install boto3
+          pip install -r scripts/requirements-ci.txt
 
       - name: Configure AWS credentials via OIDC (no static secrets)
         uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c  # v6.2.4
@@ -184,8 +192,12 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
+        # Issue #3812 — this job has `id-token: write` for AWS OIDC
+        # role assumption; a compromised `boto3` artifact would
+        # harvest STS credentials scoped to the campaign role. Pull
+        # from the pinned constraints file instead of a bare install.
         run: |
-          pip install boto3
+          pip install -r scripts/requirements-ci.txt
 
       - name: Configure AWS credentials via OIDC (no static secrets)
         uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c  # v6.2.4
