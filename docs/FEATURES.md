@@ -8,7 +8,7 @@ The canonical source of truth is always the `Cargo.toml` `[features]` table — 
 file disagrees with it, `Cargo.toml` wins and this doc is stale (please file a
 docs-hygiene issue).
 
-*Last Updated: 2026-09-11*
+*Last Updated: 2026-09-15*
 
 ## Summary Table
 
@@ -138,7 +138,8 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
 - **CI implication:** Drives the `CUDA Smoke Test` (#1603) — `cargo test --features cuda
   --test surrogate_cuda_smoke`. Skips gracefully on CPU-only runners.
 - **Runtime config:** set `FLUXION_ONNX_BACKEND=cuda` (or it falls back to `cpu`); set
-  `FLUXION_GPU=0` / `FLUXION_GPU=false` to force CPU even when built with the feature.
+  `FLUXION_GPU` to any falsy token (`0` / `false` / `no` / `off` / empty) to force CPU even
+  when built with the feature — see [Boolean Environment Variables](#boolean-environment-variables-unified-parsing).
 - **Default:** off.
 
 ### `coreml`
@@ -429,12 +430,48 @@ Manual / advisory (not branch-protection gates):
   `deprecated-multinode-runner` (opt-in helpers: weather download, log pipelines,
   kernel-conversion evaluation, deprecated-API migration)
 
+## Boolean Environment Variables (Unified Parsing)
+
+Every boolean environment variable — `FLUXION_*` and `ASHRAE_140_*` alike — is parsed
+through the single shared helper `fluxion::util::env_bool::env_bool` (Issue #3751), so a
+variable's truthiness semantics are predictable from its prefix. Tokens are matched
+case-insensitively after trimming surrounding whitespace:
+
+| Value                              | Parses as |
+|------------------------------------|-----------|
+| `1`, `true`, `yes`, `on`           | `true`    |
+| `0`, `false`, `no`, `off`, `` (empty) | `false` |
+| anything else (e.g. the typo `ture`) | *unrecognized* |
+
+An unrecognized value emits a one-line `tracing::warn!` (target
+`fluxion::util::env_bool`) naming the variable, its raw value, and the accepted token
+sets, and is then treated exactly as if the variable were **unset** — opt-in flags stay
+off (fail closed), opt-out bypasses keep their documented default. No value is ever
+silently true or silently false.
+
+Boolean env-var inventory:
+
+| Variable | Default when unset | Effect when `true` | Notes |
+|----------|--------------------|--------------------|-------|
+| `FLUXION_GPU` | GPU honored | GPU honored (no-op for the bypass) | Opt-out CPU bypass; falsy tokens force CPU. Effective only in `--features cuda` builds. |
+| `FLUXION_REST_ALLOW_INSECURE` | off | allows insecure public bind / weak-auth boot combinations in release builds | Security escape hatch — unrecognized values warn and **fail closed** (stay off) |
+| `FLUXION_EXPERIMENTAL_ZONE_SOLVERS` | off | accepts experimental zone-solver kinds (`6r2c`, `8r3c`) in `ThermalSelector` | Hidden gate (Issue #3282); read once per process |
+| `ASHRAE_140_DEBUG` | off | enables ASHRAE 140 diagnostic collection (breakdowns, peak timing, profiles, comparison table) | Read by `DiagnosticConfig::default()` |
+| `ASHRAE_140_HOURLY_OUTPUT` | off | enables hourly CSV diagnostic collection | Path via `ASHRAE_140_HOURLY_PATH` (non-boolean) |
+| `ASHRAE_140_VERBOSE` | off | verbose per-case console diagnostics | Read by `DiagnosticConfig::default()` |
+
+Non-boolean variables (`FLUXION_ONNX_MODEL`, `FLUXION_ONNX_BACKEND`,
+`FLUXION_ONNX_MODEL_SIGNATURE`, `FLUXION_REST_TRUSTED_PROXIES`, `DWAVE_API_TOKEN`, …)
+keep their own documented formats and are unaffected.
+
 ## See Also
 
 - `AGENTS.md` §Toolchain, Security, and Generated Artifacts → "Feature flags" — the human-readable overview this
   document expands.
 - `AGENTS.md` §Environment Variables — runtime configuration (`FLUXION_ONNX_*`,
   `FLUXION_REST_*`, `DWAVE_API_TOKEN`, …).
+- [Boolean Environment Variables](#boolean-environment-variables-unified-parsing) above —
+  the unified truthiness contract for every `FLUXION_*` / `ASHRAE_140_*` boolean (Issue #3751).
 - `Cargo.toml` `[features]` — the authoritative machine-readable source.
 - `release_gates.yaml` → `ci.required_checks` — which of the above are branch-protection gates.
 - ARCHITECTURE.md §"Module N+2" — describes the `fluxion-cfd` FFD loose-coupling adapter.

@@ -96,20 +96,17 @@ pub struct DiagnosticConfig {
 
 impl Default for DiagnosticConfig {
     fn default() -> Self {
-        // Check environment variable
-        let env_debug = std::env::var("ASHRAE_140_DEBUG")
-            .map(|v| v == "1" || v.to_lowercase() == "true")
-            .unwrap_or(false);
+        // Boolean env reads go through the shared canonical parser
+        // (Issue #3751): truthy `1|true|yes|on`, falsy
+        // `0|false|no|off|<empty>` (case-insensitive), and any other
+        // value warns and is treated as unset (opt-in → disabled).
+        let env_debug = crate::util::env_bool::env_bool("ASHRAE_140_DEBUG", false);
 
-        let output_hourly = std::env::var("ASHRAE_140_HOURLY_OUTPUT")
-            .map(|v| v == "1" || v.to_lowercase() == "true")
-            .unwrap_or(false);
+        let output_hourly = crate::util::env_bool::env_bool("ASHRAE_140_HOURLY_OUTPUT", false);
 
         let hourly_output_path = std::env::var("ASHRAE_140_HOURLY_PATH").ok();
 
-        let verbose = std::env::var("ASHRAE_140_VERBOSE")
-            .map(|v| v == "1" || v.to_lowercase() == "true")
-            .unwrap_or(false);
+        let verbose = crate::util::env_bool::env_bool("ASHRAE_140_VERBOSE", false);
 
         Self {
             enabled: env_debug,
@@ -1148,11 +1145,74 @@ impl Default for DiagnosticCollector {
 mod tests {
     use super::*;
 
+    /// Shared mutex serializing env mutation in this module (same
+    /// convention as `src/ai/surrogate.rs`): `DiagnosticConfig::default()`
+    /// reads `ASHRAE_140_*` env vars, so unguarded parallel tests would
+    /// observe each other's values.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn test_diagnostic_config_default() {
         let config = DiagnosticConfig::default();
         // Should be disabled by default (no env var set)
         assert!(!config.enabled || std::env::var("ASHRAE_140_DEBUG").is_ok());
+    }
+
+    /// Issue #3751 headline scenario: `ASHRAE_140_DEBUG=yes` used to
+    /// silently disable diagnostics (only literal `1`/`true` parsed).
+    /// With the unified env-bool parser every truthy token enables it.
+    #[test]
+    fn test_diagnostic_config_env_truthy_tokens_enable() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prev = std::env::var("ASHRAE_140_DEBUG").ok();
+
+        for raw in ["1", "true", "yes", "on"] {
+            std::env::set_var("ASHRAE_140_DEBUG", raw);
+            let config = DiagnosticConfig::default();
+            assert!(
+                config.enabled,
+                "ASHRAE_140_DEBUG={raw:?} must enable diagnostics (Issue #3751)"
+            );
+            assert!(config.output_energy_breakdown);
+            assert!(config.output_comparison_table);
+        }
+
+        match prev {
+            Some(v) => std::env::set_var("ASHRAE_140_DEBUG", v),
+            None => std::env::remove_var("ASHRAE_140_DEBUG"),
+        }
+    }
+
+    /// Falsy tokens — including set-but-empty — keep diagnostics disabled;
+    /// the verbose flag follows the same canonical tokens.
+    #[test]
+    fn test_diagnostic_config_env_falsy_tokens_disable() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prev_debug = std::env::var("ASHRAE_140_DEBUG").ok();
+        let prev_verbose = std::env::var("ASHRAE_140_VERBOSE").ok();
+
+        for raw in ["0", "false", "no", "off", ""] {
+            std::env::set_var("ASHRAE_140_DEBUG", raw);
+            std::env::set_var("ASHRAE_140_VERBOSE", raw);
+            let config = DiagnosticConfig::default();
+            assert!(
+                !config.enabled,
+                "ASHRAE_140_DEBUG={raw:?} must disable diagnostics"
+            );
+            assert!(
+                !config.verbose,
+                "ASHRAE_140_VERBOSE={raw:?} must disable verbose"
+            );
+        }
+
+        match prev_debug {
+            Some(v) => std::env::set_var("ASHRAE_140_DEBUG", v),
+            None => std::env::remove_var("ASHRAE_140_DEBUG"),
+        }
+        match prev_verbose {
+            Some(v) => std::env::set_var("ASHRAE_140_VERBOSE", v),
+            None => std::env::remove_var("ASHRAE_140_VERBOSE"),
+        }
     }
 
     #[test]
