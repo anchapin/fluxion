@@ -118,7 +118,7 @@ jobs:
   # any regression slipped through silently.
   module-size:
     runs-on: ubuntu-latest
-    name: Module Size (Issue #2878)
+    name: "Module Size (Issue #2878)"
     permissions:
       contents: read
 

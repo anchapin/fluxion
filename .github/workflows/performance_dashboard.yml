@@ -648,7 +648,7 @@ jobs:
   # for the same reason.
   # =========================================================================
   absolute-perf-gate:
-    name: Absolute Perf Gate (Issue #2693)
+    name: "Absolute Perf Gate (Issue #2693)"
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # NOTE: intentionally no `needs: bench-default` — this job builds its own
@@ -825,7 +825,7 @@ jobs:
   # different absolute throughput and make the floor incomparable.
   # =========================================================================
   multi-zone-perf-gate:
-    name: Multi-Zone Perf Gate (Issue #2772)
+    name: "Multi-Zone Perf Gate (Issue #2772)"
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # NOTE: intentionally no `needs: bench-default` — this job builds its
@@ -1014,7 +1014,7 @@ jobs:
   # incomparable.
   # =========================================================================
   hybrid-perf-gate:
-    name: Hybrid Perf Gate (Issue #2922)
+    name: "Hybrid Perf Gate (Issue #2922)"
     runs-on: ubuntu-latest
     timeout-minutes: 25
     # NOTE: intentionally no `needs: bench-default` — this job builds its
@@ -1333,7 +1333,7 @@ jobs:
   # test would compile but skip everything, silently green-gating the PR.
   # =========================================================================
   multi-zone-cold-start-gate:
-    name: Multi-Zone Cold Start Gate (Issue #2919)
+    name: "Multi-Zone Cold Start Gate (Issue #2919)"
     runs-on: ubuntu-latest
     # Issue #2919 gate timeout bumped 25 -> 45 min on 2026-09-10 (folded into
     # chore PR #3668): the nightly `warm-cold-start-build` cache-prime only

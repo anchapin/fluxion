@@ -85,7 +85,7 @@ env:
 
 jobs:
   onnx-integrity:
-    name: ONNX Integrity Gate (Issue #2906)
+    name: "ONNX Integrity Gate (Issue #2906)"
     # Issue #3445: persistent self-hosted runners MUST NOT execute
     # PR-controlled code. Force ephemeral GH-hosted `ubuntu-latest` on
     # any `pull_request` event (this workflow runs on PRs that touch the

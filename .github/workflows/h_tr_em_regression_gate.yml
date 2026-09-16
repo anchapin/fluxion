@@ -100,7 +100,7 @@ env:
 
 jobs:
   h-tr-em-regression-gate:
-    name: h_tr_em Regression Gate (LIMIT-13)
+    name: "h_tr_em Regression Gate (LIMIT-13)"
     runs-on: >-
       ${{
         github.event_name == 'push'
@@ -196,7 +196,7 @@ jobs:
   # (Issue #3116). The job id is suffixed `-listener` to avoid
   # colliding with the upstream `h-tr-em-regression-gate` id.
   h-tr-em-listener:
-    name: h_tr_em Regression Gate (LIMIT-13)
+    name: "h_tr_em Regression Gate (LIMIT-13)"
     needs: [h-tr-em-regression-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 5

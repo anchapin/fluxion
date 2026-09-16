@@ -62,7 +62,7 @@ env:
 
 jobs:
   crate-size:
-    name: Crate Size Gate (Issue #2930)
+    name: "Crate Size Gate (Issue #2930)"
     runs-on: ubuntu-latest
 
     steps:

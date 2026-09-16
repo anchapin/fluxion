@@ -13,16 +13,24 @@ name: Tracked-vs-Ignored Gate
 # ``KNOWN_TRACKED_BUT_IGNORED`` baseline inside the script.
 #
 # This workflow is intentionally minimal: pure-Python, single-job, no
-# runner probes, no caching — the gate must run on every PR that
-# touches the ``.gitignore`` files or the script itself, so it has to
-# be cheap enough to always fit in the per-PR feedback budget.
+# runner probes, no caching — the gate must run on every PR class to
+# satisfy the listener pattern (Issue #3810, 6th invariant) so that
+# `Tracked-vs-Ignored Gate (Issue #3356)` reports as a required status
+# check on docs-only / scripts-only / physics PRs alike. The
+# `paths-ignore` filter excludes only doc-only changes to stay within
+# the per-PR feedback budget.
 
 on:
   pull_request:
-    paths:
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - "**.mdx"
+      - "LICENSE"
+      - "**/LICENSE"
       - ".gitignore"
-      - "**/.gitignore"
-      - "scripts/check_no_ignored_tracked_files.py"
+      - ".gitattributes"
+      - ".editorconfig"
   push:
     branches:
       - develop
