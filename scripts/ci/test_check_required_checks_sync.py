@@ -25,6 +25,7 @@ and ``docs/ci/branch-protection-strict-mode.md`` in the mock repo with
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from textwrap import dedent
 
@@ -1319,3 +1320,266 @@ def _write_path(path: Path, text: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     return path
+
+
+# ---------------------------------------------------------------------------
+# Issue #3831 — 7th invariant alignment with apply_branch_protection.py
+# ---------------------------------------------------------------------------
+# The 7th invariant compares the live ``develop`` branch-protection
+# contexts against the YAML list. Pre-#3831 it compared against
+# ``ci.required_checks`` (23 entries) — which is wrong because
+# ``scripts/apply_branch_protection.py`` writes ``ci.required_checks_workflow_only``
+# (18 entries) to branch protection, with the 5 path-filtered checks
+# intentionally excluded (Issue #3810 design intent). The tests below
+# pin the post-#3831 contract:
+#
+#   * ``check_live_branch_protection`` accepts the workflow-only list
+#     (not the full required_checks).
+#   * When the live contexts match that list (the case apply_branch_
+#     protection.py just produced), the function returns NO failures —
+#     even though the full ``required_checks`` list is larger.
+#   * The 5 path-filtered contexts that were false-positive drift under
+#     the old code are now NOT in the comparison set at all.
+
+
+def test_check_live_branch_protection_signature_uses_workflow_only(
+    checker,
+):
+    """Pin the post-#3831 parameter name.
+
+    The function's first positional parameter is ``workflow_only_checks``
+    (not ``required_checks``). This is the source-of-truth alignment
+    with ``scripts/apply_branch_protection.py``: that script writes the
+    workflow-only set to branch protection, so the live check must
+    compare against the same set.
+    """
+    import inspect
+
+    sig = inspect.signature(checker.check_live_branch_protection)
+    params = list(sig.parameters)
+    assert params[0] == "workflow_only_checks", (
+        f"check_live_branch_protection first parameter should be "
+        f"'workflow_only_checks' (Issue #3831 alignment); got {params[0]!r}"
+    )
+
+
+def test_check_live_branch_protection_passes_when_live_matches_workflow_only(
+    checker, monkeypatch
+):
+    """Core regression guard: live protection matches the workflow-only
+    set (the case apply_branch_protection.py just produced) — must
+    return NO failures, even though the full ``ci.required_checks``
+    list is larger.
+
+    Pre-#3831 the function compared against the 23-entry
+    ``required_checks`` list, so this exact scenario produced 5
+    false-positive drift findings (one per path-filtered check).
+    Post-#3831 the comparison list is the 18-entry workflow-only set,
+    so the same scenario is clean.
+    """
+    workflow_only = [
+        "Workspace Check (GH)",
+        "Rustfmt (GH)",
+        "Clippy (GH)",
+        "Cargo Deny",
+        "Ashrae Cases Cycle Check (GH)",
+    ]
+    # The full required_checks list is the workflow_only list PLUS the 5
+    # path-filtered checks that branch protection deliberately excludes
+    # (Docs Hygiene, Architecture Drift, Module Size, Crate Size, MSRV).
+    # This is the exact split that produced the #3831 false positives.
+    required_checks_full = workflow_only + [
+        "Docs Hygiene Gate (Issue #2466)",
+        "Architecture Drift Detection",
+        "Module Size (Issue #2878)",
+        "Crate Size Gate (Issue #2930)",
+        "MSRV Check (Issue #2934)",
+    ]
+
+    def fake_run(cmd, **kwargs):
+        # The 5 path-filtered checks are NOT on the live branch
+        # protection (apply_branch_protection.py only writes the
+        # workflow-only set).
+        live_payload = {
+            "required_status_checks": {
+                "strict": True,
+                "contexts": list(workflow_only),
+            },
+            "enforce_admins": {"enabled": True},
+            "required_pull_request_reviews": {
+                "required_approving_review_count": 1,
+            },
+        }
+        return _FakeCompleted(json.dumps(live_payload), returncode=0)
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    # Pass only the workflow_only list — this is what main() does
+    # post-#3831. Pre-#3831 it would have passed `required_checks_full`
+    # and the 5 path-filtered checks would have been reported as
+    # missing from live protection.
+    failures = checker.check_live_branch_protection(workflow_only)
+    assert failures == [], (
+        f"check_live_branch_protection should pass when live matches the "
+        f"workflow-only set (Issue #3831), got: {failures}"
+    )
+    # Sanity check: under the OLD behavior, passing the full list would
+    # have surfaced the 5 path-filtered checks as missing — proving the
+    # fix actually does something observable.
+    pre_fix_failures = checker.check_live_branch_protection(required_checks_full)
+    assert pre_fix_failures, (
+        "Sanity check: passing the full required_checks list MUST report "
+        "the 5 path-filtered checks as missing — otherwise this test "
+        "would not be exercising the bug."
+    )
+    assert any("Docs Hygiene Gate" in f for f in pre_fix_failures)
+    assert any("Architecture Drift Detection" in f for f in pre_fix_failures)
+
+
+def test_check_live_branch_protection_flags_missing_workflow_only(
+    checker, monkeypatch
+):
+    """When live protection is missing one of the workflow-only
+    contexts, the gate fails — the comparison list is the workflow-only
+    set, so any drift on that list is still detected.
+    """
+    workflow_only = [
+        "Workspace Check (GH)",
+        "Rustfmt (GH)",
+        "Clippy (GH)",
+    ]
+    # Live protection only has 2 of the 3 required workflow-only checks.
+    live_payload = {
+        "required_status_checks": {
+            "strict": True,
+            "contexts": ["Workspace Check (GH)", "Rustfmt (GH)"],
+        },
+        "enforce_admins": {"enabled": True},
+        "required_pull_request_reviews": {
+            "required_approving_review_count": 1,
+        },
+    }
+
+    def fake_run(cmd, **kwargs):
+        return _FakeCompleted(json.dumps(live_payload), returncode=0)
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    failures = checker.check_live_branch_protection(workflow_only)
+    assert any("Clippy (GH)" in f for f in failures), (
+        f"Expected failure mentioning 'Clippy (GH)' (the missing "
+        f"workflow-only context), got: {failures}"
+    )
+
+
+def test_check_live_branch_protection_flags_stale_extra_context(
+    checker, monkeypatch
+):
+    """When live protection has an extra context NOT in the workflow-only
+    list, the gate fails. The remediation message must reference the
+    workflow-only key (Issue #3831 wording).
+    """
+    workflow_only = ["Workspace Check (GH)", "Clippy (GH)"]
+    live_payload = {
+        "required_status_checks": {
+            "strict": True,
+            "contexts": [
+                "Workspace Check (GH)",
+                "Clippy (GH)",
+                "Some Stale Check (Issue #9999)",
+            ],
+        },
+        "enforce_admins": {"enabled": True},
+        "required_pull_request_reviews": {
+            "required_approving_review_count": 1,
+        },
+    }
+
+    def fake_run(cmd, **kwargs):
+        return _FakeCompleted(json.dumps(live_payload), returncode=0)
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    failures = checker.check_live_branch_protection(workflow_only)
+    assert any("Some Stale Check" in f for f in failures)
+    # Remediation message references the workflow-only key.
+    assert any("required_checks_workflow_only" in f for f in failures), (
+        f"Stale-context message must mention the workflow-only key "
+        f"(Issue #3831), got: {failures}"
+    )
+
+
+def test_main_with_live_protection_uses_workflow_only_check(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Integration test: when ``FLUXION_CHECK_LIVE_PROTECTION=1`` is set,
+    ``main()`` invokes ``check_live_branch_protection`` with the
+    workflow-only list, not the full ``required_checks``. If ``main()``
+    regressed to passing the full list, the 5 path-filtered checks
+    would surface as false-positive drift.
+    """
+    target = _redirect(checker, tmp_path, monkeypatch)
+    # Full list includes 5 path-filtered checks; workflow_only list
+    # excludes them (the post-#3810 / pre-#3831 contract).
+    required = [
+        "Always Gate (GH)",
+        "Path Filtered A",
+        "Path Filtered B",
+        "Path Filtered C",
+        "Path Filtered D",
+        "Path Filtered E",
+    ]
+    workflow_only = ["Always Gate (GH)"]
+    workflow_index = [{"job": c, "workflow": f".github/workflows/g{i}.yml"} for i, c in enumerate(required)]
+    target.write_text(
+        _release_gates_yaml(
+            required_checks=required,
+            workflow_index=workflow_index,
+            workflow_only=workflow_only,
+        ),
+        encoding="utf-8",
+    )
+    for i, c in enumerate(required):
+        _write(
+            tmp_path / ".github" / "workflows" / f"g{i}.yml",
+            _workflow_yaml(c),
+        )
+
+    # Live protection contains only "Always Gate (GH)" (the workflow-only
+    # set). Under the old code this would fail (the 5 path-filtered
+    # checks would be reported as missing from live protection). Under
+    # the new code this must pass.
+    live_payload = {
+        "required_status_checks": {
+            "strict": True,
+            "contexts": ["Always Gate (GH)"],
+        },
+        "enforce_admins": {"enabled": True},
+        "required_pull_request_reviews": {
+            "required_approving_review_count": 1,
+        },
+    }
+
+    def fake_run(cmd, **kwargs):
+        return _FakeCompleted(json.dumps(live_payload), returncode=0)
+
+    monkeypatch.setenv("FLUXION_CHECK_LIVE_PROTECTION", "1")
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    rc = checker.main()
+    out = capsys.readouterr().out
+    assert rc == 0, (
+        f"main() must succeed when live protection matches the "
+        f"workflow-only set (Issue #3831). Output:\n{out}"
+    )
+    assert "LIVE DRIFT" not in out, (
+        f"Expected no LIVE DRIFT message when live matches workflow-only "
+        f"set; output:\n{out}"
+    )
+
+
+class _FakeCompleted:
+    """Minimal ``subprocess.CompletedProcess`` stand-in for gh api mocks."""
+
+    def __init__(self, stdout: str, returncode: int = 0, stderr: str = ""):
+        self.stdout = stdout
+        self.returncode = returncode
+        self.stderr = stderr
+        self.args: list[str] = []
