@@ -316,6 +316,171 @@ class TestMarkerAndRendering:
         assert "workflow-run stats unavailable" in body
 
 
+class TestCollectPreviousMetricsSpoofResistance:
+    """Issue #3814 — the public tracker issue lets any commenter post
+    a body containing ``MARKER_KEY``. ``collect_previous_metrics`` MUST
+    ignore spoofed third-party comments and only honour markers
+    authored by ``github-actions[bot]`` (the workflow identity that
+    emits genuine weekly posts).
+    """
+
+    @staticmethod
+    def _marker(pass_rate: float = 99.0) -> str:
+        return (
+            "## 📟 v1.3 progress telegram — week of 2026-09-08\n\n"
+            "<!-- progress-telegram-v1 "
+            f"pass_rate_pct={pass_rate} limit_gaps=0 cases_fully_passing=99 "
+            "physics_p50_min=1 hygiene_p50_min=1 merged_total=1 "
+            "milestone_merged=1 hygiene_merged=0 fixloop_share=0.0 "
+            "cancel_share=0.0 "
+            "limit_headings=[] "
+            "-->\n"
+        )
+
+    @staticmethod
+    def _make_jq_runner(comments):
+        """Return a ``run_gh`` stub that simulates the production jq
+        filter: filter by ``.author.login ==
+        \"github-actions[bot]\"`` and ``.body | contains(MARKER_KEY)``,
+        take the last match, then map to its body. Empty if no bot
+        comment matches. ``comments`` is the parsed list, not the
+        JSON string, so the test author can build it via
+        ``json.dumps`` to handle newlines correctly.
+        """
+        import json as _json
+
+        def fake_run_gh(argv):
+            for i, tok in enumerate(argv):
+                if tok == "--jq":
+                    break
+            else:
+                return ""
+            jq_value = argv[i + 1]
+            assert ".author.login" in jq_value, (
+                "production --jq filter is missing the author constraint "
+                "(Issue #3814)"
+            )
+            matches = [
+                c
+                for c in comments
+                if c.get("author", {}).get("login") == "github-actions[bot]"
+                and "progress-telegram-v1" in c.get("body", "")
+            ]
+            if not matches:
+                return ""
+            return matches[-1].get("body", "")
+
+        return fake_run_gh
+
+    @staticmethod
+    def _comments_json(*entries):
+        import json as _json
+        return _json.dumps(list(entries))
+
+    def test_spoofed_third_party_marker_ignored(self, load_script, monkeypatch):
+        """A spoofed marker posted by anyone other than
+        ``github-actions[bot]`` MUST NOT be picked up — even when it's
+        the most recent comment on the issue."""
+        import json as _json
+
+        mod = load_script("progress_telegram")
+        bot_marker = self._marker(pass_rate=14.1)
+        spoofed_marker = self._marker(pass_rate=99.0)
+        # Spoofed marker is NEWER than the genuine bot marker — i.e.
+        # listed LAST in the comments array (which is ordered newest
+        # first by gh).
+        comments = _json.loads(
+            self._comments_json(
+                {"body": bot_marker, "author": {"login": "github-actions[bot]"}},
+                {"body": spoofed_marker, "author": {"login": "attacker"}},
+            )
+        )
+        monkeypatch.setattr(mod, "run_gh", self._make_jq_runner(comments))
+        prev = mod.collect_previous_metrics("anchapin/fluxion", 3804)
+        assert prev is not None
+        assert prev["pass_rate_pct"] == 14.1, (
+            "spoofed attacker marker (99.0) was treated as the WoW "
+            "baseline — Issue #3814 spoof-resistance regression"
+        )
+
+    def test_only_spoofed_marker_returns_none(self, load_script, monkeypatch):
+        """If the most recent marker comment is from anyone but the
+        bot, ``collect_previous_metrics`` MUST return ``None`` — no
+        marker is treated as a marker — rather than falling back to a
+        spoofed value."""
+        import json as _json
+
+        mod = load_script("progress_telegram")
+        spoofed_marker = self._marker(pass_rate=99.0)
+        comments = _json.loads(
+            self._comments_json(
+                {"body": spoofed_marker, "author": {"login": "attacker"}},
+            )
+        )
+        monkeypatch.setattr(mod, "run_gh", self._make_jq_runner(comments))
+        assert mod.collect_previous_metrics("anchapin/fluxion", 3804) is None
+
+    def test_jq_filter_includes_author_constraint(self, load_script):
+        """The constructed ``--jq`` filter MUST reference
+        ``.author.login`` to enforce the bot-only provenance check."""
+        import shlex
+
+        mod = load_script("progress_telegram")
+        captured: list[list[str]] = []
+
+        def fake_run_gh(argv):
+            captured.append(argv)
+            return ""
+
+        # Patch run_gh and capture the args; the function returns None
+        # on empty stdout so we don't care about the parsed result.
+        original_run_gh = mod.run_gh
+        mod.run_gh = fake_run_gh
+        try:
+            mod.collect_previous_metrics("anchapin/fluxion", 3804)
+        finally:
+            mod.run_gh = original_run_gh
+
+        assert captured, "run_gh was not invoked"
+        argv = captured[0]
+        # The --jq argument is somewhere in argv; find the value after
+        # the `--jq` token.
+        try:
+            jq_idx = argv.index("--jq")
+        except ValueError:
+            for i, tok in enumerate(argv):
+                if tok.startswith("--jq"):
+                    jq_idx = i
+                    if tok == "--jq":
+                        jq_value = argv[i + 1]
+                    else:
+                        jq_value = tok.split("=", 1)[1]
+                    break
+            else:
+                raise AssertionError(f"--jq not found in argv: {argv}")
+        else:
+            jq_value = argv[jq_idx + 1]
+
+        # The --jq value is a shell-quoted string in argv. Strip the
+        # outer quotes if present and check the program text directly
+        # (shlex.split mis-parses embedded `[` / `]` / `|`).
+        if jq_value.startswith('"') and jq_value.endswith('"'):
+            jq_program = jq_value[1:-1]
+        elif jq_value.startswith("'") and jq_value.endswith("'"):
+            jq_program = jq_value[1:-1]
+        else:
+            jq_program = jq_value
+        assert ".author.login" in jq_program, (
+            "collect_previous_metrics MUST filter by .author.login to "
+            "prevent WoW baseline spoofing on the public tracker issue "
+            "(Issue #3814)."
+        )
+        assert "github-actions[bot]" in jq_program, (
+            "collect_previous_metrics MUST restrict to github-actions[bot] "
+            "comments (Issue #3814)."
+        )
+
+
 class TestSelftestCli:
     def test_selftest_flag_exits_zero_offline(self, repo_root):
         proc = subprocess.run(
