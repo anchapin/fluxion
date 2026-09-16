@@ -27,7 +27,7 @@ There is **no `pull_request` trigger** on this workflow. The PR-blocking static-
 
 1. `required_status_checks.contexts` matches `release_gates.yaml::ci.required_checks` by symmetric set equality.
 2. `required_status_checks.strict` is `true`.
-3. `required_pull_request_reviews.required_approving_review_count` ≥ 1.
+3. `required_pull_request_reviews.required_approving_review_count` equals `release_gates.yaml::ci.review_policy.required_approving_review_count` (default 0, reviews-advisory per ADR-0016 / Issue #3807).
 4. `enforce_admins.enabled` is `true`.
 
 When any check fails the script exits 1 and the cron run fails. When all pass, exit 0 and the cron succeeds (silent green).

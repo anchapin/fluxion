@@ -112,6 +112,12 @@ def test_build_put_payload_includes_all_required_contexts(applier):
     the payload must round-trip the YAML list with no normalization
     (whitespace, sorting, dedup) — that's why ``build_put_payload`` does
     ``list(required_checks)`` rather than ``set(...)``.
+
+    Issue #3807: ``required_approving_review_count`` defaults to 0
+    (reviews-advisory per ADR-0016). The default + enforce_admins=True
+    is the canonical reviews-advisory config — admins + CI are the
+    gate; humans cannot self-approve on GitHub, so requiring ≥1
+    re-blocks the wave pipeline.
     """
     required = ["A (GH)", "B", "C (Issue #1234)"]
     payload = applier.build_put_payload(required)
@@ -119,8 +125,23 @@ def test_build_put_payload_includes_all_required_contexts(applier):
     assert payload["required_status_checks"]["strict"] is True
     assert payload["enforce_admins"] is True
     assert (
-        payload["required_pull_request_reviews"]["required_approving_review_count"] == 1
+        payload["required_pull_request_reviews"]["required_approving_review_count"] == 0
     )
+
+
+def test_build_put_payload_default_is_reviews_advisory(applier):
+    """Issue #3807 explicit pin: applier default is reviews-advisory.
+
+    Locks the post-#3807 default in place so a future refactor cannot
+    silently flip it back to ``1`` (which would re-block the wave
+    pipeline the moment someone re-runs the applier).
+    """
+    payload = applier.build_put_payload(["A (GH)"])
+    assert (
+        payload["required_pull_request_reviews"]["required_approving_review_count"]
+        == 0
+    )
+    assert payload["enforce_admins"] is True
 
 
 def test_build_put_payload_preserves_duplicates(applier):
@@ -145,6 +166,15 @@ def test_build_put_payload_strict_can_be_disabled(applier):
 
 
 def _live_payload(contexts: list[str], *, enforce_admins: bool = True) -> dict:
+    """Live protection fixture that mirrors the post-#3807 canonical.
+
+    ``required_approving_review_count`` is 0 (reviews-advisory) to match
+    the applier's new default — keeping the helper in sync means tests
+    that expect ``diff_has_changes`` to be False on a clean baseline do
+    not need to override the review count explicitly. Override via the
+    ``required_approving_review_count=`` keyword (below) when the test
+    is specifically exercising a pre-#3807 / human-review-gated state.
+    """
     return {
         "required_status_checks": {
             "strict": True,
@@ -154,7 +184,7 @@ def _live_payload(contexts: list[str], *, enforce_admins: bool = True) -> dict:
             "enabled": enforce_admins,
         },
         "required_pull_request_reviews": {
-            "required_approving_review_count": 1,
+            "required_approving_review_count": 0,
         },
     }
 
@@ -210,18 +240,26 @@ def test_compute_diff_treats_empty_live_as_full_add(applier):
     The cron drift case from Issue #3386's acceptance criterion starts
     with the live ``contexts`` array missing every entry. Every YAML
     entry should land in ``add``.
+
+    Issue #3807: pre-#3807 live state would carry
+    ``required_approving_review_count=1`` (the old applier default).
+    The post-#3807 applier defaults to 0, so that count must move
+    ``1 → 0`` here to keep exercising the drift path. ``enforce_admins``
+    continues to flip ``false → true``.
     """
     live = {
         "required_status_checks": {"strict": True, "contexts": []},
         "enforce_admins": {"enabled": False},
         "required_pull_request_reviews": {
-            "required_approving_review_count": 0,
+            "required_approving_review_count": 1,
         },
     }
     payload = applier.build_put_payload(["A", "B"])
     diff = applier.compute_diff(live, payload)
     assert sorted(diff["contexts"]["add"]) == ["A", "B"]
     assert diff["enforce_admins"]["would_change"] is True
+    assert diff["required_approving_review_count"]["from"] == 1
+    assert diff["required_approving_review_count"]["to"] == 0
     assert diff["required_approving_review_count"]["would_change"] is True
     assert applier.diff_has_changes(diff) is True
 
@@ -231,6 +269,11 @@ def test_compute_diff_handles_missing_live_keys(applier):
     not raise — the GitHub API returns those nested dicts but a partial
     response (e.g. from a custom API proxy) may not. The diff should
     surface ``would_change=True`` for the missing fields.
+
+    Issue #3807: both the implicit live default (``or 0``) and the new
+    applier default are 0, so ``required_approving_review_count`` no
+    longer registers as drift here. ``enforce_admins`` and ``strict``
+    still must flip. The test pins both expectations.
     """
     live = {"required_status_checks": {"strict": False, "contexts": []}}
     payload = applier.build_put_payload(["A"])
@@ -241,7 +284,8 @@ def test_compute_diff_handles_missing_live_keys(applier):
     assert diff["strict"]["from"] is False
     assert diff["strict"]["would_change"] is True
     assert diff["required_approving_review_count"]["from"] == 0
-    assert diff["required_approving_review_count"]["would_change"] is True
+    assert diff["required_approving_review_count"]["to"] == 0
+    assert diff["required_approving_review_count"]["would_change"] is False
 
 
 # ---------------------------------------------------------------------------

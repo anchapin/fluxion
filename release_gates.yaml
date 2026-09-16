@@ -283,6 +283,30 @@ ci:
   output_file: "gate_status.json"
 
   # =============================================================================
+  # REVIEW POLICY (Issue #3807 / ADR-0016 companion, 2026-09-15)
+  # =============================================================================
+  # Canonical source for the `required_pull_request_reviews` half of branch
+  # protection. The values below are enforced by
+  # ``scripts/apply_branch_protection.py`` (default + PUT) and verified by
+  # ``scripts/check_branch_protection_diff.py`` (drift gate) plus the
+  # cron-mode ``FLUXION_CHECK_LIVE_PROTECTION=1`` check in
+  # ``scripts/check_required_checks_sync.py``. Never hard-code these in
+  # the scripts — read them from here.
+  review_policy:
+    # Reviews are ADVISORY, not blocking. Admins + CI are the gate.
+    # GitHub forbids self-approval, so requiring ≥1 reviewer re-blocks
+    # the wave pipeline (agents author their own PRs).
+    # Rationale: ADR-0016 lane split (2026-09-15) classifies reviews as
+    # a Lane 4 / non-blocking signal; the per-PR blocking authority is
+    # Lane 1 + Lane 2 + Lane 3-nightly per the release_gates workflow.
+    required_approving_review_count: 0
+
+    # Enforce-admins MUST stay true: even with 0 required approvals, the
+    # admin bypass must be disabled so required_status_checks and the
+    # listener gate above cannot be sidestepped by an admin push.
+    enforce_admins: true
+
+  # =============================================================================
   # REQUIRED STATUS CHECKS
   # =============================================================================
   # GitHub branch-protection "Required status checks" list. Every check
