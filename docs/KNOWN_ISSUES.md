@@ -1224,14 +1224,14 @@ The fix is **structural** — the `GaugeSolver` rework (#1465 / #1462) — and t
 | Free-Float (FREE) | 3 | 0 | 1 | 0 | 0 |
 | Temperature (TEMP) | 1 | 0 | 0 | 0 | 0 |
 | Multi-Zone (MULTI) | 4 | 3 | 0 | 0 | 0 |
-| Model Limits (LIMIT) | 25 | 2 | 0 | 3 | 2 |
+| Model Limits (LIMIT) | 26 | 2 | 0 | 4 | 2 |
 | Reporting (REPORT) | 4 | 0 | 4 | 0 | 0 |
 | CI/Infrastructure (CI) | 3 | 0 | 0 | 0 | 0 |
 | fluxion-fluid (FLUID) | 2 | 0 | 0 | 0 | 0 |
-| FFD/CFD (FFD) | 2 | 0 | 1 | 0 | 0 |
-| **Total** | **53** | **10** | **8** | **5** | **2** |
+| FFD/CFD (FFD) | 2 | 0 | 0 | 1 | 0 |
+| **Total** | **54** | **10** | **8** | **6** | **2** |
 
-*Counts derived from `grep -cE '^### CATEGORY-NN:' docs/KNOWN_ISSUES.md` via `scripts/check_known_issues_summary.py`; CI gate = `python3 scripts/check_known_issues_summary.py --check`. Status columns (`Fixed` / `Open` / `Partial` / `Won't Fix`) derive from each section's first `**Status:**` line. To regenerate: `python3 scripts/check_known_issues_summary.py --regen | sponge docs/KNOWN_ISSUES.md`.*
+*Counts derived from `grep -cE '^### CATEGORY-NN:' docs/KNOWN_ISSUES.md` via `scripts/check_known_issues_summary.py`. Edit the per-section `**Status:**` lines (or add new `### CATEGORY-NN:` headers) and the table updates on the next regen. Status columns (`Fixed` / `Open` / `Partial` / `Won't Fix`) derive from the first `**Status:**` line in each section. Sections without a `**Status:**` line are counted in the Total column but contribute 0 to the status columns — treat the missing line as a TODO and either add the line or document the exception in the section body. To regenerate: `python3 scripts/check_known_issues_summary.py --regen | sponge docs/KNOWN_ISSUES.md`.**
 
 ### Open Issues by Severity
 
