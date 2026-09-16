@@ -1115,6 +1115,41 @@ jobs:
             /tmp/surrogate_mae_gate_stderr.txt
           retention-days: 14
 
+  # Issue #3810: GH-listener pattern for the path-filtered
+  # `surrogate-ashrae-mae-gate` job (#2924). The upstream is path-filtered
+  # via the workflow-level `paths-ignore` (docs/markdown/license/etc.
+  # only — anything else triggers the workflow), so on a docs-only /
+  # scripts-only PR the workflow is skipped and the required-check
+  # context is never reported — branch protection's expected-vs-actual
+  # gap that #3805 documented.
+  #
+  # The `surrogate-ashrae-mae-gate-listener` job is unconditional
+  # (`if: always()`) and observes the upstream result: PASS on
+  # `success` / `skipped` (path-filter neutral-success); FAIL on
+  # `failure` / `cancelled` / `timed_out`. Listener's `name:` is the
+  # exact required-check string so GitHub branch protection can
+  # reference it verbatim (Issue #3116). Job id is suffixed
+  # `-listener` to avoid colliding with the upstream
+  # `surrogate-ashrae-mae-gate` id.
+  surrogate-ashrae-mae-gate-listener:
+    name: Surrogate ASHRAE 140 MAE Gate (Issue #2924)
+    needs: [surrogate-ashrae-mae-gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+
+    steps:
+      - name: Verify upstream result
+        run: |
+          set -uo pipefail
+          RESULT="${{ needs.surrogate-ashrae-mae-gate.result }}"
+          echo "surrogate-ashrae-mae-gate upstream result: ${RESULT}"
+          if [[ "${RESULT}" != "success" && "${RESULT}" != "skipped" ]]; then
+            echo "::error::Surrogate ASHRAE 140 MAE Gate upstream did not succeed: ${RESULT}"
+            exit 1
+          fi
+          echo "Surrogate ASHRAE 140 MAE Gate (Issue #2924) PASS"
+
   # Python verification scripts — Issue #1699
   # These scripts validate QUBO math (issue-1464) and diurnal parity (issue-1465).
   # They are not built into the Rust binary; they run as standalone Python scripts

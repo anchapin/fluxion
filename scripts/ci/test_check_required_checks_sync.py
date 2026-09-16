@@ -887,3 +887,353 @@ def test_get_workflow_only_checks_parses_and_drops_comments(checker):
     assert checker.get_workflow_only_checks(gates) == ["A", "B"]
     assert checker.get_workflow_only_checks({"ci": {}}) == []
     assert checker.get_workflow_only_checks({}) == []
+
+
+# ---------------------------------------------------------------------------
+# Issue #3810 — 6th invariant: GH-listener pattern
+# ---------------------------------------------------------------------------
+# Synthetic workflow shapes mirroring the three Issue #3810 acceptance
+# cases: (a) workflow with no path filter, (b) path-filtered workflow
+# with an additive `if: always()` listener, (c) path-filtered workflow
+# with NO listener (the gap #3805 documented). All fixtures use the
+# `_workflow_yaml` helper above so the parsing invariants are exercised
+# through the same regex window as production workflows.
+
+_UNFILTERED_WORKFLOW = _workflow_yaml("My Listener (GH)")
+
+_PATH_FILTERED_WITH_LISTENER = (
+    "name: Path-Filtered\n"
+    "\n"
+    "on:\n"
+    "  pull_request:\n"
+    "    branches: [main, develop]\n"
+    "    paths-ignore:\n"
+    "      - 'docs/**'\n"
+    "      - '**.md'\n"
+    "\n"
+    "concurrency:\n"
+    "  group: ${{ github.workflow }}-${{ github.ref }}\n"
+    "  cancel-in-progress: false\n"
+    "\n"
+    "jobs:\n"
+    "  upstream:\n"
+    "    runs-on: ubuntu-latest\n"
+    "    name: Upstream Work\n"
+    "    steps:\n"
+    "      - run: echo do work\n"
+    "  listener-gh:\n"
+    "    runs-on: ubuntu-latest\n"
+    "    name: My Listener (GH)\n"
+    "    needs: [upstream]\n"
+    "    timeout-minutes: 5\n"
+    "    if: always()\n"
+    "    steps:\n"
+    "      - name: Verify upstream\n"
+    "        run: |\n"
+    "          set -uo pipefail\n"
+    "          RESULT=\"${{ needs.upstream.result }}\"\n"
+    "          if [[ \"${RESULT}\" != \"success\" && \"${RESULT}\" != \"skipped\" ]]; then\n"
+    "            echo \"::error::upstream did not succeed: ${RESULT}\"\n"
+    "            exit 1\n"
+    "          fi\n"
+    "          echo \"My Listener (GH) PASS\"\n"
+)
+
+# Path-filtered workflow with NO listener — the exact gap #3810 closes.
+# The `My Listener (GH)` job exists but lacks `if: always()`, so the
+# 6th invariant correctly flags the required_check.
+_PATH_FILTERED_NO_LISTENER = (
+    "name: Path-Filtered No Listener\n"
+    "\n"
+    "on:\n"
+    "  pull_request:\n"
+    "    branches: [main, develop]\n"
+    "    paths-ignore:\n"
+    "      - 'docs/**'\n"
+    "      - '**.md'\n"
+    "\n"
+    "concurrency:\n"
+    "  group: ${{ github.workflow }}-${{ github.ref }}\n"
+    "  cancel-in-progress: false\n"
+    "\n"
+    "jobs:\n"
+    "  upstream:\n"
+    "    runs-on: ubuntu-latest\n"
+    "    name: My Listener (GH)\n"
+    "    steps:\n"
+    "      - run: echo do work\n"
+)
+
+
+def test_workflow_has_pull_request_path_filter_detects_paths_ignore(
+    checker, tmp_path
+):
+    """Unit-level: ``workflow_has_pull_request_path_filter`` returns True
+    iff the workflow's ``pull_request:`` block declares ``paths:`` /
+    ``paths-ignore:``. The regex window is the entire pull_request
+    sub-block (Issue #3810).
+    """
+    unfiltered_path = _write_path(tmp_path / "_UNFILTERED.yml", _UNFILTERED_WORKFLOW)
+    parsed = checker.parse_workflow(unfiltered_path)
+    assert checker.workflow_has_pull_request_path_filter(parsed) is False
+
+    filtered_path = _write_path(tmp_path / "_FILTERED.yml", _PATH_FILTERED_WITH_LISTENER)
+    parsed_filtered = checker.parse_workflow(filtered_path)
+    assert checker.workflow_has_pull_request_path_filter(parsed_filtered) is True
+
+
+def test_workflow_has_pull_request_path_filter_ignores_workflow_run(checker, tmp_path):
+    """``paths:`` under ``workflow_run:`` is NOT a path filter (GitHub
+    ignores ``paths`` under ``workflow_run:``). The helper only flags
+    the ``pull_request:`` sub-block — even if the workflow declares
+    ``workflow_run:`` triggers elsewhere with their own (no-op) ``paths:``.
+    """
+    text = (
+        "name: Workflow Run\n"
+        "\n"
+        "on:\n"
+        "  workflow_run:\n"
+        "    workflows: [Other]\n"
+        "    paths: ['foo']\n"
+        "    types: [completed]\n"
+    )
+    target = _write_path(tmp_path / "_wr.yml", text)
+    parsed = checker.parse_workflow(target)
+    assert checker.workflow_has_pull_request_path_filter(parsed) is False
+
+
+def test_workflow_has_unconditional_listener_accepts_unfiltered_workflow(checker, tmp_path):
+    """The (a) branch of the listener pattern: a workflow with no path
+    filter has no need for an additive listener — its existing job
+    emission covers every PR class.
+    """
+    target = _write_path(tmp_path / "_UNF.yml", _UNFILTERED_WORKFLOW)
+    parsed = checker.parse_workflow(target)
+    assert checker.workflow_has_unconditional_listener(parsed, "My Listener (GH)") is True
+
+
+def test_workflow_has_unconditional_listener_accepts_listener_with_if_always(checker, tmp_path):
+    """The (b) branch: a path-filtered workflow with an additive
+    ``if: always()`` listener job satisfies the pattern (Issue #3810
+    Option A — fix in-place via additive listener).
+    """
+    target = _write_path(tmp_path / "_LIST.yml", _PATH_FILTERED_WITH_LISTENER)
+    parsed = checker.parse_workflow(target)
+    assert checker.workflow_has_pull_request_path_filter(parsed) is True
+    assert checker.workflow_has_unconditional_listener(parsed, "My Listener (GH)") is True
+
+
+def test_workflow_has_unconditional_listener_rejects_listener_without_if_always(checker, tmp_path):
+    """Regression guard for the gap #3810 / #3805 documented: a path-
+    filtered workflow whose existing job has the exact name but does
+    NOT carry ``if: always()`` does NOT satisfy the listener pattern —
+    the script must flag it.
+
+    This is the broken `fast-math-gh` shape pre-#3810-fix.
+    """
+    target = _write_path(tmp_path / "_NOLIST.yml", _PATH_FILTERED_NO_LISTENER)
+    parsed = checker.parse_workflow(target)
+    assert checker.workflow_has_pull_request_path_filter(parsed) is True
+    assert checker.workflow_has_unconditional_listener(parsed, "My Listener (GH)") is False
+
+
+def test_workflow_has_unconditional_listener_rejects_unrelated_listener(checker, tmp_path):
+    """A path-filtered workflow whose listener exists but emits a
+    DIFFERENT name (the Issue #3116 verbatim-match contract) does NOT
+    satisfy the pattern for the queried required-check string — the
+    emitted ``name:`` must equal the queried value byte-for-byte.
+    """
+    text = (
+        "name: Wrong Name\n"
+        "\n"
+        "on:\n"
+        "  pull_request:\n"
+        "    paths-ignore:\n"
+        "      - 'docs/**'\n"
+    )
+    target = _write_path(tmp_path / "_WRONG.yml", text)
+    parsed = checker.parse_workflow(target)
+    # No listener with the queried name => fails.
+    assert checker.workflow_has_unconditional_listener(parsed, "My Listener (GH)") is False
+
+
+def test_parse_workflow_tolerates_continuation_indentation(checker, tmp_path):
+    """Regression guard for the regex window fix: a job whose
+    ``runs-on:`` is a folded scalar continuation (``>-\\n      ${{
+    ...``) must NOT terminate the 15-line window prematurely. The
+    pre-fix regex (`    [^ #\n].*\\n`) stopped on lines starting with
+    extra whitespace, which made the Issue #3810 6th invariant miss
+    the existing ``fast-math-gh`` listener's ``if: always()``
+    marker.
+    """
+    text = (
+        "name: Folded Scalar Job\n"
+        "\n"
+        "on:\n"
+        "  pull_request:\n"
+        "\n"
+        "jobs:\n"
+        "  folded:\n"
+        "    name: Folded Listener (GH)\n"
+        "    runs-on: >-\n"
+        "      ${{\n"
+        "        github.event_name == 'push'\n"
+        "        && github.ref == 'refs/heads/main'\n"
+        "        && vars.FLUXION_LINUX_RUNNER\n"
+        "        || 'ubuntu-latest'\n"
+        "      }}\n"
+        "    timeout-minutes: 5\n"
+        "    if: always()\n"
+        "    steps:\n"
+        "      - run: echo done\n"
+    )
+    target = _write_path(tmp_path / "_FOLD.yml", text)
+    parsed = checker.parse_workflow(target)
+    assert "folded" in parsed["jobs"]
+    assert parsed["jobs"]["folded"] == "Folded Listener (GH)"
+    assert parsed["job_unconditional"]["folded"] is True
+
+
+def test_main_passes_when_workflow_only_listener_satisfies_pattern(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Clean Issue #3810 fixture: a required_checks_workflow_only entry
+    whose workflow is unfiltered (no path filter) — the (a) branch of
+    the listener pattern. The gate stays green.
+    """
+    target = _redirect(checker, tmp_path, monkeypatch)
+    target.write_text(
+        _release_gates_yaml(
+            required_checks=["My Listener (GH)"],
+            workflow_index=[
+                {
+                    "job": "My Listener (GH)",
+                    "workflow": ".github/workflows/unfiltered.yml",
+                },
+            ],
+            workflow_only=["My Listener (GH)"],
+        ),
+        encoding="utf-8",
+    )
+    _write(
+        tmp_path / ".github" / "workflows" / "unfiltered.yml",
+        _UNFILTERED_WORKFLOW,
+    )
+    rc = checker.main()
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    assert "No drift" in out
+
+
+def test_main_passes_when_path_filtered_workflow_has_unconditional_listener(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Clean Issue #3810 Option A fixture: a path-filtered workflow
+    with an additive ``if: always()`` listener job. The gate stays
+    green — the listener pattern is satisfied via Option A.
+    """
+    target = _redirect(checker, tmp_path, monkeypatch)
+    target.write_text(
+        _release_gates_yaml(
+            required_checks=["Path Listener (GH)"],
+            workflow_index=[
+                {
+                    "job": "Path Listener (GH)",
+                    "workflow": ".github/workflows/filtered.yml",
+                },
+            ],
+            workflow_only=["Path Listener (GH)"],
+        ),
+        encoding="utf-8",
+    )
+    _write(
+        tmp_path / ".github" / "workflows" / "filtered.yml",
+        _PATH_FILTERED_WITH_LISTENER.replace("My Listener (GH)", "Path Listener (GH)"),
+    )
+    rc = checker.main()
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    assert "No drift" in out
+
+
+def test_main_fails_when_path_filtered_workflow_lacks_unconditional_listener(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Planted Issue #3810 violation: a required_checks_workflow_only
+    entry whose workflow is path-filtered but has NO additive
+    ``if: always()`` listener — the exact gap #3805 documented.
+    The 6th invariant must fail with the actionable remediation hint.
+    """
+    target = _redirect(checker, tmp_path, monkeypatch)
+    target.write_text(
+        _release_gates_yaml(
+            required_checks=["Path Listener (GH)"],
+            workflow_index=[
+                {
+                    "job": "Path Listener (GH)",
+                    "workflow": ".github/workflows/filtered.yml",
+                },
+            ],
+            workflow_only=["Path Listener (GH)"],
+        ),
+        encoding="utf-8",
+    )
+    _write(
+        tmp_path / ".github" / "workflows" / "filtered.yml",
+        _PATH_FILTERED_NO_LISTENER,
+    )
+    rc = checker.main()
+    out = capsys.readouterr().out
+    assert rc == 1, out
+    assert "DRIFT DETECTED" in out
+    # The drift message must name the required-check and workflow,
+    # and must offer both Option A and Option B remediation.
+    assert "'Path Listener (GH)'" in out
+    assert ".github/workflows/filtered.yml" in out
+    assert "unconditional listener" in out
+    assert "if: always()" in out
+
+
+def test_main_fails_when_required_checks_workflow_only_lacks_workflow_index_entry(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Planted Issue #3810 violation: a required_checks_workflow_only
+    entry without ANY workflow_index mapping. The 6th invariant
+    surfaces this even when the workflow_only list is otherwise well-
+    formed; the drift message names the missing workflow_index row.
+    """
+    target = _redirect(checker, tmp_path, monkeypatch)
+    target.write_text(
+        _release_gates_yaml(
+            required_checks=["My Listener (GH)"],
+            workflow_index=[
+                {
+                    "job": "My Listener (GH)",
+                    "workflow": ".github/workflows/unfiltered.yml",
+                },
+            ],
+            workflow_only=["My Listener (GH)", "Unmapped Gate (GH)"],
+        ),
+        encoding="utf-8",
+    )
+    _write(
+        tmp_path / ".github" / "workflows" / "unfiltered.yml",
+        _UNFILTERED_WORKFLOW,
+    )
+    rc = checker.main()
+    out = capsys.readouterr().out
+    assert rc == 1, out
+    assert "no workflow_index entry" in out
+    assert "'Unmapped Gate (GH)'" in out
+
+
+def _write_path(path: Path, text: str) -> Path:
+    """Write ``text`` to ``path`` and return ``path`` (mkdir -p parents).
+
+    The Issue #3810 unit tests (``parse_workflow`` / ``workflow_has_*``)
+    need a real on-disk file for the parser; this helper avoids
+    round-tripping through the conftest's ``write_file`` factory.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path

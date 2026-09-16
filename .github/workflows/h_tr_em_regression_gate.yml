@@ -179,3 +179,37 @@ jobs:
           path: |
             h_tr_em_verifier_output.json
           retention-days: 14
+
+  # Issue #3810: GH-listener pattern for the path-filtered `h_tr_em`
+  # gate (Issue #3154 / LIMIT-13 / ADR-0009). The upstream
+  # `h-tr-em-regression-gate` job only fires for non-docs-only PRs
+  # (`paths-ignore: ['docs/**', ...]`), so on a docs-only / scripts-
+  # only PR the workflow is skipped and the required-check context is
+  # never reported — branch protection's expected-vs-actual gap that
+  # #3805 documented.
+  #
+  # The `h-tr-em-listener` job is unconditional (`if: always()`) and
+  # observes the upstream result: PASS on `success` / `skipped`
+  # (path-filter neutral-success); FAIL on `failure` / `cancelled` /
+  # `timed_out`. Listener's `name:` is the exact required-check
+  # string so GitHub branch protection can reference it verbatim
+  # (Issue #3116). The job id is suffixed `-listener` to avoid
+  # colliding with the upstream `h-tr-em-regression-gate` id.
+  h-tr-em-listener:
+    name: h_tr_em Regression Gate (LIMIT-13)
+    needs: [h-tr-em-regression-gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+
+    steps:
+      - name: Verify upstream result
+        run: |
+          set -uo pipefail
+          RESULT="${{ needs.h-tr-em-regression-gate.result }}"
+          echo "h-tr-em-regression-gate upstream result: ${RESULT}"
+          if [[ "${RESULT}" != "success" && "${RESULT}" != "skipped" ]]; then
+            echo "::error::h_tr_em regression gate upstream did not succeed: ${RESULT}"
+            exit 1
+          fi
+          echo "h_tr_em Regression Gate (LIMIT-13) PASS"

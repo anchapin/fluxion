@@ -33,7 +33,7 @@ workflow emits suffixed variants (e.g. ``Workspace Check (GH)`` and
 ``Workspace Check (Hetzner Overflow)``), the YAML must name the suffixed
 job explicitly — never the bare canonical.
 
-The script enforces five invariants:
+The script enforces six invariants:
 
 1. Every ``workflow_index`` entry points at an existing
    ``.github/workflows/<name>.yml`` file.
@@ -58,6 +58,21 @@ The script enforces five invariants:
    31/26 drift where the docs still said 19/29/25 and "4 path-filtered
    checks" after Module Size (#2878) was wired in; this guard keeps the
    prose counts from drifting again.
+6. Every ``ci.required_checks_workflow_only`` entry (Issue #3810) must
+   either (a) point at a workflow with no ``pull_request.paths`` /
+   ``pull_request.paths-ignore`` filter, OR (b) point at a workflow
+   whose ``jobs`` block declares an additive listener job whose
+   ``name:`` equals the required-check string exactly AND whose job
+   carries ``if: always()``. This is the GH-listener pattern: a
+   path-filtered workflow cannot emit a check run on a docs-only /
+   scripts-only PR, so branch protection's exact-string context would
+   be perpetually "expected" but never reported (#3805). The listener
+   job is unconditional (``if: always()``) so it observes the upstream
+   even when the upstream was ``skipped`` (path-filter neutral-success)
+   and PASSes; a hard failure on the upstream propagates as a FAIL.
+   Without this invariant, develop's branch-protection context list
+   had to drop to the small set of path-filter-free required checks,
+   leaving the rest silently unsatisfied (the #3810 / #3805 gap).
 
 The script deliberately does NOT enforce the inverse (every
 ``workflow_index`` entry must also be in ``required_checks``) — the
@@ -238,6 +253,20 @@ _ON_BLOCK_RE = re.compile(
 )
 _TRIGGER_KEY_RE = re.compile(r"^  ([A-Za-z_][A-Za-z0-9_-]*):", re.MULTILINE)
 
+# Issue #3810: detect `paths:` and `paths-ignore:` keys at 4-space indent
+# under `pull_request:` (the standard GitHub Actions path-filter shape).
+# We capture the entire `pull_request:` sub-block (its lines, including
+# nested `paths:` / `paths-ignore:`) so a later helper can decide
+# whether the workflow is path-filtered. The block runs from the
+# `pull_request:` line itself to the next 2-space-indent key (or EOF).
+_PULL_REQUEST_BLOCK_RE = re.compile(
+    r"^  pull_request:\s*\n((?:    [^\n]*\n|    #[^\n]*\n|[ \t]*#[^\n]*\n)*)",
+    re.MULTILINE,
+)
+_PATH_FILTER_KEY_RE = re.compile(
+    r"^    (paths|paths-ignore):\s*$", re.MULTILINE
+)
+
 # Match the YAML `jobs:` block at the top of a workflow. We split on the
 # 0-indent `jobs:` token and capture everything until the next 0-indent
 # key (or EOF).
@@ -248,21 +277,42 @@ _JOBS_BLOCK_RE = re.compile(
 # Each job id is at 2-space indent, then `name:` (if present) appears at
 # 4-space indent *somewhere* within the first ~15 lines of the job block
 # (allowing `runs-on:`, `permissions:`, etc. to interleave before
-# `name:`). Quoted and unquoted values both supported.
+# `name:`). Quoted and unquoted values both supported. The line
+# pattern (`    +\S[^\n]*\n`) tolerates arbitrary continuation
+# indentation (e.g. folded scalar `>-` continuations at 6+ spaces) so
+# the regex window does NOT terminate prematurely on
+# `runs-on: >-\n      ${{ ...` style blocks — that bug made the
+# Issue #3810 6th invariant miss the existing
+# `fast-math-gh`/`if: always()` listener in `fast_math_check.yml`.
 _JOB_RE = re.compile(
-    r"^  ([A-Za-z_][A-Za-z0-9_-]*):\n((?:    [^ #\n].*\n|    #[^\n]*\n){1,15})",
+    r"^  ([A-Za-z_][A-Za-z0-9_-]*):\n((?:    +\S[^\n]*\n){1,15})",
     re.MULTILINE,
 )
 _NAME_RE = re.compile(r'^    name:\s*"?(?P<v>[^"\n]+)"?', re.MULTILINE)
+# Detect the `if: always()` directive at the top of a job block. The
+# listener pattern (Issue #3810 / #3358) is exactly this: a job whose
+# `name:` equals a required-check string and whose `if:` is `always()`.
+# The regex anchors on column 4 (the standard job-key indent) and
+# tolerates YAML quoting around the `always()` value.
+_IF_ALWAYS_RE = re.compile(
+    r"^    if:\s*[\"']?always\(\)[\"']?\s*$", re.MULTILINE
+)
 _WORKFLOW_NAME_RE = re.compile(r"^name:\s*\"?(?P<v>[^\"\n]+)\"?", re.MULTILINE)
 
 
 def parse_workflow(path: Path) -> dict:
     """Parse one workflow file and return ``{"triggers": [...], "jobs": {...},
+    "job_unconditional": {...}, "pull_request_path_filtered": bool,
     "workflow_name": "..."}``.
 
     Uses regex (not PyYAML) because GitHub Actions workflows embed
     ``${{ }}`` expressions and other constructs PyYAML cannot parse.
+
+    The Issue #3810 extensions (``job_unconditional`` and
+    ``pull_request_path_filtered``) are additive: existing callers
+    that only read ``triggers`` / ``jobs`` / ``workflow_name`` are
+    unaffected. The two new keys drive the 6th invariant (GH-listener
+    pattern detection).
     """
     text = path.read_text(encoding="utf-8")
 
@@ -274,7 +324,23 @@ def parse_workflow(path: Path) -> dict:
             if m:
                 triggers.append(m.group(1))
 
+    # Issue #3810: does the `pull_request:` block declare `paths:` or
+    # `paths-ignore:`? A workflow with no path filter runs on every PR
+    # class (docs-only / scripts-only / physics); one with a filter is
+    # path-gated and needs a listener job to emit its required-check
+    # name unconditionally. The regex captures the entire
+    # `pull_request:` sub-block; a single `paths:` / `paths-ignore:`
+    # line anywhere in that block triggers the flag.
+    pull_request_path_filtered = False
+    pr_match = _PULL_REQUEST_BLOCK_RE.search(text)
+    if pr_match:
+        for line in pr_match.group(1).splitlines():
+            if _PATH_FILTER_KEY_RE.match(line):
+                pull_request_path_filtered = True
+                break
+
     job_names: dict[str, str] = {}
+    job_unconditional: dict[str, bool] = {}
     jobs_match = _JOBS_BLOCK_RE.search(text)
     if jobs_match:
         jobs_block = jobs_match.group(1)
@@ -284,6 +350,14 @@ def parse_workflow(path: Path) -> dict:
             nm = _NAME_RE.search(block)
             if nm:
                 job_names[jid] = nm.group("v").strip()
+            # Issue #3810: `if: always()` at the job level is the
+            # marker for the GH-listener pattern (the listener is
+            # unconditional — fires even if the upstream was skipped
+            # via path-filter). Per the canonical pattern
+            # (AGENTS.md / #3358), the listener's classification step
+            # then maps `success`/`skipped` to PASS and
+            # `failure`/`cancelled`/`timed_out` to FAIL.
+            job_unconditional[jid] = bool(_IF_ALWAYS_RE.search(block))
 
     wn_match = _WORKFLOW_NAME_RE.search(text)
     workflow_name = wn_match.group("v").strip() if wn_match else None
@@ -291,6 +365,8 @@ def parse_workflow(path: Path) -> dict:
     return {
         "triggers": triggers,
         "jobs": job_names,
+        "job_unconditional": job_unconditional,
+        "pull_request_path_filtered": pull_request_path_filtered,
         "workflow_name": workflow_name,
     }
 
@@ -371,6 +447,66 @@ def has_blocking_trigger(workflow: dict) -> bool:
     return any(t in BLOCKING_TRIGGERS for t in workflow["triggers"])
 
 
+def workflow_has_pull_request_path_filter(workflow: dict) -> bool:
+    """Return True if the workflow's ``pull_request`` block declares a
+    ``paths:`` or ``paths-ignore:`` key (Issue #3810).
+
+    A path-filtered ``pull_request`` trigger causes the workflow to be
+    SKIPPED on PRs whose changed files are all matched by the filter
+    (e.g. docs-only / scripts-only PRs hitting a workflow with
+    ``paths-ignore: ['docs/**']``). When skipped, no check runs are
+    emitted and GitHub branch protection's exact-string contexts array
+    is left "expected" but never reported — the gap Issue #3810 closes
+    with the GH-listener pattern.
+
+    The parser tolerates block-comments and 6-space-indent nested
+    continuation; the on-block capture in :data:`_ON_BLOCK_RE` is
+    intentionally permissive. ``workflow_run:`` triggers are NOT
+    path-filterable (GitHub ignores ``paths`` under ``workflow_run``),
+    so this helper looks specifically at ``pull_request``.
+    """
+    return bool(workflow.get("pull_request_path_filtered", False))
+
+
+def workflow_has_unconditional_listener(workflow: dict, job_name: str) -> bool:
+    """Return True if ``workflow`` satisfies the Issue #3810 GH-listener
+    pattern for ``job_name``.
+
+    A workflow satisfies the listener pattern iff:
+
+    * **(a) No path filter.** ``workflow_has_pull_request_path_filter``
+      returns False — every PR class triggers the workflow and the
+      existing job(s) emit unconditionally.
+    * **(b) Has an unconditional listener.** The workflow's ``jobs``
+      block contains a job whose ``name:`` equals ``job_name`` AND
+      whose top-level ``if:`` is ``always()`` (so the listener fires
+      even when the upstream was ``skipped`` by a path-filter
+      elsewhere in the workflow — the GH-probe / Hetzner-overflow
+      listener convention, AGENTS.md "Required checks sync discipline").
+
+    Used by the 6th invariant in ``collect_drift`` to detect the
+    exact gap #3805 documented: a path-filtered required check whose
+    workflow has NO unconditional listener. Branch protection can name
+    such a check, but it never reports on docs-only / scripts-only
+    PRs — leaving develop with an unsatisfied context list that the
+    wave orchestrator (not CI) has to monitor.
+    """
+    # (a) No path filter → the existing job emission covers every PR.
+    if not workflow_has_pull_request_path_filter(workflow):
+        return True
+
+    # (b) An unconditional listener job must exist with the exact
+    # emitted name AND carry `if: always()` at the job level.
+    job_unconditional = workflow.get("job_unconditional") or {}
+    for jid, jname in workflow.get("jobs", {}).items():
+        if jname != job_name:
+            continue
+        if job_unconditional.get(jid, False):
+            return True
+
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Drift detection
 # ---------------------------------------------------------------------------
@@ -380,15 +516,22 @@ def collect_drift(
     required_checks: list[str],
     workflow_index: list[dict],
     workflows: dict[str, dict],
+    workflow_only_checks: list[str] | None = None,
 ) -> tuple[list[str], list[str]]:
-    """Run all four invariants and return ``(failures, informational)``.
+    """Run all six invariants and return ``(failures, informational)``.
 
     ``failures`` is non-empty when the script must exit 1; ``informational``
     is for findings that are not blocking (e.g. ``workflow_index`` entries
     that intentionally live outside ``required_checks``).
+
+    The 6th invariant (Issue #3810) was added with the ``workflow_only_checks``
+    parameter so existing callers do not have to pass it (defaulting to
+    ``None`` runs the first five invariants and skips the new check).
+    The ``main()`` invocation passes the parsed value.
     """
     failures: list[str] = []
     informational: list[str] = []
+    workflow_only_checks = workflow_only_checks or []
 
     workflow_index_jobs: dict[str, dict] = {}
     for entry in workflow_index:
@@ -478,6 +621,75 @@ def collect_drift(
             informational.append(
                 f"workflow_index.job {job!r} is not referenced by any "
                 f"required_check (intentionally opt-in or stale?)"
+            )
+
+    # Issue #3810 — 6th invariant: every `required_checks_workflow_only`
+    # entry must satisfy the GH-listener pattern (Issue #3116 verbatim
+    # match + the unconditional listener convention). The path-filtered
+    # workflow's `pull_request:` block is skipped on docs-only /
+    # scripts-only PRs — branch protection names the check but no
+    # check run is emitted, leaving develop with an unsatisfied
+    # required context list. The remediation is either:
+    #
+    #   (a) host the listener in an unfiltered workflow (the Option B
+    #       `rust-tests-listeners.yml` pattern), OR
+    #   (b) add an additive `name: <exact>` job to the path-filtered
+    #       workflow with `if: always()` so the listener fires even
+    #       when the upstream was skipped by the path filter.
+    #
+    # The invariant enforces BOTH the workflow_index mapping (so the
+    # listener's owning workflow is recorded) AND the listener's
+    # `if: always()` marker (so a future contributor cannot forget it
+    # in a copy-paste from #3358's pattern).
+    for rc in workflow_only_checks:
+        entry = workflow_index_jobs.get(rc)
+        if entry is None:
+            # Invariant 4 above already reports a missing
+            # workflow_index entry for `required_checks` — same gap
+            # applies to `required_checks_workflow_only`, but only
+            # when the workflow_only entry lacks a workflow_index row
+            # entirely. The drift message is intentionally precise
+            # so the contributor can fix either side.
+            failures.append(
+                f"required_checks_workflow_only {rc!r} has no "
+                f"workflow_index entry — Issue #3810 requires a "
+                f"workflow_index mapping so the listener's owning "
+                f"workflow is recorded for the drift gate."
+            )
+            continue
+        wf_path = entry.get("workflow") or ""
+        wf = workflows.get(wf_path)
+        if wf is None:
+            # Invariant 1 above already reports a missing workflow
+            # file — the GH-listener pattern check is moot without
+            # the file on disk.
+            continue
+        if not workflow_has_unconditional_listener(wf, rc):
+            # Actionable remediation: list the two pattern options so
+            # the contributor can pick (a) or (b) without reading the
+            # whole issue thread.
+            is_path_filtered = workflow_has_pull_request_path_filter(wf)
+            job_names = sorted(wf["jobs"].values())
+            unconditional_jobs = sorted(
+                jid
+                for jid, is_unconditional in (
+                    wf.get("job_unconditional") or {}
+                ).items()
+                if is_unconditional
+            )
+            failures.append(
+                f"required_checks_workflow_only {rc!r} ({wf_path}) is "
+                f"path-filtered and has no unconditional listener that "
+                f"emits the required-check name (Issue #3810). "
+                f"path-filtered={is_path_filtered}; unconditional jobs in "
+                f"workflow: {unconditional_jobs}; emitted job names: "
+                f"{job_names}. "
+                f"Remediation: either (a) move the listener to an "
+                f"unfiltered workflow (rust-tests-listeners.yml Option B "
+                f"pattern), or (b) add an additive listener job to "
+                f"{wf_path} with `name: {rc!r}` and `if: always()` "
+                f"that classifies `success`/`skipped` as PASS and "
+                f"`failure`/`cancelled`/`timed_out` as FAIL."
             )
 
     return failures, informational
@@ -742,35 +954,40 @@ def main() -> int:
     print()
 
     failures, informational = collect_drift(
-        required_checks, workflow_index, workflows
+        required_checks, workflow_index, workflows, workflow_only_checks
     )
     failures.extend(
         collect_doc_count_drift(required_checks, workflow_only_checks)
     )
 
     print(
-        "[1/6] every workflow_index entry references an existing "
+        "[1/7] every workflow_index entry references an existing "
         ".github/workflows/*.yml file ..."
     )
     print(
-        "[2/6] every workflow_index.job matches a jobs.<id>.name in that "
+        "[2/7] every workflow_index.job matches a jobs.<id>.name in that "
         "workflow EXACTLY (no canonical+suffix tolerance — Issue #3116) ..."
     )
     print(
-        "[3/6] every workflow_index workflow declares a pull_request or "
+        "[3/7] every workflow_index workflow declares a pull_request or "
         "workflow_run trigger ..."
     )
     print(
-        "[4/6] every required_check has a matching workflow_index entry "
+        "[4/7] every required_check has a matching workflow_index entry "
         "(exact job-string equality) AND no canonical-vs-suffix drift ..."
     )
     print(
-        "[5/6] the 'NN checks' count literals in AGENTS.md and "
+        "[5/7] the 'NN checks' count literals in AGENTS.md and "
         "docs/ci/branch-protection-strict-mode.md match the parsed "
         "release_gates.yaml list lengths (Issue #3441) ..."
     )
     print(
-        "[6/6] when FLUXION_CHECK_LIVE_PROTECTION=1, the live "
+        "[6/7] every required_checks_workflow_only entry has an "
+        "unconditional listener in its hosting workflow (Issue #3810 "
+        "GH-listener pattern) ..."
+    )
+    print(
+        "[7/7] when FLUXION_CHECK_LIVE_PROTECTION=1, the live "
         "develop branch protection matches release_gates.yaml ..."
     )
     print()
