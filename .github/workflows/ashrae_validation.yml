@@ -930,7 +930,7 @@ jobs:
   # `release_gates.yaml` under `ci.required_checks`.
   # =====================================================================
   surrogate-ashrae-mae-gate:
-    name: Surrogate ASHRAE 140 MAE Gate (Issue #2924)
+    name: "Surrogate ASHRAE 140 MAE Gate (Issue #2924)"
     # Issue #3445: persistent self-hosted runners MUST NOT execute
     # PR-controlled code. The surrogate MAE gate is the per-timestep
     # ±1% ASHRAE 140 drift gate — letting PR code touch a persistent
@@ -1132,7 +1132,7 @@ jobs:
   # `-listener` to avoid colliding with the upstream
   # `surrogate-ashrae-mae-gate` id.
   surrogate-ashrae-mae-gate-listener:
-    name: Surrogate ASHRAE 140 MAE Gate (Issue #2924)
+    name: "Surrogate ASHRAE 140 MAE Gate (Issue #2924)"
     needs: [surrogate-ashrae-mae-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 5

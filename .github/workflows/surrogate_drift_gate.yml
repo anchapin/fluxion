@@ -124,7 +124,7 @@ env:
 
 jobs:
   surrogate-drift-gate:
-    name: Surrogate Drift Tolerance Gate (Issue #1784)
+    name: "Surrogate Drift Tolerance Gate (Issue #1784)"
     runs-on: >-
       ${{
         github.event_name == 'push'

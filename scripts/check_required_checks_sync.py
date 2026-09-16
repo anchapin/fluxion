@@ -288,7 +288,13 @@ _JOB_RE = re.compile(
     r"^  ([A-Za-z_][A-Za-z0-9_-]*):\n((?:    +\S[^\n]*\n){1,15})",
     re.MULTILINE,
 )
-_NAME_RE = re.compile(r'^    name:\s*"?(?P<v>[^"\n]+)"?', re.MULTILINE)
+_NAME_RE = re.compile(
+    r"^    name:\s*"
+    r'(?:"(?P<v>[^"\n]*)"|'  # double-quoted (literal; `#` is allowed inside)
+    r"'(?P<v2>[^'\n]*)'|"     # single-quoted (literal; `#` is allowed inside)
+    r"(?P<v3>[^\"'\n#]+))",   # unquoted: stop at `#` (YAML comment marker) too
+    re.MULTILINE,
+)
 # Detect the `if: always()` directive at the top of a job block. The
 # listener pattern (Issue #3810 / #3358) is exactly this: a job whose
 # `name:` equals a required-check string and whose `if:` is `always()`.
@@ -349,7 +355,12 @@ def parse_workflow(path: Path) -> dict:
             block = jm.group(2)
             nm = _NAME_RE.search(block)
             if nm:
-                job_names[jid] = nm.group("v").strip()
+                # The regex captures into named groups v (double-quoted),
+                # v2 (single-quoted), or v3 (unquoted). All three carry
+                # the same semantic — emit the value as the GitHub
+                # check_run name — but only one will be set per match.
+                emitted = nm.group("v") or nm.group("v2") or nm.group("v3")
+                job_names[jid] = emitted.strip()
             # Issue #3810: `if: always()` at the job level is the
             # marker for the GH-listener pattern (the listener is
             # unconditional — fires even if the upstream was skipped

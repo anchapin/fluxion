@@ -787,7 +787,7 @@ jobs:
   # is exercised even when no physical GPU is present.
 
   cuda-smoke:
-    name: CUDA Smoke Test (Issue #1603)
+    name: "CUDA Smoke Test (Issue #1603)"
     runs-on: >-
       ${{
         github.event_name == 'push'
@@ -846,7 +846,7 @@ jobs:
   # The job uses continue-on-error so a missing GPU runner does not fail CI.
 
   cuda-parity:
-    name: CUDA Parity (Issue #1895)
+    name: "CUDA Parity (Issue #1895)"
     runs-on: >-
       ${{
         github.event_name == 'push'

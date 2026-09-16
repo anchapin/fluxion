@@ -76,7 +76,15 @@ def _workflow_yaml(job_name: str, triggers=("pull_request",)) -> str:
     Default trigger set is just ``pull_request``. The job name is placed
     after ``runs-on:`` to mirror the real workflows that have it second
     (e.g. ``architecture_drift.yml``) — the parser must tolerate that.
+
+    Job names containing ``#`` are auto-quoted — unquoted ``#NNNN)``
+    is a YAML comment marker and would silently truncate the name
+    (Issue: GH check_run names get clipped mid-string). This mirrors
+    the post-#3810 fix that quoted every ``(Issue #NNNN)`` /
+    ``(LIMIT-NN)`` job name across ``.github/workflows/*.yml``.
     """
+    needs_quoting = "#" in job_name or any(c in job_name for c in '"\'\\')
+    name_field = f'"{job_name}"' if needs_quoting else job_name
     on_block = "\n".join(f"  {t}:" for t in triggers)
     return (
         f"name: Test Workflow\n"
@@ -87,7 +95,7 @@ def _workflow_yaml(job_name: str, triggers=("pull_request",)) -> str:
         f"jobs:\n"
         f"  the-job:\n"
         f"    runs-on: ubuntu-latest\n"
-        f"    name: {job_name}\n"
+        f"    name: {name_field}\n"
         f"    steps:\n"
         f"      - run: echo hello\n"
     )
@@ -1092,6 +1100,80 @@ def test_parse_workflow_tolerates_continuation_indentation(checker, tmp_path):
     assert "folded" in parsed["jobs"]
     assert parsed["jobs"]["folded"] == "Folded Listener (GH)"
     assert parsed["job_unconditional"]["folded"] is True
+
+
+def test_parse_workflow_truncates_unquoted_hash_in_job_name(checker, tmp_path):
+    """Regression guard for the YAML-comment bug: an unquoted job
+    ``name:`` containing ``(Issue #NNNN)`` is parsed by YAML as if
+    ``#NNNN)`` were a comment, so the real emitted name is truncated
+    (e.g. ``"My Gate (Issue "``). GitHub Actions emits the
+    YAML-parsed name, NOT the regex-captured full string — so the
+    Issue #3810 listener pattern silently fails to satisfy branch
+    protection's exact-match contract.
+
+    The fix: ``_NAME_RE`` stops at the first ``#`` in unquoted
+    names. This test asserts that behaviour so any future refactor
+    that re-introduces the full-string capture is caught.
+
+    Companion to the in-tree fix that quoted every
+    ``(Issue #NNNN)`` / ``(LIMIT-NN)`` job name across
+    ``.github/workflows/*.yml`` (PR #3829 follow-up).
+    """
+    text = (
+        "name: Hash Bug Job\n"
+        "\n"
+        "on:\n"
+        "  pull_request:\n"
+        "\n"
+        "jobs:\n"
+        "  buggy:\n"
+        "    name: My Gate (Issue #1234)\n"
+        "    runs-on: ubuntu-latest\n"
+        "    if: always()\n"
+        "    steps:\n"
+        "      - run: echo done\n"
+    )
+    target = _write_path(tmp_path / "_HASH.yml", text)
+    parsed = checker.parse_workflow(target)
+    assert "buggy" in parsed["jobs"]
+    # The captured name must STOP at `#` (YAML comment marker), matching
+    # what GitHub Actions will actually emit on the wire. The full
+    # "My Gate (Issue #1234)" string would silently fail branch
+    # protection's exact-match check. ``.strip()`` removes the trailing
+    # space that survives the regex capture (YAML trims trailing
+    # whitespace too, so GitHub's emitted check name matches).
+    assert parsed["jobs"]["buggy"] == "My Gate (Issue", (
+        f"YAML-comment truncation regressed: got {parsed['jobs']['buggy']!r}; "
+        "an unquoted `#` in a job name is a YAML comment marker and must "
+        "be excluded from the captured name."
+    )
+
+
+def test_parse_workflow_preserves_hash_in_quoted_job_name(checker, tmp_path):
+    """Companion to ``test_parse_workflow_truncates_unquoted_hash_in_job_name``:
+    a QUOTED ``name:`` containing ``#`` MUST preserve the full string
+    — quotes escape YAML comment interpretation. This is the canonical
+    fix that the in-tree quoting pass adopted (Issue #3810 follow-up).
+    """
+    text = (
+        "name: Hash Quoted Job\n"
+        "\n"
+        "on:\n"
+        "  pull_request:\n"
+        "\n"
+        "jobs:\n"
+        "  quoted:\n"
+        '    name: "My Gate (Issue #1234)"\n'
+        "    runs-on: ubuntu-latest\n"
+        "    if: always()\n"
+        "    steps:\n"
+        "      - run: echo done\n"
+    )
+    target = _write_path(tmp_path / "_HASHQ.yml", text)
+    parsed = checker.parse_workflow(target)
+    assert "quoted" in parsed["jobs"]
+    # Quotes escape the YAML comment marker — full string preserved.
+    assert parsed["jobs"]["quoted"] == "My Gate (Issue #1234)"
 
 
 def test_main_passes_when_workflow_only_listener_satisfies_pattern(

@@ -75,7 +75,7 @@ permissions:
 
 jobs:
   docs-hygiene:
-    name: Docs Hygiene Gate (Issue #2466)
+    name: "Docs Hygiene Gate (Issue #2466)"
     runs-on: ubuntu-latest
 
     steps:

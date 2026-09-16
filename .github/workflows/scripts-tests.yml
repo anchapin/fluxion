@@ -53,7 +53,7 @@ permissions:
 
 jobs:
   scripts-tests:
-    name: Scripts Test Suite (Issue #2817)
+    name: "Scripts Test Suite (Issue #2817)"
     runs-on: ubuntu-latest
 
     steps:

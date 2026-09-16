@@ -175,7 +175,7 @@ env:
 
 jobs:
   strict-energy-gate:
-    name: ASHRAE 140 Strict Energy Gate (Issue #1333)
+    name: "ASHRAE 140 Strict Energy Gate (Issue #1333)"
     runs-on: >-
       ${{
         github.event_name == 'push'
@@ -307,7 +307,7 @@ jobs:
   # `-listener` to avoid colliding with the upstream
   # `strict-energy-gate` id.
   strict-energy-gh-listener:
-    name: ASHRAE 140 Strict Energy Gate (Issue #1333)
+    name: "ASHRAE 140 Strict Energy Gate (Issue #1333)"
     needs: [strict-energy-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 5

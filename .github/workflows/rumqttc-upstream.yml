@@ -58,7 +58,7 @@ permissions:
 
 jobs:
   rumqttc-upstream-watch:
-    name: rumqttc Upstream Watch (Issue #2853)
+    name: "rumqttc Upstream Watch (Issue #2853)"
     runs-on: ubuntu-latest
     permissions:
       contents: read
