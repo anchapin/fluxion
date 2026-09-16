@@ -12,7 +12,7 @@
 - **Date:** 2026-09-15 (record created)
 - **Deciders:** Fluxion maintainers
 - **Supersedes:** None (refines the required-checks policy documented in `release_gates.yaml` and `docs/ci/branch-protection-strict-mode.md`)
-- **Depends on:** Planning session 2026-09-15 (throughput plan); `.planning/CONTEXT.md` (pipeline glossary); Issue #1505 (queue-stall detector precedent); ADR-0015 (per-`head_sha` concurrency)
+- **Depends on:** Planning session 2026-09-15 (throughput plan); `.planning/CONTEXT.md` (pipeline glossary); Issue #1505 (queue-stall detector precedent); ADR-0015 (per-`head_sha` concurrency); Issue #3804 (weekly progress telegram that tracks Summary 7/7 acceptance)
 
 ## Context
 
@@ -28,3 +28,8 @@ As per Summary 2/7: three lanes, deny-list path filters, nightly authority bound
 - The blind window for lane-3 properties (cross-platform determinism, perf, coverage) extends from 0 to ≤ one nightly cycle (~18 h), bounded by the merge freeze.
 - `docs/agents/pre-push-checklist.md` (pre-push ladder + fix-push etiquette) reduces fix-loop iterations; the wave-mix rule (≥1 `milestone`-labeled issue per wave) redirects throughput at the v1.3 scorecard rather than pure hygiene burn-down.
 - Rollback: revert the lane-split PR and re-apply prior branch protection (the diff/protection checker scripts verify both directions).
+
+## Companion artifacts
+
+- **Weekly progress telegram — Issue #3804.** The pinned v1.3 progress tracker. Every Monday, [`scripts/progress_telegram.py`](../../scripts/progress_telegram.py) (triggered by [`.github/workflows/progress_telegram.yml`](../../.github/workflows/progress_telegram.yml) on cron `0 7 * * 1`) posts a markdown comment on issue #3804 that reports the Summary 7/7 acceptance metrics in flight: ASHRAE 140 metric pass-rate + cases-fully-passing (parsed from `validation/performance_history.latest.json` and the canonical `SCORECARD.md`); `milestone`-labelled vs hygiene merge mix; physics/hygiene cycle-time p50s; fix-loop rate; cancelled-run share; and the LIMIT-gap count from `docs/KNOWN_ISSUES.md`. Week-over-week deltas are derived statelessly from a machine-readable marker embedded in the previous comment (no committed state file — same pattern as the β-soak streak tracker, Issue #3286). The 30-day acceptance window closes when the weekly metrics clear all six targets; the issue stays open as the ongoing tracker.
+- **Glossary.** `.planning/CONTEXT.md` defines the `Progress telegram` entry in the wave-pipeline vocabulary so future agents do not reinvent the term.
