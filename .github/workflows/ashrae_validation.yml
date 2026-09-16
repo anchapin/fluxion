@@ -81,6 +81,26 @@ on:
   pull_request:
     branches: [main, develop]
     types: [opened, synchronize, reopened, ready_for_review]
+    # ADR-0016 lane 2 (deny-list semantics): this workflow (ASHRAE blind
+    # validation + isolation suites and the Surrogate MAE gate) is skipped
+    # only when EVERY changed file is clearly irrelevant to the physics
+    # path class (docs/markdown/license/git-hygiene metadata). Any
+    # unexpected file type — any .rs anywhere, Cargo.toml/Cargo.lock,
+    # scripts/**, .github/workflows/** — still triggers this workflow.
+    # Fail-safe by construction: an unrecognized diff runs the gauntlet.
+    # NOTE: the workflow_run listeners (determinism/perf/energy/
+    # rustfmt/clippy/cycle gates) below are NOT affected by paths-ignore —
+    # workflow_run triggers have no path filtering.
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '**.md'
+      - '**.mdx'
+      - 'LICENSE'
+      - '**/LICENSE'
+      - '.gitignore'
+      - '.gitattributes'
+      - '.editorconfig'
   # Issue #1351: mirror the Cross-Platform Determinism CI conclusion
   # into this workflow as a single non-matrix "Fluxion Determinism Gate"
   # check that branch protection can reference. The listener only fires

@@ -579,20 +579,46 @@ impl GaugeZoneSolver {
         let h_vent = 0.0;
         let h_total = h_vent + h_inf;
 
+        // Issue #3817 — envelope conductance H = Σ (area / R) over the zone's
+        // opaque exterior surfaces. Without including H in the implicit
+        // coupling the gauge's step formula treats the surface heat flux as
+        // a constant w.r.t. T_air (it isn't — `q = (T_ext − T_air)/R`), and
+        // the resulting scheme is conditionally stable: it diverges once
+        // H · dt > C_air. Case 900FF (heavyweight concrete walls, low R) hits
+        // that regime; Case 600 (lightweight) does not — both routes share
+        // the same code, only the wall spec differs.
+        //
+        // Correct implicit Euler for the coupled ODE
+        //   C_air · dT/dt = −(H + h_inf) · T + (H + h_inf) · T_ext + Q_internal
+        // evaluates BOTH the envelope flux and the infiltration coupling at
+        // T_new, giving:
+        //   T_new = (C_air · T_old + dt · ((H + h_inf) · T_ext + Q_internal))
+        //         / (C_air + dt · (H + h_inf))
+        // Stability then reduces to |dT_new/dT_old| = C_air / (C_air + dt·(H+h_inf))
+        // which is unconditionally < 1 (was |C_air − H·dt| / (C_air + h_inf·dt)
+        // in the old formula — could exceed 1).
+        let h_surface_total: f64 = self
+            .surfaces
+            .iter()
+            .filter(|s| !s.surface_type.is_inter_zone())
+            .filter_map(|s| {
+                let r = s.wall_spec.as_ref()?.total_r_value();
+                if r > 0.0 && r.is_finite() {
+                    Some(s.area_m2 / r)
+                } else {
+                    None
+                }
+            })
+            .sum();
+        let h_eff = h_surface_total + h_total;
+
         // Update zone air temperature using implicit Euler (unconditionally stable):
-        // T_air_new = (C_air * T_air_old + Q_net * dt) / (C_air + h_total * dt)
-        //
-        // This is equivalent to solving:
-        //   C_air * (T_new - T_old)/dt = Q_net + h_total * (T_out - T_new)
-        // which implicit Euler handles by evaluating the coupling at T_new.
-        //
-        // Stability comparison (explicit Euler):
-        //   dt/τ = dt * h_total / C_air
-        //   For Case 650: dt/τ ≈ 3.5 (UNSTABLE, exceeds limit of 2)
-        //   For Case 600: dt/τ ≈ 0.5 (stable, but implicit is still preferred)
+        // T_air_new = (C_air · T_air_old + dt · ((H + h_inf) · T_ext + Q_internal))
+        //           / (C_air + dt · (H + h_inf))
         let T_air_old = self.T_air;
-        self.T_air = (self.C_air * T_air_old + net_power_watts * dt_seconds)
-            / (self.C_air + h_total * dt_seconds);
+        let T_ext_val = T_exterior.to_value();
+        self.T_air = (self.C_air * T_air_old + dt_seconds * (h_eff * T_ext_val + Q_internal_w))
+            / (self.C_air + h_eff * dt_seconds);
 
         // Add infiltration heat contribution to net power for return value
         net_power_watts += Q_infiltration_w;
@@ -705,10 +731,48 @@ impl GaugeZoneSolver {
             * self.zone_volume;
         let h_total = h_inf;
 
-        // Update zone air temperature using implicit Euler
+        // Issue #3817 — fully implicit Euler including envelope + inter-zone
+        // conductance in the coupling. Without these terms the gauge treats
+        // surface and inter-zone fluxes as constant w.r.t. T_air, which is
+        // unstable for high-mass / low-R constructions (see step() comment
+        // for derivation; identical math extended with inter-zone terms).
+        let h_surface_total: f64 = self
+            .surfaces
+            .iter()
+            .filter(|s| !s.surface_type.is_inter_zone())
+            .filter_map(|s| {
+                let r = s.wall_spec.as_ref()?.total_r_value();
+                if r > 0.0 && r.is_finite() {
+                    Some(s.area_m2 / r)
+                } else {
+                    None
+                }
+            })
+            .sum();
+        let h_inter_zone_total: f64 = self.couplings.iter().map(|c| c.conductance).sum();
+        let h_eff = h_surface_total + h_total + h_inter_zone_total;
+
+        // Σ_j H_ij · T_adj,j — inter-zone driving term evaluated at the
+        // adjacent zones' current T_air (explicit on the coupling; this is
+        // the Gauss-Seidel ordering the multi-zone step already uses for
+        // the coupling vector itself).
+        let inter_zone_drive: f64 = self
+            .couplings
+            .iter()
+            .filter_map(|c| {
+                let t_adj = adjacent_temperatures.get(&c.adjacent_zone_id)?.to_value();
+                Some(c.conductance * t_adj)
+            })
+            .sum();
+
         let T_air_old = self.T_air;
-        self.T_air = (self.C_air * T_air_old + net_power_watts * dt_seconds)
-            / (self.C_air + h_total * dt_seconds);
+        let T_ext_val = bc.T_exterior.to_value();
+        // Numerator: C_air·T_old + dt · ((H_ext + h_inf)·T_ext + Σ H_ij·T_j + Q_internal).
+        // Denominator: C_air + dt · (H_ext + h_inf + Σ H_ij).
+        self.T_air = (self.C_air * T_air_old
+            + dt_seconds
+                * ((h_surface_total + h_total) * T_ext_val + inter_zone_drive + bc.Q_internal_w))
+            / (self.C_air + h_eff * dt_seconds);
 
         // Return net energy in kWh
         let energy_kwh = -(net_power_watts * dt_seconds) / 3_600_000.0;

@@ -194,9 +194,15 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #     modules (stale one-arg ``from_case_spec`` calls and moved
 #     ``ThermalModel`` mass fields) so these tests actually run again.
 #     No new binaries and no ignore-count changes.
-BASELINE_LIB_TESTS = 4325
+#   - 2026-09-15 (Issue #3741): bumped ``BASELINE_LIB_TESTS`` from 4325
+#     to 4326 and ``BASELINE_WORKSPACE_TESTS`` from 8694 to 8695 for the
+#     new fail-closed egress allow-list release-decision table test in
+#     ``src/api/email_notification.rs``
+#     (``endpoint_allowlist_release_decision_table``). No new binaries
+#     and no ignore-count changes.
+BASELINE_LIB_TESTS = 4326
 BASELINE_LIB_IGNORED = 9
-BASELINE_WORKSPACE_TESTS = 8694
+BASELINE_WORKSPACE_TESTS = 8695
 # 2026-09-12 (Issue #3711): 121 -> 133 — see the history entry above for
 # the per-crate attribution and the AST-vs-cargo calibration analysis.
 BASELINE_WORKSPACE_IGNORED = 133
