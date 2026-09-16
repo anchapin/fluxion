@@ -10,8 +10,8 @@
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use rand::rngs::SmallRng;
-use rand::Rng;
 use rand::SeedableRng;
+use rand::{Rng, RngExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -517,7 +517,7 @@ pub struct MarkovOccupancyProvider {
 impl MarkovOccupancyProvider {
     pub fn new(generator: MarkovOccupancyGenerator) -> Self {
         Self {
-            simulation_rng: SmallRng::from_os_rng(),
+            simulation_rng: SmallRng::from_rng(&mut rand::rng()),
             generator,
             current_state: OccupancyState::Vacant,
         }
@@ -745,7 +745,7 @@ mod tests {
     #[test]
     fn test_markov_state_transition() {
         let g = MarkovOccupancyGenerator::new(BuildingType::Office, 10, 100.0);
-        let mut rng = SmallRng::from_os_rng();
+        let mut rng = SmallRng::from_rng(&mut rand::rng());
         let state = g.generate_state(&mut rng, OccupancyState::Vacant, 9, DayOfWeek::Tuesday);
         assert!(matches!(
             state,

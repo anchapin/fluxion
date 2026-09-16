@@ -81,6 +81,26 @@ on:
   pull_request:
     branches: [main, develop]
     types: [opened, synchronize, reopened, ready_for_review]
+    # ADR-0016 lane 2 (deny-list semantics): this workflow (ASHRAE blind
+    # validation + isolation suites and the Surrogate MAE gate) is skipped
+    # only when EVERY changed file is clearly irrelevant to the physics
+    # path class (docs/markdown/license/git-hygiene metadata). Any
+    # unexpected file type — any .rs anywhere, Cargo.toml/Cargo.lock,
+    # scripts/**, .github/workflows/** — still triggers this workflow.
+    # Fail-safe by construction: an unrecognized diff runs the gauntlet.
+    # NOTE: the workflow_run listeners (determinism/perf/energy/
+    # rustfmt/clippy/cycle gates) below are NOT affected by paths-ignore —
+    # workflow_run triggers have no path filtering.
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '**.md'
+      - '**.mdx'
+      - 'LICENSE'
+      - '**/LICENSE'
+      - '.gitignore'
+      - '.gitattributes'
+      - '.editorconfig'
   # Issue #1351: mirror the Cross-Platform Determinism CI conclusion
   # into this workflow as a single non-matrix "Fluxion Determinism Gate"
   # check that branch protection can reference. The listener only fires
@@ -226,7 +246,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo test --test case_900_determinism --release -- --nocapture 2>&1 | tee case900_output.txt
+          cargo test --test all_tests case_900_determinism:: --release -- --nocapture 2>&1 | tee case900_output.txt
 
       - name: Extract determinism values
         id: extract
@@ -433,7 +453,7 @@ jobs:
       - name: Run ASHRAE 140 Validation Tests
         id: validation
         run: |
-          cargo test --test ashrae_140_validation --release -- --nocapture 2>&1 | tee validation_output.txt
+          cargo test --test all_tests ashrae_140_validation:: --release -- --nocapture 2>&1 | tee validation_output.txt
           echo "exit_code=$?" >> $GITHUB_OUTPUT
 
       - name: Extract Validation Results
@@ -596,7 +616,14 @@ jobs:
 
       - name: CI Gate Check
         id: gate
-        continue-on-error: true  # advisory on PRs; hard gate on push/schedule
+        # Issue #3763 audit (known-red validation site): the 80% pass-rate
+        # gate is expected-red until the §LIMIT-* cohort in
+        # docs/KNOWN_ISSUES.md closes (GaugeSolver routing #1465/#1462/#3297),
+        # so on pull_request events this is advisory only. It is NOT
+        # best-effort: the "Fail if validation gate failed (non-PR)" step
+        # below re-raises steps.gate.outcome == 'failure' on push/schedule
+        # events.
+        continue-on-error: true
         if: always()
         run: |
           python3 << 'PYEOF'
@@ -698,7 +725,7 @@ jobs:
           set -euo pipefail
           echo "::notice::Issue #1505 fallback: re-running ASHRAE 140 blind validation on GitHub-hosted ubuntu-latest after a 10-min self-hosted queue stall."
           echo "Primary validate result was: ${{ needs.validate.result }}"
-          cargo test --test ashrae_140_validation --release -- --nocapture 2>&1 | tee validation_fallback_output.txt
+          cargo test --test all_tests ashrae_140_validation:: --release -- --nocapture 2>&1 | tee validation_fallback_output.txt
 
   # Module isolation tests - each module must match EnergyPlus within 1% tolerance.
   # Issue #1351: every isolation job now explicitly `needs: compare-hashes` so the
@@ -734,7 +761,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Run Weather Isolation Tests
-        run: cargo test --test weather_isolation --release
+        run: "cargo test --test all_tests weather_isolation:: --release"
 
   isolation-solar:
     name: Solar Isolation
@@ -765,7 +792,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Run Solar Isolation Tests
-        run: cargo test --test solar_isolation --release
+        run: "cargo test --test all_tests solar_isolation:: --release"
 
   isolation-conduction:
     name: Conduction Isolation
@@ -796,7 +823,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Run Conduction Isolation Tests
-        run: cargo test --test conduction_5r1c_isolation --release
+        run: "cargo test --test all_tests conduction_5r1c_isolation:: --release"
 
   isolation-ventilation:
     name: Ventilation Isolation
@@ -827,7 +854,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Run Ventilation Isolation Tests
-        run: cargo test --test ventilation_infiltration_vs_energyplus --release
+        run: "cargo test --test all_tests ventilation_infiltration_vs_energyplus:: --release"
 
   isolation-zone-balance:
     name: Zone Balance Isolation
@@ -858,7 +885,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Run Zone Balance Isolation Tests
-        run: cargo test --test zone_balance_eplus_isolation --release
+        run: "cargo test --test all_tests zone_balance_eplus_isolation:: --release"
 
   # =====================================================================
   # Issue #2924 — Surrogate ASHRAE 140 MAE Gate (Cases 600/900 cooling)
@@ -999,7 +1026,7 @@ jobs:
         # 8, which trips the regex on most runs.
         run: |
           stdbuf -oL -eL cargo test --release --features ort --verbose \
-            --test surrogate_ashrae_600_cooling_mae \
+            --test all_tests surrogate_ashrae_600_cooling_mae:: \
             -- --nocapture --test-threads=1 \
             > /tmp/surrogate_mae_gate_output.txt \
             2> /tmp/surrogate_mae_gate_stderr.txt
@@ -1020,9 +1047,13 @@ jobs:
           # cargo harness's "test X ... ok" line. The original strict
           # regex `\.\.\. (ok|ignored|FAILED)` is restored now that the
           # captured stdout is clean.
+          # Issue #3764 — the consolidated `tests/all_tests` harness prints
+          # module-qualified names (`test <module>::<name> ... ok`); an
+          # optional `<module>::` prefix is tolerated between `test ` and
+          # the test name.
           check_coverage() {
             local name="$1"
-            if grep -qE "(^|[^[:alnum:]_])test $name \.\.\. (ok|ignored|FAILED)" /tmp/surrogate_mae_gate_output.txt; then
+            if grep -qE "(^|[^[:alnum:]_])test ([a-z0-9_]+::)?$name \.\.\. (ok|ignored|FAILED)" /tmp/surrogate_mae_gate_output.txt; then
               echo "  COVERED: $name"
             else
               echo "  DROPPED FROM GATE: $name"
@@ -1038,9 +1069,11 @@ jobs:
 
           echo
           echo "=== Surrogate ASHRAE 140 MAE gate result extraction ==="
+          # Issue #3764: tolerate module-qualified names in the PASSED
+          # extractor (`test <module>::surrogate_annual_cooling_...`).
           FAILED=$(grep -cE '(^|[^[:alnum:]_])test .* \.\.\. FAILED' /tmp/surrogate_mae_gate_output.txt || true)
           PANICS=$(grep -cE 'panicked at' /tmp/surrogate_mae_gate_output.txt || true)
-          PASSED=$(grep -cE '(^|[^[:alnum:]_])test (surrogate_annual_cooling_|reference_json_files_).* \.\.\. ok' /tmp/surrogate_mae_gate_output.txt || true)
+          PASSED=$(grep -cE '(^|[^[:alnum:]_])test ([a-z0-9_]+::)?(surrogate_annual_cooling_|reference_json_files_).* \.\.\. ok' /tmp/surrogate_mae_gate_output.txt || true)
           RESOLVED_MODE="${{ steps.gate-mode.outputs.mode }}"
 
           echo "  Passed        : $PASSED"
@@ -1115,7 +1148,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Run Quantum Python Verification
-        run: cargo test --test quantum_python_verification --release
+        run: "cargo test --test all_tests quantum_python_verification:: --release"
 
   gauge-python-diagnostic:
     name: Gauge Python Diagnostic
@@ -1146,7 +1179,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - name: Run Gauge Python Diagnostic
-        run: cargo test --test gauge_python_diagnostic --release
+        run: "cargo test --test all_tests gauge_python_diagnostic:: --release"
 
 
   # =====================================================================

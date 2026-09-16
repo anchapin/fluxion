@@ -63,10 +63,16 @@ jobs:
       - name: Run ASHRAE 140 Validation Tests
         id: validation
         run: |
-          cargo test --test ashrae_140_validation --release -- --nocapture 2>&1 | tee validation_output.txt
+          cargo test --test all_tests ashrae_140_validation:: --release -- --nocapture 2>&1 | tee validation_output.txt
           TEST_EXIT=$?
           echo "test_exit_code=$TEST_EXIT" >> $GITHUB_OUTPUT
           exit 0  # Always continue to generate report
+        # Issue #3763 audit (known-red validation site): masks the raw test
+        # exit of the ASHRAE 140 suite, which is structurally red at the
+        # metric level (§LIMIT-* cohort in docs/KNOWN_ISSUES.md, routed to
+        # GaugeSolver #1465/#1462/#3297). The report/gate steps below must
+        # still run to produce artifacts and the advisory/hard gate. No
+        # validation baseline or tolerance change is made by this mask.
         continue-on-error: true
 
       - name: Extract Validation Results
@@ -203,7 +209,13 @@ jobs:
 
       - name: Check Validation Results
         id: check
-        continue-on-error: true  # advisory on PRs; hard gate on push/schedule
+        # Issue #3763 audit (known-red validation site): the release-gate
+        # check is expected-red until the §LIMIT-* cohort in
+        # docs/KNOWN_ISSUES.md closes (GaugeSolver routing #1465/#1462/#3297),
+        # so on pull_request events this is advisory only. It is NOT
+        # best-effort: the terminal "Fail if validation gate failed" step
+        # re-raises steps.check.outcome == 'failure' on push/schedule events.
+        continue-on-error: true
         run: |
           # Run centralized release gate checker for validation gates
           python3 scripts/release_gate_checker.py \
@@ -253,6 +265,10 @@ jobs:
               )
               print("PR comment result:", result.returncode)
           EOF
+        # Issue #3763 audit: cosmetic best-effort — masks only a failed
+        # `gh pr comment` post. The durable signal is the report artifact
+        # uploaded above (if: always()); a comment-posting failure must
+        # not fail the workflow.
         continue-on-error: true
 
       - name: Fail if validation gate failed

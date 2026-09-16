@@ -422,7 +422,9 @@ config) so it can be checked mechanically, not just by process.
   allow-list is what bounds what leaves the process.
 - **Auth mode (Issue #2505).** Set `FLUXION_REST_AUTH=token|tls` for any
   network-reachable bind; `off` is refused for `0.0.0.0` release builds unless
-  `FLUXION_REST_ALLOW_INSECURE=1`.
+  `FLUXION_REST_ALLOW_INSECURE=1`. A *configured* `FLUXION_REST_AUTH_TOKEN`
+  shorter than 16 bytes refuses boot in release builds (Issue #3743); generate
+  secrets of at least that length (e.g. `openssl rand -base64 32`).
 - **CORS (Issue #2505).** `FLUXION_REST_CORS_ORIGINS` must be an explicit
   origin allow-list (never permissive).
 - **Rate limiting (Issue #2505).** Tune `FLUXION_REST_RATE_LIMIT_RPS` /

@@ -4,7 +4,7 @@ generate_perf_baseline.py — generate/regenerate tests/perf_baseline.json.
 
 This is the canonical "regenerate" command referenced by the fail-loud guard
 in tests/performance_regression_test.rs (issue #2680). It runs the SAME
-harness CI uses — `cargo test --test performance_regression_test --release
+harness CI uses — `cargo test --test all_tests performance_regression_test:: --release
 test_performance_regression` (population=100) — N times, parses the printed
 `Throughput:` / `Latency per config:` lines, and writes the median to
 `tests/perf_baseline.json` (computed via Python statistics.median, per
@@ -116,7 +116,7 @@ def main() -> int:
         "_meta": {
             "measured_at": datetime.now(timezone.utc).date().isoformat(),
             "methodology": (
-                "Median of N runs of `cargo test --test performance_regression_test "
+                "Median of N runs of `cargo test --test all_tests performance_regression_test:: "
                 "--release test_performance_regression` (population=100, 1 warmup + "
                 "1 measured per run). Same harness CI's absolute-perf-gate (#2693) "
                 "and performance.yml use. Computed via Python statistics.median "

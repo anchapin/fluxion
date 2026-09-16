@@ -195,17 +195,53 @@ jobs:
           cargo nextest run \
             -p fluxion \
             --lib \
-            --test surface_flux_provider_isolation \
-            --test regression_exterior_film_unification \
+            --test all_tests surface_flux_provider_isolation:: \
             --test validation_empirical_harness \
             --test hvac_bestest \
             -p fluxion-behavior --test lighting_occupancy_integration \
             -p fluxion-twin --test mqtt_ukf_integration --test ukf_covariance_stability --test ukf_van_der_pol --test websocket_memory_leak \
             --test-threads=2 \
             --no-fail-fast \
+            ${{ matrix.feature_set.flags }} && \
+          cargo nextest run \
+            -p fluxion \
+            --test all_tests regression_exterior_film_unification:: \
+            --test-threads=2 \
+            --no-fail-fast \
             ${{ matrix.feature_set.flags }}
         env:
           PYO3_PYTHON: /usr/bin/python3
+
+      # Issue #3755: the `python-bindings` feature set was invisible to the
+      # PR path — nothing in this workflow compiled `--features
+      # python-bindings`, so 10 compile errors from API drift (the #1773
+      # annealer-trait addition and an `hvac` field path change in the model
+      # bindings) accumulated silently on develop until the #3720 wave-1
+      # sub-agent tripped over them. PR #3782 (issue #3749) fixed the call
+      # sites mechanically; this step compiles the feature set and runs the
+      # `python::` lib tests (~161 tests) on every PR so the blind spot
+      # cannot reopen. The full OS x Python wheel + pytest matrices stay in
+      # python-bindings.yml (nightly + main, issue #3567 moved them off the
+      # PR path). Pinned to ONE matrix leg (Linux + "no-default") so the
+      # extra cargo build is paid once per PR, not three times; the
+      # lib-test compile covers every `#[cfg(feature = "python-bindings")]`
+      # module in src/python/ regardless of which tests the filter selects.
+      # Env mirrors the established python-bindings.yml pattern:
+      # PYO3_USE_ABI3_FORWARD_COMPATIBILITY is already workflow-level above;
+      # RUST_MIN_STACK enlarges the build thread stack (32 MiB) for the
+      # PyO3 link step, as in .github/workflows/python-bindings.yml.
+      - name: Python bindings feature tests (Issue #3755)
+        if: runner.os == 'Linux' && matrix.feature_set.name == 'no-default'
+        env:
+          RUST_MIN_STACK: 33554432
+        run: |
+          cargo nextest run \
+            -p fluxion \
+            --lib \
+            --features python-bindings \
+            python:: \
+            --test-threads=2 \
+            --no-fail-fast
 
   # ---------------------------------------------------------------------------
   # Issue #2133: Hetzner autoscaling overflow
@@ -250,8 +286,8 @@ jobs:
           python-version: '3.10'
       - name: Run energy conservation tests
         run: |
-          cargo test --test test_energy_conservation --verbose 2>&1 | tee /tmp/energy_test_output.txt
-          cargo test --test zone_balance_eplus_isolation --verbose 2>&1 | tee /tmp/zone_balance_test_output.txt
+          cargo test --test all_tests test_energy_conservation:: --verbose 2>&1 | tee /tmp/energy_test_output.txt
+          cargo test --test all_tests zone_balance_eplus_isolation:: --verbose 2>&1 | tee /tmp/zone_balance_test_output.txt
       - name: Extract violation counts
         run: |
           echo "=== Energy Conservation Test Results ==="
@@ -287,8 +323,8 @@ jobs:
           python-version: '3.10'
       - name: Run energy conservation tests
         run: |
-          cargo test --test test_energy_conservation --verbose 2>&1 | tee /tmp/energy_test_output.txt
-          cargo test --test zone_balance_eplus_isolation --verbose 2>&1 | tee /tmp/zone_balance_test_output.txt
+          cargo test --test all_tests test_energy_conservation:: --verbose 2>&1 | tee /tmp/energy_test_output.txt
+          cargo test --test all_tests zone_balance_eplus_isolation:: --verbose 2>&1 | tee /tmp/zone_balance_test_output.txt
       - name: Extract violation counts
         run: |
           echo "=== Energy Conservation Test Results ==="
@@ -468,7 +504,7 @@ jobs:
       - name: Run tests
         run: |
           cargo test --lib --verbose --no-default-features
-          cargo test --test regression_exterior_film_unification --verbose --no-default-features
+          cargo test --test all_tests regression_exterior_film_unification:: --verbose --no-default-features
           # Issue #1803 / Plan T10.1 — empirical validation harness skeleton.
           cargo test --test validation_empirical_harness --verbose --no-default-features
           # Issue #1756 — HVAC BESTEST CI runner stub (dummy, always-green).
@@ -792,7 +828,7 @@ jobs:
         run: cargo build --features cuda --verbose
       - name: Run CUDA smoke test
         if: steps.cuda.outputs.cuda_available == 'true'
-        run: cargo test --test surrogate_cuda_smoke --features cuda --verbose
+        run: "cargo test --test all_tests surrogate_cuda_smoke_test:: --features cuda --verbose"
         env:
           PYO3_PYTHON: /usr/bin/python3
 
@@ -850,7 +886,7 @@ jobs:
         run: cargo build --features cuda --features ort --verbose
       - name: Run CUDA parity test
         if: steps.cuda.outputs.cuda_available == 'true'
-        run: cargo test --test surrogate_backend_parity --features cuda --features ort -- --ignored
+        run: "cargo test --test all_tests surrogate_backend_parity:: --features cuda --features ort -- --ignored"
         env:
           PYO3_PYTHON: /usr/bin/python3
       - name: Upload parity test results

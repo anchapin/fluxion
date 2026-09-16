@@ -215,6 +215,12 @@ fn insecure_bind_ipv6_wildcards_and_garbage() {
         AuthMode::Off,
         false
     ));
+    // Issue #3742 — the bracketed bare wildcard `[::]` (no port) is now
+    // resolved by the shared canonical resolver and correctly flagged;
+    // pre-#3742 it slipped past the raw-string parser while the
+    // listener's `{bind}:{port}` concatenation happily bound `[::]:port`
+    // (all IPv6 interfaces).
+    assert!(is_insecure_bind_configuration("[::]", AuthMode::Off, false));
     // Any auth mode other than Off clears the flag, even on 0.0.0.0.
     assert!(!is_insecure_bind_configuration(
         "0.0.0.0",
@@ -344,6 +350,224 @@ fn boot_guard_from_env_allow_insecure_opt_out() {
         check_boot_guard_from_env().is_ok(),
         "ALLOW_INSECURE=1 must opt out of the TLS boot guard"
     );
+}
+
+// ---- Issue #3743: weak-token boot guard (min FLUXION_REST_AUTH_TOKEN length) ----
+
+/// Issue #3743 acceptance: the pure decision function flags `token`/`tls`
+/// with a *configured* token shorter than [`MIN_REST_AUTH_TOKEN_BYTES`]
+/// (boundary: 15 bytes insecure, 16 bytes fine), leaves `off` mode
+/// unaffected, treats an unset token as out of scope (the `require_auth`
+/// middleware already fails closed per-request), and honours
+/// `FLUXION_REST_ALLOW_INSECURE=1` as the explicit opt-out. The
+/// release-only wiring in [`check_boot_guard_from_env`] is exercised by
+/// the binary; unit tests target the decision function so they are
+/// deterministic in debug builds (mirroring the #2505 bind-guard test
+/// strategy).
+#[test]
+fn weak_token_boot_guard_boundary_and_mode_scoping() {
+    let ok = "a".repeat(MIN_REST_AUTH_TOKEN_BYTES); // exactly 16 bytes
+    let short = "a".repeat(MIN_REST_AUTH_TOKEN_BYTES - 1); // 15 bytes
+    assert_eq!(ok.len(), 16);
+    assert_eq!(short.len(), 15);
+
+    // `token` mode: 15 bytes → insecure, 16 bytes → fine.
+    assert!(is_weak_auth_token_configuration(
+        AuthMode::Token,
+        Some(&short),
+        false
+    ));
+    assert!(!is_weak_auth_token_configuration(
+        AuthMode::Token,
+        Some(&ok),
+        false
+    ));
+
+    // `tls` mode: the bearer token is the direct-client fallback — a
+    // configured short token is refused there too.
+    assert!(is_weak_auth_token_configuration(
+        AuthMode::Tls,
+        Some(&short),
+        false
+    ));
+    assert!(!is_weak_auth_token_configuration(
+        AuthMode::Tls,
+        Some(&ok),
+        false
+    ));
+
+    // `off` mode is unaffected: a short (or unset) token never trips the
+    // guard when auth is disabled.
+    assert!(!is_weak_auth_token_configuration(
+        AuthMode::Off,
+        Some(&short),
+        false
+    ));
+    assert!(!is_weak_auth_token_configuration(
+        AuthMode::Off,
+        None,
+        false
+    ));
+
+    // An unset token is out of scope for this guard: `token` mode fails
+    // closed per-request in [`require_auth`], and `tls` mode legitimately
+    // runs header-only. An empty *string* is zero bytes — flagged
+    // defensively — although the env-reading paths normalize empty to
+    // unset before the decision function ever sees it.
+    assert!(!is_weak_auth_token_configuration(
+        AuthMode::Token,
+        None,
+        false
+    ));
+    assert!(!is_weak_auth_token_configuration(
+        AuthMode::Tls,
+        None,
+        false
+    ));
+    assert!(is_weak_auth_token_configuration(
+        AuthMode::Token,
+        Some(""),
+        false
+    ));
+
+    // FLUXION_REST_ALLOW_INSECURE=1 is the explicit opt-out, mirroring the
+    // sibling bind/TLS boot guards.
+    assert!(!is_weak_auth_token_configuration(
+        AuthMode::Token,
+        Some(&short),
+        true
+    ));
+    assert!(!is_weak_auth_token_configuration(
+        AuthMode::Tls,
+        Some(&short),
+        true
+    ));
+}
+
+// ---- Issue #3742: canonical bind resolver + unresolvable-bind guard ----
+
+/// Issue #3742 acceptance: [`resolve_rest_bind_addr`] is the single
+/// parsing path shared by the listener (`resolve_addr` in
+/// `src/bin/fluxion_rest.rs`) and the boot guard. Pin the accepted forms
+/// (bare v4/v6, bracketed bare v6, host:port with the embedded port
+/// winning, scheme prefix, trimming), the rejected forms (hostnames such
+/// as `localhost`, garbage, empty — every error names the variable so the
+/// release abort is actionable), and the guard/listener agreement: the
+/// #2505 wildcard verdict ([`is_insecure_bind_configuration`]) is always
+/// computed from the address [`resolve_rest_bind_addr`] returns, and the
+/// #3742 guard ([`is_unresolvable_bind_configuration`]) flags exactly the
+/// values the resolver rejects — so the address the guard judged is the
+/// address that gets bound. The release-only wiring in
+/// [`check_boot_guard_from_env`] is exercised by the binary; unit tests
+/// target the decision functions so they are deterministic in debug
+/// builds (mirroring the #2505 / #3743 test strategy).
+#[test]
+fn rest_bind_resolver_matrix_and_guard_parity() {
+    let port: u16 = 9090;
+
+    // Accepted forms — each resolves to the exact socket address the
+    // listener will bind.
+    let assert_resolves = |raw: &str, expect: &str| {
+        let sa = resolve_rest_bind_addr(raw, port)
+            .unwrap_or_else(|e| panic!("'{raw}' must resolve: {e}"));
+        assert_eq!(
+            sa,
+            expect.parse::<SocketAddr>().unwrap(),
+            "raw='{raw}' must resolve to {expect}"
+        );
+    };
+    assert_resolves("127.0.0.1", "127.0.0.1:9090");
+    // Stray whitespace (e.g. a Kubernetes ConfigMap value) is trimmed.
+    assert_resolves("  10.0.0.5\n", "10.0.0.5:9090");
+    // Bare IPv6 — the legacy `{bind}:{port}` concatenation mangled these
+    // into a parse failure (and then a silent 0.0.0.0 fallback).
+    assert_resolves("::1", "[::1]:9090");
+    assert_resolves("::", "[::]:9090");
+    // Bracketed bare IPv6 was accepted by the legacy concatenation; keep.
+    assert_resolves("[::1]", "[::1]:9090");
+    assert_resolves("0.0.0.0", "0.0.0.0:9090");
+    // A full socket address wins: the embedded port overrides the
+    // FLUXION_REST_PORT-sourced `port` argument.
+    assert_resolves("127.0.0.1:443", "127.0.0.1:443");
+    assert_resolves("[::]:80", "[::]:80");
+    // Scheme prefix is stripped (parity with the pre-#3742 guard).
+    assert_resolves("https://127.0.0.1", "127.0.0.1:9090");
+
+    // Rejected forms — the exact values whose legacy behaviour was the
+    // silent 0.0.0.0 widening. Every error names FLUXION_REST_BIND so
+    // the release-build abort points at the offending variable.
+    for bad in [
+        "localhost",
+        "localhost:8080",
+        "fluxion.internal",
+        "",
+        "   ",
+        "0.0.0.0:not-a-port",
+        "not-a-host",
+    ] {
+        let err = resolve_rest_bind_addr(bad, port)
+            .err()
+            .unwrap_or_else(|| panic!("'{bad}' must be rejected"));
+        assert!(err.contains("FLUXION_REST_BIND"), "got: {err}");
+    }
+
+    // Guard/listener parity — the Issue #3742 pin. For every accepted
+    // value the wildcard verdict matches the *resolved* address; for
+    // every rejected value the unresolvable-bind guard flags it (and
+    // only those). If either side ever switches to a different parser,
+    // this loop is where the drift shows up.
+    for raw in [
+        "127.0.0.1",
+        "::1",
+        "[::1]:8080",
+        "0.0.0.0:9000",
+        "::",
+        "[::]",
+        "http://0.0.0.0",
+        "localhost",
+        "not-a-host",
+        "",
+    ] {
+        match resolve_rest_bind_addr(raw, port) {
+            Ok(sa) => {
+                assert!(
+                    !is_unresolvable_bind_configuration(raw, false),
+                    "'{raw}' resolves; the #3742 guard must not flag it"
+                );
+                assert_eq!(
+                    is_insecure_bind_configuration(raw, AuthMode::Off, false),
+                    sa.ip().is_unspecified(),
+                    "wildcard verdict must match the address that gets bound: '{raw}'"
+                );
+            }
+            Err(_) => {
+                assert!(
+                    is_unresolvable_bind_configuration(raw, false),
+                    "'{raw}' does not resolve; the #3742 guard must flag it"
+                );
+                // Preserved #2505 semantics: an unparseable value is not
+                // *itself* a wildcard bind — the #3742 guard aborts on it
+                // separately in release builds.
+                assert!(
+                    !is_insecure_bind_configuration(raw, AuthMode::Off, false),
+                    "'{raw}' is unparseable, not wildcard: {raw:?}"
+                );
+            }
+        }
+    }
+
+    // FLUXION_REST_ALLOW_INSECURE=1 is the explicit opt-out, mirroring
+    // the sibling bind / TLS / weak-token boot guards.
+    assert!(!is_unresolvable_bind_configuration("localhost", true));
+    assert!(!is_unresolvable_bind_configuration("", true));
+
+    // The exported defaults are exactly what the binary's
+    // resolve_bind()/resolve_port() fall back to, so the guard judges
+    // the same default address the listener binds when the variables
+    // are unset.
+    assert_eq!(DEFAULT_REST_BIND, "0.0.0.0");
+    assert_eq!(DEFAULT_REST_PORT, 8080);
+    assert!(resolve_rest_bind_addr(DEFAULT_REST_BIND, DEFAULT_REST_PORT).is_ok());
 }
 
 // ---- RateLimiter clamping edge ----

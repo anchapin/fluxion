@@ -3,6 +3,14 @@
 //! This module provides an Energy Management System framework for overriding HVAC setpoints,
 //! schedules, and equipment status based on custom logic executed at each simulation timestep.
 //!
+//! # Disposition (Issue #3748)
+//!
+//! Intentionally wired-but-dead: this module is the planned EMS integration
+//! surface (demand response, optimal start/stop) and is parked until the
+//! simulation loop consumes it. Tracked in
+//! `tests/reference_data/wired_but_dead_dispositions.json` — a cleanup PR
+//! must not delete it without flipping its `keep-dead` disposition first.
+//!
 //! # Architecture
 //!
 //! - **EmsGlobalVariable**: Named numeric values that programs can read/write

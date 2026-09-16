@@ -66,7 +66,7 @@ case "$ZONES" in
     ;;
 esac
 
-if cargo test --features dhat --test multi_zone_n_zone_network -- "$TEST_TARGET" --nocapture 2>&1; then
+if cargo test --features dhat --test all_tests multi_zone_n_zone_network:: -- "$TEST_TARGET" --nocapture 2>&1; then
   echo "Simulation completed"
 else
   echo "ERROR: Simulation failed" >&2

@@ -49,7 +49,7 @@ fn epw_hour_to_local_std(epw_hour: usize) -> (i32, u32, u32, f64) {
 /// Parse reference CSV for surface irradiance.
 /// Columns: hour(1-8760), beam_irradiance(W/m2), ground_diffuse_irradiance(W/m2)
 fn parse_reference_csv() -> Vec<(usize, f64, f64)> {
-    let csv = include_str!("reference_data/solar/surface_irradiance_south.csv");
+    let csv = include_str!("../reference_data/solar/surface_irradiance_south.csv");
     csv.lines()
         .filter(|line| !line.starts_with('#') && !line.is_empty())
         .filter_map(|line| {
@@ -257,7 +257,7 @@ fn test_beam_irradiance_vs_energyplus() {
     assert_eq!(reference.len(), 8760, "Should have 8760 hours of data");
 
     // Load Denver EPW weather data
-    let epw_data = include_bytes!("test_data/denver.epw");
+    let epw_data = include_bytes!("../test_data/denver.epw");
     let epw_reader = Cursor::new(&epw_data[..]);
     let weather_records =
         EpwWeatherSource::parse_epw_v3(epw_reader).expect("Failed to parse Denver EPW file");
@@ -350,7 +350,7 @@ fn test_ground_diffuse_vs_energyplus() {
     assert_eq!(reference.len(), 8760, "Should have 8760 hours of data");
 
     // Load Denver EPW weather data
-    let epw_data = include_bytes!("test_data/denver.epw");
+    let epw_data = include_bytes!("../test_data/denver.epw");
     let epw_reader = Cursor::new(&epw_data[..]);
     let weather_records =
         EpwWeatherSource::parse_epw_v3(epw_reader).expect("Failed to parse Denver EPW file");

@@ -543,7 +543,7 @@ def criterion_2_failures() -> dict[str, Any]:
             "program (Issue #1465 / #1462 / #3059 — NOT a constant or "
             "baseline change).",
             "Verify nightly Criterion 2 goes green: cargo test --locked "
-            "--features gauge-solver --test zone_balance_eplus_isolation",
+            "--features gauge-solver --test all_tests zone_balance_eplus_isolation::",
             "Wait for 30 consecutive green nightly runs; the workflow "
             "computes the streak from gh run list and writes "
             "beta-soak-state.json.",

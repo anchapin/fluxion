@@ -336,25 +336,38 @@ mod tests {
         );
     }
 
-    #[ignore = "awaiting #3629"]
+    #[ignore = "awaiting #3770"]
     #[test]
     fn test_thermal_mass_temperature_damping() {
-        // SKIP: This test is currently failing due to Session 84 physics changes
-        // The thermal mass temperature reaches 141°C due to low target_tau_hours (2.0)
-        // This is a known issue that requires deeper physics investigation
-        // TODO: Fix the physics parameters or update the test expectations
-        //
-        // Original test:
-        // let spec = ASHRAE140Case::Case900.spec();
-        // let mut model = ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default()).expect("default selector must initialize");
-        // let surrogates = SurrogateManager::new().expect("Failed to create surrogate manager");
-        // let initial_mass_temp: f64 = model.mass.mass_temperatures.as_ref()[0];
-        // model.solve_timesteps(24, &surrogates, false, None, None, None);
-        // let final_mass_temp: f64 = model.mass.mass_temperatures.as_ref()[0];
-        // assert!(final_mass_temp > -50.0 && final_mass_temp < 100.0);
+        // Quarantined per #3753: the Session-84 physics regression tracked by
+        // #3770 drives the mass node to 141°C after 24 h (suspected cause, as
+        // recorded in the original inline pin: low target_tau_hours (2.0)).
+        // The original damping assertions below are restored verbatim and kept
+        // ignored so the un-ignore criterion is mechanically verifiable when
+        // #3770 closes. The -50..100 °C band is a physical plausibility bound,
+        // not a tuned baseline — do NOT relax it (RULES.md).
+        use crate::ai::surrogate::SurrogateManager;
 
-        // Placeholder assertion to keep test passing
-        // Test skipped due to Session 84 physics changes - see TODO comment
+        let spec = ASHRAE140Case::Case900.spec();
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
+        let surrogates = SurrogateManager::new().expect("Failed to create surrogate manager");
+
+        let initial_mass_temp: f64 = model.mass.mass_temperatures.as_ref()[0];
+        model.solve_timesteps(24, &surrogates, false, None, None, None);
+        let final_mass_temp: f64 = model.mass.mass_temperatures.as_ref()[0];
+
+        // Temperature damping: the mass node must track the driving weather
+        // schedule and stay within physical bounds (original assertion band).
+        assert!(
+            final_mass_temp > -50.0 && final_mass_temp < 100.0,
+            "Mass node left the physical plausibility band (-50..100 °C): \
+             initial {initial_mass_temp:.2} °C -> final {final_mass_temp:.2} °C \
+             (Session-84 regression, see #3770)"
+        );
     }
 
     #[test]

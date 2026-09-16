@@ -73,7 +73,11 @@ Production-code callers are defined as:
   * Other ``src/**/*.rs`` files (outside the module's own subtree)
   * Top-level ``tests/*.rs`` (Cargo auto-discovered test targets per
     AGENTS.md — ``tests/<subdir>/*.rs`` are NOT Cargo targets and are
-    excluded)
+    excluded), PLUS the file universe of the root crate's explicit
+    ``[[test]] path = "tests/<sub>/<root>.rs"`` targets (Issue #3764
+    consolidated-harness convention): a harness root such as
+    ``tests/all_tests/main.rs`` and the sibling files it wires in via
+    ``mod`` declarations ARE compiled test code and count as callers
   * ``examples/*.rs`` (if any examples exist)
 
 Excluded from caller scope: ``benches/`` (intentional external consumers
@@ -84,22 +88,110 @@ Cfg-gated declarations (``#[cfg(feature = "...")] pub mod foo;``) are
 SKIPPED — these are intentional opt-in surfaces whose caller scope is
 inherently feature-dependent.
 
+Dead-code-allow inventory (Issue #3752)
+---------------------------------------
+A third companion check governs the ``#[allow(dead_code)]`` attributes in
+production (non-test) code. At the density the #3752 audit measured
+(~100 occurrences concentrated in solver-adjacent modules such as
+``src/physics/state_space_ctf/mod.rs`` and ``src/ai/surrogate/session_pool.rs``),
+compiler-level dead-code signal is disabled exactly where solver internals
+evolve fastest, and no Goal #5 tooling could see it: the orphan detector
+above works at file granularity, not item granularity.
+
+The mechanism is a checked-in inventory —
+``tests/reference_data/dead_code_inventory.json`` — that records every
+production ``#[allow(dead_code)]`` site with a tracking-issue reference
+(the "#3752" governing issue until a site gains its own follow-up issue).
+This satisfies the issue's acceptance clause "each existing
+``#[allow(dead_code)]`` either gains an issue reference (or is deleted)"
+at the registry level without churning 42 production files; deleting an
+attribute remains the preferred resolution and shrinks the inventory
+through ``--update-dead-code-inventory``.
+
+Gate semantics (mirroring the downward-only ratchet convention of the
+quarantine registry, Issue #3443):
+
+1. **New-site rejection** — a live production site that is absent from
+   the inventory fails CI. The fix is either to delete the attribute or
+   to add the entry (with a tracking issue) via
+   ``--update-dead-code-inventory`` and justify it in review.
+2. **Stale-entry rejection** — an inventory entry whose site no longer
+   exists in code fails CI, keeping the registry in lock-step with the
+   tree (same lock-step convention as the test-inventory drift gate,
+   Issue #3442).
+3. **Downward-only count ratchet** — ``BASELINE_DEAD_CODE_ALLOWS`` is
+   the highest production count this guard accepts. The script fails the
+   moment the live count exceeds it. Cleanup PRs are expected to lower
+   the baseline by one per resolved attribute; raising it requires a
+   documenting comment naming the tracking issue.
+
+Measurement scope (canonical definition): ``src/**/*.rs`` of the root
+``fluxion`` crate (``src/bin/`` excluded — those are standalone binary
+targets, mirroring the orphan universe), block comments stripped,
+occurrence-counted, with ``#[cfg(test)]`` inline module bodies excluded
+so test-only suppressions never count against the production ratchet.
+Inner ``#![allow(...)]`` module-level attributes are out of scope (none
+exist today). The #3752 audit headline of "100 across 43 files" came
+from a looser raw-text match that included 3 sites inside
+``#[cfg(test)]`` bodies; the canonical production-only scan seeds the
+baseline at 94 across 42 files.
+
+Per-module disposition registry (Issue #3748)
+---------------------------------------------
+A fourth companion check requires every ``WIRED_BUT_DEAD`` entry to
+carry an explicit, owner-assigned disposition in a checked-in registry
+— ``tests/reference_data/wired_but_dead_dispositions.json`` — mirroring
+the #3752 inventory pattern. The ``BASELINE_WIRED_BUT_DEAD`` ratchet is
+downward-only with no forcing function (the #3555 burn-down removed 11
+entries, but nothing scheduled the remaining 22); the registry is that
+forcing function. Allowed dispositions:
+
+  * ``wire-pending``  a production consumer is planned; the module
+    stays until the wiring lands (or the decision flips to reject).
+  * ``reject``        slated for deletion in a cleanup PR; that PR must
+    delete the module, drop the allowlist entry, lower
+    ``BASELINE_WIRED_BUT_DEAD`` by one, and drop the registry row.
+  * ``keep-dead``     intentional dead surface with a documented
+    rationale (e.g. a parked roadmap module, or a helper surface whose
+    callers are excluded from caller scope by design).
+
+Gate semantics (mirroring the lock-step convention of the dead-code
+inventory, Issue #3443's downward-only ratchet convention stays
+untouched):
+
+1. **Coverage** — every live wired-but-dead module AND every
+   ``WIRED_BUT_DEAD`` allowlist entry must have a registry row, and
+   each row must carry a ``disposition`` from the enum above plus
+   ``issue``, ``owner``, and a non-empty ``rationale``.
+2. **Lock-step** — a registry row whose module is no longer
+   wired-but-dead (it was wired up or deleted) fails CI; drop the row
+   in the same PR that resolves the module.
+3. The count ratchet itself remains ``BASELINE_WIRED_BUT_DEAD``
+   (downward-only, Issue #3458); the registry adds the per-module
+   wire-or-delete decision and owner the ratchet lacked.
+
 Usage
 -----
     python3 scripts/check_orphan_modules.py
+    python3 scripts/check_orphan_modules.py --update-dead-code-inventory
 
 Exit codes
 ----------
-    0 — no NEW orphan modules AND no NEW wired-but-dead modules
-    1 — one or more NEW orphan modules / wired-but-dead modules detected
-    2 — script error (e.g. ``src/lib.rs`` missing)
+    0 — no NEW orphan modules, no NEW wired-but-dead modules, the
+        dead-code-allow inventory is in lock-step at or below baseline,
+        and every wired-but-dead module carries a valid disposition
+    1 — one or more NEW orphan modules / wired-but-dead modules / new or
+        stale dead-code-allow sites, a missing/stale/invalid
+        disposition registry row, or the production count grew above
+        ``BASELINE_DEAD_CODE_ALLOWS``
+    2 — script error (e.g. ``src/lib.rs`` missing, a required registry
+        file absent)
 """
 
 from __future__ import annotations
 
+import json
 import re
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -210,7 +302,6 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
         "coupled_solver",
         "distributed",
         "doe_reference",
-        "empirical_hybrid",
         "equipment_surrogate",
         "epjson",
         "fdd",
@@ -248,7 +339,15 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
 #     31-module cleanup into this PR. Companion cleanup PRs that
 #     delete each module are expected to drop the matching entry AND
 #     lower BASELINE_WIRED_BUT_DEAD by one.
-BASELINE_WIRED_BUT_DEAD = 22  # lowered from 33 → 22 in PR for fluxion-#3555
+#   22 → 21 (Issue #3748): the wired-but-dead caller scope now counts
+#     the root crate's explicit ``[[test]]`` target universes (the
+#     Issue #3764 consolidated-harness convention). That correction
+#     revealed ``empirical_hybrid``'s compiled harness consumer
+#     (``tests/validation/hybrid_empirical_test.rs``, the
+#     ``validation_hybrid_empirical_test`` target) — the module is no
+#     longer wired-but-dead, so its allowlist entry and its Issue
+#     #3748 disposition row are dropped in the same PR.
+BASELINE_WIRED_BUT_DEAD = 21  # lowered from 22 → 21 in PR for fluxion-#3748 (was 33 → 22 in PR for fluxion-#3555)
 
 # Downward-only ratchet for the orphan allowlist (Issue #3459).
 #
@@ -296,6 +395,94 @@ BASELINE_KNOWN_ORPHANS = 0
 _BASELINE_KNOWN_ORPHANS_SET: frozenset[str] = frozenset(
     KNOWN_ORPHANS  # sentinel — must match KNOWN_ORPHANS at freeze time
 )
+
+# ---------------------------------------------------------------------------
+# Dead-code-allow inventory (Issue #3752).
+#
+# ``DEAD_CODE_INVENTORY_PATH`` is the checked-in registry of every production
+# (non-test) ``#[allow(dead_code)]`` site in the root crate. Each entry
+# carries the site's file, a stable signature (the first code line after the
+# attribute), a 1-based occurrence index disambiguating duplicate signatures
+# within one file, and the tracking issue that justifies the suppression.
+# Regenerate with ``--update-dead-code-inventory``; hand-edit only to change
+# an entry's ``issue`` reference.
+# ---------------------------------------------------------------------------
+DEAD_CODE_INVENTORY_PATH = (
+    REPO_ROOT / "tests" / "reference_data" / "dead_code_inventory.json"
+)
+
+# Governing issue for the seed inventory (#3752). Entries regenerated by
+# ``--update-dead-code-inventory`` default to this reference; a cleanup PR
+# that triages an individual site to a more specific follow-up issue edits
+# that entry's ``issue`` field by hand.
+DEAD_CODE_GOVERNING_ISSUE = 3752
+
+# Matches ``#[allow(dead_code)]`` and multi-lint forms such as
+# ``#[allow(dead_code, unused_imports)]``, consuming the attribute's closing
+# bracket so the site signature is extracted from the *item* that follows,
+# not from attribute punctuation. Inner ``#![allow(...)]`` module attributes
+# and ``#[cfg_attr(..., allow(...))]`` forms are deliberately out of scope
+# (none exist under src/ today; the detector fails closed on the forms it
+# can see rather than trying to parse every attribute spelling).
+_ALLOW_DEAD_CODE_RE = re.compile(r"#\[allow\([^)]*\bdead_code\b[^)]*\)\s*\]")
+
+# Matches the header of an inline ``#[cfg(test)] mod <name> { ... }`` body.
+# Everything inside the brace-matched span is test-only code and is excluded
+# from the production inventory (the compiler only applies ``allow`` during
+# test builds there, so it is not production dead-code debt).
+_CFG_TEST_BODY_RE = re.compile(
+    r"#\[cfg\(test\)\]\s*\n\s*"
+    r"(?:pub(?:\s*\([^)]*\))?\s+)?"
+    r"mod\s+[A-Za-z_][A-Za-z0-9_]*\s*\{"
+)
+
+# Downward-only ratchet on the production ``#[allow(dead_code)]`` count
+# (Issue #3752). Mirrors ``BASELINE_KNOWN_ORPHANS`` /
+# ``BASELINE_WIRED_BUT_DEAD`` above: the constant is the highest live
+# production count this guard accepts; the script fails (exit 1) the moment
+# the count grows past it. Cleanup PRs that delete suppressions are expected
+# to LOWER this baseline; raising it requires a documenting comment naming
+# the tracking issue that justifies the new suppressions.
+#
+# History:
+#   94 → seed (Issue #3752): initial inventory across 42 production files.
+#     The #3752 audit headline of "100 across 43 files" used a looser raw
+#     text match that included 3 sites inside ``#[cfg(test)]`` inline test
+#     bodies; this gate's canonical production-only measurement (block
+#     comments stripped, occurrence-counted, cfg(test) bodies excluded)
+#     seeds at 94.
+BASELINE_DEAD_CODE_ALLOWS = 94
+
+# ---------------------------------------------------------------------------
+# Wired-but-dead disposition registry (Issue #3748).
+#
+# ``WIRED_BUT_DEAD_DISPOSITIONS_PATH`` is the checked-in registry giving
+# every ``WIRED_BUT_DEAD`` allowlist entry an explicit, owner-assigned
+# wire-or-delete decision — the per-module forcing function the
+# downward-only ``BASELINE_WIRED_BUT_DEAD`` ratchet lacked. Allowed
+# dispositions are ``wire-pending`` / ``reject`` / ``keep-dead`` (see the
+# module docstring). Resolving a module requires dropping its allowlist
+# entry, lowering ``BASELINE_WIRED_BUT_DEAD`` by one, AND dropping its
+# registry row in the same PR (lock-step, like the dead-code inventory).
+# ---------------------------------------------------------------------------
+WIRED_BUT_DEAD_DISPOSITIONS_PATH = (
+    REPO_ROOT / "tests" / "reference_data" / "wired_but_dead_dispositions.json"
+)
+
+# Governing issue for the seed registry (#3748). A follow-up issue that
+# takes ownership of one module's decision edits that row's ``issue``
+# field by hand.
+WIRED_BUT_DEAD_GOVERNING_ISSUE = 3748
+
+# The only dispositions the gate accepts; anything else is a schema
+# violation and fails the check.
+ALLOWED_DISPOSITIONS: frozenset[str] = frozenset(
+    {"wire-pending", "reject", "keep-dead"}
+)
+
+# Max characters stored per site signature — long function signatures are
+# truncated deterministically so the JSON diff stays reviewable.
+_DEAD_CODE_SIGNATURE_MAX_LEN = 120
 
 # Match `mod foo;` / `pub mod foo;` / `pub(crate) mod foo;` / `mod foo {`.
 # We capture the *name* and skip a `;` or `{` terminator. ``cfg(...)`` and
@@ -603,6 +790,47 @@ def _enumerate_pub_mods() -> list[tuple[str, Path, Path]]:
     return out
 
 
+def _cargo_test_target_files() -> set[Path]:
+    """Return the file universe of the root crate's explicit ``[[test]]``
+    targets declared in ``Cargo.toml`` (Issue #3764 consolidation).
+
+    Each ``[[test]] path = "tests/<sub>/<root>.rs"`` entry contributes
+    its root file; a ``main.rs`` / ``mod.rs`` harness root (e.g.
+    ``tests/all_tests/main.rs``, which collapsed 263 standalone test
+    binaries into one target) additionally contributes the sibling
+    files it wires in via ``mod`` declarations — those siblings ARE
+    compiled by ``cargo test`` and therefore count as production-code
+    callers for the wired-but-dead detector. Ad-hoc ``tests/<sub>/``
+    files that no ``[[test]]`` target references remain excluded, per
+    AGENTS.md.
+    """
+    out: set[Path] = set()
+    manifest = REPO_ROOT / "Cargo.toml"
+    if not manifest.exists():
+        return out
+    text = manifest.read_text(encoding="utf-8", errors="replace")
+    for block_match in re.finditer(r"\[\[test\]\](.*?)(?=\n\[|\Z)", text, re.DOTALL):
+        path_match = re.search(r'path\s*=\s*"([^"]+)"', block_match.group(1))
+        if not path_match:
+            continue
+        root = (REPO_ROOT / path_match.group(1)).resolve()
+        if not root.is_file():
+            continue
+        out.add(root)
+        if root.name not in ("main.rs", "mod.rs"):
+            continue
+        cleaned = _clean_source(root.read_text(encoding="utf-8", errors="replace"))
+        for mod_match in _MOD_RE.finditer(cleaned):
+            if cleaned[mod_match.end() - 1] != ";":
+                continue
+            name = mod_match.group(1)
+            for candidate in _candidate_paths_for_mod(name, root.parent):
+                if candidate.exists() and candidate.is_file():
+                    out.add(candidate.resolve())
+                    break
+    return out
+
+
 def _production_caller_files() -> list[Path]:
     """Return the list of files whose contents count as production-code
     callers for the wired-but-dead detector.
@@ -613,7 +841,8 @@ def _production_caller_files() -> list[Path]:
       * ``tests/*.rs`` (top-level Cargo test targets per AGENTS.md;
         subdirectories like ``tests/validation/`` are NOT Cargo targets
         and are excluded so we don't false-positive on benchmark /
-        fixture helpers)
+        fixture helpers) — plus the explicit ``[[test]]`` target
+        universes from ``_cargo_test_target_files`` (Issue #3764)
       * ``examples/*.rs`` (Cargo's auto-discovery rule)
     """
     out: list[Path] = []
@@ -626,6 +855,7 @@ def _production_caller_files() -> list[Path]:
         for p in tests_dir.glob("*.rs"):
             if p.is_file():
                 out.append(p)
+    out.extend(sorted(_cargo_test_target_files()))
     examples_dir = REPO_ROOT / "examples"
     if examples_dir.exists():
         for p in examples_dir.glob("*.rs"):
@@ -643,24 +873,24 @@ def _find_wired_but_dead() -> tuple[list[str], list[str]]:
     not present in the ``WIRED_BUT_DEAD`` allowlist — those are the
     regressions that should fail CI.
 
-    Performance: with ~300 module names and ~700 production files,
-    running ripgrep ONCE PER MODULE is the fastest correct approach
-    (~300 invocations × ~10 ms each ≈ 3 s). A single combined regex
-    over all 300 module names works for ripgrep but is too slow in
-    pure Python (the negative-lookbehind-per-alternation regex takes
-    ~20 s per file). Per-module ripgrep keeps total runtime well
-    under a few seconds while staying trivially correct.
+    Performance: the caller scan is pure Python (no external tool
+    dependency). A historical ripgrep fast path silently SKIPPED the
+    detector when rg was absent — e.g. on GitHub-hosted runners — which
+    zeroed the live set and made every disposition-registry row look
+    stale (Issue #3748 CI failure). The two-stage scan below (one
+    identifier-tokenization pass per file, then the precise caller-form
+    regex only for candidate names actually present) keeps the whole
+    detector deterministic across environments at ~5 s total runtime.
 
-    The caller-form patterns ripgrep applies per-module are:
+    The caller-form patterns applied per module are:
 
       * ``mod_name::Bar`` — qualified path usage.
-      * ``use mod_name;`` / ``use mod_name::{...}`` — leaf import.
-      * ``pub use mod_name;`` / ``pub use mod_name::{...}`` — re-export.
+      * ``use mod_name;`` / ``use mod_name::{...}`` — leaf import
+        (``pub use mod_name;`` is subsumed: the leading ``\b`` holds
+        after ``pub``).
 
-    Each is combined into one alternation pattern per module and
-    passed to ``rg -e``. We accept the small false-positive risk
-    (e.g. a doc-comment word matching) over the runtime cost of a
-    per-file attribution pass.
+    We accept the small false-positive risk (e.g. a doc-comment word
+    matching) over the runtime cost of a per-file attribution pass.
     """
     if not SRC_DIR.exists():
         return [], []
@@ -688,32 +918,49 @@ def _find_wired_but_dead() -> tuple[list[str], list[str]]:
     # tests/<subdir>/ files are NOT Cargo test targets.
     allowed_files = {p.resolve() for p in _production_caller_files()}
 
-    rg = shutil.which("rg")
-    if rg is None:
-        print(
-            "WARNING: ripgrep (rg) not found on PATH; wired-but-dead "
-            "detector requires ripgrep for acceptable performance.",
-            file=sys.stderr,
+    # Caller detection is pure Python on purpose: the historical ripgrep
+    # fast path silently SKIPPED the detector when rg was absent (e.g. on
+    # GitHub-hosted runners), zeroing the live set and making every
+    # disposition-registry row look stale (Issue #3748 CI failure). A
+    # two-stage scan — one identifier-tokenization pass per file, then the
+    # precise caller-form regex only for candidate names actually present —
+    # keeps the whole detector deterministic across environments and fast
+    # enough (a few seconds) without any external tool dependency.
+    token_re = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+    precise_re = {
+        name: re.compile(
+            rf"\b{re.escape(name)}::"
+            rf"|\buse\s+{re.escape(name)}\s*[;{{]"
         )
-        return [], []  # Skip the check; the orphan detector above still runs.
+        for name in unique_mod_names
+    }
+    hits_by_module: dict[str, set[Path]] = {
+        name: set() for name in unique_mod_names
+    }
+    name_set = set(unique_mod_names)
+    for path in sorted(allowed_files):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        # Stage 1: which module names appear as identifiers at all?
+        candidates = {t for t in token_re.findall(text) if t in name_set}
+        if not candidates:
+            continue
+        # Stage 2: precise caller-form verification for the candidates.
+        # ``pub use name;`` is subsumed by the ``use`` alternative (the
+        # ``\b`` holds after ``pub``).
+        for name in candidates:
+            if precise_re[name].search(text):
+                hits_by_module[name].add(path)
 
     # Track which modules have at least one caller outside their own
     # subtree.
-    has_caller: dict[str, bool] = {name: False for name in unique_mod_names}
-
+    has_caller: dict[str, bool] = {}
     for mod_name in unique_mod_names:
         subtree = canonical_subtree[mod_name]
-        # Caller-form pattern: matches ``mod_name::Bar``,
-        # ``use mod_name;``, ``pub use mod_name;``.
-        # ``\b`` at the start prevents matching ``xmod_name::Bar``.
-        caller_pattern = (
-            rf"\b{re.escape(mod_name)}::"
-            rf"|\buse\s+{re.escape(mod_name)}\s*[;{{]"
-            rf"|\bpub\s+use\s+{re.escape(mod_name)}\s*[;{{]"
-        )
-        hits = _rg_files_with_match(rg, caller_pattern, allowed_files)
         external_hit = False
-        for hit in hits:
+        for hit in hits_by_module[mod_name]:
             try:
                 hit.relative_to(subtree)
                 continue  # hit IS inside the module's subtree
@@ -728,133 +975,437 @@ def _find_wired_but_dead() -> tuple[list[str], list[str]]:
     return raw, new
 
 
-def _rg_files_with_match(
-    rg_path: str, pattern: str, allowed_files: set[Path]
-) -> set[Path]:
-    """Run ripgrep with ``--files-with-matches`` for a single pattern and
-    return the subset of matches that fall within ``allowed_files``.
+def _cfg_test_body_spans(text: str) -> list[tuple[int, int]]:
+    """Return the ``(start, end)`` spans of inline ``#[cfg(test)] mod ... { }``
+    bodies (brace-matched, nesting-safe via sequential scanning).
 
-    Caller of this function is responsible for interpreting the result
-    (e.g. applying the per-module subtree filter); this function is a
-    thin wrapper that just runs rg and post-filters the hit list.
+    ``#[allow(dead_code)]`` occurrences inside these spans are test-only
+    suppressions: the compiler applies them only under ``cfg(test)``, so
+    they are not production dead-code debt and must never count against
+    the Issue #3752 production ratchet.
     """
-    cmd = [
-        rg_path,
-        "--files-with-matches",
-        "--no-heading",
-        "--no-messages",
-        "--type", "rust",
-        "-e", pattern,
-        ".",
-    ]
-    proc = subprocess.run(
-        cmd,
-        cwd=str(REPO_ROOT),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if proc.returncode not in (0, 1):
-        raise RuntimeError(
-            f"ripgrep failed (exit {proc.returncode}): {proc.stderr.strip()}"
-        )
-    hits: set[Path] = set()
-    for line in proc.stdout.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        path = (REPO_ROOT / line).resolve()
-        if path in allowed_files:
-            hits.add(path)
-    return hits
+    spans: list[tuple[int, int]] = []
+    for m in _CFG_TEST_BODY_RE.finditer(text):
+        open_brace_index = m.end() - 1
+        depth = 1
+        i = open_brace_index + 1
+        while i < len(text) and depth > 0:
+            ch = text[i]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+            i += 1
+        spans.append((m.start(), i))
+    return spans
 
 
-def _rg_scan(
-    rg_path: str, combined_pattern: str, allowed_files: set[Path]
-) -> set[Path]:
-    """Run ripgrep over the repo and return the set of files whose
-    contents match ``combined_pattern``, restricted to ``allowed_files``.
+def _dead_code_site_signature(text: str, search_from: int) -> str:
+    """Return the stable signature for an ``#[allow(dead_code)]`` site: the
+    first non-blank, non-comment, non-attribute line at or after
+    ``search_from`` (the attribute's end), whitespace-normalised and
+    truncated to ``_DEAD_CODE_SIGNATURE_MAX_LEN`` characters.
 
-    ``allowed_files`` is a set of resolved absolute paths so the
-    post-filter is a fast set membership check. The script restricts
-    the caller scope to src/, top-level tests/*.rs, and examples/*.rs;
-    benches/ and tests/<subdir>/ are deliberately excluded.
+    Line numbers are deliberately NOT part of a site's identity — any edit
+    above the attribute would otherwise shift unrelated entries and force
+    inventory churn. The signature survives unrelated edits because
+    doc-comments / sibling attributes between the attribute and its item
+    are skipped.
     """
-    cmd = [
-        rg_path,
-        "--files-with-matches",
-        "--no-heading",
-        "--no-messages",
-        "--type", "rust",
-        "-e", combined_pattern,
-        ".",
-    ]
-    proc = subprocess.run(
-        cmd,
-        cwd=str(REPO_ROOT),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if proc.returncode not in (0, 1):
-        # ripgrep exits 1 when nothing matched; 0 when something did.
-        # Any other exit code is a real error — surface it.
-        raise RuntimeError(
-            f"ripgrep failed (exit {proc.returncode}): {proc.stderr.strip()}"
-        )
-    hits: set[Path] = set()
-    for line in proc.stdout.splitlines():
-        line = line.strip()
-        if not line:
+    for line in text[search_from:].splitlines():
+        stripped = line.strip()
+        if not stripped:
             continue
-        path = (REPO_ROOT / line).resolve()
-        if path in allowed_files:
-            hits.add(path)
-    return hits
+        if stripped.startswith("//"):
+            continue
+        if stripped.startswith("#["):
+            continue
+        normalised = " ".join(stripped.split())
+        if len(normalised) > _DEAD_CODE_SIGNATURE_MAX_LEN:
+            normalised = normalised[:_DEAD_CODE_SIGNATURE_MAX_LEN]
+        return normalised
+    return "(end of file)"
 
 
-def _rg_scan(
-    rg_path: str, combined_pattern: str, allowed_files: set[Path]
-) -> set[Path]:
-    """Run ripgrep over the repo and return the set of files whose
-    contents match ``combined_pattern``, restricted to ``allowed_files``.
+def _scan_dead_code_sites() -> list[dict[str, object]]:
+    """Scan production code for ``#[allow(dead_code)]`` occurrences and
+    return the sorted site list used by both the gate and the
+    ``--update-dead-code-inventory`` writer.
 
-    ``allowed_files`` is a set of resolved absolute paths so the
-    post-filter is a fast set membership check. The script restricts
-    the caller scope to src/, top-level tests/*.rs, and examples/*.rs;
-    benches/ and tests/<subdir>/ are deliberately excluded.
+    Each site is ``{"file", "signature", "index"}`` where ``index`` is the
+    1-based occurrence counter among identical ``(file, signature)`` pairs
+    (two identical signatures in one file are legitimately distinct sites).
     """
-    cmd = [
-        rg_path,
-        "--files-with-matches",
-        "--no-heading",
-        "--no-messages",
-        "--type", "rust",
-        "-e", combined_pattern,
-        ".",
-    ]
-    proc = subprocess.run(
-        cmd,
-        cwd=str(REPO_ROOT),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if proc.returncode not in (0, 1):
-        # ripgrep exits 1 when nothing matched; 0 when something did.
-        # Any other exit code is a real error — surface it.
-        raise RuntimeError(
-            f"ripgrep failed (exit {proc.returncode}): {proc.stderr.strip()}"
-        )
-    hits: set[Path] = set()
-    for line in proc.stdout.splitlines():
-        line = line.strip()
-        if not line:
+    sites: list[dict[str, object]] = []
+    for rs_file in sorted(SRC_DIR.rglob("*.rs")):
+        if not rs_file.is_file():
             continue
-        path = (REPO_ROOT / line).resolve()
-        if path in allowed_files:
-            hits.add(path)
-    return hits
+        rel = rs_file.relative_to(REPO_ROOT).as_posix()
+        # src/bin/*.rs are standalone Cargo binary targets, not children of
+        # the library module tree — same universe rule as the orphan scan.
+        try:
+            rs_file.relative_to(BIN_DIR)
+            continue
+        except ValueError:
+            pass
+        text = _strip_block_comments(
+            rs_file.read_text(encoding="utf-8", errors="replace")
+        )
+        test_spans = _cfg_test_body_spans(text)
+        signature_counts: dict[str, int] = {}
+        for m in _ALLOW_DEAD_CODE_RE.finditer(text):
+            if any(start <= m.start() < end for start, end in test_spans):
+                continue
+            signature = _dead_code_site_signature(text, m.end())
+            signature_counts[signature] = signature_counts.get(signature, 0) + 1
+            sites.append(
+                {
+                    "file": rel,
+                    "signature": signature,
+                    "index": signature_counts[signature],
+                }
+            )
+    sites.sort(key=lambda s: (str(s["file"]), str(s["signature"]), int(s["index"])))
+    return sites
+
+
+def _load_dead_code_inventory() -> list[dict[str, object]]:
+    """Load the checked-in inventory. Returns ``[]`` when the file is
+    missing so the gate can emit a single actionable message instead of a
+    traceback.
+    """
+    if not DEAD_CODE_INVENTORY_PATH.exists():
+        return []
+    payload = json.loads(DEAD_CODE_INVENTORY_PATH.read_text(encoding="utf-8"))
+    return list(payload.get("sites", []))
+
+
+def _write_dead_code_inventory(sites: list[dict[str, object]]) -> None:
+    """Regenerate ``tests/reference_data/dead_code_inventory.json`` from the
+    live scan. Every entry is stamped with the governing issue (#3752);
+    hand-edit an entry's ``issue`` field afterwards to point at a more
+    specific follow-up issue.
+    """
+    entries = [
+        {
+            "file": site["file"],
+            "signature": site["signature"],
+            "index": site["index"],
+            "issue": DEAD_CODE_GOVERNING_ISSUE,
+        }
+        for site in sites
+    ]
+    payload = {
+        "schema_version": 1,
+        "description": (
+            "Inventory of production #[allow(dead_code)] sites in the root"
+            " fluxion crate, governed by"
+            " scripts/check_orphan_modules.py (Issue #3752). Regenerate"
+            " with: python3 scripts/check_orphan_modules.py"
+            " --update-dead-code-inventory"
+        ),
+        "governing_issue": DEAD_CODE_GOVERNING_ISSUE,
+        "site_count": len(entries),
+        "sites": entries,
+    }
+    DEAD_CODE_INVENTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DEAD_CODE_INVENTORY_PATH.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _check_dead_code_inventory(update: bool) -> int:
+    """Run the Issue #3752 dead-code-allow gate. Returns the process exit
+    code for this section (0 pass / 1 fail).
+
+    In ``update`` mode the inventory is regenerated from the live scan and
+    the gate short-circuits to success (the caller has asked for a rewrite,
+    not a verdict); the printed report still shows the resulting count so
+    a ratchet-affecting regeneration is visible in the output.
+    """
+    print("--- Dead-code-allow inventory (#3752) ---")
+    # Mock-repo guard: scripts/ci/test_check_orphan_modules.py redirects the
+    # module-level REPO_ROOT at synthetic tmp_path trees whose fixture
+    # sources carry allow(dead_code) markers that can never appear in the
+    # real repo's checked-in inventory. Every other detector here is
+    # self-contained; this one is inherently registry-relative to the real
+    # repo, so skip it whenever REPO_ROOT no longer points at this script's
+    # actual repository.
+    real_root = Path(__file__).resolve().parent.parent
+    if Path(REPO_ROOT).resolve() != real_root:
+        print(
+            "Skipped: REPO_ROOT redirected to a synthetic mock tree "
+            "(dead-code gate is registry-relative to the real repo)."
+        )
+        return 0
+    live_sites = _scan_dead_code_sites()
+    live_count = len(live_sites)
+    print(f"Production allow(dead_code) sites (live scan): {live_count}")
+    print(
+        f"Count baseline (BASELINE_DEAD_CODE_ALLOWS): "
+        f"{BASELINE_DEAD_CODE_ALLOWS}"
+    )
+
+    if update:
+        _write_dead_code_inventory(live_sites)
+        print(
+            f"Inventory regenerated: "
+            f"{DEAD_CODE_INVENTORY_PATH.relative_to(REPO_ROOT)} "
+            f"({live_count} entries)"
+        )
+        if live_count > BASELINE_DEAD_CODE_ALLOWS:
+            print(
+                "WARNING: the regenerated count exceeds "
+                "BASELINE_DEAD_CODE_ALLOWS; the verify gate will fail until "
+                "the baseline is raised with a tracking-issue comment."
+            )
+        return 0
+
+    inventory_sites = _load_dead_code_inventory()
+    if not inventory_sites and not DEAD_CODE_INVENTORY_PATH.exists():
+        print(
+            "ERROR: dead-code inventory missing: "
+            f"{DEAD_CODE_INVENTORY_PATH.relative_to(REPO_ROOT)}\n"
+            "Regenerate it with:\n"
+            "  python3 scripts/check_orphan_modules.py"
+            " --update-dead-code-inventory"
+        )
+        return 2
+
+    inventory_keys = {
+        (
+            str(s["file"]),
+            str(s["signature"]),
+            int(s["index"]),
+        )
+        for s in inventory_sites
+    }
+    live_keys = {
+        (str(s["file"]), str(s["signature"]), int(s["index"])) for s in live_sites
+    }
+    new_sites = sorted(live_keys - inventory_keys)
+    stale_sites = sorted(inventory_keys - live_keys)
+    print(f"Inventory entries: {len(inventory_sites)}")
+    print(f"NEW production sites (not inventoried): {len(new_sites)}")
+    print(f"Stale inventory entries (site no longer in code): {len(stale_sites)}")
+    print()
+
+    failures = False
+
+    if new_sites:
+        failures = True
+        print("NEW allow(dead_code) SITES DETECTED (CI FAILURE — Issue #3752):")
+        for file, signature, index in new_sites:
+            print(f"  {file}: {signature} (occurrence {index})")
+        print()
+        print(
+            "Every production allow(dead_code) suppression must be\n"
+            "inventoried with a tracking issue before it lands. Either\n"
+            "delete the attribute (preferred — dead code should not ship),\n"
+            "or run:\n"
+            "  python3 scripts/check_orphan_modules.py"
+            " --update-dead-code-inventory\n"
+            "and commit the regenerated inventory alongside a justification\n"
+            "for the new suppression."
+        )
+        print()
+
+    if stale_sites:
+        failures = True
+        print("STALE INVENTORY ENTRIES DETECTED (CI FAILURE — Issue #3752):")
+        for file, signature, index in stale_sites:
+            print(f"  {file}: {signature} (occurrence {index})")
+        print()
+        print(
+            "These inventory entries no longer match any live site. Keep\n"
+            "the registry in lock-step with the tree by regenerating:\n"
+            "  python3 scripts/check_orphan_modules.py"
+            " --update-dead-code-inventory\n"
+            "Resolving stale entries via deletion is exactly the cleanup\n"
+            "#3752 wants — lower BASELINE_DEAD_CODE_ALLOWS by one per\n"
+            "resolved attribute in the same PR."
+        )
+        print()
+
+    if live_count > BASELINE_DEAD_CODE_ALLOWS:
+        failures = True
+        print(
+            "PRODUCTION allow(dead_code) COUNT GREW ABOVE BASELINE "
+            "(CI FAILURE — Issue #3752 downward-only ratchet):"
+        )
+        print(
+            f"  live count {live_count} > "
+            f"BASELINE_DEAD_CODE_ALLOWS {BASELINE_DEAD_CODE_ALLOWS}"
+        )
+        print(
+            "\n"
+            "The ratchet is downward-only (Issue #3443 convention): new\n"
+            "suppressions must be justified by a tracking issue AND the\n"
+            "baseline raised with a documenting comment in\n"
+            "scripts/check_orphan_modules.py. Companion cleanup PRs are\n"
+            "expected to LOWER the baseline by one per deleted attribute."
+        )
+        print()
+    elif live_count < BASELINE_DEAD_CODE_ALLOWS:
+        print(
+            "CLEANUP NUDGE: the live count dropped below the baseline; "
+            "lower BASELINE_DEAD_CODE_ALLOWS "
+            f"({BASELINE_DEAD_CODE_ALLOWS} → {live_count}) in this PR to "
+            "keep the ratchet tight."
+        )
+        print()
+
+    if failures:
+        return 1
+
+    print(
+        f"Dead-code inventory in lock-step ({live_count} production "
+        f"suppression(s), at or below the baseline of "
+        f"{BASELINE_DEAD_CODE_ALLOWS})."
+    )
+    return 0
+
+
+def _load_wired_but_dead_dispositions() -> list[dict[str, object]]:
+    """Load the checked-in disposition registry. Returns ``[]`` when the
+    file is missing so the gate can emit a single actionable message
+    instead of a traceback.
+    """
+    if not WIRED_BUT_DEAD_DISPOSITIONS_PATH.exists():
+        return []
+    payload = json.loads(
+        WIRED_BUT_DEAD_DISPOSITIONS_PATH.read_text(encoding="utf-8")
+    )
+    return list(payload.get("modules", []))
+
+
+def _check_wired_but_dead_dispositions(raw_wired_but_dead: list[str]) -> int:
+    """Run the Issue #3748 disposition gate. Returns the process exit
+    code for this section (0 pass / 1 fail / 2 missing registry).
+
+    Lock-step contract: the registry must cover every live wired-but-dead
+    module AND every ``WIRED_BUT_DEAD`` allowlist entry, carry a
+    disposition from ``ALLOWED_DISPOSITIONS`` plus ``issue`` / ``owner``
+    / non-empty ``rationale`` per row, and hold no rows for modules that
+    are no longer wired-but-dead (wired up or deleted).
+    """
+    print("--- Wired-but-dead dispositions (#3748) ---")
+    # Mock-repo guard: mirrors the dead-code gate above. The registry is
+    # checked into the real repo; scripts/ci/test_check_orphan_modules.py
+    # redirects REPO_ROOT at synthetic tmp_path trees whose live
+    # wired-but-dead set can never match the real registry. Skip whenever
+    # REPO_ROOT no longer points at this script's actual repository.
+    real_root = Path(__file__).resolve().parent.parent
+    if Path(REPO_ROOT).resolve() != real_root:
+        print(
+            "Skipped: REPO_ROOT redirected to a synthetic mock tree "
+            "(disposition gate is registry-relative to the real repo)."
+        )
+        return 0
+
+    rows = _load_wired_but_dead_dispositions()
+    if not rows and not WIRED_BUT_DEAD_DISPOSITIONS_PATH.exists():
+        print(
+            "ERROR: wired-but-dead disposition registry missing: "
+            f"{WIRED_BUT_DEAD_DISPOSITIONS_PATH}\n"
+            "Every WIRED_BUT_DEAD entry must carry an owner-assigned "
+            "wire-or-delete disposition (Issue #3748). Restore or create "
+            "the registry before landing."
+        )
+        return 2
+
+    live_set = set(raw_wired_but_dead)
+    failures = False
+
+    row_modules: set[str] = set()
+    invalid_rows: list[str] = []
+    for row in rows:
+        name = str(row.get("module", "")).strip()
+        row_modules.add(name)
+        disposition = str(row.get("disposition", "")).strip()
+        if disposition not in ALLOWED_DISPOSITIONS:
+            invalid_rows.append(
+                f"{name or '(blank module)'}: unknown disposition "
+                f"{disposition!r} (allowed: "
+                f"{sorted(ALLOWED_DISPOSITIONS)})"
+            )
+        issue = row.get("issue")
+        if not isinstance(issue, int):
+            invalid_rows.append(
+                f"{name}: missing/invalid 'issue' reference "
+                "(expected the governing or follow-up issue number)"
+            )
+        for field in ("owner", "rationale"):
+            if not str(row.get(field, "")).strip():
+                invalid_rows.append(f"{name}: missing '{field}'")
+
+    missing_live = sorted(live_set - row_modules)
+    missing_allowlist = sorted(set(WIRED_BUT_DEAD) - row_modules)
+    stale_rows = sorted(row_modules - live_set)
+    print(f"Live wired-but-dead modules: {len(live_set)}")
+    print(f"Allowlisted entries: {len(WIRED_BUT_DEAD)}")
+    print(f"Registry rows: {len(rows)}")
+    print(f"Rows missing for live modules: {len(missing_live)}")
+    print(f"Rows missing for allowlist entries: {len(missing_allowlist)}")
+    print(f"Stale rows (module no longer wired-but-dead): {len(stale_rows)}")
+    print(f"Invalid rows (schema violations): {len(invalid_rows)}")
+    print()
+
+    if missing_live or missing_allowlist:
+        failures = True
+        print(
+            "MISSING DISPOSITION ROWS DETECTED (CI FAILURE — Issue #3748):"
+        )
+        for name in sorted(set(missing_live) | set(missing_allowlist)):
+            print(f"  pub mod {name}; — no registry row")
+        print()
+        print(
+            "Every wired-but-dead module needs an owner-assigned\n"
+            "wire-or-delete disposition in\n"
+            "  tests/reference_data/wired_but_dead_dispositions.json\n"
+            "with one of: wire-pending / reject / keep-dead, a tracking\n"
+            "issue, an owner, and a rationale. Wire-up decisions without\n"
+            "a registry row are exactly the drift #3748 exists to stop."
+        )
+        print()
+
+    if invalid_rows:
+        failures = True
+        print("INVALID DISPOSITION ROWS DETECTED (CI FAILURE — Issue #3748):")
+        for problem in invalid_rows:
+            print(f"  {problem}")
+        print()
+        print(
+            "Each row must carry disposition (wire-pending | reject |\n"
+            "keep-dead), an integer issue reference, an owner, and a\n"
+            "non-empty rationale."
+        )
+        print()
+
+    if stale_rows:
+        failures = True
+        print("STALE DISPOSITION ROWS DETECTED (CI FAILURE — Issue #3748):")
+        for name in stale_rows:
+            print(f"  pub mod {name}; — no longer wired-but-dead")
+        print()
+        print(
+            "These registry rows point at modules that now have a\n"
+            "production caller or no longer exist. Keep the registry in\n"
+            "lock-step with the tree: drop the row in the same PR that\n"
+            "resolves the module, drop its WIRED_BUT_DEAD allowlist\n"
+            "entry, and lower BASELINE_WIRED_BUT_DEAD by one."
+        )
+        print()
+
+    if failures:
+        return 1
+
+    print(
+        f"Disposition registry in lock-step ({len(rows)} row(s), every "
+        "wired-but-dead module carries an owner-assigned decision)."
+    )
+    return 0
 
 
 def main() -> int:
@@ -1029,7 +1580,30 @@ def main() -> int:
         f"({len(raw_wired_but_dead)} known wired-but-dead pub mod(s) are "
         "tracked in WIRED_BUT_DEAD and will be cleaned up in follow-up PRs.)"
     )
-    return 0
+    print()
+
+    # ------------------------------------------------------------------
+    # Wired-but-dead disposition registry (Issue #3748).
+    #
+    # Fourth companion check: every WIRED_BUT_DEAD entry must carry an
+    # owner-assigned wire-or-delete disposition in the checked-in
+    # registry, and the registry must stay in lock-step with the live
+    # wired-but-dead set.
+    # ------------------------------------------------------------------
+    disposition_rc = _check_wired_but_dead_dispositions(raw_wired_but_dead)
+    if disposition_rc != 0:
+        return disposition_rc
+
+    # ------------------------------------------------------------------
+    # Dead-code-allow inventory (Issue #3752).
+    #
+    # Third companion detector: governs production #[allow(dead_code)]
+    # suppressions via a checked-in per-site registry and a downward-only
+    # count ratchet. ``--update-dead-code-inventory`` regenerates the
+    # registry instead of rendering a verdict.
+    # ------------------------------------------------------------------
+    update_dead_code_inventory = "--update-dead-code-inventory" in sys.argv[1:]
+    return _check_dead_code_inventory(update=update_dead_code_inventory)
 
 
 if __name__ == "__main__":

@@ -66,13 +66,16 @@ jobs:
   # =========================================================================
   # bench-default — REQUIRED PR check.
   # Builds with default features only (matches what a user gets from
-  # `cargo install fluxion`). Cold-cache compile time: ~3 min. Warm-cache:
-  # <1 min. This is the fast path the dashboard regression check consumes.
+  # `cargo install fluxion`). Cold-cache full-crate bench compile observed
+  # at 9-15 min on shared runners (2026-09-14: canceled at the old 15 min
+  # ceiling on PR #3772 after 13m02s on #3769); the 25 min budget absorbs
+  # runner variance. This is the fast path the dashboard regression check
+  # consumes.
   # =========================================================================
   bench-default:
     name: Bench (default features)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -193,7 +196,7 @@ jobs:
     name: Published Crate Bench
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    timeout-minutes: 15
+    timeout-minutes: 25 # same observed 9-15 min spread as bench-default (see above)
     needs: bench-default
 
     steps:
@@ -692,7 +695,7 @@ jobs:
           rm -f run_*.txt
           for i in 1 2 3; do
             echo "=== measurement run ${i}/3 ==="
-            cargo test --test performance_regression_test --release test_performance_regression -- --nocapture > "run_${i}.txt" 2>&1 || true
+            cargo test --test all_tests performance_regression_test::test_performance_regression --release -- --nocapture > "run_${i}.txt" 2>&1 || true
           done
 
           python3 << 'EOF'
@@ -873,7 +876,7 @@ jobs:
           rm -f run_*.txt
           for i in 1 2 3; do
             echo "=== measurement run ${i}/3 ==="
-            cargo test --test performance_regression_test --release test_multi_zone_performance_regression -- --nocapture > "run_${i}.txt" 2>&1 || true
+            cargo test --test all_tests performance_regression_test::test_multi_zone_performance_regression --release -- --nocapture > "run_${i}.txt" 2>&1 || true
           done
 
           python3 << 'EOF'
@@ -1072,7 +1075,7 @@ jobs:
           rm -f run_*.txt
           for i in 1 2 3; do
             echo "=== measurement run ${i}/3 ==="
-            cargo test --test hybrid_perf_regression --release -- --nocapture --test-threads=1 > "run_${i}.txt" 2>&1 || true
+            cargo test --test all_tests hybrid_perf_regression:: --release -- --nocapture --test-threads=1 > "run_${i}.txt" 2>&1 || true
           done
 
           python3 << 'EOF'
@@ -1269,13 +1272,14 @@ jobs:
           shared-key: ort-cold-start-build
           cache-on-failure: true
 
-      # Pre-compile the release test binary for the cold-start gate. We
-      # build ONLY the surrogate_cold_start_test test binary (via
-      # `--test surrogate_cold_start_test`) instead of all `--tests` to
-      # keep the warm-cache step under ~3 min. The full ort build still
-      # runs once on the first cold-cache run after a content-hash change.
+      # Pre-compile the release test binary for the cold-start gate. Post-#3764
+      # every integration test lives in the single `all_tests` target, and
+      # `cargo build` takes no positional test filter — so we build that one
+      # target (via `--test all_tests`) instead of all `--tests`. It is also
+      # exactly the binary the cold-start gate executes. The full ort build
+      # still runs once on the first cold-cache run after a content-hash change.
       - name: Build release test binary (--features ort)
-        run: cargo build --release -p fluxion --features ort --test surrogate_cold_start_test
+        run: "cargo build --release -p fluxion --features ort --test all_tests"
 
       - name: Summary
         if: always()
@@ -1440,7 +1444,7 @@ jobs:
           rm -f run_*.txt
           for i in 1 2 3; do
             echo "=== measurement run ${i}/3 ==="
-            cargo test --test surrogate_cold_start_test --release --features ort -- --nocapture --test-threads=1 > "run_${i}.txt" 2>&1 || true
+            cargo test --test all_tests surrogate_cold_start_test:: --release --features ort -- --nocapture --test-threads=1 > "run_${i}.txt" 2>&1 || true
           done
 
           python3 << 'EOF'

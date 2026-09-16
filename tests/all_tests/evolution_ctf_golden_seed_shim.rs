@@ -19,5 +19,5 @@
 // (an `include!`'d file can't carry its own outer attrs reliably).
 #[allow(clippy::needless_range_loop)]
 pub mod seed {
-    include!("../tools/evolution/seeds/ctf/seed.rs");
+    include!("../../tools/evolution/seeds/ctf/seed.rs");
 }

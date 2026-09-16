@@ -95,6 +95,11 @@ jobs:
         run: |
           set -o pipefail
           ./scripts/build_pgo.sh --clean 2>&1 | tee pgo_pipeline.log
+        # Issue #3763 audit: this mask is NOT silent best-effort. It defers
+        # the step's failure so the "Upload pipeline log" and "Upload PGO
+        # profile data" artifact steps (if: always()) can still run; the
+        # terminal "Fail if pipeline returned non-zero" step re-raises
+        # steps.pgo.outcome == 'failure' and fails the nightly run.
         continue-on-error: true
 
       - name: Smoke-test PGO binary

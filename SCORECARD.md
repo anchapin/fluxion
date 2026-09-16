@@ -69,23 +69,15 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | ASHRAE 140 Strict Energy Gate (Issue #1333) | #1333 |
 | Surrogate ASHRAE 140 MAE Gate (Issue #2924) | #2924 |
 | Surrogate Drift Tolerance Gate (Issue #1784) | #1784 |
-| Fluxion Determinism Gate (Issue #1351) | #1351 |
-| Fluxion Performance Gate (Issue #1618) | #1618 |
-| Code Coverage Gate (Issue #1932) | #1932 |
 | Docs Hygiene Gate (Issue #2466) | #2466 |
 | Physics-Sim-Cycle-Check (GH) | — |
 | Workspace Check (GH) | — |
-| Absolute Perf Gate (Issue #2693) | #2693 |
-| Multi-Zone Perf Gate (Issue #2772) | #2772 |
-| Multi-Zone Cold Start Gate (Issue #2919) | #2919 |
-| Hybrid Perf Gate (Issue #2922) | #2922 |
 | Energy Conservation (GH) | — |
 | Rustfmt (GH) | — |
 | Clippy (GH) | — |
 | Known Issues Stale Check (GH) | — |
 | Ashrae Cases Cycle Check (GH) | — |
 | Cycle Downward Trend Guard (Issue #2768) | #2768 |
-| CUDA Smoke Test (Issue #1603) | #1603 |
 | Architecture Drift Detection | — |
 | Module Size (Issue #2878) | #2878 |
 | Cargo Deny | — |

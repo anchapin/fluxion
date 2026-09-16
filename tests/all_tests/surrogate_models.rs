@@ -9,8 +9,8 @@
 //! breaking the directory layout that `tests/surrogate_models/golden/`
 //! and `tests/surrogate_models/registry.json` rely on.
 
-#[path = "surrogate_models/test_hybrid_mode_dispatch.rs"]
+#[path = "../surrogate_models/test_hybrid_mode_dispatch.rs"]
 mod hybrid_mode_dispatch;
 
-#[path = "surrogate_models/test_hybrid_cuda_smoke.rs"]
+#[path = "../surrogate_models/test_hybrid_cuda_smoke.rs"]
 mod hybrid_cuda_smoke_test;

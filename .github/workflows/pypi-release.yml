@@ -69,7 +69,13 @@ jobs:
 
       - name: Run ASHRAE 140 Validation
         run: |
-          cargo test --test ashrae_140_validation --release -- --nocapture 2>&1 | tee validation_output.txt
+          cargo test --test all_tests ashrae_140_validation:: --release -- --nocapture 2>&1 | tee validation_output.txt
+        # Issue #3763 audit (known-red validation site): masks the raw test
+        # exit of the structurally red ASHRAE 140 suite (§LIMIT-* cohort in
+        # docs/KNOWN_ISSUES.md, routed to GaugeSolver #1465/#1462/#3297) so
+        # the result-extraction steps below can run. This mask is NOT the
+        # release gate: publishing is hard-gated downstream by "Run Release
+        # Gate Checker" (baseline comparison) + "Fail if gates not passed".
         continue-on-error: true
 
       - name: Extract Validation Results
@@ -124,7 +130,7 @@ jobs:
 
       - name: Run Performance Benchmarks
         run: |
-          cargo test --test performance_regression_test --release -- --nocapture 2>&1 | tee perf_output.txt
+          cargo test --test all_tests performance_regression_test:: --release -- --nocapture 2>&1 | tee perf_output.txt
 
       - name: Extract Benchmark Results
         run: |

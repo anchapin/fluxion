@@ -30,6 +30,7 @@
 //! regenerator script and `tests/per_tilt_per_azimuth_fixture_data.rs` for
 //! the auto-generated const arrays.
 
+#[path = "per_tilt_per_azimuth_fixture_data.rs"]
 mod per_tilt_per_azimuth_fixture_data;
 
 use fluxion::physics::five_r1c_solver::FiveR1CSolver;

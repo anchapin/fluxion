@@ -129,6 +129,22 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+    # ADR-0016 lane 2 (deny-list semantics): this gate is skipped only
+    # when EVERY changed file is clearly irrelevant to the physics path
+    # class (docs/markdown/license/git-hygiene metadata). Any unexpected
+    # file type — any .rs anywhere, Cargo.toml/Cargo.lock, scripts/**,
+    # .github/workflows/** — still triggers this workflow. Fail-safe by
+    # construction: an unrecognized diff runs the gauntlet.
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '**.md'
+      - '**.mdx'
+      - 'LICENSE'
+      - '**/LICENSE'
+      - '.gitignore'
+      - '.gitattributes'
+      - '.editorconfig'
   workflow_dispatch:
 
 # Serialize strict-gate runs per ref so two pushes don't double-allocate
@@ -204,8 +220,7 @@ jobs:
         run: |
           set +e
           cargo test --release --features ort --verbose \
-            --test zone_balance_eplus_isolation \
-            _annual_energy_ashrae140_tolerance \
+            --test all_tests _annual_energy_ashrae140_tolerance \
             -- --include-ignored --nocapture \
             2>&1 | tee /tmp/strict_gate_output.txt
           ec=${PIPESTATUS[0]}
@@ -221,16 +236,14 @@ jobs:
         # a failure here is a real regression.
         run: |
           cargo test --release --features ort --verbose \
-            --test ashrae_140_blind_validation \
-            _blind_mode_case_600_infrastructure \
+            --test all_tests _blind_mode_case_600_infrastructure \
             2>&1 | tee -a /tmp/strict_gate_output.txt
 
       - name: ValidationMode::Blind Case 900 infrastructure (must pass)
         # Test 4/4: API-level infrastructure for Case 900 (already passing).
         run: |
           cargo test --release --features ort --verbose \
-            --test ashrae_140_blind_validation \
-            _blind_mode_case_900_infrastructure \
+            --test all_tests _blind_mode_case_900_infrastructure \
             2>&1 | tee -a /tmp/strict_gate_output.txt
 
       - name: Regression check vs. known baseline (issue #2506)
@@ -248,10 +261,14 @@ jobs:
           # Coverage: the two infrastructure tests must appear as `ok`.
           # (The two strict tolerance tests are coverage-checked by the
           # Python parser, which fails if a case line is missing.)
+          # Issue #3764: the consolidated `tests/all_tests` harness prints
+          # module-qualified names (`test <module>::<name> ... ok`), so an
+          # optional `<module>::` prefix is tolerated between `test ` and
+          # the test name.
           for t in \
             test_blind_mode_case_600_infrastructure \
             test_blind_mode_case_900_infrastructure ; do
-            if grep -qE "^test $t \.\.\. ok$" /tmp/strict_gate_output.txt; then
+            if grep -qE "^test ([a-z0-9_]+::)?$t \.\.\. ok$" /tmp/strict_gate_output.txt; then
               echo "  COVERED (pass): $t"
             else
               echo "  DROPPED OR FAILING: $t"
