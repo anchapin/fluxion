@@ -79,10 +79,11 @@ jobs:
           python-version: '3.12'
 
       - name: Install PyYAML (required by the sync script)
-        # scripts/requirements-test.txt already pins pyyaml, but the
-        # cron runner may not have it pre-installed. Pull just the
-        # one direct dep to keep the step fast.
-        run: pip install pyyaml
+        # Issue #3812 — this job holds the FLUXION_BRANCH_PROTECTION_PAT
+        # (repo-scope), so the install MUST come from a pinned
+        # constraints file. `scripts/requirements-ci.txt` pins pyyaml
+        # to the same floor as the rest of the project.
+        run: pip install -r scripts/requirements-ci.txt
 
       # Issue #3123: opt the script into live-mode (`gh api` against
       # `anchapin/fluxion:develop` branch protection). `GH_TOKEN` is the

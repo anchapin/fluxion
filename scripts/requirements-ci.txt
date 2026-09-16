@@ -1,0 +1,29 @@
+# CI-only Python install pins (Issue #3812).
+#
+# Every workflow whose job holds or can mint high-value credentials
+# (a `secrets.*` env, `permissions: id-token: write`, or a
+# branch-protection PAT) MUST install its Python dependencies from
+# this file rather than from `pip install <pkg>` directly. A
+# compromised or dependency-confusion PyPI artifact installed via an
+# unpinned `pip install` runs with the same credential scope as the
+# workflow itself — the project pins every `uses:` action by SHA via
+# `check_workflow_pin.py` / `check_action_pinning.py`, and the
+# Python install layer of the same jobs MUST be pinned at parity.
+#
+# Gate: `scripts/check_pip_pinning.py` (wired into `scripts-tests.yml`)
+# fails any PR that introduces a new `pip install <bare-package>`
+# step in a credential-bearing workflow.
+
+# Required by `scripts/check_required_checks_sync.py` (Issue #3123).
+# Floor pinned to match `requirements-dev.txt::pyyaml>=6.0` and
+# `scripts/requirements-test.txt::pyyaml>=6.0`.
+pyyaml>=6.0
+
+# Required by `cloud_campaign.yml` (boto3) and `pypi-release.yml` (twine, build).
+# Exact pins are appropriate here — these tools do not need to
+# auto-track upstream changes in a credential-bearing context, and
+# exact pins make a transitive-dep compromise surface immediately on
+# the next dev bump rather than silently re-resolving.
+boto3==1.35.36
+twine==5.1.1
+build==1.2.2
