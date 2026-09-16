@@ -89,13 +89,22 @@ Live branch-protection verification (cron-mode)
 Set ``FLUXION_CHECK_LIVE_PROTECTION=1`` (and have ``gh auth`` working)
 to additionally ``gh api``-query ``develop``'s branch protection and
 verify the live ``required_status_checks.contexts`` array matches the
-``ci.required_checks`` list exactly (and that
+``ci.required_checks_workflow_only`` list exactly (and that
 ``required_pull_request_reviews.required_approving_review_count`` ≥ 1
-and ``enforce_admins.enabled`` is true). Designed to run as a scheduled
-cron in ``.github/workflows/`` so #3116's "configuration has 0 required
-checks" gap cannot recur silently. Always exits 0 in the default
-(static-only) mode — the live check is opt-in to keep this script
-network-free for the PR-blocking CI invocation.
+and ``enforce_admins.enabled`` is true). The comparison list is the
+**workflow-only set** (not the full ``ci.required_checks``) because
+``scripts/apply_branch_protection.py`` — the source-of-truth applier —
+restores ``develop`` branch protection to exactly this 18-entry set
+(Issue #3810 design intent; see lines 382-388 of that script). The full
+``ci.required_checks`` list intentionally contains the 5 path-filtered
+checks (Docs Hygiene, Architecture Drift, Module Size, Crate Size,
+MSRV) that never report on docs-only / scripts-only PRs; branch
+protection cannot require what never emits, so comparing against the
+full list produced false-positive drift (Issue #3831). Designed to run
+as a scheduled cron in ``.github/workflows/`` so #3116's "configuration
+has 0 required checks" gap cannot recur silently. Always exits 0 in the
+default (static-only) mode — the live check is opt-in to keep this
+script network-free for the PR-blocking CI invocation.
 
 Usage::
 
@@ -835,19 +844,26 @@ def collect_doc_count_drift(
 
 
 def check_live_branch_protection(
-    required_checks: list[str],
+    workflow_only_checks: list[str],
     repo: str = "anchapin/fluxion",
     branch: str = "develop",
 ) -> list[str]:
     """Verify the live GitHub branch protection for ``repo:branch`` matches
-    ``required_checks`` (Issue #3116 closure).
+    ``workflow_only_checks`` (Issues #3116 closure + #3810 design intent).
 
     Returns a list of human-readable failure messages; empty list means the
     live protection matches. Reads the configured branch protection via
     ``gh api`` and checks:
 
-    * ``required_status_checks.contexts`` matches ``required_checks`` by
-      symmetric set equality (the same set, in any order).
+    * ``required_status_checks.contexts`` matches ``workflow_only_checks``
+      by symmetric set equality (the same set, in any order). This is the
+      **always-run / workflow-only set** (the 18-entry list) — not the
+      full ``ci.required_checks`` (23 entries). The applier
+      ``scripts/apply_branch_protection.py`` writes exactly this set to
+      ``develop`` branch protection (Issue #3810): the 5 path-filtered
+      checks cannot be required at branch-protection level because they
+      never report on docs-only / scripts-only PRs. Comparing against the
+      full list previously produced false-positive drift (Issue #3831).
     * ``required_status_checks.strict`` is True.
     * ``required_pull_request_reviews.required_approving_review_count``
       is at least 1.
@@ -896,7 +912,7 @@ def check_live_branch_protection(
 
     rsc = protection.get("required_status_checks") or {}
     contexts = set(rsc.get("contexts") or [])
-    expected = set(required_checks)
+    expected = set(workflow_only_checks)
 
     if contexts != expected:
         missing = sorted(expected - contexts)
@@ -904,13 +920,16 @@ def check_live_branch_protection(
         if missing:
             failures.append(
                 f"develop branch protection is missing required check(s): "
-                f"{missing}. Add via `gh api --method PUT` (see Issue #3116)."
+                f"{missing}. Add via `gh api --method PUT` (Issue #3116 "
+                f"closure; the comparison list is the workflow-only set, "
+                f"not the full required_checks — Issue #3831)."
             )
         if extra:
             failures.append(
                 f"develop branch protection has stale check(s) not in "
-                f"release_gates.yaml: {extra}. Either remove them or "
-                f"re-add the corresponding required_check entry."
+                f"release_gates.yaml ci.required_checks_workflow_only: "
+                f"{extra}. Either remove them or re-add the corresponding "
+                f"required_checks_workflow_only entry."
             )
 
     if not rsc.get("strict", False):
@@ -1042,7 +1061,14 @@ def main() -> int:
             "FLUXION_CHECK_LIVE_PROTECTION=1 — verifying live develop "
             "branch protection via `gh api` ..."
         )
-        live_failures = check_live_branch_protection(required_checks)
+        # Issue #3831: the live 7th invariant compares against the
+        # workflow-only list (18 entries), not the full required_checks
+        # list (23 entries). apply_branch_protection.py writes the
+        # workflow-only set; comparing against the full set produced
+        # false-positive drift for the 5 intentionally-excluded
+        # path-filtered checks (Docs Hygiene, Architecture Drift,
+        # Module Size, Crate Size, MSRV).
+        live_failures = check_live_branch_protection(workflow_only_checks)
         if live_failures:
             print(f"LIVE DRIFT DETECTED ({len(live_failures)} failure(s)):")
             for msg in live_failures:
@@ -1051,14 +1077,16 @@ def main() -> int:
             print(
                 "Fix: update develop branch protection so the live "
                 "required_status_checks.contexts match release_gates.yaml "
-                "ci.required_checks (Issue #3116 closure). See "
-                "`scripts/check_required_checks_sync.py --help` for the "
+                "ci.required_checks_workflow_only (Issues #3116 closure + "
+                "#3831 alignment with apply_branch_protection.py). See "
+                "`scripts/apply_branch_protection.py --help` for the "
                 "`gh api` payload shape."
             )
             return 1
         print(
             "Live develop branch protection matches release_gates.yaml "
-            "(contexts, strict, reviews, enforce_admins)."
+            "ci.required_checks_workflow_only (contexts, strict, reviews, "
+            "enforce_admins)."
         )
 
     return 0
