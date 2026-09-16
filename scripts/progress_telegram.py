@@ -612,7 +612,16 @@ def collect_workflow_runs(
 
 
 def collect_previous_metrics(repo: str, issue: int) -> dict[str, float] | None:
-    """Parse the most recent telegram marker on the tracker issue."""
+    """Parse the most recent telegram marker on the tracker issue.
+
+    The tracker issue is public, so any GitHub commenter can post a
+    body containing ``MARKER_KEY``. Trust the marker ONLY when the
+    comment was authored by ``github-actions[bot]`` — the same
+    identity that runs ``.github/workflows/progress_telegram.yml``
+    and emits the genuine weekly posts (per Issue #3814). This is
+    the integrity mechanism for the WoW deltas that feed the v1.3
+    progress dashboard.
+    """
     out = run_gh(
         [
             "issue",
@@ -623,7 +632,8 @@ def collect_previous_metrics(repo: str, issue: int) -> dict[str, float] | None:
             "--json",
             "comments",
             "--jq",
-            "[.comments[] | select(.body | contains("
+            "[.comments[] | select(.author.login == \"github-actions[bot]\""
+            " and .body | contains("
             f'"{MARKER_KEY}"'
             "))][-.1:] | map(.body) | .[0] // empty",
         ]
