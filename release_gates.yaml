@@ -583,9 +583,22 @@ ci:
   # in `required_checks` above for code-changing PRs. See
   # `docs/ci/branch-protection-strict-mode.md` for the full rationale.
   #
-  # Path-filtered checks (EXCLUDED from this list):
+  # Path-filtered checks (EXCLUDED from this list — Issue #3810):
+  # The 5 path-filtered required_checks stay out of this list because
+  # their workflows only trigger on specific file patterns (cargo /
+  # src / docs) and would never report on docs-only / scripts-only PRs
+  # even with the #3810 GH-listener pattern (the listener pattern
+  # makes a path-filtered workflow's listener emit its required-check
+  # name unconditionally, but the upstream physics / coverage / docs
+  # work itself is what the check enforces — a listener cannot
+  # synthesize "passed" without the upstream). They are documented in
+  # `ci.required_checks` for the wave-orchestrator's lane-1 / lane-2
+  # enforcement on PRs that touch their path filters; branch
+  # protection just doesn't require them.
+  #
   #   - Docs Hygiene Gate (Issue #2466)        — docs-hygiene.yml paths: docs/**
   #   - Architecture Drift Detection           — architecture_drift.yml paths: src/**
+  #   - Module Size (Issue #2878)              — architecture_drift.yml paths: thermal_model_data.rs (companion to Architecture Drift Detection)
   #   - Crate Size Gate (Issue #2930)         — crate-size.yml paths: Cargo.toml
   #   - MSRV Check (Issue #2934)              — msrv.yml paths: **/Cargo.toml
   required_checks_workflow_only:
@@ -743,38 +756,44 @@ ci:
 
     - job: "Physics-Sim-Cycle-Check (GH)"
       # Mirrors the `Ashrae Cases Cycle Check (Issue #1441)` pattern.
-      # The GH-runner listener job (`physics-sim-cycle-gh` job id) emits
-      # the check name "Physics-Sim-Cycle-Check (GH)". The Hetzner-
-      # overflow variant `physics-sim-cycle-hz` emits
-      # "Physics-Sim-Cycle-Check (Hetzner Overflow)" and fires only on
-      # GH-runner saturation (see AGENTS.md "Runner routing"). Branch
-      # protection requires the exact emitted name "(GH)" — Issue #3116
-      # closes the canonical-vs-suffix drift where this entry previously
-      # held the bare canonical "Physics-Sim-Cycle-Check" and was
-      # matched only by the sync script's tolerance rule, never by
-      # GitHub's exact-string contexts array.
-      workflow: ".github/workflows/rust-tests.yml"
+      # The unfiltered listener job
+      # (`physics-sim-cycle-listener` in `rust-tests-listeners.yml`,
+      # Issue #3810 Option B) emits the check name
+      # "Physics-Sim-Cycle-Check (GH)". The Hetzner-overflow variant
+      # `physics-sim-cycle-hz` (in `rust-tests.yml`) emits
+      # "Physics-Sim-Cycle-Check (Hetzner Overflow)" and fires only
+      # on GH-runner saturation (see AGENTS.md "Runner routing").
+      # Branch protection requires the exact emitted name "(GH)" —
+      # Issue #3116 closes the canonical-vs-suffix drift where this
+      # entry previously held the bare canonical
+      # "Physics-Sim-Cycle-Check" and was matched only by the sync
+      # script's tolerance rule, never by GitHub's exact-string
+      # contexts array.
+      workflow: ".github/workflows/rust-tests-listeners.yml"
       issue: 2463
       closes_issue: 2462
-      triggered_by: "PR + push to main"
+      triggered_by: "PR + push to main/develop (unfiltered, Issue #3810)"
 
     - job: "Workspace Check (GH)"
       # Mirrors the `Physics-Sim-Cycle-Check (GH)` pattern above: the
-      # GH-runner listener job (`workspace-check-gh` job id) emits
+      # unfiltered listener job (`workspace-check-listener` in
+      # `rust-tests-listeners.yml`, Issue #3810 Option B) emits
       # "Workspace Check (GH)"; the Hetzner-overflow variant
-      # `workspace-check-hz` emits "Workspace Check (Hetzner Overflow)"
-      # and fires only on GH-runner saturation. Closes the systemic gap
-      # that let PR #2960 merge broken — bare `cargo check` only compiles
-      # the root crate because `default-members = ["."]` is set in the
-      # workspace root, so sibling regressions like `fluxion-behavior`'s
-      # `rand 0.8 -> 0.9` breakage slipped through. `build-release`
-      # (also in this file) was updated to add `cargo build --release
-      # --workspace` for the main-only release smoke. Issue #3116 closes
-      # the canonical-vs-suffix drift.
-      workflow: ".github/workflows/rust-tests.yml"
+      # `workspace-check-hz` (in `rust-tests.yml`) emits
+      # "Workspace Check (Hetzner Overflow)" and fires only on
+      # GH-runner saturation. Closes the systemic gap that let PR
+      # #2960 merge broken — bare `cargo check` only compiles the
+      # root crate because `default-members = ["."]` is set in the
+      # workspace root, so sibling regressions like
+      # `fluxion-behavior`'s `rand 0.8 -> 0.9` breakage slipped
+      # through. `build-release` (also in `rust-tests.yml`) was
+      # updated to add `cargo build --release --workspace` for the
+      # main-only release smoke. Issue #3116 closes the
+      # canonical-vs-suffix drift.
+      workflow: ".github/workflows/rust-tests-listeners.yml"
       issue: 2983
       closes_issue: 2960
-      triggered_by: "PR + push to main"
+      triggered_by: "PR + push to main/develop (unfiltered, Issue #3810)"
 
     - job: "Absolute Perf Gate (Issue #2693)"
       # PR-blocking ABSOLUTE performance floor (throughput ≥ 150 cfg/s,
@@ -928,69 +947,83 @@ ci:
     # any future drift in either direction.
     - job: "Energy Conservation (GH)"
       # Energy conservation gate (#1295). Listener job in
-      # `.github/workflows/rust-tests.yml` under
-      # `energy-conservation-gh` id. Triggers on the PR + push-to-main
-      # events; runs `cargo test --test all_tests test_energy_conservation::` and
-      # `cargo test --test all_tests zone_balance_eplus_isolation::` and fails the
-      # PR when any "violated energy conservation" count > 0. The
+      # `.github/workflows/rust-tests-listeners.yml` (Issue #3810
+      # Option B listener — unfiltered `pull_request:` so the
+      # listener fires on every PR class; the original listener
+      # in `rust-tests.yml` is path-filtered along with that
+      # workflow's test matrix and never reports on docs-only /
+      # scripts-only PRs). Runs `cargo test --test all_tests
+      # test_energy_conservation::` and `cargo test --test all_tests
+      # zone_balance_eplus_isolation::`; fails the PR when any
+      # "violated energy conservation" count > 0. The
       # Hetzner-overflow variant (`Energy Conservation (Hetzner
-      # Overflow)`) is the same job on the self-hosted overflow runner
-      # and is not separately required.
-      workflow: ".github/workflows/rust-tests.yml"
+      # Overflow)`) is the same job on the self-hosted overflow
+      # runner inside `rust-tests.yml` and is not separately
+      # required.
+      workflow: ".github/workflows/rust-tests-listeners.yml"
       issue: 1295
-      triggered_by: "PR + push to main"
+      triggered_by: "PR + push to main/develop (unfiltered, Issue #3810)"
 
     - job: "Rustfmt (GH)"
-      # Rustfmt gate. Listener job in `.github/workflows/rust-tests.yml`
-      # under `fmt-gh` id. Runs `cargo fmt -- --check`; non-zero exit
-      # when any file is mis-formatted. Companion to the `Clippy (GH)`
-      # and `Energy Conservation (GH)` gates above — all three share
-      # the same GH-runner / Hetzner-overflow job pattern and the
-      # "(GH)" suffix on the canonical name.
-      workflow: ".github/workflows/rust-tests.yml"
-      triggered_by: "PR + push to main"
+      # Rustfmt gate. Listener job in
+      # `.github/workflows/rust-tests-listeners.yml` (Issue #3810
+      # Option B — unfiltered `pull_request:`). Runs
+      # `cargo fmt -- --check`; non-zero exit when any file is
+      # mis-formatted. Companion to the `Clippy (GH)` and `Energy
+      # Conservation (GH)` gates — all three share the same
+      # listener shape and the "(GH)" suffix on the canonical name.
+      workflow: ".github/workflows/rust-tests-listeners.yml"
+      triggered_by: "PR + push to main/develop (unfiltered, Issue #3810)"
 
     - job: "Clippy (GH)"
       # Clippy gate with `-D warnings`. Listener job in
-      # `.github/workflows/rust-tests.yml` under `clippy-gh` id. Runs
-      # `cargo clippy --lib -- -D warnings`; non-zero exit on any
-      # clippy warning. Required-check counterpart to `cargo audit`
-      # and `cargo deny` from the security gate.
-      workflow: ".github/workflows/rust-tests.yml"
-      triggered_by: "PR + push to main"
+      # `.github/workflows/rust-tests-listeners.yml` (Issue #3810
+      # Option B). Runs `cargo clippy --lib -- -D warnings`;
+      # non-zero exit on any clippy warning. Required-check
+      # counterpart to `cargo audit` and `cargo deny` from the
+      # security gate.
+      workflow: ".github/workflows/rust-tests-listeners.yml"
+      triggered_by: "PR + push to main/develop (unfiltered, Issue #3810)"
 
     - job: "Known Issues Stale Check (GH)"
       # Known Issues freshness gate (#1723). Listener job in
-      # `.github/workflows/rust-tests.yml` under `known-issues-stale-gh`
-      # id. Runs `python3 scripts/check_known_issues_stale.py`; exits
-      # non-zero when `docs/KNOWN_ISSUES.md` `*Last Updated:*` line is
-      # >60 days stale. Mirror of the dedicated
-      # `.github/workflows/known-issues-stale.yml` workflow which
-      # runs on the same gate but on `schedule` only.
-      workflow: ".github/workflows/rust-tests.yml"
+      # `.github/workflows/rust-tests-listeners.yml` (Issue #3810
+      # Option B — the dedicated `known-issues-stale.yml` workflow
+      # is also path-filtered on `docs/KNOWN_ISSUES.md` /
+      # `scripts/check_known_issues_stale.py`, and the
+      # `rust-tests.yml` listener is path-filtered along with the
+      # test matrix; this listener is the only check that reports
+      # the required-check name on every PR class). Runs
+      # `python3 scripts/check_known_issues_stale.py`; exits
+      # non-zero when `docs/KNOWN_ISSUES.md` `*Last Updated:*` line
+      # is >60 days stale.
+      workflow: ".github/workflows/rust-tests-listeners.yml"
       issue: 1723
-      triggered_by: "PR + push to main"
+      triggered_by: "PR + push to main/develop (unfiltered, Issue #3810)"
 
     - job: "Ashrae Cases Cycle Check (GH)"
       # ASHRAE 140 Cases Cycle Check (#1441). Listener job in
-      # `.github/workflows/rust-tests.yml` under `ashrae-cases-cycle-gh`
-      # id. Runs `python3 scripts/check_ashrae_cases_cycle.py`; exits
-      # non-zero on any new sim↔validation cycle edge above the
-      # documented baseline. Companion to `Physics-Sim-Cycle-Check`
-      # which mirrors this gate for the physics↔sim direction.
-      workflow: ".github/workflows/rust-tests.yml"
+      # `.github/workflows/rust-tests-listeners.yml` (Issue #3810
+      # Option B). Runs `python3 scripts/check_ashrae_cases_cycle.py`;
+      # exits non-zero on any new sim↔validation cycle edge above
+      # the documented baseline. Companion to
+      # `Physics-Sim-Cycle-Check` which mirrors this gate for the
+      # physics↔sim direction.
+      workflow: ".github/workflows/rust-tests-listeners.yml"
       issue: 1441
-      triggered_by: "PR + push to main"
+      triggered_by: "PR + push to main/develop (unfiltered, Issue #3810)"
 
     - job: "Cycle Downward Trend Guard (Issue #2768)"
       # Downward trend guard for the sim↔validation cycle (Issue #2768).
       # Per-PR: R1 (no growth) + R3 (no net-flat edge swap). Nightly:
       # R1 + R2 (stale-window) + R3. R2 only enforced in nightly cron
-      # to avoid blocking PRs that don't touch the cycle. Job in
-      # `.github/workflows/rust-tests.yml` under `cycle-trend-gh` id.
-      workflow: ".github/workflows/rust-tests.yml"
+      # to avoid blocking PRs that don't touch the cycle. Listener
+      # job in `.github/workflows/rust-tests-listeners.yml`
+      # (Issue #3810 Option B — the R1+R3 enforcement emits the
+      # required-check name on every PR class).
+      workflow: ".github/workflows/rust-tests-listeners.yml"
       issue: 2768
-      triggered_by: "PR + push to main"
+      triggered_by: "PR + push to main/develop (unfiltered, Issue #3810)"
 
     - job: "CUDA Smoke Test (Issue #1603)"
       # CUDA smoke test (#1603). Job in
@@ -1053,19 +1086,20 @@ ci:
       # integration tests (3-node Newton-Raphson power-flow round-trip,
       # 10-heat-pump radial feeder, IEEE 33-bus Joint-Thermal-Electrical
       # co-simulation; convergence asserted via `max |ΔP|, max |ΔQ| < 1e-6
-      # pu`). The job is in `.github/workflows/rust-tests.yml` under
-      # `fluxion-grid-integration-gh` and emits the exact job name
-      # `"fluxion-grid Integration Tests (GH)"` — the "(GH)" suffix is
-      # required by Issue #3116. The Hetzner-overflow variant
-      # `fluxion-grid-integration-hz` (emits `"fluxion-grid Integration
-      # Tests (Hetzner Overflow)"`) fires only on GH runner saturation
-      # and is intentionally not separately required. Closes the gap
+      # pu`). The unfiltered listener job (`fluxion-grid-integration-
+      # listener` in `rust-tests-listeners.yml`, Issue #3810 Option B)
+      # emits the exact job name `"fluxion-grid Integration Tests
+      # (GH)"` — the "(GH)" suffix is required by Issue #3116. The
+      # Hetzner-overflow variant `fluxion-grid-integration-hz` (in
+      # `rust-tests.yml`, emits `"fluxion-grid Integration Tests
+      # (Hetzner Overflow)"`) fires only on GH runner saturation and
+      # is intentionally not separately required. Closes the gap
       # recorded by Issue #3127 where the listener existed but the
       # check was never wired into `ci.required_checks`.
-      workflow: ".github/workflows/rust-tests.yml"
+      workflow: ".github/workflows/rust-tests-listeners.yml"
       issue: 3127
       closes_issue: 2275
-      triggered_by: "PR + push to main"
+      triggered_by: "PR + push to main/develop (unfiltered, Issue #3810)"
 
     - job: "h_tr_em Regression Gate (LIMIT-13)"
       # h_tr_em wind-dependent recompute regression fence gate (Issue #3549 /

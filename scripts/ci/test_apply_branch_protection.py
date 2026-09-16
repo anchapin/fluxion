@@ -58,9 +58,13 @@ def applier(load_script):
     return load_script(SCRIPT_NAME)
 
 
-def _write_release_gates(tmp_path: Path, contexts: list[str]) -> Path:
+def _write_release_gates(
+    tmp_path: Path,
+    contexts: list[str],
+    workflow_only: list[str] | None = None,
+) -> Path:
     """Write a synthetic ``release_gates.yaml`` containing a single
-    ``ci.required_checks`` list. Returns the path.
+    ``ci.required_checks`` list (and optional ``workflow_only``). Returns the path.
 
     The YAML is built by hand rather than via ``yaml.dump`` so the test
     surfaces any parser-regression in ``check_required_checks_sync.load_release_gates``
@@ -72,6 +76,10 @@ def _write_release_gates(tmp_path: Path, contexts: list[str]) -> Path:
     for c in contexts:
         lines.append(f'    - "{c}"')
     lines.append("  workflow_index: []")
+    if workflow_only is not None:
+        lines.append("  required_checks_workflow_only:")
+        for c in workflow_only:
+            lines.append(f'    - "{c}"')
     target = tmp_path / "release_gates.yaml"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -275,6 +283,47 @@ def test_load_release_gates_returns_yaml_required_checks(
         "Workspace Check (GH)",
         "Architecture Drift Detection",
     ]
+
+
+def test_main_payload_uses_required_checks_workflow_only_for_issue_3810(
+    applier, tmp_path, monkeypatch
+):
+    """Issue #3810: develop branch protection must be restored to the
+    ``required_checks_workflow_only`` (always-run) set, NOT the full
+    ``required_checks`` list. The full list contains the 5 path-filtered
+    checks that never report on docs-only / scripts-only PRs, so they
+    cannot be branch-protection required checks (the wave-orchestrator
+    enforces them on lane-1 instead). This test pins the post-#3810
+    behavior: ``main()``'s PUT payload uses
+    ``get_workflow_only_checks`` (18 entries) — verified end-to-end
+    via the redirect-the-constants pattern.
+    """
+    import sys
+
+    required = [
+        "Workspace Check (GH)",
+        "Energy Conservation (GH)",
+        "Docs Hygiene Gate (Issue #2466)",  # path-filtered — must NOT be in payload
+        "Architecture Drift Detection",     # path-filtered — must NOT be in payload
+    ]
+    workflow_only = [
+        "Workspace Check (GH)",
+        "Energy Conservation (GH)",
+    ]
+    _write_release_gates(tmp_path, required, workflow_only=workflow_only)
+    monkeypatch.setattr(applier, "REPO_ROOT", tmp_path)
+    dep_mod = sys.modules["scripts.check_required_checks_sync"]
+    monkeypatch.setattr(dep_mod, "RELEASE_GATES_YAML", tmp_path / "release_gates.yaml")
+    gates = applier.load_release_gates()
+    payload = applier.build_put_payload(applier.get_workflow_only_checks(gates))
+    contexts = payload["required_status_checks"]["contexts"]
+    # The payload MUST be the workflow_only set, not the full required
+    # set: the path-filtered entries (Docs Hygiene Gate, Architecture
+    # Drift Detection) cannot report on every PR class so they are
+    # dropped at the branch-protection layer.
+    assert contexts == workflow_only
+    assert "Docs Hygiene Gate (Issue #2466)" not in contexts
+    assert "Architecture Drift Detection" not in contexts
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,343 @@
+# rust-tests-listeners.yml — Issue #3810 GH-listener pattern (Option B)
+#
+# Why this file exists
+# --------------------
+# Issue #3810 documents the gap closed by the GH-listener pattern: a
+# `pull_request:` trigger with a `paths-ignore:` filter (e.g. the docs-
+# only carve-out at the top of `rust-tests.yml`) is SKIPPED on PRs whose
+# changed files are all matched by the filter. When the workflow is
+# skipped, no check runs are emitted and GitHub branch protection's
+# exact-string contexts array is left "expected" but never reported
+# — the "14 of 23 expected" / "5 of 23" gap that #3805 quantified.
+#
+# `rust-tests.yml` is the most expensive CI workflow in the repo (the
+# `test` matrix alone runs `cargo nextest run` against the root lib +
+# 4 integration suites + `fluxion-behavior` + `fluxion-twin`, with
+# three `feature_set` legs per platform; `build-release` adds a full
+# `cargo build --release --workspace`). Path-filtering the workflow
+# (Issue #3367) saved ~38 min on docs-only PRs, which is the right
+# trade-off for that matrix — but it left nine listener jobs
+# (`workspace-check-gh`, `energy-conservation-gh`, `fmt-gh`,
+# `clippy-gh`, `known-issues-stale-gh`, `ashrae-cases-cycle-gh`,
+# `physics-sim-cycle-gh`, `cycle-trend-gh`, `fluxion-grid-integration-
+# gh`) path-filtered along with it, so branch protection's
+# `release_gates.yaml::ci.required_checks_workflow_only` entries that
+# reference those listener names never get reported on docs-only /
+# scripts-only PRs.
+#
+# Two options were considered (see Issue #3810 §"What 'GH listener
+# pattern' means"):
+#
+#   A) Add additive `if: always()` listener jobs to `rust-tests.yml`
+#      itself. Each listener would observe its upstream and emit the
+#      required-check name unconditionally. Cost: ZERO extra runs
+#      because the listeners are tiny (`always()` succeeds in <5 sec),
+#      but the `pull_request:` trigger must still fire on every PR
+#      class — which defeats the Issue #3367 path-filter on docs-only
+#      PRs and forces the entire 38-min `test` matrix on docs-only
+#      PRs (the exact cost the path-filter was added to avoid).
+#
+#   B) Create this unfiltered listener workflow. The `pull_request:`
+#      trigger has NO `paths-ignore:` so the workflow fires on every
+#      PR class (docs-only / scripts-only / physics). Each listener
+#      job runs the SAME test/script that the original listener ran
+#      (most are Python scripts <10 sec; only `workspace-check-gh`
+#      is the expensive `cargo check --workspace` cost). The listener
+#      cost on a docs-only PR is ~9 short jobs (the listeners only —
+#      not the full `test` matrix). This is the canonical fix and
+#      matches the existing `fluxion-determinism-gate` /
+#      `fluxion-performance-gate` listener pattern in
+#      `ashrae_validation.yml`.
+#
+# Decision: Option B. The 9 listener jobs below are the same shape
+# as their `rust-tests.yml` originals (same `name:`, same `steps:`,
+# same `runs-on:`), with the following changes:
+#
+#   * NO `paths-ignore:` on `pull_request:` — the workflow fires on
+#     every PR class.
+#   * NO `-gh-probe` / `-hz` overflow variants — the listeners run on
+#     GH-hosted `ubuntu-latest` directly. The probe pattern is only
+#     relevant when the listener needs a HETz overflow fallback
+#     (Issue #2133 / #3445); for docs-only / scripts-only PRs the
+#     overflow fallback is not warranted (the `-hz` variant only
+#     runs on main-merge pushes per Issue #3445).
+#   * NO `if: github.event_name == 'pull_request' || ...` guard at
+#     the job level — the listener must run on every PR class. The
+#     `if:` is implicitly `always()` (the workflow trigger fires on
+#     every PR; the job has no opt-out).
+#
+# The listeners remain IN `rust-tests.yml` for now — that workflow's
+# test matrix still emits the same required-check name on physics PRs
+# (the path-filter permits those PRs to trigger the workflow). The
+# duplication is accepted; on physics PRs both workflows emit the
+# listener name with the same status, which branch protection treats
+# as one check name. The `release_gates.yaml::ci.workflow_index`
+# entry for each listener points at THIS file (the unfiltered one)
+# because that's where the listener is GUARANTEED to emit on every
+# PR class; the `rust-tests.yml` copy is the documented opt-in
+# fallback (Issue #2133 / `vars.FLUXION_LINUX_RUNNER` routing).
+#
+# Why "duplicate but not wrong" is acceptable
+# ------------------------------------------
+# Branch protection's `required_status_checks.contexts` array matches
+# by emitted `jobs.<id>.name` — it does NOT care which workflow the
+# job came from. When two workflows both emit jobs named
+# `Workspace Check (GH)`, GitHub collapses them into a single check
+# (the latest run wins for the status; both jobs share the same
+# underlying check). The PR's overall check status is the OR of the
+# two (any failure → check is failing). This is the same
+# deduplication that the existing
+# `Workspace Check (GH)` / `Workspace Check (Hetzner Overflow)`
+# sibling jobs in `rust-tests.yml` rely on — the `(GH)` job is
+# canonical for branch protection; the `(Hetzner Overflow)` job is
+# the GH-runner-saturation fallback that emits a sibling name.
+#
+# Why no HETz overflow variants here
+# ----------------------------------
+# The `-hz` overflow variants in `rust-tests.yml` only run on
+# main-merge pushes (per Issue #3445: persistent self-hosted runners
+# MUST NOT execute PR-controlled code). The same policy applies here:
+# if this workflow's GH-hosted runner is saturated on a physics PR,
+# the wave orchestrator's merge-when-all-green discipline catches it
+# (the branch protection context stays "pending" until the runner
+# frees up). Adding `-hz` overflow would re-introduce the probe
+# pattern (and its 5-min latency), which is not warranted for
+# per-PR feedback. If main-merge saturation becomes a problem, this
+# file gains `-hz` jobs mirroring `rust-tests.yml::*-hz`.
+#
+# Listener name contract (Issue #3116 verbatim-match rule)
+# ------------------------------------------------------
+# Every listener's `name:` equals the corresponding
+# `release_gates.yaml::ci.required_checks_workflow_only` entry BYTE-
+# FOR-BYTE. Renaming either side silently desyncs branch protection
+# (the gap this PR closes). The drift guard
+# `scripts/check_required_checks_sync.py` (Issue #3810 6th
+# invariant) refuses any future drift in either direction.
+#
+# Job IDs vs. names
+# -----------------
+# GitHub branch protection matches the emitted `name:`, not the
+# `id:`. We use distinct ids (`workspace-check-listener`, etc.) so
+# the listener does not collide with any potential future `*-gh`
+# job inside `rust-tests.yml`. The `name:` is what counts.
+
+name: Rust Tests Listeners (Issue #3810)
+
+on:
+  pull_request:
+    # NO `paths-ignore:` — this workflow is the Option B
+    # unfiltered listener (Issue #3810 rationale in the header).
+    # Every PR class must trigger the workflow so the listeners
+    # emit the required-check names regardless of changed files.
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+# ADR-0015 per-`head_sha` concurrency block (Issue #3366 / #3444).
+# Re-run `python3 scripts/check_concurrency_keys.py` after edits.
+concurrency:
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
+# Least-privilege GITHUB_TOKEN default (Issue #2526): the listener
+# jobs only check out code and run scripts / cargo subcommands.
+# No repo write-back.
+permissions:
+  contents: read
+
+jobs:
+  # ----------------------------------------------------------------
+  # Workspace Check (GH) — Issue #2983
+  # ----------------------------------------------------------------
+  # The original `workspace-check-gh` job inside `rust-tests.yml` is
+  # path-filtered (the workflow's `paths-ignore:` carve-out skips it
+  # on docs-only PRs). This listener re-runs the same `cargo check
+  # --workspace` against the root + workspace siblings, emitting
+  # the exact required-check name. The Issue #3125
+  # `--examples --all-targets` step is duplicated here too; both
+  # the original and this listener use `continue-on-error: true` on
+  # the examples step until #3126 lands.
+  workspace-check-listener:
+    name: "Workspace Check (GH)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run workspace check
+        run: cargo check --workspace --verbose --exclude fluxion-tauri
+      # Issue #3125: catch example drift. `--examples` is NOT included
+      # by default in `cargo check --workspace`, so a renamed
+      # field/method silently breaks `examples/*.rs`. The new step
+      # adds `--examples --all-targets` to catch this drift at PR
+      # time. `continue-on-error: true` because the 4 broken examples
+      # reported in #3126 still fail to compile on current `develop`;
+      # the check observes the drift without blocking PRs (mirrors
+      # the original listener's posture).
+      - name: Run workspace check (examples, Issue #3125)
+        continue-on-error: true
+        run: cargo check --workspace --examples --all-targets --verbose --exclude fluxion-tauri
+
+  # ----------------------------------------------------------------
+  # Energy Conservation (GH) — Issue #1295
+  # ----------------------------------------------------------------
+  energy-conservation-listener:
+    name: "Energy Conservation (GH)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run energy conservation tests
+        run: |
+          cargo test --test all_tests test_energy_conservation:: --verbose 2>&1 | tee /tmp/energy_test_output.txt
+          cargo test --test all_tests zone_balance_eplus_isolation:: --verbose 2>&1 | tee /tmp/zone_balance_test_output.txt
+      - name: Extract violation counts
+        run: |
+          echo "=== Energy Conservation Test Results ==="
+          echo "Checking for energy conservation violations..."
+          ENERGY_VIOLATIONS=$(grep -c "violated energy conservation" /tmp/energy_test_output.txt /tmp/zone_balance_test_output.txt 2>/dev/null || echo "0")
+          echo "Total violations found: $ENERGY_VIOLATIONS"
+          if [ "$ENERGY_VIOLATIONS" -gt "0" ]; then
+            echo "FAIL: Energy conservation violations detected"
+            grep -A2 "violated energy conservation" /tmp/energy_test_output.txt /tmp/zone_balance_test_output.txt
+            exit 1
+          fi
+          echo "PASS: No energy conservation violations"
+
+  # ----------------------------------------------------------------
+  # Rustfmt (GH)
+  # ----------------------------------------------------------------
+  fmt-listener:
+    name: Rustfmt (GH)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-env
+        with:
+          components: rustfmt
+      - run: cargo fmt -- --check
+
+  # ----------------------------------------------------------------
+  # Clippy (GH) — `-D warnings`
+  # ----------------------------------------------------------------
+  clippy-listener:
+    name: Clippy (GH)
+    runs-on: ubuntu-latest
+    env:
+      CARGO_BUILD_JOBS: 1
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          rust-components: clippy
+          python-version: '3.10'
+      - run: cargo clippy --lib -- -D warnings
+
+  # ----------------------------------------------------------------
+  # Known Issues Stale Check (GH) — Issue #1723
+  # ----------------------------------------------------------------
+  # The original `known-issues-stale-gh` listener in `rust-tests.yml`
+  # is path-filtered; the dedicated `known-issues-stale.yml`
+  # workflow is ALSO path-filtered (`paths:
+  # ['docs/KNOWN_ISSUES.md', 'scripts/check_known_issues_stale.py']`).
+  # So the only way to get a "Known Issues Stale Check (GH)" check
+  # reported on every PR class (e.g. a CI-infra PR that touches
+  # neither KNOWN_ISSUES.md nor the script) is THIS listener. The
+  # script is pure stdlib (no Rust toolchain) so the listener is
+  # cheap.
+  known-issues-stale-listener:
+    name: "Known Issues Stale Check (GH)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Run stale check
+        run: python3 scripts/check_known_issues_stale.py
+
+  # ----------------------------------------------------------------
+  # Ashrae Cases Cycle Check (GH) — Issue #1441
+  # ----------------------------------------------------------------
+  ashrae-cases-cycle-listener:
+    name: "Ashrae Cases Cycle Check (GH)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run cycle check
+        run: python3 scripts/check_ashrae_cases_cycle.py
+
+  # ----------------------------------------------------------------
+  # Physics-Sim-Cycle-Check (GH) — Issue #2463
+  # ----------------------------------------------------------------
+  physics-sim-cycle-listener:
+    name: "Physics-Sim-Cycle-Check (GH)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run physics-sim cycle check
+        run: python3 scripts/check_physics_sim_cycle.py
+
+  # ----------------------------------------------------------------
+  # Cycle Downward Trend Guard (Issue #2768)
+  # ----------------------------------------------------------------
+  # Per-PR R1 (no growth) + R3 (no net-flat edge swap) enforcement.
+  # The R2 (14-night stale-window) check is nightly-only and lives in
+  # the `cycle-trend-nightly` job of `rust-tests.yml` (the path
+  # filter permits nightly pushes to trigger the workflow).
+  cycle-trend-listener:
+    name: "Cycle Downward Trend Guard (Issue #2768)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: "Run cycle downward-trend guard (per-PR: R1 + R3)"
+        run: python3 scripts/check_cycle_downward_trend.py
+
+  # ----------------------------------------------------------------
+  # fluxion-grid Integration Tests (GH) — Issue #2908 / #3127
+  # ----------------------------------------------------------------
+  fluxion-grid-integration-listener:
+    name: "fluxion-grid Integration Tests (GH)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install system dependencies (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run fluxion-grid integration tests
+        run: |
+          cargo test -p fluxion-grid --test grid_solver_integration --verbose

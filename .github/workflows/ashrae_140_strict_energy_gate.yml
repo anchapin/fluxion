@@ -289,3 +289,38 @@ jobs:
           name: ashrae-140-strict-energy-gate
           path: /tmp/strict_gate_output.txt
           retention-days: 14
+
+  # Issue #3810: GH-listener pattern for the path-filtered
+  # `ashrae_140_strict_energy_gate.yml` workflow. The upstream
+  # `strict-energy-gate` job only fires for non-docs-only PRs
+  # (`paths-ignore: ['docs/**', ...]`), so on a docs-only /
+  # scripts-only PR the workflow is skipped and the required-check
+  # context is never reported — branch protection's expected-vs-actual
+  # gap that #3805 documented.
+  #
+  # The `strict-energy-gh-listener` job is unconditional
+  # (`if: always()`) and observes the upstream result: PASS on
+  # `success` / `skipped` (path-filter neutral-success); FAIL on
+  # `failure` / `cancelled` / `timed_out`. Listener's `name:` is the
+  # exact required-check string so GitHub branch protection can
+  # reference it verbatim (Issue #3116). The job id is suffixed
+  # `-listener` to avoid colliding with the upstream
+  # `strict-energy-gate` id.
+  strict-energy-gh-listener:
+    name: ASHRAE 140 Strict Energy Gate (Issue #1333)
+    needs: [strict-energy-gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+
+    steps:
+      - name: Verify upstream result
+        run: |
+          set -uo pipefail
+          RESULT="${{ needs.strict-energy-gate.result }}"
+          echo "strict-energy-gate upstream result: ${RESULT}"
+          if [[ "${RESULT}" != "success" && "${RESULT}" != "skipped" ]]; then
+            echo "::error::ASHRAE 140 Strict Energy Gate upstream did not succeed: ${RESULT}"
+            exit 1
+          fi
+          echo "ASHRAE 140 Strict Energy Gate (Issue #1333) PASS"

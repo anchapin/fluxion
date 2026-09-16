@@ -99,6 +99,7 @@ try:
     from scripts.check_required_checks_sync import (  # type: ignore[import-not-found]
         get_required_checks,
         get_workflow_index,
+        get_workflow_only_checks,
         load_release_gates,
     )
 except ImportError:  # pragma: no cover - allow direct invocation from repo root
@@ -106,6 +107,7 @@ except ImportError:  # pragma: no cover - allow direct invocation from repo root
     from scripts.check_required_checks_sync import (  # type: ignore[no-redef]
         get_required_checks,
         get_workflow_index,
+        get_workflow_only_checks,
         load_release_gates,
     )
 
@@ -366,8 +368,23 @@ def main() -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
-    required_checks = get_required_checks(gates)
-    _ = get_workflow_index(gates)  # not used directly, but loaded to validate YAML
+    # Issue #3810: develop branch protection is restored to the
+    # `required_checks_workflow_only` (always-run) set, NOT the full
+    # `required_checks` list. The full list contains the 5 path-filtered
+    # checks (Docs Hygiene, Architecture Drift, Module Size, Crate Size,
+    # MSRV) that never report on docs-only / scripts-only PRs. Pre-#3810
+    # develop's required-checks list dropped to the 5 contexts that DO
+    # report on every PR class (the so-called "5-check floor"). Post-
+    # #3810 the listener pattern makes all 18 `workflow_only` checks
+    # report on every PR class, so the always-run set is the durable
+    # branch protection list. The path-filtered checks remain in
+    # `required_checks` for the wave-orchestrator's `required_checks`
+    # lane-1 enforcement (PRs that touch code/script paths still get
+    # the path-filtered checks as blocking); branch protection just
+    # doesn't require them because they cannot report on every PR.
+    required_checks = get_workflow_only_checks(gates)
+    _ = get_required_checks(gates)  # validate the full list exists
+    _ = get_workflow_index(gates)  # validate workflow_index exists
     payload = build_put_payload(required_checks)
 
     try:

@@ -60,3 +60,40 @@ jobs:
 
       - name: Run tracked-vs-ignored gate
         run: python3 scripts/check_no_ignored_tracked_files.py
+
+  # Issue #3810: GH-listener pattern for the path-filtered
+  # `tracked-vs-ignored` gate. The upstream `tracked-vs-ignored` job only
+  # fires when a `.gitignore` file or the script itself changes
+  # (`paths:` filter), so on docs-only / scripts-only PRs that touch
+  # other files (release_gates.yaml, AGENTS.md, etc.) the workflow is
+  # skipped and the required-check context is never reported. The
+  # `tracked-vs-ignored-listener` job is unconditional (`if: always()`)
+  # and observes the upstream's result:
+  #
+  #   * `success` / `skipped` -> PASS (skipped is the path-filtered
+  #     neutral-success: the gate isn't triggered for this PR class, so
+  #     it cannot fail).
+  #   * `failure` / `cancelled` / `timed_out` -> FAIL.
+  #
+  # The listener's `name:` is the exact required-check string so
+  # GitHub branch protection's contexts array can reference it
+  # verbatim (Issue #3116). Job id is suffixed `-listener` to avoid a
+  # name collision with the upstream `tracked-vs-ignored` id.
+  tracked-vs-ignored-listener:
+    name: "Tracked-vs-Ignored Gate (Issue #3356)"
+    needs: [tracked-vs-ignored]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+
+    steps:
+      - name: Verify upstream result
+        run: |
+          set -uo pipefail
+          RESULT="${{ needs.tracked-vs-ignored.result }}"
+          echo "tracked-vs-ignored upstream result: ${RESULT}"
+          if [[ "${RESULT}" != "success" && "${RESULT}" != "skipped" ]]; then
+            echo "::error::tracked-vs-ignored upstream did not succeed: ${RESULT}"
+            exit 1
+          fi
+          echo "Tracked-vs-Ignored Gate (Issue #3356) PASS"

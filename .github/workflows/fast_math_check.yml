@@ -533,12 +533,22 @@ jobs:
     if: always()
 
     steps:
-      - name: Verify compare job succeeded
+      - name: Verify compare job result
+        # Issue #3810: the previous shape (`if [ "${RESULT}" != "success" ]`)
+        # classified `skipped` as FAIL, which is wrong for a
+        # path-filtered listener — `skipped` is the neutral-success
+        # case when the upstream's `paths-ignore` excludes the PR's
+        # changed files. The corrected shape treats `success` and
+        # `skipped` as PASS (the gate cannot fail on a PR class that
+        # cannot run it), and only `failure` / `cancelled` /
+        # `timed_out` are FAIL. Mirrors the GH-listener pattern
+        # already used in tracked-vs-ignored.yml / h_tr_em_regression_
+        # gate.yml (Issue #3810 remediation).
         run: |
           set -uo pipefail
           RESULT="${{ needs.compare.result }}"
           echo "compare job result: ${RESULT}"
-          if [ "${RESULT}" != "success" ]; then
+          if [[ "${RESULT}" != "success" && "${RESULT}" != "skipped" ]]; then
             echo "::error::Fast-Math compare job did not succeed: ${RESULT}"
             exit 1
           fi

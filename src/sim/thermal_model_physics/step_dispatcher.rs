@@ -90,7 +90,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         #[cfg(feature = "gauge-solver")]
         let gauge_inputs = self.collect_gauge_inputs();
 
-// β-phase gauge dispatch (gauge-enabled build) with the
+        // β-phase gauge dispatch (gauge-enabled build) with the
         // #3817 heavyweight-spec exception. Try single-zone first;
         // multi-zone specs (e.g. Case 960 sunspace) have
         // `gauge_zone_solver == None` and are picked up by the
