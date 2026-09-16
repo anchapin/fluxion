@@ -1399,7 +1399,9 @@ def test_check_live_branch_protection_passes_when_live_matches_workflow_only(
     def fake_run(cmd, **kwargs):
         # The 5 path-filtered checks are NOT on the live branch
         # protection (apply_branch_protection.py only writes the
-        # workflow-only set).
+        # workflow-only set). Live review-count matches canonical
+        # ci.review_policy.required_approving_review_count=0 per
+        # ADR-0016 / Issue #3807 (reviews-advisory).
         live_payload = {
             "required_status_checks": {
                 "strict": True,
@@ -1407,7 +1409,7 @@ def test_check_live_branch_protection_passes_when_live_matches_workflow_only(
             },
             "enforce_admins": {"enabled": True},
             "required_pull_request_reviews": {
-                "required_approving_review_count": 1,
+                "required_approving_review_count": 0,
             },
         }
         return _FakeCompleted(json.dumps(live_payload), returncode=0)
@@ -1545,7 +1547,9 @@ def test_main_with_live_protection_uses_workflow_only_check(
     # Live protection contains only "Always Gate (GH)" (the workflow-only
     # set). Under the old code this would fail (the 5 path-filtered
     # checks would be reported as missing from live protection). Under
-    # the new code this must pass.
+    # the new code this must pass. Live review-count matches the
+    # canonical ci.review_policy.required_approving_review_count=0 per
+    # ADR-0016 / Issue #3807 (reviews-advisory).
     live_payload = {
         "required_status_checks": {
             "strict": True,
@@ -1553,7 +1557,7 @@ def test_main_with_live_protection_uses_workflow_only_check(
         },
         "enforce_admins": {"enabled": True},
         "required_pull_request_reviews": {
-            "required_approving_review_count": 1,
+            "required_approving_review_count": 0,
         },
     }
 

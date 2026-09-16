@@ -89,9 +89,11 @@ Live branch-protection verification (cron-mode)
 Set ``FLUXION_CHECK_LIVE_PROTECTION=1`` (and have ``gh auth`` working)
 to additionally ``gh api``-query ``develop``'s branch protection and
 verify the live ``required_status_checks.contexts`` array matches the
-``ci.required_checks_workflow_only`` list exactly (and that
-``required_pull_request_reviews.required_approving_review_count`` ≥ 1
-and ``enforce_admins.enabled`` is true). The comparison list is the
+``ci.required_checks_workflow_only`` list exactly, that
+``required_pull_request_reviews.required_approving_review_count`` equals
+the canonical ``ci.review_policy.required_approving_review_count`` (0 by
+default per ADR-0016 / Issue #3807 — reviews-advisory), and that
+``enforce_admins.enabled`` is true. The comparison list is the
 **workflow-only set** (not the full ``ci.required_checks``) because
 ``scripts/apply_branch_protection.py`` — the source-of-truth applier —
 restores ``develop`` branch protection to exactly this 18-entry set
@@ -847,6 +849,7 @@ def check_live_branch_protection(
     workflow_only_checks: list[str],
     repo: str = "anchapin/fluxion",
     branch: str = "develop",
+    canonical_required_approving_review_count: int | None = None,
 ) -> list[str]:
     """Verify the live GitHub branch protection for ``repo:branch`` matches
     ``workflow_only_checks`` (Issues #3116 closure + #3810 design intent).
@@ -866,7 +869,12 @@ def check_live_branch_protection(
       full list previously produced false-positive drift (Issue #3831).
     * ``required_status_checks.strict`` is True.
     * ``required_pull_request_reviews.required_approving_review_count``
-      is at least 1.
+      equals the canonical value (Issue #3807 / ADR-0016 companion —
+      the canonical defaults to 0, reviews-advisory). Pass
+      ``canonical_required_approving_review_count=N`` to require N
+      human approvals; if omitted, the function falls back to
+      ``release_gates.yaml::ci.review_policy.required_approving_review_count``
+      (and ultimately to 0 if neither is present).
     * ``enforce_admins.enabled`` is True.
 
     Requires ``gh auth`` to be configured for the target repo. The cron-
@@ -883,6 +891,20 @@ def check_live_branch_protection(
     import subprocess
 
     failures: list[str] = []
+
+    if canonical_required_approving_review_count is None:
+        try:
+            gates = load_release_gates()
+        except (FileNotFoundError, ValueError):
+            canonical_required_approving_review_count = 0
+        else:
+            policy = (gates.get("ci") or {}).get("review_policy") or {}
+            canonical_required_approving_review_count = int(
+                policy.get("required_approving_review_count", 0)
+            )
+    canonical_required_approving_review_count = int(
+        canonical_required_approving_review_count
+    )
 
     try:
         proc = subprocess.run(
@@ -941,10 +963,13 @@ def check_live_branch_protection(
 
     rpr = protection.get("required_pull_request_reviews") or {}
     approving = rpr.get("required_approving_review_count") or 0
-    if approving < 1:
+    if approving != canonical_required_approving_review_count:
         failures.append(
             f"develop branch protection has required_approving_review_count="
-            f"{approving}. Issue #3116 acceptance criterion requires ≥1."
+            f"{approving} but the canonical value (ci.review_policy in "
+            f"release_gates.yaml, ADR-0016 / Issue #3807) is "
+            f"{canonical_required_approving_review_count}. Reconcile via "
+            f"`scripts/apply_branch_protection.py --write`."
         )
 
     admins = protection.get("enforce_admins") or {}
