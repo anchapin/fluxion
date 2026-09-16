@@ -230,16 +230,23 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
+        # Issue #3812 — this job has `id-token: write` for PyPI OIDC
+        # trusted publishing. A compromised `build` artifact would
+        # exfiltrate the minted upload credential. Install from a
+        # pinned constraints file instead of a bare `pip install`.
         run: |
           python -m pip install --upgrade pip
-          pip install build
+          pip install -r scripts/requirements-ci.txt
 
       - name: Build package
         run: python -m build
 
       - name: Check package
+        # Issue #3812 — `twine` is in the pinned constraints file, but
+        # its `check` step is a separate run block that still needs
+        # the package; pull via the constraints file to keep parity.
         run: |
-          pip install twine
+          pip install -r scripts/requirements-ci.txt
           twine check dist/*
 
       - name: Publish to PyPI
@@ -265,9 +272,11 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
+        # Issue #3812 — same fix as `publish`; install from pinned
+        # constraints file. This job also has `id-token: write`.
         run: |
           python -m pip install --upgrade pip
-          pip install build
+          pip install -r scripts/requirements-ci.txt
 
       - name: Build package
         run: python -m build
