@@ -2412,7 +2412,17 @@ impl ThermalModel<VectorField> {
         // (verified against the `zone_balance_eplus_isolation` energy
         // conservation gate). The feature gate is removed in PR4 (#3290) when
         // gauge becomes unconditional default.
-        #[cfg(not(feature = "gauge-solver"))]
+        //
+        // Issue #3817 — auto-promote also runs in the gauge build. The gauge
+        // solver has no thermal-mass modeling, so Case 900FF (heavyweight
+        // free-floating) cannot satisfy the `zone_balance_eplus_isolation`
+        // swing-reduction sanity bound without 9R4C's wall/roof/floor mass
+        // nodes. The dispatcher's cfg-gated gauge block now consults
+        // `is_nine_r4c_model()` and falls through to the legacy 9R4C arm
+        // whenever `thermal_model_type == NineRFourC`, so setting the flag
+        // here is what makes the gauge → 9R4C fall-through work in both
+        // builds. Light-mass specs (600, 600FF) are unaffected — they stay
+        // on `FiveROneC` and the gauge path runs as before.
         if spec.construction_type == fluxion_core::ashrae_cases::ConstructionType::HighMass {
             model.enable_9r4c_model();
         }

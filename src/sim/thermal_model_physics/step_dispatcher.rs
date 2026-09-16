@@ -96,8 +96,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // and `from_spec_with_selector` initializes the matching gauge
         // backend, so a selector=="Gauge" run without a configured
         // backend is a programming error.
+        //
+        // Issue #3817 — exception to the "unconditional gauge" rule: when
+        // the spec is heavyweight (`thermal_model_type == NineRFourC`,
+        // auto-promoted by `from_spec_with_selector` for HighMass
+        // construction in both the default and gauge builds) the gauge
+        // path is bypassed and the dispatch falls through to the legacy
+        // 9R4C arm below. The gauge solver has no thermal-mass modeling,
+        // so heavyweight free-floating specs (e.g. Case 900FF) cannot
+        // satisfy the `zone_balance_eplus_isolation` swing-reduction
+        // sanity bound without the 9R4C's wall/roof/floor mass nodes.
+        // This keeps the gauge as the default for light-mass specs while
+        // routing heavyweight specs to the physically-correct legacy
+        // solver — the same fall-through pattern PR #3818 introduced for
+        // missing-backend failures.
         #[cfg(feature = "gauge-solver")]
-        if selector_zone_solver == ZoneSolverKind::Gauge {
+        if selector_zone_solver == ZoneSolverKind::Gauge && !self.is_nine_r4c_model() {
             if let Some(ekwh) =
                 self.try_run_gauge_single_zone(timestep, outdoor_temp, dt_seconds, &gauge_inputs)
             {
@@ -299,12 +313,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .expect("checked Some above");
             // HVAC-aware coupling: force T_air to setpoint only for
             // conditioned cases. Free-floating keeps the gauge free-float.
+            let h_sp: f64 = inputs
+                .heating_setpoints
+                .first()
+                .copied()
+                .unwrap_or(inputs.default_heating_sp);
             if is_conditioned {
-                let h_sp: f64 = inputs
-                    .heating_setpoints
-                    .first()
-                    .copied()
-                    .unwrap_or(inputs.default_heating_sp);
                 gauge.set_T_air(h_sp);
             }
             let r = gauge.step(
@@ -316,6 +330,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 q_internal_w,
                 0.0, // Q_infiltration_w — would need proper infiltration calculation
             );
+            // Issue #3817 — for HVAC-conditioned zones the dispatcher forces
+            // T_air to the setpoint BEFORE the step (so the gauge's per-surface
+            // flux is computed at T_air = h_sp, giving the correct HVAC load
+            // in `energy_kwh`), but the gauge's step formula still evolves
+            // T_air from that forced value via the implicit Euler update. For
+            // the conditioned case the HVAC is assumed to track the setpoint,
+            // so we restore T_air to h_sp AFTER the step and propagate that
+            // value to `setpoints.temperatures[0]` below. Without this restore,
+            // the post-step T_air drifts toward the gauge's free-float
+            // equilibrium (e.g. ≈ 0 °C for Case 600, Denver TMY) and the test
+            // at `tests/all_tests/zone_balance_eplus_isolation.rs:298` sees a
+            // 30+ °C step-to-step oscillation in the propagated T_zone. The
+            // restore is a no-op for free-floating cases (the `if is_conditioned`
+            // branch is skipped), so the gauge's free-float dynamics are
+            // preserved for Case 600FF/900FF.
+            if is_conditioned {
+                gauge.set_T_air(h_sp);
+            }
             let t_air = gauge.T_air().to_value();
             (r.ok(), t_air)
         };
