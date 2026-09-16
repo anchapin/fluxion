@@ -52,6 +52,29 @@ ROOT_ALLOW = (
 )
 
 
+# Issue #3808 — `.planning/worktrees/**` is the wave orchestrator's
+# live git worktree store (gitignored runtime state). It is never
+# present in CI but exists during parallel-agent local runs and
+# contains markdown files with cross-references resolved against the
+# worktree root rather than the repo root, which produces false
+# "broken reference" failures. Skip the directory at collection time.
+WORKTREE_SKIP_PARTS = (REPO_ROOT / ".planning" / "worktrees",)
+
+
+def is_skipped_worktree(path: Path) -> bool:
+    """Return True if `path` lives under any gitignored runtime
+    worktree directory (Issue #3808)."""
+    try:
+        rel = path.relative_to(REPO_ROOT)
+    except ValueError:
+        return False
+    parts = rel.parts
+    return any(
+        REPO_ROOT.joinpath(*parts[: i + 1]) in WORKTREE_SKIP_PARTS
+        for i in range(len(parts))
+    )
+
+
 def collect_markdown_files() -> list[Path]:
     """Return all in-scope markdown files."""
     files: list[Path] = []
@@ -64,9 +87,13 @@ def collect_markdown_files() -> list[Path]:
         for path in sorted(docs_dir.rglob("*.md")):
             files.append(path)
     # Include .planning/**/*.md for cross-references from CHANGELOG/AGENTS/etc.
+    # Issue #3808 — but skip `.planning/worktrees/**` (parallel-agent
+    # git worktrees; see WORKTREE_SKIP_PARTS above).
     planning_dir = REPO_ROOT / ".planning"
     if planning_dir.is_dir():
         for path in sorted(planning_dir.rglob("*.md")):
+            if is_skipped_worktree(path):
+                continue
             files.append(path)
     return files
 
