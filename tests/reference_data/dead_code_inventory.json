@@ -1,0 +1,572 @@
+{
+  "schema_version": 1,
+  "description": "Inventory of production #[allow(dead_code)] sites in the root fluxion crate, governed by scripts/check_orphan_modules.py (Issue #3752). Regenerate with: python3 scripts/check_orphan_modules.py --update-dead-code-inventory",
+  "governing_issue": 3752,
+  "site_count": 94,
+  "sites": [
+    {
+      "file": "src/ai/equipment_surrogate.rs",
+      "signature": "inference_session: ort::session::Session,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/ai/surrogate/session_pool.rs",
+      "signature": "fn create_session(",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/ai/surrogate/session_pool.rs",
+      "signature": "pub struct MultiDeviceSessionPool {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/ai/surrogate/session_pool.rs",
+      "signature": "pub struct SessionPool {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/ai/surrogate/session_pool.rs",
+      "signature": "pub struct SessionPool {",
+      "index": 2,
+      "issue": 3752
+    },
+    {
+      "file": "src/ai/surrogate/session_pool.rs",
+      "signature": "pub(crate) device_pools: Vec<Arc<SessionPool>>,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/ai/surrogate/session_pool.rs",
+      "signature": "pub(crate) fn get_or_create_session(&self) -> Result<SessionGuard<'_>, String> {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/ai/surrogate/session_pool.rs",
+      "signature": "pub(crate) fn new(",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/ai/surrogate/session_pool.rs",
+      "signature": "pub(crate) struct SessionGuard<'a> {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/interop/fmi/common.rs",
+      "signature": "const FMI_XMLNS: &str = \"http://fmi-standard.org/\";",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/interop/gbxml/reader.rs",
+      "signature": "pub struct GbXmlReader {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/interop/gbxml/writer.rs",
+      "signature": "pub struct GbXmlWriter {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/interop/osm/writer.rs",
+      "signature": "indent: usize,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/bdf_benchmarks.rs",
+      "signature": "fn rel_err(a: f64, b: f64) -> f64 {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/bdf_engine.rs",
+      "signature": "pub struct BdfDriver {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/bdf_engine.rs",
+      "signature": "pub struct BdfTimeStepper {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/cta.rs",
+      "signature": "pub const fn inline_capacity() -> usize {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/ctf_coefficients.rs",
+      "signature": "impl<'a> CTFCalculator<'a> {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/ctf_solver_wrapper.rs",
+      "signature": "pub struct CTFSolverWrapper {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/fd_solver_wrapper.rs",
+      "signature": "pub struct FDSolverWrapper {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/gauge_zone_solver.rs",
+      "signature": "adjacent_zone_id: Option<usize>,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/gauge_zone_solver.rs",
+      "signature": "fn compute_inter_zone_flux(",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/gauge_zone_solver.rs",
+      "signature": "fn new_inter_zone(",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/gauge_zone_solver.rs",
+      "signature": "inter_zone_conductance: f64,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/state_space_ctf/mod.rs",
+      "signature": "fn apply_householder_left(h: &mut [Vec<f64>], v: &[f64], start: usize, col_start: usize, n: usize) {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/state_space_ctf/mod.rs",
+      "signature": "fn apply_householder_right(h: &mut [Vec<f64>], v: &[f64], row_end: usize, start: usize, _n: usize) {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/state_space_ctf/mod.rs",
+      "signature": "fn apply_householder_right_unitary(u: &mut [Vec<f64>], v: &[f64], start: usize, n: usize) {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/state_space_ctf/mod.rs",
+      "signature": "fn exp_real_schur(t: &[Vec<f64>]) -> Vec<Vec<f64>> {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/state_space_ctf/mod.rs",
+      "signature": "fn francis_qr_schur(h: &[Vec<f64>]) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/state_space_ctf/mod.rs",
+      "signature": "fn householder_qr(m: &[Vec<f64>], start: usize, nn: usize) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/state_space_ctf/mod.rs",
+      "signature": "fn householder_to_hessenberg(a: &[Vec<f64>]) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/state_space_ctf/mod.rs",
+      "signature": "fn implicit_double_shift_bulge_chase(",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/state_space_ctf/mod.rs",
+      "signature": "fn mat_mul_transpose(a: &[Vec<f64>], b: &[Vec<f64>]) -> Vec<Vec<f64>> {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/state_space_ctf/mod.rs",
+      "signature": "fn matrix_exponential_explicit_qr(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/state_space_ctf/mod.rs",
+      "signature": "fn matrix_exponential_old_pade(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/state_space_ctf/mod.rs",
+      "signature": "fn matrix_exponential_schur(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/state_space_ctf/mod.rs",
+      "signature": "fn matrix_exponential_taylor(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/state_space_ctf/mod.rs",
+      "signature": "fn matrix_norm_inf(a: &[Vec<f64>]) -> f64 {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/state_space_ctf/mod.rs",
+      "signature": "fn transpose(a: &[Vec<f64>]) -> Vec<Vec<f64>> {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/physics/state_space_ctf/mod.rs",
+      "signature": "fn vector_norm(v: &[f64]) -> f64 {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/sim/adaptive_timestep.rs",
+      "signature": "pub struct AdaptiveTimestepScheduler {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/sim/hvac/doas.rs",
+      "signature": "fn _assert_validate_positive_used(v: f64) -> Result<(), AirsideCouplingError> {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/sim/hvac/economizer.rs",
+      "signature": "fn zone_enthalpy_from_temp(zone_temp: f64, outdoor_humidity: f64) -> f64 {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/sim/hvac/fluid_adapter.rs",
+      "signature": "pumps: Vec<Pump>,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/sim/hvac/fluid_adapter.rs",
+      "signature": "struct FluidConservationNode {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/sim/hvac/humidifier.rs",
+      "signature": "fn _assert_validate_positive_used(v: f64) -> Result<(), AirsideCouplingError> {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/sim/hvac/mod.rs",
+      "signature": "pub fn simulate_annual(",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/sim/hvac/modes.rs",
+      "signature": "pub fn with_tuning(",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/sim/interzone.rs",
+      "signature": "pub fn calculate_zone_to_zone_view_factor(",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/sim/interzone_radiation.rs",
+      "signature": "pub fn calculate_radiative_conductance_linearized(",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/sim/loose_coupling.rs",
+      "signature": "num_surfaces: usize,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/sim/loose_coupling.rs",
+      "signature": "num_zones: usize,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/sim/thermal_model_iterative.rs",
+      "signature": "fn calculate_window_radiative_conductance(",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/sim/thermal_model_iterative.rs",
+      "signature": "pub(crate) fn calculate_radiative_conductance_with_view_factor(",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/sim/thermal_model_iterative.rs",
+      "signature": "pub(crate) fn calculate_total_interior_surface_area(geometry: &GeometrySpec) -> f64 {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/sim/thermal_model_iterative.rs",
+      "signature": "pub(crate) fn calculate_zone_to_zone_view_factor(",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/sim/thermal_model_physics/physics_impl/step_6r2c.rs",
+      "signature": "pub(crate) fn step_physics_6r2c(",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/sim/thermal_model_physics/solver_core.rs",
+      "signature": "if false {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/twin/kafka_telemetry_consumer.rs",
+      "signature": "group_id: String,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/twin/kafka_telemetry_consumer.rs",
+      "signature": "topic: String,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/twin/kafka_telemetry_consumer.rs",
+      "signature": "tx: Sender<TelemetryMsg>,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/twin/kafka_telemetry_consumer.rs",
+      "signature": "type KafkaConsumerContextType = PhantomData<()>;",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/twin/kafka_telemetry_consumer.rs",
+      "signature": "type KafkaConsumerType = PhantomData<()>;",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/adaptive_calibration.rs",
+      "signature": "efficiency_baseline: f64,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/adaptive_calibration.rs",
+      "signature": "occupancy_baseline: f64,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/ashrae_140_cases.rs",
+      "signature": "pub fn generate_denver_weather_data() -> Vec<HourlyWeatherData> {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/ashrae_140_multi_zone.rs",
+      "signature": "base_validator: ASHRAE140Validator,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/ashrae_140_multi_zone.rs",
+      "signature": "case_960_reference: Option<Case960Reference>,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/ashrae_140_multi_zone.rs",
+      "signature": "case_970_reference: Option<Case970Reference>,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/ashrae_140_multi_zone.rs",
+      "signature": "case_980_reference: Option<Case960Reference>,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/ashrae_140_validator/mod.rs",
+      "signature": "fn layer_to_ctf_material(layer: &crate::sim::construction::ConstructionLayer) -> CTFMaterial {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/ashrae_140_validator/mod.rs",
+      "signature": "pub hourly_data: Vec<HourlyData>,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/automation/github/api.rs",
+      "signature": "impl GitHubClient {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/automation/github/api.rs",
+      "signature": "token: Option<String>,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/automation/github/workflow.rs",
+      "signature": "config: WorkflowGeneratorConfig,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/automation/github/workflow.rs",
+      "signature": "impl WorkflowGenerator {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/automation/runner.rs",
+      "signature": "config: TestRunnerConfig,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/automation/runner.rs",
+      "signature": "format: String,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/automation/runner.rs",
+      "signature": "impl TestRunner {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/automation/runner.rs",
+      "signature": "impl TestRunnerConfig {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/automation/runner.rs",
+      "signature": "output_dir: PathBuf,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/automation/runner.rs",
+      "signature": "test_cases_dir: PathBuf,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/automation/runner.rs",
+      "signature": "tolerance: f64,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/automation/runner.rs",
+      "signature": "verbose: bool,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/case_960.rs",
+      "signature": "weather: EpwWeatherSource,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/copilot/ollama.rs",
+      "signature": "pub struct OllamaClient {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/hvac_bestest/runner.rs",
+      "signature": "fn simulate_annual_cav(",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/hvac_bestest/runner.rs",
+      "signature": "fn simulate_annual_cav_terminal(",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/performance/ci.rs",
+      "signature": "baseline_path: Option<String>,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/performance/ci.rs",
+      "signature": "impl CiPerformanceValidator {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/performance/comparative.rs",
+      "signature": "baseline_config: ConfigurationResult,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/performance/comparative.rs",
+      "signature": "impl ComparativeAnalyzer {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/report.rs",
+      "signature": "config: crate::validation::ValidationConfig,",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/validation/reporting/aggregation.rs",
+      "signature": "const HOURS_PER_YEAR: usize = 8760;",
+      "index": 1,
+      "issue": 3752
+    }
+  ]
+}

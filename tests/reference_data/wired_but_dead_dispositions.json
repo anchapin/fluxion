@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "description": "Per-module disposition registry for the wired-but-dead pub mods allowlisted in scripts/check_orphan_modules.py::WIRED_BUT_DEAD (Issue #3748). Every allowlist entry must carry exactly one row with an owner-assigned wire-or-delete decision; the registry must stay in lock-step with the live wired-but-dead set. Resolving a module (wiring it up or deleting it) requires dropping its row AND lowering BASELINE_WIRED_BUT_DEAD by one in the same PR.",
+  "governing_issue": 3748,
+  "module_count": 21,
+  "modules": [
+    {
+      "module": "ems",
+      "disposition": "keep-dead",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "EnergyPlus-parity EMS framework (sensors/actuators/programs); parked until the simulation loop integrates it. Decision documented in src/sim/ems.rs."
+    },
+    {
+      "module": "hvac_sizing",
+      "disposition": "keep-dead",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "Design-day HVAC sizing utility; parked until a CLI or reporting consumer exists. Decision documented in src/sim/hvac_sizing.rs."
+    },
+    {
+      "module": "assembly_library",
+      "disposition": "wire-pending",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "Assembly-variant validation library; wire into the validation suite or delete in the #3748 burn-down."
+    },
+    {
+      "module": "batch_inference",
+      "disposition": "wire-pending",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "Dynamic ONNX batching for surrogate throughput; wire into an ort-feature consumer or delete."
+    },
+    {
+      "module": "benchmarking",
+      "disposition": "wire-pending",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "Performance measurement utilities; benches/ is excluded from caller scope by design, so wire a production consumer or delete."
+    },
+    {
+      "module": "context_aware",
+      "disposition": "wire-pending",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "Quantum state-space parameter initializer; wire into the quantum path or delete."
+    },
+    {
+      "module": "coupled_solver",
+      "disposition": "wire-pending",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "Implicit multi-zone ODE solver reserved as an alternative integration path; wire into a consumer or delete."
+    },
+    {
+      "module": "distributed",
+      "disposition": "wire-pending",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "Distributed inference scaffold; wire into a multi-node consumer or delete."
+    },
+    {
+      "module": "doe_reference",
+      "disposition": "wire-pending",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "DOE Commercial Reference Building configurations; wire into the validation suite or delete."
+    },
+    {
+      "module": "equipment_surrogate",
+      "disposition": "wire-pending",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "ONNX HVAC equipment surrogate node; wire into the HVAC loop or delete."
+    },
+    {
+      "module": "epjson",
+      "disposition": "wire-pending",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "epJSON (EnergyPlus JSON) parser; wire into an input-format consumer or delete."
+    },
+    {
+      "module": "fdd",
+      "disposition": "wire-pending",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "Fault detection and diagnostics surface; wire into validation/twin reporting or delete."
+    },
+    {
+      "module": "flexlab_weather",
+      "disposition": "wire-pending",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "FLEXLAB measured-weather loader; wire into the empirical validation datasets or delete."
+    },
+    {
+      "module": "inter_zone",
+      "disposition": "wire-pending",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "Inter-zone conductance functions; wire into a multi-zone coupling consumer or delete."
+    },
+    {
+      "module": "parallel",
+      "disposition": "wire-pending",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "Parallel execution infrastructure; wire into a population-scale batch path or delete (BatchOracle remains the only sanctioned parallelism)."
+    },
+    {
+      "module": "rom",
+      "disposition": "wire-pending",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "Reduced-order-model intermediary fidelity layer; wire into a multi-zone consumer or delete."
+    },
+    {
+      "module": "sweeps",
+      "disposition": "wire-pending",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "Monte Carlo sweep infrastructure for Phase 2 ML data generation (#1776); wire a driver or delete."
+    },
+    {
+      "module": "tdd",
+      "disposition": "keep-dead",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "Test-helper surface for tests/<subdir>/ harnesses, which are not Cargo targets and are excluded from caller scope by design."
+    },
+    {
+      "module": "thermal_model_5r1c",
+      "disposition": "wire-pending",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "ISO 13790 5R1C variant; wire as an explicit ThermalSelector opt-in path or delete."
+    },
+    {
+      "module": "thermal_model_solvers",
+      "disposition": "wire-pending",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "5R1C/6R2C solver core; wire into a swap-point consumer or delete."
+    },
+    {
+      "module": "topsis",
+      "disposition": "wire-pending",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "TOPSIS multi-criteria selection for Pareto optimization; wire into an optimization consumer or delete."
+    }
+  ]
+}

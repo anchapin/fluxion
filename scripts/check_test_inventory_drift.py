@@ -174,9 +174,35 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #     #3707/#3714 un-ignoring the occupancy statistical and wasm
 #     ``wasm_run_full_annual_*`` smoke tests. Issue #3711 is the
 #     required documentation for this bump.
-BASELINE_LIB_TESTS = 4314
+#   - 2026-09-13 (Issue #3754): bumped ``BASELINE_LIB_TESTS`` from 4314
+#     to 4319 and ``BASELINE_WORKSPACE_TESTS`` from 8683 to 8688 for the
+#     five new closed-channel tests in ``src/sim/orchestrator.rs``
+#     (``batched_worker_batch_captured_when_receiver_dropped_mid_run``,
+#     ``batched_worker_batch_delivered_when_receiver_alive``,
+#     ``batched_finalize_fails_loudly_preserving_received_results``,
+#     ``batched_finalize_ok_when_nothing_dropped``, and
+#     ``batched_happy_path_returns_ok_with_full_population``). No new
+#     binaries and no ignore-count changes.
+#   - 2026-09-14 (Issue #3749): bumped ``BASELINE_LIB_TESTS`` from 4319
+#     to 4325 and ``BASELINE_WORKSPACE_TESTS`` from 8688 to 8694 for the
+#     six new binding-level effective-solver truth tests (two in
+#     ``src/python/bindings.rs`` and one in
+#     ``src/python/model_bindings/model.rs`` for the PyO3 accessor, three
+#     in ``src/napi/state_extractor.rs`` for the ``StateMatrices``
+#     ``effective_solver`` field). Also un-blocked the latent compile
+#     breakage of the pre-existing ``python-bindings`` feature-gated test
+#     modules (stale one-arg ``from_case_spec`` calls and moved
+#     ``ThermalModel`` mass fields) so these tests actually run again.
+#     No new binaries and no ignore-count changes.
+#   - 2026-09-15 (Issue #3741): bumped ``BASELINE_LIB_TESTS`` from 4325
+#     to 4326 and ``BASELINE_WORKSPACE_TESTS`` from 8694 to 8695 for the
+#     new fail-closed egress allow-list release-decision table test in
+#     ``src/api/email_notification.rs``
+#     (``endpoint_allowlist_release_decision_table``). No new binaries
+#     and no ignore-count changes.
+BASELINE_LIB_TESTS = 4326
 BASELINE_LIB_IGNORED = 9
-BASELINE_WORKSPACE_TESTS = 8683
+BASELINE_WORKSPACE_TESTS = 8695
 # 2026-09-12 (Issue #3711): 121 -> 133 — see the history entry above for
 # the per-crate attribution and the AST-vs-cargo calibration analysis.
 BASELINE_WORKSPACE_IGNORED = 133

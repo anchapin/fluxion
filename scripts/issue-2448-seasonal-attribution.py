@@ -22,7 +22,7 @@ From the repository root::
 
     # Step 1: Run the diagnostic test, capture stdout to a file
     cargo test --release -p fluxion \\
-        --test case_900_series_seasonal_attribution \\
+        --test all_tests case_900_series_seasonal_attribution:: \\
         test_case_900_series_seasonal_attribution \\
         -- --ignored --nocapture \\
         2>/dev/null | grep -E '^\\[#2453|^  Case|^  Month|^    ' \\

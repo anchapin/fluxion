@@ -181,7 +181,7 @@ See `scripts/README.md` for the orchestration overview. Coverage floor ≥60% en
 | `doc_inventory_check.sh` | Shell wrapper for `doc_inventory_check.py` | operator convenience |
 | `end_of_shift_validation.sh` | Comprehensive pre-handoff validation (tests, perf, drift, ASHRAE, mutation, audit, lint) | operator |
 | `install_ripr.sh` | Install ripr — static mutation-exposure analyzer (#1254) | operator |
-| `memory-budget-gate.sh` | Warn or exit if peak RSS exceeds budget | operator |
+| `memory-budget-gate.sh` | Warn or exit if peak RSS exceeds budget; monitors the whole child process tree of `--command` and aborts on `--exit` or system-headroom breach (#3766) | operator / `ci-local.sh` wrapper (warn 12 GB, exit 16 GB, headroom 2 GB) |
 | `memory_profile.sh` | Run simulation with dhat heap profiling | operator |
 | `mutants_diff_files.sh` | Unified diff of changed Rust files for scoped mutation testing (#1891) | mutation-testing.yml |
 | `pin_docker_base_images.sh` | Resolve and pin Docker base-image digests for `Dockerfile` | docker.yml |

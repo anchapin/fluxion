@@ -41,8 +41,12 @@ OpenAPI YAML so the on-disk spec and the served spec can never drift.
 | `RUST_LOG`           | `info`       | Standard `env_logger` filter. e.g. `RUST_LOG=debug fluxion=info`. |
 
 If `FLUXION_REST_PORT` is not a valid `u16`, the server logs a warning and
-falls back to `8080`. If `FLUXION_REST_BIND` cannot be parsed as a socket
-address, the server falls back to `0.0.0.0` on the resolved port.
+falls back to `8080`. `FLUXION_REST_BIND` must be a literal IP or
+`host:port` socket address — hostnames such as `localhost` are **not**
+resolved (Issue #3742). An unparseable value aborts startup in release
+builds (set `FLUXION_REST_ALLOW_INSECURE=1` to explicitly opt in to the
+`0.0.0.0` fallback); debug builds log a warning and fall back to `0.0.0.0`
+on the resolved port.
 
 ## Endpoints
 

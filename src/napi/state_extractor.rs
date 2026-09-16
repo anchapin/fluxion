@@ -243,6 +243,7 @@ impl StateExtractor {
             heating_loads: into_zero_copy_float64_array(heating_w),
             cooling_loads: into_zero_copy_float64_array(cooling_w),
             solar_gains: into_zero_copy_float64_array(vec![0.0; steps * self.num_zones]),
+            effective_solver: self.inner.effective_zone_solver().as_str().to_string(),
         })
     }
 
@@ -306,6 +307,7 @@ impl StateExtractor {
             heating_loads: into_zero_copy_float64_array(heating_loads),
             cooling_loads: into_zero_copy_float64_array(cooling_loads),
             solar_gains: into_zero_copy_float64_array(vec![0.0; steps * self.num_zones]),
+            effective_solver: self.inner.effective_zone_solver().as_str().to_string(),
         })
     }
 
@@ -505,7 +507,9 @@ fn populate_step_loads(annual_kwh: f64, steps: usize) -> Vec<f64> {
 #[cfg(test)]
 mod tests {
     use super::{
-        check_energy_finite, flatten_mass_temperatures, populate_step_loads, push_step_energy_kwh,
+        check_energy_finite, flatten_mass_temperatures, into_zero_copy_float64_array,
+        populate_step_loads, push_step_energy_kwh, StateExtractor, StateExtractorOptions,
+        StateMatrices,
     };
 
     // ====================================================================
@@ -717,6 +721,87 @@ mod tests {
         let out = populate_step_loads(4380.0, 8760);
         assert!(out.iter().all(|&v| v == 500.0));
     }
+
+    // ====================================================================
+    // Issue #3749 regression tests: effective-solver truth on StateMatrices
+    // ====================================================================
+
+    /// Issue #3749: a `StateExtractor` built with the default options
+    /// carries the `Gauge` default selector (`ThermalSelector::default()`),
+    /// but with root default features the dispatcher silently falls
+    /// through to legacy 5R1C — the exact silent-fall-through observability
+    /// gap this issue closes for Node consumers. After one real dispatcher
+    /// step, the value the run paths report on `StateMatrices::effective_solver`
+    /// must be the dispatcher's own outcome (`effective_zone_solver`),
+    /// feature-conditionally: `"5r1c"` in the default build, `"gauge"`
+    /// under `--features gauge-solver` (where the gauge arm runs
+    /// unconditionally — `Gauge` is the unconditional default selector;
+    /// the cargo feature only gates the dispatcher arm, issue #3291).
+    #[test]
+    fn state_extractor_effective_solver_tracks_dispatcher_truth_for_default_selector() {
+        let mut extractor = StateExtractor::new(None).expect("default StateExtractor builds");
+        // One real dispatcher step moves `effective_zone_solver` off its
+        // constructor default — no EPW / full-year run needed.
+        let _ = extractor.inner.step_physics(0, 20.0, 3600.0);
+
+        // The exact expression both run paths use to populate the field:
+        let reported = extractor.inner.effective_zone_solver().as_str();
+        assert!(
+            ["gauge", "5r1c", "9r4c"].contains(&reported),
+            "effective solver must use the shared as_str() vocabulary, got {reported}"
+        );
+        #[cfg(not(feature = "gauge-solver"))]
+        assert_eq!(
+            reported, "5r1c",
+            "default build: the Gauge default selector silently falls through to 5R1C — StateMatrices must say so"
+        );
+        #[cfg(feature = "gauge-solver")]
+        assert_eq!(
+            reported, "gauge",
+            "gauge-solver build: the gauge arm ran unconditionally — StateMatrices must say so"
+        );
+    }
+
+    /// Issue #3749: an explicit legacy `zoneSolver: "5r1c"` must be
+    /// reported verbatim in BOTH the default and `--features gauge-solver`
+    /// builds — the selector drives the dispatch in either feature state,
+    /// and the binding must never relabel an explicit opt-in.
+    #[test]
+    fn state_extractor_effective_solver_reports_explicit_legacy_selector() {
+        let mut extractor = StateExtractor::new(Some(StateExtractorOptions {
+            zone_solver: Some("5r1c".to_string()),
+            conduction_solver: None,
+        }))
+        .expect("explicit 5r1c StateExtractor builds");
+        let _ = extractor.inner.step_physics(0, 20.0, 3600.0);
+
+        let reported = extractor.inner.effective_zone_solver().as_str();
+        assert_eq!(reported, "5r1c");
+    }
+
+    /// Issue #3749: `StateMatrices` carries the `effective_solver` string
+    /// alongside the typed arrays, populated the same way the run paths
+    /// populate it (from `effective_zone_solver().as_str()`). Guards the
+    /// field plumbing (JS name: `effectiveSolver`, camelCased by napi-rs).
+    #[test]
+    fn state_matrices_carries_effective_solver_string() {
+        let matrices = StateMatrices {
+            zone_temperatures: into_zero_copy_float64_array(vec![20.0]),
+            mass_temperatures: into_zero_copy_float64_array(vec![20.0]),
+            heating_loads: into_zero_copy_float64_array(vec![0.0]),
+            cooling_loads: into_zero_copy_float64_array(vec![0.0]),
+            solar_gains: into_zero_copy_float64_array(vec![0.0]),
+            effective_solver: "5r1c".to_string(),
+        };
+        assert_eq!(matrices.effective_solver, "5r1c");
+        // The value must always come from the shared vocabulary.
+        let mut extractor = StateExtractor::new(None).expect("default StateExtractor builds");
+        let _ = extractor.inner.step_physics(0, 20.0, 3600.0);
+        assert!(
+            ["gauge", "5r1c", "9r4c"].contains(&extractor.inner.effective_zone_solver().as_str()),
+            "dispatcher outcome must stay within the shared vocabulary"
+        );
+    }
 }
 
 /// Container for extracted state matrices.
@@ -739,6 +824,22 @@ pub struct StateMatrices {
 
     /// Solar heat gains in W [timesteps x num_zones]
     pub solar_gains: Float64Array,
+
+    /// Issue #3749 — the zone solver that ACTUALLY executed on the run
+    /// that produced these matrices: `"gauge"` | `"5r1c"` | `"9r4c"` (the
+    /// same `ZoneSolverKind::as_str()` vocabulary as the REST
+    /// `effective_solver` field, issue #3305). Derived from the step
+    /// dispatcher's real per-step outcome, not from the `zoneSolver`
+    /// option the extractor was built with: bindings ship with root
+    /// default features, where the `Gauge` default selector silently
+    /// falls through to legacy 5R1C/9R4C in the dispatcher, and this
+    /// field is how a Node consumer tells the difference. (`Gauge`
+    /// remains the unconditional default selector; the `gauge-solver`
+    /// cargo feature only gates whether the dispatcher's gauge arm
+    /// runs — issue #3291 / §LIMIT-21.)
+    ///
+    /// JS-side the field is camelCased to `effectiveSolver` by napi-rs.
+    pub effective_solver: String,
 }
 
 impl StateMatrices {

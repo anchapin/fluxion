@@ -12,8 +12,13 @@ repository = "https://github.com/anchapin/fluxion"
 # ONNX Runtime bindings. RC pin (issue #2691) — see root Cargo.toml for rationale;
 # opt-in here so the release-candidate is not pulled into every consumer.
 ort = { version = "2.0.0-rc.13", features = ["download-binaries"], optional = true }
-rand = { version = "0.9", features = ["small_rng"] }
-rand_distr = "0.5"
+# rand 0.10 alignment (PR #3774): rand_distr 0.6 implements rand 0.10's
+# `Distribution` trait, so the RNG passed to `Normal::sample` must be a
+# rand 0.10 `RngCore`-family type. `SmallRng` is unconditional in 0.10
+# (the `small_rng` feature was removed); `seed_from_u64` is unchanged and
+# `from_os_rng` is replaced by `from_rng(&mut rand::rng())`.
+rand = "0.10"
+rand_distr = "0.6"
 thiserror.workspace = true
 anyhow = "1.0"
 tracing.workspace = true

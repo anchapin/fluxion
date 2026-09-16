@@ -71,7 +71,7 @@ struct WeatherRow {
 }
 
 fn load_weather_reference() -> Vec<WeatherRow> {
-    let csv = include_str!("reference_data/weather/denver_tmy3_reference.csv");
+    let csv = include_str!("../reference_data/weather/denver_tmy3_reference.csv");
     csv.lines()
         .filter(|l| !l.is_empty() && !l.starts_with("hour"))
         .filter_map(|l| {
@@ -102,7 +102,7 @@ struct RoofIrradianceRow {
 }
 
 fn load_roof_reference() -> Vec<RoofIrradianceRow> {
-    let csv = include_str!("reference_data/solar/case_900_roof_solar_hourly.csv");
+    let csv = include_str!("../reference_data/solar/case_900_roof_solar_hourly.csv");
     csv.lines()
         .filter(|l| !l.starts_with('#') && !l.is_empty() && !l.starts_with("hour"))
         .filter_map(|l| {

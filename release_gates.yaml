@@ -291,6 +291,15 @@ ci:
   # pattern (`rust-tests.yml::energy-conservation`) — the strict energy
   # gate (#1333) is the next layer of the same regression-guard stack.
   #
+  # ADR-0016 lane split (2026-09-15): this list is the union of Lane 1
+  # (fast lane — required per-PR on every PR) and Lane 2 (path-filtered
+  # physics/binding gauntlet — required per-PR when the physics path
+  # class changes). Lane 3 (nightly-authority) checks were REMOVED from
+  # this list and are documented under `ci.nightly_authority` below;
+  # their authority is enforced by the wave-orchestrator merge freeze,
+  # not by branch protection. Classification only — no tolerance band,
+  # baseline, or gate logic changed.
+  #
   # Job names (NOT workflow names) must match the `jobs.<id>.name`
   # field in each workflow file. To find them, look for
   # `name: ASHRAE 140 Strict Energy Gate (Issue #1333)` in
@@ -339,37 +348,6 @@ ci:
     # silently.
     - "Surrogate Drift Tolerance Gate (Issue #1784)"
 
-    # Cross-platform floating-point determinism (issues #1351 / #1297).
-    # The listener job is defined in `.github/workflows/ashrae_validation.yml`
-    # under the `fluxion-determinism-gate` id and is triggered by the
-    # `Cross-Platform Determinism CI` workflow_run completion. It is the
-    # canonical non-matrix check name that branch protection references
-    # (the upstream `determinism-check` job expands into three OS matrix
-    # rows and is not a stable branch-protection target on its own).
-    # The listener exits non-zero on `failure` / `cancelled` / `timed_out`
-    # upstream conclusions and posts a PR comment linking the upstream
-    # run URL — closing the #1297 acceptance gap that allowed a
-    # determinism failure to slip through with a green `validate` job.
-    - "Fluxion Determinism Gate (Issue #1351)"
-
-    # Issue #1618: performance regression gate wired as a required check.
-    # The listener job is defined in `.github/workflows/ashrae_validation.yml`
-    # under the `fluxion-performance-gate` id and is triggered by the
-    # `Performance Dashboard` workflow_run completion. It exits non-zero on
-    # `failure` / `cancelled` / `timed_out` upstream conclusions and posts
-    # a PR comment linking the upstream run URL.
-    - "Fluxion Performance Gate (Issue #1618)"
-
-    # Issue #1932: per-critical-path coverage ratchet gate.  Runs
-    # cargo-llvm-cov, buckets results by the four ARCHITECTURE.md critical
-    # physics paths (Weather→Solar, Weather→Ventilation, Conduction→Zone
-    # Balance, HVAC→Zone Balance), and fails the build when any path whose
-    # baseline has been set (validation/coverage_baseline.json) regresses by
-    # more than 1% relative.  Paths with a 0.0 baseline are unenforced
-    # (collection pending) and never trip the gate — see the KNOWN_ISSUES.md
-    # entry titled "Code coverage gate (issue #1932)".
-    - "Code Coverage Gate (Issue #1932)"
-
     # Issue #2466: docs-hygiene gate.  Verifies that (a) every `.md`
     # file at the repo root is in the AGENTS.md allow-list (CLAUDE.md
     # warns but never fails — it's auto-generated per session), (b)
@@ -411,74 +389,6 @@ ci:
     # satisfied GitHub branch protection's exact-string contexts array).
     - "Workspace Check (GH)"
 
-    # Issue #2693: PR-level ABSOLUTE performance floor. The throughput ≥ 150
-    # configs/sec and latency ≤ 10 ms/config thresholds below were already
-    # defined here but only evaluated on push to main/dev (performance.yml)
-    # and at release time — never on PRs. The `regression-check` /
-    # Fluxion Performance Gate (#1618) is a RELATIVE 5% gate with no
-    # absolute floor, so a PR could regress throughput below 150 cfg/s and
-    # still merge. The `absolute-perf-gate` job in
-    # `performance_dashboard.yml` runs `performance_regression_test` x3,
-    # takes the median, and feeds it to `release_gate_checker.py
-    # --benchmark-gates throughput,latency`, failing the PR on breach.
-    - "Absolute Perf Gate (Issue #2693)"
-
-    # Issue #2772: PR-level ABSOLUTE multi-zone floor. The
-    # `benchmark.multi_zone.min_configs_per_sec: 10` threshold (10-zone
-    # model) was already defined here but only enforced by
-    # `tests/performance_ci_test.rs` on population=100 — never on the
-    # slowest regime (pop_1000 / pop_10k). The #2693 Absolute Perf Gate
-    # measures the SINGLE-ZONE analytical path (150 cfg/s floor), a much
-    # easier target, so a per-zone-cost regression could merge and blow
-    # the multi-zone margin (only 2.8× per
-    # `benches/multi_zone_throughput.rs:17`) silently. The
-    # `multi-zone-perf-gate` job in `performance_dashboard.yml` runs the
-    # new `test_multi_zone_performance_regression` (pop_1000, 10-zone,
-    # analytical) x3 → median → `release_gate_checker.py --benchmark-gates
-    # multi_zone_throughput`, failing the PR on breach. Transparency rule
-    # (#2506 / #1333): this is a real regression-catching absolute floor,
-    # not a silently-greened gate.
-    - "Multi-Zone Perf Gate (Issue #2772)"
-
-    # Issue #2919: PR-level cold-start latency floor for the ONNX
-    # surrogate. The #2693 Absolute Perf Gate and #2772 / #2922 multi-
-    # zone / hybrid gates all measure warm steady-state paths on
-    # `BatchOracle::evaluate_population` / `HybridThermalModel` — none
-    # construct a fresh `SurrogateManager` per cycle and none exercise
-    # the FIRST `predict_loads_onnx` call against a cold session pool.
-    # That first call pays the full cost of
-    # `SessionPool::get_or_create_session` (`src/ai/surrogate.rs:1247` —
-    # ort env init + model parse + session allocation) plus per-call
-    # scratch tensors, and at the API layer the first `/v1/simulate`
-    # request after a fresh process pays the same cost — easy > 500 ms
-    # on a 256 MiB shipped model. The
-    # `multi-zone-cold-start-gate` job in `performance_dashboard.yml`
-    # runs `tests/surrogate_cold_start_test.rs` x3, takes the median,
-    # and feeds the result to `release_gate_checker.py --benchmark-gates
-    # cold_start`, which enforces absolute cold ≤ 100 ms, cold/warm
-    # ratio ≤ 1.5×, and ≤ 25% regression relative to
-    # `tests/reference_data/surrogate/cold_start_baseline.json`.
-    - "Multi-Zone Cold Start Gate (Issue #2919)"
-
-    # Issue #2922: PR-level ABSOLUTE HybridThermalModel floor. The
-    # #2693 Absolute Perf Gate and #2772 Multi-Zone Perf Gate both measure
-    # the pure-physics path (`ThermalModel<VectorField>` /
-    # `BatchOracle::evaluate_population`); HybridThermalModel with
-    # `HybridRouting::default()` (the production-recommended default
-    # `ThermalModelMode::Hybrid` routing — surrogate loads, physics
-    # everything else) is NOT exercised by either gate. A regression
-    # adding per-timestep overhead in the surrogate-load branch fires
-    # only in Hybrid mode and would slip through. The `hybrid-perf-gate`
-    # job in `performance_dashboard.yml` runs the new
-    # `tests/hybrid_perf_regression.rs::test_hybrid_performance_regression`
-    # (pop_100, 1-zone) and
-    # `test_hybrid_multi_zone_performance_regression` (pop_1000, 10-zone)
-    # x3 → median → `release_gate_checker.py --benchmark-gates
-    # hybrid_throughput,hybrid_multi_zone_throughput`, failing the PR on
-    # breach. Floors: `benchmark.hybrid.min_configs_per_sec: 80` and
-    # `benchmark.hybrid_multi_zone.min_configs_per_sec: 8`.
-    - "Hybrid Perf Gate (Issue #2922)"
-
     # Energy Conservation gate (#1295). Listener job defined in
     # `.github/workflows/ashrae_validation.yml` under the
     # `fluxion-energy-conservation-gate` id. Mirrors the determinism /
@@ -515,11 +425,6 @@ ci:
     # avoid blocking PRs that don't touch the cycle. Job in
     # `.github/workflows/rust-tests.yml` under `cycle-trend-gh` id.
     - "Cycle Downward Trend Guard (Issue #2768)"
-
-    # CUDA smoke test (#1603). The smoke-test job in `ashrae_validation.yml`
-    # verifies `--features cuda` builds and runs the gate. Auto-skips on
-    # CPU-only runners; non-zero exit on any CUDA regression.
-    - "CUDA Smoke Test (Issue #1603)"
 
     # Architecture Drift Detection. Scheduled job in
     # `.github/workflows/architecture_drift.yml`; runs nightly plus on
@@ -687,22 +592,14 @@ ci:
     - "ASHRAE 140 Strict Energy Gate (Issue #1333)"
     - "Surrogate ASHRAE 140 MAE Gate (Issue #2924)"
     - "Surrogate Drift Tolerance Gate (Issue #1784)"
-    - "Fluxion Determinism Gate (Issue #1351)"
-    - "Fluxion Performance Gate (Issue #1618)"
-    - "Code Coverage Gate (Issue #1932)"
     - "Physics-Sim-Cycle-Check (GH)"
     - "Workspace Check (GH)"
-    - "Absolute Perf Gate (Issue #2693)"
-    - "Multi-Zone Perf Gate (Issue #2772)"
-    - "Multi-Zone Cold Start Gate (Issue #2919)"
-    - "Hybrid Perf Gate (Issue #2922)"
     - "Energy Conservation (GH)"
     - "Rustfmt (GH)"
     - "Clippy (GH)"
     - "Known Issues Stale Check (GH)"
     - "Ashrae Cases Cycle Check (GH)"
     - "Cycle Downward Trend Guard (Issue #2768)"
-    - "CUDA Smoke Test (Issue #1603)"
     - "Cargo Deny"
     - "Audit Ignore Freshness (Issue #2912)"
     - "fluxion-grid Integration Tests (GH)"
@@ -710,6 +607,55 @@ ci:
     - "FFI Feature Check (GH)"
     - "Tracked-vs-Ignored Gate (Issue #3356)"
     - "Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH)"
+
+  # =============================================================================
+  # NIGHTLY-AUTHORITY CHECKS (ADR-0016 Lane 3)
+  # =============================================================================
+  # These gates were moved OUT of `ci.required_checks` and
+  # `ci.required_checks_workflow_only` by ADR-0016 (accepted 2026-09-15).
+  # They run nightly on `develop` instead of blocking every PR: measured
+  # 2026-09 baseline showed ~0 recent real failures across the set, while
+  # they contribute the slowest stragglers (~40 min determinism matrix,
+  # the perf-gate cohort, coverage, CUDA) to the per-PR critical path.
+  # Their authority is enforced by the wave orchestrator via the merge
+  # freeze (a red nightly freezes merges and new waves; the blind window
+  # is bounded by one nightly cycle, ~18 h) — GitHub branch protection
+  # cannot express "last nightly green" as a required check, which is
+  # why they are documented here rather than listed above.
+  # Scheduling/classification change ONLY — every tolerance band,
+  # baseline, and gate logic below is untouched (RULES.md / ADR-0001).
+  # The owning jobs still exist and still run (per-PR where their
+  # workflows trigger, plus nightly); their `workflow_index` entries are
+  # retained below and are expected to surface as informational
+  # "not referenced by any required_check" notes from
+  # `scripts/check_required_checks_sync.py`.
+  nightly_authority:
+    # Determinism matrix (~40 min, 3-OS cross-platform FP check) — the
+    # slowest per-PR straggler with no recent real failures; the nightly
+    # `schedule` added to `determinism_check.yml` by ADR-0016 gives it
+    # authoritative coverage on develop.
+    - "Fluxion Determinism Gate (Issue #1351)"
+    # Relative perf regression listener (5% band) — near-zero recent
+    # real failures; nightly authority per ADR-0016.
+    - "Fluxion Performance Gate (Issue #1618)"
+    # Absolute single-zone perf floor (#2693) — near-zero recent real
+    # failures; nightly authority per ADR-0016.
+    - "Absolute Perf Gate (Issue #2693)"
+    # Absolute multi-zone perf floor (#2772) — near-zero recent real
+    # failures; nightly authority per ADR-0016.
+    - "Multi-Zone Perf Gate (Issue #2772)"
+    # ONNX surrogate cold-start floor (#2919) — near-zero recent real
+    # failures; nightly authority per ADR-0016.
+    - "Multi-Zone Cold Start Gate (Issue #2919)"
+    # HybridThermalModel absolute floor (#2922) — near-zero recent real
+    # failures; nightly authority per ADR-0016.
+    - "Hybrid Perf Gate (Issue #2922)"
+    # Coverage ratchet (#1932) — collection cost dominates its per-PR
+    # value; nightly authority per ADR-0016.
+    - "Code Coverage Gate (Issue #1932)"
+    # CUDA smoke test (#1603) — auto-skips on CPU-only runners, so its
+    # per-PR signal is already sparse; nightly authority per ADR-0016.
+    - "CUDA Smoke Test (Issue #1603)"
 
   # Job-to-workflow map (informational; branch-protection reads job
   # names directly). Used by `scripts/release_gate_checker.py` to verify
@@ -984,8 +930,8 @@ ci:
       # Energy conservation gate (#1295). Listener job in
       # `.github/workflows/rust-tests.yml` under
       # `energy-conservation-gh` id. Triggers on the PR + push-to-main
-      # events; runs `cargo test --test test_energy_conservation` and
-      # `cargo test --test zone_balance_eplus_isolation` and fails the
+      # events; runs `cargo test --test all_tests test_energy_conservation::` and
+      # `cargo test --test all_tests zone_balance_eplus_isolation::` and fails the
       # PR when any "violated energy conservation" count > 0. The
       # Hetzner-overflow variant (`Energy Conservation (Hetzner
       # Overflow)`) is the same job on the self-hosted overflow runner
@@ -1050,7 +996,7 @@ ci:
       # CUDA smoke test (#1603). Job in
       # `.github/workflows/rust-tests.yml` under `cuda-smoke` id.
       # Builds the root crate with `--features cuda` and runs
-      # `cargo test --test surrogate_cuda_smoke`. Auto-skips on
+      # `cargo test --test all_tests surrogate_cuda_smoke_test::`. Auto-skips on
       # CPU-only runners via the `cuda_available` step output
       # (issue #2962); non-zero exit on any CUDA regression on
       # GPU-enabled runners.

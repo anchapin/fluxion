@@ -10,6 +10,18 @@ on:
   push:
     branches: [main, develop]
   pull_request:
+  # ADR-0016 lane 3 — nightly authority on develop. The determinism
+  # matrix was the only lane-3 gate without a schedule; this nightly run
+  # is the authoritative cross-platform floating-point verdict that the
+  # wave-orchestrator merge freeze consumes (per-PR runs remain, now
+  # non-blocking per ADR-0016). 03:30 UTC is deliberately offset from the
+  # existing nightly cohort (02:00 performance dashboard, 03:00
+  # architecture drift, 04:00 fast-math / 04:23 python-bindings) to avoid
+  # a simultaneous job stampede against the runner concurrency cap. The
+  # ADR-0015 per-head_sha concurrency block below is unchanged; schedule
+  # events resolve to github.ref of the default branch.
+  schedule:
+    - cron: "30 3 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -268,14 +280,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Post-#3764 the six determinism modules are all children of the one
+          # `all_tests` target; cargo takes a single positional, so the six
+          # module filters go through `--` to libtest (which ORs filters).
           cargo test \
-            --test case_800_determinism \
-            --test case_810_determinism \
-            --test case_900_determinism \
-            --test case_950_determinism \
-            --test case_960_determinism \
-            --test case_970_determinism \
-            --release -- --nocapture 2>&1 | tee determinism_cases_output.txt
+            --test all_tests \
+            --release -- \
+            case_800_determinism:: \
+            case_810_determinism:: \
+            case_900_determinism:: \
+            case_950_determinism:: \
+            case_960_determinism:: \
+            case_970_determinism:: \
+            --nocapture 2>&1 | tee determinism_cases_output.txt
 
       - name: Run cross_platform_fp_regression (Case 600/920 + solar hash)
         # `tests/cross_platform_fp_regression.rs::test_case_600_annual_determinism_hash`
@@ -292,13 +309,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo test --test cross_platform_fp_regression --release -- --nocapture 2>&1 | tee cross_platform_output.txt
+          cargo test --test all_tests cross_platform_fp_regression:: --release -- --nocapture 2>&1 | tee cross_platform_output.txt
 
       - name: Run matrix_exponential_faer determinism test (Issue #2549)
         shell: bash
         run: |
           set -euo pipefail
-          cargo test --test determinism_matrix_exponential --release 2>&1 | tee matexp_output.txt
+          cargo test --test all_tests determinism_matrix_exponential:: --release 2>&1 | tee matexp_output.txt
 
       - name: Extract determinism values for the 7-case gate
         id: extract

@@ -42,7 +42,7 @@ use fluxion::ai::surrogate::{
     InferenceBackend, MultiDeviceConfig, SurrogateInputs, SurrogateManager,
 };
 
-#[path = "surrogate_models/test_surrogate_thermal_model_runs_onnx.rs"]
+#[path = "../surrogate_models/test_surrogate_thermal_model_runs_onnx.rs"]
 mod surrogate_thermal_model_runs_onnx;
 
 /// Per-element tolerance for deterministic CPU reference checks.

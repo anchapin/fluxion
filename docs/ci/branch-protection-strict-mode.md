@@ -75,21 +75,21 @@ Full operator procedure in
 
 `release_gates.yaml` now contains two arrays:
 
-1. **`required_checks`** — All checks for code-changing PRs (31 checks). Use this for branch protection configuration on `main`.
+1. **`required_checks`** — All checks for code-changing PRs (23 checks; ADR-0016 moved 8 nightly-authority gates out). Use this for branch protection configuration on `main`.
 
-2. **`required_checks_workflow_only`** — Only the checks that run on every PR regardless of changed files (26 checks). This excludes the 5 path-filtered checks above. The fast-math listener (#3358) is INCLUDED in this list because it has no `paths:` filter and runs on every PR (including workflow-only PRs like the one that lands this very gate's promotion).
+2. **`required_checks_workflow_only`** — Only the checks that run on every PR regardless of changed files (18 checks; ADR-0016 moved 8 nightly-authority gates out). This excludes the 5 path-filtered checks above. The fast-math listener (#3358) is INCLUDED in this list because it has no `paths:` filter and runs on every PR (including workflow-only PRs like the one that lands this very gate's promotion).
 
 ### Branch Protection Configuration
 
-**For `main` branch:** Use `required_checks` (all 31 checks). Code-changing PRs must pass all gates.
+**For `main` branch:** Use `required_checks` (all 23 checks). Code-changing PRs must pass all gates.
 
-**For `develop` branch:** Use `required_checks_workflow_only` (26 checks). Workflow-only PRs (docs, CI, scripts) can merge without triggering the path-filtered checks that structurally cannot run for them.
+**For `develop` branch:** Use `required_checks_workflow_only` (18 checks). Workflow-only PRs (docs, CI, scripts) can merge without triggering the path-filtered checks that structurally cannot run for them.
 
 ### Alternative: Single Rule with Documentation
 
 If GitHub branch protection only supports one required-checks list, use `required_checks_workflow_only` and document the behavior:
 
-> **Note:** Some required checks (`Docs Hygiene Gate`, `Architecture Drift Detection`, `Module Size`, `Crate Size Gate`, `MSRV Check`) have workflows that only run when specific file patterns are changed. For PRs touching only `scripts/`, `.github/workflows/`, or `docs/`, these checks will not run and are excluded from the required list. The 26 always-run checks provide adequate regression protection for workflow-only changes.
+> **Note:** Some required checks (`Docs Hygiene Gate`, `Architecture Drift Detection`, `Module Size`, `Crate Size Gate`, `MSRV Check`) have workflows that only run when specific file patterns are changed. For PRs touching only `scripts/`, `.github/workflows/`, or `docs/`, these checks will not run and are excluded from the required list. The 18 always-run checks provide adequate regression protection for workflow-only changes.
 
 ## Implementation Notes
 

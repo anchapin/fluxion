@@ -173,7 +173,12 @@ fn bench_cpu_surrogate_batched_vs_unbatched(c: &mut Criterion) {
         b.iter_batched(
             || build_orchestrator_configs(size),
             |configs| {
-                let _ = orchestrator.run_cpu_surrogate_batched(configs, &surrogates);
+                // Issue #3754: a batched run that lost worker results must
+                // abort the bench rather than silently report timings for a
+                // truncated population.
+                orchestrator
+                    .run_cpu_surrogate_batched(configs, &surrogates)
+                    .expect("batched bench run must deliver every worker's results");
             },
             criterion::BatchSize::SmallInput,
         )

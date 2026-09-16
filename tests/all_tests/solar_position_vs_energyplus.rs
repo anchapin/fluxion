@@ -58,7 +58,7 @@ fn epw_hour_to_date(epw_hour: usize) -> (i32, u32, u32, f64) {
 /// Parse the E+ reference CSV file.
 /// Returns Vec of (hour, altitude, azimuth, zenith).
 fn load_reference_data() -> Vec<(usize, f64, f64, f64)> {
-    let csv = include_str!("reference_data/solar/solar_position_denver.csv");
+    let csv = include_str!("../reference_data/solar/solar_position_denver.csv");
     csv.lines()
         .filter(|line| !line.starts_with('#') && !line.is_empty())
         .filter_map(|line| {

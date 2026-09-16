@@ -95,6 +95,13 @@ jobs:
           TEST_EXIT=$?
           echo "test_exit_code=$TEST_EXIT" >> $GITHUB_OUTPUT
           exit 0
+        # Issue #3763 audit (known-red validation site): masks the raw exit
+        # of the ASHRAE 140 comprehensive regression suite, structurally red
+        # at the metric level (§LIMIT-* cohort in docs/KNOWN_ISSUES.md,
+        # routed to GaugeSolver #1465/#1462/#3297). The mask is load-bearing,
+        # not best-effort: it lets the artifact upload below (if: always())
+        # run, and genuine step failures are re-raised by the terminal
+        # "Fail if regression test failed" step.
         continue-on-error: true
 
       - name: Upload test results as artifacts
@@ -157,10 +164,15 @@ jobs:
       - name: Run HVAC BESTEST Validation Tests
         id: validation
         run: |
-          cargo test --test hvac_bestest_validation --release 2>&1 | tee hvac_output.txt
+          cargo test --test all_tests hvac_bestest_validation:: --release 2>&1 | tee hvac_output.txt
           TEST_EXIT=$?
           echo "test_exit_code=$TEST_EXIT" >> $GITHUB_OUTPUT
           exit 0
+        # Issue #3763 audit: nightly signal collection, not a required gate —
+        # masks the raw exit of the HVAC BESTEST validation suite so the
+        # artifact upload below (if: always()) can run. Not silent
+        # best-effort: genuine step failures are re-raised by the terminal
+        # "Fail if HVAC BESTEST failed" step.
         continue-on-error: true
 
       - name: Upload HVAC BESTEST results

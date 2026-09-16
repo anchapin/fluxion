@@ -29,12 +29,22 @@
 //!   `FLUXION_REST_CORS_ORIGINS`; defaults to localhost dev origins. Never
 //!   `CorsLayer::permissive()`.
 //! - **Boot guard** ([`is_insecure_bind_configuration`] +
-//!   [`is_insecure_tls_configuration`]) — pure decision functions; the
+//!   [`is_insecure_tls_configuration`] +
+//!   [`is_weak_auth_token_configuration`] +
+//!   [`is_unresolvable_bind_configuration`]) — pure decision functions; the
 //!   binary refuses to start when `0.0.0.0` + `auth=off` coincide in a
 //!   release build unless `FLUXION_REST_ALLOW_INSECURE=1` (#2505), and
 //!   refuses `auth=tls` without a `FLUXION_REST_TRUSTED_PROXIES`
 //!   allow-list in *every* build (#2754) so the verified-client header
-//!   can never silently degrade to no-op.
+//!   can never silently degrade to no-op, and refuses a *configured*
+//!   `FLUXION_REST_AUTH_TOKEN` shorter than 16 bytes under `token`/`tls`
+//!   in release builds (#3743) so a trivially guessable bearer secret
+//!   cannot stand in for real authentication, and refuses an unparseable
+//!   or non-literal `FLUXION_REST_BIND` (e.g. the hostname `localhost`)
+//!   in release builds (#3742) instead of silently widening the listener
+//!   to `0.0.0.0` — the guard and the listener share the canonical
+//!   [`resolve_rest_bind_addr`] parser so the address the guard judged
+//!   is the address that gets bound.
 //!
 //! All primitives are pure-library code so they are unit-testable from
 //! `cargo test -p fluxion --lib api` without spawning the binary.
@@ -193,7 +203,10 @@ impl RestSecurityConfig {
     ///   (e.g. a typo) is propagated as an `Err` so the server refuses to
     ///   boot rather than silently disabling auth (Issue #2689). Unset /
     ///   empty is the legitimate `off` default.
-    /// - `FLUXION_REST_AUTH_TOKEN` — bearer token (required for `token`)
+    /// - `FLUXION_REST_AUTH_TOKEN` — bearer token (required for `token`).
+    ///   A *configured* value shorter than [`MIN_REST_AUTH_TOKEN_BYTES`]
+    ///   refuses boot in release builds (Issue #3743, see
+    ///   [`check_boot_guard_from_env`]).
     /// - `FLUXION_REST_CORS_ORIGINS` — comma-separated origin allow-list
     /// - `FLUXION_REST_RATE_LIMIT_RPS` — sustained req/s per IP
     /// - `FLUXION_REST_RATE_LIMIT_BURST` — burst capacity per IP
@@ -1185,6 +1198,103 @@ pub fn build_cors_layer(origins: &[String]) -> CorsLayer {
 // Boot guard (release-only insecure-bind refusal)
 // =========================================================================
 
+/// Default `FLUXION_REST_BIND` when the variable is unset (Issue #3742).
+/// Exported so the boot guard and the binary's listener resolution
+/// substitute the *same* default and therefore judge/bind the same
+/// address.
+pub const DEFAULT_REST_BIND: &str = "0.0.0.0";
+
+/// Default `FLUXION_REST_PORT` when the variable is unset or unparseable
+/// (Issue #3742). See [`DEFAULT_REST_BIND`] for why this lives here.
+pub const DEFAULT_REST_PORT: u16 = 8080;
+
+/// Canonical `FLUXION_REST_BIND` resolver (Issue #3742) — the **single**
+/// parsing path shared by the binary's listener resolution (`resolve_addr`
+/// in `src/bin/fluxion_rest.rs`) and the boot guard
+/// ([`check_boot_guard_from_env`]), so the address the guard judged is
+/// exactly the address that gets bound.
+///
+/// Accepted forms (whitespace-trimmed, with an optional `http://` /
+/// `https://` scheme prefix — parity with what the #2505 guard always
+/// accepted):
+///
+/// - bare IPv4 — `127.0.0.1` → `127.0.0.1:{port}`
+/// - bare IPv6 — `::1`, `::` → `[addr]:{port}` (the legacy
+///   `{bind}:{port}` string-concatenation mangled these)
+/// - bracketed bare IPv6 — `[::1]` → `[::1]:{port}`
+/// - full socket address — `0.0.0.0:9000`, `[::]:80` — the **embedded
+///   port wins** over the `port` argument (the operator was explicit in
+///   `FLUXION_REST_BIND` itself)
+///
+/// Anything else — hostnames (`localhost`, `db.internal`), garbage, or an
+/// empty value — is an `Err` naming the variable and the underlying parse
+/// error. Hostnames are deliberately **not** resolved: a DNS lookup at
+/// boot would make the guard/bind decision non-deterministic, and the
+/// pre-#3742 behaviour for them was the silent `0.0.0.0` widening this
+/// function exists to eliminate.
+pub fn resolve_rest_bind_addr(bind: &str, port: u16) -> Result<SocketAddr, String> {
+    use std::str::FromStr;
+    let raw = bind
+        .trim()
+        .trim_start_matches("http://")
+        .trim_start_matches("https://");
+    if raw.is_empty() {
+        return Err(format!(
+            "FLUXION_REST_BIND='{bind}' is empty after trimming"
+        ));
+    }
+    // Full `host:port` / `[v6]:port` form — the embedded port wins over
+    // the `port` argument.
+    if let Ok(sa) = SocketAddr::from_str(raw) {
+        return Ok(sa);
+    }
+    // Bare IPv4 / IPv6 literal. Keep the parse error so the boot guard
+    // can abort *with* it (Issue #3742 acceptance).
+    let parse_err = match IpAddr::from_str(raw) {
+        Ok(ip) => return Ok(SocketAddr::new(ip, port)),
+        Err(e) => e,
+    };
+    // Bracketed bare IPv6 without a port (`[::1]`): the binary's legacy
+    // `{bind}:{port}` formatting happened to accept this form (it
+    // produced `[::1]:port`); keep accepting it.
+    if let Some(inner) = raw.strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
+        if let Ok(v6) = Ipv6Addr::from_str(inner) {
+            return Ok(SocketAddr::new(IpAddr::V6(v6), port));
+        }
+    }
+    Err(format!(
+        "FLUXION_REST_BIND='{bind}' does not parse as a literal socket address ({parse_err}); \
+         hostnames are not resolved"
+    ))
+}
+
+/// Pure decision function for the unresolvable-bind boot guard
+/// (Issue #3742).
+///
+/// Returns `true` when `bind` cannot be resolved by the canonical
+/// [`resolve_rest_bind_addr`] — i.e. exactly the values for which the
+/// pre-#3742 listener silently widened the bind to `0.0.0.0:{port}` with
+/// only a stderr note, while the #2505 guard judged the raw string and
+/// let it pass (`localhost` is not a wildcard literal, so a
+/// well-meaning operator got a publicly-bound server with `auth=off`
+/// that the guard had assessed as local-only). The binary refuses to
+/// start in that case (release builds only) unless `allow_insecure` is
+/// `true` (`FLUXION_REST_ALLOW_INSECURE=1`), mirroring the sibling
+/// [`is_insecure_bind_configuration`] /
+/// [`is_weak_auth_token_configuration`] guards. Debug builds keep the
+/// warn-and-fallback behaviour so `cargo run` with a stray hostname
+/// keeps working.
+///
+/// An *unset* `FLUXION_REST_BIND` is out of scope: callers substitute
+/// [`DEFAULT_REST_BIND`] (`0.0.0.0` — resolvable) before consulting this
+/// function, exactly like the listener's `resolve_bind()` does.
+pub fn is_unresolvable_bind_configuration(bind: &str, allow_insecure: bool) -> bool {
+    if allow_insecure {
+        return false;
+    }
+    resolve_rest_bind_addr(bind, DEFAULT_REST_PORT).is_err()
+}
+
 /// Pure decision function used by the binary's boot guard (Issue #2505).
 ///
 /// Returns `true` when the configuration binds all interfaces **and** runs
@@ -1193,8 +1303,15 @@ pub fn build_cors_layer(origins: &[String]) -> CorsLayer {
 /// (release builds only) unless `allow_insecure` is `true`
 /// (`FLUXION_REST_ALLOW_INSECURE=1`).
 ///
-/// `bind` may be a bare host (`0.0.0.0`), a `host:port` pair, or an IPv6
-/// wildcard (`::` / `::0`); both wildcard families are flagged.
+/// `bind` may be a bare host (`0.0.0.0`), a `host:port` pair, a bracketed
+/// IPv6 form (`[::]`, `[::1]:8080`), or an IPv6 wildcard (`::` / `::0`);
+/// both wildcard families are flagged. Since Issue #3742 the wildcard
+/// verdict is computed from the **same** canonical resolver the listener
+/// uses ([`resolve_rest_bind_addr`]), so it can never drift from the
+/// address that actually gets bound. A value that does not parse is
+/// deliberately *not* this guard's concern (it returns `false`,
+/// preserving the documented semantics): the #3742
+/// [`is_unresolvable_bind_configuration`] guard aborts on it separately.
 pub fn is_insecure_bind_configuration(
     bind: &str,
     auth_mode: AuthMode,
@@ -1206,21 +1323,15 @@ pub fn is_insecure_bind_configuration(
     if auth_mode != AuthMode::Off {
         return false;
     }
-    // Strip an optional scheme, then try to parse the remainder as a
-    // `SocketAddr` (host:port / [v6]:port) first, falling back to a bare
-    // `IpAddr`. `Ipv4Addr::UNSPECIFIED` (0.0.0.0) and
-    // `Ipv6Addr::UNSPECIFIED` (::) both report `is_unspecified()` == true,
-    // which is exactly the "bound to every interface" condition we refuse.
-    use std::str::FromStr;
-    let raw = bind
-        .trim()
-        .trim_start_matches("http://")
-        .trim_start_matches("https://");
-    let ip = std::net::SocketAddr::from_str(raw)
-        .map(|sa| sa.ip())
-        .or_else(|_| std::net::IpAddr::from_str(raw))
-        .ok();
-    matches!(ip, Some(ip) if ip.is_unspecified())
+    // Issue #3742 — judge the *resolved* address. `Ipv4Addr::UNSPECIFIED`
+    // (0.0.0.0) and `Ipv6Addr::UNSPECIFIED` (::) both report
+    // `is_unspecified() == true`, which is exactly the "bound to every
+    // interface" condition we refuse. The port is irrelevant to the
+    // verdict (only the IP is inspected), so `0` is used as a dummy.
+    matches!(
+        resolve_rest_bind_addr(bind, 0),
+        Ok(sa) if sa.ip().is_unspecified()
+    )
 }
 
 /// Pure decision function for the TLS boot guard (Issue #2754).
@@ -1253,6 +1364,52 @@ pub fn is_insecure_tls_configuration(
         return false;
     }
     trusted_proxies.is_empty()
+}
+
+/// Minimum accepted `FLUXION_REST_AUTH_TOKEN` length **in bytes** when
+/// `FLUXION_REST_AUTH=token|tls` (Issue #3743).
+///
+/// Intentionally stricter than the outbound-email bearer floor
+/// (`BEARER_AUTH_HEADER_MIN_TOKEN_LEN = 8`,
+/// `src/api/email_notification.rs`): the REST token is the sole credential
+/// standing between an unauthenticated network peer and every `/v1/*`
+/// route, and a one-character token makes `token` mode little better than
+/// `off`.
+pub const MIN_REST_AUTH_TOKEN_BYTES: usize = 16;
+
+/// Pure decision function for the weak-token boot guard (Issue #3743).
+///
+/// Returns `true` when the configuration selects `token` / `tls` auth
+/// **and** a bearer token *is* configured but is shorter than
+/// [`MIN_REST_AUTH_TOKEN_BYTES`] — a trivially guessable secret that makes
+/// the selected mode little better than `off` against an unauthenticated
+/// network peer. The binary refuses to start in that case (release builds
+/// only) unless `allow_insecure` is `true`
+/// (`FLUXION_REST_ALLOW_INSECURE=1`), mirroring the sibling
+/// [`is_insecure_bind_configuration`] guard.
+///
+/// An **unset** token is deliberately *not* this guard's concern: in
+/// `token` mode the [`require_auth`] middleware already fails closed
+/// per-request (500), and `tls` mode legitimately runs header-only with no
+/// bearer fallback configured. `off` mode never trips the guard — a short
+/// token in the environment is simply ignored, exactly as today. (An empty
+/// *string* is zero bytes and is flagged defensively; the env-reading
+/// paths normalize empty to unset before this function is called.)
+pub fn is_weak_auth_token_configuration(
+    auth_mode: AuthMode,
+    auth_token: Option<&str>,
+    allow_insecure: bool,
+) -> bool {
+    if allow_insecure {
+        return false;
+    }
+    if !matches!(auth_mode, AuthMode::Token | AuthMode::Tls) {
+        return false;
+    }
+    match auth_token {
+        Some(t) => t.len() < MIN_REST_AUTH_TOKEN_BYTES,
+        None => false,
+    }
 }
 
 /// Convenience wrapper for the binary: reads the three inputs from the
@@ -1306,6 +1463,66 @@ pub fn check_boot_guard_from_env() -> Result<(), String> {
                  while FLUXION_REST_AUTH=off. Set FLUXION_REST_AUTH=token (with \
                  FLUXION_REST_AUTH_TOKEN) or FLUXION_REST_AUTH=tls, bind to 127.0.0.1, or set \
                  FLUXION_REST_ALLOW_INSECURE=1 to explicitly opt in."
+            ));
+        }
+
+        // Release-only unresolvable-bind guard (Issue #3742): an
+        // unparseable or non-literal FLUXION_REST_BIND (most realistically
+        // a hostname such as `localhost`) used to be silently widened to
+        // `0.0.0.0:{port}` by the listener while the #2505 guard judged
+        // the raw string and let it pass — a publicly-bound server with
+        // `auth=off` that the guard had assessed as local-only. Abort
+        // startup with the parse error instead. Debug builds keep the
+        // warn-and-fallback behaviour, and FLUXION_REST_ALLOW_INSECURE=1
+        // remains the explicit opt-out (the listener then falls back with
+        // a loud warning — no longer silently).
+        //
+        // The unset-default (`0.0.0.0`) is substituted exactly like the
+        // binary's `resolve_bind()`, and the port is read with the same
+        // default-and-fallback semantics as the binary's `resolve_port()`,
+        // so the guard resolves the *same* `(bind, port)` pair — via the
+        // *same* [`resolve_rest_bind_addr`] — that the listener will bind
+        // (the Issue #3742 guard/listener pin).
+        let bind_or_default =
+            std::env::var("FLUXION_REST_BIND").unwrap_or_else(|_| DEFAULT_REST_BIND.to_string());
+        if is_unresolvable_bind_configuration(&bind_or_default, allow_insecure) {
+            let port = std::env::var("FLUXION_REST_PORT")
+                .ok()
+                .and_then(|p| p.trim().parse::<u16>().ok())
+                .unwrap_or(DEFAULT_REST_PORT);
+            let detail = resolve_rest_bind_addr(&bind_or_default, port)
+                .err()
+                .expect("decision function flagged the same value as unresolvable");
+            return Err(format!(
+                "fluxion-rest: refusing to boot — {detail} (Issue #3742): the listener would \
+                 silently substitute {DEFAULT_REST_BIND}:{port} instead of the intended bind. Use \
+                 a literal IP (e.g. 127.0.0.1 or [::1]) or a host:port pair, or set \
+                 FLUXION_REST_ALLOW_INSECURE=1 to explicitly opt in to the fallback."
+            ));
+        }
+    }
+    // Release-only weak-token guard (Issue #3743): a *configured* bearer
+    // token shorter than [`MIN_REST_AUTH_TOKEN_BYTES`] makes `token`/`tls`
+    // auth little better than `off`, so release builds refuse to boot with
+    // a clear operator-facing error naming the minimum. Mirrors the
+    // release-only posture of the insecure-bind guard above; debug builds
+    // skip it so local `cargo run` and test harnesses keep working with
+    // placeholder tokens, and `FLUXION_REST_ALLOW_INSECURE=1` remains the
+    // explicit opt-out.
+    #[cfg(not(debug_assertions))]
+    {
+        let auth_token = std::env::var("FLUXION_REST_AUTH_TOKEN")
+            .ok()
+            .filter(|t| !t.is_empty());
+        if is_weak_auth_token_configuration(auth, auth_token.as_deref(), allow_insecure) {
+            let got = auth_token.as_deref().map(str::len).unwrap_or(0);
+            return Err(format!(
+                "fluxion-rest: refusing to boot — FLUXION_REST_AUTH_TOKEN is {got} byte(s), below \
+                 the {MIN_REST_AUTH_TOKEN_BYTES}-byte minimum required with \
+                 FLUXION_REST_AUTH=token|tls (Issue #3743): a trivially short bearer token is \
+                 little better than auth=off. Generate a stronger secret (e.g. \
+                 `openssl rand -base64 32`), or set FLUXION_REST_ALLOW_INSECURE=1 to explicitly \
+                 opt out."
             ));
         }
     }
