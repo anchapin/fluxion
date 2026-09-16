@@ -150,6 +150,7 @@ def fetch_live_protection(repo: str, branch: str) -> dict:
 def build_put_payload(
     required_checks: list[str],
     strict: bool = True,
+    required_approving_review_count: int = 1,
 ) -> dict:
     """Build the JSON payload that PUT /protection expects.
 
@@ -167,7 +168,7 @@ def build_put_payload(
         },
         "enforce_admins": True,
         "required_pull_request_reviews": {
-            "required_approving_review_count": 1,
+            "required_approving_review_count": required_approving_review_count,
         },
         "restrictions": None,
     }
@@ -355,6 +356,16 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--required-approving-review-count",
+        type=int,
+        default=1,
+        help=(
+            "required_approving_review_count to set on the branch "
+            "protection (default: 1). Use 0 to disable the approval "
+            "requirement."
+        ),
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="emit the payload + diff as JSON (machine-readable).",
@@ -385,7 +396,10 @@ def main() -> int:
     required_checks = get_workflow_only_checks(gates)
     _ = get_required_checks(gates)  # validate the full list exists
     _ = get_workflow_index(gates)  # validate workflow_index exists
-    payload = build_put_payload(required_checks)
+    payload = build_put_payload(
+        required_checks,
+        required_approving_review_count=args.required_approving_review_count,
+    )
 
     try:
         live = fetch_live_protection(args.repo, args.branch)
