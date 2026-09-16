@@ -98,16 +98,16 @@ def resolve_default_repo(env: dict[str, str] | None = None) -> str:
 try:
     from scripts.check_required_checks_sync import (  # type: ignore[import-not-found]
         get_required_checks,
-        get_workflow_only_checks,
         get_workflow_index,
+        get_workflow_only_checks,
         load_release_gates,
     )
 except ImportError:  # pragma: no cover - allow direct invocation from repo root
     sys.path.insert(0, str(REPO_ROOT))
     from scripts.check_required_checks_sync import (  # type: ignore[no-redef]
         get_required_checks,
-        get_workflow_only_checks,
         get_workflow_index,
+        get_workflow_only_checks,
         load_release_gates,
     )
 
