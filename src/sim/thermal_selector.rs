@@ -178,16 +178,17 @@ pub fn parse_conduction_solver(s: &str) -> Result<ConductionSolverKind, String> 
 static EXPERIMENTAL_ENABLED: OnceLock<bool> = OnceLock::new();
 
 /// Hidden gate for experimental solvers. Reads
-/// `FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1` from env once and caches the result.
+/// `FLUXION_EXPERIMENTAL_ZONE_SOLVERS` from env once and caches the result.
 ///
 /// The function is a process-wide configuration gate, not a hot-path check,
 /// so caching is intentional: it avoids race conditions when tests in the
 /// same binary mutate the environment concurrently.
 pub fn experimental_zone_solver_enabled() -> bool {
     *EXPERIMENTAL_ENABLED.get_or_init(|| {
-        std::env::var("FLUXION_EXPERIMENTAL_ZONE_SOLVERS")
-            .map(|v| v == "1")
-            .unwrap_or(false)
+        // Issue #3751: canonical env-bool tokens — `true`/`yes`/`on` now
+        // also enable the gate (previously only a literal `1` did), and
+        // unrecognized values warn instead of silently disabling.
+        crate::util::env_bool::env_bool("FLUXION_EXPERIMENTAL_ZONE_SOLVERS", false)
     })
 }
 
