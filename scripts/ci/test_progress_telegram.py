@@ -347,7 +347,6 @@ class TestCollectPreviousMetricsSpoofResistance:
         JSON string, so the test author can build it via
         ``json.dumps`` to handle newlines correctly.
         """
-        import json as _json
 
         def fake_run_gh(argv):
             for i, tok in enumerate(argv):
@@ -423,7 +422,7 @@ class TestCollectPreviousMetricsSpoofResistance:
     def test_jq_filter_includes_author_constraint(self, load_script):
         """The constructed ``--jq`` filter MUST reference
         ``.author.login`` to enforce the bot-only provenance check."""
-        import shlex
+        import shlex  # noqa: F401  # see comment below re: shlex.split
 
         mod = load_script("progress_telegram")
         captured: list[list[str]] = []
