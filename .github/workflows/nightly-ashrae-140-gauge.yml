@@ -92,7 +92,18 @@ jobs:
 
       # ADR-0007 criterion 2 — energy conservation gate.
       - name: Criterion 2 — zone_balance_eplus_isolation (energy conservation)
-        run: "cargo test --locked --features gauge-solver --test all_tests zone_balance_eplus_isolation::"
+        # stdout/stderr captured to a file so the cohort-drift detector
+        # (Issue #3744) can parse the actual failing-test set in a
+        # follow-up step; the Criterion 2 step itself is allowed to
+        # exit non-zero (the soak is permanently red on this criterion
+        # per §LIMIT-21, Issue #3297) without failing the wrapper.
+        run: |
+          set -uo pipefail
+          cargo test --locked --features gauge-solver --test all_tests \
+            zone_balance_eplus_isolation:: \
+            > criterion-2-output.log 2>&1 || true
+          echo "Criterion 2 log size: $(wc -l < criterion-2-output.log) lines"
+          echo "(the §LIMIT-21 cohort's red is by design — see docs/agents/beta-soak-criterion-2-tracker.md)"
 
       # ADR-0007 criterion 3 — CLI behaviour / stub guards (includes the
       # Issue #3283 --zone-solver / --conduction-solver flag tests).
@@ -239,6 +250,70 @@ jobs:
           path: beta-soak-criterion-2-failures.json
           retention-days: 90
 
+      # Issue #3744 — cohort-drift detector. Parses the actual Criterion 2
+      # test output, diffs the live failing-test set against the canonical
+      # §LIMIT-21 cohort from `check_beta_soak_gate.criterion_2_failures()`,
+      # and emits a v1-schema JSON artifact. Drift fires in either
+      # direction (regression OR canonical cohort shrinkage → tracker
+      # may be stale). Runs on `always()` so the artifact is produced
+      # even when Criterion 2 failed. The exit code is recorded for the
+      # follow-up comment-posting step but does NOT fail the workflow —
+      # a drift alarm is informational (it does not gate the β-soak
+      # streak by itself; the streak reset is the consequence of any
+      # nightly Criterion 2 failure regardless of cohort membership).
+      - name: Criterion 2 cohort-drift detector (Issue #3744)
+        id: cohort_drift
+        if: always()
+        env:
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          drift_rc=0
+          python3 scripts/check_criterion_2_drift.py \
+            --log criterion-2-output.log \
+            --artifact beta-soak-criterion-2-drift.json \
+            --run-id "${GITHUB_RUN_ID}" || drift_rc=$?
+          echo "drift_rc=${drift_rc}"
+          echo "DRIFT_RC=${drift_rc}" >> "${GITHUB_ENV}"
+          if [ "${drift_rc}" -ne 0 ] && [ "${drift_rc}" -ne 1 ]; then
+            # 0 = clean, 1 = drift detected (both expected); anything
+            # else is a script error — surface it but do not block the
+            # nightly (the Criterion 2 step itself is already red).
+            echo "::warning::Criterion 2 cohort-drift detector exited ${drift_rc} (script error — see run log)"
+          fi
+          cat beta-soak-criterion-2-drift.json || true
+
+      - name: Upload Criterion 2 cohort-drift artifact (Issue #3744)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: beta-soak-criterion-2-drift
+          path: beta-soak-criterion-2-drift.json
+          retention-days: 90
+
+      # Issue #3744 — distinct cohort-drift marker comment on #3286.
+      # Posted ONLY when the live failing set differs from the canonical
+      # §LIMIT-21 cohort (in either direction); the nightly result
+      # comment is unaffected so a maintainer can tell the two apart
+      # at a glance. Drift direction (regression / shrunk / mixed)
+      # appears in the comment body.
+      - name: Post cohort-drift marker comment on #3286 (Issue #3744)
+        if: always() && env.DRIFT_RC == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          python3 scripts/check_criterion_2_drift.py \
+            --log criterion-2-output.log \
+            --canonical beta-soak-criterion-2-failures.json \
+            --comment \
+            --run-id "${GITHUB_RUN_ID}" > drift-comment.md || true
+          echo "Wrote drift comment ($(wc -l < drift-comment.md) lines)"
+          cat drift-comment.md
+          gh issue comment "${SOAK_TRACKING_ISSUE}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --body-file drift-comment.md
+
       # Post the nightly result + streak on the tracking issue (#3286).
       # One comment per night — the issue is the durable soak log.
       - name: Report nightly result on soak tracking issue
@@ -268,6 +343,7 @@ jobs:
             echo "- Criterion 7 census: \`#[ignore]\` count = ${IGNORED_TEST_COUNT:-unknown}, removed vs baseline = ${IGNORE_CENSUS_DELTA:-unknown}"
             echo "- Solver selection: gauge+default (ThermalSelector::default(), metric label \`solver=\"gauge+default\"\`)"
             echo "- Criterion 2 failures summary: see \`beta-soak-criterion-2-failures\` artifact (Issue #3359 tracker)"
+            echo "- Criterion 2 cohort drift: ${DRIFT_RC:-0} (0=clean, 1=drift; artifact: \`beta-soak-criterion-2-drift\`, Issue #3744)"
           } > comment.md
           gh issue comment "$SOAK_TRACKING_ISSUE" \
             --repo "$GITHUB_REPOSITORY" \

@@ -105,6 +105,13 @@ bypass that always cites a §LIMIT-21 unblocker.
 
 - **Issue #3354** — parent diagnostic ("workflow firing as designed").
 - **Issue #3359** — this issue / this tracker doc.
+- **Issue #3744** — cohort-drift detector (live failing-set vs canonical
+  cohort diff). The detector parses the actual Criterion 2 test output,
+  compares against the canonical list above, and posts a distinct
+  marker comment on #3286 whenever the live set diverges from the
+  canonical set in either direction (regression OR canonical
+  shrinkage → tracker doc may be stale). See §"Cohort-drift detector"
+  below for the operational protocol.
 - **Issue #3286** — β-phase 30-day soak window gate contract.
 - **Issue #3284** — original nightly CI workflow infrastructure.
 - **Issue #3285** — β-soak escape hatch (operational safety valve).
@@ -126,10 +133,17 @@ bypass that always cites a §LIMIT-21 unblocker.
 - **`scripts/check_beta_soak_gate.py`** — gate validator; the
   `--criterion-2-failures` CLI option emits this tracker doc's failing
   tests as a JSON summary for the nightly artifact.
+- **`scripts/check_criterion_2_drift.py`** — cohort-drift detector
+  (Issue #3744). Parses the actual Criterion 2 ``cargo test`` log,
+  computes the live failing-set, and diffs it against the canonical
+  cohort emitted by ``check_beta_soak_gate.criterion_2_failures()``.
 - **`.github/workflows/nightly-ashrae-140-gauge.yml`** — the nightly
   workflow; step "Criterion 2 — zone_balance_eplus_isolation" is the
-  Criterion 2 check, and the new
-  "Emit Criterion 2 failures summary" step uploads the JSON.
+  Criterion 2 check, the "Emit Criterion 2 failures summary" step
+  uploads the canonical JSON, the new "Criterion 2 cohort-drift
+  detector" step emits the drift artifact, and the new
+  "Post cohort-drift marker comment on #3286" step posts the
+  distinct drift comment when drift fires.
 - **`docs/agents/beta-soak-gate-failure-no-reset.md`** — the
   gate-failure protocol note (Issue #3354).
 - **`docs/agents/beta-soak-state-schema.md`** — gate state schema.
@@ -137,6 +151,87 @@ bypass that always cites a §LIMIT-21 unblocker.
   (Issue #3285).
 - **ADR-0001** — No-Parameter-Tuning Rule (why no baseline/constant
   changes).
+
+## Cohort-drift detector (Issue #3744)
+
+The canonical cohort above is **deliberately hard-coded**
+(``scripts/check_beta_soak_gate.criterion_2_failures()`` returns a
+hard-coded list — it is not parsed from live output). The β-soak
+nightly's Criterion 2 step is permanently red on this §LIMIT-21 cohort,
+so job redness carries **no marginal information**: a gauge-arm
+regression introduced by any given day's merge would be
+indistinguishable from the known LIMIT-21 failures without a human
+diffing the run log against this tracker doc.
+
+The cohort-drift detector (``scripts/check_criterion_2_drift.py``)
+closes that gap. It runs as part of the nightly workflow
+(``.github/workflows/nightly-ashrae-140-gauge.yml``):
+
+1. The Criterion 2 step now writes its ``cargo test`` stdout to
+   ``criterion-2-output.log`` (in addition to the existing
+   ``--criterion-2-failures`` JSON artifact).
+2. A new step parses that output, extracts the live failing-test set
+   (normalised to bare ``snake_case`` identifiers), and diffs it
+   against the canonical cohort.
+4. A new step emits a v1-schema JSON artifact
+   (``beta-soak-criterion-2-drift.json``) with the structured diff.
+5. A new step posts a **distinct** cohort-drift marker comment on
+   #3286 whenever the live set differs from the canonical set in
+   either direction (regression OR canonical shrinkage → tracker doc
+   may be stale). The drift comment uses a hidden HTML marker
+   (``<!-- criterion-2-cohort-drift-marker -->``) so a future
+   follow-up can suppress duplicate posts without parsing markdown.
+
+### Why drift fires in either direction
+
+* **Added** (live has a new failure not in canonical §LIMIT-21) —
+  likely a fresh gauge-arm regression; the §LIMIT-21 cohort grew.
+  This is the alarm case the issue (#3744) primarily targets.
+* **Removed** (canonical failure no longer fires) — either the
+  structural fix program (#1465 / #1462 / #3059) is closing in on
+  §LIMIT-21 OR the canonical list is stale (test was renamed,
+  refactored, or moved). Either way the maintainer needs to look.
+* **Mixed** (both added and removed) — the cohort structure is
+  changing; needs triage.
+
+The detector does **not** gate the β-soak streak by itself: any
+Criterion 2 failure (canonical OR new) resets the streak to zero, so
+the streak reset is the consequence of any nightly Criterion 2
+failure regardless of cohort membership. The drift alarm is purely
+**informational** — it surfaces the marginal signal that job
+redness alone cannot carry.
+
+### Manual invocation
+
+The detector can be run locally against a captured Criterion 2 log::
+
+    # Parse a log + emit the v1-schema JSON artifact.
+    python3 scripts/check_criterion_2_drift.py \
+      --log /tmp/criterion-2-output.log \
+      --artifact /tmp/beta-soak-criterion-2-drift.json
+
+    # Render the #3286 comment body for posting.
+    python3 scripts/check_criterion_2_drift.py \
+      --log /tmp/criterion-2-output.log \
+      --comment > /tmp/drift-comment.md
+
+Exit codes:
+
+* **0** — no drift (live failing set ≡ canonical cohort).
+* **1** — drift detected (live ≠ canonical).
+* **2** — script error (missing log, malformed canonical, etc.).
+
+### Cross-references (drift detector only)
+
+- **`scripts/check_criterion_2_drift.py`** — the detector itself
+  (single source of truth; `--log`, `--canonical`, `--artifact`,
+  `--comment`, `--run-id`, `--json` flags).
+- **`scripts/ci/test_check_criterion_2_drift.py`** — pytest coverage
+  of the parser, the loader, the diff, the artifact + comment
+  rendering, and the CLI exit-code contract.
+- **`.github/workflows/nightly-ashrae-140-gauge.yml`** — the nightly
+  workflow; the "Criterion 2 cohort-drift detector" and
+  "Post cohort-drift marker comment on #3286" steps.
 
 ## Definition of done
 
