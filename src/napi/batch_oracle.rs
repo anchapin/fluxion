@@ -11,6 +11,13 @@ use crate::sim::thermal_selector::ThermalSelector;
 use crate::validation::ashrae_140_cases::CaseBuilder;
 use crate::BatchOracle as CoreBatchOracle;
 
+// Issue #3734: catch_unwind wrapper that converts a panic on the NAPI
+// entry thread into a `napi::Error` (mirrors the PyO3 behaviour PyO3
+// provides natively). Imported here once at the module root so each
+// `#[napi]` body can wrap its potentially-panicking work without a
+// 30-line preamble.
+use super::panic_hook::catch_unwind_napi;
+
 /// JavaScript-accessible BatchOracle wrapper for high-throughput building energy evaluation.
 ///
 /// This class provides a JavaScript interface to Fluxion's BatchOracle, enabling
@@ -77,10 +84,20 @@ impl BatchOracle {
     /// - `FluxionError` if initialization fails (e.g., model loading, surrogate initialization)
     #[napi(constructor)]
     pub fn new() -> napi::bindgen_prelude::Result<Self> {
+        // Issue #3734: the `.expect("default selector must initialize")`
+        // was a reachable panic vector on the NAPI boundary — a gauge
+        // backend missing in Phase A8 would abort the host Node process
+        // for what should be a recoverable constructor error. Now mapped
+        // to `NapiError` so the JS caller sees a thrown Error instead.
         let spec = CaseBuilder::case_600_baseline();
         let thermal_model =
-            ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default())
-                .expect("default selector must initialize");
+            ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default()).map_err(
+                |e| {
+                    napi::bindgen_prelude::Error::from_reason(format!(
+                        "Failed to create BatchOracle (default selector initialization): {e}"
+                    ))
+                },
+            )?;
 
         let inner = CoreBatchOracle::from_model(thermal_model).map_err(|e| {
             napi::bindgen_prelude::Error::from_reason(format!("Failed to create BatchOracle: {e}"))
@@ -110,9 +127,20 @@ impl BatchOracle {
         population: Vec<Vec<f64>>,
         use_surrogates: bool,
     ) -> napi::bindgen_prelude::Result<Vec<f64>> {
-        self.inner
-            .evaluate_population(population, use_surrogates)
-            .map_err(|e| napi::bindgen_prelude::Error::from_reason(format!("Fluxion error: {}", e)))
+        // Issue #3734: wrap the population-parallel hot loop in
+        // `catch_unwind_napi` so a panic inside `evaluate_population` (or
+        // any of the Rayon workers it spawns — a panic on a Rayon worker
+        // that is observed by the calling thread still crosses this
+        // boundary) surfaces as a NAPI Error instead of aborting the
+        // host Node process. Mirrors the PyO3 `PanicException` semantics
+        // in `crate::python::panic_hook`.
+        catch_unwind_napi(|| {
+            self.inner
+                .evaluate_population(population, use_surrogates)
+                .map_err(|e| {
+                    napi::bindgen_prelude::Error::from_reason(format!("Fluxion error: {}", e))
+                })
+        })
     }
 
     /// Validate building parameters against physical constraints.
