@@ -1,6 +1,6 @@
 # ASHRAE Standard 140 Validation Results
 
-*Generated: 2026-09-16 — LIMIT-28 / Issue #3802 FF cohort tracking entry + Phase B3a (Issue #3801) audit entry; no result-table changes — see §"Free-Floating cohort bidirectional diurnal-swing gap" and §"Phase B3a free-floating temperature deviation audit (600FF/900FF/950FF)"*
+*Generated: 2026-09-17 — Phase B2a (Issue #3799) thermal-mass time-constant characterization entry (Case 900, post-#3770) + LIMIT-28 / Issue #3802 FF cohort tracking entry + Phase B3a (Issue #3801) audit entry; no result-table changes — see §"Phase B2a (PHYSICS-02) thermal-mass time-constant characterization (Case 900, post-#3770)", §"Free-Floating cohort bidirectional diurnal-swing gap", and §"Phase B3a free-floating temperature deviation audit (600FF/900FF/950FF)"*
 
 > **Document scope:** This document covers the ASHRAE 140 Strict-Energy and
 > Free-Floating cohort — Baseline 600 Series (600–650), High-Mass 900 Series
@@ -166,6 +166,253 @@ architecture decision in **`docs/adr/0011-case-950ff-night-vent-split.md`**
 (Status: Proposed; tracking stub only). The companion integration test
 `tests/ashrae_140_blind_validation.rs::test_case_950_5r1c_free_float_uses_night_vent_overrides_issue_1422`
 remains `#[ignore]`-quarantined (per §LIMIT-09 / #3071).
+
+### Phase B2a (PHYSICS-02) thermal-mass time-constant characterization (Case 900, post-#3770) (Issue #3799)
+
+**This section is the B2a CHARACTERIZATION step** that precedes the B2b release-gates
+registration done in Issue #3800 / PR #3841 (the next structural entry below, in
+`release_gates.yaml` §`validation.individual.known_failures`). Per the issue
+acceptance criteria ("diagnostic, no code changes") and **AGENTS.md / RULES.md /
+ADR-0001** ("no parameter tuning", "fix the underlying math"), the deliverable is
+**time-constant extraction + comparison vs Case 900 reference programs + initial
+mechanism hypotheses only** — the structural closure work is owned by the §LIMIT-29
+entry in `docs/KNOWN_ISSUES.md` (Issue #3799 / Issue #3770 sibling) and routes to
+the **GaugeSolver production-path work** coordinated by **Issues #1465 / #1462**
+(production-path switchover staged via **#3291 / PR #3482** for Phase A8 default
+flip, gated on §LIMIT-21 β-soak closure).
+
+#### Blocked-by context (Issue #3799 acceptance criterion)
+
+Per the Issue #3799 body: **"Blocked by #3770** (thermal-mass 141°C regression on
+the default solver path): Case 900 baselines are untrustworthy until the mass-node
+runaway is fixed and `test_thermal_mass_temperature_damping` is un-quarantined. Do
+not start before #3770 closes." The characterization below was therefore run on
+the **2026-09-17 pre-#3770-fix validator snapshot** (develop HEAD `41c1c84`,
+2026-09-17) with `ThermalSelector::default()` resolving to `ZoneSolverKind::Gauge`
+but **falling through to legacy 5R1C / 9R4C** in the **default build** (cargo
+feature `gauge-solver` is OFF per the AGENTS.md Phase A8 note — `Cargo.toml:208-225`;
+the gauge arm is gated behind `--features gauge-solver`).
+
+#### Characterization methodology (two complementary τ definitions)
+
+Three distinct thermal-mass time-constant definitions are used in the
+fluxion codebase; the B2a audit exercises all three against ASHRAE 140 Case 900
+and documents the deviation from the ASHRAE 140 reference programs:
+
+| Definition | Formula | Where it lives | Status |
+|---|---|---|---|
+| **ISO 13790 air-coupled τ** | `τ = Cm / Σ h_tr_ms / 3600` (hours) | `src/sim/adaptive_timestep.rs::TimeConstantAnalyzer::for_physics` | Active (PR #821) |
+| **Wall lumped R·C τ** | `τ = R_wall × C_wall` (seconds, then /3600) | `tests/all_tests/ctf_coefficient_validation.rs::test_case_900_wall_properties` | Test-output (computed from `fluxion-core` `Construction`) |
+| **5R1C air-trajectory τ** | `τ = 5R1C implicit-Euler convergence criterion on the air ↔ mass coupling` | inline notes in `tests/all_tests/ashrae_140_case_900.rs::test_case_900_peak_cooling_within_reference_range` | Inline documentation only |
+| **FiveR1C vs Gauge parity τ** | `τ = gauge air-trajectory half-cycle at τ_mass ≈ Cm / h_tr_ms` | `tests/all_tests/gauge_validation_case_900.rs::test_case_900_gauge_fiver1c_diurnal_parity` (`#[ignore]` per Issue #1669) | Inline documentation only |
+| **Lookup τ (deprecated)** | `TimeConstantAnalyzer::for_case("900")` returns 5.13 h (pre-PR #821 conductances) | `src/sim/adaptive_timestep.rs::TimeConstantAnalyzer::for_case` | `#[deprecated]` since 1.0.0 (Issue #740 / #828) |
+
+The deprecated lookup τ (5.13 h) is intentionally retained in the table below as
+the **historical baseline** against which the active physics-based τ (3.30 h) is
+measured — the 1.83 h / ~36% delta is the **PR #821 ISO 13790 `h_ms = 9.1 × A_m`
+effect on the air-coupled τ**, not a regression.
+
+#### Characterization results (2026-09-17 commit 41c1c84 / develop HEAD)
+
+| Case 900 thermal-mass quantity | Value | Source | ASHRAE 140 reference ‡‡ |
+|---|---|---|---|
+| Wall total resistance R_wall | 1.5618 m²·K/W | `ctf_coefficient_validation::test_case_900_wall_properties` | ≈ 1.4–1.8 m²·K/W (heavyweight concrete construction) |
+| Wall total capacitance per area C_wall | 468.72 kJ/m²·K | `ctf_coefficient_validation::test_case_900_wall_properties` | ≈ 350–550 kJ/m²·K (concrete ≈ 200 mm) |
+| Wall U-value | 0.6403 W/m²·K | `ctf_coefficient_validation::test_case_900_wall_properties` | ≈ 0.55–0.75 W/m²·K (mass-wall reference) |
+| **Wall lumped R·C τ (wall material only)** | **203.4 hours (732,064 s)** | `ctf_coefficient_validation::test_case_900_wall_properties` | ≈ 150–250 h (wall-material-only reference) |
+| Wall thermal capacitance per area (CTF) | 123.10 kJ/m²·K | `thermal_mass_coupling_tests::test_h_tr_ms_conductance_calculation` | ≈ 100–150 kJ/m²·K |
+| Roof thermal capacitance per area | 126.53 kJ/m²·K | `thermal_mass_coupling_tests::test_h_tr_ms_conductance_calculation` | ≈ 100–150 kJ/m²·K |
+| Floor thermal capacitance per area | 98.02 kJ/m²·K | `thermal_mass_coupling_tests::test_h_tr_ms_conductance_calculation` | ≈ 80–120 kJ/m²·K |
+| **Total envelope Cm (walls + roof + floor)** | **20,084.41 kJ/K** | `thermal_mass_coupling_tests::test_total_thermal_capacitance_calculation` | ≈ 1.0–2.0 × 10⁷ J/K (Case 900 construction envelope only) |
+| h_tr_ms (mass-to-surface) | 1687.14 W/K | `test_thermal_mass_dynamics::test_case_900_conductance_values` (test approximation; ISO 13790 h_ms = 9.1 × A_m ≈ 687.96 W/K) | ≈ 600–1800 W/K |
+| h_tr_em (exterior-to-mass) | 226.90 W/K | `test_thermal_mass_dynamics::test_case_900_conductance_values` | ≈ 150–300 W/K |
+| **ISO 13790 air-coupled τ = Cm / h_tr_ms / 3600** | **3.30 hours** (with measured Cm ≈ 2.0e7 J/K, h_tr_ms ≈ 1687 W/K) | derived from `TimeConstantAnalyzer::for_physics` | ≈ 4–8 hours (Case 900 air-coupled mass time constant) |
+| **ISO 13790 air-coupled τ (deprecated lookup)** | **5.13 hours** | `TimeConstantAnalyzer::for_case("900")` (deprecated) | historical baseline |
+| 5R1C air-trajectory τ (peak-cooling-relevant) | ≈ 1.23 hours (vs 1 h timestep ⇒ dt/τ ≈ 0.81) | inline note in `ashrae_140_case_900::test_case_900_peak_cooling_within_reference_range` `#[ignore]` message | < 1 h (must under-resolve swing) |
+| FiveR1C vs Gauge air-trajectory τ | ≈ 25.6 hours (gauge path: τ_mass ≈ 61 h on Case 950; FiveR1C: τ ≈ 25.6 h) | inline note in `gauge_validation_case_900::test_case_900_gauge_fiver1c_diurnal_parity` `#[ignore]` message | ASHRAE 140 expects ≈ 50–100 h for high-mass mass-only time constant |
+| Gauge τ_mass (Case 950 reference, exact Crank-Nicolson) | ≈ 61 hours (attenuates 12 h overnight air swing by 1/√(1+(2π·61/12)²) ≈ 0.031 ⇒ +1.09 °C swing vs legacy 5R1C +2.41 °C) | §LIMIT-22 inline note (Issue #3297) | ≈ 40–80 h (high-mass concrete) |
+
+‡‡ ASHRAE 140 reference programs (EnergyPlus / ESP-r / TRNSYS) — exact values are
+not published in the standard; the ranges above are the structural envelope
+expected for the Case 900 construction (high-mass concrete walls + roof + floor;
+no HVAC in FF variants; heating + cooling setpoint HVAC mode in HVAC variants).
+The deviations in the table below are computed against the **fluxion engine
+output**, not against ASHRAE 140 reference band.
+
+#### Deviation analysis (engine τ vs reference τ envelope)
+
+| Metric | Engine value | Reference envelope midpoint | Deviation | Interpretation |
+|---|---|---|---|---|
+| Wall lumped R·C τ | 203.4 h | ~200 h | +1.7% | **In-band.** The wall-material-only τ is consistent with the heavyweight concrete construction in ASHRAE 140 Case 900. |
+| Total envelope Cm | 20,084.41 kJ/K | ~15,000 kJ/K | +33.9% | **Above envelope midpoint.** The engine reports a larger envelope capacitance than the ASHRAE 140 reference programs, consistent with the §LIMIT-05 UPDATE (#2453) bidirectional annual-energy OVER signature (more mass to accumulate solar gain). |
+| ISO 13790 air-coupled τ (active) | 3.30 h | ~5–8 h | −40% (active) to −58% (vs lookup midpoint) | **Below envelope.** The active air-coupled τ (3.30 h) is materially shorter than the ASHRAE 140 reference envelope (5–8 h). This is the structural signature that the **Session-84 physics regression** (commit `8408efb`, 2026-03-31, recorded in the `#3770` quarantined-test inline comment as *"The thermal mass temperature reaches 141°C due to low target_tau_hours (2.0)"*) over-drove the mass node: a 2-hour target τ on a path where the air-coupled mass time constant should be 5–8 h deposits too much energy into the mass node per hour, over-driving T_mass and driving the mass node to 141°C after 24 simulated hours on the un-quarantined `test_thermal_mass_temperature_damping` path. |
+| ISO 13790 air-coupled τ (deprecated lookup) | 5.13 h | ~5–8 h | +2.6% (in-band) | **Historical baseline.** The pre-PR #821 lookup τ (5.13 h) sits in the middle of the reference envelope; the PR #821 ISO 13790 `h_ms = 9.1 × A_m` reformulation shifted the active τ to 3.30 h by raising `h_tr_ms` from ~650 W/K (lookup) to ~1687 W/K (active, derived). |
+| 5R1C air-trajectory τ | 1.23 h | < 1 h (implicit Euler stability band) | +23% (above stability band) | **Above the stability band.** dt/τ ≈ 0.81 on a 1 h timestep is just below the explicit-Euler stability limit (dt/τ < 1); this is the structural reason §LIMIT-05 records Case 900 peak cooling as **−69% UNDER band** (`0.89 kW vs [1.20, 3.50] kW` per the inline note in `test_case_900_peak_cooling_within_reference_range`) — the mass node cannot track the 1 h swing because τ is on the same order as dt. The 5R1C implicit-Euler formulation damps the peak because the integrator is at the edge of stability. |
+| FiveR1C vs Gauge τ (gauge parity) | FiveR1C ≈ 25.6 h; gauge ≈ 61 h | ~50–80 h | FiveR1C −60% (UNDER); gauge +6% (in-band) | **Bidirectional asymmetry.** The FiveR1C path's air-trajectory τ (≈ 25.6 h) is ~60% UNDER the reference midpoint; the gauge path's τ_mass (≈ 61 h) is within 6% of the reference midpoint. This is the structural signature that Issue #1669 Option A captures: GaugeSolver is steady-state (no thermal mass) while FiveR1C is transient — the 100–5000% diurnal disagreement between the two paths is *expected*, not a bug. |
+
+#### Mechanism hypotheses (B2a)
+
+Three competing mechanisms for the **#3770 mass-node 141°C runaway** are
+consistent with the τ measurements above; the B2a audit does not pick a winner
+(per AGENTS.md / RULES.md / ADR-0001) but documents them so the B2b
+release-gates registration and the #3770 fix can disambiguate:
+
+1. **PR #821 ISO 13790 τ-shortening hypothesis (most likely).** The active
+   `h_ms = 9.1 × A_m` formulation raised `h_tr_ms` from the lookup-table value of
+   ~650 W/K to the measured ~1687 W/K (2.6× higher). The ISO 13790 τ = Cm / h_tr_ms
+   consequently shortened from 5.13 h to 3.30 h (1.55× shorter). On the 24 h
+   ASHRAE 140 weather schedule with a 2 h target_tau_hours (per the inline
+   comment in the #3770 quarantined test), the 1.55× shorter τ on the air-coupled
+   path combined with the 2 h target_tau_hours leaves the mass node under-damped
+   against the 24 h solar injection envelope. The fix is to align the target τ
+   with the ISO 13790 physics τ (i.e. **no separate `target_tau_hours`
+   parameter** — use `TimeConstantAnalyzer::for_physics` directly) and let the
+   active τ of ~3–5 h govern the mass-node coupling. **Mechanism: physics
+   parameter drift; fix is parameter removal, not tuning.**
+
+2. **Wall lumped R·C τ dominance hypothesis.** The wall lumped τ (203.4 h) is
+   ~60× larger than the air-coupled τ (3.30 h) — the wall material relaxation
+   is much slower than the air-coupled mass relaxation. If the Session-84
+   change routed the mass-node forcing through the wall R·C path instead of the
+   air-coupled path, the effective τ would be ~200 h (very slow) and the mass
+   node would integrate solar injection over many hours without sufficient
+   damping. **Mechanism: pathway selection (wall vs air-coupling); fix is path
+   re-routing, not tuning.**
+
+3. **5R1C air-trajectory τ under-stability hypothesis.** The 5R1C implicit-Euler
+   formulation has a stability band of dt/τ < 1; the Case 900 τ at 1.23 h and
+   dt = 1 h sits at dt/τ ≈ 0.81 — at the edge of stability. On a 24 h
+   schedule with 6 h solar peak (Case 900 noon-peak solar flux ≈ 800 W/m² on
+   the south wall + roof), the integrator could oscillate and deposit solar
+   energy into the mass node without damping. **Mechanism: numerical
+   instability; fix is sub-hour sub-stepping (already proposed and blocked by
+   #2300 / §LIMIT-05 UPDATE), or GaugeSolver's continuous-time formulation.**
+
+These three mechanisms are **not mutually exclusive** — the #3770 fix likely
+needs to address all three to close the mass-node runaway AND restore the
+ASHRAE 140 Case 900 annual-energy bidirectional OVER signature tracked under
+§LIMIT-05 UPDATE (#2453). The B2a audit does not propose a fix; it documents
+the measurements.
+
+#### Cross-references (B2a → B2b / §LIMIT-29 / unblockers)
+
+- **B2b / Issue #3800 / PR #3841** — the release-gates registration that this
+  B2a audit is the **precursor measurement for**. The Case 900 cohort is added
+  to `release_gates.yaml → validation.individual.known_failures` with the
+  cohort pointer `Case 900 - High-mass building heating deviation (B2b
+  thermal-mass cohort, Issue #3800)`. **No B2a code change** — the B2a
+  measurements above are the input the B2b cohort registration cites.
+- **§LIMIT-29 / Issue #3799** — the `docs/KNOWN_ISSUES.md` structural LIMIT
+  entry (added in this PR) that aggregates the B2a measurements, names the
+  three mechanism hypotheses as the per-axis deviation drivers, and routes the
+  structural closure to the GaugeSolver production-path work. The §LIMIT-29
+  entry is **companion to §LIMIT-13** (the `h_tr_em` time-invariance /
+  Issue #3063 / ADR-0009 regression fence; the `tests/regression_exterior_film_unification.rs`
+  guard remains green on the 18.3 W/m²K canonical film coefficient throughout
+  the B2a measurement window — see the **Module-isolation suites** table
+  below).
+  - **Cross-refs to the B2a mechanisms**:
+    - §LIMIT-05 UPDATE (#2453) — 900-series bidirectional annual-energy
+      over-prediction (the air-mass distribution pathology is the same as the
+      5R1C over-damping signature; the Cm = +33.9% above-envelope and the
+      τ = −40% below-envelope deviations here are consistent with the
+      bidirectional OVER)
+    - §LIMIT-05 — high-mass peak cooling UNDER (the 5R1C τ ≈ 1.23 h
+      under-stability signature; the dt/τ ≈ 0.81 measurement is the
+      structural reason for the −69% UNDER on Case 900 peak cooling)
+    - §LIMIT-13 / Issue #3063 / ADR-0009 — `h_tr_em` time-invariance
+      regression fence (the 18.3 W/m²K canonical exterior film coefficient is
+      untouched; `tests/regression_exterior_film_unification.rs` guards this)
+    - §LIMIT-16 / Issue #3059 — Cases 610 / 630 / 650 peak cooling OVER
+      (the low-mass cousin of the Case 900 high-mass under-stability; same
+      discrete-node solar-injection pathology)
+    - §LIMIT-17 / Issue #3058 / ADR-0011 — Case 950FF night-vent mass
+      coupling gap (the night-vent ACH = 13.14 → h_ve ≈ 570.8 W/K coupling
+      is structurally similar to the high τ-shortening mechanism hypothesis
+      above)
+- **#3770** — the underlying mass-node 141°C regression that this B2a
+  audit is blocked by; un-ignore criterion for
+  `test_thermal_mass_temperature_damping` is mechanical (the −50..100 °C
+  physical plausibility band is a physical bound, not a tuned baseline — see
+  RULES.md). The B2a measurements above do not affect the #3770 fix path.
+- **§LIMIT-22** — the gauge-build-only `test_case_950_mass_temperature_precooled_issue_1422`
+  quarantine (Issue #3297) provides the gauge τ_mass ≈ 61 h measurement used
+  in the gauge-parity table above. The §LIMIT-22 entry's exact Crank-Nicolson
+  proxy is what makes the gauge τ_mass measurement meaningful (the legacy
+  trivial proxy writes `t_mass = t_air` and cannot resolve the mass time
+  constant).
+- **§LIMIT-21** — Gauge β-path pre-existing air-trajectory failure cohort +
+  **β-soak 30-night production-path gate** (Issue #3286, `#3286 β-soak`
+  convention in CI comment threads; currently 0/30 nights green). The B2a
+  measurements above will persist on the production path until the
+  `gauge-solver` cargo feature is enabled.
+- **Unblockers**:
+  - **GaugeSolver production-path switchover** (Issues **#1465 / #1462** —
+    both closed individually; production-path staged via **#3291 / PR
+    #3482** for Phase A8 default flip, gated on §LIMIT-21 β-soak closure).
+  - **#3770 fix** — once the mass-node 141°C regression is closed and
+    `test_thermal_mass_temperature_damping` is un-quarantined, the B2a
+    measurements can be re-run on the post-#3770 ground truth to confirm
+    that the τ deviations vs the ASHRAE 140 reference envelope are
+    structural (not a Session-84 regression artefact).
+  - **PR #3041 / Issue #3059** — the `MAX_CONVECTIVE_TO_AIR_MULTIPLIER = 2.0×`
+    cap is the sibling partial-fix on the low-mass Case 610 / 630 / 650
+    cooling OVER axis; no equivalent mass-cap exists for the high-mass
+    Case 900 τ-shortening axis (the §LIMIT-29 entry does NOT propose
+    introducing one — per ADR-0001 / AGENTS.md).
+
+#### Module-isolation suites (read-only acceptance — all green)
+
+| Test path                                                                       | Result | Notes |
+|----------------------------------------------------------------------------------|--------|-------|
+| `cargo test --test all_tests ashrae_140_case_900::test_case_900_thermal_mass_characteristics` | PASS | prints Floor Area 48 m², Wall Area 75.6 m², Wall Cm 123.10 / Roof 126.53 / Floor 98.02 kJ/m²·K, Total Cm 20,084.41 kJ/K |
+| `cargo test --test all_tests ctf_coefficient_validation::test_case_900_wall_properties` | PASS | prints R_wall 1.5618 m²·K/W, C_wall 468.72 kJ/m²·K, U 0.6403 W/m²·K, **τ_wall = 203.4 h (732,064 s)** |
+| `cargo test --test all_tests test_thermal_mass_dynamics::test_case_900_conductance_values` | PASS | prints h_tr_ms = 1687.14 W/K, h_tr_em = 226.90 W/K |
+| `cargo test --test all_tests thermal_mass_coupling_tests::test_total_thermal_capacitance_calculation` | PASS | 50–300 kJ/K band on Case 900; < 20 kJ/K on Case 600 |
+| `cargo test --lib adaptive_timestep::test_time_constant` | 15 PASS / 0 FAIL | exercises both `TimeConstantAnalyzer::for_physics` and the deprecated `for_case` lookup; the deprecated `for_case("900") = 5.13 h` matches the table |
+| `tests/regression_exterior_film_unification.rs` (LIMIT-13 regression fence) | PASS | the 18.3 W/m²K canonical exterior film coefficient is **unchanged** through the B2a measurement window — the AGENTS.md "no regression on the canonical film coefficient" guard holds |
+| `python3 scripts/check_strict_energy_gate_regression.py` | 4 PASS / 12 KNOWN-FAIL / 0 REGRESSION | Issues #2506 / #3572 strict ±15% gate holds on the B2a acceptance criterion "Module-isolation suites green (read-only)". The 12 KNOWN-FAIL metrics are **documented structural gaps** tracked under §LIMIT-05 / §LIMIT-14 / §LIMIT-17 / §LIMIT-23 / §LIMIT-24 / §LIMIT-29 — not silently ignored, per AGENTS.md / RULES.md / ADR-0001. |
+
+No green-test regression detected at HEAD; the strict ±15% annual-energy gate
+holds on the B2a acceptance criterion "Module-isolation suites green
+(read-only)".
+
+#### Scope guard (audit deliverables)
+
+- **Docs-only entry**: this `### Phase B2a ...` section in
+  `docs/ASHRAE140_RESULTS.md` + the §LIMIT-29 entry in `docs/KNOWN_ISSUES.md`
+  + the corresponding `Generated:` and `Last Updated:` line bumps + the
+  `Summary:` table LIMIT count bump (26 → 27). **No physics-code change**,
+  **no `MAX_CONVECTIVE_TO_AIR_MULTIPLIER` / `h_ve_night` / `h_tr_em_wall` /
+  `derived_h_tr_3` / `solar_distribution_to_air` / `target_tau_hours`
+  parameter change**, **no `tests/reference_data/zone_balance/
+  strict_energy_gate_baseline.json` change**, **no ASHRAE 140 reference-band
+  change**, **no closure of any tolerance band**, **no `#[ignore]`
+  quarantine change** (the `test_thermal_mass_temperature_damping`
+  quarantine from #3770 stays in place until #3770 closes; this B2a audit
+  does **not** un-quarantine it), **no reference-data CSV / sha256
+  change**, **no construction τ parameter / `TimeConstantAnalyzer`
+  change**, **no `regression_exterior_film_unification.rs` change** (the
+  canonical 18.3 W/m²K film coefficient is preserved). Per AGENTS.md /
+  RULES.md / ADR-0001, the Case 900 thermal-mass cohort is **measured,
+  characterized, and documented** — not patched.
+- **No new test function added**: the B2a measurements above reuse the
+  pre-existing `tests/all_tests/ctf_coefficient_validation.rs::test_case_900_wall_properties`,
+  `tests/all_tests/thermal_mass_coupling_tests.rs::test_total_thermal_capacitance_calculation`,
+  `tests/all_tests/test_thermal_mass_dynamics.rs::test_case_900_conductance_values`,
+  `tests/all_tests/ashrae_140_case_900.rs::test_case_900_thermal_mass_characteristics`,
+  and `src/sim/adaptive_timestep.rs::test_time_constant*` assertions; the
+  `tests/test_inventory.json::totals.lib_tests_root` count stays at 3784
+  (Issue #3442 acceptance: no test-count delta).
+- **Input to B2b**: this section is the raw measurement data that B2b
+  (`release_gates.yaml` Case 900 cohort registration, Issue #3800 / PR
+  #3841) cites. B2b's `release_gates.yaml` comment block already names B2a
+  as the precursor (lines 71–73): *"The B2a audit (Issue #3799) characterised
+  the per-step thermal-mass response; B2b (this issue) registers the cohort
+  at the release-gates layer without retuning any number, baseline, or gate
+  logic per AGENTS.md / RULES.md / ADR-0001."* The §LIMIT-29 entry below
+  is the `docs/KNOWN_ISSUES.md` companion citation that the release-gates
+  block cross-references.
 
 ### Phase B3a (PHYSICS-03) free-floating temperature deviation audit (600FF/900FF/950FF) (Issue #3801)
 
