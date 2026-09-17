@@ -11,7 +11,7 @@ Action: Check this document before attributing validation failures to new issues
 including their blocking issues, un-ignore criteria, and status. The QUARANTINE.md registry is the
 canonical source for tracking when quarantined tests can be un-ignored (per Issue #3211).
 
-*Last Updated: 2026-09-16 (LIMIT-28 #3802 added — Phase B3b PHYSICS-03 FF cohort [600FF/650FF/900FF/950FF] documented as a structural LIMIT entry; cohort remains out-of-band on the 2026-09-16 validator snapshot; structural fix routed to GaugeSolver #1465, #1462 + ADR-0011 options; no physics-code, reference-band, or tolerance change per AGENTS.md / RULES.md / ADR-0001; Phase B3a audit sibling added for #3801: see Phase B3a free-floating temperature deviation audit in docs/ASHRAE140_RESULTS.md; corrective verdict for 600FF Validator Min cell that §LIMIT-28 greps as below by 1.33 °C but is actually in-band, per Greptile P1 finding on PR #3835.)*
+*Last Updated: 2026-09-17 (LIMIT-29 #3799 added — Phase B2a PHYSICS-02 thermal-mass time-constant characterization — Case 900, post-#3770 — documented as a structural LIMIT entry with three named mechanism hypotheses; B2a is the precursor measurement for B2b #3800 / PR #3841 release-gates registration of the Case 900 thermal-mass cohort; τ measurements run on the 2026-09-17 develop HEAD `41c1c84` with `ThermalSelector::default` falling through to legacy 5R1C / 9R4C in the default build, cargo feature `gauge-solver` OFF per the AGENTS.md Phase A8 note; h_tr_em / h_tr_ms / 18.3 W/m²K canonical exterior film coefficient regression fence — LIMIT-13 — stays green throughout; structural fix routed to GaugeSolver #1465, #1462 + #3770 fix; no physics-code, reference-band, or tolerance change per AGENTS.md / RULES.md / ADR-0001; Phase B3a #3801 / B3b #3802 FF cohort entries unchanged. Companion doc: docs/ASHRAE140_RESULTS.md, see Phase B2a PHYSICS-02 thermal-mass time-constant characterization — Case 900, post-#3770.)*
 
 **LIMIT-14 added (Issue #3061):** After PR #3052's partial Case 960 inter-zone fix, raw annual cooling remains 0.63 MWh versus the 1.55–2.78 MWh reference band and peak heating remains 1.17 kW versus 2.0–8.0 kW. The 5R1C/9R4C air-mass distribution cannot accumulate enough back-zone cooling demand at the 27 °C setpoint through coupling to the free-floating sunspace; compliant closure is blocked on the GaugeSolver production-path work coordinated by #3059, not a sunspace HVAC control or gain-split tuning.
 
@@ -33,6 +33,8 @@ canonical source for tracking when quarantined tests can be un-ignored (per Issu
 **LIMIT-23 added (Issue #3552):** Case 970 (5-zone multi-zone cross-coupling per ASHRAE 140-2017 §B6.7 / 140-2023 Annex B8-3, `sim::multi_zone_network::MultiZoneAirflowNetwork` with 5×5 symmetric inter-zone conductance matrix) reports 4/4 ASHRAE 140 reference-band metrics failing on the 2026-08-16 snapshot — annual heating 18.58 MWh vs reference band [10.54, 14.26] MWh (+30 % to +76 % OVER the band), annual cooling 21.07 MWh vs [7.39, 10.00] MWh (+110 % to +185 % OVER), peak heating 3.80 kW vs [4.00, 8.00] kW (5 % UNDER the low edge), peak cooling 2.58 kW vs [2.50, 5.50] kW (at the low edge). The bidirectional annual OVER signature (heating AND cooling simultaneously >+30 % above the reference band on a 5-zone topology) is consistent with the §LIMIT-05 UPDATE (#2453) 900-series bidirectional over-prediction mechanism — the 5R1C/9R4C air-mass distribution in a 5-zone coupling matrix amplifies the same solar mass-node over-charge that drives the 900-series and §LIMIT-14 / LIMIT-16 / LIMIT-17 cohorts. Reference bands are maintained in `validation::benchmark` and summarised in `docs/ASHRAE140_MULTI_ZONE_RESULTS.md` §"Case 970 Reference Data"; the per-metric engine-output table below is the full strict-gate view. **Documentation/tracking only entry; no physics-code change, no `inter_zone_conductance` / `solar_distribution_to_air` / `h_ms_coeff` change, no `tests/reference_data/zone_balance/case_970_energy_reference.csv` raise.** Case 970 is intentionally NOT added to the §LIMIT-05 / #3072 aggressive-baseline cohort table (per Issue #3552 acceptance criteria: "tracked separately; the cohort list is #3072's purview"); cohort-level tracking remains owned by Issue #3072 (Cases 195 / 600 / 620 / 940 / 960). See §LIMIT-23 for the per-metric engine-output vs reference-band table, the per-zone attribution test stub, and the cross-references to Issue #1446 (Case 970 multi-zone implementation, closed via #1467), §LIMIT-05 / LIMIT-14 / LIMIT-16 cohort, and #1465 / #1462 (GaugeSolver architectural unblocker).
 
 **LIMIT-27 added (Issue #3647):** `tests/test_energy_conservation.rs` cited "FREE-04 in docs/KNOWN_ISSUES.md" as the documented rationale for the 200 W `ENERGY_BALANCE_RESIDUAL_THRESHOLD` (the ~191 W systematic residual of the 5R1C `InvariantChecker` algebraic formulation, introduced by #2225 / PR #2230, commit `12425d8`) — but no `FREE-04` heading ever existed (the FREE-\* family covers free-floating temperature findings only). This is a doc-vs-code drift: someone assuming the citation was stale could delete the test and silently de-facto-relax the strict-energy guard. Fixed docs-side: the residual is now documented as **§LIMIT-27** (25/26 are reserved for the Cases 800 / 810 structural entries per the `strict_energy_gate_baseline.json` `_doc_issue3572` note), the test comment is repointed, and `scripts/check_known_issues_links.py` now validates every `FREE-NN` / `LIMIT-NN` token in `tests/**/*.rs` against actual `### TOKEN` headings. No physics-code change; no threshold change.
+
+**LIMIT-29 added (Issue #3799):** Phase B2a (PHYSICS-02) thermal-mass time-constant characterization of ASHRAE 140 Case 900 (high-mass concrete construction, 9R4C default path per `ThermalSelector::default()` falling through to legacy 5R1C / 9R4C in the default build per the AGENTS.md Phase A8 note — cargo feature `gauge-solver` OFF, `Cargo.toml:208-225`) on the 2026-09-17 pre-#3770-fix validator snapshot (develop HEAD `41c1c84`); the B2a audit extracted four τ values that bracket the ASHRAE 140 reference envelope midpoint and named three competing mechanism hypotheses for the **#3770 mass-node 141°C regression** (Session-84 physics commit `8408efb`, 2026-03-31, recorded in the quarantined-test inline comment as *"The thermal mass temperature reaches 141°C due to low target_tau_hours (2.0)"*). Per the Issue #3799 acceptance criteria ("diagnostic, no code changes") and AGENTS.md / RULES.md / ADR-0001 ("no parameter tuning", "fix the underlying math"), the B2a deliverable is **measurement + mechanism hypothesis documentation only** — the structural closure is routed to the GaugeSolver production-path work coordinated by #1465 / #1462 and the #3770 fix. The four measured τ values are: (1) **Wall lumped R·C τ = 203.4 hours (732,064 s)** from R_wall × C_wall = 1.5618 m²·K/W × 468.72 kJ/m²·K (`tests/all_tests/ctf_coefficient_validation.rs::test_case_900_wall_properties`); this is the **wall-material-only** time constant and is **in-band** with the ≈150–250 h ASHRAE 140 reference envelope for heavyweight concrete construction (deviation +1.7%); (2) **ISO 13790 air-coupled τ = 3.30 hours** (active, post-PR #821) from Cm / Σ h_tr_ms / 3600 = 2.0e7 J/K / 1687.14 W/K / 3600 (`TimeConstantAnalyzer::for_physics`); this is **below envelope** at ~−40% deviation vs the ≈5–8 h reference midpoint — the structural signature that the Session-84 2-hour `target_tau_hours` over-drove the mass node against the ISO 13790 physics τ; (3) **5R1C air-trajectory τ ≈ 1.23 hours** (inline note in `ashrae_140_case_900::test_case_900_peak_cooling_within_reference_range`); this is **above the explicit-Euler stability band** at dt/τ ≈ 0.81 on a 1 h timestep, the structural reason for the −69% UNDER on Case 900 peak cooling (0.89 kW vs [1.20, 3.50] kW reference band per §LIMIT-05); (4) **FiveR1C vs Gauge air-trajectory τ**: FiveR1C ≈ 25.6 h, gauge τ_mass ≈ 61 h (`gauge_validation_case_900::test_case_900_gauge_fiver1c_diurnal_parity` `#[ignore]` per Issue #1669 Option A); the FiveR1C τ is **−60% UNDER** the ≈50–80 h reference midpoint, the gauge τ is **+6% in-band** — the bidirectional asymmetry is the structural signature Issue #1669 captures. The **three mechanism hypotheses** for the #3770 mass-node 141°C runaway that are consistent with the τ measurements above (the B2a audit does not pick a winner — per AGENTS.md / RULES.md / ADR-0001): (a) **PR #821 ISO 13790 τ-shortening hypothesis (most likely)** — the `h_ms = 9.1 × A_m` reformulation raised `h_tr_ms` from ~650 W/K (lookup) to ~1687 W/K (active), shortening the ISO 13790 τ from 5.13 h to 3.30 h (1.55× shorter); on the 24 h ASHRAE 140 weather schedule with a 2 h target_tau_hours, the 1.55× shorter τ on the air-coupled path leaves the mass node under-damped, over-driving T_mass to 141°C; fix is **parameter removal** (drop the separate `target_tau_hours` parameter, use `TimeConstantAnalyzer::for_physics` directly); (b) **Wall lumped R·C τ dominance hypothesis** — the wall material τ (203.4 h) is ~60× larger than the air-coupled τ (3.30 h); if the Session-84 change routed the mass-node forcing through the wall R·C path instead of the air-coupled path, the effective τ would be ~200 h (very slow) and the mass node would integrate solar injection without sufficient damping; fix is **path re-routing**, not tuning; (c) **5R1C air-trajectory τ under-stability hypothesis** — the Case 900 τ at 1.23 h on a 1 h timestep sits at dt/τ ≈ 0.81, at the edge of the explicit-Euler stability band (dt/τ < 1); on a 24 h schedule with 6 h solar peak the integrator could oscillate and deposit solar energy without damping; fix is **sub-hour sub-stepping** (already proposed and blocked by #2300 / §LIMIT-05 UPDATE), or **GaugeSolver's continuous-time formulation**. The three mechanisms are **not mutually exclusive** — the #3770 fix likely needs to address all three to close the mass-node runaway AND restore the ASHRAE 140 Case 900 annual-energy bidirectional OVER signature tracked under §LIMIT-05 UPDATE (#2453). Tracked as a documentation-only entry; the structural fix is routed to the GaugeSolver production-path work coordinated by #1465 / #1462 plus the #3770 fix. Sibling entries: §LIMIT-13 (h_tr_em time-invariance regression fence — 18.3 W/m²K canonical exterior film coefficient unchanged, guarded by `tests/regression_exterior_film_unification.rs`); §LIMIT-05 / §LIMIT-05 UPDATE (#2453) (900-series bidirectional annual-energy over-prediction; the Cm = +33.9% above-envelope and τ = −40% below-envelope deviations here are consistent with the bidirectional OVER signature); §LIMIT-16 / Issue #3059 (Cases 610 / 630 / 650 peak cooling OVER — the low-mass cousin of the Case 900 high-mass under-stability); §LIMIT-17 / Issue #3058 / ADR-0011 (Case 950FF night-vent mass coupling gap — structurally similar to the τ-shortening mechanism hypothesis); §LIMIT-22 (the gauge τ_mass ≈ 61 h measurement used in the gauge-parity table is from #3297's exact Crank-Nicolson proxy). Phase A8 default flip (Issue #3291, merged via PR #3482) wires `ThermalSelector::default() = ZoneSolverKind::Gauge`; the `gauge-solver` cargo feature is intentionally retained as the production-path gate pending §LIMIT-21 β-soak closure — the B2a measurements above will persist on the production path until the feature is enabled. See §LIMIT-29 for the per-metric measurement table, the deviation analysis vs the ASHRAE 140 reference envelope, the three mechanism hypotheses, the cross-references to B2b / Issue #3800 / PR #3841 (the release-gates cohort registration that this B2a audit is the precursor measurement for — `release_gates.yaml` lines 64–81 already cite B2a as the precursor), the #3770 mass-node 141°C regression that B2a is blocked by, and the module-isolation suites (read-only acceptance — all green; the `test_thermal_mass_temperature_damping` quarantine from #3770 stays in place until #3770 closes; this B2a audit does **not** un-quarantine it).
 
 **LIMIT-12 added (Issue #3062):** Case 940 annual heating is 5,158 kWh on the CTF validator path versus 1,289.9 kWh on the blind diagnostic path (per the §LIMIT-05 UPDATE #2452 measurement table, post-PR #3042); the remaining setback-recovery overshoot is structural and tracked without a production-physics change. (Historical: 7,487.81 kWh was the pre-§LIMIT-05-UPDATE snapshot; the latest measured value is 5.158 MWh. See §LIMIT-05 UPDATE (#2452) for the canonical per-path table.)
 
@@ -1224,12 +1226,12 @@ The fix is **structural** — the `GaugeSolver` rework (#1465 / #1462) — and t
 | Free-Float (FREE) | 3 | 0 | 1 | 0 | 0 |
 | Temperature (TEMP) | 1 | 0 | 0 | 0 | 0 |
 | Multi-Zone (MULTI) | 4 | 3 | 0 | 0 | 0 |
-| Model Limits (LIMIT) | 26 | 2 | 0 | 4 | 2 |
+| Model Limits (LIMIT) | 27 | 2 | 0 | 5 | 2 |
 | Reporting (REPORT) | 4 | 0 | 4 | 0 | 0 |
 | CI/Infrastructure (CI) | 3 | 0 | 0 | 0 | 0 |
 | fluxion-fluid (FLUID) | 2 | 0 | 0 | 0 | 0 |
 | FFD/CFD (FFD) | 2 | 0 | 0 | 1 | 0 |
-| **Total** | **54** | **10** | **8** | **6** | **2** |
+| **Total** | **55** | **10** | **8** | **7** | **2** |
 
 *Counts derived from `grep -cE '^### CATEGORY-NN:' docs/KNOWN_ISSUES.md` via `scripts/check_known_issues_summary.py`. Edit the per-section `**Status:**` lines (or add new `### CATEGORY-NN:` headers) and the table updates on the next regen. Status columns (`Fixed` / `Open` / `Partial` / `Won't Fix`) derive from the first `**Status:**` line in each section. Sections without a `**Status:**` line are counted in the Total column but contribute 0 to the status columns — treat the missing line as a TODO and either add the line or document the exception in the section body. To regenerate: `python3 scripts/check_known_issues_summary.py --regen | sponge docs/KNOWN_ISSUES.md`.**
 
@@ -3989,6 +3991,248 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
   `known_failures` exclusion is *predicated on*, so adding the FF
   cases to the §LIMIT-05 / #3072 cohort would conflate the meta-issue
   with its own justification).
+
+### LIMIT-29: ASHRAE 140 Case 900 thermal-mass time-constant characterization (post-#3770) — Phase B2a PHYSICS-02 (Issue #3799)
+
+- **Description:** Phase B2a (Issue #3799) — diagnostic / audit of
+  the thermal-mass time constant for ASHRAE 140 Case 900 (high-mass
+  concrete construction, 9R4C default path on the production
+  validator). Per the Issue #3799 acceptance criteria ("diagnostic,
+  no code changes") and AGENTS.md / RULES.md / ADR-0001
+  ("no parameter tuning", "fix the underlying math"), the B2a
+  deliverable is **measurement + mechanism hypothesis documentation
+  only** — the structural closure work is routed to the
+  GaugeSolver production-path work coordinated by **Issues #1465 /
+  #1462** (production-path switchover staged via **#3291 / PR
+  #3482** for Phase A8 default flip, gated on §LIMIT-21 β-soak
+  closure) plus the **#3770 mass-node 141°C regression fix** (the
+  underlying Session-84 physics regression that this B2a audit is
+  blocked by — the inline comment in the quarantined
+  `tests/validation/thermal_mass.rs::test_thermal_mass_temperature_damping`
+  records: *"The thermal mass temperature reaches 141°C due to low
+  target_tau_hours (2.0)"*, the Session-84 commit is `8408efb`,
+  2026-03-31, and the `#[ignore = "awaiting #3770"]` quarantine stays
+  in place — this B2a audit does **not** un-quarantine it). The
+  measurements below were taken on the **2026-09-17 pre-#3770-fix
+  validator snapshot** (develop HEAD `41c1c84`) with
+  `ThermalSelector::default()` resolving to `ZoneSolverKind::Gauge`
+  but falling through to legacy 5R1C / 9R4C in the **default build**
+  (cargo feature `gauge-solver` is OFF per the AGENTS.md Phase A8
+  note — `Cargo.toml:208-225`).
+
+- **Four τ measurements bracket the ASHRAE 140 reference envelope
+  midpoint (companion: `docs/ASHRAE140_RESULTS.md` §"Phase B2a
+  (PHYSICS-02) thermal-mass time-constant characterization (Case 900,
+  post-#3770)"):**
+
+  | τ definition | Value | Source | Deviation vs ASHRAE 140 reference envelope midpoint |
+  |---|---|---|---|
+  | **Wall lumped R·C τ** | **203.4 h (732,064 s)** | `ctf_coefficient_validation::test_case_900_wall_properties` (R_wall = 1.5618 m²·K/W × C_wall = 468.72 kJ/m²·K) | **+1.7% (in-band)** — heavyweight concrete envelope midpoint ≈ 200 h |
+  | **ISO 13790 air-coupled τ (active)** | **3.30 h** | `TimeConstantAnalyzer::for_physics(Cm, Σ h_tr_ms)` with measured Cm ≈ 2.0e7 J/K, h_tr_ms ≈ 1687 W/K | **−40% (below envelope midpoint ≈ 5–8 h)** — the structural signature of the Session-84 2-hour `target_tau_hours` over-driving the mass node |
+  | **5R1C air-trajectory τ** | **≈ 1.23 h** | inline note in `ashrae_140_case_900::test_case_900_peak_cooling_within_reference_range` | **Above the explicit-Euler stability band** at dt/τ ≈ 0.81 on a 1 h timestep; structural reason for the −69% UNDER on Case 900 peak cooling (0.89 kW vs [1.20, 3.50] kW per §LIMIT-05) |
+  | **FiveR1C vs Gauge τ** | FiveR1C **≈ 25.6 h**; gauge τ_mass **≈ 61 h** | `gauge_validation_case_900::test_case_900_gauge_fiver1c_diurnal_parity` (`#[ignore]` per Issue #1669 Option A) | FiveR1C **−60% UNDER**; gauge **+6% in-band** — the bidirectional asymmetry that Issue #1669 captures |
+
+  Per the **deviation analysis** in the B2a ASHRAE140_RESULTS.md
+  section, the **total envelope Cm = 20,084.41 kJ/K** (Wall
+  123.10 + Roof 126.53 + Floor 98.02 kJ/m²·K, per
+  `thermal_mass_coupling_tests::test_total_thermal_capacitance_calculation`)
+  is **+33.9% above the ASHRAE 140 envelope midpoint** — consistent
+  with the §LIMIT-05 UPDATE (#2453) bidirectional annual-energy
+  OVER signature (more mass accumulates more solar injection). The
+  h_tr_ms and h_tr_em measurements (1687.14 W/K and 226.90 W/K
+  respectively, per `test_thermal_mass_dynamics::test_case_900_conductance_values`)
+  are in-band.
+
+- **Three mechanism hypotheses (B2a does not pick a winner — per
+  AGENTS.md / RULES.md / ADR-0001):**
+
+  1. **PR #821 ISO 13790 τ-shortening hypothesis (most likely).**
+     The active `h_ms = 9.1 × A_m` formulation raised `h_tr_ms` from
+     the lookup-table value of ~650 W/K to the measured ~1687 W/K
+     (2.6× higher), shortening the ISO 13790 τ from 5.13 h
+     (deprecated `TimeConstantAnalyzer::for_case("900")` lookup) to
+     3.30 h (active `TimeConstantAnalyzer::for_physics`). On the 24 h
+     ASHRAE 140 weather schedule with a 2 h `target_tau_hours`, the
+     1.55× shorter τ on the air-coupled path leaves the mass node
+     under-damped against the 24 h solar injection envelope, over-
+     driving T_mass to 141°C. **Fix is parameter removal** (drop the
+     separate `target_tau_hours` parameter; use
+     `TimeConstantAnalyzer::for_physics` directly). **Mechanism:
+     physics parameter drift; fix is parameter removal, not
+     tuning.**
+
+  2. **Wall lumped R·C τ dominance hypothesis.** The wall material τ
+     (203.4 h) is ~60× larger than the air-coupled τ (3.30 h). If
+     the Session-84 change routed the mass-node forcing through the
+     wall R·C path instead of the air-coupled path, the effective τ
+     would be ~200 h (very slow) and the mass node would integrate
+     solar injection over many hours without sufficient damping.
+     **Fix is path re-routing**, not tuning.
+
+  3. **5R1C air-trajectory τ under-stability hypothesis.** The
+     5R1C implicit-Euler formulation has a stability band of dt/τ <
+     1; the Case 900 τ at 1.23 h and dt = 1 h sits at dt/τ ≈ 0.81 —
+     at the edge of stability. On a 24 h schedule with 6 h solar
+     peak (Case 900 noon-peak solar flux ≈ 800 W/m² on the south
+     wall + roof), the integrator could oscillate and deposit solar
+     energy into the mass node without damping. **Fix is sub-hour
+     sub-stepping** (already proposed and blocked by #2300 / §LIMIT-05
+     UPDATE), or **GaugeSolver's continuous-time formulation**.
+
+  The three mechanisms are **not mutually exclusive** — the #3770
+  fix likely needs to address all three to close the mass-node
+  runaway AND restore the ASHRAE 140 Case 900 annual-energy
+  bidirectional OVER signature tracked under §LIMIT-05 UPDATE
+  (#2453). The B2a audit does **not** propose a fix; it documents
+  the measurements.
+
+- **Cross-references:**
+
+  - **B2b / Issue #3800 / PR #3841** — the `release_gates.yaml →
+    validation.individual.known_failures` cohort registration that
+    this B2a audit is the **precursor measurement for** (the
+    `release_gates.yaml` comment block at lines 64–81 already cites
+    *"The B2a audit (Issue #3799) characterised the per-step
+    thermal-mass response; B2b (this issue) registers the cohort at
+    the release-gates layer without retuning any number, baseline,
+    or gate logic per AGENTS.md / RULES.md / ADR-0001"*). **No B2a
+    code change** — the B2a measurements above are the input the
+    B2b cohort registration cites.
+
+  - **#3770** — the underlying mass-node 141°C regression that this
+    B2a audit is blocked by (Issue #3799 body: *"Blocked by #3770:
+    Case 900 baselines are untrustworthy until the mass-node runaway
+    is fixed and `test_thermal_mass_temperature_damping` is
+    un-quarantined. Do not start before #3770 closes"*). The
+    un-ignore criterion for `test_thermal_mass_temperature_damping`
+    is mechanical (the −50..100 °C physical plausibility band is a
+    physical bound, not a tuned baseline — see RULES.md). The B2a
+    measurements above do not affect the #3770 fix path.
+
+  - **§LIMIT-13 / Issue #3063 / ADR-0009** — `h_tr_em`
+    time-invariance regression fence (the 18.3 W/m²K canonical
+    exterior film coefficient is **unchanged** through the B2a
+    measurement window — guarded by
+    `tests/regression_exterior_film_unification.rs`; the AGENTS.md
+    "no regression on the canonical film coefficient" guard holds
+    throughout). The B2a measurements above do not regress this
+    fence.
+
+  - **§LIMIT-05 UPDATE (#2453)** — 900-series bidirectional
+    annual-energy over-prediction (the air-mass distribution
+    pathology is the same as the 5R1C over-damping signature; the
+    Cm = +33.9% above-envelope and the τ = −40% below-envelope
+    deviations here are consistent with the bidirectional OVER).
+
+  - **§LIMIT-05** — high-mass peak cooling UNDER (the 5R1C τ ≈ 1.23
+    h under-stability signature; the dt/τ ≈ 0.81 measurement is
+    the structural reason for the −69% UNDER on Case 900 peak
+    cooling).
+
+  - **§LIMIT-16 / Issue #3059** — Cases 610 / 630 / 650 peak
+    cooling OVER (the low-mass cousin of the Case 900 high-mass
+    under-stability; same discrete-node solar-injection pathology).
+
+  - **§LIMIT-17 / Issue #3058 / ADR-0011** — Case 950FF night-vent
+    mass coupling gap (the night-vent ACH = 13.14 → h_ve ≈ 570.8
+    W/K coupling is structurally similar to the τ-shortening
+    mechanism hypothesis above).
+
+  - **§LIMIT-22** — the gauge-build-only
+    `test_case_950_mass_temperature_precooled_issue_1422`
+    quarantine (Issue #3297) provides the gauge τ_mass ≈ 61 h
+    measurement used in the gauge-parity table above. The
+    §LIMIT-22 entry's exact Crank-Nicolson proxy is what makes the
+    gauge τ_mass measurement meaningful (the legacy trivial proxy
+    writes `t_mass = t_air` and cannot resolve the mass time
+    constant).
+
+  - **§LIMIT-21** — Gauge β-path pre-existing air-trajectory
+    failure cohort + **β-soak 30-night production-path gate**
+    (Issue #3286, `#3286 β-soak` convention in CI comment threads;
+    currently 0/30 nights green). The B2a measurements above will
+    persist on the production path until the `gauge-solver` cargo
+    feature is enabled.
+
+  - **PR #3041 / Issue #3059** — the
+    `MAX_CONVECTIVE_TO_AIR_MULTIPLIER = 2.0×` cap is the sibling
+    partial-fix on the low-mass Case 610 / 630 / 650 cooling OVER
+    axis; no equivalent mass-cap exists for the high-mass Case 900
+    τ-shortening axis (the §LIMIT-29 entry does NOT propose
+    introducing one — per ADR-0001 / AGENTS.md / RULES.md).
+
+- **Unblockers:**
+
+  - **GaugeSolver production-path switchover** (Issues **#1465 /
+    #1462**, both closed individually; production-path staged via
+    **#3291 / PR #3482** for Phase A8 default flip, gated on
+    §LIMIT-21 β-soak closure).
+
+  - **#3770 fix** — once the mass-node 141°C regression is closed
+    and `test_thermal_mass_temperature_damping` is un-quarantined,
+    the B2a measurements can be re-run on the post-#3770 ground
+    truth to confirm that the τ deviations vs the ASHRAE 140
+    reference envelope are structural (not a Session-84 regression
+    artefact). The three mechanism hypotheses above are designed
+    to be disambiguated by the #3770 fix.
+
+- **Affected Cases / Metrics (post-#1323 baseline):**
+
+  - Case 900 — Annual heating 5.13 MWh (Ref: 1.17–2.04 MWh, ~+200% OVER);
+    Annual cooling 7.75 MWh (Ref: 2.13–3.67 MWh, ~+150% OVER); Peak
+    heating 3.93 kW (Ref: 1.80–2.40 kW, ~+85% OVER); Peak cooling
+    3.36 kW (Ref: 1.60–2.10 kW, ~+95% OVER). All 4 ASHRAE 140
+    reference-band metrics are FAIL-rows on the 84-metric scorecard
+    (`docs/ASHRAE140_RESULTS.md` §"Detailed Results / High-Mass
+    Cases (900 Series)"). The Case 900 cohort is in
+    `release_gates.yaml → validation.individual.known_failures`
+    (added by B2b / Issue #3800 / PR #3841 — see the
+    `release_gates.yaml` comment block at lines 64–81 for the
+    B2a → B2b provenance).
+
+- **Severity:** **High** — the Case 900 thermal-mass cohort is one
+  of the two fundamental ASHRAE 140 validation axes (the other being
+  the 600-series and FF cohort tracked by §LIMIT-05 / §LIMIT-16 /
+  §LIMIT-28). The Case 900 mass-node 141°C runaway is the **#3770
+  physical-plausibility violation** that gates `test_thermal_mass_temperature_damping`
+  on the QUARANTINE.md registry (`tests/QUARANTINE.md` wildcard row
+  `src/validation/thermal_mass.rs | test_thermal_mass_* | #3770`).
+  The cohort gap blocks the strict ±15% annual-energy gate per
+  `release_gates.yaml → validation.individual.known_failures`
+  (Case 900 is excluded from the gate's `extreme_count` because the
+  cohort gap is structural — the FF cohort, not Case 900, is the
+  structural primary that the `known_failures` exclusion is
+  *predicated on*).
+
+- **GitHub Issue:** [#3799](https://github.com/anchapin/fluxion/issues/3799)
+  (Phase B2a PHYSICS-02 thermal-mass time-constant characterization,
+  post-#3770 precursor to B2b / Issue #3800).
+
+- **Status:** 🟡 **Docs + characterization shipped; structural fix
+  routed to GaugeSolver #1465 / #1462 + #3770 fix.** No
+  physics-code change; no
+  `MAX_CONVECTIVE_TO_AIR_MULTIPLIER` / `h_ve_night` / `h_tr_em_wall`
+  / `solar_distribution_to_air` / `derived_h_tr_3` /
+  `target_tau_hours` change; no
+  `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`
+  change; no ASHRAE 140 reference-band change; no `#[ignore]`
+  quarantine change; no reference-data CSV / sha256 change; no
+  construction τ parameter / `TimeConstantAnalyzer` change; no
+  `regression_exterior_film_unification.rs` change (the canonical
+  18.3 W/m²K film coefficient is preserved — LIMIT-13 regression
+  fence stays green).
+
+- **Sibling framing:** §LIMIT-13 (h_tr_em time-invariance
+  regression fence); §LIMIT-05 / §LIMIT-05 UPDATE (#2453)
+  (900-series annual-energy + peak cooling siblings); §LIMIT-16
+  (low-mass peak cooling OVER cousin); §LIMIT-17 / §LIMIT-24
+  (Case 950 FF+HVAC sibling entries); §LIMIT-22 (gauge τ_mass
+  measurement source); §LIMIT-21 (β-soak 30-night production-path
+  gate). **Cross-PHYSICS-02**: B2b / Issue #3800 / PR #3841 (the
+  release-gates cohort registration that cites this B2a audit as
+  the precursor measurement); **cross-PHYSICS-02 (blocked-by)**:
+  #3770 (the mass-node 141°C regression whose fix unblocks the
+  B2a audit's `test_thermal_mass_temperature_damping` quarantine).
 
 ## fluxion-fluid Autodiff Issues (FLUID)
 
