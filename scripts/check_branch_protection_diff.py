@@ -25,13 +25,21 @@ Tracking issues:
 - #3383 — reconcile live develop branch-protection (this script's scope)
 - #3386 — idempotent ``apply_branch_protection.py`` (the future destructive
   applier; gate on a manual operator run, not an automated cron)
+- #3807 — align applier default with reviews-advisory policy (ADR-0016
+  companion). Adds the ``ci.review_policy`` canonical source
+  (``release_gates.yaml``) and the corresponding drift check below:
+  ``required_pull_request_reviews.required_approving_review_count``
+  must equal the canonical value (0 by default; any future "human-review
+  gating" change must bump the YAML, not the script).
 
 The script's exit codes:
 
-- 0 — no diff (live matches canonical, ``enforce_admins`` is true)
-- 1 — diff present (printed; required-checks differ or ``enforce_admins``
-       is false). The PUT payload is printed to stderr for the operator
-       to review before invoking the destructive applier.
+- 0 — no diff (live matches canonical: required-checks equal,
+       ``enforce_admins`` is true, review count matches canonical)
+- 1 — diff present (printed; required-checks differ, ``enforce_admins``
+       is false, OR review count diverges). The PUT payload is printed
+       to stderr for the operator to review before invoking the
+       destructive applier.
 - 2 — script error (release_gates.yaml missing/unparseable, ``gh`` CLI
        unavailable, network/auth failure)
 
@@ -118,6 +126,37 @@ def load_canonical_required_checks(path: Path) -> list[str]:
         sys.exit(2)
 
 
+def load_canonical_review_policy(path: Path) -> dict:
+    """Return ``release_gates.yaml::ci.review_policy`` (Issue #3807).
+
+    The keys mirror the GitHub REST branch-protection schema:
+    ``required_approving_review_count`` (int, 0 = reviews-advisory) and
+    ``enforce_admins`` (bool, MUST be true so admins cannot bypass the
+    status checks even when human review is not required).
+
+    Falls back to a safe default (0 / true) when the key is missing
+    so a pre-#3807 ``release_gates.yaml`` continues to drive a
+    reviews-advisory drift check (matching the applier's pre-fix
+    behavior of defaulting to 0 once #3807 lands). The fallback is
+    *deliberately* the post-#3807 canonical — flipping the default to
+    enforce a hard requirement would silently break the wave pipeline.
+    """
+    if not path.exists():
+        print(f"ERROR: {path} missing", file=sys.stderr)
+        sys.exit(2)
+
+    with path.open(encoding="utf-8") as fh:
+        data = yaml.safe_load(fh)
+
+    policy = (data.get("ci") or {}).get("review_policy") or {}
+    return {
+        "required_approving_review_count": int(
+            policy.get("required_approving_review_count", 0)
+        ),
+        "enforce_admins": bool(policy.get("enforce_admins", True)),
+    }
+
+
 def fetch_live_protection(repo: str) -> dict:
     """Query GitHub for the live ``develop`` branch protection.
 
@@ -192,6 +231,27 @@ def build_desired_put_payload(canonical: list[str], enforce_admins: bool) -> dic
     }
 
 
+def build_review_policy_drift(
+    canonical_required_approving_review_count: int,
+    live_required_approving_review_count: int,
+) -> dict:
+    """Compute the review-count drift for the #3807 canonical.
+
+    Returns a dict with ``canonical``, ``live``, and ``drift`` keys. The
+    ``drift`` flag is True iff the live value diverges from canonical
+    (in either direction: live at 0 when canonical requires ≥1, or live
+    at ≥1 when canonical is 0). ``diff_has_changes`` semantics mirror
+    ``compute_diff`` — both directions of drift are reported.
+    """
+    canonical = int(canonical_required_approving_review_count)
+    live = int(live_required_approving_review_count)
+    return {
+        "canonical": canonical,
+        "live": live,
+        "drift": canonical != live,
+    }
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n",1)[0])
     parser.add_argument(
@@ -217,6 +277,7 @@ def main(argv: list[str]) -> int:
     args.repo = args.repo or resolve_default_repo()
 
     canonical = load_canonical_required_checks(args.release_gates)
+    review_policy = load_canonical_review_policy(args.release_gates)
     try:
         live = fetch_live_protection(args.repo)
     except subprocess.CalledProcessError as exc:
@@ -232,11 +293,21 @@ def main(argv: list[str]) -> int:
     enforce_admins = bool(
         (live.get("enforce_admins") or {}).get("enabled")
     )
+    live_approving = int(
+        ((live.get("required_pull_request_reviews") or {}).get(
+            "required_approving_review_count"
+        ) or 0)
+    )
 
     diff = compute_diff(canonical, live_required)
     has_diff = bool(diff["missing_from_live"] or diff["extra_in_live"])
     has_enforce_drift = enforce_admins is False
-    drift = has_diff or has_enforce_drift
+    review_drift = build_review_policy_drift(
+        review_policy["required_approving_review_count"],
+        live_approving,
+    )
+    has_review_drift = review_drift["drift"]
+    drift = has_diff or has_enforce_drift or has_review_drift
 
     payload = build_desired_put_payload(canonical, enforce_admins=True)
     report = {
@@ -244,6 +315,12 @@ def main(argv: list[str]) -> int:
         "canonical_count": len(canonical),
         "live_count": len(live_required),
         "enforce_admins": enforce_admins,
+        "review_policy": review_policy,
+        "review_count": {
+            "canonical": review_drift["canonical"],
+            "live": review_drift["live"],
+            "drift": has_review_drift,
+        },
         "diff": diff,
         "desired_put": payload,
     }
@@ -256,6 +333,11 @@ def main(argv: list[str]) -> int:
     print(f"Canonical required_checks: {len(canonical)}")
     print(f"Live required_status_checks.contexts: {len(live_required)}")
     print(f"Live enforce_admins.enabled: {enforce_admins}")
+    print(
+        f"Live required_approving_review_count: {review_drift['live']} "
+        f"(canonical: {review_drift['canonical']}, "
+        f"reviews-advisory per ADR-0016 / Issue #3807)"
+    )
     print()
     if not drift:
         print("OK: live state matches canonical (no diff).")
@@ -273,6 +355,14 @@ def main(argv: list[str]) -> int:
         print()
     if has_enforce_drift:
         print("DRIFT: enforce_admins.enabled is false (canonical: true).")
+        print()
+    if has_review_drift:
+        print(
+            f"DRIFT: required_approving_review_count={review_drift['live']} "
+            f"but canonical is {review_drift['canonical']} (Issue #3807 / "
+            f"ADR-0016 reviews-advisory). Reconcile via "
+            f"`scripts/apply_branch_protection.py --write`."
+        )
         print()
     print("DESIRED PUT PAYLOAD (NOT APPLIED — see Issue #3386 for the applier):")
     print(json.dumps(payload, indent=2))
