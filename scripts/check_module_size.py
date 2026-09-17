@@ -138,7 +138,20 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #     model_bindings lowering stacks on top of it.)
 #     (Second merge resolution: the model_bindings lowering landed on
 #     develop first; the surrogate lowering stacks on top of it -> 14.)
-BASELINE_MODULE_SIZE_LIMITS = 14
+#   14 → 13 (Issue #3790, multi_node_solver/mod.rs decomposition):
+#     ``src/physics/multi_node_solver/mod.rs`` (2666 lines) was decomposed
+#     into a child tree (helpers.rs with the free helpers —
+#     ``h_series`` / ``air_sky_conductance`` / etc. and the
+#     ``SurfaceExteriorTemperatures`` struct, and tests.rs with the inline
+#     ``mod tests`` block) per the PR #3688 ``coverage_tests`` precedent.
+#     The ``HeatConductionSolver`` trait impl stays in ``mod.rs`` so the
+#     ``solver_trait.rs`` swap-point surface path is unchanged. The parent
+#     lands at ~1670 lines, below the ~2000-line audit threshold;
+#     no child entries are added. The decomposition itself is the
+#     ratchet-lowering event. The public API at
+#     ``crate::physics::multi_node_solver::*`` is preserved via the
+#     ``pub use helpers::{...}`` re-export shim in ``mod.rs``.
+BASELINE_MODULE_SIZE_LIMITS = 13
 
 # Freeze snapshot of the gated paths (Issue #3457 ratchet).
 #
@@ -171,7 +184,12 @@ _BASELINE_MODULE_SIZE_LIMITS_SET: frozenset[str] = frozenset(
         # Removed in Issue #3625 (decomposed into src/interop/fmi/ submodules):
         #   - ``src/interop/fmi/mod.rs`` — common/export/import/cosim/xml/ffd
         "src/sim/thermal_model.rs",
-        "src/physics/multi_node_solver/mod.rs",
+        # Removed in Issue #3790 (decomposed into
+        # ``src/physics/multi_node_solver/`` submodules — helpers.rs +
+        # tests.rs — per the PR #3688 ``coverage_tests`` precedent; the
+        # ``HeatConductionSolver`` trait impl stays in ``mod.rs`` so the
+        # swap-point surface path is unchanged; parent lands at ~1670 lines,
+        # below the audit threshold, no child entries added).
         # Issue #3574 — 8 files newly over the ~2000-LoC threshold after
         # the Issue #3543 decomposition. Each is ratcheted at its current
         # size plus a small buffer; companion cleanup PRs that decompose
@@ -341,25 +359,6 @@ LIMITS: list[Limit] = [
             "keeps touching; decomposition tracked in #3789 — growth "
             "beyond the ceiling goes through that split (or a documented "
             "protocol bump), not a reflexive raise."
-        ),
-    ),
-    Limit(
-        path=REPO_ROOT / "src" / "physics" / "multi_node_solver" / "mod.rs",
-        max_lines=2666,
-        ratchet_path=REPO_ROOT
-        / "tests"
-        / "reference_data"
-        / "module_size"
-        / "multi_node_solver_ratchet.json",
-        reason=(
-            "Issue #3457: multi-node thermal solver ratcheted at current "
-            "size. 2026-09-11 (PR #3688 coverage): coverage tests extracted "
-            "to the multi_node_solver/coverage_tests child module; "
-            "production content unchanged — ceiling raised 2664 -> 2666 to "
-            "cover only the `#[cfg(test)] mod coverage_tests;` wiring. "
-            "Zero-headroom entry (Issue #3747): decomposition tracked in "
-            "#3790 — growth beyond the ceiling goes through that split "
-            "(or a documented protocol bump), not a reflexive raise."
         ),
     ),
     # ------------------------------------------------------------------
