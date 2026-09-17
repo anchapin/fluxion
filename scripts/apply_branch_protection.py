@@ -18,6 +18,10 @@ This script is the apply side. It:
    ``release_gates.yaml``. Default mode ``--dry-run`` only prints the payload
    and exits; ``--write`` actually performs the PUT and re-GETs to verify.
 4. Supports ``--branch`` (default ``develop``; ``main`` also supported).
+5. Issue #3807 (ADR-0016 companion): default ``required_approving_review_count``
+   is 0 (reviews-advisory). Admins + CI are the gate; humans cannot self-approve
+   on GitHub, so requiring ≥1 reviewer re-blocks the wave pipeline. Override via
+   ``--required-approving-review-count N``.
 
 This script is fail-closed: it never proceeds with a write unless the
 diff is well-formed, ``gh auth`` is configured, and the operator has
@@ -34,6 +38,11 @@ Usage::
 
     # Apply (destructive — requires operator-supervised ``--write`` flag)
     python3 scripts/apply_branch_protection.py --branch develop --write
+
+    # Override the reviews-advisory default (use only when re-enabling
+    # human-review gating on a long-lived branch).
+    python3 scripts/apply_branch_protection.py --branch develop --write \\
+        --required-approving-review-count 1
 
 Exit codes::
 
@@ -150,7 +159,7 @@ def fetch_live_protection(repo: str, branch: str) -> dict:
 def build_put_payload(
     required_checks: list[str],
     strict: bool = True,
-    required_approving_review_count: int = 1,
+    required_approving_review_count: int = 0,
 ) -> dict:
     """Build the JSON payload that PUT /protection expects.
 
@@ -160,6 +169,12 @@ def build_put_payload(
 
     The shape matches the GitHub REST API documented at
     https://docs.github.com/en/rest/branches/branch-protection#update-branch-protection.
+
+    Issue #3807: the default ``required_approving_review_count`` is 0
+    (reviews-advisory) per ADR-0016. Admins + CI are the gate; humans
+    cannot self-approve GitHub PRs, so requiring ≥1 reviewer re-blocks
+    the wave pipeline. Override at the CLI with
+    ``--required-approving-review-count N``.
     """
     return {
         "required_status_checks": {
@@ -192,7 +207,7 @@ def compute_diff(live: dict, payload: dict) -> dict:
     live_rpr = live.get("required_pull_request_reviews") or {}
     live_approving = live_rpr.get("required_approving_review_count") or 0
     payload_approving = (payload.get("required_pull_request_reviews") or {}).get(
-        "required_approving_review_count", 1
+        "required_approving_review_count", 0
     )
 
     live_strict = live_rsc.get("strict", False)
@@ -358,11 +373,13 @@ def main() -> int:
     parser.add_argument(
         "--required-approving-review-count",
         type=int,
-        default=1,
+        default=0,
         help=(
             "required_approving_review_count to set on the branch "
-            "protection (default: 1). Use 0 to disable the approval "
-            "requirement."
+            "protection (default: 0, reviews-advisory per ADR-0016 / "
+            "Issue #3807). Use a positive int to require N human "
+            "approvals; GitHub forbids self-approval, so the wave "
+            "pipeline defaults to 0."
         ),
     )
     parser.add_argument(

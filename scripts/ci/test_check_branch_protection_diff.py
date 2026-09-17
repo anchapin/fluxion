@@ -57,6 +57,33 @@ def _write_release_gates(tmp_path: Path, contexts: list[str]) -> Path:
     return target
 
 
+def _write_release_gates_with_review_policy(
+    tmp_path: Path,
+    contexts: list[str],
+    *,
+    required_approving_review_count: int = 0,
+    enforce_admins: bool = True,
+) -> Path:
+    """Write a synthetic ``release_gates.yaml`` that also carries a
+    ``ci.review_policy`` block (Issue #3807). Hand-built YAML keeps the
+    parser-regression guardrail intact.
+    """
+    lines = ["ci:"]
+    lines.append("  required_checks:")
+    for c in contexts:
+        lines.append(f'    - "{c}"')
+    lines.append("  review_policy:")
+    lines.append(
+        f"    required_approving_review_count: "
+        f"{required_approving_review_count}"
+    )
+    lines.append(f"    enforce_admins: {'true' if enforce_admins else 'false'}")
+    target = tmp_path / "release_gates.yaml"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return target
+
+
 def _live_payload(contexts: list[str], enforce_admins: bool) -> dict:
     """Minimal live protection payload shaped like GitHub's
     ``GET /repos/{owner}/{repo}/branches/develop/protection`` response.
@@ -65,6 +92,23 @@ def _live_payload(contexts: list[str], enforce_admins: bool) -> dict:
         "required_status_checks": {"contexts": list(contexts)},
         "enforce_admins": {"enabled": enforce_admins},
     }
+
+
+def _live_payload_with_review_count(
+    contexts: list[str],
+    enforce_admins: bool,
+    required_approving_review_count: int,
+) -> dict:
+    """Live protection payload with the ``required_pull_request_reviews``
+    block included (Issue #3807). Mirrors GitHub's full response shape
+    so the canonical-vs-live review-count comparison can exercise the
+    real nested-dict path.
+    """
+    payload = _live_payload(contexts, enforce_admins)
+    payload["required_pull_request_reviews"] = {
+        "required_approving_review_count": required_approving_review_count,
+    }
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +159,102 @@ def test_compute_diff_identical_lists_is_empty(checker):
     assert diff["missing_from_live"] == []
     assert diff["extra_in_live"] == []
     assert diff["in_both"] == ["A", "B"]
+
+
+# ---------------------------------------------------------------------------
+# load_canonical_review_policy (Issue #3807)
+# ---------------------------------------------------------------------------
+
+
+def test_load_canonical_review_policy_parses_yaml(checker, tmp_path):
+    """``ci.review_policy`` round-trips verbatim from the YAML fixture.
+
+    The drift gate fails on either direction (canonical 0, live ≥1, or
+    canonical ≥1, live 0) — so the parse contract is byte-exact: int +
+    bool, no coercion.
+    """
+    gates = _write_release_gates_with_review_policy(
+        tmp_path,
+        ["A (GH)"],
+        required_approving_review_count=2,
+        enforce_admins=True,
+    )
+    policy = checker.load_canonical_review_policy(gates)
+    assert policy == {
+        "required_approving_review_count": 2,
+        "enforce_admins": True,
+    }
+
+
+def test_load_canonical_review_policy_defaults_when_missing(checker, tmp_path):
+    """A pre-#3807 ``release_gates.yaml`` (no ``review_policy`` block)
+    falls back to the post-#3807 canonical (0 / true).
+
+    The fallback is *deliberately* the canonical, not the pre-#3807
+    hard-coded ``1`` — flipping the default to enforce a hard
+    requirement would silently break the wave pipeline.
+    """
+    gates = _write_release_gates(tmp_path, ["A (GH)"])
+    policy = checker.load_canonical_review_policy(gates)
+    assert policy == {
+        "required_approving_review_count": 0,
+        "enforce_admins": True,
+    }
+
+
+def test_load_canonical_review_policy_missing_file_exits_2(checker, tmp_path):
+    """A missing ``release_gates.yaml`` is a script error (exit 2)."""
+    with pytest.raises(SystemExit) as excinfo:
+        checker.load_canonical_review_policy(tmp_path / "nope.yaml")
+    assert excinfo.value.code == 2
+
+
+# ---------------------------------------------------------------------------
+# build_review_policy_drift (Issue #3807)
+# ---------------------------------------------------------------------------
+
+
+def test_build_review_policy_drift_identifies_canonical_zero_live_one(checker):
+    """Pre-#3807 live state (``reviews = 1``) must surface as drift against
+    the post-#3807 canonical (0).
+    """
+    drift = checker.build_review_policy_drift(
+        canonical_required_approving_review_count=0,
+        live_required_approving_review_count=1,
+    )
+    assert drift == {
+        "canonical": 0,
+        "live": 1,
+        "drift": True,
+    }
+
+
+def test_build_review_policy_drift_identifies_canonical_one_live_zero(checker):
+    """Future "human-review gating" canonical (``reviews = 1``) against
+    a reviews-advisory live (``0``) must surface as drift in the
+    *opposite* direction.
+    """
+    drift = checker.build_review_policy_drift(
+        canonical_required_approving_review_count=1,
+        live_required_approving_review_count=0,
+    )
+    assert drift == {
+        "canonical": 1,
+        "live": 0,
+        "drift": True,
+    }
+
+
+def test_build_review_policy_drift_no_drift_when_equal(checker):
+    """Canonical == live → ``drift=False`` regardless of the value."""
+    for n in (0, 1, 2, 5):
+        drift = checker.build_review_policy_drift(
+            canonical_required_approving_review_count=n,
+            live_required_approving_review_count=n,
+        )
+        assert drift["drift"] is False, n
+        assert drift["canonical"] == n
+        assert drift["live"] == n
 
 
 # ---------------------------------------------------------------------------
@@ -262,6 +402,168 @@ def test_main_exit_1_on_extra_in_live(
     assert code == 1
     report = json.loads(capsys.readouterr().out)
     assert report["diff"]["extra_in_live"] == ["RETIRED (GH)"]
+
+
+def test_main_exit_0_when_review_count_matches_canonical(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Issue #3807: live review-count == canonical review-count → exit 0.
+
+    The canonical review policy is declared in YAML; the live
+    ``required_pull_request_reviews.required_approving_review_count``
+    matches it. No review-count drift, no exit-1.
+    """
+    canonical = ["A (GH)", "B (GH)"]
+    gates = _write_release_gates_with_review_policy(
+        tmp_path,
+        canonical,
+        required_approving_review_count=0,
+        enforce_admins=True,
+    )
+    live = _live_payload_with_review_count(
+        canonical, enforce_admins=True, required_approving_review_count=0
+    )
+    monkeypatch.setattr(checker, "fetch_live_protection", lambda repo: live)
+
+    code = checker.main(
+        ["--release-gates", str(gates), "--repo", "owner/repo", "--json"]
+    )
+
+    assert code == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["review_policy"] == {
+        "required_approving_review_count": 0,
+        "enforce_admins": True,
+    }
+    assert report["review_count"] == {
+        "canonical": 0,
+        "live": 0,
+        "drift": False,
+    }
+
+
+def test_main_exit_1_on_review_count_drift(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Issue #3807: live review-count != canonical → exit 1, drift surfaced.
+
+    Simulates the scenario where develop branch protection was set
+    before #3807 landed (``reviews=1``) and the canonical is post-#3807
+    (``reviews=0``). The drift gate must catch it.
+    """
+    canonical = ["A (GH)"]
+    gates = _write_release_gates_with_review_policy(
+        tmp_path,
+        canonical,
+        required_approving_review_count=0,
+        enforce_admins=True,
+    )
+    live = _live_payload_with_review_count(
+        canonical, enforce_admins=True, required_approving_review_count=1
+    )
+    monkeypatch.setattr(checker, "fetch_live_protection", lambda repo: live)
+
+    code = checker.main(
+        ["--release-gates", str(gates), "--repo", "owner/repo", "--json"]
+    )
+
+    assert code == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["review_count"] == {
+        "canonical": 0,
+        "live": 1,
+        "drift": True,
+    }
+    # Human-readable output mentions the canonical value + Issue #3807
+    # (the script's text-mode prints go to stdout; JSON-mode --json
+    # goes to stdout first, so we need a second invocation for the
+    # text output — see the second ``main`` call below).
+    text_capsys = capsys
+    text_gates = _write_release_gates_with_review_policy(
+        tmp_path,
+        canonical,
+        required_approving_review_count=0,
+        enforce_admins=True,
+    )
+    text_live = _live_payload_with_review_count(
+        canonical, enforce_admins=True, required_approving_review_count=1
+    )
+    monkeypatch.setattr(
+        checker, "fetch_live_protection", lambda repo: text_live
+    )
+    text_code = checker.main(
+        ["--release-gates", str(text_gates), "--repo", "owner/repo"]
+    )
+    assert text_code == 1
+    text_out = text_capsys.readouterr().out
+    assert "required_approving_review_count" in text_out
+    assert "Issue #3807" in text_out
+
+
+def test_main_exit_1_on_review_count_drift_opposite_direction(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """Issue #3807 acceptance: drift in EITHER direction fails the gate.
+
+    If a future "human-review gating" change moves the canonical to
+    ``reviews=1`` while the live branch protection is still
+    reviews-advisory (``0``), the drift gate must catch that direction
+    too.
+    """
+    canonical = ["A (GH)"]
+    gates = _write_release_gates_with_review_policy(
+        tmp_path,
+        canonical,
+        required_approving_review_count=2,
+        enforce_admins=True,
+    )
+    live = _live_payload_with_review_count(
+        canonical, enforce_admins=True, required_approving_review_count=0
+    )
+    monkeypatch.setattr(checker, "fetch_live_protection", lambda repo: live)
+
+    code = checker.main(
+        ["--release-gates", str(gates), "--repo", "owner/repo", "--json"]
+    )
+
+    assert code == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["review_count"] == {
+        "canonical": 2,
+        "live": 0,
+        "drift": True,
+    }
+
+
+def test_main_review_count_defaults_when_policy_missing(
+    checker, tmp_path, monkeypatch, capsys
+):
+    """A pre-#3807 ``release_gates.yaml`` (no ``ci.review_policy``) gets
+    the safe fallback (0 / true) so the drift gate does not regress
+    the wave pipeline on legacy YAMLs.
+
+    Pair this with the ``load_canonical_review_policy_defaults_when_missing``
+    test above: the fallback is end-to-end consistent with the helper.
+    """
+    canonical = ["A (GH)"]
+    gates = _write_release_gates(tmp_path, canonical)
+    live = _live_payload(canonical, enforce_admins=True)
+    monkeypatch.setattr(checker, "fetch_live_protection", lambda repo: live)
+
+    code = checker.main(
+        ["--release-gates", str(gates), "--repo", "owner/repo", "--json"]
+    )
+
+    # canonical review policy = (0, true) fallback; live review count = 0
+    # (no required_pull_request_reviews block → default-or-0).
+    # No drift on review count → exit 0.
+    assert code == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["review_policy"] == {
+        "required_approving_review_count": 0,
+        "enforce_admins": True,
+    }
+    assert report["review_count"]["drift"] is False
 
 
 def test_main_exit_2_on_gh_failure(checker, tmp_path, monkeypatch, capsys):
