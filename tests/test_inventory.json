@@ -66,7 +66,7 @@
       "test_binaries": 1
     }
   },
-  "generated_at": "2026-09-16T05:16:32.383534+00:00",
+  "generated_at": "2026-09-17T16:56:42.075782+00:00",
   "repo_root": "unknown",
   "schema_version": 1,
   "scope": {
@@ -98,7 +98,7 @@
       "--list"
     ],
     "doc_tests": 171,
-    "executed_at": "2026-09-16T05:16:43.347198+00:00",
+    "executed_at": "2026-09-17T16:56:57.134855+00:00",
     "lib_ignored": 6,
     "lib_tests": 3793,
     "matched": true,

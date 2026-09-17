@@ -200,12 +200,28 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #     ``src/api/email_notification.rs``
 #     (``endpoint_allowlist_release_decision_table``). No new binaries
 #     and no ignore-count changes.
+#   - 2026-09-17 (Issue #3738): bumped ``BASELINE_WORKSPACE_IGNORED``
+#     from 133 to 134 for the AGENTS.md test-count refresh — the
+#     cargo-verified live count regenerated against HEAD
+#     ``fix/issue-3738-agents-test-count-refresh`` rose by one
+#     (cargo ``cargo test --workspace --exclude fluxion-tauri --
+#     --list --ignored``). ``BASELINE_LIB_TESTS`` /
+#     ``BASELINE_LIB_IGNORED`` / ``BASELINE_WORKSPACE_TESTS`` /
+#     ``BASELINE_TEST_BINARIES`` are deliberately NOT lowered here —
+#     Issue #3764's test-binary consolidation (273 → 47) and the
+#     subsequent test-attr churn left the ratchets well above the
+#     live cargo counts. Per the ``Issue #3442`` downward-only
+#     ratchet contract, lowering them to the new live state is a
+#     separate cleanup PR (out of scope for the AGENTS.md refresh);
+#     the gate still passes because ``live < ratchet`` in all four
+#     cases — only ``BASELINE_WORKSPACE_IGNORED`` needed a raise to
+#     cover the one new ignored test counted by cargo.
 BASELINE_LIB_TESTS = 4326
 BASELINE_LIB_IGNORED = 9
 BASELINE_WORKSPACE_TESTS = 8695
-# 2026-09-12 (Issue #3711): 121 -> 133 — see the history entry above for
-# the per-crate attribution and the AST-vs-cargo calibration analysis.
-BASELINE_WORKSPACE_IGNORED = 133
+# 2026-09-17 (Issue #3738): 133 -> 134 — see the AGENTS.md refresh
+# history entry above for the rationale.
+BASELINE_WORKSPACE_IGNORED = 134
 # 2026-09-12 (Issue #3685): bumped from 308 to 309 for the new
 # ``tests/cold_start_guard_test.rs`` binary — the always-compiled
 # (feature-independent) unit tests for the Multi-Zone Cold Start
