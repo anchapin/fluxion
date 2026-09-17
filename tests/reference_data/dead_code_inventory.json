@@ -557,7 +557,7 @@
       "issue": 3752
     },
     {
-      "file": "src/validation/report.rs",
+      "file": "src/validation/report/multi_zone.rs",
       "signature": "config: crate::validation::ValidationConfig,",
       "index": 1,
       "issue": 3752

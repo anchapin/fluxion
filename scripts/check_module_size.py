@@ -83,7 +83,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #     added because the largest child submodule (~750 LoC) is well below
 #     the smallest ratcheted threshold (~2000 LoC); the decomposition
 #     itself is the ratchet-lowering event.
-#   11 → 9 (Issue #3543, parts 2 + 3):
 #     - ``src/sim/thermal_model_core.rs`` → ``src/sim/thermal_model_core/``
 #       directory (mod.rs + tests). Largest child: mod.rs (~4.1k LoC) —
 #       still over the ratchet but only because of the bare
@@ -138,7 +137,21 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #     model_bindings lowering stacks on top of it.)
 #     (Second merge resolution: the model_bindings lowering landed on
 #     develop first; the surrogate lowering stacks on top of it -> 14.)
-BASELINE_MODULE_SIZE_LIMITS = 14
+#   14 → 13 (Issue #3788, merged via PR for #3788): ``src/validation/report.rs``
+#     (4136 lines) was decomposed into the ``report/`` submodule tree
+#     (``mod.rs`` re-export shim + ``benchmark.rs`` holding both
+#     ``impl BenchmarkReport`` blocks + ``multi_zone.rs`` holding the
+#     multi-zone/Case960/Case970/summary/``ValidationSuite`` family +
+#     ``tests.rs`` holding the extracted ``#[cfg(test)] mod tests``
+#     body). The largest child, ``benchmark.rs`` (~1690 LoC), is
+#     below the smallest ratcheted threshold (~2000 LoC), so no new
+#     LIMITS entry is added; the ``report`` parent lands below the
+#     audit threshold for the future ``#3574``-style child audit pass.
+#     The ``report.rs`` LIMITS entry is removed and
+#     ``tests/reference_data/module_size/report_ratchet.json`` deleted
+#     per the companion-cleanup convention (cf. Issue #3543 #3625
+#     #3669 surrogate.rs / fmi / model_bindings decompositions).
+BASELINE_MODULE_SIZE_LIMITS = 13
 
 # Freeze snapshot of the gated paths (Issue #3457 ratchet).
 #
@@ -165,11 +178,11 @@ _BASELINE_MODULE_SIZE_LIMITS_SET: frozenset[str] = frozenset(
         # Removed in the surrogate.rs decomposition (issue #3669):
         #   - ``src/ai/surrogate.rs`` — src/ai/surrogate/ submodule tree
         #     (session_pool, integrity, metrics, manager)
+        # Removed in Issue #3788 (decomposed into src/validation/report/ submodules):
+        #   - ``src/validation/report.rs`` — mod.rs + benchmark.rs +
+        #     multi_zone.rs + tests.rs (largest child ~1690 LoC, below audit threshold)
         "src/validation/ashrae_140_cases.rs",
         "src/physics/state_space_ctf/mod.rs",
-        "src/validation/report.rs",
-        # Removed in Issue #3625 (decomposed into src/interop/fmi/ submodules):
-        #   - ``src/interop/fmi/mod.rs`` — common/export/import/cosim/xml/ffd
         "src/sim/thermal_model.rs",
         "src/physics/multi_node_solver/mod.rs",
         # Issue #3574 — 8 files newly over the ~2000-LoC threshold after
@@ -307,22 +320,6 @@ LIMITS: list[Limit] = [
             "decomposition tracked in #3787 — growth beyond the ceiling "
             "goes through that split (or a documented protocol bump), not "
             "a reflexive raise."
-        ),
-    ),
-    Limit(
-        path=REPO_ROOT / "src" / "validation" / "report.rs",
-        max_lines=4136,
-        ratchet_path=REPO_ROOT
-        / "tests"
-        / "reference_data"
-        / "module_size"
-        / "report_ratchet.json",
-        reason=(
-            "Issue #3457: validation report module ratcheted at current "
-            "size (4136 lines); consumed by ``ashrae_140_validator``. "
-            "Zero-headroom entry (Issue #3747): decomposition tracked in "
-            "#3788 — growth beyond the ceiling goes through that split "
-            "(or a documented protocol bump), not a reflexive raise."
         ),
     ),
     Limit(
