@@ -1905,7 +1905,7 @@ Three of the Issue #3457-era entries sit at **exactly** their current line count
 
 | Exact-ceiling file | Lines = ceiling | Decomposition tracking |
 |---|---:|---|
-| `src/validation/report.rs` | 4136 | #3788 |
+| `src/validation/report/` | 4136 | #3788 |
 | `src/sim/thermal_model/` | 288 | #3789 |
 | `src/physics/multi_node_solver/mod.rs` | 2666 | #3790 |
 
