@@ -138,7 +138,35 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #     model_bindings lowering stacks on top of it.)
 #     (Second merge resolution: the model_bindings lowering landed on
 #     develop first; the surrogate lowering stacks on top of it -> 14.)
-BASELINE_MODULE_SIZE_LIMITS = 14
+#   14 → 13 (Issue #3787, state_space_ctf/mod.rs decomposition):
+#     ``src/physics/state_space_ctf/mod.rs`` (4347 lines) was decomposed
+#     into a child tree:
+#       - ``tests.rs`` with the inline ``mod tests`` (basic matrix ops +
+#         state-space / capavg / cross-coupling cases)
+#       - ``expm_debug_tests.rs`` with the inline ``mod expm_debug_tests``
+#         (Padé vs Taylor / Schur vs Padé 4-layer / 6×6 / 2×2 cases)
+#       - ``debug_new_expm_tests.rs`` with the inline
+#         ``mod debug_new_expm_tests`` (Schur reconstruction, 4-layer
+#         Padé, proptest convergence, thermal-mass conservation)
+#       - ``linalg.rs`` with the dense linear-algebra kernel
+#         (``matrix_exponential`` family — explicit-QR, ``faer``,
+#         Higham Padé-13, real-Schur/Francis double-shift, legacy Padé,
+#         Taylor — plus mat-mul helpers, Householder QR/Hessenberg,
+#         ``matrix_inverse``, norms). Self-contained pure math with no
+#         CTF-domain coupling.
+#     The public API on ``crate::physics::state_space_ctf`` is preserved
+#     unchanged via the re-export shim in ``mod.rs`` (``pub use
+#     linalg::matrix_exponential_faer``); the pipeline
+#     (``compute_state_space_ctf``, ``build_state_space_matrices``,
+#     ``compute_ctf_from_state_space``) re-imports the few symbols it
+#     needs from ``super::linalg``. Parent lands at ~933 lines (below
+#     the ~2000-line audit threshold); ``linalg`` at ~1471 lines (also
+#     below the audit threshold); no child entries are added. The
+#     decomposition itself is the ratchet-lowering event.
+#     (This commit lowers the baseline alongside the #3788 report,
+#     #3789 thermal_model, and #3790 multi_node_solver decompose
+#     commits — same companion-cleanup convention.)
+BASELINE_MODULE_SIZE_LIMITS = 13
 
 # Freeze snapshot of the gated paths (Issue #3457 ratchet).
 #
@@ -165,8 +193,15 @@ _BASELINE_MODULE_SIZE_LIMITS_SET: frozenset[str] = frozenset(
         # Removed in the surrogate.rs decomposition (issue #3669):
         #   - ``src/ai/surrogate.rs`` — src/ai/surrogate/ submodule tree
         #     (session_pool, integrity, metrics, manager)
+        # Removed in Issue #3787 (decomposed into src/physics/state_space_ctf/
+        # submodules — tests.rs + expm_debug_tests.rs + debug_new_expm_tests.rs
+        # + linalg.rs — per the PR #3688 ``coverage_tests`` precedent; the
+        # ``compute_state_space_ctf`` / ``build_state_space_matrices`` /
+        # ``compute_ctf_from_state_space`` pipeline stays in ``mod.rs`` so the
+        # public API is preserved via the re-export shim; parent lands at
+        # ~933 lines, ``linalg`` at ~1471 lines, both below the ~2000-line
+        # audit threshold, no child entries added).
         "src/validation/ashrae_140_cases.rs",
-        "src/physics/state_space_ctf/mod.rs",
         "src/validation/report.rs",
         # Removed in Issue #3625 (decomposed into src/interop/fmi/ submodules):
         #   - ``src/interop/fmi/mod.rs`` — common/export/import/cosim/xml/ffd
@@ -286,27 +321,6 @@ LIMITS: list[Limit] = [
             "Issue #3457: ASHRAE 140 cases module ratcheted at current "
             "size (4764 lines); v1.3 validation work depends on this "
             "module."
-        ),
-    ),
-    Limit(
-        path=REPO_ROOT / "src" / "physics" / "state_space_ctf" / "mod.rs",
-        max_lines=4347,
-        ratchet_path=REPO_ROOT
-        / "tests"
-        / "reference_data"
-        / "module_size"
-        / "state_space_ctf_ratchet.json",
-        reason=(
-            "Issue #3457: state-space CTF (conduction transfer function) "
-            "module ratcheted at current size; referenced by the 5R1C / "
-            "9R4C legacy dispatchers. 2026-09-11 (PR #3688 coverage): "
-            "coverage tests extracted to the state_space_ctf/coverage_tests "
-            "child module; production content unchanged — ceiling raised "
-            "4344 -> 4347 to cover only the `#[cfg(test)] mod "
-            "coverage_tests;` wiring. Zero-headroom entry (Issue #3747): "
-            "decomposition tracked in #3787 — growth beyond the ceiling "
-            "goes through that split (or a documented protocol bump), not "
-            "a reflexive raise."
         ),
     ),
     Limit(
