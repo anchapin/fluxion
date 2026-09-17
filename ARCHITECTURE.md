@@ -721,7 +721,7 @@ pub trait VentilationSchedule: Debug + Send + Sync {
 
 ### Module 5: Zone Air Heat Balance
 
-**Source**: `src/sim/thermal_model_core/`, `src/sim/thermal_model.rs`, `src/sim/thermal_model_physics/`, `src/sim/timestep_solver.rs`, `src/sim/thermal_selector.rs`
+**Source**: `src/sim/thermal_model_core/`, `src/sim/thermal_model/`, `src/sim/thermal_model_physics/`, `src/sim/timestep_solver.rs`, `src/sim/thermal_selector.rs`
 **Purpose**: Solve the zone heat balance equation at each timestep.
 
 | Input | Type | Source |
@@ -1572,7 +1572,7 @@ must remain cheap and isolated: each clone is solved exactly once, from a
 pristine pre-solve state, on its own rayon worker.
 
 **`HybridThermalModel` clone asymmetry — slots reset, counters preserved.**
-`HybridThermalModel` (`src/sim/thermal_model.rs:766-784`) implements `Clone` by
+`HybridThermalModel` (`src/sim/thermal_model/hybrid.rs:766-784` of the pre-#3789 single-file form) implements `Clone` by
 hand because its fields have divergent clone semantics:
 
 | Field group | On clone | Why |
@@ -1886,7 +1886,8 @@ Snapshot 2026-09-13; run `python3 scripts/check_module_size.py --json` for curre
 |---|---:|---:|---|
 | `src/sim/thermal_model_data/mod.rs` | 161 | 200 | #2878 |
 | `src/physics/state_space_ctf/mod.rs` | 4347 | 4347 | #3457 |
-| `src/sim/thermal_model.rs` | 3061 | 3061 | #3457 |
+| `src/validation/report.rs` | 4136 | 4136 | #3457 |
+| `src/sim/thermal_model/mod.rs` | 288 | 288 | #3457 |
 | `src/validation/ashrae_140_cases.rs` | 3304 | 4764 | #3457 |
 | `src/physics/multi_node_solver/mod.rs` | 2666 | 2666 | #3457 |
 
@@ -1907,12 +1908,11 @@ Four of the Issue #3457-era entries sit at **exactly** their current line count 
 | Exact-ceiling file | Lines = ceiling | Decomposition tracking |
 |---|---:|---|
 | `src/physics/state_space_ctf/mod.rs` | 4347 | #3787 |
-| `src/sim/thermal_model.rs` | 3061 | #3789 |
+| `src/validation/report.rs` | 4136 | #3788 |
+| `src/sim/thermal_model/` | 288 | #3789 |
 | `src/physics/multi_node_solver/mod.rs` | 2666 | #3790 |
 
-`src/validation/report/` (formerly the 4136-line validation-report module, the repo maximum) was decomposed into the `src/validation/report/` directory tree at Issue #3788 (`mod.rs` + `benchmark.rs` + `multi_zone.rs` + `tests.rs`; largest child ~1690 LoC, below the audit threshold — no new entry needed). Like `src/sim/thermal_model.rs` it hosts shared types (`BenchmarkReport`, `ValidationSuite`, `MultiZoneValidationReport`) that the validator and suite-of-cases machinery cross, so it absorbs most validator change surface. Each tracking issue stages the decomposition (inline-test extraction first — the PR #3688 `coverage_tests` precedent — then concern splits behind a facade) and records the protocol obligations above.
-
-`src/sim/thermal_model.rs` deserves particular attention: it hosts `ThermalModelTrait`, the swap point the gauge-dispatcher work keeps touching, making it the most likely of the four to collide with the gate. Each tracking issue stages the decomposition (inline-test extraction first — the PR #3688 `coverage_tests` precedent — then concern splits behind a facade) and records the protocol obligations above.
+`src/sim/thermal_model/` deserves particular attention: it hosts `ThermalModelTrait`, the swap point the gauge-dispatcher work keeps touching, making it the most likely of the four to collide with the gate. Each tracking issue stages the decomposition (inline-test extraction first — the PR #3688 `coverage_tests` precedent — then concern splits behind a facade) and records the protocol obligations above. Issue #3789 (merged via PR #3843) split the original 3061-line single-file module into the directory form (mod.rs + physics.rs + surrogate.rs + hybrid.rs + unified.rs + comfort.rs + tests.rs, sibling module of `src/sim/thermal_model_core/`); the entry on the `LIMITS` ratchet now points at the new mod.rs so future growth still triggers the gate.
 
 ### Changing ceilings (protocol)
 

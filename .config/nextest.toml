@@ -53,3 +53,17 @@
 # [[test]]
 # name = "flagged_binary_name"
 # concurrency = 1
+
+# Issue #3745 — `twin_memory_leak_test` previously ran inside the consolidated
+# `tests/all_tests/main.rs` runner where its `memory_stats().physical_mem`
+# delta was polluted by parallel sibling tests allocating into the same
+# process. The test now lives at `tests/twin_memory_leak_test.rs` as a
+# standalone [[test]] binary (process-isolated, the Issue #3764 keepers
+# pattern) and reads RSS directly from `/proc/self/statm`. This block is
+# the defensive belt-and-suspenders for that fix: even if a future PR adds
+# a second test to this binary, the leak-detector's measurement window
+# stays serialised within the binary and cannot be polluted by another
+# test in the same process.
+[[test]]
+name = "twin_memory_leak_test"
+concurrency = 1

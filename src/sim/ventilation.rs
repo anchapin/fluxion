@@ -27,6 +27,40 @@
 //!
 //! **Validation**: For `ACH=0.5`, `V=129.6 m³`, `ρ=1.2`, `c_p=1005`:
 //! Fluxion ≈ 21.71 W/K vs EnergyPlus ≈ 21.6 W/K (Δ < 0.5%). See Issue #918.
+//!
+//! # Free-Floating cohort (600FF/650FF/900FF/950FF) — swap-point awareness
+//!
+//! This module is a [`VentilationSchedule`] swap point; the multi-node
+//! solver applies the returned ACH to the air node (and the mass node
+//! for the night-vent mass coupling path) inside
+//! `src/physics/multi_node_solver.rs::step_with_gains`. Per the
+//! **Phase B3b PHYSICS-03 (Issue #3802)** acceptance criteria
+//! ("FF cases within ASHRAE ranges OR LIMIT entries with named
+//! mechanisms") and the **AGENTS.md / RULES.md / ADR-0001**
+//! no-parameter-tuning rule, the post-#1323 Free-Floating cohort
+//! measurements are documented as **§LIMIT-28** rather than patched at
+//! the ventilation schedule — the structural fix is routed to the
+//! GaugeSolver production-path work (Issues #1465 / #1462, gated on
+//! §LIMIT-21 β-soak closure). Concretely:
+//!
+//! - **Case 950FF**: night fan ACH = 13.14 → `h_ve ≈ 570.8 W/K` (V=129.6,
+//!   ρ=1.2, c_p=1005) overwhelms the wall exterior-film correction
+//!   `h_tr_em_wall ≈ 71.6 W/K` by ~8× on the mass node — see
+//!   §LIMIT-17 / Issue #3058 / ADR-0011 (Status: Proposed) for the
+//!   Option (a) / (b) / (c) decision matrix.
+//! - **Cases 600FF / 650FF / 900FF**: 5R1C / 9R4C single lumped-mass
+//!   damping under-predicts the diurnal swing the ASHRAE 140 reference
+//!   programs produce (with / without night-vent amplification).
+//!
+//! The pin test
+//! `test_case_950ff_night_vent_h_ve_signature_issue_3802_limit28`
+//! preserves the input-side ACH → `h_ve` signature that drives the
+//! cohort gap so the documented mechanism cannot silently regress if
+//! the night-ventilation schedule is refactored. **No parameter
+//! adjustment to `h_ve_night`, `MAX_CONVECTIVE_TO_AIR_MULTIPLIER`,
+//! `h_tr_em_wall`, `solar_distribution_to_air`, or any other 5R1C /
+//! 9R4C coefficient is permitted** to close the gap (per
+//! AGENTS.md / RULES.md / ADR-0001).
 
 use crate::physics::units::{FromF64, ThermalConductance};
 use fluxion_core::earth_tube::EarthTube;
@@ -720,12 +754,88 @@ mod tests {
         assert_eq!(cloned.get_ach(10, 20.0, 22.0, 2.0, 100.0), 0.3);
     }
 
+    // =========================================================================
+    // Phase B3b PHYSICS-03 FF cohort signature pin (Issue #3802 / LIMIT-28)
+    //
+    // Per AGENTS.md / RULES.md / ADR-0001 ("no parameter tuning", "fix the
+    // underlying math") the ASHRAE 140 Free-Floating cohort
+    // (600FF/650FF/900FF/950FF — all 8 metrics FAIL on the 2026-09-16
+    // validator snapshot) is documented as §LIMIT-28 rather than patched at
+    // the ventilation schedule. This test pins the input-side ACH signature
+    // that drives the cohort gap so the documented mechanism cannot silently
+    // regress if the night-ventilation schedule is refactored.
+    //
+    // ASHRAE 140-2023 §6.5.6.2 Case 950FF spec:
+    // - base_ach = 0.5 ACH (always)
+    // - fan_ach  = 12.64 ACH (18:00–07:00, 13 hours overnight)
+    // - night total = 13.14 ACH (during 18:00–07:00)
+    // - day total   = 0.5 ACH (during 07:00–18:00, 11 hours)
+    //
+    // The night `h_ve = ACH × V × ρ × c_p / 3600 = 13.14 × 129.6 × 1.2 ×
+    // 1005 / 3600 ≈ 570.8 W/K`. This value overwhelms the wall exterior-film
+    // `h_tr_em_wall ≈ 71.6 W/K` by ~8× in
+    // `src/physics/multi_node_solver.rs::step_with_gains`, locking the
+    // Case 950FF winter-min free-floating temperature at −23.95 °C against
+    // the [−20.2, −17.8] °C ASHRAE 140 band (3.72 °C outside band).
+    //
+    // The structural fix is routed to the GaugeSolver production-path work
+    // (Issues #1465 / #1462 — both closed individually; production-path
+    // switchover staged via #3291 / PR #3482 — Phase A8 default flip,
+    // **gated on §LIMIT-21 β-soak closure**).
+    //
+    // References:
+    // - §LIMIT-28 / Issue #3802 (Phase B3b PHYSICS-03 FF cohort)
+    // - §LIMIT-17 / Issue #3058 / ADR-0011 (Case 950FF night-vent mass
+    //   coupling structural gap, Status: Proposed)
+    // - §LIMIT-24 / Issue #3551 (Case 950 HVAC-mode annual cooling
+    //   companion — the §LIMIT-17 regression-avoidance clause)
+    //
+    // Implementation note: this test extends `test_ach_to_conductance`
+    // (which already imports `crate::physics::units::ToF64`) rather than
+    // adding a new `use crate::physics::*` statement, to avoid bumping
+    // the `src/sim/** -> crate::physics::*` edge count in the
+    // Issue #2463 / #2766 cycle guard (the guard rejects growth).
+    // =========================================================================
+
     #[test]
     fn test_ach_to_conductance() {
         use crate::physics::units::ToF64;
         // Standard values: ach=1.0, volume=100m³, rho=1.2, cp=1005
         let conductance = ach_to_conductance(1.0, 100.0, 1.2, 1005.0);
         assert!((conductance.to_value() - 33.5).abs() < 0.01); // (1*100*1.2*1005)/3600 = 33.5
+
+        // Issue #3802 / LIMIT-28 / LIMIT-17 / ADR-0011 pin: ASHRAE 140 Case
+        // 950FF night-ventilation ACH signature drives `h_ve ≈ 570.8 W/K` on
+        // the mass node, overwhelming `h_tr_em_wall ≈ 71.6 W/K` by ~8× (see
+        // `src/physics/multi_node_solver.rs::step_with_gains`). The cohort
+        // (600FF/650FF/900FF/950FF) is documented as §LIMIT-28 rather than
+        // patched at the ventilation schedule — per AGENTS.md / RULES.md /
+        // ADR-0001 ("no parameter tuning"). The day signature
+        // (`h_ve ≈ 21.7 W/K`, base 0.5 ACH only) is also pinned so a silent
+        // refactor of `ScheduledVentilation::night_ventilation` cannot
+        // regress the documented mechanism.
+        let schedule = ScheduledVentilation::night_ventilation(0.5, 12.64, 18, 7);
+        let ach_day = schedule.get_ach(12, 0.0, 22.0, 2.0, 129.6);
+        let ach_night = schedule.get_ach(0, -20.0, -18.0, 2.0, 129.6);
+        assert!(
+            (ach_day - 0.5).abs() < 1.0e-9,
+            "Case 950FF day ACH = base 0.5 only (got {ach_day})"
+        );
+        assert!(
+            (ach_night - 13.14).abs() < 1.0e-6,
+            "Case 950FF night ACH = 0.5 + 12.64 = 13.14 (got {ach_night})"
+        );
+        let h_ve_night = ach_to_conductance(ach_night, 129.6, 1.2, 1005.0).to_value();
+        assert!(
+            (h_ve_night - 570.8).abs() < 1.0,
+            "Case 950FF night h_ve ≈ 570.8 W/K drives the §LIMIT-28 / §LIMIT-17 \
+             structural gap (got {h_ve_night:.2} W/K)"
+        );
+        let h_ve_day = ach_to_conductance(ach_day, 129.6, 1.2, 1005.0).to_value();
+        assert!(
+            (h_ve_day - 21.7).abs() < 0.1,
+            "Case 950FF day h_ve ≈ 21.7 W/K (base 0.5 ACH only, got {h_ve_day:.2} W/K)"
+        );
     }
 
     #[test]

@@ -116,6 +116,12 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     // ==================== Low Mass Cases (600 Series) ====================
 
     // Case 600 - Baseline (Low Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Inter-program range from BSIMAC 9.0.74, CSE 0.861.1,
+    // DeST 2.0, EnergyPlus 9.0.1, ESP-r 13.3, TRNSYS 18.01.0001.
+    // Issue #1270 superseded the prior "calibrated for 5R1C model"
+    // (5.5-7.5 heating, 8.0-10.5 cooling); current band is the inter-program
+    // spread from the Annex B source above.
     // ASHRAE 140-2023 Annex B raw reference values (issue #1270)
     // Previously calibrated for 5R1C model (5.5-7.5 heating, 8.0-10.5 cooling)
     data.insert(
@@ -137,6 +143,8 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 610 - South Shading (Low Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Same inter-program source set as Case 600 above.
     data.insert(
         "610".to_string(),
         BenchmarkData {
@@ -156,18 +164,28 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 620 - East/West Windows (Low Mass)
-    // Note: Calibrated for 5R1C model
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-4 (Issue #3803 /
+    // Phase C1 BENCH-01). Replaces the prior "Calibrated for 5R1C
+    // model" values (heating 4.5-6.5, cooling 3.2-5.0, peaks 2.8-3.8 /
+    // 2.5-3.5 MWh/kW) with the raw inter-program range from
+    // Std140_TF_Results.pdf (TESS, 19-Aug-2024) — programs BSIMAC
+    // 9.0.74, CSE 0.861.1, DeST 2.0, EnergyPlus 9.0.1, ESP-r 13.3,
+    // TRNSYS 18.01.0001. Free-float zone temperatures (Table B8-5)
+    // preserved from the prior baseline because Case 620 is a
+    // conditioned case (the ff_* fields are unused by the validator
+    // for non-free-floating cases); the JSON does not carry ff_*
+    // entries for Case 620.
     data.insert(
         "620".to_string(),
         BenchmarkData {
-            annual_heating_min: 4.5,
-            annual_heating_max: 6.5,
-            annual_cooling_min: 3.2,
-            annual_cooling_max: 5.0,
-            peak_heating_min: 2.8,
-            peak_heating_max: 3.8,
-            peak_cooling_min: 2.5,
-            peak_cooling_max: 3.5,
+            annual_heating_min: 4.094,
+            annual_heating_max: 4.719,
+            annual_cooling_min: 3.841,
+            annual_cooling_max: 4.404,
+            peak_heating_min: 3.038,
+            peak_heating_max: 3.385,
+            peak_cooling_min: 3.955,
+            peak_cooling_max: 4.797,
             min_free_float_min: -18.5,
             min_free_float_max: -15.3,
             max_free_float_min: 62.8,
@@ -176,6 +194,8 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 630 - East/West Shading (Low Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Same inter-program source set as Case 600 above.
     data.insert(
         "630".to_string(),
         BenchmarkData {
@@ -195,6 +215,8 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 640 - Thermostat Setback (Low Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Same inter-program source set as Case 600 above.
     data.insert(
         "640".to_string(),
         BenchmarkData {
@@ -214,6 +236,10 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 650 - Night Ventilation (Low Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Annual heating and peak heating are 0.00 (HVAC
+    // is OFF for this case per ASHRAE 140-2023 §B8.5; night ventilation
+    // alone provides cooling).
     data.insert(
         "650".to_string(),
         BenchmarkData {
@@ -233,6 +259,10 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 600FF - Free Float (Low Mass)
+    // Source: ASHRAE 140-2023 Annex B Table B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Annual / peak heating and cooling are 0.00
+    // because there is no HVAC (free-float); only min/max free-float
+    // temperatures apply.
     data.insert(
         "600FF".to_string(),
         BenchmarkData {
@@ -252,6 +282,9 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 650FF - Free Float with Night Ventilation (Low Mass)
+    // Source: ASHRAE 140-2023 Annex B Table B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Annual / peak heating and cooling are 0.00
+    // because there is no HVAC; only min/max free-float temperatures apply.
     data.insert(
         "650FF".to_string(),
         BenchmarkData {
@@ -273,6 +306,10 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     // ==================== High Mass Cases (900 Series) ====================
 
     // Case 900 - Baseline (High Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Cross-referenced with NREL/TP-472-6231 (1995
+    // BESTEST) Tables 3-2..3-4; see tests/reference_data/zone_balance/
+    // PROVENANCE.md for the reconciliation.
     data.insert(
         "900".to_string(),
         BenchmarkData {
@@ -292,6 +329,8 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 910 - South Shading (High Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Same inter-program source set as Case 900 above.
     data.insert(
         "910".to_string(),
         BenchmarkData {
@@ -311,6 +350,8 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 920 - East/West Windows (High Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Same inter-program source set as Case 900 above.
     data.insert(
         "920".to_string(),
         BenchmarkData {
@@ -330,6 +371,8 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 930 - East/West Shading (High Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Same inter-program source set as Case 900 above.
     data.insert(
         "930".to_string(),
         BenchmarkData {
@@ -349,6 +392,8 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 940 - Thermostat Setback (High Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Same inter-program source set as Case 900 above.
     data.insert(
         "940".to_string(),
         BenchmarkData {
@@ -368,6 +413,10 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 950 - Night Ventilation (High Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Annual heating and peak heating are 0.00 (HVAC
+    // is OFF per ASHRAE 140-2023 §B8.5; night ventilation alone provides
+    // cooling).
     data.insert(
         "950".to_string(),
         BenchmarkData {
@@ -387,6 +436,10 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 900FF - Free Float (High Mass)
+    // Source: ASHRAE 140-2023 Annex B Table B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Annual / peak heating and cooling are 0.00
+    // because there is no HVAC (free-float); only min/max free-float
+    // temperatures apply.
     data.insert(
         "900FF".to_string(),
         BenchmarkData {
@@ -406,6 +459,9 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 950FF - Free Float with Night Ventilation (High Mass)
+    // Source: ASHRAE 140-2023 Annex B Table B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Annual / peak heating and cooling are 0.00
+    // because there is no HVAC; only min/max free-float temperatures apply.
     data.insert(
         "950FF".to_string(),
         BenchmarkData {
@@ -427,11 +483,11 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     // ==================== Special Cases ====================
 
     // Case 960 - Sunspace (2-zone)
-    // Reference values from ASHRAE 140-2023:
-    // - Annual heating: 1.65-2.45 MWh (but our model uses 5R1C which gives higher values)
-    // - Annual cooling: 1.55-2.78 MWh
-    // Note: These ranges are calibrated for the 5R1C thermal network model
-    // Our model uses simplified 2-zone coupling which gives different results
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). The peak_heating band 2.0-8.0 kW reflects the
+    // wide inter-program spread for the sunspace geometry; annual heating
+    // and cooling bands (1.65-2.45 / 1.55-2.78 MWh) match Issue #2858.
+    // Values align with data/ashrae140_reference.json (Tables B8-1..B8-4).
     data.insert(
         "960".to_string(),
         BenchmarkData {
@@ -489,10 +545,11 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     // Bands mirror `get_all_benchmark_data_blind()` Cases 800/810.
 
     // Case 800 - Heat pump (single-stage, basic control)
-    // Annual heating/cooling centred on the synthetic reference CSV at
-    // data/reference/ashrae140/series_800.csv (zone1_delivered sums:
-    // H=5.60 MWh, C=6.07 MWh). Band fits inside the AC3 [4.5, 6.5] MWh
-    // envelope for both heating and cooling.
+    // Source: ASHRAE 140-2023 Annex B Table 8-15 inter-program envelope
+    // (Std140_TF_Results.pdf, TESS 19-Aug-2024) plus the synthetic
+    // reference CSV data/reference/ashrae140/series_800.csv (zone1_
+    // delivered sums: H=5.60 MWh, C=6.07 MWh). Band fits inside the
+    // AC3 [4.5, 6.5] MWh envelope for both heating and cooling.
     data.insert(
         "800".to_string(),
         BenchmarkData {
@@ -512,10 +569,12 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 810 - Comprehensive HVAC equipment
-    // Annual heating/cooling centred on the synthetic reference CSV
-    // (zone1_delivered sums: H=3.70 MWh, C=4.12 MWh). The full system has
-    // higher COP, so the band sits below the AC3 [4.5, 6.5] envelope —
-    // the band itself remains ≤ 1.5× the raw ASHRAE 140 width (AC2).
+    // Source: ASHRAE 140-2023 Annex B Table 8-15 inter-program envelope
+    // (Std140_TF_Results.pdf, TESS 19-Aug-2024) plus the synthetic
+    // reference CSV (zone1_delivered sums: H=3.70 MWh, C=4.12 MWh).
+    // The full system has higher COP, so the band sits below the
+    // AC3 [4.5, 6.5] envelope; the band itself remains <= 1.5x the raw
+    // ASHRAE 140 width (AC2).
     data.insert(
         "810".to_string(),
         BenchmarkData {
@@ -535,14 +594,14 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 970 - 5-zone multi-zone cross-coupling (issue #2869)
-    // Raw ASHRAE 140-2017 §B6.7 / 140-2023 Annex B8-3 inter-program envelope.
-    // The 5-zone geometry creates cross-coupled air-flow + conduction paths
-    // (MultiZoneAirflowNetwork 5x5 conductance matrix); all five zones are
-    // conditioned at 20 °C / 27 °C. Band is intentionally the wider
-    // inter-program band (vs the 5R1C-calibrated 600/900 band) because the
-    // multi-zone coupling makes the per-zone temperature setpoints more
-    // sensitive to cross-zone conductance modelling — most programs fall
-    // within ±15% of the midpoint.
+    // Source: ASHRAE 140-2017 §B6.7 / 140-2023 Annex B8-3 inter-program
+    // envelope. The 5-zone geometry creates cross-coupled air-flow and
+    // conduction paths (MultiZoneAirflowNetwork 5x5 conductance matrix);
+    // all five zones are conditioned at 20 degC / 27 degC. Band is the
+    // wider inter-program band (not the 5R1C-calibrated 600/900 band)
+    // because multi-zone coupling makes per-zone setpoints more
+    // sensitive to cross-zone conductance modelling — most programs
+    // fall within +/-15% of the midpoint.
     data.insert(
         "970".to_string(),
         BenchmarkData {
@@ -582,6 +641,12 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     // ==================== Low Mass Cases (600 Series) ====================
 
     // Case 600 - Baseline (Low Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Inter-program range from BSIMAC 9.0.74, CSE 0.861.1,
+    // DeST 2.0, EnergyPlus 9.0.1, ESP-r 13.3, TRNSYS 18.01.0001.
+    // Issue #1270 superseded the prior "calibrated for 5R1C model"
+    // (5.5-7.5 heating, 8.0-10.5 cooling); current band is the inter-program
+    // spread from the Annex B source above.
     // Raw ASHRAE 140-2023 Annex B values (issue #1270)
     data.insert(
         "600".to_string(),
@@ -602,6 +667,8 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 610 - South Shading (Low Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Same inter-program source set as Case 600 above.
     data.insert(
         "610".to_string(),
         BenchmarkData {
@@ -621,17 +688,28 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 620 - East/West Windows (Low Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-4 (Issue #3803 /
+    // Phase C1 BENCH-01). Replaces the prior "Calibrated for 5R1C
+    // model" values (heating 4.5-6.5, cooling 3.2-5.0, peaks 2.8-3.8 /
+    // 2.5-3.5 MWh/kW) with the raw inter-program range from
+    // Std140_TF_Results.pdf (TESS, 19-Aug-2024) — programs BSIMAC
+    // 9.0.74, CSE 0.861.1, DeST 2.0, EnergyPlus 9.0.1, ESP-r 13.3,
+    // TRNSYS 18.01.0001. Free-float zone temperatures (Table B8-5)
+    // preserved from the prior baseline because Case 620 is a
+    // conditioned case (the ff_* fields are unused by the validator
+    // for non-free-floating cases); the JSON does not carry ff_*
+    // entries for Case 620.
     data.insert(
         "620".to_string(),
         BenchmarkData {
-            annual_heating_min: 4.5,
-            annual_heating_max: 6.5,
-            annual_cooling_min: 3.2,
-            annual_cooling_max: 5.0,
-            peak_heating_min: 2.8,
-            peak_heating_max: 3.8,
-            peak_cooling_min: 2.5,
-            peak_cooling_max: 3.5,
+            annual_heating_min: 4.094,
+            annual_heating_max: 4.719,
+            annual_cooling_min: 3.841,
+            annual_cooling_max: 4.404,
+            peak_heating_min: 3.038,
+            peak_heating_max: 3.385,
+            peak_cooling_min: 3.955,
+            peak_cooling_max: 4.797,
             min_free_float_min: -18.5,
             min_free_float_max: -15.3,
             max_free_float_min: 62.8,
@@ -640,6 +718,8 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 630 - East/West Shading (Low Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Same inter-program source set as Case 600 above.
     data.insert(
         "630".to_string(),
         BenchmarkData {
@@ -659,6 +739,8 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 640 - Thermostat Setback (Low Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Same inter-program source set as Case 600 above.
     data.insert(
         "640".to_string(),
         BenchmarkData {
@@ -678,6 +760,10 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 650 - Night Ventilation (Low Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Annual heating and peak heating are 0.00 (HVAC
+    // is OFF for this case per ASHRAE 140-2023 §B8.5; night ventilation
+    // alone provides cooling).
     data.insert(
         "650".to_string(),
         BenchmarkData {
@@ -697,6 +783,10 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 600FF - Free Float (Low Mass)
+    // Source: ASHRAE 140-2023 Annex B Table B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Annual / peak heating and cooling are 0.00
+    // because there is no HVAC (free-float); only min/max free-float
+    // temperatures apply.
     data.insert(
         "600FF".to_string(),
         BenchmarkData {
@@ -716,6 +806,9 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 650FF - Free Float with Night Ventilation (Low Mass)
+    // Source: ASHRAE 140-2023 Annex B Table B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Annual / peak heating and cooling are 0.00
+    // because there is no HVAC; only min/max free-float temperatures apply.
     data.insert(
         "650FF".to_string(),
         BenchmarkData {
@@ -737,6 +830,10 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     // ==================== High Mass Cases (900 Series) ====================
 
     // Case 900 - Baseline (High Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Cross-referenced with NREL/TP-472-6231 (1995
+    // BESTEST) Tables 3-2..3-4; see tests/reference_data/zone_balance/
+    // PROVENANCE.md for the reconciliation.
     data.insert(
         "900".to_string(),
         BenchmarkData {
@@ -756,6 +853,8 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 910 - South Shading (High Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Same inter-program source set as Case 900 above.
     data.insert(
         "910".to_string(),
         BenchmarkData {
@@ -775,6 +874,8 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 920 - East/West Windows (High Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Same inter-program source set as Case 900 above.
     data.insert(
         "920".to_string(),
         BenchmarkData {
@@ -794,6 +895,8 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 930 - East/West Shading (High Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Same inter-program source set as Case 900 above.
     data.insert(
         "930".to_string(),
         BenchmarkData {
@@ -813,6 +916,8 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 940 - Thermostat Setback (High Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Same inter-program source set as Case 900 above.
     data.insert(
         "940".to_string(),
         BenchmarkData {
@@ -832,6 +937,10 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 950 - Night Ventilation (High Mass)
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Annual heating and peak heating are 0.00 (HVAC
+    // is OFF per ASHRAE 140-2023 §B8.5; night ventilation alone provides
+    // cooling).
     data.insert(
         "950".to_string(),
         BenchmarkData {
@@ -851,6 +960,10 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 900FF - Free Float (High Mass)
+    // Source: ASHRAE 140-2023 Annex B Table B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Annual / peak heating and cooling are 0.00
+    // because there is no HVAC (free-float); only min/max free-float
+    // temperatures apply.
     data.insert(
         "900FF".to_string(),
         BenchmarkData {
@@ -870,6 +983,9 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 950FF - Free Float with Night Ventilation (High Mass)
+    // Source: ASHRAE 140-2023 Annex B Table B8-5 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024). Annual / peak heating and cooling are 0.00
+    // because there is no HVAC; only min/max free-float temperatures apply.
     data.insert(
         "950FF".to_string(),
         BenchmarkData {
@@ -897,10 +1013,11 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     // issue #1332 requires Blind band width ≤ 1.5× the raw ASHRAE 140 band.
 
     // Case 800 - Heat pump (single-stage, basic control)
-    // Annual heating/cooling centred on the synthetic reference CSV at
-    // data/reference/ashrae140/series_800.csv (zone1_delivered sums:
-    // H=5.60 MWh, C=6.07 MWh). Band fits inside the AC3 [4.5, 6.5] MWh
-    // envelope for both heating and cooling.
+    // Source: ASHRAE 140-2023 Annex B Table 8-15 inter-program envelope
+    // (Std140_TF_Results.pdf, TESS 19-Aug-2024) plus the synthetic
+    // reference CSV data/reference/ashrae140/series_800.csv (zone1_
+    // delivered sums: H=5.60 MWh, C=6.07 MWh). Band fits inside the
+    // AC3 [4.5, 6.5] MWh envelope for both heating and cooling.
     data.insert(
         "800".to_string(),
         BenchmarkData {
@@ -920,10 +1037,12 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 810 - Comprehensive HVAC equipment
-    // Annual heating/cooling centred on the synthetic reference CSV
-    // (zone1_delivered sums: H=3.70 MWh, C=4.12 MWh). The full system has
-    // higher COP, so the band sits below the AC3 [4.5, 6.5] envelope —
-    // the band itself remains ≤ 1.5× the raw ASHRAE 140 width (AC2).
+    // Source: ASHRAE 140-2023 Annex B Table 8-15 inter-program envelope
+    // (Std140_TF_Results.pdf, TESS 19-Aug-2024) plus the synthetic
+    // reference CSV (zone1_delivered sums: H=3.70 MWh, C=4.12 MWh).
+    // The full system has higher COP, so the band sits below the
+    // AC3 [4.5, 6.5] envelope; the band itself remains <= 1.5x the raw
+    // ASHRAE 140 width (AC2).
     data.insert(
         "810".to_string(),
         BenchmarkData {
@@ -991,13 +1110,14 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 970 - 5-zone multi-zone cross-coupling (issue #2869)
-    // Raw ASHRAE 140-2017 §B6.7 / 140-2023 Annex B8-3 inter-program envelope.
-    // The 5-zone geometry creates cross-coupled air-flow + conduction paths
-    // (MultiZoneAirflowNetwork 5x5 conductance matrix); all five zones are
-    // conditioned at 20 °C / 27 °C. Band is the wider inter-program band
-    // (vs the 5R1C-calibrated 600/900 band) because multi-zone coupling
-    // makes per-zone setpoints more sensitive to cross-zone conductance
-    // modelling — most programs fall within ±15% of the midpoint.
+    // Source: ASHRAE 140-2017 §B6.7 / 140-2023 Annex B8-3 inter-program
+    // envelope. The 5-zone geometry creates cross-coupled air-flow and
+    // conduction paths (MultiZoneAirflowNetwork 5x5 conductance matrix);
+    // all five zones are conditioned at 20 degC / 27 degC. Band is the
+    // wider inter-program band (not the 5R1C-calibrated 600/900 band)
+    // because multi-zone coupling makes per-zone setpoints more
+    // sensitive to cross-zone conductance modelling — most programs
+    // fall within +/-15% of the midpoint.
     data.insert(
         "970".to_string(),
         BenchmarkData {
