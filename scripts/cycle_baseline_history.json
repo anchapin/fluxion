@@ -262,6 +262,22 @@
       "total": 288,
       "edge_signature": "9e26deae4db0520dd2a5596b1bfa55227f8a33af41dcc06f02d08c888573c7d3",
       "reason": "re-baseline for #3730: #3586 leaf-type migration removed 48 sim->validation edges; BASELINE_SIM_TO_VALIDATION 99->51 (live total 208)"
+    },
+    {
+      "timestamp": "2026-09-17T12:26:18+00:00",
+      "commit": "7541662",
+      "source": "issue-3789-decomposition",
+      "totals": {
+        "sim_to_validation": 51,
+        "validation_to_sim": 67,
+        "validation_to_physics": 65,
+        "validation_to_weather": 25,
+        "physics_to_sim": 0,
+        "sim_to_physics": 80
+      },
+      "total": 288,
+      "edge_signature": "f2e011da65a1989d93a3800d0b8930e8e13939443351ad080082006b469c5fb5",
+      "reason": "Re-baseline for Issue #3789 decomposition: src/sim/thermal_model.rs (3061 lines) split into thermal_model/{mod,physics,surrogate,hybrid,unified,comfort,tests}.rs. Total cycle edge count unchanged at 288; signature shifted because edge file paths moved (sim->physics 80 stays at 80, with edges redistributed across the new child files). Per the #2768 R3 net-flat-swap rule, a manual baseline bump is required after a legitimate decomposition that redistributes the same edge set across child files."
     }
   ]
 }
