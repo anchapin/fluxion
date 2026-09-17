@@ -126,8 +126,10 @@ mod unified;
 pub use hybrid::{HybridRouting, HybridThermalModel, MetricsSnapshot};
 pub use physics::PhysicsThermalModel;
 pub use surrogate::SurrogateThermalModel;
-pub(crate) use surrogate::SurrogateThermalLoadAdapter;
 pub use unified::{ThermalModelBuilder, UnifiedThermalModel};
+
+#[cfg(test)]
+pub(crate) use surrogate::SurrogateThermalLoadAdapter;
 
 // `compute_pmv_ppd_and_adaptive` is consumed by every concrete
 // `ThermalModelTrait` implementation — including `thermal_model_mock.rs`
