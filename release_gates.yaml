@@ -79,9 +79,38 @@ validation:
     # energy gate (Issue #1333 / Issues #2506 / #3572) remain the authoritative
     # catch for the underlying engine gap; the cohort is not in the strict
     # band on the current validator snapshot.
+    #
+    # v1.3 Phase B.1 PHYSICS-01 — B1b solar-distribution cohort tracking (Issue #3798):
+    # Case 600 series (600/610/620/630/640/650) is the §LIMIT-05 / #3072
+    # aggressive-baseline low-mass cohort that the B1a audit (Issue #3797)
+    # characterises as the solar-distribution-path root-cause candidate — per
+    # the `.planning/STATE.md` Phase B framing, the low-mass peak-cooling
+    # signature is consistent with a per-tilt / per-azimuth solar incident-
+    # energy distribution that differs from the ASHRAE 140 reference programs
+    # (EnergyPlus / ESP-r / TRNSYS) at the structural level. Per the Issue
+    # #3798 acceptance criterion ("Case 600 cooling deviation moves toward the
+    # strict band OR a new LIMIT entry documents the structural mechanism"),
+    # the B1b PR registers the cohort at the release-gates layer pending the
+    # B1a measurement (Issue #3797, currently OPEN) — without retuning any
+    # number, baseline, or gate logic per AGENTS.md / RULES.md / ADR-0001.
+    # No `solar_distribution_to_air` / `h_ms_coeff` / `h_tr_w` / per-surface
+    # diffuse-fraction / direct-beam fraction adjustment is permitted to close
+    # the cohort gap (RULES.md "no parameter tuning" rule). The h_tr_em wind-
+    # dependent per-step recompute regression fence (LIMIT-13 / Issue #3549 /
+    # Issue #3063 / ADR-0009) stays green throughout — 18.3 W/m²K canonical
+    # exterior film coefficient is untouched, guarded by
+    # `tests/regression_exterior_film_unification.rs`. Energy-conservation
+    # suite (Issue #1295) and the strict ±15% annual-energy gate (Issue #1333
+    # / Issues #2506 / #3572) remain the authoritative catch for the
+    # underlying engine gap; the cohort is not in the strict band on the
+    # current validator snapshot. Once Issue #3797 (B1a audit) closes with
+    # the per-tilt / per-azimuth deviation table, a follow-up §LIMIT entry
+    # + `docs/ASHRAE140_RESULTS.md` structural-failure-mechanism note will
+    # be filed with the named mechanisms (mirror of the B2a → §LIMIT-29 /
+    # B3a → B3b → §LIMIT-28 progression).
     known_failures:
       - "195"    # Case 195 - Weather file artefact (LIMIT-15)
-      - "600"    # Case 600 series - Low-mass baseline envelope simplification (family)
+      - "600"    # Case 600 series - Low-mass baseline envelope simplification (family) (B1b solar-distribution cohort, Issue #3798)
       - "620"    # Case 620 - Low-mass baseline structural (LIMIT cohort)
       - "900"    # Case 900 - High-mass building heating deviation (B2b thermal-mass cohort, Issue #3800)
       - "940"    # Case 940 - High-mass setback-recovery overshoot (LIMIT-12)
