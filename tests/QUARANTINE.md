@@ -308,6 +308,29 @@ manually after legitimate changes.
 | `tests/diagnostics/case_970_multi_zone_seasonal_attribution.rs` | `case_970_per_zone_seasonal_attribution_placeholder` | #3552 / §LIMIT-23 | Implement per-month per-zone attribution | `pending` |
 | `fluxion-wasm/tests/wasm_integration_tests.rs` | `wasm_run_full_annual_*` | #3703 (wasm step() toy model; #3595 smoke test) | RESOLVED via #3624: `step()` now drives the embedded WD600 annual weather schedule (`weather: "ASHRAE_600"`), test un-ignored. Cooling asserts the published ±15% band (satisfied); heating asserts a recorded regression band — the toy single-node RC model has no solar aperture, so published heating-band parity still requires an engine-backed wasm surface | `closed (resolve #3624)` |
 
+### Issue #3803 (Phase C1, BENCH-01) — Case 620 narrower ASHRAE 140-2023 band exposes physics gap
+
+`src/validation/benchmark.rs` Case 620 reference was migrated from the
+historical "Calibrated for 5R1C model" values to the raw ASHRAE 140-2023
+Annex B Tables B8-1..B8-4 inter-program range from
+`data/ashrae140_reference.json` (Std140_TF_Results.pdf, TESS 19-Aug-2024;
+programs BSIMAC 9.0.74, CSE 0.861.1, DeST 2.0, EnergyPlus 9.0.1, ESP-r 13.3,
+TRNSYS 18.01.0001). Per RULES.md / ADR-0001 the band is not widened; the
+four `ashrae_140_case_600_series::case_620::test_*` assertions are quarantined
+while the engine sits outside the narrower inter-program spread on every
+metric (H=5.83 vs [4.09,4.72]; C=2.47 vs [3.84,4.40]; pH=3.58 vs [3.04,3.38];
+pC=3.43 vs [3.96,4.80]). A follow-up issue should add a §LIMIT- entry to
+`docs/KNOWN_ISSUES.md` for the Case 620 east/west-window physics gap; the
+daily `ashrae_140_blind_validation` runner still prints the engine value vs
+the new band for triage.
+
+| Test File | Test Name | Blocking Issue | Un-Ignore Criteria | Status |
+|-----------|-----------|----------------|-------------------|--------|
+| `tests/all_tests/ashrae_140_case_600_series.rs` | `test_annual_heating` | #3803 | Engine annual heating re-enters [4.094, 4.719] MWh | `pending` |
+| `tests/all_tests/ashrae_140_case_600_series.rs` | `test_annual_cooling` | #3803 | Engine annual cooling re-enters [3.841, 4.404] MWh | `pending` |
+| `tests/all_tests/ashrae_140_case_600_series.rs` | `test_peak_heating` | #3803 | Engine peak heating re-enters [3.038, 3.385] kW | `pending` |
+| `tests/all_tests/ashrae_140_case_600_series.rs` | `test_peak_cooling` | #3803 | Engine peak cooling re-enters [3.955, 4.797] kW | `pending` |
+
 ---
 
 ## Summary
@@ -315,7 +338,7 @@ manually after legitimate changes.
 | Category | Count | Status |
 |----------|-------|--------|
 | Diagnostic tests (#2536) | 15 | `pending` |
-| Structural gaps (LIMIT-*) | ~56 (3 gauge-build-only, Issue #3297; 3 9R4C legacy pool, Issue #3599; 7 strict-energy-gate / Case 970 cohort, Issue #3572 / #3585) | `pending` |
+| Structural gaps (LIMIT-*) | ~60 (3 gauge-build-only, Issue #3297; 3 9R4C legacy pool, Issue #3599; 7 strict-energy-gate / Case 970 cohort, Issue #3572 / #3585; 4 Case 620 BENCH-01 narrower-band cohort, Issue #3803) | `pending` |
 | Performance/memory (dhat + BDF + batch) | 17 | `pending` |
 | Hardware-dependent (GPU) | 1 | `pending` |
 | Calibration/pending data | 8 | `pending` |
@@ -335,6 +358,11 @@ registered — 7 strict-energy/Case-970 structural rows (Issue #3572 / #3585,
 LIMIT-05/14/17/23/24) and 2 diagnostic placeholder rows (Issue #3551 / #3552).
 `test_case_970_validator_accepts_canonical_midpoints` was un-ignored (its
 assertions validate the validator, not the engine band, and it passes).
+
+2026-09-16 (PR fix/issue-3803-phase-c1-bench-01): 4 Case 620 quarantines added
+— Phase C1 BENCH-01 migration from 5R1C-calibrated to raw ASHRAE 140-2023
+Annex B narrower inter-program range (Issue #3803); see
+`tests/reference_data/zone_balance/PROVENANCE.md` for the full provenance.
 
 ---
 

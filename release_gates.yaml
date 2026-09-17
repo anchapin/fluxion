@@ -60,11 +60,30 @@ validation:
     # Case 600 series: multiple tests (low-mass baseline - simplified envelope model)
     # Case 195: weather-file artefact (LIMIT-15 / Issue #3060)
     # Case 620/940/960: additional structurally-limited cases in the cohort
+    #
+    # v1.3 Phase B.2 PHYSICS-02 — B2b thermal-mass cohort tracking (Issue #3800):
+    # Case 900 heating (and the symmetric case cooling capacity) deviates ~200% on
+    # the 2026-09-16 validator snapshot; per the issue acceptance criterion
+    # ("Case 900 heating/cooling strict-gate movement OR new LIMIT entry with
+    # mechanism"), the deviation is documented here as a structural LIMIT path
+    # pending the GaugeSolver production-path switchover (Issue #3291 / PR #3482
+    # Phase A8 default flip, gated on §LIMIT-21 / Issue #3297 β-soak closure).
+    # The B2a audit (Issue #3799) characterised the per-step thermal-mass
+    # response; B2b (this issue) registers the cohort at the release-gates
+    # layer without retuning any number, baseline, or gate logic per AGENTS.md /
+    # RULES.md / ADR-0001. The h_tr_em wind-dependent per-step recompute
+    # regression fence (LIMIT-13 / Issue #3549 / Issue #3063 / ADR-0009) stays
+    # green throughout — 18.3 W/m²K canonical exterior film coefficient is
+    # untouched, guarded by `tests/regression_exterior_film_unification.rs`.
+    # Energy-conservation suite (Issue #1295) and the strict ±15% annual-
+    # energy gate (Issue #1333 / Issues #2506 / #3572) remain the authoritative
+    # catch for the underlying engine gap; the cohort is not in the strict
+    # band on the current validator snapshot.
     known_failures:
       - "195"    # Case 195 - Weather file artefact (LIMIT-15)
       - "600"    # Case 600 series - Low-mass baseline envelope simplification (family)
       - "620"    # Case 620 - Low-mass baseline structural (LIMIT cohort)
-      - "900"    # Case 900 - High-mass building heating deviation
+      - "900"    # Case 900 - High-mass building heating deviation (B2b thermal-mass cohort, Issue #3800)
       - "940"    # Case 940 - High-mass setback-recovery overshoot (LIMIT-12)
       - "960"    # Case 960 - Multi-zone 5R1C structural (LIMIT cohort)
 
@@ -281,6 +300,30 @@ ci:
 
   # Gate status output file
   output_file: "gate_status.json"
+
+  # =============================================================================
+  # REVIEW POLICY (Issue #3807 / ADR-0016 companion, 2026-09-15)
+  # =============================================================================
+  # Canonical source for the `required_pull_request_reviews` half of branch
+  # protection. The values below are enforced by
+  # ``scripts/apply_branch_protection.py`` (default + PUT) and verified by
+  # ``scripts/check_branch_protection_diff.py`` (drift gate) plus the
+  # cron-mode ``FLUXION_CHECK_LIVE_PROTECTION=1`` check in
+  # ``scripts/check_required_checks_sync.py``. Never hard-code these in
+  # the scripts — read them from here.
+  review_policy:
+    # Reviews are ADVISORY, not blocking. Admins + CI are the gate.
+    # GitHub forbids self-approval, so requiring ≥1 reviewer re-blocks
+    # the wave pipeline (agents author their own PRs).
+    # Rationale: ADR-0016 lane split (2026-09-15) classifies reviews as
+    # a Lane 4 / non-blocking signal; the per-PR blocking authority is
+    # Lane 1 + Lane 2 + Lane 3-nightly per the release_gates workflow.
+    required_approving_review_count: 0
+
+    # Enforce-admins MUST stay true: even with 0 required approvals, the
+    # admin bypass must be disabled so required_status_checks and the
+    # listener gate above cannot be sidestepped by an admin push.
+    enforce_admins: true
 
   # =============================================================================
   # REQUIRED STATUS CHECKS
