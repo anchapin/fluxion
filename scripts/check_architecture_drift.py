@@ -46,7 +46,7 @@ SRC_DIRS = [
 KEY_TRAIT_FILES = {
     "HeatConductionSolver": REPO_ROOT / "src" / "physics" / "solver_trait.rs",
     "VentilationSchedule": REPO_ROOT / "src" / "sim" / "ventilation.rs",
-    "ThermalModelTrait": REPO_ROOT / "src" / "sim" / "thermal_model.rs",
+    "ThermalModelTrait": REPO_ROOT / "src" / "sim" / "thermal_model" / "mod.rs",
 }
 
 
@@ -959,7 +959,7 @@ def check_drift() -> tuple[list[str], bool]:
     # --- Check 4: Key modules existence ---
     key_modules = [
         "src/physics/solver_trait.rs",
-        "src/sim/thermal_model.rs",
+        "src/sim/thermal_model/mod.rs",
         "src/sim/solar.rs",
         "src/sim/ventilation.rs",
         "fluxion-core/src/weather/epw.rs",

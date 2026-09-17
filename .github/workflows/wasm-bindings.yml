@@ -86,24 +86,105 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-      # wasm-pack 0.15.x is pinned via the official installer. The
-      # installer downloads a prebuilt binary for the current OS+arch
-      # from https://github.com/rustwasm/wasm-pack/releases (faster than
-      # `cargo install` and avoids a wasted build when the toolchain is
-      # already cached). The version is not specified exactly because
-      # the installer always resolves to the latest 0.15.x release — a
-      # wasm-pack major bump changes the `wasm-pack test --node`
-      # runner behaviour and would silently change which WASM tests get
-      # collected, so it must be a deliberate change tracked alongside
-      # a test-suite re-baseline.
-      - name: Install wasm-pack (official installer)
+      # wasm-pack v0.15.0 is installed from the official GitHub release
+      # tarball with a per-platform SHA-256 checksum verified before
+      # extraction (Issue #3740). The previous `curl ... | sh` pattern
+      # downloaded and executed the upstream installer unconditionally —
+      # a moving-target code-execution path that bypassed the SHA-pinning
+      # guarantees every other action in this repo enjoys (Issues
+      # #3475/#3530). The version + per-platform SHA-256 are hard-coded
+      # in the install step below; bumping the wasm-pack version requires
+      # updating both AND re-running the interface-hash baseline
+      # (Issue #2914) if the wasm-bindgen test-runner output format
+      # changes.
+      - name: Install wasm-pack (pinned v0.15.0, SHA-256 verified)
         shell: bash
         run: |
           set -euo pipefail
-          if ! command -v wasm-pack >/dev/null 2>&1; then
-            curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          if command -v wasm-pack >/dev/null 2>&1; then
+            echo "wasm-pack already installed: $(wasm-pack --version)"
+            exit 0
           fi
-          wasm-pack --version
+
+          # Pinned wasm-pack install — Issue #3740. Bumping the version
+          # requires updating WASM_PACK_VERSION AND every per-platform
+          # SHA-256 in the case statement below.
+          WASM_PACK_VERSION="v0.15.0"
+
+          case "${RUNNER_OS}-${RUNNER_ARCH}" in
+            Linux-X64)
+              TRIPLE="x86_64-unknown-linux-musl"
+              SHA256="c09f971ecaed9a2efc80fdcea7a00ef6b53c7fadc8c57d1f61b53a6aa66b668a"
+              BIN_NAME="wasm-pack"
+              ;;
+            Linux-ARM64)
+              TRIPLE="aarch64-unknown-linux-musl"
+              SHA256="e17ef0806381c3a0acb9c9ddad643a49facaa5a2ecf657a421d4d8f3357a24b7"
+              BIN_NAME="wasm-pack"
+              ;;
+            # Match the upstream wasm-pack installer init.sh: on Apple
+            # Silicon runners fall back to the x86_64 tarball (executes
+            # under Rosetta). See
+            # https://github.com/wasm-bindgen/wasm-pack/pull/1088.
+            macOS-ARM64)
+              TRIPLE="x86_64-apple-darwin"
+              SHA256="d3f1a4a33e95f8f0d7801b024e08624c479999ac96aa150908b2394015cd0363"
+              BIN_NAME="wasm-pack"
+              ;;
+            macOS-X64)
+              TRIPLE="x86_64-apple-darwin"
+              SHA256="d3f1a4a33e95f8f0d7801b024e08624c479999ac96aa150908b2394015cd0363"
+              BIN_NAME="wasm-pack"
+              ;;
+            Windows-X64)
+              TRIPLE="x86_64-pc-windows-msvc"
+              SHA256="518dc51180c7bc864699c9279b3bc99025bc109123e0249a34ba34d130a509bf"
+              BIN_NAME="wasm-pack.exe"
+              ;;
+            *)
+              echo "::error::Unsupported runner for wasm-pack pinned install: ${RUNNER_OS}-${RUNNER_ARCH}"
+              exit 1
+              ;;
+          esac
+
+          URL="https://github.com/wasm-bindgen/wasm-pack/releases/download/${WASM_PACK_VERSION}/wasm-pack-${WASM_PACK_VERSION}-${TRIPLE}.tar.gz"
+          INSTALL_DIR="${HOME}/.local/bin"
+          # ${RUNNER_TEMP} is Windows-style (e.g. D:\a\_temp) on windows-latest, which the tar
+          # child process launched from Git Bash can't resolve in `tar -xzf`. Convert it to
+          # a POSIX path on Windows and pass-through unchanged on Linux/macOS.
+          if command -v cygpath >/dev/null 2>&1; then
+            RUNNER_TEMP_POSIX="$(cygpath -u "${RUNNER_TEMP}")"
+          else
+            RUNNER_TEMP_POSIX="${RUNNER_TEMP}"
+          fi
+          TARBALL="${RUNNER_TEMP_POSIX}/wasm-pack-${WASM_PACK_VERSION}-${TRIPLE}.tar.gz"
+
+          mkdir -p "${INSTALL_DIR}"
+
+          echo "Downloading ${URL}"
+          curl --fail --silent --show-error --location --output "${TARBALL}" "${URL}"
+
+          # SHA-256 verification — Python is portable across the BSD-vs-GNU
+          # `sha256sum` / `shasum` split on macOS-Linux-Windows (the
+          # workflow runs on all three).
+          echo "Verifying SHA-256 of ${TARBALL}"
+          ACTUAL_SHA256="$(python3 -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "${TARBALL}")"
+          if [[ "${ACTUAL_SHA256}" != "${SHA256}" ]]; then
+            echo "::error::wasm-pack tarball SHA-256 mismatch: expected ${SHA256}, got ${ACTUAL_SHA256}"
+            exit 1
+          fi
+
+          tar -xzf "${TARBALL}" -C "${INSTALL_DIR}" --strip-components=1 \
+              "wasm-pack-${WASM_PACK_VERSION}-${TRIPLE}/${BIN_NAME}"
+          chmod +x "${INSTALL_DIR}/${BIN_NAME}"
+
+          # Persist INSTALL_DIR for subsequent steps (each runs in a fresh
+          # shell). GitHub-hosted runners include ~/.local/bin in the
+          # default PATH, but the GITHUB_PATH append is a belt-and-
+          # suspenders guarantee.
+          echo "${INSTALL_DIR}" >> "${GITHUB_PATH}"
+
+          echo "Installed wasm-pack $("${INSTALL_DIR}/${BIN_NAME}" --version) at ${INSTALL_DIR}/${BIN_NAME}"
 
       # Toolchain with the wasm32-unknown-unknown target. `setup-rust-env`
       # also installs libssl/fontconfig system deps on Linux (unnecessary

@@ -81,6 +81,25 @@ borderline FAIL into a more dramatic FAIL with no change in the
 physics-gap root cause. The ASHRAE 140-2023 migration is tracked as a
 follow-up to issue #1408.
 
+## Issue #3803 (Phase C1, BENCH-01) — Case 620 reference migration
+
+`src/validation/benchmark.rs` Case 620 (and the matching
+`get_all_benchmark_data_blind()` entry) previously carried the comment
+*"Note: Calibrated for 5R1C model"* with heating 4.5–6.5 MWh / cooling
+3.2–5.0 MWh / peaks 2.8–3.8 / 2.5–3.5 kW. Per issue #3803 those values are
+replaced with the raw ASHRAE 140-2023 Annex B Tables B8-1..B8-4 inter-
+program range from `data/ashrae140_reference.json`:
+
+| Metric | | Pre-#3803 (5R1C-calibrated) | | Post-#3803 (ASHRAE 140-2023 Annex B) | Source |
+|---|---|---|---|---|
+| annual_heating | | 4.5 – 6.5 MWh | | **4.094 – 4.719 MWh** | Std140_TF_Results.pdf, TESS 19-Aug-2024, Table B8-1 |
+| annual_cooling | | 3.2 – 5.0 MWh | | **3.841 – 4.404 MWh** | Std140_TF_Results.pdf, TESS 19-Aug-2024, Table B8-2 |
+| peak_heating | | 2.8 – 3.8 kW | | **3.038 – 3.385 kW** | Std140_TF_Results.pdf, TESS 19-Aug-2024, Table B8-3 |
+| peak_cooling | | 2.5 – 3.5 kW | | **3.955 – 4.797 kW** | Std140_TF_Results.pdf, TESS 19-Aug-2024, Table B8-4 |
+| free-float temperatures | | unchanged (-18.5..-15.3 °C, 62.8..71.5 °C) | | unchanged (Table B8-5 not present in JSON for Case 620; ff_* unused for non-free-floating cases) | preserved from prior baseline |
+
+The same range is mirrored in `tests/all_tests/ashrae_140_case_600_series.rs::CASE_620` (the annual / peak metrics). No `case_620_energy_reference.csv` exists in `tests/reference_data/zone_balance/` (Case 620 is outside the strict ±15% annual-energy gate's eight tracked cases: 600/800/810/900/920/950/960/970), so the strict-energy-gate baseline JSON is unaffected. Acceptance: per `AGENTS.md` "no tolerance tuning", bands are NARROWER (3pp narrower for annual heating, 3.3pp for cooling, 1.6pp for peak heating, 7pp for peak cooling), not wider — RULES.md / ADR-0001 preserved.
+
 ## Companion files (also updated by #1408)
 
 - `src/validation/benchmark.rs` — `get_all_benchmark_data` (Informed) and
