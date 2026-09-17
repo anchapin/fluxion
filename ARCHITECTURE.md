@@ -553,7 +553,7 @@ graph TD
 - `calculate_surface_irradiance(sun_pos, dni, dhi, ghi, orientation) -> SurfaceIrradiance`
 - `calculate_hourly_solar(...) -> (SolarGain, SolarPosition, SurfaceIrradiance)`
 
-**Per-surface distribution** (#1119): Solar gain distribution across multiple surfaces is tracked via the `IncidentSolarAccumulator` (`sim/thermal_model_data/incident_solar_accumulator.rs`). The `IncidentSolar` metric type (#1132, `validation/report.rs`) records per-surface solar radiation for diagnostics and validation. The legacy `sim/solar_gain_distribution.rs` module was deleted in Issue #3555 as a wired-but-dead sibling of `sim/solar.rs`.
+**Per-surface distribution** (#1119): Solar gain distribution across multiple surfaces is tracked via the `IncidentSolarAccumulator` (`sim/thermal_model_data/incident_solar_accumulator.rs`). The `IncidentSolar` metric type (#1132, `validation/report/mod.rs` post-Issue #3788) records per-surface solar radiation for diagnostics and validation. The legacy `sim/solar_gain_distribution.rs` module was deleted in Issue #3555 as a wired-but-dead sibling of `sim/solar.rs`.
 
 **Ground-reflected component** (#1326): The `ground_reflected` field of `SurfaceIrradiance` uses the standard isotropic view-factor form
 `E_g = ρ · GHI · (1 - cos β) / 2` for β ∈ (0°, 180°), with the two endpoint tilts pinned explicitly so the boundary physics is correct:
@@ -1886,10 +1886,11 @@ Snapshot 2026-09-13; run `python3 scripts/check_module_size.py --json` for curre
 |---|---:|---:|---|
 | `src/sim/thermal_model_data/mod.rs` | 161 | 200 | #2878 |
 | `src/physics/state_space_ctf/mod.rs` | 4347 | 4347 | #3457 |
-| `src/validation/report.rs` | 4136 | 4136 | #3457 |
 | `src/sim/thermal_model/mod.rs` | 288 | 288 | #3457 |
 | `src/validation/ashrae_140_cases.rs` | 3304 | 4764 | #3457 |
 | `src/physics/multi_node_solver/mod.rs` | 2666 | 2666 | #3457 |
+
+(`src/validation/report/` — the directory form of what was the 4136-line validation report module (ratcheted at its snapshot size by #3457) — was ratcheted by #3457 and removed from the gated list at Issue #3788 when it decomposed into `mod.rs` + `benchmark.rs` + `multi_zone.rs` + `tests.rs`; largest child ~1690 LoC, below the audit threshold.)
 | `src/sim/thermal_model_core/mod.rs` | 4062 | 4260 | #3574 |
 | `src/validation/ashrae_140_validator/mod.rs` | 3092 | 3247 | #3574 |
 | `src/physics/geometry_tensor.rs` | 2486 | 2610 | #3574 |
@@ -1906,7 +1907,6 @@ Four of the Issue #3457-era entries sit at **exactly** their current line count 
 | Exact-ceiling file | Lines = ceiling | Decomposition tracking |
 |---|---:|---|
 | `src/physics/state_space_ctf/mod.rs` | 4347 | #3787 |
-| `src/validation/report.rs` | 4136 | #3788 |
 | `src/sim/thermal_model/` | 288 | #3789 |
 | `src/physics/multi_node_solver/mod.rs` | 2666 | #3790 |
 
