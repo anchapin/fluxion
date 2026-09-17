@@ -149,7 +149,15 @@ jobs:
 
           URL="https://github.com/wasm-bindgen/wasm-pack/releases/download/${WASM_PACK_VERSION}/wasm-pack-${WASM_PACK_VERSION}-${TRIPLE}.tar.gz"
           INSTALL_DIR="${HOME}/.local/bin"
-          TARBALL="${RUNNER_TEMP}/wasm-pack-${WASM_PACK_VERSION}-${TRIPLE}.tar.gz"
+          # ${RUNNER_TEMP} is Windows-style (e.g. D:\a\_temp) on windows-latest, which the tar
+          # child process launched from Git Bash can't resolve in `tar -xzf`. Convert it to
+          # a POSIX path on Windows and pass-through unchanged on Linux/macOS.
+          if command -v cygpath >/dev/null 2>&1; then
+            RUNNER_TEMP_POSIX="$(cygpath -u "${RUNNER_TEMP}")"
+          else
+            RUNNER_TEMP_POSIX="${RUNNER_TEMP}"
+          fi
+          TARBALL="${RUNNER_TEMP_POSIX}/wasm-pack-${WASM_PACK_VERSION}-${TRIPLE}.tar.gz"
 
           mkdir -p "${INSTALL_DIR}"
 
