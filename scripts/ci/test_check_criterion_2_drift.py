@@ -531,13 +531,27 @@ def seed_clean_run(checker, write_canonical, tmp_path):
     return log, canonical_path
 
 
-def test_cli_clean_exits_zero(checker, monkeypatch, seed_clean_run):
-    """No drift → exit 0, no drift verdict in stdout."""
+def test_cli_clean_exits_zero(checker, monkeypatch, seed_clean_run, tmp_path):
+    """No drift → exit 0, no drift verdict in stdout.
+
+    Pass ``--artifact`` so the v1-schema file lands in ``tmp_path``
+    instead of the real repo root — otherwise the next pytest module
+    (root-hygiene) picks the leftover up as a transient-artifact
+    violation and the real-repo gate flips red.
+    """
     log, canonical = seed_clean_run
+    artifact_path = tmp_path / "out.json"
     rc, out, _err = _run_main(
         checker,
         monkeypatch,
-        ["--log", str(log), "--canonical", str(canonical)],
+        [
+            "--log",
+            str(log),
+            "--canonical",
+            str(canonical),
+            "--artifact",
+            str(artifact_path),
+        ],
     )
     assert rc == 0
     assert "clean" in out
@@ -581,7 +595,13 @@ def test_cli_clean_json_to_stdout(checker, monkeypatch, seed_clean_run):
 
 
 def test_cli_drift_exits_one(checker, monkeypatch, write_canonical, tmp_path):
-    """Drift detected → exit 1."""
+    """Drift detected → exit 1.
+
+    Pass ``--artifact`` so the v1-schema file lands in ``tmp_path``
+    instead of the real repo root — otherwise the next pytest module
+    (root-hygiene) picks the leftover up as a transient-artifact
+    violation and the real-repo gate flips red.
+    """
     canonical = write_canonical()
     log = tmp_path / "drift.log"
     log.write_text(
@@ -591,10 +611,18 @@ def test_cli_drift_exits_one(checker, monkeypatch, write_canonical, tmp_path):
         "test result: FAILED. 18 passed; 3 failed; 0 ignored\n",
         encoding="utf-8",
     )
+    artifact_path = tmp_path / "out.json"
     rc, out, _err = _run_main(
         checker,
         monkeypatch,
-        ["--log", str(log), "--canonical", str(canonical)],
+        [
+            "--log",
+            str(log),
+            "--canonical",
+            str(canonical),
+            "--artifact",
+            str(artifact_path),
+        ],
     )
     assert rc == 1
     assert "DRIFT" in out
