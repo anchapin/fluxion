@@ -46,7 +46,6 @@
 
 use super::FlatMatrix;
 
-
 /// General matrix multiply: C = A · B where A is (r1×c1) and B is (c1×c2).
 /// Result is (r1×c2). Works for non-square matrices.
 pub fn mat_mul_gen(a: &[Vec<f64>], b: &[Vec<f64>]) -> Vec<Vec<f64>> {
@@ -844,7 +843,13 @@ pub fn householder_to_hessenberg(a: &[Vec<f64>]) -> (Vec<Vec<f64>>, Vec<Vec<f64>
 
 /// Apply Householder (I - 2 v v^T) to rows [start..n] of h, columns [col_start..n].
 #[allow(dead_code)]
-pub fn apply_householder_left(h: &mut [Vec<f64>], v: &[f64], start: usize, col_start: usize, n: usize) {
+pub fn apply_householder_left(
+    h: &mut [Vec<f64>],
+    v: &[f64],
+    start: usize,
+    col_start: usize,
+    n: usize,
+) {
     // h[start..n, col_start..n] -= 2 v (v^T h[start..n, col_start..n])
     // Step 1: w = v^T h[start..n, col_start..n]  (a row vector of length n-col_start)
     let mut w = vec![0.0; n - col_start];
@@ -865,7 +870,13 @@ pub fn apply_householder_left(h: &mut [Vec<f64>], v: &[f64], start: usize, col_s
 
 /// Apply Householder (I - 2 v v^T) to columns [start..n] of h, rows [0..row_end].
 #[allow(dead_code)]
-pub fn apply_householder_right(h: &mut [Vec<f64>], v: &[f64], row_end: usize, start: usize, _n: usize) {
+pub fn apply_householder_right(
+    h: &mut [Vec<f64>],
+    v: &[f64],
+    row_end: usize,
+    start: usize,
+    _n: usize,
+) {
     // h[0..row_end, start..n] -= 2 (h[0..row_end, start..n] v) v^T
     // Step 1: w = h[0..row_end, start..n] v  (a column vector of length row_end)
     let mut w = vec![0.0; row_end];
@@ -1468,4 +1479,3 @@ pub fn matrix_inverse(a: &[Vec<f64>]) -> Option<Vec<Vec<f64>>> {
 
     Some(inv)
 }
-

@@ -912,9 +912,8 @@ mod linalg;
 // are visible here but stay inside the `state_space_ctf` module from the
 // outside world's perspective.
 use linalg::{
-    mat_mat_mul_col, mat_mat_mul_col_flat, mat_mat_mul_flat, mat_mul_gen,
-    mat_mul_gen_flat, matrix_exponential, matrix_inverse, matrix_sub_col,
-    matrix_sub_identity, scale_columns,
+    mat_mat_mul_col, mat_mat_mul_col_flat, mat_mat_mul_flat, mat_mul_gen, mat_mul_gen_flat,
+    matrix_exponential, matrix_inverse, matrix_sub_col, matrix_sub_identity, scale_columns,
 };
 
 // Public-API re-export (used by `tests/all_tests/determinism_matrix_exponential.rs`
@@ -924,10 +923,10 @@ use linalg::{
 pub use linalg::matrix_exponential_faer;
 
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
-mod expm_debug_tests;
+mod coverage_tests;
 #[cfg(test)]
 mod debug_new_expm_tests;
 #[cfg(test)]
-mod coverage_tests;
+mod expm_debug_tests;
+#[cfg(test)]
+mod tests;
