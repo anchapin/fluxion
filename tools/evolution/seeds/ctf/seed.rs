@@ -4,8 +4,10 @@
 // `fluxion-evaluator` harness recompiles and dispatches. It contains:
 //
 // 1. A self-contained copy of the state-space CTF discretization +
-//    extraction pipeline from `src/physics/state_space_ctf.rs`,
-//    verbatim so the baseline settings produce **exactly** the same
+//    extraction pipeline from `src/physics/state_space_ctf/{mod,linalg}.rs`
+//    (post-#3787 decomposition — the dense-linear-algebra kernel is
+//    extracted to `linalg.rs` and re-imported via the `super::linalg`
+//    shim), verbatim so the baseline settings produce **exactly** the same
 //    coefficients as the in-tree production code (verified by the
 //    golden-coefficient test, `tests/evolution_ctf_golden.rs`).
 //
@@ -42,7 +44,7 @@
 use fluxion_evaluator::kernel::{Kernel, KernelError, KernelInput, KernelOutput};
 
 // =====================================================================
-// SHARED STATE-SPACE TYPES (mirrors src/physics/state_space_ctf.rs)
+// SHARED STATE-SPACE TYPES (mirrors src/physics/state_space_ctf/{mod,linalg}.rs)
 // =====================================================================
 
 /// Material layer with thermal properties (mirrors `CTFMaterial` in
@@ -206,7 +208,7 @@ fn fom_matrix_exp_thresholds(norm_1: f64) -> (f64, usize) {
 
 // =====================================================================
 // Frozen skeleton: state-space matrices (verbatim from
-// src/physics/state_space_ctf.rs::build_state_space_matrices)
+// src/physics/state_space_ctf/mod.rs::build_state_space_matrices)
 // =====================================================================
 
 #[allow(clippy::type_complexity)]
