@@ -486,8 +486,8 @@ def render_drift_comment(
             )
     lines.append("")
     lines.append(
-        f"See `beta-soak-criterion-2-drift` artifact for the structured "
-        f"v1-schema diff (Issue #3744)."
+        "See `beta-soak-criterion-2-drift` artifact for the structured "
+        "v1-schema diff (Issue #3744)."
     )
     if run_url:
         lines.append("")
