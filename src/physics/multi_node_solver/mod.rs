@@ -63,9 +63,7 @@ use helpers::{internal_node_envelope_temperature, per_surface_t_s};
 // `crate::physics::multi_node_solver::helpers::*`. Mirrors the `pub use`
 // re-export shim pattern in `src/sim/assembly.rs` and
 // `src/sim/multi_node_thermal.rs`.
-pub use helpers::{
-    air_sky_conductance, h_series, h_series_strict, SurfaceExteriorTemperatures,
-};
+pub use helpers::{air_sky_conductance, h_series, h_series_strict, SurfaceExteriorTemperatures};
 
 #[derive(Debug, Clone)]
 pub struct MultiNodeSolver {

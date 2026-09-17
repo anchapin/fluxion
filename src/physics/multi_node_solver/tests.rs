@@ -362,8 +362,7 @@ fn test_issue_1281_new_with_mode_parallel_resistance() {
 
 #[test]
 fn test_issue_1281_with_coupling_mode_builder() {
-    let solver =
-        create_test_solver().with_coupling_mode(MassAirCouplingMode::ParallelResistance);
+    let solver = create_test_solver().with_coupling_mode(MassAirCouplingMode::ParallelResistance);
     assert_eq!(
         solver.coupling_mode,
         MassAirCouplingMode::ParallelResistance
@@ -677,8 +676,8 @@ fn test_issue_1858_backward_compat_zero_sky_conductance() {
         let phi_ia = 200.0;
 
         let t_air_plain = solver.compute_zone_air_temperature(t_outdoor, h_ve, 0.0, phi_ia);
-        let t_air_sky_zero = solver
-            .compute_zone_air_temperature_with_sky(t_outdoor, h_ve, 0.0, phi_ia, -30.0, 0.0);
+        let t_air_sky_zero =
+            solver.compute_zone_air_temperature_with_sky(t_outdoor, h_ve, 0.0, phi_ia, -30.0, 0.0);
 
         assert!(
             (t_air_plain - t_air_sky_zero).abs() < 1e-12,
