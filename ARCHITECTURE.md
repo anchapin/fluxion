@@ -1886,7 +1886,6 @@ Snapshot 2026-09-13; run `python3 scripts/check_module_size.py --json` for curre
 |---|---:|---:|---|
 | `src/sim/thermal_model_data/mod.rs` | 161 | 200 | #2878 |
 | `src/physics/state_space_ctf/mod.rs` | 4347 | 4347 | #3457 |
-| `src/validation/report.rs` | 4136 | 4136 | #3457 |
 | `src/sim/thermal_model/mod.rs` | 288 | 288 | #3457 |
 | `src/validation/ashrae_140_cases.rs` | 3304 | 4764 | #3457 |
 | `src/physics/multi_node_solver/mod.rs` | 2666 | 2666 | #3457 |
@@ -1908,7 +1907,6 @@ Four of the Issue #3457-era entries sit at **exactly** their current line count 
 | Exact-ceiling file | Lines = ceiling | Decomposition tracking |
 |---|---:|---|
 | `src/physics/state_space_ctf/mod.rs` | 4347 | #3787 |
-| `src/validation/report.rs` | 4136 | #3788 |
 | `src/sim/thermal_model/` | 288 | #3789 |
 | `src/physics/multi_node_solver/mod.rs` | 2666 | #3790 |
 

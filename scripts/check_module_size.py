@@ -150,7 +150,21 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #     ratchet-lowering event. The public API at
 #     ``crate::physics::multi_node_solver::*`` is preserved via the
 #     ``pub use helpers::{...}`` re-export shim in ``mod.rs``.
-BASELINE_MODULE_SIZE_LIMITS = 13
+#   13 → 12 (Issue #3788, merged via PR for #3788): ``src/validation/report.rs``
+#     (4136 lines) was decomposed into the ``report/`` submodule tree
+#     (``mod.rs`` re-export shim + ``benchmark.rs`` holding both
+#     ``impl BenchmarkReport`` blocks + ``multi_zone.rs`` holding the
+#     multi-zone/Case960/Case970/summary/``ValidationSuite`` family +
+#     ``tests.rs`` holding the extracted ``#[cfg(test)] mod tests``
+#     body). The largest child, ``benchmark.rs`` (~1690 LoC), is
+#     below the smallest ratcheted threshold (~2000 LoC), so no new
+#     LIMITS entry is added; the ``report`` parent lands below the
+#     audit threshold for the future ``#3574``-style child audit pass.
+#     The ``report.rs`` LIMITS entry is removed and
+#     ``tests/reference_data/module_size/report_ratchet.json`` deleted
+#     per the companion-cleanup convention (cf. Issue #3543 #3625
+#     #3669 surrogate.rs / fmi / model_bindings decompositions).
+BASELINE_MODULE_SIZE_LIMITS = 12
 
 # Freeze snapshot of the gated paths (Issue #3457 ratchet).
 #
@@ -336,22 +350,6 @@ LIMITS: list[Limit] = [
             "decomposition tracked in #3787 — growth beyond the ceiling "
             "goes through that split (or a documented protocol bump), not "
             "a reflexive raise."
-        ),
-    ),
-    Limit(
-        path=REPO_ROOT / "src" / "validation" / "report.rs",
-        max_lines=4136,
-        ratchet_path=REPO_ROOT
-        / "tests"
-        / "reference_data"
-        / "module_size"
-        / "report_ratchet.json",
-        reason=(
-            "Issue #3457: validation report module ratcheted at current "
-            "size (4136 lines); consumed by ``ashrae_140_validator``. "
-            "Zero-headroom entry (Issue #3747): decomposition tracked in "
-            "#3788 — growth beyond the ceiling goes through that split "
-            "(or a documented protocol bump), not a reflexive raise."
         ),
     ),
     Limit(
