@@ -190,6 +190,18 @@ _BASELINE_MODULE_SIZE_LIMITS_SET: frozenset[str] = frozenset(
         # ``HeatConductionSolver`` trait impl stays in ``mod.rs`` so the
         # swap-point surface path is unchanged; parent lands at ~1670 lines,
         # below the audit threshold, no child entries added).
+        # Replaced in Issue #3789 (merged via PR #3843) — the 3061-line
+        # ``src/sim/thermal_model.rs`` was split into a ``thermal_model/``
+        # directory: ``mod.rs`` (288 lines, the only child at the ~2k
+        # audit threshold or above? — no, 288 is below audit, so it does
+        # not get a child entry) + ``physics.rs`` (163) + ``surrogate.rs``
+        # (295) + ``hybrid.rs`` (953) + ``unified.rs`` (281) +
+        # ``comfort.rs`` (96) + ``tests.rs`` (1079). The ``HybridThermalModel``
+        # body migrated to ``hybrid.rs`` and ``ThermalModelTrait`` stays in
+        # ``mod.rs``; the swap-point surface path is unchanged. The
+        # replacement limit below targets the new ``mod.rs`` so future
+        # growth in this concern continues to trigger the gate.
+        "src/sim/thermal_model/mod.rs",
         # Issue #3574 — 8 files newly over the ~2000-LoC threshold after
         # the Issue #3543 decomposition. Each is ratcheted at its current
         # size plus a small buffer; companion cleanup PRs that decompose
@@ -344,21 +356,26 @@ LIMITS: list[Limit] = [
         ),
     ),
     Limit(
-        path=REPO_ROOT / "src" / "sim" / "thermal_model.rs",
+        path=REPO_ROOT / "src" / "sim" / "thermal_model" / "mod.rs",
         max_lines=3061,
         ratchet_path=REPO_ROOT
         / "tests"
         / "reference_data"
         / "module_size"
-        / "thermal_model_ratchet.json",
+        / "thermal_model_mod_ratchet.json",
         reason=(
-            "Issue #3457: top-level thermal-model module ratcheted at "
-            "current size (3061 lines); consumed by the physics↔sim "
-            "cycle guard. Zero-headroom entry (Issue #3747): hosts the "
-            "``ThermalModelTrait`` swap point the gauge dispatcher work "
-            "keeps touching; decomposition tracked in #3789 — growth "
-            "beyond the ceiling goes through that split (or a documented "
-            "protocol bump), not a reflexive raise."
+            "Issue #3457 (originally) → Issue #3789 (decomposed via PR "
+            "#3843): the 3061-line single-file ``src/sim/thermal_model.rs`` "
+            "was split into a ``thermal_model/`` directory (``mod.rs`` + "
+            "``physics.rs`` + ``surrogate.rs`` + ``hybrid.rs`` + "
+            "``unified.rs`` + ``comfort.rs`` + ``tests.rs``); the original "
+            "ceiling (3061) is preserved as the ratchet for the new "
+            "``mod.rs`` so the audit thread keeps firing on growth in this "
+            "concern. Hosts the ``ThermalModelTrait`` swap point the gauge "
+            "dispatcher work keeps touching; zero-headroom entry (Issue "
+            "#3747) — further growth beyond the ceiling goes through a "
+            "documented protocol bump (split another child, or justify), "
+            "not a reflexive raise."
         ),
     ),
     # ------------------------------------------------------------------
