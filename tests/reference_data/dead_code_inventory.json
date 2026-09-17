@@ -150,13 +150,13 @@
     },
     {
       "file": "src/physics/state_space_ctf/linalg.rs",
-      "signature": "pub fn apply_householder_left(h: &mut [Vec<f64>], v: &[f64], start: usize, col_start: usize, n: usize) {",
+      "signature": "pub fn apply_householder_left(",
       "index": 1,
       "issue": 3752
     },
     {
       "file": "src/physics/state_space_ctf/linalg.rs",
-      "signature": "pub fn apply_householder_right(h: &mut [Vec<f64>], v: &[f64], row_end: usize, start: usize, _n: usize) {",
+      "signature": "pub fn apply_householder_right(",
       "index": 1,
       "issue": 3752
     },
