@@ -79,7 +79,7 @@ CRITICAL_PATHS: dict[str, list[str]] = {
     ],
     "conduction_zone": [
         "src/physics/**",
-        "src/sim/thermal_model.rs",
+        "src/sim/thermal_model/**",
         "src/sim/thermal_model_core/**",
         "src/sim/thermal_model_solvers.rs",
         "src/sim/thermal_model_iterative.rs",
