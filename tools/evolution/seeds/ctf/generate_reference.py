@@ -72,10 +72,10 @@ import numpy as np
 # ---------------------------------------------------------------------------
 
 # Surface film resistances (ASHRAE 140 §5.2, matches R_SI/R_SE in
-# src/physics/state_space_ctf.rs and EXTERIOR_FILM_COEFF in
+# src/physics/state_space_ctf/mod.rs and EXTERIOR_FILM_COEFF in
 # fluxion-core/src/construction.rs).
-R_SI = 0.125      # m²K/W interior film (R_SI from state_space_ctf.rs)
-R_SE = 0.044      # m²K/W exterior film (R_SE from state_space_ctf.rs)
+R_SI = 0.125      # m²K/W interior film (R_SI from state_space_ctf)
+R_SE = 0.044      # m²K/W exterior film (R_SE from state_space_ctf)
 
 # ASHRAE 140 §5.2 surface film coefficients — used for step-response
 # boundary conditions, NOT for the analytical U-value which uses the
@@ -344,7 +344,7 @@ def surface_temperatures_to_flux(
 ) -> tuple[complex, complex, complex, complex]:
     """Return H matrix relating (q_int, q_ext) to (T_int_air, T_ext_air).
 
-    Convention (matches Rust state_space_ctf.rs DC-gain test):
+    Convention (matches Rust state_space_ctf DC-gain test, post-#3787):
       q_int > 0: heat INTO the zone (interior air gains heat from wall).
       q_ext > 0: heat INTO the wall from exterior air.
 

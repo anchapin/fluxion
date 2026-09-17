@@ -1872,7 +1872,7 @@ Surrogates must match physics within 2% on held-out data. v3.0 surrogate trainin
 
 The **operative module-size control** is the ratchet gate `scripts/check_module_size.py` (Issues #2878 → #3457 → #3574), wired into the `architecture_drift.yml` CI workflow. It enforces hard, per-file line ceilings (`max_lines`, PR-blocking) on a ratcheted list of files prone to god-struct accumulation. A companion ratchet JSON under `tests/reference_data/module_size/` records each file's historical maximum; the effective ceiling is `max(max_lines, ratchet_max)`.
 
-The historical "each module < 500 lines of physics code" figure is **retired as a budget**: no gate enforces it, and it does not describe the codebase (more than 200 tracked production `.rs` files exceed 500 lines; the largest gated module is 4,347 lines). It survives only as a **design guideline for new modules** — when a new module approaches ~500 lines, prefer decomposition before it becomes a future ratchet candidate (periodic audit passes sweep ungated files above the ~2,000-line threshold into the gate; see Issue #3574).
+The historical "each module < 500 lines of physics code" figure is **retired as a budget**: no gate enforces it, and it does not describe the codebase (more than 200 tracked production `.rs` files exceed 500 lines; the largest gated module is 4,764 lines (`src/validation/ashrae_140_cases.rs`) after the #3787 state_space_ctf, #3788 report, #3789 thermal_model, and #3790 multi_node_solver decompositions cleared the prior 4,347 / 4,136 / 3,061 / 2,666-line entries). It survives only as a **design guideline for new modules** — when a new module approaches ~500 lines, prefer decomposition before it becomes a future ratchet candidate (periodic audit passes sweep ungated files above the ~2,000-line threshold into the gate; see Issue #3574).
 
 Remaining context-window guidelines (guidance, not CI-enforced):
 - Test files < 300 lines each
@@ -1885,7 +1885,6 @@ Snapshot 2026-09-13; run `python3 scripts/check_module_size.py --json` for curre
 | Gated file | Lines at snapshot | Ceiling | Ratcheted by |
 |---|---:|---:|---|
 | `src/sim/thermal_model_data/mod.rs` | 161 | 200 | #2878 |
-| `src/physics/state_space_ctf/mod.rs` | 4347 | 4347 | #3457 |
 | `src/sim/thermal_model/mod.rs` | 288 | 288 | #3457 |
 | `src/validation/ashrae_140_cases.rs` | 3304 | 4764 | #3457 |
 | `src/physics/multi_node_solver/mod.rs` | 2666 | 2666 | #3457 |
@@ -1902,15 +1901,17 @@ The `LIMITS` list additionally retains two legacy entries whose paths no longer 
 
 ### Exact-ceiling entries and decomposition tracking (Issue #3747)
 
-Four of the Issue #3457-era entries sit at **exactly** their current line count — zero headroom — so any additive change inside them (even a new unit test or a doc-comment fix) is PR-blocking until either a decomposition lands or a narrowly-scoped protocol bump is justified. Unlike the Issue #3574 entries (current size + a max-of-+5%/+100-lines buffer), these carry no implicit slack; per Issue #3747 each now has an **explicit decomposition tracking issue** so the sanctioned path for growth is a split, never a reflexive ceiling bump:
+Three of the Issue #3457-era entries sit at **exactly** their current line count — zero headroom — so any additive change inside them (even a new unit test or a doc-comment fix) is PR-blocking until either a decomposition lands or a narrowly-scoped protocol bump is justified. Unlike the Issue #3574 entries (current size + a max-of-+5%/+100-lines buffer), these carry no implicit slack; per Issue #3747 each now has an **explicit decomposition tracking issue** so the sanctioned path for growth is a split, never a reflexive ceiling bump:
 
 | Exact-ceiling file | Lines = ceiling | Decomposition tracking |
 |---|---:|---|
-| `src/physics/state_space_ctf/mod.rs` | 4347 | #3787 |
+| `src/validation/report/` | 4136 | #3788 |
 | `src/sim/thermal_model/` | 288 | #3789 |
 | `src/physics/multi_node_solver/mod.rs` | 2666 | #3790 |
 
-`src/sim/thermal_model/` deserves particular attention: it hosts `ThermalModelTrait`, the swap point the gauge-dispatcher work keeps touching, making it the most likely of the four to collide with the gate. Each tracking issue stages the decomposition (inline-test extraction first — the PR #3688 `coverage_tests` precedent — then concern splits behind a facade) and records the protocol obligations above. Issue #3789 (merged via PR #3843) split the original 3061-line single-file module into the directory form (mod.rs + physics.rs + surrogate.rs + hybrid.rs + unified.rs + comfort.rs + tests.rs, sibling module of `src/sim/thermal_model_core/`); the entry on the `LIMITS` ratchet now points at the new mod.rs so future growth still triggers the gate.
+`src/sim/thermal_model/` deserves particular attention: it hosts `ThermalModelTrait`, the swap point the gauge-dispatcher work keeps touching, making it the most likely of the three to collide with the gate. Each tracking issue stages the decomposition (inline-test extraction first — the PR #3688 `coverage_tests` precedent — then concern splits behind a facade) and records the protocol obligations above. Issue #3789 (merged via PR #3843) split the original 3061-line single-file module into the directory form (mod.rs + physics.rs + surrogate.rs + hybrid.rs + unified.rs + comfort.rs + tests.rs, sibling module of `src/sim/thermal_model_core/`); the entry on the `LIMITS` ratchet now points at the new mod.rs so future growth still triggers the gate.
+
+The fourth Issue #3747 entry — `src/physics/state_space_ctf/mod.rs` (4347 lines, Issue #3787) — has been removed from the gated table now that Issue #3787's decomposition (tests + linalg child) has landed; the parent lands at ~933 lines and `linalg.rs` at ~1471 lines, both well under the ~2000-line audit threshold, so the decomposition itself is the ratchet-lowering event (no child entries added; see `scripts/check_module_size.py::BASELINE_MODULE_SIZE_LIMITS` history).
 
 ### Changing ceilings (protocol)
 

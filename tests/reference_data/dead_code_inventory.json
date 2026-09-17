@@ -149,98 +149,98 @@
       "issue": 3752
     },
     {
-      "file": "src/physics/state_space_ctf/mod.rs",
-      "signature": "fn apply_householder_left(h: &mut [Vec<f64>], v: &[f64], start: usize, col_start: usize, n: usize) {",
+      "file": "src/physics/state_space_ctf/linalg.rs",
+      "signature": "pub fn apply_householder_left(",
       "index": 1,
       "issue": 3752
     },
     {
-      "file": "src/physics/state_space_ctf/mod.rs",
-      "signature": "fn apply_householder_right(h: &mut [Vec<f64>], v: &[f64], row_end: usize, start: usize, _n: usize) {",
+      "file": "src/physics/state_space_ctf/linalg.rs",
+      "signature": "pub fn apply_householder_right(",
       "index": 1,
       "issue": 3752
     },
     {
-      "file": "src/physics/state_space_ctf/mod.rs",
-      "signature": "fn apply_householder_right_unitary(u: &mut [Vec<f64>], v: &[f64], start: usize, n: usize) {",
+      "file": "src/physics/state_space_ctf/linalg.rs",
+      "signature": "pub fn apply_householder_right_unitary(u: &mut [Vec<f64>], v: &[f64], start: usize, n: usize) {",
       "index": 1,
       "issue": 3752
     },
     {
-      "file": "src/physics/state_space_ctf/mod.rs",
-      "signature": "fn exp_real_schur(t: &[Vec<f64>]) -> Vec<Vec<f64>> {",
+      "file": "src/physics/state_space_ctf/linalg.rs",
+      "signature": "pub fn exp_real_schur(t: &[Vec<f64>]) -> Vec<Vec<f64>> {",
       "index": 1,
       "issue": 3752
     },
     {
-      "file": "src/physics/state_space_ctf/mod.rs",
-      "signature": "fn francis_qr_schur(h: &[Vec<f64>]) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {",
+      "file": "src/physics/state_space_ctf/linalg.rs",
+      "signature": "pub fn francis_qr_schur(h: &[Vec<f64>]) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {",
       "index": 1,
       "issue": 3752
     },
     {
-      "file": "src/physics/state_space_ctf/mod.rs",
-      "signature": "fn householder_qr(m: &[Vec<f64>], start: usize, nn: usize) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {",
+      "file": "src/physics/state_space_ctf/linalg.rs",
+      "signature": "pub fn householder_qr(m: &[Vec<f64>], start: usize, nn: usize) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {",
       "index": 1,
       "issue": 3752
     },
     {
-      "file": "src/physics/state_space_ctf/mod.rs",
-      "signature": "fn householder_to_hessenberg(a: &[Vec<f64>]) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {",
+      "file": "src/physics/state_space_ctf/linalg.rs",
+      "signature": "pub fn householder_to_hessenberg(a: &[Vec<f64>]) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {",
       "index": 1,
       "issue": 3752
     },
     {
-      "file": "src/physics/state_space_ctf/mod.rs",
-      "signature": "fn implicit_double_shift_bulge_chase(",
+      "file": "src/physics/state_space_ctf/linalg.rs",
+      "signature": "pub fn implicit_double_shift_bulge_chase(",
       "index": 1,
       "issue": 3752
     },
     {
-      "file": "src/physics/state_space_ctf/mod.rs",
-      "signature": "fn mat_mul_transpose(a: &[Vec<f64>], b: &[Vec<f64>]) -> Vec<Vec<f64>> {",
+      "file": "src/physics/state_space_ctf/linalg.rs",
+      "signature": "pub fn mat_mul_transpose(a: &[Vec<f64>], b: &[Vec<f64>]) -> Vec<Vec<f64>> {",
       "index": 1,
       "issue": 3752
     },
     {
-      "file": "src/physics/state_space_ctf/mod.rs",
-      "signature": "fn matrix_exponential_explicit_qr(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {",
+      "file": "src/physics/state_space_ctf/linalg.rs",
+      "signature": "pub fn matrix_exponential_explicit_qr(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {",
       "index": 1,
       "issue": 3752
     },
     {
-      "file": "src/physics/state_space_ctf/mod.rs",
-      "signature": "fn matrix_exponential_old_pade(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {",
+      "file": "src/physics/state_space_ctf/linalg.rs",
+      "signature": "pub fn matrix_exponential_old_pade(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {",
       "index": 1,
       "issue": 3752
     },
     {
-      "file": "src/physics/state_space_ctf/mod.rs",
-      "signature": "fn matrix_exponential_schur(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {",
+      "file": "src/physics/state_space_ctf/linalg.rs",
+      "signature": "pub fn matrix_exponential_schur(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {",
       "index": 1,
       "issue": 3752
     },
     {
-      "file": "src/physics/state_space_ctf/mod.rs",
-      "signature": "fn matrix_exponential_taylor(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {",
+      "file": "src/physics/state_space_ctf/linalg.rs",
+      "signature": "pub fn matrix_exponential_taylor(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {",
       "index": 1,
       "issue": 3752
     },
     {
-      "file": "src/physics/state_space_ctf/mod.rs",
-      "signature": "fn matrix_norm_inf(a: &[Vec<f64>]) -> f64 {",
+      "file": "src/physics/state_space_ctf/linalg.rs",
+      "signature": "pub fn matrix_norm_inf(a: &[Vec<f64>]) -> f64 {",
       "index": 1,
       "issue": 3752
     },
     {
-      "file": "src/physics/state_space_ctf/mod.rs",
-      "signature": "fn transpose(a: &[Vec<f64>]) -> Vec<Vec<f64>> {",
+      "file": "src/physics/state_space_ctf/linalg.rs",
+      "signature": "pub fn transpose(a: &[Vec<f64>]) -> Vec<Vec<f64>> {",
       "index": 1,
       "issue": 3752
     },
     {
-      "file": "src/physics/state_space_ctf/mod.rs",
-      "signature": "fn vector_norm(v: &[f64]) -> f64 {",
+      "file": "src/physics/state_space_ctf/linalg.rs",
+      "signature": "pub fn vector_norm(v: &[f64]) -> f64 {",
       "index": 1,
       "issue": 3752
     },

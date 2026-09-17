@@ -5,7 +5,9 @@ campaign harness, seed modules, analytical reference generators, and
 bounded-campaign results across **two** issues:
 
 - **Issue #3337** — evolving the state-space CTF discretization
-  heuristics in `src/physics/state_space_ctf.rs`.
+  heuristics in `src/physics/state_space_ctf/mod.rs` (decomposed from
+  the pre-#3787 single-file form at `src/physics/state_space_ctf.rs`; the
+  dense-linear-algebra kernel now lives at `linalg.rs`).
 - **Issue #3338** — evolving the SIMD / cache-blocked solar &
   radiation accumulation kernels in
   `src/solar/surface_irradiance.rs`, `src/sim/interzone_radiation.rs`,
@@ -24,7 +26,7 @@ evolver-agnostic.
 ## State-Space CTF Evolution Campaign (#3337)
 
 This sub-campaign targets the state-space CTF discretization
-heuristics in `src/physics/state_space_ctf.rs`.
+heuristics in `src/physics/state_space_ctf/{mod,linalg}.rs`.
 
 ### Layout
 
@@ -231,7 +233,7 @@ the seed already reproduces production coefficients bit-for-bit
 across the wall library, this PR lands the harness integration,
 fixture, and reference generator as the foundation for the full
 campaign. A follow-up PR can run the ≥200-generation campaign and
-port any improvements back to `src/physics/state_space_ctf.rs`.
+port any improvements back to `src/physics/state_space_ctf/mod.rs`.
 
 The acceptance criteria are met:
 
@@ -243,7 +245,7 @@ The acceptance criteria are met:
       `1e-15` floating-point floor).
 - [x] No constant is tuned against ASHRAE 140 outputs.
 - [x] Canonical exterior film coefficient 18.3 W/m²K path untouched
-      (no modifications to `src/physics/state_space_ctf.rs`).
+      (no modifications to `src/physics/state_space_ctf/{mod,linalg}.rs`).
 - [x] `cargo fmt -- --check`, `cargo clippy --lib -- -D warnings`,
       `cargo test -p fluxion-evaluator`, `cargo test --test
       evolution_ctf_golden` all clean.

@@ -6,7 +6,8 @@
 //! `eprintln!` calls (across `matrix_exponential_faer`, `expm_higham_padé13`, and
 //! diagnostic paths) that fired on every CTF coefficient computation in release
 //! builds — a single 8760-step ASHRAE 600 run could emit thousands of discarded
-//! stderr lines.
+//! stderr lines. (Decomposed post-#3787 into `src/physics/state_space_ctf/{mod,linalg}.rs`;
+//! the offending `eprintln!` sites are now in `linalg.rs`.)
 //!
 //! This test enforces the gate at the source level so the drift cannot reappear.
 //! It scans every `.rs` file under `src/physics/` and asserts that each

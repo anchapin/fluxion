@@ -271,7 +271,7 @@ fn golden_summary_matches_all_walls() {
 //   2. DC-gain identity: |ΣX / (1 + ΣΦ) − u_value_filmed_w_m2k| /
 //      u_value_filmed_w_m2k  ≤  DC_REL_TOL.
 //      (Seem 1987 load-bearing invariant — see the `e[j]` comment in
-//      `src/physics/state_space_ctf.rs`.)
+//      `src/physics/state_space_ctf/mod.rs::compute_ctf_from_state_space`.)
 //   3. NaN / Inf rejection on every coefficient.
 //   4. Monotonic |Φ[1..]| decay (10× relaxation for tail noise — same as
 //      `tools/evolution/evaluators/ctf_evaluator.py::monotonic_phi_decay`).
