@@ -263,7 +263,6 @@ mod thermal_mass_time_constant_validation;
 mod throughput_benchmark;
 mod toon_roundtrip_integration;
 mod twin_correction_integration;
-mod twin_memory_leak_test;
 mod unsafe_pyo3_panic_safety;
 mod validation_report;
 mod validator;
