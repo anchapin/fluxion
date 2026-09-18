@@ -134,7 +134,9 @@ fn catch_unwind_napi_passes_through_ok() {
 #[test]
 fn catch_unwind_napi_propagates_inner_err() {
     let result: napi::bindgen_prelude::Result<i32> = catch_unwind_napi(|| {
-        Err(napi::bindgen_prelude::Error::from_reason("plain napi error"))
+        Err(napi::bindgen_prelude::Error::from_reason(
+            "plain napi error",
+        ))
     });
     let err = result.expect_err("inner Err must surface");
     // `napi::Error::Display` prefixes the status enum name; the inner
@@ -152,9 +154,8 @@ fn catch_unwind_napi_propagates_inner_err() {
 /// messages, even when the panic is raised at the FFI boundary.
 #[test]
 fn catch_unwind_napi_strips_env_like_secret_in_payload() {
-    let result: napi::bindgen_prelude::Result<()> = catch_unwind_napi(|| {
-        panic!("inner failure: API_KEY=sk-live-deadbeef at /tmp/x.rs:1:1")
-    });
+    let result: napi::bindgen_prelude::Result<()> =
+        catch_unwind_napi(|| panic!("inner failure: API_KEY=sk-live-deadbeef at /tmp/x.rs:1:1"));
 
     let err = result.expect_err("expected panic to be caught");
     let msg = format!("{err}");

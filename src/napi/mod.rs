@@ -53,8 +53,6 @@ mod fmi_exporter;
 // (matching the Python layout) so integration tests under `tests/`
 // can `use fluxion::napi::panic_hook::...` to assert the boundary.
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
-pub mod panic_hook;
-#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod gbxml_exporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod hvac_config;
@@ -64,6 +62,8 @@ mod nine_r4c_config;
 mod nine_r4c_nodal_trace;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod osm_exporter;
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+pub mod panic_hook;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod state_extractor;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
