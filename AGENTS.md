@@ -99,6 +99,8 @@ Runtime configuration knobs referenced above and in `docs/FEATURES.md`. Defaults
 - `LOOM=1` — test-only: enables loom concurrency-model execution in `cargo test --features loom --test loom_concurrency_tests` (`.github/workflows/loom-stress.yml`). Manual-only locally; requires ~32 GB RAM.
 - `FLUXION_REST_ALLOW_INSECURE=1` — opt-in escape hatch for release REST builds that bind publicly without TLS or accepted-auth combinations. Leave unset for any release reachable from the public internet.
 - `FLUXION_REST_TRUSTED_PROXIES` — comma-separated CIDR list of proxies whose `Forwarded`/`X-Forwarded-*` headers may be honored for client-IP and TLS-terminated-auth context. Untrusted forwarded headers are always ignored outside this set.
+- `FLUXION_EXPORT_DIR` — exporter write-path allow-list directory (Issue #3728). All NAPI / PyO3 exporter paths (`src/napi/{osm,gbxml,fmi}_exporter.rs` and `src/python/{bindings,osm_bindings}.rs`) must canonicalise to a path inside this directory; per-exporter extension pinning (`.osm`/`.xml`/`.fmu`) and parent-symlink refusal apply. Default `exports/` (relative to the process CWD).
+- `FLUXION_EXPORT_ALLOW_UNRESTRICTED=1` — explicit opt-out for the exporter write-path confinement. Drops the containment gate so a caller can target an external mount the allow-list cannot express; the extension pin, parent-existence, and parent-symlink gates still fire. Fail-closed on typos. Leave unset in production.
 
 ## Documentation and Repository Hygiene
 

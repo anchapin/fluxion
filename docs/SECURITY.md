@@ -4,6 +4,72 @@ Security policy, accepted-risk advisories, and hardening guides for Fluxion.
 Covers vulnerability reporting, the `cargo audit` ignore list, and the GitHub
 Actions supply-chain / least-privilege baseline enforced across all workflows.
 
+## Exporter write-path confinement (Issue #3728)
+
+Every exporter on the FFI surfaces (`src/napi/{osm,gbxml,fmi}_exporter.rs`
+and `src/python/{bindings,osm_bindings}.rs`) accepts a write path that lands
+on disk — OSM, gbXML, or FMU files. Before #3728 these paths were
+unvalidated: an embedding context that forwards untrusted strings (Tauri
+IPC, a Python service, a Node server) could overwrite any file the process
+could reach, including the ONNX model itself, breaking the sha256
+signature gate's assumptions (`verify_onnx_signature`).
+
+Issue #3728 ports the read-side confinement pattern
+(`validate_model_path` #2529; `validate_epw_path` #2915) to the write
+side. The validator is `validate_export_path` /
+`validate_export_path_in_dir` in `src/api/security/path_validation.rs` and
+is invoked at every FFI entry point before the underlying writer runs.
+
+### Policy
+
+| Gate | Behaviour |
+| --- | --- |
+| Operator-configured allow-list | `FLUXION_EXPORT_DIR` (default `exports/`, relative to the process working directory — mirrors the `FLUXION_MODEL_DIR` / `FLUXION_EPW_DIR` pattern). Destination must canonicalise to a path inside this directory. |
+| Parent existence | The destination's parent directory must exist — no creating attacker-controlled directories mid-call. |
+| Parent symlink refusal | A symlinked parent is refused even when the link target sits inside the allow-list, mirroring the read side's Issue #3651 policy (`symlink_metadata` check). A symlink could be swapped to escape the allow-list between the check and the write. |
+| Per-exporter extension pin | The destination's extension must match the exporter (`.osm` / `.xml` for gbXML / `.fmu`). Case-insensitive. Stops the FFI surface from being used as a "write to any extension" primitive. |
+| Bare-filename refusal | A path with no parent (e.g. `"output.osm"`) is rejected — the destination must be explicitly under the allow-list; a basename-only path would otherwise pin to the process CWD, which is operator-dependent. |
+| Generic errors | All error messages are deliberately generic and never echo the raw user-supplied path — closes the error oracle (same posture as `validate_model_path`). |
+
+### Opt-out
+
+Set `FLUXION_EXPORT_ALLOW_UNRESTRICTED=1` (accepted tokens: `1|true|yes|on`,
+mirroring `FLUXION_REST_ALLOW_INSECURE`) to drop the containment gate so a
+caller can target an external mount the allow-list cannot express (e.g. an
+S3 FUSE mount, a CI artifact dir outside the workspace). The opt-out is
+fail-closed on typos: an unrecognized token is treated as unset so a
+stray `FLUXION_EXPORT_ALLOW_UNRESTRICTED=yez` cannot activate the bypass.
+The extension pin, parent-existence, and parent-symlink gates still fire
+under the opt-out so the bypass cannot widen to "write to any extension".
+
+Production deploys MUST leave `FLUXION_EXPORT_ALLOW_UNRESTRICTED` unset.
+The escape hatch exists for local dev and for callers that need an
+external mount.
+
+### Operator deploy checklist
+
+- Set `FLUXION_EXPORT_DIR` to a directory the process can write to. The
+  default `exports/` is created relative to the process CWD, which is
+  fine for `cargo run` / test harnesses but may need overriding in a
+  containerised deploy where the CWD is read-only.
+- Verify the directory exists and is writable **before** shipping the
+  binary. The validator refuses to create it on demand (parent-existence
+  gate).
+- Leave `FLUXION_EXPORT_ALLOW_UNRESTRICTED` unset unless the deploy
+  genuinely needs to target an external mount.
+
+### Related controls
+
+- **Read side** — `validate_model_path` (#2529) and `validate_epw_path`
+  (#2915) apply the same canonicalize + `starts_with` + symlink-refusal
+  pattern to inbound paths.
+- **REST write body cap** — `MAX_REQUEST_BODY_BYTES` (16 MiB, #2505)
+  caps the size of any payload that could land inside the allow-list.
+- **ONNX signature gate** — `verify_onnx_signature` is fail-closed against
+  `<model>.sha256`. The exporter confinement ensures an embedding cannot
+  overwrite the model file as a stepping stone to bypass the signature
+  gate.
+
 ## Reporting vulnerabilities
 
 Email security@fluxion.org (PGP key on request) for any suspected security

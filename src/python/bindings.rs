@@ -5,6 +5,7 @@
 use crate::api::error::fluxion_err_to_pyerr;
 use crate::api::error::FluxionError;
 use crate::api::schema::{SimulationSchema, SimulationSchemaV1};
+use crate::api::security::validate_export_path;
 use crate::interop::gbxml::{export_gbxml as export_gbxml_file, GbXmlError};
 use crate::interop::osm::{export_osm as export_osm_file, OsmError};
 use crate::physics::cta::VectorField;
@@ -1091,13 +1092,15 @@ fn schema_from_dict(schema: &Bound<'_, PyDict>) -> PyResult<SimulationSchemaV1> 
 #[pyfunction]
 pub fn export_osm(schema: &Bound<'_, PyDict>, path: &str) -> PyResult<()> {
     let schema = schema_from_dict(schema)?;
-    export_osm_file(&schema, path).map_err(osm_error)
+    let validated_path = validate_export_path(path, "osm").map_err(validation_error)?;
+    export_osm_file(&schema, validated_path).map_err(osm_error)
 }
 
 #[pyfunction]
 pub fn export_gbxml(schema: &Bound<'_, PyDict>, path: &str) -> PyResult<()> {
     let schema = schema_from_dict(schema)?;
-    export_gbxml_file(&schema, path).map_err(gbxml_error)
+    let validated_path = validate_export_path(path, "xml").map_err(validation_error)?;
+    export_gbxml_file(&schema, validated_path).map_err(gbxml_error)
 }
 
 /// Register HVAC module in main bindings
