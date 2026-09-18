@@ -17,7 +17,11 @@
     },
     "fluxion": {
       "lib_ignored": 9,
+<<<<<<< HEAD
       "lib_tests": 4165,
+=======
+      "lib_tests": 4163,
+>>>>>>> b1e6f22 (feat(physics): resolve #3731 — typed ZoneCountPolicy for beyond-MAX_ZONES envelope)
       "test_binaries": 34
     },
     "fluxion-behavior": {
@@ -66,6 +70,7 @@
       "test_binaries": 1
     }
   },
+<<<<<<< HEAD
   "captured_at": "2026-09-18T12:49:30.793190+00:00",
   "captured_from": "tests/test_inventory.json",
   "metrics": {
@@ -81,6 +86,23 @@
     "test_binaries": 48,
     "workspace_ignored": 123,
     "workspace_tests": 8607
+=======
+  "captured_at": "2026-09-18T13:21:21.430319+00:00",
+  "captured_from": "tests/test_inventory.json",
+  "metrics": {
+    "lib_ignored": 9,
+    "lib_tests": 4163,
+    "test_binaries": 48,
+    "workspace_ignored": 123,
+    "workspace_tests": 8598
+  },
+  "metrics_ast": {
+    "lib_ignored": 9,
+    "lib_tests": 4163,
+    "test_binaries": 48,
+    "workspace_ignored": 123,
+    "workspace_tests": 8598
+>>>>>>> b1e6f22 (feat(physics): resolve #3731 — typed ZoneCountPolicy for beyond-MAX_ZONES envelope)
   },
   "ratchet": {
     "BASELINE_LIB_IGNORED": 9,
@@ -93,6 +115,7 @@
   "ratchet_drift_tolerance_pct": 5.0,
   "schema_version": 1,
   "totals": {
+<<<<<<< HEAD
     "doc_tests": 171,
     "lib_ignored_root": 6,
     "lib_tests_root": 3818,
@@ -104,5 +127,18 @@
     "workspace_lib_ignored": 21,
     "workspace_lib_tests": 5260,
     "workspace_tests": 7910
+=======
+    "doc_tests": 0,
+    "lib_ignored_root": 9,
+    "lib_tests_root": 4163,
+    "test_binaries": 48,
+    "test_source_files": 356,
+    "workspace_ignored": 123,
+    "workspace_integration_ignored": 102,
+    "workspace_integration_tests": 3340,
+    "workspace_lib_ignored": 21,
+    "workspace_lib_tests": 5258,
+    "workspace_tests": 8598
+>>>>>>> b1e6f22 (feat(physics): resolve #3731 — typed ZoneCountPolicy for beyond-MAX_ZONES envelope)
   }
 }
