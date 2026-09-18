@@ -966,3 +966,131 @@ jobs:
       - name: Run fluxion-grid integration tests
         run: |
           cargo test -p fluxion-grid --test grid_solver_integration --verbose
+
+  # -- Issue #3725: Workspace doctest execution ------------------------------
+  # `cargo nextest run` structurally cannot run doctests (nextest executes
+  # each `#[test]` in its own process; doctests are compiled into the lib
+  # binary and must be exercised by `cargo test --doc`). Before ADR-0014 /
+  # the nextest rollout (Issue #3366), the plain-`cargo test` path ran
+  # doctests implicitly; the migration silently dropped them. 171
+  # executable doctests currently exist across the workspace (the
+  # `Doc-tests fluxion*` sections reported by
+  # `cargo test --doc --workspace --exclude fluxion-tauri -- --list`),
+  # including executable specifications for solver and zone-balance APIs
+  # central to Goal #1 (e.g. `src/sim/thermal_integration.rs`,
+  # `src/sim/multi_zone_network.rs`, `src/physics/five_r1c_solver.rs`,
+  # `src/sim/adaptive_timestep.rs`). They can now rot or assert stale
+  # API shapes with no CI signal.
+  #
+  # This job restores doctest execution as a per-PR + main-merge gate;
+  # see docs/ci/nextest-rollout.md §"Doctest execution (Issue #3725)"
+  # for the runbook rationale and ownership statement.
+
+  doctests-gh-probe:
+    name: "Doctests Probe"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - run: echo "GH runner acquired"
+
+  doctests-gh:
+    name: "Workspace Doctests (GH)"
+    needs: doctests-gh-probe
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install system dependencies (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      # Issue #3398: reuse Swatinem/rust-cache so the doctest cold-cache
+      # PR cost stays inside the existing 15-30 min savings envelope.
+      # Workspace list mirrors `test::Cache cargo workspace` above so the
+      # nextest job and this job share the same keyspace.
+      - name: Cache cargo workspace
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        with:
+          workspaces: |
+            .
+            fluxion-core -> target
+            fluxion-city -> target
+            fluxion-fluid -> target
+            fluxion-grid -> target
+            fluxion-behavior -> target
+            fluxion-mcp -> target
+            fluxion-wasm -> target
+            crates/fluxion-toon -> target
+            crates/fluxion-twin -> target
+            crates/fluxion-evaluator -> target
+            fluxion-cfd -> target
+            fluxion-tauri/src-tauri -> target
+      - name: Run workspace doctests
+        # nextest structurally cannot run doctests; the canonical
+        # invocation is `cargo test --doc --workspace --exclude
+        # fluxion-tauri` (fluxion-tauri is excluded per AGENTS.md §
+        # "Commands That Are Easy to Guess Wrong" because its proc-macro
+        # build needs `npm run build` in fluxion-tauri/frontend/ to
+        # materialise ../frontend/dist -- Issue #3126). `--no-fail-fast`
+        # keeps the matrix honest: a single failing doctest does not
+        # abort the whole run, so all failures surface together.
+        # PYO3_PYTHON mirrors the nextest-job env so any `python::`-facing
+        # doctest finds the interpreter.
+        env:
+          PYO3_PYTHON: /usr/bin/python3
+        run: |
+          cargo test --doc --workspace --exclude fluxion-tauri --no-fail-fast --verbose
+
+  doctests-hz:
+    name: "Workspace Doctests (Hetzner Overflow)"
+    needs: doctests-gh-probe
+    runs-on: [self-hosted,fluxion-overflow]
+    # Issue #3445: persistent self-hosted runners MUST NOT execute
+    # PR-controlled code. Doctests are executable Rust code whose
+    # assertion failures become CI failures; the same threat model that
+    # gates `fluxion-grid-integration-hz` applies here. Restrict to
+    # main-merge pushes; PR doctest runs resolve on the GH-hosted probe
+    # path (ephemeral VM).
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      && (needs.doctests-gh-probe.result == 'failure'
+          || needs.doctests-gh-probe.result == 'cancelled')
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install system dependencies (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Cache cargo workspace
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        with:
+          workspaces: |
+            .
+            fluxion-core -> target
+            fluxion-city -> target
+            fluxion-fluid -> target
+            fluxion-grid -> target
+            fluxion-behavior -> target
+            fluxion-mcp -> target
+            fluxion-wasm -> target
+            crates/fluxion-toon -> target
+            crates/fluxion-twin -> target
+            crates/fluxion-evaluator -> target
+            fluxion-cfd -> target
+            fluxion-tauri/src-tauri -> target
+      - name: Run workspace doctests
+        env:
+          PYO3_PYTHON: /usr/bin/python3
+        run: |
+          cargo test --doc --workspace --exclude fluxion-tauri --no-fail-fast --verbose
