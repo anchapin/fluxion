@@ -1612,11 +1612,74 @@ of `HybridThermalModel::clone`:**
    agree on a single run.
 
 3. **The `conduction_solver` / `ventilation_schedule` slots do NOT round-trip
-   across clone.** If a caller installed a custom solver via
-   `set_conduction_solver` (e.g. an ONNX-trained wall surrogate, per Issue
-   #1896), cloning the model discards it and reinstates the default lightweight
-   wall spec. Re-install the custom solver on the clone, or do not rely on
-   clone to preserve it.
+    across clone.** If a caller installed a custom solver via
+    `set_conduction_solver` (e.g. an ONNX-trained wall surrogate, per Issue
+    #1896), cloning the model discards it and reinstates the default lightweight
+    wall spec. Re-install the custom solver on the clone, or do not rely on
+    clone to preserve it.
+
+#### Gauge-slot clone semantics (issue #3729)
+
+The cfg-gated `gauge_zone_solver` / `gauge_multi_zone_solver` slots on
+[`ConductionBackend`](src/sim/thermal_model_data/conduction_backend.rs)
+follow the same slot-reset contract as `HybridThermalModel::conduction_solver`.
+A naive `#[derive(Clone)]` on [`GaugeZoneSolver`](src/physics/gauge_zone_solver.rs)
+would silently leak a mid-solve `T_air` (and the per-surface `GaugeSolver`
+slot state) into every freshly-cloned `BatchOracle` candidate, contaminating
+the per-config dispatch in `evaluate_population`. Once §LIMIT-21 closes and
+the `gauge-solver` feature flips unconditionally, every `BatchOracle`
+candidate would inherit that state — the contract has to be pinned before
+the β-soak gate unlocks the default-flip.
+
+**Per-field semantics (Issue #3729):**
+
+| Field | On clone | Why |
+|---|---|---|
+| `surfaces`, `C_air`, `zone_volume`, `floor_area`, `num_surfaces`, `zone_id`, `couplings`, `inter_zone_conductance` (`GaugeZoneSolver`) | Deep-cloned | Pure geometry / adjacency data; round-trips correctly. |
+| Per-surface `wall_spec`, `area_m2`, `surface_type`, azimuth, tilt (`SurfaceGaugeSolver`) | Deep-cloned | Surface metadata + the wall spec used to re-initialize the per-surface gauge. |
+| Per-surface `GaugeSolver` (1D solve state: `prev_T_interior`, `q_flux`, `energy_storage_rate`, `initialized`) | **Reset to fresh-initialized form** | Re-initialized from `wall_spec` by `SurfaceGaugeSolver::clone`. When `wall_spec` is `None` (the rare direct-`add_surface` path) the cloned gauge retains its prior state — callers in this category are responsible for re-initialization. |
+| `T_air` (`GaugeZoneSolver`) | **Reset to `20.0`** (the `new_with_id` default) | A cloned candidate must start from the same zone air temperature a freshly-constructed solver would, regardless of the parent's mid-solve `T_air`. |
+| `initialized` (`GaugeZoneSolver`, `MultiZoneGaugeSolver`) | **Reset to `false`** | The clone is NOT pre-solved; the caller invokes `GaugeZoneSolver::initialize()` (or relies on the dispatcher's first-step path) before solving. |
+| `zones`, `zone_ids`, `num_zones` (`MultiZoneGaugeSolver`) | Deep-cloned (per-zone state reset transitively) | Topology preserved; per-zone `T_air` / `initialized` reset by the per-zone `Clone` impl above. |
+
+**Contract for consumers of `ConductionBackend::clone` when the gauge slot is populated:**
+
+1. **Clone BEFORE solving.** This is the pattern every in-tree caller uses
+   (`BatchOracle::evaluate_population` clones an unsolved `base_model`;
+   `validation::empirical_hybrid` clones a configured-but-unsolved model
+   and then runs `solve_timesteps` on the clone). In both cases the
+   original is unsolved, so the `T_air` / `initialized` resets are a no-op
+   (they are already at their default values) and the per-surface gauge
+   re-initializations are equivalent to the construction-time setup.
+
+2. **Cloning AFTER `solve_timesteps` produces a model whose published
+   gauge state does NOT correspond to the parent's state.** The clone
+   resets `T_air` to `20.0`, `initialized` to `false`, and per-surface
+   gauges to their freshly-initialized form — energy balances produced
+   by the clone diverge from the parent's post-solve trajectory. Any
+   caller that needs a post-solve branch must call `GaugeZoneSolver::
+   initialize()` on the clone before the next `step()` / `solve_timesteps`
+   call. This matches the `HybridThermalModel::conduction_solver`
+   slot-reset precedent above.
+
+3. **The gauge slot is NOT a `Box<dyn>` — the slot is owned directly.** Unlike
+   `HybridThermalModel::conduction_solver` (a trait-object slot whose
+   default is a fresh `FiveR1CSolver`), the gauge slot is a concrete
+   `Option<GaugeZoneSolver>` whose `Clone` is hand-rolled in
+   `src/physics/gauge_zone_solver.rs`. The two contracts share the same
+   "topology preserved, state reset" shape but apply at different layers
+   of the dispatch stack.
+
+The contract is regression-gated by
+`tests/all_tests/gauge_conduction_backend_clone.rs` (end-to-end with a
+gauge-initialized `BatchOracle` candidate) and by in-module unit tests in
+`src/physics/gauge_zone_solver.rs` (`issue_3729_clone_resets_t_air_to_construction_default`,
+`issue_3729_clone_resets_initialized_flag`, `issue_3729_clone_preserves_topology`,
+`issue_3729_clones_are_independent`, `issue_3729_clone_resets_per_surface_gauge_state`,
+`issue_3729_multi_zone_clone_resets_aggregate_state`). At least one
+`BatchOracle` end-to-end test from the new module is wired into the
+nightly gauge workflow (`.github/workflows/nightly-ashrae-140-gauge.yml`)
+so the feature-on oracle path is exercised before the β-soak gate closes.
 
 The `ThermalModel`-level `Clone` contract (points 1–2 of the trait-level
 section above) does **not** relax any of these `HybridThermalModel`-specific

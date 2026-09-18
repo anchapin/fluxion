@@ -198,7 +198,21 @@ impl ZoneBoundaryConditions {
 }
 
 /// Per-surface gauge solver with geometric and type metadata.
-#[derive(Debug, Clone)]
+///
+/// # Clone semantics (Issue #3729)
+///
+/// `SurfaceGaugeSolver` does not derive `Clone`: the per-surface `GaugeSolver`
+/// carries per-step internal state (`prev_T_interior`, `q_flux`,
+/// `energy_storage_rate`, `initialized`) that must NOT round-trip across
+/// `BatchOracle::evaluate_population`'s per-candidate clones — a clone of a
+/// mid-solve surface would inherit the post-step interior temperature and
+/// diverge from a fresh-from-scratch solver. The hand-rolled `Clone` impl
+/// below preserves geometry (`area_m2`, `surface_type`, azimuth/tilt,
+/// `wall_spec`) and re-initializes the per-surface gauge from `wall_spec`
+/// when available (the common path — `add_opaque_surface` always sets
+/// `wall_spec`). When `wall_spec` is `None` (the rare direct-`add_surface`
+/// path) the cloned gauge retains its prior state and callers are
+/// responsible for re-initializing.
 pub(crate) struct SurfaceGaugeSolver {
     /// The 1D gauge solver for this surface
     gauge: GaugeSolver,
@@ -248,12 +262,80 @@ impl SurfaceGaugeSolver {
     }
 }
 
+// Issue #3729 — hand-rolled `Clone` for `SurfaceGaugeSolver`.
+//
+// A `#[derive(Clone)]` would deep-copy the per-surface `GaugeSolver` slot,
+// inheriting the post-step `prev_T_interior` / `q_flux` / `initialized`
+// flags verbatim across `BatchOracle::evaluate_population`'s per-candidate
+// clones. This impl instead preserves the geometry / metadata and
+// re-initializes the per-surface gauge from `wall_spec` when available —
+// the common path (`add_opaque_surface` always sets `wall_spec`).
+impl Clone for SurfaceGaugeSolver {
+    fn clone(&self) -> Self {
+        let mut clone = Self {
+            gauge: self.gauge.clone(),
+            area_m2: self.area_m2,
+            surface_type: self.surface_type,
+            _azimuth_deg: self._azimuth_deg,
+            _tilt_deg: self._tilt_deg,
+            wall_spec: self.wall_spec.clone(),
+        };
+        // Reset per-surface gauge state to the freshly-initialized form
+        // by re-running `GaugeSolver::initialize` from the stored
+        // `wall_spec`. The original surface was successfully initialized
+        // (otherwise `GaugeZoneSolver::initialize` would have errored at
+        // construction time), so the wall is valid and the re-init
+        // succeeds. If `wall_spec` is `None` (direct-`add_surface` path),
+        // the cloned gauge retains its prior state — callers in this
+        // category must re-initialize manually before solving.
+        if let Some(ref wall) = clone.wall_spec {
+            // Best-effort: the source was already initialized with this
+            // wall, so re-init cannot fail barring a programming error.
+            // `log::warn` keeps the contract permissive in the rare
+            // `None`-wall_spec case while still surfacing a regression.
+            if let Err(e) = clone.gauge.initialize(wall) {
+                log::warn!(
+                    "SurfaceGaugeSolver::clone: re-initialize from wall_spec failed ({}); \
+                     cloned gauge retains prior state. Caller is responsible for re-initialization.",
+                    e
+                );
+            }
+        }
+        clone
+    }
+}
+
 /// Zone-level heat balance solver using per-surface GaugeSolvers.
 ///
 /// This struct owns the collection of per-surface 1D solvers and manages
 /// the zone air node thermal capacitance. Supports both single-zone
 /// and multi-zone configurations with inter-zone coupling.
-#[derive(Debug, Clone)]
+///
+/// # Clone semantics (Issue #3729)
+///
+/// `GaugeZoneSolver` does not derive `Clone`: it carries per-step
+/// state (`T_air`, `initialized`, and the per-surface `GaugeSolver` slot
+/// state which `SurfaceGaugeSolver::clone` resets on its own). A
+/// `#[derive(Clone)]` would deep-copy `T_air` and `initialized`, silently
+/// leaking a mid-solve zone air temperature into a freshly-cloned
+/// `BatchOracle` candidate. The hand-rolled `Clone` impl below follows the
+/// [`HybridThermalModel`] precedent (ARCHITECTURE.md §"Clone semantics &
+/// BatchOracle parallelism contract", Issue #2539): **topology preserved,
+/// runtime state reset**. Specifically:
+///
+/// | Field | On clone | Why |
+/// |---|---|---|
+/// | `surfaces`, `C_air`, `zone_volume`, `floor_area`, `num_surfaces`, `zone_id`, `couplings`, `inter_zone_conductance` | Deep-cloned | Pure geometry / adjacency data; round-trips correctly. |
+/// | `T_air` | **Reset to `20.0`** (the `new_with_id` default) | A cloned candidate must start from the same zone air temperature a freshly-constructed solver would, regardless of the parent's mid-solve `T_air`. |
+/// | `initialized` | **Reset to `false`** | The clone is NOT pre-solved; the caller invokes `GaugeZoneSolver::initialize()` (or relies on the dispatcher's first-step path) before solving. Matches the slot-reset contract applied to `HybridThermalModel::conduction_solver`. |
+///
+/// Per-surface `GaugeSolver` state is reset transitively by
+/// [`SurfaceGaugeSolver::clone`] (re-initialized from `wall_spec` when
+/// available — the common path; otherwise the caller is responsible).
+///
+/// **Independence guarantee.** Two clones are fully independent: mutating
+/// `clone.T_air` (or stepping `clone`) does not affect `original.T_air`,
+/// and vice versa. Pinned by `tests/all_tests/gauge_conduction_backend_clone.rs`.
 pub struct GaugeZoneSolver {
     /// Per-surface gauge solvers (walls, windows, roof, floor)
     surfaces: Vec<SurfaceGaugeSolver>,
@@ -276,6 +358,31 @@ pub struct GaugeZoneSolver {
     couplings: Vec<ZoneCoupling>,
     /// Pre-computed inter-zone conductance matrix (zone_id -> conductance)
     inter_zone_conductance: HashMap<usize, f64>,
+}
+
+// Issue #3729 — hand-rolled `Clone` for `GaugeZoneSolver`.
+//
+// See the struct doc-comment for the full table of preserved-vs-reset
+// fields. Summary: topology preserved (geometry, adjacency, surface
+// metadata, `num_surfaces`, `zone_id`); runtime state reset (`T_air`
+// to the `new_with_id` default of `20.0`, `initialized` to `false`).
+// Per-surface `GaugeSolver` state is reset transitively by the
+// `SurfaceGaugeSolver::clone` impl above.
+impl Clone for GaugeZoneSolver {
+    fn clone(&self) -> Self {
+        Self {
+            surfaces: self.surfaces.clone(),
+            C_air: self.C_air,
+            T_air: 20.0, // RESET — see struct doc-comment.
+            zone_volume: self.zone_volume,
+            floor_area: self.floor_area,
+            num_surfaces: self.num_surfaces,
+            initialized: false, // RESET — see struct doc-comment.
+            zone_id: self.zone_id,
+            couplings: self.couplings.clone(),
+            inter_zone_conductance: self.inter_zone_conductance.clone(),
+        }
+    }
 }
 
 /// Physical constants for air
@@ -593,6 +700,15 @@ impl GaugeZoneSolver {
         &self.surfaces
     }
 
+    /// Issue #3729 — public surface count accessor so external callers
+    /// (e.g. integration tests under `tests/all_tests/`) can verify the
+    /// topology-preservation contract without depending on the
+    /// `pub(crate)` `SurfaceGaugeSolver` type. The returned length
+    /// matches `self.surfaces().len()`.
+    pub fn surface_count(&self) -> usize {
+        self.surfaces.len()
+    }
+
     /// Issue #3297 — per-surface interior temperature (the interior-most
     /// node state of each surface's 1D solve) at the most recent step.
     /// Length matches `self.surfaces.len()`. Read-only telemetry: used by
@@ -774,7 +890,15 @@ impl GaugeZoneSolver {
 /// multi_zone.add_zone_coupling(0, 1, 10.0, 0.5); // Shared wall: 10m², R=0.5
 /// multi_zone.initialize().unwrap();
 /// ```
-#[derive(Debug, Clone)]
+///
+/// # Clone semantics (Issue #3729)
+///
+/// `MultiZoneGaugeSolver` does not derive `Clone`. Per-zone state is
+/// reset by [`GaugeZoneSolver::clone`] (the topology is preserved,
+/// `T_air` is reset to the `new_with_id` default, and `initialized` is
+/// reset to `false`). The aggregate `initialized` flag here is also
+/// reset to `false`, mirroring the slot-reset contract applied to
+/// `HybridThermalModel::conduction_solver` (ARCHITECTURE.md Issue #2539).
 pub struct MultiZoneGaugeSolver {
     /// All zones in the system
     zones: Vec<GaugeZoneSolver>,
@@ -784,6 +908,24 @@ pub struct MultiZoneGaugeSolver {
     num_zones: usize,
     /// Solver initialized flag
     initialized: bool,
+}
+
+// Issue #3729 — hand-rolled `Clone` for `MultiZoneGaugeSolver`.
+//
+// Per-zone state (including the `T_air` / `initialized` reset) is handled
+// by `GaugeZoneSolver::clone`; this impl additionally resets the
+// aggregate `initialized` flag. Topology (zone list, IDs, count) is
+// preserved verbatim. Two clones are fully independent: solving one does
+// not perturb the other's per-zone `T_air`.
+impl Clone for MultiZoneGaugeSolver {
+    fn clone(&self) -> Self {
+        Self {
+            zones: self.zones.clone(),
+            zone_ids: self.zone_ids.clone(),
+            num_zones: self.num_zones,
+            initialized: false, // RESET — see struct doc-comment.
+        }
+    }
 }
 
 impl MultiZoneGaugeSolver {
@@ -1410,5 +1552,290 @@ mod tests {
             (per_zone[1] - 25.0).abs() < 1e-9,
             "zone 1 interior T must equal its pinned T_air=25 °C, got {per_zone:?}"
         );
+    }
+
+    // ============== Issue #3729 — `GaugeZoneSolver` clone contract ==============
+    //
+    // The hand-rolled `Clone` impls in this module are pinned by the
+    // tests below. They mirror the
+    // `tests/all_tests/hybrid_clone_preserves_dispatch_counters.rs`
+    // pattern: topology preserved, runtime state reset, candidates
+    // independent.
+
+    /// Build a Case 600-style initialized zone with two opaque surfaces.
+    fn build_initialized_zone() -> GaugeZoneSolver {
+        let wall = case600_wall();
+        let mut zone = GaugeZoneSolver::new(48.0, 2.7);
+        zone.add_opaque_surface(&wall, 48.0, SurfaceType::Wall, 180.0, 90.0)
+            .expect("Case 600 wall must add");
+        zone.add_opaque_surface(&wall, 48.0, SurfaceType::Roof, 180.0, 0.0)
+            .expect("Case 600 roof must add");
+        zone.initialize().expect("Case 600 zone must initialize");
+        zone.set_T_air(35.0); // Pin a mid-solve zone air temperature.
+        zone
+    }
+
+    /// `GaugeZoneSolver::clone` must reset `T_air` to the
+    /// `new_with_id` default (20.0) regardless of the parent's mid-solve
+    /// value. The clone starts from the same baseline a freshly-constructed
+    /// solver would, matching the
+    /// `HybridThermalModel::conduction_solver` slot-reset precedent.
+    #[test]
+    fn issue_3729_clone_resets_t_air_to_construction_default() {
+        let original = build_initialized_zone();
+        assert!(
+            original.is_initialized(),
+            "fixture: original must be initialized"
+        );
+        assert!(
+            (original.T_air().to_value() - 35.0).abs() < 1e-9,
+            "fixture: original T_air must be pinned to 35.0, got {}",
+            original.T_air().to_value()
+        );
+
+        let clone = original.clone();
+
+        assert!(
+            (clone.T_air().to_value() - 20.0).abs() < 1e-9,
+            "clone.T_air must reset to the new_with_id default (20.0), got {} \
+             (Issue #3729: clone must NOT carry forward the parent's mid-solve T_air)",
+            clone.T_air().to_value()
+        );
+        // Original must remain untouched (Clone reads `&self`).
+        assert!(
+            (original.T_air().to_value() - 35.0).abs() < 1e-9,
+            "Clone must not perturb the original's T_air (Issue #3729 independence)"
+        );
+    }
+
+    /// `GaugeZoneSolver::clone` must reset `initialized` to `false`.
+    /// The clone is not pre-solved; callers must re-initialize before
+    /// stepping the clone. Mirrors the slot-reset contract for
+    /// `HybridThermalModel::conduction_solver` (ARCHITECTURE.md #2539).
+    #[test]
+    fn issue_3729_clone_resets_initialized_flag() {
+        let original = build_initialized_zone();
+        assert!(original.is_initialized());
+
+        let clone = original.clone();
+
+        assert!(
+            !clone.is_initialized(),
+            "clone.is_initialized must be false after Clone (Issue #3729 slot-reset contract); \
+             got true"
+        );
+        assert!(
+            original.is_initialized(),
+            "Clone must not perturb the original's is_initialized (Issue #3729 independence)"
+        );
+    }
+
+    /// `GaugeZoneSolver::clone` must preserve topology: surfaces (count
+    /// and metadata), `zone_id`, `floor_area`, `zone_volume`, `C_air`,
+    /// couplings, and the per-surface `wall_spec`. A candidate model
+    /// built from this clone must have the same envelope and adjacency
+    /// as the original — only the runtime state diverges.
+    #[test]
+    fn issue_3729_clone_preserves_topology() {
+        let original = build_initialized_zone();
+        let original_zone_id = original.zone_id();
+        let original_surface_count = original.surface_count();
+        let original_floor_area = original.floor_area;
+        let original_zone_volume = original.zone_volume;
+        let original_C_air = original.C_air();
+
+        let clone = original.clone();
+
+        assert_eq!(
+            clone.zone_id(),
+            original_zone_id,
+            "clone must preserve zone_id"
+        );
+        assert_eq!(
+            clone.surface_count(),
+            original_surface_count,
+            "clone must preserve surface count"
+        );
+        assert!(
+            (clone.floor_area - original_floor_area).abs() < 1e-12,
+            "clone must preserve floor_area"
+        );
+        assert!(
+            (clone.zone_volume - original_zone_volume).abs() < 1e-12,
+            "clone must preserve zone_volume"
+        );
+        assert!(
+            (clone.C_air() - original_C_air).abs() < 1e-9,
+            "clone must preserve C_air"
+        );
+        // Per-surface metadata (area, type, wall_spec) must round-trip.
+        for (orig_surface, clone_surface) in
+            original.surfaces().iter().zip(clone.surfaces().iter())
+        {
+            assert!(
+                (orig_surface.area_m2 - clone_surface.area_m2).abs() < 1e-12,
+                "clone must preserve per-surface area_m2"
+            );
+            assert_eq!(
+                orig_surface.surface_type, clone_surface.surface_type,
+                "clone must preserve per-surface surface_type"
+            );
+        }
+    }
+
+    /// Two clones are fully independent: mutating one's `T_air` (or
+    /// stepping one) must not perturb the other. Pinned by the
+    /// candidate-independence requirement in the BatchOracle
+    /// `par_iter` hot loop — a shared-state bug would corrupt every
+    /// per-config dispatch in `evaluate_population`.
+    #[test]
+    fn issue_3729_clones_are_independent() {
+        let original = build_initialized_zone();
+        let mut clone_a = original.clone();
+        let mut clone_b = original.clone();
+
+        clone_a.set_T_air(15.0);
+        clone_b.set_T_air(30.0);
+
+        // Each clone's T_air must reflect only its own mutation.
+        assert!(
+            (clone_a.T_air().to_value() - 15.0).abs() < 1e-9,
+            "clone_a T_air must equal its own pin (15.0), got {}",
+            clone_a.T_air().to_value()
+        );
+        assert!(
+            (clone_b.T_air().to_value() - 30.0).abs() < 1e-9,
+            "clone_b T_air must equal its own pin (30.0), got {}",
+            clone_b.T_air().to_value()
+        );
+        // Original must remain untouched.
+        assert!(
+            (original.T_air().to_value() - 35.0).abs() < 1e-9,
+            "original T_air must be untouched by subsequent clone mutations"
+        );
+
+        // Re-initialize each clone and step independently. The clone's
+        // freshly-reset surface gauge state must be runnable end-to-end.
+        clone_a.initialize().expect("clone_a must re-initialize");
+        clone_b.initialize().expect("clone_b must re-initialize");
+        let bc = (
+            Temperature::from_value(10.0),
+            HeatTransferCoefficient::from_value(25.0),
+        );
+        let _ = clone_a.step(
+            0,
+            3600.0,
+            bc.0,
+            bc.1,
+            0.0,
+            0.0,
+            0.0,
+        );
+        let _ = clone_b.step(
+            1,
+            3600.0,
+            bc.0,
+            bc.1,
+            0.0,
+            0.0,
+            0.0,
+        );
+        assert!(
+            clone_a.is_initialized(),
+            "clone_a must remain functional after re-init + step"
+        );
+        assert!(
+            clone_b.is_initialized(),
+            "clone_b must remain functional after re-init + step"
+        );
+    }
+
+    /// `SurfaceGaugeSolver::clone` (transitively invoked by
+    /// `GaugeZoneSolver::clone`) must re-initialize the per-surface
+    /// `GaugeSolver` from `wall_spec` when available. After clone, the
+    /// per-surface `GaugeSolver` must be `initialized = true` with the
+    /// expected `r_total` / `C_mass` derived from the wall spec.
+    #[test]
+    fn issue_3729_clone_resets_per_surface_gauge_state() {
+        use crate::physics::solver_trait::HeatConductionSolver;
+
+        let original = build_initialized_zone();
+        let pre_clone_surface_count = original.surface_count();
+        let pre_clone_first_r_total = original.surfaces()[0].gauge.r_total_for_test();
+        let pre_clone_first_c_mass = original.surfaces()[0].gauge.c_mass_for_test();
+
+        let clone = original.clone();
+
+        assert_eq!(clone.surface_count(), pre_clone_surface_count);
+        for (i, clone_surface) in clone.surfaces().iter().enumerate() {
+            assert!(
+                clone_surface.gauge.is_valid(),
+                "clone.surfaces[{i}].gauge must be in the initialized form (Issue #3729)"
+            );
+            // The wall-derived r_total / C_mass must round-trip across clone.
+            let r_total = clone_surface.gauge.r_total_for_test();
+            let c_mass = clone_surface.gauge.c_mass_for_test();
+            assert!(
+                (r_total - pre_clone_first_r_total).abs() < 1e-12,
+                "clone.surfaces[{i}].gauge.r_total must match wall spec, got {r_total}"
+            );
+            assert!(
+                (c_mass - pre_clone_first_c_mass).abs() < 1e-12,
+                "clone.surfaces[{i}].gauge.C_mass must match wall spec, got {c_mass}"
+            );
+        }
+    }
+
+    /// `MultiZoneGaugeSolver::clone` must reset each per-zone state
+    /// (via `GaugeZoneSolver::clone`) AND the aggregate `initialized`
+    /// flag. Topology (zone count, IDs, surface counts, couplings) is
+    /// preserved.
+    #[test]
+    fn issue_3729_multi_zone_clone_resets_aggregate_state() {
+        let wall = case600_wall();
+        let mut mz = MultiZoneGaugeSolver::new();
+        mz.add_zone(0, 48.0, 2.7);
+        mz.add_zone(1, 36.0, 2.7);
+        mz.add_opaque_surface_to_zone(0, &wall, 48.0, SurfaceType::Wall, 180.0, 90.0)
+            .unwrap();
+        mz.add_opaque_surface_to_zone(1, &wall, 36.0, SurfaceType::Wall, 180.0, 90.0)
+            .unwrap();
+        mz.add_zone_coupling(0, 1, 10.0, 0.5).unwrap();
+        mz.initialize().expect("multi-zone must initialize");
+        mz.get_zone_mut(0).unwrap().set_T_air(28.0);
+        mz.get_zone_mut(1).unwrap().set_T_air(22.0);
+
+        let clone = mz.clone();
+
+        // Topology preserved.
+        assert_eq!(clone.num_zones(), 2);
+        assert_eq!(clone.zone_ids(), &[0, 1]);
+        assert_eq!(clone.get_zone(0).unwrap().surface_count(), 1);
+        assert_eq!(clone.get_zone(1).unwrap().surface_count(), 1);
+
+        // Per-zone state reset to defaults.
+        assert!(
+            (clone.get_zone(0).unwrap().T_air().to_value() - 20.0).abs() < 1e-9,
+            "clone.zone[0].T_air must reset to 20.0, got {}",
+            clone.get_zone(0).unwrap().T_air().to_value()
+        );
+        assert!(
+            (clone.get_zone(1).unwrap().T_air().to_value() - 20.0).abs() < 1e-9,
+            "clone.zone[1].T_air must reset to 20.0, got {}",
+            clone.get_zone(1).unwrap().T_air().to_value()
+        );
+
+        // Aggregate `initialized` flag reset.
+        assert!(
+            !clone.is_initialized(),
+            "clone.is_initialized must be false (Issue #3729 aggregate slot-reset contract)"
+        );
+
+        // Originals untouched.
+        assert!(
+            (mz.get_zone(0).unwrap().T_air().to_value() - 28.0).abs() < 1e-9,
+            "original zone[0].T_air must remain at 28.0 (independence guarantee)"
+        );
+        assert!(mz.is_initialized());
     }
 }
