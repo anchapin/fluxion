@@ -11,7 +11,7 @@
   "all_dc_pass": true,
   "all_monotonic_pass": true,
   "all_finite_pass": true,
-  "total_ns": 52723455,
+  "total_ns": 55083118,
   "per_wall": [
     {
       "name": "ashrae_600_low_mass_floor",
@@ -24,7 +24,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 149202
+      "ns_per_wall": 841810
     },
     {
       "name": "ashrae_600_low_mass_roof",
@@ -37,7 +37,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 195643
+      "ns_per_wall": 278923
     },
     {
       "name": "ashrae_600_low_mass_wall",
@@ -50,7 +50,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 27740
+      "ns_per_wall": 52861
     },
     {
       "name": "ashrae_900_high_mass_floor",
@@ -63,7 +63,7 @@
       "dc_gain_rel_err": 1.7821953063650442e-15,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 195873
+      "ns_per_wall": 348085
     },
     {
       "name": "ashrae_900_high_mass_roof",
@@ -76,7 +76,7 @@
       "dc_gain_rel_err": 1.6606715543952083e-16,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 150082
+      "ns_per_wall": 278334
     },
     {
       "name": "ashrae_900_high_mass_wall",
@@ -89,7 +89,7 @@
       "dc_gain_rel_err": 4.177665306313372e-15,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 503307
+      "ns_per_wall": 667409
     },
     {
       "name": "ashrae_900ff_high_mass_wall",
@@ -102,7 +102,7 @@
       "dc_gain_rel_err": 4.177665306313372e-15,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 675609
+      "ns_per_wall": 663789
     },
     {
       "name": "asymmetric_ins_out",
@@ -115,7 +115,7 @@
       "dc_gain_rel_err": 4.3192298774591175e-15,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 413025
+      "ns_per_wall": 666548
     },
     {
       "name": "asymmetric_thin_film_ext",
@@ -128,7 +128,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 289974
+      "ns_per_wall": 488146
     },
     {
       "name": "asymmetric_thin_film_int",
@@ -141,7 +141,7 @@
       "dc_gain_rel_err": 1.9912626461022007e-15,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 559598
+      "ns_per_wall": 483416
     },
     {
       "name": "multi_02layers_Rins005",
@@ -154,7 +154,7 @@
       "dc_gain_rel_err": 1.5882414202046598e-16,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 88701
+      "ns_per_wall": 145862
     },
     {
       "name": "multi_02layers_Rins010",
@@ -167,7 +167,7 @@
       "dc_gain_rel_err": 2.9760202009861055e-16,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 140112
+      "ns_per_wall": 291624
     },
     {
       "name": "multi_02layers_Rins020",
@@ -180,7 +180,7 @@
       "dc_gain_rel_err": 8.627366643823493e-16,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 198453
+      "ns_per_wall": 365274
     },
     {
       "name": "multi_03layers_Rins005",
@@ -193,7 +193,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 27040
+      "ns_per_wall": 47500
     },
     {
       "name": "multi_03layers_Rins010",
@@ -206,7 +206,7 @@
       "dc_gain_rel_err": 1.6010763684662222e-16,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 153952
+      "ns_per_wall": 586408
     },
     {
       "name": "multi_03layers_Rins020",
@@ -219,7 +219,7 @@
       "dc_gain_rel_err": 2.988855149247668e-16,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 300035
+      "ns_per_wall": 345695
     },
     {
       "name": "multi_04layers_Rins005",
@@ -232,7 +232,7 @@
       "dc_gain_rel_err": 1.1384834415390735e-16,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 56191
+      "ns_per_wall": 47741
     },
     {
       "name": "multi_04layers_Rins010",
@@ -245,7 +245,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 52551
+      "ns_per_wall": 49990
     },
     {
       "name": "multi_04layers_Rins020",
@@ -258,7 +258,7 @@
       "dc_gain_rel_err": 7.82808200620393e-16,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 345265
+      "ns_per_wall": 380165
     },
     {
       "name": "multi_05layers_Rins005",
@@ -271,7 +271,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 87751
+      "ns_per_wall": 59051
     },
     {
       "name": "multi_05layers_Rins010",
@@ -284,7 +284,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 60691
+      "ns_per_wall": 53400
     },
     {
       "name": "multi_05layers_Rins020",
@@ -297,7 +297,7 @@
       "dc_gain_rel_err": 1.0505915341282305e-15,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 298484
+      "ns_per_wall": 486746
     },
     {
       "name": "multi_06layers_Rins005",
@@ -310,7 +310,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 49891
+      "ns_per_wall": 63451
     },
     {
       "name": "multi_06layers_Rins010",
@@ -323,7 +323,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 41430
+      "ns_per_wall": 59121
     },
     {
       "name": "multi_06layers_Rins020",
@@ -336,7 +336,7 @@
       "dc_gain_rel_err": 1.9562408854019947e-15,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 438786
+      "ns_per_wall": 669109
     },
     {
       "name": "single_brick_050mm",
@@ -349,7 +349,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 68171
+      "ns_per_wall": 108161
     },
     {
       "name": "single_brick_100mm",
@@ -362,7 +362,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 84901
+      "ns_per_wall": 140312
     },
     {
       "name": "single_brick_150mm",
@@ -375,7 +375,7 @@
       "dc_gain_rel_err": 3.1457963805897396e-16,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 137522
+      "ns_per_wall": 240733
     },
     {
       "name": "single_concrete_005mm",
@@ -388,7 +388,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 17940
+      "ns_per_wall": 23610
     },
     {
       "name": "single_concrete_009mm",
@@ -401,7 +401,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 17380
+      "ns_per_wall": 22050
     },
     {
       "name": "single_concrete_012mm",
@@ -414,7 +414,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 18810
+      "ns_per_wall": 26421
     },
     {
       "name": "single_concrete_020mm",
@@ -427,7 +427,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 18200
+      "ns_per_wall": 26600
     },
     {
       "name": "single_concrete_030mm",
@@ -440,7 +440,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 18101
+      "ns_per_wall": 30220
     },
     {
       "name": "single_concrete_050mm",
@@ -453,7 +453,7 @@
       "dc_gain_rel_err": 1.757720494524462e-16,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 73092
+      "ns_per_wall": 112042
     },
     {
       "name": "single_concrete_075mm",
@@ -466,7 +466,7 @@
       "dc_gain_rel_err": 1.8860699771400867e-16,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 105211
+      "ns_per_wall": 101561
     },
     {
       "name": "single_concrete_100mm",
@@ -479,7 +479,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 175742
+      "ns_per_wall": 140731
     },
     {
       "name": "single_concrete_150mm",
@@ -492,7 +492,7 @@
       "dc_gain_rel_err": 2.271118424986962e-16,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 138282
+      "ns_per_wall": 126732
     },
     {
       "name": "single_concrete_200mm",
@@ -505,7 +505,7 @@
       "dc_gain_rel_err": 2.5278173902182117e-16,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 258734
+      "ns_per_wall": 213962
     },
     {
       "name": "single_concrete_250mm",
@@ -518,7 +518,7 @@
       "dc_gain_rel_err": 9.745807244073115e-16,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 214293
+      "ns_per_wall": 307334
     },
     {
       "name": "single_concrete_300mm",
@@ -531,7 +531,7 @@
       "dc_gain_rel_err": 2.280911490510534e-15,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 189242
+      "ns_per_wall": 302044
     },
     {
       "name": "single_concrete_400mm",
@@ -544,7 +544,7 @@
       "dc_gain_rel_err": 2.2216332819645075e-14,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 263744
+      "ns_per_wall": 456546
     },
     {
       "name": "single_gypsum_005mm",
@@ -557,7 +557,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 18821
+      "ns_per_wall": 33181
     },
     {
       "name": "single_gypsum_010mm",
@@ -570,7 +570,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 17420
+      "ns_per_wall": 36051
     },
     {
       "name": "single_gypsum_013mm",
@@ -583,7 +583,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 17711
+      "ns_per_wall": 28400
     },
     {
       "name": "single_gypsum_020mm",
@@ -596,7 +596,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 77321
+      "ns_per_wall": 126621
     },
     {
       "name": "single_gypsum_050mm",
@@ -609,7 +609,7 @@
       "dc_gain_rel_err": 2.1382895454280512e-16,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 83981
+      "ns_per_wall": 151352
     },
     {
       "name": "single_insulation_020mm",
@@ -622,7 +622,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 18291
+      "ns_per_wall": 32571
     },
     {
       "name": "single_insulation_050mm",
@@ -635,7 +635,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 67571
+      "ns_per_wall": 120321
     },
     {
       "name": "single_insulation_100mm",
@@ -648,7 +648,7 @@
       "dc_gain_rel_err": 0.0,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 81861
+      "ns_per_wall": 152622
     },
     {
       "name": "single_insulation_150mm",
@@ -661,7 +661,7 @@
       "dc_gain_rel_err": 4.3509640335059885e-16,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 80851
+      "ns_per_wall": 150162
     },
     {
       "name": "single_insulation_200mm",
@@ -674,7 +674,7 @@
       "dc_gain_rel_err": 1.4346857035718584e-16,
       "monotonic_phi_decay": true,
       "all_finite": true,
-      "ns_per_wall": 198523
+      "ns_per_wall": 249653
     }
   ]
 }
