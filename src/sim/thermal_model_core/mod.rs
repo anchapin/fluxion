@@ -3735,7 +3735,7 @@ impl ThermalModel<VectorField> {
         let r_layers = assembly.total_r_value();
         // Guard against pathological zero-R assemblies (already validated,
         // but assert to prevent divide-by-zero on unexpected input).
-        if !(r_layers > 0.0) {
+        if !r_layers.is_sign_positive() {
             return Err(format!(
                 "Assembly '{}' has non-positive total R-value ({r_layers}); \
                  cannot compute U-value",

@@ -81,7 +81,9 @@ fn clone_resets_gauge_zone_solver_t_air() {
         .backend
         .gauge_zone_solver
         .as_ref()
-        .expect("Issue #3729 fixture: gauge-zone-solver must be populated when gauge-solver feature is on");
+        .expect(
+        "Issue #3729 fixture: gauge-zone-solver must be populated when gauge-solver feature is on",
+    );
 
     // Pin a non-default T_air on the original so we can verify the clone
     // resets it. The original `T_air` must be at the `new_with_id`
@@ -237,10 +239,8 @@ fn cloned_gauge_models_produce_identical_eui_in_batch_oracle() {
     // in `evaluate_population`, so any candidate-state leak between
     // clones would surface as a divergence between the two oracles'
     // outputs.
-    let oracle_a =
-        BatchOracle::from_model(base.clone()).expect("BatchOracle A must build");
-    let oracle_b =
-        BatchOracle::from_model(base.clone()).expect("BatchOracle B must build");
+    let oracle_a = BatchOracle::from_model(base.clone()).expect("BatchOracle A must build");
+    let oracle_b = BatchOracle::from_model(base.clone()).expect("BatchOracle B must build");
 
     // Single-candidate population so the EUI is purely a function of
     // the base-model clone + the parameter set. U-value / setpoints
@@ -294,8 +294,7 @@ fn cloned_gauge_models_produce_identical_eui_in_batch_oracle() {
     // sequence must be deterministic across runs (the analytical path
     // sorts results by population index, so this is exact bit-equality,
     // not just tolerance).
-    let oracle_c =
-        BatchOracle::from_model(base).expect("BatchOracle C must build");
+    let oracle_c = BatchOracle::from_model(base).expect("BatchOracle C must build");
     let multi_population = vec![
         vec![0.5, 20.0, 26.0],
         vec![1.5, 20.0, 26.0],
@@ -342,10 +341,24 @@ fn clone_resets_multi_zone_gauge_solver() {
     let mut mz = MultiZoneGaugeSolver::new();
     mz.add_zone(0, 48.0, 2.7);
     mz.add_zone(1, 36.0, 2.7);
-    mz.add_opaque_surface_to_zone(0, &wall, 48.0, fluxion::sim::thermal_model_data::SurfaceType::Wall, 180.0, 90.0)
-        .unwrap();
-    mz.add_opaque_surface_to_zone(1, &wall, 36.0, fluxion::sim::thermal_model_data::SurfaceType::Wall, 180.0, 90.0)
-        .unwrap();
+    mz.add_opaque_surface_to_zone(
+        0,
+        &wall,
+        48.0,
+        fluxion::sim::thermal_model_data::SurfaceType::Wall,
+        180.0,
+        90.0,
+    )
+    .unwrap();
+    mz.add_opaque_surface_to_zone(
+        1,
+        &wall,
+        36.0,
+        fluxion::sim::thermal_model_data::SurfaceType::Wall,
+        180.0,
+        90.0,
+    )
+    .unwrap();
     mz.add_zone_coupling(0, 1, 10.0, 0.5).unwrap();
     mz.initialize().expect("multi-zone must initialize");
 

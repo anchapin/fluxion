@@ -1669,8 +1669,7 @@ mod tests {
             "clone must preserve C_air"
         );
         // Per-surface metadata (area, type, wall_spec) must round-trip.
-        for (orig_surface, clone_surface) in
-            original.surfaces().iter().zip(clone.surfaces().iter())
+        for (orig_surface, clone_surface) in original.surfaces().iter().zip(clone.surfaces().iter())
         {
             assert!(
                 (orig_surface.area_m2 - clone_surface.area_m2).abs() < 1e-12,
@@ -1722,24 +1721,8 @@ mod tests {
             Temperature::from_value(10.0),
             HeatTransferCoefficient::from_value(25.0),
         );
-        let _ = clone_a.step(
-            0,
-            3600.0,
-            bc.0,
-            bc.1,
-            0.0,
-            0.0,
-            0.0,
-        );
-        let _ = clone_b.step(
-            1,
-            3600.0,
-            bc.0,
-            bc.1,
-            0.0,
-            0.0,
-            0.0,
-        );
+        let _ = clone_a.step(0, 3600.0, bc.0, bc.1, 0.0, 0.0, 0.0);
+        let _ = clone_b.step(1, 3600.0, bc.0, bc.1, 0.0, 0.0, 0.0);
         assert!(
             clone_a.is_initialized(),
             "clone_a must remain functional after re-init + step"
