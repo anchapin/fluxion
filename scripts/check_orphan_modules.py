@@ -451,7 +451,14 @@ _CFG_TEST_BODY_RE = re.compile(
 #     bodies; this gate's canonical production-only measurement (block
 #     comments stripped, occurrence-counted, cfg(test) bodies excluded)
 #     seeds at 94.
-BASELINE_DEAD_CODE_ALLOWS = 94
+#
+# Issue #3733 lowered the baseline by 4 (94 → 90) when the dead inter-zone
+# coupling fields on `SurfaceGaugeSolver` (`adjacent_zone_id`,
+# `inter_zone_conductance`) and their supporting `new_inter_zone` /
+# `compute_inter_zone_flux` allow(dead_code) sites were deleted; the
+# dead-code inventory was regenerated via
+# `python3 scripts/check_orphan_modules.py --update-dead-code-inventory`.
+BASELINE_DEAD_CODE_ALLOWS = 90
 
 # ---------------------------------------------------------------------------
 # Wired-but-dead disposition registry (Issue #3748).
