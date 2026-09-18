@@ -151,6 +151,12 @@ mod multi_climate_multi_building_validation;
 mod multi_zone_n_zone_network;
 mod multinode_9r4c_isolation;
 mod multinode_9r4c_sky_radiative;
+// Issue #3734: NAPI panic-safety hook + `catch_unwind` boundary
+// regression (parity with `unsafe_pyo3_panic_safety`). The module is
+// `#[cfg(feature = "napi-bindings")]`-gated internally because it
+// imports `fluxion::napi::panic_hook`, which is only compiled with the
+// `napi-bindings` cargo feature.
+mod napi_panic_safety;
 mod night_ventilation_verification;
 mod ood_detection_tests;
 mod pcm_integration;

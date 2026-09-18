@@ -47,6 +47,11 @@ mod building_parameters;
 mod error;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod fmi_exporter;
+// Issue #3734: NAPI panic-safety hook + `catch_unwind` boundary that
+// mirrors `crate::python::panic_hook` (Issue #2528). Feature-gated on
+// `napi-bindings` to mirror the python-bindings gate. Marked `pub mod`
+// (matching the Python layout) so integration tests under `tests/`
+// can `use fluxion::napi::panic_hook::...` to assert the boundary.
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod gbxml_exporter;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
@@ -57,6 +62,8 @@ mod nine_r4c_config;
 mod nine_r4c_nodal_trace;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod osm_exporter;
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+pub mod panic_hook;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod state_extractor;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
@@ -93,6 +100,11 @@ pub use zero_copy_matrix::transfer_matrix;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 #[napi_derive::napi]
 pub fn register() -> napi::bindgen_prelude::Result<()> {
+    // Issue #3734: install the NAPI-aware panic hook before any
+    // `#[napi]` function is registered. Idempotent — safe to call from
+    // every native module load. See `src/napi/panic_hook.rs` for the
+    // full rationale.
+    panic_hook::install();
     Ok(())
 }
 #[cfg(not(feature = "napi-bindings"))]
