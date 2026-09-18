@@ -17,7 +17,11 @@
     },
     "fluxion": {
       "lib_ignored": 9,
+<<<<<<< HEAD
       "lib_tests": 4165,
+=======
+      "lib_tests": 4163,
+>>>>>>> b1e6f22 (feat(physics): resolve #3731 — typed ZoneCountPolicy for beyond-MAX_ZONES envelope)
       "test_binaries": 34
     },
     "fluxion-behavior": {
@@ -66,7 +70,11 @@
       "test_binaries": 1
     }
   },
+<<<<<<< HEAD
   "generated_at": "2026-09-18T13:00:52.966458+00:00",
+=======
+  "generated_at": "2026-09-18T13:21:57.608275+00:00",
+>>>>>>> b1e6f22 (feat(physics): resolve #3731 — typed ZoneCountPolicy for beyond-MAX_ZONES envelope)
   "repo_root": "unknown",
   "schema_version": 1,
   "scope": {
@@ -77,6 +85,7 @@
   "totals": {
     "doc_tests": 0,
     "lib_ignored_root": 9,
+<<<<<<< HEAD
     "lib_tests_root": 4165,
     "test_binaries": 48,
     "test_source_files": 357,
@@ -86,5 +95,31 @@
     "workspace_lib_ignored": 21,
     "workspace_lib_tests": 5260,
     "workspace_tests": 8607
+=======
+    "lib_tests_root": 4163,
+    "test_binaries": 48,
+    "test_source_files": 356,
+    "workspace_ignored": 123,
+    "workspace_integration_ignored": 102,
+    "workspace_integration_tests": 3340,
+    "workspace_lib_ignored": 21,
+    "workspace_lib_tests": 5258,
+    "workspace_tests": 8598
+  },
+  "verify": {
+    "command": [
+      "cargo",
+      "test",
+      "--workspace",
+      "--exclude",
+      "fluxion-tauri",
+      "--",
+      "--list"
+    ],
+    "error": "cargo returned exit 101",
+    "executed_at": "2026-09-18T13:22:06.278498+00:00",
+    "matched": false,
+    "stderr_tail": " -> bool {\n    |        ^^^^^^^^\n\nwarning: function `openapi_router_drift` is never used\n   --> src/api/server/router.rs:230:4\n    |\n230 | fn openapi_router_drift(registry: &[(HttpMethod, &str)], openapi_yaml: &str) -> OpenApiRouterDrift {\n    |    ^^^^^^^^^^^^^^^^^^^^\n\nwarning: `fluxion` (lib test) generated 4 warnings\nerror[E0583]: file not found for module `gauge_conduction_backend_clone`\n   --> tests/all_tests/main.rs:112:1\n    |\n112 | mod gauge_conduction_backend_clone;\n    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    |\n    = help: to create the module `gauge_conduction_backend_clone`, create file \"tests/all_tests/gauge_conduction_backend_clone.rs\" or \"tests/all_tests/gauge_conduction_backend_clone/mod.rs\"\n    = note: if there is a `mod gauge_conduction_backend_clone` elsewhere in the crate already, import it with `use crate::...` instead\n\nFor more information about this error, try `rustc --explain E0583`.\nerror: could not compile `fluxion` (test \"all_tests\") due to 1 previous error\n"
+>>>>>>> b1e6f22 (feat(physics): resolve #3731 — typed ZoneCountPolicy for beyond-MAX_ZONES envelope)
   }
 }

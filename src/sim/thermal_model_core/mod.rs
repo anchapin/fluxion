@@ -6,6 +6,7 @@
 use std::sync::OnceLock;
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
+use crate::physics::geometry_tensor::ZoneCountPolicy;
 use crate::physics::solver_trait::{PhysicsError, PhysicsResult};
 use crate::sim::adaptive_timestep::TimestepMode;
 use crate::sim::construction::{SurfaceType, WallSurface};
@@ -2932,6 +2933,23 @@ impl ThermalModel<VectorField> {
     /// `model.solar.surfaces[0]` (zone_id 0). The multi-zone path is wired
     /// in #3275 via `MultiZoneGaugeSolver::new()` + `add_zone_coupling()`.
     pub(crate) fn enable_gauge_solver(&mut self) -> Result<(), PhysicsError> {
+        // =====================================================================
+        // Zone-count envelope pre-check (Issue #3731) — single-zone variant.
+        //
+        // Sits OUTSIDE the `#[cfg]` gate so the typed PhysicsError behavior
+        // is pinned in **both feature states** (default build and
+        // `--features gauge-solver`). A model with `hvac.num_zones >
+        // MAX_ZONES` would otherwise reach the gauge dispatcher's deep
+        // `ThermalManifold::new(num_zones)` assertion (gauge_solver.rs:28)
+        // and panic instead of surfacing the typed `PhysicsError::initialization`
+        // every other gauge pre-check uses. The `ZoneCountPolicy` wrapper is
+        // the canonical typed seam.
+        //
+        // Note: `enable_gauge_solver` operates on zone 0 (single-zone path)
+        // so the cap check is on the model's overall `num_zones`, not the
+        // per-zone identity — a multi-zone model never belongs here.
+        // =====================================================================
+        ZoneCountPolicy::for_count(self.0.hvac.num_zones).check_gauge()?;
         #[cfg(not(feature = "gauge-solver"))]
         {
             let _ = self;
@@ -3129,9 +3147,24 @@ impl ThermalModel<VectorField> {
         &mut self,
         spec: &crate::validation::ashrae_140_cases::CaseSpec,
     ) -> Result<(), PhysicsError> {
+        // =====================================================================
+        // Zone-count envelope pre-check (Issue #3731)
+        //
+        // Sits OUTSIDE the `#[cfg]` gate so the typed PhysicsError behavior
+        // is pinned in **both feature states** (default build and
+        // `--features gauge-solver`). A spec with `spec.num_zones >
+        // MAX_ZONES` would otherwise reach the gauge dispatcher's deep
+        // `ThermalManifold::new(num_zones)` assertion (gauge_solver.rs:28)
+        // and panic instead of surfacing the typed `PhysicsError::initialization`
+        // every other gauge pre-check uses. The `ZoneCountPolicy` wrapper is
+        // the canonical typed seam — callers that want a non-reject action
+        // (e.g. an explicit `NineRFourC` fallback) must invoke
+        // `ZoneCountPolicy::for_count` and switch on the tier, not bypass it.
+        // =====================================================================
+        ZoneCountPolicy::for_count(spec.num_zones).check_gauge()?;
         #[cfg(not(feature = "gauge-solver"))]
         {
-            let _ = (self, spec);
+            let _ = spec;
         }
         #[cfg(feature = "gauge-solver")]
         {

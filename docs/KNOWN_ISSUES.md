@@ -3362,6 +3362,38 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
   per-case tolerance change. No constant, baseline, or threshold
   change is permitted to absorb these failures (AGENTS.md / RULES.md
   / ADR-0001).
+- **Beyond-envelope zone-count policy (Issue #3731):** When the
+  `gauge-solver` feature flips unconditionally after this β-soak
+  closes, a spec routed through `ZoneSolverKind::Gauge` (the
+  unconditional `ThermalSelector::default()` per the Phase A8 note
+  above) with `spec.num_zones > MAX_ZONES = 100` (the Phase-1a
+  gauge envelope documented in `ARCHITECTURE.md` Module 6 / point 7)
+  would otherwise reach the deep `assert!` in the shadow-mode
+  `ThermalManifold::new(num_zones)` (`src/physics/gauge_solver.rs:28`)
+  and panic instead of surfacing the typed `PhysicsError::initialization`
+  every other gauge pre-check uses. The canonical typed seam is
+  `physics::geometry_tensor::ZoneCountPolicy`
+  (`src/physics/geometry_tensor.rs`), wired into both gauge
+  initialization entry points — `enable_gauge_solver` and
+  `enable_gauge_solver_multi_zone` (`src/sim/thermal_model_core/mod.rs`)
+  — **outside** the `#[cfg(feature = "gauge-solver")]` gate so the
+  rejection surface is identical in both feature states. Beyond-
+  envelope counts surface as `Empty` (num_zones == 0) / `BeyondEnvelope`
+  (num_zones > 100) tiers with a typed diagnostic naming the offending
+  count, the gauge envelope constant, and the Phase-1b geometry rework
+  that owns growing it; the boundary tests
+  (`enable_gauge_solver_multi_zone_rejects_beyond_envelope_*` and
+  `*_accepts_at_capacity` in `src/sim/thermal_model_core/tests.rs`,
+  `test_zone_count_policy_*` in `src/physics/geometry_tensor.rs::tests`)
+  pin the typed behavior for `= 100`, `= 101`, and `= 200` across
+  both feature states. The deep `ThermalManifold::new` assert
+  remains as the secondary, deep-defense check (intentionally NOT
+  deleted — the wrapper is the primary, the assert is the safety
+  net). Future policy extensions (explicit `NineRFourC` fallback
+  for beyond-envelope, partitioned gauge solve across two
+  `ThermalManifold`s, etc.) MUST hook into `ZoneCountPolicy::for_count`
+  + tier switch — bypassing the wrapper is forbidden while this
+  entry remains open.
 
 ### LIMIT-22: Gauge-build-only test failures exposed by the exact Crank-Nicolson mass-state proxy (Issue #3297 aftermath)
 
