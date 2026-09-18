@@ -755,12 +755,11 @@ mod tests {
             .add_layer(Box::new(ConcreteMaterial::new(0.1)))
             .build()
             .expect("good assembly");
-        let _good_with_insulation =
-            AssemblyBuilder::new("good_two_layer".to_string())
-                .add_layer(Box::new(ConcreteMaterial::new(0.1)))
-                .add_layer(Box::new(InsulationMaterial::new(0.05)))
-                .build()
-                .expect("two-layer assembly");
+        let _good_with_insulation = AssemblyBuilder::new("good_two_layer".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.1)))
+            .add_layer(Box::new(InsulationMaterial::new(0.05)))
+            .build()
+            .expect("two-layer assembly");
         // Reference the trait symbol to avoid unused-import lint in case
         // signature shrinks.
         let _: &dyn MaterialLayer = &ConcreteMaterial::new(0.1);
