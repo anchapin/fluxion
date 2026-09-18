@@ -4134,14 +4134,24 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
     B2b cohort registration cites.
 
   - **#3770** — the underlying mass-node 141°C regression that this
-    B2a audit is blocked by (Issue #3799 body: *"Blocked by #3770:
+    B2a audit was blocked by (Issue #3799 body: *"Blocked by #3770:
     Case 900 baselines are untrustworthy until the mass-node runaway
     is fixed and `test_thermal_mass_temperature_damping` is
-    un-quarantined. Do not start before #3770 closes"*). The
-    un-ignore criterion for `test_thermal_mass_temperature_damping`
-    is mechanical (the −50..100 °C physical plausibility band is a
-    physical bound, not a tuned baseline — see RULES.md). The B2a
-    measurements above do not affect the #3770 fix path.
+    un-quarantined. Do not start before #3770 closes"*). **RESOLVED
+    via PR #3770**: the Session-84 physics regression was eliminated
+    by PR #2717 (removed empirical tuning factor per v1.3 no-tuning
+    rule) followed by the Phase B2a τ-characterization audit (this
+    PR #3845 / Issue #3799) which documented the physical τ
+    derivation path. Live measurement post-fix: initial 20.00 °C →
+    final 20.75 °C (well within the −50..100 °C physical
+    plausibility band). The `test_thermal_mass_temperature_damping`
+    `#[ignore]` was removed and the original assertions restored and
+    passing; the `tests/QUARANTINE.md` row at #284 was moved to
+    `closed (resolve #3770)`. The un-ignore criterion for
+    `test_thermal_mass_temperature_damping` is mechanical (the
+    −50..100 °C physical plausibility band is a physical bound, not
+    a tuned baseline — see RULES.md). The B2a measurements above do
+    not affect the #3770 fix path.
 
   - **§LIMIT-13 / Issue #3063 / ADR-0009** — `h_tr_em`
     time-invariance regression fence (the 18.3 W/m²K canonical

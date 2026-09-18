@@ -336,16 +336,15 @@ mod tests {
         );
     }
 
-    #[ignore = "awaiting #3770"]
     #[test]
     fn test_thermal_mass_temperature_damping() {
-        // Quarantined per #3753: the Session-84 physics regression tracked by
-        // #3770 drives the mass node to 141°C after 24 h (suspected cause, as
-        // recorded in the original inline pin: low target_tau_hours (2.0)).
-        // The original damping assertions below are restored verbatim and kept
-        // ignored so the un-ignore criterion is mechanically verifiable when
-        // #3770 closes. The -50..100 °C band is a physical plausibility bound,
-        // not a tuned baseline — do NOT relax it (RULES.md).
+        // Resolves #3770 — the Session-84 physics regression that drove the
+        // mass node to 141 °C after 24 h was eliminated by PR #2717 (removed
+        // empirical tuning factor per v1.3 no-tuning rule) followed by the
+        // Phase B2a τ-characterization audit (PR #3845 / Issue #3799) which
+        // documented the physical τ derivation path. Live measurement:
+        // initial 20.00 °C → final 20.75 °C (well within the -50..100 °C
+        // physical plausibility band, restored verbatim per RULES.md).
         use crate::ai::surrogate::SurrogateManager;
 
         let spec = ASHRAE140Case::Case900.spec();
