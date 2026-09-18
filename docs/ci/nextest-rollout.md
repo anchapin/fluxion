@@ -7,6 +7,8 @@
 > **Summary 5/7:** Empirical 5× rerun baseline (2026-09-06, `CARGO_TARGET_DIR=/tmp/nextest-audit-target`): medians 55.38s–58.86s, 3,922 tests, all PASSED.
 > **Summary 6/7:** Acceptance per ADR-0014 §"Consequences": median PR feedback wall-clock for `Rust Tests & Linting` ≤ 15 min (from ~38 min baseline). Post-merge 1-week watch window is the discipline cost — see Step 4.
 > **Summary 7/7:** Per-binary concurrency overrides in `.config/nextest.toml` are the recommended remediation for any race surface post-merge. Do **not** relax any of: ASHRAE 140 tolerance bands, energy-conservation invariant, `h_tr_em` regression gate, surrogate drift tolerance gate, `fluxion-grid` integration tests (RULES.md §"Physics and Validation Guardrails").
+>
+> **Summary 8/8 (Issue #3725):** Doctests are **not** owned by nextest — they live in the dedicated `Workspace Doctests (GH)` / `Workspace Doctests (Hetzner Overflow)` jobs at the bottom of `.github/workflows/rust-tests.yml`, which invoke `cargo test --doc --workspace --exclude fluxion-tauri --no-fail-fast`. The nextest roll-out (ADR-0014) explicitly carved doctests out of the canonical CI command because `cargo nextest run` cannot execute them; they would otherwise silently rot. See §"Doctest execution (Issue #3725)" below for the runbook rationale.
 
 - **Status:** Audit runbook — read after any Rayon / `tokio` / major-deps bump
 - **Issue:** [#3366](https://github.com/anchapin/fluxion/issues/3366)
@@ -170,6 +172,100 @@ concurrency = 1
 - Path-filter the matrix on docs-only PRs (saves ~38 min for that PR shape; ~5% of typical PR volume). Tracked by #3367.
 - Move `Memory Budget (Issue #2384)` (8-min `cargo test --release --features multi-zone`) out of `Rust Tests & Linting` into a separate slow-poll workflow. Tracked by #3368.
 - WASM / Python / Node binding workflow consolidations — each binding has its own test surface and is out of scope for this PR.
+
+---
+
+## Doctest execution (Issue #3725)
+
+`cargo nextest run` is structurally unable to execute doctests. Doctests are
+compiled into the library binary's `doctest` target and discovered by
+`rustdoc`'s test runner, which `cargo test --doc` drives explicitly; nextest
+only handles the `[[bin]]` / `[[test]]` / `--lib` binaries it knows about.
+Before the nextest rollout (ADR-0014, Issue #3366), plain-`cargo test`
+invocations ran doctests implicitly; the migration silently dropped them
+because nothing in the roll-out PR, the runbook, or the canonical CI
+command re-introduced a `cargo test --doc` invocation.
+
+### Why this matters for Fluxion specifically
+
+Many of the 119 runnable doctests reported at the time issue #3725 was
+opened (and the 171 currently listed by
+`cargo test --doc --workspace --exclude fluxion-tauri -- --list`) sit in
+`src/sim/` and `src/physics/` modules central to Goal #1 (ASHRAE 140
+validation) — e.g. `src/sim/thermal_integration.rs`,
+`src/sim/multi_zone_network.rs`, `src/physics/five_r1c_solver.rs`,
+`src/sim/adaptive_timestep.rs`. They are executable specifications for
+the solver and zone-balance APIs that the ASHRAE 140 structural work
+modifies daily; without CI coverage, a renamed field or method silently
+turns the doctest into a stale example until a downstream user complains.
+
+### Ownership statement
+
+Doctest execution in CI is **owned by** the `Workspace Doctests (GH)` and
+`Workspace Doctests (Hetzner Overflow)` jobs in
+`.github/workflows/rust-tests.yml` (introduced by Issue #3725 / PR
+fixing it). Concretely:
+
+- The canonical invocation is `cargo test --doc --workspace --exclude
+  fluxion-tauri --no-fail-fast`. `fluxion-tauri` is excluded per AGENTS.md
+  §"Commands That Are Easy to Guess Wrong" because its proc-macro build
+  needs `npm run build` in `fluxion-tauri/frontend/` to materialise
+  `../frontend/dist` (Issue #3126).
+- `--no-fail-fast` keeps the run honest: a single failing doctest does
+  not abort the whole run, so all failures surface together in the
+  PR-fleet watch window.
+- The job follows the established GH-probe + Hetzner-overflow pattern
+  (Issue #2133). The Hetzner overflow path is restricted to main-merge
+  pushes (Issue #3445): persistent self-hosted runners MUST NOT execute
+  PR-controlled code, and doctests are executable Rust code whose
+  assertion failures become CI failures.
+- The job uses `Swatinem/rust-cache@v2` with the same workspace list
+  as the nextest job, so the two jobs share a keyspace and the doctest
+  cold-cache PR cost stays inside the existing 15-30 min savings
+  envelope (Issue #3398).
+- `PYO3_PYTHON=/usr/bin/python3` is exported so any `python::`-facing
+  doctest finds the interpreter (mirrors the nextest job env).
+
+### What this runbook does **not** cover
+
+- Per-doctest timeout tuning (the canonical `--test-threads` knob only
+  applies to the nextest runner; `cargo test --doc` runs doctests
+  sequentially within the lib binary, which is the right default for
+  executable documentation).
+- Promoting doctest count into `tests/test_inventory.json`'s
+  `doc_tests` field. `scripts/generate_test_inventory.py --verify` does
+  parse `cargo test -- --list` for doctest entries (see
+  `tests/test_inventory.json::totals.doc_tests`), and the drift gate
+  (`scripts/check_test_inventory_drift.py`) treats that field as
+  informational. Issue #3725 does **not** require a `BASELINE_DOC_TESTS`
+  ratchet; the count is exposed in the inventory JSON for transparency,
+  not enforced.
+- Cross-crate doctest deduplication. `cargo test --doc --workspace`
+  already covers every crate's lib doctests in one invocation; no extra
+  fan-out is required.
+
+### Re-audit triggers for this step
+
+Re-run the doctest invocation locally after any of:
+
+| Trigger | Why |
+|---|---|
+| A doctest is added or removed in `src/physics/` or `src/sim/` | Direct change to the doctest surface area |
+| `rustdoc` behavior change (Rust toolchain bump) | Doctests are compiled by `rustdoc`; a stable toolchain bump can shift the executable-specs contract |
+| A new workspace member is added that contains doctests | The `cargo test --doc --workspace` invocation must reach the new crate |
+
+To re-audit locally (cold target forces a real compile, mirroring the
+Step 1a pattern):
+
+```bash
+rm -rf /tmp/doctest-audit-target  # force cold target
+export CARGO_TARGET_DIR=/tmp/doctest-audit-target
+cd /home/alex/Projects/fluxion
+cargo test --doc --workspace --exclude fluxion-tauri --no-fail-fast 2>&1 | tee /tmp/doctest-audit.log
+```
+
+A panic, deadlock, or any non-zero exit → revert the offending PR; do
+**not** relax the doctest gate.
 
 ---
 
