@@ -294,6 +294,22 @@
       "total": 289,
       "edge_signature": "217b111063c1819a8ca7e25134ed0b375722a6ea5a602ce0215e54ef82cf01bd",
       "reason": "Issue #3731 introduced a typed ZoneCountPolicy wrapper under src/physics/geometry_tensor.rs and consumed it from src/sim/thermal_model_core/mod.rs:9 to wire typed gauge pre-checks for num_zones beyond MAX_ZONES=100. This added 1 sanctioned sim->physics edge. BASELINE_SIM_TO_PHYSICS in scripts/check_physics_sim_cycle.py was raised from 80 to 81 in the same commit. Live scan at 81 on 2026-09-18; sim_to_physics 80 -> 81 (+1)."
+    },
+    {
+      "timestamp": "2026-09-18T20:23:53+00:00",
+      "commit": "pending",
+      "source": "issue-3871-zone-count-policy-hoist",
+      "totals": {
+        "sim_to_validation": 51,
+        "validation_to_sim": 67,
+        "validation_to_physics": 65,
+        "validation_to_weather": 25,
+        "physics_to_sim": 0,
+        "sim_to_physics": 80
+      },
+      "total": 288,
+      "edge_signature": "f2e011da65a1989d93a3800d0b8930e8e13939443351ad080082006b469c5fb5",
+      "reason": "Issue #3871 \u2014 leaf-module hoist of ZoneCountPolicy + MAX_ZONES into fluxion-core::zone_count_policy (Phase 3 sim->physics edge elision that #2462 deferred). Re-closes the edge admitted by PR #3869 for the #3731 typed ZoneCountPolicy import; live scan back at 80, baseline #2463 cycle guard restored to 80."
     }
   ]
 }

@@ -195,8 +195,8 @@ and `fluxion_core::ashrae_cases::Orientation` for its data fields.
 **Regression guard**: `scripts/check_physics_sim_cycle.py` enforces a
 zero-edge physics→sim baseline (`BASELINE_PHYSICS_TO_SIM = 0`) and — since
 Issue #2766 extended Phase 2 coverage from the 2 originally-guarded files to
-ALL of `src/sim/**/*.rs` — an 81-edge sim→physics baseline
-(`BASELINE_SIM_TO_PHYSICS = 81`; 84 pre-existing `use crate::physics::`
+ALL of `src/sim/**/*.rs` — an 80-edge sim→physics baseline
+(`BASELINE_SIM_TO_PHYSICS = 80`; 84 pre-existing `use crate::physics::`
 imports across 26 sim files that the pre-#2766 guard never scanned, minus
 1 edge removed by PR #3020 / issue #2896 (doc-only stub deletion), plus
 2 new `use crate::physics::exterior_convection::{...}` edges added by
@@ -303,11 +303,14 @@ that those 2 files were just 2 of 26 sim files importing `crate::physics::`
 — 84 pre-existing `use crate::physics::` edges across `thermal_model.rs`,
 `engine.rs`, `ventilation.rs`, and 23 others were completely unguarded —
 and extended Phase 2 to ALL of `src/sim/**`, snapshotting the 84 edges as
-the new baseline. The documented baseline is now **0+81 edges** (0
-physics→sim + 81 sim→physics) after the subsequent companion-cycle-work
+the new baseline. The documented baseline is now **0+80 edges** (0
+physics→sim + 80 sim→physics) after the subsequent companion-cycle-work
 adjustments (#2896 −1, #2891 +2, #2878 −6, #3324 +4, 2026-09-11 −3 for
 the #3638/#3555-era sim refactors, 2026-09-18 +1 for #3731's typed
-`ZoneCountPolicy` import under `src/sim/thermal_model_core/mod.rs:9`);
+`ZoneCountPolicy` import under `src/sim/thermal_model_core/mod.rs:9`,
+2026-09-18 −1 for #3871's leaf-module hoist of `ZoneCountPolicy` +
+`MAX_ZONES` into `fluxion-core::zone_count_policy` that re-closes the
+residual sim→physics edge admitted by #3869 at 2026-09-18);
 the script exits
 non-zero only on regression
 (a count grows above its baseline). Wired into CI as the

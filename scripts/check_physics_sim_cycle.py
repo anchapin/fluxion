@@ -144,12 +144,15 @@ BASELINE_PHYSICS_TO_SIM = 0
 # that hoisted them to `fluxion-core` would also have to move the
 # helpers themselves. Companion cycle-removal work stays open under
 # the #2462 phase-3 sim->physics edge elision.
-BASELINE_SIM_TO_PHYSICS = 81  # src/sim/** -> crate::physics::* (was 79; +4 for #3324; -3 for
+BASELINE_SIM_TO_PHYSICS = 80  # src/sim/** -> crate::physics::* (was 79; +4 for #3324; -3 for
                               # the #3638/#3555-era sim refactors that removed three
                               # `use crate::physics::` edges; +1 for #3731's typed
                               # `ZoneCountPolicy` import under
-                              # src/sim/thermal_model_core/mod.rs:9 — live scan at
-                              # 81 on 2026-09-18)
+                              # src/sim/thermal_model_core/mod.rs:9; -1 for #3871's
+                              # leaf-module hoist of `ZoneCountPolicy` +
+                              # `MAX_ZONES` into `fluxion-core::zone_count_policy`
+                              # — PR #3871 closes the residual sim→physics edge
+                              # admitted by PR #3869 at 2026-09-18)
 
 # Regex for Phase 2: match `use` or `pub use` against `crate::physics::`.
 # Mirrors `scan_sim_for_orientation_cycle` in check_ashrae_cases_cycle.py
