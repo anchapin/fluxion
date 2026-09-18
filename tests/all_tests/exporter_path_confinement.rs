@@ -130,12 +130,20 @@ fn integration_validate_export_path_pins_extension_per_exporter() {
     assert!(ok.is_absolute());
 }
 
+#[cfg(unix)]
 #[test]
 fn integration_validate_export_path_rejects_symlinked_parent() {
     // Sibling of `validate_model_path_in_dir`'s Issue #3651 policy:
     // a symlinked parent is refused even when the symlink target sits
     // inside the allow-list — a symlink could be swapped to escape the
     // allow-list between the check and the write.
+    //
+    // Gated to Unix-only: parent-directory symlinks require privileges
+    // on Windows that are not available in the CI runner. Coverage of
+    // the symlink-parent rejection path on Windows is therefore
+    // intentionally skipped; the other 6 tests in this file still
+    // cover the non-symlinked rejection paths on all three CI lanes
+    // (see Issue #3866).
     let _env = EnvGuard::new();
     let dir = tempfile::tempdir().expect("tempdir");
     let real = dir.path().join("real");
