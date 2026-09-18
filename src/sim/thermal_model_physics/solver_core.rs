@@ -60,8 +60,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ///
     /// # Example
     /// ```rust,no_run
+    /// use fluxion::sim::engine::ThermalModel;
+    /// use fluxion::physics::cta::VectorField;
+    /// use fluxion::ai::surrogate::SurrogateManager;
+    ///
+    /// let mut model = ThermalModel::<VectorField>::new(1);
+    /// let surrogates = SurrogateManager::default();
+    /// // Simulates 1 year with analytical loads (no internal loads).
     /// let eui = model.solve_timesteps(8760, &surrogates, false, None, None, None);
-    /// // Simulates 1 year with analytical loads (no internal loads)
     /// ```
     pub fn solve_timesteps(
         &mut self,

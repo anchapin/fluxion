@@ -163,7 +163,8 @@ pub(super) fn internal_node_envelope_temperature(
 /// Steady-state solution of the (mass → T_s → air) series pair, given the
 /// current mass temperature `t_m`, the surface-to-air conductance `h_is`,
 /// and the air temperature `t_air`:
-/// ...
+///
+/// ```text
 /// T_s = (h_tr_ms × t_m + h_tr_is × t_air) / (h_tr_ms + h_tr_is)
 /// ```
 ///

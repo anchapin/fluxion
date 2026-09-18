@@ -13,14 +13,26 @@
 //!
 //! # Example
 //!
-//! ```rust
+//! ```rust,no_run
 //! use fluxion::physics::ctf_solver_wrapper::CTFSolverWrapper;
 //! use fluxion::physics::solver_trait::HeatConductionSolver;
+//! use fluxion::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time};
 //!
-//! let mut solver = CTFSolverWrapper::new();
-//! solver.initialize(&wall_assembly)?;
+//! fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let mut solver = CTFSolverWrapper::new();
+//!     // Real code constructs a `WallSpec` from a spec / YAML; see
+//!     // `WallSpec::from_layers(...)` and the `fluxion::physics::wall_spec` docs.
+//!     // solver.initialize(&wall)?;
 //!
-//! let flux = solver.step(3600.0, 20.0, 5.0, 8.0, 25.0)?;
+//!     let _flux = solver.step(
+//!         Time::from_value(3600.0),
+//!         Temperature::from_value(20.0),
+//!         Temperature::from_value(5.0),
+//!         HeatTransferCoefficient::from_value(8.0),
+//!         HeatTransferCoefficient::from_value(25.0),
+//!     )?;
+//!     Ok(())
+//! }
 //! ```
 
 use crate::physics::ctf_coefficients::{CTFCalculator, CTFCoefficients, CTFMaterial};

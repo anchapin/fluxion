@@ -27,20 +27,29 @@
 //! # Example
 //!
 //! ```rust
-//! use fluxion::physics::ctf_coefficients::{CTFCalculator, MaterialLayer};
+//! use fluxion::physics::ctf_coefficients::{CTFCalculator, CTFMaterial};
 //!
 //! let layers = vec![
-//!     MaterialLayer::new("Gypsum", 0.013, 0.16, 800.0, 1090.0),
-//!     MaterialLayer::new("Concrete", 0.150, 1.4, 2300.0, 880.0),
-//!     MaterialLayer::new("Insulation", 0.050, 0.04, 50.0, 840.0),
-//!     MaterialLayer::new("Brick", 0.100, 0.81, 1920.0, 790.0),
+//!     CTFMaterial::new("Gypsum", 0.013, 0.16, 800.0, 1090.0),
+//!     CTFMaterial::new("Concrete", 0.150, 1.4, 2300.0, 880.0),
+//!     CTFMaterial::new("Insulation", 0.050, 0.04, 50.0, 840.0),
+//!     CTFMaterial::new("Brick", 0.100, 0.81, 1920.0, 790.0),
 //! ];
 //!
-//! let calculator = CTFCalculator::new(&layers, 3600.0); // 1-hour timestep
+//! let calculator = CTFCalculator::new(&layers, 3600.0, 12); // 1-hour timestep, 12 coeff slots
 //! let coeffs = calculator.compute_coefficients();
 //!
 //! // Use coefficients for runtime heat flux calculation
-//! let q_flux = coeffs.calculate_flux(t_interior, t_exterior_history, flux_history);
+//! let t_interior = 20.0;
+//! let t_exterior_history = vec![15.0_f64; 12];
+//! let t_interior_history = vec![20.0_f64; 12];
+//! let flux_history = vec![0.0_f64; 12];
+//! let q_flux = coeffs.calculate_interior_flux(
+//!     t_interior,
+//!     &t_exterior_history,
+//!     &t_interior_history,
+//!     &flux_history,
+//! );
 //! ```
 
 use num_complex::Complex64;

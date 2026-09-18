@@ -6,19 +6,23 @@
 //!
 //! # Usage
 //!
-//! ```
+//! ```rust,no_run
 //! use fluxion::sim::engine::ThermalModel;
+//! use fluxion::physics::cta::VectorField;
 //! use fluxion::validation::diagnostics::SimulationDiagnostics;
 //!
-//! let mut model: ThermalModel<VectorField> = ...;
-//! let mut diag = SimulationDiagnostics::new(model.num_zones, 8760);
+//! // Construct a model (single-zone example; see ThermalModel docs for the
+//! // full from_spec / from_spec_with_selector constructors).
+//! let mut model: ThermalModel<VectorField> = ThermalModel::<VectorField>::new(1);
+//! let num_zones = model.hvac.num_zones;
+//! let mut diag = SimulationDiagnostics::new(num_zones, 8760);
 //! model.set_diagnostics(Some(diag));
 //!
 //! // Run simulation...
 //!
 //! let diag = model.get_diagnostics().unwrap();
 //! diag.print_summary();
-//! diag.export_csv("output/diagnostics.csv").unwrap();
+//! let _ = diag.export_csv("output/diagnostics.csv");
 //! ```
 
 use crate::physics::cta::ContinuousTensor;

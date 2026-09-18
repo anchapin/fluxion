@@ -26,12 +26,12 @@
 //!
 //! ```rust
 //! use fluxion::api::schema::{
-//!     SimulationSchema, Geometry, ConstructionSet, ScheduleSet,
-//!     WeatherData, ControlSet, SchemaVersion,
+//!     SimulationSchema, SimulationSchemaV1, Geometry, ConstructionSet, ScheduleSet,
+//!     WeatherData, ControlSet, SchemaVersion, SimulationOutput,
 //! };
 //!
 //! // Create a minimal schema
-//! let schema = SimulationSchema::v1(SimulationSchemaV1 {
+//! let schema = SimulationSchema::V1(SimulationSchemaV1 {
 //!     version: SchemaVersion::V1,
 //!     metadata: Default::default(),
 //!     geometry: Geometry::default(),
@@ -39,7 +39,7 @@
 //!     schedules: ScheduleSet::default(),
 //!     weather: WeatherData::default(),
 //!     controls: ControlSet::default(),
-//!     output: Default::default(),
+//!     output: SimulationOutput::default(),
 //! });
 //! ```
 

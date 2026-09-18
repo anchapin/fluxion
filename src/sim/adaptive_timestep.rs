@@ -343,6 +343,8 @@ impl TimeConstantAnalyzer {
     ///
     /// # Example
     /// ```
+    /// use fluxion::sim::adaptive_timestep::TimeConstantAnalyzer;
+    ///
     /// // Case 900: Cm ≈ 1.2e7 J/K, h_tr_ms ≈ 650 W/K
     /// let tau = TimeConstantAnalyzer::for_physics(1.2e7, 650.0);
     /// assert!(tau > 2.0); // high-mass

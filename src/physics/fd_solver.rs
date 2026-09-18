@@ -19,7 +19,7 @@
 //! # Example
 //!
 //! ```rust
-//! use fluxion::physics::fd_discretization::{WallDiscretization, MaterialLayer};
+//! use fluxion::physics::fd_discretization::{MaterialLayer, WallDiscretization};
 //! use fluxion::physics::fd_solver::{ImplicitFDSolver, SurfaceBC};
 //!
 //! // Create discretization
@@ -36,8 +36,9 @@
 //! // Advance by one hour
 //! solver.step(3600.0, &interior_bc, &exterior_bc);
 //!
-//! // Get temperature profile
-//! let temps = solver.temperatures();
+//! // Sample temperature at a node (returns Vec of all node temps via
+//! // repeated `temperature_at`; there is no `temperatures()` bulk accessor).
+//! let t_first_node = solver.temperature_at(0);
 //! ```
 
 use crate::physics::fd_discretization::WallDiscretization;
@@ -149,8 +150,9 @@ impl TridiagonalSystem {
 /// * `dt` - Current timestep [s]
 ///
 /// # Example
-///
-/// ```rust
+/// ```rust,ignore
+/// // See the module-level # Example block above for the full construction
+/// // (MaterialLayer -> WallDiscretization -> ImplicitFDSolver + SurfaceBC).
 /// let disc = WallDiscretization::from_layers(&layers, 20);
 /// let mut solver = ImplicitFDSolver::new(disc, 20.0);
 ///

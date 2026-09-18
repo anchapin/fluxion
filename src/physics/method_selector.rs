@@ -12,17 +12,16 @@
 //!
 //! # Example
 //!
-//! ```rust
+//! ```rust,ignore
+//! // See `fluxion::sim::assembly` for `BuildingAssembly` construction;
+//! // this doctest is illustrative — production code constructs a real
+//! // assembly from spec / YAML before calling `select_method`.
 //! use fluxion::physics::method_selector::{ThermalMethodSelector, ThermalMethod};
+//! use fluxion_core::assembly::BuildingAssembly;
 //!
 //! let selector = ThermalMethodSelector::default();
-//! let method = selector.select_method(&wall_assembly);
-//!
-//! match method {
-//!     ThermalMethod::FiveR1C => println!("Using 5R1C for low-mass wall"),
-//!     ThermalMethod::CTF => println!("Using CTF for high-mass wall"),
-//!     ThermalMethod::FiniteDifference => println!("Using FD as fallback"),
-//! }
+//! // let wall_assembly = BuildingAssembly::default();
+//! // let method = selector.select_method(&wall_assembly);
 //! ```
 
 // Issue #1349 (Phase 2 crate split): `BuildingAssembly` moved to

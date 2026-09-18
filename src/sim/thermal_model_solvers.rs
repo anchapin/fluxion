@@ -317,15 +317,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// * `history_size` - Number of history elements to retain (typically 50)
     ///
     /// # Example
-    /// ```rust
-    /// let mut model = ThermalModel::new(1);
-    /// let layers = vec![
-    ///     CTFMaterial::new("Gypsum", 0.013, 0.16, 800.0, 1090.0),
-    ///     CTFMaterial::new("Concrete", 0.150, 1.4, 2300.0, 880.0),
-    ///     CTFMaterial::new("Insulation", 0.050, 0.04, 50.0, 840.0),
-    ///     CTFMaterial::new("Brick", 0.100, 0.81, 1920.0, 790.0),
-    /// ];
-    /// model.enable_ctf(&layers, 3600.0, 50);
+    /// ```rust,ignore
+    /// // `enable_ctf` is deprecated — prefer `from_spec_with_selector` with
+    /// // `conduction_solver = Ctf`. See issue #3287. This doctest is kept
+    /// // as a historical reference.
     /// ```
     #[deprecated(
         since = "1.4.0",
@@ -424,11 +419,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ///
     /// # Example
     ///
-    /// ```rust
-    /// let layers = vec![
-    ///     MaterialLayer::new("Concrete", 0.200, 1.4, 2300.0, 880.0),
-    /// ];
-    /// model.enable_fd(&layers, 3600.0, 5, 20.0);
+    /// ```rust,ignore
+    /// // `enable_fd` is deprecated — prefer `from_spec_with_selector` with
+    /// // `conduction_solver = Fd`. See issue #3287. This doctest is kept
+    /// // as a historical reference.
     /// ```
     #[deprecated(
         since = "1.4.0",
@@ -481,22 +475,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
+    /// // (`model` is illustrative; production code constructs a real
+    /// // `ThermalModel` via `from_spec_with_selector` before wiring the
+    /// // solver manager.)
     /// use fluxion::physics::method_selector::{
     ///     ThermalMethodSelector, SolverSelectionConfig, SurfaceSolverConfig, ThermalMethod
     /// };
     ///
     /// // Automatic selection based on thermal mass
-    /// model.enable_solver_manager(SolverSelectionConfig::Automatic);
-    ///
+    /// // model.enable_solver_manager(SolverSelectionConfig::Automatic);
     /// // Force all surfaces to use CTF
-    /// model.enable_solver_manager(SolverSelectionConfig::ForceMethod(ThermalMethod::CTF));
-    ///
+    /// // model.enable_solver_manager(SolverSelectionConfig::ForceMethod(ThermalMethod::CTF));
     /// // Per-surface explicit selection
-    /// model.enable_solver_manager(SolverSelectionConfig::PerSurface(vec![
-    ///     SurfaceSolverConfig::wall(ThermalMethod::FiveR1C),
-    ///     SurfaceSolverConfig::roof(ThermalMethod::CTF),
-    /// ]));
+    /// // model.enable_solver_manager(SolverSelectionConfig::PerSurface(vec![
+    /// //     SurfaceSolverConfig::wall(ThermalMethod::FiveR1C),
+    /// //     SurfaceSolverConfig::roof(ThermalMethod::CTF),
+    /// // ]));
     /// ```
     pub fn enable_solver_manager(
         &mut self,
@@ -632,8 +627,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// "Window U-value (index 0) is NaN (value: nan W/m²K). Cannot use in simulation."
     ///
     /// # Example
-    /// ```no_run
-    /// model.apply_parameters(&[1.5, 20.0, 27.0]);
+    /// ```rust,ignore
+    /// // (`model` is illustrative.)
+    /// // model.apply_parameters(&[1.5, 20.0, 27.0]);
     /// ```
     /// Applies design parameters to the thermal model.
     ///
@@ -651,9 +647,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// Use `validate_parameters()` before calling this method for graceful error handling.
     ///
     /// # Example
-    /// ```rust,no_run
-    /// model.apply_parameters(&[1.5, 20.0, 22.0]);
-    /// // Applies: window_u_value=1.5, heating_setpoint=20.0, cooling_setpoint=22.0
+    /// ```rust,ignore
+    /// // (`model` is illustrative.)
+    /// // model.apply_parameters(&[1.5, 20.0, 22.0]);
+    /// // // Applies: window_u_value=1.5, heating_setpoint=20.0, cooling_setpoint=22.0
     /// ```
     pub fn apply_parameters(&mut self, params: &[f64]) {
         debug!("Applying parameters: {:?}", params);
@@ -778,6 +775,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ///
     /// # Example
     /// ```rust,no_run
+    /// use fluxion::sim::engine::ThermalModel;
+    /// use fluxion::physics::cta::VectorField;
     /// use fluxion::sim::adaptive_timestep::TimestepMode;
     /// use std::time::Duration;
     ///

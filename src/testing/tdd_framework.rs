@@ -25,14 +25,15 @@
 //! use fluxion::testing::tdd_framework::{TDDFramework, PhysicsDomain};
 //!
 //! // Create framework with EnergyPlus reference data
-//! let framework = TDDFramework::new()
+//! let mut framework = TDDFramework::new()
 //!     .with_reference_data("data/energyplus_references.json");
 //!
-//! // Run tests for a specific physics domain
-//! let results = framework.run_tests(PhysicsDomain::HeatConduction);
+//! // Run tests for a specific physics domain (returns a single suite).
+//! let suite = framework.run_tests(PhysicsDomain::HeatConduction);
 //!
-//! // Generate report
-//! framework.generate_report(&results, "reports/tdd_heat_conduction.md");
+//! // Generate report — `generate_report` accepts `&[PhysicsTestSuite]`, so
+//! // wrap the single suite in a slice.
+//! framework.generate_report(&[suite], "reports/tdd_heat_conduction.md");
 //! ```
 
 use serde::{Deserialize, Serialize};

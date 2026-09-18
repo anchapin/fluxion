@@ -32,7 +32,6 @@
 //!
 //! ```no_run
 //! use fluxion::ai::s3_upload::{S3UploadConfig, S3Uploader, ProvenanceManifest};
-//! use fluxion::ai::tensor_dataset::TensorDatasetManifest;
 //! use std::path::Path;
 //!
 //! let config = S3UploadConfig::from_env(
@@ -40,12 +39,24 @@
 //!     "datasets/ftds",
 //!     "us-east-1",
 //! ).unwrap();
-//! let provenance = ProvenanceManifest::builder()
-//!     .solver_version("9r4c-1.0")
-//!     .git_sha("a1b2c3d")
-//!     .parameter_seed(42)
-//!     .weather_source("TMY3-4A")
-//!     .build();
+//! // `ProvenanceManifest` is a plain pub-field struct (no builder). Fill the
+//! // required fields and let the rest default.
+//! let provenance = ProvenanceManifest {
+//!     provenance_schema_version: "1".to_string(),
+//!     solver_version: "9r4c-1.0".to_string(),
+//!     dataset_schema_version: "1".to_string(),
+//!     git_sha: "a1b2c3d".to_string(),
+//!     parameter_seed: 42,
+//!     weather_source: "TMY3-4A".to_string(),
+//!     dataset_hash: String::new(),
+//!     generated_at_utc: String::new(),
+//!     provenance_created_at_utc: String::new(),
+//!     n_samples: 0,
+//!     n_shards: 0,
+//!     generation_parameters: serde_json::Value::Null,
+//!     s3_bucket: String::new(),
+//!     s3_prefix: String::new(),
+//! };
 //! let uploader = S3Uploader::new(config);
 //! // let report = uploader.upload_dataset(Path::new("/data/dataset"), &provenance).unwrap();
 //! ```

@@ -3701,7 +3701,7 @@ impl ThermalModel<VectorField> {
     /// # Examples
     /// ```
     /// use fluxion::sim::engine::ThermalModel;
-    /// use fluxion::sim::assembly::{AssemblyBuilder, BuildingAssembly};
+    /// use fluxion::sim::assembly::{AssemblyBuilder, BuildingAssembly, ConcreteMaterial};
     ///
     /// let assembly = AssemblyBuilder::new("test".to_string())
     ///     .add_layer(Box::new(ConcreteMaterial::new(0.1)))

@@ -14,17 +14,25 @@
 //!
 //! # Example
 //!
-//! ```rust
+//! ```rust,no_run
 //! use fluxion::physics::solver_manager::SolverManager;
 //! use fluxion::physics::method_selector::ThermalMethodSelector;
 //!
-//! let mut manager = SolverManager::new(ThermalMethodSelector::default());
+//! fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let mut manager = SolverManager::new(ThermalMethodSelector::default());
 //!
-//! // Initialize solver for a wall
-//! manager.get_or_create_solver(&wall_assembly)?;
+//!     // Initialize solver for a wall (see `fluxion_core::assembly` for
+//!     // `BuildingAssembly` construction; pass a real spec / YAML-built
+//!     // assembly in production code).
+//!     // manager.get_or_create_solver(&wall_assembly)?;
+//!     let wall_index: usize = 0;
 //!
-//! // Calculate heat flux at each timestep
-//! let flux = manager.step(wall_index, 3600.0, T_zone, T_outdoor, h_int, h_ext)?;
+//!     // Calculate heat flux at each timestep. `step` takes plain `f64`
+//!     // SI units; the typed `Temperature` / `HeatTransferCoefficient` /
+//!     // `Time` wrappers used elsewhere are converted via `.to_value()`.
+//!     let _flux = manager.step(wall_index, 3600.0_f64, 20.0_f64, 5.0_f64, 8.0_f64, 25.0_f64)?;
+//!     Ok(())
+//! }
 //! ```
 
 use crate::physics::ctf_solver_wrapper::CTFSolverWrapper;

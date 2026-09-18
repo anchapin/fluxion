@@ -91,7 +91,8 @@ impl Default for DHWResult {
 ///     HeatingSource::Electric,
 /// );
 ///
-/// let result = tank.step(10.0, 3600.0);
+/// // `step(hour: usize, dt: f64)` — first arg is the hour index (10), not a temperature.
+/// let result = tank.step(10_usize, 3600.0);
 /// assert!(result.standby_loss_w > 0.0);
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]

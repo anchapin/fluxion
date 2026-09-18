@@ -167,6 +167,7 @@ impl SurfaceHeatFluxProvider for MockSurfaceHeatFluxProvider {
 /// ```
 /// use fluxion::sim::surface_flux_provider::{PhysicsSurfaceFluxProvider, SurfaceHeatFluxProvider};
 /// use fluxion::physics::five_r1c_solver::FiveR1CSolver;
+/// use fluxion::physics::solver_trait::HeatConductionSolver;
 /// use fluxion::physics::wall_spec::WallSpec;
 ///
 /// // Create a wall spec

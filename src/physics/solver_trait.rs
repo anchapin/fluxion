@@ -46,21 +46,27 @@
 //!
 //! # Example
 //!
-//! ```rust
+//! ```rust,no_run
 //! use fluxion::physics::solver_trait::{HeatConductionSolver, SolverError};
 //! use fluxion::physics::five_r1c_solver::FiveR1CSolver;
-//! use fluxion::physics::units::{HeatFlux, HeatTransferCoefficient, Temperature, Time};
+//! use fluxion::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time};
 //!
-//! let mut solver = FiveR1CSolver::new();
-//! solver.initialize(&wall_spec)?;
+//! fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let mut solver = FiveR1CSolver::new();
+//!     // Real code constructs a `WallSpec` from a spec / YAML; see
+//!     // `fluxion::physics::wall_spec` and the `from_spec_with_selector`
+//!     // constructor on `ThermalModel`.
+//!     // solver.initialize(&wall_spec)?;
 //!
-//! let flux = solver.step(
-//!     Time::from_value(3600.0),
-//!     Temperature::from_value(20.0),
-//!     Temperature::from_value(5.0),
-//!     HeatTransferCoefficient::from_value(8.0),
-//!     HeatTransferCoefficient::from_value(25.0),
-//! )?;
+//!     let _flux = solver.step(
+//!         Time::from_value(3600.0),
+//!         Temperature::from_value(20.0),
+//!         Temperature::from_value(5.0),
+//!         HeatTransferCoefficient::from_value(8.0),
+//!         HeatTransferCoefficient::from_value(25.0),
+//!     )?;
+//!     Ok(())
+//! }
 //! ```
 
 #[allow(unused_imports)]
@@ -193,28 +199,23 @@ pub type PhysicsResult<T> = Result<T, PhysicsError>;
 ///
 /// # Example
 ///
-/// ```rust
-/// # use fluxion::physics::solver_trait::{HeatConductionSolver, SolverError};
-/// # use fluxion::physics::units::{HeatFlux, HeatTransferCoefficient, Temperature, Time};
-/// # struct MySolver;
-/// # impl MySolver { fn new() -> Self { MySolver } }
-/// # impl HeatConductionSolver for MySolver {
-/// #     fn name(&self) -> &str { "test" }
-/// #     fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError> { Ok(()) }
-/// #     fn step(&mut self, dt: Time, T_int: Temperature, T_ext: Temperature, h_int: HeatTransferCoefficient, h_ext: HeatTransferCoefficient) -> Result<HeatFlux, SolverError> { Ok(HeatFlux::from_value(0.0)) }
-/// #     fn energy_storage_rate(&self) -> f64 { 0.0 }
-/// #     fn is_valid(&self) -> bool { true }
-/// # }
-/// let mut solver = MySolver::new();
-/// solver.initialize(&wall)?;
+/// ```rust,ignore
+/// // Trait-implementation guide: implement `HeatConductionSolver` on a custom
+/// // solver type. The `initialize` and `step` method signatures use the
+/// // typed unit wrappers from `fluxion::physics::units` (`Time`,
+/// // `Temperature`, `HeatTransferCoefficient`); build a `WallSpec` from
+/// // a spec / YAML and pass plain `f64` SI values via `from_value(...)`.
+/// use fluxion::physics::solver_trait::{HeatConductionSolver, SolverError};
+/// use fluxion::physics::units::{FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time};
 ///
-/// let flux = solver.step(
-///     Time::from_value(3600.0),
-///     Temperature::from_value(T_zone),
-///     Temperature::from_value(T_outdoor),
-///     HeatTransferCoefficient::from_value(h_int),
-///     HeatTransferCoefficient::from_value(h_ext),
-/// )?;
+/// struct MySolver;
+/// impl HeatConductionSolver for MySolver {
+///     fn name(&self) -> &str { "test" }
+///     fn initialize(&mut self, _wall: &fluxion::physics::wall_spec::WallSpec) -> Result<(), SolverError> { Ok(()) }
+///     fn step(&mut self, _dt: Time, _t_int: Temperature, _t_ext: Temperature, _h_int: HeatTransferCoefficient, _h_ext: HeatTransferCoefficient) -> Result<HeatFlux, SolverError> { Ok(HeatFlux::from_value(0.0)) }
+///     fn energy_storage_rate(&self) -> f64 { 0.0 }
+///     fn is_valid(&self) -> bool { true }
+/// }
 /// ```
 pub trait HeatConductionSolver: Send + Sync {
     /// Get solver name/type identifier
