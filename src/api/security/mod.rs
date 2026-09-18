@@ -62,6 +62,12 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use tower_http::cors::CorsLayer;
 
+pub mod path_validation;
+pub use path_validation::{
+    validate_export_path, validate_export_path_in_dir, DEFAULT_EXPORT_DIR,
+    FLUXION_EXPORT_ALLOW_UNRESTRICTED_ENV, FLUXION_EXPORT_DIR_ENV,
+};
+
 /// Maximum accepted request body size (Issue #2505). Caps `/v1/import/*`
 /// (which accepts arbitrary `Bytes`) and every other POST at **16 MiB** so a
 /// single client cannot OOM the server or fill `/tmp` in one shot. This is a

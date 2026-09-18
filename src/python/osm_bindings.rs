@@ -1,5 +1,6 @@
 use crate::api::error::FluxionError;
 use crate::api::schema::{SimulationSchema, SimulationSchemaV1};
+use crate::api::security::validate_export_path;
 use crate::interop::osm::{export_osm as export_osm_file, import_osm as import_osm_file, OsmError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule};
@@ -94,7 +95,8 @@ impl PyOsmWriter {
     }
 
     pub fn export(&self, path: &str) -> PyResult<()> {
-        export_osm_file(&self.schema, path).map_err(osm_error)
+        let validated_path = validate_export_path(path, "osm").map_err(validation_error)?;
+        export_osm_file(&self.schema, validated_path).map_err(osm_error)
     }
 
     pub fn to_schema_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
@@ -111,7 +113,8 @@ pub fn import_osm(py: Python<'_>, path: &str) -> PyResult<Py<PyDict>> {
 #[pyfunction]
 pub fn export_osm(schema: &Bound<'_, PyDict>, path: &str) -> PyResult<()> {
     let schema = schema_from_dict(schema)?;
-    export_osm_file(&schema, path).map_err(osm_error)
+    let validated_path = validate_export_path(path, "osm").map_err(validation_error)?;
+    export_osm_file(&schema, validated_path).map_err(osm_error)
 }
 
 #[cfg(all(test, feature = "python-bindings"))]

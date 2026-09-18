@@ -200,9 +200,21 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #     ``src/api/email_notification.rs``
 #     (``endpoint_allowlist_release_decision_table``). No new binaries
 #     and no ignore-count changes.
-BASELINE_LIB_TESTS = 4326
+#   - 2026-09-18 (Issue #3728): bumped ``BASELINE_LIB_TESTS`` from 4326
+#     to 4346 and ``BASELINE_WORKSPACE_TESTS`` from 8695 to 8702 for the
+#     20 new inline unit tests in ``src/api/security/path_validation.rs``
+#     (the exporter write-path confinement validator: extension pin,
+#     parent existence, symlink refusal, containment, traversal, dotdot
+#     collapsing inside the allow-list, happy path, env-driven entry
+#     point, opt-out failure modes) and the 7 new integration tests in
+#     ``tests/all_tests/exporter_path_confinement.rs`` (the headline
+#     `/etc/passwd` rejection, traversal outside, per-exporter
+#     extension pin, symlinked parent, unrestricted bypass,
+#     extension-pin-still-fires-under-bypass, and the default-dir
+#     sanity). No new binaries and no ignore-count changes.
+BASELINE_LIB_TESTS = 4346
 BASELINE_LIB_IGNORED = 9
-BASELINE_WORKSPACE_TESTS = 8695
+BASELINE_WORKSPACE_TESTS = 8702
 # 2026-09-12 (Issue #3711): 121 -> 133 — see the history entry above for
 # the per-crate attribution and the AST-vs-cargo calibration analysis.
 # 2026-09-18 (Issue #3729): 133 -> 138 — absorbs the cargo-verified
