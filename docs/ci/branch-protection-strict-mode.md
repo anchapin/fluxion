@@ -57,7 +57,7 @@ For a PR touching only `scripts/`, `.github/workflows/`, or `docs/`:
 
 `Module Size (Issue #2878)` is not a separate workflow — it is a step inside `architecture_drift.yml`'s `check-drift` job (Issue #2878, wired via #3394). The job name remains `Architecture Drift Detection`, but the step emits its own check name and inherits the parent workflow's `paths:` filter, so it is path-filtered for the same reason as the row above.
 
-The Issue #3810 GH-listener pattern mitigates this for the Lane-1 fast lane by adding unconditional listener jobs (`if: always()`) inside path-filtered workflows that emit the required-check name even when the upstream was `skipped` due to paths. This is the Lane-1 floor for `required_checks_workflow_only` (18 checks); branch protection still requires the listener variant name (e.g. `Workspace Check (GH)`, `Energy Conservation (GH)`). Lane-2 physics validation cannot be synthesized this way — a listener cannot certify "ASHRAE validation passed" without the upstream physics work, so the 5 path-filtered Lane-2 checks remain excluded from `required_checks_workflow_only`.
+The Issue #3810 GH-listener pattern mitigates this for the Lane-1 fast lane by adding unconditional listener jobs (`if: always()`) inside path-filtered workflows that emit the required-check name even when the upstream was `skipped` due to paths. This is the Lane-1 floor for `required_checks_workflow_only` (19 checks); branch protection still requires the listener variant name (e.g. `Workspace Check (GH)`, `Energy Conservation (GH)`). Lane-2 physics validation cannot be synthesized this way — a listener cannot certify "ASHRAE validation passed" without the upstream physics work, so the 5 path-filtered Lane-2 checks remain excluded from `required_checks_workflow_only`.
 
 ## Workflow-Only Promotion: Fast-Math Gate (Issue #3358)
 
@@ -69,19 +69,19 @@ The 4-week stability window (remaining acceptance criterion from #3358) is track
 
 ## Solution
 
-`release_gates.yaml::ci` partitions every required check into the three ADR-0016 lanes above. Branch protection lists the Lane 1 + Lane 2 union as required checks (23 checks). Lane 3 lives in `ci.nightly_authority` and is enforced by the wave-orchestrator merge freeze, not branch protection.
+`release_gates.yaml::ci` partitions every required check into the three ADR-0016 lanes above. Branch protection lists the Lane 1 + Lane 2 union as required checks (24 checks). Lane 3 lives in `ci.nightly_authority` and is enforced by the wave-orchestrator merge freeze, not branch protection.
 
-1. **`required_checks`** — Lane 1 + Lane 2 union (23 checks; the 8 ADR-0016 Lane-3 gates were moved out into `ci.nightly_authority`). Use this for branch protection configuration on `main`, and for `develop` PRs that touch the physics path class.
+1. **`required_checks`** — Lane 1 + Lane 2 union (24 checks; the 8 ADR-0016 Lane-3 gates were moved out into `ci.nightly_authority`). Use this for branch protection configuration on `main`, and for `develop` PRs that touch the physics path class.
 
-2. **`required_checks_workflow_only`** — Lane-1 + Lane-2 items that run on every PR regardless of changed files (18 checks; ADR-0016 moved 8 nightly-authority gates out). This excludes the 5 path-filtered Lane-2 items above plus the `Architecture Drift Detection` / `Module Size (Issue #2878)` pair. The fast-math listener (#3358) is INCLUDED in this list because it has no `paths:` filter and runs on every PR (including workflow-only PRs like the one that lands this very gate's promotion).
+2. **`required_checks_workflow_only`** — Lane-1 + Lane-2 items that run on every PR regardless of changed files (19 checks; ADR-0016 moved 8 nightly-authority gates out). This excludes the 5 path-filtered Lane-2 items above plus the `Architecture Drift Detection` / `Module Size (Issue #2878)` pair. The fast-math listener (#3358) is INCLUDED in this list because it has no `paths:` filter and runs on every PR (including workflow-only PRs like the one that lands this very gate's promotion).
 
 3. **`nightly_authority`** (Lane 3) — `ci.nightly_authority` lists the 8 nightly-only gates (#1351, #1618, #2693, #2772, #2919, #2922, #1932, #1603) that were removed from `required_checks_workflow_only` per ADR-0016. They run nightly on `develop`; their authority is the wave-orchestrator merge freeze, not branch protection.
 
 ### Branch Protection Configuration
 
-**For `main` branch:** Use `required_checks` (23 checks; the full Lane 1 + Lane 2 union). Code-changing PRs that touch the physics path class must pass all Lane-1 + Lane-2 gates. Lane 3 is not required per-PR on `main` either — the wave orchestrator's merge freeze covers both branches.
+**For `main` branch:** Use `required_checks` (24 checks; the full Lane 1 + Lane 2 union). Code-changing PRs that touch the physics path class must pass all Lane-1 + Lane-2 gates. Lane 3 is not required per-PR on `main` either — the wave orchestrator's merge freeze covers both branches.
 
-**For `develop` branch:** Use `required_checks_workflow_only` (18 checks; Lane 1 + non-path-filtered Lane 2 items). Workflow-only PRs (docs, CI, scripts) can merge without triggering the 5 path-filtered Lane-2 items that structurally cannot run for them. The Lane-3 merge freeze is the develop-side authority for the 8 nightly-authority gates.
+**For `develop` branch:** Use `required_checks_workflow_only` (19 checks; Lane 1 + non-path-filtered Lane 2 items). Workflow-only PRs (docs, CI, scripts) can merge without triggering the 5 path-filtered Lane-2 items that structurally cannot run for them. The Lane-3 merge freeze is the develop-side authority for the 8 nightly-authority gates.
 
 ### Reviews-Advisory Policy (Issue #3810, PR #3805)
 
@@ -96,7 +96,7 @@ Per Issue #3810 and the solo-PR pattern observed in PR #3805, both `develop` and
 
 If GitHub branch protection only supports one required-checks list, use `required_checks_workflow_only` and document the behavior:
 
-> **Note:** Some required checks (`Docs Hygiene Gate`, `Architecture Drift Detection`, `Module Size`, `Crate Size Gate`, `MSRV Check`) have workflows that only run when specific file patterns are changed. For PRs touching only `scripts/`, `.github/workflows/`, or `docs/`, these checks will not run and are excluded from the required list. The 18 always-run checks provide adequate regression protection for workflow-only changes; the 8 nightly-authority gates (Lane 3) are enforced by the wave-orchestrator merge freeze.
+> **Note:** Some required checks (`Docs Hygiene Gate`, `Architecture Drift Detection`, `Module Size`, `Crate Size Gate`, `MSRV Check`) have workflows that only run when specific file patterns are changed. For PRs touching only `scripts/`, `.github/workflows/`, or `docs/`, these checks will not run and are excluded from the required list. The 19 always-run checks provide adequate regression protection for workflow-only changes; the 8 nightly-authority gates (Lane 3) are enforced by the wave-orchestrator merge freeze.
 
 ## Implementation Notes
 

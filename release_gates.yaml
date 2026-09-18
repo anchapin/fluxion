@@ -593,6 +593,26 @@ ci:
     # references the exact emitted "(GH)" name per Issue #3116.
     - "fluxion-grid Integration Tests (GH)"
 
+    # Issue #3727: Tauri CSP gate. `fluxion-tauri/src-tauri/
+    # tauri.conf.json` previously declared `"csp": null`, which disables
+    # Tauri's Content-Security-Policy injection for the shipped webview;
+    # a DOM-XSS-class compromise then chains directly to the Rust-side
+    # IPC surface (`load_geometry`, `update_simulation_parameters`, ...).
+    # The `tauri-csp-listener` job in `.github/workflows/rust-tests-
+    # listeners.yml` runs `python3 scripts/check_tauri_csp.py` on every
+    # PR class; the gate rejects `"csp": null` AND any production `csp`
+    # that omits the strict directive set (`default-src 'self'`,
+    # `script-src 'self'`, `object-src 'none'`, `base-uri 'self'`,
+    # `frame-ancestors 'none'`) or that carries Vite HMR relaxations
+    # (`'unsafe-inline'`, `'unsafe-eval'`) in the production policy. The
+    # relaxations belong in `devCsp` only. Listed in BOTH
+    # `required_checks` (always required) AND `required_checks_workflow_only`
+    # (still required on workflow-only PRs) because the gate reads a
+    # pure file in `fluxion-tauri/src-tauri/` and runs a stdlib Python
+    # script — neither depends on the Rust toolchain or the workflow
+    # run path-filter carve-out.
+    - "Tauri CSP Gate (Issue #3727)"
+
     # Issue #3154 / LIMIT-13: h_tr_em regression fence gate. The verifier
     # `scripts/verify_h_tr_em_regression.py` existed but was orphaned (no
     # CI guard). This gate ensures the h_tr_em (envelope-to-mass
@@ -691,6 +711,22 @@ ci:
     - "h_tr_em Regression Gate (LIMIT-13)"
     - "FFI Feature Check (GH)"
     - "Tracked-vs-Ignored Gate (Issue #3356)"
+
+    # Issue #3727: Tauri CSP gate. `fluxion-tauri/src-tauri/
+    # tauri.conf.json` previously declared `"csp": null`, which disables
+    # Tauri's Content-Security-Policy injection for the shipped webview;
+    # a DOM-XSS-class compromise then chains directly to the Rust-side
+    # IPC surface (`load_geometry`, `update_simulation_parameters`, ...).
+    # The `tauri-csp-listener` job in `.github/workflows/rust-tests-
+    # listeners.yml` runs `python3 scripts/check_tauri_csp.py` on every
+    # PR class; the gate rejects `"csp": null` AND any production `csp`
+    # that omits the strict directive set (`default-src 'self'`,
+    # `script-src 'self'`, `object-src 'none'`, `base-uri 'self'`,
+    # `frame-ancestors 'none'`) or that carries Vite HMR relaxations
+    # (`'unsafe-inline'`, `'unsafe-eval'`) in the production policy. The
+    # relaxations belong in `devCsp` only.
+    - "Tauri CSP Gate (Issue #3727)"
+
     - "Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH)"
 
   # =============================================================================
@@ -1209,6 +1245,22 @@ ci:
       workflow: ".github/workflows/ci.yml"
       issue: 3302
       triggered_by: "PR + push to main"
+
+    - job: "Tauri CSP Gate (Issue #3727)"
+      # Issue #3727 — strict CSP for the Tauri webview. Listener job
+      # `tauri-csp-listener` in `.github/workflows/rust-tests-listeners.yml`
+      # (the unfiltered GH-listener workflow per Issue #3810 Option B —
+      # the gate must fire on every PR class so the Issue #3367 docs-only
+      # carve-out can't silently drop a security regression). Runs
+      # `python3 scripts/check_tauri_csp.py` which rejects `"csp": null`
+      # AND any production `csp` that omits the strict directive set
+      # (`default-src 'self'`, `script-src 'self'`, `object-src 'none'`,
+      # `base-uri 'self'`, `frame-ancestors 'none'`) or carries Vite HMR
+      # relaxations (`'unsafe-inline'`, `'unsafe-eval'`) in production.
+      # The relaxations belong in `devCsp` only.
+      workflow: ".github/workflows/rust-tests-listeners.yml"
+      issue: 3727
+      triggered_by: "PR + push to main/develop (unfiltered, Issue #3810)"
 
     - job: "Tracked-vs-Ignored Gate (Issue #3356)"
       # Tracked-vs-ignored CI gate (issue #3356). The ``tracked-vs-ignored``

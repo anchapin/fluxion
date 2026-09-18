@@ -323,6 +323,36 @@ jobs:
         run: python3 scripts/check_cycle_downward_trend.py
 
   # ----------------------------------------------------------------
+  # Tauri CSP Gate (Issue #3727)
+  # ----------------------------------------------------------------
+  # `fluxion-tauri/src-tauri/tauri.conf.json` previously declared
+  # `"csp": null`, which disables Tauri's Content-Security-Policy
+  # injection for the webview. A DOM-XSS-class compromise then chains
+  # directly to the Rust-side IPC surface
+  # (`load_geometry`, `update_simulation_parameters`, ... in
+  # `fluxion-tauri/src-tauri/src/commands.rs`). The check reads the
+  # release conf, asserts `app.security.csp` is a non-null string, and
+  # verifies the strict directive set required by Issue #3727
+  # (`default-src 'self'`, `script-src 'self'`, `object-src 'none'`,
+  # `base-uri 'self'`, `frame-ancestors 'none'`); Vite HMR
+  # relaxations (`'unsafe-inline'`, `'unsafe-eval'`, `ws://localhost:*`)
+  # are accepted in `devCsp` but NOT in the production `csp`.
+  # This listener emits the required-check name on every PR class so
+  # the Issue #3367 docs-only carve-out can't silently drop the
+  # security gate.
+  tauri-csp-listener:
+    name: "Tauri CSP Gate (Issue #3727)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: "Run Tauri CSP gate (Issue #3727)"
+        run: python3 scripts/check_tauri_csp.py
+
+  # ----------------------------------------------------------------
   # fluxion-grid Integration Tests (GH) — Issue #2908 / #3127
   # ----------------------------------------------------------------
   fluxion-grid-integration-listener:
