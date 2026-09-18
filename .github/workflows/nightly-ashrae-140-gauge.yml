@@ -122,6 +122,17 @@ jobs:
       - name: Criterion 6 — gauge_validation_case_900
         run: "cargo test --locked --features gauge-solver --test all_tests gauge_validation_case_900::"
 
+      # Issue #3729 — BatchOracle clone-contract regression gate.
+      # Wires the gauge-affected `BatchOracle::evaluate_population` clone
+      # path into the nightly gauge soak so the feature-on oracle path
+      # is exercised end-to-end (not just the slot-level unit tests)
+      # before the β-soak gate closes. Until this gate is in place the
+      # nightly covers only the ASHRAE 140 dispatch paths and would not
+      # catch a candidate-clone state-leak regression introduced by a
+      # future refactor that reverts the hand-rolled `Clone` impls.
+      - name: Issue #3729 — gauge_conduction_backend_clone (BatchOracle clone contract)
+        run: "cargo test --locked --features gauge-solver --test all_tests gauge_conduction_backend_clone::"
+
       # Issue #3283 smoke — explicit `--zone-solver gauge` selection exits
       # through the (intentional, #2947) fail-closed stub, but the selection
       # itself must validate. A silent clap rejection would exit before the

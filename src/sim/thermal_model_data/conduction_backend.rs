@@ -7,6 +7,37 @@
 //! behaviour) — the heavy `Vec<ImplicitFDSolver>`, `Vec<MultiNodeSolver>`, and
 //! `SolverManager` are dropped and re-initialised by `prepare_solvers` on the
 //! first timestep after clone.
+//!
+//! ## Gauge-slot clone semantics (Issue #3729)
+//!
+//! The cfg-gated `gauge_zone_solver` / `gauge_multi_zone_solver` slots
+//! follow the slot-reset contract documented for
+//! [`HybridThermalModel::conduction_solver`](crate::sim::thermal_model::HybridThermalModel)
+//! in `ARCHITECTURE.md` §"Clone semantics & BatchOracle parallelism contract"
+//! (Issue #2539). Per the per-zone hand-rolled `Clone` impls in
+//! [`crate::physics::gauge_zone_solver`]:
+//!
+//! - **Topology preserved**: `zone_id`, `floor_area`, `zone_volume`, `C_air`,
+//!   `num_surfaces`, surface metadata (`area_m2`, `surface_type`, azimuth,
+//!   tilt, `wall_spec`), couplings, inter-zone conductance. Two clones
+//!   describe identical buildings; only their runtime states diverge.
+//! - **Runtime state reset**: `T_air` resets to the `new_with_id` default
+//!   (20.0), `initialized` resets to `false`. Per-surface `GaugeSolver`
+//!   state is reset transitively by `SurfaceGaugeSolver::clone`, which
+//!   re-initializes the slot from `wall_spec` when available (the common
+//!   `add_opaque_surface` path).
+//! - **Candidates are independent**: mutating one clone's `T_air` or
+//!   stepping one clone does not perturb the other's. Pinned by
+//!   `tests/all_tests/gauge_conduction_backend_clone.rs` (end-to-end with
+//!   `BatchOracle`) and by the in-module unit tests in
+//!   `src/physics/gauge_zone_solver.rs`.
+//!
+//! The `BatchOracle::evaluate_population` hot loop relies on this contract:
+//! it clones `base_model` once per candidate and then solves each clone
+//! independently via the per-timestep dispatch (which routes through the
+//! gauge slot when `ThermalSelector::default()` is selected). Without the
+//! slot reset, a mid-solve `T_air` from the parent would silently
+//! contaminate every freshly-cloned candidate.
 
 use super::{
     CTFCoefficients, CTFSolver, CtfZoneCouplingSolver, ImplicitFDSolver, MultiNodeSolver,
