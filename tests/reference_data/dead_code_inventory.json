@@ -2,7 +2,7 @@
   "schema_version": 1,
   "description": "Inventory of production #[allow(dead_code)] sites in the root fluxion crate, governed by scripts/check_orphan_modules.py (Issue #3752). Regenerate with: python3 scripts/check_orphan_modules.py --update-dead-code-inventory",
   "governing_issue": 3752,
-  "site_count": 94,
+  "site_count": 90,
   "sites": [
     {
       "file": "src/ai/equipment_surrogate.rs",
@@ -121,30 +121,6 @@
     {
       "file": "src/physics/fd_solver_wrapper.rs",
       "signature": "pub struct FDSolverWrapper {",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/physics/gauge_zone_solver.rs",
-      "signature": "adjacent_zone_id: Option<usize>,",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/physics/gauge_zone_solver.rs",
-      "signature": "fn compute_inter_zone_flux(",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/physics/gauge_zone_solver.rs",
-      "signature": "fn new_inter_zone(",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/physics/gauge_zone_solver.rs",
-      "signature": "inter_zone_conductance: f64,",
       "index": 1,
       "issue": 3752
     },

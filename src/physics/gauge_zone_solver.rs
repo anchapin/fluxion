@@ -212,11 +212,6 @@ pub(crate) struct SurfaceGaugeSolver {
     _tilt_deg: f64,
     /// Wall spec for initialization (stored for re-initialization if needed)
     wall_spec: Option<WallSpec>,
-    /// Adjacent zone ID (for inter-zone surfaces)
-    #[allow(dead_code)]
-    adjacent_zone_id: Option<usize>,
-    #[allow(dead_code)]
-    inter_zone_conductance: f64,
 }
 
 impl SurfaceGaugeSolver {
@@ -235,28 +230,6 @@ impl SurfaceGaugeSolver {
             _azimuth_deg,
             _tilt_deg,
             wall_spec: None,
-            adjacent_zone_id: None,
-            inter_zone_conductance: 0.0,
-        }
-    }
-
-    /// Create a new inter-zone surface gauge solver.
-    #[allow(dead_code)]
-    fn new_inter_zone(
-        gauge: GaugeSolver,
-        area_m2: f64,
-        adjacent_zone_id: usize,
-        inter_zone_conductance: f64,
-    ) -> Self {
-        Self {
-            gauge,
-            area_m2,
-            surface_type: SurfaceType::InterZone,
-            _azimuth_deg: 0.0,
-            _tilt_deg: 90.0,
-            wall_spec: None,
-            adjacent_zone_id: Some(adjacent_zone_id),
-            inter_zone_conductance,
         }
     }
 
@@ -272,23 +245,6 @@ impl SurfaceGaugeSolver {
         let boundary = GaugeBoundaryConditions::new(solar_irradiance_wm2, T_exterior.to_value());
         self.gauge
             .step_with_boundary_conditions(timestep, T_interior, h_exterior, boundary)
-    }
-
-    /// Compute heat flux for an inter-zone boundary.
-    #[allow(dead_code)]
-    fn compute_inter_zone_flux(
-        &mut self,
-        T_interior: Temperature,
-        T_adjacent: Temperature,
-    ) -> Result<HeatFlux, SolverError> {
-        if !self.surface_type.is_inter_zone() {
-            return Err(SolverError::InvalidConfig(
-                "compute_inter_zone_flux called on non-inter-zone surface".to_string(),
-            ));
-        }
-        let delta_t = T_adjacent.to_value() - T_interior.to_value();
-        let flux = self.inter_zone_conductance * delta_t / self.area_m2;
-        Ok(HeatFlux::from_value(flux))
     }
 }
 
