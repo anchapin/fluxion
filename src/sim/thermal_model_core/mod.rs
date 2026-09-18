@@ -3623,7 +3623,39 @@ impl ThermalModel<VectorField> {
     /// Create a new ThermalModel with assembly validation.
     ///
     /// This constructor validates the building assembly configuration before
-    /// creating the ThermalModel, ensuring all material properties are physically valid.
+    /// creating the ThermalModel, ensuring all material properties are
+    /// physically valid, **and** wires the validated assembly through to the
+    /// model's construction parameters. The returned model therefore reflects
+    /// the caller's assembly rather than the `ThermalModel::new` defaults
+    /// (Issue #3732 — fail-closed semantics).
+    ///
+    /// Specifically, the constructor:
+    /// 1. Validates the assembly via [`validate_assembly`]; returns `Err` on
+    ///    any physical-validity failure (non-positive thickness,
+    ///    conductivity, density, specific heat, or out-of-range
+    ///    emissivity/absorptance on any layer).
+    /// 2. Computes the assembly U-value as
+    ///    `1 / (R_layers + 1/h_int + 1/h_ext)` from the sum of layer
+    ///    R-values and ASHRAE 140 standard interior/exterior film
+    ///    coefficients (`INTERIOR_FILM_COEFF = 8.29 W/m²K`,
+    ///    `EXTERIOR_FILM_COEFF = 18.3 W/m²K`), then applies it to the
+    ///    model's `wall_u_value` / `roof_u_value` / `floor_u_value`. The
+    ///    `BuildingAssembly` type does not distinguish wall vs roof vs
+    ///    floor, so the same effective U-value is used for all three
+    ///    opaque envelopes (matching the ASHRAE 140 single-zone envelope
+    ///    convention).
+    /// 3. Calls [`ThermalModel::update_derived_parameters`] so the
+    ///    assembly U-value flows through to the derived conductances
+    ///    (`h_tr_floor`, `h_tr_w`, `h_ve`, etc.). Without this call the
+    ///    stored U-value would never reach the conduction math.
+    ///
+    /// Scope guard: this constructor does NOT differentiate wall vs roof vs
+    /// floor assemblies (BuildingAssembly is unpartitioned), does NOT
+    /// propagate assembly thermal mass into the mass-state capacitances
+    /// (use [`Self::from_spec_with_selector`] for the full
+    /// construction-aware path), and does NOT populate `WallSurface.wall_spec`
+    /// for the gauge solver — gauge opt-in remains an explicit step on
+    /// top of this constructor.
     ///
     /// # Arguments
     /// * `num_zones` - Number of thermal zones to model
@@ -3661,11 +3693,38 @@ impl ThermalModel<VectorField> {
             return Err(format!("Assembly validation failed: {}", errors.join("; ")));
         }
 
+        // Compute the assembly-level U-value from the sum of layer R-values
+        // plus the ASHRAE 140 standard interior + exterior film resistances.
+        // The BuildingAssembly type does not partition by surface type, so
+        // the same U-value is applied to wall, roof, and floor opaque
+        // envelopes (matching the ASHRAE 140 single-zone convention used by
+        // from_spec_with_selector for non-partitioned assemblies).
+        let r_layers = assembly.total_r_value();
+        // Guard against pathological zero-R assemblies (already validated,
+        // but assert to prevent divide-by-zero on unexpected input).
+        if !(r_layers > 0.0) {
+            return Err(format!(
+                "Assembly '{}' has non-positive total R-value ({r_layers}); \
+                 cannot compute U-value",
+                assembly.name
+            ));
+        }
+        let r_films = 1.0 / fluxion_core::construction::interior_film_coeff()
+            + 1.0 / fluxion_core::construction::EXTERIOR_FILM_COEFF;
+        let assembly_u_value = 1.0 / (r_layers + r_films);
+
         // Create ThermalModel with validated assembly
-        // Note: This creates a basic ThermalModel; for full assembly integration,
-        // additional setup would be needed (similar to from_spec)
-        let model = ThermalModel::new(num_zones);
-        // TODO: Apply assembly properties to model (wall_u_value, roof_u_value, etc.)
+        // (Issue #3732 — apply assembly properties instead of silently
+        // dropping them; without this wiring the returned model would run
+        // on the ThermalModel::new defaults and discard the validated
+        // wall/roof U-values the docstring promises.)
+        let mut model = ThermalModel::new(num_zones);
+        model.setpoints.wall_u_value = assembly_u_value;
+        model.setpoints.roof_u_value = assembly_u_value;
+        model.setpoints.floor_u_value = assembly_u_value;
+        // Recompute derived conductances so the U-value flows through to
+        // h_tr_floor / h_tr_w / h_ve (Issue #3732 follow-up).
+        model.update_derived_parameters();
         Ok(model)
     }
 
