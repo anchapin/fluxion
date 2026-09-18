@@ -151,17 +151,6 @@ enum HttpMethod {
     Post,
 }
 
-impl HttpMethod {
-    /// Lowercase method name, matching the keys OpenAPI uses under each path.
-    #[cfg(test)]
-    const fn as_str(self) -> &'static str {
-        match self {
-            HttpMethod::Get => "get",
-            HttpMethod::Post => "post",
-        }
-    }
-}
-
 /// The canonical list of `/v1/*` REST routes — **the single source of truth**
 /// (Issue #2812). Each entry is `(HTTP method, path template, access tier)`.
 #[rustfmt::skip]
@@ -204,104 +193,14 @@ fn method_router_for_path(path: &str) -> MethodRouter<AppState> {
     }
 }
 
-/// Symmetric-path and per-path method drift between a route registry (the
-/// single source of truth) and an OpenAPI document. Produced by
-/// [`openapi_router_drift`]; empty iff the two are in sync. (Issue #2812.)
-#[cfg(test)]
-#[derive(Debug, Default, PartialEq, Eq)]
-struct OpenApiRouterDrift {
-    only_in_router: Vec<String>,
-    only_in_openapi: Vec<String>,
-    method_mismatches: Vec<(String, Vec<String>, Vec<String>)>,
-}
-
-#[cfg(test)]
-impl OpenApiRouterDrift {
-    /// `true` iff there is no drift to report.
-    fn is_clean(&self) -> bool {
-        self.only_in_router.is_empty()
-            && self.only_in_openapi.is_empty()
-            && self.method_mismatches.is_empty()
-    }
-}
-
-/// Pure drift detector between a route registry and an OpenAPI YAML document.
-#[cfg(test)]
-fn openapi_router_drift(registry: &[(HttpMethod, &str)], openapi_yaml: &str) -> OpenApiRouterDrift {
-    use std::collections::{BTreeMap, BTreeSet};
-
-    let mut router: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
-    for (method, path) in registry {
-        router.entry(path).or_default().insert(method.as_str());
-    }
-
-    let parsed: serde_yaml::Value = match serde_yaml::from_str(openapi_yaml) {
-        Ok(v) => v,
-        Err(e) => panic!("OpenAPI YAML failed to parse: {e}"),
-    };
-    let paths = parsed
-        .get("paths")
-        .and_then(|v| v.as_mapping())
-        .expect("OpenAPI document must have a top-level `paths:` mapping");
-    let mut openapi: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for (key, val) in paths.iter() {
-        let path = key
-            .as_str()
-            .unwrap_or_else(|| panic!("OpenAPI path key {key:?} must be a string"))
-            .to_string();
-        let mut methods = BTreeSet::new();
-        if let Some(ops) = val.as_mapping() {
-            for (method_key, _) in ops.iter() {
-                if let Some(s) = method_key.as_str() {
-                    let lower = s.to_ascii_lowercase();
-                    if matches!(
-                        lower.as_str(),
-                        "get" | "post" | "put" | "delete" | "patch" | "head" | "options"
-                    ) {
-                        methods.insert(lower);
-                    }
-                }
-            }
-        }
-        openapi.insert(path, methods);
-    }
-
-    let router_paths: BTreeSet<&str> = router.keys().copied().collect();
-    let openapi_paths: BTreeSet<&str> = openapi.keys().map(String::as_str).collect();
-
-    let only_in_router: Vec<String> = router_paths
-        .difference(&openapi_paths)
-        .map(|s| (*s).to_string())
-        .collect();
-    let only_in_openapi: Vec<String> = openapi_paths
-        .difference(&router_paths)
-        .map(|s| (*s).to_string())
-        .collect();
-
-    let method_mismatches: Vec<(String, Vec<String>, Vec<String>)> = router_paths
-        .intersection(&openapi_paths)
-        .filter_map(|path| {
-            let router_methods: BTreeSet<String> =
-                router[path].iter().map(|s| (*s).to_string()).collect();
-            let openapi_methods: &BTreeSet<String> = &openapi[*path];
-            if &router_methods == openapi_methods {
-                None
-            } else {
-                Some((
-                    (*path).to_string(),
-                    router_methods.into_iter().collect(),
-                    openapi_methods.iter().cloned().collect(),
-                ))
-            }
-        })
-        .collect();
-
-    OpenApiRouterDrift {
-        only_in_router,
-        only_in_openapi,
-        method_mismatches,
-    }
-}
+// Symbols deleted per issue #3874 — OpenAPI drift checker was disabled, see
+// https://github.com/anchapin/fluxion/issues/3874. The drift detector
+// (`openapi_router_drift`), its result type (`OpenApiRouterDrift`), the
+// convenience predicate (`OpenApiRouterDrift::is_clean`), and the test-only
+// string accessor (`HttpMethod::as_str`) were unreachable once the
+// `scripts-tests.yml` `openapi_drift` job was retired. If option (a) of
+// issue #3874 (re-enable the checker) is later chosen, restore them from
+// the git history of `src/api/server/router.rs`.
 
 /// Construct the application's router. Exposed so integration tests can
 /// mount it without going through the binary's env-var resolution path.
