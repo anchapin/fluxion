@@ -6,13 +6,16 @@
 use std::sync::OnceLock;
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
-use crate::physics::geometry_tensor::ZoneCountPolicy;
 use crate::physics::solver_trait::{PhysicsError, PhysicsResult};
+// Issue #3871 — `ZoneCountPolicy` hoisted out of `crate::physics` into the
+// `fluxion-core` dependency-light leaf crate to close the residual sim→physics
+// edge admitted by PR #3869 for the typed wrapper import.
 use crate::sim::adaptive_timestep::TimestepMode;
 use crate::sim::construction::{SurfaceType, WallSurface};
 use crate::sim::hvac::{CyclingTracker, EconomizerMode, IdealLoadsSystem, PredictiveController};
 use crate::sim::hvac_controller::{HvacSystemMode, IdealHVACController};
 use crate::sim::occupancy::BuildingType as OccupancyBuildingType;
+use fluxion_core::zone_count_policy::ZoneCountPolicy;
 // Issue #1349 (Phase 2 crate split): `BuildingAssembly` moved to `fluxion_core::assembly`.
 use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
@@ -2949,7 +2952,15 @@ impl ThermalModel<VectorField> {
         // so the cap check is on the model's overall `num_zones`, not the
         // per-zone identity — a multi-zone model never belongs here.
         // =====================================================================
-        ZoneCountPolicy::for_count(self.0.hvac.num_zones).check_gauge()?;
+        // Issue #3871: `check_gauge()` now returns `fluxion_core::zone_count_policy::ZoneCountError`
+        // (a leaf-only thiserror enum) rather than `crate::physics::solver_trait::PhysicsError`,
+        // because fluxion-core cannot import from the main `fluxion` crate. Map it back to
+        // `PhysicsError::initialization(...)` here at the call site so the engine's existing
+        // error envelope (and any log lines that grep on the rejection text) is byte-identical
+        // to the pre-#3871 behavior.
+        ZoneCountPolicy::for_count(self.0.hvac.num_zones)
+            .check_gauge()
+            .map_err(|e| PhysicsError::initialization(&e.to_string()))?;
         #[cfg(not(feature = "gauge-solver"))]
         {
             let _ = self;
@@ -3161,7 +3172,12 @@ impl ThermalModel<VectorField> {
         // (e.g. an explicit `NineRFourC` fallback) must invoke
         // `ZoneCountPolicy::for_count` and switch on the tier, not bypass it.
         // =====================================================================
-        ZoneCountPolicy::for_count(spec.num_zones).check_gauge()?;
+        // Issue #3871: `check_gauge()` now returns `fluxion_core::zone_count_policy::ZoneCountError`;
+        // map back to `PhysicsError::initialization(...)` at this call site (see the mirror comment
+        // in `enable_gauge_solver` above).
+        ZoneCountPolicy::for_count(spec.num_zones)
+            .check_gauge()
+            .map_err(|e| PhysicsError::initialization(&e.to_string()))?;
         #[cfg(not(feature = "gauge-solver"))]
         {
             let _ = spec;

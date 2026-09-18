@@ -71,6 +71,7 @@
 //! | `multi_node`  | Moved (#1349) | `ThermalMassNode`, `MultiNodeThermalMass`, `MultiNodeModelType`, `MassAirCouplingMode` (pure data, zero deps) |
 //! | `per_surface_conduction` | Moved (#2462) | `SurfaceKind`, `MassNode`, `SurfaceNode`, `PerSurfaceConductionSolver`. Breaks the remaining 2 `physics ↔ sim` cycle edges. |
 //! | `physics_constants` | Moved (#2462) | `STEFAN_BOLTZMANN`. Hoisted out of `sim::sky_radiation` so `physics::multi_node_solver` no longer imports from `sim`. |
+//! | `zone_count_policy` | Moved (#3871, leaf-only follow-up to #3731) | `MAX_ZONES = 100` constant + `ZoneCountTier` enum + `ZoneCountPolicy` typed wrapper + `ZoneCountError` typed rejection (thiserror enum). Closes the residual sim→physics edge admitted by PR #3869 for the `#3731` typed `ZoneCountPolicy` import. |
 //! | `ashrae_cases`| Moved (#1441) | `Orientation`, `WindowArea`, `ConstructionType`, `ShadingType`, `ShadingDevice`, `GlassType`, `WindowSpec`, `InternalLoads`, `HvacSchedule`, `NightVentilation`, `BuildingType`, `GeometrySpec`, `ConductanceReferences` — pure-data leaf types from `validation::ashrae_140_cases`. Breaks the `sim ↔ validation` cycle (5 sim callers + 3 indirect sim callers). |
 //! | `error`       | New (error-unification PR) | `FluxionError` — the ONE unified engine error type (thiserror enum, `Clone` + `PartialEq`) replacing the fragmented `fluxion::api::error::FluxionError` / `fluxion::napi::error::FluxionError` pair — plus `SimulationDiagnostics` (issue #2547) and the `FluxionResult` alias. thiserror + serde only. |
 //!
@@ -135,3 +136,9 @@ pub mod physics_constants;
 pub mod tensor;
 pub mod urban_radiation;
 pub mod weather;
+/// Zone-count envelope policy (Issues #3731, #3871). Typed wrapper around the
+/// Phase-1a gauge envelope (`MAX_ZONES = 100`); surfaces beyond-envelope
+/// counts as a typed [`zone_count_policy::ZoneCountError`] rather than letting
+/// them reach the deep `assert!` panic in `gauge_solver.rs`. Dependency-light
+/// (thiserror + std only); must NOT import `crate::physics::*`.
+pub mod zone_count_policy;

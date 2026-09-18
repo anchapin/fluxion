@@ -2,6 +2,12 @@ use crate::physics::cta::VectorField;
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
 use crate::physics::units::{FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64};
 use crate::physics::wall_spec::WallSpec;
+// Issue #3871 — `MAX_ZONES` hoisted out of `crate::physics` into the
+// `fluxion-core` dependency-light leaf crate to close the residual sim→physics
+// edge admitted by PR #3869. Same constant value (100), same Phase-1a gauge
+// envelope contract, just sourced from the leaf so neither `sim` nor `physics`
+// needs to import from the other.
+use fluxion_core::zone_count_policy::MAX_ZONES;
 
 /// Per-zone gauge-connection bookkeeping for shadow mode.
 ///
@@ -25,7 +31,7 @@ struct ThermalManifold {
 impl ThermalManifold {
     fn new(num_zones: usize) -> Self {
         assert!(
-            num_zones <= crate::physics::geometry_tensor::MAX_ZONES,
+            num_zones <= MAX_ZONES,
             "ThermalManifold zone count exceeds MAX_ZONES"
         );
         let gauge_connection = (0..num_zones)
