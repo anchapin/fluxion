@@ -50,7 +50,7 @@ For the historical v0.8.0 snapshot (Peak Load & Free-Float Validation narrative)
 - **Throughput:** ~900 configs/sec throughput in release mode via `BatchOracle` and `rayon` threading (≥150 configs/sec CI gate; see [`SCORECARD.md`](SCORECARD.md)).
 - **Speed:** <100ms annual simulations via AI approximation (design target).
 - **Hybrid Physics:** Hard constraints (Energy Balance) + Soft constraints (Neural Surrogates) at swap-point traits.
-- **Interoperability:** Native Python SDK via `pyo3` and Node.js bindings via `napi-rs`.
+- **Interoperability:** Native Python SDK via `pyo3`, Node.js bindings via `napi-rs`, and WebAssembly bindings via `wasm-pack` for browser/CAD/BIM integration. See [`docs/bindings.md`](docs/bindings.md) for the top-level surface overview; per-surface detail lives in [`docs/NAPI_BINDINGS.md`](docs/NAPI_BINDINGS.md), [`fluxion-wasm/README.md`](fluxion-wasm/README.md), and [`fluxion-wasm/WASM_STATUS.md`](fluxion-wasm/WASM_STATUS.md).
 - **Cross-Platform:** Supports macOS (x64 + ARM), Linux, and Windows.
 
 ### Feature Flags (default = none)
