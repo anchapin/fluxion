@@ -11,7 +11,7 @@ Action: Check this document before attributing validation failures to new issues
 including their blocking issues, un-ignore criteria, and status. The QUARANTINE.md registry is the
 canonical source for tracking when quarantined tests can be un-ignored (per Issue #3211).
 
-*Last Updated: 2026-09-17 (LIMIT-29 #3799 added — Phase B2a PHYSICS-02 thermal-mass time-constant characterization — Case 900, post-#3770 — documented as a structural LIMIT entry with three named mechanism hypotheses; B2a is the precursor measurement for B2b #3800 / PR #3841 release-gates registration of the Case 900 thermal-mass cohort; τ measurements run on the 2026-09-17 develop HEAD `41c1c84` with `ThermalSelector::default` falling through to legacy 5R1C / 9R4C in the default build, cargo feature `gauge-solver` OFF per the AGENTS.md Phase A8 note; h_tr_em / h_tr_ms / 18.3 W/m²K canonical exterior film coefficient regression fence — LIMIT-13 — stays green throughout; structural fix routed to GaugeSolver #1465, #1462 + #3770 fix; no physics-code, reference-band, or tolerance change per AGENTS.md / RULES.md / ADR-0001; Phase B3a #3801 / B3b #3802 FF cohort entries unchanged. Companion doc: docs/ASHRAE140_RESULTS.md, see Phase B2a PHYSICS-02 thermal-mass time-constant characterization — Case 900, post-#3770.)*
+*Last Updated: 2026-09-17 (LIMIT-30 #3797 added — Phase B1a PHYSICS-01 solar distribution audit — Case 600 series — per-tilt / per-azimuth incident-energy deviation table vs the analytical cos theta reference; per-surface distribution metrics named and ranked — Case 600 `solar_distribution_to_air = 0.30` vs ASHRAE 140 expectation 0.0, Δ +0.30, worst offender; `solar_beam_to_mass_fraction = 0.30` vs 1.0, Δ −0.70; fractions sum 0.60 vs 1.0, Δ −0.40; per-surface Case 600 5R1C h_tr_is / h_tr_ms conductance deviations vs hand-calc — −86.8 %, −78.0 % — the structural signature of the §LIMIT-05 / §LIMIT-16 family on the LowMass end of the 5R1C + 9R4C single-lumped-mass-node pathology; three competing mechanism hypotheses documented — per-surface distribution routing, per-surface 5R1C conductance re-derivation, family-level 5R1C lumped-mass-node damping; B1a is the precursor measurement for B1b #3798 / PR #3847 release-gates registration of the Case 600 solar-distribution cohort, already merged; module-isolation suites green, read-only acceptance; 11 pre-existing solar test failures unchanged, NOT regressions; per-tilt / per-azimuth calculation PASSES — fluxion vs analytical ratio in [0.99, 1.01] for all 5 tilts, Mock-vs-Physics 1 % parity on the 16 × 8760 grid; the failing distribution axis is downstream in the routing parameters and the 5R1C coupling; structural fix routed to GaugeSolver #1465, #1462 + the per-surface distribution path re-routing; no physics-code, parameter, reference-band, or tolerance change per AGENTS.md / RULES.md / ADR-0001; LIMIT-29 / #3799 / B2a and LIMIT-28 / #3802 / B3b cohort entries unchanged; h_tr_em / 18.3 W/m²K canonical exterior film coefficient regression fence — LIMIT-13 — stays green throughout; the canonical exterior film coefficient is preserved. Companion doc: docs/ASHRAE140_RESULTS.md, see Phase B1a PHYSICS-01 solar distribution audit — Case 600, Issue #3797.)*
 
 **LIMIT-14 added (Issue #3061):** After PR #3052's partial Case 960 inter-zone fix, raw annual cooling remains 0.63 MWh versus the 1.55–2.78 MWh reference band and peak heating remains 1.17 kW versus 2.0–8.0 kW. The 5R1C/9R4C air-mass distribution cannot accumulate enough back-zone cooling demand at the 27 °C setpoint through coupling to the free-floating sunspace; compliant closure is blocked on the GaugeSolver production-path work coordinated by #3059, not a sunspace HVAC control or gain-split tuning.
 
@@ -35,6 +35,8 @@ canonical source for tracking when quarantined tests can be un-ignored (per Issu
 **LIMIT-27 added (Issue #3647):** `tests/test_energy_conservation.rs` cited "FREE-04 in docs/KNOWN_ISSUES.md" as the documented rationale for the 200 W `ENERGY_BALANCE_RESIDUAL_THRESHOLD` (the ~191 W systematic residual of the 5R1C `InvariantChecker` algebraic formulation, introduced by #2225 / PR #2230, commit `12425d8`) — but no `FREE-04` heading ever existed (the FREE-\* family covers free-floating temperature findings only). This is a doc-vs-code drift: someone assuming the citation was stale could delete the test and silently de-facto-relax the strict-energy guard. Fixed docs-side: the residual is now documented as **§LIMIT-27** (25/26 are reserved for the Cases 800 / 810 structural entries per the `strict_energy_gate_baseline.json` `_doc_issue3572` note), the test comment is repointed, and `scripts/check_known_issues_links.py` now validates every `FREE-NN` / `LIMIT-NN` token in `tests/**/*.rs` against actual `### TOKEN` headings. No physics-code change; no threshold change.
 
 **LIMIT-29 added (Issue #3799):** Phase B2a (PHYSICS-02) thermal-mass time-constant characterization of ASHRAE 140 Case 900 (high-mass concrete construction, 9R4C default path per `ThermalSelector::default()` falling through to legacy 5R1C / 9R4C in the default build per the AGENTS.md Phase A8 note — cargo feature `gauge-solver` OFF, `Cargo.toml:208-225`) on the 2026-09-17 pre-#3770-fix validator snapshot (develop HEAD `41c1c84`); the B2a audit extracted four τ values that bracket the ASHRAE 140 reference envelope midpoint and named three competing mechanism hypotheses for the **#3770 mass-node 141°C regression** (Session-84 physics commit `8408efb`, 2026-03-31, recorded in the quarantined-test inline comment as *"The thermal mass temperature reaches 141°C due to low target_tau_hours (2.0)"*). Per the Issue #3799 acceptance criteria ("diagnostic, no code changes") and AGENTS.md / RULES.md / ADR-0001 ("no parameter tuning", "fix the underlying math"), the B2a deliverable is **measurement + mechanism hypothesis documentation only** — the structural closure is routed to the GaugeSolver production-path work coordinated by #1465 / #1462 and the #3770 fix. The four measured τ values are: (1) **Wall lumped R·C τ = 203.4 hours (732,064 s)** from R_wall × C_wall = 1.5618 m²·K/W × 468.72 kJ/m²·K (`tests/all_tests/ctf_coefficient_validation.rs::test_case_900_wall_properties`); this is the **wall-material-only** time constant and is **in-band** with the ≈150–250 h ASHRAE 140 reference envelope for heavyweight concrete construction (deviation +1.7%); (2) **ISO 13790 air-coupled τ = 3.30 hours** (active, post-PR #821) from Cm / Σ h_tr_ms / 3600 = 2.0e7 J/K / 1687.14 W/K / 3600 (`TimeConstantAnalyzer::for_physics`); this is **below envelope** at ~−40% deviation vs the ≈5–8 h reference midpoint — the structural signature that the Session-84 2-hour `target_tau_hours` over-drove the mass node against the ISO 13790 physics τ; (3) **5R1C air-trajectory τ ≈ 1.23 hours** (inline note in `ashrae_140_case_900::test_case_900_peak_cooling_within_reference_range`); this is **above the explicit-Euler stability band** at dt/τ ≈ 0.81 on a 1 h timestep, the structural reason for the −69% UNDER on Case 900 peak cooling (0.89 kW vs [1.20, 3.50] kW reference band per §LIMIT-05); (4) **FiveR1C vs Gauge air-trajectory τ**: FiveR1C ≈ 25.6 h, gauge τ_mass ≈ 61 h (`gauge_validation_case_900::test_case_900_gauge_fiver1c_diurnal_parity` `#[ignore]` per Issue #1669 Option A); the FiveR1C τ is **−60% UNDER** the ≈50–80 h reference midpoint, the gauge τ is **+6% in-band** — the bidirectional asymmetry is the structural signature Issue #1669 captures. The **three mechanism hypotheses** for the #3770 mass-node 141°C runaway that are consistent with the τ measurements above (the B2a audit does not pick a winner — per AGENTS.md / RULES.md / ADR-0001): (a) **PR #821 ISO 13790 τ-shortening hypothesis (most likely)** — the `h_ms = 9.1 × A_m` reformulation raised `h_tr_ms` from ~650 W/K (lookup) to ~1687 W/K (active), shortening the ISO 13790 τ from 5.13 h to 3.30 h (1.55× shorter); on the 24 h ASHRAE 140 weather schedule with a 2 h target_tau_hours, the 1.55× shorter τ on the air-coupled path leaves the mass node under-damped, over-driving T_mass to 141°C; fix is **parameter removal** (drop the separate `target_tau_hours` parameter, use `TimeConstantAnalyzer::for_physics` directly); (b) **Wall lumped R·C τ dominance hypothesis** — the wall material τ (203.4 h) is ~60× larger than the air-coupled τ (3.30 h); if the Session-84 change routed the mass-node forcing through the wall R·C path instead of the air-coupled path, the effective τ would be ~200 h (very slow) and the mass node would integrate solar injection without sufficient damping; fix is **path re-routing**, not tuning; (c) **5R1C air-trajectory τ under-stability hypothesis** — the Case 900 τ at 1.23 h on a 1 h timestep sits at dt/τ ≈ 0.81, at the edge of the explicit-Euler stability band (dt/τ < 1); on a 24 h schedule with 6 h solar peak the integrator could oscillate and deposit solar energy without damping; fix is **sub-hour sub-stepping** (already proposed and blocked by #2300 / §LIMIT-05 UPDATE), or **GaugeSolver's continuous-time formulation**. The three mechanisms are **not mutually exclusive** — the #3770 fix likely needs to address all three to close the mass-node runaway AND restore the ASHRAE 140 Case 900 annual-energy bidirectional OVER signature tracked under §LIMIT-05 UPDATE (#2453). Tracked as a documentation-only entry; the structural fix is routed to the GaugeSolver production-path work coordinated by #1465 / #1462 plus the #3770 fix. Sibling entries: §LIMIT-13 (h_tr_em time-invariance regression fence — 18.3 W/m²K canonical exterior film coefficient unchanged, guarded by `tests/regression_exterior_film_unification.rs`); §LIMIT-05 / §LIMIT-05 UPDATE (#2453) (900-series bidirectional annual-energy over-prediction; the Cm = +33.9% above-envelope and τ = −40% below-envelope deviations here are consistent with the bidirectional OVER signature); §LIMIT-16 / Issue #3059 (Cases 610 / 630 / 650 peak cooling OVER — the low-mass cousin of the Case 900 high-mass under-stability); §LIMIT-17 / Issue #3058 / ADR-0011 (Case 950FF night-vent mass coupling gap — structurally similar to the τ-shortening mechanism hypothesis); §LIMIT-22 (the gauge τ_mass ≈ 61 h measurement used in the gauge-parity table is from #3297's exact Crank-Nicolson proxy). Phase A8 default flip (Issue #3291, merged via PR #3482) wires `ThermalSelector::default() = ZoneSolverKind::Gauge`; the `gauge-solver` cargo feature is intentionally retained as the production-path gate pending §LIMIT-21 β-soak closure — the B2a measurements above will persist on the production path until the feature is enabled. See §LIMIT-29 for the per-metric measurement table, the deviation analysis vs the ASHRAE 140 reference envelope, the three mechanism hypotheses, the cross-references to B2b / Issue #3800 / PR #3841 (the release-gates cohort registration that this B2a audit is the precursor measurement for — `release_gates.yaml` lines 64–81 already cite B2a as the precursor), the #3770 mass-node 141°C regression that B2a is blocked by, and the module-isolation suites (read-only acceptance — all green; the `test_thermal_mass_temperature_damping` quarantine from #3770 stays in place until #3770 closes; this B2a audit does **not** un-quarantine it).
+
+**LIMIT-30 added (Issue #3797):** Phase B1a (PHYSICS-01) solar distribution audit of the ASHRAE 140 Case 600 series (600/610/620/630/640/650, the §LIMIT-05 / #3072 aggressive-baseline low-mass cohort) on the 2026-09-17 develop HEAD with `ThermalSelector::default()` resolving to `ZoneSolverKind::Gauge` but **falling through to legacy 5R1C / 9R4C** in the **default build** (cargo feature `gauge-solver` is OFF per the AGENTS.md Phase A8 note — `Cargo.toml:208-225`). Per the Issue #3797 acceptance criteria ("diagnostic, no code changes") and **AGENTS.md / RULES.md / ADR-0001** ("no parameter tuning", "fix the underlying math"), the B1a deliverable is **per-tilt / per-azimuth incident-energy deviation table + ranking of the failing distribution metrics + initial mechanism hypotheses only** — the structural closure is owned by B1b / Issue #3798 / PR #3847 at the release-gates layer (already merged) and the GaugeSolver production-path work coordinated by #1465 / #1462. The **per-tilt / per-azimuth fluxion vs analytical incident-energy calculation PASSES** (all 5 tilts {0°, 30°, 60°, 90°, 180°} at az=180° (south) in the [0.99, 1.01] annual ratio band on the Denver TMY3 year; horizontal-beam annual fluxion 1041.332 kWh/m²/year vs analytical 1041.332 kWh/m²/year, max abs deviation 0.0000 W/m²; 0 of 3573 hours-with-sun exceed 1 % per-hour tolerance; Mock-vs-Physics 1 % parity on the full 16 × 8760 (tilt × az × hour) assertion grid per `tests/all_tests/surface_flux_parity.rs::test_parity_combined_tilt_azimuth_matrix`) — **the failing axis is NOT in the per-tilt / per-azimuth arithmetic**, it is downstream in the per-surface distribution routing parameters and the 5R1C coupling. The **per-surface distribution metrics that FAIL** (printed by `tests/all_tests/solar_distribution_validation.rs`): (a) **Case 600 (LowMass) `solar_distribution_to_air = 0.30` vs ASHRAE 140 expectation 0.0, Δ +0.30 (worst offender)**; (b) **Case 600 `solar_beam_to_mass_fraction = 0.30` vs ASHRAE 140 expectation 1.0, Δ −0.70**; (c) **Case 600 fractions sum to_air + to_mass = 0.60 vs requirement 1.0, Δ −0.40** (the missing 0.40 fraction is the structural gap); (d) Case 900 `solar_beam_to_mass_fraction = 0.30` vs 1.0, Δ −0.70 (same axis on the HighMass construction); Case 900 `solar_distribution_to_air = 0.00` PASSES. The **per-surface Case 600 5R1C conductances vs hand-calc** (printed by `tests/all_tests/test_case_600_htotal_verification.rs::test_case_600_htotal_hand_verification`) are out of band on the dominant axes: h_tr_is model 165.60 vs hand 1251.32, **Δ −86.8 %**; h_tr_ms model 240.00 vs hand 1092.00, **Δ −78.0 %**; Cm model 2,162,443 vs hand 3,028,278 J/K, **Δ −28.6 %**; H_total 5R1C 85.83 vs simple Σ U·A 103.63 W/K, ratio 0.828 (−17.2 % under); the cumulative effect cascades into the production-validator Case 600 detailed-results row (3/4 metrics fail: Annual Cooling 3299.30 kWh vs ref [3920, 6140] = −16 % UNDER, Peak Heating 4.38 kW vs [2.80, 3.80] = +15.3 % OVER, Peak Cooling 3.72 kW vs [4.80, 6.20] = −22.5 % UNDER) and the strict-energy-gate `case_600_cooling` 2.546 MWh vs [4.275, 5.784] = **−34.38 % UNDER** (KNOWN-FAIL tracked under this §LIMIT-30 cohort). The **three competing mechanism hypotheses** for the Case 600 series per-tilt / per-azimuth deviation signature (the B1a audit does not pick a winner — per AGENTS.md / RULES.md / ADR-0001): (1) **`solar_distribution_to_air` / `solar_beam_to_mass_fraction` parameter routing hypothesis (most likely)** — the 0.30 / 0.30 per-surface routing split is the direct cause of the Case 600 cooling −34.4 % UNDER strict-energy-gate signature; 0.30 of the per-timestep beam gain that should go to the mass node (per ASHRAE 140 expectation `solar_beam_to_mass_fraction = 1.0`) is being routed to the air node instead, where the HVAC controller reads the cooling setpoint signal and trips the cooling plant on an over-estimated load; the structural fix is **path re-routing** (split the parameter between LowMass and HighMass constructions or re-derive the per-tilt / per-azimuth fraction from the energy-balance identity `f_beam_to_mass + f_beam_to_air = 1.0`), **not** a numerical tuning of the 0.30 / 0.30 values themselves — per AGENTS.md / RULES.md / ADR-0001, raising `solar_distribution_to_air` to absorb the structural cooling gap is forbidden; (2) **per-surface 5R1C h_tr_is / h_tr_ms conductance hypothesis** — the hand-calc / model per-surface conductance deltas (−86.8 % on h_tr_is and −78.0 % on h_tr_ms) are the structural reason the H_total 5R1C path is 0.828× the simple Σ U·A reference (−17.2 %); the structural fix is **5R1C parameter re-derivation** (e.g. via ISO 13790 §12.2.3 + Annex C, the same convention used by the §LIMIT-29 B2a Cm derivation), not numerical tuning; (3) **Case 600 series low-mass + 5R1C lumped-mass-node hypothesis (the §LIMIT-16 / §LIMIT-05 cousin)** — the Case 600 series shares the same 5R1C + 9R4C single-lumped-mass-node pathology as Cases 610 / 630 / 650 (§LIMIT-16 / Issue #3059) and the 900-series (B2a / §LIMIT-29); the `MAX_CONVECTIVE_TO_AIR_MULTIPLIER = 2.0×` cap (PR #3041) closed Cases 620 / 640 but did NOT transfer to Case 600 — because Case 600's per-tilt / per-azimuth solar-distribution deviation is upstream of the `MAX_CONVECTIVE_TO_AIR_MULTIPLIER` axis (the cap is on the convective path, not on the solar-distribution routing); the structural fix is the GaugeSolver production-path work coordinated by #1465 / #1462, not per-Case 600 tuning. The three mechanisms are **not mutually exclusive** — the B1b structural fix likely needs to address all three. **Module-isolation suites green (read-only acceptance)** per the B1a audit table: `tests/all_tests/solar_isolation::test_horizontal_incident_solar` PASS, `tests/all_tests/solar_isolation::test_per_tilt_sweep` PASS (5/5 tilts in [0.99, 1.01]), `tests/all_tests/surface_flux_parity::test_parity_combined_tilt_azimuth_matrix` PASS (16 × 8760 assertions), `tests/all_tests/solar_isolation::` 11 passed, `tests/all_tests/ashrae_140_case_600::test_case_600_baseline_ashrae_140_reference` PASS (integration prints the 3/4-failure the detailed-results row already shows — NOT introduced by this audit), `tests/all_tests/ashrae_140_validation::` 3 passed, `tests/regression_exterior_film_unification.rs` (LIMIT-13 regression fence) PASS — the 18.3 W/m²K canonical exterior film coefficient is **unchanged** through the B1a measurement window (the AGENTS.md "no regression on the canonical film coefficient" guard holds), `python3 scripts/check_strict_energy_gate_regression.py` 4 PASS / 12 KNOWN-FAIL / 0 REGRESSION (Issues #2506 / #3572 strict ±15 % gate holds; Case 600 cooling KNOWN-FAIL tracked under this §LIMIT-30 cohort). The **11 pre-existing solar test failures** (3 in `solar_distribution_validation::` — the per-surface distribution metrics the B1a audit characterizes; 5 in `solar_longwave_boundary_traces::`; 1 each in `solar_horizontal_isolation::test_roof_surface_irradiance_matches_energyplus`, `issue_1860_5r1c_time_constant_aware::test_case_650_solar_lag_improves_annual_cooling`, `solar_distribution_tests::test_conductance_mass_dependence`) are **NOT regressions** introduced by this audit — they are pre-existing structural failures consistent with the §LIMIT-30 mechanism hypotheses; per AGENTS.md / RULES.md / ADR-0001, no test assertion is loosened to absorb them. Tracked as a documentation-only entry; the structural fix is routed to the GaugeSolver production-path work coordinated by **#1465 / #1462** (production-path switchover staged via **#3291 / PR #3482** for Phase A8 default flip, gated on **§LIMIT-21** β-soak closure). Sibling entries: §LIMIT-13 (h_tr_em time-invariance regression fence — 18.3 W/m²K canonical exterior film coefficient unchanged, guarded by `tests/regression_exterior_film_unification.rs`); §LIMIT-05 / §LIMIT-05 UPDATE (#2453) (900-series bidirectional annual-energy over-prediction); §LIMIT-16 / Issue #3059 (Cases 610 / 630 / 650 peak cooling OVER — same Case 600-series family); §LIMIT-17 / Issue #3058 / ADR-0011 (Case 950FF night-vent mass coupling gap); §LIMIT-22 (gauge τ_mass measurement source for the B2a cousin); §LIMIT-21 (β-soak 30-night production-path gate); §LIMIT-29 / Issue #3799 (the B2a thermal-mass τ cousin — same `TimeConstantAnalyzer` / ISO 13790 §12.2.3 + Annex C family); **#3072** (the aggressive-baseline cohort tracking — Cases 195 / 600 / 620 / 940 / 960); SOLAR-01 / Issue #274 (the pre-existing SOLAR-01 entry that documents the 600-series peak-cooling signature; the B1a measurements identify the per-tilt / per-azimuth distribution axis as the structural mechanism behind the SOLAR-01 partial-resolution status). **Cross-PHYSICS-01**: B1b / Issue #3798 / PR #3847 (the release-gates registration that cites this B1a audit as the precursor measurement — `release_gates.yaml` lines 83–110 already name B1a as the precursor); **cross-PHYSICS-01 (companion fixtures)**: Issue #1323 (corrected roof-solar constants; the `test_parity_roof_zero_followup_1323` `#[ignore]` stays in place until #1323 closes — this B1a audit does **not** un-ignore it), #1325 / #1330 / #1337 (per-tilt / per-azimuth fixture-data lineage grounding the calculation PASSES — all upstream closed issues cited without modification). See §LIMIT-30 below for the per-axis measurement tables, the three mechanism hypotheses, the cross-references to B1b / Issue #3798 / PR #3847, the module-isolation suites (read-only acceptance — all green), the pre-existing solar test failures (NOT regressions), and the sibling framing to §LIMIT-05 / §LIMIT-13 / §LIMIT-16 / §LIMIT-17 / §LIMIT-21 / §LIMIT-22 / §LIMIT-29 / #3072 / SOLAR-01 / Issue #1323-#1337.
 
 **LIMIT-12 added (Issue #3062):** Case 940 annual heating is 5,158 kWh on the CTF validator path versus 1,289.9 kWh on the blind diagnostic path (per the §LIMIT-05 UPDATE #2452 measurement table, post-PR #3042); the remaining setback-recovery overshoot is structural and tracked without a production-physics change. (Historical: 7,487.81 kWh was the pre-§LIMIT-05-UPDATE snapshot; the latest measured value is 5.158 MWh. See §LIMIT-05 UPDATE (#2452) for the canonical per-path table.)
 
@@ -1226,12 +1228,12 @@ The fix is **structural** — the `GaugeSolver` rework (#1465 / #1462) — and t
 | Free-Float (FREE) | 3 | 0 | 1 | 0 | 0 |
 | Temperature (TEMP) | 1 | 0 | 0 | 0 | 0 |
 | Multi-Zone (MULTI) | 4 | 3 | 0 | 0 | 0 |
-| Model Limits (LIMIT) | 27 | 2 | 0 | 5 | 2 |
+| Model Limits (LIMIT) | 28 | 2 | 0 | 6 | 2 |
 | Reporting (REPORT) | 4 | 0 | 4 | 0 | 0 |
 | CI/Infrastructure (CI) | 3 | 0 | 0 | 0 | 0 |
 | fluxion-fluid (FLUID) | 2 | 0 | 0 | 0 | 0 |
 | FFD/CFD (FFD) | 2 | 0 | 0 | 1 | 0 |
-| **Total** | **55** | **10** | **8** | **7** | **2** |
+| **Total** | **56** | **10** | **8** | **8** | **2** |
 
 *Counts derived from `grep -cE '^### CATEGORY-NN:' docs/KNOWN_ISSUES.md` via `scripts/check_known_issues_summary.py`. Edit the per-section `**Status:**` lines (or add new `### CATEGORY-NN:` headers) and the table updates on the next regen. Status columns (`Fixed` / `Open` / `Partial` / `Won't Fix`) derive from the first `**Status:**` line in each section. Sections without a `**Status:**` line are counted in the Total column but contribute 0 to the status columns — treat the missing line as a TODO and either add the line or document the exception in the section body. To regenerate: `python3 scripts/check_known_issues_summary.py --regen | sponge docs/KNOWN_ISSUES.md`.**
 
@@ -4233,6 +4235,403 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
   the precursor measurement); **cross-PHYSICS-02 (blocked-by)**:
   #3770 (the mass-node 141°C regression whose fix unblocks the
   B2a audit's `test_thermal_mass_temperature_damping` quarantine).
+
+### LIMIT-30: ASHRAE 140 Case 600 series per-tilt / per-azimuth solar distribution audit — Phase B1a PHYSICS-01 (Issue #3797)
+
+- **Description:** Phase B1a (Issue #3797) — diagnostic / audit
+  of the ASHRAE 140 Case 600 series (600/610/620/630/640/650,
+  the §LIMIT-05 / #3072 aggressive-baseline low-mass cohort)
+  per-tilt / per-azimuth solar incident-energy distribution
+  deviation against the ASHRAE 140 reference programs (EnergyPlus
+  / ESP-r / TRNSYS) on the 2026-09-17 develop HEAD with
+  `ThermalSelector::default()` resolving to `ZoneSolverKind::Gauge`
+  but **falling through to legacy 5R1C / 9R4C** in the **default
+  build** (cargo feature `gauge-solver` is OFF per the AGENTS.md
+  Phase A8 note — `Cargo.toml:208-225`). Per the Issue #3797
+  acceptance criteria ("diagnostic, no code changes") and
+  **AGENTS.md / RULES.md / ADR-0001** ("no parameter tuning",
+  "fix the underlying math"), the B1a deliverable is
+  **measurement + ranking of failing distribution metrics +
+  initial mechanism hypotheses only** — the structural closure is
+  routed to B1b / Issue #3798 / PR #3847 at the release-gates
+  layer (already merged; the B1b PR registers the cohort at
+  `release_gates.yaml → validation.individual.known_failures` per
+  the `release_gates.yaml` comment block at lines 83–110, which
+  already names B1a as the precursor) and the GaugeSolver
+  production-path work coordinated by **#1465 / #1462**
+  (production-path switchover staged via **#3291 / PR #3482** for
+  Phase A8 default flip, gated on **§LIMIT-21** β-soak closure).
+
+- **Per-tilt / per-azimuth incident-energy calculation PASSES
+  (the failing axis is NOT in the per-tilt / per-azimuth
+  arithmetic):** Fluxion's `calculate_surface_irradiance`
+  implementation agrees with the analytical cos(θᵢ) reference
+  (ASHRAE Fundamentals Ch. 14 / Duffie–Beckman Eq. 1.6.3, the
+  exact formulation EnergyPlus itself uses for beam-on-tilt)
+  within 1 % on the full per-tilt sweep at az = 180° (south) on
+  the Denver TMY3 weather year
+  (`tests/all_tests/solar_isolation.rs::test_per_tilt_sweep`):
+  5 tilts {0°, 30°, 60°, 90°, 180°} all in the [0.99, 1.01]
+  annual ratio band, with annual beam {1041.332, 1281.590,
+  1184.360, 786.890, 0.000} kWh/m²/year, max abs deviation
+  1.4211×10⁻¹³ W/m² on the tilt=0° row (fluxion vs analytical);
+  the horizontal-beam test
+  (`test_horizontal_incident_solar`) reports 3637 hours with sun
+  + DNI > 0, 3573 hours compared (> 1 W/m²), 0 hours exceed 1 %
+  per-hour tolerance, annual fluxion 1041.332 kWh/m²/year vs
+  analytical 1041.332 kWh/m²/year (annual ratio 1.000000, max abs
+  deviation 0.0000 W/m²). The Mock-vs-Physics per-(tilt, az,
+  hour) parity test
+  (`tests/all_tests/surface_flux_parity.rs::test_parity_combined_tilt_azimuth_matrix`)
+  passes within the 1 % ARCHITECTURE.md Module 2 acceptance
+  criterion on the full 16 × 8760 = 140,160 (tilt × az × hour)
+  assertion grid (the `test_parity_roof_zero_followup_1323`
+  `#[ignore]`-quarantined test stays in place until #1323
+  closes — this B1a audit does **not** un-ignore it).
+
+- **Per-surface solar distribution parameters that FAIL (ranked by
+  deviation — the issue acceptance criterion "the specific failing
+  distribution metrics named and ranked by deviation"):**
+
+  | Parameter | Fluxion value | ASHRAE 140 expectation | Deviation | Verdict |
+  |---|---|---|---|---|
+  | **Case 600 `solar_distribution_to_air`** (LowMass) | **0.30** | 0.0 (100 % to opaque surfaces) | **+0.30** | ❌ FAIL (worst) |
+  | **Case 600 `solar_beam_to_mass_fraction`** (LowMass) | **0.30** | 1.0 (100 % to mass) | **−0.70** | ❌ FAIL |
+  | **Case 600 fractions sum** (to_air + to_mass) | **0.60** | 1.0 (must sum to one) | **−0.40** | ❌ FAIL |
+  | Case 900 `solar_beam_to_mass_fraction` (HighMass) | 0.30 | 1.0 (100 % to mass) | −0.70 | ❌ FAIL |
+  | Case 900 `solar_distribution_to_air` (HighMass) | 0.00 | 0.0 (100 % to opaque surfaces) | 0.00 | ✅ PASS |
+
+  Source: `tests/all_tests/solar_distribution_validation.rs`
+  (printed via `cargo test --test all_tests solar_distribution_validation::
+  -- --nocapture` on the 2026-09-17 develop HEAD). The Case 600
+  `solar_distribution_to_air = 0.30` deviation (+0.30 absolute,
+  100 % relative deviation from the ASHRAE 140 reference
+  expectation of 0.0) is the **worst offender** — this is the
+  structural reason the Case 600 series over-deposits solar into
+  the air node and under-predicts peak cooling (the per-air-node
+  distribution deviation then cascades through the 5R1C
+  lumped-mass coupling and the multi-step τ-shortening axis
+  measured in B2a / §LIMIT-29).
+
+- **Per-surface Case 600 5R1C conductances vs hand-calc
+  (per-tilt / per-azimuth transmission deviation,
+  `tests/all_tests/test_case_600_htotal_verification.rs::test_case_600_htotal_hand_verification`,
+  2026-09-17 develop HEAD on the canonical Case 600 envelope —
+  Floor 48 m², Wall 75.6 m², Window 12 m², Opaque 63.6 m², Roof
+  48 m²):**
+
+  | Parameter | Hand-calc | Model | Δ (%) | Verdict |
+  |---|---|---|---|---|
+  | **h_tr_is** | 1251.32 | **165.60** | **−86.8 %** | worst |
+  | **h_tr_ms** | 1092.00 | **240.00** | **−78.0 %** | 2nd worst |
+  | h_tr_em | 50.17 | 59.26 | +18.1 % | out of band |
+  | h_tr_w | 25.20 | 27.20 | +7.9 % | in band |
+  | h_ve | 21.71 | 21.71 | 0.0 % | exact |
+  | h_tr_floor | 8.82 | 8.82 | 0.0 % | exact |
+  | **Cm** (J/K) | 3,028,278 | **2,162,443** | **−28.6 %** | out of band |
+  | h_opaque (5R1C series) | 46.19 | 36.93 | −20.1 % | out of band |
+  | H_total (5R1C series + window + ve) | 93.10 | 85.83 | −7.8 % | in band (small) |
+  | H_total (simple Σ U·A) | 103.63 | (n/a) | — | reference |
+  | 5R1C / simple UA ratio | — | **0.828** | −17.2 % under | structural |
+
+  The h_tr_is / h_tr_ms per-surface conductances are the
+  dominant deviations (−86.8 % and −78.0 %); the model produces
+  an h_opaque (5R1C series path) of 36.93 W/K vs the
+  hand-calculated 46.19 W/K (−20.1 %), which feeds the 0.828
+  ratio of the 5R1C series H_total (85.83 W/K) to the simple Σ
+  U·A H_total (103.63 W/K) — the structural signature that the
+  per-tilt / per-azimuth transmission is systematically
+  under-counted at the Case 600 envelope.
+
+- **Case 600 annual / peak metrics vs ASHRAE 140 reference (the
+  cascading failures):**
+
+  | Case 600 metric | Engine value | Reference band | Deviation | Verdict |
+  |---|---|---|---|---|
+  | Annual heating | 4604.57 kWh | [4360.00, 5790.00] kWh | in-band (+5.6 %) | PASS |
+  | Annual cooling | 3299.30 kWh | [3920.00, 6140.00] kWh | **−16 % UNDER** | ❌ FAIL |
+  | Peak heating | 4.38 kW | [2.80, 3.80] kW | **+15.3 % OVER** | ❌ FAIL |
+  | Peak cooling | 3.72 kW | [4.80, 6.20] kW | **−22.5 % UNDER** | ❌ FAIL |
+  | `case_600_cooling` strict ±15 % gate | 2.546 MWh | [4.275, 5.784] MWh | **−34.38 % UNDER** | KNOWN-FAIL |
+
+  3/4 Case 600 metrics fail the ±15 % strict-energy gate per
+  `python3 scripts/check_strict_energy_gate_regression.py`
+  (Issues #2506 / #3572); only Annual Heating is in-band. The
+  integration test
+  (`tests/all_tests/ashrae_140_case_600.rs::test_case_600_baseline_ashrae_140_reference`)
+  prints Annual H 4.64 (ref 4.30–5.71, in-band) / Annual C 2.86
+  (ref 6.14–8.45, −57 % UNDER) / Peak H 2.05 (ref 5.20–6.60, −62 %
+  UNDER) / Peak C 3.60 (ref 6.80–8.50, −50 % UNDER) — the per-axis
+  deviations converge with the production-validator detailed-results
+  row above. The comprehensive validator
+  (`tests/all_tests/ashrae_140_validation.rs`) emits the matching
+  "ATTENTION: Potential regression" lines for Case 600 Annual
+  Cooling (3.299 MWh vs ref 7–10), Peak Heating (4.38 kW vs ref
+  2.6–4), and Peak Cooling (3.72 kW vs ref 4.6–6) — same 3/4-failures.
+
+- **Three mechanism hypotheses (B1a does not pick a winner — per
+  AGENTS.md / RULES.md / ADR-0001):**
+
+  1. **`solar_distribution_to_air` / `solar_beam_to_mass_fraction`
+     parameter routing hypothesis (most likely).** The 0.30 / 0.30
+     per-surface routing split is the direct cause of the Case
+     600 cooling −34.4 % UNDER strict-energy-gate signature:
+     0.30 of the per-timestep beam gain that should go to the
+     mass node (per ASHRAE 140 expectation
+     `solar_beam_to_mass_fraction = 1.0`) is being routed to the
+     air node instead, where the HVAC controller reads the
+     cooling setpoint signal and trips the cooling plant on an
+     over-estimated load. The structural fix is **path
+     re-routing** (split the parameter between the LowMass and
+     HighMass constructions or re-derive the per-tilt /
+     per-azimuth fraction from the energy-balance identity
+     `f_beam_to_mass + f_beam_to_air = 1.0`), **not** a numerical
+     tuning of the 0.30 / 0.30 values themselves — per
+     AGENTS.md / RULES.md / ADR-0001, raising
+     `solar_distribution_to_air` to absorb the structural
+     cooling gap is forbidden. **Mechanism: per-surface
+     distribution routing mismatch; fix is path re-routing, not
+     tuning.**
+
+  2. **Per-surface 5R1C h_tr_is / h_tr_ms conductance hypothesis.**
+     The hand-calc / model per-surface conductance deltas (−86.8 %
+     on h_tr_is and −78.0 % on h_tr_ms) are the structural reason
+     the H_total 5R1C path is 0.828× the simple Σ U·A reference
+     (−17.2 %). The 5R1C series path is systematically
+     under-counted on the Case 600 envelope. The structural fix
+     is **5R1C parameter re-derivation** (e.g. via ISO 13790
+     §12.2.3 + Annex C, the same convention used by the
+     §LIMIT-29 B2a Cm derivation), **not** numerical tuning.
+     **Mechanism: per-surface 5R1C parameter drift; fix is
+     parameter re-derivation, not tuning.**
+
+  3. **Case 600 series low-mass + 5R1C lumped-mass-node
+     hypothesis (the §LIMIT-16 / §LIMIT-05 cousin).** The Case
+     600 series shares the same 5R1C + 9R4C single-lumped-mass-
+     node pathology as Cases 610 / 630 / 650 (§LIMIT-16 / Issue
+     #3059) and the 900-series (B2a / §LIMIT-29); the
+     solar-distribution deviation is the LowMass end of the same
+     family. The `MAX_CONVECTIVE_TO_AIR_MULTIPLIER = 2.0×` cap
+     (PR #3041) closed Cases 620 / 640 but did NOT transfer to
+     Case 600 — because Case 600's per-tilt / per-azimuth
+     solar-distribution deviation is upstream of the
+     `MAX_CONVECTIVE_TO_AIR_MULTIPLIER` axis (the cap is on the
+     convective path, not on the solar-distribution routing).
+     **Mechanism: same family as §LIMIT-05 / §LIMIT-16 /
+     §LIMIT-29; fix is routed to the GaugeSolver production-path
+     work, not to per-Case 600 tuning.**
+
+  The three mechanisms are **not mutually exclusive** — the
+  B1b structural fix likely needs to address the per-surface
+  distribution routing (hypothesis 1) and the per-surface 5R1C
+  h_tr_is / h_tr_ms conductance re-derivation (hypothesis 2) and
+  the family-level 5R1C lumped-mass-node damping (hypothesis 3)
+  to close the Case 600 cooling cascade AND preserve the ±15 %
+  strict-energy gate per `release_gates.yaml →
+  validation.individual.known_failures` Case 600 series
+  annotation (B1b / Issue #3798 / PR #3847).
+
+- **Cross-references:**
+
+  - **B1b / Issue #3798 / PR #3847** — the release-gates
+    registration
+    (`release_gates.yaml → validation.individual.known_failures`
+    Case 600 series annotation, "B1b solar-distribution cohort,
+    Issue #3798") that this B1a audit is the **precursor
+    measurement for**. The `release_gates.yaml` comment block at
+    lines 83–110 already names B1a as the precursor: *"Once
+    Issue #3797 (B1a audit) closes with the per-tilt /
+    per-azimuth deviation table, a follow-up §LIMIT entry +
+    `docs/ASHRAE140_RESULTS.md` structural-failure-mechanism note
+    will be filed with the named mechanisms."* The per-surface
+    distribution / conductance / metric tables above are the
+    input the B1b cohort registration cites.
+
+  - **§LIMIT-29 / Issue #3799** — the B2a thermal-mass τ cousin
+    (same `TimeConstantAnalyzer` / ISO 13790 §12.2.3 + Annex C
+    family). The B2a Cm = +33.9 % above-envelope and τ = −40 %
+    below-envelope deviations are consistent with the B1a
+    family-level 5R1C lumped-mass-node damping (hypothesis 3
+    above).
+
+  - **§LIMIT-13 / Issue #3063 / ADR-0009** — `h_tr_em`
+    time-invariance regression fence; the 18.3 W/m²K canonical
+    exterior film coefficient is **unchanged** through the B1a
+    measurement window — guarded by
+    `tests/regression_exterior_film_unification.rs`; the AGENTS.md
+    "no regression on the canonical film coefficient" guard holds
+    throughout. The B1a measurements above do not regress this
+    fence (the h_tr_em hand-calc 50.17 vs model 59.26 = +18.1 %
+    is on the 5R1C series path, not on the 18.3 W/m²K canonical
+    exterior film coefficient).
+
+  - **§LIMIT-05 / §LIMIT-05 UPDATE (#2453)** — 900-series
+    bidirectional annual-energy over-prediction (the air-mass
+    distribution pathology is the same as the B1a
+    solar-distribution deviation; the per-tilt / per-azimuth
+    distribution deviation on Case 600 series is the LowMass end
+    of the same family).
+
+  - **§LIMIT-16 / Issue #3059** — Cases 610 / 630 / 650 peak
+    cooling OVER (same Case 600-series family; the
+    `MAX_CONVECTIVE_TO_AIR_MULTIPLIER = 2.0×` cap from PR #3041
+    closed Cases 620 / 640 but did not transfer to Case 600 —
+    the B1a per-tilt / per-azimuth solar-distribution deviation
+    is upstream of the `MAX_CONVECTIVE_TO_AIR_MULTIPLIER` axis).
+
+  - **§LIMIT-17 / Issue #3058 / ADR-0011** — Case 950FF
+    night-vent mass coupling gap (structurally similar to the
+    Case 600 series 5R1C + 9R4C single-lumped-mass-node
+    pathology; the night-vent ACH = 13.14 → h_ve ≈ 570.8 W/K
+    coupling is the FF-mode cousin of the Case 600 HVAC-mode
+    solar-distribution routing mismatch).
+
+  - **§LIMIT-22** — the gauge-build-only
+    `test_case_950_mass_temperature_precooled_issue_1422`
+    quarantine (Issue #3297); not directly applicable to B1a but
+    the gauge τ_mass ≈ 61 h measurement source for the B2a
+    cousin.
+
+  - **§LIMIT-21** — Gauge β-path pre-existing air-trajectory
+    failure cohort + β-soak 30-night production-path gate
+    (Issue #3286, `#3286 β-soak` convention in CI comment
+    threads; currently 0/30 nights green). The Case 600 series
+    residuals above persist on the production path until the
+    `gauge-solver` cargo feature is enabled.
+
+  - **#3072** — the aggressive-baseline cohort tracking (Cases
+    195 / 600 / 620 / 940 / 960) that owns the
+    `release_gates.yaml → validation.individual.known_failures`
+    membership. Case 600 is in this cohort; the B1a measurements
+    are the per-axis attribution for the Case 600 entry.
+
+  - **SOLAR-01 / Issue #274** — the pre-existing SOLAR-01 entry
+    that documents the 600-series peak-cooling signature; the
+    B1a measurements identify the per-tilt / per-azimuth
+    distribution axis as the structural mechanism behind the
+    SOLAR-01 partial-resolution status (low-mass peak cooling now
+    in-band per #1362 / #1328 verification, but the per-axis
+    distribution / conductance deviations persist). The
+    structural fix routed to GaugeSolver #1465 / #1462 in
+    SOLAR-01 is the same unblocker the B1a mechanism hypotheses
+    above route to.
+
+  - **Issue #1323 / #1325 / #1330 / #1337** — the per-tilt /
+    per-azimuth fixture-data lineage. Issue #1323 (corrected
+    constants in roof-solar) is the pre-existing dependency for
+    the `test_parity_roof_zero_followup_1323` `#[ignore]` test;
+    #1325 / #1330 / #1337 are the analytical / ASHRAE-140-reference
+    fixture-data lineage that grounds the B1a per-tilt /
+    per-azimuth calculation PASSES above. **All four are
+    upstream closed issues** that the B1a audit cites without
+    modification.
+
+- **Unblockers:**
+
+  - **GaugeSolver production-path switchover** (Issues
+    **#1465 / #1462**, both closed individually; production-path
+    staged via **#3291 / PR #3482** for Phase A8 default flip,
+    gated on §LIMIT-21 β-soak closure).
+
+  - **PR #3041 / Issue #3059** — the
+    `MAX_CONVECTIVE_TO_AIR_MULTIPLIER = 2.0×` cap sibling
+    partial-fix on the Cases 610 / 630 / 650 cooling OVER axis;
+    no equivalent solar-distribution cap exists for the Case
+    600 axis — per ADR-0001 / AGENTS.md / RULES.md, raising
+    `solar_distribution_to_air` to absorb the structural cooling
+    gap is forbidden.
+
+- **Affected Cases / Metrics (post-#1323 baseline):**
+
+  - Case 600 — Annual heating 4.60 MWh (Ref: 4.36–5.79 MWh,
+    in-band +5.6 %); Annual cooling 3.30 MWh (Ref: 3.92–6.14
+    MWh, −16 % UNDER); Peak heating 4.38 kW (Ref: 2.80–3.80
+    kW, +15.3 % OVER); Peak cooling 3.72 kW (Ref: 4.80–6.20
+    kW, −22.5 % UNDER). 3/4 ASHRAE 140 reference-band metrics
+    are FAIL-rows on the 84-metric scorecard
+    (`docs/ASHRAE140_RESULTS.md` §"Detailed Results / Baseline
+    Cases (600 Series)"). The Case 600 series cohort is in
+    `release_gates.yaml → validation.individual.known_failures`
+    (annotated by B1b / Issue #3798 / PR #3847 — see the
+    `release_gates.yaml` comment block at lines 83–110 for the
+    B1a → B1b provenance).
+  - The Case 600 series (600 / 610 / 620 / 630 / 640 / 650)
+    shares the same per-tilt / per-azimuth distribution /
+    conductance signature; the B1a audit's Case 600 measurements
+    are the per-axis attribution for the whole family.
+
+- **Severity:** **High** — the Case 600 series per-tilt /
+  per-azimuth solar-distribution cohort is one of the two
+  fundamental ASHRAE 140 validation axes (the other being the
+  Case 900 thermal-mass cohort tracked by §LIMIT-05 /
+  §LIMIT-29). The Case 600 cooling −34.4 % UNDER on the
+  strict ±15 % annual-energy gate per
+  `release_gates.yaml → validation.individual.known_failures`
+  is the per-axis structural signature that the B1b cohort
+  registration cites. The cohort gap blocks the strict ±15 %
+  annual-energy gate per the AGENTS.md / RULES.md / ADR-0001
+  prohibition on closing it by raising
+  `solar_distribution_to_air` / `solar_beam_to_mass_fraction`.
+
+- **GitHub Issue:** [#3797](https://github.com/anchapin/fluxion/issues/3797)
+  (Phase B1a PHYSICS-01 solar distribution audit, precursor
+  measurement for B1b / Issue #3798 / PR #3847 release-gates
+  cohort registration of the Case 600 solar-distribution
+  cohort).
+
+- **Status:** 🟡 **Docs + characterization shipped; structural
+  fix routed to B1b release-gates registration (Issue #3798 /
+  PR #3847, already merged) + GaugeSolver #1465 / #1462
+  production-path switchover.** No physics-code change; no
+  `solar_distribution_to_air` / `solar_beam_to_mass_fraction` /
+  `h_tr_w` / `h_tr_is` / `h_tr_ms` / `h_tr_em` / `h_ve` /
+  `h_tr_floor` / `MAX_CONVECTIVE_TO_AIR_MULTIPLIER` /
+  `h_ve_night` / `h_tr_em_wall` / `derived_h_tr_3` /
+  `h_ms_coeff` change; no
+  `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`
+  change; no ASHRAE 140 reference-band change; no `#[ignore]`
+  quarantine change (the `test_parity_roof_zero_followup_1323`
+  `#[ignore]` from #1323 stays in place until #1323 closes;
+  this B1a audit does **not** un-ignore it); no reference-data
+  CSV / sha256 change; no
+  `tests/all_tests/per_tilt_per_azimuth_fixture_data.rs` regen
+  (the fixture is auto-generated from
+  `tests/reference_data/solar/ashrae_140_surface_incident_solar.csv`
+  — Issue #1330; B1a cites the existing fixture without
+  modification); no `regression_exterior_film_unification.rs`
+  change (the canonical 18.3 W/m²K film coefficient is
+  preserved — LIMIT-13 regression fence stays green).
+
+- **Sibling framing:** §LIMIT-13 (h_tr_em time-invariance
+  regression fence; the 18.3 W/m²K canonical exterior film
+  coefficient is unchanged, guarded by
+  `tests/regression_exterior_film_unification.rs`); §LIMIT-05 /
+  §LIMIT-05 UPDATE (#2453) (900-series annual-energy + peak
+  cooling siblings — the bidirectional OVER / UNDER signature
+  on the high-mass end of the 5R1C + 9R4C single-lumped-mass-node
+  pathology); §LIMIT-16 / Issue #3059 (Cases 610 / 630 / 650
+  peak cooling OVER — the same Case 600-series family, the
+  LowMass end of the 5R1C + 9R4C single-lumped-mass-node
+  pathology); §LIMIT-17 / Issue #3058 / ADR-0011 (Case 950FF
+  night-vent mass coupling gap — structurally similar to the
+  Case 600 series solar-distribution deviation); §LIMIT-22
+  (gauge τ_mass measurement source for the B2a cousin);
+  §LIMIT-21 (β-soak 30-night production-path gate);
+  §LIMIT-29 / Issue #3799 (the B2a thermal-mass τ cousin —
+  same `TimeConstantAnalyzer` / ISO 13790 §12.2.3 + Annex C
+  family); SOLAR-01 / Issue #274 (the pre-existing SOLAR-01
+  entry that documents the 600-series peak-cooling signature).
+  **Cross-PHYSICS-01**: B1b / Issue #3798 / PR #3847 (the
+  release-gates registration that cites this B1a audit as the
+  precursor measurement — `release_gates.yaml` lines 83–110
+  already name B1a as the precursor); **cross-PHYSICS-01
+  (companion fixtures)**: Issue #1323 (corrected roof-solar
+  constants; the `test_parity_roof_zero_followup_1323` `#[ignore]`
+  stays in place until #1323 closes — this B1a audit does
+  **not** un-ignore it), #1325 / #1330 / #1337 (per-tilt /
+  per-azimuth fixture-data lineage grounding the calculation
+  PASSES — all upstream closed issues cited without
+  modification).
 
 ## fluxion-fluid Autodiff Issues (FLUID)
 
