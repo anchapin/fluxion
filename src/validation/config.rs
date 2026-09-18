@@ -155,7 +155,7 @@ impl ConfigValidationResult {
 /// # Examples
 /// ```
 /// use fluxion::validation::config::validate_assembly;
-/// use fluxion::sim::assembly::{BuildingAssembly, AssemblyBuilder};
+/// use fluxion::sim::assembly::{BuildingAssembly, AssemblyBuilder, ConcreteMaterial};
 ///
 /// let assembly = AssemblyBuilder::new("test".to_string())
 ///     .add_layer(Box::new(ConcreteMaterial::new(0.1)))

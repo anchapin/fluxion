@@ -448,7 +448,7 @@ LIMITS: list[Limit] = [
     ),
     Limit(
         path=REPO_ROOT / "src" / "physics" / "geometry_tensor.rs",
-        max_lines=2610,
+        max_lines=2932,
         ratchet_path=REPO_ROOT
         / "tests"
         / "reference_data"
@@ -457,8 +457,10 @@ LIMITS: list[Limit] = [
         reason=(
             "Issue #3574: ``src/physics/geometry_tensor.rs`` crossed the "
             "smallest ratcheted threshold after Issue #3543. Ratcheted at "
-            "current size 2486 lines + buffer (max of +5% or +100 lines = "
-            "2610); decomposition tracked separately."
+            "current size 2792 lines + buffer (max of +5% or +100 lines = "
+            "2932; raised from 2486/2610 by #3731's typed ZoneCountPolicy "
+            "wrapper which added a struct + impl + doc + 5 unit tests, "
+            "+306 lines / +12.3%); decomposition tracked separately."
         ),
     ),
     Limit(

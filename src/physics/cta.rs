@@ -120,8 +120,6 @@ where
 /// use fluxion::physics::cta::VectorField;
 ///
 /// let v = VectorField::new(vec![1.0, 2.0, 3.0]);
-/// let g = v.gradient();
-/// let integral = v.integrate();
 ///
 /// // Element-wise arithmetic
 /// let sum = v.clone() + VectorField::new(vec![4.0, 5.0, 6.0]);
@@ -243,6 +241,8 @@ impl VectorField {
     ///
     /// # Example
     /// ```rust
+    /// use fluxion::physics::cta::VectorField;
+    ///
     /// let mut v = VectorField::new(vec![1.0, 2.0, 3.0]);
     /// v.map_in_place(|x| x * 2.0);
     /// assert_eq!(v.as_slice(), &[2.0, 4.0, 6.0]);

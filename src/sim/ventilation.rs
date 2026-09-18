@@ -576,7 +576,7 @@ pub fn ach_to_conductance(ach: f64, volume: f64, rho: f64, cp: f64) -> ThermalCo
 /// // Base ventilation schedule
 /// let base = ConstantVentilation::new(0.5);
 ///
-/// // Earth tube with typical parameters
+/// // Earth tube with typical parameters (Kelvin units for ground + supply API)
 /// let earth_tube = EarthTube::new()
 ///     .soil_temperature_K(285.15)  // ~12°C ground temperature
 ///     .flow_rate_m3_s(0.05);
@@ -588,10 +588,11 @@ pub fn ach_to_conductance(ach: f64, volume: f64, rho: f64, cp: f64) -> ThermalCo
 /// let ach = vent.get_ach(12, 30.0, 25.0, 2.0, 100.0);
 /// assert_eq!(ach, 0.5);
 ///
-/// // But supply temperature is pre-conditioned
-/// let supply = vent.supply_temperature(35.0);  // Hot summer day
-/// assert!(supply < 35.0);  // Pre-cooled
-/// assert!(supply > 12.0);  // Above ground temperature
+/// // But supply temperature is pre-conditioned.
+/// // `supply_temperature` takes Kelvin (308.15 K = 35 °C hot summer day).
+/// let supply = vent.supply_temperature(308.15);
+/// assert!(supply < 308.15);  // Pre-cooled
+/// assert!(supply > 285.15);  // Above ground temperature (285.15 K ≈ 12 °C)
 /// ```
 #[derive(Debug)]
 pub struct EarthTubeVentilation<S: VentilationSchedule + Clone> {

@@ -158,6 +158,8 @@ impl WallDiscretization {
     /// # Example
     ///
     /// ```rust
+    /// use fluxion::physics::fd_discretization::{MaterialLayer, WallDiscretization};
+    ///
     /// let layers = vec![
     ///     MaterialLayer::new("Gypsum", 0.013, 0.16, 800.0, 1090.0),
     ///     MaterialLayer::new("Concrete", 0.150, 1.4, 2300.0, 880.0),

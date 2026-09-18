@@ -86,6 +86,7 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | Tracked-vs-Ignored Gate (Issue #3356) | #3356 |
 | Crate Size Gate (Issue #2930) | #2930 |
 | fluxion-grid Integration Tests (GH) | — |
+| Tauri CSP Gate (Issue #3727) | #3727 |
 | h_tr_em Regression Gate (LIMIT-13) | — |
 | FFI Feature Check (GH) | — |
 | Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH) | — |

@@ -278,6 +278,22 @@
       "total": 288,
       "edge_signature": "f2e011da65a1989d93a3800d0b8930e8e13939443351ad080082006b469c5fb5",
       "reason": "Re-baseline for Issue #3789 decomposition: src/sim/thermal_model.rs (3061 lines) split into thermal_model/{mod,physics,surrogate,hybrid,unified,comfort,tests}.rs. Total cycle edge count unchanged at 288; signature shifted because edge file paths moved (sim->physics 80 stays at 80, with edges redistributed across the new child files). Per the #2768 R3 net-flat-swap rule, a manual baseline bump is required after a legitimate decomposition that redistributes the same edge set across child files."
+    },
+    {
+      "timestamp": "2026-09-18T15:25:23+00:00",
+      "commit": "db62523",
+      "source": "issue-3731-zonecount-policy",
+      "totals": {
+        "sim_to_validation": 51,
+        "validation_to_sim": 67,
+        "validation_to_physics": 65,
+        "validation_to_weather": 25,
+        "physics_to_sim": 0,
+        "sim_to_physics": 81
+      },
+      "total": 289,
+      "edge_signature": "217b111063c1819a8ca7e25134ed0b375722a6ea5a602ce0215e54ef82cf01bd",
+      "reason": "Issue #3731 introduced a typed ZoneCountPolicy wrapper under src/physics/geometry_tensor.rs and consumed it from src/sim/thermal_model_core/mod.rs:9 to wire typed gauge pre-checks for num_zones beyond MAX_ZONES=100. This added 1 sanctioned sim->physics edge. BASELINE_SIM_TO_PHYSICS in scripts/check_physics_sim_cycle.py was raised from 80 to 81 in the same commit. Live scan at 81 on 2026-09-18; sim_to_physics 80 -> 81 (+1)."
     }
   ]
 }

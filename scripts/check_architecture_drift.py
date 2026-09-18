@@ -918,6 +918,14 @@ def check_drift() -> tuple[list[str], bool]:
         "UrbanRadiationSolver",  # struct in fluxion-city/src/lib.rs (sparse module)
         "ConstructionLayer",  # struct in fluxion-core/src/construction.rs (#2462)
         "PerSurfaceConductionSolver",  # struct in fluxion-core/src/per_surface_conduction.rs (#2462)
+        # Issue #3729 gauge-conduction backend refactor: these are pub structs
+        # in src/physics/gauge_zone_solver.rs, not traits. They were originally
+        # traits in pre-#3729 designs but the gauge solver is now struct-based
+        # (the previous trait abstraction was dropped along with the `Clone`
+        # contract pinning work in #3729).
+        "GaugeZoneSolver",
+        "MultiZoneGaugeSolver",
+        "SurfaceGaugeSolver",
     }
 
     # Traits documented as planned-but-not-yet-implemented in the multi-phase

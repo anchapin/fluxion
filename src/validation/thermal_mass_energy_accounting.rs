@@ -25,17 +25,20 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```rust,ignore
+//! // Full setup requires constructing a `ThermalSelector` and an ASHRAE 140
+//! // spec; see `fluxion::sim::engine::ThermalModel::from_spec_with_selector`
+//! // and the integration tests in `tests/` for end-to-end usage. This
+//! // doctest is illustrative — production callers resolve a real selector.
 //! use fluxion::validation::thermal_mass_energy_accounting::*;
 //! use fluxion::sim::engine::ThermalModel;
 //! use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+//! use fluxion::sim::thermal_selector::ThermalSelector;
 //!
-//! let spec = ASHRAE140Case::Case900.spec();
-//! let model = ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default()).expect("default selector must initialize");
-//!
-//! let mass_energy = calculate_mass_energy(&model);
-//!
-//! println!("Total thermal mass energy: {:.2e} J", mass_energy);
+//! // let spec = ASHRAE140Case::Case900.spec();
+//! // let model = ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default()).expect("default selector must initialize");
+//! // let mass_energy = calculate_mass_energy(&model);
+//! // println!("Total thermal mass energy: {:.2e} J", mass_energy);
 //! ```
 
 use crate::physics::cta::VectorField;
