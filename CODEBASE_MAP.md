@@ -188,30 +188,32 @@ src/
 
 ### FFI Architecture Overview
 
-Fluxion provides three FFI pathways:
+Fluxion provides four FFI pathways — PyO3 (Python), NAPI-RS (Node.js),
+FMI 2.0 (co-simulation export), and `wasm-bindgen` (browser / CAD /
+web-BIM via the `fluxion-wasm` workspace crate, PR #3714):
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    External Consumers                        │
-│   Python (scipy, D-Wave, GA libs)  │  Node.js  │  FMI     │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                    ┌─────────┴─────────┐
-                    │   src/lib.rs      │
-                    │   (PyO3 module)   │
-                    └─────────┬─────────┘
-                              │
-         ┌────────────────────┼────────────────────┐
-         │                    │                    │
-   ┌─────▼─────┐       ┌─────▼─────┐       ┌─────▼─────┐
-   │  python/  │       │   napi/  │       │  interop/ │
-   │ bindings  │       │  napi    │       │    fmi    │
-   └─────┬─────┘       └─────┬─────┘       └─────┬─────┘
-         │                    │                    │
-   ┌─────▼────────────────────▼────────────────────▼─────┐
-   │              Rust Core (rlib)                        │
-   │   ThermalModel │ SurrogateManager │ Solvers        │
-   └─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         External Consumers                                │
+│ Python (scipy, D-Wave) │ Node.js │ FMI (EnergyPlus, TRNSYS) │ WASM (browser, CAD) │
+└──────────────────────────────────────────────────────────────────────────┘
+              │                │              │                        │
+       ┌──────┴───────┐ ┌──────┴───────┐ ┌────┴────┐          ┌─────────┴─────────┐
+       │  src/lib.rs  │ │   src/napi/  │ │  src/   │          │   fluxion-wasm    │
+       │ (PyO3 module)│ │  (NAPI-RS)   │ │interop/ │          │   (wasm-bindgen)  │
+       │              │ │              │ │   fmi   │          │                   │
+       └──────┬───────┘ └──────┬───────┘ └────┬────┘          └─────────┬─────────┘
+              │                │              │                        │
+              │        ┌───────┴────┐         │                        │
+              │        │ crates/     │         │                        │
+              │        │ fluxion-    │         │                        │
+              │        │ toon (TOON) │         │                        │
+              │        └───────┬────┘         │                        │
+              │                │              │                        │
+    ┌─────────▼────────────────▼──────────────▼────────────────────────▼─────┐
+    │              Rust Core (rlib) + fluxion-fluid acausal HVAC ports       │
+    │   ThermalModel │ SurrogateManager │ Solvers │ FluidNetwork             │
+    └────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -328,6 +330,107 @@ FmiConfig {
     stop_time: 31536000.0,  // 1 year
 }
 ```
+
+---
+
+### WebAssembly Bindings (wasm-bindgen) — `fluxion-wasm/`
+
+**Purpose**: Browser-side and in-CAD simulation. The `fluxion-wasm`
+workspace crate ships `wasm-bindgen` exports wrapping `fluxion-fluid`
+ports/mediums and a per-zone lumped-capacitance model wired to real
+weather + HVAC loads. Issue #1996 scaffolded the crate; Issue #2380
+and PR #3714 wired it to real weather (WD600 series for
+`"ASHRAE_600"` preset) and full HVAC power demand. Authoritative
+references: [`fluxion-wasm/README.md`](fluxion-wasm/README.md) (API
++ integration examples) and
+[`fluxion-wasm/WASM_STATUS.md`](fluxion-wasm/WASM_STATUS.md)
+(compatibility matrix + limitations).
+
+**Build entry points** (`wasm-pack`):
+```bash
+wasm-pack build --target web     -p fluxion-wasm   # browser bundle
+wasm-pack build --target nodejs -p fluxion-wasm   # Node.js module
+cargo check                      -p fluxion-wasm   # native sanity check
+```
+
+#### Exposed Types (`#[wasm_bindgen]`)
+
+| Rust Type | JS Class | Purpose |
+|-----------|----------|---------|
+| `FluidSimulation` | `FluidSimulation` | Per-zone lumped-capacitance model with HVAC power demand; primary public type |
+| `FluidSimulationConfig` | (plain JSON) | Serialization-only — constructor input schema |
+| `Air`, `Water`, `Medium` | re-exports | `fluxion-fluid::mediums` strong types |
+| `AirPort`, `HydronicPort`, `BoundaryConditions` | re-exports | `fluxion-fluid::ports` strong types |
+
+#### JavaScript API (v1.1.0)
+
+```javascript
+import init, { FluidSimulation } from '@fluxion/wasm';
+
+await init();
+
+const sim = new FluidSimulation(JSON.stringify({
+  building: '5_zone_office',
+  num_zones: 5,
+  weather: 'ASHRAE_600',
+  heating_setpoint: 20.0,
+  cooling_setpoint: 24.0,
+  zone_thermal_mass: [5e6, 5e6, 5e6, 5e6, 5e6],
+  zone_conductance:  [50.0, 50.0, 50.0, 50.0, 50.0],
+  infiltration_ach:  [0.5,  0.5,  0.5,  0.5,  0.5 ],
+  internal_gains_w:  [200,  200,  200,  200,  200 ],
+}));
+
+sim.step(1.0);                                 // advance 1 hour
+const temps = sim.get_zone_temps();            // Float64Array of zone °C
+sim.set_control('heating_zone_0', 21.0);       // mutate control loop
+const q = sim.hvac_power_demand(0, -5.0);      // HVAC W at hour, T_out °C
+```
+
+Full method list (constructor + 25 methods including zone-parameter
+batch mutations in v1.1.0): see `fluxion-wasm/README.md` §API. The
+JSON shape for both the constructor and `apply_zone_parameters` is
+documented in `fluxion-wasm/README.md` §Configuration.
+
+#### FFI / Memory Ownership
+
+- `wasm-bindgen` translates `Vec<f64>` to JS `Float64Array` as a
+  zero-copy view (no heap allocation, the JS GC reclaims).
+- `String` ↔ `JSString` automatic.
+- `Result<T, JsValue>` maps to either a thrown `Error` (Rust `Err`
+  variant converted via `JsValue::from_str`) or a returned value.
+- `Option<T>` ↔ `T | null`.
+- All exported types are `'static`; reference counting on the
+  JS side, no explicit `free()` required — the JS GC reclaims.
+- Validation at the boundary (Issue #2911): finite-range checks in
+  `fluxion_wasm::check_finite` (and the wasm-boundary
+  `validate_finite` wrapper) reject NaN/±Inf and out-of-range values
+  so a malformed JS payload cannot propagate into downstream
+  numerical instability.
+
+#### WASM Compatibility Constraints
+
+See [`fluxion-wasm/WASM_STATUS.md`](fluxion-wasm/WASM_STATUS.md) for
+the full matrix. Summary:
+
+| Module | Status | Notes |
+|--------|--------|-------|
+| `fluxion-core` | ✅ Compatible | Weather, assembly, multi_node |
+| `fluxion-fluid::mediums` | ✅ Compatible | Pure Rust |
+| `fluxion-fluid::ports` | ✅ Compatible | Strongly typed ports |
+| `fluxion-fluid::graph` | ✅ Compatible | petgraph with `alloc` |
+| `fluxion-fluid::solvers` | ⚠ Sequential | `faer-rs` without `rayon` |
+| `fluxion-ai` (ONNX) | ❌ Incompatible | `ort` is not WASM-portable |
+| `BatchOracle` (`rayon`) | ❌ Incompatible | No thread pool in WASM |
+
+Consequence: `FluidSimulation::solve_timesteps(steps, useSurrogates)`
+is a documented stub that returns `0.0`; surrogate inference is
+unavailable in WASM builds. The enhanced lumped-capacitance model
+(per-zone thermal mass + conductance + infiltration + gains) is the
+physics-only path. The crate is consumed by
+`fluxion-tauri/frontend/src/sim/` via the `WASM Sim` button as the
+optional in-browser physics fallback (see `fluxion-tauri/README.md`
+§Web fallback).
 
 ---
 
@@ -714,6 +817,316 @@ results are produced as owned `String`s (JSON or `toon:v1\n...`) and then
 re-parsed into `serde_json::Value` for the response envelope (TOON strings are
 wrapped as `{"_toon": <string>}`). Per-tool latency and error metrics are
 recorded via the `metrics` crate (#2515).
+
+---
+
+### fluxion-wasm (fluxion-wasm/)
+
+**Purpose**: WebAssembly surface for browser-side and in-CAD simulation.
+Ships `wasm-bindgen` exports that wrap `fluxion-fluid` strong types
+(`Air`, `Water`, `Medium`, `AirPort`, `HydronicPort`,
+`BoundaryConditions`) and a per-zone lumped-capacitance model with HVAC
+power demand. Issue #1996 (scaffolding) → #2380 (WASM build pipeline)
+→ PR #3714 wired the simulator to real outdoor-temperature schedules
+(`"ASHRAE_600"` preset via embedded WD600 dry-bulb series, plus the
+explicit `outdoorTemps` array channel — Issue #3624) and full HVAC
+power demand. See §WebAssembly Bindings above for the FFI surface and
+[`fluxion-wasm/README.md`](fluxion-wasm/README.md) /
+[`fluxion-wasm/WASM_STATUS.md`](fluxion-wasm/WASM_STATUS.md) for the
+authoritative API + compatibility matrix.
+
+**Feature-gate relationship** (`fluxion-wasm/Cargo.toml`):
+- **`crate-type = ["cdylib", "rlib"]`** — the `cdylib` target is what
+  `wasm-pack` ships; the `rlib` target lets `cargo test --lib`
+  exercise the simulation natively without a browser harness.
+- **`fluxion-fluid`** is an unconditional dependency (the `ports`/
+  `mediums`/graph layers are WASM-portable per
+  `fluxion-fluid/WASM_STATUS.md`).
+- **`fluxion-core`** is pulled in only on non-`wasm32` targets
+  (`[target.'cfg(not(target_arch = "wasm32"))'.dependencies]`) so the
+  WASM artefact stays free of platform-specific edge cases.
+
+**Entry point**: `fluxion-wasm/src/lib.rs` (`FluidSimulation`,
+`FluidSimulationConfig`, plus re-exports of `fluxion_fluid::mediums`
+and `fluxion_fluid::ports`).
+
+#### Public Surface (FFI)
+
+See §WebAssembly Bindings (wasm-bindgen) above for the full table —
+it documents every `#[wasm_bindgen]`-exposed type and method, the
+`Float64Array` / `JSString` / `Option<T>` memory-translation rules,
+and the NaN/±Inf + range-validation contract at the
+JS→Rust boundary (Issue #2911).
+
+#### Build & Test
+
+| Command | Purpose |
+|---------|---------|
+| `cargo check -p fluxion-wasm` | Native typecheck; runs in CI |
+| `cargo test -p fluxion-wasm` | Native tests via the `rlib` target |
+| `wasm-pack build --target web -p fluxion-wasm` | Browser bundle (consumed by `fluxion-tauri/frontend/src/sim/`) |
+| `wasm-pack build --target nodejs -p fluxion-wasm` | Node.js module |
+| `cargo build -p fluxion-wasm --release` | Optimised artefact (`opt-level = "s"`, `lto = true`; `wasm-opt = false` per `[package.metadata.wasm-pack.profile.release]`) |
+
+#### Memory Ownership
+
+`wasm-bindgen` handles transfer automatically: `Vec<f64>` → JS
+`Float64Array` (zero-copy view, no JS-side heap allocation), `String`
+→ `JSString`, `Result<T, JsValue>` → thrown `Error` or returned value.
+All exported types are `'static`; the JS GC reclaims. No explicit
+`free()` calls, no `unsafe`, no shared mutable state across exports.
+
+---
+
+### fluxion-fluid (fluxion-fluid/)
+
+**Purpose**: Acausal HVAC / fluid-network port-trait library (ADR-0005,
+Issue #1980). Provides strongly-typed ports (`ports/`), a graph layer
+for connecting them (`graph/`), and solvers (`solvers/`) for assembling
+air loops, plant loops, and other DAE systems. Documented at the file
+level rather than via PyO3/NAPI because the surface is consumed by
+other Rust crates (notably `fluxion-mcp` and `fluxion-wasm`).
+
+> **Not to be confused** with `fluxion-core/src/fluid/` — that is a
+> separate, lighter in-core module. `fluxion-fluid` is the
+> feature-gated, acausal-HVAC port-trait layer; see
+> [`fluxion-fluid/README.md`](fluxion-fluid/README.md).
+
+**Feature-gate relationship** (`fluxion-fluid/Cargo.toml`):
+- The crate itself is always built (workspace member);
+- **`fluxion`** (the root crate) pulls it in only with
+  `--features fluid`. **`fluxion-mcp`** and **`fluxion-wasm`** depend
+  on it unconditionally — both need the port-traits surface at
+  runtime regardless of the engine build profile.
+
+**Entry point**: `fluxion-fluid/src/ports/` (`AirPort`, `HydronicPort`,
+`BoundaryConditions`), `fluxion-fluid/src/graph/` (`Component`,
+`FluidNode`, `FluidEdge`), `fluxion-fluid/src/solvers/`.
+
+#### WASM Compatibility
+
+[`fluxion-fluid/WASM_STATUS.md`](fluxion-fluid/WASM_STATUS.md) tracks
+the dependency compatibility matrix. `ports/`, `graph/`, and `mediums`
+are fully WASM-portable. `solvers/` fall back to a sequential path
+(no `rayon`) — `fluxion-wasm` pins to that fallback by construction.
+
+#### Consumers
+
+| Consumer | Use |
+|----------|-----|
+| `fluxion-mcp` | `inspect_fluid_loop`, `get_hvac_control_sequence`, `set_hvac_control_sequence` (Issue #2562) |
+| `fluxion-wasm` | Re-exports `Air`, `Water`, `Medium`, `AirPort`, `HydronicPort`, `BoundaryConditions`; wraps them in `FluidSimulation` |
+| Root `fluxion` | `cargo build --features fluid` wires it into the engine proper |
+
+#### Memory Ownership
+
+Pure value-passing and trait-object composition (`Box<dyn AirPort>`
+etc.). State per loop lives on `FluidNetworkState` inside
+`fluxion-mcp`'s `McpState` (one entry per loop). No `unsafe`; no FFI
+boundary of its own.
+
+---
+
+### fluxion-behavior (fluxion-behavior/)
+
+**Purpose**: Occupant-side thermal comfort + behaviour. Implements
+Fanger PMV/PPD, adaptive-comfort models (ASHRAE 55-style), and
+stochastic occupant triggers (window opening, shading,
+setpoint adjustments). Outputs feed back into the zone energy
+balance so the simulation reflects how a real occupant would react
+to the conditions the model produces. Always-built sibling of the
+root crate. See [`fluxion-behavior/README.md`](fluxion-behavior/README.md).
+
+**Feature-gate relationship**: the crate is always built; the root
+crate's `behavior` feature (default-on in the relevant scope)
+activates the wiring into `ThermalModelTrait::get_comfort_metrics`.
+
+**Entry point**: `fluxion-behavior/src/` (PMV/PPD, adaptive models,
+occupant-trigger state machine).
+
+#### Public Surface
+
+| Item | Kind | Purpose |
+|------|------|---------|
+| `PmvComfort` | struct | Fanger PMV/PPD reference implementation |
+| `AdaptiveComfort` | struct | ASHRAE 55 adaptive-comfort reference implementation |
+| `OccupantComfortTriggers` | struct | Stochastic state machine — emits `TriggerType` on `ComfortViolation` (window open, shade down, setpoint adjust) |
+| `OccupantState` | enum | Occupant state machine backing the triggers (see `lighting.rs`) |
+| `ComfortMetrics` | struct | Aggregated outputs surfaced via `ThermalModelTrait::get_comfort_metrics()` |
+| `ComfortError`, `PmvComfortStatus`, `AdaptiveComfortStatus` | enum | Status / error return types |
+
+#### Memory Ownership
+
+Pure value-passing. No FFI, no async, no shared mutable state
+across zones. Comfort outputs are computed on demand from the
+caller's zone temperatures and humidity ratios.
+
+---
+
+### fluxion-grid (fluxion-grid/)
+
+**Purpose**: Grid-edge electrical network — battery storage, bus
+nodes, power-flow solvers, and the joint thermal–electrical
+convergence that couples the grid back to the thermal model.
+Always-built sibling of the root crate. See
+[`fluxion-grid/README.md`](fluxion-grid/README.md).
+
+**Feature-gate relationship**: the crate is always built; the
+optional **`fluxion-integration`** feature on the root crate wires
+`ThermalElectricalCoupler` into `ThermalModelTrait` so the grid
+and the thermal solver converge on one solution instead of
+running decoupled.
+
+**Entry point**: `fluxion-grid/src/` (battery, bus, solver,
+coupler).
+
+#### Public Surface
+
+| Item | Kind | Purpose |
+|------|------|---------|
+| `BatteryStorage` | struct | Time-varying SOC, charge/discharge limits |
+| `BatteryStorageNode`, `NetZeroSystem` | struct | Battery network assembly |
+| `ElectricalBus` | struct | Power-balance aggregation point (`BusNodeType`) |
+| `PowerFlowSolver` | struct | Per-bus power-flow solver (`TransmissionLine`, `PowerFlowState`, `GridConvergenceReport`) |
+| `VoltageCoupler`, `ThermalElectricalCoupler`, `ThermalModelTraitBridge` | struct | Joint convergence back into `ThermalModelTrait` (gated by `fluxion-integration`) |
+| `HeatPumpVoltageModel`, `fluxion_bridge` | module / struct | Heat-pump voltage coupling helpers |
+| `GridModelError`, `GridSolveError` | enum | Top-level error types |
+
+#### Memory Ownership
+
+Pure value-passing plus per-bus owned state. The coupler holds a
+callback back into `ThermalModelTrait` for one convergence pass;
+no `unsafe`, no async, no FFI.
+
+---
+
+### fluxion-city (fluxion-city/)
+
+**Purpose**: Urban-scale radiation modelling. Inter-building
+radiative exchange via a Nusselt-analog view-factor formulation
+so a building's thermal model accounts for longwave + shortwave
+radiation from neighbouring buildings rather than treating the
+building as isolated. Feature-gated sibling. See
+[`fluxion-city/README.md`](fluxion-city/README.md).
+
+**Feature-gate relationship** (`fluxion-city/Cargo.toml`, Issue
+#2344): always built as a workspace member; pulled into the root
+crate only with `--features fluxion-city`. ARCHITECTURE.md gives
+this crate a full Module section, so its absence from
+`CODEBASE_MAP.md` would drift the two reference docs.
+
+**Entry point**: `fluxion-city/src/` (view-factor matrix,
+urban-radiation timestep).
+
+#### Public Surface
+
+| Item | Kind | Purpose |
+|------|------|---------|
+| `UrbanGraph` | struct | Bounding-box graph of buildings (`BuildingNode`, `SpatialEdge`, `AdjacencyType`, `BoundingBox3D`) |
+| `nusselt` module | module | Pairwise Nusselt-analog form factors between buildings |
+| `sparse` module | module | Sparse assembly helpers for the view-factor matrix |
+| `geometry` module | module | `GroundPlane`, `RectSurface`, `UrbanCanopySurface`, `VerticalSurface`, `SurfaceType` |
+| `ray_tracing` module | module | `MonteCarloViewFactor`, `Surface3D` for 3D form-factor verification |
+| `ashrae140` module | module | `ashrae140(...)` + `verify_ashrae_case(...)` plumbing for ASHRAE-140 view-factor checks |
+| `ViewFactorError` | enum | Top-level error type |
+
+#### Memory Ownership
+
+Pure value-passing. The graph and view-factor matrices are owned
+per `UrbanGraph` instance; surface properties are read-only views
+into the caller's `Construction` data.
+
+---
+
+### fluxion-cfd (fluxion-cfd/)
+
+**Purpose**: Indoor airflow / CFD co-simulation path. Fast Fluid
+Dynamics (FFD) approximation of the Navier–Stokes equations
+produces room-scale air-temperature and velocity fields that feed
+back into the zone thermal model. Backend selection via per-crate
+`cpu` / `cuda` / `opencl` features (default `cpu`). Feature-gated
+sibling. See [`fluxion-cfd/README.md`](fluxion-cfd/README.md).
+
+**Feature-gate relationship** (`fluxion-cfd/Cargo.toml`): always
+built as a workspace member; pulled into the root crate only with
+`--features fluxion-cfd`. The crate's own `cpu` / `cuda` /
+`opencl` features are independent of the root crate's feature
+gate. ARCHITECTURE.md gives this crate a full Module section, so
+its absence from `CODEBASE_MAP.md` would drift the two reference
+docs.
+
+**Entry point**: `fluxion-cfd/src/` (FFD solver, room-mesh
+loader, GPU/CPU backends).
+
+#### Public Surface
+
+| Item | Kind | Purpose |
+|------|------|---------|
+| `FfdCfdSolver` | struct | Per-room Navier–Stokes approximation; backend chosen via the crate's `cpu` / `cuda` / `opencl` features |
+| `FfdConfig`, `Grid3d`, `Field3d`, `VelocityField` | struct | Per-room config, 3D grid, scalar/vector field buffers |
+| `advection` module | module | `AdvectionSolver` |
+| `diffusion` module | module | `DiffusionSolver` |
+| `pressure` module | module | `PressureSolver` (pressure-Poisson stage) |
+| `gpu`, `cpu` modules | module | Backend selection (gated by crate features) |
+
+#### Memory Ownership
+
+Per-room owned mesh + field buffers. State lives on
+`FfdCfdSolver` for the duration of one simulation; no `unsafe`
+on the boundary itself (GPU kernels live behind the `cuda`/`opencl`
+features).
+
+---
+
+### fluxion-tauri (fluxion-tauri/src-tauri/) — explicit rationale
+
+**Why listed here despite being a GUI shell**: the root
+`Cargo.toml` workspace member path is `fluxion-tauri/src-tauri/`
+package `fluxion-tauri`. It is omitted from the body of the
+Boundary Crates section above (which is reserved for crates
+that cross a process, protocol, or model boundary rather than
+a language-FFI boundary — TAURI's IPC is a Tauri-defined
+contract, not a Fluxion FFI surface).
+
+**Crate role**: Tauri v2 desktop shell scaffolded in Issue #3178.
+`fluxion-tauri/README.md` is the authoritative layout reference:
+
+- `fluxion-tauri/src-tauri/` — Rust crate (`main.rs`, `commands.rs`,
+  `geometry.rs`; Tauri IPC commands for geometry, summary, zone
+  info, sim params; 11 unit tests).
+- `fluxion-tauri/frontend/` — Vite + React 18 + TypeScript +
+  React Three Fiber app (`scene/`, `lib/`, `livetwin/`,
+  `sim/`, `tauri/`, `ui/`).
+- Optional **in-browser physics** via `fluxion-wasm` built into
+  `frontend/public/wasm/`; the **WASM Sim** button steps a
+  `FluidSimulation` in 3 zones without a backend. Building
+  geometry is **not** exposed through `fluxion-wasm` (that crate
+  exports simulation, not geometry) — geometry commands stay
+  behind Tauri IPC.
+
+**Workspace-scope exclusion** (Issue #3587 / Issue #3126):
+`cargo test --workspace --exclude fluxion-tauri` is the
+developer-facing default because the proc-macro build needs
+`npm run build` in `fluxion-tauri/frontend/` to materialise
+`frontend/dist` first. Building the workspace crate from the
+repo root without that pre-step fails on the proc-macro
+expansion. `--include fluxion-tauri` works once the frontend
+is built.
+
+**Build / test entry points**:
+
+```bash
+cargo test -p fluxion-tauri                # 11 Rust unit tests
+cargo check -p fluxion-tauri
+(cd fluxion-tauri/frontend && npm run build)   # produces frontend/dist
+(cd fluxion-tauri/frontend && npm run tauri:dev)
+(cd fluxion-tauri/frontend && npm run tauri:build)
+```
+
+`fluxion-tauri/src-tauri/examples/dump_sample.rs` regenerates
+the cross-language contract fixture
+(`fluxion-tauri/frontend/tests/fixtures/rust-sample-geometry.json`)
+after `commands.rs`/`geometry.rs` changes.
 
 ---
 
