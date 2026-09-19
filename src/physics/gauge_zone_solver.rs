@@ -1647,8 +1647,16 @@ mod tests {
         // ~47 W/K settles ~10 °C above ambient when counted once (≈30 °C),
         // ~20 °C above when double-counted (≈40 °C).
         for _ in 0..240 {
-            zone.step(0, 3600.0, Temperature::from_value(20.0),
-                HeatTransferCoefficient::from_value(25.0), 0.0, 480.0, 0.0).unwrap();
+            zone.step(
+                0,
+                3600.0,
+                Temperature::from_value(20.0),
+                HeatTransferCoefficient::from_value(25.0),
+                0.0,
+                480.0,
+                0.0,
+            )
+            .unwrap();
         }
         let t = zone.T_air().to_value();
         assert!(
