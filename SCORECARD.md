@@ -14,7 +14,7 @@
 
 | Metric | Current | Budget (gate) | Status | Source |
 |--------|---------|---------------|--------|--------|
-| ASHRAE 140 pass rate | **14.1%** (12/84 metrics) | ≥ 60% (`validation.min_pass_rate`) | ❌ Fail | `validation/performance_history.latest.json` (latest run 2026-09-07) |
+| ASHRAE 140 pass rate | **14.1%** (10/84 metrics) | ≥ 60% (`validation.min_pass_rate`) | ❌ Fail | `validation/performance_history.latest.json` (latest run 2026-09-07) |
 | Mean Absolute Error (MAE) | **49.82%** | ≤ 50% (`validation.max_mae`) | ✅ Pass | `validation/performance_history.latest.json` (latest run 2026-09-07) |
 | BatchOracle throughput | **157 (CI) / 900 (release)** configs/sec | ≥ 150 (`benchmark.throughput.min_configs_per_sec`) | ✅ Pass | `release_gates.yaml` comment + `README.md` |
 | Validation-suite throughput | 13.83 cases/sec | (informational) | ℹ️ | `validation/performance_history.latest.json` (latest run 2026-09-07) |
@@ -22,7 +22,7 @@
 
 ## ASHRAE 140 Pass Rate
 
-- **Overall (metric-level):** 14.1% — 12 PASS / 8 WARN / 64 FAIL of 84 results. Below the 60% gate.
+- **Overall (metric-level):** 14.1% — 10 PASS / 8 WARN / 66 FAIL of 84 results. Below the 60% gate.
 - **Case-level:** 0/18 cases fully PASS (0.0%).
 
 ### Per-Series Breakdown (case-level)
