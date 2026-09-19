@@ -1066,6 +1066,14 @@ jobs:
       # matches the #2693 / #2772 gate pattern (those jobs each run a
       # single test) and keeps each test's measurement stable.
       #
+      # `--include-ignored` (Issue #3892 / PR #3895): the single-zone
+      # `test_hybrid_performance_regression` is `#[ignore]`-quarantined
+      # for load/cold-start dependence of its DEBUG-mode floor (QUARANTINE.md,
+      # un-ignore path #3894) — but this `--release` gate is its
+      # authoritative home and must keep running it. `--include-ignored`
+      # (NOT `--ignored`) so the non-quarantined multi-zone sibling runs
+      # in the same invocation and both throughput lines stay parseable.
+      #
       # Runtime budget: each pop_100 single-zone run measures ~1.5s and
       # each pop_1000 / 10-zone run measures ~125s on ubuntu-latest.
       # 2 tests × 3 runs × worst-case timing + ~3 min cold-cache build
@@ -1075,7 +1083,7 @@ jobs:
           rm -f run_*.txt
           for i in 1 2 3; do
             echo "=== measurement run ${i}/3 ==="
-            cargo test --test all_tests hybrid_perf_regression:: --release -- --nocapture --test-threads=1 > "run_${i}.txt" 2>&1 || true
+            cargo test --test all_tests hybrid_perf_regression:: --release -- --nocapture --test-threads=1 --include-ignored > "run_${i}.txt" 2>&1 || true
           done
 
           python3 << 'EOF'
