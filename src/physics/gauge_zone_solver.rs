@@ -1161,8 +1161,24 @@ mod tests {
     use super::*;
     use crate::physics::wall_spec::WallSpec;
 
-    fn case600_wall() -> WallSpec {
-        // ASHRAE 140 Case 600 low-mass wall
+    /// Conductive stub wall — NOT the real ASHRAE 140 Case 600 construction
+    /// (Issue #3893). R = 0.09 m²K/W (0.09 m / 1.0 W/mK), roughly 27× more
+    /// conductive than the real Case 600 wood-frame wall (R ≈ 2.4, per
+    /// `docs/contributing/ADDING_A_NEW_ASHRAE_140_CASE.md` reference data).
+    ///
+    /// **Stability footgun:** PR #3890 made the surface flux explicit in the
+    /// multi-zone T_air update (mirroring the single-zone #3878 fix), so
+    /// explicit-Euler stability requires `dt·H_surface < 2·C_air`. At hourly
+    /// dt this stub's H ≈ 373 W/K gives `dt·H ≈ 1.34 MJ > 2·C_air ≈ 0.31 MJ`
+    /// — a free-floating settle at hourly dt through the explicit-surface-flux
+    /// formula DIVERGES to non-finite (this cost PR #3890's first tracer test
+    /// a RED-cycle debug). Use `insulated_wall()` (R ≈ 2.4) for any test that
+    /// settles at hourly dt; see the #3817 stability analysis in `step`.
+    ///
+    /// Kept (renamed from `case600_wall`, Issue #3893) for the existing
+    /// short-step / steady-state tests calibrated against R = 0.09 — none of
+    /// them drive an hourly-dt free-float settle (audited in #3893).
+    fn conductive_stub_wall() -> WallSpec {
         WallSpec::single_layer("LightWeight", 0.09, 1.0, 50.0, 50.0)
     }
 
@@ -1179,7 +1195,7 @@ mod tests {
         let mut zone = GaugeZoneSolver::new(48.0, 2.7); // Case 600 floor area
 
         // Add 4 walls (simplified - each gets full wall R)
-        let wall = case600_wall();
+        let wall = conductive_stub_wall();
 
         // Case 600 dimensions: 8m x 6m x 2.7m
         // Wall heights are 2.7m
@@ -1218,7 +1234,7 @@ mod tests {
         // Test that adding multiple surfaces properly aggregates heat flows
         let mut zone = GaugeZoneSolver::new(48.0, 2.7);
 
-        let wall = case600_wall();
+        let wall = conductive_stub_wall();
 
         // Add 2 identical walls
         let wall_area = 10.0; // 10 m² each
@@ -1258,7 +1274,7 @@ mod tests {
     fn test_step_updates_temperature() {
         let mut zone = GaugeZoneSolver::new(48.0, 2.7);
 
-        let wall = case600_wall();
+        let wall = conductive_stub_wall();
         zone.add_opaque_surface(&wall, 48.0, SurfaceType::Wall, 0.0, 90.0)
             .unwrap();
 
@@ -1320,7 +1336,7 @@ mod tests {
         // Zone 1: 36m² floor, 2.7m height (Zone B)
         multi_zone.add_zone(1, 36.0, 2.7);
 
-        let wall = case600_wall();
+        let wall = conductive_stub_wall();
 
         // Add walls to Zone 0 (exterior walls only)
         multi_zone
@@ -1378,7 +1394,7 @@ mod tests {
         let mut zone_a = GaugeZoneSolver::new(48.0, 2.7);
         let mut zone_b = GaugeZoneSolver::new(48.0, 2.7);
 
-        let wall = case600_wall();
+        let wall = conductive_stub_wall();
         zone_a
             .add_opaque_surface(&wall, 48.0, SurfaceType::Wall, 0.0, 90.0)
             .unwrap();
@@ -1412,7 +1428,7 @@ mod tests {
     fn test_backward_compatibility_single_zone() {
         // Ensure existing single-zone usage still works
         let mut zone = GaugeZoneSolver::new(48.0, 2.7);
-        let wall = case600_wall();
+        let wall = conductive_stub_wall();
 
         zone.add_opaque_surface(&wall, 21.6, SurfaceType::Wall, 0.0, 90.0)
             .unwrap();
@@ -1435,7 +1451,7 @@ mod tests {
     #[test]
     fn test_surface_interior_temperatures_per_surface() {
         let mut zone = GaugeZoneSolver::new(48.0, 2.7);
-        let wall = case600_wall();
+        let wall = conductive_stub_wall();
 
         zone.add_opaque_surface(&wall, 21.6, SurfaceType::Wall, 0.0, 90.0)
             .unwrap();
@@ -1477,7 +1493,7 @@ mod tests {
     #[test]
     fn test_zone_interior_temperatures_area_weighted() {
         let mut zone = GaugeZoneSolver::new(48.0, 2.7);
-        let wall = case600_wall();
+        let wall = conductive_stub_wall();
 
         // Two surfaces with areas 30 m² and 10 m²: the weighted mean of
         // (20, 20) is 20 before any step.
@@ -1518,7 +1534,7 @@ mod tests {
         let mut mz = MultiZoneGaugeSolver::new();
         mz.add_zone(0, 48.0, 2.7);
         mz.add_zone(1, 32.0, 2.7);
-        let wall = case600_wall();
+        let wall = conductive_stub_wall();
         mz.add_opaque_surface_to_zone(0, &wall, 21.6, SurfaceType::Wall, 0.0, 90.0)
             .unwrap();
         mz.add_opaque_surface_to_zone(1, &wall, 12.0, SurfaceType::Wall, 180.0, 90.0)
@@ -1570,9 +1586,11 @@ mod tests {
 
     /// Issue #3889 — realistic insulated wall (R ≈ 2.4 m²K/W) so the
     /// explicit surface flux stays inside the T_air update's stability
-    /// envelope at hourly timesteps (the `case600_wall` stub is R = 0.09,
-    /// whose H·dt > 2·C_air is unstable once surface flux is treated
-    /// explicitly, matching the #3817 stability analysis in `step`).
+    /// envelope at hourly timesteps (the `conductive_stub_wall` stub is
+    /// R = 0.09 — ~27× too conductive for the real Case 600 construction,
+    /// Issue #3893 — whose H·dt > 2·C_air is unstable once surface flux is
+    /// treated explicitly, matching the #3817 stability analysis in `step`;
+    /// see that fixture's doc comment for the full divergence arithmetic).
     fn insulated_wall() -> WallSpec {
         WallSpec::single_layer("Insulated", 0.24, 0.1, 50.0, 50.0)
     }
@@ -1771,7 +1789,7 @@ mod tests {
 
     /// Build a Case 600-style initialized zone with two opaque surfaces.
     fn build_initialized_zone() -> GaugeZoneSolver {
-        let wall = case600_wall();
+        let wall = conductive_stub_wall();
         let mut zone = GaugeZoneSolver::new(48.0, 2.7);
         zone.add_opaque_surface(&wall, 48.0, SurfaceType::Wall, 180.0, 90.0)
             .expect("Case 600 wall must add");
@@ -1982,7 +2000,7 @@ mod tests {
     /// preserved.
     #[test]
     fn issue_3729_multi_zone_clone_resets_aggregate_state() {
-        let wall = case600_wall();
+        let wall = conductive_stub_wall();
         let mut mz = MultiZoneGaugeSolver::new();
         mz.add_zone(0, 48.0, 2.7);
         mz.add_zone(1, 36.0, 2.7);
