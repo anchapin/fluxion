@@ -33,7 +33,10 @@ def main() -> int:
     # Match "*Last Updated: YYYY-MM-DD*" (established format also allows an optional
     # parenthetical summary of LIMIT-N additions between the date and the closing *,
     # e.g. "*Last Updated: 2026-08-17 (LIMIT-08 + LIMIT-09 ...)*" — see issue #3105).
-    m = re.search(r"\*Last Updated:\s*(\d{4}-\d{2}-\d{2})(?:\s*\([^)]*\))?\s*\*", content)
+    # The parenthetical content may itself contain ')' characters (e.g. "follow-up)"),
+    # so we use [^)]*(\)[^)]*)* to skip over any inner ')' chars and find the
+    # actual ')*' that closes the parenthetical.
+    m = re.search(r"\*Last Updated:\s*(\d{4}-\d{2}-\d{2})(?:\s*\([^)]*(\)[^)]*)*\))?\s*\*", content)
     if not m:
         print(f"ERROR: Could not parse '*Last Updated: YYYY-MM-DD*' in {path}")
         print("  regex mismatch — script needs update (see issue #3105)")
