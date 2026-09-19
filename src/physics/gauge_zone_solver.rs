@@ -1572,15 +1572,15 @@ mod tests {
         WallSpec::single_layer("Insulated", 0.24, 0.1, 50.0, 50.0)
     }
 
-    #[test]
-    fn step_with_coupling_solar_lifts_free_float_above_ambient() {
+    /// Build the Issue #3889 sunspace pair: zone 0 carries a 40 m² window
+    /// (the only solar aperture), zone 1 is opaque, and the zones share a
+    /// 10 m² / R=0.5 coupling wall. Both zones are free-floating.
+    fn sunspace_pair() -> MultiZoneGaugeSolver {
         let mut mz = MultiZoneGaugeSolver::new();
         mz.add_zone(0, 48.0, 2.7);
         mz.add_zone(1, 48.0, 2.7);
 
         let wall = insulated_wall();
-        // Large window on zone 0 (solar_fraction = 1.0); both zones keep
-        // opaque exterior walls so the only solar aperture is zone 0's.
         mz.add_opaque_surface_to_zone(0, &wall, 40.0, SurfaceType::Window, 0.0, 90.0)
             .unwrap();
         mz.add_opaque_surface_to_zone(0, &wall, 21.6, SurfaceType::Wall, 180.0, 90.0)
@@ -1589,27 +1589,57 @@ mod tests {
             .unwrap();
         mz.add_zone_coupling(0, 1, 10.0, 0.5).unwrap();
         mz.initialize().unwrap();
+        mz
+    }
 
-        // 800 W/m² on the window: sol-air film raises the window's effective
-        // exterior temperature to 20 + 800/25 = 52 °C.
+    /// Step the sunspace pair to steady state under constant irradiance at
+    /// 20 °C outdoor air; return (zone 0 T_air, zone 1 T_air).
+    fn sunspace_settled_temps(solar_wm2: f64) -> (f64, f64) {
+        let mut mz = sunspace_pair();
         let mut bc = HashMap::new();
         let entry = ZoneBoundaryConditions::new(
             Temperature::from_value(20.0),
             HeatTransferCoefficient::from_value(25.0),
-            800.0,
+            solar_wm2,
         );
         bc.insert(0, entry.clone());
         bc.insert(1, entry);
-
-        // Settle the free-floating pair (10 days of hourly steps).
         for _ in 0..240 {
             mz.step(3600.0, &bc).unwrap();
         }
+        (
+            mz.get_zone(0).unwrap().T_air().to_value(),
+            mz.get_zone(1).unwrap().T_air().to_value(),
+        )
+    }
 
-        let t0 = mz.get_zone(0).unwrap().T_air().to_value();
+    #[test]
+    fn step_with_coupling_solar_lifts_free_float_above_ambient() {
+        let (t0, _) = sunspace_settled_temps(800.0);
         assert!(
             t0 > 25.0,
             "sunlit zone must float above T_ext + 5 °C under 800 W/m², got {t0:.2} °C"
+        );
+    }
+
+    #[test]
+    fn step_with_coupling_solar_lift_scales_with_irradiance() {
+        // The surface flux is linear in irradiance (sol-air film adds
+        // solar / h_ext to the effective exterior temperature), so the
+        // free-float lift must track irradiance proportionally. Guards
+        // against solar entering through a saturating or capped path.
+        let (t0_low, _) = sunspace_settled_temps(400.0);
+        let (t0_high, _) = sunspace_settled_temps(800.0);
+        let lift_low = t0_low - 20.0;
+        let lift_high = t0_high - 20.0;
+        assert!(
+            lift_low > 0.0 && lift_high > lift_low,
+            "lift must grow with irradiance: 400 W/m² -> {lift_low:.2} K, 800 W/m² -> {lift_high:.2} K"
+        );
+        let ratio = lift_high / lift_low;
+        assert!(
+            (ratio - 2.0).abs() < 0.1,
+            "doubling irradiance must double the lift (linear sol-air physics), ratio {ratio:.3}"
         );
     }
 
