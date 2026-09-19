@@ -660,28 +660,20 @@ impl GaugeZoneSolver {
         // Stability then reduces to |dT_new/dT_old| = C_air / (C_air + dt·(H+h_inf))
         // which is unconditionally < 1 (was |C_air − H·dt| / (C_air + h_inf·dt)
         // in the old formula — could exceed 1).
-        let h_surface_total: f64 = self
-            .surfaces
-            .iter()
-            .filter(|s| !s.surface_type.is_inter_zone())
-            .filter_map(|s| {
-                let r = s.wall_spec.as_ref()?.total_r_value();
-                if r > 0.0 && r.is_finite() {
-                    Some(s.area_m2 / r)
-                } else {
-                    None
-                }
-            })
-            .sum();
-        let h_eff = h_surface_total + h_total;
-
         // Update zone air temperature using implicit Euler (unconditionally stable):
-        // T_air_new = (C_air · T_air_old + dt · ((H + h_inf) · T_ext + Q_internal))
-        //           / (C_air + dt · (H + h_inf))
+        // T_air_new = (C_air · T_air_old + dt · (net_power_watts + h_total · T_ext + Q_internal))
+        //           / (C_air + dt · h_total)
+        // Issue #3878: The old formula used h_eff * T_ext as a proxy for all surface heat
+        // flows, but solar-driven flows were invisible to it (solar heats exterior surfaces above
+        // T_ext, yet h_eff * T_ext never saw that gain). net_power_watts already captures all
+        // surface heat flows including solar, so use it directly. h_total (infiltration only)
+        // is the correct denominator coefficient since infiltration is driven by outdoor air
+        // temperature, not surface temperatures.
         let T_air_old = self.T_air;
         let T_ext_val = T_exterior.to_value();
-        self.T_air = (self.C_air * T_air_old + dt_seconds * (h_eff * T_ext_val + Q_internal_w))
-            / (self.C_air + h_eff * dt_seconds);
+        self.T_air = (self.C_air * T_air_old
+            + dt_seconds * (net_power_watts + h_total * T_ext_val + Q_internal_w))
+            / (self.C_air + h_total * dt_seconds);
 
         // Add infiltration heat contribution to net power for return value
         net_power_watts += Q_infiltration_w;
