@@ -661,18 +661,23 @@ impl GaugeZoneSolver {
         // which is unconditionally < 1 (was |C_air − H·dt| / (C_air + h_inf·dt)
         // in the old formula — could exceed 1).
         // Update zone air temperature using implicit Euler (unconditionally stable):
-        // T_air_new = (C_air · T_air_old + dt · (net_power_watts + h_total · T_ext + Q_internal))
+        // T_air_new = (C_air · T_air_old + dt · (net_power_watts + h_total · T_ext))
         //           / (C_air + dt · h_total)
-        // Issue #3878: The old formula used h_eff * T_ext as a proxy for all surface heat
-        // flows, but solar-driven flows were invisible to it (solar heats exterior surfaces above
-        // T_ext, yet h_eff * T_ext never saw that gain). net_power_watts already captures all
-        // surface heat flows including solar, so use it directly. h_total (infiltration only)
-        // is the correct denominator coefficient since infiltration is driven by outdoor air
-        // temperature, not surface temperatures.
+        // Issue #3878: The old formula used h_eff * T_ext as a proxy for all surface
+        // heat flows, but solar-driven flows were invisible to it (solar heats exterior
+        // surfaces above T_ext, yet h_eff * T_ext never saw that gain). net_power_watts
+        // already captures all surface heat flows including solar, so it is used
+        // directly. h_total (infiltration only) is the correct denominator coefficient
+        // since infiltration is driven by outdoor air temperature, not surface
+        // temperatures.
+        // Issue #3889: net_power_watts already includes Q_internal_w (accumulated
+        // above), so the numerator adds it exactly once. The pre-#3889 form carried a
+        // redundant explicit `+ Q_internal_w`, double-counting internal gains and
+        // settling free-floating zones at T_ext + 2·Q/(H + h_inf).
         let T_air_old = self.T_air;
         let T_ext_val = T_exterior.to_value();
         self.T_air = (self.C_air * T_air_old
-            + dt_seconds * (net_power_watts + h_total * T_ext_val + Q_internal_w))
+            + dt_seconds * (net_power_watts + h_total * T_ext_val))
             / (self.C_air + h_total * dt_seconds);
 
         // Add infiltration heat contribution to net power for return value
@@ -1619,6 +1624,36 @@ mod tests {
         assert!(
             t0 > 25.0,
             "sunlit zone must float above T_ext + 5 °C under 800 W/m², got {t0:.2} °C"
+        );
+    }
+
+    #[test]
+    fn step_counts_internal_gains_once_in_t_air_update() {
+        // Companion of the #3889 multi-zone fix: the single-zone step()
+        // T_air update must count Q_internal exactly once. The formula
+        // historically carried an explicit `+ Q_internal_w` term while
+        // `net_power_watts` already accumulated it, so a free-floating
+        // zone settled at T_ext + 2·Q/(H + h_inf) instead of
+        // T_ext + Q/(H + h_inf) — a +9 °C error at Case 600 gains.
+        let mut zone = GaugeZoneSolver::new(48.0, 2.7);
+        let wall = insulated_wall();
+        zone.add_opaque_surface(&wall, 40.0, SurfaceType::Window, 0.0, 90.0)
+            .unwrap();
+        zone.add_opaque_surface(&wall, 21.6, SurfaceType::Wall, 180.0, 90.0)
+            .unwrap();
+        zone.initialize().unwrap();
+
+        // 480 W into a zone whose envelope + infiltration conductance is
+        // ~47 W/K settles ~10 °C above ambient when counted once (≈30 °C),
+        // ~20 °C above when double-counted (≈40 °C).
+        for _ in 0..240 {
+            zone.step(0, 3600.0, Temperature::from_value(20.0),
+                HeatTransferCoefficient::from_value(25.0), 0.0, 480.0, 0.0).unwrap();
+        }
+        let t = zone.T_air().to_value();
+        assert!(
+            t > 25.0 && t < 35.0,
+            "internal gains must count once: expected ≈30 °C, double-count lands ≈40 °C, got {t:.2} °C"
         );
     }
 
