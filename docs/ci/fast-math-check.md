@@ -2,7 +2,7 @@
 
 **Issue:** #3326, #3358  
 **Date:** 2026-09-06  
-**Status:** REQUIRED — promoted to `release_gates.yaml::ci.required_checks` via the `(GH)` listener pattern (Issue #3358); live `develop` branch-protection activation gates on the 4-week stability window sign-off tracked in Issue #3358 comments.
+**Status:** NOT REQUIRED (Issue #3898 demotion) — removed from `release_gates.yaml::ci.required_checks` and `ci.required_checks_workflow_only` because the workflow's `pull_request.paths-ignore` (docs/markdown) means no run — the `(GH)` listener included — is ever created on a docs-only PR, so the required name could never report (structurally unmergeable). The gate still runs as a non-required path-filtered check (any non-docs diff) + nightly. History: promoted to required via the `(GH)` listener pattern (Issue #3358).
 
 ## Summary
 
@@ -118,13 +118,20 @@ immediately.
 | `workflow_dispatch` | — | Manual `gh workflow run fast_math_check.yml` |
 | `schedule` (nightly) | `0 4 * * *` | 04:00 UTC — off-peak slot, no collision with the other nightly jobs (nightly_validation=00, perf_dashboard=02, pgo=02:30, ashrae_140_validation=02, architecture_drift=03, rust-tests=03:17, loom=03 Sun, gauge=06, required-checks-sync-cron=06, mutation=07, known-issues-stale=09 Mon, rumqttc=10 Mon) |
 
-## Status: required (promoted)
+## Status: not required (promoted #3358, demoted #3898)
 
-The job **is** now a branch-protection required check on `develop`
-as of #3358 (YAML-side promotion). The live `develop` branch-protection
-contexts array pickup is the *separate* activation step — gated on the
-4-week stability window sign-off that is tracked in the Issue #3358
-comments using the #3286 β-soak convention.
+The job was a branch-protection required check on `develop` as of #3358
+(YAML-side promotion), and was REMOVED from both required lists by
+Issue #3898: the workflow's `pull_request.paths-ignore` for
+docs/markdown means no workflow run — the `fast-math-gh` listener
+included — is ever created on a docs-only PR, so the required name
+could never report success and every docs-only PR was permanently
+unmergeable under `enforce_admins: true`. The gate itself is
+UNCHANGED: it keeps running as a non-required path-filtered check on
+every PR class that touches its filter plus nightly at 04:00 UTC, and
+remains in `ci.workflow_index`; the wave-orchestrator all-checks-green
+merge criterion and the ADR-0016 Lane-3 nightly authority re-cover the
+invariant.
 
 Initial advisory state (Issue #3326, PR #3349, 2026-09-03):
 
@@ -149,12 +156,22 @@ Per the #3142 sync-discipline pattern documented in
    Gate (GH)"`) — **done in #3358**.
 4. Add the check to **both** `ci.required_checks` (for code-changing
    PRs) **and** `ci.required_checks_workflow_only` (for workflow-only
-   PRs) — **done in #3358**.
+   PRs) — **done in #3358, undone by #3898** (the workflow's
+   `paths-ignore` skip means the name can never report on docs-only
+   PRs; see Status above).
 5. Run `python3 scripts/check_required_checks_sync.py` to verify
    drift-free — **passes in #3358** (30 required_check(s), 31
    workflow_index entr(ies), in sync with 46 workflow file(s)).
 
-## Activation step (gated on stability window sign-off)
+## Activation step (historical — superseded by Issue #3898)
+
+> **Issue #3898:** this activation is **no longer the live state** —
+> the name was removed from both required lists (and is being removed
+> from live branch protection by the #3898 post-merge PUT) because the
+> workflow's `paths-ignore` skip makes the name unsatisfiable on
+> docs-only PRs. The procedure is retained verbatim below as the
+> template for any future re-promotion that first drops
+> `docs/**` from the workflow's `paths-ignore`.
 
 The YAML side already emits the exact required-check name. To
 *activate* the gate on the live `develop` branch-protection, run

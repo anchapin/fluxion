@@ -66,7 +66,6 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 
 | Required check | Issue |
 |----------------|-------|
-| ASHRAE 140 Strict Energy Gate (Issue #1333) | #1333 |
 | Surrogate ASHRAE 140 MAE Gate (Issue #2924) | #2924 |
 | Surrogate Drift Tolerance Gate (Issue #1784) | #1784 |
 | Docs Hygiene Gate (Issue #2466) | #2466 |
@@ -83,13 +82,10 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | Cargo Deny | — |
 | Audit Ignore Freshness (Issue #2912) | #2912 |
 | MSRV Check (Issue #2934) | #2934 |
-| Tracked-vs-Ignored Gate (Issue #3356) | #3356 |
 | Crate Size Gate (Issue #2930) | #2930 |
 | fluxion-grid Integration Tests (GH) | — |
 | Tauri CSP Gate (Issue #3727) | #3727 |
-| h_tr_em Regression Gate (LIMIT-13) | — |
 | FFI Feature Check (GH) | — |
-| Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH) | — |
 
 - **Live status** is intentionally not baked in here (it is non-deterministic and would break scorecard diff stability). Run:
 
