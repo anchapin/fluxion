@@ -661,18 +661,23 @@ impl GaugeZoneSolver {
         // which is unconditionally < 1 (was |C_air − H·dt| / (C_air + h_inf·dt)
         // in the old formula — could exceed 1).
         // Update zone air temperature using implicit Euler (unconditionally stable):
-        // T_air_new = (C_air · T_air_old + dt · (net_power_watts + h_total · T_ext + Q_internal))
+        // T_air_new = (C_air · T_air_old + dt · (net_power_watts + h_total · T_ext))
         //           / (C_air + dt · h_total)
-        // Issue #3878: The old formula used h_eff * T_ext as a proxy for all surface heat
-        // flows, but solar-driven flows were invisible to it (solar heats exterior surfaces above
-        // T_ext, yet h_eff * T_ext never saw that gain). net_power_watts already captures all
-        // surface heat flows including solar, so use it directly. h_total (infiltration only)
-        // is the correct denominator coefficient since infiltration is driven by outdoor air
-        // temperature, not surface temperatures.
+        // Issue #3878: The old formula used h_eff * T_ext as a proxy for all surface
+        // heat flows, but solar-driven flows were invisible to it (solar heats exterior
+        // surfaces above T_ext, yet h_eff * T_ext never saw that gain). net_power_watts
+        // already captures all surface heat flows including solar, so it is used
+        // directly. h_total (infiltration only) is the correct denominator coefficient
+        // since infiltration is driven by outdoor air temperature, not surface
+        // temperatures.
+        // Issue #3889: net_power_watts already includes Q_internal_w (accumulated
+        // above), so the numerator adds it exactly once. The pre-#3889 form carried a
+        // redundant explicit `+ Q_internal_w`, double-counting internal gains and
+        // settling free-floating zones at T_ext + 2·Q/(H + h_inf).
         let T_air_old = self.T_air;
         let T_ext_val = T_exterior.to_value();
         self.T_air = (self.C_air * T_air_old
-            + dt_seconds * (net_power_watts + h_total * T_ext_val + Q_internal_w))
+            + dt_seconds * (net_power_watts + h_total * T_ext_val))
             / (self.C_air + h_total * dt_seconds);
 
         // Add infiltration heat contribution to net power for return value
@@ -757,6 +762,12 @@ impl GaugeZoneSolver {
 
         let T_int = Temperature::from_value(self.T_air);
         let mut net_power_watts = 0.0;
+        // Issue #3889 — solar-aware exterior-surface flux sum. This is the
+        // multi-zone analogue of the single-zone #3878 fix: the T_air update
+        // below consumes the *computed* surface fluxes (which the sol-air
+        // film has already raised by solar/h_ext on sun-exposed surfaces)
+        // instead of an `H · T_ext` proxy that cannot see irradiance.
+        let mut q_surfaces_w = 0.0;
 
         // Sum heat flux from all exterior surfaces
         for surface in &mut self.surfaces {
@@ -773,6 +784,7 @@ impl GaugeZoneSolver {
 
             let Q_surface = q_flux.to_value() * surface.area_m2;
             net_power_watts += Q_surface;
+            q_surfaces_w += Q_surface;
         }
 
         // Compute inter-zone heat transfer
@@ -795,26 +807,12 @@ impl GaugeZoneSolver {
             * self.zone_volume;
         let h_total = h_inf;
 
-        // Issue #3817 — fully implicit Euler including envelope + inter-zone
-        // conductance in the coupling. Without these terms the gauge treats
-        // surface and inter-zone fluxes as constant w.r.t. T_air, which is
-        // unstable for high-mass / low-R constructions (see step() comment
-        // for derivation; identical math extended with inter-zone terms).
-        let h_surface_total: f64 = self
-            .surfaces
-            .iter()
-            .filter(|s| !s.surface_type.is_inter_zone())
-            .filter_map(|s| {
-                let r = s.wall_spec.as_ref()?.total_r_value();
-                if r > 0.0 && r.is_finite() {
-                    Some(s.area_m2 / r)
-                } else {
-                    None
-                }
-            })
-            .sum();
+        // Issue #3817 — fully implicit Euler including inter-zone conductance
+        // in the coupling. Without these terms the gauge treats inter-zone
+        // fluxes as constant w.r.t. T_air, which is unstable for strongly
+        // coupled zones (see step() comment for derivation; identical math
+        // extended with inter-zone terms).
         let h_inter_zone_total: f64 = self.couplings.iter().map(|c| c.conductance).sum();
-        let h_eff = h_surface_total + h_total + h_inter_zone_total;
 
         // Σ_j H_ij · T_adj,j — inter-zone driving term evaluated at the
         // adjacent zones' current T_air (explicit on the coupling; this is
@@ -831,12 +829,25 @@ impl GaugeZoneSolver {
 
         let T_air_old = self.T_air;
         let T_ext_val = bc.T_exterior.to_value();
-        // Numerator: C_air·T_old + dt · ((H_ext + h_inf)·T_ext + Σ H_ij·T_j + Q_internal).
-        // Denominator: C_air + dt · (H_ext + h_inf + Σ H_ij).
+        // Update zone air temperature using implicit Euler over the
+        // infiltration + inter-zone conductances (unconditionally stable):
+        // T_air_new = (C_air·T_old + dt·(Q_surfaces + h_inf·T_ext + Σ H_ij·T_j + Q_internal))
+        //           / (C_air + dt·(h_inf + Σ H_ij))
+        // Issue #3889 — the multi-zone mirror of the single-zone #3878 fix:
+        // the old formula used (H_surface + h_inf) · T_ext as a proxy for all
+        // surface heat flows, so solar-driven flows were invisible to it
+        // (solar heats exterior surfaces above T_ext via the sol-air film,
+        // yet the proxy never saw that gain), pinning free-floating zones at
+        // outdoor air temperature. `q_surfaces_w` already captures all
+        // exterior-surface flows including solar, so it enters the numerator
+        // directly. The denominator keeps only h_total (infiltration, driven
+        // by outdoor air temperature) + Σ H_ij (inter-zone, implicit per
+        // #3817) — surface conductance is *not* implicit because the surface
+        // flux is evaluated at T_air_old through the per-surface gauges.
         self.T_air = (self.C_air * T_air_old
             + dt_seconds
-                * ((h_surface_total + h_total) * T_ext_val + inter_zone_drive + bc.Q_internal_w))
-            / (self.C_air + h_eff * dt_seconds);
+                * (q_surfaces_w + h_total * T_ext_val + inter_zone_drive + bc.Q_internal_w))
+            / (self.C_air + (h_total + h_inter_zone_total) * dt_seconds);
 
         // Return net energy in kWh
         let energy_kwh = -(net_power_watts * dt_seconds) / 3_600_000.0;
@@ -1543,6 +1554,210 @@ mod tests {
         assert!(
             (per_zone[1] - 25.0).abs() < 1e-9,
             "zone 1 interior T must equal its pinned T_air=25 °C, got {per_zone:?}"
+        );
+    }
+
+    // ============== Issue #3889 — solar-coupled T_air on the multi-zone path ==============
+    //
+    // The single-zone fix (#3878 / PR #3884) replaced the `h_eff · T_ext`
+    // surface heat-flow proxy in `GaugeZoneSolver::step`'s T_air update with
+    // the solar-aware surface flux sum. `step_with_coupling` kept the proxy,
+    // so solar admitted through windows was invisible to the multi-zone air
+    // update — a free-floating zone stayed pinned at outdoor air temperature
+    // regardless of irradiance (the ~39.6 °C free-float ceiling on multi-zone
+    // ASHRAE 140 configurations). The tests below verify the behavior through
+    // the public `MultiZoneGaugeSolver::step` interface.
+
+    /// Issue #3889 — realistic insulated wall (R ≈ 2.4 m²K/W) so the
+    /// explicit surface flux stays inside the T_air update's stability
+    /// envelope at hourly timesteps (the `case600_wall` stub is R = 0.09,
+    /// whose H·dt > 2·C_air is unstable once surface flux is treated
+    /// explicitly, matching the #3817 stability analysis in `step`).
+    fn insulated_wall() -> WallSpec {
+        WallSpec::single_layer("Insulated", 0.24, 0.1, 50.0, 50.0)
+    }
+
+    /// Build the Issue #3889 sunspace pair: zone 0 carries a 40 m² window
+    /// (the only solar aperture), zone 1 is opaque, and the zones share a
+    /// 10 m² / R=0.5 coupling wall. Both zones are free-floating.
+    fn sunspace_pair() -> MultiZoneGaugeSolver {
+        let mut mz = MultiZoneGaugeSolver::new();
+        mz.add_zone(0, 48.0, 2.7);
+        mz.add_zone(1, 48.0, 2.7);
+
+        let wall = insulated_wall();
+        mz.add_opaque_surface_to_zone(0, &wall, 40.0, SurfaceType::Window, 0.0, 90.0)
+            .unwrap();
+        mz.add_opaque_surface_to_zone(0, &wall, 21.6, SurfaceType::Wall, 180.0, 90.0)
+            .unwrap();
+        mz.add_opaque_surface_to_zone(1, &wall, 21.6, SurfaceType::Wall, 0.0, 90.0)
+            .unwrap();
+        mz.add_zone_coupling(0, 1, 10.0, 0.5).unwrap();
+        mz.initialize().unwrap();
+        mz
+    }
+
+    /// Step the sunspace pair to steady state under constant irradiance at
+    /// 20 °C outdoor air; return (zone 0 T_air, zone 1 T_air).
+    fn sunspace_settled_temps(solar_wm2: f64) -> (f64, f64) {
+        let mut mz = sunspace_pair();
+        let mut bc = HashMap::new();
+        let entry = ZoneBoundaryConditions::new(
+            Temperature::from_value(20.0),
+            HeatTransferCoefficient::from_value(25.0),
+            solar_wm2,
+        );
+        bc.insert(0, entry.clone());
+        bc.insert(1, entry);
+        for _ in 0..240 {
+            mz.step(3600.0, &bc).unwrap();
+        }
+        (
+            mz.get_zone(0).unwrap().T_air().to_value(),
+            mz.get_zone(1).unwrap().T_air().to_value(),
+        )
+    }
+
+    #[test]
+    fn step_with_coupling_solar_lifts_free_float_above_ambient() {
+        let (t0, _) = sunspace_settled_temps(800.0);
+        assert!(
+            t0 > 25.0,
+            "sunlit zone must float above T_ext + 5 °C under 800 W/m², got {t0:.2} °C"
+        );
+    }
+
+    #[test]
+    fn step_counts_internal_gains_once_in_t_air_update() {
+        // Companion of the #3889 multi-zone fix: the single-zone step()
+        // T_air update must count Q_internal exactly once. The formula
+        // historically carried an explicit `+ Q_internal_w` term while
+        // `net_power_watts` already accumulated it, so a free-floating
+        // zone settled at T_ext + 2·Q/(H + h_inf) instead of
+        // T_ext + Q/(H + h_inf) — a +9 °C error at Case 600 gains.
+        let mut zone = GaugeZoneSolver::new(48.0, 2.7);
+        let wall = insulated_wall();
+        zone.add_opaque_surface(&wall, 40.0, SurfaceType::Window, 0.0, 90.0)
+            .unwrap();
+        zone.add_opaque_surface(&wall, 21.6, SurfaceType::Wall, 180.0, 90.0)
+            .unwrap();
+        zone.initialize().unwrap();
+
+        // 480 W into a zone whose envelope + infiltration conductance is
+        // ~47 W/K settles ~10 °C above ambient when counted once (≈30 °C),
+        // ~20 °C above when double-counted (≈40 °C).
+        for _ in 0..240 {
+            zone.step(
+                0,
+                3600.0,
+                Temperature::from_value(20.0),
+                HeatTransferCoefficient::from_value(25.0),
+                0.0,
+                480.0,
+                0.0,
+            )
+            .unwrap();
+        }
+        let t = zone.T_air().to_value();
+        assert!(
+            t > 25.0 && t < 35.0,
+            "internal gains must count once: expected ≈30 °C, double-count lands ≈40 °C, got {t:.2} °C"
+        );
+    }
+
+    #[test]
+    fn step_with_coupling_return_energy_convention() {
+        // The returned net load keeps the documented convention (positive =
+        // heating needed, negative = cooling needed) and still reflects the
+        // full net power (surface + inter-zone + internal), independent of
+        // the T_air update formula change.
+
+        // Gaining heat: sunlit first step from T_air = T_ext.
+        let mut mz = sunspace_pair();
+        let mut bc = HashMap::new();
+        let entry = ZoneBoundaryConditions::new(
+            Temperature::from_value(20.0),
+            HeatTransferCoefficient::from_value(25.0),
+            800.0,
+        );
+        bc.insert(0, entry.clone());
+        bc.insert(1, entry);
+        let results = mz.step(3600.0, &bc).unwrap();
+        let e0 = *results.get(&0).unwrap();
+        assert!(
+            e0 < -0.1 && e0 > -2.0,
+            "sunlit gaining zone must report cooling load (negative kWh), got {e0:.3}"
+        );
+
+        // Losing heat: cold night, no solar.
+        let mut mz = sunspace_pair();
+        let mut bc = HashMap::new();
+        let entry = ZoneBoundaryConditions::new(
+            Temperature::from_value(0.0),
+            HeatTransferCoefficient::from_value(25.0),
+            0.0,
+        );
+        bc.insert(0, entry.clone());
+        bc.insert(1, entry);
+        let results = mz.step(3600.0, &bc).unwrap();
+        let e0 = *results.get(&0).unwrap();
+        assert!(
+            e0 > 0.1 && e0 < 2.0,
+            "zone losing heat to the cold outdoors must report heating load (positive kWh), got {e0:.3}"
+        );
+    }
+
+    #[test]
+    fn step_with_coupling_solar_gain_spreads_to_coupled_neighbor() {
+        // The #3889 fix must not disturb the #3817 inter-zone coupling:
+        // solar admitted to zone 0 flows through the shared boundary, so
+        // the opaque neighbor floats above ambient while staying cooler
+        // than the sunlit zone (heat flows downhill).
+        let (t0, t1) = sunspace_settled_temps(800.0);
+        assert!(
+            t1 > 21.0,
+            "coupled neighbor must share the solar gain (float above T_ext), got {t1:.2} °C"
+        );
+        assert!(
+            t1 < t0,
+            "heat must flow downhill: neighbor {t1:.2} °C must stay below sunlit zone {t0:.2} °C"
+        );
+    }
+
+    #[test]
+    fn step_with_coupling_no_solar_settles_at_ambient() {
+        // With zero irradiance and no internal gains, a free-floating pair
+        // must settle at outdoor air temperature — solar coupling must not
+        // over-heat the air update when the sun is absent.
+        let (t0, t1) = sunspace_settled_temps(0.0);
+        assert!(
+            (t0 - 20.0).abs() < 0.5,
+            "zone 0 must settle at T_ext without solar, got {t0:.2} °C"
+        );
+        assert!(
+            (t1 - 20.0).abs() < 0.5,
+            "zone 1 must settle at T_ext without solar, got {t1:.2} °C"
+        );
+    }
+
+    #[test]
+    fn step_with_coupling_solar_lift_scales_with_irradiance() {
+        // The surface flux is linear in irradiance (sol-air film adds
+        // solar / h_ext to the effective exterior temperature), so the
+        // free-float lift must track irradiance proportionally. Guards
+        // against solar entering through a saturating or capped path.
+        let (t0_low, _) = sunspace_settled_temps(400.0);
+        let (t0_high, _) = sunspace_settled_temps(800.0);
+        let lift_low = t0_low - 20.0;
+        let lift_high = t0_high - 20.0;
+        assert!(
+            lift_low > 0.0 && lift_high > lift_low,
+            "lift must grow with irradiance: 400 W/m² -> {lift_low:.2} K, 800 W/m² -> {lift_high:.2} K"
+        );
+        let ratio = lift_high / lift_low;
+        assert!(
+            (ratio - 2.0).abs() < 0.1,
+            "doubling irradiance must double the lift (linear sol-air physics), ratio {ratio:.3}"
         );
     }
 
