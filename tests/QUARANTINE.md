@@ -210,18 +210,6 @@ unit-test CI. They are run manually for memory profiling.
 | `tests/all_tests/bdf_solver_tests.rs` | `benchmark_bdf_stiff_network_100_throughput` | Performance (manual benchmark) | Run in perf CI under `--release` with `--nocapture` | `pending` |
 | `tests/all_tests/lib_batch_oracle.rs` | `test_batch_oracle_*` (5 tests) | Slow (full-year simulation) | Integration CI profile; run on perf runner | `pending` |
 
-### Hybrid throughput (load/cold-start dependent, Issue #3892)
-
-The single-zone debug-mode floor assertion is not a reliable signal: a 2026-09-19
-isolated run breached it at ~1.1 cfg/s vs 49–51 cfg/s warm (~35× swing, consistent
-with a one-time cold-start effect; full core saturation only halves throughput).
-Do not classify its isolated debug result as a regression in "no new failures"
-diffs. The authoritative `--release` Hybrid Perf Gate (#2922) remains active in CI.
-
-| Test File | Test Name | Blocking Issue | Un-Ignore Criteria | Status |
-|-----------|-----------|----------------|-------------------|--------|
-| `tests/all_tests/hybrid_perf_regression.rs` | `test_hybrid_performance_regression` | #3892 (load/cold-start dependent debug floor) | Best-of-N / median-of-N debug floor per #3894 | `pending` |
-
 ---
 
 ## Category: Hardware-Dependent Tests
