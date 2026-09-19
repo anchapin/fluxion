@@ -12,7 +12,7 @@ base:
       layers:
       - name: Plasterboard
         conductivity: 0.16
-        density: 950.0
+        density: 784.0
         specific_heat: 840.0
         thickness: 0.012
         emissivity: 0.9
@@ -26,8 +26,8 @@ base:
         absorptance: 0.7
       - name: Wood Siding
         conductivity: 0.14
-        density: 500.0
-        specific_heat: 1300.0
+        density: 530.0
+        specific_heat: 900.0
         thickness: 0.009
         emissivity: 0.9
         absorptance: 0.7
@@ -35,7 +35,7 @@ base:
       layers:
       - name: Plasterboard
         conductivity: 0.16
-        density: 950.0
+        density: 784.0
         specific_heat: 840.0
         thickness: 0.01
         emissivity: 0.9
@@ -78,16 +78,19 @@ base:
       sill_height: 0.2
       left_offset: 0.5
   window_properties:
-    u_value: 3.0
-    shgc: 0.789
-    normal_transmittance: 0.86156
+    u_value: 2.1
+    shgc: 0.77
+    normal_transmittance: 0.703
     glass_type: DoubleClear
     emissivity: 0.84
+    frame_u_value: 0.1
+    frame_area_fraction: 0.15
+    frame_perimeter: 0.0
   shading: null
   internal_loads:
   - total_load: 200.0
-    radiative_fraction: 0.6
-    convective_fraction: 0.4
+    radiative_fraction: 0.4
+    convective_fraction: 0.6
   hvac:
   - heating_setpoint: 20.0
     cooling_setpoint: 27.0
@@ -107,6 +110,8 @@ base:
   door_area: null
   epw_path: null
   hvac_equipment: null
+  ground_temperature_c: 9.4
+  building_type: Residential
 variants:
 - name: high_infil
   patch:

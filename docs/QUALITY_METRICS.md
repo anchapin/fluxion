@@ -1,11 +1,11 @@
 # Quality Metrics Tracker
 
-*Generated: 2026-08-16 18:24 UTC
+*Generated: 2026-09-18 23:21 UTC
 
 ## Current Status
 
 - **Pass Rate:** 0.0% (0 / 21 cases)
-- **MAE:** 51.07%
+- **MAE:** 51.84%
 - **Max Deviation:** 470.11%
 
 ### Status Breakdown
@@ -13,8 +13,8 @@
 | Status | Count | Percentage |
 |--------|-------|------------|
 | WARN | 8 | 9.5% |
-| FAIL | 64 | 76.2% |
-| PASS | 12 | 14.3% |
+| FAIL | 66 | 78.6% |
+| PASS | 10 | 11.9% |
 
 ## Phase Progression
 
@@ -25,7 +25,7 @@
 | Phase 2 | 35% | 38.5% | 250% | Thermal mass |
 | Phase 3 | 42% | 32.1% | 200% | Solar improvements |
 | Phase 4 | 47% | 28.4% | 180% | Multi-zone correct |
-| Current (Phase 5) | 0.0% | 51.1% | 470% | Diagnostics |
+| Current (Phase 5) | 0.0% | 51.8% | 470% | Diagnostics |
 
 ## Metric Deviations
 
@@ -60,7 +60,7 @@
 | 960 | Peak Heating Load (kW) | 4.16 | 2.00-8.00 | 51.0% | Unknown |
 | 610 | Annual Cooling Energy (kWh) | 2.67 | 3.92-6.14 | 47.0% | Unknown |
 | 960 | Peak Cooling Load (kW) | 3.64 | 0.00-4.00 | 46.0% | Unknown |
-| 620 | Annual Cooling Energy (kWh) | 2.36 | 3.20-5.00 | 42.4% | Unknown |
+| 620 | Annual Cooling Energy (kWh) | 2.36 | 3.84-4.40 | 42.7% | Unknown |
 
 ## Problematic Cases
 
@@ -75,9 +75,9 @@ Cases with the highest number of failing metrics:
 | 810 | 6 | 286.3% |
 | 800 | 6 | 259.0% |
 | 940 | 3 | 162.8% |
+| 620 | 4 | 149.6% |
 | 960 | 3 | 138.7% |
 | 920 | 3 | 124.8% |
-| 600 | 3 | 123.9% |
 
 ---
 *Note: MAE = Mean Absolute Error of percent deviation from reference midpoints.*
