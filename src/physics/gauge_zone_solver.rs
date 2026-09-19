@@ -1623,6 +1623,48 @@ mod tests {
     }
 
     #[test]
+    fn step_with_coupling_return_energy_convention() {
+        // The returned net load keeps the documented convention (positive =
+        // heating needed, negative = cooling needed) and still reflects the
+        // full net power (surface + inter-zone + internal), independent of
+        // the T_air update formula change.
+
+        // Gaining heat: sunlit first step from T_air = T_ext.
+        let mut mz = sunspace_pair();
+        let mut bc = HashMap::new();
+        let entry = ZoneBoundaryConditions::new(
+            Temperature::from_value(20.0),
+            HeatTransferCoefficient::from_value(25.0),
+            800.0,
+        );
+        bc.insert(0, entry.clone());
+        bc.insert(1, entry);
+        let results = mz.step(3600.0, &bc).unwrap();
+        let e0 = *results.get(&0).unwrap();
+        assert!(
+            e0 < -0.1 && e0 > -2.0,
+            "sunlit gaining zone must report cooling load (negative kWh), got {e0:.3}"
+        );
+
+        // Losing heat: cold night, no solar.
+        let mut mz = sunspace_pair();
+        let mut bc = HashMap::new();
+        let entry = ZoneBoundaryConditions::new(
+            Temperature::from_value(0.0),
+            HeatTransferCoefficient::from_value(25.0),
+            0.0,
+        );
+        bc.insert(0, entry.clone());
+        bc.insert(1, entry);
+        let results = mz.step(3600.0, &bc).unwrap();
+        let e0 = *results.get(&0).unwrap();
+        assert!(
+            e0 > 0.1 && e0 < 2.0,
+            "zone losing heat to the cold outdoors must report heating load (positive kWh), got {e0:.3}"
+        );
+    }
+
+    #[test]
     fn step_with_coupling_solar_gain_spreads_to_coupled_neighbor() {
         // The #3889 fix must not disturb the #3817 inter-zone coupling:
         // solar admitted to zone 0 flows through the shared boundary, so
