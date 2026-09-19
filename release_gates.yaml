@@ -372,19 +372,37 @@ ci:
   # not by branch protection. Classification only — no tolerance band,
   # baseline, or gate logic changed.
   #
+  # Issue #3898 (2026-09-19): four paths-ignore Lane-2 gates —
+  # "ASHRAE 140 Strict Energy Gate (Issue #1333)",
+  # "h_tr_em Regression Gate (LIMIT-13)",
+  # "Tracked-vs-Ignored Gate (Issue #3356)", and
+  # "Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH)" — were
+  # REMOVED from this list and from `required_checks_workflow_only`
+  # below. Their workflows declare `pull_request.paths-ignore` for
+  # docs/markdown (deny-list Lane-2 semantics, fail-safe by design), so
+  # on a docs-only PR no workflow run is ever created and a required
+  # name can never report success — requiring the names anyway made
+  # every docs-only PR permanently unmergeable under
+  # `enforce_admins: true`. The gates keep RUNNING as non-required
+  # path-filtered checks on PRs that touch their filters, remain in
+  # `ci.workflow_index` below, and their invariants are re-covered by
+  # the wave-orchestrator all-checks-green merge criterion plus the
+  # ADR-0016 Lane-3 nightly authority.
+  #
   # Job names (NOT workflow names) must match the `jobs.<id>.name`
   # field in each workflow file. To find them, look for
   # `name: ASHRAE 140 Strict Energy Gate (Issue #1333)` in
   # `.github/workflows/ashrae_140_strict_energy_gate.yml`.
   required_checks:
-    # Strict ±15% annual-energy tolerance for ASHRAE 140 Cases 600/900
-    # (issue #1333). Currently exercises the two Blind-mode
-    # infrastructure tests (passing) plus the two strict-tolerance
-    # tests (skipped via `#[ignore]` pending A#4 closure verification).
-    # When the `#[ignore]` attributes are removed (tracked by the
-    # follow-up issue recorded in PR #1367's body), the same gate will
-    # enforce the ±15% band automatically.
-    - "ASHRAE 140 Strict Energy Gate (Issue #1333)"
+    # Issue #3898: "ASHRAE 140 Strict Energy Gate (Issue #1333)"
+    # REMOVED from this list (and from `required_checks_workflow_only`
+    # below) — `ashrae_140_strict_energy_gate.yml` declares
+    # `pull_request.paths-ignore` for docs/markdown, so on a docs-only
+    # PR no run is ever created and the required name can never report
+    # (structurally unmergeable). The gate is UNCHANGED: it still runs
+    # as a non-required path-filtered check enforcing the ±15%
+    # annual-energy tolerance for Cases 600/900 on every PR class that
+    # touches its filter; see its `workflow_index` entry below.
 
     # Issue #2924: surrogate-layer MAE gate (between the per-timestep drift
     # gate #1784 and the system-level strict ±15% gate #1333 just above).
@@ -551,21 +569,15 @@ ci:
     # machine-readable signal of which stable toolchain the build requires.
     - "MSRV Check (Issue #2934)"
 
-    # Issue #3356: tracked-vs-ignored gate. Anchors the
-    # ``.gitignore`` audit and prevents the silent-data-loss bug class
-    # where a tracked file matches a ``.gitignore`` pattern (PR #3342
-    # reconstructed 5 silently-dropped React frontend modules because
-    # an unanchored ``lib/`` pattern in the root ``.gitignore`` matched
-    # ``fluxion-tauri/frontend/src/lib/``). The ``tracked-vs-ignored``
-    # job in `.github/workflows/tracked-vs-ignored.yml` runs
-    # ``python3 scripts/check_no_ignored_tracked_files.py`` on every
-    # PR that touches any ``.gitignore`` file or the script itself;
-    # pre-existing tracked-but-ignored files are tolerated via
-    # ``KNOWN_TRACKED_BUT_IGNORED`` baseline inside the script. New
-    # tracked-but-ignored entries fail the gate so future regressions
-    # of the #3174 / #3356 class are caught at PR time, not after
-    # reconstruction.
-    - "Tracked-vs-Ignored Gate (Issue #3356)"
+    # Issue #3898: "Tracked-vs-Ignored Gate (Issue #3356)" REMOVED
+    # from this list (and from `required_checks_workflow_only` below) —
+    # `tracked-vs-ignored.yml` declares `pull_request.paths-ignore`
+    # for docs-only changes, so on a docs-only PR no run is ever
+    # created and the required name can never report (structurally
+    # unmergeable). The gate is UNCHANGED: it still runs as a
+    # non-required path-filtered check (any `.gitignore` change or the
+    # script itself) anchoring the silent-data-loss audit of #3174 /
+    # #3356; see its `workflow_index` entry below.
 
     # Issue #2930 / Goal #10: PR-blocking crate-size gate. Runs
     # `cargo package --allow-dirty --no-verify` against the root crate,
@@ -613,16 +625,16 @@ ci:
     # run path-filter carve-out.
     - "Tauri CSP Gate (Issue #3727)"
 
-    # Issue #3154 / LIMIT-13: h_tr_em regression fence gate. The verifier
-    # `scripts/verify_h_tr_em_regression.py` existed but was orphaned (no
-    # CI guard). This gate ensures the h_tr_em (envelope-to-mass
-    # conductance) wind-dependent per-step recompute (Issue #3063) does
-    # not regress against stored baseline snapshots. The gate fails
-    # closed (exit 2) when the baseline snapshot set is a placeholder,
-    # forcing real per-step measurements to be captured before any
-    # comparison. Job is defined in
-    # `.github/workflows/h_tr_em_regression_gate.yml`.
-    - "h_tr_em Regression Gate (LIMIT-13)"
+    # Issue #3898: "h_tr_em Regression Gate (LIMIT-13)" REMOVED from
+    # this list (and from `required_checks_workflow_only` below) —
+    # `h_tr_em_regression_gate.yml` declares
+    # `pull_request.paths-ignore` for docs/markdown, so on a docs-only
+    # PR no run is ever created and the required name can never report
+    # (structurally unmergeable). The gate is UNCHANGED: it still runs
+    # as a non-required path-filtered check fencing the h_tr_em
+    # wind-dependent per-step recompute (Issue #3063) against the
+    # ADR-0009 baseline snapshots; see its `workflow_index` entry
+    # below.
 
     # Issue #3302: fail-fast FFI signature gate. Root default features are
     # empty, so the default `cargo check` / `cargo clippy` gates never
@@ -637,29 +649,20 @@ ci:
     # main-only `if` and runs on every PR.
     - "FFI Feature Check (GH)"
 
-    # Issue #3358: promote the fast-math advisory gate (#3326, PR #3349)
-    # to a branch-protection required check. The listener job in
-    # `.github/workflows/fast_math_check.yml` is `fast-math-gh` (job
-    # name: "Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH)").
-    # This is the workflow-only `(GH)` suffix convention (per
-    # `docs/ci/branch-protection-strict-mode.md` and AGENTS.md "Required
-    # checks sync discipline"). The listener is an ADDITIVE job in the
-    # workflow; the workflow's top-level `name:` field is intentionally
-    # unchanged per Issue #3358 directive ("Do NOT modify fast_math_check
-    # .yml's ``name:`` field; the promotion is at the release_gates
-    # layer, not the workflow"). The 4-week stability window (the
-    # remaining acceptance criterion from Issue #3358) is tracked in the
-    # issue comments using the #3286 β-soak convention, NOT in code.
-    # Operator runbook (weekly tracking template + activation procedure
-    # + rollback procedure) lives at
-    # `docs/ci/fast-math-stability-window.md`. When the window closes,
-    # this entry is the gate-activation mechanism: the `(GH)` listener
-    # already emits the exact required-check name so the live `develop`
-    # branch protection contexts array will pick it up the moment it is
-    # added via `gh api --method PATCH`. This PR only lands the YAML
-    # side; the live branch-protection activation is gated on the
-    # stability sign-off.
-    - "Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH)"
+    # Issue #3898: "Fast-Math vs IEEE-754 ASHRAE 600/900 Regression
+    # Gate (GH)" REMOVED from this list (and from
+    # `required_checks_workflow_only` below). The #3358 promotion made
+    # the name required, but `fast_math_check.yml` declares
+    # `pull_request.paths-ignore` for docs/markdown (fail-safe skip
+    # when EVERY changed file is irrelevant to the physics path
+    # class), so on a docs-only PR no run — including the `(GH)`
+    # listener — is ever created and the required name can never
+    # report (structurally unmergeable). The gate is UNCHANGED: the
+    # `fast-math-gh` listener and the upstream `compare` job (±0.05%
+    # load agreement + ≤ 1e-5 W residual, Issue #3326) still run as a
+    # non-required path-filtered check on every PR class that touches
+    # its filter plus nightly at 04:00 UTC; see its `workflow_index`
+    # entry below and `docs/ci/fast-math-check.md`.
 
   # Issue #3142: Required checks for workflow-only PRs.
   #
@@ -693,8 +696,26 @@ ci:
   #   - Module Size (Issue #2878)              — architecture_drift.yml paths: thermal_model_data.rs (companion to Architecture Drift Detection)
   #   - Crate Size Gate (Issue #2930)         — crate-size.yml paths: Cargo.toml
   #   - MSRV Check (Issue #2934)              — msrv.yml paths: **/Cargo.toml
+  #
+  # Issue #3898 — paths-ignore gates removed from BOTH required lists:
+  # unlike the 5 entries above (plain `paths:` filters, still required
+  # via `ci.required_checks` on PRs that touch their filters), the 4
+  # gates below declare `pull_request.paths-ignore` for docs/markdown
+  # (deny-list Lane-2 semantics — they run on ANY PR whose diff is not
+  # purely docs/markdown). Requiring their names made every docs-only
+  # PR permanently unmergeable (no run is ever created for a docs-only
+  # diff, so the name can never report success), so they were removed
+  # from `ci.required_checks` AND `ci.required_checks_workflow_only`
+  # alike. They keep RUNNING as non-required path-filtered checks;
+  # docs-only PRs remain covered by the always-run Lane-1 set, the
+  # wave-orchestrator all-checks-green merge criterion, and the
+  # ADR-0016 Lane-3 nightly authority.
+  #
+  #   - ASHRAE 140 Strict Energy Gate (Issue #1333)   — ashrae_140_strict_energy_gate.yml paths-ignore: docs/**
+  #   - h_tr_em Regression Gate (LIMIT-13)            — h_tr_em_regression_gate.yml paths-ignore: docs/**
+  #   - Tracked-vs-Ignored Gate (Issue #3356)         — tracked-vs-ignored.yml paths-ignore: docs-only changes
+  #   - Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH) — fast_math_check.yml paths-ignore: docs/**
   required_checks_workflow_only:
-    - "ASHRAE 140 Strict Energy Gate (Issue #1333)"
     - "Surrogate ASHRAE 140 MAE Gate (Issue #2924)"
     - "Surrogate Drift Tolerance Gate (Issue #1784)"
     - "Physics-Sim-Cycle-Check (GH)"
@@ -708,9 +729,7 @@ ci:
     - "Cargo Deny"
     - "Audit Ignore Freshness (Issue #2912)"
     - "fluxion-grid Integration Tests (GH)"
-    - "h_tr_em Regression Gate (LIMIT-13)"
     - "FFI Feature Check (GH)"
-    - "Tracked-vs-Ignored Gate (Issue #3356)"
 
     # Issue #3727: Tauri CSP gate. `fluxion-tauri/src-tauri/
     # tauri.conf.json` previously declared `"csp": null`, which disables
@@ -726,8 +745,6 @@ ci:
     # (`'unsafe-inline'`, `'unsafe-eval'`) in the production policy. The
     # relaxations belong in `devCsp` only.
     - "Tauri CSP Gate (Issue #3727)"
-
-    - "Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH)"
 
   # =============================================================================
   # NIGHTLY-AUTHORITY CHECKS (ADR-0016 Lane 3)

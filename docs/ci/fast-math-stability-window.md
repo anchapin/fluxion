@@ -2,8 +2,16 @@
 
 **Issue:** #3358 (Closes), #3286 (template)  
 **Date:** 2026-09-06  
-**Status:** YAML-side promotion landed (#3358); live branch-protection activation
-gates on the 4-week stability window sign-off below.
+**Status:** Superseded by Issue #3898 — the `(GH)` name was REMOVED from
+`ci.required_checks` and `ci.required_checks_workflow_only` (and is being
+removed from live branch protection by the #3898 post-merge PUT) because the
+workflow's `pull_request.paths-ignore` (docs/markdown) means no run is ever
+created on a docs-only PR, so the required name could never report. The
+gate keeps running as a non-required path-filtered check + nightly. The
+stability-window evidence trail below is retained as history; any future
+re-promotion must first drop `docs/**` from the workflow's `paths-ignore`.
+Historical status: YAML-side promotion landed (#3358); live branch-protection
+activation gated on the 4-week stability window sign-off below.
 
 ## Summary
 
@@ -31,8 +39,10 @@ The four remaining acceptance criteria from Issue #3358 are tracked here:
 The structural YAML promotion (adding the `(GH)` listener to the
 workflow + the `ci.required_checks` entry + the `ci.workflow_index`
 entry + the `ci.required_checks_workflow_only` entry) was landed in
-#3358 itself. Live activation is **gated** on the stability sign-off
-so an unstable run cannot block develop merges.
+#3358 itself, and the two required-list entries were removed again by
+Issue #3898 (paths-ignore skip; see Status above). Live activation is
+**gated** on the stability sign-off so an unstable run cannot block
+develop merges.
 
 ## Why tracking lives in the issue, not in code
 
