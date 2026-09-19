@@ -1623,6 +1623,22 @@ mod tests {
     }
 
     #[test]
+    fn step_with_coupling_no_solar_settles_at_ambient() {
+        // With zero irradiance and no internal gains, a free-floating pair
+        // must settle at outdoor air temperature — solar coupling must not
+        // over-heat the air update when the sun is absent.
+        let (t0, t1) = sunspace_settled_temps(0.0);
+        assert!(
+            (t0 - 20.0).abs() < 0.5,
+            "zone 0 must settle at T_ext without solar, got {t0:.2} °C"
+        );
+        assert!(
+            (t1 - 20.0).abs() < 0.5,
+            "zone 1 must settle at T_ext without solar, got {t1:.2} °C"
+        );
+    }
+
+    #[test]
     fn step_with_coupling_solar_lift_scales_with_irradiance() {
         // The surface flux is linear in irradiance (sol-air film adds
         // solar / h_ext to the effective exterior temperature), so the
