@@ -863,25 +863,24 @@ impl MultiNodeSolver {
     ///           / (C_k/dt + h_em + h_ms)
     /// ```
     ///
+    /// Night ventilation (`h_ve_night`) is NOT applied to the mass node
+    /// denominator — it enters only via the air-side `compute_zone_air_temperature`
+    /// call in the dispatcher. This avoids double-counting (LIMIT-17 / Issue #1898)
+    /// and mirrors the 5R1C `h_vent_mass_zone = 0` pattern.
+    ///
     /// # Arguments
     /// * `dt` — Timestep duration [s]
     /// * `gains_wall` — Radiative/solar gains to wall mass node [W]
     /// * `gains_roof` — Radiative/solar gains to roof mass node [W]
     /// * `gains_floor` — Radiative/solar gains to floor mass node [W]
     /// * `gains_internal` — Internal radiative gains to internal mass node [W]
+    /// * `h_ve_night` — Night ventilation conductance [W/K]; used only on the
+    ///   air-side in `compute_zone_air_temperature`, not on the mass node
+    /// * `outdoor_temp` — Outdoor air temperature [°C]; driving temp for
+    ///   night-vent on the air-side balance
     ///
     /// # Returns
     /// Reference to the updated `MultiNodeThermalMass`
-    /// Step the multi-node thermal model with per-node gains and night ventilation.
-    ///
-    /// # Arguments
-    /// * `dt` - Timestep in seconds
-    /// * `gains_wall` - Solar radiative gain to wall node [W]
-    /// * `gains_roof` - Solar radiative gain to roof node [W]
-    /// * `gains_floor` - Solar radiative gain to floor node [W]
-    /// * `gains_internal` - Internal/solar gain to internal mass node [W]
-    /// * `h_ve_night` - Night ventilation conductance [W/K] (0 if inactive)
-    /// * `outdoor_temp` - Outdoor air temperature [°C] (driving temp for night vent)
     #[allow(clippy::too_many_arguments)]
     pub fn step_with_gains(
         &mut self,
@@ -974,18 +973,21 @@ impl MultiNodeSolver {
 
     /// Backward Euler step with per-node gain injection.
     ///
-    /// Same as `step_backward_euler()` but adds gain terms [W] to each node's
-    /// numerator and applies night ventilation conductance directly to envelope
-    /// mass nodes (Issue #1898: night ventilation was only affecting the air
-    /// node, not the thermal mass).
+    /// Night ventilation conductance (`h_ve_night`) is NOT applied to the mass
+    /// node denominator — it enters only via the air-side path in
+    /// `compute_zone_air_temperature` (the `(h_ve + h_ve_night) × T_out`
+    /// term in the `T_air` balance). Applying it to both the air node AND the
+    /// mass node simultaneously double-counts the night-vent cooling (Issue
+    /// #1898 / LIMIT-17). This matches the 5R1C `h_vent_mass_zone = 0` pattern
+    /// (step_5r1c.rs lines ~1689).
     fn step_backward_euler_with_gains(
         &mut self,
         gains_wall: f64,
         gains_roof: f64,
         gains_floor: f64,
         gains_internal: f64,
-        h_ve_night: f64,
-        outdoor_temp: f64,
+        _h_ve_night: f64,
+        _outdoor_temp: f64,
     ) {
         let dt = self.timestep_seconds;
         let t_i = self.zone_temperature;
@@ -1003,57 +1005,55 @@ impl MultiNodeSolver {
         let t_floor_old = m.floor.temperature;
         let t_internal_old = m.internal.temperature;
 
-        // Issue #1898: Night ventilation mass coupling.
-        // When night ventilation is active (h_ve_night > 0), cool outdoor air directly
-        // cools the thermal mass through an additional conductance path.
-        // This mirrors the 5R1C path's h_vent_mass_zone term.
+        // Night ventilation is handled entirely on the air side via
+        // `compute_zone_air_temperature` (the h_ve_night × T_outdoor term in
+        // the T_air balance). It is NOT applied to the mass node here, to
+        // avoid double-counting with the air-side path (Issue #1898 / LIMIT-17).
+        // This mirrors 5R1C step_5r1c.rs where h_vent_mass_zone = 0.
 
-        // Update wall node — with gains and night ventilation
+        // Update wall node — with gains (no mass-side night-vent)
         {
             let node = &mut m.wall;
             let h_em = node.h_tr_em;
             let h_ms = node.h_tr_ms;
 
-            let denom = node.capacitance / dt + h_em + h_ms + h_ve_night;
+            let denom = node.capacitance / dt + h_em + h_ms;
             if denom > 1e-10 {
                 let numer = node.capacitance / dt * node.temperature
                     + h_em * t_ext_wall
                     + h_ms * self.surface_temperature
-                    + h_ve_night * outdoor_temp
                     + gains_wall;
                 node.temperature = numer / denom;
             }
         }
 
-        // Update roof node — with gains and night ventilation
+        // Update roof node — with gains (no mass-side night-vent)
         {
             let node = &mut m.roof;
             let h_em = node.h_tr_em;
             let h_ms = node.h_tr_ms;
 
-            let denom = node.capacitance / dt + h_em + h_ms + h_ve_night;
+            let denom = node.capacitance / dt + h_em + h_ms;
             if denom > 1e-10 {
                 let numer = node.capacitance / dt * node.temperature
                     + h_em * t_ext_roof
                     + h_ms * self.surface_temperature
-                    + h_ve_night * outdoor_temp
                     + gains_roof;
                 node.temperature = numer / denom;
             }
         }
 
-        // Update floor node — with gains and night ventilation
+        // Update floor node — with gains (no mass-side night-vent)
         {
             let node = &mut m.floor;
             let h_em = node.h_tr_em;
             let h_ms = node.h_tr_ms;
 
-            let denom = node.capacitance / dt + h_em + h_ms + h_ve_night;
+            let denom = node.capacitance / dt + h_em + h_ms;
             if denom > 1e-10 {
                 let numer = node.capacitance / dt * node.temperature
                     + h_em * t_ext_floor
                     + h_ms * self.surface_temperature
-                    + h_ve_night * outdoor_temp
                     + gains_floor;
                 node.temperature = numer / denom;
             }
@@ -1109,16 +1109,19 @@ impl MultiNodeSolver {
     /// (Issue #1281). See `step_backward_euler_parallel_resistance` for the
     /// non-gain counterpart.
     ///
-    /// Issue #1898: Night ventilation conductance (h_ve_night) is applied directly
-    /// to envelope mass nodes to allow night ventilation to cool thermal mass.
+    /// Night ventilation conductance (`h_ve_night`) is NOT applied to the mass
+    /// node denominator — it enters only via the air-side path in
+    /// `compute_zone_air_temperature` (the `(h_ve + h_ve_night) × T_out`
+    /// term in the `T_air` balance). This matches the 5R1C
+    /// `h_vent_mass_zone = 0` pattern (step_5r1c.rs lines ~1689).
     fn step_backward_euler_with_gains_parallel_resistance(
         &mut self,
         gains_wall: f64,
         gains_roof: f64,
         gains_floor: f64,
         gains_internal: f64,
-        h_ve_night: f64,
-        outdoor_temp: f64,
+        _h_ve_night: f64,
+        _outdoor_temp: f64,
     ) {
         let dt = self.timestep_seconds;
         let t_i = self.zone_temperature;
@@ -1141,55 +1144,55 @@ impl MultiNodeSolver {
         let t_s_roof = per_surface_t_s(m.roof.temperature, m.roof.h_tr_ms, h_is, t_i);
         let t_s_floor = per_surface_t_s(m.floor.temperature, m.floor.h_tr_ms, h_is, t_i);
 
-        // Issue #1898: Night ventilation mass coupling — applied to all envelope nodes.
-        // When h_ve_night > 0, cool outdoor air directly cools the thermal mass.
+        // Night ventilation is handled entirely on the air side via
+        // `compute_zone_air_temperature` (the h_ve_night × T_outdoor term in
+        // the T_air balance). It is NOT applied to the mass node here, to
+        // avoid double-counting with the air-side path (Issue #1898 / LIMIT-17).
+        // This mirrors 5R1C step_5r1c.rs where h_vent_mass_zone = 0.
 
-        // Wall — per-surface T_s_k + per-node gain + night vent
+        // Wall — per-surface T_s_k + per-node gain (no mass-side night-vent)
         {
             let node = &mut m.wall;
             let h_em = node.h_tr_em;
             let h_ms = node.h_tr_ms;
 
-            let denom = node.capacitance / dt + h_em + h_ms + h_ve_night;
+            let denom = node.capacitance / dt + h_em + h_ms;
             if denom > 1e-10 {
                 let numer = node.capacitance / dt * node.temperature
                     + h_em * t_ext_wall
                     + h_ms * t_s_wall
-                    + h_ve_night * outdoor_temp
                     + gains_wall;
                 node.temperature = numer / denom;
             }
         }
 
-        // Roof — per-surface T_s_k + per-node gain + night vent
+        // Roof — per-surface T_s_k + per-node gain (no mass-side night-vent)
         {
             let node = &mut m.roof;
             let h_em = node.h_tr_em;
             let h_ms = node.h_tr_ms;
 
-            let denom = node.capacitance / dt + h_em + h_ms + h_ve_night;
+            let denom = node.capacitance / dt + h_em + h_ms;
             if denom > 1e-10 {
                 let numer = node.capacitance / dt * node.temperature
                     + h_em * t_ext_roof
                     + h_ms * t_s_roof
-                    + h_ve_night * outdoor_temp
                     + gains_roof;
                 node.temperature = numer / denom;
             }
         }
 
-        // Floor — per-surface T_s_k + per-node gain + night vent
+        // Floor — per-surface T_s_k + per-node gain (no mass-side night-vent)
         {
             let node = &mut m.floor;
             let h_em = node.h_tr_em;
             let h_ms = node.h_tr_ms;
 
-            let denom = node.capacitance / dt + h_em + h_ms + h_ve_night;
+            let denom = node.capacitance / dt + h_em + h_ms;
             if denom > 1e-10 {
                 let numer = node.capacitance / dt * node.temperature
                     + h_em * t_ext_floor
                     + h_ms * t_s_floor
-                    + h_ve_night * outdoor_temp
                     + gains_floor;
                 node.temperature = numer / denom;
             }
