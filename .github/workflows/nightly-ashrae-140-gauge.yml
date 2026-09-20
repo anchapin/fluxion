@@ -86,6 +86,17 @@ jobs:
       - name: Disk space guard
         run: ./scripts/disk-space-check.sh
 
+      # Issue #3724 — gauge-solver-gated lib unit tests. These tests
+      # (thermal_model_core/tests.rs gauge arms, step_dispatcher.rs gauge
+      # paths) are compiled by every --test step but are NEVER executed:
+      # PR CI never compiles with --features gauge-solver, and the six
+      # nightly --test <binary> steps likewise never invoke --lib. This
+      # step closes the gap so the beta-soak (Issue #3286 / #3297)
+      # catches regressions in the gauge dispatcher arm before the
+      # gauge-solver feature flips to unconditional production use.
+      - name: Issue #3724 — gauge-solver lib unit tests
+        run: cargo test --locked --features gauge-solver --lib
+
       # ADR-0007 criterion 1 — strict ±15% annual-energy band gate.
       - name: Criterion 1 — ashrae_140_validation (strict ±15% band)
         run: "cargo test --locked --features gauge-solver --test all_tests ashrae_140_validation::"
