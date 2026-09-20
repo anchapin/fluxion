@@ -919,6 +919,15 @@ name = "all_tests"
 path = "tests/all_tests/main.rs"
 harness = true
 
+# Issue #3724 — gauge-solver dispatcher identity integration tests.
+# Lives in tests/ (not src/sim/) to avoid sim→validation cycle edges.
+# See scripts/check_ashrae_cases_cycle.py — src/sim/** imports of
+# crate::validation::* are cycle-edge violations; tests/ is out-of-scope.
+[[test]]
+name = "gauge_dispatcher_cases"
+path = "tests/gauge_dispatcher_cases.rs"
+harness = true
+
 # Issue #1603 — GPU smoke test for InferenceBackend::CUDA.
 # Compiles under --features cuda and skips gracefully on CPU-only runners.
 # GPU runner executes the test with CUDA EP and verifies output matches CPU within 0.1%.
