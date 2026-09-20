@@ -913,7 +913,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             {
                 let buf = scratch.air_node_t_i_free.as_mut();
                 for i in 0..self.0.hvac.num_zones {
-                    let num_i = num_tm_ref[i] + num_rest_ref[i];
+                    let mut num_i = num_tm_ref[i] + num_rest_ref[i];
+                    // LIMIT-17 fix: night ventilation removes heat from the zone proportional
+                    // to (T_zone - T_outdoor). The h_ve_night term was added to h_ext (den)
+                    // but the corresponding heat removal from the air-node energy balance was
+                    // missing. The iterative solver correctly applies this to phi_m; we add
+                    // the outdoor-temperature contribution here for the 5R1C steady-state.
+                    if night_vent_active_now && i == 0 {
+                        num_i += h_ve_night * outdoor_temp;
+                    }
                     let den_i = den_ref[i];
                     let steady = num_i / den_i;
                     let c_air_i = c_air_ref[i];
