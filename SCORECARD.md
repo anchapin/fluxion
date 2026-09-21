@@ -66,7 +66,6 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 
 | Required check | Issue |
 |----------------|-------|
-| Surrogate ASHRAE 140 MAE Gate (Issue #2924) | #2924 |
 | Surrogate Drift Tolerance Gate (Issue #1784) | #1784 |
 | Docs Hygiene Gate (Issue #2466) | #2466 |
 | Physics-Sim-Cycle-Check (GH) | — |
