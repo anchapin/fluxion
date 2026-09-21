@@ -244,6 +244,17 @@ pub(crate) struct SurfaceGaugeSolver {
     wall_spec: Option<WallSpec>,
 }
 
+/// Parameters for computing the surface boundary conditions.
+/// Groups the solar irradiance, sky temperature, and linearized sky conductance.
+pub(crate) struct SurfaceBoundaryInput {
+    /// Effective solar irradiance on this surface [W/m²]
+    pub solar_irradiance_wm2: f64,
+    /// Night-sky radiative temperature [°C]
+    pub t_sky: f64,
+    /// Linearized sky-radiative conductance [W/m²·K]
+    pub h_rad_sky: f64,
+}
+
 impl SurfaceGaugeSolver {
     /// Create a new surface gauge solver.
     fn new(
@@ -264,20 +275,23 @@ impl SurfaceGaugeSolver {
     }
 
     /// Compute heat flux through this surface.
+    #[allow(clippy::too_many_arguments)]
     fn compute_flux(
         &mut self,
         timestep: Time,
         T_interior: Temperature,
         T_exterior: Temperature,
         h_exterior: HeatTransferCoefficient,
-        solar_irradiance_wm2: f64,
-        t_sky: f64,
-        h_rad_sky: f64,
+        boundary: SurfaceBoundaryInput,
     ) -> Result<HeatFlux, SolverError> {
-        let boundary =
-            GaugeBoundaryConditions::new(solar_irradiance_wm2, T_exterior.to_value(), t_sky, h_rad_sky);
+        let boundary_conds = GaugeBoundaryConditions::new(
+            boundary.solar_irradiance_wm2,
+            T_exterior.to_value(),
+            boundary.t_sky,
+            boundary.h_rad_sky,
+        );
         self.gauge
-            .step_with_boundary_conditions(timestep, T_interior, h_exterior, boundary)
+            .step_with_boundary_conditions(timestep, T_interior, h_exterior, boundary_conds)
     }
 
     /// Issue #3297 / LIMIT-21 Phase 5: sky view factor from surface tilt.
@@ -713,9 +727,11 @@ impl GaugeZoneSolver {
                 T_int,
                 T_exterior,
                 h_exterior,
-                solar_irradiance_wm2 * surface.surface_type.solar_fraction(),
-                t_sky,
-                h_rad_sky_surface,
+                SurfaceBoundaryInput {
+                    solar_irradiance_wm2: solar_irradiance_wm2 * surface.surface_type.solar_fraction(),
+                    t_sky,
+                    h_rad_sky: h_rad_sky_surface,
+                },
             )?;
 
             let Q_surface = q_flux.to_value() * surface.area_m2;
@@ -851,9 +867,11 @@ impl GaugeZoneSolver {
                 T_int,
                 bc.T_exterior,
                 bc.h_exterior,
-                bc.solar_irradiance_wm2 * surface.surface_type.solar_fraction(),
-                bc.t_sky,
-                h_rad_sky_surface,
+                SurfaceBoundaryInput {
+                    solar_irradiance_wm2: bc.solar_irradiance_wm2 * surface.surface_type.solar_fraction(),
+                    t_sky: bc.t_sky,
+                    h_rad_sky: h_rad_sky_surface,
+                },
             )?;
 
             let Q_surface = q_flux.to_value() * surface.area_m2;
@@ -939,6 +957,112 @@ impl GaugeZoneSolver {
 
         coupling_vector
     }
+
+    /// Issue #3911 — Per-surface telemetry from each surface's 1D gauge solve.
+    ///
+    /// Returns a vector of per-surface diagnostic data for the LIMIT-21 Phase 6
+    /// diagnostic (Case 640 annual cooling gap isolation). Each entry corresponds
+    /// to one surface in the zone. Telemetry is captured at the state *after*
+    /// the most recent `step()` or `step_with_coupling()` call.
+    ///
+    /// Telemetry per surface:
+    /// - `area_m2` — surface area [m²]
+    /// - `surface_type` — SurfaceType enum (Window, Wall, Roof, etc.)
+    /// - `tilt_deg` — tilt from horizontal [degrees]
+    /// - `azimuth_deg` — azimuth from north [degrees]
+    /// - `q_flux_Wm2` — heat flux through surface [W/m²] (positive = into zone)
+    /// - `r_total_m2K_W` — total surface resistance [m²K/W]
+    /// - `c_mass_Jm2K` — surface thermal mass [J/m²K]
+    /// - `solar_fraction` — fraction of horizontal GHI that reaches this surface
+    /// - `sky_view_factor` — ISO 13790 sky view factor (0–1)
+    pub fn per_surface_telemetry(&self) -> Vec<SurfaceTelemetry> {
+        self.surfaces
+            .iter()
+            .map(|s| SurfaceTelemetry {
+                area_m2: s.area_m2,
+                surface_type: s.surface_type,
+                tilt_deg: s._tilt_deg,
+                azimuth_deg: s._azimuth_deg,
+                q_flux_Wm2: s.gauge.q_flux(),
+                r_total_m2K_W: s.gauge.r_total_for_test(),
+                c_mass_Jm2K: s.gauge.c_mass_for_test(),
+                solar_fraction: s.surface_type.solar_fraction(),
+                sky_view_factor: s.sky_view_factor(),
+            })
+            .collect()
+    }
+
+    /// Issue #3911 — Infiltration conductance [W/K] from the most recent step.
+    ///
+    /// Computed as: ρ_air · c_p,air · (ACH / 3600) · V_zone
+    pub fn infiltration_conductance_WK(&self, infiltration_ach: f64) -> f64 {
+        air_constants::RHO_AIR * air_constants::CP_AIR * (infiltration_ach / 3600.0) * self.zone_volume
+    }
+
+    /// Issue #3911 — Total surface-to-air conductance [W/K] from the most recent step.
+    ///
+    /// Σ_i (A_i / R_total,i) for all non-inter-zone surfaces.
+    /// This is the sum of window, wall, roof, and floor conductances that
+    /// couple the zone air to the exterior / sky / ground.
+    fn surface_to_air_conductance(&self) -> f64 {
+        self.surfaces
+            .iter()
+            .filter(|s| !s.surface_type.is_inter_zone())
+            .filter(|s| s.gauge.r_total_for_test() > 0.0)
+            .map(|s| s.area_m2 / s.gauge.r_total_for_test())
+            .sum()
+    }
+
+    /// Issue #3911 — Effective air-node time constant [seconds] from the most recent step.
+    ///
+    /// τ_air = C_air / (h_inf + h_surface_total + h_inter_zone)
+    /// where C_air = ρ_air · c_p,air · V_zone.
+    ///
+    /// Matches the 5R1C τ_air = C_air / den_true formula, where den_true
+    /// includes window conductance (H_tr,w), opaque surface conductance (H_tr,1),
+    /// infiltration (H_ve), and inter-zone coupling.
+    ///
+    /// At τ_air ≈ 1000 s and dt = 3600 s: dt/τ_air ≈ 3.6 (5R1C regime).
+    /// A larger τ_air means the air node responds more slowly.
+    pub fn effective_time_constant_s(&self, infiltration_ach: f64) -> f64 {
+        let h_inf = self.infiltration_conductance_WK(infiltration_ach);
+        let h_surface = self.surface_to_air_conductance();
+        let h_inter_zone: f64 = self.couplings.iter().map(|c| c.conductance).sum();
+        let C_air = air_constants::RHO_AIR * air_constants::CP_AIR * self.zone_volume;
+        C_air / (h_inf + h_surface + h_inter_zone)
+    }
+
+    /// Issue #3911 — Effective dt/τ_air ratio.
+    ///
+    /// At dt/τ_air ≈ 3.6, implicit Euler sub-stepping (N=3) still under-equilibrates
+    /// the air node vs the analytical solution. This ratio is the key diagnostic
+    /// for the "family-level lumped-mass damping" hypothesis.
+    pub fn dt_over_tau(&self, dt_seconds: f64, infiltration_ach: f64) -> f64 {
+        dt_seconds / self.effective_time_constant_s(infiltration_ach)
+    }
+}
+
+/// Per-surface telemetry returned by [`GaugeZoneSolver::per_surface_telemetry()`].
+#[derive(Debug, Clone)]
+pub struct SurfaceTelemetry {
+    /// Surface area [m²]
+    pub area_m2: f64,
+    /// Surface type (Window, Wall, Roof, etc.)
+    pub surface_type: SurfaceType,
+    /// Surface tilt from horizontal [degrees]
+    pub tilt_deg: f64,
+    /// Surface azimuth from north [degrees]
+    pub azimuth_deg: f64,
+    /// Heat flux through surface [W/m²] (positive = into zone)
+    pub q_flux_Wm2: f64,
+    /// Total surface resistance [m²K/W]
+    pub r_total_m2K_W: f64,
+    /// Surface thermal mass [J/m²K]
+    pub c_mass_Jm2K: f64,
+    /// Fraction of horizontal GHI that reaches this surface
+    pub solar_fraction: f64,
+    /// ISO 13790 sky view factor (0–1)
+    pub sky_view_factor: f64,
 }
 
 /// Multi-zone gauge solver for N-zone thermal coupling.

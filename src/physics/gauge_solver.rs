@@ -156,17 +156,20 @@ impl GaugeSolver {
     /// (in `src/physics/gauge_zone_solver.rs`) can verify that
     /// `SurfaceGaugeSolver::clone` re-initialized the per-surface gauge
     /// from the cloned `wall_spec`. The field is private at runtime;
-    /// this accessor is `#[cfg(test)]`-gated and lives next to the
-    /// existing `manifold()` test accessor.
-    #[cfg(test)]
+    /// this accessor is `pub(crate)` for use in both test and lib contexts.
+    /// Also used by Issue #3911 LIMIT-21 Phase 6 diagnostic.
     pub(crate) fn r_total_for_test(&self) -> f64 {
         self.r_total
     }
 
-    /// Issue #3729 — see `r_total_for_test`.
-    #[cfg(test)]
+    /// Issue #3729 — see `r_total_for_test`. Also used by Issue #3911 diagnostic.
     pub(crate) fn c_mass_for_test(&self) -> f64 {
         self.C_mass
+    }
+
+    /// Issue #3911 — expose q_flux for diagnostic access from GaugeZoneSolver.
+    pub(crate) fn q_flux(&self) -> f64 {
+        self.q_flux
     }
 
     pub fn translate_boundary_conditions(boundary: GaugeBoundaryConditions) -> VectorField {
