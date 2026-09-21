@@ -1073,7 +1073,10 @@ impl GaugeZoneSolver {
     ///
     /// Computed as: ρ_air · c_p,air · (ACH / 3600) · V_zone
     pub fn infiltration_conductance_WK(&self, infiltration_ach: f64) -> f64 {
-        air_constants::RHO_AIR * air_constants::CP_AIR * (infiltration_ach / 3600.0) * self.zone_volume
+        air_constants::RHO_AIR
+            * air_constants::CP_AIR
+            * (infiltration_ach / 3600.0)
+            * self.zone_volume
     }
 
     /// Issue #3911 — Total surface-to-air conductance [W/K] from the most recent step.
@@ -1554,16 +1557,14 @@ mod tests {
         // One hour timestep
         let energy = zone
             .step(
-                0, // timestep
+                0,      // timestep
                 3600.0, // dt = 1 hour
-                T_ext,
-                h_ext,
-                0.0,  // no solar
-                0.0,  // solar_distribution_to_air
-                0.0,  // no internal gains
-                0.0,  // no infiltration
-                0.0,  // t_sky
-                0.0,  // h_rad_sky
+                T_ext, h_ext, 0.0, // no solar
+                0.0, // solar_distribution_to_air
+                0.0, // no internal gains
+                0.0, // no infiltration
+                0.0, // t_sky
+                0.0, // h_rad_sky
             )
             .unwrap();
 
@@ -1746,12 +1747,12 @@ mod tests {
             3600.0,
             Temperature::from_value(5.0),
             HeatTransferCoefficient::from_value(25.0),
-            0.0,  // solar_irradiance_wm2
-            0.0,  // solar_distribution_to_air
-            0.0,  // Q_internal_w
-            0.0,  // Q_infiltration_w
-            0.0,  // t_sky
-            0.0,  // h_rad_sky
+            0.0, // solar_irradiance_wm2
+            0.0, // solar_distribution_to_air
+            0.0, // Q_internal_w
+            0.0, // Q_infiltration_w
+            0.0, // t_sky
+            0.0, // h_rad_sky
         )
         .unwrap();
         let temps = zone.surface_interior_temperatures();

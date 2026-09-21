@@ -239,11 +239,7 @@ fn run_case640_diagnostic() -> Vec<TimestepDiag> {
     let infiltration_ach = 0.5;
 
     // Get gauge zone solver for telemetry (if available)
-    let gauge_available = model
-        .conduction
-        .backend
-        .gauge_zone_solver
-        .is_some();
+    let gauge_available = model.conduction.backend.gauge_zone_solver.is_some();
 
     let mut results = Vec::with_capacity(8760);
 
@@ -287,32 +283,32 @@ fn run_case640_diagnostic() -> Vec<TimestepDiag> {
             .unwrap_or(t_zone_C);
 
         // Gauge per-surface telemetry
-        let (window_solar_fraction, window_R_total, opaque_R_total) =
-            if let Some(gauge) = model.conduction.backend.gauge_zone_solver.as_ref() {
-                let tel = gauge.per_surface_telemetry();
-                let window_tel = tel
-                    .iter()
-                    .find(|s| matches!(s.surface_type, SurfaceType::Window));
-                let opaque_tels: Vec<_> = tel
-                    .iter()
-                    .filter(|s| {
-                        !matches!(s.surface_type, SurfaceType::Window)
-                            && !matches!(s.surface_type, SurfaceType::InterZone)
-                    })
-                    .collect();
+        let (window_solar_fraction, window_R_total, opaque_R_total) = if let Some(gauge) =
+            model.conduction.backend.gauge_zone_solver.as_ref()
+        {
+            let tel = gauge.per_surface_telemetry();
+            let window_tel = tel
+                .iter()
+                .find(|s| matches!(s.surface_type, SurfaceType::Window));
+            let opaque_tels: Vec<_> = tel
+                .iter()
+                .filter(|s| {
+                    !matches!(s.surface_type, SurfaceType::Window)
+                        && !matches!(s.surface_type, SurfaceType::InterZone)
+                })
+                .collect();
 
-                let ws_frac = window_tel.map(|w| w.solar_fraction).unwrap_or(0.0);
-                let w_R = window_tel.map(|w| w.r_total_m2K_W).unwrap_or(0.0);
-                let o_R = if opaque_tels.is_empty() {
-                    0.0
-                } else {
-                    opaque_tels.iter().map(|o| o.r_total_m2K_W).sum::<f64>()
-                        / opaque_tels.len() as f64
-                };
-                (ws_frac, w_R, o_R)
+            let ws_frac = window_tel.map(|w| w.solar_fraction).unwrap_or(0.0);
+            let w_R = window_tel.map(|w| w.r_total_m2K_W).unwrap_or(0.0);
+            let o_R = if opaque_tels.is_empty() {
+                0.0
             } else {
-                (0.0, 0.0, 0.0)
+                opaque_tels.iter().map(|o| o.r_total_m2K_W).sum::<f64>() / opaque_tels.len() as f64
             };
+            (ws_frac, w_R, o_R)
+        } else {
+            (0.0, 0.0, 0.0)
+        };
 
         // Effective "direct to air" ratio for gauge (Hypothesis 1)
         // Gauge routes 100% of window solar through the window path.
@@ -336,8 +332,7 @@ fn run_case640_diagnostic() -> Vec<TimestepDiag> {
                 let sub_steps = 3_usize;
                 let denom = 1.0 + dt_sub / tau;
                 let gauge_equil_per_step = 1.0 / denom;
-                let gauge_equil_after_N =
-                    1.0 - gauge_equil_per_step.powi(sub_steps as i32);
+                let gauge_equil_after_N = 1.0 - gauge_equil_per_step.powi(sub_steps as i32);
 
                 // 5R1C: implicit Euler with dt=3600 s (single step)
                 let five_r1c_equil_per_step = 1.0 / (1.0 + dtt);
@@ -404,15 +399,17 @@ fn test_limit_21_phase6_case640_diagnostic() {
         .filter(|r| r.window_solar_fraction > 0.0)
         .map(|r| r.window_solar_fraction)
         .sum::<f64>()
-        / results.iter().filter(|r| r.window_solar_fraction > 0.0).count().max(1) as f64;
+        / results
+            .iter()
+            .filter(|r| r.window_solar_fraction > 0.0)
+            .count()
+            .max(1) as f64;
 
     // Gauge direct-to-air ratio = 0 (no equivalent to 5R1C's solar_distribution_to_air)
     let gauge_solar_to_air_ratio = 0.0_f64;
     let five_r1c_solar_to_air_ratio = 0.30_f64; // Case 640 / ISO 13790 default
 
-    eprintln!(
-        "\n--- Hypothesis 1: Per-surface Distribution Routing ---"
-    );
+    eprintln!("\n--- Hypothesis 1: Per-surface Distribution Routing ---");
     eprintln!(
         "Gauge window solar_fraction (avg): {:.4}",
         window_solar_fraction
@@ -427,14 +424,14 @@ fn test_limit_21_phase6_case640_diagnostic() {
     );
     eprintln!(
         "Gauge routes 100% through window conduction (R_total ≈ {:.3} m²K/W).",
-        results.iter().find(|r| r.window_R_total > 0.0).map(|r| r.window_R_total).unwrap_or(0.0)
+        results
+            .iter()
+            .find(|r| r.window_R_total > 0.0)
+            .map(|r| r.window_R_total)
+            .unwrap_or(0.0)
     );
-    eprintln!(
-        "FINDING: Gauge has NO direct-to-air solar path. Window solar must"
-    );
-    eprintln!(
-        "  conduct through the window assembly before reaching zone air."
-    );
+    eprintln!("FINDING: Gauge has NO direct-to-air solar path. Window solar must");
+    eprintln!("  conduct through the window assembly before reaching zone air.");
     eprintln!(
         "  The 5R1C's {:.0}% direct-to-air routing is absent from the gauge.",
         100.0 * five_r1c_solar_to_air_ratio
@@ -455,14 +452,22 @@ fn test_limit_21_phase6_case640_diagnostic() {
         .filter(|r| r.window_R_total > 0.0)
         .map(|r| r.window_R_total)
         .sum::<f64>()
-        / results.iter().filter(|r| r.window_R_total > 0.0).count().max(1) as f64;
+        / results
+            .iter()
+            .filter(|r| r.window_R_total > 0.0)
+            .count()
+            .max(1) as f64;
 
     let avg_opaque_R: f64 = results
         .iter()
         .filter(|r| r.opaque_R_total > 0.0)
         .map(|r| r.opaque_R_total)
         .sum::<f64>()
-        / results.iter().filter(|r| r.opaque_R_total > 0.0).count().max(1) as f64;
+        / results
+            .iter()
+            .filter(|r| r.opaque_R_total > 0.0)
+            .count()
+            .max(1) as f64;
 
     // Reference window R_value for Case 640: double-clear glass U=2.10 → R = 0.476 m²K/W.
     // ASHRAE 140 / ISO 13790 opaque wall: h_tr_is ≈ 8.3 W/m²K → R_tr_is = 0.12 m²K/W.
@@ -481,14 +486,10 @@ fn test_limit_21_phase6_case640_diagnostic() {
         "NOTE: The opaque R_total ({:.2}) is NOT comparable to window R_total ({:.2}).",
         avg_opaque_R, avg_window_R
     );
-    eprintln!(
-        "H2 is NOT a root cause — the 295% 'deviation' cited in earlier versions of");
-    eprintln!(
-        "this diagnostic was an artifact of comparing R_window vs R_tr_is (opaque films).");
-    eprintln!(
-        "The gauge correctly implements double-clear glass (U=2.10, R=0.476).");
-    eprintln!(
-        "Primary driver is H1 (solar routing): gauge lacks 5R1C's direct-to-air path.");
+    eprintln!("H2 is NOT a root cause — the 295% 'deviation' cited in earlier versions of");
+    eprintln!("this diagnostic was an artifact of comparing R_window vs R_tr_is (opaque films).");
+    eprintln!("The gauge correctly implements double-clear glass (U=2.10, R=0.476).");
+    eprintln!("Primary driver is H1 (solar routing): gauge lacks 5R1C's direct-to-air path.");
 
     // -------------------------------------------------------------------------
     // Hypothesis 3: Family-level 5R1C lumped-mass-node damping
@@ -498,7 +499,11 @@ fn test_limit_21_phase6_case640_diagnostic() {
         .filter(|r| r.dt_over_tau > 0.0)
         .map(|r| r.dt_over_tau)
         .sum::<f64>()
-        / results.iter().filter(|r| r.dt_over_tau > 0.0).count().max(1) as f64;
+        / results
+            .iter()
+            .filter(|r| r.dt_over_tau > 0.0)
+            .count()
+            .max(1) as f64;
 
     let avg_tau_s: f64 = results
         .iter()
@@ -512,16 +517,22 @@ fn test_limit_21_phase6_case640_diagnostic() {
         .filter(|r| r.gauge_equilibration_per_hour > 0.0)
         .map(|r| r.gauge_equilibration_per_hour)
         .sum::<f64>()
-        / results.iter().filter(|r| r.gauge_equilibration_per_hour > 0.0).count().max(1)
-        as f64;
+        / results
+            .iter()
+            .filter(|r| r.gauge_equilibration_per_hour > 0.0)
+            .count()
+            .max(1) as f64;
 
     let avg_5r1c_equil: f64 = results
         .iter()
         .filter(|r| r.five_r1c_equilibration_per_hour > 0.0)
         .map(|r| r.five_r1c_equilibration_per_hour)
         .sum::<f64>()
-        / results.iter().filter(|r| r.five_r1c_equilibration_per_hour > 0.0).count().max(1)
-        as f64;
+        / results
+            .iter()
+            .filter(|r| r.five_r1c_equilibration_per_hour > 0.0)
+            .count()
+            .max(1) as f64;
 
     eprintln!("\n--- Hypothesis 3: Family-level Lumped-Mass-Node Damping ---");
     eprintln!(
@@ -555,7 +566,11 @@ fn test_limit_21_phase6_case640_diagnostic() {
     let damp_delta = avg_gauge_equil - five_r1c_equil_correct;
     eprintln!(
         "Gauge {} by {:.1}%% relative to 5R1C  (positive = gauge equilibrates more)",
-        if damp_delta > 0.0 { "over-damps" } else { "under-damps" },
+        if damp_delta > 0.0 {
+            "over-damps"
+        } else {
+            "under-damps"
+        },
         damp_delta.abs() * 100.0
     );
     if damp_delta > 0.05 {

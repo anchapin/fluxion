@@ -63,8 +63,12 @@ impl ThermalManifold {
             ));
         }
 
-        self.gauge_connection[zone_index] =
-            VectorField::new(vec![solar_irradiance_wm2, outside_air_temp_c, t_sky, h_rad_sky]);
+        self.gauge_connection[zone_index] = VectorField::new(vec![
+            solar_irradiance_wm2,
+            outside_air_temp_c,
+            t_sky,
+            h_rad_sky,
+        ]);
         Ok(())
     }
 
@@ -378,10 +382,7 @@ mod tests {
     #[test]
     fn test_boundary_translation_preserves_raw_values() {
         let connection = GaugeSolver::translate_boundary_conditions(GaugeBoundaryConditions::new(
-            250_000.0,
-            -80.0,
-            0.0,
-            0.0,
+            250_000.0, -80.0, 0.0, 0.0,
         ));
 
         assert_eq!(connection.as_slice(), &[250_000.0, -80.0, 0.0, 0.0]);
