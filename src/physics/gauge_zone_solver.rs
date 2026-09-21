@@ -48,6 +48,7 @@
 //! - **InterZone**: Shared boundary with adjacent zone
 
 use crate::physics::gauge_solver::{GaugeBoundaryConditions, GaugeSolver};
+use crate::physics::multi_node_solver::air_sky_conductance;
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
 use crate::physics::units::FromF64;
 use crate::physics::units::{HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64};
@@ -143,6 +144,10 @@ pub struct ZoneBoundaryConditions {
     pub infiltration_ach: f64,
     /// Coupled heat from adjacent zones (W)
     pub inter_zone_heat: f64,
+    /// Night-sky radiative temperature (°C)
+    pub t_sky: f64,
+    /// Linearized sky-radiative conductance [W/m²·K]
+    pub h_rad_sky: f64,
 }
 
 impl Default for ZoneBoundaryConditions {
@@ -155,6 +160,8 @@ impl Default for ZoneBoundaryConditions {
             Q_infiltration_w: 0.0,
             infiltration_ach: 0.5,
             inter_zone_heat: 0.0,
+            t_sky: 0.0,
+            h_rad_sky: 0.0,
         }
     }
 }
@@ -174,7 +181,16 @@ impl ZoneBoundaryConditions {
             Q_infiltration_w: 0.0,
             infiltration_ach: 0.5,
             inter_zone_heat: 0.0,
+            t_sky: 0.0,
+            h_rad_sky: 0.0,
         }
+    }
+
+    /// Set sky radiative parameters.
+    pub fn with_sky_radiation(mut self, t_sky: f64, h_rad_sky: f64) -> Self {
+        self.t_sky = t_sky;
+        self.h_rad_sky = h_rad_sky;
+        self
     }
 
     /// Set internal heat gains.
@@ -255,10 +271,50 @@ impl SurfaceGaugeSolver {
         T_exterior: Temperature,
         h_exterior: HeatTransferCoefficient,
         solar_irradiance_wm2: f64,
+        t_sky: f64,
+        h_rad_sky: f64,
     ) -> Result<HeatFlux, SolverError> {
-        let boundary = GaugeBoundaryConditions::new(solar_irradiance_wm2, T_exterior.to_value());
+        let boundary =
+            GaugeBoundaryConditions::new(solar_irradiance_wm2, T_exterior.to_value(), t_sky, h_rad_sky);
         self.gauge
             .step_with_boundary_conditions(timestep, T_interior, h_exterior, boundary)
+    }
+
+    /// Issue #3297 / LIMIT-21 Phase 5: sky view factor from surface tilt.
+    ///
+    /// ISO 13790 §12.3.2 sky radiation exchange factor for a tilted surface:
+    /// `F_sky = (1 + cos(β)) / 2` where β is the tilt from horizontal.
+    /// - Horizontal roof (β=0°): F_sky = 1.0 (full sky dome view)
+    /// - Vertical wall (β=90°): F_sky = 0.5 (half sky dome view)
+    /// - Floor (β=180°): F_sky = 0.0 (no sky view, radiates to ground)
+    fn sky_view_factor(&self) -> f64 {
+        let tilt_rad = self._tilt_deg.to_radians();
+        ((1.0 + tilt_rad.cos()) / 2.0).clamp(0.0, 1.0)
+    }
+
+    /// Issue #3297 / LIMIT-21 Phase 5: linearized sky-radiative conductance [W/m²K].
+    ///
+    /// Computes per-unit-area sky radiative conductance from `air_sky_conductance`
+    /// (returns W/K total). The gauge formula expects h_rad_sky in W/m²K for its
+    /// `h_rad_sky / h_exterior` dimensionless ratio. Uses T_exterior as the "air"
+    /// node temperature proxy (iteration on T_air would be second-order; the
+    /// h_rad_sky temperature sensitivity is O(T³) so the error is negligible).
+    ///
+    /// Returns 0.0 for surfaces with no sky view (Floor) or degenerate inputs.
+    ///
+    /// Default emissivity of 0.9 follows ASHRAE 140 / ISO 13790 convention
+    /// for opaque exterior surfaces (gypsum board interior, concrete, brick).
+    fn h_rad_sky_for_gauge(&self, t_exterior_c: f64, t_sky_c: f64) -> f64 {
+        let f_sky = self.sky_view_factor();
+        if f_sky <= 0.0 || self.area_m2 <= 0.0 {
+            return 0.0;
+        }
+        // ASHRAE 140 default exterior emissivity for opaque surfaces (Issue #3297)
+        let emissivity = 0.9;
+        // air_sky_conductance returns W/K (total for this surface)
+        let h_total = air_sky_conductance(emissivity, f_sky, self.area_m2, t_exterior_c, t_sky_c);
+        // Convert to per-unit-area for the gauge formula: W/K / m² = W/(K·m²)
+        h_total / self.area_m2
     }
 }
 
@@ -604,6 +660,8 @@ impl GaugeZoneSolver {
     /// * `solar_irradiance_wm2` - Total solar irradiance on horizontal plane (W/m²)
     /// * `Q_internal_w` - Internal heat gains (W)
     /// * `Q_infiltration_w` - Infiltration heat gain/loss (W)
+    /// * `t_sky` - Night-sky radiative temperature (°C)
+    /// * `h_rad_sky` - Linearized sky-radiative conductance [W/m²·K]
     ///
     /// # Returns
     /// Net zone load in kWh (positive = heating needed, negative = cooling needed)
@@ -617,6 +675,11 @@ impl GaugeZoneSolver {
         solar_irradiance_wm2: f64,
         Q_internal_w: f64,
         Q_infiltration_w: f64,
+        t_sky: f64,
+        // Issue #3297 Phase 5: per-surface h_rad_sky is now computed inside
+        // the surface loop using air_sky_conductance(); this parameter is retained
+        // for API compatibility but is ignored (prefixed _ to silence warning).
+        _h_rad_sky: f64,
     ) -> Result<f64, SolverError> {
         if !self.is_initialized() {
             return Err(SolverError::InvalidConfig(
@@ -637,14 +700,22 @@ impl GaugeZoneSolver {
         let T_int = Temperature::from_value(self.T_air);
         let mut net_power_watts = 0.0;
 
-        // Sum heat flux from all surfaces (computed once at T_air_old)
+        // Sum heat flux from all surfaces (computed once at T_air_old).
+        // Issue #3297 / LIMIT-21 Phase 5: per-surface h_rad_sky via
+        // air_sky_conductance(), keyed to each surface's sky-view factor
+        // derived from its tilt angle. Uses T_exterior as the air-node
+        // temperature proxy (iteration on T_air would be second-order).
+        let t_exterior_c = T_exterior.to_value();
         for surface in &mut self.surfaces {
+            let h_rad_sky_surface = surface.h_rad_sky_for_gauge(t_exterior_c, t_sky);
             let q_flux = surface.compute_flux(
                 Time::from_value(dt_seconds),
                 T_int,
                 T_exterior,
                 h_exterior,
                 solar_irradiance_wm2 * surface.surface_type.solar_fraction(),
+                t_sky,
+                h_rad_sky_surface,
             )?;
 
             let Q_surface = q_flux.to_value() * surface.area_m2;
@@ -765,17 +836,24 @@ impl GaugeZoneSolver {
         // Issue #3889 — solar-aware exterior-surface flux sum.
         let mut q_surfaces_w = 0.0;
 
-        // Sum heat flux from all exterior surfaces (computed once at T_air_old)
+        // Sum heat flux from all exterior surfaces (computed once at T_air_old).
+        // Issue #3297 / LIMIT-21 Phase 5: per-surface h_rad_sky via
+        // air_sky_conductance(), keyed to each surface's sky-view factor
+        // derived from its tilt angle.
+        let t_exterior_c = bc.T_exterior.to_value();
         for surface in &mut self.surfaces {
             if surface.surface_type.is_inter_zone() {
                 continue;
             }
+            let h_rad_sky_surface = surface.h_rad_sky_for_gauge(t_exterior_c, bc.t_sky);
             let q_flux = surface.compute_flux(
                 Time::from_value(dt_seconds),
                 T_int,
                 bc.T_exterior,
                 bc.h_exterior,
                 bc.solar_irradiance_wm2 * surface.surface_type.solar_fraction(),
+                bc.t_sky,
+                h_rad_sky_surface,
             )?;
 
             let Q_surface = q_flux.to_value() * surface.area_m2;
@@ -1275,11 +1353,15 @@ mod tests {
         // One hour timestep
         let energy = zone
             .step(
-                0,      // timestep
+                0, // timestep
                 3600.0, // dt = 1 hour
-                T_ext, h_ext, 0.0, // no solar
-                0.0, // no internal gains
-                0.0, // no infiltration
+                T_ext,
+                h_ext,
+                0.0,  // no solar
+                0.0,  // no internal gains
+                0.0,  // no infiltration
+                0.0,  // t_sky
+                0.0,  // h_rad_sky
             )
             .unwrap();
 
@@ -1463,6 +1545,8 @@ mod tests {
             0.0,
             0.0,
             0.0,
+            0.0,
+            0.0,
         )
         .unwrap();
         let temps = zone.surface_interior_temperatures();
@@ -1602,14 +1686,23 @@ mod tests {
 
     /// Step the sunspace pair to steady state under constant irradiance at
     /// 20 °C outdoor air; return (zone 0 T_air, zone 1 T_air).
+    ///
+    /// Issue #3297 / LIMIT-21 Phase 5: `t_sky = T_exterior` neutralises the
+    /// sky-radiative term so these tests isolate pure solar / conduction
+    /// physics. The tests' names ("no solar settles at ambient", "solar lift
+    /// scales linearly") reflect the old h_rad_sky=0 behaviour; neutralising
+    /// the term here preserves the original test intent while allowing the
+    /// per-surface h_rad_sky computation to run correctly in production.
     fn sunspace_settled_temps(solar_wm2: f64) -> (f64, f64) {
         let mut mz = sunspace_pair();
         let mut bc = HashMap::new();
+        // Neutralise sky radiative term (t_sky = T_exterior → zero contribution)
         let entry = ZoneBoundaryConditions::new(
             Temperature::from_value(20.0),
             HeatTransferCoefficient::from_value(25.0),
             solar_wm2,
-        );
+        )
+        .with_sky_radiation(20.0, 0.0); // t_sky = T_exterior, h_rad_sky = 0
         bc.insert(0, entry.clone());
         bc.insert(1, entry);
         for _ in 0..240 {
@@ -1657,6 +1750,8 @@ mod tests {
                 HeatTransferCoefficient::from_value(25.0),
                 0.0,
                 480.0,
+                0.0,
+                0.0,
                 0.0,
             )
             .unwrap();
@@ -1931,8 +2026,8 @@ mod tests {
             Temperature::from_value(10.0),
             HeatTransferCoefficient::from_value(25.0),
         );
-        let _ = clone_a.step(0, 3600.0, bc.0, bc.1, 0.0, 0.0, 0.0);
-        let _ = clone_b.step(1, 3600.0, bc.0, bc.1, 0.0, 0.0, 0.0);
+        let _ = clone_a.step(0, 3600.0, bc.0, bc.1, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let _ = clone_b.step(1, 3600.0, bc.0, bc.1, 0.0, 0.0, 0.0, 0.0, 0.0);
         assert!(
             clone_a.is_initialized(),
             "clone_a must remain functional after re-init + step"

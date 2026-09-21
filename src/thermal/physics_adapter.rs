@@ -110,7 +110,8 @@ impl PhysicsAdapter {
             .baseline_solver
             .step(timestep, T_interior, T_exterior, h_interior, h_exterior)?;
 
-        let boundary = GaugeBoundaryConditions::new(solar_irradiance_wm2, T_exterior.to_value());
+        let boundary =
+            GaugeBoundaryConditions::new(solar_irradiance_wm2, T_exterior.to_value(), 0.0, 0.0);
         let mut gauge_flux_result: Result<HeatFlux, SolverError> = Err(SolverError::InvalidConfig(
             "Gauge solver not available".to_string(),
         ));
@@ -210,7 +211,7 @@ mod tests {
         assert_eq!(record.baseline_flux_wm2, direct_flux.to_value());
         assert_eq!(record.gauge_flux_wm2, Some(160.0));
         assert_eq!(record.delta_wm2, Some(160.0));
-        assert_eq!(record.gauge_connection, vec![800.0, 20.0]);
+        assert_eq!(record.gauge_connection, vec![800.0, 20.0, 0.0, 0.0]);
     }
 
     #[test]
