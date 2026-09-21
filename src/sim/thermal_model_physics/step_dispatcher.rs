@@ -64,10 +64,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Issue #351: Calculate loads from weather data if not already set
         // This is needed for ASHRAE 140 validation where step_physics is called directly
-        // Issue #3911: Always call calc_analytical_loads - it has internal fallback
-        // when weather.is_none() using sine-wave approximation. Without this, the gauge
-        // path receives solar_irradiance_wm2 = 0.0 because solar_gains is never populated.
-        self.calc_analytical_loads(timestep, true, dt_seconds);
+        if self.0.solar.weather.is_some() {
+            self.calc_analytical_loads(timestep, true, dt_seconds);
+        }
 
         // Issue #3280 / #3291 / #3816: selector-driven dispatch. The
         // `Gauge` selector tries the gauge single- and multi-zone arms
