@@ -148,6 +148,9 @@ pub struct ZoneBoundaryConditions {
     pub t_sky: f64,
     /// Linearized sky-radiative conductance [W/m²·K]
     pub h_rad_sky: f64,
+    /// Fraction of window solar that goes directly to zone air (ASHRAE 140 solar_distribution_to_air).
+    /// 0.30 for LowMass (30% instant), 0.0 for HighMass per Issue #3911 / LIMIT-21.
+    pub solar_distribution_to_air: f64,
 }
 
 impl Default for ZoneBoundaryConditions {
@@ -162,6 +165,7 @@ impl Default for ZoneBoundaryConditions {
             inter_zone_heat: 0.0,
             t_sky: 0.0,
             h_rad_sky: 0.0,
+            solar_distribution_to_air: 0.0,
         }
     }
 }
@@ -172,6 +176,7 @@ impl ZoneBoundaryConditions {
         T_exterior: Temperature,
         h_exterior: HeatTransferCoefficient,
         solar_irradiance_wm2: f64,
+        solar_distribution_to_air: f64,
     ) -> Self {
         Self {
             T_exterior,
@@ -183,6 +188,7 @@ impl ZoneBoundaryConditions {
             inter_zone_heat: 0.0,
             t_sky: 0.0,
             h_rad_sky: 0.0,
+            solar_distribution_to_air,
         }
     }
 
@@ -672,6 +678,7 @@ impl GaugeZoneSolver {
     /// * `T_exterior` - Exterior air temperature (°C)
     /// * `h_exterior` - Exterior film coefficient (W/m²·K)
     /// * `solar_irradiance_wm2` - Total solar irradiance on horizontal plane (W/m²)
+    /// * `solar_distribution_to_air` - Fraction of window solar that goes directly to zone air
     /// * `Q_internal_w` - Internal heat gains (W)
     /// * `Q_infiltration_w` - Infiltration heat gain/loss (W)
     /// * `t_sky` - Night-sky radiative temperature (°C)
@@ -687,6 +694,7 @@ impl GaugeZoneSolver {
         T_exterior: Temperature,
         h_exterior: HeatTransferCoefficient,
         solar_irradiance_wm2: f64,
+        solar_distribution_to_air: f64,
         Q_internal_w: f64,
         Q_infiltration_w: f64,
         t_sky: f64,
@@ -719,16 +727,50 @@ impl GaugeZoneSolver {
         // air_sky_conductance(), keyed to each surface's sky-view factor
         // derived from its tilt angle. Uses T_exterior as the air-node
         // temperature proxy (iteration on T_air would be second-order).
+        //
+        // Issue #3911 / LIMIT-21 Phase 7: For windows, split solar gains per
+        // `solar_distribution_to_air` — (1 - frac) goes through the window
+        // conduction path; frac goes directly to zone air as instant cooling.
+        // This matches the 5R1C behavior where `solar_distribution_to_air = 0.30`
+        // routes 30% of window solar directly to the zone air node.
         let t_exterior_c = T_exterior.to_value();
         for surface in &mut self.surfaces {
             let h_rad_sky_surface = surface.h_rad_sky_for_gauge(t_exterior_c, t_sky);
+
+            // Compute window solar components for this surface
+            let solar_frac = surface.surface_type.solar_fraction();
+            let window_solar_wm2 = solar_irradiance_wm2 * solar_frac;
+
+            // Issue #3911: split window solar between direct-to-air and conduction path
+            // For windows, we ADD the direct-to-air portion to zone air immediately.
+            // The window flux receives only the remaining (1 - solar_distribution_to_air)
+            // portion because in 5R1C, that fraction bypasses the window surface and
+            // goes directly to zone air.
+            let solar_to_air_wm2 = if solar_frac > 0.0 {
+                // Window: direct portion goes straight to zone air
+                solar_distribution_to_air * window_solar_wm2
+            } else {
+                0.0
+            };
+
+            // Add direct-to-air portion to zone load immediately
+            net_power_watts += solar_to_air_wm2 * surface.area_m2;
+
+            // Window flux gets only the portion that goes through the surface network
+            // (the remaining 1 - solar_distribution_to_air of window solar)
+            let solar_to_surface_wm2 = if solar_frac > 0.0 {
+                (1.0 - solar_distribution_to_air) * window_solar_wm2
+            } else {
+                window_solar_wm2
+            };
+
             let q_flux = surface.compute_flux(
                 Time::from_value(dt_seconds),
                 T_int,
                 T_exterior,
                 h_exterior,
                 SurfaceBoundaryInput {
-                    solar_irradiance_wm2: solar_irradiance_wm2 * surface.surface_type.solar_fraction(),
+                    solar_irradiance_wm2: solar_to_surface_wm2,
                     t_sky,
                     h_rad_sky: h_rad_sky_surface,
                 },
@@ -856,19 +898,54 @@ impl GaugeZoneSolver {
         // Issue #3297 / LIMIT-21 Phase 5: per-surface h_rad_sky via
         // air_sky_conductance(), keyed to each surface's sky-view factor
         // derived from its tilt angle.
+        //
+        // Issue #3911 / LIMIT-21 Phase 7: For windows, split solar gains per
+        // `solar_distribution_to_air` — (1 - frac) goes through the window
+        // conduction path; frac goes directly to zone air as instant cooling.
+        // This matches the 5R1C behavior where `solar_distribution_to_air = 0.30`
+        // routes 30% of window solar directly to the zone air node.
         let t_exterior_c = bc.T_exterior.to_value();
         for surface in &mut self.surfaces {
             if surface.surface_type.is_inter_zone() {
                 continue;
             }
             let h_rad_sky_surface = surface.h_rad_sky_for_gauge(t_exterior_c, bc.t_sky);
+
+            // Compute window solar components for this surface
+            let solar_frac = surface.surface_type.solar_fraction();
+            let window_solar_wm2 = bc.solar_irradiance_wm2 * solar_frac;
+
+            // Issue #3911: split window solar between direct-to-air and conduction path
+            // For windows, we ADD the direct-to-air portion to zone air immediately.
+            // The window flux receives only the remaining (1 - solar_distribution_to_air)
+            // portion because in 5R1C, that fraction bypasses the window surface and
+            // goes directly to zone air.
+            let solar_to_air_wm2 = if solar_frac > 0.0 {
+                // Window: direct portion goes straight to zone air
+                bc.solar_distribution_to_air * window_solar_wm2
+            } else {
+                0.0
+            };
+
+            // Add direct-to-air portion to zone load immediately
+            // (positive = heat gain to zone, which becomes cooling load when zone is warm)
+            net_power_watts += solar_to_air_wm2 * surface.area_m2;
+
+            // Window flux gets only the portion that goes through the surface network
+            // (the remaining 1 - solar_distribution_to_air of window solar)
+            let solar_to_surface_wm2 = if solar_frac > 0.0 {
+                (1.0 - bc.solar_distribution_to_air) * window_solar_wm2
+            } else {
+                window_solar_wm2
+            };
+
             let q_flux = surface.compute_flux(
                 Time::from_value(dt_seconds),
                 T_int,
                 bc.T_exterior,
                 bc.h_exterior,
                 SurfaceBoundaryInput {
-                    solar_irradiance_wm2: bc.solar_irradiance_wm2 * surface.surface_type.solar_fraction(),
+                    solar_irradiance_wm2: solar_to_surface_wm2,
                     t_sky: bc.t_sky,
                     h_rad_sky: h_rad_sky_surface,
                 },
@@ -1482,6 +1559,7 @@ mod tests {
                 T_ext,
                 h_ext,
                 0.0,  // no solar
+                0.0,  // solar_distribution_to_air
                 0.0,  // no internal gains
                 0.0,  // no infiltration
                 0.0,  // t_sky
@@ -1564,6 +1642,7 @@ mod tests {
                 Temperature::from_value(5.0),
                 HeatTransferCoefficient::from_value(25.0),
                 0.0,
+                0.0, // solar_distribution_to_air
             ),
         );
         bc.insert(
@@ -1572,6 +1651,7 @@ mod tests {
                 Temperature::from_value(5.0),
                 HeatTransferCoefficient::from_value(25.0),
                 0.0,
+                0.0, // solar_distribution_to_air
             ),
         );
 
@@ -1666,11 +1746,12 @@ mod tests {
             3600.0,
             Temperature::from_value(5.0),
             HeatTransferCoefficient::from_value(25.0),
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
+            0.0,  // solar_irradiance_wm2
+            0.0,  // solar_distribution_to_air
+            0.0,  // Q_internal_w
+            0.0,  // Q_infiltration_w
+            0.0,  // t_sky
+            0.0,  // h_rad_sky
         )
         .unwrap();
         let temps = zone.surface_interior_temperatures();
@@ -1745,8 +1826,8 @@ mod tests {
         let mut bc = HashMap::new();
         let cold = Temperature::from_value(5.0);
         let h_ext = HeatTransferCoefficient::from_value(25.0);
-        bc.insert(0, ZoneBoundaryConditions::new(cold, h_ext, 300.0));
-        bc.insert(1, ZoneBoundaryConditions::new(cold, h_ext, 300.0));
+        bc.insert(0, ZoneBoundaryConditions::new(cold, h_ext, 300.0, 0.0));
+        bc.insert(1, ZoneBoundaryConditions::new(cold, h_ext, 300.0, 0.0));
 
         mz.step(3600.0, &bc).unwrap();
 
@@ -1825,6 +1906,7 @@ mod tests {
             Temperature::from_value(20.0),
             HeatTransferCoefficient::from_value(25.0),
             solar_wm2,
+            0.0, // solar_distribution_to_air
         )
         .with_sky_radiation(20.0, 0.0); // t_sky = T_exterior, h_rad_sky = 0
         bc.insert(0, entry.clone());
@@ -1872,11 +1954,12 @@ mod tests {
                 3600.0,
                 Temperature::from_value(20.0),
                 HeatTransferCoefficient::from_value(25.0),
-                0.0,
-                480.0,
-                0.0,
-                0.0,
-                0.0,
+                0.0,   // solar_irradiance_wm2
+                0.0,   // solar_distribution_to_air
+                480.0, // Q_internal_w
+                0.0,   // Q_infiltration_w
+                0.0,   // t_sky
+                0.0,   // h_rad_sky
             )
             .unwrap();
         }
@@ -1901,6 +1984,7 @@ mod tests {
             Temperature::from_value(20.0),
             HeatTransferCoefficient::from_value(25.0),
             800.0,
+            0.0, // solar_distribution_to_air
         );
         bc.insert(0, entry.clone());
         bc.insert(1, entry);
@@ -1918,6 +2002,7 @@ mod tests {
             Temperature::from_value(0.0),
             HeatTransferCoefficient::from_value(25.0),
             0.0,
+            0.0, // solar_distribution_to_air
         );
         bc.insert(0, entry.clone());
         bc.insert(1, entry);
@@ -2150,8 +2235,8 @@ mod tests {
             Temperature::from_value(10.0),
             HeatTransferCoefficient::from_value(25.0),
         );
-        let _ = clone_a.step(0, 3600.0, bc.0, bc.1, 0.0, 0.0, 0.0, 0.0, 0.0);
-        let _ = clone_b.step(1, 3600.0, bc.0, bc.1, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let _ = clone_a.step(0, 3600.0, bc.0, bc.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let _ = clone_b.step(1, 3600.0, bc.0, bc.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         assert!(
             clone_a.is_initialized(),
             "clone_a must remain functional after re-init + step"

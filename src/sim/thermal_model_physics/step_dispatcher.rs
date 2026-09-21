@@ -64,9 +64,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Issue #351: Calculate loads from weather data if not already set
         // This is needed for ASHRAE 140 validation where step_physics is called directly
-        if self.0.solar.weather.is_some() {
-            self.calc_analytical_loads(timestep, true, dt_seconds);
-        }
+        // Issue #3911: Always call calc_analytical_loads - it has internal fallback
+        // when weather.is_none() using sine-wave approximation. Without this, the gauge
+        // path receives solar_irradiance_wm2 = 0.0 because solar_gains is never populated.
+        self.calc_analytical_loads(timestep, true, dt_seconds);
 
         // Issue #3280 / #3291 / #3816: selector-driven dispatch. The
         // `Gauge` selector tries the gauge single- and multi-zone arms
@@ -317,6 +318,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 Temperature::from_value(outdoor_temp),
                 HeatTransferCoefficient::from_value(inputs.h_ext),
                 solar_irradiance_wm2,
+                // Issue #3911 / LIMIT-21 Phase 7: thread solar_distribution_to_air so the
+                // gauge solver splits window solar the same way the 5R1C model does.
+                self.0.solar.solar_distribution_to_air,
                 q_internal_w,
                 0.0, // Q_infiltration_w — would need proper infiltration calculation
                 t_sky,
@@ -514,6 +518,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         inter_zone_heat: 0.0,
                         t_sky,
                         h_rad_sky,
+                        // Issue #3911 / LIMIT-21 Phase 7: thread solar_distribution_to_air
+                        // from the thermal model so the gauge solver can split window solar
+                        // the same way the 5R1C model does.
+                        solar_distribution_to_air: self.0.solar.solar_distribution_to_air,
                     },
                 );
             }
