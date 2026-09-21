@@ -48,6 +48,7 @@
 //! - **InterZone**: Shared boundary with adjacent zone
 
 use crate::physics::gauge_solver::{GaugeBoundaryConditions, GaugeSolver};
+use crate::physics::multi_node_solver::air_sky_conductance;
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
 use crate::physics::units::FromF64;
 use crate::physics::units::{HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64};
@@ -143,6 +144,13 @@ pub struct ZoneBoundaryConditions {
     pub infiltration_ach: f64,
     /// Coupled heat from adjacent zones (W)
     pub inter_zone_heat: f64,
+    /// Night-sky radiative temperature (°C)
+    pub t_sky: f64,
+    /// Linearized sky-radiative conductance [W/m²·K]
+    pub h_rad_sky: f64,
+    /// Fraction of window solar that goes directly to zone air (ASHRAE 140 solar_distribution_to_air).
+    /// 0.30 for LowMass (30% instant), 0.0 for HighMass per Issue #3911 / LIMIT-21.
+    pub solar_distribution_to_air: f64,
 }
 
 impl Default for ZoneBoundaryConditions {
@@ -155,6 +163,9 @@ impl Default for ZoneBoundaryConditions {
             Q_infiltration_w: 0.0,
             infiltration_ach: 0.5,
             inter_zone_heat: 0.0,
+            t_sky: 0.0,
+            h_rad_sky: 0.0,
+            solar_distribution_to_air: 0.0,
         }
     }
 }
@@ -165,6 +176,7 @@ impl ZoneBoundaryConditions {
         T_exterior: Temperature,
         h_exterior: HeatTransferCoefficient,
         solar_irradiance_wm2: f64,
+        solar_distribution_to_air: f64,
     ) -> Self {
         Self {
             T_exterior,
@@ -174,7 +186,17 @@ impl ZoneBoundaryConditions {
             Q_infiltration_w: 0.0,
             infiltration_ach: 0.5,
             inter_zone_heat: 0.0,
+            t_sky: 0.0,
+            h_rad_sky: 0.0,
+            solar_distribution_to_air,
         }
+    }
+
+    /// Set sky radiative parameters.
+    pub fn with_sky_radiation(mut self, t_sky: f64, h_rad_sky: f64) -> Self {
+        self.t_sky = t_sky;
+        self.h_rad_sky = h_rad_sky;
+        self
     }
 
     /// Set internal heat gains.
@@ -228,6 +250,17 @@ pub(crate) struct SurfaceGaugeSolver {
     wall_spec: Option<WallSpec>,
 }
 
+/// Parameters for computing the surface boundary conditions.
+/// Groups the solar irradiance, sky temperature, and linearized sky conductance.
+pub(crate) struct SurfaceBoundaryInput {
+    /// Effective solar irradiance on this surface [W/m²]
+    pub solar_irradiance_wm2: f64,
+    /// Night-sky radiative temperature [°C]
+    pub t_sky: f64,
+    /// Linearized sky-radiative conductance [W/m²·K]
+    pub h_rad_sky: f64,
+}
+
 impl SurfaceGaugeSolver {
     /// Create a new surface gauge solver.
     fn new(
@@ -248,17 +281,60 @@ impl SurfaceGaugeSolver {
     }
 
     /// Compute heat flux through this surface.
+    #[allow(clippy::too_many_arguments)]
     fn compute_flux(
         &mut self,
         timestep: Time,
         T_interior: Temperature,
         T_exterior: Temperature,
         h_exterior: HeatTransferCoefficient,
-        solar_irradiance_wm2: f64,
+        boundary: SurfaceBoundaryInput,
     ) -> Result<HeatFlux, SolverError> {
-        let boundary = GaugeBoundaryConditions::new(solar_irradiance_wm2, T_exterior.to_value());
+        let boundary_conds = GaugeBoundaryConditions::new(
+            boundary.solar_irradiance_wm2,
+            T_exterior.to_value(),
+            boundary.t_sky,
+            boundary.h_rad_sky,
+        );
         self.gauge
-            .step_with_boundary_conditions(timestep, T_interior, h_exterior, boundary)
+            .step_with_boundary_conditions(timestep, T_interior, h_exterior, boundary_conds)
+    }
+
+    /// Issue #3297 / LIMIT-21 Phase 5: sky view factor from surface tilt.
+    ///
+    /// ISO 13790 §12.3.2 sky radiation exchange factor for a tilted surface:
+    /// `F_sky = (1 + cos(β)) / 2` where β is the tilt from horizontal.
+    /// - Horizontal roof (β=0°): F_sky = 1.0 (full sky dome view)
+    /// - Vertical wall (β=90°): F_sky = 0.5 (half sky dome view)
+    /// - Floor (β=180°): F_sky = 0.0 (no sky view, radiates to ground)
+    fn sky_view_factor(&self) -> f64 {
+        let tilt_rad = self._tilt_deg.to_radians();
+        ((1.0 + tilt_rad.cos()) / 2.0).clamp(0.0, 1.0)
+    }
+
+    /// Issue #3297 / LIMIT-21 Phase 5: linearized sky-radiative conductance [W/m²K].
+    ///
+    /// Computes per-unit-area sky radiative conductance from `air_sky_conductance`
+    /// (returns W/K total). The gauge formula expects h_rad_sky in W/m²K for its
+    /// `h_rad_sky / h_exterior` dimensionless ratio. Uses T_exterior as the "air"
+    /// node temperature proxy (iteration on T_air would be second-order; the
+    /// h_rad_sky temperature sensitivity is O(T³) so the error is negligible).
+    ///
+    /// Returns 0.0 for surfaces with no sky view (Floor) or degenerate inputs.
+    ///
+    /// Default emissivity of 0.9 follows ASHRAE 140 / ISO 13790 convention
+    /// for opaque exterior surfaces (gypsum board interior, concrete, brick).
+    fn h_rad_sky_for_gauge(&self, t_exterior_c: f64, t_sky_c: f64) -> f64 {
+        let f_sky = self.sky_view_factor();
+        if f_sky <= 0.0 || self.area_m2 <= 0.0 {
+            return 0.0;
+        }
+        // ASHRAE 140 default exterior emissivity for opaque surfaces (Issue #3297)
+        let emissivity = 0.9;
+        // air_sky_conductance returns W/K (total for this surface)
+        let h_total = air_sky_conductance(emissivity, f_sky, self.area_m2, t_exterior_c, t_sky_c);
+        // Convert to per-unit-area for the gauge formula: W/K / m² = W/(K·m²)
+        h_total / self.area_m2
     }
 }
 
@@ -602,8 +678,11 @@ impl GaugeZoneSolver {
     /// * `T_exterior` - Exterior air temperature (°C)
     /// * `h_exterior` - Exterior film coefficient (W/m²·K)
     /// * `solar_irradiance_wm2` - Total solar irradiance on horizontal plane (W/m²)
+    /// * `solar_distribution_to_air` - Fraction of window solar that goes directly to zone air
     /// * `Q_internal_w` - Internal heat gains (W)
     /// * `Q_infiltration_w` - Infiltration heat gain/loss (W)
+    /// * `t_sky` - Night-sky radiative temperature (°C)
+    /// * `h_rad_sky` - Linearized sky-radiative conductance [W/m²·K]
     ///
     /// # Returns
     /// Net zone load in kWh (positive = heating needed, negative = cooling needed)
@@ -615,8 +694,14 @@ impl GaugeZoneSolver {
         T_exterior: Temperature,
         h_exterior: HeatTransferCoefficient,
         solar_irradiance_wm2: f64,
+        solar_distribution_to_air: f64,
         Q_internal_w: f64,
         Q_infiltration_w: f64,
+        t_sky: f64,
+        // Issue #3297 Phase 5: per-surface h_rad_sky is now computed inside
+        // the surface loop using air_sky_conductance(); this parameter is retained
+        // for API compatibility but is ignored (prefixed _ to silence warning).
+        _h_rad_sky: f64,
     ) -> Result<f64, SolverError> {
         if !self.is_initialized() {
             return Err(SolverError::InvalidConfig(
@@ -637,14 +722,58 @@ impl GaugeZoneSolver {
         let T_int = Temperature::from_value(self.T_air);
         let mut net_power_watts = 0.0;
 
-        // Sum heat flux from all surfaces (computed once at T_air_old)
+        // Sum heat flux from all surfaces (computed once at T_air_old).
+        // Issue #3297 / LIMIT-21 Phase 5: per-surface h_rad_sky via
+        // air_sky_conductance(), keyed to each surface's sky-view factor
+        // derived from its tilt angle. Uses T_exterior as the air-node
+        // temperature proxy (iteration on T_air would be second-order).
+        //
+        // Issue #3911 / LIMIT-21 Phase 7: For windows, split solar gains per
+        // `solar_distribution_to_air` — (1 - frac) goes through the window
+        // conduction path; frac goes directly to zone air as instant cooling.
+        // This matches the 5R1C behavior where `solar_distribution_to_air = 0.30`
+        // routes 30% of window solar directly to the zone air node.
+        let t_exterior_c = T_exterior.to_value();
         for surface in &mut self.surfaces {
+            let h_rad_sky_surface = surface.h_rad_sky_for_gauge(t_exterior_c, t_sky);
+
+            // Compute window solar components for this surface
+            let solar_frac = surface.surface_type.solar_fraction();
+            let window_solar_wm2 = solar_irradiance_wm2 * solar_frac;
+
+            // Issue #3911: split window solar between direct-to-air and conduction path
+            // For windows, we ADD the direct-to-air portion to zone air immediately.
+            // The window flux receives only the remaining (1 - solar_distribution_to_air)
+            // portion because in 5R1C, that fraction bypasses the window surface and
+            // goes directly to zone air.
+            let solar_to_air_wm2 = if solar_frac > 0.0 {
+                // Window: direct portion goes straight to zone air
+                solar_distribution_to_air * window_solar_wm2
+            } else {
+                0.0
+            };
+
+            // Add direct-to-air portion to zone load immediately
+            net_power_watts += solar_to_air_wm2 * surface.area_m2;
+
+            // Window flux gets only the portion that goes through the surface network
+            // (the remaining 1 - solar_distribution_to_air of window solar)
+            let solar_to_surface_wm2 = if solar_frac > 0.0 {
+                (1.0 - solar_distribution_to_air) * window_solar_wm2
+            } else {
+                window_solar_wm2
+            };
+
             let q_flux = surface.compute_flux(
                 Time::from_value(dt_seconds),
                 T_int,
                 T_exterior,
                 h_exterior,
-                solar_irradiance_wm2 * surface.surface_type.solar_fraction(),
+                SurfaceBoundaryInput {
+                    solar_irradiance_wm2: solar_to_surface_wm2,
+                    t_sky,
+                    h_rad_sky: h_rad_sky_surface,
+                },
             )?;
 
             let Q_surface = q_flux.to_value() * surface.area_m2;
@@ -765,17 +894,61 @@ impl GaugeZoneSolver {
         // Issue #3889 — solar-aware exterior-surface flux sum.
         let mut q_surfaces_w = 0.0;
 
-        // Sum heat flux from all exterior surfaces (computed once at T_air_old)
+        // Sum heat flux from all exterior surfaces (computed once at T_air_old).
+        // Issue #3297 / LIMIT-21 Phase 5: per-surface h_rad_sky via
+        // air_sky_conductance(), keyed to each surface's sky-view factor
+        // derived from its tilt angle.
+        //
+        // Issue #3911 / LIMIT-21 Phase 7: For windows, split solar gains per
+        // `solar_distribution_to_air` — (1 - frac) goes through the window
+        // conduction path; frac goes directly to zone air as instant cooling.
+        // This matches the 5R1C behavior where `solar_distribution_to_air = 0.30`
+        // routes 30% of window solar directly to the zone air node.
+        let t_exterior_c = bc.T_exterior.to_value();
         for surface in &mut self.surfaces {
             if surface.surface_type.is_inter_zone() {
                 continue;
             }
+            let h_rad_sky_surface = surface.h_rad_sky_for_gauge(t_exterior_c, bc.t_sky);
+
+            // Compute window solar components for this surface
+            let solar_frac = surface.surface_type.solar_fraction();
+            let window_solar_wm2 = bc.solar_irradiance_wm2 * solar_frac;
+
+            // Issue #3911: split window solar between direct-to-air and conduction path
+            // For windows, we ADD the direct-to-air portion to zone air immediately.
+            // The window flux receives only the remaining (1 - solar_distribution_to_air)
+            // portion because in 5R1C, that fraction bypasses the window surface and
+            // goes directly to zone air.
+            let solar_to_air_wm2 = if solar_frac > 0.0 {
+                // Window: direct portion goes straight to zone air
+                bc.solar_distribution_to_air * window_solar_wm2
+            } else {
+                0.0
+            };
+
+            // Add direct-to-air portion to zone load immediately
+            // (positive = heat gain to zone, which becomes cooling load when zone is warm)
+            net_power_watts += solar_to_air_wm2 * surface.area_m2;
+
+            // Window flux gets only the portion that goes through the surface network
+            // (the remaining 1 - solar_distribution_to_air of window solar)
+            let solar_to_surface_wm2 = if solar_frac > 0.0 {
+                (1.0 - bc.solar_distribution_to_air) * window_solar_wm2
+            } else {
+                window_solar_wm2
+            };
+
             let q_flux = surface.compute_flux(
                 Time::from_value(dt_seconds),
                 T_int,
                 bc.T_exterior,
                 bc.h_exterior,
-                bc.solar_irradiance_wm2 * surface.surface_type.solar_fraction(),
+                SurfaceBoundaryInput {
+                    solar_irradiance_wm2: solar_to_surface_wm2,
+                    t_sky: bc.t_sky,
+                    h_rad_sky: h_rad_sky_surface,
+                },
             )?;
 
             let Q_surface = q_flux.to_value() * surface.area_m2;
@@ -861,6 +1034,115 @@ impl GaugeZoneSolver {
 
         coupling_vector
     }
+
+    /// Issue #3911 — Per-surface telemetry from each surface's 1D gauge solve.
+    ///
+    /// Returns a vector of per-surface diagnostic data for the LIMIT-21 Phase 6
+    /// diagnostic (Case 640 annual cooling gap isolation). Each entry corresponds
+    /// to one surface in the zone. Telemetry is captured at the state *after*
+    /// the most recent `step()` or `step_with_coupling()` call.
+    ///
+    /// Telemetry per surface:
+    /// - `area_m2` — surface area [m²]
+    /// - `surface_type` — SurfaceType enum (Window, Wall, Roof, etc.)
+    /// - `tilt_deg` — tilt from horizontal [degrees]
+    /// - `azimuth_deg` — azimuth from north [degrees]
+    /// - `q_flux_Wm2` — heat flux through surface [W/m²] (positive = into zone)
+    /// - `r_total_m2K_W` — total surface resistance [m²K/W]
+    /// - `c_mass_Jm2K` — surface thermal mass [J/m²K]
+    /// - `solar_fraction` — fraction of horizontal GHI that reaches this surface
+    /// - `sky_view_factor` — ISO 13790 sky view factor (0–1)
+    pub fn per_surface_telemetry(&self) -> Vec<SurfaceTelemetry> {
+        self.surfaces
+            .iter()
+            .map(|s| SurfaceTelemetry {
+                area_m2: s.area_m2,
+                surface_type: s.surface_type,
+                tilt_deg: s._tilt_deg,
+                azimuth_deg: s._azimuth_deg,
+                q_flux_Wm2: s.gauge.q_flux(),
+                r_total_m2K_W: s.gauge.r_total_for_test(),
+                c_mass_Jm2K: s.gauge.c_mass_for_test(),
+                solar_fraction: s.surface_type.solar_fraction(),
+                sky_view_factor: s.sky_view_factor(),
+            })
+            .collect()
+    }
+
+    /// Issue #3911 — Infiltration conductance [W/K] from the most recent step.
+    ///
+    /// Computed as: ρ_air · c_p,air · (ACH / 3600) · V_zone
+    pub fn infiltration_conductance_WK(&self, infiltration_ach: f64) -> f64 {
+        air_constants::RHO_AIR
+            * air_constants::CP_AIR
+            * (infiltration_ach / 3600.0)
+            * self.zone_volume
+    }
+
+    /// Issue #3911 — Total surface-to-air conductance [W/K] from the most recent step.
+    ///
+    /// Σ_i (A_i / R_total,i) for all non-inter-zone surfaces.
+    /// This is the sum of window, wall, roof, and floor conductances that
+    /// couple the zone air to the exterior / sky / ground.
+    fn surface_to_air_conductance(&self) -> f64 {
+        self.surfaces
+            .iter()
+            .filter(|s| !s.surface_type.is_inter_zone())
+            .filter(|s| s.gauge.r_total_for_test() > 0.0)
+            .map(|s| s.area_m2 / s.gauge.r_total_for_test())
+            .sum()
+    }
+
+    /// Issue #3911 — Effective air-node time constant [seconds] from the most recent step.
+    ///
+    /// τ_air = C_air / (h_inf + h_surface_total + h_inter_zone)
+    /// where C_air = ρ_air · c_p,air · V_zone.
+    ///
+    /// Matches the 5R1C τ_air = C_air / den_true formula, where den_true
+    /// includes window conductance (H_tr,w), opaque surface conductance (H_tr,1),
+    /// infiltration (H_ve), and inter-zone coupling.
+    ///
+    /// At τ_air ≈ 1000 s and dt = 3600 s: dt/τ_air ≈ 3.6 (5R1C regime).
+    /// A larger τ_air means the air node responds more slowly.
+    pub fn effective_time_constant_s(&self, infiltration_ach: f64) -> f64 {
+        let h_inf = self.infiltration_conductance_WK(infiltration_ach);
+        let h_surface = self.surface_to_air_conductance();
+        let h_inter_zone: f64 = self.couplings.iter().map(|c| c.conductance).sum();
+        let C_air = air_constants::RHO_AIR * air_constants::CP_AIR * self.zone_volume;
+        C_air / (h_inf + h_surface + h_inter_zone)
+    }
+
+    /// Issue #3911 — Effective dt/τ_air ratio.
+    ///
+    /// At dt/τ_air ≈ 3.6, implicit Euler sub-stepping (N=3) still under-equilibrates
+    /// the air node vs the analytical solution. This ratio is the key diagnostic
+    /// for the "family-level lumped-mass damping" hypothesis.
+    pub fn dt_over_tau(&self, dt_seconds: f64, infiltration_ach: f64) -> f64 {
+        dt_seconds / self.effective_time_constant_s(infiltration_ach)
+    }
+}
+
+/// Per-surface telemetry returned by [`GaugeZoneSolver::per_surface_telemetry()`].
+#[derive(Debug, Clone)]
+pub struct SurfaceTelemetry {
+    /// Surface area [m²]
+    pub area_m2: f64,
+    /// Surface type (Window, Wall, Roof, etc.)
+    pub surface_type: SurfaceType,
+    /// Surface tilt from horizontal [degrees]
+    pub tilt_deg: f64,
+    /// Surface azimuth from north [degrees]
+    pub azimuth_deg: f64,
+    /// Heat flux through surface [W/m²] (positive = into zone)
+    pub q_flux_Wm2: f64,
+    /// Total surface resistance [m²K/W]
+    pub r_total_m2K_W: f64,
+    /// Surface thermal mass [J/m²K]
+    pub c_mass_Jm2K: f64,
+    /// Fraction of horizontal GHI that reaches this surface
+    pub solar_fraction: f64,
+    /// ISO 13790 sky view factor (0–1)
+    pub sky_view_factor: f64,
 }
 
 /// Multi-zone gauge solver for N-zone thermal coupling.
@@ -1278,8 +1560,11 @@ mod tests {
                 0,      // timestep
                 3600.0, // dt = 1 hour
                 T_ext, h_ext, 0.0, // no solar
+                0.0, // solar_distribution_to_air
                 0.0, // no internal gains
                 0.0, // no infiltration
+                0.0, // t_sky
+                0.0, // h_rad_sky
             )
             .unwrap();
 
@@ -1358,6 +1643,7 @@ mod tests {
                 Temperature::from_value(5.0),
                 HeatTransferCoefficient::from_value(25.0),
                 0.0,
+                0.0, // solar_distribution_to_air
             ),
         );
         bc.insert(
@@ -1366,6 +1652,7 @@ mod tests {
                 Temperature::from_value(5.0),
                 HeatTransferCoefficient::from_value(25.0),
                 0.0,
+                0.0, // solar_distribution_to_air
             ),
         );
 
@@ -1460,9 +1747,12 @@ mod tests {
             3600.0,
             Temperature::from_value(5.0),
             HeatTransferCoefficient::from_value(25.0),
-            0.0,
-            0.0,
-            0.0,
+            0.0, // solar_irradiance_wm2
+            0.0, // solar_distribution_to_air
+            0.0, // Q_internal_w
+            0.0, // Q_infiltration_w
+            0.0, // t_sky
+            0.0, // h_rad_sky
         )
         .unwrap();
         let temps = zone.surface_interior_temperatures();
@@ -1537,8 +1827,8 @@ mod tests {
         let mut bc = HashMap::new();
         let cold = Temperature::from_value(5.0);
         let h_ext = HeatTransferCoefficient::from_value(25.0);
-        bc.insert(0, ZoneBoundaryConditions::new(cold, h_ext, 300.0));
-        bc.insert(1, ZoneBoundaryConditions::new(cold, h_ext, 300.0));
+        bc.insert(0, ZoneBoundaryConditions::new(cold, h_ext, 300.0, 0.0));
+        bc.insert(1, ZoneBoundaryConditions::new(cold, h_ext, 300.0, 0.0));
 
         mz.step(3600.0, &bc).unwrap();
 
@@ -1602,14 +1892,24 @@ mod tests {
 
     /// Step the sunspace pair to steady state under constant irradiance at
     /// 20 °C outdoor air; return (zone 0 T_air, zone 1 T_air).
+    ///
+    /// Issue #3297 / LIMIT-21 Phase 5: `t_sky = T_exterior` neutralises the
+    /// sky-radiative term so these tests isolate pure solar / conduction
+    /// physics. The tests' names ("no solar settles at ambient", "solar lift
+    /// scales linearly") reflect the old h_rad_sky=0 behaviour; neutralising
+    /// the term here preserves the original test intent while allowing the
+    /// per-surface h_rad_sky computation to run correctly in production.
     fn sunspace_settled_temps(solar_wm2: f64) -> (f64, f64) {
         let mut mz = sunspace_pair();
         let mut bc = HashMap::new();
+        // Neutralise sky radiative term (t_sky = T_exterior → zero contribution)
         let entry = ZoneBoundaryConditions::new(
             Temperature::from_value(20.0),
             HeatTransferCoefficient::from_value(25.0),
             solar_wm2,
-        );
+            0.0, // solar_distribution_to_air
+        )
+        .with_sky_radiation(20.0, 0.0); // t_sky = T_exterior, h_rad_sky = 0
         bc.insert(0, entry.clone());
         bc.insert(1, entry);
         for _ in 0..240 {
@@ -1655,9 +1955,12 @@ mod tests {
                 3600.0,
                 Temperature::from_value(20.0),
                 HeatTransferCoefficient::from_value(25.0),
-                0.0,
-                480.0,
-                0.0,
+                0.0,   // solar_irradiance_wm2
+                0.0,   // solar_distribution_to_air
+                480.0, // Q_internal_w
+                0.0,   // Q_infiltration_w
+                0.0,   // t_sky
+                0.0,   // h_rad_sky
             )
             .unwrap();
         }
@@ -1682,6 +1985,7 @@ mod tests {
             Temperature::from_value(20.0),
             HeatTransferCoefficient::from_value(25.0),
             800.0,
+            0.0, // solar_distribution_to_air
         );
         bc.insert(0, entry.clone());
         bc.insert(1, entry);
@@ -1699,6 +2003,7 @@ mod tests {
             Temperature::from_value(0.0),
             HeatTransferCoefficient::from_value(25.0),
             0.0,
+            0.0, // solar_distribution_to_air
         );
         bc.insert(0, entry.clone());
         bc.insert(1, entry);
@@ -1931,8 +2236,8 @@ mod tests {
             Temperature::from_value(10.0),
             HeatTransferCoefficient::from_value(25.0),
         );
-        let _ = clone_a.step(0, 3600.0, bc.0, bc.1, 0.0, 0.0, 0.0);
-        let _ = clone_b.step(1, 3600.0, bc.0, bc.1, 0.0, 0.0, 0.0);
+        let _ = clone_a.step(0, 3600.0, bc.0, bc.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let _ = clone_b.step(1, 3600.0, bc.0, bc.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         assert!(
             clone_a.is_initialized(),
             "clone_a must remain functional after re-init + step"

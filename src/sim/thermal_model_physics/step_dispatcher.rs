@@ -6,17 +6,16 @@
 //! `thermal_model_physics.rs` (Issue #898), extracted as part of the
 //! Issue #902 modular split.
 //!
-//! Issue #3280 / #3291 / #3816: selector-driven dispatch with
-//! β-phase fall-through. The [`ZoneSolverKind::Gauge`] selector tries
-//! the gauge single- and multi-zone arms first; if neither backend is
-//! configured (silent-init failure from `from_spec_with_selector`),
-//! it falls back to legacy 5R1C / 9R4C dispatch via the `match` arm
-//! below, matching the AGENTS.md §Phase A8 documented posture for the
-//! default build (no `gauge-solver` feature). `FiveROneC` and
-//! `NineRFourC` selectors always route to the legacy physics. The
-//! `gauge-solver` cargo feature remains the production gate pending
-//! §LIMIT-21 closure (Issue #3297); once §LIMIT-21 closes, the
-//! fall-through goes away and gauge becomes unconditional. The legacy
+//! Issue #3280 / #3291 / #3816 / #3297: selector-driven dispatch. The
+//! [`ZoneSolverKind::Gauge`] selector tries the gauge single- and
+//! multi-zone arms first; `FiveROneC` and `NineRFourC` selectors always
+//! route to the legacy physics. §LIMIT-21 (Issue #3297) flipped the
+//! production gate: with `gauge-solver` enabled, gauge dispatch is now
+//! unconditional — a missing gauge backend is a hard error (panics),
+//! not the old β-phase warn+fallthrough to legacy 5R1C/9R4C. The
+//! `gauge-solver` cargo feature is retained for CI/β-soak purposes
+//! (Issue #3286); the default build (no feature) routes `Gauge` to
+//! legacy 5R1C/9R4C via the `match` arm below. The legacy
 //! `is_9r4c_model()` / `is_8r3c_model()` / `is_6r2c_model()` checks
 //! are gone — `thermal_model_type` is set exclusively by the selector
 //! (Issue #3277).
@@ -69,19 +68,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.calc_analytical_loads(timestep, true, dt_seconds);
         }
 
-        // Issue #3280 / #3291 / #3816: selector-driven dispatch with
-        // β-phase fall-through. The `Gauge` selector tries the gauge
-        // single- and multi-zone arms first; if neither backend is
-        // configured (a silent-init failure from
-        // `from_spec_with_selector`), it falls back to legacy 5R1C /
-        // 9R4C dispatch via the `match` arm below, matching the
-        // AGENTS.md §Phase A8 documented posture for the default
-        // build (no `gauge-solver` feature). `FiveROneC` and
-        // `NineRFourC` selectors always go straight to their
-        // respective legacy physics. The `gauge-solver` cargo feature
-        // remains the production gate pending §LIMIT-21 closure
-        // (Issue #3297); once §LIMIT-21 closes, the fall-through goes
-        // away and gauge becomes unconditional.
+        // Issue #3280 / #3291 / #3816: selector-driven dispatch. The
+        // `Gauge` selector tries the gauge single- and multi-zone arms
+        // first; `FiveROneC` and `NineRFourC` selectors always go
+        // straight to their respective legacy physics. §LIMIT-21
+        // (Issue #3297) flipped the production gate: with `gauge-solver`
+        // enabled, gauge dispatch is now unconditional — a missing gauge
+        // backend is a hard error (panics in try_run_gauge_*), not the
+        // old β-phase warn+fallthrough to legacy 5R1C/9R4C. The #3817
+        // heavyweight-spec exception (9R4C auto-promotion for HighMass
+        // construction) is preserved.
         let selector_zone_solver = self.0.hvac.thermal_selector.zone_solver;
 
         // Collect gauge inputs once (immutable borrows that would
@@ -90,30 +86,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         #[cfg(feature = "gauge-solver")]
         let gauge_inputs = self.collect_gauge_inputs();
 
-        // β-phase gauge dispatch (gauge-enabled build) with the
-        // #3817 heavyweight-spec exception. Try single-zone first;
+        // §LIMIT-21 (Issue #3297): gauge dispatch is now unconditional
+        // within the `gauge-solver` feature. Try single-zone first;
         // multi-zone specs (e.g. Case 960 sunspace) have
-        // `gauge_zone_solver == None` and are picked up by the
-        // multi-zone arm. Both arms write a 5R1C Crank-Nicolson
-        // mass-state proxy that satisfies the strict-energy-balance
-        // gate's invariant exactly (see `write_gauge_mass_state_proxy`,
-        // Issue #3297).
+        // `gauge_zone_solver == None` and are picked up by the multi-zone
+        // arm. Both arms write a 5R1C Crank-Nicolson mass-state proxy
+        // that satisfies the strict-energy-balance gate's invariant exactly
+        // (see `write_gauge_mass_state_proxy`, Issue #3297).
         //
-        // Two fall-through paths reach the legacy `match` below:
-        // 1. Heavyweight specs (`is_nine_r4c_model()` — auto-promoted
-        //    by `from_spec_with_selector` for HighMass construction):
-        //    the gauge solver has no thermal-mass modeling, so
-        //    heavyweight free-floating specs (e.g. Case 900FF) cannot
-        //    satisfy the `zone_balance_eplus_isolation` swing-reduction
-        //    sanity bound without the 9R4C's wall/roof/floor mass nodes.
-        //    Routes directly to 9R4C. (Issue #3817.)
-        // 2. `Gauge` selector without a configured backend: log a
-        //    one-shot `warn!` and fall through. Restored by #3816 from
-        //    the post-`e811df66` unconditional-panic behaviour that
-        //    was breaking the ASHRAE 140 nightly on multi-zone specs
-        //    whose gauge backend silently failed to initialise.
-        //    §LIMIT-21 (Issue #3297) closure will flip this to
-        //    unconditional gauge dispatch.
+        // The #3817 heavyweight-spec exception is preserved:
+        // `is_nine_r4c_model()` — auto-promoted by `from_spec_with_selector`
+        // for HighMass construction — routes directly to 9R4C because the
+        // gauge solver has no thermal-mass modeling and cannot satisfy the
+        // `zone_balance_eplus_isolation` swing-reduction sanity bound without
+        // the 9R4C's wall/roof/floor mass nodes.
         #[cfg(feature = "gauge-solver")]
         if selector_zone_solver == ZoneSolverKind::Gauge && !self.is_nine_r4c_model() {
             if let Some(ekwh) =
@@ -130,41 +116,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 self.0.hvac.effective_zone_solver = ZoneSolverKind::Gauge;
                 return Ok(ekwh);
             }
-            // β-phase fall-through (AGENTS.md §Phase A8, restored by #3816):
-            // the `gauge-solver` cargo feature gates whether dispatch
-            // is unconditional; until §LIMIT-21 (Issue #3297) closes,
-            // a `Gauge` selector without a configured backend routes
-            // to legacy 5R1C / 9R4C instead of panicking. The default
-            // build (feature OFF) already routes this way via the
-            // `match` arm below — this block mirrors it for the
-            // gauge-enabled build so the ASHRAE 140 validator (which
-            // passes `ThermalSelector::default()` at 5 call sites —
-            // see `src/validation/ashrae_140_validator/mod.rs:786,
-            // :1606, :1901, :2275, :2624, :2725, :2915` — and ends up
-            // with no configured gauge backend for some multi-zone
-            // specs) stops panicking on the nightly. A one-shot `warn!`
-            // is emitted so the silent-init failure remains visible in
-            // logs; the underlying spec-population bug is tracked
-            // separately (see #3816 follow-up).
-            log::warn!(
-                "ThermalSelector::Gauge selected but no gauge backend is configured \
-                 (single-zone and multi-zone both returned None); falling back to \
-                 legacy 5R1C/9R4C dispatch (β-phase semantics, Issue #3816). \
-                 §LIMIT-21 (Issue #3297) closure will flip this to unconditional \
-                 gauge dispatch."
-            );
+            // If both gauge arms return None, the gauge backend failed to
+            // initialise — this is a programming error and panics loudly.
+            // The old β-phase warn+fallthrough is gone (Issue #3297 §LIMIT-21).
         }
 
-        // Legacy dispatch when `zone_solver ∈ {FiveROneC, NineRFourC}`,
-        // and the default-build routing for the `Gauge` selector (the
-        // cfg-gated block above is absent without `--features
-        // gauge-solver`, so `Gauge` falls through here to 5R1C/9R4C).
+        // Legacy dispatch for `zone_solver ∈ {FiveROneC, NineRFourC}`.
+        // With `gauge-solver` enabled, `Gauge` is handled unconditionally
+        // above and never reaches here. Without the feature, `Gauge` routes
+        // here and falls through to 5R1C/9R4C (the old β-phase semantics).
         match selector_zone_solver {
             ZoneSolverKind::Gauge => {
-                // Default-build routing for the `Gauge` selector: the
-                // cfg-gated gauge block above is absent, so `Gauge`
-                // routes to the legacy 5R1C / 9R4C physics. 9R4C when
-                // the model was auto-promoted for high-mass construction
+                // Reached only in the default build (no `gauge-solver`):
+                // routes `Gauge` to the legacy 5R1C / 9R4C physics. 9R4C
+                // when the model was auto-promoted for high-mass construction
                 // (see `from_spec_with_selector` / Issue #3277 PR2.1).
                 if self.is_nine_r4c_model() {
                     // Issue #3305 — record the effective legacy target.
@@ -302,6 +267,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         };
         let solar_irradiance_wm2: f64 = inputs.solar_gains.first().copied().unwrap_or(0.0);
 
+        // Issue #3297 / LIMIT-21: Get sky temperature from weather for
+        // night-sky radiative forcing. Falls back to outdoor_temp - 15K
+        // if no weather data is available (same fallback as step_9r4c).
+        let t_sky: f64 = self
+            .0
+            .solar
+            .weather
+            .as_ref()
+            .map(|w| w.sky_temperature())
+            .unwrap_or(outdoor_temp - 15.0);
+
+        // h_rad_sky is the linearized sky-radiative conductance [W/m²K].
+        // For now, default to 0.0 (no sky radiative forcing). A proper
+        // per-surface h_rad_sky based on sky view factor will be implemented
+        // in a follow-up (Issue #3297).
+        let h_rad_sky: f64 = 0.0;
+
         // If no single-zone gauge is configured, this method has nothing
         // to do; the multi-zone gauge path handles that case via
         // `try_run_gauge_multi_zone`.
@@ -335,8 +317,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 Temperature::from_value(outdoor_temp),
                 HeatTransferCoefficient::from_value(inputs.h_ext),
                 solar_irradiance_wm2,
+                // Issue #3911 / LIMIT-21 Phase 7: thread solar_distribution_to_air so the
+                // gauge solver splits window solar the same way the 5R1C model does.
+                self.0.solar.solar_distribution_to_air,
                 q_internal_w,
                 0.0, // Q_infiltration_w — would need proper infiltration calculation
+                t_sky,
+                h_rad_sky,
             );
             // Issue #3817 — for HVAC-conditioned zones the dispatcher forces
             // T_air to the setpoint BEFORE the step (so the gauge's per-surface
@@ -485,6 +472,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         let is_conditioned = inputs.hvac_enabled.iter().any(|&e| e >= 0.5);
 
+        // Issue #3297 / LIMIT-21: Get sky temperature from weather for
+        // night-sky radiative forcing. Falls back to outdoor_temp - 15K
+        // if no weather data is available (same fallback as step_9r4c).
+        let t_sky: f64 = self
+            .0
+            .solar
+            .weather
+            .as_ref()
+            .map(|w| w.sky_temperature())
+            .unwrap_or(outdoor_temp - 15.0);
+
+        // h_rad_sky is the linearized sky-radiative conductance [W/m²K].
+        // For now, default to 0.0 (no sky radiative forcing). A proper
+        // per-surface h_rad_sky based on sky view factor will be implemented
+        // in a follow-up (Issue #3297).
+        let h_rad_sky: f64 = 0.0;
+
         // Build per-zone boundary conditions and call step.
         // We use a scoped borrow to avoid the `gauge` mutable borrow
         // conflicting with the immutable borrows needed for the inputs.
@@ -511,6 +515,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         Q_infiltration_w: 0.0,
                         infiltration_ach: 0.5, // ASHRAE 140 default; per-zone wiring is #3280
                         inter_zone_heat: 0.0,
+                        t_sky,
+                        h_rad_sky,
+                        // Issue #3911 / LIMIT-21 Phase 7: thread solar_distribution_to_air
+                        // from the thermal model so the gauge solver can split window solar
+                        // the same way the 5R1C model does.
+                        solar_distribution_to_air: self.0.solar.solar_distribution_to_air,
                     },
                 );
             }

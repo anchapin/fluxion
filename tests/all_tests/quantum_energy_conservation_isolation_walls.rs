@@ -108,6 +108,7 @@ fn test_two_zone_energy_in_equals_energy_out() {
         Temperature::from_value(20.0),
         HeatTransferCoefficient::from_value(25.0),
         0.0,
+        0.0, // solar_distribution_to_air
     );
     bc.insert(0, exterior_bc.clone());
     bc.insert(1, exterior_bc);
@@ -185,6 +186,7 @@ fn test_two_zone_symmetric_coupling_steady_state() {
         Temperature::from_value(20.0),
         HeatTransferCoefficient::from_value(25.0),
         0.0,
+        0.0, // solar_distribution_to_air
     );
     bc.insert(0, exterior_bc.clone());
     bc.insert(1, exterior_bc);
@@ -244,6 +246,7 @@ fn test_two_zone_asymmetric_initial_temps_conservation() {
         Temperature::from_value(20.0),
         HeatTransferCoefficient::from_value(25.0),
         0.0,
+        0.0, // solar_distribution_to_air
     );
     bc.insert(0, exterior_bc.clone());
     bc.insert(1, exterior_bc);
@@ -363,6 +366,7 @@ fn test_four_zone_grid_energy_conservation() {
         Temperature::from_value(20.0),
         HeatTransferCoefficient::from_value(25.0),
         0.0,
+        0.0, // solar_distribution_to_air
     );
     for i in 0..4 {
         bc.insert(i, exterior_bc.clone());
@@ -453,6 +457,7 @@ fn test_four_zone_uniform_temperature_no_flow() {
         Temperature::from_value(20.0),
         HeatTransferCoefficient::from_value(25.0),
         0.0,
+        0.0, // solar_distribution_to_air
     );
     for i in 0..4 {
         bc.insert(i, exterior_bc.clone());
@@ -560,6 +565,7 @@ fn test_asymmetric_three_zone_energy_conservation() {
         Temperature::from_value(20.0),
         HeatTransferCoefficient::from_value(25.0),
         0.0,
+        0.0, // solar_distribution_to_air
     );
     for i in 0..3 {
         bc.insert(i, exterior_bc.clone());
@@ -668,6 +674,7 @@ fn test_asymmetric_isolated_zone_conservation() {
         Temperature::from_value(20.0),
         HeatTransferCoefficient::from_value(25.0),
         0.0,
+        0.0, // solar_distribution_to_air
     );
     for i in 0..3 {
         bc.insert(i, exterior_bc.clone());
@@ -751,11 +758,12 @@ fn test_machine_epsilon_energy_conservation_balanced() {
         Temperature::from_value(20.0),
         HeatTransferCoefficient::from_value(25.0),
         0.0,
+        0.0, // solar_distribution_to_air
     );
     bc.insert(0, exterior_bc.clone());
     bc.insert(1, exterior_bc);
 
-    // Step once
+    // Capture pre-step temperatures for conservation check
     let (t0_pre, t1_pre) = {
         let z0 = multi_zone.get_zone(0).unwrap();
         let z1 = multi_zone.get_zone(1).unwrap();
@@ -809,23 +817,29 @@ fn test_pairwise_heat_flow_sign_convention() {
         Temperature::from_value(20.0),
         HeatTransferCoefficient::from_value(25.0),
         0.0,
+        0.0, // solar_distribution_to_air
     );
     bc.insert(0, exterior_bc.clone());
     bc.insert(1, exterior_bc);
 
+    // Capture pre-step temperatures for conservation check
+    let (t0_pre, t1_pre) = {
+        let z0 = multi_zone.get_zone(0).unwrap();
+        let z1 = multi_zone.get_zone(1).unwrap();
+        (z0.T_air().to_value(), z1.T_air().to_value())
+    };
+
+    // Step the system once
     multi_zone.step(3600.0, &bc).unwrap();
 
     let z0 = multi_zone.get_zone(0).unwrap();
     let z1 = multi_zone.get_zone(1).unwrap();
-
-    let t0 = z0.T_air().to_value();
-    let t1 = z1.T_air().to_value();
     let conductance = z0.inter_zone_conductance(1);
 
     // Q_AB = g * (T_A - T_B)
     // Q_BA = g * (T_B - T_A) = -g * (T_A - T_B) = -Q_AB
-    let q_ab = conductance * (t0 - t1);
-    let q_ba = conductance * (t1 - t0);
+    let q_ab = conductance * (t0_pre - t1_pre);
+    let q_ba = conductance * (t1_pre - t0_pre);
 
     let violation = q_ab + q_ba; // Must be zero if conserved
 
@@ -880,6 +894,7 @@ fn test_zero_conductance_decoupled_zones() {
         Temperature::from_value(20.0),
         HeatTransferCoefficient::from_value(25.0),
         0.0,
+        0.0, // solar_distribution_to_air
     );
     bc.insert(0, exterior_bc.clone());
     bc.insert(1, exterior_bc);
@@ -931,6 +946,7 @@ fn test_identical_zones_symmetry() {
         Temperature::from_value(20.0),
         HeatTransferCoefficient::from_value(25.0),
         0.0,
+        0.0, // solar_distribution_to_air
     );
     bc.insert(0, exterior_bc.clone());
     bc.insert(1, exterior_bc);
