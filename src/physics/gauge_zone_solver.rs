@@ -358,6 +358,11 @@ pub struct GaugeZoneSolver {
     couplings: Vec<ZoneCoupling>,
     /// Pre-computed inter-zone conductance matrix (zone_id -> conductance)
     inter_zone_conductance: HashMap<usize, f64>,
+    /// Number of sub-steps for the air-node update per timestep.
+    /// At dt/τ_air ≈ 3.6 on a 1-hour timestep, splitting into N sub-steps
+    /// reduces dt/τ to ≈ 3.6/N, within stability bounds when N ≥ 3.
+    /// Default: 3 (matching 5R1C sub_hour_air_node_steps).
+    sub_hour_air_node_steps: u32,
 }
 
 // Issue #3729 — hand-rolled `Clone` for `GaugeZoneSolver`.
@@ -381,6 +386,7 @@ impl Clone for GaugeZoneSolver {
             zone_id: self.zone_id,
             couplings: self.couplings.clone(),
             inter_zone_conductance: self.inter_zone_conductance.clone(),
+            sub_hour_air_node_steps: self.sub_hour_air_node_steps, // preserved on clone
         }
     }
 }
@@ -422,6 +428,7 @@ impl GaugeZoneSolver {
             zone_id,
             couplings: Vec::new(),
             inter_zone_conductance: HashMap::new(),
+            sub_hour_air_node_steps: 3, // default: 3 sub-steps per timestep (matching 5R1C)
         }
     }
 
@@ -526,6 +533,13 @@ impl GaugeZoneSolver {
         self.T_air = temp;
     }
 
+    /// Set number of sub-steps per timestep for air-node update.
+    /// At dt/τ_air ≈ 3.6 on a 1-hour timestep, use N ≥ 3 for stability.
+    /// Default is 3 (matching 5R1C sub_hour_air_node_steps).
+    pub fn set_sub_hour_air_node_steps(&mut self, steps: u32) {
+        self.sub_hour_air_node_steps = steps;
+    }
+
     /// Get zone air thermal capacitance.
     pub fn C_air(&self) -> f64 {
         self.C_air
@@ -610,10 +624,20 @@ impl GaugeZoneSolver {
             ));
         }
 
+        // Issue #3817 / LIMIT-05 / LIMIT-16: At dt/τ_air ≈ 3.6 on a 1-hour
+        // timestep, the air node equilibrates ~98% each step, making the
+        // conditionally-stable implicit Euler scheme diverge when H·dt > C_air
+        // (Case 900FF heavyweight concrete). Sub-stepping mirrors the 5R1C
+        // fix (Issue #2339): splitting into N sub-steps reduces dt/τ to
+        // ≈ 3.6/N, within stability bounds when N ≥ 3.
+        //
+        // Surface fluxes are computed ONCE per outer timestep (at T_air_old)
+        // and reused across all sub-steps. This is consistent with the 5R1C
+        // approach where driving terms remain constant during sub-stepping.
         let T_int = Temperature::from_value(self.T_air);
         let mut net_power_watts = 0.0;
 
-        // Sum heat flux from all surfaces
+        // Sum heat flux from all surfaces (computed once at T_air_old)
         for surface in &mut self.surfaces {
             let q_flux = surface.compute_flux(
                 Time::from_value(dt_seconds),
@@ -627,66 +651,39 @@ impl GaugeZoneSolver {
             net_power_watts += Q_surface;
         }
 
-        // Add internal gains (infiltration is handled via implicit coupling below)
+        // Add internal gains
         net_power_watts += Q_internal_w;
 
-        // Infiltration/ventilation coupling: h = rho * cp * ACH * V / 3600 [W/K]
-        // For Case 600: ACH_inf = 0.5, V = 129.6 m³ => h_inf ≈ 21.7 W/K
-        // For Case 650 (night vent): additional ACH = 3.0 => h_vent ≈ 130 W/K
+        // Infiltration/ventilation coupling
         let infiltration_ach = 0.5; // ASHRAE 140 Case 600
         let h_inf = air_constants::RHO_AIR
             * air_constants::CP_AIR
             * (infiltration_ach / 3600.0)
             * self.zone_volume;
-        // h_vent = 0 for base case; caller should pass night ventilation ACH if needed
         let h_vent = 0.0;
         let h_total = h_vent + h_inf;
 
-        // Issue #3817 — envelope conductance H = Σ (area / R) over the zone's
-        // opaque exterior surfaces. Without including H in the implicit
-        // coupling the gauge's step formula treats the surface heat flux as
-        // a constant w.r.t. T_air (it isn't — `q = (T_ext − T_air)/R`), and
-        // the resulting scheme is conditionally stable: it diverges once
-        // H · dt > C_air. Case 900FF (heavyweight concrete walls, low R) hits
-        // that regime; Case 600 (lightweight) does not — both routes share
-        // the same code, only the wall spec differs.
-        //
-        // Correct implicit Euler for the coupled ODE
-        //   C_air · dT/dt = −(H + h_inf) · T + (H + h_inf) · T_ext + Q_internal
-        // evaluates BOTH the envelope flux and the infiltration coupling at
-        // T_new, giving:
-        //   T_new = (C_air · T_old + dt · ((H + h_inf) · T_ext + Q_internal))
-        //         / (C_air + dt · (H + h_inf))
-        // Stability then reduces to |dT_new/dT_old| = C_air / (C_air + dt·(H+h_inf))
-        // which is unconditionally < 1 (was |C_air − H·dt| / (C_air + h_inf·dt)
-        // in the old formula — could exceed 1).
-        // Update zone air temperature using implicit Euler (unconditionally stable):
-        // T_air_new = (C_air · T_air_old + dt · (net_power_watts + h_total · T_ext))
-        //           / (C_air + dt · h_total)
-        // Issue #3878: The old formula used h_eff * T_ext as a proxy for all surface
-        // heat flows, but solar-driven flows were invisible to it (solar heats exterior
-        // surfaces above T_ext, yet h_eff * T_ext never saw that gain). net_power_watts
-        // already captures all surface heat flows including solar, so it is used
-        // directly. h_total (infiltration only) is the correct denominator coefficient
-        // since infiltration is driven by outdoor air temperature, not surface
-        // temperatures.
-        // Issue #3889: net_power_watts already includes Q_internal_w (accumulated
-        // above), so the numerator adds it exactly once. The pre-#3889 form carried a
-        // redundant explicit `+ Q_internal_w`, double-counting internal gains and
-        // settling free-floating zones at T_ext + 2·Q/(H + h_inf).
-        let T_air_old = self.T_air;
         let T_ext_val = T_exterior.to_value();
-        self.T_air = (self.C_air * T_air_old
-            + dt_seconds * (net_power_watts + h_total * T_ext_val))
-            / (self.C_air + h_total * dt_seconds);
+
+        // Sub-stepping loop: N iterations with dt/N per sub-step
+        let steps = self.sub_hour_air_node_steps as usize;
+        let dt_sub = dt_seconds / steps as f64;
+        let mut T_air_current = self.T_air;
+
+        for _ in 0..steps {
+            // Implicit Euler update with dt_sub
+            // T_air_new = (C·T_old + dt·(Q + h_total·T_ext)) / (C + h_total·dt)
+            T_air_current = (self.C_air * T_air_current
+                + dt_sub * (net_power_watts + h_total * T_ext_val))
+                / (self.C_air + h_total * dt_sub);
+        }
+        self.T_air = T_air_current;
 
         // Add infiltration heat contribution to net power for return value
         net_power_watts += Q_infiltration_w;
 
         // Return net energy in kWh
         // Convention: positive = heating needed, negative = cooling needed
-        // net_power_watts is positive when heat enters zone, negative when it leaves
-        // So we negate to get heating/cooling convention
         let energy_kwh = -(net_power_watts * dt_seconds) / 3_600_000.0;
         Ok(energy_kwh)
     }
@@ -760,16 +757,15 @@ impl GaugeZoneSolver {
             ));
         }
 
+        // Issue #3817 / LIMIT-05 / LIMIT-16: Sub-stepping for stability.
+        // Same pattern as step(): surface fluxes and inter-zone terms are
+        // computed once at T_air_old and reused across sub-steps.
         let T_int = Temperature::from_value(self.T_air);
         let mut net_power_watts = 0.0;
-        // Issue #3889 — solar-aware exterior-surface flux sum. This is the
-        // multi-zone analogue of the single-zone #3878 fix: the T_air update
-        // below consumes the *computed* surface fluxes (which the sol-air
-        // film has already raised by solar/h_ext on sun-exposed surfaces)
-        // instead of an `H · T_ext` proxy that cannot see irradiance.
+        // Issue #3889 — solar-aware exterior-surface flux sum.
         let mut q_surfaces_w = 0.0;
 
-        // Sum heat flux from all exterior surfaces
+        // Sum heat flux from all exterior surfaces (computed once at T_air_old)
         for surface in &mut self.surfaces {
             if surface.surface_type.is_inter_zone() {
                 continue;
@@ -787,7 +783,7 @@ impl GaugeZoneSolver {
             q_surfaces_w += Q_surface;
         }
 
-        // Compute inter-zone heat transfer
+        // Compute inter-zone heat transfer (evaluated at T_air_old)
         let mut inter_zone_heat = 0.0;
         for coupling in &self.couplings {
             if let Some(&T_adjacent) = adjacent_temperatures.get(&coupling.adjacent_zone_id) {
@@ -807,17 +803,10 @@ impl GaugeZoneSolver {
             * self.zone_volume;
         let h_total = h_inf;
 
-        // Issue #3817 — fully implicit Euler including inter-zone conductance
-        // in the coupling. Without these terms the gauge treats inter-zone
-        // fluxes as constant w.r.t. T_air, which is unstable for strongly
-        // coupled zones (see step() comment for derivation; identical math
-        // extended with inter-zone terms).
         let h_inter_zone_total: f64 = self.couplings.iter().map(|c| c.conductance).sum();
 
         // Σ_j H_ij · T_adj,j — inter-zone driving term evaluated at the
-        // adjacent zones' current T_air (explicit on the coupling; this is
-        // the Gauss-Seidel ordering the multi-zone step already uses for
-        // the coupling vector itself).
+        // adjacent zones' temperatures (constant during sub-stepping).
         let inter_zone_drive: f64 = self
             .couplings
             .iter()
@@ -827,27 +816,23 @@ impl GaugeZoneSolver {
             })
             .sum();
 
-        let T_air_old = self.T_air;
         let T_ext_val = bc.T_exterior.to_value();
-        // Update zone air temperature using implicit Euler over the
-        // infiltration + inter-zone conductances (unconditionally stable):
-        // T_air_new = (C_air·T_old + dt·(Q_surfaces + h_inf·T_ext + Σ H_ij·T_j + Q_internal))
-        //           / (C_air + dt·(h_inf + Σ H_ij))
-        // Issue #3889 — the multi-zone mirror of the single-zone #3878 fix:
-        // the old formula used (H_surface + h_inf) · T_ext as a proxy for all
-        // surface heat flows, so solar-driven flows were invisible to it
-        // (solar heats exterior surfaces above T_ext via the sol-air film,
-        // yet the proxy never saw that gain), pinning free-floating zones at
-        // outdoor air temperature. `q_surfaces_w` already captures all
-        // exterior-surface flows including solar, so it enters the numerator
-        // directly. The denominator keeps only h_total (infiltration, driven
-        // by outdoor air temperature) + Σ H_ij (inter-zone, implicit per
-        // #3817) — surface conductance is *not* implicit because the surface
-        // flux is evaluated at T_air_old through the per-surface gauges.
-        self.T_air = (self.C_air * T_air_old
-            + dt_seconds
-                * (q_surfaces_w + h_total * T_ext_val + inter_zone_drive + bc.Q_internal_w))
-            / (self.C_air + (h_total + h_inter_zone_total) * dt_seconds);
+
+        // Sub-stepping loop: N iterations with dt/N per sub-step
+        let steps = self.sub_hour_air_node_steps as usize;
+        let dt_sub = dt_seconds / steps as f64;
+        let mut T_air_current = self.T_air;
+
+        for _ in 0..steps {
+            // Implicit Euler update with dt_sub
+            // T_air_new = (C·T_old + dt·(Q_surfaces + h_inf·T_ext + ΣH_ij·T_j + Q_internal))
+            //             / (C + dt·(h_inf + Σ H_ij))
+            T_air_current = (self.C_air * T_air_current
+                + dt_sub
+                    * (q_surfaces_w + h_total * T_ext_val + inter_zone_drive + bc.Q_internal_w))
+                / (self.C_air + (h_total + h_inter_zone_total) * dt_sub);
+        }
+        self.T_air = T_air_current;
 
         // Return net energy in kWh
         let energy_kwh = -(net_power_watts * dt_seconds) / 3_600_000.0;
