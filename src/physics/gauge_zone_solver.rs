@@ -326,6 +326,7 @@ impl SurfaceGaugeSolver {
             boundary.t_sky,
             boundary.h_rad_sky,
         );
+        );
         self.gauge
             .step_with_boundary_conditions(timestep, T_interior, h_exterior, boundary_conds)
     }
