@@ -142,6 +142,8 @@ pub struct ZoneBoundaryConditions {
     pub Q_infiltration_w: f64,
     /// Air changes per hour for infiltration
     pub infiltration_ach: f64,
+    /// Ventilation ACH from night_ventilation schedule (Issue #3904)
+    pub ventilation_ach: f64,
     /// Coupled heat from adjacent zones (W)
     pub inter_zone_heat: f64,
     /// Night-sky radiative temperature (°C)
@@ -175,6 +177,7 @@ impl Default for ZoneBoundaryConditions {
             Q_internal_w: 0.0,
             Q_infiltration_w: 0.0,
             infiltration_ach: 0.5,
+            ventilation_ach: 0.0, // Issue #3904: default no ventilation
             inter_zone_heat: 0.0,
             t_sky: 0.0,
             h_rad_sky: 0.0,
@@ -205,6 +208,7 @@ impl ZoneBoundaryConditions {
             Q_internal_w: 0.0,
             Q_infiltration_w: 0.0,
             infiltration_ach: 0.5,
+            ventilation_ach: 0.0, // Issue #3904: default no ventilation
             inter_zone_heat: 0.0,
             t_sky: 0.0,
             h_rad_sky: 0.0,
@@ -430,6 +434,7 @@ impl Clone for SurfaceGaugeSolver {
 /// | `surfaces`, `C_air`, `zone_volume`, `floor_area`, `num_surfaces`, `zone_id`, `couplings`, `inter_zone_conductance` | Deep-cloned | Pure geometry / adjacency data; round-trips correctly. |
 /// | `T_air` | **Reset to `20.0`** (the `new_with_id` default) | A cloned candidate must start from the same zone air temperature a freshly-constructed solver would, regardless of the parent's mid-solve `T_air`. |
 /// | `initialized` | **Reset to `false`** | The clone is NOT pre-solved; the caller invokes `GaugeZoneSolver::initialize()` (or relies on the dispatcher's first-step path) before solving. Matches the slot-reset contract applied to `HybridThermalModel::conduction_solver`. |
+/// | `previous_T_surface` | **Reset to `20.0`** | Issue #3920: Must start from a known thermal state like T_air. The h_tr_is coupling requires a valid previous T_surface for the first step. |
 ///
 /// Per-surface `GaugeSolver` state is reset transitively by
 /// [`SurfaceGaugeSolver::clone`] (re-initialized from `wall_spec` when
@@ -746,6 +751,8 @@ impl GaugeZoneSolver {
         // the surface loop using air_sky_conductance(); this parameter is retained
         // for API compatibility but is ignored (prefixed _ to silence warning).
         _h_rad_sky: f64,
+        // Issue #3904: Ventilation ACH from night_ventilation schedule
+        ventilation_ach: f64,
         // Issue #3918: Solar lag correction parameters
         h_tr_3: f64,
         cm: f64,
@@ -844,12 +851,18 @@ impl GaugeZoneSolver {
         net_power_watts += Q_internal_w;
 
         // Infiltration/ventilation coupling
+        // Issue #3904: Ventilation ACH is now passed as a parameter instead of hardcoded 0.
+        // infiltration_ach remains 0.5 for ASHRAE 140 Case 600 (baseline infiltration).
         let infiltration_ach = 0.5; // ASHRAE 140 Case 600
         let h_inf = air_constants::RHO_AIR
             * air_constants::CP_AIR
             * (infiltration_ach / 3600.0)
             * self.zone_volume;
-        let h_vent = 0.0;
+        // Issue #3904: h_vent is computed from ventilation_ach parameter (night ventilation)
+        let h_vent = air_constants::RHO_AIR
+            * air_constants::CP_AIR
+            * (ventilation_ach / 3600.0)
+            * self.zone_volume;
         let h_total = h_vent + h_inf;
 
         // Issue #3920 / LIMIT-21: Compute area-weighted mean interior surface temperature
@@ -869,10 +882,9 @@ impl GaugeZoneSolver {
         // 2. Denominator is den_true ≈ h_tr_is + h_total (not just h_total)
         // 3. tau_lag uses C_air / den_true (matching 5R1C den_true formula)
         //
-        // NOTE: This correction is fundamentally limited because Gauge lacks the h_tr_is
-        // interior surface-to-air coupling that 5R1C has. The correction can only add
-        // to t_steady but cannot create the proper thermal coupling. See LIMIT-21
-        // Phase 9 findings (docs/KNOWN_ISSUES.md).
+        // Issue #3920: T_surface is now computed from gauge as T_surface = T_air + Q_gauge / h_tr_is.
+        // This stores the proper interior surface temperature (previously unavailable) in
+        // previous_T_surface for coupling in subsequent timesteps. See LIMIT-21 Phase 9 / Issue #3920.
         //
         let lag_correction = if h_tr_3 > 0.0 && cm > 0.0 && h_tr_is > 0.0 && term_rest_1 > 0.0 {
             // Fractionation: same as 5R1C step_5r1c.rs:96-99
@@ -952,6 +964,8 @@ impl GaugeZoneSolver {
             let exponent = -dt_sub / tau_air;
             T_air_current = t_steady + (T_air_current - t_steady) * exponent.exp();
         }
+
+        // Update T_air
         self.T_air = T_air_current;
 
         // Add infiltration heat contribution to net power for return value
@@ -1124,11 +1138,15 @@ impl GaugeZoneSolver {
         net_power_watts += bc.Q_internal_w;
 
         // Infiltration/ventilation coupling
+        // Issue #3904: Compute h_vent from ventilation_ach (night ventilation)
         let h_inf = air_constants::RHO_AIR
             * air_constants::CP_AIR
             * (bc.infiltration_ach / 3600.0)
             * self.zone_volume;
-        let h_vent = 0.0;
+        let h_vent = air_constants::RHO_AIR
+            * air_constants::CP_AIR
+            * (bc.ventilation_ach / 3600.0)
+            * self.zone_volume;
         let h_total = h_vent + h_inf;
 
         let h_inter_zone_total: f64 = self.couplings.iter().map(|c| c.conductance).sum();
@@ -1720,6 +1738,7 @@ mod tests {
                 0.0, // Q_infiltration_w
                 0.0, // t_sky
                 0.0, // h_rad_sky
+                0.0, // ventilation_ach (Issue #3904: 0 = no night vent)
                 // Issue #3918: solar lag parameters (0.0 = lag disabled)
                 0.0, // h_tr_3
                 0.0, // cm
@@ -1915,6 +1934,7 @@ mod tests {
             0.0, // Q_infiltration_w
             0.0, // t_sky
             0.0, // h_rad_sky
+            0.0, // ventilation_ach (Issue #3904: 0 = no night vent)
             // Issue #3918: solar lag parameters (0.0 = lag disabled)
             0.0, // h_tr_3
             0.0, // cm
@@ -2130,6 +2150,7 @@ mod tests {
                 0.0,   // Q_infiltration_w
                 0.0,   // t_sky
                 0.0,   // h_rad_sky
+                0.0,   // ventilation_ach (Issue #3904: 0 = no night vent)
                 // Issue #3918: solar lag parameters (0.0 = lag disabled)
                 0.0, // h_tr_3
                 0.0, // cm
@@ -2419,6 +2440,7 @@ mod tests {
             0.0, // Q_infiltration_w
             0.0, // t_sky
             0.0, // h_rad_sky
+            0.0, // ventilation_ach (Issue #3904: 0 = no night vent)
             // Issue #3918: solar lag parameters (0.0 = lag disabled)
             0.0, // h_tr_3
             0.0, // cm
@@ -2434,6 +2456,7 @@ mod tests {
             0.0, // Q_infiltration_w
             0.0, // t_sky
             0.0, // h_rad_sky
+            0.0, // ventilation_ach (Issue #3904: 0 = no night vent)
             // Issue #3918: solar lag parameters (0.0 = lag disabled)
             0.0, // h_tr_3
             0.0, // cm
