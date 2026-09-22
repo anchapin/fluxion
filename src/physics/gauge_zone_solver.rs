@@ -497,7 +497,7 @@ impl Clone for GaugeZoneSolver {
             couplings: self.couplings.clone(),
             inter_zone_conductance: self.inter_zone_conductance.clone(),
             sub_hour_air_node_steps: self.sub_hour_air_node_steps, // preserved on clone
-            solar_lag: 0.0, // RESET — see struct doc-comment.
+            solar_lag: 0.0,          // RESET — see struct doc-comment.
             previous_T_surface: 0.0, // RESET — see struct doc-comment.
         }
     }
@@ -542,7 +542,7 @@ impl GaugeZoneSolver {
             inter_zone_conductance: HashMap::new(),
             sub_hour_air_node_steps: 3, // default: 3 sub-steps per timestep (matching 5R1C)
             solar_lag: 0.0,             // Issue #3918: initialized to 0, updated each step
-            previous_T_surface: 0.0,     // Issue #3920: initialized to 0, computed each step
+            previous_T_surface: 0.0,    // Issue #3920: initialized to 0, computed each step
         }
     }
 
