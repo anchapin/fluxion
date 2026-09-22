@@ -84,7 +84,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // otherwise conflict with the mutable borrow on
         // `self.0.conduction.backend` later in the block).
         #[cfg(feature = "gauge-solver")]
-        let gauge_inputs = self.collect_gauge_inputs();
+        let gauge_inputs = self.collect_gauge_inputs(timestep);
 
         // §LIMIT-21 (Issue #3297): gauge dispatch is now unconditional
         // within the `gauge-solver` feature. Try single-zone first;
@@ -195,11 +195,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 struct GaugeInputs {
     hvac_enabled: Vec<f64>,
     heating_setpoints: Vec<f64>,
+    cooling_setpoints: Vec<f64>,
     default_heating_sp: f64,
+    default_cooling_sp: f64,
     zone_areas: Vec<f64>,
+    zone_volumes: Vec<f64>,
     loads: Vec<f64>,
     solar_gains: Vec<f64>,
     h_ext: f64,
+    // Issue #3904: Ventilation ACH from night_ventilation schedule
+    ventilation_ach: f64,
     // Issue #3918: Threading for solar lag correction (per-zone values)
     h_tr_3: Vec<f64>,      // combined air-to-mass conductance [W/K]
     cm: Vec<f64>,          // zone thermal capacitance [J/K]
@@ -215,11 +220,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// owned `Vec`s) so the gauge-step methods can take a `&mut self`
     /// for `self.0.conduction.backend` without borrow-checker conflicts.
     #[cfg(feature = "gauge-solver")]
-    fn collect_gauge_inputs(&self) -> GaugeInputs {
+    fn collect_gauge_inputs(&self, timestep: usize) -> GaugeInputs {
         let hvac_enabled = self.0.hvac.hvac_enabled.as_ref().to_vec();
         let heating_setpoints = self.0.setpoints.heating_setpoints.as_ref().to_vec();
+        let cooling_setpoints = self.0.setpoints.cooling_setpoints.as_ref().to_vec();
         let default_heating_sp = self.0.setpoints.heating_setpoint;
+        let default_cooling_sp = self.0.setpoints.cooling_setpoint;
         let zone_areas = self.0.setpoints.zone_area.as_ref().to_vec();
+        let zone_volumes = self.0.setpoints.zone_volume.as_ref().to_vec();
         let loads = self.0.setpoints.loads.as_ref().to_vec();
         let solar_gains = self.0.solar.solar_gains.as_ref().to_vec();
         let h_ext = self
@@ -230,6 +238,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .first()
             .copied()
             .unwrap_or(25.0);
+        // Issue #3904: Compute ventilation_ach from night_ventilation schedule
+        let hour_of_day = (timestep % 24) as u8;
+        let mut ventilation_ach = 0.0;
+        if let Some(ref night_vent) = self.0.hvac.night_ventilation {
+            if night_vent.is_active_at_hour(hour_of_day) {
+                // ACH = fan_capacity (m³/h) / zone_volume (m³)
+                // Use first zone volume as ASHRAE 140 night-vent applies to zone 0
+                if let Some(&zone_vol) = zone_volumes.first() {
+                    if zone_vol > 0.0 {
+                        ventilation_ach = night_vent.fan_capacity / zone_vol;
+                    }
+                }
+            }
+        }
         // Issue #3918: Thread lag correction parameters per zone
         let h_tr_3 = self.0.conduction.derived_h_tr_3.as_ref().to_vec();
         let cm = self.0.mass.thermal_capacitance.as_ref().to_vec();
@@ -241,11 +263,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         GaugeInputs {
             hvac_enabled,
             heating_setpoints,
+            cooling_setpoints,
             default_heating_sp,
+            default_cooling_sp,
             zone_areas,
+            zone_volumes,
             loads,
             solar_gains,
             h_ext,
+            ventilation_ach,
             h_tr_3,
             cm,
             h_tr_is,
@@ -323,15 +349,37 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .gauge_zone_solver
                 .as_mut()
                 .expect("checked Some above");
-            // HVAC-aware coupling: force T_air to setpoint only for
-            // conditioned cases. Free-floating keeps the gauge free-float.
+            // Issue #3904: HVAC mode detection.
+            // Get current zone temperature to determine heating/cooling mode.
+            let t_air_current = gauge.T_air().to_value();
             let h_sp: f64 = inputs
                 .heating_setpoints
                 .first()
                 .copied()
                 .unwrap_or(inputs.default_heating_sp);
+            let c_sp: f64 = inputs
+                .cooling_setpoints
+                .first()
+                .copied()
+                .unwrap_or(inputs.default_cooling_sp);
+            // Issue #3904: Determine HVAC mode based on zone temperature vs setpoints.
+            #[allow(unused_imports)]
+            use crate::sim::hvac::HVACMode as EquipmentHVACMode;
+            let hvac_mode = if t_air_current <= h_sp {
+                EquipmentHVACMode::Heating
+            } else if t_air_current >= c_sp {
+                EquipmentHVACMode::Cooling
+            } else {
+                EquipmentHVACMode::Off
+            };
+            // Force T_air to appropriate setpoint based on mode.
+            let setpoint_for_mode = match hvac_mode {
+                EquipmentHVACMode::Heating => h_sp,
+                EquipmentHVACMode::Cooling => c_sp,
+                EquipmentHVACMode::Off => t_air_current,
+            };
             if is_conditioned {
-                gauge.set_T_air(h_sp);
+                gauge.set_T_air(setpoint_for_mode);
             }
             let r = gauge.step(
                 timestep,
@@ -346,6 +394,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 0.0, // Q_infiltration_w — would need proper infiltration calculation
                 t_sky,
                 h_rad_sky,
+                inputs.ventilation_ach,
                 // Issue #3918: Thread lag correction parameters (single-zone: use first element)
                 inputs.h_tr_3.first().copied().unwrap_or(0.0),
                 inputs.cm.first().copied().unwrap_or(0.0),
@@ -354,13 +403,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 inputs.convective_fraction,
                 inputs.solar_beam_to_mass_fraction,
             );
-            // Issue #3817 — for HVAC-conditioned zones the dispatcher forces
+            // Issue #3817 / Issue #3904 — for HVAC-conditioned zones the dispatcher forces
             // T_air to the setpoint BEFORE the step (so the gauge's per-surface
-            // flux is computed at T_air = h_sp, giving the correct HVAC load
+            // flux is computed at T_air = setpoint_for_mode, giving the correct HVAC load
             // in `energy_kwh`), but the gauge's step formula still evolves
             // T_air from that forced value via the implicit Euler update. For
             // the conditioned case the HVAC is assumed to track the setpoint,
-            // so we restore T_air to h_sp AFTER the step and propagate that
+            // so we restore T_air to setpoint_for_mode AFTER the step and propagate that
             // value to `setpoints.temperatures[0]` below. Without this restore,
             // the post-step T_air drifts toward the gauge's free-float
             // equilibrium (e.g. ≈ 0 °C for Case 600, Denver TMY) and the test
@@ -370,7 +419,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // branch is skipped), so the gauge's free-float dynamics are
             // preserved for Case 600FF/900FF.
             if is_conditioned {
-                gauge.set_T_air(h_sp);
+                gauge.set_T_air(setpoint_for_mode);
             }
             let t_air = gauge.T_air().to_value();
             (r.ok(), t_air)
@@ -543,6 +592,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         Q_internal_w: q_internal,
                         Q_infiltration_w: 0.0,
                         infiltration_ach: 0.5, // ASHRAE 140 default; per-zone wiring is #3280
+                        ventilation_ach: inputs.ventilation_ach, // Issue #3904
                         inter_zone_heat: 0.0,
                         t_sky,
                         h_rad_sky,
@@ -561,18 +611,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 );
             }
             if let Some(multi_zone) = self.0.conduction.backend.gauge_multi_zone_solver.as_mut() {
-                // Force T_air to setpoint for conditioned zones. Without
-                // this, multi-zone gauge returns free-float per-zone
-                // energies. With it, the returned per-zone map contains
-                // HVAC demand.
-                //
-                // Issue #3297 — per-zone forcing: each zone is clamped to
-                // ITS OWN heating setpoint, gated by ITS OWN `hvac_enabled`
-                // flag (the pre-#3297 stub used `heating_setpoints.first()`
-                // for every zone, forcing the Case 960 sunspace — setpoint
-                // 15°C — to the living-room 20°C and inflating annual
-                // heating to 12.99 MWh, inside the 12.5±1.0 MWh anti-stub
-                // guard of `test_case_960_validator_runs_real_model_not_stub`).
+                // Issue #3904: HVAC mode detection per zone.
+                // Force T_air to appropriate setpoint based on mode (heating/cooling).
                 if is_conditioned {
                     for zone_idx in 0..num_zones {
                         let zone_conditioned =
@@ -580,13 +620,30 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         if !zone_conditioned {
                             continue;
                         }
+                        let t_air_current = multi_zone
+                            .get_zone(zone_idx)
+                            .map(|z| z.T_air().to_value())
+                            .unwrap_or(20.0);
                         let h_sp: f64 = inputs
                             .heating_setpoints
                             .get(zone_idx)
                             .copied()
                             .unwrap_or(inputs.default_heating_sp);
+                        let c_sp: f64 = inputs
+                            .cooling_setpoints
+                            .get(zone_idx)
+                            .copied()
+                            .unwrap_or(inputs.default_cooling_sp);
+                        // Determine mode based on current zone temperature
+                        let setpoint_for_mode = if t_air_current <= h_sp {
+                            h_sp // Heating mode
+                        } else if t_air_current >= c_sp {
+                            c_sp // Cooling mode
+                        } else {
+                            t_air_current // Deadband/off - free float
+                        };
                         if let Some(zone) = multi_zone.get_zone_mut(zone_idx) {
-                            zone.set_T_air(h_sp);
+                            zone.set_T_air(setpoint_for_mode);
                         }
                     }
                 }
