@@ -12,16 +12,23 @@
 //!
 //! # Example
 //!
-//! ```rust,ignore
-//! // See `fluxion::sim::assembly` for `BuildingAssembly` construction;
-//! // this doctest is illustrative — production code constructs a real
-//! // assembly from spec / YAML before calling `select_method`.
-//! use fluxion::physics::method_selector::{ThermalMethodSelector, ThermalMethod};
-//! use fluxion_core::assembly::BuildingAssembly;
+//! ```rust
+//! // Thermal method selection is driven by `ThermalSelector` paired with
+//! // `ThermalModel::from_spec_with_selector`. See issue #3287 for the
+//! // deprecation trail of the legacy `select_method` path.
+//! use fluxion::sim::thermal_model_core::ThermalModel;
+//! use fluxion::sim::thermal_selector::{ThermalSelector, ZoneSolverKind, ConductionSolverKind};
+//! use fluxion::validation::ashrae140::ASHRAE140Case;
 //!
-//! let selector = ThermalMethodSelector::default();
-//! // let wall_assembly = BuildingAssembly::default();
-//! // let method = selector.select_method(&wall_assembly);
+//! let spec = ASHRAE140Case::Case900.spec();
+//! // Request CTF conduction via the selector
+//! let selector = ThermalSelector {
+//!     zone_solver: ZoneSolverKind::Gauge,
+//!     conduction_solver: ConductionSolverKind::Ctf,
+//! };
+//! let model = ThermalModel::from_spec_with_selector(&spec, &selector)
+//!     .expect("CTF selector must initialize");
+//! // The model is now configured for CTF-based conduction.
 //! ```
 
 // Issue #1349 (Phase 2 crate split): `BuildingAssembly` moved to

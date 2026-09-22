@@ -316,12 +316,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// * `timestep` - Simulation timestep in seconds (typically 3600 for 1-hour)
     /// * `history_size` - Number of history elements to retain (typically 50)
     ///
-    /// # Example
-    /// ```rust,ignore
-    /// // `enable_ctf` is deprecated — prefer `from_spec_with_selector` with
-    /// // `conduction_solver = Ctf`. See issue #3287. This doctest is kept
-    /// // as a historical reference.
-    /// ```
     #[deprecated(
         since = "1.4.0",
         note = "Use ThermalSelector with conduction_solver = Ctf (or Fd) via \
@@ -417,13 +411,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// * `nodes_per_layer` - Number of nodes per material layer (default: 5-10 for accuracy)
     /// * `initial_temp` - Initial wall temperature [°C] (default: 20°C)
     ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// // `enable_fd` is deprecated — prefer `from_spec_with_selector` with
-    /// // `conduction_solver = Fd`. See issue #3287. This doctest is kept
-    /// // as a historical reference.
-    /// ```
     #[deprecated(
         since = "1.4.0",
         note = "Use ThermalSelector with conduction_solver = Fd (or Ctf) via \
@@ -473,26 +460,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ///
     /// * `selection_config` - Solver selection configuration (Automatic, ForceMethod, PerSurface)
     ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// // (`model` is illustrative; production code constructs a real
-    /// // `ThermalModel` via `from_spec_with_selector` before wiring the
-    /// // solver manager.)
-    /// use fluxion::physics::method_selector::{
-    ///     ThermalMethodSelector, SolverSelectionConfig, SurfaceSolverConfig, ThermalMethod
-    /// };
-    ///
-    /// // Automatic selection based on thermal mass
-    /// // model.enable_solver_manager(SolverSelectionConfig::Automatic);
-    /// // Force all surfaces to use CTF
-    /// // model.enable_solver_manager(SolverSelectionConfig::ForceMethod(ThermalMethod::CTF));
-    /// // Per-surface explicit selection
-    /// // model.enable_solver_manager(SolverSelectionConfig::PerSurface(vec![
-    /// //     SurfaceSolverConfig::wall(ThermalMethod::FiveR1C),
-    /// //     SurfaceSolverConfig::roof(ThermalMethod::CTF),
-    /// // ]));
-    /// ```
     pub fn enable_solver_manager(
         &mut self,
         selection_config: crate::physics::method_selector::SolverSelectionConfig,
@@ -626,11 +593,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// Panics if any parameter is NaN or infinite with a message like:
     /// "Window U-value (index 0) is NaN (value: nan W/m²K). Cannot use in simulation."
     ///
-    /// # Example
-    /// ```rust,ignore
-    /// // (`model` is illustrative.)
-    /// // model.apply_parameters(&[1.5, 20.0, 27.0]);
-    /// ```
     /// Applies design parameters to the thermal model.
     ///
     /// Maps gene vector elements to model fields and broadcasts 5R1C/6R2C conductances.
@@ -646,12 +608,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// Panics if parameters are invalid (NaN, Inf, or heating setpoint >= cooling setpoint).
     /// Use `validate_parameters()` before calling this method for graceful error handling.
     ///
-    /// # Example
-    /// ```rust,ignore
-    /// // (`model` is illustrative.)
-    /// // model.apply_parameters(&[1.5, 20.0, 22.0]);
-    /// // // Applies: window_u_value=1.5, heating_setpoint=20.0, cooling_setpoint=22.0
-    /// ```
     pub fn apply_parameters(&mut self, params: &[f64]) {
         debug!("Applying parameters: {:?}", params);
 
