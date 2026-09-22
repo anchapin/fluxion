@@ -468,6 +468,11 @@ pub struct GaugeZoneSolver {
     // Issue #3918: Solar lag state — exponentially-filtered solar gain accumulator.
     // Reset to 0.0 on clone (matches air_node_solar_lag reset in 5R1C).
     solar_lag: f64,
+    // Issue #3920 / LIMIT-21: Area-weighted mean interior surface temperature for
+    // h_tr_is coupling. Computed as T_air + Q_gauge_total / h_tr_is where
+    // Q_gauge_total = sum of q_flux * area for all surfaces. Stored for use
+    // in subsequent timesteps to provide proper thermal coupling.
+    previous_T_surface: f64,
 }
 
 // Issue #3729 — hand-rolled `Clone` for `GaugeZoneSolver`.
@@ -492,7 +497,8 @@ impl Clone for GaugeZoneSolver {
             couplings: self.couplings.clone(),
             inter_zone_conductance: self.inter_zone_conductance.clone(),
             sub_hour_air_node_steps: self.sub_hour_air_node_steps, // preserved on clone
-            solar_lag: 0.0, // RESET — see struct doc-comment.
+            solar_lag: 0.0,          // RESET — see struct doc-comment.
+            previous_T_surface: 0.0, // RESET — see struct doc-comment.
         }
     }
 }
@@ -536,6 +542,7 @@ impl GaugeZoneSolver {
             inter_zone_conductance: HashMap::new(),
             sub_hour_air_node_steps: 3, // default: 3 sub-steps per timestep (matching 5R1C)
             solar_lag: 0.0,             // Issue #3918: initialized to 0, updated each step
+            previous_T_surface: 0.0,    // Issue #3920: initialized to 0, computed each step
         }
     }
 
@@ -765,6 +772,11 @@ impl GaugeZoneSolver {
         // approach where driving terms remain constant during sub-stepping.
         let T_int = Temperature::from_value(self.T_air);
         let mut net_power_watts = 0.0;
+        // Issue #3920 / LIMIT-21: Track Q_gauge_total separately for h_tr_is coupling.
+        // Q_gauge_total = sum of q_flux * area for all surfaces (W).
+        // This is distinct from net_power_watts which includes direct-to-air window
+        // solar and internal gains.
+        let mut Q_gauge_total = 0.0;
 
         // Sum heat flux from all surfaces (computed once at T_air_old).
         // Issue #3297 / LIMIT-21 Phase 5: per-surface h_rad_sky via
@@ -825,6 +837,7 @@ impl GaugeZoneSolver {
 
             let Q_surface = q_flux.to_value() * surface.area_m2;
             net_power_watts += Q_surface;
+            Q_gauge_total += Q_surface;
         }
 
         // Add internal gains
@@ -838,6 +851,14 @@ impl GaugeZoneSolver {
             * self.zone_volume;
         let h_vent = 0.0;
         let h_total = h_vent + h_inf;
+
+        // Issue #3920 / LIMIT-21: Compute area-weighted mean interior surface temperature
+        // for h_tr_is coupling. T_surface = T_air + Q_gauge_total / h_tr_is.
+        // This represents the interior surface node temperature that couples to the air node
+        // through h_tr_is. Stored for use in subsequent timesteps.
+        if h_tr_is > 0.0 {
+            self.previous_T_surface = self.T_air + Q_gauge_total / h_tr_is;
+        }
 
         // Issue #3918: Solar lag correction (matching 5R1C physics from step_5r1c.rs:957-998).
         // The lag input represents the interior surface heat flow (phi_st) that drives a
@@ -984,6 +1005,14 @@ impl GaugeZoneSolver {
         } else {
             self.T_air
         }
+    }
+
+    /// Issue #3920 / LIMIT-21 — the previous-timestep area-weighted mean interior
+    /// surface temperature (T_air + Q_gauge_total / h_tr_is), used for h_tr_is
+    /// coupling in the thermal network. Returns 0.0 when h_tr_is <= 0 (not yet
+    /// computed) or when the solver has not been stepped.
+    pub fn previous_T_surface(&self) -> f64 {
+        self.previous_T_surface
     }
 
     /// Step the zone model with inter-zone coupling.
