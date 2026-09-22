@@ -1342,6 +1342,42 @@ impl GaugeZoneSolver {
             .sum()
     }
 
+    /// Issue #3928 — Compute interior surface-to-air conductance [W/K] from surface geometry.
+    ///
+    /// h_tr_is = Σ A_surface × h_tr_is_coeff(tilt)
+    ///
+    /// h_tr_is_coeff varies with surface tilt:
+    /// - Horizontal (tilt ≈ 0° or 180°): 2.3 W/m²K
+    /// - Vertical (tilt ≈ 90°): 8.3 W/m²K
+    /// - Intermediate tilts: linear interpolation using sin(tilt)
+    ///
+    /// This activates the solar lag correction in the zone energy balance.
+    /// The solar lag correction is gated on h_tr_is > 0.0 && term_rest_1 > 0.0.
+    ///
+    /// NOTE: The tilt-linear interpolation formula (sin-based) needs validation
+    /// against the actual 5R1C reference. This implementation follows the
+    /// issue #3928 specification.
+    pub fn compute_h_tr_is(&self) -> f64 {
+        self.surfaces
+            .iter()
+            .filter(|s| !s.surface_type.is_inter_zone())
+            .map(|s| {
+                let coeff = if s._tilt_deg.abs() < 1.0 || (s._tilt_deg - 180.0).abs() < 1.0 {
+                    2.3 // horizontal
+                } else if (s._tilt_deg - 90.0).abs() < 1.0 || (s._tilt_deg + 90.0).abs() < 1.0 {
+                    8.3 // vertical
+                } else {
+                    // Linear interpolation between 2.3 (horizontal) and 8.3 (vertical)
+                    // using sine of tilt angle for smooth transition
+                    let tilt_rad = s._tilt_deg.to_radians();
+                    let ratio = tilt_rad.sin().abs();
+                    2.3 + ratio * (8.3 - 2.3)
+                };
+                s.area_m2 * coeff
+            })
+            .sum()
+    }
+
     /// Issue #3911 — Effective air-node time constant [seconds] from the most recent step.
     ///
     /// τ_air = C_air / (h_inf + h_surface_total + h_inter_zone)
