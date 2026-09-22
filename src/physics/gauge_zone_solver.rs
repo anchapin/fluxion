@@ -535,7 +535,7 @@ impl GaugeZoneSolver {
             couplings: Vec::new(),
             inter_zone_conductance: HashMap::new(),
             sub_hour_air_node_steps: 3, // default: 3 sub-steps per timestep (matching 5R1C)
-            solar_lag: 0.0, // Issue #3918: initialized to 0, updated each step
+            solar_lag: 0.0,             // Issue #3918: initialized to 0, updated each step
         }
     }
 
@@ -1685,9 +1685,7 @@ mod tests {
             .step(
                 0,      // timestep
                 3600.0, // dt = 1 hour
-                T_ext,
-                h_ext,
-                0.0, // solar_irradiance_wm2
+                T_ext, h_ext, 0.0, // solar_irradiance_wm2
                 0.0, // solar_distribution_to_air
                 0.0, // Q_internal_w
                 0.0, // Q_infiltration_w
@@ -2104,12 +2102,12 @@ mod tests {
                 0.0,   // t_sky
                 0.0,   // h_rad_sky
                 // Issue #3918: solar lag parameters (0.0 = lag disabled)
-                0.0,   // h_tr_3
-                0.0,   // cm
-                0.0,   // h_tr_is
-                0.0,   // term_rest_1
-                0.0,   // convective_fraction
-                0.0,   // solar_beam_to_mass_fraction
+                0.0, // h_tr_3
+                0.0, // cm
+                0.0, // h_tr_is
+                0.0, // term_rest_1
+                0.0, // convective_fraction
+                0.0, // solar_beam_to_mass_fraction
             )
             .unwrap();
         }
@@ -2386,11 +2384,7 @@ mod tests {
             HeatTransferCoefficient::from_value(25.0),
         );
         let _ = clone_a.step(
-            0,
-            3600.0,
-            bc.0,
-            bc.1,
-            0.0, // solar_irradiance_wm2
+            0, 3600.0, bc.0, bc.1, 0.0, // solar_irradiance_wm2
             0.0, // solar_distribution_to_air
             0.0, // Q_internal_w
             0.0, // Q_infiltration_w
@@ -2405,11 +2399,7 @@ mod tests {
             0.0, // solar_beam_to_mass_fraction
         );
         let _ = clone_b.step(
-            1,
-            3600.0,
-            bc.0,
-            bc.1,
-            0.0, // solar_irradiance_wm2
+            1, 3600.0, bc.0, bc.1, 0.0, // solar_irradiance_wm2
             0.0, // solar_distribution_to_air
             0.0, // Q_internal_w
             0.0, // Q_infiltration_w

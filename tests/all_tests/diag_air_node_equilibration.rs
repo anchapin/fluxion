@@ -46,8 +46,9 @@ fn run_gauge_simulation() -> Vec<(usize, f64, f64, f64)> {
     // Gauge: ThermalSelector::default() = ZoneSolverKind::Gauge (under --features gauge-solver)
     // In default build, Gauge falls through to 5R1C, so we need --features gauge-solver
     let spec = ASHRAE140Case::Case640.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
-        .expect("default selector must initialize");
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     let weather = DenverTmyWeather::new();
 
     let mut hourly = Vec::with_capacity(8760);
@@ -142,14 +143,26 @@ fn diag_air_node_equilibration() {
     // Compute annual totals
     // energy_kwh from step_physics: positive = heating, negative = cooling
     // Convert kWh -> MWh for display
-    let (h_5r1c_kwh, c_5r1c_kwh) = hourly_5r1c.iter()
-        .fold((0.0_f64, 0.0_f64), |(h, c), &(_, _, _, e)| {
-            if e > 0.0 { (h + e, c) } else { (h, c - e) }
-        });
-    let (h_gauge_kwh, c_gauge_kwh) = hourly_gauge.iter()
-        .fold((0.0_f64, 0.0_f64), |(h, c), &(_, _, _, e)| {
-            if e > 0.0 { (h + e, c) } else { (h, c - e) }
-        });
+    let (h_5r1c_kwh, c_5r1c_kwh) =
+        hourly_5r1c
+            .iter()
+            .fold((0.0_f64, 0.0_f64), |(h, c), &(_, _, _, e)| {
+                if e > 0.0 {
+                    (h + e, c)
+                } else {
+                    (h, c - e)
+                }
+            });
+    let (h_gauge_kwh, c_gauge_kwh) =
+        hourly_gauge
+            .iter()
+            .fold((0.0_f64, 0.0_f64), |(h, c), &(_, _, _, e)| {
+                if e > 0.0 {
+                    (h + e, c)
+                } else {
+                    (h, c - e)
+                }
+            });
 
     let h_5r1c = h_5r1c_kwh / 1000.0;
     let c_5r1c = c_5r1c_kwh / 1000.0;
@@ -157,13 +170,24 @@ fn diag_air_node_equilibration() {
     let c_gauge = c_gauge_kwh / 1000.0;
 
     println!("\n--- Annual Energy Totals ---");
-    println!("5R1C:  heating = {:.2} MWh, cooling = {:.2} MWh, H/C = {:.2}", h_5r1c, c_5r1c, h_5r1c / c_5r1c);
-    println!("Gauge: heating = {:.2} MWh, cooling = {:.2} MWh, H/C = {:.2}", h_gauge, c_gauge, h_gauge / c_gauge);
+    println!(
+        "5R1C:  heating = {:.2} MWh, cooling = {:.2} MWh, H/C = {:.2}",
+        h_5r1c,
+        c_5r1c,
+        h_5r1c / c_5r1c
+    );
+    println!(
+        "Gauge: heating = {:.2} MWh, cooling = {:.2} MWh, H/C = {:.2}",
+        h_gauge,
+        c_gauge,
+        h_gauge / c_gauge
+    );
     println!("ASHRAE reference: heating = 2.75–3.80 MWh, cooling = 5.95–8.10 MWh");
 
     // Compute effective equilibration per timestep (exclude setback/transient hours)
     // Focus on stable hours where |T_air - T_out| > 2 K
-    let eq_5r1c: Vec<f64> = hourly_5r1c.iter()
+    let eq_5r1c: Vec<f64> = hourly_5r1c
+        .iter()
         .filter_map(|&(step, t_old, t_new, _)| {
             let weather = DenverTmyWeather::new();
             let t_ext = weather.get_hourly_data(step).unwrap().dry_bulb_temp;
@@ -176,7 +200,8 @@ fn diag_air_node_equilibration() {
         })
         .collect();
 
-    let eq_gauge: Vec<f64> = hourly_gauge.iter()
+    let eq_gauge: Vec<f64> = hourly_gauge
+        .iter()
         .filter_map(|&(step, t_old, t_new, _)| {
             let weather = DenverTmyWeather::new();
             let t_ext = weather.get_hourly_data(step).unwrap().dry_bulb_temp;
@@ -193,9 +218,21 @@ fn diag_air_node_equilibration() {
     let mean_eq_gauge = eq_gauge.iter().sum::<f64>() / eq_gauge.len() as f64;
 
     println!("\n--- Effective Equilibration Rate (stable hours only) ---");
-    println!("5R1C mean equilibration: {:.4} ({:.1}%/hr)", mean_eq_5r1c, 100.0 * mean_eq_5r1c);
-    println!("Gauge mean equilibration:  {:.4} ({:.1}%/hr)", mean_eq_gauge, 100.0 * mean_eq_gauge);
-    println!("Delta: {:.4} ({:.1}%/hr faster in gauge)", mean_eq_gauge - mean_eq_5r1c, 100.0 * (mean_eq_gauge - mean_eq_5r1c));
+    println!(
+        "5R1C mean equilibration: {:.4} ({:.1}%/hr)",
+        mean_eq_5r1c,
+        100.0 * mean_eq_5r1c
+    );
+    println!(
+        "Gauge mean equilibration:  {:.4} ({:.1}%/hr)",
+        mean_eq_gauge,
+        100.0 * mean_eq_gauge
+    );
+    println!(
+        "Delta: {:.4} ({:.1}%/hr faster in gauge)",
+        mean_eq_gauge - mean_eq_5r1c,
+        100.0 * (mean_eq_gauge - mean_eq_5r1c)
+    );
 
     // Monthly breakdown
     let months_5r1c = monthly_energy(&hourly_5r1c);
@@ -207,12 +244,30 @@ fn diag_air_node_equilibration() {
         let (h5, c5) = months_5r1c[i];
         let (hg, cg) = months_gauge[i];
         let month_name = match i {
-            0 => "Jan", 1 => "Feb", 2 => "Mar", 3 => "Apr", 4 => "May", 5 => "Jun",
-            6 => "Jul", 7 => "Aug", 8 => "Sep", 9 => "Oct", 10 => "Nov", 11 => "Dec",
+            0 => "Jan",
+            1 => "Feb",
+            2 => "Mar",
+            3 => "Apr",
+            4 => "May",
+            5 => "Jun",
+            6 => "Jul",
+            7 => "Aug",
+            8 => "Sep",
+            9 => "Oct",
+            10 => "Nov",
+            11 => "Dec",
             _ => "??",
         };
-        println!("{:>4} | {:>7.2} | {:>7.2} | {:>7.2} | {:>7.2} | {:>+7.2} | {:>+7.2}",
-            month_name, h5, c5, hg, cg, hg - h5, cg - c5);
+        println!(
+            "{:>4} | {:>7.2} | {:>7.2} | {:>7.2} | {:>7.2} | {:>+7.2} | {:>+7.2}",
+            month_name,
+            h5,
+            c5,
+            hg,
+            cg,
+            hg - h5,
+            cg - c5
+        );
     }
 
     // Summer peak analysis (June-August)
@@ -222,14 +277,24 @@ fn diag_air_node_equilibration() {
     let winter_heating_gauge: f64 = months_gauge[11].0 + months_gauge[0].0 + months_gauge[1].0;
 
     println!("\n--- Seasonal Summary ---");
-    println!("Summer (Jun-Aug) cooling: 5R1C = {:.2} MWh, Gauge = {:.2} MWh", summer_cooling_5r1c, summer_cooling_gauge);
-    println!("Winter (Dec-Feb) heating: 5R1C = {:.2} MWh, Gauge = {:.2} MWh", winter_heating_5r1c, winter_heating_gauge);
-    println!("Summer cooling gap: {:.2} MWh (gauge under-predicts by {:.0}%)",
+    println!(
+        "Summer (Jun-Aug) cooling: 5R1C = {:.2} MWh, Gauge = {:.2} MWh",
+        summer_cooling_5r1c, summer_cooling_gauge
+    );
+    println!(
+        "Winter (Dec-Feb) heating: 5R1C = {:.2} MWh, Gauge = {:.2} MWh",
+        winter_heating_5r1c, winter_heating_gauge
+    );
+    println!(
+        "Summer cooling gap: {:.2} MWh (gauge under-predicts by {:.0}%)",
         summer_cooling_5r1c - summer_cooling_gauge,
-        100.0 * (summer_cooling_5r1c - summer_cooling_gauge) / summer_cooling_5r1c.max(0.01));
-    println!("Winter heating gap: {:.2} MWh (gauge over-predicts by {:.0}%)",
+        100.0 * (summer_cooling_5r1c - summer_cooling_gauge) / summer_cooling_5r1c.max(0.01)
+    );
+    println!(
+        "Winter heating gap: {:.2} MWh (gauge over-predicts by {:.0}%)",
         winter_heating_gauge - winter_heating_5r1c,
-        100.0 * (winter_heating_gauge - winter_heating_5r1c) / winter_heating_5r1c.max(0.01));
+        100.0 * (winter_heating_gauge - winter_heating_5r1c) / winter_heating_5r1c.max(0.01)
+    );
 
     println!("\n=== End Diagnostic ===");
 }

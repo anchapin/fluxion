@@ -201,12 +201,12 @@ struct GaugeInputs {
     solar_gains: Vec<f64>,
     h_ext: f64,
     // Issue #3918: Threading for solar lag correction (per-zone values)
-    h_tr_3: Vec<f64>,         // combined air-to-mass conductance [W/K]
-    cm: Vec<f64>,              // zone thermal capacitance [J/K]
-    h_tr_is: Vec<f64>,         // interior surface-to-air conductance [W/K]
-    term_rest_1: Vec<f64>,     // h_tr_ms + h_tr_is [W/K]
+    h_tr_3: Vec<f64>,      // combined air-to-mass conductance [W/K]
+    cm: Vec<f64>,          // zone thermal capacitance [J/K]
+    h_tr_is: Vec<f64>,     // interior surface-to-air conductance [W/K]
+    term_rest_1: Vec<f64>, // h_tr_ms + h_tr_is [W/K]
     // Fractionation parameters needed for phi_st computation
-    convective_fraction: f64,    // convective fraction of internal gains
+    convective_fraction: f64, // convective fraction of internal gains
     solar_beam_to_mass_fraction: f64, // solar beam-to-mass fraction
 }
 
