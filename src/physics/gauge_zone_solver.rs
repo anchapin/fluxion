@@ -1342,6 +1342,42 @@ impl GaugeZoneSolver {
             .sum()
     }
 
+    /// Issue #3928 — Compute interior surface-to-air conductance [W/K] from surface geometry.
+    ///
+    /// h_tr_is = Σ A_surface × h_tr_is_coeff(tilt)
+    ///
+    /// h_tr_is_coeff varies with surface tilt:
+    /// - Horizontal (tilt ≈ 0° or 180°): 2.3 W/m²K
+    /// - Vertical (tilt ≈ 90°): 8.3 W/m²K
+    /// - Intermediate tilts: linear interpolation using sin(tilt)
+    ///
+    /// This activates the solar lag correction in the zone energy balance.
+    /// The solar lag correction is gated on h_tr_is > 0.0 && term_rest_1 > 0.0.
+    ///
+    /// NOTE: The tilt-linear interpolation formula (sin-based) needs validation
+    /// against the actual 5R1C reference. This implementation follows the
+    /// issue #3928 specification.
+    pub fn compute_h_tr_is(&self) -> f64 {
+        self.surfaces
+            .iter()
+            .filter(|s| !s.surface_type.is_inter_zone())
+            .map(|s| {
+                let coeff = if s._tilt_deg.abs() < 1.0 || (s._tilt_deg - 180.0).abs() < 1.0 {
+                    2.3 // horizontal
+                } else if (s._tilt_deg - 90.0).abs() < 1.0 || (s._tilt_deg + 90.0).abs() < 1.0 {
+                    8.3 // vertical
+                } else {
+                    // Linear interpolation between 2.3 (horizontal) and 8.3 (vertical)
+                    // using sine of tilt angle for smooth transition
+                    let tilt_rad = s._tilt_deg.to_radians();
+                    let ratio = tilt_rad.sin().abs();
+                    2.3 + ratio * (8.3 - 2.3)
+                };
+                s.area_m2 * coeff
+            })
+            .sum()
+    }
+
     /// Issue #3911 — Effective air-node time constant [seconds] from the most recent step.
     ///
     /// τ_air = C_air / (h_inf + h_surface_total + h_inter_zone)
@@ -1704,6 +1740,54 @@ mod tests {
         let C = air_constants::zone_air_capacitance(48.0, 2.7);
         let expected = 1.2 * 48.0 * 2.7 * 1006.0; // ~156,000 J/K
         assert!((C - expected).abs() < 1.0);
+    }
+
+    // Issue #3928 — Test that compute_h_tr_is() exercises the tilt-based coefficient
+    // branches (horizontal ≈ 2.3, vertical ≈ 8.3, intermediate = sin-interpolated).
+    // This test covers the new branches introduced by PR #3931 in the gauge solver's
+    // solar lag correction path. Without this test, compute_h_tr_is() is only
+    // invoked from step_dispatcher.rs (not exercised by lib tests), causing the
+    // Code Coverage Gate to fail on the conduction_zone ratchet.
+    #[test]
+    fn test_compute_h_tr_is_tilt_branches() {
+        let mut mz = MultiZoneGaugeSolver::new();
+        mz.add_zone(0, 48.0, 2.7);
+
+        // Use conductive_stub_wall for all surfaces; tilt drives the coefficient.
+        let wall = conductive_stub_wall();
+
+        // Roof (tilt ≈ 0°, horizontal): coeff = 2.3
+        mz.add_opaque_surface_to_zone(0, &wall, 48.0, SurfaceType::Roof, 0.0, 0.0)
+            .unwrap();
+        // North wall (tilt = 90°, vertical): coeff = 8.3
+        mz.add_opaque_surface_to_zone(0, &wall, 12.0, SurfaceType::Wall, 180.0, 90.0)
+            .unwrap();
+        // South wall (tilt = 90°, vertical): coeff = 8.3
+        mz.add_opaque_surface_to_zone(0, &wall, 12.0, SurfaceType::Wall, 0.0, 90.0)
+            .unwrap();
+        // Intermediate tilt (45°): coeff = 2.3 + sin(45°)*(8.3-2.3) ≈ 6.54
+        mz.add_opaque_surface_to_zone(0, &wall, 10.0, SurfaceType::Wall, 45.0, 45.0)
+            .unwrap();
+        // Floor (tilt = 180°, horizontal): coeff = 2.3
+        mz.add_opaque_surface_to_zone(0, &wall, 48.0, SurfaceType::Floor, 0.0, 180.0)
+            .unwrap();
+
+        mz.initialize().unwrap();
+
+        let zone = mz.get_zone(0).unwrap();
+        let h_tr_is = zone.compute_h_tr_is();
+
+        // Expected: 48*2.3 + 12*8.3 + 12*8.3 + 10*6.54 + 48*2.3
+        // = 110.4 + 99.6 + 99.6 + 65.4 + 110.4 = 485.4
+        let expected = 48.0 * 2.3
+            + 12.0 * 8.3
+            + 12.0 * 8.3
+            + 10.0 * (2.3 + 45.0_f64.to_radians().sin() * 6.0)
+            + 48.0 * 2.3;
+        assert!(
+            (h_tr_is - expected).abs() < 1e-9,
+            "h_tr_is = {h_tr_is}, expected {expected}"
+        );
     }
 
     #[test]

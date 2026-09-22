@@ -568,49 +568,69 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_rad_sky: f64 = 0.0;
 
         // Build per-zone boundary conditions and call step.
-        // We use a scoped borrow to avoid the `gauge` mutable borrow
-        // conflicting with the immutable borrows needed for the inputs.
+        // Issue #3928: We compute h_tr_is from gauge surface geometry inside the
+        // multi_zone block so we have access to the gauge solver.
         let step_result = {
             let num_zones = self.0.hvac.num_zones;
-            let mut boundary_conditions: HashMap<usize, ZoneBoundaryConditions> = HashMap::new();
-            for zone_idx in 0..num_zones {
-                let q_internal = {
-                    let q = inputs.loads.get(zone_idx).copied().unwrap_or(0.0);
-                    let a = inputs.zone_areas.get(zone_idx).copied().unwrap_or(48.0);
-                    q * a
-                };
-                boundary_conditions.insert(
-                    zone_idx,
-                    ZoneBoundaryConditions {
-                        T_exterior: Temperature::from_value(outdoor_temp),
-                        h_exterior: HeatTransferCoefficient::from_value(inputs.h_ext),
-                        solar_irradiance_wm2: inputs
-                            .solar_gains
-                            .get(zone_idx)
-                            .copied()
-                            .unwrap_or(0.0),
-                        Q_internal_w: q_internal,
-                        Q_infiltration_w: 0.0,
-                        infiltration_ach: 0.5, // ASHRAE 140 default; per-zone wiring is #3280
-                        ventilation_ach: inputs.ventilation_ach, // Issue #3904
-                        inter_zone_heat: 0.0,
-                        t_sky,
-                        h_rad_sky,
-                        // Issue #3911 / LIMIT-21 Phase 7: thread solar_distribution_to_air
-                        // from the thermal model so the gauge solver can split window solar
-                        // the same way the 5R1C model does.
-                        solar_distribution_to_air: self.0.solar.solar_distribution_to_air,
-                        // Issue #3918: Thread lag correction parameters per zone
-                        h_tr_3: inputs.h_tr_3.get(zone_idx).copied().unwrap_or(0.0),
-                        cm: inputs.cm.get(zone_idx).copied().unwrap_or(0.0),
-                        h_tr_is: inputs.h_tr_is.get(zone_idx).copied().unwrap_or(0.0),
-                        term_rest_1: inputs.term_rest_1.get(zone_idx).copied().unwrap_or(0.0),
-                        convective_fraction: inputs.convective_fraction,
-                        solar_beam_to_mass_fraction: inputs.solar_beam_to_mass_fraction,
-                    },
-                );
-            }
+
             if let Some(multi_zone) = self.0.conduction.backend.gauge_multi_zone_solver.as_mut() {
+                // Issue #3928: Build boundary conditions with h_tr_is computed from gauge surfaces.
+                // This activates the solar lag correction that was previously disabled (h_tr_is = 0.0).
+                let mut boundary_conditions: HashMap<usize, ZoneBoundaryConditions> =
+                    HashMap::new();
+                for zone_idx in 0..num_zones {
+                    let q_internal = {
+                        let q = inputs.loads.get(zone_idx).copied().unwrap_or(0.0);
+                        let a = inputs.zone_areas.get(zone_idx).copied().unwrap_or(48.0);
+                        q * a
+                    };
+
+                    // Issue #3928: Compute h_tr_is from actual surface geometry (tilt-dependent).
+                    // h_tr_is = Σ A_surface × h_tr_is_coeff(tilt)
+                    // where h_tr_is_coeff varies: horizontal = 2.3 W/m²K, vertical = 8.3 W/m²K
+                    let h_tr_is_gauge = multi_zone
+                        .get_zone(zone_idx)
+                        .map(|z| z.compute_h_tr_is())
+                        .unwrap_or(0.0);
+                    // h_tr_ms comes from the thermal model (used for term_rest_1 denominator)
+                    let h_tr_ms = inputs.h_tr_3.get(zone_idx).copied().unwrap_or(0.0);
+                    // term_rest_1 = h_tr_ms + h_tr_is per Issue #3928
+                    let term_rest_1 = h_tr_ms + h_tr_is_gauge;
+
+                    boundary_conditions.insert(
+                        zone_idx,
+                        ZoneBoundaryConditions {
+                            T_exterior: Temperature::from_value(outdoor_temp),
+                            h_exterior: HeatTransferCoefficient::from_value(inputs.h_ext),
+                            solar_irradiance_wm2: inputs
+                                .solar_gains
+                                .get(zone_idx)
+                                .copied()
+                                .unwrap_or(0.0),
+                            Q_internal_w: q_internal,
+                            Q_infiltration_w: 0.0,
+                            infiltration_ach: 0.5, // ASHRAE 140 default; per-zone wiring is #3280
+                            ventilation_ach: inputs.ventilation_ach, // Issue #3904
+                            inter_zone_heat: 0.0,
+                            t_sky,
+                            h_rad_sky,
+                            // Issue #3911 / LIMIT-21 Phase 7: thread solar_distribution_to_air
+                            // from the thermal model so the gauge solver can split window solar
+                            // the same way the 5R1C model does.
+                            solar_distribution_to_air: self.0.solar.solar_distribution_to_air,
+                            // Issue #3918 / Issue #3928: Thread lag correction parameters per zone
+                            // Issue #3928: h_tr_3 now includes gauge-computed h_tr_is contribution
+                            h_tr_3: term_rest_1, // h_tr_ms + h_tr_is
+                            cm: inputs.cm.get(zone_idx).copied().unwrap_or(0.0),
+                            // Issue #3928: Use gauge-computed h_tr_is instead of simplified model
+                            h_tr_is: h_tr_is_gauge,
+                            term_rest_1,
+                            convective_fraction: inputs.convective_fraction,
+                            solar_beam_to_mass_fraction: inputs.solar_beam_to_mass_fraction,
+                        },
+                    );
+                }
+
                 // Issue #3904: HVAC mode detection per zone.
                 // Force T_air to appropriate setpoint based on mode (heating/cooling).
                 if is_conditioned {
