@@ -714,12 +714,11 @@ mod tests {
         );
         let mut solver = crate::physics::five_r1c_solver::FiveR1CSolver::new();
         solver.initialize(&wall).expect("5R1C init");
-        let mut physics = PhysicsSurfaceFluxProvider::new()
-            .add_surface(solver, 10.0, 0.0);
+        let mut physics = PhysicsSurfaceFluxProvider::new().add_surface(solver, 10.0, 0.0);
         // OOB set must not panic
         physics.set_solar_gain(99, 500.0);
         physics.set_solar_gain(0, 500.0); // valid — should update
-        // The flux should still be finite after the calls
+                                          // The flux should still be finite after the calls
         assert!(physics.surface_heat_flux(0, 20.0, 5.0, 3600.0).is_finite());
     }
 
@@ -736,8 +735,7 @@ mod tests {
         );
         let mut solver = crate::physics::five_r1c_solver::FiveR1CSolver::new();
         solver.initialize(&wall).expect("5R1C init");
-        let mut physics = PhysicsSurfaceFluxProvider::new()
-            .add_surface(solver, 10.0, 0.0);
+        let mut physics = PhysicsSurfaceFluxProvider::new().add_surface(solver, 10.0, 0.0);
         // OOB set must not panic
         physics.set_exterior_longwave_flux(99, 50.0);
         physics.set_exterior_longwave_flux(0, 50.0); // valid

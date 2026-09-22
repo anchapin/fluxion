@@ -951,7 +951,10 @@ mod tests {
         let vent = WeatherDependentVentilation::new(0.3, 0.3, 2.0, 26.0, 18.0);
         // Indoor below cooling setpoint — no benefit
         let benefit = vent.outdoor_temp_benefit(25.0, 20.0);
-        assert_eq!(benefit, 0.0, "indoor below cooling setpoint should give zero benefit");
+        assert_eq!(
+            benefit, 0.0,
+            "indoor below cooling setpoint should give zero benefit"
+        );
     }
 
     /// Issue #1932: coverage — outdoor_temp_benefit returns 0 when outdoor_temp is
@@ -961,7 +964,10 @@ mod tests {
         let vent = WeatherDependentVentilation::new(0.3, 0.3, 2.0, 26.0, 18.0);
         // Outdoor at or below start_temp — no benefit
         let benefit = vent.outdoor_temp_benefit(15.0, 22.0);
-        assert_eq!(benefit, 0.0, "outdoor at/below start_temp should give zero benefit");
+        assert_eq!(
+            benefit, 0.0,
+            "outdoor at/below start_temp should give zero benefit"
+        );
     }
 
     /// Issue #1932: coverage — outdoor_temp_benefit with delta_t_out <= 0 via direct
