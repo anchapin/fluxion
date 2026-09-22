@@ -336,4 +336,17 @@ mod tests {
         let q = calculate_surface_radiative_exchange(20.0, 20.0, 0.9, 0.9, 1.0, 21.6);
         assert_eq!(q, 0.0, "Equal temperatures should give zero heat transfer");
     }
+
+    /// Issue #1932: coverage — radiative_conductance_chord_slope with
+    /// temperature difference smaller than f64::EPSILON triggers the early-return
+    /// guard at line 156.
+    #[test]
+    fn test_radiative_conductance_chord_slope_near_epsilon_delta_t() {
+        // f64::EPSILON ≈ 2.22e-16. A delta much smaller than EPSILON should
+        // return 0 rather than divide by a near-zero dt.
+        let k1 = 293.15;
+        let k2 = 293.15 + 1e-17; // dt ≈ 1e-17 < EPSILON
+        let h = radiative_conductance_chord_slope(k1, k2, 0.9, 0.9, 1.0, 10.0);
+        assert_eq!(h, 0.0, "Near-EPSILON delta T should return 0 conductance");
+    }
 }

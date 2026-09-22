@@ -173,6 +173,8 @@ fn gauge_shadow_diurnal_fluxes(wall: &WallSpec) -> Vec<f64> {
             let boundary = GaugeBoundaryConditions::new(
                 solar_irradiance_at(hour),
                 outdoor_temperature_at(hour),
+                0.0,
+                0.0,
             );
             solver
                 .step_with_boundary_conditions(Time::from_value(DT_SECONDS), t_int, h_ext, boundary)
@@ -467,7 +469,7 @@ fn test_case_900_gauge_solver_shadow_does_not_clamp_extreme_solar() {
             Time::from_value(DT_SECONDS),
             t_int,
             h_ext,
-            GaugeBoundaryConditions::new(SOLAR_PEAK_W_M2, 25.0),
+            GaugeBoundaryConditions::new(SOLAR_PEAK_W_M2, 25.0, 0.0, 0.0),
         )
         .expect("step typical")
         .to_value();
@@ -478,7 +480,7 @@ fn test_case_900_gauge_solver_shadow_does_not_clamp_extreme_solar() {
             Time::from_value(DT_SECONDS),
             t_int,
             h_ext,
-            GaugeBoundaryConditions::new(5_000.0, 25.0),
+            GaugeBoundaryConditions::new(5_000.0, 25.0, 0.0, 0.0),
         )
         .expect("step extreme")
         .to_value();
@@ -571,7 +573,7 @@ fn test_case_900_gauge_shadow_matches_baseline_in_steady_state() {
          expected machine-precision parity in steady state."
     );
     // And the gauge connection is just the translated BC vector.
-    assert_eq!(record.gauge_connection, vec![0.0, t_ext_val]);
+    assert_eq!(record.gauge_connection, vec![0.0, t_ext_val, 0.0, 0.0]);
 }
 
 // =============================================================================
@@ -775,7 +777,7 @@ fn test_case_900_gauge_fiver1c_diurnal_parity() {
                 Time::from_value(DT_SECONDS),
                 t_int,
                 h_ext,
-                GaugeBoundaryConditions::new(solar, t_outdoor),
+                GaugeBoundaryConditions::new(solar, t_outdoor, 0.0, 0.0),
             )
             .expect("GaugeSolver step")
             .to_value();

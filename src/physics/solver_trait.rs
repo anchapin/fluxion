@@ -199,7 +199,7 @@ pub type PhysicsResult<T> = Result<T, PhysicsError>;
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```rust
 /// // Trait-implementation guide: implement `HeatConductionSolver` on a custom
 /// // solver type. The `initialize` and `step` method signatures use the
 /// // typed unit wrappers from `fluxion::physics::units` (`Time`,

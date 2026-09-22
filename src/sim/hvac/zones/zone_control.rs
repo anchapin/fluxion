@@ -802,6 +802,20 @@ mod tests {
         assert!(energy2 > 0.0);
     }
 
+    // Issue #1932: cover `calculate_staged_equipment` base_energy == 0.0 branch
+    #[test]
+    fn test_staged_equipment_off_status_zero_energy() {
+        let mut controller = LayeredController::new();
+        controller.config.strategy = ControlStrategy::StagedEquipment;
+        controller.config.zone_volume = 129.6;
+        controller.config.air_changes_per_hour = 0.5;
+        controller.config.min_runtime_timesteps = 5;
+
+        // Off status → calculate_ideal_loads returns 0.0 → base_energy == 0.0 branch
+        let energy = controller.calculate_energy_input(0, 23.0, &HVACStatus::Off, 22.0, 26.0);
+        assert_eq!(energy, 0.0, "Off status must produce zero energy");
+    }
+
     #[test]
     fn test_schedule_aware_predictive_control() {
         let mut controller = LayeredController::new();
