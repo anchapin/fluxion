@@ -138,6 +138,7 @@ fn uniform_bc(n_zones: usize) -> HashMap<usize, ZoneBoundaryConditions> {
                     Temperature::from_value(5.0),
                     HeatTransferCoefficient::from_value(25.0),
                     300.0,
+                    0.0, // solar_distribution_to_air
                 ),
             )
         })

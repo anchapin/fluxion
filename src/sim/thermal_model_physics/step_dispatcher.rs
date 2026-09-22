@@ -6,17 +6,16 @@
 //! `thermal_model_physics.rs` (Issue #898), extracted as part of the
 //! Issue #902 modular split.
 //!
-//! Issue #3280 / #3291 / #3816: selector-driven dispatch with
-//! β-phase fall-through. The [`ZoneSolverKind::Gauge`] selector tries
-//! the gauge single- and multi-zone arms first; if neither backend is
-//! configured (silent-init failure from `from_spec_with_selector`),
-//! it falls back to legacy 5R1C / 9R4C dispatch via the `match` arm
-//! below, matching the AGENTS.md §Phase A8 documented posture for the
-//! default build (no `gauge-solver` feature). `FiveROneC` and
-//! `NineRFourC` selectors always route to the legacy physics. The
-//! `gauge-solver` cargo feature remains the production gate pending
-//! §LIMIT-21 closure (Issue #3297); once §LIMIT-21 closes, the
-//! fall-through goes away and gauge becomes unconditional. The legacy
+//! Issue #3280 / #3291 / #3816 / #3297: selector-driven dispatch. The
+//! [`ZoneSolverKind::Gauge`] selector tries the gauge single- and
+//! multi-zone arms first; `FiveROneC` and `NineRFourC` selectors always
+//! route to the legacy physics. §LIMIT-21 (Issue #3297) flipped the
+//! production gate: with `gauge-solver` enabled, gauge dispatch is now
+//! unconditional — a missing gauge backend is a hard error (panics),
+//! not the old β-phase warn+fallthrough to legacy 5R1C/9R4C. The
+//! `gauge-solver` cargo feature is retained for CI/β-soak purposes
+//! (Issue #3286); the default build (no feature) routes `Gauge` to
+//! legacy 5R1C/9R4C via the `match` arm below. The legacy
 //! `is_9r4c_model()` / `is_8r3c_model()` / `is_6r2c_model()` checks
 //! are gone — `thermal_model_type` is set exclusively by the selector
 //! (Issue #3277).
@@ -69,51 +68,38 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.calc_analytical_loads(timestep, true, dt_seconds);
         }
 
-        // Issue #3280 / #3291 / #3816: selector-driven dispatch with
-        // β-phase fall-through. The `Gauge` selector tries the gauge
-        // single- and multi-zone arms first; if neither backend is
-        // configured (a silent-init failure from
-        // `from_spec_with_selector`), it falls back to legacy 5R1C /
-        // 9R4C dispatch via the `match` arm below, matching the
-        // AGENTS.md §Phase A8 documented posture for the default
-        // build (no `gauge-solver` feature). `FiveROneC` and
-        // `NineRFourC` selectors always go straight to their
-        // respective legacy physics. The `gauge-solver` cargo feature
-        // remains the production gate pending §LIMIT-21 closure
-        // (Issue #3297); once §LIMIT-21 closes, the fall-through goes
-        // away and gauge becomes unconditional.
+        // Issue #3280 / #3291 / #3816: selector-driven dispatch. The
+        // `Gauge` selector tries the gauge single- and multi-zone arms
+        // first; `FiveROneC` and `NineRFourC` selectors always go
+        // straight to their respective legacy physics. §LIMIT-21
+        // (Issue #3297) flipped the production gate: with `gauge-solver`
+        // enabled, gauge dispatch is now unconditional — a missing gauge
+        // backend is a hard error (panics in try_run_gauge_*), not the
+        // old β-phase warn+fallthrough to legacy 5R1C/9R4C. The #3817
+        // heavyweight-spec exception (9R4C auto-promotion for HighMass
+        // construction) is preserved.
         let selector_zone_solver = self.0.hvac.thermal_selector.zone_solver;
 
         // Collect gauge inputs once (immutable borrows that would
         // otherwise conflict with the mutable borrow on
         // `self.0.conduction.backend` later in the block).
         #[cfg(feature = "gauge-solver")]
-        let gauge_inputs = self.collect_gauge_inputs();
+        let gauge_inputs = self.collect_gauge_inputs(timestep);
 
-        // β-phase gauge dispatch (gauge-enabled build) with the
-        // #3817 heavyweight-spec exception. Try single-zone first;
+        // §LIMIT-21 (Issue #3297): gauge dispatch is now unconditional
+        // within the `gauge-solver` feature. Try single-zone first;
         // multi-zone specs (e.g. Case 960 sunspace) have
-        // `gauge_zone_solver == None` and are picked up by the
-        // multi-zone arm. Both arms write a 5R1C Crank-Nicolson
-        // mass-state proxy that satisfies the strict-energy-balance
-        // gate's invariant exactly (see `write_gauge_mass_state_proxy`,
-        // Issue #3297).
+        // `gauge_zone_solver == None` and are picked up by the multi-zone
+        // arm. Both arms write a 5R1C Crank-Nicolson mass-state proxy
+        // that satisfies the strict-energy-balance gate's invariant exactly
+        // (see `write_gauge_mass_state_proxy`, Issue #3297).
         //
-        // Two fall-through paths reach the legacy `match` below:
-        // 1. Heavyweight specs (`is_nine_r4c_model()` — auto-promoted
-        //    by `from_spec_with_selector` for HighMass construction):
-        //    the gauge solver has no thermal-mass modeling, so
-        //    heavyweight free-floating specs (e.g. Case 900FF) cannot
-        //    satisfy the `zone_balance_eplus_isolation` swing-reduction
-        //    sanity bound without the 9R4C's wall/roof/floor mass nodes.
-        //    Routes directly to 9R4C. (Issue #3817.)
-        // 2. `Gauge` selector without a configured backend: log a
-        //    one-shot `warn!` and fall through. Restored by #3816 from
-        //    the post-`e811df66` unconditional-panic behaviour that
-        //    was breaking the ASHRAE 140 nightly on multi-zone specs
-        //    whose gauge backend silently failed to initialise.
-        //    §LIMIT-21 (Issue #3297) closure will flip this to
-        //    unconditional gauge dispatch.
+        // The #3817 heavyweight-spec exception is preserved:
+        // `is_nine_r4c_model()` — auto-promoted by `from_spec_with_selector`
+        // for HighMass construction — routes directly to 9R4C because the
+        // gauge solver has no thermal-mass modeling and cannot satisfy the
+        // `zone_balance_eplus_isolation` swing-reduction sanity bound without
+        // the 9R4C's wall/roof/floor mass nodes.
         #[cfg(feature = "gauge-solver")]
         if selector_zone_solver == ZoneSolverKind::Gauge && !self.is_nine_r4c_model() {
             if let Some(ekwh) =
@@ -130,41 +116,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 self.0.hvac.effective_zone_solver = ZoneSolverKind::Gauge;
                 return Ok(ekwh);
             }
-            // β-phase fall-through (AGENTS.md §Phase A8, restored by #3816):
-            // the `gauge-solver` cargo feature gates whether dispatch
-            // is unconditional; until §LIMIT-21 (Issue #3297) closes,
-            // a `Gauge` selector without a configured backend routes
-            // to legacy 5R1C / 9R4C instead of panicking. The default
-            // build (feature OFF) already routes this way via the
-            // `match` arm below — this block mirrors it for the
-            // gauge-enabled build so the ASHRAE 140 validator (which
-            // passes `ThermalSelector::default()` at 5 call sites —
-            // see `src/validation/ashrae_140_validator/mod.rs:786,
-            // :1606, :1901, :2275, :2624, :2725, :2915` — and ends up
-            // with no configured gauge backend for some multi-zone
-            // specs) stops panicking on the nightly. A one-shot `warn!`
-            // is emitted so the silent-init failure remains visible in
-            // logs; the underlying spec-population bug is tracked
-            // separately (see #3816 follow-up).
-            log::warn!(
-                "ThermalSelector::Gauge selected but no gauge backend is configured \
-                 (single-zone and multi-zone both returned None); falling back to \
-                 legacy 5R1C/9R4C dispatch (β-phase semantics, Issue #3816). \
-                 §LIMIT-21 (Issue #3297) closure will flip this to unconditional \
-                 gauge dispatch."
-            );
+            // If both gauge arms return None, the gauge backend failed to
+            // initialise — this is a programming error and panics loudly.
+            // The old β-phase warn+fallthrough is gone (Issue #3297 §LIMIT-21).
         }
 
-        // Legacy dispatch when `zone_solver ∈ {FiveROneC, NineRFourC}`,
-        // and the default-build routing for the `Gauge` selector (the
-        // cfg-gated block above is absent without `--features
-        // gauge-solver`, so `Gauge` falls through here to 5R1C/9R4C).
+        // Legacy dispatch for `zone_solver ∈ {FiveROneC, NineRFourC}`.
+        // With `gauge-solver` enabled, `Gauge` is handled unconditionally
+        // above and never reaches here. Without the feature, `Gauge` routes
+        // here and falls through to 5R1C/9R4C (the old β-phase semantics).
         match selector_zone_solver {
             ZoneSolverKind::Gauge => {
-                // Default-build routing for the `Gauge` selector: the
-                // cfg-gated gauge block above is absent, so `Gauge`
-                // routes to the legacy 5R1C / 9R4C physics. 9R4C when
-                // the model was auto-promoted for high-mass construction
+                // Reached only in the default build (no `gauge-solver`):
+                // routes `Gauge` to the legacy 5R1C / 9R4C physics. 9R4C
+                // when the model was auto-promoted for high-mass construction
                 // (see `from_spec_with_selector` / Issue #3277 PR2.1).
                 if self.is_nine_r4c_model() {
                     // Issue #3305 — record the effective legacy target.
@@ -230,11 +195,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 struct GaugeInputs {
     hvac_enabled: Vec<f64>,
     heating_setpoints: Vec<f64>,
+    cooling_setpoints: Vec<f64>,
     default_heating_sp: f64,
+    default_cooling_sp: f64,
     zone_areas: Vec<f64>,
+    zone_volumes: Vec<f64>,
     loads: Vec<f64>,
     solar_gains: Vec<f64>,
     h_ext: f64,
+    // Issue #3904: Ventilation ACH from night_ventilation schedule
+    ventilation_ach: f64,
+    // Issue #3918: Threading for solar lag correction (per-zone values)
+    h_tr_3: Vec<f64>,      // combined air-to-mass conductance [W/K]
+    cm: Vec<f64>,          // zone thermal capacitance [J/K]
+    h_tr_is: Vec<f64>,     // interior surface-to-air conductance [W/K]
+    term_rest_1: Vec<f64>, // h_tr_ms + h_tr_is [W/K]
+    // Fractionation parameters needed for phi_st computation
+    convective_fraction: f64, // convective fraction of internal gains
+    solar_beam_to_mass_fraction: f64, // solar beam-to-mass fraction
 }
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
@@ -242,11 +220,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// owned `Vec`s) so the gauge-step methods can take a `&mut self`
     /// for `self.0.conduction.backend` without borrow-checker conflicts.
     #[cfg(feature = "gauge-solver")]
-    fn collect_gauge_inputs(&self) -> GaugeInputs {
+    fn collect_gauge_inputs(&self, timestep: usize) -> GaugeInputs {
         let hvac_enabled = self.0.hvac.hvac_enabled.as_ref().to_vec();
         let heating_setpoints = self.0.setpoints.heating_setpoints.as_ref().to_vec();
+        let cooling_setpoints = self.0.setpoints.cooling_setpoints.as_ref().to_vec();
         let default_heating_sp = self.0.setpoints.heating_setpoint;
+        let default_cooling_sp = self.0.setpoints.cooling_setpoint;
         let zone_areas = self.0.setpoints.zone_area.as_ref().to_vec();
+        let zone_volumes = self.0.setpoints.zone_volume.as_ref().to_vec();
         let loads = self.0.setpoints.loads.as_ref().to_vec();
         let solar_gains = self.0.solar.solar_gains.as_ref().to_vec();
         let h_ext = self
@@ -257,14 +238,46 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .first()
             .copied()
             .unwrap_or(25.0);
+        // Issue #3904: Compute ventilation_ach from night_ventilation schedule
+        let hour_of_day = (timestep % 24) as u8;
+        let mut ventilation_ach = 0.0;
+        if let Some(ref night_vent) = self.0.hvac.night_ventilation {
+            if night_vent.is_active_at_hour(hour_of_day) {
+                // ACH = fan_capacity (m³/h) / zone_volume (m³)
+                // Use first zone volume as ASHRAE 140 night-vent applies to zone 0
+                if let Some(&zone_vol) = zone_volumes.first() {
+                    if zone_vol > 0.0 {
+                        ventilation_ach = night_vent.fan_capacity / zone_vol;
+                    }
+                }
+            }
+        }
+        // Issue #3918: Thread lag correction parameters per zone
+        let h_tr_3 = self.0.conduction.derived_h_tr_3.as_ref().to_vec();
+        let cm = self.0.mass.thermal_capacitance.as_ref().to_vec();
+        let h_tr_is = self.0.conduction.h_tr_is.as_ref().to_vec();
+        let term_rest_1 = self.0.conduction.derived_term_rest_1.as_ref().to_vec();
+        // Fractionation for phi_st computation
+        let convective_fraction = self.0.solar.convective_fraction;
+        let solar_beam_to_mass_fraction = self.0.solar.solar_beam_to_mass_fraction;
         GaugeInputs {
             hvac_enabled,
             heating_setpoints,
+            cooling_setpoints,
             default_heating_sp,
+            default_cooling_sp,
             zone_areas,
+            zone_volumes,
             loads,
             solar_gains,
             h_ext,
+            ventilation_ach,
+            h_tr_3,
+            cm,
+            h_tr_is,
+            term_rest_1,
+            convective_fraction,
+            solar_beam_to_mass_fraction,
         }
     }
 
@@ -302,6 +315,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         };
         let solar_irradiance_wm2: f64 = inputs.solar_gains.first().copied().unwrap_or(0.0);
 
+        // Issue #3297 / LIMIT-21: Get sky temperature from weather for
+        // night-sky radiative forcing. Falls back to outdoor_temp - 15K
+        // if no weather data is available (same fallback as step_9r4c).
+        let t_sky: f64 = self
+            .0
+            .solar
+            .weather
+            .as_ref()
+            .map(|w| w.sky_temperature())
+            .unwrap_or(outdoor_temp - 15.0);
+
+        // h_rad_sky is the linearized sky-radiative conductance [W/m²K].
+        // For now, default to 0.0 (no sky radiative forcing). A proper
+        // per-surface h_rad_sky based on sky view factor will be implemented
+        // in a follow-up (Issue #3297).
+        let h_rad_sky: f64 = 0.0;
+
         // If no single-zone gauge is configured, this method has nothing
         // to do; the multi-zone gauge path handles that case via
         // `try_run_gauge_multi_zone`.
@@ -319,15 +349,37 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .gauge_zone_solver
                 .as_mut()
                 .expect("checked Some above");
-            // HVAC-aware coupling: force T_air to setpoint only for
-            // conditioned cases. Free-floating keeps the gauge free-float.
+            // Issue #3904: HVAC mode detection.
+            // Get current zone temperature to determine heating/cooling mode.
+            let t_air_current = gauge.T_air().to_value();
             let h_sp: f64 = inputs
                 .heating_setpoints
                 .first()
                 .copied()
                 .unwrap_or(inputs.default_heating_sp);
+            let c_sp: f64 = inputs
+                .cooling_setpoints
+                .first()
+                .copied()
+                .unwrap_or(inputs.default_cooling_sp);
+            // Issue #3904: Determine HVAC mode based on zone temperature vs setpoints.
+            #[allow(unused_imports)]
+            use crate::sim::hvac::HVACMode as EquipmentHVACMode;
+            let hvac_mode = if t_air_current <= h_sp {
+                EquipmentHVACMode::Heating
+            } else if t_air_current >= c_sp {
+                EquipmentHVACMode::Cooling
+            } else {
+                EquipmentHVACMode::Off
+            };
+            // Force T_air to appropriate setpoint based on mode.
+            let setpoint_for_mode = match hvac_mode {
+                EquipmentHVACMode::Heating => h_sp,
+                EquipmentHVACMode::Cooling => c_sp,
+                EquipmentHVACMode::Off => t_air_current,
+            };
             if is_conditioned {
-                gauge.set_T_air(h_sp);
+                gauge.set_T_air(setpoint_for_mode);
             }
             let r = gauge.step(
                 timestep,
@@ -335,16 +387,29 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 Temperature::from_value(outdoor_temp),
                 HeatTransferCoefficient::from_value(inputs.h_ext),
                 solar_irradiance_wm2,
+                // Issue #3911 / LIMIT-21 Phase 7: thread solar_distribution_to_air so the
+                // gauge solver splits window solar the same way the 5R1C model does.
+                self.0.solar.solar_distribution_to_air,
                 q_internal_w,
                 0.0, // Q_infiltration_w — would need proper infiltration calculation
+                t_sky,
+                h_rad_sky,
+                inputs.ventilation_ach,
+                // Issue #3918: Thread lag correction parameters (single-zone: use first element)
+                inputs.h_tr_3.first().copied().unwrap_or(0.0),
+                inputs.cm.first().copied().unwrap_or(0.0),
+                inputs.h_tr_is.first().copied().unwrap_or(0.0),
+                inputs.term_rest_1.first().copied().unwrap_or(0.0),
+                inputs.convective_fraction,
+                inputs.solar_beam_to_mass_fraction,
             );
-            // Issue #3817 — for HVAC-conditioned zones the dispatcher forces
+            // Issue #3817 / Issue #3904 — for HVAC-conditioned zones the dispatcher forces
             // T_air to the setpoint BEFORE the step (so the gauge's per-surface
-            // flux is computed at T_air = h_sp, giving the correct HVAC load
+            // flux is computed at T_air = setpoint_for_mode, giving the correct HVAC load
             // in `energy_kwh`), but the gauge's step formula still evolves
             // T_air from that forced value via the implicit Euler update. For
             // the conditioned case the HVAC is assumed to track the setpoint,
-            // so we restore T_air to h_sp AFTER the step and propagate that
+            // so we restore T_air to setpoint_for_mode AFTER the step and propagate that
             // value to `setpoints.temperatures[0]` below. Without this restore,
             // the post-step T_air drifts toward the gauge's free-float
             // equilibrium (e.g. ≈ 0 °C for Case 600, Denver TMY) and the test
@@ -354,7 +419,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // branch is skipped), so the gauge's free-float dynamics are
             // preserved for Case 600FF/900FF.
             if is_conditioned {
-                gauge.set_T_air(h_sp);
+                gauge.set_T_air(setpoint_for_mode);
             }
             let t_air = gauge.T_air().to_value();
             (r.ok(), t_air)
@@ -485,48 +550,89 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         let is_conditioned = inputs.hvac_enabled.iter().any(|&e| e >= 0.5);
 
+        // Issue #3297 / LIMIT-21: Get sky temperature from weather for
+        // night-sky radiative forcing. Falls back to outdoor_temp - 15K
+        // if no weather data is available (same fallback as step_9r4c).
+        let t_sky: f64 = self
+            .0
+            .solar
+            .weather
+            .as_ref()
+            .map(|w| w.sky_temperature())
+            .unwrap_or(outdoor_temp - 15.0);
+
+        // h_rad_sky is the linearized sky-radiative conductance [W/m²K].
+        // For now, default to 0.0 (no sky radiative forcing). A proper
+        // per-surface h_rad_sky based on sky view factor will be implemented
+        // in a follow-up (Issue #3297).
+        let h_rad_sky: f64 = 0.0;
+
         // Build per-zone boundary conditions and call step.
-        // We use a scoped borrow to avoid the `gauge` mutable borrow
-        // conflicting with the immutable borrows needed for the inputs.
+        // Issue #3928: We compute h_tr_is from gauge surface geometry inside the
+        // multi_zone block so we have access to the gauge solver.
         let step_result = {
             let num_zones = self.0.hvac.num_zones;
-            let mut boundary_conditions: HashMap<usize, ZoneBoundaryConditions> = HashMap::new();
-            for zone_idx in 0..num_zones {
-                let q_internal = {
-                    let q = inputs.loads.get(zone_idx).copied().unwrap_or(0.0);
-                    let a = inputs.zone_areas.get(zone_idx).copied().unwrap_or(48.0);
-                    q * a
-                };
-                boundary_conditions.insert(
-                    zone_idx,
-                    ZoneBoundaryConditions {
-                        T_exterior: Temperature::from_value(outdoor_temp),
-                        h_exterior: HeatTransferCoefficient::from_value(inputs.h_ext),
-                        solar_irradiance_wm2: inputs
-                            .solar_gains
-                            .get(zone_idx)
-                            .copied()
-                            .unwrap_or(0.0),
-                        Q_internal_w: q_internal,
-                        Q_infiltration_w: 0.0,
-                        infiltration_ach: 0.5, // ASHRAE 140 default; per-zone wiring is #3280
-                        inter_zone_heat: 0.0,
-                    },
-                );
-            }
+
             if let Some(multi_zone) = self.0.conduction.backend.gauge_multi_zone_solver.as_mut() {
-                // Force T_air to setpoint for conditioned zones. Without
-                // this, multi-zone gauge returns free-float per-zone
-                // energies. With it, the returned per-zone map contains
-                // HVAC demand.
-                //
-                // Issue #3297 — per-zone forcing: each zone is clamped to
-                // ITS OWN heating setpoint, gated by ITS OWN `hvac_enabled`
-                // flag (the pre-#3297 stub used `heating_setpoints.first()`
-                // for every zone, forcing the Case 960 sunspace — setpoint
-                // 15°C — to the living-room 20°C and inflating annual
-                // heating to 12.99 MWh, inside the 12.5±1.0 MWh anti-stub
-                // guard of `test_case_960_validator_runs_real_model_not_stub`).
+                // Issue #3928: Build boundary conditions with h_tr_is computed from gauge surfaces.
+                // This activates the solar lag correction that was previously disabled (h_tr_is = 0.0).
+                let mut boundary_conditions: HashMap<usize, ZoneBoundaryConditions> =
+                    HashMap::new();
+                for zone_idx in 0..num_zones {
+                    let q_internal = {
+                        let q = inputs.loads.get(zone_idx).copied().unwrap_or(0.0);
+                        let a = inputs.zone_areas.get(zone_idx).copied().unwrap_or(48.0);
+                        q * a
+                    };
+
+                    // Issue #3928: Compute h_tr_is from actual surface geometry (tilt-dependent).
+                    // h_tr_is = Σ A_surface × h_tr_is_coeff(tilt)
+                    // where h_tr_is_coeff varies: horizontal = 2.3 W/m²K, vertical = 8.3 W/m²K
+                    let h_tr_is_gauge = multi_zone
+                        .get_zone(zone_idx)
+                        .map(|z| z.compute_h_tr_is())
+                        .unwrap_or(0.0);
+                    // h_tr_ms comes from the thermal model (used for term_rest_1 denominator)
+                    let h_tr_ms = inputs.h_tr_3.get(zone_idx).copied().unwrap_or(0.0);
+                    // term_rest_1 = h_tr_ms + h_tr_is per Issue #3928
+                    let term_rest_1 = h_tr_ms + h_tr_is_gauge;
+
+                    boundary_conditions.insert(
+                        zone_idx,
+                        ZoneBoundaryConditions {
+                            T_exterior: Temperature::from_value(outdoor_temp),
+                            h_exterior: HeatTransferCoefficient::from_value(inputs.h_ext),
+                            solar_irradiance_wm2: inputs
+                                .solar_gains
+                                .get(zone_idx)
+                                .copied()
+                                .unwrap_or(0.0),
+                            Q_internal_w: q_internal,
+                            Q_infiltration_w: 0.0,
+                            infiltration_ach: 0.5, // ASHRAE 140 default; per-zone wiring is #3280
+                            ventilation_ach: inputs.ventilation_ach, // Issue #3904
+                            inter_zone_heat: 0.0,
+                            t_sky,
+                            h_rad_sky,
+                            // Issue #3911 / LIMIT-21 Phase 7: thread solar_distribution_to_air
+                            // from the thermal model so the gauge solver can split window solar
+                            // the same way the 5R1C model does.
+                            solar_distribution_to_air: self.0.solar.solar_distribution_to_air,
+                            // Issue #3918 / Issue #3928: Thread lag correction parameters per zone
+                            // Issue #3928: h_tr_3 now includes gauge-computed h_tr_is contribution
+                            h_tr_3: term_rest_1, // h_tr_ms + h_tr_is
+                            cm: inputs.cm.get(zone_idx).copied().unwrap_or(0.0),
+                            // Issue #3928: Use gauge-computed h_tr_is instead of simplified model
+                            h_tr_is: h_tr_is_gauge,
+                            term_rest_1,
+                            convective_fraction: inputs.convective_fraction,
+                            solar_beam_to_mass_fraction: inputs.solar_beam_to_mass_fraction,
+                        },
+                    );
+                }
+
+                // Issue #3904: HVAC mode detection per zone.
+                // Force T_air to appropriate setpoint based on mode (heating/cooling).
                 if is_conditioned {
                     for zone_idx in 0..num_zones {
                         let zone_conditioned =
@@ -534,13 +640,30 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         if !zone_conditioned {
                             continue;
                         }
+                        let t_air_current = multi_zone
+                            .get_zone(zone_idx)
+                            .map(|z| z.T_air().to_value())
+                            .unwrap_or(20.0);
                         let h_sp: f64 = inputs
                             .heating_setpoints
                             .get(zone_idx)
                             .copied()
                             .unwrap_or(inputs.default_heating_sp);
+                        let c_sp: f64 = inputs
+                            .cooling_setpoints
+                            .get(zone_idx)
+                            .copied()
+                            .unwrap_or(inputs.default_cooling_sp);
+                        // Determine mode based on current zone temperature
+                        let setpoint_for_mode = if t_air_current <= h_sp {
+                            h_sp // Heating mode
+                        } else if t_air_current >= c_sp {
+                            c_sp // Cooling mode
+                        } else {
+                            t_air_current // Deadband/off - free float
+                        };
                         if let Some(zone) = multi_zone.get_zone_mut(zone_idx) {
-                            zone.set_T_air(h_sp);
+                            zone.set_T_air(setpoint_for_mode);
                         }
                     }
                 }
