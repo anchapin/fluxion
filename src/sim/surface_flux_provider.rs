@@ -701,6 +701,49 @@ mod tests {
         assert_eq!(mock.surface_heat_flux(99, t_zone, t_outdoor, dt), 0.0);
     }
 
+    /// Issue #1932: coverage for set_solar_gain with out-of-bounds index — must
+    /// be a no-op (not a panic).
+    #[test]
+    fn test_set_solar_gain_oob_is_noop() {
+        let wall = crate::physics::wall_spec::WallSpec::single_layer(
+            "200mm Concrete",
+            0.2,
+            1.73,
+            2243.0,
+            837.0,
+        );
+        let mut solver = crate::physics::five_r1c_solver::FiveR1CSolver::new();
+        solver.initialize(&wall).expect("5R1C init");
+        let mut physics = PhysicsSurfaceFluxProvider::new()
+            .add_surface(solver, 10.0, 0.0);
+        // OOB set must not panic
+        physics.set_solar_gain(99, 500.0);
+        physics.set_solar_gain(0, 500.0); // valid — should update
+        // The flux should still be finite after the calls
+        assert!(physics.surface_heat_flux(0, 20.0, 5.0, 3600.0).is_finite());
+    }
+
+    /// Issue #1932: coverage for set_exterior_longwave_flux with out-of-bounds
+    /// index — must be a no-op (not a panic).
+    #[test]
+    fn test_set_exterior_longwave_flux_oob_is_noop() {
+        let wall = crate::physics::wall_spec::WallSpec::single_layer(
+            "200mm Concrete",
+            0.2,
+            1.73,
+            2243.0,
+            837.0,
+        );
+        let mut solver = crate::physics::five_r1c_solver::FiveR1CSolver::new();
+        solver.initialize(&wall).expect("5R1C init");
+        let mut physics = PhysicsSurfaceFluxProvider::new()
+            .add_surface(solver, 10.0, 0.0);
+        // OOB set must not panic
+        physics.set_exterior_longwave_flux(99, 50.0);
+        physics.set_exterior_longwave_flux(0, 50.0); // valid
+        assert!(physics.surface_heat_flux(0, 20.0, 5.0, 3600.0).is_finite());
+    }
+
     /// Issue #1430: set_film_coefficients must be callable on the trait
     /// object for both providers and the physics impl must persist the
     /// new h-values to its internal vectors (verified indirectly via

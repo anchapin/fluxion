@@ -934,6 +934,56 @@ mod tests {
         assert_eq!(vent.full_open_temp, 31.0);
     }
 
+    /// Issue #1932: coverage — WeatherDependentVentilation with
+    /// full_open_temp <= start_temp clamps full_open_temp to start_temp + 5.0.
+    #[test]
+    fn test_weather_dependent_ventilation_full_open_clamped_to_start_plus_five() {
+        // When full_open_temp (26.0) <= start_temp (30.0), full_open is set to start + 5
+        // new(base_ach, min_ach, max_ach, start_temp, full_open_temp)
+        let vent = WeatherDependentVentilation::new(0.3, 0.3, 2.0, 30.0, 26.0);
+        assert_eq!(vent.full_open_temp, 35.0); // 30.0 + 5.0
+    }
+
+    /// Issue #1932: coverage — outdoor_temp_benefit returns 0 when indoor_temp is at
+    /// or below cooling setpoint (no cooling needed).
+    #[test]
+    fn test_weather_dependent_ventilation_outdoor_benefit_at_cooling_setpoint() {
+        let vent = WeatherDependentVentilation::new(0.3, 0.3, 2.0, 26.0, 18.0);
+        // Indoor below cooling setpoint — no benefit
+        let benefit = vent.outdoor_temp_benefit(25.0, 20.0);
+        assert_eq!(benefit, 0.0, "indoor below cooling setpoint should give zero benefit");
+    }
+
+    /// Issue #1932: coverage — outdoor_temp_benefit returns 0 when outdoor_temp is
+    /// at or below start_temp.
+    #[test]
+    fn test_weather_dependent_ventilation_outdoor_benefit_at_start_temp() {
+        let vent = WeatherDependentVentilation::new(0.3, 0.3, 2.0, 26.0, 18.0);
+        // Outdoor at or below start_temp — no benefit
+        let benefit = vent.outdoor_temp_benefit(15.0, 22.0);
+        assert_eq!(benefit, 0.0, "outdoor at/below start_temp should give zero benefit");
+    }
+
+    /// Issue #1932: coverage — outdoor_temp_benefit with delta_t_out <= 0 via direct
+    /// struct construction (bypassing the new() clamp).
+    #[test]
+    fn test_weather_dependent_ventilation_outdoor_temp_benefit_zero_delta_t_out() {
+        // Directly construct so full_open_temp <= start_temp, triggering line 489
+        let vent = WeatherDependentVentilation {
+            base_ach: 0.3,
+            min_ach: 0.3,
+            max_ach: 2.0,
+            start_temp: 30.0,
+            full_open_temp: 25.0, // less than start_temp
+            indoor_cooling_setpoint: 26.0,
+            building_height: 2.7,
+            opening_fraction: 0.3,
+        };
+        // outdoor > start_temp but delta_t_out = full_open - start = 25 - 30 = -5 <= 0
+        let benefit = vent.outdoor_temp_benefit(29.0, 22.0);
+        assert_eq!(benefit, 0.0, "delta_t_out <= 0 should return zero benefit");
+    }
+
     // =============================================================================
     // Issue #1624: Forced-convection h_tr_is boost during high ACH night flush
     // =============================================================================
@@ -1109,5 +1159,30 @@ mod tests {
         );
 
         println!("Q_winter = {:.1} W, Q_summer = {:.1} W", Q_winter, Q_summer);
+    }
+
+    /// Issue #1932: coverage — calculate_stack_infiltration_ach with zero zone volume
+    /// returns 0 without panicking.
+    #[test]
+    fn test_stack_infiltration_zero_zone_volume_returns_zero() {
+        let ach = calculate_stack_infiltration_ach(20.0, 10.0, 2.0, 0.5, 0.0);
+        assert_eq!(ach, 0.0);
+    }
+
+    /// Issue #1932: coverage — calculate_stack_infiltration_ach with zero height diff
+    /// returns 0 without panicking.
+    #[test]
+    fn test_stack_infiltration_zero_height_diff_returns_zero() {
+        let ach = calculate_stack_infiltration_ach(20.0, 10.0, 0.0, 0.5, 100.0);
+        assert_eq!(ach, 0.0);
+    }
+
+    /// Issue #1932: coverage — calculate_combined_infiltration_ach with zero zone volume
+    /// returns 0 without panicking.
+    #[test]
+    fn test_combined_infiltration_zero_zone_volume_returns_zero() {
+        // Use wind_speed=0 so wind ACH is 0; stack ACH is 0 because zone_volume=0
+        let ach = calculate_combined_infiltration_ach(20.0, 10.0, 0.0, 2.0, 0.5, 0.0, 0.5);
+        assert_eq!(ach, 0.0);
     }
 }

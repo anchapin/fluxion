@@ -909,6 +909,45 @@ mod tests {
         ));
     }
 
+    /// Issue #1932: coverage for `!dt.is_finite()` — NaN and Inf must return error.
+    #[test]
+    fn solve_step_rejects_nonfinite_timestep() {
+        let h = fully_connected_conductance(2, 50.0);
+        let mut zones = vec![ZoneState::new(20.0, 1.0e6), ZoneState::new(15.0, 1.0e6)];
+        let q_ext = vec![0.0; 2];
+        // NaN
+        let nan_dt = f64::NAN;
+        let result_nan = MultiZoneAirflowNetwork::from_matrix(h.clone()).solve_step(&mut zones, &q_ext, nan_dt);
+        assert!(matches!(result_nan, Err(MultiZoneNetworkError::InvalidTimestep(_))));
+        // Inf
+        let inf_dt = f64::INFINITY;
+        let result_inf = MultiZoneAirflowNetwork::from_matrix(h).solve_step(&mut zones, &q_ext, inf_dt);
+        assert!(matches!(result_inf, Err(MultiZoneNetworkError::InvalidTimestep(_))));
+    }
+
+    /// Issue #1932: coverage for q_ext.len() != n when zones.len() == n.
+    /// The existing `solve_step_rejects_zone_count_mismatch` swaps zones length
+    /// but this exercises the specific q_ext length mismatch branch at line 407.
+    #[test]
+    fn solve_step_rejects_q_ext_count_mismatch_when_zones_match() {
+        let h = fully_connected_conductance(2, 50.0); // n = 2
+        let mut zones = vec![ZoneState::new(20.0, 1.0e6); 2]; // exactly 2
+        let q_ext = vec![0.0; 3]; // wrong length
+        let result = MultiZoneAirflowNetwork::from_matrix(h).solve_step(&mut zones, &q_ext, 3600.0);
+        assert!(matches!(
+            result,
+            Err(MultiZoneNetworkError::ZoneCountMismatch { .. })
+        ));
+    }
+
+    /// Issue #1932: coverage — is_symmetric with non-square matrix returns false.
+    /// `from_adjacency_pairs` with mismatched n triggers this path.
+    #[test]
+    fn is_symmetric_rejects_non_square_matrix() {
+        let m = DMatrix::<f64>::zeros(3, 4); // non-square
+        assert!(!is_symmetric(&m, 1e-6));
+    }
+
     /// Asymmetric conductance violates conservation (sanity check that the
     /// `|Σ q_iz| < 1e-6 W` acceptance criterion really is testing
     /// symmetry, not numerical noise).
