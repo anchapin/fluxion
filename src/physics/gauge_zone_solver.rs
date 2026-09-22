@@ -1061,6 +1061,9 @@ impl GaugeZoneSolver {
         let mut net_power_watts = 0.0;
         // Issue #3889 — solar-aware exterior-surface flux sum.
         let mut q_surfaces_w = 0.0;
+        // Issue #3920 / LIMIT-21: Track Q_gauge_total separately for h_tr_is coupling.
+        // Q_gauge_total = sum of q_flux * area for all surfaces (W).
+        let mut Q_gauge_total = 0.0;
 
         // Sum heat flux from all exterior surfaces (computed once at T_air_old).
         // Issue #3297 / LIMIT-21 Phase 5: per-surface h_rad_sky via
@@ -1122,6 +1125,7 @@ impl GaugeZoneSolver {
             let Q_surface = q_flux.to_value() * surface.area_m2;
             net_power_watts += Q_surface;
             q_surfaces_w += Q_surface;
+            Q_gauge_total += Q_surface;
         }
 
         // Compute inter-zone heat transfer (evaluated at T_air_old)
@@ -1164,6 +1168,73 @@ impl GaugeZoneSolver {
 
         let T_ext_val = bc.T_exterior.to_value();
 
+        // Issue #3920 / LIMIT-21: Compute area-weighted mean interior surface temperature
+        // for h_tr_is coupling. T_surface = T_air + Q_gauge_total / h_tr_is.
+        if bc.h_tr_is > 0.0 {
+            self.previous_T_surface = self.T_air + Q_gauge_total / bc.h_tr_is;
+        }
+
+        // Issue #3918: Solar lag correction (matching 5R1C physics from step_5r1c.rs:957-998).
+        // The lag input represents the interior surface heat flow (phi_st) that drives a
+        // filtered solar-gain response through the air↔mass thermal network.
+        //
+        // Key corrections vs reverted implementation:
+        // 1. phi_st uses ONLY the surface-absorbed window solar (not full window_solar)
+        // 2. Denominator is den_true ≈ h_tr_is + h_total (not just h_total)
+        // 3. tau_lag uses C_air / den_true (matching 5R1C den_true formula)
+        //
+        // Issue #3920: T_surface is now computed from gauge as T_surface = T_air + Q_gauge / h_tr_is.
+        // This stores the proper interior surface temperature (previously unavailable) in
+        // previous_T_surface for coupling in subsequent timesteps. See LIMIT-21 Phase 9 / Issue #3920.
+        let lag_correction =
+            if bc.h_tr_3 > 0.0 && bc.cm > 0.0 && bc.h_tr_is > 0.0 && bc.term_rest_1 > 0.0 {
+                // Fractionation: same as 5R1C step_5r1c.rs:96-99
+                let st_int_frac =
+                    (1.0 - bc.convective_fraction) * (1.0 - bc.solar_distribution_to_air);
+                let st_sol_frac = 1.0 - bc.solar_beam_to_mass_fraction;
+
+                // phi_st: interior surface heat flow (W) — same formula as 5R1C
+                let phi_st_internal = bc.Q_internal_w * st_int_frac;
+
+                // Window absorbed solar to surface
+                let mut phi_st_window = 0.0;
+                for surface in &self.surfaces {
+                    let solar_frac = surface.surface_type.solar_fraction();
+                    if solar_frac > 0.0 {
+                        let window_solar_w = self.floor_area * bc.solar_irradiance_wm2 * solar_frac;
+                        let remaining_sol = window_solar_w * (1.0 - bc.solar_distribution_to_air);
+                        phi_st_window += remaining_sol * st_sol_frac;
+                    }
+                }
+
+                let phi_st = phi_st_internal + phi_st_window;
+
+                // Lag input: h_tr_is * phi_st / term_rest_1 (5R1C formula)
+                let lag_input = bc.h_tr_is * phi_st / bc.term_rest_1;
+
+                // Time constants matching 5R1C
+                let den_true = h_total;
+                let tau_air = self.C_air / den_true;
+                let tau_mass = bc.cm / bc.h_tr_3;
+                let tau_lag = (tau_air * tau_mass).sqrt();
+
+                // Exponential filter decay over full timestep
+                let decay = if tau_lag > 0.0 && dt_seconds > 0.0 {
+                    (-dt_seconds / tau_lag).exp()
+                } else {
+                    0.0
+                };
+
+                // Update solar_lag state (exponential filter)
+                let new_solar_lag = self.solar_lag * decay + lag_input * (1.0 - decay);
+                self.solar_lag = new_solar_lag;
+
+                // Correction to driving temperature: new_solar_lag / den_true
+                new_solar_lag / den_true
+            } else {
+                0.0
+            };
+
         // Sub-stepping loop: N iterations with dt/N per sub-step
         let steps = self.sub_hour_air_node_steps as usize;
         let dt_sub = dt_seconds / steps as f64;
@@ -1171,11 +1242,16 @@ impl GaugeZoneSolver {
 
         for _ in 0..steps {
             // Implicit Euler update with dt_sub
-            // T_air_new = (C·T_old + dt·(Q_surfaces + h_inf·T_ext + ΣH_ij·T_j + Q_internal))
-            //             / (C + dt·(h_inf + Σ H_ij))
+            // T_air_new = (C·T_old + dt·(Q_surfaces + h_total·T_ext + inter_zone_drive + Q_internal + lag_correction·h_total))
+            //             / (C + dt·(h_total + h_inter_zone_total))
+            // Issue #3918: lag_correction is added to the driving temperature (as lag_correction * h_total in power units)
             T_air_current = (self.C_air * T_air_current
                 + dt_sub
-                    * (q_surfaces_w + h_total * T_ext_val + inter_zone_drive + bc.Q_internal_w))
+                    * (q_surfaces_w
+                        + h_total * T_ext_val
+                        + inter_zone_drive
+                        + bc.Q_internal_w
+                        + lag_correction * h_total))
                 / (self.C_air + (h_total + h_inter_zone_total) * dt_sub);
         }
         self.T_air = T_air_current;
