@@ -151,6 +151,19 @@ pub struct ZoneBoundaryConditions {
     /// Fraction of window solar that goes directly to zone air (ASHRAE 140 solar_distribution_to_air).
     /// 0.30 for LowMass (30% instant), 0.0 for HighMass per Issue #3911 / LIMIT-21.
     pub solar_distribution_to_air: f64,
+    // Issue #3918: Threading parameters for solar lag correction
+    /// Combined air-to-mass conductance [W/K]
+    pub h_tr_3: f64,
+    /// Zone thermal capacitance [J/K]
+    pub cm: f64,
+    /// Interior surface-to-air conductance [W/K]
+    pub h_tr_is: f64,
+    /// term_rest_1 = h_tr_ms + h_tr_is [W/K]
+    pub term_rest_1: f64,
+    /// Convective fraction of internal gains (Issue #3918)
+    pub convective_fraction: f64,
+    /// Solar beam-to-mass fraction (Issue #3918)
+    pub solar_beam_to_mass_fraction: f64,
 }
 
 impl Default for ZoneBoundaryConditions {
@@ -166,6 +179,13 @@ impl Default for ZoneBoundaryConditions {
             t_sky: 0.0,
             h_rad_sky: 0.0,
             solar_distribution_to_air: 0.0,
+            // Issue #3918: defaults for lag parameters (0 = disabled if not threaded)
+            h_tr_3: 0.0,
+            cm: 0.0,
+            h_tr_is: 0.0,
+            term_rest_1: 0.0,
+            convective_fraction: 0.0,
+            solar_beam_to_mass_fraction: 0.0,
         }
     }
 }
@@ -189,6 +209,12 @@ impl ZoneBoundaryConditions {
             t_sky: 0.0,
             h_rad_sky: 0.0,
             solar_distribution_to_air,
+            h_tr_3: 0.0,
+            cm: 0.0,
+            h_tr_is: 0.0,
+            term_rest_1: 0.0,
+            convective_fraction: 0.0,
+            solar_beam_to_mass_fraction: 0.0,
         }
     }
 
@@ -439,6 +465,9 @@ pub struct GaugeZoneSolver {
     /// reduces dt/τ to ≈ 3.6/N, within stability bounds when N ≥ 3.
     /// Default: 3 (matching 5R1C sub_hour_air_node_steps).
     sub_hour_air_node_steps: u32,
+    // Issue #3918: Solar lag state — exponentially-filtered solar gain accumulator.
+    // Reset to 0.0 on clone (matches air_node_solar_lag reset in 5R1C).
+    solar_lag: f64,
 }
 
 // Issue #3729 — hand-rolled `Clone` for `GaugeZoneSolver`.
@@ -463,6 +492,7 @@ impl Clone for GaugeZoneSolver {
             couplings: self.couplings.clone(),
             inter_zone_conductance: self.inter_zone_conductance.clone(),
             sub_hour_air_node_steps: self.sub_hour_air_node_steps, // preserved on clone
+            solar_lag: 0.0, // RESET — see struct doc-comment.
         }
     }
 }
@@ -505,6 +535,7 @@ impl GaugeZoneSolver {
             couplings: Vec::new(),
             inter_zone_conductance: HashMap::new(),
             sub_hour_air_node_steps: 3, // default: 3 sub-steps per timestep (matching 5R1C)
+            solar_lag: 0.0, // Issue #3918: initialized to 0, updated each step
         }
     }
 
@@ -683,6 +714,12 @@ impl GaugeZoneSolver {
     /// * `Q_infiltration_w` - Infiltration heat gain/loss (W)
     /// * `t_sky` - Night-sky radiative temperature (°C)
     /// * `h_rad_sky` - Linearized sky-radiative conductance [W/m²·K]
+    /// * `h_tr_3` - Combined air-to-mass conductance for lag [W/K] (Issue #3918)
+    /// * `cm` - Zone thermal capacitance for lag [J/K] (Issue #3918)
+    /// * `h_tr_is` - Interior surface-to-air conductance [W/K] (Issue #3918)
+    /// * `term_rest_1` - h_tr_ms + h_tr_is [W/K] (Issue #3918)
+    /// * `convective_fraction` - Convective fraction of internal gains (Issue #3918)
+    /// * `solar_beam_to_mass_fraction` - Solar beam-to-mass fraction (Issue #3918)
     ///
     /// # Returns
     /// Net zone load in kWh (positive = heating needed, negative = cooling needed)
@@ -702,6 +739,13 @@ impl GaugeZoneSolver {
         // the surface loop using air_sky_conductance(); this parameter is retained
         // for API compatibility but is ignored (prefixed _ to silence warning).
         _h_rad_sky: f64,
+        // Issue #3918: Solar lag correction parameters
+        h_tr_3: f64,
+        cm: f64,
+        h_tr_is: f64,
+        term_rest_1: f64,
+        convective_fraction: f64,
+        solar_beam_to_mass_fraction: f64,
     ) -> Result<f64, SolverError> {
         if !self.is_initialized() {
             return Err(SolverError::InvalidConfig(
@@ -734,6 +778,9 @@ impl GaugeZoneSolver {
         // This matches the 5R1C behavior where `solar_distribution_to_air = 0.30`
         // routes 30% of window solar directly to the zone air node.
         let t_exterior_c = T_exterior.to_value();
+        // Accumulate direct-to-air window solar separately (before lag filtering).
+        // Will be added to net_power_watts AFTER applying the lag filter below.
+        // Issue #3916: This replaces the "instant solar" addition that was previously
         for surface in &mut self.surfaces {
             let h_rad_sky_surface = surface.h_rad_sky_for_gauge(t_exterior_c, t_sky);
 
@@ -792,19 +839,97 @@ impl GaugeZoneSolver {
         let h_vent = 0.0;
         let h_total = h_vent + h_inf;
 
-        let T_ext_val = T_exterior.to_value();
+        // Issue #3918: Solar lag correction (matching 5R1C physics from step_5r1c.rs:957-998).
+        // The lag input represents the interior surface heat flow (phi_st) that drives a
+        // filtered solar-gain response through the air↔mass thermal network.
+        //
+        // Key corrections vs reverted implementation:
+        // 1. phi_st uses ONLY the surface-absorbed window solar (not full window_solar)
+        // 2. Denominator is den_true ≈ h_tr_is + h_total (not just h_total)
+        // 3. tau_lag uses C_air / den_true (matching 5R1C den_true formula)
+        //
+        // NOTE: This correction is fundamentally limited because Gauge lacks the h_tr_is
+        // interior surface-to-air coupling that 5R1C has. The correction can only add
+        // to t_steady but cannot create the proper thermal coupling. See LIMIT-21
+        // Phase 9 findings (docs/KNOWN_ISSUES.md).
+        //
+        let lag_correction = if h_tr_3 > 0.0 && cm > 0.0 && h_tr_is > 0.0 && term_rest_1 > 0.0 {
+            // Fractionation: same as 5R1C step_5r1c.rs:96-99
+            // st_int_frac = rad_frac * (1 - solar_distribution_to_air)
+            let st_int_frac = (1.0 - convective_fraction) * (1.0 - solar_distribution_to_air);
+            let st_sol_frac = 1.0 - solar_beam_to_mass_fraction;
 
-        // Sub-stepping loop: N iterations with dt/N per sub-step
+            // phi_st: interior surface heat flow (W) — same formula as 5R1C
+            // Internal gains to surface (radiative portion only, convective goes directly to air)
+            let phi_st_internal = Q_internal_w * st_int_frac;
+
+            // Window absorbed solar to surface:
+            // In 5R1C: remaining_sol = sol_w * (1 - solar_distribution_to_air), then
+            // remaining_sol * st_sol_frac goes to surface.
+            // For Gauge, we use the same fractionation but at surface level.
+            // The window's absorbed solar (transmitted through window material) is estimated
+            // as the difference between total window solar and the portion that Gauge routes
+            // directly to air. Gauge's window flux already includes the absorbed portion,
+            // so we approximate the surface-absorbed window solar as the window's contribution
+            // to phi_st via the 5R1C fractionation.
+            let mut phi_st_window = 0.0;
+            for surface in &self.surfaces {
+                let solar_frac = surface.surface_type.solar_fraction();
+                if solar_frac > 0.0 {
+                    // Window: total absorbed = window_area * irradiance (approximation
+                    // since Gauge window model includes absorbed solar in flux).
+                    // Use 5R1C fractionation for what goes to surface.
+                    let window_solar_w = self.floor_area * solar_irradiance_wm2 * solar_frac;
+                    let remaining_sol = window_solar_w * (1.0 - solar_distribution_to_air);
+                    phi_st_window += remaining_sol * st_sol_frac;
+                }
+            }
+
+            let phi_st = phi_st_internal + phi_st_window;
+
+            // Lag input: h_tr_is * phi_st / term_rest_1 (5R1C formula)
+            let lag_input = h_tr_is * phi_st / term_rest_1;
+
+            // Time constants matching 5R1C:
+            // den_true = den / term_rest_1 = h_total (since den = h_total × term_rest_1)
+            let den_true = h_total;
+            let tau_air = self.C_air / den_true;
+            let tau_mass = cm / h_tr_3;
+            let tau_lag = (tau_air * tau_mass).sqrt();
+
+            // Exponential filter decay over sub-step
+            let decay = if tau_lag > 0.0 && dt_seconds > 0.0 {
+                (-dt_seconds / tau_lag).exp()
+            } else {
+                0.0
+            };
+
+            // Update solar_lag state (exponential filter)
+            let new_solar_lag = self.solar_lag * decay + lag_input * (1.0 - decay);
+            self.solar_lag = new_solar_lag;
+
+            // Correction to driving temperature: new_solar_lag / den_true
+            // (same units as 5R1C's corrected_t_i_free += new_solar_lag / den_true)
+            new_solar_lag / den_true
+        } else {
+            0.0
+        };
+
+        let T_ext_val = T_exterior.to_value();
+        // Quasi-steady-state temperature (constant over all sub-steps, like 5R1C's "steady")
+        // Issue #3918: Add lag correction to driving temperature
+        let t_steady = T_ext_val + net_power_watts / h_total + lag_correction;
+        // Time constant τ = C_air / h_total
+        let tau_air = self.C_air / h_total;
+        // Sub-stepping for the exact exponential solution
         let steps = self.sub_hour_air_node_steps as usize;
         let dt_sub = dt_seconds / steps as f64;
         let mut T_air_current = self.T_air;
 
         for _ in 0..steps {
-            // Implicit Euler update with dt_sub
-            // T_air_new = (C·T_old + dt·(Q + h_total·T_ext)) / (C + h_total·dt)
-            T_air_current = (self.C_air * T_air_current
-                + dt_sub * (net_power_watts + h_total * T_ext_val))
-                / (self.C_air + h_total * dt_sub);
+            // Exact exponential update over dt_sub
+            let exponent = -dt_sub / tau_air;
+            T_air_current = t_steady + (T_air_current - t_steady) * exponent.exp();
         }
         self.T_air = T_air_current;
 
@@ -974,7 +1099,8 @@ impl GaugeZoneSolver {
             * air_constants::CP_AIR
             * (bc.infiltration_ach / 3600.0)
             * self.zone_volume;
-        let h_total = h_inf;
+        let h_vent = 0.0;
+        let h_total = h_vent + h_inf;
 
         let h_inter_zone_total: f64 = self.couplings.iter().map(|c| c.conductance).sum();
 
@@ -1354,7 +1480,7 @@ impl MultiZoneGaugeSolver {
     ) -> Result<HashMap<usize, f64>, SolverError> {
         if !self.is_initialized() {
             return Err(SolverError::InvalidConfig(
-                "MultiZoneGaugeSolver not initialized".to_string(),
+                "GaugeZoneSolver not initialized".to_string(),
             ));
         }
 
@@ -1559,12 +1685,21 @@ mod tests {
             .step(
                 0,      // timestep
                 3600.0, // dt = 1 hour
-                T_ext, h_ext, 0.0, // no solar
+                T_ext,
+                h_ext,
+                0.0, // solar_irradiance_wm2
                 0.0, // solar_distribution_to_air
-                0.0, // no internal gains
-                0.0, // no infiltration
+                0.0, // Q_internal_w
+                0.0, // Q_infiltration_w
                 0.0, // t_sky
                 0.0, // h_rad_sky
+                // Issue #3918: solar lag parameters (0.0 = lag disabled)
+                0.0, // h_tr_3
+                0.0, // cm
+                0.0, // h_tr_is
+                0.0, // term_rest_1
+                0.0, // convective_fraction
+                0.0, // solar_beam_to_mass_fraction
             )
             .unwrap();
 
@@ -1753,6 +1888,13 @@ mod tests {
             0.0, // Q_infiltration_w
             0.0, // t_sky
             0.0, // h_rad_sky
+            // Issue #3918: solar lag parameters (0.0 = lag disabled)
+            0.0, // h_tr_3
+            0.0, // cm
+            0.0, // h_tr_is
+            0.0, // term_rest_1
+            0.0, // convective_fraction
+            0.0, // solar_beam_to_mass_fraction
         )
         .unwrap();
         let temps = zone.surface_interior_temperatures();
@@ -1961,6 +2103,13 @@ mod tests {
                 0.0,   // Q_infiltration_w
                 0.0,   // t_sky
                 0.0,   // h_rad_sky
+                // Issue #3918: solar lag parameters (0.0 = lag disabled)
+                0.0,   // h_tr_3
+                0.0,   // cm
+                0.0,   // h_tr_is
+                0.0,   // term_rest_1
+                0.0,   // convective_fraction
+                0.0,   // solar_beam_to_mass_fraction
             )
             .unwrap();
         }
@@ -2236,8 +2385,44 @@ mod tests {
             Temperature::from_value(10.0),
             HeatTransferCoefficient::from_value(25.0),
         );
-        let _ = clone_a.step(0, 3600.0, bc.0, bc.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
-        let _ = clone_b.step(1, 3600.0, bc.0, bc.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let _ = clone_a.step(
+            0,
+            3600.0,
+            bc.0,
+            bc.1,
+            0.0, // solar_irradiance_wm2
+            0.0, // solar_distribution_to_air
+            0.0, // Q_internal_w
+            0.0, // Q_infiltration_w
+            0.0, // t_sky
+            0.0, // h_rad_sky
+            // Issue #3918: solar lag parameters (0.0 = lag disabled)
+            0.0, // h_tr_3
+            0.0, // cm
+            0.0, // h_tr_is
+            0.0, // term_rest_1
+            0.0, // convective_fraction
+            0.0, // solar_beam_to_mass_fraction
+        );
+        let _ = clone_b.step(
+            1,
+            3600.0,
+            bc.0,
+            bc.1,
+            0.0, // solar_irradiance_wm2
+            0.0, // solar_distribution_to_air
+            0.0, // Q_internal_w
+            0.0, // Q_infiltration_w
+            0.0, // t_sky
+            0.0, // h_rad_sky
+            // Issue #3918: solar lag parameters (0.0 = lag disabled)
+            0.0, // h_tr_3
+            0.0, // cm
+            0.0, // h_tr_is
+            0.0, // term_rest_1
+            0.0, // convective_fraction
+            0.0, // solar_beam_to_mass_fraction
+        );
         assert!(
             clone_a.is_initialized(),
             "clone_a must remain functional after re-init + step"

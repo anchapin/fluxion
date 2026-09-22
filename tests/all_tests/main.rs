@@ -94,6 +94,7 @@ mod cross_platform_fp_regression;
 mod ctf_analytical_step_response;
 mod ctf_coefficient_validation;
 mod ctf_vs_5r1c_comparison;
+mod diag_air_node_equilibration;
 mod determinism_matrix_exponential;
 mod dhw_integration;
 mod earth_tube_integration;
