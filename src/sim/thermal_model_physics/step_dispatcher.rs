@@ -576,7 +576,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             if let Some(multi_zone) = self.0.conduction.backend.gauge_multi_zone_solver.as_mut() {
                 // Issue #3928: Build boundary conditions with h_tr_is computed from gauge surfaces.
                 // This activates the solar lag correction that was previously disabled (h_tr_is = 0.0).
-                let mut boundary_conditions: HashMap<usize, ZoneBoundaryConditions> = HashMap::new();
+                let mut boundary_conditions: HashMap<usize, ZoneBoundaryConditions> =
+                    HashMap::new();
                 for zone_idx in 0..num_zones {
                     let q_internal = {
                         let q = inputs.loads.get(zone_idx).copied().unwrap_or(0.0);
