@@ -1742,6 +1742,50 @@ mod tests {
         assert!((C - expected).abs() < 1.0);
     }
 
+    // Issue #3928 — Test that compute_h_tr_is() exercises the tilt-based coefficient
+    // branches (horizontal ≈ 2.3, vertical ≈ 8.3, intermediate = sin-interpolated).
+    // This test covers the new branches introduced by PR #3931 in the gauge solver's
+    // solar lag correction path. Without this test, compute_h_tr_is() is only
+    // invoked from step_dispatcher.rs (not exercised by lib tests), causing the
+    // Code Coverage Gate to fail on the conduction_zone ratchet.
+    #[test]
+    fn test_compute_h_tr_is_tilt_branches() {
+        let mut mz = MultiZoneGaugeSolver::new();
+        mz.add_zone(0, 48.0, 2.7);
+
+        // Use conductive_stub_wall for all surfaces; tilt drives the coefficient.
+        let wall = conductive_stub_wall();
+
+        // Roof (tilt ≈ 0°, horizontal): coeff = 2.3
+        mz.add_opaque_surface_to_zone(0, &wall, 48.0, SurfaceType::Roof, 0.0, 0.0)
+            .unwrap();
+        // North wall (tilt = 90°, vertical): coeff = 8.3
+        mz.add_opaque_surface_to_zone(0, &wall, 12.0, SurfaceType::Wall, 180.0, 90.0)
+            .unwrap();
+        // South wall (tilt = 90°, vertical): coeff = 8.3
+        mz.add_opaque_surface_to_zone(0, &wall, 12.0, SurfaceType::Wall, 0.0, 90.0)
+            .unwrap();
+        // Intermediate tilt (45°): coeff = 2.3 + sin(45°)*(8.3-2.3) ≈ 6.54
+        mz.add_opaque_surface_to_zone(0, &wall, 10.0, SurfaceType::Wall, 45.0, 45.0)
+            .unwrap();
+        // Floor (tilt = 180°, horizontal): coeff = 2.3
+        mz.add_opaque_surface_to_zone(0, &wall, 48.0, SurfaceType::Floor, 0.0, 180.0)
+            .unwrap();
+
+        mz.initialize().unwrap();
+
+        let zone = mz.get_zone(0).unwrap();
+        let h_tr_is = zone.compute_h_tr_is();
+
+        // Expected: 48*2.3 + 12*8.3 + 12*8.3 + 10*6.54 + 48*2.3
+        // = 110.4 + 99.6 + 99.6 + 65.4 + 110.4 = 485.4
+        let expected = 48.0 * 2.3 + 12.0 * 8.3 + 12.0 * 8.3 + 10.0 * (2.3 + 45.0_f64.to_radians().sin() * 6.0) + 48.0 * 2.3;
+        assert!(
+            (h_tr_is - expected).abs() < 1e-9,
+            "h_tr_is = {h_tr_is}, expected {expected}"
+        );
+    }
+
     #[test]
     fn test_steady_state_no_solar() {
         let mut zone = GaugeZoneSolver::new(48.0, 2.7); // Case 600 floor area
