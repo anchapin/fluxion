@@ -200,6 +200,14 @@ struct GaugeInputs {
     loads: Vec<f64>,
     solar_gains: Vec<f64>,
     h_ext: f64,
+    // Issue #3918: Threading for solar lag correction (per-zone values)
+    h_tr_3: Vec<f64>,      // combined air-to-mass conductance [W/K]
+    cm: Vec<f64>,          // zone thermal capacitance [J/K]
+    h_tr_is: Vec<f64>,     // interior surface-to-air conductance [W/K]
+    term_rest_1: Vec<f64>, // h_tr_ms + h_tr_is [W/K]
+    // Fractionation parameters needed for phi_st computation
+    convective_fraction: f64, // convective fraction of internal gains
+    solar_beam_to_mass_fraction: f64, // solar beam-to-mass fraction
 }
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
@@ -222,6 +230,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .first()
             .copied()
             .unwrap_or(25.0);
+        // Issue #3918: Thread lag correction parameters per zone
+        let h_tr_3 = self.0.conduction.derived_h_tr_3.as_ref().to_vec();
+        let cm = self.0.mass.thermal_capacitance.as_ref().to_vec();
+        let h_tr_is = self.0.conduction.h_tr_is.as_ref().to_vec();
+        let term_rest_1 = self.0.conduction.derived_term_rest_1.as_ref().to_vec();
+        // Fractionation for phi_st computation
+        let convective_fraction = self.0.solar.convective_fraction;
+        let solar_beam_to_mass_fraction = self.0.solar.solar_beam_to_mass_fraction;
         GaugeInputs {
             hvac_enabled,
             heating_setpoints,
@@ -230,6 +246,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             loads,
             solar_gains,
             h_ext,
+            h_tr_3,
+            cm,
+            h_tr_is,
+            term_rest_1,
+            convective_fraction,
+            solar_beam_to_mass_fraction,
         }
     }
 
@@ -324,6 +346,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 0.0, // Q_infiltration_w — would need proper infiltration calculation
                 t_sky,
                 h_rad_sky,
+                // Issue #3918: Thread lag correction parameters (single-zone: use first element)
+                inputs.h_tr_3.first().copied().unwrap_or(0.0),
+                inputs.cm.first().copied().unwrap_or(0.0),
+                inputs.h_tr_is.first().copied().unwrap_or(0.0),
+                inputs.term_rest_1.first().copied().unwrap_or(0.0),
+                inputs.convective_fraction,
+                inputs.solar_beam_to_mass_fraction,
             );
             // Issue #3817 — for HVAC-conditioned zones the dispatcher forces
             // T_air to the setpoint BEFORE the step (so the gauge's per-surface
@@ -521,6 +550,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         // from the thermal model so the gauge solver can split window solar
                         // the same way the 5R1C model does.
                         solar_distribution_to_air: self.0.solar.solar_distribution_to_air,
+                        // Issue #3918: Thread lag correction parameters per zone
+                        h_tr_3: inputs.h_tr_3.get(zone_idx).copied().unwrap_or(0.0),
+                        cm: inputs.cm.get(zone_idx).copied().unwrap_or(0.0),
+                        h_tr_is: inputs.h_tr_is.get(zone_idx).copied().unwrap_or(0.0),
+                        term_rest_1: inputs.term_rest_1.get(zone_idx).copied().unwrap_or(0.0),
+                        convective_fraction: inputs.convective_fraction,
+                        solar_beam_to_mass_fraction: inputs.solar_beam_to_mass_fraction,
                     },
                 );
             }

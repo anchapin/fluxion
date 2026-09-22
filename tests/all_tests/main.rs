@@ -96,6 +96,7 @@ mod ctf_coefficient_validation;
 mod ctf_vs_5r1c_comparison;
 mod determinism_matrix_exponential;
 mod dhw_integration;
+mod diag_air_node_equilibration;
 mod earth_tube_integration;
 mod energy_balance_residual_monitoring;
 mod energyplus_comparison_tests;
