@@ -220,8 +220,5 @@ fn per_surface_t_s_nan_mass_temperature_returns_air() {
 fn per_surface_t_s_nan_air_temperature_returns_air() {
     let t_air = f64::NAN;
     let result = per_surface_t_s(20.0, 10.0, 10.0, t_air);
-    assert!(
-        result.is_nan(),
-        "per_surface_t_s must propagate NaN t_air"
-    );
+    assert!(result.is_nan(), "per_surface_t_s must propagate NaN t_air");
 }

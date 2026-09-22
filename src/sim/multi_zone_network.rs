@@ -917,12 +917,20 @@ mod tests {
         let q_ext = vec![0.0; 2];
         // NaN
         let nan_dt = f64::NAN;
-        let result_nan = MultiZoneAirflowNetwork::from_matrix(h.clone()).solve_step(&mut zones, &q_ext, nan_dt);
-        assert!(matches!(result_nan, Err(MultiZoneNetworkError::InvalidTimestep(_))));
+        let result_nan =
+            MultiZoneAirflowNetwork::from_matrix(h.clone()).solve_step(&mut zones, &q_ext, nan_dt);
+        assert!(matches!(
+            result_nan,
+            Err(MultiZoneNetworkError::InvalidTimestep(_))
+        ));
         // Inf
         let inf_dt = f64::INFINITY;
-        let result_inf = MultiZoneAirflowNetwork::from_matrix(h).solve_step(&mut zones, &q_ext, inf_dt);
-        assert!(matches!(result_inf, Err(MultiZoneNetworkError::InvalidTimestep(_))));
+        let result_inf =
+            MultiZoneAirflowNetwork::from_matrix(h).solve_step(&mut zones, &q_ext, inf_dt);
+        assert!(matches!(
+            result_inf,
+            Err(MultiZoneNetworkError::InvalidTimestep(_))
+        ));
     }
 
     /// Issue #1932: coverage for q_ext.len() != n when zones.len() == n.

@@ -1779,7 +1779,11 @@ mod tests {
 
         // Expected: 48*2.3 + 12*8.3 + 12*8.3 + 10*6.54 + 48*2.3
         // = 110.4 + 99.6 + 99.6 + 65.4 + 110.4 = 485.4
-        let expected = 48.0 * 2.3 + 12.0 * 8.3 + 12.0 * 8.3 + 10.0 * (2.3 + 45.0_f64.to_radians().sin() * 6.0) + 48.0 * 2.3;
+        let expected = 48.0 * 2.3
+            + 12.0 * 8.3
+            + 12.0 * 8.3
+            + 10.0 * (2.3 + 45.0_f64.to_radians().sin() * 6.0)
+            + 48.0 * 2.3;
         assert!(
             (h_tr_is - expected).abs() < 1e-9,
             "h_tr_is = {h_tr_is}, expected {expected}"
