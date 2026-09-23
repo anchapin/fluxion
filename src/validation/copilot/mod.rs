@@ -131,8 +131,15 @@ impl Copilot {
             );
         }
 
-        // Step 2: If LLM is enabled, get natural language analysis
-        let llm_analysis = if self.config.rule_based_only {
+        // Step 2: Triage gate - skip Ollama if rules already give a definitive verdict.
+        // When rules find Error-severity issues, the config is definitively invalid and
+        // the LLM result is not meaningfully parsed (raw text stuffed into an Info issue).
+        // Only call Ollama when rules are inconclusive (warnings/hints only) so the LLM
+        // can provide additional natural-language insights.
+        let llm_analysis = if self.config.rule_based_only || self.checker.is_definitive(&rule_issues) {
+            if self.config.verbose && self.checker.is_definitive(&rule_issues) {
+                tracing::warn!("[Copilot] Rules definitive (errors found) - skipping Ollama");
+            }
             None
         } else {
             match self.ollama.analyze(config_json, &rule_issues).await {
