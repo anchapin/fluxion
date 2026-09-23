@@ -19,9 +19,11 @@ use fluxion_core::zone_count_policy::MAX_ZONES;
 /// ordered pair `[solar_irradiance, outside_air_temp]` per zone, so we keep a
 /// minimal per-zone `Vec<VectorField>` here and resolve the name collision by
 /// keeping both as private module items.
-const GAUGE_CONNECTION_COMPONENTS: usize = 2;
+const GAUGE_CONNECTION_COMPONENTS: usize = 4;
 const GAUGE_CONNECTION_SOLAR_INDEX: usize = 0;
 const GAUGE_CONNECTION_OUTDOOR_TEMP_INDEX: usize = 1;
+const GAUGE_CONNECTION_SKY_TEMP_INDEX: usize = 2;
+const GAUGE_CONNECTION_SKY_CONDUCTANCE_INDEX: usize = 3;
 
 #[derive(Debug, Clone)]
 struct ThermalManifold {
@@ -50,6 +52,8 @@ impl ThermalManifold {
         zone_index: usize,
         solar_irradiance_wm2: f64,
         outside_air_temp_c: f64,
+        t_sky: f64,
+        h_rad_sky: f64,
     ) -> Result<(), String> {
         if zone_index >= self.gauge_connection.len() {
             return Err(format!(
@@ -59,8 +63,12 @@ impl ThermalManifold {
             ));
         }
 
-        self.gauge_connection[zone_index] =
-            VectorField::new(vec![solar_irradiance_wm2, outside_air_temp_c]);
+        self.gauge_connection[zone_index] = VectorField::new(vec![
+            solar_irradiance_wm2,
+            outside_air_temp_c,
+            t_sky,
+            h_rad_sky,
+        ]);
         Ok(())
     }
 
@@ -74,13 +82,24 @@ impl ThermalManifold {
 pub struct GaugeBoundaryConditions {
     pub solar_irradiance_wm2: f64,
     pub outside_air_temp_c: f64,
+    /// Night-sky radiative temperature (°C)
+    pub t_sky: f64,
+    /// Linearized sky-radiative conductance [W/m²·K]
+    pub h_rad_sky: f64,
 }
 
 impl GaugeBoundaryConditions {
-    pub fn new(solar_irradiance_wm2: f64, outside_air_temp_c: f64) -> Self {
+    pub fn new(
+        solar_irradiance_wm2: f64,
+        outside_air_temp_c: f64,
+        t_sky: f64,
+        h_rad_sky: f64,
+    ) -> Self {
         Self {
             solar_irradiance_wm2,
             outside_air_temp_c,
+            t_sky,
+            h_rad_sky,
         }
     }
 }
@@ -141,23 +160,28 @@ impl GaugeSolver {
     /// (in `src/physics/gauge_zone_solver.rs`) can verify that
     /// `SurfaceGaugeSolver::clone` re-initialized the per-surface gauge
     /// from the cloned `wall_spec`. The field is private at runtime;
-    /// this accessor is `#[cfg(test)]`-gated and lives next to the
-    /// existing `manifold()` test accessor.
-    #[cfg(test)]
+    /// this accessor is `pub(crate)` for use in both test and lib contexts.
+    /// Also used by Issue #3911 LIMIT-21 Phase 6 diagnostic.
     pub(crate) fn r_total_for_test(&self) -> f64 {
         self.r_total
     }
 
-    /// Issue #3729 — see `r_total_for_test`.
-    #[cfg(test)]
+    /// Issue #3729 — see `r_total_for_test`. Also used by Issue #3911 diagnostic.
     pub(crate) fn c_mass_for_test(&self) -> f64 {
         self.C_mass
+    }
+
+    /// Issue #3911 — expose q_flux for diagnostic access from GaugeZoneSolver.
+    pub(crate) fn q_flux(&self) -> f64 {
+        self.q_flux
     }
 
     pub fn translate_boundary_conditions(boundary: GaugeBoundaryConditions) -> VectorField {
         VectorField::new(vec![
             boundary.solar_irradiance_wm2,
             boundary.outside_air_temp_c,
+            boundary.t_sky,
+            boundary.h_rad_sky,
         ])
     }
 
@@ -175,17 +199,23 @@ impl GaugeSolver {
 
         let solar_irradiance_wm2 = gauge_connection[GAUGE_CONNECTION_SOLAR_INDEX];
         let outside_air_temp_c = gauge_connection[GAUGE_CONNECTION_OUTDOOR_TEMP_INDEX];
+        let t_sky = gauge_connection[GAUGE_CONNECTION_SKY_TEMP_INDEX];
+        let h_rad_sky = gauge_connection[GAUGE_CONNECTION_SKY_CONDUCTANCE_INDEX];
         if h_exterior <= 0.0 || !h_exterior.is_finite() {
             return Err(SolverError::InvalidConfig(
                 "h_exterior must be positive and finite".to_string(),
             ));
         }
 
-        if solar_irradiance_wm2 == 0.0 {
-            Ok(outside_air_temp_c)
-        } else {
-            Ok(outside_air_temp_c + solar_irradiance_wm2 / h_exterior)
-        }
+        // Effective exterior temperature includes:
+        // 1. Solar irradiance absorbed by surface: G_solar / h_exterior
+        // 2. Sky radiative forcing buffered through surface thermal mass:
+        //    h_rad_sky / h_exterior * (T_sky - T_outdoor)
+        let t_ext = outside_air_temp_c
+            + solar_irradiance_wm2 / h_exterior
+            + (h_rad_sky / h_exterior) * (t_sky - outside_air_temp_c);
+
+        Ok(t_ext)
     }
 
     pub fn step_with_boundary_conditions(
@@ -212,6 +242,8 @@ impl GaugeSolver {
                 self.zone_index,
                 gauge_connection[GAUGE_CONNECTION_SOLAR_INDEX],
                 gauge_connection[GAUGE_CONNECTION_OUTDOOR_TEMP_INDEX],
+                gauge_connection[GAUGE_CONNECTION_SKY_TEMP_INDEX],
+                gauge_connection[GAUGE_CONNECTION_SKY_CONDUCTANCE_INDEX],
             )
             .map_err(SolverError::InvalidConfig)?;
 
@@ -286,7 +318,8 @@ impl HeatConductionSolver for GaugeSolver {
             timestep,
             T_interior,
             h_exterior,
-            GaugeBoundaryConditions::new(0.0, T_exterior.to_value()),
+            // No solar, no sky radiative forcing for this legacy step interface
+            GaugeBoundaryConditions::new(0.0, T_exterior.to_value(), 0.0, 0.0),
         )
     }
 
@@ -349,10 +382,12 @@ mod tests {
     #[test]
     fn test_boundary_translation_preserves_raw_values() {
         let connection = GaugeSolver::translate_boundary_conditions(GaugeBoundaryConditions::new(
-            250_000.0, -80.0,
+            250_000.0, -80.0, 0.0, 0.0,
         ));
 
-        assert_eq!(connection.as_slice(), &[250_000.0, -80.0]);
+        assert_eq!(connection.as_slice(), &[250_000.0, -80.0, 0.0, 0.0]);
+        // With h_rad_sky = 0, sky term vanishes and formula reduces to:
+        // T_ext = T_outdoor + G_solar / h_exterior = -80 + 250000/25 = 9920
         assert_eq!(
             GaugeSolver::effective_exterior_temperature(&connection, 25.0).unwrap(),
             9920.0
@@ -370,14 +405,14 @@ mod tests {
                 Time::from_value(3600.0),
                 Temperature::from_value(20.0),
                 HeatTransferCoefficient::from_value(25.0),
-                GaugeBoundaryConditions::new(800.0, 20.0),
+                GaugeBoundaryConditions::new(800.0, 20.0, 0.0, 0.0),
             )
             .unwrap();
 
         assert_eq!(flux.to_value(), 160.0);
         assert_eq!(
             solver.manifold().gauge_connection(0).unwrap().as_slice(),
-            &[800.0, 20.0]
+            &[800.0, 20.0, 0.0, 0.0]
         );
     }
 
@@ -400,7 +435,7 @@ mod tests {
                 Time::from_value(3600.0), // 1 hour timestep
                 Temperature::from_value(15.0),
                 HeatTransferCoefficient::from_value(25.0),
-                GaugeBoundaryConditions::new(0.0, 5.0), // No solar, T_ext = 5°C
+                GaugeBoundaryConditions::new(0.0, 5.0, 0.0, 0.0), // No solar, T_ext = 5°C
             )
             .unwrap();
 
@@ -421,7 +456,7 @@ mod tests {
                 Time::from_value(3600.0),
                 Temperature::from_value(15.0),
                 HeatTransferCoefficient::from_value(25.0),
-                GaugeBoundaryConditions::new(0.0, 5.0),
+                GaugeBoundaryConditions::new(0.0, 5.0, 0.0, 0.0),
             )
             .unwrap();
 
@@ -438,7 +473,7 @@ mod tests {
                 Time::from_value(3600.0),
                 Temperature::from_value(20.0),
                 HeatTransferCoefficient::from_value(25.0),
-                GaugeBoundaryConditions::new(0.0, 5.0),
+                GaugeBoundaryConditions::new(0.0, 5.0, 0.0, 0.0),
             )
             .unwrap();
 
@@ -474,7 +509,7 @@ mod tests {
                 Time::from_value(0.0), // dt = 0
                 Temperature::from_value(20.0),
                 HeatTransferCoefficient::from_value(25.0),
-                GaugeBoundaryConditions::new(0.0, 5.0),
+                GaugeBoundaryConditions::new(0.0, 5.0, 0.0, 0.0),
             )
             .unwrap();
         assert_eq!(
@@ -489,7 +524,7 @@ mod tests {
                 Time::from_value(-3600.0), // dt = -1h (invalid)
                 Temperature::from_value(20.0),
                 HeatTransferCoefficient::from_value(25.0),
-                GaugeBoundaryConditions::new(0.0, 5.0),
+                GaugeBoundaryConditions::new(0.0, 5.0, 0.0, 0.0),
             )
             .unwrap();
         assert_eq!(
@@ -518,7 +553,7 @@ mod tests {
                 Time::from_value(3600.0),
                 Temperature::from_value(20.0), // same as previous
                 HeatTransferCoefficient::from_value(25.0),
-                GaugeBoundaryConditions::new(0.0, 5.0),
+                GaugeBoundaryConditions::new(0.0, 5.0, 0.0, 0.0),
             )
             .unwrap();
         assert_eq!(
@@ -534,7 +569,7 @@ mod tests {
                 Time::from_value(3600.0),
                 Temperature::from_value(25.0), // different from previous 20°C
                 HeatTransferCoefficient::from_value(25.0),
-                GaugeBoundaryConditions::new(0.0, 5.0),
+                GaugeBoundaryConditions::new(0.0, 5.0, 0.0, 0.0),
             )
             .unwrap();
         assert!(

@@ -193,3 +193,32 @@ fn sky_dispatcher_cold_sky_lowers_air_temperature() {
         "cold sky should lower T_air: {cold_sky} vs {no_sky}"
     );
 }
+
+// ── Issue #1932: degenerate-input branch coverage for helpers ─────────────────
+
+/// Cover `air_sky_conductance` non-finite `t_mean` branch (line 113).
+/// NaN in t_air propagates to t_mean, triggering `!t_mean.is_finite()`.
+#[test]
+fn air_sky_conductance_nan_temperature_returns_zero() {
+    let h = air_sky_conductance(0.9, 0.5, 12.0, f64::NAN, -30.0);
+    assert_eq!(h, 0.0, "air_sky_conductance must return 0 for NaN t_air");
+}
+
+/// Cover `per_surface_t_s` non-finite `t_m` branch (line 180).
+#[test]
+fn per_surface_t_s_nan_mass_temperature_returns_air() {
+    let t_air = 20.0;
+    let result = per_surface_t_s(f64::NAN, 10.0, 10.0, t_air);
+    assert_eq!(
+        result, t_air,
+        "per_surface_t_s must return t_air when t_m is NaN"
+    );
+}
+
+/// Cover `per_surface_t_s` non-finite `t_air` branch (line 180 second leg).
+#[test]
+fn per_surface_t_s_nan_air_temperature_returns_air() {
+    let t_air = f64::NAN;
+    let result = per_surface_t_s(20.0, 10.0, 10.0, t_air);
+    assert!(result.is_nan(), "per_surface_t_s must propagate NaN t_air");
+}

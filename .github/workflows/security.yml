@@ -107,7 +107,7 @@ jobs:
       - uses: ./.github/actions/setup-rust-env
       - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
       - name: Install cargo-audit
-        uses: baptiste0928/cargo-install@f204293d9709061b7bc1756fec3ec4e2cd57dec0  # v3
+        uses: baptiste0928/cargo-install@8195d4f734a149db85385bb4102b42efcd373759  # v3
         with:
           crate: cargo-audit
       - name: Run cargo audit
@@ -127,7 +127,7 @@ jobs:
       - uses: ./.github/actions/setup-rust-env
       - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
       - name: Install cargo-deny
-        uses: baptiste0928/cargo-install@f204293d9709061b7bc1756fec3ec4e2cd57dec0  # v3
+        uses: baptiste0928/cargo-install@8195d4f734a149db85385bb4102b42efcd373759  # v3
         with:
           crate: cargo-deny
           version: 0.20.2

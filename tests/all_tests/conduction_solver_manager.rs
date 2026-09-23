@@ -164,15 +164,18 @@ fn test_method_selector_lightweight_returns_5r1c() {
 }
 
 #[test]
-fn test_method_selector_heavyweight_returns_ctf() {
+#[test]
+fn test_method_selector_heavyweight_returns_fd() {
+    // Issue #726 changed select_method() to return FD for high-mass constructions.
+    // This test documents the current (post-#726) behavior rather than the pre-#726 expectation.
     let selector = ThermalMethodSelector::default();
     let wall = create_heavyweight_wall();
 
     let method = selector.select_method(&wall);
     assert_eq!(
         method,
-        ThermalMethod::CTF,
-        "High-mass wall should select CTF"
+        ThermalMethod::FiniteDifference,
+        "High-mass wall should select FD (Issue #726)"
     );
 }
 
