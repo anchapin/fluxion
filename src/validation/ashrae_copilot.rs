@@ -16,9 +16,12 @@
 //! * **Traceable** — every hypothesis carries a `source` field citing the KNOWN_ISSUES.md
 //!   section or the deviation-pattern evidence that motivated it.
 
+use crate::validation::issue_classifier::{
+    case_mass, deviation_direction, deviation_magnitude, metric_axis, CaseMass, DeviationDirection,
+    MetricAxis, ENERGY_SYSTEMATIC_THRESHOLD_PCT,
+};
 use crate::validation::report::{MetricType, ValidationResult};
 use crate::validation::reporter::SystematicIssue;
-use crate::validation::issue_classifier::{case_mass, metric_axis, deviation_direction, deviation_magnitude, CaseMass, MetricAxis, DeviationDirection, ENERGY_SYSTEMATIC_THRESHOLD_PCT};
 
 /// A diagnostic hypothesis for an [`SystematicIssue::Unknown`] failure.
 ///
@@ -38,8 +41,18 @@ pub struct DiagnosticHypothesis {
 }
 
 impl DiagnosticHypothesis {
-    fn new(rank: usize, issue: SystematicIssue, rationale: &'static str, source: &'static str) -> Self {
-        Self { rank, issue, rationale: rationale.to_string(), source }
+    fn new(
+        rank: usize,
+        issue: SystematicIssue,
+        rationale: &'static str,
+        source: &'static str,
+    ) -> Self {
+        Self {
+            rank,
+            issue,
+            rationale: rationale.to_string(),
+            source,
+        }
     }
 }
 
@@ -58,13 +71,19 @@ pub fn is_unknown(result: &ValidationResult) -> bool {
         return false;
     }
     // Rule 2
-    if axis == MetricAxis::Energy && mass == CaseMass::HighMass &&
-       direction == DeviationDirection::Over && magnitude >= ENERGY_SYSTEMATIC_THRESHOLD_PCT {
+    if axis == MetricAxis::Energy
+        && mass == CaseMass::HighMass
+        && direction == DeviationDirection::Over
+        && magnitude >= ENERGY_SYSTEMATIC_THRESHOLD_PCT
+    {
         return false;
     }
     // Rule 3
-    if axis == MetricAxis::Energy && mass == CaseMass::LowMass &&
-       direction == DeviationDirection::Under && magnitude >= ENERGY_SYSTEMATIC_THRESHOLD_PCT {
+    if axis == MetricAxis::Energy
+        && mass == CaseMass::LowMass
+        && direction == DeviationDirection::Under
+        && magnitude >= ENERGY_SYSTEMATIC_THRESHOLD_PCT
+    {
         return false;
     }
     // Rule 4
@@ -72,8 +91,10 @@ pub fn is_unknown(result: &ValidationResult) -> bool {
         return false;
     }
     // Rule 5
-    if result.metric == MetricType::PeakCooling &&
-       direction == DeviationDirection::Over && mass == CaseMass::HighMass {
+    if result.metric == MetricType::PeakCooling
+        && direction == DeviationDirection::Over
+        && mass == CaseMass::HighMass
+    {
         return false;
     }
     // Rule 6
@@ -97,8 +118,10 @@ pub fn is_unknown(result: &ValidationResult) -> bool {
         return false;
     }
     // Rule 11
-    if result.metric == MetricType::PeakCooling &&
-       direction == DeviationDirection::Over && mass == CaseMass::LowMass {
+    if result.metric == MetricType::PeakCooling
+        && direction == DeviationDirection::Over
+        && mass == CaseMass::LowMass
+    {
         return false;
     }
 
@@ -145,7 +168,9 @@ pub fn diagnose(result: &ValidationResult) -> Vec<DiagnosticHypothesis> {
                     ));
                 }
                 // Under + magnitude below threshold — might be thermal mass coupling
-                if direction == DeviationDirection::Under && abs_pct < ENERGY_SYSTEMATIC_THRESHOLD_PCT {
+                if direction == DeviationDirection::Under
+                    && abs_pct < ENERGY_SYSTEMATIC_THRESHOLD_PCT
+                {
                     hypotheses.push(DiagnosticHypothesis::new(
                         2,
                         SystematicIssue::ThermalMass,
@@ -158,29 +183,28 @@ pub fn diagnose(result: &ValidationResult) -> Vec<DiagnosticHypothesis> {
             }
             MetricAxis::Peak => {
                 // Peak metrics not caught by rules 4/9/11
-                if result.metric == MetricType::PeakCooling {
-                    if direction == DeviationDirection::Over {
-                        hypotheses.push(DiagnosticHypothesis::new(
-                            1,
-                            SystematicIssue::HvacLoad,
-                            "Low-mass peak cooling over-prediction — LIMIT-16 (Issue #3059) documents \
-                             the single-lumped thermal-mass node signature (dt/τ ≈ 3.6) driving peak OVER \
-                             in this series.",
-                            "KNOWN_ISSUES.md §LIMIT-16 (Issue #3059)",
-                        ));
-                    }
+                if result.metric == MetricType::PeakCooling && direction == DeviationDirection::Over
+                {
+                    hypotheses.push(DiagnosticHypothesis::new(
+                        1,
+                        SystematicIssue::HvacLoad,
+                        "Low-mass peak cooling over-prediction — LIMIT-16 (Issue #3059) documents \
+                         the single-lumped thermal-mass node signature (dt/τ ≈ 3.6) driving peak OVER \
+                         in this series.",
+                        "KNOWN_ISSUES.md §LIMIT-16 (Issue #3059)",
+                    ));
                 }
-                if result.metric == MetricType::PeakHeating {
-                    if direction == DeviationDirection::Under {
-                        hypotheses.push(DiagnosticHypothesis::new(
-                            1,
-                            SystematicIssue::HvacLoad,
-                            "Low-mass peak heating under-prediction — possible HVAC control timing or \
-                             setpoint/deadband issue. Examine the hourly heating profile for \
-                             premature setback recovery.",
-                            "Deviation pattern + LIMIT-05 family",
-                        ));
-                    }
+                if result.metric == MetricType::PeakHeating
+                    && direction == DeviationDirection::Under
+                {
+                    hypotheses.push(DiagnosticHypothesis::new(
+                        1,
+                        SystematicIssue::HvacLoad,
+                        "Low-mass peak heating under-prediction — possible HVAC control timing or \
+                         setpoint/deadband issue. Examine the hourly heating profile for \
+                         premature setback recovery.",
+                        "Deviation pattern + LIMIT-05 family",
+                    ));
                 }
             }
             MetricAxis::FreeFloat => {
@@ -223,7 +247,9 @@ pub fn diagnose(result: &ValidationResult) -> Vec<DiagnosticHypothesis> {
                         "LIMIT-05 family (Issue #3072)",
                     ));
                 }
-                if direction == DeviationDirection::Over && abs_pct < ENERGY_SYSTEMATIC_THRESHOLD_PCT {
+                if direction == DeviationDirection::Over
+                    && abs_pct < ENERGY_SYSTEMATIC_THRESHOLD_PCT
+                {
                     hypotheses.push(DiagnosticHypothesis::new(
                         2,
                         SystematicIssue::ModelLimitation,
@@ -234,39 +260,40 @@ pub fn diagnose(result: &ValidationResult) -> Vec<DiagnosticHypothesis> {
                 }
             }
             MetricAxis::Peak => {
-                if result.metric == MetricType::PeakCooling {
-                    if direction == DeviationDirection::Under {
-                        hypotheses.push(DiagnosticHypothesis::new(
-                            1,
-                            SystematicIssue::SolarGains,
-                            "High-mass peak cooling under-prediction — solar gains may be damped too \
-                             aggressively by the thermal mass filter. The τ_lag = √(τ_air × τ_mass) \
-                             lag correction may be over-counting.",
-                            "LIMIT-05 family + LIMIT-21 Phase 9 (Issue #3916)",
-                        ));
-                    }
+                if result.metric == MetricType::PeakCooling
+                    && direction == DeviationDirection::Under
+                {
+                    hypotheses.push(DiagnosticHypothesis::new(
+                        1,
+                        SystematicIssue::SolarGains,
+                        "High-mass peak cooling under-prediction — solar gains may be damped too \
+                         aggressively by the thermal mass filter. The τ_lag = √(τ_air × τ_mass) \
+                         lag correction may be over-counting.",
+                        "LIMIT-05 family + LIMIT-21 Phase 9 (Issue #3916)",
+                    ));
                 }
-                if result.metric == MetricType::PeakHeating {
-                    if direction == DeviationDirection::Under {
-                        hypotheses.push(DiagnosticHypothesis::new(
-                            1,
-                            SystematicIssue::ThermalMass,
-                            "High-mass peak heating under-prediction — thermal mass dynamics may be \
-                             damping peak demand too aggressively. Consider the air-trajectory \
-                             equilibration rate (dt/τ ≈ 3.6 for Gauge).",
-                            "LIMIT-21 (Issue #3297) + LIMIT-05 family",
-                        ));
-                    }
-                    if direction == DeviationDirection::Over {
-                        hypotheses.push(DiagnosticHypothesis::new(
-                            2,
-                            SystematicIssue::ThermalMass,
-                            "High-mass peak heating over-prediction — possible overnight setback \
-                             recovery overshoot. LIMIT-12 (Issue #3062) documents similar \
-                             patterns in Case 940 annual heating.",
-                            "KNOWN_ISSUES.md §LIMIT-12 (Issue #3062)",
-                        ));
-                    }
+                if result.metric == MetricType::PeakHeating
+                    && direction == DeviationDirection::Under
+                {
+                    hypotheses.push(DiagnosticHypothesis::new(
+                        1,
+                        SystematicIssue::ThermalMass,
+                        "High-mass peak heating under-prediction — thermal mass dynamics may be \
+                         damping peak demand too aggressively. Consider the air-trajectory \
+                         equilibration rate (dt/τ ≈ 3.6 for Gauge).",
+                        "LIMIT-21 (Issue #3297) + LIMIT-05 family",
+                    ));
+                }
+                if result.metric == MetricType::PeakHeating && direction == DeviationDirection::Over
+                {
+                    hypotheses.push(DiagnosticHypothesis::new(
+                        2,
+                        SystematicIssue::ThermalMass,
+                        "High-mass peak heating over-prediction — possible overnight setback \
+                         recovery overshoot. LIMIT-12 (Issue #3062) documents similar \
+                         patterns in Case 940 annual heating.",
+                        "KNOWN_ISSUES.md §LIMIT-12 (Issue #3062)",
+                    ));
                 }
             }
             MetricAxis::FreeFloat => {
@@ -345,17 +372,15 @@ pub fn diagnose(result: &ValidationResult) -> Vec<DiagnosticHypothesis> {
     // ---- Generic deviation-pattern heuristics ----
 
     // Very large deviations (>=50%) that didn't match any rule
-    if abs_pct >= 50.0 {
-        if mass == CaseMass::Special {
-            hypotheses.push(DiagnosticHypothesis::new(
-                1,
-                SystematicIssue::WeatherData,
-                "Non-standard case with >=50% deviation — large deviations on unrecognised case \
-                 identifiers often indicate a weather data or case construction specification mismatch. \
-                 Verify the case spec matches the ASHRAE 140-2023 Annex B definition.",
-                "Deviation magnitude + LIMIT-15 (Issue #3060)",
-            ));
-        }
+    if abs_pct >= 50.0 && mass == CaseMass::Special {
+        hypotheses.push(DiagnosticHypothesis::new(
+            1,
+            SystematicIssue::WeatherData,
+            "Non-standard case with >=50% deviation — large deviations on unrecognised case \
+             identifiers often indicate a weather data or case construction specification mismatch. \
+             Verify the case spec matches the ASHRAE 140-2023 Annex B definition.",
+            "Deviation magnitude + LIMIT-15 (Issue #3060)",
+        ));
     }
 
     // Small-magnitude in-range failures (flagged despite being near midpoint)
@@ -384,7 +409,7 @@ pub fn diagnose(result: &ValidationResult) -> Vec<DiagnosticHypothesis> {
     }
 
     // Sort by rank (lowest first = most likely) and return
-    hypotheses.sort_by(|a, b| a.rank.cmp(&b.rank));
+    hypotheses.sort_by_key(|a| a.rank);
     hypotheses
 }
 
@@ -393,7 +418,13 @@ mod tests {
     use super::*;
     use crate::validation::report::ValidationResult;
 
-    fn unknown_result(case_id: &str, metric: MetricType, fluxion: f64, ref_min: f64, ref_max: f64) -> ValidationResult {
+    fn unknown_result(
+        case_id: &str,
+        metric: MetricType,
+        fluxion: f64,
+        ref_min: f64,
+        ref_max: f64,
+    ) -> ValidationResult {
         ValidationResult::new(case_id, metric, fluxion, ref_min, ref_max)
     }
 
@@ -401,7 +432,10 @@ mod tests {
     fn test_is_unknown_for_lowmass_energy_over() {
         // LowMass + Energy + Over should be caught by rule 3 only if Under
         let r = unknown_result("600", MetricType::AnnualCooling, 10.0, 5.0, 7.0);
-        assert!(is_unknown(&r), "LowMass Energy Over should be Unknown (no rule matches Over)");
+        assert!(
+            is_unknown(&r),
+            "LowMass Energy Over should be Unknown (no rule matches Over)"
+        );
     }
 
     #[test]

@@ -111,7 +111,7 @@ impl BatchOracle {
         )
         .increment(1);
 
-        Ok(result.map_err(fluxion_err_to_pyerr)?)
+        result.map_err(fluxion_err_to_pyerr)
     }
 
     /// Evaluate a population of building design configurations using BuildingParameters.
@@ -159,10 +159,8 @@ impl BatchOracle {
             .collect();
 
         // Call existing implementation
-        Ok(
-            Self::evaluate_population(self, vec_population, use_surrogates)
-                .map_err(fluxion_err_to_pyerr)?,
-        )
+        Self::evaluate_population(self, vec_population, use_surrogates)
+            .map_err(fluxion_err_to_pyerr)
     }
 
     /// Evaluate a population of building design configurations using numpy arrays.
