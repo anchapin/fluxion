@@ -26,6 +26,8 @@ monitors CI, merges PRs, then proceeds to the next wave.
 
 **Flags:**
 - `--auto` — skip Phase 2 confirmation, proceed directly to wave execution. Wave plan is written to state file for auditability.
+- `--state-file <path>` — override the default state-file location (issue #3145). The default is `../worktrees/wave-state.<repo-slug>.json`; pass an explicit path when running concurrent orchestrators against the same repo or when migrating away from the legacy `wave-state.json`. Equivalent env var: `WAVE_STATE_FILE=<path>`.
+- `--force` — bypass the per-repo pre-flight collision check (issue #3145). By default the orchestrator refuses to overwrite a state file that belongs to a different repo. Use only when you intentionally want to clobber a prior run.
 
 ## Phase 0: Pre-flight
 
@@ -36,6 +38,27 @@ mkdir -p ../worktrees && touch ../worktrees/.test && rm ../worktrees/.test  # Wr
 ```
 
 If any check fails, stop and report to the user.
+
+**Per-repo state-file collision check (issue #3145).** The default state-file
+path is namespaced per repo (e.g. `../worktrees/wave-state.fluxion.json`) so
+concurrent orchestrator runs against different repos do not overwrite each
+other. Before writing the initial state file the orchestrator must verify
+the file does not already belong to a different repo:
+
+```bash
+source scripts/wave-state-helpers.sh
+STATE_FILE=$(get_state_file)
+if ! check_state_collision "$STATE_FILE"; then
+  echo "ERROR: state file $STATE_FILE belongs to a different repo." >&2
+  echo "  Use --state-file to choose a different path, or pass --force to overwrite." >&2
+  exit 1
+fi
+```
+
+`scripts/wave-state-helpers.sh` emits a deprecation warning and falls back to
+the legacy `../worktrees/wave-state.json` path for one release when the
+namespaced file does not exist. See [REFERENCE.md — Resume and Recovery](REFERENCE.md#resume-and-recovery)
+for the resolution policy.
 
 ## Phase 1: Discovery
 
@@ -52,16 +75,61 @@ Filter out issues that are:
 
 ```bash
 gh issue list --state open --json number,title,body,labels \
-  | node ~/.agents/skills/github-wave-orchestrator/scripts/wave-planner.js
+  | node ~/.agents/skills/github-wave-orchestrator/scripts/wave-planner.js [--mix-rule]
 ```
 
-**Confirmation:**
+Pass `--mix-rule` only for repos that track a `milestone` label on
+scorecard-moving issues (the fluxion v1.3 throughput program); see the
+wave-mix rule below.
+
+Pass `--state-file <path>` (or set `WAVE_STATE_FILE`) to write the plan to
+a non-default location; otherwise the plan is written to the per-repo
+namespaced state file (`../worktrees/wave-state.<repo-slug>.json`, e.g.
+`wave-state.fluxion.json`). The wave-planner refuses to overwrite a state
+file that belongs to a different repo unless `--force` is passed.
+
+**Wave-mix rule (default: AUTO).** Every scheduled wave reserves >=1 issue
+labeled `milestone`; hygiene issues fill the remaining slots. The planner
+colors milestone issues first and milestone issues land one-per-wave (they
+share the `milestone` label, so the #369 label-overlap heuristic already
+forces the split) — the no-shared-files grouping is preserved; the mix rule
+never overrides the conflict graph. Waves that would contain zero milestone
+issues are NOT scheduled: their issues are reported in `plan.deferred`
+(reason `wave-mix`). When the plan reports deferred issues, HALT before
+executing any further wave and notify the user that milestone-compatible
+supply is exhausted — never silently fill the pipeline with hygiene.
+Modes (recorded in `plan._meta.mix_rule_mode`): **AUTO** (the default, no
+flags) enforces the rule whenever >=1 milestone-labeled issue exists and
+goes DORMANT (legacy planning + a `WAVE-MIX DORMANT` stderr note) when none
+do — repos without a `milestone` label convention are unaffected; surface
+dormancy to the user when it persists across runs, since sustained
+dormancy means the pipeline is burning hygiene only. **STRICT**
+(`--mix-rule` / `WAVE_MIX_RULE=1`) additionally halts the planner itself
+with exit code 3 and a `WAVE-MIX HALT` message (no state file written)
+when milestone supply is absent entirely; surface that halt to the user
+the same way. **OFF** (`--no-mix-rule` / `WAVE_MIX_RULE=0`) disables the
+rule for a deliberate hygiene-only run.
+
+**Confirmation & Decision Protocol:**
 - If `--auto` flag is passed: proceed immediately (no confirmation required).
-- Otherwise: **Present the plan to the user before executing.** Wait for confirmation.
+- Otherwise: **Consult the Foreman MCP first** via `ask_foreman` before prompting the human:
+  - `question`: "Approve execution plan for wave sequence ({wave_count} waves, {issue_count} issues)?"
+  - `options`: ["Approve plan and begin wave execution", "Re-plan waves with different parameters", "Halt and escalate to human"]
+  - `context`: Summary of planned waves, issues per wave, and milestone mix status.
+  - If Foreman returns `status: "answered"`: proceed immediately according to `choice` without interrupting the human.
+  - If Foreman returns `status: "abstained"` (or is unavailable): present the plan to the human user and wait for manual confirmation.
 
 The wave plan is written to the state file (`../worktrees/wave-state.<repo-slug>.json`) under the `waves` key for auditability, regardless of confirmation mode.
 
 ## Phase 3: Wave Execution (per wave)
+
+**Precondition — nightly-authority check at wave start.** If the target
+repo delegates authority checks to scheduled nightly workflows on develop
+(e.g. fluxion under ADR-0016), run Checkpoint 1 of
+[Nightly-Authority Merge Freeze](#nightly-authority-merge-freeze) before
+starting the wave: if ANY lane-3 workflow's most recent COMPLETED run on
+develop is `failure`, the wave does not start — run the freeze protocol
+instead.
 
 For each issue in the current wave:
 
@@ -77,7 +145,7 @@ modifies files in the skill home
 is copied into the worktree under a **wave-numbered** snapshot name:
 
 ```bash
-WAVE=$(jq -r .current_wave ../wave-state.json)
+WAVE=$(jq -r .current_wave ../worktrees/wave-state.<repo-slug>.json)
 mkdir -p docs/skill-snapshot
 cp ~/.config/opencode/skill/github-wave-orchestrator/SKILL.md \
    "docs/skill-snapshot/SKILL.wave-${WAVE}.md"
@@ -151,36 +219,36 @@ instead of passively waiting for a done signal:
    ```bash
    gh pr list --search "fix/issue-{N}" --json number,title,state --jq '.[] | select(.state=="OPEN") | .number'
    ```
-   - **PR found** → record PR number in wave-state.json, move to next issue
-   - **PR NOT found after 60s** → if `wave-state.json` records a prior
-     PR number for this issue (status `pr_created`), run the `pr_recreate`
-     sub-step below; otherwise enter the recovery sequence.
-   - **`pr_recreate` sub-step** (when the previous PR is stuck CLOSED
-     because `gh pr reopen` failed after a force-push; issue #364):
-     ```bash
-     # 1. Look up the prior PR number from wave-state.json
-     PRIOR_PR=$(jq -r '.issues["{N}"].pr_number // empty' ../wave-state.json)
-     if [ -n "$PRIOR_PR" ]; then
-       STATE=$(gh pr view "$PRIOR_PR" --json state --jq '.state')
-       if [ "$STATE" = "CLOSED" ]; then
-         # 2. Attempt reopen; on failure, recreate the PR (issue #364)
-         if ! gh pr reopen "$PRIOR_PR" 2>/dev/null; then
-           OLD_TITLE=$(gh pr view "$PRIOR_PR" --json title --jq '.title' 2>/dev/null)
-           OLD_BODY=$(gh pr view "$PRIOR_PR" --json body --jq '.body' 2>/dev/null)
-           gh pr close "$PRIOR_PR"  # confirm closed
-           NEW_PR=$(gh pr create --base develop \
-             --title "$OLD_TITLE" \
-             --body "$OLD_BODY" \
-             --head fix/issue-{N}-{slug} | tail -1 | awk -F'/' '{print $NF}')
-           # 3. Update wave-state.json with the new PR number
-           jq --arg n "{N}" --arg p "$NEW_PR" \
-             '.issues[$n].pr_number = ($p | tonumber)' \
-             ../wave-state.json > ../wave-state.json.tmp \
-             && mv ../wave-state.json.tmp ../wave-state.json
-         fi
-       fi
-     fi
-     ```
+    - **PR found** → record PR number in wave-state.<repo-slug>.json, move to next issue
+    - **PR NOT found after 60s** → if `wave-state.<repo-slug>.json` records a prior
+      PR number for this issue (status `pr_created`), run the `pr_recreate`
+      sub-step below; otherwise enter the recovery sequence.
+    - **`pr_recreate` sub-step** (when the previous PR is stuck CLOSED
+      because `gh pr reopen` failed after a force-push; issue #364):
+      ```bash
+      # 1. Look up the prior PR number from wave-state.<repo-slug>.json
+      PRIOR_PR=$(jq -r '.issues["{N}"].pr_number // empty' ../worktrees/wave-state.<repo-slug>.json)
+      if [ -n "$PRIOR_PR" ]; then
+        STATE=$(gh pr view "$PRIOR_PR" --json state --jq '.state')
+        if [ "$STATE" = "CLOSED" ]; then
+          # 2. Attempt reopen; on failure, recreate the PR (issue #364)
+          if ! gh pr reopen "$PRIOR_PR" 2>/dev/null; then
+            OLD_TITLE=$(gh pr view "$PRIOR_PR" --json title --jq '.title' 2>/dev/null)
+            OLD_BODY=$(gh pr view "$PRIOR_PR" --json body --jq '.body' 2>/dev/null)
+            gh pr close "$PRIOR_PR"  # confirm closed
+            NEW_PR=$(gh pr create --base develop \
+              --title "$OLD_TITLE" \
+              --body "$OLD_BODY" \
+              --head fix/issue-{N}-{slug} | tail -1 | awk -F'/' '{print $NF}')
+            # 3. Update wave-state.<repo-slug>.json with the new PR number
+            jq --arg n "{N}" --arg p "$NEW_PR" \
+              '.issues[$n].pr_number = ($p | tonumber)' \
+              ../worktrees/wave-state.<repo-slug>.json > ../worktrees/wave-state.<repo-slug>.json.tmp \
+              && mv ../worktrees/wave-state.<repo-slug>.json.tmp ../worktrees/wave-state.<repo-slug>.json
+          fi
+        fi
+      fi
+      ```
      The verification loop re-runs Phase 3c § 4 (PR base) and § 5
      (PR body) on the new PR before recording it.
 
@@ -247,7 +315,7 @@ instead of passively waiting for a done signal:
         KEYWORD="Refs"
       fi
       if echo "$BODY" | grep -qE "(Closes|Fixes|Refs|for|touches)\s+#{N}"; then
-         # Keyword found — record PR number in wave-state.json, move to next issue
+         # Keyword found — record PR number in wave-state.<repo-slug>.json, move to next issue
          :
        else
          # Auto-fix: append the required keyword to the PR body
@@ -256,7 +324,7 @@ instead of passively waiting for a done signal:
 ${KEYWORD} #{N}"
        fi
       if echo "$BODY" | grep -qE "^Scope guard:"; then
-        # Scope guard already present — record PR number in wave-state.json
+        # Scope guard already present — record PR number in wave-state.<repo-slug>.json
         :
       else
         # Auto-fix: append the default scope-guard line (issue #365;
@@ -287,12 +355,25 @@ Scope guard: Do NOT touch any other area of the codebase; ${NEXT_ISSUE} owns the
      reaching that case.
 
   7. **Escalation**: If recovery sequence fails or PR still missing after push,
-    record issue as `escalated` in wave-state.json and report to user with
+    record issue as `escalated` in wave-state.<repo-slug>.json and report to user with
     worktree path so they can inspect and push manually.
 
  **Do not proceed to Phase 4 until every PR in the wave exists (on develop) or is escalated.**
 
 ## Phase 4: CI and Merge
+
+**Precondition — pre-merge nightly-authority re-check.** Before EVERY
+merge (orchestrator-initiated or CI sub-agent), re-run Checkpoint 2 of
+[Nightly-Authority Merge Freeze](#nightly-authority-merge-freeze): a red
+lane-3 nightly freezes all merges and all new waves for the repo.
+
+**Merge criterion — ALL checks green (interim invariant).** The merge
+criterion is ALL checks green (`gh pr checks {N}` exits 0), NOT merely
+required-checks green. Some repos temporarily run a reduced required-check
+floor on develop (fluxion: issue #3810 tracks restoring branch protection
+after the ADR-0016 lane split), so a PR with failing or erroring
+non-required checks must NOT merge under the reduced floor. This invariant
+survives until #3810 (or the target repo's equivalent) closes.
 
 ### 4a. Merge Ordering
 
@@ -323,7 +404,7 @@ if ! gh pr reopen <N> 2>/dev/null; then
     --body "$OLD_BODY" \
     --head fix/issue-{N}-{slug} | tail -1 | awk -F'/' '{print $NF}')
   # Phase 3c verification loop picks up the new PR on its next poll;
-  # update wave-state.json with the new number.
+  # update wave-state.<repo-slug>.json with the new number.
 fi
 ```
 
@@ -361,9 +442,77 @@ helper.
 Monitor until ALL PRs in the wave are merged (or escalated).
 Then clean up worktrees: `git worktree prune`
 
+## Nightly-Authority Merge Freeze
+
+Some repos (fluxion under ADR-0016) delegate slow authority checks —
+determinism, performance gates, coverage, security — to scheduled nightly
+workflows on `develop` instead of per-PR CI. When a nightly is red, per-PR
+green is NOT sufficient authority to merge: the base branch itself is
+suspect. The freeze has two checkpoints and one diagnostic path.
+
+**Lane-3 workflow set (fluxion):** `nightly-ashrae-140-gauge.yml`,
+`determinism_check.yml`, `performance_dashboard.yml`, `code-coverage.yml`,
+`security.yml`. Keep the skill repo-agnostic: apply the check to the target
+repo's scheduled-authority workflows; a workflow that does not exist in
+the repo is skipped, and a repo with none skips the freeze entirely.
+
+### Checkpoint 1 — wave start
+
+Before starting any wave, check the most recent COMPLETED nightly run of
+each lane-3 workflow on develop:
+
+```bash
+gh run list --workflow <workflow-file> --branch develop --status completed --limit 1 \
+  --json conclusion,displayTitle,createdAt
+```
+
+If ANY conclusion is `failure`, the wave does not start — treat it as a
+freeze and run the freeze protocol below.
+
+### Checkpoint 2 — before each merge
+
+Re-run the same check immediately before EVERY merge, in the orchestrator
+and in each CI sub-agent (the CI Sub-agent Template embeds this step). A
+red nightly ⇒ FREEZE:
+
+- **No merges** — even PRs whose own checks are all green.
+- **No new waves** — do not proceed to Phase 5 while frozen.
+- **Spawn exactly ONE freeze-breaker sub-agent** (below). Do not spawn
+  fixers per PR: the failure lives on develop, not on any single PR.
+
+### Freeze-breaker sub-agent
+
+Exactly one diagnostic sub-agent for the whole frozen wave — never one per
+PR. Inputs:
+
+- The failing workflow name and run id.
+- `gh run view <run-id> --log-failed` output for that run.
+- Develop merges since that workflow's last green nightly:
+  ```bash
+  gh run list --workflow <workflow-file> --branch develop --status success \
+    --limit 1 --json headSha,createdAt
+  git log --oneline <last-green-sha>..origin/develop
+  ```
+
+Mandate: diagnose only — identify which merge (or nightly-environment
+change) broke the workflow and propose the revert/fix; do not implement
+changes beyond the diagnostic. The freeze-breaker consumes the wave's
+milestone slot: the reserved `milestone` issue is not executed while
+frozen (it returns to supply for the next wave once the freeze lifts).
+
+Notify the user per the Communication Rules "stuck" clause — a frozen wave
+IS a stuck wave; report the failing workflow, run id, and the
+freeze-breaker's findings.
+
+The freeze lifts only when the failing workflow's most recent COMPLETED
+run on develop is green again (re-verify via Checkpoint 1).
+
 ## Phase 5: Next Wave
 
-Repeat Phase 3–4 for the next wave.
+Repeat Phase 3–4 for the next wave. Do not start the next wave while a
+nightly-authority freeze is active (see Nightly-Authority Merge Freeze),
+and do not start one on a plan whose wave-mix deferred list is non-empty
+without new milestone supply.
 After the final wave, report summary:
 
 ```
@@ -373,17 +522,47 @@ Total issues: {N} | Waves: {count}
 Merged: {count} | Escalated: {count} | Skipped: {count}
 ```
 
+## Decision Protocol (Foreman MCP)
+
+Whenever the orchestrator or its sub-agents encounter an ambiguous situation, blocker, plan approval, or decision point that would normally require asking the human operator for input, **always query the Foreman MCP first** using the `ask_foreman` tool.
+
+### Tool Invocation Schema
+```json
+{
+  "question": "<Clear, concise decision question as would be asked to the human>",
+  "options": ["<Option 1>", "<Option 2>", "..."],
+  "context": "<Detailed context: issue/PR numbers, error outputs, attempted fixes, tradeoffs>",
+  "risk_hint": "<Advisory hint, e.g. 'merge conflict', 'CI failure', 'plan approval', 'freeze'>",
+  "min_confidence": 0.7
+}
+```
+
+### Protocol Rules
+1. **Foreman First**: Call `ask_foreman` before any escalation, confirmation prompt, or question to the human operator.
+2. **Handle Answered**: If Foreman returns `{"status": "answered", "choice": "...", "rationale": "..."}`, log the decision and rationale in the state file / journal and proceed immediately with that choice without interrupting the human.
+3. **Handle Abstained / Fallback**: If Foreman returns `{"status": "abstained", "rationale": "..."}` or the Foreman MCP is unreachable/errors, only then fall back to asking the human operator, providing the options and Foreman's rationale for full context.
+
+### Key Decision Points Handled by Foreman
+- **Wave Plan Approval (Phase 2)**: Approving wave groupings when not in `--auto` mode.
+- **Merge Conflict Strategy (Phase 3c / 4)**: Deciding whether to adopt branch changes, adopt develop changes, attempt manual semantic rebase, or escalate.
+- **Persistent CI Failures (Phase 3c / 4)**: Deciding whether to retry with a clean worktree, skip the issue to preserve wave progress, use `--admin` merge if locally verified, or escalate.
+- **Nightly-Authority Freezes (Phase 4)**: Deciding whether to spawn a freeze-breaker, wait for a scheduled re-run, or halt the pipeline.
+
 ## Communication Rules
 
 - **Silent during execution.** No play-by-play updates.
+- **Always consult Foreman MCP (`ask_foreman`) first** on any decision, blocker, or approval before contacting the human.
 - **Update the user only when:**
-  - Wave plan is ready for review (Phase 2) — **only when NOT in --auto mode**
+  - Wave plan is ready for review (Phase 2) — **only when NOT in --auto mode AND Foreman abstained**
   - A wave completes and the next begins
-  - A sub-agent is stuck or CI cannot be fixed after 3 attempts
-  - A merge conflict requires human resolution (non-auto-resolvable)
+  - A sub-agent is stuck or CI cannot be fixed after max retries — **only after Foreman abstained or selected escalation**
+  - The pipeline HALTS: wave-mix milestone supply exhausted (Phase 2
+    `WAVE-MIX HALT` or a non-empty `plan.deferred`), or a
+    nightly-authority freeze is active (red lane-3 nightly on develop) — **only after Foreman confirms halting**
+  - A merge conflict requires human resolution (non-auto-resolvable) — **only after Foreman abstained on auto-resolution strategy**
   - The user asks a direct question
 
-**When --auto flag is passed:** All wave execution proceeds autonomously. The wave plan is written to the state file for post-hoc audit. Merge conflicts that cannot be auto-resolved are recorded as `escalated` in the state file and the wave continues with remaining issues.
+**When --auto flag is passed:** All wave execution proceeds autonomously. The wave plan is written to the state file for post-hoc audit. Merge conflicts that cannot be auto-resolved (even after querying Foreman) are recorded as `escalated` in the state file and the wave continues with remaining issues.
 
 ## Resume
 
@@ -396,6 +575,15 @@ in-progress work and resumes from the last incomplete phase.
 the orchestrator falls back to the legacy `../worktrees/wave-state.json` and
 emits a deprecation warning. The legacy path will be removed in a future release.
 
+**Mid-flight collision recovery (issue #3145):** If the orchestrator detects
+that its state file has been overwritten by a different repo's run mid-wave,
+follow the archive convention: move the stale state to
+`wave-state.<repo>-archived-<YYYY-MM-DD>.json` (the date is `UTC` of the
+overwrite detection) and re-run the wave from a fresh namespaced file. The
+archive convention is intentionally not automated — the operator confirms
+which state is stale before archiving, because both repos may have written
+to the same path legitimately during a forced merge.
+
 See [REFERENCE.md — Resume and Recovery](REFERENCE.md#resume-and-recovery).
 
 ## Limits
@@ -405,4 +593,5 @@ See [REFERENCE.md — Resume and Recovery](REFERENCE.md#resume-and-recovery).
 | Max issues per wave | 3 |
 | Max CI fix iterations per PR | 10 |
 | Max conflict resolution attempts | 2 |
+| Freeze-breaker sub-agents per frozen wave | 1 |
 | Worktree location | `../worktrees/` (parent of repo root) |

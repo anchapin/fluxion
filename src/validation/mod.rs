@@ -3,6 +3,7 @@ pub mod analyzer;
 pub mod ashrae140;
 pub mod ashrae_140_cases;
 pub mod ashrae_140_validator;
+pub mod ashrae_copilot;
 pub mod assembly_library;
 pub mod automation;
 pub mod benchmark;
