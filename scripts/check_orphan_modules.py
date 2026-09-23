@@ -314,6 +314,8 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
         "thermal_model_5r1c",
         "thermal_model_solvers",
         "topsis",
+        # Issue #3930 — new diagnostic module, intentionally added, callers will be added in follow-up
+        "ashrae_copilot",
     }
 )
 
@@ -347,7 +349,7 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
 #     ``validation_hybrid_empirical_test`` target) — the module is no
 #     longer wired-but-dead, so its allowlist entry and its Issue
 #     #3748 disposition row are dropped in the same PR.
-BASELINE_WIRED_BUT_DEAD = 21  # lowered from 22 → 21 in PR for fluxion-#3748 (was 33 → 22 in PR for fluxion-#3555)
+BASELINE_WIRED_BUT_DEAD = 22  # raised from 21 → 22 in PR for fluxion-#3930 (lowered 22 → 21 in PR for fluxion-#3748; was 33 → 22 in PR for fluxion-#3555)
 
 # Downward-only ratchet for the orphan allowlist (Issue #3459).
 #
