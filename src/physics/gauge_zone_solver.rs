@@ -278,6 +278,40 @@ pub(crate) struct SurfaceGaugeSolver {
     _tilt_deg: f64,
     /// Wall spec for initialization (stored for re-initialization if needed)
     wall_spec: Option<WallSpec>,
+    /// Issue #3918 follow-up (daytime solar gap): interior surface-node
+    /// temperature T_s [°C]. Tracks this surface's response to interior
+    /// absorbed gains (transmitted solar + radiative internal gains) and
+    /// couples back to the zone air through
+    /// h_tr_is,i = A_i · h_tr_is_coeff(tilt_i) inside
+    /// `GaugeZoneSolver::step_interior_surface_network`.
+    T_surface: f64,
+}
+
+/// Issue #3918 follow-up: does this surface participate in the interior
+/// absorbed-gain network? Inter-zone partitions exchange through the explicit
+/// coupling conductances (they carry no independent interior node), so they
+/// are excluded; every other surface — including slab-on-grade floors and
+/// internal mass — has an interior film and participates, matching the
+/// ISO 13790 A_tot convention used by `compute_h_tr_is`.
+fn surface_is_absorbing(st: &SurfaceType) -> bool {
+    !st.is_inter_zone()
+}
+
+/// Issue #3928 / #3918 follow-up: tilt-dependent interior surface film
+/// coefficient [W/m²K].
+/// - Horizontal (tilt ≈ 0° or 180°): 2.3 W/m²K
+/// - Vertical (tilt ≈ ±90°): 8.3 W/m²K
+/// - Intermediate tilts: sin(tilt)-interpolated
+fn h_tr_is_coeff(tilt_deg: f64) -> f64 {
+    if tilt_deg.abs() < 1.0 || (tilt_deg - 180.0).abs() < 1.0 {
+        2.3 // horizontal
+    } else if (tilt_deg - 90.0).abs() < 1.0 || (tilt_deg + 90.0).abs() < 1.0 {
+        8.3 // vertical
+    } else {
+        let tilt_rad = tilt_deg.to_radians();
+        let ratio = tilt_rad.sin().abs();
+        2.3 + ratio * (8.3 - 2.3)
+    }
 }
 
 /// Parameters for computing the surface boundary conditions.
@@ -307,7 +341,14 @@ impl SurfaceGaugeSolver {
             _azimuth_deg,
             _tilt_deg,
             wall_spec: None,
+            T_surface: 20.0,
         }
+    }
+
+    /// Issue #3918 follow-up: interior surface-node temperature T_s [°C]
+    /// from the most recent interior absorbed-gain network step.
+    pub(crate) fn t_surface(&self) -> f64 {
+        self.T_surface
     }
 
     /// Compute heat flux through this surface.
@@ -385,6 +426,9 @@ impl Clone for SurfaceGaugeSolver {
             _azimuth_deg: self._azimuth_deg,
             _tilt_deg: self._tilt_deg,
             wall_spec: self.wall_spec.clone(),
+            // Issue #3918 follow-up: runtime surface-node state RESET on
+            // clone (topology preserved, state reset — Issue #3729 contract).
+            T_surface: 20.0,
         };
         // Reset per-surface gauge state to the freshly-initialized form
         // by re-running `GaugeSolver::initialize` from the stored
@@ -470,9 +514,6 @@ pub struct GaugeZoneSolver {
     /// reduces dt/τ to ≈ 3.6/N, within stability bounds when N ≥ 3.
     /// Default: 3 (matching 5R1C sub_hour_air_node_steps).
     sub_hour_air_node_steps: u32,
-    // Issue #3918: Solar lag state — exponentially-filtered solar gain accumulator.
-    // Reset to 0.0 on clone (matches air_node_solar_lag reset in 5R1C).
-    solar_lag: f64,
     // Issue #3920 / LIMIT-21: Area-weighted mean interior surface temperature for
     // h_tr_is coupling. Computed as T_air + Q_gauge_total / h_tr_is where
     // Q_gauge_total = sum of q_flux * area for all surfaces. Stored for use
@@ -502,7 +543,6 @@ impl Clone for GaugeZoneSolver {
             couplings: self.couplings.clone(),
             inter_zone_conductance: self.inter_zone_conductance.clone(),
             sub_hour_air_node_steps: self.sub_hour_air_node_steps, // preserved on clone
-            solar_lag: 0.0,          // RESET — see struct doc-comment.
             previous_T_surface: 0.0, // RESET — see struct doc-comment.
         }
     }
@@ -546,7 +586,6 @@ impl GaugeZoneSolver {
             couplings: Vec::new(),
             inter_zone_conductance: HashMap::new(),
             sub_hour_air_node_steps: 3, // default: 3 sub-steps per timestep (matching 5R1C)
-            solar_lag: 0.0,             // Issue #3918: initialized to 0, updated each step
             previous_T_surface: 0.0,    // Issue #3920: initialized to 0, computed each step
         }
     }
@@ -753,11 +792,16 @@ impl GaugeZoneSolver {
         _h_rad_sky: f64,
         // Issue #3904: Ventilation ACH from night_ventilation schedule
         ventilation_ach: f64,
-        // Issue #3918: Solar lag correction parameters
-        h_tr_3: f64,
-        cm: f64,
+        // Issue #3918 + follow-up: the former scalar lag-correction inputs
+        // `h_tr_3`, `cm`, and `term_rest_1` are retained for API stability
+        // but no longer used — the per-surface T_s network derives its time
+        // constants (C_i/h_tr_is,i) from each surface's own gauge
+        // capacitance. `h_tr_is` IS used: it is the zone star-node
+        // conductance the network distributes per-surface by area share.
+        _h_tr_3: f64,
+        _cm: f64,
         h_tr_is: f64,
-        term_rest_1: f64,
+        _term_rest_1: f64,
         convective_fraction: f64,
         solar_beam_to_mass_fraction: f64,
     ) -> Result<f64, SolverError> {
@@ -779,11 +823,6 @@ impl GaugeZoneSolver {
         // approach where driving terms remain constant during sub-stepping.
         let T_int = Temperature::from_value(self.T_air);
         let mut net_power_watts = 0.0;
-        // Issue #3920 / LIMIT-21: Track Q_gauge_total separately for h_tr_is coupling.
-        // Q_gauge_total = sum of q_flux * area for all surfaces (W).
-        // This is distinct from net_power_watts which includes direct-to-air window
-        // solar and internal gains.
-        let mut Q_gauge_total = 0.0;
 
         // Sum heat flux from all surfaces (computed once at T_air_old).
         // Issue #3297 / LIMIT-21 Phase 5: per-surface h_rad_sky via
@@ -791,44 +830,22 @@ impl GaugeZoneSolver {
         // derived from its tilt angle. Uses T_exterior as the air-node
         // temperature proxy (iteration on T_air would be second-order).
         //
-        // Issue #3911 / LIMIT-21 Phase 7: For windows, split solar gains per
-        // `solar_distribution_to_air` — (1 - frac) goes through the window
-        // conduction path; frac goes directly to zone air as instant cooling.
-        // This matches the 5R1C behavior where `solar_distribution_to_air = 0.30`
-        // routes 30% of window solar directly to the zone air node.
+        // Issue #3918 follow-up (daytime solar gap): transmitted window
+        // solar NO LONGER enters the window gauge's exterior sol-air node.
+        // The dispatcher's `solar_irradiance_wm2` is the zone solar-gain
+        // density [W per m² of FLOOR area] — the same 5R1C `solar_gains[i]`
+        // quantity that model multiplies by `zone_area[i]` (step_5r1c.rs:114)
+        // — and injecting it as exterior absorbed irradiance shed most of
+        // it back through the exterior film: the sol-air formulation
+        // t_ext = T_out + G/h_ext driving q = (t_ext − T_in)/R_total delivers
+        // only 1/(h_ext·R_total) ≈ 16% of G for a U=3.0 window, and the old
+        // per-window-area scaling additionally starved it by A_win/A_floor
+        // (12/48 for Case 600). Transmitted solar is instead absorbed by the
+        // interior surfaces via the per-surface T_s network
+        // (`step_interior_surface_network` below).
         let t_exterior_c = T_exterior.to_value();
-        // Accumulate direct-to-air window solar separately (before lag filtering).
-        // Will be added to net_power_watts AFTER applying the lag filter below.
-        // Issue #3916: This replaces the "instant solar" addition that was previously
         for surface in &mut self.surfaces {
             let h_rad_sky_surface = surface.h_rad_sky_for_gauge(t_exterior_c, t_sky);
-
-            // Compute window solar components for this surface
-            let solar_frac = surface.surface_type.solar_fraction();
-            let window_solar_wm2 = solar_irradiance_wm2 * solar_frac;
-
-            // Issue #3911: split window solar between direct-to-air and conduction path
-            // For windows, we ADD the direct-to-air portion to zone air immediately.
-            // The window flux receives only the remaining (1 - solar_distribution_to_air)
-            // portion because in 5R1C, that fraction bypasses the window surface and
-            // goes directly to zone air.
-            let solar_to_air_wm2 = if solar_frac > 0.0 {
-                // Window: direct portion goes straight to zone air
-                solar_distribution_to_air * window_solar_wm2
-            } else {
-                0.0
-            };
-
-            // Add direct-to-air portion to zone load immediately
-            net_power_watts += solar_to_air_wm2 * surface.area_m2;
-
-            // Window flux gets only the portion that goes through the surface network
-            // (the remaining 1 - solar_distribution_to_air of window solar)
-            let solar_to_surface_wm2 = if solar_frac > 0.0 {
-                (1.0 - solar_distribution_to_air) * window_solar_wm2
-            } else {
-                window_solar_wm2
-            };
 
             // Issue #3918: At night (solar_irradiance_wm2 == 0), neutralize the sky radiative
             // term by setting t_sky = t_exterior_c. This disables sky radiative forcing since
@@ -846,7 +863,7 @@ impl GaugeZoneSolver {
                 T_exterior,
                 h_exterior,
                 SurfaceBoundaryInput {
-                    solar_irradiance_wm2: solar_to_surface_wm2,
+                    solar_irradiance_wm2: 0.0,
                     t_sky: t_sky_effective,
                     h_rad_sky: h_rad_sky_surface,
                 },
@@ -854,11 +871,32 @@ impl GaugeZoneSolver {
 
             let Q_surface = q_flux.to_value() * surface.area_m2;
             net_power_watts += Q_surface;
-            Q_gauge_total += Q_surface;
         }
 
-        // Add internal gains
-        net_power_watts += Q_internal_w;
+        // Issue #3918 follow-up (daytime solar gap): route zone solar and
+        // internal gains through the 5R1C three-way split (phi_ia / phi_st /
+        // phi_m, step_5r1c.rs:96-130) computed on the FULL zone solar
+        // Φ_sol = solar_irradiance_wm2 · floor_area [W].
+        let phi_sol_total = solar_irradiance_wm2 * self.floor_area;
+        let phi_ia_sol = phi_sol_total * solar_distribution_to_air;
+        let remaining_sol = phi_sol_total - phi_ia_sol;
+        let phi_ia_int = Q_internal_w * convective_fraction;
+        let phi_int_rad = Q_internal_w - phi_ia_int;
+        let st_sol_frac = 1.0 - solar_beam_to_mass_fraction;
+        let surface_pool =
+            remaining_sol * st_sol_frac + phi_int_rad * (1.0 - solar_distribution_to_air);
+        let mass_pool =
+            remaining_sol * solar_beam_to_mass_fraction + phi_int_rad * solar_distribution_to_air;
+        // Direct-to-air gains (5R1C phi_ia) enter the air balance instantly.
+        net_power_watts += phi_ia_sol + phi_ia_int;
+        // Interior absorbed-gain network: per-surface T_s tracking returning
+        // φ_st = Σ h_tr_is,i·(T_s,i − T_air) as an energy-exact timestep
+        // average (Issue #3918 architectural fix). `h_interior` is the
+        // network's air-side conductance — it enters den_air below as the
+        // implicit-conductance counterpart of φ_st.
+        let (phi_st, h_interior) =
+            self.step_interior_surface_network(dt_seconds, surface_pool, mass_pool, h_tr_is);
+        net_power_watts += phi_st;
 
         // Infiltration/ventilation coupling
         // Issue #3904: Ventilation ACH is now passed as a parameter instead of hardcoded 0.
@@ -891,95 +929,16 @@ impl GaugeZoneSolver {
         let h_env = self.surface_to_air_conductance();
         // True air-node denominator — the exact analog of 5R1C's den_true
         // (step_5r1c.rs:963-967: den_true = den / term_rest_1 =
-        // H_tr,1 + H_tr,w + H_ve + H_tr,floor).
-        let den_air = h_env + h_total;
-
-        // Issue #3920 / LIMIT-21: Compute area-weighted mean interior surface temperature
-        // for h_tr_is coupling. T_surface = T_air + Q_gauge_total / h_tr_is.
-        // This represents the interior surface node temperature that couples to the air node
-        // through h_tr_is. Stored for use in subsequent timesteps.
-        if h_tr_is > 0.0 {
-            self.previous_T_surface = self.T_air + Q_gauge_total / h_tr_is;
-        }
-
-        // Issue #3918: Solar lag correction (matching 5R1C physics from step_5r1c.rs:957-998).
-        // The lag input represents the interior surface heat flow (phi_st) that drives a
-        // filtered solar-gain response through the air↔mass thermal network.
+        // H_tr,1 + H_tr,w + H_ve + H_tr,floor + h_ms_is_prod/term_rest_1).
         //
-        // Key corrections vs reverted implementation:
-        // 1. phi_st uses ONLY the surface-absorbed window solar (not full window_solar)
-        // 2. Denominator is den_true ≈ h_tr_is + h_total (not just h_total)
-        // 3. tau_lag uses C_air / den_true (matching 5R1C den_true formula)
-        //
-        // Issue #3920: T_surface is now computed from gauge as T_surface = T_air + Q_gauge / h_tr_is.
-        // This stores the proper interior surface temperature (previously unavailable) in
-        // previous_T_surface for coupling in subsequent timesteps. See LIMIT-21 Phase 9 / Issue #3920.
-        //
-        let lag_correction = if h_tr_3 > 0.0 && cm > 0.0 && h_tr_is > 0.0 && term_rest_1 > 0.0 {
-            // Fractionation: same as 5R1C step_5r1c.rs:96-99
-            // st_int_frac = rad_frac * (1 - solar_distribution_to_air)
-            let st_int_frac = (1.0 - convective_fraction) * (1.0 - solar_distribution_to_air);
-            let st_sol_frac = 1.0 - solar_beam_to_mass_fraction;
-
-            // phi_st: interior surface heat flow (W) — same formula as 5R1C
-            // Internal gains to surface (radiative portion only, convective goes directly to air)
-            let phi_st_internal = Q_internal_w * st_int_frac;
-
-            // Window absorbed solar to surface:
-            // In 5R1C: remaining_sol = sol_w * (1 - solar_distribution_to_air), then
-            // remaining_sol * st_sol_frac goes to surface.
-            // For Gauge, we use the same fractionation but at surface level.
-            // The window's absorbed solar (transmitted through window material) is estimated
-            // as the difference between total window solar and the portion that Gauge routes
-            // directly to air. Gauge's window flux already includes the absorbed portion,
-            // so we approximate the surface-absorbed window solar as the window's contribution
-            // to phi_st via the 5R1C fractionation.
-            let mut phi_st_window = 0.0;
-            for surface in &self.surfaces {
-                let solar_frac = surface.surface_type.solar_fraction();
-                if solar_frac > 0.0 {
-                    // Window: total absorbed = window_area * irradiance (approximation
-                    // since Gauge window model includes absorbed solar in flux).
-                    // Use 5R1C fractionation for what goes to surface.
-                    let window_solar_w = self.floor_area * solar_irradiance_wm2 * solar_frac;
-                    let remaining_sol = window_solar_w * (1.0 - solar_distribution_to_air);
-                    phi_st_window += remaining_sol * st_sol_frac;
-                }
-            }
-
-            let phi_st = phi_st_internal + phi_st_window;
-
-            // Lag input: h_tr_is * phi_st / term_rest_1 (5R1C formula)
-            let lag_input = h_tr_is * phi_st / term_rest_1;
-
-            // Time constants matching 5R1C:
-            // den_true is the unscaled (physical) air-node denominator — the
-            // TOTAL air-coupled conductance including envelope transmission.
-            // Issue #3918: previously this was `h_total` (ventilation only,
-            // ~21.7 W/K for Case 600), which under-stiffened τ_air by ~4× and
-            // inflated the lag temperature correction by the same factor.
-            let den_true = den_air;
-            let tau_air = self.C_air / den_true;
-            let tau_mass = cm / h_tr_3;
-            let tau_lag = (tau_air * tau_mass).sqrt();
-
-            // Exponential filter decay over sub-step
-            let decay = if tau_lag > 0.0 && dt_seconds > 0.0 {
-                (-dt_seconds / tau_lag).exp()
-            } else {
-                0.0
-            };
-
-            // Update solar_lag state (exponential filter)
-            let new_solar_lag = self.solar_lag * decay + lag_input * (1.0 - decay);
-            self.solar_lag = new_solar_lag;
-
-            // Correction to driving temperature: new_solar_lag / den_true
-            // (same units as 5R1C's corrected_t_i_free += new_solar_lag / den_true)
-            new_solar_lag / den_true
-        } else {
-            0.0
-        };
+        // Issue #3918 follow-up: `h_interior` (Σ h_tr_is,i of the interior
+        // network) is the air-side conductance the T_s network presents to
+        // the air node. φ_st inside `net_power_watts` is its frozen-flux
+        // driving counterpart — the same implicit linearization the envelope
+        // fluxes get through `h_env` — so the ultimate steady state stays
+        // T_ext + Φ_gains/(h_env + h_total): the interior film circulates
+        // heat but leaks nothing.
+        let den_air = h_env + h_total + h_interior;
 
         let T_ext_val = T_exterior.to_value();
         // Quasi-steady-state temperature (constant over all sub-steps, like 5R1C's "steady")
@@ -994,20 +953,20 @@ impl GaugeZoneSolver {
         //   t_steady = T_air_old + [Q_net(T_air_old) + h_total·(T_ext − T_air_old)] / (h_env + h_total)
         // instead of the divergent `T_ext + Q_net / h_total` that produced
         // −169 °C driving temperatures and the 20 → −54 °C oscillation.
-        // The lag correction is added as a temperature increment, mirroring
-        // 5R1C's `corrected_t_i_free += new_solar_lag / den_true`.
+        // Issue #3918 follow-up: `net_power_watts` already carries the full
+        // interior absorbed-gain response φ_st from the per-surface T_s
+        // network, replacing the former scalar solar-lag temperature
+        // increment.
         let T_air_old = self.T_air;
         let (t_steady, tau_air) = if den_air > 0.0 {
             (
-                T_air_old
-                    + (net_power_watts + h_total * (T_ext_val - T_air_old)) / den_air
-                    + lag_correction,
+                T_air_old + (net_power_watts + h_total * (T_ext_val - T_air_old)) / den_air,
                 self.C_air / den_air,
             )
         } else {
             // No air-coupled conductance at all (no surfaces, no ventilation):
-            // hold the air state (exp(−dt/∞) = 1) and apply only the lag term.
-            (T_air_old + lag_correction, f64::INFINITY)
+            // hold the air state (exp(−dt/∞) = 1).
+            (T_air_old, f64::INFINITY)
         };
         // Sub-stepping for the exact exponential solution
         let steps = self.sub_hour_air_node_steps as usize;
@@ -1116,54 +1075,22 @@ impl GaugeZoneSolver {
         let mut net_power_watts = 0.0;
         // Issue #3889 — solar-aware exterior-surface flux sum.
         let mut q_surfaces_w = 0.0;
-        // Issue #3920 / LIMIT-21: Track Q_gauge_total separately for h_tr_is coupling.
-        // Q_gauge_total = sum of q_flux * area for all surfaces (W).
-        let mut Q_gauge_total = 0.0;
 
         // Sum heat flux from all exterior surfaces (computed once at T_air_old).
         // Issue #3297 / LIMIT-21 Phase 5: per-surface h_rad_sky via
         // air_sky_conductance(), keyed to each surface's sky-view factor
         // derived from its tilt angle.
         //
-        // Issue #3911 / LIMIT-21 Phase 7: For windows, split solar gains per
-        // `solar_distribution_to_air` — (1 - frac) goes through the window
-        // conduction path; frac goes directly to zone air as instant cooling.
-        // This matches the 5R1C behavior where `solar_distribution_to_air = 0.30`
-        // routes 30% of window solar directly to the zone air node.
+        // Issue #3918 follow-up (daytime solar gap): transmitted window
+        // solar is absorbed by the interior surface network below (see the
+        // full rationale in step()); the window gauge receives no exterior
+        // solar injection.
         let t_exterior_c = bc.T_exterior.to_value();
         for surface in &mut self.surfaces {
             if surface.surface_type.is_inter_zone() {
                 continue;
             }
             let h_rad_sky_surface = surface.h_rad_sky_for_gauge(t_exterior_c, bc.t_sky);
-
-            // Compute window solar components for this surface
-            let solar_frac = surface.surface_type.solar_fraction();
-            let window_solar_wm2 = bc.solar_irradiance_wm2 * solar_frac;
-
-            // Issue #3911: split window solar between direct-to-air and conduction path
-            // For windows, we ADD the direct-to-air portion to zone air immediately.
-            // The window flux receives only the remaining (1 - solar_distribution_to_air)
-            // portion because in 5R1C, that fraction bypasses the window surface and
-            // goes directly to zone air.
-            let solar_to_air_wm2 = if solar_frac > 0.0 {
-                // Window: direct portion goes straight to zone air
-                bc.solar_distribution_to_air * window_solar_wm2
-            } else {
-                0.0
-            };
-
-            // Add direct-to-air portion to zone load immediately
-            // (positive = heat gain to zone, which becomes cooling load when zone is warm)
-            net_power_watts += solar_to_air_wm2 * surface.area_m2;
-
-            // Window flux gets only the portion that goes through the surface network
-            // (the remaining 1 - solar_distribution_to_air of window solar)
-            let solar_to_surface_wm2 = if solar_frac > 0.0 {
-                (1.0 - bc.solar_distribution_to_air) * window_solar_wm2
-            } else {
-                window_solar_wm2
-            };
 
             // Issue #3918: At night (solar_irradiance_wm2 == 0), neutralize the sky radiative
             // term by setting t_sky = t_exterior_c. This disables sky radiative forcing since
@@ -1181,7 +1108,7 @@ impl GaugeZoneSolver {
                 bc.T_exterior,
                 bc.h_exterior,
                 SurfaceBoundaryInput {
-                    solar_irradiance_wm2: solar_to_surface_wm2,
+                    solar_irradiance_wm2: 0.0,
                     t_sky: t_sky_effective,
                     h_rad_sky: h_rad_sky_surface,
                 },
@@ -1190,7 +1117,6 @@ impl GaugeZoneSolver {
             let Q_surface = q_flux.to_value() * surface.area_m2;
             net_power_watts += Q_surface;
             q_surfaces_w += Q_surface;
-            Q_gauge_total += Q_surface;
         }
 
         // Compute inter-zone heat transfer (evaluated at T_air_old)
@@ -1203,8 +1129,28 @@ impl GaugeZoneSolver {
         }
         net_power_watts += inter_zone_heat + bc.inter_zone_heat;
 
-        // Add internal gains
-        net_power_watts += bc.Q_internal_w;
+        // Issue #3918 follow-up (daytime solar gap): route zone solar and
+        // internal gains through the 5R1C three-way split (phi_ia / phi_st /
+        // phi_m, step_5r1c.rs:96-130) computed on the FULL zone solar
+        // Φ_sol = solar_irradiance_wm2 · floor_area [W]. `gains_w` carries
+        // every non-surface-flux gain for the sub-step driving numerator —
+        // including the direct-to-air solar that previously reached only
+        // the returned energy, never the T_air update (latent multi-zone
+        // routing bug fixed en passant).
+        let phi_sol_total = bc.solar_irradiance_wm2 * self.floor_area;
+        let phi_ia_sol = phi_sol_total * bc.solar_distribution_to_air;
+        let remaining_sol = phi_sol_total - phi_ia_sol;
+        let phi_ia_int = bc.Q_internal_w * bc.convective_fraction;
+        let phi_int_rad = bc.Q_internal_w - phi_ia_int;
+        let st_sol_frac = 1.0 - bc.solar_beam_to_mass_fraction;
+        let surface_pool =
+            remaining_sol * st_sol_frac + phi_int_rad * (1.0 - bc.solar_distribution_to_air);
+        let mass_pool = remaining_sol * bc.solar_beam_to_mass_fraction
+            + phi_int_rad * bc.solar_distribution_to_air;
+        let (phi_st, h_interior) =
+            self.step_interior_surface_network(dt_seconds, surface_pool, mass_pool, bc.h_tr_is);
+        let gains_w = phi_ia_sol + phi_ia_int + phi_st;
+        net_power_watts += gains_w;
 
         // Infiltration/ventilation coupling
         // Issue #3904: Compute h_vent from ventilation_ach (night ventilation)
@@ -1238,75 +1184,6 @@ impl GaugeZoneSolver {
 
         let T_ext_val = bc.T_exterior.to_value();
 
-        // Issue #3920 / LIMIT-21: Compute area-weighted mean interior surface temperature
-        // for h_tr_is coupling. T_surface = T_air + Q_gauge_total / h_tr_is.
-        if bc.h_tr_is > 0.0 {
-            self.previous_T_surface = self.T_air + Q_gauge_total / bc.h_tr_is;
-        }
-
-        // Issue #3918: Solar lag correction (matching 5R1C physics from step_5r1c.rs:957-998).
-        // The lag input represents the interior surface heat flow (phi_st) that drives a
-        // filtered solar-gain response through the air↔mass thermal network.
-        //
-        // Key corrections vs reverted implementation:
-        // 1. phi_st uses ONLY the surface-absorbed window solar (not full window_solar)
-        // 2. Denominator is den_true ≈ h_tr_is + h_total (not just h_total)
-        // 3. tau_lag uses C_air / den_true (matching 5R1C den_true formula)
-        //
-        // Issue #3920: T_surface is now computed from gauge as T_surface = T_air + Q_gauge / h_tr_is.
-        // This stores the proper interior surface temperature (previously unavailable) in
-        // previous_T_surface for coupling in subsequent timesteps. See LIMIT-21 Phase 9 / Issue #3920.
-        let lag_correction =
-            if bc.h_tr_3 > 0.0 && bc.cm > 0.0 && bc.h_tr_is > 0.0 && bc.term_rest_1 > 0.0 {
-                // Fractionation: same as 5R1C step_5r1c.rs:96-99
-                let st_int_frac =
-                    (1.0 - bc.convective_fraction) * (1.0 - bc.solar_distribution_to_air);
-                let st_sol_frac = 1.0 - bc.solar_beam_to_mass_fraction;
-
-                // phi_st: interior surface heat flow (W) — same formula as 5R1C
-                let phi_st_internal = bc.Q_internal_w * st_int_frac;
-
-                // Window absorbed solar to surface
-                let mut phi_st_window = 0.0;
-                for surface in &self.surfaces {
-                    let solar_frac = surface.surface_type.solar_fraction();
-                    if solar_frac > 0.0 {
-                        let window_solar_w = self.floor_area * bc.solar_irradiance_wm2 * solar_frac;
-                        let remaining_sol = window_solar_w * (1.0 - bc.solar_distribution_to_air);
-                        phi_st_window += remaining_sol * st_sol_frac;
-                    }
-                }
-
-                let phi_st = phi_st_internal + phi_st_window;
-
-                // Lag input: h_tr_is * phi_st / term_rest_1 (5R1C formula)
-                let lag_input = bc.h_tr_is * phi_st / bc.term_rest_1;
-
-                // Time constants matching 5R1C
-                // Issue #3918: den_true is the TOTAL air-coupled conductance
-                // (envelope + ventilation + inter-zone), previously h_total only.
-                let den_true = h_env + h_total + h_inter_zone_total;
-                let tau_air = self.C_air / den_true;
-                let tau_mass = bc.cm / bc.h_tr_3;
-                let tau_lag = (tau_air * tau_mass).sqrt();
-
-                // Exponential filter decay over full timestep
-                let decay = if tau_lag > 0.0 && dt_seconds > 0.0 {
-                    (-dt_seconds / tau_lag).exp()
-                } else {
-                    0.0
-                };
-
-                // Update solar_lag state (exponential filter)
-                let new_solar_lag = self.solar_lag * decay + lag_input * (1.0 - decay);
-                self.solar_lag = new_solar_lag;
-
-                // Correction to driving temperature: new_solar_lag / den_true
-                new_solar_lag / den_true
-            } else {
-                0.0
-            };
-
         // Sub-stepping loop: N iterations with dt/N per sub-step
         let steps = self.sub_hour_air_node_steps as usize;
         let dt_sub = dt_seconds / steps as f64;
@@ -1315,13 +1192,14 @@ impl GaugeZoneSolver {
         // (q_surfaces_w) were evaluated at T_air_old, so the implicit
         // conductance h_env must enter with that driving temperature.
         let T_air_old = self.T_air;
-        // Total air-coupled conductance: envelope + ventilation + inter-zone.
-        let den_air = h_env + h_total + h_inter_zone_total;
+        // Total air-coupled conductance: envelope + ventilation + inter-zone
+        // + interior network Σ h_tr_is,i (Issue #3918 follow-up, see step()).
+        let den_air = h_env + h_total + h_inter_zone_total + h_interior;
 
         for _ in 0..steps {
             // Implicit Euler update with dt_sub
-            // T_air_new = (C·T_old + dt·(h_env·T_air_old + Q_surfaces + h_total·T_ext + inter_zone_drive + Q_internal + Q_inter_zone_fixed + lag_correction·den_air))
-            //             / (C + dt·(h_env + h_total + h_inter_zone_total))
+            // T_air_new = (C·T_old + dt·(h_env·T_air_old + Q_surfaces + h_total·T_ext + inter_zone_drive + gains_w + Q_inter_zone_fixed))
+            //             / (C + dt·(h_env + h_total + h_inter_zone_total + mass_coupling))
             //
             // Issue #3918: `h_env·T_air_old` / `h_env` pair linearizes the
             // frozen per-surface fluxes implicitly (the envelope loss is not a
@@ -1329,15 +1207,27 @@ impl GaugeZoneSolver {
             // and `bc.inter_zone_heat` (a fixed W input) is now included in
             // the driving numerator, matching its treatment in
             // `net_power_watts` above.
+            //
+            // Issue #3918 follow-up: `gains_w` (direct-to-air solar +
+            // convective internal gains + the interior-network φ_st) replaces
+            // the bare `bc.Q_internal_w` — the direct-to-air solar previously
+            // reached only the returned energy, never the T_air update.
+            // φ_st is a DEVIATION flux (Σ h_is·(T̄_s − T_air_old)); this
+            // absolute-form update therefore adds back `h_interior·T_air_old`
+            // so the network's implicit conductance carries the matching
+            // absolute driving term h_interior·T̄_s (equilibrium check: at
+            // T_s = T_air = T_ext the interior terms cancel and the zone
+            // settles exactly at ambient, as pinned by
+            // step_with_coupling_no_solar_settles_at_ambient).
             T_air_current = (self.C_air * T_air_current
                 + dt_sub
                     * (h_env * T_air_old
                         + q_surfaces_w
                         + h_total * T_ext_val
                         + inter_zone_drive
-                        + bc.Q_internal_w
-                        + bc.inter_zone_heat
-                        + lag_correction * den_air))
+                        + gains_w
+                        + h_interior * T_air_old
+                        + bc.inter_zone_heat))
                 / (self.C_air + den_air * dt_sub);
         }
         self.T_air = T_air_current;
@@ -1400,6 +1290,7 @@ impl GaugeZoneSolver {
                 c_mass_Jm2K: s.gauge.c_mass_for_test(),
                 solar_fraction: s.surface_type.solar_fraction(),
                 sky_view_factor: s.sky_view_factor(),
+                t_surface_deg: s.t_surface(),
             })
             .collect()
     }
@@ -1446,22 +1337,126 @@ impl GaugeZoneSolver {
     pub fn compute_h_tr_is(&self) -> f64 {
         self.surfaces
             .iter()
-            .filter(|s| !s.surface_type.is_inter_zone())
-            .map(|s| {
-                let coeff = if s._tilt_deg.abs() < 1.0 || (s._tilt_deg - 180.0).abs() < 1.0 {
-                    2.3 // horizontal
-                } else if (s._tilt_deg - 90.0).abs() < 1.0 || (s._tilt_deg + 90.0).abs() < 1.0 {
-                    8.3 // vertical
-                } else {
-                    // Linear interpolation between 2.3 (horizontal) and 8.3 (vertical)
-                    // using sine of tilt angle for smooth transition
-                    let tilt_rad = s._tilt_deg.to_radians();
-                    let ratio = tilt_rad.sin().abs();
-                    2.3 + ratio * (8.3 - 2.3)
-                };
-                s.area_m2 * coeff
-            })
+            .filter(|s| surface_is_absorbing(&s.surface_type))
+            .map(|s| s.area_m2 * h_tr_is_coeff(s._tilt_deg))
             .sum()
+    }
+
+    /// Issue #3918 follow-up (daytime solar gap): step the per-surface
+    /// interior absorbed-gain network and return the surface→air heat flow.
+    ///
+    /// Each eligible surface ([`surface_is_absorbing`]: opaque envelope,
+    /// window, internal mass — NOT inter-zone partitions or the fixed-
+    /// temperature Ground boundary) carries an interior surface node T_s,i
+    /// coupled to the zone air by h_tr_is,i = A_i · h_tr_is_coeff(tilt_i)
+    /// [W/K] with capacitance C_i = A_i · c_mass,i [J/K] taken from the
+    /// surface's own 1D gauge. This is the gauge analog of 5R1C's surface
+    /// star node θ_s + mass node θ_m pair, resolved per surface.
+    ///
+    /// The absorbed pools mirror the 5R1C split (step_5r1c.rs:96-130):
+    /// - `surface_pool_w` (5R1C phi_st): distributed conductance-weighted
+    ///   (h_tr_is,i/Σ), giving a uniform steady-state ΔT_s across surfaces —
+    ///   the ISO 13790 isothermal surface-node behavior.
+    /// - `mass_pool_w` (5R1C phi_m): distributed capacitance-weighted
+    ///   (C_i/ΣC), placing beam-like gains on the massive surfaces (the
+    ///   floor slab in the ASHRAE 140 cases) where the beam physically lands
+    ///   and releasing it on the mass time constant.
+    ///
+    /// Each node follows the exact exponential solution of
+    /// `C_i·dT_s/dt = q_abs,i − h_tr_is,i·(T_s,i − T_air)`, and the emitted
+    /// energy is taken from the energy balance
+    /// `∫h·(T_s−T_air)dt = q_abs,i·dt − C_i·ΔT_s,i`, so per-surface and
+    /// zone-level conservation hold by construction. With zero pools the
+    /// surfaces relax toward T_air, releasing stored solar at night.
+    ///
+    /// Returns `(φ_st, Σ h_tr_is,i)`: the timestep-average surface→air heat
+    /// flow [W] and the network's total air-side conductance [W/K]. The
+    /// caller must thread Σ h_tr_is,i into the air-node denominator — it is
+    /// the implicit-conductance counterpart of `φ_st` (frozen-flux
+    /// linearization, same pattern as `h_env` for the envelope fluxes).
+    /// Also updates `previous_T_surface` to the h_tr_is-weighted mean T_s.
+    /// Fallback: when no eligible surface can couple (Σ h_tr_is,i ≤ 0) the
+    /// pools are delivered instantly so the gains are never silently
+    /// dropped.
+    fn step_interior_surface_network(
+        &mut self,
+        dt_seconds: f64,
+        surface_pool_w: f64,
+        mass_pool_w: f64,
+        h_tr_is_zone: f64,
+    ) -> (f64, f64) {
+        let t_air = self.T_air;
+
+        // First pass: geometry sums. Per-surface air-side conductance is the
+        // ZONE h_tr_is threaded from the thermal model (the same ISO 13790
+        // star-node value the 5R1C reference solver uses, e.g. 3.45·A_tot),
+        // distributed by area share. The Issue #3928 tilt coefficients
+        // (2.3/8.3 W/m²K) are only a geometric fallback for callers that do
+        // not thread h_tr_is — using them unconditionally made the interior
+        // film ~2.2× stronger than the 5R1C star node and over-damped the
+        // diurnal swing (Issue #3918 follow-up).
+        let mut sum_area = 0.0;
+        let mut sum_c = 0.0;
+        for s in &self.surfaces {
+            if !surface_is_absorbing(&s.surface_type) {
+                continue;
+            }
+            sum_area += s.area_m2;
+            sum_c += s.area_m2 * s.gauge.c_mass_for_test();
+        }
+        let per_surface_h = |s: &SurfaceGaugeSolver| -> f64 {
+            if h_tr_is_zone > 0.0 && sum_area > 0.0 {
+                h_tr_is_zone * s.area_m2 / sum_area
+            } else {
+                s.area_m2 * h_tr_is_coeff(s._tilt_deg)
+            }
+        };
+        let mut sum_h = 0.0;
+        for s in &self.surfaces {
+            if surface_is_absorbing(&s.surface_type) {
+                sum_h += per_surface_h(s);
+            }
+        }
+        if sum_h <= 0.0 {
+            // No interior surface can couple to the air node: deliver the
+            // absorbed gains instantly (energy must not vanish).
+            return (surface_pool_w + mass_pool_w, 0.0);
+        }
+
+        let mut emitted_j = 0.0;
+        let mut h_weighted_ts = 0.0;
+        for s in &mut self.surfaces {
+            if !surface_is_absorbing(&s.surface_type) {
+                continue;
+            }
+            let h_i = per_surface_h(s);
+            let c_i = s.area_m2 * s.gauge.c_mass_for_test();
+            let w_surface = h_i / sum_h;
+            let w_mass = if sum_c > 0.0 {
+                c_i / sum_c
+            } else {
+                h_i / sum_h
+            };
+            let q_abs_i = surface_pool_w * w_surface + mass_pool_w * w_mass;
+            let steady = t_air + q_abs_i / h_i;
+            let new_ts = if c_i > 0.0 && dt_seconds > 0.0 {
+                let tau_i = c_i / h_i;
+                steady + (s.T_surface - steady) * (-dt_seconds / tau_i).exp()
+            } else {
+                steady
+            };
+            // Energy-exact emission over the step: absorbed − stored.
+            emitted_j += q_abs_i * dt_seconds - c_i * (new_ts - s.T_surface);
+            s.T_surface = new_ts;
+            h_weighted_ts += h_i * new_ts;
+        }
+        self.previous_T_surface = h_weighted_ts / sum_h;
+
+        if dt_seconds > 0.0 {
+            (emitted_j / dt_seconds, sum_h)
+        } else {
+            (surface_pool_w + mass_pool_w, sum_h)
+        }
     }
 
     /// Issue #3911 — Effective air-node time constant [seconds] from the most recent step.
@@ -1514,6 +1509,9 @@ pub struct SurfaceTelemetry {
     pub solar_fraction: f64,
     /// ISO 13790 sky view factor (0–1)
     pub sky_view_factor: f64,
+    /// Issue #3918 follow-up: interior surface-node temperature T_s [°C]
+    /// from the interior absorbed-gain network (per-surface solar-lag state).
+    pub t_surface_deg: f64,
 }
 
 /// Multi-zone gauge solver for N-zone thermal coupling.
@@ -2345,8 +2343,13 @@ mod tests {
             0.0, // solar_distribution_to_air
         )
         .with_sky_radiation(20.0, 0.0); // t_sky = T_exterior, h_rad_sky = 0
-        bc.insert(0, entry.clone());
-        bc.insert(1, entry);
+                                        // Issue #3918 follow-up: solar_irradiance_wm2 is the zone-level solar
+                                        // density (5R1C solar_gains semantics) — the opaque neighbor has no
+                                        // aperture, so its density is zero. Zone 0 alone is sunlit.
+        let mut entry_neighbor = entry.clone();
+        entry_neighbor.solar_irradiance_wm2 = 0.0;
+        bc.insert(0, entry);
+        bc.insert(1, entry_neighbor);
         for _ in 0..240 {
             mz.step(3600.0, &bc).unwrap();
         }
@@ -2434,8 +2437,12 @@ mod tests {
         bc.insert(1, entry);
         let results = mz.step(3600.0, &bc).unwrap();
         let e0 = *results.get(&0).unwrap();
+        // Issue #3918 follow-up: the first step now admits ~the full zone
+        // solar (800 W/m² · 48 m² floor ≈ 38 kW, mostly instant through the
+        // low-capacitance surfaces) instead of the former ~1 kW sol-air
+        // remnant. Bounds assert the SIGN convention and order of magnitude.
         assert!(
-            e0 < -0.1 && e0 > -2.0,
+            e0 < -5.0 && e0 > -45.0,
             "sunlit gaining zone must report cooling load (negative kWh), got {e0:.3}"
         );
 
