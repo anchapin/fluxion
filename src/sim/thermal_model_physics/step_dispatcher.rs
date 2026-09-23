@@ -592,6 +592,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         .get_zone(zone_idx)
                         .map(|z| z.compute_h_tr_is())
                         .unwrap_or(0.0);
+                    // Issue #3918 follow-up: the interior absorbed-gain network
+                    // prefers the MODEL's ISO 13790 star-node h_tr_is (the same
+                    // value the 5R1C reference solver uses); the gauge-geometry
+                    // tilt-based sum is only a fallback when it is unavailable.
+                    let h_tr_is_bc = inputs
+                        .h_tr_is
+                        .get(zone_idx)
+                        .copied()
+                        .filter(|&v| v > 0.0)
+                        .unwrap_or(h_tr_is_gauge);
                     // h_tr_ms comes from the thermal model (used for term_rest_1 denominator)
                     let h_tr_ms = inputs.h_tr_3.get(zone_idx).copied().unwrap_or(0.0);
                     // term_rest_1 = h_tr_ms + h_tr_is per Issue #3928
@@ -623,7 +633,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             h_tr_3: term_rest_1, // h_tr_ms + h_tr_is
                             cm: inputs.cm.get(zone_idx).copied().unwrap_or(0.0),
                             // Issue #3928: Use gauge-computed h_tr_is instead of simplified model
-                            h_tr_is: h_tr_is_gauge,
+                            // Issue #3918 follow-up: prefer the model's ISO 13790 star-node
+                            // value for the interior network (see h_tr_is_bc above).
+                            h_tr_is: h_tr_is_bc,
                             term_rest_1,
                             convective_fraction: inputs.convective_fraction,
                             solar_beam_to_mass_fraction: inputs.solar_beam_to_mass_fraction,
