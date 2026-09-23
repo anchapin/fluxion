@@ -131,25 +131,33 @@ impl Copilot {
             );
         }
 
-        // Step 2: If LLM is enabled, get natural language analysis
-        let llm_analysis = if self.config.rule_based_only {
-            None
-        } else {
-            match self.ollama.analyze(config_json, &rule_issues).await {
-                Ok(analysis) => {
-                    if self.config.verbose {
-                        tracing::warn!("[Copilot] LLM analysis complete");
-                    }
-                    Some(analysis)
+        // Step 2: Triage gate - skip Ollama if rules already give a definitive verdict.
+        // When rules find Error-severity issues, the config is definitively invalid and
+        // the LLM result is not meaningfully parsed (raw text stuffed into an Info issue).
+        // Only call Ollama when rules are inconclusive (warnings/hints only) so the LLM
+        // can provide additional natural-language insights.
+        let llm_analysis =
+            if self.config.rule_based_only || self.checker.is_definitive(&rule_issues) {
+                if self.config.verbose && self.checker.is_definitive(&rule_issues) {
+                    tracing::warn!("[Copilot] Rules definitive (errors found) - skipping Ollama");
                 }
-                Err(e) => {
-                    if self.config.verbose {
-                        tracing::warn!("[Copilot] LLM analysis failed: {}", e);
+                None
+            } else {
+                match self.ollama.analyze(config_json, &rule_issues).await {
+                    Ok(analysis) => {
+                        if self.config.verbose {
+                            tracing::warn!("[Copilot] LLM analysis complete");
+                        }
+                        Some(analysis)
                     }
-                    None
+                    Err(e) => {
+                        if self.config.verbose {
+                            tracing::warn!("[Copilot] LLM analysis failed: {}", e);
+                        }
+                        None
+                    }
                 }
-            }
-        };
+            };
 
         // Step 3: Combine results
         let all_issues = if let Some(ref analysis) = llm_analysis {

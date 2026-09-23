@@ -20,6 +20,13 @@ impl BemChecker {
         Self {}
     }
 
+    /// Returns true if rule checks give a definitive verdict (i.e., contain errors).
+    /// In this case, Ollama can be skipped because the config is already
+    /// definitively invalid and the LLM result would not be meaningfully parsed.
+    pub fn is_definitive(&self, issues: &[BemIssue]) -> bool {
+        issues.iter().any(|i| i.severity == BemIssueSeverity::Error)
+    }
+
     /// Check a BEM configuration for issues
     pub fn check(&self, config_json: &str) -> Vec<BemIssue> {
         let mut issues = Vec::new();
@@ -682,5 +689,51 @@ mod tests {
             "Expected no errors but got: {:?}",
             errors
         );
+    }
+
+    #[test]
+    fn test_is_definitive_with_errors() {
+        let checker = BemChecker::new();
+
+        // Parse failure - should be definitive
+        let issues = checker.check("not json");
+        assert!(checker.is_definitive(&issues));
+
+        // Invalid WWR (> 95%) - should be definitive
+        let issues = checker.check(r#"{"window_wall_ratio": 1.5}"#);
+        assert!(checker.is_definitive(&issues));
+    }
+
+    #[test]
+    fn test_is_definitive_without_errors() {
+        let checker = BemChecker::new();
+
+        // Zero WWR with required fields - only info severity, not definitive
+        let issues = checker.check(
+            r#"{
+            "building_type": "office",
+            "climate_zone": "4A",
+            "floor_area": 1000.0,
+            "window_wall_ratio": 0.0,
+            "latitude": 39.7,
+            "longitude": -105.0
+        }"#,
+        );
+        // Zero WWR is an Info, not an Error
+        assert!(!checker.is_definitive(&issues));
+
+        // Valid config - not definitive (no errors)
+        let issues = checker.check(
+            r#"{
+            "building_type": "office",
+            "climate_zone": "4A",
+            "floor_area": 1000.0,
+            "window_wall_ratio": 0.3,
+            "latitude": 39.7,
+            "longitude": -105.0,
+            "hvac_system": {"cooling_setpoint": 24.0, "heating_setpoint": 20.0}
+        }"#,
+        );
+        assert!(!checker.is_definitive(&issues));
     }
 }
