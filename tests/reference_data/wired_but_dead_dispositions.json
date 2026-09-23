@@ -2,7 +2,7 @@
   "schema_version": 1,
   "description": "Per-module disposition registry for the wired-but-dead pub mods allowlisted in scripts/check_orphan_modules.py::WIRED_BUT_DEAD (Issue #3748). Every allowlist entry must carry exactly one row with an owner-assigned wire-or-delete decision; the registry must stay in lock-step with the live wired-but-dead set. Resolving a module (wiring it up or deleting it) requires dropping its row AND lowering BASELINE_WIRED_BUT_DEAD by one in the same PR.",
   "governing_issue": 3748,
-  "module_count": 21,
+  "module_count": 22,
   "modules": [
     {
       "module": "ems",
@@ -150,6 +150,13 @@
       "issue": 3748,
       "owner": "anchapin",
       "rationale": "TOPSIS multi-criteria selection for Pareto optimization; wire into an optimization consumer or delete."
+    },
+    {
+      "module": "ashrae_copilot",
+      "disposition": "wire-pending",
+      "issue": 3930,
+      "owner": "anchapin",
+      "rationale": "Diagnostic heuristics for SystematicIssue::Unknown ASHRAE failures; wire into the issue classifier or delete."
     }
   ]
 }
