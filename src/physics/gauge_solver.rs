@@ -211,9 +211,18 @@ impl GaugeSolver {
         // 1. Solar irradiance absorbed by surface: G_solar / h_exterior
         // 2. Sky radiative forcing buffered through surface thermal mass:
         //    h_rad_sky / h_exterior * (T_sky - T_outdoor)
+        //
+        // Issue #3918: At night (solar_irradiance_wm2 ≈ 0), disable the sky radiative
+        // term by setting h_rad_sky = 0. This matches 5R1C behavior which doesn't include
+        // sky radiation in the free-floating zone air temperature balance.
+        let h_rad_sky_effective = if solar_irradiance_wm2.abs() < 1e-6 {
+            0.0
+        } else {
+            h_rad_sky
+        };
         let t_ext = outside_air_temp_c
             + solar_irradiance_wm2 / h_exterior
-            + (h_rad_sky / h_exterior) * (t_sky - outside_air_temp_c);
+            + (h_rad_sky_effective / h_exterior) * (t_sky - outside_air_temp_c);
 
         Ok(t_ext)
     }
