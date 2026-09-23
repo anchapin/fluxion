@@ -24,9 +24,7 @@ impl BemChecker {
     /// In this case, Ollama can be skipped because the config is already
     /// definitively invalid and the LLM result would not be meaningfully parsed.
     pub fn is_definitive(&self, issues: &[BemIssue]) -> bool {
-        issues
-            .iter()
-            .any(|i| i.severity == BemIssueSeverity::Error)
+        issues.iter().any(|i| i.severity == BemIssueSeverity::Error)
     }
 
     /// Check a BEM configuration for issues
@@ -711,19 +709,22 @@ mod tests {
         let checker = BemChecker::new();
 
         // Zero WWR with required fields - only info severity, not definitive
-        let issues = checker.check(r#"{
+        let issues = checker.check(
+            r#"{
             "building_type": "office",
             "climate_zone": "4A",
             "floor_area": 1000.0,
             "window_wall_ratio": 0.0,
             "latitude": 39.7,
             "longitude": -105.0
-        }"#);
+        }"#,
+        );
         // Zero WWR is an Info, not an Error
         assert!(!checker.is_definitive(&issues));
 
         // Valid config - not definitive (no errors)
-        let issues = checker.check(r#"{
+        let issues = checker.check(
+            r#"{
             "building_type": "office",
             "climate_zone": "4A",
             "floor_area": 1000.0,
@@ -731,7 +732,8 @@ mod tests {
             "latitude": 39.7,
             "longitude": -105.0,
             "hvac_system": {"cooling_setpoint": 24.0, "heating_setpoint": 20.0}
-        }"#);
+        }"#,
+        );
         assert!(!checker.is_definitive(&issues));
     }
 }
