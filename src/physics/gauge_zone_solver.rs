@@ -830,6 +830,16 @@ impl GaugeZoneSolver {
                 window_solar_wm2
             };
 
+            // Issue #3918: At night (solar_irradiance_wm2 == 0), neutralize the sky radiative
+            // term by setting t_sky = t_exterior_c. This disables sky radiative forcing since
+            // (t_sky - t_exterior) = 0, matching 5R1C behavior which doesn't include sky
+            // radiation in the free-floating zone air temperature balance.
+            let t_sky_effective = if solar_irradiance_wm2.abs() < 1e-6 {
+                t_exterior_c
+            } else {
+                t_sky
+            };
+
             let q_flux = surface.compute_flux(
                 Time::from_value(dt_seconds),
                 T_int,
@@ -837,7 +847,7 @@ impl GaugeZoneSolver {
                 h_exterior,
                 SurfaceBoundaryInput {
                     solar_irradiance_wm2: solar_to_surface_wm2,
-                    t_sky,
+                    t_sky: t_sky_effective,
                     h_rad_sky: h_rad_sky_surface,
                 },
             )?;
@@ -864,6 +874,25 @@ impl GaugeZoneSolver {
             * (ventilation_ach / 3600.0)
             * self.zone_volume;
         let h_total = h_vent + h_inf;
+
+        // Issue #3918: envelope transmission conductance Σ_i A_i/R_i [W/K] over
+        // all non-inter-zone surfaces — the gauge analog of the 5R1C air-node
+        // denominator terms H_tr,1 + H_tr,w (opaque + window transmission).
+        //
+        // The per-surface fluxes accumulated in `net_power_watts` were
+        // evaluated at T_air_old and are linear in T_air with slope −h_env
+        // (q_flux = (t_ext − T_air)/R_total). Omitting h_env from the air-node
+        // denominator therefore treats the envelope loss as a fixed heat
+        // source divided by the ventilation-only conductance (~21.7 W/K vs
+        // ~90 W/K of envelope coupling for Case 600), yielding the physically
+        // impossible steady state −169 °C at ΔT = 38 K and the unstable
+        // fixed-point map T_{n+1} = T_ext + Q_env(T_n)/h_ve with slope
+        // ≈ −UA/h_ve ≈ −4 (observed oscillation 20 → −54 → 19 °C).
+        let h_env = self.surface_to_air_conductance();
+        // True air-node denominator — the exact analog of 5R1C's den_true
+        // (step_5r1c.rs:963-967: den_true = den / term_rest_1 =
+        // H_tr,1 + H_tr,w + H_ve + H_tr,floor).
+        let den_air = h_env + h_total;
 
         // Issue #3920 / LIMIT-21: Compute area-weighted mean interior surface temperature
         // for h_tr_is coupling. T_surface = T_air + Q_gauge_total / h_tr_is.
@@ -924,8 +953,12 @@ impl GaugeZoneSolver {
             let lag_input = h_tr_is * phi_st / term_rest_1;
 
             // Time constants matching 5R1C:
-            // den_true = den / term_rest_1 = h_total (since den = h_total × term_rest_1)
-            let den_true = h_total;
+            // den_true is the unscaled (physical) air-node denominator — the
+            // TOTAL air-coupled conductance including envelope transmission.
+            // Issue #3918: previously this was `h_total` (ventilation only,
+            // ~21.7 W/K for Case 600), which under-stiffened τ_air by ~4× and
+            // inflated the lag temperature correction by the same factor.
+            let den_true = den_air;
             let tau_air = self.C_air / den_true;
             let tau_mass = cm / h_tr_3;
             let tau_lag = (tau_air * tau_mass).sqrt();
@@ -950,10 +983,32 @@ impl GaugeZoneSolver {
 
         let T_ext_val = T_exterior.to_value();
         // Quasi-steady-state temperature (constant over all sub-steps, like 5R1C's "steady")
-        // Issue #3918: Add lag correction to driving temperature
-        let t_steady = T_ext_val + net_power_watts / h_total + lag_correction;
-        // Time constant τ = C_air / h_total
-        let tau_air = self.C_air / h_total;
+        //
+        // Issue #3918: exact analog of 5R1C `steady = num / den`
+        // (step_5r1c.rs:926). The surface fluxes inside `net_power_watts`
+        // are frozen at T_air_old, so linearize them implicitly around that
+        // point:  Q_surface(T) ≈ Q_surface(T_air_old) + h_env·(T_air_old − T).
+        // The quasi-steady state of
+        //   C_air·dT/dt = Q_net(T_air_old) + h_env·(T_air_old − T) + h_total·(T_ext − T)
+        // is therefore bounded:
+        //   t_steady = T_air_old + [Q_net(T_air_old) + h_total·(T_ext − T_air_old)] / (h_env + h_total)
+        // instead of the divergent `T_ext + Q_net / h_total` that produced
+        // −169 °C driving temperatures and the 20 → −54 °C oscillation.
+        // The lag correction is added as a temperature increment, mirroring
+        // 5R1C's `corrected_t_i_free += new_solar_lag / den_true`.
+        let T_air_old = self.T_air;
+        let (t_steady, tau_air) = if den_air > 0.0 {
+            (
+                T_air_old
+                    + (net_power_watts + h_total * (T_ext_val - T_air_old)) / den_air
+                    + lag_correction,
+                self.C_air / den_air,
+            )
+        } else {
+            // No air-coupled conductance at all (no surfaces, no ventilation):
+            // hold the air state (exp(−dt/∞) = 1) and apply only the lag term.
+            (T_air_old + lag_correction, f64::INFINITY)
+        };
         // Sub-stepping for the exact exponential solution
         let steps = self.sub_hour_air_node_steps as usize;
         let dt_sub = dt_seconds / steps as f64;
@@ -1110,6 +1165,16 @@ impl GaugeZoneSolver {
                 window_solar_wm2
             };
 
+            // Issue #3918: At night (solar_irradiance_wm2 == 0), neutralize the sky radiative
+            // term by setting t_sky = t_exterior_c. This disables sky radiative forcing since
+            // (t_sky - t_exterior) = 0, matching 5R1C behavior which doesn't include sky
+            // radiation in the free-floating zone air temperature balance.
+            let t_sky_effective = if bc.solar_irradiance_wm2.abs() < 1e-6 {
+                t_exterior_c
+            } else {
+                bc.t_sky
+            };
+
             let q_flux = surface.compute_flux(
                 Time::from_value(dt_seconds),
                 T_int,
@@ -1117,7 +1182,7 @@ impl GaugeZoneSolver {
                 bc.h_exterior,
                 SurfaceBoundaryInput {
                     solar_irradiance_wm2: solar_to_surface_wm2,
-                    t_sky: bc.t_sky,
+                    t_sky: t_sky_effective,
                     h_rad_sky: h_rad_sky_surface,
                 },
             )?;
@@ -1152,6 +1217,11 @@ impl GaugeZoneSolver {
             * (bc.ventilation_ach / 3600.0)
             * self.zone_volume;
         let h_total = h_vent + h_inf;
+
+        // Issue #3918: envelope transmission conductance Σ_i A_i/R_i [W/K]
+        // (non-inter-zone surfaces) — must appear in the air-node denominator
+        // exactly like 5R1C's den_true; see the step() fix above.
+        let h_env = self.surface_to_air_conductance();
 
         let h_inter_zone_total: f64 = self.couplings.iter().map(|c| c.conductance).sum();
 
@@ -1213,7 +1283,9 @@ impl GaugeZoneSolver {
                 let lag_input = bc.h_tr_is * phi_st / bc.term_rest_1;
 
                 // Time constants matching 5R1C
-                let den_true = h_total;
+                // Issue #3918: den_true is the TOTAL air-coupled conductance
+                // (envelope + ventilation + inter-zone), previously h_total only.
+                let den_true = h_env + h_total + h_inter_zone_total;
                 let tau_air = self.C_air / den_true;
                 let tau_mass = bc.cm / bc.h_tr_3;
                 let tau_lag = (tau_air * tau_mass).sqrt();
@@ -1239,20 +1311,34 @@ impl GaugeZoneSolver {
         let steps = self.sub_hour_air_node_steps as usize;
         let dt_sub = dt_seconds / steps as f64;
         let mut T_air_current = self.T_air;
+        // Issue #3918: linearization reference — the frozen surface fluxes
+        // (q_surfaces_w) were evaluated at T_air_old, so the implicit
+        // conductance h_env must enter with that driving temperature.
+        let T_air_old = self.T_air;
+        // Total air-coupled conductance: envelope + ventilation + inter-zone.
+        let den_air = h_env + h_total + h_inter_zone_total;
 
         for _ in 0..steps {
             // Implicit Euler update with dt_sub
-            // T_air_new = (C·T_old + dt·(Q_surfaces + h_total·T_ext + inter_zone_drive + Q_internal + lag_correction·h_total))
-            //             / (C + dt·(h_total + h_inter_zone_total))
-            // Issue #3918: lag_correction is added to the driving temperature (as lag_correction * h_total in power units)
+            // T_air_new = (C·T_old + dt·(h_env·T_air_old + Q_surfaces + h_total·T_ext + inter_zone_drive + Q_internal + Q_inter_zone_fixed + lag_correction·den_air))
+            //             / (C + dt·(h_env + h_total + h_inter_zone_total))
+            //
+            // Issue #3918: `h_env·T_air_old` / `h_env` pair linearizes the
+            // frozen per-surface fluxes implicitly (the envelope loss is not a
+            // fixed heat source — it scales with T_air through Σ A_i/R_i),
+            // and `bc.inter_zone_heat` (a fixed W input) is now included in
+            // the driving numerator, matching its treatment in
+            // `net_power_watts` above.
             T_air_current = (self.C_air * T_air_current
                 + dt_sub
-                    * (q_surfaces_w
+                    * (h_env * T_air_old
+                        + q_surfaces_w
                         + h_total * T_ext_val
                         + inter_zone_drive
                         + bc.Q_internal_w
-                        + lag_correction * h_total))
-                / (self.C_air + (h_total + h_inter_zone_total) * dt_sub);
+                        + bc.inter_zone_heat
+                        + lag_correction * den_air))
+                / (self.C_air + den_air * dt_sub);
         }
         self.T_air = T_air_current;
 
