@@ -10,7 +10,6 @@ use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::validation::diagnostics::SimulationDiagnostics;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
-use std::path::Path;
 
 #[test]
 fn test_case_900_peak_diagnostic() {
@@ -94,15 +93,17 @@ fn test_case_900_peak_diagnostic() {
         let _hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
-    // 6. Export diagnostics to CSV
-    let csv_path = "case_900_peak_hourly.csv";
+    // 6. Export diagnostics to CSV into a tempdir (never drop scratch files
+    // into the working tree — Issue #3952 report-writer isolation)
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+    let csv_path = temp_dir.path().join("case_900_peak_hourly.csv");
     let diag = model
         .get_diagnostics()
         .expect("Diagnostics should be attached");
-    diag.export_csv(csv_path)
+    diag.export_csv(&csv_path)
         .expect("Should export CSV successfully");
 
-    println!("Exported diagnostics to {}", csv_path);
+    println!("Exported diagnostics to {}", csv_path.display());
 
     // 7. Report peak values
     let mut max_heating = 0.0;
@@ -132,5 +133,5 @@ fn test_case_900_peak_diagnostic() {
     );
 
     // Success criteria: CSV exists
-    assert!(Path::new(csv_path).exists());
+    assert!(csv_path.exists());
 }
