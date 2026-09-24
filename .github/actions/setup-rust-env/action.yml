@@ -6,7 +6,11 @@ description: |
 
 inputs:
   toolchain:
-    description: 'Rust toolchain version (e.g., 1.85.0, stable)'
+    description: 'Rust toolchain version (e.g., 1.85.0, stable). Forwarded to dtolnay/rust-toolchain `toolchain`, which takes VERSIONS, not target triples. Empty = fall back to the repo rust-toolchain file.'
+    required: false
+    default: ''
+  targets:
+    description: 'Rust target triple(s) to install (e.g., wasm32-unknown-unknown). Forwarded to dtolnay/rust-toolchain `targets`, which takes TRIPLES, not versions — the exact input-semantics confusion that broke msrv.yml in #3949.'
     required: false
     default: ''
   components:
@@ -61,7 +65,8 @@ runs:
       id: install_rust_1
       uses: dtolnay/rust-toolchain@f8be11a05b1d4f3fcebe6410cc16743212b999b0  # 1.98.0
       with:
-        targets: ${{ inputs.toolchain }}
+        toolchain: ${{ inputs.toolchain }}
+        targets: ${{ inputs.targets }}
         components: ${{ inputs.components }}
       continue-on-error: true
 
@@ -70,7 +75,8 @@ runs:
       if: steps.install_rust_1.outcome == 'failure'
       uses: dtolnay/rust-toolchain@f8be11a05b1d4f3fcebe6410cc16743212b999b0  # 1.98.0
       with:
-        targets: ${{ inputs.toolchain }}
+        toolchain: ${{ inputs.toolchain }}
+        targets: ${{ inputs.targets }}
         components: ${{ inputs.components }}
       continue-on-error: true
 
@@ -78,7 +84,8 @@ runs:
       if: steps.install_rust_2.outcome == 'failure'
       uses: dtolnay/rust-toolchain@f8be11a05b1d4f3fcebe6410cc16743212b999b0  # 1.98.0
       with:
-        targets: ${{ inputs.toolchain }}
+        toolchain: ${{ inputs.toolchain }}
+        targets: ${{ inputs.targets }}
         components: ${{ inputs.components }}
 
     # sccache: content-addressed compiler cache backed by GHA cache API.
