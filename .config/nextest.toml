@@ -67,3 +67,17 @@
 [[test]]
 name = "twin_memory_leak_test"
 concurrency = 1
+
+# Issue #3952 / #3957 — contention-sensitive timing tests. Both pass in
+# isolation and at `--test-threads=1`; under concurrent sibling load their
+# timing assertions occasionally trip. The foreman-decided disposition keeps
+# them in-suite (they are load-sensitive, not broken) with one retry each.
+# The deterministic TIMING cohort is quarantined under #3957 instead — see
+# tests/QUARANTINE.md.
+[[profile.default.overrides]]
+filter = "test(concurrent_throughput_smoke)"
+retries = 1
+
+[[profile.default.overrides]]
+filter = "test(rate_limiter_lru_cap_respected_under_concurrent_cold_flood)"
+retries = 1
