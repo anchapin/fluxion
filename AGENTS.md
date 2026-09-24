@@ -32,7 +32,12 @@ cargo test -p fluxion-mcp                            # MCP package
 cargo test --features ort                            # ONNX runtime is opt-in
 python3 scripts/generate_test_inventory.py --verify   # regenerate tests/test_inventory.json — Issue #3442; cross-checks AST counts against cargo test -- --list
 python3 scripts/check_test_inventory_drift.py        # Issue #3442 drift gate; fails PRs that grow the test suite above the documented baseline without an explicit baseline bump
+cargo run -q -p fluxion -- topology export --case 600  # zone/surface/construction/HVAC graph → deterministic JSON (Issues #3963–#3966; `--model <path>` accepts CaseSpec JSON; schema: schemas/topology_v1.schema.json)
+cargo run -q -p fluxion -- topology lint --case 600 --strict   # E/W-rule lint of the topology graph (0 clean / 1 findings / 2 usage error); `--input <exported.json>` lints offline
+python3 scripts/generate_topology_diagrams.py        # regenerate docs/architecture/topology/*.mmd|svg + tests/reference_data/topology/* (byte-drift-gated by check_topology_drift.py, Issue #3966)
 ```
+
+**Topology introspection (Issues #3963–#3966, PR #3968):** `fluxion topology export|lint` expose the assembled model's zone/surface/construction/HVAC graph as deterministic, schema-versioned JSON — useful as a diagnostic before/after physics or assembly changes (e.g. diff the case-600 export across commits to see exactly which nodes/edges a solver change touched). Committed reference diagrams live in `docs/architecture/topology/` (Mermaid + dependency-free SVG + viewer payloads); the zero-build interactive viewer is `fluxion-tauri/frontend/public/topology-standalone.html` (load a payload via `?model=<json>` or drag-and-drop). Any change that alters the topology graph must regenerate the diagrams in the same PR — the drift gate fails otherwise. Deferred follow-ups (HVAC wiring, OSM input, Playwright, SVG-in-CI) are tracked in Issue #3967.
 
 **Pre-push gate (opt-in, Issue #3587 acceptance criterion #b)** — to stop a bare-`cargo test` local green from landing a PR that breaks siblings, install the opt-in hook once:
 
