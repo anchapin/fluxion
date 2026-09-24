@@ -33,7 +33,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
-use crate::sim::topology::{
+use crate::topology::{
     TopologyEdge, TopologyEdgeKind, TopologyGraph, TopologyNode, TopologyNodeKind,
 };
 
@@ -629,7 +629,7 @@ fn w002_high_conductance_ratio(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::topology::{TopologyContext, TopologyGraph};
+    use crate::topology::{TopologyContext, TopologyGraph};
 
     fn node(id: &str, kind: TopologyNodeKind) -> TopologyNode {
         TopologyNode {

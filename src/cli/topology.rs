@@ -24,9 +24,10 @@ use std::path::PathBuf;
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{Args, Subcommand, ValueEnum};
 
-use crate::sim::topology::{ToTopologyGraph, TopologyContext, TopologyGraph};
 use crate::sim::topology_lint::{lint_topology, LintReport, LintSeverity};
+use crate::topology::{TopologyContext, TopologyGraph};
 use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec};
+use crate::validation::topology_bridge;
 
 /// Arguments for `fluxion topology export` / `fluxion export-topology`.
 #[derive(Debug, Args, Clone)]
@@ -116,7 +117,7 @@ pub fn handle_export(args: ExportArgs) -> Result<()> {
         }
     };
 
-    let mut graph = spec.to_topology_graph(&ctx);
+    let mut graph = topology_bridge::case_topology_graph(&spec, &ctx);
     graph
         .finalize()
         .map_err(|e| anyhow::anyhow!("topology finalization failed: {e}"))?;
@@ -236,7 +237,7 @@ fn lint_graph_source(args: &LintArgs) -> Result<(TopologyGraph, String)> {
                 model_source: format!("ashrae-140-registry:{}", spec.case_id),
                 timestamp: None,
             };
-            let mut graph = spec.to_topology_graph(&ctx);
+            let mut graph = topology_bridge::case_topology_graph(&spec, &ctx);
             graph
                 .finalize()
                 .map_err(|e| anyhow!("topology finalization failed: {e}"))?;
@@ -259,7 +260,7 @@ fn lint_graph_source(args: &LintArgs) -> Result<(TopologyGraph, String)> {
                 model_source: format!("model-file:{}", path.display()),
                 timestamp: None,
             };
-            let mut graph = spec.to_topology_graph(&ctx);
+            let mut graph = topology_bridge::case_topology_graph(&spec, &ctx);
             graph
                 .finalize()
                 .map_err(|e| anyhow!("topology finalization failed: {e}"))?;

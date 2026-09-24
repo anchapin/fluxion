@@ -1,7 +1,7 @@
 //! ASHRAE 140 `CaseSpec` → topology-graph bridge (Issue #3963).
 //!
 //! Converts a registry case specification into the thermal-network topology
-//! defined in [`crate::sim::topology`]. The bridge lives in `validation/`
+//! defined in [`crate::topology`]. The bridge lives in `validation/`
 //! (which may import from `sim`) so the cycle rule
 //! `scripts/check_ashrae_cases_cycle.py` keeps holding: `sim` never imports
 //! `validation`.
@@ -26,7 +26,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::sim::topology::{
+use crate::topology::{
     ToTopologyGraph, TopologyContext, TopologyEdge, TopologyEdgeKind, TopologyGraph, TopologyNode,
     TopologyNodeKind,
 };
@@ -568,7 +568,7 @@ impl ToTopologyGraph for CaseSpec {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::topology::TOPOLOGY_SCHEMA_VERSION;
+    use crate::topology::TOPOLOGY_SCHEMA_VERSION;
     use crate::validation::ashrae_140_cases::ASHRAE140Case;
 
     fn graph_for(case: ASHRAE140Case) -> TopologyGraph {
@@ -698,4 +698,15 @@ mod tests {
         };
         assert!(cap(&high) > cap(&low));
     }
+}
+
+/// Explicit production entry point for the CLI's `--case` export path.
+/// Exists so the module dependency is textual (the orphan gate's detector
+/// cannot see trait impls); see scripts/check_orphan_modules.py.
+pub fn case_topology_graph(
+    spec: &CaseSpec,
+    ctx: &crate::topology::TopologyContext,
+) -> crate::topology::TopologyGraph {
+    use crate::topology::ToTopologyGraph;
+    spec.to_topology_graph(ctx)
 }
