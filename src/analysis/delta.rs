@@ -265,10 +265,8 @@ pub fn run_simulation(
     model.hvac.hvac_enabled = VectorField::new(hvac_enabled_vals.clone());
 
     // Prepare weather (Denver EPW)
-    let weather = EpwWeatherSource::from_file(
-        "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
-    )
-    .expect("Failed to load EPW weather data");
+    let weather = EpwWeatherSource::from_file(crate::cli::bundled_denver_epw_path())
+        .expect("Failed to load EPW weather data");
 
     // --- Warm-up / pre-conditioning (Issue #744) ---
     // Run convergence-based warm-up: iterate full years until temperatures
