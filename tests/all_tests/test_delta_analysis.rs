@@ -270,23 +270,49 @@ mod delta_unit_tests {
 
     #[test]
     fn test_expand_variants_patch_and_sweep() {
-        let yaml_str = r#"
-base:
-  case_id: "600"
-  description: "Test case for delta analysis"
-  construction_type: "LowMass"
-  num_zones: 1
-  hvac: []
-  windows: []
-  night_ventilation: null
-variants:
-  - name: "combined"
-    patch:
-      cooling_setpoint: 26
-    sweep:
-      heating_setpoint: [18, 20]
-"#;
-        let config: DeltaConfig = serde_yaml::from_str(yaml_str).unwrap();
+        // Base composed from a full CaseSpec value (literal YAML fixtures
+        // drifted from the required CaseSpec fields — see #3952).
+        let mut yaml_map = serde_yaml::Mapping::new();
+        yaml_map.insert(
+            serde_yaml::Value::String("base".to_string()),
+            create_test_case_spec(),
+        );
+
+        let mut variants_seq = serde_yaml::Sequence::new();
+        let mut variant_map = serde_yaml::Mapping::new();
+        variant_map.insert(
+            serde_yaml::Value::String("name".to_string()),
+            serde_yaml::Value::String("combined".to_string()),
+        );
+        let mut patch_map = serde_yaml::Mapping::new();
+        patch_map.insert(
+            serde_yaml::Value::String("cooling_setpoint".to_string()),
+            serde_yaml::Value::Number(serde_yaml::Number::from(26)),
+        );
+        variant_map.insert(
+            serde_yaml::Value::String("patch".to_string()),
+            serde_yaml::Value::Mapping(patch_map),
+        );
+        let mut sweep_map = serde_yaml::Mapping::new();
+        sweep_map.insert(
+            serde_yaml::Value::String("heating_setpoint".to_string()),
+            serde_yaml::Value::Sequence(vec![
+                serde_yaml::Value::Number(serde_yaml::Number::from(18)),
+                serde_yaml::Value::Number(serde_yaml::Number::from(20)),
+            ]),
+        );
+        variant_map.insert(
+            serde_yaml::Value::String("sweep".to_string()),
+            serde_yaml::Value::Mapping(sweep_map),
+        );
+        variants_seq.push(serde_yaml::Value::Mapping(variant_map));
+        yaml_map.insert(
+            serde_yaml::Value::String("variants".to_string()),
+            serde_yaml::Value::Sequence(variants_seq),
+        );
+
+        let config: DeltaConfig =
+            serde_yaml::from_value(serde_yaml::Value::Mapping(yaml_map)).unwrap();
         let results = expand_variants(&config).unwrap();
 
         assert_eq!(results.len(), 2);
@@ -296,24 +322,37 @@ variants:
 
     #[test]
     fn test_expand_variants_multiple_variants() {
-        let yaml_str = r#"
-base:
-  case_id: "600"
-  description: "Test case for delta analysis"
-  construction_type: "LowMass"
-  num_zones: 1
-  hvac: []
-  windows: []
-  night_ventilation: null
-variants:
-  - name: "variant_a"
-    patch:
-      heating_setpoint: 22
-  - name: "variant_b"
-    patch:
-      heating_setpoint: 18
-"#;
-        let config: DeltaConfig = serde_yaml::from_str(yaml_str).unwrap();
+        let mut yaml_map = serde_yaml::Mapping::new();
+        yaml_map.insert(
+            serde_yaml::Value::String("base".to_string()),
+            create_test_case_spec(),
+        );
+
+        let mut variants_seq = serde_yaml::Sequence::new();
+        for (name, setpoint) in [("variant_a", 22), ("variant_b", 18)] {
+            let mut variant_map = serde_yaml::Mapping::new();
+            variant_map.insert(
+                serde_yaml::Value::String("name".to_string()),
+                serde_yaml::Value::String(name.to_string()),
+            );
+            let mut patch_map = serde_yaml::Mapping::new();
+            patch_map.insert(
+                serde_yaml::Value::String("heating_setpoint".to_string()),
+                serde_yaml::Value::Number(serde_yaml::Number::from(setpoint)),
+            );
+            variant_map.insert(
+                serde_yaml::Value::String("patch".to_string()),
+                serde_yaml::Value::Mapping(patch_map),
+            );
+            variants_seq.push(serde_yaml::Value::Mapping(variant_map));
+        }
+        yaml_map.insert(
+            serde_yaml::Value::String("variants".to_string()),
+            serde_yaml::Value::Sequence(variants_seq),
+        );
+
+        let config: DeltaConfig =
+            serde_yaml::from_value(serde_yaml::Value::Mapping(yaml_map)).unwrap();
         let results = expand_variants(&config).unwrap();
 
         assert_eq!(results.len(), 2);
@@ -323,18 +362,18 @@ variants:
 
     #[test]
     fn test_expand_variants_empty_variants() {
-        let yaml_str = r#"
-base:
-  case_id: "600"
-  description: "Test case for delta analysis"
-  construction_type: "LowMass"
-  num_zones: 1
-  hvac: []
-  windows: []
-  night_ventilation: null
-variants: []
-"#;
-        let config: DeltaConfig = serde_yaml::from_str(yaml_str).unwrap();
+        let mut yaml_map = serde_yaml::Mapping::new();
+        yaml_map.insert(
+            serde_yaml::Value::String("base".to_string()),
+            create_test_case_spec(),
+        );
+        yaml_map.insert(
+            serde_yaml::Value::String("variants".to_string()),
+            serde_yaml::Value::Sequence(serde_yaml::Sequence::new()),
+        );
+
+        let config: DeltaConfig =
+            serde_yaml::from_value(serde_yaml::Value::Mapping(yaml_map)).unwrap();
         let results = expand_variants(&config).unwrap();
 
         assert_eq!(results.len(), 0);
@@ -346,21 +385,35 @@ variants: []
 
     #[test]
     fn test_delta_config_deserialization() {
-        let yaml_str = r#"
-base:
-  case_id: "600"
-  description: "Test case for delta analysis"
-  construction_type: "LowMass"
-  num_zones: 1
-  hvac: []
-  windows: []
-  night_ventilation: null
-variants:
-  - name: "test_variant"
-    patch:
-      heating_setpoint: 22
-"#;
-        let config: DeltaConfig = serde_yaml::from_str(yaml_str).unwrap();
+        let mut yaml_map = serde_yaml::Mapping::new();
+        yaml_map.insert(
+            serde_yaml::Value::String("base".to_string()),
+            create_test_case_spec(),
+        );
+
+        let mut variants_seq = serde_yaml::Sequence::new();
+        let mut variant_map = serde_yaml::Mapping::new();
+        variant_map.insert(
+            serde_yaml::Value::String("name".to_string()),
+            serde_yaml::Value::String("test_variant".to_string()),
+        );
+        let mut patch_map = serde_yaml::Mapping::new();
+        patch_map.insert(
+            serde_yaml::Value::String("heating_setpoint".to_string()),
+            serde_yaml::Value::Number(serde_yaml::Number::from(22)),
+        );
+        variant_map.insert(
+            serde_yaml::Value::String("patch".to_string()),
+            serde_yaml::Value::Mapping(patch_map),
+        );
+        variants_seq.push(serde_yaml::Value::Mapping(variant_map));
+        yaml_map.insert(
+            serde_yaml::Value::String("variants".to_string()),
+            serde_yaml::Value::Sequence(variants_seq),
+        );
+
+        let config: DeltaConfig =
+            serde_yaml::from_value(serde_yaml::Value::Mapping(yaml_map)).unwrap();
         assert_eq!(config.base.case_id, "600");
         assert_eq!(config.variants.len(), 1);
         assert_eq!(config.variants[0].name, "test_variant");

@@ -156,7 +156,9 @@ pub fn set_nested(
     new_value: serde_yaml::Value,
 ) -> Result<()> {
     let parts: Vec<&str> = path.split('.').collect();
-    if parts.is_empty() {
+    // `"".split('.')` yields `[""]`, so `parts.is_empty()` alone never fires
+    // for an empty path string — guard the raw path too (Issue #3952).
+    if path.is_empty() || parts.is_empty() {
         return Err(anyhow::anyhow!("Empty path"));
     }
     let mut current = value;
