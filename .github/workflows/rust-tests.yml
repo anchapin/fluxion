@@ -190,7 +190,7 @@ jobs:
       #      does.
       #
       # Everything else inside `--test all_tests` (2,704 run / 76
-      # skipped tests across 251 modules; 107 failures across 41
+      # skipped tests across 251 modules; 107 failures across 39
       # modules) is deliberately NOT in per-PR scope: those suites
       # never ran in the original 7-line block and carry documented
       # physics gaps (SCORECARD / KNOWN_ISSUES §LIMIT-*), CLI EPW
