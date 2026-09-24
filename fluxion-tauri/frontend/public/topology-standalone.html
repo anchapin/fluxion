@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fluxion Topology Viewer — standalone</title>
+<meta name="description" content="Zero-build standalone 2D topology section viewer for Fluxion topology_v1 documents (issue #3965). Load an export via ?model=URL or drag-and-drop." />
+<!--
+  Standalone topology section viewer (issue #3965).
+  Self-contained: no bundler, no external requests. Mirrors the React
+  implementation in src/topology/ (layout rules, palette, badge codes);
+  keep the two in sync when either changes.
+  Usage:
+    topology-standalone.html                      → embedded demo document
+    topology-standalone.html?model=case600.json   → fetch + render an export
+    drag & drop a `fluxion topology export` JSON  → render it
+    drag & drop a `fluxion topology lint` JSON    → overlay findings as badges
+-->
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, sans-serif; background: #1a1a2e; color: #e8e8f0; height: 100vh; display: flex; flex-direction: column; }
+  header { padding: 8px 14px; background: #16213e; border-bottom: 1px solid #0f3460; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  header h1 { font-size: 15px; margin: 0; color: #e94560; font-weight: 600; }
+  header .stats { margin-left: auto; color: #9aa0b5; font-size: 12px; }
+  button, select, label.btn { background: #0f3460; color: #e8e8f0; border: 1px solid #22467c; border-radius: 4px; padding: 4px 10px; font: inherit; cursor: pointer; }
+  label.chk { display: inline-flex; gap: 5px; align-items: center; color: #c6cbe0; }
+  main { flex: 1; display: flex; min-height: 0; }
+  #canvasWrap { flex: 1; position: relative; min-width: 0; }
+  svg { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  svg.dragging { cursor: grabbing; }
+  aside { width: 320px; border-left: 1px solid #0f3460; background: #16213e; padding: 12px 14px; overflow-y: auto; }
+  aside h3 { margin: 0 0 4px; font-size: 14px; color: #4cc9f0; }
+  aside h4 { margin: 12px 0 4px; font-size: 12px; color: #9aa0b5; text-transform: uppercase; letter-spacing: .04em; }
+  aside table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  aside th { text-align: left; color: #9aa0b5; font-weight: 500; padding: 2px 8px 2px 0; white-space: nowrap; }
+  aside td { padding: 2px 0; }
+  .kind { color: #9aa0b5; font-size: 12px; margin: 0 0 8px; }
+  .legend { position: absolute; left: 10px; bottom: 10px; background: rgba(15,25,45,.88); border: 1px solid #22467c; border-radius: 6px; padding: 8px 12px; font-size: 12px; max-height: 45%; overflow-y: auto; }
+  .legend h4 { margin: 4px 0; color: #9aa0b5; font-size: 11px; text-transform: uppercase; }
+  .legend ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(120px, auto)); gap: 2px 14px; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  #banner { display: none; background: #4a1f28; color: #ffb3c0; border-bottom: 1px solid #e94560; padding: 6px 14px; font-size: 13px; }
+  .badge-note { background: #4a1f28; border-left: 3px solid #e94560; padding: 6px 8px; border-radius: 4px; margin: 6px 0; font-size: 12.5px; }
+  text { fill: #e8e8f0; font-size: 11px; }
+  .sub { fill: #9aa0b5; font-size: 10px; }
+  g.node { cursor: pointer; }
+  g.node:focus, g.node:hover rect { stroke-width: 2.5; }
+  g.node:focus { outline: none; }
+  .badge circle { fill: #e94560; }
+  .badge circle.pulse { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+  .dim { opacity: .18; }
+  p.muted { color: #9aa0b5; font-size: 12.5px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Fluxion · Topology section (standalone)</h1>
+  <select id="modelSel" aria-label="Model"></select>
+  <label class="btn">Load JSON…<input type="file" id="fileInp" accept="application/json,.json" hidden /></label>
+  <label class="chk"><input type="checkbox" id="fluxChk" /> Conductance overlay</label>
+  <button id="fitBtn" type="button">Fit</button>
+  <span class="stats" id="stats"></span>
+</header>
+<div id="banner" role="alert"></div>
+<main>
+  <div id="canvasWrap">
+    <svg id="svg" role="application" aria-label="Topology section diagram. Drag to pan, scroll to zoom, click elements to inspect."><div id="legend" class="legend"></div></svg>
+  </div>
+  <aside id="inspector" aria-label="Topology inspector"></aside>
+</main>
+<script>
+"use strict";
+/* ---- palette + geometry (mirrors src/topology/styling.ts, layout.ts) ---- */
+var NODE_STYLES = {
+  outdoor_ambient: ["Outdoor ambient", "#3d1f2e", "#e94560"], exterior_surface: ["Exterior film", "#42291b", "#f9844a"],
+  wall_layer: ["Wall layer", "#232c3d", "#8d99ae"], interior_surface: ["Interior film", "#1b3a33", "#43aa8b"],
+  internal_mass: ["Internal mass", "#3a2b33", "#b5838d"], zone_air: ["Zone air", "#12314a", "#4cc9f0"],
+  internal_gain: ["Internal gain", "#3d3418", "#f9c74e"], hvac_terminal: ["HVAC terminal", "#263a22", "#90be6d"]
+};
+var EDGE_STYLES = {
+  conduction: ["Conduction", "#f9844a"], convection_exterior: ["Ext. convection", "#5fa8d3"],
+  convection_interior: ["Int. convection", "#43aa8b"], longwave_radiation: ["Longwave radiation", "#9d4edd"],
+  shortwave_solar_direct: ["Direct solar", "#ffd166"], shortwave_solar_diffuse: ["Diffuse solar", "#ffe8a3"],
+  air_exchange: ["Air exchange", "#4cc9f0"], internal_gain_split: ["Gain split", "#f9c74e"], hvac_sensible: ["HVAC sensible", "#90be6d"]
+};
+var LANE_W=168, NODE_W=116, NODE_H=46, ZAIR_W=132, ZAIR_H=200, AMB_H=120, ROW_GAP=20, BAND_PAD=32, BAND_GAP=64, BAND_MIN=300, MARGIN=48;
+
+/* ---- embedded demo document: two zones + an orphan node (badge demo) ---- */
+var DEMO = { metadata:{schema_version:"1.0.0",tool_version:"standalone-demo",model_name:"Demo — two zones (embedded)",model_source:"embedded",node_count:12,edge_count:12},
+  nodes:[
+    {id:"amb",kind:"outdoor_ambient",name:"Outdoor ambient"},
+    {id:"z0:air",kind:"zone_air",name:"Zone 0 air",zone_id:"z0:air",volume_m3:100,capacitance_j_per_k:120720},
+    {id:"z1:air",kind:"zone_air",name:"Zone 1 air",zone_id:"z1:air",volume_m3:80,capacitance_j_per_k:96576},
+    {id:"z0:wall-s:ext",kind:"exterior_surface",name:"Z0 south ext film",zone_id:"z0:air",tilt_deg:90,azimuth_deg:180,area_m2:12},
+    {id:"z0:wall-s:l0",kind:"wall_layer",name:"Z0 south layer 0",zone_id:"z0:air",capacitance_j_per_k:5.18e6},
+    {id:"z0:wall-s:l1",kind:"wall_layer",name:"Z0 south layer 1",zone_id:"z0:air",capacitance_j_per_k:1.73e6},
+    {id:"z0:wall-s:int",kind:"interior_surface",name:"Z0 south int film",zone_id:"z0:air"},
+    {id:"z0:gain",kind:"internal_gain",name:"Z0 internal gains",zone_id:"z0:air",attributes:{base_watts:200}},
+    {id:"z0:hvac",kind:"hvac_terminal",name:"Z0 HVAC terminal",zone_id:"z0:air",attributes:{setpoint_heating_c:20,setpoint_cooling_c:27}},
+    {id:"z1:roof:ext",kind:"exterior_surface",name:"Z1 roof ext film",zone_id:"z1:air",tilt_deg:0,area_m2:16},
+    {id:"z1:roof:int",kind:"interior_surface",name:"Z1 roof int film",zone_id:"z1:air"},
+    {id:"z1:mass",kind:"internal_mass",name:"Z1 internal mass",zone_id:"z1:air",area_m2:30,capacitance_j_per_k:8.9e6}
+  ],
+  edges:[
+    {source_id:"amb",target_id:"z0:wall-s:ext",coupling_type:"shortwave_solar_direct",bidirectional:false,attributes:{window_area_m2:12}},
+    {source_id:"amb",target_id:"z0:wall-s:ext",coupling_type:"convection_exterior",conductance_w_per_k:84.9,bidirectional:true},
+    {source_id:"z0:wall-s:ext",target_id:"z0:wall-s:l0",coupling_type:"conduction",conductance_w_per_k:52.2,bidirectional:true},
+    {source_id:"z0:wall-s:l0",target_id:"z0:wall-s:l1",coupling_type:"conduction",conductance_w_per_k:20.7,bidirectional:true},
+    {source_id:"z0:wall-s:l1",target_id:"z0:wall-s:int",coupling_type:"conduction",conductance_w_per_k:55.2,bidirectional:true},
+    {source_id:"z0:wall-s:int",target_id:"z0:air",coupling_type:"convection_interior",conductance_w_per_k:8.4,bidirectional:true},
+    {source_id:"z0:gain",target_id:"z0:air",coupling_type:"internal_gain_split",fraction:0.6,bidirectional:false},
+    {source_id:"z0:air",target_id:"z0:hvac",coupling_type:"hvac_sensible",conductance_w_per_k:123.5,bidirectional:true},
+    {source_id:"amb",target_id:"z1:roof:ext",coupling_type:"convection_exterior",conductance_w_per_k:113.1,bidirectional:true},
+    {source_id:"z1:roof:ext",target_id:"z1:roof:int",coupling_type:"conduction",conductance_w_per_k:67.9,bidirectional:true},
+    {source_id:"z1:roof:int",target_id:"z1:air",coupling_type:"convection_interior",conductance_w_per_k:11.2,bidirectional:true},
+    {source_id:"z0:air",target_id:"z1:air",coupling_type:"air_exchange",conductance_w_per_k:14.9,bidirectional:true,attributes:{ach:0.5}}
+  ]};
+
+var state = { doc: DEMO, lint: null, sel: null, flux: false, t: {x:0,y:0,scale:0.6}, layout: null };
+
+/* ---- layout: same rules as src/topology/layout.ts ---- */
+function laneX(l, w) { return MARGIN + l*LANE_W + (LANE_W - w)/2; }
+function classRank(n){ var t=n.tilt_deg; if(t!==undefined){ if(t<=45) return 0; if(t>=135) return 2; } var nm=(n.name||"").toLowerCase(); if(nm.indexOf("roof")>=0||nm.indexOf("ceiling")>=0) return 0; if(nm.indexOf("floor")>=0) return 2; return 1; }
+function computeLayout(doc){
+  var SK=["exterior_surface","wall_layer","interior_surface"], byId={}, members=[];
+  doc.nodes.forEach(function(n){ byId[n.id]=n; if(SK.indexOf(n.kind)>=0) members.push(n); });
+  var adj={}; doc.edges.forEach(function(e){ if(e.coupling_type!=="conduction") return;
+    if(!byId[e.source_id]||SK.indexOf((byId[e.source_id]||{}).kind)<0) return;
+    if(!byId[e.target_id]||SK.indexOf((byId[e.target_id]||{}).kind)<0) return;
+    (adj[e.source_id]=adj[e.source_id]||[]).push(e.target_id); (adj[e.target_id]=adj[e.target_id]||[]).push(e.source_id); });
+  var visited={}, assemblies=[];
+  members.forEach(function(seed){ if(visited[seed.id]) return;
+    var comp=[], q=[seed.id]; visited[seed.id]=1;
+    while(q.length){ var id=q.shift(); comp.push(id); (adj[id]||[]).forEach(function(nx){ if(!visited[nx]){visited[nx]=1;q.push(nx);} }); }
+    comp.sort();
+    var nodes=comp.map(function(id){return byId[id];});
+    var depth={}, seeds=nodes.filter(function(n){return n.kind==="exterior_surface";}); if(!seeds.length) seeds=[nodes[0]];
+    var q2=seeds.map(function(n){return [n.id,0];}); q2.forEach(function(p){depth[p[0]]=0;});
+    while(q2.length){ var p=q2.shift(); (adj[p[0]]||[]).forEach(function(nx){ if(depth[nx]===undefined){ depth[nx]=p[1]+1; q2.push([nx,p[1]+1]); } }); }
+    var orient=seeds[0]||nodes[0];
+    assemblies.push({nodes:nodes,depth:depth,rank:classRank(orient),az:orient.azimuth_deg||0,nm:orient.name,z:orient.zone_id});
+  });
+  assemblies.sort(function(a,b){ return a.rank-b.rank || a.az-b.az || (a.nm<b.nm?-1:1); });
+  var zairs=doc.nodes.filter(function(n){return n.kind==="zone_air";}).sort(function(a,b){return a.id<b.id?-1:1;});
+  var bands=zairs.map(function(z){return z.id;}), seen={};
+  doc.nodes.forEach(function(n){ if(n.kind==="zone_air"||n.kind==="outdoor_ambient") return; var k=n.zone_id||"(unzoned)"; if(bands.indexOf(k)<0&&!seen[k]){seen[k]=1;bands.push(k);} });
+  var bandIdx={}; bands.forEach(function(k,i){bandIdx[k]=i;});
+  var maxD=0; assemblies.forEach(function(a){ Object.keys(a.depth).forEach(function(id){ maxD=Math.max(maxD,a.depth[id]); }); });
+  var intLane=maxD+1, zLane=intLane+1, aLane=zLane+1;
+  var pos={}, y=MARGIN;
+  bands.forEach(function(bk){
+    var top=y, asm=assemblies.filter(function(a){ return (a.z||"(unzoned)")===bk; }), rowY=top+BAND_PAD;
+    asm.forEach(function(a){ var c=rowY+NODE_H/2;
+      a.nodes.forEach(function(m){ var d=a.depth[m.id]||0;
+        var lane=m.kind==="exterior_surface"?1:(m.kind==="interior_surface"?intLane:1+d);
+        pos[m.id]={n:m,x:laneX(lane,NODE_W),y:c-NODE_H/2,w:NODE_W,h:NODE_H,lane:lane,band:bandIdx[bk]}; });
+      rowY+=NODE_H+ROW_GAP; });
+    var rowsB=Math.max(rowY-ROW_GAP, top);
+    var za=zairs.filter(function(z){return z.id===bk;})[0];
+    var att=doc.nodes.filter(function(n){ return ["internal_mass","internal_gain","hvac_terminal"].indexOf(n.kind)>=0 && (n.zone_id||"(unzoned)")===bk; })
+      .sort(function(a,b){return (a.kind+a.id)<(b.kind+b.id)?-1:1;});
+    var bandH=Math.max(rowsB-top+BAND_PAD, BAND_MIN, att.length*(NODE_H+ROW_GAP)+2*BAND_PAD);
+    var mid=top+bandH/2;
+    if(za){ var zh=Math.min(ZAIR_H,bandH-2*BAND_PAD); pos[za.id]={n:za,x:laneX(zLane,ZAIR_W),y:mid-zh/2,w:ZAIR_W,h:zh,lane:zLane,band:bandIdx[bk]}; }
+    var total=att.length*NODE_H+Math.max(0,att.length-1)*ROW_GAP, ay=mid-total/2;
+    att.forEach(function(n){ pos[n.id]={n:n,x:laneX(aLane,NODE_W),y:ay,w:NODE_W,h:NODE_H,lane:aLane,band:bandIdx[bk]}; ay+=NODE_H+ROW_GAP; });
+    y=top+bandH+BAND_GAP;
+  });
+  var H=Math.max(y-BAND_GAP,MARGIN)+MARGIN;
+  doc.nodes.forEach(function(n){ if(n.kind==="outdoor_ambient") pos[n.id]={n:n,x:laneX(0,NODE_W),y:H/2-AMB_H/2,w:NODE_W,h:AMB_H,lane:0,band:-1}; });
+  var W=MARGIN*2+(aLane+1)*LANE_W;
+  var routed=[];
+  doc.edges.forEach(function(e){ var s=pos[e.source_id],t=pos[e.target_id]; if(!s||!t) return;
+    var fwd=t.x>=s.x, x1=fwd?s.x+s.w:s.x, y1=s.y+s.h/2, x2=fwd?t.x:t.x+t.w, y2=t.y+t.h/2;
+    var dx=Math.min(120,Math.max(30,Math.abs(x2-x1)*0.45));
+    routed.push({e:e,s:s,t:t,path:"M "+x1+" "+y1+" C "+(fwd?x1+dx:x1-dx)+" "+y1+", "+(fwd?x2-dx:x2+dx)+" "+y2+", "+x2+" "+y2}); });
+  return {pos:pos,edges:routed,W:W,H:H,byId:byId};
+}
+/* ---- client diagnostics (same as src/topology/diagnostics.ts) ---- */
+function diagnostics(doc){
+  var out=[], conn={};
+  doc.edges.forEach(function(e){ conn[e.source_id]=1; conn[e.target_id]=1; });
+  var ids={}; doc.nodes.forEach(function(n){ ids[n.id]=1;
+    if(!conn[n.id]) out.push({code:"E001_ORPHAN_NODE",nodeId:n.id,message:"Node \""+n.name+"\" ("+n.kind+") has no incoming or outgoing edges."});
+    if(n.capacitance_j_per_k!==undefined && n.capacitance_j_per_k<=0) out.push({code:"E007_NON_POSITIVE_CAPACITY",nodeId:n.id,message:"Non-positive capacitance on \""+n.name+"\"."}); });
+  doc.edges.forEach(function(e){ var miss=[]; if(!ids[e.source_id]) miss.push(e.source_id); if(!ids[e.target_id]) miss.push(e.target_id);
+    if(miss.length) out.push({code:"E002_DANGLING_BOUNDARY",message:"Edge "+e.source_id+" → "+e.target_id+" references missing node(s): "+miss.join(", ")+"."});
+    if(e.fraction!==undefined&&(e.fraction<0||e.fraction>1)) out.push({code:"E005_INVALID_SPLIT_FRACTION",message:"Fraction "+e.fraction+" outside [0,1] on "+e.source_id+" → "+e.target_id+"."}); });
+  if(state.lint && state.lint.findings) state.lint.findings.forEach(function(f){ out.push({code:f.code,nodeId:f.node_id,message:f.message||f.code,ext:true}); });
+  return out;
+}
+/* ---- rendering ---- */
+var SVGNS="http://www.w3.org/2000/svg", svg=document.getElementById("svg"), legend=document.getElementById("legend"), insp=document.getElementById("inspector");
+function el(tag, attrs, parent){ var e=document.createElementNS(SVGNS,tag); for(var k in attrs) e.setAttribute(k,attrs[k]); if(parent) parent.appendChild(e); return e; }
+function fmt(v){ if(v===undefined) return "—"; if(Math.abs(v)>=100000||(Math.abs(v)<0.01&&v!==0)) return v.toExponential(3); return Number.isInteger(v)?String(v):v.toFixed(3); }
+function trunc(s,m){ return s.length>m?s.slice(0,m-1)+"…":s; }
+function strokeWidth(e){ var b=1.6; if(!state.flux||!e.conductance_w_per_k||e.conductance_w_per_k<=0) return b;
+  var tt=Math.min(1,Math.max(0,(Math.log10(e.conductance_w_per_k)+1)/4)); return 1+tt*6; }
+
+function render(){
+  var L=state.layout=computeLayout(state.doc), diags=diagnostics(state.doc), byNode={};
+  diags.forEach(function(d){ if(d.nodeId) (byNode[d.nodeId]=byNode[d.nodeId]||[]).push(d); });
+  svg.querySelectorAll("g.layer").forEach(function(g){ g.remove(); });
+  var root=el("g",{class:"layer",transform:"translate("+state.t.x+" "+state.t.y+") scale("+state.t.scale+")"},svg);
+  svg.querySelectorAll("marker").forEach(function(m){ m.remove(); });
+  var defs=el("defs",{},root), colors={};
+  Object.keys(EDGE_STYLES).forEach(function(k){ colors[EDGE_STYLES[k][1]]=1; });
+  Object.keys(colors).forEach(function(c){ var mk=el("marker",{id:"ar"+c.slice(1),viewBox:"0 0 10 10",refX:9,refY:5,markerWidth:7,markerHeight:7,orient:"auto-start-reverse"},defs);
+    el("path",{d:"M 0 0 L 10 5 L 0 10 z",fill:c},mk); });
+  var hl=state.sel?related(state.sel):{nodes:{},edges:{}};
+  L.edges.forEach(function(re,i){ var st=EDGE_STYLES[re.e.coupling_type]||["","#888"];
+    var dim=state.sel&&!hl.edges[i];
+    el("path",{d:re.path,fill:"none",stroke:st[1],"stroke-width":strokeWidth(re.e),opacity:dim?0.1:1,"marker-end":"url(#ar"+st[1].slice(1)+")",
+      "stroke-dasharray":(re.e.coupling_type==="longwave_radiation"||re.e.coupling_type==="air_exchange"||re.e.coupling_type.indexOf("solar")>=0)?"6 3":"",
+      style:"cursor:pointer",tabindex:-1},root)
+      .addEventListener("click",function(ev){ ev.stopPropagation(); select({type:"edge",i:i}); });
+  });
+  Object.keys(L.pos).sort().forEach(function(id){ var p=L.pos[id], st=NODE_STYLES[p.n.kind]||["","#333","#888"], b=byNode[id];
+    var g=el("g",{class:"node"+(state.sel&&state.sel.type==="node"&&state.sel.id===id?" sel":"")+(state.sel&&!hl.nodes[id]?" dim":""),tabindex:0,role:"button","aria-label":p.n.name+", "+st[0]},root);
+    g.setAttribute("transform","translate("+p.x+" "+p.y+")");
+    el("rect",{width:p.w,height:p.h,rx:p.n.kind==="zone_air"?10:5,fill:st[1],stroke:st[2],"stroke-width":state.sel&&state.sel.type==="node"&&state.sel.id===id?3:1.3},g);
+    var t1=el("text",{x:p.w/2,y:p.h/2-3,"text-anchor":"middle"},g); t1.textContent=trunc(p.n.name,22);
+    var t2=el("text",{x:p.w/2,y:p.h/2+13,"text-anchor":"middle",class:"sub"},g);
+    t2.textContent=p.n.kind==="zone_air"&&p.n.volume_m3!==undefined?Math.round(p.n.volume_m3)+" m³":(p.n.area_m2!==undefined?Math.round(p.n.area_m2)+" m²":st[0]);
+    if(b&&b.length){ var bg=el("g",{class:"badge"},g); el("circle",{cx:p.w-2,cy:2,r:9,class:"pulse"},bg);
+      var bt=el("text",{x:p.w-2,y:6,"text-anchor":"middle"},bg); bt.textContent=String(b.length);
+      var ti=el("title",{},bg); ti.textContent=b.map(function(d){return d.code+": "+d.message;}).join(" | "); }
+    g.addEventListener("click",function(ev){ ev.stopPropagation(); select({type:"node",id:id}); });
+    g.addEventListener("keydown",function(ev){ if(ev.key==="Enter"||ev.key===" "){ ev.preventDefault(); select({type:"node",id:id}); } });
+  });
+  document.getElementById("stats").textContent=state.doc.nodes.length+" nodes · "+state.doc.edges.length+" couplings · "+diags.length+" findings";
+  renderLegend(); renderInspector(diags);
+}
+function related(sel){
+  var L=state.layout, nodes={}, edges={};
+  if(sel.type==="node"){ var up={},dn={};
+    L.edges.forEach(function(re,i){ if(re.e.target_id===sel.id){up[re.e.source_id]=1;edges[i]=1;} if(re.e.source_id===sel.id){dn[re.e.target_id]=1;edges[i]=1;} });
+    nodes[sel.id]=1; Object.keys(up).forEach(function(k){nodes[k]=1;}); Object.keys(dn).forEach(function(k){nodes[k]=1;});
+  } else { var re=L.edges[sel.i]; edges[sel.i]=1; nodes[re.e.source_id]=1; nodes[re.e.target_id]=1; }
+  return {nodes:nodes,edges:edges};
+}
+function renderLegend(){
+  var h="<h4>Nodes</h4><ul>", seenN={}, seenE={};
+  state.doc.nodes.forEach(function(n){ if(seenN[n.kind]) return; seenN[n.kind]=1; h+="<li><span class='sw' style='background:"+NODE_STYLES[n.kind][2]+"'></span>"+NODE_STYLES[n.kind][0]+"</li>"; });
+  h+="</ul><h4>Couplings</h4><ul>";
+  state.doc.edges.forEach(function(e){ if(seenE[e.coupling_type]) return; seenE[e.coupling_type]=1; h+="<li><span class='sw' style='background:"+EDGE_STYLES[e.coupling_type][1]+"'></span>"+EDGE_STYLES[e.coupling_type][0]+"</li>"; });
+  legend.innerHTML=h+"</ul>";
+}
+function rows(list){ return list.map(function(r){ return "<tr><th>"+r[0]+"</th><td>"+r[1]+"</td></tr>"; }).join(""); }
+function renderInspector(diags){
+  var d=state.doc, L=state.layout;
+  if(!state.sel){
+    insp.innerHTML="<h3>"+d.metadata.model_name+"</h3><p class='muted'>Select a node or coupling to inspect its thermal metadata.</p>"+
+      "<h4>Document</h4><table>"+rows([["Source",d.metadata.model_source||"—"],["Nodes",d.nodes.length],["Couplings",d.edges.length],["Findings",diags.length]])+"</table>";
+    return;
+  }
+  if(state.sel.type==="node"){
+    var n=L.byId[state.sel.id]; if(!n){ insp.innerHTML="<p>Unknown node.</p>"; return; }
+    var st=NODE_STYLES[n.kind], b=diags.filter(function(x){return x.nodeId===n.id;});
+    var up=[],dn=[]; L.edges.forEach(function(re){ if(re.e.target_id===n.id) up.push(re.e.source_id); if(re.e.source_id===n.id) dn.push(re.e.target_id); });
+    insp.innerHTML="<h3>"+n.name+"</h3><p class='kind'>"+st[0]+" · "+n.kind+"</p>"+
+      (b.length?"<div class='badge-note'>"+b.map(function(x){return "<strong>"+x.code+"</strong> — "+x.message;}).join("<br>")+"</div>":"")+
+      "<table>"+rows([["ID",n.id]].concat(n.zone_id? [["Zone",n.zone_id]]:[],
+        n.area_m2!==undefined?[["Area",fmt(n.area_m2)+" m²"]]:[], n.volume_m3!==undefined?[["Volume",fmt(n.volume_m3)+" m³"]]:[],
+        n.capacitance_j_per_k!==undefined?[["Capacitance",fmt(n.capacitance_j_per_k)+" J/K"]]:[],
+        n.tilt_deg!==undefined?[["Tilt",fmt(n.tilt_deg)+"°"]]:[], n.azimuth_deg!==undefined?[["Azimuth",fmt(n.azimuth_deg)+"°"]]:[]))+"</table>"+
+      attrsTable(n.attributes)+neighborSection("Upstream sources",up)+neighborSection("Downstream sinks",dn);
+  } else {
+    var re=L.edges[state.sel.i]; if(!re){ insp.innerHTML="<p>Unknown coupling.</p>"; return; }
+    var est=EDGE_STYLES[re.e.coupling_type];
+    insp.innerHTML="<h3>"+est[0]+"</h3><p class='kind'>"+re.e.coupling_type+"</p>"+
+      "<table>"+rows([["From",(L.byId[re.e.source_id]||{}).name||re.e.source_id],["To",(L.byId[re.e.target_id]||{}).name||re.e.target_id],
+        re.e.conductance_w_per_k!==undefined?["Conductance",fmt(re.e.conductance_w_per_k)+" W/K"]:["Conductance","—"],
+        re.e.fraction!==undefined?["Fraction",fmt(re.e.fraction)]:["Fraction","—"],["Bidirectional",re.e.bidirectional?"yes":"no"]])+"</table>"+attrsTable(re.e.attributes);
+  }
+}
+function attrsTable(a){ if(!a) return ""; var ks=Object.keys(a).sort(); if(!ks.length) return "";
+  return "<h4>Attributes</h4><table>"+rows(ks.map(function(k){ return [k,fmt(a[k])]; }))+"</table>"; }
+function neighborSection(title,ids){ if(!ids.length) return "";
+  return "<h4>"+title+"</h4><table>"+rows(ids.sort().map(function(id){ return [id,(state.layout.byId[id]||{}).name||id]; }))+"</table>"; }
+function select(sel){ state.sel=(state.sel&&state.sel.type===sel.type&&(sel.type==="node"?state.sel.id===sel.id:state.sel.i===sel.i))?null:sel; render(); }
+
+/* ---- pan / zoom (same math as src/topology/panZoom.ts) ---- */
+var dragS=null;
+svg.addEventListener("pointerdown",function(e){ if(e.button!==0) return; dragS={px:e.clientX,py:e.clientY,tx:state.t}; svg.classList.add("dragging"); svg.setPointerCapture(e.pointerId); });
+svg.addEventListener("pointermove",function(e){ if(!dragS) return; state.t={x:dragS.tx.x+(e.clientX-dragS.px),y:dragS.tx.y+(e.clientY-dragS.py),scale:dragS.tx.scale};
+  var g=svg.querySelector("g.layer"); if(g) g.setAttribute("transform","translate("+state.t.x+" "+state.t.y+") scale("+state.t.scale+")"); });
+svg.addEventListener("pointerup",function(){ dragS=null; svg.classList.remove("dragging"); });
+svg.addEventListener("click",function(e){ if(e.target===svg){ state.sel=null; render(); } });
+svg.addEventListener("wheel",function(e){ e.preventDefault(); var r=svg.getBoundingClientRect(), f=e.deltaY<0?1.15:1/1.15;
+  var px=e.clientX-r.left, py=e.clientY-r.top, sc=Math.min(8,Math.max(0.15,state.t.scale*f)), eff=sc/state.t.scale;
+  state.t={scale:sc,x:px-(px-state.t.x)*eff,y:py-(py-state.t.y)*eff}; render(); },{passive:false});
+document.addEventListener("keydown",function(e){ if(e.key==="Escape"){ state.sel=null; render(); } });
+function fitView(){ var w=document.getElementById("canvasWrap");
+  var sc=Math.min(8,Math.max(0.15,Math.min((w.clientWidth-48)/state.layout.W,(w.clientHeight-48)/state.layout.H)));
+  state.t={scale:sc,x:(w.clientWidth-state.layout.W*sc)/2,y:(w.clientHeight-state.layout.H*sc)/2}; render(); }
+document.getElementById("fitBtn").addEventListener("click",fitView);
+document.getElementById("fluxChk").addEventListener("change",function(e){ state.flux=e.target.checked; render(); });
+
+/* ---- loading ---- */
+var NODE_KINDS=Object.keys(NODE_STYLES), EDGE_KINDS=Object.keys(EDGE_STYLES);
+function parseDoc(text){ var o; try{ o=JSON.parse(text); }catch(err){ return {err:"Invalid JSON: "+err.message}; }
+  if(!o||!Array.isArray(o.nodes)||!Array.isArray(o.edges)||!o.metadata) return {err:"Not a topology_v1 document: expected metadata, nodes, edges."};
+  for(var i=0;i<o.nodes.length;i++){ var n=o.nodes[i]; if(!n.id||!n.name||!n.kind) return {err:"Node missing id/name/kind."}; if(NODE_KINDS.indexOf(n.kind)<0) return {err:"Unknown node kind \""+n.kind+"\" ("+n.id+")."}; }
+  for(var j=0;j<o.edges.length;j++){ var e=o.edges[j]; if(!e.source_id||!e.target_id) return {err:"Edge missing source_id/target_id."}; if(EDGE_KINDS.indexOf(e.coupling_type)<0) return {err:"Unknown edge kind \""+e.coupling_type+"\"."}; }
+  return {doc:o}; }
+function banner(msg){ var b=document.getElementById("banner"); b.textContent=msg; b.style.display=msg?"block":"none"; }
+function loadText(text,label){ var r=parseDoc(text);
+  if(r.doc){ state.doc=r.doc; state.lint=null; state.sel=null; banner(""); setModelSel(label); fitView(); return; }
+  var maybe=null; try{ var raw=JSON.parse(text); if(raw&&Array.isArray(raw.findings)) maybe=raw; }catch(err){}
+  if(maybe){ state.lint=maybe; banner(""); render(); return; }
+  banner(r.err||"Unsupported file."); }
+function setModelSel(label){ var sel=document.getElementById("modelSel"); sel.value=label||"custom";
+  if(sel.value!==(label||"custom")){ var o=document.createElement("option"); o.value=label||"custom"; o.textContent=(label||"custom")+" (loaded)"; sel.appendChild(o); sel.value=label||"custom"; } }
+document.getElementById("fileInp").addEventListener("change",function(e){ var f=e.target.files&&e.target.files[0]; if(!f) return; f.text().then(function(t){ loadText(t,f.name); }); e.target.value=""; });
+document.addEventListener("dragover",function(e){ e.preventDefault(); });
+document.addEventListener("drop",function(e){ e.preventDefault(); var f=e.dataTransfer.files&&e.dataTransfer.files[0]; if(!f) return; f.text().then(function(t){ loadText(t,f.name); }); });
+(function(){ var sel=document.getElementById("modelSel");
+  var opt=new Option(DEMO.metadata.model_name,"demo",true,true); sel.add(opt); sel.add(new Option("…load from ?model= URL","custom"));
+  sel.addEventListener("change",function(){ if(sel.value==="demo"){ state.doc=DEMO; state.lint=null; state.sel=null; banner(""); fitView(); } });
+  var q=new URLSearchParams(location.search).get("model");
+  if(q){ fetch(q).then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.text(); }).then(function(t){ loadText(t,q); })
+    .catch(function(err){ banner("Could not load ?model="+q+": "+err.message); fitView(); }); }
+  else fitView(); })();
+</script>
+</body>
+</html>
