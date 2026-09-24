@@ -168,16 +168,36 @@ jobs:
       # keeps the matrix honest — a single failing binary does not
       # abort the whole run.
       #
-      # The test selector list matches the original 7-line block's
-      # scope (root lib + 4 root integration tests + the workspace
-      # package tests called out by Issues #2909 / #2904). The full
-      # `--workspace --all-targets` scope from ADR-0014 is deferred —
-      # it would expand to ~7,900 tests across the whole workspace and
-      # surface pre-existing failures in tests that the original 7-line
-      # block intentionally did NOT run (e.g. broader ASHRAE 140 case
-      # series, `test_edge_cases`, `test_delta_analysis`). Tracking
-      # issue: revisit after the deferred ASHRAE 140 cooling-gate fix
-      # lands (RULES.md §"Physics and Validation Guardrails").
+      # Issue #3952: this step previously passed POSITIONAL filters
+      # (`surface_flux_provider_isolation::`, then
+      # `regression_exterior_film_unification::`) that nextest applies
+      # globally across EVERY selected target. As a result `--lib`
+      # (3,853 tests), `--test validation_empirical_harness`,
+      # `--test hvac_bestest`, and the fluxion-behavior / fluxion-twin
+      # selections each ran ~zero tests — the root lib suite executed
+      # in NO per-PR required check, which is how #3935's five broken
+      # lib tests shipped green (#3948). The two invocations below
+      # restore the original 7-line block's scope:
+      #
+      #   1. Unfiltered multi-target: root lib + the standalone keeper
+      #      integration tests + the workspace-package tests called
+      #      out by Issues #2909 / #2904.
+      #   2. The two all_tests regression modules (standalone test
+      #      binaries before the #3764 consolidation), scoped with an
+      #      explicit nextest filterset (`-E`). A filterset applies
+      #      only within its own invocation, so it cannot silently
+      #      zero out the other targets the way a positional filter
+      #      does.
+      #
+      # Everything else inside `--test all_tests` (2,704 run / 76
+      # skipped tests across 251 modules; 107 failures across 39
+      # modules) is deliberately NOT in per-PR scope: those suites
+      # never ran in the original 7-line block and carry documented
+      # physics gaps (SCORECARD / KNOWN_ISSUES §LIMIT-*), CLI EPW
+      # fixture-path breakage, timing-threshold tests, and
+      # working-tree-mutating report writers. Full per-suite triage
+      # and dispositions: issue #3952. Do NOT re-add positional
+      # filters to this step.
       #
       # Matrix `flags` carries the per-entry nextest args verbatim (e.g.
       # `--no-default-features` for the "no-default" entry, `--features
@@ -195,7 +215,6 @@ jobs:
           cargo nextest run \
             -p fluxion \
             --lib \
-            --test all_tests surface_flux_provider_isolation:: \
             --test validation_empirical_harness \
             --test hvac_bestest \
             -p fluxion-behavior --test lighting_occupancy_integration \
@@ -205,7 +224,8 @@ jobs:
             ${{ matrix.feature_set.flags }} && \
           cargo nextest run \
             -p fluxion \
-            --test all_tests regression_exterior_film_unification:: \
+            --test all_tests \
+            -E 'test(/^surface_flux_provider_isolation::/) | test(/^regression_exterior_film_unification::/)' \
             --test-threads=2 \
             --no-fail-fast \
             ${{ matrix.feature_set.flags }}
