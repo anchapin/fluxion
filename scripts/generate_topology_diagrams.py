@@ -28,7 +28,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -189,7 +188,7 @@ def render_svg(doc: dict, case: str) -> str:
     height = MARGIN_TOP + PITCH_Y * n_rows + legend_h + 20
 
     parts = [
-        f'<?xml version="1.0" encoding="UTF-8"?>',
+        '<?xml version="1.0" encoding="UTF-8"?>',
         f"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" "
         f"viewBox=\"0 0 {width} {height}\" font-family=\"Helvetica,Arial,sans-serif\">",
         f"<!-- {GENERATOR_STAMP} -->",
