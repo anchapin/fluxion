@@ -113,7 +113,7 @@ Runtime configuration knobs referenced above and in `docs/FEATURES.md`. Defaults
 
 ## CI Gates You Can Run Locally
 
-Every active gate under `scripts/check_*.py` (39 scripts at head) is wired into a `.github/workflows/*.yml` job, a pre-commit hook, or a manual operator diagnostic. Run the matching local command before opening a PR to catch regressions the live workflow would otherwise surface as a CI failure. The 31 gates below join the 8 already named above (`check_architecture_drift`, `check_ashrae_cases_cycle`, `check_doc_inventory_fresh`, `check_docs_summaries`, `check_orphan_modules`, `check_physics_sim_cycle`, `check_root_hygiene`, `check_test_inventory_drift`); the table covers **all 39** for one-stop lookup, and matches the regex list in `release_gates.yaml -> ci.required_checks`. **Goal** numbering follows `SCORECARD.md` and `ARCHITECTURE.md` (key: **#1** ASHRAE 140 validation pass rate, **#5** module-size ratchet + cycle-break governance, **#6** contributor docs + CI hygiene).
+Every active gate under `scripts/check_*.py` (40 scripts at head) is wired into a `.github/workflows/*.yml` job, a pre-commit hook, or a manual operator diagnostic. Run the matching local command before opening a PR to catch regressions the live workflow would otherwise surface as a CI failure. The 32 gates below join the 8 already named above (`check_architecture_drift`, `check_ashrae_cases_cycle`, `check_doc_inventory_fresh`, `check_docs_summaries`, `check_orphan_modules`, `check_physics_sim_cycle`, `check_root_hygiene`, `check_test_inventory_drift`); the table covers **all 40** for one-stop lookup, and matches the regex list in `release_gates.yaml -> ci.required_checks`. **Goal** numbering follows `SCORECARD.md` and `ARCHITECTURE.md` (key: **#1** ASHRAE 140 validation pass rate, **#5** module-size ratchet + cycle-break governance, **#6** contributor docs + CI hygiene).
 
 | Gate | Purpose | Workflow / hook | Goal |
 |---|---|---|---|
@@ -155,6 +155,7 @@ Every active gate under `scripts/check_*.py` (39 scripts at head) is wired into 
 | `scripts/check_stub_modules.py` | Stub-module detector — future-extraction marker files (#2896) | `architecture_drift.yml` | #5 |
 | `scripts/check_tdqs_regression.py` | Temporal-Decision-Quality-Score criterion-bench regression | `tdqs_regression.yml` | #6 |
 | `scripts/check_test_inventory_drift.py` | Test-count ratchet vs. `test_inventory_baseline.json` (#3442) | `scripts-tests.yml` | #6 |
+| `scripts/check_topology_drift.py` | Topology artifact drift gate — byte-compares regenerated reference topologies + Mermaid/SVG diagrams vs. committed tree, `topology lint --strict` per case (#3966) | `topology_visualizer.yml` | #5 |
 | `scripts/check_workflow_pin.py` | SHA-pinned `uses:` in `.github/workflows/*.yml` (#3475) | `scripts-tests.yml` | #6 |
 
 ## Git and CI Workflow

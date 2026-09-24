@@ -1,0 +1,11 @@
+{
+  "clean": true,
+  "findings": [],
+  "source": "ashrae-140-registry:620",
+  "strict": true,
+  "summary": {
+    "errors": 0,
+    "total": 0,
+    "warnings": 0
+  }
+}

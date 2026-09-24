@@ -1,0 +1,775 @@
+{
+  "metadata": {
+    "schema_version": "1.0.0",
+    "tool_version": "1.0.0",
+    "model_name": "ASHRAE 140 Case 900",
+    "model_source": "ashrae-140-registry:900",
+    "node_count": 34,
+    "edge_count": 47
+  },
+  "nodes": [
+    {
+      "id": "ambient",
+      "kind": "outdoor_ambient",
+      "name": "Outdoor ambient"
+    },
+    {
+      "id": "zone-0:air",
+      "kind": "zone_air",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 air",
+      "capacitance_j_per_k": 156453.12000000002,
+      "volume_m3": 129.60000000000002
+    },
+    {
+      "id": "zone-0:floor:ext",
+      "kind": "exterior_surface",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 floor exterior film",
+      "area_m2": 48.0,
+      "tilt_deg": 180.0,
+      "attributes": {
+        "ground_coupled": 1.0,
+        "ground_temperature_c": 9.4
+      }
+    },
+    {
+      "id": "zone-0:floor:int",
+      "kind": "interior_surface",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 floor interior film",
+      "area_m2": 48.0,
+      "tilt_deg": 180.0
+    },
+    {
+      "id": "zone-0:floor:layer-0",
+      "kind": "wall_layer",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 floor layer 0",
+      "capacitance_j_per_k": 4515840.0,
+      "area_m2": 48.0,
+      "tilt_deg": 180.0,
+      "attributes": {
+        "conductivity_w_per_mk": 0.51,
+        "density_kg_per_m3": 1400.0,
+        "specific_heat_j_per_kgk": 840.0,
+        "thickness_m": 0.08
+      }
+    },
+    {
+      "id": "zone-0:floor:layer-1",
+      "kind": "wall_layer",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 floor layer 1",
+      "capacitance_j_per_k": 189100.80000000002,
+      "area_m2": 48.0,
+      "tilt_deg": 180.0,
+      "attributes": {
+        "conductivity_w_per_mk": 0.04,
+        "density_kg_per_m3": 14.0,
+        "specific_heat_j_per_kgk": 1400.0,
+        "thickness_m": 0.201
+      }
+    },
+    {
+      "id": "zone-0:gain",
+      "kind": "internal_gain",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 internal gain",
+      "attributes": {
+        "convective_fraction": 0.6,
+        "radiative_fraction": 0.4,
+        "total_load_w": 200.0
+      }
+    },
+    {
+      "id": "zone-0:hvac",
+      "kind": "hvac_terminal",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 HVAC terminal",
+      "attributes": {
+        "cooling_setpoint_c": 27.0,
+        "efficiency": 1.0,
+        "heating_setpoint_c": 20.0,
+        "hvac_end_hour": 24.0,
+        "hvac_start_hour": 0.0
+      }
+    },
+    {
+      "id": "zone-0:mass",
+      "kind": "internal_mass",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 radiant mass",
+      "area_m2": 48.0
+    },
+    {
+      "id": "zone-0:roof:ext",
+      "kind": "exterior_surface",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 roof exterior film",
+      "area_m2": 48.0,
+      "tilt_deg": 0.0
+    },
+    {
+      "id": "zone-0:roof:int",
+      "kind": "interior_surface",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 roof interior film",
+      "area_m2": 48.0,
+      "tilt_deg": 0.0
+    },
+    {
+      "id": "zone-0:roof:layer-0",
+      "kind": "wall_layer",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 roof layer 0",
+      "capacitance_j_per_k": 5376000.0,
+      "area_m2": 48.0,
+      "tilt_deg": 0.0,
+      "attributes": {
+        "conductivity_w_per_mk": 1.13,
+        "density_kg_per_m3": 1400.0,
+        "specific_heat_j_per_kgk": 1000.0,
+        "thickness_m": 0.08
+      }
+    },
+    {
+      "id": "zone-0:roof:layer-1",
+      "kind": "wall_layer",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 roof layer 1",
+      "capacitance_j_per_k": 104428.8,
+      "area_m2": 48.0,
+      "tilt_deg": 0.0,
+      "attributes": {
+        "conductivity_w_per_mk": 0.04,
+        "density_kg_per_m3": 14.0,
+        "specific_heat_j_per_kgk": 1400.0,
+        "thickness_m": 0.111
+      }
+    },
+    {
+      "id": "zone-0:roof:layer-2",
+      "kind": "wall_layer",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 roof layer 2",
+      "capacitance_j_per_k": 592799.9999999999,
+      "area_m2": 48.0,
+      "tilt_deg": 0.0,
+      "attributes": {
+        "conductivity_w_per_mk": 0.14,
+        "density_kg_per_m3": 500.0,
+        "specific_heat_j_per_kgk": 1300.0,
+        "thickness_m": 0.019
+      }
+    },
+    {
+      "id": "zone-0:wall-east:ext",
+      "kind": "exterior_surface",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 wall-east exterior film",
+      "area_m2": 21.6,
+      "azimuth_deg": 90.0,
+      "tilt_deg": 90.0
+    },
+    {
+      "id": "zone-0:wall-east:int",
+      "kind": "interior_surface",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 wall-east interior film",
+      "area_m2": 21.6,
+      "azimuth_deg": 90.0,
+      "tilt_deg": 90.0
+    },
+    {
+      "id": "zone-0:wall-east:layer-0",
+      "kind": "wall_layer",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 wall-east layer 0",
+      "capacitance_j_per_k": 92728.8,
+      "area_m2": 21.6,
+      "azimuth_deg": 90.0,
+      "tilt_deg": 90.0,
+      "attributes": {
+        "conductivity_w_per_mk": 0.14,
+        "density_kg_per_m3": 530.0,
+        "specific_heat_j_per_kgk": 900.0,
+        "thickness_m": 0.009
+      }
+    },
+    {
+      "id": "zone-0:wall-east:layer-1",
+      "kind": "wall_layer",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 wall-east layer 1",
+      "capacitance_j_per_k": 26036.64,
+      "area_m2": 21.6,
+      "azimuth_deg": 90.0,
+      "tilt_deg": 90.0,
+      "attributes": {
+        "conductivity_w_per_mk": 0.04,
+        "density_kg_per_m3": 14.0,
+        "specific_heat_j_per_kgk": 1400.0,
+        "thickness_m": 0.0615
+      }
+    },
+    {
+      "id": "zone-0:wall-east:layer-2",
+      "kind": "wall_layer",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 wall-east layer 2",
+      "capacitance_j_per_k": 2540160.0,
+      "area_m2": 21.6,
+      "azimuth_deg": 90.0,
+      "tilt_deg": 90.0,
+      "attributes": {
+        "conductivity_w_per_mk": 0.51,
+        "density_kg_per_m3": 1400.0,
+        "specific_heat_j_per_kgk": 840.0,
+        "thickness_m": 0.1
+      }
+    },
+    {
+      "id": "zone-0:wall-north:ext",
+      "kind": "exterior_surface",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 wall-north exterior film",
+      "area_m2": 16.200000000000003,
+      "azimuth_deg": 0.0,
+      "tilt_deg": 90.0
+    },
+    {
+      "id": "zone-0:wall-north:int",
+      "kind": "interior_surface",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 wall-north interior film",
+      "area_m2": 16.200000000000003,
+      "azimuth_deg": 0.0,
+      "tilt_deg": 90.0
+    },
+    {
+      "id": "zone-0:wall-north:layer-0",
+      "kind": "wall_layer",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 wall-north layer 0",
+      "capacitance_j_per_k": 69546.6,
+      "area_m2": 16.200000000000003,
+      "azimuth_deg": 0.0,
+      "tilt_deg": 90.0,
+      "attributes": {
+        "conductivity_w_per_mk": 0.14,
+        "density_kg_per_m3": 530.0,
+        "specific_heat_j_per_kgk": 900.0,
+        "thickness_m": 0.009
+      }
+    },
+    {
+      "id": "zone-0:wall-north:layer-1",
+      "kind": "wall_layer",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 wall-north layer 1",
+      "capacitance_j_per_k": 19527.480000000003,
+      "area_m2": 16.200000000000003,
+      "azimuth_deg": 0.0,
+      "tilt_deg": 90.0,
+      "attributes": {
+        "conductivity_w_per_mk": 0.04,
+        "density_kg_per_m3": 14.0,
+        "specific_heat_j_per_kgk": 1400.0,
+        "thickness_m": 0.0615
+      }
+    },
+    {
+      "id": "zone-0:wall-north:layer-2",
+      "kind": "wall_layer",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 wall-north layer 2",
+      "capacitance_j_per_k": 1905120.0000000005,
+      "area_m2": 16.200000000000003,
+      "azimuth_deg": 0.0,
+      "tilt_deg": 90.0,
+      "attributes": {
+        "conductivity_w_per_mk": 0.51,
+        "density_kg_per_m3": 1400.0,
+        "specific_heat_j_per_kgk": 840.0,
+        "thickness_m": 0.1
+      }
+    },
+    {
+      "id": "zone-0:wall-south:ext",
+      "kind": "exterior_surface",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 wall-south exterior film",
+      "area_m2": 4.200000000000003,
+      "azimuth_deg": 180.0,
+      "tilt_deg": 90.0
+    },
+    {
+      "id": "zone-0:wall-south:int",
+      "kind": "interior_surface",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 wall-south interior film",
+      "area_m2": 4.200000000000003,
+      "azimuth_deg": 180.0,
+      "tilt_deg": 90.0
+    },
+    {
+      "id": "zone-0:wall-south:layer-0",
+      "kind": "wall_layer",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 wall-south layer 0",
+      "capacitance_j_per_k": 18030.60000000001,
+      "area_m2": 4.200000000000003,
+      "azimuth_deg": 180.0,
+      "tilt_deg": 90.0,
+      "attributes": {
+        "conductivity_w_per_mk": 0.14,
+        "density_kg_per_m3": 530.0,
+        "specific_heat_j_per_kgk": 900.0,
+        "thickness_m": 0.009
+      }
+    },
+    {
+      "id": "zone-0:wall-south:layer-1",
+      "kind": "wall_layer",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 wall-south layer 1",
+      "capacitance_j_per_k": 5062.680000000004,
+      "area_m2": 4.200000000000003,
+      "azimuth_deg": 180.0,
+      "tilt_deg": 90.0,
+      "attributes": {
+        "conductivity_w_per_mk": 0.04,
+        "density_kg_per_m3": 14.0,
+        "specific_heat_j_per_kgk": 1400.0,
+        "thickness_m": 0.0615
+      }
+    },
+    {
+      "id": "zone-0:wall-south:layer-2",
+      "kind": "wall_layer",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 wall-south layer 2",
+      "capacitance_j_per_k": 493920.0000000004,
+      "area_m2": 4.200000000000003,
+      "azimuth_deg": 180.0,
+      "tilt_deg": 90.0,
+      "attributes": {
+        "conductivity_w_per_mk": 0.51,
+        "density_kg_per_m3": 1400.0,
+        "specific_heat_j_per_kgk": 840.0,
+        "thickness_m": 0.1
+      }
+    },
+    {
+      "id": "zone-0:wall-west:ext",
+      "kind": "exterior_surface",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 wall-west exterior film",
+      "area_m2": 21.6,
+      "azimuth_deg": 270.0,
+      "tilt_deg": 90.0
+    },
+    {
+      "id": "zone-0:wall-west:int",
+      "kind": "interior_surface",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 wall-west interior film",
+      "area_m2": 21.6,
+      "azimuth_deg": 270.0,
+      "tilt_deg": 90.0
+    },
+    {
+      "id": "zone-0:wall-west:layer-0",
+      "kind": "wall_layer",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 wall-west layer 0",
+      "capacitance_j_per_k": 92728.8,
+      "area_m2": 21.6,
+      "azimuth_deg": 270.0,
+      "tilt_deg": 90.0,
+      "attributes": {
+        "conductivity_w_per_mk": 0.14,
+        "density_kg_per_m3": 530.0,
+        "specific_heat_j_per_kgk": 900.0,
+        "thickness_m": 0.009
+      }
+    },
+    {
+      "id": "zone-0:wall-west:layer-1",
+      "kind": "wall_layer",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 wall-west layer 1",
+      "capacitance_j_per_k": 26036.64,
+      "area_m2": 21.6,
+      "azimuth_deg": 270.0,
+      "tilt_deg": 90.0,
+      "attributes": {
+        "conductivity_w_per_mk": 0.04,
+        "density_kg_per_m3": 14.0,
+        "specific_heat_j_per_kgk": 1400.0,
+        "thickness_m": 0.0615
+      }
+    },
+    {
+      "id": "zone-0:wall-west:layer-2",
+      "kind": "wall_layer",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 wall-west layer 2",
+      "capacitance_j_per_k": 2540160.0,
+      "area_m2": 21.6,
+      "azimuth_deg": 270.0,
+      "tilt_deg": 90.0,
+      "attributes": {
+        "conductivity_w_per_mk": 0.51,
+        "density_kg_per_m3": 1400.0,
+        "specific_heat_j_per_kgk": 840.0,
+        "thickness_m": 0.1
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "ambient",
+      "target_id": "zone-0:air",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 26.400000000000002,
+      "bidirectional": true,
+      "attributes": {
+        "glazing": 1.0,
+        "u_value_w_per_m2k": 2.2,
+        "window_area_m2": 12.0
+      }
+    },
+    {
+      "source_id": "ambient",
+      "target_id": "zone-0:roof:ext",
+      "coupling_type": "convection_exterior",
+      "conductance_w_per_k": 878.4000000000001,
+      "bidirectional": false
+    },
+    {
+      "source_id": "ambient",
+      "target_id": "zone-0:wall-east:ext",
+      "coupling_type": "convection_exterior",
+      "conductance_w_per_k": 395.28000000000003,
+      "bidirectional": false
+    },
+    {
+      "source_id": "ambient",
+      "target_id": "zone-0:wall-north:ext",
+      "coupling_type": "convection_exterior",
+      "conductance_w_per_k": 296.46000000000004,
+      "bidirectional": false
+    },
+    {
+      "source_id": "ambient",
+      "target_id": "zone-0:wall-south:ext",
+      "coupling_type": "convection_exterior",
+      "conductance_w_per_k": 76.86000000000006,
+      "bidirectional": false
+    },
+    {
+      "source_id": "ambient",
+      "target_id": "zone-0:wall-south:int",
+      "coupling_type": "shortwave_solar_diffuse",
+      "fraction": 0.77,
+      "bidirectional": false,
+      "attributes": {
+        "window_area_m2": 12.0
+      }
+    },
+    {
+      "source_id": "ambient",
+      "target_id": "zone-0:wall-south:int",
+      "coupling_type": "shortwave_solar_direct",
+      "fraction": 0.77,
+      "bidirectional": false,
+      "attributes": {
+        "window_area_m2": 12.0
+      }
+    },
+    {
+      "source_id": "ambient",
+      "target_id": "zone-0:wall-west:ext",
+      "coupling_type": "convection_exterior",
+      "conductance_w_per_k": 395.28000000000003,
+      "bidirectional": false
+    },
+    {
+      "source_id": "zone-0:air",
+      "target_id": "ambient",
+      "coupling_type": "air_exchange",
+      "conductance_w_per_k": 21.729600000000005,
+      "bidirectional": true,
+      "attributes": {
+        "air_changes_per_hour": 0.5
+      }
+    },
+    {
+      "source_id": "zone-0:floor:ext",
+      "target_id": "zone-0:floor:layer-0",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 612.0,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:floor:int",
+      "target_id": "zone-0:air",
+      "coupling_type": "convection_interior",
+      "conductance_w_per_k": 397.91999999999996,
+      "bidirectional": false
+    },
+    {
+      "source_id": "zone-0:floor:int",
+      "target_id": "zone-0:mass",
+      "coupling_type": "longwave_radiation",
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:floor:layer-0",
+      "target_id": "zone-0:floor:layer-1",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 19.104477611940297,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:floor:layer-1",
+      "target_id": "zone-0:floor:int",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 19.104477611940297,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:gain",
+      "target_id": "zone-0:air",
+      "coupling_type": "internal_gain_split",
+      "fraction": 0.6,
+      "bidirectional": false,
+      "attributes": {
+        "path": 0.0
+      }
+    },
+    {
+      "source_id": "zone-0:gain",
+      "target_id": "zone-0:mass",
+      "coupling_type": "internal_gain_split",
+      "fraction": 0.4,
+      "bidirectional": false,
+      "attributes": {
+        "path": 1.0
+      }
+    },
+    {
+      "source_id": "zone-0:hvac",
+      "target_id": "zone-0:air",
+      "coupling_type": "hvac_sensible",
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:roof:ext",
+      "target_id": "zone-0:roof:layer-0",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 1355.9999999999998,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:roof:int",
+      "target_id": "zone-0:air",
+      "coupling_type": "convection_interior",
+      "conductance_w_per_k": 397.91999999999996,
+      "bidirectional": false
+    },
+    {
+      "source_id": "zone-0:roof:int",
+      "target_id": "zone-0:mass",
+      "coupling_type": "longwave_radiation",
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:roof:layer-0",
+      "target_id": "zone-0:roof:layer-1",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 34.59459459459459,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:roof:layer-1",
+      "target_id": "zone-0:roof:layer-2",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 707.3684210526317,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:roof:layer-2",
+      "target_id": "zone-0:roof:int",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 707.3684210526317,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:wall-east:ext",
+      "target_id": "zone-0:wall-east:layer-0",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 672.0000000000001,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:wall-east:int",
+      "target_id": "zone-0:air",
+      "coupling_type": "convection_interior",
+      "conductance_w_per_k": 179.064,
+      "bidirectional": false
+    },
+    {
+      "source_id": "zone-0:wall-east:int",
+      "target_id": "zone-0:mass",
+      "coupling_type": "longwave_radiation",
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:wall-east:layer-0",
+      "target_id": "zone-0:wall-east:layer-1",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 28.097560975609756,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:wall-east:layer-1",
+      "target_id": "zone-0:wall-east:layer-2",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 220.32000000000002,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:wall-east:layer-2",
+      "target_id": "zone-0:wall-east:int",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 220.32000000000002,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:wall-north:ext",
+      "target_id": "zone-0:wall-north:layer-0",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 504.0000000000001,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:wall-north:int",
+      "target_id": "zone-0:air",
+      "coupling_type": "convection_interior",
+      "conductance_w_per_k": 134.298,
+      "bidirectional": false
+    },
+    {
+      "source_id": "zone-0:wall-north:int",
+      "target_id": "zone-0:mass",
+      "coupling_type": "longwave_radiation",
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:wall-north:layer-0",
+      "target_id": "zone-0:wall-north:layer-1",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 21.07317073170732,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:wall-north:layer-1",
+      "target_id": "zone-0:wall-north:layer-2",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 165.24000000000004,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:wall-north:layer-2",
+      "target_id": "zone-0:wall-north:int",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 165.24000000000004,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:wall-south:ext",
+      "target_id": "zone-0:wall-south:layer-0",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 130.66666666666677,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:wall-south:int",
+      "target_id": "zone-0:air",
+      "coupling_type": "convection_interior",
+      "conductance_w_per_k": 34.81800000000002,
+      "bidirectional": false
+    },
+    {
+      "source_id": "zone-0:wall-south:int",
+      "target_id": "zone-0:mass",
+      "coupling_type": "longwave_radiation",
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:wall-south:layer-0",
+      "target_id": "zone-0:wall-south:layer-1",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 5.463414634146345,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:wall-south:layer-1",
+      "target_id": "zone-0:wall-south:layer-2",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 42.84000000000003,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:wall-south:layer-2",
+      "target_id": "zone-0:wall-south:int",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 42.84000000000003,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:wall-west:ext",
+      "target_id": "zone-0:wall-west:layer-0",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 672.0000000000001,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:wall-west:int",
+      "target_id": "zone-0:air",
+      "coupling_type": "convection_interior",
+      "conductance_w_per_k": 179.064,
+      "bidirectional": false
+    },
+    {
+      "source_id": "zone-0:wall-west:int",
+      "target_id": "zone-0:mass",
+      "coupling_type": "longwave_radiation",
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:wall-west:layer-0",
+      "target_id": "zone-0:wall-west:layer-1",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 28.097560975609756,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:wall-west:layer-1",
+      "target_id": "zone-0:wall-west:layer-2",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 220.32000000000002,
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:wall-west:layer-2",
+      "target_id": "zone-0:wall-west:int",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 220.32000000000002,
+      "bidirectional": true
+    }
+  ]
+}
