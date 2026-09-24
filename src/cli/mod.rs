@@ -24,7 +24,7 @@ pub mod validation;
 
 pub use multi_zone::*;
 pub use performance::PerformanceCommand;
-pub use topology::{ExportArgs, TopologyCommand};
+pub use topology::{ExportArgs, LintArgs, TopologyCommand};
 pub use validation::ValidationSubcommand;
 
 use anyhow::{anyhow, Result};
@@ -434,6 +434,8 @@ pub enum Commands {
 
     /// Backward-compatibility alias for `fluxion topology export` (Issue #3966).
     ExportTopology(ExportArgs),
+    /// Backward-compatibility alias for `fluxion topology lint` (Issue #3964).
+    LintTopology(LintArgs),
 }
 
 /// Main CLI structure.
@@ -1168,6 +1170,9 @@ pub fn run_cli() -> Result<()> {
 
         Commands::ExportTopology(args) => {
             topology::handle_export(args)?;
+        }
+        Commands::LintTopology(args) => {
+            topology::handle_lint(args)?;
         }
 
         Commands::References { command } => match command {

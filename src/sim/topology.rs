@@ -307,7 +307,7 @@ impl TopologyGraph {
             .map(|n| n.id.as_str())
             .collect();
         for n in &self.nodes {
-            if ids.get(n.id.as_str()).is_none() {
+            if !ids.contains(n.id.as_str()) {
                 return Err(format!("node id not in id set: {}", n.id));
             }
             if let Some(z) = &n.zone_id {

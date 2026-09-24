@@ -98,6 +98,10 @@ fn gross_wall_area(g: &GeometrySpec, orientation: &Orientation) -> f64 {
 }
 
 /// Builds and returns the surface node chain for one construction assembly.
+// A builder for one assembly needs the zone, surface, geometry, construction,
+// and boundary context; bundling them into a struct would obscure the call
+// sites, so the arity is accepted here.
+#[allow(clippy::too_many_arguments)]
 fn push_surface_chain(
     graph: &mut TopologyGraph,
     zi: usize,

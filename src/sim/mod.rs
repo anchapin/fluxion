@@ -46,6 +46,7 @@ pub mod thermal_model_solvers;
 pub mod thermal_selector;
 pub mod timestep_solver;
 pub mod topology;
+pub mod topology_lint;
 pub mod utility_tariff;
 pub mod warmup;
 
