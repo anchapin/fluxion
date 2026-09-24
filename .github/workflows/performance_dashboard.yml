@@ -695,7 +695,10 @@ jobs:
           rm -f run_*.txt
           for i in 1 2 3; do
             echo "=== measurement run ${i}/3 ==="
-            cargo test --test all_tests performance_regression_test::test_performance_regression --release -- --nocapture > "run_${i}.txt" 2>&1 || true
+            # --ignored: test_performance_regression is quarantined from the
+            # debug lanes under #3957; this release-mode gate is its
+            # designated measurement home (Issue #3952 / #3957).
+            cargo test --test all_tests performance_regression_test::test_performance_regression --release -- --ignored --nocapture > "run_${i}.txt" 2>&1 || true
           done
 
           python3 << 'EOF'
