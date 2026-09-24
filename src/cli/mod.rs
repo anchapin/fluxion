@@ -54,6 +54,22 @@ use crate::validation::ASHRAE140Validator;
 use crate::weather::epw::EpwWeatherSource;
 use crate::BatchOracle;
 
+/// Path to the bundled Denver-Stapleton TMY EPW used by ASHRAE 140 CLI commands.
+///
+/// Resolution order (Issue #3952): the process working directory first —
+/// preserving the historical `assets/weather/...` relative-path behavior for
+/// users running from the repository root — then the build-time workspace
+/// root via `CARGO_MANIFEST_DIR`, so CLI subcommands also work when invoked
+/// from an arbitrary working directory (the `cli_integration` tests spawn the
+/// binary with a tempdir cwd).
+pub(crate) fn bundled_denver_epw_path() -> PathBuf {
+    const RELATIVE: &str = "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw";
+    if Path::new(RELATIVE).exists() {
+        return PathBuf::from(RELATIVE);
+    }
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(RELATIVE)
+}
+
 /// Automation subcommands for test workflows and CI/CD integration.
 #[derive(Subcommand, Debug)]
 pub enum AutomationSubcommand {
@@ -825,10 +841,8 @@ pub fn validate_diagnostic_case(case_spec: &str) -> Result<()> {
 
             // Run validation
             let validator = ASHRAE140Validator::new();
-            let weather = EpwWeatherSource::from_file(
-                "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
-            )
-            .expect("Failed to load EPW weather data");
+            let weather = EpwWeatherSource::from_file(bundled_denver_epw_path())
+                .expect("Failed to load EPW weather data");
             let (results, _) = validator.simulate_case_with_diagnostics(&spec, &weather, case_spec);
 
             println!(
@@ -1564,10 +1578,8 @@ pub fn run_cli() -> Result<()> {
             let spec =
                 case_id_to_spec(&case).ok_or_else(|| anyhow!("Unknown case ID: {}", case))?;
             let validator = ASHRAE140Validator::new();
-            let weather = EpwWeatherSource::from_file(
-                "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
-            )
-            .expect("Failed to load EPW weather data");
+            let weather = EpwWeatherSource::from_file(bundled_denver_epw_path())
+                .expect("Failed to load EPW weather data");
             let (_, diagnostic) = validator.simulate_case_with_diagnostics(&spec, &weather, &case);
             let breakdown = diagnostic.energy_breakdown;
             let entries =
@@ -1592,10 +1604,8 @@ pub fn run_cli() -> Result<()> {
             let spec =
                 case_id_to_spec(&case).ok_or_else(|| anyhow!("Unknown case ID: {}", case))?;
             let validator = ASHRAE140Validator::new();
-            let weather = EpwWeatherSource::from_file(
-                "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
-            )
-            .expect("Failed to load EPW weather data");
+            let weather = EpwWeatherSource::from_file(bundled_denver_epw_path())
+                .expect("Failed to load EPW weather data");
             let (_, diagnostic) = validator.simulate_case_with_diagnostics(&spec, &weather, &case);
             // Ensure temperature profile has data (free-floating case)
             if diagnostic.temp_profile.hourly_temps.is_empty() {
