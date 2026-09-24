@@ -536,3 +536,269 @@ fn test_cli_valid_solver_flags_pass_selection() {
         "failure must be the missing-input check, proving selection passed; got:\n{combined}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// `fluxion topology export` / `fluxion export-topology` (Issue #3963/#3966)
+// ---------------------------------------------------------------------------
+
+/// Helper: run the binary, require success, and return stdout.
+fn topology_export_stdout(args: &[&str]) -> String {
+    let (status, stdout, stderr) = run_fluxion(args);
+    assert!(
+        status.success(),
+        "`fluxion {}` must succeed; stdout:\n{stdout}\nstderr:\n{stderr}",
+        args.join(" ")
+    );
+    stdout
+}
+
+/// Hand-rolled structural validation against `schemas/topology_v1.schema.json`
+/// (no JSON-Schema validator dependency; see Issue #3963 task notes).
+fn assert_matches_schema(doc: &serde_json::Value) {
+    let schema_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/schemas/topology_v1.schema.json"
+    );
+    let schema: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(schema_path).expect("schemas/topology_v1.schema.json readable"),
+    )
+    .expect("schema is valid JSON");
+
+    let node_kinds = schema["$defs"]["node_kind"]["enum"]
+        .as_array()
+        .expect("node_kind enum");
+    let edge_kinds = schema["$defs"]["edge_kind"]["enum"]
+        .as_array()
+        .expect("edge_kind enum");
+
+    let metadata = doc.get("metadata").expect("metadata block present");
+    for key in [
+        "schema_version",
+        "tool_version",
+        "model_name",
+        "model_source",
+        "node_count",
+        "edge_count",
+    ] {
+        assert!(metadata.get(key).is_some(), "metadata.{key} required");
+    }
+    assert_eq!(metadata["schema_version"], "1.0.0");
+    assert!(
+        metadata.get("timestamp").is_none(),
+        "timestamp omitted by default"
+    );
+
+    let nodes = doc["nodes"].as_array().expect("nodes array");
+    let edges = doc["edges"].as_array().expect("edges array");
+    assert_eq!(
+        metadata["node_count"].as_u64().unwrap(),
+        nodes.len() as u64,
+        "node_count matches array length"
+    );
+    assert_eq!(
+        metadata["edge_count"].as_u64().unwrap(),
+        edges.len() as u64,
+        "edge_count matches array length"
+    );
+
+    let mut ids: Vec<&str> = Vec::new();
+    for n in nodes {
+        for key in ["id", "kind", "name"] {
+            assert!(n.get(key).is_some(), "node.{key} required");
+        }
+        assert!(
+            node_kinds.contains(&n["kind"]),
+            "node kind {} is in the schema enum",
+            n["kind"]
+        );
+        if let Some(c) = n.get("capacitance_j_per_k") {
+            assert!(c.as_f64().unwrap() >= 0.0, "capacitance >= 0");
+        }
+        ids.push(n["id"].as_str().unwrap());
+    }
+    let mut sorted_ids = ids.clone();
+    sorted_ids.sort();
+    assert_eq!(ids, sorted_ids, "nodes sorted by stable id");
+    let id_set: std::collections::BTreeSet<&str> = ids.iter().copied().collect();
+    assert_eq!(id_set.len(), ids.len(), "node ids unique");
+
+    let mut edge_keys: Vec<(&str, &str, &str)> = Vec::new();
+    for e in edges {
+        for key in ["source_id", "target_id", "coupling_type", "bidirectional"] {
+            assert!(e.get(key).is_some(), "edge.{key} required");
+        }
+        assert!(
+            edge_kinds.contains(&e["coupling_type"]),
+            "edge kind {} is in the schema enum",
+            e["coupling_type"]
+        );
+        assert!(
+            id_set.contains(e["source_id"].as_str().unwrap()),
+            "edge source resolves: {}",
+            e["source_id"]
+        );
+        assert!(
+            id_set.contains(e["target_id"].as_str().unwrap()),
+            "edge target resolves: {}",
+            e["target_id"]
+        );
+        if let Some(f) = e.get("fraction") {
+            let f = f.as_f64().unwrap();
+            assert!((0.0..=1.0).contains(&f), "fraction within [0,1]: {f}");
+        }
+        edge_keys.push((
+            e["source_id"].as_str().unwrap(),
+            e["target_id"].as_str().unwrap(),
+            e["coupling_type"].as_str().unwrap(),
+        ));
+    }
+    let mut sorted_edges = edge_keys.clone();
+    sorted_edges.sort();
+    assert_eq!(
+        edge_keys, sorted_edges,
+        "edges sorted by (source,target,kind)"
+    );
+}
+
+#[test]
+fn test_topology_export_case_600_deterministic_and_schema_valid() {
+    let a = topology_export_stdout(&["topology", "export", "--case", "600"]);
+    let b = topology_export_stdout(&["topology", "export", "--case", "600"]);
+    assert_eq!(a, b, "identical inputs must yield byte-identical output");
+
+    let doc: serde_json::Value = serde_json::from_str(&a).expect("stdout is valid JSON");
+    assert_matches_schema(&doc);
+
+    // Thermal-network essentials for Case 600 (single zone, low mass).
+    let kinds = |kind: &str| {
+        doc["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|n| n["kind"] == kind)
+            .count()
+    };
+    assert_eq!(kinds("outdoor_ambient"), 1);
+    assert_eq!(kinds("zone_air"), 1);
+    assert_eq!(kinds("internal_mass"), 1);
+    assert_eq!(kinds("internal_gain"), 1);
+    assert_eq!(kinds("hvac_terminal"), 1);
+    assert!(
+        kinds("wall_layer") >= 6,
+        "multi-layer envelope nodes present"
+    );
+    assert!(kinds("exterior_surface") >= 5);
+    assert!(kinds("interior_surface") >= 5);
+
+    let edge_kinds = |kind: &str| {
+        doc["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["coupling_type"] == kind)
+            .count()
+    };
+    assert!(edge_kinds("shortwave_solar_direct") >= 1);
+    assert!(edge_kinds("shortwave_solar_diffuse") >= 1);
+    assert_eq!(
+        edge_kinds("internal_gain_split"),
+        2,
+        "radiative + convective split"
+    );
+    assert!(edge_kinds("air_exchange") >= 1, "infiltration present");
+}
+
+#[test]
+fn test_topology_export_alias_matches_subcommand() {
+    let alias = topology_export_stdout(&["export-topology", "--case", "600"]);
+    let subcommand = topology_export_stdout(&["topology", "export", "--case", "600"]);
+    assert_eq!(
+        alias, subcommand,
+        "`export-topology` alias must behave identically to `topology export`"
+    );
+}
+
+#[test]
+fn test_topology_export_rejects_case_and_model_together() {
+    let (status, _stdout, stderr) = run_fluxion(&[
+        "topology",
+        "export",
+        "--case",
+        "600",
+        "--model",
+        "does-not-matter.json",
+    ]);
+    assert!(
+        !status.success(),
+        "--case and --model are mutually exclusive; stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn test_topology_export_rejects_missing_source() {
+    let (status, _stdout, stderr) = run_fluxion(&["topology", "export"]);
+    assert!(
+        !status.success(),
+        "one of --case/--model is required; stderr:\n{stderr}"
+    );
+    let (status_alias, _o, stderr_alias) = run_fluxion(&["export-topology"]);
+    assert!(
+        !status_alias.success(),
+        "alias must reject missing source too; stderr:\n{stderr_alias}"
+    );
+}
+
+#[test]
+fn test_topology_export_unknown_case_fails_loud() {
+    let (status, _stdout, stderr) = run_fluxion(&["topology", "export", "--case", "42"]);
+    assert!(
+        !status.success(),
+        "unknown case id must fail non-zero; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("unknown ASHRAE 140 case id"),
+        "error must name the problem; stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn test_topology_export_writes_output_file() {
+    let temp_dir = tempdir().expect("tempdir");
+    let out_path = temp_dir.path().join("case600.json");
+    let out_str = out_path.to_string_lossy().into_owned();
+    let (status, stdout, _stderr) =
+        run_fluxion(&["topology", "export", "--case", "600", "--output", &out_str]);
+    assert!(status.success(), "stdout:\n{stdout}");
+    let written = std::fs::read_to_string(&out_path).expect("output file written");
+    let doc: serde_json::Value = serde_json::from_str(&written).expect("file is valid JSON");
+    assert_matches_schema(&doc);
+}
+
+#[test]
+fn test_topology_export_model_file_roundtrip() {
+    // Serialize the Case 600 spec through the library and export it via
+    // `--model`; node/edge arrays must match the `--case 600` export (only
+    // metadata provenance differs).
+    let spec = fluxion::validation::ashrae_140_cases::ASHRAE140Case::Case600.spec();
+    let spec_json = serde_json::to_string_pretty(&spec).expect("CaseSpec serializes");
+    let temp_dir = tempdir().expect("tempdir");
+    let model_path = temp_dir.path().join("case600_model.json");
+    std::fs::write(&model_path, spec_json).expect("write model file");
+
+    let model_str = model_path.to_string_lossy().into_owned();
+    let via_model = topology_export_stdout(&["topology", "export", "--model", &model_str]);
+    let via_case = topology_export_stdout(&["topology", "export", "--case", "600"]);
+
+    let m: serde_json::Value = serde_json::from_str(&via_model).unwrap();
+    let c: serde_json::Value = serde_json::from_str(&via_case).unwrap();
+    assert_eq!(
+        m["nodes"], c["nodes"],
+        "identical graph regardless of source"
+    );
+    assert_eq!(m["edges"], c["edges"]);
+    assert_eq!(
+        m["metadata"]["model_source"],
+        serde_json::json!(format!("model-file:{model_str}")),
+        "provenance records the file path"
+    );
+}
