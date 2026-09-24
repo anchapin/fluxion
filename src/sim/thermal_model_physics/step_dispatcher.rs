@@ -255,7 +255,38 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Issue #3918: Thread lag correction parameters per zone
         let h_tr_3 = self.0.conduction.derived_h_tr_3.as_ref().to_vec();
         let cm = self.0.mass.thermal_capacitance.as_ref().to_vec();
-        let h_tr_is = self.0.conduction.h_tr_is.as_ref().to_vec();
+        // Issue #3918: `conduction.h_tr_is` is the Issue #714 5R1C star-node
+        // calibration (`3.45 × floor_area`). The gauge interior absorbed-gain
+        // network consumes this value as its zone-total interior film
+        // conductance and splits it across absorbing surfaces by area share
+        // (`h_i = h_tr_is × A_i / ΣA`), so threading the #714 basis under-sizes
+        // every per-surface `h_i` by the floor-area/A_tot ratio (≈3.6× for the
+        // ASHRAE 140 600 envelope: 165.6 W/K vs the ISO 592.1 W/K), inflating
+        // `τ_i = c_i/h_i` by the same factor and damping the diurnal swing.
+        // Thread the ISO 13790 §7.2.2.2 basis from the gauge solvers' own
+        // surface sets instead (`GaugeZoneSolver::iso_h_tr_is_zone`); the #714
+        // value survives only as the fallback when a gauge surface set is
+        // missing or empty.
+        let mut h_tr_is = self.0.conduction.h_tr_is.as_ref().to_vec();
+        if let Some(multi) = self.0.conduction.backend.gauge_multi_zone_solver.as_ref() {
+            for (z, zone_id) in multi.zone_ids().iter().enumerate() {
+                if let Some(zone) = multi.get_zone(*zone_id) {
+                    let iso = zone.iso_h_tr_is_zone();
+                    if iso > 0.0 {
+                        if let Some(v) = h_tr_is.get_mut(z) {
+                            *v = iso;
+                        }
+                    }
+                }
+            }
+        } else if let Some(gauge) = self.0.conduction.backend.gauge_zone_solver.as_ref() {
+            let iso = gauge.iso_h_tr_is_zone();
+            if iso > 0.0 {
+                if let Some(v) = h_tr_is.first_mut() {
+                    *v = iso;
+                }
+            }
+        }
         let term_rest_1 = self.0.conduction.derived_term_rest_1.as_ref().to_vec();
         // Fractionation for phi_st computation
         let convective_fraction = self.0.solar.convective_fraction;

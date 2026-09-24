@@ -1342,6 +1342,33 @@ impl GaugeZoneSolver {
             .sum()
     }
 
+    /// Issue #3918: ISO 13790 §7.2.2.2 zone-total interior film conductance
+    /// `H_tr_is = 3.45 W/m²K × ΣA_i` over all surfaces facing the zone
+    /// (windows included, matching the A_tot convention of
+    /// [`Self::compute_h_tr_is`]).
+    ///
+    /// This is the physical film basis the interior absorbed-gain network
+    /// needs: threading this value and splitting it by area share (see
+    /// [`Self::step_interior_surface_network`]) yields `h_i = 3.45·A_i` per
+    /// absorbing surface, so `τ_i = c_i/h_i = c_mass_i / 3.45` is dimensioned
+    /// per unit area and independent of how much envelope faces the zone.
+    ///
+    /// Callers must NOT thread `conduction.h_tr_is` into the gauge network
+    /// instead: that field is the Issue #714 5R1C star-node calibration
+    /// (`3.45 × floor_area`), which under-sizes the network's Σh by the
+    /// floor-area/A_tot ratio (≈3.6× for the ASHRAE 140 600 envelope),
+    /// inflating every `τ_i` by the same factor and damping the diurnal
+    /// swing (Issue #3918 root cause).
+    pub fn iso_h_tr_is_zone(&self) -> f64 {
+        /// ISO 13790 §7.2.2.2 interior-surface film coefficient (W/m²K).
+        const H_IS_13790: f64 = 3.45;
+        self.surfaces
+            .iter()
+            .filter(|s| surface_is_absorbing(&s.surface_type))
+            .map(|s| s.area_m2 * H_IS_13790)
+            .sum()
+    }
+
     /// Issue #3918 follow-up (daytime solar gap): step the per-surface
     /// interior absorbed-gain network and return the surface→air heat flow.
     ///
@@ -1423,13 +1450,49 @@ impl GaugeZoneSolver {
             return (surface_pool_w + mass_pool_w, 0.0);
         }
 
+        // Issue #3918 (star topology): ISO 13790's H_tr_is = 3.45 W/m²K is a
+        // STAR film — the combined convective+radiative exchange between each
+        // surface and the (virtual) star point, NOT a direct surface→air
+        // conductance. Coupling the air node to the T_s bank in parallel with
+        // the full ΣH_tr_is (≈592 W/K for the Case 600 envelope) pins T_air to
+        // the surface bank and mutes the direct-gain response ≈3× vs the 5R1C
+        // reference, whose air node sees only the series star path. Split the
+        // film instead:
+        //   h_c,i ≈ 2.5 W/m²K   natural-convection share reaching the air
+        //   h_r,i = 3.45 − 2.5  radiative share exchanged via the star point
+        // and relax each surface toward the combined-film steady state with
+        // θ* (the zero-capacitance, h_r-weighted mean of T_s,i):
+        //   steady_i = (h_c·T_air + h_r·θ* + q_abs,i)/(h_c + h_r)
+        // τ_i = c_i/(h_c+h_r) is unchanged (still the ISO combined film), the
+        // surface-bank energy bookkeeping stays energy-exact (the star only
+        // redistributes heat between surfaces, Σ h_r(θ*−T_s,i) = 0), and the
+        // AIR-side coupling returned for den_air becomes Σh_c,i.
+        const H_CONV_SHARE: f64 = 2.5 / 3.45;
+        let mut sum_h_r = 0.0;
+        let mut hr_weighted_ts = 0.0;
+        for s in &self.surfaces {
+            if surface_is_absorbing(&s.surface_type) {
+                let h_ri = per_surface_h(s) * (1.0 - H_CONV_SHARE);
+                sum_h_r += h_ri;
+                hr_weighted_ts += h_ri * s.T_surface;
+            }
+        }
+        let theta_star = if sum_h_r > 0.0 {
+            hr_weighted_ts / sum_h_r
+        } else {
+            t_air
+        };
+
         let mut emitted_j = 0.0;
         let mut h_weighted_ts = 0.0;
+        let mut sum_h_c = 0.0;
         for s in &mut self.surfaces {
             if !surface_is_absorbing(&s.surface_type) {
                 continue;
             }
             let h_i = per_surface_h(s);
+            let h_ci = h_i * H_CONV_SHARE;
+            let h_ri = h_i * (1.0 - H_CONV_SHARE);
             let c_i = s.area_m2 * s.gauge.c_mass_for_test();
             let w_surface = h_i / sum_h;
             let w_mass = if sum_c > 0.0 {
@@ -1438,9 +1501,9 @@ impl GaugeZoneSolver {
                 h_i / sum_h
             };
             let q_abs_i = surface_pool_w * w_surface + mass_pool_w * w_mass;
-            let steady = t_air + q_abs_i / h_i;
+            let steady = (h_ci * t_air + h_ri * theta_star + q_abs_i) / (h_ci + h_ri);
             let new_ts = if c_i > 0.0 && dt_seconds > 0.0 {
-                let tau_i = c_i / h_i;
+                let tau_i = c_i / (h_ci + h_ri);
                 steady + (s.T_surface - steady) * (-dt_seconds / tau_i).exp()
             } else {
                 steady
@@ -1449,13 +1512,14 @@ impl GaugeZoneSolver {
             emitted_j += q_abs_i * dt_seconds - c_i * (new_ts - s.T_surface);
             s.T_surface = new_ts;
             h_weighted_ts += h_i * new_ts;
+            sum_h_c += h_ci;
         }
         self.previous_T_surface = h_weighted_ts / sum_h;
 
         if dt_seconds > 0.0 {
-            (emitted_j / dt_seconds, sum_h)
+            (emitted_j / dt_seconds, sum_h_c)
         } else {
-            (surface_pool_w + mass_pool_w, sum_h)
+            (surface_pool_w + mass_pool_w, sum_h_c)
         }
     }
 
