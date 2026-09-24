@@ -199,7 +199,7 @@ jobs:
       - name: Set up Rust toolchain (with wasm32 target)
         uses: ./.github/actions/setup-rust-env
         with:
-          toolchain: wasm32-unknown-unknown
+          targets: wasm32-unknown-unknown
           sccache: 'false'
 
       # Node.js is required by `wasm-pack test --node` — it spawns a
