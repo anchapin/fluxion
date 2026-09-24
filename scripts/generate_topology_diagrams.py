@@ -100,7 +100,7 @@ def locate_fluxion(explicit: str | None) -> str:
     for cand in candidates:
         if cand and Path(cand).is_file() and os.access(cand, os.X_OK):
             probe = subprocess.run(
-                [cand, "topology", "--help"], capture_output=True
+                [cand, "topology", "--help"], capture_output=True, check=False
             )
             if probe.returncode == 0:
                 return cand
@@ -114,7 +114,7 @@ def locate_fluxion(explicit: str | None) -> str:
 
 
 def run_cli(fluxion: str, args: list[str]) -> subprocess.CompletedProcess:
-    return subprocess.run([fluxion, *args], capture_output=True, text=True)
+    return subprocess.run([fluxion, *args], capture_output=True, text=True, check=False)
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -189,12 +189,16 @@ def render_svg(doc: dict, case: str) -> str:
 
     parts = [
         '<?xml version="1.0" encoding="UTF-8"?>',
-        f"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" "
-        f"viewBox=\"0 0 {width} {height}\" font-family=\"Helvetica,Arial,sans-serif\">",
+        (
+            f"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" "
+            f"viewBox=\"0 0 {width} {height}\" font-family=\"Helvetica,Arial,sans-serif\">"
+        ),
         f"<!-- {GENERATOR_STAMP} -->",
         f'<rect width="{width}" height="{height}" fill="#f8fafc"/>',
-        f'<text x="{MARGIN_X}" y="28" font-size="17" font-weight="bold" fill="#0f172a">'
-        f"{xml_escape('ASHRAE 140 Case ' + case + ' — ' + doc['metadata'].get('model_name', ''))}</text>",
+        (
+            f'<text x="{MARGIN_X}" y="28" font-size="17" font-weight="bold" fill="#0f172a">'
+            f"{xml_escape('ASHRAE 140 Case ' + case + ' — ' + doc['metadata'].get('model_name', ''))}</text>"
+        ),
         "<defs>",
     ]
     for i, color in enumerate(EDGE_PALETTE):
@@ -280,15 +284,21 @@ def render_docs_index(entries: list[dict]) -> str:
     lines = [
         "# Topology Diagrams — Issue #3966",
         "",
-        f"Machine-generated ASHRAE 140 topology diagrams (Mermaid + structural SVG) with "
-        f"verbatim `fluxion topology export` references, `topology lint --strict` reports, "
-        f"and standalone-viewer payloads. {GENERATOR_STAMP}",
+        (
+            f"Machine-generated ASHRAE 140 topology diagrams (Mermaid + structural SVG) with "
+            f"verbatim `fluxion topology export` references, `topology lint --strict` reports, "
+            f"and standalone-viewer payloads. {GENERATOR_STAMP}"
+        ),
         "",
-        "Each case row links the committed artifacts; the reference JSONs under "
-        "`tests/reference_data/topology/` are the drift-gated source of truth.",
+        (
+            "Each case row links the committed artifacts; the reference JSONs under "
+            "`tests/reference_data/topology/` are the drift-gated source of truth."
+        ),
         "",
-        "Open the viewer at `fluxion-tauri/frontend/public/topology-standalone.html` and load a "
-        "payload via `?model=` or drag-and-drop (issue #3965).",
+        (
+            "Open the viewer at `fluxion-tauri/frontend/public/topology-standalone.html` and load a "
+            "payload via `?model=` or drag-and-drop (issue #3965)."
+        ),
         "",
         "| Case | Model | Nodes | Couplings | Lint (strict) | Mermaid | SVG | Viewer payload |",
         "|---|---|---|---|---|---|---|---|",
@@ -312,11 +322,13 @@ def render_docs_index(entries: list[dict]) -> str:
         "python3 scripts/check_topology_drift.py   # must exit 0 before you commit",
         "```",
         "",
-        "The drift gate (`scripts/check_topology_drift.py`, wired into "
-        "`.github/workflows/topology_visualizer.yml`) regenerates everything into a temp "
-        "directory and byte-compares it against the committed tree; any physics change that "
-        "alters the topology graph requires regenerating and committing these artifacts in "
-        "the same PR.",
+        (
+            "The drift gate (`scripts/check_topology_drift.py`, wired into "
+            "`.github/workflows/topology_visualizer.yml`) regenerates everything into a temp "
+            "directory and byte-compares it against the committed tree; any physics change that "
+            "alters the topology graph requires regenerating and committing these artifacts in "
+            "the same PR."
+        ),
         "",
     ]
     return "\n".join(lines)
