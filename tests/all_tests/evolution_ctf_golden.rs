@@ -277,7 +277,7 @@ fn golden_summary_matches_all_walls() {
 //      `tools/evolution/evaluators/ctf_evaluator.py::monotonic_phi_decay`).
 //
 // A sidecar JSON file is written under
-// `tools/evolution/results/ctf/bounded_run/baseline_golden_full_library.json`
+// `tmp/evolution/ctf/baseline_golden_full_library.json` (gitignored scratch)
 // capturing per-construction numbers (max |Δx|, max |Δy|, dc_gain_rel_err,
 // invariant pass/fail, ns/wall elapsed). This satisfies the issue's
 // "Post-port regression … baseline-vs-winner comparison table" requirement
@@ -595,11 +595,11 @@ fn golden_full_library_matches_python_reference() {
     );
 
     // Sidecar: per-wall numbers for the issue's "baseline-vs-winner
-    // comparison table" requirement (numbers, not vibes). Path is under
-    // `tools/evolution/results/ctf/bounded_run/` per the campaign layout
-    // in `tools/evolution/README.md`.
-    let sidecar_path = manifest_dir
-        .join("tools/evolution/results/ctf/bounded_run/baseline_golden_full_library.json");
+    // comparison table" requirement (numbers, not vibes). Written under the
+    // gitignored `tmp/` scratch dir so the test never mutates the tracked
+    // `tools/evolution/results/` tree (Issue #3952 report-writer
+    // isolation); regenerable from `cargo test`.
+    let sidecar_path = manifest_dir.join("tmp/evolution/ctf/baseline_golden_full_library.json");
     if let Some(parent) = sidecar_path.parent() {
         std::fs::create_dir_all(parent).expect("create sidecar parent");
     }

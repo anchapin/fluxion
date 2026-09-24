@@ -88,8 +88,7 @@ fn test_all_cases_instantiation() {
 #[test]
 fn generate_validation_report() {
     use fluxion::validation::reporter::ValidationReportGenerator;
-    use fluxion::validation::Analyzer;
-    use std::path::PathBuf;
+    use fluxion::validation::{Analyzer, AnalyzerConfig};
 
     let validator = ASHRAE140Validator::new();
     let report = validator.validate_analytical_engine();
@@ -97,8 +96,10 @@ fn generate_validation_report() {
     // Classify systematic issues
     let systematic_issues = ValidationReportGenerator::classify_systematic_issues(&report);
 
-    // Generate main validation report
-    let generator = ValidationReportGenerator::new(PathBuf::from("docs/ASHRAE140_RESULTS.md"));
+    // Generate main validation report into a tempdir so the test never
+    // mutates the tracked `docs/` tree (Issue #3952 report-writer isolation).
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+    let generator = ValidationReportGenerator::new(temp_dir.path().join("ASHRAE140_RESULTS.md"));
     generator
         .generate(&report, Some(&systematic_issues), None)
         .expect("Failed to generate report");
@@ -116,12 +117,17 @@ fn generate_validation_report() {
     assert!(content.contains("## References"));
     assert!(content.contains("## What's Fixed in Phase 5"));
 
-    // Update quality metrics automatically (Task 5: metrics collection hook)
-    let analyzer = Analyzer::default();
+    // Update quality metrics automatically (Task 5: metrics collection hook),
+    // with the metrics output also routed into the tempdir.
+    let metrics_path = temp_dir.path().join("QUALITY_METRICS.md");
+    let analyzer = Analyzer::new(AnalyzerConfig {
+        generate_report: true,
+        output_path: Some(metrics_path.clone()),
+        historical_data_path: None,
+    });
     match analyzer.update_quality_metrics(&report) {
         Ok(_) => {
             // Verify quality metrics file was created
-            let metrics_path = PathBuf::from("docs/QUALITY_METRICS.md");
             assert!(metrics_path.exists(), "Quality metrics file not generated");
         }
         Err(e) => {
