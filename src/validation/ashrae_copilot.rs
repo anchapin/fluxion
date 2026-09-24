@@ -1,11 +1,15 @@
 //! Heuristic diagnostic copilot for ASHRAE 140 `SystematicIssue::Unknown` failures.
 //!
-//! When the 11-rule decision tree in [`issue_classifier`](super::issue_classifier)
-//! cannot classify a failed metric, this module provides structured diagnostic
+//! For failed ASHRAE 140 metrics, this module provides structured diagnostic
 //! hypotheses based on the case identifier, metric type, and deviation
-//! characteristics. These hypotheses are drawn from documented LIMIT-* patterns
-//! in [`docs/KNOWN_ISSUES.md`] and from systematic deviation signatures observed
-//! across the ASHRAE 140 case suite.
+//! characteristics. Priority goes to the `SystematicIssue::Unknown` bucket that
+//! the 11-rule decision tree in [`issue_classifier`](super::issue_classifier)
+//! cannot classify, but the case-series heuristics also cover
+//! classified-but-diagnosable patterns (e.g. Case 960 peaks, Case 970
+//! multi-zone coupling, Case 800-series weather-source mismatches), enriching
+//! the classifier's verdict with ranked, cited context. These hypotheses are
+//! drawn from documented LIMIT-* patterns in [`docs/KNOWN_ISSUES.md`] and from
+//! systematic deviation signatures observed across the ASHRAE 140 case suite.
 //!
 //! # Design contract
 //!
@@ -128,19 +132,42 @@ pub fn is_unknown(result: &ValidationResult) -> bool {
     true
 }
 
-/// Returns ordered diagnostic hypotheses for an [`SystematicIssue::Unknown`] failure.
+/// Returns ordered diagnostic hypotheses for a failed [`ValidationResult`].
 ///
 /// The hypotheses are ranked by likelihood based on the deviation pattern,
 /// case series membership, and documented LIMIT-* signatures in KNOWN_ISSUES.md.
-/// Returns an empty slice when no hypotheses can be confidently generated.
+/// The 11-rule classifier stays the single source of truth for issue
+/// classification; these hypotheses add ranked, traceable diagnostic context for
+/// any failed result — both the `SystematicIssue::Unknown` bucket the tree
+/// cannot classify and results the tree already classified (the case-series
+/// heuristics carry LIMIT-* citations the classifier does not). Passing results
+/// have no failure to diagnose. Returns an empty vector when no heuristic
+/// confidently applies.
 pub fn diagnose(result: &ValidationResult) -> Vec<DiagnosticHypothesis> {
-    if !is_unknown(result) {
+    // Only failed (or borderline-warning) results are diagnosable; a clean pass
+    // has no deviation pattern to explain.
+    if result.is_pass() {
         return Vec::new();
+    }
+
+    // IncidentSolar has no BESTEST axis (`metric_axis` maps it to `None`), so it
+    // must be handled before the axis-based heuristics below.
+    if matches!(result.metric, MetricType::IncidentSolar { .. }) {
+        return vec![DiagnosticHypothesis::new(
+            1,
+            SystematicIssue::SolarGains,
+            "IncidentSolar metrics are not part of the BESTEST pass/fail set per ASHRAE 140-2023 \
+             §8.2.3 — they are informational outputs. Per-metric distribution routing should be \
+             validated against analytical flux calculations (see LIMIT-30 Issue #3797 B1a audit).",
+            "issue_classifier.rs + KNOWN_ISSUES.md §LIMIT-30 (Issue #3797)",
+        )];
     }
 
     let mass = case_mass(&result.case_id);
     let axis = match metric_axis(&result.metric) {
         Some(axis) => axis,
+        // IncidentSolar is handled above; any future non-BESTEST metric without
+        // an axis has no case-series heuristic yet.
         None => return Vec::new(),
     };
     let direction = deviation_direction(result);
@@ -155,8 +182,7 @@ pub fn diagnose(result: &ValidationResult) -> Vec<DiagnosticHypothesis> {
     if result.case_id.starts_with('6') || result.case_id == "195" {
         match axis {
             MetricAxis::Energy => {
-                // LowMass energy but not caught by Rule 3 (Under+>=30%)
-                // Check for over-prediction patterns similar to LIMIT-30
+                // Low-mass annual energy over-prediction pattern (cf. LIMIT-30)
                 if direction == DeviationDirection::Over {
                     hypotheses.push(DiagnosticHypothesis::new(
                         1,
@@ -182,7 +208,8 @@ pub fn diagnose(result: &ValidationResult) -> Vec<DiagnosticHypothesis> {
                 }
             }
             MetricAxis::Peak => {
-                // Peak metrics not caught by rules 4/9/11
+                // Rule 11 classifies this shape as HvacLoad; this branch adds
+                // the LIMIT-16 single-lumped-mass citation as diagnostic context.
                 if result.metric == MetricType::PeakCooling && direction == DeviationDirection::Over
                 {
                     hypotheses.push(DiagnosticHypothesis::new(
@@ -236,7 +263,8 @@ pub fn diagnose(result: &ValidationResult) -> Vec<DiagnosticHypothesis> {
     if result.case_id.starts_with('9') && result.case_id != "960" {
         match axis {
             MetricAxis::Energy => {
-                // HighMass energy but not caught by Rule 2 (Over+>=30%)
+                // Rule 2 classifies Over + >=30% as ModelLimitation; this branch
+                // covers the sub-threshold Over shape and the Under shape.
                 if direction == DeviationDirection::Under {
                     hypotheses.push(DiagnosticHypothesis::new(
                         1,
@@ -323,7 +351,9 @@ pub fn diagnose(result: &ValidationResult) -> Vec<DiagnosticHypothesis> {
 
     // Case 960 (special inter-zone)
     if result.case_id == "960" {
-        // Rule 1 should catch Energy, but Peak/FreeFloat may fall through
+        // Rule 1 classifies 960 Energy as InterZoneTransfer; the Peak and
+        // FreeFloat axes carry the same inter-zone signature (LIMIT-14) as
+        // ranked diagnostic context.
         if axis == MetricAxis::Peak {
             hypotheses.push(DiagnosticHypothesis::new(
                 1,
@@ -393,18 +423,6 @@ pub fn diagnose(result: &ValidationResult) -> Vec<DiagnosticHypothesis> {
              may be too tight for this metric's natural variability, or the reference data \
              source may differ.",
             "ValidationResult status = InRange + ASHRAE 140-2023 §8 tolerance bands",
-        ));
-    }
-
-    // IncidentSolar (not handled by the decision tree)
-    if matches!(result.metric, MetricType::IncidentSolar { .. }) {
-        hypotheses.push(DiagnosticHypothesis::new(
-            1,
-            SystematicIssue::SolarGains,
-            "IncidentSolar metrics are not part of the BESTEST pass/fail set per ASHRAE 140-2023 \
-             §8.2.3 — they are informational outputs. Per-metric distribution routing should be \
-             validated against analytical flux calculations (see LIMIT-30 Issue #3797 B1a audit).",
-            "issue_classifier.rs + KNOWN_ISSUES.md §LIMIT-30 (Issue #3797)",
         ));
     }
 
@@ -488,7 +506,9 @@ mod tests {
 
     #[test]
     fn test_diagnose_non_unknown_returns_empty() {
-        // A result that IS classified by the tree should return empty
+        // No case-series heuristic matches 960 annual energy (the 960 branch
+        // only covers the Peak/FreeFloat axes), so diagnose returns empty even
+        // though the result itself is failed.
         let r = unknown_result("960", MetricType::AnnualCooling, 5.0, 1.6, 2.8);
         assert!(!is_unknown(&r));
         assert!(diagnose(&r).is_empty());
