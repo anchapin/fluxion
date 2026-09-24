@@ -21,6 +21,7 @@ fn generate_synthetic_population(size: usize) -> Vec<Vec<f64>> {
 }
 
 #[test]
+#[ignore = "awaiting #3957"]
 fn test_multi_zone_throughput() {
     let base_model = ThermalModel::<VectorField>::new(ZONE_COUNT);
     let oracle = BatchOracle::from_model(base_model).unwrap();

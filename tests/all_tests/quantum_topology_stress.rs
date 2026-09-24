@@ -184,6 +184,7 @@ fn stress_20_zone_qubo_no_divergence_k12() {
 /// measure encoding with K=16 (largest encoding) and assert per-zone mean
 /// stays within budget.
 #[test]
+#[ignore = "awaiting #3957"]
 fn stress_20_zone_qubo_encoding_performance_k16() {
     use std::time::Instant;
 

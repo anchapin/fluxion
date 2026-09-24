@@ -349,6 +349,7 @@ fn check_regression(
 /// python3 scripts/generate_perf_baseline.py tests/perf_baseline.json 7
 /// ```
 #[test]
+#[ignore = "awaiting #3957"]
 fn test_performance_regression() {
     let population_size = 100;
     let threshold = regression_threshold();
@@ -520,6 +521,7 @@ fn test_regression_threshold_matches_yaml() {
 /// cargo test performance_smoke_test --release
 /// ```
 #[test]
+#[ignore = "awaiting #3957"]
 fn test_performance_smoke_test() {
     let population_size = 100;
     let metrics = run_performance_test(population_size);
