@@ -86,6 +86,7 @@ pub mod sim;
 pub mod solar;
 pub mod testing;
 pub mod thermal;
+pub mod topology;
 pub mod twin;
 pub mod util;
 pub mod validation;

@@ -536,3 +536,502 @@ fn test_cli_valid_solver_flags_pass_selection() {
         "failure must be the missing-input check, proving selection passed; got:\n{combined}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// `fluxion topology export` / `fluxion export-topology` (Issue #3963/#3966)
+// ---------------------------------------------------------------------------
+
+/// Helper: run the binary, require success, and return stdout.
+fn topology_export_stdout(args: &[&str]) -> String {
+    let (status, stdout, stderr) = run_fluxion(args);
+    assert!(
+        status.success(),
+        "`fluxion {}` must succeed; stdout:\n{stdout}\nstderr:\n{stderr}",
+        args.join(" ")
+    );
+    stdout
+}
+
+/// Hand-rolled structural validation against `schemas/topology_v1.schema.json`
+/// (no JSON-Schema validator dependency; see Issue #3963 task notes).
+fn assert_matches_schema(doc: &serde_json::Value) {
+    let schema_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/schemas/topology_v1.schema.json"
+    );
+    let schema: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(schema_path).expect("schemas/topology_v1.schema.json readable"),
+    )
+    .expect("schema is valid JSON");
+
+    let node_kinds = schema["$defs"]["node_kind"]["enum"]
+        .as_array()
+        .expect("node_kind enum");
+    let edge_kinds = schema["$defs"]["edge_kind"]["enum"]
+        .as_array()
+        .expect("edge_kind enum");
+
+    let metadata = doc.get("metadata").expect("metadata block present");
+    for key in [
+        "schema_version",
+        "tool_version",
+        "model_name",
+        "model_source",
+        "node_count",
+        "edge_count",
+    ] {
+        assert!(metadata.get(key).is_some(), "metadata.{key} required");
+    }
+    assert_eq!(metadata["schema_version"], "1.0.0");
+    assert!(
+        metadata.get("timestamp").is_none(),
+        "timestamp omitted by default"
+    );
+
+    let nodes = doc["nodes"].as_array().expect("nodes array");
+    let edges = doc["edges"].as_array().expect("edges array");
+    assert_eq!(
+        metadata["node_count"].as_u64().unwrap(),
+        nodes.len() as u64,
+        "node_count matches array length"
+    );
+    assert_eq!(
+        metadata["edge_count"].as_u64().unwrap(),
+        edges.len() as u64,
+        "edge_count matches array length"
+    );
+
+    let mut ids: Vec<&str> = Vec::new();
+    for n in nodes {
+        for key in ["id", "kind", "name"] {
+            assert!(n.get(key).is_some(), "node.{key} required");
+        }
+        assert!(
+            node_kinds.contains(&n["kind"]),
+            "node kind {} is in the schema enum",
+            n["kind"]
+        );
+        if let Some(c) = n.get("capacitance_j_per_k") {
+            assert!(c.as_f64().unwrap() >= 0.0, "capacitance >= 0");
+        }
+        ids.push(n["id"].as_str().unwrap());
+    }
+    let mut sorted_ids = ids.clone();
+    sorted_ids.sort();
+    assert_eq!(ids, sorted_ids, "nodes sorted by stable id");
+    let id_set: std::collections::BTreeSet<&str> = ids.iter().copied().collect();
+    assert_eq!(id_set.len(), ids.len(), "node ids unique");
+
+    let mut edge_keys: Vec<(&str, &str, &str)> = Vec::new();
+    for e in edges {
+        for key in ["source_id", "target_id", "coupling_type", "bidirectional"] {
+            assert!(e.get(key).is_some(), "edge.{key} required");
+        }
+        assert!(
+            edge_kinds.contains(&e["coupling_type"]),
+            "edge kind {} is in the schema enum",
+            e["coupling_type"]
+        );
+        assert!(
+            id_set.contains(e["source_id"].as_str().unwrap()),
+            "edge source resolves: {}",
+            e["source_id"]
+        );
+        assert!(
+            id_set.contains(e["target_id"].as_str().unwrap()),
+            "edge target resolves: {}",
+            e["target_id"]
+        );
+        if let Some(f) = e.get("fraction") {
+            let f = f.as_f64().unwrap();
+            assert!((0.0..=1.0).contains(&f), "fraction within [0,1]: {f}");
+        }
+        edge_keys.push((
+            e["source_id"].as_str().unwrap(),
+            e["target_id"].as_str().unwrap(),
+            e["coupling_type"].as_str().unwrap(),
+        ));
+    }
+    let mut sorted_edges = edge_keys.clone();
+    sorted_edges.sort();
+    assert_eq!(
+        edge_keys, sorted_edges,
+        "edges sorted by (source,target,kind)"
+    );
+}
+
+#[test]
+fn test_topology_export_case_600_deterministic_and_schema_valid() {
+    let a = topology_export_stdout(&["topology", "export", "--case", "600"]);
+    let b = topology_export_stdout(&["topology", "export", "--case", "600"]);
+    assert_eq!(a, b, "identical inputs must yield byte-identical output");
+
+    let doc: serde_json::Value = serde_json::from_str(&a).expect("stdout is valid JSON");
+    assert_matches_schema(&doc);
+
+    // Thermal-network essentials for Case 600 (single zone, low mass).
+    let kinds = |kind: &str| {
+        doc["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|n| n["kind"] == kind)
+            .count()
+    };
+    assert_eq!(kinds("outdoor_ambient"), 1);
+    assert_eq!(kinds("zone_air"), 1);
+    assert_eq!(kinds("internal_mass"), 1);
+    assert_eq!(kinds("internal_gain"), 1);
+    assert_eq!(kinds("hvac_terminal"), 1);
+    assert!(
+        kinds("wall_layer") >= 6,
+        "multi-layer envelope nodes present"
+    );
+    assert!(kinds("exterior_surface") >= 5);
+    assert!(kinds("interior_surface") >= 5);
+
+    let edge_kinds = |kind: &str| {
+        doc["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["coupling_type"] == kind)
+            .count()
+    };
+    assert!(edge_kinds("shortwave_solar_direct") >= 1);
+    assert!(edge_kinds("shortwave_solar_diffuse") >= 1);
+    assert_eq!(
+        edge_kinds("internal_gain_split"),
+        2,
+        "radiative + convective split"
+    );
+    assert!(edge_kinds("air_exchange") >= 1, "infiltration present");
+}
+
+#[test]
+fn test_topology_export_alias_matches_subcommand() {
+    let alias = topology_export_stdout(&["export-topology", "--case", "600"]);
+    let subcommand = topology_export_stdout(&["topology", "export", "--case", "600"]);
+    assert_eq!(
+        alias, subcommand,
+        "`export-topology` alias must behave identically to `topology export`"
+    );
+}
+
+#[test]
+fn test_topology_export_rejects_case_and_model_together() {
+    let (status, _stdout, stderr) = run_fluxion(&[
+        "topology",
+        "export",
+        "--case",
+        "600",
+        "--model",
+        "does-not-matter.json",
+    ]);
+    assert!(
+        !status.success(),
+        "--case and --model are mutually exclusive; stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn test_topology_export_rejects_missing_source() {
+    let (status, _stdout, stderr) = run_fluxion(&["topology", "export"]);
+    assert!(
+        !status.success(),
+        "one of --case/--model is required; stderr:\n{stderr}"
+    );
+    let (status_alias, _o, stderr_alias) = run_fluxion(&["export-topology"]);
+    assert!(
+        !status_alias.success(),
+        "alias must reject missing source too; stderr:\n{stderr_alias}"
+    );
+}
+
+#[test]
+fn test_topology_export_unknown_case_fails_loud() {
+    let (status, _stdout, stderr) = run_fluxion(&["topology", "export", "--case", "42"]);
+    assert!(
+        !status.success(),
+        "unknown case id must fail non-zero; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("unknown ASHRAE 140 case id"),
+        "error must name the problem; stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn test_topology_export_writes_output_file() {
+    let temp_dir = tempdir().expect("tempdir");
+    let out_path = temp_dir.path().join("case600.json");
+    let out_str = out_path.to_string_lossy().into_owned();
+    let (status, stdout, _stderr) =
+        run_fluxion(&["topology", "export", "--case", "600", "--output", &out_str]);
+    assert!(status.success(), "stdout:\n{stdout}");
+    let written = std::fs::read_to_string(&out_path).expect("output file written");
+    let doc: serde_json::Value = serde_json::from_str(&written).expect("file is valid JSON");
+    assert_matches_schema(&doc);
+}
+
+#[test]
+fn test_topology_export_model_file_roundtrip() {
+    // Serialize the Case 600 spec through the library and export it via
+    // `--model`; node/edge arrays must match the `--case 600` export (only
+    // metadata provenance differs).
+    let spec = fluxion::validation::ashrae_140_cases::ASHRAE140Case::Case600.spec();
+    let spec_json = serde_json::to_string_pretty(&spec).expect("CaseSpec serializes");
+    let temp_dir = tempdir().expect("tempdir");
+    let model_path = temp_dir.path().join("case600_model.json");
+    std::fs::write(&model_path, spec_json).expect("write model file");
+
+    let model_str = model_path.to_string_lossy().into_owned();
+    let via_model = topology_export_stdout(&["topology", "export", "--model", &model_str]);
+    let via_case = topology_export_stdout(&["topology", "export", "--case", "600"]);
+
+    let m: serde_json::Value = serde_json::from_str(&via_model).unwrap();
+    let c: serde_json::Value = serde_json::from_str(&via_case).unwrap();
+    assert_eq!(
+        m["nodes"], c["nodes"],
+        "identical graph regardless of source"
+    );
+    assert_eq!(m["edges"], c["edges"]);
+    assert_eq!(
+        m["metadata"]["model_source"],
+        serde_json::json!(format!("model-file:{model_str}")),
+        "provenance records the file path"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Issue #3964 — `fluxion topology lint` / `fluxion lint-topology`
+// ---------------------------------------------------------------------------
+
+const LINT_REGISTRY_CASES: &[&str] = &["600", "610", "620", "630", "640", "650", "900", "960"];
+
+#[test]
+fn test_topology_lint_registry_cases_strict_clean() {
+    // Acceptance (#3964): every ASHRAE 140 registry case lints CLEAN under
+    // --strict via --case.
+    for case in LINT_REGISTRY_CASES {
+        let (status, stdout, stderr) = run_fluxion(&[
+            "topology", "lint", "--case", case, "--strict", "--format", "json",
+        ]);
+        assert_eq!(
+            status.code(),
+            Some(0),
+            "case {case} should lint clean under --strict\nstderr:\n{stderr}\nstdout:\n{stdout}"
+        );
+        let doc: serde_json::Value = serde_json::from_str(&stdout).expect("json lint report");
+        assert_eq!(
+            doc["clean"],
+            serde_json::json!(true),
+            "case {case}: {stdout}"
+        );
+        assert_eq!(
+            doc["summary"]["total"],
+            serde_json::json!(0),
+            "case {case}: {stdout}"
+        );
+    }
+}
+
+#[test]
+fn test_topology_lint_alias_matches_subcommand() {
+    let (_, via_sub, _) = run_fluxion(&["topology", "lint", "--case", "600", "--format", "json"]);
+    let (_, via_alias, _) = run_fluxion(&["lint-topology", "--case", "600", "--format", "json"]);
+    let sub: serde_json::Value = serde_json::from_str(&via_sub).expect("sub json");
+    let alias: serde_json::Value = serde_json::from_str(&via_alias).expect("alias json");
+    assert_eq!(sub["findings"], alias["findings"]);
+    assert_eq!(sub["clean"], alias["clean"]);
+    assert_eq!(sub["source"], alias["source"]);
+}
+
+/// Exports Case 600 to a temp file and returns its path.
+fn lint_export_case600(temp_dir: &tempfile::TempDir) -> String {
+    let doc_path = temp_dir.path().join("case600_topology.json");
+    let doc_str = doc_path.to_string_lossy().into_owned();
+    let (status, _stdout, stderr) =
+        run_fluxion(&["topology", "export", "--case", "600", "--output", &doc_str]);
+    assert!(status.success(), "export failed: {stderr}");
+    doc_str
+}
+
+#[test]
+fn test_topology_lint_input_document_offline() {
+    // `--input` lints a previously exported document — independent of the
+    // case registry.
+    let temp_dir = tempdir().expect("tempdir");
+    let doc_str = lint_export_case600(&temp_dir);
+    let (status, stdout, stderr) = run_fluxion(&[
+        "topology", "lint", "--input", &doc_str, "--strict", "--format", "json",
+    ]);
+    assert_eq!(status.code(), Some(0), "{stderr}\n{stdout}");
+    let doc: serde_json::Value = serde_json::from_str(&stdout).expect("json");
+    assert_eq!(doc["clean"], serde_json::json!(true));
+    assert_eq!(doc["source"], serde_json::json!("ashrae-140-registry:600"));
+}
+
+fn patch_topology_document(path: &str, patch: impl Fn(&mut serde_json::Value)) -> String {
+    let raw = std::fs::read_to_string(path).expect("read exported doc");
+    let mut doc: serde_json::Value = serde_json::from_str(&raw).expect("parse exported doc");
+    patch(&mut doc);
+    let patched_path = path.replace(".json", ".patched.json");
+    std::fs::write(&patched_path, serde_json::to_string_pretty(&doc).unwrap()).expect("write");
+    patched_path
+}
+
+fn lint_finding_codes(stdout: &str) -> Vec<String> {
+    let doc: serde_json::Value = serde_json::from_str(stdout).expect("json lint report");
+    doc["findings"]
+        .as_array()
+        .expect("findings array")
+        .iter()
+        .map(|f| f["code"].as_str().expect("code string").to_string())
+        .collect()
+}
+
+#[test]
+fn test_topology_lint_input_detects_e005_bad_split() {
+    let temp_dir = tempdir().expect("tempdir");
+    let doc_str = lint_export_case600(&temp_dir);
+    // Break the internal-gain split fractions so they no longer sum to 1.0.
+    let patched = patch_topology_document(&doc_str, |doc| {
+        let edges = doc["edges"].as_array_mut().expect("edges");
+        let mut patched_count = 0;
+        for edge in edges.iter_mut() {
+            let coupling = edge["coupling_type"].as_str().unwrap_or_default();
+            if coupling.to_lowercase().contains("gain") && patched_count == 0 {
+                edge["fraction"] = serde_json::json!(0.123);
+                patched_count += 1;
+            }
+        }
+        assert!(patched_count == 1, "expected a gain split edge to patch");
+    });
+    let (status, stdout, stderr) =
+        run_fluxion(&["topology", "lint", "--input", &patched, "--format", "json"]);
+    assert_eq!(status.code(), Some(1), "{stderr}\n{stdout}");
+    assert!(
+        lint_finding_codes(&stdout).contains(&"E005_INVALID_SPLIT_FRACTION".to_string()),
+        "findings: {stdout}"
+    );
+}
+
+#[test]
+fn test_topology_lint_warning_promoted_by_strict() {
+    let temp_dir = tempdir().expect("tempdir");
+    let doc_str = lint_export_case600(&temp_dir);
+    // Inflate one convection film by 1000x => h_c far outside (0.1, 100).
+    let patched = patch_topology_document(&doc_str, |doc| {
+        let edges = doc["edges"].as_array_mut().expect("edges");
+        let mut patched_count = 0;
+        for edge in edges.iter_mut() {
+            let coupling = edge["coupling_type"].as_str().unwrap_or_default();
+            let conductance = edge["conductance_w_per_k"].as_f64();
+            if coupling.to_lowercase().contains("convection")
+                && conductance.is_some()
+                && patched_count == 0
+            {
+                edge["conductance_w_per_k"] =
+                    serde_json::json!(conductance.expect("checked Some") * 1000.0);
+                patched_count += 1;
+            }
+        }
+        assert!(patched_count == 1, "expected a convection edge to patch");
+    });
+    // Without --strict a lone warning does not fail the run (exit 0)…
+    let (status, stdout, stderr) =
+        run_fluxion(&["topology", "lint", "--input", &patched, "--format", "json"]);
+    assert_eq!(status.code(), Some(0), "{stderr}\n{stdout}");
+    assert!(
+        lint_finding_codes(&stdout).contains(&"W001_EXTREME_FILM_COEFFICIENT".to_string()),
+        "findings: {stdout}"
+    );
+    // …with --strict it is promoted to a failure (exit 1).
+    let (status, stdout, stderr) = run_fluxion(&[
+        "topology", "lint", "--input", &patched, "--strict", "--format", "json",
+    ]);
+    assert_eq!(status.code(), Some(1), "{stderr}\n{stdout}");
+}
+
+#[test]
+fn test_topology_lint_input_detects_e002_when_film_removed() {
+    let temp_dir = tempdir().expect("tempdir");
+    let doc_str = lint_export_case600(&temp_dir);
+    // Drop every ambient convection-film edge: above-grade exterior
+    // surfaces lose their ambient boundary coupling.
+    let patched = patch_topology_document(&doc_str, |doc| {
+        let edges = doc["edges"].as_array_mut().expect("edges");
+        edges.retain(|edge| {
+            let coupling = edge["coupling_type"].as_str().unwrap_or_default();
+            !coupling.to_lowercase().contains("convection_exterior")
+                && !coupling.to_lowercase().contains("convectionexterior")
+        });
+    });
+    let (status, stdout, stderr) =
+        run_fluxion(&["topology", "lint", "--input", &patched, "--format", "json"]);
+    assert_eq!(status.code(), Some(1), "{stderr}\n{stdout}");
+    assert!(
+        lint_finding_codes(&stdout).contains(&"E002_DANGLING_BOUNDARY".to_string()),
+        "findings: {stdout}"
+    );
+}
+
+#[test]
+fn test_topology_lint_conflicting_sources_exit_2() {
+    for args in [
+        vec![
+            "topology",
+            "lint",
+            "--case",
+            "600",
+            "--model",
+            "whatever.json",
+        ],
+        vec![
+            "topology",
+            "lint",
+            "--case",
+            "600",
+            "--input",
+            "whatever.json",
+        ],
+        vec!["topology", "lint", "--model", "a.json", "--input", "b.json"],
+    ] {
+        let refs: Vec<&str> = args.iter().map(|s| *s).collect();
+        let (status, _stdout, stderr) = run_fluxion(&refs);
+        assert_eq!(
+            status.code(),
+            Some(2),
+            "expected clap usage error (2) for {args:?}\n{stderr}"
+        );
+    }
+}
+
+#[test]
+fn test_topology_lint_usage_errors_exit_2() {
+    // No source at all.
+    let (status, _stdout, stderr) = run_fluxion(&["topology", "lint"]);
+    assert_eq!(status.code(), Some(2), "{stderr}");
+    // Unknown case id.
+    let (status, _stdout, stderr) = run_fluxion(&["topology", "lint", "--case", "42"]);
+    assert_eq!(status.code(), Some(2), "{stderr}");
+    // Missing --input file.
+    let (status, _stdout, stderr) =
+        run_fluxion(&["topology", "lint", "--input", "/nonexistent/doc.json"]);
+    assert_eq!(status.code(), Some(2), "{stderr}");
+}
+
+#[test]
+fn test_topology_lint_text_format_reports_clean() {
+    let (status, stdout, stderr) = run_fluxion(&["topology", "lint", "--case", "600"]);
+    assert_eq!(status.code(), Some(0), "{stderr}");
+    assert!(
+        stdout.contains("topology lint: ashrae-140-registry:600"),
+        "text header missing: {stdout}"
+    );
+    assert!(
+        stdout.contains("findings: 0"),
+        "text body missing: {stdout}"
+    );
+}

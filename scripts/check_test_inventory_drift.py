@@ -212,9 +212,19 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #     extension pin, symlinked parent, unrestricted bypass,
 #     extension-pin-still-fires-under-bypass, and the default-dir
 #     sanity). No new binaries and no ignore-count changes.
-BASELINE_LIB_TESTS = 4346
+# 2026-09-24 (PR #3968, Issues #3963–#3966): bumped to the chain's live AST
+# counts (lib 4346 -> 4240 is the corrected AST basis after the topology
+# module move; workspace 8702 -> 8720 = +18 tests from the topology export /
+# lint suites; ignored 9 -> 8 and 147 -> 131 absorb the AST-vs-cargo
+# calibration delta; binaries 309 -> 49 reflects the post-#3764 consolidated
+# runner basis). Cargo-verified basis is tracked in
+# tests/reference_data/test_inventory_baseline.json::ratchet.
+# (BASELINE_LIB_IGNORED stays 9: the harness's mode-aware selection
+# fixture pins a lib_ignored of 9, and the live AST count 8 < 9 keeps
+# the ratchet green either way.)
+BASELINE_LIB_TESTS = 4240
 BASELINE_LIB_IGNORED = 9
-BASELINE_WORKSPACE_TESTS = 8702
+BASELINE_WORKSPACE_TESTS = 8720
 # 2026-09-12 (Issue #3711): 121 -> 133 — see the history entry above for
 # the per-crate attribution and the AST-vs-cargo calibration analysis.
 # 2026-09-18 (Issue #3729): 133 -> 138 — absorbs the cargo-verified
@@ -243,7 +253,11 @@ BASELINE_WORKSPACE_IGNORED = 147  # Issue #3869: bumped from 138 (+9) — eight 
 # AST-scan test_binaries at HEAD is 309 (308 + this binary); no other
 # ratchet moves (lib/workspace/ignored AST counts are unchanged or
 # below their constants).
-BASELINE_TEST_BINARIES = 309
+# 2026-09-24 (PR #3968): 309 -> 49 — corrected to the live AST basis after
+# the #3764 consolidated-runner restructure (273 standalone root binaries
+# folded into ``all_tests``); the 309 figure predated the restructure's
+# AST-scan accounting.
+BASELINE_TEST_BINARIES = 49
 
 # Sanity-check constants — the verified cargo counts at HEAD
 # ``12856a9``. Operators checking the drift gate's accuracy can

@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fluxion.dev/schemas/topology_v1.schema.json",
+  "title": "Fluxion simulation topology export (v1)",
+  "description": "Deterministic thermal-network topology document emitted by `fluxion topology export` / `fluxion export-topology` (Issue #3963). Nodes are thermal-network elements; edges are heat-transfer couplings. Node and edge arrays are sorted by stable ids so identical model inputs yield byte-identical JSON.",
+  "type": "object",
+  "required": ["metadata", "nodes", "edges"],
+  "additionalProperties": false,
+  "properties": {
+    "metadata": { "$ref": "#/$defs/metadata" },
+    "nodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "edges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/edge" }
+    }
+  },
+  "$defs": {
+    "metadata": {
+      "type": "object",
+      "description": "Document metadata block.",
+      "required": [
+        "schema_version",
+        "tool_version",
+        "model_name",
+        "model_source",
+        "node_count",
+        "edge_count"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "1.0.0",
+          "description": "Topology schema version."
+        },
+        "tool_version": {
+          "type": "string",
+          "description": "Version of the exporting engine (CARGO_PKG_VERSION)."
+        },
+        "model_name": {
+          "type": "string",
+          "description": "Name of the exported model (e.g. 'ASHRAE 140 Case 600')."
+        },
+        "model_source": {
+          "type": "string",
+          "description": "Model provenance, e.g. 'ashrae-140-registry:600' or 'model-file:path/to/model.json'."
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Optional export timestamp. Absent by default so exports are deterministic; set explicitly when reproducibility is not required."
+        },
+        "node_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of nodes in the document."
+        },
+        "edge_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of edges in the document."
+        }
+      }
+    },
+    "node_kind": {
+      "type": "string",
+      "enum": [
+        "outdoor_ambient",
+        "exterior_surface",
+        "wall_layer",
+        "interior_surface",
+        "internal_mass",
+        "zone_air",
+        "internal_gain",
+        "hvac_terminal"
+      ]
+    },
+    "edge_kind": {
+      "type": "string",
+      "enum": [
+        "conduction",
+        "convection_exterior",
+        "convection_interior",
+        "longwave_radiation",
+        "shortwave_solar_direct",
+        "shortwave_solar_diffuse",
+        "air_exchange",
+        "internal_gain_split",
+        "hvac_sensible"
+      ]
+    },
+    "node": {
+      "type": "object",
+      "description": "A thermal-network node. Numeric attributes are absent (not null) when not applicable to the node kind.",
+      "required": ["id", "kind", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable unique node id (e.g. 'zone-0:air'). Nodes are sorted by this id.",
+          "minLength": 1
+        },
+        "kind": { "$ref": "#/$defs/node_kind" },
+        "zone_id": {
+          "type": "string",
+          "description": "Owning zone air node id, when the node belongs to a zone."
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable node name.",
+          "minLength": 1
+        },
+        "capacitance_j_per_k": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Thermal capacitance (J/K)."
+        },
+        "area_m2": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Reference surface area (m²)."
+        },
+        "volume_m3": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Reference volume (m³)."
+        },
+        "azimuth_deg": {
+          "type": "number",
+          "description": "Surface azimuth, degrees clockwise from North; absent for flat or ground-coupled surfaces."
+        },
+        "tilt_deg": {
+          "type": "number",
+          "description": "Surface tilt from horizontal (90 = vertical wall, 0 = upward roof, 180 = downward floor)."
+        },
+        "elevation_m": {
+          "type": "number",
+          "description": "Node elevation above grade (m)."
+        },
+        "attributes": {
+          "type": "object",
+          "description": "Extensible numeric attributes (HVAC setpoints, layer material properties, ground flags...). Keys are deterministic (sorted).",
+          "additionalProperties": { "type": "number" }
+        }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "description": "A heat-transfer coupling between two nodes. Edges are sorted by (source_id, target_id, coupling_type).",
+      "required": ["source_id", "target_id", "coupling_type", "bidirectional"],
+      "additionalProperties": false,
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Source node id; must resolve to a node in the document."
+        },
+        "target_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Target node id; must resolve to a node in the document."
+        },
+        "coupling_type": { "$ref": "#/$defs/edge_kind" },
+        "conductance_w_per_k": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Coupling conductance (W/K); absent for non-conductive couplings (solar admission, unresisted radiation star edges)."
+        },
+        "fraction": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Coupling fraction (e.g. SHGC, gain split fraction); absent when not applicable."
+        },
+        "bidirectional": {
+          "type": "boolean",
+          "description": "Whether heat flow is modeled in both directions."
+        },
+        "attributes": {
+          "type": "object",
+          "description": "Extensible numeric attributes (ACH, schedule hours, window areas...).",
+          "additionalProperties": { "type": "number" }
+        }
+      }
+    }
+  }
+}

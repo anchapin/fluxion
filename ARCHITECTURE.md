@@ -1436,6 +1436,7 @@ These traits support the main physics pipeline and should also be documented:
 | `Humidifier` | `src/sim/hvac/humidifier.rs` | Adiabatic humidifier component (issue #2464) — moisture addition at constant dry-bulb, capacity-clamped against rated moisture rate |
 | `CavTerminal` | `src/sim/hvac/cav_terminal.rs` | CAV terminal unit composing Fan + CoolingCoil + HeatingCoil (constant volumetric flow,Issue #1903) |
 | `VavTerminal` | `src/sim/hvac/vav_terminal.rs` | VAV terminal unit composing Fan + CoolingCoil + HeatingCoil (damper-modulated mass flow, reheat control) |
+| `ToTopologyGraph` | `src/topology.rs` | Zone-model → simulation-topology graph introspection (issue #3963) — powers `fluxion topology export` and the `topology lint` rule engine; top-level module so the sim ↔ validation cycle pair stays clean |
 | `Doas` | `src/sim/hvac/doas.rs` | Dedicated Outdoor Air System composing Fan + CoolingCoil + HeatingCoil (constant-volume, dew-point-targeted dehumidification, neutral-supply reheat) |
 | `PartLoadCurve` | `src/sim/hvac/part_load_curves.rs` | ASHRAE/E+ biquadratic part-load curves for fan, chiller, boiler |
 | `PlantComponent` | `src/sim/hvac/plant/plant_component.rs` | Plant loop equipment trait (chiller, boiler, cooling tower, pump, heat exchanger) |

@@ -13,6 +13,7 @@ pub mod hvac_commands;
 pub mod monte_carlo;
 pub mod multi_zone;
 pub mod performance;
+pub mod topology;
 pub mod validation;
 
 // Issue #2929: the previous `mod commands { pub mod import; }` and
@@ -23,6 +24,7 @@ pub mod validation;
 
 pub use multi_zone::*;
 pub use performance::PerformanceCommand;
+pub use topology::{ExportArgs, LintArgs, TopologyCommand};
 pub use validation::ValidationSubcommand;
 
 use anyhow::{anyhow, Result};
@@ -423,6 +425,17 @@ pub enum Commands {
         #[command(subcommand)]
         command: MeasureSubcommand,
     },
+
+    /// Simulation topology graph introspection (Issue #3963).
+    Topology {
+        #[command(subcommand)]
+        command: TopologyCommand,
+    },
+
+    /// Backward-compatibility alias for `fluxion topology export` (Issue #3966).
+    ExportTopology(ExportArgs),
+    /// Backward-compatibility alias for `fluxion topology lint` (Issue #3964).
+    LintTopology(LintArgs),
 }
 
 /// Main CLI structure.
@@ -1151,6 +1164,17 @@ pub fn run_cli() -> Result<()> {
     })?;
 
     match command {
+        Commands::Topology { command } => {
+            topology::dispatch(command)?;
+        }
+
+        Commands::ExportTopology(args) => {
+            topology::handle_export(args)?;
+        }
+        Commands::LintTopology(args) => {
+            topology::handle_lint(args)?;
+        }
+
         Commands::References { command } => match command {
             ReferenceCommands::Update { url } => {
                 update_references(url.as_deref())?;

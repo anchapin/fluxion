@@ -1,0 +1,115 @@
+# Topology Visualizer Gate (Issue #3966)
+#
+# Regenerates the committed topology artifacts (reference export JSONs, lint
+# reports, Mermaid/SVG diagrams, standalone-viewer payloads — produced by
+# scripts/generate_topology_diagrams.py) into a temp directory and
+# byte-compares them against the committed tree. Any physics change that
+# alters the ASHRAE 140 topology graph must regenerate + commit the artifacts
+# in the same PR; this gate fails the PR otherwise. Also posts topology
+# health (lint verdict per case + rendered Mermaid previews) to the Job
+# Summary. See docs/architecture/topology/index.md.
+
+name: Topology Visualizer Gate (Issue #3966)
+
+on:
+  pull_request:
+    paths:
+      - 'src/sim/**'
+      - 'src/physics/**'
+      - 'src/api/schema.rs'
+      - 'src/cli/topology.rs'
+      - 'schemas/**'
+      - 'scripts/generate_topology_diagrams.py'
+      - 'scripts/check_topology_drift.py'
+      - 'tests/reference_data/topology/**'
+      - 'docs/architecture/topology/**'
+      - '.github/workflows/topology_visualizer.yml'
+  push:
+    branches: [main, develop]
+    paths:
+      - 'src/sim/**'
+      - 'src/physics/**'
+      - 'src/api/schema.rs'
+      - 'src/cli/topology.rs'
+      - 'schemas/**'
+      - 'scripts/generate_topology_diagrams.py'
+      - 'scripts/check_topology_drift.py'
+      - 'tests/reference_data/topology/**'
+      - 'docs/architecture/topology/**'
+      - '.github/workflows/topology_visualizer.yml'
+  workflow_dispatch:
+
+# Per-head_sha concurrency so sibling pushes of the same PR requeue in
+# parallel (so feature branches don't queue behind main).
+concurrency:
+  group: >-
+    ${{
+      github.workflow }}-
+      ${{ github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  PYO3_USE_ABI3_FORWARD_COMPATIBILITY: 1
+
+jobs:
+  topology-drift-gate:
+    name: "Topology Diagram Drift Gate (Issue #3966)"
+    runs-on: >-
+      ${{
+        github.event_name == 'push'
+        && github.ref == 'refs/heads/main'
+        && vars.FLUXION_LINUX_RUNNER
+        || 'ubuntu-latest'
+      }}
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+
+      - name: Build fluxion CLI (debug profile)
+        run: cargo build -p fluxion
+
+      - name: Run topology drift gate (regenerate + byte-compare + lint)
+        run: python3 scripts/check_topology_drift.py --write-summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Embed topology diagram previews in job summary
+        if: always()
+        run: |
+          SUMMARY="${GITHUB_STEP_SUMMARY}"
+          {
+            echo "### Topology diagram previews (issue #3966)"
+            echo
+            echo "Rendered from the committed Mermaid sources under \`docs/architecture/topology/\`."
+            for mmd in docs/architecture/topology/case-*.mmd; do
+              case_id="$(basename "$mmd" .mmd)"
+              echo "<details><summary>${case_id}</summary>"
+              echo
+              echo '```mermaid'
+              cat "$mmd"
+              echo '```'
+              echo
+              echo "</details>"
+            done
+          } >> "$SUMMARY"

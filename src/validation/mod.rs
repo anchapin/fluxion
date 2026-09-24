@@ -31,6 +31,7 @@ pub mod reference_data;
 pub mod reference_loader;
 pub mod reporting;
 pub mod tolerance;
+pub mod topology_bridge;
 
 pub mod physics_validator;
 pub mod report;

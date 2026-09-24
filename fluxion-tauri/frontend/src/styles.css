@@ -391,3 +391,354 @@ body {
   color: #97a5c8;
   z-index: 10;
 }
+
+/* ---- Topology viewer (issue #3965) ------------------------------------ */
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.app-shell .app {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.view-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px 0;
+  background: #16213e;
+  border-bottom: 1px solid #0f3460;
+  z-index: 20;
+}
+
+.view-tab {
+  padding: 6px 16px;
+  border: 1px solid #0f3460;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: #97a5c8;
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.view-tab:hover {
+  color: #e8e8f0;
+}
+
+.view-tab-active {
+  background: #0f3460;
+  color: #e8e8f0;
+  font-weight: 600;
+}
+
+.topo-viewer {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: #12122a;
+}
+
+.topo-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  background: #16213e;
+  border-bottom: 1px solid #0f3460;
+  font-size: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.topo-toolbar select,
+.topo-toolbar button {
+  background: #0f3460;
+  color: #e8e8f0;
+  border: 1px solid #22467c;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.topo-toolbar button:focus-visible,
+.topo-toolbar select:focus-visible,
+.topo-toolbar label:focus-within {
+  outline: 2px solid #4cc9f0;
+  outline-offset: 1px;
+}
+
+.topo-toolbar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #97a5c8;
+}
+
+.topo-toolbar-btn {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  background: #0f3460;
+  border: 1px solid #22467c;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  color: #e8e8f0;
+}
+
+.topo-toolbar-btn input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.topo-toolbar-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #c6cbe0;
+  cursor: pointer;
+}
+
+.topo-toolbar-stats {
+  margin-left: auto;
+  color: #97a5c8;
+}
+
+.topo-error {
+  margin: 0;
+  padding: 6px 14px;
+  background: #4a1f28;
+  color: #ffb3c0;
+  border-bottom: 1px solid #e94560;
+  font-size: 0.8rem;
+}
+
+.topo-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.topo-canvas-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.topo-svg {
+  display: block;
+  cursor: grab;
+  touch-action: none;
+}
+
+.topo-svg:active {
+  cursor: grabbing;
+}
+
+.topo-node {
+  cursor: pointer;
+}
+
+.topo-node:focus,
+.topo-node:focus-visible {
+  outline: none;
+}
+
+.topo-node:focus-visible rect {
+  stroke-width: 3;
+  filter: drop-shadow(0 0 4px #4cc9f0);
+}
+
+.topo-node-selected rect {
+  stroke-width: 3;
+  filter: drop-shadow(0 0 6px rgba(76, 201, 240, 0.8));
+}
+
+.topo-node-label {
+  fill: #e8e8f0;
+  font-size: 10.5px;
+}
+
+.topo-node-sublabel {
+  fill: #9aa0b5;
+  font-size: 9.5px;
+}
+
+.topo-edge {
+  cursor: pointer;
+}
+
+.topo-edge-selected {
+  filter: drop-shadow(0 0 3px currentColor);
+}
+
+.topo-badge circle {
+  fill: #e94560;
+  stroke: #1a1a2e;
+  stroke-width: 1;
+  animation: topo-badge-pulse 1.6s ease-in-out infinite;
+}
+
+.topo-badge text {
+  fill: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+@keyframes topo-badge-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.topo-legend {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  background: rgba(15, 25, 45, 0.88);
+  border: 1px solid #22467c;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 0.72rem;
+  color: #c6cbe0;
+  max-height: 45%;
+  overflow-y: auto;
+  z-index: 5;
+}
+
+.topo-legend h4 {
+  margin: 4px 0;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #97a5c8;
+}
+
+.topo-legend ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(110px, auto));
+  gap: 2px 14px;
+}
+
+.topo-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+
+.topo-swatch-line {
+  height: 3px;
+  border-radius: 1px;
+}
+
+.topo-inspector {
+  width: 320px;
+  border-left: 1px solid #0f3460;
+  background: #16213e;
+  padding: 12px 14px;
+  overflow-y: auto;
+}
+
+.topo-inspector h3 {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  color: #4cc9f0;
+}
+
+.topo-inspector h4 {
+  margin: 12px 0 4px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #97a5c8;
+}
+
+.topo-inspect-kind {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  color: #9aa0b5;
+}
+
+.topo-inspect-muted {
+  color: #9aa0b5;
+  font-size: 0.78rem;
+}
+
+.topo-inspect-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.78rem;
+}
+
+.topo-inspect-table th {
+  text-align: left;
+  color: #97a5c8;
+  font-weight: 500;
+  padding: 2px 8px 2px 0;
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.topo-inspect-table td {
+  padding: 2px 0;
+  word-break: break-word;
+}
+
+.topo-neighbor-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.topo-neighbor-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: #c6cbe0;
+  font: inherit;
+  font-size: 0.78rem;
+  text-align: left;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.topo-neighbor-btn:hover {
+  background: #0f3460;
+  color: #e8e8f0;
+}
+
+.topo-badge-note {
+  background: #4a1f28;
+  border-left: 3px solid #e94560;
+  padding: 6px 8px;
+  border-radius: 4px;
+  margin: 4px 0;
+  font-size: 0.72rem;
+}

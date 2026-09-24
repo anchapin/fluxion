@@ -15,6 +15,7 @@ import { ControlBar } from "./ui/ControlBar";
 import { InfoPanel } from "./ui/InfoPanel";
 import { Legend } from "./ui/Legend";
 import { ParamsPanel } from "./ui/ParamsPanel";
+import TopologyViewer from "./topology/TopologyViewer";
 import type { BuildingGeometry } from "./types/geometry";
 import type * as THREE from "three";
 import { useEffect } from "react";
@@ -40,6 +41,9 @@ export default function App() {
   const [wireframe, setWireframe] = useState(false);
   const [zoneColoring, setZoneColoring] = useState(true);
   const [thermal, setThermal] = useState(false);
+
+  /** Top-level view switch: 3D scene vs. 2D topology section (issue #3965). */
+  const [view, setView] = useState<"scene3d" | "topology">("scene3d");
 
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
   const livetwin = useLiveTwin();
@@ -147,7 +151,31 @@ export default function App() {
   const hasRenderable = modelSource === "gltf" ? gltfScene !== null : model !== null;
 
   return (
-    <div className="app">
+    <div className="app-shell">
+      <nav className="view-tabs" role="tablist" aria-label="Main view">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "scene3d"}
+          className={view === "scene3d" ? "view-tab view-tab-active" : "view-tab"}
+          onClick={() => setView("scene3d")}
+        >
+          3D Scene
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "topology"}
+          className={view === "topology" ? "view-tab view-tab-active" : "view-tab"}
+          onClick={() => setView("topology")}
+        >
+          2D Topology
+        </button>
+      </nav>
+      {view === "topology" ? (
+        <TopologyViewer />
+      ) : (
+      <div className="app">
       <aside className="sidebar">
         <header className="sidebar-header">
           <h1>Fluxion</h1>
@@ -235,6 +263,8 @@ export default function App() {
           <span>Temps: {tempSource}</span>
         </footer>
       </main>
+      </div>
+      )}
     </div>
   );
 }
