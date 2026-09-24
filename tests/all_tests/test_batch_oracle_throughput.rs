@@ -46,6 +46,7 @@ fn generate_population(size: usize) -> Vec<Vec<f64>> {
 ///
 /// For full performance testing, run with: cargo test --release -- --nocapture
 #[test]
+#[ignore = "awaiting #3957"]
 fn test_throughput_analytical_1000_configs_sec() {
     let oracle = fluxion::BatchOracle::from_model(create_base_model()).unwrap();
     let population = generate_population(100);

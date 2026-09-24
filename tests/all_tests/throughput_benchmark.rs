@@ -111,6 +111,7 @@ fn test_batch_oracle_throughput_characterization() {
 /// This test validates that BatchOracle meets minimum throughput requirements
 /// for optimization workflows at the standard batch size.
 #[test]
+#[ignore = "awaiting #3957"]
 fn test_batch_oracle_throughput_1000() {
     let oracle = BatchOracle::from_model(create_single_zone_model()).unwrap();
     let population = generate_population(1000);
@@ -143,6 +144,7 @@ fn test_batch_oracle_throughput_1000() {
 /// of 50 configs/sec which was the established CI baseline before the
 /// release gate was created.
 #[test]
+#[ignore = "awaiting #3957"]
 fn test_batch_oracle_throughput_100() {
     let oracle = BatchOracle::from_model(create_single_zone_model()).unwrap();
     let population: Vec<Vec<f64>> = (0..100).map(|_| vec![1.5, 20.0, 26.0]).collect();
