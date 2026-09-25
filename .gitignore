@@ -88,6 +88,8 @@ MANIFEST
 # Logs
 /logs/
 *.log
+# CI run-log zips fetched by gh CLI tooling (issue #4002); build artifacts.
+/gh-cli-cache/
 
 # OS
 .DS_Store
