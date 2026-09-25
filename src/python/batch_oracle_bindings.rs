@@ -78,7 +78,7 @@ impl BatchOracle {
     ///   if false, use physics-based analytical calculations (slower but exact)
     ///
     /// # Returns
-    /// Vector of fitness values (EUI in kWh/m²/year) corresponding to each candidate.
+    /// Vector of fitness values (relative energy-cost objective; not a calibrated EUI in kWh/m²/year) corresponding to each candidate.
     ///
     /// # Performance
     /// Target throughput: >10,000 configs/sec on 8-core CPU (~100µs per config)
@@ -126,7 +126,7 @@ impl BatchOracle {
     ///   if false, use physics-based analytical calculations (slower but exact)
     ///
     /// # Returns
-    /// Vector of fitness values (EUI in kWh/m²/year) corresponding to each candidate.
+    /// Vector of fitness values (relative energy-cost objective; not a calibrated EUI in kWh/m²/year) corresponding to each candidate.
     ///
     /// # Performance
     /// Target throughput: >10,000 configs/sec on 8-core CPU (~100µs per config)
@@ -177,7 +177,7 @@ impl BatchOracle {
     /// * `use_surrogates` - If true, use neural network surrogates for faster evaluation
     ///
     /// # Returns
-    /// 1D numpy array of fitness values (EUI in kWh/m²/year) corresponding to each candidate.
+    /// 1D numpy array of fitness values (relative energy-cost objective; not a calibrated EUI in kWh/m²/year) corresponding to each candidate.
     fn evaluate_population_numpy<'a>(
         &self,
         py: Python<'a>,
