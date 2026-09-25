@@ -324,6 +324,57 @@ fn bdf2_keeps_second_order_on_alternating_timesteps() {
 }
 
 #[test]
+fn fd_timestep_config_is_honored_via_substepping() {
+    // Issue #3980: `ConductionBackendConfig.fd_timestep` must be honored —
+    // the FD solver substeps at fd_timestep inside the zone step instead of
+    // silently taking one 3600 s step. Observable: the solver's last-step dt
+    // equals fd_timestep and the resulting trajectory differs from the
+    // single-step path.
+    use fluxion::physics::cta::VectorField;
+    use fluxion::sim::engine::{StepParameters, ThermalModel};
+
+    let layers = vec![fluxion::physics::fd_discretization::MaterialLayer::new(
+        "Gypsum", 0.012, 0.16, 950.0, 840.0,
+    )];
+
+    let build = |fd_dt: f64| {
+        let mut model = ThermalModel::<VectorField>::new(1);
+        model.enable_fd(&layers, fd_dt, 10, 20.0);
+        model
+    };
+    let params = StepParameters::default();
+
+    let mut fine = build(60.0);
+    let mut coarse = build(3600.0);
+
+    let _ = fine.solve_single_step(0, 35.0, &params, 3600.0);
+    let _ = coarse.solve_single_step(0, 35.0, &params, 3600.0);
+
+    let fine_solver = &fine.conduction.backend.fd_solvers[0];
+    let coarse_solver = &coarse.conduction.backend.fd_solvers[0];
+
+    // The config was honored: the solver's last step was a 60 s substep.
+    assert_eq!(fine_solver.dt, 60.0);
+
+    // Substepping resolved more of the surface transient: the trajectories
+    // differ (an ignored config would leave them identical).
+    let diff: f64 = fine_solver
+        .temperatures
+        .iter()
+        .zip(coarse_solver.temperatures.iter())
+        .map(|(&a, &b)| (a - b).abs())
+        .fold(0.0, f64::max);
+    assert!(
+        diff > 1e-6,
+        "fd_timestep=60 produced an identical trajectory to 3600 (config ignored): max node diff {diff}"
+    );
+    assert!(
+        fine_solver.temperatures.iter().all(|t| t.is_finite()),
+        "substepped FD temperatures must stay finite"
+    );
+}
+
+#[test]
 fn cumulative_energy_balance_closes_for_all_schemes() {
     // Over a transient, cumulative boundary energy exchange must match the
     // wall's stored-energy change closely enough that the 2nd-order schemes
