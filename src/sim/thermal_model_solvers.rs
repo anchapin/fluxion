@@ -411,6 +411,32 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// * `nodes_per_layer` - Number of nodes per material layer (default: 5-10 for accuracy)
     /// * `initial_temp` - Initial wall temperature [°C] (default: 20°C)
     ///
+    /// Enable the FD backend from plain layer tuples (Issue #3980):
+    /// `(name, thickness [m], conductivity [W/m·K], density [kg/m³],
+    /// specific_heat [J/kg·K])`. Keeps validation-side callers free of
+    /// `crate::physics` references (cycle guard #1441) while the per-surface
+    /// selector wiring is pending (#3983).
+    pub fn enable_fd_from_tuples(
+        &mut self,
+        layers: &[(String, f64, f64, f64, f64)],
+        timestep: f64,
+        nodes_per_layer: usize,
+        initial_temperature: f64,
+    ) {
+        let fd_layers: Vec<crate::physics::fd_discretization::MaterialLayer> = layers
+            .iter()
+            .map(|(name, thickness, k, rho, cp)| {
+                crate::physics::fd_discretization::MaterialLayer::new(
+                    name, *thickness, *k, *rho, *cp,
+                )
+            })
+            .collect();
+        #[allow(deprecated)] // enable_fd deprecated by #3287; #3983 supersedes
+        {
+            self.enable_fd(&fd_layers, timestep, nodes_per_layer, initial_temperature);
+        }
+    }
+
     #[deprecated(
         since = "1.4.0",
         note = "Use ThermalSelector with conduction_solver = Fd (or Ctf) via \

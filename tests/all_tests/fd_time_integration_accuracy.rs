@@ -627,3 +627,42 @@ fn both_schemes_stay_close_to_analytical_series() {
     );
     assert!(e_bdf2 < 0.2, "Bdf2 drifted from the reference: {e_bdf2}");
 }
+
+#[test]
+fn free_floating_conduction_uses_fd_teacher_not_ctf_primary() {
+    // Issue #3980: the 50-term CTF is demoted from the free-floating
+    // primary to a fast cross-check role (linear constructions only).
+    // The FF wiring must enable the upgraded FD backend (BDF2) at short
+    // substeps and leave ctf_primary false. (Integration-runner home so
+    // the validation module adds no new sim import edges — cycle guard
+    // #1441 rejects growth.)
+    use fluxion::physics::cta::VectorField;
+    use fluxion::sim::engine::{StepParameters, ThermalModel};
+    use fluxion::sim::thermal_selector::ThermalSelector;
+    use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+
+    let spec = ASHRAE140Case::Case900FF.spec();
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
+    fluxion::validation::ashrae_140_validator::wire_free_floating_conduction(&mut model, &spec);
+
+    let backend = &model.conduction.backend;
+    assert!(
+        !backend.ctf_primary,
+        "free-floating wiring must not set ctf_primary (CTF is cross-check only)"
+    );
+    assert!(
+        backend.fd_enabled,
+        "free-floating wiring must enable the FD teacher path"
+    );
+    assert_eq!(
+        backend.fd_timestep, 60.0,
+        "FD teacher runs at 60 s substeps (Issue #3980 teacher step)"
+    );
+    assert!(
+        !backend.fd_solvers.is_empty(),
+        "FD teacher path needs at least one solver"
+    );
+    let _ = StepParameters::default();
+}

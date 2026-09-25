@@ -143,17 +143,19 @@ pub const FD_TEACHER_SUBSTEP_S: f64 = 60.0;
 /// ASHRAE wall set, so spatial resolution — not stability — governs.
 pub const FD_TEACHER_NODES: usize = 10;
 
-/// Map a case's wall construction to FD teacher layers (Issue #3980).
-pub fn free_floating_fd_layers(
-    spec: &CaseSpec,
-) -> Vec<crate::physics::fd_discretization::MaterialLayer> {
+/// Map a case's wall construction to FD teacher layer tuples (Issue #3980):
+/// `(name, thickness [m], conductivity [W/m·K], density [kg/m³],
+/// specific_heat [J/kg·K])`. Plain data so validation stays free of
+/// `crate::physics` references (cycle guard #1441); the sim-side
+/// `enable_fd_from_tuples` builds the solver layers.
+pub fn free_floating_fd_layers(spec: &CaseSpec) -> Vec<(String, f64, f64, f64, f64)> {
     spec.construction
         .wall
         .layers
         .iter()
         .map(|layer| {
-            crate::physics::fd_discretization::MaterialLayer::new(
-                &layer.name,
+            (
+                layer.name.clone(),
                 layer.thickness,
                 layer.conductivity,
                 layer.density,
@@ -169,20 +171,11 @@ pub fn free_floating_fd_layers(
 /// cross-check for linear constructions; the teacher path is the upgraded
 /// FD solver (BDF2 time integration) running at 60 s substeps inside the
 /// hourly zone step.
-pub(crate) fn wire_free_floating_conduction(
-    model: &mut ThermalModel<VectorField>,
-    spec: &CaseSpec,
-) {
+pub fn wire_free_floating_conduction(model: &mut ThermalModel<VectorField>, spec: &CaseSpec) {
     let fd_layers = free_floating_fd_layers(spec);
     // Wall nodes start at the case's 20 C initial condition (consistent with
     // the zone initialization in the validator's free-floating entry).
-    // enable_fd is deprecated (#3287) in favour of the ThermalSelector Fd
-    // path; per-surface teacher wiring arrives with #3983 — the single-wall
-    // teacher entry keeps the explicit call until then.
-    #[allow(deprecated)]
-    {
-        model.enable_fd(&fd_layers, FD_TEACHER_SUBSTEP_S, FD_TEACHER_NODES, 20.0);
-    }
+    model.enable_fd_from_tuples(&fd_layers, FD_TEACHER_SUBSTEP_S, FD_TEACHER_NODES, 20.0);
     // CTF demoted: available as a cross-check for linear constructions,
     // never the free-floating primary (Issue #3980).
     model.conduction.backend.ctf_primary = false;

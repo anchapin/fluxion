@@ -661,36 +661,4 @@ mod tests {
             results.annual_heating_mwh
         );
     }
-
-    #[test]
-    fn free_floating_conduction_uses_fd_teacher_not_ctf_primary() {
-        // Issue #3980: the 50-term CTF is demoted from the free-floating
-        // primary to a fast cross-check role (linear constructions only).
-        // The FF wiring must enable the upgraded FD backend (BDF2) at short
-        // substeps and leave ctf_primary false.
-        let spec = ASHRAE140Case::Case900FF.spec();
-        let mut model = crate::sim::engine::ThermalModel::<
-            crate::physics::cta::VectorField,
-        >::from_spec_with_selector(&spec, &crate::sim::thermal_selector::ThermalSelector::default())
-        .expect("from_spec_with_selector");
-        crate::validation::ashrae_140_validator::wire_free_floating_conduction(&mut model, &spec);
-
-        let backend = &model.conduction.backend;
-        assert!(
-            !backend.ctf_primary,
-            "free-floating wiring must not set ctf_primary (CTF is cross-check only)"
-        );
-        assert!(
-            backend.fd_enabled,
-            "free-floating wiring must enable the FD teacher path"
-        );
-        assert_eq!(
-            backend.fd_timestep, 60.0,
-            "FD teacher runs at 60 s substeps (Issue #3980 teacher step)"
-        );
-        assert!(
-            !backend.fd_solvers.is_empty(),
-            "FD teacher path needs at least one solver"
-        );
-    }
 }
