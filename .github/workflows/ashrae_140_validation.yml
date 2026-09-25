@@ -269,10 +269,24 @@ jobs:
           EOF
 
       - name: Package crate for size gate
+        id: package
         # The release-gate checker's crate_size gate auto-detects
         # target/package/fluxion-*.crate; without a measurement it
         # fails with "No crate-size measurement supplied".
-        run: cargo package --allow-dirty --no-verify
+        # Tolerate a nonzero exit like crate-size.yml does: `cargo
+        # package` errors on the manifest-normalization registry lookup
+        # for the feature-gated fluxion-cfd path dep (not on crates.io),
+        # but the .crate is still written to target/package/tmp-crate/
+        # and is valid for size measurement.
+        run: |
+          set +e
+          cargo package --allow-dirty --no-verify
+          EXIT_CODE=$?
+          set -e
+          echo "exit_code=${EXIT_CODE}" >> "$GITHUB_OUTPUT"
+          if [[ ${EXIT_CODE} -ne 0 ]]; then
+            echo "::warning::\`cargo package\` exited with code ${EXIT_CODE}; continuing to inspect any produced .crate file."
+          fi
 
       - name: Check Validation Results
         id: check
