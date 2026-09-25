@@ -453,9 +453,10 @@ jobs:
     name: "KI Probe"
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    # Issue #4003: no longer PR-blocking — the stale check is informational.
+    # Runs on main-merge pushes only; the weekly schedule in
+    # known-issues-stale.yml keeps the advisory cadence.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - run: echo "GH runner acquired"
 
@@ -463,9 +464,9 @@ jobs:
     name: "Known Issues Stale Check (GH)"
     needs: known-issues-stale-gh-probe
     runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    # Issue #4003: demoted from required — a physics-only PR must not fail
+    # for an untouched stale doc. Main-merge pushes only.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Run stale check

@@ -71,7 +71,8 @@ with `cargo test --test zone_balance_eplus_isolation` and follow
 `docs/KNOWN_ISSUES.md` has a top-level `*Last Updated: YYYY-MM-DD*`
 line at line 10. The gate fails if it is older than 60 days. Update
 the line — and the prose around it — when you refresh the file. The
-check skips (passes) if the file is absent.
+check skips (passes) if the file is absent. Since #4003 this check is
+informational (weekly schedule + main-merge pushes) — it never blocks a PR.
 
 ### `Ashrae Cases Cycle Check` (#1441) / `Physics-Sim-Cycle-Check` (#2463) fail
 

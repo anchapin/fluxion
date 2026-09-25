@@ -654,7 +654,10 @@ jobs:
     # NOTE: intentionally no `needs: bench-default` — this job builds its own
     # release test binary and does not consume any bench-default artifact, so
     # it runs in parallel for a faster PR signal.
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    # Issue #4003: absolute perf gates moved off PRs -> develop/main push + dispatch only.
+    if: |
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')) ||
+      github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -834,7 +837,10 @@ jobs:
     # NOTE: intentionally no `needs: bench-default` — this job builds its
     # own release test binary and runs in parallel with `absolute-perf-gate`
     # / `bench-default` for a faster PR signal.
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    # Issue #4003: absolute perf gates moved off PRs -> develop/main push + dispatch only.
+    if: |
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')) ||
+      github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -1023,7 +1029,10 @@ jobs:
     # NOTE: intentionally no `needs: bench-default` — this job builds its
     # own release test binary and runs in parallel with `absolute-perf-gate`
     # / `multi-zone-perf-gate` / `bench-default` for a faster PR signal.
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    # Issue #4003: absolute perf gates moved off PRs -> develop/main push + dispatch only.
+    if: |
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')) ||
+      github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -1372,7 +1381,10 @@ jobs:
     # The gate continues to run in parallel with the other perf gates
     # (the warm-build runs before it, not alongside it).
     needs: warm-cold-start-build
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    # Issue #4003: absolute perf gates moved off PRs -> develop/main push + dispatch only.
+    if: |
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')) ||
+      github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
