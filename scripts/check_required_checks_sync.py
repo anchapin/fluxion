@@ -218,6 +218,23 @@ def get_required_checks(gates: dict) -> list[str]:
     return out
 
 
+def get_branch_protection_strict(gates: dict | None = None) -> bool:
+    """Return ``ci.branch_protection.strict`` from ``release_gates.yaml``.
+
+    The canonical source for GitHub's "require branches to be up to date
+    before merging" toggle. ``None`` (or a missing ``branch_protection``
+    section) falls back to ``True`` — the pre-2026-09-25 policy — so mock
+    repos and pre-change YAML files keep driving the old expectation.
+    Raises ``FileNotFoundError``/``ValueError`` via ``load_release_gates``
+    when ``gates`` is None and the file is missing or malformed.
+    """
+    if gates is None:
+        gates = load_release_gates()
+    ci = gates.get("ci") or {}
+    policy = ci.get("branch_protection") or {}
+    return bool(policy.get("strict", True))
+
+
 def get_workflow_only_checks(gates: dict) -> list[str]:
     """Return the ``ci.required_checks_workflow_only`` list as raw strings.
 
@@ -867,7 +884,9 @@ def check_live_branch_protection(
       checks cannot be required at branch-protection level because they
       never report on docs-only / scripts-only PRs. Comparing against the
       full list previously produced false-positive drift (Issue #3831).
-    * ``required_status_checks.strict`` is True.
+    * ``required_status_checks.strict`` matches
+      ``ci.branch_protection.strict`` from ``release_gates.yaml``
+      (``get_branch_protection_strict``; ``True`` when the key is absent).
     * ``required_pull_request_reviews.required_approving_review_count``
       equals the canonical value (Issue #3807 / ADR-0016 companion —
       the canonical defaults to 0, reviews-advisory). Pass
@@ -954,11 +973,14 @@ def check_live_branch_protection(
                 f"required_checks_workflow_only entry."
             )
 
-    if not rsc.get("strict", False):
+    canonical_strict = get_branch_protection_strict()
+    live_strict = bool(rsc.get("strict", False))
+    if live_strict != canonical_strict:
         failures.append(
-            "develop branch protection has strict=false. Issue #3116 "
-            "acceptance criterion requires strict=true so out-of-date "
-            "branches are blocked."
+            f"develop branch protection has strict={live_strict} but "
+            f"release_gates.yaml ci.branch_protection.strict is "
+            f"{canonical_strict}. Reconcile via "
+            f"`scripts/apply_branch_protection.py --write`."
         )
 
     rpr = protection.get("required_pull_request_reviews") or {}

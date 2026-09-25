@@ -1,5 +1,12 @@
 # Branch Protection Strict Mode — Issues #3142, #3809 (ADR-0016 lane reconciliation)
 
+> **Update 2026-09-25:** the "require branches to be up to date before merging"
+> toggle (`required_status_checks.strict`) was **disabled** on `develop` by
+> operator decision. `release_gates.yaml::ci.branch_protection.strict` is now
+> the canonical source for the setting (falls back to `true` when absent).
+> Required checks still gate merging; they run against the PR head commit
+> rather than a fresh merge with `develop`. The lane model below is unchanged.
+
 **Issue:** #3142 (path-filter rationale), #3809 (ADR-0016 lane reconciliation), ADR-0016 (three-lane model)
 **Date:** 2026-08-29 (initial), 2026-09-16 (ADR-0016 rewrite)
 **Status:** Implemented

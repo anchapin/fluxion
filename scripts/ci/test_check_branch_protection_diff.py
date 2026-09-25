@@ -266,7 +266,9 @@ def test_build_desired_put_payload_shape(checker):
     """The payload surfaces both PUTs verbatim and never executes them.
 
     GitHub matches contexts by exact string, so ``contexts`` must be the
-    canonical list un-normalized; ``strict`` must be True; the
+    canonical list un-normalized; ``strict`` defaults to True (the
+    pre-2026-09-25 policy) for direct callers but ``main()`` passes the
+    ``release_gates.yaml::ci.branch_protection.strict`` canonical; the
     ``enforce_admins`` toggle lives on the protection endpoint, not the
     required_status_checks endpoint.
     """
@@ -287,6 +289,25 @@ def test_build_desired_put_payload_shape(checker):
     assert payload["protection_put_payload"]["body"] == {
         "enforce_admins": {"enabled": True}
     }
+
+
+def test_build_desired_put_payload_strict_override(checker):
+    """An explicit ``strict=False`` must round-trip into the payload body."""
+    payload = checker.build_desired_put_payload(["X (GH)"], True, strict=False)
+    body = payload["required_status_checks_put_payload"]["body"]
+    assert body["strict"] is False
+
+
+def test_load_canonical_branch_protection_strict(checker, tmp_path):
+    """The YAML canonical is read; a missing key falls back to True."""
+    from pathlib import Path
+
+    p = tmp_path / "release_gates.yaml"
+    p.write_text("ci:\n  branch_protection:\n    strict: false\n", encoding="utf-8")
+    assert checker.load_canonical_branch_protection_strict(p) is False
+
+    p.write_text("ci:\n  review_policy: {}\n", encoding="utf-8")
+    assert checker.load_canonical_branch_protection_strict(p) is True
 
 
 # ---------------------------------------------------------------------------
