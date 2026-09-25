@@ -460,7 +460,7 @@ _CFG_TEST_BODY_RE = re.compile(
 # `compute_inter_zone_flux` allow(dead_code) sites were deleted; the
 # dead-code inventory was regenerated via
 # `python3 scripts/check_orphan_modules.py --update-dead-code-inventory`.
-BASELINE_DEAD_CODE_ALLOWS = 90
+BASELINE_DEAD_CODE_ALLOWS = 91  # +1: #3918 zone_volumes kept for C_air threading decision
 
 # ---------------------------------------------------------------------------
 # Wired-but-dead disposition registry (Issue #3748).

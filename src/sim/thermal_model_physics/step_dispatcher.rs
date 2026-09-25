@@ -199,6 +199,10 @@ struct GaugeInputs {
     default_heating_sp: f64,
     default_cooling_sp: f64,
     zone_areas: Vec<f64>,
+    /// Zone volumes [m³], collected for the gauge dispatcher's C_air audit
+    /// path (#3918 scratch work). Unread pending the C_air threading
+    /// decision — kept so the collection is not silently lost.
+    #[allow(dead_code)]
     zone_volumes: Vec<f64>,
     loads: Vec<f64>,
     solar_gains: Vec<f64>,
@@ -372,15 +376,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             } else {
                 EquipmentHVACMode::Off
             };
-            // Force T_air to appropriate setpoint based on mode.
-            let setpoint_for_mode = match hvac_mode {
-                EquipmentHVACMode::Heating => h_sp,
-                EquipmentHVACMode::Cooling => c_sp,
-                EquipmentHVACMode::Off => t_air_current,
-            };
-            if is_conditioned {
-                gauge.set_T_air(setpoint_for_mode);
-            }
+            // Issue #3918 Fix B — ISO 13790 §C.3 load form. The previous
+            // scheme forced T_air to the setpoint BEFORE/AFTER the gauge
+            // step and read the HVAC load from the gauge's −net_power
+            // ledger. That ledger is evaluated at the pre-forced air
+            // temperature and is contaminated by the frozen-flux
+            // linearization error diagnosed in
+            // `.agents/results/result-debug.md` §Fix B. Instead, run the
+            // branch free-float (no forcing — Case 600FF/650FF dynamics
+            // are untouched by construction) and derive the load from the
+            // free-float final temperature via the §C.3 form, reusing the
+            // exact coefficient and clamp semantics of
+            // `compute_zone_hvac_load` / `compute_hvac_coefficient`:
+            //
+            //   Q_hvac = clamp(h_coeff·(T_set − t_air_free_final),
+            //                  −cool_cap, heat_cap)
+            //
+            // The propagated T_air is the ISO closed-form conditioned
+            // temperature t_air_free_final + Q_hvac/h_coeff (exactly T_set
+            // when unclamped, partial when capacity-limited, free-float
+            // inside the deadband — HVAC off means the zone floats).
             let r = gauge.step(
                 timestep,
                 dt_seconds,
@@ -403,26 +418,44 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 inputs.convective_fraction,
                 inputs.solar_beam_to_mass_fraction,
             );
-            // Issue #3817 / Issue #3904 — for HVAC-conditioned zones the dispatcher forces
-            // T_air to the setpoint BEFORE the step (so the gauge's per-surface
-            // flux is computed at T_air = setpoint_for_mode, giving the correct HVAC load
-            // in `energy_kwh`), but the gauge's step formula still evolves
-            // T_air from that forced value via the implicit Euler update. For
-            // the conditioned case the HVAC is assumed to track the setpoint,
-            // so we restore T_air to setpoint_for_mode AFTER the step and propagate that
-            // value to `setpoints.temperatures[0]` below. Without this restore,
-            // the post-step T_air drifts toward the gauge's free-float
-            // equilibrium (e.g. ≈ 0 °C for Case 600, Denver TMY) and the test
-            // at `tests/all_tests/zone_balance_eplus_isolation.rs:298` sees a
-            // 30+ °C step-to-step oscillation in the propagated T_zone. The
-            // restore is a no-op for free-floating cases (the `if is_conditioned`
-            // branch is skipped), so the gauge's free-float dynamics are
-            // preserved for Case 600FF/900FF.
-            if is_conditioned {
-                gauge.set_T_air(setpoint_for_mode);
-            }
-            let t_air = gauge.T_air().to_value();
-            (r.ok(), t_air)
+            let t_air_free_final = gauge.T_air().to_value();
+            let (energy_out, t_air) = if r.is_err() || !is_conditioned {
+                // Step failed (fall through to legacy per the β-gate) or the
+                // zone is not conditioned: keep the ledger semantics of the
+                // old path. Free-float setups (±999 setpoints) always land
+                // here via the deadband branch below — no forcing, no load.
+                (r.ok(), t_air_free_final)
+            } else {
+                // §C.3 demand from the FREE-FLOAT final temperature (mirrors
+                // `compute_zone_hvac_load`: heating at/below h_sp, cooling
+                // at/above c_sp, deadband otherwise).
+                let h_coeff = self.0.compute_hvac_coefficient(0);
+                let demand = if t_air_free_final <= h_sp {
+                    h_coeff * (h_sp - t_air_free_final)
+                } else if t_air_free_final >= c_sp {
+                    -h_coeff * (t_air_free_final - c_sp)
+                } else {
+                    0.0
+                };
+                let q_hvac = demand.clamp(
+                    -self.0.hvac.hvac_cooling_capacity,
+                    self.0.hvac.hvac_heating_capacity,
+                );
+                let energy = q_hvac * dt_seconds / 3_600_000.0;
+                // ISO §C.3 closed-form final air temperature. When the
+                // demand is unclamped this equals the setpoint exactly;
+                // when capacity-limited it holds the partial pull toward
+                // the setpoint. h_coeff == 0 degenerates to free-float
+                // (demand is 0 anyway).
+                let t_air_final = if h_coeff > 0.0 {
+                    t_air_free_final + q_hvac / h_coeff
+                } else {
+                    t_air_free_final
+                };
+                gauge.set_T_air(t_air_final);
+                (Some(energy), t_air_final)
+            };
+            (energy_out, t_air)
         };
 
         let energy_kwh = energy_kwh?; // β-gate: fall through to legacy on None
