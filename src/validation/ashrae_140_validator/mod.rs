@@ -176,7 +176,13 @@ pub(crate) fn wire_free_floating_conduction(
     let fd_layers = free_floating_fd_layers(spec);
     // Wall nodes start at the case's 20 C initial condition (consistent with
     // the zone initialization in the validator's free-floating entry).
-    model.enable_fd(&fd_layers, FD_TEACHER_SUBSTEP_S, FD_TEACHER_NODES, 20.0);
+    // enable_fd is deprecated (#3287) in favour of the ThermalSelector Fd
+    // path; per-surface teacher wiring arrives with #3983 — the single-wall
+    // teacher entry keeps the explicit call until then.
+    #[allow(deprecated)]
+    {
+        model.enable_fd(&fd_layers, FD_TEACHER_SUBSTEP_S, FD_TEACHER_NODES, 20.0);
+    }
     // CTF demoted: available as a cross-check for linear constructions,
     // never the free-floating primary (Issue #3980).
     model.conduction.backend.ctf_primary = false;
