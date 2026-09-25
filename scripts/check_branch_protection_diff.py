@@ -157,6 +157,23 @@ def load_canonical_review_policy(path: Path) -> dict:
     }
 
 
+def load_canonical_branch_protection_strict(path: Path) -> bool:
+    """Return ``release_gates.yaml::ci.branch_protection.strict``.
+
+    Falls back to ``True`` (the pre-2026-09-25 policy) when the key is
+    missing so older YAML files keep driving the previous expectation.
+    """
+    if not path.exists():
+        print(f"ERROR: {path} missing", file=sys.stderr)
+        sys.exit(2)
+
+    with path.open(encoding="utf-8") as fh:
+        data = yaml.safe_load(fh)
+
+    policy = (data.get("ci") or {}).get("branch_protection") or {}
+    return bool(policy.get("strict", True))
+
+
 def fetch_live_protection(repo: str) -> dict:
     """Query GitHub for the live ``develop`` branch protection.
 
@@ -196,12 +213,17 @@ def compute_diff(canonical: list[str], live_required: list[str]) -> dict:
     }
 
 
-def build_desired_put_payload(canonical: list[str], enforce_admins: bool) -> dict:
+def build_desired_put_payload(
+    canonical: list[str], enforce_admins: bool, strict: bool = True
+) -> dict:
     """Build the JSON body for ``PUT .../protection/required_status_checks``.
 
     Per the GitHub REST API contract, the ``contexts`` array is the verbatim
     list of required check names; ``strict`` controls whether branches must
-    be up-to-date before merging. The envelope for the PUT is documented at
+    be up-to-date before merging (canonical:
+    ``release_gates.yaml::ci.branch_protection.strict``; the ``True``
+    default preserves the pre-2026-09-25 policy for direct callers).
+    The envelope for the PUT is documented at
     https://docs.github.com/en/rest/branches/branch-protection.
 
     The ``enforce_admins.enabled`` toggle is set on the protection endpoint
@@ -224,7 +246,7 @@ def build_desired_put_payload(canonical: list[str], enforce_admins: bool) -> dic
         "required_status_checks_put_payload": {
             "url": "/repos/<owner>/<repo>/branches/develop/protection/required_status_checks",
             "body": {
-                "strict": True,
+                "strict": strict,
                 "contexts": canonical,
             },
         },
@@ -278,6 +300,7 @@ def main(argv: list[str]) -> int:
 
     canonical = load_canonical_required_checks(args.release_gates)
     review_policy = load_canonical_review_policy(args.release_gates)
+    strict = load_canonical_branch_protection_strict(args.release_gates)
     try:
         live = fetch_live_protection(args.repo)
     except subprocess.CalledProcessError as exc:
@@ -309,7 +332,7 @@ def main(argv: list[str]) -> int:
     has_review_drift = review_drift["drift"]
     drift = has_diff or has_enforce_drift or has_review_drift
 
-    payload = build_desired_put_payload(canonical, enforce_admins=True)
+    payload = build_desired_put_payload(canonical, enforce_admins=True, strict=strict)
     report = {
         "repo": args.repo,
         "canonical_count": len(canonical),

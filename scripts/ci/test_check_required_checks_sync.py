@@ -1404,7 +1404,8 @@ def test_check_live_branch_protection_passes_when_live_matches_workflow_only(
         # ADR-0016 / Issue #3807 (reviews-advisory).
         live_payload = {
             "required_status_checks": {
-                "strict": True,
+                # 2026-09-25 policy: ci.branch_protection.strict=false.
+                "strict": False,
                 "contexts": list(workflow_only),
             },
             "enforce_admins": {"enabled": True},
@@ -1452,7 +1453,8 @@ def test_check_live_branch_protection_flags_missing_workflow_only(
     # Live protection only has 2 of the 3 required workflow-only checks.
     live_payload = {
         "required_status_checks": {
-            "strict": True,
+            # 2026-09-25 policy: ci.branch_protection.strict=false.
+            "strict": False,
             "contexts": ["Workspace Check (GH)", "Rustfmt (GH)"],
         },
         "enforce_admins": {"enabled": True},
@@ -1482,7 +1484,8 @@ def test_check_live_branch_protection_flags_stale_extra_context(
     workflow_only = ["Workspace Check (GH)", "Clippy (GH)"]
     live_payload = {
         "required_status_checks": {
-            "strict": True,
+            # 2026-09-25 policy: ci.branch_protection.strict=false.
+            "strict": False,
             "contexts": [
                 "Workspace Check (GH)",
                 "Clippy (GH)",
@@ -1505,6 +1508,73 @@ def test_check_live_branch_protection_flags_stale_extra_context(
     assert any("required_checks_workflow_only" in f for f in failures), (
         f"Stale-context message must mention the workflow-only key "
         f"(Issue #3831), got: {failures}"
+    )
+
+
+def test_get_branch_protection_strict_reads_yaml_and_defaults_true(checker):
+    """``get_branch_protection_strict`` reads ``ci.branch_protection.strict``.
+
+    A missing ``branch_protection`` section falls back to ``True`` (the
+    pre-2026-09-25 policy) so older YAML files keep the old expectation.
+    """
+    assert checker.get_branch_protection_strict(
+        {"ci": {"branch_protection": {"strict": False}}}
+    ) is False
+    assert checker.get_branch_protection_strict(
+        {"ci": {"branch_protection": {"strict": True}}}
+    ) is True
+    assert checker.get_branch_protection_strict({"ci": {}}) is True
+    assert checker.get_branch_protection_strict({}) is True
+
+
+def test_check_live_branch_protection_flags_strict_drift(
+    checker, tmp_path, monkeypatch
+):
+    """Live ``strict`` must match ``ci.branch_protection.strict``.
+
+    Mock repo pins ``strict: false`` (the 2026-09-25 policy): live
+    ``strict=true`` is drift, live ``strict=false`` is clean.
+    """
+    target = _redirect(checker, tmp_path, monkeypatch)
+    target.write_text(
+        "ci:\n"
+        "  required_checks_workflow_only:\n"
+        '    - "Workspace Check (GH)"\n'
+        "  branch_protection:\n"
+        "    strict: false\n",
+        encoding="utf-8",
+    )
+    workflow_only = ["Workspace Check (GH)"]
+
+    def fake_run(strict_value, **kwargs):
+        live_payload = {
+            "required_status_checks": {
+                "strict": strict_value,
+                "contexts": list(workflow_only),
+            },
+            "enforce_admins": {"enabled": True},
+            "required_pull_request_reviews": {
+                "required_approving_review_count": 0,
+            },
+        }
+        return _FakeCompleted(json.dumps(live_payload), returncode=0)
+
+    monkeypatch.setattr(
+        "subprocess.run", lambda cmd, **kw: fake_run(True, **kw)
+    )
+    failures = checker.check_live_branch_protection(workflow_only)
+    assert any("strict" in f for f in failures), (
+        f"Live strict=true vs YAML strict=false must be flagged, got: "
+        f"{failures}"
+    )
+
+    monkeypatch.setattr(
+        "subprocess.run", lambda cmd, **kw: fake_run(False, **kw)
+    )
+    failures = checker.check_live_branch_protection(workflow_only)
+    assert failures == [], (
+        f"Live strict=false matching YAML strict=false must be clean, "
+        f"got: {failures}"
     )
 
 

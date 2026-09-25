@@ -26,7 +26,7 @@ There is **no `pull_request` trigger** on this workflow. The PR-blocking static-
 `scripts/check_required_checks_sync.py` enforces five invariants. The first four are pure YAML / regex parsing — no network access. The fifth (only enabled when `FLUXION_CHECK_LIVE_PROTECTION=1`) calls `gh api /repos/anchapin/fluxion/branches/develop/protection` and verifies:
 
 1. `required_status_checks.contexts` matches `release_gates.yaml::ci.required_checks` by symmetric set equality.
-2. `required_status_checks.strict` is `true`.
+2. `required_status_checks.strict` matches `release_gates.yaml::ci.branch_protection.strict` (currently `false` — the require-up-to-date rule was disabled 2026-09-25 by operator decision).
 3. `required_pull_request_reviews.required_approving_review_count` equals `release_gates.yaml::ci.review_policy.required_approving_review_count` (default 0, reviews-advisory per ADR-0016 / Issue #3807).
 4. `enforce_admins.enabled` is `true`.
 

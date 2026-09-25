@@ -355,6 +355,22 @@ ci:
     enforce_admins: true
 
   # =============================================================================
+  # BRANCH PROTECTION STRICT MODE
+  # =============================================================================
+  # Canonical source for `required_status_checks.strict` (GitHub's
+  # "require branches to be up to date before merging"). Read by
+  # ``scripts/apply_branch_protection.py`` (PUT) and verified by the
+  # cron-mode ``FLUXION_CHECK_LIVE_PROTECTION=1`` check in
+  # ``scripts/check_required_checks_sync.py``. Never hard-code this in
+  # the scripts — read it from here.
+  branch_protection:
+    # `strict: false` (2026-09-25, operator decision): the update-branch
+    # churn on every PR is not always necessary. Required checks still
+    # gate merging; they run against the PR head commit rather than a
+    # fresh merge with develop.
+    strict: false
+
+  # =============================================================================
   # REQUIRED STATUS CHECKS
   # =============================================================================
   # GitHub branch-protection "Required status checks" list. Every check
