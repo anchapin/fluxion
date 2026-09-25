@@ -1117,8 +1117,9 @@ jobs:
     name: "Fluxion Determinism Gate (Issue #1351)"
     runs-on: ubuntu-latest
     # Issue #4018: accept both direct-PR determinism runs (event ==
-    # 'pull_request', current) and future CI-Gates-triggered runs (event
-    # == 'workflow_run'). Two-PR rollout per ci-gates.yml warning.
+    # 'pull_request', pre-rollout) and CI-Gates-triggered runs (event ==
+    # 'workflow_run'). The two-PR rollout is complete as of the
+    # determinism phase-gate follow-up; only the workflow_run kind fires now.
     if: (github.event.workflow_run.event == 'pull_request' || github.event.workflow_run.event == 'workflow_run') && github.event.workflow_run.name == 'Cross-Platform Determinism CI'
     # Issue #1505: the previous guard `&& conclusion != 'skipped'`
     # suppressed the listener when an upstream benchmark sub-job was
