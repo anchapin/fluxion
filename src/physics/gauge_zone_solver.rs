@@ -948,7 +948,18 @@ impl GaugeZoneSolver {
         // fluxes get through `h_env` — so the ultimate steady state stays
         // T_ext + Φ_gains/(h_env + h_total): the interior film circulates
         // heat but leaks nothing.
-        let den_air = h_env + h_total + h_interior;
+        // Scratch diagnostic ablation for Issue #3962 (#3962 h_env/h_interior
+        // decomposition) — REMOVE BEFORE MERGE. FLUXION_ABLATE=h_env|h_interior|both
+        // zeroes the named conductance out of the air-node denominator only.
+        static ABLATE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        let ablate = ABLATE.get_or_init(|| std::env::var("FLUXION_ABLATE").unwrap_or_default());
+        let (h_env_abl, h_interior_abl) = match ablate.as_str() {
+            "h_env" => (0.0, h_interior),
+            "h_interior" => (h_env, 0.0),
+            "both" => (0.0, 0.0),
+            _ => (h_env, h_interior),
+        };
+        let den_air = h_env_abl + h_total + h_interior_abl;
 
         let T_ext_val = T_exterior.to_value();
         // Quasi-steady-state temperature (constant over all sub-steps, like 5R1C's "steady")
