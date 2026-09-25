@@ -105,6 +105,7 @@ mod evolution_ctf_golden_seed_shim;
 mod examples_smoke;
 mod exporter_path_confinement;
 mod fast_math_probe;
+mod fd_time_integration_accuracy;
 mod ffd_cfd_adapter_integration;
 mod ffd_cosimulation_validation;
 mod fmi_ffi_safety;

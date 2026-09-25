@@ -136,6 +136,51 @@ impl Default for ASHRAE140Validator {
 /// println!("Min temp: {:.2}°C, Max temp: {:.2}°C",
 ///          result.free_float_min_temp, result.free_float_max_temp);
 /// ```
+/// FD conduction-teacher substep inside the hourly zone step (Issue #3980).
+pub const FD_TEACHER_SUBSTEP_S: f64 = 60.0;
+/// FD node count for the conduction teacher (Issue #3980). 10 nodes keep
+/// the per-step cost bounded at the 60 s substep; Fourier << 1 for the
+/// ASHRAE wall set, so spatial resolution — not stability — governs.
+pub const FD_TEACHER_NODES: usize = 10;
+
+/// Map a case's wall construction to FD teacher layer tuples (Issue #3980):
+/// `(name, thickness [m], conductivity [W/m·K], density [kg/m³],
+/// specific_heat [J/kg·K])`. Plain data so validation stays free of
+/// `crate::physics` references (cycle guard #1441); the sim-side
+/// `enable_fd_from_tuples` builds the solver layers.
+pub fn free_floating_fd_layers(spec: &CaseSpec) -> Vec<(String, f64, f64, f64, f64)> {
+    spec.construction
+        .wall
+        .layers
+        .iter()
+        .map(|layer| {
+            (
+                layer.name.clone(),
+                layer.thickness,
+                layer.conductivity,
+                layer.density,
+                layer.specific_heat,
+            )
+        })
+        .collect()
+}
+
+/// Wire the conduction teacher for a free-floating case (Issue #3980).
+///
+/// The 50-term CTF is demoted from the free-floating primary role to a fast
+/// cross-check for linear constructions; the teacher path is the upgraded
+/// FD solver (BDF2 time integration) running at 60 s substeps inside the
+/// hourly zone step.
+pub fn wire_free_floating_conduction(model: &mut ThermalModel<VectorField>, spec: &CaseSpec) {
+    let fd_layers = free_floating_fd_layers(spec);
+    // Wall nodes start at the case's 20 C initial condition (consistent with
+    // the zone initialization in the validator's free-floating entry).
+    model.enable_fd_from_tuples(&fd_layers, FD_TEACHER_SUBSTEP_S, FD_TEACHER_NODES, 20.0);
+    // CTF demoted: available as a cross-check for linear constructions,
+    // never the free-floating primary (Issue #3980).
+    model.conduction.backend.ctf_primary = false;
+}
+
 pub fn validate_ashrae_140(spec: &CaseSpec) -> FreeFloatValidationResult {
     ASHRAE140Validator::validate_ashrae_140(spec)
 }
@@ -2572,11 +2617,13 @@ impl ASHRAE140Validator {
         model.reset_peak_power();
         model.reset_heating_cooling_energy();
 
-        // Enable ctf_primary mode for free-floating cases with multi-layer construction
-        // This addresses thermal mass dynamics limitation (Issue #486)
+        // Conduction teacher for free-floating cases (Issue #3980): the
+        // upgraded FD backend (BDF2, 60 s substeps) replaces the 50-term
+        // CTF primary — CTF is demoted to a fast cross-check role for
+        // linear constructions, never the teacher path.
         let is_free_floating = spec.case_id.ends_with("FF");
         if is_free_floating {
-            model.conduction.backend.ctf_primary = true;
+            wire_free_floating_conduction(&mut model, spec);
             // Disable HVAC for free-floating
             model.setpoints.heating_setpoint = -999.0;
             model.setpoints.cooling_setpoint = 999.0;

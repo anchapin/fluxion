@@ -37,6 +37,7 @@ manually for investigation. They are NOT part of CI gates.
 
 | Test File | Test Name | Blocking Issue | Un-Ignore Criteria | Status |
 |-----------|-----------|----------------|-------------------|--------|
+| `tests/all_tests/fd_time_integration_accuracy.rs` | `fd_time_integration_sweep_harness` | #3980 | Prints the accuracy-vs-cost table for docs/validation/conduction_time_integration.md; convert to a CI gate only if a sweep-drift gate is ever warranted | `pending` |
 | `tests/diagnostics/diag_917_energy.rs` | `diag_energy_balance_600ff` | #2536 | Add assertions; convert to CI gate | `pending` |
 | `tests/diagnostics/diag_917_solar.rs` | `diag_solar_gains_600ff` | #2536 | Add assertions; convert to CI gate | `pending` |
 | `tests/diagnostics/diag_917_v2.rs` | `diagnostic` | #2536 | Add assertions; convert to CI gate | `pending` |

@@ -351,8 +351,28 @@ where
                 let interior_bc = SurfaceBC::new_interior(INTERIOR_FILM_COEFF, t_zone);
                 let exterior_bc = SurfaceBC::new_exterior(h_se_fd, t_ext, 0.0);
 
-                // Step FD solver and get interior surface heat flux
-                solver.step(3600.0, &interior_bc, &exterior_bc);
+                // Step FD solver at the configured substep (Issue #3980):
+                // fd_timestep below the zone step => substep within it; a
+                // non-divisor configuration fails loudly rather than
+                // silently mis-stepping. Default == zone step => single
+                // step (the historical behaviour). The zone step is the
+                // architectural hourly step (callers pass a step INDEX).
+                const FD_ZONE_STEP_S: f64 = 3600.0;
+                let fd_sub_dt = self.0.conduction.backend.fd_timestep;
+                let n_sub = if fd_sub_dt > 0.0 && fd_sub_dt < FD_ZONE_STEP_S {
+                    let n = (FD_ZONE_STEP_S / fd_sub_dt).round();
+                    if (FD_ZONE_STEP_S / n - fd_sub_dt).abs() > 1e-9 * FD_ZONE_STEP_S {
+                        panic!(
+                            "fd_timestep {fd_sub_dt} must divide the zone step {FD_ZONE_STEP_S} exactly"
+                        );
+                    }
+                    n as usize
+                } else {
+                    1
+                };
+                for _ in 0..n_sub {
+                    solver.step(FD_ZONE_STEP_S / n_sub as f64, &interior_bc, &exterior_bc);
+                }
                 let q_flux = solver.interior_heat_flux(INTERIOR_FILM_COEFF, t_zone);
                 fd_fluxes.push(q_flux);
             }
