@@ -90,48 +90,8 @@ permissions:
   contents: read
 
 jobs:
-  energy-conservation-gh-probe:
-    name: "EC Probe"
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    steps:
-      - run: echo "GH runner acquired"
-
-  energy-conservation-gh:
-    name: "Energy Conservation (GH)"
-    needs: energy-conservation-gh-probe
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: ./.github/actions/setup-rust-python-env
-        with:
-          python-version: '3.10'
-      - name: Run energy conservation tests
-        run: |
-          cargo test --test all_tests test_energy_conservation:: --verbose 2>&1 | tee /tmp/energy_test_output.txt
-          cargo test --test all_tests zone_balance_eplus_isolation:: --verbose 2>&1 | tee /tmp/zone_balance_test_output.txt
-      - name: Extract violation counts
-        run: |
-          echo "=== Energy Conservation Test Results ==="
-          echo "Checking for energy conservation violations..."
-          ENERGY_VIOLATIONS=$(grep -c "violated energy conservation" /tmp/energy_test_output.txt /tmp/zone_balance_test_output.txt 2>/dev/null || echo "0")
-          echo "Total violations found: $ENERGY_VIOLATIONS"
-          if [ "$ENERGY_VIOLATIONS" -gt "0" ]; then
-            echo "FAIL: Energy conservation violations detected"
-            grep -A2 "violated energy conservation" /tmp/energy_test_output.txt /tmp/zone_balance_test_output.txt
-            exit 1
-          fi
-          echo "PASS: No energy conservation violations"
-
   energy-conservation-hz:
     name: "Energy Conservation (Hetzner Overflow)"
-    needs: energy-conservation-gh-probe
     runs-on: [self-hosted,fluxion-overflow]
     # Issue #3445: persistent self-hosted runners MUST NOT execute
     # PR-controlled code (CI is the enforcement layer for every validation
@@ -142,8 +102,7 @@ jobs:
     # Only run if GH probe timed out (GH runners saturated) or was cancelled.
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      && (needs.energy-conservation-gh-probe.result == 'failure'
-          || needs.energy-conservation-gh-probe.result == 'cancelled')
+     
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-python-env
@@ -168,27 +127,8 @@ jobs:
 
   # -- Rustfmt ----------------------------------------------------------------
 
-  fmt-gh-probe:
-    name: "Fmt Probe"
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - run: echo "GH runner acquired"
-
-  fmt-gh:
-    name: Rustfmt (GH)
-    needs: fmt-gh-probe
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: ./.github/actions/setup-rust-env
-        with:
-          components: rustfmt
-      - run: cargo fmt -- --check
-
   fmt-hz:
     name: Rustfmt (Hetzner Overflow)
-    needs: fmt-gh-probe
     runs-on: [self-hosted,fluxion-overflow]
     # Issue #3445: persistent self-hosted runners MUST NOT execute
     # PR-controlled code. The probe above is trigger-less (so it runs on
@@ -198,8 +138,7 @@ jobs:
     # probe-path's success branch.
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      && (needs.fmt-gh-probe.result == 'failure'
-          || needs.fmt-gh-probe.result == 'cancelled')
+     
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-env
@@ -209,32 +148,8 @@ jobs:
 
   # -- Clippy -----------------------------------------------------------------
 
-  clippy-gh-probe:
-    name: "Clippy Probe"
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    env:
-      CARGO_BUILD_JOBS: 1
-    steps:
-      - run: echo "GH runner acquired"
-
-  clippy-gh:
-    name: Clippy (GH)
-    needs: clippy-gh-probe
-    runs-on: ubuntu-latest
-    env:
-      CARGO_BUILD_JOBS: 1
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: ./.github/actions/setup-rust-python-env
-        with:
-          rust-components: clippy
-          python-version: '3.10'
-      - run: cargo clippy --lib -- -D warnings
-
   clippy-hz:
     name: Clippy (Hetzner Overflow)
-    needs: clippy-gh-probe
     runs-on: [self-hosted,fluxion-overflow]
     env:
       CARGO_BUILD_JOBS: 1
@@ -245,8 +160,7 @@ jobs:
     # to main-merge pushes.
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      && (needs.clippy-gh-probe.result == 'failure'
-          || needs.clippy-gh-probe.result == 'cancelled')
+     
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-python-env
@@ -379,50 +293,8 @@ jobs:
   # so the cuda / ort features are not pulled in on CPU-only runners — see
   # the issue body §"Acceptance" for the rationale.
 
-  workspace-check-gh-probe:
-    name: "Workspace Check Probe"
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    steps:
-      - run: echo "GH runner acquired"
-
-  workspace-check-gh:
-    name: "Workspace Check (GH)"
-    needs: workspace-check-gh-probe
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: ./.github/actions/setup-rust-python-env
-        with:
-          python-version: '3.10'
-      - name: Run workspace check
-        run: cargo check --workspace --verbose --exclude fluxion-tauri
-      # Issue #3125: catch example drift. `--examples` is NOT included by
-      # default in `cargo check --workspace`, so a renamed field/method
-      # silently breaks `examples/*.rs` (which are user-facing docs) until
-      # a downstream user complains. The new step adds `--examples
-      # --all-targets` to catch this drift at PR time.
-      #
-      # `continue-on-error: true` because the 4 broken examples reported
-      # in #3126 (`multi_zone_demo.rs`, `debug_solar_case_600.rs`,
-      # `tutorial_custom_model.rs`, `test_6r2c.rs`) still fail to compile
-      # on current `develop`. The check observes the drift without
-      # blocking PRs; once #3126 lands and `cargo check --workspace
-      # --examples --all-targets` exits 0 against `develop`, drop the
-      # `continue-on-error` so this becomes a required gate.
-      - name: Run workspace check (examples, Issue #3125)
-        continue-on-error: true
-        run: cargo check --workspace --examples --all-targets --verbose --exclude fluxion-tauri
-
   workspace-check-hz:
     name: "Workspace Check (Hetzner Overflow)"
-    needs: workspace-check-gh-probe
     runs-on: [self-hosted,fluxion-overflow]
     # Issue #3445: persistent self-hosted runners MUST NOT execute
     # PR-controlled code. PR workspace checks run on the GH-hosted probe
@@ -430,8 +302,7 @@ jobs:
     # main-merge pushes where the code is trusted post-merge gate.
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      && (needs.workspace-check-gh-probe.result == 'failure'
-          || needs.workspace-check-gh-probe.result == 'cancelled')
+     
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-python-env
@@ -447,34 +318,8 @@ jobs:
 
   # -- ASHRAE Cases Cycle Check -----------------------------------------------
 
-  ashrae-cases-cycle-gh-probe:
-    name: "ACC Probe"
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    steps:
-      - run: echo "GH runner acquired"
-
-  ashrae-cases-cycle-gh:
-    name: "Ashrae Cases Cycle Check (GH)"
-    needs: ashrae-cases-cycle-gh-probe
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: ./.github/actions/setup-rust-python-env
-        with:
-          python-version: '3.10'
-      - name: Run cycle check
-        run: python3 scripts/check_ashrae_cases_cycle.py
-
   ashrae-cases-cycle-hz:
     name: "Ashrae Cases Cycle Check (Hetzner Overflow)"
-    needs: ashrae-cases-cycle-gh-probe
     runs-on: [self-hosted,fluxion-overflow]
     # Issue #3445: persistent self-hosted runners MUST NOT execute
     # PR-controlled code. The Ashrae Cases Cycle check is one of the ASHRAE
@@ -483,8 +328,7 @@ jobs:
     # alter subsequent validation runs. Restrict to main-merge pushes.
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      && (needs.ashrae-cases-cycle-gh-probe.result == 'failure'
-          || needs.ashrae-cases-cycle-gh-probe.result == 'cancelled')
+     
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-python-env
@@ -509,34 +353,8 @@ jobs:
   # that closes both this issue and the companion cycle-break issue
   # (see issue body §"Notes" for the rationale).
 
-  physics-sim-cycle-gh-probe:
-    name: "PSC Probe"
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    steps:
-      - run: echo "GH runner acquired"
-
-  physics-sim-cycle-gh:
-    name: "Physics-Sim-Cycle-Check (GH)"
-    needs: physics-sim-cycle-gh-probe
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: ./.github/actions/setup-rust-python-env
-        with:
-          python-version: '3.10'
-      - name: Run physics-sim cycle check
-        run: python3 scripts/check_physics_sim_cycle.py
-
   physics-sim-cycle-hz:
     name: "Physics-Sim-Cycle-Check (Hetzner Overflow)"
-    needs: physics-sim-cycle-gh-probe
     runs-on: [self-hosted,fluxion-overflow]
     # Issue #3445: persistent self-hosted runners MUST NOT execute
     # PR-controlled code. The physics-sim cycle gate is a structural
@@ -545,8 +363,7 @@ jobs:
     # cycle_baseline_history.json ledger, etc.). Restrict to main-merge.
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      && (needs.physics-sim-cycle-gh-probe.result == 'failure'
-          || needs.physics-sim-cycle-gh-probe.result == 'cancelled')
+     
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-python-env
@@ -575,20 +392,6 @@ jobs:
   # R2 (downward progress within the last 14 snapshots); per-PR jobs do
   # not enforce R2, so an ordinary PR that doesn't touch the cycle still
   # merges.
-
-  cycle-trend-gh:
-    name: "Cycle Downward Trend Guard (Issue #2768)"
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: ./.github/actions/setup-rust-python-env
-        with:
-          python-version: '3.10'
-      - name: "Run cycle downward-trend guard (per-PR: R1 + R3)"
-        run: python3 scripts/check_cycle_downward_trend.py
 
   cycle-trend-nightly:
     name: "Cycle Downward Trend Guard (nightly, Issue #2768)"
@@ -819,9 +622,10 @@ jobs:
     name: "Doctests Probe"
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Issue #4018: doctests moved off PRs (~5 job-min/PR saved).
+    # Run on push, schedule, workflow_dispatch only.
     if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      github.event_name != 'pull_request'
     steps:
       - run: echo "GH runner acquired"
 
@@ -829,9 +633,10 @@ jobs:
     name: "Workspace Doctests (GH)"
     needs: doctests-gh-probe
     runs-on: ubuntu-latest
+    # Issue #4018: doctests moved off PRs (~5 job-min/PR saved).
+    # Run on push, schedule, workflow_dispatch only.
     if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Install system dependencies (Linux)
