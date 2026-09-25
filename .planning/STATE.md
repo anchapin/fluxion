@@ -5,7 +5,7 @@ milestone_name: Blind ASHRAE 140 Validation (Physics Only)
 current_phase: phase-b-physics-fixes
 status: in_progress
 stopped_at: "Phase B sub-phases B1a (Issue #3797, PR pending) PHYSICS-01 solar distribution audit (Case 600, §LIMIT-30 in docs/KNOWN_ISSUES.md) shipped 2026-09-17 + B1b (Issue #3798 / PR #3847) release-gates cohort registration already merged + B2a (Issue #3799 / PR #3845) PHYSICS-02 thermal-mass τ characterization (Case 900, §LIMIT-29) already merged + B2b (Issue #3800 / PR #3841) already merged + B3a (Issue #3801 / PR #3838) PHYSICS-03 free-floating deviation audit already merged + B3b (Issue #3802 / PR #3835) §LIMIT-28 FF cohort entry already merged; GaugeSolver production-path switchover shipped 2026-09-07 (Phase A8, Issue #3291 / PR #3482); β-soak gate at 0/30 nights green (Issue #3286); ≥80% blind-validation coverage is the next milestone gate"
-last_updated: "2026-09-17"
+last_updated: "2026-09-25"
 progress:
   total_phases: 5
   completed_phases: 0
@@ -17,21 +17,21 @@ progress:
 # Fluxion Project State
 
 **Milestone:** v1.3 Blind ASHRAE 140 Validation (Physics Only)
-**Last Updated:** 2026-09-17
+**Last Updated:** 2026-09-25
 **Current Phase:** phase-b-physics-fixes
 **Decision:** Planning artifacts synchronized from shipped reality (Phase A8 / Issue #3291 / PR #3482 closed 2026-09-07; Phase B sub-phases B.1 / B.2 / B.3 audit + release-gates shipped 2026-09-16/17 — B1a #3797, B1b #3798, B2a #3799, B2b #3800, B3a #3801, B3b #3802 all closed at the docs level with §LIMIT-29 / §LIMIT-30 structural LIMIT entries); frontmatter and body refreshed to v1.3 per issue #3632 and the Phase B wave (PRs #3835 / #3838 / #3841 / #3845 / #3847 / pending B1a).
 
-## Live validation snapshot (2026-08-11 run; mirror of `.planning/PROJECT.md`)
+## Live validation snapshot (2026-09-07 run; mirror of `SCORECARD.md`)
 
 | Metric | Current | Release-gate target | Status |
 |--------|---------|---------------------|--------|
-| Pass rate (metric-level) | **20.3%** (13/64) | ≥ 60% | ❌ Fail |
-| Mean Absolute Error (MAE) | **55.09%** | ≤ 50% | ❌ Fail |
-| Cases fully passing | 1/18 (5.6%) | — | ❌ |
+| Pass rate (metric-level) | **14.1%** (11/84) | ≥ 60% | ❌ Fail |
+| Mean Absolute Error (MAE) | **49.82%** | ≤ 50% | ✅ Pass |
+| Cases fully passing | 0/18 (0.0%) | — | ❌ |
 | Strict ±15% annual-energy gate (Cases 600/900 heating) | passes | passes | ✅ |
 | Strict ±15% Cases 600/900 cooling (annual) | fails structurally | passes | ❌ |
 
-The canonical status snapshot lives in `SCORECARD.md` (auto-generated) and `docs/ASHRAE140_RESULTS.md`. This section is the planning-artifact mirror and may lag the canonical snapshot by one regeneration cycle.
+`SCORECARD.md` (auto-generated — regenerate with `python3 scripts/generate_scorecard.py`, never hand-edit) is the single source of truth for these numbers; `docs/ASHRAE140_RESULTS.md` carries the detailed breakdown. This section is a planning-artifact mirror and may lag the canonical snapshot by one regeneration cycle.
 
 ## Progress Summary
 
@@ -70,5 +70,5 @@ The canonical status snapshot lives in `SCORECARD.md` (auto-generated) and `docs
 This file was manually refreshed for the v1.3 milestone on 2026-09-17 by issue #3797 (Phase B1a solar distribution audit deliverable).
 The previous refresh on 2026-09-09 was the output of issue #3632 (Phase A8 / Issue #3291 / PR #3482 sync); that generation reflected the post-A8 reality. The 2026-09-17 refresh adds Phase B sub-phases B.1 / B.2 / B.3 to the Phase status block — B1a Issue #3797 (this PR's deliverable), B1b Issue #3798 / PR #3847, B2a Issue #3799 / PR #3845 + §LIMIT-29, B2b Issue #3800 / PR #3841, B3a Issue #3801 / PR #3838, B3b Issue #3802 / PR #3835 + §LIMIT-28 — all shipped at the docs level with structural fix uniformly routed to the GaugeSolver production-path work coordinated by #1465 / #1462. The v1.2 historical record is preserved in `.planning/MILESTONES.md` (v1.1/v1.2 entries + the v0.8.0/v0.4/v0.2 rollup), `.planning/v1.2-MILESTONE-VERIFICATION.md`, and `.planning/MILESTONE_v1.2_SUMMARY.md` for traceability.
 
-Last refreshed: 2026-09-17
-Refreshing issue: #3797 (Phase B1a audit); previous refreshes: #3632 (2026-09-09, Phase A8 sync)
+Last refreshed: 2026-09-25
+Refreshing issue: #3999 (scorecard-number sync only — snapshot section refreshed to the verified 2026-09-07 SCORECARD.md numbers); previous refreshes: #3797 (2026-09-17, Phase B1a audit); #3632 (2026-09-09, Phase A8 sync)
