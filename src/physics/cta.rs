@@ -203,7 +203,6 @@ impl VectorField {
 
     /// The inline (stack) capacity, in elements, of every VectorField.
     /// Vectors at or below this length never touch the heap.
-    #[allow(dead_code)]
     pub const fn inline_capacity() -> usize {
         VECTORFIELD_INLINE_CAPACITY
     }

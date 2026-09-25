@@ -687,47 +687,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         )
     }
 
-    /// Calculate window-to-window radiative conductance using glass emissivity.
-    ///
-    /// Implements Issue #349: Window-to-Window Radiative Exchange
-    /// (linearization corrected to chord-slope in Issue #1445).
-    ///
-    /// The radiative heat exchange between two windows follows:
-    /// `Q_ij = σ · F_ij · ε_glass² · A_window · (T_i⁴ − T_j⁴)`
-    ///
-    /// The chord-slope linearization `h_eff = Q_ij / (T_i − T_j)` exactly
-    /// reproduces the full nonlinear `Q_ij` at the supplied operating
-    /// point — replacing the prior hardcoded `T_ref = 293.15 K`
-    /// linearization which under-predicted by up to ~9.7 % at ΔT = 20 K.
-    ///
-    /// # Arguments
-    /// * `window_area` - Area of the windows (m²)
-    /// * `glass_emissivity` - Emissivity of glass for longwave radiation (0–1)
-    /// * `temp_a_k` - Temperature of glass A (Kelvin)
-    /// * `temp_b_k` - Temperature of glass B (Kelvin)
-    /// * `view_factor` - View factor between windows (0–1)
-    ///
-    /// # Returns
-    /// Radiative conductance in W/K (chord-slope form).
-    #[allow(dead_code)]
-    fn calculate_window_radiative_conductance(
-        window_area: f64,
-        glass_emissivity: f64,
-        temp_a_k: f64,
-        temp_b_k: f64,
-        view_factor: f64,
-    ) -> f64 {
-        let effective_emissivity = glass_emissivity * glass_emissivity;
-        crate::sim::interzone_radiation::radiative_conductance_chord_slope(
-            temp_a_k,
-            temp_b_k,
-            effective_emissivity,
-            effective_emissivity,
-            view_factor,
-            window_area,
-        )
-    }
-
     /// Calculate analytical thermal loads without neural surrogates.
     ///
     /// When weather data is available, this uses the solar module to calculate

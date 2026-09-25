@@ -128,7 +128,6 @@ impl PredictiveController {
     /// * `cooling_setpoint` - Cooling setpoint (°C)
     /// * `thermal_inertia_gain` - Thermal inertia gain factor (α)
     /// * `temp_rate_gain` - Temperature rate gain factor (β)
-    #[allow(dead_code)]
     pub fn with_tuning(
         heating_setpoint: f64,
         cooling_setpoint: f64,

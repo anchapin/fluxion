@@ -186,9 +186,6 @@ pub struct ValidationSuite {
     /// this as opaque and use `generate_interpretations` /
     /// `interpretation_for_case` instead.
     pub interpretations: HashMap<String, Interpretation>,
-    /// Validation configuration
-    #[allow(dead_code)]
-    config: crate::validation::ValidationConfig,
 }
 
 impl Default for ValidationSuite {
@@ -197,7 +194,6 @@ impl Default for ValidationSuite {
             results: Vec::new(),
             benchmark_data: HashMap::new(),
             interpretations: HashMap::new(),
-            config: crate::validation::ValidationConfig::standard(),
         }
     }
 }
@@ -209,13 +205,11 @@ impl ValidationSuite {
     }
 
     /// Creates a new validation suite with specified configuration.
-    pub fn new_with_config(config: crate::validation::ValidationConfig) -> Self {
-        Self {
-            results: Vec::new(),
-            benchmark_data: HashMap::new(),
-            interpretations: HashMap::new(),
-            config,
-        }
+    ///
+    /// The configuration is currently unused (reserved for future use);
+    /// this constructor is retained for API compatibility.
+    pub fn new_with_config(_config: crate::validation::ValidationConfig) -> Self {
+        Self::new()
     }
 
     /// Creates a validation suite pre-populated with all ASHRAE 140 benchmark data.

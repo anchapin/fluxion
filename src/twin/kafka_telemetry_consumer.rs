@@ -45,16 +45,8 @@ pub const DEFAULT_CHANNEL_CAPACITY: usize = 1024;
 #[cfg(feature = "kafka")]
 type KafkaConsumerType = BaseConsumer<DefaultConsumerContext>;
 
-#[cfg(not(feature = "kafka"))]
-#[allow(dead_code)]
-type KafkaConsumerType = PhantomData<()>;
-
 #[cfg(feature = "kafka")]
 type KafkaConsumerContextType = DefaultConsumerContext;
-
-#[cfg(not(feature = "kafka"))]
-#[allow(dead_code)]
-type KafkaConsumerContextType = PhantomData<()>;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct TelemetryMsg {
@@ -341,6 +333,8 @@ pub struct KafkaTelemetryConsumer {
     consumer: KafkaConsumerType,
     #[cfg(not(feature = "kafka"))]
     _phantom: PhantomData<()>,
+    // `tx`/`group_id` are read by `sender()`/`consumer_group_id()` only under
+    // the `kafka` feature; without it the consumer is never constructed.
     #[allow(dead_code)]
     tx: Sender<TelemetryMsg>,
     #[cfg(feature = "kafka")]

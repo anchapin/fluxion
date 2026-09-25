@@ -35,7 +35,7 @@ use std::path::Path;
 use crate::validation::diagnostic::HourlyData;
 
 /// Number of hours in a year
-#[allow(dead_code)]
+#[cfg(test)]
 const HOURS_PER_YEAR: usize = 8760;
 /// Approximate watts per kW conversion
 const WATTS_PER_KW: f64 = 1000.0;

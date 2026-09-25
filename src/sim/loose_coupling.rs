@@ -321,10 +321,6 @@ pub struct LooseCoupling {
     macro_timestep: f64,
     /// Current simulation time [s].
     current_time: f64,
-    #[allow(dead_code)]
-    num_zones: usize,
-    #[allow(dead_code)]
-    num_surfaces: usize,
     /// Last boundary conditions received from BES.
     last_bc: Option<BesToFfdBoundaryConditions>,
 }
@@ -359,8 +355,6 @@ impl LooseCoupling {
             accumulator: FfdAccumulator::new(num_surfaces, num_zones),
             macro_timestep,
             current_time: 0.0,
-            num_zones,
-            num_surfaces,
             last_bc: None,
         })
     }

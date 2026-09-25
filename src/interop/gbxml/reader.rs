@@ -414,21 +414,15 @@ fn get_surface_count(doc: &GbXmlDocument) -> usize {
 }
 
 /// GbXmlReader for parsing gbXML files.
-#[allow(dead_code)]
 pub struct GbXmlReader {
-    construction_map: HashMap<String, Construction>,
-    layer_map: HashMap<String, Layer>,
-    material_map: HashMap<String, Material>,
+    // (Construction/layer/material lookup maps were removed as dead scaffolding;
+    // parsing builds local maps per call instead.)
 }
 
 impl GbXmlReader {
     /// Create a new GbXmlReader.
     pub fn new() -> Self {
-        GbXmlReader {
-            construction_map: HashMap::new(),
-            layer_map: HashMap::new(),
-            material_map: HashMap::new(),
-        }
+        GbXmlReader {}
     }
 
     /// Parse gbXML content into fluxion SimulationSchema.

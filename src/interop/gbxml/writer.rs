@@ -36,14 +36,11 @@ pub fn export_gbxml(schema: &SimulationSchemaV1, path: impl AsRef<Path>) -> Resu
 }
 
 /// GbXmlWriter for exporting to gbXML format.
-#[allow(dead_code)]
 pub struct GbXmlWriter {
-    construction_counter: usize,
     layer_counter: usize,
     material_counter: usize,
     space_counter: usize,
     surface_counter: usize,
-    schedule_counter: usize,
     zone_counter: usize,
 }
 
@@ -51,12 +48,10 @@ impl GbXmlWriter {
     /// Create a new GbXmlWriter.
     pub fn new() -> Self {
         GbXmlWriter {
-            construction_counter: 0,
             layer_counter: 0,
             material_counter: 0,
             space_counter: 0,
             surface_counter: 0,
-            schedule_counter: 0,
             zone_counter: 0,
         }
     }

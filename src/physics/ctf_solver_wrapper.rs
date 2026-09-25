@@ -47,15 +47,18 @@ use crate::physics::wall_spec::WallSpec;
 /// This wrapper adapts the CTFSolver to work with the unified solver interface,
 /// handling conversion from BuildingAssembly to CTF coefficients and managing
 /// boundary condition transformations.
-#[allow(dead_code)]
 pub struct CTFSolverWrapper {
     /// Underlying CTF solver
     solver: Option<CTFSolver>,
     /// CTF coefficients (cached after initialization)
     coefficients: Option<CTFCoefficients>,
     /// Interior convective coefficient [W/m²·K]
+    // Set via `with_convection` and asserted in tests; not yet wired into
+    // the solver's boundary conditions.
+    #[allow(dead_code)]
     h_interior: f64,
     /// Exterior convective coefficient [W/m²·K]
+    #[allow(dead_code)]
     h_exterior: f64,
     /// Previous interior heat flux for convection approximation [W/m²]
     prev_q_flux: f64,

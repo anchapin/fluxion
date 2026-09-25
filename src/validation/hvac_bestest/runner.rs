@@ -547,48 +547,6 @@ impl HVACBestestRunner {
         (total_energy_kwh, peak_demand_w)
     }
 
-    #[allow(dead_code)]
-    /// Simulate annual CAV energy consumption (deprecated: replaced by simulate_annual_cav_terminal)
-    fn simulate_annual_cav(
-        &self,
-        cav: &CAVSystem,
-        _case_def: &HVACBestestCaseDefinition,
-    ) -> (f64, f64) {
-        let start = Instant::now();
-
-        let bins: [(f64, f64); 6] = [
-            (5.0, 400.0),
-            (10.0, 800.0),
-            (15.0, 1200.0),
-            (20.0, 1500.0),
-            (25.0, 1000.0),
-            (30.0, 200.0),
-        ];
-
-        let mut total_energy_kwh: f64 = 0.0;
-        let mut peak_demand_w: f64 = 0.0;
-
-        for (temp, hours) in bins.iter() {
-            if *hours == 0.0 {
-                continue;
-            }
-
-            let plr = 0.7; // Typical average PLR for CAV
-            let capacity = cav.calculate_capacity(plr, *temp);
-            let power = cav.calculate_power(capacity, *temp, HVACMode::Cooling);
-
-            total_energy_kwh += power * hours / 1000.0;
-            peak_demand_w = peak_demand_w.max(power);
-        }
-
-        let elapsed = start.elapsed();
-        if elapsed.as_secs() > 0 {
-            tracing::info!("  CAV simulation: {:.2}s", elapsed.as_secs_f64());
-        }
-
-        (total_energy_kwh, peak_demand_w)
-    }
-
     /// Simulate annual CAV energy consumption using CavTerminalUnit psychrometric model.
     ///
     /// # Deprecated

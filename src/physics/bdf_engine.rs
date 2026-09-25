@@ -794,7 +794,6 @@ pub mod time_stepping {
         fn dimension(&self) -> usize;
     }
 
-    #[allow(dead_code)]
     pub struct BdfTimeStepper {
         config: TimeSteppingConfig,
         history: Vec<Vec<f64>>,
@@ -1022,7 +1021,6 @@ pub mod time_stepping {
     /// **Determinism contract:** the driver does no I/O, no
     /// parallelism, no wall-clock reads; identical `config` + system
     /// state ⇒ identical `DriverStats` byte-for-byte.
-    #[allow(dead_code)]
     pub struct BdfDriver {
         config: TimeSteppingConfig,
         adaptive: AdaptiveStepController,

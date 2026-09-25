@@ -259,7 +259,6 @@ impl CAVSystem {
     ///
     /// # Returns
     /// * `(annual_energy_kwh, peak_demand_w)`
-    #[allow(dead_code)]
     pub fn simulate_annual(
         &self,
         outdoor_temps_h: &[(f64, f64)],
