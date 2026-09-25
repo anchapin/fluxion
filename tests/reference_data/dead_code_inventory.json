@@ -2,7 +2,7 @@
   "schema_version": 1,
   "description": "Inventory of production #[allow(dead_code)] sites in the root fluxion crate, governed by scripts/check_orphan_modules.py (Issue #3752). Regenerate with: python3 scripts/check_orphan_modules.py --update-dead-code-inventory",
   "governing_issue": 3752,
-  "site_count": 90,
+  "site_count": 91,
   "sites": [
     {
       "file": "src/ai/equipment_surrogate.rs",
@@ -325,6 +325,12 @@
     {
       "file": "src/sim/thermal_model_physics/solver_core.rs",
       "signature": "if false {",
+      "index": 1,
+      "issue": 3752
+    },
+    {
+      "file": "src/sim/thermal_model_physics/step_dispatcher.rs",
+      "signature": "zone_volumes: Vec<f64>,",
       "index": 1,
       "issue": 3752
     },
