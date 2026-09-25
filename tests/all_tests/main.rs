@@ -92,6 +92,7 @@ mod cooling_mode_convective_governor;
 mod cross_language_contract;
 mod cross_platform_fp_regression;
 mod ctf_analytical_step_response;
+mod fd_time_integration_accuracy;
 mod ctf_coefficient_validation;
 mod ctf_vs_5r1c_comparison;
 mod determinism_matrix_exponential;

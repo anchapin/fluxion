@@ -141,6 +141,31 @@ impl TridiagonalSystem {
     }
 }
 
+/// Time-integration scheme applied to the semi-discrete FD conduction
+/// system (Issue #3980). The spatial discretization is unchanged; only the
+/// temporal weighting of the discrete Laplacian differs.
+///
+/// - [`TimeIntegrationScheme::BackwardEuler`]: θ=1, 1st order, L-stable —
+///   the historical scheme, kept as the baseline and as the first-step
+///   bootstrap for multi-step schemes.
+/// - [`TimeIntegrationScheme::Bdf2`]: 2nd-order backward differentiation
+///   with variable-step support, L-stable for stiff walls. Production
+///   default since Issue #3980.
+/// - [`TimeIntegrationScheme::CrankNicolson`]: θ=½ trapezoidal rule, 2nd
+///   order, A-stable but NOT L-stable — can oscillate for large Fourier
+///   numbers (light walls at coarse steps). Provided for accuracy-vs-cost
+///   characterization (Issue #3980 sweep), not the production default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TimeIntegrationScheme {
+    /// Fully implicit Euler (1st order). Historical behaviour.
+    BackwardEuler,
+    /// Second-order backward differentiation formula (2-step BDF).
+    #[default]
+    Bdf2,
+    /// Trapezoidal/Crank-Nicolson (θ=½, 2nd order, not L-stable).
+    CrankNicolson,
+}
+
 /// Implicit finite difference solver for 1D heat conduction.
 ///
 /// # Fields
@@ -148,6 +173,7 @@ impl TridiagonalSystem {
 /// * `discretization` - Wall spatial discretization
 /// * `temperatures` - Current temperature at each node [°C]
 /// * `dt` - Current timestep [s]
+/// * `scheme` - Time-integration scheme (Issue #3980)
 ///
 /// # Example
 /// ```rust,ignore
@@ -169,6 +195,16 @@ pub struct ImplicitFDSolver {
     pub dt: f64,
     /// Cached Fourier numbers for each node.
     fourier_numbers: Vec<f64>,
+    /// Time-integration scheme (Issue #3980).
+    scheme: TimeIntegrationScheme,
+    /// `T^{n-1}` history for BDF2 (`None` until the first step completes).
+    previous_temperatures: Option<Vec<f64>>,
+    /// dt of the previous accepted step (variable-step BDF2 ratio).
+    previous_dt: Option<f64>,
+    /// Boundary conditions of the previous step for the Crank-Nicolson
+    /// explicit source term (`None` until the first step completes).
+    previous_interior_bc: Option<SurfaceBC>,
+    previous_exterior_bc: Option<SurfaceBC>,
 }
 
 impl ImplicitFDSolver {
@@ -189,7 +225,59 @@ impl ImplicitFDSolver {
             temperatures: vec![initial_temp; n],
             dt: 3600.0, // Default 1 hour
             fourier_numbers: vec![0.0; n],
+            scheme: TimeIntegrationScheme::default(),
+            previous_temperatures: None,
+            previous_dt: None,
+            previous_interior_bc: None,
+            previous_exterior_bc: None,
         }
+    }
+
+    /// Create a solver with an explicit time-integration scheme (Issue #3980).
+    ///
+    /// # Arguments
+    ///
+    /// * `discretization` - Wall discretization
+    /// * `initial_temp` - Initial temperature for all nodes [°C]
+    /// * `scheme` - Time-integration scheme (see [`TimeIntegrationScheme`])
+    pub fn with_scheme(
+        discretization: WallDiscretization,
+        initial_temp: f64,
+        scheme: TimeIntegrationScheme,
+    ) -> Self {
+        let mut solver = Self::new(discretization, initial_temp);
+        solver.scheme = scheme;
+        solver
+    }
+
+    /// Create a solver with an explicit scheme and a non-uniform initial
+    /// temperature profile (validation seeds eigenmodes / measured profiles;
+    /// production paths use uniform initial temperatures).
+    ///
+    /// # Arguments
+    ///
+    /// * `discretization` - Wall discretization
+    /// * `initial_temperatures` - Per-node initial temperature [°C]; length
+    ///   must equal `discretization.total_nodes`
+    /// * `scheme` - Time-integration scheme (see [`TimeIntegrationScheme`])
+    ///
+    /// # Panics
+    ///
+    /// Panics if the profile length does not match the node count.
+    pub fn with_scheme_and_temperatures(
+        discretization: WallDiscretization,
+        initial_temperatures: Vec<f64>,
+        scheme: TimeIntegrationScheme,
+    ) -> Self {
+        assert_eq!(
+            initial_temperatures.len(),
+            discretization.total_nodes,
+            "initial temperature profile must match node count"
+        );
+        let mut solver = Self::new(discretization, 0.0);
+        solver.temperatures = initial_temperatures;
+        solver.scheme = scheme;
+        solver
     }
 
     /// Create solver with temperature gradient.
@@ -221,7 +309,17 @@ impl ImplicitFDSolver {
             temperatures,
             dt: 3600.0,
             fourier_numbers: vec![0.0; n],
+            scheme: TimeIntegrationScheme::default(),
+            previous_temperatures: None,
+            previous_dt: None,
+            previous_interior_bc: None,
+            previous_exterior_bc: None,
         }
+    }
+
+    /// Time-integration scheme in use (Issue #3980).
+    pub fn scheme(&self) -> TimeIntegrationScheme {
+        self.scheme
     }
 
     /// Calculate Fourier number Fo = α·Δt/Δx² for each node.
@@ -235,27 +333,135 @@ impl ImplicitFDSolver {
         }
     }
 
+    /// Per-step time-integration weights for the assembled system.
+    ///
+    /// Unified form (mass normalized to 1):
+    /// `T^{n+1} + w·S(T^{n+1}) = hist`, where `S` is the Fo-scaled discrete
+    /// Laplacian including Robin boundary terms. The spatial operator is
+    /// IDENTICAL for all schemes (Issue #3980 keeps the discretization);
+    /// only `w` and the history RHS differ:
+    ///
+    /// * BackwardEuler: `w = 1`, `hist = T^n`
+    /// * Bdf2 (constant dt): `w = 2/3`, `hist = (2·T^n − ½·T^{n-1})·(2/3)`
+    ///
+    /// Variable-step BDF2 derivation (ρ = dt/dt_prev): the Lagrange
+    /// derivative through (t_{n+1}, t_n, t_{n-1}) evaluated at t_{n+1} gives
+    /// `(1+2ρ)/(1+ρ)·T^{n+1} − S(T^{n+1}) = (1+ρ)·T^n − ρ²/(1+ρ)·T^{n-1}`;
+    /// normalizing by mass yields the pair below. At ρ = 1 this reproduces
+    /// [`crate::physics::bdf_engine::coefficients::BDF2`]
+    /// (α = [½, −2, 3/2], β = 2/3).
+    fn scheme_weights(
+        &self,
+        dt: f64,
+        interior_bc: &SurfaceBC,
+        exterior_bc: &SurfaceBC,
+    ) -> (f64, Vec<f64>) {
+        match self.scheme {
+            TimeIntegrationScheme::BackwardEuler => (1.0, self.temperatures.clone()),
+            TimeIntegrationScheme::CrankNicolson => {
+                // θ = ½: rhs = T^n + (1-θ)·S(T^n, BCs at t_n). The explicit
+                // source term uses the PREVIOUS step's boundary values; on
+                // the first step they are unavailable and the current values
+                // stand in (exact for constant BCs).
+                let w = 0.5;
+                let int_old = self.previous_interior_bc.as_ref().unwrap_or(interior_bc);
+                let ext_old = self.previous_exterior_bc.as_ref().unwrap_or(exterior_bc);
+                let s = self.explicit_laplacian(&self.temperatures, int_old, ext_old);
+                let mut rhs = self.temperatures.clone();
+                for (r, si) in rhs.iter_mut().zip(s.iter()) {
+                    *r += (1.0 - w) * si;
+                }
+                (w, rhs)
+            }
+            TimeIntegrationScheme::Bdf2 => {
+                match (&self.previous_temperatures, self.previous_dt) {
+                    (Some(prev), Some(prev_dt)) if prev_dt > 0.0 => {
+                        let rho = dt / prev_dt;
+                        let alpha0 = (1.0 + 2.0 * rho) / (1.0 + rho);
+                        let w = 1.0 / alpha0;
+                        let hist: Vec<f64> = self
+                            .temperatures
+                            .iter()
+                            .zip(prev.iter())
+                            .map(|(&tn, &tn1)| {
+                                ((1.0 + rho) * tn - (rho * rho / (1.0 + rho)) * tn1) / alpha0
+                            })
+                            .collect();
+                        (w, hist)
+                    }
+                    // First step: backward-Euler bootstrap (a single 1st-order
+                    // step; global order stays 2).
+                    _ => (1.0, self.temperatures.clone()),
+                }
+            }
+        }
+    }
+
+    /// Fo-scaled discrete Laplacian (ghost-node substituted, Robin boundary
+    /// rows included) evaluated at `temps` with the given boundary values —
+    /// the explicit operator of the θ-scheme. Row structure mirrors the
+    /// implicit assembly exactly so the two remain consistent.
+    fn explicit_laplacian(
+        &self,
+        temps: &[f64],
+        interior: &SurfaceBC,
+        exterior: &SurfaceBC,
+    ) -> Vec<f64> {
+        let n = self.discretization.total_nodes;
+        let mut s = vec![0.0; n];
+        for i in 1..n - 1 {
+            let fo = self.fourier_numbers[i];
+            s[i] = fo * (temps[i - 1] - 2.0 * temps[i] + temps[i + 1]);
+        }
+        // Interior boundary row (ghost node at -dx).
+        {
+            let k = self.discretization.conductivity[0];
+            let dx = self.discretization.node_volumes[0];
+            let fo = self.fourier_numbers[0];
+            let h_dx_k = interior.h * dx / k;
+            s[0] = 2.0
+                * fo
+                * (temps[1] - (1.0 + h_dx_k) * temps[0]
+                    + h_dx_k * interior.t_fluid
+                    + interior.q_external * dx / k);
+        }
+        // Exterior boundary row (ghost node at L+dx).
+        {
+            let k = self.discretization.conductivity[n - 1];
+            let dx = self.discretization.node_volumes[n - 1];
+            let fo = self.fourier_numbers[n - 1];
+            let h_dx_k = exterior.h * dx / k;
+            s[n - 1] = 2.0
+                * fo
+                * (temps[n - 2] - (1.0 + h_dx_k) * temps[n - 1]
+                    + h_dx_k * exterior.t_fluid
+                    + exterior.q_external * dx / k);
+        }
+        s
+    }
+
     /// Assemble tridiagonal system for implicit scheme.
-    fn assemble_system(&self) -> TridiagonalSystem {
+    fn assemble_system(&self, w: f64, hist: &[f64]) -> TridiagonalSystem {
         let n = self.discretization.total_nodes;
         let mut sys = TridiagonalSystem::new(n);
 
         for i in 0..n {
             let fo = self.fourier_numbers[i];
 
-            // Main diagonal: (1 + 2·Fo)
-            sys.main[i] = 1.0 + 2.0 * fo;
+            // Main diagonal: (1 + 2·w·Fo)
+            sys.main[i] = 1.0 + 2.0 * w * fo;
 
-            // Off-diagonals: -Fo (interior nodes)
+            // Off-diagonals: -w·Fo (interior nodes)
             if i > 0 {
-                sys.lower[i - 1] = -fo;
+                sys.lower[i - 1] = -w * fo;
             }
             if i < n - 1 {
-                sys.upper[i] = -fo;
+                sys.upper[i] = -w * fo;
             }
 
-            // RHS: T^n (previous timestep)
-            sys.rhs[i] = self.temperatures[i];
+            // RHS: scheme history (T^n for backward Euler, BDF2 combination
+            // for second-order schemes)
+            sys.rhs[i] = hist[i];
         }
 
         sys
@@ -267,37 +473,36 @@ impl ImplicitFDSolver {
     /// ```text
     /// -k·dT/dx = h·(T_zone - T_surf) + q_external
     /// ```
-    fn apply_interior_bc(&mut self, sys: &mut TridiagonalSystem, bc: &SurfaceBC) {
+    fn apply_interior_bc(&mut self, sys: &mut TridiagonalSystem, bc: &SurfaceBC, w: f64, hist: &[f64]) {
         let k = self.discretization.conductivity[0];
         let dx = self.discretization.node_volumes[0];
         let fo = self.fourier_numbers[0];
 
         // Ghost node approach: T_{-1} = T_1 - 2·dx/k·(h·(T_zone - T_0) + q)
-        // Substituting into BTCS equation and rearranging:
-        // (1 + 2Fo + 2·Fo·h·dx/k)·T_0 - 2·Fo·T_1 = T^n + 2·Fo·(h·dx/k·T_zone + q·dx/k)
+        // Substituting into the implicit scheme equation and rearranging:
+        // (1 + 2wFo + 2·wFo·h·dx/k)·T_0 - 2·wFo·T_1 = hist + 2·wFo·(h·dx/k·T_zone + q·dx/k)
 
         let h_dx_k = bc.h * dx / k;
-        sys.main[0] = 1.0 + 2.0 * fo * (1.0 + h_dx_k);
-        sys.upper[0] = -2.0 * fo; // Modified for boundary
-        sys.rhs[0] =
-            self.temperatures[0] + 2.0 * fo * (h_dx_k * bc.t_fluid + bc.q_external * dx / k);
+        sys.main[0] = 1.0 + 2.0 * w * fo * (1.0 + h_dx_k);
+        sys.upper[0] = -2.0 * w * fo; // Modified for boundary
+        sys.rhs[0] = hist[0] + 2.0 * w * fo * (h_dx_k * bc.t_fluid + bc.q_external * dx / k);
     }
 
     /// Apply exterior surface boundary condition (Robin BC).
-    fn apply_exterior_bc(&mut self, sys: &mut TridiagonalSystem, bc: &SurfaceBC) {
+    fn apply_exterior_bc(&mut self, sys: &mut TridiagonalSystem, bc: &SurfaceBC, w: f64, hist: &[f64]) {
         let n = self.discretization.total_nodes;
         let k = self.discretization.conductivity[n - 1];
         let dx = self.discretization.node_volumes[n - 1];
         let fo = self.fourier_numbers[n - 1];
 
         // Ghost node: T_{n} = T_{n-2} + 2·dx/k·(h·(T_solair - T_{n-1}) + q)
-        // Rearranging: -2·Fo·T_{n-2} + (1 + 2Fo + 2·Fo·h·dx/k)·T_{n-1} = T^n + 2·Fo·(h·dx/k·T_solair + q·dx/k)
+        // Rearranging: -2·wFo·T_{n-2} + (1 + 2wFo + 2·wFo·h·dx/k)·T_{n-1} = hist + 2·wFo·(h·dx/k·T_solair + q·dx/k)
 
         let h_dx_k = bc.h * dx / k;
-        sys.main[n - 1] = 1.0 + 2.0 * fo * (1.0 + h_dx_k);
-        sys.lower[n - 2] = -2.0 * fo; // Modified for boundary
+        sys.main[n - 1] = 1.0 + 2.0 * w * fo * (1.0 + h_dx_k);
+        sys.lower[n - 2] = -2.0 * w * fo; // Modified for boundary
         sys.rhs[n - 1] =
-            self.temperatures[n - 1] + 2.0 * fo * (h_dx_k * bc.t_fluid + bc.q_external * dx / k);
+            hist[n - 1] + 2.0 * w * fo * (h_dx_k * bc.t_fluid + bc.q_external * dx / k);
     }
 
     /// Solve tridiagonal system using Thomas algorithm (TDMA).
@@ -351,19 +556,30 @@ impl ImplicitFDSolver {
     pub fn step(&mut self, dt: f64, interior_bc: &SurfaceBC, exterior_bc: &SurfaceBC) -> Vec<f64> {
         // Update Fourier numbers for new timestep
         self.update_fourier_numbers(dt);
+        self.dt = dt;
+
+        // Time-integration weights (Issue #3980): scheme-dependent implicit
+        // weight `w` and history RHS (BE: T^n; CN: T^n + explicit Laplacian;
+        // BDF2: 2-step combination).
+        let (w, hist) = self.scheme_weights(dt, interior_bc, exterior_bc);
 
         // Assemble tridiagonal system
-        let mut sys = self.assemble_system();
+        let mut sys = self.assemble_system(w, &hist);
 
         // Apply boundary conditions
-        self.apply_interior_bc(&mut sys, interior_bc);
-        self.apply_exterior_bc(&mut sys, exterior_bc);
+        self.apply_interior_bc(&mut sys, interior_bc, w, &hist);
+        self.apply_exterior_bc(&mut sys, exterior_bc, w, &hist);
 
         // Solve system
         let new_temps = Self::thomas_algorithm(&sys);
-
-        // Update state
-        self.temperatures = new_temps.clone();
+        // Update state: T^n becomes the T^{n-1} history for multi-step
+        // schemes; dt drives the variable-step BDF2 ratio; the CN explicit
+        // source term keeps the boundary values of this step.
+        self.previous_temperatures =
+            Some(std::mem::replace(&mut self.temperatures, new_temps.clone()));
+        self.previous_dt = Some(dt);
+        self.previous_interior_bc = Some(interior_bc.clone());
+        self.previous_exterior_bc = Some(exterior_bc.clone());
 
         new_temps
     }
@@ -468,6 +684,14 @@ mod tests {
             "Concrete", thickness, 1.4, 2300.0, 880.0,
         )];
         WallDiscretization::from_layers(&layers, nodes)
+    }
+
+    #[test]
+    fn test_default_scheme_is_bdf2() {
+        // Issue #3980: the production default is the 2nd-order BDF2 scheme;
+        // BE remains available explicitly for baselines and cross-checks.
+        let solver = ImplicitFDSolver::new(concrete_wall(0.2, 20), 20.0);
+        assert_eq!(solver.scheme(), TimeIntegrationScheme::Bdf2);
     }
 
     #[test]
