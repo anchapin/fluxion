@@ -1539,6 +1539,18 @@ impl ASHRAE140Validator {
             .expect("default selector must initialize")
     }
 
+    /// Load the Denver EPW shared by every `simulate_case`-family entry
+    /// point. Lives here (not in `tests.rs`) so the module keeps exactly its
+    /// existing weather-import set — the sim↔validation cycle guard
+    /// (`scripts/check_ashrae_cases_cycle.py`, Issue #1441) counts each
+    /// `use crate::weather...` edge in `src/validation/**`, and test-local
+    /// imports would grow the pinned baseline (Issue #3979 follow-up).
+    #[cfg(test)]
+    fn load_denver_epw(&self) -> EpwWeatherSource {
+        EpwWeatherSource::from_file("assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw")
+            .expect("Failed to load EPW weather data")
+    }
+
     fn simulate_case(&self, spec: &CaseSpec, weather: &EpwWeatherSource) -> CaseResults {
         let mut model = self.build_case_model(spec);
 

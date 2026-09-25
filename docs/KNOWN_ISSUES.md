@@ -1297,7 +1297,7 @@ The fix is **structural** — the `GaugeSolver` rework (#1465 / #1462) — and t
 | Free-Float (FREE) | 3 | 0 | 1 | 0 | 0 |
 | Temperature (TEMP) | 1 | 0 | 0 | 0 | 0 |
 | Multi-Zone (MULTI) | 4 | 3 | 0 | 0 | 0 |
-| Model Limits (LIMIT) | 29 | 2 | 0 | 7 | 2 |
+| Model Limits (LIMIT) | 29 | 2 | 1 | 6 | 2 |
 | Reporting (REPORT) | 4 | 0 | 4 | 0 | 0 |
 | CI/Infrastructure (CI) | 3 | 0 | 0 | 0 | 0 |
 | fluxion-fluid (FLUID) | 2 | 0 | 0 | 0 | 0 |
@@ -4985,7 +4985,7 @@ for the first time; the failures are latent (pre-existing), not regressions
   under-prediction is the §LIMIT-05-family regime, root-caused under #3980).
   CTF remains the single-zone 5R1C fast cross-check per ADR-0017
   (`ConductionSolverKind::Ctf` / `enable_ctf` are unchanged public API).
-- **Status:** Open — bypass landed (Issue #3979); substitutive-coupling
+- **Status:** 🔄 Open — bypass landed (Issue #3979); substitutive-coupling
   re-derivation (and the frozen-coefficient / sol-air-boundary / sign-convention
   suspects) deferred to the fine-grid FD teacher work (#3980, #3981). Full
   analysis: `docs/investigations/issue-3979-ctf-zone-coupling.md`.

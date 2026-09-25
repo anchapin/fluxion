@@ -649,13 +649,9 @@ mod tests {
     /// Slow: runs the 8760-step annual sim.
     #[test]
     fn test_case_900_validator_pipeline_heating_in_widened_band() {
-        use crate::weather::epw::EpwWeatherSource;
-        use crate::weather::WeatherSource;
         let validator = ASHRAE140Validator::new();
-        let weather = EpwWeatherSource::from_file(
-            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
-        )
-        .expect("Failed to load EPW weather data");
+        // Zero weather-import edges: reuse the module's loader (cycle guard).
+        let weather = validator.load_denver_epw();
         let spec = ASHRAE140Case::Case900.spec();
         let results = validator.simulate_case(&spec, &weather);
         // Published [1.17, 2.04] MWh widened ±15% (repo annual-energy gate).
