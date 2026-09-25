@@ -93,7 +93,7 @@ impl PyMultiZoneThermalModel {
             zone_solver: match &zone_solver {
                 Some(s) => crate::sim::thermal_selector::parse_zone_solver(s)
                     .map_err(pyo3::exceptions::PyValueError::new_err)?,
-                None => crate::sim::thermal_selector::ZoneSolverKind::Gauge,
+                None => crate::sim::thermal_selector::ZoneSolverKind::default(),
             },
             conduction_solver: match &conduction_solver {
                 Some(s) => crate::sim::thermal_selector::parse_conduction_solver(s)
@@ -158,12 +158,12 @@ impl PyMultiZoneThermalModel {
     ///
     /// This is derived from the dispatcher's real per-step outcome, not
     /// from the `zone_solver` requested via [`Self::from_case_spec`]:
-    /// bindings ship with root default features, where the `Gauge`
-    /// default selector silently falls through to legacy 5R1C/9R4C in
-    /// the dispatcher, and this accessor is how a Python consumer tells
-    /// the difference. (`Gauge` remains the unconditional default
-    /// selector; the `gauge-solver` cargo feature only gates whether the
-    /// dispatcher's gauge arm runs — issue #3291 / §LIMIT-21.)
+    /// ADR-0017 (#3978) made the default selector cfg-dependent and
+    /// explicit in every build — the explicit legacy `FiveROneC` in
+    /// default builds, `Gauge` in `gauge-solver` builds — so this
+    /// accessor reports the requested solver by construction and remains
+    /// the authoritative truth source for what actually executed on the
+    /// last step (issue #3291 / §LIMIT-21 / #3305).
     pub fn effective_zone_solver(&self) -> String {
         self.inner.effective_zone_solver().as_str().to_string()
     }
@@ -1233,17 +1233,15 @@ mod tests {
 
     // -- effective_zone_solver (Issue #3749) -----------------------------
 
-    /// Issue #3749: the binding accessor must report the DISPATCHER's
-    /// outcome, not the requested selector. `from_case_spec` with the
-    /// `zone_solver` omitted carries the `Gauge` default selector
-    /// (`ThermalSelector::default()`), but with root default features the
-    /// dispatcher silently falls through to legacy 5R1C — the exact
-    /// silent-fall-through observability gap this issue closes for Python
-    /// consumers. After one real dispatcher step, the accessor must
-    /// feature-conditionally report `"5r1c"` (default build) or `"gauge"`
-    /// (`--features gauge-solver`, where the gauge arm runs
-    /// unconditionally — `Gauge` is the unconditional default selector;
-    /// the cargo feature only gates the dispatcher arm, issue #3291).
+    /// Issue #3749 + ADR-0017 (#3978): the binding accessor must report
+    /// the DISPATCHER's outcome, not the requested selector.
+    /// `from_case_spec` with the `zone_solver` omitted carries the
+    /// cfg-dependent default selector (`ThermalSelector::default()`):
+    /// the explicit legacy `FiveROneC` in default builds, `Gauge` in
+    /// `gauge-solver` builds. After one real dispatcher step, the
+    /// accessor must feature-conditionally report `"5r1c"` (default
+    /// build) or `"gauge"` (`--features gauge-solver`, where the gauge
+    /// arm runs unconditionally, issue #3291).
     #[test]
     fn effective_zone_solver_matches_dispatcher_for_default_selector() {
         let mut model =
@@ -1267,7 +1265,7 @@ mod tests {
         #[cfg(not(feature = "gauge-solver"))]
         assert_eq!(
             reported, "5r1c",
-            "default build: the Gauge default selector silently falls through to 5R1C — the binding must say so"
+            "default build (ADR-0017, #3978): the explicit legacy FiveROneC default selector dispatches 5R1C — the binding must say so"
         );
         #[cfg(feature = "gauge-solver")]
         assert_eq!(

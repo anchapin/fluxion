@@ -59,15 +59,20 @@ pub struct StateExtractor {
 
 /// Optional constructor options for [`StateExtractor`] (Issue #3282).
 ///
-/// Both fields default to the production defaults (`gauge` zone solver,
-/// `default` conduction algorithm) when omitted. The experimental
+/// Both fields default to the production defaults when omitted: the zone
+/// solver default is cfg-dependent per ADR-0017 (#3978) — `gauge` in
+/// `gauge-solver` builds, the explicit legacy `5r1c` in default builds
+/// (HighMass specs still auto-promote to 9R4C) — and `default` conduction
+/// algorithm. The experimental
 /// `"6r2c"` / `"8r3c"` zone-solver identifiers are rejected unless the
 /// `FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1` env var is set (and even then they
 /// stay unavailable until the `fluxion-experimental-zone-solvers` cargo
 /// feature ships; issue #3291).
 #[napi_derive::napi(object)]
 pub struct StateExtractorOptions {
-    /// Zone solver: `"gauge"` (default) | `"5r1c"` | `"9r4c"`.
+    /// Zone solver: `"gauge"` | `"5r1c"` | `"9r4c"` (default is
+    /// cfg-dependent per ADR-0017: `gauge` with the `gauge-solver`
+    /// feature, `5r1c` otherwise).
     #[napi(js_name = "zoneSolver")]
     pub zone_solver: Option<String>,
     /// Conduction algorithm: `"default"` (default) | `"ctf"` | `"fd"`.
@@ -99,7 +104,7 @@ impl StateExtractor {
                 zone_solver: match &opts.zone_solver {
                     Some(s) => crate::sim::thermal_selector::parse_zone_solver(s)
                         .map_err(napi::bindgen_prelude::Error::from_reason)?,
-                    None => crate::sim::thermal_selector::ZoneSolverKind::Gauge,
+                    None => crate::sim::thermal_selector::ZoneSolverKind::default(),
                 },
                 conduction_solver: match &opts.conduction_solver {
                     Some(s) => crate::sim::thermal_selector::parse_conduction_solver(s)
@@ -726,17 +731,16 @@ mod tests {
     // Issue #3749 regression tests: effective-solver truth on StateMatrices
     // ====================================================================
 
-    /// Issue #3749: a `StateExtractor` built with the default options
-    /// carries the `Gauge` default selector (`ThermalSelector::default()`),
-    /// but with root default features the dispatcher silently falls
-    /// through to legacy 5R1C — the exact silent-fall-through observability
-    /// gap this issue closes for Node consumers. After one real dispatcher
-    /// step, the value the run paths report on `StateMatrices::effective_solver`
-    /// must be the dispatcher's own outcome (`effective_zone_solver`),
-    /// feature-conditionally: `"5r1c"` in the default build, `"gauge"`
-    /// under `--features gauge-solver` (where the gauge arm runs
-    /// unconditionally — `Gauge` is the unconditional default selector;
-    /// the cargo feature only gates the dispatcher arm, issue #3291).
+    /// Issue #3749 + ADR-0017 (#3978): a `StateExtractor` built with the
+    /// default options carries the cfg-dependent default selector
+    /// (`ThermalSelector::default()`): the explicit legacy `FiveROneC` in
+    /// default builds, `Gauge` in `gauge-solver` builds. After one real
+    /// dispatcher step, the value the run paths report on
+    /// `StateMatrices::effective_solver` must be the dispatcher's own
+    /// outcome (`effective_zone_solver`), feature-conditionally: `"5r1c"`
+    /// in the default build (the explicit legacy default), `"gauge"` under
+    /// `--features gauge-solver` (where the gauge arm runs unconditionally,
+    /// issue #3291).
     #[test]
     fn state_extractor_effective_solver_tracks_dispatcher_truth_for_default_selector() {
         let mut extractor = StateExtractor::new(None).expect("default StateExtractor builds");
@@ -753,7 +757,7 @@ mod tests {
         #[cfg(not(feature = "gauge-solver"))]
         assert_eq!(
             reported, "5r1c",
-            "default build: the Gauge default selector silently falls through to 5R1C — StateMatrices must say so"
+            "default build (ADR-0017, #3978): the explicit legacy FiveROneC default selector dispatches 5R1C — StateMatrices must say so"
         );
         #[cfg(feature = "gauge-solver")]
         assert_eq!(

@@ -15,6 +15,7 @@ use crate::sim::construction::{SurfaceType, WallSurface};
 use crate::sim::hvac::{CyclingTracker, EconomizerMode, IdealLoadsSystem, PredictiveController};
 use crate::sim::hvac_controller::{HvacSystemMode, IdealHVACController};
 use crate::sim::occupancy::BuildingType as OccupancyBuildingType;
+#[cfg(feature = "gauge-solver")]
 use fluxion_core::zone_count_policy::ZoneCountPolicy;
 // Issue #1349 (Phase 2 crate split): `BuildingAssembly` moved to `fluxion_core::assembly`.
 use crate::sim::schedule::DailySchedule;
@@ -2832,6 +2833,21 @@ impl ThermalModel<VectorField> {
         //                     so the dispatch flag is set.
         match selector.zone_solver {
             crate::sim::thermal_selector::ZoneSolverKind::Gauge => {
+                // ADR-0017 (Issue #3978): in default builds an explicit
+                // `Gauge` selector is a loud configuration error — the
+                // silent fall-through to legacy 5R1C/9R4C no longer exists.
+                // Use the explicit legacy default (`ThermalSelector::default()`)
+                // or rebuild with `--features gauge-solver` to run the
+                // gauge/DAE prototype path.
+                #[cfg(not(feature = "gauge-solver"))]
+                {
+                    panic!(
+                        "ZoneSolverKind::Gauge requires the `gauge-solver` cargo feature \
+                         (ADR-0017, issue #3978): the default-build silent fall-through \
+                         to legacy 5R1C/9R4C was removed — select a legacy solver or \
+                         rebuild with --features gauge-solver"
+                    );
+                }
                 // Invariant from #3275: exactly one of `gauge_zone_solver`
                 // (single-zone) / `gauge_multi_zone_solver` (multi-zone) is
                 // populated based on `spec.num_zones`. The single-zone path
@@ -2839,6 +2855,7 @@ impl ThermalModel<VectorField> {
                 // the multi-zone path additionally consumes `spec.common_walls`
                 // and `spec.geometry` for inter-zone coupling and per-zone
                 // floor area / height.
+                #[cfg(feature = "gauge-solver")]
                 if spec.num_zones > 1 {
                     model.enable_gauge_solver_multi_zone(spec)?;
                     // Issue #3278: add window surfaces so gauge sees solar
@@ -2860,7 +2877,18 @@ impl ThermalModel<VectorField> {
                 // Pin the dispatch flag so the selector is authoritative. The
                 // gauge backend stays `None`; #3280 will route the dispatcher
                 // away from gauge when `thermal_selector.zone_solver != Gauge`.
-                model.0.hvac.thermal_model_type = ThermalModelType::FiveROneC;
+                //
+                // ADR-0017 (#3978) + ADR-0002: HighMass constructions keep
+                // the 9R4C auto-promotion set earlier (selector-
+                // independently) — the legacy 5R1C network is structurally
+                // dead for high-mass peaks (#1522/#3983), and the removed
+                // Gauge fall-through arm used to carry exactly this
+                // promotion. The pin therefore only applies to LowMass specs
+                // (600/600FF and other lightweight constructions).
+                if spec.construction_type != fluxion_core::ashrae_cases::ConstructionType::HighMass
+                {
+                    model.0.hvac.thermal_model_type = ThermalModelType::FiveROneC;
+                }
             }
             crate::sim::thermal_selector::ZoneSolverKind::NineRFourC => {
                 // Only enable 9R4C if the per-surface fields were actually
@@ -2900,10 +2928,12 @@ impl ThermalModel<VectorField> {
     /// Thin wrapper that calls [`Self::from_spec_with_selector`] with the
     /// default [`ThermalSelector`](crate::sim::thermal_selector::ThermalSelector).
     ///
-    /// The default selector is `ZoneSolverKind::Gauge + ConductionSolverKind::Default`,
-    /// which preserves the prior `from_spec` behaviour (gauge backend initialized
-    /// for all cases when the `gauge-solver` feature is enabled). This wrapper
-    /// exists so call sites that do not need selector-aware dispatch keep
+    /// The default selector is cfg-dependent (ADR-0017, issue #3978):
+    /// `ZoneSolverKind::Gauge + ConductionSolverKind::Default` in
+    /// `gauge-solver` builds (gauge backend initialized for all cases),
+    /// the explicit legacy `ZoneSolverKind::FiveROneC` in default builds
+    /// (HighMass specs still auto-promote to 9R4C). This wrapper exists
+    /// so call sites that do not need selector-aware dispatch keep
     /// working without modification.
     pub fn from_spec(spec: &CaseSpec) -> Self {
         Self::from_spec_with_selector(
@@ -2939,6 +2969,7 @@ impl ThermalModel<VectorField> {
     /// This is the **single-zone** path: it consumes
     /// `model.solar.surfaces[0]` (zone_id 0). The multi-zone path is wired
     /// in #3275 via `MultiZoneGaugeSolver::new()` + `add_zone_coupling()`.
+    #[cfg(feature = "gauge-solver")]
     pub(crate) fn enable_gauge_solver(&mut self) -> Result<(), PhysicsError> {
         // =====================================================================
         // Zone-count envelope pre-check (Issue #3731) — single-zone variant.
@@ -3157,6 +3188,7 @@ impl ThermalModel<VectorField> {
     /// surface orientation that needs population. For the β-phase default
     /// build the constructor populates every `wall_spec` from
     /// `spec.construction` per the #3279 contract.
+    #[cfg(feature = "gauge-solver")]
     #[allow(clippy::too_many_lines)]
     pub(crate) fn enable_gauge_solver_multi_zone(
         &mut self,
@@ -3389,6 +3421,7 @@ impl ThermalModel<VectorField> {
     /// Idempotent: returns Ok(()) if `gauge_zone_solver` is not configured
     /// (caller routed to multi-zone path or no-gauge path) or if there are
     /// no windows in the spec.
+    #[cfg(feature = "gauge-solver")]
     pub(crate) fn add_gauge_windows(
         &mut self,
         spec: &crate::validation::ashrae_140_cases::CaseSpec,
@@ -3444,6 +3477,7 @@ impl ThermalModel<VectorField> {
     /// Issue #3278 — Multi-zone equivalent of `add_gauge_windows`. Adds
     /// window surfaces per zone from `spec.windows[zone_idx]` to the
     /// multi-zone gauge solver and re-initializes.
+    #[cfg(feature = "gauge-solver")]
     pub(crate) fn add_gauge_windows_multi_zone(
         &mut self,
         spec: &crate::validation::ashrae_140_cases::CaseSpec,

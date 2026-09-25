@@ -2,16 +2,24 @@
 //! Mirrors the binding-layer `thermal_model.zone_solver` and
 //! `thermal_model.conduction_solver` fields.
 //!
-//! **Phase A8 (Issue #3291):** `ThermalSelector::default()` resolves to
-//! `ZoneSolverKind::Gauge`, the **unconditional default** zone solver
-//! when the `gauge-solver` cargo feature is enabled. With the feature
-//! enabled the dispatcher's `step_physics` runs the gauge path with no
-//! fall-through to legacy 5R1C/9R4C — a programming error (no gauge
-//! backend configured for a `Gauge` selector) surfaces as a panic
-//! rather than silently switching to a legacy solver. In the default
-//! build (no `gauge-solver` feature) the `Gauge` selector still routes
-//! to legacy 5R1C/9R4C, since the cargo feature remains the production
-//! gate pending §LIMIT-21 closure (Issue #3297).
+//! **ADR-0017 interim posture (Issue #3978):** the crate-default selector
+//! is cfg-dependent and explicit in every build — no silent fall-through
+//! anywhere. With the `gauge-solver` cargo feature enabled,
+//! `ThermalSelector::default()` is `ZoneSolverKind::Gauge` (the ADR-0007
+//! Phase A8 production posture) and gauge dispatch is unconditional; a
+//! programming error (no gauge backend configured for a `Gauge` selector)
+//! surfaces as a panic rather than silently switching to a legacy solver.
+//! In the default build `ThermalSelector::default()` is the explicit
+//! legacy `ZoneSolverKind::FiveROneC` (HighMass specs still auto-promote
+//! to `NineRFourC` via `from_spec_with_selector`) — the name now matches
+//! the physics the default build actually executes. An *explicit*
+//! `Gauge` selector in a default build panics loudly at construction
+//! (`ThermalModel::from_spec_with_selector`); the old silent fall-through
+//! to legacy 5R1C/9R4C under a Gauge-named default was removed. The
+//! target end state (ADR-0017) is the equation-based DAE teacher as the
+//! single production thermal path; the default flips to it in all builds
+//! only when the teacher validation suite (#3986) passes. See
+//! `docs/adr/0017-equation-based-dae-teacher-architecture.md`.
 
 /// Composite selector pairing a zone solver with a conduction algorithm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -24,13 +32,20 @@ pub struct ThermalSelector {
 /// behind the `fluxion-experimental-zone-solvers` cargo feature (out of
 /// scope for this issue; tracked separately).
 ///
-/// **Phase A8 (Issue #3291):** `Gauge` is the unconditional default
-/// (see module docs). `FiveROneC` and `NineRFourC` remain available as
-/// explicit opt-in legacy paths.
+/// **ADR-0017 (Issue #3978):** the default variant is cfg-dependent —
+/// `Gauge` in `gauge-solver` builds (ADR-0007 Phase A8 production
+/// posture), `FiveROneC` in default builds (the explicit legacy default
+/// that matches what the default build actually executes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ZoneSolverKind {
-    #[default]
+    /// GaugeSolver zone solver (ADR-0007). In `gauge-solver` builds this is
+    /// the default selector (ADR-0017 interim posture, issue #3978).
+    #[cfg_attr(feature = "gauge-solver", default)]
     Gauge,
+    /// Legacy 5R1C network (ISO 13790). The default selector in default
+    /// builds (ADR-0017, issue #3978) — the name now matches the physics the
+    /// default build actually executes; the silent fall-through is gone.
+    #[cfg_attr(not(feature = "gauge-solver"), default)]
     FiveROneC,
     NineRFourC,
 }
@@ -196,10 +211,17 @@ pub fn experimental_zone_solver_enabled() -> bool {
 mod tests {
     use super::*;
 
+    /// ADR-0017 (issue #3978): the default selector is cfg-dependent and
+    /// explicit in every build — `Gauge` in `gauge-solver` builds, the
+    /// explicit legacy `FiveROneC` in default builds (no silent
+    /// fall-through anywhere).
     #[test]
-    fn default_selector_is_gauge_plus_default() {
+    fn default_selector_is_cfg_dependent_per_adr_0017() {
         let s = ThermalSelector::default();
+        #[cfg(feature = "gauge-solver")]
         assert_eq!(s.zone_solver, ZoneSolverKind::Gauge);
+        #[cfg(not(feature = "gauge-solver"))]
+        assert_eq!(s.zone_solver, ZoneSolverKind::FiveROneC);
         assert_eq!(s.conduction_solver, ConductionSolverKind::Default);
     }
 
