@@ -3,8 +3,8 @@
 # ============================================================================
 #
 # This workflow is the canonical validation gate for PRs to main. It owns:
-#   * the in-workflow determinism matrix (`determinism-check`) and
-#     cross-platform hash comparison (`compare-hashes`),
+#   * (removed Issue #4018) the in-workflow determinism matrix — now
+#     owned by the standalone `Cross-Platform Determinism CI` workflow,
 #   * the ASHRAE 140 blind validation (`validate`),
 #   * the module-isolation tests for Weather / Solar / Conduction /
 #     Ventilation / Zone Balance.
@@ -53,20 +53,21 @@
 # PR gate wiring (Issue #1351, closes #1297 acceptance gap)
 # --------------------------------------------------------
 # GitHub branch protection requires a single canonical "Required status
-# check" name. The matrix `determinism-check` job expands into three OS-
-# specific rows (ubuntu/windows/macOS) and the `compare-hashes` job is the
-# only place that actually fails the build on hash divergence. To give
+# check" name. The standalone `Cross-Platform Determinism CI` workflow
+# (`determinism_check.yml`) runs the 3-OS determinism matrix. To give
 # branch protection a single, stable, non-matrix check name, this
-# workflow also exposes a `workflow_run` listener job (`fluxion-determinism-gate`)
+# workflow exposes a `workflow_run` listener job (`fluxion-determinism-gate`)
 # that fires after `Cross-Platform Determinism CI` completes for the same
 # SHA and fails the build if the upstream concluded `failure` or
 # `cancelled`. Add that job name to the branch-protection required list
 # (also recorded in `release_gates.yaml::ci.required_checks`).
 #
-# The in-workflow `determinism-check` + `compare-hashes` jobs are kept
-# as a fast first line of defence (they run inline with the rest of the
-# gate) — they are the actual source of truth, and the listener job is
-# the durable cross-workflow mirror that branch protection can name.
+# The former in-workflow `determinism-check` + `compare-hashes` jobs were
+# removed (Issue #4018 follow-up): they duplicated the standalone
+# workflow's 3-OS matrix (~42 job-min per PR) while claiming to be a
+# "fast first line of defence" — they were the same 10–16m builds, not
+# fast. The standalone workflow is now the source of truth; the listener
+# job is the durable cross-workflow mirror that branch protection names.
 
 name: ASHRAE 140 CI Gate
 
@@ -78,29 +79,8 @@ on:
   # workflows (`determinism_check.yml`, `performance_dashboard.yml`) run
   # for develop — both upstreams were also expanded to `[main, develop]`
   # in this commit.
-  pull_request:
-    branches: [main, develop]
-    types: [opened, synchronize, reopened, ready_for_review]
-    # ADR-0016 lane 2 (deny-list semantics): this workflow (ASHRAE blind
-    # validation + isolation suites and the Surrogate MAE gate) is skipped
-    # only when EVERY changed file is clearly irrelevant to the physics
-    # path class (docs/markdown/license/git-hygiene metadata). Any
-    # unexpected file type — any .rs anywhere, Cargo.toml/Cargo.lock,
-    # scripts/**, .github/workflows/** — still triggers this workflow.
-    # Fail-safe by construction: an unrecognized diff runs the gauntlet.
-    # NOTE: the workflow_run listeners (determinism/perf/energy/
-    # rustfmt/clippy/cycle gates) below are NOT affected by paths-ignore —
-    # workflow_run triggers have no path filtering.
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-      - '**.md'
-      - '**.mdx'
-      - 'LICENSE'
-      - '**/LICENSE'
-      - '.gitignore'
-      - '.gitattributes'
-      - '.editorconfig'
+  # Issue #4018: PRs phase-gated behind CI Gates (see workflow_run below).
+  # Docs-only skip preserved via docs-only-gate check job.
   # Issue #1351: mirror the Cross-Platform Determinism CI conclusion
   # into this workflow as a single non-matrix "Fluxion Determinism Gate"
   # check that branch protection can reference. The listener only fires
@@ -113,6 +93,7 @@ on:
   # Each listener scopes itself by `name` so the two coexist cleanly.
   workflow_run:
     workflows:
+    - "CI Gates"
     - "Cross-Platform Determinism CI"
     - "Performance Dashboard"
     types: [completed]
@@ -150,6 +131,48 @@ permissions:
   contents: read
 
 jobs:
+  # Issue #4018: phase-gate precheck. Heavy jobs run only when triggered
+  # by CI Gates succeeding for a PR (not by Determinism/Performance
+  # listener events). Docs-only skip via docs-only-gate.
+  precheck:
+    name: Phase-gate precheck
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.final.outputs.should_run }}
+    steps:
+      - id: upstream
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          UPSTREAM_NAME: ${{ github.event.workflow_run.name }}
+          UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}
+          UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            # Only CI Gates triggers heavy jobs; Determinism/Performance
+            # events are for the listener jobs only.
+            if [ "$UPSTREAM_NAME" != "CI Gates" ]; then
+              echo "upstream_ok=false" >> "$GITHUB_OUTPUT"
+              echo "Upstream is $UPSTREAM_NAME (not CI Gates); heavy jobs skip"
+              exit 0
+            fi
+            if [ "$UPSTREAM_EVENT" != "pull_request" ] || [ "$UPSTREAM_CONCLUSION" != "success" ]; then
+              echo "upstream_ok=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "upstream_ok=true" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/docs-only-gate
+        id: docs
+        if: steps.upstream.outputs.upstream_ok == 'true' && github.event_name == 'workflow_run'
+      - id: final
+        run: |
+          if [ "${{ steps.upstream.outputs.upstream_ok }}" != "true" ]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_run" ] && [ "${{ steps.docs.outputs.docs_only }}" = "true" ]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
   # =====================================================================
   # Issue #1505 — Queue-stall detector (10-min wait)
   # =====================================================================
@@ -165,6 +188,8 @@ jobs:
   # =====================================================================
   queue-stall-detector:
     name: "Queue-Stall Detector (10 min, Issue #1505)"
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 12
     outputs:
@@ -190,213 +215,10 @@ jobs:
           echo "enable_fallback=true" >> "$GITHUB_OUTPUT"
 
   # Issue #1297: Cross-platform FP determinism check - runs first as a gate
-  determinism-check:
-    name: Determinism Check (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-
-      - name: Install system dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig
-
-      - name: Install system dependencies (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install pkg-config nasm
-
-      - name: Install Rust
-        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
-        with:
-          max_attempts: 3
-          timeout_minutes: 10
-          retry_wait_seconds: 15
-          command: rustup toolchain install stable --profile default
-
-      - name: Cache cargo dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-determinism-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-determinism-cargo-
-
-      - name: Build fluxion
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "=== Toolchain diagnostic ==="
-          echo "rustc: $(rustc --version 2>&1)"
-          echo "cargo: $(cargo --version 2>&1)"
-          echo "cc: $(cc --version 2>&1 | head -1 || echo 'cc not found')"
-          echo "================================"
-          cargo build --release --features wiring-tracing 2>&1 | tee build_output.txt
-
-      - name: Run Case 900 Determinism Test
-        id: case900
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo test --test all_tests case_900_determinism:: --release -- --nocapture 2>&1 | tee case900_output.txt
-
-      - name: Extract determinism values
-        id: extract
-        shell: bash
-        run: |
-          python3 << 'PYEOF'
-          import re
-          import json
-          import hashlib
-
-          with open('case900_output.txt', 'r') as f:
-              output = f.read()
-
-          values = {}
-
-          match = re.search(r'DETERMINISM_VALUES\|([\d.]+)\|([\d.]+)\|([\d.]+)\|([\d.]+)', output)
-          if match:
-              values['annual_heating_mwh'] = float(match.group(1))
-              values['annual_cooling_mwh'] = float(match.group(2))
-              values['peak_heating_kw'] = float(match.group(3))
-              values['peak_cooling_kw'] = float(match.group(4))
-
-          ff_match = re.search(r'DETERMINISM_FF_VALUES\|([\d.-]+)\|([\d.-]+)\|([\d.-]+)\|([\d.-]+)', output)
-          if ff_match:
-              values['ff_min_temp'] = float(ff_match.group(1))
-              values['ff_max_temp'] = float(ff_match.group(2))
-              values['ff_avg_temp'] = float(ff_match.group(3))
-              values['ff_temp_swing'] = float(ff_match.group(4))
-
-          hash_input = json.dumps(values, sort_keys=True)
-          hash_hex = hashlib.sha256(hash_input.encode()).hexdigest()
-
-          with open('output_values.json', 'w') as f:
-              json.dump(values, f, indent=2)
-          with open('output_hash.txt', 'w') as f:
-              f.write(hash_hex + '\n')
-              f.write(hash_input + '\n')
-
-          print(f"Hash: {hash_hex}")
-          print(f"Values: {json.dumps(values, indent=2)}")
-          PYEOF
-
-          echo "output_hash=$(head -1 output_hash.txt)" >> $GITHUB_OUTPUT
-          echo "platform=${{ matrix.os }}" >> $GITHUB_OUTPUT
-
-      - name: Upload Case 900 output
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-        with:
-          name: case900-output-${{ matrix.os }}
-          path: |
-            case900_output.txt
-            output_values.json
-            output_hash.txt
-          retention-days: 7
-
-  # Compare hashes across platforms - must pass before validation runs
-  compare-hashes:
-    name: Compare Hashes
-    needs: determinism-check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
-        with:
-          path: artifacts
-
-      - name: Compare hashes across platforms
-        run: |
-          python3 << 'EOF'
-          import os
-          import json
-          import sys
-
-          artifacts_dir = 'artifacts'
-          hashes = {}
-          all_values = {}
-
-          # Read hashes and values from all platforms
-          for os_name in ['ubuntu-latest', 'windows-latest', 'macos-latest']:
-              hash_file = os.path.join(artifacts_dir, f'case900-output-{os_name}', 'output_hash.txt')
-              values_file = os.path.join(artifacts_dir, f'case900-output-{os_name}', 'output_values.json')
-
-              if os.path.exists(hash_file):
-                  with open(hash_file, 'r') as f:
-                      lines = f.readlines()
-                      if lines:
-                          hashes[os_name] = lines[0].strip()
-
-              if os.path.exists(values_file):
-                  with open(values_file, 'r') as f:
-                      all_values[os_name] = json.load(f)
-
-          print("=" * 60)
-          print("Cross-Platform Determinism Check Results")
-          print("=" * 60)
-          print()
-
-          print("Hashes from each platform:")
-          for os_name, h in hashes.items():
-              print(f"  {os_name}: {h}")
-          print()
-
-          print("Values from each platform:")
-          for os_name, vals in all_values.items():
-              print(f"  {os_name}:")
-              for k, v in vals.items():
-                  print(f"    {k}: {v}")
-          print()
-
-          # Check if all hashes are identical
-          unique_hashes = set(hashes.values())
-
-          if len(unique_hashes) == 1:
-              print("✅ SUCCESS: All platforms produce identical outputs")
-              print(f"Universal hash: {list(unique_hashes)[0]}")
-              status = "PASS"
-          else:
-              print("❌ FAILURE: Hashes differ across platforms!")
-              print(f"Unique hashes ({len(unique_hashes)}): {unique_hashes}")
-              status = "FAIL"
-              # Detailed comparison
-              print()
-              print("Detailed comparison:")
-              for os_name, vals in all_values.items():
-                  print(f"  {os_name}:")
-                  for k, v in vals.items():
-                      print(f"    {k}: {v}")
-              sys.exit(1)
-
-          # Write result files
-          result = {
-              'status': status,
-              'all_identical': status == "PASS",
-              'hash': list(unique_hashes)[0] if status == "PASS" else None,
-              'platforms': list(hashes.keys()),
-              'values': all_values
-          }
-          with open('comparison_result.json', 'w') as f:
-              json.dump(result, f, indent=2)
-          EOF
-
-      - name: Upload comparison result
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
-        with:
-          name: determinism-comparison
-          path: comparison_result.json
-          retention-days: 30
-
   validate:
     name: ASHRAE 140 Blind Validation
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
     # Issue #1505: benchmark jobs (the actual ASHRAE 140 simulation
     # suite) prefer self-hosted runners when `vars.FLUXION_LINUX_RUNNER`
     # is set. Issue #3445: persistent self-hosted runners MUST NOT
@@ -421,7 +243,10 @@ jobs:
     # transitive gate on the entire determinism matrix). The new
     # `fluxion-determinism-gate` workflow_run listener is the canonical
     # non-matrix check that branch protection references.
-    needs: compare-hashes
+    # Issue #4018: in-workflow determinism-check/compare-hashes removed;
+    # determinism signal now comes from the standalone
+    # Cross-Platform Determinism CI workflow via the
+    # fluxion-determinism-gate listener (required check).
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -684,10 +509,13 @@ jobs:
   # =====================================================================
   validate-fallback:
     name: "ASHRAE 140 Validation (10-min Fallback, Issue #1505)"
-    needs: [queue-stall-detector, compare-hashes, validate]
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
+    needs: [queue-stall-detector, validate]
     if: |
       needs.queue-stall-detector.outputs.enable_fallback == 'true' &&
-      needs.compare-hashes.result == 'success' &&
+      # Issue #4018: compare-hashes removed; determinism enforced via listener.
+
       (needs.validate.result == 'failure' || needs.validate.result == 'cancelled' || needs.validate.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -734,11 +562,18 @@ jobs:
   # the `validate` job, and the isolation jobs could still report PASS.
   isolation-weather:
     name: Weather Isolation
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
     runs-on: ubuntu-latest
-    needs: compare-hashes
+    # Issue #4018: in-workflow determinism-check/compare-hashes removed;
+    # determinism signal now comes from the standalone
+    # Cross-Platform Determinism CI workflow via the
+    # fluxion-determinism-gate listener (required check).
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -765,11 +600,18 @@ jobs:
 
   isolation-solar:
     name: Solar Isolation
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
     runs-on: ubuntu-latest
-    needs: compare-hashes
+    # Issue #4018: in-workflow determinism-check/compare-hashes removed;
+    # determinism signal now comes from the standalone
+    # Cross-Platform Determinism CI workflow via the
+    # fluxion-determinism-gate listener (required check).
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -796,11 +638,18 @@ jobs:
 
   isolation-conduction:
     name: Conduction Isolation
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
     runs-on: ubuntu-latest
-    needs: compare-hashes
+    # Issue #4018: in-workflow determinism-check/compare-hashes removed;
+    # determinism signal now comes from the standalone
+    # Cross-Platform Determinism CI workflow via the
+    # fluxion-determinism-gate listener (required check).
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -827,11 +676,18 @@ jobs:
 
   isolation-ventilation:
     name: Ventilation Isolation
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
     runs-on: ubuntu-latest
-    needs: compare-hashes
+    # Issue #4018: in-workflow determinism-check/compare-hashes removed;
+    # determinism signal now comes from the standalone
+    # Cross-Platform Determinism CI workflow via the
+    # fluxion-determinism-gate listener (required check).
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -858,11 +714,18 @@ jobs:
 
   isolation-zone-balance:
     name: Zone Balance Isolation
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
     runs-on: ubuntu-latest
-    needs: compare-hashes
+    # Issue #4018: in-workflow determinism-check/compare-hashes removed;
+    # determinism signal now comes from the standalone
+    # Cross-Platform Determinism CI workflow via the
+    # fluxion-determinism-gate listener (required check).
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -931,6 +794,8 @@ jobs:
   # =====================================================================
   surrogate-ashrae-mae-gate:
     name: "Surrogate ASHRAE 140 MAE Gate (Issue #2924)"
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
     # Issue #3445: persistent self-hosted runners MUST NOT execute
     # PR-controlled code. The surrogate MAE gate is the per-timestep
     # ±1% ASHRAE 140 drift gate — letting PR code touch a persistent
@@ -948,7 +813,10 @@ jobs:
         && vars.FLUXION_LINUX_RUNNER
         || 'ubuntu-latest'
       }}
-    needs: compare-hashes
+    # Issue #4018: in-workflow determinism-check/compare-hashes removed;
+    # determinism signal now comes from the standalone
+    # Cross-Platform Determinism CI workflow via the
+    # fluxion-determinism-gate listener (required check).
     timeout-minutes: 30
     steps:
       - name: Checkout code
@@ -1156,11 +1024,18 @@ jobs:
   # and must execute without crashing for CI to pass.
   quantum-python-verification:
     name: Quantum Python Verification
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
     runs-on: ubuntu-latest
-    needs: compare-hashes
+    # Issue #4018: in-workflow determinism-check/compare-hashes removed;
+    # determinism signal now comes from the standalone
+    # Cross-Platform Determinism CI workflow via the
+    # fluxion-determinism-gate listener (required check).
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -1187,11 +1062,18 @@ jobs:
 
   gauge-python-diagnostic:
     name: Gauge Python Diagnostic
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
     runs-on: ubuntu-latest
-    needs: compare-hashes
+    # Issue #4018: in-workflow determinism-check/compare-hashes removed;
+    # determinism signal now comes from the standalone
+    # Cross-Platform Determinism CI workflow via the
+    # fluxion-determinism-gate listener (required check).
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -1234,7 +1116,10 @@ jobs:
   fluxion-determinism-gate:
     name: "Fluxion Determinism Gate (Issue #1351)"
     runs-on: ubuntu-latest
-    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.name == 'Cross-Platform Determinism CI'
+    # Issue #4018: accept both direct-PR determinism runs (event ==
+    # 'pull_request', current) and future CI-Gates-triggered runs (event
+    # == 'workflow_run'). Two-PR rollout per ci-gates.yml warning.
+    if: (github.event.workflow_run.event == 'pull_request' || github.event.workflow_run.event == 'workflow_run') && github.event.workflow_run.name == 'Cross-Platform Determinism CI'
     # Issue #1505: the previous guard `&& conclusion != 'skipped'`
     # suppressed the listener when an upstream benchmark sub-job was
     # skipped (a self-hosted queue-stall leaves the upstream

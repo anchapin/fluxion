@@ -86,24 +86,13 @@ name: Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate
 on:
   push:
     branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
-    # ADR-0016 lane 2 (deny-list semantics): this gate is skipped only
-    # when EVERY changed file is clearly irrelevant to the physics path
-    # class (docs/markdown/license/git-hygiene metadata). Any unexpected
-    # file type — any .rs anywhere, Cargo.toml/Cargo.lock, scripts/**,
-    # .github/workflows/** — still triggers this workflow. Fail-safe by
-    # construction: an unrecognized diff runs the gauntlet.
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-      - '**.md'
-      - '**.mdx'
-      - 'LICENSE'
-      - '**/LICENSE'
-      - '.gitignore'
-      - '.gitattributes'
-      - '.editorconfig'
+  # Issue #4018: phase-gated behind CI Gates. PRs no longer trigger this
+  # workflow directly; it runs via workflow_run when CI Gates succeeds
+  # for a PR. The docs-only skip (ADR-0016 lane 2) is preserved via the
+  # docs-only-gate check job below (workflow_run has no path filters).
+  workflow_run:
+    workflows: ["CI Gates"]
+    types: [completed]
   workflow_dispatch:
   schedule:
     # Daily 04:00 UTC — off-peak slot (collision audit:
@@ -141,8 +130,52 @@ env:
   RUSTFLAGS: ""
 
 jobs:
+  # Issue #4018: phase-gate precheck. For workflow_run events (PRs via
+  # CI Gates), verifies the upstream succeeded for a PR and checks the
+  # docs-only deny list. For push/schedule/dispatch, always passes.
+  precheck:
+    name: Phase-gate precheck
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.final.outputs.should_run }}
+    steps:
+      - id: upstream
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}
+          UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            if [ "$UPSTREAM_EVENT" != "pull_request" ]; then
+              echo "upstream_ok=false" >> "$GITHUB_OUTPUT"
+              echo "Upstream event is $UPSTREAM_EVENT (not pull_request); skipping"
+              exit 0
+            fi
+            if [ "$UPSTREAM_CONCLUSION" != "success" ]; then
+              echo "upstream_ok=false" >> "$GITHUB_OUTPUT"
+              echo "Upstream conclusion is $UPSTREAM_CONCLUSION (not success); skipping"
+              exit 0
+            fi
+          fi
+          echo "upstream_ok=true" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/docs-only-gate
+        id: docs
+        if: steps.upstream.outputs.upstream_ok == 'true' && github.event_name == 'workflow_run'
+      - id: final
+        run: |
+          if [ "${{ steps.upstream.outputs.upstream_ok }}" != "true" ]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_run" ] && [ "${{ steps.docs.outputs.docs_only }}" = "true" ]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "Docs-only PR; skipping heavy jobs"
+          else
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
   probe-default:
     name: Fast-Math Probe (default features)
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
     runs-on: >-
       ${{
         github.event_name == 'push'
@@ -154,6 +187,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # Issue #4018: workflow_run checks out the default branch by
+          # default; explicitly use the PR head SHA for gated runs.
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Install system dependencies (Linux)
         run: |
@@ -169,9 +206,22 @@ jobs:
           command: rustup toolchain install stable --profile default
 
       - name: Cache cargo dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
         with:
-          path: |
+          workspaces: |
+            .
+            fluxion-core -> target
+            fluxion-city -> target
+            fluxion-fluid -> target
+            fluxion-grid -> target
+            fluxion-behavior -> target
+            fluxion-mcp -> target
+            fluxion-wasm -> target
+            crates/fluxion-toon -> target
+            crates/fluxion-twin -> target
+            crates/fluxion-evaluator -> target
+            fluxion-cfd -> target
+            fluxion-tauri/src-tauri -> target          path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
@@ -221,6 +271,8 @@ jobs:
 
   probe-fastmath:
     name: Fast-Math Probe (--features fast-math)
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
     runs-on: >-
       ${{
         github.event_name == 'push'
@@ -232,6 +284,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # Issue #4018: workflow_run checks out the default branch by
+          # default; explicitly use the PR head SHA for gated runs.
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Install system dependencies (Linux)
         run: |
@@ -247,9 +303,22 @@ jobs:
           command: rustup toolchain install stable --profile default
 
       - name: Cache cargo dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
         with:
-          path: |
+          workspaces: |
+            .
+            fluxion-core -> target
+            fluxion-city -> target
+            fluxion-fluid -> target
+            fluxion-grid -> target
+            fluxion-behavior -> target
+            fluxion-mcp -> target
+            fluxion-wasm -> target
+            crates/fluxion-toon -> target
+            crates/fluxion-twin -> target
+            crates/fluxion-evaluator -> target
+            fluxion-cfd -> target
+            fluxion-tauri/src-tauri -> target          path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
@@ -302,6 +371,8 @@ jobs:
 
   compare:
     name: Fast-Math Comparison (Δ loads + residual ceiling)
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
     needs: [probe-default, probe-fastmath]
     runs-on: >-
       ${{
@@ -521,6 +592,8 @@ jobs:
   # the #3286 β-soak tracking convention), not in this file.
   fast-math-gh:
     name: Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH)
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
     needs: [compare]
     runs-on: >-
       ${{

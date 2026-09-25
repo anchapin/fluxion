@@ -89,14 +89,15 @@
 # 5-10x slowdown that debug-mode unit tests incur. Same reasoning as
 # `.github/workflows/ashrae_140_validation.yml`.
 #
-# Why --features ort
-# ------------------
-# Case 900 routes through the production `MultiNodeSolver` (9R4C thermal
-# network) when the construction is HighMass. That code path lives
-# behind the `ort` feature gate (per issue #1294). Without `--features
-# ort`, Case 900 would compile out of the `MultiNodeSolver` arm and the
-# strict gate would only exercise the low-mass path — false-positive
-# coverage.
+# Feature flags
+# -------------
+# No `--features ort`: the strict tolerance tests run the pure physics
+# path (ThermalModel::from_spec_with_selector with
+# ThermalSelector::default() -> step_physics). Verified 2026-09-25: the
+# only #[cfg(feature = "ort")] in src/sim/ is an unrelated surrogate
+# unit test; MultiNodeSolver / 9R4C are NOT ort-gated, so the earlier
+# claim that Case 900 needed ort was incorrect. Dropping ort also
+# avoids downloading/compiling ONNX Runtime binaries (~2-4 min).
 #
 # Status check name
 # -----------------
@@ -127,24 +128,11 @@ name: ASHRAE 140 Strict Energy Gate
 on:
   push:
     branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
-    # ADR-0016 lane 2 (deny-list semantics): this gate is skipped only
-    # when EVERY changed file is clearly irrelevant to the physics path
-    # class (docs/markdown/license/git-hygiene metadata). Any unexpected
-    # file type — any .rs anywhere, Cargo.toml/Cargo.lock, scripts/**,
-    # .github/workflows/** — still triggers this workflow. Fail-safe by
-    # construction: an unrecognized diff runs the gauntlet.
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-      - '**.md'
-      - '**.mdx'
-      - 'LICENSE'
-      - '**/LICENSE'
-      - '.gitignore'
-      - '.gitattributes'
-      - '.editorconfig'
+  # Issue #4018: phase-gated behind CI Gates. Docs-only skip preserved
+  # via docs-only-gate check job.
+  workflow_run:
+    workflows: ["CI Gates"]
+    types: [completed]
   workflow_dispatch:
 
 # Serialize strict-gate runs per ref so two pushes don't double-allocate
@@ -174,8 +162,45 @@ env:
   PYO3_USE_ABI3_FORWARD_COMPATIBILITY: 1
 
 jobs:
+  precheck:
+    name: Phase-gate precheck
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.final.outputs.should_run }}
+    steps:
+      - id: upstream
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}
+          UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            if [ "$UPSTREAM_EVENT" != "pull_request" ]; then
+              echo "upstream_ok=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$UPSTREAM_CONCLUSION" != "success" ]; then
+              echo "upstream_ok=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "upstream_ok=true" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/docs-only-gate
+        id: docs
+        if: steps.upstream.outputs.upstream_ok == 'true' && github.event_name == 'workflow_run'
+      - id: final
+        run: |
+          if [ "${{ steps.upstream.outputs.upstream_ok }}" != "true" ]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_run" ] && [ "${{ steps.docs.outputs.docs_only }}" = "true" ]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
   strict-energy-gate:
     name: "ASHRAE 140 Strict Energy Gate (Issue #1333)"
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
     runs-on: >-
       ${{
         github.event_name == 'push'
@@ -187,6 +212,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
@@ -199,9 +226,22 @@ jobs:
           python-version: '3.10'
 
       - name: Cache cargo registry + build artifacts
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
         with:
-          path: |
+          workspaces: |
+            .
+            fluxion-core -> target
+            fluxion-city -> target
+            fluxion-fluid -> target
+            fluxion-grid -> target
+            fluxion-behavior -> target
+            fluxion-mcp -> target
+            fluxion-wasm -> target
+            crates/fluxion-toon -> target
+            crates/fluxion-twin -> target
+            crates/fluxion-evaluator -> target
+            fluxion-cfd -> target
+            fluxion-tauri/src-tauri -> target          path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
@@ -219,7 +259,7 @@ jobs:
         # cases by issue #3572).
         run: |
           set +e
-          cargo test --release --features ort --verbose \
+          cargo test --release --verbose \
             --test all_tests _annual_energy_ashrae140_tolerance \
             -- --include-ignored --nocapture \
             2>&1 | tee /tmp/strict_gate_output.txt
@@ -235,14 +275,14 @@ jobs:
         # one test in the workspace matches this substring. NOT ignored;
         # a failure here is a real regression.
         run: |
-          cargo test --release --features ort --verbose \
+          cargo test --release --verbose \
             --test all_tests _blind_mode_case_600_infrastructure \
             2>&1 | tee -a /tmp/strict_gate_output.txt
 
       - name: ValidationMode::Blind Case 900 infrastructure (must pass)
         # Test 4/4: API-level infrastructure for Case 900 (already passing).
         run: |
-          cargo test --release --features ort --verbose \
+          cargo test --release --verbose \
             --test all_tests _blind_mode_case_900_infrastructure \
             2>&1 | tee -a /tmp/strict_gate_output.txt
 

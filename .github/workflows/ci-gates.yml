@@ -1,0 +1,803 @@
+# ci-gates.yml — Phase-gated CI.
+#
+# Why this file exists
+# --------------------
+# GitHub Actions has no repository-wide runner priority: every workflow that
+# triggers on `pull_request` queues its jobs immediately, so a single PR
+# fans out to 100+ jobs and starves parallel PRs of the limited GH-hosted
+# runner pool. This workflow splits PR CI into two phases in a single DAG:
+#
+#   Phase 1 — the 9 branch-protection required checks. Small, fast, and
+#             unfiltered: they run on every PR class and report the exact
+#             check names branch protection expects (Issue #3116
+#             verbatim-match rule; see `scripts/check_required_checks_sync.py`).
+#   Phase 2 — heavy advisory jobs. Each declares
+#             `needs: [<all nine phase-1 job ids>]`, so GitHub does not even
+#             *schedule* them until phase 1 completes. If any required
+#             check fails, phase 2 is skipped (saving runners); re-run the
+#             workflow when you want the full advisory picture.
+#
+# Why move jobs instead of `workflow_call` / `workflow_run`
+# ----------------------------------------------------------
+# Moving keeps every job's `github.event.pull_request` context and
+# `if: github.event_name == 'pull_request'` conditions working
+# byte-for-byte. `workflow_call` would resolve reusable workflows from a
+# different ref and change `github.event_name`; `workflow_run` always uses
+# the *default branch's* workflow files, so CI-infra PRs could not test
+# advisory workflow changes through the normal PR flow.
+#
+# Phase-1 provenance
+# ------------------
+# The seven `*-listener` jobs are the Issue #3810 Option B unfiltered
+# listeners, moved verbatim from `rust-tests-listeners.yml` (same `name:`,
+# same steps, same `runs-on:`). `surrogate-drift-gate` moved verbatim from
+# `surrogate_drift_gate.yml` (that file had no other jobs and is deleted).
+# `deny` (Cargo Deny) moved verbatim from `security.yml`.
+#
+# Phase-2 provenance
+# ------------------
+# `test` is the ~38-min `cargo nextest` matrix, moved verbatim from
+# `rust-tests.yml`. It is the single heaviest per-PR job; gating it behind
+# phase 1 is the 80/20 of runner contention. Follow-ups: gate
+# `determinism_check.yml` (needs a two-PR `workflow_run` rollout because
+# `fluxion-determinism-gate` observes that workflow by name), then
+# `ashrae_validation.yml` / `performance_dashboard.yml`.
+#
+# Branch protection contract
+# --------------------------
+# Do NOT rename any phase-1 job's `name:`. Branch protection matches the
+# emitted `name:` byte-for-byte (Issue #3116). Job *ids* are free to
+# change; names are not.
+
+name: CI Gates
+
+on:
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+# ADR-0015 per-`head_sha` concurrency block (Issue #3366 / #3444).
+# Re-run `python3 scripts/check_concurrency_keys.py` after edits.
+concurrency:
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
+# Least-privilege GITHUB_TOKEN default (Issue #2526): phase-1 jobs only
+# check out code and run scripts / cargo subcommands. No repo write-back.
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+
+  # ----------------------------------------------------------------
+  # Workspace Check (GH) — Issue #2983
+  # ----------------------------------------------------------------
+  # The original `workspace-check-gh` job inside `rust-tests.yml` is
+  # path-filtered (the workflow's `paths-ignore:` carve-out skips it
+  # on docs-only PRs). This listener re-runs the same `cargo check
+  # --workspace` against the root + workspace siblings, emitting
+  # the exact required-check name. The Issue #3125
+  # `--examples --all-targets` step is duplicated here too; both
+  # the original and this listener use `continue-on-error: true` on
+  # the examples step until #3126 lands.
+  workspace-check-listener:
+    name: "Workspace Check (GH)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run workspace check
+        run: cargo check --workspace --verbose --exclude fluxion-tauri
+      # Issue #3125: catch example drift. `--examples` is NOT included
+      # by default in `cargo check --workspace`, so a renamed
+      # field/method silently breaks `examples/*.rs`. The new step
+      # adds `--examples --all-targets` to catch this drift at PR
+      # time. `continue-on-error: true` because the 4 broken examples
+      # reported in #3126 still fail to compile on current `develop`;
+      # the check observes the drift without blocking PRs (mirrors
+      # the original listener's posture).
+      - name: Run workspace check (examples, Issue #3125)
+        continue-on-error: true
+        run: cargo check --workspace --examples --all-targets --verbose --exclude fluxion-tauri
+
+  # ----------------------------------------------------------------
+  # Energy Conservation (GH) — Issue #1295
+  # ----------------------------------------------------------------
+  energy-conservation-listener:
+    name: "Energy Conservation (GH)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run energy conservation tests
+        run: |
+          cargo test --test all_tests test_energy_conservation:: --verbose 2>&1 | tee /tmp/energy_test_output.txt
+          cargo test --test all_tests zone_balance_eplus_isolation:: --verbose 2>&1 | tee /tmp/zone_balance_test_output.txt
+      - name: Extract violation counts
+        run: |
+          echo "=== Energy Conservation Test Results ==="
+          echo "Checking for energy conservation violations..."
+          ENERGY_VIOLATIONS=$(grep -c "violated energy conservation" /tmp/energy_test_output.txt /tmp/zone_balance_test_output.txt 2>/dev/null || echo "0")
+          echo "Total violations found: $ENERGY_VIOLATIONS"
+          if [ "$ENERGY_VIOLATIONS" -gt "0" ]; then
+            echo "FAIL: Energy conservation violations detected"
+            grep -A2 "violated energy conservation" /tmp/energy_test_output.txt /tmp/zone_balance_test_output.txt
+            exit 1
+          fi
+          echo "PASS: No energy conservation violations"
+
+  # ----------------------------------------------------------------
+  # Rustfmt (GH)
+  # ----------------------------------------------------------------
+  fmt-listener:
+    name: Rustfmt (GH)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-env
+        with:
+          components: rustfmt
+      - run: cargo fmt -- --check
+
+  # ----------------------------------------------------------------
+  # Clippy (GH) — `-D warnings`
+  # ----------------------------------------------------------------
+  clippy-listener:
+    name: Clippy (GH)
+    runs-on: ubuntu-latest
+    env:
+      CARGO_BUILD_JOBS: 1
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          rust-components: clippy
+          python-version: '3.10'
+      - run: cargo clippy --lib -- -D warnings
+
+  # ----------------------------------------------------------------
+  # Ashrae Cases Cycle Check (GH) — Issue #1441
+  # ----------------------------------------------------------------
+  ashrae-cases-cycle-listener:
+    name: "Ashrae Cases Cycle Check (GH)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run cycle check
+        run: python3 scripts/check_ashrae_cases_cycle.py
+
+  # ----------------------------------------------------------------
+  # Physics-Sim-Cycle-Check (GH) — Issue #2463
+  # ----------------------------------------------------------------
+  physics-sim-cycle-listener:
+    name: "Physics-Sim-Cycle-Check (GH)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run physics-sim cycle check
+        run: python3 scripts/check_physics_sim_cycle.py
+
+  # ----------------------------------------------------------------
+  # Cycle Downward Trend Guard (Issue #2768)
+  # ----------------------------------------------------------------
+  # Per-PR R1 (no growth) + R3 (no net-flat edge swap) enforcement.
+  # The R2 (14-night stale-window) check is nightly-only and lives in
+  # the `cycle-trend-nightly` job of `rust-tests.yml` (the path
+  # filter permits nightly pushes to trigger the workflow).
+  cycle-trend-listener:
+    name: "Cycle Downward Trend Guard (Issue #2768)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: "Run cycle downward-trend guard (per-PR: R1 + R3)"
+        run: python3 scripts/check_cycle_downward_trend.py
+
+  # ----------------------------------------------------------------
+  # Surrogate Drift Tolerance Gate (Issue #1784)
+  # ----------------------------------------------------------------
+  # Moved verbatim from `surrogate_drift_gate.yml` (sole job in that
+  # file; the file is deleted). Emits the exact required-check name.
+  surrogate-drift-gate:
+    name: "Surrogate Drift Tolerance Gate (Issue #1784)"
+    runs-on: >-
+      ${{
+        github.event_name == 'push'
+        && github.ref == 'refs/heads/main'
+        && vars.FLUXION_LINUX_RUNNER
+        || 'ubuntu-latest'
+      }}
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+          sccache: 'false'
+
+      - name: Cache cargo registry + build artifacts
+
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: surrogate-drift-gate-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            surrogate-drift-gate-${{ runner.os }}-
+
+      - name: Resolve surrogate gate mode
+        # Mirror SurrogateManager::new_with_auto_load() (src/ai/surrogate.rs):
+        #   1. FLUXION_ONNX_MODEL env var (if it points at an existing file)
+        #   2. models/surrogate_zone_thermal.onnx (built-in default)
+        #   3. otherwise → fallback (analytical predictor, lenient gate)
+        # The resolved mode drives the success/error messaging in the verify
+        # step below so the CI summary reflects whether the strict 1% gate
+        # was actually active (Issue #1865).
+        #
+        # Issue #2923: in mode=fallback, the manifest at
+        # `models/surrogate_zone_thermal.onnx.sha256` MUST be present — its
+        # existence is the operator's explicit acknowledgement that fallback
+        # mode is acceptable for this milestone. Without it the gate silently
+        # downgrades to advisory and Goal #1 (ASHRAE 140 ≥60%) has no enforced
+        # surrogate-layer gate. Fail closed in that case so the regression
+        # cannot ship silently.
+        id: gate-mode
+        run: |
+          model=""
+          if [ -n "${FLUXION_ONNX_MODEL:-}" ] && [ -f "${FLUXION_ONNX_MODEL}" ]; then
+            model="${FLUXION_ONNX_MODEL}"
+          elif [ -f "models/surrogate_zone_thermal.onnx" ]; then
+            model="models/surrogate_zone_thermal.onnx"
+          fi
+          if [ -n "$model" ]; then
+            echo "mode=onnx" >> "$GITHUB_OUTPUT"
+            echo "model=$model" >> "$GITHUB_OUTPUT"
+            echo "Gate mode: ONNX (strict 1% tolerance) — model: $model"
+          else
+            # Issue #2923: fail-closed fallback precondition. The manifest at
+            # models/surrogate_zone_thermal.onnx.sha256 is the operator's
+            # explicit acknowledgement that fallback mode is acceptable for
+            # this milestone. Without it the gate would silently downgrade
+            # to advisory and Goal #1 (ASHRAE 140 ≥60%) would have no
+            # enforced surrogate-layer gate. Either ship the official
+            # `.onnx` + `.sha256` or open an ADR waiving the surrogate gate.
+            if [ ! -f "models/surrogate_zone_thermal.onnx.sha256" ]; then
+              echo "::error::No surrogate model registered — surrogate drift gate cannot enforce Goal #1 (ASHRAE 140 ≥60%). Either ship the official .onnx + .sha256 or open an ADR waiving the surrogate gate for this milestone. (Issue #2923)"
+              echo "Expected manifest at: models/surrogate_zone_thermal.onnx.sha256 (see file header for format)"
+              exit 1
+            fi
+            echo "mode=fallback" >> "$GITHUB_OUTPUT"
+            echo "model=" >> "$GITHUB_OUTPUT"
+            echo "Gate mode: FALLBACK (manifest present at models/surrogate_zone_thermal.onnx.sha256 — Issue #2923 fail-closed precondition satisfied; analytical fallback, fallback-mode floor: ±10% annual HVAC vs 9R4C baseline)"
+          fi
+
+      - name: Regex tolerance self-test (Issue #2487)
+        # Fast-fail guard: prove the verify-step test-summary regexes still
+        # match libtest's `test <name> ... ok|FAILED` line when unbuffered
+        # eprintln! output interleaves onto the same captured line (the race
+        # documented in #2487, observed in PR #2473 run 31300498830). Runs
+        # before the heavy simulations so a regex regression fails the gate
+        # in seconds, not minutes.
+        run: |
+          set -euo pipefail
+          # Synthetic interleaved lines mirroring the PR #2473 capture:
+          #   `[drift-gate-diag] ... tolerance=test <name> ... ok`
+          # plus the module-qualified summary shape produced by the
+          # consolidated `tests/all_tests` harness (Issue #3764):
+          #   `test surrogate_drift_gate::test_<name> ... ok`
+          ok_interleaved='[drift-gate-diag] context=Issue #1865 tolerance=test test_surrogate_drift_metric_definition ... ok'
+          ok_plain='test test_surrogate_drift_metric_definition ... ok'
+          ok_qualified='test surrogate_drift_gate::test_surrogate_drift_metric_definition ... ok'
+          fail_interleaved='some eprintln noise test surrogate_drift_gate_case_900_9r4c ... FAILED'
+          printf '%s\n%s\n%s\n%s\n' "$ok_interleaved" "$ok_plain" "$ok_qualified" "$fail_interleaved" > /tmp/regex_selftest.txt
+
+          # check_coverage-style regex must find the specific test name even
+          # behind an eprintln! prefix.
+          grep -qE '(^|[^[:alnum:]_])test ([a-z0-9_]+::)?test_surrogate_drift_metric_definition \.\.\. (ok|ignored|FAILED)' /tmp/regex_selftest.txt \
+            || { echo "::error::coverage regex did not match interleaved ok line (#2487)"; exit 1; }
+
+          # ...and the module-qualified consolidation format must match on
+          # its own (Issue #3764): `test <module>::test_<name> ... ok`.
+          printf '%s\n' "$ok_qualified" \
+            | grep -qE '(^|[^[:alnum:]_])test ([a-z0-9_]+::)?test_surrogate_drift_metric_definition \.\.\. (ok|ignored|FAILED)' \
+            || { echo "::error::coverage regex did not match module-qualified ok line (#3764)"; exit 1; }
+
+          # PASSED extractor must count ALL THREE ok lines (plain +
+          # interleaved + module-qualified).
+          passed=$(grep -cE '(^|[^[:alnum:]_])test ([a-z0-9_]+::)?test_surrogate_drift_(gate|metric).* \.\.\. ok' /tmp/regex_selftest.txt)
+          [ "$passed" -eq 3 ] || { echo "::error::PASSED regex counted $passed (expected 3) for interleaved/qualified ok lines (#2487)"; exit 1; }
+
+          # FAILED extractor must count the interleaved FAILED line.
+          failed=$(grep -cE '(^|[^[:alnum:]_])test .* \.\.\. FAILED' /tmp/regex_selftest.txt)
+          [ "$failed" -eq 1 ] || { echo "::error::FAILED regex counted $failed (expected 1) for interleaved FAILED line (#2487)"; exit 1; }
+
+          # No false positive: `latest` (contains the substring `test`) must
+          # NOT be counted as a test FAILED line — the leading word boundary
+          # guard rejects it.
+          printf 'latest scenario ... FAILED\n' >> /tmp/regex_selftest.txt
+          failed2=$(grep -cE '(^|[^[:alnum:]_])test .* \.\.\. FAILED' /tmp/regex_selftest.txt)
+          [ "$failed2" -eq 1 ] || { echo "::error::FAILED regex false-positive on 'latest scenario ... FAILED' (#2487)"; exit 1; }
+
+          echo "Regex tolerance self-test passed (#2487): interleaved ok/FAILED lines matched, no false positives."
+
+      - name: Case 900 9R4C 1-week drift check
+        # Test 1/4: 168-timestep (1-week) drift gate
+        # Filter `_surrogate_drift_gate_case_900_9r4c` is precise — no other
+        # test in the workspace shares this suffix.
+        # `--nocapture` surfaces the per-test `mode=` / `max_drift=` diagnostic
+        # line so the verify step can report the actual drift and operating mode.
+        run: |
+          cargo test --release --features ort --verbose \
+            --test all_tests _surrogate_drift_gate_case_900_9r4c \
+            -- --nocapture \
+            2>&1 | tee -a /tmp/surrogate_drift_output.txt
+          echo "---"
+          echo "exit_code=$?"
+
+      - name: Case 900 Annual simulation drift check
+        # Test 2/4: 8760-timestep (annual) drift gate
+        run: |
+          cargo test --release --features ort --verbose \
+            --test all_tests _surrogate_drift_gate_annual_simulation \
+            -- --nocapture \
+            2>&1 | tee -a /tmp/surrogate_drift_output.txt
+          echo "---"
+          echo "exit_code=$?"
+
+      - name: Drift metric definition test
+        # Test 3/4: pure unit test on the drift metric formula (no
+        # simulation). Runs in its OWN `cargo test` invocation and captures
+        # to a dedicated file (`/tmp/surrogate_drift_metric.txt`) so the
+        # verify step can grep its summary line deterministically — the ONLY
+        # `test <name> ... ok` line in that file is this test's.
+        #
+        # Issue #2582: previously this was OR-grouped with the
+        # lenient-fallback test in a single invocation
+        # (`-- _surrogate_drift_metric_definition _lenient_fallback_contract`).
+        # The sibling test's `eprintln!` context output interleaved with (and
+        # sometimes masked) this test's summary line, making the coverage
+        # regex flake and randomly report `DROPPED FROM GATE` on PRs that
+        # touched neither file. Splitting the invocations guarantees each
+        # test's summary line is the only one in its captured output.
+        #
+        # Issue #2487: splitting steps was not enough — a test's OWN
+        # unbuffered eprintln! can still interleave mid-line with its libtest
+        # `test ... ok` summary (PR #2473 run 31300498830 @ line 2122). The
+        # coverage/result regexes in the verify step below are therefore
+        # UNANCHORED with a leading word boundary so they survive such
+        # interleaving, and a self-test step guards against regressions.
+        run: |
+          cargo test --release --features ort --verbose \
+            --test all_tests _surrogate_drift_metric_definition \
+            -- --nocapture \
+            2>&1 | tee /tmp/surrogate_drift_metric.txt | tee -a /tmp/surrogate_drift_output.txt
+          echo "---"
+          echo "exit_code=$?"
+
+      - name: Lenient-fallback contract test
+        # Test 4/4: Issue #1865 regression guard — locks the two-mode lenient
+        # fallback contract (50% drift must not trip the gate when no model is
+        # loaded). `test_surrogate_drift_gate_lenient_fallback_contract` was
+        # silently unrun by the gate before PR #1874. Runs in its OWN
+        # invocation for the same deterministic-capture reason as the metric
+        # test above (Issue #2582); captures to
+        # `/tmp/surrogate_drift_lenient.txt`.
+        run: |
+          cargo test --release --features ort --verbose \
+            --test all_tests _lenient_fallback_contract \
+            -- --nocapture \
+            2>&1 | tee /tmp/surrogate_drift_lenient.txt | tee -a /tmp/surrogate_drift_output.txt
+          echo "---"
+          echo "exit_code=$?"
+
+      - name: Analytical-fallback annual HVAC regression (Issue #2923)
+        # Test 5/5: Issue #2923 fallback-mode floor — locks the analytical
+        # surrogate's annual HVAC drift against the 9R4C physics baseline
+        # (ASHRAE 140 Case 900, ±10% envelope). Runs in its OWN invocation so
+        # its `eprintln!` diagnostic doesn't interleave with the lenient
+        # contract test's; captures to
+        # `/tmp/surrogate_drift_fallback_hvac.txt`. This test is the active
+        # surrogate-layer gate in mode=fallback; in mode=onnx the analytical
+        # predictor is dormant in production but the assertions still hold
+        # (the trained model diverges more than the analytical sine cycle),
+        # so the test stays in the workflow unconditionally — it just isn't
+        # the active Goal #1 enforcement in ONNX mode (that role belongs to
+        # the strict ±1% per-timestep tests 1/2 above).
+        run: |
+          cargo test --release --features ort --verbose \
+            --test all_tests surrogate_drift_fallback_regression:: \
+            -- --nocapture \
+            2>&1 | tee /tmp/surrogate_drift_fallback_hvac.txt | tee -a /tmp/surrogate_drift_output.txt
+          echo "---"
+          echo "exit_code=$?"
+
+      - name: Verify gate coverage and extract results
+        run: |
+          echo "=== Surrogate drift gate coverage check ==="
+          # All four tests in `tests/surrogate_drift_gate.rs` must appear in
+          # the cargo output. A name missing means a filter silently dropped
+          # it (Issue #1866) — fail honestly rather than report a false PASS.
+          #
+          # Issue #2582: the two light unit tests now run in dedicated
+          # `cargo test` invocations, each capturing to its OWN file, so each
+          # test's summary line is the ONLY `test <name> ... ok` line in that
+          # file and the coverage grep is deterministic (no interleaving with
+          # a sibling test's eprintln! context output). The two heavy
+          # simulations still append to the aggregate file; their precise
+          # one-test filters mean each contributes exactly one summary line.
+          check_coverage() {
+            local name="$1" file="$2"
+            # Issue #2487: drop the `^` line anchor and require a word
+            # boundary before `test` so the match survives mid-line
+            # interleaving (an unbuffered eprintln! glued onto the start of
+            # libtest's `test <name> ... ok` summary line under --nocapture).
+            # Issue #3764: the consolidated `tests/all_tests` harness prints
+            # module-qualified names (`test <module>::<name> ... ok`), so an
+            # optional `<module>::` prefix is tolerated between `test ` and
+            # the test name.
+            if grep -qE "(^|[^[:alnum:]_])test ([a-z0-9_]+::)?$name \\.\\.\\. (ok|ignored|FAILED)" "$file"; then
+              echo "  COVERED: $name (from $(basename "$file"))"
+            else
+              echo "  DROPPED FROM GATE: $name"
+              echo "  This test name was not found in $file."
+              echo "  Either the test was renamed/removed, or the workflow"
+              echo "  filter needs updating. Failing the build."
+              exit 1
+            fi
+          }
+          check_coverage test_surrogate_drift_gate_case_900_9r4c             /tmp/surrogate_drift_output.txt
+          check_coverage test_surrogate_drift_gate_annual_simulation         /tmp/surrogate_drift_output.txt
+          check_coverage test_surrogate_drift_metric_definition              /tmp/surrogate_drift_metric.txt
+          check_coverage test_surrogate_drift_gate_lenient_fallback_contract /tmp/surrogate_drift_lenient.txt
+          check_coverage fallback_annual_hvac_within_10pct_of_9r4c_baseline   /tmp/surrogate_drift_fallback_hvac.txt
+
+          echo
+          echo "=== Surrogate drift gate result extraction ==="
+          sed -i 's/\x1b\[[0-9;]*m//g' /tmp/surrogate_drift_output.txt
+
+          # Issue #2487: the test-summary regexes are deliberately UNANCHORED
+          # (no `^`/`$`) and require a leading word boundary so they still
+          # match libtest's `test <name> ... ok|FAILED` line when an
+          # unbuffered eprintln! diagnostic interleaves onto the same captured
+          # line (e.g. `[drift-gate-diag] ... tolerance=test <name> ... ok`).
+          # The word boundary prevents false positives like `latest ... FAILED`.
+          # Issue #3764: the PASSED extractor additionally tolerates the
+          # module-qualified consolidation format (`test <module>::<name>`).
+          FAILED=$(grep -cE '(^|[^[:alnum:]_])test .* \.\.\. FAILED' /tmp/surrogate_drift_output.txt || true)
+          PANICS=$(grep -cE 'panicked at' /tmp/surrogate_drift_output.txt || true)
+          PASSED=$(grep -cE '(^|[^[:alnum:]_])test ([a-z0-9_]+::)?(test_surrogate_drift_(gate|metric)|fallback_annual_hvac).* \.\.\. ok' /tmp/surrogate_drift_output.txt || true)
+
+          # Test self-reported mode + peak drift (printed via eprintln! under
+          # --nocapture). Used to cross-check the independently resolved mode.
+          TEST_MODE=$(grep -oE 'mode=(onnx|fallback)' /tmp/surrogate_drift_output.txt | tail -1 | cut -d= -f2 || true)
+          PEAK_DRIFT=$(grep -oE 'max_drift=[0-9.]+%' /tmp/surrogate_drift_output.txt | tail -1 | cut -d= -f2 || true)
+          RESOLVED_MODE="${{ steps.gate-mode.outputs.mode }}"
+
+          echo "  Passed        : $PASSED"
+          echo "  Failed        : $FAILED"
+          echo "  Panics        : $PANICS"
+          echo "  Resolved mode : $RESOLVED_MODE"
+          echo "  Test mode     : ${TEST_MODE:-n/a}"
+          echo "  Peak drift    : ${PEAK_DRIFT:-n/a}"
+
+          if [ -n "$TEST_MODE" ] && [ "$TEST_MODE" != "$RESOLVED_MODE" ]; then
+            echo "::warning::Gate mode mismatch — workflow resolved '$RESOLVED_MODE' but the test reported '$TEST_MODE'. Verify SurrogateManager::new_with_auto_load() resolution (Issue #1865)."
+          fi
+
+          if [ "$FAILED" -gt 0 ] || [ "$PANICS" -gt 0 ]; then
+            echo
+            if [ "$RESOLVED_MODE" = "onnx" ]; then
+              echo "::error::Surrogate drift tolerance gate FAILED — surrogate drifted >1% from 9R4C baseline (strict ONNX mode). Retrain the surrogate or adjust the drift tolerance (Issue #1784)."
+            else
+              echo "::error::Surrogate drift tolerance gate FAILED — surrogate exceeded the lenient 100% fallback ceiling. This is unexpected in fallback mode; investigate the analytical load predictor (Issue #1865)."
+            fi
+            echo "See /tmp/surrogate_drift_output.txt for the failing assertion messages."
+            exit 1
+          fi
+
+          if [ "$RESOLVED_MODE" = "onnx" ]; then
+            echo "PASS: Surrogate drift tolerance gate holds (<1% drift from 9R4C baseline, strict ONNX mode${PEAK_DRIFT:+, peak drift $PEAK_DRIFT})."
+          else
+            echo "PASS: Surrogate drift gate passed in fallback mode — manifest models/surrogate_zone_thermal.onnx.sha256 IS present (Issue #2923 fail-closed precondition satisfied), strict 1% gate is dormant, fallback-mode floor (analytical fallback annual HVAC drift <10% from 9R4C baseline) enforced${PEAK_DRIFT:+ (peak drift $PEAK_DRIFT)}. See Issue #2923."
+          fi
+
+      - name: Upload drift-gate log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: surrogate-drift-gate
+          path: /tmp/surrogate_drift_output.txt
+          retention-days: 14
+
+  # ----------------------------------------------------------------
+  # Cargo Deny
+  # ----------------------------------------------------------------
+  # Moved verbatim from `security.yml`. Emits the exact required-check
+  # name. The remaining security jobs stay in `security.yml`.
+  deny:
+    name: Cargo Deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-env
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+      - name: Install cargo-deny
+        uses: baptiste0928/cargo-install@8195d4f734a149db85385bb4102b42efcd373759  # v3
+        with:
+          crate: cargo-deny
+          version: 0.20.2
+      # Supply-chain gate (issue #2699): licenses (no copyleft), duplicate
+      # crates (warn), banned crates (denylist), advisory DB scan, and source
+      # registry validation. Config lives in deny.toml at the repo root.
+      # Mirrors .cargo/audit.toml ignores so the two tools agree.
+      - name: Run cargo deny check
+        run: cargo deny check
+      # Issue #2933: enforce the duplicate-version budget declared in
+      # deny.toml `[bans] duplicates_baseline`. `multiple-versions = "warn"`
+      # makes `cargo deny check` exit 0 even with duplicates, so we count
+      # JSON diagnostics and fail when the count exceeds the baseline. The
+      # baseline lives in a comment inside `[bans]` because cargo-deny 0.20.2
+      # rejects unknown keys in that table. The tracking issue (#2994)
+      # carries the cluster inventory and reduction plan; this step only
+      # catches regressions.
+      - name: Verify duplicate-version budget
+        run: |
+          set -euo pipefail
+          BASELINE=$(grep -E '^#\s*duplicates_baseline\s*:\s*[0-9]+' deny.toml | sed -E 's/.*:\s*([0-9]+).*/\1/' | head -n1)
+          if [ -z "${BASELINE}" ]; then
+            echo "::error::deny.toml [bans] duplicates_baseline (comment) is not set"
+            exit 1
+          fi
+          JSON_OUT=$(cargo deny -f json check bans 2>&1 || true)
+          DUP_COUNT=$(echo "${JSON_OUT}" | grep -c '"code":"duplicate"' || true)
+          echo "Duplicate-version count: ${DUP_COUNT} (baseline: ${BASELINE})"
+          if [ "${DUP_COUNT}" -gt "${BASELINE}" ]; then
+            echo "::error::Duplicate-version count ${DUP_COUNT} exceeds baseline ${BASELINE}. See issue #2994 for the triage plan."
+            exit 1
+          fi
+          echo "OK: duplicate-version count within budget."
+
+  # ================================================================
+  # PHASE 2 — heavy advisory jobs. Everything below declares
+  # `needs:` on all nine phase-1 jobs and does not schedule until
+  # phase 1 completes (successfully).
+  # ================================================================
+
+  # -- Always: fast gate (both PR and main) ----------------------------------
+  # PRs: single-platform (ubuntu only) for fast signal.
+  # Main: full 3-platform matrix for cross-platform validation.
+
+  test:
+    needs: [workspace-check-listener, energy-conservation-listener, fmt-listener, clippy-listener, ashrae-cases-cycle-listener, physics-sim-cycle-listener, cycle-trend-listener, surrogate-drift-gate, deny]
+    name: Test (${{ matrix.os }}, ${{ matrix.feature_set.name }})
+    runs-on: ${{ matrix.os }}
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    strategy:
+      fail-fast: false
+      matrix:
+        os: |
+          ${{ github.event_name == 'pull_request'
+              && fromJSON('["ubuntu-latest"]')
+              || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
+        rust: [stable]
+        feature_set:
+          - {name: "no-default",       flags: "--no-default-features"}
+          - {name: "wiring-tracing",   flags: "--features wiring-tracing"}
+          - {name: "multi-zone",       flags: "--features wiring-tracing,multi-zone"}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+
+      - name: Cache ONNX Runtime binaries
+        if: runner.os == 'macOS'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/Library/Caches/ort.pyke.io
+          key: ort-binaries-aarch64-apple-darwin-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ort-binaries-aarch64-apple-darwin-
+
+      # Issue #3398: cargo cache for the PR-blocking test matrix. Every
+      # sibling workflow (performance_dashboard.yml, msrv.yml,
+      # crate-size.yml, security.yml) already wires Swatinem/rust-cache;
+      # this matrix was the only PR-blocking pipeline without it, paying
+      # 15-30 cold-cache CI minutes per code-changing PR. rust-cache
+      # keys entries on the rustc invocation (feature flags included),
+      # so the three feature_set matrix entries get distinct caches and
+      # cannot poison each other. Workspace list mirrors the actual
+      # `[workspace] members` in Cargo.toml (crates/fluxion-evaluator
+      # included; fluxion-tauri lives at fluxion-tauri/src-tauri).
+      - name: Cache cargo workspace
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        with:
+          workspaces: |
+            .
+            fluxion-core -> target
+            fluxion-city -> target
+            fluxion-fluid -> target
+            fluxion-grid -> target
+            fluxion-behavior -> target
+            fluxion-mcp -> target
+            fluxion-wasm -> target
+            crates/fluxion-toon -> target
+            crates/fluxion-twin -> target
+            crates/fluxion-evaluator -> target
+            fluxion-cfd -> target
+            fluxion-tauri/src-tauri -> target
+
+      # Issue #3366 / ADR-0014: consolidated the 7-line `cargo test` block
+      # into a single `cargo nextest run` invocation. Each test binary
+      # runs in its own process; per-binary concurrency overrides live
+      # in `.config/nextest.toml` (audit findings). `--no-fail-fast`
+      # keeps the matrix honest — a single failing binary does not
+      # abort the whole run.
+      #
+      # Issue #3952: this step previously passed POSITIONAL filters
+      # (`surface_flux_provider_isolation::`, then
+      # `regression_exterior_film_unification::`) that nextest applies
+      # globally across EVERY selected target. As a result `--lib`
+      # (3,853 tests), `--test validation_empirical_harness`,
+      # `--test hvac_bestest`, and the fluxion-behavior / fluxion-twin
+      # selections each ran ~zero tests — the root lib suite executed
+      # in NO per-PR required check, which is how #3935's five broken
+      # lib tests shipped green (#3948). The two invocations below
+      # restore the original 7-line block's scope:
+      #
+      #   1. Unfiltered multi-target: root lib + the standalone keeper
+      #      integration tests + the workspace-package tests called
+      #      out by Issues #2909 / #2904.
+      #   2. The two all_tests regression modules (standalone test
+      #      binaries before the #3764 consolidation), scoped with an
+      #      explicit nextest filterset (`-E`). A filterset applies
+      #      only within its own invocation, so it cannot silently
+      #      zero out the other targets the way a positional filter
+      #      does.
+      #
+      # Everything else inside `--test all_tests` (2,704 run / 76
+      # skipped tests across 251 modules; 107 failures across 39
+      # modules) is deliberately NOT in per-PR scope: those suites
+      # never ran in the original 7-line block and carry documented
+      # physics gaps (SCORECARD / KNOWN_ISSUES §LIMIT-*), CLI EPW
+      # fixture-path breakage, timing-threshold tests, and
+      # working-tree-mutating report writers. Full per-suite triage
+      # and dispositions: issue #3952. Do NOT re-add positional
+      # filters to this step.
+      #
+      # Matrix `flags` carries the per-entry nextest args verbatim (e.g.
+      # `--no-default-features` for the "no-default" entry, `--features
+      # wiring-tracing` for the "wiring-tracing" entry, `--features
+      # wiring-tracing,multi-zone` for the "multi-zone" entry). The
+      # earlier `--features ${{ matrix.feature_set.nextest_flags }}`
+      # template was broken: `nextest_flags` does not exist on the
+      # matrix object, so the interpolation produced an empty string
+      # and cargo-nextest rejected every matrix entry with
+      # `error: a value is required for '--features <FEATURES>'`. The
+      # interpolation below yields the full flag string and bash's
+      # word-splitting parses it correctly per matrix entry.
+      - name: Run tests
+        run: |
+          cargo nextest run \
+            -p fluxion \
+            --lib \
+            --test validation_empirical_harness \
+            --test hvac_bestest \
+            -p fluxion-behavior --test lighting_occupancy_integration \
+            -p fluxion-twin --test mqtt_ukf_integration --test ukf_covariance_stability --test ukf_van_der_pol --test websocket_memory_leak \
+            --test-threads=2 \
+            --no-fail-fast \
+            ${{ matrix.feature_set.flags }} && \
+          cargo nextest run \
+            -p fluxion \
+            --test all_tests \
+            -E 'test(/^surface_flux_provider_isolation::/) | test(/^regression_exterior_film_unification::/)' \
+            --test-threads=2 \
+            --no-fail-fast \
+            ${{ matrix.feature_set.flags }}
+        env:
+          PYO3_PYTHON: /usr/bin/python3
+
+      # Issue #3755: the `python-bindings` feature set was invisible to the
+      # PR path — nothing in this workflow compiled `--features
+      # python-bindings`, so 10 compile errors from API drift (the #1773
+      # annealer-trait addition and an `hvac` field path change in the model
+      # bindings) accumulated silently on develop until the #3720 wave-1
+      # sub-agent tripped over them. PR #3782 (issue #3749) fixed the call
+      # sites mechanically; this step compiles the feature set and runs the
+      # `python::` lib tests (~161 tests) on every PR so the blind spot
+      # cannot reopen. The full OS x Python wheel + pytest matrices stay in
+      # python-bindings.yml (nightly + main, issue #3567 moved them off the
+      # PR path). Pinned to ONE matrix leg (Linux + "no-default") so the
+      # extra cargo build is paid once per PR, not three times; the
+      # lib-test compile covers every `#[cfg(feature = "python-bindings")]`
+      # module in src/python/ regardless of which tests the filter selects.
+      # Env mirrors the established python-bindings.yml pattern:
+      # PYO3_USE_ABI3_FORWARD_COMPATIBILITY is already workflow-level above;
+      # RUST_MIN_STACK enlarges the build thread stack (32 MiB) for the
+      # PyO3 link step, as in .github/workflows/python-bindings.yml.
+      - name: Python bindings feature tests (Issue #3755)
+        if: runner.os == 'Linux' && matrix.feature_set.name == 'no-default'
+        env:
+          RUST_MIN_STACK: 33554432
+        run: |
+          cargo nextest run \
+            -p fluxion \
+            --lib \
+            --features python-bindings \
+            python:: \
+            --test-threads=2 \
+            --no-fail-fast
+
+  # ---------------------------------------------------------------------------
+  # Issue #2133: Hetzner autoscaling overflow
+  #
+  # Probe pattern: a lightweight job tries to grab a GH runner with a 5-minute
+  # timeout.  If GH runners are saturated, the probe is cancelled after 5 min
+  # and the overflow path (ci-on-hetzner) runs on the Hetzner autoscaling pool.
+  #
+  # Jobs below follow this pattern.  Each group has:
+  #   <job>-gh-probe  — lightweight GH availability probe (5-min timeout)
+  #   <job>-gh        — CI on GH-hosted runner (runs if probe succeeds)
+  #   <job>-hz        — CI on Hetzner overflow (runs if probe fails/cancelled)
+  #
+  # The FLUXION_LINUX_RUNNER || ubuntu-latest jobs (test-full, build-release,
+  # cuda-smoke, cuda-parity) are unaffected — they already route to the static
+  # self-hosted pool as primary with GH as fallback.
+  # ---------------------------------------------------------------------------
+
+  # -- Energy Conservation (Issue #1295) ---------------------------------------

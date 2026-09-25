@@ -10,6 +10,18 @@ on:
   push:
     branches: [main, develop]
   pull_request:
+    # Issue #4018: ADR-0016 lane-2 docs-only deny list. Determinism is
+    # physics-path code; docs-only PRs skip it.
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '**.md'
+      - '**.mdx'
+      - 'LICENSE'
+      - '**/LICENSE'
+      - '.gitignore'
+      - '.gitattributes'
+      - '.editorconfig'
   # ADR-0016 lane 3 — nightly authority on develop. The determinism
   # matrix was the only lane-3 gate without a schedule; this nightly run
   # is the authoritative cross-platform floating-point verdict that the
@@ -72,25 +84,36 @@ env:
     -C llvm-args=--enable-no-nans-fp-math=false
 
 jobs:
+  # Issue #4018: PR-triggered runs use ubuntu-only (the full 3-OS matrix
+  # is ~30 job-min/PR; ubuntu-only is ~10). Push/schedule/dispatch keep
+  # the full matrix as the nightly authority per ADR-0016. workflow_run
+  # events from a PR-triggered upstream also use ubuntu-only.
+  setup-matrix:
+    name: Select determinism matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ] || \
+             [ "${{ github.event.workflow_run.event }}" = "pull_request" ]; then
+            echo 'matrix={"os":["ubuntu-latest"]}' >> "$GITHUB_OUTPUT"
+          else
+            echo 'matrix={"os":["ubuntu-latest","windows-latest","macos-14"]}' >> "$GITHUB_OUTPUT"
+          fi
+
   determinism-check:
     name: Determinism Check (${{ matrix.os }})
+    needs: setup-matrix
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
-      matrix:
-        # Cover x86_64 (ubuntu/windows) + aarch64 Apple Silicon (macos-14).
-        # macos-13 (the last Intel x86_64 macOS runner) was removed in #2618:
-        # it is redundant with the ubuntu/windows x86_64 determinism signal
-        # AND the macOS Intel GitHub-hosted runner pool is perpetually
-        # oversubscribed (30+ min queue or never starts within the wave
-        # polling window), which left every PR stuck UNSTABLE with a pending
-        # `Determinism Check (macos-13)` job. macos-14 (Apple Silicon)
-        # preserves the cross-arch determinism signal that #2549 wanted.
-        # The job-level timeout-minutes caps runaway queue time for any
-        # remaining variant (esp. macos-14) so none can hold a PR UNSTABLE.
-        os: [ubuntu-latest, windows-latest, macos-14]
-        rust: [stable]
+      matrix: ${{ fromJSON(needs.setup-matrix.outputs.matrix) }}
+        # (Full 3-OS matrix defined in setup-matrix above: ubuntu/windows
+        # for x86_64 + macos-14 for aarch64 Apple Silicon. macos-13 was
+        # removed in #2618 — redundant and the Intel pool is oversubscribed.)
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -110,9 +133,22 @@ jobs:
           command: rustup toolchain install stable --profile default
 
       - name: Cache cargo dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
         with:
-          path: |
+          workspaces: |
+            .
+            fluxion-core -> target
+            fluxion-city -> target
+            fluxion-fluid -> target
+            fluxion-grid -> target
+            fluxion-behavior -> target
+            fluxion-mcp -> target
+            fluxion-wasm -> target
+            crates/fluxion-toon -> target
+            crates/fluxion-twin -> target
+            crates/fluxion-evaluator -> target
+            fluxion-cfd -> target
+            fluxion-tauri/src-tauri -> target          path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
