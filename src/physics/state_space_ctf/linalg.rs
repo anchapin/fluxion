@@ -4,9 +4,9 @@
 //! (the parent landed at 4347/4347 lines, see
 //! `tests/reference_data/module_size/state_space_ctf_ratchet.json`). The
 //! kernel is self-contained pure math — small dense matrix operations,
-//! matrix-exponential variants (Higham Padé [13/13], explicit single-shift
-//! QR, real-Schur/Francis double-shift, legacy Padé, Taylor), and the
-//! Householder QR/Hessenberg machinery — with no CTF-domain coupling.
+//! matrix-exponential variants (Higham Padé [13/13], real-Schur/Francis
+//! double-shift, legacy Padé, Taylor), and the Householder
+//! QR/Hessenberg machinery — with no CTF-domain coupling.
 //!
 //! The pipeline (`compute_state_space_ctf`, `compute_ctf_from_state_space`,
 //! `build_state_space_matrices`) re-imports the symbols it needs via
@@ -16,21 +16,19 @@
 //! `mod.rs` re-exports it via `pub use linalg::matrix_exponential_faer;`.
 //!
 //! ## Contents
-//! - Basic dense matrix ops (`mat_mul_gen`, `mat_mul_transpose`, `identity`,
+//! - Basic dense matrix ops (`mat_mul_gen`, `identity`,
 //!   `matrix_sub_identity`, `mat_mat_mul`, `mat_mat_mul_col`,
 //!   `scale_columns`, `matrix_sub_col`)
 //! - `FlatMatrix` variants (`mat_mat_mul_flat`, `mat_mat_mul_col_flat`,
 //!   `mat_mul_gen_flat`)
 //! - Matrix-exponential dispatch (`matrix_exponential`,
-//!   `matrix_exponential_explicit_qr`, `matrix_exponential_faer`)
+//!   `matrix_exponential_faer`)
 //! - Higham Padé [13/13] (`expm_higham_padé13` + `solve_linear_system_lu`,
 //!   `matrix_norm_1`, `compute_powers`, `expm_2x2`)
-//! - Real-Schur / Francis QR (`matrix_exponential_schur`,
-//!   `householder_to_hessenberg`, `householder_qr`,
+//! - Real-Schur / Francis QR (`householder_to_hessenberg`,
 //!   `apply_householder_left` / `apply_householder_right` /
 //!   `apply_householder_right_unitary`, `vector_norm`, `transpose`,
-//!   `francis_qr_schur`, `implicit_double_shift_bulge_chase`,
-//!   `exp_real_schur`)
+//!   `francis_qr_schur`, `implicit_double_shift_bulge_chase`)
 //! - Reference implementations kept for the test suite
 //!   (`matrix_exponential_old_pade`, `matrix_exponential_taylor`,
 //!   `matrix_norm_inf`)
@@ -58,26 +56,6 @@ pub fn mat_mul_gen(a: &[Vec<f64>], b: &[Vec<f64>]) -> Vec<Vec<f64>> {
             let mut sum = 0.0;
             for k in 0..c1 {
                 sum += a[i][k] * b[k][j];
-            }
-            c[i][j] = sum;
-        }
-    }
-    c
-}
-
-/// Matrix multiply with left transpose: A^T · B where A is (n×n) and B is (n×m).
-/// Result is (n×m). Used for CTF s coefficient computation where E+ indexes
-/// R[m][kNode] (column of R), requiring R^T · Gamma instead of R · Gamma.
-#[allow(dead_code)]
-pub fn mat_mul_transpose(a: &[Vec<f64>], b: &[Vec<f64>]) -> Vec<Vec<f64>> {
-    let n = a.len();
-    let m = b[0].len();
-    let mut c = vec![vec![0.0; m]; n];
-    for i in 0..n {
-        for j in 0..m {
-            let mut sum = 0.0;
-            for k in 0..n {
-                sum += a[k][i] * b[k][j]; // a[k][i] = A^T[i][k]
             }
             c[i][j] = sum;
         }
@@ -224,195 +202,6 @@ pub fn mat_mul_gen_flat(a: &FlatMatrix, b: &FlatMatrix) -> FlatMatrix {
 /// divisions in the critical path.
 pub fn matrix_exponential(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {
     matrix_exponential_faer(a, t)
-}
-
-/// Matrix exponential via Hessenberg reduction + explicit single-shift QR.
-///
-/// Algorithm:
-/// 1. Householder reduction to upper Hessenberg form.
-/// 2. Explicit single-shift QR with Wilkinson shift to reduce to Schur form.
-///    For each step: M = H - σI, QR-factorize, H = RQ + σI.
-/// 3. Compute F = exp(H) via Parlett recurrence.
-/// 4. Reconstruct exp(A·t) = U · F · U^T.
-///
-/// Simpler than implicit double-shift and more robust for stiff multi-layer
-/// walls. The cost is higher (O(n^3) per QR iteration vs O(n²) for implicit)
-/// but for our 24-node state-space this is still fast.
-#[allow(dead_code)]
-pub fn matrix_exponential_explicit_qr(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {
-    let n = a.len();
-    if n == 0 {
-        return vec![];
-    }
-    if n == 1 {
-        return vec![vec![(a[0][0] * t).exp()]];
-    }
-
-    // Step 1: Householder reduction to upper Hessenberg form.
-    let (mut h, mut u) = householder_to_hessenberg(a);
-
-    // Step 2: Scale H by t.
-    for i in 0..n {
-        for j in 0..n {
-            h[i][j] *= t;
-        }
-    }
-
-    // Step 3: Explicit single-shift QR with Wilkinson shift.
-    let max_iter = 100 * n;
-    let tol = 1e-14;
-    let mut iter = 0;
-    let mut nn = n;
-    let start = 0;
-
-    while nn > 1 && iter < max_iter {
-        // Deflation: check if the bottom subdiagonal has converged
-        if nn >= 2 {
-            let bot_sub = h[start + nn - 1][start + nn - 2].abs();
-            let bot_diag_sum =
-                h[start + nn - 1][start + nn - 1].abs() + h[start + nn - 2][start + nn - 2].abs();
-            if bot_sub < tol * bot_diag_sum.max(1e-30) {
-                h[start + nn - 1][start + nn - 2] = 0.0;
-                nn -= 1;
-                continue;
-            }
-        }
-
-        // Compute Wilkinson shift from the trailing 2x2 block
-        let shift = if nn == 1 {
-            h[start][start]
-        } else {
-            let a = h[start + nn - 2][start + nn - 2];
-            let b = h[start + nn - 2][start + nn - 1];
-            let c = h[start + nn - 1][start + nn - 2];
-            let d = h[start + nn - 1][start + nn - 1];
-            let trace = a + d;
-            let disc = (a - d).powi(2) + 4.0 * b * c;
-            if disc < 0.0 {
-                trace / 2.0
-            } else {
-                let sqrt_disc = disc.sqrt();
-                let l1 = (trace + sqrt_disc) / 2.0;
-                let l2 = (trace - sqrt_disc) / 2.0;
-                if (l1 - d).abs() < (l2 - d).abs() {
-                    l1
-                } else {
-                    l2
-                }
-            }
-        };
-
-        // Form M = H - σI on the active submatrix
-        let mut m_mat = h.clone();
-        for i in start..start + nn {
-            m_mat[i][i] -= shift;
-        }
-
-        // QR factorize the active submatrix using Householder reflections
-        let (q, r) = householder_qr(&m_mat, start, nn);
-
-        // H_new = R · Q + σI on the active submatrix
-        let mut h_new = vec![vec![0.0; n]; n];
-        for i in start..start + nn {
-            for j in start..start + nn {
-                let mut s_acc = 0.0;
-                for k in start..start + nn {
-                    s_acc += r[i][k] * q[k][j];
-                }
-                h_new[i][j] = s_acc;
-            }
-        }
-        for i in start..start + nn {
-            h_new[i][i] += shift;
-        }
-        for i in start..start + nn {
-            for j in start..start + nn {
-                h[i][j] = h_new[i][j];
-            }
-        }
-
-        // Update U = U · Q (the Schur vectors)
-        let u_new = mat_mat_mul(&u, &q);
-        u = u_new;
-
-        // Aggressive deflation
-        for i in 1..nn {
-            let sub_abs = h[start + i][start + i - 1].abs();
-            let diag_sum = h[start + i][start + i].abs() + h[start + i - 1][start + i - 1].abs();
-            if sub_abs < 1e-10 * diag_sum.max(1e-30) {
-                h[start + i][start + i - 1] = 0.0;
-            }
-        }
-
-        iter += 1;
-    }
-
-    // Step 4: Compute F = exp(H) (H is now in Schur form)
-    let f = exp_real_schur(&h);
-
-    // Step 5: Reconstruct exp(A·t) = U · F · U^T
-    let uf = mat_mat_mul(&u, &f);
-    let ut = transpose(&u);
-    mat_mat_mul(&uf, &ut)
-}
-
-/// Householder QR factorization of a matrix slice.
-#[allow(dead_code)]
-///
-/// Returns (Q, R) such that M[start..start+nn, start..start+nn] = Q · R.
-pub fn householder_qr(m: &[Vec<f64>], start: usize, nn: usize) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
-    let n_total = m.len();
-    let mut q = identity(n_total);
-    let mut r = m.to_vec();
-
-    if nn <= 1 {
-        return (q, r);
-    }
-
-    for k in 0..nn.saturating_sub(1) {
-        if start + nn - (start + k) < 2 {
-            break;
-        }
-        let mut x: Vec<f64> = (start + k..start + nn).map(|i| r[i][start + k]).collect();
-        let x_norm = vector_norm(&x);
-        if x_norm < 1e-15 {
-            continue;
-        }
-
-        let sign = if x[0] >= 0.0 { 1.0 } else { -1.0 };
-        x[0] += sign * x_norm;
-        let v_norm = vector_norm(&x);
-        if v_norm < 1e-15 {
-            continue;
-        }
-        for vi in x.iter_mut() {
-            *vi /= v_norm;
-        }
-        let v = x;
-
-        // Apply H = I - 2 v v^T from the left to r[start+k..start+nn, start+k..n_total]
-        for j in start + k..n_total {
-            let mut s_acc = 0.0;
-            for i in 0..v.len() {
-                s_acc += v[i] * r[start + k + i][j];
-            }
-            for i in 0..v.len() {
-                r[start + k + i][j] -= 2.0 * v[i] * s_acc;
-            }
-        }
-        // Update Q: Q = Q · H
-        for i in 0..n_total {
-            let mut s_acc = 0.0;
-            for j in 0..v.len() {
-                s_acc += q[i][start + k + j] * v[j];
-            }
-            for j in 0..v.len() {
-                q[i][start + k + j] -= 2.0 * s_acc * v[j];
-            }
-        }
-    }
-
-    (q, r)
 }
 
 /// faer-backed matrix exponential: Higham Padé [13/13] scaling-and-squaring.
@@ -743,49 +532,6 @@ pub fn expm_2x2(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {
 
     vec![vec![r11, r12], vec![r21, r22]]
 }
-///
-/// See `matrix_exponential` for the algorithm outline.
-#[allow(dead_code)]
-pub fn matrix_exponential_schur(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {
-    let n = a.len();
-
-    if n == 0 {
-        return vec![];
-    }
-    if n == 1 {
-        return vec![vec![(a[0][0] * t).exp()]];
-    }
-
-    // Step 1: Householder reduction to upper Hessenberg form.
-    // A = U · H · U^T  (U orthogonal, H upper Hessenberg: h[i][j] = 0 for i > j+1)
-    let (h, u) = householder_to_hessenberg(a);
-
-    // Step 2: Scale H by t.  Working with H·t is equivalent to working with H
-    // and then squaring — but we compute F = exp(T·t) directly.
-    let mut h_scaled = vec![vec![0.0; n]; n];
-    for i in 0..n {
-        for j in 0..n {
-            h_scaled[i][j] = h[i][j] * t;
-        }
-    }
-
-    // Step 3: Francis double-shift QR to real Schur form.
-    // H_scaled = V · T · V^T  (V orthogonal, T real quasi-upper-triangular)
-    let (t_schur, v) = francis_qr_schur(&h_scaled);
-
-    // Step 4: Compute F = exp(T) using Parlett recurrence.
-    let f = exp_real_schur(&t_schur);
-
-    // Step 5: Reconstruct exp(A·t) = U · V · F · V^T · U^T.
-    // Compute Q = U · V.
-    let q = mat_mat_mul(&u, &v);
-
-    // exp(A·t) = Q · F · Q^T.
-    let qf = mat_mat_mul(&q, &f);
-    let qt = transpose(&q);
-    mat_mat_mul(&qf, &qt)
-}
-
 /// Householder reduction of a general n×n matrix A to upper Hessenberg form.
 ///
 /// Returns (H, U) such that A = U · H · U^T, where H is upper Hessenberg
@@ -1099,163 +845,6 @@ pub fn implicit_double_shift_bulge_chase(
 
         m += 1;
     }
-}
-
-/// Compute exp(T) for a real quasi-upper-triangular Schur form T.
-///
-/// T has 1×1 blocks (real eigenvalues) and 2×2 blocks (complex-conjugate
-/// eigenvalue pairs) on its diagonal, with arbitrary values above the
-/// diagonal. We use the Parlett recurrence to fill in the off-diagonal
-/// entries.
-#[allow(dead_code)]
-pub fn exp_real_schur(t: &[Vec<f64>]) -> Vec<Vec<f64>> {
-    let n = t.len();
-    if n == 0 {
-        return vec![];
-    }
-
-    let mut f = vec![vec![0.0; n]; n];
-
-    // Identify block structure: 1x1 or 2x2 blocks on the diagonal.
-    // A 2x2 block is at position [i..i+2, i..i+2] if t[i+1][i] != 0
-    // (subdiagonal entry indicates complex-conjugate pair).
-    let mut i = 0;
-    while i < n {
-        if i + 1 < n && t[i + 1][i].abs() > 1e-14 {
-            // 2x2 block: [[a, b], [-c, a]] after Schur reduction
-            // (real Schur form for complex eigenvalue λ = μ ± iω has the block
-            //  [[μ, ω], [-ω, μ]] up to signs)
-            let a = t[i][i];
-            let b = t[i][i + 1];
-            let c = -t[i + 1][i]; // -c to make the block [[a, b], [c, a]] with c > 0
-            let _ = c; // not used directly; treat as general 2x2
-
-            // For 2x2 block [[a, b], [d, e]], the exp is:
-            //   if (a-e)² + 4bd < 0 (complex eigenvalues):
-            //     μ = (a+e)/2, ω = sqrt(-((a-e)² + 4bd))/2
-            //     exp([[a,b],[d,e]]) = exp(μ) * [[cos(ω) + (a-μ)·sin(ω)/ω, b·sin(ω)/ω],
-            //                                       [d·sin(ω)/ω, cos(ω) - (a-μ)·sin(ω)/ω]]
-            //   else: use closed-form Taylor
-            let a11 = a;
-            let a12 = b;
-            let a21 = t[i + 1][i];
-            let a22 = t[i][i + 1]; // placeholder
-            let _ = a22;
-
-            // Re-read: t[i+1][i] is the subdiagonal (should be -b if Schur-reduced)
-            // t[i][i+1] is the superdiagonal
-            let trace = t[i][i] + t[i + 1][i + 1];
-            let det = t[i][i] * t[i + 1][i + 1] - t[i][i + 1] * t[i + 1][i];
-            let disc = trace * trace - 4.0 * det;
-
-            if disc < 0.0 {
-                // Complex eigenvalues: μ ± iω
-                let mu = 0.5 * trace;
-                let omega = (-disc).max(0.0).sqrt() * 0.5;
-                let exp_mu = mu.exp();
-                let cos_w = omega.cos();
-                let sin_w = omega.sin();
-                // exp([[a, b], [d, e]]) for a=e=μ, bd = det - μ²
-                // = exp(μ) * [[cos(ω) + (a11 - μ) sin(ω)/ω, b sin(ω)/ω],
-                //             [d sin(ω)/ω, cos(ω) - (a11 - μ) sin(ω)/ω]]
-                let a_diff = a11 - mu;
-                let _ = a_diff;
-                if omega.abs() > 1e-14 {
-                    f[i][i] = exp_mu * (cos_w + a_diff * sin_w / omega);
-                    f[i + 1][i + 1] = exp_mu * (cos_w - a_diff * sin_w / omega);
-                    f[i][i + 1] = exp_mu * a12 * sin_w / omega;
-                    f[i + 1][i] = exp_mu * a21 * sin_w / omega;
-                } else {
-                    // ω ≈ 0, use Taylor
-                    f[i][i] = exp_mu;
-                    f[i + 1][i + 1] = exp_mu;
-                    f[i][i + 1] = exp_mu * a12;
-                    f[i + 1][i] = exp_mu * a21;
-                }
-            } else {
-                // Real eigenvalues
-                let sqrt_disc = disc.sqrt();
-                let l1 = 0.5 * (trace + sqrt_disc);
-                let l2 = 0.5 * (trace - sqrt_disc);
-                if (l1 - l2).abs() > 1e-10 {
-                    // f(A) = (exp(l1) - exp(l2)) / (l1 - l2) * A + (l1 exp(l2) - l2 exp(l1)) / (l1 - l2) * I
-                    let alpha = (l1.exp() - l2.exp()) / (l1 - l2);
-                    let beta = (l1 * l2.exp() - l2 * l1.exp()) / (l1 - l2);
-                    f[i][i] = alpha * a11 + beta;
-                    f[i][i + 1] = alpha * a12;
-                    f[i + 1][i] = alpha * a21;
-                    f[i + 1][i + 1] = alpha * t[i + 1][i + 1] + beta;
-                } else {
-                    // Degenerate: l1 ≈ l2, use Taylor
-                    let l = 0.5 * trace;
-                    let el = l.exp();
-                    f[i][i] = el * (1.0 + a11 - l);
-                    f[i][i + 1] = el * a12;
-                    f[i + 1][i] = el * a21;
-                    f[i + 1][i + 1] = el * (1.0 + t[i + 1][i + 1] - l);
-                }
-            }
-            i += 2;
-        } else {
-            // 1x1 block: real eigenvalue
-            f[i][i] = t[i][i].exp();
-            i += 1;
-        }
-    }
-
-    // Parlett recurrence for the off-diagonal entries
-    // For upper-triangular portion, f[i][j] depends on f[i][k] for k < j
-    // and f[k][j] for k < j (in upper triangular region).
-    //
-    // For the 1x1 block case:
-    //   f[i][j] (i < j) = (T[i][i] - T[j][j])^{-1} * sum_{i<k<j} (f[i][k] T[k][j] - T[i][k] f[k][j])
-    //
-    // For 2x2 block case, the recurrence is more complex. We use a simple
-    // approach: for each pair (i, j) with i < j, solve the Sylvester equation
-    // by iteration.
-
-    for j in 1..n {
-        // Determine the "diagonal block" of j
-        // If j is the first row of a 2x2 block, j_block_start = j-1 (and j is j+1)
-        // If j is a single row of a 1x1 block, j_block_start = j
-        // For simplicity, treat j as 1x1 unless we just hit a 2x2 block.
-        let _ = (); // placeholder
-        for i in (0..j).rev() {
-            // Skip if i,j are both in a 2x2 block
-            if i + 1 < n && t[i + 1][i].abs() > 1e-14 && j == i + 1 {
-                continue; // diagonal entry of 2x2 block
-            }
-            if j + 1 < n && t[j + 1][j].abs() > 1e-14 && j == i + 1 {
-                // i is the first row of the same 2x2 block as j+1; skip the off-diagonal
-                continue;
-            }
-
-            // f[i][j] recurrence
-            // For 1x1 blocks: f[i][j] (T[i][i] - T[j][j]) = sum_k (f[i][k] T[k][j] - T[i][k] f[k][j])
-            let mut rhs = 0.0;
-            for k in (i + 1)..j {
-                rhs += f[i][k] * t[k][j] - t[i][k] * f[k][j];
-            }
-            // Handle 2x2 block neighbors
-            // If i+1 == j and (i, i+1) is a 2x2 block: f[i][j] = t[i][i+1] * f[i+1][j] (from the 2x2 structure)
-            if i + 1 == j && i + 1 < n && t[i + 1][i].abs() > 1e-14 {
-                // i and j are in the same 2x2 block
-                f[i][j] = f[i][i] * t[i][j] + t[i][i + 1] * f[i + 1][j];
-                continue;
-            }
-            // If j-1 == i and (j, j+1) is a 2x2 block: f[j-1][j] is already set above
-            // Otherwise: 1x1 block recurrence
-            let denom = t[i][i] - t[j][j];
-            if denom.abs() > 1e-14 {
-                f[i][j] = rhs / denom;
-            } else {
-                // Eigenvalue collision: handle via Sylvester equation
-                f[i][j] = 0.0;
-            }
-        }
-    }
-
-    f
 }
 
 #[allow(dead_code)]

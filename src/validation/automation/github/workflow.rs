@@ -8,7 +8,6 @@ pub struct WorkflowGenerator {
     config: WorkflowGeneratorConfig,
 }
 
-#[allow(dead_code)]
 impl WorkflowGenerator {
     pub fn new(config: WorkflowGeneratorConfig) -> Result<Self> {
         Ok(Self { config })

@@ -86,7 +86,7 @@
 //! with the VAV damper/reheat handling only zone-sensible load.
 
 use crate::sim::hvac::airside_state::{
-    validate_finite, validate_nonnegative, validate_positive, AirsideCouplingError, MoistAirState,
+    validate_finite, validate_nonnegative, AirsideCouplingError, MoistAirState,
 };
 use crate::sim::hvac::cooling_coil::{CoolingCoil, CoolingCoilBehavior};
 use crate::sim::hvac::fan::{Fan, FanComponent};
@@ -761,13 +761,6 @@ fn dew_point_of(state: &MoistAirState) -> f64 {
         state.relative_humidity_percent,
         state.pressure_pa,
     )
-}
-
-// Suppress unused-import warning for `validate_positive` when the feature set
-// does not exercise it; kept for API symmetry with sibling modules.
-#[allow(dead_code)]
-fn _assert_validate_positive_used(v: f64) -> Result<(), AirsideCouplingError> {
-    validate_positive("unused", v)
 }
 
 #[cfg(test)]

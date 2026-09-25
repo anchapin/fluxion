@@ -1641,7 +1641,6 @@ impl CaseBuilder {
     ///
     /// Note: Weather data should be loaded dynamically from EpwWeatherSource in validation,
     /// not pre-generated here to avoid performance issues.
-    #[allow(dead_code)]
     pub fn generate_denver_weather_data() -> Vec<HourlyWeatherData> {
         use crate::weather::epw::EpwWeatherSource;
         let weather = EpwWeatherSource::from_file(

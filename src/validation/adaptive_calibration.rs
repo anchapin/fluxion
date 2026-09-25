@@ -223,10 +223,6 @@ impl SmartMeterPatternAnalyzer {
 
 /// Recalibration trigger detector
 pub struct TriggerDetector {
-    #[allow(dead_code)]
-    occupancy_baseline: f64,
-    #[allow(dead_code)]
-    efficiency_baseline: f64,
     temp_anomaly_threshold: f64,
     bias_change_threshold: f64,
 }
@@ -234,8 +230,6 @@ pub struct TriggerDetector {
 impl TriggerDetector {
     pub fn new() -> Self {
         Self {
-            occupancy_baseline: 0.5,
-            efficiency_baseline: 1.0,
             temp_anomaly_threshold: 5.0, // °C from normal  // LEDGER: CAL_ADAPTIVE_TEMP_ANOMALY_THRESHOLD
             bias_change_threshold: 0.15, // 15% change in bias  // LEDGER: CAL_ADAPTIVE_BIAS_CHANGE_THRESHOLD
         }
@@ -296,10 +290,6 @@ impl TriggerDetector {
         }
 
         triggers
-    }
-
-    pub fn set_occupancy_baseline(&mut self, baseline: f64) {
-        self.occupancy_baseline = baseline;
     }
 
     pub fn set_temp_anomaly_threshold(&mut self, threshold: f64) {
@@ -656,7 +646,6 @@ mod tests {
     #[test]
     fn test_trigger_detection() {
         let mut detector = TriggerDetector::new();
-        detector.set_occupancy_baseline(0.5);
         detector.set_temp_anomaly_threshold(5.0);
 
         let current = HourlyObservation {

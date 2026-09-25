@@ -6,42 +6,11 @@ use std::process::Command;
 pub struct CiPerformanceValidator {
     #[allow(dead_code)]
     baseline_path: Option<String>,
-    threshold_percent: f64,
 }
 
-#[allow(dead_code)]
 impl CiPerformanceValidator {
     pub fn new(baseline_path: Option<String>) -> Self {
-        Self {
-            baseline_path,
-            threshold_percent: 5.0, // 5% regression threshold
-        }
-    }
-
-    pub fn validate_no_regression(&self) -> Result<(), String> {
-        let output = Command::new("cargo")
-            .args(["bench", "--bench", "performance", "--", "--noplot"])
-            .output()
-            .map_err(|e| format!("Failed to run benchmarks: {}", e))?;
-
-        if !output.status.success() {
-            return Err(format!(
-                "Benchmarks failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
-
-        // Parse benchmark output and compare with baseline
-        let report = self.generate_ci_report()?;
-
-        if report.regressions.len() > 0 {
-            return Err(format!(
-                "Performance regressions detected: {:?}",
-                report.regressions
-            ));
-        }
-
-        Ok(())
+        Self { baseline_path }
     }
 
     pub fn generate_ci_report(&self) -> Result<CiPerformanceReport, String> {
@@ -97,43 +66,6 @@ impl CiPerformanceValidator {
 
         Ok(report)
     }
-
-    pub fn compare_with_baseline(
-        &self,
-        current: &CiPerformanceReport,
-        baseline: &CiPerformanceReport,
-    ) -> ComparisonResult {
-        let mut regressions = vec![];
-        let mut improvements = vec![];
-
-        for (current_bench, baseline_bench) in
-            current.benchmarks.iter().zip(baseline.benchmarks.iter())
-        {
-            if current_bench.name == baseline_bench.name {
-                let delta = current_bench.duration_ms - baseline_bench.duration_ms;
-                let percent_change = (delta / baseline_bench.duration_ms) * 100.0;
-
-                if percent_change > self.threshold_percent {
-                    regressions.push(Regression {
-                        benchmark: current_bench.name.clone(),
-                        delta_ms: delta,
-                        percent_change,
-                    });
-                } else if percent_change < -self.threshold_percent {
-                    improvements.push(Improvement {
-                        benchmark: current_bench.name.clone(),
-                        delta_ms: delta,
-                        percent_change: -percent_change,
-                    });
-                }
-            }
-        }
-
-        ComparisonResult {
-            regressions,
-            improvements,
-        }
-    }
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -162,10 +94,4 @@ pub struct Improvement {
     pub benchmark: String,
     pub delta_ms: f64,
     pub percent_change: f64,
-}
-
-#[derive(Debug)]
-pub struct ComparisonResult {
-    pub regressions: Vec<Regression>,
-    pub improvements: Vec<Improvement>,
 }

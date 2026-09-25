@@ -29,24 +29,10 @@ pub struct ComparativeAnalyzer {
     baseline_config: ConfigurationResult,
 }
 
-#[allow(dead_code)]
 impl ComparativeAnalyzer {
     pub fn new(baseline: ConfigurationResult) -> Self {
         Self {
             baseline_config: baseline,
-        }
-    }
-
-    pub fn add_configuration(&mut self, _config: ConfigurationResult) {
-        // Store configuration for comparison
-    }
-
-    pub fn analyze(&self) -> ComparativeAnalysis {
-        // Implement comparative analysis logic
-        ComparativeAnalysis {
-            configurations: vec![],
-            best_performer: String::new(),
-            performance_deltas: vec![],
         }
     }
 

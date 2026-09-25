@@ -1,5 +1,4 @@
 use crate::physics::cta::VectorField;
-use crate::physics::ctf_coefficients::CTFMaterial;
 use crate::sim::engine::{IdealHVACController, ThermalModel};
 use crate::sim::thermal_selector::ThermalSelector;
 use crate::sim::warmup::{run_warmup, WarmupConfig};
@@ -1550,18 +1549,6 @@ impl ASHRAE140Validator {
         report
     }
 
-    /// Convert ConstructionLayer to CTFMaterial for CTF solver.
-    #[allow(dead_code)]
-    fn layer_to_ctf_material(layer: &crate::sim::construction::ConstructionLayer) -> CTFMaterial {
-        CTFMaterial::new(
-            &layer.name,
-            layer.thickness,
-            layer.conductivity,
-            layer.density,
-            layer.specific_heat,
-        )
-    }
-
     /// Build the `ThermalModel` for a case spec exactly as `simulate_case`
     /// does, without running the annual simulation. Extracted as the testable
     /// seam for conduction-backend wiring assertions (Issue #3979).
@@ -2154,7 +2141,6 @@ pub struct CaseDiagnostic {
     /// Temperature profile for free-floating cases
     pub temp_profile: TemperatureProfile,
     /// Hourly data (if collected)
-    #[allow(dead_code)]
     pub hourly_data: Vec<HourlyData>,
     /// Issue #432: Thermal mass energy accounting data
     /// Total cumulative mass energy change (J)

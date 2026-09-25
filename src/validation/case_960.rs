@@ -50,9 +50,6 @@ pub struct Case960Result {
 pub struct Case960ReferenceImplementation {
     /// Reference data for validation
     reference: Case960Reference,
-    /// Weather data for Denver
-    #[allow(dead_code)]
-    weather: EpwWeatherSource,
 }
 
 impl Default for Case960ReferenceImplementation {
@@ -66,10 +63,6 @@ impl Case960ReferenceImplementation {
     pub fn new() -> Self {
         Self {
             reference: Case960Reference::load_case_960_reference_data(),
-            weather: EpwWeatherSource::from_file(
-                "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
-            )
-            .expect("Failed to load EPW weather data"),
         }
     }
 
