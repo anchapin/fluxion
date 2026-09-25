@@ -57,11 +57,16 @@ flowchart LR
     n53["Zone 1 wall-north layer 0"]:::wall_layer
     n54["Zone 1 wall-north layer 1"]:::wall_layer
     n55["Zone 1 wall-north layer 2"]:::wall_layer
-    n56["Zone 1 wall-west exterior film"]:::exterior_surface
-    n57["Zone 1 wall-west interior film"]:::interior_surface
-    n58["Zone 1 wall-west layer 0"]:::wall_layer
-    n59["Zone 1 wall-west layer 1"]:::wall_layer
-    n60["Zone 1 wall-west layer 2"]:::wall_layer
+    n56["Zone 1 wall-south exterior film"]:::exterior_surface
+    n57["Zone 1 wall-south interior film"]:::interior_surface
+    n58["Zone 1 wall-south layer 0"]:::wall_layer
+    n59["Zone 1 wall-south layer 1"]:::wall_layer
+    n60["Zone 1 wall-south layer 2"]:::wall_layer
+    n61["Zone 1 wall-west exterior film"]:::exterior_surface
+    n62["Zone 1 wall-west interior film"]:::interior_surface
+    n63["Zone 1 wall-west layer 0"]:::wall_layer
+    n64["Zone 1 wall-west layer 1"]:::wall_layer
+    n65["Zone 1 wall-west layer 2"]:::wall_layer
     n0 <-->|conduction| n1
     n0 -->|convection_exterior| n9
     n0 -->|convection_exterior| n14
@@ -71,12 +76,13 @@ flowchart LR
     n0 -->|shortwave_solar_direct| n25
     n0 -->|convection_exterior| n29
     n0 <-->|conduction| n34
-    n0 -->|shortwave_solar_diffuse| n34
-    n0 -->|shortwave_solar_direct| n34
     n0 -->|convection_exterior| n41
     n0 -->|convection_exterior| n46
     n0 -->|convection_exterior| n51
     n0 -->|convection_exterior| n56
+    n0 -->|shortwave_solar_diffuse| n57
+    n0 -->|shortwave_solar_direct| n57
+    n0 -->|convection_exterior| n61
     n1 <-->|air_exchange| n0
     n1 <-->|conduction| n34
     n2 <-->|conduction| n4
@@ -148,6 +154,12 @@ flowchart LR
     n58 <-->|conduction| n59
     n59 <-->|conduction| n60
     n60 <-->|conduction| n57
+    n61 <-->|conduction| n63
+    n62 -->|convection_interior| n34
+    n62 <-->|longwave_radiation| n40
+    n63 <-->|conduction| n64
+    n64 <-->|conduction| n65
+    n65 <-->|conduction| n62
     classDef exterior_surface fill:#f97316,stroke:#0f172a,color:#0f172a
     classDef hvac_terminal fill:#14b8a6,stroke:#0f172a,color:#0f172a
     classDef interior_surface fill:#fbbf24,stroke:#0f172a,color:#0f172a
