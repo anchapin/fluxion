@@ -91,8 +91,10 @@ fn zone_name(zi: usize, g: &GeometrySpec) -> String {
 /// Gross opaque area of one orientation's wall before window subtraction.
 fn gross_wall_area(g: &GeometrySpec, orientation: &Orientation) -> f64 {
     match orientation {
-        Orientation::North | Orientation::South => g.depth * g.height,
-        Orientation::East | Orientation::West => g.width * g.height,
+        // North/South walls span the width (X-axis) of the zone
+        Orientation::North | Orientation::South => g.width * g.height,
+        // East/West walls span the depth (Y-axis) of the zone
+        Orientation::East | Orientation::West => g.depth * g.height,
         Orientation::Up | Orientation::Down | Orientation::Horizontal => g.width * g.depth,
     }
 }
@@ -697,6 +699,24 @@ mod tests {
                 .sum::<f64>()
         };
         assert!(cap(&high) > cap(&low));
+    }
+
+    /// Regression test: North/South wall area must use `width` (X-axis, spans N-S),
+    /// and East/West must use `depth` (Y-axis, spans E-W) — even when width ≠ depth.
+    #[test]
+    fn gross_wall_area_uses_correct_geometric_dimension() {
+        // Zone with asymmetric footprint: 8 m wide (X) × 6 m deep (Y) × 2.7 m tall
+        let g = GeometrySpec {
+            name: Some("AsymmetricZone".into()),
+            ..GeometrySpec::new(8.0, 6.0, 2.7)
+        };
+
+        // N/S walls span X-axis → 8 * 2.7
+        assert!((gross_wall_area(&g, &Orientation::North) - 8.0 * 2.7).abs() < 1e-9);
+        assert!((gross_wall_area(&g, &Orientation::South) - 8.0 * 2.7).abs() < 1e-9);
+        // E/W walls span Y-axis → 6 * 2.7
+        assert!((gross_wall_area(&g, &Orientation::East) - 6.0 * 2.7).abs() < 1e-9);
+        assert!((gross_wall_area(&g, &Orientation::West) - 6.0 * 2.7).abs() < 1e-9);
     }
 }
 

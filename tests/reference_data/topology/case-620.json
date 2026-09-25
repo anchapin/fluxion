@@ -168,7 +168,7 @@
       "kind": "exterior_surface",
       "zone_id": "zone-0:air",
       "name": "Zone 0 wall-east exterior film",
-      "area_m2": 15.600000000000001,
+      "area_m2": 10.200000000000003,
       "azimuth_deg": 90.0,
       "tilt_deg": 90.0
     },
@@ -177,7 +177,7 @@
       "kind": "interior_surface",
       "zone_id": "zone-0:air",
       "name": "Zone 0 wall-east interior film",
-      "area_m2": 15.600000000000001,
+      "area_m2": 10.200000000000003,
       "azimuth_deg": 90.0,
       "tilt_deg": 90.0
     },
@@ -186,8 +186,8 @@
       "kind": "wall_layer",
       "zone_id": "zone-0:air",
       "name": "Zone 0 wall-east layer 0",
-      "capacitance_j_per_k": 123282.43200000003,
-      "area_m2": 15.600000000000001,
+      "capacitance_j_per_k": 80607.74400000002,
+      "area_m2": 10.200000000000003,
       "azimuth_deg": 90.0,
       "tilt_deg": 90.0,
       "attributes": {
@@ -202,8 +202,8 @@
       "kind": "wall_layer",
       "zone_id": "zone-0:air",
       "name": "Zone 0 wall-east layer 1",
-      "capacitance_j_per_k": 10378.368,
-      "area_m2": 15.600000000000001,
+      "capacitance_j_per_k": 6785.856000000002,
+      "area_m2": 10.200000000000003,
       "azimuth_deg": 90.0,
       "tilt_deg": 90.0,
       "attributes": {
@@ -218,8 +218,8 @@
       "kind": "wall_layer",
       "zone_id": "zone-0:air",
       "name": "Zone 0 wall-east layer 2",
-      "capacitance_j_per_k": 66970.79999999999,
-      "area_m2": 15.600000000000001,
+      "capacitance_j_per_k": 43788.60000000001,
+      "area_m2": 10.200000000000003,
       "azimuth_deg": 90.0,
       "tilt_deg": 90.0,
       "attributes": {
@@ -234,7 +234,7 @@
       "kind": "exterior_surface",
       "zone_id": "zone-0:air",
       "name": "Zone 0 wall-north exterior film",
-      "area_m2": 16.200000000000003,
+      "area_m2": 21.6,
       "azimuth_deg": 0.0,
       "tilt_deg": 90.0
     },
@@ -243,7 +243,7 @@
       "kind": "interior_surface",
       "zone_id": "zone-0:air",
       "name": "Zone 0 wall-north interior film",
-      "area_m2": 16.200000000000003,
+      "area_m2": 21.6,
       "azimuth_deg": 0.0,
       "tilt_deg": 90.0
     },
@@ -252,8 +252,8 @@
       "kind": "wall_layer",
       "zone_id": "zone-0:air",
       "name": "Zone 0 wall-north layer 0",
-      "capacitance_j_per_k": 128024.06400000003,
-      "area_m2": 16.200000000000003,
+      "capacitance_j_per_k": 170698.75200000004,
+      "area_m2": 21.6,
       "azimuth_deg": 0.0,
       "tilt_deg": 90.0,
       "attributes": {
@@ -268,8 +268,8 @@
       "kind": "wall_layer",
       "zone_id": "zone-0:air",
       "name": "Zone 0 wall-north layer 1",
-      "capacitance_j_per_k": 10777.536,
-      "area_m2": 16.200000000000003,
+      "capacitance_j_per_k": 14370.048000000003,
+      "area_m2": 21.6,
       "azimuth_deg": 0.0,
       "tilt_deg": 90.0,
       "attributes": {
@@ -284,8 +284,8 @@
       "kind": "wall_layer",
       "zone_id": "zone-0:air",
       "name": "Zone 0 wall-north layer 2",
-      "capacitance_j_per_k": 69546.6,
-      "area_m2": 16.200000000000003,
+      "capacitance_j_per_k": 92728.8,
+      "area_m2": 21.6,
       "azimuth_deg": 0.0,
       "tilt_deg": 90.0,
       "attributes": {
@@ -300,7 +300,7 @@
       "kind": "exterior_surface",
       "zone_id": "zone-0:air",
       "name": "Zone 0 wall-south exterior film",
-      "area_m2": 16.200000000000003,
+      "area_m2": 21.6,
       "azimuth_deg": 180.0,
       "tilt_deg": 90.0
     },
@@ -309,7 +309,7 @@
       "kind": "interior_surface",
       "zone_id": "zone-0:air",
       "name": "Zone 0 wall-south interior film",
-      "area_m2": 16.200000000000003,
+      "area_m2": 21.6,
       "azimuth_deg": 180.0,
       "tilt_deg": 90.0
     },
@@ -318,8 +318,8 @@
       "kind": "wall_layer",
       "zone_id": "zone-0:air",
       "name": "Zone 0 wall-south layer 0",
-      "capacitance_j_per_k": 128024.06400000003,
-      "area_m2": 16.200000000000003,
+      "capacitance_j_per_k": 170698.75200000004,
+      "area_m2": 21.6,
       "azimuth_deg": 180.0,
       "tilt_deg": 90.0,
       "attributes": {
@@ -334,8 +334,8 @@
       "kind": "wall_layer",
       "zone_id": "zone-0:air",
       "name": "Zone 0 wall-south layer 1",
-      "capacitance_j_per_k": 10777.536,
-      "area_m2": 16.200000000000003,
+      "capacitance_j_per_k": 14370.048000000003,
+      "area_m2": 21.6,
       "azimuth_deg": 180.0,
       "tilt_deg": 90.0,
       "attributes": {
@@ -350,8 +350,8 @@
       "kind": "wall_layer",
       "zone_id": "zone-0:air",
       "name": "Zone 0 wall-south layer 2",
-      "capacitance_j_per_k": 69546.6,
-      "area_m2": 16.200000000000003,
+      "capacitance_j_per_k": 92728.8,
+      "area_m2": 21.6,
       "azimuth_deg": 180.0,
       "tilt_deg": 90.0,
       "attributes": {
@@ -366,7 +366,7 @@
       "kind": "exterior_surface",
       "zone_id": "zone-0:air",
       "name": "Zone 0 wall-west exterior film",
-      "area_m2": 15.600000000000001,
+      "area_m2": 10.200000000000003,
       "azimuth_deg": 270.0,
       "tilt_deg": 90.0
     },
@@ -375,7 +375,7 @@
       "kind": "interior_surface",
       "zone_id": "zone-0:air",
       "name": "Zone 0 wall-west interior film",
-      "area_m2": 15.600000000000001,
+      "area_m2": 10.200000000000003,
       "azimuth_deg": 270.0,
       "tilt_deg": 90.0
     },
@@ -384,8 +384,8 @@
       "kind": "wall_layer",
       "zone_id": "zone-0:air",
       "name": "Zone 0 wall-west layer 0",
-      "capacitance_j_per_k": 123282.43200000003,
-      "area_m2": 15.600000000000001,
+      "capacitance_j_per_k": 80607.74400000002,
+      "area_m2": 10.200000000000003,
       "azimuth_deg": 270.0,
       "tilt_deg": 90.0,
       "attributes": {
@@ -400,8 +400,8 @@
       "kind": "wall_layer",
       "zone_id": "zone-0:air",
       "name": "Zone 0 wall-west layer 1",
-      "capacitance_j_per_k": 10378.368,
-      "area_m2": 15.600000000000001,
+      "capacitance_j_per_k": 6785.856000000002,
+      "area_m2": 10.200000000000003,
       "azimuth_deg": 270.0,
       "tilt_deg": 90.0,
       "attributes": {
@@ -416,8 +416,8 @@
       "kind": "wall_layer",
       "zone_id": "zone-0:air",
       "name": "Zone 0 wall-west layer 2",
-      "capacitance_j_per_k": 66970.79999999999,
-      "area_m2": 15.600000000000001,
+      "capacitance_j_per_k": 43788.60000000001,
+      "area_m2": 10.200000000000003,
       "azimuth_deg": 270.0,
       "tilt_deg": 90.0,
       "attributes": {
@@ -464,7 +464,7 @@
       "source_id": "ambient",
       "target_id": "zone-0:wall-east:ext",
       "coupling_type": "convection_exterior",
-      "conductance_w_per_k": 285.48,
+      "conductance_w_per_k": 186.66000000000005,
       "bidirectional": false
     },
     {
@@ -491,21 +491,21 @@
       "source_id": "ambient",
       "target_id": "zone-0:wall-north:ext",
       "coupling_type": "convection_exterior",
-      "conductance_w_per_k": 296.46000000000004,
+      "conductance_w_per_k": 395.28000000000003,
       "bidirectional": false
     },
     {
       "source_id": "ambient",
       "target_id": "zone-0:wall-south:ext",
       "coupling_type": "convection_exterior",
-      "conductance_w_per_k": 296.46000000000004,
+      "conductance_w_per_k": 395.28000000000003,
       "bidirectional": false
     },
     {
       "source_id": "ambient",
       "target_id": "zone-0:wall-west:ext",
       "coupling_type": "convection_exterior",
-      "conductance_w_per_k": 285.48,
+      "conductance_w_per_k": 186.66000000000005,
       "bidirectional": false
     },
     {
@@ -643,14 +643,14 @@
       "source_id": "zone-0:wall-east:ext",
       "target_id": "zone-0:wall-east:layer-0",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 416.00000000000006,
+      "conductance_w_per_k": 272.0000000000001,
       "bidirectional": true
     },
     {
       "source_id": "zone-0:wall-east:int",
       "target_id": "zone-0:air",
       "coupling_type": "convection_interior",
-      "conductance_w_per_k": 129.324,
+      "conductance_w_per_k": 84.55800000000002,
       "bidirectional": false
     },
     {
@@ -663,35 +663,35 @@
       "source_id": "zone-0:wall-east:layer-0",
       "target_id": "zone-0:wall-east:layer-1",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 18.90909090909091,
+      "conductance_w_per_k": 12.363636363636367,
       "bidirectional": true
     },
     {
       "source_id": "zone-0:wall-east:layer-1",
       "target_id": "zone-0:wall-east:layer-2",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 485.33333333333354,
+      "conductance_w_per_k": 317.3333333333335,
       "bidirectional": true
     },
     {
       "source_id": "zone-0:wall-east:layer-2",
       "target_id": "zone-0:wall-east:int",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 485.33333333333354,
+      "conductance_w_per_k": 317.3333333333335,
       "bidirectional": true
     },
     {
       "source_id": "zone-0:wall-north:ext",
       "target_id": "zone-0:wall-north:layer-0",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 432.0000000000001,
+      "conductance_w_per_k": 576.0,
       "bidirectional": true
     },
     {
       "source_id": "zone-0:wall-north:int",
       "target_id": "zone-0:air",
       "coupling_type": "convection_interior",
-      "conductance_w_per_k": 134.298,
+      "conductance_w_per_k": 179.064,
       "bidirectional": false
     },
     {
@@ -704,35 +704,35 @@
       "source_id": "zone-0:wall-north:layer-0",
       "target_id": "zone-0:wall-north:layer-1",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 19.63636363636364,
+      "conductance_w_per_k": 26.181818181818183,
       "bidirectional": true
     },
     {
       "source_id": "zone-0:wall-north:layer-1",
       "target_id": "zone-0:wall-north:layer-2",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 504.0000000000001,
+      "conductance_w_per_k": 672.0000000000001,
       "bidirectional": true
     },
     {
       "source_id": "zone-0:wall-north:layer-2",
       "target_id": "zone-0:wall-north:int",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 504.0000000000001,
+      "conductance_w_per_k": 672.0000000000001,
       "bidirectional": true
     },
     {
       "source_id": "zone-0:wall-south:ext",
       "target_id": "zone-0:wall-south:layer-0",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 432.0000000000001,
+      "conductance_w_per_k": 576.0,
       "bidirectional": true
     },
     {
       "source_id": "zone-0:wall-south:int",
       "target_id": "zone-0:air",
       "coupling_type": "convection_interior",
-      "conductance_w_per_k": 134.298,
+      "conductance_w_per_k": 179.064,
       "bidirectional": false
     },
     {
@@ -745,35 +745,35 @@
       "source_id": "zone-0:wall-south:layer-0",
       "target_id": "zone-0:wall-south:layer-1",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 19.63636363636364,
+      "conductance_w_per_k": 26.181818181818183,
       "bidirectional": true
     },
     {
       "source_id": "zone-0:wall-south:layer-1",
       "target_id": "zone-0:wall-south:layer-2",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 504.0000000000001,
+      "conductance_w_per_k": 672.0000000000001,
       "bidirectional": true
     },
     {
       "source_id": "zone-0:wall-south:layer-2",
       "target_id": "zone-0:wall-south:int",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 504.0000000000001,
+      "conductance_w_per_k": 672.0000000000001,
       "bidirectional": true
     },
     {
       "source_id": "zone-0:wall-west:ext",
       "target_id": "zone-0:wall-west:layer-0",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 416.00000000000006,
+      "conductance_w_per_k": 272.0000000000001,
       "bidirectional": true
     },
     {
       "source_id": "zone-0:wall-west:int",
       "target_id": "zone-0:air",
       "coupling_type": "convection_interior",
-      "conductance_w_per_k": 129.324,
+      "conductance_w_per_k": 84.55800000000002,
       "bidirectional": false
     },
     {
@@ -786,21 +786,21 @@
       "source_id": "zone-0:wall-west:layer-0",
       "target_id": "zone-0:wall-west:layer-1",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 18.90909090909091,
+      "conductance_w_per_k": 12.363636363636367,
       "bidirectional": true
     },
     {
       "source_id": "zone-0:wall-west:layer-1",
       "target_id": "zone-0:wall-west:layer-2",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 485.33333333333354,
+      "conductance_w_per_k": 317.3333333333335,
       "bidirectional": true
     },
     {
       "source_id": "zone-0:wall-west:layer-2",
       "target_id": "zone-0:wall-west:int",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 485.33333333333354,
+      "conductance_w_per_k": 317.3333333333335,
       "bidirectional": true
     }
   ]
