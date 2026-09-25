@@ -754,16 +754,20 @@ strictly selector-driven:
 
 | Selector | Path |
 |----------|------|
-| `ZoneSolverKind::Gauge` (default) | Unconditional gauge dispatch under `--features gauge-solver` — single-zone and multi-zone gauge paths are tried in turn, and a missing gauge backend is a programming error that **panics** rather than falling through to legacy 5R1C/9R4C. In the default build (no `gauge-solver` feature), the `Gauge` selector routes to 5R1C/9R4C via the `match` arm at the bottom of `step_physics`; the cargo feature remains the production gate pending §LIMIT-21 (Issue #3297) closure. |
-| `ZoneSolverKind::FiveROneC` | Always routes to the legacy 5R1C `step_physics_5r1c` path (low-mass ISO 13790 single-node network). |
+| `ZoneSolverKind::Gauge` | **ADR-0017 (#3978):** with `--features gauge-solver`, `Gauge` is the **default selector** and gauge dispatch is unconditional — single-zone and multi-zone gauge paths are tried in turn, and a missing gauge backend is a programming error that **panics** rather than falling through to legacy 5R1C/9R4C (#3817 exception: HighMass specs auto-promote to 9R4C even under `Gauge`). In the default build (feature OFF), an explicit `Gauge` selector **panics loudly at `from_spec_with_selector` construction** naming the feature flag — the silent fall-through to 5R1C/9R4C was removed. |
+| `ZoneSolverKind::FiveROneC` (**default in default builds**, ADR-0017) | Routes to the legacy 5R1C `step_physics_5r1c` path (low-mass ISO 13790 single-node network). Honors the ADR-0002 HighMass ⇒ 9R4C auto-promotion (`is_nine_r4c_model()` flag set selector-independently by `from_spec_with_selector`). |
 | `ZoneSolverKind::NineRFourC` | Always routes to the legacy 9R4C `step_physics_9r4c` path (high-mass multi-node network per ADR-002). |
 
-The `gauge-solver` cargo feature is the **production-path gate**
-(Issues #3291 / #3286): the β-soak gate is currently at 0/30 nights
-green (§LIMIT-21 below), and the unconditional gauge-default dispatch
-applies for callers who opt into the feature while the β-soak gate is
-climbing. Production builds that do not enable the feature continue to
-get the 5R1C / 9R4C network on the `Gauge` selector. The legacy
+The `gauge-solver` cargo feature is the **prototype-path gate**
+(ADR-0017 / Issues #3291 / #3286): the β-soak gate is currently at 0/30
+nights green (§LIMIT-21 below) and continues as the nightly authority on
+the gauge arm. The **default selector is cfg-dependent and explicit in
+every build** (ADR-0017, #3978): `Gauge` with the feature on, the
+explicit legacy `FiveROneC` (HighMass auto-promotion preserved) in
+default builds — no silent cfg fall-through anywhere. The unconditional
+default flip to the equation-based DAE teacher is gated on the #3986
+teacher validation suite, superseding the old "β-soak-trips → feature
+flips" plan (§LIMIT-21 / #3297). The legacy
 `is_9r4c_model()` / `is_8r3c_model()` / `is_6r2c_model()` checks are
 gone — `thermal_model_type` is set exclusively by the selector
 (Issue #3277 PR2.1).
