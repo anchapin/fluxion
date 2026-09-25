@@ -73,7 +73,6 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | Energy Conservation (GH) | — |
 | Rustfmt (GH) | — |
 | Clippy (GH) | — |
-| Known Issues Stale Check (GH) | — |
 | Ashrae Cases Cycle Check (GH) | — |
 | Cycle Downward Trend Guard (Issue #2768) | #2768 |
 | Architecture Drift Detection | — |
