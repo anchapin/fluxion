@@ -2,26 +2,21 @@ name: Cross-Platform Determinism CI
 
 # Issue #3355: expand upstream scope to `develop` so the Fluxion Determinism
 # Gate listener job (`fluxion-determinism-gate` in `ashrae_validation.yml`)
-# fires for PRs targeting `develop`. The `workflow_run` listener in
-# `ashrae_validation.yml` is filtered by
-# `github.event.workflow_run.event == 'pull_request'`, so the listener
-# activates as soon as this workflow runs for a develop PR.
+# fires for PRs targeting `develop`. PR runs are phase-gated behind CI Gates
+# via `workflow_run` (second PR of the two-PR rollout); the listener in
+# `ashrae_validation.yml` accepts both direct `pull_request` runs (pre-rollout)
+# and CI-Gates-triggered `workflow_run` runs, so no listener change was needed.
 on:
   push:
     branches: [main, develop]
-  pull_request:
-    # Issue #4018: ADR-0016 lane-2 docs-only deny list. Determinism is
-    # physics-path code; docs-only PRs skip it.
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-      - '**.md'
-      - '**.mdx'
-      - 'LICENSE'
-      - '**/LICENSE'
-      - '.gitignore'
-      - '.gitattributes'
-      - '.editorconfig'
+  # Phase-gated behind CI Gates (second PR of the two-PR workflow_run
+  # rollout; see ci-gates.yml). PRs no longer trigger this workflow
+  # directly; it runs via workflow_run when CI Gates succeeds for a PR.
+  # The docs-only skip (ADR-0016 lane 2) is preserved via the
+  # docs-only-gate check job below (workflow_run has no path filters).
+  workflow_run:
+    workflows: ["CI Gates"]
+    types: [completed]
   # ADR-0016 lane 3 — nightly authority on develop. The determinism
   # matrix was the only lane-3 gate without a schedule; this nightly run
   # is the authoritative cross-platform floating-point verdict that the
@@ -52,6 +47,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read  # docs-only-gate reads the PR file list via gh
 
 env:
   CARGO_TERM_COLOR: always
@@ -84,12 +80,57 @@ env:
     -C llvm-args=--enable-no-nans-fp-math=false
 
 jobs:
+  # Phase-gate precheck (same pattern as the other CI-Gates-gated heavy
+  # workflows, e.g. fast_math_check.yml). For workflow_run events (PRs via
+  # CI Gates), verifies the upstream succeeded for a PR and checks the
+  # docs-only deny list. For push/schedule/dispatch, always passes.
+  precheck:
+    name: Phase-gate precheck
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.final.outputs.should_run }}
+    steps:
+      - id: upstream
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}
+          UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            if [ "$UPSTREAM_EVENT" != "pull_request" ]; then
+              echo "upstream_ok=false" >> "$GITHUB_OUTPUT"
+              echo "Upstream event is $UPSTREAM_EVENT (not pull_request); skipping"
+              exit 0
+            fi
+            if [ "$UPSTREAM_CONCLUSION" != "success" ]; then
+              echo "upstream_ok=false" >> "$GITHUB_OUTPUT"
+              echo "Upstream conclusion is $UPSTREAM_CONCLUSION (not success); skipping"
+              exit 0
+            fi
+          fi
+          echo "upstream_ok=true" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/docs-only-gate
+        id: docs
+        if: steps.upstream.outputs.upstream_ok == 'true' && github.event_name == 'workflow_run'
+      - id: final
+        run: |
+          if [ "${{ steps.upstream.outputs.upstream_ok }}" != "true" ]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_run" ] && [ "${{ steps.docs.outputs.docs_only }}" = "true" ]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "Docs-only PR; skipping heavy jobs"
+          else
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
   # Issue #4018: PR-triggered runs use ubuntu-only (the full 3-OS matrix
   # is ~30 job-min/PR; ubuntu-only is ~10). Push/schedule/dispatch keep
   # the full matrix as the nightly authority per ADR-0016. workflow_run
   # events from a PR-triggered upstream also use ubuntu-only.
   setup-matrix:
     name: Select determinism matrix
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set.outputs.matrix }}
@@ -117,6 +158,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # workflow_run checks out the default branch by default;
+          # explicitly use the PR head SHA for gated runs.
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'

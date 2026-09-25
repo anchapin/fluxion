@@ -38,10 +38,11 @@
 # ------------------
 # `test` is the ~38-min `cargo nextest` matrix, moved verbatim from
 # `rust-tests.yml`. It is the single heaviest per-PR job; gating it behind
-# phase 1 is the 80/20 of runner contention. Follow-ups: gate
-# `determinism_check.yml` (needs a two-PR `workflow_run` rollout because
-# `fluxion-determinism-gate` observes that workflow by name), then
-# `ashrae_validation.yml` / `performance_dashboard.yml`.
+# phase 1 is the 80/20 of runner contention. `determinism_check.yml` was
+# gated in the follow-up PR (second half of the two-PR `workflow_run`
+# rollout; `fluxion-determinism-gate` observes that workflow by name and
+# already accepted both event kinds). `ashrae_validation.yml` and
+# `performance_dashboard.yml` were gated in #4018 itself.
 #
 # Branch protection contract
 # --------------------------
