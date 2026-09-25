@@ -116,6 +116,7 @@ mod gauge_python_diagnostic;
 mod gauge_solver_scalability;
 mod gauge_transport_bipolar_sign;
 mod gauge_validation_case_900;
+mod gauge_zone_volume_parity;
 mod generate_delta_config;
 mod geometry_bim_gbxml;
 mod hvac_airside_9r4c_integration;
