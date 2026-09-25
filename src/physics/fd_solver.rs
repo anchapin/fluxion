@@ -445,7 +445,7 @@ impl ImplicitFDSolver {
         let n = self.discretization.total_nodes;
         let mut sys = TridiagonalSystem::new(n);
 
-        for i in 0..n {
+        for (i, hist_i) in hist.iter().enumerate() {
             let fo = self.fourier_numbers[i];
 
             // Main diagonal: (1 + 2·w·Fo)
@@ -461,7 +461,7 @@ impl ImplicitFDSolver {
 
             // RHS: scheme history (T^n for backward Euler, BDF2 combination
             // for second-order schemes)
-            sys.rhs[i] = hist[i];
+            sys.rhs[i] = *hist_i;
         }
 
         sys
@@ -473,7 +473,13 @@ impl ImplicitFDSolver {
     /// ```text
     /// -k·dT/dx = h·(T_zone - T_surf) + q_external
     /// ```
-    fn apply_interior_bc(&mut self, sys: &mut TridiagonalSystem, bc: &SurfaceBC, w: f64, hist: &[f64]) {
+    fn apply_interior_bc(
+        &mut self,
+        sys: &mut TridiagonalSystem,
+        bc: &SurfaceBC,
+        w: f64,
+        hist: &[f64],
+    ) {
         let k = self.discretization.conductivity[0];
         let dx = self.discretization.node_volumes[0];
         let fo = self.fourier_numbers[0];
@@ -489,7 +495,13 @@ impl ImplicitFDSolver {
     }
 
     /// Apply exterior surface boundary condition (Robin BC).
-    fn apply_exterior_bc(&mut self, sys: &mut TridiagonalSystem, bc: &SurfaceBC, w: f64, hist: &[f64]) {
+    fn apply_exterior_bc(
+        &mut self,
+        sys: &mut TridiagonalSystem,
+        bc: &SurfaceBC,
+        w: f64,
+        hist: &[f64],
+    ) {
         let n = self.discretization.total_nodes;
         let k = self.discretization.conductivity[n - 1];
         let dx = self.discretization.node_volumes[n - 1];

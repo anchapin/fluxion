@@ -145,7 +145,12 @@ const MODE_AMPLITUDE: f64 = 4.75;
 /// problem: IC = T_MEAN + A·cos(λ_m·x) with λ_m = (2m+1)π/2L (the m-th
 /// Neumann/Dirichlet eigenfunction), constant BCs at T_MEAN, on a grid with
 /// `nodes` nodes.
-fn eigenmode_history(scheme: TimeIntegrationScheme, dt: f64, nodes: usize, mode: usize) -> Vec<f64> {
+fn eigenmode_history(
+    scheme: TimeIntegrationScheme,
+    dt: f64,
+    nodes: usize,
+    mode: usize,
+) -> Vec<f64> {
     let layers = vec![MaterialLayer::new("Concrete", L, K, RHO, CP)];
     let disc = WallDiscretization::from_layers(&layers, nodes);
 
@@ -194,8 +199,20 @@ fn eigenmode_order(
 #[test]
 fn backward_euler_converges_at_first_order_in_time() {
     // 1st-order scheme: halving dt should halve the error (order ≈ 1).
-    let p_coarse = eigenmode_order(TimeIntegrationScheme::BackwardEuler, 1800.0, 900.0, FD_NODES, 0);
-    let p_fine = eigenmode_order(TimeIntegrationScheme::BackwardEuler, 900.0, 450.0, FD_NODES, 0);
+    let p_coarse = eigenmode_order(
+        TimeIntegrationScheme::BackwardEuler,
+        1800.0,
+        900.0,
+        FD_NODES,
+        0,
+    );
+    let p_fine = eigenmode_order(
+        TimeIntegrationScheme::BackwardEuler,
+        900.0,
+        450.0,
+        FD_NODES,
+        0,
+    );
     assert!(
         p_coarse > 0.75 && p_coarse < 1.3,
         "BackwardEuler observed order out of band (coarse): {p_coarse}"
@@ -251,10 +268,7 @@ fn crank_nicolson_oscillates_at_large_fourier_where_bdf2_stays_monotone() {
     // CN must ring: repeated non-monotone increments as lightly-damped high
     // modes flip sign (amplification -> -1 for z >> 2). More than a startup
     // artifact — several reversals across the run.
-    let cn_reversals = cn
-        .windows(2)
-        .filter(|w| w[1] < w[0] - 1e-9)
-        .count();
+    let cn_reversals = cn.windows(2).filter(|w| w[1] < w[0] - 1e-9).count();
     assert!(
         cn_reversals >= 4,
         "CN should show sustained ringing; reversals={cn_reversals}, history: {cn:?}"
@@ -271,7 +285,8 @@ fn crank_nicolson_oscillates_at_large_fourier_where_bdf2_stays_monotone() {
         "BDF2 failed to settle to steady state: {bdf2:?}"
     );
     assert!(
-        bdf2.iter().all(|&t| t >= T_INITIAL - 1e-6 && t <= T_EXTERIOR + 0.6),
+        bdf2.iter()
+            .all(|&t| t >= T_INITIAL - 1e-6 && t <= T_EXTERIOR + 0.6),
         "BDF2 exceeded the physical envelope: {bdf2:?}"
     );
 }
@@ -296,7 +311,10 @@ fn bdf2_keeps_second_order_on_alternating_timesteps() {
 
         let pattern_sum = dt_small + dt_large;
         let patterns = (T_END / pattern_sum) as usize;
-        assert!((3600.0 / pattern_sum).fract() < 1e-9, "pattern must divide 3600 s");
+        assert!(
+            (3600.0 / pattern_sum).fract() < 1e-9,
+            "pattern must divide 3600 s"
+        );
         let mut history = Vec::new();
         let mut next_sample = 3600.0_f64;
         let mut t = 0.0_f64;
@@ -372,6 +390,125 @@ fn fd_timestep_config_is_honored_via_substepping() {
         fine_solver.temperatures.iter().all(|t| t.is_finite()),
         "substepped FD temperatures must stay finite"
     );
+}
+
+#[test]
+fn steady_periodic_1052rp_bdf2_is_tighter_than_backward_euler() {
+    // ASHRAE 1052-RP style steady-periodic check (Issue #3980 acceptance,
+    // minimal form; the full cross-method regression module is #3981):
+    // 24 h sinusoidal sol-air forcing on a 200 mm concrete wall, spun up
+    // past the transient, comparing interior surface flux against a
+    // dt = 5 s semi-discrete reference. The 2nd-order scheme must be
+    // strictly tighter than backward Euler at both swept steps.
+    let layers = vec![MaterialLayer::new("Concrete", L, K, RHO, CP)];
+    let disc = WallDiscretization::from_layers(&layers, FD_NODES);
+    let omega = 2.0 * PI / 86400.0; // 24 h period
+    let t_mean = 20.0_f64;
+    let t_amp = 15.0_f64;
+    let h_int = 8.3;
+    let h_ext = 18.3;
+
+    let run = |scheme: TimeIntegrationScheme, dt: f64| -> Vec<f64> {
+        let mut solver = ImplicitFDSolver::with_scheme(disc.clone(), t_mean, scheme);
+        let spin_up_days = 10;
+        let measure_days = 3;
+        let total_s = (spin_up_days + measure_days) as f64 * 86_400.0;
+        let steps = (total_s / dt) as usize;
+        assert!((3600.0 / dt).fract() < 1e-9, "dt must divide 3600 s");
+        let mut fluxes = Vec::new();
+        let mut next_sample = spin_up_days as f64 * 86_400.0 + 3600.0;
+        for step in 1..=steps {
+            let t_after = step as f64 * dt;
+            let sol_air = t_mean + t_amp * (omega * t_after).sin();
+            let int_bc = SurfaceBC::new_interior(h_int, t_mean);
+            let ext_bc = SurfaceBC::new_exterior(h_ext, sol_air, 0.0);
+            solver.step(dt, &int_bc, &ext_bc);
+            while next_sample <= t_after + 1e-9 {
+                fluxes.push(solver.interior_heat_flux(h_int, t_mean));
+                next_sample += 3600.0;
+            }
+        }
+        fluxes
+    };
+
+    let reference = run(TimeIntegrationScheme::Bdf2, DT_REF);
+    let err = |scheme, dt| {
+        let f = run(scheme, dt);
+        rms_vs(&f, &reference)
+    };
+
+    let e_be_h = err(TimeIntegrationScheme::BackwardEuler, 3600.0);
+    let e_bdf2_h = err(TimeIntegrationScheme::Bdf2, 3600.0);
+    let e_be_q = err(TimeIntegrationScheme::BackwardEuler, 900.0);
+    let e_bdf2_q = err(TimeIntegrationScheme::Bdf2, 900.0);
+
+    assert!(
+        e_bdf2_h < e_be_h,
+        "at dt=3600 Bdf2 ({e_bdf2_h}) must beat BackwardEuler ({e_be_h}) under steady-periodic forcing"
+    );
+    assert!(
+        e_bdf2_q < e_be_q,
+        "at dt=900 Bdf2 ({e_bdf2_q}) must beat BackwardEuler ({e_be_q}) under steady-periodic forcing"
+    );
+    // And the scheme actually converges on the periodic problem: refining
+    // the step shrinks the BDF2 flux error.
+    assert!(
+        e_bdf2_q < e_bdf2_h,
+        "Bdf2 steady-periodic error must shrink with dt: {e_bdf2_h} -> {e_bdf2_q}"
+    );
+}
+
+#[test]
+#[ignore = "dev harness: prints the Issue #3980 accuracy-vs-cost sweep table"]
+fn fd_time_integration_sweep_harness() {
+    // Prints RMS interior-flux error (steady-periodic concrete wall, vs a
+    // dt=5 s Bdf2 reference) and relative wall-clock cost per scheme and
+    // step. Output feeds docs/validation/conduction_time_integration.md.
+    use std::time::Instant;
+    let layers = vec![MaterialLayer::new("Concrete", L, K, RHO, CP)];
+    let disc = WallDiscretization::from_layers(&layers, FD_NODES);
+    let omega = 2.0 * PI / 86400.0;
+    let h_int = 8.3;
+    let h_ext = 18.3;
+
+    let run = |scheme: TimeIntegrationScheme, dt: f64| -> (Vec<f64>, f64) {
+        let mut solver = ImplicitFDSolver::with_scheme(disc.clone(), 20.0, scheme);
+        let spin_up_days = 10;
+        let measure_days = 3;
+        let total_s = (spin_up_days + measure_days) as f64 * 86_400.0;
+        let steps = (total_s / dt) as usize;
+        let mut fluxes = Vec::new();
+        let mut next_sample = spin_up_days as f64 * 86_400.0 + 3600.0;
+        let t0 = Instant::now();
+        for step in 1..=steps {
+            let t_after = step as f64 * dt;
+            let sol_air = 20.0 + 15.0 * (omega * t_after).sin();
+            let int_bc = SurfaceBC::new_interior(h_int, 20.0);
+            let ext_bc = SurfaceBC::new_exterior(h_ext, sol_air, 0.0);
+            solver.step(dt, &int_bc, &ext_bc);
+            while next_sample <= t_after + 1e-9 {
+                fluxes.push(solver.interior_heat_flux(h_int, 20.0));
+                next_sample += 3600.0;
+            }
+        }
+        (fluxes, t0.elapsed().as_secs_f64())
+    };
+
+    let (reference, _) = run(TimeIntegrationScheme::Bdf2, DT_REF);
+    println!("scheme             dt[s]  flux_rms_err[W/m2]  rel_cost");
+    let base = run(TimeIntegrationScheme::BackwardEuler, 3600.0).1;
+    for scheme in [
+        TimeIntegrationScheme::BackwardEuler,
+        TimeIntegrationScheme::CrankNicolson,
+        TimeIntegrationScheme::Bdf2,
+    ] {
+        for dt in [3600.0, 1800.0, 900.0, 600.0, 300.0, 120.0, 60.0] {
+            let (fluxes, secs) = run(scheme, dt);
+            let err = rms_vs(&fluxes, &reference);
+            let rel = secs / base;
+            println!("{scheme:<18?} {dt:>5.0}  {err:>19.6e}  {rel:>8.2}");
+        }
+    }
 }
 
 #[test]
@@ -484,6 +621,9 @@ fn both_schemes_stay_close_to_analytical_series() {
     let reference = semi_discrete_reference();
     let e_be = rms_error(TimeIntegrationScheme::BackwardEuler, 450.0, &reference);
     let e_bdf2 = rms_error(TimeIntegrationScheme::Bdf2, 450.0, &reference);
-    assert!(e_be < 0.2, "BackwardEuler drifted from the reference: {e_be}");
+    assert!(
+        e_be < 0.2,
+        "BackwardEuler drifted from the reference: {e_be}"
+    );
     assert!(e_bdf2 < 0.2, "Bdf2 drifted from the reference: {e_bdf2}");
 }
