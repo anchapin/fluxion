@@ -597,4 +597,68 @@ mod tests {
             );
         }
     }
+
+    /// Issue #3979: conditioned high-mass (900-series) cases must be built
+    /// with NO CTF/FD conduction backend wired. The retired validator path
+    /// layered the CTF wall flux on top of the 9R4C network's own multi-node
+    /// FD conduction as an additive air-node correction in `step_physics_9r4c`,
+    /// double-counting envelope transmission (~2–3× annual energies). The
+    /// 9R4C multi-node path is authoritative for these cases pending the
+    /// fine-grid FD teacher (#3980); CTF remains a 5R1C cross-check only.
+    #[test]
+    fn test_case_900_model_has_no_conduction_backend_wired() {
+        let validator = ASHRAE140Validator::new();
+        let spec = ASHRAE140Case::Case900.spec();
+        let model = validator.build_case_model(&spec);
+        let backend = &model.0.conduction.backend;
+        assert!(
+            !backend.ctf_enabled,
+            "Case 900 (conditioned high-mass) must not wire the CTF backend (Issue #3979)"
+        );
+        assert!(
+            backend.ctf_solvers.is_empty(),
+            "Case 900 must not construct CTF solvers (Issue #3979)"
+        );
+        assert!(
+            !backend.fd_enabled,
+            "Case 900 must not wire the FD backend either — both enter 9R4C as additive corrections (Issue #3979)"
+        );
+        assert!(
+            backend.fd_solvers.is_empty(),
+            "Case 900 must not construct FD solvers (Issue #3979)"
+        );
+    }
+
+    /// Issue #3979 acceptance criterion: Case 900 annual heating through the
+    /// validator's `simulate_case` pipeline — the path that feeds
+    /// `validate_analytical_engine` → ASHRAE140_RESULTS.md, not the
+    /// diagnostics-collector variant or the direct model construction the
+    /// integration tests use — recovers from the CTF-coupling catastrophe
+    /// (5.05 MWh, +215% over reference mid) to ~1.165 MWh once conditioned
+    /// high-mass cases run the 9R4C FD multi-node path backend-free.
+    ///
+    /// The assertion uses the repo's documented annual-energy gate — the
+    /// published range [1.17, 2.04] MWh widened ±15% ([0.995, 2.346] MWh),
+    /// the same convention as `benchmark.rs`'s widened bands and the strict
+    /// energy gate. The honest post-bypass value (1.162–1.165 MWh on both
+    /// validator paths) sits ~0.5% below the RAW published lower edge; that
+    /// residual under-prediction is the pre-existing LIMIT-05-family regime
+    /// (900-series under-prediction, #2453) and is root-caused under #3980.
+    /// No model constants were tuned (RULES.md).
+    ///
+    /// Slow: runs the 8760-step annual sim.
+    #[test]
+    fn test_case_900_validator_pipeline_heating_in_widened_band() {
+        let validator = ASHRAE140Validator::new();
+        // Zero weather-import edges: reuse the module's loader (cycle guard).
+        let weather = validator.load_denver_epw();
+        let spec = ASHRAE140Case::Case900.spec();
+        let results = validator.simulate_case(&spec, &weather);
+        // Published [1.17, 2.04] MWh widened ±15% (repo annual-energy gate).
+        assert!(
+            (0.9945..=2.346).contains(&results.annual_heating_mwh),
+            "Case 900 annual heating {:.4} MWh outside widened gate [0.9945, 2.346] MWh (Issue #3979)",
+            results.annual_heating_mwh
+        );
+    }
 }

@@ -3,7 +3,7 @@ use crate::physics::ctf_coefficients::CTFMaterial;
 use crate::sim::engine::{IdealHVACController, ThermalModel};
 use crate::sim::thermal_selector::ThermalSelector;
 use crate::sim::warmup::{run_warmup, WarmupConfig};
-use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec, ConstructionType};
+use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec};
 use crate::validation::benchmark;
 use crate::validation::calibration_ledger;
 use crate::validation::diagnostic::{
@@ -1517,102 +1517,42 @@ impl ASHRAE140Validator {
         )
     }
 
-    /// Enable advanced solver (CTF or FD) for high-mass cases based on construction type.
+    /// Build the `ThermalModel` for a case spec exactly as `simulate_case`
+    /// does, without running the annual simulation. Extracted as the testable
+    /// seam for conduction-backend wiring assertions (Issue #3979).
     ///
-    /// This method implements automatic solver selection with CTF→FD fallback:
-    /// - For high-mass constructions (τ ≥ 2 hours): try CTF first, fallback to FD if coefficients invalid
-    /// - For low-mass constructions: use default 5R1C (no change)
+    /// Issue #3979: conditioned high-mass (900-series) cases run through the
+    /// 9R4C FD multi-node path with NO CTF/FD backend wired. The retired
+    /// `enable_advanced_solver` mutator layered the CTF wall flux on top of
+    /// the 9R4C network's own conduction as an additive air-node correction
+    /// (`step_physics_9r4c`), double-counting envelope transmission and
+    /// blowing 900-series energies to ~2–3× reference. CTF remains a
+    /// single-zone 5R1C cross-check per ADR-0017; the high-mass backend
+    /// story is the fine-grid FD teacher (#3980). See
+    /// `docs/investigations/issue-3979-ctf-zone-coupling.md`.
     ///
-    /// Phase 29: This is the key integration for CTF/FD solvers into the validation path.
-    ///
-    /// Issue #1268: Case-ID-derived corrections are applied only in `Informed` mode.
-    /// In `Blind` mode the solver is selected purely from `construction_type`, with
-    /// no case-specific tuning.
-    ///
-    /// Issue #1456: Removed the `configure_6r2c_model` override for Case 960.
-    /// The SESSION 23/32 override forced the 6R2C model on top of the default 5R1C/9R4C
-    /// selection from `from_spec`, pushing the back-zone to ~16°C (below setpoint) and
-    /// producing 264.5% annual heating over-prediction. The default 5R1C/9R4C path now
-    /// yields results within the ASHRAE 140 ±15% energy band for Case 960.
-    /// **Issue #3287:** The `enable_ctf_with_fd_fallback` post-construction
-    /// mutator is deprecated in favour of the selector-based constructor
-    /// (`ThermalModel::from_spec_with_selector` with `conduction_solver =
-    /// ConductionSolverKind::Ctf`/`Fd`). The dispatch wiring for non-default
-    /// `conduction_solver` is tracked in #3280 and is not yet complete, so this
-    /// validator's legacy path keeps calling the deprecated mutator. The
-    /// `#[allow(deprecated)]` is the documented exception per the
-    /// post-construction-orchestrator pattern.
-    #[allow(deprecated)]
-    fn enable_advanced_solver(&self, model: &mut ThermalModel<VectorField>, spec: &CaseSpec) {
-        // Only enable advanced solver for high-mass construction cases
-        if spec.construction_type == ConstructionType::HighMass {
-            // Skip CTF for free-floating cases: the explicit coupling feedback loop
-            // (q_ctf depends on T_zone, T_zone depends on q_ctf) diverges without the
-            // damping that HVAC provides, producing inf temperatures in 900FF/950FF.
-            if spec.is_free_floating() {
-                return;
-            }
-            // Convert wall construction layers to FD materials (compatible with both CTFand FD)
-            let fd_layers: Vec<crate::physics::fd_discretization::MaterialLayer> = spec
-                .construction
-                .wall
-                .layers
-                .iter()
-                .map(|layer| {
-                    crate::physics::fd_discretization::MaterialLayer::new(
-                        &layer.name,
-                        layer.thickness,
-                        layer.conductivity,
-                        layer.density,
-                        layer.specific_heat,
-                    )
-                })
-                .collect();
+    /// Issue #2363 first bypassed CTF for Case 950 only; this generalizes the
+    /// bypass to every case (free-floating cases never reached the mutator —
+    /// the explicit CTF↔zone coupling loop diverges without HVAC damping).
+    fn build_case_model(&self, spec: &CaseSpec) -> ThermalModel<VectorField> {
+        ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
+            .expect("default selector must initialize")
+    }
 
-            // Calculate wall thermal properties for logging
-            let total_resistance: f64 =
-                fd_layers.iter().map(|l| l.thickness / l.conductivity).sum();
-            let total_capacitance: f64 = fd_layers
-                .iter()
-                .map(|l| l.density * l.specific_heat * l.thickness)
-                .sum();
-            let time_constant = total_resistance * total_capacitance; // seconds
-            let tau_hours = time_constant / 3600.0;
-
-            // Enable CTF with automatic FD fallback
-            // Returns true if CTF was enabled, false if fell back to FD
-            let used_ctf = model.enable_ctf_with_fd_fallback(&fd_layers, 3600.0, 50, 5);
-
-            let u_value = 1.0
-                / fd_layers
-                    .iter()
-                    .map(|l| l.thickness / l.conductivity)
-                    .sum::<f64>();
-            let solver_name = if used_ctf { "CTF" } else { "FD (fallback)" };
-
-            tracing::info!(
-                "[Solver] Case {}: Enabled {} solver for high-mass construction ({} layers, U={:.3} W/m²K, τ={:.1}h)",
-                spec.case_id,
-                solver_name,
-                fd_layers.len(),
-                u_value,
-                tau_hours
-            );
-        }
+    /// Load the Denver EPW shared by every `simulate_case`-family entry
+    /// point. Lives here (not in `tests.rs`) so the module keeps exactly its
+    /// existing weather-import set — the sim↔validation cycle guard
+    /// (`scripts/check_ashrae_cases_cycle.py`, Issue #1441) counts each
+    /// `use crate::weather...` edge in `src/validation/**`, and test-local
+    /// imports would grow the pinned baseline (Issue #3979 follow-up).
+    #[cfg(test)]
+    fn load_denver_epw(&self) -> EpwWeatherSource {
+        EpwWeatherSource::from_file("assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw")
+            .expect("Failed to load EPW weather data")
     }
 
     fn simulate_case(&self, spec: &CaseSpec, weather: &EpwWeatherSource) -> CaseResults {
-        let mut model =
-            ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
-                .expect("default selector must initialize");
-
-        // Phase 29: Enable advanced solver (CTF/FD) for high-mass cases
-        // This implements automatic solver selection with CTF→FD fallback
-        // Issue #2363: Skip for Case 950 - CTF may cause massive energy over-prediction
-        // The blind path (which produces correct results) doesn't enable CTF
-        if spec.case_id != "950" {
-            self.enable_advanced_solver(&mut model, spec);
-        }
+        let mut model = self.build_case_model(spec);
 
         const STEPS: usize = 8760;
         let num_zones = model.hvac.num_zones;

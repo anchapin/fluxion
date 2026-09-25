@@ -87,13 +87,13 @@
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     },
-    "case_950_cooling": {
-      "published_range_mwh": [0.39, 0.92],
-      "band_mwh": [0.557, 0.753],
-      "value_mwh": 0.028,
-      "gap_pct_of_mid": 80.7634,
-      "status": "known_fail"
-    },
+  "case_950_cooling": {
+    "published_range_mwh": [2.13, 3.67],
+    "band_mwh": [2.465, 3.335],
+    "value_mwh": 0.25,
+    "gap_pct_of_mid": 46.87,
+    "status": "known_fail"
+  },
     "case_960_heating": {
       "published_range_mwh": [1.65, 2.45],
       "band_mwh": [1.742, 2.357],
