@@ -1,0 +1,79 @@
+name: Docs-only gate
+description: |
+  Determines whether a PR touches only docs/metadata files (ADR-0016
+  lane-2 deny list). Used by phase-gated heavy workflows (Issue #4018)
+  to preserve docs-only skip semantics after moving from `pull_request`
+  triggers (which support `paths-ignore`) to `workflow_run` triggers
+  (which do not).
+
+  For `workflow_run` events, the PR number is read from the upstream
+  run's `pull_requests[0].number`. For `pull_request` events, it uses
+  the current PR number. For other events (push/schedule/dispatch),
+  always outputs `docs_only=false`.
+
+inputs:
+  pr-number:
+    description: 'Override PR number (defaults to auto-detect)'
+    required: false
+    default: ''
+
+outputs:
+  docs_only:
+    description: "'true' if the PR is docs-only, else 'false'"
+    value: ${{ steps.check.outputs.docs_only }}
+
+runs:
+  using: composite
+  steps:
+    - id: check
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        INPUT_PR_NUMBER: ${{ inputs.pr-number }}
+        EVENT_NAME: ${{ github.event_name }}
+        WORKFLOW_RUN_PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: |
+        set -euo pipefail
+        
+        # Determine PR number
+        PR_NUM="${INPUT_PR_NUMBER:-}"
+        if [ -z "$PR_NUM" ]; then
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            PR_NUM="${WORKFLOW_RUN_PR:-}"
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
+            PR_NUM="${PR_NUMBER:-}"
+          fi
+        fi
+        
+        # Non-PR events: never docs-only
+        if [ -z "$PR_NUM" ]; then
+          echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          echo "No PR number (event: $EVENT_NAME); docs_only=false"
+          exit 0
+        fi
+        
+        echo "Checking files for PR #$PR_NUM"
+        FILES=$(gh pr view "$PR_NUM" --json files --jq '.files[].path' || echo "")
+        
+        if [ -z "$FILES" ]; then
+          echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          echo "Could not list files; docs_only=false (fail-safe)"
+          exit 0
+        fi
+        
+        # ADR-0016 lane-2 deny list (mirrors paths-ignore in workflows)
+        DOCS_ONLY=true
+        while IFS= read -r f; do
+          case "$f" in
+            docs/*|*.md|*.mdx|LICENSE|*/LICENSE|.gitignore|.gitattributes|.editorconfig)
+              ;;
+            *)
+              DOCS_ONLY=false
+              break
+              ;;
+          esac
+        done <<< "$FILES"
+        
+        echo "docs_only=$DOCS_ONLY" >> "$GITHUB_OUTPUT"
+        echo "docs_only=$DOCS_ONLY"

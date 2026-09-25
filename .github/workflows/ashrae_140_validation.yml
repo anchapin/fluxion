@@ -3,8 +3,10 @@ name: ASHRAE 140 Validation
 on:
   push:
     branches: [ main, develop ]
-  pull_request:
-    branches: [ main, develop ]
+  # Issue #4018: phase-gated behind CI Gates.
+  workflow_run:
+    workflows: ["CI Gates"]
+    types: [completed]
   schedule:
     # Run nightly validation at 2 AM UTC
     - cron: '0 2 * * *'
@@ -29,12 +31,36 @@ permissions:
   contents: read
 
 jobs:
+  precheck:
+    name: Phase-gate precheck
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.final.outputs.should_run }}
+    steps:
+      - id: final
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}
+          UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            if [ "$UPSTREAM_EVENT" != "pull_request" ] || [ "$UPSTREAM_CONCLUSION" != "success" ]; then
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "should_run=true" >> "$GITHUB_OUTPUT"
   validate:
+    # Issue #4018: phase-gated behind CI Gates.
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Install system dependencies
         run: |
@@ -50,9 +76,22 @@ jobs:
           command: rustup toolchain install stable --profile default
 
       - name: Cache dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
         with:
-          path: |
+          workspaces: |
+            .
+            fluxion-core -> target
+            fluxion-city -> target
+            fluxion-fluid -> target
+            fluxion-grid -> target
+            fluxion-behavior -> target
+            fluxion-mcp -> target
+            fluxion-wasm -> target
+            crates/fluxion-toon -> target
+            crates/fluxion-twin -> target
+            crates/fluxion-evaluator -> target
+            fluxion-cfd -> target
+            fluxion-tauri/src-tauri -> target          path: |
             ~/.cargo/registry
             ~/.cargo/git
             target

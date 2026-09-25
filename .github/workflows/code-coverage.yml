@@ -28,8 +28,11 @@
 name: Code Coverage
 
 on:
-  pull_request:
-    # Issue #3662: skip the `Code Coverage Gate (Issue #1932)` workflow on
+  # Issue #4018: phase-gated behind CI Gates. Docs-only skip (Issue
+  # #3662) preserved via docs-only-gate check job.
+  workflow_run:
+    workflows: ["CI Gates"]
+    types: [completed]
     # docs-only PRs so the 1%-relative ratchet cannot fire on coverage
     # measurement noise (e.g. PR #3660 — `+24 / -0` lines in
     # CONTRIBUTING.md and AGENTS.md, zero code change, gate tripped at
@@ -82,11 +85,50 @@ permissions:
   contents: read
 
 jobs:
+  precheck:
+    name: Phase-gate precheck
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.final.outputs.should_run }}
+    steps:
+      - id: upstream
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}
+          UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            if [ "$UPSTREAM_EVENT" != "pull_request" ]; then
+              echo "upstream_ok=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$UPSTREAM_CONCLUSION" != "success" ]; then
+              echo "upstream_ok=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "upstream_ok=true" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/docs-only-gate
+        id: docs
+        if: steps.upstream.outputs.upstream_ok == 'true' && github.event_name == 'workflow_run'
+      - id: final
+        run: |
+          if [ "${{ steps.upstream.outputs.upstream_ok }}" != "true" ]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_run" ] && [ "${{ steps.docs.outputs.docs_only }}" = "true" ]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
   coverage:
     name: "Code Coverage Gate (Issue #1932)"
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - uses: ./.github/actions/setup-rust-env
         with:
           # llvm-cov instruments at the LLVM level and is fully compatible
