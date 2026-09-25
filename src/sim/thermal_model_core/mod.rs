@@ -2629,31 +2629,35 @@ impl ThermalModel<VectorField> {
             model.conduction.h_tr_iz_rad =
                 VectorField::from_scalar(radiative_conductance, num_zones);
 
-            // Update zone areas for multi-zone case
-            // Zone 0: back-zone (8x6m = 48 m²), Zone 1: sunspace (8x2m = 16 m²)
-            if spec.geometry.len() >= 2 {
-                let mut zone_area_vec = Vec::with_capacity(num_zones);
-                let mut zone_volume_vec = Vec::with_capacity(num_zones);
-                for zone_idx in 0..num_zones {
-                    if zone_idx < spec.geometry.len() {
-                        zone_area_vec.push(spec.geometry[zone_idx].floor_area());
-                        zone_volume_vec.push(spec.geometry[zone_idx].volume());
-                    } else {
-                        // Fallback to first zone's area if geometry not specified
-                        zone_area_vec.push(spec.geometry[0].floor_area());
-                        zone_volume_vec.push(spec.geometry[0].volume());
-                    }
-                }
-                model.setpoints.zone_area = VectorField::new(zone_area_vec);
-                model.setpoints.zone_volume = VectorField::new(zone_volume_vec);
-
-                // Calculate common wall area for multi-zone buildings
-                model.setpoints.common_wall_area = spec.common_walls.iter().map(|w| w.area).sum();
-            }
-
             // Set surface emissivity for inter-zone radiative heat transfer
             // Default interior surface emissivity = 0.9
             model.conduction.surface_emissivity = VectorField::from_scalar(0.9, num_zones);
+        }
+
+        // Populate zone areas/volumes from the case geometry whenever it is
+        // provided — for single- and multi-zone cases alike. The generic
+        // `new()` defaults (20 m² × 3.0 m = 60 m³) previously leaked into
+        // every single-zone ASHRAE case (real volume 129.6 m³), mis-scaling
+        // volume-normalised physics (ventilation ACH, infiltration) by the
+        // 129.6/60 = 2.16 ratio (Issue #3962).
+        if !spec.geometry.is_empty() {
+            let mut zone_area_vec = Vec::with_capacity(num_zones);
+            let mut zone_volume_vec = Vec::with_capacity(num_zones);
+            for zone_idx in 0..num_zones {
+                if zone_idx < spec.geometry.len() {
+                    zone_area_vec.push(spec.geometry[zone_idx].floor_area());
+                    zone_volume_vec.push(spec.geometry[zone_idx].volume());
+                } else {
+                    // Fallback to first zone's area if geometry not specified
+                    zone_area_vec.push(spec.geometry[0].floor_area());
+                    zone_volume_vec.push(spec.geometry[0].volume());
+                }
+            }
+            model.setpoints.zone_area = VectorField::new(zone_area_vec);
+            model.setpoints.zone_volume = VectorField::new(zone_volume_vec);
+
+            // Calculate common wall area for multi-zone buildings
+            model.setpoints.common_wall_area = spec.common_walls.iter().map(|w| w.area).sum();
         }
 
         // Set the ASHRAE 140 case identifier for special handling

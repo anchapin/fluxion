@@ -590,6 +590,16 @@ impl GaugeZoneSolver {
         }
     }
 
+    /// Read-only accessor for the derived zone volume (m³).
+    ///
+    /// The dispatcher derives ventilation ACH from `setpoints.zone_volume`
+    /// while `h_vent` is computed against `self.zone_volume` (= floor_area ×
+    /// ceiling_height); a mismatch between the two scales `h_vent` by their
+    /// ratio (Issue #3962 diagnostics).
+    pub fn zone_volume_m3(&self) -> f64 {
+        self.zone_volume
+    }
+
     /// Add a surface with its gauge solver and geometric properties.
     pub fn add_surface(
         &mut self,

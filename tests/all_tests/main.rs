@@ -113,6 +113,7 @@ mod fmi_multizone_do_step_regression;
 mod free_floating_temperature_validation;
 mod gauge_conduction_backend_clone;
 mod gauge_python_diagnostic;
+mod gauge_zone_volume_parity;
 mod gauge_solver_scalability;
 mod gauge_transport_bipolar_sign;
 mod gauge_validation_case_900;
