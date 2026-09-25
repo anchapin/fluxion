@@ -343,6 +343,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             return None;
         }
 
+        // Issue #3918 Fix B: compute the §C.3 load coefficient BEFORE the
+        // scoped gauge borrow below — `compute_hvac_coefficient` immutably
+        // borrows `self`, which conflicts with the mutable gauge borrow.
+        let h_coeff = self.compute_hvac_coefficient(0);
         // Run the step inside a scoped mutable borrow so the result and
         // the post-step T_air can both be captured without re-borrowing.
         let (energy_kwh, new_t_air) = {
@@ -353,9 +357,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .gauge_zone_solver
                 .as_mut()
                 .expect("checked Some above");
-            // Issue #3904: HVAC mode detection.
-            // Get current zone temperature to determine heating/cooling mode.
-            let t_air_current = gauge.T_air().to_value();
             let h_sp: f64 = inputs
                 .heating_setpoints
                 .first()
@@ -366,16 +367,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .first()
                 .copied()
                 .unwrap_or(inputs.default_cooling_sp);
-            // Issue #3904: Determine HVAC mode based on zone temperature vs setpoints.
-            #[allow(unused_imports)]
-            use crate::sim::hvac::HVACMode as EquipmentHVACMode;
-            let hvac_mode = if t_air_current <= h_sp {
-                EquipmentHVACMode::Heating
-            } else if t_air_current >= c_sp {
-                EquipmentHVACMode::Cooling
-            } else {
-                EquipmentHVACMode::Off
-            };
             // Issue #3918 Fix B — ISO 13790 §C.3 load form. The previous
             // scheme forced T_air to the setpoint BEFORE/AFTER the gauge
             // step and read the HVAC load from the gauge's −net_power
@@ -429,7 +420,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // §C.3 demand from the FREE-FLOAT final temperature (mirrors
                 // `compute_zone_hvac_load`: heating at/below h_sp, cooling
                 // at/above c_sp, deadband otherwise).
-                let h_coeff = self.0.compute_hvac_coefficient(0);
                 let demand = if t_air_free_final <= h_sp {
                     h_coeff * (h_sp - t_air_free_final)
                 } else if t_air_free_final >= c_sp {
