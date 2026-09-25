@@ -13,7 +13,8 @@ on:
       - npm/**
       - src/python/**
       - src/napi/**
-      - src/sim/thermal_model.rs
+      # Issue #4003: src/sim/thermal_model.rs removed — the DAE-teacher
+      # work touches it constantly and must not trip full NAPI builds.
       - .github/workflows/node-bindings.yml
   workflow_dispatch:
 
