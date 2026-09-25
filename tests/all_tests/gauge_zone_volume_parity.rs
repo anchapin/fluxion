@@ -35,9 +35,11 @@ const CASES: [ASHRAE140Case; 10] = [
 fn gauge_zone_volume_parity_all_ashrae_cases() {
     for case in CASES {
         let spec = case.spec();
-        let model =
-            ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
-                .unwrap_or_else(|e| panic!("{case:?}: default (Gauge) selector must initialize: {e:?}"));
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .unwrap_or_else(|e| panic!("{case:?}: default (Gauge) selector must initialize: {e:?}"));
 
         let setpoint_volumes = model.0.setpoints.zone_volume.as_ref().to_vec();
         assert!(
