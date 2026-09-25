@@ -681,5 +681,5 @@ assert_eq!(vent.get_ach(12, 20.0, 22.0, 2.0, 100.0), 0.5);
 - [`src/sim/ventilation.rs`](../../src/sim/ventilation.rs) — `VentilationSchedule` trait and ACH utilities
 - [`src/sim/thermal_model/mod.rs`](../../src/sim/thermal_model/mod.rs) — `ThermalModelTrait`, `HybridThermalModel`, and `HybridRouting` (post-Issue #3789 directory layout; pre-#3789 the entire surface lived in the single-file `src/sim/thermal_model.rs`)
 - [`src/physics/five_r1c_solver.rs`](../../src/physics/five_r1c_solver.rs) — Reference `HeatConductionSolver` implementation
-- [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) — Architecture overview and swap-point contracts
+- [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) — Architecture overview and swap-point contracts
 - [`docs/ASHRAE140_RESULTS.md`](../ASHRAE140_RESULTS.md) — Validation methodology and reference values

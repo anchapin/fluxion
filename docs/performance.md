@@ -3,7 +3,7 @@
 Performance benchmarks and optimization guide for the Fluxion BEM engine.
 Performance engineers and benchmark authors — measure and improve simulation throughput.
 Covers: criterion.rs benchmarks, throughput targets (10,000+ configs/sec), memory budget (<10MB).
-Companion to documentation/performance_guide.md (user-facing CLI guide) and validation_report.md.
+Companion to performance_guide.md (user-facing CLI guide) and validation_report.md.
 Status: Active — performance targets enforced by CI gates on latency and memory.
 Action: Run `cargo bench --bench performance` to verify no regression before submitting optimizations.
 

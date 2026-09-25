@@ -12,7 +12,7 @@ The Code Coverage Gate (Issue #1932) replaces the previous tarpaulin-based
 informational job with a cargo-llvm-cov pipeline that:
 
 1. **Collects** line + branch coverage for the library crate (`--lib
-   --features wiring-tracing`), matching the `docs/CONTRIBUTING.md`
+   --features wiring-tracing`), matching the `../CONTRIBUTING.md`
    "Coverage Measurement" workflow.
 2. **Buckets** the results into the four critical physics paths defined
    in `ARCHITECTURE.md`:

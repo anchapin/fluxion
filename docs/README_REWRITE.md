@@ -127,10 +127,10 @@ fluxion serve   # REST API server
 |----------|-------------|
 | [`docs/QUICKSTART.md`](docs/QUICKSTART.md) | Installation, first simulation, config format |
 | [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md) | Full Python API (`Model`, `BatchOracle`, bindings) |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Engine internals: CTF solver, thermal network, surrogate layer |
+| [`../ARCHITECTURE.md`](../ARCHITECTURE.md) | Engine internals: CTF solver, thermal network, surrogate layer |
 | [`docs/SCHEMA.md`](docs/SCHEMA.md) | Config JSON schema and field definitions |
 | [`docs/EXAMPLES.md`](docs/EXAMPLES.md) | Worked examples: optimization loops, multi-zone, surrogates |
-| [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | How to contribute (Rust dev setup, PR process) |
+| [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | How to contribute (Rust dev setup, PR process) |
 | [`docs/compliance/`](docs/compliance/) | ASHRAE 140 compliance docs: SQT report, deviations register, standards roadmap |
 | [`docs/ASHRAE140_VALIDATION.md`](docs/ASHRAE140_VALIDATION.md) | ASHRAE 140 validation methodology and current results |
 | [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) | Current limitations and workarounds |
@@ -192,7 +192,7 @@ Full results: [`docs/archive/ASHRAE140_RESULTS_v0.8.0.md`](docs/archive/ASHRAE14
 
 Fluxion uses an **ISO 13790 5R1C thermal network** as its physics core. The surrogate layer intercepts expensive CFD/radiation calls and replaces them with trained ONNX neural networks. The `BatchOracle` evaluates populations in parallel using `rayon` for throughput-oriented workloads.
 
-→ Details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+→ Details: [`../ARCHITECTURE.md`](../ARCHITECTURE.md)
 
 ---
 
@@ -233,13 +233,13 @@ cargo build && cargo test
 maturin develop
 ```
 
-→ Full guide: [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md)
+→ Full guide: [`../CONTRIBUTING.md`](../CONTRIBUTING.md)
 
 ---
 
 ## Release Process
 
-See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md#release-process) for the full release checklist (version bump, validation, wheel build, publication to crates.io / PyPI, GitHub release).
+See [`../CONTRIBUTING.md`](../CONTRIBUTING.md#release-process) for the full release checklist (version bump, validation, wheel build, publication to crates.io / PyPI, GitHub release).
 
 ---
 

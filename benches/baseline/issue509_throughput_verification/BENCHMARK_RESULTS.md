@@ -1,7 +1,7 @@
 # Issue #509: Benchmark & Throughput Verification Report
 
 **Issue:** QG-02: Normalize benchmark and throughput claims
-**Repository Focus:** README.md, docs/ARCHITECTURE.md, throughput tests
+**Repository Focus:** README.md, ../../../ARCHITECTURE.md, throughput tests
 **Status:** Work in progress (benchmark infrastructure fixed, docs partially updated)
 
 ---
@@ -29,7 +29,7 @@ After investigation, several inconsistencies were found and corrected.
 | README.md | 10,000+ configurations/sec | ~900 configs/sec (release) | **Fixed** |
 | README.md | 1,237 configs/sec | ~900 configs/sec (release) | **Fixed** |
 | SCORECARD.md | 1237 configs/sec | ~900 configs/sec (release) | **Pending** |
-| docs/ARCHITECTURE.md | 10,000+ building design configs/second | ~900 configs/sec | **Pending** |
+| ../../../ARCHITECTURE.md | 10,000+ building design configs/second | ~900 configs/sec | **Pending** |
 | docs/API_REFERENCE.md | ~2,575 configs/sec analytical | ~900 configs/sec release | **Pending** |
 
 ### 3. Benchmark Results (Release Mode, 1000 configs)
@@ -67,7 +67,7 @@ A new throughput benchmark test was created at `tests/throughput_benchmark.rs` t
 ## Remaining Work
 
 1. **Update SCORECARD.md** - ✅ Replaced 1237 configs/sec with measured ~900 configs/sec (DONE)
-2. **Update docs/ARCHITECTURE.md** - ✅ Fixed "10,000+" claim to match reality (DONE)
+2. **Update ../../../ARCHITECTURE.md** - ✅ Fixed "10,000+" claim to match reality (DONE)
 3. **Update docs/API_REFERENCE.md** - ✅ Fixed "~2,575" claim to match reality (DONE)
 4. **Update scripts/generate_scorecard.py** - ✅ Updated to measure actual benchmark instead of hardcoding (DONE)
 5. **Update CHANGELOG.md** - Historical version entries contain legacy throughput numbers (e.g., v0.7 ~2,575). These are historical records of past measurements and may be retained as-is, OR a note can be added clarifying actual current performance
@@ -103,7 +103,7 @@ cargo bench
 - [x] Benchmarks actually run (not 0 tests)
 - [x] README.md throughput claims match benchmark
 - [x] README.md v0.8.0 highlights updated
-- [x] docs/ARCHITECTURE.md throughput claims updated
+- [x] ../../../ARCHITECTURE.md throughput claims updated
 - [x] docs/API_REFERENCE.md throughput claims updated
 - [x] SCORECARD.md throughput number corrected
 - [x] scripts/generate_scorecard.py updated to measure instead of hardcode

@@ -249,7 +249,7 @@ It matches `fluxion::api::schema::SimulationSchemaV1` byte-for-byte
 - [`docs/REST_API.md`](REST_API.md) — every endpoint with curl examples
 - [`docs/API_REFERENCE.md`](API_REFERENCE.md) — full API documentation
 - [`docs/EXAMPLES.md`](EXAMPLES.md) — more usage examples
-- [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) — module boundaries
+- [`../ARCHITECTURE.md`](../ARCHITECTURE.md) — module boundaries
 - [`docs/ci/local-validation.md`](ci/local-validation.md) — pre-push `act` suite via `scripts/ci-local.sh` + `.actrc` (Issue #3577)
 - [`examples/`](../examples/) — runnable scripts
 

@@ -107,6 +107,6 @@ on CI environments.
   reference (curl examples for every endpoint, OpenAPI 3.1 contract).
 - See [`../docs/QUICKSTART.md`](../docs/QUICKSTART.md) for the
   five-minute on-ramp.
-- See [`../docs/ARCHITECTURE.md`](../ARCHITECTURE.md) for the
+- See [`../../ARCHITECTURE.md`](../ARCHITECTURE.md) for the
   module-boundary overview and `src/lib.rs:1727` for the
   PyO3 module entry point.

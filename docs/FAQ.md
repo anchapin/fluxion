@@ -201,7 +201,7 @@ non-matrix required check that branch protection references. The full
 list of required checks lives in
 [`release_gates.yaml`](../release_gates.yaml) → `ci.required_checks`.
 
-**Source:** [`docs/CONTRIBUTING.md` §Cross-Platform Determinism CI
+**Source:** [`../CONTRIBUTING.md` §Cross-Platform Determinism CI
 Gate](CONTRIBUTING.md), [`AGENTS.md` §CI Gates](../AGENTS.md).
 
 ## Q9. Why are my `peak_cooling_load` results for the 9xx series off?
