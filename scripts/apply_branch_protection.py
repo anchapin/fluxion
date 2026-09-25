@@ -44,6 +44,12 @@ Usage::
     python3 scripts/apply_branch_protection.py --branch develop --write \\
         --required-approving-review-count 1
 
+    # ``strict`` ("require branches to be up to date") defaults to the
+    # ``release_gates.yaml::ci.branch_protection.strict`` canonical;
+    # --strict / --no-strict override it for one run.
+    python3 scripts/apply_branch_protection.py --branch develop --write \\
+        --no-strict
+
 Exit codes::
 
     0 — dry-run: diff computed and printed (or no diff, "already in sync").
@@ -106,6 +112,7 @@ def resolve_default_repo(env: dict[str, str] | None = None) -> str:
 
 try:
     from scripts.check_required_checks_sync import (  # type: ignore[import-not-found]
+        get_branch_protection_strict,
         get_required_checks,
         get_workflow_index,
         get_workflow_only_checks,
@@ -114,6 +121,7 @@ try:
 except ImportError:  # pragma: no cover - allow direct invocation from repo root
     sys.path.insert(0, str(REPO_ROOT))
     from scripts.check_required_checks_sync import (  # type: ignore[no-redef]
+        get_branch_protection_strict,
         get_required_checks,
         get_workflow_index,
         get_workflow_only_checks,
@@ -382,6 +390,26 @@ def main() -> int:
             "pipeline defaults to 0."
         ),
     )
+    strict_group = parser.add_mutually_exclusive_group()
+    strict_group.add_argument(
+        "--strict",
+        dest="strict",
+        action="store_true",
+        default=None,
+        help=(
+            'force required_status_checks.strict=true ("require branches '
+            'to be up to date"). Overrides release_gates.yaml.'
+        ),
+    )
+    strict_group.add_argument(
+        "--no-strict",
+        dest="strict",
+        action="store_false",
+        help=(
+            'force required_status_checks.strict=false. Overrides '
+            "release_gates.yaml."
+        ),
+    )
     parser.add_argument(
         "--json",
         action="store_true",
@@ -413,8 +441,16 @@ def main() -> int:
     required_checks = get_workflow_only_checks(gates)
     _ = get_required_checks(gates)  # validate the full list exists
     _ = get_workflow_index(gates)  # validate workflow_index exists
+    # --strict/--no-strict wins when passed; otherwise the YAML canonical
+    # (ci.branch_protection.strict, True when the key is absent).
+    strict = (
+        args.strict
+        if args.strict is not None
+        else get_branch_protection_strict(gates)
+    )
     payload = build_put_payload(
         required_checks,
+        strict=strict,
         required_approving_review_count=args.required_approving_review_count,
     )
 

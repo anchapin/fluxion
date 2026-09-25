@@ -1,6 +1,6 @@
 # Required Checks Sync (Live Mode) — Issue #3123
 > **Summary 1/7:** `scripts/check_required_checks_sync.py` ships with a static-only mode (PR-blocking CI) and a live-mode hook (`FLUXION_CHECK_LIVE_PROTECTION=1`) added in #3116 that `gh api`-queries the live `develop` branch protection.
-> **Summary 2/7:** #3123 wires that hook into a scheduled workflow (`.github/workflows/required-checks-sync-cron.yml`) so a "YAML says 13 required checks, develop actually has 0" gap cannot recur silently between PRs.
+> **Summary 2/7:** #3123 wires that hook into a scheduled workflow (`.github/workflows/required-checks-sync-cron.yml`) so a "YAML says 9 required checks, develop actually has 0" gap cannot recur silently between PRs.
 > **Summary 3/7:** The workflow runs daily at 06:00 UTC plus `workflow_dispatch`; on PR triggers the static check is already covered by `.github/workflows/scripts-tests.yml` so the cron stays schedule-only.
 > **Summary 4/7:** Auth uses an org-level PAT (`FLUXION_BRANCH_PROTECTION_PAT`, `repo` scope) because the default `GITHUB_TOKEN` in scheduled workflows is read-only on most scopes; passed via `GH_TOKEN` to the script's `gh api` call.
 > **Summary 5/7:** Secret rotation policy: the PAT is created by an org owner, scoped to `anchapin/fluxion` only with `repo` access, and rotated **quarterly** (next rotation due at the end of each calendar quarter — tracked in the org secrets dashboard).
@@ -26,7 +26,7 @@ There is **no `pull_request` trigger** on this workflow. The PR-blocking static-
 `scripts/check_required_checks_sync.py` enforces five invariants. The first four are pure YAML / regex parsing — no network access. The fifth (only enabled when `FLUXION_CHECK_LIVE_PROTECTION=1`) calls `gh api /repos/anchapin/fluxion/branches/develop/protection` and verifies:
 
 1. `required_status_checks.contexts` matches `release_gates.yaml::ci.required_checks` by symmetric set equality.
-2. `required_status_checks.strict` is `true`.
+2. `required_status_checks.strict` matches `release_gates.yaml::ci.branch_protection.strict` (currently `false` — the require-up-to-date rule was disabled 2026-09-25 by operator decision).
 3. `required_pull_request_reviews.required_approving_review_count` equals `release_gates.yaml::ci.review_policy.required_approving_review_count` (default 0, reviews-advisory per ADR-0016 / Issue #3807).
 4. `enforce_admins.enabled` is `true`.
 

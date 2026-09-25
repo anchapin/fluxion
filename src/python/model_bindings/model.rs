@@ -1119,7 +1119,7 @@ impl Model {
     /// * `use_surrogates` - If true, use AI surrogates for load predictions; if false, use analytical calculations
     ///
     /// # Returns
-    /// Total energy use intensity (EUI) in kWh/m²/year
+    /// Relative energy-cost objective (not a calibrated EUI in kWh/m²/year)
     fn simulate(&mut self, years: u32, use_surrogates: bool) -> PyResult<f64> {
         // Issue #2548: enter a tracing span for the full duration of the
         // Python-visible call so spans/metrics emitted from the physics core
@@ -1176,7 +1176,7 @@ impl Model {
                 None,
                 None,
             );
-            info!("Simulation complete, EUI = {:.2} kWh/m²/year", result);
+            info!("Simulation complete, relative energy-cost objective = {:.2} (not a calibrated EUI in kWh/m²/year)", result);
             Ok(result)
         };
 
@@ -1204,7 +1204,7 @@ impl Model {
     /// * `use_surrogates` - If true, use AI surrogates for load predictions; if false, use analytical calculations
     ///
     /// # Returns
-    /// Total energy use intensity (EUI) in kWh/m²/year
+    /// Relative energy-cost objective (not a calibrated EUI in kWh/m²/year)
     ///
     /// # Note
     /// This method currently accepts None for all load parameters, which will trigger
@@ -1232,7 +1232,7 @@ impl Model {
         let result =
             self.inner
                 .solve_timesteps(steps, &self.surrogates, use_surrogates, None, None, None);
-        info!("Simulation complete, EUI = {:.2} kWh/m²/year", result);
+        info!("Simulation complete, relative energy-cost objective = {:.2} (not a calibrated EUI in kWh/m²/year)", result);
         Ok(result)
     }
 
