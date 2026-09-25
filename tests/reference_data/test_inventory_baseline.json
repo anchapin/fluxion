@@ -66,21 +66,21 @@
       "test_binaries": 1
     }
   },
-  "captured_at": "2026-09-25T05:21:25.628084+00:00",
+  "captured_at": "2026-09-25T17:38:56.735500+00:00",
   "captured_from": "tests/test_inventory.json",
   "metrics": {
     "lib_ignored": 5,
     "lib_tests": 3894,
     "test_binaries": 49,
     "workspace_ignored": 146,
-    "workspace_tests": 8016
+    "workspace_tests": 8018
   },
   "metrics_ast": {
     "lib_ignored": 8,
     "lib_tests": 4241,
     "test_binaries": 49,
     "workspace_ignored": 131,
-    "workspace_tests": 8722
+    "workspace_tests": 8725
   },
   "ratchet": {
     "BASELINE_LIB_IGNORED": 9,
@@ -100,9 +100,9 @@
     "test_source_files": 363,
     "workspace_ignored": 146,
     "workspace_integration_ignored": 111,
-    "workspace_integration_tests": 3375,
+    "workspace_integration_tests": 3378,
     "workspace_lib_ignored": 20,
     "workspace_lib_tests": 5347,
-    "workspace_tests": 8016
+    "workspace_tests": 8018
   }
 }

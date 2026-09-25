@@ -123,14 +123,27 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Legacy dispatch for `zone_solver ∈ {FiveROneC, NineRFourC}`.
         // With `gauge-solver` enabled, `Gauge` is handled unconditionally
-        // above and never reaches here. Without the feature, `Gauge` routes
-        // here and falls through to 5R1C/9R4C (the old β-phase semantics).
+        // above and reaches this match only for the #3817 high-mass
+        // exception. Without the feature, an explicit `Gauge` selector is a
+        // loud error (ADR-0017, issue #3978): the silent fall-through to
+        // 5R1C/9R4C was removed. `from_spec_with_selector` already panics at
+        // construction in default builds — this arm is the defense-in-depth
+        // backstop for hand-assembled models.
         match selector_zone_solver {
+            #[cfg(not(feature = "gauge-solver"))]
             ZoneSolverKind::Gauge => {
-                // Reached only in the default build (no `gauge-solver`):
-                // routes `Gauge` to the legacy 5R1C / 9R4C physics. 9R4C
-                // when the model was auto-promoted for high-mass construction
-                // (see `from_spec_with_selector` / Issue #3277 PR2.1).
+                panic!(
+                    "ZoneSolverKind::Gauge reached the dispatcher in a default build \
+                     (ADR-0017, issue #3978): programming error — the silent fall-through \
+                     to legacy 5R1C/9R4C was removed; build with --features gauge-solver"
+                );
+            }
+            #[cfg(feature = "gauge-solver")]
+            ZoneSolverKind::Gauge => {
+                // #3817 heavyweight exception (gauge-solver builds only):
+                // HighMass specs auto-promote to 9R4C even under a `Gauge`
+                // selector — gauge has no thermal-mass dynamics, so
+                // conditioned high-mass cases keep the 9R4C FD network.
                 if self.is_nine_r4c_model() {
                     // Issue #3305 — record the effective legacy target.
                     self.0.hvac.effective_zone_solver = ZoneSolverKind::NineRFourC;
@@ -141,8 +154,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 }
             }
             ZoneSolverKind::FiveROneC => {
-                self.0.hvac.effective_zone_solver = ZoneSolverKind::FiveROneC;
-                self.step_physics_5r1c(timestep, outdoor_temp, dt_seconds)
+                // ADR-0017 (#3978) + ADR-0002: `from_spec_with_selector` sets
+                // the 9R4C flag for HighMass constructions selector-
+                // independently (issue #3277 PR2.1); the legacy 5R1C network
+                // is structurally dead for high-mass peaks (#1522/#3983), so
+                // the `FiveROneC` arm honors the promotion exactly as the
+                // removed Gauge fall-through arm did. LowMass specs pin 5R1C.
+                if self.is_nine_r4c_model() {
+                    // Issue #3305 — record the effective legacy target.
+                    self.0.hvac.effective_zone_solver = ZoneSolverKind::NineRFourC;
+                    Ok(self.step_physics_9r4c(timestep, outdoor_temp, dt_seconds))
+                } else {
+                    self.0.hvac.effective_zone_solver = ZoneSolverKind::FiveROneC;
+                    self.step_physics_5r1c(timestep, outdoor_temp, dt_seconds)
+                }
             }
             ZoneSolverKind::NineRFourC => {
                 self.0.hvac.effective_zone_solver = ZoneSolverKind::NineRFourC;

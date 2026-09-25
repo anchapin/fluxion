@@ -21,9 +21,11 @@
 //! use fluxion::validation::ashrae140::ASHRAE140Case;
 //!
 //! let spec = ASHRAE140Case::Case900.spec();
-//! // Request CTF conduction via the selector
+//! // Request CTF conduction via the selector. The zone solver follows the
+//! // cfg-dependent ADR-0017 default (`Gauge` needs the `gauge-solver`
+//! // feature; the default build's explicit legacy default is used here).
 //! let selector = ThermalSelector {
-//!     zone_solver: ZoneSolverKind::Gauge,
+//!     zone_solver: ZoneSolverKind::default(),
 //!     conduction_solver: ConductionSolverKind::Ctf,
 //! };
 //! let model = ThermalModel::from_spec_with_selector(&spec, &selector)

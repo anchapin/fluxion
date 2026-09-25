@@ -209,28 +209,33 @@ tmy3-download = ["fluxion-core/tmy3-download"]
 # Feature flag for acausal HVAC / fluid network modeling (Issue #1980 / ADR-005).
 # Gates the `fluxion-fluid` crate which provides port-based fluid circuit traits.
 fluid = ["dep:fluxion-fluid"]
-# Feature flag for the **production** GaugeSolver zone solver
-# (`ZoneSolverKind::Gauge`, Issue #2304 / #2686 / #3291).
+# Feature flag for the GaugeSolver zone solver — per ADR-0017 (Issue
+# #3978) the DAE-path PROTOTYPE (`ZoneSolverKind::Gauge`, Issue #2304 /
+# #2686 / #3291; #3982 replaces its quasi-steady flux or retires it).
 #
-# STATUS (Issue #3291, Phase A8, merged via PR #3482 on 2026-09-07): with
-# `--features gauge-solver` on, the dispatcher's gauge arm is UNCONDITIONAL
-# (`src/sim/thermal_model_physics/step_dispatcher.rs:99-134`); a `Gauge`
-# selector with no gauge backend configured PANICS rather than silently
-# falling through to legacy 5R1C/9R4C. The feature is intentionally
-# retained as the production-path gate pending §LIMIT-21 (Issue #3297)
-# closure — the β-soak gate (#3286) is at 0/30 nights green. Once the
-# β-soak trips the feature flips unconditionally (no longer a
-# `default = []` opt-in) and the `#[cfg(feature = "gauge-solver")]`
-# gate in the dispatcher becomes the always-on production path.
+# ADR-0017 POSTURE (Issue #3978, supersedes the Phase A8 two-axis
+# wording): the default thermal selector is cfg-dependent and EXPLICIT
+# in every build — no silent fall-through anywhere.
 #
-# In the default build (feature OFF), the cfg-gated gauge block is absent
-# and a `Gauge` selector falls through to legacy 5R1C/9R4C — the same
-# observable behaviour as the pre-#3291 fall-through. The `Gauge`
-# selector itself (the `Default` impl on `ZoneSolverKind` per Issue #3291)
-# IS the production default and is reached via `from_spec_with_selector`
-# regardless of the cargo feature.
+# - With `--features gauge-solver` on: `ThermalSelector::default()` is
+#   `ZoneSolverKind::Gauge` and the dispatcher's gauge arm is
+#   UNCONDITIONAL (`src/sim/thermal_model_physics/step_dispatcher.rs`);
+#   a `Gauge` selector with no gauge backend configured PANICS rather
+#   than silently falling through to legacy 5R1C/9R4C. The β-soak gate
+#   (#3286, currently 0/30 nights green) continues as the nightly
+#   authority on this arm.
+# - In the default build (feature OFF): the default selector is the
+#   EXPLICIT LEGACY `FiveROneC` (HighMass specs still auto-promote to
+#   9R4C via `from_spec_with_selector`), and an explicit `Gauge`
+#   selector panics loudly at construction naming this feature. The
+#   silent fall-through to 5R1C/9R4C under a Gauge-named default was
+#   removed (ADR-0017).
 #
-# Run with: cargo test --features gauge-solver --test ashrae_140_case_600_series
+# The unconditional default flip now lands only when the equation-based
+# DAE teacher passes the teacher validation suite (#3986) — superseding
+# the old "β-soak-trips → feature flips" plan (§LIMIT-21 / Issue #3297).
+#
+# Run with: cargo test --features gauge-solver --test all_tests ashrae_140_
 #
 # Issue #3509: rewrote the pre-#3291 "always None" wording. See also
 # AGENTS.md:12 (Phase A8 note), ARCHITECTURE.md:716-735 (Thermal

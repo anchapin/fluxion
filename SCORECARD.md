@@ -73,18 +73,13 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | Energy Conservation (GH) | — |
 | Rustfmt (GH) | — |
 | Clippy (GH) | — |
-| Known Issues Stale Check (GH) | — |
 | Ashrae Cases Cycle Check (GH) | — |
 | Cycle Downward Trend Guard (Issue #2768) | #2768 |
 | Architecture Drift Detection | — |
 | Module Size (Issue #2878) | #2878 |
 | Cargo Deny | — |
-| Audit Ignore Freshness (Issue #2912) | #2912 |
 | MSRV Check (Issue #2934) | #2934 |
 | Crate Size Gate (Issue #2930) | #2930 |
-| fluxion-grid Integration Tests (GH) | — |
-| Tauri CSP Gate (Issue #3727) | #3727 |
-| FFI Feature Check (GH) | — |
 
 - **Live status** is intentionally not baked in here (it is non-deterministic and would break scorecard diff stability). Run:
 

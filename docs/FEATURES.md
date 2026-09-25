@@ -278,37 +278,44 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
 
 ### `gauge-solver`
 
-- **Two axes (Issue #3643):** The `ZoneSolverKind::Gauge` selector is
-  the unconditional default; the cargo feature `gauge-solver`
-  separately gates whether the dispatcher's gauge arm runs
-  unconditionally or falls through to legacy 5R1C/9R4C. Canonical
+- **ADR-0017 posture (Issue #3978, supersedes the two-axis wording of
+  Issue #3643):** the default thermal selector is cfg-dependent and
+  **explicit in every build — no silent fall-through anywhere**. With the
+  feature on, `ThermalSelector::default()` is `ZoneSolverKind::Gauge` and
+  the dispatcher's gauge arm runs unconditionally; in the default build
+  the default selector is the **explicit legacy** `FiveROneC` (HighMass
+  specs still auto-promote to 9R4C), and an *explicit* `Gauge` selector
+  panics loudly at `from_spec_with_selector` construction. Canonical
   wording: `Cargo.toml:208-225`.
-- **Enables:** the **production** `GaugeSolver` zone-solver gate
-  (`ZoneSolverKind::Gauge`, Issue #2304 / #2686 / #3291). The
-  `gauge_zone_solver` / `gauge_multi_zone_solver` fields on
-  `ThermalModelData` are initialised by `from_spec_with_selector` when
-  the feature is on.
-- **Status (Issue #3291, Phase A8, merged via PR #3482 on 2026-09-07):**
-  with `--features gauge-solver` on, the dispatcher's gauge arm is
-  **unconditional** (`src/sim/thermal_model_physics/step_dispatcher.rs:99-134`);
-  a `Gauge` selector with no gauge backend configured PANICS rather
-  than silently falling through to legacy 5R1C/9R4C. The feature is
-  intentionally retained as the production-path gate pending §LIMIT-21
-  (Issue #3297) closure — the β-soak gate (#3286) is at 0/30 nights
-  green. Once the β-soak trips, the feature flips unconditionally (no
-  longer a `default = []` opt-in) and the `#[cfg(feature = "gauge-solver")]`
-  gate in the dispatcher becomes the always-on production path.
+- **Enables:** the `GaugeSolver` zone-solver gate (`ZoneSolverKind::Gauge`,
+  Issue #2304 / #2686 / #3291) — per ADR-0017 the **DAE-path prototype**
+  (its boundary-condition translation / connection assembly is the seed of
+  the equation-based DAE teacher; issue #3982 replaces the quasi-steady
+  flux or retires it). The `gauge_zone_solver` / `gauge_multi_zone_solver`
+  fields on `ThermalModelData` are initialised by
+  `from_spec_with_selector` when the feature is on.
+- **Status (Issue #3291, Phase A8, merged via PR #3482 on 2026-09-07;
+  interim posture amended by ADR-0017):** with `--features gauge-solver`
+  on, the dispatcher's gauge arm is **unconditional**
+  (`src/sim/thermal_model_physics/step_dispatcher.rs`); a `Gauge`
+  selector with no gauge backend configured PANICS rather than silently
+  falling through to legacy 5R1C/9R4C. The feature remains the
+  prototype-path gate: the β-soak (#3286, currently 0/30 nights green)
+  continues as the nightly authority on this arm, and the unconditional
+  default flip now lands only when the equation-based DAE teacher passes
+  the teacher validation suite (#3986) — superseding the old
+  "β-soak-trips → feature flips" plan.
 - **In the default build (feature OFF),** the cfg-gated gauge block is
-  absent and a `Gauge` selector falls through to legacy 5R1C/9R4C — the
-  same observable behaviour as the pre-#3291 fall-through. The
-  `Gauge` selector itself (the `Default` impl on `ZoneSolverKind` per
-  Issue #3291) IS the production default and is reached via
-  `from_spec_with_selector` regardless of the cargo feature.
-- **Build:** `cargo test --features gauge-solver --test ashrae_140_case_600_series`.
-- **CI implication:** Advisory ASHRAE variant; the production solver path in CI is still the
-  5R1C / 9R4C default so the strict energy gate (#1333) remains directly comparable to
+  absent, the default selector is the explicit legacy `FiveROneC`
+  (9R4C for HighMass specs), and an explicit `Gauge` selector is a loud
+  configuration error (panic naming ADR-0017 / the feature flag). The
+  silent fall-through to 5R1C/9R4C under a Gauge-named default was
+  removed (ADR-0017, issue #3978).
+- **Build:** `cargo test --features gauge-solver --test all_tests ashrae_140_`.
+- **CI implication:** Advisory ASHRAE variant; the default-build solver path in CI is the
+  explicit legacy 5R1C / 9R4C default so the strict energy gate (#1333) remains directly comparable to
   EnergyPlus reference data.
-- **Default:** off (pending §LIMIT-21 closure).
+- **Default:** off (the flip to the DAE teacher default is gated on #3986).
 
 ### `fluxion-city`
 

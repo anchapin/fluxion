@@ -9,8 +9,9 @@
 - **Depends on:** None (this ADR records the gap; the actual structural fix is tracked by the underlying issues)
 - **Issue:** [#3072](https://github.com/anchapin/fluxion/issues/3072) (meta-issue)
 - **Related:** #1465 (Phase 3 GaugeSolver validation), #1462 (Phase 1b shadow-mode implementation), #3058 / #3059 / #3061 / #3062 / #3063 / #3060 / #3070 (cohort follow-ups)
-- **Phase A8 cross-references:** `AGENTS.md:12` (Phase A8 note), `ARCHITECTURE.md:716-735` (Thermal selector Phase A8 note), `ARCHITECTURE.md:1267-1269` (Phase A8 status note), `docs/KNOWN_ISSUES.md` §LIMIT-21 (Issue #3297) + §LIMIT-22, `docs/agents/beta-soak-criterion-2-tracker.md`, `src/sim/thermal_selector.rs` (module docs)
+- **Phase A8 cross-references:** `AGENTS.md:12` (ADR-0017 posture note), `ARCHITECTURE.md:716-735` (Thermal selector note), `ARCHITECTURE.md:1267-1269` (status note), `docs/KNOWN_ISSUES.md` §LIMIT-21 (Issue #3297) + §LIMIT-22, `docs/agents/beta-soak-criterion-2-tracker.md`, `src/sim/thermal_selector.rs` (module docs)
 - **Issue #3511:** refreshed the post-#3291 status. See the "Phase A8 implementation status" section below.
+- **ADR-0017 addendum (2026-09-25, Issue #3978):** the Phase A8 *production posture* recorded here — `Gauge` as the unconditional default selector in both feature states with a default-build silent fall-through to legacy 5R1C/9R4C, and the "β-soak-trips → feature flips" plan — is **superseded by `docs/adr/0017-equation-based-dae-teacher-architecture.md`**. The default selector is now cfg-dependent and explicit in every build (`Gauge` in `gauge-solver` builds; explicit legacy `FiveROneC` in default builds, HighMass auto-promotion preserved), an explicit `Gauge` selector in a default build panics loudly at construction, and the unconditional default flip to the equation-based DAE teacher is gated on the #3986 validation suite. ADR-0007's structural-work program (case coverage, multi-zone wiring, observability) is unaffected.
 
 ---
 

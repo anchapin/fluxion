@@ -1118,7 +1118,7 @@ pub fn run_cli() -> Result<()> {
         zone_solver: match &cli.zone_solver {
             Some(s) => crate::sim::thermal_selector::parse_zone_solver(s)
                 .map_err(|e| anyhow::anyhow!(e))?,
-            None => crate::sim::thermal_selector::ZoneSolverKind::Gauge,
+            None => crate::sim::thermal_selector::ZoneSolverKind::default(),
         },
         conduction_solver: match &cli.conduction_solver {
             Some(s) => crate::sim::thermal_selector::parse_conduction_solver(s)

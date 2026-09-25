@@ -222,9 +222,18 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 # (BASELINE_LIB_IGNORED stays 9: the harness's mode-aware selection
 # fixture pins a lib_ignored of 9, and the live AST count 8 < 9 keeps
 # the ratchet green either way.)
-BASELINE_LIB_TESTS = 4240
+# 2026-09-25 (Issue #3978 / ADR-0017, PR #4017): bumped
+# ``BASELINE_LIB_TESTS`` from 4240 to 4241 (+1: the Phase-A8 single
+# default-selector unit test became the cfg-dependent ADR-0017 pair) and
+# ``BASELINE_WORKSPACE_TESTS`` from 8720 to 8725 (+5: three new
+# ``tests/gauge_dispatcher_cases.rs`` integration tests — default-build
+# explicit-legacy default, loud Gauge panic, HighMass promotion truth —
+# plus the two AST-counted cfg variants of the selector unit test; the
+# net cargo-verified delta is workspace_tests 7927 -> 8018 per
+# ``tests/test_inventory.json``).
+BASELINE_LIB_TESTS = 4241
 BASELINE_LIB_IGNORED = 9
-BASELINE_WORKSPACE_TESTS = 8720
+BASELINE_WORKSPACE_TESTS = 8725
 # 2026-09-12 (Issue #3711): 121 -> 133 — see the history entry above for
 # the per-crate attribution and the AST-vs-cargo calibration analysis.
 # 2026-09-18 (Issue #3729): 133 -> 138 — absorbs the cargo-verified
@@ -299,6 +308,7 @@ def _regenerate_inventory(cargo_target_dir: str | None, verify: bool) -> dict:
         capture_output=True,
         text=True,
         timeout=timeout,
+        check=False,  # returncode handled explicitly below (ruff PLW1510)
     )
     if proc.returncode != 0:
         print(
