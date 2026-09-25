@@ -1,6 +1,12 @@
 name: Documentation
 
-on: [pull_request]
+# Issue #4003: was `on: [pull_request]` — a full `cargo doc` build on every
+# PR that gated nothing. Now schedule + manual dispatch only.
+on:
+  schedule:
+    # Daily at 06:00 UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:
 
 concurrency:
   group: >-

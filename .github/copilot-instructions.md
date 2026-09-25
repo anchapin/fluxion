@@ -46,28 +46,26 @@ Fluxion uses a **two-class** PyO3 API pattern critical to understand:
 
 ### Thermal Network (`src/sim/engine.rs`)
 
-**ThermalModel** is the physics backbone:
+`src/sim/engine.rs` is a facade: it re-exports the physics types (no `pub struct` of its own). The physics backbone is **`ThermalModel`**, defined in `src/sim/thermal_model_core/mod.rs`:
 
 ```rust
-pub struct ThermalModel {
-    pub num_zones: usize,
-    pub temperatures: Vec<f64>,
-    pub loads: Vec<f64>,
-    pub window_u_value: f64,      // Design variable
-    pub hvac_setpoint: f64,        // Design variable
-}
+pub struct ThermalModel<T: ContinuousTensor<f64>>(pub ThermalModelData<T>);
 ```
 
-**Key Methods**:
+`ThermalModelData` (`src/sim/thermal_model_data/mod.rs`) groups the simulation state into six structs: `hvac: HvacState`, `setpoints: SetpointState`, `solar: SolarState`, `mass: MassState`, `conduction: ConductionState`, `diagnostics_state: DiagnosticsState`. `ThermalModel` derefs to `ThermalModelData`, so field access looks like `model.solar.window_u_value`.
+
+**Key Methods** (solver core: `src/sim/thermal_model_physics/solver_core.rs`):
 - `apply_parameters(params: &[f64])`: Maps gene vector to model state
-  - `params[0]` → `window_u_value` (building envelope quality)
-  - `params[1]` → `hvac_setpoint` (comfort/energy trade-off)
-- `solve_timesteps(steps, surrogates, use_ai)`: Core physics loop
+  - `params[0]` → `solar.window_u_value` (building envelope quality)
+  - `params[1]` → `setpoints.heating_setpoint`, `params[2]` → `setpoints.cooling_setpoint` (comfort/energy trade-off; swapped values are normalized)
+- `solve_timesteps(steps, surrogates, use_ai, lighting, equipment, occupancy) -> f64`: Core physics loop
   - If `use_ai=true`: queries `SurrogateManager` for thermal loads (fast approximation)
   - If `use_ai=false`: computes analytical loads (slower but validated)
   - Returns cumulative energy consumption
 
-**Important**: `ThermalModel` is `Clone`—this enables the batch parallel pattern (each thread gets a copy to mutate).
+**Important**: `ThermalModel` is `Clone` (manual impl for `T: Clone`)—this enables the batch parallel pattern (each thread gets a copy to mutate).
+
+**Solver dispatch**: `ThermalSelector::default()` resolves to `ZoneSolverKind::Gauge` (`src/sim/thermal_selector.rs`); the `gauge-solver` cargo feature gates whether the dispatcher runs the gauge arm unconditionally or falls through to legacy 5R1C/9R4C.
 
 ## AI Surrogates Integration
 
@@ -137,7 +135,7 @@ python -c "import fluxion; print(fluxion.BatchOracle())"  # Quick smoke test
 ## Developer Workflows
 
 ### Adding a New Design Variable
-1. Add field to `ThermalModel` struct (e.g., `thermal_mass: f64`)
+1. Add a field to the relevant state struct in `ThermalModelData` (e.g., `solar: SolarState` in `src/sim/thermal_model_data/solar_state.rs`)
 2. Extend `apply_parameters()` to map new gene to field
 3. Update physics in `solve_timesteps()` to use it
 4. Document the parameter vector semantics
@@ -164,7 +162,7 @@ python -c "import fluxion; print(fluxion.BatchOracle())"  # Quick smoke test
 ## Key Files to Reference
 
 - **Entrypoint**: `src/lib.rs` (PyO3 module definition)
-- **Physics**: `src/sim/engine.rs` (ThermalModel, solve loop)
+- **Physics**: `src/sim/engine.rs` (re-export facade); `ThermalModel` lives in `src/sim/thermal_model_core/mod.rs`, the solve loop in `src/sim/thermal_model_physics/solver_core.rs`
 - **AI Layer**: `src/ai/surrogate.rs` (SurrogateManager, ONNX integration)
 - **Docs**: `docs/Fluxion_PRD.md` (full architecture & roadmap)
 - **Config**: `Cargo.toml` (dependencies, release profile)
@@ -189,17 +187,20 @@ python -c "import fluxion; print(fluxion.BatchOracle())"  # Quick smoke test
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fluxion::physics::cta::VectorField;
 
     #[test]
     fn test_thermal_model_energy_conservation() {
-        let mut model = ThermalModel::new(10);
-        let surrogates = SurrogateManager::new().unwrap();
+        let mut model = ThermalModel::<VectorField>::new(10);
+        let surrogates = SurrogateManager::default();
 
         // Analytical baseline (no AI)
-        let energy_analytical = model.clone().solve_timesteps(8760, &surrogates, false);
+        let energy_analytical = model
+            .clone()
+            .solve_timesteps(8760, &surrogates, false, None, None, None);
 
         // Surrogate prediction (should be close)
-        model.solve_timesteps(8760, &surrogates, true);
+        model.solve_timesteps(8760, &surrogates, true, None, None, None);
 
         // Verify energy conservation within tolerance
         assert!(energy_analytical.abs() > 0.0, "Energy should be non-zero");
@@ -207,12 +208,12 @@ mod tests {
 
     #[test]
     fn test_apply_parameters_updates_model() {
-        let mut model = ThermalModel::new(10);
-        let params = vec![1.5, 22.0];
+        let mut model = ThermalModel::<VectorField>::new(10);
+        let params = vec![1.5, 22.0, 24.0];
 
         model.apply_parameters(&params);
-        assert_eq!(model.window_u_value, 1.5);
-        assert_eq!(model.hvac_setpoint, 22.0);
+        assert_eq!(model.solar.window_u_value, 1.5);
+        assert_eq!(model.setpoints.heating_setpoint, 22.0);
     }
 }
 ```
