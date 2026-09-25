@@ -308,6 +308,7 @@ def _regenerate_inventory(cargo_target_dir: str | None, verify: bool) -> dict:
         capture_output=True,
         text=True,
         timeout=timeout,
+        check=False,  # returncode handled explicitly below (ruff PLW1510)
     )
     if proc.returncode != 0:
         print(
