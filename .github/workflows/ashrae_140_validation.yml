@@ -101,6 +101,12 @@ jobs:
 
       - name: Run ASHRAE 140 Validation Tests
         id: validation
+        env:
+          # The comprehensive validation test writes its machine-readable
+          # BenchmarkReport JSON here (see
+          # tests/all_tests/ashrae_140_validation.rs); the Extract step
+          # below transforms it into the release-gate checker's shape.
+          FLUXION_VALIDATION_JSON_OUT: ${{ github.workspace }}/validation_report.json
         run: |
           cargo test --test all_tests ashrae_140_validation:: --release -- --nocapture 2>&1 | tee validation_output.txt
           TEST_EXIT=$?
@@ -118,71 +124,87 @@ jobs:
         id: extract
         run: |
           python3 << 'EOF'
-          import re
           import json
+          import os
+          import sys
 
-          with open('validation_output.txt', 'r') as f:
-              output = f.read()
+          # The comprehensive validation test writes the machine-readable
+          # BenchmarkReport JSON to FLUXION_VALIDATION_JSON_OUT (see
+          # tests/all_tests/ashrae_140_validation.rs). Transform it into
+          # the release-gate checker's shape:
+          #   {'cases': {case_id: {heating, heating_min, heating_max,
+          #                       cooling, cooling_min, cooling_max}},
+          #    'summary': {pass_rate, passed, failed, mae}}
+          #
+          # History: this step used to regex-parse the test's stdout for
+          # `Case NNN: Heating = ...` / `Validation Report Summary:`
+          # lines. That println format was removed when the summary moved
+          # to structured tracing (Issue #2500), so the regexes silently
+          # matched nothing -> 0 cases / 0.0% pass rate -> red gate on
+          # every push/workflow_run even though the Rust suite passed.
+          report_path = os.environ.get(
+              "FLUXION_VALIDATION_JSON_OUT", "validation_report.json"
+          )
+          if not os.path.isfile(report_path):
+              print(f"::error::validation report JSON missing: {report_path}")
+              sys.exit(1)
 
-          def parse_numeric(s):
-              """Parse numeric string that may contain inf."""
-              s = s.strip().lower()
-              if s in ('inf', '+inf'):
-                  return float('inf')
-              elif s == '-inf':
-                  return float('-inf')
-              return float(s)
+          with open(report_path) as f:
+              report = json.load(f)
 
-          # Extract case results - handles inf and leading whitespace
+          results = report.get("results", [])
+          if not results:
+              print("::error::validation report contains no results")
+              sys.exit(1)
+
+          def metric_name(m):
+              # MetricType unit variants serialize as their name;
+              # struct variants (e.g. IncidentSolar) as {"Variant": {...}}.
+              if isinstance(m, str):
+                  return m
+              if isinstance(m, dict) and m:
+                  return next(iter(m))
+              return ""
+
+          total = len(results)
+          passed = sum(1 for r in results if r.get("status") == "Pass")
+          failed = sum(1 for r in results if r.get("status") == "Fail")
+          # Mirrors BenchmarkReport::pass_rate / ::mae (benchmark.rs).
+          pass_rate = (100.0 * passed / total) if total else 0.0
+          mae = sum(abs(r.get("percent_error", 0.0)) for r in results) / total
+
           cases = {}
-          case_pattern = r"Case\s+(\d+[A-Z]*)\s*[:\-]\s*Heating\s*=\s*([+-]?(?:inf|\d+\.?\d*))\s*\(Ref:\s*([+-]?(?:inf|\d+\.?\d*))\s*-\s*([+-]?(?:inf|\d+\.?\d*))\),\s*Cooling\s*=\s*([+-]?(?:inf|\d+\.?\d*))\s*\(Ref:\s*([+-]?(?:inf|\d+\.?\d*))\s*-\s*([+-]?(?:inf|\d+\.?\d*))\)"
-          for match in re.finditer(case_pattern, output):
-              case_id, heating, heating_min, heating_max, cooling, cooling_min, cooling_max = match.groups()
-              h_act = parse_numeric(heating)
-              h_min = parse_numeric(heating_min)
-              h_max = parse_numeric(heating_max)
-              c_act = parse_numeric(cooling)
-              c_min = parse_numeric(cooling_min)
-              c_max = parse_numeric(cooling_max)
-              # If ref range is inf, skip the range check
-              h_pass = (h_min <= h_act <= h_max) if h_min != float('inf') and h_max != float('inf') else True
-              c_pass = (c_min <= c_act <= c_max) if c_min != float('inf') and c_max != float('inf') else True
-              cases[case_id] = {
-                  'heating': h_act,
-                  'heating_min': h_min,
-                  'heating_max': h_max,
-                  'cooling': c_act,
-                  'cooling_min': c_min,
-                  'cooling_max': c_max,
-                  'heating_pass': h_pass,
-                  'cooling_pass': c_pass,
-              }
+          for r in results:
+              cid = str(r.get("case_id", ""))
+              entry = cases.setdefault(cid, {
+                  "heating": 0.0, "heating_min": 0.0, "heating_max": 0.0,
+                  "cooling": 0.0, "cooling_min": 0.0, "cooling_max": 0.0,
+              })
+              mname = metric_name(r.get("metric"))
+              if mname == "AnnualHeating":
+                  entry["heating"] = r.get("fluxion_value", 0.0)
+                  entry["heating_min"] = r.get("ref_min", 0.0)
+                  entry["heating_max"] = r.get("ref_max", 0.0)
+              elif mname == "AnnualCooling":
+                  entry["cooling"] = r.get("fluxion_value", 0.0)
+                  entry["cooling_min"] = r.get("ref_min", 0.0)
+                  entry["cooling_max"] = r.get("ref_max", 0.0)
 
-          # Extract summary - handles inf% and leading whitespace
-          summary_pattern = r"^\s*Validation\s+Report\s+Summary:.*?Pass\s+Rate:\s*([\d.]+|inf)%\s*Passed:\s*(\d+).*?Failed:\s*(\d+).*?Mean\s+Absolute\s+Error:\s*([\d.]+|inf)%"
-          summary_match = re.search(summary_pattern, output, re.DOTALL | re.MULTILINE)
+          summary = {
+              "pass_rate": pass_rate,
+              "passed": passed,
+              "failed": failed,
+              "mae": mae,
+          }
 
-          summary = {}
-          if summary_match:
-              pass_rate, passed, failed, mae = summary_match.groups()
-              summary = {
-                  'pass_rate': parse_numeric(pass_rate),
-                  'passed': int(passed),
-                  'failed': int(failed),
-                  'mae': parse_numeric(mae)
-              }
+          with open("validation_results.json", "w") as f:
+              json.dump({"cases": cases, "summary": summary}, f, indent=2)
 
-          with open('validation_results.json', 'w') as f:
-              json.dump({'cases': cases, 'summary': summary}, f, indent=2)
-
-          print(f"::notice::ASHRAE 140 Validation Summary")
-          if summary:
-              pr = summary['pass_rate']
-              ma = summary['mae']
-              print(f"Pass Rate: {pr:.1f}%" if pr != float('inf') else f"Pass Rate: inf%")
-              print(f"Passed: {summary['passed']}")
-              print(f"Failed: {summary['failed']}")
-              print(f"Mean Absolute Error: {ma:.2f}%" if ma != float('inf') else f"Mean Absolute Error: inf%")
+          print("::notice::ASHRAE 140 Validation Summary")
+          print(f"Results: {total}, Cases: {len(cases)}")
+          print(f"Pass Rate: {pass_rate:.1f}%")
+          print(f"Passed: {passed}, Failed: {failed}")
+          print(f"Mean Absolute Error: {mae:.2f}%")
           EOF
 
       - name: Generate Markdown Report
@@ -246,6 +268,12 @@ jobs:
               f.write('\n'.join(report_lines))
           EOF
 
+      - name: Package crate for size gate
+        # The release-gate checker's crate_size gate auto-detects
+        # target/package/fluxion-*.crate; without a measurement it
+        # fails with "No crate-size measurement supplied".
+        run: cargo package --allow-dirty --no-verify
+
       - name: Check Validation Results
         id: check
         # Issue #3763 audit (known-red validation site): the release-gate
@@ -277,6 +305,7 @@ jobs:
           name: ashrae-140-results
           path: |
             validation_output.txt
+            validation_report.json
             validation_results.json
             ASHRAE_140_VALIDATION_REPORT.md
             gate_status.json
