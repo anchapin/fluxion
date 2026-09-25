@@ -28,6 +28,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
+import re
 import subprocess
 import sys
 import tempfile
@@ -49,19 +51,11 @@ LINT_DIR = REFERENCE_DIR / "lint"
 DOCS_DIR = Path("docs/architecture/topology")
 PAYLOAD_DIR = DOCS_DIR / "payloads"
 
-# Deterministic layout: node kind -> column index (left-to-right thermal flow).
-KIND_COLUMNS = {
-    "outdoor_ambient": 0,
-    "exterior_surface": 1,
-    "wall_layer": 2,
-    "interior_surface": 3,
-    "zone_air": 4,
-    "internal_mass": 5,
-    "hvac_terminal": 6,
-    "internal_gain": 7,
-}
+# Deterministic layout: node kind -> column slot (left-to-right thermal flow).
+# Surface columns split per-zone for large graphs (issue #4037).
 KIND_COLORS = {
     "outdoor_ambient": "#38bdf8",
+    "boundary": "#78716c",
     "exterior_surface": "#f97316",
     "wall_layer": "#a16207",
     "interior_surface": "#fbbf24",
@@ -71,10 +65,24 @@ KIND_COLORS = {
     "internal_gain": "#a855f7",
 }
 DEFAULT_NODE_COLOR = "#64748b"
-EDGE_PALETTE = [
-    "#0ea5e9", "#f97316", "#22c55e", "#a855f7", "#ef4444",
-    "#eab308", "#14b8a6", "#ec4899", "#6366f1", "#64748b",
-]
+
+# Declared semantic edge-color mapping (issue #4038). Every color is chosen
+# outside the node-kind palette so node fills and edge strokes never imply a
+# false relationship.
+EDGE_COLORS = {
+    "conduction": "#1f77b4",
+    "convection_exterior": "#17becf",
+    "convection_interior": "#2ca02c",
+    "longwave_radiation": "#9467bd",
+    "shortwave_solar_direct": "#e377c2",
+    "shortwave_solar_diffuse": "#bcbd22",
+    "air_exchange": "#7f7f7f",
+    "internal_gain_split": "#aec7e8",
+    "hvac_sensible": "#98df8a",
+    "ground_conduction": "#8c564b",
+}
+# Fallback for coupling types not in EDGE_COLORS (also node-palette-free).
+EDGE_FALLBACK_PALETTE = ["#393b79", "#637939", "#8c6d31", "#843c39", "#7b4173"]
 
 BOX_W, BOX_H = 170, 40
 PITCH_X, PITCH_Y = 230, 54
@@ -127,27 +135,271 @@ def xml_escape(text: str) -> str:
     )
 
 
-def _stable_index(coupling_type: str) -> int:
+def edge_color(coupling_type: str) -> str:
+    """Declared semantic color for a coupling type (issue #4038)."""
+    if coupling_type in EDGE_COLORS:
+        return EDGE_COLORS[coupling_type]
     total = 0
     for ch in coupling_type.encode("utf-8"):
         total = (total * 131 + ch) % 1_000_003
-    return total % len(EDGE_PALETTE)
+    return EDGE_FALLBACK_PALETTE[total % len(EDGE_FALLBACK_PALETTE)]
+
+
+def case_title(case: str, doc: dict) -> str:
+    """Header title without the duplicated case name (issue #4049)."""
+    model_name = (doc["metadata"].get("model_name") or "").strip()
+    base = f"ASHRAE 140 Case {case}"
+    if not model_name or model_name == base or model_name.startswith(base):
+        return model_name or base
+    return f"{base} — {model_name}"
+
+
+_LABEL_MAX = 24
+
+
+def _middle_truncate(label: str) -> str:
+    keep = _LABEL_MAX - 1  # room for the ellipsis
+    head = (keep + 1) // 2
+    tail = keep - head
+    return label[:head] + "…" + label[-tail:]
+
+
+def short_label(name: str) -> list[str]:
+    """Issue #4035: abbreviate the Zone prefix; split long labels across two
+    lines at a word boundary (never chopping the distinguishing token); only
+    middle-truncate as a last resort."""
+    label = re.sub(r"^Zone (\d+) ", r"Z\1 ", name)
+    if len(label) <= _LABEL_MAX:
+        return [label]
+    words = label.split(" ")
+    best: list[str] | None = None
+    for i in range(1, len(words)):
+        cand = [" ".join(words[:i]), " ".join(words[i:])]
+        if best is None or max(len(c) for c in cand) < max(len(b) for b in best):
+            best = cand
+    lines = best if best is not None else [label]
+    return [_middle_truncate(line) if len(line) > _LABEL_MAX else line for line in lines]
+
+
+def display_labels(nodes: list[dict]) -> list[list[str]]:
+    """Rendered labels (1-2 lines each), asserted unique within the diagram."""
+    labels = [short_label(n.get("name", n["id"])) for n in nodes]
+    joined = ["\n".join(lines) for lines in labels]
+    dupes = sorted({j for j in joined if joined.count(j) > 1})
+    if dupes:
+        raise ValueError(f"rendered label collision (issue #4035): {dupes}")
+    return labels
+
+
+_MERMAID_SAFE = str.maketrans(
+    {
+        '"': "'",
+        "`": "'",
+        "[": "(",
+        "]": ")",
+        "{": "(",
+        "}": ")",
+        "|": "/",
+    }
+)
+
+
+def sanitize_mermaid_label(text: str) -> str:
+    """Issue #4041: neutralize Mermaid-significant characters in flowchart labels."""
+    return text.translate(_MERMAID_SAFE)
+
+
+def augment_boundaries(doc: dict) -> dict:
+    """Issue #4036: synthesize boundary-condition nodes for the diagrams.
+
+    Diagram-layer only — the verbatim export bytes (reference + payload JSONs)
+    are untouched. Each ground-coupled exterior surface gets a shared
+    ``boundary:ground`` node and a ``ground_conduction`` edge so the heat path
+    is visible instead of living only in node attributes.
+    """
+    nodes = list(doc["nodes"])
+    edges = list(doc["edges"])
+    node_ids = {n["id"] for n in nodes}
+    for node in doc["nodes"]:
+        attrs = node.get("attributes") or {}
+        if node["kind"] == "exterior_surface" and attrs.get("ground_coupled"):
+            if "boundary:ground" not in node_ids:
+                temp = attrs.get("ground_temperature_c")
+                name = (
+                    f"Ground ({temp:g} °C)"
+                    if isinstance(temp, (int, float))
+                    else "Ground"
+                )
+                nodes.insert(0, {"id": "boundary:ground", "kind": "boundary", "name": name})
+                node_ids.add("boundary:ground")
+            edges.append(
+                {
+                    "source_id": "boundary:ground",
+                    "target_id": node["id"],
+                    "coupling_type": "ground_conduction",
+                    "bidirectional": False,
+                    "conductance_w_per_k": None,
+                    "attributes": {"ground_temperature_c": attrs.get("ground_temperature_c")},
+                }
+            )
+    return {**doc, "nodes": nodes, "edges": edges}
+
+
+def group_edges(edges: list[dict]) -> list[tuple[tuple, list[dict]]]:
+    """Merge parallel identical edges for rendering (issue #4039).
+
+    Groups by (source, target, coupling_type), normalizing direction for
+    bidirectional edges since they render as the same curve.
+    """
+    groups: dict[tuple, list[dict]] = {}
+    order: list[tuple] = []
+    for edge in edges:
+        src, tgt = edge["source_id"], edge["target_id"]
+        if edge.get("bidirectional") and tgt < src:
+            src, tgt = tgt, src
+        key = (src, tgt, edge.get("coupling_type", "coupling"))
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(edge)
+    return [(key, groups[key]) for key in order]
+
+
+def edge_stroke_width(conductance: float | None, lo: float, hi: float) -> float:
+    """Issue #4043: log-scaled stroke width in [1.2, 5.0]; unknown -> minimum."""
+    if not conductance or conductance <= 0 or hi <= lo:
+        return 1.2
+    t = (math.log10(conductance) - math.log10(lo)) / (math.log10(hi) - math.log10(lo))
+    return 1.2 + 3.8 * min(1.0, max(0.0, t))
+
+
+_ZONE_RE = re.compile(r"^zone-(\d+):")
+# Split surface columns per-zone when the wall_layer tower exceeds this many
+# rows (issue #4037); case-960 has 34, single-zone cases have <= 17.
+_ZONE_SPLIT_THRESHOLD = 20
+
+
+def _node_zone(node: dict) -> str | None:
+    m = _ZONE_RE.match(node["id"])
+    return m.group(1) if m else None
+
+
+def _surface_of(node_id: str, kind: str) -> str:
+    if kind == "wall_layer":
+        return re.sub(r":layer-\d+$", "", node_id)
+    if kind == "exterior_surface":
+        return re.sub(r":ext$", "", node_id)
+    if kind == "interior_surface":
+        return re.sub(r":int$", "", node_id)
+    return node_id
+
+
+def layout_positions(
+    nodes: list[dict],
+) -> tuple[dict[str, tuple[int, int]], dict[int, float], int, int]:
+    """Issue #4037: assign (column, row) per node.
+
+    * Surface columns split per-zone for large graphs (case-960) instead of
+      one 34-row tower.
+    * Within a column, wall layers are ordered by surface (following the
+      exterior-surface order) then layer index, so each conduction chain is
+      contiguous and roughly row-aligned with its films.
+    * Short columns are vertically centered instead of top-aligned.
+
+    Returns (positions, column_y_offsets, n_columns, max_rows).
+    """
+    zones = sorted({_node_zone(n) for n in nodes if _node_zone(n)})
+    split = (
+        sum(1 for n in nodes if n["kind"] == "wall_layer") > _ZONE_SPLIT_THRESHOLD
+        and len(zones) > 1
+    )
+
+    col_keys: list[tuple] = [("ambient",)]
+    if split:
+        for z in zones:
+            col_keys += [
+                (f"zone:{z}", "ext"),
+                (f"zone:{z}", "layer"),
+                (f"zone:{z}", "int"),
+            ]
+    else:
+        col_keys += [("surface", "ext"), ("surface", "layer"), ("surface", "int")]
+    col_keys += [("zone_air",), ("internal_mass",), ("hvac_terminal",), ("internal_gain",)]
+    col_index = {k: i for i, k in enumerate(col_keys)}
+
+    slot_of = {
+        "exterior_surface": "ext",
+        "wall_layer": "layer",
+        "interior_surface": "int",
+    }
+
+    def key_for(node: dict) -> tuple:
+        kind = node["kind"]
+        if kind in ("outdoor_ambient", "boundary"):
+            return ("ambient",)
+        if kind in slot_of:
+            if split:
+                return (f"zone:{_node_zone(node)}", slot_of[kind])
+            return ("surface", slot_of[kind])
+        key = (kind,)
+        if key not in col_index:  # unknown kinds get trailing columns, first-seen
+            col_index[key] = len(col_index)
+        return key
+
+    buckets: dict[tuple, list[dict]] = {}
+    for node in nodes:
+        buckets.setdefault(key_for(node), []).append(node)
+
+    # Surface order follows the exterior-surface columns (zone order, then row).
+    surface_order: dict[str, int] = {}
+    ordered_cols = sorted(buckets, key=lambda k: col_index[k])
+    for key in ordered_cols:
+        for node in buckets[key]:
+            if node["kind"] == "exterior_surface":
+                surface = _surface_of(node["id"], "exterior_surface")
+                if surface not in surface_order:
+                    surface_order[surface] = len(surface_order)
+
+    def layer_sort_key(node: dict) -> tuple[int, int]:
+        m = re.search(r":layer-(\d+)$", node["id"])
+        idx = int(m.group(1)) if m else 0
+        return (
+            surface_order.get(_surface_of(node["id"], "wall_layer"), 10**9),
+            idx,
+        )
+
+    for key, bucket in buckets.items():
+        if any(n["kind"] == "wall_layer" for n in bucket):
+            bucket.sort(key=layer_sort_key)
+
+    max_rows = max(len(b) for b in buckets.values()) if buckets else 1
+    n_cols = len(col_index)
+    pos: dict[str, tuple[int, int]] = {}
+    col_yoff: dict[int, float] = {}
+    for key in ordered_cols:
+        col = col_index[key]
+        bucket = buckets[key]
+        col_yoff[col] = (max_rows - len(bucket)) * PITCH_Y / 2
+        for row, node in enumerate(bucket):
+            pos[node["id"]] = (col, row)
+    return pos, col_yoff, n_cols, max_rows
 
 
 def render_mermaid(doc: dict, case: str) -> str:
+    title = case_title(case, doc)
     lines = [
         f"%% {GENERATOR_STAMP}",
-        f"%% Case {case}: {doc['metadata'].get('model_name', '')}",
+        f"%% Case {case}: {title}",
         "flowchart LR",
     ]
     for i, node in enumerate(doc["nodes"]):
-        label = node.get("name", node["id"]).replace('"', "'")
+        label = sanitize_mermaid_label(node.get("name", node["id"]))
         lines.append(f'    n{i}["{label}"]:::{node["kind"]}')
     for edge in doc["edges"]:
         src = _node_index(doc, edge["source_id"])
         tgt = _node_index(doc, edge["target_id"])
         arrow = "<-->" if edge.get("bidirectional") else "-->"
-        label = edge.get("coupling_type", "coupling")
+        label = sanitize_mermaid_label(edge.get("coupling_type", "coupling"))
         lines.append(f"    n{src} {arrow}|{label}| n{tgt}")
     for kind in sorted({n["kind"] for n in doc["nodes"]}):
         color = KIND_COLORS.get(kind, DEFAULT_NODE_COLOR)
@@ -165,43 +417,51 @@ def _node_index(doc: dict, node_id: str) -> int:
 def render_svg(doc: dict, case: str) -> str:
     nodes = doc["nodes"]
     edges = doc["edges"]
-    kind_cols = dict(KIND_COLUMNS)
-    next_col = len(kind_cols)
-    for node in nodes:
-        if node["kind"] not in kind_cols:
-            kind_cols[node["kind"]] = next_col
-            next_col += 1
-    col_rows: dict[int, int] = {}
-    pos: dict[str, tuple[int, int]] = {}
-    for node in nodes:
-        col = kind_cols[node["kind"]]
-        row = col_rows.get(col, 0)
-        col_rows[col] = row + 1
-        pos[node["id"]] = (col, row)
-    n_cols = max(col_rows) + 1 if col_rows else 1
-    n_rows = max(col_rows.values()) if col_rows else 1
+    title = case_title(case, doc)
+    labels = display_labels(nodes)
+    label_of = {node["id"]: label for node, label in zip(nodes, labels)}
+
+    pos, col_yoff, n_cols, max_rows = layout_positions(nodes)
 
     coupling_types = sorted({e.get("coupling_type", "coupling") for e in edges})
     kinds_present = sorted({n["kind"] for n in nodes})
+    colors = [edge_color(c) for c in coupling_types]
+    color_index = {c: i for i, c in enumerate(colors)}
+
     legend_h = 28 + 20 * (1 + (len(kinds_present) + len(coupling_types)) // 3 + 1)
     width = MARGIN_X * 2 + PITCH_X * n_cols
-    height = MARGIN_TOP + PITCH_Y * n_rows + legend_h + 20
+    height = MARGIN_TOP + PITCH_Y * max_rows + legend_h + 20
 
+    # Conductance range for log-scaled stroke widths (issue #4043).
+    conds = [e.get("conductance_w_per_k") for e in edges]
+    conds = [c for c in conds if c and c > 0]
+    lo, hi = (min(conds), max(conds)) if conds else (1.0, 1.0)
+
+    aria = f"{title}: {len(nodes)} nodes, {len(edges)} couplings"
+    desc = (
+        f"Node-link topology diagram of the {title} thermal model. "
+        "Edge color encodes coupling type; edge width scales with log "
+        "conductance; a ×N badge marks merged parallel edges."
+    )
     parts = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         (
             f"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" "
-            f"viewBox=\"0 0 {width} {height}\" font-family=\"Helvetica,Arial,sans-serif\">"
+            f"viewBox=\"0 0 {width} {height}\" font-family=\"Helvetica,Arial,sans-serif\" "
+            f'role="img">'
         ),
+        # Issue #4042: accessible name + description on the SVG root.
+        f"<title>{xml_escape(aria)}</title>",
+        f"<desc>{xml_escape(desc)}</desc>",
         f"<!-- {GENERATOR_STAMP} -->",
         f'<rect width="{width}" height="{height}" fill="#f8fafc"/>',
         (
             f'<text x="{MARGIN_X}" y="28" font-size="17" font-weight="bold" fill="#0f172a">'
-            f"{xml_escape('ASHRAE 140 Case ' + case + ' — ' + doc['metadata'].get('model_name', ''))}</text>"
+            f"{xml_escape(title)}</text>"
         ),
         "<defs>",
     ]
-    for i, color in enumerate(EDGE_PALETTE):
+    for i, color in enumerate(colors):
         parts.append(
             f'<marker id="arrow{i}" viewBox="0 0 10 10" refX="10" refY="5" '
             f'markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
@@ -209,51 +469,90 @@ def render_svg(doc: dict, case: str) -> str:
         )
     parts.append("</defs>")
 
-    # Edges (drawn under the boxes).
-    for edge in edges:
-        s_col, s_row = pos[edge["source_id"]]
-        t_col, t_row = pos[edge["target_id"]]
-        x1 = MARGIN_X + s_col * PITCH_X + BOX_W
-        y1 = MARGIN_TOP + s_row * PITCH_Y + BOX_H // 2
-        x2 = MARGIN_X + t_col * PITCH_X
-        y2 = MARGIN_TOP + t_row * PITCH_Y + BOX_H // 2
+    def node_xy(node_id: str) -> tuple[float, float]:
+        col, row = pos[node_id]
+        return (
+            MARGIN_X + col * PITCH_X,
+            MARGIN_TOP + row * PITCH_Y + col_yoff[col],
+        )
+
+    # Edges (drawn under the boxes), merged by multiplicity (issue #4039).
+    badges: list[str] = []  # drawn after the nodes so they stay on top
+    for (src, tgt, ctype), group in group_edges(edges):
+        rep = group[0]
+        mult = len(group)
+        x1, y1 = node_xy(src)
+        x1 += BOX_W
+        y1 += BOX_H / 2
+        x2, y2 = node_xy(tgt)
+        y2 += BOX_H / 2
+        s_col, t_col = pos[src][0], pos[tgt][0]
         if t_col > s_col:
             mid = (x1 + x2) / 2
-            path = f"M {x1} {y1} C {mid} {y1}, {mid} {y2}, {x2} {y2}"
+            path = f"M {x1:.1f} {y1:.1f} C {mid:.1f} {y1:.1f}, {mid:.1f} {y2:.1f}, {x2:.1f} {y2:.1f}"
         else:
+            s_row, t_row = pos[src][1], pos[tgt][1]
             bulge = y1 + (60 if t_row >= s_row else -60)
             mid = (x1 + x2) / 2
-            path = f"M {x1} {y1} C {mid} {bulge}, {mid} {y2}, {x2} {y2}"
-        color_idx = _stable_index(edge.get("coupling_type", "coupling"))
-        color = EDGE_PALETTE[color_idx]
-        title = xml_escape(
-            f"{edge['source_id']} -> {edge['target_id']} ({edge.get('coupling_type', 'coupling')})"
-        )
+            path = (
+                f"M {x1:.1f} {y1:.1f} C {mid:.1f} {bulge:.1f}, "
+                f"{mid:.1f} {y2:.1f}, {x2:.1f} {y2:.1f}"
+            )
+        color = edge_color(ctype)
+        idx = color_index[color]
+        stroke_w = edge_stroke_width(rep.get("conductance_w_per_k"), lo, hi)
+        # Issue #4040: double-headed arrows for bidirectional edges.
+        marker_start = f' marker-start="url(#arrow{idx})"' if rep.get("bidirectional") else ""
+        mult_suffix = f" ×{mult}" if mult > 1 else ""
+        edge_title = xml_escape(f"{src} -> {tgt} ({ctype}){mult_suffix}")
         parts.append(
-            f'<path d="{path}" fill="none" stroke="{color}" stroke-width="1.4" '
-            f'opacity="0.75" marker-end="url(#arrow{color_idx})"><title>{title}</title></path>'
+            f'<path d="{path}" fill="none" stroke="{color}" stroke-width="{stroke_w:.2f}" '
+            f'opacity="0.75" marker-end="url(#arrow{idx})"{marker_start}>'
+            f"<title>{edge_title}</title></path>"
         )
+        if mult > 1:
+            mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+            badges.append(
+                f'<g><title>{xml_escape(f"{mult} parallel {ctype} edges")}</title>'
+                f'<circle cx="{mx:.1f}" cy="{my:.1f}" r="10" fill="#ffffff" '
+                f'stroke="#0f172a" stroke-width="1"/>'
+                f'<text x="{mx:.1f}" y="{my + 3.5:.1f}" font-size="10" font-weight="bold" '
+                f'text-anchor="middle" fill="#0f172a">×{mult}</text></g>'
+            )
 
     # Nodes.
     for node in nodes:
-        col, row = pos[node["id"]]
-        x = MARGIN_X + col * PITCH_X
-        y = MARGIN_TOP + row * PITCH_Y
+        x, y = node_xy(node["id"])
         color = KIND_COLORS.get(node["kind"], DEFAULT_NODE_COLOR)
-        label = node.get("name", node["id"])
-        if len(label) > 24:
-            label = label[:23] + "…"
+        cx = x + BOX_W / 2
+        lines = label_of[node["id"]]
+        if len(lines) == 1:
+            label_svg = (
+                f'<text x="{cx:.1f}" y="{y + BOX_H / 2 + 4:.1f}" font-size="11" '
+                f'text-anchor="middle" fill="#0f172a">{xml_escape(lines[0])}</text>'
+            )
+        else:
+            label_svg = "".join(
+                f'<text x="{cx:.1f}" y="{y + BOX_H / 2 + dy:.1f}" font-size="11" '
+                f'text-anchor="middle" fill="#0f172a">{xml_escape(line)}</text>'
+                for line, dy in zip(lines, (-7, 7))
+            )
         parts.append(
             f'<g><title>{xml_escape(node["id"] + " (" + node["kind"] + ")")}</title>'
-            f'<rect x="{x}" y="{y}" width="{BOX_W}" height="{BOX_H}" rx="7" '
+            f'<rect x="{x:.1f}" y="{y:.1f}" width="{BOX_W}" height="{BOX_H}" rx="7" '
             f'fill="{color}" stroke="#0f172a" stroke-width="1"/>'
-            f'<text x="{x + BOX_W // 2}" y="{y + BOX_H // 2 + 4}" font-size="11" '
-            f'text-anchor="middle" fill="#0f172a">{xml_escape(label)}</text></g>'
+            f"{label_svg}</g>"
         )
 
+    # Multiplicity badges on top of everything (issue #4039).
+    parts.extend(badges)
+
     # Legend.
-    ly = MARGIN_TOP + PITCH_Y * n_rows + 24
-    parts.append(f'<text x="{MARGIN_X}" y="{ly}" font-size="12" font-weight="bold" fill="#0f172a">Legend</text>')
+    ly = MARGIN_TOP + PITCH_Y * max_rows + 24
+    parts.append(
+        f'<text x="{MARGIN_X}" y="{ly}" font-size="12" font-weight="bold" fill="#0f172a">'
+        "Legend — edge width scales with log conductance</text>"
+    )
     lx, ly2 = MARGIN_X, ly + 18
     for kind in kinds_present:
         color = KIND_COLORS.get(kind, DEFAULT_NODE_COLOR)
@@ -266,8 +565,8 @@ def render_svg(doc: dict, case: str) -> str:
             lx, ly2 = MARGIN_X, ly2 + 18
     lx, ly2 = MARGIN_X, ly2 + 20
     for ctype in coupling_types:
-        color = EDGE_PALETTE[_stable_index(ctype)]
-        idx = _stable_index(ctype)
+        color = edge_color(ctype)
+        idx = color_index[color]
         parts.append(
             f'<path d="M {lx} {ly2} L {lx + 26} {ly2}" stroke="{color}" stroke-width="2" '
             f'marker-end="url(#arrow{idx})"/>'
@@ -363,6 +662,10 @@ def generate(dest_root: Path, fluxion_bin: str) -> int:
                 failures += 1
             lint_bytes = lint.stdout.encode("utf-8")
             doc = json.loads(export_bytes.decode("utf-8"))
+            # Diagram-layer augmentation (issue #4036): boundary-condition nodes
+            # appear in the Mermaid/SVG diagrams only; the reference and payload
+            # JSONs below stay byte-verbatim exports.
+            diagram_doc = augment_boundaries(doc)
 
             rel_ref = REFERENCE_DIR / f"case-{case}.json"
             rel_lint = LINT_DIR / f"case-{case}.lint.json"
@@ -371,8 +674,8 @@ def generate(dest_root: Path, fluxion_bin: str) -> int:
             rel_payload = PAYLOAD_DIR / f"case-{case}.json"
             (dest_root / rel_ref).write_bytes(export_bytes)
             (dest_root / rel_lint).write_bytes(lint_bytes)
-            (dest_root / rel_mmd).write_text(render_mermaid(doc, case), encoding="utf-8")
-            (dest_root / rel_svg).write_text(render_svg(doc, case), encoding="utf-8")
+            (dest_root / rel_mmd).write_text(render_mermaid(diagram_doc, case), encoding="utf-8")
+            (dest_root / rel_svg).write_text(render_svg(diagram_doc, case), encoding="utf-8")
             (dest_root / rel_payload).write_bytes(export_bytes)
 
             try:
