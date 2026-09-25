@@ -139,6 +139,11 @@ jobs:
     outputs:
       should_run: ${{ steps.final.outputs.should_run }}
     steps:
+      - name: Checkout (precheck needs the local docs-only-gate action)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 1
       - id: upstream
         env:
           EVENT_NAME: ${{ github.event_name }}

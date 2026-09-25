@@ -66,7 +66,7 @@
       "test_binaries": 1
     }
   },
-  "captured_at": "2026-09-25T21:03:21.323346+00:00",
+  "captured_at": "2026-09-25T21:52:13.604676+00:00",
   "captured_from": "tests/test_inventory.json",
   "metrics": {
     "lib_ignored": 5,
@@ -84,10 +84,10 @@
   },
   "ratchet": {
     "BASELINE_LIB_IGNORED": 9,
-    "BASELINE_LIB_TESTS": 4241,
+    "BASELINE_LIB_TESTS": 4243,
     "BASELINE_TEST_BINARIES": 49,
     "BASELINE_WORKSPACE_IGNORED": 147,
-    "BASELINE_WORKSPACE_TESTS": 8725
+    "BASELINE_WORKSPACE_TESTS": 8727
   },
   "ratchet_drift_tolerance_abs": 25,
   "ratchet_drift_tolerance_pct": 5.0,

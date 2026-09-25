@@ -66,8 +66,8 @@
       "test_binaries": 1
     }
   },
-  "generated_at": "2026-09-25T21:02:06.582481+00:00",
-  "repo_root": "59a4cd1f5f94",
+  "generated_at": "2026-09-25T21:52:23.170050+00:00",
+  "repo_root": "bd7395999739",
   "schema_version": 1,
   "scope": {
     "workspace_exclude": [
@@ -98,7 +98,7 @@
       "--list"
     ],
     "doc_tests": 165,
-    "executed_at": "2026-09-25T21:03:21.244182+00:00",
+    "executed_at": "2026-09-25T21:52:42.069530+00:00",
     "lib_ignored": 5,
     "lib_tests": 3898,
     "matched": true,
