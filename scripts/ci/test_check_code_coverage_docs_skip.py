@@ -1,49 +1,50 @@
 """Regression tests for the Code Coverage Gate docs-only skip (Issue #3662).
 
-PR #3660 — a docs-only PR touching only ``CONTRIBUTING.md`` and
-``AGENTS.md`` — failed the ``Code Coverage Gate (Issue #1932)`` workflow
-with ``conduction_zone: branch coverage 65.51% < 65.62% ratchet floor``
-(a 0.11pp dip inside typical ``cargo llvm-cov`` measurement variance).
-The PR added zero code lines so coverage on the critical path could not
-have actually regressed; the gate's noise floor needs alignment.
+History: PR #3660 — a docs-only PR touching only ``CONTRIBUTING.md``
+and ``AGENTS.md`` — failed the ``Code Coverage Gate (Issue #1932)``
+workflow with ``conduction_zone: branch coverage 65.51% < 65.62%
+ratchet floor`` (a 0.11pp dip inside typical ``cargo llvm-cov``
+measurement variance). The PR added zero code lines so coverage on the
+critical path could not have actually regressed; the gate's noise floor
+needed alignment.
 
-Issue #3662 lands the Wave 8 / #3367 carve-out already used by
-``.github/workflows/rust-tests.yml`` (Issue #3367, PR #3369): declare a
+Issue #3662 originally landed the Wave 8 / #3367 carve-out as a
 ``paths-ignore:`` block on the ``pull_request:`` trigger so docs-only
-PRs do not invoke ``scripts/coverage_critical_paths.py --gate`` at all.
-The script itself is unchanged — the fix lives at the workflow layer.
+PRs would not invoke ``scripts/coverage_critical_paths.py --gate`` at
+all.
 
-These tests pin the contract that the workflow file
-(``.github/workflows/code-coverage.yml``) carries the
-``paths-ignore:`` block with the canonical documentation patterns, so
-a future contributor tightening (or accidentally removing) the carve-out
-surfaces here instead of letting the next docs-only PR misfire the
-ratchet gate. Mirrors the ``test_check_concurrency_keys.py`` /
-``test_check_workflow_pin.py`` pattern (load the real workflow, assert
-its structure with a YAML parser + targeted invariants).
+Phase-gated CI (#4018 / #4019) moved the heavy workflows — including
+Code Coverage — from ``pull_request`` triggers to ``workflow_run``
+triggers behind CI Gates. ``workflow_run`` triggers do not support
+``paths-ignore``, so the skip mechanism moved with it: the workflow
+now carries a ``precheck`` job whose ``docs-only-gate`` step
+(``.github/actions/docs-only-gate``, ADR-0016 lane-2 deny list)
+computes ``docs_only`` from the upstream PR's file list, and the real
+gate only runs when ``should_run == 'true'``. The old
+``on.pull_request.paths-ignore`` block is gone; a ``paths-ignore``
+block remains under ``on.workflow_run`` purely as documentation of
+the carve-out (GitHub ignores it for ``workflow_run`` triggers).
 
-Coverage:
+These tests pin the new contract:
 
-* ``test_code_coverage_workflow_has_paths_ignore`` — the workflow's
-  ``on.pull_request`` block declares ``paths-ignore``.
-* ``test_code_coverage_workflow_paths_ignore_contains_docs_globs`` —
-  the carve-out covers ``docs/**``, ``**.md``, ``**.mdx``, and the
-  canonical root markdown files, matching the
-  ``rust-tests.yml::paths-ignore`` set so a docs PR cannot slip
-  through either workflow.
-* ``test_code_coverage_workflow_paths_ignore_in_sync_with_rust_tests``
-  — defensive invariant: the two path-filter sets stay in lock-step
-  (the docs-only carve-out is a single repo-wide invariant, not a
-  per-workflow one). Drift here would mean a docs PR that is filtered
-  out of one heavy workflow still triggers another.
+* ``test_code_coverage_workflow_precheck_uses_docs_only_gate`` — the
+  ``precheck`` job exists and invokes the local docs-only-gate action
+  (the LIVE skip mechanism).
+* ``test_code_coverage_workflow_documents_docs_carve_out`` — the
+  documentary ``on.workflow_run.paths-ignore`` block still lists the
+  canonical documentation globs, so the carve-out stays visible and
+  honest.
+* ``test_docs_only_gate_action_covers_canonical_docs_patterns`` —
+  the action's own match pattern covers ``docs/*``, ``*.md``,
+  ``*.mdx`` (the shapes a docs-only PR takes).
 * ``test_code_coverage_workflow_does_not_ignore_source_paths`` —
-  defensive: the carve-out MUST NOT ignore ``src/**``,
-  ``fluxion-core/src/**``, ``Cargo.toml``, ``Cargo.lock``, or
-  ``scripts/**`` so any code-touching PR still triggers the gate.
-* Synthetic ``tmp_path`` workflow fixtures exercise the inverse
-  cases (no ``paths-ignore`` -> assertion failure; root ``.md`` entry
-  missing -> assertion failure; source path leaked into the
-  carve-out -> assertion failure).
+  defensive: the documented carve-out MUST NOT swallow ``src/**``,
+  ``Cargo.toml``, ``scripts/**``, etc.
+* Synthetic ``tmp_path`` fixtures exercise the inverse cases.
+
+Mirrors the ``test_check_concurrency_keys.py`` / ``test_check_workflow_pin.py``
+pattern (load the real workflow, assert its structure with a YAML
+parser + targeted invariants).
 """
 
 from __future__ import annotations
@@ -53,14 +54,13 @@ from pathlib import Path
 import yaml  # type: ignore[import-untyped]
 
 # Repo-relative paths resolved against ``Path(__file__)`` so the tests
-# run unchanged from any worktree (CI + local-dev + the agent worktree
-# at ``../worktrees/issue-3662-coverage-flake-fix``).
+# run unchanged from any worktree (CI + local-dev + agent worktrees).
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_PATH = (
     REPO_ROOT / ".github" / "workflows" / "code-coverage.yml"
 )
-RUST_TESTS_WORKFLOW_PATH = (
-    REPO_ROOT / ".github" / "workflows" / "rust-tests.yml"
+DOCS_ONLY_GATE_ACTION_PATH = (
+    REPO_ROOT / ".github" / "actions" / "docs-only-gate" / "action.yml"
 )
 
 
@@ -70,39 +70,63 @@ RUST_TESTS_WORKFLOW_PATH = (
 
 
 def _load_workflow(path: Path) -> dict:
-    """Parse the YAML workflow at ``path`` and return the doc.
-
-    ``yaml.safe_load`` is consistent with the existing
-    ``test_check_required_checks_sync.py`` / ``test_release_gate_checker.py``
-    parsers — using the same library across the test suite keeps a
-    parser regression surfaced uniformly.
-    """
+    """Parse the YAML workflow at ``path`` and return the doc."""
     with open(path, encoding="utf-8") as fh:
         return yaml.safe_load(fh)
 
 
-def _paths_ignore(workflow: dict) -> list[str]:
-    """Return the ``on.pull_request.paths-ignore`` list (possibly empty)."""
+def _precheck_steps(workflow: dict) -> list[dict]:
+    """Return the ``precheck`` job's steps (possibly empty)."""
+    jobs = workflow.get("jobs") or {}
+    precheck = jobs.get("precheck") or {}
+    return precheck.get("steps") or []
+
+
+def _documented_carve_out(workflow: dict) -> list[str]:
+    """Return the documentary ``on.workflow_run.paths-ignore`` list.
+
+    Post-#4019 this block is documentation only — GitHub does not
+    honor ``paths-ignore`` on ``workflow_run`` triggers — but it is
+    kept in the file as the human-readable carve-out, so pin it.
+    """
     on_block = workflow.get(True) or workflow.get("on") or {}
-    pull_request = on_block.get("pull_request") or {}
-    if isinstance(pull_request, list):
-        # `on.pull_request: [foo, bar]` form (no map) — no path filter
-        # can be attached in this shape.
-        return []
-    paths_ignore = pull_request.get("paths-ignore") or []
+    workflow_run = on_block.get("workflow_run") or {}
+    paths_ignore = workflow_run.get("paths-ignore") or []
     assert isinstance(paths_ignore, list), (
-        "pull_request.paths-ignore must be a YAML sequence (list of "
+        "workflow_run.paths-ignore must be a YAML sequence (list of "
         f"strings), got {type(paths_ignore).__name__}"
     )
     return [str(p) for p in paths_ignore]
 
 
-# Canonical documentation carve-out, mirrored verbatim from
-# `.github/workflows/rust-tests.yml::on.pull_request.paths-ignore`
-# (Issue #3367, PR #3369, Wave 8). The carve-out is a single
-# repo-wide invariant — every heavy workflow that path-filters docs PRs
-# must declare the same list so a docs PR does not slip past one and
-# trip another.
+def _action_docs_alternatives() -> list[str]:
+    """Extract the ``case`` pattern alternatives from the action.
+
+    The docs-only-gate action matches PR file paths with a shell
+    ``case`` statement like::
+
+        docs/*|*.md|*.mdx|LICENSE|...)
+
+    Return the ``|``-separated alternatives so tests can assert the
+    canonical docs shapes are covered.
+    """
+    text = DOCS_ONLY_GATE_ACTION_PATH.read_text(encoding="utf-8")
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("docs/*|") and stripped.endswith(")"):
+            return stripped[:-1].split("|")
+    raise AssertionError(
+        f"{DOCS_ONLY_GATE_ACTION_PATH} no longer declares its docs "
+        "match pattern as a `docs/*|...` case statement — the skip "
+        "contract moved; update these tests to the new shape."
+    )
+
+
+# Canonical documentation carve-out, mirrored verbatim from the
+# documentary `.github/workflows/code-coverage.yml::on.workflow_run.
+# paths-ignore` block. The explicit root `.md` entries are defensive
+# (`**.md` already matches them) and document which root files count
+# as "documentation".
 EXPECTED_DOCS_GLOBS: tuple[str, ...] = (
     "docs/**",
     "**.md",
@@ -122,7 +146,7 @@ EXPECTED_DOCS_GLOBS: tuple[str, ...] = (
 # Source-side patterns the carve-out MUST NOT swallow — a regression
 # here would silently exempt code-changing PRs from coverage. The
 # strings are tested as fnmatch-style glob fragments against each
-# ``paths-ignore`` entry.
+# carve-out entry.
 FORBIDDEN_DOCS_SKIP_GLOBS: tuple[str, ...] = (
     "src/**",
     "fluxion-core/src/**",
@@ -149,112 +173,112 @@ def _write_workflow(tmp_path: Path, body: str, name: str = "code-coverage.yml") 
 
 
 def test_code_coverage_workflow_file_exists():
-    """Sanity: the workflow file is at the expected location.
-
-    The test fails loudly if the workflow is renamed/moved so the
-    follow-up invariants do not silently pass on a missing target.
-    """
+    """Sanity: the workflow file is at the expected location."""
     assert WORKFLOW_PATH.is_file(), (
         f"Expected workflow at {WORKFLOW_PATH}, but the file does not "
-        f"exist. The Issue #3662 fix is anchored to "
-        f"`.github/workflows/code-coverage.yml`."
+        "exist. The Issue #3662 fix is anchored to "
+        "`.github/workflows/code-coverage.yml`."
     )
 
 
-def test_code_coverage_workflow_has_paths_ignore():
-    """``on.pull_request.paths-ignore`` MUST be declared.
-
-    Pre-#3662 the workflow declared only ``on.pull_request:`` (a bare
-    scalar) so every PR — including docs-only ones like #3660 — ran
-    the full cargo-llvm-cov pipeline and could misfire the 1%
-    ratchet on measurement noise. The fix is to attach a
-    ``paths-ignore`` block listing the canonical documentation globs.
-    """
-    workflow = _load_workflow(WORKFLOW_PATH)
-    paths_ignore = _paths_ignore(workflow)
-    assert paths_ignore, (
-        ".github/workflows/code-coverage.yml is missing "
-        "`on.pull_request.paths-ignore:`. The Code Coverage Gate "
-        "(Issue #1932) cannot fire on docs-only PRs (Issue #3662) "
-        "without this block — see "
-        ".github/workflows/rust-tests.yml::on.pull_request.paths-ignore "
-        "for the Wave 8 / #3367 pattern."
+def test_docs_only_gate_action_exists():
+    """Sanity: the local action the precheck depends on exists."""
+    assert DOCS_ONLY_GATE_ACTION_PATH.is_file(), (
+        f"Expected action at {DOCS_ONLY_GATE_ACTION_PATH}, but the "
+        "file does not exist. The phase-gated docs-only skip "
+        "(#4018/#4019) depends on it."
     )
 
 
-def test_code_coverage_workflow_paths_ignore_contains_docs_globs():
-    """Every canonical docs glob is present in the carve-out.
+def test_code_coverage_workflow_precheck_uses_docs_only_gate():
+    """The ``precheck`` job MUST invoke the local docs-only-gate action.
 
-    Documents the invariant that a docs PR touching any of these
-    paths is exempted from the gate. Removing any entry re-opens the
-    noise-floor failure mode that PR #3660 triggered.
+    Post-#4019 this step is the LIVE docs-only skip mechanism:
+    ``workflow_run`` triggers do not support ``paths-ignore``, so the
+    old ``on.pull_request.paths-ignore`` block is gone and the
+    precheck's ``docs_only`` output decides whether the gate runs.
+    Removing this step would re-open the PR #3660 noise-floor failure
+    mode for every docs-only PR.
     """
     workflow = _load_workflow(WORKFLOW_PATH)
-    paths_ignore = _paths_ignore(workflow)
-    missing = [
-        g for g in EXPECTED_DOCS_GLOBS if g not in paths_ignore
-    ]
+    steps = _precheck_steps(workflow)
+    assert steps, (
+        ".github/workflows/code-coverage.yml has no `precheck` job "
+        "steps. The phase-gated docs-only skip (#4018/#4019) requires "
+        "a precheck job driving `.github/actions/docs-only-gate`."
+    )
+    uses_values = [str(s.get("uses") or "") for s in steps]
+    assert "./.github/actions/docs-only-gate" in uses_values, (
+        ".github/workflows/code-coverage.yml::jobs.precheck does not "
+        "invoke `./.github/actions/docs-only-gate`. Without it, "
+        "docs-only PRs reach `scripts/coverage_critical_paths.py "
+        "--gate` and can misfire the 1%-relative ratchet on "
+        "measurement noise (Issue #3662, PR #3660)."
+    )
+
+
+def test_code_coverage_workflow_documents_docs_carve_out():
+    """The documentary carve-out lists every canonical docs glob.
+
+    ``on.workflow_run.paths-ignore`` is not honored by GitHub for
+    ``workflow_run`` triggers — it is kept as the human-readable
+    record of the carve-out. Pin it so the documentation cannot
+    silently drift from the skip contract.
+    """
+    workflow = _load_workflow(WORKFLOW_PATH)
+    carve_out = _documented_carve_out(workflow)
+    missing = [g for g in EXPECTED_DOCS_GLOBS if g not in carve_out]
     assert not missing, (
-        ".github/workflows/code-coverage.yml::on.pull_request."
-        "paths-ignore is missing the canonical documentation globs: "
-        f"{missing}. The Issue #3662 carve-out must match the "
-        ".github/workflows/rust-tests.yml::on.pull_request."
-        "paths-ignore set so docs-only PRs are skipped by both "
-        "heavy workflows uniformly."
+        ".github/workflows/code-coverage.yml::on.workflow_run."
+        f"paths-ignore is missing the canonical documentation globs: "
+        f"{missing}. Keep the documented carve-out in sync with the "
+        "docs-only skip contract."
     )
 
 
-def test_code_coverage_workflow_paths_ignore_in_sync_with_rust_tests():
-    """The Code Coverage and Rust Tests path-filters stay in lock-step.
+def test_docs_only_gate_action_covers_canonical_docs_patterns():
+    """The action's match pattern covers the docs-only PR shapes.
 
-    The docs-only carve-out is a single repo-wide invariant, not a
-    per-workflow one. Drift between the two path-filter sets would
-    mean a docs PR is filtered out of one heavy workflow but still
-    triggers another, defeating the Wave 8 / #3367 decoupling.
+    A docs-only PR touches ``docs/**``, ``*.md``, or ``*.mdx``. If
+    the action's ``case`` pattern ever drops one of these shapes,
+    such PRs would stop being detected as docs-only and would run
+    the full coverage long pole (re-opening the #3660 failure mode).
     """
-    code_cov = _load_workflow(WORKFLOW_PATH)
-    rust_tests = _load_workflow(RUST_TESTS_WORKFLOW_PATH)
-    code_cov_set = set(_paths_ignore(code_cov))
-    rust_tests_set = set(_paths_ignore(rust_tests))
-
-    missing_from_code_cov = rust_tests_set - code_cov_set
-    assert not missing_from_code_cov, (
-        ".github/workflows/code-coverage.yml::on.pull_request."
-        f"paths-ignore is missing entries that "
-        f".github/workflows/rust-tests.yml::on.pull_request."
-        f"paths-ignore declares: {sorted(missing_from_code_cov)}. "
-        "The two heavy workflows must agree on the docs-only carve-out "
-        "so a docs PR is either skipped by both or runs through both "
-        "(never a mix)."
-    )
+    alternatives = _action_docs_alternatives()
+    for shape in ("docs/*", "*.md", "*.mdx"):
+        assert shape in alternatives, (
+            f".github/actions/docs-only-gate no longer matches "
+            f"{shape!r} (pattern alternatives: {alternatives}). "
+            "Docs-only PRs with that shape would no longer be "
+            "detected as docs-only."
+        )
 
 
 def test_code_coverage_workflow_does_not_ignore_source_paths():
-    """Defensive: the carve-out MUST NOT swallow source paths.
+    """Defensive: the documented carve-out MUST NOT swallow source paths.
 
-    A regression where ``src/**`` ends up under ``paths-ignore`` would
-    silently exempt every code-changing PR from coverage. Use
-    fnmatch-style glob containment to catch both literal entries
-    (e.g. ``src/**``) and over-broad patterns (e.g. ``**/*.rs``).
+    A regression where ``src/**`` ends up in the carve-out would
+    mis-document the skip contract and could mask a future change
+    that re-introduces a live path filter. Use fnmatch-style glob
+    containment to catch both literal entries and over-broad
+    patterns.
     """
     import fnmatch
 
     workflow = _load_workflow(WORKFLOW_PATH)
-    paths_ignore = _paths_ignore(workflow)
+    carve_out = _documented_carve_out(workflow)
 
     leaked: list[str] = []
     for forbidden in FORBIDDEN_DOCS_SKIP_GLOBS:
-        for entry in paths_ignore:
+        for entry in carve_out:
             if fnmatch.fnmatchcase(forbidden, entry):
                 leaked.append(f"{forbidden!r} matched by {entry!r}")
 
     assert not leaked, (
-        ".github/workflows/code-coverage.yml::on.pull_request."
+        ".github/workflows/code-coverage.yml::on.workflow_run."
         "paths-ignore swallowed a code-side pattern; the docs-only "
-        "carve-out must NEVER exempt source-side changes. Findings: "
-        f"{leaked}. The Code Coverage Gate must still run on every "
-        "PR that touches src/, fluxion-core/src/, Cargo.toml, "
-        "Cargo.lock, scripts/, or *.rs files."
+        f"carve-out must NEVER cover source-side changes. Findings: "
+        f"{leaked}."
     )
 
 
@@ -263,92 +287,73 @@ def test_code_coverage_workflow_does_not_ignore_source_paths():
 # ---------------------------------------------------------------------------
 
 
-def test_synthetic_workflow_without_paths_ignore_is_rejected(tmp_path):
-    """A workflow that omits ``paths-ignore`` triggers the assertion.
+def test_synthetic_precheck_without_docs_only_gate_is_rejected(tmp_path):
+    """A precheck job without the docs-only-gate step is rejected.
 
-    Pins the production assertion that the carve-out is required, not
-    optional, on the Code Coverage workflow.
+    Pins the production assertion that the gate step is required, not
+    optional, in the precheck job.
     """
     body = (
         "name: Code Coverage\n"
         "\n"
         "on:\n"
-        "  pull_request:\n"
-        "  push:\n"
-        "    branches: [develop]\n"
+        "  workflow_run:\n"
+        "    workflows: [\"CI Gates\"]\n"
+        "    types: [completed]\n"
         "\n"
         "jobs:\n"
-        "  coverage:\n"
+        "  precheck:\n"
         "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - id: upstream\n"
+        "        run: echo hi\n"
     )
     workflow_path = _write_workflow(tmp_path, body)
     workflow = _load_workflow(workflow_path)
-    assert _paths_ignore(workflow) == [], (
-        "Synthetic fixture: a workflow with bare `on.pull_request:` "
-        "must yield an empty paths-ignore list (the regression we "
-        "are guarding against is exactly this empty case)."
-    )
-    # And the production assertion fires:
-    assert not _paths_ignore(workflow), (
-        "production gate: empty paths-ignore is rejected"
+    steps = _precheck_steps(workflow)
+    uses_values = [str(s.get("uses") or "") for s in steps]
+    assert "./.github/actions/docs-only-gate" not in uses_values, (
+        "Synthetic fixture: a precheck job without the docs-only-gate "
+        "step must be detected as missing the skip mechanism."
     )
 
 
-def test_synthetic_workflow_missing_canonical_root_md_is_rejected(tmp_path):
-    """A carve-out missing ``KNOWN_ISSUES.md`` is rejected.
+def test_synthetic_carve_out_missing_canonical_root_md_is_rejected(tmp_path):
+    """A documentary carve-out missing ``KNOWN_ISSUES.md`` is rejected.
 
     Pins that the canonical root-markdown enumeration is the
-    contract — removing a single root ``.md`` entry from the carve-out
-    re-opens the noise-floor failure mode for that file.
+    contract for the documented block.
     """
-    partial = [
-        "docs/**",
-        "**.md",
-        "**.mdx",
-        "README.md",
-        "ARCHITECTURE.md",
-        "AGENTS.md",
-        "RULES.md",
-        "CODEBASE_MAP.md",
-        "SCORECARD.md",
-        # KNOWN_ISSUES.md deliberately omitted
-        "ASHRAE140_RESULTS.md",
-        "CONTRIBUTING.md",
-    ]
+    partial = [g for g in EXPECTED_DOCS_GLOBS if g != "KNOWN_ISSUES.md"]
     body = (
         "name: Code Coverage\n"
         "\n"
         "on:\n"
-        "  pull_request:\n"
+        "  workflow_run:\n"
+        "    workflows: [\"CI Gates\"]\n"
+        "    types: [completed]\n"
         "    paths-ignore:\n"
         + "".join(f'      - "{p}"\n' for p in partial)
         + "\n"
-        "  push:\n"
-        "    branches: [develop]\n"
-        "\n"
         "jobs:\n"
-        "  coverage:\n"
+        "  precheck:\n"
         "    runs-on: ubuntu-latest\n"
     )
     workflow_path = _write_workflow(tmp_path, body)
     workflow = _load_workflow(workflow_path)
-    paths_ignore = _paths_ignore(workflow)
-
-    missing = [
-        g for g in EXPECTED_DOCS_GLOBS if g not in paths_ignore
-    ]
+    carve_out = _documented_carve_out(workflow)
+    missing = [g for g in EXPECTED_DOCS_GLOBS if g not in carve_out]
     assert missing == ["KNOWN_ISSUES.md"], (
         "Synthetic fixture: the production assertion must surface "
         f"the missing entry; got missing={missing}"
     )
 
 
-def test_synthetic_workflow_with_src_in_paths_ignore_is_rejected(tmp_path):
-    """A carve-out containing ``src/**`` triggers the source-leak check.
+def test_synthetic_carve_out_with_src_is_rejected(tmp_path):
+    """A carve-out containing ``src/**`` trips the source-leak guard.
 
-    Pins that adding ``src/**`` (or any source-side pattern) to
-    ``paths-ignore`` re-opens a silent coverage blind-spot: a
-    code-changing PR would skip the gate entirely.
+    Pins that planting ``src/**`` in the documentary block is
+    detected — the carve-out must never cover code-side paths.
     """
     import fnmatch
 
@@ -356,55 +361,52 @@ def test_synthetic_workflow_with_src_in_paths_ignore_is_rejected(tmp_path):
         "name: Code Coverage\n"
         "\n"
         "on:\n"
-        "  pull_request:\n"
+        "  workflow_run:\n"
+        "    workflows: [\"CI Gates\"]\n"
+        "    types: [completed]\n"
         "    paths-ignore:\n"
         '      - "docs/**"\n'
         '      - "**.md"\n'
         '      - "src/**"\n'  # regression: code-side pattern
         "\n"
-        "  push:\n"
-        "    branches: [develop]\n"
-        "\n"
         "jobs:\n"
-        "  coverage:\n"
+        "  precheck:\n"
         "    runs-on: ubuntu-latest\n"
     )
     workflow_path = _write_workflow(tmp_path, body)
     workflow = _load_workflow(workflow_path)
-    paths_ignore = _paths_ignore(workflow)
+    carve_out = _documented_carve_out(workflow)
 
     leaked = []
     for forbidden in FORBIDDEN_DOCS_SKIP_GLOBS:
-        for entry in paths_ignore:
+        for entry in carve_out:
             if fnmatch.fnmatchcase(forbidden, entry):
                 leaked.append(f"{forbidden!r} matched by {entry!r}")
     assert leaked, (
-        "Synthetic fixture: planting `src/**` in paths-ignore MUST "
-        "be detected by the source-leak guard. The fixture did not "
-        "trip the guard — the matcher regressed."
+        "Synthetic fixture: planting `src/**` in the documentary "
+        "carve-out MUST be detected by the source-leak guard. The "
+        "fixture did not trip the guard — the matcher regressed."
     )
 
 
-def test_paths_ignore_accepts_bare_pull_request_form(tmp_path):
-    """``on.pull_request:`` (bare scalar) yields an empty list.
+def test_documented_carve_out_accepts_missing_block(tmp_path):
+    """A workflow without the documentary block yields an empty list.
 
-    Pins the parser branch that returns an empty list when
-    ``on.pull_request`` is declared as a bare scalar rather than a
-    map. This is the pre-#3662 shape — the regression we are
-    guarding against — and the parser must not crash on it.
+    Pins the parser branch for workflows that (legitimately) omit
+    the documentary ``paths-ignore`` — the parser must not crash.
     """
     body = (
         "name: Code Coverage\n"
         "\n"
         "on:\n"
-        "  pull_request:\n"
-        "  push:\n"
-        "    branches: [develop]\n"
+        "  workflow_run:\n"
+        "    workflows: [\"CI Gates\"]\n"
+        "    types: [completed]\n"
         "\n"
         "jobs:\n"
-        "  coverage:\n"
+        "  precheck:\n"
         "    runs-on: ubuntu-latest\n"
     )
     workflow_path = _write_workflow(tmp_path, body)
     workflow = _load_workflow(workflow_path)
-    assert _paths_ignore(workflow) == []
+    assert _documented_carve_out(workflow) == []

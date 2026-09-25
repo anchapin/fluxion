@@ -41,6 +41,21 @@ fn test_ashrae_140_comprehensive_validation() {
     // Ensure we can generate markdown
     let markdown = report.to_markdown();
     assert!(markdown.contains("# ASHRAE 140 Validation Report"));
+
+    // CI ingestion: the ASHRAE 140 Validation workflow's extract step
+    // consumes this machine-readable report instead of regex-parsing
+    // stdout. The old `Case NNN: Heating = ...` / `Validation Report
+    // Summary:` println format was removed when the summary moved to
+    // structured tracing (Issue #2500), which silently zeroed the
+    // workflow's pass-rate extraction (0 cases, 0.0% vs the 60%
+    // floor). Env-gated so local `cargo test` runs stay side-effect
+    // free; the workflow sets FLUXION_VALIDATION_JSON_OUT.
+    if let Ok(out_path) = std::env::var("FLUXION_VALIDATION_JSON_OUT") {
+        let json = report.to_json();
+        std::fs::write(&out_path, json)
+            .unwrap_or_else(|e| panic!("failed to write validation JSON to {out_path}: {e}"));
+        println!("wrote validation report JSON to {out_path}");
+    }
 }
 
 #[test]
