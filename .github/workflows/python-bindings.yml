@@ -71,6 +71,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      # Issue #4018: cargo caching for the maturin build.
+      - name: Cache cargo workspace
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+
       - name: Cache ONNX Runtime binaries
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         if: matrix.os == 'macos-latest'
@@ -152,6 +156,10 @@ jobs:
       - uses: ./.github/actions/setup-rust-python-env
         with:
           python-version: ${{ matrix.python-version }}
+
+      # Issue #4018: cargo caching for the maturin build.
+      - name: Cache cargo workspace
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
 
       - name: Install maturin + test deps
         # Deliberately NOT installing requirements-dev.txt here: it pulls the

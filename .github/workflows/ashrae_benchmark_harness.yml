@@ -19,9 +19,9 @@ name: ASHRAE 140 Benchmark Harness
 
 on:
   push:
-    branches: [ main, dev ]
+    branches: [ main, develop ]
   pull_request:
-    branches: [ main, dev ]
+    branches: [ main, develop ]
   workflow_dispatch:
     inputs:
       update_baseline:
