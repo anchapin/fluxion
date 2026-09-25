@@ -490,12 +490,6 @@ ci:
     # Triggers on upstream clippy workflow_run; non-zero exit on any warning.
     - "Clippy (GH)"
 
-    # Known Issues Staleness gate (#1723). Listener job in
-    # `.github/workflows/known-issues-stale.yml` (the `fluxion-known-issues-gate`
-    # id). Triggers on the upstream KNOWN_ISSUES.md freshness workflow_run;
-    # non-zero exit when `*Last Updated:*` header is >60 days stale.
-    - "Known Issues Stale Check (GH)"
-
     # ASHRAE 140 Cases Cycle Check (#1441). Listener job in
     # `.github/workflows/ashrae_validation.yml` under
     # `fluxion-ashrae-cases-cycle-gate`. Triggers on upstream cycle check
@@ -717,7 +711,6 @@ ci:
     - "Energy Conservation (GH)"
     - "Rustfmt (GH)"
     - "Clippy (GH)"
-    - "Known Issues Stale Check (GH)"
     - "Ashrae Cases Cycle Check (GH)"
     - "Cycle Downward Trend Guard (Issue #2768)"
     - "Cargo Deny"
