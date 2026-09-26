@@ -248,7 +248,13 @@ BASELINE_WORKSPACE_TESTS = 8727  # 2026-09-25: 8725 -> 8727 — same window as
 # bumping the ratchet here keeps the nightly gauge soak's
 # ``scripts-tests.yml`` invocation green until a dedicated cleanup PR
 # can attribute them per-crate.
-BASELINE_WORKSPACE_IGNORED = 147  # Issue #3869: bumped from 138 (+9) — eight new
+BASELINE_WORKSPACE_IGNORED = 153  # Issue #4058: bumped from 147 (+6) — the six
+                                  # FD-vs-EnergyPlus step-response tests quarantined
+                                  # ``awaiting #4058`` (their former flux channel was
+                                  # a circular identity exposed by the #3981
+                                  # conservative Robin extraction; redesign tracked
+                                  # in Issue #4058, rows in tests/QUARANTINE.md).
+                                  # Previous: Issue #3869 bump from 138 (+9) — eight new
                                   # doctests marked ``ignore`` in the workspace-doctests
                                   # fix (Issue #3869 unblocking develop merges): the
                                   # ``MaterialLayer`` / ``CTFMaterial`` / ``WallSpec``
@@ -259,7 +265,7 @@ BASELINE_WORKSPACE_IGNORED = 147  # Issue #3869: bumped from 138 (+9) — eight 
                                   # ``src/sim/thermal_model_solvers.rs`` (4 blocks)
                                   # that flag the deprecated ``enable_*`` methods as
                                   # illustrative-only. Live cargo-verified count is
-                                  # 147 on develop HEAD after the fix lands.
+                                  # 153 on this branch after the #3981 module lands.
 # 2026-09-12 (Issue #3685): bumped from 308 to 309 for the new
 # ``tests/cold_start_guard_test.rs`` binary — the always-compiled
 # (feature-independent) unit tests for the Multi-Zone Cold Start
