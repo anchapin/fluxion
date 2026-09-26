@@ -42,9 +42,12 @@ THROUGHPUT_RE = re.compile(r"Throughput:\s*([\d.]+)\s*configs/sec")
 LATENCY_RE = re.compile(r"Latency per config:\s*([\d.]+)ms")
 
 CMD = [
-    "cargo", "test", "--test", "performance_regression_test",
-    "--release", "test_performance_regression",
-    "--", "--nocapture",
+    # Post-#3764 the standalone `performance_regression_test` binary is
+    # consolidated into `all_tests`; the test is #[ignore]d (Issue #3957),
+    # so ignore-stripping is required to actually execute it.
+    "cargo", "test", "--test", "all_tests",
+    "performance_regression_test::test_performance_regression",
+    "--release", "--", "--ignored", "--nocapture",
 ]
 
 

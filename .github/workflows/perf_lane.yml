@@ -1,0 +1,134 @@
+# Nightly release-mode perf lane for the TIMING test cohort (Issue #3957).
+#
+# Why this lane exists: the TIMING cohort — 8 modules in `tests/all_tests/`
+# (`performance_regression_test`, `quantum_topology_stress`,
+# `throughput_benchmark`, `api_concurrent_throughput`,
+# `hybrid_perf_regression`, `performance_ci_test`,
+# `test_batch_oracle_throughput`, `security_rate_limit`) — asserts absolute
+# throughput/latency thresholds. Seven of its tests fail deterministically in
+# debug builds even in isolation (#3952 deferred-suite triage) because the
+# thresholds were calibrated for release-mode measurement; debug-mode
+# absolute thresholds are environment roulette (GH 2-vCPU runners vs dev
+# boxes) and carry no stable regression signal. Those 7 tests are
+# `#[ignore = "awaiting #3957"]`-quarantined out of the debug lanes — this
+# lane is their designated measurement home.
+#
+# Design decisions (all from Issue #3957):
+# - Runner is `ubuntu-24.04` pinned, NOT `ubuntu-latest`, so measurements
+#   stay comparable run over run. Do NOT add the `vars.FLUXION_LINUX_RUNNER`
+#   override here — a self-hosted runner would silently change the
+#   measurement class this lane's thresholds are calibrated against.
+# - Release mode: the thresholds assume release-mode codegen.
+# - `--run-ignored=all` with a `-E` filter over the 8 TIMING modules:
+#   ignore-stripping without attribute churn. The debug lanes keep their
+#   quarantine; this lane executes the full cohort including the 7
+#   quarantined tests. (Precedent: performance_dashboard.yml runs
+#   `test_performance_regression` via `-- --ignored` in release mode.)
+# - The 2 contention-sensitive tests
+#   (`api_concurrent_throughput::concurrent_throughput_smoke`,
+#   `security_rate_limit::rate_limiter_lru_cap_respected_under_concurrent_cold_flood`)
+#   stay in-suite; their `.config/nextest.toml` `retries = 1` override
+#   (default profile) applies here unchanged.
+# - `--test-threads=2` matches the per-PR nextest lanes (ADR-0014) and the
+#   #3952 evidence runs, keeping sibling-load contention bounded.
+# - This workflow is NOT a required check and is NOT in
+#   `release_gates.yaml::ci.workflow_index`: scheduled-only workflows never
+#   produce PR-blocking check runs (ADR-0016 Lane 3 nightly authority).
+#   Results are informational; regressions are tracked via the perf-lane
+#   runbook (`docs/ci/perf-lane.md`), not branch protection.
+#
+# Threshold provenance: the absolute floors are release-mode values
+# re-baselined for this lane (Issue #3957 acceptance #3); the environment
+# and margin policy are documented in `docs/ci/perf-lane.md`. Per the #3952
+# guardrails, thresholds are NEVER relaxed to compensate for environment —
+# an unstable test is flagged for follow-up, not re-thresholded.
+
+name: Perf Lane (Nightly TIMING)
+
+on:
+  schedule:
+    # 08:00 UTC daily — after the 06:00/07:00 nightly cluster, off-peak US/EU.
+    - cron: '0 8 * * *'
+  workflow_dispatch: {}  # manual trigger for on-demand perf runs
+
+concurrency:
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: short
+
+jobs:
+  perf-lane:
+    name: Nightly TIMING perf lane (release)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig
+
+      - name: Install Rust
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
+        with:
+          max_attempts: 3
+          timeout_minutes: 10
+          retry_wait_seconds: 15
+          command: rustup toolchain install stable --profile default
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d  # v2
+        with:
+          tool: cargo-nextest
+
+      - name: Cache cargo (perf-lane)
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        with:
+          shared-key: perf-lane
+          cache-on-failure: true
+
+      # Explicit release build of the consolidated test runner first, so a
+      # compile failure is attributed to the build step, not the measurement.
+      - name: Build release (all_tests)
+        run: cargo build --release -p fluxion --test all_tests
+
+      - name: Run TIMING cohort (release, ignore-stripped)
+        # tee the console output to a log for the results artifact; pipefail
+        # keeps the step red when nextest fails.
+        run: |
+          set -o pipefail
+          cargo nextest run --release \
+            -p fluxion --test all_tests \
+            -E 'test(performance_regression_test::) | test(quantum_topology_stress::) | test(throughput_benchmark::) | test(api_concurrent_throughput::) | test(hybrid_perf_regression::) | test(performance_ci_test::) | test(test_batch_oracle_throughput::) | test(security_rate_limit::)' \
+            --run-ignored=all \
+            --test-threads=2 \
+            --no-fail-fast 2>&1 | tee perf-lane-run.log
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: perf-lane-results-${{ github.run_id }}
+          path: perf-lane-run.log
+          retention-days: 30
