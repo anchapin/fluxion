@@ -2,14 +2,8 @@
   "schema_version": 1,
   "description": "Inventory of production #[allow(dead_code)] sites in the root fluxion crate, governed by scripts/check_orphan_modules.py (Issue #3752). Regenerate with: python3 scripts/check_orphan_modules.py --update-dead-code-inventory",
   "governing_issue": 3752,
-  "site_count": 54,
+  "site_count": 53,
   "sites": [
-    {
-      "file": "src/ai/equipment_surrogate.rs",
-      "signature": "inference_session: ort::session::Session,",
-      "index": 1,
-      "issue": 3752
-    },
     {
       "file": "src/ai/surrogate/session_pool.rs",
       "signature": "pub struct MultiDeviceSessionPool {",

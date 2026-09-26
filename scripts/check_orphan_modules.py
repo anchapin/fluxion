@@ -302,7 +302,6 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
         "coupled_solver",
         "distributed",
         "doe_reference",
-        "equipment_surrogate",
         "epjson",
         "fdd",
         "flexlab_weather",
@@ -349,7 +348,11 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
 #     ``validation_hybrid_empirical_test`` target) — the module is no
 #     longer wired-but-dead, so its allowlist entry and its Issue
 #     #3748 disposition row are dropped in the same PR.
-BASELINE_WIRED_BUT_DEAD = 22  # raised from 21 → 22 in PR for fluxion-#3930 (lowered 22 → 21 in PR for fluxion-#3748; was 33 → 22 in PR for fluxion-#3555)
+BASELINE_WIRED_BUT_DEAD = 21  # lowered 22 → 21 in PR for fluxion-#4065: develop #4064 deleted
+                              # src/ai/equipment_surrogate.rs, so its allowlist entry and registry row
+                              # were removed in lock-step (live raw count is 21). History: 21 → 22 in PR
+                              # for fluxion-#3930 (lowered 22 → 21 in PR for fluxion-#3748; was 33 → 22
+                              # in PR for fluxion-#3555)
 
 # Downward-only ratchet for the orphan allowlist (Issue #3459).
 #
