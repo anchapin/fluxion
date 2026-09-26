@@ -36,56 +36,58 @@ flowchart LR
     n32["Zone 0 wall-west layer 0"]:::wall_layer
     n33["Zone 0 wall-west layer 1"]:::wall_layer
     n34["Zone 0 wall-west layer 2"]:::wall_layer
-    n35["Zone 1 air"]:::zone_air
-    n36["Zone 1 floor exterior film"]:::exterior_surface
-    n37["Zone 1 floor interior film"]:::interior_surface
-    n38["Zone 1 floor layer 0"]:::wall_layer
-    n39["Zone 1 floor layer 1"]:::wall_layer
-    n40["Zone 1 HVAC terminal"]:::hvac_terminal
-    n41["Zone 1 radiant mass"]:::internal_mass
-    n42["Zone 1 roof exterior film"]:::exterior_surface
-    n43["Zone 1 roof interior film"]:::interior_surface
-    n44["Zone 1 roof layer 0"]:::wall_layer
-    n45["Zone 1 roof layer 1"]:::wall_layer
-    n46["Zone 1 roof layer 2"]:::wall_layer
-    n47["Zone 1 wall-east exterior film"]:::exterior_surface
-    n48["Zone 1 wall-east interior film"]:::interior_surface
-    n49["Zone 1 wall-east layer 0"]:::wall_layer
-    n50["Zone 1 wall-east layer 1"]:::wall_layer
-    n51["Zone 1 wall-east layer 2"]:::wall_layer
-    n52["Zone 1 wall-north exterior film"]:::exterior_surface
-    n53["Zone 1 wall-north interior film"]:::interior_surface
-    n54["Zone 1 wall-north layer 0"]:::wall_layer
-    n55["Zone 1 wall-north layer 1"]:::wall_layer
-    n56["Zone 1 wall-north layer 2"]:::wall_layer
-    n57["Zone 1 wall-south exterior film"]:::exterior_surface
-    n58["Zone 1 wall-south interior film"]:::interior_surface
-    n59["Zone 1 wall-south layer 0"]:::wall_layer
-    n60["Zone 1 wall-south layer 1"]:::wall_layer
-    n61["Zone 1 wall-south layer 2"]:::wall_layer
-    n62["Zone 1 wall-west exterior film"]:::exterior_surface
-    n63["Zone 1 wall-west interior film"]:::interior_surface
-    n64["Zone 1 wall-west layer 0"]:::wall_layer
-    n65["Zone 1 wall-west layer 1"]:::wall_layer
-    n66["Zone 1 wall-west layer 2"]:::wall_layer
-    n1 <-->|conduction| n2
+    n35["Zone 0 window south #0"]:::window
+    n36["Zone 1 air"]:::zone_air
+    n37["Zone 1 floor exterior film"]:::exterior_surface
+    n38["Zone 1 floor interior film"]:::interior_surface
+    n39["Zone 1 floor layer 0"]:::wall_layer
+    n40["Zone 1 floor layer 1"]:::wall_layer
+    n41["Zone 1 HVAC terminal"]:::hvac_terminal
+    n42["Zone 1 radiant mass"]:::internal_mass
+    n43["Zone 1 roof exterior film"]:::exterior_surface
+    n44["Zone 1 roof interior film"]:::interior_surface
+    n45["Zone 1 roof layer 0"]:::wall_layer
+    n46["Zone 1 roof layer 1"]:::wall_layer
+    n47["Zone 1 roof layer 2"]:::wall_layer
+    n48["Zone 1 wall-east exterior film"]:::exterior_surface
+    n49["Zone 1 wall-east interior film"]:::interior_surface
+    n50["Zone 1 wall-east layer 0"]:::wall_layer
+    n51["Zone 1 wall-east layer 1"]:::wall_layer
+    n52["Zone 1 wall-east layer 2"]:::wall_layer
+    n53["Zone 1 wall-north exterior film"]:::exterior_surface
+    n54["Zone 1 wall-north interior film"]:::interior_surface
+    n55["Zone 1 wall-north layer 0"]:::wall_layer
+    n56["Zone 1 wall-north layer 1"]:::wall_layer
+    n57["Zone 1 wall-north layer 2"]:::wall_layer
+    n58["Zone 1 wall-south exterior film"]:::exterior_surface
+    n59["Zone 1 wall-south interior film"]:::interior_surface
+    n60["Zone 1 wall-south layer 0"]:::wall_layer
+    n61["Zone 1 wall-south layer 1"]:::wall_layer
+    n62["Zone 1 wall-south layer 2"]:::wall_layer
+    n63["Zone 1 wall-west exterior film"]:::exterior_surface
+    n64["Zone 1 wall-west interior film"]:::interior_surface
+    n65["Zone 1 wall-west layer 0"]:::wall_layer
+    n66["Zone 1 wall-west layer 1"]:::wall_layer
+    n67["Zone 1 wall-west layer 2"]:::wall_layer
+    n68["Zone 1 window south #0"]:::window
     n1 -->|convection_exterior| n10
     n1 -->|convection_exterior| n15
     n1 -->|convection_exterior| n20
     n1 -->|convection_exterior| n25
-    n1 -->|shortwave_solar_diffuse| n26
-    n1 -->|shortwave_solar_direct| n26
     n1 -->|convection_exterior| n30
     n1 <-->|conduction| n35
-    n1 -->|convection_exterior| n42
-    n1 -->|convection_exterior| n47
-    n1 -->|convection_exterior| n52
-    n1 -->|convection_exterior| n57
-    n1 -->|shortwave_solar_diffuse| n58
-    n1 -->|shortwave_solar_direct| n58
-    n1 -->|convection_exterior| n62
+    n1 -->|shortwave_solar_diffuse| n35
+    n1 -->|shortwave_solar_direct| n35
+    n1 -->|convection_exterior| n43
+    n1 -->|convection_exterior| n48
+    n1 -->|convection_exterior| n53
+    n1 -->|convection_exterior| n58
+    n1 -->|convection_exterior| n63
+    n1 <-->|conduction| n68
+    n1 -->|shortwave_solar_diffuse| n68
+    n1 -->|shortwave_solar_direct| n68
     n2 <-->|air_exchange| n1
-    n2 <-->|conduction| n35
+    n2 <-->|conduction| n36
     n3 <-->|conduction| n5
     n4 -->|convection_interior| n2
     n4 <-->|longwave_radiation| n9
@@ -124,45 +126,51 @@ flowchart LR
     n32 <-->|conduction| n33
     n33 <-->|conduction| n34
     n34 <-->|conduction| n31
-    n35 <-->|air_exchange| n1
-    n36 <-->|conduction| n38
-    n37 -->|convection_interior| n35
-    n37 <-->|longwave_radiation| n41
-    n38 <-->|conduction| n39
-    n39 <-->|conduction| n37
-    n40 <-->|hvac_sensible| n35
-    n42 <-->|conduction| n44
-    n43 -->|convection_interior| n35
-    n43 <-->|longwave_radiation| n41
-    n44 <-->|conduction| n45
+    n35 <-->|conduction| n2
+    n35 -->|shortwave_solar_diffuse| n26
+    n35 -->|shortwave_solar_direct| n26
+    n36 <-->|air_exchange| n1
+    n37 <-->|conduction| n39
+    n38 -->|convection_interior| n36
+    n38 <-->|longwave_radiation| n42
+    n39 <-->|conduction| n40
+    n40 <-->|conduction| n38
+    n41 <-->|hvac_sensible| n36
+    n43 <-->|conduction| n45
+    n44 -->|convection_interior| n36
+    n44 <-->|longwave_radiation| n42
     n45 <-->|conduction| n46
-    n46 <-->|conduction| n43
-    n47 <-->|conduction| n49
-    n48 -->|convection_interior| n35
-    n48 <-->|longwave_radiation| n41
-    n49 <-->|conduction| n50
+    n46 <-->|conduction| n47
+    n47 <-->|conduction| n44
+    n48 <-->|conduction| n50
+    n49 -->|convection_interior| n36
+    n49 <-->|longwave_radiation| n42
     n50 <-->|conduction| n51
-    n51 <-->|conduction| n48
-    n52 <-->|conduction| n54
-    n53 -->|convection_interior| n35
-    n53 <-->|longwave_radiation| n41
-    n54 <-->|conduction| n55
+    n51 <-->|conduction| n52
+    n52 <-->|conduction| n49
+    n53 <-->|conduction| n55
+    n54 -->|convection_interior| n36
+    n54 <-->|longwave_radiation| n42
     n55 <-->|conduction| n56
-    n56 <-->|conduction| n53
-    n57 <-->|conduction| n59
-    n58 -->|convection_interior| n35
-    n58 <-->|longwave_radiation| n41
-    n59 <-->|conduction| n60
+    n56 <-->|conduction| n57
+    n57 <-->|conduction| n54
+    n58 <-->|conduction| n60
+    n59 -->|convection_interior| n36
+    n59 <-->|longwave_radiation| n42
     n60 <-->|conduction| n61
-    n61 <-->|conduction| n58
-    n62 <-->|conduction| n64
-    n63 -->|convection_interior| n35
-    n63 <-->|longwave_radiation| n41
-    n64 <-->|conduction| n65
+    n61 <-->|conduction| n62
+    n62 <-->|conduction| n59
+    n63 <-->|conduction| n65
+    n64 -->|convection_interior| n36
+    n64 <-->|longwave_radiation| n42
     n65 <-->|conduction| n66
-    n66 <-->|conduction| n63
+    n66 <-->|conduction| n67
+    n67 <-->|conduction| n64
+    n68 <-->|conduction| n36
+    n68 -->|shortwave_solar_diffuse| n59
+    n68 -->|shortwave_solar_direct| n59
     n0 -->|ground_conduction| n3
-    n0 -->|ground_conduction| n36
+    n0 -->|ground_conduction| n37
     classDef boundary fill:#78716c,stroke:#0f172a,color:#0f172a
     classDef exterior_surface fill:#f97316,stroke:#0f172a,color:#0f172a
     classDef hvac_terminal fill:#14b8a6,stroke:#0f172a,color:#0f172a
@@ -171,4 +179,5 @@ flowchart LR
     classDef internal_mass fill:#eab308,stroke:#0f172a,color:#0f172a
     classDef outdoor_ambient fill:#38bdf8,stroke:#0f172a,color:#0f172a
     classDef wall_layer fill:#a16207,stroke:#0f172a,color:#0f172a
+    classDef window fill:#818cf8,stroke:#0f172a,color:#0f172a
     classDef zone_air fill:#ef4444,stroke:#0f172a,color:#0f172a

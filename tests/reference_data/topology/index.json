@@ -7,8 +7,8 @@
       "case": "600",
       "model_name": "ASHRAE 140 Case 600",
       "model_source": "ashrae-140-registry:600",
-      "node_count": 34,
-      "edge_count": 47,
+      "node_count": 35,
+      "edge_count": 50,
       "lint": {
         "clean": true,
         "errors": 0,
@@ -23,19 +23,19 @@
         "payload": "docs/architecture/topology/payloads/case-600.json"
       },
       "sha256": {
-        "reference": "3d5903c1e7320dd216e46236c79d9d32bdf58dbcc2aee9dded9e0d7be788f965",
+        "reference": "ce4b725f1ba052dc5f34aa9ea1cccc6b119bb5859ae17ad5f302ff9efafd2857",
         "lint": "82f710f2579c6f505baa9361aa1de1d7c50ac1f61ac891cef68750b4b4e1201b",
-        "mermaid": "9af9009e6903c3769be33f517bc8c9dc962acc1f7a709cd20ff146925e359c6b",
-        "svg": "dac617e45ae31e586450afdaa7696006d52fd01871ef4360df74666cba56ab45",
-        "payload": "3d5903c1e7320dd216e46236c79d9d32bdf58dbcc2aee9dded9e0d7be788f965"
+        "mermaid": "ff569a5b5a96ec3e9d6f8c76918e10b856a7578732763bb71a13d808b8f4be64",
+        "svg": "54a61cbb2665916d62dfe177ed7e1aae309b2a111a9c782227fec898f202f754",
+        "payload": "ce4b725f1ba052dc5f34aa9ea1cccc6b119bb5859ae17ad5f302ff9efafd2857"
       }
     },
     {
       "case": "610",
       "model_name": "ASHRAE 140 Case 610",
       "model_source": "ashrae-140-registry:610",
-      "node_count": 34,
-      "edge_count": 47,
+      "node_count": 35,
+      "edge_count": 50,
       "lint": {
         "clean": true,
         "errors": 0,
@@ -50,19 +50,19 @@
         "payload": "docs/architecture/topology/payloads/case-610.json"
       },
       "sha256": {
-        "reference": "df1eb5e9549e9418ee4346f05e15b460d125eaf51df9ab2271e5744332c314a9",
+        "reference": "2986aa3fee84bd676d366c5e5ecf76208172d9c036c2b0861347bc9a66341acf",
         "lint": "542ee3e95bc60564950996a3cb8989b361767dc5cb7569de419becdef7def5c7",
-        "mermaid": "23c10100bb0f1e78090e5a07e0ce53946302649aaf49e7db20bbf5af8f47945d",
-        "svg": "e501a39eda76fa143242bc80e6e5157be1d508523681fca2db684ad275a77beb",
-        "payload": "df1eb5e9549e9418ee4346f05e15b460d125eaf51df9ab2271e5744332c314a9"
+        "mermaid": "e0dfe92d08c36df458a897baccddc6374d5e1e8bbf709e4f3ccab23b8e9da5b3",
+        "svg": "e22dd21b4435ca9e276dbc7d7cf7bfb0195a73e88c023515317268bc9e8d72c3",
+        "payload": "2986aa3fee84bd676d366c5e5ecf76208172d9c036c2b0861347bc9a66341acf"
       }
     },
     {
       "case": "620",
       "model_name": "ASHRAE 140 Case 620",
       "model_source": "ashrae-140-registry:620",
-      "node_count": 34,
-      "edge_count": 50,
+      "node_count": 36,
+      "edge_count": 56,
       "lint": {
         "clean": true,
         "errors": 0,
@@ -77,19 +77,19 @@
         "payload": "docs/architecture/topology/payloads/case-620.json"
       },
       "sha256": {
-        "reference": "7d36f7e61e021bea97d1dc60f90bc1fa495cb538f7efe59a16a69d1ab3f57004",
+        "reference": "bae2647f832d588e7340107a74f2ac78645547951d09c2a50758519e8f7f41bf",
         "lint": "962f58050d38fa48fe2ec79764f04fa025fa905561d4dcee68b445cc80a039cd",
-        "mermaid": "3d498e60c2f452d97a6abf345c6ceb65f257c651f763aefe76367f7a6ac13528",
-        "svg": "d00aad548866b44fc6dcac6b63051609eab5628ed176154a803866d372609b4b",
-        "payload": "7d36f7e61e021bea97d1dc60f90bc1fa495cb538f7efe59a16a69d1ab3f57004"
+        "mermaid": "d96a06f14c902d2dcbc3ba995079cfaf9fc8555598e06448b99955c3531560ce",
+        "svg": "98dd3150213108c87975cc39b401840b642d25d1660ee92079b8e92767d96d75",
+        "payload": "bae2647f832d588e7340107a74f2ac78645547951d09c2a50758519e8f7f41bf"
       }
     },
     {
       "case": "630",
       "model_name": "ASHRAE 140 Case 630",
       "model_source": "ashrae-140-registry:630",
-      "node_count": 34,
-      "edge_count": 50,
+      "node_count": 36,
+      "edge_count": 56,
       "lint": {
         "clean": true,
         "errors": 0,
@@ -104,19 +104,19 @@
         "payload": "docs/architecture/topology/payloads/case-630.json"
       },
       "sha256": {
-        "reference": "5268271aa778dc3883eecd08a37606faebf08208738f3583bd3d667abff8a336",
+        "reference": "f3fdd8a843fbeb965c58f108336ee0e9d1b901e8935284b7824dd29575ac4399",
         "lint": "206e27f44abf8d2bdfeb417a13b4b5b20ddf98dd10a617d5d82661a69c5f723f",
-        "mermaid": "ff1540697bb700544b03ff744d8d054bc401cb4c42d3dd5a043ccfda316416d2",
-        "svg": "8bc4be8d79d0358ffc32a19c7ac828c7496f7fad1ff2c861ae37b19f902b46a4",
-        "payload": "5268271aa778dc3883eecd08a37606faebf08208738f3583bd3d667abff8a336"
+        "mermaid": "470ea14b52e8f69297212f69c79fd5ec265950e20661633b6717a5ba52b5f660",
+        "svg": "fab8eb5f153f2c5205f77e779b8b9bbbc78d1ee9120207ba68511f4f83f4dffd",
+        "payload": "f3fdd8a843fbeb965c58f108336ee0e9d1b901e8935284b7824dd29575ac4399"
       }
     },
     {
       "case": "640",
       "model_name": "ASHRAE 140 Case 640",
       "model_source": "ashrae-140-registry:640",
-      "node_count": 34,
-      "edge_count": 47,
+      "node_count": 35,
+      "edge_count": 50,
       "lint": {
         "clean": true,
         "errors": 0,
@@ -131,19 +131,19 @@
         "payload": "docs/architecture/topology/payloads/case-640.json"
       },
       "sha256": {
-        "reference": "ee7a9efd04bf51e96c5130781f0620a42bce26aee529a27c2ed59c9617b04375",
+        "reference": "c8bc07397f0a9df398334849288edbf4669f788ff3435135b024dbb1fbf044a1",
         "lint": "b00aad5676ae6e049348f171579e64c746ca1a5e9c219d9d0c8a229ae181d987",
-        "mermaid": "134223fd80324e61646dd6092aabe317ba7cdd1956c1d5f03f62cf011b380107",
-        "svg": "c632e20ca5777b92060a44458b8e2f7c455da5a46475e7db0e5ba05880d0ea13",
-        "payload": "ee7a9efd04bf51e96c5130781f0620a42bce26aee529a27c2ed59c9617b04375"
+        "mermaid": "e55139045e2ed25384a96c82d92dca6aa605395cf2693bedd2124623490a53cc",
+        "svg": "14819fef069594963558c511685b72c0b8f351815592995775da1269dade72d9",
+        "payload": "c8bc07397f0a9df398334849288edbf4669f788ff3435135b024dbb1fbf044a1"
       }
     },
     {
       "case": "650",
       "model_name": "ASHRAE 140 Case 650",
       "model_source": "ashrae-140-registry:650",
-      "node_count": 34,
-      "edge_count": 48,
+      "node_count": 35,
+      "edge_count": 51,
       "lint": {
         "clean": true,
         "errors": 0,
@@ -158,19 +158,19 @@
         "payload": "docs/architecture/topology/payloads/case-650.json"
       },
       "sha256": {
-        "reference": "59833ee9a31343159529de122cc01673771d583d7fd475b7b40459d459e1027a",
+        "reference": "218953130ddd4bc573eaa31678137f455f61ad1a6a8a159da5c485369fa7e451",
         "lint": "8d4bb978a0269aaa41a35a39f676de62514714ddfd5462b4b839f31c4a59df83",
-        "mermaid": "efe711119bbcecb65314ada56194d7e87f2ef5c96ec285a5ada879696cda6af4",
-        "svg": "3d1946142c4ecda58ed822cbaed8d301c5900c3744cb3c719032e463a45758a5",
-        "payload": "59833ee9a31343159529de122cc01673771d583d7fd475b7b40459d459e1027a"
+        "mermaid": "5255b0ca03424412662ab94306a7aa209e6fabf161274770409e048cf4463967",
+        "svg": "4d61dee701dfc893a63cac877d4224eb522c71553048134ae42d2c5c9d7d5890",
+        "payload": "218953130ddd4bc573eaa31678137f455f61ad1a6a8a159da5c485369fa7e451"
       }
     },
     {
       "case": "900",
       "model_name": "ASHRAE 140 Case 900",
       "model_source": "ashrae-140-registry:900",
-      "node_count": 34,
-      "edge_count": 47,
+      "node_count": 35,
+      "edge_count": 50,
       "lint": {
         "clean": true,
         "errors": 0,
@@ -185,19 +185,19 @@
         "payload": "docs/architecture/topology/payloads/case-900.json"
       },
       "sha256": {
-        "reference": "cb52bee0ef0494196a8e186b2a21dc48c5d3f8d3ffe3b6abc6bab395871c3c36",
+        "reference": "a0890575258a8c6494cddd723bb51c356888403007b19cf9600f52cb5719436c",
         "lint": "b1dcb48f23df77ebee7a9dafb0761b3b87eda155eb4e1656eafcb3e4bbaa6938",
-        "mermaid": "c76584a9c47093dde44f9162721dd88c13f0137b7db04a5085ef14897ee82a2b",
-        "svg": "f881d0368ce8ba6f140b91d91312496bbcec0cf344ac6eadf228228d23e0b55b",
-        "payload": "cb52bee0ef0494196a8e186b2a21dc48c5d3f8d3ffe3b6abc6bab395871c3c36"
+        "mermaid": "8ce947efb71cdb75bdfaf1e2c894883e0d5ff0cac0beafe691530c3b9e117582",
+        "svg": "d6dfc7f8feb9d0a6db6745a6a054fbe9da373275771482a7b76c7de8c1e0292f",
+        "payload": "a0890575258a8c6494cddd723bb51c356888403007b19cf9600f52cb5719436c"
       }
     },
     {
       "case": "960",
       "model_name": "ASHRAE 140 Case 960",
       "model_source": "ashrae-140-registry:960",
-      "node_count": 66,
-      "edge_count": 93,
+      "node_count": 68,
+      "edge_count": 99,
       "lint": {
         "clean": true,
         "errors": 0,
@@ -212,11 +212,11 @@
         "payload": "docs/architecture/topology/payloads/case-960.json"
       },
       "sha256": {
-        "reference": "2a5721a60b37ebe80628660f40c7dc3a9890794ed4667ce7c8ee50b29060603f",
+        "reference": "54a8737692cc91ce6e8517bf1ddbbf7150f65698109fdac987895b9aafb29c91",
         "lint": "90ff6d9069558503bdd5cc328ed40019173b570b62084dc1661f05b1d9080a52",
-        "mermaid": "e263e0e071772a4ee5470e2a7262074f3ca93f05eac4a6c46636da5020bf7ac2",
-        "svg": "388007cffe08630c84a8d52b80ac87b6d094cf340a6280e0c2890be0a3c8fda6",
-        "payload": "2a5721a60b37ebe80628660f40c7dc3a9890794ed4667ce7c8ee50b29060603f"
+        "mermaid": "dd11a2859b58a9ca28d59aecbd371b74e9239fb6f13abda3a8fd1a9492f5a9dc",
+        "svg": "2a42993274645a9a6a947163d760da01037cc2f7a458f97423b79bb273fe787a",
+        "payload": "54a8737692cc91ce6e8517bf1ddbbf7150f65698109fdac987895b9aafb29c91"
       }
     }
   ]

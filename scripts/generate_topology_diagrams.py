@@ -59,6 +59,7 @@ KIND_COLORS = {
     "exterior_surface": "#f97316",
     "wall_layer": "#a16207",
     "interior_surface": "#fbbf24",
+    "window": "#818cf8",
     "zone_air": "#ef4444",
     "internal_mass": "#eab308",
     "hvac_terminal": "#14b8a6",
@@ -321,9 +322,15 @@ def layout_positions(
                 (f"zone:{z}", "ext"),
                 (f"zone:{z}", "layer"),
                 (f"zone:{z}", "int"),
+                (f"zone:{z}", "window"),
             ]
     else:
-        col_keys += [("surface", "ext"), ("surface", "layer"), ("surface", "int")]
+        col_keys += [
+            ("surface", "ext"),
+            ("surface", "layer"),
+            ("surface", "int"),
+            ("surface", "window"),
+        ]
     col_keys += [("zone_air",), ("internal_mass",), ("hvac_terminal",), ("internal_gain",)]
     col_index = {k: i for i, k in enumerate(col_keys)}
 
@@ -341,6 +348,11 @@ def layout_positions(
             if split:
                 return (f"zone:{_node_zone(node)}", slot_of[kind])
             return ("surface", slot_of[kind])
+        if kind == "window":
+            # Glazing assemblies sit between the opaque envelope and zone air.
+            if split:
+                return (f"zone:{_node_zone(node)}", "window")
+            return ("surface", "window")
         key = (kind,)
         if key not in col_index:  # unknown kinds get trailing columns, first-seen
             col_index[key] = len(col_index)
