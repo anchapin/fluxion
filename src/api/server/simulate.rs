@@ -424,20 +424,25 @@ pub fn run_simulation(
     selector: ThermalSelector,
     request_id: &str,
 ) -> Result<SimulationOutput, ApiError> {
+    // Issue #3993: full schema validation with actionable errors, replacing
+    // the previous ad-hoc setpoint/zones checks and the silent `.max(1.0)`
+    // clamping downstream.
+    let validation_errors = schema.validate();
+    if !validation_errors.is_empty() {
+        let msg = validation_errors
+            .iter()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(ApiError::InvalidSchema(format!(
+            "invalid SimulationSchemaV1: {msg}"
+        )));
+    }
+
     let num_zones = schema.geometry.zones.len().max(1);
 
     let heating = schema.controls.zone_control.heating_setpoint;
     let cooling = schema.controls.zone_control.cooling_setpoint;
-    if heating >= cooling {
-        return Err(ApiError::InvalidSchema(format!(
-            "heating_setpoint ({heating}) must be < cooling_setpoint ({cooling})"
-        )));
-    }
-    if schema.geometry.zones.is_empty() {
-        return Err(ApiError::InvalidSchema(
-            "geometry.zones must contain at least one zone".to_string(),
-        ));
-    }
 
     let years = years.clamp(1, MAX_YEARS);
 
@@ -712,18 +717,23 @@ pub async fn simulate_stream(
     let schema = req.schema.into_v1();
     let options = req.options;
 
-    let heating = schema.controls.zone_control.heating_setpoint;
-    let cooling = schema.controls.zone_control.cooling_setpoint;
-    if heating >= cooling {
+    // Issue #3993: full schema validation with actionable errors, replacing
+    // the previous ad-hoc setpoint/zones checks and the silent `.max(1.0)`
+    // clamping downstream.
+    let validation_errors = schema.validate();
+    if !validation_errors.is_empty() {
+        let msg = validation_errors
+            .iter()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join("; ");
         return Err(ApiError::InvalidSchema(format!(
-            "heating_setpoint ({heating}) must be < cooling_setpoint ({cooling})"
+            "invalid SimulationSchemaV1: {msg}"
         )));
     }
-    if schema.geometry.zones.is_empty() {
-        return Err(ApiError::InvalidSchema(
-            "geometry.zones must contain at least one zone".to_string(),
-        ));
-    }
+
+    let heating = schema.controls.zone_control.heating_setpoint;
+    let cooling = schema.controls.zone_control.cooling_setpoint;
 
     let years = options.years.clamp(1, MAX_YEARS);
     let steps = years as usize * 8760;
