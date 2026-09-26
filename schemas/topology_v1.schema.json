@@ -71,6 +71,7 @@
         "exterior_surface",
         "wall_layer",
         "interior_surface",
+        "window",
         "internal_mass",
         "zone_air",
         "internal_gain",

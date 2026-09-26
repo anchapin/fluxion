@@ -36,14 +36,15 @@ flowchart LR
     n32["Zone 0 wall-west layer 0"]:::wall_layer
     n33["Zone 0 wall-west layer 1"]:::wall_layer
     n34["Zone 0 wall-west layer 2"]:::wall_layer
-    n1 <-->|conduction| n2
+    n35["Zone 0 window south #0"]:::window
     n1 -->|convection_exterior| n10
     n1 -->|convection_exterior| n15
     n1 -->|convection_exterior| n20
     n1 -->|convection_exterior| n25
-    n1 -->|shortwave_solar_diffuse| n26
-    n1 -->|shortwave_solar_direct| n26
     n1 -->|convection_exterior| n30
+    n1 <-->|conduction| n35
+    n1 -->|shortwave_solar_diffuse| n35
+    n1 -->|shortwave_solar_direct| n35
     n2 <-->|air_exchange| n1
     n3 <-->|conduction| n5
     n4 -->|convection_interior| n2
@@ -83,6 +84,9 @@ flowchart LR
     n32 <-->|conduction| n33
     n33 <-->|conduction| n34
     n34 <-->|conduction| n31
+    n35 <-->|conduction| n2
+    n35 -->|shortwave_solar_diffuse| n26
+    n35 -->|shortwave_solar_direct| n26
     n0 -->|ground_conduction| n3
     classDef boundary fill:#78716c,stroke:#0f172a,color:#0f172a
     classDef exterior_surface fill:#f97316,stroke:#0f172a,color:#0f172a
@@ -92,4 +96,5 @@ flowchart LR
     classDef internal_mass fill:#eab308,stroke:#0f172a,color:#0f172a
     classDef outdoor_ambient fill:#38bdf8,stroke:#0f172a,color:#0f172a
     classDef wall_layer fill:#a16207,stroke:#0f172a,color:#0f172a
+    classDef window fill:#818cf8,stroke:#0f172a,color:#0f172a
     classDef zone_air fill:#ef4444,stroke:#0f172a,color:#0f172a

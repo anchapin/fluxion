@@ -260,28 +260,107 @@ fn push_common_wall(graph: &mut TopologyGraph, cw: &CommonWall) {
     });
 }
 
+/// Stable window key for a wall orientation (used in node ids).
+fn window_key(orientation: &Orientation) -> &'static str {
+    match orientation {
+        Orientation::North => "north",
+        Orientation::East => "east",
+        Orientation::South => "south",
+        Orientation::West => "west",
+        Orientation::Up | Orientation::Horizontal => "skylight",
+        Orientation::Down => "floor-window",
+    }
+}
+
+/// Tilt for a window from its orientation (windows sit in walls; skylights
+/// lie flat).
+fn window_tilt_deg(orientation: &Orientation) -> f64 {
+    match orientation {
+        Orientation::North | Orientation::East | Orientation::South | Orientation::West => 90.0,
+        Orientation::Up | Orientation::Horizontal => 0.0,
+        Orientation::Down => 180.0,
+    }
+}
+
 fn push_window(
     graph: &mut TopologyGraph,
     zi: usize,
+    zname: &str,
     w: &WindowArea,
     spec: &CaseSpec,
     hosts: &std::collections::BTreeSet<String>,
+    index: usize,
 ) {
     if w.area <= 0.0 {
         return;
     }
     let outdoor = "ambient";
-    // Solar + glazing conduction: glazing inner surface is convectively close
-    // to zone air; solar gains land on the host orientation's interior film
-    // when that orientation has an opaque chain (a fully-glazed wall has
-    // none — its solar gain couples straight to the zone air node).
+    // Per-(zone, orientation) index keeps node ids unique when a zone has
+    // several windows on the same wall.
+    let win_id = format!("zone-{zi}:window-{}:{index}", window_key(&w.orientation));
+    let zone_air = format!("zone-{zi}:air");
+    let zone_ref = Some(zone_air.clone());
+    let shgc = spec.window_properties.shgc;
+    // Glazing conduction (glass + frame in series, per WindowSpec doc).
+    let u_eff = spec.window_properties.u_value + spec.window_properties.frame_u_value;
+
+    // Window node (Issue #3972): the glazing assembly as a first-class graph
+    // node carrying the audit-relevant properties (area, orientation, U, SHGC).
+    let mut attrs = BTreeMap::new();
+    attrs.insert("u_value_w_per_m2k".to_string(), u_eff);
+    attrs.insert("shgc".to_string(), shgc);
+    attrs.insert("glazing".to_string(), 1.0);
+    if spec.shading.is_some() {
+        attrs.insert("shading_present".to_string(), 1.0);
+    }
+    graph.push_node(TopologyNode {
+        id: win_id.clone(),
+        kind: TopologyNodeKind::Window,
+        zone_id: zone_ref,
+        name: format!("{zname} window {} #{index}", window_key(&w.orientation)),
+        capacitance_j_per_k: None,
+        area_m2: Some(w.area),
+        volume_m3: None,
+        azimuth_deg: azimuth_deg(&w.orientation),
+        tilt_deg: Some(window_tilt_deg(&w.orientation)),
+        elevation_m: None,
+        attributes: attrs,
+    });
+
+    // Glazing conduction: outdoor -> glazing assembly carries the full
+    // U_eff x A (unchanged value from the pre-#3972 direct ambient->air edge).
+    graph.push_edge(TopologyEdge {
+        source_id: outdoor.to_string(),
+        target_id: win_id.clone(),
+        coupling_type: TopologyEdgeKind::Conduction,
+        conductance_w_per_k: Some(u_eff * w.area),
+        fraction: None,
+        bidirectional: true,
+        attributes: BTreeMap::new(),
+    });
+    // Glazing -> zone air: pure topological link (the conductance lives on
+    // the outdoor leg; the glazing node models no capacitance).
+    graph.push_edge(TopologyEdge {
+        source_id: win_id.clone(),
+        target_id: zone_air.clone(),
+        coupling_type: TopologyEdgeKind::Conduction,
+        conductance_w_per_k: None,
+        fraction: None,
+        bidirectional: true,
+        attributes: BTreeMap::new(),
+    });
+
+    // Solar admission through the glazing: outdoor -> window carries the SHGC
+    // fraction, then window -> receiving surface shows where the admitted
+    // solar lands (the host orientation's interior film when that orientation
+    // has an opaque chain; a fully-glazed wall has none, so its solar gain
+    // couples straight to the zone air node).
     let host_surface = format!("zone-{}:{}:int", zi, wall_key(&w.orientation));
     let solar_target = if hosts.contains(&host_surface) {
         host_surface
     } else {
-        format!("zone-{zi}:air")
+        zone_air
     };
-    let shgc = spec.window_properties.shgc;
     let mut solar_attrs = attr("window_area_m2", w.area);
     if spec.shading.is_some() {
         solar_attrs.insert("shading_present".to_string(), 1.0);
@@ -292,28 +371,23 @@ fn push_window(
     ] {
         graph.push_edge(TopologyEdge {
             source_id: outdoor.to_string(),
-            target_id: solar_target.clone(),
+            target_id: win_id.clone(),
             coupling_type: kind,
             conductance_w_per_k: None,
             fraction: Some(shgc),
             bidirectional: false,
             attributes: solar_attrs.clone(),
         });
+        graph.push_edge(TopologyEdge {
+            source_id: win_id.clone(),
+            target_id: solar_target.clone(),
+            coupling_type: kind,
+            conductance_w_per_k: None,
+            fraction: None,
+            bidirectional: false,
+            attributes: BTreeMap::new(),
+        });
     }
-    // Glazing conduction (glass + frame in series, per WindowSpec doc).
-    let u_eff = spec.window_properties.u_value + spec.window_properties.frame_u_value;
-    let mut cond_attrs = attr("glazing", 1.0);
-    cond_attrs.insert("u_value_w_per_m2k".to_string(), u_eff);
-    cond_attrs.insert("window_area_m2".to_string(), w.area);
-    graph.push_edge(TopologyEdge {
-        source_id: outdoor.to_string(),
-        target_id: format!("zone-{zi}:air"),
-        coupling_type: TopologyEdgeKind::Conduction,
-        conductance_w_per_k: Some(u_eff * w.area),
-        fraction: None,
-        bidirectional: true,
-        attributes: cond_attrs,
-    });
 }
 
 impl ToTopologyGraph for CaseSpec {
@@ -506,10 +580,17 @@ impl ToTopologyGraph for CaseSpec {
                 Some(self.ground_temperature_c.unwrap_or(10.0)),
             ));
 
-            // Windows (solar + glazing conduction).
+            // Windows (Issue #3972): glazing assemblies as first-class nodes.
+            // Per-orientation counters keep window node ids unique when a
+            // zone has several windows on the same wall.
             if let Some(zone_windows) = self.windows.get(zi) {
+                let mut counters: BTreeMap<&str, usize> = BTreeMap::new();
                 for w in zone_windows {
-                    push_window(&mut graph, zi, w, self, &hosts);
+                    let key = window_key(&w.orientation);
+                    let index = counters.entry(key).or_insert(0);
+                    let i = *index;
+                    *index += 1;
+                    push_window(&mut graph, zi, &zname, w, self, &hosts, i);
                 }
             }
 
@@ -610,16 +691,17 @@ mod tests {
         let spec = ASHRAE140Case::Case600.spec();
         let g = graph_for(ASHRAE140Case::Case600);
         // Each chain with L layers contributes L+1 conduction edges
-        // (ext→l0, l_j→l_{j+1}, l_last→int); windows add one glazing
-        // conduction edge each.
+        // (ext→l0, l_j→l_{j+1}, l_last→int); each window contributes two
+        // glazing conduction edges (ambient→window, window→air).
+        let windows: usize = spec
+            .windows
+            .iter()
+            .map(|z| z.iter().filter(|w| w.area > 0.0).count())
+            .sum();
         let expected: usize = (spec.construction.wall.layers.len() + 1) * 4
             + (spec.construction.roof.layers.len() + 1)
             + (spec.construction.floor.layers.len() + 1)
-            + spec
-                .windows
-                .iter()
-                .map(|z| z.iter().filter(|w| w.area > 0.0).count())
-                .sum::<usize>();
+            + 2 * windows;
         assert_eq!(count_edges(&g, TopologyEdgeKind::Conduction), expected);
     }
 
@@ -717,6 +799,78 @@ mod tests {
         // E/W walls span Y-axis → 6 * 2.7
         assert!((gross_wall_area(&g, &Orientation::East) - 6.0 * 2.7).abs() < 1e-9);
         assert!((gross_wall_area(&g, &Orientation::West) - 6.0 * 2.7).abs() < 1e-9);
+    }
+
+    /// Issue #3972: windows must appear as first-class nodes in the topology
+    /// export (kind=window), with glazing-conduction and solar edges routed
+    /// through them.
+    #[test]
+    fn case_600_window_nodes_present_with_glazing_and_solar_paths() {
+        let spec = ASHRAE140Case::Case600.spec();
+        let g = graph_for(ASHRAE140Case::Case600);
+
+        let windows: Vec<&TopologyNode> = g
+            .nodes
+            .iter()
+            .filter(|n| n.kind == TopologyNodeKind::Window)
+            .collect();
+        assert_eq!(windows.len(), 1, "Case 600 has one south window");
+
+        let w = windows[0];
+        assert_eq!(w.id, "zone-0:window-south:0");
+        assert_eq!(w.zone_id.as_deref(), Some("zone-0:air"));
+        assert!((w.area_m2.unwrap() - 12.0).abs() < 1e-9);
+        assert_eq!(w.azimuth_deg, Some(180.0));
+        assert_eq!(w.tilt_deg, Some(90.0));
+        let u_eff = spec.window_properties.u_value + spec.window_properties.frame_u_value;
+        assert!((w.attributes["u_value_w_per_m2k"] - u_eff).abs() < 1e-12);
+        assert!((w.attributes["shgc"] - spec.window_properties.shgc).abs() < 1e-12);
+
+        // Glazing conduction: ambient -> window carries U_eff x A, then a
+        // topological link window -> zone air.
+        let cond: Vec<&TopologyEdge> = g
+            .edges
+            .iter()
+            .filter(|e| {
+                e.coupling_type == TopologyEdgeKind::Conduction
+                    && (e.source_id == w.id || e.target_id == w.id)
+            })
+            .collect();
+        assert_eq!(cond.len(), 2);
+        let in_leg = cond
+            .iter()
+            .find(|e| e.source_id == "ambient")
+            .expect("ambient->window conduction");
+        assert!((in_leg.conductance_w_per_k.unwrap() - u_eff * 12.0).abs() < 1e-9);
+        let out_leg = cond
+            .iter()
+            .find(|e| e.target_id == "zone-0:air")
+            .expect("window->air conduction");
+        assert!(out_leg.conductance_w_per_k.is_none());
+
+        // Solar admission passes through the window node: ambient -> window
+        // (SHGC fraction), window -> host wall interior film.
+        for kind in [
+            TopologyEdgeKind::ShortwaveSolarDirect,
+            TopologyEdgeKind::ShortwaveSolarDiffuse,
+        ] {
+            let solar: Vec<&TopologyEdge> = g
+                .edges
+                .iter()
+                .filter(|e| e.coupling_type == kind && (e.source_id == w.id || e.target_id == w.id))
+                .collect();
+            assert_eq!(solar.len(), 2, "two {kind:?} legs per window");
+            let admit = solar
+                .iter()
+                .find(|e| e.source_id == "ambient")
+                .expect("ambient->window solar");
+            assert!((admit.fraction.unwrap() - spec.window_properties.shgc).abs() < 1e-12);
+            let land = solar
+                .iter()
+                .find(|e| e.source_id == w.id)
+                .expect("window->interior solar");
+            assert_eq!(land.target_id, "zone-0:wall-south:int");
+        }
     }
 }
 
