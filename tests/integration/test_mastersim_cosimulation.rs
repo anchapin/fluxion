@@ -20,12 +20,39 @@
 //! The test is skipped if MasterSim is not installed (graceful degradation).
 
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Path to the cosimulation tools directory
-fn cosim_dir() -> PathBuf {
+/// Directory containing the cosimulation *scripts* (read-only from tests).
+fn cosim_script_dir() -> PathBuf {
     PathBuf::from("tools/cosim")
+}
+
+/// Per-test sandbox for harness outputs (Issue #4070).
+///
+/// The Python harness regenerates `bes_dummy.fmu` / `ffd_dummy.fmu` /
+/// `master_config_BES_FFD.ums` on every run. Pointing that output at the
+/// shared `tools/cosim/` directory meant parallel `cargo test` workers raced:
+/// a reader could open a half-written zip ("Invalid checksum ... reading
+/// modelDescription.xml from FMU archive") and the tracked dummy FMUs showed
+/// up as modified in `git status`. Each test now gets a unique temp dir, and
+/// the tracked files stay read-only.
+struct CosimSandbox {
+    dir: tempfile::TempDir,
+}
+
+impl CosimSandbox {
+    fn new(test_name: &str) -> Self {
+        let dir = tempfile::Builder::new()
+            .prefix(&format!("fluxion_cosim_{}_", test_name))
+            .tempdir()
+            .expect("failed to create cosim sandbox dir");
+        Self { dir }
+    }
+
+    fn path(&self) -> &Path {
+        self.dir.path()
+    }
 }
 
 /// Find the MasterSim executable, checking common locations and PATH.
@@ -82,11 +109,14 @@ fn python_available() -> bool {
         .unwrap_or(false)
 }
 
-/// Run the cosimulation Python harness
+/// Run the cosimulation Python harness, writing all outputs into `out_dir`.
 ///
 /// Returns: (exit_code, stdout, stderr)
-fn run_cosim_harness(generate_only: bool) -> Result<(i32, String, String), std::io::Error> {
-    let script = cosim_dir().join("run_cosimulation.py");
+fn run_cosim_harness(
+    generate_only: bool,
+    out_dir: &Path,
+) -> Result<(i32, String, String), std::io::Error> {
+    let script = cosim_script_dir().join("run_cosimulation.py");
 
     let mut cmd = Command::new("python3");
     cmd.arg(script);
@@ -96,6 +126,7 @@ fn run_cosim_harness(generate_only: bool) -> Result<(i32, String, String), std::
     } else {
         cmd.arg("--run");
     }
+    cmd.arg("--output-dir").arg(out_dir);
 
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
@@ -122,7 +153,8 @@ fn test_cosim_generate_fmus_and_config() {
         return;
     }
 
-    let result = run_cosim_harness(true);
+    let sandbox = CosimSandbox::new("generate_fmus_and_config");
+    let result = run_cosim_harness(true, sandbox.path());
 
     match result {
         Ok((exit_code, stdout, stderr)) => {
@@ -137,25 +169,26 @@ fn test_cosim_generate_fmus_and_config() {
                 exit_code
             );
 
-            // Verify generated files exist
-            let cosim_dir = cosim_dir();
+            // Verify generated files exist (inside the per-test sandbox,
+            // never in the tracked tools/cosim/ directory)
+            let out_dir = sandbox.path();
             assert!(
-                cosim_dir.join("bes_dummy.fmu").exists(),
+                out_dir.join("bes_dummy.fmu").exists(),
                 "BES FMU not generated"
             );
             assert!(
-                cosim_dir.join("ffd_dummy.fmu").exists(),
+                out_dir.join("ffd_dummy.fmu").exists(),
                 "FFD FMU not generated"
             );
             assert!(
-                cosim_dir.join("master_config_BES_FFD.ums").exists(),
+                out_dir.join("master_config_BES_FFD.ums").exists(),
                 "MasterSim config not generated"
             );
 
-            println!("Generated files verified:");
-            println!("  - tools/cosim/bes_dummy.fmu");
-            println!("  - tools/cosim/ffd_dummy.fmu");
-            println!("  - tools/cosim/master_config_BES_FFD.ums");
+            println!("Generated files verified in {}:", out_dir.display());
+            println!("  - bes_dummy.fmu");
+            println!("  - ffd_dummy.fmu");
+            println!("  - master_config_BES_FFD.ums");
         }
         Err(e) => {
             panic!("Failed to run cosimulation harness: {}", e);
@@ -177,10 +210,11 @@ fn test_mastersim_config_validity() {
         return;
     }
 
-    // First generate the config
-    run_cosim_harness(true).expect("generate step failed");
+    // First generate the config (into a per-test sandbox, Issue #4070)
+    let sandbox = CosimSandbox::new("mastersim_config_validity");
+    run_cosim_harness(true, sandbox.path()).expect("generate step failed");
 
-    let config_path = cosim_dir().join("master_config_BES_FFD.ums");
+    let config_path = sandbox.path().join("master_config_BES_FFD.ums");
     let content = std::fs::read_to_string(&config_path).expect("Failed to read MasterSim config");
 
     // Check for required elements
@@ -241,9 +275,10 @@ fn test_bes_fmu_fmi20_compliance() {
         return;
     }
 
-    run_cosim_harness(true).expect("generate step failed");
+    let sandbox = CosimSandbox::new("bes_fmu_fmi20_compliance");
+    run_cosim_harness(true, sandbox.path()).expect("generate step failed");
 
-    let fmu_path = cosim_dir().join("bes_dummy.fmu");
+    let fmu_path = sandbox.path().join("bes_dummy.fmu");
     let file = std::fs::File::open(&fmu_path).expect("Failed to open BES FMU");
     let mut archive = zip::ZipArchive::new(file).expect("Failed to read FMU as ZIP");
 
@@ -305,9 +340,10 @@ fn test_ffd_fmu_fmi20_compliance() {
         return;
     }
 
-    run_cosim_harness(true).expect("generate step failed");
+    let sandbox = CosimSandbox::new("ffd_fmu_fmi20_compliance");
+    run_cosim_harness(true, sandbox.path()).expect("generate step failed");
 
-    let fmu_path = cosim_dir().join("ffd_dummy.fmu");
+    let fmu_path = sandbox.path().join("ffd_dummy.fmu");
     let file = std::fs::File::open(&fmu_path).expect("Failed to open FFD FMU");
     let mut archive = zip::ZipArchive::new(file).expect("Failed to read FMU as ZIP");
 
@@ -390,11 +426,12 @@ fn test_mastersim_bes_ffd_24hour_cosimulation() {
 
     println!("Found MasterSim at: {}", mastersim_path.as_ref().unwrap());
 
-    // First generate FMUs and config
-    run_cosim_harness(true).expect("generate step failed");
+    // Generate FMUs and config into a per-test sandbox (Issue #4070)
+    let sandbox = CosimSandbox::new("mastersim_bes_ffd_24hour");
+    run_cosim_harness(true, sandbox.path()).expect("generate step failed");
 
     // Run the simulation
-    let result = run_cosim_harness(false);
+    let result = run_cosim_harness(false, sandbox.path());
 
     match result {
         Ok((exit_code, stdout, stderr)) => {
@@ -410,9 +447,9 @@ fn test_mastersim_bes_ffd_24hour_cosimulation() {
                 exit_code
             );
 
-            // Check for result files
-            let cosim_dir = cosim_dir();
-            let result_files: Vec<_> = std::fs::read_dir(&cosim_dir)
+            // Check for result files (inside the sandbox)
+            let out_dir = sandbox.path();
+            let result_files: Vec<_> = std::fs::read_dir(out_dir)
                 .into_iter()
                 .flatten()
                 .flatten()
@@ -510,9 +547,10 @@ fn test_loose_coupling_connection_configuration() {
         return;
     }
 
-    run_cosim_harness(true).expect("generate step failed");
+    let sandbox = CosimSandbox::new("loose_coupling_connections");
+    run_cosim_harness(true, sandbox.path()).expect("generate step failed");
 
-    let config_path = cosim_dir().join("master_config_BES_FFD.ums");
+    let config_path = sandbox.path().join("master_config_BES_FFD.ums");
     let content = std::fs::read_to_string(&config_path).expect("Failed to read MasterSim config");
 
     // BES → FFD connection: outdoor_temperature → inlet_air_temperature
@@ -546,9 +584,10 @@ fn test_fmu_variable_name_compatibility() {
         return;
     }
 
-    run_cosim_harness(true).expect("generate step failed");
+    let sandbox = CosimSandbox::new("fmu_variable_name_compatibility");
+    run_cosim_harness(true, sandbox.path()).expect("generate step failed");
 
-    let config_path = cosim_dir().join("master_config_BES_FFD.ums");
+    let config_path = sandbox.path().join("master_config_BES_FFD.ums");
     let config_content =
         std::fs::read_to_string(&config_path).expect("Failed to read MasterSim config");
 
@@ -566,7 +605,7 @@ fn test_fmu_variable_name_compatibility() {
         .collect();
 
     // Verify BES FMU has all required output variables
-    let bes_path = cosim_dir().join("bes_dummy.fmu");
+    let bes_path = sandbox.path().join("bes_dummy.fmu");
     let bes_xml = read_fmu_xml(&bes_path);
 
     for var in &connection_vars {
@@ -595,7 +634,7 @@ fn test_fmu_variable_name_compatibility() {
     }
 
     // Verify FFD FMU has all required input/output variables
-    let ffd_path = cosim_dir().join("ffd_dummy.fmu");
+    let ffd_path = sandbox.path().join("ffd_dummy.fmu");
     let ffd_xml = read_fmu_xml(&ffd_path);
 
     let required_ffd_vars = [
