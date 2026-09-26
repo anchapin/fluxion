@@ -47,6 +47,8 @@
 //! - **InternalMass**: Furniture, partitions
 //! - **InterZone**: Shared boundary with adjacent zone
 
+use crate::physics::fd_discretization::{MaterialLayer, WallDiscretization};
+use crate::physics::fd_solver::{ImplicitFDSolver, SurfaceBC};
 use crate::physics::gauge_solver::{GaugeBoundaryConditions, GaugeSolver};
 use crate::physics::multi_node_solver::air_sky_conductance;
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
@@ -265,6 +267,47 @@ impl ZoneBoundaryConditions {
 /// `wall_spec`). When `wall_spec` is `None` (the rare direct-`add_surface`
 /// path) the cloned gauge retains its prior state and callers are
 /// responsible for re-initializing.
+/// Per-surface exterior boundary inputs for the FD conduction path
+/// (Issue #3983). One entry per surface, aligned by index; consumed only
+/// by FD-backed surfaces inside `step_interior_surface_network`.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct SurfaceExteriorInputs {
+    /// Combined exterior film coefficient (conv + linearized sky) [W/m²K]
+    pub h_exterior_effective: f64,
+    /// Effective exterior fluid temperature [°C] — sol-air blend of
+    /// ambient and sky at the combined film.
+    pub t_sol_air_effective_c: f64,
+}
+
+/// Issue #3983 — build a per-surface multi-node FD conduction engine from
+/// the wall's real layer stack (BDF2 time integration per #3980). Layer
+/// order is reversed from the `WallSpec` exterior→interior convention to
+/// the fd_solver interior→exterior convention (node 0 = interior face).
+fn build_fd_solver(wall: &WallSpec, initial_temp_c: f64) -> Option<ImplicitFDSolver> {
+    if wall.layers.is_empty() {
+        return None;
+    }
+    let interior_first: Vec<MaterialLayer> = wall
+        .layers
+        .iter()
+        .rev()
+        .map(|l| {
+            MaterialLayer::new(
+                "surface_layer",
+                l.thickness,
+                l.conductivity,
+                l.density,
+                l.specific_heat,
+            )
+        })
+        .collect();
+    // 6 nodes/layer balances through-thickness resolution against per-step
+    // cost (implicit tridiagonal solve); validated against the 1052-RP
+    // analytical regression (#3981) at this resolution in fd_solver tests.
+    let disc = WallDiscretization::from_layers(&interior_first, 6);
+    Some(ImplicitFDSolver::new(disc, initial_temp_c))
+}
+
 pub(crate) struct SurfaceGaugeSolver {
     /// The 1D gauge solver for this surface
     gauge: GaugeSolver,
@@ -278,6 +321,22 @@ pub(crate) struct SurfaceGaugeSolver {
     _tilt_deg: f64,
     /// Wall spec for initialization (stored for re-initialization if needed)
     wall_spec: Option<WallSpec>,
+    /// Issue #3983 — per-surface multi-node FD conduction engine (BDF2)
+    /// built from this surface's real layer stack. `None` when the wall
+    /// spec carries no layers (legacy lumped `T_surface` path).
+    fd: Option<ImplicitFDSolver>,
+    /// Issue #3983 — solar absorbed by this surface's interior node during
+    /// the most recent step [W]. Solar-only attribution of the interior
+    /// network pools; `Σ_i + Φ_sol·to_air = Φ_sol` must hold exactly.
+    last_solar_absorbed_w: f64,
+    /// Issue #3983 review — timestep-average interior-face emission flux
+    /// from the most recent FD step [W/m²] (positive = into zone), i.e.
+    /// last-step emitted energy / (area · dt). Reported by
+    /// `per_surface_telemetry` for FD-backed surfaces in place of the
+    /// lumped `gauge.q_flux()`, which is never stepped for them (the
+    /// network loop skips `compute_flux` when `fd` is present) and would
+    /// otherwise report a stale reference-state value.
+    last_fd_emitted_wm2: f64,
     /// Issue #3918 follow-up (daytime solar gap): interior surface-node
     /// temperature T_s [°C]. Tracks this surface's response to interior
     /// absorbed gains (transmitted solar + radiative internal gains) and
@@ -341,7 +400,10 @@ impl SurfaceGaugeSolver {
             _azimuth_deg,
             _tilt_deg,
             wall_spec: None,
+            fd: None,
             T_surface: 20.0,
+            last_solar_absorbed_w: 0.0,
+            last_fd_emitted_wm2: 0.0,
         }
     }
 
@@ -428,7 +490,15 @@ impl Clone for SurfaceGaugeSolver {
             wall_spec: self.wall_spec.clone(),
             // Issue #3918 follow-up: runtime surface-node state RESET on
             // clone (topology preserved, state reset — Issue #3729 contract).
+            // Issue #3983: the FD stack is rebuilt from the layer spec so
+            // cloned surfaces start from the reference temperature too.
+            fd: self
+                .wall_spec
+                .as_ref()
+                .and_then(|w| build_fd_solver(w, 20.0)),
             T_surface: 20.0,
+            last_solar_absorbed_w: 0.0,
+            last_fd_emitted_wm2: 0.0,
         };
         // Reset per-surface gauge state to the freshly-initialized form
         // by re-running `GaugeSolver::initialize` from the stored
@@ -685,6 +755,11 @@ impl GaugeZoneSolver {
         let mut surface =
             SurfaceGaugeSolver::new(gauge, area_m2, surface_type, azimuth_deg, tilt_deg);
         surface.wall_spec = Some(wall.clone());
+        // Issue #3983 — per-surface multi-node FD engine from the real
+        // layer stack; solar is absorbed at the interior-face node. Built
+        // at the same 20 °C reference as `T_surface` (state reset on
+        // clone/initialize per the #3729 contract).
+        surface.fd = build_fd_solver(wall, 20.0);
 
         self.surfaces.push(surface);
         self.num_surfaces = self.surfaces.len();
@@ -718,7 +793,14 @@ impl GaugeZoneSolver {
         self.initialized && !self.surfaces.is_empty()
     }
 
-    /// Initialize all surface gauge solvers.
+    /// Initialize all surface gauge solvers and reset per-surface runtime
+    /// state to the pre-solve reference (Issue #3729 contract).
+    ///
+    /// Issue #3983 review: this now also resets the FD stack (rebuilt from
+    /// `wall_spec` at the 20 °C reference), `T_surface`, and the per-step
+    /// telemetry accumulators — previously only the lumped gauge was
+    /// re-initialized, so a second `initialize()` after stepping would
+    /// leave stale FD node temperatures behind.
     pub fn initialize(&mut self) -> Result<(), SolverError> {
         if self.surfaces.is_empty() {
             return Err(SolverError::InvalidConfig(
@@ -729,6 +811,16 @@ impl GaugeZoneSolver {
         for surface in &mut self.surfaces {
             if let Some(ref wall) = surface.wall_spec {
                 surface.gauge.initialize(wall)?;
+                // Reset the FD stack only when one is already present: a
+                // `None` slot means either a layer-less wall spec or the
+                // test-only `disable_fd_for_test` path — both must stay
+                // `None` through re-initialization.
+                if surface.fd.is_some() {
+                    surface.fd = build_fd_solver(wall, 20.0);
+                }
+                surface.T_surface = 20.0;
+                surface.last_solar_absorbed_w = 0.0;
+                surface.last_fd_emitted_wm2 = 0.0;
             }
         }
 
@@ -854,6 +946,9 @@ impl GaugeZoneSolver {
         // interior surfaces via the per-surface T_s network
         // (`step_interior_surface_network` below).
         let t_exterior_c = T_exterior.to_value();
+        // Issue #3983 — per-surface exterior boundary inputs for the FD
+        // conduction path (one entry per surface, index-aligned).
+        let mut ext_inputs: Vec<SurfaceExteriorInputs> = Vec::with_capacity(self.surfaces.len());
         for surface in &mut self.surfaces {
             let h_rad_sky_surface = surface.h_rad_sky_for_gauge(t_exterior_c, t_sky);
 
@@ -866,6 +961,28 @@ impl GaugeZoneSolver {
             } else {
                 t_sky
             };
+
+            // Combined exterior film (conv + linearized sky) and its
+            // sol-air blend temperature for the FD stack's outer face.
+            let h_ext = h_exterior.to_value();
+            let h_ext_eff = h_ext + h_rad_sky_surface;
+            let t_sol_air_eff = if h_ext_eff > 1e-12 {
+                (h_ext * t_exterior_c + h_rad_sky_surface * t_sky_effective) / h_ext_eff
+            } else {
+                t_exterior_c
+            };
+            ext_inputs.push(SurfaceExteriorInputs {
+                h_exterior_effective: h_ext_eff,
+                t_sol_air_effective_c: t_sol_air_eff,
+            });
+
+            // Issue #3983 — FD-backed surfaces carry their through-wall
+            // transmission inside the FD stack (stepped in
+            // `step_interior_surface_network`); the lumped gauge flux
+            // would double-count them.
+            if surface.fd.is_some() {
+                continue;
+            }
 
             let q_flux = surface.compute_flux(
                 Time::from_value(dt_seconds),
@@ -897,6 +1014,9 @@ impl GaugeZoneSolver {
             remaining_sol * st_sol_frac + phi_int_rad * (1.0 - solar_distribution_to_air);
         let mass_pool =
             remaining_sol * solar_beam_to_mass_fraction + phi_int_rad * solar_distribution_to_air;
+        // Solar-only pool portions for the per-surface absorption telemetry.
+        let solar_surface_pool = remaining_sol * st_sol_frac;
+        let solar_mass_pool = remaining_sol * solar_beam_to_mass_fraction;
         // Direct-to-air gains (5R1C phi_ia) enter the air balance instantly.
         net_power_watts += phi_ia_sol + phi_ia_int;
         // Interior absorbed-gain network: per-surface T_s tracking returning
@@ -904,8 +1024,15 @@ impl GaugeZoneSolver {
         // average (Issue #3918 architectural fix). `h_interior` is the
         // network's air-side conductance — it enters den_air below as the
         // implicit-conductance counterpart of φ_st.
-        let (phi_st, h_interior) =
-            self.step_interior_surface_network(dt_seconds, surface_pool, mass_pool, h_tr_is);
+        let (phi_st, h_interior) = self.step_interior_surface_network(
+            dt_seconds,
+            surface_pool,
+            mass_pool,
+            solar_surface_pool,
+            solar_mass_pool,
+            h_tr_is,
+            &ext_inputs,
+        );
         net_power_watts += phi_st;
 
         // Infiltration/ventilation coupling
@@ -1022,9 +1149,17 @@ impl GaugeZoneSolver {
     /// the dispatch to compute a 5R1C-compatible mass-state proxy; the
     /// gauge integration never consumes these values.
     pub fn surface_interior_temperatures(&self) -> Vec<f64> {
+        // Issue #3983 — FD-backed surfaces report the FD stack's
+        // interior-face node (the physically meaningful interior surface
+        // temperature); the lumped gauge engine no longer steps for them.
         self.surfaces
             .iter()
-            .map(|surface| surface.gauge.interior_temperature())
+            .map(|surface| {
+                surface.fd.as_ref().map_or_else(
+                    || surface.gauge.interior_temperature(),
+                    |fd| fd.interior_surface_temp(),
+                )
+            })
             .collect()
     }
 
@@ -1035,7 +1170,13 @@ impl GaugeZoneSolver {
         let mut weighted_sum = 0.0;
         let mut total_area = 0.0;
         for surface in &self.surfaces {
-            weighted_sum += surface.gauge.interior_temperature() * surface.area_m2;
+            // Issue #3983 — FD-backed surfaces report the FD stack's
+            // interior-face node (see `surface_interior_temperatures`).
+            let t_int = surface.fd.as_ref().map_or_else(
+                || surface.gauge.interior_temperature(),
+                |fd| fd.interior_surface_temp(),
+            );
+            weighted_sum += t_int * surface.area_m2;
             total_area += surface.area_m2;
         }
         if total_area > 0.0 {
@@ -1096,8 +1237,12 @@ impl GaugeZoneSolver {
         // full rationale in step()); the window gauge receives no exterior
         // solar injection.
         let t_exterior_c = bc.T_exterior.to_value();
+        // Issue #3983 — per-surface exterior boundary inputs for the FD
+        // conduction path (one entry per surface, index-aligned).
+        let mut ext_inputs: Vec<SurfaceExteriorInputs> = Vec::with_capacity(self.surfaces.len());
         for surface in &mut self.surfaces {
             if surface.surface_type.is_inter_zone() {
+                ext_inputs.push(SurfaceExteriorInputs::default());
                 continue;
             }
             let h_rad_sky_surface = surface.h_rad_sky_for_gauge(t_exterior_c, bc.t_sky);
@@ -1111,6 +1256,26 @@ impl GaugeZoneSolver {
             } else {
                 bc.t_sky
             };
+
+            // Combined exterior film (conv + linearized sky) and its
+            // sol-air blend temperature for the FD stack's outer face.
+            let h_ext = bc.h_exterior.to_value();
+            let h_ext_eff = h_ext + h_rad_sky_surface;
+            let t_sol_air_eff = if h_ext_eff > 1e-12 {
+                (h_ext * t_exterior_c + h_rad_sky_surface * t_sky_effective) / h_ext_eff
+            } else {
+                t_exterior_c
+            };
+            ext_inputs.push(SurfaceExteriorInputs {
+                h_exterior_effective: h_ext_eff,
+                t_sol_air_effective_c: t_sol_air_eff,
+            });
+
+            // Issue #3983 — FD-backed surfaces carry their through-wall
+            // transmission inside the FD stack; skip the lumped gauge flux.
+            if surface.fd.is_some() {
+                continue;
+            }
 
             let q_flux = surface.compute_flux(
                 Time::from_value(dt_seconds),
@@ -1157,8 +1322,18 @@ impl GaugeZoneSolver {
             remaining_sol * st_sol_frac + phi_int_rad * (1.0 - bc.solar_distribution_to_air);
         let mass_pool = remaining_sol * bc.solar_beam_to_mass_fraction
             + phi_int_rad * bc.solar_distribution_to_air;
-        let (phi_st, h_interior) =
-            self.step_interior_surface_network(dt_seconds, surface_pool, mass_pool, bc.h_tr_is);
+        // Solar-only pool portions for the per-surface absorption telemetry.
+        let solar_surface_pool = remaining_sol * st_sol_frac;
+        let solar_mass_pool = remaining_sol * bc.solar_beam_to_mass_fraction;
+        let (phi_st, h_interior) = self.step_interior_surface_network(
+            dt_seconds,
+            surface_pool,
+            mass_pool,
+            solar_surface_pool,
+            solar_mass_pool,
+            bc.h_tr_is,
+            &ext_inputs,
+        );
         let gains_w = phi_ia_sol + phi_ia_int + phi_st;
         net_power_watts += gains_w;
 
@@ -1287,6 +1462,17 @@ impl GaugeZoneSolver {
     /// - `c_mass_Jm2K` — surface thermal mass [J/m²K]
     /// - `solar_fraction` — fraction of horizontal GHI that reaches this surface
     /// - `sky_view_factor` — ISO 13790 sky view factor (0–1)
+    /// Issue #3983 — test-only: drop the per-surface FD engines so the
+    /// legacy lumped interior-node path runs against an IDENTICAL wall
+    /// spec. Used by formulation-signature tests that compare the FD and
+    /// lumped responses under matched envelopes.
+    #[cfg(test)]
+    pub(crate) fn disable_fd_for_test(&mut self) {
+        for s in &mut self.surfaces {
+            s.fd = None;
+        }
+    }
+
     pub fn per_surface_telemetry(&self) -> Vec<SurfaceTelemetry> {
         self.surfaces
             .iter()
@@ -1295,12 +1481,21 @@ impl GaugeZoneSolver {
                 surface_type: s.surface_type,
                 tilt_deg: s._tilt_deg,
                 azimuth_deg: s._azimuth_deg,
-                q_flux_Wm2: s.gauge.q_flux(),
+                // Issue #3983 review — FD-backed surfaces never step the
+                // lumped gauge (the network loop skips compute_flux for
+                // them), so gauge.q_flux() would be a stale reference-state
+                // value; report the FD interior-face emission instead.
+                q_flux_Wm2: if s.fd.is_some() {
+                    s.last_fd_emitted_wm2
+                } else {
+                    s.gauge.q_flux()
+                },
                 r_total_m2K_W: s.gauge.r_total_for_test(),
                 c_mass_Jm2K: s.gauge.c_mass_for_test(),
                 solar_fraction: s.surface_type.solar_fraction(),
                 sky_view_factor: s.sky_view_factor(),
                 t_surface_deg: s.t_surface(),
+                solar_absorbed_w: s.last_solar_absorbed_w,
             })
             .collect()
     }
@@ -1321,9 +1516,15 @@ impl GaugeZoneSolver {
     /// This is the sum of window, wall, roof, and floor conductances that
     /// couple the zone air to the exterior / sky / ground.
     fn surface_to_air_conductance(&self) -> f64 {
+        // Issue #3983 — FD-backed surfaces are excluded: their
+        // through-wall transmission is carried dynamically by the FD
+        // stack and reaches the air through the interior film (captured
+        // by `h_interior`), so the steady A/R linearization would
+        // double-count them.
         self.surfaces
             .iter()
             .filter(|s| !s.surface_type.is_inter_zone())
+            .filter(|s| s.fd.is_none())
             .filter(|s| s.gauge.r_total_for_test() > 0.0)
             .map(|s| s.area_m2 / s.gauge.r_total_for_test())
             .sum()
@@ -1388,12 +1589,16 @@ impl GaugeZoneSolver {
     /// Fallback: when no eligible surface can couple (Σ h_tr_is,i ≤ 0) the
     /// pools are delivered instantly so the gains are never silently
     /// dropped.
+    #[allow(clippy::too_many_arguments)]
     fn step_interior_surface_network(
         &mut self,
         dt_seconds: f64,
         surface_pool_w: f64,
         mass_pool_w: f64,
+        solar_surface_pool_w: f64,
+        solar_mass_pool_w: f64,
         h_tr_is_zone: f64,
+        ext_inputs: &[SurfaceExteriorInputs],
     ) -> (f64, f64) {
         let t_air = self.T_air;
 
@@ -1435,7 +1640,7 @@ impl GaugeZoneSolver {
 
         let mut emitted_j = 0.0;
         let mut h_weighted_ts = 0.0;
-        for s in &mut self.surfaces {
+        for (surface_idx, s) in self.surfaces.iter_mut().enumerate() {
             if !surface_is_absorbing(&s.surface_type) {
                 continue;
             }
@@ -1448,17 +1653,66 @@ impl GaugeZoneSolver {
                 h_i / sum_h
             };
             let q_abs_i = surface_pool_w * w_surface + mass_pool_w * w_mass;
-            let steady = t_air + q_abs_i / h_i;
-            let new_ts = if c_i > 0.0 && dt_seconds > 0.0 {
-                let tau_i = c_i / h_i;
-                steady + (s.T_surface - steady) * (-dt_seconds / tau_i).exp()
+            // Issue #3983 — solar-only attribution for the per-surface
+            // absorption telemetry (Σ_i + Φ_sol·to_air = Φ_sol).
+            s.last_solar_absorbed_w = solar_surface_pool_w * w_surface + solar_mass_pool_w * w_mass;
+            if let Some(fd) = s.fd.as_mut() {
+                // Issue #3983 — per-surface multi-node FD conduction: the
+                // absorbed solar enters the interior-FACE node of the real
+                // layer stack; through-thickness dynamics replace the
+                // lumped exponential update. The exterior face exchanges
+                // with the combined ambient film (conv + linearized sky).
+                let area = s.area_m2.max(1e-12);
+                let h_prime = h_i / area; // interior film [W/m²K]
+                let interior_bc = SurfaceBC::new_exterior(h_prime, t_air, q_abs_i / area);
+                let ext = ext_inputs.get(surface_idx).copied().unwrap_or_default();
+                let exterior_bc = SurfaceBC::new_exterior(
+                    ext.h_exterior_effective,
+                    ext.t_sol_air_effective_c,
+                    0.0,
+                );
+                // Emission bookkeeping: exact on storage and absorption;
+                // the exterior path is a trapezoid on the pre/post-step
+                // boundary flux — exact under Crank–Nicolson, O(dt²·q̈)
+                // quadrature skew under the BDF2 default (#3980). Zone
+                // conservation holds exactly w.r.t. the declared trapezoid
+                // exterior source:
+                //   emitted_to_air = q_abs·dt + ext_in − ΔE_wall
+                let e_before = fd.stored_energy(t_air) * area;
+                let q_ext_before = fd
+                    .exterior_heat_flux(ext.h_exterior_effective, ext.t_sol_air_effective_c)
+                    * area;
+                fd.step(dt_seconds, &interior_bc, &exterior_bc);
+                let e_after = fd.stored_energy(t_air) * area;
+                let q_ext_after = fd
+                    .exterior_heat_flux(ext.h_exterior_effective, ext.t_sol_air_effective_c)
+                    * area;
+                let ext_in_j = 0.5 * (q_ext_before + q_ext_after) * dt_seconds;
+                let emitted_i_j = q_abs_i * dt_seconds + ext_in_j - (e_after - e_before);
+                emitted_j += emitted_i_j;
+                // Timestep-average interior-face emission flux for
+                // telemetry (positive = into zone): through-wall
+                // transmission plus absorbed-gain release. The dt > 0
+                // guard mirrors the emitted_j/dt fallback below.
+                s.last_fd_emitted_wm2 = if dt_seconds > 0.0 {
+                    emitted_i_j / (area * dt_seconds)
+                } else {
+                    0.0
+                };
+                s.T_surface = fd.interior_surface_temp();
             } else {
-                steady
-            };
-            // Energy-exact emission over the step: absorbed − stored.
-            emitted_j += q_abs_i * dt_seconds - c_i * (new_ts - s.T_surface);
-            s.T_surface = new_ts;
-            h_weighted_ts += h_i * new_ts;
+                let steady = t_air + q_abs_i / h_i;
+                let new_ts = if c_i > 0.0 && dt_seconds > 0.0 {
+                    let tau_i = c_i / h_i;
+                    steady + (s.T_surface - steady) * (-dt_seconds / tau_i).exp()
+                } else {
+                    steady
+                };
+                // Energy-exact emission over the step: absorbed − stored.
+                emitted_j += q_abs_i * dt_seconds - c_i * (new_ts - s.T_surface);
+                s.T_surface = new_ts;
+            }
+            h_weighted_ts += h_i * s.T_surface;
         }
         self.previous_T_surface = h_weighted_ts / sum_h;
 
@@ -1509,8 +1763,17 @@ pub struct SurfaceTelemetry {
     pub tilt_deg: f64,
     /// Surface azimuth from north [degrees]
     pub azimuth_deg: f64,
-    /// Heat flux through surface [W/m²] (positive = into zone)
+    /// Heat flux through surface [W/m²] (positive = into zone).
+    ///
+    /// Issue #3983 review — FD-backed surfaces report the timestep-average
+    /// interior-face emission from the most recent step (through-wall
+    /// transmission plus absorbed-gain release); lumped surfaces report the
+    /// gauge's instantaneous flux.
     pub q_flux_Wm2: f64,
+    /// Issue #3983 — solar absorbed by this surface's interior node during
+    /// the most recent step [W]. Solar-only attribution; the zone-level
+    /// closure Σ_i + Φ_sol·to_air = Φ_sol must hold exactly.
+    pub solar_absorbed_w: f64,
     /// Total surface resistance [m²K/W]
     pub r_total_m2K_W: f64,
     /// Surface thermal mass [J/m²K]
@@ -1805,7 +2068,7 @@ impl Default for MultiZoneGaugeSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::physics::wall_spec::WallSpec;
+    use crate::physics::wall_spec::{LayerSpec, WallSpec};
 
     /// Conductive stub wall — NOT the real ASHRAE 140 Case 600 construction
     /// (Issue #3893). R = 0.09 m²K/W (0.09 m / 1.0 W/mK), roughly 27× more
@@ -2199,9 +2462,14 @@ mod tests {
         )
         .unwrap();
         let temps = zone.surface_interior_temperatures();
+        // Issue #3983 — with per-surface FD conduction the interior node is
+        // the layer stack's face node: a near-massless stub reaches its
+        // conductive steady point strictly between the pinned interior
+        // (25 °C) and exterior (5 °C) boundaries within the step.
         assert!(
-            temps.iter().all(|&t| (t - 25.0).abs() < 1e-12),
-            "stepped surfaces report the step's interior boundary temperature, got {temps:?}"
+            temps.iter().all(|&t| t > 5.0 && t < 25.0),
+            "stepped surfaces must sit strictly between exterior (5) and \
+             interior (25) boundaries, got {temps:?}"
         );
     }
 
@@ -2277,17 +2545,20 @@ mod tests {
 
         let per_zone = mz.zone_interior_temperatures();
         assert_eq!(per_zone.len(), mz.num_zones());
-        // Each zone's accessor must reflect the T_air the gauge
-        // integrated against (GaugeSolver writes T_int into
-        // prev_T_interior at end-of-step, which `interior_temperature()`
-        // returns).
+        // Issue #3983 — the interior-node accessors now report the FD
+        // stack's face node. With the 300 W/m² floor-density solar
+        // (Φ_sol ≈ 14.4 kW per zone) absorbed at the interior face, each
+        // zone's faces must sit strictly ABOVE the pinned T_air the
+        // network integrated against (face concentrates absorbed solar);
+        // the old lumped contract (T_s == T_air) no longer holds by
+        // design.
         assert!(
-            (per_zone[0] - 15.0).abs() < 1e-9,
-            "zone 0 interior T must equal its pinned T_air=15 °C, got {per_zone:?}"
+            per_zone[0] > 15.0,
+            "zone 0 faces must absorb solar above pinned T_air=15 °C, got {per_zone:?}"
         );
         assert!(
-            (per_zone[1] - 25.0).abs() < 1e-9,
-            "zone 1 interior T must equal its pinned T_air=25 °C, got {per_zone:?}"
+            per_zone[1] > 25.0,
+            "zone 1 faces must absorb solar above pinned T_air=25 °C, got {per_zone:?}"
         );
     }
 
@@ -2427,6 +2698,259 @@ mod tests {
         );
     }
 
+    // Issue #3983 review, finding 1 — the #3729 reset contract must cover
+    // the whole per-surface runtime state, not just the lumped gauge:
+    // after stepping away from the 20 °C reference, `initialize()` must
+    // return T_surface, the FD stack, and the per-step telemetry
+    // accumulators to their pre-solve values.
+    #[test]
+    fn initialize_resets_fd_state_and_telemetry() {
+        let mut zone = GaugeZoneSolver::new(48.0, 2.7);
+        let wall = insulated_wall();
+        zone.add_opaque_surface(&wall, 21.6, SurfaceType::Wall, 0.0, 90.0)
+            .unwrap();
+        zone.initialize().unwrap();
+
+        // Drive the surface off the 20 °C reference: cold exterior plus
+        // solar so both through-wall flux and absorbed-gain release are
+        // nonzero during the step.
+        zone.step(
+            0,
+            3600.0,
+            Temperature::from_value(-10.0),
+            HeatTransferCoefficient::from_value(25.0),
+            100.0, // solar_irradiance_wm2
+            0.30,  // solar_distribution_to_air
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        )
+        .unwrap();
+
+        let tel = zone.per_surface_telemetry();
+        assert_eq!(tel.len(), 1);
+        assert!(
+            (tel[0].t_surface_deg - 20.0).abs() > 0.5,
+            "stepping must move the interior surface off the 20 °C reference, got {}",
+            tel[0].t_surface_deg
+        );
+        assert!(
+            tel[0].q_flux_Wm2.abs() > 1e-9,
+            "FD-backed surface must report a nonzero interior-face emission \
+             after stepping, got {}",
+            tel[0].q_flux_Wm2
+        );
+
+        // Re-initialize: everything returns to the pre-solve reference.
+        zone.initialize().unwrap();
+        let tel = zone.per_surface_telemetry();
+        assert!(
+            (tel[0].t_surface_deg - 20.0).abs() < 1e-9,
+            "initialize() must reset T_surface to 20 °C, got {}",
+            tel[0].t_surface_deg
+        );
+        assert!(
+            tel[0].q_flux_Wm2.abs() < 1e-12,
+            "initialize() must reset the FD emission-flux telemetry, got {}",
+            tel[0].q_flux_Wm2
+        );
+        assert_eq!(
+            tel[0].solar_absorbed_w, 0.0,
+            "initialize() must reset the absorbed-solar accumulator"
+        );
+    }
+
+    // Issue #3983 (slice 1) — per-surface absorbed-solar accounting closes
+    // the zone solar balance: Σ_i solar_absorbed_w,i + direct-to-air = Φ_sol.
+    //
+    // The interior surface network already computes per-surface absorption
+    // internally (step_interior_surface_network); this exposes it as public
+    // telemetry so the per-surface solar-distribution contract is observable.
+    // Later slices (per-surface FD stacks, irradiance weighting) must keep
+    // this closure exact — it is the energy gate for the #3983 rework.
+    #[test]
+    fn per_surface_solar_absorption_closes_zone_solar_balance() {
+        let mut zone = GaugeZoneSolver::new(48.0, 2.7);
+        let wall = insulated_wall();
+        // Two equal-area opaque walls: equal shares under both the
+        // conductance weight (h_i/Σh) and the capacitance weight (C_i/ΣC).
+        zone.add_opaque_surface(&wall, 21.6, SurfaceType::Wall, 0.0, 90.0)
+            .unwrap();
+        zone.add_opaque_surface(&wall, 21.6, SurfaceType::Wall, 180.0, 90.0)
+            .unwrap();
+        zone.initialize().unwrap();
+
+        let solar_density = 100.0; // W per m² floor
+        let to_air = 0.30;
+        let beam_to_mass = 0.30;
+        zone.step(
+            0,
+            3600.0,
+            Temperature::from_value(20.0),
+            HeatTransferCoefficient::from_value(25.0),
+            solar_density,
+            to_air,
+            0.0,    // Q_internal_w
+            0.0,    // Q_infiltration_w
+            0.0,    // t_sky
+            0.0,    // h_rad_sky
+            0.0,    // ventilation_ach
+            5.0,    // h_tr_3
+            5000.0, // cm
+            500.0,  // h_tr_is (zone total)
+            0.0,    // term_rest_1
+            0.0,    // convective_fraction
+            beam_to_mass,
+        )
+        .unwrap();
+
+        let tel = zone.per_surface_telemetry();
+        assert_eq!(tel.len(), 2, "both walls must report telemetry");
+        let phi_sol = solar_density * 48.0; // 4800 W
+        let direct_air = phi_sol * to_air; // 1440 W
+        let absorbed: f64 = tel.iter().map(|t| t.solar_absorbed_w).sum();
+        assert!(
+            (absorbed + direct_air - phi_sol).abs() < 1e-9,
+            "solar balance must close: Σ_absorbed ({absorbed:.3}) + to_air ({direct_air:.3}) \
+             != Φ_sol ({phi_sol:.3})"
+        );
+        assert!(
+            (tel[0].solar_absorbed_w - tel[1].solar_absorbed_w).abs() < 1e-9,
+            "equal-area walls must absorb equal solar, got {} vs {}",
+            tel[0].solar_absorbed_w,
+            tel[1].solar_absorbed_w
+        );
+        // Each wall takes half of the non-air solar: 4800 · 0.7 / 2 = 1680 W.
+        assert!(
+            (tel[0].solar_absorbed_w - 1680.0).abs() < 1e-6,
+            "expected 1680 W per wall, got {}",
+            tel[0].solar_absorbed_w
+        );
+    }
+
+    // Issue #3983 (slice 2) — per-surface multi-node FD conduction: solar
+    // must be absorbed at the interior-face NODE of the real layer stack,
+    // not spread instantaneously into a single lumped full-wall
+    // capacitance.
+    //
+    // Bounds are derived from an implicit-FD Python reference (RULES.md),
+    // wall = 100 mm brick (interior) + 62.5 mm insulation (exterior),
+    // interior film h' = 3.45 W/m²K (ISO 13790 §C.4), absorbed
+    // q" = 155.6 W/m² for 6 h, T_air held near 20 °C by ventilation:
+    //   lumped 1-node (full C behind film): rise@1h ≈ 3.5 K, retained@+3h ≈ 79 %
+    //   multi-node FD:                      rise@1h ≈ 8.7 K, retained@+3h ≈ 51 %
+    // The face-concentration ratio (≈2.5×) is the #3983 formulation change;
+    // the fast-rise/slow-tail shape is what the lumped node provably cannot
+    // produce (#1522).
+    #[test]
+    fn fd_surface_concentrates_solar_at_interior_face_node() {
+        // Matched envelopes: the FD wall carries real layers; the legacy
+        // wall has the same total R (0.1/0.89 + 0.0625/0.04 = 1.674) and
+        // areal capacity (1920·790·0.1 + 43·1210·0.0625 ≈ 154,900 J/m²K).
+        let fd_wall = WallSpec::multi_layer(
+            "heavy_test_wall",
+            vec![
+                LayerSpec::new("ext_insulation", 0.0625, 0.040, 43.0, 1210.0),
+                LayerSpec::new("int_brick", 0.100, 0.89, 1920.0, 790.0),
+            ],
+        );
+        let legacy_wall = WallSpec::multi_layer(
+            "heavy_test_wall",
+            vec![
+                LayerSpec::new("ext_insulation", 0.0625, 0.040, 43.0, 1210.0),
+                LayerSpec::new("int_brick", 0.100, 0.89, 1920.0, 790.0),
+            ],
+        );
+
+        let run_scenario = |wall: &WallSpec, disable_fd: bool| -> Vec<f64> {
+            let mut zone = GaugeZoneSolver::new(48.0, 2.7);
+            zone.add_opaque_surface(wall, 21.6, SurfaceType::Wall, 0.0, 90.0)
+                .unwrap();
+            if disable_fd {
+                zone.disable_fd_for_test();
+            }
+            zone.initialize().unwrap();
+            let mut elevations: Vec<f64> = Vec::new();
+            for hour in 0..30 {
+                let density = if hour < 6 { 100.0 } else { 0.0 };
+                zone.step(
+                    0,
+                    3600.0,
+                    Temperature::from_value(20.0),
+                    HeatTransferCoefficient::from_value(25.0),
+                    density, // 100 W/m² floor → Φ_sol = 4800 W for 6 h
+                    0.30,    // solar_distribution_to_air
+                    0.0,     // Q_internal_w
+                    0.0,     // Q_infiltration_w
+                    0.0,     // t_sky
+                    0.0,     // h_rad_sky
+                    10.0,    // ventilation_ach — sink keeps T_air bounded
+                    5.0,     // h_tr_3
+                    5000.0,  // cm
+                    74.52,   // h_tr_is zone total = 3.45 W/m²K × 21.6 m²
+                    0.0,     // term_rest_1
+                    0.0,     // convective_fraction
+                    0.30,    // solar_beam_to_mass_fraction
+                )
+                .unwrap();
+                let ts = zone.per_surface_telemetry()[0].t_surface_deg;
+                let ta = zone.T_air().to_value();
+                elevations.push(ts - ta);
+            }
+            elevations
+        };
+
+        let fd = run_scenario(&fd_wall, false);
+        let legacy = run_scenario(&legacy_wall, true);
+
+        // (1) Face concentration (absolute): the FD interior face runs
+        // > 1.5 K above air after the first pulse hour (Python fixed-air
+        // anchor ≈ 8.7 K; zone coupling compresses to ≈ 2.3 K).
+        assert!(
+            fd[0] > 1.5,
+            "FD interior face must concentrate absorbed solar early: elevation after 1 h = {:.2} K",
+            fd[0]
+        );
+
+        // (2) Concentration ratio (relative): FD face elevation exceeds
+        // the lumped node's by > 2× under identical zone coupling.
+        assert!(
+            fd[0] > 2.0 * legacy[0],
+            "FD rise@1h ({:.2} K) must exceed 2× the lumped rise ({:.2} K)",
+            fd[0],
+            legacy[0]
+        );
+
+        // (3) Fast-rise/slow-tail shape (relative): 3 h after the pulse
+        // the FD elevation has decayed measurably further than the lumped
+        // node's — the lumped full-C node behind one film cannot produce
+        // this shape (#1522).
+        let peak = |e: &[f64]| e.iter().cloned().fold(f64::MIN, f64::max);
+        let retained = |e: &[f64]| e[8] / peak(e);
+        assert!(
+            retained(&fd) < retained(&legacy) - 0.05,
+            "FD retained@+3h ({:.3}) must sit below lumped ({:.3})",
+            retained(&fd),
+            retained(&legacy)
+        );
+
+        // (4) Long memory: 24 h after the pulse the FD wall still couples
+        // heat back into the zone (deep-node storage release).
+        assert!(
+            fd[29] > 0.0,
+            "deep storage must still release at +24 h, elevation = {:.4} K",
+            fd[29]
+        );
+    }
+
     #[test]
     fn step_with_coupling_return_energy_convention() {
         // The returned net load keeps the documented convention (positive =
@@ -2469,8 +2993,16 @@ mod tests {
         bc.insert(1, entry);
         let results = mz.step(3600.0, &bc).unwrap();
         let e0 = *results.get(&0).unwrap();
+        // Issue #3983 — per-surface FD conduction raises the first-hour
+        // transient loss (the layer stacks' interior nodes initialize at
+        // the zone temperature and couple to the cold exterior without the
+        // lumped engine's single-C lag), moving the lumped-era value
+        // (≈1.5 kWh) to ≈2.8 kWh. Bounds keep the SIGN convention and the
+        // physical magnitude bound: one hour of loss cannot exceed the
+        // zone air + envelope storage released through the sunspace-pair
+        // envelope.
         assert!(
-            e0 > 0.1 && e0 < 2.0,
+            e0 > 0.1 && e0 < 4.0,
             "zone losing heat to the cold outdoors must report heating load (positive kWh), got {e0:.3}"
         );
     }
