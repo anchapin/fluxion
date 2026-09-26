@@ -2248,6 +2248,23 @@ impl ThermalModel<VectorField> {
             // Table B-12 specifies F_m = 0.30 for low-mass; reduced from the
             // 0.70 Issue #1216 band-aid), heavyweight → 0.0 (ADR-002 #1175:
             // the ASHRAE-140-correct solar split, mass absorbs first).
+            //
+            // Issue #3961 experiment record (2026-09): retiring these
+            // defaults to the referee convention (to_air 0.0 / beam 1.0, or
+            // to_air 0.0 alone) was measured against the strict ±15% annual
+            // gate and REFUTED for a defaults-only change:
+            //   - to_air=0 (low-mass): 600FF peak T_air moves AWAY from the
+            //     reference band (47.29 → 46.01 °C vs 64.9–75.1 °C) and
+            //     Case 600/800 cooling regress ~20 pp each;
+            //   - beam_to_mass=1.0: high-mass cooling collapses (960: 0.144
+            //     → 0.008 MWh) because the capacitance-weighted mass pool
+            //     swallows solar into ground-coupled storage;
+            //   - i.e. the 0.30 low-mass air fraction is load-bearing
+            //     compensation for the missing air-node capacitance /
+            //     beam-incident absorption geometry (#1152-class structural
+            //     work). Do NOT zero these constants without that work; the
+            //     failing referee (solar_distribution_validation) tracks the
+            //     gap (docs/KNOWN_ISSUES.md §LIMIT-30).
             let w_solar = fluxion_core::construction::massiveness_weight(
                 spec.construction.wall.thermal_capacitance_per_area(),
             );
