@@ -501,6 +501,20 @@ pub fn run_simulation(
         let hourly_zone_temperatures = model.get_hourly_temperatures();
         let zone_temperatures = model.get_temperatures();
 
+        // Issue #3988: unmet hours from the hourly temperature trace.
+        let (unmet_heating_hours, unmet_cooling_hours) = hourly_zone_temperatures
+            .as_deref()
+            .map(|hourly| {
+                SimulationOutput::unmet_hours(
+                    hourly,
+                    &schema.schedules.occupancy,
+                    heating,
+                    cooling,
+                    schema.controls.zone_control.deadband_tolerance,
+                )
+            })
+            .unwrap_or((0.0, 0.0));
+
         Ok(SimulationOutput {
             eui,
             total_energy,
@@ -511,6 +525,8 @@ pub fn run_simulation(
             zone_temperatures: Some(zone_temperatures),
             hourly_zone_temperatures,
             effective_solver: Some(model.effective_zone_solver().as_str().to_string()),
+            unmet_heating_hours,
+            unmet_cooling_hours,
         })
     })();
     let solve_elapsed = solve_started.elapsed().as_secs_f64();
