@@ -128,14 +128,19 @@ mod solar_gain_traces {
     use super::*;
 
     #[test]
-    fn test_solar_gain_trace_summer_solstice_south() {
+    fn test_solar_gain_trace_winter_solstice_south_high_gain() {
+        // Issue #4078: was summer solstice expecting >5000W, but a
+        // south-facing VERTICAL window in summer sees grazing incidence
+        // (noon cos θ ≈ 0.28 at 73.7° solar altitude) so the ~3 kW peak is
+        // correct physics. Winter solstice is the season where a south
+        // vertical window truly receives high beam (noon cos θ ≈ 0.89).
         let window = WindowProperties::double_clear(12.0);
-        let trace = generate_solar_trace(2024, 6, 21, &window, Orientation::South);
+        let trace = generate_solar_trace(2024, 12, 21, &window, Orientation::South);
 
         let hours_with_gain = trace.hours_with_solar_gain();
         assert!(
-            (10..=16).contains(&hours_with_gain),
-            "Summer solstice should have 10-16 hours of solar gain, got {}",
+            (8..=12).contains(&hours_with_gain),
+            "Winter solstice should have 8-12 hours of solar gain, got {}",
             hours_with_gain
         );
 
@@ -195,9 +200,13 @@ mod solar_gain_traces {
 
     #[test]
     fn test_solar_gain_trace_north_vs_south() {
+        // Issue #4078: was summer solstice, but in summer a south-facing
+        // vertical window gets grazing noon sun while the north face catches
+        // morning/evening beam — north peak can legitimately exceed south.
+        // Winter is the season where south definitively dominates north.
         let window = WindowProperties::double_clear(12.0);
-        let trace_south = generate_solar_trace(2024, 6, 21, &window, Orientation::South);
-        let trace_north = generate_solar_trace(2024, 6, 21, &window, Orientation::North);
+        let trace_south = generate_solar_trace(2024, 12, 21, &window, Orientation::South);
+        let trace_north = generate_solar_trace(2024, 12, 21, &window, Orientation::North);
 
         let south_peak = trace_south
             .peak_solar_hour()
@@ -213,7 +222,7 @@ mod solar_gain_traces {
 
         assert!(
             south_peak.unwrap() > north_peak.unwrap(),
-            "South peak ({:.0}W) should exceed North peak ({:.0}W) in summer",
+            "South peak ({:.0}W) should exceed North peak ({:.0}W) in winter",
             south_peak.unwrap(),
             north_peak.unwrap()
         );
@@ -733,8 +742,12 @@ mod solar_constant_verification {
 
     #[test]
     fn test_perez_diffuse_tilted_basic() {
+        // Issue #4078: tilt was 0.0 (horizontal), for which Perez reproduces
+        // DHI exactly by construction — the `< DHI` assertion could never
+        // pass. Use a genuinely tilted surface (30°) so the test exercises
+        // the tilted-diffuse path it was named for.
         let diffuse = PerezSkyModel::calculate_diffuse_tilted(
-            100.0, 800.0, 1366.0, 1.5, 30.0, 0.0, 0.0, 180.0,
+            100.0, 800.0, 1366.0, 1.5, 30.0, 30.0, 0.0, 180.0,
         );
 
         assert!(
@@ -745,7 +758,7 @@ mod solar_constant_verification {
 
         assert!(
             diffuse < 100.0,
-            "Diffuse should be less than DHI for horizontal, got {:.1}",
+            "Diffuse should be less than DHI for tilted surface, got {:.1}",
             diffuse
         );
     }
@@ -791,9 +804,12 @@ mod window_solar_gain_traces {
     use super::*;
 
     #[test]
-    fn test_window_gain_trace_south_summer() {
+    fn test_window_gain_trace_south_winter() {
+        // Issue #4078: was summer expecting >5 kW peak, but a south-facing
+        // vertical window in summer sees grazing incidence (correct ~3 kW
+        // peak). Winter is the high-gain season for south vertical.
         let window = WindowProperties::double_clear(12.0);
-        let trace = generate_solar_trace(2024, 6, 21, &window, Orientation::South);
+        let trace = generate_solar_trace(2024, 12, 21, &window, Orientation::South);
 
         let total_daily_gain: f64 = trace.points.iter().map(|p| p.solar_gain_w).sum();
 
@@ -847,20 +863,24 @@ mod window_solar_gain_traces {
 
     #[test]
     fn test_window_gain_angular_effect() {
+        // Issue #4078: was summer noon expecting cos θ > 0.5, but at summer
+        // solstice noon the solar altitude is ~73.7° so a south-facing
+        // vertical window correctly sees cos θ ≈ 0.28 (grazing). Winter noon
+        // (~26.8° altitude) is the high-incidence case for south vertical.
         let window = WindowProperties::double_clear(12.0);
 
-        let trace = generate_solar_trace(2024, 6, 21, &window, Orientation::South);
+        let trace = generate_solar_trace(2024, 12, 21, &window, Orientation::South);
 
         let peak_idx = trace.peak_solar_hour().unwrap();
         let peak_point = &trace.points[peak_idx];
 
         let sun_pos =
-            calculate_solar_position(DENVER_LAT, DENVER_LON, 2024, 6, 21, peak_point.hour, None);
+            calculate_solar_position(DENVER_LAT, DENVER_LON, 2024, 12, 21, peak_point.hour, None);
         let cos_incidence = sun_pos.incidence_cosine(90.0, 180.0);
 
         assert!(
             cos_incidence > 0.5,
-            "South-facing window should have high incidence at noon, got cos(θ)={:.3}",
+            "South-facing window should have high incidence at winter noon, got cos(θ)={:.3}",
             cos_incidence
         );
     }
