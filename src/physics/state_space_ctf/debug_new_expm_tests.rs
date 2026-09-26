@@ -822,6 +822,19 @@ fn test_ctf_convergence_random_assemblies() {
                 u_filmed
             );
 
+            // 1e: Y-path DC gain ≈ U_filmed within 1% (Issue #4062: a missing
+            // interior B-coupling on single-node walls doubled ΣY/(1+ΣΦ) and
+            // produced a wrong-sign steady-state interior flux).
+            let dc_gain_y = coeffs.y.iter().sum::<f64>() / (1.0 + coeffs.phi.iter().sum::<f64>());
+            let rel_err_y = (dc_gain_y - u_filmed).abs() / u_filmed;
+            prop_assert!(
+                rel_err_y < 0.01,
+                "CTF Y-path DC gain error {:.4e} exceeds 1% (Y_ctf={:.6}, U_filmed={:.6})",
+                rel_err_y,
+                dc_gain_y,
+                u_filmed
+            );
+
             Ok(())
         })
         .unwrap();

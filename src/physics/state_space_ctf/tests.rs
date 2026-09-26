@@ -195,6 +195,77 @@ fn test_state_space_single_layer() {
 }
 
 // ========================================================================
+// Issue #4062: single-layer wall whose discretization yields exactly ONE
+// state node (EPS 80 mm at dt = 3600 s). The node is simultaneously the
+// exterior and the interior boundary; both surface temperatures must drive
+// it, and both DC-gain paths (X and Y) must reproduce U_filmed.
+// ========================================================================
+
+#[test]
+fn test_state_space_single_layer_single_node_dc_gains() {
+    let eps = CTFMaterial::new("EPS 80mm", 0.080, 0.04, 25.0, 1400.0);
+
+    // Pin the discretization regime: dxn = sqrt(2·α·dt) ≈ 0.0907 m > L = 0.08 m
+    // → exactly one node, and Fo ≈ 0.64 < 2.5 → not the 0-node quasi-steady path.
+    let nodes = compute_nodes_per_layer(std::slice::from_ref(&eps), 3600.0);
+    assert_eq!(nodes.len(), 1);
+    assert_eq!(
+        nodes[0], 1,
+        "EPS 80 mm at dt = 3600 s must discretize to exactly 1 node"
+    );
+
+    // Bare-wall DC gain must be [[U, -U], [U, -U]] with U = k/L = 0.5 W/m²K.
+    let n: usize = nodes.iter().sum();
+    let (a_mat, b_mat, c_mat, d_mat) =
+        build_state_space_matrices(std::slice::from_ref(&eps), &nodes, n);
+    let a_inv = matrix_inverse(&a_mat).unwrap();
+    let a_inv_b = mat_mat_mul_col(&a_inv, &b_mat);
+    let mut gain = vec![vec![0.0f64; 2]; 2];
+    for j in 0..2 {
+        for k in 0..2 {
+            let mut cab = 0.0;
+            for i in 0..n {
+                cab += c_mat[j][i] * a_inv_b[i][k];
+            }
+            gain[j][k] = d_mat[j][k] - cab;
+        }
+    }
+    let u_bare = 1.0 / (0.080 / 0.04);
+    for (j, k, expected) in [
+        (0usize, 0usize, u_bare),
+        (0, 1, -u_bare),
+        (1, 0, u_bare),
+        (1, 1, -u_bare),
+    ] {
+        assert!(
+            (gain[j][k] - expected).abs() / u_bare < 1e-9,
+            "bare DC gain[{j}][{k}] = {:.6}, expected {expected:.6} (Issue #4062 single-node regime)",
+            gain[j][k]
+        );
+    }
+
+    // Filmed CTF: both DC-gain paths must reproduce U_filmed. The Y path is
+    // the wrong-sign channel of Issue #4062 (interior temperature reaches
+    // the flux only through the D term when the B coupling is missing).
+    let coeffs = compute_state_space_ctf(&[eps], 3600.0);
+    let phi_sum: f64 = coeffs.phi.iter().sum();
+    let u_filmed = 1.0 / (R_SE + 0.080 / 0.04 + R_SI);
+    let x_sum: f64 = coeffs.x.iter().sum();
+    let y_sum: f64 = coeffs.y.iter().sum();
+    for (name, dc) in [
+        ("X", x_sum / (1.0 + phi_sum)),
+        ("Y", y_sum / (1.0 + phi_sum)),
+    ] {
+        assert!(
+            (dc - u_filmed).abs() / u_filmed < 1e-2,
+            "{name}-path DC gain Σ{name}/(1+ΣΦ) = {:.6} should match U_filmed {:.6} (within 1%)",
+            dc,
+            u_filmed
+        );
+    }
+}
+
+// ========================================================================
 // Phase C: Verify the capavg formula used at layer interfaces.
 //
 // The fluxion code computes:

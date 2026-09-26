@@ -517,6 +517,17 @@ pub fn build_state_space_matrices(
                 }
                 b_mat[i][0] = k * dxtmp_boundary;
                 b_mat[i][1] = 0.0;
+                // Single-layer wall with a single state node: the node is
+                // simultaneously the exterior AND the interior boundary.
+                // The interior surface must drive it as well — with the
+                // coupling dropped, the interior temperature only enters
+                // through the D direct term and the Y-column DC gain
+                // doubles, producing the wrong-sign steady-state flux of
+                // Issue #4062. Both surfaces count as one `k * dxtmp`
+                // neighbor each, so the diagonal stays -2*k*dxtmp.
+                if is_interior_boundary {
+                    b_mat[i][1] = k * dxtmp_boundary;
+                }
             } else if is_interior_boundary {
                 // E+ lumped-mass boundary scheme (interior side):
                 //   dT_{N-1}/dt = k*dxtmp*T_{N-2} - 2*k*dxtmp*T_{N-1}

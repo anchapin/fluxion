@@ -5,7 +5,7 @@
 > **Summary 3/7:** CN is A-stable but **not L-stable**: on a 12 mm gypsum wall at the 3600 s zone step (z_max ≈ 8) it rings persistently while BDF2 settles to steady state — the documented reason BDF2 (not CN) is the default despite CN's smaller error constant.
 > **Summary 4/7:** Steady-periodic sweep (200 mm concrete wall, 24 h sinusoidal sol-air, interior flux RMS vs dt = 5 s reference): at equal cost BDF2 reaches errors BackwardEuler needs ~60× more steps for (BDF2@120 s ≈ 5.9e-4 W/m² vs BE@60 s ≈ 5.0e-2 W/m²).
 > **Summary 5/7:** `ConductionBackendConfig.fd_timestep` is now honored via substepping inside the hourly zone step (non-divisor configurations fail loudly); the teacher entry for free-floating validation runs FD at 60 s substeps (`FD_TEACHER_SUBSTEP_S`).
-> **Summary 6/7:** The 50-term CTF is demoted from the free-floating primary (validator wiring, Issue #486 workaround removed) to a fast cross-check for linear constructions; `select_method` never returns CTF-primary since Issue #726; the #3981 analytical module measured its pole-residue envelope and found the **light-wall DC gain has the wrong sign (Issue #4062)**.
+> **Summary 6/7:** The 50-term CTF is demoted from the free-floating primary (validator wiring, Issue #486 workaround removed) to a fast cross-check for linear constructions; `select_method` never returns CTF-primary since Issue #726; the #3981 analytical module measured its pole-residue envelope — the **light-wall DC gain sign defect (Issue #4062) is now fixed** via single-node dual-boundary B-coupling in `build_state_space_matrices` (`src/physics/state_space_ctf/mod.rs`); steady flux now matches U·ΔT exactly.
 > **Summary 7/7:** Known follow-up (root-caused, not patched): wiring the 60 s FD teacher into the free-floating zone loops diverges because the explicit zone↔FD flux coupling gain exceeds 1 when the substepped flux tracks zone temperature — the implicit DAE zone-wall assembly (ADR-0017, Issues #3982/#3983) is the sanctioned fix; no tolerance was relaxed.
 
 ## Scope
@@ -99,7 +99,7 @@ constructions. It no longer serves as a primary path anywhere:
 `select_method` stopped returning CTF-primary in Issue #726, and the
 free-floating validator workaround (Issue #486) was removed in favour of the
 FD teacher entry. The #3981 module measured its actual envelope (below) and
-found the light-wall DC defect (Issue #4062).
+found the light-wall DC defect (Issue #4062, resolved via B-matrix fix).
 
 ## ASHRAE 1052-RP analytical steady-periodic regression (Issue #3981)
 
@@ -128,10 +128,10 @@ except CN-light@3600).
    conductance assembly now realizes exact series resistance and telescoping
    face fluxes on every layer stack; the mean column below is 0.000% for
    all cells.
-2. **CTF light-wall DC gain has the wrong sign** (Issue #4062, open): q_ss =
-   −5.53 vs +3.69 W/m² under constant forcing for 80 mm EPS — the
-   y-coefficient `abs().max(0)` clamping breaks the DC identity when all
-   poles have τ ≪ dt.
+2. **CTF light-wall DC gain wrong sign — RESOLVED** (Issue #4062, fix PR #4062): q_ss =
+   +3.688 W/m² under constant forcing for 80 mm EPS (was −5.53); matches
+   exact U·ΔT = +3.69 W/m². Single-node dual-boundary B-coupling in
+   `build_state_space_matrices`; see `tests/all_tests/conduction_1052rp_analytical.rs`.
 3. **FD-vs-E+ step-response tests were a circular identity** (Issue #4058,
    quarantined): the old back-calculation passed through the same formula
    the extraction used.
@@ -166,9 +166,9 @@ plus BDF2 refinement from 3600 s to 900 s.
 |---|---|---|---|
 | heavy | +57% | −0.39 rad | 0.000% |
 | medium | +10% | +0.02 rad | 0.000% |
-| light | −4% | +0.43 rad | **−269% (defect #4062)** |
+| light | −3.7% | +0.43 rad | 0.000% |
 | multi | +29% | −0.21 rad | 0.000% |
 
 The pole-residue coefficient approximation is normalized to the exact U at
-DC (heavy/medium/multi) but has no tight dynamic envelope; reworking it is
-tracked by #4062.
+DC (heavy/medium/multi) but has no tight dynamic envelope; #4062 RESOLVED
+(single-node B-coupling fix in state-space CTF path).
