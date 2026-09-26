@@ -231,15 +231,18 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 # plus the two AST-counted cfg variants of the selector unit test; the
 # net cargo-verified delta is workspace_tests 7927 -> 8018 per
 # ``tests/test_inventory.json``).
-BASELINE_LIB_TESTS = 4244  # 2026-09-25: 4243 -> 4244 — PR for fluxion-#4065 lock-step
+BASELINE_LIB_TESTS = 4248  # 2026-09-25: 4243 -> 4248 — PR for fluxion-#4065 lock-step
                         # after merging develop (which added lib tests in the
-                        # #4018/#4019/#4034 window and later); live AST count
-                        # on the #4065 merge tree.
+                        # #4018/#4019/#4034 window and later). AST-scan count
+                        # on a FRESH CI checkout of the #4065 merge tree; a
+                        # dirty developer tree scans up to 4 lower (untracked
+                        # planning worktrees are excluded from git-tracked
+                        # scans) — the ratchet is a ceiling, not equality.
 BASELINE_LIB_IGNORED = 9
-BASELINE_WORKSPACE_TESTS = 8737  # 2026-09-25: 8727 -> 8737 — same PR for
-                                 # fluxion-#4065 lock-step: +10 AST tests
-                                 # (develop window + the 1052-RP module); live
-                                 # AST count on the #4065 merge tree.
+BASELINE_WORKSPACE_TESTS = 8741  # 2026-09-25: 8727 -> 8741 — same PR for
+                                 # fluxion-#4065 lock-step (develop window +
+                                 # the 1052-RP module); CI fresh-checkout AST
+                                 # count on the #4065 merge tree.
 # 2026-09-12 (Issue #3711): 121 -> 133 — see the history entry above for
 # the per-crate attribution and the AST-vs-cargo calibration analysis.
 # 2026-09-18 (Issue #3729): 133 -> 138 — absorbs the cargo-verified
