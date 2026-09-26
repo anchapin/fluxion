@@ -37,17 +37,12 @@ pub fn export_osm(schema: &SimulationSchemaV1, path: impl AsRef<Path>) -> Result
 }
 
 pub struct OsmWriter {
-    #[allow(dead_code)]
-    indent: usize,
     handle_counter: usize,
 }
 
 impl OsmWriter {
     pub fn new() -> Self {
-        OsmWriter {
-            indent: 0,
-            handle_counter: 0,
-        }
+        OsmWriter { handle_counter: 0 }
     }
 
     pub fn export_osm(

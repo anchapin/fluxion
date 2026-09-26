@@ -75,7 +75,6 @@ pub fn calculate_interzone_conductance(common_wall_area: f64, construction: &Con
 ///
 /// For now, implements a simplified analytical solution for two rectangular zones
 /// separated by a common wall.
-#[allow(dead_code)]
 pub fn calculate_zone_to_zone_view_factor(
     common_wall_area: f64,
     total_area_zone_1: f64,

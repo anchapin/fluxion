@@ -181,7 +181,6 @@ pub fn radiative_conductance_chord_slope(
 ///
 /// Linearized form: `h_rad = 4σ·ε²·F·T³·A`.  Valid only for small ΔT (<5 K),
 /// inaccurate for sunspace applications.
-#[allow(dead_code)]
 pub fn calculate_radiative_conductance_linearized(
     area: f64,
     emissivity: f64,

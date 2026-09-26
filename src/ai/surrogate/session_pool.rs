@@ -525,21 +525,6 @@ impl SessionPool {
             .map_err(|e| format!("Failed to load ONNX model: {}", e))
     }
 
-    /// Back-compat shim that retains the old `path` signature for any
-    /// downstream test or inert stub that happens to call it directly.
-    /// Goes through `open_and_verify_onnx` so the path is opened with
-    /// `O_NOFOLLOW` exactly once and the verified bytes are handed to
-    /// `commit_from_memory` (no second filesystem read).
-    #[allow(dead_code)]
-    fn create_session(
-        path: &str,
-        backend: InferenceBackend,
-        device_id: usize,
-    ) -> Result<ort::session::Session, String> {
-        let bytes = open_and_verify_onnx(Path::new(path))?;
-        Self::create_session_from_bytes(&bytes, backend, device_id)
-    }
-
     pub(crate) fn get_or_create_session(&self) -> Result<SessionGuard<'_>, String> {
         {
             let mut sessions = self.sessions.lock();

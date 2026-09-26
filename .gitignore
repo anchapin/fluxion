@@ -295,8 +295,14 @@ CLAUDE.md
 # fresh checkouts and was flagged by the #2954 gate).
 .hypothesis/
 
-# ONNX model artifacts (issue #1335) — pinned via tests/surrogate_models/registry.json, never committed
+# ONNX model artifacts (issue #1335) — pinned via tests/surrogate_models/registry.json.
+# The blanket `*.onnx` rule keeps new/unregistered model artifacts out of the repo.
+# Tiny test fixtures ARE tracked as explicit exceptions (issue #4006); each is
+# named below so the exception is grep-able in audit logs.
 *.onnx
+!assets/dummy_surrogate.onnx
+!assets/loads_predictor.onnx
+!examples/dummy_surrogate.onnx
 # Test fixtures that escaped temp directories (see #2949). Stricter
 # pattern than the blanket `*.onnx` above so the escapee is named
 # explicitly in audit logs and the broader root-hygiene gate can refer
@@ -314,10 +320,17 @@ models/*.pth
 models/*.pkl
 models/*.h5
 # Issue #2923 fail-closed surrogate-gate manifest. Re-includes the `.sha256`
-# sidecar after the blanket `models/*` ignore above. The `.sha256` file is
-# the ONLY artifact in `models/` that is tracked; the `.onnx` itself stays
-# gitignored. If a future manifest is added, copy the negation pattern below.
+# sidecar after the blanket `models/*` ignore above.
+# Tracked exceptions under `models/` (issue #4006): the `.sha256` sidecar plus
+# the tiny rl_policy fixtures used by tests. Everything else under `models/`
+# stays ignored. (The full list of intentionally-tracked-but-ignored files
+# lives in scripts/check_no_ignored_tracked_files.py.)
 !models/surrogate_zone_thermal.onnx.sha256
+!models/rl_policy/
+models/rl_policy/*
+!models/rl_policy/policy.json
+!models/rl_policy/policy.onnx
+!models/rl_policy/policy.onnx.data
 
 # FMI 2.0 XSD cache used by `.agents/results/issue-D1-multi-zone-fmi-verification.py`.
 # Fetched on demand from modelica/fmi-standard; never committed.

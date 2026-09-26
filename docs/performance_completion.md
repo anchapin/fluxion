@@ -23,9 +23,9 @@ This document summarizes the completion of Phase 47: Performance Validation & Op
 
 #### Documentation Deliverables
 
-- `documentation/performance.md` - Technical documentation
-- `documentation/performance_guide.md` - User guide
-- `documentation/performance_completion.md` - This document
+- `performance.md` - Technical documentation
+- `performance_guide.md` - User guide
+- `performance_completion.md` - This document
 - `examples/performance_example.rs` - Usage examples
 
 #### Planning Deliverables
@@ -102,7 +102,7 @@ For issues with performance validation:
 
 1. Check performance logs: `RUST_LOG=debug fluxion performance validate`
 2. Review performance reports in `target/criterion/`
-3. Consult `documentation/performance_guide.md`
+3. Consult `performance_guide.md`
 4. Run examples: `cargo run --example performance_example`
 
 ### Maintenance

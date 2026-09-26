@@ -134,7 +134,7 @@ Cargo builds pick up memory-safe defaults from [`.cargo/config.toml`](.cargo/con
 - **Pull Requests**: Create PRs against the `develop` branch (PR body must include `Closes #N` / `Fixes #N`).
 - **Releases**: Merge from `develop` to `main` via a release PR (`--no-ff`). No direct pushes to `develop` or `main`.
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) (short form) and [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) (long form) for detailed guidelines.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) (short form) and [`CONTRIBUTING.md`](CONTRIBUTING.md) (long form) for detailed guidelines.
 
 ## 🚀 Release Process
 

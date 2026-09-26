@@ -3,7 +3,7 @@
 User guide for Fluxion's performance validation capabilities — run and interpret performance tests.
 BEM engineers and developers — validate models, optimize simulations, ensure compliance.
 Covers: CLI commands (fluxion performance validate/report/integrated), key metrics (timestep <50ms).
-Companion to documentation/performance.md (benchmarks, optimization targets, targets table).
+Companion to performance.md (benchmarks, optimization targets, targets table).
 Status: Active — integrated with CI via performance validation framework.
 Action: Run `fluxion performance integrated` before submitting PRs affecting simulation speed.
 

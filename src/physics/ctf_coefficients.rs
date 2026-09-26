@@ -211,6 +211,11 @@ pub struct CTFCalculator<'a> {
     max_coeffs: usize,
 }
 
+// The transmission-matrix private methods below (find_poles,
+// compute_residues, pole_residue_to_ctf, …) are a superseded reference
+// implementation: the live path is `compute_coefficients`, which delegates
+// to `crate::physics::state_space_ctf`. They are retained for their unit
+// tests, which pin the reference numerical behavior.
 #[allow(dead_code)]
 impl<'a> CTFCalculator<'a> {
     /// Multiply two 2x2 real matrices.
@@ -267,42 +272,6 @@ impl<'a> CTFCalculator<'a> {
     /// CTF coefficients (X, Y, Z, Φ) for heat flux calculation.
     pub fn compute_coefficients(&self) -> CTFCoefficients {
         crate::physics::state_space_ctf::compute_state_space_ctf(self.layers, self.timestep)
-    }
-
-    /// Compute CTF coefficients using full pole/residue extraction method.
-    ///
-    /// This is the rigorous ASHRAE method that:
-    /// 1. Computes transmission matrix for the multi-layer wall
-    /// 2. Finds poles (eigenvalues) of the transfer function Y(s) = 1/A(s)
-    /// 3. Computes residues at each pole
-    /// 4. Converts to discrete-time CTF coefficients via z-transform
-    ///
-    /// This method accurately handles arbitrary multi-layer walls including
-    /// thermally asymmetric constructions like Case 900/940.
-    fn compute_pole_residue_ctf(&self) -> CTFCoefficients {
-        let mut coeffs = CTFCoefficients::new(self.timestep, self.max_coeffs);
-
-        // Calculate overall wall properties
-        // Include surface film resistances for ASHRAE 140 compliance
-        const R_SI: f64 = 0.125; // Interior film resistance [m²K/W]
-        const R_SE: f64 = 0.044; // Exterior film resistance [m²K/W]
-        let total_resistance: f64 = self.layers.iter().map(|l| l.resistance()).sum();
-        let u_value = 1.0 / (R_SI + total_resistance + R_SE); // Include surface films
-
-        // Step 1: Find poles of the transfer function
-        // Poles are values of s where A(s) = 0 (determinant of transmission matrix)
-        let poles = self.find_poles();
-
-        // Step 2: Compute residues at each pole
-        let residues = self.compute_residues(&poles);
-
-        // Step 3: Convert poles/residues to CTF coefficients
-        self.pole_residue_to_ctf(&mut coeffs, &poles, &residues, u_value);
-
-        // Step 4: Apply steady-state normalization
-        self.normalize_ctf_coefficients(&mut coeffs, u_value);
-
-        coeffs
     }
 
     /// Find poles of the wall transfer function Y(s) = 1/A(s).
@@ -535,57 +504,6 @@ impl<'a> CTFCalculator<'a> {
         }
     }
 
-    /// Compute CTF coefficients using analytical approximation (fallback).
-    ///
-    /// This method uses the wall's thermal properties to derive CTF coefficients
-    /// that match the exact transmission matrix response at key frequencies.
-    fn compute_analytical_ctf(
-        &self,
-        coeffs: &mut CTFCoefficients,
-        u_value: f64,
-        _time_constant: f64,
-    ) {
-        // Calculate decay factor based on wall time constant
-        // For multi-layer walls, use effective time constant
-        let effective_tau = self.compute_effective_time_constant();
-        let decay = (-self.timestep / effective_tau).exp();
-
-        // Compute transmission matrix at s=0 (steady-state) for normalization
-        let matrix_dc = self.compute_overall_transmission_matrix(Complex64::new(0.0, 0.0));
-        let a_dc = matrix_dc[0][0].re;
-        let d_dc = matrix_dc[1][1].re;
-
-        // Y coefficients: admittance response (exterior to interior)
-        // Y(s) = 1/A(s), sampled at discrete times
-        coeffs.y[0] = u_value * (1.0 + decay) * 0.5;
-        for j in 1..self.max_coeffs {
-            coeffs.y[j] = u_value * (1.0 - decay) * decay.powi(j as i32);
-        }
-
-        // X coefficients: exterior temperature response
-        // X(s) = D(s)/A(s)
-        let x_ratio = if a_dc.abs() > 1e-10 { d_dc / a_dc } else { 1.0 };
-        for j in 0..self.max_coeffs {
-            coeffs.x[j] = u_value * x_ratio * (1.0 - decay) * decay.powi(j as i32);
-        }
-
-        // Z coefficients: interior temperature response
-        // For symmetric walls, Z ≈ Y; for asymmetric, scale by interior surface properties
-        let z_scale = self.compute_interior_surface_factor();
-        for j in 0..self.max_coeffs {
-            coeffs.z[j] = coeffs.y[j] * z_scale;
-        }
-
-        // Φ coefficients: flux history feedback
-        coeffs.phi[0] = 0.0;
-        for j in 1..self.max_coeffs {
-            coeffs.phi[j] = decay.powi(j as i32);
-        }
-
-        // Apply final normalization to ensure steady-state consistency
-        self.normalize_ctf_coefficients(coeffs, u_value);
-    }
-
     /// Compute effective time constant for multi-layer wall.
     ///
     /// Uses the dominant pole of the transmission matrix to estimate
@@ -751,45 +669,6 @@ impl<'a> CTFCalculator<'a> {
                 a[1][0] * b[0][1] + a[1][1] * b[1][1],
             ],
         ]
-    }
-
-    /// Apply normalization and ensure physical consistency of CTF coefficients.
-    fn apply_ctf_normalization(&self, coeffs: &mut CTFCoefficients) {
-        // Ensure X, Y, Z coefficients sum to U-value (steady-state constraint)
-        // Include surface film resistances for ASHRAE 140 compliance
-        const R_SI: f64 = 0.125; // Interior film resistance [m²K/W]
-        const R_SE: f64 = 0.044; // Exterior film resistance [m²K/W]
-        let total_resistance: f64 = self.layers.iter().map(|l| l.resistance()).sum();
-        let u_value = 1.0 / (R_SI + total_resistance + R_SE); // Include surface films
-
-        // Normalize Y coefficients to sum to U-value
-        let y_sum: f64 = coeffs.y.iter().sum();
-        if y_sum.abs() > 1e-10 {
-            let scale = u_value / y_sum;
-            for y in &mut coeffs.y {
-                *y *= scale;
-            }
-        }
-
-        // X and Z should also sum to approximately U-value
-        let x_sum: f64 = coeffs.x.iter().sum();
-        if x_sum.abs() > 1e-10 {
-            let scale = u_value / x_sum;
-            for x in &mut coeffs.x {
-                *x *= scale;
-            }
-        }
-
-        let z_sum: f64 = coeffs.z.iter().sum();
-        if z_sum.abs() > 1e-10 {
-            let scale = u_value / z_sum;
-            for z in &mut coeffs.z {
-                *z *= scale;
-            }
-        }
-
-        // Ensure coefficients decay smoothly (apply exponential window if needed)
-        self.apply_decay_window(coeffs);
     }
 
     /// Apply exponential decay window to ensure coefficient convergence.

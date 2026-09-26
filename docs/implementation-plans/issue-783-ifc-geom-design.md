@@ -483,5 +483,5 @@ engine.run()?;
 - ISO 16739-1:2022 — Industry Foundation Classes (IFC) for data sharing
 - buildingSMART IFC Specification: https://standards.buildingsmart.org/IFC/RELEASE/IFC4/ADD2/
 - ifcopenshell: https://github.com/IfcOpenShell/IfcOpenShell
-- Fluxion Architecture: `docs/ARCHITECTURE.md`
+- Fluxion Architecture: `../../ARCHITECTURE.md`
 - Fluxion Schema: `src/api/schema.rs`

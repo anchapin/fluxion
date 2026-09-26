@@ -40,9 +40,7 @@
 //! saturates the air and returns the saturation ratio. For typical DOAS
 //! setpoints (`target_dew_point ≤ supply_dry_bulb`) this is never reached.
 
-use crate::sim::hvac::airside_state::{
-    validate_nonnegative, validate_positive, AirsideCouplingError, MoistAirState,
-};
+use crate::sim::hvac::airside_state::{validate_nonnegative, AirsideCouplingError, MoistAirState};
 use fluxion_core::weather::psychrometrics::calculate_humidity_ratio;
 use serde::{Deserialize, Serialize};
 
@@ -244,11 +242,6 @@ impl Humidifier for HumidifierComponent {
             0.0
         };
     }
-}
-
-#[allow(dead_code)]
-fn _assert_validate_positive_used(v: f64) -> Result<(), AirsideCouplingError> {
-    validate_positive("unused", v)
 }
 
 #[cfg(test)]

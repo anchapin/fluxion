@@ -151,11 +151,14 @@ mod duration_serde {
 /// Calculates appropriate timestep sequence based on building thermal mass
 /// and time constant threshold.
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 pub struct AdaptiveTimestepScheduler {
     /// Timestep mode configuration
+    // Retained for the `new(mode, tau_hours)` API; the live methods currently
+    // take `tau_hours` as a parameter instead of reading this field.
+    #[allow(dead_code)]
     mode: TimestepMode,
     /// Building thermal time constant (hours)
+    #[allow(dead_code)]
     tau_hours: f64,
     /// Calculated timestep for this building
     dt: Duration,

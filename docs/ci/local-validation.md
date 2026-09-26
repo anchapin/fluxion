@@ -1,6 +1,6 @@
 # Local CI Validation via `act` — Issue #3577
 
-Run a curated subset of GitHub Actions workflows locally with [`act`](https://nektosact.com/) before pushing, so workflow-shape failures (wrong action refs, missing env, typos in step names) are caught on the operator's machine instead of burning a slot in the GH-hosted runner queue. Configured by `.actrc` (catthehacker/ubuntu:act-22.04 image, `linux/amd64`, default branch `develop`) and driven by `scripts/ci-local.sh` (default suite: `scorecard-drift`, `docs-hygiene`, `architecture_drift`, `scripts-tests`). See `docs/CONTRIBUTING.md` for the broader workflow guide and `AGENTS.md` §"Commands That Are Easy to Guess Wrong" for the one-line pre-push invocation.
+Run a curated subset of GitHub Actions workflows locally with [`act`](https://nektosact.com/) before pushing, so workflow-shape failures (wrong action refs, missing env, typos in step names) are caught on the operator's machine instead of burning a slot in the GH-hosted runner queue. Configured by `.actrc` (catthehacker/ubuntu:act-22.04 image, `linux/amd64`, default branch `develop`) and driven by `scripts/ci-local.sh` (default suite: `scorecard-drift`, `docs-hygiene`, `architecture_drift`, `scripts-tests`). See `../../CONTRIBUTING.md` for the broader workflow guide and `AGENTS.md` §"Commands That Are Easy to Guess Wrong" for the one-line pre-push invocation.
 
 ## When to run this
 
@@ -81,7 +81,7 @@ What does NOT run under `scripts/ci-local.sh` and why:
 - `scripts/ci-local.sh` — curated suite driver
 - `scripts/disk-space-check.sh` — 10 GB minimum gate that precedes `ci-local.sh`
 - `AGENTS.md` §"Commands That Are Easy to Guess Wrong" — one-line pre-push pair
-- `docs/CONTRIBUTING.md` §"Running CI locally with `act`" — broader context and example invocations
+- `../../CONTRIBUTING.md` §"Running CI locally with `act`" — broader context and example invocations
 
 ## Related
 

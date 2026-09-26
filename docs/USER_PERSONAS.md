@@ -91,7 +91,7 @@
 - Contribute quality PRs that pass CI on first try
 
 ### Pain Points
-- Architecture documentation (`docs/ARCHITECTURE.md`) needs to clearly explain where each physics module lives, its public API, and its invariants
+- Architecture documentation (`../ARCHITECTURE.md`) needs to clearly explain where each physics module lives, its public API, and its invariants
 - Pre-commit hook setup and CI requirements not immediately obvious from README
 - The boundary between the analytical physics core and the surrogate layer is not clearly documented
 - Node.js binding (`napi-rs`) documentation is thin — behavior differences from the Python API are undocumented
@@ -100,7 +100,7 @@
 - Arrives via GitHub directly (contributor, fork, or stars search)
 - First question: *"Where is the CTF solver? How do I add a new thermal zone type? How do I run CI locally?"*
 - Primary interface: Rust source (`src/`), Cargo.toml, GitHub Actions
-- Key docs: `docs/ARCHITECTURE.md`, `docs/CONTRIBUTING.md`, `docs/HVAC_ARCHITECTURE.md`, `docs/NAPI_BINDINGS.md`, `docs/FMI.md`
+- Key docs: `../ARCHITECTURE.md`, `../CONTRIBUTING.md`, `docs/HVAC_ARCHITECTURE.md`, `docs/NAPI_BINDINGS.md`, `docs/FMI.md`
 
 ### Definition of Success
 - `cargo build --release && cargo test` succeeds on a fresh clone without manual environment tweaks

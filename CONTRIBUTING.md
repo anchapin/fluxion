@@ -15,6 +15,72 @@ Action: Use `gh pr create --base develop` for all changes; never push directly t
   ```
 - **Development branch**: `develop` (default) — create all feature branches from `develop` and target all PRs at `develop`; `main` is release-only. See [Branch Protection](#branch-protection) below.
 
+## Development Setup
+
+### Prerequisites
+
+- **Rust**: via `rustup` (latest stable), plus `rustfmt` and `clippy` components
+- **Python**: 3.10+
+- **maturin**: `pip install maturin`
+
+### First-Time Setup
+
+```bash
+git clone https://github.com/anchapin/fluxion.git && cd fluxion
+git checkout develop
+rustup update && rustup component add rustfmt clippy
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
+pre-commit install && pre-commit install --hook-type commit-msg -f
+cargo build
+maturin develop                      # Python bindings
+python -c "import fluxion; print(fluxion.BatchOracle())"  # smoke test
+```
+
+### Typical Iteration
+
+```bash
+cargo fmt && cargo clippy
+cargo test --workspace --exclude fluxion-tauri --no-fail-fast  # never bare `cargo test`
+maturin develop  # only needed when touching Python bindings
+```
+
+### Running CI Locally with `act`
+
+Run GitHub Actions workflows locally with the `act` CLI to reproduce CI jobs:
+
+- **Pre-push shortcut:** `./scripts/disk-space-check.sh && ./scripts/ci-local.sh` runs the curated default suite (`scorecard-drift`, `docs-hygiene`, `architecture_drift`, `scripts-tests`) inside the act container pinned by `.actrc`. Run this before any push that touches `scripts/`, `.github/workflows/`, `.actrc`, or `docs/`.
+- Full details and per-workflow reference: [`docs/ci/local-validation.md`](docs/ci/local-validation.md).
+- **Apple Silicon:** pass `--container-architecture linux/arm64` and `-P ubuntu-latest=catthehacker/ubuntu:act-latest`.
+- `act` does not provide GitHub secrets — supply them with `-s NAME=VALUE` or `--env-file`. Treat `act` as a debugging tool; final verification still runs in GitHub Actions.
+
+## Training AI Surrogates
+
+Surrogate model development is iterative:
+
+1. **Generate synthetic data**: use the analytical `fluxion` model (or `tools/train_surrogate.py`) for ground truth.
+2. **Train**: run `train_surrogate.py` to train the PyTorch model.
+3. **Validate**: check MAE/R² against the analytical model on a held-out set.
+4. **Export to ONNX**: the script exports the best model automatically.
+5. **Integrate**: the Rust `SurrogateManager` (`src/ai/surrogate.rs`) loads and runs it; input/output shapes must match.
+
+Guidelines: MAE within ~5%, inference <100ms for 8760 timesteps, add regression tests. Track model versions in `assets/model_metrics.json`. **Do not commit large model files** — use the gitignored `models/` directory or the model registry (see `tests/surrogate_models/registry.json`).
+
+## Performance Considerations
+
+- **Per-configuration latency**: <100ms for single `solve_timesteps(8760)`
+- **Throughput**: <100ms total for `evaluate_population(1000)`
+- Use `rayon::par_iter()` only at population level, not nested
+- Minimize Python-Rust boundary crossings; avoid allocations in inner loops
+- Test with `--release` profile
+
+## Further Reading
+
+- Parameter vector semantics (`BatchOracle`/`Model` APIs): [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md)
+- ASHRAE 140 validation status and results: [`docs/ASHRAE140_RESULTS.md`](docs/ASHRAE140_RESULTS.md)
+- Test inventory, nextest rollout, quarantine protocol: [`docs/ci/nextest-rollout.md`](docs/ci/nextest-rollout.md), [`tests/QUARANTINE.md`](tests/QUARANTINE.md)
+- Architecture source of truth: [`ARCHITECTURE.md`](ARCHITECTURE.md)
+
 ## Filing bugs
 
 Report bugs on [GitHub Issues](https://github.com/anchapin/fluxion/issues) — via the web UI or `gh issue create`. Before filing:

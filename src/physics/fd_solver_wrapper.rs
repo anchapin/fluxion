@@ -47,7 +47,6 @@ use crate::physics::wall_spec::WallSpec;
 /// This wrapper adapts the ImplicitFDSolver to work with the unified solver interface,
 /// handling conversion from BuildingAssembly to wall discretization and managing
 /// boundary condition transformations.
-#[allow(dead_code)]
 pub struct FDSolverWrapper {
     /// Underlying FD solver
     solver: Option<ImplicitFDSolver>,
@@ -56,8 +55,12 @@ pub struct FDSolverWrapper {
     /// Number of nodes per layer
     nodes_per_layer: usize,
     /// Interior convective coefficient [W/m²·K]
+    // Set via `with_convection` and asserted in tests; not yet wired into
+    // the solver's boundary conditions.
+    #[allow(dead_code)]
     h_interior: f64,
     /// Exterior convective coefficient [W/m²·K]
+    #[allow(dead_code)]
     h_exterior: f64,
     /// Current heat flux [W/m²]
     q_flux: f64,

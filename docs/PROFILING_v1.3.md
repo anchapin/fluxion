@@ -235,8 +235,8 @@ cargo test --test integration
 
 ## 7. References
 
-- Phase 47 Completion: `documentation/performance_completion.md`
-- Performance Guide: `documentation/performance.md`
+- Phase 47 Completion: `performance_completion.md`
+- Performance Guide: `performance.md`
 - Thermal Model Architecture: `src/sim/thermal_model_physics/mod.rs`
 - Benchmark Suite: `benches/performance.rs`
 

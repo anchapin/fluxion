@@ -92,7 +92,7 @@ fluxion/
 **docs/:**
 - Purpose: Project documentation and guides
 - Contains: Architecture deep dives, ASHRAE 140 validation guides, API reference, troubleshooting
-- Key files: `docs/ARCHITECTURE.md` (architecture overview), `docs/ASHRAE140_RESULTS.md` (validation results), `docs/API_REFERENCE.md` (API documentation)
+- Key files: `../../ARCHITECTURE.md` (architecture overview), `docs/ASHRAE140_RESULTS.md` (validation results), `docs/API_REFERENCE.md` (API documentation)
 
 **models/:**
 - Purpose: Trained ONNX models for surrogate inference

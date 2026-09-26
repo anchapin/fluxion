@@ -45,13 +45,7 @@
 //! ```
 
 #[cfg(feature = "fluid")]
-use fluxion_fluid::autodiff::{
-    Boiler, Chiller, CoolingCoil, DifferentiableComponent, Pump, VavBox,
-};
-#[cfg(feature = "fluid")]
-#[cfg(feature = "fluid")]
-use fluxion_fluid::energy::{ConservationNode, EnthalpyFlow};
-
+use fluxion_fluid::autodiff::{Boiler, Chiller, CoolingCoil, DifferentiableComponent, VavBox};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "fluid")]
@@ -147,39 +141,11 @@ impl Default for VavSystemConfig {
 }
 
 #[cfg(feature = "fluid")]
-#[allow(dead_code)]
-struct FluidConservationNode {
-    id: usize,
-    inlet_enthalpy: EnthalpyFlow,
-    outlet_enthalpy: EnthalpyFlow,
-    energy_transfer_w: f64,
-}
-
-#[cfg(feature = "fluid")]
-impl ConservationNode for FluidConservationNode {
-    fn id(&self) -> usize {
-        self.id
-    }
-
-    fn mass_balance_residual(&self) -> f64 {
-        self.inlet_enthalpy.mass_flow_rate - self.outlet_enthalpy.mass_flow_rate
-    }
-
-    fn energy_balance_residual(&self) -> f64 {
-        let enthalpy_in = self.inlet_enthalpy.enthalpy_rate();
-        let enthalpy_out = self.outlet_enthalpy.enthalpy_rate();
-        enthalpy_in + self.energy_transfer_w - enthalpy_out
-    }
-}
-
-#[cfg(feature = "fluid")]
 pub struct FluidNetworkAdapter {
     config: VavSystemConfig,
     chiller: Chiller,
     boiler: Boiler,
     cooling_coil: CoolingCoil,
-    #[allow(dead_code)]
-    pumps: Vec<Pump>,
     vav_boxes: Vec<VavBox>,
     zone_states: Vec<ZoneFluidState>,
     boundary_conditions: Vec<ThermalBoundaryConditions>,
@@ -198,11 +164,6 @@ impl FluidNetworkAdapter {
         let chiller = Chiller::new(config.chiller_capacity, config.chiller_cop);
         let boiler = Boiler::new(config.boiler_capacity, config.boiler_efficiency);
         let cooling_coil = CoolingCoil::new(config.chiller_capacity * 0.8, 2.0);
-
-        let pumps = vec![
-            Pump::new(2.0, 100_000.0, 5000.0),
-            Pump::new(1.0, 50_000.0, 2500.0),
-        ];
 
         let vav_boxes: Vec<VavBox> = (0..config.num_zones).map(|_| VavBox::new()).collect();
 
@@ -225,7 +186,6 @@ impl FluidNetworkAdapter {
             chiller,
             boiler,
             cooling_coil,
-            pumps,
             vav_boxes,
             zone_states,
             boundary_conditions,

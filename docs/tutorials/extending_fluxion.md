@@ -1031,13 +1031,13 @@ fn test_custom_model_performance() {
 ## Next Steps
 
 - **Explore API Reference:** See `docs/API_REFERENCE.md` for comprehensive BatchOracle and Model documentation
-- **Read Architecture:** See `docs/ARCHITECTURE.md` for deep dive into Fluxion's design
+- **Read Architecture:** See `../../ARCHITECTURE.md` for deep dive into Fluxion's design
 - **Study Examples:** Check `examples/` directory for more working examples
-- **Contribute:** See `docs/CONTRIBUTING.md` for contribution guidelines
+- **Contribute:** See `../../CONTRIBUTING.md` for contribution guidelines
 
 ## See Also
 
 - [API Reference](../API_REFERENCE.md) - Comprehensive BatchOracle and Model documentation
-- [Architecture Overview](../ARCHITECTURE.md) - Deep dive into Fluxion's design
+- [Architecture Overview](../../ARCHITECTURE.md) - Deep dive into Fluxion's design
 - [ASHRAE 140 Validation](../ASHRAE140_RESULTS.md) - Validation methodology and results
 - [Known Limitations](../KNOWN_ISSUES.md) - Current model limitations and planned improvements
