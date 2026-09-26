@@ -255,6 +255,14 @@ fn build_state_space_matrices(
                     a_mat[i][i + 1] = k * dxtmp_boundary;
                 }
                 b_mat[i][0] = k * dxtmp_boundary;
+                // Single-layer wall with a single state node: the node is
+                // simultaneously the exterior AND the interior boundary.
+                // Both surface temperatures must drive it, or the Y-column
+                // DC gain doubles and the steady flux has the wrong sign
+                // (Issue #4062).
+                if is_interior_boundary {
+                    b_mat[i][1] = k * dxtmp_boundary;
+                }
             } else if is_interior_boundary {
                 a_mat[i][i] = -2.0 * k * dxtmp_boundary;
                 if i > 0 {

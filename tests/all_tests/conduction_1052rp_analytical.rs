@@ -869,20 +869,21 @@ fn run_ctf_steady_periodic(wall: &str, spinup_days: usize) -> FdRun {
     }
 }
 
-/// CTF linear envelope (Issue #3981). The pole-residue coefficient
-/// approximation (src/physics/ctf_coefficients.rs) is normalized to the
-/// exact U at DC for heavy/medium/multi walls, but its DYNAMIC response has
-/// no tight envelope (measured: heavy amp +57%, medium +9.6%, multi +29%),
-/// and the LIGHT wall's DC gain has the WRONG SIGN (Issue #4062: q_ss =
-/// -5.53 vs +3.69 W/m2 under constant forcing — the y-coefficient
-/// abs().max(0) clamping breaks the DC identity when all poles have
-/// tau << dt). These envelopes characterize the CURRENT implementation;
-/// they will fail (correctly) when CTF is reworked, prompting re-pinning.
+/// CTF linear envelope (Issue #3981). The state-space CTF path
+/// (src/physics/state_space_ctf) is normalized to the exact U at DC for
+/// all walls, but its DYNAMIC response has no tight envelope (measured:
+/// heavy amp +57%, medium +9.6%, multi +29% — E+-style lumped
+/// discretization error vs the exact ZOH analytical reference). The LIGHT
+/// wall's DC gain had the WRONG SIGN until Issue #4062 was fixed (q_ss =
+/// -5.53 vs +3.69 W/m2 under constant forcing): the single state node of
+/// a low-mass wall is simultaneously the exterior and interior boundary,
+/// and the interior B-matrix coupling was dropped, doubling the Y-column
+/// DC gain. These envelopes characterize the CURRENT implementation; they
+/// will fail (correctly) when CTF is reworked, prompting re-pinning.
 #[test]
 fn ctf_stays_within_linear_envelope() {
     // DC sanity probe first: constant forcing must converge to U*dT for
     // every wall (superposition demands the periodic mean equal this).
-    // Light is the known-defective #4062 case.
     for wall in ["heavy", "medium", "light", "multi"] {
         let mut wrapper = CTFSolverWrapper::new();
         wrapper.initialize(&wall_spec_for(wall)).expect("init");
@@ -901,20 +902,10 @@ fn ctf_stays_within_linear_envelope() {
         }
         let g = golden(&format!("{wall}_ctf"));
         let dc_target = g.u * 8.0;
-        if wall == "light" {
-            // KNOWN DEFECT #4062: wrong-sign DC gain. Assert the defective
-            // magnitude band so the defect is regression-tracked, not hidden.
-            assert!(
-                q_last < 0.0 && q_last > -8.0,
-                "light CTF DC flux {q_last} outside the known #4062 defect band (-8, 0); \
-                 if CTF was fixed, tighten this to the physical envelope"
-            );
-        } else {
-            assert!(
-                (q_last - dc_target).abs() / dc_target < 0.005,
-                "{wall}: CTF DC flux {q_last} vs U*dT {dc_target} exceeds 0.5%"
-            );
-        }
+        assert!(
+            (q_last - dc_target).abs() / dc_target < 0.005,
+            "{wall}: CTF DC flux {q_last} vs U*dT {dc_target} exceeds 0.5%"
+        );
         eprintln!("[ctf-dc] {wall:6}: q_ss={q_last:9.5}  U*dT={dc_target:9.5}");
     }
     // Steady-periodic envelope vs the analytical ZOH reference. WallSpec
@@ -937,11 +928,7 @@ fn ctf_stays_within_linear_envelope() {
             "{wall}: CTF periodicity drift {} exceeds budget",
             run.drift
         );
-        let (amp_env, phi_env, mean_env) = if wall == "light" {
-            (0.10, 0.60, 3.00) // #4062: mean includes the wrong-sign defect
-        } else {
-            (0.65, 0.45, 0.01)
-        };
+        let (amp_env, phi_env, mean_env) = (0.65, 0.45, 0.01);
         let amp_rel = (run.amp - g.zoh3600_amp).abs() / g.zoh3600_amp;
         assert!(
             amp_rel < amp_env,
@@ -958,14 +945,9 @@ fn ctf_stays_within_linear_envelope() {
         let mean_rel = (run.mean - g.qbar).abs() / g.qbar;
         assert!(
             mean_rel < mean_env,
-            "{wall}: CTF mean err {:+.4}% exceeds {:.0}% envelope{}",
+            "{wall}: CTF mean err {:+.4}% exceeds {:.0}% envelope",
             100.0 * (run.mean - g.qbar) / g.qbar,
-            100.0 * mean_env,
-            if wall == "light" {
-                " (known defect #4062)"
-            } else {
-                ""
-            }
+            100.0 * mean_env
         );
     }
 }

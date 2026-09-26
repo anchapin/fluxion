@@ -5086,31 +5086,30 @@ Full-convention regressions: 9 strict-gate violations (600_C, 810_C, 900_H, 900_
 
 **Category:** LIMIT (known open physics defect, tracked upstream)
 
-**Status:** Open (defect confirmed, reproducer merged with the #3981 module; fix tracked in Issue #4062)
+**Status:** Resolved (fix merged, PR #4062 — single-node dual-boundary B-coupling)
 
 **Evidence (Issue #4062, found by `tests/all_tests/conduction_1052rp_analytical.rs`):**
 under constant forcing (20 °C zone / 28 °C sol-air) the `CTFSolverWrapper`
-steady-state flux for an 80 mm EPS wall converges to **−5.53 W/m²** where the
-physical value is +3.69 W/m² (U·ΔT): the modelled wall pumps heat out of the
-zone while the exterior is warmer. Heavy (200 mm concrete), medium (100 mm
-brick), and the brick+EPS+gypsum multi wall all converge to their exact
-U·ΔT (error 0.000%), so the defect is specific to walls whose pole spectrum
-lies entirely far inside one timestep (EPS τ ≈ 1.4 s ≪ dt = 3600 s).
+steady-state flux for an 80 mm EPS wall now converges to **+3.688 W/m²** (was −5.53 W/m²), matching the physical value U_filmed·ΔT = +3.69 W/m². Heavy, medium, and multi-layer walls unchanged. The EPS wall now reproduces the analytical ZOH reference to 5+ significant figures.
 
-**Root cause (suspected, `src/physics/ctf_coefficients.rs`):** the pole-residue
-coefficient construction clamps every partial sum to non-negative
-(`y_j = |...|.abs().max(0)`); alternating-sign residue sums are legitimate,
-and clamping them breaks the recurrence DC identity that the `x = y·(D/A)(0)`
-normalization relies on, inverting the fixed point for fast walls. The
-homogeneous-wall pole guess (−4·α·n²·π²/L² ± 5 % bisection) is also far
-outside its validity regime for such walls.
+**Root cause (`src/physics/state_space_ctf/mod.rs::build_state_space_matrices`):**
+for a single-layer wall whose discretization yields exactly ONE state node
+(EPS 80 mm at dt = 3600 s: Fo = 0.64, dxn = 0.0907 m > L = 0.08 m →
+n = ceil(L/dxn) = 1), the node is simultaneously the exterior and interior
+boundary. The exterior-boundary branch in the if/else chain fires first and sets
+`b_mat[i][0]` (exterior surface coupling) but leaves `b_mat[i][1] = 0`
+(interior surface coupling never set). The interior temperature then enters
+only through the D direct term, doubling the Y-column DC gain
+(−2U instead of −U) and inverting the steady-state flux sign.
+Fix: when `is_exterior_boundary && is_interior_boundary`, also set
+`b_mat[i][1] = k * dxtmp_boundary` inside the exterior branch. The A
+diagonal stays −2k·dxtmp_b (each surface counts as one k·dxtmp_b neighbor).
+DC gain becomes exactly [[U, −U], [U, −U]]. The old `abs().max(0)`
+clamping in `ctf_coefficients.rs` is dead reference code (superseded by
+state_space_ctf); the LIMIT-32 diagnosis pre-dates the state-space migration.
 
-**Guardrails:** `ctf_stays_within_linear_envelope` pins the defective band
-(`−8 < q_ss < 0`) for the light wall so any change — fix or further drift —
-fails loudly and forces re-pinning; heavy/medium/multi DC and the FD paths
-are unaffected (FD realized exact series resistance on all stacks since the
-#3981 conservative-assembly fix).
-
-**Blocking:** none — CTF is the fast cross-check per ADR-0017 / #3980
-demotion, and `select_method` never returns CTF-primary (Issue #726). Fix or
-rework (exact state-space CTF) is tracked in Issue #4062.
+**Guardrails:** `ctf_stays_within_linear_envelope` and
+`ctf_1052rp_ss_validations` pin the corrected behavior; the proptest in
+`debug_new_expm_tests.rs` now checks both X and Y DC gains to 1% across
+10,000 randomised wall configurations. The evolution test
+`golden_summary_matches_all_walls` confirms production == seed kernel.
