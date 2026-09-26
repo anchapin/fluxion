@@ -100,6 +100,26 @@ The gate is a ratchet; baseline lives in
 is unenforced. Run `python3 scripts/coverage_critical_paths.py` for the
 per-path list. Do not regress covered paths.
 
+### Push fires no `pull_request` workflows — zero checks registered (#4067)
+
+Twice on 2026-09-26, a push to an open PR branch fired only the
+`push`-event workflows and produced **zero** `pull_request` `synchronize`
+runs for the head. `gh pr view --json statusCheckRollup` then shows
+only e.g. `Sourcery review: skipped` — the required suite silently never
+ran. `python3 scripts/ci_wait.py <pr>` treats this as FAILURE (exit 1),
+never as success.
+
+Recovery — amend the head and force-push; the new SHA re-dispatches the
+dropped events (worked both times):
+
+```bash
+git commit --amend --no-edit
+git push --force-with-lease
+```
+
+If it recurs, ask GitHub support about webhook/event delivery for the
+repo.
+
 ## Physics Constants
 
 ### The `29.3 W/m²K` exterior film coefficient appears in a computation path
