@@ -11,6 +11,8 @@ pub mod equipment;
 pub mod ffd_cfd_adapter;
 #[cfg(feature = "fluxion-city")]
 pub mod fluxion_city_flux_provider;
+#[cfg(feature = "grid")]
+pub mod grid_adapter;
 pub mod holiday;
 pub mod hvac;
 pub mod hvac_controller;

@@ -37,13 +37,13 @@ docs-hygiene issue).
 | [`fluxion-city`](#fluxion-city) | off | Urban radiation solver wiring (#2344) | manual only | none |
 | [`dhat`](#dhat) | off | `dhat` heap allocation profiling (#2384) | manual only | `DHAT_ANALYSIS=1` |
 | [`fluxion-cfd`](#fluxion-cfd) | off | FFD / CFD loose-coupling co-simulation (#2460) | manual only | none |
+| [`grid`](#grid) | off | Thermal→electrical coupling via `fluxion-grid`: `GridAdapter` per-timestep `step()` API (PV + battery + COP) with batch `post_process` built on top (#4005) | `fluxion-grid-integration-gh` job | none |
 | [`fast-math`](#fast-math) | off | algebraic-FP helper layer (`src/physics/fp_algebraic.rs`, #3322); **non-deterministic** | none — never in CI | none |
 | [`deprecated-multinode-runner`](#deprecated-multinode-runner) | off | Compiles the deprecated `MultiNodeHvacRunner` migration path (#2877, ADR-002) | none — migration only | none |
 | [`simd-kernels`](#simd-kernels) | off | SIMD-kernel invariant-battery gate for the solar/radiation kernel conversion work — relaxes the 1e-9 tolerance to 1e-6 (#3338) | none — evaluation harness only | none |
-| [`fluxion`](#fluxion-internal-stub) | off | Internal stub for workspace feature resolution | none (never user-facing) | none |
 
-**Total: 26 user-facing feature flags** (25 distinct capabilities — `onnx` is an alias
-of `ort`) plus 1 internal stub (`fluxion`).
+**Total: 27 user-facing feature flags** (26 distinct capabilities — `onnx` is an alias
+of `ort`).
 Default build (`cargo build`) enables none of them and skips the ONNX runtime, producing the
 mock / analytical fallback in `src/ai/surrogate`.
 
@@ -349,6 +349,32 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
   default workspace build.
 - **Default:** off.
 
+### `grid`
+
+- **Enables:** Thermal→electrical coupling via the `fluxion-grid` sibling crate (Issue #4005).
+  Wires `fluxion_grid::{ThermalElectricalCoupler, PvSystem, BatteryStorage}` into
+  `crate::sim::grid_adapter::GridAdapter`, built around a **per-timestep `step()` API**
+  — thermal state in, electrical state out, each timestep — with the batch
+  `post_process` (additive `ElectricalResults` block) built directly on top of `step()`.
+  Phase 1 is post-processing only: the thermal solver, timesteps, tolerances, constants,
+  and ASHRAE paths are untouched, so physics results are identical with the feature
+  on or off. The `step()` shape keeps phase-2 in-loop co-simulation (demand-response /
+  pre-cooling controllers) a wiring change, not a rewrite. Solar *thermal* panels are
+  out of scope — they are thermal-domain components and belong in `crate::solar`, not
+  in this electrical adapter.
+- **Dependency direction:** strictly main crate → `fluxion-grid`, never the reverse
+  (Cargo rejects optional-optional package cycles; the grid-side back-edge was removed
+  and `fluxion_bridge` now defines its own `ThermalModelQuery` trait).
+- **PV re-export:** `crate::solar` re-exports `fluxion_grid::{PvPanel, PvSystem,
+  SimpleInverter}` under this feature; the former local `src/solar/pv.rs` duplicate
+  was deleted.
+- **Build:** `cargo build --features grid`.
+- **Example:** `cargo run --example grid_coupling_demo --features grid` — drives a real
+  `ThermalModel::step_physics` timestep loop through `GridAdapter::step`.
+- **CI implication:** covered by the `fluxion-grid Integration Tests (GH)` job
+  (`cargo test --features grid -p fluxion --lib sim::grid_adapter`).
+- **Default:** off.
+
 ### `fast-math`
 
 - **Enables:** routing of the `src/physics/fp_algebraic.rs` helper layer
@@ -400,13 +426,6 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
 - **Build:** `cargo test --features simd-kernels --test solar_simd_evolution`.
 - **CI implication:** None — evaluation harness only; never in validation CI.
 - **Default:** off (must stay off outside kernel-conversion evaluation).
-
-### `fluxion` (internal stub)
-
-- **Enables:** Nothing user-facing. This is a stub feature that exists purely so
-  `fluxion-grid` can depend on this crate via `dep:fluxion` and resolve `--features fluxion`
-  at the workspace level. **Never set this from the command line.**
-- **Default:** off (and irrelevant).
 
 ---
 

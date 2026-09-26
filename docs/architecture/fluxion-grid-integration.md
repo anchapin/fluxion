@@ -28,13 +28,17 @@ The crate predates the 2026-09-10 monorepo import (commit `3f89f48` squashed the
 - **`src/solar/pv.rs` (main crate) is a near-verbatim duplicate of `fluxion-grid/src/pv.rs`** — same EnergyPlus mappings (`Generator:Photovoltaic` → `PvPanel`, `Inverter:Simple` → `SimpleInverter`), same struct fields, same NREL SAM alignment notes. It is **completely unconsumed**: the only reference is the re-export in `src/solar/mod.rs`; `src/sim/solar.rs` uses the irradiance parts of `crate::solar`, not the PV types. Integration must delete this file and re-export from `fluxion-grid` (or from the new adapter module).
 - **No battery model exists in the main crate** (the one "battery" hit in `src/physics/mod.rs` is a comment about "evolution fitness battery" test fixtures). No power-flow anywhere else. Integration is not redundant.
 
+### Solar thermal is out of scope (Alex, 2026-09-26)
+
+Solar *thermal* panels (hot-water / heating-assist collectors) exchange heat with the thermal model directly — they are thermal-domain components, not electrical ones. They belong in the main crate's thermal side (`src/solar/`, alongside `surface_irradiance`), **not** in the electrical `fluxion-grid` crate and not in this integration. Recorded here as future thermal-side work; keeping it out preserves the grid crate's electrical-domain boundary.
+
 ## 5. Integration options
 
 ### Option A — `grid` feature + engine adapter + example (RECOMMENDED)
 
 - **What gets built:**
   1. `grid = ["dep:fluxion-grid"]` feature in the main crate's `Cargo.toml` (mirrors the `fluxion-cfd` precedent; default off so the default build and physics-core semantics are untouched).
-  2. `src/sim/grid_adapter.rs` (feature-gated): `GridAdapter` takes the engine's per-timestep thermal results, converts thermal→electrical via `fluxion_grid::ThermalElectricalCoupler`, runs `PvPanel`/`SimpleInverter` generation and a `BatteryStorage` dispatch policy, and returns an `ElectricalResults` block appended to the engine's output struct (new fields only — no existing field changes).
+  2. `src/sim/grid_adapter.rs` (feature-gated): `GridAdapter` built around a **per-timestep `step()` API** — thermal state in, electrical state out, each timestep — with the batch post-processing (`post_process`) built on top of `step()`. Phase 1 is post-processing only (the adapter reads per-timestep thermal loads after/during the thermal run and returns an `ElectricalResults` block appended to the caller's results; new fields only — no existing field changes), but the `step()` shape means phase 2 (in-loop co-simulation for demand-response / pre-cooling controllers, Alex 2026-09-26) is a wiring change, not a rewrite: a future controller calls `step()` inside the timestep loop instead of `post_process()` after it. The adapter converts thermal→electrical via `fluxion_grid::ThermalElectricalCoupler` (COP-based), runs `PvSystem` generation and a `BatteryStorage` dispatch policy per step. The IEEE 33-bus feeder-level power flow stays library-only (no building-simulation consumer).
   3. Delete `src/solar/pv.rs`; re-export `fluxion_grid::{PvPanel, PvSystem, SimpleInverter}` from `src/solar/mod.rs` so the one existing import path keeps working.
   4. `examples/grid_coupling_demo.rs` in `fluxion-examples`: end-to-end PV + battery + coupling demo with `--features grid`.
   5. Feature-matrix CI coverage for `--features grid` in the existing `rust-tests.yml` matrix (no new workflow, no new required-check name).
@@ -52,16 +56,18 @@ Add electrical state (battery SoC, bus voltages) to the twin's UKF state vector 
 
 ## 6. Risks
 
-- **Physics-core semantics:** Option A is strictly post-processing — the adapter reads engine results after the thermal solver finishes. No timestep, tolerance, constant, or ASHRAE-path changes. The determinism contract is preserved because the feature is off by default and the determinism job doesn't enable it.
-- **Dependency cycle:** `fluxion-grid` already optionally depends on the main `fluxion` crate (`fluxion-integration` feature). Adding `fluxion` → `fluxion-grid` (`grid` feature) creates an optional-optional cycle. Cargo permits this (the `fluxion`/`fluxion-cfd` and stub-feature precedent suggests the workspace already lives with this shape), but the implementer must verify `cargo build --features grid,fluxion-integration` resolves — a cycle that only materializes when *both* features are on is the failure mode to test.
+- **Physics-core semantics:** Option A is strictly post-processing — the adapter reads engine results after the thermal solver finishes. No timestep, tolerance, constant, or ASHRAE-path changes. The determinism contract is preserved because the feature is off by default and the determinism job doesn't enable it. The per-timestep `step()` API (Alex 2026-09-26) additionally keeps the door open for phase-2 in-loop co-simulation (demand-response / pre-cooling controllers calling `step()` inside the timestep loop); nothing in the phase-1 shape precludes it.
+- **Dependency direction:** strictly one-way — `fluxion` (feature `grid`) → `fluxion-grid`. Cargo rejects optional-optional package cycles, so the former `fluxion-grid` → `fluxion` back-edge (`dep:fluxion` under its `fluxion-integration` feature) was removed during this integration and replaced with a grid-owned `ThermalModelQuery` trait; `fluxion-integration` is now a standalone feature for the joint thermal-electrical convergence bridge. The build to verify is `cargo build -p fluxion --features grid` and `cargo build -p fluxion-grid --features fluxion-integration` separately — `cargo build --features grid,fluxion-integration` is not a valid root-package spelling (`fluxion-integration` is not a root feature).
 - **CI/build surface (the original complaint):** a default-off optional dependency does not expand the default workspace build. It adds one feature combination to the feature matrix — acceptable, and strictly less surface than the status quo ante if the dead `src/solar/pv.rs` is deleted. No new required-check names (the `check_required_checks_sync` gate stays green).
 - **Scope creep:** the power-flow solver (IEEE 33-bus) is distribution-grid scale and has no building-simulation consumer; Option A deliberately does not wire it into the engine — it stays available as library surface with its existing tests. Wiring feeder-level power flow into per-building simulation is a separate design (and a separate issue).
 
 ## 7. Recommended sequence (after Alex picks Option A)
 
-1. Add `grid` feature + optional dep; verify the both-features-on cycle resolves.
-2. Write `src/sim/grid_adapter.rs` with unit tests; delete `src/solar/pv.rs`, re-export.
-3. Extend engine output struct with the electrical block (additive only); integration test with recorded baseline.
-4. Add the `fluxion-examples` demo; CI matrix row for `--features grid`.
+Alex approved the adjusted Option A on 2026-09-26 (per-timestep `step()` API; solar thermal out of scope).
+
+1. Add `grid` feature + optional dep (strictly one-way; no back-edge — Cargo rejects optional-optional package cycles).
+2. Write `src/sim/grid_adapter.rs` with per-timestep `step()` + `post_process` built on it, unit tests vs hand-computed values; delete `src/solar/pv.rs`, re-export.
+3. Integration test: deterministic thermal series → `post_process` → recorded electrical baseline; assert `step()`-loop and `post_process` agree exactly (proves the batch path is just the step path folded).
+4. Add the `grid_coupling_demo.rs` example (drives the real `ThermalModel::step_physics` per-timestep loop); CI coverage via the existing `fluxion-grid Integration Tests (GH)` job.
 5. Update ARCHITECTURE.md N+1, `fluxion-grid/README.md`, FEATURES.md; regenerate inventories; run the workflow/docs gates.
 6. Open the PR against `develop`; the PR closes #4005 with the decision + wiring documented.

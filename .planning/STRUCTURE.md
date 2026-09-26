@@ -105,7 +105,7 @@ fluxion/                          # Cargo workspace root (also the main `fluxion
 ### `fluxion-grid/`
 
 - **Purpose:** Grid-edge electrical network components — battery storage, bus nodes, power flow, PV, joint thermal-electrical convergence (`ThermalElectricalCoupler`).
-- **Features:** `fluxion-integration` (alias `fluxion`) for `Arc<dyn ThermalModelTrait>` coupling; `fluid` for `fluxion-fluid` HvacState coupling.
+- **Features:** `fluxion-integration` for `Arc<dyn ThermalModelQuery>` coupling (grid-side trait; no back-edge into `fluxion`, Issue #4005); `fluid` for `fluxion-fluid` HvacState coupling.
 
 ### `fluxion-behavior/`
 

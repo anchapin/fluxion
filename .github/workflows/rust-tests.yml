@@ -572,6 +572,16 @@ jobs:
       - name: Run fluxion-grid integration tests
         run: |
           cargo test -p fluxion-grid --test grid_solver_integration --verbose
+      # Issue #4005: exercise the main-crate grid adapter (per-timestep step()
+      # API + post_process), its engine-driven integration test (real Case 600
+      # loop, bit-identical physics + recorded electrical baseline), and the
+      # demo example on the GH path. The `grid` feature is default-off; this
+      # is the one CI feature run for it.
+      - name: Run grid adapter tests (--features grid)
+        run: |
+          cargo test --features grid -p fluxion --lib sim::grid_adapter --verbose
+          cargo test --features grid -p fluxion --test grid_adapter_integration --verbose
+          cargo build --features grid -p fluxion --example grid_coupling_demo
 
   fluxion-grid-integration-hz:
     name: "fluxion-grid Integration Tests (Hetzner Overflow)"

@@ -256,10 +256,14 @@ dhat = ["dep:dhat"]
 # §"Module N+2"). The default CPU solver path in `fluxion-cfd/src/cpu/` is
 # sufficient for the regression test; CUDA is not required.
 fluxion-cfd = ["dep:fluxion-cfd"]
-# Stub feature to allow fluxion-grid to depend on this crate with a fluxion feature.
-# fluxion-grid uses dep:fluxion to reference this crate, and this feature exists
-# to satisfy the feature resolution when --features fluxion is used at workspace level.
-fluxion = []
+# Feature flag for fluxion-grid electrical integration (Issue #4005).
+# Wires `fluxion_grid::{ThermalElectricalCoupler, PvSystem, BatteryStorage}`
+# into `crate::sim::grid_adapter::GridAdapter` — a per-timestep thermal→electrical
+# adapter (post-processing in phase 1; the step() API keeps phase-2 in-loop
+# co-simulation for demand-response controllers a wiring change, not a rewrite).
+# Default OFF so the default build, physics-core semantics, and the determinism
+# contract are untouched. Mirrors the `fluxion-cfd` precedent above.
+grid = ["dep:fluxion-grid"]
 # Issue #2877 — gates the long-deprecated `MultiNodeHvacRunner` (now
 # `DeprecatedMultiNodeHvacRunner`) at `src/sim/multi_node_hvac_runner.rs`.
 # The default build does NOT compile this 58.8K dead-code path; opt in
@@ -356,6 +360,15 @@ fluxion-city = { path = "fluxion-city", version = "0.1.0", optional = true }
 # Compile with --features fluxion-cfd to enable the FfdCfdAdapter that wires
 # `fluxion_cfd::FfdCfdSolver` into the loose-coupling FfdSolver trait.
 fluxion-cfd = { path = "fluxion-cfd", version = "0.1.0", optional = true }
+
+# Optional fluxion-grid electrical integration (Issue #4005).
+# Compile with --features grid to enable `crate::sim::grid_adapter::GridAdapter`,
+# the per-timestep thermal→electrical adapter (PV + battery + COP coupling).
+# Dependency direction is strictly one-way: this crate (feature `grid`) → `fluxion-grid`.
+# Cargo rejects optional-optional package cycles, so `fluxion-grid`'s former
+# `dep:fluxion` back-edge was removed in this integration; its `fluxion-integration`
+# feature is now a standalone feature for the grid-owned bridge (`fluxion_bridge`).
+fluxion-grid = { path = "fluxion-grid", version = "0.1.0", optional = true }
 
 # Core Logic
 serde.workspace = true
@@ -591,6 +604,12 @@ memory-stats = "1.0"
 # `DebuggingRecorder` + `metrics::with_local_recorder` lets tests assert on
 # emitted observations without polluting the process-global Prometheus recorder.
 metrics-util = "0.20"
+
+# Grid-coupling demo (Issue #4005). Feature-gated so the default build never
+# compiles it: it drives `crate::sim::grid_adapter::GridAdapter`.
+[[example]]
+name = "grid_coupling_demo"
+required-features = ["grid"]
 
 [[bench]]
 name = "cta_bench"
@@ -923,6 +942,17 @@ harness = true
 name = "all_tests"
 path = "tests/all_tests/main.rs"
 harness = true
+
+# Issue #4005 — grid-adapter integration tests (per-timestep step() API +
+# post_process over a real Case 600 engine loop).
+# Lives in tests/ (not src/sim/) to avoid sim→validation cycle edges.
+# See scripts/check_ashrae_cases_cycle.py — src/sim/** imports of
+# crate::validation::* are cycle-edge violations; tests/ is out-of-scope.
+[[test]]
+name = "grid_adapter_integration"
+path = "tests/grid_adapter_integration.rs"
+harness = true
+required-features = ["grid"]
 
 # Issue #3724 — gauge-solver dispatcher identity integration tests.
 # Lives in tests/ (not src/sim/) to avoid sim→validation cycle edges.

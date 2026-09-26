@@ -60,7 +60,7 @@ Most functionality is behind cargo feature flags; default builds skip the ONNX r
 - **Physics solvers:** `gauge-solver` (production GaugeSolver zone-solver gate, Phase A8, #3291 / #3482 — with `--features gauge-solver` on, the dispatcher's gauge arm is unconditional and panics on missing gauge backend; pending §LIMIT-21 / β-soak #3286; see [`docs/FEATURES.md §gauge-solver`](docs/FEATURES.md#gauge-solver)), `debug-physics` (gates `eprintln!` in physics hot loops).
 - **AI / surrog:** `ort` (alias `onnx`, ONNX inference), `cuda` (GPU inference; auto-downgrades to CPU if unavailable).
 - **Acausal HVAC / fluid:** `fluid` (enables `fluxion-fluid` acausal HVAC/fluid port traits).
-- **Advanced co-simulation:** `fluxion-cfd` (FFD/CFD airflow), `fluxion-city` (urban radiation), `dwave` (D-Wave quantum annealing SAPI).
+- **Advanced co-simulation:** `fluxion-cfd` (FFD/CFD airflow), `fluxion-city` (urban radiation), `grid` (thermal→electrical coupling via `fluxion-grid`, #4005), `dwave` (D-Wave quantum annealing SAPI).
 - **Telemetry / concurrency:** `kafka` (rdkafka telemetry), `loom` (concurrency fuzzing; needs ~32 GB).
 - **Bindings / interop:** `python-bindings`, `python-extension` (maturin wheel build, #2532), `napi-bindings`, `multi-zone`, `wiring-tracing`, `ashrae_140_v2021`, `dhat` (heap profiling).
 

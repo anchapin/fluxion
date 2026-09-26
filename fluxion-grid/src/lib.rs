@@ -27,10 +27,12 @@ pub mod thermal_electrical_coupler;
 
 // === Fluxion Integration Bridge ===
 // Only available when the "fluxion-integration" feature flag is enabled.
+// The bridge defines its own ThermalModelQuery trait (Issue #4005): the
+// dependency direction is strictly fluxion → fluxion-grid, never the reverse.
 #[cfg(feature = "fluxion-integration")]
 pub mod fluxion_bridge;
 #[cfg(feature = "fluxion-integration")]
-pub use fluxion_bridge::ThermalModelTraitBridge;
+pub use fluxion_bridge::{ThermalModelQuery, ThermalModelTraitBridge};
 
 pub use error::{GridModelError, GridSolveError};
 pub use heat_pump_voltage_model::HeatPumpVoltageModel;
