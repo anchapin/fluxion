@@ -86,8 +86,16 @@ flowchart LR
     n33 <-->|conduction| n34
     n34 <-->|conduction| n31
     n35 <-->|conduction| n2
+    n35 -->|shortwave_solar_diffuse| n4
+    n35 -->|shortwave_solar_direct| n4
+    n35 -->|shortwave_solar_diffuse| n16
+    n35 -->|shortwave_solar_direct| n16
+    n35 -->|shortwave_solar_diffuse| n21
+    n35 -->|shortwave_solar_direct| n21
     n35 -->|shortwave_solar_diffuse| n26
     n35 -->|shortwave_solar_direct| n26
+    n35 -->|shortwave_solar_diffuse| n31
+    n35 -->|shortwave_solar_direct| n31
     n0 -->|ground_conduction| n3
     classDef boundary fill:#78716c,stroke:#0f172a,color:#0f172a
     classDef exterior_surface fill:#f97316,stroke:#0f172a,color:#0f172a

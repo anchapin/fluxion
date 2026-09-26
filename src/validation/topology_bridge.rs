@@ -192,20 +192,17 @@ fn solar_diffuse_factors(hosts: &BTreeSet<String>, zi: usize) -> Vec<(String, f6
     factors
 }
 
-/// Total R-value (K/W) of an assembly including both film coefficients.
-fn total_resistance(area: f64, construction: &Construction) -> f64 {
-    let r = construction
-        .layers
-        .iter()
-        .map(|l| l.thickness / (l.conductivity * area))
-        .sum::<f64>();
-    1.0 / (INTERIOR_FILM_COEFF_W_M2K * area) + r + 1.0 / (EXTERIOR_FILM_COEFF_W_M2K * area)
-}
-
 fn attr<K: Into<String>>(key: K, value: f64) -> BTreeMap<String, f64> {
     let mut m = BTreeMap::new();
     m.insert(key.into(), value);
     m
+}
+
+/// Adds "common_wall" -> 1.0 to an existing attributes BTreeMap
+fn with_common_wall(attrs: BTreeMap<String, f64>) -> BTreeMap<String, f64> {
+    let mut result = attrs;
+    result.insert("common_wall".to_string(), 1.0);
+    result
 }
 
 /// Zone display name from geometry.
@@ -367,21 +364,196 @@ fn push_surface_chain(
 }
 
 fn push_common_wall(graph: &mut TopologyGraph, cw: &CommonWall) {
-    // Inter-zone common wall: represented as a single air-to-air conduction
-    // coupling with the assembly U-value (films included). Zone indices are
-    // guarded by graph validation.
+    // Inter-zone common wall: modeled as a proper wall chain with explicit
+    // thermal mass nodes, using centered-capacitance for each layer.
+    //
+    // Chain structure:
+    //   zone-a:air → zone-a:common-wall:int
+    //   zone-a:common-wall:int ↔ common-wall:layer-0 (split at midplane)
+    //   ...
+    //   common-wall:layer-N → zone-b:common-wall:int
+    //   zone-b:common-wall:int → zone-b:air
+    //
+    // Both sides use INTERIOR film coefficient since both zones are conditioned
+    // interior spaces (not exterior ambient).
+    //
+    // Zone indices are guarded by graph validation.
     let area = cw.area;
-    let conductance = area / total_resistance(area, &cw.construction);
-    let mut attributes = attr("common_wall", 1.0);
-    attributes.insert("area_m2".to_string(), area);
+    let Construction { layers } = &cw.construction;
+
+    let zone_a_int_id = format!("zone-{}:common-wall:int", cw.zone_a);
+    let zone_b_int_id = format!("zone-{}:common-wall:int", cw.zone_b);
+    let zone_a_id = format!("zone-{}:air", cw.zone_a);
+    let zone_b_id = format!("zone-{}:air", cw.zone_b);
+
+    // Add zone-a interior film node (convection from zone air to film)
+    graph.push_node(TopologyNode {
+        id: zone_a_int_id.clone(),
+        kind: TopologyNodeKind::InteriorSurface,
+        zone_id: Some(zone_a_id.clone()),
+        name: format!("Zone {} common-wall interior film", cw.zone_a),
+        capacitance_j_per_k: None,
+        area_m2: Some(area),
+        volume_m3: None,
+        azimuth_deg: None,
+        tilt_deg: None,
+        elevation_m: None,
+        attributes: attr("common_wall", 1.0),
+    });
+
+    // Add zone-b interior film node (convection from film to zone air)
+    graph.push_node(TopologyNode {
+        id: zone_b_int_id.clone(),
+        kind: TopologyNodeKind::InteriorSurface,
+        zone_id: Some(zone_b_id.clone()),
+        name: format!("Zone {} common-wall interior film", cw.zone_b),
+        capacitance_j_per_k: None,
+        area_m2: Some(area),
+        volume_m3: None,
+        azimuth_deg: None,
+        tilt_deg: None,
+        elevation_m: None,
+        attributes: attr("common_wall", 1.0),
+    });
+
+    // Calculate layer resistances for centered-capacitance model
+    let layer_r: Vec<f64> = layers
+        .iter()
+        .map(|l| l.thickness / (l.conductivity * area))
+        .collect();
+
+    // Add layer nodes and conduction edges (centered-capacitance model)
+    let num_layers = layers.len();
+    for (i, layer) in layers.iter().enumerate() {
+        let layer_id = format!("common-wall:layer-{}", i);
+        let r_layer = layer.thickness / (layer.conductivity * area);
+        let capacitance = area * layer.thickness * layer.density * layer.specific_heat;
+
+        // Layer node
+        graph.push_node(TopologyNode {
+            id: layer_id.clone(),
+            kind: TopologyNodeKind::WallLayer,
+            zone_id: None, // Layer nodes are not zone-specific
+            name: format!("Common-wall layer {}", i),
+            capacitance_j_per_k: Some(capacitance),
+            area_m2: Some(area),
+            volume_m3: None,
+            azimuth_deg: None,
+            tilt_deg: None,
+            elevation_m: None,
+            attributes: {
+                let mut attrs = attr("common_wall_layer", 1.0);
+                attrs.insert("layer_index".to_string(), (i as f64).into());
+                attrs.insert("thickness_m".to_string(), layer.thickness);
+                attrs.insert("conductivity_w_per_mk".to_string(), layer.conductivity);
+                attrs.insert("density_kg_per_m3".to_string(), layer.density);
+                attrs.insert("specific_heat_j_per_kgk".to_string(), layer.specific_heat);
+                attrs
+            },
+        });
+
+        // Conduction from zone-a side to first layer (or between layers)
+        if i == 0 {
+            // First layer: connect from zone-a int film
+            let r_half = r_layer / 2.0;
+            let conductance_a = 1.0 / r_half;
+            graph.push_edge(TopologyEdge {
+                source_id: zone_a_int_id.clone(),
+                target_id: layer_id.clone(),
+                coupling_type: TopologyEdgeKind::Conduction,
+                conductance_w_per_k: Some(conductance_a),
+                fraction: None,
+                bidirectional: true,
+                attributes: with_common_wall(attr("common_wall_conduction", 1.0)),
+            });
+        } else {
+            // Subsequent layers: connect from previous layer node
+            let prev_id = format!("common-wall:layer-{}", i - 1);
+            let r_half = layer_r[i - 1] / 2.0;
+            let conductance_a = 1.0 / r_half;
+            graph.push_edge(TopologyEdge {
+                source_id: prev_id,
+                target_id: layer_id.clone(),
+                coupling_type: TopologyEdgeKind::Conduction,
+                conductance_w_per_k: Some(conductance_a),
+                fraction: None,
+                bidirectional: true,
+                attributes: with_common_wall(attr("common_wall_conduction", 1.0)),
+            });
+        }
+
+        // Conduction from this layer to zone-b side (or next layer)
+        if i == num_layers - 1 {
+            // Last layer: connect to zone-b int film
+            let r_half = r_layer / 2.0;
+            let conductance_b = 1.0 / r_half;
+            graph.push_edge(TopologyEdge {
+                source_id: layer_id,
+                target_id: zone_b_int_id.clone(),
+                coupling_type: TopologyEdgeKind::Conduction,
+                conductance_w_per_k: Some(conductance_b),
+                fraction: None,
+                bidirectional: true,
+                attributes: with_common_wall(attr("common_wall_conduction", 1.0)),
+            });
+        }
+    }
+
+    // If no layers, directly connect zone-a int to zone-b int
+    if layers.is_empty() {
+        let r_total = 1.0 / (INTERIOR_FILM_COEFF_W_M2K * area);
+        graph.push_edge(TopologyEdge {
+            source_id: zone_a_int_id.clone(),
+            target_id: zone_b_int_id.clone(),
+            coupling_type: TopologyEdgeKind::Conduction,
+            conductance_w_per_k: Some(1.0 / r_total),
+            fraction: None,
+            bidirectional: true,
+            attributes: with_common_wall(attr("common_wall_conduction", 1.0)),
+        });
+    }
+
+    // Add convection edges: zone air → interior film (zone-a side)
     graph.push_edge(TopologyEdge {
         source_id: format!("zone-{}:air", cw.zone_a),
-        target_id: format!("zone-{}:air", cw.zone_b),
-        coupling_type: TopologyEdgeKind::Conduction,
-        conductance_w_per_k: Some(conductance),
+        target_id: zone_a_int_id.clone(),
+        coupling_type: TopologyEdgeKind::ConvectionInterior,
+        conductance_w_per_k: Some(INTERIOR_FILM_COEFF_W_M2K * area),
         fraction: None,
-        bidirectional: true,
-        attributes,
+        bidirectional: false,
+        attributes: with_common_wall(attr("common_wall_convection", 1.0)),
+    });
+
+    // Add convection edges: interior film → zone air (zone-b side)
+    graph.push_edge(TopologyEdge {
+        source_id: zone_b_int_id.clone(),
+        target_id: format!("zone-{}:air", cw.zone_b),
+        coupling_type: TopologyEdgeKind::ConvectionInterior,
+        conductance_w_per_k: Some(INTERIOR_FILM_COEFF_W_M2K * area),
+        fraction: None,
+        bidirectional: false,
+        attributes: with_common_wall(attr("common_wall_convection", 1.0)),
+    });
+
+    // Add longwave radiation from interior films to zone mass nodes
+    graph.push_edge(TopologyEdge {
+        source_id: zone_a_int_id.clone(),
+        target_id: format!("zone-{}:mass", cw.zone_a),
+        coupling_type: TopologyEdgeKind::LongwaveRadiation,
+        conductance_w_per_k: Some(INTERIOR_FILM_COEFF_W_M2K * area),
+        fraction: None,
+        bidirectional: false,
+        attributes: with_common_wall(attr("common_wall_lw", 1.0)),
+    });
+
+    graph.push_edge(TopologyEdge {
+        source_id: zone_b_int_id,
+        target_id: format!("zone-{}:mass", cw.zone_b),
+        coupling_type: TopologyEdgeKind::LongwaveRadiation,
+        conductance_w_per_k: Some(INTERIOR_FILM_COEFF_W_M2K * area),
+        fraction: None,
+        bidirectional: false,
+        attributes: with_common_wall(attr("common_wall_lw", 1.0)),
     });
 }
 
@@ -1007,9 +1179,15 @@ mod tests {
             .filter(|e| e.attributes.contains_key("common_wall"))
             .collect();
         assert!(!common.is_empty());
-        assert!(common
-            .iter()
-            .all(|e| e.source_id.starts_with("zone-") && e.target_id.starts_with("zone-")));
+        // Edges should connect zone nodes or zone nodes to wall chain nodes
+        assert!(common.iter().all(|e| {
+            let src_zone = e.source_id.starts_with("zone-");
+            let tgt_zone = e.target_id.starts_with("zone-");
+            let src_chain = e.source_id.contains("common-wall");
+            let tgt_chain = e.target_id.contains("common-wall");
+            // Valid patterns: zone->zone, zone->common-wall chain, common-wall chain->zone
+            (src_zone && tgt_zone) || (src_zone && tgt_chain) || (src_chain && tgt_zone)
+        }));
     }
 
     #[test]

@@ -8,14 +8,14 @@ Open the viewer at `fluxion-tauri/frontend/public/topology-standalone.html` and 
 
 | Case | Model | Nodes | Couplings | Lint (strict) | Mermaid | SVG | Viewer payload |
 |---|---|---|---|---|---|---|---|
-| 600 | ASHRAE 140 Case 600 | 35 | 50 | ✅ clean | [case-600.mmd](case-600.mmd) | [case-600.svg](case-600.svg) | [payloads/case-600.json](payloads/case-600.json) |
-| 610 | ASHRAE 140 Case 610 | 35 | 50 | ✅ clean | [case-610.mmd](case-610.mmd) | [case-610.svg](case-610.svg) | [payloads/case-610.json](payloads/case-610.json) |
-| 620 | ASHRAE 140 Case 620 | 36 | 56 | ✅ clean | [case-620.mmd](case-620.mmd) | [case-620.svg](case-620.svg) | [payloads/case-620.json](payloads/case-620.json) |
-| 630 | ASHRAE 140 Case 630 | 36 | 56 | ✅ clean | [case-630.mmd](case-630.mmd) | [case-630.svg](case-630.svg) | [payloads/case-630.json](payloads/case-630.json) |
-| 640 | ASHRAE 140 Case 640 | 35 | 50 | ✅ clean | [case-640.mmd](case-640.mmd) | [case-640.svg](case-640.svg) | [payloads/case-640.json](payloads/case-640.json) |
-| 650 | ASHRAE 140 Case 650 | 35 | 51 | ✅ clean | [case-650.mmd](case-650.mmd) | [case-650.svg](case-650.svg) | [payloads/case-650.json](payloads/case-650.json) |
-| 900 | ASHRAE 140 Case 900 | 35 | 50 | ✅ clean | [case-900.mmd](case-900.mmd) | [case-900.svg](case-900.svg) | [payloads/case-900.json](payloads/case-900.json) |
-| 960 | ASHRAE 140 Case 960 | 68 | 99 | ✅ clean | [case-960.mmd](case-960.mmd) | [case-960.svg](case-960.svg) | [payloads/case-960.json](payloads/case-960.json) |
+| 600 | ASHRAE 140 Case 600 | 35 | 58 | ✅ clean | [case-600.mmd](case-600.mmd) | [case-600.svg](case-600.svg) | [payloads/case-600.json](payloads/case-600.json) |
+| 610 | ASHRAE 140 Case 610 | 35 | 58 | ✅ clean | [case-610.mmd](case-610.mmd) | [case-610.svg](case-610.svg) | [payloads/case-610.json](payloads/case-610.json) |
+| 620 | ASHRAE 140 Case 620 | 36 | 72 | ✅ clean | [case-620.mmd](case-620.mmd) | [case-620.svg](case-620.svg) | [payloads/case-620.json](payloads/case-620.json) |
+| 630 | ASHRAE 140 Case 630 | 36 | 72 | ✅ clean | [case-630.mmd](case-630.mmd) | [case-630.svg](case-630.svg) | [payloads/case-630.json](payloads/case-630.json) |
+| 640 | ASHRAE 140 Case 640 | 35 | 58 | ✅ clean | [case-640.mmd](case-640.mmd) | [case-640.svg](case-640.svg) | [payloads/case-640.json](payloads/case-640.json) |
+| 650 | ASHRAE 140 Case 650 | 35 | 59 | ✅ clean | [case-650.mmd](case-650.mmd) | [case-650.svg](case-650.svg) | [payloads/case-650.json](payloads/case-650.json) |
+| 900 | ASHRAE 140 Case 900 | 35 | 58 | ✅ clean | [case-900.mmd](case-900.mmd) | [case-900.svg](case-900.svg) | [payloads/case-900.json](payloads/case-900.json) |
+| 960 | ASHRAE 140 Case 960 | 71 | 120 | ✅ clean | [case-960.mmd](case-960.mmd) | [case-960.svg](case-960.svg) | [payloads/case-960.json](payloads/case-960.json) |
 
 ## How to regenerate
 
