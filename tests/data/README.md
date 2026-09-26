@@ -385,4 +385,4 @@ When adding test data:
 
 ---
 
-**Questions?** See `docs/CONTRIBUTING.md` or open an issue on GitHub.
+**Questions?** See `../../CONTRIBUTING.md` or open an issue on GitHub.

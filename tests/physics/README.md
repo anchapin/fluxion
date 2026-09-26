@@ -458,5 +458,5 @@ cargo llvm-cov report --json --output-path coverage/coverage.json
 - [PHYSICS_TEST_COVERAGE_PLAN.md](../../docs/PHYSICS_TEST_COVERAGE_PLAN.md) - Detailed coverage plan
 - [PHASE2_COMPLETION.md](../../docs/PHASE2_COMPLETION.md) - EP oracle setup
 - [ASHRAE140_RESULTS.md](../../docs/ASHRAE140_RESULTS.md) - ASHRAE 140 validation results
-- [ARCHITECTURE.md](../../docs/ARCHITECTURE.md) - Fluxion architecture
-- [CONTRIBUTING.md](../../docs/CONTRIBUTING.md) - Development guidelines
+- [ARCHITECTURE.md](../../../../ARCHITECTURE.md) - Fluxion architecture
+- [CONTRIBUTING.md](../../../../CONTRIBUTING.md) - Development guidelines

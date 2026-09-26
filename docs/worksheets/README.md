@@ -19,7 +19,7 @@ This directory contains session worksheets used by agents to document their inve
 |-----|------------|
 | architecture | [ARCHITECTURE.md](../../ARCHITECTURE.md) |
 | validation | [validation_report.md](../validation_report.md), [ASHRAE140_VALIDATION.md](../ASHRAE140_VALIDATION.md) |
-| performance | [documentation/performance.md](../../documentation/performance.md), [documentation/performance_guide.md](../../documentation/performance_guide.md) |
+| performance | [docs/performance.md](../performance.md), [docs/performance_guide.md](../performance_guide.md) |
 | contributing | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
 | rules | [RULES.md](../../RULES.md) |
 | codebase | [CODEBASE_MAP.md](../../CODEBASE_MAP.md) |
