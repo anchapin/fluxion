@@ -239,10 +239,13 @@ BASELINE_LIB_TESTS = 4248  # 2026-09-25: 4243 -> 4248 — PR for fluxion-#4065 l
                         # planning worktrees are excluded from git-tracked
                         # scans) — the ratchet is a ceiling, not equality.
 BASELINE_LIB_IGNORED = 9
-BASELINE_WORKSPACE_TESTS = 8741  # 2026-09-25: 8727 -> 8741 — same PR for
-                                 # fluxion-#4065 lock-step (develop window +
-                                 # the 1052-RP module); CI fresh-checkout AST
-                                 # count on the #4065 merge tree.
+BASELINE_WORKSPACE_TESTS = 8747  # 2026-09-26: 8741 -> 8747 (+6 new
+                                 # continuous-massiveness unit tests in
+                                 # fluxion-core/src/construction.rs
+                                 # (massiveness_weight / h_ms_of_kappa /
+                                 # a_m_blend_weight endpoints + continuity +
+                                 # high-mass calc_h_tr_ms); stacked on the
+                                 # 8741 fluxion-#4065 lock-step bump.
 # 2026-09-12 (Issue #3711): 121 -> 133 — see the history entry above for
 # the per-crate attribution and the AST-vs-cargo calibration analysis.
 # 2026-09-18 (Issue #3729): 133 -> 138 — absorbs the cargo-verified
