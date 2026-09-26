@@ -683,11 +683,14 @@ impl Construction {
     /// # Returns
     /// Conductance in W/K
     ///
-    /// The h_ms coefficient depends on mass class per ISO 13790:
-    /// - VeryLight/Light: 2.0 W/m²K (furniture/internal mass dominates)
-    /// - Medium/Heavy/VeryHeavy: 9.1 W/m²K (envelope mass dominates)
+    /// The h_ms coefficient is a continuous function of the wall's full thermal
+    /// capacitance (density-driven, no mass-class flag):
+    /// - Lightweight (κ ≤ 80,000 J/m²K): 2.0 W/m²K (furniture/internal mass dominates)
+    /// - Heavyweight (κ ≥ 100,000 J/m²K): 13.4 W/m²K (envelope mass dominates;
+    ///   Issue #2229 calibration)
+    /// See [`h_ms_of_kappa`].
     pub fn calc_h_tr_ms(&self, surface_area: f64) -> f64 {
-        let h_ms = self.iso_13790_mass_class().h_ms_coeff();
+        let h_ms = h_ms_of_kappa(self.thermal_capacitance_per_area());
         h_ms * surface_area
     }
 
@@ -888,6 +891,81 @@ impl MassClass {
             MassClass::VeryHeavy => 9.1,
         }
     }
+}
+
+/// Smoothstep interpolation: 0 below `edge0`, 1 above `edge1`, with a
+/// C1-continuous S-curve between. Used to replace discrete mass-class steps
+/// with continuous functions of thermal capacitance.
+fn smoothstep01(x: f64, edge0: f64, edge1: f64) -> f64 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// Continuous "massiveness" weight from the wall's full thermal capacitance κ [J/m²K].
+///
+/// Generic replacement for branching on `MassClass` / `ConstructionType`:
+/// 0 for lightweight construction, rising smoothly to 1 for heavyweight.
+///
+/// IMPORTANT: this uses the wall's FULL capacitance
+/// (`thermal_capacitance_per_area`, Σ ρ·c·δ over all layers), not the
+/// ISO 13790 effective value. The ISO truncation drops mass exterior to the
+/// dominant insulation layer, which mis-measures heavyweight walls like
+/// ASHRAE 140 Case 900's (effective κ ≈ 5,500 vs full κ ≈ 123,100 J/m²K) —
+/// that mis-measurement is exactly why the old code needed a type flag
+/// (Issue #905). The flag was compensating for the truncation; using the
+/// untruncated capacitance removes the need for the flag.
+///
+/// Band edges: 80,000 J/m²K is the ISO 13790 VeryLight/Light boundary.
+/// 100,000 keeps the validated 900-series wall (κ ≈ 123,100) fully on the
+/// heavyweight asymptote with >20% margin, while every lightweight
+/// construction (κ ≈ 12,900 for the 600-series) sits at 0.
+pub fn massiveness_weight(kappa_wall_full: f64) -> f64 {
+    smoothstep01(kappa_wall_full, 80_000.0, 100_000.0)
+}
+
+/// Continuous surface-to-mass heat transfer coefficient [W/(m²·K)] from the
+/// wall's full thermal capacitance.
+///
+/// Replaces both hard-coded branches:
+/// - `match construction_type { LowMass => 2.0, HighMass => 13.4, Special => 9.1 }`
+///   in the thermal model core, and
+/// - `MassClass::h_ms_coeff` (2.0 for VeryLight/Light, 9.1 for Medium+).
+///
+/// Endpoints preserve validated behavior (verified across all 65 ASHRAE 140
+/// case variants: the construction-type flag agrees with wall mass in 100%
+/// of cases, and `Special` never occurs):
+/// - κ ≤ 80,000 → 2.0 (furniture/internal mass dominates; 600-series)
+/// - κ ≥ 100,000 → 13.4 (envelope mass dominates; Issue #2229 calibration, 900-series)
+///
+/// Between them the coefficient blends smoothly — no knife-edge where a
+/// 2 J/m²K difference flips the coupling by 4.55×.
+///
+/// Note: the 9.1 ISO 13790 Table C.3 value previously returned for Medium+ by
+/// `MassClass::h_ms_coeff` is superseded here; the main simulation path
+/// already used the 13.4 Issue #2229 calibration for high-mass construction,
+/// and this function unifies the two paths on it.
+pub fn h_ms_of_kappa(kappa_wall_full: f64) -> f64 {
+    2.0 + (13.4 - 2.0) * massiveness_weight(kappa_wall_full)
+}
+
+/// Blend weight between the two ISO 13790 effective-mass-area formulations,
+/// keyed off the wall's ISO 13790 EFFECTIVE capacitance (interior-active κ).
+///
+/// - 0 → simplified Table C.2 form: A_m = 2.5 × floor_area (low-mass)
+/// - 1 → full weighted form: A_m = (ΣAκ)²/(ΣAκ²) (medium+ mass)
+///
+/// The transition spans the Medium class (165,000–260,000 J/m²K), so the
+/// ASHRAE 140 600-series (κ_eff ≈ 8,600) and 900-series (κ_eff ≈ 5,500 —
+/// the concrete mass sits exterior to the insulation) keep their validated
+/// simplified-form values exactly, while the previous discontinuous
+/// `if kappa_wall < 165_000` switch becomes a smooth blend.
+///
+/// Note the contrast with [`massiveness_weight`]: that weight answers "how
+/// massive is this wall" and therefore uses the FULL capacitance; this one
+/// selects the ISO 13790 A_m formulation and follows the standard's own
+/// effective-κ keying.
+pub fn a_m_blend_weight(kappa_wall_eff: f64) -> f64 {
+    smoothstep01(kappa_wall_eff, 165_000.0, 260_000.0)
 }
 
 /// Pre-defined material properties for common building materials.
@@ -1609,6 +1687,91 @@ mod tests {
     fn test_calc_h_tr_ms() {
         let wall = Assemblies::low_mass_wall();
         assert_eq!(wall.calc_h_tr_ms(48.0), 2.0 * 48.0);
+    }
+
+    // --- Continuous massiveness functions (no wall-type flag) ---
+
+    #[test]
+    fn test_massiveness_weight_endpoints() {
+        // Lightweight: at or below the ISO 13790 VeryLight/Light boundary.
+        assert_eq!(massiveness_weight(0.0), 0.0);
+        assert_eq!(massiveness_weight(12_861.0), 0.0); // 600-series wall
+        assert_eq!(massiveness_weight(80_000.0), 0.0);
+        // Heavyweight: at or above the upper edge.
+        assert_eq!(massiveness_weight(100_000.0), 1.0);
+        assert_eq!(massiveness_weight(123_098.0), 1.0); // 900-series wall
+        assert_eq!(massiveness_weight(1_000_000.0), 1.0);
+    }
+
+    #[test]
+    fn test_massiveness_weight_continuous_monotone() {
+        // No knife-edge: C1 smoothstep, monotone non-decreasing, bounded.
+        let mut prev = -1.0f64;
+        let mut k = 70_000.0;
+        while k <= 110_000.0 {
+            let w = massiveness_weight(k);
+            assert!(w >= prev, "not monotone at k={k}");
+            assert!((0.0..=1.0).contains(&w), "out of bounds at k={k}: {w}");
+            prev = w;
+            k += 1_000.0;
+        }
+        // Deep inside the heavyweight asymptote on both sides of the old
+        // 165,000 step — adjacent values are indistinguishable.
+        let (a, b) = (massiveness_weight(164_999.0), massiveness_weight(165_001.0));
+        assert!((a - b).abs() < 1e-12, "jump at old boundary: {a} vs {b}");
+        assert_eq!(a, 1.0);
+    }
+
+    #[test]
+    fn test_h_ms_of_kappa_validated_endpoints() {
+        // 600-series wall (light): exactly the old LowMass value.
+        assert_eq!(h_ms_of_kappa(12_861.0), 2.0);
+        // 900-series wall (heavy): exactly the old HighMass value (Issue #2229).
+        assert_eq!(h_ms_of_kappa(123_098.0), 13.4);
+    }
+
+    #[test]
+    fn test_h_ms_of_kappa_no_discontinuity() {
+        // The old flag/step code changed the coupling by 4.55x across the
+        // 165,000 boundary. Now the ratio is ~1.
+        let (a, b) = (h_ms_of_kappa(164_999.0), h_ms_of_kappa(165_001.0));
+        assert!(
+            (a / b - 1.0).abs() < 1e-9,
+            "jump at old boundary: {a} vs {b}"
+        );
+        // Strictly between the asymptotes inside the transition band.
+        let mid = h_ms_of_kappa(90_000.0);
+        assert!(
+            mid > 2.0 && mid < 13.4,
+            "mid-band value out of range: {mid}"
+        );
+    }
+
+    #[test]
+    fn test_a_m_blend_weight_validated_endpoints() {
+        // Both validated series sit at weight 0 (simplified Table C.2 form).
+        assert_eq!(a_m_blend_weight(8_568.0), 0.0); // 600 wall, effective κ
+        assert_eq!(a_m_blend_weight(5_498.0), 0.0); // 900 wall, effective κ
+        assert_eq!(a_m_blend_weight(165_000.0), 0.0);
+        assert_eq!(a_m_blend_weight(260_000.0), 1.0);
+        assert_eq!(a_m_blend_weight(500_000.0), 1.0);
+        // Continuous across the old switch point.
+        let (a, b) = (a_m_blend_weight(164_999.0), a_m_blend_weight(165_001.0));
+        assert!((a - b).abs() < 1e-9, "jump at old switch: {a} vs {b}");
+    }
+
+    #[test]
+    fn test_calc_h_tr_ms_high_mass_wall() {
+        // Unified path: the heavyweight wall gets the 13.4 Issue #2229
+        // calibration through the continuous function. Previously only the
+        // thermal-model-core flag path had it; MassClass::h_ms_coeff gave 9.1.
+        let wall = Assemblies::high_mass_wall();
+        let kappa = wall.thermal_capacitance_per_area();
+        assert!(
+            kappa > 100_000.0,
+            "test wall must be heavyweight, got {kappa}"
+        );
+        assert_eq!(wall.calc_h_tr_ms(48.0), 13.4 * 48.0);
     }
 
     #[test]
