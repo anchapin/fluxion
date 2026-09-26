@@ -329,6 +329,14 @@ pub(crate) struct SurfaceGaugeSolver {
     /// the most recent step [W]. Solar-only attribution of the interior
     /// network pools; `Σ_i + Φ_sol·to_air = Φ_sol` must hold exactly.
     last_solar_absorbed_w: f64,
+    /// Issue #3983 review — timestep-average interior-face emission flux
+    /// from the most recent FD step [W/m²] (positive = into zone), i.e.
+    /// last-step emitted energy / (area · dt). Reported by
+    /// `per_surface_telemetry` for FD-backed surfaces in place of the
+    /// lumped `gauge.q_flux()`, which is never stepped for them (the
+    /// network loop skips `compute_flux` when `fd` is present) and would
+    /// otherwise report a stale reference-state value.
+    last_fd_emitted_wm2: f64,
     /// Issue #3918 follow-up (daytime solar gap): interior surface-node
     /// temperature T_s [°C]. Tracks this surface's response to interior
     /// absorbed gains (transmitted solar + radiative internal gains) and
@@ -395,6 +403,7 @@ impl SurfaceGaugeSolver {
             fd: None,
             T_surface: 20.0,
             last_solar_absorbed_w: 0.0,
+            last_fd_emitted_wm2: 0.0,
         }
     }
 
@@ -489,6 +498,7 @@ impl Clone for SurfaceGaugeSolver {
                 .and_then(|w| build_fd_solver(w, 20.0)),
             T_surface: 20.0,
             last_solar_absorbed_w: 0.0,
+            last_fd_emitted_wm2: 0.0,
         };
         // Reset per-surface gauge state to the freshly-initialized form
         // by re-running `GaugeSolver::initialize` from the stored
@@ -783,7 +793,14 @@ impl GaugeZoneSolver {
         self.initialized && !self.surfaces.is_empty()
     }
 
-    /// Initialize all surface gauge solvers.
+    /// Initialize all surface gauge solvers and reset per-surface runtime
+    /// state to the pre-solve reference (Issue #3729 contract).
+    ///
+    /// Issue #3983 review: this now also resets the FD stack (rebuilt from
+    /// `wall_spec` at the 20 °C reference), `T_surface`, and the per-step
+    /// telemetry accumulators — previously only the lumped gauge was
+    /// re-initialized, so a second `initialize()` after stepping would
+    /// leave stale FD node temperatures behind.
     pub fn initialize(&mut self) -> Result<(), SolverError> {
         if self.surfaces.is_empty() {
             return Err(SolverError::InvalidConfig(
@@ -794,6 +811,16 @@ impl GaugeZoneSolver {
         for surface in &mut self.surfaces {
             if let Some(ref wall) = surface.wall_spec {
                 surface.gauge.initialize(wall)?;
+                // Reset the FD stack only when one is already present: a
+                // `None` slot means either a layer-less wall spec or the
+                // test-only `disable_fd_for_test` path — both must stay
+                // `None` through re-initialization.
+                if surface.fd.is_some() {
+                    surface.fd = build_fd_solver(wall, 20.0);
+                }
+                surface.T_surface = 20.0;
+                surface.last_solar_absorbed_w = 0.0;
+                surface.last_fd_emitted_wm2 = 0.0;
             }
         }
 
@@ -1454,7 +1481,15 @@ impl GaugeZoneSolver {
                 surface_type: s.surface_type,
                 tilt_deg: s._tilt_deg,
                 azimuth_deg: s._azimuth_deg,
-                q_flux_Wm2: s.gauge.q_flux(),
+                // Issue #3983 review — FD-backed surfaces never step the
+                // lumped gauge (the network loop skips compute_flux for
+                // them), so gauge.q_flux() would be a stale reference-state
+                // value; report the FD interior-face emission instead.
+                q_flux_Wm2: if s.fd.is_some() {
+                    s.last_fd_emitted_wm2
+                } else {
+                    s.gauge.q_flux()
+                },
                 r_total_m2K_W: s.gauge.r_total_for_test(),
                 c_mass_Jm2K: s.gauge.c_mass_for_test(),
                 solar_fraction: s.surface_type.solar_fraction(),
@@ -1636,8 +1671,12 @@ impl GaugeZoneSolver {
                     ext.t_sol_air_effective_c,
                     0.0,
                 );
-                // Energy-exact emission bookkeeping (trapezoid on the
-                // exterior path, exact on storage and absorption):
+                // Emission bookkeeping: exact on storage and absorption;
+                // the exterior path is a trapezoid on the pre/post-step
+                // boundary flux — exact under Crank–Nicolson, O(dt²·q̈)
+                // quadrature skew under the BDF2 default (#3980). Zone
+                // conservation holds exactly w.r.t. the declared trapezoid
+                // exterior source:
                 //   emitted_to_air = q_abs·dt + ext_in − ΔE_wall
                 let e_before = fd.stored_energy(t_air) * area;
                 let q_ext_before = fd
@@ -1649,7 +1688,17 @@ impl GaugeZoneSolver {
                     .exterior_heat_flux(ext.h_exterior_effective, ext.t_sol_air_effective_c)
                     * area;
                 let ext_in_j = 0.5 * (q_ext_before + q_ext_after) * dt_seconds;
-                emitted_j += q_abs_i * dt_seconds + ext_in_j - (e_after - e_before);
+                let emitted_i_j = q_abs_i * dt_seconds + ext_in_j - (e_after - e_before);
+                emitted_j += emitted_i_j;
+                // Timestep-average interior-face emission flux for
+                // telemetry (positive = into zone): through-wall
+                // transmission plus absorbed-gain release. The dt > 0
+                // guard mirrors the emitted_j/dt fallback below.
+                s.last_fd_emitted_wm2 = if dt_seconds > 0.0 {
+                    emitted_i_j / (area * dt_seconds)
+                } else {
+                    0.0
+                };
                 s.T_surface = fd.interior_surface_temp();
             } else {
                 let steady = t_air + q_abs_i / h_i;
@@ -1714,7 +1763,12 @@ pub struct SurfaceTelemetry {
     pub tilt_deg: f64,
     /// Surface azimuth from north [degrees]
     pub azimuth_deg: f64,
-    /// Heat flux through surface [W/m²] (positive = into zone)
+    /// Heat flux through surface [W/m²] (positive = into zone).
+    ///
+    /// Issue #3983 review — FD-backed surfaces report the timestep-average
+    /// interior-face emission from the most recent step (through-wall
+    /// transmission plus absorbed-gain release); lumped surfaces report the
+    /// gauge's instantaneous flux.
     pub q_flux_Wm2: f64,
     /// Issue #3983 — solar absorbed by this surface's interior node during
     /// the most recent step [W]. Solar-only attribution; the zone-level
@@ -2641,6 +2695,76 @@ mod tests {
         assert!(
             t > 25.0 && t < 35.0,
             "internal gains must count once: expected ≈30 °C, double-count lands ≈40 °C, got {t:.2} °C"
+        );
+    }
+
+    // Issue #3983 review, finding 1 — the #3729 reset contract must cover
+    // the whole per-surface runtime state, not just the lumped gauge:
+    // after stepping away from the 20 °C reference, `initialize()` must
+    // return T_surface, the FD stack, and the per-step telemetry
+    // accumulators to their pre-solve values.
+    #[test]
+    fn initialize_resets_fd_state_and_telemetry() {
+        let mut zone = GaugeZoneSolver::new(48.0, 2.7);
+        let wall = insulated_wall();
+        zone.add_opaque_surface(&wall, 21.6, SurfaceType::Wall, 0.0, 90.0)
+            .unwrap();
+        zone.initialize().unwrap();
+
+        // Drive the surface off the 20 °C reference: cold exterior plus
+        // solar so both through-wall flux and absorbed-gain release are
+        // nonzero during the step.
+        zone.step(
+            0,
+            3600.0,
+            Temperature::from_value(-10.0),
+            HeatTransferCoefficient::from_value(25.0),
+            100.0, // solar_irradiance_wm2
+            0.30,  // solar_distribution_to_air
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        )
+        .unwrap();
+
+        let tel = zone.per_surface_telemetry();
+        assert_eq!(tel.len(), 1);
+        assert!(
+            (tel[0].t_surface_deg - 20.0).abs() > 0.5,
+            "stepping must move the interior surface off the 20 °C reference, got {}",
+            tel[0].t_surface_deg
+        );
+        assert!(
+            tel[0].q_flux_Wm2.abs() > 1e-9,
+            "FD-backed surface must report a nonzero interior-face emission \
+             after stepping, got {}",
+            tel[0].q_flux_Wm2
+        );
+
+        // Re-initialize: everything returns to the pre-solve reference.
+        zone.initialize().unwrap();
+        let tel = zone.per_surface_telemetry();
+        assert!(
+            (tel[0].t_surface_deg - 20.0).abs() < 1e-9,
+            "initialize() must reset T_surface to 20 °C, got {}",
+            tel[0].t_surface_deg
+        );
+        assert!(
+            tel[0].q_flux_Wm2.abs() < 1e-12,
+            "initialize() must reset the FD emission-flux telemetry, got {}",
+            tel[0].q_flux_Wm2
+        );
+        assert_eq!(
+            tel[0].solar_absorbed_w, 0.0,
+            "initialize() must reset the absorbed-solar accumulator"
         );
     }
 
