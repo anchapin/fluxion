@@ -385,21 +385,101 @@ fn push_common_wall(graph: &mut TopologyGraph, cw: &CommonWall) {
     });
 }
 
+/// Stable window key for a wall orientation (used in node ids).
+fn window_key(orientation: &Orientation) -> &'static str {
+    match orientation {
+        Orientation::North => "north",
+        Orientation::East => "east",
+        Orientation::South => "south",
+        Orientation::West => "west",
+        Orientation::Up | Orientation::Horizontal => "skylight",
+        Orientation::Down => "floor-window",
+    }
+}
+
+/// Tilt for a window from its orientation (windows sit in walls; skylights
+/// lie flat).
+fn window_tilt_deg(orientation: &Orientation) -> f64 {
+    match orientation {
+        Orientation::North | Orientation::East | Orientation::South | Orientation::West => 90.0,
+        Orientation::Up | Orientation::Horizontal => 0.0,
+        Orientation::Down => 180.0,
+    }
+}
+
 fn push_window(
     graph: &mut TopologyGraph,
     zi: usize,
+    zname: &str,
     w: &WindowArea,
     spec: &CaseSpec,
     hosts: &std::collections::BTreeSet<String>,
+    index: usize,
 ) {
     if w.area <= 0.0 {
         return;
     }
     let outdoor = "ambient";
-    // Solar + glazing conduction: glazing inner surface is convectively close
-    // to zone air; solar gains land on the host orientation's interior film
-    // when that orientation has an opaque chain (a fully-glazed wall has
-    // none — its solar gain couples straight to the zone air node).
+    // Per-(zone, orientation) index keeps node ids unique when a zone has
+    // several windows on the same wall.
+    let win_id = format!("zone-{zi}:window-{}:{index}", window_key(&w.orientation));
+    let zone_air = format!("zone-{zi}:air");
+    let zone_ref = Some(zone_air.clone());
+    let shgc = spec.window_properties.shgc;
+    // Glazing conduction (glass + frame in series, per WindowSpec doc).
+    let u_eff = spec.window_properties.u_value + spec.window_properties.frame_u_value;
+
+    // Window node (Issue #3972): the glazing assembly as a first-class graph
+    // node carrying the audit-relevant properties (area, orientation, U, SHGC).
+    let mut attrs = BTreeMap::new();
+    attrs.insert("u_value_w_per_m2k".to_string(), u_eff);
+    attrs.insert("shgc".to_string(), shgc);
+    attrs.insert("glazing".to_string(), 1.0);
+    if spec.shading.is_some() {
+        attrs.insert("shading_present".to_string(), 1.0);
+    }
+    graph.push_node(TopologyNode {
+        id: win_id.clone(),
+        kind: TopologyNodeKind::Window,
+        zone_id: zone_ref,
+        name: format!("{zname} window {} #{index}", window_key(&w.orientation)),
+        capacitance_j_per_k: None,
+        area_m2: Some(w.area),
+        volume_m3: None,
+        azimuth_deg: azimuth_deg(&w.orientation),
+        tilt_deg: Some(window_tilt_deg(&w.orientation)),
+        elevation_m: None,
+        attributes: attrs,
+    });
+
+    // Glazing conduction: outdoor -> glazing assembly carries the full
+    // U_eff x A (unchanged value from the pre-#3972 direct ambient->air edge).
+    graph.push_edge(TopologyEdge {
+        source_id: outdoor.to_string(),
+        target_id: win_id.clone(),
+        coupling_type: TopologyEdgeKind::Conduction,
+        conductance_w_per_k: Some(u_eff * w.area),
+        fraction: None,
+        bidirectional: true,
+        attributes: BTreeMap::new(),
+    });
+    // Glazing -> zone air: pure topological link (the conductance lives on
+    // the outdoor leg; the glazing node models no capacitance).
+    graph.push_edge(TopologyEdge {
+        source_id: win_id.clone(),
+        target_id: zone_air.clone(),
+        coupling_type: TopologyEdgeKind::Conduction,
+        conductance_w_per_k: None,
+        fraction: None,
+        bidirectional: true,
+        attributes: BTreeMap::new(),
+    });
+
+    // Solar admission through the glazing: window -> receiving surface shows where
+    // the admitted solar lands. Solar distribution is multi-target: beam and
+    // diffuse radiation are distributed across multiple interior surfaces based
+    // on orientation-dependent factors (Issue #4048).
+    //
     // For beam radiation, use distribution factors based on orientation.
     // For diffuse radiation, the distribution is the same for all window orientations
     // (diffuse is isotropic from the sky dome): floor 40%, north 15%,
@@ -407,72 +487,60 @@ fn push_window(
     let direct_factors = solar_beam_factors(&w.orientation, hosts, zi);
     let diffuse_factors = solar_diffuse_factors(hosts, zi);
 
-    // If no valid interior surfaces found, fall back to zone air node
-    let fallback = format!("zone-{zi}:air");
-
-    let shgc = spec.window_properties.shgc;
-    let mut solar_attrs = attr("window_area_m2", w.area);
+    let mut solar_attrs = BTreeMap::new();
+    solar_attrs.insert("window_area_m2".to_string(), w.area);
     if spec.shading.is_some() {
         solar_attrs.insert("shading_present".to_string(), 1.0);
     }
 
-    // ShortwaveSolarDirect: distribute beam radiation across interior surfaces
-    // If a target surface is not in hosts (e.g., fully-glazed wall with no opaque
-    // chain), redistribute its fraction to the zone air node so fractions sum to 1.0.
-    let mut direct_fractions_sum = 0.0;
-    for (_, fraction) in &direct_factors {
-        direct_fractions_sum += fraction;
-    }
-    for (surface, fraction) in &direct_factors {
-        let (target, adj_fraction) = if hosts.contains(surface) {
-            (surface.clone(), *fraction)
-        } else {
-            // Redistribute missing fraction to zone air
-            (fallback.clone(), *fraction)
-        };
+    // ambient -> window: solar admission with full SHGC fraction.
+    // This edge represents solar radiation entering through the window.
+    for kind in [
+        TopologyEdgeKind::ShortwaveSolarDirect,
+        TopologyEdgeKind::ShortwaveSolarDiffuse,
+    ] {
         graph.push_edge(TopologyEdge {
             source_id: outdoor.to_string(),
-            target_id: target,
-            coupling_type: TopologyEdgeKind::ShortwaveSolarDirect,
+            target_id: win_id.clone(),
+            coupling_type: kind,
             conductance_w_per_k: None,
-            fraction: Some(shgc * adj_fraction),
+            fraction: Some(shgc),
             bidirectional: false,
             attributes: solar_attrs.clone(),
         });
     }
 
-    // ShortwaveSolarDiffuse: distribute diffuse radiation across interior surfaces
-    for (surface, fraction) in &diffuse_factors {
-        let (target, adj_fraction) = if hosts.contains(surface) {
-            (surface.clone(), *fraction)
-        } else {
-            // Redistribute missing fraction to zone air
-            (fallback.clone(), *fraction)
-        };
-        graph.push_edge(TopologyEdge {
-            source_id: outdoor.to_string(),
-            target_id: target,
-            coupling_type: TopologyEdgeKind::ShortwaveSolarDiffuse,
-            conductance_w_per_k: None,
-            fraction: Some(shgc * adj_fraction),
-            bidirectional: false,
-            attributes: solar_attrs.clone(),
-        });
+    // ShortwaveSolarDirect: distribute beam radiation across interior surfaces.
+    // Only create edges for surfaces that are in hosts. Missing surfaces
+    // (e.g., fully-glazed wall) simply don't receive solar.
+    for (surface, fraction) in &direct_factors {
+        if hosts.contains(surface) {
+            graph.push_edge(TopologyEdge {
+                source_id: win_id.clone(),
+                target_id: surface.clone(),
+                coupling_type: TopologyEdgeKind::ShortwaveSolarDirect,
+                conductance_w_per_k: None,
+                fraction: Some(shgc * fraction),
+                bidirectional: false,
+                attributes: solar_attrs.clone(),
+            });
+        }
     }
-    // Glazing conduction (glass + frame in series, per WindowSpec doc).
-    let u_eff = spec.window_properties.u_value + spec.window_properties.frame_u_value;
-    let mut cond_attrs = attr("glazing", 1.0);
-    cond_attrs.insert("u_value_w_per_m2k".to_string(), u_eff);
-    cond_attrs.insert("window_area_m2".to_string(), w.area);
-    graph.push_edge(TopologyEdge {
-        source_id: outdoor.to_string(),
-        target_id: format!("zone-{zi}:air"),
-        coupling_type: TopologyEdgeKind::Conduction,
-        conductance_w_per_k: Some(u_eff * w.area),
-        fraction: None,
-        bidirectional: true,
-        attributes: cond_attrs,
-    });
+
+    // ShortwaveSolarDiffuse: distribute diffuse radiation across interior surfaces.
+    for (surface, fraction) in &diffuse_factors {
+        if hosts.contains(surface) {
+            graph.push_edge(TopologyEdge {
+                source_id: win_id.clone(),
+                target_id: surface.clone(),
+                coupling_type: TopologyEdgeKind::ShortwaveSolarDiffuse,
+                conductance_w_per_k: None,
+                fraction: Some(shgc * fraction),
+                bidirectional: false,
+                attributes: solar_attrs.clone(),
+            });
+        }
+    }
 }
 
 impl ToTopologyGraph for CaseSpec {
@@ -665,10 +733,17 @@ impl ToTopologyGraph for CaseSpec {
                 Some(self.ground_temperature_c.unwrap_or(10.0)),
             ));
 
-            // Windows (solar + glazing conduction).
+            // Windows (Issue #3972): glazing assemblies as first-class nodes.
+            // Per-orientation counters keep window node ids unique when a
+            // zone has several windows on the same wall.
             if let Some(zone_windows) = self.windows.get(zi) {
+                let mut counters: BTreeMap<&str, usize> = BTreeMap::new();
                 for w in zone_windows {
-                    push_window(&mut graph, zi, w, self, &hosts);
+                    let key = window_key(&w.orientation);
+                    let index = counters.entry(key).or_insert(0);
+                    let i = *index;
+                    *index += 1;
+                    push_window(&mut graph, zi, &zname, w, self, &hosts, i);
                 }
             }
 
@@ -769,16 +844,17 @@ mod tests {
         let spec = ASHRAE140Case::Case600.spec();
         let g = graph_for(ASHRAE140Case::Case600);
         // Each chain with L layers contributes L+1 conduction edges
-        // (ext→l0, l_j→l_{j+1}, l_last→int); windows add one glazing
-        // conduction edge each.
+        // (ext→l0, l_j→l_{j+1}, l_last→int); each window contributes two
+        // glazing conduction edges (ambient→window, window→air).
+        let windows: usize = spec
+            .windows
+            .iter()
+            .map(|z| z.iter().filter(|w| w.area > 0.0).count())
+            .sum();
         let expected: usize = (spec.construction.wall.layers.len() + 1) * 4
             + (spec.construction.roof.layers.len() + 1)
             + (spec.construction.floor.layers.len() + 1)
-            + spec
-                .windows
-                .iter()
-                .map(|z| z.iter().filter(|w| w.area > 0.0).count())
-                .sum::<usize>();
+            + 2 * windows;
         assert_eq!(count_edges(&g, TopologyEdgeKind::Conduction), expected);
     }
 
@@ -796,10 +872,13 @@ mod tests {
         assert_eq!(splits.len(), 2);
         assert!((splits.iter().sum::<f64>() - 1.0).abs() < 1e-9);
     }
-
     /// Regression test: window-transmitted solar must be distributed across
     /// multiple interior surfaces (floor, N/E/S/W walls), not 100% to the host
-    /// wall. The distribution factors should sum to 1.0 (before multiplying by SHGC).
+    /// wall (Issue #4048).
+    ///
+    /// The topology model is:
+    /// - ambient -> Window (solar admission, fraction = SHGC)
+    /// - Window -> receiving_surface (solar distribution, fractions sum to SHGC)
     #[test]
     fn case_600_window_solar_distributed() {
         let g = graph_for(ASHRAE140Case::Case600);
@@ -826,33 +905,69 @@ mod tests {
             "Should have ShortwaveSolarDiffuse edges"
         );
 
-        // The SHGC for Case 600 is 0.787. The edge fractions are shgc * distribution_factor.
-        // The distribution factors (before multiplying by shgc) should sum to 1.0.
-        // Verify this by checking that fractions sum close to SHGC.
-        let total_direct_fraction: f64 = direct_edges.iter().filter_map(|e| e.fraction).sum();
-        let total_diffuse_fraction: f64 = diffuse_edges.iter().filter_map(|e| e.fraction).sum();
+        // Separate admission edges (ambient -> Window) from distribution edges
+        // (Window -> receiving_surface). Window nodes have id containing "window-".
+        let direct_admission: Vec<&&TopologyEdge> = direct_edges
+            .iter()
+            .filter(|e| e.source_id == "ambient")
+            .collect();
+        let direct_distribution: Vec<&&TopologyEdge> = direct_edges
+            .iter()
+            .filter(|e| e.source_id.contains("window-"))
+            .collect();
 
-        // The window SHGC for Case 600 is 0.77. The edge fractions are shgc *
-        // distribution_factor. When all distribution factors are present, fractions
-        // should sum to approximately 0.77 (the SHGC value).
+        let diffuse_admission: Vec<&&TopologyEdge> = diffuse_edges
+            .iter()
+            .filter(|e| e.source_id == "ambient")
+            .collect();
+        let diffuse_distribution: Vec<&&TopologyEdge> = diffuse_edges
+            .iter()
+            .filter(|e| e.source_id.contains("window-"))
+            .collect();
+
+        // Check admission edges: ambient -> Window should have fraction = SHGC
         let expected_shgc = 0.77;
+        for edge in direct_admission.iter() {
+            let frac = edge.fraction.unwrap_or(0.0);
+            assert!(
+                (frac - expected_shgc).abs() < 0.01,
+                "Direct admission edge fraction should be SHGC (~0.77), got {:.3}",
+                frac
+            );
+        }
+        for edge in diffuse_admission.iter() {
+            let frac = edge.fraction.unwrap_or(0.0);
+            assert!(
+                (frac - expected_shgc).abs() < 0.01,
+                "Diffuse admission edge fraction should be SHGC (~0.77), got {:.3}",
+                frac
+            );
+        }
+
+        // Check distribution edges: Window -> receiving_surface fractions should
+        // sum to SHGC
+        let direct_dist_sum: f64 =
+            direct_distribution.iter().filter_map(|e| e.fraction).sum();
+        let diffuse_dist_sum: f64 =
+            diffuse_distribution.iter().filter_map(|e| e.fraction).sum();
+
         assert!(
-            (total_direct_fraction - expected_shgc).abs() < 0.01,
-            "Direct fractions should sum to SHGC (~0.77), got {:.3}",
-            total_direct_fraction
+            (direct_dist_sum - expected_shgc).abs() < 0.01,
+            "Direct distribution fractions should sum to SHGC (~0.77), got {:.3}",
+            direct_dist_sum
         );
         assert!(
-            (total_diffuse_fraction - expected_shgc).abs() < 0.01,
-            "Diffuse fractions should sum to SHGC (~0.77), got {:.3}",
-            total_diffuse_fraction
+            (diffuse_dist_sum - expected_shgc).abs() < 0.01,
+            "Diffuse distribution fractions should sum to SHGC (~0.77), got {:.3}",
+            diffuse_dist_sum
         );
 
         // KEY ASSERTION: Solar should be distributed across multiple surfaces,
-        // NOT 100% to one surface (the original bug)
+        // NOT 100% to one surface (the original bug, Issue #4048)
         let direct_targets: std::collections::HashSet<&String> =
-            direct_edges.iter().map(|e| &e.target_id).collect();
+            direct_distribution.iter().map(|e| &e.target_id).collect();
         let diffuse_targets: std::collections::HashSet<&String> =
-            diffuse_edges.iter().map(|e| &e.target_id).collect();
+            diffuse_distribution.iter().map(|e| &e.target_id).collect();
 
         assert!(
             direct_targets.len() >= 2,
@@ -867,7 +982,6 @@ mod tests {
             diffuse_targets
         );
     }
-
     #[test]
     fn case_600_infiltration_edge_present() {
         let spec = ASHRAE140Case::Case600.spec();
@@ -947,6 +1061,100 @@ mod tests {
         // E/W walls span Y-axis → 6 * 2.7
         assert!((gross_wall_area(&g, &Orientation::East) - 6.0 * 2.7).abs() < 1e-9);
         assert!((gross_wall_area(&g, &Orientation::West) - 6.0 * 2.7).abs() < 1e-9);
+    }
+
+    /// Issue #3972: windows must appear as first-class nodes in the topology
+    /// export (kind=window), with glazing-conduction and solar edges routed
+    /// through them.
+    #[test]
+    fn case_600_window_nodes_present_with_glazing_and_solar_paths() {
+        let spec = ASHRAE140Case::Case600.spec();
+        let g = graph_for(ASHRAE140Case::Case600);
+
+        let windows: Vec<&TopologyNode> = g
+            .nodes
+            .iter()
+            .filter(|n| n.kind == TopologyNodeKind::Window)
+            .collect();
+        assert_eq!(windows.len(), 1, "Case 600 has one south window");
+
+        let w = windows[0];
+        assert_eq!(w.id, "zone-0:window-south:0");
+        assert_eq!(w.zone_id.as_deref(), Some("zone-0:air"));
+        assert!((w.area_m2.unwrap() - 12.0).abs() < 1e-9);
+        assert_eq!(w.azimuth_deg, Some(180.0));
+        assert_eq!(w.tilt_deg, Some(90.0));
+        let u_eff = spec.window_properties.u_value + spec.window_properties.frame_u_value;
+        assert!((w.attributes["u_value_w_per_m2k"] - u_eff).abs() < 1e-12);
+        assert!((w.attributes["shgc"] - spec.window_properties.shgc).abs() < 1e-12);
+
+        // Glazing conduction: ambient -> window carries U_eff x A, then a
+        // topological link window -> zone air.
+        let cond: Vec<&TopologyEdge> = g
+            .edges
+            .iter()
+            .filter(|e| {
+                e.coupling_type == TopologyEdgeKind::Conduction
+                    && (e.source_id == w.id || e.target_id == w.id)
+            })
+            .collect();
+        assert_eq!(cond.len(), 2);
+        let in_leg = cond
+            .iter()
+            .find(|e| e.source_id == "ambient")
+            .expect("ambient->window conduction");
+        assert!((in_leg.conductance_w_per_k.unwrap() - u_eff * 12.0).abs() < 1e-9);
+        let out_leg = cond
+            .iter()
+            .find(|e| e.target_id == "zone-0:air")
+            .expect("window->air conduction");
+        assert!(out_leg.conductance_w_per_k.is_none());
+
+        // Solar admission passes through the window node: ambient -> window
+        // (SHGC fraction), window -> receiving surfaces (multi-target distribution,
+        // Issue #4048).
+        for kind in [
+            TopologyEdgeKind::ShortwaveSolarDirect,
+            TopologyEdgeKind::ShortwaveSolarDiffuse,
+        ] {
+            let solar: Vec<&TopologyEdge> = g
+                .edges
+                .iter()
+                .filter(|e| e.coupling_type == kind && (e.source_id == w.id || e.target_id == w.id))
+                .collect();
+
+            // Should have 6 edges per kind: 1 ambient->window (admission) +
+            // 5 window->receiving_surface (distribution for floor, N, E, S, W)
+            assert!(
+                solar.len() >= 2,
+                "Should have at least 2 {kind:?} legs per window (admission + distribution)"
+            );
+
+            // Verify ambient -> window admission edge has fraction = SHGC
+            let admit = solar
+                .iter()
+                .find(|e| e.source_id == "ambient")
+                .expect("ambient->window solar");
+            assert!((admit.fraction.unwrap() - spec.window_properties.shgc).abs() < 1e-12);
+
+            // Verify distribution edges go from window to multiple receiving surfaces
+            let distribution: Vec<&&TopologyEdge> = solar
+                .iter()
+                .filter(|e| e.source_id == w.id)
+                .collect();
+            assert!(
+                distribution.len() >= 2,
+                "Should have >= 2 distribution edges (multiple interior surfaces)"
+            );
+
+            // Distribution fractions should sum to SHGC
+            let dist_sum: f64 = distribution.iter().filter_map(|e| e.fraction).sum();
+            assert!(
+                (dist_sum - spec.window_properties.shgc).abs() < 1e-6,
+                "Distribution fractions should sum to SHGC, got {:.4}",
+                dist_sum
+            );
+        }
     }
 }
 
