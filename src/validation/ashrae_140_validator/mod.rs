@@ -398,7 +398,7 @@ impl ASHRAE140Validator {
     /// - "solar-gain" -> vec![Case195SHGC0.3, Case195SHGC0.6, Case195SHGC0.9, Case195Alb0.1, Case195Alb0.5, Case195Alb0.9]
     ///
     /// Returns empty vec for unknown ranges.
-    fn expand_diagnostic_range(&self, range: &str) -> Vec<ASHRAE140Case> {
+    pub fn expand_diagnostic_range(&self, range: &str) -> Vec<ASHRAE140Case> {
         match range {
             "800-810" => vec![
                 ASHRAE140Case::Case800,

@@ -39,6 +39,42 @@ mod tests {
         assert!(validator.diagnostic_cases_added.is_empty());
     }
 
+    /// Issue #4054: the CLI statistical path used to hard-code every named
+    /// diagnostic range to just Cases 800/801. The canonical expansion below
+    /// is the single source of truth both paths share — pin its contents so
+    /// a future edit can't silently reintroduce the stub.
+    #[test]
+    fn test_expand_diagnostic_range_contents() {
+        let validator = ASHRAE140Validator::new();
+
+        let hvac_cases = validator.expand_diagnostic_range("800-810");
+        assert_eq!(hvac_cases.len(), 11, "800-810 should expand to 11 cases");
+        assert!(hvac_cases.contains(&ASHRAE140Case::Case800));
+        assert!(hvac_cases.contains(&ASHRAE140Case::Case810));
+
+        let diag_cases = validator.expand_diagnostic_range("195-470");
+        assert_eq!(diag_cases.len(), 9, "195-470 should expand to 9 cases");
+
+        let non_res = validator.expand_diagnostic_range("non-residential");
+        assert_eq!(non_res.len(), 3);
+        assert!(non_res.contains(&ASHRAE140Case::Office));
+        assert!(non_res.contains(&ASHRAE140Case::Retail));
+        assert!(non_res.contains(&ASHRAE140Case::School));
+
+        let conduction = validator.expand_diagnostic_range("solid-conduction");
+        assert_eq!(conduction.len(), 4);
+        assert!(conduction.contains(&ASHRAE140Case::Case195HighMass));
+
+        let solar = validator.expand_diagnostic_range("solar-gain");
+        assert_eq!(solar.len(), 6);
+        assert!(solar.contains(&ASHRAE140Case::Case195SHGC03));
+
+        assert!(
+            validator.expand_diagnostic_range("not-a-range").is_empty(),
+            "unknown ranges must expand to no cases"
+        );
+    }
+
     #[test]
     fn test_validator_multireference_enrichment() {
         // This test verifies that the validator automatically loads multi-reference data
