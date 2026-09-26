@@ -300,8 +300,6 @@ def test_build_desired_put_payload_strict_override(checker):
 
 def test_load_canonical_branch_protection_strict(checker, tmp_path):
     """The YAML canonical is read; a missing key falls back to True."""
-    from pathlib import Path
-
     p = tmp_path / "release_gates.yaml"
     p.write_text("ci:\n  branch_protection:\n    strict: false\n", encoding="utf-8")
     assert checker.load_canonical_branch_protection_strict(p) is False
