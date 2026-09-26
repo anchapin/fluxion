@@ -263,6 +263,23 @@ These tests are `#[ignore]` because they await external calibration data or veri
 | `tests/all_tests/ashrae_140_blind_validation.rs` | `test_blind_mode_case_810_annual_energy_within_band` | #1331, #1168 | `case_810_energy_reference.csv` regenerated from EnergyPlus | `pending` |
 | `tests/all_tests/ashrae_140_blind_validation.rs` | `test_blind_mode_case_960_annual_energy_within_band` | #1331, #1168 | `case_960_energy_reference.csv` regenerated from EnergyPlus | `pending` |
 
+### FD-vs-EnergyPlus step-response redesign cohort (Issue #4058 / #3981)
+
+Former flux channel was a circular identity (back-calculation through the pre-#3981
+`h*(T_zone - T_0)` extraction); the conservative Robin extraction broke the circularity.
+The harness is redesigned to the temperature channel (interior surface temperature under
+the real film), but the ~96-row reference datasets cannot spin up multi-day thermal
+states (concrete tau ~ 29 h) and the E+ interior-film composition is undocumented.
+
+| Test File | Test Name | Blocking Issue | Un-Ignore Criteria | Status |
+|-----------|-----------|----------------|-------------------|--------|
+| `tests/all_tests/conduction_step_response_vs_energyplus.rs` | `test_fd_solver_concrete_200mm` | #4058 | Reference regenerated with multi-day spin-up and documented interior film, or E+ inside-face conduction flux exported for direct comparison | `pending` |
+| `tests/all_tests/conduction_step_response_vs_energyplus.rs` | `test_fd_solver_lightweight_wall` | #4058 | Same as `test_fd_solver_concrete_200mm` | `pending` |
+| `tests/all_tests/conduction_step_response_vs_energyplus.rs` | `test_fd_solver_roof` | #4058 | Same as `test_fd_solver_concrete_200mm` | `pending` |
+| `tests/all_tests/conduction_step_response_vs_energyplus.rs` | `test_fd_solver_floor_ground_contact` | #4058 | Same as `test_fd_solver_concrete_200mm` | `pending` |
+| `tests/all_tests/conduction_step_response_vs_energyplus.rs` | `test_fd_solver_composite_wall` | #4058 | Same as `test_fd_solver_concrete_200mm` | `pending` |
+| `tests/all_tests/conduction_step_response_vs_energyplus.rs` | `test_fd_solver_all_constructions_summary` | #4058 | Same as `test_fd_solver_concrete_200mm` | `pending` |
+
 ---
 
 ## Category: CI Infrastructure

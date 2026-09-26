@@ -80,6 +80,7 @@ mod cli_integration;
 mod cli_multi_zone_energy_conservation;
 mod cli_run_with_perf_600_900;
 mod cold_start_guard_test;
+mod conduction_1052rp_analytical;
 mod conduction_5r1c_isolation;
 mod conduction_ctf_isolation;
 mod conduction_ctf_step_response_vs_energyplus;

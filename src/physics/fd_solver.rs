@@ -194,7 +194,16 @@ pub struct ImplicitFDSolver {
     /// Current timestep [s].
     pub dt: f64,
     /// Cached Fourier numbers for each node.
-    fourier_numbers: Vec<f64>,
+    /// Per-node dt-scaled conductance weights of the conservative
+    /// control-volume network (Issue #3981): `conductance_left[i]` couples
+    /// node i to node i-1, `conductance_right[i]` to node i+1, both already
+    /// divided by the node heat capacity C_i = rho_i*cp_i*dx_i. For a
+    /// uniform single layer these reduce to the classic Fourier number
+    /// Fo = alpha*dt/dx^2; for multi-layer walls each side carries the true
+    /// series resistance 1/((dx_i/2)/k_i + (dx_{i+-1}/2)/k_{i+-1}) so the
+    /// steady state solves the exact layer resistance network.
+    conductance_left: Vec<f64>,
+    conductance_right: Vec<f64>,
     /// Time-integration scheme (Issue #3980).
     scheme: TimeIntegrationScheme,
     /// `T^{n-1}` history for BDF2 (`None` until the first step completes).
@@ -224,7 +233,8 @@ impl ImplicitFDSolver {
             discretization,
             temperatures: vec![initial_temp; n],
             dt: 3600.0, // Default 1 hour
-            fourier_numbers: vec![0.0; n],
+            conductance_left: vec![0.0; n],
+            conductance_right: vec![0.0; n],
             scheme: TimeIntegrationScheme::default(),
             previous_temperatures: None,
             previous_dt: None,
@@ -308,7 +318,8 @@ impl ImplicitFDSolver {
             discretization,
             temperatures,
             dt: 3600.0,
-            fourier_numbers: vec![0.0; n],
+            conductance_left: vec![0.0; n],
+            conductance_right: vec![0.0; n],
             scheme: TimeIntegrationScheme::default(),
             previous_temperatures: None,
             previous_dt: None,
@@ -323,14 +334,45 @@ impl ImplicitFDSolver {
     }
 
     /// Calculate Fourier number Fo = α·Δt/Δx² for each node.
-    fn update_fourier_numbers(&mut self, dt: f64) {
-        self.dt = dt;
-
-        for i in 0..self.discretization.total_nodes {
-            let dx = self.discretization.node_volumes[i];
-            let alpha = self.discretization.diffusivity[i];
-            self.fourier_numbers[i] = alpha * dt / (dx * dx);
+    /// Recompute the conservative conductance weights for the current
+    /// timestep (Issue #3981). Each weight is dt*G/C with G the series
+    /// conductance between adjacent node centers (half-cell each side) and
+    /// C the node heat capacity — the standard finite-volume form (Patankar).
+    /// Unlike the former uniform-grid Fo = alpha*dt/dx^2, this represents
+    /// layer interfaces exactly: at steady state the node network solves the
+    /// true series resistance of the wall.
+    fn update_conductance_weights(&mut self, dt: f64) {
+        let n = self.discretization.total_nodes;
+        let k = &self.discretization.conductivity;
+        let dx = &self.discretization.node_volumes;
+        let rho = &self.discretization.density;
+        let cp = &self.discretization.specific_heat;
+        for i in 0..n {
+            let c_i = rho[i] * cp[i] * dx[i];
+            if i > 0 {
+                let g_left = 1.0 / ((dx[i] / 2.0) / k[i] + (dx[i - 1] / 2.0) / k[i - 1]);
+                self.conductance_left[i] = dt * g_left / c_i;
+            }
+            if i < n - 1 {
+                let g_right = 1.0 / ((dx[i] / 2.0) / k[i] + (dx[i + 1] / 2.0) / k[i + 1]);
+                self.conductance_right[i] = dt * g_right / c_i;
+            }
         }
+    }
+
+    /// Boundary (Robin) weights for one film: returns (dt*G_b/C_node,
+    /// dt*(G_b/h)/C_node) where G_b = 1/(1/h + half-cell conduction). The
+    /// second weight scales an externally absorbed surface flux q so that
+    /// the face balance h*(T_air - T_s) + q = (T_s - T_node)/R_half is
+    /// satisfied exactly at steady state.
+    fn boundary_weights(&self, h: f64, idx: usize, dt: f64) -> (f64, f64) {
+        let k = &self.discretization.conductivity;
+        let dx = &self.discretization.node_volumes;
+        let rho = &self.discretization.density;
+        let cp = &self.discretization.specific_heat;
+        let c_node = rho[idx] * cp[idx] * dx[idx];
+        let g_b = 1.0 / (1.0 / h + (dx[idx] / 2.0) / k[idx]);
+        (dt * g_b / c_node, dt * (g_b / h) / c_node)
     }
 
     /// Per-step time-integration weights for the assembled system.
@@ -397,10 +439,12 @@ impl ImplicitFDSolver {
         }
     }
 
-    /// Fo-scaled discrete Laplacian (ghost-node substituted, Robin boundary
-    /// rows included) evaluated at `temps` with the given boundary values —
-    /// the explicit operator of the θ-scheme. Row structure mirrors the
-    /// implicit assembly exactly so the two remain consistent.
+    /// Explicit evaluation of the conservative spatial operator S (dt-scaled
+    /// by node heat capacity) — the explicit operator of the θ-scheme. Row
+    /// structure mirrors the implicit assembly exactly so the two remain
+    /// consistent. Interior rows use the per-side conductance weights
+    /// (Issue #3981); boundary rows use the film+half-cell Robin conductance
+    /// with the absorbed surface source split.
     fn explicit_laplacian(
         &self,
         temps: &[f64],
@@ -408,34 +452,25 @@ impl ImplicitFDSolver {
         exterior: &SurfaceBC,
     ) -> Vec<f64> {
         let n = self.discretization.total_nodes;
+        let dt = self.dt;
         let mut s = vec![0.0; n];
         for i in 1..n - 1 {
-            let fo = self.fourier_numbers[i];
-            s[i] = fo * (temps[i - 1] - 2.0 * temps[i] + temps[i + 1]);
+            s[i] = self.conductance_left[i] * (temps[i - 1] - temps[i])
+                + self.conductance_right[i] * (temps[i + 1] - temps[i]);
         }
-        // Interior boundary row (ghost node at -dx).
+        // Interior boundary row: film through the boundary half-cell.
         {
-            let k = self.discretization.conductivity[0];
-            let dx = self.discretization.node_volumes[0];
-            let fo = self.fourier_numbers[0];
-            let h_dx_k = interior.h * dx / k;
-            s[0] = 2.0
-                * fo
-                * (temps[1] - (1.0 + h_dx_k) * temps[0]
-                    + h_dx_k * interior.t_fluid
-                    + interior.q_external * dx / k);
+            let (a_b, q_w) = self.boundary_weights(interior.h, 0, dt);
+            s[0] = self.conductance_right[0] * (temps[1] - temps[0])
+                + a_b * (interior.t_fluid - temps[0])
+                + q_w * interior.q_external;
         }
-        // Exterior boundary row (ghost node at L+dx).
+        // Exterior boundary row: film through the boundary half-cell.
         {
-            let k = self.discretization.conductivity[n - 1];
-            let dx = self.discretization.node_volumes[n - 1];
-            let fo = self.fourier_numbers[n - 1];
-            let h_dx_k = exterior.h * dx / k;
-            s[n - 1] = 2.0
-                * fo
-                * (temps[n - 2] - (1.0 + h_dx_k) * temps[n - 1]
-                    + h_dx_k * exterior.t_fluid
-                    + exterior.q_external * dx / k);
+            let (a_b, q_w) = self.boundary_weights(exterior.h, n - 1, dt);
+            s[n - 1] = self.conductance_left[n - 1] * (temps[n - 2] - temps[n - 1])
+                + a_b * (exterior.t_fluid - temps[n - 1])
+                + q_w * exterior.q_external;
         }
         s
     }
@@ -445,18 +480,16 @@ impl ImplicitFDSolver {
         let n = self.discretization.total_nodes;
         let mut sys = TridiagonalSystem::new(n);
 
+        // Conservative per-side conductances (Issue #3981): row i carries
+        // -w·aL·T_{i-1} + (1 + w·(aL+aR))·T_i - w·aR·T_{i+1}. Boundary rows
+        // (0 and n-1) are finalized by apply_interior_bc/apply_exterior_bc.
         for (i, hist_i) in hist.iter().enumerate() {
-            let fo = self.fourier_numbers[i];
-
-            // Main diagonal: (1 + 2·w·Fo)
-            sys.main[i] = 1.0 + 2.0 * w * fo;
-
-            // Off-diagonals: -w·Fo (interior nodes)
+            sys.main[i] = 1.0 + w * (self.conductance_left[i] + self.conductance_right[i]);
             if i > 0 {
-                sys.lower[i - 1] = -w * fo;
+                sys.lower[i - 1] = -w * self.conductance_left[i];
             }
             if i < n - 1 {
-                sys.upper[i] = -w * fo;
+                sys.upper[i] = -w * self.conductance_right[i];
             }
 
             // RHS: scheme history (T^n for backward Euler, BDF2 combination
@@ -469,10 +502,14 @@ impl ImplicitFDSolver {
 
     /// Apply interior surface boundary condition (Robin BC).
     ///
-    /// Modifies the first equation to enforce:
+    /// Conservative half-cell form (Issue #3981): the film resistance and the
+    /// boundary half-cell act in series between the zone air and node 0:
     /// ```text
-    /// -k·dT/dx = h·(T_zone - T_surf) + q_external
+    /// G_b = 1 / (1/h + (dx_0/2)/k_0)
+    /// C_0/dt·(T_0^{n+1} - hist) = w·[G_b·(T_zone - T_0) + (G_b/h)·q + G_{01}·(T_1 - T_0)]
     /// ```
+    /// At steady state this row realizes exactly 1/h + half-cell in series
+    /// with the interior network, for any layer arrangement.
     fn apply_interior_bc(
         &mut self,
         sys: &mut TridiagonalSystem,
@@ -480,21 +517,14 @@ impl ImplicitFDSolver {
         w: f64,
         hist: &[f64],
     ) {
-        let k = self.discretization.conductivity[0];
-        let dx = self.discretization.node_volumes[0];
-        let fo = self.fourier_numbers[0];
-
-        // Ghost node approach: T_{-1} = T_1 - 2·dx/k·(h·(T_zone - T_0) + q)
-        // Substituting into the implicit scheme equation and rearranging:
-        // (1 + 2wFo + 2·wFo·h·dx/k)·T_0 - 2·wFo·T_1 = hist + 2·wFo·(h·dx/k·T_zone + q·dx/k)
-
-        let h_dx_k = bc.h * dx / k;
-        sys.main[0] = 1.0 + 2.0 * w * fo * (1.0 + h_dx_k);
-        sys.upper[0] = -2.0 * w * fo; // Modified for boundary
-        sys.rhs[0] = hist[0] + 2.0 * w * fo * (h_dx_k * bc.t_fluid + bc.q_external * dx / k);
+        let (a_b, q_w) = self.boundary_weights(bc.h, 0, self.dt);
+        sys.main[0] = 1.0 + w * (self.conductance_right[0] + a_b);
+        sys.upper[0] = -w * self.conductance_right[0];
+        sys.rhs[0] = hist[0] + w * (a_b * bc.t_fluid + q_w * bc.q_external);
     }
 
-    /// Apply exterior surface boundary condition (Robin BC).
+    /// Apply exterior surface boundary condition (Robin BC) — conservative
+    /// half-cell form, mirror of `apply_interior_bc` on node n-1.
     fn apply_exterior_bc(
         &mut self,
         sys: &mut TridiagonalSystem,
@@ -503,18 +533,10 @@ impl ImplicitFDSolver {
         hist: &[f64],
     ) {
         let n = self.discretization.total_nodes;
-        let k = self.discretization.conductivity[n - 1];
-        let dx = self.discretization.node_volumes[n - 1];
-        let fo = self.fourier_numbers[n - 1];
-
-        // Ghost node: T_{n} = T_{n-2} + 2·dx/k·(h·(T_solair - T_{n-1}) + q)
-        // Rearranging: -2·wFo·T_{n-2} + (1 + 2wFo + 2·wFo·h·dx/k)·T_{n-1} = hist + 2·wFo·(h·dx/k·T_solair + q·dx/k)
-
-        let h_dx_k = bc.h * dx / k;
-        sys.main[n - 1] = 1.0 + 2.0 * w * fo * (1.0 + h_dx_k);
-        sys.lower[n - 2] = -2.0 * w * fo; // Modified for boundary
-        sys.rhs[n - 1] =
-            hist[n - 1] + 2.0 * w * fo * (h_dx_k * bc.t_fluid + bc.q_external * dx / k);
+        let (a_b, q_w) = self.boundary_weights(bc.h, n - 1, self.dt);
+        sys.main[n - 1] = 1.0 + w * (self.conductance_left[n - 1] + a_b);
+        sys.lower[n - 2] = -w * self.conductance_left[n - 1];
+        sys.rhs[n - 1] = hist[n - 1] + w * (a_b * bc.t_fluid + q_w * bc.q_external);
     }
 
     /// Solve tridiagonal system using Thomas algorithm (TDMA).
@@ -566,8 +588,8 @@ impl ImplicitFDSolver {
     ///
     /// New temperature vector after timestep.
     pub fn step(&mut self, dt: f64, interior_bc: &SurfaceBC, exterior_bc: &SurfaceBC) -> Vec<f64> {
-        // Update Fourier numbers for new timestep
-        self.update_fourier_numbers(dt);
+        // Update conservative conductance weights for new timestep (Issue #3981)
+        self.update_conductance_weights(dt);
         self.dt = dt;
 
         // Time-integration weights (Issue #3980): scheme-dependent implicit
@@ -614,17 +636,32 @@ impl ImplicitFDSolver {
         self.temperatures[self.temperatures.len() - 1]
     }
 
-    /// Calculate heat flux at interior surface [W/m²].
+    /// Calculate heat flux at interior surface [W/m²], positive from zone
+    /// air INTO the wall.
     ///
-    /// Uses Fourier's law: q = -k·dT/dx
+    /// Consistent with the conservative boundary row (Issue #3981): the film
+    /// and the boundary half-cell act in series between the zone air and
+    /// node 0, so the face flux is G_b·(T_zone - T_0) with
+    /// G_b = 1/(1/h + (dx_0/2)/k_0). Node 0 sits a half-cell inside the
+    /// wall, not on the face, so using the bare film h against T_0 would
+    /// bias the flux and break steady-state energy conservation across the
+    /// wall. At steady state this telescopes with the interior network to
+    /// the exact series-resistance flux.
     pub fn interior_heat_flux(&self, h_interior: f64, t_zone: f64) -> f64 {
-        // q = h·(T_zone - T_surf)
-        h_interior * (t_zone - self.interior_surface_temp())
+        let k = self.discretization.conductivity[0];
+        let dx = self.discretization.node_volumes[0];
+        let g_b = 1.0 / (1.0 / h_interior + (dx / 2.0) / k);
+        g_b * (t_zone - self.temperatures[0])
     }
 
-    /// Calculate heat flux at exterior surface [W/m²].
+    /// Calculate heat flux at exterior surface [W/m²], positive from
+    /// ambient INTO the wall — mirror of `interior_heat_flux` on node n-1.
     pub fn exterior_heat_flux(&self, h_exterior: f64, t_sol_air: f64) -> f64 {
-        h_exterior * (t_sol_air - self.exterior_surface_temp())
+        let n = self.discretization.total_nodes;
+        let k = self.discretization.conductivity[n - 1];
+        let dx = self.discretization.node_volumes[n - 1];
+        let g_b = 1.0 / (1.0 / h_exterior + (dx / 2.0) / k);
+        g_b * (t_sol_air - self.temperatures[n - 1])
     }
 
     /// Calculate total energy stored in wall [J/m²].
@@ -808,23 +845,61 @@ mod tests {
     }
 
     #[test]
-    fn test_fourier_number_calculation() {
+    fn test_conductance_weight_calculation() {
         let disc = concrete_wall(0.200, 20);
         let mut solver = ImplicitFDSolver::new(disc, 20.0);
 
-        // For concrete: α ≈ 6.9e-7 m²/s
-        // With dx = 0.01m, dt = 3600s: Fo = α·dt/dx² ≈ 0.025
-        // But our dx is actually 0.200/20 = 0.01m
-        solver.update_fourier_numbers(3600.0);
+        solver.update_conductance_weights(3600.0);
 
-        // Fo should be small but positive (typically 0.01-0.1 for building simulations)
-        for Fo in &solver.fourier_numbers {
+        // For a uniform layer the per-side weights equal the classic Fourier
+        // number Fo = alpha*dt/dx^2: concrete alpha ~= 6.9e-7 m2/s, dx = 0.01,
+        // dt = 3600 -> Fo ~= 0.025. Interior nodes must realize this exactly.
+        let fo_classic = 6.9e-7_f64 * 3600.0 / (0.01_f64 * 0.01);
+        for i in 1..solver.discretization.total_nodes - 1 {
+            let a_left = solver.conductance_left[i];
+            let a_right = solver.conductance_right[i];
             assert!(
-                *Fo > 0.0 && *Fo < 100.0,
-                "Fo = {:.4} outside reasonable range",
-                Fo
+                (a_left - fo_classic).abs() / fo_classic < 0.02,
+                "a_left = {a_left:.6} vs classic Fo {fo_classic:.6}"
+            );
+            assert!(
+                (a_right - fo_classic).abs() / fo_classic < 0.02,
+                "a_right = {a_right:.6} vs classic Fo {fo_classic:.6}"
             );
         }
+    }
+
+    #[test]
+    fn test_multilayer_conductance_weights_realize_series_resistance() {
+        // Two layers with a 20:1 conductivity contrast: the steady network
+        // must realize the exact series resistance (Issue #3981 regression
+        // guard for the former uniform-stencil defect).
+        use super::super::fd_discretization::MaterialLayer;
+        let layers = vec![
+            MaterialLayer::new("brick", 0.1, 0.81, 1920.0, 790.0),
+            MaterialLayer::new("eps", 0.08, 0.04, 25.0, 1400.0),
+        ];
+        let disc = WallDiscretization::from_layers(&layers, 30);
+        let mut solver = ImplicitFDSolver::new(disc, 20.0);
+        solver.update_conductance_weights(3600.0);
+        // Sum of 1/(a_i)·(C_i/dt) over the chain reconstructs total R between
+        // the two boundary node centers; verify via steady flux instead:
+        // drive with constant BCs and compare realized U to the analytical
+        // series resistance (films included).
+        for _ in 0..60 * 24 {
+            let bc_int = SurfaceBC::new_interior(8.3, 20.0);
+            let bc_ext = SurfaceBC::new_exterior(18.3, 28.0, 0.0);
+            solver.step(3600.0, &bc_int, &bc_ext);
+        }
+        let q_through =
+            0.5 * (solver.exterior_heat_flux(18.3, 28.0) - solver.interior_heat_flux(8.3, 20.0));
+        let u_true = 1.0 / (1.0 / 8.3 + 0.1 / 0.81 + 0.08 / 0.04 + 1.0 / 18.3);
+        assert!(
+            (q_through / 8.0 / u_true - 1.0).abs() < 0.005,
+            "realized U {:.6} vs analytical {:.6}",
+            q_through / 8.0,
+            u_true
+        );
     }
 
     #[test]
@@ -972,11 +1047,14 @@ mod tests {
         let flux = solver.interior_heat_flux(8.0, 20.0);
         assert_eq!(flux, 0.0);
 
-        // Positive flux into zone
+        // Positive flux into zone. Conservative convention (Issue #3981):
+        // the film acts through the boundary half-cell, G_b = 1/(1/h + dx/2k).
+        // concrete_wall(0.2, 20): dx = 0.01, k = 1.7 -> G_b = 1/(1/8 + 0.005/1.7).
         solver.temperatures[0] = 18.0;
         let flux = solver.interior_heat_flux(8.0, 20.0);
         assert!(flux > 0.0); // Heat flowing into zone
-        assert_eq!(flux, 8.0 * (20.0 - 18.0));
+        let g_b = 1.0 / (1.0 / 8.0 + 0.005 / 1.4);
+        assert!((flux - g_b * (20.0 - 18.0)).abs() < 1e-12);
     }
 
     #[test]
@@ -988,12 +1066,14 @@ mod tests {
         let flux = solver.exterior_heat_flux(25.0, 20.0);
         assert_eq!(flux, 0.0);
 
-        // Positive flux into wall
+        // Positive flux into wall. Conservative convention (Issue #3981):
+        // film through the boundary half-cell, G_b = 1/(1/h + dx/2k).
         let n = solver.temperatures.len() - 1;
         solver.temperatures[n] = 15.0;
         let flux = solver.exterior_heat_flux(25.0, 20.0);
         assert!(flux > 0.0); // Heat flowing into wall
-        assert_eq!(flux, 25.0 * (20.0 - 15.0));
+        let g_b = 1.0 / (1.0 / 25.0 + 0.005 / 1.4);
+        assert!((flux - g_b * (20.0 - 15.0)).abs() < 1e-12);
     }
 
     #[test]

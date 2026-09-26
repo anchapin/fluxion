@@ -68,13 +68,6 @@
       "rationale": "DOE Commercial Reference Building configurations; wire into the validation suite or delete."
     },
     {
-      "module": "equipment_surrogate",
-      "disposition": "wire-pending",
-      "issue": 3748,
-      "owner": "anchapin",
-      "rationale": "ONNX HVAC equipment surrogate node; wire into the HVAC loop or delete."
-    },
-    {
       "module": "epjson",
       "disposition": "wire-pending",
       "issue": 3748,
