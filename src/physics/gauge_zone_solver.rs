@@ -278,6 +278,10 @@ pub(crate) struct SurfaceGaugeSolver {
     _tilt_deg: f64,
     /// Wall spec for initialization (stored for re-initialization if needed)
     wall_spec: Option<WallSpec>,
+    /// Issue #3983 — solar absorbed by this surface's interior node during
+    /// the most recent step [W]. Solar-only attribution of the interior
+    /// network pools; `Σ_i + Φ_sol·to_air = Φ_sol` must hold exactly.
+    last_solar_absorbed_w: f64,
     /// Issue #3918 follow-up (daytime solar gap): interior surface-node
     /// temperature T_s [°C]. Tracks this surface's response to interior
     /// absorbed gains (transmitted solar + radiative internal gains) and
@@ -342,6 +346,7 @@ impl SurfaceGaugeSolver {
             _tilt_deg,
             wall_spec: None,
             T_surface: 20.0,
+            last_solar_absorbed_w: 0.0,
         }
     }
 
@@ -429,6 +434,7 @@ impl Clone for SurfaceGaugeSolver {
             // Issue #3918 follow-up: runtime surface-node state RESET on
             // clone (topology preserved, state reset — Issue #3729 contract).
             T_surface: 20.0,
+            last_solar_absorbed_w: 0.0,
         };
         // Reset per-surface gauge state to the freshly-initialized form
         // by re-running `GaugeSolver::initialize` from the stored
@@ -897,6 +903,9 @@ impl GaugeZoneSolver {
             remaining_sol * st_sol_frac + phi_int_rad * (1.0 - solar_distribution_to_air);
         let mass_pool =
             remaining_sol * solar_beam_to_mass_fraction + phi_int_rad * solar_distribution_to_air;
+        // Solar-only pool portions for the per-surface absorption telemetry.
+        let solar_surface_pool = remaining_sol * st_sol_frac;
+        let solar_mass_pool = remaining_sol * solar_beam_to_mass_fraction;
         // Direct-to-air gains (5R1C phi_ia) enter the air balance instantly.
         net_power_watts += phi_ia_sol + phi_ia_int;
         // Interior absorbed-gain network: per-surface T_s tracking returning
@@ -904,8 +913,14 @@ impl GaugeZoneSolver {
         // average (Issue #3918 architectural fix). `h_interior` is the
         // network's air-side conductance — it enters den_air below as the
         // implicit-conductance counterpart of φ_st.
-        let (phi_st, h_interior) =
-            self.step_interior_surface_network(dt_seconds, surface_pool, mass_pool, h_tr_is);
+        let (phi_st, h_interior) = self.step_interior_surface_network(
+            dt_seconds,
+            surface_pool,
+            mass_pool,
+            solar_surface_pool,
+            solar_mass_pool,
+            h_tr_is,
+        );
         net_power_watts += phi_st;
 
         // Infiltration/ventilation coupling
@@ -1157,8 +1172,17 @@ impl GaugeZoneSolver {
             remaining_sol * st_sol_frac + phi_int_rad * (1.0 - bc.solar_distribution_to_air);
         let mass_pool = remaining_sol * bc.solar_beam_to_mass_fraction
             + phi_int_rad * bc.solar_distribution_to_air;
-        let (phi_st, h_interior) =
-            self.step_interior_surface_network(dt_seconds, surface_pool, mass_pool, bc.h_tr_is);
+        // Solar-only pool portions for the per-surface absorption telemetry.
+        let solar_surface_pool = remaining_sol * st_sol_frac;
+        let solar_mass_pool = remaining_sol * bc.solar_beam_to_mass_fraction;
+        let (phi_st, h_interior) = self.step_interior_surface_network(
+            dt_seconds,
+            surface_pool,
+            mass_pool,
+            solar_surface_pool,
+            solar_mass_pool,
+            bc.h_tr_is,
+        );
         let gains_w = phi_ia_sol + phi_ia_int + phi_st;
         net_power_watts += gains_w;
 
@@ -1301,6 +1325,7 @@ impl GaugeZoneSolver {
                 solar_fraction: s.surface_type.solar_fraction(),
                 sky_view_factor: s.sky_view_factor(),
                 t_surface_deg: s.t_surface(),
+                solar_absorbed_w: s.last_solar_absorbed_w,
             })
             .collect()
     }
@@ -1393,6 +1418,8 @@ impl GaugeZoneSolver {
         dt_seconds: f64,
         surface_pool_w: f64,
         mass_pool_w: f64,
+        solar_surface_pool_w: f64,
+        solar_mass_pool_w: f64,
         h_tr_is_zone: f64,
     ) -> (f64, f64) {
         let t_air = self.T_air;
@@ -1448,6 +1475,10 @@ impl GaugeZoneSolver {
                 h_i / sum_h
             };
             let q_abs_i = surface_pool_w * w_surface + mass_pool_w * w_mass;
+            // Issue #3983 — solar-only attribution for the per-surface
+            // absorption telemetry (Σ_i + Φ_sol·to_air = Φ_sol).
+            s.last_solar_absorbed_w =
+                solar_surface_pool_w * w_surface + solar_mass_pool_w * w_mass;
             let steady = t_air + q_abs_i / h_i;
             let new_ts = if c_i > 0.0 && dt_seconds > 0.0 {
                 let tau_i = c_i / h_i;
@@ -1511,6 +1542,10 @@ pub struct SurfaceTelemetry {
     pub azimuth_deg: f64,
     /// Heat flux through surface [W/m²] (positive = into zone)
     pub q_flux_Wm2: f64,
+    /// Issue #3983 — solar absorbed by this surface's interior node during
+    /// the most recent step [W]. Solar-only attribution; the zone-level
+    /// closure Σ_i + Φ_sol·to_air = Φ_sol must hold exactly.
+    pub solar_absorbed_w: f64,
     /// Total surface resistance [m²K/W]
     pub r_total_m2K_W: f64,
     /// Surface thermal mass [J/m²K]
@@ -2424,6 +2459,74 @@ mod tests {
         assert!(
             t > 25.0 && t < 35.0,
             "internal gains must count once: expected ≈30 °C, double-count lands ≈40 °C, got {t:.2} °C"
+        );
+    }
+
+    // Issue #3983 (slice 1) — per-surface absorbed-solar accounting closes
+    // the zone solar balance: Σ_i solar_absorbed_w,i + direct-to-air = Φ_sol.
+    //
+    // The interior surface network already computes per-surface absorption
+    // internally (step_interior_surface_network); this exposes it as public
+    // telemetry so the per-surface solar-distribution contract is observable.
+    // Later slices (per-surface FD stacks, irradiance weighting) must keep
+    // this closure exact — it is the energy gate for the #3983 rework.
+    #[test]
+    fn per_surface_solar_absorption_closes_zone_solar_balance() {
+        let mut zone = GaugeZoneSolver::new(48.0, 2.7);
+        let wall = insulated_wall();
+        // Two equal-area opaque walls: equal shares under both the
+        // conductance weight (h_i/Σh) and the capacitance weight (C_i/ΣC).
+        zone.add_opaque_surface(&wall, 21.6, SurfaceType::Wall, 0.0, 90.0)
+            .unwrap();
+        zone.add_opaque_surface(&wall, 21.6, SurfaceType::Wall, 180.0, 90.0)
+            .unwrap();
+        zone.initialize().unwrap();
+
+        let solar_density = 100.0; // W per m² floor
+        let to_air = 0.30;
+        let beam_to_mass = 0.30;
+        zone.step(
+            0,
+            3600.0,
+            Temperature::from_value(20.0),
+            HeatTransferCoefficient::from_value(25.0),
+            solar_density,
+            to_air,
+            0.0, // Q_internal_w
+            0.0, // Q_infiltration_w
+            0.0, // t_sky
+            0.0, // h_rad_sky
+            0.0, // ventilation_ach
+            5.0,  // h_tr_3
+            5000.0, // cm
+            500.0, // h_tr_is (zone total)
+            0.0,   // term_rest_1
+            0.0,   // convective_fraction
+            beam_to_mass,
+        )
+        .unwrap();
+
+        let tel = zone.per_surface_telemetry();
+        assert_eq!(tel.len(), 2, "both walls must report telemetry");
+        let phi_sol = solar_density * 48.0; // 4800 W
+        let direct_air = phi_sol * to_air; // 1440 W
+        let absorbed: f64 = tel.iter().map(|t| t.solar_absorbed_w).sum();
+        assert!(
+            (absorbed + direct_air - phi_sol).abs() < 1e-9,
+            "solar balance must close: Σ_absorbed ({absorbed:.3}) + to_air ({direct_air:.3}) \
+             != Φ_sol ({phi_sol:.3})"
+        );
+        assert!(
+            (tel[0].solar_absorbed_w - tel[1].solar_absorbed_w).abs() < 1e-9,
+            "equal-area walls must absorb equal solar, got {} vs {}",
+            tel[0].solar_absorbed_w,
+            tel[1].solar_absorbed_w
+        );
+        // Each wall takes half of the non-air solar: 4800 · 0.7 / 2 = 1680 W.
+        assert!(
+            (tel[0].solar_absorbed_w - 1680.0).abs() < 1e-6,
+            "expected 1680 W per wall, got {}",
+            tel[0].solar_absorbed_w
         );
     }
 
