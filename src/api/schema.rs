@@ -366,6 +366,191 @@ impl SimulationSchema {
     }
 }
 
+/// A single actionable input-validation error.
+///
+/// Issue #3993: the schema used to fail with panics or silently clamp bad
+/// values (`.max(1.0)`). Each error names the offending field (JSON-path
+/// style), states the problem, and tells the modeler how to fix it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ValidationError {
+    /// Field path, e.g. `geometry.zones[0].floor_area`.
+    pub field: String,
+    /// What is wrong, e.g. `must be > 0, got -5.0`.
+    pub problem: String,
+    /// How to fix it, e.g. `set floor_area to the zone's floor area in m²`.
+    pub fix: String,
+}
+
+impl ValidationError {
+    fn new(field: impl Into<String>, problem: impl Into<String>, fix: impl Into<String>) -> Self {
+        ValidationError {
+            field: field.into(),
+            problem: problem.into(),
+            fix: fix.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}. Fix: {}", self.field, self.problem, self.fix)
+    }
+}
+
+impl SimulationSchemaV1 {
+    /// Validate the schema, returning every actionable error found.
+    ///
+    /// An empty vec means the schema is valid. Callers (REST
+    /// `/v1/simulate`, the `fluxion` CLI direct path) must reject the input
+    /// when this is non-empty rather than simulating with clamped values.
+    pub fn validate(&self) -> Vec<ValidationError> {
+        let mut errors = Vec::new();
+
+        // --- Geometry ---
+        if self.geometry.zones.is_empty() {
+            errors.push(ValidationError::new(
+                "geometry.zones",
+                "must contain at least one zone, got 0",
+                "add a zone object with name, floor_area (m²), volume (m³), height (m)",
+            ));
+        }
+        for (i, zone) in self.geometry.zones.iter().enumerate() {
+            let base = format!("geometry.zones[{i}]");
+            if zone.floor_area <= 0.0 {
+                errors.push(ValidationError::new(
+                    format!("{base}.floor_area"),
+                    format!("must be > 0, got {}", zone.floor_area),
+                    "set floor_area to the zone's floor area in m²",
+                ));
+            }
+            if zone.height <= 0.0 {
+                errors.push(ValidationError::new(
+                    format!("{base}.height"),
+                    format!("must be > 0, got {}", zone.height),
+                    "set height to the zone's floor-to-ceiling height in m",
+                ));
+            }
+            if zone.volume <= 0.0 {
+                errors.push(ValidationError::new(
+                    format!("{base}.volume"),
+                    format!("must be > 0, got {}", zone.volume),
+                    "set volume to the zone's air volume in m³ (usually floor_area × height)",
+                ));
+            }
+        }
+        if self.geometry.total_floor_area <= 0.0 {
+            errors.push(ValidationError::new(
+                "geometry.total_floor_area",
+                format!("must be > 0, got {}", self.geometry.total_floor_area),
+                "set total_floor_area to the sum of zone floor areas in m²",
+            ));
+        }
+
+        // --- Constructions ---
+        for (label, sc) in [
+            ("wall", &self.constructions.wall),
+            ("roof", &self.constructions.roof),
+            ("floor", &self.constructions.floor),
+        ] {
+            let base = format!("constructions.{label}");
+            if sc.layers.is_empty() {
+                errors.push(ValidationError::new(
+                    format!("{base}.layers"),
+                    "must contain at least one material layer, got 0",
+                    "add at least one layer with conductivity (W/m·K), density (kg/m³), specific_heat (J/kg·K), thickness (m)",
+                ));
+            }
+            for (j, layer) in sc.layers.iter().enumerate() {
+                let lbase = format!("{base}.layers[{j}]");
+                for (prop, v) in [
+                    ("thickness", layer.thickness),
+                    ("conductivity", layer.conductivity),
+                    ("density", layer.density),
+                    ("specific_heat", layer.specific_heat),
+                ] {
+                    if v <= 0.0 {
+                        errors.push(ValidationError::new(
+                            format!("{lbase}.{prop}"),
+                            format!("must be > 0, got {v}"),
+                            format!(
+                                "set {prop} to a positive physical value for '{}'",
+                                layer.name
+                            ),
+                        ));
+                    }
+                }
+            }
+            if let Some(w) = &sc.window {
+                let wbase = format!("{base}.window");
+                if w.window_area <= 0.0 {
+                    errors.push(ValidationError::new(
+                        format!("{wbase}.window_area"),
+                        format!("must be > 0, got {}", w.window_area),
+                        "set window_area to the total window area in m², or remove the window object for no glazing",
+                    ));
+                }
+                if w.window_u_value <= 0.0 {
+                    errors.push(ValidationError::new(
+                        format!("{wbase}.window_u_value"),
+                        format!("must be > 0, got {}", w.window_u_value),
+                        "set window_u_value to the glazing U-value in W/m²·K (typical: 1.0–3.0)",
+                    ));
+                }
+                if !(0.0 < w.window_shgc && w.window_shgc <= 1.0) {
+                    errors.push(ValidationError::new(
+                        format!("{wbase}.window_shgc"),
+                        format!("must be in (0, 1], got {}", w.window_shgc),
+                        "set window_shgc to the solar heat gain coefficient as a fraction (typical: 0.2–0.8)",
+                    ));
+                }
+            }
+        }
+
+        // --- Controls ---
+        let cbase = "controls.zone_control";
+        let heating = self.controls.zone_control.heating_setpoint;
+        let cooling = self.controls.zone_control.cooling_setpoint;
+        if heating >= cooling {
+            errors.push(ValidationError::new(
+                format!("{cbase}.heating_setpoint / {cbase}.cooling_setpoint"),
+                format!("heating_setpoint ({heating}) must be < cooling_setpoint ({cooling})"),
+                "set heating_setpoint below cooling_setpoint (typical: 20.0 / 24.0 °C)",
+            ));
+        }
+        for (prop, v) in [
+            (
+                "heating_capacity",
+                self.controls.zone_control.heating_capacity,
+            ),
+            (
+                "cooling_capacity",
+                self.controls.zone_control.cooling_capacity,
+            ),
+        ] {
+            if v <= 0.0 {
+                errors.push(ValidationError::new(
+                    format!("{cbase}.{prop}"),
+                    format!("must be > 0, got {v}"),
+                    format!("set {prop} to the system capacity in W"),
+                ));
+            }
+        }
+
+        // --- Weather ---
+        if let WeatherData::EpwFile { path } = &self.weather {
+            if path.as_os_str().is_empty() {
+                errors.push(ValidationError::new(
+                    "weather.path",
+                    "epw file path must not be empty",
+                    "set weather to {\"type\": \"epw\", \"path\": \"<path to .epw>\"}",
+                ));
+            }
+        }
+
+        errors
+    }
+}
+
 impl Default for SimulationSchemaV1 {
     fn default() -> Self {
         SimulationSchemaV1 {
@@ -390,6 +575,72 @@ impl Default for SimulationSchema {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_validate_default_schema_is_valid() {
+        // The default schema must pass validation — it is the baseline all
+        // other tests and examples build from.
+        let schema = SimulationSchemaV1::default();
+        assert!(schema.validate().is_empty());
+    }
+
+    #[test]
+    fn test_validate_catches_bad_zone_geometry() {
+        let mut schema = SimulationSchemaV1::default();
+        schema.geometry.zones[0].floor_area = -5.0;
+        schema.geometry.zones[0].height = 0.0;
+        let errors = schema.validate();
+        let fields: Vec<&str> = errors.iter().map(|e| e.field.as_str()).collect();
+        assert!(fields.contains(&"geometry.zones[0].floor_area"));
+        assert!(fields.contains(&"geometry.zones[0].height"));
+        // Every error must name the problem and a fix.
+        for e in &errors {
+            assert!(!e.problem.is_empty(), "missing problem for {}", e.field);
+            assert!(!e.fix.is_empty(), "missing fix for {}", e.field);
+        }
+    }
+
+    #[test]
+    fn test_validate_catches_empty_zones_and_bad_setpoints() {
+        let mut schema = SimulationSchemaV1::default();
+        schema.geometry.zones.clear();
+        schema.controls.zone_control.heating_setpoint = 26.0;
+        schema.controls.zone_control.cooling_setpoint = 24.0;
+        let errors = schema.validate();
+        let fields: Vec<&str> = errors.iter().map(|e| e.field.as_str()).collect();
+        assert!(fields.contains(&"geometry.zones"));
+        assert!(fields.iter().any(|f| f.contains("heating_setpoint")));
+    }
+
+    #[test]
+    fn test_validate_catches_bad_construction_layer() {
+        let mut schema = SimulationSchemaV1::default();
+        schema.constructions.wall.layers = vec![crate::sim::construction::ConstructionLayer {
+            name: "bad".to_string(),
+            conductivity: 0.04,
+            density: 12.0,
+            specific_heat: 840.0,
+            thickness: 0.0,
+            absorptance: 0.7,
+            emissivity: 0.9,
+        }];
+        let errors = schema.validate();
+        assert!(errors
+            .iter()
+            .any(|e| e.field == "constructions.wall.layers[0].thickness"));
+    }
+
+    #[test]
+    fn test_validate_catches_bad_window_shgc() {
+        let mut schema = SimulationSchemaV1::default();
+        if let Some(w) = &mut schema.constructions.wall.window {
+            w.window_shgc = 1.5;
+        }
+        let errors = schema.validate();
+        assert!(errors
+            .iter()
+            .any(|e| e.field == "constructions.wall.window.window_shgc"));
+    }
 
     #[test]
     fn test_schema_version_default() {
