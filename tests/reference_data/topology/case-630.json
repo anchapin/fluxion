@@ -5,7 +5,7 @@
     "model_name": "ASHRAE 140 Case 630",
     "model_source": "ashrae-140-registry:630",
     "node_count": 36,
-    "edge_count": 56
+    "edge_count": 72
   },
   "nodes": [
     {
@@ -835,15 +835,113 @@
     },
     {
       "source_id": "zone-0:window-east:0",
-      "target_id": "zone-0:wall-east:int",
+      "target_id": "zone-0:floor:int",
       "coupling_type": "shortwave_solar_diffuse",
-      "bidirectional": false
+      "fraction": 0.30800000000000005,
+      "bidirectional": false,
+      "attributes": {
+        "shading_present": 1.0,
+        "window_area_m2": 6.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-east:0",
+      "target_id": "zone-0:floor:int",
+      "coupling_type": "shortwave_solar_direct",
+      "fraction": 0.34650000000000003,
+      "bidirectional": false,
+      "attributes": {
+        "shading_present": 1.0,
+        "window_area_m2": 6.0
+      }
     },
     {
       "source_id": "zone-0:window-east:0",
       "target_id": "zone-0:wall-east:int",
+      "coupling_type": "shortwave_solar_diffuse",
+      "fraction": 0.11549999999999999,
+      "bidirectional": false,
+      "attributes": {
+        "shading_present": 1.0,
+        "window_area_m2": 6.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-east:0",
+      "target_id": "zone-0:wall-north:int",
+      "coupling_type": "shortwave_solar_diffuse",
+      "fraction": 0.11549999999999999,
+      "bidirectional": false,
+      "attributes": {
+        "shading_present": 1.0,
+        "window_area_m2": 6.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-east:0",
+      "target_id": "zone-0:wall-north:int",
       "coupling_type": "shortwave_solar_direct",
-      "bidirectional": false
+      "fraction": 0.11549999999999999,
+      "bidirectional": false,
+      "attributes": {
+        "shading_present": 1.0,
+        "window_area_m2": 6.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-east:0",
+      "target_id": "zone-0:wall-south:int",
+      "coupling_type": "shortwave_solar_diffuse",
+      "fraction": 0.11549999999999999,
+      "bidirectional": false,
+      "attributes": {
+        "shading_present": 1.0,
+        "window_area_m2": 6.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-east:0",
+      "target_id": "zone-0:wall-south:int",
+      "coupling_type": "shortwave_solar_direct",
+      "fraction": 0.11549999999999999,
+      "bidirectional": false,
+      "attributes": {
+        "shading_present": 1.0,
+        "window_area_m2": 6.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-east:0",
+      "target_id": "zone-0:wall-south:int",
+      "coupling_type": "shortwave_solar_direct",
+      "fraction": 0.07700000000000001,
+      "bidirectional": false,
+      "attributes": {
+        "shading_present": 1.0,
+        "window_area_m2": 6.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-east:0",
+      "target_id": "zone-0:wall-west:int",
+      "coupling_type": "shortwave_solar_diffuse",
+      "fraction": 0.11549999999999999,
+      "bidirectional": false,
+      "attributes": {
+        "shading_present": 1.0,
+        "window_area_m2": 6.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-east:0",
+      "target_id": "zone-0:wall-west:int",
+      "coupling_type": "shortwave_solar_direct",
+      "fraction": 0.11549999999999999,
+      "bidirectional": false,
+      "attributes": {
+        "shading_present": 1.0,
+        "window_area_m2": 6.0
+      }
     },
     {
       "source_id": "zone-0:window-west:0",
@@ -853,15 +951,113 @@
     },
     {
       "source_id": "zone-0:window-west:0",
+      "target_id": "zone-0:floor:int",
+      "coupling_type": "shortwave_solar_diffuse",
+      "fraction": 0.30800000000000005,
+      "bidirectional": false,
+      "attributes": {
+        "shading_present": 1.0,
+        "window_area_m2": 6.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-west:0",
+      "target_id": "zone-0:floor:int",
+      "coupling_type": "shortwave_solar_direct",
+      "fraction": 0.34650000000000003,
+      "bidirectional": false,
+      "attributes": {
+        "shading_present": 1.0,
+        "window_area_m2": 6.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-west:0",
+      "target_id": "zone-0:wall-east:int",
+      "coupling_type": "shortwave_solar_diffuse",
+      "fraction": 0.11549999999999999,
+      "bidirectional": false,
+      "attributes": {
+        "shading_present": 1.0,
+        "window_area_m2": 6.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-west:0",
+      "target_id": "zone-0:wall-north:int",
+      "coupling_type": "shortwave_solar_diffuse",
+      "fraction": 0.11549999999999999,
+      "bidirectional": false,
+      "attributes": {
+        "shading_present": 1.0,
+        "window_area_m2": 6.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-west:0",
+      "target_id": "zone-0:wall-north:int",
+      "coupling_type": "shortwave_solar_direct",
+      "fraction": 0.11549999999999999,
+      "bidirectional": false,
+      "attributes": {
+        "shading_present": 1.0,
+        "window_area_m2": 6.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-west:0",
+      "target_id": "zone-0:wall-south:int",
+      "coupling_type": "shortwave_solar_diffuse",
+      "fraction": 0.11549999999999999,
+      "bidirectional": false,
+      "attributes": {
+        "shading_present": 1.0,
+        "window_area_m2": 6.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-west:0",
+      "target_id": "zone-0:wall-south:int",
+      "coupling_type": "shortwave_solar_direct",
+      "fraction": 0.11549999999999999,
+      "bidirectional": false,
+      "attributes": {
+        "shading_present": 1.0,
+        "window_area_m2": 6.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-west:0",
+      "target_id": "zone-0:wall-south:int",
+      "coupling_type": "shortwave_solar_direct",
+      "fraction": 0.07700000000000001,
+      "bidirectional": false,
+      "attributes": {
+        "shading_present": 1.0,
+        "window_area_m2": 6.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-west:0",
       "target_id": "zone-0:wall-west:int",
       "coupling_type": "shortwave_solar_diffuse",
-      "bidirectional": false
+      "fraction": 0.11549999999999999,
+      "bidirectional": false,
+      "attributes": {
+        "shading_present": 1.0,
+        "window_area_m2": 6.0
+      }
     },
     {
       "source_id": "zone-0:window-west:0",
       "target_id": "zone-0:wall-west:int",
       "coupling_type": "shortwave_solar_direct",
-      "bidirectional": false
+      "fraction": 0.11549999999999999,
+      "bidirectional": false,
+      "attributes": {
+        "shading_present": 1.0,
+        "window_area_m2": 6.0
+      }
     }
   ]
 }

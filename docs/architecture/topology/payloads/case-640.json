@@ -5,7 +5,7 @@
     "model_name": "ASHRAE 140 Case 640",
     "model_source": "ashrae-140-registry:640",
     "node_count": 35,
-    "edge_count": 50
+    "edge_count": 58
   },
   "nodes": [
     {
@@ -788,15 +788,103 @@
     },
     {
       "source_id": "zone-0:window-south:0",
+      "target_id": "zone-0:floor:int",
+      "coupling_type": "shortwave_solar_diffuse",
+      "fraction": 0.30800000000000005,
+      "bidirectional": false,
+      "attributes": {
+        "window_area_m2": 12.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-south:0",
+      "target_id": "zone-0:floor:int",
+      "coupling_type": "shortwave_solar_direct",
+      "fraction": 0.385,
+      "bidirectional": false,
+      "attributes": {
+        "window_area_m2": 12.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-south:0",
+      "target_id": "zone-0:wall-east:int",
+      "coupling_type": "shortwave_solar_diffuse",
+      "fraction": 0.11549999999999999,
+      "bidirectional": false,
+      "attributes": {
+        "window_area_m2": 12.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-south:0",
+      "target_id": "zone-0:wall-east:int",
+      "coupling_type": "shortwave_solar_direct",
+      "fraction": 0.038500000000000006,
+      "bidirectional": false,
+      "attributes": {
+        "window_area_m2": 12.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-south:0",
+      "target_id": "zone-0:wall-north:int",
+      "coupling_type": "shortwave_solar_diffuse",
+      "fraction": 0.11549999999999999,
+      "bidirectional": false,
+      "attributes": {
+        "window_area_m2": 12.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-south:0",
+      "target_id": "zone-0:wall-north:int",
+      "coupling_type": "shortwave_solar_direct",
+      "fraction": 0.1925,
+      "bidirectional": false,
+      "attributes": {
+        "window_area_m2": 12.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-south:0",
       "target_id": "zone-0:wall-south:int",
       "coupling_type": "shortwave_solar_diffuse",
-      "bidirectional": false
+      "fraction": 0.11549999999999999,
+      "bidirectional": false,
+      "attributes": {
+        "window_area_m2": 12.0
+      }
     },
     {
       "source_id": "zone-0:window-south:0",
       "target_id": "zone-0:wall-south:int",
       "coupling_type": "shortwave_solar_direct",
-      "bidirectional": false
+      "fraction": 0.07700000000000001,
+      "bidirectional": false,
+      "attributes": {
+        "window_area_m2": 12.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-south:0",
+      "target_id": "zone-0:wall-west:int",
+      "coupling_type": "shortwave_solar_diffuse",
+      "fraction": 0.11549999999999999,
+      "bidirectional": false,
+      "attributes": {
+        "window_area_m2": 12.0
+      }
+    },
+    {
+      "source_id": "zone-0:window-south:0",
+      "target_id": "zone-0:wall-west:int",
+      "coupling_type": "shortwave_solar_direct",
+      "fraction": 0.07700000000000001,
+      "bidirectional": false,
+      "attributes": {
+        "window_area_m2": 12.0
+      }
     }
   ]
 }

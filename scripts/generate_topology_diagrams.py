@@ -346,7 +346,11 @@ def layout_positions(
             return ("ambient",)
         if kind in slot_of:
             if split:
-                return (f"zone:{_node_zone(node)}", slot_of[kind])
+                zone = _node_zone(node)
+                if zone is None:
+                    # Cross-zone wall layer nodes (like common-wall layers) use zone-0's column
+                    return ("zone:0", slot_of[kind])
+                return (f"zone:{zone}", slot_of[kind])
             return ("surface", slot_of[kind])
         if kind == "window":
             # Glazing assemblies sit between the opaque envelope and zone air.
