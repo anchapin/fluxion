@@ -514,13 +514,18 @@ jobs:
   # =====================================================================
   validate-fallback:
     name: "ASHRAE 140 Validation (10-min Fallback, Issue #1505)"
-    needs: precheck
-    if: needs.precheck.outputs.should_run == 'true'
-    needs: [queue-stall-detector, validate]
+    # Issue #4068: merged the duplicate `needs:` keys (#4018 added
+    # `needs: precheck` above the pre-existing `needs:`) — duplicate
+    # mapping keys fail GitHub's workflow parser ("workflow file issue").
+    # Also hoisted the `#` comment OUT of the `if:` block scalar: inside
+    # `|` it is part of the expression string, and GitHub expressions
+    # have no comment syntax (Issue #4018 replaced
+    # `needs.compare-hashes.result == 'success'` with that comment).
+    needs: [precheck, queue-stall-detector, validate]
+    # Issue #4018: compare-hashes removed; determinism enforced via listener.
     if: |
+      needs.precheck.outputs.should_run == 'true' &&
       needs.queue-stall-detector.outputs.enable_fallback == 'true' &&
-      # Issue #4018: compare-hashes removed; determinism enforced via listener.
-
       (needs.validate.result == 'failure' || needs.validate.result == 'cancelled' || needs.validate.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 60
