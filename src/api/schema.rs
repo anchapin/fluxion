@@ -317,6 +317,16 @@ pub struct SimulationOutput {
     /// `None` so existing wire shapes are unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effective_solver: Option<String>,
+    /// Issue #3988 — unmet heating hours: occupied hours where a zone's
+    /// temperature fell below `heating_setpoint - deadband_tolerance`,
+    /// summed across zones. See [`SimulationOutput::unmet_hours`].
+    #[serde(default)]
+    pub unmet_heating_hours: f64,
+    /// Issue #3988 — unmet cooling hours: occupied hours where a zone's
+    /// temperature rose above `cooling_setpoint + deadband_tolerance`,
+    /// summed across zones. See [`SimulationOutput::unmet_hours`].
+    #[serde(default)]
+    pub unmet_cooling_hours: f64,
 }
 
 impl Default for SimulationOutput {
@@ -331,7 +341,48 @@ impl Default for SimulationOutput {
             zone_temperatures: None,
             hourly_zone_temperatures: None,
             effective_solver: None,
+            unmet_heating_hours: 0.0,
+            unmet_cooling_hours: 0.0,
         }
+    }
+}
+
+impl SimulationOutput {
+    /// Compute unmet heating/cooling hours from hourly zone temperatures.
+    ///
+    /// Issue #3988. `hourly_temps` is zone-major (`[zone][timestep]`, one
+    /// step per hour) as returned by the thermal model's
+    /// `get_hourly_temperatures`. An hour counts as occupied when the
+    /// occupancy schedule's value for that hour-of-day exceeds 0.05 (the
+    /// weekday profile is used for weekly schedules). A zone-hour is
+    /// unmet-heating when its temperature falls below
+    /// `heating_setpoint - tolerance`, unmet-cooling when it rises above
+    /// `cooling_setpoint + tolerance`.
+    ///
+    /// Returns `(unmet_heating_hours, unmet_cooling_hours)` summed across
+    /// zones. Shared by the REST path and the CLI direct path.
+    pub fn unmet_hours(
+        hourly_temps: &[Vec<f64>],
+        occupancy: &DailySchedule,
+        heating_setpoint: f64,
+        cooling_setpoint: f64,
+        tolerance: f64,
+    ) -> (f64, f64) {
+        let mut unmet_heating = 0.0;
+        let mut unmet_cooling = 0.0;
+        for zone_temps in hourly_temps {
+            for (t, &temp) in zone_temps.iter().enumerate() {
+                if occupancy.value(t % 24) <= 0.05 {
+                    continue;
+                }
+                if temp < heating_setpoint - tolerance {
+                    unmet_heating += 1.0;
+                } else if temp > cooling_setpoint + tolerance {
+                    unmet_cooling += 1.0;
+                }
+            }
+        }
+        (unmet_heating, unmet_cooling)
     }
 }
 
@@ -575,6 +626,51 @@ impl Default for SimulationSchema {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_unmet_hours_all_comfortable() {
+        let occupancy = DailySchedule::weekly("occ".to_string()).office_hours();
+        // 48 hours, 1 zone, always 21°C within the 20/24 band.
+        let hourly = vec![vec![21.0; 48]];
+        let (h, c) = SimulationOutput::unmet_hours(&hourly, &occupancy, 20.0, 24.0, 0.5);
+        assert_eq!((h, c), (0.0, 0.0));
+    }
+
+    #[test]
+    fn test_unmet_hours_counts_occupied_only() {
+        let occupancy = DailySchedule::weekly("occ".to_string()).office_hours();
+        // Zone is cold (15°C) for all 48 hours, but only office hours count.
+        let hourly = vec![vec![15.0; 48]];
+        let (h, c) = SimulationOutput::unmet_hours(&hourly, &occupancy, 20.0, 24.0, 0.5);
+        // office_hours sets 8..=17 (10 hours/day) on weekdays; value() falls
+        // back to Monday's profile, so 10 occupied hours/day × 2 days.
+        assert_eq!(h, 20.0);
+        assert_eq!(c, 0.0);
+    }
+
+    #[test]
+    fn test_unmet_hours_cooling_and_tolerance() {
+        let occupancy = DailySchedule::weekly("occ".to_string()).office_hours();
+        // 30°C during occupied hours -> unmet cooling; 24.2°C is inside the
+        // cooling setpoint + 0.5 tolerance band and must not count.
+        let mut temps = vec![21.0; 48];
+        for t in [9, 10, 33] {
+            temps[t] = 30.0;
+        }
+        temps[11] = 24.2;
+        let hourly = vec![temps];
+        let (h, c) = SimulationOutput::unmet_hours(&hourly, &occupancy, 20.0, 24.0, 0.5);
+        assert_eq!(h, 0.0);
+        assert_eq!(c, 3.0);
+    }
+
+    #[test]
+    fn test_unmet_hours_sums_across_zones() {
+        let occupancy = DailySchedule::weekly("occ".to_string()).office_hours();
+        let hourly = vec![vec![15.0; 48], vec![15.0; 48]];
+        let (h, _) = SimulationOutput::unmet_hours(&hourly, &occupancy, 20.0, 24.0, 0.5);
+        assert_eq!(h, 40.0);
+    }
 
     #[test]
     fn test_validate_default_schema_is_valid() {

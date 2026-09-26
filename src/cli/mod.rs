@@ -1047,6 +1047,25 @@ pub fn run_direct_simulation(
 
     let total_energy = total_heating_kwh + total_cooling_kwh;
     let floor_area = schema_v1.geometry.total_floor_area.max(1.0);
+
+    // Issue #3988: unmet hours. hourly_temps is timestep-major here;
+    // transpose to zone-major for SimulationOutput::unmet_hours.
+    let num_zones = schema_v1.geometry.zones.len().max(1);
+    let mut zone_major: Vec<Vec<f64>> = vec![Vec::with_capacity(8760); num_zones];
+    for step_temps in &hourly_temps {
+        for (z, &t) in step_temps.iter().enumerate().take(num_zones) {
+            zone_major[z].push(t);
+        }
+    }
+    let (unmet_heating_hours, unmet_cooling_hours) =
+        crate::api::schema::SimulationOutput::unmet_hours(
+            &zone_major,
+            &schema_v1.schedules.occupancy,
+            schema_v1.controls.zone_control.heating_setpoint,
+            schema_v1.controls.zone_control.cooling_setpoint,
+            schema_v1.controls.zone_control.deadband_tolerance,
+        );
+
     let output = crate::api::schema::SimulationOutput {
         eui: total_energy / floor_area,
         total_energy,
@@ -1057,6 +1076,8 @@ pub fn run_direct_simulation(
         zone_temperatures: hourly_temps.last().cloned(),
         hourly_zone_temperatures: Some(hourly_temps),
         effective_solver: Some(model.effective_zone_solver().as_str().to_string()),
+        unmet_heating_hours,
+        unmet_cooling_hours,
     };
 
     let results_path = output_dir.join(format!("{}_results.json", prefix));
