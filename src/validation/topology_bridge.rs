@@ -24,7 +24,7 @@
 //!   analogue). Its runtime capacitance is computed inside the thermal
 //!   solvers and is deliberately not fabricated here (`null`).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::topology::{
     ToTopologyGraph, TopologyContext, TopologyEdge, TopologyEdgeKind, TopologyGraph, TopologyNode,
@@ -63,8 +63,133 @@ fn wall_key(orientation: &Orientation) -> &'static str {
         Orientation::South => "wall-south",
         Orientation::West => "wall-west",
         Orientation::Up | Orientation::Horizontal => "roof",
-        Orientation::Down => "floor",
+        _ => "floor",
     }
+}
+
+/// Returns solar distribution factors for beam (direct) radiation based on
+/// window orientation. For each `(surface_suffix, fraction)` pair, the full
+/// surface key is `zone-{zi}:{suffix}:int`.
+///
+/// Fractions follow projected irradiated area for ASHRAE 140 Case 600 geometry:
+/// - SOUTH beam: floor 50%, north 25%, east 5%, west 10%, south 10%
+/// - EAST/WEST beam: floor 45%, north+south+west 15% each, host wall 10%
+/// - NORTH beam: floor 100% (beam never hits north directly)
+fn solar_beam_factors(
+    orientation: &Orientation,
+    hosts: &BTreeSet<String>,
+    zi: usize,
+) -> Vec<(String, f64)> {
+    let floor_key = format!("zone-{}:floor:int", zi);
+    let north_key = format!("zone-{}:wall-north:int", zi);
+    let south_key = format!("zone-{}:wall-south:int", zi);
+    let east_key = format!("zone-{}:wall-east:int", zi);
+    let west_key = format!("zone-{}:wall-west:int", zi);
+
+    let has_floor = hosts.contains(&floor_key);
+    let has_north = hosts.contains(&north_key);
+    let has_south = hosts.contains(&south_key);
+    let has_east = hosts.contains(&east_key);
+    let has_west = hosts.contains(&west_key);
+
+    match orientation {
+        Orientation::South => {
+            let mut factors = Vec::new();
+            if has_floor {
+                factors.push((floor_key, 0.50)); // 50%
+            }
+            if has_north {
+                factors.push((north_key, 0.25)); // 25%
+            }
+            if has_south {
+                factors.push((south_key, 0.10)); // 10%
+            }
+            if has_east {
+                factors.push((east_key, 0.05)); // 5%
+            }
+            if has_west {
+                factors.push((west_key, 0.10)); // 10%
+            }
+            factors
+        }
+        Orientation::East | Orientation::West => {
+            let mut factors = Vec::new();
+            let host_key = if has_south {
+                south_key.clone()
+            } else {
+                north_key.clone()
+            };
+            if has_floor {
+                factors.push((floor_key, 0.45)); // 45%
+            }
+            if has_north {
+                factors.push((north_key, 0.15));
+            }
+            if has_south {
+                factors.push((south_key, 0.15));
+            }
+            if has_west {
+                factors.push((west_key, 0.15));
+            }
+            // Host wall (north for east-facing, south for west-facing) gets 10%
+            if hosts.contains(&host_key) {
+                factors.push((host_key, 0.10));
+            }
+            factors
+        }
+        Orientation::North => {
+            // Beam never hits north directly, 100% to floor
+            if has_floor {
+                vec![(floor_key, 1.0)]
+            } else {
+                vec![]
+            }
+        }
+        _ => {
+            // Default: all to floor if available
+            if has_floor {
+                vec![(floor_key, 1.0)]
+            } else {
+                vec![]
+            }
+        }
+    }
+}
+
+/// Returns solar distribution factors for diffuse radiation. Diffuse radiation
+/// is isotropic from the sky dome, so the distribution is the same for all
+/// window orientations:
+/// - floor 40%, north 15%, east 15%, south 15%, west 15%
+fn solar_diffuse_factors(hosts: &BTreeSet<String>, zi: usize) -> Vec<(String, f64)> {
+    let floor_key = format!("zone-{}:floor:int", zi);
+    let north_key = format!("zone-{}:wall-north:int", zi);
+    let south_key = format!("zone-{}:wall-south:int", zi);
+    let east_key = format!("zone-{}:wall-east:int", zi);
+    let west_key = format!("zone-{}:wall-west:int", zi);
+
+    let has_floor = hosts.contains(&floor_key);
+    let has_north = hosts.contains(&north_key);
+    let has_south = hosts.contains(&south_key);
+    let has_east = hosts.contains(&east_key);
+    let has_west = hosts.contains(&west_key);
+
+    let mut factors = Vec::new();
+    if has_floor {
+        factors.push((floor_key, 0.40)); // 40%
+    }
+    if has_north {
+        factors.push((north_key, 0.15)); // 15%
+    }
+    if has_south {
+        factors.push((south_key, 0.15)); // 15%
+    }
+    if has_east {
+        factors.push((east_key, 0.15)); // 15%
+    }
+    if has_west {
+        factors.push((west_key, 0.15)); // 15%
+    }
+    factors
 }
 
 /// Total R-value (K/W) of an assembly including both film coefficients.
@@ -350,21 +475,26 @@ fn push_window(
         attributes: BTreeMap::new(),
     });
 
-    // Solar admission through the glazing: outdoor -> window carries the SHGC
-    // fraction, then window -> receiving surface shows where the admitted
-    // solar lands (the host orientation's interior film when that orientation
-    // has an opaque chain; a fully-glazed wall has none, so its solar gain
-    // couples straight to the zone air node).
-    let host_surface = format!("zone-{}:{}:int", zi, wall_key(&w.orientation));
-    let solar_target = if hosts.contains(&host_surface) {
-        host_surface
-    } else {
-        zone_air
-    };
-    let mut solar_attrs = attr("window_area_m2", w.area);
+    // Solar admission through the glazing: window -> receiving surface shows where
+    // the admitted solar lands. Solar distribution is multi-target: beam and
+    // diffuse radiation are distributed across multiple interior surfaces based
+    // on orientation-dependent factors (Issue #4048).
+    //
+    // For beam radiation, use distribution factors based on orientation.
+    // For diffuse radiation, the distribution is the same for all window orientations
+    // (diffuse is isotropic from the sky dome): floor 40%, north 15%,
+    // east 15%, south 15%, west 15%.
+    let direct_factors = solar_beam_factors(&w.orientation, hosts, zi);
+    let diffuse_factors = solar_diffuse_factors(hosts, zi);
+
+    let mut solar_attrs = BTreeMap::new();
+    solar_attrs.insert("window_area_m2".to_string(), w.area);
     if spec.shading.is_some() {
         solar_attrs.insert("shading_present".to_string(), 1.0);
     }
+
+    // ambient -> window: solar admission with full SHGC fraction.
+    // This edge represents solar radiation entering through the window.
     for kind in [
         TopologyEdgeKind::ShortwaveSolarDirect,
         TopologyEdgeKind::ShortwaveSolarDiffuse,
@@ -378,15 +508,38 @@ fn push_window(
             bidirectional: false,
             attributes: solar_attrs.clone(),
         });
-        graph.push_edge(TopologyEdge {
-            source_id: win_id.clone(),
-            target_id: solar_target.clone(),
-            coupling_type: kind,
-            conductance_w_per_k: None,
-            fraction: None,
-            bidirectional: false,
-            attributes: BTreeMap::new(),
-        });
+    }
+
+    // ShortwaveSolarDirect: distribute beam radiation across interior surfaces.
+    // Only create edges for surfaces that are in hosts. Missing surfaces
+    // (e.g., fully-glazed wall) simply don't receive solar.
+    for (surface, fraction) in &direct_factors {
+        if hosts.contains(surface) {
+            graph.push_edge(TopologyEdge {
+                source_id: win_id.clone(),
+                target_id: surface.clone(),
+                coupling_type: TopologyEdgeKind::ShortwaveSolarDirect,
+                conductance_w_per_k: None,
+                fraction: Some(shgc * fraction),
+                bidirectional: false,
+                attributes: solar_attrs.clone(),
+            });
+        }
+    }
+
+    // ShortwaveSolarDiffuse: distribute diffuse radiation across interior surfaces.
+    for (surface, fraction) in &diffuse_factors {
+        if hosts.contains(surface) {
+            graph.push_edge(TopologyEdge {
+                source_id: win_id.clone(),
+                target_id: surface.clone(),
+                coupling_type: TopologyEdgeKind::ShortwaveSolarDiffuse,
+                conductance_w_per_k: None,
+                fraction: Some(shgc * fraction),
+                bidirectional: false,
+                attributes: solar_attrs.clone(),
+            });
+        }
     }
 }
 
@@ -719,7 +872,114 @@ mod tests {
         assert_eq!(splits.len(), 2);
         assert!((splits.iter().sum::<f64>() - 1.0).abs() < 1e-9);
     }
+    /// Regression test: window-transmitted solar must be distributed across
+    /// multiple interior surfaces (floor, N/E/S/W walls), not 100% to the host
+    /// wall (Issue #4048).
+    ///
+    /// The topology model is:
+    /// - ambient -> Window (solar admission, fraction = SHGC)
+    /// - Window -> receiving_surface (solar distribution, fractions sum to SHGC)
+    #[test]
+    fn case_600_window_solar_distributed() {
+        let g = graph_for(ASHRAE140Case::Case600);
 
+        // Collect all window solar edges
+        let direct_edges: Vec<&TopologyEdge> = g
+            .edges
+            .iter()
+            .filter(|e| e.coupling_type == TopologyEdgeKind::ShortwaveSolarDirect)
+            .collect();
+
+        let diffuse_edges: Vec<&TopologyEdge> = g
+            .edges
+            .iter()
+            .filter(|e| e.coupling_type == TopologyEdgeKind::ShortwaveSolarDiffuse)
+            .collect();
+
+        assert!(
+            !direct_edges.is_empty(),
+            "Should have ShortwaveSolarDirect edges"
+        );
+        assert!(
+            !diffuse_edges.is_empty(),
+            "Should have ShortwaveSolarDiffuse edges"
+        );
+
+        // Separate admission edges (ambient -> Window) from distribution edges
+        // (Window -> receiving_surface). Window nodes have id containing "window-".
+        let direct_admission: Vec<&&TopologyEdge> = direct_edges
+            .iter()
+            .filter(|e| e.source_id == "ambient")
+            .collect();
+        let direct_distribution: Vec<&&TopologyEdge> = direct_edges
+            .iter()
+            .filter(|e| e.source_id.contains("window-"))
+            .collect();
+
+        let diffuse_admission: Vec<&&TopologyEdge> = diffuse_edges
+            .iter()
+            .filter(|e| e.source_id == "ambient")
+            .collect();
+        let diffuse_distribution: Vec<&&TopologyEdge> = diffuse_edges
+            .iter()
+            .filter(|e| e.source_id.contains("window-"))
+            .collect();
+
+        // Check admission edges: ambient -> Window should have fraction = SHGC
+        let expected_shgc = 0.77;
+        for edge in direct_admission.iter() {
+            let frac = edge.fraction.unwrap_or(0.0);
+            assert!(
+                (frac - expected_shgc).abs() < 0.01,
+                "Direct admission edge fraction should be SHGC (~0.77), got {:.3}",
+                frac
+            );
+        }
+        for edge in diffuse_admission.iter() {
+            let frac = edge.fraction.unwrap_or(0.0);
+            assert!(
+                (frac - expected_shgc).abs() < 0.01,
+                "Diffuse admission edge fraction should be SHGC (~0.77), got {:.3}",
+                frac
+            );
+        }
+
+        // Check distribution edges: Window -> receiving_surface fractions should
+        // sum to SHGC
+        let direct_dist_sum: f64 = direct_distribution.iter().filter_map(|e| e.fraction).sum();
+        let diffuse_dist_sum: f64 = diffuse_distribution.iter().filter_map(|e| e.fraction).sum();
+
+        assert!(
+            (direct_dist_sum - expected_shgc).abs() < 0.01,
+            "Direct distribution fractions should sum to SHGC (~0.77), got {:.3}",
+            direct_dist_sum
+        );
+        assert!(
+            (diffuse_dist_sum - expected_shgc).abs() < 0.01,
+            "Diffuse distribution fractions should sum to SHGC (~0.77), got {:.3}",
+            diffuse_dist_sum
+        );
+
+        // KEY ASSERTION: Solar should be distributed across multiple surfaces,
+        // NOT 100% to one surface (the original bug, Issue #4048)
+        let direct_targets: std::collections::HashSet<&String> =
+            direct_distribution.iter().map(|e| &e.target_id).collect();
+        let diffuse_targets: std::collections::HashSet<&String> =
+            diffuse_distribution.iter().map(|e| &e.target_id).collect();
+
+        assert!(
+            direct_targets.len() >= 2,
+            "Direct solar should be distributed across >= 2 surfaces, got {}: {:?}",
+            direct_targets.len(),
+            direct_targets
+        );
+        assert!(
+            diffuse_targets.len() >= 2,
+            "Diffuse solar should be distributed across >= 2 surfaces, got {}: {:?}",
+            diffuse_targets.len(),
+            diffuse_targets
+        );
+    }
     #[test]
     fn case_600_infiltration_edge_present() {
         let spec = ASHRAE140Case::Case600.spec();
@@ -849,7 +1109,8 @@ mod tests {
         assert!(out_leg.conductance_w_per_k.is_none());
 
         // Solar admission passes through the window node: ambient -> window
-        // (SHGC fraction), window -> host wall interior film.
+        // (SHGC fraction), window -> receiving surfaces (multi-target distribution,
+        // Issue #4048).
         for kind in [
             TopologyEdgeKind::ShortwaveSolarDirect,
             TopologyEdgeKind::ShortwaveSolarDiffuse,
@@ -859,17 +1120,36 @@ mod tests {
                 .iter()
                 .filter(|e| e.coupling_type == kind && (e.source_id == w.id || e.target_id == w.id))
                 .collect();
-            assert_eq!(solar.len(), 2, "two {kind:?} legs per window");
+
+            // Should have 6 edges per kind: 1 ambient->window (admission) +
+            // 5 window->receiving_surface (distribution for floor, N, E, S, W)
+            assert!(
+                solar.len() >= 2,
+                "Should have at least 2 {kind:?} legs per window (admission + distribution)"
+            );
+
+            // Verify ambient -> window admission edge has fraction = SHGC
             let admit = solar
                 .iter()
                 .find(|e| e.source_id == "ambient")
                 .expect("ambient->window solar");
             assert!((admit.fraction.unwrap() - spec.window_properties.shgc).abs() < 1e-12);
-            let land = solar
-                .iter()
-                .find(|e| e.source_id == w.id)
-                .expect("window->interior solar");
-            assert_eq!(land.target_id, "zone-0:wall-south:int");
+
+            // Verify distribution edges go from window to multiple receiving surfaces
+            let distribution: Vec<&&TopologyEdge> =
+                solar.iter().filter(|e| e.source_id == w.id).collect();
+            assert!(
+                distribution.len() >= 2,
+                "Should have >= 2 distribution edges (multiple interior surfaces)"
+            );
+
+            // Distribution fractions should sum to SHGC
+            let dist_sum: f64 = distribution.iter().filter_map(|e| e.fraction).sum();
+            assert!(
+                (dist_sum - spec.window_properties.shgc).abs() < 1e-6,
+                "Distribution fractions should sum to SHGC, got {:.4}",
+                dist_sum
+            );
         }
     }
 }
