@@ -54,6 +54,7 @@ use crate::validation::reporter::{BaselineMetrics, ValidationReportGenerator};
 use crate::validation::statistical::StatisticalValidator;
 use crate::validation::ASHRAE140Validator;
 use crate::weather::epw::EpwWeatherSource;
+use crate::weather::WeatherSource;
 use crate::BatchOracle;
 
 /// Path to the bundled Denver-Stapleton TMY EPW used by ASHRAE 140 CLI commands.
@@ -976,27 +977,102 @@ pub fn run_direct_simulation(
         println!("Parallel jobs: {}", n_jobs);
     }
 
-    // Load the building model
+    // Load the building model as a SimulationSchema (the .flux native format).
+    // Issue #3990 — this path now executes end-to-end.
     println!("\nLoading building model...");
     let model_content = std::fs::read_to_string(input_path)?;
-    let _model: serde_json::Value = serde_json::from_str(&model_content)
-        .map_err(|e| anyhow!("Failed to parse input file as JSON: {}", e))?;
+    let schema: crate::api::schema::SimulationSchema = serde_json::from_str(&model_content)
+        .map_err(|e| anyhow!("Failed to parse input file as SimulationSchema JSON: {}", e))?;
+    let crate::api::schema::SimulationSchema::V1(schema_v1) = schema;
 
     // Load weather data
     println!("Loading weather data...");
-    let _weather = EpwWeatherSource::from_file(weather_path)
+    let weather = EpwWeatherSource::from_file(weather_path)
         .map_err(|e| anyhow!("Failed to load weather file: {}", e))?;
 
-    // TODO(#2947): Wire the thermal simulation engine into this path. All
-    // EnergyPlus-compatible arguments are parsed and validated above, but the
-    // actual timestepping is not yet integrated. Fail loudly rather than
-    // silently report success — blind runs depend on a non-zero exit here.
-    // Originally tracked by #2711.
-    if readvars {
-        println!("Post-processing requested (readvars)");
+    // Run the annual simulation: build the thermal model from the schema
+    // (same wiring as the REST /v1/simulate path), then step it through
+    // 8760 hourly EPW steps, accumulating energy and zone temperatures.
+    println!("\nRunning annual simulation (8760 hourly steps)...");
+    let mut model = crate::api::server::simulate::build_model_from_schema(&schema_v1);
+
+    // Populate per-zone window properties from the schema's window spec.
+    // build_model_from_schema leaves solar.window_properties empty, and the
+    // solar-gain path in step_physics indexes it per zone.
+    {
+        use crate::sim::solar::WindowProperties;
+        let window_spec = schema_v1.constructions.wall.window.as_ref();
+        let props: Vec<WindowProperties> = schema_v1
+            .geometry
+            .zones
+            .iter()
+            .map(|zone| {
+                let floor_area = zone.floor_area.max(1.0);
+                let height = zone.height.max(1.0);
+                let gross_wall_area = 4.0 * floor_area.sqrt() * height;
+                let area = window_spec
+                    .map(|w| w.window_area)
+                    .filter(|a| *a > 0.0 && *a <= gross_wall_area)
+                    .unwrap_or(0.15 * gross_wall_area);
+                let shgc = window_spec.map(|w| w.window_shgc).unwrap_or(0.3);
+                WindowProperties::new(area, shgc, shgc)
+            })
+            .collect();
+        model.solar.window_properties = props;
     }
-    eprintln!("error: direct simulation is not yet implemented (see issue #2947)");
-    Err(not_yet_implemented("direct simulation"))
+
+    let mut total_heating_kwh = 0.0_f64;
+    let mut total_cooling_kwh = 0.0_f64;
+    let mut peak_heating_kw = 0.0_f64;
+    let mut peak_cooling_kw = 0.0_f64;
+    let mut hourly_temps: Vec<Vec<f64>> = Vec::with_capacity(8760);
+
+    for step in 0..8760 {
+        let weather_data = weather
+            .get_hourly_data(step)
+            .map_err(|e| anyhow!("Weather data missing for hour {}: {}", step, e))?;
+        model.solar.weather = Some(weather_data.clone());
+        // step_physics returns net HVAC energy for the hour in kWh:
+        // positive = heating, negative = cooling.
+        let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        if energy_kwh > 0.0 {
+            total_heating_kwh += energy_kwh;
+            peak_heating_kw = peak_heating_kw.max(energy_kwh);
+        } else if energy_kwh < 0.0 {
+            total_cooling_kwh += -energy_kwh;
+            peak_cooling_kw = peak_cooling_kw.max(-energy_kwh);
+        }
+        hourly_temps.push(model.get_temperatures());
+    }
+
+    let total_energy = total_heating_kwh + total_cooling_kwh;
+    let floor_area = schema_v1.geometry.total_floor_area.max(1.0);
+    let output = crate::api::schema::SimulationOutput {
+        eui: total_energy / floor_area,
+        total_energy,
+        peak_heating_load: peak_heating_kw * 1000.0,
+        peak_cooling_load: peak_cooling_kw * 1000.0,
+        heating_energy: total_heating_kwh,
+        cooling_energy: total_cooling_kwh,
+        zone_temperatures: hourly_temps.last().cloned(),
+        hourly_zone_temperatures: Some(hourly_temps),
+        effective_solver: Some(model.effective_zone_solver().as_str().to_string()),
+    };
+
+    let results_path = output_dir.join(format!("{}_results.json", prefix));
+    let results_json = serde_json::to_string_pretty(&output)
+        .map_err(|e| anyhow!("Failed to serialize results: {}", e))?;
+    std::fs::write(&results_path, results_json)?;
+
+    println!("\nSimulation complete.");
+    println!("Heating energy: {:.1} kWh", total_heating_kwh);
+    println!("Cooling energy: {:.1} kWh", total_cooling_kwh);
+    println!("Results written to: {}", results_path.display());
+
+    if readvars {
+        println!("Note: --readvars post-processing is not implemented; the results JSON above is the output.");
+    }
+    Ok(())
 }
 
 /// Run a workflow (OpenStudio-compatible mode).

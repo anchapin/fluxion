@@ -213,29 +213,33 @@ total_energy_kwh = model.simulate_multi_zone(years=1, use_surrogates=False)
 print(f"3-zone annual energy (heating+cooling): {total_energy_kwh:.2f} kWh")
 ```
 
-### 6. The `fluxion` CLI (OpenStudio-compatible workflow)
+### 6. The `fluxion` CLI (EnergyPlus-compatible direct simulation)
 
-The `fluxion` binary accepts OpenStudio-style `.fwf` workflow files,
-but **the workflow / direct-simulation paths are intentionally
-stubbed** in this release — they fail non-zero with a reference to
-issue `#2947`, by policy (`AGENTS.md:65`, enforced by
-`test_workflow_execution_is_gated_non_silent` in `src/bin/fluxion.rs`).
-The binary is shipped as-is so the stub stays loud; it is **not** a
-runnable surface, and the repo does not ship any `.fwf` example
-fixtures (e.g. `examples/workflow.fwf` does not exist — do not
-create one).
+The `fluxion` binary runs a simulation end-to-end from a `.flux` model
+file (the `SimulationSchemaV1` JSON native format) and an EPW weather
+file — no REST server needed (Issue #3990):
 
 ```bash
-# Demonstrating the fail-loud contract:
-$ fluxion run -w some.workflow.fwf
-error: workflow execution path is intentionally stubbed; see issue #2947
+$ fluxion -w assets/weather/WD600.epw examples/minimal.flux -d out/
+# ...
+# Running annual simulation (8760 hourly steps)...
+#
+# Simulation complete.
+# Heating energy: 7558.5 kWh
+# Cooling energy: 382.6 kWh
+# Results written to: out/fluxion_out_results.json
 ```
 
-If you want a CLI surface that is runnable end-to-end, use
-`fluxion-rest` from §4 above — it consumes the canonical
-`SimulationSchemaV1` JSON (e.g.
-[`tests/fixtures/single_zone.json`](../tests/fixtures/single_zone.json))
-and is the supported path for hands-on simulation.
+The output is a `SimulationOutput` JSON document: annual heating /
+cooling energy, peak loads, EUI, and hourly zone temperatures. Generate
+a starter model with `cargo run --example gen_minimal_flux`, or hand-write
+one matching `fluxion::api::schema::SimulationSchemaV1`.
+
+Note: the OpenStudio-style workflow path (`fluxion run -w some.workflow.fwf`)
+is still intentionally stubbed — it fails non-zero with a reference to
+issue `#2947`, by policy (`test_workflow_execution_is_gated_non_silent`
+in `src/bin/fluxion.rs`). The direct-simulation path above is the runnable
+CLI surface.
 
 ## Your first configuration
 
