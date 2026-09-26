@@ -202,6 +202,7 @@ mod solar_peak_cooling_tdd;
 mod solar_position_utc_offset;
 mod solar_position_vs_energyplus;
 mod solar_simd_evolution;
+mod solar_split_convention;
 mod step_physics_unit_tests;
 mod surface_flux_parity;
 mod surface_flux_provider_isolation;
