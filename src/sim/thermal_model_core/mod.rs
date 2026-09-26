@@ -1269,8 +1269,6 @@ impl ThermalModel<VectorField> {
             h_tr_is_vec.push(total_h_tr_is);
 
             // Calculate effective specific capacitances per area for each construction
-            // Note: kappa_* variables are reserved for future ISO 13790 admittance method
-            #[allow(unused_variables)]
             let kappa_wall = spec
                 .construction
                 .wall
@@ -1287,41 +1285,48 @@ impl ThermalModel<VectorField> {
                 .iso_13790_effective_capacitance_per_area();
 
             // Total thermal capacitance (C_m) from all mass elements
-            // Issue #2455: For HighMass construction, the half-insulation rule
-            // excludes the heavy concrete-block layer from `wall_cap` for the
-            // wall construction `wood_siding + foam + concrete_block` (per
-            // ASHRAE 140 Case 900) because the concrete sits exterior to the
-            // insulation. This drops the per-surface capacitance to
-            // ≈ 736 kJ/K × A_wall ≈ 1.2 MJ/K and the per-surface time constant
-            // collapses to τ ≈ C_wall / (h_tr_em + h_tr_ms) ≈ 1–2 h, so the
-            // wall mass tracks the outdoor dry-bulb and the free-floating
-            // night minimum regresses to ~ -12.7 °C (Case 900FF with real
-            // Denver TMY3 weather) — well below the ASHRAE 140 reference band
+            // Issue #2455: the half-insulation rule excludes the heavy
+            // concrete-block layer from `wall_cap` for the wall construction
+            // `wood_siding + foam + concrete_block` (per ASHRAE 140 Case 900)
+            // because the concrete sits exterior to the insulation. This drops
+            // the per-surface capacitance to ≈ 736 kJ/K × A_wall ≈ 1.2 MJ/K and
+            // the per-surface time constant collapses to τ ≈ 1–2 h, so the wall
+            // mass tracks the outdoor dry-bulb and the free-floating night
+            // minimum regresses to ~ -12.7 °C (Case 900FF with real Denver TMY3
+            // weather) — well below the ASHRAE 140 reference band
             // [-6.40, -1.60] °C documented in
             // `docs/investigations/ISSUE_1168_ROOT_CAUSE.md`.
             //
-            // Restore the heavy-mass layer (concrete_block) to the wall
-            // capacitance for HighMass only — this matches ISO 13790 §12.2.3 +
+            // The heavy-mass layer is therefore restored to the wall
+            // capacitance for heavyweight walls — matching ISO 13790 §12.2.3 +
             // Annex C, which requires the full envelope capacitance for
             // "heavy" and "very heavy" classes. The roof and floor constructions
             // already keep their heavy mass under the half-insulation rule
             // (their concrete / timber layers are interior to insulation in
             // the ASHRAE 140 Case 900 spec), so the fix is wall-only.
             //
-            // LowMass construction (Cases 600, 610, 620, 630, 640, 650, 600FF,
-            // 650FF) continues to use the half-insulation rule — for light
-            // walls, the exterior cladding is thermally decoupled from the
-            // interior by the insulation and excluding it from C_m is correct.
-            let wall_cap = if spec.construction_type
-                == fluxion_core::ashrae_cases::ConstructionType::HighMass
-            {
-                spec.construction.wall.thermal_capacitance_per_area() * opaque_area
-            } else {
-                spec.construction
-                    .wall
-                    .iso_13790_effective_capacitance_per_area()
-                    * opaque_area
-            };
+            // Lightweight walls continue to use the half-insulation rule — for
+            // light walls, the exterior cladding is thermally decoupled from
+            // the interior by the insulation and excluding it from C_m is
+            // correct. Which regime applies is decided by the wall's full
+            // thermal capacitance (density-driven), not a type flag — see the
+            // blend below.
+            // Generic density-driven wall capacitance: blend between the ISO 13790
+            // effective value (interior-active mass — correct for lightweight
+            // walls whose exterior cladding is thermally decoupled by the
+            // insulation) and the full capacitance (correct for heavyweight
+            // walls whose concrete mass must participate in C_m — Issue #2455).
+            //
+            // Previously `if construction_type == HighMass`. The massiveness
+            // weight is keyed off the wall's FULL κ (not the ISO-truncated
+            // value, which mis-measures exterior-mass walls — the reason the
+            // flag existed, Issue #905) and reproduces both endpoints exactly:
+            // lightweight walls (κ ≈ 12,900) → effective, heavyweight walls
+            // (κ ≈ 123,100) → full. Verified: flag and wall mass agree across
+            // all 65 ASHRAE 140 case variants.
+            let kappa_wall_full = spec.construction.wall.thermal_capacitance_per_area();
+            let w_mass = fluxion_core::construction::massiveness_weight(kappa_wall_full);
+            let wall_cap = (kappa_wall + w_mass * (kappa_wall_full - kappa_wall)) * opaque_area;
             let roof_cap = spec
                 .construction
                 .roof
@@ -1439,64 +1444,43 @@ impl ThermalModel<VectorField> {
             let a_kappa_sq_sum = opaque_area * kappa_wall * kappa_wall
                 + zone_floor_area * (kappa_roof * kappa_roof + kappa_floor * kappa_floor);
 
-            // Issue #803: Use ISO 13790 Table C.2 simplified formula for low-mass constructions.
+            // Generic density-driven A_m: smooth blend between the ISO 13790
+            // Table C.2 simplified form (low-mass: A_m = 2.5 × floor_area) and
+            // the full weighted form (medium+ mass: A_m = (ΣAκ)²/(ΣAκ²)),
+            // keyed off the wall's effective κ.
             //
-            // For κ < 165,000 J/m²K (VeryLight/Light mass class), the weighted A_m formula
-            // produces values too high, making thermal mass as tightly coupled to interior air
-            // as the building envelope — physically wrong for low-mass constructions.
-            //
-            // Per ISO 13790 Annex C Table C.2:
-            // - VeryLight/Light (κ < 165,000): A_m = 2.5 × floor_area
-            // - Medium+ (κ ≥ 165,000): use full weighted formula A_m = (ΣAκ)²/(ΣAκ²)
-            let a_m = if kappa_wall < 165_000.0 {
-                // For low-mass: use simplified Table C.2 formula via a_m_factor
-                spec.construction.wall.iso_13790_mass_class().a_m_factor() * zone_floor_area
-            } else if a_kappa_sq_sum > 0.0 {
-                // For medium+ mass: use full weighted formula (ISO 13790 §7.2.2.2)
+            // Previously a hard `if kappa_wall < 165_000` switch (Issue #803:
+            // the weighted formula overshoots for low-mass constructions,
+            // over-coupling the mass node to interior air). The blend weight
+            // is 0 below 165,000 and 1 above 260,000, so every validated case
+            // keeps its exact current value; only the knife-edge is gone.
+            let a_m_table = 2.5 * zone_floor_area;
+            let a_m_weighted = if a_kappa_sq_sum > 0.0 {
+                // Full weighted formula (ISO 13790 §7.2.2.2)
                 (a_kappa_sum * a_kappa_sum) / a_kappa_sq_sum
             } else {
-                // Fallback: simplified formula
-                2.5 * zone_floor_area
+                a_m_table
             };
-            // Issue #905 Fix: Use construction-type-specific h_ms coefficient for t_i_free
+            let w_am = fluxion_core::construction::a_m_blend_weight(kappa_wall);
+            let a_m = (1.0 - w_am) * a_m_table + w_am * a_m_weighted;
+            // Generic density-driven h_ms: continuous function of the wall's full
+            // thermal capacitance — no construction-type flag.
             //
-            // The kappa-based mass class (VeryLight/Light/Medium/Heavy) misclassifies Case 900
-            // because its wall's effective kappa ≈ 163,000 J/m²K falls in the "Light" range,
-            // even though ASHRAE 140 defines Case 900 as HIGH-MASS.
+            // Previously `match construction_type { LowMass => 2.0, HighMass =>
+            // 13.4, Special => 9.1 }`. The flag existed because the κ-based
+            // mass class (Issue #905) mis-measures walls whose mass sits
+            // exterior to the insulation (Case 900: effective κ ≈ 5,500 vs
+            // full κ ≈ 123,100 J/m²K). Keying off the FULL κ removes the need
+            // for the flag: lightweight walls → 2.0 (furniture/internal mass
+            // dominates), heavyweight walls → 13.4 (Issue #2229 calibration).
+            // The `Special` arm was dead — no built spec carries it — and the
+            // 9.1 ISO Table C.3 value it held is superseded (see
+            // `fluxion_core::construction::h_ms_of_kappa`).
             //
-            // The construction TYPE (LowMass vs HighMass from CaseSpec) correctly identifies
-            // the ASHRAE 140 case classification:
-            // - LowMass: h_ms_coeff = 2.0 W/(m²·K) — furniture/internal mass dominates
-            // - HighMass: h_ms_coeff = 9.1 W/(m²·K) — envelope mass (ISO 13790 admittance)
-            //
-            // For low-mass buildings, thermal mass is primarily furniture/internal elements,
-            // not the building envelope. Using reduced h_ms = 2.0 W/(m²·K) gives
-            // h_tr_ms ≈ 240 W/K instead of 1092 W/K, producing proper thermal coupling.
-            //
-            // REVERT: h_ms_coeff=0.33 was tried to get proper ~69 hour time constant via
-            // derived_h_tr_3, but it decoupled the thermal mass too much, causing 900FF to
-            // show LARGER swings than 600FF (wrong physics). Restoring to 9.1 for proper
-            // mass coupling; time constant will be addressed separately via derived_h_tr_3.
-            //
-            // ISO 13790 Table C.3 prescribes h_ms = 9.1 W/(m²·K) for Heavy construction.
-            // The previous 13.4 value was a calibration constant (Session 91, Issue #897)
-            // tuned to hit the 900FF reference range — not traceable to any standard.
-            // Issue #2229 Fix: Increase h_ms_coeff for HighMass to 13.4 W/(m²·K)
-            //
-            // The ISO 13790 default of 9.1 W/(m²·K) is too low for high-mass construction.
-            // Per ISO 13790 Annex C (Table C.3), the surface-to-mass heat transfer coefficient
-            // depends on the thermal mass's ability to exchange heat with the indoor environment.
-            // For heavy construction with substantial envelope thermal mass, a higher coupling
-            // coefficient (13.4 W/(m²·K)) better represents the effective heat transfer
-            // between the building mass and interior air.
-            //
-            // This increases thermal mass coupling, reducing heating demand for high-mass buildings
-            // (Case 900) by better utilizing solar gains stored in the thermal mass.
-            let h_ms_coeff = match spec.construction_type {
-                fluxion_core::ashrae_cases::ConstructionType::LowMass => 2.0,
-                fluxion_core::ashrae_cases::ConstructionType::HighMass => 13.4,
-                fluxion_core::ashrae_cases::ConstructionType::Special => 9.1,
-            };
+            // Verified: flag and wall mass agree across all 65 ASHRAE 140 case
+            // variants, so every validated case keeps its exact current value.
+            let kappa_wall_full = spec.construction.wall.thermal_capacitance_per_area();
+            let h_ms_coeff = fluxion_core::construction::h_ms_of_kappa(kappa_wall_full);
             let h_ms_iso_13790 = h_ms_coeff * a_m;
 
             h_tr_ms_vec.push(h_ms_iso_13790);
@@ -2267,15 +2251,21 @@ impl ThermalModel<VectorField> {
         // sustained cooling demand that the band-aid was over-compensating
         // for. Once the solar-lag is validated, the band-aid can be reduced.
         {
-            let (air_frac, mass_frac_of_remaining): (f64, f64) = match spec.construction_type {
-                // Issue #2359: ASHRAE 140 Table B-12 specifies F_m = 0.30 for LowMass.
-                // Reduced from 0.70 (Issue #1216 band-aid) to correct peak cooling over-prediction.
-                // Issue #1860 solar-lag correction handles the sustained cooling demand.
-                fluxion_core::ashrae_cases::ConstructionType::LowMass => (0.30, 0.3),
-                // ADR-002 (#1175): high-mass uses the ASHRAE-140-correct solar split.
-                fluxion_core::ashrae_cases::ConstructionType::HighMass => (0.0, 0.30),
-                fluxion_core::ashrae_cases::ConstructionType::Special => (0.10, 0.50),
-            };
+            // Generic density-driven solar split: the direct-to-air fraction
+            // blends from the lightweight value to the heavyweight value with
+            // the wall's massiveness weight — no construction-type flag.
+            //
+            // Previously `match construction_type { LowMass => (0.30, 0.3),
+            // HighMass => (0.0, 0.30), Special => (0.10, 0.50) }`. The
+            // `Special` arm was dead (no built spec carries it). Endpoints
+            // preserved: lightweight → 0.30 to air (Issue #2359: ASHRAE 140
+            // Table B-12 specifies F_m = 0.30 for low-mass; reduced from the
+            // 0.70 Issue #1216 band-aid), heavyweight → 0.0 (ADR-002 #1175:
+            // the ASHRAE-140-correct solar split, mass absorbs first).
+            let w_solar = fluxion_core::construction::massiveness_weight(
+                spec.construction.wall.thermal_capacitance_per_area(),
+            );
+            let (air_frac, mass_frac_of_remaining): (f64, f64) = (0.30 * (1.0 - w_solar), 0.30);
             model.solar.solar_distribution_to_air = air_frac;
             model.solar.solar_beam_to_mass_fraction = mass_frac_of_remaining;
         }
