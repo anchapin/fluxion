@@ -233,7 +233,7 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 # plus the two AST-counted cfg variants of the selector unit test; the
 # net cargo-verified delta is workspace_tests 7927 -> 8018 per
 # ``tests/test_inventory.json``).
-BASELINE_LIB_TESTS = 4265  # 2026-09-26: 4263 -> 4265 — PR for fluxion-#4055
+BASELINE_LIB_TESTS = 4266  # 2026-09-26: 4265 -> 4266 — PR #4093 (#4078) added a lib test without bumping; ratchet caught up in #3957
                         # (+2 hvac setpoint CLI tests in src/cli/hvac_commands.rs:
                         # ZoneControl delegation + CLI-to-system propagation);
                         # stacked on the merged 4263 fluxion-#4086 bump.
@@ -242,7 +242,7 @@ BASELINE_LIB_TESTS = 4265  # 2026-09-26: 4263 -> 4265 — PR for fluxion-#4055
                         # scans identically to a fresh CI checkout — the old
                         # "dirty tree scans up to 4 lower" caveat is retired.
 BASELINE_LIB_IGNORED = 9
-BASELINE_WORKSPACE_TESTS = 8774  # 2026-09-26: 8772 -> 8774 — PR for fluxion-#4055
+BASELINE_WORKSPACE_TESTS = 8775  # 2026-09-26: 8774 -> 8775 — PR #4093 (#4078) added a test without bumping; ratchet caught up in #3957
                                  # (+2 lib tests; no integration/binary/
                                  # ignore-count changes). Stacked on the 8772
                                  # fluxion-#4086 bump.
