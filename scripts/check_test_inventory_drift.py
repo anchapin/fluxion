@@ -233,20 +233,20 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 # plus the two AST-counted cfg variants of the selector unit test; the
 # net cargo-verified delta is workspace_tests 7927 -> 8018 per
 # ``tests/test_inventory.json``).
-BASELINE_LIB_TESTS = 4263  # 2026-09-26: 4262 -> 4263 — follow-up for fluxion-#3972
-                        # (+1 case_600_window_nodes_present_with_glazing_and_
-                        # solar_paths test; PR #4085 merged without the
-                        # ratchet bump); stacked on the 4262 fluxion-#3938
-                        # bump. Issue #4069: the AST scan now enumerates
-                        # strictly git-tracked .rs files, so a dirty
-                        # developer tree scans identically to a fresh CI
-                        # checkout — the old "dirty tree scans up to 4
-                        # lower" caveat is retired.
+BASELINE_LIB_TESTS = 4265  # 2026-09-26: 4263 -> 4265 — PR for fluxion-#4055
+                        # (+2 hvac setpoint CLI tests in src/cli/hvac_commands.rs:
+                        # ZoneControl delegation + CLI-to-system propagation);
+                        # stacked on the merged 4263 fluxion-#4086 bump.
+                        # Issue #4069: the AST scan now enumerates strictly
+                        # git-tracked .rs files, so a dirty developer tree
+                        # scans identically to a fresh CI checkout — the old
+                        # "dirty tree scans up to 4 lower" caveat is retired.
 BASELINE_LIB_IGNORED = 9
-BASELINE_WORKSPACE_TESTS = 8772  # 2026-09-26: 8771 -> 8772 — follow-up for fluxion-#3972
-                                 # (+1 lib test; no integration/binary/
-                                 # ignore-count changes). Stacked on the 8771
-                                 # fluxion-#3938 bump.
+BASELINE_WORKSPACE_TESTS = 8774  # 2026-09-26: 8772 -> 8774 — PR for fluxion-#4055
+                                 # (+2 lib tests; no integration/binary/
+                                 # ignore-count changes). Stacked on the 8772
+                                 # fluxion-#4086 bump.
+
 # 2026-09-12 (Issue #3711): 121 -> 133 — see the history entry above for
 # the per-crate attribution and the AST-vs-cargo calibration analysis.
 # 2026-09-18 (Issue #3729): 133 -> 138 — absorbs the cargo-verified
