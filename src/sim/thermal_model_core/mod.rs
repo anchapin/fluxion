@@ -745,18 +745,17 @@ impl ThermalModel<VectorField> {
         model.setpoints.wall_u_value = spec.construction.wall.u_value(None, None);
         model.setpoints.roof_u_value = spec.construction.roof.u_value(None, None);
 
-        // Case 195: Use ASHRAE-specified floor U-value for ground coupling (0.039 W/m²K)
-        // This is a simplified ground coupling model for the solid conduction test
-        if spec.case_id == "195" {
-            model.setpoints.floor_u_value = 0.039;
-        } else {
-            // Issue #588 Fix: Use SurfaceType::Floor for correct film coefficients
-            // and ground coupling resistance in floor U-value calculation.
-            model.setpoints.floor_u_value = spec
-                .construction
+        // Floor U-value for ground coupling. A spec-provided override (e.g. the
+        // ASHRAE 140 Case 195 solid-conduction test's specified 0.039 W/m²K)
+        // takes precedence over the construction-derived value — data-driven,
+        // no case_id check.
+        // Issue #588: Use SurfaceType::Floor for correct film coefficients
+        // and ground coupling resistance in floor U-value calculation.
+        model.setpoints.floor_u_value = spec.floor_u_value_override.unwrap_or_else(|| {
+            spec.construction
                 .floor
-                .u_value(Some(crate::sim::construction::SurfaceType::Floor), None);
-        }
+                .u_value(Some(crate::sim::construction::SurfaceType::Floor), None)
+        });
 
         // Issue #746: Apply ground temperature boundary condition per ASHRAE 140-2023 Annex B §B3.3.
         // T_ground = 9.4°C (annual mean Denver air temperature) for all cases with floor slab.
@@ -1233,30 +1232,17 @@ impl ThermalModel<VectorField> {
             let zone_air_cap = zone_volume * 1.2 * 1005.0;
             h_ve_vec.push((spec.infiltration_ach * zone_air_cap) / 3600.0);
 
-            // Floor conductance
-            // ASHRAE 140 Case 195 uses specified ground coupling value of 0.039 W/m²K
-            // Other cases use the construction's u_value
-            // Issue #588 Fix: Use SurfaceType::Floor for floor U-value to get correct
-            // interior film coefficient (5.88 W/m²K for downward heat flow) and ground
-            // coupling resistance in exterior calculation.
-            let floor_u = spec
-                .construction
-                .floor
-                .u_value(Some(crate::sim::construction::SurfaceType::Floor), None);
-
-            let is_900_series_hvac = spec.case_id.starts_with("9")
-                && !spec.case_id.contains("FF")
-                && spec.case_id != "195"
-                && spec.case_id != "960";
-            let h_tr_floor_val = if spec.case_id == "195" {
-                // Case 195: Solid conduction - use ASHRAE-specified floor U-value (0.039)
-                // WITHOUT 1.2 multiplier - it's applied in update_optimization_cache
-                0.039 * zone_floor_area
-            } else if is_900_series_hvac {
-                floor_u * zone_floor_area * 1.2
-            } else {
-                floor_u * zone_floor_area
-            };
+            // Floor-to-ground conductance. Reuses the effective floor U-value
+            // stored on `setpoints.floor_u_value` above (spec override wins
+            // over construction) so the two sites cannot drift apart.
+            //
+            // The old 900-series ×1.2 multiplier is removed: it was dead code.
+            // 900-series specs are HighMass and auto-promote to 9R4C, whose
+            // per-surface vectors never consume the lumped `h_tr_floor`
+            // (verified bit-identical across Cases 900–950 with and without
+            // the multiplier). The stale "applied in update_optimization_cache"
+            // comment is removed with it — that function never applied it.
+            let h_tr_floor_val = model.setpoints.floor_u_value * zone_floor_area;
             h_tr_floor_vec.push(h_tr_floor_val);
 
             // h_tr_is = Surface-to-air conductance for ASHRAE 140 simplified 5R1C model

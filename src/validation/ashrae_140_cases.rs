@@ -930,6 +930,12 @@ pub struct CaseSpec {
     /// Per ASHRAE 140-2023 Annex B §B3.3: T_ground = 9.4°C for all cases with floor slab.
     /// When `None`, the model default (10.0°C) is used for backward compatibility.
     pub ground_temperature_c: Option<f64>,
+    /// Optional override for the floor U-value (W/m²K) used in ground coupling.
+    /// When `Some`, replaces the construction-derived floor U-value in both
+    /// `setpoints.floor_u_value` and the `h_tr_floor` conductance. Used for
+    /// specified test conditions such as the ASHRAE 140 Case 195 solid
+    /// conduction test (U = 0.039 W/m²K).
+    pub floor_u_value_override: Option<f64>,
     /// Building usage type for thermal mass calculations (default: Residential)
     pub building_type: BuildingType,
 }
@@ -1223,6 +1229,12 @@ pub struct CaseBuilder {
     /// Ground temperature boundary condition (°C) for floor slab (Issue #746).
     /// Per ASHRAE 140-2023 Annex B §B3.3: T_ground = 9.4°C.
     ground_temperature_c: Option<f64>,
+    /// Optional override for the floor U-value (W/m²K) used in ground coupling.
+    /// When `Some`, replaces the construction-derived floor U-value in both
+    /// `setpoints.floor_u_value` and the `h_tr_floor` conductance. Used for
+    /// specified test conditions such as the ASHRAE 140 Case 195 solid
+    /// conduction test (U = 0.039 W/m²K) — data-driven, no case_id check.
+    floor_u_value_override: Option<f64>,
     /// Building usage type for thermal mass calculations
     building_type: BuildingType,
 }
@@ -1256,6 +1268,7 @@ impl CaseBuilder {
             door_area: None,
             epw_path: None,
             ground_temperature_c: None,
+            floor_u_value_override: None,
             building_type: BuildingType::default(),
         }
     }
@@ -1559,6 +1572,16 @@ impl CaseBuilder {
         self
     }
 
+    /// Overrides the construction-derived floor U-value (W/m²K) for ground coupling.
+    ///
+    /// For specified test conditions such as the ASHRAE 140 Case 195 solid
+    /// conduction test (U = 0.039 W/m²K). Data-driven: replaces the old
+    /// `case_id == "195"` hard-code in the thermal model.
+    pub fn with_floor_u_value_override(mut self, u_value: f64) -> Self {
+        self.floor_u_value_override = Some(u_value);
+        self
+    }
+
     /// Builds and validates the case specification.
     pub fn build(mut self) -> Result<CaseSpec, String> {
         // Ensure vectors have correct length for num_zones
@@ -1626,6 +1649,7 @@ impl CaseBuilder {
             epw_path: self.epw_path.clone(),
             hvac_equipment: None,
             ground_temperature_c: self.ground_temperature_c,
+            floor_u_value_override: self.floor_u_value_override,
             building_type: self.building_type,
         };
 
@@ -1706,6 +1730,10 @@ impl CaseBuilder {
             .with_infiltration(0.0) // No infiltration
             .with_opaque_absorptance(0.0) // No solar absorption for Case 195
             .with_num_zones(1)
+            // ASHRAE 140 solid-conduction test specifies the ground-coupled
+            // floor U-value (0.039 W/m²K); carried as spec data instead of a
+            // case_id hard-code in the thermal model.
+            .with_floor_u_value_override(0.039)
             .build()
             .expect("Case 195 should validate")
     }

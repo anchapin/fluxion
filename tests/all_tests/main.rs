@@ -109,6 +109,7 @@ mod fast_math_probe;
 mod fd_time_integration_accuracy;
 mod ffd_cfd_adapter_integration;
 mod ffd_cosimulation_validation;
+mod floor_ground_coupling;
 mod fmi_ffi_safety;
 mod fmi_import_tests;
 mod fmi_multizone_do_step_regression;
