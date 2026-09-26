@@ -33,7 +33,7 @@ permissions:
 jobs:
   precheck:
     name: Phase-gate precheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       should_run: ${{ steps.final.outputs.should_run }}
     steps:
@@ -54,7 +54,7 @@ jobs:
     # Issue #4018: phase-gated behind CI Gates.
     needs: precheck
     if: needs.precheck.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:

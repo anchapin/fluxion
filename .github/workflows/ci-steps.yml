@@ -1,6 +1,6 @@
 # =============================================================================
 # Reusable CI workflow — accepts a runner-label input so callers can route
-# to GitHub-hosted (ubuntu-latest) or self-hosted Hetzner overflow runners.
+# to GitHub-hosted (ubuntu-24.04) or self-hosted Hetzner overflow runners.
 #
 # Usage (from a caller workflow):
 #   jobs:
@@ -8,7 +8,7 @@
 #       needs: gh-probe
 #       uses: ./.github/workflows/ci-steps.yml
 #       with:
-#         runner-label: ubuntu-latest
+#         runner-label: ubuntu-24.04
 #         cargo-features: ""
 #     ci-on-hetzner:
 #       needs: gh-probe
@@ -32,7 +32,7 @@ on:
         type: string
         description: >
           Runner label(s) to use. Examples:
-          - `ubuntu-latest` — GitHub-hosted (free, primary choice)
+          - `ubuntu-24.04` — GitHub-hosted (free, primary choice)
           - `[self-hosted,fluxion-overflow]` — Hetzner autoscaling overflow
           - `fluxion-ci` — static self-hosted Hetzner runners
       cargo-features:

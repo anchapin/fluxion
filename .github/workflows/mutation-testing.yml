@@ -8,7 +8,7 @@ name: Mutation Testing
 # full-workspace run, it completes in minutes and restores a mutation signal
 # on PRs — something that was previously zero because the full suite OOMs
 # even on 32 GB machines.  Since #3301 it runs on the standard 4-core
-# `ubuntu-latest` runner; the RAM guard below skips with a notice when
+# `ubuntu-24.04` runner; the RAM guard below skips with a notice when
 # < 16 GB is available (standard runners have 16 GB total, so the guard may
 # skip rather than execute — an accepted trade-off for an advisory check).
 #
@@ -81,12 +81,12 @@ jobs:
     # larger-runner tier, chosen because the per-mutant recompile of the
     # main crate pulls in `ort`/ONNX types until Phase 3 gates them).  A
     # free-plan personal account cannot provision that label, so every PR
-    # job queued forever.  Now on the standard `ubuntu-latest` (4-core,
+    # job queued forever.  Now on the standard `ubuntu-24.04` (4-core,
     # 16 GB) runner; the RAM guard below skips the run with a
     # `::notice::` when < 16 GB is available, so the job always reaches a
     # terminal state instead of hanging branch protection.  Comprehensive
     # coverage stays on `mutation-nightly.yml`.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Belt-and-braces (#3301): hard terminal bound so even a pathological
     # run cannot hang this check.  Diff-scoped runs are documented to take
     # minutes (see header and the diff-scope step below); 120 minutes gives

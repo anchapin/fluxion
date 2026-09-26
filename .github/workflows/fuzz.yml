@@ -18,11 +18,11 @@
 #     regression-detection benefit (each target explores its own input
 #     space, and crashes surface immediately via the per-target summary).
 #   * Conservative by design — AGENTS.md warns the full Loom/mutation
-#     suites need ~32 GB RAM; nightly fuzzing on `ubuntu-latest` (7 GB)
+#     suites need ~32 GB RAM; nightly fuzzing on `ubuntu-24.04` (7 GB)
 #     stays well clear of that ceiling.
 #
 # Runner selection (Issue #3445 contract): scheduled CI uses the ephemeral
-# `ubuntu-latest` pool. The self-hosted Hetzner pool is reserved for jobs
+# `ubuntu-24.04` pool. The self-hosted Hetzner pool is reserved for jobs
 # gated to `push:main` (security contract) and is NOT used here.
 #
 # Toolchain:
@@ -86,7 +86,7 @@ env:
 jobs:
   fuzz-nightly:
     name: libFuzzer targets (epw / FFI / zone-balance)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

@@ -36,7 +36,7 @@ permissions:
 jobs:
   # Gate check job - must pass before publish
   gate-check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
 
     steps:
@@ -214,7 +214,7 @@ jobs:
 
   # Build and publish to PyPI - depends on gate-check
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: gate-check
     permissions:
       contents: read
@@ -255,7 +255,7 @@ jobs:
 
   # Build and publish to Test PyPI
   publish-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: gate-check
     if: github.event_name == 'workflow_dispatch'
     permissions:

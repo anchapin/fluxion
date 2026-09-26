@@ -63,7 +63,7 @@ permissions:
 jobs:
   conflict-marker:
     name: PR Merge-Conflict Gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Emit merge-conflict check run

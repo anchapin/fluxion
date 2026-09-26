@@ -28,7 +28,7 @@ LINES = [
     f"The `Cross-Platform Determinism CI` workflow concluded **{CONCLUSION}** "
     f"for commit `{HEAD_SHA}` on this PR. The PR cannot be merged until the "
     "determinism check passes on **all three OS matrix entries** "
-    "(ubuntu-latest, windows-latest, macos-latest).",
+    "(ubuntu-24.04, windows-latest, macos-latest).",
     "",
     f"**Upstream run:** {RUN_URL}",
     "",

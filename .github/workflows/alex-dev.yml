@@ -15,7 +15,7 @@
 #   strategy:
 #     fail-fast: false
 #     matrix:
-#       runner: [self-hosted, alex-workstation, ubuntu-latest]
+#       runner: [self-hosted, alex-workstation, ubuntu-24.04]
 # That tries the local runner first; falls through to GH-hosted when the
 # workstation is off.
 

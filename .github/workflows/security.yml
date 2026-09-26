@@ -31,7 +31,7 @@ jobs:
     # reviewers and can mislabel ignored advisories or place directives
     # under the wrong table where they silently no-op.
     name: Audit Config Unique
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -47,7 +47,7 @@ jobs:
     # in `crates/fluxion-evaluator/src/dynamic.rs`. Mirrors the
     # `check_audit_config_unique.py` fail-closed pattern.
     name: "Evaluator Dynamic Secure (Issue #3554)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -70,7 +70,7 @@ jobs:
     # `--check-upstream` and not used in this job so the gate is
     # network-free in CI.
     name: "Audit Ignore Freshness (Issue #2912)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -91,7 +91,7 @@ jobs:
     # and exemptions valid only while `unmaintained = "workspace"`.
     # Comment-only script (no toolchain needed) — network-free.
     name: "Audit Deny Agree (Issue #3654)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -101,7 +101,7 @@ jobs:
 
   audit:
     name: Cargo Audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-env

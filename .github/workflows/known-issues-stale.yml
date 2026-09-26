@@ -33,7 +33,7 @@ permissions:
 
 jobs:
   check-stale:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     name: Check KNOWN_ISSUES.md staleness
     permissions:
       contents: read

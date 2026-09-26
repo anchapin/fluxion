@@ -48,17 +48,17 @@ jobs:
     # Issue #3445: persistent self-hosted runners MUST NOT execute
     # PR-controlled code. When this job runs on a `pull_request` event
     # (which it does — see the `on: pull_request` trigger above) we
-    # force the runner to the ephemeral GH-hosted `ubuntu-latest` path
+    # force the runner to the ephemeral GH-hosted `ubuntu-24.04` path
     # regardless of the `FLUXION_LINUX_RUNNER` repo variable. Only
     # main-merge pushes honour the routing variable. Do NOT simplify
-    # this back to `vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest'` —
+    # this back to `vars.FLUXION_LINUX_RUNNER || 'ubuntu-24.04'` —
     # see SECURITY.md §"Self-hosted runner job execution policy".
     runs-on: >-
       ${{
         github.event_name == 'push'
         && github.ref == 'refs/heads/main'
         && vars.FLUXION_LINUX_RUNNER
-        || 'ubuntu-latest'
+        || 'ubuntu-24.04'
       }}
     strategy:
       fail-fast: false

@@ -44,6 +44,8 @@ Skip it for Rust-matrix jobs — those run on native toolchains and cannot be re
 | `--defaultbranch develop` | Branch | Matches the GH default branch so `pull_request` events resolve correctly. |
 | `--verbose` | Logging | Loud by default; pass `-q` (or set `act` flags yourself) to silence. |
 
+> **Note (2026-09-26, #3960):** CI workflows are pinned to `ubuntu-24.04` through ~Dec 2026 (deferring GitHub's Oct 19 – Nov 19 `ubuntu-latest` → Ubuntu 26.04 rollout). The `-P ubuntu-latest=...` mapping above therefore no longer matches any CI `runs-on` label; `act` falls back to its default image for `ubuntu-24.04`. Local runs remain shape-checking, not environment parity — see `docs/ci/ubuntu26-preflight.md` §4.
+
 ## What the curated suite covers (and what it skips)
 
 The default suite is four Python-only workflows chosen for low RAM cost and short wall time:

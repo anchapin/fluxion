@@ -63,7 +63,7 @@ permissions:
 jobs:
   scorecard-drift:
     name: "Scorecard Drift Gate (Issue #2496)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Issue #3128: `contents: write` is required so the auto-regen step can
     # push the regenerated SCORECARD.md back to the PR branch. The job-level
     # scope overrides the workflow-level `contents: read` default.

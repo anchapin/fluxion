@@ -14,7 +14,7 @@
 # `--node` test-runner output and must be a deliberate change tracked
 # alongside a test-suite re-baseline).
 #
-# Mirrors `node-bindings.yml` structure: matrix of ubuntu-latest and
+# Mirrors `node-bindings.yml` structure: matrix of ubuntu-24.04 and
 # windows-latest, `napi-rs`/`napi build` swapped for `wasm-pack test
 # --node`, no `npm install` step (Node ships pre-installed on both
 # runners and `wasm-pack test --node` drives the runtime itself).
@@ -72,7 +72,7 @@ jobs:
       matrix:
         # Linux honours the repo's FLUXION_LINUX_RUNNER routing var on
         # main-merge pushes only — on pull_request events the expression
-        # MUST resolve to ubuntu-latest (docs/SECURITY.md §7; Issues
+        # MUST resolve to ubuntu-24.04 (docs/SECURITY.md §7; Issues
         # #3531/#3718). Windows is always GitHub-hosted.
         # macos-latest is intentionally omitted here — `wasm-pack test
         # --node` on macOS has been a recurring flake source, and the
@@ -81,7 +81,7 @@ jobs:
         # neutral (the underlying V8 is the same Node version), so the
         # 2-runner matrix is sufficient for the gate.
         os:
-          - ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+          - ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.FLUXION_LINUX_RUNNER || 'ubuntu-24.04' }}
           - windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

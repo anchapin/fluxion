@@ -87,7 +87,7 @@ jobs:
   # Issue #4018: phase-gate precheck (see fast_math_check.yml for docs).
   precheck:
     name: Phase-gate precheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       should_run: ${{ steps.final.outputs.should_run }}
     steps:
@@ -134,7 +134,7 @@ jobs:
         github.event_name == 'push'
         && github.ref == 'refs/heads/main'
         && vars.FLUXION_LINUX_RUNNER
-        || 'ubuntu-latest'
+        || 'ubuntu-24.04'
       }}
     timeout-minutes: 60
 
@@ -241,7 +241,7 @@ jobs:
   h-tr-em-listener:
     name: "h_tr_em Regression Gate (LIMIT-13)"
     needs: [h-tr-em-regression-gate]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     if: always()
 
