@@ -376,9 +376,11 @@ jobs:
 
   compare:
     name: Fast-Math Comparison (Δ loads + residual ceiling)
-    needs: precheck
+    # Issue #4068: merged the duplicate `needs:` keys (#4018 added
+    # `needs: precheck` above the pre-existing `needs:`) — duplicate
+    # mapping keys fail GitHub's workflow parser ("workflow file issue").
+    needs: [precheck, probe-default, probe-fastmath]
     if: needs.precheck.outputs.should_run == 'true'
-    needs: [probe-default, probe-fastmath]
     runs-on: >-
       ${{
         github.event_name == 'push'
@@ -597,9 +599,12 @@ jobs:
   # the #3286 β-soak tracking convention), not in this file.
   fast-math-gh:
     name: Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH)
-    needs: precheck
-    if: needs.precheck.outputs.should_run == 'true'
-    needs: [compare]
+    # Issue #4068: merged the duplicate `needs:` keys (#4018 added
+    # `needs: precheck` above the pre-existing `needs: [compare]`) and
+    # dropped the earlier `if: needs.precheck...` line — the intended
+    # terminal condition for this listener is `if: always()` below
+    # (Issue #3810), which must run even when `compare` is skipped.
+    needs: [precheck, compare]
     runs-on: >-
       ${{
         github.event_name == 'push'

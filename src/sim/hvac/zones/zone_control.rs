@@ -451,6 +451,81 @@ impl ZoneControl {
             .map(|c| c.config.strategy)
     }
 
+    /// Set heating setpoint for a specific zone.
+    ///
+    /// Delegates to the zone setpoints configuration.
+    ///
+    /// # Arguments
+    /// * `zone_id` - Zone index (0-based)
+    /// * `temperature` - Heating setpoint temperature (°C)
+    ///
+    /// # Returns
+    /// Result indicating success or validation error
+    pub fn set_heating_setpoint(&mut self, zone_id: usize, temperature: f64) -> Result<(), String> {
+        self.setpoints.set_heating_setpoint(zone_id, temperature)
+    }
+
+    /// Set cooling setpoint for a specific zone.
+    ///
+    /// Delegates to the zone setpoints configuration.
+    ///
+    /// # Arguments
+    /// * `zone_id` - Zone index (0-based)
+    /// * `temperature` - Cooling setpoint temperature (°C)
+    ///
+    /// # Returns
+    /// Result indicating success or validation error
+    pub fn set_cooling_setpoint(&mut self, zone_id: usize, temperature: f64) -> Result<(), String> {
+        self.setpoints.set_cooling_setpoint(zone_id, temperature)
+    }
+
+    /// Set deadband for a specific zone.
+    ///
+    /// Delegates to the zone setpoints configuration.
+    ///
+    /// # Arguments
+    /// * `zone_id` - Zone index (0-based)
+    /// * `deadband` - Deadband value (°C)
+    ///
+    /// # Returns
+    /// Result indicating success or validation error
+    pub fn set_deadband(&mut self, zone_id: usize, deadband: f64) -> Result<(), String> {
+        self.setpoints.set_deadband(zone_id, deadband)
+    }
+
+    /// Get heating setpoint for a specific zone.
+    ///
+    /// # Arguments
+    /// * `zone_id` - Zone index (0-based)
+    ///
+    /// # Returns
+    /// Current heating setpoint (°C)
+    pub fn get_heating_setpoint(&self, zone_id: usize) -> f64 {
+        self.setpoints.get_heating_setpoint(zone_id)
+    }
+
+    /// Get cooling setpoint for a specific zone.
+    ///
+    /// # Arguments
+    /// * `zone_id` - Zone index (0-based)
+    ///
+    /// # Returns
+    /// Current cooling setpoint (°C)
+    pub fn get_cooling_setpoint(&self, zone_id: usize) -> f64 {
+        self.setpoints.get_cooling_setpoint(zone_id)
+    }
+
+    /// Get deadband for a specific zone.
+    ///
+    /// # Arguments
+    /// * `zone_id` - Zone index (0-based)
+    ///
+    /// # Returns
+    /// Current deadband (°C)
+    pub fn get_deadband(&self, zone_id: usize) -> f64 {
+        self.setpoints.get_deadband(zone_id)
+    }
+
     /// Update HVAC controls for all zones based on current temperatures.
     ///
     /// # Arguments

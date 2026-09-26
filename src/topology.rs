@@ -3,8 +3,8 @@
 //! This module defines the engine-agnostic topology representation used by
 //! `fluxion topology export`: a directed (optionally bidirectional) graph whose
 //! nodes are thermal-network elements (`zone_air`, `exterior_surface`,
-//! `wall_layer`, `interior_surface`, `internal_mass`, `internal_gain`,
-//! `hvac_terminal`, `outdoor_ambient`) and whose edges are heat-transfer
+//! `wall_layer`, `interior_surface`, `window`, `internal_mass`,
+//! `internal_gain`, `hvac_terminal`, `outdoor_ambient`) and whose edges are heat-transfer
 //! couplings (`conduction`, `convection_exterior`, `convection_interior`,
 //! `longwave_radiation`, `shortwave_solar_direct`, `shortwave_solar_diffuse`,
 //! `air_exchange`, `internal_gain_split`, `hvac_sensible`).
@@ -39,6 +39,10 @@ pub enum TopologyNodeKind {
     WallLayer,
     /// Interior-facing film node of a surface.
     InteriorSurface,
+    /// Glazing assembly node (Issue #3972): the lumped glazing + frame
+    /// conductance between outdoor ambient and zone air, and the admission
+    /// point for transmitted solar gains.
+    Window,
     /// Zone radiant-mass star node (5R1C `T_m` analogue).
     InternalMass,
     /// Zone air capacitance node.
@@ -57,6 +61,7 @@ impl TopologyNodeKind {
             Self::ExteriorSurface => "exterior_surface",
             Self::WallLayer => "wall_layer",
             Self::InteriorSurface => "interior_surface",
+            Self::Window => "window",
             Self::InternalMass => "internal_mass",
             Self::ZoneAir => "zone_air",
             Self::InternalGain => "internal_gain",

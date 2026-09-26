@@ -4,8 +4,8 @@
     "tool_version": "1.0.0",
     "model_name": "ASHRAE 140 Case 960",
     "model_source": "ashrae-140-registry:960",
-    "node_count": 66,
-    "edge_count": 93
+    "node_count": 68,
+    "edge_count": 99
   },
   "nodes": [
     {
@@ -428,6 +428,20 @@
       }
     },
     {
+      "id": "zone-0:window-south:0",
+      "kind": "window",
+      "zone_id": "zone-0:air",
+      "name": "Zone 0 window south #0",
+      "area_m2": 12.0,
+      "azimuth_deg": 180.0,
+      "tilt_deg": 90.0,
+      "attributes": {
+        "glazing": 1.0,
+        "shgc": 0.77,
+        "u_value_w_per_m2k": 2.2
+      }
+    },
+    {
       "id": "zone-1:air",
       "kind": "zone_air",
       "zone_id": "zone-1:air",
@@ -829,21 +843,23 @@
         "specific_heat_j_per_kgk": 840.0,
         "thickness_m": 0.1
       }
+    },
+    {
+      "id": "zone-1:window-south:0",
+      "kind": "window",
+      "zone_id": "zone-1:air",
+      "name": "Zone 1 window south #0",
+      "area_m2": 6.0,
+      "azimuth_deg": 180.0,
+      "tilt_deg": 90.0,
+      "attributes": {
+        "glazing": 1.0,
+        "shgc": 0.77,
+        "u_value_w_per_m2k": 2.2
+      }
     }
   ],
   "edges": [
-    {
-      "source_id": "ambient",
-      "target_id": "zone-0:air",
-      "coupling_type": "conduction",
-      "conductance_w_per_k": 26.400000000000002,
-      "bidirectional": true,
-      "attributes": {
-        "glazing": 1.0,
-        "u_value_w_per_m2k": 2.2,
-        "window_area_m2": 12.0
-      }
-    },
     {
       "source_id": "ambient",
       "target_id": "zone-0:roof:ext",
@@ -874,7 +890,21 @@
     },
     {
       "source_id": "ambient",
-      "target_id": "zone-0:wall-south:int",
+      "target_id": "zone-0:wall-west:ext",
+      "coupling_type": "convection_exterior",
+      "conductance_w_per_k": 296.46000000000004,
+      "bidirectional": false
+    },
+    {
+      "source_id": "ambient",
+      "target_id": "zone-0:window-south:0",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 26.400000000000002,
+      "bidirectional": true
+    },
+    {
+      "source_id": "ambient",
+      "target_id": "zone-0:window-south:0",
       "coupling_type": "shortwave_solar_diffuse",
       "fraction": 0.77,
       "bidirectional": false,
@@ -884,31 +914,12 @@
     },
     {
       "source_id": "ambient",
-      "target_id": "zone-0:wall-south:int",
+      "target_id": "zone-0:window-south:0",
       "coupling_type": "shortwave_solar_direct",
       "fraction": 0.77,
       "bidirectional": false,
       "attributes": {
         "window_area_m2": 12.0
-      }
-    },
-    {
-      "source_id": "ambient",
-      "target_id": "zone-0:wall-west:ext",
-      "coupling_type": "convection_exterior",
-      "conductance_w_per_k": 296.46000000000004,
-      "bidirectional": false
-    },
-    {
-      "source_id": "ambient",
-      "target_id": "zone-1:air",
-      "coupling_type": "conduction",
-      "conductance_w_per_k": 13.200000000000001,
-      "bidirectional": true,
-      "attributes": {
-        "glazing": 1.0,
-        "u_value_w_per_m2k": 2.2,
-        "window_area_m2": 6.0
       }
     },
     {
@@ -941,7 +952,21 @@
     },
     {
       "source_id": "ambient",
-      "target_id": "zone-1:wall-south:int",
+      "target_id": "zone-1:wall-west:ext",
+      "coupling_type": "convection_exterior",
+      "conductance_w_per_k": 98.82000000000001,
+      "bidirectional": false
+    },
+    {
+      "source_id": "ambient",
+      "target_id": "zone-1:window-south:0",
+      "coupling_type": "conduction",
+      "conductance_w_per_k": 13.200000000000001,
+      "bidirectional": true
+    },
+    {
+      "source_id": "ambient",
+      "target_id": "zone-1:window-south:0",
       "coupling_type": "shortwave_solar_diffuse",
       "fraction": 0.77,
       "bidirectional": false,
@@ -951,20 +976,13 @@
     },
     {
       "source_id": "ambient",
-      "target_id": "zone-1:wall-south:int",
+      "target_id": "zone-1:window-south:0",
       "coupling_type": "shortwave_solar_direct",
       "fraction": 0.77,
       "bidirectional": false,
       "attributes": {
         "window_area_m2": 6.0
       }
-    },
-    {
-      "source_id": "ambient",
-      "target_id": "zone-1:wall-west:ext",
-      "coupling_type": "convection_exterior",
-      "conductance_w_per_k": 98.82000000000001,
-      "bidirectional": false
     },
     {
       "source_id": "zone-0:air",
@@ -1253,6 +1271,24 @@
       "bidirectional": true
     },
     {
+      "source_id": "zone-0:window-south:0",
+      "target_id": "zone-0:air",
+      "coupling_type": "conduction",
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-0:window-south:0",
+      "target_id": "zone-0:wall-south:int",
+      "coupling_type": "shortwave_solar_diffuse",
+      "bidirectional": false
+    },
+    {
+      "source_id": "zone-0:window-south:0",
+      "target_id": "zone-0:wall-south:int",
+      "coupling_type": "shortwave_solar_direct",
+      "bidirectional": false
+    },
+    {
       "source_id": "zone-1:air",
       "target_id": "ambient",
       "coupling_type": "air_exchange",
@@ -1506,6 +1542,24 @@
       "coupling_type": "conduction",
       "conductance_w_per_k": 55.080000000000005,
       "bidirectional": true
+    },
+    {
+      "source_id": "zone-1:window-south:0",
+      "target_id": "zone-1:air",
+      "coupling_type": "conduction",
+      "bidirectional": true
+    },
+    {
+      "source_id": "zone-1:window-south:0",
+      "target_id": "zone-1:wall-south:int",
+      "coupling_type": "shortwave_solar_diffuse",
+      "bidirectional": false
+    },
+    {
+      "source_id": "zone-1:window-south:0",
+      "target_id": "zone-1:wall-south:int",
+      "coupling_type": "shortwave_solar_direct",
+      "bidirectional": false
     }
   ]
 }

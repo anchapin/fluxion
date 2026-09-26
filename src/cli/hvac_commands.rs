@@ -24,6 +24,22 @@ lazy_static! {
     static ref CURRENT_SCHEDULE: Mutex<Option<HVACSchedule>> = Mutex::new(None);
 }
 
+/// Get the global HVAC system, initializing a default 2-zone system on first use.
+///
+/// Returns a cloned handle so callers do not hold the global lock while
+/// operating on the inner system lock.
+fn get_or_init_hvac_system() -> Arc<Mutex<ZoneControl>> {
+    let mut system = HVAC_SYSTEM.lock().unwrap();
+    if system.is_none() {
+        // Create a default thermal model with 2 zones
+        let thermal_model = Arc::new(ThermalModel::new(2));
+        let setpoints = ZoneSetpoints::new(2);
+        let zone_control = Arc::new(Mutex::new(ZoneControl::new(thermal_model, setpoints)));
+        *system = Some(zone_control);
+    }
+    system.as_ref().unwrap().clone()
+}
+
 /// HVAC command-line interface
 #[derive(Subcommand, Debug, Clone)]
 pub enum HvacCommand {
@@ -165,18 +181,14 @@ fn handle_setpoints(action: SetpointAction) -> Result<(), String> {
                 ));
             }
 
-            // Integrate with actual HVAC system
-            // TODO: Fix private field access issue
-            // let mut system = HVAC_SYSTEM.lock().unwrap();
-            // if let Some(hvac) = system.as_ref() {
-            //     let mut hvac_guard = hvac.lock().unwrap();
-            //     if let Err(e) = hvac_guard
-            //         .setpoints
-            //         .set_heating_setpoint(zone_id, temperature)
-            //     {
-            //         return Err(anyhow::anyhow!("Failed to set heating setpoint: {}", e));
-            //     }
-            // }
+            // Apply to the HVAC system so the setpoint actually takes effect
+            // (issue #4055: this previously printed success without writing anything)
+            let hvac = get_or_init_hvac_system();
+            let mut hvac_guard = hvac.lock().unwrap();
+            hvac_guard
+                .set_heating_setpoint(zone_id, temperature)
+                .map_err(|e| format!("Failed to set heating setpoint: {}", e))?;
+
             println!(
                 "Set heating setpoint for zone {} to {}°C",
                 zone_id, temperature
@@ -193,6 +205,14 @@ fn handle_setpoints(action: SetpointAction) -> Result<(), String> {
                     temperature
                 ));
             }
+
+            // Apply to the HVAC system so the setpoint actually takes effect
+            let hvac = get_or_init_hvac_system();
+            let mut hvac_guard = hvac.lock().unwrap();
+            hvac_guard
+                .set_cooling_setpoint(zone_id, temperature)
+                .map_err(|e| format!("Failed to set cooling setpoint: {}", e))?;
+
             println!(
                 "Set cooling setpoint for zone {} to {}°C",
                 zone_id, temperature
@@ -206,6 +226,14 @@ fn handle_setpoints(action: SetpointAction) -> Result<(), String> {
                     deadband
                 ));
             }
+
+            // Apply to the HVAC system so the deadband actually takes effect
+            let hvac = get_or_init_hvac_system();
+            let mut hvac_guard = hvac.lock().unwrap();
+            hvac_guard
+                .set_deadband(zone_id, deadband)
+                .map_err(|e| format!("Failed to set deadband: {}", e))?;
+
             println!("Set deadband for zone {} to {}°C", zone_id, deadband);
             Ok(())
         }
@@ -334,54 +362,42 @@ fn handle_simulate(steps: usize, output: Option<PathBuf>) -> Result<(), String> 
     println!("Running HVAC simulation for {} steps", steps);
 
     // Initialize HVAC system if not already done
-    let mut system = HVAC_SYSTEM.lock().unwrap();
-    if system.is_none() {
-        // Create a default thermal model with 2 zones
-        let thermal_model = Arc::new(ThermalModel::new(2));
-        let setpoints = ZoneSetpoints::new(2);
-        let zone_control = Arc::new(Mutex::new(ZoneControl::new(thermal_model, setpoints)));
-        *system = Some(zone_control);
+    let hvac = get_or_init_hvac_system();
+    let mut hvac_guard = hvac.lock().unwrap();
+
+    // Get initial temperatures
+    let initial_temps = VectorField::from_scalar(20.0, hvac_guard.thermal_model.hvac.num_zones);
+
+    // Run simulation loop
+    let mut results = Vec::new();
+    for step in 0..steps {
+        let energy_input = hvac_guard.update_zone_controls(&initial_temps);
+
+        // Store results
+        for zone_id in 0..hvac_guard.thermal_model.hvac.num_zones {
+            let temp = initial_temps.as_slice()[zone_id];
+            let energy = energy_input.as_slice()[zone_id];
+            let status = hvac_guard.get_zone_hvac_status(zone_id);
+            results.push((zone_id, step, temp, energy, status));
+        }
     }
 
-    if let Some(hvac) = system.as_ref() {
-        let mut hvac_guard = hvac.lock().unwrap();
-
-        // Get initial temperatures
-        let initial_temps = VectorField::from_scalar(20.0, hvac_guard.thermal_model.hvac.num_zones);
-
-        // Run simulation loop
-        let mut results = Vec::new();
-        for step in 0..steps {
-            let energy_input = hvac_guard.update_zone_controls(&initial_temps);
-
-            // Store results
-            for zone_id in 0..hvac_guard.thermal_model.hvac.num_zones {
-                let temp = initial_temps.as_slice()[zone_id];
-                let energy = energy_input.as_slice()[zone_id];
-                let status = hvac_guard.get_zone_hvac_status(zone_id);
-                results.push((zone_id, step, temp, energy, status));
-            }
+    // Output CSV if requested
+    if let Some(output_path) = output {
+        let mut csv_content = String::from("zone_id,step,temperature,energy,status\n");
+        for (zone_id, step, temp, energy, status) in results {
+            csv_content.push_str(&format!(
+                "{},{},{},{},{:?}\n",
+                zone_id, step, temp, energy, status
+            ));
         }
-
-        // Output CSV if requested
-        if let Some(output_path) = output {
-            let mut csv_content = String::from("zone_id,step,temperature,energy,status\n");
-            for (zone_id, step, temp, energy, status) in results {
-                csv_content.push_str(&format!(
-                    "{},{},{},{},{:?}\n",
-                    zone_id, step, temp, energy, status
-                ));
-            }
-            let output_display = output_path.display();
-            std::fs::write(&output_path, csv_content)
-                .map_err(|e| format!("Failed to write output file: {}", e))?;
-            println!("Output written to: {}", output_display);
-        }
-
-        println!("Simulation completed successfully with {} steps", steps);
-    } else {
-        println!("Simulation completed successfully");
+        let output_display = output_path.display();
+        std::fs::write(&output_path, csv_content)
+            .map_err(|e| format!("Failed to write output file: {}", e))?;
+        println!("Output written to: {}", output_display);
     }
+
+    println!("Simulation completed successfully with {} steps", steps);
 
     Ok(())
 }
@@ -419,6 +435,22 @@ fn handle_status() -> Result<(), String> {
 mod tests {
     use super::*;
 
+    /// Serializes tests that mutate the global HVAC_SYSTEM setpoints, since
+    /// Rust runs tests in the same binary on multiple threads.
+    static SETPOINT_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Reset the global HVAC system to a fresh default 2-zone system.
+    /// Callers must hold SETPOINT_TEST_LOCK.
+    fn reset_hvac_system_for_test() {
+        let thermal_model = Arc::new(ThermalModel::new(2));
+        let setpoints = ZoneSetpoints::new(2);
+        let mut system = HVAC_SYSTEM.lock().unwrap();
+        *system = Some(Arc::new(Mutex::new(ZoneControl::new(
+            thermal_model,
+            setpoints,
+        ))));
+    }
+
     #[test]
     fn test_set_heating_validation() {
         let result = handle_setpoints(SetpointAction::SetHeating {
@@ -451,6 +483,8 @@ mod tests {
 
     #[test]
     fn test_valid_setpoints() {
+        let _guard = SETPOINT_TEST_LOCK.lock().unwrap();
+
         let result = handle_setpoints(SetpointAction::SetHeating {
             zone_id: 0,
             temperature: 22.0,
@@ -468,6 +502,75 @@ mod tests {
             deadband: 2.0,
         });
         assert!(result.is_ok());
+    }
+
+    /// ZoneControl delegating methods must forward to the setpoints config
+    /// (issue #4055: the CLI could not reach them because `setpoints` is private).
+    #[test]
+    fn test_zone_control_setpoint_delegation() {
+        let thermal_model = Arc::new(ThermalModel::new(2));
+        let setpoints = ZoneSetpoints::new(2);
+        let mut control = ZoneControl::new(thermal_model, setpoints);
+
+        assert!(control.set_heating_setpoint(0, 23.5).is_ok());
+        assert_eq!(control.get_heating_setpoint(0), 23.5);
+        assert!(control.set_cooling_setpoint(1, 25.5).is_ok());
+        assert_eq!(control.get_cooling_setpoint(1), 25.5);
+        assert!(control.set_deadband(0, 1.5).is_ok());
+        assert_eq!(control.get_deadband(0), 1.5);
+
+        // Out-of-range zone ids propagate the validation error
+        assert!(control.set_heating_setpoint(99, 22.0).is_err());
+        assert!(control.set_cooling_setpoint(99, 26.0).is_err());
+        assert!(control.set_deadband(99, 2.0).is_err());
+
+        // Other zones keep their defaults
+        assert_eq!(control.get_heating_setpoint(1), 20.0);
+        assert_eq!(control.get_cooling_setpoint(0), 24.0);
+        assert_eq!(control.get_deadband(1), 2.0);
+    }
+
+    /// End-to-end: the CLI setpoint commands must actually write the values
+    /// into the HVAC system instead of printing success and no-op'ing.
+    #[test]
+    fn test_cli_setpoints_propagate_to_hvac_system() {
+        let _guard = SETPOINT_TEST_LOCK.lock().unwrap();
+        reset_hvac_system_for_test();
+
+        assert!(handle_setpoints(SetpointAction::SetHeating {
+            zone_id: 0,
+            temperature: 23.5,
+        })
+        .is_ok());
+        assert!(handle_setpoints(SetpointAction::SetCooling {
+            zone_id: 1,
+            temperature: 25.5,
+        })
+        .is_ok());
+        assert!(handle_setpoints(SetpointAction::SetDeadband {
+            zone_id: 0,
+            deadband: 1.5,
+        })
+        .is_ok());
+
+        let hvac = get_or_init_hvac_system();
+        let hvac_guard = hvac.lock().unwrap();
+        assert_eq!(hvac_guard.get_heating_setpoint(0), 23.5);
+        assert_eq!(hvac_guard.get_cooling_setpoint(1), 25.5);
+        assert_eq!(hvac_guard.get_deadband(0), 1.5);
+        // Untouched zones keep defaults
+        assert_eq!(hvac_guard.get_heating_setpoint(1), 20.0);
+        drop(hvac_guard);
+
+        // An invalid zone id fails loudly instead of claiming success
+        let result = handle_setpoints(SetpointAction::SetHeating {
+            zone_id: 99,
+            temperature: 22.0,
+        });
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("Failed to set heating setpoint"));
     }
 
     #[test]

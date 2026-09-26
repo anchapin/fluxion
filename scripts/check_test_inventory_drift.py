@@ -88,8 +88,10 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #
 #   * ``--no-verify`` (default in CI for speed) regenerates the
 #     inventory via the AST-regex pass. Counts are deterministic for a
-#     given source-tree state — the BASELINE_* seed below is the AST
-#     scan count, not the cargo runtime count.
+#     given *commit* — since Issue #4069 the scan enumerates strictly
+#     git-tracked ``*.rs`` files, so working-tree dirt (untracked
+#     scratch files) cannot shift the numbers. The BASELINE_* seed
+#     below is the AST scan count, not the cargo runtime count.
 #
 #   * ``--verify`` (recommended for accuracy) cross-checks the AST
 #     counts against ``cargo test --workspace --exclude fluxion-tauri
@@ -231,21 +233,20 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 # plus the two AST-counted cfg variants of the selector unit test; the
 # net cargo-verified delta is workspace_tests 7927 -> 8018 per
 # ``tests/test_inventory.json``).
-BASELINE_LIB_TESTS = 4252  # 2026-09-26: 4248 -> 4252 — PR for fluxion-#4054
-                        # after merging develop (which added lib tests in the
-                        # #4018/#4019/#4034 window and later). AST-scan count
-                        # on a FRESH CI checkout of the #4065 merge tree; a
-                        # dirty developer tree scans up to 4 lower (untracked
-                        # planning worktrees are excluded from git-tracked
-                        # scans) — the ratchet is a ceiling, not equality.
+BASELINE_LIB_TESTS = 4265  # 2026-09-26: 4263 -> 4265 — PR for fluxion-#4055
+                        # (+2 hvac setpoint CLI tests in src/cli/hvac_commands.rs:
+                        # ZoneControl delegation + CLI-to-system propagation);
+                        # stacked on the merged 4263 fluxion-#4086 bump.
+                        # Issue #4069: the AST scan now enumerates strictly
+                        # git-tracked .rs files, so a dirty developer tree
+                        # scans identically to a fresh CI checkout — the old
+                        # "dirty tree scans up to 4 lower" caveat is retired.
 BASELINE_LIB_IGNORED = 9
-BASELINE_WORKSPACE_TESTS = 8761  # 2026-09-26: 8747 -> 8761 — PR for fluxion-#4054
-                                 # continuous-massiveness unit tests in
-                                 # fluxion-core/src/construction.rs
-                                 # (massiveness_weight / h_ms_of_kappa /
-                                 # a_m_blend_weight endpoints + continuity +
-                                 # high-mass calc_h_tr_ms); stacked on the
-                                 # 8741 fluxion-#4065 lock-step bump.
+BASELINE_WORKSPACE_TESTS = 8774  # 2026-09-26: 8772 -> 8774 — PR for fluxion-#4055
+                                 # (+2 lib tests; no integration/binary/
+                                 # ignore-count changes). Stacked on the 8772
+                                 # fluxion-#4086 bump.
+
 # 2026-09-12 (Issue #3711): 121 -> 133 — see the history entry above for
 # the per-crate attribution and the AST-vs-cargo calibration analysis.
 # 2026-09-18 (Issue #3729): 133 -> 138 — absorbs the cargo-verified

@@ -199,6 +199,7 @@ fn kind_label(kind: &TopologyNodeKind) -> &'static str {
         TopologyNodeKind::ExteriorSurface => "exterior_surface",
         TopologyNodeKind::WallLayer => "wall_layer",
         TopologyNodeKind::InteriorSurface => "interior_surface",
+        TopologyNodeKind::Window => "window",
         TopologyNodeKind::InternalMass => "internal_mass",
         TopologyNodeKind::ZoneAir => "zone_air",
         TopologyNodeKind::InternalGain => "internal_gain",
