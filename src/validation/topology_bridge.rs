@@ -946,10 +946,8 @@ mod tests {
 
         // Check distribution edges: Window -> receiving_surface fractions should
         // sum to SHGC
-        let direct_dist_sum: f64 =
-            direct_distribution.iter().filter_map(|e| e.fraction).sum();
-        let diffuse_dist_sum: f64 =
-            diffuse_distribution.iter().filter_map(|e| e.fraction).sum();
+        let direct_dist_sum: f64 = direct_distribution.iter().filter_map(|e| e.fraction).sum();
+        let diffuse_dist_sum: f64 = diffuse_distribution.iter().filter_map(|e| e.fraction).sum();
 
         assert!(
             (direct_dist_sum - expected_shgc).abs() < 0.01,
@@ -1138,10 +1136,8 @@ mod tests {
             assert!((admit.fraction.unwrap() - spec.window_properties.shgc).abs() < 1e-12);
 
             // Verify distribution edges go from window to multiple receiving surfaces
-            let distribution: Vec<&&TopologyEdge> = solar
-                .iter()
-                .filter(|e| e.source_id == w.id)
-                .collect();
+            let distribution: Vec<&&TopologyEdge> =
+                solar.iter().filter(|e| e.source_id == w.id).collect();
             assert!(
                 distribution.len() >= 2,
                 "Should have >= 2 distribution edges (multiple interior surfaces)"
