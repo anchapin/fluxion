@@ -307,17 +307,23 @@ mod tests {
     // `not_yet_implemented("direct simulation")`) and by the structure of the
     // integration test suite:
 
+    // Issue #3990: the direct simulation path (`fluxion -w weather.epw
+    // model.flux -d out/`) now executes end-to-end. This guard pins the
+    // wiring so a future refactor cannot silently re-stub it: the lib's
+    // `src/cli/mod.rs` must NOT contain the old `not_yet_implemented` call
+    // for `run_direct_simulation`, and must contain the annual-loop marker.
+    // (The `fluxion run` workflow path stays stubbed by #2947; see the
+    // gating tests above.)
     #[test]
-    fn test_direct_simulation_gated_via_source() {
-        // Source-level guard: the lib's `src/cli/mod.rs` MUST contain the
-        // `not_yet_implemented` call for `run_direct_simulation`. Anyone
-        // removing the gating to implement direct simulation will need to
-        // update this test (and the eight integration tests in
-        // `tests/integration/test_cli.rs`).
+    fn test_direct_simulation_is_wired_not_stubbed() {
         let source = include_str!("../cli/mod.rs");
         assert!(
-            source.contains("Err(not_yet_implemented(\"direct simulation\"))"),
-            "run_direct_simulation must call not_yet_implemented to preserve #2947 loud-failure"
+            !source.contains("Err(not_yet_implemented(\"direct simulation\"))"),
+            "run_direct_simulation must not call not_yet_implemented (#3990 wired it)"
+        );
+        assert!(
+            source.contains("Running annual simulation (8760 hourly steps)"),
+            "run_direct_simulation must run the annual simulation loop"
         );
     }
 }
