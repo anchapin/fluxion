@@ -99,6 +99,17 @@ documented in `docs/KNOWN_ISSUES.md`. They are tracked by LIMIT-* entries.
 | `tests/validation/hvac_bestest/runner.rs` | `comparative_e200_cooling_vs_iea_task22_ensemble` | LIMIT-05, SOLAR-02 | GaugeSolver (#1465/#1462) ships; Case-600-class cooling closes | `pending` |
 | `tests/all_tests/ffd_cosimulation_validation.rs` | `test_peak_cooling_load_tolerance` | #2612, FFD-02 | Real coupled BES↔FFD solver ships; stub `BuoyancyDrivenFfdSolver` replaced | `pending` |
 
+### Issue #4078 — solar/zone-balance hermeticity triage cohort
+
+| Test File | Test Name | Blocking Issue(s) | Un-Ignore Criteria | Status |
+|-----------|-----------|------------------|-------------------|--------|
+| `tests/all_tests/solar_distribution_validation.rs` | `test_ashrae_140_solar_distribution_to_air_is_zero` | #4078, LIMIT-30 | GaugeSolver per-surface distribution rework (#1465/#1462) lands; `solar_distribution_to_air` reaches 0.0 without regressing Case 600/800 cooling | `pending` |
+| `tests/all_tests/solar_distribution_validation.rs` | `test_ashrae_140_solar_beam_to_mass_fraction` | #4078, LIMIT-30 | GaugeSolver per-surface distribution rework (#1465/#1462) lands; `solar_beam_to_mass_fraction` reaches 1.0 without collapsing high-mass cooling | `pending` |
+| `tests/all_tests/solar_distribution_validation.rs` | `test_solar_fractions_sum_to_one` | #4078, LIMIT-30 | GaugeSolver per-surface distribution rework (#1465/#1462) lands; distribution fractions sum to 1.0 | `pending` |
+| `tests/all_tests/issue_1860_5r1c_time_constant_aware.rs` | `test_case_650_solar_lag_improves_annual_cooling` | #4078 | Solar-lag coupling root-caused; Case 650 annual cooling reaches ≥10% above the 3.0 MWh pre-fix baseline | `pending` |
+| `tests/all_tests/solar_horizontal_isolation.rs` | `test_roof_surface_irradiance_matches_energyplus` | #4078 | Perez/E+ sky-diffuse discrepancy root-caused; annual error within the 1% tolerance (tolerance must NOT be weakened) | `pending` |
+| `tests/all_tests/zone_balance_analytical.rs` | `test_single_timestep_convergence` | #4078 | Single-step convergence contract defined for the multi-state model; strict monotonic decrease holds or the assertion is reformulated | `pending` |
+
 ### Case 920 / 950 / 960 blind-mode cohort (Issue #1323 / #1213 / #3071 / #1422)
 
 | Test File | Test Name | Blocking Issue(s) | Un-Ignore Criteria | Status |

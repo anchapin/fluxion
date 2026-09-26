@@ -140,10 +140,13 @@ mod tests {
         let low_h_tr_ms = low_model.conduction.h_tr_ms.as_ref()[0];
         let high_h_tr_ms = high_model.conduction.h_tr_ms.as_ref()[0];
 
-        // High-mass should have < h_tr_ms (more insulation = lower conductance)
+        // High-mass should have > h_tr_ms: per ISO 13790 H_tr_ms = h_ms * A_m
+        // and the effective mass area A_m grows with thermal mass. (Issue
+        // #4078: the old `<` assertion inverted this — h_tr_ms is mass-node
+        // coupling, not wall insulation.)
         assert!(
-            high_h_tr_ms < low_h_tr_ms,
-            "High-mass h_tr_ms ({:.2} W/K) should be < low-mass ({:.2} W/K)",
+            high_h_tr_ms > low_h_tr_ms,
+            "High-mass h_tr_ms ({:.2} W/K) should be > low-mass ({:.2} W/K)",
             high_h_tr_ms,
             low_h_tr_ms
         );
