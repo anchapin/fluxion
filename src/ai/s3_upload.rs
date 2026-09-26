@@ -227,6 +227,266 @@ impl AwsCredentials {
             session_token,
         })
     }
+
+    /// Resolve credentials via the AWS default provider chain (Issue #3938):
+    ///
+    /// 1. Explicit environment variables (`AWS_ACCESS_KEY_ID` /
+    ///    `AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN`).
+    /// 2. ECS task-role credentials (`AWS_CONTAINER_CREDENTIALS_*`).
+    /// 3. EC2 instance-profile credentials via the instance metadata service
+    ///    (IMDSv2).
+    ///
+    /// Each provider is tried in order; a provider that is unavailable or
+    /// errors falls through to the next one. Returns
+    /// [`S3UploadError::MissingCredential`] when no provider yields
+    /// credentials.
+    pub fn from_default_chain() -> Result<Self> {
+        Self::from_chain_with_env(
+            &|key| std::env::var(key).ok(),
+            &fetch_ecs_credentials,
+            &fetch_imds_credentials,
+        )
+    }
+
+    /// Chain resolution with injectable environment lookup and metadata
+    /// fetchers. This is the unit-testable seam for the provider-selection
+    /// logic: tests inject a fake env map and fake fetchers so no network or
+    /// process-environment mutation is needed.
+    fn from_chain_with_env(
+        get: &dyn Fn(&str) -> Option<String>,
+        fetch_ecs: &dyn Fn(&EcsCredentialsEndpoint) -> Result<AwsCredentials>,
+        fetch_imds: &dyn Fn() -> Result<AwsCredentials>,
+    ) -> Result<Self> {
+        // 1. Explicit environment credentials.
+        if let (Some(access_key_id), Some(secret_access_key)) =
+            (get("AWS_ACCESS_KEY_ID"), get("AWS_SECRET_ACCESS_KEY"))
+        {
+            return Ok(AwsCredentials {
+                access_key_id,
+                secret_access_key,
+                session_token: get("AWS_SESSION_TOKEN"),
+            });
+        }
+
+        // 2. ECS task role.
+        if let Some(endpoint) = ecs_endpoint_from_env(get) {
+            if let Ok(creds) = fetch_ecs(&endpoint) {
+                return Ok(creds);
+            }
+        }
+
+        // 3. EC2 instance metadata (IMDSv2).
+        if let Ok(creds) = fetch_imds() {
+            return Ok(creds);
+        }
+
+        Err(S3UploadError::MissingCredential(
+            "no AWS credentials found: set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, \
+             run with an ECS task role, or attach an EC2 instance profile"
+                .to_string(),
+        ))
+    }
+}
+
+// =============================================================================
+// Default credential chain providers (Issue #3938)
+// =============================================================================
+//
+// Mirrors the AWS SDK default credential provider chain (env → ECS task role →
+// EC2 instance metadata) without pulling in `aws-sdk-s3` — the published crate
+// must stay under the 10 MB cap, so the chain is implemented against the
+// already-present `reqwest` blocking client.
+//
+// Security notes:
+// - Instance metadata uses IMDSv2 (session-token handshake) exclusively.
+//   There is deliberately NO IMDSv1 fallback: IMDSv1 is vulnerable to SSRF
+//   credential exfiltration.
+// - Metadata lookups use short timeouts so hosts without a metadata service
+//   fail fast instead of hanging the upload path.
+// - Credential material is never logged; [`AwsCredentials`]' `Debug` impl
+//   redacts secrets (Issue #2503).
+
+/// Timeout for metadata-service credential lookups. Short on purpose: on
+/// hosts without a metadata service the connection fails fast.
+const METADATA_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// EC2 instance metadata service base URL (link-local; only reachable from
+/// the instance itself).
+const IMDS_BASE_URL: &str = "http://169.254.169.254";
+
+/// IMDSv2 session-token endpoint.
+const IMDS_TOKEN_PATH: &str = "/latest/api/token";
+
+/// IMDSv2 IAM role credential path prefix.
+const IMDS_ROLE_PATH: &str = "/latest/meta-data/iam/security-credentials/";
+
+/// IMDSv2 session-token TTL requested (6 hours, the maximum).
+const IMDS_TOKEN_TTL_SECS: &str = "21600";
+
+/// ECS task-role credentials endpoint host (link-local).
+const ECS_METADATA_HOST: &str = "169.254.170.2";
+
+/// ECS task-role credentials endpoint derived from the environment.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct EcsCredentialsEndpoint {
+    url: String,
+    /// Value for the `Authorization` header, when configured.
+    auth_token: Option<String>,
+}
+
+/// Derive the ECS task-role credentials endpoint from environment variables.
+///
+/// Returns `None` unless `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` or
+/// `AWS_CONTAINER_CREDENTIALS_FULL_URI` is set (i.e. we are running in ECS).
+fn ecs_endpoint_from_env(get: &dyn Fn(&str) -> Option<String>) -> Option<EcsCredentialsEndpoint> {
+    let auth_token = get("AWS_CONTAINER_AUTHORIZATION_TOKEN");
+    if let Some(relative_uri) = get("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") {
+        return Some(EcsCredentialsEndpoint {
+            url: format!("http://{ECS_METADATA_HOST}{relative_uri}"),
+            auth_token,
+        });
+    }
+    get("AWS_CONTAINER_CREDENTIALS_FULL_URI").map(|url| EcsCredentialsEndpoint { url, auth_token })
+}
+
+/// Credential document returned by the ECS task-role and EC2 IMDS endpoints.
+///
+/// Both services return the same JSON shape:
+/// `{"AccessKeyId": "...", "SecretAccessKey": "...", "Token": "...",
+/// "Expiration": "..."}`. Unknown fields are ignored.
+#[derive(Deserialize)]
+struct MetadataCredentialDocument {
+    #[serde(rename = "AccessKeyId", default)]
+    access_key_id: String,
+    #[serde(rename = "SecretAccessKey", default)]
+    secret_access_key: String,
+    #[serde(rename = "Token", default)]
+    token: Option<String>,
+}
+
+/// Parse a metadata-service credential document into [`AwsCredentials`].
+///
+/// Rejects documents with empty key material so a malformed response can
+/// never produce credentials that silently fail Sig V4 signing later.
+fn parse_metadata_credentials(body: &str) -> Result<AwsCredentials> {
+    let doc: MetadataCredentialDocument = serde_json::from_str(body).map_err(|e| {
+        S3UploadError::Signing(format!(
+            "malformed credential document from metadata service: {e}"
+        ))
+    })?;
+    if doc.access_key_id.is_empty() || doc.secret_access_key.is_empty() {
+        return Err(S3UploadError::Signing(
+            "metadata service returned empty credential material".to_string(),
+        ));
+    }
+    Ok(AwsCredentials {
+        access_key_id: doc.access_key_id,
+        secret_access_key: doc.secret_access_key,
+        session_token: doc.token.filter(|t| !t.is_empty()),
+    })
+}
+
+/// Build a short-timeout blocking client for metadata-service lookups.
+fn metadata_client() -> reqwest::blocking::Client {
+    reqwest::blocking::Client::builder()
+        .timeout(METADATA_TIMEOUT)
+        .build()
+        .unwrap_or_else(|_| reqwest::blocking::Client::new())
+}
+
+/// Fetch credentials from the ECS task-role endpoint.
+fn fetch_ecs_credentials(endpoint: &EcsCredentialsEndpoint) -> Result<AwsCredentials> {
+    let client = metadata_client();
+    let mut req = client.get(&endpoint.url);
+    if let Some(ref token) = endpoint.auth_token {
+        req = req.header("Authorization", token);
+    }
+    let resp = req
+        .send()
+        .map_err(|e| S3UploadError::Network(e.to_string()))?;
+    if !resp.status().is_success() {
+        return Err(S3UploadError::Http {
+            status: resp.status().as_u16(),
+            body: "ECS credentials endpoint returned non-success status".to_string(),
+        });
+    }
+    let body = resp
+        .text()
+        .map_err(|e| S3UploadError::Network(e.to_string()))?;
+    parse_metadata_credentials(&body)
+}
+
+/// Fetch an IMDSv2 session token.
+///
+/// IMDSv2-only by design — see the section-level security notes above.
+fn fetch_imds_v2_token(client: &reqwest::blocking::Client) -> Result<String> {
+    let resp = client
+        .put(format!("{IMDS_BASE_URL}{IMDS_TOKEN_PATH}"))
+        .header("X-aws-ec2-metadata-token-ttl-seconds", IMDS_TOKEN_TTL_SECS)
+        .send()
+        .map_err(|e| S3UploadError::Network(e.to_string()))?;
+    if !resp.status().is_success() {
+        return Err(S3UploadError::Http {
+            status: resp.status().as_u16(),
+            body: "IMDSv2 token request failed".to_string(),
+        });
+    }
+    let token = resp
+        .text()
+        .map_err(|e| S3UploadError::Network(e.to_string()))?;
+    if token.trim().is_empty() {
+        return Err(S3UploadError::Signing(
+            "IMDSv2 returned an empty session token".to_string(),
+        ));
+    }
+    Ok(token)
+}
+
+/// Fetch credentials from the EC2 instance metadata service (IMDSv2).
+///
+/// Returns an error when no IAM role is attached to the instance (or when not
+/// running on EC2 at all); the caller treats this as "try the next provider".
+fn fetch_imds_credentials() -> Result<AwsCredentials> {
+    let client = metadata_client();
+    let token = fetch_imds_v2_token(&client)?;
+
+    // List attached IAM roles; the first one wins (instances normally have one).
+    let role_resp = client
+        .get(format!("{IMDS_BASE_URL}{IMDS_ROLE_PATH}"))
+        .header("X-aws-ec2-metadata-token", &token)
+        .send()
+        .map_err(|e| S3UploadError::Network(e.to_string()))?;
+    if !role_resp.status().is_success() {
+        return Err(S3UploadError::Http {
+            status: role_resp.status().as_u16(),
+            body: "IMDS IAM role lookup failed".to_string(),
+        });
+    }
+    let role_name = role_resp
+        .text()
+        .map_err(|e| S3UploadError::Network(e.to_string()))?;
+    let role_name = role_name.trim();
+    if role_name.is_empty() {
+        return Err(S3UploadError::MissingCredential(
+            "no IAM role attached to this EC2 instance".to_string(),
+        ));
+    }
+
+    let cred_resp = client
+        .get(format!("{IMDS_BASE_URL}{IMDS_ROLE_PATH}{role_name}"))
+        .header("X-aws-ec2-metadata-token", &token)
+        .send()
+        .map_err(|e| S3UploadError::Network(e.to_string()))?;
+    if !cred_resp.status().is_success() {
+        return Err(S3UploadError::Http {
+            status: cred_resp.status().as_u16(),
+            body: "IMDS IAM credential lookup failed".to_string(),
+        });
+    }
+    let body = cred_resp
+        .text()
+        .map_err(|e| S3UploadError::Network(e.to_string()))?;
+    parse_metadata_credentials(&body)
 }
 
 impl fmt::Debug for AwsCredentials {
@@ -912,7 +1172,9 @@ pub struct S3UploadConfig {
 }
 
 impl S3UploadConfig {
-    /// Create a config from environment-loaded credentials.
+    /// Create a config with credentials resolved via the AWS default provider
+    /// chain (Issue #3938): explicit env vars → ECS task role → EC2 instance
+    /// profile (IMDSv2). See [`AwsCredentials::from_default_chain`].
     pub fn from_env(
         bucket: impl Into<String>,
         key_prefix: impl Into<String>,
@@ -922,7 +1184,7 @@ impl S3UploadConfig {
             bucket: bucket.into(),
             key_prefix: key_prefix.into(),
             region: region.into(),
-            credentials: AwsCredentials::from_env()?,
+            credentials: AwsCredentials::from_default_chain()?,
             part_size: DEFAULT_PART_SIZE,
             multipart_threshold: DEFAULT_MULTIPART_THRESHOLD,
             state_dir: None,
@@ -1638,5 +1900,150 @@ mod tests {
     fn multipart_state_filename_flattens_slashes() {
         let name = MultipartUploadState::state_filename("a/b/c.ftds");
         assert_eq!(name, "a__b__c.ftds.uploadstate.json");
+    }
+
+    // ---- Default credential chain (Issue #3938) ----
+
+    /// Fake environment lookup backed by a slice of (key, value) pairs, so
+    /// chain-selection tests need no process-environment mutation.
+    fn fake_env<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+        move |key| {
+            pairs
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, v)| v.to_string())
+        }
+    }
+
+    fn panic_ecs(_: &EcsCredentialsEndpoint) -> Result<AwsCredentials> {
+        panic!("ECS fetcher must not be called")
+    }
+
+    fn panic_imds() -> Result<AwsCredentials> {
+        panic!("IMDS fetcher must not be called")
+    }
+
+    fn fake_ecs_creds() -> AwsCredentials {
+        AwsCredentials {
+            access_key_id: "ECSKEY".to_string(),
+            secret_access_key: "ecssecret".to_string(),
+            session_token: Some("ecstoken".to_string()),
+        }
+    }
+
+    fn fake_imds_creds() -> AwsCredentials {
+        AwsCredentials {
+            access_key_id: "IMDSKEY".to_string(),
+            secret_access_key: "imdssecret".to_string(),
+            session_token: Some("imdstoken".to_string()),
+        }
+    }
+
+    #[test]
+    fn chain_prefers_explicit_env_over_providers() {
+        let get = fake_env(&[
+            ("AWS_ACCESS_KEY_ID", "ENVKEY"),
+            ("AWS_SECRET_ACCESS_KEY", "envsecret"),
+            ("AWS_SESSION_TOKEN", "envtoken"),
+            (
+                "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+                "/v2/credentials/abc",
+            ),
+        ]);
+        let creds = AwsCredentials::from_chain_with_env(&get, &panic_ecs, &panic_imds).unwrap();
+        assert_eq!(creds.access_key_id, "ENVKEY");
+        assert_eq!(creds.secret_access_key, "envsecret");
+        assert_eq!(creds.session_token.as_deref(), Some("envtoken"));
+    }
+
+    #[test]
+    fn chain_falls_through_to_ecs_task_role() {
+        let get = fake_env(&[(
+            "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+            "/v2/credentials/abc",
+        )]);
+        let creds =
+            AwsCredentials::from_chain_with_env(&get, &|_| Ok(fake_ecs_creds()), &panic_imds)
+                .unwrap();
+        assert_eq!(creds.access_key_id, "ECSKEY");
+        assert_eq!(creds.session_token.as_deref(), Some("ecstoken"));
+    }
+
+    #[test]
+    fn chain_ecs_failure_falls_through_to_imds() {
+        let get = fake_env(&[(
+            "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+            "/v2/credentials/abc",
+        )]);
+        let creds = AwsCredentials::from_chain_with_env(
+            &get,
+            &|_| Err(S3UploadError::Network("boom".to_string())),
+            &|| Ok(fake_imds_creds()),
+        )
+        .unwrap();
+        assert_eq!(creds.access_key_id, "IMDSKEY");
+    }
+
+    #[test]
+    fn chain_all_providers_fail_returns_missing_credential() {
+        let get = fake_env(&[]);
+        let err = AwsCredentials::from_chain_with_env(
+            &get,
+            &|_| Err(S3UploadError::Network("boom".to_string())),
+            &|| Err(S3UploadError::Network("boom".to_string())),
+        )
+        .unwrap_err();
+        assert!(matches!(err, S3UploadError::MissingCredential(_)));
+    }
+
+    #[test]
+    fn ecs_endpoint_derives_from_relative_uri() {
+        let get = fake_env(&[
+            (
+                "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+                "/v2/credentials/abc123",
+            ),
+            ("AWS_CONTAINER_AUTHORIZATION_TOKEN", "authtoken"),
+        ]);
+        let ep = ecs_endpoint_from_env(&get).expect("endpoint");
+        assert_eq!(ep.url, "http://169.254.170.2/v2/credentials/abc123");
+        assert_eq!(ep.auth_token.as_deref(), Some("authtoken"));
+    }
+
+    #[test]
+    fn ecs_endpoint_derives_from_full_uri() {
+        let get = fake_env(&[(
+            "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+            "http://localhost:51679/v1/credentials",
+        )]);
+        let ep = ecs_endpoint_from_env(&get).expect("endpoint");
+        assert_eq!(ep.url, "http://localhost:51679/v1/credentials");
+        assert_eq!(ep.auth_token, None);
+    }
+
+    #[test]
+    fn ecs_endpoint_absent_without_env() {
+        let get = fake_env(&[]);
+        assert!(ecs_endpoint_from_env(&get).is_none());
+    }
+
+    #[test]
+    fn parse_metadata_credentials_valid_document() {
+        let body = r#"{"AccessKeyId":"IMDSKEY","SecretAccessKey":"imdssecret","Token":"imdstoken","Expiration":"2026-09-27T00:00:00Z","Code":"Success","Type":"AWS-HMAC"}"#;
+        let creds = parse_metadata_credentials(body).unwrap();
+        assert_eq!(creds.access_key_id, "IMDSKEY");
+        assert_eq!(creds.secret_access_key, "imdssecret");
+        assert_eq!(creds.session_token.as_deref(), Some("imdstoken"));
+    }
+
+    #[test]
+    fn parse_metadata_credentials_rejects_empty_key_material() {
+        let body = r#"{"AccessKeyId":"","SecretAccessKey":"x"}"#;
+        assert!(parse_metadata_credentials(body).is_err());
+    }
+
+    #[test]
+    fn parse_metadata_credentials_rejects_malformed_json() {
+        assert!(parse_metadata_credentials("not json").is_err());
     }
 }
