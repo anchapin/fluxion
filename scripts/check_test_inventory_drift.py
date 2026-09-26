@@ -88,8 +88,10 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #
 #   * ``--no-verify`` (default in CI for speed) regenerates the
 #     inventory via the AST-regex pass. Counts are deterministic for a
-#     given source-tree state — the BASELINE_* seed below is the AST
-#     scan count, not the cargo runtime count.
+#     given *commit* — since Issue #4069 the scan enumerates strictly
+#     git-tracked ``*.rs`` files, so working-tree dirt (untracked
+#     scratch files) cannot shift the numbers. The BASELINE_* seed
+#     below is the AST scan count, not the cargo runtime count.
 #
 #   * ``--verify`` (recommended for accuracy) cross-checks the AST
 #     counts against ``cargo test --workspace --exclude fluxion-tauri
@@ -235,11 +237,11 @@ BASELINE_LIB_TESTS = 4263  # 2026-09-26: 4262 -> 4263 — follow-up for fluxion-
                         # (+1 case_600_window_nodes_present_with_glazing_and_
                         # solar_paths test; PR #4085 merged without the
                         # ratchet bump); stacked on the 4262 fluxion-#3938
-                        # bump. AST-scan count on a FRESH CI checkout of the
-                        # #4085 merge tree; a dirty developer tree scans up
-                        # to 4 lower (untracked planning worktrees are
-                        # excluded from git-tracked scans) — the ratchet is
-                        # a ceiling, not equality.
+                        # bump. Issue #4069: the AST scan now enumerates
+                        # strictly git-tracked .rs files, so a dirty
+                        # developer tree scans identically to a fresh CI
+                        # checkout — the old "dirty tree scans up to 4
+                        # lower" caveat is retired.
 BASELINE_LIB_IGNORED = 9
 BASELINE_WORKSPACE_TESTS = 8772  # 2026-09-26: 8771 -> 8772 — follow-up for fluxion-#3972
                                  # (+1 lib test; no integration/binary/

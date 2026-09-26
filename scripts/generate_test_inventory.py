@@ -16,9 +16,13 @@ contributors see one consistent shape across the testing gates.
 
 Two modes:
 
-  * ``--default`` (default): pure AST-regex scan over ``**/*.rs``
-    files (fast, no compilation). Counts include unconditional
-    ``#[test]`` and ``#[ignore]`` attributes and ignore ``cfg_attr``-
+  * ``--default`` (default): pure AST-regex scan over the
+    **git-tracked** ``**/*.rs`` files (fast, no compilation). Issue
+    #4069: enumeration is strictly ``git ls-files '*.rs'`` (sorted),
+    so untracked scratch files (e.g. agent ``.planning/worktrees/``
+    copies) cannot shift the counts between checkouts of the same
+    commit. Falls back to the on-disk walk when git is unavailable.
+    Counts include unconditional ``#[test]`` and ``#[ignore]`` attributes and ignore ``cfg_attr``-
     gated variants (consistent with the quarantine registry's ratchet
     pattern: a ``cfg_attr(..., ignore, ...)`` test that lacks an
     unconditional fallback is still reported, but tag the conditional
@@ -228,6 +232,112 @@ def _walk_workspace_members() -> list[Path]:
     return members
 
 
+def _tracked_rs_files() -> list[str] | None:
+    """Sorted POSIX paths of git-tracked ``*.rs`` files (Issue #4069).
+
+    The AST inventory scan must be a pure function of the tracked
+    tree, not the working directory: a dirty checkout (untracked
+    scratch ``.rs`` files, agent ``.planning/worktrees/`` copies, …)
+    must scan identically to a fresh CI checkout of the same commit.
+
+    Returns ``None`` when git is unavailable or ``REPO_ROOT`` is not a
+    git checkout, so the caller can fall back to the on-disk walk.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "ls-files", "-z", "--", "*.rs"],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    paths = [
+        p for p in proc.stdout.decode("utf-8", errors="replace").split("\0") if p
+    ]
+    return sorted(paths)
+
+
+def _crate_name_for(rel: Path, workspace_excludes: list[str]) -> str | None:
+    """Map a member's repo-relative path to its inventory crate name.
+
+    Returns ``None`` for excluded members. Mirrors the naming in
+    ``scan_source_inventory`` (root crate ``.`` → ``"fluxion"``).
+    """
+    rel_s = rel.as_posix()
+    if rel_s == ".":
+        return "fluxion"
+    if rel_s in workspace_excludes:
+        return None
+    return rel_s.replace("/", "_")
+
+
+def _scan_file_list(
+    members: list[Path], workspace_excludes: list[str]
+) -> list[tuple[str, Path, str, Path]]:
+    """Enumerate ``(crate_name, member, section, path)`` deterministically.
+
+    Issue #4069: when git is available the enumeration is strictly the
+    sorted ``git ls-files '*.rs'`` set, restricted to each member's
+    ``src/`` and ``tests/`` sections and to files that exist on disk
+    (a tracked-but-locally-deleted file is not compiled by cargo, so it
+    is not scanned). Without git, falls back to the legacy on-disk
+    ``rglob`` walk.
+    """
+    tracked = _tracked_rs_files()
+    if tracked is None:
+        return _scan_file_list_ondisk(members, workspace_excludes)
+    # Longest-prefix-first so a nested member wins over the root "."
+    # catch-all; the trailing "/" blocks "fluxion-core" from matching
+    # "fluxion-core2/...".
+    indexed: list[tuple[str, str, Path]] = []
+    for member in members:
+        rel = member.relative_to(REPO_ROOT)
+        crate_name = _crate_name_for(rel, workspace_excludes)
+        if crate_name is None:
+            continue
+        prefix = "" if rel.as_posix() == "." else rel.as_posix() + "/"
+        indexed.append((prefix, crate_name, member))
+    indexed.sort(key=lambda t: len(t[0]), reverse=True)
+    out: list[tuple[str, Path, str, Path]] = []
+    for posix_path in tracked:
+        for prefix, crate_name, member in indexed:
+            if not posix_path.startswith(prefix):
+                continue
+            rest = posix_path[len(prefix) :]
+            if "/" not in rest:
+                break  # tracked .rs outside src//tests/ (e.g. benches/)
+            section, _ = rest.split("/", 1)
+            if section not in ("src", "tests"):
+                break
+            path = REPO_ROOT / posix_path
+            if path.is_file():
+                out.append((crate_name, member, section, path))
+            break
+    return out
+
+
+def _scan_file_list_ondisk(
+    members: list[Path], workspace_excludes: list[str]
+) -> list[tuple[str, Path, str, Path]]:
+    """Legacy on-disk enumeration (pre-#4069 behavior, git-less fallback)."""
+    out: list[tuple[str, Path, str, Path]] = []
+    for member in members:
+        rel = member.relative_to(REPO_ROOT)
+        crate_name = _crate_name_for(rel, workspace_excludes)
+        if crate_name is None:
+            continue
+        for section in ("src", "tests"):
+            scan_dir = member / section
+            if scan_dir.exists():
+                for f in sorted(scan_dir.rglob("*.rs")):
+                    out.append((crate_name, member, section, f))
+    return out
+
+
 def _is_under(path: Path, root: Path) -> bool:
     try:
         path.relative_to(root)
@@ -268,6 +378,19 @@ def scan_source_inventory(workspace_excludes: list[str]) -> dict:
     # src/ + tests/ both contribute to the inventory.
     members = [REPO_ROOT] + list(members)
 
+    # Issue #4069: enumerate strictly the sorted ``git ls-files
+    # '*.rs'`` set (tracked files only), grouped per member/section.
+    # The per-file counting below is unchanged from the on-disk walk.
+    scan_files = _scan_file_list(members, workspace_excludes)
+    src_files: dict[tuple[str, Path], list[Path]] = defaultdict(list)
+    test_files: dict[tuple[str, Path], list[Path]] = defaultdict(list)
+    for crate_name, member, section, path in scan_files:
+        key = (crate_name, member)
+        if section == "src":
+            src_files[key].append(path)
+        else:
+            test_files[key].append(path)
+
     by_crate: dict[str, dict[str, int]] = defaultdict(
         lambda: {"test_binaries": 0, "lib_tests": 0, "lib_ignored": 0}
     )
@@ -279,19 +402,16 @@ def scan_source_inventory(workspace_excludes: list[str]) -> dict:
 
     for member in members:
         rel = member.relative_to(REPO_ROOT)
-        if str(rel) == ".":
-            crate_name = "fluxion"
-        elif str(rel) in workspace_excludes:
+        crate_name = _crate_name_for(rel, workspace_excludes)
+        if crate_name is None:
             continue
-        else:
-            crate_name = rel.as_posix().replace("/", "_")
 
         # lib / inline-`#[cfg(test)]` tests under src/
         src_dir = member / "src"
         if src_dir.exists():
             lib_tests = 0
             lib_ignored = 0
-            for f in sorted(src_dir.rglob("*.rs")):
+            for f in src_files.get((crate_name, member), []):
                 text = f.read_text(encoding="utf-8")
                 lines = text.split("\n")
                 t, _ct, i, _ci = _scan_attributes(text, lines)
@@ -312,7 +432,7 @@ def scan_source_inventory(workspace_excludes: list[str]) -> dict:
                 hand_wired_paths = set(
                     _parse_test_blocks(cargo_toml.read_text(encoding="utf-8"))
                 )
-            for f in sorted(tests_dir.rglob("*.rs")):
+            for f in test_files.get((crate_name, member), []):
                 text = f.read_text(encoding="utf-8")
                 lines = text.split("\n")
                 t, _ct, i, _ci = _scan_attributes(text, lines)
