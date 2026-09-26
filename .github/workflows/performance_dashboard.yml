@@ -67,7 +67,7 @@ permissions:
 jobs:
   precheck:
     name: Phase-gate precheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       should_run: ${{ steps.final.outputs.should_run }}
     steps:
@@ -97,7 +97,7 @@ jobs:
     name: Bench (default features)
     needs: precheck
     if: needs.precheck.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
 
     steps:
@@ -224,7 +224,7 @@ jobs:
     # `needs: bench-default` / `if: push-to-main`) — duplicate mapping
     # keys fail GitHub's workflow parser ("workflow file issue").
     needs: [precheck, bench-default]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: needs.precheck.outputs.should_run == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     timeout-minutes: 25 # same observed 9-15 min spread as bench-default (see above)
 
@@ -337,7 +337,7 @@ jobs:
   # =========================================================================
   bench-all-features:
     name: Bench (all features)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     timeout-minutes: 60
 
@@ -488,7 +488,7 @@ jobs:
   # =========================================================================
   regression-check:
     name: Regression Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: bench-default
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
@@ -675,8 +675,8 @@ jobs:
   # measures — multi-zone / cross-validation stay with the heavy sweep).
   # The job FAILS if throughput < 150 OR latency > 10.
   #
-  # Runner: `ubuntu-latest` (NOT `vars.FLUXION_LINUX_RUNNER`) because the
-  # 150 cfg/s floor was calibrated on GitHub-hosted ubuntu-latest (see the
+  # Runner: `ubuntu-24.04` (NOT `vars.FLUXION_LINUX_RUNNER`) because the
+  # 150 cfg/s floor was calibrated on GitHub-hosted ubuntu-24.04 (see the
   # comment at `release_gates.yaml` → `benchmark.throughput`). A self-hosted
   # runner would measure a different absolute throughput and make the floor
   # incomparable. `bench-default` / `regression-check` use the same runner
@@ -684,7 +684,7 @@ jobs:
   # =========================================================================
   absolute-perf-gate:
     name: "Absolute Perf Gate (Issue #2693)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     # NOTE: intentionally no `needs: bench-default` — this job builds its own
     # release test binary and does not consume any bench-default artifact, so
@@ -821,7 +821,7 @@ jobs:
           echo "- latency ≤ 10 ms/config" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Noise suppression:** median of 3 \`performance_regression_test\` runs (population = 100, release build, default features)." >> $GITHUB_STEP_SUMMARY
-          echo "**Runner:** \`ubuntu-latest\` (the 150 cfg/s floor was calibrated here; self-hosted runners measure a different absolute throughput)." >> $GITHUB_STEP_SUMMARY
+          echo "**Runner:** \`ubuntu-24.04\` (the 150 cfg/s floor was calibrated here; self-hosted runners measure a different absolute throughput)." >> $GITHUB_STEP_SUMMARY
           if [ -f gate_status.json ]; then
             echo '```json' >> $GITHUB_STEP_SUMMARY
             cat gate_status.json >> $GITHUB_STEP_SUMMARY
@@ -861,15 +861,15 @@ jobs:
   # multi_zone_throughput`. The job FAILS if throughput < 10 cfg/s on the
   # 10-zone pop_1000 workload.
   #
-  # Runner: `ubuntu-latest` (NOT `vars.FLUXION_LINUX_RUNNER`) — parity
+  # Runner: `ubuntu-24.04` (NOT `vars.FLUXION_LINUX_RUNNER`) — parity
   # with `absolute-perf-gate`, whose 150 cfg/s floor was calibrated on
-  # ubuntu-latest. The multi-zone floor (10 cfg/s) was likewise set on
-  # GitHub-hosted ubuntu-latest, so a self-hosted runner would measure a
+  # ubuntu-24.04. The multi-zone floor (10 cfg/s) was likewise set on
+  # GitHub-hosted ubuntu-24.04, so a self-hosted runner would measure a
   # different absolute throughput and make the floor incomparable.
   # =========================================================================
   multi-zone-perf-gate:
     name: "Multi-Zone Perf Gate (Issue #2772)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     # NOTE: intentionally no `needs: bench-default` — this job builds its
     # own release test binary and runs in parallel with `absolute-perf-gate`
@@ -917,7 +917,7 @@ jobs:
       # `|| true`; the throughput line is printed before any baseline check.
       #
       # Runtime budget: each pop_1000 / 10-zone run measures ~30-60s on
-      # ubuntu-latest; median-of-3 + ~3 min cold-cache build fits inside
+      # ubuntu-24.04; median-of-3 + ~3 min cold-cache build fits inside
       # the 20-min job timeout with margin.
       - name: Run multi-zone benchmark (median of 3)
         run: |
@@ -1013,7 +1013,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Why:** the #2693 Absolute Perf Gate measures the *single-zone* analytical path against the 150 cfg/s floor — a much easier target than the 10 cfg/s multi-zone floor. \`benches/multi_zone_throughput.rs:17\` documents only 2.8× margin at pop_10k; without this gate a per-zone-cost regression could merge and blow that margin silently." >> $GITHUB_STEP_SUMMARY
           echo "**Noise suppression:** median of 3 \`test_multi_zone_performance_regression\` runs (pop_1000, release build, default features)." >> $GITHUB_STEP_SUMMARY
-          echo "**Runner:** \`ubuntu-latest\` (the 10 cfg/s floor was calibrated here; self-hosted runners measure a different absolute throughput — parity with \`absolute-perf-gate\`)." >> $GITHUB_STEP_SUMMARY
+          echo "**Runner:** \`ubuntu-24.04\` (the 10 cfg/s floor was calibrated here; self-hosted runners measure a different absolute throughput — parity with \`absolute-perf-gate\`)." >> $GITHUB_STEP_SUMMARY
           if [ -f gate_status.json ]; then
             echo '```json' >> $GITHUB_STEP_SUMMARY
             cat gate_status.json >> $GITHUB_STEP_SUMMARY
@@ -1055,15 +1055,15 @@ jobs:
   #  hybrid_throughput,hybrid_multi_zone_throughput`. The job FAILS if
   # single-zone throughput < 80 cfg/s OR 10-zone throughput < 8 cfg/s.
   #
-  # Runner: `ubuntu-latest` (NOT `vars.FLUXION_LINUX_RUNNER`) — parity with
+  # Runner: `ubuntu-24.04` (NOT `vars.FLUXION_LINUX_RUNNER`) — parity with
   # `absolute-perf-gate` and `multi-zone-perf-gate`, whose floors were
-  # calibrated on GitHub-hosted ubuntu-latest. A self-hosted runner would
+  # calibrated on GitHub-hosted ubuntu-24.04. A self-hosted runner would
   # measure a different absolute throughput and make the floors
   # incomparable.
   # =========================================================================
   hybrid-perf-gate:
     name: "Hybrid Perf Gate (Issue #2922)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     # NOTE: intentionally no `needs: bench-default` — this job builds its
     # own release test binary and runs in parallel with `absolute-perf-gate`
@@ -1128,7 +1128,7 @@ jobs:
       # in the same invocation and both throughput lines stay parseable.
       #
       # Runtime budget: each pop_100 single-zone run measures ~1.5s and
-      # each pop_1000 / 10-zone run measures ~125s on ubuntu-latest.
+      # each pop_1000 / 10-zone run measures ~125s on ubuntu-24.04.
       # 2 tests × 3 runs × worst-case timing + ~3 min cold-cache build
       # fits inside the 25-min job timeout with margin.
       - name: Run hybrid benchmark (median of 3, both regimes, sequential)
@@ -1245,7 +1245,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Why:** the #2693 Absolute Perf Gate and #2772 Multi-Zone Perf Gate both measure the pure-physics path (\`ThermalModel<VectorField>\` / \`BatchOracle::evaluate_population\`); neither exercises HybridThermalModel with \`HybridRouting::default()\` — the production-recommended default routing. A regression adding per-timestep overhead in the surrogate-load branch fires only in Hybrid mode and would slip through both gates silently." >> $GITHUB_STEP_SUMMARY
           echo "**Noise suppression:** median of 3 \`hybrid_perf_regression\` runs (release build, default features)." >> $GITHUB_STEP_SUMMARY
-          echo "**Runner:** \`ubuntu-latest\` (parity with \`absolute-perf-gate\` / \`multi-zone-perf-gate\`; the 80 + 8 cfg/s floors were calibrated here)." >> $GITHUB_STEP_SUMMARY
+          echo "**Runner:** \`ubuntu-24.04\` (parity with \`absolute-perf-gate\` / \`multi-zone-perf-gate\`; the 80 + 8 cfg/s floors were calibrated here)." >> $GITHUB_STEP_SUMMARY
           if [ -f gate_status.json ]; then
             echo '```json' >> $GITHUB_STEP_SUMMARY
             cat gate_status.json >> $GITHUB_STEP_SUMMARY
@@ -1287,7 +1287,7 @@ jobs:
   # =========================================================================
   warm-cold-start-build:
     name: Warm Cold Start Build (cache prime for #2919 gate)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Issue #3668 — also run on `pull_request` so the `ort-cold-start-build`
     # cache namespace is primed BEFORE `multi-zone-cold-start-gate` runs.
     # Without the PR trigger, the gate pays the cold-cache cost of
@@ -1385,9 +1385,9 @@ jobs:
   # FAILS if cold/warm ratio > 1.5 OR cold-start regresses > 25% relative
   # to the stored baseline.
   #
-  # Runner: `ubuntu-latest` (parity with `absolute-perf-gate` /
+  # Runner: `ubuntu-24.04` (parity with `absolute-perf-gate` /
   # `multi-zone-perf-gate` / `hybrid-perf-gate`). The cold-start floors
-  # were calibrated on GitHub-hosted ubuntu-latest against the
+  # were calibrated on GitHub-hosted ubuntu-24.04 against the
   # `assets/dummy_surrogate.onnx` fixture.
   #
   # `--features ort` is REQUIRED — `tests/surrogate_cold_start_test.rs`
@@ -1397,7 +1397,7 @@ jobs:
   # =========================================================================
   multi-zone-cold-start-gate:
     name: "Multi-Zone Cold Start Gate (Issue #2919)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Issue #2919 gate timeout bumped 25 -> 45 min on 2026-09-10 (folded into
     # chore PR #3668): the nightly `warm-cold-start-build` cache-prime only
     # runs on `schedule` / `workflow_dispatch`, so PR builds pay the full
@@ -1504,7 +1504,7 @@ jobs:
       # Runtime budget: each cold/warm cycle builds a fresh
       # `SurrogateManager`, runs 1 cold `predict_loads_onnx` call, then
       # up to 3 batches x 9 warm calls (Issue #3685 bounded re-measure).
-      # On ubuntu-latest the dummy fixture is ~1 ms per call worst-case.
+      # On ubuntu-24.04 the dummy fixture is ~1 ms per call worst-case.
       # 1 test × 3 runs × worst-case timing + ~5 min cold-cache ort build
       # fits inside the 45-min job timeout with margin.
       - name: Run cold-start benchmark (median of 3, sequential)
@@ -1657,7 +1657,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Why:** the #2693 Absolute Perf Gate measures the warm steady-state path of \`BatchOracle::evaluate_population\`, which constructs its own models and never exercises the FIRST \`predict_loads_onnx\` call against a freshly constructed \`SurrogateManager\`. That first call pays the full cost of \`SessionPool::get_or_create_session\` (ort env init + model parse + session allocation), and at the API layer the first \`/v1/simulate\` request after a fresh process pays the same cost — easy > 500 ms on a 256 MiB shipped model. Before #2919 this regression was invisible to CI." >> $GITHUB_STEP_SUMMARY
           echo "**Noise suppression:** median of 3 cold/warm cycles (\`surrogate_cold_start_test\` x3, release build, \`--features ort\`). The cold/warm ratio denominator is the p95 of epsilon-guarded warm samples; when the warm path sits below the 0.01 ms measurement floor (expected on the trivial CI fixture) the ratio is reported as unmeasurable and the gate rests on the absolute bounds (Issue #3685)." >> $GITHUB_STEP_SUMMARY
-          echo "**Runner:** \`ubuntu-latest\` (parity with \`absolute-perf-gate\` / \`multi-zone-perf-gate\` / \`hybrid-perf-gate\`; the 100 ms + 1.5× ratio floors were calibrated here)." >> $GITHUB_STEP_SUMMARY
+          echo "**Runner:** \`ubuntu-24.04\` (parity with \`absolute-perf-gate\` / \`multi-zone-perf-gate\` / \`hybrid-perf-gate\`; the 100 ms + 1.5× ratio floors were calibrated here)." >> $GITHUB_STEP_SUMMARY
           if [ -f gate_status.json ]; then
             echo '```json' >> $GITHUB_STEP_SUMMARY
             cat gate_status.json >> $GITHUB_STEP_SUMMARY
@@ -1691,7 +1691,7 @@ jobs:
   # =========================================================================
   dhat-alloc-budget:
     name: dhat Alloc Budget (BatchOracle)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
 
@@ -1743,7 +1743,7 @@ jobs:
   # =========================================================================
   publish-dashboard:
     name: Publish Dashboard
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     needs: [bench-default, published-crate-bench]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

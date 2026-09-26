@@ -1,6 +1,6 @@
 # Ubuntu 26 Runner Migration Preflight — Issue #3960
 
-Preflight audit for the GitHub `ubuntu-latest` → Ubuntu 26.04 migration (rolling out Oct 19 – Nov 19, 2026, not a single cutover). Current inventory at `develop` 73ed427: 53 workflows, all 53 reference `ubuntu-latest` (216 refs), zero pin an explicit version. This report classifies the risk-sensitive lanes (β-soak, physics/ASHRAE, perf, TLS-fail-closed, apt-install surfaces), assesses the SHA-pinned setup actions, documents the act/local divergence, and proposes a pin-or-ride policy with the exact file list for the mechanical pin PR. The policy decision belongs to Alex — this report is the audit, not the sweep.
+Preflight audit for the GitHub `ubuntu-latest` → Ubuntu 26.04 migration (rolling out Oct 19 – Nov 19, 2026, not a single cutover). Inventory at `develop` 73ed427: 53 workflows, all 53 reference `ubuntu-latest` (216 refs), zero pin an explicit version. This report classifies the risk-sensitive lanes (β-soak, physics/ASHRAE, perf, TLS-fail-closed, apt-install surfaces), assesses the SHA-pinned setup actions, documents the act/local divergence, and records the adopted policy: **pin `ubuntu-24.04` everywhere** (decided 2026-09-26) — the mechanical sweep (51 files, 208 refs) is implemented in this branch alongside the audit.
 
 ## 1. Inventory (measured 2026-09-26 on `develop` @ `73ed427`)
 
@@ -57,23 +57,13 @@ All actions are SHA-pinned (verified via `check_workflow_pin.py`):
 - `.actrc` pins `catthehacker/ubuntu:act-22.04` — two LTS behind CI's 24.04 today, three behind after the flip. The pin is deliberate (Docker Hub rate limits, preinstalled rustup/cargo/node/python) and local `act` runs are shape-checking, not environment parity — but the fidelity gap is widening and should be re-acknowledged, not silently inherited.
 - `bc` gap (still present): `scripts/disk-space-gate.sh` (pre-push) and `scripts/annual_ashrae_revalidation.sh` shell out to `bc`, which is not guaranteed on the act image or minimal dev machines. Unrelated to the Ubuntu 26 flip (GH images ship `bc`), but it is the same class of undeclared-dependency risk the migration exposes.
 
-## 5. Recommendation: pin-or-ride
+## 5. Recommendation: pin everywhere (decided 2026-09-26)
 
-**Pin `ubuntu-24.04` explicitly on the risk-sensitive lanes in one mechanical workflow-only PR** (qualifies for the `required_checks_workflow_only` lane); **let everything else ride `ubuntu-latest` through the flip** (failures there are loud, fast, and cheap to fix).
+**Pin `ubuntu-24.04` explicitly in ALL workflows in one mechanical workflow-only PR** (qualifies for the `required_checks_workflow_only` lane) — 51 files, 208 refs. Alex chose pin-everywhere over pin-10-and-ride: the rollout is gradual (Oct 19 – Nov 19), so riding workflows would get non-deterministic OS assignment per job for a month, making "is this the OS or my change?" expensive to debug; the sed is trivially reviewable; and uniformity means December's unpin is a single sweep. The "early 26.04 signal" canary argument loses to a deliberate December validation window over accidental October breakage.
 
-### Exact file list for the pin PR (10 files)
-1. `.github/workflows/nightly-ashrae-140-gauge.yml` — β-soak (1 ref)
-2. `.github/workflows/ashrae_validation.yml` — Lane 2 ASHRAE (27)
-3. `.github/workflows/rust-tests.yml` — Lane 1 (15)
-4. `.github/workflows/ci-gates.yml` — phase-1 gate (12)
-5. `.github/workflows/performance_dashboard.yml` — perf (28)
-6. `.github/workflows/ashrae_140_strict_energy_gate.yml` — strict energy gate
-7. `.github/workflows/h_tr_em_regression_gate.yml` — h_tr_em gate
-8. `.github/workflows/ashrae_140_validation.yml` — ASHRAE suite
-9. `.github/workflows/fast_math_check.yml` — fast math (5)
-10. `.github/workflows/determinism_check.yml` — determinism (7)
+Deliberately NOT renamed: the self-hosted custom labels `ubuntu-latest-4-cores` / `ubuntu-latest-8-cores` (used by `ripr-preflight.yml`, `loom-stress.yml`, `mutation-nightly.yml`) — these match Alex's self-hosted Hetzner runner labels, not GitHub-hosted images, so renaming them in workflow files would break runner matching. Relabeling the self-hosted runners themselves is a separate ops task.
 
-Mechanical rule: `runs-on: ubuntu-latest` → `runs-on: ubuntu-24.04`; in the `vars.FLUXION_LINUX_RUNNER` expression form, replace only the `'ubuntu-latest'` fallback literal with `'ubuntu-24.04'` (guard shape unchanged).
+Mechanical rule: `ubuntu-latest` → `ubuntu-24.04` everywhere except the `-4-cores`/`-8-cores` self-hosted labels; in the `vars.FLUXION_LINUX_RUNNER` expression form, only the fallback literal changes (guard shape unchanged); matrix values, `fromJSON` matrices, artifact-name derivations, and descriptive comments/echoes updated in lock-step so nothing references a stale name.
 
 ### `check_runner_routing_policy.py` implications
 None blocking. The gate constrains the guard conjunction around `vars.FLUXION_LINUX_RUNNER` (invariants 1–3), not the fallback literal — swapping the literal preserves the trust boundary. Run the gate after the sweep regardless.
@@ -85,6 +75,6 @@ Set a re-validation deadline (~Dec 2026): run the pinned lanes once against `ubu
 
 > **LIMIT-21 UPDATE (flip day, Oct/Nov 2026):** GitHub's rolling `ubuntu-latest` → Ubuntu 26.04 migration (Oct 19 – Nov 19, 2026) moved the β-soak runner (`nightly-ashrae-140-gauge.yml`) to the new image on <date>. Per ADR-0017 the production flip authority sits with the #3986 teacher validation suite; the β-soak continues as the nightly authority on the `gauge-solver` prototype arm. Counter state at flip: <x>/30 consecutive green (0/30 as of 2026-09-26). Any streak progress after this date is measured on Ubuntu 26.04 and is not directly comparable to pre-flip runs.
 
-## 7. The decision Alex needs to make
+## 7. Decision (recorded 2026-09-26)
 
-**Pin-or-ride on the 10 files in §5, or ride everything?** Once decided, the mechanical PR is a single sed-shaped change plus the three workflow gates (`check_workflow_pin`, `check_workflow_dup_keys`, `check_concurrency_keys`) — no physics, no inventory, no ratchets. If pinning, also decide whether to fold in the `dtolnay/rust-toolchain` SHA unification (§3) or leave it for a follow-up.
+**Pin everywhere.** The mechanical sweep is implemented in this branch alongside the audit. Left for follow-up (not folded in): the `dtolnay/rust-toolchain` 3-SHA unification (§3) and the self-hosted runner relabeling (§5).

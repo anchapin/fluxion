@@ -54,7 +54,7 @@ permissions:
 
 jobs:
   check-drift:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Job name must match `release_gates.yaml::ci.required_checks` and
     # `ci.workflow_index` exactly (GitHub branch protection matches the
     # emitted `jobs.<id>.name` verbatim; the sync script
@@ -117,7 +117,7 @@ jobs:
   # decomposition; without this listener the script was orphaned and
   # any regression slipped through silently.
   module-size:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     name: "Module Size (Issue #2878)"
     permissions:
       contents: read

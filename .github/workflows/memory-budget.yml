@@ -60,7 +60,7 @@ permissions:
 jobs:
   memory-budget:
     name: "Memory Budget (Issue #2384)"
-    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Install system dependencies (Linux)

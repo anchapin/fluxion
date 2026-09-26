@@ -54,7 +54,7 @@ permissions:
 jobs:
   scripts-tests:
     name: "Scripts Test Suite (Issue #2817)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -107,10 +107,10 @@ jobs:
       # §7`` (Issue #3445): every PR-triggered job that mentions
       # ``vars.FLUXION_LINUX_RUNNER`` MUST use the guarded
       # ``github.event_name == 'push' && github.ref == 'refs/heads/main' &&
-      # vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest'`` form (the canonical
+      # vars.FLUXION_LINUX_RUNNER || 'ubuntu-24.04'`` form (the canonical
       # pattern already used by ``onnx-integrity.yml:92-98`` and
       # ``python-tests.yml:49-55``). The unguarded ``vars.FLUXION_LINUX_RUNNER
-      # || 'ubuntu-latest'`` form silently routes PR-controlled code onto a
+      # || 'ubuntu-24.04'`` form silently routes PR-controlled code onto a
       # persistent self-hosted runner, defeating the gate's own trust
       # boundary. Workflows that don't trigger on PR (e.g. ``memory-budget.yml``)
       # and jobs whose ``if:`` clause is strictly main-only are exempt — the

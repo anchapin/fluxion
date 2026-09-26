@@ -100,7 +100,7 @@ jobs:
   # the examples step until #3126 lands.
   workspace-check-listener:
     name: "Workspace Check (GH)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -126,7 +126,7 @@ jobs:
   # ----------------------------------------------------------------
   energy-conservation-listener:
     name: "Energy Conservation (GH)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -155,7 +155,7 @@ jobs:
   # ----------------------------------------------------------------
   fmt-listener:
     name: Rustfmt (GH)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -169,7 +169,7 @@ jobs:
   # ----------------------------------------------------------------
   clippy-listener:
     name: Clippy (GH)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       CARGO_BUILD_JOBS: 1
     timeout-minutes: 15
@@ -186,7 +186,7 @@ jobs:
   # ----------------------------------------------------------------
   ashrae-cases-cycle-listener:
     name: "Ashrae Cases Cycle Check (GH)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -201,7 +201,7 @@ jobs:
   # ----------------------------------------------------------------
   physics-sim-cycle-listener:
     name: "Physics-Sim-Cycle-Check (GH)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -220,7 +220,7 @@ jobs:
   # filter permits nightly pushes to trigger the workflow).
   cycle-trend-listener:
     name: "Cycle Downward Trend Guard (Issue #2768)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -242,7 +242,7 @@ jobs:
         github.event_name == 'push'
         && github.ref == 'refs/heads/main'
         && vars.FLUXION_LINUX_RUNNER
-        || 'ubuntu-latest'
+        || 'ubuntu-24.04'
       }}
     timeout-minutes: 45
 
@@ -563,7 +563,7 @@ jobs:
   # name. The remaining security jobs stay in `security.yml`.
   deny:
     name: Cargo Deny
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-env
@@ -626,8 +626,8 @@ jobs:
       matrix:
         os: |
           ${{ github.event_name == 'pull_request'
-              && fromJSON('["ubuntu-latest"]')
-              || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
+              && fromJSON('["ubuntu-24.04"]')
+              || fromJSON('["ubuntu-24.04", "macos-latest", "windows-latest"]') }}
         rust: [stable]
         feature_set:
           - {name: "no-default",       flags: "--no-default-features"}
@@ -796,7 +796,7 @@ jobs:
   #   <job>-gh        — CI on GH-hosted runner (runs if probe succeeds)
   #   <job>-hz        — CI on Hetzner overflow (runs if probe fails/cancelled)
   #
-  # The FLUXION_LINUX_RUNNER || ubuntu-latest jobs (test-full, build-release,
+  # The FLUXION_LINUX_RUNNER || ubuntu-24.04 jobs (test-full, build-release,
   # cuda-smoke, cuda-parity) are unaffected — they already route to the static
   # self-hosted pool as primary with GH as fallback.
   # ---------------------------------------------------------------------------

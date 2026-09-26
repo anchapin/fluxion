@@ -71,7 +71,7 @@ jobs:
         github.event_name == 'push'
         && github.ref == 'refs/heads/main'
         && vars.FLUXION_LINUX_RUNNER
-        || 'ubuntu-latest'
+        || 'ubuntu-24.04'
       }}
     timeout-minutes: 30
 

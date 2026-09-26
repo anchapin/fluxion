@@ -54,10 +54,10 @@ jobs:
       matrix:
         # Linux honours the repo's FLUXION_LINUX_RUNNER routing var on
         # main-merge pushes only — on pull_request events the expression
-        # MUST resolve to ubuntu-latest (docs/SECURITY.md §7; Issues
+        # MUST resolve to ubuntu-24.04 (docs/SECURITY.md §7; Issues
         # #3531/#3718). Windows is always GitHub-hosted.
         os:
-          - ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+          - ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.FLUXION_LINUX_RUNNER || 'ubuntu-24.04' }}
           - windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

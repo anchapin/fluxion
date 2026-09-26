@@ -164,7 +164,7 @@ env:
 jobs:
   precheck:
     name: Phase-gate precheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       should_run: ${{ steps.final.outputs.should_run }}
     steps:
@@ -211,7 +211,7 @@ jobs:
         github.event_name == 'push'
         && github.ref == 'refs/heads/main'
         && vars.FLUXION_LINUX_RUNNER
-        || 'ubuntu-latest'
+        || 'ubuntu-24.04'
       }}
     timeout-minutes: 30
 
@@ -354,7 +354,7 @@ jobs:
   strict-energy-gh-listener:
     name: "ASHRAE 140 Strict Energy Gate (Issue #1333)"
     needs: [strict-energy-gate]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     if: always()
 

@@ -41,7 +41,7 @@ permissions:
 
 jobs:
   ashrae-regression:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     # Issue #2526: scoped to the minimal set this job needs. issues: write is
     # required by the github-script step that opens a regression-tracking issue.
@@ -127,7 +127,7 @@ jobs:
           exit 1
 
   hvac-bestest:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:

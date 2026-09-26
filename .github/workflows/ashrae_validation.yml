@@ -20,7 +20,7 @@
 #
 #   Tier 1 (DEFAULT / happy path)
 #     Deterministic sub-jobs and benchmark jobs all run on standard
-#     GitHub-hosted runners (ubuntu-latest / windows-latest /
+#     GitHub-hosted runners (ubuntu-24.04 / windows-latest /
 #     macos-latest). Fast and always-available. This is the state the
 #     repository is in when `vars.FLUXION_LINUX_RUNNER` is unset.
 #
@@ -28,7 +28,7 @@
 #     When `vars.FLUXION_LINUX_RUNNER` is set (e.g., "fluxion-ci"),
 #     only the benchmark job (`validate`, the ASHRAE 140 blind
 #     validation) routes to self-hosted runners via
-#     `${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}`. The `||`
+#     `${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-24.04' }}`. The `||`
 #     clause makes the GitHub-hosted fallback automatic. Deterministic
 #     sub-jobs deliberately stay on GitHub-hosted because they are
 #     already fast and reproducible there.
@@ -37,7 +37,7 @@
 #     `queue-stall-detector` runs first and sleeps 10 minutes when
 #     self-hosted routing is active. If a primary self-hosted path
 #     stalls beyond the window, `validate-fallback` re-runs the
-#     ASHRAE 140 blind validation on `ubuntu-latest` so the gate does
+#     ASHRAE 140 blind validation on `ubuntu-24.04` so the gate does
 #     not block PRs. The fallback infrastructure is dormant when
 #     self-hosted is not configured, so the happy path wall-time is
 #     unchanged.
@@ -136,7 +136,7 @@ jobs:
   # listener events). Docs-only skip via docs-only-gate.
   precheck:
     name: Phase-gate precheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       should_run: ${{ steps.final.outputs.should_run }}
     steps:
@@ -195,7 +195,7 @@ jobs:
     name: "Queue-Stall Detector (10 min, Issue #1505)"
     needs: precheck
     if: needs.precheck.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 12
     outputs:
       enable_fallback: ${{ steps.detect.outputs.enable_fallback }}
@@ -211,7 +211,7 @@ jobs:
           if [ -n "${FLUXION_LINUX_RUNNER:-}" ]; then
             echo "Self-hosted routing active (FLUXION_LINUX_RUNNER=${FLUXION_LINUX_RUNNER})."
             echo "Waiting 10 minutes for self-hosted runners to claim primary benchmark jobs before"
-            echo "the validate-fallback job on ubuntu-latest is allowed to start."
+            echo "the validate-fallback job on ubuntu-24.04 is allowed to start."
             sleep 600
             echo "::notice::10-min queue-stall window elapsed. validate-fallback is now eligible to start if the primary benchmark job has not reported success."
           else
@@ -229,17 +229,17 @@ jobs:
     # is set. Issue #3445: persistent self-hosted runners MUST NOT
     # execute PR-controlled code — CI is the enforcement layer for the
     # ASHRAE 140 gate, so a runner compromise here poisons the gate's
-    # own evidence. Force ephemeral GH-hosted `ubuntu-latest` on any
+    # own evidence. Force ephemeral GH-hosted `ubuntu-24.04` on any
     # `pull_request` event; only main-merge pushes honour the routing
     # variable. Do NOT simplify back to
-    # `vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest'` — see SECURITY.md
+    # `vars.FLUXION_LINUX_RUNNER || 'ubuntu-24.04'` — see SECURITY.md
     # §"Self-hosted runner job execution policy".
     runs-on: >-
       ${{
         github.event_name == 'push'
         && github.ref == 'refs/heads/main'
         && vars.FLUXION_LINUX_RUNNER
-        || 'ubuntu-latest'
+        || 'ubuntu-24.04'
       }}
     timeout-minutes: 60
     # Issue #1351: the explicit `needs: compare-hashes` makes the
@@ -506,7 +506,7 @@ jobs:
   #     self-hosted runner never claimed it).
   #
   # In that case, `validate-fallback` re-runs the same ASHRAE 140
-  # blind validation on a GitHub-hosted `ubuntu-latest` runner so the
+  # blind validation on a GitHub-hosted `ubuntu-24.04` runner so the
   # PR does not block on the gate for the entire queue-stall window.
   # When `vars.FLUXION_LINUX_RUNNER` is unset, the detector is a
   # no-op, primary `validate` runs on GitHub-hosted directly, and
@@ -527,7 +527,7 @@ jobs:
       needs.precheck.outputs.should_run == 'true' &&
       needs.queue-stall-detector.outputs.enable_fallback == 'true' &&
       (needs.validate.result == 'failure' || needs.validate.result == 'cancelled' || needs.validate.result == 'skipped')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - name: Checkout code
@@ -561,7 +561,7 @@ jobs:
       - name: Run ASHRAE 140 Validation Tests (fallback path)
         run: |
           set -euo pipefail
-          echo "::notice::Issue #1505 fallback: re-running ASHRAE 140 blind validation on GitHub-hosted ubuntu-latest after a 10-min self-hosted queue stall."
+          echo "::notice::Issue #1505 fallback: re-running ASHRAE 140 blind validation on GitHub-hosted ubuntu-24.04 after a 10-min self-hosted queue stall."
           echo "Primary validate result was: ${{ needs.validate.result }}"
           cargo test --test all_tests ashrae_140_validation:: --release -- --nocapture 2>&1 | tee validation_fallback_output.txt
 
@@ -574,7 +574,7 @@ jobs:
     name: Weather Isolation
     needs: precheck
     if: needs.precheck.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Issue #4018: in-workflow determinism-check/compare-hashes removed;
     # determinism signal now comes from the standalone
     # Cross-Platform Determinism CI workflow via the
@@ -612,7 +612,7 @@ jobs:
     name: Solar Isolation
     needs: precheck
     if: needs.precheck.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Issue #4018: in-workflow determinism-check/compare-hashes removed;
     # determinism signal now comes from the standalone
     # Cross-Platform Determinism CI workflow via the
@@ -650,7 +650,7 @@ jobs:
     name: Conduction Isolation
     needs: precheck
     if: needs.precheck.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Issue #4018: in-workflow determinism-check/compare-hashes removed;
     # determinism signal now comes from the standalone
     # Cross-Platform Determinism CI workflow via the
@@ -688,7 +688,7 @@ jobs:
     name: Ventilation Isolation
     needs: precheck
     if: needs.precheck.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Issue #4018: in-workflow determinism-check/compare-hashes removed;
     # determinism signal now comes from the standalone
     # Cross-Platform Determinism CI workflow via the
@@ -726,7 +726,7 @@ jobs:
     name: Zone Balance Isolation
     needs: precheck
     if: needs.precheck.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Issue #4018: in-workflow determinism-check/compare-hashes removed;
     # determinism signal now comes from the standalone
     # Cross-Platform Determinism CI workflow via the
@@ -811,17 +811,17 @@ jobs:
     # ±1% ASHRAE 140 drift gate — letting PR code touch a persistent
     # runner would let it poison the sccache / cargo / model caches
     # and silently alter the very evidence the gate is meant to
-    # validate. Force ephemeral GH-hosted `ubuntu-latest` on any
+    # validate. Force ephemeral GH-hosted `ubuntu-24.04` on any
     # `pull_request` event; only main-merge pushes honour the routing
     # variable. Do NOT simplify this back to
-    # `vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest'` — see SECURITY.md
+    # `vars.FLUXION_LINUX_RUNNER || 'ubuntu-24.04'` — see SECURITY.md
     # §"Self-hosted runner job execution policy".
     runs-on: >-
       ${{
         github.event_name == 'push'
         && github.ref == 'refs/heads/main'
         && vars.FLUXION_LINUX_RUNNER
-        || 'ubuntu-latest'
+        || 'ubuntu-24.04'
       }}
     # Issue #4018: in-workflow determinism-check/compare-hashes removed;
     # determinism signal now comes from the standalone
@@ -1012,7 +1012,7 @@ jobs:
   surrogate-ashrae-mae-gate-listener:
     name: "Surrogate ASHRAE 140 MAE Gate (Issue #2924)"
     needs: [surrogate-ashrae-mae-gate]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     if: always()
 
@@ -1036,7 +1036,7 @@ jobs:
     name: Quantum Python Verification
     needs: precheck
     if: needs.precheck.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Issue #4018: in-workflow determinism-check/compare-hashes removed;
     # determinism signal now comes from the standalone
     # Cross-Platform Determinism CI workflow via the
@@ -1074,7 +1074,7 @@ jobs:
     name: Gauge Python Diagnostic
     needs: precheck
     if: needs.precheck.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Issue #4018: in-workflow determinism-check/compare-hashes removed;
     # determinism signal now comes from the standalone
     # Cross-Platform Determinism CI workflow via the
@@ -1125,7 +1125,7 @@ jobs:
   # =====================================================================
   fluxion-determinism-gate:
     name: "Fluxion Determinism Gate (Issue #1351)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Issue #4018: accept both direct-PR determinism runs (event ==
     # 'pull_request', pre-rollout) and CI-Gates-triggered runs (event ==
     # 'workflow_run'). The two-PR rollout is complete as of the
@@ -1206,7 +1206,7 @@ jobs:
               # NOT blocking. `skipped` typically means the upstream
               # benchmark sub-jobs never claimed a self-hosted runner
               # within the 10-min queue-stall window — the
-              # `validate-fallback` job on `ubuntu-latest` provides
+              # `validate-fallback` job on `ubuntu-24.04` provides
               # the safety signal in that case (it would have failed
               # the gate via its own conclusion). Falling through
               # here with `exit 0` therefore matches the issue's
@@ -1239,7 +1239,7 @@ jobs:
   # =====================================================================
   fluxion-performance-gate:
     name: "Fluxion Performance Gate (Issue #1618)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.name == 'Performance Dashboard'
     permissions:
       contents: read

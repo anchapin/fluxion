@@ -78,7 +78,7 @@ env:
 jobs:
   benchmark-harness:
     name: ASHRAE 140 Benchmark Harness
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     # Workflow-level `contents: read` + `issues: write` (declared above) is
     # exactly the set this job needs: checkout the repo, build the harness,
@@ -236,7 +236,7 @@ jobs:
   # above continues to see only `contents: read` regardless of trigger.
   update-baseline:
     name: Update committed baseline (manual, main only)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: benchmark-harness
     timeout-minutes: 15
     if: |

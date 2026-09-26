@@ -16,7 +16,7 @@ name: Nightly ASHRAE 140 Gauge β-Soak
 # status comment on the tracking issue. When the streak reaches 30, the
 # comment signals that the PR4 default-flip is unblocked.
 #
-# Standard `ubuntu-latest` runners are used deliberately (NOT the
+# Standard `ubuntu-24.04` runners are used deliberately (NOT the
 # 32 GB `ubuntu-latest-8-cores` label — unavailable on this plan; see the
 # permanently-queued mutation-testing job).
 
@@ -54,7 +54,7 @@ env:
 jobs:
   ashrae-140-gauge-soak:
     name: ADR-0007 criteria + soak streak
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

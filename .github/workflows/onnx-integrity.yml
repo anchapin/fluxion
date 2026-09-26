@@ -87,18 +87,18 @@ jobs:
   onnx-integrity:
     name: "ONNX Integrity Gate (Issue #2906)"
     # Issue #3445: persistent self-hosted runners MUST NOT execute
-    # PR-controlled code. Force ephemeral GH-hosted `ubuntu-latest` on
+    # PR-controlled code. Force ephemeral GH-hosted `ubuntu-24.04` on
     # any `pull_request` event (this workflow runs on PRs that touch the
     # surrogate model manifest, load path, or this file). Only main-merge
     # pushes honour `vars.FLUXION_LINUX_RUNNER`. Do NOT simplify this
-    # back to `vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest'` — see
+    # back to `vars.FLUXION_LINUX_RUNNER || 'ubuntu-24.04'` — see
     # SECURITY.md §"Self-hosted runner job execution policy".
     runs-on: >-
       ${{
         github.event_name == 'push'
         && github.ref == 'refs/heads/main'
         && vars.FLUXION_LINUX_RUNNER
-        || 'ubuntu-latest'
+        || 'ubuntu-24.04'
       }}
     timeout-minutes: 15
 
@@ -108,7 +108,7 @@ jobs:
       - name: Install system dependencies for `ort` feature build
         # `cargo test --features ort` (run below) pulls in `ort`'s transitive
         # dependency `yeslogic-fontconfig-sys`, which compiles `fontconfig`'s
-        # C headers via `pkg-config`. The default `ubuntu-latest` runner image
+        # C headers via `pkg-config`. The default `ubuntu-24.04` runner image
         # does NOT ship `libfontconfig1-dev`, so install it before building.
         # Matches the apt-get install line in `ci.yml` and `cross-validation.yml`.
         run: |

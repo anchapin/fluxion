@@ -65,7 +65,7 @@ jobs:
   # cheap.
   known-issues-stale-listener:
     name: "Known Issues Stale Check (GH)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -92,7 +92,7 @@ jobs:
   # security gate.
   tauri-csp-listener:
     name: "Tauri CSP Gate (Issue #3727)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -107,7 +107,7 @@ jobs:
   # ----------------------------------------------------------------
   fluxion-grid-integration-listener:
     name: "fluxion-grid Integration Tests (GH)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

@@ -43,7 +43,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-24.04, windows-latest, macos-latest]
         python-version: ['3.10', '3.11', '3.12', '3.13']
         exclude:
           # Exclude macOS on PRs (not in PR matrix)
@@ -56,9 +56,9 @@ jobs:
           - os: macos-latest
             python-version: '3.13'
           # Exclude Python 3.11 and 3.13 on ubuntu/windows on PRs
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             python-version: '3.11'
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             python-version: '3.13'
           - os: windows-latest
             python-version: '3.11'
@@ -121,7 +121,7 @@ jobs:
   # ---------------------------------------------------------------------------
   pytest-matrix:
     name: PyO3 pytest matrix selector
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
@@ -130,10 +130,10 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             # Fast signal: ubuntu + windows × {3.10, 3.13}  (4 legs)
-            matrix='[{"os":"ubuntu-latest","python-version":"3.10"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"windows-latest","python-version":"3.10"},{"os":"windows-latest","python-version":"3.13"}]'
+            matrix='[{"os":"ubuntu-24.04","python-version":"3.10"},{"os":"ubuntu-24.04","python-version":"3.13"},{"os":"windows-latest","python-version":"3.10"},{"os":"windows-latest","python-version":"3.13"}]'
           else
             # Full matrix: ubuntu + windows + macos × {3.10, 3.11, 3.12, 3.13}  (12 legs)
-            matrix='[{"os":"ubuntu-latest","python-version":"3.10"},{"os":"ubuntu-latest","python-version":"3.11"},{"os":"ubuntu-latest","python-version":"3.12"},{"os":"ubuntu-latest","python-version":"3.13"},{"os":"windows-latest","python-version":"3.10"},{"os":"windows-latest","python-version":"3.11"},{"os":"windows-latest","python-version":"3.12"},{"os":"windows-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.10"},{"os":"macos-latest","python-version":"3.11"},{"os":"macos-latest","python-version":"3.12"},{"os":"macos-latest","python-version":"3.13"}]'
+            matrix='[{"os":"ubuntu-24.04","python-version":"3.10"},{"os":"ubuntu-24.04","python-version":"3.11"},{"os":"ubuntu-24.04","python-version":"3.12"},{"os":"ubuntu-24.04","python-version":"3.13"},{"os":"windows-latest","python-version":"3.10"},{"os":"windows-latest","python-version":"3.11"},{"os":"windows-latest","python-version":"3.12"},{"os":"windows-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.10"},{"os":"macos-latest","python-version":"3.11"},{"os":"macos-latest","python-version":"3.12"},{"os":"macos-latest","python-version":"3.13"}]'
           fi
           # Single-line JSON so the GITHUB_OUTPUT parse stays simple.
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
@@ -263,7 +263,7 @@ jobs:
         # Issue #2852: opt out of the perf-benchmark acceptance test
         # (`test_zero_copy_10k_benchmark_median_improvement`) in CI — the
         # ≤700 ms ceiling is calibrated for a tuned local release+rayon
-        # workstation, not the stock `ubuntu-latest` runner (~80 s
+        # workstation, not the stock `ubuntu-24.04` runner (~80 s
         # observed). The test remains runnable locally by unsetting this
         # var or running `FLUXION_RUN_PERF_BENCHMARK=1 pytest ...`.
         env:

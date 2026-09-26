@@ -9,7 +9,7 @@
 # workflow is the WASM-side mirror of the same discipline.
 #
 # Two jobs:
-#   1. `wasm-build` (matrix: ubuntu-latest, macos-latest, windows-latest)
+#   1. `wasm-build` (matrix: ubuntu-24.04, macos-latest, windows-latest)
 #      — installs wasm-pack, builds fluxion-wasm via
 #        `wasm-pack build --release --target web`, asserts the `.wasm`
 #        size ≤ 10 MiB, computes a wasm-bindgen interface hash over the
@@ -113,7 +113,7 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - ubuntu-latest
+          - ubuntu-24.04
           - macos-latest
           - windows-latest
         # Per-OS `output_name` was previously used as a dynamic key into
@@ -127,7 +127,7 @@ jobs:
         # windows) without touching the steps block; the hash is now
         # exchanged via per-OS artifacts.
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             output_name: ubuntu_hash
           - os: macos-latest
             output_name: macos_hash
@@ -421,7 +421,7 @@ jobs:
   interface-stability:
     name: WASM Interface Stability (cross-platform)
     needs: wasm-build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: always() && needs.wasm-build.result == 'success'
 
     steps:
@@ -435,8 +435,8 @@ jobs:
         # an artifact, not the artifact name itself.
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
-          name: wasm-iface-hash-ubuntu-latest
-          path: artifacts/iface-hash/wasm-iface-hash-ubuntu-latest
+          name: wasm-iface-hash-ubuntu-24.04
+          path: artifacts/iface-hash/wasm-iface-hash-ubuntu-24.04
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
           name: wasm-iface-hash-macos-latest
@@ -456,7 +456,7 @@ jobs:
           # name per OS bucket by listing the directory the artifact was
           # extracted into. The matrix entries all converged on this path
           # because the upload step name uses `matrix.os` (stable), so the
-          # artifact name is `wasm-iface-hash-ubuntu-latest` / `-macos-latest`
+          # artifact name is `wasm-iface-hash-ubuntu-24.04` / `-macos-latest`
           # / `-windows-latest` and `merge-multiple: true` flattens them.
           #
           # We use a small Python helper rather than the per-OS dynamic
@@ -479,7 +479,7 @@ jobs:
             cat "${file}"
           }
 
-          HASH_UBUNTU="$(read_iface_hash ubuntu-latest)"
+          HASH_UBUNTU="$(read_iface_hash ubuntu-24.04)"
           HASH_MACOS="$(read_iface_hash macos-latest)"
           HASH_WINDOWS="$(read_iface_hash windows-latest)"
 
@@ -488,14 +488,14 @@ jobs:
             echo ""
             echo "| Platform | wasm-bindgen interface hash |"
             echo "| --- | --- |"
-            echo "| ubuntu-latest | \`${HASH_UBUNTU}\` |"
+            echo "| ubuntu-24.04 | \`${HASH_UBUNTU}\` |"
             echo "| macos-latest | \`${HASH_MACOS}\` |"
             echo "| windows-latest | \`${HASH_WINDOWS}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
 
           if [[ -z "${HASH_UBUNTU}" || -z "${HASH_MACOS}" || -z "${HASH_WINDOWS}" ]]; then
             echo "::error::One or more matrix jobs did not report an iface hash output."
-            echo "  ubuntu-latest:  '${HASH_UBUNTU}'"
+            echo "  ubuntu-24.04:  '${HASH_UBUNTU}'"
             echo "  macos-latest:   '${HASH_MACOS}'"
             echo "  windows-latest: '${HASH_WINDOWS}'"
             exit 1
@@ -503,7 +503,7 @@ jobs:
 
           if [[ "${HASH_UBUNTU}" != "${HASH_MACOS}" || "${HASH_MACOS}" != "${HASH_WINDOWS}" ]]; then
             echo "::error::WASM interface hashes differ across platforms — a platform-specific flag or non-deterministic build leaked into the JS surface."
-            echo "  ubuntu-latest:  ${HASH_UBUNTU}"
+            echo "  ubuntu-24.04:  ${HASH_UBUNTU}"
             echo "  macos-latest:   ${HASH_MACOS}"
             echo "  windows-latest: ${HASH_WINDOWS}"
             exit 1

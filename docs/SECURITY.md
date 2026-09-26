@@ -384,7 +384,7 @@ infrastructure**:
 
 | Trigger | Where it runs | Why |
 | --- | --- | --- |
-| `pull_request` (any source repo — fork or branch) | **GitHub-hosted, ephemeral VM.** `runs-on` resolves to `ubuntu-latest` even when `vars.FLUXION_LINUX_RUNNER` is set. | PR-controlled build scripts, `Cargo.lock`, `#[test]` code, and any in-tree `build.rs` must execute on a one-shot VM that is destroyed at the end of the run. |
+| `pull_request` (any source repo — fork or branch) | **GitHub-hosted, ephemeral VM.** `runs-on` resolves to `ubuntu-24.04` even when `vars.FLUXION_LINUX_RUNNER` is set. | PR-controlled build scripts, `Cargo.lock`, `#[test]` code, and any in-tree `build.rs` must execute on a one-shot VM that is destroyed at the end of the run. |
 | `push` to `refs/heads/main` (and `push` to `refs/heads/develop` for some workflows, see the workflow header) | **Self-hosted (`vars.FLUXION_LINUX_RUNNER`) preferred; GH-hosted fallback.** The code path that arrives here has cleared the branch-protection gate; the runner is therefore trusted to execute it. | Heavy CPU/memory-bound workloads (full workspace `cargo check`, ASHRAE 140 `validate`, surrogate MAE gate, `cuda-smoke`, etc.) where the GH-hosted free tier is too slow. |
 
 **Concretely, every workflow that mentions `vars.FLUXION_LINUX_RUNNER` MUST
@@ -396,11 +396,11 @@ runs-on: >-
     github.event_name == 'push'
     && github.ref == 'refs/heads/main'
     && vars.FLUXION_LINUX_RUNNER
-    || 'ubuntu-latest'
+    || 'ubuntu-24.04'
   }}
 ```
 
-Do **not** reduce this to `vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest'`;
+Do **not** reduce this to `vars.FLUXION_LINUX_RUNNER || 'ubuntu-24.04'`;
 the shorter form silently routes PR-controlled code onto a persistent
 self-hosted runner when the variable is set. The longer form forces the
 GH-hosted ephemeral path on every `pull_request` event regardless of
@@ -453,7 +453,7 @@ adds `runs-on: [self-hosted, fluxion-ci]` to a job that does take
 
 #### Why we accept this constraint
 
-GitHub-hosted `ubuntu-latest` is free for public repositories, so the
+GitHub-hosted `ubuntu-24.04` is free for public repositories, so the
 practical cost of forcing PRs onto the ephemeral path is wall-time, not
 money. Wall-time is bounded by `actions/checkout`, `sccache` cache hits,
 and the regression test matrix (~5 min for the PR-blocking test); the

@@ -40,7 +40,7 @@ permissions:
 # to self-hosted Hetzner runners for more parallelism at lower cost:
 #   gh variable set FLUXION_LINUX_RUNNER --body "fluxion-ci" \
 #     --repo anchapin/fluxion
-# When unset or empty, jobs fall back to GitHub-hosted ubuntu-latest (free).
+# When unset or empty, jobs fall back to GitHub-hosted ubuntu-24.04 (free).
 #
 # Hetzner overflow pool (issue #2133): When GH-hosted runners are saturated
 # (queued >5 min), jobs automatically fall back to the on-demand Hetzner
@@ -72,7 +72,7 @@ jobs:
 
   python-examples-gh-probe:
     name: "Python Bindings Probe"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
@@ -81,7 +81,7 @@ jobs:
   python-examples-gh:
     name: "Python Bindings & pytest (GH)"
     needs: python-examples-gh-probe
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -148,7 +148,7 @@ jobs:
 
   integration-tests-gh-probe:
     name: "Integration Tests Probe"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
@@ -157,7 +157,7 @@ jobs:
   integration-tests-gh:
     name: "Integration Tests (GH)"
     needs: integration-tests-gh-probe
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -266,7 +266,7 @@ jobs:
 
   ffi-feature-check:
     name: "FFI Feature Check (GH)"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: |
       github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
