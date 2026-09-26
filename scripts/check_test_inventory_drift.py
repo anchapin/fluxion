@@ -231,16 +231,19 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 # plus the two AST-counted cfg variants of the selector unit test; the
 # net cargo-verified delta is workspace_tests 7927 -> 8018 per
 # ``tests/test_inventory.json``).
-BASELINE_LIB_TESTS = 4248  # 2026-09-25: 4243 -> 4248 — PR for fluxion-#4065 lock-step
-                        # after merging develop (which added lib tests in the
-                        # #4018/#4019/#4034 window and later). AST-scan count
-                        # on a FRESH CI checkout of the #4065 merge tree; a
+BASELINE_LIB_TESTS = 4252  # 2026-09-26: 4248 -> 4252 — PR for fluxion-#4054
+                        # (+1 expand_diagnostic_range contents test); stacked
+                        # on the 4248 fluxion-#4065 lock-step bump. AST-scan
+                        # count on a FRESH CI checkout of the #4065 merge tree; a
                         # dirty developer tree scans up to 4 lower (untracked
                         # planning worktrees are excluded from git-tracked
                         # scans) — the ratchet is a ceiling, not equality.
 BASELINE_LIB_IGNORED = 9
-BASELINE_WORKSPACE_TESTS = 8747  # 2026-09-26: 8741 -> 8747 (+6 new
-                                 # continuous-massiveness unit tests in
+BASELINE_WORKSPACE_TESTS = 8761  # 2026-09-26: 8747 -> 8761 — PR for fluxion-#4054
+                                 # (+1 lib test; +13 net from develop commits
+                                 # #4073/#4079 merged after the 8747 bump).
+                                 # Stacked on the 8747 bump (+6 continuous-
+                                 # massiveness unit tests in
                                  # fluxion-core/src/construction.rs
                                  # (massiveness_weight / h_ms_of_kappa /
                                  # a_m_blend_weight endpoints + continuity +
