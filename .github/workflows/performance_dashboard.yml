@@ -219,12 +219,14 @@ jobs:
   # =========================================================================
   published-crate-bench:
     name: Published Crate Bench
-    needs: precheck
-    if: needs.precheck.outputs.should_run == 'true'
+    # Issue #4068: merged the duplicate `needs:`/`if:` keys (#4018 added
+    # `needs: precheck` + `if: needs.precheck...` above the pre-existing
+    # `needs: bench-default` / `if: push-to-main`) — duplicate mapping
+    # keys fail GitHub's workflow parser ("workflow file issue").
+    needs: [precheck, bench-default]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: needs.precheck.outputs.should_run == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     timeout-minutes: 25 # same observed 9-15 min spread as bench-default (see above)
-    needs: bench-default
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

@@ -1,0 +1,107 @@
+# PR Merge-Conflict Gate (Issue #4077, Symptom B)
+#
+# Platform behavior, documented: GitHub does NOT create `pull_request`
+# workflow runs while the PR has a merge conflict ("Workflows will not
+# run on `pull_request` activity if the pull request has a merge
+# conflict" — docs.github.com "Events that trigger workflows" and
+# "Troubleshooting workflows"). `pull_request` jobs run against the
+# merge ref `refs/pull/N/merge`, which GitHub cannot create for a
+# conflicting PR, so no run exists at all — no held run, no check, no
+# Actions-tab entry. Pushes, empty commits, and close/reopen change
+# nothing until the conflict resolves.
+#
+# Operational risk this closes: a conflicting PR shows an empty check
+# surface, which automation (and humans) can misread as green — a
+# `ci-wait` invocation against conflicting PR #4073 literally reported
+# "SUCCESS: All checks PASSED in 0m 1s" because the check set was empty.
+#
+# This workflow uses `pull_request_target` (which DOES fire for
+# conflicting PRs, per the same docs page) to emit an explicit check
+# run on the head SHA: failure "PR has merge conflicts — resolve to
+# run CI" while conflicting, success once mergeable. It never checks
+# out PR code and executes nothing from the PR branch; it only queries
+# the PR's mergeable state via the API and writes a check run.
+#
+# Design notes:
+# - `mergeable` is computed asynchronously by GitHub; right after a
+#   `synchronize` it may read UNKNOWN/null, so the job polls briefly.
+# - The check is informational, NOT a branch-protection required check:
+#   GitHub already blocks merging a conflicting PR, so gating would add
+#   nothing; the value is visibility for tooling and humans.
+# - On the synchronize that resolves the conflict this workflow marks
+#   the check successful while the normal `pull_request` cascade fires;
+#   both converge to green, no stale failure persists.
+
+name: PR Merge-Conflict Gate
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+# ADR-0015 per-`head_sha` concurrency block (Issue #3366 / #3444).
+# `github.event.pull_request.head.sha` is present in the
+# `pull_request_target` payload.
+concurrency:
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
+permissions:
+  contents: none
+  checks: write
+  pull-requests: read
+
+jobs:
+  conflict-marker:
+    name: PR Merge-Conflict Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Emit merge-conflict check run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+          # GitHub computes mergeability asynchronously; poll briefly
+          # before reading the verdict (Issue #4077).
+          STATE="UNKNOWN"
+          for _ in $(seq 1 12); do
+            STATE="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.mergeable // "UNKNOWN"')"
+            if [ "${STATE}" != "UNKNOWN" ] && [ "${STATE}" != "null" ]; then
+              break
+            fi
+            sleep 10
+          done
+          if [ "${STATE}" = "MERGEABLE" ]; then
+            CONCLUSION="success"
+            TITLE="PR is mergeable — CI running"
+            SUMMARY="The PR has no merge conflicts, so the normal \`pull_request\` workflow cascade is running (or has run) for this head SHA."
+          elif [ "${STATE}" = "CONFLICTING" ]; then
+            CONCLUSION="failure"
+            TITLE="PR has merge conflicts — CI cannot start"
+            SUMMARY="GitHub does not create \`pull_request\` workflow runs while a PR has merge conflicts (the merge ref cannot be built). No checks will appear until the conflict is resolved; rebase or merge the base branch and push to re-trigger CI."
+          else
+            CONCLUSION="neutral"
+            TITLE="Mergeability unknown — CI status indeterminate"
+            SUMMARY="GitHub had not computed mergeability within the poll window (state: ${STATE}). Treat the check surface as unknown, not green."
+          fi
+          gh api -X POST "repos/${REPO}/check-runs" \
+            -f name="PR Merge-Conflict Gate" \
+            -f head_sha="${HEAD_SHA}" \
+            -f status="completed" \
+            -f conclusion="${CONCLUSION}" \
+            -f "output[title]=${TITLE}" \
+            -f "output[summary]=${SUMMARY}" \
+            --jq '{id, conclusion}'
