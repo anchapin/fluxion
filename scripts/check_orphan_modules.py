@@ -466,7 +466,7 @@ _CFG_TEST_BODY_RE = re.compile(
 # Issue #4005 lowered the baseline by 38 (91 → 53) when the dead duplicate
 # `src/solar/pv.rs` (near-verbatim copy of `fluxion-grid/src/pv.rs`) was deleted
 # and PV types were re-exported from `fluxion-grid` under the `grid` feature.
-BASELINE_DEAD_CODE_ALLOWS = 53
+BASELINE_DEAD_CODE_ALLOWS = 50
 
 # ---------------------------------------------------------------------------
 # Wired-but-dead disposition registry (Issue #3748).

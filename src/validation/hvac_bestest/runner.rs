@@ -3,8 +3,7 @@
 //! Executes HVAC BESTEST cases and validates results against reference data.
 
 use crate::sim::hvac::{
-    Boiler, CAVSystem, CavTerminal, CavTerminalControl, Chiller, HVACMode, HeatPump, MoistAirState,
-    VAVTerminal, VariableCapacityEquipment,
+    Boiler, CAVSystem, Chiller, HVACMode, HeatPump, VAVTerminal, VariableCapacityEquipment,
 };
 use crate::validation::hvac_bestest::cases::{
     get_bestest_cases, get_reference_data, EquipmentType, HVACBestestCase,
@@ -546,103 +545,7 @@ impl HVACBestestRunner {
 
         (total_energy_kwh, peak_demand_w)
     }
-
-    /// Simulate annual CAV energy consumption using CavTerminalUnit psychrometric model.
-    ///
-    /// # Deprecated
-    ///
-    /// This function is deprecated. Use `CAVSystem::simulate_annual` instead.
-    /// It is kept for backward compatibility and testing purposes.
-    #[allow(dead_code)]
-    fn simulate_annual_cav_terminal(
-        &self,
-        terminal: &impl CavTerminal,
-        _case_def: &HVACBestestCaseDefinition,
-    ) -> (f64, f64) {
-        let start = Instant::now();
-
-        // Extended bin analysis with proper mode transitions (Issue #2346)
-        let bins: [(f64, f64); 8] = [
-            (5.0, 500.0),   // 5°C - 500 hours (heating)
-            (10.0, 800.0),  // 10°C - 800 hours (heating)
-            (15.0, 1000.0), // 15°C - 1000 hours (deadband/heating)
-            (20.0, 1200.0), // 20°C - 1200 hours (deadband)
-            (25.0, 1500.0), // 25°C - 1500 hours (cooling)
-            (30.0, 1800.0), // 30°C - 1800 hours (cooling)
-            (35.0, 1200.0), // 35°C - 1200 hours (cooling)
-            (40.0, 500.0),  // 40°C - 500 hours (cooling)
-        ];
-
-        // Zone setpoints (ASHRAE RP-865)
-        let cooling_setpoint = 24.0; // °C
-        let heating_setpoint = 20.0; // °C
-        let _deadband = 2.0; // °C [reserved for future use]
-
-        let standard_pressure_pa = 101325.0_f64;
-
-        let mut total_energy_kwh: f64 = 0.0;
-        let mut peak_demand_w: f64 = 0.0;
-
-        for (outdoor_temp, hours) in bins.iter() {
-            if *hours == 0.0 {
-                continue;
-            }
-
-            // Determine operating mode based on outdoor temperature and setpoints
-            let control = if *outdoor_temp > cooling_setpoint {
-                // Cooling mode
-                CavTerminalControl::cooling()
-            } else if *outdoor_temp < heating_setpoint {
-                // Heating mode
-                let supply_setpoint = heating_setpoint + 5.0;
-                CavTerminalControl::heating(supply_setpoint)
-            } else {
-                // Deadband
-                CavTerminalControl::deadband()
-            };
-
-            // Derive entering air conditions from outdoor temperature.
-            // For a CAV terminal serving a zone, the entering air at the coil
-            // is a mix of outdoor air and return air. At higher outdoor temps,
-            // the entering dry-bulb is warmer.
-            let entering_dry_bulb_c = 20.0 + (*outdoor_temp - 5.0).clamp(0.0, 10.0);
-            let entering_rh_percent = 50.0;
-
-            let entering = match MoistAirState::try_new(
-                entering_dry_bulb_c,
-                entering_rh_percent,
-                standard_pressure_pa,
-            ) {
-                Ok(state) => state,
-                Err(_) => continue,
-            };
-
-            let air_density = entering.density_kg_per_m3;
-
-            let perf = match terminal.compute_terminal_performance(&entering, air_density, &control)
-            {
-                Ok(p) => p,
-                Err(_) => continue,
-            };
-
-            // Total power = fan motor power + any coil power overhead
-            // For cooling mode: power = fan_motor_power (coil extracts heat, doesn't consume power)
-            let power = perf.fan_motor_power_w;
-
-            total_energy_kwh += power * hours / 1000.0;
-            peak_demand_w = peak_demand_w.max(power);
-        }
-
-        let elapsed = start.elapsed();
-        if elapsed.as_secs() > 0 {
-            tracing::info!("  CAV terminal simulation: {:.2}s", elapsed.as_secs_f64());
-        }
-
-        (total_energy_kwh, peak_demand_w)
-    }
 }
-
-/// Run all HVAC BESTEST tests and return results
 pub fn run_hvac_bestest() -> Vec<HVACBestestResult> {
     let runner = HVACBestestRunner::new();
     runner.run_all()

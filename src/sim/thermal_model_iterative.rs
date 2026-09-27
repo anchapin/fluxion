@@ -667,7 +667,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// # Returns
     /// Radiative conductance in W/K. Returns 0.0 when ΔT ≈ 0 (no gradient,
     /// no flow) or when area / view_factor / emissivity is zero.
-    #[allow(dead_code)]
     pub(crate) fn calculate_radiative_conductance_with_view_factor(
         window_area: f64,
         surface_emissivity: f64,
