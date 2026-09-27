@@ -1027,14 +1027,27 @@ pub fn run_direct_simulation(
     let mut peak_cooling_kw = 0.0_f64;
     let mut hourly_temps: Vec<Vec<f64>> = Vec::with_capacity(8760);
 
+    // Issue #4101: end-use metering for the CLI's direct step_physics loop.
+    // Heating/cooling come from backend accumulator deltas (same counters
+    // the solver loop uses); lighting/equipment are zero here because this
+    // path steps physics directly without internal-load StepParameters.
+    model.diagnostics_state.init_end_use_metering(8760);
+
     for step in 0..8760 {
         let weather_data = weather
             .get_hourly_data(step)
             .map_err(|e| anyhow!("Weather data missing for hour {}: {}", step, e))?;
         model.solar.weather = Some(weather_data.clone());
+        let heating_before = model.hvac.annual_heating_energy;
+        let cooling_before = model.hvac.annual_cooling_energy;
         // step_physics returns net HVAC energy for the hour in kWh:
         // positive = heating, negative = cooling.
         let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        let step_heating_kwh = (model.hvac.annual_heating_energy - heating_before).max(0.0);
+        let step_cooling_kwh = (model.hvac.annual_cooling_energy - cooling_before).max(0.0);
+        model
+            .diagnostics_state
+            .record_timestep(step_heating_kwh, step_cooling_kwh, 0.0, 0.0);
         if energy_kwh > 0.0 {
             total_heating_kwh += energy_kwh;
             peak_heating_kw = peak_heating_kw.max(energy_kwh);
@@ -1078,6 +1091,11 @@ pub fn run_direct_simulation(
         effective_solver: Some(model.effective_zone_solver().as_str().to_string()),
         unmet_heating_hours,
         unmet_cooling_hours,
+        // Issue #4101: end-use metering series recorded in the loop above.
+        hourly_heating_kwh: model.get_hourly_heating_kwh(),
+        hourly_cooling_kwh: model.get_hourly_cooling_kwh(),
+        hourly_lighting_kwh: model.get_hourly_lighting_kwh(),
+        hourly_equipment_kwh: model.get_hourly_equipment_kwh(),
     };
 
     let results_path = output_dir.join(format!("{}_results.json", prefix));

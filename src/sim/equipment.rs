@@ -32,6 +32,14 @@ pub trait Equipment {
 
     /// Returns self as Any for downcasting (needed for cloning)
     fn as_any(&self) -> &dyn std::any::Any;
+
+    /// Clone into an owned trait-object box.
+    ///
+    /// Issue #4101: `StepParameters` owns its equipment list (as
+    /// `Vec<Box<dyn Equipment>>`), so the solver loop clones the caller's
+    /// borrowed slice once per run. All four implementors derive `Clone`,
+    /// so this is a thin boxing wrapper.
+    fn clone_box(&self) -> Box<dyn Equipment>;
 }
 
 /// Computer equipment (desktops, laptops, monitors)
@@ -106,6 +114,10 @@ impl Equipment for ComputerEquipment {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+
+    fn clone_box(&self) -> Box<dyn Equipment> {
+        Box::new(self.clone())
+    }
 }
 
 /// Server rack equipment (data center servers)
@@ -164,6 +176,10 @@ impl Equipment for ServerRack {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+
+    fn clone_box(&self) -> Box<dyn Equipment> {
+        Box::new(self.clone())
+    }
 }
 
 /// Generic equipment (any other equipment type)
@@ -220,6 +236,10 @@ impl Equipment for GenericEquipment {
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    fn clone_box(&self) -> Box<dyn Equipment> {
+        Box::new(self.clone())
     }
 }
 
@@ -343,6 +363,10 @@ impl Equipment for ITEquipmentLoad {
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    fn clone_box(&self) -> Box<dyn Equipment> {
+        Box::new(self.clone())
     }
 }
 

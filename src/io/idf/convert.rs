@@ -851,6 +851,9 @@ fn build_schedules(idf: &IdfFile, zone_name: &str) -> ScheduleSet {
         hvac: HVACSchedule::constant_schedule(heat_sp, cool_sp)
             .expect("constant_schedule on fresh daily schedules cannot fail"),
         infiltration: None,
+        // Issue #4101: no IDF-sourced lighting density or equipment yet.
+        lighting_power_density_w_m2: None,
+        equipment: Vec::new(),
     }
 }
 

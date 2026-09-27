@@ -209,6 +209,19 @@ pub struct ScheduleSet {
     pub lighting: DailySchedule,
     pub hvac: HVACSchedule,
     pub infiltration: Option<DailySchedule>,
+    /// Issue #4101 — lighting power density in W/m². When `None` (or
+    /// non-positive) the run keeps the historical behaviour: the REST path
+    /// applies a zero lighting schedule and no auto-loaded profile. Set to
+    /// a positive value to apply `schedules.lighting` (hourly fractions
+    /// 0-1) at this density and meter it as an end-use series.
+    #[serde(default)]
+    pub lighting_power_density_w_m2: Option<f64>,
+    /// Issue #4101 — plug/process equipment applied to the run and metered
+    /// as an end-use series. Empty keeps the historical behaviour (no
+    /// equipment gains). Each entry becomes one
+    /// [`crate::sim::equipment::Equipment`] via [`EquipmentSpec::build`].
+    #[serde(default)]
+    pub equipment: Vec<EquipmentSpec>,
 }
 
 impl Default for ScheduleSet {
@@ -219,6 +232,167 @@ impl Default for ScheduleSet {
             hvac: HVACSchedule::constant_schedule(20.0, 24.0)
                 .expect("constant_schedule on fresh daily schedules cannot fail"),
             infiltration: None,
+            lighting_power_density_w_m2: None,
+            equipment: Vec::new(),
+        }
+    }
+}
+
+/// Issue #4101 — schema-supplied plug/process equipment.
+///
+/// A minimal, hand-computable description of one equipment item. The REST
+/// `/v1/simulate` path (and the CLI schema path) converts each spec into a
+/// real [`crate::sim::equipment::Equipment`] with
+/// [`EquipmentSpec::build`]; the item's thermal gains are applied through
+/// `StepParameters` and its electric draw is metered per timestep via
+/// `Equipment::power_at_hour`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EquipmentSpec {
+    /// Equipment class: `"computer"`, `"server"`, or `"generic"`
+    /// (case-insensitive).
+    pub equipment_type: String,
+    /// Rated electric power per unit, Watts.
+    pub rated_power_w: f64,
+    /// Number of units. Defaults to 1.
+    #[serde(default = "default_equipment_count")]
+    pub count: usize,
+    /// Hourly utilization fractions (0-1), indexed by hour of day.
+    /// Defaults to always-on.
+    #[serde(default = "always_on_hourly_fractions")]
+    pub hourly_fractions: [f64; 24],
+    /// Fraction of the heat release that is radiative (0-1). Defaults to 0.3.
+    #[serde(default = "default_radiative_fraction")]
+    pub radiative_fraction: f64,
+    /// Fraction of the heat release that is convective (0-1). Defaults to 0.7.
+    #[serde(default = "default_convective_fraction")]
+    pub convective_fraction: f64,
+    /// Fraction of radiative heat absorbed by thermal mass (0-1).
+    /// Defaults to 0.2.
+    #[serde(default = "default_mass_coupling_factor")]
+    pub mass_coupling_factor: f64,
+}
+
+fn default_equipment_count() -> usize {
+    1
+}
+
+fn always_on_hourly_fractions() -> [f64; 24] {
+    [1.0; 24]
+}
+
+fn default_radiative_fraction() -> f64 {
+    0.3
+}
+
+fn default_convective_fraction() -> f64 {
+    0.7
+}
+
+fn default_mass_coupling_factor() -> f64 {
+    0.2
+}
+
+impl EquipmentSpec {
+    /// Validate the spec, returning human-readable errors (empty = valid).
+    /// Called from [`SimulationSchemaV1::validate`].
+    pub fn validate(&self, index: usize) -> Vec<ValidationError> {
+        let base = format!("schedules.equipment[{index}]");
+        let mut errors = Vec::new();
+        match self.equipment_type.to_ascii_lowercase().as_str() {
+            "computer" | "server" | "generic" => {}
+            other => errors.push(ValidationError::new(
+                format!("{base}.equipment_type"),
+                format!("unknown equipment type {other:?}"),
+                "use \"computer\", \"server\", or \"generic\"".to_string(),
+            )),
+        }
+        if self.rated_power_w.is_nan() || self.rated_power_w < 0.0 {
+            errors.push(ValidationError::new(
+                format!("{base}.rated_power_w"),
+                format!("must be >= 0, got {}", self.rated_power_w),
+                "set rated_power_w to the per-unit electric draw in Watts".to_string(),
+            ));
+        }
+        if self.count == 0 {
+            errors.push(ValidationError::new(
+                format!("{base}.count"),
+                "must be >= 1, got 0".to_string(),
+                "set count to the number of installed units".to_string(),
+            ));
+        }
+        for (h, &f) in self.hourly_fractions.iter().enumerate() {
+            if !(0.0..=1.0).contains(&f) {
+                errors.push(ValidationError::new(
+                    format!("{base}.hourly_fractions[{h}]"),
+                    format!("must be in [0, 1], got {f}"),
+                    "set the hour's utilization fraction between 0 and 1".to_string(),
+                ));
+            }
+        }
+        let total = self.radiative_fraction + self.convective_fraction;
+        if (total - 1.0).abs() > 1e-9 {
+            errors.push(ValidationError::new(
+                format!("{base}.radiative_fraction"),
+                format!("radiative + convective fractions must sum to 1.0, got {total}"),
+                "adjust radiative_fraction / convective_fraction to sum to 1.0".to_string(),
+            ));
+        }
+        if !(0.0..=1.0).contains(&self.mass_coupling_factor) {
+            errors.push(ValidationError::new(
+                format!("{base}.mass_coupling_factor"),
+                format!("must be in [0, 1], got {}", self.mass_coupling_factor),
+                "set the mass coupling factor between 0 and 1".to_string(),
+            ));
+        }
+        errors
+    }
+
+    /// Build the runtime equipment object. `id` names the item (the REST
+    /// path generates `schema-equipment-{index}`).
+    ///
+    /// # Errors
+    /// Returns `Err` for an unknown `equipment_type`.
+    pub fn build(&self, id: String) -> Result<Box<dyn crate::sim::equipment::Equipment>, String> {
+        use crate::sim::equipment::{ComputerEquipment, Equipment, GenericEquipment, ServerRack};
+
+        let mut schedule = DailySchedule::new();
+        for (hour, &fraction) in self.hourly_fractions.iter().enumerate() {
+            schedule
+                .set_hour(hour, fraction)
+                .map_err(|e| format!("equipment {id}: invalid schedule: {e}"))?;
+        }
+
+        // Concrete fields are public; apply the spec's heat-split fractions
+        // after the builder (builders only set id / power / count / schedule).
+        match self.equipment_type.to_ascii_lowercase().as_str() {
+            "computer" => {
+                let mut item = ComputerEquipment::new(id, self.rated_power_w, self.count)
+                    .with_schedule(schedule);
+                item.radiative_fraction = self.radiative_fraction;
+                item.convective_fraction = self.convective_fraction;
+                item.mass_coupling_factor = self.mass_coupling_factor;
+                Ok(Box::new(item) as Box<dyn Equipment>)
+            }
+            "server" => {
+                let mut item =
+                    ServerRack::new(id, self.rated_power_w, self.count).with_schedule(schedule);
+                item.radiative_fraction = self.radiative_fraction;
+                item.convective_fraction = self.convective_fraction;
+                item.mass_coupling_factor = self.mass_coupling_factor;
+                Ok(Box::new(item) as Box<dyn Equipment>)
+            }
+            "generic" => {
+                let mut item = GenericEquipment::new(id, self.rated_power_w, self.count)
+                    .with_schedule(schedule);
+                item.radiative_fraction = self.radiative_fraction;
+                item.convective_fraction = self.convective_fraction;
+                item.mass_coupling_factor = self.mass_coupling_factor;
+                Ok(Box::new(item) as Box<dyn Equipment>)
+            }
+            other => Err(format!(
+                "equipment {id}: unknown equipment_type {other:?} \
+                 (expected \"computer\", \"server\", or \"generic\")"
+            )),
         }
     }
 }
@@ -327,6 +501,22 @@ pub struct SimulationOutput {
     /// summed across zones. See [`SimulationOutput::unmet_hours`].
     #[serde(default)]
     pub unmet_cooling_hours: f64,
+    /// Issue #4101 — timestep-indexed heating energy, kWh per timestep.
+    /// One entry per solver timestep; omitted when the run did not record
+    /// end-use metering so existing wire shapes are unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hourly_heating_kwh: Option<Vec<f64>>,
+    /// Issue #4101 — timestep-indexed cooling energy, kWh per timestep.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hourly_cooling_kwh: Option<Vec<f64>>,
+    /// Issue #4101 — timestep-indexed lighting electric energy, kWh per
+    /// timestep.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hourly_lighting_kwh: Option<Vec<f64>>,
+    /// Issue #4101 — timestep-indexed equipment electric energy, kWh per
+    /// timestep.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hourly_equipment_kwh: Option<Vec<f64>>,
 }
 
 impl Default for SimulationOutput {
@@ -343,6 +533,10 @@ impl Default for SimulationOutput {
             effective_solver: None,
             unmet_heating_hours: 0.0,
             unmet_cooling_hours: 0.0,
+            hourly_heating_kwh: None,
+            hourly_cooling_kwh: None,
+            hourly_lighting_kwh: None,
+            hourly_equipment_kwh: None,
         }
     }
 }
@@ -585,6 +779,27 @@ impl SimulationSchemaV1 {
                     format!("set {prop} to the system capacity in W"),
                 ));
             }
+        }
+
+        // --- Internal loads (Issue #4101) ---
+        if let Some(density) = self.schedules.lighting_power_density_w_m2 {
+            if density < 0.0 {
+                errors.push(ValidationError::new(
+                    "schedules.lighting_power_density_w_m2",
+                    format!("must be >= 0, got {density}"),
+                    "set lighting_power_density_w_m2 to the lighting power density in W/m² (omit for no lighting)",
+                ));
+            }
+            if density.is_nan() {
+                errors.push(ValidationError::new(
+                    "schedules.lighting_power_density_w_m2",
+                    "must not be NaN".to_string(),
+                    "set lighting_power_density_w_m2 to the lighting power density in W/m² (omit for no lighting)",
+                ));
+            }
+        }
+        for (i, spec) in self.schedules.equipment.iter().enumerate() {
+            errors.extend(spec.validate(i));
         }
 
         // --- Weather ---
