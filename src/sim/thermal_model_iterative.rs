@@ -625,10 +625,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// Radiative exchange: Q_rad = σ * ε1 * ε2 * A * F12 * (T1^4 - T2^4)
     /// Linearized: Q_rad ≈ h_rad * (T1 - T2)
     /// Where h_rad ≈ 4 * σ * ε * T_avg^3 * A
+    #[allow(dead_code)]
     pub(crate) fn calculate_total_interior_surface_area(geometry: &GeometrySpec) -> f64 {
         geometry.wall_area() + geometry.floor_area() + geometry.roof_area()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn calculate_zone_to_zone_view_factor(
         common_window_area: f64,
         zone_a_area: f64,
