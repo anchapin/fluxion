@@ -463,7 +463,10 @@ _CFG_TEST_BODY_RE = re.compile(
 # `compute_inter_zone_flux` allow(dead_code) sites were deleted; the
 # dead-code inventory was regenerated via
 # `python3 scripts/check_orphan_modules.py --update-dead-code-inventory`.
-BASELINE_DEAD_CODE_ALLOWS = 91  # +1: #3918 zone_volumes kept for C_air threading decision
+# Issue #4005 lowered the baseline by 38 (91 → 53) when the dead duplicate
+# `src/solar/pv.rs` (near-verbatim copy of `fluxion-grid/src/pv.rs`) was deleted
+# and PV types were re-exported from `fluxion-grid` under the `grid` feature.
+BASELINE_DEAD_CODE_ALLOWS = 53
 
 # ---------------------------------------------------------------------------
 # Wired-but-dead disposition registry (Issue #3748).

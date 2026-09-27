@@ -971,11 +971,14 @@ convergence that couples the grid back to the thermal model.
 Always-built sibling of the root crate. See
 [`fluxion-grid/README.md`](fluxion-grid/README.md).
 
-**Feature-gate relationship**: the crate is always built; the
-optional **`fluxion-integration`** feature on the root crate wires
-`ThermalElectricalCoupler` into `ThermalModelTrait` so the grid
-and the thermal solver converge on one solution instead of
-running decoupled.
+**Feature-gate relationship**: the crate is always built; the main crate's default-off
+**`grid`** feature (Issue #4005) wires `ThermalElectricalCoupler`, `PvSystem`, and
+`BatteryStorage` into `crate::sim::grid_adapter::GridAdapter` — a per-timestep
+thermal→electrical adapter. The optional **`fluxion-integration`** feature gates the
+`fluxion_bridge::ThermalModelTraitBridge`, which holds `Arc<dyn ThermalModelQuery>`
+(a grid-side trait callers implement for their thermal model) so the grid and the
+thermal solver can converge on one solution instead of running decoupled. The
+dependency direction is strictly `fluxion` → `fluxion-grid`, never the reverse.
 
 **Entry point**: `fluxion-grid/src/` (battery, bus, solver,
 coupler).
@@ -988,7 +991,7 @@ coupler).
 | `BatteryStorageNode`, `NetZeroSystem` | struct | Battery network assembly |
 | `ElectricalBus` | struct | Power-balance aggregation point (`BusNodeType`) |
 | `PowerFlowSolver` | struct | Per-bus power-flow solver (`TransmissionLine`, `PowerFlowState`, `GridConvergenceReport`) |
-| `VoltageCoupler`, `ThermalElectricalCoupler`, `ThermalModelTraitBridge` | struct | Joint convergence back into `ThermalModelTrait` (gated by `fluxion-integration`) |
+| `VoltageCoupler`, `ThermalElectricalCoupler`, `ThermalModelTraitBridge`, `ThermalModelQuery` | struct / trait | Joint convergence via the grid-side `ThermalModelQuery` trait (gated by `fluxion-integration`; no back-edge into `fluxion`) |
 | `HeatPumpVoltageModel`, `fluxion_bridge` | module / struct | Heat-pump voltage coupling helpers |
 | `GridModelError`, `GridSolveError` | enum | Top-level error types |
 

@@ -285,7 +285,10 @@ BASELINE_WORKSPACE_IGNORED = 153  # Issue #4058: bumped from 147 (+6) — the si
 # the #3764 consolidated-runner restructure (273 standalone root binaries
 # folded into ``all_tests``); the 309 figure predated the restructure's
 # AST-scan accounting.
-BASELINE_TEST_BINARIES = 49
+# 2026-09-26 (Issue #4005): 49 -> 50 — new ``grid_adapter_integration``
+# test binary (Case 600 engine-driven grid-adapter tests,
+# ``required-features = ["grid"]``); no other ratchet moves.
+BASELINE_TEST_BINARIES = 50
 
 # Sanity-check constants — the verified cargo counts at HEAD
 # ``12856a9``. Operators checking the drift gate's accuracy can

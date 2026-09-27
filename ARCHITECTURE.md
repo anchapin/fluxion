@@ -957,9 +957,9 @@ pub trait FfdSolver: Send + Sync {
 **Source**: `fluxion-grid/` (standalone crate, workspace member)
 **Purpose**: Grid-edge electrical network components for joint thermal-electrical convergence: battery storage, bus nodes, power flow analysis, and `ThermalElectricalCoupler` for COP-based thermal-to-electrical conversion.
 
-**Crate independence**: `fluxion-grid` has **no default dependency** on the main `fluxion` crate, and **no default dependency on `fluxion-fluid`** (Issue #2561). It ships with its own simplified `ThermalModel` and `ThermalElectricalCoupler` so the crate can be used for pure electrical-network work (batteries, bus nodes, power flow) without pulling in any thermal solver stack. When the optional `fluid` feature is enabled, the coupler gains `HvacState`/`HvacMode` integration via `fluxion_fluid::hvac`.
+**Crate independence**: `fluxion-grid` has **no dependency** on the main `fluxion` crate, and **no default dependency on `fluxion-fluid`** (Issue #2561). It ships with its own simplified `ThermalModel` and `ThermalElectricalCoupler` so the crate can be used for pure electrical-network work (batteries, bus nodes, power flow) without pulling in any thermal solver stack. When the optional `fluid` feature is enabled, the coupler gains `HvacState`/`HvacMode` integration via `fluxion_fluid::hvac`.
 
-**Optional `fluxion` integration (Issue #2275)**: When the `fluxion` feature flag is enabled, `fluxion-grid` gains access to `Arc<dyn ThermalModelTrait>` via an optional dependency on the main `fluxion` crate. The `fluxion_bridge::ThermalModelBridge` struct holds both a `ThermalElectricalCoupler` and an `Arc<dyn ThermalModelTrait>`, enabling joint convergence where the grid-side coupler queries the full thermal solver state directly rather than relying on scalar HVAC values.
+**Dependency direction (Issue #4005)**: the wiring direction is strictly **main crate → `fluxion-grid`, never the reverse**. The main crate enables it with its default-off `grid` feature, which wires `fluxion_grid::{ThermalElectricalCoupler, PvSystem, BatteryStorage}` into `crate::sim::grid_adapter::GridAdapter` — a per-timestep `step()` API (thermal state in, electrical state out) with the batch `post_process` built on top of it. Phase 1 is post-processing only; the `step()` shape keeps phase-2 in-loop co-simulation (demand-response / pre-cooling controllers) a wiring change, not a rewrite. A `fluxion-grid` → `fluxion` optional back-edge was removed because Cargo rejects optional-optional package cycles: the `fluxion_bridge::ThermalModelTraitBridge` now takes an `Arc<dyn ThermalModelQuery>`, a minimal grid-side trait callers implement for their thermal model, instead of the main crate's `ThermalModelTrait`.
 
 **Optional `fluid` integration (Issue #2561)**: When the `fluid` feature flag is enabled, `fluxion-grid` re-introduces the optional dependency on `fluxion-fluid` for `HvacState`/`HvacMode` types. This matches the `fluid = ["dep:fluxion-fluid"]` convention used by the main `fluxion` crate, so the two crates stay in sync on the feature name. The default build (no features) no longer pulls in `fluxion-fluid`, which is useful for consumers who only need the standalone electrical-network solver.
 
@@ -967,7 +967,7 @@ pub trait FfdSolver: Send + Sync {
 |---------|----------------------------------|
 | Default (no feature) | Pure electrical: bus nodes, power flow, batteries. `thermal_to_electrical_simple` and `electrical_to_thermal` are available (scalar COP-based conversion). No `HvacState`/`HvacMode` methods. |
 | `fluid` feature | Adds `hvac_state_to_electrical`, `thermal_to_electrical` (batch), and `update_cop_from_hvac_state` via `fluxion_fluid::hvac::{HvacState, HvacMode}` |
-| `fluxion-integration` feature | Can additionally hold `Arc<dyn ThermalModelTrait>` via `ThermalModelTraitBridge` |
+| `fluxion-integration` feature | Can additionally hold `Arc<dyn ThermalModelQuery>` via `ThermalModelTraitBridge` (grid-side trait; no back-edge into `fluxion`) |
 
 **Key structs** (always available):
 - `ThermalElectricalCoupler` — COP-based coupler between thermal and electrical systems
@@ -980,16 +980,21 @@ pub trait FfdSolver: Send + Sync {
 - `HvacState` / `HvacMode` (re-exported from `fluxion_fluid::hvac`) — scalar HVAC operational state
 
 **Key structs** (requires `fluxion-integration` feature):
-- `ThermalModelTraitBridge` — Bridge holding `ThermalElectricalCoupler` + `Arc<dyn ThermalModelTrait>`
+- `ThermalModelQuery` — minimal grid-side trait (`hvac_power_demand`); implement for a thermal model to use the bridge
+- `ThermalModelTraitBridge` — Bridge holding `ThermalElectricalCoupler` + `Arc<dyn ThermalModelQuery>`
 
-**Joint convergence pattern** (with `fluxion` feature):
+**Main-crate consumer** (main `fluxion` crate, `grid` feature, Issue #4005):
+- `crate::sim::grid_adapter::GridAdapter` — per-timestep `step()` thermal→electrical adapter (PV + battery + COP coupling); `post_process` folds `step()` over a series into an additive `ElectricalResults` block
+
+**Joint convergence pattern** (with `fluxion-integration` feature):
 
 ```rust
 use fluxion_grid::{ThermalElectricalCoupler, ElectricalNetwork};
-use fluxion_grid::fluxion_bridge::ThermalModelTraitBridge;
+use fluxion_grid::fluxion_bridge::{ThermalModelQuery, ThermalModelTraitBridge};
 
 let coupler = ThermalElectricalCoupler::new(3.0);
-let thermal_model: Arc<dyn ThermalModelTrait> = /* from fluxion */;
+// Implement ThermalModelQuery for the caller's thermal model — no fluxion dep needed.
+let thermal_model: Arc<dyn ThermalModelQuery> = /* caller-provided */;
 let bridge = ThermalModelTraitBridge::new(coupler, thermal_model);
 
 // Query thermal model directly → convert to electrical
@@ -1453,6 +1458,7 @@ These traits support the main physics pipeline and should also be documented:
 | `EmailTransport` | `src/api/email_notification.rs` | Abstraction for sending email notifications (campaign completion fallback); mockable for tests |
 | `SimulationStateStore` | `src/api/server/state.rs` | Simulation state persistence trait (in-memory or cloud-backed); enables stateless API servers |
 | `AlgebraicFloat` | `src/physics/fp_algebraic.rs` | Opt-in algebraic-FP helper layer for `f32`/`f64` (issue #3322): default-feature builds route to plain IEEE operators (bit-identical, zero-cost); `--features fast-math` routes to the Rust 1.98 std algebraic methods. Per-call opt-in only — must never flow through energy-balance or ASHRAE 140 gates because algebraic ops break the bit-identical determinism contract and the strict-eval ASHRAE baselines (see module docs and `RULES.md`). |
+| `ThermalModelQuery` | `fluxion-grid/src/fluxion_bridge.rs` | Minimal grid-side trait (`hvac_power_demand`) implemented by a caller's thermal model for joint thermal-electrical convergence via `ThermalModelTraitBridge` (issue #4005); keeps the dependency direction strictly `fluxion` → `fluxion-grid` |
 
 **Psychrometrics library** (#1760): `fluxion-core/src/weather/psychrometrics.rs` is the dependency-light, cycle-safe psychrometrics library that all airside HVAC equipment depends on. It implements ASHRAE Handbook of Fundamentals, Chapter 1 formulas in SI units:
 
