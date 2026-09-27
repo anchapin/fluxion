@@ -58,12 +58,12 @@ jobs:
           fetch-depth: 1
 
       - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@e3eda4bc8e50e8c1d8e89e9c9e548afc0418e1d49 # 2024-07-20
+        uses: dtolnay/rust-toolchain@5775e857f6137e738adf93c80ad3d6c81e29a8fe # 2024-07-20
         with:
           toolchain: stable
 
       - name: Cache cargo registry + target
-        uses: Swatinem/rust-cache@d9ca55b4b5badd9efa370c1ae1a52da1d0e2c0380 # v2
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
         with:
           workspaces: "."
           cache-on-failure: true
