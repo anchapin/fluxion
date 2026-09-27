@@ -1070,14 +1070,29 @@ pub fn run_direct_simulation(
             zone_major[z].push(t);
         }
     }
-    let (unmet_heating_hours, unmet_cooling_hours) =
-        crate::api::schema::SimulationOutput::unmet_hours(
+    let (
+        unmet_heating_hours,
+        unmet_cooling_hours,
+        unmet_heating_hours_all_hours,
+        unmet_cooling_hours_all_hours,
+    ) = {
+        let tolerance = schema_v1.controls.zone_control.deadband_tolerance;
+        let (occ_h, occ_c) = crate::api::schema::SimulationOutput::unmet_hours(
             &zone_major,
             &schema_v1.schedules.occupancy,
             schema_v1.controls.zone_control.heating_setpoint,
             schema_v1.controls.zone_control.cooling_setpoint,
-            schema_v1.controls.zone_control.deadband_tolerance,
+            tolerance,
         );
+        // Issue #4103: all-hours variant (ASHRAE 90.1 G3.1.2.2).
+        let (all_h, all_c) = crate::api::schema::SimulationOutput::unmet_hours_all_hours(
+            &zone_major,
+            schema_v1.controls.zone_control.heating_setpoint,
+            schema_v1.controls.zone_control.cooling_setpoint,
+            tolerance,
+        );
+        (occ_h, occ_c, all_h, all_c)
+    };
 
     // Issue #4101: end-use metering series recorded in the loop above
     // (fetched once here; the clones below feed the #4102 monthly
@@ -1108,6 +1123,9 @@ pub fn run_direct_simulation(
         effective_solver: Some(model.effective_zone_solver().as_str().to_string()),
         unmet_heating_hours,
         unmet_cooling_hours,
+        // Issue #4103: all-hours variant (ASHRAE 90.1 G3.1.2.2).
+        unmet_heating_hours_all_hours,
+        unmet_cooling_hours_all_hours,
         hourly_heating_kwh,
         hourly_cooling_kwh,
         hourly_lighting_kwh,

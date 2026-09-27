@@ -506,6 +506,70 @@ impl PyMultiZoneThermalModel {
         self.inner.get_hourly_temperatures()
     }
 
+    /// Get unmet heating/cooling hours from the hourly temperature trace
+    /// (Issue #4103).
+    ///
+    /// Pure post-processing of [`Self::get_hourly_temperatures`]: no loop or
+    /// physics changes.
+    ///
+    /// # Arguments
+    /// * `occupancy` - 24-element daily occupancy profile (0.0-1.0); an hour
+    ///   counts as occupied when its value exceeds 0.05.
+    /// * `heating_setpoint` - heating setpoint in °C (e.g. 20.0).
+    /// * `cooling_setpoint` - cooling setpoint in °C (e.g. 24.0).
+    /// * `tolerance` - setpoint tolerance in °C; defaults to 0.2 °C when
+    ///   `None` (EnergyPlus "Time Setpoint Not Met" parity; EnergyPlus Input
+    ///   Output Reference, System Summary table).
+    ///
+    /// # Returns
+    /// `(unmet_heating_hours, unmet_cooling_hours,
+    /// unmet_heating_hours_all_hours, unmet_cooling_hours_all_hours)`:
+    /// occupied-only heating/cooling unmet hours plus the all-hours variant
+    /// per ASHRAE 90.1 Appendix G §G3.1.2.2 (the 90.1 Performance Rating
+    /// Method caps all-hours unmet load hours at 300).
+    ///
+    /// # Example
+    /// ```python
+    /// model = fluxion.MultiZoneThermalModel(1)
+    /// model.simulate(1, False)
+    /// occ = [1.0]*8 + [0.0]*16
+    /// occ_h, occ_c, all_h, all_c = model.get_unmet_hours(occ, 20.0, 24.0, None)
+    /// ```
+    pub fn get_unmet_hours(
+        &self,
+        occupancy: Vec<f64>,
+        heating_setpoint: f64,
+        cooling_setpoint: f64,
+        tolerance: Option<f64>,
+    ) -> PyResult<(f64, f64, f64, f64)> {
+        let hourly = self.inner.get_hourly_temperatures().ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err(
+                "no hourly temperature trace recorded; run simulate() first",
+            )
+        })?;
+        let mut sched = crate::sim::schedule::DailySchedule::new();
+        for (hour, &value) in occupancy.iter().enumerate().take(24) {
+            sched
+                .set_hour(hour, value)
+                .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        }
+        let tolerance = tolerance.unwrap_or(crate::api::schema::UNMET_HOURS_TOLERANCE_DEFAULT_C);
+        let (occ_h, occ_c) = crate::api::schema::SimulationOutput::unmet_hours(
+            &hourly,
+            &sched,
+            heating_setpoint,
+            cooling_setpoint,
+            tolerance,
+        );
+        let (all_h, all_c) = crate::api::schema::SimulationOutput::unmet_hours_all_hours(
+            &hourly,
+            heating_setpoint,
+            cooling_setpoint,
+            tolerance,
+        );
+        Ok((occ_h, occ_c, all_h, all_c))
+    }
+
     /// Get hourly temperatures as zero-copy numpy arrays for ML training.
     ///
     /// This method provides direct access to the underlying temperature data

@@ -242,12 +242,18 @@ BASELINE_LIB_TESTS = 4266  # 2026-09-26: 4265 -> 4266 — PR #4093 (#4078) added
                         # scans identically to a fresh CI checkout — the old
                         # "dirty tree scans up to 4 lower" caveat is retired.
 BASELINE_LIB_IGNORED = 9
-BASELINE_WORKSPACE_TESTS = 8796  # 2026-09-27: 8785 -> 8796 — Issue #4102 adds 11
-                                 # monthly_end_use integration tests (bin
-                                 # edges, leap-year, sub-hourly, multi-year,
-                                 # reconciliation, peaks, REST shape, Case
-                                 # 600 cross-check); no lib/binary/ignore
-                                 # changes. Stacked on the 8785 #4101 bump.
+BASELINE_WORKSPACE_TESTS = 8799  # 2026-09-27: 8796 -> 8799 — Issue #4103 adds 3
+                                 # unmet-hours lib tests in src/api/schema.rs
+                                 # (tolerance default, all-hours divergence,
+                                 # multi-zone summation); no binary/ignore
+                                 # changes. Stacked on the 8796 #4102 bump.
+                                 # Previous: 2026-09-27: 8785 -> 8796 — Issue
+                                 # #4102 adds 11 monthly_end_use integration
+                                 # tests (bin edges, leap-year, sub-hourly,
+                                 # multi-year, reconciliation, peaks, REST
+                                 # shape, Case 600 cross-check); no
+                                 # lib/binary/ignore changes. Stacked on the
+                                 # 8785 #4101 bump.
 
 # 2026-09-12 (Issue #3711): 121 -> 133 — see the history entry above for
 # the per-crate attribution and the AST-vs-cargo calibration analysis.
