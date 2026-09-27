@@ -1,0 +1,112 @@
+name: Teacher Validation Suite (Issue #3986)
+
+# Nightly authority advisory gate (Refs #3986 / #4116, ADR-0016 Lane 3).
+#
+# Aggregates the three sub-suites of the #3986 teacher validation suite
+# (ASHRAE 140 fabric + 1052-RP + PCM test-box) into a single verdict via
+# `scripts/check_teacher_validation_suite.py`. The job name appears in
+# `release_gates.yaml::ci.nightly_authority` so the SCORECARD.md picks it up.
+#
+# Per the user's PR-C scope decision (Refs #4116), this gate is ADVISORY
+# ONLY: it never blocks PRs and only collects signal nightly. The
+# script exits 0 on PASS and non-zero on FAIL; failures here translate
+# to a red check on the cron job, which is the nightly-authority signal.
+
+on:
+  schedule:
+    # Nightly at 06:00 UTC (matches the existing nightly_validation.yml +
+    # nightly-ashrae-140-gauge.yml cadence per AGENTS.md / ADR-0016).
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      sub_suite:
+        description: "Optional filter; one of ashrae_140_fabric / conduction_1052rp / pcm_test_box"
+        required: false
+        type: choice
+        options:
+          - ashrae_140_fabric
+          - conduction_1052rp
+          - pcm_test_box
+
+permissions:
+  contents: read
+
+# Cancel any in-flight run when a new commit lands on the branch (PR push).
+concurrency:
+  group: teacher-validation-suite-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  teacher-validation-suite:
+    name: Teacher Validation Suite (Issue #3986)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c175235 # v4.2.2
+        with:
+          fetch-depth: 1
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@e3eda4bc8e50e8c1d8e89e9c9e548afc0418e1d49 # 2024-07-20
+        with:
+          toolchain: stable
+
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@d9ca55b4b5badd9efa370c1ae1a52da1d0e2c0380 # v2
+        with:
+          workspaces: "."
+          cache-on-failure: true
+
+      - name: Build test binaries (cached)
+        # Build once so the three cargo test invocations below reuse the
+        # same compiled artifacts. Saves ~60-90 s vs three separate builds.
+        run: |
+          cargo test -p fluxion --test all_tests --no-run
+
+      - name: Run ASHRAE 140 fabric sub-suite (PR-A #4119)
+        id: ashrae_140_fabric
+        run: |
+          cargo test -p fluxion --test all_tests ashrae_140_validator_selector_parity:: 2>&1 \
+            | tee ashrae_140_fabric.log
+
+      - name: Run 1052-RP conduction sub-suite (#3981)
+        id: conduction_1052rp
+        run: |
+          cargo test -p fluxion --test all_tests conduction_1052rp_analytical:: 2>&1 \
+            | tee conduction_1052rp.log
+
+      - name: Run PCM test-box sub-suite (PR-B #4120)
+        id: pcm_test_box
+        run: |
+          cargo test -p fluxion --test all_tests teacher_validation_pcm_box:: 2>&1 \
+            | tee pcm_test_box.log
+
+      - name: Aggregate verdict (Refs #3986 / #4116)
+        id: aggregate
+        env:
+          SUB_SUITE_FILTER: ${{ inputs.sub_suite }}
+        run: |
+          set -euo pipefail
+          LOG_ARGS=(
+            --log "ashrae_140_fabric=ashrae_140_fabric.log"
+            --log "conduction_1052rp=conduction_1052rp.log"
+            --log "pcm_test_box=pcm_test_box.log"
+          )
+          if [ -n "${SUB_SUITE_FILTER:-}" ]; then
+            python3 scripts/check_teacher_validation_suite.py \
+              --sub-suite "${SUB_SUITE_FILTER}" "${LOG_ARGS[@]}"
+          else
+            python3 scripts/check_teacher_validation_suite.py "${LOG_ARGS[@]}"
+          fi
+
+      - name: Upload sub-suite logs (on failure for diagnostics)
+        if: failure()
+        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
+        with:
+          name: teacher-validation-suite-logs
+          path: |
+            ashrae_140_fabric.log
+            conduction_1052rp.log
+            pcm_test_box.log
+          retention-days: 14

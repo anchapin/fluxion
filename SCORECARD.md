@@ -67,25 +67,37 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | Required check | Issue |
 |----------------|-------|
 | Surrogate Drift Tolerance Gate (Issue #1784) | #1784 |
-| Docs Hygiene Gate (Issue #2466) | #2466 |
 | Physics-Sim-Cycle-Check (GH) | — |
 | Workspace Check (GH) | — |
 | Energy Conservation (GH) | — |
 | Rustfmt (GH) | — |
 | Clippy (GH) | — |
-| Ashrae Cases Cycle Check (GH) | — |
-| Cycle Downward Trend Guard (Issue #2768) | #2768 |
-| Architecture Drift Detection | — |
-| Module Size (Issue #2878) | #2878 |
+| ASHRAE 140 Strict Energy Gate (Issue #1333) | #1333 |
+| Nextest Subset (GH) | — |
 | Cargo Deny | — |
-| MSRV Check (Issue #2934) | #2934 |
-| Crate Size Gate (Issue #2930) | #2930 |
 
 - **Live status** is intentionally not baked in here (it is non-deterministic and would break scorecard diff stability). Run:
 
   ```bash
   gh run list --repo anchapin/fluxion --branch develop --limit 10
   ```
+
+### Nightly authority checks (ADR-0016 Lane 3)
+
+Advisory-only checks that collect signal nightly per ADR-0016. These never block PRs; failures translate to a red nightly job, which is the signal that the lane-3 authority model relies on.
+
+| Nightly authority check | Issue |
+|--------------------------|-------|
+| Fluxion Determinism Gate (Issue #1351) | #1351 |
+| Fluxion Performance Gate (Issue #1618) | #1618 |
+| Absolute Perf Gate (Issue #2693) | #2693 |
+| Multi-Zone Perf Gate (Issue #2772) | #2772 |
+| Multi-Zone Cold Start Gate (Issue #2919) | #2919 |
+| Hybrid Perf Gate (Issue #2922) | #2922 |
+| Code Coverage Gate (Issue #1932) | #1932 |
+| CUDA Smoke Test (Issue #1603) | #1603 |
+| MSRV Check (Issue #2934) | #2934 |
+| Teacher Validation Suite (Issue #3986) | #3986 |
 
 - **Validation gate policy** (`release_gates.yaml`): major/minor releases require validation + benchmark + drift gates; patches relax validation to 40% pass (see `release_requirements.patch`).
 - **Drift guard** (`drift.*`): max ±2.0 pp pass-rate change, ±5.0 pp MAE change, ≤1 pass→fail flip vs `validation_baseline.json`.

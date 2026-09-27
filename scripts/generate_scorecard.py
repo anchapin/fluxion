@@ -119,6 +119,7 @@ class Gates:
     absolute_min_throughput: float = 100.0
     known_failures: list[str] = field(default_factory=list)
     required_checks: list[str] = field(default_factory=list)
+    nightly_authority: list[str] = field(default_factory=list)
     ci_throughput_comment: float = 0.0  # parsed from the YAML comment (~157)
 
 
@@ -402,6 +403,15 @@ def parse_gates(yaml_text: str) -> Gates:
         block = _next_top_level_key(yaml_text, block, "known_failures", None)
         g.known_failures = re.findall(r'^\s*-\s*"(\d+)"', block, re.MULTILINE)
 
+    # nightly_authority list (Issue #3986 / #4116). Captured the same way as
+    # ``required_checks`` — stops at the next top-level YAML key, or returns
+    # the full block if no fallback key is given (which is the common case
+    # since ``nightly_authority`` is usually the last key in ``ci:``).
+    if "nightly_authority:" in yaml_text:
+        block = yaml_text.split("nightly_authority:", 1)[1]
+        block = _next_top_level_key(yaml_text, block, "nightly_authority", None)
+        g.nightly_authority = re.findall(r'^\s*-\s*"(.+?)"', block, re.MULTILINE)
+
     # CI runner throughput from the YAML comment (~157 configs/sec).
     mc = re.search(r"~(\d+)\s*configs/sec", yaml_text)
     if mc:
@@ -635,6 +645,28 @@ def render(
     p("  ```bash")
     p("  gh run list --repo anchapin/fluxion --branch develop --limit 10")
     p("  ```")
+    p("")
+
+    # --- Nightly authority checks (ADR-0016 Lane 3; Refs #3986 / #4116) ----
+    # Advisory-only checks that collect signal nightly without blocking PRs.
+    # Mirrors the table shape used for ``ci.required_checks`` so reviewers
+    # can compare Lane 1 (required) vs Lane 3 (nightly authority) at a glance.
+    p("### Nightly authority checks (ADR-0016 Lane 3)")
+    p("")
+    p(
+        "Advisory-only checks that collect signal nightly per ADR-0016. "
+        "These never block PRs; failures translate to a red nightly job, "
+        "which is the signal that the lane-3 authority model relies on."
+    )
+    p("")
+    if g.nightly_authority:
+        p("| Nightly authority check | Issue |")
+        p("|--------------------------|-------|")
+        for chk in g.nightly_authority:
+            im = re.search(r"#(\d+)", chk)
+            p(f"| {chk} | {('#' + im.group(1)) if im else '—'} |")
+    else:
+        p("_(none registered)_")
     p("")
     p(
         "- **Validation gate policy** (`release_gates.yaml`): major/minor "

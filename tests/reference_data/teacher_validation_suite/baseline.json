@@ -1,0 +1,35 @@
+{
+  "_doc": "Known baseline for the Teacher Validation Suite umbrella gate (Issue #3986 / PR-C #4116). Aggregates the three sub-suites: ASHRAE 140 fabric (PR-A #4119), ASHRAE 1052-RP analytical conduction (PR #3981), and PCM test-box skeleton (PR-B #4120). The gate FAILS when any sub-suite's cargo test output reports `test result: FAILED.` for the corresponding `cargo test -- --test all_tests <sub-suite>::` invocation. Per AGENTS.md / RULES.md: this baseline records the KNOWN state; it must never be loosened to hide a regression. Only update when a sub-suite genuinely adds tests or a real reference-data curve lands (PR-B+1 territory).",
+  "_rule": "Per AGENTS.md / RULES.md: do not lower expected counts to hide a regression. Only update when a sub-suite genuinely grows or shrinks (new test added, ignored test removed, etc.).",
+  "captured_commit": "develop @ HEAD (post PR-A #4119 + PR-B #4120 merge)",
+  "source_command": "cargo test --workspace --exclude fluxion-tauri -- --test all_tests <sub-suite>:: --nocapture",
+  "sub_suites": {
+    "ashrae_140_fabric": {
+      "cargo_target": "ashrae_140_validator_selector_parity::",
+      "source_pr": "PR-A #4119 (Refs #3986-A)",
+      "expected_total": 7,
+      "expected_pass": 7,
+      "expected_fail": 0,
+      "status": "pass"
+    },
+    "conduction_1052rp": {
+      "cargo_target": "conduction_1052rp_analytical::",
+      "source_pr": "PR #3981 (Refs #3986 1052-RP wiring, already merged)",
+      "expected_total": 6,
+      "expected_pass": 6,
+      "expected_fail": 0,
+      "status": "pass"
+    },
+    "pcm_test_box": {
+      "cargo_target": "teacher_validation_pcm_box::",
+      "source_pr": "PR-B #4120 (Refs #3986-B)",
+      "expected_total": 8,
+      "expected_pass": 8,
+      "expected_fail": 0,
+      "status": "pass",
+      "_note_blocker": "Per tests/reference_data/pcm_test_box/PROVENANCE.md BLOCKER branch: the experimental solid-fraction-vs-time reference curve is NOT available; the 8 tests above verify the SK (PhaseChangeMaterial + PCMTestBox harness) only. PR-B+1 (real PCM physics) lands a real `tests/reference_data/pcm_test_box/rt27_solid_fraction.csv` and adds `solid_fraction_at_time_returns_some_after_reference_data_loaded` matching the published experimental curve within \u00b12% absolute."
+    }
+  },
+  "regression_tolerance_tests": 0,
+  "_regression_tolerance_tests_doc": "A sub-suite may drop by AT MOST this many passing tests (due to cross-runner noise, ignored-test re-enables, etc.) before the gate fires a regression. 0 = strict: any failing test is a regression. Tightened from 1 because the three sub-suites are small (6-8 tests each) and deterministic on the supported runners; relax to 1 if the suite becomes flaky on the Hetzner overflow path."
+}
