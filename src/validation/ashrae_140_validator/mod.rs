@@ -1216,7 +1216,17 @@ impl ASHRAE140Validator {
         let case = ASHRAE140Case::from_case_id(case_id)
             .ok_or_else(|| format!("Unknown case ID: {}", case_id))?;
 
-        let mut validator = ASHRAE140Validator::new();
+        // PR-A+1 (Refs #3986-A+1): honor the receiver's stored selector.
+        // PR-A (#4119) added `selector` field + `new_with_selector` + `selector()`,
+        // but this method previously discarded `self.selector` by constructing a
+        // fresh `ASHRAE140Validator::new()` — meaning explicit selectors passed
+        // via `new_with_selector(selector).validate_case(id)` were silently
+        // ignored, only the default FiveROneC was ever exercised through this
+        // entry point. The fabric comparison tests under
+        // `tests/all_tests/ashrae_140_validator_fabric.rs` exercise this path
+        // with NineRFourC and (under `--features gauge-solver`) Gauge selectors
+        // and would silently always use the default without this fix.
+        let mut validator = ASHRAE140Validator::new_with_selector(self.selector);
         let (report, _diagnostics) = validator.validate_single_case_with_diagnostics(case);
 
         // Return combined result - pass if all metrics pass or warn
