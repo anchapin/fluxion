@@ -96,7 +96,7 @@ QUARANTINE_MD = REPO_ROOT / "tests" / "QUARANTINE.md"
 #     Diagnostic sections) and raises this baseline to 9 with the
 #     matching freeze-set entries below.
 # ---------------------------------------------------------------------------
-BASELINE_ORPHANED_IGNORES = 9
+BASELINE_ORPHANED_IGNORES = 11
 BASELINE_GHOST_ROWS = 0
 
 # Freeze snapshot of the orphan allowlist (Issue #3443 ratchet).
@@ -122,6 +122,15 @@ _BASELINE_ORPHANED_IGNORES_SET: frozenset[tuple[str, str]] = frozenset({
     ("tests/ashrae_140_case_970_validation.rs", "test_case_970_annual_energy_band"),
     ("tests/diagnostics/case_950_hvac_mode_seasonal_attribution.rs", "test_case_950_hvac_mode_seasonal_attribution"),
     ("tests/diagnostics/case_970_multi_zone_seasonal_attribution.rs", "case_970_per_zone_seasonal_attribution_placeholder"),
+    # PR #4111: add 2 registry rows for the `diag_air_node_equilibration`
+    # `#[ignore]` attributes (Issue #2536) that pre-date the Issue #3443
+    # ratchet but were never registered. The canonical source row covers
+    # `tests/diagnostics/diag_air_node_equilibration.rs:133`; the second
+    # row is the consolidated runner re-export at
+    # `tests/all_tests/diag_air_node_equilibration.rs:133` (same test,
+    # tracked at the canonical source row).
+    ("tests/diagnostics/diag_air_node_equilibration.rs", "diag_air_node_equilibration"),
+    ("tests/all_tests/diag_air_node_equilibration.rs", "diag_air_node_equilibration"),
 })
 
 # Freeze snapshot of the ghost rows (Issue #3443 ratchet). Same shape
