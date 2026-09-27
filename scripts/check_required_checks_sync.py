@@ -96,11 +96,11 @@ default per ADR-0016 / Issue #3807 — reviews-advisory), and that
 ``enforce_admins.enabled`` is true. The comparison list is the
 **workflow-only set** (not the full ``ci.required_checks``) because
 ``scripts/apply_branch_protection.py`` — the source-of-truth applier —
-restores ``develop`` branch protection to exactly this 18-entry set
+restores ``develop`` branch protection to exactly this 7-entry set
 (Issue #3810 design intent; see lines 382-388 of that script). The full
-``ci.required_checks`` list intentionally contains the 5 path-filtered
-checks (Docs Hygiene, Architecture Drift, Module Size, Crate Size,
-MSRV) that never report on docs-only / scripts-only PRs; branch
+``ci.required_checks`` list intentionally contains the 2 path-filtered
+checks (Surrogate Drift Tolerance Gate (Issue #1784), Cargo Deny) that
+never report on docs-only / scripts-only PRs; branch
 protection cannot require what never emits, so comparing against the
 full list produced false-positive drift (Issue #3831). Designed to run
 as a scheduled cron in ``.github/workflows/`` so #3116's "configuration
@@ -768,8 +768,8 @@ DOC_COUNT_PATTERNS = (
         re.compile(r"(\d+)\s+always-run\s+checks"),
         "required_checks_workflow_only",
     ),
-    # "This excludes the 5 path-filtered checks above" /
-    # "it removes only the 5 path-filtered checks"
+    # "This excludes the 2 path-filtered checks above" /
+    # "it removes only the 2 path-filtered checks"
     (
         re.compile(r"(\d+)\s+path-filtered\s+checks"),
         "path_filtered_delta",
@@ -877,10 +877,10 @@ def check_live_branch_protection(
 
     * ``required_status_checks.contexts`` matches ``workflow_only_checks``
       by symmetric set equality (the same set, in any order). This is the
-      **always-run / workflow-only set** (the 18-entry list) — not the
-      full ``ci.required_checks`` (23 entries). The applier
+      **always-run / workflow-only set** (the 7-entry list) — not the
+      full ``ci.required_checks`` (9 entries). The applier
       ``scripts/apply_branch_protection.py`` writes exactly this set to
-      ``develop`` branch protection (Issue #3810): the 5 path-filtered
+      ``develop`` branch protection (Issue #3810): the 2 path-filtered
       checks cannot be required at branch-protection level because they
       never report on docs-only / scripts-only PRs. Comparing against the
       full list previously produced false-positive drift (Issue #3831).

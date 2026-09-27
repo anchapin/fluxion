@@ -426,12 +426,12 @@ def main() -> int:
 
     # Issue #3810: develop branch protection is restored to the
     # `required_checks_workflow_only` (always-run) set, NOT the full
-    # `required_checks` list. The full list contains the 5 path-filtered
-    # checks (Docs Hygiene, Architecture Drift, Module Size, Crate Size,
-    # MSRV) that never report on docs-only / scripts-only PRs. Pre-#3810
+    # `required_checks` list. The full list contains the 2 path-filtered
+    # checks (Surrogate Drift Tolerance Gate (Issue #1784), Cargo Deny)
+    # that never report on docs-only / scripts-only PRs. Pre-#3810
     # develop's required-checks list dropped to the 5 contexts that DO
     # report on every PR class (the so-called "5-check floor"). Post-
-    # #3810 the listener pattern makes all 18 `workflow_only` checks
+    # #3810 the listener pattern makes all 7 `workflow_only` checks
     # report on every PR class, so the always-run set is the durable
     # branch protection list. The path-filtered checks remain in
     # `required_checks` for the wave-orchestrator's `required_checks`

@@ -316,3 +316,52 @@ decision (below) is likewise deferred pending 30-day usage data.
    which branch protection does not track.
 4. Verify with `FLUXION_CHECK_LIVE_PROTECTION=1 python3
    scripts/check_required_checks_sync.py`.
+
+### Follow-up cut: 16 → 9 required checks (2026-09-27, Alex-approved)
+
+Alex asked for the cut list to reach ~9 required checks and approved the
+exact list below. Shipped on branch `ci/cut-required-checks-4007`.
+
+**Keep required (9):** `Energy Conservation (GH)`, `ASHRAE 140 Strict
+Energy Gate (Issue #1333)`, `Nextest Subset (GH)`,
+`Physics-Sim-Cycle-Check (GH)`, `Rustfmt (GH)`, `Clippy (GH)`, `Workspace
+Check (GH)` (all always-run, in `required_checks_workflow_only`) plus
+`Surrogate Drift Tolerance Gate (Issue #1784)` and `Cargo Deny`
+(path-filtered required — in `required_checks`, enforced on PRs touching
+their filters, not on live branch protection).
+
+**Demoted to advisory (6)** — workflows keep running, names removed from
+`required_checks` (and from `required_checks_workflow_only` where present):
+`Docs Hygiene Gate (Issue #2466)`, `Ashrae Cases Cycle Check (GH)`
+(Physics-Sim-Cycle-Check stays as the cycle representative), `Cycle
+Downward Trend Guard (Issue #2768)`, `Architecture Drift Detection`,
+`Module Size (Issue #2878)`, `Crate Size Gate (Issue #2930)`.
+
+**Path-filtered instead of always-required (2):**
+- `Cargo Deny` → moved from `ci-gates.yml` to new
+  `.github/workflows/cargo-deny.yml` with `pull_request.paths` on
+  `**/Cargo.toml`, `**/Cargo.lock`, `deny.toml`.
+- `Surrogate Drift Tolerance Gate (Issue #1784)` → moved from
+  `ci-gates.yml` to new `.github/workflows/surrogate-drift.yml` with
+  `pull_request.paths` on `**/surrogate*.rs`, `**/Surrogate*.rs`,
+  `models/**`, `tests/reference_data/surrogate/**`.
+- `ci-gates.yml` now hosts only the advisory `test` nextest matrix (its
+  `needs: [surrogate-drift-gate, deny]` removed); header rewritten.
+
+**MSRV → nightly authority:** `msrv.yml` gained a `0 1 * * *` UTC schedule;
+removed from per-PR required; added to `ci.nightly_authority` (now 9).
+Still runs advisory on Cargo-manifest PRs and pushes.
+
+**`release_gates.yaml`:** `required_checks` 16 → 9;
+`required_checks_workflow_only` 11 → 7; `nightly_authority` 8 → 9;
+`workflow_index` repointed (surrogate-drift, cargo-deny) and annotated
+(advisory demotions, MSRV nightly).
+
+**Live branch-protection edits Alex must apply** (develop; main has no
+required checks configured): starting from the current 9 live contexts,
+REMOVE `Cargo Deny`, `Surrogate Drift Tolerance Gate (Issue #1784)`,
+`Ashrae Cases Cycle Check (GH)`, `Cycle Downward Trend Guard (Issue
+#2768)`; ADD `ASHRAE 140 Strict Energy Gate (Issue #1333)` and `Nextest
+Subset (GH)` (still pending from the #4007 PR). Net: 9 → 7. Verify with
+`FLUXION_CHECK_LIVE_PROTECTION=1 python3
+scripts/check_required_checks_sync.py`.
