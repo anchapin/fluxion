@@ -31,7 +31,10 @@ fn selector_round_trip() {
     // Default selector round-trips through the new ctor + getter.
     let g = ThermalSelector::default();
     let v = ASHRAE140Validator::new_with_selector(g);
-    assert_eq!(v.selector().zone_solver, ThermalSelector::default().zone_solver);
+    assert_eq!(
+        v.selector().zone_solver,
+        ThermalSelector::default().zone_solver
+    );
 
     // Explicit FiveROneC round-trips too.
     let g = ThermalSelector {
