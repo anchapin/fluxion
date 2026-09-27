@@ -578,6 +578,38 @@ impl Construction {
         total_kappa
     }
 
+    /// Total (full) thermal capacitance per unit area, summed across ALL layers.
+    ///
+    /// This is the construction's per-area heat capacity without any ISO 13790
+    /// truncation: every layer contributes its full `thermal_capacitance_per_area()`,
+    /// regardless of its position relative to insulation.
+    ///
+    /// Contrast with [`Self::iso_13790_effective_capacitance_per_area`], which
+    /// follows ISO 13790 Annex C's "half-insulation rule" and zeros contributions
+    /// from layers exterior to the insulation plane. The two metrics are related by:
+    ///
+    /// ```text
+    /// total_thermal_capacitance_per_area
+    ///     == iso_13790_effective_capacitance_per_area
+    ///      + Σ(exterior_layers.thermal_capacitance_per_area)
+    /// ```
+    ///
+    /// Physically, the mass in layers exterior to insulation is decoupled from
+    /// the interior air node by the insulation's thermal resistance — its temperature
+    /// responds primarily to ambient conditions rather than indoor setpoint. This
+    /// method's per-area sum is the appropriate input for massiveness weights
+    /// (e.g. [`massiveness_weight`]) that key on the construction's *total*
+    /// heat-storage capacity, not the portion active for the interior lumped node.
+    ///
+    /// # Returns
+    /// Total thermal capacitance per unit floor area in `J/(m²·K)`. Always ≥ 0.
+    pub fn total_thermal_capacitance_per_area(&self) -> f64 {
+        self.layers
+            .iter()
+            .map(|layer| layer.thermal_capacitance_per_area())
+            .sum()
+    }
+
     /// Classifies the construction by its effective thermal mass per ISO 13790 Annex C.
     ///
     /// Classification is based on the effective specific thermal capacitance (κ)
@@ -966,6 +998,72 @@ pub fn h_ms_of_kappa(kappa_wall_full: f64) -> f64 {
 /// effective-κ keying.
 pub fn a_m_blend_weight(kappa_wall_eff: f64) -> f64 {
     smoothstep01(kappa_wall_eff, 165_000.0, 260_000.0)
+}
+
+/// Compute the lumped wall thermal capacitance for the 5R1C / 9R4C thermal model.
+///
+/// This is the C_wall term in the zone energy balance — the heat storage
+/// capacity of the opaque wall envelope. It is shared by both the 5R1C
+/// lumped-node branch and the 9R4C multi-node branch (ΣA·κ path), so any
+/// change here is a single-source change for every envelope-mass assumption
+/// in the engine.
+///
+/// # Issue #4072 — κ-asymmetry cleanup
+///
+/// The pre-#4072 inline code mixed two different per-area capacitance
+/// measures on the two sides of a smoothstep blend:
+///
+/// ```text
+///   wall_cap = (κ_eff + w_mass · (κ_full − κ_eff)) · opaque_area
+/// ```
+///
+/// For high-mass walls (e.g. Case 900 concrete block, κ_full ≈ 123,100,
+/// κ_eff ≈ 5,500 J/m²K), the (κ_full − κ_eff) gap dominates the formula
+/// — the "ISO 13790 effective weighting" intent on the low-mass side is
+/// buried by the κ_full term that drives h_ms_of_kappa. The mixed-κ
+/// expression is also numerically fragile: a future change to one of the
+/// two κ accessors would silently alter the wall_cap behaviour without
+/// touching the other side of the blend.
+///
+/// This helper resolves the structure while preserving the pre-#4072
+/// numerical behaviour that the ASHRAE 140 strict-energy gate band is
+/// calibrated against (Issue #2506/#3572). The new structure makes the
+/// asymmetry explicit at the right semantic level — a discrete choice of
+/// massiveness regime, not a single-κ formula — and renders the
+/// κ-accessors in named locals so a future exterior-mass correction can
+/// be expressed in terms of the same two caps:
+///
+/// ```text
+///   cap_low  = κ_eff · opaque_area        // ISO 13790 effective mass
+///   cap_high = κ_full · opaque_area       // total mass, including exterior
+///   wall_cap = (1 − w_mass) · cap_low + w_mass · cap_high
+/// ```
+///
+/// At the endpoints this is identical to the pre-#4072 formula:
+/// * Low-mass (κ_full < 80 kJ/m²K → w_mass = 0) → wall_cap = cap_low.
+/// * High-mass (κ_full > 100 kJ/m²K → w_mass = 1) → wall_cap = cap_high.
+///
+/// The smoothstep constants (80 kJ/m²K, 100 kJ/m²K) on `massiveness_weight`
+/// are preserved: they also feed `h_ms_of_kappa` downstream (Issue #2229
+/// calibration of the interior-surface heat-transfer coefficient). The
+/// pre-#4072 `Construction::thermal_capacitance_per_area()` call on the
+/// wall — which summed per-layer κ across ALL layers — is renamed to
+/// [`Construction::total_thermal_capacitance_per_area`] for clarity.
+///
+/// # Arguments
+/// * `wall` - The opaque wall `Construction` (interior → exterior layer order).
+/// * `opaque_area` - Total opaque envelope area in m² (sum of all wall
+///   surfaces visible to the zone).
+///
+/// # Returns
+/// `C_wall` in J/K. Always ≥ 0.
+pub fn wall_cap_for(wall: &Construction, opaque_area: f64) -> f64 {
+    let kappa_wall = wall.iso_13790_effective_capacitance_per_area();
+    let kappa_wall_full = wall.total_thermal_capacitance_per_area();
+    let w_mass = massiveness_weight(kappa_wall_full);
+    let cap_low = kappa_wall * opaque_area;
+    let cap_high = kappa_wall_full * opaque_area;
+    (1.0 - w_mass) * cap_low + w_mass * cap_high
 }
 
 /// Pre-defined material properties for common building materials.

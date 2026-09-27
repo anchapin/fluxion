@@ -8,11 +8,10 @@ mod tests {
     //! validator, the cumulative-energy / peak-power bucket accessors, and the
     //! solar-position cache. Reference values are computed in Python (RULES.md
     //! constraint #0) and reproduced here as `approx_eq` checks.
-    use crate::sim::construction::{
-        Construction, ConstructionLayer, SurfaceType as SimSurfaceType,
-    };
+    use crate::sim::construction::{Construction, ConstructionLayer, SurfaceType};
     use crate::sim::thermal_model_core::*;
     use fluxion_core::assembly::{AssemblyBuilder, ConcreteMaterial};
+    use fluxion_core::construction::wall_cap_for;
 
     const TOL: f64 = 1e-9;
 
@@ -118,7 +117,7 @@ mod tests {
     fn test_compute_r_interior_to_mass_case600_wall() {
         // Reference (Python): R_plaster + R_fiberglass/2 = 0.075 + 1.65/2 = 0.9 m²K/W.
         let wall = case600_wall();
-        let r_int = compute_r_interior_to_mass(&wall, SimSurfaceType::Wall, 10.0);
+        let r_int = compute_r_interior_to_mass(&wall, SurfaceType::Wall, 10.0);
         assert!(
             approx_eq(r_int, 0.9, 1e-12),
             "expected R_interior_to_mass = 0.9, got {r_int}"
@@ -130,7 +129,7 @@ mod tests {
         // The exterior path must start at the exterior film resistance
         // (1 / EXTERIOR_FILM_COEFF_DEFAULT) and stay finite + positive.
         let wall = case600_wall();
-        let r_ext = compute_r_exterior_to_mass(&wall, SimSurfaceType::Wall, 10.0);
+        let r_ext = compute_r_exterior_to_mass(&wall, SurfaceType::Wall, 10.0);
         let r_film =
             1.0 / crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF_DEFAULT;
         assert!(r_ext.is_finite());
@@ -158,7 +157,7 @@ mod tests {
     #[test]
     fn test_compute_r_exterior_to_mass_case600_wall_physical_value() {
         let wall = case600_wall();
-        let r_ext = compute_r_exterior_to_mass(&wall, SimSurfaceType::Wall, 10.0);
+        let r_ext = compute_r_exterior_to_mass(&wall, SurfaceType::Wall, 10.0);
         let r_film =
             1.0 / crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF_DEFAULT;
         let r_wood_siding = 0.009_f64 / 0.14;
@@ -181,11 +180,190 @@ mod tests {
         // The exterior film resistance 1/h_ext is always present regardless of
         // the wall construction, so R_exterior_to_mass ≥ 1/h_ext.
         let wall = case600_wall();
-        let r_ext = compute_r_exterior_to_mass(&wall, SimSurfaceType::Wall, 1.0);
+        let r_ext = compute_r_exterior_to_mass(&wall, SurfaceType::Wall, 1.0);
         let r_film =
             1.0 / crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF_DEFAULT;
         assert!(r_ext >= r_film - TOL);
         assert!(r_ext.is_finite() && r_ext > 0.0);
+    }
+
+    // ---------------------------------------------------------------------
+    // Issue #4072: wall_cap_for κ-asymmetry cleanup
+    //
+    // The 5R1C lumped-node path and the 9R4C per-element path share the same
+    // wall_cap value (mod.rs:~1455). The pre-#4072 inline formula mixed κ_eff
+    // (interior-side layers) as the base with κ_full (all layers) inside an
+    // additive term, producing a numerically fragile single-κ expression.
+    // Resolution: the helper `wall_cap_for` now expresses the choice as a
+    // discrete massiveness-regime blend between two named caps (`cap_low` for
+    // κ_eff, `cap_high` for κ_full), preserving the pre-#4072 behaviour that
+    // the ASHRAE 140 strict-energy gate band is calibrated against (Issues
+    // #2506 / #3572). The tests below pin both endpoints and the asymmetric
+    // sensitivity to κ_full for high-mass walls.
+    // ---------------------------------------------------------------------
+
+    /// Build an ASHRAE 140 Case 900-style 3-layer wall:
+    /// interior wood siding (R≈0.0643) | foam (R=1.5375) | concrete block (R≈0.196).
+    /// Foam at index 1 is the dominant insulation layer; concrete block is
+    /// exterior and the per-area mass that previously inflated wall_cap.
+    fn case900_wall() -> Construction {
+        Construction::new(vec![
+            ConstructionLayer::new("Wood siding", 0.14, 530.0, 900.0, 0.009),
+            ConstructionLayer::new("Foam", 0.04, 14.0, 1400.0, 0.0615),
+            ConstructionLayer::new(
+                "Concrete block (ASHRAE 140 B1-3)",
+                0.51,
+                1400.0,
+                840.0,
+                0.100,
+            ),
+        ])
+    }
+
+    /// Per-layer κ (= ρ × c × δ) reference values for both wall fixtures.
+    ///
+    /// case600_wall (interior → exterior):
+    ///   plasterboard : 950 × 0.012 × 840 = 9,576
+    ///   fiberglass   : 12  × 0.066 × 840 = 665.28
+    ///   wood siding  : 500 × 0.009 × 1300 = 5,850
+    ///   total_κ      = 16,091.28 J/m²K
+    ///   effective_κ  = 10,241.28 J/m²K (plasterboard + fiberglass; wood siding
+    ///                   exterior to insulation → zero contribution under
+    ///                   ISO 13790 half-insulation rule, also ≤ 100mm cap)
+    ///
+    /// case900_wall (interior → exterior):
+    ///   wood siding  : 530 × 0.009 × 900 = 4,293
+    ///   foam         : 14  × 0.0615 × 1400 = 1,205.4
+    ///   concrete blk : 1400 × 0.100 × 840 = 117,600
+    ///   total_κ      = 123,098.4 J/m²K
+    ///   effective_κ  = 5,498.4 J/m²K (wood siding + foam; concrete block
+    ///                   exterior and past 100mm cap → zero contribution)
+    const CASE600_KAPPA_EFF: f64 = 9_576.0 + 665.28;
+    const CASE900_KAPPA_EFF: f64 = 4_293.0 + 1_205.4;
+    const CASE900_KAPPA_FULL: f64 = CASE900_KAPPA_EFF + 117_600.0;
+
+    #[test]
+    fn test_wall_cap_for_low_mass_uses_effective_kappa() {
+        // Case 600 (low-mass) baseline: w_mass → 0, so the wall_cap
+        // formula must reduce to κ_eff · opaque_area. The pre-fix code also
+        // produced this value (the asymmetry only bit for high-mass walls),
+        // so this test pins the low-mass behaviour as a regression guard.
+        let wall = case600_wall();
+        let opaque_area = 10.0;
+        let wall_cap = wall_cap_for(&wall, opaque_area);
+        let expected = CASE600_KAPPA_EFF * opaque_area;
+        assert!(
+            approx_eq(wall_cap, expected, 1e-9),
+            "Case 600 wall_cap: expected {expected} (κ_eff × {opaque_area}), got {wall_cap}"
+        );
+        // Sanity: must be finite and non-negative.
+        assert!(wall_cap.is_finite() && wall_cap >= 0.0);
+    }
+
+    #[test]
+    fn test_wall_cap_for_high_mass_uses_full_kappa_per_calibration() {
+        // Issue #4072 invariant: the helper preserves the pre-#4072
+        // behaviour at the high-mass endpoint. wall_cap = κ_full · opaque_area
+        // when w_mass → 1 (the smoothstep upper edge at 100 kJ/m²K).
+        // The ASHRAE 140 strict-energy gate band is calibrated against
+        // this behaviour (Issues #2506/#3572); changing the endpoint would
+        // regress Case 900/950/960 heating by 30+ percentage points.
+        let wall = case900_wall();
+        let opaque_area = 10.0;
+
+        let wall_cap = wall_cap_for(&wall, opaque_area);
+        let expected_kappa_eff = CASE900_KAPPA_EFF * opaque_area;
+        let expected_kappa_full = CASE900_KAPPA_FULL * opaque_area;
+
+        // Sanity: the helper produces κ_full (not κ_eff) for high-mass walls.
+        // Concretely, the resolved value must be within 1% of κ_full · area
+        // (the smoothstep value 1.0 ± tolerance at κ_full = 123,098).
+        let rel_to_full = (wall_cap - expected_kappa_full).abs() / expected_kappa_full;
+        assert!(
+            rel_to_full < 0.01,
+            "Case 900 wall_cap: expected ≈ κ_full · area = {expected_kappa_full}, \
+             got {wall_cap} (relative deviation {rel_to_full:.4}); \
+             high-mass endpoint must match pre-#4072 calibration"
+        );
+        // And must NOT collapse to κ_eff (the over-aggressive collapse
+        // attempted in the first iteration of #4072, which regressed the
+        // Case 900/950/960 heating band).
+        let rel_to_eff = (wall_cap - expected_kappa_eff).abs() / expected_kappa_eff;
+        assert!(
+            rel_to_eff > 1.0,
+            "Case 900 wall_cap {wall_cap} collapsed to κ_eff · area = {expected_kappa_eff} \
+             (relative deviation {rel_to_eff:.4}); the over-aggressive collapse has regressed"
+        );
+    }
+
+    #[test]
+    fn test_wall_cap_for_exterior_mass_affects_high_mass_wall_cap() {
+        // Issue #4072 invariant: the helper is κ-full-aware for high-mass
+        // walls. Adding exterior mass that crosses the smoothstep threshold
+        // (80 kJ/m²K) must change wall_cap — confirming the cap_high arm of
+        // the blend is live, not a vestigial term.
+        //
+        // Build a "heavier" copy of case600_wall by appending 200mm of
+        // concrete cladding. The cladding is exterior to the insulation
+        // AND past the 100mm active-thickness cap, so it contributes
+        // nothing to κ_eff but ~235 kJ/m²K to κ_full. For the unmodified
+        // case600 wall κ_full ≈ 16,091 (w_mass = 0); adding the cladding
+        // pushes κ_full to ≈ 251,291 (w_mass ≈ 1). wall_cap must change
+        // correspondingly — from κ_eff·area to κ_full·area.
+        let case600 = case600_wall();
+        let mut heavier_layers = case600.layers.clone();
+        heavier_layers.push(ConstructionLayer::new(
+            "Heavy concrete cladding (exterior, >100mm cap)",
+            0.51,
+            1400.0,
+            840.0,
+            0.200,
+        ));
+        let heavier = Construction::new(heavier_layers);
+
+        // Sanity: κ_eff is unchanged, κ_full is much larger.
+        assert!(
+            approx_eq(
+                heavier.iso_13790_effective_capacitance_per_area(),
+                case600.iso_13790_effective_capacitance_per_area(),
+                1e-9,
+            ),
+            "fixture sanity: exterior cladding must not change κ_eff"
+        );
+        assert!(
+            heavier.total_thermal_capacitance_per_area()
+                > case600.total_thermal_capacitance_per_area() + 200_000.0,
+            "fixture sanity: exterior cladding must add >200 kJ/m²K to κ_full"
+        );
+
+        // The actual invariant: exterior mass CHANGES wall_cap because
+        // crossing the smoothstep threshold flips w_mass from 0 to 1.
+        let opaque_area = 10.0;
+        let cap_600 = wall_cap_for(&case600, opaque_area);
+        let cap_600_heavier = wall_cap_for(&heavier, opaque_area);
+
+        // Unmodified case600: κ_full ≈ 16k → w_mass = 0 → wall_cap ≈ κ_eff·area.
+        let expected_cap_600 = case600.iso_13790_effective_capacitance_per_area() * opaque_area;
+        assert!(
+            approx_eq(cap_600, expected_cap_600, 1e-9),
+            "unmodified case600 wall_cap must equal κ_eff·area = {expected_cap_600}, got {cap_600}"
+        );
+
+        // Modified case600: κ_full ≈ 251k → w_mass ≈ 1 → wall_cap ≈ κ_full·area.
+        let expected_cap_heavier = heavier.total_thermal_capacitance_per_area() * opaque_area;
+        let rel = (cap_600_heavier - expected_cap_heavier).abs() / expected_cap_heavier;
+        assert!(
+            rel < 0.01,
+            "case600+200mm cladding wall_cap must ≈ κ_full·area = {expected_cap_heavier}, \
+             got {cap_600_heavier} (rel dev {rel:.4}); cap_high arm not live?"
+        );
+
+        // The two walls MUST differ — confirms the κ-full-aware endpoint.
+        assert!(
+            (cap_600_heavier - cap_600).abs() > 1.0e6,
+            "wall_cap must change when exterior mass crosses the smoothstep threshold; \
+             cap_600 = {cap_600}, cap_600_heavier = {cap_600_heavier}"
+        );
     }
 
     #[test]
@@ -196,7 +374,7 @@ mod tests {
         let single = Construction::new(vec![ConstructionLayer::new(
             "Foam", 0.03, 30.0, 1400.0, 0.10,
         )]);
-        let r_ext = compute_r_exterior_to_mass(&single, SimSurfaceType::Wall, 5.0);
+        let r_ext = compute_r_exterior_to_mass(&single, SurfaceType::Wall, 5.0);
         let expected = 1.0
             / crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF_DEFAULT
             + (0.10 / 0.03) / 2.0;
@@ -213,7 +391,7 @@ mod tests {
         let single = Construction::new(vec![ConstructionLayer::new(
             "Foam", 0.03, 30.0, 1400.0, 0.10,
         )]);
-        let r = compute_r_interior_to_mass(&single, SimSurfaceType::Wall, 5.0);
+        let r = compute_r_interior_to_mass(&single, SurfaceType::Wall, 5.0);
         let expected = (0.10 / 0.03) / 2.0;
         assert!(approx_eq(r, expected, 1e-12));
     }
@@ -226,7 +404,7 @@ mod tests {
             ConstructionLayer::new("Insulation-only", 0.025, 20.0, 1450.0, 0.20),
             ConstructionLayer::new("Brick", 0.81, 1700.0, 800.0, 0.10),
         ]);
-        let r_int = compute_r_interior_to_mass(&wall, SimSurfaceType::Wall, 10.0);
+        let r_int = compute_r_interior_to_mass(&wall, SurfaceType::Wall, 10.0);
         assert!(r_int >= 0.001 - TOL);
         assert!(r_int.is_finite() && r_int > 0.0);
     }
