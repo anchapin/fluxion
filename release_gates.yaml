@@ -410,15 +410,16 @@ ci:
   # `name: ASHRAE 140 Strict Energy Gate (Issue #1333)` in
   # `.github/workflows/ashrae_140_strict_energy_gate.yml`.
   required_checks:
-    # Issue #3898: "ASHRAE 140 Strict Energy Gate (Issue #1333)"
-    # REMOVED from this list (and from `required_checks_workflow_only`
-    # below) — `ashrae_140_strict_energy_gate.yml` declares
-    # `pull_request.paths-ignore` for docs/markdown, so on a docs-only
-    # PR no run is ever created and the required name can never report
-    # (structurally unmergeable). The gate is UNCHANGED: it still runs
-    # as a non-required path-filtered check enforcing the ±15%
-    # annual-energy tolerance for Cases 600/900 on every PR class that
-    # touches its filter; see its `workflow_index` entry below.
+    # Issue #3898: "ASHRAE 140 Strict Energy Gate (Issue #1333)" was
+    # REMOVED from this list (2026-09-25) because
+    # `ashrae_140_strict_energy_gate.yml` declared
+    # `pull_request.paths-ignore` for docs/markdown, making docs-only
+    # PRs structurally unmergeable. Issue #4007 SUPERSEDES that removal:
+    # the gate moved into `physics-pr.yml` with a docs-only-gate skip
+    # (`strict-precheck` job) and the `-listener` job reports
+    # neutral-success on docs-only PRs (Issue #3810 pattern), so the
+    # check is now PROMOTED back to required. The entry below reflects
+    # the promoted state.
 
     # Issue #3898 (follow-on): "Surrogate ASHRAE 140 MAE Gate (Issue #2924)"
     # REMOVED from this list — `ashrae_validation.yml` declares
@@ -519,6 +520,18 @@ ci:
     # avoid blocking PRs that don't touch the cycle. Job in
     # `.github/workflows/rust-tests.yml` under `cycle-trend-gh` id.
     - "Cycle Downward Trend Guard (Issue #2768)"
+
+    # Issue #4007: PROMOTED to required. The strict ±15% annual-energy
+    # tolerance gate moved from `ashrae_140_strict_energy_gate.yml`
+    # (deleted) into `physics-pr.yml`. Keeps the docs-only-gate skip
+    # (Issue #3810 listener pattern) so docs-only PRs stay mergeable.
+    - "ASHRAE 140 Strict Energy Gate (Issue #1333)"
+
+    # Issue #4007: NEW required check. Curated nextest subset (root lib
+    # tests + the two `all_tests` regression modules, single
+    # default-feature leg) in `physics-pr.yml`. The full 3-feature-set
+    # matrix stays in `ci-gates.yml` as the advisory signal.
+    - "Nextest Subset (GH)"
 
     # Architecture Drift Detection. Scheduled job in
     # `.github/workflows/architecture_drift.yml`; runs nightly plus on
@@ -685,6 +698,11 @@ ci:
     - "Ashrae Cases Cycle Check (GH)"
     - "Cycle Downward Trend Guard (Issue #2768)"
     - "Cargo Deny"
+    # Issue #4007: strict gate promoted to required; runs on
+    # workflow-only PRs (docs-only skip does not apply). The curated
+    # nextest subset also runs — both live in `physics-pr.yml`.
+    - "ASHRAE 140 Strict Energy Gate (Issue #1333)"
+    - "Nextest Subset (GH)"
 
     # 2026-09-25: "FFI Feature Check (GH)" DEMOTED from required to advisory
     # (physics-core focus). The gate is UNCHANGED: it still runs as a
@@ -748,10 +766,16 @@ ci:
   # the required_checks list is in sync with the workflows directory.
   workflow_index:
     - job: "ASHRAE 140 Strict Energy Gate (Issue #1333)"
-      workflow: ".github/workflows/ashrae_140_strict_energy_gate.yml"
+      workflow: ".github/workflows/physics-pr.yml"
       issue: 1333
       # Issue #3355: expanded upstream scope to `[main, develop]` so this
       # PR-blocking strict-tolerance check actually fires for develop PRs.
+      # Issue #4007: PROMOTED back to required and moved from the deleted
+      # `ashrae_140_strict_energy_gate.yml` into `physics-pr.yml`. The
+      # Issue #3898 removal comment in `required_checks` above is
+      # superseded: the docs-only-gate skip now lives in the
+      # `strict-precheck` job, and the `-listener` job reports
+      # neutral-success so docs-only PRs stay mergeable.
       triggered_by: "PR + push to main/develop"
 
     - job: "Surrogate ASHRAE 140 MAE Gate (Issue #2924)"
@@ -842,7 +866,7 @@ ci:
       # "Physics-Sim-Cycle-Check" and was matched only by the sync
       # script's tolerance rule, never by GitHub's exact-string
       # contexts array.
-      workflow: ".github/workflows/ci-gates.yml"
+      workflow: ".github/workflows/physics-pr.yml"
       issue: 2463
       closes_issue: 2462
       triggered_by: "PR + push to main/develop (unfiltered, Issue #3810)"
@@ -863,7 +887,7 @@ ci:
       # updated to add `cargo build --release --workspace` for the
       # main-only release smoke. Issue #3116 closes the
       # canonical-vs-suffix drift.
-      workflow: ".github/workflows/ci-gates.yml"
+      workflow: ".github/workflows/physics-pr.yml"
       issue: 2983
       closes_issue: 2960
       triggered_by: "PR + push to main/develop (unfiltered, Issue #3810)"
@@ -1033,7 +1057,7 @@ ci:
       # Overflow)`) is the same job on the self-hosted overflow
       # runner inside `rust-tests.yml` and is not separately
       # required.
-      workflow: ".github/workflows/ci-gates.yml"
+      workflow: ".github/workflows/physics-pr.yml"
       issue: 1295
       triggered_by: "PR + push to main/develop (unfiltered, Issue #3810)"
 
@@ -1045,7 +1069,7 @@ ci:
       # mis-formatted. Companion to the `Clippy (GH)` and `Energy
       # Conservation (GH)` gates — all three share the same
       # listener shape and the "(GH)" suffix on the canonical name.
-      workflow: ".github/workflows/ci-gates.yml"
+      workflow: ".github/workflows/physics-pr.yml"
       triggered_by: "PR + push to main/develop (unfiltered, Issue #3810)"
 
     - job: "Clippy (GH)"
@@ -1055,7 +1079,7 @@ ci:
       # non-zero exit on any clippy warning. Required-check
       # counterpart to `cargo audit` and `cargo deny` from the
       # security gate.
-      workflow: ".github/workflows/ci-gates.yml"
+      workflow: ".github/workflows/physics-pr.yml"
       triggered_by: "PR + push to main/develop (unfiltered, Issue #3810)"
 
     - job: "Known Issues Stale Check (GH)"
@@ -1082,7 +1106,7 @@ ci:
       # the documented baseline. Companion to
       # `Physics-Sim-Cycle-Check` which mirrors this gate for the
       # physics↔sim direction.
-      workflow: ".github/workflows/ci-gates.yml"
+      workflow: ".github/workflows/physics-pr.yml"
       issue: 1441
       triggered_by: "PR + push to main/develop (unfiltered, Issue #3810)"
 
@@ -1094,8 +1118,20 @@ ci:
       # job in `.github/workflows/ci-gates.yml`
       # (Issue #3810 Option B — the R1+R3 enforcement emits the
       # required-check name on every PR class).
-      workflow: ".github/workflows/ci-gates.yml"
+      workflow: ".github/workflows/physics-pr.yml"
       issue: 2768
+      triggered_by: "PR + push to main/develop (unfiltered, Issue #3810)"
+
+    - job: "Nextest Subset (GH)"
+      # Issue #4007: curated nextest subset — root lib tests plus the
+      # two `all_tests` regression modules
+      # (`surface_flux_provider_isolation::`,
+      # `regression_exterior_film_unification::`), single
+      # default-feature leg. The full 3-feature-set matrix stays in
+      # `ci-gates.yml` (`Test` job) as the advisory signal. Job id
+      # `nextest-subset` in `.github/workflows/physics-pr.yml`.
+      workflow: ".github/workflows/physics-pr.yml"
+      issue: 4007
       triggered_by: "PR + push to main/develop (unfiltered, Issue #3810)"
 
     - job: "CUDA Smoke Test (Issue #1603)"

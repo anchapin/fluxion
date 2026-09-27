@@ -1,0 +1,211 @@
+# ashrae-shard.yml — Sharded ASHRAE 140 validation (Issue #4007).
+#
+# Why this file exists
+# --------------------
+# Phase 2 of the CI runtime reduction (Issue #4007) shards the ASHRAE
+# 140 validation suite. Previously `ashrae_validation.yml` ran six
+# heavy test suites (`validate` + five module-isolation suites) as
+# independent jobs, each paying a full cold release build (~15-30 min
+# × 6). Now a single `build` job warms the shared sccache (GHA
+# backend) once, and the six shards run against the warm cache —
+# each shard only links its test binary and runs its module filter.
+#
+# The six shards (same test filters as the original jobs):
+#   * validate      — `ashrae_140_validation::` (blind validation)
+#   * weather       — `weather_isolation::`
+#   * solar         — `solar_isolation::`
+#   * conduction    — `conduction_5r1c_isolation::`
+#   * ventilation   — `ventilation_infiltration_vs_energyplus::`
+#   * zone-balance  — `zone_balance_eplus_isolation::`
+#
+# All jobs run on ephemeral GitHub-hosted `ubuntu-24.04` runners
+# (Issue #4007). The self-hosted routing (`vars.FLUXION_LINUX_RUNNER`)
+# and the 10-min queue-stall fallback (Issue #1505) were removed with
+# the move: the fallback machinery only existed to tolerate
+# self-hosted queue stalls, which cannot happen on ephemeral runners.
+#
+# Nightly cache prime: the `cache-prime` job runs at 06:00 UTC on
+# `develop` and warms sccache so the next day's PR shards start warm.
+#
+# Phase gating: the test shards run only after the upstream "CI Gates"
+# workflow succeeds for a pull_request event (same precheck pattern as
+# the other heavy workflows, Issue #4018). Docs-only PRs skip via the
+# docs-only-gate action.
+#
+# No merge queue (deliberate, Issue #4007): consolidation + sharding
+# only; the queue decision is deferred.
+
+name: ASHRAE 140 Sharded Validation
+
+on:
+  # Issue #4018: phase-gated behind CI Gates. Docs-only skip preserved
+  # via docs-only-gate check job.
+  workflow_run:
+    workflows: ["CI Gates"]
+    types: [completed]
+  # Issue #4007: nightly cache prime (06:00 UTC) on develop. Warms the
+  # shared sccache so PR shards start warm.
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+# ADR-0015 per-`head_sha` concurrency block (Issue #3366 / #3444).
+# Re-run `python3 scripts/check_concurrency_keys.py` after edits.
+concurrency:
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
+# Least-privilege GITHUB_TOKEN default (Issue #2526).
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  precheck:
+    name: Phase-gate precheck
+    runs-on: ubuntu-24.04
+    outputs:
+      should_run: ${{ steps.final.outputs.should_run }}
+    steps:
+      - name: Checkout (precheck needs the local docs-only-gate action)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 1
+      - id: upstream
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          UPSTREAM_NAME: ${{ github.event.workflow_run.name }}
+          UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}
+          UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            # Only CI Gates triggers the shards; the schedule trigger
+            # is for the cache-prime job only (guarded separately).
+            if [ "$UPSTREAM_NAME" != "CI Gates" ]; then
+              echo "upstream_ok=false" >> "$GITHUB_OUTPUT"
+              echo "Upstream is $UPSTREAM_NAME (not CI Gates); shards skip"
+              exit 0
+            fi
+            if [ "$UPSTREAM_EVENT" != "pull_request" ] || [ "$UPSTREAM_CONCLUSION" != "success" ]; then
+              echo "upstream_ok=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "upstream_ok=true" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/docs-only-gate
+        id: docs
+        if: steps.upstream.outputs.upstream_ok == 'true' && github.event_name == 'workflow_run'
+      - id: final
+        run: |
+          if [ "${{ steps.upstream.outputs.upstream_ok }}" != "true" ]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_run" ] && [ "${{ steps.docs.outputs.docs_only }}" = "true" ]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ----------------------------------------------------------------
+  # Build (sccache warm) — Issue #4007
+  # ----------------------------------------------------------------
+  # Single build job that warms the shared sccache (GHA backend) with
+  # a full release build of the test targets. The six shards below
+  # `needs: [build]` so they start against a warm cache instead of
+  # each paying a cold build. Uploads nothing; the cache is the
+  # sharing mechanism.
+  build:
+    name: Build (sccache warm)
+    needs: precheck
+    if: needs.precheck.outputs.should_run == 'true' && github.event_name == 'workflow_run'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Warm sccache (release build of test targets)
+        run: cargo build --release --tests
+
+  # ----------------------------------------------------------------
+  # Shard matrix — Issue #4007
+  # ----------------------------------------------------------------
+  # Six shards behind the single build job. Each runs its module
+  # filter against the warm sccache; with the build complete, the
+  # shard only links the `all_tests` binary and runs its tests.
+  # All on ephemeral ubuntu-24.04 (no self-hosted routing).
+  shard:
+    name: "${{ matrix.name }}"
+    needs: [precheck, build]
+    if: needs.precheck.outputs.should_run == 'true' && github.event_name == 'workflow_run'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: validate
+            name: ASHRAE 140 Blind Validation
+            filter: "ashrae_140_validation::"
+          - id: weather
+            name: Weather Isolation
+            filter: "weather_isolation::"
+          - id: solar
+            name: Solar Isolation
+            filter: "solar_isolation::"
+          - id: conduction
+            name: Conduction Isolation
+            filter: "conduction_5r1c_isolation::"
+          - id: ventilation
+            name: Ventilation Isolation
+            filter: "ventilation_infiltration_vs_energyplus::"
+          - id: zone-balance
+            name: Zone Balance Isolation
+            filter: "zone_balance_eplus_isolation::"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: "Run ${{ matrix.name }} tests (warm sccache)"
+        run: "cargo test --test all_tests ${{ matrix.filter }} --release"
+
+  # ----------------------------------------------------------------
+  # Nightly cache prime — Issue #4007
+  # ----------------------------------------------------------------
+  # Runs at 06:00 UTC on develop (schedule trigger). Warms the shared
+  # sccache with a release build so the next day's PR shards start
+  # warm. Independent of the precheck/shard path; guarded to schedule
+  # events only.
+  cache-prime:
+    name: Nightly sccache prime (develop)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: develop
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Prime sccache (release build of test targets)
+        run: cargo build --release --tests
