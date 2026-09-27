@@ -312,7 +312,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         let cycle = get_daily_cycle();
 
-
         // Main simulation loop — only this loop's energy is reported
         let total_energy_kwh: f64 = (0..steps)
             .map(|t| {

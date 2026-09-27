@@ -545,7 +545,6 @@ impl HVACBestestRunner {
 
         (total_energy_kwh, peak_demand_w)
     }
-
 }
 pub fn run_hvac_bestest() -> Vec<HVACBestestResult> {
     let runner = HVACBestestRunner::new();
