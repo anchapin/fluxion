@@ -661,4 +661,77 @@ mod tests {
             results.annual_heating_mwh
         );
     }
+
+    // ----- File-content regression guard (Refs #3986-A, ADR-0017) -----
+    //
+    // ADR-0017 makes the thermal selector explicit per build configuration.
+    // Every production code path that constructs a `ThermalModel` MUST use the
+    // validator's stored selector (or take an explicit `&ThermalSelector`
+    // argument). The only legitimate occurrences of `ThermalSelector::default()`
+    // in `ashrae_140_validator/mod.rs` are:
+    //
+    //   1. The 3 constructor bodies (`with_mode`, `with_diagnostics`,
+    //      `with_full_diagnostics`) — each initializes the `selector` field.
+    //      (`new()` delegates to `with_mode`; `new_with_selector` sets the
+    //      field after construction.)
+    //   2. The 2 free-function wrappers (`validate_ashrae_140`,
+    //      `validate_case_with_diagnostics`) — each delegates to its
+    //      `_with_selector` sibling with the default selector.
+    //   3. Doc comments referencing `ThermalSelector::default()` for context.
+    //
+    // This guard scans the file at test time and fails if the count drifts.
+    // If you legitimately add a new constructor or wrapper, bump the constant
+    // below; if you re-introduce a hardcoded default in a production path,
+    // the guard will fire and you must use `&self.selector` instead.
+    #[test]
+    fn no_hardcoded_default_in_validator() {
+        // 3 constructor field initializers + 2 free-fn wrapper delegations +
+        // 1 doc comment reference = 6.
+        const EXPECTED_LEGITIMATE_COUNT: usize = 6;
+        const VALIDATOR_PATH: &str = "src/validation/ashrae_140_validator/mod.rs";
+
+        let src = std::fs::read_to_string(VALIDATOR_PATH)
+            .unwrap_or_else(|e| panic!("cannot read {VALIDATOR_PATH}: {e}"));
+        let raw_count = src.matches("ThermalSelector::default()").count();
+        assert!(
+            raw_count >= EXPECTED_LEGITIMATE_COUNT,
+            "expected at least {EXPECTED_LEGITIMATE_COUNT} ThermalSelector::default() \
+             occurrences (3 constructors + 2 free-fn wrappers + 1 doc comment) in \
+             {VALIDATOR_PATH}, found {raw_count}. Did a constructor/wrapper get removed?"
+        );
+        assert_eq!(
+            raw_count, EXPECTED_LEGITIMATE_COUNT,
+            "found {raw_count} ThermalSelector::default() occurrences in {VALIDATOR_PATH}, \
+             expected exactly {EXPECTED_LEGITIMATE_COUNT} (3 constructor field \
+             initializers + 2 free-fn wrapper delegations + 1 doc comment). \
+             Production paths must use &self.selector (Refs #3986-A, ADR-0017). \
+             If you added a new constructor or wrapper, bump EXPECTED_LEGITIMATE_COUNT."
+        );
+    }
+
+    // The multi-zone validator's only legitimate `ThermalSelector::default()`
+    // occurrence is the `new()` constructor initializing the `selector` field.
+    // (`new_with_selector` sets the field via the explicit argument.)
+    #[test]
+    fn no_hardcoded_default_in_multi_zone_validator() {
+        const EXPECTED_LEGITIMATE_COUNT: usize = 1;
+        const MULTI_ZONE_PATH: &str = "src/validation/ashrae_140_multi_zone.rs";
+
+        let src = std::fs::read_to_string(MULTI_ZONE_PATH)
+            .unwrap_or_else(|e| panic!("cannot read {MULTI_ZONE_PATH}: {e}"));
+        let raw_count = src.matches("ThermalSelector::default()").count();
+        assert!(
+            raw_count >= EXPECTED_LEGITIMATE_COUNT,
+            "expected at least {EXPECTED_LEGITIMATE_COUNT} ThermalSelector::default() \
+             occurrence in {MULTI_ZONE_PATH}, found {raw_count}. \
+             Did the constructor get removed?"
+        );
+        assert_eq!(
+            raw_count, EXPECTED_LEGITIMATE_COUNT,
+            "found {raw_count} ThermalSelector::default() occurrences in {MULTI_ZONE_PATH}, \
+             expected exactly {EXPECTED_LEGITIMATE_COUNT} (one in `new()`). \
+             Production paths must use &self.selector (Refs #3986-A, ADR-0017). \
+             If you added a new constructor, bump EXPECTED_LEGITIMATE_COUNT."
+        );
+    }
 }

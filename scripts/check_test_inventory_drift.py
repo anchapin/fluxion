@@ -233,7 +233,7 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 # plus the two AST-counted cfg variants of the selector unit test; the
 # net cargo-verified delta is workspace_tests 7927 -> 8018 per
 # ``tests/test_inventory.json``).
-BASELINE_LIB_TESTS = 4268  # 2026-09-27: 4266 -> 4268 — Issue #3063 adds 2 lib tests (5 inline tests in step_5r1c, net of -3 from PR #4103 rebalance)
+BASELINE_LIB_TESTS = 4273  # 2026-09-27: 4268 -> 4273 — Issue #3986-A adds 5 lib tests (4 inline tests in tests.rs guard module, plus 1 extra in the existing validator test module net); the AST workspace count grew by 7 (the consolidated `ashrae_140_validator_selector_parity` runner module — 7 behavior tests); these ratchet bumps track both metrics.
                         # (+2 hvac setpoint CLI tests in src/cli/hvac_commands.rs:
                         # ZoneControl delegation + CLI-to-system propagation);
                         # stacked on the merged 4263 fluxion-#4086 bump.
@@ -242,7 +242,7 @@ BASELINE_LIB_TESTS = 4268  # 2026-09-27: 4266 -> 4268 — Issue #3063 adds 2 lib
                         # scans identically to a fresh CI checkout — the old
                         # "dirty tree scans up to 4 lower" caveat is retired.
 BASELINE_LIB_IGNORED = 9
-BASELINE_WORKSPACE_TESTS = 8804  # 2026-09-27: 8799 -> 8804 — Issue #3063 adds 5 inline tests via step_5r1c::h_tr_em_wind_dependent_tests mod
+BASELINE_WORKSPACE_TESTS = 8821  # 2026-09-27: 8804 -> 8821 — Issue #3986-A adds 7 tests via the new `ashrae_140_validator_selector_parity` consolidated runner module (selector_round_trip, new_delegates_to_new_with_selector_default, case_600_default_vs_new_with_default_parity, case_900_explicit_legacy_selector_runs, multi_zone_selector_round_trip, multi_zone_new_delegates_to_new_with_selector_default, multi_zone_explicit_legacy_selector_accepted) plus 10 lib tests across the existing validator+multi-zone tests.rs modules.
                                  # unmet-hours lib tests in src/api/schema.rs
                                  # (tolerance default, all-hours divergence,
                                  # multi-zone summation); no binary/ignore
@@ -296,7 +296,10 @@ BASELINE_WORKSPACE_IGNORED = 153  # Issue #4058: bumped from 147 (+6) — the si
 # 2026-09-26 (Issue #4005): 49 -> 50 — new ``grid_adapter_integration``
 # test binary (Case 600 engine-driven grid-adapter tests,
 # ``required-features = ["grid"]``); no other ratchet moves.
-BASELINE_TEST_BINARIES = 50
+# 2026-09-27 (Issue #3986-A): 50 -> 51 — new ``ashrae_140_validator_selector_parity``
+# test binary (ThermalSelector wiring through ASHRAE 140 validator; PR-A of #3986
+# teacher validation suite); no other ratchet moves.
+BASELINE_TEST_BINARIES = 51
 
 # Sanity-check constants — the verified cargo counts at HEAD
 # ``12856a9``. Operators checking the drift gate's accuracy can
