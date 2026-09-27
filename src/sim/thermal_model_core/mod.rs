@@ -1118,12 +1118,6 @@ impl ThermalModel<VectorField> {
         let mut h_tr_is_vec = Vec::with_capacity(num_zones);
         let mut h_tr_ms_vec = Vec::with_capacity(num_zones);
         let mut h_tr_em_vec = Vec::with_capacity(num_zones);
-        // Issue #3063 — per-zone opaque (wall minus window) area and per-zone
-        // roof area. The wall area cannot come from `setpoints.wall_area`
-        // because that field includes windows and overcounts the wall
-        // contribution to `h_tr_em`.
-        let mut opaque_wall_area_vec: Vec<f64> = Vec::with_capacity(num_zones);
-        let mut roof_area_zone_vec: Vec<f64> = Vec::with_capacity(num_zones);
         let mut h_tr_is_no_south_vec = Vec::with_capacity(num_zones);
         let mut h_tr_em_south_vec = Vec::with_capacity(num_zones);
         // Per-surface h_tr_ms for 9R4C model (Phase 6B, Issue #715)
@@ -1637,12 +1631,6 @@ impl ThermalModel<VectorField> {
 
             // Debug output for all contributions
             h_tr_em_vec.push(h_tr_em_total.max(0.1));
-            // Issue #3063 — store per-zone opaque wall area (wall minus
-            // windows) and per-zone roof area (zone floor area) so that
-            // `step_5r1c` can recompute `h_tr_em` per-timestep using the
-            // wind-dependent exterior film coefficient.
-            opaque_wall_area_vec.push(opaque_area);
-            roof_area_zone_vec.push(zone_floor_area);
             // Store per-surface h_tr_em for 9R4C model (Phase 6B, Issue #715)
             h_tr_em_wall_vec.push(h_tr_em_physics);
             h_tr_em_roof_vec.push(h_tr_em_roof);
@@ -1789,16 +1777,8 @@ impl ThermalModel<VectorField> {
         model.conduction.h_tr_is = VectorField::new(h_tr_is_vec);
         model.conduction.h_tr_ms = VectorField::new(h_tr_ms_vec.clone());
         model.conduction.h_tr_em = VectorField::new(h_tr_em_vec.clone());
-        // Issue #3063 — wind-dependent `h_tr_em` material R-values and
-        // per-zone areas. Zone-invariant material R-values are derived
-        // directly from the construction layer stack via
-        // `Construction::r_value_materials()` (sum of layer d/k, no film
-        // terms baked in). This avoids the asymmetry of inverting
-        // `u_value()` to recover material resistance.
-        model.conduction.r_materials_wall = spec.construction.wall.r_value_materials();
-        model.conduction.r_materials_roof = spec.construction.roof.r_value_materials();
-        model.conduction.opaque_wall_area = VectorField::new(opaque_wall_area_vec);
-        model.conduction.roof_area_zone = VectorField::new(roof_area_zone_vec);
+        // Issue #3063 — wind-dependent h_tr_em fields (see issue_3063_setup)
+        issue_3063_setup::populate_from_spec(&mut model.conduction, spec, num_zones);
         // === Issue 715 FIX: Assign south-wall bypass vectors ===
         model.conduction.h_tr_is_no_south = VectorField::new(h_tr_is_no_south_vec);
         model.conduction.h_tr_em_south = VectorField::new(h_tr_em_south_vec.clone());
@@ -3753,15 +3733,8 @@ impl ThermalModel<VectorField> {
         model.conduction.h_tr_is = VectorField::from_scalar(h_tr_is, num_zones);
         model.conduction.h_tr_w = VectorField::from_scalar(h_tr_w, num_zones);
         model.conduction.h_ve = VectorField::from_scalar(h_ve, num_zones);
-        // Issue #3063 — the legacy scalar constructor bypasses
-        // `from_spec_with_selector` and cannot derive the material R-values
-        // from a `Construction`. Leave the wind-dependent fields at zero
-        // (the legacy `h_tr_em` above is used directly, the recomputation
-        // path is never reached for callers of this constructor).
-        model.conduction.r_materials_wall = 0.0;
-        model.conduction.r_materials_roof = 0.0;
-        model.conduction.opaque_wall_area = VectorField::from_scalar(0.0, num_zones);
-        model.conduction.roof_area_zone = VectorField::from_scalar(0.0, num_zones);
+        // Issue #3063 — wind-dependent h_tr_em legacy default-init
+        issue_3063_setup::default_init(&mut model.conduction, num_zones);
         model.update_derived_parameters();
 
         Ok(model)
@@ -4074,12 +4047,7 @@ impl ThermalModel<VectorField> {
                 h_tr_is: VectorField::from_scalar(1658.0, num_zones),
                 h_tr_is_no_south: VectorField::from_scalar(0.0, num_zones),
                 h_tr_em_south: VectorField::from_scalar(0.0, num_zones),
-                // Issue #3063 — wind-dependent `h_tr_em` material R-values
-                // and per-zone areas. `from_spec` overrides the scalars;
-                // default-init to 0.0 here because legacy paths that bypass
-                // `from_spec` never reach the per-timestep recomputation in
-                // `step_5r1c` (which would produce NaN with uninitialised
-                // material R-values).
+                // Issue #3063
                 r_materials_wall: 0.0,
                 r_materials_roof: 0.0,
                 opaque_wall_area: VectorField::from_scalar(0.0, num_zones),
@@ -4283,6 +4251,8 @@ where
         self.0.setpoints.temperatures = T::from(VectorField::new(temps));
     }
 }
+
+mod issue_3063_setup;
 
 #[cfg(test)]
 mod tests;

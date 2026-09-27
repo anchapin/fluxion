@@ -1935,7 +1935,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 // The helper is kept local to `step_5r1c.rs` until 6R2C/9R4C adopt it; it moves
 // to `exterior_convection.rs` at that point so all three paths share one
 // canonical implementation.
-#[allow(dead_code)]
 pub(crate) fn h_tr_em_wind_dependent(
     opaque_area: f64,
     r_materials: f64,
