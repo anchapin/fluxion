@@ -435,9 +435,27 @@ impl Default for WeatherData {
 pub struct ControlConfig {
     pub heating_setpoint: f64,
     pub cooling_setpoint: f64,
+    /// Issue #4103 — setpoint tolerance (°C) used ONLY for unmet-hours
+    /// reporting. Defaults to [`UNMET_HOURS_TOLERANCE_DEFAULT_C`] (0.2 °C,
+    /// matching EnergyPlus "Time Setpoint Not Met", EnergyPlus Input
+    /// Output Reference, System Summary table) when the schema leaves the
+    /// field unset; explicit values are honored unchanged. This field is
+    /// not a physics control deadband — the HVAC controllers keep their
+    /// own 0.5 °C default.
+    #[serde(default = "default_unmet_hours_tolerance")]
     pub deadband_tolerance: f64,
     pub heating_capacity: f64,
     pub cooling_capacity: f64,
+}
+
+/// Issue #4103 — default setpoint tolerance for unmet-hours reporting:
+/// 0.2 °C, matching EnergyPlus "Time Setpoint Not Met" (EnergyPlus Input
+/// Output Reference, System Summary table, which applies a 0.2 °C
+/// tolerance band when counting occupied hours the setpoint was not met).
+pub const UNMET_HOURS_TOLERANCE_DEFAULT_C: f64 = 0.2;
+
+fn default_unmet_hours_tolerance() -> f64 {
+    UNMET_HOURS_TOLERANCE_DEFAULT_C
 }
 
 impl Default for ControlConfig {
@@ -445,7 +463,10 @@ impl Default for ControlConfig {
         ControlConfig {
             heating_setpoint: 20.0,
             cooling_setpoint: 24.0,
-            deadband_tolerance: 0.5,
+            // Issue #4103: unset schemas default to the EnergyPlus
+            // "Time Setpoint Not Met" 0.2 °C tolerance, not the 0.5 °C
+            // HVAC control deadband.
+            deadband_tolerance: UNMET_HOURS_TOLERANCE_DEFAULT_C,
             heating_capacity: 100_000.0,
             cooling_capacity: 100_000.0,
         }
@@ -491,16 +512,34 @@ pub struct SimulationOutput {
     /// `None` so existing wire shapes are unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effective_solver: Option<String>,
-    /// Issue #3988 — unmet heating hours: occupied hours where a zone's
-    /// temperature fell below `heating_setpoint - deadband_tolerance`,
-    /// summed across zones. See [`SimulationOutput::unmet_hours`].
+    /// Issue #3988 — unmet heating hours (occupied-only): occupied hours
+    /// where a zone's temperature fell below
+    /// `heating_setpoint - deadband_tolerance`, summed across zones. The
+    /// tolerance defaults to 0.2 °C when the schema leaves
+    /// `deadband_tolerance` unset (EnergyPlus "Time Setpoint Not Met"
+    /// parity; EnergyPlus Input Output Reference, System Summary table).
+    /// See [`SimulationOutput::unmet_hours`].
     #[serde(default)]
     pub unmet_heating_hours: f64,
-    /// Issue #3988 — unmet cooling hours: occupied hours where a zone's
-    /// temperature rose above `cooling_setpoint + deadband_tolerance`,
-    /// summed across zones. See [`SimulationOutput::unmet_hours`].
+    /// Issue #3988 — unmet cooling hours (occupied-only): occupied hours
+    /// where a zone's temperature rose above
+    /// `cooling_setpoint + deadband_tolerance`, summed across zones.
+    /// Tolerance default as for `unmet_heating_hours`. See
+    /// [`SimulationOutput::unmet_hours`].
     #[serde(default)]
     pub unmet_cooling_hours: f64,
+    /// Issue #4103 — unmet heating hours over ALL hours (per ASHRAE 90.1
+    /// Appendix G §G3.1.2.2): same setpoint-deviation test as
+    /// `unmet_heating_hours` but evaluated for every timestep, not just
+    /// occupied hours. The 90.1 Performance Rating Method caps these at
+    /// 300 hours and requires proposed-design unmet hours ≤ baseline + 50.
+    /// See [`SimulationOutput::unmet_hours_all_hours`].
+    #[serde(default)]
+    pub unmet_heating_hours_all_hours: f64,
+    /// Issue #4103 — unmet cooling hours over ALL hours (ASHRAE 90.1
+    /// Appendix G §G3.1.2.2). See `unmet_heating_hours_all_hours`.
+    #[serde(default)]
+    pub unmet_cooling_hours_all_hours: f64,
     /// Issue #4101 — timestep-indexed heating energy, kWh per timestep.
     /// One entry per solver timestep; omitted when the run did not record
     /// end-use metering so existing wire shapes are unchanged.
@@ -561,6 +600,8 @@ impl Default for SimulationOutput {
             effective_solver: None,
             unmet_heating_hours: 0.0,
             unmet_cooling_hours: 0.0,
+            unmet_heating_hours_all_hours: 0.0,
+            unmet_cooling_hours_all_hours: 0.0,
             hourly_heating_kwh: None,
             hourly_cooling_kwh: None,
             hourly_lighting_kwh: None,
@@ -651,12 +692,58 @@ impl SimulationOutput {
         cooling_setpoint: f64,
         tolerance: f64,
     ) -> (f64, f64) {
+        Self::unmet_hours_impl(
+            hourly_temps,
+            Some(occupancy),
+            heating_setpoint,
+            cooling_setpoint,
+            tolerance,
+        )
+    }
+
+    /// Compute unmet heating/cooling hours over ALL timesteps.
+    ///
+    /// Issue #4103. Same setpoint-deviation test as [`Self::unmet_hours`]
+    /// but evaluated for every timestep instead of only occupied ones, per
+    /// ASHRAE 90.1 Appendix G §G3.1.2.2 (unmet load hours). The 90.1
+    /// Performance Rating Method caps these at 300 hours and requires the
+    /// proposed design to stay within baseline + 50 unmet hours.
+    ///
+    /// Returns `(unmet_heating_hours_all_hours,
+    /// unmet_cooling_hours_all_hours)` summed across zones.
+    pub fn unmet_hours_all_hours(
+        hourly_temps: &[Vec<f64>],
+        heating_setpoint: f64,
+        cooling_setpoint: f64,
+        tolerance: f64,
+    ) -> (f64, f64) {
+        Self::unmet_hours_impl(
+            hourly_temps,
+            None,
+            heating_setpoint,
+            cooling_setpoint,
+            tolerance,
+        )
+    }
+
+    /// Shared implementation for [`Self::unmet_hours`] (occupied-only,
+    /// `occupancy = Some`) and [`Self::unmet_hours_all_hours`] (all hours,
+    /// `occupancy = None`).
+    fn unmet_hours_impl(
+        hourly_temps: &[Vec<f64>],
+        occupancy: Option<&DailySchedule>,
+        heating_setpoint: f64,
+        cooling_setpoint: f64,
+        tolerance: f64,
+    ) -> (f64, f64) {
         let mut unmet_heating = 0.0;
         let mut unmet_cooling = 0.0;
         for zone_temps in hourly_temps {
             for (t, &temp) in zone_temps.iter().enumerate() {
-                if occupancy.value(t % 24) <= 0.05 {
-                    continue;
+                if let Some(occ) = occupancy {
+                    if occ.value(t % 24) <= 0.05 {
+                        continue;
+                    }
                 }
                 if temp < heating_setpoint - tolerance {
                     unmet_heating += 1.0;
@@ -974,6 +1061,68 @@ mod tests {
         let hourly = vec![vec![15.0; 48], vec![15.0; 48]];
         let (h, _) = SimulationOutput::unmet_hours(&hourly, &occupancy, 20.0, 24.0, 0.5);
         assert_eq!(h, 40.0);
+    }
+
+    #[test]
+    fn test_unmet_hours_tolerance_defaults_to_0_2_c() {
+        // Issue #4103: an unset schema deadband defaults to the EnergyPlus
+        // "Time Setpoint Not Met" 0.2 °C tolerance, not 0.5 °C.
+        assert_eq!(
+            ControlConfig::default().deadband_tolerance,
+            UNMET_HOURS_TOLERANCE_DEFAULT_C
+        );
+        assert_eq!(UNMET_HOURS_TOLERANCE_DEFAULT_C, 0.2);
+        // A schema JSON that omits deadband_tolerance must still
+        // deserialize, picking up the 0.2 °C default.
+        let cfg: ControlConfig = serde_json::from_str(
+            r#"{"heating_setpoint":20.0,"cooling_setpoint":24.0,
+                "heating_capacity":100000.0,"cooling_capacity":100000.0}"#,
+        )
+        .expect("unset deadband_tolerance must deserialize");
+        assert_eq!(cfg.deadband_tolerance, 0.2);
+        // An explicit value is honored unchanged.
+        let cfg: ControlConfig = serde_json::from_str(
+            r#"{"heating_setpoint":20.0,"cooling_setpoint":24.0,
+                "deadband_tolerance":0.5,
+                "heating_capacity":100000.0,"cooling_capacity":100000.0}"#,
+        )
+        .expect("explicit deadband_tolerance must deserialize");
+        assert_eq!(cfg.deadband_tolerance, 0.5);
+    }
+
+    #[test]
+    fn test_unmet_hours_all_hours_diverges_on_unoccupied_night() {
+        // Issue #4103: a deviation during unoccupied night hours counts in
+        // the all-hours variant (ASHRAE 90.1 G3.1.2.2) but not in the
+        // occupied-only variant.
+        let occupancy = DailySchedule::weekly("occ".to_string()).office_hours();
+        // 24 h trace: comfortable 21 °C all day except midnight (t=0),
+        // which is unoccupied and drops to 15 °C.
+        let mut temps = vec![21.0; 24];
+        temps[0] = 15.0;
+        let hourly = vec![temps];
+        let tol = UNMET_HOURS_TOLERANCE_DEFAULT_C;
+        let (occ_h, occ_c) = SimulationOutput::unmet_hours(&hourly, &occupancy, 20.0, 24.0, tol);
+        let (all_h, all_c) = SimulationOutput::unmet_hours_all_hours(&hourly, 20.0, 24.0, tol);
+        assert_eq!((occ_h, occ_c), (0.0, 0.0));
+        assert_eq!((all_h, all_c), (1.0, 0.0));
+    }
+
+    #[test]
+    fn test_unmet_hours_all_hours_sums_across_zones() {
+        // Issue #4103: the all-hours variant also sums across zones, with
+        // the same heating/cooling deviation test.
+        let hourly = vec![vec![15.0; 24], vec![30.0; 24]];
+        let tol = UNMET_HOURS_TOLERANCE_DEFAULT_C;
+        let (h, c) = SimulationOutput::unmet_hours_all_hours(&hourly, 20.0, 24.0, tol);
+        assert_eq!(h, 24.0);
+        assert_eq!(c, 24.0);
+        // A fully comfortable trace reports zero in both conventions.
+        let comfortable = vec![vec![21.0; 24]];
+        assert_eq!(
+            SimulationOutput::unmet_hours_all_hours(&comfortable, 20.0, 24.0, tol),
+            (0.0, 0.0)
+        );
     }
 
     #[test]
