@@ -447,7 +447,84 @@ impl<'a> CTFCalculator<'a> {
         residues
     }
 
+    /// Convert poles and residues to discrete-time CTF coefficients.
+    ///
+    /// Uses the z-transform relationship:
+    /// Y(z) = Σ Res_n / (1 - exp(s_n·Δt)·z⁻¹)
+    ///
+    /// where s_n are poles and Res_n are residues.
+    fn pole_residue_to_ctf(
+        &self,
+        coeffs: &mut CTFCoefficients,
+        poles: &[Complex64],
+        residues: &[Complex64],
+        _u_value: f64,
+    ) {
+        let dt = self.timestep;
 
+        // Compute Y coefficients from poles and residues
+        // Y_j = Σ Res_n · exp(s_n · j · dt)
+        for j in 0..self.max_coeffs {
+            let mut y_j = Complex64::new(0.0, 0.0);
+            for (pole, residue) in poles.iter().zip(residues.iter()) {
+                let exp_term = (pole * dt * (j as f64)).exp();
+                y_j += residue * exp_term;
+            }
+            // Take real part (imaginary should be near zero for stable walls)
+            coeffs.y[j] = y_j.re.abs().max(0.0);
+        }
+
+        // Compute X coefficients using D(s)/A(s) relationship
+        // At steady state (s=0): X(0) = D(0)/A(0)
+        let matrix_dc = self.compute_overall_transmission_matrix(Complex64::new(0.0, 0.0));
+        let a_dc = matrix_dc[0][0].re;
+        let d_dc = matrix_dc[1][1].re;
+        let x_dc_ratio = if a_dc.abs() > 1e-10 { d_dc / a_dc } else { 1.0 };
+
+        // X coefficients have same pole structure as Y, scaled by D/A ratio
+        for j in 0..self.max_coeffs {
+            coeffs.x[j] = coeffs.y[j] * x_dc_ratio;
+        }
+
+        // Compute Z coefficients (interior response)
+        // For walls, Z ≈ Y at steady state, but may differ for asymmetric constructions
+        let z_scale = self.compute_interior_surface_factor();
+        for j in 0..self.max_coeffs {
+            coeffs.z[j] = coeffs.y[j] * z_scale;
+        }
+
+        // Compute Φ coefficients from pole locations
+        // Φ_j = exp(s_1 · j · dt) where s_1 is the dominant pole
+        coeffs.phi[0] = 0.0;
+        if let Some(&dominant_pole) = poles.first() {
+            for j in 1..self.max_coeffs {
+                let exp_term = (dominant_pole * dt * (j as f64)).exp();
+                coeffs.phi[j] = exp_term.re.abs().clamp(0.0, 1.0);
+            }
+        }
+    }
+
+    /// Compute effective time constant for multi-layer wall.
+    ///
+    /// Uses the dominant pole of the transmission matrix to estimate
+    /// the effective thermal response time.
+    fn compute_effective_time_constant(&self) -> f64 {
+        // For multi-layer walls, the effective time constant is dominated
+        // by the layer with highest thermal mass (R·C product)
+        let mut max_tau: f64 = 0.0;
+        let mut cumulative_r: f64 = 0.0;
+
+        for layer in self.layers {
+            let r_layer = layer.resistance();
+            let c_layer = layer.density * layer.specific_heat * layer.thickness;
+            cumulative_r += r_layer;
+            let tau_layer = cumulative_r * c_layer;
+            max_tau = max_tau.max(tau_layer);
+        }
+
+        // Effective tau is weighted average, biased toward high-mass layers
+        max_tau.max(3600.0) // Minimum 1 hour
+    }
 
     /// Compute interior surface factor for Z coefficient scaling.
     fn compute_interior_surface_factor(&self) -> f64 {
