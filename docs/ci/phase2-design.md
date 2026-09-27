@@ -1,7 +1,7 @@
 # CI Phase 2 design: merge queue + physics-pr.yml + sharded ASHRAE suite
 
 <!-- summary: Design for #4007 — merge queue on develop, one physics-pr.yml (~6 checks), sharded ASHRAE suite with sccache-warmed shared build, nightly cache-prime. -->
-<!-- status: design — no implementation; decisions for Alex at the bottom. -->
+<!-- status: implemented 2026-09-27 (no merge queue per Alex's decision); see §8. Triplicate fold deferred pending 30-day data. -->
 <!-- scope: CI only; no physics, no tolerance, no test changes. -->
 <!-- lane: workflow-only (required_checks_workflow_only) when implemented. -->
 <!-- risks: merge-queue changes how Alex merges; merge_group trigger rollout; check renames need release_gates.yaml + branch-protection sync. -->
@@ -247,3 +247,72 @@ is the proxy baseline).
 5. **Probe triplicates:** gather the 30-day Hetzner-arm hit-rate data first, or
    fold `tracked-vs-ignored`/`fast_math_check` now and measure `ci.yml` later?
 6. Confirm **squash** stays the merge method under the queue.
+
+## 8. Implementation status (2026-09-27, PR for Issue #4007)
+
+**No merge queue — deliberate decision.** Alex approved proceeding with the
+recommendation WITHOUT the merge queue: he is effectively the sole merger,
+prefers fast landing + follow-up fixes, and queue latency would oppose that
+policy. This implementation is consolidation + sharding only. The queue
+design in §§2–3 remains documented for a future revisit; the triplicate-data
+decision (below) is likewise deferred pending 30-day usage data.
+
+**What shipped:**
+
+- **`physics-pr.yml` (new):** consolidates the per-PR physics path. Nine
+  required checks, all with byte-identical `name:` values (Issue #3116):
+  `Workspace Check (GH)`, `Energy Conservation (GH)`, `Rustfmt (GH)`,
+  `Clippy (GH)`, `Ashrae Cases Cycle Check (GH)`,
+  `Physics-Sim-Cycle-Check (GH)`, `Cycle Downward Trend Guard (Issue #2768)`
+  (all folded verbatim from `ci-gates.yml`); `ASHRAE 140 Strict Energy Gate
+  (Issue #1333)` (PROMOTED from the deleted
+  `ashrae_140_strict_energy_gate.yml`, with `strict-precheck` docs-only-gate
+  + `strict-energy-gate-listener` neutral-success so docs-only PRs stay
+  mergeable — Issue #3810 pattern); `Nextest Subset (GH)` (NEW curated
+  signal: root lib tests + the two `all_tests` regression modules, single
+  default-feature leg, ~10 min budget; the full 3-feature-set matrix stays
+  in `ci-gates.yml` as advisory).
+- **`ci-gates.yml`:** the seven folded jobs removed; `test` job's `needs:`
+  narrowed to `[surrogate-drift-gate, deny]`. Surrogate drift, Cargo deny,
+  and the full nextest matrix stay.
+- **`ashrae-shard.yml` (new):** `build` job warms sccache (GHA backend)
+  once; six-shard matrix (`validate`, `weather`, `solar`, `conduction`,
+  `ventilation`, `zone-balance`) runs against the warm cache. All on
+  ephemeral `ubuntu-24.04`. Phase-gated on "CI Gates" via `workflow_run` +
+  docs-only-gate precheck. Nightly `cache-prime` job at 06:00 UTC on
+  `develop`.
+- **`ashrae_validation.yml`:** the seven moved jobs
+  (`queue-stall-detector`, `validate`, `validate-fallback`, five isolation
+  suites) removed. Surrogate MAE gate, quantum/gauge diagnostics, and the
+  determinism/performance listeners stay. The Issue #1505 self-hosted
+  routing + fallback machinery was removed with the move (ephemeral-only
+  per the #4007 decision).
+- **`release_gates.yaml`:** `required_checks` 14 → 16 (strict gate
+  promoted, nextest subset added); `required_checks_workflow_only` 9 → 11;
+  `workflow_index` updated (8 entries repointed to `physics-pr.yml`,
+  1 new entry for the nextest subset).
+- **Docs:** `AGENTS.md` and `docs/ci/branch-protection-strict-mode.md`
+  count literals updated (14→16, 9→11); the Issue #3898 removal text now
+  notes the strict gate's #4007 promotion.
+
+**What remains deferred (needs Alex's data call):**
+
+- **Probe/GitHub/Hetzner triplicates:** NOT folded. The five workflows
+  using the probe pattern keep their shape until 30-day hit-rate data is
+  collected. To gather it: `gh run list --workflow <name> --created
+  ">2026-08-27" --json databaseId,conclusion` correlated with job-level
+  outcomes (`gh run view <id> --json jobs`), counting how often the `-hz`
+  arm actually fires on PRs. If <5%, fold to GH-only + retry. The fold
+  decision is explicitly Alex's call after seeing the data.
+
+**Live branch-protection edits Alex must apply** (after merging; the
+`check_required_checks_sync.py` live check `[7/7]` will fail until then):
+
+1. ADD `ASHRAE 140 Strict Energy Gate (Issue #1333)` to develop (and main)
+   required checks.
+2. ADD `Nextest Subset (GH)` to develop (and main) required checks.
+3. No removals — the seven folded checks keep their exact names; only
+   their hosting workflow changed (`ci-gates.yml` → `physics-pr.yml`),
+   which branch protection does not track.
+4. Verify with `FLUXION_CHECK_LIVE_PROTECTION=1 python3
+   scripts/check_required_checks_sync.py`.

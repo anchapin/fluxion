@@ -1,0 +1,453 @@
+# physics-pr.yml — Per-PR physics gate consolidation (Issue #4007).
+#
+# Why this file exists
+# --------------------
+# Phase 2 of the CI runtime reduction (Issue #4007) consolidates the
+# per-PR physics checks into a single workflow so the fast required
+# signal lives in one DAG instead of scattered across `ci-gates.yml`
+# and standalone gate workflows.
+#
+# Folded in (same `name:`, same steps — Issue #3116 verbatim-match rule):
+#   * Workspace Check (GH)                    — from `ci-gates.yml`
+#   * Energy Conservation (GH)                — from `ci-gates.yml`
+#   * Rustfmt (GH)                            — from `ci-gates.yml`
+#   * Clippy (GH)                             — from `ci-gates.yml`
+#   * Ashrae Cases Cycle Check (GH)           — from `ci-gates.yml`
+#   * Physics-Sim-Cycle-Check (GH)            — from `ci-gates.yml`
+#   * Cycle Downward Trend Guard (Issue #2768) — from `ci-gates.yml`
+#   * ASHRAE 140 Strict Energy Gate (Issue #1333) — PROMOTED to required
+#     from `ashrae_140_strict_energy_gate.yml` (that file is deleted).
+#     Keeps the docs-only-gate skip so docs-only PRs stay mergeable
+#     (Issue #3810 pattern: the `-listener` job reports neutral-success
+#     when the gate itself is skipped).
+#
+# New (the one real policy change in #4007):
+#   * Nextest Subset (GH) — curated regression signal: root lib tests +
+#     the two `all_tests` regression modules
+#     (`surface_flux_provider_isolation::`,
+#     `regression_exterior_film_unification::`), single default-feature
+#     leg, ~10 min budget. The full 3-feature-set matrix stays in
+#     `ci-gates.yml` as the comprehensive advisory signal.
+#
+# Branch protection contract
+# --------------------------
+# Do NOT rename any job's `name:`. Branch protection matches the emitted
+# `name:` byte-for-byte (Issue #3116). Job *ids* are free to change;
+# names are not. The required names live in
+# `release_gates.yaml::ci.required_checks`.
+#
+# No merge queue (deliberate, Issue #4007): Alex is effectively the sole
+# merger and prefers fast landing + follow-up fixes; queue latency would
+# oppose that policy. This workflow is consolidation + sharding only.
+
+name: Physics PR Gates
+
+on:
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+# ADR-0015 per-`head_sha` concurrency block (Issue #3366 / #3444).
+# Re-run `python3 scripts/check_concurrency_keys.py` after edits.
+concurrency:
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
+# Least-privilege GITHUB_TOKEN default (Issue #2526): jobs only check
+# out code and run scripts / cargo subcommands. `pull-requests: read`
+# is needed by the docs-only-gate action used in the strict precheck.
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  PYO3_USE_ABI3_FORWARD_COMPATIBILITY: 1
+
+jobs:
+
+  # ----------------------------------------------------------------
+  # Workspace Check (GH) — Issue #2983
+  # ----------------------------------------------------------------
+  # Folded verbatim from `ci-gates.yml` (Issue #4007). Same `name:`,
+  # same steps, same `runs-on:`.
+  workspace-check:
+    name: "Workspace Check (GH)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run workspace check
+        run: cargo check --workspace --verbose --exclude fluxion-tauri
+      # Issue #3125: catch example drift. `--examples` is NOT included
+      # by default in `cargo check --workspace`, so a renamed
+      # field/method silently breaks `examples/*.rs`. The new step
+      # adds `--examples --all-targets` to catch this drift at PR
+      # time. `continue-on-error: true` because the 4 broken examples
+      # reported in #3126 still fail to compile on current `develop`;
+      # the check observes the drift without blocking PRs (mirrors
+      # the original listener's posture).
+      - name: Run workspace check (examples, Issue #3125)
+        continue-on-error: true
+        run: cargo check --workspace --examples --all-targets --verbose --exclude fluxion-tauri
+
+  # ----------------------------------------------------------------
+  # Energy Conservation (GH) — Issue #1295
+  # ----------------------------------------------------------------
+  # Folded verbatim from `ci-gates.yml` (Issue #4007).
+  energy-conservation:
+    name: "Energy Conservation (GH)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run energy conservation tests
+        run: |
+          cargo test --test all_tests test_energy_conservation:: --verbose 2>&1 | tee /tmp/energy_test_output.txt
+          cargo test --test all_tests zone_balance_eplus_isolation:: --verbose 2>&1 | tee /tmp/zone_balance_test_output.txt
+      - name: Extract violation counts
+        run: |
+          echo "=== Energy Conservation Test Results ==="
+          echo "Checking for energy conservation violations..."
+          ENERGY_VIOLATIONS=$(grep -c "violated energy conservation" /tmp/energy_test_output.txt /tmp/zone_balance_test_output.txt 2>/dev/null || echo "0")
+          echo "Total violations found: $ENERGY_VIOLATIONS"
+          if [ "$ENERGY_VIOLATIONS" -gt "0" ]; then
+            echo "FAIL: Energy conservation violations detected"
+            grep -A2 "violated energy conservation" /tmp/energy_test_output.txt /tmp/zone_balance_test_output.txt
+            exit 1
+          fi
+          echo "PASS: No energy conservation violations"
+
+  # ----------------------------------------------------------------
+  # Rustfmt (GH)
+  # ----------------------------------------------------------------
+  # Folded verbatim from `ci-gates.yml` (Issue #4007).
+  fmt:
+    name: Rustfmt (GH)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-env
+        with:
+          components: rustfmt
+      - run: cargo fmt -- --check
+
+  # ----------------------------------------------------------------
+  # Clippy (GH) — `-D warnings`
+  # ----------------------------------------------------------------
+  # Folded verbatim from `ci-gates.yml` (Issue #4007).
+  clippy:
+    name: Clippy (GH)
+    runs-on: ubuntu-24.04
+    env:
+      CARGO_BUILD_JOBS: 1
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          rust-components: clippy
+          python-version: '3.10'
+      - run: cargo clippy --lib -- -D warnings
+
+  # ----------------------------------------------------------------
+  # Ashrae Cases Cycle Check (GH) — Issue #1441
+  # ----------------------------------------------------------------
+  # Folded verbatim from `ci-gates.yml` (Issue #4007).
+  ashrae-cases-cycle:
+    name: "Ashrae Cases Cycle Check (GH)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run cycle check
+        run: python3 scripts/check_ashrae_cases_cycle.py
+
+  # ----------------------------------------------------------------
+  # Physics-Sim-Cycle-Check (GH) — Issue #2463
+  # ----------------------------------------------------------------
+  # Folded verbatim from `ci-gates.yml` (Issue #4007).
+  physics-sim-cycle:
+    name: "Physics-Sim-Cycle-Check (GH)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run physics-sim cycle check
+        run: python3 scripts/check_physics_sim_cycle.py
+
+  # ----------------------------------------------------------------
+  # Cycle Downward Trend Guard (Issue #2768)
+  # ----------------------------------------------------------------
+  # Folded verbatim from `ci-gates.yml` (Issue #4007).
+  # Per-PR R1 (no growth) + R3 (no net-flat edge swap) enforcement.
+  # The R2 (14-night stale-window) check is nightly-only and lives in
+  # the `cycle-trend-nightly` job of `rust-tests.yml` (the path
+  # filter permits nightly pushes to trigger the workflow).
+  cycle-trend:
+    name: "Cycle Downward Trend Guard (Issue #2768)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: "Run cycle downward-trend guard (per-PR: R1 + R3)"
+        run: python3 scripts/check_cycle_downward_trend.py
+
+  # ----------------------------------------------------------------
+  # Nextest Subset (GH) — Issue #4007 (new required check)
+  # ----------------------------------------------------------------
+  # The one real policy change in #4007: a curated regression signal
+  # that runs the root lib tests (the suite whose absence let #3935's
+  # five broken lib tests ship green — Issue #3948) plus the two
+  # `all_tests` regression modules, on a single default-feature leg.
+  # ~10 min budget. The full 3-feature-set nextest matrix stays in
+  # `ci-gates.yml` (`Test` job) as the comprehensive advisory signal.
+  #
+  # Do NOT add positional filters to these invocations (Issue #3952):
+  # a positional filter applies globally across every selected target
+  # and would silently zero out `--lib`. The `-E` filterset below
+  # applies only within its own invocation.
+  nextest-subset:
+    name: "Nextest Subset (GH)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run curated nextest subset
+        run: |
+          cargo nextest run \
+            -p fluxion \
+            --lib \
+            --test-threads=2 \
+            --no-fail-fast && \
+          cargo nextest run \
+            -p fluxion \
+            --test all_tests \
+            -E 'test(/^surface_flux_provider_isolation::/) | test(/^regression_exterior_film_unification::/)' \
+            --test-threads=2 \
+            --no-fail-fast
+        env:
+          PYO3_PYTHON: /usr/bin/python3
+
+  # ----------------------------------------------------------------
+  # ASHRAE 140 Strict Energy Gate (Issue #1333) — PROMOTED to required
+  # ----------------------------------------------------------------
+  # Moved from `ashrae_140_strict_energy_gate.yml` (Issue #4007; that
+  # file is deleted). PROMOTED from path-filtered non-required to a
+  # required check: the strict ±15% annual-energy tolerance is the
+  # PR-time guard against Case 600/900 energy regressions.
+  #
+  # Docs-only skip (Issue #3810 pattern): the gate is expensive
+  # (~8-12 min release build), so docs-only PRs skip it via the
+  # `strict-precheck` docs-only-gate. The `strict-energy-gate-listener`
+  # job is unconditional (`if: always()`) and reports neutral-success
+  # when the gate is skipped, so branch protection's required check
+  # is always reported and docs-only PRs stay mergeable.
+  strict-precheck:
+    name: Strict gate precheck (docs-only skip)
+    runs-on: ubuntu-24.04
+    outputs:
+      should_run: ${{ steps.final.outputs.should_run }}
+    steps:
+      - name: Checkout (precheck needs the local docs-only-gate action)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 1
+      - uses: ./.github/actions/docs-only-gate
+        id: docs
+      - id: final
+        run: |
+          if [ "${{ steps.docs.outputs.docs_only }}" = "true" ]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "Docs-only PR: strict energy gate skipped (neutral-success via listener)"
+          else
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  strict-energy-gate:
+    name: "ASHRAE 140 Strict Energy Gate (Issue #1333)"
+    needs: strict-precheck
+    if: needs.strict-precheck.outputs.should_run == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+
+      # Issue #3398: cargo cache for the PR-blocking gate. Keys entries
+      # on the rustc invocation so feature-set changes cannot poison
+      # each other. Workspace list mirrors the actual `[workspace]`
+      # members in Cargo.toml.
+      - name: Cache cargo workspace
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        with:
+          workspaces: |
+            .
+            fluxion-core -> target
+            fluxion-city -> target
+            fluxion-fluid -> target
+            fluxion-grid -> target
+            fluxion-behavior -> target
+            fluxion-mcp -> target
+            fluxion-wasm -> target
+            crates/fluxion-toon -> target
+            crates/fluxion-twin -> target
+            crates/fluxion-evaluator -> target
+            fluxion-cfd -> target
+            fluxion-tauri/src-tauri -> target
+
+      - name: Strict ±15% Case 600/800/810/900/920/950/960/970 tolerance (transparent measurement)
+        # Runs the eight `*_annual_energy_ashrae140_tolerance` tests with
+        # `--include-ignored` so their measured H/C values print. The
+        # cooling assertions WILL fail today (known structural gaps) — the
+        # step deliberately does NOT fail (`set +e` + `exit 0`); the
+        # regression-check step below makes the real pass/fail decision
+        # against the recorded baseline (issue #2506, extended to 8
+        # cases by issue #3572).
+        run: |
+          set +e
+          cargo test --release --verbose \
+            --test all_tests _annual_energy_ashrae140_tolerance \
+            -- --include-ignored --nocapture \
+            2>&1 | tee /tmp/strict_gate_output.txt
+          ec=${PIPESTATUS[0]}
+          echo "---"
+          echo "strict-tolerance-raw-exit=$ec (non-zero expected: cooling assertions fail today)"
+          echo "strict-tolerance-raw-exit=$ec" >> /tmp/strict_gate_output.txt
+          exit 0
+
+      - name: ValidationMode::Blind Case 600 infrastructure (must pass)
+        # Test 3/4: API-level infrastructure for Case 600 (already passing).
+        # Filter `_blind_mode_case_600_infrastructure` is precise — only
+        # one test in the workspace matches this substring. NOT ignored;
+        # a failure here is a real regression.
+        run: |
+          cargo test --release --verbose \
+            --test all_tests _blind_mode_case_600_infrastructure \
+            2>&1 | tee -a /tmp/strict_gate_output.txt
+
+      - name: ValidationMode::Blind Case 900 infrastructure (must pass)
+        # Test 4/4: API-level infrastructure for Case 900 (already passing).
+        run: |
+          cargo test --release --verbose \
+            --test all_tests _blind_mode_case_900_infrastructure \
+            2>&1 | tee -a /tmp/strict_gate_output.txt
+
+      - name: Regression check vs. known baseline (issue #2506)
+        # Parses the measured H/C values from the strict-tolerance step,
+        # computes each metric's gap from the ±15% band, and compares
+        # against the recorded baseline. Fails ONLY on regression beyond
+        # the tolerance, or if a measured line is missing (filter drift).
+        # Also confirms the two infrastructure tests ran and passed.
+        run: |
+          set -e
+          echo "=== Strict gate coverage + regression check ==="
+          # Strip ANSI colour codes for grep / the parser.
+          sed -i 's/\x1b\[[0-9;]*m//g' /tmp/strict_gate_output.txt
+
+          # Coverage: the two infrastructure tests must appear as `ok`.
+          # (The two strict tolerance tests are coverage-checked by the
+          # Python parser, which fails if a case line is missing.)
+          # Issue #3764: the consolidated `tests/all_tests` harness prints
+          # module-qualified names (`test <module>::<name> ... ok`), so an
+          # optional `<module>::` prefix is tolerated between `test ` and
+          # the test name.
+          for t in \
+            test_blind_mode_case_600_infrastructure \
+            test_blind_mode_case_900_infrastructure ; do
+            if grep -qE "^test ([a-z0-9_]+::)?$t \.\.\. ok$" /tmp/strict_gate_output.txt; then
+              echo "  COVERED (pass): $t"
+            else
+              echo "  DROPPED OR FAILING: $t"
+              echo "  This infrastructure test must pass. A missing/failed"
+              echo "  line is a real regression (not a known structural gap)."
+              exit 1
+            fi
+          done
+
+          echo
+          echo "=== Strict ±15% tolerance regression analysis ==="
+          python3 scripts/check_strict_energy_gate_regression.py /tmp/strict_gate_output.txt
+
+      - name: Upload strict-gate log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ashrae-140-strict-energy-gate
+          path: /tmp/strict_gate_output.txt
+          retention-days: 14
+
+  # Issue #3810: GH-listener pattern for the docs-only-skipped strict
+  # gate. The upstream `strict-energy-gate` job only fires for
+  # non-docs-only PRs, so on a docs-only PR the gate is skipped and
+  # the required-check context would never be reported — branch
+  # protection's expected-vs-actual gap that #3805 documented.
+  #
+  # The `strict-energy-gate-listener` job is unconditional
+  # (`if: always()`) and observes the upstream result: PASS on
+  # `success` / `skipped` (docs-only neutral-success); FAIL on
+  # `failure` / `cancelled` / `timed_out`. Its `name:` is the exact
+  # required-check string so GitHub branch protection can reference
+  # it verbatim (Issue #3116).
+  strict-energy-gate-listener:
+    name: "ASHRAE 140 Strict Energy Gate (Issue #1333)"
+    needs: [strict-precheck, strict-energy-gate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    if: always()
+    steps:
+      - name: Verify upstream result
+        run: |
+          set -uo pipefail
+          GATE_RESULT="${{ needs.strict-energy-gate.result }}"
+          PRECHECK_RESULT="${{ needs.strict-precheck.result }}"
+          echo "strict-precheck result: ${PRECHECK_RESULT}"
+          echo "strict-energy-gate upstream result: ${GATE_RESULT}"
+          if [[ "${GATE_RESULT}" != "success" && "${GATE_RESULT}" != "skipped" ]]; then
+            echo "::error::ASHRAE 140 Strict Energy Gate upstream did not succeed: ${GATE_RESULT}"
+            exit 1
+          fi
+          echo "ASHRAE 140 Strict Energy Gate (Issue #1333) PASS"
