@@ -1442,7 +1442,107 @@ impl BenchmarkReport {
     }
 }
 
+/// Issue #4102 — one month's end-use bin from
+/// [`BenchmarkReport::calculate_monthly_end_use`]: the month's energy sum
+/// plus its peak demand.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MonthlyEndUseBin {
+    /// Sum of the timestep energies (kWh) assigned to this month.
+    pub kwh: f64,
+    /// Maximum timestep-average demand (kW) in this month.
+    pub peak_kw: f64,
+}
+
 impl BenchmarkReport {
+    /// Month lengths in hours. Shared calendar geometry for
+    /// [`BenchmarkReport::calculate_monthly_aggregation`] and the Issue
+    /// #4102 timestep-aware aggregation so the two can never disagree on
+    /// month boundaries.
+    fn month_lengths_hours(leap_year: bool) -> [usize; 12] {
+        [
+            744,
+            if leap_year { 696 } else { 672 },
+            744,
+            720,
+            744,
+            720,
+            744,
+            744,
+            720,
+            744,
+            720,
+            744,
+        ]
+    }
+
+    /// Issue #4102 — timestep-aware monthly aggregation of an end-use
+    /// energy series: 12 bins per year with kWh sums AND monthly peak
+    /// demand (max kW) per bin.
+    ///
+    /// `series` holds kWh per timestep — timestep-indexed, entries are NOT
+    /// assumed to be hourly. `dt_seconds` is the run's constant timestep
+    /// duration. `leap_year` gives February 29 days; production call sites
+    /// pass `false` (ASHRAE 140 convention is a non-leap year), the leap
+    /// path is covered by unit tests.
+    ///
+    /// Timestep `i` spans `[i·dt, (i+1)·dt)` seconds from Jan 1 00:00 of
+    /// the weather year and is assigned to the month containing its
+    /// midpoint, so sub-hourly-dt paths bin by actual time rather than by
+    /// entry count. Multi-year runs yield `12 × years_spanned` bins in
+    /// chronological order.
+    ///
+    /// Returns one [`MonthlyEndUseBin`] per (year, month): `kwh` is the
+    /// exact sum of the timestep energies in that month (the bins sum to
+    /// the series total exactly); `peak_kw` is the maximum
+    /// timestep-average kW (`kwh_i / dt_hours`) in that month — identical
+    /// to the maximum hourly kW for hourly runs.
+    pub fn calculate_monthly_end_use(
+        series: &[f64],
+        dt_seconds: f64,
+        leap_year: bool,
+    ) -> Vec<MonthlyEndUseBin> {
+        if dt_seconds.is_nan() || dt_seconds <= 0.0 {
+            return Vec::new();
+        }
+        // Cumulative month-start boundaries in seconds; index 12 is the
+        // year length.
+        let mut boundaries = [0.0f64; 13];
+        for (m, &hours) in Self::month_lengths_hours(leap_year).iter().enumerate() {
+            boundaries[m + 1] = boundaries[m] + hours as f64 * 3600.0;
+        }
+        let year_seconds = boundaries[12];
+        let dt_hours = dt_seconds / 3600.0;
+
+        let mut bins: Vec<MonthlyEndUseBin> = Vec::new();
+        for (i, &kwh) in series.iter().enumerate() {
+            let t_mid = (i as f64 + 0.5) * dt_seconds;
+            let year_idx = (t_mid / year_seconds).floor() as usize;
+            let within_year = t_mid - year_idx as f64 * year_seconds;
+            // Largest month start <= within_year. `within_year <
+            // year_seconds` guarantees month_idx <= 11; the `.min(11)` is
+            // belt-and-braces against float rounding at the year edge.
+            let month_idx = boundaries
+                .iter()
+                .rposition(|&b| within_year >= b)
+                .unwrap_or(0)
+                .min(11);
+            let flat = year_idx * 12 + month_idx;
+            if bins.len() <= flat {
+                bins.resize(
+                    flat + 1,
+                    MonthlyEndUseBin {
+                        kwh: 0.0,
+                        peak_kw: 0.0,
+                    },
+                );
+            }
+            let bin = &mut bins[flat];
+            bin.kwh += kwh;
+            bin.peak_kw = bin.peak_kw.max(kwh / dt_hours);
+        }
+        bins
+    }
+
     /// Calculates monthly aggregation from hourly data.
     ///
     /// This function correctly sums hourly values into 12 months using actual hours per month.
@@ -1457,7 +1557,7 @@ impl BenchmarkReport {
         let mut monthly = vec![0.0; 12];
 
         // Actual hours per month (non-leap year)
-        let hours_per_month = [744, 696, 744, 720, 744, 720, 744, 744, 720, 744, 720, 744];
+        let hours_per_month = Self::month_lengths_hours(false);
 
         // Calculate cumulative hour counts for month boundaries
         let mut month_boundaries = vec![0; 13];

@@ -66,7 +66,7 @@
       "test_binaries": 1
     }
   },
-  "generated_at": "2026-09-27T02:23:36.862738+00:00",
+  "generated_at": "2026-09-27T03:32:09.834675+00:00",
   "repo_root": "unknown",
   "schema_version": 1,
   "scope": {
@@ -79,26 +79,12 @@
     "lib_ignored_root": 8,
     "lib_tests_root": 4260,
     "test_binaries": 50,
-    "test_source_files": 368,
+    "test_source_files": 369,
     "workspace_ignored": 144,
     "workspace_integration_ignored": 124,
-    "workspace_integration_tests": 3413,
+    "workspace_integration_tests": 3424,
     "workspace_lib_ignored": 20,
     "workspace_lib_tests": 5372,
-    "workspace_tests": 8785
-  },
-  "verify": {
-    "command": [
-      "cargo",
-      "test",
-      "--workspace",
-      "--exclude",
-      "fluxion-tauri",
-      "--",
-      "--list"
-    ],
-    "error": "FileNotFoundError: [Errno 2] No such file or directory: 'cargo'",
-    "executed_at": "2026-09-27T02:23:36.863790+00:00",
-    "matched": false
+    "workspace_tests": 8796
   }
 }

@@ -156,6 +156,7 @@ mod limit_21_phase6_case640_diagnostic;
 mod metering_end_use;
 mod moisture_latent_heat_validation;
 mod monte_carlo_sweep;
+mod monthly_end_use;
 mod multi_climate_multi_building_validation;
 mod multi_zone_n_zone_network;
 mod multinode_9r4c_isolation;
