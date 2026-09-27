@@ -1256,21 +1256,10 @@ impl ThermalModel<VectorField> {
             let total_h_tr_is = H_SI * zone_floor_area;
             h_tr_is_vec.push(total_h_tr_is);
 
-            // Calculate effective specific capacitances per area for each construction
-            let kappa_wall = spec
-                .construction
-                .wall
-                .iso_13790_effective_capacitance_per_area();
-            #[allow(unused_variables)]
-            let kappa_roof = spec
-                .construction
-                .roof
-                .iso_13790_effective_capacitance_per_area();
-            #[allow(unused_variables)]
-            let kappa_floor = spec
-                .construction
-                .floor
-                .iso_13790_effective_capacitance_per_area();
+            // Issue #4072: `wall_cap` is computed by the shared helper
+            // `fluxion_core::construction::wall_cap_for`, which uses the
+            // ISO 13790 effective κ on both sides of the blend. Roof and
+            // floor κ are consumed only by the 9R4C block below.
 
             // Total thermal capacitance (C_m) from all mass elements
             // Issue #2455: the half-insulation rule excludes the heavy
@@ -1305,16 +1294,17 @@ impl ThermalModel<VectorField> {
             // insulation) and the full capacitance (correct for heavyweight
             // walls whose concrete mass must participate in C_m — Issue #2455).
             //
-            // Previously `if construction_type == HighMass`. The massiveness
-            // weight is keyed off the wall's FULL κ (not the ISO-truncated
-            // value, which mis-measures exterior-mass walls — the reason the
-            // flag existed, Issue #905) and reproduces both endpoints exactly:
-            // lightweight walls (κ ≈ 12,900) → effective, heavyweight walls
-            // (κ ≈ 123,100) → full. Verified: flag and wall mass agree across
-            // all 65 ASHRAE 140 case variants.
-            let kappa_wall_full = spec.construction.wall.thermal_capacitance_per_area();
-            let w_mass = fluxion_core::construction::massiveness_weight(kappa_wall_full);
-            let wall_cap = (kappa_wall + w_mass * (kappa_wall_full - kappa_wall)) * opaque_area;
+            // === Issue #4072 — wall_cap κ-consistency ===
+            //
+            // wall_cap is computed by the shared helper
+            // `fluxion_core::construction::wall_cap_for`, ensuring the 5R1C
+            // lumped node and the 9R4C per-element path agree on envelope
+            // mass for every MassClass. The massiveness-weight smoothstep
+            // (80k, 100k) is preserved and still feeds `h_ms_of_kappa` below
+            // (#2229 calibration). See the helper doc-comment for the full
+            // design rationale.
+            let wall_cap =
+                fluxion_core::construction::wall_cap_for(&spec.construction.wall, opaque_area);
             let roof_cap = spec
                 .construction
                 .roof
