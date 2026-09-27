@@ -233,7 +233,7 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 # plus the two AST-counted cfg variants of the selector unit test; the
 # net cargo-verified delta is workspace_tests 7927 -> 8018 per
 # ``tests/test_inventory.json``).
-BASELINE_LIB_TESTS = 4266  # 2026-09-26: 4265 -> 4266 — PR #4093 (#4078) added a lib test without bumping; ratchet caught up in #3957
+BASELINE_LIB_TESTS = 4268  # 2026-09-27: 4266 -> 4268 — Issue #3063 adds 2 lib tests (5 inline tests in step_5r1c, net of -3 from PR #4103 rebalance)
                         # (+2 hvac setpoint CLI tests in src/cli/hvac_commands.rs:
                         # ZoneControl delegation + CLI-to-system propagation);
                         # stacked on the merged 4263 fluxion-#4086 bump.
@@ -242,7 +242,7 @@ BASELINE_LIB_TESTS = 4266  # 2026-09-26: 4265 -> 4266 — PR #4093 (#4078) added
                         # scans identically to a fresh CI checkout — the old
                         # "dirty tree scans up to 4 lower" caveat is retired.
 BASELINE_LIB_IGNORED = 9
-BASELINE_WORKSPACE_TESTS = 8799  # 2026-09-27: 8796 -> 8799 — Issue #4103 adds 3
+BASELINE_WORKSPACE_TESTS = 8804  # 2026-09-27: 8799 -> 8804 — Issue #3063 adds 5 inline tests via step_5r1c::h_tr_em_wind_dependent_tests mod
                                  # unmet-hours lib tests in src/api/schema.rs
                                  # (tolerance default, all-hours divergence,
                                  # multi-zone summation); no binary/ignore
