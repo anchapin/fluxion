@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Behavior tests for scripts/check_teacher_validation_suite.py (Refs #3986 / #4116).
 
 These tests exercise the pure-function verdict logic and the CLI's main()
@@ -25,12 +24,8 @@ advisory-only nightly gate per the user's PR-C scope decision (Refs #4116).
 
 from __future__ import annotations
 
-import io
-import json
-import os
 import subprocess
 import sys
-from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
 
 # Path setup: scripts/ci/test_*.py files are pytest-discovered by the
@@ -158,8 +153,8 @@ def test_parse_failing_log_does_not_silently_pass() -> None:
 def test_aggregate_all_pass_returns_overall_pass() -> None:
     """When every sub-suite PASSes, the aggregate verdict is PASS."""
     from check_teacher_validation_suite import (
-        parse_sub_suite_result,
         aggregate_verdict,
+        parse_sub_suite_result,
     )
 
     sub_results = [
@@ -176,8 +171,8 @@ def test_aggregate_all_pass_returns_overall_pass() -> None:
 def test_aggregate_any_fail_returns_overall_fail() -> None:
     """When at least one sub-suite FAILs, the aggregate verdict is FAIL."""
     from check_teacher_validation_suite import (
-        parse_sub_suite_result,
         aggregate_verdict,
+        parse_sub_suite_result,
     )
 
     sub_results = [
@@ -196,8 +191,8 @@ def test_aggregate_mixed_pass_and_fail_returns_overall_fail() -> None:
     verdict to FAIL. This is the conservative aggregation policy: a teacher-path
     regression must not be masked by other suites passing."""
     from check_teacher_validation_suite import (
-        parse_sub_suite_result,
         aggregate_verdict,
+        parse_sub_suite_result,
     )
 
     sub_results = [
@@ -215,8 +210,8 @@ def test_aggregate_verdict_includes_per_sub_suite_detail() -> None:
     """The aggregate verdict struct exposes per-sub-suite detail so the CI
     log can render which sub-suite(s) failed without re-parsing."""
     from check_teacher_validation_suite import (
-        parse_sub_suite_result,
         aggregate_verdict,
+        parse_sub_suite_result,
     )
 
     sub_results = [
