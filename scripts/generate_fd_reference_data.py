@@ -17,7 +17,6 @@ import argparse
 import csv
 import os
 import shutil
-import sqlite3
 import subprocess
 import tempfile
 from pathlib import Path
@@ -82,7 +81,7 @@ def expand_and_run_ep(idf_content: str, tmpdir: str) -> bool:
 
     expanded = os.path.join(tmpdir, "expanded.idf")
     if not os.path.exists(expanded):
-        print(f"  expanded.idf not created")
+        print("  expanded.idf not created")
         return False
 
     # Run E+
@@ -233,17 +232,17 @@ def main():
         with tempfile.TemporaryDirectory(prefix=f"ep_{key}_") as tmpdir:
             success = expand_and_run_ep(modified, tmpdir)
             if not success:
-                print(f"  FAILED: E+ run failed")
+                print("  FAILED: E+ run failed")
                 continue
 
             eso_path = os.path.join(tmpdir, "eplusout.eso")
             if not os.path.exists(eso_path):
-                print(f"  FAILED: eplusout.eso not found")
+                print("  FAILED: eplusout.eso not found")
                 continue
 
             rows = parse_eso(eso_path)
             if not rows:
-                print(f"  FAILED: no data extracted from ESO")
+                print("  FAILED: no data extracted from ESO")
                 continue
 
             output_file = output_dir / f"step_response_{key}.csv"
