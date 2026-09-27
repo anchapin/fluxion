@@ -36,6 +36,23 @@ pub struct ConductionState<T: ContinuousTensor<f64>> {
     pub h_tr_is_no_south: T,
     /// South wall's h_tr_em for series path computation (Issue #715).
     pub h_tr_em_south: T,
+    /// Issue #3063 — opaque envelope material-only R-value for walls (m²·K/W),
+    /// used by `step_5r1c` to recompute `h_tr_em` per-timestep with the
+    /// wind-dependent exterior film coefficient. Pre-stored (rather than
+    /// inverted from `u_value`) to avoid coupling to `u_value`'s internal
+    /// default-film assumptions.
+    pub r_materials_wall: f64,
+    /// Issue #3063 — opaque envelope material-only R-value for roof (m²·K/W).
+    pub r_materials_roof: f64,
+    /// Issue #3063 — per-zone opaque (wall minus window) area (m²). The
+    /// gross `setpoints.wall_area[i]` includes windows and overcounts the
+    /// wall contribution to `h_tr_em`, so the per-zone opaque area is
+    /// precomputed at construction time.
+    pub opaque_wall_area: T,
+    /// Issue #3063 — per-zone roof area (m²), equal to the floor area for
+    /// the same zone (the legacy `from_spec_with_selector` uses
+    /// `zone_floor_area` for the roof contribution).
+    pub roof_area_zone: T,
     /// Per-surface thermal mass conductances for 9R4C model (Issue #715, Phase 6B).
     pub h_tr_ms_wall: Option<T>,
     pub h_tr_ms_roof: Option<T>,
@@ -80,6 +97,10 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ConductionState<T> {
             h_tr_is: self.h_tr_is.clone(),
             h_tr_is_no_south: self.h_tr_is_no_south.clone(),
             h_tr_em_south: self.h_tr_em_south.clone(),
+            r_materials_wall: self.r_materials_wall,
+            r_materials_roof: self.r_materials_roof,
+            opaque_wall_area: self.opaque_wall_area.clone(),
+            roof_area_zone: self.roof_area_zone.clone(),
             h_tr_ms_wall: self.h_tr_ms_wall.clone(),
             h_tr_ms_roof: self.h_tr_ms_roof.clone(),
             h_tr_ms_floor: self.h_tr_ms_floor.clone(),

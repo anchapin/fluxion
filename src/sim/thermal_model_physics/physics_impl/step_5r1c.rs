@@ -546,14 +546,33 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         .get(i)
                         .copied()
                         .unwrap_or(20.0);
-                    let h_tr_em_i = self
-                        .0
-                        .conduction
-                        .h_tr_em
-                        .as_ref()
-                        .get(i)
-                        .copied()
-                        .unwrap_or(0.0);
+                    // Issue #3063 — wind-dependent `h_tr_em`. Recomputed
+                    // per-timestep from material R-values and the same
+                    // exterior film convention used by the sol-air call
+                    // (`HorizontalRoofWindward` at `v_wind_building`).
+                    let h_tr_em_i = h_tr_em_wind_dependent(
+                        self.0
+                            .conduction
+                            .opaque_wall_area
+                            .as_ref()
+                            .get(i)
+                            .copied()
+                            .unwrap_or(0.0),
+                        self.0.conduction.r_materials_wall,
+                        crate::physics::exterior_convection::ExteriorSurfaceDirection::HorizontalRoofWindward,
+                        v_wind_building,
+                    ) + h_tr_em_wind_dependent(
+                        self.0
+                            .conduction
+                            .roof_area_zone
+                            .as_ref()
+                            .get(i)
+                            .copied()
+                            .unwrap_or(0.0),
+                        self.0.conduction.r_materials_roof,
+                        crate::physics::exterior_convection::ExteriorSurfaceDirection::HorizontalRoofWindward,
+                        v_wind_building,
+                    );
                     let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
 
                     // Net CTF contribution (CTF - 5R1C)
@@ -604,14 +623,33 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         .get(i)
                         .copied()
                         .unwrap_or(20.0);
-                    let h_tr_em_i = self
-                        .0
-                        .conduction
-                        .h_tr_em
-                        .as_ref()
-                        .get(i)
-                        .copied()
-                        .unwrap_or(0.0);
+                    // Issue #3063 — wind-dependent `h_tr_em`. Recomputed
+                    // per-timestep from material R-values and the same
+                    // exterior film convention used by the sol-air call
+                    // (`HorizontalRoofWindward` at `v_wind_building`).
+                    let h_tr_em_i = h_tr_em_wind_dependent(
+                        self.0
+                            .conduction
+                            .opaque_wall_area
+                            .as_ref()
+                            .get(i)
+                            .copied()
+                            .unwrap_or(0.0),
+                        self.0.conduction.r_materials_wall,
+                        crate::physics::exterior_convection::ExteriorSurfaceDirection::HorizontalRoofWindward,
+                        v_wind_building,
+                    ) + h_tr_em_wind_dependent(
+                        self.0
+                            .conduction
+                            .roof_area_zone
+                            .as_ref()
+                            .get(i)
+                            .copied()
+                            .unwrap_or(0.0),
+                        self.0.conduction.r_materials_roof,
+                        crate::physics::exterior_convection::ExteriorSurfaceDirection::HorizontalRoofWindward,
+                        v_wind_building,
+                    );
                     let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
 
                     // Add net FD flux (FD - 5R1C)
@@ -1563,7 +1601,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let mass_temps_ref = self.0.mass.mass_temperatures.as_ref();
         let thermal_cap_ref = self.0.mass.thermal_capacitance.as_ref();
         // Mode-specific fields removed - use physics-based h_tr_em and h_tr_ms
-        let h_tr_em_ref = self.0.conduction.h_tr_em.as_ref();
+        // Issue #3063 — `h_tr_em` is recomputed per-timestep inside the loop
+        // from material R-values and the wind-dependent exterior film. The
+        // legacy construction-time vector is no longer needed.
         let h_tr_ms_ref = self.0.conduction.h_tr_ms.as_ref();
         let t_s_act_ref = t_s_act.as_ref();
         let t_i_act_ref = t_i_act.as_ref();
@@ -1645,7 +1685,31 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             if i == 0 && timestep < 3 {
                 let tm = mass_temps_ref[i];
                 let cm_dt = cm / dt;
-                let h_tr_em_i = h_tr_em_ref[i];
+                // Issue #3063 — wind-dependent `h_tr_em` (debug-physics
+                // snapshot mirrors the production BE/CN integrators above).
+                let h_tr_em_i = h_tr_em_wind_dependent(
+                    self.0
+                        .conduction
+                        .opaque_wall_area
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(0.0),
+                    self.0.conduction.r_materials_wall,
+                    crate::physics::exterior_convection::ExteriorSurfaceDirection::HorizontalRoofWindward,
+                    v_wind_building,
+                ) + h_tr_em_wind_dependent(
+                    self.0
+                        .conduction
+                        .roof_area_zone
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(0.0),
+                    self.0.conduction.r_materials_roof,
+                    crate::physics::exterior_convection::ExteriorSurfaceDirection::HorizontalRoofWindward,
+                    v_wind_building,
+                );
                 let h_tr_3_i = h_tr_3_ref_2[i];
                 let half_cond = 0.5 * (h_tr_3_i + h_tr_em_i);
                 let denom = cm_dt + half_cond;
@@ -1662,9 +1726,39 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             // Use physics-based h_tr_em and h_tr_ms (mode-specific factors removed)
             // The conductances are now calculated from first principles:
-            // h_tr_em = k * A / d (thermal conductivity * area / thickness)
+            // h_tr_em = A / (R_materials + 1/h_c_ext_wind_dependent)  [Issue #3063]
+            //   Previously h_tr_em was baked at construction time with the
+            //   default exterior film coefficient (`EXTERIOR_FILM_COEFF_DEFAULT`
+            //   = 18.3 W/m²·K), which overstated `h_tr_em` at low wind speeds
+            //   and biased hours into the cooling deadband. We now recompute
+            //   `h_tr_em` per-timestep using the same `v_wind_building` and
+            //   `HorizontalRoofWindward` convention as the sol-air call.
             // h_tr_ms = k * A / d (thermal conductivity * area / thickness)
-            let h_tr_em = h_tr_em_ref[i];
+            // Issue #3063 — wind-dependent `h_tr_em`. Recomputed per-timestep
+            // from material R-values and the wind-dependent exterior film.
+            let h_tr_em = h_tr_em_wind_dependent(
+                self.0
+                    .conduction
+                    .opaque_wall_area
+                    .as_ref()
+                    .get(i)
+                    .copied()
+                    .unwrap_or(0.0),
+                self.0.conduction.r_materials_wall,
+                crate::physics::exterior_convection::ExteriorSurfaceDirection::HorizontalRoofWindward,
+                v_wind_building,
+            ) + h_tr_em_wind_dependent(
+                self.0
+                    .conduction
+                    .roof_area_zone
+                    .as_ref()
+                    .get(i)
+                    .copied()
+                    .unwrap_or(0.0),
+                self.0.conduction.r_materials_roof,
+                crate::physics::exterior_convection::ExteriorSurfaceDirection::HorizontalRoofWindward,
+                v_wind_building,
+            );
             // Issue #2868: `h_tr_ms` is now consumed through `h_air_mass`
             // (computed above with the degenerate-`H_tr,3` fallback).
             let _h_tr_ms = h_tr_ms_ref[i];
@@ -1809,5 +1903,232 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         self.0.hvac.scratch_pool.return_5r1c(scratch);
 
         Ok(net_hvac_energy_for_step / 3.6e6) // Return kWh
+    }
+}
+
+// =============================================================================
+// Issue #3063 — wind-dependent `h_tr_em` helper
+// =============================================================================
+//
+// Legacy 5R1C locks the exterior film coefficient to `EXTERIOR_FILM_COEFF_DEFAULT`
+// (18.3 W/m²·K) at construction time. At low wind speeds (< 2 m/s) the actual
+// exterior film coefficient is materially lower (~8 W/m²·K at 1 m/s), which
+// overstates `h_tr_em` and shifts more hours into the cooling deadband (issue
+// description; see `docs/KNOWN_ISSUES.md` §LIMIT-21).
+//
+// We re-derive `h_tr_em` per-timestep from the material-only R-value (no films
+// baked in) and the wind-dependent exterior film coefficient produced by the
+// same `h_c_ext_wind_dependent` helper that drives the sol-air temperature
+// calculation. The exterior-film convention is preserved exactly: the existing
+// sol-air call at `step_5r1c.rs:219-232` uses
+// `ExteriorSurfaceDirection::HorizontalRoofWindward` with wind already adjusted
+// to building height via `wind_at_building_height_from_10m(_, 2.7)`, and we
+// call the helper with the same `v_wind_building` so the `h_c_ext` driving the
+// heat balance matches the `h_c_ext` driving `t_sol_air`.
+//
+// UNITS:
+//   opaque_area    [m²]
+//   r_materials    [m²·K/W]  — sum of opaque-layer R-values, no films baked in
+//   h_c_ext        [W/m²·K]  — from `h_c_ext_wind_dependent`
+//   returns        [W/K]     — h_tr_em = A / (R_materials + 1/h_c_ext)
+//
+// The helper is kept local to `step_5r1c.rs` until 6R2C/9R4C adopt it; it moves
+// to `exterior_convection.rs` at that point so all three paths share one
+// canonical implementation.
+#[allow(dead_code)]
+pub(crate) fn h_tr_em_wind_dependent(
+    opaque_area: f64,
+    r_materials: f64,
+    surface_direction: crate::physics::exterior_convection::ExteriorSurfaceDirection,
+    v_wind_at_building_height: f64,
+) -> f64 {
+    let h_c_ext = crate::physics::exterior_convection::h_c_ext_wind_dependent(
+        surface_direction,
+        v_wind_at_building_height,
+    );
+    opaque_area / (r_materials + 1.0 / h_c_ext)
+}
+
+#[cfg(test)]
+mod h_tr_em_wind_dependent_tests {
+    //! Bit-consistency and dimensional tests for the Issue #3063 fix.
+    //!
+    //! The legacy 5R1C path used a construction-time `h_tr_em` baked with the
+    //! default exterior film coefficient (`EXTERIOR_FILM_COEFF_DEFAULT =
+    //! 18.3 W/m²·K`). To prove that switching to the per-timestep wind-dependent
+    //! computation is bit-consistent at the calibration point, we verify two
+    //! facts:
+    //!
+    //! 1. `h_c_ext_wind_dependent(HorizontalRoofWindward, v_cal) == EXTERIOR_FILM_COEFF_DEFAULT`
+    //!    at `v_cal = (18.3 - 5.8) / 3.8 ≈ 3.28947… m/s`, which is the wind
+    //!    speed at which the new helper returns the legacy value. We allow
+    //!    `rel_err < 1e-9` because `(18.3 - 5.8) / 3.8` is not exact in
+    //!    floating point.
+    //!
+    //! 2. With `h_c_ext` pinned to exactly `18.3`, the helper reproduces the
+    //!    legacy formula `A / (R_materials + 1/EXTERIOR_FILM_COEFF_DEFAULT)`
+    //!    to floating-point equality.
+
+    use super::h_tr_em_wind_dependent;
+    use crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF_DEFAULT;
+    use crate::physics::exterior_convection::{h_c_ext_wind_dependent, ExteriorSurfaceDirection};
+    use fluxion_core::construction::{Construction, ConstructionLayer};
+
+    /// Calibration wind speed: `5.8 + 3.8 * v = 18.3` ⇒ `v = (18.3 - 5.8) / 3.8`.
+    /// `HorizontalRoofWindward` is the convention used at `step_5r1c.rs:219-232`.
+    const V_CAL_ROOF_WINDWARD: f64 = (EXTERIOR_FILM_COEFF_DEFAULT - 5.8) / 3.8;
+
+    #[test]
+    fn h_c_ext_recovers_default_at_calibration_wind() {
+        // Sanity: at V_CAL_ROOF_WINDWARD, h_c_ext returns EXTERIOR_FILM_COEFF_DEFAULT.
+        let h_c_ext = h_c_ext_wind_dependent(
+            ExteriorSurfaceDirection::HorizontalRoofWindward,
+            V_CAL_ROOF_WINDWARD,
+        );
+        let rel_err =
+            (h_c_ext - EXTERIOR_FILM_COEFF_DEFAULT).abs() / EXTERIOR_FILM_COEFF_DEFAULT.abs();
+        assert!(
+            rel_err < 1e-9,
+            "h_c_ext at V_CAL diverges from EXTERIOR_FILM_COEFF_DEFAULT: \
+             rel_err = {rel_err}, h_c_ext = {h_c_ext}, expected = {EXTERIOR_FILM_COEFF_DEFAULT}"
+        );
+    }
+
+    #[test]
+    fn h_tr_em_bit_consistent_at_calibration_wind() {
+        // Build a small ASHRAE 600-style wall construction. We only care about
+        // the value of `r_value_materials()` and that the helper uses the same
+        // `ExteriorSurfaceDirection` convention as the sol-air call. Any
+        // single-layer construction with positive R suffices.
+        let wall = Construction::new(vec![ConstructionLayer::new(
+            "Concrete", 1.7,    // k [W/m·K]
+            2400.0, // density [kg/m³]
+            880.0,  // specific_heat [J/kg·K]
+            0.1,    // thickness [m]
+        )]);
+        let r_materials = wall.r_value_materials();
+        assert!(
+            r_materials > 0.0,
+            "test precondition: positive material R-value"
+        );
+
+        // Per-zone opaque (wall minus window) area. The exact number does not
+        // matter; pick something representative.
+        let opaque_area = 50.0_f64;
+
+        // New helper at the calibration wind speed.
+        let h_tr_em_new = h_tr_em_wind_dependent(
+            opaque_area,
+            r_materials,
+            ExteriorSurfaceDirection::HorizontalRoofWindward,
+            V_CAL_ROOF_WINDWARD,
+        );
+
+        // Legacy formula baked at construction time.
+        let h_tr_em_legacy = opaque_area / (r_materials + 1.0 / EXTERIOR_FILM_COEFF_DEFAULT);
+
+        let rel_err = (h_tr_em_new - h_tr_em_legacy).abs() / h_tr_em_legacy.abs();
+        assert!(
+            rel_err < 1e-9,
+            "h_tr_em diverges from legacy at calibration wind: rel_err = {rel_err}, \
+             new = {h_tr_em_new}, legacy = {h_tr_em_legacy}"
+        );
+    }
+
+    #[test]
+    fn h_tr_em_exact_equality_when_h_c_ext_pinned() {
+        // When `h_c_ext` equals `EXTERIOR_FILM_COEFF_DEFAULT` exactly (no
+        // floating-point error from the wind-speed inversion), the helper
+        // reproduces the legacy value to floating-point equality. We cannot
+        // call the helper with `h_c_ext` directly, but we can construct a
+        // wind speed that produces EXACTLY `18.3` via the formula
+        // `5.8 + 3.8 * v = 18.3 ⇒ v = 12.5 / 3.8`. In floating point
+        // `12.5 / 3.8` is the same value the helper sees, so this is still
+        // relative-error rather than bit-exact equality. The legacy formula
+        // is `A / (R + 1/18.3)`; the helper evaluates `A / (R + 1/h_c_ext)`
+        // with `h_c_ext = 5.8 + 3.8 * (12.5 / 3.8)`. The `12.5 / 3.8` may
+        // differ from `18.3 - 5.8) / 3.8` only by floating-point rounding
+        // accumulated through the wind-speed path; we still allow `rel_err
+        // < 1e-12` to capture the intent.
+        let r_materials = 0.5_f64;
+        let opaque_area = 50.0_f64;
+        let v = 12.5 / 3.8;
+        let h_tr_em_new = h_tr_em_wind_dependent(
+            opaque_area,
+            r_materials,
+            ExteriorSurfaceDirection::HorizontalRoofWindward,
+            v,
+        );
+        let h_tr_em_legacy = opaque_area / (r_materials + 1.0 / EXTERIOR_FILM_COEFF_DEFAULT);
+        let rel_err = (h_tr_em_new - h_tr_em_legacy).abs() / h_tr_em_legacy.abs();
+        assert!(
+            rel_err < 1e-12,
+            "h_tr_em helper diverges from pinned-h_c_ext value: rel_err = {rel_err}, \
+             new = {h_tr_em_new}, legacy = {h_tr_em_legacy}"
+        );
+    }
+
+    #[test]
+    fn r_materials_plus_default_films_recovers_u_value_inverse() {
+        // Build a wall construction and verify:
+        //     r_materials + 1/INTERIOR_FILM_COEFF + 1/EXTERIOR_FILM_COEFF_DEFAULT
+        //     ≈ 1 / u_value(None, None)
+        // The `u_value(None, None)` path uses the default interior film
+        // (8.29 W/m²·K) — see `construction.rs::r_value_total` — which is the
+        // same default `from_spec_with_selector` used to compute the legacy
+        // `h_tr_em`. Pinning this identity protects against future refactors
+        // that change either the default interior film or the material-R
+        // derivation.
+        use crate::physics::constants::thermal::ashrae_140::INTERIOR_FILM_COEFF;
+
+        let wall = Construction::new(vec![ConstructionLayer::new(
+            "Concrete", 1.7, 2400.0, 880.0, 0.1,
+        )]);
+        let r_se_default = 1.0 / EXTERIOR_FILM_COEFF_DEFAULT;
+        let r_si_default = 1.0 / INTERIOR_FILM_COEFF;
+        let r_materials = wall.r_value_materials();
+        let total_r_with_defaults = r_materials + r_si_default + r_se_default;
+        let inverse_u_value = 1.0 / wall.u_value(None, None);
+
+        let rel_err = (total_r_with_defaults - inverse_u_value).abs() / inverse_u_value.abs();
+        assert!(
+            rel_err < 1e-9,
+            "R-value identity broke: r_materials + R_si + R_se = {total_r_with_defaults}, \
+             1/u_value = {inverse_u_value}, rel_err = {rel_err}"
+        );
+    }
+
+    #[test]
+    fn h_tr_em_decreases_at_low_wind_speed() {
+        // Sanity: the wind-dependent `h_tr_em` should be strictly *smaller*
+        // than the legacy construction-time `h_tr_em` when wind speed is
+        // below the calibration point. This is the whole point of the fix:
+        // low wind means a thicker exterior film means lower `h_tr_em`.
+        let r_materials = 0.5_f64;
+        let opaque_area = 50.0_f64;
+        let h_tr_em_legacy = opaque_area / (r_materials + 1.0 / EXTERIOR_FILM_COEFF_DEFAULT);
+        let h_tr_em_low_wind = h_tr_em_wind_dependent(
+            opaque_area,
+            r_materials,
+            ExteriorSurfaceDirection::HorizontalRoofWindward,
+            1.0, // 1 m/s — well below V_CAL_ROOF_WINDWARD ≈ 3.29 m/s
+        );
+        assert!(
+            h_tr_em_low_wind < h_tr_em_legacy,
+            "h_tr_em should decrease at low wind: low_wind = {h_tr_em_low_wind}, \
+             legacy = {h_tr_em_legacy}"
+        );
+        // And strictly *larger* above the calibration point.
+        let h_tr_em_high_wind = h_tr_em_wind_dependent(
+            opaque_area,
+            r_materials,
+            ExteriorSurfaceDirection::HorizontalRoofWindward,
+            6.0, // 6 m/s — well above V_CAL_ROOF_WINDWARD
+        );
+        assert!(
+            h_tr_em_high_wind > h_tr_em_legacy,
+            "h_tr_em should increase at high wind: high_wind = {h_tr_em_high_wind}, \
+             legacy = {h_tr_em_legacy}"
+        );
     }
 }
