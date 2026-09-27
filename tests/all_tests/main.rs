@@ -51,6 +51,7 @@ mod ashrae_140_setback_ventilation;
 mod ashrae_140_solar_gain_variants;
 mod ashrae_140_solid_conduction_variants;
 mod ashrae_140_validation;
+mod ashrae_140_validator_fabric;
 mod ashrae_140_validator_selector_parity;
 mod ashrae_140_weather_comparison;
 mod ashrae_140_window_frame;
