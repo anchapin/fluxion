@@ -105,6 +105,11 @@ impl SurrogateThermalLoadAdapter {
         let dt_seconds = model.calculate_timestep_seconds();
         model.diagnostics_state.hourly_temperatures =
             Some(vec![Vec::with_capacity(steps); model.hvac.num_zones]);
+        // Issue #4101 — end-use metering for the surrogate loop. Heating /
+        // cooling come from the backend accumulator deltas; lighting and
+        // equipment are zero here because this path steps physics directly
+        // (no StepParameters internal loads are applied).
+        model.diagnostics_state.init_end_use_metering(steps);
         let cycle = get_daily_cycle();
         let total_energy_kwh: f64 = (0..steps)
             .map(|t| {
@@ -123,7 +128,16 @@ impl SurrogateThermalLoadAdapter {
                     }
                 };
                 model.set_loads(&loads);
+                // Issue #4101 — same accumulator-delta metering as the
+                // physics loop; lighting/equipment are unapplied here.
+                let heating_before = model.hvac.annual_heating_energy;
+                let cooling_before = model.hvac.annual_cooling_energy;
                 let energy = model.step_physics(t, outdoor_temp, dt_seconds);
+                let heating_kwh = (model.hvac.annual_heating_energy - heating_before).max(0.0);
+                let cooling_kwh = (model.hvac.annual_cooling_energy - cooling_before).max(0.0);
+                model
+                    .diagnostics_state
+                    .record_timestep(heating_kwh, cooling_kwh, 0.0, 0.0);
                 let temps = model.setpoints.temperatures.as_ref().to_vec();
                 if let Some(ref mut hourly) = model.diagnostics_state.hourly_temperatures {
                     for (zone_idx, &temp) in temps.iter().enumerate() {

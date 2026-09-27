@@ -153,6 +153,7 @@ mod lib_batch_oracle;
 mod lib_parameter_validation;
 mod limit_05_inversion_regression;
 mod limit_21_phase6_case640_diagnostic;
+mod metering_end_use;
 mod moisture_latent_heat_validation;
 mod monte_carlo_sweep;
 mod multi_climate_multi_building_validation;

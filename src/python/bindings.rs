@@ -554,6 +554,50 @@ impl PyMultiZoneThermalModel {
         }
     }
 
+    /// Get timestep-indexed end-use energy series as a numpy array (Issue #4101).
+    ///
+    /// # Returns
+    /// Tuple of (end_uses, shape) where end_uses is a 2D numpy array with
+    /// shape [4, timesteps]; rows are heating, cooling, lighting, equipment
+    /// in that order, each in kWh per timestep.
+    ///
+    /// # Example
+    /// ```python
+    /// import numpy as np
+    /// model = fluxion.MultiZoneThermalModel(3)
+    /// model.simulate_multi_zone(1, False)
+    /// end_uses, shape = model.get_hourly_end_use_kwh_numpy()
+    /// # end_uses is a numpy array with shape [4, 8760]
+    /// heating = end_uses[0]
+    /// ```
+    pub fn get_hourly_end_use_kwh_numpy<'a>(
+        &self,
+        py: Python<'a>,
+    ) -> PyResult<(Bound<'a, numpy::PyArray2<f64>>, Vec<usize>)> {
+        let series = [
+            self.inner.get_hourly_heating_kwh(),
+            self.inner.get_hourly_cooling_kwh(),
+            self.inner.get_hourly_lighting_kwh(),
+            self.inner.get_hourly_equipment_kwh(),
+        ];
+        let rows: Option<Vec<Vec<f64>>> = series.into_iter().collect::<Option<Vec<Vec<f64>>>>();
+        match rows {
+            Some(rows) => {
+                let timesteps = rows.first().map(|r| r.len()).unwrap_or(0);
+                let shape = vec![rows.len(), timesteps];
+                let arr = numpy::PyArray2::from_vec2(py, &rows).map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!(
+                        "Failed to create numpy array: {e}"
+                    ))
+                })?;
+                Ok((arr, shape))
+            }
+            None => Err(pyo3::exceptions::PyValueError::new_err(
+                "Simulation has not been run yet. Call simulate_multi_zone first.",
+            )),
+        }
+    }
+
     /// Get sub-hourly 9R4C node temperature profiles (Issue #1799).
     ///
     /// Returns a nested list `[[[wall_t], [roof_t], [floor_t], [internal_t]] * num_zones]`
