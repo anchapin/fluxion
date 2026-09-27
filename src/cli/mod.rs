@@ -1079,6 +1079,23 @@ pub fn run_direct_simulation(
             schema_v1.controls.zone_control.deadband_tolerance,
         );
 
+    // Issue #4101: end-use metering series recorded in the loop above
+    // (fetched once here; the clones below feed the #4102 monthly
+    // post-processing so the model getters are not called twice).
+    let hourly_heating_kwh = model.get_hourly_heating_kwh();
+    let hourly_cooling_kwh = model.get_hourly_cooling_kwh();
+    let hourly_lighting_kwh = model.get_hourly_lighting_kwh();
+    let hourly_equipment_kwh = model.get_hourly_equipment_kwh();
+    // Issue #4102: monthly end-use summaries — pure post-processing.
+    // This CLI loop steps physics directly at a fixed 3600 s timestep.
+    let monthly_fields = crate::api::schema::SimulationOutput::monthly_end_use_summary(
+        hourly_heating_kwh.clone(),
+        hourly_cooling_kwh.clone(),
+        hourly_lighting_kwh.clone(),
+        hourly_equipment_kwh.clone(),
+        3600.0,
+    );
+
     let output = crate::api::schema::SimulationOutput {
         eui: total_energy / floor_area,
         total_energy,
@@ -1091,11 +1108,19 @@ pub fn run_direct_simulation(
         effective_solver: Some(model.effective_zone_solver().as_str().to_string()),
         unmet_heating_hours,
         unmet_cooling_hours,
-        // Issue #4101: end-use metering series recorded in the loop above.
-        hourly_heating_kwh: model.get_hourly_heating_kwh(),
-        hourly_cooling_kwh: model.get_hourly_cooling_kwh(),
-        hourly_lighting_kwh: model.get_hourly_lighting_kwh(),
-        hourly_equipment_kwh: model.get_hourly_equipment_kwh(),
+        hourly_heating_kwh,
+        hourly_cooling_kwh,
+        hourly_lighting_kwh,
+        hourly_equipment_kwh,
+        // Issue #4102: monthly end-use summaries ([year][month]).
+        monthly_heating_kwh: monthly_fields.as_ref().map(|m| m.kwh[0].clone()),
+        monthly_heating_peak_kw: monthly_fields.as_ref().map(|m| m.peak_kw[0].clone()),
+        monthly_cooling_kwh: monthly_fields.as_ref().map(|m| m.kwh[1].clone()),
+        monthly_cooling_peak_kw: monthly_fields.as_ref().map(|m| m.peak_kw[1].clone()),
+        monthly_lighting_kwh: monthly_fields.as_ref().map(|m| m.kwh[2].clone()),
+        monthly_lighting_peak_kw: monthly_fields.as_ref().map(|m| m.peak_kw[2].clone()),
+        monthly_equipment_kwh: monthly_fields.as_ref().map(|m| m.kwh[3].clone()),
+        monthly_equipment_peak_kw: monthly_fields.as_ref().map(|m| m.peak_kw[3].clone()),
     };
 
     let results_path = output_dir.join(format!("{}_results.json", prefix));

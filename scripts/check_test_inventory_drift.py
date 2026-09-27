@@ -242,12 +242,12 @@ BASELINE_LIB_TESTS = 4266  # 2026-09-26: 4265 -> 4266 — PR #4093 (#4078) added
                         # scans identically to a fresh CI checkout — the old
                         # "dirty tree scans up to 4 lower" caveat is retired.
 BASELINE_LIB_IGNORED = 9
-BASELINE_WORKSPACE_TESTS = 8785  # 2026-09-27: 8775 -> 8785 — Issue #4101 adds 13
-                                 # metering_end_use integration tests (hourly
-                                 # end-use metering series incl. the REST
-                                 # end-to-end proof); no lib/binary/
-                                 # ignore-count changes. Stacked on the 8775
-                                 # fluxion-#3957 bump.
+BASELINE_WORKSPACE_TESTS = 8796  # 2026-09-27: 8785 -> 8796 — Issue #4102 adds 11
+                                 # monthly_end_use integration tests (bin
+                                 # edges, leap-year, sub-hourly, multi-year,
+                                 # reconciliation, peaks, REST shape, Case
+                                 # 600 cross-check); no lib/binary/ignore
+                                 # changes. Stacked on the 8785 #4101 bump.
 
 # 2026-09-12 (Issue #3711): 121 -> 133 — see the history entry above for
 # the per-crate attribution and the AST-vs-cargo calibration analysis.

@@ -517,6 +517,34 @@ pub struct SimulationOutput {
     /// timestep.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hourly_equipment_kwh: Option<Vec<f64>>,
+    /// Issue #4102 — monthly heating energy, kWh per month. Outer vec is
+    /// the 0-based year index, inner vec is 12 calendar months (Jan = 0).
+    /// Pure post-processing of [`SimulationOutput::hourly_heating_kwh`];
+    /// omitted when the run did not record end-use metering.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub monthly_heating_kwh: Option<Vec<Vec<f64>>>,
+    /// Issue #4102 — monthly heating peak demand, max timestep-average kW
+    /// per month. Same `[year][month]` shape as `monthly_heating_kwh`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub monthly_heating_peak_kw: Option<Vec<Vec<f64>>>,
+    /// Issue #4102 — monthly cooling energy, kWh per month (`[year][month]`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub monthly_cooling_kwh: Option<Vec<Vec<f64>>>,
+    /// Issue #4102 — monthly cooling peak demand, kW (`[year][month]`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub monthly_cooling_peak_kw: Option<Vec<Vec<f64>>>,
+    /// Issue #4102 — monthly lighting energy, kWh per month (`[year][month]`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub monthly_lighting_kwh: Option<Vec<Vec<f64>>>,
+    /// Issue #4102 — monthly lighting peak demand, kW (`[year][month]`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub monthly_lighting_peak_kw: Option<Vec<Vec<f64>>>,
+    /// Issue #4102 — monthly equipment energy, kWh per month (`[year][month]`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub monthly_equipment_kwh: Option<Vec<Vec<f64>>>,
+    /// Issue #4102 — monthly equipment peak demand, kW (`[year][month]`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub monthly_equipment_peak_kw: Option<Vec<Vec<f64>>>,
 }
 
 impl Default for SimulationOutput {
@@ -537,11 +565,72 @@ impl Default for SimulationOutput {
             hourly_cooling_kwh: None,
             hourly_lighting_kwh: None,
             hourly_equipment_kwh: None,
+            monthly_heating_kwh: None,
+            monthly_heating_peak_kw: None,
+            monthly_cooling_kwh: None,
+            monthly_cooling_peak_kw: None,
+            monthly_lighting_kwh: None,
+            monthly_lighting_peak_kw: None,
+            monthly_equipment_kwh: None,
+            monthly_equipment_peak_kw: None,
         }
     }
 }
 
+/// Issue #4102 — monthly end-use summary produced by
+/// [`SimulationOutput::monthly_end_use_summary`].
+///
+/// Both arrays are `[end_use][year][month]` with end uses in
+/// heating/cooling/lighting/equipment order and months Jan = 0. `kwh`
+/// holds the month's energy sum; `peak_kw` holds the month's maximum
+/// timestep-average demand.
+#[derive(Debug, Clone, Default)]
+pub struct MonthlyEndUseSummary {
+    pub kwh: [Vec<Vec<f64>>; 4],
+    pub peak_kw: [Vec<Vec<f64>>; 4],
+}
+
 impl SimulationOutput {
+    /// Issue #4102 — monthly end-use summary: 12 bins per simulated year
+    /// per end use, derived from the timestep-indexed hourly series
+    /// (#4101). Pure post-processing — no sim-loop involvement.
+    ///
+    /// Each input series is kWh per timestep; `dt_seconds` is the run's
+    /// constant timestep duration. Returns `None` when any series is
+    /// missing or empty (all-or-nothing, mirroring the #4101 exposure).
+    /// Otherwise the arrays are `[end_use][year][month]` in
+    /// heating/cooling/lighting/equipment order, with timestep 0 starting
+    /// Jan 1 00:00 of the weather year (non-leap, per ASHRAE 140
+    /// convention).
+    pub fn monthly_end_use_summary(
+        heating_kwh: Option<Vec<f64>>,
+        cooling_kwh: Option<Vec<f64>>,
+        lighting_kwh: Option<Vec<f64>>,
+        equipment_kwh: Option<Vec<f64>>,
+        dt_seconds: f64,
+    ) -> Option<MonthlyEndUseSummary> {
+        use crate::validation::report::BenchmarkReport;
+        let series = [heating_kwh?, cooling_kwh?, lighting_kwh?, equipment_kwh?];
+        let mut kwh: [Vec<Vec<f64>>; 4] = Default::default();
+        let mut peak_kw: [Vec<Vec<f64>>; 4] = Default::default();
+        for (u, s) in series.iter().enumerate() {
+            let bins = BenchmarkReport::calculate_monthly_end_use(s, dt_seconds, false);
+            if bins.is_empty() {
+                return None;
+            }
+            let years = bins.len().div_ceil(12);
+            let mut kwh_years = vec![vec![0.0; 12]; years];
+            let mut peak_years = vec![vec![0.0; 12]; years];
+            for (flat, bin) in bins.iter().enumerate() {
+                kwh_years[flat / 12][flat % 12] = bin.kwh;
+                peak_years[flat / 12][flat % 12] = bin.peak_kw;
+            }
+            kwh[u] = kwh_years;
+            peak_kw[u] = peak_years;
+        }
+        Some(MonthlyEndUseSummary { kwh, peak_kw })
+    }
+
     /// Compute unmet heating/cooling hours from hourly zone temperatures.
     ///
     /// Issue #3988. `hourly_temps` is zone-major (`[zone][timestep]`, one

@@ -598,6 +598,73 @@ impl PyMultiZoneThermalModel {
         }
     }
 
+    /// Get monthly end-use energy as a numpy array (Issue #4102).
+    ///
+    /// Pure post-processing of the timestep-indexed series from
+    /// [`Self::get_hourly_end_use_kwh_numpy`]: 12 bins per simulated year
+    /// per end use.
+    ///
+    /// # Returns
+    /// Tuple of (monthly_kwh, shape) where monthly_kwh is a 3D numpy array
+    /// with shape [4, years, 12]; axis 0 is heating, cooling, lighting,
+    /// equipment in that order, axis 1 is the 0-based year index, axis 2
+    /// is the calendar month (Jan = 0). Each entry is that month's kWh.
+    ///
+    /// # Example
+    /// ```python
+    /// model = fluxion.MultiZoneThermalModel(3)
+    /// model.simulate_multi_zone(1, False)
+    /// monthly, shape = model.get_monthly_end_use_kwh_numpy()
+    /// # monthly is a numpy array with shape [4, 1, 12]
+    /// jan_heating = monthly[0, 0, 0]
+    /// ```
+    pub fn get_monthly_end_use_kwh_numpy<'a>(
+        &self,
+        py: Python<'a>,
+    ) -> PyResult<(Bound<'a, numpy::PyArray3<f64>>, Vec<usize>)> {
+        self.monthly_end_use_numpy(py, false)
+    }
+
+    /// Get monthly end-use peak demand as a numpy array (Issue #4102).
+    ///
+    /// Same shape as [`Self::get_monthly_end_use_kwh_numpy`] ([4, years,
+    /// 12]); each entry is the month's maximum timestep-average kW
+    /// (identical to the maximum hourly kW for hourly runs).
+    pub fn get_monthly_end_use_peak_kw_numpy<'a>(
+        &self,
+        py: Python<'a>,
+    ) -> PyResult<(Bound<'a, numpy::PyArray3<f64>>, Vec<usize>)> {
+        self.monthly_end_use_numpy(py, true)
+    }
+
+    /// Shared implementation for the Issue #4102 monthly numpy getters.
+    fn monthly_end_use_numpy<'a>(
+        &self,
+        py: Python<'a>,
+        peaks: bool,
+    ) -> PyResult<(Bound<'a, numpy::PyArray3<f64>>, Vec<usize>)> {
+        let summary = crate::api::schema::SimulationOutput::monthly_end_use_summary(
+            self.inner.get_hourly_heating_kwh(),
+            self.inner.get_hourly_cooling_kwh(),
+            self.inner.get_hourly_lighting_kwh(),
+            self.inner.get_hourly_equipment_kwh(),
+            self.inner.calculate_timestep_seconds(),
+        )
+        .ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err(
+                "Simulation has not been run yet. Call simulate_multi_zone first.",
+            )
+        })?;
+        let grids = if peaks { summary.peak_kw } else { summary.kwh };
+        let years = grids[0].len();
+        let shape = vec![4, years, 12];
+        let rows: Vec<Vec<Vec<f64>>> = grids.into_iter().collect();
+        let arr = numpy::PyArray3::from_vec3(py, &rows).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("Failed to create numpy array: {e}"))
+        })?;
+        Ok((arr, shape))
+    }
+
     /// Get sub-hourly 9R4C node temperature profiles (Issue #1799).
     ///
     /// Returns a nested list `[[[wall_t], [roof_t], [floor_t], [internal_t]] * num_zones]`
