@@ -411,10 +411,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     let opaque_area = (surface.area - win_area).max(0.0);
 
                     // 1. Window Solar Gain
-                    // Scale by ratio of per-surface window area to total orientation window area
+                    // `total_gain_w` is already the full window gain (area × effective_beam × beam_shgc).
+                    // No further scaling needed — area_ratio was causing double-counting of window area
+                    // when multiple windows share the same orientation (Issue #3961).
                     if win_area > 0.0 && total_win_area > 0.0 {
-                        let area_ratio = win_area / total_win_area;
-                        let window_gain = solar_gain.total_gain_w * area_ratio;
+                        let window_gain = solar_gain.total_gain_w;
                         total_window_gain += window_gain;
                     }
 
