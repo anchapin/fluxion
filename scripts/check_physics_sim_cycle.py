@@ -144,7 +144,7 @@ BASELINE_PHYSICS_TO_SIM = 0
 # that hoisted them to `fluxion-core` would also have to move the
 # helpers themselves. Companion cycle-removal work stays open under
 # the #2462 phase-3 sim->physics edge elision.
-BASELINE_SIM_TO_PHYSICS = 80  # src/sim/** -> crate::physics::* (was 79; +4 for #3324; -3 for
+BASELINE_SIM_TO_PHYSICS = 83  # src/sim/** -> crate::physics::* (was 79; +4 for #3324; -3 for
                               # the #3638/#3555-era sim refactors that removed three
                               # `use crate::physics::` edges; +1 for #3731's typed
                               # `ZoneCountPolicy` import under

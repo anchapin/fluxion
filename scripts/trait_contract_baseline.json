@@ -78,7 +78,7 @@
   },
   "ThermalModelTrait": {
     "trait_name": "ThermalModelTrait",
-    "source_file": "src/sim/thermal_model.rs",
+    "source_file": "src/sim/thermal_model/mod.rs",
     "methods": {
       "num_zones": {
         "name": "num_zones",
