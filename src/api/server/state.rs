@@ -329,6 +329,11 @@ pub enum SimulationStateEnum {
 /// carry the result so the in-process store can answer both
 /// `/v1/simulation/{id}/status` (status only) and the broader diagnostics
 /// queries.
+///
+// Issue #4101: `SimulationOutput` grew by four `Option<Vec<f64>>` metering
+// series; the `Completed` variant is intentionally larger than its siblings
+// (same precedent as `sim::hvac::equipment` / `sim::schedule`).
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum SimulationState {
     Pending,

@@ -301,12 +301,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Issue #901 perf: construct a single StepParameters once and reuse it
         // (passed by & reference to solve_single_step). Avoids per-step clones of
         // SurrogateManager, LightingSchedule, and OccupancyProfile.
+        //
+        // Issue #4101: explicitly-supplied equipment is cloned into the step
+        // parameters (it was previously hardcoded to `None`, silently
+        // dropping caller-supplied plug loads). Auto-loaded profile equipment
+        // is intentionally NOT applied: the Office factory profile carries
+        // ~8.5 kW of plug loads, and applying it would move the ASHRAE 140
+        // validation baselines (strict energy gate). Only caller-supplied
+        // equipment reaches the thermal path and the metering below.
         let step_params = StepParameters {
             use_ai,
             surrogates: use_ai.then(|| Arc::new(surrogates.clone())),
             use_analytical_gains: true,
             lighting: lighting_ref.cloned(),
-            equipment: None, // Can't clone dyn Equipment, so pass None
+            equipment: equipment.map(|eqs| eqs.iter().map(|e| e.clone_box()).collect()),
             occupancy: occupancy_ref.cloned(),
         };
 
@@ -373,6 +381,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             info!("Warm-up phase complete, starting main simulation");
         }
 
+        // Issue #4101 — allocate timestep-indexed end-use metering series
+        // (heating / cooling / lighting / equipment kWh per timestep).
+        self.0.diagnostics_state.init_end_use_metering(steps);
+
         // Main simulation loop — only this loop's energy is reported
         let total_energy_kwh: f64 = (0..steps)
             .map(|t| {
@@ -382,7 +394,40 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 let hour_of_day = t % 24;
                 let daily_cycle = cycle[hour_of_day];
                 let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+                // Issue #4101 — snapshot the energy accumulators so the
+                // timestep's heating/cooling increments come from the same
+                // backend counters that feed the annual totals (works for
+                // 5R1C/6R2C/9R4C/gauge/dispatch arms without touching them).
+                let heating_before = self.0.hvac.annual_heating_energy;
+                let cooling_before = self.0.hvac.annual_cooling_energy;
                 let energy = self.solve_single_step(t, outdoor_temp, &step_params, dt_seconds);
+
+                // Issue #4101 — record one metering entry per timestep. Each
+                // value is the energy for THIS timestep's dt_seconds:
+                // heating/cooling from accumulator deltas, lighting/equipment
+                // from the applied schedules' electric power × dt.
+                let heating_kwh = (self.0.hvac.annual_heating_energy - heating_before).max(0.0);
+                let cooling_kwh = (self.0.hvac.annual_cooling_energy - cooling_before).max(0.0);
+                let lighting_kwh = step_params
+                    .lighting
+                    .as_ref()
+                    .map(|l| l.lighting_power(t) * dt_seconds / 3.6e6)
+                    .unwrap_or(0.0);
+                let equipment_kwh = step_params
+                    .equipment
+                    .as_ref()
+                    .map(|eqs| {
+                        eqs.iter()
+                            .map(|e| e.power_at_hour(t) * dt_seconds / 3.6e6)
+                            .sum()
+                    })
+                    .unwrap_or(0.0);
+                self.0.diagnostics_state.record_timestep(
+                    heating_kwh,
+                    cooling_kwh,
+                    lighting_kwh,
+                    equipment_kwh,
+                );
 
                 // Issue #763 — capture zone temperatures after each timestep
                 // Issue #901 perf: bound check is unnecessary — temperatures always has
@@ -463,6 +508,40 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// been run through `solve_timesteps_with_dt`.
     pub fn get_hourly_temperatures(&self) -> Option<Vec<Vec<f64>>> {
         self.0.diagnostics_state.hourly_temperatures.clone()
+    }
+
+    /// Get the timestep-indexed heating energy series, kWh per timestep
+    /// (Issue #4101).
+    ///
+    /// # Returns
+    /// `Some([h0, h1, ...])` with one entry per solver timestep, or `None`
+    /// if the simulation has not been run through `solve_timesteps_with_dt`
+    /// (or the surrogate adapter). The series sums to
+    /// [`Self::get_heating_energy_kwh`] up to floating-point rounding.
+    pub fn get_hourly_heating_kwh(&self) -> Option<Vec<f64>> {
+        self.0.diagnostics_state.hourly_heating_kwh.clone()
+    }
+
+    /// Get the timestep-indexed cooling energy series, kWh per timestep
+    /// (Issue #4101). See [`Self::get_hourly_heating_kwh`] for semantics.
+    pub fn get_hourly_cooling_kwh(&self) -> Option<Vec<f64>> {
+        self.0.diagnostics_state.hourly_cooling_kwh.clone()
+    }
+
+    /// Get the timestep-indexed lighting electric energy series, kWh per
+    /// timestep (Issue #4101): `lighting_power(t) * dt_seconds / 3.6e6`
+    /// summed over the applied lighting schedule. All zeros when no
+    /// lighting was applied.
+    pub fn get_hourly_lighting_kwh(&self) -> Option<Vec<f64>> {
+        self.0.diagnostics_state.hourly_lighting_kwh.clone()
+    }
+
+    /// Get the timestep-indexed equipment electric energy series, kWh per
+    /// timestep (Issue #4101): `power_at_hour(t) * dt_seconds / 3.6e6`
+    /// summed over the applied equipment list. All zeros when no equipment
+    /// was applied.
+    pub fn get_hourly_equipment_kwh(&self) -> Option<Vec<f64>> {
+        self.0.diagnostics_state.hourly_equipment_kwh.clone()
     }
 
     /// Get the sub-hourly 9R4C node temperature profiles (Issue #1799).

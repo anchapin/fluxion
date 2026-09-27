@@ -447,8 +447,43 @@ pub fn run_simulation(
     let years = years.clamp(1, MAX_YEARS);
 
     let solve_started = std::time::Instant::now();
-    let empty_lighting =
-        crate::sim::lighting::LightingSchedule::new(0.0, schema.geometry.total_floor_area);
+    // Issue #4101: lighting — apply the schema's lighting schedule at the
+    // schema's power density when one is given; otherwise keep the historical
+    // zero schedule (bit-identical REST results; also suppresses profile
+    // auto-load exactly as before).
+    let floor_area_for_lighting = schema.geometry.total_floor_area;
+    let lighting_schedule = match schema.schedules.lighting_power_density_w_m2 {
+        Some(density) if density.is_finite() && density > 0.0 => {
+            let mut sched =
+                crate::sim::lighting::LightingSchedule::new(density, floor_area_for_lighting);
+            for h in 0..24 {
+                sched.hourly_schedule[h] = schema.schedules.lighting.value(h).clamp(0.0, 1.0);
+            }
+            sched
+        }
+        _ => crate::sim::lighting::LightingSchedule::new(0.0, floor_area_for_lighting),
+    };
+    // Issue #4101: equipment — build schema-supplied plug loads into real
+    // Equipment objects (empty by default → None → bit-identical results).
+    // Validation above already rejected bad specs; build errors are
+    // defensive-only.
+    let equipment_items: Vec<Box<dyn crate::sim::equipment::Equipment>> = schema
+        .schedules
+        .equipment
+        .iter()
+        .enumerate()
+        .map(|(i, spec)| {
+            spec.build(format!("schema-equipment-{i}")).map_err(|e| {
+                ApiError::SimulationFailed(format!("invalid equipment spec: {e}"), None)
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let equipment_ref: Option<&[Box<dyn crate::sim::equipment::Equipment>]> =
+        if equipment_items.is_empty() {
+            None
+        } else {
+            Some(equipment_items.as_slice())
+        };
     let solve_result: Result<SimulationOutput, ApiError> = (|| {
         let mut model = build_model_from_schema(schema);
         model.hvac.thermal_selector = selector;
@@ -473,8 +508,8 @@ pub fn run_simulation(
             steps,
             &surrogates,
             use_surrogates,
-            Some(&empty_lighting),
-            None,
+            Some(&lighting_schedule),
+            equipment_ref,
             None,
         );
 
@@ -532,6 +567,11 @@ pub fn run_simulation(
             effective_solver: Some(model.effective_zone_solver().as_str().to_string()),
             unmet_heating_hours,
             unmet_cooling_hours,
+            // Issue #4101: timestep-indexed end-use metering series.
+            hourly_heating_kwh: model.get_hourly_heating_kwh(),
+            hourly_cooling_kwh: model.get_hourly_cooling_kwh(),
+            hourly_lighting_kwh: model.get_hourly_lighting_kwh(),
+            hourly_equipment_kwh: model.get_hourly_equipment_kwh(),
         })
     })();
     let solve_elapsed = solve_started.elapsed().as_secs_f64();
