@@ -2472,12 +2472,12 @@ impl ThermalModel<VectorField> {
             let mut total_conductance = 0.0;
             let radiative_conductance;
 
-    // Case 960 sunspace: the door opening between the sunspace and adjacent zone
-    // is modelled as a common wall with a fixed 0.25 fraction of its area open
-    // to airflow at all times (the "leaky sunspace" assumption from the ASHRAE
-    // 140 benchmark).  The benchmark provides no physical door dimensions, so we
-    // infer an equivalent aperture from the prescribed heating/cooling offset.
-    if spec.door_height.is_some() && spec.door_area.is_some() {
+            // Case 960 sunspace: the door opening between the sunspace and adjacent zone
+            // is modelled as a common wall with a fixed 0.25 fraction of its area open
+            // to airflow at all times (the "leaky sunspace" assumption from the ASHRAE
+            // 140 benchmark).  The benchmark provides no physical door dimensions, so we
+            // infer an equivalent aperture from the prescribed heating/cooling offset.
+            if spec.door_height.is_some() && spec.door_area.is_some() {
                 // Case 960: 2-zone sunspace with door opening through the common wall.
                 //
                 // Issue #2858 — fixes three inter-zone coupling gaps that left the
