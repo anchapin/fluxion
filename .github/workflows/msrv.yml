@@ -1,5 +1,10 @@
 name: MSRV Check
 
+# Issue #4007 follow-up cut (16 -> 9 required checks): MSRV moved from
+# per-PR required to nightly authority (Lane 3). It still runs on PRs
+# that touch Cargo manifests (paths filter below) and on pushes, but as
+# advisory — the nightly schedule is the enforcement point.
+
 on:
   push:
     branches: [develop, main]
@@ -8,6 +13,10 @@ on:
       - '**/Cargo.toml'
       - '**/Cargo.lock'
       - '.github/workflows/msrv.yml'
+  schedule:
+    # Nightly MSRV authority (Lane 3) — 01:00 UTC avoids the other
+    # nightly jobs (00, 02, 03, 04, 06, 07, 08 UTC).
+    - cron: '0 1 * * *'
   workflow_dispatch:
 
 # Least-privilege GITHUB_TOKEN grants (Issue #2526). The msrv-build job only

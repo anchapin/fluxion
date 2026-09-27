@@ -1,0 +1,111 @@
+# cargo-deny.yml — Supply-chain gate (Cargo Deny), path-filtered required check.
+#
+# Why this file exists
+# --------------------
+# `deny` (job name `Cargo Deny`) moved verbatim from `ci-gates.yml` in the
+# Issue #4007 required-check cut (16 -> 9). It is a required check, but only
+# when dependency manifests change: the `pull_request.paths` filter below
+# means no check run is emitted for PRs that touch no `Cargo.toml` /
+# `Cargo.lock` / `deny.toml`, so it is intentionally NOT in
+# `release_gates.yaml::ci.required_checks_workflow_only` (the live branch
+# protection set) — same pattern as the other path-filtered required
+# checks (Issue #3810 / #3805). PRs that change manifests still get it as
+# blocking via the wave-orchestrator's `required_checks` lane-1 enforcement.
+#
+# Branch protection contract
+# --------------------------
+# Do NOT rename the job's `name:`. Branch protection matches the emitted
+# `name:` byte-for-byte (Issue #3116). Job *ids* are free to change;
+# names are not.
+
+name: cargo-deny
+
+on:
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - 'deny.toml'
+      - '.github/workflows/cargo-deny.yml'
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+# ADR-0015 per-`head_sha` concurrency block (Issue #3366 / #3444).
+# Re-run `python3 scripts/check_concurrency_keys.py` after edits.
+concurrency:
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
+# Least-privilege GITHUB_TOKEN default (Issue #2526): the deny job only
+# checks out code and runs cargo subcommands. No repo write-back.
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+
+  # ----------------------------------------------------------------
+  # Cargo Deny
+  # ----------------------------------------------------------------
+  # Moved verbatim from `ci-gates.yml` (which had itself moved it from
+  # `security.yml`). Emits the exact required-check name. The remaining
+  # security jobs stay in `security.yml`.
+  deny:
+    name: Cargo Deny
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-env
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+      - name: Install cargo-deny
+        uses: baptiste0928/cargo-install@8195d4f734a149db85385bb4102b42efcd373759  # v3
+        with:
+          crate: cargo-deny
+          version: 0.20.2
+      # Supply-chain gate (issue #2699): licenses (no copyleft), duplicate
+      # crates (warn), banned crates (denylist), advisory DB scan, and source
+      # registry validation. Config lives in deny.toml at the repo root.
+      # Mirrors .cargo/audit.toml ignores so the two tools agree.
+      - name: Run cargo deny check
+        run: cargo deny check
+      # Issue #2933: enforce the duplicate-version budget declared in
+      # deny.toml `[bans] duplicates_baseline`. `multiple-versions = "warn"`
+      # makes `cargo deny check` exit 0 even with duplicates, so we count
+      # JSON diagnostics and fail when the count exceeds the baseline. The
+      # baseline lives in a comment inside `[bans]` because cargo-deny 0.20.2
+      # rejects unknown keys in that table. The tracking issue (#2994)
+      # carries the cluster inventory and reduction plan; this step only
+      # catches regressions.
+      - name: Verify duplicate-version budget
+        run: |
+          set -euo pipefail
+          BASELINE=$(grep -E '^#\s*duplicates_baseline\s*:\s*[0-9]+' deny.toml | sed -E 's/.*:\s*([0-9]+).*/\1/' | head -n1)
+          if [ -z "${BASELINE}" ]; then
+            echo "::error::deny.toml [bans] duplicates_baseline (comment) is not set"
+            exit 1
+          fi
+          JSON_OUT=$(cargo deny -f json check bans 2>&1 || true)
+          DUP_COUNT=$(echo "${JSON_OUT}" | grep -c '"code":"duplicate"' || true)
+          echo "Duplicate-version count: ${DUP_COUNT} (baseline: ${BASELINE})"
+          if [ "${DUP_COUNT}" -gt "${BASELINE}" ]; then
+            echo "::error::Duplicate-version count ${DUP_COUNT} exceeds baseline ${BASELINE}. See issue #2994 for the triage plan."
+            exit 1
+          fi
+          echo "OK: duplicate-version count within budget."
+
