@@ -247,7 +247,6 @@ fn test_fd_solver_concrete_200mm() {
 }
 
 #[test]
-#[ignore = "awaiting #4058"]
 fn test_fd_solver_lightweight_wall() {
     let ref_data = load_reference_data("lightweight");
     let spec = lightweight_wall_spec();
@@ -276,7 +275,6 @@ fn test_fd_solver_lightweight_wall() {
 }
 
 #[test]
-#[ignore = "awaiting #4058"]
 fn test_fd_solver_composite_wall() {
     let ref_data = load_reference_data("composite");
     let spec = composite_wall_spec();
@@ -305,7 +303,6 @@ fn test_fd_solver_composite_wall() {
 }
 
 #[test]
-#[ignore = "awaiting #4058"]
 fn test_fd_solver_roof() {
     let ref_data = load_reference_data("roof");
     let spec = roof_spec();
@@ -334,7 +331,6 @@ fn test_fd_solver_roof() {
 }
 
 #[test]
-#[ignore = "awaiting #4058"]
 fn test_fd_solver_floor_ground_contact() {
     let ref_data = load_reference_data("floor");
     let spec = floor_spec();
@@ -367,7 +363,6 @@ fn test_fd_solver_floor_ground_contact() {
 // ===========================================================================
 
 #[test]
-#[ignore = "awaiting #4058"]
 fn test_fd_solver_all_constructions_summary() {
     let constructions = vec![
         ("200mm Concrete", concrete_200mm_spec(), "fixed_zone_20c"),
