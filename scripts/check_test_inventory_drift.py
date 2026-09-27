@@ -296,7 +296,10 @@ BASELINE_WORKSPACE_IGNORED = 153  # Issue #4058: bumped from 147 (+6) — the si
 # 2026-09-26 (Issue #4005): 49 -> 50 — new ``grid_adapter_integration``
 # test binary (Case 600 engine-driven grid-adapter tests,
 # ``required-features = ["grid"]``); no other ratchet moves.
-BASELINE_TEST_BINARIES = 50
+# 2026-09-27 (Issue #3986-A): 50 -> 51 — new ``ashrae_140_validator_selector_parity``
+# test binary (ThermalSelector wiring through ASHRAE 140 validator; PR-A of #3986
+# teacher validation suite); no other ratchet moves.
+BASELINE_TEST_BINARIES = 51
 
 # Sanity-check constants — the verified cargo counts at HEAD
 # ``12856a9``. Operators checking the drift gate's accuracy can

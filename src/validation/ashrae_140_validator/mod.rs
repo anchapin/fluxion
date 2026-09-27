@@ -106,6 +106,11 @@ pub struct ASHRAE140Validator {
     pub diagnostic_cases_added: Vec<String>,
     /// Skip baseline cases when running diagnostics only (Phase 18)
     skip_baseline_cases: bool,
+    /// Thermal selector used when constructing per-case thermal models (Refs #3986-A).
+    /// ADR-0017 makes the selector explicit per build configuration; storing it on
+    /// the validator lets fabric tests run the same case under multiple selectors
+    /// without forking the validation path. See `new_with_selector`.
+    selector: ThermalSelector,
 }
 
 impl Default for ASHRAE140Validator {
@@ -190,6 +195,26 @@ impl ASHRAE140Validator {
         Self::with_mode(ValidationMode::Informed)
     }
 
+    /// Creates a new ASHRAE 140 validator with an explicit thermal selector
+    /// (Refs #3986-A, ADR-0017).
+    ///
+    /// The selector is used when constructing per-case `ThermalModel`s inside
+    /// `validate_case_*` methods. Use this entry point when running the
+    /// validator under a non-default selector (e.g., the gauge-solver path
+    /// behind `--features gauge-solver`, or the equation-based DAE teacher
+    /// once it lands). The legacy `new()` / `with_mode()` entry points
+    /// delegate here with `ThermalSelector::default()`.
+    pub fn new_with_selector(selector: ThermalSelector) -> Self {
+        let mut v = Self::with_mode(ValidationMode::Informed);
+        v.selector = selector;
+        v
+    }
+
+    /// Read-only view of the stored thermal selector (Refs #3986-A).
+    pub fn selector(&self) -> &ThermalSelector {
+        &self.selector
+    }
+
     /// Creates a new ASHRAE 140 validator with specified validation mode.
     ///
     /// # Arguments
@@ -212,6 +237,7 @@ impl ASHRAE140Validator {
             multi_ref: None,
             diagnostic_cases_added: Vec::new(),
             skip_baseline_cases: false,
+            selector: ThermalSelector::default(),
         };
 
         // Auto-load multi-reference database if available (Phase 7 multi-reference integration)
@@ -309,6 +335,7 @@ impl ASHRAE140Validator {
             multi_ref: None,
             diagnostic_cases_added: Vec::new(),
             skip_baseline_cases: false,
+            selector: ThermalSelector::default(),
         };
 
         // Add all diagnostic case ranges by default
@@ -333,6 +360,7 @@ impl ASHRAE140Validator {
             multi_ref: None,
             diagnostic_cases_added: Vec::new(),
             skip_baseline_cases: false,
+            selector: ThermalSelector::default(),
         };
 
         // Add all diagnostic case ranges by default
@@ -826,9 +854,8 @@ impl ASHRAE140Validator {
         weather: &EpwWeatherSource,
         controller: &IdealHVACController,
     ) -> CaseResults {
-        let mut model =
-            ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
-                .expect("default selector must initialize");
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(spec, &self.selector)
+            .expect("selector must initialize");
         // Plan 03-04: Thermal mass energy accounting removed
         // Ti_free calculation already includes thermal mass effects via:
         // - h_tr_em and h_tr_ms conductances (thermal mass coupling)
@@ -1567,8 +1594,8 @@ impl ASHRAE140Validator {
     /// bypass to every case (free-floating cases never reached the mutator —
     /// the explicit CTF↔zone coupling loop diverges without HVAC damping).
     fn build_case_model(&self, spec: &CaseSpec) -> ThermalModel<VectorField> {
-        ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
-            .expect("default selector must initialize")
+        ThermalModel::<VectorField>::from_spec_with_selector(spec, &self.selector)
+            .expect("selector must initialize")
     }
 
     /// Load the Denver EPW shared by every `simulate_case`-family entry
@@ -1869,9 +1896,8 @@ impl ASHRAE140Validator {
         spec: &CaseSpec,
         weather: &EpwWeatherSource,
     ) -> CaseResults {
-        let mut model =
-            ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
-                .expect("default selector must initialize");
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(spec, &self.selector)
+            .expect("selector must initialize");
         // Attach simulation diagnostics if requested (Phase 5)
         if self.use_simulation_diagnostics {
             let diag = SimulationDiagnostics::new(model.hvac.num_zones, 8760);
@@ -2242,9 +2268,8 @@ impl ASHRAE140Validator {
         weather: &impl WeatherSource,
         case_id: &str,
     ) -> (CaseResults, CaseDiagnostic) {
-        let mut model =
-            ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
-                .expect("default selector must initialize");
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(spec, &self.selector)
+            .expect("selector must initialize");
         // Plan 03-04: Thermal mass energy accounting removed
         // Ti_free calculation already includes thermal mass effects via:
         // - h_tr_em and h_tr_ms conductances (thermal mass coupling)
@@ -2591,9 +2616,17 @@ impl ASHRAE140Validator {
     ///          result.free_float_min_temp, result.free_float_max_temp);
     /// ```
     pub fn validate_ashrae_140(spec: &CaseSpec) -> FreeFloatValidationResult {
-        let mut model =
-            ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
-                .expect("default selector must initialize");
+        Self::validate_ashrae_140_with_selector(spec, &ThermalSelector::default())
+    }
+
+    /// Same as [`Self::validate_ashrae_140`] but with an explicit thermal selector
+    /// (Refs #3986-A, ADR-0017).
+    pub fn validate_ashrae_140_with_selector(
+        spec: &CaseSpec,
+        selector: &ThermalSelector,
+    ) -> FreeFloatValidationResult {
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(spec, selector)
+            .expect("selector must initialize");
         let weather = EpwWeatherSource::from_file(
             "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
         )
@@ -2695,11 +2728,8 @@ impl ASHRAE140Validator {
     /// Tests inter-zone heat transfer between conditioned back-zone and unconditioned sunspace.
     pub fn validate_case_960(&self) -> ValidationReport {
         let spec = ASHRAE140Case::Case960.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
-            &spec,
-            &ThermalSelector::default(),
-        )
-        .expect("default selector must initialize");
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(&spec, &self.selector)
+            .expect("selector must initialize");
         let weather = EpwWeatherSource::from_file(
             "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
         )
@@ -2878,15 +2908,24 @@ pub fn validate_case_with_diagnostics(
     case: ASHRAE140Case,
     collect_diags: bool,
 ) -> (ValidationReport, Option<SimulationDiagnostics>) {
+    validate_case_with_diagnostics_with_selector(case, collect_diags, &ThermalSelector::default())
+}
+
+/// Same as [`Self::validate_case_with_diagnostics`] but with an explicit thermal
+/// selector (Refs #3986-A, ADR-0017).
+pub fn validate_case_with_diagnostics_with_selector(
+    case: ASHRAE140Case,
+    collect_diags: bool,
+    selector: &ThermalSelector,
+) -> (ValidationReport, Option<SimulationDiagnostics>) {
     // Use a validator instance to access helper methods
-    let validator = ASHRAE140Validator::new();
+    let validator = ASHRAE140Validator::new_with_selector(*selector);
     let spec = case.spec();
     let case_id = case.number().to_string();
 
     // Create model
-    let mut model =
-        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
-            .expect("default selector must initialize");
+    let mut model = ThermalModel::<VectorField>::from_spec_with_selector(&spec, selector)
+        .expect("selector must initialize");
     model.reset_peak_power();
 
     // Handle free-floating cases

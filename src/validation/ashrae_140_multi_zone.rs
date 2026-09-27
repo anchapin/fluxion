@@ -44,6 +44,10 @@ pub struct ASHRAE140MultiZoneValidator {
     /// Case 980 reference data (stub for future implementation)
     #[allow(dead_code)]
     case_980_reference: Option<Case960Reference>,
+    /// Thermal selector used when constructing per-case thermal models (Refs #3986-A).
+    /// Mirrors the field on [`ASHRAE140Validator`]; ADR-0017 makes the selector
+    /// explicit per build configuration. See `new_with_selector`.
+    selector: ThermalSelector,
 }
 
 /// Case 960 validator for ASHRAE 140 multi-zone validation
@@ -110,7 +114,28 @@ impl ASHRAE140MultiZoneValidator {
             case_960_reference: None,
             case_970_reference: None,
             case_980_reference: None,
+            selector: ThermalSelector::default(),
         }
+    }
+
+    /// Create a new multi-zone validator with an explicit thermal selector
+    /// (Refs #3986-A, ADR-0017).
+    ///
+    /// Mirrors [`ASHRAE140Validator::new_with_selector`]. Use this entry point
+    /// when running the validator under a non-default selector.
+    pub fn new_with_selector(selector: ThermalSelector) -> Self {
+        Self {
+            base_validator: ASHRAE140Validator::new_with_selector(selector),
+            case_960_reference: None,
+            case_970_reference: None,
+            case_980_reference: None,
+            selector,
+        }
+    }
+
+    /// Read-only view of the stored thermal selector (Refs #3986-A).
+    pub fn selector(&self) -> &ThermalSelector {
+        &self.selector
     }
 
     /// Load Case 960 reference data
@@ -380,7 +405,7 @@ impl ASHRAE140MultiZoneValidator {
         let spec = ASHRAE140Case::Case960.spec();
         let model = ThermalModel::<crate::physics::cta::VectorField>::from_spec_with_selector(
             &spec,
-            &ThermalSelector::default(),
+            &self.selector,
         )
         .expect("default selector must initialize");
         let case_960_result = self.validate_case_960(&model, &case_960_ref);
@@ -794,11 +819,9 @@ mod tests {
 
         // Create a thermal model for testing
         let spec = crate::validation::ashrae_140_cases::ASHRAE140Case::Case960.spec();
-        let model = ThermalModel::<VectorField>::from_spec_with_selector(
-            &spec,
-            &ThermalSelector::default(),
-        )
-        .expect("default selector must initialize");
+        let model =
+            ThermalModel::<VectorField>::from_spec_with_selector(&spec, validator.selector())
+                .expect("default selector must initialize");
 
         // Run validation. With the real path the validator now actually
         // steps the physics — depending on the model's current accuracy
@@ -885,9 +908,9 @@ mod tests {
     fn test_case_960_validator_runs_real_model_not_stub() {
         let validator = ASHRAE140MultiZoneValidator::new();
         let spec = ASHRAE140Case::Case960.spec();
-        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+        let model = ThermalModel::<crate::physics::cta::VectorField>::from_spec_with_selector(
             &spec,
-            &ThermalSelector::default(),
+            validator.selector(),
         )
         .expect("default selector must initialize");
         let reference = Case960Reference::load_case_960_reference_data();
@@ -1062,7 +1085,7 @@ mod tests {
         let spec = ASHRAE140Case::Case970.spec();
         let model = ThermalModel::<crate::physics::cta::VectorField>::from_spec_with_selector(
             &spec,
-            &ThermalSelector::default(),
+            validator.selector(),
         )
         .expect("default selector must initialize");
         let result = validator.validate_case_970_with_validator(&model);
@@ -1741,7 +1764,7 @@ impl ASHRAE140MultiZoneValidator {
         let spec = ASHRAE140Case::Case970.spec();
         let mut model = ThermalModel::<crate::physics::cta::VectorField>::from_spec_with_selector(
             &spec,
-            &ThermalSelector::default(),
+            &self.selector,
         )
         .expect("default selector must initialize");
 
@@ -1910,7 +1933,7 @@ impl ASHRAE140MultiZoneValidator {
         let spec = ASHRAE140Case::Case960.spec();
         let model = ThermalModel::<crate::physics::cta::VectorField>::from_spec_with_selector(
             &spec,
-            &ThermalSelector::default(),
+            &self.selector,
         )
         .expect("default selector must initialize");
 
