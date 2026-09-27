@@ -8,12 +8,10 @@ mod tests {
     //! validator, the cumulative-energy / peak-power bucket accessors, and the
     //! solar-position cache. Reference values are computed in Python (RULES.md
     //! constraint #0) and reproduced here as `approx_eq` checks.
-    use crate::sim::construction::{
-        Construction, ConstructionLayer, SurfaceType,
-    };
+    use crate::sim::construction::{Construction, ConstructionLayer, SurfaceType};
     use crate::sim::thermal_model_core::*;
-    use fluxion_core::construction::wall_cap_for;
     use fluxion_core::assembly::{AssemblyBuilder, ConcreteMaterial};
+    use fluxion_core::construction::wall_cap_for;
 
     const TOL: f64 = 1e-9;
 
