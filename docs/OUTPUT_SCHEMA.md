@@ -201,6 +201,26 @@ For validation, comfort is evaluated against ASHRAE 140 reference ranges:
 | Free-Floating Max | Highest zone temperature | Varies by case |
 | Free-Floating Swing | Daily temperature swing | < 5 K for well-built |
 
+### Unmet Hours (Issue #4103)
+
+Unmet hours are pure post-processing of the hourly zone-temperature trace;
+no loop or physics changes. A zone-hour is unmet-heating when its
+temperature falls below `heating_setpoint - deadband_tolerance`, and
+unmet-cooling when it rises above `cooling_setpoint + deadband_tolerance`;
+values are summed across zones.
+
+| Field (`SimulationOutput`) | Convention |
+|---|---|
+| `unmet_heating_hours` / `unmet_cooling_hours` | Occupied-only hours (occupancy schedule value > 0.05) |
+| `unmet_heating_hours_all_hours` / `unmet_cooling_hours_all_hours` | All hours, per ASHRAE 90.1 Appendix G §G3.1.2.2 |
+
+The setpoint tolerance defaults to **0.2 °C** when the schema leaves
+`deadband_tolerance` unset, matching EnergyPlus "Time Setpoint Not Met"
+(EnergyPlus Input Output Reference, System Summary table). Explicit schema
+values are honored unchanged. Per the ASHRAE 90.1 Performance Rating
+Method, all-hours unmet load hours are capped at 300 and the proposed
+design must stay within baseline + 50.
+
 ---
 
 ## 6. Diagnostic Metadata

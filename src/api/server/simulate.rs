@@ -542,18 +542,31 @@ pub fn run_simulation(
         let zone_temperatures = model.get_temperatures();
 
         // Issue #3988: unmet hours from the hourly temperature trace.
-        let (unmet_heating_hours, unmet_cooling_hours) = hourly_zone_temperatures
+        // Issue #4103: report both conventions — occupied-only and
+        // all-hours (ASHRAE 90.1 G3.1.2.2). The tolerance defaults to
+        // 0.2 °C (EnergyPlus "Time Setpoint Not Met" parity) when the
+        // schema leaves deadband_tolerance unset.
+        let (
+            unmet_heating_hours,
+            unmet_cooling_hours,
+            unmet_heating_hours_all_hours,
+            unmet_cooling_hours_all_hours,
+        ) = hourly_zone_temperatures
             .as_deref()
             .map(|hourly| {
-                SimulationOutput::unmet_hours(
+                let tolerance = schema.controls.zone_control.deadband_tolerance;
+                let (occ_h, occ_c) = SimulationOutput::unmet_hours(
                     hourly,
                     &schema.schedules.occupancy,
                     heating,
                     cooling,
-                    schema.controls.zone_control.deadband_tolerance,
-                )
+                    tolerance,
+                );
+                let (all_h, all_c) =
+                    SimulationOutput::unmet_hours_all_hours(hourly, heating, cooling, tolerance);
+                (occ_h, occ_c, all_h, all_c)
             })
-            .unwrap_or((0.0, 0.0));
+            .unwrap_or((0.0, 0.0, 0.0, 0.0));
 
         // Issue #4101: timestep-indexed end-use metering series (fetched
         // once here; the clones below feed the #4102 monthly
@@ -584,6 +597,9 @@ pub fn run_simulation(
             effective_solver: Some(model.effective_zone_solver().as_str().to_string()),
             unmet_heating_hours,
             unmet_cooling_hours,
+            // Issue #4103: all-hours variant (ASHRAE 90.1 G3.1.2.2).
+            unmet_heating_hours_all_hours,
+            unmet_cooling_hours_all_hours,
             hourly_heating_kwh,
             hourly_cooling_kwh,
             hourly_lighting_kwh,
