@@ -222,6 +222,7 @@ mod surrogate_golden_output;
 mod surrogate_models;
 mod surrogate_onnx_error_path_tests;
 mod synthetic_data_quality;
+mod teacher_validation_pcm_box;
 mod tensor_dataset;
 mod test_6r2c_comprehensive;
 mod test_8r3c_evaluation;

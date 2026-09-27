@@ -233,7 +233,17 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 # plus the two AST-counted cfg variants of the selector unit test; the
 # net cargo-verified delta is workspace_tests 7927 -> 8018 per
 # ``tests/test_inventory.json``).
-BASELINE_LIB_TESTS = 4273  # 2026-09-27: 4268 -> 4273 — Issue #3986-A adds 5 lib tests (4 inline tests in tests.rs guard module, plus 1 extra in the existing validator test module net); the AST workspace count grew by 7 (the consolidated `ashrae_140_validator_selector_parity` runner module — 7 behavior tests); these ratchet bumps track both metrics.
+# CUMULATIVE bumps from PR-A (#3986-A) and PR-B (#3986-B).
+# - 2026-09-27 (Issue #3986-A, PR #4119): 4268 -> 4273 — PR-A adds 5 lib tests
+#   (4 inline tests in tests.rs guard module, plus 1 extra in the existing
+#   validator test module net); the AST workspace count grew by 7 (the
+#   consolidated `ashrae_140_validator_selector_parity` runner module —
+#   7 behavior tests); these ratchet bumps track both metrics.
+# - 2026-09-27 (Issue #3986-B, PR #4120): 4273 -> 4274 — PR-B adds 1 inline
+#   test in `pcm_test_box.rs::tests` (the `default_layer_thickness_matches_documented_value`
+#   guard test) plus the AST-scan delta for the new `tests/all_tests/teacher_validation_pcm_box.rs`
+#   module's integration tests. Stacked on PR-A's 4273 baseline.
+BASELINE_LIB_TESTS = 4277  # 2026-09-27: 4274 -> 4277 — post-rebase AST delta for PR-A + PR-B's combined inline tests (the 7 selector-parity tests are counted as workspace-integration rather than lib, so the lib bump comes from the 4 inline tests in `phase_change_material.rs::tests` + `pcm_test_box.rs::tests` plus the AST scan delta for PR-A's `tests.rs` guards).
                         # (+2 hvac setpoint CLI tests in src/cli/hvac_commands.rs:
                         # ZoneControl delegation + CLI-to-system propagation);
                         # stacked on the merged 4263 fluxion-#4086 bump.
@@ -242,7 +252,23 @@ BASELINE_LIB_TESTS = 4273  # 2026-09-27: 4268 -> 4273 — Issue #3986-A adds 5 l
                         # scans identically to a fresh CI checkout — the old
                         # "dirty tree scans up to 4 lower" caveat is retired.
 BASELINE_LIB_IGNORED = 9
-BASELINE_WORKSPACE_TESTS = 8821  # 2026-09-27: 8804 -> 8821 — Issue #3986-A adds 7 tests via the new `ashrae_140_validator_selector_parity` consolidated runner module (selector_round_trip, new_delegates_to_new_with_selector_default, case_600_default_vs_new_with_default_parity, case_900_explicit_legacy_selector_runs, multi_zone_selector_round_trip, multi_zone_new_delegates_to_new_with_selector_default, multi_zone_explicit_legacy_selector_accepted) plus 10 lib tests across the existing validator+multi-zone tests.rs modules.
+# CUMULATIVE bumps from PR-A (#3986-A) and PR-B (#3986-B).
+# - 2026-09-27 (Issue #3986-A, PR #4119): 8804 -> 8821 — PR-A adds 7 tests via
+#   the new `ashrae_140_validator_selector_parity` consolidated runner module
+#   (selector_round_trip, new_delegates_to_new_with_selector_default,
+#   case_600_default_vs_new_with_default_parity, case_900_explicit_legacy_selector_runs,
+#   multi_zone_selector_round_trip, multi_zone_new_delegates_to_new_with_selector_default,
+#   multi_zone_explicit_legacy_selector_accepted) plus 10 lib tests across the
+#   existing validator+multi-zone tests.rs modules.
+# - 2026-09-27 (Issue #3986-B, PR #4120): 8821 -> 8829 — PR-B adds 8 tests via
+#   the new `teacher_validation_pcm_box` consolidated-runner module
+#   (rt27_constructs_with_nominal_properties, enthalpy_linear_below_solidus,
+#   enthalpy_linear_above_liquidus, apparent_cp_sensible_outside_melting_band,
+#   apparent_cp_latent_band_height, test_box_constructs_with_default_pcm,
+#   test_box_solid_fraction_returns_none_without_reference_data,
+#   test_box_apparent_cp_at_wall_delegates_to_material). Stacked on PR-A's
+#   8821 baseline.
+BASELINE_WORKSPACE_TESTS = 8833  # 2026-09-27: 8829 -> 8833 — post-rebase AST delta for PR-A + PR-B's combined consolidated-runner modules (7 selector-parity + 8 PCM box tests).
                                  # unmet-hours lib tests in src/api/schema.rs
                                  # (tolerance default, all-hours divergence,
                                  # multi-zone summation); no binary/ignore
@@ -299,6 +325,16 @@ BASELINE_WORKSPACE_IGNORED = 153  # Issue #4058: bumped from 147 (+6) — the si
 # 2026-09-27 (Issue #3986-A): 50 -> 51 — new ``ashrae_140_validator_selector_parity``
 # test binary (ThermalSelector wiring through ASHRAE 140 validator; PR-A of #3986
 # teacher validation suite); no other ratchet moves.
+# CUMULATIVE bumps from PR-A (#3986-A) and PR-B (#3986-B).
+# - 2026-09-27 (Issue #3986-A, PR #4119): 50 -> 51 — new
+#   `ashrae_140_validator_selector_parity` test binary (ThermalSelector
+#   wiring through ASHRAE 140 validator; PR-A of #3986 teacher validation
+#   suite).
+# - 2026-09-27 (Issue #3986-B, PR #4120): 51 -> 51 — no AST-scan delta;
+#   the new `teacher_validation_pcm_box` module is hosted inside the
+#   existing consolidated `all_tests` runner and does not add a new
+#   binary. The AST scanner's module-detection heuristic is consistent
+#   with cargo's `--list` reporting.
 BASELINE_TEST_BINARIES = 51
 
 # Sanity-check constants — the verified cargo counts at HEAD

@@ -68,6 +68,12 @@ pub mod zero_copy_matrix;
 
 pub mod multi_node_solver;
 pub mod nine_r4c_nodal_trace;
+// Phase-Change Material test-box skeleton (Refs #3986 / #4118, BLOCKER branch).
+// Nominal Rubitherm RT27 properties + a one-zone test-box harness; the
+// experimental solid-fraction-vs-time curve is deferred to PR-B+1 (see
+// tests/reference_data/pcm_test_box/PROVENANCE.md).
+pub mod pcm_test_box;
+pub mod phase_change_material;
 pub mod solver_manager;
 pub mod solver_registry;
 pub mod solver_trait;
