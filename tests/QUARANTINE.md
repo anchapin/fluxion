@@ -55,6 +55,8 @@ manually for investigation. They are NOT part of CI gates.
 | `tests/diagnostics/case_195_weather_source_diagnostic.rs` | `test_case_195_weather_source_comparison` | #3060 (LIMIT-15) | Re-derive reference from E+ TMY3; add assertions | `pending` |
 | `tests/diagnostics/case_950_hvac_mode_seasonal_attribution.rs` | `test_case_950_hvac_mode_seasonal_attribution` | #3551, #2536 | Implement diagnostic per §LIMIT-24 table; add assertions; convert to CI gate | `pending` |
 | `tests/diagnostics/case_970_multi_zone_seasonal_attribution.rs` | `case_970_per_zone_seasonal_attribution_placeholder` | #3552, #2536 | Implement per-month per-zone attribution; add assertions; convert to CI gate | `pending` |
+| `tests/diagnostics/diag_air_node_equilibration.rs` | `diag_air_node_equilibration` | #2536 | Add assertions; convert to CI gate | `pending` |
+| `tests/all_tests/diag_air_node_equilibration.rs` | `diag_air_node_equilibration` | #2536 | Consolidated runner re-export of `tests/diagnostics/diag_air_node_equilibration.rs::diag_air_node_equilibration`; tracked at the canonical source row above | `pending` |
 | `tests/all_tests/ashrae_140_case_920.rs` | `test_case_920_per_month_attribution` | #2454, #2536 | Add assertions; convert to CI gate | `pending` |
 | `tests/all_tests/ashrae_140_case_920.rs` | `test_case_920_engine_vs_reference_per_month` | #2454, #2536 | Add assertions; convert to CI gate | `pending` |
 
@@ -290,14 +292,7 @@ The harness is redesigned to the temperature channel (interior surface temperatu
 the real film), but the ~96-row reference datasets cannot spin up multi-day thermal
 states (concrete tau ~ 29 h) and the E+ interior-film composition is undocumented.
 
-| Test File | Test Name | Blocking Issue | Un-Ignore Criteria | Status |
-|-----------|-----------|----------------|-------------------|--------|
-| `tests/all_tests/conduction_step_response_vs_energyplus.rs` | `test_fd_solver_concrete_200mm` | #4058 | Reference regenerated with multi-day spin-up and documented interior film, or E+ inside-face conduction flux exported for direct comparison | `pending` |
-| `tests/all_tests/conduction_step_response_vs_energyplus.rs` | `test_fd_solver_lightweight_wall` | #4058 | Same as `test_fd_solver_concrete_200mm` | `pending` |
-| `tests/all_tests/conduction_step_response_vs_energyplus.rs` | `test_fd_solver_roof` | #4058 | Same as `test_fd_solver_concrete_200mm` | `pending` |
-| `tests/all_tests/conduction_step_response_vs_energyplus.rs` | `test_fd_solver_floor_ground_contact` | #4058 | Same as `test_fd_solver_concrete_200mm` | `pending` |
-| `tests/all_tests/conduction_step_response_vs_energyplus.rs` | `test_fd_solver_composite_wall` | #4058 | Same as `test_fd_solver_concrete_200mm` | `pending` |
-| `tests/all_tests/conduction_step_response_vs_energyplus.rs` | `test_fd_solver_all_constructions_summary` | #4058 | Same as `test_fd_solver_concrete_200mm` | `pending` |
+The 6 FD step-response cohort rows that previously lived here were un-ignored by PR #4111 / commit 8903331 (closes #4058). They are now live tests; their rows were removed from the registry in PR #4111 follow-up commits once the tests were confirmed passing (`test_inventory.json` reflects the new ignored count).
 
 ---
 

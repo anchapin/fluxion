@@ -334,12 +334,18 @@ pub fn lightweight_wall_spec() -> WallSpec {
 ///
 /// This construction has high thermal mass and significant insulation.
 pub fn composite_wall_spec() -> WallSpec {
+    // Construction matches EnergyPlus IDF step_change_composite.idf:
+    // COMPOSITE_WALL = GYP_BOARD | MINERAL_WOOL | CONCRETE_100
+    // Layer order outside→inside matches EnergyPlus construction definition.
     WallSpec::multi_layer(
         "Composite Concrete",
         vec![
-            LayerSpec::new("Concrete Inner", 0.100, 1.13, 1400.0, 1000.0),
-            LayerSpec::new("Foam Insulation", 0.0615, 0.04, 14.0, 1400.0),
-            LayerSpec::new("Concrete Block", 0.100, 0.51, 1400.0, 840.0),
+            // GYP_BOARD: 13mm, k=0.160 W/(m·K), ρ=800 kg/m³, cp=1090 J/(kg·K)
+            LayerSpec::new("Gypsum Board", 0.013, 0.160, 800.0, 1090.0),
+            // MINERAL_WOOL: 100mm, k=0.040 W/(m·K), ρ=18 kg/m³, cp=840 J/(kg·K)
+            LayerSpec::new("Mineral Wool", 0.100, 0.040, 18.0, 840.0),
+            // CONCRETE_100: 100mm, k=1.730 W/(m·K), ρ=2300 kg/m³, cp=840 J/(kg·K)
+            LayerSpec::new("Concrete", 0.100, 1.730, 2300.0, 840.0),
         ],
     )
 }

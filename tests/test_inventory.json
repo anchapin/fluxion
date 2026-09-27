@@ -17,7 +17,7 @@
     },
     "fluxion": {
       "lib_ignored": 8,
-      "lib_tests": 4263,
+      "lib_tests": 4260,
       "test_binaries": 36
     },
     "fluxion-behavior": {
@@ -66,8 +66,8 @@
       "test_binaries": 1
     }
   },
-  "generated_at": "2026-09-27T12:48:30.453645+00:00",
-  "repo_root": "unknown",
+  "generated_at": "2026-09-27T14:45:14.403091+00:00",
+  "repo_root": "4b9056c50a58",
   "schema_version": 1,
   "scope": {
     "workspace_exclude": [
@@ -75,17 +75,17 @@
     ]
   },
   "totals": {
-    "doc_tests": 0,
-    "lib_ignored_root": 8,
-    "lib_tests_root": 4263,
+    "doc_tests": 165,
+    "lib_ignored_root": 5,
+    "lib_tests_root": 3906,
     "test_binaries": 50,
     "test_source_files": 369,
-    "workspace_ignored": 144,
-    "workspace_integration_ignored": 124,
+    "workspace_ignored": 153,
+    "workspace_integration_ignored": 118,
     "workspace_integration_tests": 3424,
     "workspace_lib_ignored": 20,
-    "workspace_lib_tests": 5375,
-    "workspace_tests": 8799
+    "workspace_lib_tests": 5372,
+    "workspace_tests": 8088
   },
   "verify": {
     "command": [
@@ -97,8 +97,12 @@
       "--",
       "--list"
     ],
-    "error": "FileNotFoundError: [Errno 2] No such file or directory: 'cargo'",
-    "executed_at": "2026-09-27T12:48:30.454650+00:00",
-    "matched": false
+    "doc_tests": 165,
+    "executed_at": "2026-09-27T14:45:33.425841+00:00",
+    "lib_ignored": 5,
+    "lib_tests": 3906,
+    "matched": true,
+    "workspace_ignored": 153,
+    "workspace_tests": 8088
   }
 }
