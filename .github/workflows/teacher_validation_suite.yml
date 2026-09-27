@@ -33,8 +33,18 @@ permissions:
 
 # Cancel any in-flight run when a new commit lands on the branch (PR push).
 concurrency:
-  group: teacher-validation-suite-${{ github.ref }}
-  cancel-in-progress: true
+  group: >-
+    teacher-validation-suite-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
 
 jobs:
   teacher-validation-suite:
