@@ -804,6 +804,13 @@ ci:
     # is slow-moving; nightly 01:00 UTC schedule plus the advisory
     # path-filtered PR runs are sufficient coverage.
     - "MSRV Check (Issue #2934)"
+    # Teacher Validation Suite (#3986 / #4116) — aggregates the three
+    # sub-suites of the teacher validation suite (ASHRAE 140 fabric +
+    # 1052-RP + PCM test-box). Per the user's PR-C scope decision
+    # (Refs #4116), this gate is ADVISORY ONLY; nightly authority
+    # collects signal but does not block PRs. Mirrors
+    # `scripts/check_strict_energy_gate_regression.py` posture.
+    - "Teacher Validation Suite (Issue #3986)"
 
   # Job-to-workflow map (informational; branch-protection reads job
   # names directly). Used by `scripts/release_gate_checker.py` to verify
