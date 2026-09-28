@@ -92,4 +92,12 @@ jobs:
 
       - name: Run Node tests
         working-directory: npm
+        # Issue #4215: the interop exporter tests write to an OS temp dir
+        # (fs.mkdtempSync), which can never sit inside the FLUXION_EXPORT_DIR
+        # allow-list — so `mkdir -p exports` alone cannot satisfy the
+        # containment check. Bypass the confinement for the test step only;
+        # the extension pin, parent-exists, and symlink-refusal gates still
+        # fire, and production keeps the default allow-list.
+        env:
+          FLUXION_EXPORT_ALLOW_UNRESTRICTED: '1'
         run: npm test
