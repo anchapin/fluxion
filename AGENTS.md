@@ -55,10 +55,10 @@ The hook invokes `cargo test --workspace --exclude fluxion-tauri --no-fail-fast`
 
 | Source | Suite | Tests | Ignored | Notes |
 |---|---|---|---|---|
-| `cargo test --lib` | root crate unit tests | 3,907 | 5 | matches `tests/test_inventory.json::totals.lib_tests_root` (cargo-verified live count via `--verify`; the AST-regex snapshot for this crate is in `tests/reference_data/test_inventory_baseline.json::by_crate.fluxion.lib_tests`) |
-| `cargo test --workspace --exclude fluxion-tauri` | full workspace (lib + integration + bin) | 8,065 | 153 | `tests/test_inventory.json::totals.workspace_tests` / `workspace_ignored` (cargo-verified via `--verify`; the AST-regex snapshot is in `tests/reference_data/test_inventory_baseline.json::metrics_ast`) |
-| AST-regex inventory | committed in `tests/reference_data/test_inventory_baseline.json::metrics_ast` | 8,760 | 138 | non-runtime snapshot, used by the drift gate (`--no-verify`); AST counts run ~10% high vs cargo-verified because the regex doesn't track `cfg(test)` boundaries |
-| Cargo test binaries | root `tests/*.rs` keepers + consolidated `all_tests` runner + hand-wired `[[test]] path = "tests/<sub>/<foo>.rs"` + sibling-crate targets | 50 | n/a | matches `tests/test_inventory.json::totals.test_binaries` (273 standalone root binaries consolidated into `all_tests` + 10 keepers in Issue #3764 + `grid_adapter_integration` in Issue #4005) |
+| `cargo test --lib` | root crate unit tests | 3,926 | 5 | matches `tests/test_inventory.json::totals.lib_tests_root` (cargo-verified live count via `--verify`; the AST-regex snapshot for this crate is in `tests/reference_data/test_inventory_baseline.json::by_crate.fluxion.lib_tests`) |
+| `cargo test --workspace --exclude fluxion-tauri` | full workspace (lib + integration + bin) | 8,134 | 153 | `tests/test_inventory.json::totals.workspace_tests` / `workspace_ignored` (cargo-verified via `--verify`; the AST-regex snapshot is in `tests/reference_data/test_inventory_baseline.json::metrics_ast`) |
+| AST-regex inventory | committed in `tests/reference_data/test_inventory_baseline.json::metrics_ast` | 8,842 | 138 | non-runtime snapshot, used by the drift gate (`--no-verify`); AST counts run ~10% high vs cargo-verified because the regex doesn't track `cfg(test)` boundaries |
+| Cargo test binaries | root `tests/*.rs` keepers + consolidated `all_tests` runner + hand-wired `[[test]] path = "tests/<sub>/<foo>.rs"` + sibling-crate targets | 51 | n/a | matches `tests/test_inventory.json::totals.test_binaries` (273 standalone root binaries consolidated into `all_tests` + 10 keepers in Issue #3764 + `grid_adapter_integration` in Issue #4005) |
 
 Refreshing the canonical inventory (Issue #3442 acceptance): run `python3 scripts/generate_test_inventory.py --verify` locally and commit the regenerated `tests/test_inventory.json`. The drift gate (next section) will fail any test-adding PR that does not bump the baseline ratchet in the same PR.
 
