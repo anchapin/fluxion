@@ -15,12 +15,14 @@ criteria):
 
   1. ``pip install -r <pinned-requirements-file>`` where the file lives
      at a path that exists in the repo and contains at least one
-     version-pinned specifier (``==``, ``>=``, ``~=``, etc.) — bare
-     ``-r`` references without an on-disk file or with no pin are
-     rejected.
+     version-pinned specifier (``==`` or ``~=``) — bare ``-r``
+     references without an on-disk file or with no pin are rejected.
   2. ``pip install <package><specifier>`` where ``<specifier>`` is a
-     version pin (``==``, ``>=``, ``~=``, ``<=``, etc.). Bare
-     ``pip install <package>`` invocations fail.
+     version pin (``==`` or ``~=``). Bare ``pip install <package>``
+     invocations fail, and so do open bounds: ``>=``, ``<=``, ``>``,
+     ``<``, and ``!=`` count as UN-pinned, because an open bound
+     re-resolves on every run and gives no protection against the
+     stated threat.
 
 The credential-bearing criterion is satisfied when EITHER of these
 holds at the workflow level:
@@ -79,13 +81,17 @@ _PIP_INSTALL_RE = re.compile(
 # wrappers, etc.).
 _ALWAYS_OK_PACKAGES = frozenset({"pip", "setuptools", "wheel", "pipx"})
 
-# A pinned package specifier: `name==X.Y.Z`, `name>=X.Y`, etc.
+# A pinned package specifier: `name==X.Y.Z` or `name~=X.Y`. Issue
+# #4203 tightened the compliance rule: open bounds (`>=`, `<=`, `>`,
+# `<`) and exclusion (`!=`) count as UN-pinned because they re-resolve
+# on every run, defeating the gate's threat model. Only `==` (exact)
+# and `~=` (compatible-release) are accepted as pins.
 # Allows quoted forms ('name==X' or "name==X") to handle shell
 # contexts where the specifier must be quoted.
 _PINNED_SPEC_RE = re.compile(
     r"""
     (?P<name>[A-Za-z0-9_.+-]+)     # package name (PEP 508)
-    (?P<op>==|>=|<=|~=|!=|>|<)     # version operator
+    (?P<op>==|~=)                  # version operator (Issue #4203)
     (?P<ver>[A-Za-z0-9_.+!*-]+)    # version spec
     """,
     re.VERBOSE,
@@ -117,8 +123,9 @@ def _classify_pip_install_args(args: str, workflow_path: Path) -> tuple[bool, st
     """Return (compliant, reason) for a single ``pip install`` invocation.
 
     Compliant when EITHER:
-      * at least one package is pinned (==, >=, etc.) — bare
-        ``pip install foo`` is non-compliant.
+      * at least one package is pinned (``==`` or ``~=`` per Issue
+        #4203) — bare ``pip install foo`` is non-compliant, and so
+        are open bounds like ``foo>=1.0``.
       * the first non-flag token is ``-r`` / ``--requirement`` pointing
         to a constraints file that exists and contains at least one
         pinned specifier.
@@ -368,6 +375,8 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - run: pip install pyyaml
+      - run: pip install foo>=1.0
+      - run: pip install bar~=2.0
       - run: pip install -r scripts/requirements-ci.txt
       - run: pip install boto3==1.35.36
       - run: pip install 'twine==5.1.1'
@@ -389,7 +398,7 @@ def _selftest() -> int:
         wf_dir.mkdir(parents=True)
         req_file = tmp_path / "scripts" / "requirements-ci.txt"
         req_file.parent.mkdir(parents=True, exist_ok=True)
-        req_file.write_text("pyyaml>=6.0\nboto3==1.35.36\n", encoding="utf-8")
+        req_file.write_text("pyyaml==6.0.3\nboto3==1.35.36\n", encoding="utf-8")
         wf_path = wf_dir / "ci.yml"
         wf_path.write_text(_SELF_TEST_WORKFLOW, encoding="utf-8")
 
@@ -405,6 +414,9 @@ def _selftest() -> int:
 
     # `cred-job` has `secrets.GITHUB_TOKEN` and `contents: write`:
     #   * `pip install pyyaml` — unpinned → FAIL.
+    #   * `pip install foo>=1.0` — open lower bound counts as
+    #     UN-pinned (Issue #4203) → FAIL.
+    #   * `pip install bar~=2.0` — compatible-release pin → PASS.
     #   * `pip install -r scripts/requirements-ci.txt` — constraints
     #     file exists and has pins → PASS.
     #   * `pip install boto3==1.35.36` — pinned → PASS.
@@ -414,6 +426,18 @@ def _selftest() -> int:
     if not bare_pyyaml_hits:
         print("FAIL: expected unpinned-bare-pyyaml failure missing", file=sys.stderr)
         print(f"  got: {failures}", file=sys.stderr)
+        return 1
+    foo_range_hits = [line for line in failures if "foo>=1.0" in line]
+    if not foo_range_hits:
+        print(
+            "FAIL: expected unpinned `foo>=1.0` open-bound failure "
+            "missing (Issue #4203)",
+            file=sys.stderr,
+        )
+        print(f"  got: {failures}", file=sys.stderr)
+        return 1
+    if any("bar~=2.0" in line for line in failures):
+        print("FAIL: compatible-release bar~=2.0 falsely flagged", file=sys.stderr)
         return 1
     if any("boto3==1.35.36" in line for line in failures):
         print("FAIL: pinned boto3 falsely flagged", file=sys.stderr)

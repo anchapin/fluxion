@@ -15,9 +15,13 @@
 # step in a credential-bearing workflow.
 
 # Required by `scripts/check_required_checks_sync.py` (Issue #3123).
-# Floor pinned to match `requirements-dev.txt::pyyaml>=6.0` and
-# `scripts/requirements-test.txt::pyyaml>=6.0`.
-pyyaml>=6.0
+# Exact pin (Issue #4203): an open `pyyaml>=6.0` lower bound
+# re-resolves on every run, defeating the gate's threat model — a
+# compromised pyyaml 6.x release would be adopted silently by a job
+# holding credentials. 6.0.3 is the latest 6.0.x release (verified via
+# `pip index versions pyyaml` on 2026-09-28); bump deliberately after
+# reviewing the upstream release notes.
+pyyaml==6.0.3
 
 # Required by `cloud_campaign.yml` (boto3) and `pypi-release.yml` (twine, build).
 # Exact pins are appropriate here — these tools do not need to
