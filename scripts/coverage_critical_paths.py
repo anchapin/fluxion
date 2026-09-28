@@ -81,7 +81,6 @@ CRITICAL_PATHS: dict[str, list[str]] = {
         "src/physics/**",
         "src/sim/thermal_model/**",
         "src/sim/thermal_model_core/**",
-        "src/sim/thermal_model_solvers.rs",
         "src/sim/thermal_model_iterative.rs",
         "src/sim/thermal_model_data/**",
         "src/sim/thermal_model_physics/**",
@@ -89,7 +88,6 @@ CRITICAL_PATHS: dict[str, list[str]] = {
     ],
     "hvac_zone": [
         "src/sim/hvac/**",
-        "src/sim/thermal_model_solvers.rs",
         "src/sim/hvac_controller.rs",
         "src/sim/multi_node_hvac_runner.rs",
     ],

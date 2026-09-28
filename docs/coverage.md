@@ -22,7 +22,7 @@ informational job with a cargo-llvm-cov pipeline that:
    | Weather → Solar | `fluxion-core/src/weather/**`, `src/sim/solar.rs`, `src/sim/solar_gain_distribution.rs` |
    | Weather → Ventilation | `fluxion-core/src/weather/**`, `src/sim/ventilation.rs` |
    | Conduction → Zone Balance | `src/physics/**`, `src/sim/thermal_model*.rs`, `src/sim/thermal_model_data/**`, `src/sim/per_surface_conduction.rs` |
-   | HVAC → Zone Balance | `src/sim/hvac/**`, `src/sim/thermal_model_solvers.rs`, `src/sim/hvac_controller.rs` |
+   | HVAC → Zone Balance | `src/sim/hvac/**`, `src/sim/hvac_controller.rs`, `src/sim/multi_node_hvac_runner.rs` |
 
    Files may contribute to more than one path (e.g. `weather/` is on both
    the solar and ventilation paths) — this mirrors the real data flow.
