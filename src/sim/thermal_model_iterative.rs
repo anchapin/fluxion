@@ -15,7 +15,7 @@ use crate::sim::thermal_model_data::IncidentSolarAccumulator;
 use crate::sim::timestep_solver::StepParameters;
 use crate::sim::ventilation::capped_h_tr_is_ach_multiplier;
 use crate::weather::HourlyWeatherData;
-use fluxion_core::ashrae_cases::{GeometrySpec, Orientation, WindowArea};
+use fluxion_core::ashrae_cases::{Orientation, WindowArea};
 
 // ---------------------------------------------------------------------------
 // Issue #2770: zero-allocation helpers for `calculate_zone_solar_gain`.
@@ -133,7 +133,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 }
             }
         } else {
-            self.calc_analytical_loads(timestep, step_params.use_analytical_gains, dt_seconds);
+            // Issue #4162: avoid duplicate analytical-load calculation.
+            // `step_physics` (via `try_step_physics`) recalculates loads
+            // when weather is present (Issue #351). Only calculate here
+            // when weather is absent, so direct `step_physics` callers
+            // still get loads but `solve_single_step` doesn't double-count.
+            if self.0.solar.weather.is_none() {
+                self.calc_analytical_loads(timestep, step_params.use_analytical_gains, dt_seconds);
+            }
         }
 
         // 1.5. Add Internal Loads (lighting, equipment, occupancy) - Plan 17-04
@@ -626,26 +633,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// Radiative exchange: Q_rad = σ * ε1 * ε2 * A * F12 * (T1^4 - T2^4)
     /// Linearized: Q_rad ≈ h_rad * (T1 - T2)
     /// Where h_rad ≈ 4 * σ * ε * T_avg^3 * A
-    #[allow(dead_code)]
-    pub(crate) fn calculate_total_interior_surface_area(geometry: &GeometrySpec) -> f64 {
-        geometry.wall_area() + geometry.floor_area() + geometry.roof_area()
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn calculate_zone_to_zone_view_factor(
-        common_window_area: f64,
-        zone_a_area: f64,
-        zone_b_area: f64,
-    ) -> f64 {
-        let zone_a_interior_area = zone_a_area;
-        let zone_b_interior_area = zone_b_area;
-
-        let f_window_to_a = common_window_area / zone_a_interior_area;
-        let f_window_to_b = common_window_area / zone_b_interior_area;
-
-        0.5 * (f_window_to_a + f_window_to_b)
-    }
-
     /// Calculate inter-zone radiative conductance for window-to-window
     /// longwave exchange using the **chord-slope** of the full nonlinear
     /// Stefan-Boltzmann law at the supplied operating point (Issue #1445).
@@ -1148,6 +1135,37 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         dt_seconds: f64,
     ) -> (f64, f64) {
         self.calculate_zone_solar_gain(zone_idx, timestep, weather, dt_seconds)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Test-only helpers (Issue #4107).
+//
+// `calculate_total_interior_surface_area` and
+// `calculate_zone_to_zone_view_factor` are exercised only by the engine
+// test-suite; they are not part of the production thermal path. They live
+// in a `#[cfg(test)]` impl block so the production build carries no
+// dead-code suppressions for them.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
+    pub(crate) fn calculate_total_interior_surface_area(geometry: &GeometrySpec) -> f64 {
+        geometry.wall_area() + geometry.floor_area() + geometry.roof_area()
+    }
+
+    pub(crate) fn calculate_zone_to_zone_view_factor(
+        common_window_area: f64,
+        zone_a_area: f64,
+        zone_b_area: f64,
+    ) -> f64 {
+        let zone_a_interior_area = zone_a_area;
+        let zone_b_interior_area = zone_b_area;
+
+        let f_window_to_a = common_window_area / zone_a_interior_area;
+        let f_window_to_b = common_window_area / zone_b_interior_area;
+
+        0.5 * (f_window_to_a + f_window_to_b)
     }
 }
 

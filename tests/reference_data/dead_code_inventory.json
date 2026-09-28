@@ -2,7 +2,7 @@
   "schema_version": 1,
   "description": "Inventory of production #[allow(dead_code)] sites in the root fluxion crate, governed by scripts/check_orphan_modules.py (Issue #3752). Regenerate with: python3 scripts/check_orphan_modules.py --update-dead-code-inventory",
   "governing_issue": 3752,
-  "site_count": 50,
+  "site_count": 48,
   "sites": [
     {
       "file": "src/ai/surrogate/session_pool.rs",
@@ -169,18 +169,6 @@
     {
       "file": "src/sim/hvac/economizer.rs",
       "signature": "fn zone_enthalpy_from_temp(zone_temp: f64, outdoor_humidity: f64) -> f64 {",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/sim/thermal_model_iterative.rs",
-      "signature": "pub(crate) fn calculate_total_interior_surface_area(geometry: &GeometrySpec) -> f64 {",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/sim/thermal_model_iterative.rs",
-      "signature": "pub(crate) fn calculate_zone_to_zone_view_factor(",
       "index": 1,
       "issue": 3752
     },
