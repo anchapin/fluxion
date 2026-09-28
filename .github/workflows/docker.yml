@@ -223,26 +223,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Issue #4143: this step declared `images:` but no `tags:`, so
-      # metadata-action produced an empty tag list and `name-canonical`
-      # came back empty. The build step then runs with
-      # `outputs: type=image,push-by-digest=true,name-canonical=true`,
-      # and buildx aborts with "tag is needed when pushing to registry".
-      # Dormant for the same reason as every other step in this job --
-      # `build-and-test` used to fail first and the matrix never ran.
-      #
-      # The tag set intentionally mirrors `merge-manifests` (no
-      # `type=ref,event=pr`): this job pushes per-arch *by digest*, and
-      # the final tag list is applied to the merged manifest list.
+      # No `tags:` here on purpose. The per-arch build step pushes by
+      # digest against a bare repository name (Issue #4145), so it must
+      # not be handed a tagged ref from metadata-action. Only `labels`
+      # are consumed from this step in this job; `merge-manifests` runs
+      # its own metadata-action to produce the tag list for the final
+      # manifest.
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=sha
 
       # Issue #3580 — see the matching step in `build-and-test`.
       # `docker pull --quiet` by digest is fail-closed: any upstream
@@ -275,17 +266,19 @@ jobs:
               fi
           done
 
-      # Issue #4145: `name-canonical=true` tells buildx to derive the
-      # image name from the `--tag` values. Without a `tags:` input here
-      # the command carried no `--tag` at all, so buildx had no
-      # reference to canonicalise and aborted with "tag is needed when
-      # pushing to registry".
+      # Issue #4145: `name-canonical=true` makes buildx add `name@<digest>`,
+      # and `push-by-digest=true` pushes the image WITHOUT a name. Both
+      # halves need a reference, but the reference must be a BARE
+      # repository name:
       #
-      # The tags are needed even though this step pushes by DIGEST: the
-      # digest push needs a named repository to push into, and
-      # `steps.build.outputs.digest` (consumed by "Export digest") is
-      # only produced once the build succeeds. `merge-manifests` then
-      # applies the tag list to the assembled manifest list.
+      #   * no reference at all  -> "tag is needed when pushing to registry"
+      #   * a TAGGED ref (`:develop`) -> "can't push tagged ref
+      #     ghcr.io/anchapin/fluxion:develop by digest"
+      #
+      # So `tags:` carries `ghcr.io/anchapin/fluxion` with no tag
+      # component, not `steps.meta.outputs.tags`. The per-arch digest is
+      # collected by "Export digest" and the real tag list is applied to
+      # the assembled manifest list in `merge-manifests`.
       - name: Build and push platform image
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
@@ -293,7 +286,7 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,push-by-digest=true,name-canonical=true
           cache-from: type=gha,scope=build-${{ matrix.slug }}-v3
