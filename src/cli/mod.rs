@@ -24,7 +24,7 @@ pub mod validation;
 
 pub use multi_zone::*;
 pub use performance::PerformanceCommand;
-pub use topology::{ExportArgs, LintArgs, TopologyCommand};
+pub use topology::{ExportArgs, ExportFormat, LintArgs, TopologyCommand};
 pub use validation::ValidationSubcommand;
 
 use anyhow::{anyhow, Result};
