@@ -30,10 +30,12 @@ use crate::api::schema::{SimulationOutput, SimulationSchema, SimulationSchemaV1}
 use crate::api::server::api_error::ApiError;
 use crate::api::server::constants::{MAX_BATCH_SIMULATIONS, MAX_CAMPAIGN_STEPS, MAX_YEARS};
 use crate::api::server::state::AppState;
+// Issue #4164: canonical H_SI from fluxion-core::physics_constants.
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
 use crate::sim::thermal_selector::ThermalSelector;
 use crate::util::sha256_hex::sha256_hex;
+use fluxion_core::physics_constants::H_SI;
 use sha2::{Digest, Sha256};
 
 use super::X_REQUEST_ID;
@@ -231,7 +233,7 @@ pub(crate) fn build_model_from_schema(schema: &SimulationSchemaV1) -> ThermalMod
     const AIR_SPECIFIC_HEAT: f64 = 1005.0; // J/(kg·K)
     const DEFAULT_INFILTRATION_ACH: f64 = 0.5;
     const H_MS_COEFF_LOW_MASS: f64 = 2.0; // W/(m²·K)
-    const H_SI: f64 = 3.45; // W/(m²·K)
+                                          // Issue #4164: H_SI now from fluxion_core::physics_constants (3.45 W/m²K).
 
     let mut zone_area_vec = Vec::with_capacity(num_zones);
     let mut ceiling_height_vec = Vec::with_capacity(num_zones);

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "description": "Per-module disposition registry for the wired-but-dead pub mods allowlisted in scripts/check_orphan_modules.py::WIRED_BUT_DEAD (Issue #3748). Every allowlist entry must carry exactly one row with an owner-assigned wire-or-delete decision; the registry must stay in lock-step with the live wired-but-dead set. Resolving a module (wiring it up or deleting it) requires dropping its row AND lowering BASELINE_WIRED_BUT_DEAD by one in the same PR.",
   "governing_issue": 3748,
-  "module_count": 22,
+  "module_count": 32,
   "modules": [
     {
       "module": "ems",
@@ -124,20 +124,6 @@
       "rationale": "Test-helper surface for tests/<subdir>/ harnesses, which are not Cargo targets and are excluded from caller scope by design."
     },
     {
-      "module": "thermal_model_5r1c",
-      "disposition": "wire-pending",
-      "issue": 3748,
-      "owner": "anchapin",
-      "rationale": "ISO 13790 5R1C variant; wire as an explicit ThermalSelector opt-in path or delete."
-    },
-    {
-      "module": "thermal_model_solvers",
-      "disposition": "wire-pending",
-      "issue": 3748,
-      "owner": "anchapin",
-      "rationale": "5R1C/6R2C solver core; wire into a swap-point consumer or delete."
-    },
-    {
       "module": "topsis",
       "disposition": "wire-pending",
       "issue": 3748,
@@ -150,6 +136,97 @@
       "issue": 3930,
       "owner": "anchapin",
       "rationale": "Diagnostic heuristics for SystematicIssue::Unknown ASHRAE failures; wire into the issue classifier or delete."
+    },
+    {
+      "module": "diagnostics",
+      "disposition": "keep-dead",
+      "issue": 4197,
+      "owner": "anchapin",
+      "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
+    },
+    {
+      "module": "error",
+      "disposition": "keep-dead",
+      "issue": 4197,
+      "owner": "anchapin",
+      "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
+    },
+    {
+      "module": "geometry",
+      "disposition": "keep-dead",
+      "issue": 4197,
+      "owner": "anchapin",
+      "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
+    },
+    {
+      "module": "integration",
+      "disposition": "keep-dead",
+      "issue": 4197,
+      "owner": "anchapin",
+      "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
+    },
+    {
+      "module": "parser",
+      "disposition": "keep-dead",
+      "issue": 4197,
+      "owner": "anchapin",
+      "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
+    },
+    {
+      "module": "performance",
+      "disposition": "keep-dead",
+      "issue": 4197,
+      "owner": "anchapin",
+      "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
+    },
+    {
+      "module": "reference_data",
+      "disposition": "keep-dead",
+      "issue": 4197,
+      "owner": "anchapin",
+      "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
+    },
+    {
+      "module": "reporting",
+      "disposition": "keep-dead",
+      "issue": 4197,
+      "owner": "anchapin",
+      "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
+    },
+    {
+      "module": "thermal_mass",
+      "disposition": "keep-dead",
+      "issue": 4197,
+      "owner": "anchapin",
+      "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
+    },
+    {
+      "module": "thermal_model_iterative",
+      "disposition": "keep-dead",
+      "issue": 4197,
+      "owner": "anchapin",
+      "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
+    },
+    {
+      "module": "ukf",
+      "disposition": "keep-dead",
+      "issue": 4197,
+      "owner": "anchapin",
+      "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
+    },
+    {
+      "module": "validation",
+      "disposition": "keep-dead",
+      "issue": 4197,
+      "owner": "anchapin",
+      "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
+    },
+    {
+      "module": "writer",
+      "disposition": "keep-dead",
+      "issue": 4197,
+      "owner": "anchapin",
+      "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
     }
   ]
 }

@@ -30,6 +30,7 @@ import hashlib
 import json
 import math
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -649,99 +650,156 @@ def render_docs_index(entries: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _svg_ids_unique(svg_text: str) -> bool:
+    """Check that every ``id="..."`` in the SVG is unique (Issue #4194)."""
+    ids = re.findall(r'id="([^"]+)"', svg_text)
+    return len(ids) == len(set(ids))
+
+
 def generate(dest_root: Path, fluxion_bin: str) -> int:
+    """Generate topology artifacts transactionally (Issue #4194).
+
+    All artifacts are staged in a temporary directory first. The
+    destination tree is only touched after every case has exported,
+    linted, parsed, and rendered successfully — a failure at any point
+    returns non-zero and leaves the destination untouched (fail-closed).
+    The ``-1`` lint-count sentinels are gone: unparseable lint output is
+    a hard failure, not a placeholder row.
+    """
     dest_root = dest_root.resolve()
-    ref_dir = dest_root / REFERENCE_DIR
-    lint_dir = dest_root / LINT_DIR
-    docs_dir = dest_root / DOCS_DIR
-    payload_dir = dest_root / PAYLOAD_DIR
-    for d in (ref_dir, lint_dir, docs_dir, payload_dir):
-        d.mkdir(parents=True, exist_ok=True)
 
-    entries: list[dict] = []
-    failures = 0
-    for case in TOPOLOGY_CASES:
-        with tempfile.TemporaryDirectory() as td:
-            tmp_export = Path(td) / f"case-{case}.json"
-            export = run_cli(fluxion_bin, ["topology", "export", "--case", case, "--output", str(tmp_export)])
-            if export.returncode != 0 or not tmp_export.is_file():
-                sys.stderr.write(f"error: topology export failed for case {case}: {export.stderr}\n")
-                failures += 1
-                continue
-            export_bytes = tmp_export.read_bytes()
-            lint = run_cli(fluxion_bin, ["topology", "lint", "--case", case, "--strict", "--format", "json"])
-            if lint.returncode != 0:
-                sys.stderr.write(
-                    f"error: topology lint --strict failed for case {case} "
-                    f"(exit {lint.returncode}): {lint.stdout}{lint.stderr}\n"
+    # Stage everything in a temp dir mirroring the destination layout.
+    with tempfile.TemporaryDirectory() as stage_td:
+        stage = Path(stage_td)
+        entries: list[dict] = []
+        failures = 0
+
+        for case in TOPOLOGY_CASES:
+            with tempfile.TemporaryDirectory() as td:
+                tmp_export = Path(td) / f"case-{case}.json"
+                export = run_cli(fluxion_bin, ["topology", "export", "--case", case, "--output", str(tmp_export)])
+                if export.returncode != 0 or not tmp_export.is_file():
+                    sys.stderr.write(f"error: topology export failed for case {case}: {export.stderr}\n")
+                    failures += 1
+                    continue
+                export_bytes = tmp_export.read_bytes()
+                lint = run_cli(fluxion_bin, ["topology", "lint", "--case", case, "--strict", "--format", "json"])
+                if lint.returncode != 0:
+                    sys.stderr.write(
+                        f"error: topology lint --strict failed for case {case} "
+                        f"(exit {lint.returncode}): {lint.stdout}{lint.stderr}\n"
+                    )
+                    failures += 1
+                    continue
+                lint_bytes = lint.stdout.encode("utf-8")
+
+                # Issue #4194: unparseable JSON is a hard failure, not -1 sentinels.
+                try:
+                    doc = json.loads(export_bytes.decode("utf-8"))
+                except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                    sys.stderr.write(f"error: topology export for case {case} is not valid JSON: {e}\n")
+                    failures += 1
+                    continue
+                try:
+                    lint_doc = json.loads(lint.stdout)
+                except json.JSONDecodeError as e:
+                    sys.stderr.write(f"error: topology lint output for case {case} is not valid JSON: {e}\n")
+                    failures += 1
+                    continue
+
+                # Diagram-layer augmentation (issue #4036): boundary-condition nodes
+                # appear in the Mermaid/SVG diagrams only; the reference and payload
+                # JSONs below stay byte-verbatim exports.
+                diagram_doc = augment_boundaries(doc)
+
+                rel_ref = REFERENCE_DIR / f"case-{case}.json"
+                rel_lint = LINT_DIR / f"case-{case}.lint.json"
+                rel_mmd = DOCS_DIR / f"case-{case}.mmd"
+                rel_svg = DOCS_DIR / f"case-{case}.svg"
+                rel_payload = PAYLOAD_DIR / f"case-{case}.json"
+
+                mmd_text = render_mermaid(diagram_doc, case)
+                svg_text = render_svg(diagram_doc, case)
+                if not _svg_ids_unique(svg_text):
+                    sys.stderr.write(f"error: duplicate SVG ids in case {case} diagram\n")
+                    failures += 1
+                    continue
+
+                (stage / rel_ref).parent.mkdir(parents=True, exist_ok=True)
+                (stage / rel_lint).parent.mkdir(parents=True, exist_ok=True)
+                (stage / rel_mmd).parent.mkdir(parents=True, exist_ok=True)
+                (stage / rel_payload).parent.mkdir(parents=True, exist_ok=True)
+                (stage / rel_ref).write_bytes(export_bytes)
+                (stage / rel_lint).write_bytes(lint_bytes)
+                (stage / rel_mmd).write_text(mmd_text, encoding="utf-8")
+                (stage / rel_svg).write_text(svg_text, encoding="utf-8")
+                (stage / rel_payload).write_bytes(export_bytes)
+
+                meta = doc["metadata"]
+                entries.append(
+                    {
+                        "case": case,
+                        "model_name": meta.get("model_name", ""),
+                        "model_source": meta.get("model_source", ""),
+                        "node_count": meta.get("node_count", len(doc["nodes"])),
+                        "edge_count": meta.get("edge_count", len(doc["edges"])),
+                        "lint": {
+                            "clean": bool(lint_doc.get("clean", False)),
+                            "errors": lint_doc.get("summary", {}).get("errors"),
+                            "warnings": lint_doc.get("summary", {}).get("warnings"),
+                            "total": lint_doc.get("summary", {}).get("total"),
+                        },
+                        "files": {
+                            "reference": str(rel_ref),
+                            "lint": str(rel_lint),
+                            "mermaid": str(rel_mmd),
+                            "svg": str(rel_svg),
+                            "payload": str(rel_payload),
+                        },
+                        "sha256": {
+                            "reference": sha256_bytes(export_bytes),
+                            "lint": sha256_bytes(lint_bytes),
+                            "mermaid": sha256_bytes(mmd_text.encode("utf-8")),
+                            "svg": sha256_bytes(svg_text.encode("utf-8")),
+                            "payload": sha256_bytes(export_bytes),
+                        },
+                    }
                 )
-                failures += 1
-            lint_bytes = lint.stdout.encode("utf-8")
-            doc = json.loads(export_bytes.decode("utf-8"))
-            # Diagram-layer augmentation (issue #4036): boundary-condition nodes
-            # appear in the Mermaid/SVG diagrams only; the reference and payload
-            # JSONs below stay byte-verbatim exports.
-            diagram_doc = augment_boundaries(doc)
+            print(f"case {case}: {meta.get('node_count')} nodes / {meta.get('edge_count')} edges — ok")
 
-            rel_ref = REFERENCE_DIR / f"case-{case}.json"
-            rel_lint = LINT_DIR / f"case-{case}.lint.json"
-            rel_mmd = DOCS_DIR / f"case-{case}.mmd"
-            rel_svg = DOCS_DIR / f"case-{case}.svg"
-            rel_payload = PAYLOAD_DIR / f"case-{case}.json"
-            (dest_root / rel_ref).write_bytes(export_bytes)
-            (dest_root / rel_lint).write_bytes(lint_bytes)
-            (dest_root / rel_mmd).write_text(render_mermaid(diagram_doc, case), encoding="utf-8")
-            (dest_root / rel_svg).write_text(render_svg(diagram_doc, case), encoding="utf-8")
-            (dest_root / rel_payload).write_bytes(export_bytes)
+        if failures:
+            # Fail-closed: the destination tree is untouched.
+            sys.stderr.write(f"error: {failures} case(s) failed; destination left untouched\n")
+            return 1
 
-            try:
-                lint_doc = json.loads(lint.stdout)
-            except json.JSONDecodeError:
-                lint_doc = {"clean": False, "summary": {"errors": -1, "warnings": -1, "total": -1}}
-            meta = doc["metadata"]
-            entries.append(
-                {
-                    "case": case,
-                    "model_name": meta.get("model_name", ""),
-                    "model_source": meta.get("model_source", ""),
-                    "node_count": meta.get("node_count", len(doc["nodes"])),
-                    "edge_count": meta.get("edge_count", len(doc["edges"])),
-                    "lint": {
-                        "clean": bool(lint_doc.get("clean", False)),
-                        "errors": lint_doc.get("summary", {}).get("errors", -1),
-                        "warnings": lint_doc.get("summary", {}).get("warnings", -1),
-                        "total": lint_doc.get("summary", {}).get("total", -1),
-                    },
-                    "files": {
-                        "reference": str(rel_ref),
-                        "lint": str(rel_lint),
-                        "mermaid": str(rel_mmd),
-                        "svg": str(rel_svg),
-                        "payload": str(rel_payload),
-                    },
-                    "sha256": {
-                        "reference": sha256_bytes(export_bytes),
-                        "lint": sha256_bytes(lint_bytes),
-                        "mermaid": sha256_bytes((dest_root / rel_mmd).read_bytes()),
-                        "svg": sha256_bytes((dest_root / rel_svg).read_bytes()),
-                        "payload": sha256_bytes(export_bytes),
-                    },
-                }
-            )
-        print(f"case {case}: {meta.get('node_count')} nodes / {meta.get('edge_count')} edges — ok")
+        index = {
+            "schema": "fluxion-topology-index/1.0",
+            "generated_by": "scripts/generate_topology_diagrams.py",
+            "generator_note": GENERATOR_STAMP,
+            "cases": entries,
+        }
+        (stage / REFERENCE_DIR / "index.json").write_text(
+            json.dumps(index, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        (stage / DOCS_DIR / "index.md").write_text(render_docs_index(entries), encoding="utf-8")
 
-    index = {
-        "schema": "fluxion-topology-index/1.0",
-        "generated_by": "scripts/generate_topology_diagrams.py",
-        "generator_note": GENERATOR_STAMP,
-        "cases": entries,
-    }
-    (ref_dir / "index.json").write_text(
-        json.dumps(index, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
-    (docs_dir / "index.md").write_text(render_docs_index(entries), encoding="utf-8")
-    print(f"wrote {len(entries)} case artifact sets + index under {dest_root}")
-    return 1 if failures else 0
+        # Commit: atomically replace each output subtree. Renaming a
+        # directory is atomic on the same filesystem, so readers never
+        # see a half-written tree.
+        for subdir in (REFERENCE_DIR, DOCS_DIR):
+            src_dir = stage / subdir
+            dst_dir = dest_root / subdir
+            # Stage outside the destination, then rename over.
+            tmp_dst = dst_dir.with_name(dst_dir.name + ".new")
+            if tmp_dst.exists():
+                shutil.rmtree(tmp_dst)
+            shutil.move(str(src_dir), str(tmp_dst))
+            if dst_dir.exists():
+                shutil.rmtree(dst_dir)
+            tmp_dst.rename(dst_dir)
+
+        print(f"wrote {len(entries)} case artifact sets + index under {dest_root}")
+        return 0
 
 
 def main(argv: list[str] | None = None) -> int:

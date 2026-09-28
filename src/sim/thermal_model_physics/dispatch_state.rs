@@ -1,17 +1,24 @@
-//! Thermal model core module
+//! Thermal-model dispatch-state methods (Issue #4158).
 //!
-//! ISO 13790-compliant 5R1C/6R2C thermal network implementation.
-//! Contains the core thermal model types, struct, and implementations.
+//! Inherent `ThermalModel` methods for solver dispatch state, backend
+//! configuration (CTF/FD/solver-manager), parameter application, and
+//! timestep mode. Moved verbatim from the deleted
+//! `src/sim/thermal_model_solvers.rs`, which was a `pub mod` containing
+//! only inherent methods (wired-but-dead). This is a private module —
+//! the methods are inherent on the public `ThermalModel` type, so the
+//! public API is unchanged.
 
 use log::{debug, trace, warn};
 
 use crate::physics::constants::thermal::ashrae_140::INTERIOR_FILM_COEFF;
+// Issue #4164: canonical H_SI from fluxion-core::physics_constants.
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::physics::ctf_coefficients::{CTFCalculator, CTFMaterial};
 use crate::physics::ctf_solver::{CTFSolver, CTFSolverConfig};
 use crate::sim::adaptive_timestep::TimestepMode;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::thermal_model_core::{ThermalModel, ThermalModelType};
+use fluxion_core::physics_constants::H_SI;
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
     /// Updates derived physical parameters based on geometry and constants.
@@ -52,7 +59,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // h_tr_is = Surface-to-air conductance for ASHRAE 140 simplified 5R1C model
         // Issue #714 Fix: Use H_SI = 3.45 W/m²K × floor_area (ASHRAE 140 simplified method)
         // instead of detailed surface-specific film coefficients
-        const H_SI: f64 = 3.45; // W/m²K - ASHRAE 140 simplified 5R1C value
+        // Issue #4164: H_SI from fluxion_core::physics_constants.
         self.0.conduction.h_tr_is = self.0.setpoints.zone_area.clone() * H_SI;
 
         // Ventilation

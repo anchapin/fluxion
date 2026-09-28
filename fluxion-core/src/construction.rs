@@ -32,6 +32,9 @@
 
 use serde::{Deserialize, Serialize};
 
+// Issue #4164: canonical H_SI from crate::physics_constants.
+use crate::physics_constants::H_SI;
+
 // =============================================================================
 // Surface film coefficients — ASHRAE 140 Section 5.2
 //
@@ -746,7 +749,7 @@ impl Construction {
         // Where h_si is interior surface film coefficient
         // For ASHRAE 140 simplified 5R1C model, use h_si = 3.45 W/m²K
         // Units: W/m²K × m² = W/K
-        const H_SI: f64 = 3.45; // W/m²K - ASHRAE 140 simplified 5R1C value
+        // Issue #4164: H_SI from crate::physics_constants.
         H_SI * surface_area
     }
 

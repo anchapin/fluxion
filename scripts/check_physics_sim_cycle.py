@@ -30,10 +30,10 @@ the `physics <-> sim` cycle closed by Issue #2462 stays closed:
    ``ThermalModelData`` god-struct, and PR #3347 (issue #3324) raised it
    to 83 to admit four ``use crate::physics::fp_algebraic::{...}``
    edges for the solar-kernel fast-math adoption.
-   Any NEW edge beyond these 83 fails the guard.
+   Any NEW edge beyond these 82 fails the guard.
  3. Summary: report the total cycle-edge count. As of #2462 + #2766 +
     #2896 + #2891 + #2878 + #3214 + #3324 the documented baseline is
-    0 physics->sim + 83 sim->physics edges.
+    0 physics->sim + 82 sim->physics edges.
 
 Usage:
   python3 scripts/check_physics_sim_cycle.py
@@ -46,7 +46,7 @@ Exit codes:
   2 — script error
 
 The script reports ``BASELINE_PHYSICS_TO_SIM = 0`` and
-``BASELINE_SIM_TO_PHYSICS = 83`` documented edges as the *current state*.
+``BASELINE_SIM_TO_PHYSICS = 82`` documented edges as the *current state*.
 A future PR that adds a *new* ``use crate::sim::`` import under
 ``src/physics/**`` (or a *new* ``use crate::physics::`` import under any
 ``src/sim/**/*.rs`` file) — pushing the count *above* the documented
@@ -111,8 +111,8 @@ SIM_SHIM_EXCEPTIONS: frozenset[str] = frozenset()
 # ``mod.rs`` (2 ``pub use`` lines: the consolidated block + a cfg-gated
 # re-export of ``gauge_zone_solver::GaugeZoneSolver``). Net effect:
 # -6 sim->physics edges (8 removed by god-struct deletion, 2 added by
-# consolidated re-exports). The guard PASSES at-or-below 83 and FAILS
-# when a NEW edge pushes the count to 84+. Lowering this baseline is
+# consolidated re-exports). The guard PASSES at-or-below 82 and FAILS
+# when a NEW edge pushes the count to 83+. Lowering this baseline is
 # authorised only by companion cycle-removal work; see ARCHITECTURE.md
 # §"Regression guard (Issue #2766, extends #2463)".
 #
@@ -144,7 +144,7 @@ BASELINE_PHYSICS_TO_SIM = 0
 # that hoisted them to `fluxion-core` would also have to move the
 # helpers themselves. Companion cycle-removal work stays open under
 # the #2462 phase-3 sim->physics edge elision.
-BASELINE_SIM_TO_PHYSICS = 83  # src/sim/** -> crate::physics::* (was 79; +4 for #3324; -3 for
+BASELINE_SIM_TO_PHYSICS = 82  # src/sim/** -> crate::physics::* (was 79; +4 for #3324; -3 for
                               # the #3638/#3555-era sim refactors that removed three
                               # `use crate::physics::` edges; +1 for #3731's typed
                               # `ZoneCountPolicy` import under
@@ -152,7 +152,9 @@ BASELINE_SIM_TO_PHYSICS = 83  # src/sim/** -> crate::physics::* (was 79; +4 for 
                               # leaf-module hoist of `ZoneCountPolicy` +
                               # `MAX_ZONES` into `fluxion-core::zone_count_policy`
                               # — PR #3871 closes the residual sim→physics edge
-                              # admitted by PR #3869 at 2026-09-18)
+                              # admitted by PR #3869 at 2026-09-18; -1 for #4158's
+                              # deletion of src/sim/thermal_model_solvers.rs on
+                              # 2026-09-28)
 
 # Regex for Phase 2: match `use` or `pub use` against `crate::physics::`.
 # Mirrors `scan_sim_for_orientation_cycle` in check_ashrae_cases_cycle.py

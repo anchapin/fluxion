@@ -321,21 +321,23 @@ def test_bucket_coverage_assigns_file_to_multiple_paths():
     """A file matching two paths contributes to both buckets (+ overall).
 
     ``fluxion-core/src/weather/**`` is deliberately on both the solar and
-    ventilation paths, and ``thermal_model_solvers.rs`` on both the
-    conduction and HVAC paths — the CRITICAL_PATHS comment documents this
-    as the intended data-flow shape (ARCHITECTURE.md).
+    ventilation paths — the CRITICAL_PATHS comment documents this as the
+    intended data-flow shape (ARCHITECTURE.md). (Pre-#4158
+    ``thermal_model_solvers.rs`` also bridged the conduction and HVAC
+    paths; it was deleted as dead code, so the HVAC bucket is now
+    exercised with a single-path file instead.)
     """
     mod = _load_cov_module()
     weather = mod.FileCoverage(
         path="fluxion-core/src/weather/site.rs", lines_found=10, lines_hit=10
     )
-    solvers = mod.FileCoverage(
-        path="src/sim/thermal_model_solvers.rs", lines_found=100, lines_hit=50
+    hvac = mod.FileCoverage(
+        path="src/sim/hvac_controller.rs", lines_found=100, lines_hit=50
     )
     unrelated = mod.FileCoverage(
         path="docs/README.md", lines_found=5, lines_hit=0
     )
-    reports = mod.bucket_coverage([weather, solvers, unrelated])
+    reports = mod.bucket_coverage([weather, hvac, unrelated])
 
     weather_paths = {
         name
@@ -344,19 +346,19 @@ def test_bucket_coverage_assigns_file_to_multiple_paths():
     }
     assert weather_paths == {"weather_solar", "weather_ventilation"}
 
-    solvers_paths = {
+    hvac_paths = {
         name
         for name, rep in reports.items()
-        if name != "overall" and solvers in rep.files
+        if name != "overall" and hvac in rep.files
     }
-    assert solvers_paths == {"conduction_zone", "hvac_zone"}
+    assert hvac_paths == {"hvac_zone"}
 
     # Unrelated files only land in overall.
     for name, rep in reports.items():
         if name != "overall":
             assert unrelated not in rep.files
     assert len(reports["overall"].files) == 3
-    # Aggregation: hvac_zone sees only the solvers file.
+    # Aggregation: hvac_zone sees only the hvac file.
     assert reports["hvac_zone"].lines_found == 100
     assert reports["hvac_zone"].line_pct == 50.0
 
