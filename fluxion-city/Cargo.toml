@@ -14,7 +14,7 @@ serde.workspace = true
 approx = "0.5"
 faer = { workspace = true, features = ["default"] }
 num-traits = "0.2"
-rand = "0.9"
+rand = "0.10"
 rayon = { workspace = true, optional = true }
 petgraph = { version = "0.8", features = ["serde-1"] }
 uuid = { workspace = true, features = ["v4", "serde"] }

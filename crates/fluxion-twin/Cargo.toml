@@ -44,7 +44,7 @@ multi-zone = []
 
 [dev-dependencies]
 approx = "0.5"
-rand = "0.9"
+rand = "0.10"
 rand_distr = "0.6"
 mockito = "1.7"
 # `DebuggingRecorder` + `metrics::with_local_recorder` lets tests assert on
