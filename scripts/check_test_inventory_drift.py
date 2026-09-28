@@ -57,6 +57,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -364,43 +365,69 @@ def _regenerate_inventory(cargo_target_dir: str | None, verify: bool) -> dict:
     inventory snapshot — pure-AST mode is only used when ``verify``
     is explicitly disabled (legacy migration scenarios) or when cargo
     is not available on the path.
+
+    The generator is pointed at a scratch temp file (Issue #4134), so
+    this gate never rewrites the committed
+    ``tests/test_inventory.json`` — a read-only gate must not dirty
+    the working tree or silently downgrade the cargo-verified snapshot
+    to a pure-AST one.
     """
-    cmd = ["python3", str(GENERATOR_SCRIPT)]
-    if verify:
-        cmd += ["--verify"]
-    if cargo_target_dir:
-        cmd += ["--cargo-target-dir", cargo_target_dir]
-    # 60s without ``--verify`` is generous; ``--verify`` triggers a
-    # full ``cargo test -- --list`` which can take 30+ min on cold
-    # rebuilds, so we use a larger timeout for that path.
-    timeout = 1800.0 if verify else 60.0
-    proc = subprocess.run(
-        cmd,
-        cwd=str(REPO_ROOT),
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,  # returncode handled explicitly below (ruff PLW1510)
-    )
-    if proc.returncode != 0:
-        print(
-            f"ERROR: generator failed (exit={proc.returncode}):\n{proc.stderr}",
-            file=sys.stderr,
+    with tempfile.TemporaryDirectory(prefix="fluxion-test-inventory-") as tmpdir:
+        tmp_inventory = Path(tmpdir) / "test_inventory.json"
+        cmd = [
+            "python3",
+            str(GENERATOR_SCRIPT),
+            "--output",
+            str(tmp_inventory),
+        ]
+        if verify:
+            cmd += ["--verify"]
+        if cargo_target_dir:
+            cmd += ["--cargo-target-dir", cargo_target_dir]
+        # 60s without ``--verify`` is generous; ``--verify`` triggers a
+        # full ``cargo test -- --list`` which can take 30+ min on cold
+        # rebuilds, so we use a larger timeout for that path.
+        timeout = 1800.0 if verify else 60.0
+        proc = subprocess.run(
+            cmd,
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,  # returncode handled explicitly below (ruff PLW1510)
         )
-        raise SystemExit(1)
-    if not DEFAULT_INVENTORY.exists():
-        print(
-            f"ERROR: generator did not produce {DEFAULT_INVENTORY.relative_to(REPO_ROOT)}",
-            file=sys.stderr,
-        )
-        raise SystemExit(1)
-    return json.loads(DEFAULT_INVENTORY.read_text(encoding="utf-8"))
+        if proc.returncode != 0:
+            print(
+                f"ERROR: generator failed (exit={proc.returncode}):\n{proc.stderr}",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+        if not tmp_inventory.exists():
+            print(
+                f"ERROR: generator did not produce {tmp_inventory}",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+        return json.loads(tmp_inventory.read_text(encoding="utf-8"))
+
+
+def _display_path(path: Path) -> str:
+    """Repo-relative display form, falling back to the absolute path.
+
+    ``--baseline`` / ``--live-inventory`` may point outside the repo
+    (e.g. a scratch copy under /tmp); ``relative_to`` would crash on
+    those, so degrade gracefully instead of dying in a print statement.
+    """
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
 
 
 def _load_baseline(path: Path) -> dict:
     if not path.exists():
         print(
-            f"ERROR: baseline not found at {path.relative_to(REPO_ROOT)}. "
+            f"ERROR: baseline not found at {_display_path(path)}. "
             f"Generate one with --update-baseline.",
             file=sys.stderr,
         )
@@ -487,7 +514,7 @@ def main() -> int:
         "--live-inventory",
         type=Path,
         default=None,
-        help=f"Use this inventory JSON file instead of regenerating (default: regenerate to {DEFAULT_INVENTORY.relative_to(REPO_ROOT)}).",
+        help="Use this inventory JSON file instead of regenerating (default: regenerate to a scratch temp file; the committed inventory is never modified).",
     )
     parser.add_argument(
         "--baseline",
@@ -614,7 +641,7 @@ def main() -> int:
             baseline_path = REPO_ROOT / baseline_path
         _save_baseline(baseline_path, baseline_snapshot)
         print(
-            f"Baseline updated: {baseline_path.relative_to(REPO_ROOT)} "
+            f"Baseline updated: {_display_path(baseline_path)} "
             f"(lib_tests={live_lib}, workspace_tests={live_workspace}, "
             f"test_binaries={live_binaries})"
         )
@@ -728,8 +755,9 @@ def main() -> int:
     else:
         print(
             f"Test-inventory drift gate (Issue #3442)\n"
-            f"  baseline: {baseline_path.relative_to(REPO_ROOT)}\n"
-            f"  live:     {DEFAULT_INVENTORY.relative_to(REPO_ROOT)}\n"
+            f"  baseline: {_display_path(baseline_path)}\n"
+            f"  live:     regenerated scratch snapshot "
+            f"({DEFAULT_INVENTORY.relative_to(REPO_ROOT)} untouched)\n"
             f"  tolerance: ±{DIFF_TOLERANCE_PCT:.1f}% or ±{DIFF_TOLERANCE_ABS} tests "
             f"(whichever is larger)"
         )
