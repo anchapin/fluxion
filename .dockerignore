@@ -9,7 +9,15 @@ docs/
 
 # Development files
 tests/
-examples/
+# Issue #4135 — the root Cargo.toml declares one [[example]] target
+# (`grid_coupling_demo`), and cargo refuses to parse a manifest whose
+# declared target file is absent from the build context. Exclude the
+# directory's contents rather than the directory itself: Docker cannot
+# re-include a file whose parent directory is excluded, so `examples/`
+# + `!examples/<file>` would silently not work — it has to be
+# `examples/*` + the negation.
+examples/*
+!examples/grid_coupling_demo.rs
 tools/
 
 # Python

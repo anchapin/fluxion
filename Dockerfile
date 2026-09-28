@@ -57,6 +57,11 @@ COPY src/ ./src/
 # manifest parses even when we are only building the `fluxion-rest`
 # binary. The runtime image never executes these.
 COPY benches/ ./benches/
+# Issue #4135 — the root manifest declares one `[[example]]` target, and
+# cargo fails to *parse* a manifest whose declared target file is missing
+# from the context. `.dockerignore` excludes the rest of `examples/`
+# (it is a separate, non-member package), so only this file is carried.
+COPY examples/grid_coupling_demo.rs ./examples/grid_coupling_demo.rs
 
 # Build the REST binary. We deliberately skip the python-bindings
 # and napi features so we do not pull in PyO3 / NAPI headers and
