@@ -21,7 +21,7 @@ use approx::assert_relative_eq;
 use fluxion_twin::UnscentedKalmanFilter;
 use nalgebra::{DMatrix, DVector};
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 /// Number of integration timesteps. 200 is enough for the oscillator to
 /// complete ~3 limit-cycle loops at `dt = 0.01`, well past the convergence

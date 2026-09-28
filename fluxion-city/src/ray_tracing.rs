@@ -39,7 +39,7 @@
 
 use crate::ViewFactorError;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{Rng, RngExt, SeedableRng};
 
 /// Default number of rays for Monte Carlo view factor computation.
 ///
