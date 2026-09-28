@@ -310,11 +310,28 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
         "rom",
         "sweeps",
         "tdd",
-        "thermal_model_5r1c",
-        "thermal_model_solvers",
         "topsis",
         # Issue #3930 — new diagnostic module, intentionally added, callers will be added in follow-up
         "ashrae_copilot",
+        # Issue #4197 — corrected detector (qualified-path-aware, comment-
+        # stripping) surfaced 13 additional wired-but-dead modules that the
+        # old bare-name/comment-sensitive detector missed. All confirmed
+        # dead per qualified-path caller scans; tracked here as a documented
+        # correction (baseline 19 → 32). Companion cleanup PRs are expected
+        # to drop one entry each as these modules are deleted or wired in.
+        "diagnostics",
+        "error",
+        "geometry",
+        "integration",
+        "parser",
+        "performance",
+        "reference_data",
+        "reporting",
+        "thermal_mass",
+        "thermal_model_iterative",
+        "ukf",
+        "validation",
+        "writer",
     }
 )
 
@@ -348,11 +365,15 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
 #     ``validation_hybrid_empirical_test`` target) — the module is no
 #     longer wired-but-dead, so its allowlist entry and its Issue
 #     #3748 disposition row are dropped in the same PR.
-BASELINE_WIRED_BUT_DEAD = 21  # lowered 22 → 21 in PR for fluxion-#4065: develop #4064 deleted
-                              # src/ai/equipment_surrogate.rs, so its allowlist entry and registry row
-                              # were removed in lock-step (live raw count is 21). History: 21 → 22 in PR
-                              # for fluxion-#3930 (lowered 22 → 21 in PR for fluxion-#3748; was 33 → 22
-                              # in PR for fluxion-#3555)
+BASELINE_WIRED_BUT_DEAD = 32  # raised 19 → 32 in PR for fluxion-#4197: corrected
+# detector (qualified-path-aware, comment-stripping) surfaced 13 additional
+# wired-but-dead modules; documented correction, not a regression.
+                              # src/sim/thermal_model_solvers.rs (methods moved to the private
+                              # src/sim/thermal_model_physics/dispatch_state.rs) and
+                              # src/sim/thermal_model_5r1c.rs (marker file); both allowlist
+                              # entries and registry rows removed in lock-step.
+                              # History: 21 → 22 in PR for fluxion-#3930 (lowered 22 → 21 in
+                              # PR for fluxion-#3748; was 33 → 22 in PR for fluxion-#3555)
 
 # Downward-only ratchet for the orphan allowlist (Issue #3459).
 #
@@ -466,7 +487,10 @@ _CFG_TEST_BODY_RE = re.compile(
 # Issue #4005 lowered the baseline by 38 (91 → 53) when the dead duplicate
 # `src/solar/pv.rs` (near-verbatim copy of `fluxion-grid/src/pv.rs`) was deleted
 # and PV types were re-exported from `fluxion-grid` under the `grid` feature.
-BASELINE_DEAD_CODE_ALLOWS = 50
+# Issue #4107 lowered the baseline by 2 (50 → 48) when the last two
+# `#[allow(dead_code)]` sites in `src/sim/thermal_model_iterative.rs`
+# moved behind `#[cfg(test)]`.
+BASELINE_DEAD_CODE_ALLOWS = 48
 
 # ---------------------------------------------------------------------------
 # Wired-but-dead disposition registry (Issue #3748).
@@ -914,18 +938,20 @@ def _find_wired_but_dead() -> tuple[list[str], list[str]]:
     if not mods:
         return [], []
 
-    # Deduplicate module names (same name can be declared in multiple
-    # mod.rs files). The first declaration's subtree is the canonical
-    # one; subsequent duplicates can be ignored for caller tracking.
-    seen: set[str] = set()
-    unique_mod_names: list[str] = []
-    canonical_subtree: dict[str, Path] = {}
-    for mod_name, _mod_rs, subtree in mods:
-        if mod_name in seen:
+    # Issue #4197: track modules by (qualified_path, subtree), not bare
+    # name. Two modules with the same leaf name in different subtrees
+    # (e.g. sim::diagnostics vs validation::diagnostics) are distinct;
+    # the old bare-name dedup hid sim::diagnostics behind
+    # validation::diagnostics callers.
+    mod_entries: list[tuple[str, str, Path]] = []  # (qualified, leaf, subtree)
+    for mod_name, mod_rs, subtree in mods:
+        try:
+            rel_parent = mod_rs.parent.relative_to(SRC_DIR)
+        except ValueError:
             continue
-        seen.add(mod_name)
-        unique_mod_names.append(mod_name)
-        canonical_subtree[mod_name] = subtree.resolve()
+        parts = list(rel_parent.parts) + [mod_name] if rel_parent.parts else [mod_name]
+        qualified = "::".join(parts)
+        mod_entries.append((qualified, mod_name, subtree.resolve()))
 
     # Restrict caller scope to the production-code surface (src/, top-
     # level tests/*.rs, examples/*.rs). Benches/ and tests/<subdir>/
@@ -942,22 +968,38 @@ def _find_wired_but_dead() -> tuple[list[str], list[str]]:
     # keeps the whole detector deterministic across environments and fast
     # enough (a few seconds) without any external tool dependency.
     token_re = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-    precise_re = {
-        name: re.compile(
-            rf"\b{re.escape(name)}::"
-            rf"|\buse\s+{re.escape(name)}\s*[;{{]"
-        )
-        for name in unique_mod_names
-    }
+    # Issue #4197: build precise patterns per qualified path. For
+    # unambiguous leaf names, leaf:: or use leaf matches. For ambiguous
+    # leaves (same name in multiple subtrees), require the qualified path.
+    leaf_to_qualified: dict[str, list[str]] = {}
+    for qualified, leaf, _ in mod_entries:
+        leaf_to_qualified.setdefault(leaf, []).append(qualified)
+    precise_re: dict[str, re.Pattern] = {}
+    for qualified, leaf, _ in mod_entries:
+        q_esc = re.escape(qualified)
+        leaf_esc = re.escape(leaf)
+        if len(leaf_to_qualified[leaf]) == 1:
+            pattern = (
+                rf"\b{q_esc}::"
+                rf"|\buse\s+(?:crate::)?{q_esc}\s*[;{{]"
+                rf"|\b{leaf_esc}::"
+                rf"|\buse\s+{leaf_esc}\s*[;{{]"
+            )
+        else:
+            pattern = rf"\b{q_esc}::|\buse\s+(?:crate::)?{q_esc}\s*[;{{]"
+        precise_re[qualified] = re.compile(pattern)
     hits_by_module: dict[str, set[Path]] = {
-        name: set() for name in unique_mod_names
+        qualified: set() for qualified, _, _ in mod_entries
     }
-    name_set = set(unique_mod_names)
+    name_set = set(leaf_to_qualified.keys())
     for path in sorted(allowed_files):
         try:
-            text = path.read_text(encoding="utf-8", errors="replace")
+            raw_text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
+        # Issue #4197: strip comments so doc-comment mentions don't count
+        # as callers.
+        text = _clean_source(raw_text)
         # Stage 1: which module names appear as identifiers at all?
         candidates = {t for t in token_re.findall(text) if t in name_set}
         if not candidates:
@@ -965,17 +1007,19 @@ def _find_wired_but_dead() -> tuple[list[str], list[str]]:
         # Stage 2: precise caller-form verification for the candidates.
         # ``pub use name;`` is subsumed by the ``use`` alternative (the
         # ``\b`` holds after ``pub``).
-        for name in candidates:
-            if precise_re[name].search(text):
-                hits_by_module[name].add(path)
+        for leaf in candidates:
+            for qualified in leaf_to_qualified[leaf]:
+                if precise_re[qualified].search(text):
+                    hits_by_module[qualified].add(path)
 
     # Track which modules have at least one caller outside their own
     # subtree.
     has_caller: dict[str, bool] = {}
-    for mod_name in unique_mod_names:
-        subtree = canonical_subtree[mod_name]
+    subtree_by_qualified = {q: s for q, _, s in mod_entries}
+    for qualified in hits_by_module:
+        subtree = subtree_by_qualified[qualified]
         external_hit = False
-        for hit in hits_by_module[mod_name]:
+        for hit in hits_by_module[qualified]:
             try:
                 hit.relative_to(subtree)
                 continue  # hit IS inside the module's subtree
@@ -983,9 +1027,13 @@ def _find_wired_but_dead() -> tuple[list[str], list[str]]:
                 pass
             external_hit = True
             break
-        has_caller[mod_name] = external_hit
+        has_caller[qualified] = external_hit
 
-    raw = sorted(name for name in unique_mod_names if not has_caller[name])
+    # Report by leaf name for back-compat with the WIRED_BUT_DEAD
+    # allowlist (which uses leaf names). If multiple qualified paths
+    # share a leaf and any is wired-but-dead, report the leaf once.
+    raw_qualified = sorted(q for q in hits_by_module if not has_caller[q])
+    raw = sorted({q.split("::")[-1] for q in raw_qualified})
     new = [m for m in raw if m not in WIRED_BUT_DEAD]
     return raw, new
 
