@@ -21,8 +21,9 @@
 //! |------|----------------|
 //! | [`physics_impl::step_common`] | Shared helpers like `step_wall_surface_ode` |
 //! | [`physics_impl::step_5r1c`] | 5R1C single thermal mass node model |
-//! | [`physics_impl::step_6r2c`] | 6R2C two thermal mass node model |
 //! | [`physics_impl::step_9r4c`] | 9R4C four thermal mass node model |
+//!
+//! Issue #4174: `step_6r2c` was deleted (no production callers).
 //!
 //! ## Public API
 //!
@@ -44,6 +45,7 @@
 //! modules per physics variant, sharing code through a clean trait boundary.
 
 mod batched_solver;
+mod dispatch_state;
 mod hvac;
 mod physics_impl;
 mod solver_core;
