@@ -260,7 +260,6 @@ impl PhysicsScratch5r1c {
     }
 }
 
-
 pub(crate) struct PhysicsScratch9r4c {
     pub n: usize,
     pub inter: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,

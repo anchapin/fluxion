@@ -490,7 +490,10 @@ _CFG_TEST_BODY_RE = re.compile(
 # Issue #4107 lowered the baseline by 2 (50 → 48) when the last two
 # `#[allow(dead_code)]` sites in `src/sim/thermal_model_iterative.rs`
 # moved behind `#[cfg(test)]`.
-BASELINE_DEAD_CODE_ALLOWS = 48
+# Issue #4174 lowered the baseline by 1 (48 → 47): deleting the unreachable
+# `src/sim/thermal_model_physics/physics_impl/step_6r2c.rs` removed its
+# `allow(dead_code)` site.
+BASELINE_DEAD_CODE_ALLOWS = 47
 
 # ---------------------------------------------------------------------------
 # Wired-but-dead disposition registry (Issue #3748).

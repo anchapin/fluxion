@@ -15,6 +15,8 @@ use crate::sim::thermal_model_data::IncidentSolarAccumulator;
 use crate::sim::timestep_solver::StepParameters;
 use crate::sim::ventilation::capped_h_tr_is_ach_multiplier;
 use crate::weather::HourlyWeatherData;
+#[cfg(test)]
+use fluxion_core::ashrae_cases::GeometrySpec;
 use fluxion_core::ashrae_cases::{Orientation, WindowArea};
 
 // ---------------------------------------------------------------------------

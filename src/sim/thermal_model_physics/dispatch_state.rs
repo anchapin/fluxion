@@ -12,13 +12,13 @@ use log::{debug, trace, warn};
 
 use crate::physics::constants::thermal::ashrae_140::INTERIOR_FILM_COEFF;
 // Issue #4164: canonical H_SI from fluxion-core::physics_constants.
-use fluxion_core::physics_constants::H_SI;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::physics::ctf_coefficients::{CTFCalculator, CTFMaterial};
 use crate::physics::ctf_solver::{CTFSolver, CTFSolverConfig};
 use crate::sim::adaptive_timestep::TimestepMode;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::thermal_model_core::{ThermalModel, ThermalModelType};
+use fluxion_core::physics_constants::H_SI;
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
     /// Updates derived physical parameters based on geometry and constants.
