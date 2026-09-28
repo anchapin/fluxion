@@ -8,7 +8,13 @@ on:
     branches: [main, develop]
     tags: ['v*']
   pull_request:
-    branches: [main]
+    # Issue #4152: the filter used to list `main` only, so PRs targeting
+    # `develop` (the project's actual PR target — `main` is release-only
+    # per AGENTS.md) never exercised the Docker build. The develop-PR
+    # cohort is now covered: `build-and-test` builds, smoke-tests,
+    # integration-tests, and Trivy-scans the image on every develop PR,
+    # while publishing stays limited to non-PR events below.
+    branches: [main, develop]
     paths:
       - 'Dockerfile'
       - 'docker-compose.yml'
@@ -164,8 +170,10 @@ jobs:
           cache-from: type=gha,scope=build-test-v3
           cache-to: type=gha,scope=build-test-v3,mode=max
 
+      # Issue #4152: runs on PRs too. The smoke test is the cheapest
+      # executable signal — it is what would have caught the
+      # instantly-dying container of Issue #4151 before merge.
       - name: Run container smoke test
-        if: github.event_name != 'pull_request'
         run: |
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}"
           docker run -d --name fluxion-test --pull=never "$IMAGE" sleep 30
@@ -188,8 +196,10 @@ jobs:
       # (src/api/server/router.rs), so the health check needs no token.
       # `FLUXION_REST_ALLOW_INSECURE=1` is deliberately NOT used here --
       # the whole point of the guard is that CI does not get a bypass.
+      # Issue #4152: runs on PRs too — the `/v1/healthz` boot check is
+      # exactly the class of failure (Issue #4151) that a develop PR
+      # must not merge with.
       - name: Run integration tests
-        if: github.event_name != 'pull_request'
         run: |
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}"
           docker run -d --name fluxion-int --pull=never -p 8080:8080 \
@@ -204,6 +214,13 @@ jobs:
   # Per-platform native builds — no QEMU, native runners for each arch
   build-platform:
     name: Build (${{ matrix.platform }})
+    # Issue #4152: reserve the native multi-arch matrix for push events
+    # (develop/main/tags/release/schedule/dispatch). On pull_request the
+    # `build-and-test` job already builds, smoke-tests, integration-tests,
+    # and Trivy-scans the amd64 image — the signal a PR needs — without
+    # paying for two native platform builds per PR. Publishing stays
+    # limited to non-PR events via the `push:` conditions below.
+    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.runner }}
     needs: build-and-test
     permissions:
