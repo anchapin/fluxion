@@ -156,19 +156,19 @@ Use conventional commits:
 
 ### When to add an entry
 
-When you push a PR that introduces a `#[ignore = "awaiting #N"]` (or the equivalent `#[ignore = "LIMIT-XX: …"]`) attribute — even temporarily — you MUST add a matching row to `tests/QUARANTINE.md` in the same PR. The `Issue` column must reference the blocker (a GitHub issue number or a `LIMIT-*` from `docs/KNOWN_ISSUES.md`), and the `Un-Ignore Criteria` column must describe what must be true before the `#[ignore]` is removed. Choose a `Category` from the list near the top of `tests/QUARANTINE.md` (`diagnostic`, `structural`, `performance`, `hardware`, `calibration`, `ci-broken`, `manual-baseline`, `pending-data`, `other`).
+When you push a PR that introduces a `#[ignore = "awaiting #N"]` (or the equivalent `#[ignore = "LIMIT-XX: …"]`) attribute — even temporarily — you MUST add a matching row to `tests/QUARANTINE.md` in the same PR. The `Issue` column must reference the blocker (a GitHub issue number or a `LIMIT-*` from `docs/KNOWN_ISSUES.md`), and the `Un-Ignore Criteria` column must describe what must be true before the `#[ignore]` is removed. Choose a `Category` from the frozen list near the top of `tests/QUARANTINE.md` (`diagnostic`, `structural`, `performance`, `hardware`, `calibration`, `ci-broken`, `manual-baseline`, `other`) and fill in the `Owner` column (use `unassigned` when no owner is known yet).
 
 When the blocking issue is later resolved, follow the Un-Ignore Checklist at the bottom of `tests/QUARANTINE.md`: remove the `#[ignore]`, verify CI is green, set `Status` to `closed`, and record the un-ignore PR in `Closed By`.
 
 ### The auditor (`--strict`)
 
-`scripts/generate_quarantine_registry.py` scans `tests/**/*.rs` for `#[ignore]` attributes and cross-references them against `tests/QUARANTINE.md`. Default mode is informational (prints a report, exits 0). The **`--strict`** flag is the gate: it exits 1 when any orphan `#[ignore]` exists in code without a registry row, when any ghost row exists in the registry without a matching `#[ignore]`, or when the orphan / ghost count grows above the downward-only ratchet constants `BASELINE_ORPHANED_IGNORES` and `BASELINE_GHOST_ROWS` defined in `scripts/generate_quarantine_registry.py` (mirroring the `BASELINE_KNOWN_ORPHANS` / `BASELINE_WIRED_BUT_DEAD` pattern in `scripts/check_orphan_modules.py`, Issue #3459). Run it locally before pushing:
+`scripts/generate_quarantine_registry.py` scans `tests/`, `src/`, and every workspace member's `src/`/`tests/` for `#[ignore]` attributes (repeatable `--scan-root` overrides the default roots; Issues #4178 / #4179) and cross-references them against `tests/QUARANTINE.md`. Default mode is informational (prints a report, exits 0). The **`--strict`** flag is the gate: it exits 1 when any orphan `#[ignore]` exists in code without a registry row, when any ghost row exists in the registry without a matching `#[ignore]`, or when any registry row violates the frozen schema (non-empty `Category` / `Blocking Issue` / `Owner` / `Un-Ignore Criteria` / `Status`, `Category` from the frozen list). The orphan/ghost ratchet is key-membership (Issue #4179): any key absent from the freeze snapshot fails, regardless of the total count — registering the row is the only way back to green. Run it locally before pushing:
 
 ```bash
 python3 scripts/generate_quarantine_registry.py --strict    # fail on orphan
 ```
 
-The auditor’s per-row message includes the `(file, attribute-pattern)` key; when you fix a real orphan, the script will tell you exactly which line to delete from the registry AND which constant to lower (see also `tests/reference_data/test_inventory_baseline.json` and `docs/ci/nextest-rollout.md` line ~215 for the same downward-ratchet pattern applied to the test-inventory drift gate, Issue #3442).
+The auditor's per-row message includes the `(file, attribute-pattern)` key; when you fix a real orphan, the script names the exact `(file, function)` key — add the registry row (do not extend the freeze set to silence the check).
 
 For the broader operational context (nextest rollout, suite overview, and how the quarantine counts feed into `tests/test_inventory.json`), see `docs/ci/nextest-rollout.md` and the `## Commands That Are Easy to Guess Wrong` section of `AGENTS.md`. For the structural-gap backstory on the `LIMIT-*` categories, see `docs/KNOWN_ISSUES.md` §1.1.
 

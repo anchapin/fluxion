@@ -100,11 +100,42 @@ def test_classifier_pinned_exact(checker, tmp_path):
     assert "pinned" in reason
 
 
-def test_classifier_pinned_floor(checker, tmp_path):
+def test_classifier_range_floor_rejected(checker, tmp_path):
+    """An open `>=` bound counts as UN-pinned (Issue #4203) — it
+    re-resolves on every run and gives no protection against the
+    gate's stated threat."""
     ok, reason = checker._classify_pip_install_args(
         "pyyaml>=6.0", Path("dummy.yml")
     )
+    assert not ok
+    assert "unpinned" in reason
+
+
+def test_classifier_bare_foo_range_rejected(checker, tmp_path):
+    """A bare `foo>=1.0` spec is rejected (Issue #4203 acceptance
+    criterion 3: the gate must exit 1 on an open bound)."""
+    ok, reason = checker._classify_pip_install_args(
+        "foo>=1.0", Path("dummy.yml")
+    )
+    assert not ok
+    assert "unpinned" in reason
+
+
+@pytest.mark.parametrize("spec", ["foo>1.0", "foo<2.0", "foo<=2.0", "foo!=1.0"])
+def test_classifier_other_open_bounds_rejected(checker, tmp_path, spec):
+    """`>`, `<`, `<=`, and `!=` are likewise un-pinned (Issue #4203)."""
+    ok, reason = checker._classify_pip_install_args(spec, Path("dummy.yml"))
+    assert not ok
+    assert "unpinned" in reason
+
+
+def test_classifier_pinned_compatible_release(checker, tmp_path):
+    """`~=` is an accepted pin shape (Issue #4203)."""
+    ok, reason = checker._classify_pip_install_args(
+        "bar~=2.0", Path("dummy.yml")
+    )
     assert ok
+    assert "pinned" in reason
 
 
 def test_classifier_pinned_quoted(checker, tmp_path):
@@ -139,12 +170,24 @@ def test_classifier_constraints_file(checker, tmp_path):
     """`-r <file>` requires the file to exist with at least one
     pinned specifier."""
     req = tmp_path / "req.txt"
-    req.write_text("pyyaml>=6.0\n", encoding="utf-8")
+    req.write_text("pyyaml==6.0.3\n", encoding="utf-8")
     ok, reason = checker._classify_pip_install_args(
         f"-r {req}", Path("dummy.yml")
     )
     assert ok
     assert "constraints file" in reason
+
+
+def test_classifier_constraints_file_range_only_fails(checker, tmp_path):
+    """A constraints file whose only specifiers are open `>=` bounds
+    has no pin under the tightened rule (Issue #4203) and fails."""
+    req = tmp_path / "req.txt"
+    req.write_text("pyyaml>=6.0\nboto3>=1.35\n", encoding="utf-8")
+    ok, reason = checker._classify_pip_install_args(
+        f"-r {req}", Path("dummy.yml")
+    )
+    assert not ok
+    assert "no version-pinned" in reason
 
 
 def test_classifier_constraints_file_without_pin(checker, tmp_path):
@@ -186,6 +229,27 @@ def test_scan_workflow_credential_job_unpinned(checker, tmp_path, monkeypatch):
     monkeypatch.setattr(checker, "WORKFLOWS_DIR", wf.parent)
     failures = checker.scan_workflow(wf)
     assert any("cj" in line and "pyyaml" in line for line in failures)
+
+
+def test_scan_workflow_range_bound_fails(checker, tmp_path, monkeypatch):
+    """End-to-end: a credential-bearing job with `pip install foo>=1.0`
+    fails under the tightened rule (Issue #4203) — an open bound is
+    not a pin."""
+    wf = tmp_path / ".github" / "workflows" / "ci.yml"
+    wf.parent.mkdir(parents=True)
+    wf.write_text(
+        "name: t\n"
+        "jobs:\n"
+        "  cj:\n"
+        "    permissions:\n"
+        "      contents: write\n"
+        "    steps:\n"
+        "      - run: pip install foo>=1.0\n"
+    )
+    monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(checker, "WORKFLOWS_DIR", wf.parent)
+    failures = checker.scan_workflow(wf)
+    assert any("cj" in line and "foo>=1.0" in line for line in failures)
 
 
 def test_scan_workflow_safe_job_ignored(checker, tmp_path, monkeypatch):
