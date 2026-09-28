@@ -30,3 +30,10 @@ numpy>=1.24.0
 # pytest *setup* of the generate-training-data tests even after numpy is
 # restored. Keep aligned with the tqdm>=4.65.0 pin in `requirements-dev.txt`.
 tqdm>=4.65.0
+
+# tomli — backport of stdlib tomllib for Python 3.10 (stdlib only from 3.11).
+# `scripts/check_docker_base_image_msrv.py` and
+# `scripts/check_docker_workspace_members.py` parse Cargo.toml with it; without
+# this the py3.10 CI matrix job errors at import time. Keep aligned with the
+# tomli pin in `requirements-dev.txt`.
+tomli>=2.0.0; python_version < "3.11"

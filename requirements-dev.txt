@@ -26,6 +26,10 @@ seaborn>=0.12.0
 tqdm>=4.65.0
 pyyaml>=6.0
 
+# tomli — backport of stdlib tomllib for Python 3.10 (stdlib only from 3.11);
+# the docker MSRV/workspace-member check scripts parse Cargo.toml with it.
+tomli>=2.0.0; python_version < "3.11"
+
 # Security patches - fix CVE-2025-66418 (urllib3 unbounded decompression chain)
 urllib3>=2.6.0
 

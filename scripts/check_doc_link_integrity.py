@@ -134,11 +134,6 @@ def is_consolidation_drift_target(target: str, valid_targets: set[str]) -> bool:
     Names that are neither declared targets nor consolidated modules
     (placeholders, filters, other-crate targets) are NOT this class."""
     return target not in valid_targets and (ALL_TESTS_DIR / f"{target}.rs").is_file()
-    parts = rel.parts
-    return any(
-        REPO_ROOT.joinpath(*parts[: i + 1]) in WORKTREE_SKIP_PARTS
-        for i in range(len(parts))
-    )
 
 
 def collect_markdown_files() -> list[Path]:
