@@ -485,7 +485,7 @@ config) so it can be checked mechanically, not just by process.
 
 - **Header redaction on TraceLayer spans (Issue #2504).**
   The `tower_http` `TraceLayer` span is built by `SafeHeaderMakeSpan`
-  (`src/api/server.rs`), which records only an explicit allow-list of safe
+  (`src/api/server/router.rs`), which records only an explicit allow-list of safe
   request headers — `x-request-id`, `content-type`, `user-agent`. Credential
   headers (`Authorization`, `Cookie`, `x-api-key`, AWS Sig V4 `x-amz-*`) are
   omitted by construction; there is no deny-list to keep in sync. The previous
