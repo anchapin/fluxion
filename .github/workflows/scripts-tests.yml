@@ -28,6 +28,11 @@ on:
       - "scripts/pytest.ini"
       - ".github/workflows/scripts-tests.yml"
       - "release_gates.yaml"
+      # Issue #4176: the `dep-budget` job gates
+      # `fluxion-core/Cargo.toml`; the workflow must fire on the PRs
+      # that can trip it, or the required check would never report and
+      # the PR would be unmergeable (the Issue #3898 lesson).
+      - "fluxion-core/Cargo.toml"
       - ".github/workflows/**"
   push:
     branches:
@@ -310,3 +315,29 @@ jobs:
       # fails the PR.
       - name: Enforce test-inventory drift gate (Issue #3442)
         run: python3 scripts/check_test_inventory_drift.py --no-verify
+
+  # Issue #4176: fluxion-core dependency-budget gate as a named,
+  # branch-protection-required job. `fluxion-core` is a
+  # dependency-light leaf; the static manifest scan plus the `cargo
+  # tree` dynamic scan in `scripts/check_fluxion_core_dep_budget.py`
+  # keep heavyweight crates (reqwest, hyper, tokio, sqlx, diesel,
+  # serde_json, futures, async-trait, actix-web, redis, clap, ...) out
+  # of the default-feature dependency tree. The check needs the Rust
+  # toolchain (`cargo tree`), so it cannot live as a step in the
+  # Python-only `scripts-tests` job above — hence this separate job.
+  # The `pull_request` `paths:` filter at the top of this file includes
+  # `fluxion-core/Cargo.toml` so the gate actually fires on the PRs
+  # that can trip it (a path-filtered required check whose workflow
+  # never runs would block the PR forever -- the Issue #3898 lesson).
+  dep-budget:
+    name: "Fluxion Core Dependency Budget Gate (Issue #4176)"
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Set up Rust toolchain
+        uses: ./.github/actions/setup-rust-env
+
+      - name: Enforce fluxion-core dependency budget (Issue #4176)
+        run: python3 scripts/check_fluxion_core_dep_budget.py

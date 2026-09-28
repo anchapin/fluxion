@@ -589,6 +589,22 @@ ci:
     # path-filtered required checks, Issue #3810 / #3805).
     - "Cargo Deny"
 
+    # Issue #4176: Fluxion Core Dependency Budget Gate. Keeps
+    # heavyweight crates (reqwest, hyper, tokio, sqlx, diesel,
+    # serde_json, futures, async-trait, actix-web, redis, clap, ...)
+    # out of `fluxion-core`'s default-feature dependency tree via
+    # `scripts/check_fluxion_core_dep_budget.py` (static manifest scan
+    # + `cargo tree` dynamic scan). The `dep-budget` job lives in
+    # `.github/workflows/scripts-tests.yml`; the workflow's
+    # `pull_request.paths:` filter includes `fluxion-core/Cargo.toml`
+    # so the gate fires on exactly the PRs that can trip it. Plain
+    # `paths:` allow-list semantics: required on PRs touching the
+    # filter, so it stays OUT of `required_checks_workflow_only` per
+    # the Issue #3810 path-filtered-required pattern (same as Cargo
+    # Deny / Scorecard / Fabric Harness above) — NOT the `paths-ignore`
+    # deny-list shape that Issue #3898 removed from both lists.
+    - "Fluxion Core Dependency Budget Gate (Issue #4176)"
+
     # Issue #3535: Scorecard Data-Source Consistency Gate. Enforces that the
     # three committed sources that feed SCORECARD.md's headline metrics
     # (`SCORECARD.md`, `docs/ASHRAE140_RESULTS.md`, and
@@ -1363,6 +1379,21 @@ ci:
       workflow: ".github/workflows/cargo-deny.yml"
       issue: 2699
       triggered_by: "PR + push to develop/main (path-filter: **/Cargo.toml, **/Cargo.lock, deny.toml)"
+
+    - job: "Fluxion Core Dependency Budget Gate (Issue #4176)"
+      # Issue #4176: keeps heavyweight crates out of `fluxion-core`'s
+      # default-feature dependency tree. The `dep-budget` job in
+      # `.github/workflows/scripts-tests.yml` runs
+      # `scripts/check_fluxion_core_dep_budget.py` (static manifest
+      # scan + `cargo tree` dynamic scan). The workflow's
+      # `pull_request.paths:` filter includes `fluxion-core/Cargo.toml`
+      # so the gate fires on exactly the PRs that can trip it; a
+      # pre-commit hook covers the local path. Companion to `Cargo
+      # Deny` above (supply-chain) — this one is about dependency
+      # WEIGHT on the hot path, not licenses/advisories.
+      workflow: ".github/workflows/scripts-tests.yml"
+      issue: 4176
+      triggered_by: "PR (path-filter: fluxion-core/Cargo.toml)"
 
     - job: "fluxion-grid Integration Tests (GH)"
       # PR-blocking gate for the `fluxion-grid` workspace-member
