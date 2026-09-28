@@ -768,8 +768,15 @@ def main() -> int:
         sys.stdout.write("\n")
     else:
         t = inventory["totals"]
+        # --output may point outside the repo (e.g. a scratch temp file
+        # from the drift gate, Issue #4134); fall back to the absolute
+        # path instead of crashing on relative_to().
+        try:
+            out_display = str(output_path.relative_to(REPO_ROOT))
+        except ValueError:
+            out_display = str(output_path)
         print(
-            f"Inventory written: {output_path.relative_to(REPO_ROOT)} "
+            f"Inventory written: {out_display} "
             f"(schema={SCHEMA_VERSION}, head={inventory['repo_root']})"
         )
         print(
