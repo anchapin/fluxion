@@ -255,18 +255,6 @@ impl Default for BuildingStorey {
     }
 }
 
-impl Default for Space {
-    fn default() -> Self {
-        Space {
-            id: "space1".to_string(),
-            name: "Zone 1".to_string(),
-            area: Some(48.0),
-            volume: Some(129.6),
-            surfaces: Vec::new(),
-        }
-    }
-}
-
 impl Default for Surface {
     fn default() -> Self {
         Surface {
@@ -384,13 +372,5 @@ mod tests {
         let doc = GbXmlDocument::default();
         assert_eq!(doc.version, "8.01");
         assert_eq!(doc.campus.name, "Main Campus");
-    }
-
-    #[test]
-    fn test_default_space() {
-        let space = Space::default();
-        assert_eq!(space.name, "Zone 1");
-        assert_eq!(space.area, Some(48.0));
-        assert_eq!(space.volume, Some(129.6));
     }
 }

@@ -208,15 +208,6 @@ def test_script_uses_strict_mode():
     assert "set -euo pipefail" in src
 
 
-def test_script_tolerates_zero_expected_with_count_zero():
-    """A non-numeric expected (e.g. typos) is still passed as-is to ``[[``.
-
-    The script uses ``[[ "$ACTUAL" == "$EXPECTED" ]]`` so string comparison
-    is fine. This pins that the tolerance is preserved.
-    """
-    pass  # covered by the existing test cases already.
-
-
 # ---------------------------------------------------------------------------
 # --- separator ----------------------------------------------------------
 # ---------------------------------------------------------------------------
