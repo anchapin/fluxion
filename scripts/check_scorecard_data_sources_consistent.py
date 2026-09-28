@@ -22,11 +22,22 @@ single stale literal in ``KNOWN_ISSUES.md:1207`` (Aggressive-baseline
 cohort → External references), and no gate caught the regression. This
 gate now blocks it.
 
+Issue #4208 closed the remaining hole: the gate parsed the
+``SCORECARD.md`` headline but never compared it against either source --
+a hand-edited headline could drift from both committed sources and stay
+green. The gate now compares the ``SCORECARD.md`` headline directly
+against the canonical source (perf-history snapshot when present, else
+the ASHRAE doc) with the same tolerances. No tolerances changed.
+
 Exit codes:
-    0 -- the two sources agree within tolerance on both headline figures
-        AND ``docs/KNOWN_ISSUES.md`` has no stale SCORECARD cross-references.
-    1 -- divergence exceeds the tolerance on either pass-rate or MAE,
-        OR KNOWN_ISSUES.md quotes a stale SCORECARD headline figure.
+    0 -- the two sources agree within tolerance on both headline figures,
+        the ``SCORECARD.md`` headline agrees with the canonical source
+        within tolerance, AND ``docs/KNOWN_ISSUES.md`` has no stale
+        SCORECARD cross-references.
+    1 -- divergence exceeds the tolerance on either pass-rate or MAE --
+        between the two sources, or between the ``SCORECARD.md`` headline
+        and the canonical source -- OR KNOWN_ISSUES.md quotes a stale
+        SCORECARD headline figure.
     2 -- a source file is missing or could not be parsed.
 
 Tolerances (chosen to absorb normal floating-point rounding between the
@@ -276,6 +287,7 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"Sources: {PERF_SNAPSHOT_ATTR} (preferred, newer) | "
         f"{ASHRAE_DOC_ATTR} (fallback, older) | "
+        f"{SCORECARD_ATTR} (headline, Issue #4208) | "
         f"{KNOWN_ISSUES_ATTR} (Issue #3578 cross-reference scan)"
     )
     print(f"Tolerances: pass_rate ≤ {args.pass_rate_tolerance} pp | "
@@ -348,7 +360,50 @@ def main(argv: list[str] | None = None) -> int:
 
     # KNOWN_ISSUES.md stale SCORECARD cross-reference scan (Issue #3578).
     sc_pr, sc_mae, sc_lu = _load_scorecard_headline()
+
+    # SCORECARD.md headline vs canonical source (Issue #4208). The
+    # generator derives the headline from the perf-history snapshot
+    # (preferred) with the ASHRAE doc as fallback, so the committed
+    # SCORECARD.md must agree with the same canonical source. A
+    # hand-edited headline that drifts from both sources is a fail --
+    # previously this hole was green because the parsed headline was
+    # only used as the KNOWN_ISSUES reference, never compared.
     print()
+    print("=== SCORECARD.md headline vs canonical source (Issue #4208) ===")
+    print(
+        f"SCORECARD.md headline (Last Updated {sc_lu or '(missing)'}): "
+        f"pass rate = {sc_pr if sc_pr is not None else '(missing)'}% | "
+        f"MAE = {sc_mae if sc_mae is not None else '(missing)'}%"
+    )
+    for label, sc_val, perf_val, doc_val, tol in (
+        ("pass_rate", sc_pr, perf_pr, doc_pr, args.pass_rate_tolerance),
+        ("mae", sc_mae, perf_mae, doc_mae, args.mae_tolerance),
+    ):
+        if perf_val is not None:
+            canonical_val, canonical_src = perf_val, PERF_SNAPSHOT_ATTR
+        else:
+            canonical_val, canonical_src = doc_val, ASHRAE_DOC_ATTR
+        print(
+            f"  {label}:  SCORECARD.md = "
+            f"{sc_val if sc_val is not None else '(missing)':>6}  |  "
+            f"canonical ({canonical_src}) = "
+            f"{canonical_val if canonical_val is not None else '(missing)':>6}",
+            end="",
+        )
+        ok, diff = _compare(sc_val, canonical_val, tol)
+        if diff is None:
+            print("  | MISSING ON ONE SIDE")
+            failures.append(f"SCORECARD.md headline {label}: missing on one side")
+        elif ok:
+            print(f"  | diff = {diff:.3f} pp  ✓")
+        else:
+            print(f"  | diff = {diff:.3f} pp  ✗ (>{tol} pp)")
+            failures.append(
+                f"SCORECARD.md headline {label} diverges from canonical "
+                f"{canonical_src} by {diff:.3f} pp > {tol} pp tolerance"
+            )
+    print()
+
     print("=== KNOWN_ISSUES stale SCORECARD cross-references (Issue #3578) ===")
     print(f"Scanning: {KNOWN_ISSUES_ATTR}")
     print(f"Stale-token catalog: {len(STALE_SCORECARD_TOKENS)} token(s)")
