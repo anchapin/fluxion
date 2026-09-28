@@ -1,0 +1,64 @@
+name: Nightly Full-Workspace Tests (Issue #4177)
+
+# Issue #4177: the per-PR test gate ("Nextest Subset (GH)" in
+# `ci-gates.yml`) runs a CURATED package/test list for speed. This
+# workflow runs the documented full-workspace command on a nightly
+# schedule so every test in the workspace is executed at least once
+# per day. Registered under `release_gates.yaml -> ci.nightly_authority`
+# (ADR-0016 Lane 3): enforced by the wave-orchestrator merge freeze,
+# NOT by branch protection — it never blocks a PR directly.
+#
+# No tests are skipped or quarantined here: `--no-fail-fast` runs the
+# whole suite and reports every failure. `fluxion-tauri` is excluded
+# because its proc-macro build needs `npm run build` in
+# fluxion-tauri/frontend/ to materialise ../frontend/dist (Issue
+# #3126); doctests are carved out because `cargo nextest run`
+# structurally cannot execute them — they live in the `Workspace
+# Doctests (GH)` jobs in rust-tests.yml (Issue #3725).
+
+on:
+  schedule:
+    # 03:45 UTC nightly — staggers off determinism_check.yml's 03:30
+    # UTC slot and the other 03:xx nightly crons.
+    - cron: "45 3 * * *"
+  workflow_dispatch:
+
+# ADR-0015 per-PR-head concurrency convention (same block shape as
+# determinism_check.yml). For `schedule`/`workflow_dispatch` events the
+# group keys on the ref; a second nightly never cancels a running one
+# (`cancel-in-progress` is false outside push).
+concurrency:
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
+permissions:
+  contents: read
+
+jobs:
+  full-workspace-tests:
+    name: "Full Workspace Tests (Issue #4177)"
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Set up Rust toolchain
+        uses: ./.github/actions/setup-rust-env
+
+      # Issue #4177: the documented full-workspace command. Runs every
+      # test target in the workspace (lib + bins + integration tests +
+      # doc-adjacent targets nextest owns), two threads per binary
+      # (matches GH free-runner vCPU count, Issue #3366 / ADR-0014),
+      # no fail-fast so one red test cannot hide the rest.
+      - name: Run full-workspace nextest suite (Issue #4177)
+        run: cargo nextest run --workspace --exclude fluxion-tauri --all-targets --test-threads=2 --no-fail-fast

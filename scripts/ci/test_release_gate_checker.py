@@ -84,6 +84,37 @@ def test_check_validation_gates_fails_when_pass_rate_below_floor(checker, tmp_pa
     assert by_name["overall_pass_rate"].passed is False
 
 
+def test_check_validation_gates_fails_just_below_floor(checker, tmp_path):
+    """Issue #4159: pass rate 59.9% with min 60% → overall FAIL.
+
+    Boundary companion to the 60.0 case below: the gate must not admit
+    a below-floor pass rate through float rounding or an off-by-one
+    comparison. The comparison is ``pass_rate >= min_pass_rate`` with no
+    tolerance band — 59.9 is red.
+    """
+    rg = _make_checker(checker, tmp_path, _MINIMAL_VALIDATION_CONFIG)
+    results = rg.check_validation_gates(_results(pass_rate=59.9))
+    by_name = {r.name: r for r in results}
+    assert by_name["overall_pass_rate"].passed is False
+    assert by_name["overall_pass_rate"].value == 59.9
+    assert by_name["overall_pass_rate"].threshold == 60.0
+
+
+def test_check_validation_gates_passes_exactly_at_floor(checker, tmp_path):
+    """Issue #4159: pass rate 60.0% with min 60% → overall PASS.
+
+    Boundary companion to the 59.9 case above: an exactly-at-floor pass
+    rate is green (``>=``, not ``>``). Guards against a future edit
+    flipping the comparison to strict ``>``.
+    """
+    rg = _make_checker(checker, tmp_path, _MINIMAL_VALIDATION_CONFIG)
+    results = rg.check_validation_gates(_results(pass_rate=60.0))
+    by_name = {r.name: r for r in results}
+    assert by_name["overall_pass_rate"].passed is True
+    assert by_name["overall_pass_rate"].value == 60.0
+    assert by_name["overall_pass_rate"].threshold == 60.0
+
+
 def test_check_validation_gates_fails_when_mae_above_limit(checker, tmp_path):
     """MAE 60% with max 50% → MAE gate fails."""
     rg = _make_checker(checker, tmp_path, _MINIMAL_VALIDATION_CONFIG)

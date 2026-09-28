@@ -45,6 +45,17 @@ repos:
 
   - repo: local
     hooks:
+      # Issue #4176: keep heavyweight crates out of fluxion-core's
+      # default-feature tree. Runs on commit when the manifest changes;
+      # the same check runs as a required CI job in scripts-tests.yml.
+      - id: fluxion-core-dep-budget
+        name: "fluxion-core dependency budget (Issue #4176)"
+        entry: python3 scripts/check_fluxion_core_dep_budget.py
+        language: system
+        files: ^fluxion-core/Cargo\.toml$
+        pass_filenames: false
+        stages: [pre-commit]
+
       - id: batch-oracle-pattern
         name: "BatchOracle Pattern Compliance"
         entry: bash .githooks/batch-oracle-check.sh

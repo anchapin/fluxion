@@ -22,8 +22,12 @@ try {
   try {
     execSync('napi --version', { stdio: 'inherit' });
   } catch (error) {
+    // Deterministic fallback: pin to the exact version in package.json's
+    // devDependencies (Issue #4202). `npm ci` in CI always installs the
+    // CLI from the lockfile, so this path only fires for local builds
+    // with a missing node_modules -- and even then it must not float.
     console.log('Installing @napi-rs/cli...');
-    execSync('npm install @napi-rs/cli', { stdio: 'inherit' });
+    execSync('npm install @napi-rs/cli@3.10.5', { stdio: 'inherit' });
   }
 
   // Build the native module

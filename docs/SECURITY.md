@@ -315,6 +315,12 @@ the campaign scripts touch (least privilege), e.g. `s3:PutObject` /
 - The only tag-ref that remained (`disk-space.yml` → `actions/checkout@v4`) was
   pinned in this change. `git ls-remote <repo> refs/tags/<tag>` resolves a tag
   to its commit SHA before pinning.
+- Enforced by `scripts/check_workflow_pin.py` (full SHA-pin rule) over
+  `.github/workflows/**/*.{yml,yaml}` and `scripts/check_action_pinning.py`
+  (mutable-ref reject: `stable`/`main`/`master`/`HEAD`/`v1`-`v4`) over
+  `.github/workflows/` plus the composite actions in
+  `.github/actions/**/*.{yml,yaml}` (Issue #4187). Local
+  `uses:./.github/actions/...` references are exempt from both.
 
 ### 6. Docker base-image pinning (Issue #3580)
 

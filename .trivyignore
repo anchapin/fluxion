@@ -1,0 +1,20 @@
+# .trivyignore — accepted Trivy findings for the fluxion container image.
+#
+# Issue #4186: the `security` job in `.github/workflows/docker.yml` scans
+# the BUILT IMAGE (`input:` tarball from `build-and-test`) with
+# `exit-code: '1'` + `ignore-unfixed: true`, so only fixable
+# CRITICAL/HIGH findings break the build. This file is the ONLY place a
+# finding may be suppressed, and every entry MUST carry:
+#
+#   * the CVE id,
+#   * a dated justification (why the finding is accepted: no fix
+#     available upstream, not reachable in the runtime image, etc.),
+#   * the issue number tracking its removal.
+#
+# Format: one CVE per line, justification in a trailing `#` comment.
+# Example:
+#   CVE-2026-12345  # 2026-09-28: no upstream fix yet; binary not present
+#                   # in the runtime stage, only the builder. Revisit in #NNNN.
+#
+# Empty today: no accepted findings. Keep it that way — widen the gate's
+# `severity:` list or add an entry here only with a written justification.

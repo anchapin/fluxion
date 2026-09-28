@@ -295,7 +295,9 @@ jobs:
         # docs/KNOWN_ISSUES.md closes (GaugeSolver routing #1465/#1462/#3297),
         # so on pull_request events this is advisory only. It is NOT
         # best-effort: the terminal "Fail if validation gate failed" step
-        # re-raises steps.check.outcome == 'failure' on push/schedule events.
+        # re-raises steps.check.conclusion == 'failure' on push/schedule
+        # events (Issue #4159: `.outcome` stays 'success' under
+        # `continue-on-error: true`; only `.conclusion` is reliable).
         continue-on-error: true
         run: |
           # Run centralized release gate checker for validation gates
@@ -354,7 +356,13 @@ jobs:
         continue-on-error: true
 
       - name: Fail if validation gate failed
-        if: (failure() || steps.check.outcome == 'failure') && github.event_name != 'pull_request'
+        # Issue #4159: `steps.check` has `continue-on-error: true`, so a
+        # failed checker step reports `outcome == 'success'` (the
+        # continue-on-error result) — only `conclusion == 'failure'`
+        # reflects the step's real result. `failure()` alone is also
+        # wrong here: continue-on-error suppresses the job failure, so
+        # `failure()` is false on the exact path this step must catch.
+        if: steps.check.conclusion == 'failure' && github.event_name != 'pull_request'
         run: |
           echo "❌ Release gate check failed"
           echo ""

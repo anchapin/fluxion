@@ -51,6 +51,6 @@
     "node": ">= 18"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^3.0.0-alpha.0"
+    "@napi-rs/cli": "3.10.5"
   }
 }

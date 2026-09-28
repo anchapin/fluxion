@@ -28,6 +28,11 @@ on:
       - "scripts/pytest.ini"
       - ".github/workflows/scripts-tests.yml"
       - "release_gates.yaml"
+      # Issue #4176: the `dep-budget` job gates
+      # `fluxion-core/Cargo.toml`; the workflow must fire on the PRs
+      # that can trip it, or the required check would never report and
+      # the PR would be unmergeable (the Issue #3898 lesson).
+      - "fluxion-core/Cargo.toml"
       - ".github/workflows/**"
   push:
     branches:
@@ -230,6 +235,80 @@ jobs:
       - name: Enforce pip pinning in credential-bearing workflows (Issue #3812)
         run: python3 scripts/check_pip_pinning.py
 
+      # Issue #4186: Trivy must scan the BUILT IMAGE, not the repo
+      # filesystem. The `security` job in `docker.yml` used to run
+      # `scan-type: 'fs'` + `scan-ref: '.'` (auditing only the checkout's
+      # Python/JS deps, never the shipped Debian runtime layer) with no
+      # `exit-code`, so the scan could neither see image CVEs nor fail
+      # the build. The matcher in
+      # ``scripts/check_trivy_scan_target.py`` fails any trivy-action
+      # step that sets `scan-type: 'fs'` without a `trivy-fs-justified:`
+      # comment documenting why a filesystem scan is correct there. The
+      # pytest companion
+      # ``scripts/ci/test_check_trivy_scan_target.py`` covers the
+      # detector / justification / ``main()`` exit-code contract against
+      # hermetic ``tmp_path`` fixtures; this direct invocation covers the
+      # end-to-end against the real tree (same direct-invocation split as
+      # #2866 / #3444 / #3475 above).
+      - name: Enforce Trivy scans the built image (Issue #4186)
+        run: python3 scripts/check_trivy_scan_target.py
+
+      # Issue #4159: reject the `continue-on-error: true` + downstream
+      # `steps.<id>.outcome` anti-pattern. On a masked step `.outcome`
+      # is ALWAYS 'success' (it reflects the continue-on-error
+      # handling, not the step's real result), so a terminal "fail if X
+      # failed" re-raise testing `.outcome` can never fire — the workflow
+      # goes green while the gate it guards is red. The ASHRAE 140
+      # release-gate re-raise in `ashrae_140_validation.yml` was exactly
+      # this bug (since fixed to `steps.check.conclusion`, along with
+      # the same pattern in `ashrae_benchmark_harness.yml`,
+      # `nightly_validation.yml`, and `pgo-nightly.yml`). The matcher in
+      # ``scripts/check_continue_on_error_outcome.py`` fails any
+      # `steps.<id>.outcome` reference where the step sets
+      # `continue-on-error: true`; `.outcome` on unmasked steps and all
+      # `.conclusion` references are left alone. The pytest companion
+      # ``scripts/ci/test_check_continue_on_error_outcome.py`` covers the
+      # detector / classification / ``main()`` exit-code contract against
+      # hermetic ``tmp_path`` fixtures; this direct invocation covers the
+      # end-to-end against the real tree (same direct-invocation split as
+      # #2866 / #3444 / #3475 / #4186 above).
+      - name: Enforce no masked-step `.outcome` re-raise (Issue #4159)
+        run: python3 scripts/check_continue_on_error_outcome.py
+
+      # Issue #4177: the per-PR "Nextest Subset (GH)" gate runs a curated
+      # package/test list, so documentation that presents a `cargo
+      # nextest run` command as what CI runs must name a command some
+      # workflow actually runs — otherwise the doc is fiction (AGENTS.md
+      # claimed the full-workspace command ran in `rust-tests.yml::test`
+      # long after phase-gating replaced it with the curated subset).
+      # The matcher in ``scripts/check_nextest_doc_drift.py`` extracts
+      # documented nextest commands from AGENTS.md and `docs/**/*.md`
+      # and fails any that appear in no workflow (template placeholders
+      # and the justified HISTORICAL_ALLOWLIST are skipped). The pytest
+      # companion ``scripts/ci/test_check_nextest_doc_drift.py`` covers
+      # extraction / matching / ``main()`` exit codes against hermetic
+      # ``tmp_path`` fixtures; this direct invocation covers the
+      # end-to-end against the real tree (same direct-invocation split
+      # as the gates above).
+      - name: Enforce documented nextest commands run in CI (Issue #4177)
+        run: python3 scripts/check_nextest_doc_drift.py
+
+      # Issue #4202: `node-bindings.yml` used bare `npm install`
+      # (re-resolves the tree at run time) and `npm/package.json`
+      # floated `@napi-rs/cli` on `^3.0.0-alpha.0` with no committed
+      # lockfile. The fix exact-pins the CLI (`3.10.5`), commits
+      # `npm/package-lock.json`, and installs with `npm ci`. The gate in
+      # ``scripts/check_npm_pinning.py`` fails non-exact manifest specs,
+      # a missing or manifest-desynced lockfile, and any bare
+      # `npm install` step in `node-bindings.yml`. The pytest companion
+      # ``scripts/ci/test_check_npm_pinning.py`` covers the three
+      # checkers and the ``main()`` exit-code contract against hermetic
+      # ``tmp_path`` fixtures; this direct invocation covers the
+      # end-to-end against the real tree (same direct-invocation split
+      # as the gates above).
+      - name: Enforce deterministic npm install (Issue #4202)
+        run: python3 scripts/check_npm_pinning.py
+
       # Issue #3453: ENV_LOCK serialisation guard for env-mutating
       # integration tests. ``tests/ashrae_140_diagnostic_integration_test``
       # shipped with bare ``env::set_var`` / ``env::remove_var`` calls and
@@ -270,3 +349,29 @@ jobs:
       # fails the PR.
       - name: Enforce test-inventory drift gate (Issue #3442)
         run: python3 scripts/check_test_inventory_drift.py --no-verify
+
+  # Issue #4176: fluxion-core dependency-budget gate as a named,
+  # branch-protection-required job. `fluxion-core` is a
+  # dependency-light leaf; the static manifest scan plus the `cargo
+  # tree` dynamic scan in `scripts/check_fluxion_core_dep_budget.py`
+  # keep heavyweight crates (reqwest, hyper, tokio, sqlx, diesel,
+  # serde_json, futures, async-trait, actix-web, redis, clap, ...) out
+  # of the default-feature dependency tree. The check needs the Rust
+  # toolchain (`cargo tree`), so it cannot live as a step in the
+  # Python-only `scripts-tests` job above — hence this separate job.
+  # The `pull_request` `paths:` filter at the top of this file includes
+  # `fluxion-core/Cargo.toml` so the gate actually fires on the PRs
+  # that can trip it (a path-filtered required check whose workflow
+  # never runs would block the PR forever -- the Issue #3898 lesson).
+  dep-budget:
+    name: "Fluxion Core Dependency Budget Gate (Issue #4176)"
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Set up Rust toolchain
+        uses: ./.github/actions/setup-rust-env
+
+      - name: Enforce fluxion-core dependency budget (Issue #4176)
+        run: python3 scripts/check_fluxion_core_dep_budget.py
