@@ -163,6 +163,7 @@ Every active gate under `scripts/check_*.py` (40 scripts at head) is wired into 
 | `scripts/check_test_inventory_drift.py` | Test-count ratchet vs. `test_inventory_baseline.json` (#3442) | `scripts-tests.yml` | #6 |
 | `scripts/check_topology_drift.py` | Topology artifact drift gate — byte-compares regenerated reference topologies + Mermaid/SVG diagrams vs. committed tree, `topology lint --strict` per case (#3966) | `topology_visualizer.yml` | #5 |
 | `scripts/check_workflow_pin.py` | SHA-pinned `uses:` in `.github/workflows/*.yml` (#3475) | `scripts-tests.yml` | #6 |
+| `scripts/check_thermal_selector_doc_claims.py` | Reject root-doc claims that the thermal-selector default is unconditionally `ZoneSolverKind::Gauge` or that `gauge-solver` gates a legacy fall-through — ADR-0017 made the default cfg-dependent and explicit (#4160 / #3978) | `scripts-tests.yml` | #1, #6 |
 
 ## Git and CI Workflow
 

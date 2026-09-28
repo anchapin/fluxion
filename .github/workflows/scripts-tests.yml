@@ -148,6 +148,17 @@ jobs:
       - name: Enforce ADR-0015 concurrency keys (Issue #3366, #3444)
         run: python3 scripts/check_concurrency_keys.py
 
+      # Issue #4160: rejects root docs claiming `ThermalSelector::default()`
+      # is unconditionally `ZoneSolverKind::Gauge` (or that `gauge-solver`
+      # gates a fall-through to legacy 5R1C/9R4C). ADR-0017 / Issue #3978
+      # made the default cfg-dependent and explicit; README documented the
+      # deleted posture and contradicted AGENTS.md. The pytest companion
+      # ``scripts/ci/test_check_thermal_selector_doc_claims.py`` covers the
+      # matcher's invariants against hermetic ``tmp_path`` fixtures; this
+      # direct invocation scans the real root docs.
+      - name: Reject unconditional-Gauge default claims (Issue #4160)
+        run: python3 scripts/check_thermal_selector_doc_claims.py
+
       # Issue #4135: Dockerfile/`[workspace] members` drift guard.
       # ``cargo build --bin fluxion-rest --no-default-features`` resolves
       # the WHOLE workspace, so a member whose manifest is absent from the
