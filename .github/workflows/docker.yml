@@ -42,8 +42,11 @@ env:
   # pin, so a tag rotation upstream cannot silently swap the base
   # layer that lands inside the published `fluxion-rest` image.
   # Refresh with `scripts/pin_docker_base_images.sh` (quarterly).
-  RUST_BUILDER_IMAGE: rust:1.87-bookworm
-  RUST_BUILDER_DIGEST: sha256:251cec8da4689d180f124ef00024c2f83f79d9bf984e43c180a598119e326b84
+  # RUST_BUILDER_IMAGE must satisfy the workspace MSRV in Cargo.toml
+  # (`rust-version`); it lagged behind the 1.98.0 bump and broke the
+  # image build (Issue #4138).
+  RUST_BUILDER_IMAGE: rust:1.98.0-bookworm
+  RUST_BUILDER_DIGEST: sha256:82150a52ec202c1b14d7817e14516c392bb7f5cfebd88f1ed531cb37ebd39922
   DEBIAN_RUNTIME_IMAGE: debian:bookworm-slim
   DEBIAN_RUNTIME_DIGEST: sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 
@@ -121,7 +124,7 @@ jobs:
             #
             # Issue #3815 follow-up — Docker normalises the repository
             # in `.RepoDigests` to `name` with the **tag stripped**, so
-            # for `rust:1.87-bookworm@sha256:…` this returns
+            # for `rust:1.98.0-bookworm@sha256:…` this returns
             # `rust@sha256:…`. Comparing it against the full
             # `${image}@${expected}` could therefore never succeed for
             # a tagged image, and this step false-failed every push to

@@ -23,11 +23,16 @@
 # Stage 1: Build the `fluxion-rest` binary
 # ============================================
 # Pinned base image — fail-closed supply-chain control (Issue #3580, Goal #5).
-#   * Tag:    rust:1.87-bookworm
-#   * Digest: sha256:251cec8da4689d180f124ef00024c2f83f79d9bf984e43c180a598119e326b84
-#   * Pinned: 2026-09-09
+#   * Tag:    rust:1.98.0-bookworm
+#   * Digest: sha256:82150a52ec202c1b14d7817e14516c392bb7f5cfebd88f1ed531cb37ebd39922
+#   * Pinned: 2026-09-28
 #   * Refresh: re-run `scripts/pin_docker_base_images.sh` (quarterly cadence).
-FROM rust:1.87-bookworm@sha256:251cec8da4689d180f124ef00024c2f83f79d9bf984e43c180a598119e326b84 AS builder
+#   * NOTE: the tag must satisfy the workspace MSRV (`rust-version` in
+#     Cargo.toml, 1.98.0 as of #3321). It lagged for 5 weeks after the
+#     2026-09-03 MSRV bump, so cargo could not compile the dependency
+#     graph at all (Issue #4138). scripts/check_docker_base_image_msrv.py
+#     now gates the tag against `rust-version`.
+FROM rust:1.98.0-bookworm@sha256:82150a52ec202c1b14d7817e14516c392bb7f5cfebd88f1ed531cb37ebd39922 AS builder
 
 RUN apt-get update && apt-get install -y \
     pkg-config \

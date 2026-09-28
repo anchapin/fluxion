@@ -40,6 +40,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DOCKERFILE="${REPO_ROOT}/Dockerfile"
 WORKFLOW="${REPO_ROOT}/.github/workflows/docker.yml"
+CARGO_TOML="${REPO_ROOT}/Cargo.toml"
+
+# Issue #4138: derive the builder tag from the workspace MSRV
+# (`rust-version` in Cargo.toml) instead of hardcoding a version. The
+# hardcoded tag lagged 5 weeks behind the 1.89 -> 1.98.0 bump (#3321),
+# leaving the image unable to compile the dependency graph at all.
+# Deriving it makes a future MSRV bump automatically self-consistent on
+# the next pin refresh.
+MSRV="$(grep -oE '^rust-version = "[0-9]+\.[0-9]+\.[0-9]+"' "${CARGO_TOML}" \
+        | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)"
+if [[ -z "${MSRV}" ]]; then
+    echo "::error::could not read rust-version from ${CARGO_TOML}" >&2
+    exit 2
+fi
+RUST_BUILDER_TAG="rust:${MSRV}-bookworm"
 
 CHECK_ONLY=0
 if [[ "${1:-}" == "--check" ]]; then
@@ -53,7 +68,7 @@ fi
 # sed anchors on the unique comments so we only rewrite the pin lines
 # (not stray mentions of "rust" or "debian" elsewhere in the file).
 BASE_IMAGES=(
-    "rust:1.87-bookworm"
+    "${RUST_BUILDER_TAG}"
     "debian:bookworm-slim"
 )
 
@@ -74,7 +89,7 @@ done
 
 # Capture the current pinned digests so `--check` mode can diff.
 if [[ "${CHECK_ONLY}" -eq 1 ]]; then
-    OLD_DIGESTS["rust:1.87-bookworm"]="$(grep -oE 'RUST_BUILDER_DIGEST: sha256:[a-f0-9]+' "${WORKFLOW}" | head -1 | sed -E 's/^RUST_BUILDER_DIGEST: //')"
+    OLD_DIGESTS["${RUST_BUILDER_TAG}"]="$(grep -oE 'RUST_BUILDER_DIGEST: sha256:[a-f0-9]+' "${WORKFLOW}" | head -1 | sed -E 's/^RUST_BUILDER_DIGEST: //')"
     OLD_DIGESTS["debian:bookworm-slim"]="$(grep -oE 'DEBIAN_RUNTIME_DIGEST: sha256:[a-f0-9]+' "${WORKFLOW}" | head -1 | sed -E 's/^DEBIAN_RUNTIME_DIGEST: //')"
     drift=0
     for image in "${BASE_IMAGES[@]}"; do
@@ -92,10 +107,10 @@ fi
 for image in "${BASE_IMAGES[@]}"; do
     new="${NEW_DIGESTS[${image}]}"
     case "${image}" in
-        rust:1.87-bookworm)
+        "${RUST_BUILDER_TAG}")
             sed -i \
-                -e "s|^#   \* Tag:    rust:1.87-bookworm$|#   * Tag:    rust:1.87-bookworm\n#   * Digest: sha256:${new}\n#   * Pinned: $(date -u +%Y-%m-%d)|" \
-                -e "s|FROM rust:1.87-bookworm@sha256:[a-f0-9]\{64\}|FROM rust:1.87-bookworm@sha256:${new}|" \
+                -e "s|^#   \* Tag:    ${RUST_BUILDER_TAG}$|#   * Tag:    ${RUST_BUILDER_TAG}\n#   * Digest: sha256:${new}\n#   * Pinned: $(date -u +%Y-%m-%d)|" \
+                -e "s|FROM ${RUST_BUILDER_TAG}@sha256:[a-f0-9]\{64\}|FROM ${RUST_BUILDER_TAG}@sha256:${new}|" \
                 "${DOCKERFILE}"
             ;;
         debian:bookworm-slim)
@@ -109,7 +124,7 @@ done
 
 # Rewrite the workflow env entries.
 sed -i \
-    -e "s|^  RUST_BUILDER_DIGEST: sha256:[a-f0-9]\{64\}$|  RUST_BUILDER_DIGEST: sha256:${NEW_DIGESTS[rust:1.87-bookworm]}|" \
+    -e "s|^  RUST_BUILDER_DIGEST: sha256:[a-f0-9]\{64\}$|  RUST_BUILDER_DIGEST: sha256:${NEW_DIGESTS[${RUST_BUILDER_TAG}]}|" \
     -e "s|^  DEBIAN_RUNTIME_DIGEST: sha256:[a-f0-9]\{64\}$|  DEBIAN_RUNTIME_DIGEST: sha256:${NEW_DIGESTS[debian:bookworm-slim]}|" \
     "${WORKFLOW}"
 
