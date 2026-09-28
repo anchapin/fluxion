@@ -76,6 +76,7 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | Nextest Subset (GH) | — |
 | Cargo Deny | — |
 | Scorecard Data-Source Consistency Gate (Issue #3535) | #3535 |
+| ASHRAE 140 Fabric Harness Gate (Issue #3986-A+2) | #3986 |
 
 - **Live status** is intentionally not baked in here (it is non-deterministic and would break scorecard diff stability). Run:
 
