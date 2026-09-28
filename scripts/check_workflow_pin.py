@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-CI hygiene guard: fail on non-SHA-pinned ``uses:`` in ``.github/workflows/*.yml``.
+CI hygiene guard: fail on non-SHA-pinned ``uses:`` under ``.github/workflows/``
+(including nested ``*.yml``/``*.yaml`` files) -- Issue #3475, scan scope
+extended to nested workflow files by Issue #4187.
 
 Issue #3475: PR #3472 repinned the repo's last tag-pinned third-party actions
 but, by scope, did not add a general enforcement gate. The guard added here
@@ -217,6 +219,32 @@ def check_workflow(path: Path) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# File discovery
+# ---------------------------------------------------------------------------
+
+def _workflow_files() -> list[Path]:
+    """Return every YAML workflow file, including nested directories.
+
+    Issue #4187: the scan is recursive over ``.github/workflows/`` and
+    accepts both ``*.yml`` and ``*.yaml`` so a workflow stashed in a
+    subdirectory cannot dodge the pinning gate.
+    """
+    if not WORKFLOWS_DIR.is_dir():
+        raise FileNotFoundError(f"{WORKFLOWS_DIR} not found")
+    files = sorted(
+        path
+        for suffix in ("*.yml", "*.yaml")
+        for path in WORKFLOWS_DIR.rglob(suffix)
+        if path.is_file()
+    )
+    if not files:
+        raise FileNotFoundError(
+            f"no .yml or .yaml workflows found in {WORKFLOWS_DIR}"
+        )
+    return files
+
+
+# ---------------------------------------------------------------------------
 # Reporting / main
 # ---------------------------------------------------------------------------
 def _print_summary(file_count: int, ref_count: int, finding_count: int) -> None:
@@ -232,14 +260,10 @@ def main(argv: list[str] | None = None) -> int:
     if "--self-test" in argv:
         return _self_test()
 
-    if not WORKFLOWS_DIR.is_dir():
-        print(f"ERROR: {WORKFLOWS_DIR} not found", file=sys.stderr)
-        return 2
-
-    files = sorted(WORKFLOWS_DIR.glob("*.yml"))
-    if not files:
-        print(f"ERROR: no .yml workflows found in {WORKFLOWS_DIR}",
-              file=sys.stderr)
+    try:
+        files = _workflow_files()
+    except FileNotFoundError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
     all_findings: list[str] = []

@@ -122,7 +122,7 @@ Every active gate under `scripts/check_*.py` (40 scripts at head) is wired into 
 
 | Gate | Purpose | Workflow / hook | Goal |
 |---|---|---|---|
-| `scripts/check_action_pinning.py` | Reject named mutable `@vN` / `@stable` / `@main` action refs (Issue #3530; sits beside the stricter `check_workflow_pin`) | `scripts-tests.yml` | #6 |
+| `scripts/check_action_pinning.py` | Reject named mutable `@vN` / `@stable` / `@main` action refs in workflows AND `.github/actions/**` composite actions (#3530 / #4187; sits beside the stricter `check_workflow_pin`) | `scripts-tests.yml` | #6 |
 | `scripts/check_architecture_drift.py` | `ARCHITECTURE.md` ↔ Rust-code drift (traits, modules, cycle-baseline counts; #3460) | `architecture_drift.yml` | #5 |
 | `scripts/check_ashrae_cases_cycle.py` | `sim ↔ validation` cycle edge-count guard (#1441 / #2495) | `rust-tests.yml` | #5 |
 | `scripts/check_audit_config_unique.py` | Single canonical `cargo audit` config — rejects stray root-level `audit.toml` (#2773) | `security.yml` | #6 |
@@ -165,7 +165,7 @@ Every active gate under `scripts/check_*.py` (40 scripts at head) is wired into 
 | `scripts/check_trivy_scan_target.py` | Trivy `scan-type: 'fs'` drift guard — every trivy-action step must scan the built image (`input:` tarball) or carry a `trivy-fs-justified:` comment (#4186) | `scripts-tests.yml` | #6 |
 | `scripts/check_test_inventory_drift.py` | Test-count ratchet vs. `test_inventory_baseline.json` (#3442) | `scripts-tests.yml` | #6 |
 | `scripts/check_topology_drift.py` | Topology artifact drift gate — byte-compares regenerated reference topologies + Mermaid/SVG diagrams vs. committed tree, `topology lint --strict` per case (#3966) | `topology_visualizer.yml` | #5 |
-| `scripts/check_workflow_pin.py` | SHA-pinned `uses:` in `.github/workflows/*.yml` (#3475) | `scripts-tests.yml` | #6 |
+| `scripts/check_workflow_pin.py` | SHA-pinned `uses:` in `.github/workflows/**/*.{yml,yaml}`, nested included (#3475 / #4187) | `scripts-tests.yml` | #6 |
 
 ## Git and CI Workflow
 

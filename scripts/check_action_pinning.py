@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Reject mutable GitHub Actions references in workflow files.
+"""Reject mutable GitHub Actions references in workflow and composite-action files.
 
 Issue #3530 keeps the nightly ASHRAE 140 gauge workflow and future PRs
-from re-introducing floating action refs. The check is deliberately narrow:
-it reports the named branch, stable, HEAD, and short major-version refs while
-leaving the existing, stricter ``check_workflow_pin.py`` gate to enforce the
-full SHA-pinning policy.
+from re-introducing floating action refs. Issue #4187 extended the scan
+to ``.github/actions/**/*.{yml,yaml}``: the repo's five local composite
+actions (``docs-only-gate``, ``install-system-deps``, ``setup-python-env``,
+``setup-rust-env``, ``setup-rust-python-env``) carry nested third-party
+``uses:`` references that were pinned but unenforced -- a mutable tag there
+resolves the same way as one in a workflow, so it gets the same gate.
+The check is deliberately narrow: it reports the named branch, stable,
+HEAD, and short major-version refs while leaving the existing, stricter
+``check_workflow_pin.py`` gate to enforce the full SHA-pinning policy.
 
 Usage::
 
@@ -29,6 +34,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
+ACTIONS_DIR = REPO_ROOT / ".github" / "actions"
 
 # These refs are explicitly called out by the issue. Keep the set
 # centralized so the scanner and its self-test cannot drift apart.
@@ -112,19 +118,31 @@ def _display_path(path: Path) -> str:
         return path.as_posix()
 
 
-def _workflow_files() -> list[Path]:
-    """Return every YAML workflow file, including nested workflow files."""
-    if not WORKFLOWS_DIR.is_dir():
-        raise FileNotFoundError(f"{WORKFLOWS_DIR} not found")
-    files = [
-        path
-        for suffix in ("*.yml", "*.yaml")
-        for path in WORKFLOWS_DIR.rglob(suffix)
-        if path.is_file()
-    ]
+def _scan_files() -> list[Path]:
+    """Return every YAML workflow and composite-action file.
+
+    Covers ``.github/workflows/**/*.{yml,yaml}`` (already recursive) and
+    ``.github/actions/**/*.{yml,yaml}`` (Issue #4187: composite actions
+    carry nested third-party ``uses:`` that must meet the same bar).
+    ``uses:./.github/actions/...`` local references are still allowed --
+    they carry no ``@`` ref, so ``_parse_action_reference`` skips them.
+    """
+    roots = (("workflows", WORKFLOWS_DIR), ("actions", ACTIONS_DIR))
+    files: list[Path] = []
+    for label, root in roots:
+        if not root.is_dir():
+            raise FileNotFoundError(f"{root} not found")
+        files.extend(
+            path
+            for suffix in ("*.yml", "*.yaml")
+            for path in root.rglob(suffix)
+            if path.is_file()
+        )
     files.sort()
     if not files:
-        raise FileNotFoundError(f"no .yml or .yaml workflows found in {WORKFLOWS_DIR}")
+        raise FileNotFoundError(
+            f"no .yml or .yaml files found in {WORKFLOWS_DIR} or {ACTIONS_DIR}"
+        )
     return files
 
 
@@ -181,7 +199,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _self_test()
 
     try:
-        files = _workflow_files()
+        files = _scan_files()
     except FileNotFoundError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
@@ -208,8 +226,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     print()
     print(
-        f"Scanned {len(files)} workflow file(s); checked {total_refs} action "
-        f"ref(s); {len(findings)} violation(s)."
+        f"Scanned {len(files)} workflow/composite-action file(s); checked "
+        f"{total_refs} action ref(s); {len(findings)} violation(s)."
     )
     if findings:
         print("ACTION PINNING FAILED: mutable action refs are not allowed.")

@@ -1,7 +1,8 @@
-"""Tests for ``scripts/check_workflow_pin.py`` -- Issue #3475.
+"""Tests for ``scripts/check_workflow_pin.py`` -- Issue #3475 (scan scope
+extended to nested ``.yml``/``.yaml`` by Issue #4187).
 
 The script enforces the SHA-pinning baseline documented in
-``docs/SECURITY.md`` §5 across every ``.github/workflows/*.yml``. Until
+``docs/SECURITY.md`` §5 across every ``.github/workflows/**/*.{yml,yaml}``. Until
 the guard lands, a mutable ``@v4`` / ``@stable`` / ``@main`` ref could
 merge into any workflow without review catching it; PR #3472 repinned
 the last tag-pinned actions but, by scope, did not add the general
@@ -357,6 +358,62 @@ def test_main_exit_1_on_planted_violation(
     assert "Remediation:" in err
 
 
+def test_main_scans_nested_workflow_directories(
+    checker, monkeypatch, tmp_path, capsys
+):
+    """Issue #4187: a tag-pinned ``uses:`` in a nested workflow
+    subdirectory fails the gate -- subdirectories do not dodge the scan."""
+    text = (
+        "name: drift\n"
+        "jobs:\n"
+        "  build:\n"
+        "    steps:\n"
+        "      - uses: actions/checkout@v4\n"
+    )
+    _redirect(checker, monkeypatch, tmp_path)
+    _write_workflow(tmp_path, "alpha.yml", _COMPLIANT_TEXT)
+    _write_workflow(tmp_path, "nested/deep/ci.yml", text)
+    monkeypatch.setattr(checker.sys, "argv", ["check_workflow_pin.py"])
+
+    assert checker.main([]) == 1
+    err = capsys.readouterr().err
+    assert ".github/workflows/nested/deep/ci.yml:" in err
+    assert "actions/checkout@v4" in err
+
+
+def test_main_scans_yaml_extension(checker, monkeypatch, tmp_path, capsys):
+    """Issue #4187: ``*.yaml`` workflow files are scanned alongside
+    ``*.yml``."""
+    text = (
+        "name: drift\n"
+        "jobs:\n"
+        "  build:\n"
+        "    steps:\n"
+        "      - uses: actions/checkout@v4\n"
+    )
+    _redirect(checker, monkeypatch, tmp_path)
+    _write_workflow(tmp_path, "alpha.yml", _COMPLIANT_TEXT)
+    _write_workflow(tmp_path, "ci.yaml", text)
+    monkeypatch.setattr(checker.sys, "argv", ["check_workflow_pin.py"])
+
+    assert checker.main([]) == 1
+    err = capsys.readouterr().err
+    assert ".github/workflows/ci.yaml:" in err
+
+
+def test_main_exit_0_nested_compliant(checker, monkeypatch, tmp_path, capsys):
+    """Compliant nested workflows and ``*.yaml`` files do not trip the
+    gate."""
+    _redirect(checker, monkeypatch, tmp_path)
+    _write_workflow(tmp_path, "nested/deep/ci.yml", _COMPLIANT_TEXT)
+    _write_workflow(tmp_path, "ci.yaml", _COMPLIANT_TEXT)
+    monkeypatch.setattr(checker.sys, "argv", ["check_workflow_pin.py"])
+
+    assert checker.main([]) == 0
+    out = capsys.readouterr().out
+    assert "0 violation(s)" in out
+
+
 def test_main_exit_2_when_workflows_dir_missing(
     checker, monkeypatch, tmp_path, capsys
 ):
@@ -381,7 +438,7 @@ def test_main_exit_2_when_no_yml_files_present(
     monkeypatch.setattr(checker.sys, "argv", ["check_workflow_pin.py"])
 
     assert checker.main([]) == 2
-    assert "no .yml workflows" in capsys.readouterr().err
+    assert "no .yml or .yaml workflows" in capsys.readouterr().err
 
 
 def test_main_reports_uses_count_in_summary(
