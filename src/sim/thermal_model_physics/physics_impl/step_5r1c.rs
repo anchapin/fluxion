@@ -852,12 +852,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             *n += g * t_g;
         }
 
-        // DEBUG: Commented out for production - uncomment when diagnosing Case 195
-        // let num_tm_val = num_tm.as_ref()[0];
-        // let num_phi_st_val = num_phi_st.as_ref()[0];
-        // let num_rest_val = num_rest_with_iz.as_ref()[0];
-        // let den_val = den.as_ref()[0];
-
         // === Issue #1585: exact-exponential air-node ODE ===
         //
         // Prior to this change the 5R1C air node was algebraically pinned to
@@ -1082,17 +1076,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // PR #821: DEBUG_MAX trace for 600FF/650FF removed; use `pr821-diag` feature instead.
 
         // PR #821: DEBUG_650FF_FULL traces removed.
-
-        // DEBUG: Case 195 thermal diagnostics - uncomment to debug heating issues
-        // if self.0.hvac.case_id == "195" && timestep < 1000 {
-        //     let t_i_free_val = t_i_free.as_ref()[0];
-        //     let mass_temp = self.0.mass.mass_temperatures.as_ref()[0];
-        //     let heating_threshold = self.0.setpoints.heating_setpoint - self.0.hvac.hvac_controller.deadband_tolerance;
-        //     eprintln!(
-        //         "DEBUG_195 t={} t_i_free={:.2}°C heating_thresh={:.2}°C num_tm={:.1} num_phi_st={:.1} num_rest={:.1} den={:.1} T_mass={:.2}°C",
-        //         timestep, t_i_free_val, heating_threshold, num_tm_val, num_phi_st_val, num_rest_val, den_val, mass_temp
-        //     );
-        // }
 
         // 2.5. Predictive Control Calculation (Plan 15-04, 15-06)
         // Calculate temperature rate (dT/dt) for predictive control using thermal inertia

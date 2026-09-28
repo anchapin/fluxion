@@ -65,10 +65,6 @@ pub fn build_inter_zone_matrix(num_zones: usize, zone_properties: &ZonePropertie
 pub struct ZoneProperties {
     /// Default conductance value for testing
     pub default_conductance: f64,
-    // Additional properties would be added here in a full implementation
-    // pub wall_areas: Vec<f64>,
-    // pub u_values: Vec<f64>,
-    // etc.
 }
 
 impl Default for ZoneProperties {
