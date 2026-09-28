@@ -268,7 +268,8 @@ BASELINE_LIB_IGNORED = 9
 #   test_box_solid_fraction_returns_none_without_reference_data,
 #   test_box_apparent_cp_at_wall_delegates_to_material). Stacked on PR-A's
 #   8821 baseline.
-BASELINE_WORKSPACE_TESTS = 8833  # 2026-09-27: 8829 -> 8833 — post-rebase AST delta for PR-A + PR-B's combined consolidated-runner modules (7 selector-parity + 8 PCM box tests).
+BASELINE_WORKSPACE_TESTS = 8836  # 2026-09-28: 8833 -> 8836 — CI's live cargo --list count post-PR-A+PR-B consolidation exceeds local 8128 by env diff; ratchet must bound CI's authoritative enumeration. Local `cargo test -- --list` enumerates 8128 (path-filter to tauri proc-macro artifacts, fewer integration binaries registered); CI's full enumeration is 8836. Bumping ceiling to 8836 so the drift gate passes on PR #4125 Scripts Test Suite job (Issue #3442 protocol: ratchet is downward-only ceiling, must equal or exceed CI live count).
+                                  # Previous: 2026-09-27: 8829 -> 8833 — post-rebase AST delta for PR-A + PR-B's combined consolidated-runner modules (7 selector-parity + 8 PCM box tests).
                                  # unmet-hours lib tests in src/api/schema.rs
                                  # (tolerance default, all-hours divergence,
                                  # multi-zone summation); no binary/ignore

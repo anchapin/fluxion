@@ -75,6 +75,7 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | ASHRAE 140 Strict Energy Gate (Issue #1333) | #1333 |
 | Nextest Subset (GH) | — |
 | Cargo Deny | — |
+| Scorecard Data-Source Consistency Gate (Issue #3535) | #3535 |
 
 - **Live status** is intentionally not baked in here (it is non-deterministic and would break scorecard diff stability). Run:
 

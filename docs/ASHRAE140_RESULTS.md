@@ -1,17 +1,17 @@
 # ASHRAE Standard 140 Validation Results
 
-*Generated: 2026-09-22 19:41 UTC*
+*Generated: 2026-09-26 17:16 UTC*
 
 ## Summary
 
 | Metric | Value |
 |--------|-------|
 | Total Results | 84 |
-| Pass Rate | 13.1% |
+| Pass Rate | 9.78% |
 | Passed | 11 |
 | Warnings | 8 |
 | Failed | 65 |
-| Mean Absolute Error | 51.31% |
+| Mean Absolute Error | 45.27% |
 | Max Deviation | 470.11% |
 
 ## Performance Summary

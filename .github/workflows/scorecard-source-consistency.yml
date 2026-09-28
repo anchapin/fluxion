@@ -1,0 +1,85 @@
+name: Scorecard Data-Source Consistency Gate
+
+# Issue #3535: Fail when SCORECARD.md's headline metrics disagree with the
+# canonical performance-history snapshot (`validation/performance_history.latest.json`)
+# OR with the ASHRAE 140 validation summary (`docs/ASHRAE140_RESULTS.md`).
+#
+# This is a defensive sibling to `scorecard-drift.yml`:
+# - `scorecard-drift.yml` catches drift in the *content* of SCORECARD.md when its
+#   generator inputs change (Issue #2496 / #3128).
+# - This workflow catches drift in the *headline numbers* the scorecard cites
+#   when the canonical sources move independently (Issue #3535).
+#
+# The script is read-only and does not regenerate any artefact; divergence is
+# always a sign that one of the three sources needs to be reconciled by hand
+# (or by a real validation run). The tolerance bands (0.1 pp pass-rate,
+# 0.5 pp MAE) come from the script itself and reflect the smallest rounding
+# delta we will accept without failing the build.
+#
+# On `pull_request` we run the check on every change to any of the three
+# sources or the script; on `push` to develop/main we run it on every commit
+# because no source should drift past the protected branches.
+
+on:
+  pull_request:
+    paths:
+      - "SCORECARD.md"
+      - "docs/ASHRAE140_RESULTS.md"
+      - "validation/performance_history.latest.json"
+      - "scripts/check_scorecard_data_sources_consistent.py"
+      - "scripts/generate_scorecard.py"
+      - "scripts/generate_perf_baseline.py"
+      - "validation/performance_history.json"
+      - "release_gates.yaml"
+  push:
+    branches:
+      - develop
+      - main
+
+concurrency:
+  group: >-
+    ${{ github.workflow }}-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
+permissions:
+  contents: read
+
+jobs:
+  scorecard-source-consistency:
+    name: "Scorecard Data-Source Consistency Gate (Issue #3535)"
+    # Read-only check; no auto-regen, no auto-commit. Drift is operator-fixable
+    # (regenerate SCORECARD.md OR ASHRAE140_RESULTS.md from a fresh validation
+    # run, OR bump the snapshot). Never auto-mutate protected branches.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+
+      # Issue #3535: every CI run is a fresh read of the three sources from
+      # disk; we do not cache SCORECARD.md, ASHRAE140_RESULTS.md, or the perf
+      # snapshot across jobs. The script's own MD5 cache (`_compute_doc_md5`)
+      # only skips re-parsing within a single Python invocation, not across
+      # workflow runs.
+      - name: Verify SCORECARD headline metrics match canonical sources
+        run: |
+          echo "Checking SCORECARD.md headline metrics against"
+          echo "  - docs/ASHRAE140_RESULTS.md"
+          echo "  - validation/performance_history.latest.json"
+          echo ""
+          python3 scripts/check_scorecard_data_sources_consistent.py

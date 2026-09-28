@@ -48,6 +48,7 @@ usage() {
 declare -A WORKFLOWS=(
   [fmt]="scorecard-drift.yml"
   [scorecard]="scorecard-drift.yml"
+  [scorecard-source-consistency]="scorecard-source-consistency.yml"
   [docs]="docs-hygiene.yml"
   [architecture]="architecture_drift.yml"
   [scripts]="scripts-tests.yml"
