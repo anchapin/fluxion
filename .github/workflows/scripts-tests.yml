@@ -148,6 +148,20 @@ jobs:
       - name: Enforce ADR-0015 concurrency keys (Issue #3366, #3444)
         run: python3 scripts/check_concurrency_keys.py
 
+      # Issue #4135: Dockerfile/`[workspace] members` drift guard.
+      # ``cargo build --bin fluxion-rest --no-default-features`` resolves
+      # the WHOLE workspace, so a member whose manifest is absent from the
+      # image context aborts the build -- optional members such as
+      # ``fluxion-cfd`` included. The Dockerfile's member list had drifted
+      # three times (#2469, #3196, #3337) with no gate to catch it, and the
+      # broken half of that (the unsatisfiable digest-pin gate, #4132) kept
+      # the failure invisible. The pytest companion
+      # ``scripts/ci/test_check_docker_workspace_members.py`` covers the
+      # matcher against hermetic ``tmp_path`` fixtures; this direct
+      # invocation covers the end-to-end against the real tree.
+      - name: Enforce Dockerfile covers every workspace member (Issue #4135)
+        run: python3 scripts/check_docker_workspace_members.py
+
       # Issue #3475: SHA-pinning hygiene guard for ``.github/workflows/``.
       # PR #3472 repinned the last tag-pinned third-party actions but, by
       # scope, did not add a general enforcement gate. The matcher in
