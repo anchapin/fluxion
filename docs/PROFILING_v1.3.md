@@ -38,7 +38,7 @@ sudo perf record -g -- cargo run --release --bin fluxion -- [args]
 **Heap Profiling:**
 - `tests/test_allocation_tracking.rs` - Uses dhat for allocation tracking
 - `dhat-heap.json` - Sample dhat output file
-- Run with: `cargo test --test test_allocation_tracking`
+- Run with: `cargo test --test all_tests test_allocation_tracking::`
 
 **Criterion Benchmarks:**
 - `benches/performance.rs` - Main thermal solver benchmarks
@@ -147,7 +147,7 @@ cargo flamegraph --bench performance -- --single-zone
 
 ```bash
 # Run with dhat heap profiler
-cargo test --test test_allocation_tracking --release -- \
+cargo test --test all_tests test_allocation_tracking:: --release -- \
   --nocapture 2>&1 | grep -A50 "dhat"
 
 # Or add dhat to a specific benchmark

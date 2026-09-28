@@ -45,7 +45,7 @@ vary by machine, but **ratios and scaling exponents are stable**.
 ### Reproduce
 
 ```bash
-cargo test --profile ci --test gauge_solver_scalability -- --nocapture
+cargo test --profile ci --test all_tests gauge_solver_scalability:: -- --nocapture
 ```
 
 ## Scaling curve (zones vs µs/timestep)

@@ -66,7 +66,7 @@ jobs:
         run: cargo build --release
 
       - name: Run Blind Validation
-        run: cargo test --test ashrae_140_blind_validation -- --nocapture
+        run: cargo test --test all_tests ashrae_140_blind_validation:: -- --nocapture
         id: validation
 
       - name: Check Pass Rate
@@ -86,7 +86,7 @@ The workflow must:
   </action>
   <verify>
     cat .github/workflows/ashrae_validation.yml
-    # Verify: cargo test --test ashrae_140_blind_validation passes locally
+    # Verify: cargo test --test all_tests ashrae_140_blind_validation:: passes locally
   </verify>
   <done>CI workflow created and verified to run</done>
 </task>
@@ -151,7 +151,7 @@ Also create scripts/annual_ashrae_revalidation.sh that automates the process.
 </tasks>
 
 <verification>
-Run: cargo test --test ashrae_140_blind_validation
+Run: cargo test --test all_tests ashrae_140_blind_validation::
 
 Verify:
 - All tests pass locally (before CI)

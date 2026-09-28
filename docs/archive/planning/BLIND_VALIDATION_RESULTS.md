@@ -5,7 +5,7 @@ Baseline measurement for the ASHRAE 140 blind validation suite
 (`ValidationMode::Blind`). Refreshed by running:
 
 ```bash
-cargo test --test ashrae_140_blind_validation -- --nocapture
+cargo test --test all_tests ashrae_140_blind_validation:: -- --nocapture
 ```
 
 This file is **living output** — the numbers below are a snapshot from the run

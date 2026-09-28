@@ -163,7 +163,7 @@ matrix:
 ```yaml
 - name: Surrogate golden-output regression
   run: |
-    cargo test --features ort --test surrogate_golden_output -- --nocapture
+    cargo test --features ort --test all_tests surrogate_golden_output:: -- --nocapture
     git diff --exit-code tests/surrogate_models/golden/golden_v3_1_0.json
 ```
 
@@ -208,8 +208,8 @@ un-flagged changes (via the diff step) and unintentional numerical drift
 
 ```bash
 cargo test --features ort --lib ai::surrogate
-cargo test --features ort --test surrogate_golden_output
-cargo test --features ort --test surrogate_config
+cargo test --features ort --test all_tests surrogate_golden_output::
+cargo test --features ort --test all_tests surrogate_config::
 cargo clippy --lib --features ort -- -D warnings
 ```
 

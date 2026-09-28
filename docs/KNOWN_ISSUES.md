@@ -11,7 +11,7 @@ Action: Check this document before attributing validation failures to new issues
 including their blocking issues, un-ignore criteria, and status. The QUARANTINE.md registry is the
 canonical source for tracking when quarantined tests can be un-ignored (per Issue #3211).
 
-*Last Updated: 2026-09-26 (LIMIT-30 UPDATE — Issue #3961: defaults-only retirement of the fixed 0.30/0.30 solar split (and its massiveness-blended `0.30·(1−w)` air fraction) to the referee convention (to_air 0.0 / beam_to_mass 1.0) measured against the strict ±15 % annual-energy gate and REFUTED: `to_air=0` alone moves Case 600FF peak T_air AWAY from the band (47.29 → 46.01 °C vs 64.9–75.1 °C) and regresses Case 600/800 cooling ~20 pp each; `beam_to_mass=1.0` collapses high-mass cooling (Case 960: 0.144 → 0.008 MWh) via the capacitance-weighted mass pool; the 0.30 low-mass air fraction is load-bearing compensation for the missing air-node capacitance / beam-incident absorption geometry (#1152-class work); zero production-code change shipped — in-code experiment record, spec pins in `tests/all_tests/solar_split_convention.rs` (load-bearing defaults pin, gauge telemetry-closure Σ_i + Φ_sol·to_air = Φ_sol, legacy 30/70 partition pin), and §LIMIT-30 UPDATE below) — LIMIT-32 ADD — Issue #4062: CTF pole-residue coefficients give low-mass walls a wrong-sign steady-state flux; 80 mm EPS converges to −5.53 W/m² under 20 °C/28 °C constant forcing (physical: +3.69 W/m²); found by the #3981 ASHRAE 1052-RP analytical module, root-caused to the `y`-coefficient `abs().max(0)` clamping when all wall poles have τ ≪ dt; heavy/medium/multi DC gains remain exact; FD is unaffected — see §LIMIT-32 and `tests/all_tests/conduction_1052rp_analytical.rs`) — LIMIT-31 ADD — Issue #3979: CTF↔zone additive-correction double count root-caused and bypassed; conditioned high-mass cases run the 9R4C FD multi-node path backend-free, Case 900 heating 5.05 → ~1.165 MWh (widened-gate in band); `enable_advanced_solver` removed with its last caller; CTF stays the 5R1C cross-check per ADR-0017; see §LIMIT-31 and `docs/investigations/issue-3979-ctf-zone-coupling.md`) — LIMIT-21 UPDATE — ADR-0017 / Issue #3978: equation-based DAE teacher adopted as the single production target; flip authority moves from β-soak/§LIMIT-21 closure to the #3986 teacher validation suite; the two-solver limbo is closed — cfg-dependent explicit default selector (`Gauge` with the feature, explicit legacy `FiveROneC` without), explicit `Gauge` in default builds panics loudly, silent fall-through removed; GaugeSolver is the DAE-path prototype per D3 with #3982 as the fix-or-retire executor; zero default-build physics drift verified. See `docs/adr/0017-equation-based-dae-teacher-architecture.md` and the LIMIT-21 ADR-0017 UPDATE below) — LIMIT-21 Phase 9 UPDATE — Issue #3916 formally closed as requiring new issue #3918: GaugeZoneSolver interior surface node network for solar lag correction. New issue #3918 opened to track the specific work (per-surface T_s tracking, h_tr_is computation, lag_input = h_tr_is × phi_st / term_rest_1 ≈ 1.9% of window solar). Air-node equilibration diagnostic written at `tests/diagnostics/diag_air_node_equilibration.rs` (run with `cargo test --test diag_air_node_equilibration -- --ignored --nocapture`): 5R1C (Case 640) = 4.07 MWh heating / 3.84 MWh cooling vs Gauge = 6.99 MWh / 1.47 MWh (ASHRAE ref: 2.75–3.80 / 5.95–8.10 MWh). Gauge winter heating +49% vs 5R1C; summer cooling −35% vs 5R1C. Root cause: Gauge's faster air equilibration (~84%/hr) dissipates solar gains before cooling demand accumulates, and overnight heat loss in setback regime drives excess heating recovery. The lag input required by 5R1C's τ_lag = √(τ_air × τ_mass) filter is h_tr_is × φ_st / term_rest_1 ≈ 1.9% of window solar — GaugeZoneSolver cannot compute this without an interior surface node; Phase 9 complete) — LIMIT-21 Phase 8 UPDATE — Issue #3916 Option A (solar lag state) investigated: h_tr_3 and Cm were successfully threaded to GaugeZoneSolver::step() from the dispatcher; implementation was reverted because the lag input (solar_irradiance_wm2 × solar_distribution_to_air × area = entire 30% direct-to-air window solar) is not equivalent to 5R1C's lag_input = h_tr_is × phi_st / term_rest_1 (~1.9% of window solar via interior film resistance); filtering the full 30% over-corrects and worsens Case 640 cooling (1.62 → 1.49 MWh); Option A confirmed as requiring GaugeSolver architectural rework (#1465 / #1462) — the gauge lacks the interior-surface node network needed to compute the correct lag_input fraction; Phase 8 complete) — LIMIT-21 Phase 7 UPDATE — exact exponential air ODE (Option B) implemented in GaugeZoneSolver per Issue #3916; Case 640 annual cooling unchanged at 1.62 MWh vs 5.95–8.10 MWh reference band — Option B produces identical result to implicit Euler for this case because sub-stepping already brings implicit Euler close to exact; the ~1 MWh gap is from missing solar lag correction (5R1C τ_lag = √(τ_air × τ_mass) filter on solar gain) which requires h_tr_3 / derived_h_tr_3 access not available in GaugeZoneSolver; Option A (solar lag state) requires architectural GaugeSolver rework #1465/#1462 as noted in the Issue #3916 approach; Phase 7 complete) — LIMIT-21 Phase 6 UPDATE #3912 — window solar splitting + sky-radiation boundary; Case 640 annual cooling 1.31 → 1.62 MWh; remaining ~1 MWh gap vs 5.95–8.10 MWh reference band tracked in Issue #3916; Phase 6 complete) — LIMIT-21 Phase 5 UPDATE #91c7238 — commit `91c7238` implements per-surface sky radiative conductance via `air_sky_conductance()`; Case 640 annual cooling 0.000 → 1.314 MWh; remaining 1.314 vs 5.95–8.10 MWh gap is downstream per-surface routing / 5R1C coupling, owned separately by #1465/#1462 and §LIMIT-30/Issue #3797 B1b; Phase 5 is complete) — LIMIT-21 UPDATE #3908 — PRs #3906 (LIMIT-17 night-vent double-count fix) and #3908 (gauge H·dt sub-stepping) merged to develop; β-soak streak confirmed 0/30; LIMIT-21 structural root cause — single lumped air-node at dt/τ ≈ 3.6 — confirmed unfixable by tuning per LIMIT-05 UPDATE #1522; no parameter change to close LIMIT-21; fix is architectural via GaugeSolver air-trajectory fidelity program #1465 / #1462) — multi-zone solar-coupled T_air in `step_with_coupling` + single-zone Q_internal dedup (PR #3890); free-float table re-measured on post-merge develop `021df06`, feature build — Case 600FF max 52.8 → 40.64°C, Case 650FF 51.1 → 40.64°C (the #3878-era table was measured with the Q_internal double-count); Case 900FF max 39.36°C and Case 950FF max 35.34°C unchanged; 600FF/650FF winter min −42.91°C; the stale `Case600FF/min_free_float=-36.91C` citation corrected to `-42.91C` (T1-era drift, not #3890 movement — #1457 tracking byte-identical pre/post); feature-build cohort unmoved: Case 960 16✓/2 quarantine-ignored, zone_balance 19✓/8 ignored, `issue_1457` 3✓/1 expected LIMIT-21 fail) — Phase B1a PHYSICS-01 solar distribution audit — Case 600 series — per-tilt / per-azimuth incident-energy deviation table vs the analytical cos theta reference; per-surface distribution metrics named and ranked — Case 600 `solar_distribution_to_air = 0.30` vs ASHRAE 140 expectation 0.0, Δ +0.30, worst offender; `solar_beam_to_mass_fraction = 0.30` vs 1.0, Δ −0.70; fractions sum 0.60 vs 1.0, Δ −0.40; per-surface Case 600 5R1C h_tr_is / h_tr_ms conductance deviations vs hand-calc — −86.8 %, −78.0 % — the structural signature of the §LIMIT-05 / §LIMIT-16 family on the LowMass end of the 5R1C + 9R4C single-lumped-mass-node pathology; three competing mechanism hypotheses documented — per-surface distribution routing, per-surface 5R1C conductance re-derivation, family-level 5R1C lumped-mass-node damping; B1a is the precursor measurement for B1b #3798 / PR #3847 release-gates registration of the Case 600 solar-distribution cohort, already merged; module-isolation suites green, read-only acceptance; 11 pre-existing solar test failures unchanged, NOT regressions; per-tilt / per-azimuth calculation PASSES — fluxion vs analytical ratio in [0.99, 1.01] for all 5 tilts, Mock-vs-Physics 1 % parity on the 16 × 8760 grid; the failing distribution axis is downstream in the routing parameters and the 5R1C coupling; structural fix routed to GaugeSolver #1465, #1462 + the per-surface distribution path re-routing; no physics-code, parameter, reference-band, or tolerance change per AGENTS.md / RULES.md / ADR-0001; LIMIT-29 / #3799 / B2a and LIMIT-28 / #3802 / B3b cohort entries unchanged; h_tr_em / 18.3 W/m²K canonical exterior film coefficient regression fence — LIMIT-13 — stays green throughout; the canonical exterior film coefficient is preserved. Companion doc: docs/ASHRAE140_RESULTS.md, see Phase B1a PHYSICS-01 solar distribution audit — Case 600, Issue #3797.)*
+*Last Updated: 2026-09-26 (LIMIT-30 UPDATE — Issue #3961: defaults-only retirement of the fixed 0.30/0.30 solar split (and its massiveness-blended `0.30·(1−w)` air fraction) to the referee convention (to_air 0.0 / beam_to_mass 1.0) measured against the strict ±15 % annual-energy gate and REFUTED: `to_air=0` alone moves Case 600FF peak T_air AWAY from the band (47.29 → 46.01 °C vs 64.9–75.1 °C) and regresses Case 600/800 cooling ~20 pp each; `beam_to_mass=1.0` collapses high-mass cooling (Case 960: 0.144 → 0.008 MWh) via the capacitance-weighted mass pool; the 0.30 low-mass air fraction is load-bearing compensation for the missing air-node capacitance / beam-incident absorption geometry (#1152-class work); zero production-code change shipped — in-code experiment record, spec pins in `tests/all_tests/solar_split_convention.rs` (load-bearing defaults pin, gauge telemetry-closure Σ_i + Φ_sol·to_air = Φ_sol, legacy 30/70 partition pin), and §LIMIT-30 UPDATE below) — LIMIT-32 ADD — Issue #4062: CTF pole-residue coefficients give low-mass walls a wrong-sign steady-state flux; 80 mm EPS converges to −5.53 W/m² under 20 °C/28 °C constant forcing (physical: +3.69 W/m²); found by the #3981 ASHRAE 1052-RP analytical module, root-caused to the `y`-coefficient `abs().max(0)` clamping when all wall poles have τ ≪ dt; heavy/medium/multi DC gains remain exact; FD is unaffected — see §LIMIT-32 and `tests/all_tests/conduction_1052rp_analytical.rs`) — LIMIT-31 ADD — Issue #3979: CTF↔zone additive-correction double count root-caused and bypassed; conditioned high-mass cases run the 9R4C FD multi-node path backend-free, Case 900 heating 5.05 → ~1.165 MWh (widened-gate in band); `enable_advanced_solver` removed with its last caller; CTF stays the 5R1C cross-check per ADR-0017; see §LIMIT-31 and `docs/investigations/issue-3979-ctf-zone-coupling.md`) — LIMIT-21 UPDATE — ADR-0017 / Issue #3978: equation-based DAE teacher adopted as the single production target; flip authority moves from β-soak/§LIMIT-21 closure to the #3986 teacher validation suite; the two-solver limbo is closed — cfg-dependent explicit default selector (`Gauge` with the feature, explicit legacy `FiveROneC` without), explicit `Gauge` in default builds panics loudly, silent fall-through removed; GaugeSolver is the DAE-path prototype per D3 with #3982 as the fix-or-retire executor; zero default-build physics drift verified. See `docs/adr/0017-equation-based-dae-teacher-architecture.md` and the LIMIT-21 ADR-0017 UPDATE below) — LIMIT-21 Phase 9 UPDATE — Issue #3916 formally closed as requiring new issue #3918: GaugeZoneSolver interior surface node network for solar lag correction. New issue #3918 opened to track the specific work (per-surface T_s tracking, h_tr_is computation, lag_input = h_tr_is × phi_st / term_rest_1 ≈ 1.9% of window solar). Air-node equilibration diagnostic written at `tests/diagnostics/diag_air_node_equilibration.rs` (run with `cargo test --test all_tests diag_air_node_equilibration:: -- --ignored --nocapture`): 5R1C (Case 640) = 4.07 MWh heating / 3.84 MWh cooling vs Gauge = 6.99 MWh / 1.47 MWh (ASHRAE ref: 2.75–3.80 / 5.95–8.10 MWh). Gauge winter heating +49% vs 5R1C; summer cooling −35% vs 5R1C. Root cause: Gauge's faster air equilibration (~84%/hr) dissipates solar gains before cooling demand accumulates, and overnight heat loss in setback regime drives excess heating recovery. The lag input required by 5R1C's τ_lag = √(τ_air × τ_mass) filter is h_tr_is × φ_st / term_rest_1 ≈ 1.9% of window solar — GaugeZoneSolver cannot compute this without an interior surface node; Phase 9 complete) — LIMIT-21 Phase 8 UPDATE — Issue #3916 Option A (solar lag state) investigated: h_tr_3 and Cm were successfully threaded to GaugeZoneSolver::step() from the dispatcher; implementation was reverted because the lag input (solar_irradiance_wm2 × solar_distribution_to_air × area = entire 30% direct-to-air window solar) is not equivalent to 5R1C's lag_input = h_tr_is × phi_st / term_rest_1 (~1.9% of window solar via interior film resistance); filtering the full 30% over-corrects and worsens Case 640 cooling (1.62 → 1.49 MWh); Option A confirmed as requiring GaugeSolver architectural rework (#1465 / #1462) — the gauge lacks the interior-surface node network needed to compute the correct lag_input fraction; Phase 8 complete) — LIMIT-21 Phase 7 UPDATE — exact exponential air ODE (Option B) implemented in GaugeZoneSolver per Issue #3916; Case 640 annual cooling unchanged at 1.62 MWh vs 5.95–8.10 MWh reference band — Option B produces identical result to implicit Euler for this case because sub-stepping already brings implicit Euler close to exact; the ~1 MWh gap is from missing solar lag correction (5R1C τ_lag = √(τ_air × τ_mass) filter on solar gain) which requires h_tr_3 / derived_h_tr_3 access not available in GaugeZoneSolver; Option A (solar lag state) requires architectural GaugeSolver rework #1465/#1462 as noted in the Issue #3916 approach; Phase 7 complete) — LIMIT-21 Phase 6 UPDATE #3912 — window solar splitting + sky-radiation boundary; Case 640 annual cooling 1.31 → 1.62 MWh; remaining ~1 MWh gap vs 5.95–8.10 MWh reference band tracked in Issue #3916; Phase 6 complete) — LIMIT-21 Phase 5 UPDATE #91c7238 — commit `91c7238` implements per-surface sky radiative conductance via `air_sky_conductance()`; Case 640 annual cooling 0.000 → 1.314 MWh; remaining 1.314 vs 5.95–8.10 MWh gap is downstream per-surface routing / 5R1C coupling, owned separately by #1465/#1462 and §LIMIT-30/Issue #3797 B1b; Phase 5 is complete) — LIMIT-21 UPDATE #3908 — PRs #3906 (LIMIT-17 night-vent double-count fix) and #3908 (gauge H·dt sub-stepping) merged to develop; β-soak streak confirmed 0/30; LIMIT-21 structural root cause — single lumped air-node at dt/τ ≈ 3.6 — confirmed unfixable by tuning per LIMIT-05 UPDATE #1522; no parameter change to close LIMIT-21; fix is architectural via GaugeSolver air-trajectory fidelity program #1465 / #1462) — multi-zone solar-coupled T_air in `step_with_coupling` + single-zone Q_internal dedup (PR #3890); free-float table re-measured on post-merge develop `021df06`, feature build — Case 600FF max 52.8 → 40.64°C, Case 650FF 51.1 → 40.64°C (the #3878-era table was measured with the Q_internal double-count); Case 900FF max 39.36°C and Case 950FF max 35.34°C unchanged; 600FF/650FF winter min −42.91°C; the stale `Case600FF/min_free_float=-36.91C` citation corrected to `-42.91C` (T1-era drift, not #3890 movement — #1457 tracking byte-identical pre/post); feature-build cohort unmoved: Case 960 16✓/2 quarantine-ignored, zone_balance 19✓/8 ignored, `issue_1457` 3✓/1 expected LIMIT-21 fail) — Phase B1a PHYSICS-01 solar distribution audit — Case 600 series — per-tilt / per-azimuth incident-energy deviation table vs the analytical cos theta reference; per-surface distribution metrics named and ranked — Case 600 `solar_distribution_to_air = 0.30` vs ASHRAE 140 expectation 0.0, Δ +0.30, worst offender; `solar_beam_to_mass_fraction = 0.30` vs 1.0, Δ −0.70; fractions sum 0.60 vs 1.0, Δ −0.40; per-surface Case 600 5R1C h_tr_is / h_tr_ms conductance deviations vs hand-calc — −86.8 %, −78.0 % — the structural signature of the §LIMIT-05 / §LIMIT-16 family on the LowMass end of the 5R1C + 9R4C single-lumped-mass-node pathology; three competing mechanism hypotheses documented — per-surface distribution routing, per-surface 5R1C conductance re-derivation, family-level 5R1C lumped-mass-node damping; B1a is the precursor measurement for B1b #3798 / PR #3847 release-gates registration of the Case 600 solar-distribution cohort, already merged; module-isolation suites green, read-only acceptance; 11 pre-existing solar test failures unchanged, NOT regressions; per-tilt / per-azimuth calculation PASSES — fluxion vs analytical ratio in [0.99, 1.01] for all 5 tilts, Mock-vs-Physics 1 % parity on the 16 × 8760 grid; the failing distribution axis is downstream in the routing parameters and the 5R1C coupling; structural fix routed to GaugeSolver #1465, #1462 + the per-surface distribution path re-routing; no physics-code, parameter, reference-band, or tolerance change per AGENTS.md / RULES.md / ADR-0001; LIMIT-29 / #3799 / B2a and LIMIT-28 / #3802 / B3b cohort entries unchanged; h_tr_em / 18.3 W/m²K canonical exterior film coefficient regression fence — LIMIT-13 — stays green throughout; the canonical exterior film coefficient is preserved. Companion doc: docs/ASHRAE140_RESULTS.md, see Phase B1a PHYSICS-01 solar distribution audit — Case 600, Issue #3797.)*
 
 **LIMIT-14 added (Issue #3061):** After PR #3052's partial Case 960 inter-zone fix, raw annual cooling remains 0.63 MWh versus the 1.55–2.78 MWh reference band and peak heating remains 1.17 kW versus 2.0–8.0 kW. The 5R1C/9R4C air-mass distribution cannot accumulate enough back-zone cooling demand at the 27 °C setpoint through coupling to the free-floating sunspace; compliant closure is blocked on the GaugeSolver production-path work coordinated by #3059, not a sunspace HVAC control or gain-split tuning.
 
@@ -84,7 +84,7 @@ Three integration methods were tested in LIMIT-05 UPDATE (#1522) for the same `d
 
 **Context:** Issue #3916 formally closed as "requires new issue for GaugeZoneSolver interior surface node network." New issue **#3918** opened to track the specific architectural work: per-surface T_s tracking, h_tr_is computation, and lag_input = h_tr_is × φ_st / term_rest_1 ≈ 1.9% of window solar.
 
-**Diagnostic written:** `tests/diagnostics/diag_air_node_equilibration.rs` — run with `cargo test --test diag_air_node_equilibration -- --ignored --nocapture` (requires `--features gauge-solver`). Compares 5R1C vs GaugeZoneSolver air-node dynamics under identical weather (Denver TMY3) and initial conditions for Case 640:
+**Diagnostic written:** `tests/diagnostics/diag_air_node_equilibration.rs` — run with `cargo test --test all_tests diag_air_node_equilibration:: -- --ignored --nocapture` (requires `--features gauge-solver`). Compares 5R1C vs GaugeZoneSolver air-node dynamics under identical weather (Denver TMY3) and initial conditions for Case 640:
 
 | Model | Heating | Cooling | H/C Ratio | vs Reference |
 |-------|---------|---------|-----------|-------------|
@@ -640,7 +640,7 @@ This is a known limitation of the 5R1C model for multi-zone buildings with free-
   | 950  | 0.84 kW              | 5.30 - 6.80 kW  | **-86% UNDER** |
   | 960  | 0.85 kW              | 6.00 - 7.50 kW  | **-87% UNDER** |
 
-  Reproduce with `cargo test --release --test limit_05_inversion_regression -- --ignored`.
+  Reproduce with `cargo test --release --test all_tests limit_05_inversion_regression:: -- --ignored`.
 
 **Investigation Summary:**
 - **Thermal Mass Divergence Test:** Mass temperatures stable without solar, accumulate with solar forcing
@@ -700,7 +700,7 @@ The fundamental issue is that h_ms_total is computed as an additive sum of wall/
 > this entry claimed "Case 600 series (16 of 27 previously-failed metrics)
 > closed." That is **inaccurate**. PR #1460 closed **6** of the 16 originally
 > failing metrics (via the ISO 13790 §12.2.1 `h_coeff` fix in `hvac.rs`).
-> A direct re-run of `cargo test -p fluxion --test ashrae_140_case_600_series`
+> A direct re-run of `cargo test -p fluxion --test all_tests ashrae_140_case_600_series::`
 > on `main` @ 6386544 reports **13 passed / 14 failed / 0 ignored**. The 14
 > remaining failures are catalogued with fresh numbers under
 > "§LIMIT-05 UPDATE (#1457 revisit)" immediately below. The physics gap is
@@ -754,7 +754,7 @@ The fundamental issue is that h_ms_total is computed as an additive sum of wall/
 ### LIMIT-05 UPDATE (#1457 revisit, 2026-07-10): the 14 remaining Case 600 metrics — fresh baseline & tracking
 
 - **Source of truth:** direct run of
-  `cargo test -p fluxion --test ashrae_140_case_600_series` on `main` @ 6386544.
+  `cargo test -p fluxion --test all_tests ashrae_140_case_600_series::` on `main` @ 6386544.
   Result: **13 passed / 14 failed**. The 14 failing metrics, with the exact
   engine value, the ASHRAE 140 reference band, and the signed deviation from the
   nearest band edge, are:
@@ -849,7 +849,7 @@ peak_cooling over-prediction — the discrete-node solar-injection pathology).
 
 5. **Current state (fresh evidence, 2026-08-03):** Confirmed the discrete-node
    solar-injection pathology persists on `fix/issue-2300-case-600-physics` @
-   `6accd10`. Test run `cargo test --test ashrae_140_case_600_series`:
+   `6accd10`. Test run `cargo test --test all_tests ashrae_140_case_600_series::`:
    - **14 passed / 13 failed** (same as LIMIT-05 UPDATE baseline)
    - Cases 610, 630, 640 peak_heating: 3.55–3.76 kW vs ref 4.30–6.10 kW
      → −24% to −33% UNDER (WORSE than the ~10-18% documented in the prior
@@ -1559,7 +1559,7 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
 - **Status:** 🔄 **Known pre-existing failure, quarantined pending GaugeSolver**.
   Re-enable once #1465 (or equivalent structural fix) lands and the
   ΔT(07-06) signal moves above the >+1.0 °C threshold on the standard
-  `cargo test --test ashrae_140_blind_validation -- --ignored` run.
+  `cargo test --test all_tests ashrae_140_blind_validation:: -- --ignored` run.
 
 ### LIMIT-10: Case 960 sunspace winter mean 0 °C vs pre-#1456 15 °C — assertion aligned with post-#1456 ground truth (Issue #3065)
 
@@ -1663,7 +1663,7 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
   Sunspace should not be excessively colder than back-zone (< 15°C difference)
   ```
   Reproduce on `develop` with
-  `cargo test --test ashrae_140_case_960_sunspace -- test_case_960_inter_zone_heat_transfer_analysis`.
+  `cargo test --test all_tests ashrae_140_case_960_sunspace:: -- test_case_960_inter_zone_heat_transfer_analysis`.
 
 - **Related sections in this document:**
   - §MULTI-01b — Case 960 6R2C override regression (Issue #1456) — the fix
@@ -1712,7 +1712,7 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
   ```
 
   Reproduce on `develop` with
-  `cargo test --test ashrae_140_solid_conduction_variants test_case_195_high_mass_walls -- --nocapture`.
+  `cargo test --test all_tests ashrae_140_solid_conduction_variants:: test_case_195_high_mass_walls -- --nocapture`.
 
   The low-mass baseline produces a small negative residual (`-18.21 kWh` —
   the no-loads / no-solar envelope with ε_ext = 0.1 from the #2868 fix), but
@@ -1782,7 +1782,7 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
 - **Status:** 🔄 **Known pre-existing failure, quarantined pending GaugeSolver**.
   Re-enable once #1465 (or equivalent structural fix) lands and the
   high-mass energy moves off the zero floor on the standard
-  `cargo test --test ashrae_140_solid_conduction_variants -- --ignored` run.
+  `cargo test --test all_tests ashrae_140_solid_conduction_variants:: -- --ignored` run.
 
 - **Why this is NOT a fixable tuning change (per AGENTS.md / RULES.md /
   ADR-0001):**
@@ -1818,7 +1818,7 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
   High-mass model should produce non-zero energy consumption
   ```
   Reproduce on `develop` with
-  `cargo test --test ashrae_140_solid_conduction_variants test_case_195_high_mass_walls -- --nocapture`.
+  `cargo test --test all_tests ashrae_140_solid_conduction_variants:: test_case_195_high_mass_walls -- --nocapture`.
 
 - **Related sections in this document:**
   - §LIMIT-08 — Case 195 (no-loads) peak heating weather-file gap (Issue
@@ -2691,7 +2691,7 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
      validation harness outputs into `step_physics_5r1c` /
      `step_physics_9r4c`) per `docs/adr/0007-gauge-solver-structural-
      work.md`.
-  2. Re-run `cargo test --test ashrae_140_case_600_series` against
+  2. Re-run `cargo test --test all_tests ashrae_140_case_600_series::` against
      the post-switchover engine.
 3. When Cases 610 / 630 / 650 peak_cooling move into band, retire
       this LIMIT-16 entry and un-quarantine the per-case tests, in
@@ -3101,7 +3101,7 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
 - **Severity:** Low for the strict-energy-gate (#1333) (Case 960 is
   not in `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`
   per `release_gates.yaml` known structural failures). Medium for the
-  integration suite `cargo test --test ashrae_140_blind_validation`
+  integration suite `cargo test --test all_tests ashrae_140_blind_validation::`
   — this test is the singular `1 failed` row in the 17 passed /
   1 failed / 6 ignored count reported by the orchestrator. High for
   the AC4 reference-band acceptance check per Issue #1332 AC1 + AC4
@@ -3126,7 +3126,7 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
 - **Status:** 🔄 **Known pre-existing failure, quarantined pending
   GaugeSolver.** Re-enable once #1465 (or equivalent structural fix)
   lands and Case 960 Blind `heating_max` moves to ≤ 1.0 MWh on the
-  standard `cargo test --test ashrae_140_blind_validation -- --ignored`
+  standard `cargo test --test all_tests ashrae_140_blind_validation:: -- --ignored`
   run. The re-enable acceptance is dual: (a) `heating_max <= 1.0 MWh`,
   (b) `cooling_min >= 8.0 MWh` — both clauses of
   `test_blind_mode_case_960_infrastructure` must hold without any
@@ -3246,7 +3246,7 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
   ```
 
   Reproduce on `develop` with
-  `cargo test --test ashrae_140_solid_conduction_variants test_solid_conduction_variants_integration -- --nocapture`.
+  `cargo test --test all_tests ashrae_140_solid_conduction_variants:: test_solid_conduction_variants_integration -- --nocapture`.
   The HighMass sub-variant assertion body
   (`high_mass_energy.abs() > 0.0` at line 305) returns `0.00 kWh` for the
   HighMass construction (the §LIMIT-11 / #3064 zero-energy root cause),
@@ -3317,7 +3317,7 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
 - **Severity:** Low for the strict-energy-gate (#1333) (Case 195 is
   not in `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`
   per `release_gates.yaml` known structural failures). Medium for the
-  ASHRAE 140 integration suite `cargo test --test ashrae_140_solid_conduction_variants`
+  ASHRAE 140 integration suite `cargo test --test all_tests ashrae_140_solid_conduction_variants::`
   — this test is the singular `1 failed` row in the 3 passed / 1 failed /
   1 ignored count reported by the orchestrator (LIMIT-11's per-test
   quarantine is the `1 ignored` row). High for the ASHRAE 140 Case
@@ -3342,7 +3342,7 @@ solar + envelope heat transfer, not a 5R1C/CTF parameter adjustment.
 - **Status:** 🔄 **Known pre-existing failure, quarantined pending
   GaugeSolver.** Re-enable once #1465 (or equivalent structural fix)
   lands and the HighMass sub-variant moves off the zero floor on the
-  standard `cargo test --test ashrae_140_solid_conduction_variants -- --ignored`
+  standard `cargo test --test all_tests ashrae_140_solid_conduction_variants:: -- --ignored`
   run. The re-enable acceptance is dual: (a) the integration pass-rate
   `>= 75.0` assertion holds without any further threshold, sub-variant, or
   aggregator change, and (b) all four sub-variant assertion bodies

@@ -83,3 +83,39 @@ def test_is_skipped_worktree_predicate(checker, tmp_path):
     assert not checker.is_skipped_worktree(checker.REPO_ROOT / "docs" / "x.md")
     assert not checker.is_skipped_worktree(checker.REPO_ROOT / ".planning" / "overview.md")
     assert not checker.is_skipped_worktree(checker.REPO_ROOT / "README.md")
+
+
+def test_extract_cargo_test_targets_only_in_fences(checker):
+    """Issue #4199 -- `--test <target>` is picked up from code fences only,
+    not from prose."""
+    text = (
+        "prose mentions --test ashrae_140_validation but is not checked\n"
+        "```\n"
+        "cargo test --test ashrae_140_validation --release -- --nocapture\n"
+        "```\n"
+        "cargo test --test zone_balance_eplus_isolation\n"
+    )
+    assert checker.extract_cargo_test_targets(text) == [("ashrae_140_validation", 3)]
+
+
+def test_cargo_test_target_regex_tolerates_flags(checker):
+    """Issue #4199 -- flags between `cargo test` and `--test` (e.g.
+    `--features`, `-p`) must not defeat the match; placeholders like
+    `<name>` are never matched."""
+    text = "```\ncargo test --features kafka -p fluxion --test ashrae_140_case_600_series\n```\n"
+    assert checker.extract_cargo_test_targets(text) == [("ashrae_140_case_600_series", 2)]
+    assert checker.extract_cargo_test_targets("```\ncargo test --test <name>\n```\n") == []
+
+
+def test_consolidation_drift_classification(checker, tmp_path, monkeypatch):
+    """Issue #4199 -- a name that is not a declared [[test]] target but has
+    a module under tests/all_tests/ is consolidation drift; anything else
+    is the warning class."""
+    monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(checker, "ALL_TESTS_DIR", tmp_path / "tests" / "all_tests")
+    (tmp_path / "tests" / "all_tests").mkdir(parents=True)
+    (tmp_path / "tests" / "all_tests" / "ashrae_140_validation.rs").write_text("x")
+    valid = {"all_tests"}
+    assert checker.is_consolidation_drift_target("ashrae_140_validation", valid)
+    assert not checker.is_consolidation_drift_target("all_tests", valid)
+    assert not checker.is_consolidation_drift_target("physics_validation", valid)

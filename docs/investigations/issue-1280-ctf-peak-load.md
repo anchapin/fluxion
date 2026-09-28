@@ -195,7 +195,7 @@ which **reduces cooling load**. Confirms the directional analysis in §3.
 
 ```bash
 # Full Case 900 multi-node summary (requires release build):
-cargo test --release -p fluxion --test case_900_multinode_validation \
+cargo test --release -p fluxion --test all_tests case_900_multinode_validation:: \
     test_case_900_multinode_validation_summary -- --nocapture
 
 # Single-case diagnostic with current peak cooling printout:

@@ -186,13 +186,13 @@ cargo fmt -- --check
 cargo clippy --lib -- -D warnings
 
 # 4. Instantiation test (fast; runs the new case's CaseBuilder factory).
-cargo test -p fluxion --test ashrae_140_validation test_all_cases_instantiation -- --nocapture
+cargo test -p fluxion --test all_tests ashrae_140_validation:: test_all_cases_instantiation -- --nocapture
 
 # 5. Full validation suite (slow; runs the analytical engine + benchmarks).
-cargo test --test ashrae_140_validation -- --nocapture
+cargo test --test all_tests ashrae_140_validation:: -- --nocapture
 
 # 6. Energy-conservation gate (must never print "violated energy conservation").
-cargo test --test zone_balance_eplus_isolation -- --nocapture
+cargo test --test all_tests zone_balance_eplus_isolation:: -- --nocapture
 ```
 
 A "round-trip" means: the new `CaseBuilder` factory produces a `CaseSpec` that

@@ -25,7 +25,7 @@ Session 5 found that CTF infrastructure exists and automatic selection is in pla
 
 1. **Run a 900-series test case** with verbose output:
 ```bash
-cargo test --test ashrae_140_validation case_900 -- --nocapture 2>&1 | head -50
+cargo test --test all_tests ashrae_140_validation:: case_900 -- --nocapture 2>&1 | head -50
 ```
 
 2. **Check for CTF solver messages** in the output - should see:
@@ -40,7 +40,7 @@ cargo test --test ashrae_140_validation case_900 -- --nocapture 2>&1 | head -50
 
 1. **Run the full test suite**:
 ```bash
-cargo test --test ashrae_140_validation 2>&1 | tail -100
+cargo test --test all_tests ashrae_140_validation:: 2>&1 | tail -100
 ```
 
 2. **Analyze results by case type**:

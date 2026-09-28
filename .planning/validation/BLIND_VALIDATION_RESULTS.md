@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-19
 **Branch:** `fix/issue-1148-blind-validation` (based on `main` @ `8f90bdc`)
-**Suite:** `tests/ashrae_140_blind_validation.rs` (`cargo test --test ashrae_140_blind_validation -- --nocapture`)
+**Suite:** `tests/ashrae_140_blind_validation.rs` (`cargo test --test all_tests ashrae_140_blind_validation:: -- --nocapture`)
 **Methodology:** Blind execution — `ThermalModel::<VectorField>::from_spec(&spec)` with no case-id hint, no correction factors, no empirical multipliers. Case definitions and benchmark ranges from `validation::benchmark::get_all_benchmark_data()`.
 
 ---
@@ -33,7 +33,7 @@ This is an improvement over the previously-documented baseline of 13.79% (8/58),
 ## 2. Run Command and Reproducibility
 
 ```bash
-cargo test --test ashrae_140_blind_validation -- --nocapture 2>&1 | tee /tmp/blind_validation_run1.txt
+cargo test --test all_tests ashrae_140_blind_validation:: -- --nocapture 2>&1 | tee /tmp/blind_validation_run1.txt
 ```
 
 **Run 1:** Pass rate 17.24%, MAE 50.39%, 10/58 pass, finished in 22.48s.
@@ -268,7 +268,7 @@ Phase D acceptance is not met on any measured criterion. Issue #668 cannot be cl
 - **Worktree:** `/home/alex/Projects/worktrees/issue-1148-blind-validation`
 - **Branch HEAD:** `8f90bdc test(weather): complete Weather module isolation with psychrometrics fix (#1145)`
 - **Test file:** `tests/ashrae_140_blind_validation.rs`
-- **Run command:** `cargo test --test ashrae_140_blind_validation -- --nocapture`
+- **Run command:** `cargo test --test all_tests ashrae_140_blind_validation:: -- --nocapture`
 - **Raw output saved to:** `/tmp/blind_validation_run1.txt` (run 1) and a grep over run 2 (determinism check).
 - **Parsed machine-readable results:** `/tmp/blind_validation_results.json` (58 rows, columns: `case_id, metric, sim, ref_min, ref_max, ref_mid, pct_err, pass`).
 

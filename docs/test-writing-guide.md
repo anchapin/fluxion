@@ -415,7 +415,7 @@ tests/
 cargo test --all
 
 # One test file
-cargo test --test solar_isolation
+cargo test --test all_tests solar_isolation::
 
 # One test
 cargo test solar_altitude_40N_summer_solstice

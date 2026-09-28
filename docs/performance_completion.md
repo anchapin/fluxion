@@ -41,7 +41,7 @@ All 14 performance requirements have been verified:
 
 ```bash
 # Run completion validation
-cargo test --test performance_completion_test
+cargo test --test all_tests performance_completion_test::
 
 # Expected output: 100% completion
 ```

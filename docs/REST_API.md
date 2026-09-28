@@ -478,7 +478,7 @@ npx @apidevtools/swagger-cli validate src/api/openapi.yaml
 Or run the in-process integration tests:
 
 ```bash
-cargo test --test api_integration_tests
+cargo test --test all_tests api_integration_tests::
 ```
 
 ## Files

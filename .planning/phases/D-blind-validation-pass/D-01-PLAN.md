@@ -39,7 +39,7 @@ The target is 80%+ pass rate — meaning at least 46 of 58 cases must pass all m
 Run the complete blind validation suite:
 
 ```bash
-cargo test --test ashrae_140_blind_validation -- --nocapture 2>&1 | tee /tmp/blind_validation_results.log
+cargo test --test all_tests ashrae_140_blind_validation:: -- --nocapture 2>&1 | tee /tmp/blind_validation_results.log
 ```
 
 Capture:
@@ -92,7 +92,7 @@ Summary:
 </tasks>
 
 <verification>
-Run: cargo test --test ashrae_140_blind_validation
+Run: cargo test --test all_tests ashrae_140_blind_validation::
 
 Verify:
 - All cases executed (no crashes)

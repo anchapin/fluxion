@@ -11,6 +11,11 @@ A checked reference is one of:
 
 1. Markdown link text inside `[..](PATH)` — `PATH` is the reference.
 2. Path inside angle brackets `<PATH>` — `PATH` is the reference.
+3. `cargo test --test <target>` commands inside code fences — `<target>` is
+   checked against the `[[test]]` targets declared in `Cargo.toml`
+   (Issue #4199: issue #3764 consolidated the standalone test binaries into
+   the single `all_tests` runner, so doc commands naming the old binaries
+   abort with `error: no test target named 'X'`).
 
 Bare path-shaped tokens are NOT heuristically matched (this avoids false
 positives on code-block-like text such as `dyn Trait` or `release_gates.yaml`
@@ -45,6 +50,16 @@ MD_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 # 2. Angle-bracket path: <PATH>
 ANGLE_RE = re.compile(r"<([^>]+)>")
 
+# 3. `cargo test --test <target>` command in a code fence (Issue #4199).
+# `--test` may be preceded by other flags (e.g. `--features x -p fluxion`),
+# so match it anywhere on the line. Target names are alphanumeric +
+# underscore + hyphen; placeholders like `<name>` are never matched.
+CARGO_TEST_TARGET_RE = re.compile(r"--test\s+([a-zA-Z0-9_\-]+)")
+
+# Directory holding the per-module sources consolidated into the
+# single `all_tests` runner by issue #3764.
+ALL_TESTS_DIR = REPO_ROOT / "tests" / "all_tests"
+
 # Files in scope: AGENTS.md allow-listed root docs + docs/**/*.md
 ROOT_ALLOW = (
     "README.md", "ARCHITECTURE.md", "CODEBASE_MAP.md", "CONTRIBUTING.md",
@@ -68,6 +83,57 @@ def is_skipped_worktree(path: Path) -> bool:
         rel = path.relative_to(REPO_ROOT)
     except ValueError:
         return False
+    parts = rel.parts
+    return any(
+        REPO_ROOT.joinpath(*parts[: i + 1]) in WORKTREE_SKIP_PARTS
+        for i in range(len(parts))
+    )
+
+
+def load_cargo_test_targets() -> set[str]:
+    """Return every `[[test]]` target name declared in the root Cargo.toml."""
+    targets: set[str] = set()
+    cargo_toml = REPO_ROOT / "Cargo.toml"
+    if not cargo_toml.is_file():
+        return targets
+    in_test_section = False
+    for line in cargo_toml.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped == "[[test]]":
+            in_test_section = True
+        elif stripped.startswith("[["):
+            in_test_section = False
+        elif in_test_section:
+            match = re.match(r'name\s*=\s*"([^"]+)"', stripped)
+            if match:
+                targets.add(match.group(1))
+                in_test_section = False
+    return targets
+
+
+def extract_cargo_test_targets(text: str) -> list[tuple[str, int]]:
+    """Return `(target, line_no)` for every `--test <target>` found inside
+    fenced code blocks in `text` (Issue #4199)."""
+    found: list[tuple[str, int]] = []
+    in_fence = False
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            for match in CARGO_TEST_TARGET_RE.finditer(line):
+                found.append((match.group(1), line_no))
+    return found
+
+
+def is_consolidation_drift_target(target: str, valid_targets: set[str]) -> bool:
+    """Return True when `target` is the issue #3764 consolidation-drift
+    class: not a declared `[[test]]` target, but a module of that name
+    exists under `tests/all_tests/` — i.e. a doc command naming a
+    standalone binary that was merged into the `all_tests` runner.
+    Names that are neither declared targets nor consolidated modules
+    (placeholders, filters, other-crate targets) are NOT this class."""
+    return target not in valid_targets and (ALL_TESTS_DIR / f"{target}.rs").is_file()
     parts = rel.parts
     return any(
         REPO_ROOT.joinpath(*parts[: i + 1]) in WORKTREE_SKIP_PARTS
@@ -187,12 +253,25 @@ def main() -> int:
 
     total_refs = 0
     failures: list[tuple[Path, int, str]] = []
+    # Issue #4199: (target, file, line) for cargo test targets in doc code
+    # fences that name a consolidated-away standalone binary.
+    drift_failures: list[tuple[str, Path, int]] = []
+    drift_warnings: list[tuple[str, Path, int]] = []
+    valid_test_targets = load_cargo_test_targets()
     for file_path in files:
         try:
             text = file_path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
             sys.stderr.write(f"::warning::could not read {file_path}: {exc}\n")
             continue
+        for target, line_no in extract_cargo_test_targets(text):
+            if target in valid_test_targets:
+                continue
+            if is_consolidation_drift_target(target, valid_test_targets):
+                drift_failures.append((target, file_path, line_no))
+            else:
+                # Placeholder, filter, or other-crate target: warn, don't fail.
+                drift_warnings.append((target, file_path, line_no))
         for ref, line_no in extract_references(text, file_path):
             if is_external_ref(ref):
                 continue
@@ -215,6 +294,28 @@ def main() -> int:
             print(f"  {rel}:{line_no}: {ref}")
         print()
         print(f"FAIL: {len(failures)} broken doc reference(s) detected.")
+
+    if drift_warnings:
+        print()
+        print("Warnings: --test targets that are neither declared [[test]] "
+              "targets nor consolidated all_tests modules (not failures):")
+        for target, file_path, line_no in drift_warnings:
+            rel = file_path.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_no}: --test {target}")
+
+    if drift_failures:
+        print()
+        for target, file_path, line_no in drift_failures:
+            rel = file_path.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_no}: --test {target} "
+                  f"(consolidated into all_tests; use "
+                  f"--test all_tests {target}::)")
+        print()
+        print(f"FAIL: {len(drift_failures)} stale cargo test target(s) "
+              f"detected (issue #4199).")
+        return 1
+
+    if failures:
         return 1
 
     print()

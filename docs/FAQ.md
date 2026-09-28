@@ -73,7 +73,7 @@ The canonical REST request body — and the only JSON document the
 `POST /v1/simulate` endpoint validates against — is
 [`tests/fixtures/single_zone.json`](../tests/fixtures/single_zone.json),
 which matches `fluxion::api::schema::SimulationSchemaV1` byte-for-byte
-and is round-tripped by `tests/examples_smoke.rs` on every CI run.
+and is round-tripped by `tests/all_tests/examples_smoke.rs` on every CI run.
 
 **Source:** [`docs/QUICKSTART.md` §6](QUICKSTART.md),
 [`docs/EXAMPLES.md` §2.3](EXAMPLES.md),
@@ -169,7 +169,7 @@ Two scenarios where reproducibility **can** break:
    if it diverges. Run locally with:
    ```bash
    RUSTFLAGS="-C opt-level=3 -C debug-assertions=no" \
-     cargo test --test case_900_determinism --release -- --nocapture
+     cargo test --test all_tests case_900_determinism:: --release -- --nocapture
    ```
 2. **RNG-seeded inputs** — if you generate stochastic candidate
    populations in Python (NumPy RNG) you must re-seed the RNG to
@@ -182,7 +182,7 @@ Two scenarios where reproducibility **can** break:
 ## Q8. Why did my PR fail the "Fluxion Determinism Gate (Issue #1351)"?
 
 The cross-platform determinism gate is a **required** branch-protection
-check. It runs `tests/case_900_determinism.rs` on ubuntu/windows/macos
+check. It runs `tests/all_tests/case_900_determinism.rs` on ubuntu/windows/macos
 and compares SHA-256 hashes of extracted values — byte-identical output
 is required across all three. Common causes of failure (issue #1297
 fix list):

@@ -46,7 +46,7 @@ Session 6 revealed:
 
 1. **Run diagnostic on Case 960**:
 ```bash
-cargo test --test ashrae_140_validation test_ashrae_140_comprehensive_validation -- --nocapture 2>&1 | grep -A5 "Case 960"
+cargo test --test all_tests ashrae_140_validation:: test_ashrae_140_comprehensive_validation -- --nocapture 2>&1 | grep -A5 "Case 960"
 ```
 
 2. **Check multi-zone model code paths**:
@@ -67,7 +67,7 @@ cargo test --test ashrae_140_validation test_ashrae_140_comprehensive_validation
 
 1. **Run individual 600-series case diagnostics**:
 ```bash
-cargo test --test ashrae_140_case_600_series 2>&1 | tail -30
+cargo test --test all_tests ashrae_140_case_600_series:: 2>&1 | tail -30
 ```
 
 2. **Analyze thermal mass behavior**:

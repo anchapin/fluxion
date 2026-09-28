@@ -77,8 +77,8 @@ The audit-first wholesale switch (not shadow mode) is justified by three facts:
    - On a single PR runner, run `cargo nextest run --lib --test-threads=2` **5 consecutive times** with `actions/cache` disabled for `target/` (force cold compile so each run is independent).
    - Record results in a scratch file. Any deadlock, panic, or non-deterministic ordering failure → audit item.
 2. **Manual (6 integration binaries, each <70 tests total):**
-   - `cargo test --test surface_flux_provider_isolation`
-   - `cargo test --test regression_exterior_film_unification`
+   - `cargo test --test all_tests surface_flux_provider_isolation::`
+   - `cargo test --test all_tests regression_exterior_film_unification::`
    - `cargo test --test validation_empirical_harness`
    - `cargo test --test hvac_bestest`
    - `cargo test -p fluxion-behavior --test lighting_occupancy_integration`

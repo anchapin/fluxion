@@ -351,7 +351,7 @@ cargo test ashrae_140
 cargo test -- --nocapture
 
 # Run specific integration test
-cargo test --test api_integration_tests
+cargo test --test all_tests api_integration_tests::
 ```
 
 > **WARNING**: The commands in the "Test Execution" block above are the

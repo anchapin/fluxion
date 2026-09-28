@@ -63,7 +63,7 @@ below 16 GB (#2130).
 
 Greps test output for the literal string `"violated energy conservation"`.
 If you see it, the bug is real physics — not a CI hiccup. Reproduce
-with `cargo test --test zone_balance_eplus_isolation` and follow
+with `cargo test --test all_tests zone_balance_eplus_isolation::` and follow
 `RULES.md` (energy balance must close; no parameter tuning).
 
 ### `Known Issues Stale Check` (#1723) fails
@@ -186,7 +186,7 @@ Build with `--features dhat` (#2384) to enable the `dhat` profiler.
 
 ```bash
 RUSTFLAGS="-C opt-level=3 -C debug-assertions=no" \
-  cargo test --test case_900_determinism --release -- --nocapture
+  cargo test --test all_tests case_900_determinism:: --release -- --nocapture
 ```
 
 The expected canonical hash for the three-OS matrix is published in

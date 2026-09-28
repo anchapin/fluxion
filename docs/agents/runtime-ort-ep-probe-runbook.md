@@ -28,12 +28,12 @@ Absence is a report, not a failure.
 
 ```bash
 # Baseline (CPU-only, works anywhere)
-cargo test -p fluxion --features ort --test ai_ort_ep_probe -- --nocapture
+cargo test -p fluxion --features ort --test all_tests ai_ort_ep_probe:: -- --nocapture
 
 # With a GPU/NPU EP compiled in
-cargo test -p fluxion --features ort,cuda     --test ai_ort_ep_probe -- --nocapture  # Linux/Windows + NVIDIA
-cargo test -p fluxion --features ort,coreml   --test ai_ort_ep_probe -- --nocapture  # macOS
-cargo test -p fluxion --features ort,directml --test ai_ort_ep_probe -- --nocapture  # Windows
+cargo test -p fluxion --features ort,cuda     --test all_tests ai_ort_ep_probe:: -- --nocapture  # Linux/Windows + NVIDIA
+cargo test -p fluxion --features ort,coreml   --test all_tests ai_ort_ep_probe:: -- --nocapture  # macOS
+cargo test -p fluxion --features ort,directml --test all_tests ai_ort_ep_probe:: -- --nocapture  # Windows
 ```
 
 `--nocapture` is required to see the lines on a passing run; without it libtest only prints

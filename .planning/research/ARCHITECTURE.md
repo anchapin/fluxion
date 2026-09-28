@@ -190,7 +190,7 @@ jobs:
         override: true
 
     - name: Run ASHRAE 140 validation
-      run: cargo test --test ashrae_140_validation -- --nocapture
+      run: cargo test --test all_tests ashrae_140_validation:: -- --nocapture
 
     - name: Run cross-validation (EnergyPlus)
       run: cargo test --test cross_validation -- --nocapture

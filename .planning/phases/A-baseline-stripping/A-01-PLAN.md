@@ -206,7 +206,7 @@ This method takes only the case specification — no case ID string.
 </tasks>
 
 <verification>
-Run: cargo test --test ashrae_140_validation 2>&1 | tail -20
+Run: cargo test --test all_tests ashrae_140_validation:: 2>&1 | tail -20
 
 Verify:
 - All existing tests still pass

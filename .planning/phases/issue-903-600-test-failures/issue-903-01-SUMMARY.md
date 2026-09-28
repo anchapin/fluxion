@@ -98,7 +98,7 @@ for i in 0..self.0.num_zones {
 
 ### Overall test counts (unchanged but values shifted)
 - `cargo test --lib`: 2464 passed, 2 ignored
-- `cargo test --test ashrae_140_case_600_series`: 7 passed, 19 failed (was 7/19)
+- `cargo test --test all_tests ashrae_140_case_600_series::`: 7 passed, 19 failed (was 7/19)
 - `cargo test --test ashrae_140_case_900`: 8 passed, 9 failed (unchanged)
 
 ### No regressions in lib tests

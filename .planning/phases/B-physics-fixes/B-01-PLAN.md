@@ -155,14 +155,14 @@ Review Perez diffuse tilt factor calculation
 After implementing fix:
 1. Re-run solar_distribution_validation.rs
 2. Confirm improvement: 900 series cooling should be closer to reference
-3. Run blind validation: cargo test --test ashrae_140_blind_validation
+3. Run blind validation: cargo test --test all_tests ashrae_140_blind_validation::
 4. Document before/after comparison
 
 DO NOT add any correction factors — fix must be physics-based.
   </action>
   <verify>
     cargo test --test solar_distribution_validation 2>&1 | grep -E "(PASS|FAIL|error)"
-    cargo test --test ashrae_140_blind_validation 2>&1 | grep -E "(900.*cooling|Case 900)" | head -10
+    cargo test --test all_tests ashrae_140_blind_validation:: 2>&1 | grep -E "(900.*cooling|Case 900)" | head -10
   </verify>
   <done>Solar distribution fix implemented, 900 series cooling improved without corrections</done>
 </task>

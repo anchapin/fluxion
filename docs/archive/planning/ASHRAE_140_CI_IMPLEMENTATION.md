@@ -108,12 +108,12 @@ To update phase, modify `MIN_PASS_RATE` in the "Check Validation Results" step.
 
 ### Run validation tests locally:
 ```bash
-cargo test --test ashrae_140_validation --release -- --nocapture
+cargo test --test all_tests ashrae_140_validation:: --release -- --nocapture
 ```
 
 ### Simulate CI extraction:
 ```bash
-cargo test --test ashrae_140_validation --release -- --nocapture > validation_output.txt
+cargo test --test all_tests ashrae_140_validation:: --release -- --nocapture > validation_output.txt
 python3 << 'EOF'
 import re
 import json
