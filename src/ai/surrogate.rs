@@ -125,6 +125,25 @@ mod tests {
         assert!(res.is_ok(), "valid signature rejected: {res:?}");
     }
 
+    /// Issue #4191 — the Python exporter's `write_sha256_sidecar` output
+    /// (``<hex>  <basename>\\n``, no comment lines) must be accepted by the
+    /// runtime verifier. This pins the cross-language format contract:
+    /// if either side changes its format, this test fails.
+    #[test]
+    fn verify_onnx_signature_accepts_python_exporter_sidecar() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("surrogate_zone_thermal.onnx");
+        let contents = b"python-exporter sidecar format fixture";
+        std::fs::write(&model, contents).unwrap();
+        let sha = compute_bytes_sha256(contents);
+        // Byte-exact replica of scripts/export_onnx.py::write_sha256_sidecar.
+        let manifest = dir.path().join("surrogate_zone_thermal.onnx.sha256");
+        std::fs::write(&manifest, format!("{sha}  surrogate_zone_thermal.onnx\n")).unwrap();
+        let res = verify_onnx_signature(&model);
+        assert!(res.is_ok(), "python-exporter sidecar rejected: {res:?}");
+    }
+
     /// Tamper the model bytes after writing the manifest — verification
     /// must FAIL with a fail-closed error message that names the issue.
     #[test]

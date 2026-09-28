@@ -97,6 +97,24 @@ def compute_model_hash(model_path: Path) -> str:
     return sha256.hexdigest()
 
 
+def write_sha256_sidecar(model_path: Path) -> Path:
+    """Write the ``<model>.sha256`` digest sidecar (Issue #4191).
+
+    The runtime verifier (``verify_onnx_signature``) fails closed when the
+    sidecar is absent, so every export must produce it. The file uses the
+    standard ``sha256sum`` text format (``<hex>  <basename>``) and is
+    written atomically via a temporary file + rename.
+    """
+    digest = compute_model_hash(model_path)
+    sidecar_path = model_path.with_suffix(model_path.suffix + ".sha256")
+    # sha256sum format: "<hex digest><two spaces><filename>"
+    content = f"{digest}  {model_path.name}\n"
+    tmp_path = sidecar_path.with_suffix(sidecar_path.suffix + ".tmp")
+    tmp_path.write_text(content, encoding="utf-8")
+    tmp_path.replace(sidecar_path)
+    return sidecar_path
+
+
 def analyze_onnx_model(model_path: Path) -> ValidationReport:
     """Analyze ONNX model structure and metadata."""
     import onnx
@@ -381,6 +399,9 @@ def export_model(
 
     onnx.save(model_def, str(output_path))
     logger.info(f"Exported ONNX model: {output_path}")
+    # Issue #4191: the runtime verifier fails closed without the sidecar.
+    sidecar = write_sha256_sidecar(output_path)
+    logger.info(f"Wrote SHA256 sidecar: {sidecar}")
     return True
 
 
