@@ -36,7 +36,9 @@ STEP_NAME_PREFIX = "Verify base image digest pins"
 RUST_IMAGE = "rust:1.87-bookworm"
 RUST_DIGEST = "sha256:251cec8da4689d180f124ef00024c2f83f79d9bf984e43c180a598119e326b84"
 DEBIAN_IMAGE = "debian:bookworm-slim"
-DEBIAN_DIGEST = "sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171"
+DEBIAN_DIGEST = (
+    "sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171"
+)
 
 # What the daemon actually reports in `.RepoDigests[0]` after a
 # pull-by-digest: the tag is stripped from the repository.
@@ -100,7 +102,9 @@ def _gate_steps(repo_root: Path) -> dict[str, str]:
 
 def _executable_body(script: str) -> str:
     """The script with comment lines removed, for cross-job comparison."""
-    return "\n".join(l for l in script.splitlines() if not l.strip().startswith("#"))
+    return "\n".join(
+        line for line in script.splitlines() if not line.strip().startswith("#")
+    )
 
 
 def _write_stub(bin_dir: Path) -> Path:
@@ -111,14 +115,14 @@ def _write_stub(bin_dir: Path) -> Path:
     return stub
 
 
-def _run_gate(script: str, bin_dir: Path, tmp_path: Path, **stub_env: str) -> int:
+def _run_gate(script: str, bin_dir: Path, **stub_env: str) -> int:
     """Execute the real gate script with the stubbed `docker` on PATH."""
     for key, value in ENV_SUBS.items():
-        script = script.replace("${{ env.%s }}" % key, value)
+        script = script.replace("${{ env." + key + " }}", value)
     assert "${{" not in script, "unsubstituted ${{ ... }} expression remains"
     env = {"PATH": f"{bin_dir}:/usr/bin:/bin", **stub_env}
     return subprocess.run(
-        ["bash", "-c", script], capture_output=True, text=True, env=env
+        ["bash", "-c", script], capture_output=True, text=True, env=env, check=False
     ).returncode
 
 
@@ -169,17 +173,15 @@ def test_gate_bodies_identical_across_jobs(repo_root_module: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_accepts_real_tag_stripped_repodigest(
-    gate_script: str, stub_bin: Path, tmp_path: Path
-) -> None:
+def test_accepts_real_tag_stripped_repodigest(gate_script: str, stub_bin: Path) -> None:
     """The exact output that false-failed every push must now pass."""
-    assert _run_gate(gate_script, stub_bin, tmp_path) == 0
+    assert _run_gate(gate_script, stub_bin) == 0
 
 
 def test_accepts_debian_tag_stripped_repodigest(
-    gate_script: str, stub_bin: Path, tmp_path: Path
+    gate_script: str, stub_bin: Path
 ) -> None:
-    assert _run_gate(gate_script, stub_bin, tmp_path, FLUXION_STUB_DEBIAN=DEBIAN_REPO_DIGEST) == 0
+    assert _run_gate(gate_script, stub_bin, FLUXION_STUB_DEBIAN=DEBIAN_REPO_DIGEST) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -187,23 +189,20 @@ def test_accepts_debian_tag_stripped_repodigest(
 # ---------------------------------------------------------------------------
 
 
-def test_rejects_genuine_digest_rotation(
-    gate_script: str, stub_bin: Path, tmp_path: Path
-) -> None:
+def test_rejects_genuine_digest_rotation(gate_script: str, stub_bin: Path) -> None:
     """Upstream tag rebase -> manifest digest changes -> must fail."""
-    assert _run_gate(gate_script, stub_bin, tmp_path, FLUXION_STUB_RUST=f"rust@sha256:{'0' * 64}") == 1
+    assert (
+        _run_gate(gate_script, stub_bin, FLUXION_STUB_RUST=f"rust@sha256:{'0' * 64}")
+        == 1
+    )
 
 
-def test_rejects_substituted_repository(
-    gate_script: str, stub_bin: Path, tmp_path: Path
-) -> None:
+def test_rejects_substituted_repository(gate_script: str, stub_bin: Path) -> None:
     """Mirror/attacker serves a different repository at the same digest."""
     evil = f"evilmirror.example.com/rust@{RUST_DIGEST}"
-    assert _run_gate(gate_script, stub_bin, tmp_path, FLUXION_STUB_RUST=evil) == 1
+    assert _run_gate(gate_script, stub_bin, FLUXION_STUB_RUST=evil) == 1
 
 
-def test_rejects_unpopulated_repodigest(
-    gate_script: str, stub_bin: Path, tmp_path: Path
-) -> None:
+def test_rejects_unpopulated_repodigest(gate_script: str, stub_bin: Path) -> None:
     """The original #3815 symptom: inspect yields nothing."""
-    assert _run_gate(gate_script, stub_bin, tmp_path, FLUXION_STUB_RUST="") == 1
+    assert _run_gate(gate_script, stub_bin, FLUXION_STUB_RUST="") == 1
