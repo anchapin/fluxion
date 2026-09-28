@@ -7,13 +7,33 @@
 # and `docs/REST_API.md`.
 #
 # Build:  docker build -t fluxion-rest .
-# Run:    docker run --rm -p 8080:8080 fluxion-rest
+# Run:    docker run --rm -p 8080:8080 \
+#            -e FLUXION_REST_AUTH=token \
+#            -e FLUXION_REST_AUTH_TOKEN=change-me \
+#            fluxion-rest
 # Smoke:  curl -s http://localhost:8080/v1/healthz
 #
 # Notes:
+#   * `FLUXION_REST_AUTH` is REQUIRED. The image defaults to
+#     `FLUXION_REST_BIND=0.0.0.0` (below) with auth off, and a release
+#     build REFUSES to boot that combination — it exits non-zero with
+#     "refusing to boot" rather than serving an unauthenticated endpoint
+#     on every interface (Issue #2526 / #4139 follow-up). The run
+#     command above is therefore not optional boilerplate: without an
+#     auth flag the container exits immediately.
+#   * `FLUXION_REST_AUTH=token` is the cheapest option that satisfies
+#     the guard. `/v1/healthz` and `/v1/readyz` are `RouteTier::Public`
+#     (src/api/server/router.rs), so the smoke check above needs no token.
+#     `FLUXION_REST_AUTH=tls` is the production choice;
+#     `FLUXION_REST_ALLOW_INSECURE=1` is an explicit escape hatch for
+#     throwaway local containers and should not be used in CI.
 #   * Bind address / port are overridable at runtime:
-#       docker run -e FLUXION_REST_BIND=0.0.0.0 -e FLUXION_REST_PORT=8080 \
-#              -p 8080:8080 fluxion-rest
+#       docker run -e FLUXION_REST_BIND=127.0.0.1 -e FLUXION_REST_PORT=8080 \
+#              -p 8080:8080 -e FLUXION_REST_AUTH=token \
+#              -e FLUXION_REST_AUTH_TOKEN=change-me fluxion-rest
+#     Note that binding 127.0.0.1 *inside* the container is incompatible
+#     with `-p` port publishing, which forwards to the container's
+#     external interface.
 #   * The old `fluxion-api` image (port 8000, `python -m api.main`,
 #     healthcheck on `/health`) no longer exists. Any reference to it
 #     in the wild is a stale doc that should be redirected to the
