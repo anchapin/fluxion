@@ -163,11 +163,28 @@ jobs:
           docker stop fluxion-test
           docker rm fluxion-test
 
+      # Issue #4141: the image defaults to `FLUXION_REST_BIND=0.0.0.0`
+      # with auth off, and a release build REFUSES to boot that
+      # combination -- it exits non-zero ("refusing to boot") instead of
+      # serving an unauthenticated endpoint on every interface. This step
+      # set no auth flag, so the container died instantly and `curl`
+      # failed with exit 7 (couldn't connect). The step had never run
+      # before: every earlier build-and-test failure aborted the job
+      # upstream, so it stayed dormant.
+      #
+      # `FLUXION_REST_AUTH=token` is the cheapest flag that satisfies the
+      # guard. `/v1/healthz` is `RouteTier::Public`
+      # (src/api/server/router.rs), so the health check needs no token.
+      # `FLUXION_REST_ALLOW_INSECURE=1` is deliberately NOT used here --
+      # the whole point of the guard is that CI does not get a bypass.
       - name: Run integration tests
         if: github.event_name != 'pull_request'
         run: |
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}"
-          docker run -d --name fluxion-int --pull=never -p 8080:8080 "$IMAGE"
+          docker run -d --name fluxion-int --pull=never -p 8080:8080 \
+            -e FLUXION_REST_AUTH=token \
+            -e FLUXION_REST_AUTH_TOKEN=ci-integration-token \
+            "$IMAGE"
           sleep 5
           curl -fsS http://localhost:8080/v1/healthz
           docker stop fluxion-int
