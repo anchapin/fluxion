@@ -26,7 +26,7 @@ cargo test --workspace --exclude fluxion-tauri --no-fail-fast
 | `--exclude fluxion-tauri` | skips the Tauri crate locally; CI uses a separate matrix entry. Issue #3126. |
 | `--no-fail-fast` | surfaces every failing crate instead of bailing on the first; matches CI's behaviour. |
 
-This command is the local-debug equivalent of the CI `cargo nextest run --workspace --all-targets --test-threads=2 --no-fail-fast` (Issue #3366 / ADR-0014, PR #3369). Both runners share `.config/nextest.toml::concurrency = 2` defaults; the test inventory reports 7,927 tests / 138 ignored for the workspace run (`tests/test_inventory.json::totals.workspace_tests` / `::totals.workspace_ignored`, mirrored in `tests/reference_data/test_inventory_baseline.json::totals`; regenerate with `python3 scripts/generate_test_inventory.py --verify` when the counts move).
+This command is the local-debug equivalent of the CI `cargo nextest run --workspace --exclude fluxion-tauri --all-targets --test-threads=2 --no-fail-fast` (Issue #3366 / ADR-0014, PR #3369; full-workspace form per Issue #4177, fluxion-tauri exclusion per Issue #3126). Both runners share `.config/nextest.toml::concurrency = 2` defaults; the test inventory reports 7,927 tests / 138 ignored for the workspace run (`tests/test_inventory.json::totals.workspace_tests` / `::totals.workspace_ignored`, mirrored in `tests/reference_data/test_inventory_baseline.json::totals`; regenerate with `python3 scripts/generate_test_inventory.py --verify` when the counts move).
 
 ## Opt-in pre-push gate
 
@@ -52,7 +52,7 @@ The hook is **opt-in by design** — it is not installed automatically so that a
 - `cargo test` (bare, root-only) still works as a fast iteration loop for engineers who know they only changed the root crate. It is now annotated `⚠ ROOT CRATE ONLY (NOT the full suite)` in `AGENTS.md` so a casual reader sees the warning.
 - `cargo test -p fluxion <test_name>` is unchanged — single-crate scope is an intentional, narrow request.
 - `cargo check --workspace` is unchanged — build-only, no test execution; useful when you only need a compile signal.
-- The CI command (`cargo nextest run --workspace --all-targets --test-threads=2 --no-fail-fast`) is unchanged. The Issue #3366 nextest rollout is the authoritative runner for CI; this rule is purely about the local-developer surface.
+- The CI command (`cargo nextest run --workspace --exclude fluxion-tauri --all-targets --test-threads=2 --no-fail-fast`, Issue #4177) is unchanged. The Issue #3366 nextest rollout is the authoritative runner for CI; this rule is purely about the local-developer surface.
 
 ## References
 

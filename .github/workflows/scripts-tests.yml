@@ -275,6 +275,24 @@ jobs:
       - name: Enforce no masked-step `.outcome` re-raise (Issue #4159)
         run: python3 scripts/check_continue_on_error_outcome.py
 
+      # Issue #4177: the per-PR "Nextest Subset (GH)" gate runs a curated
+      # package/test list, so documentation that presents a `cargo
+      # nextest run` command as what CI runs must name a command some
+      # workflow actually runs — otherwise the doc is fiction (AGENTS.md
+      # claimed the full-workspace command ran in `rust-tests.yml::test`
+      # long after phase-gating replaced it with the curated subset).
+      # The matcher in ``scripts/check_nextest_doc_drift.py`` extracts
+      # documented nextest commands from AGENTS.md and `docs/**/*.md`
+      # and fails any that appear in no workflow (template placeholders
+      # and the justified HISTORICAL_ALLOWLIST are skipped). The pytest
+      # companion ``scripts/ci/test_check_nextest_doc_drift.py`` covers
+      # extraction / matching / ``main()`` exit codes against hermetic
+      # ``tmp_path`` fixtures; this direct invocation covers the
+      # end-to-end against the real tree (same direct-invocation split
+      # as the gates above).
+      - name: Enforce documented nextest commands run in CI (Issue #4177)
+        run: python3 scripts/check_nextest_doc_drift.py
+
       # Issue #3453: ENV_LOCK serialisation guard for env-mutating
       # integration tests. ``tests/ashrae_140_diagnostic_integration_test``
       # shipped with bare ``env::set_var`` / ``env::remove_var`` calls and

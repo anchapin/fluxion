@@ -868,6 +868,17 @@ ci:
     # collects signal but does not block PRs. Mirrors
     # `scripts/check_strict_energy_gate_regression.py` posture.
     - "Teacher Validation Suite (Issue #3986)"
+    # Full-workspace nextest suite (Issue #4177) — the per-PR
+    # "Nextest Subset (GH)" gate in ci-gates.yml runs a CURATED
+    # package/test list; this job runs the documented full-workspace
+    # command (`cargo nextest run --workspace --exclude
+    # fluxion-tauri --all-targets --test-threads=2 --no-fail-fast`)
+    # on a nightly schedule in
+    # `.github/workflows/nightly-full-workspace-tests.yml` so every
+    # workspace test executes at least once per day. Lane 3 per
+    # ADR-0016: wave-orchestrator merge freeze, not branch protection.
+    # No tests skipped or quarantined.
+    - "Full Workspace Tests (Issue #4177)"
 
   # Job-to-workflow map (informational; branch-protection reads job
   # names directly). Used by `scripts/release_gate_checker.py` to verify
