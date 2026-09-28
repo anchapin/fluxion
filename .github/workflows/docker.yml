@@ -173,6 +173,24 @@ jobs:
       # Issue #4152: runs on PRs too. The smoke test is the cheapest
       # executable signal — it is what would have caught the
       # instantly-dying container of Issue #4151 before merge.
+      # Issue #4186: save the image `build-and-test` already built so the
+      # `security` job can Trivy-scan the real container image (tarball
+      # input) instead of the repo filesystem. `docker save` on the first
+      # metadata tag — the same ref the smoke/integration steps run.
+      - name: Save built image for Trivy scan (Issue #4186)
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}"
+          echo "Saving $IMAGE for Trivy image scan"
+          docker save -o /tmp/fluxion-image.tar "$IMAGE"
+
+      - name: Upload image tarball for Trivy scan (Issue #4186)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: fluxion-image-tar
+          path: /tmp/fluxion-image.tar
+          retention-days: 1
+
       - name: Run container smoke test
         run: |
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}"
@@ -405,17 +423,35 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
+      - name: Download image tarball (Issue #4186)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: fluxion-image-tar
+          path: /tmp/trivy-scan
+
       - name: Run Trivy vulnerability scanner
         # Pinned to commit SHA for supply-chain security (master as of 2026-05-12)
         # To update: get latest SHA from https://github.com/aquasecurity/trivy-action/commits/master
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
-          scan-type: 'fs'
-          scan-ref: '.'
+          # Issue #4186: scan the IMAGE `build-and-test` built (tarball
+          # `input:`), not the repo filesystem. The old `scan-type: 'fs'`
+          # + `scan-ref: '.'` audited only the checkout's Python/JS
+          # dependencies and never saw the Debian runtime layer — the
+          # layer that actually ships. Fail-closed: `exit-code: '1'` plus
+          # `ignore-unfixed: true` so only fixable CRITICAL/HIGH findings
+          # break the build; accepted findings go in `.trivyignore` with
+          # a dated justification, never by widening this gate.
+          input: /tmp/trivy-scan/fluxion-image.tar
+          scan-type: 'image'
           format: 'sarif'
           output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: '1'
 
       - name: Upload Trivy results to GitHub Security tab
+        if: always()
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v3
         with:
           sarif_file: 'trivy-results.sarif'

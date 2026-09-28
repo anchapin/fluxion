@@ -160,6 +160,7 @@ Every active gate under `scripts/check_*.py` (40 scripts at head) is wired into 
 | `scripts/check_strict_energy_gate_regression.py` | Strict ±15% ASHRAE 140 annual-energy tolerance regression (Issues #2506 / #3572) | `ashrae_140_strict_energy_gate.yml` | #1, #5 |
 | `scripts/check_stub_modules.py` | Stub-module detector — future-extraction marker files (#2896) | `architecture_drift.yml` | #5 |
 | `scripts/check_tdqs_regression.py` | Temporal-Decision-Quality-Score criterion-bench regression | `tdqs_regression.yml` | #6 |
+| `scripts/check_trivy_scan_target.py` | Trivy `scan-type: 'fs'` drift guard — every trivy-action step must scan the built image (`input:` tarball) or carry a `trivy-fs-justified:` comment (#4186) | `scripts-tests.yml` | #6 |
 | `scripts/check_test_inventory_drift.py` | Test-count ratchet vs. `test_inventory_baseline.json` (#3442) | `scripts-tests.yml` | #6 |
 | `scripts/check_topology_drift.py` | Topology artifact drift gate — byte-compares regenerated reference topologies + Mermaid/SVG diagrams vs. committed tree, `topology lint --strict` per case (#3966) | `topology_visualizer.yml` | #5 |
 | `scripts/check_workflow_pin.py` | SHA-pinned `uses:` in `.github/workflows/*.yml` (#3475) | `scripts-tests.yml` | #6 |
