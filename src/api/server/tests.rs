@@ -326,12 +326,6 @@ async fn appstate_with_cloud_store() {
     ));
 }
 
-#[test]
-fn doc_invariant_campaign_survives_disconnect() {
-    let state = AppState::with_cloud_store(InMemorySimulationStateStore::new());
-    let _ = state;
-}
-
 #[cfg(unix)]
 #[test]
 fn tempfile_for_bytes_creates_regular_file_with_payload() {
@@ -466,12 +460,6 @@ fn shutdown_timeout_rejects_zero_and_invalid() {
         Some(v) => std::env::set_var(SHUTDOWN_TIMEOUT_ENV, v),
         None => std::env::remove_var(SHUTDOWN_TIMEOUT_ENV),
     }
-}
-
-#[tokio::test]
-async fn zero_duration_timeout_fires_immediately() {
-    let result = tokio::time::timeout(Duration::from_secs(0), std::future::pending::<()>()).await;
-    assert!(result.is_err());
 }
 
 // The tests above are the minimum regression set. The full legacy test

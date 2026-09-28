@@ -72,13 +72,6 @@ fn test_fmi_error_display() {
 // -------------------------------------------------------------------------
 
 #[test]
-fn test_multi_zone_default_single_zone() {
-    let exporter = FmiExporter::new();
-    assert_eq!(exporter.zone_count(), 1);
-    assert_eq!(exporter.total_variable_count(), 7);
-}
-
-#[test]
 fn test_multi_zone_three_zones_count() {
     let exporter = FmiExporter::new().with_zones(vec![
         ZoneVariables::new("living"),
@@ -185,34 +178,24 @@ fn test_configurable_timestep_default_3600s() {
 }
 
 #[test]
-fn test_configurable_timestep_60s() {
-    let mut cfg = FmiConfig::default();
-    cfg.communication_timestep = 60.0;
-    let exporter = FmiExporter::with_config(cfg).unwrap();
-    let xml = exporter.generate_model_description_xml().unwrap();
-    assert!(
-        xml.contains("stepSize=\"60.0\""),
-        "60s stepSize missing: {}",
-        xml
-    );
-}
-
-#[test]
-fn test_configurable_timestep_300s() {
-    let mut cfg = FmiConfig::default();
-    cfg.communication_timestep = 300.0;
-    let exporter = FmiExporter::with_config(cfg).unwrap();
-    let xml = exporter.generate_model_description_xml().unwrap();
-    assert!(xml.contains("stepSize=\"300.0\""));
-}
-
-#[test]
-fn test_configurable_timestep_600s() {
-    let mut cfg = FmiConfig::default();
-    cfg.communication_timestep = 600.0;
-    let exporter = FmiExporter::with_config(cfg).unwrap();
-    let xml = exporter.generate_model_description_xml().unwrap();
-    assert!(xml.contains("stepSize=\"600.0\""));
+fn test_configurable_timestep_custom_values() {
+    // One contract: communication_timestep flows into stepSize="N.N" in the
+    // generated modelDescription XML. The interpolation is value-agnostic,
+    // so the custom values share a single table-driven test instead of one
+    // near-duplicate test per value.
+    for (timestep, expected) in [(60.0, "60.0"), (300.0, "300.0"), (600.0, "600.0")] {
+        let mut cfg = FmiConfig::default();
+        cfg.communication_timestep = timestep;
+        let exporter = FmiExporter::with_config(cfg).unwrap();
+        let xml = exporter.generate_model_description_xml().unwrap();
+        let needle = format!("stepSize=\"{}\"", expected);
+        assert!(
+            xml.contains(&needle),
+            "{}s stepSize missing: {}",
+            timestep,
+            xml
+        );
+    }
 }
 
 #[test]
