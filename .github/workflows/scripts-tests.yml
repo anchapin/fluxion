@@ -162,6 +162,26 @@ jobs:
       - name: Enforce Dockerfile covers every workspace member (Issue #4135)
         run: python3 scripts/check_docker_workspace_members.py
 
+      # Issue #4150: MSRV / digest-pin / docker.yml-parity guard for the
+      # Dockerfile base images. The Dockerfile has cited
+      # ``scripts/check_docker_base_image_msrv.py`` since the #4138 MSRV
+      # bump, but the script did not exist -- the repo asserted a control
+      # it never enforced. The concrete cost was #4149: the pin script
+      # wrote ``FROM rust:1.98.0-bookworm@sha256:sha256:<hex>``, an
+      # unparseable reference that ``docker build`` rejects, while CI
+      # stayed green because the only digest assertion in CI reads the
+      # ``docker.yml`` env pins and never compares them to the Dockerfile
+      # ``FROM`` lines. This gate enforces (1) the builder tag against
+      # ``rust-version``, (2) that every base ``FROM`` is digest-pinned
+      # with a well-formed digest documented by its comment, and (3)
+      # Dockerfile/docker.yml digest parity. Hermetic -- no docker daemon
+      # and no network. The pytest companion
+      # ``scripts/ci/test_check_docker_base_image_msrv.py`` covers each
+      # invariant against hermetic ``tmp_path`` fixtures; this direct
+      # invocation covers the end-to-end against the real tree.
+      - name: Enforce Dockerfile base-image MSRV and digest pins (Issue #4150)
+        run: python3 scripts/check_docker_base_image_msrv.py
+
       # Issue #3475: SHA-pinning hygiene guard for ``.github/workflows/``.
       # PR #3472 repinned the last tag-pinned third-party actions but, by
       # scope, did not add a general enforcement gate. The matcher in
