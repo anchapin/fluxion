@@ -293,6 +293,22 @@ jobs:
       - name: Enforce documented nextest commands run in CI (Issue #4177)
         run: python3 scripts/check_nextest_doc_drift.py
 
+      # Issue #4202: `node-bindings.yml` used bare `npm install`
+      # (re-resolves the tree at run time) and `npm/package.json`
+      # floated `@napi-rs/cli` on `^3.0.0-alpha.0` with no committed
+      # lockfile. The fix exact-pins the CLI (`3.10.5`), commits
+      # `npm/package-lock.json`, and installs with `npm ci`. The gate in
+      # ``scripts/check_npm_pinning.py`` fails non-exact manifest specs,
+      # a missing or manifest-desynced lockfile, and any bare
+      # `npm install` step in `node-bindings.yml`. The pytest companion
+      # ``scripts/ci/test_check_npm_pinning.py`` covers the three
+      # checkers and the ``main()`` exit-code contract against hermetic
+      # ``tmp_path`` fixtures; this direct invocation covers the
+      # end-to-end against the real tree (same direct-invocation split
+      # as the gates above).
+      - name: Enforce deterministic npm install (Issue #4202)
+        run: python3 scripts/check_npm_pinning.py
+
       # Issue #3453: ENV_LOCK serialisation guard for env-mutating
       # integration tests. ``tests/ashrae_140_diagnostic_integration_test``
       # shipped with bare ``env::set_var`` / ``env::remove_var`` calls and

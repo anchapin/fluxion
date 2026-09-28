@@ -78,13 +78,13 @@ jobs:
         with:
           node-version: '20'
 
-      # No package-lock.json / npm-shrinkwrap.json is committed under npm/,
-      # so use `npm install` (resolves from package.json) rather than
-      # `npm ci`, which requires a lockfile. setup-node's `cache: 'npm'`
-      # is intentionally omitted for the same reason.
+      # `npm/package-lock.json` is committed (Issue #4202), so the install
+      # is `npm ci` -- byte-deterministic from the lockfile. setup-node's
+      # `cache: 'npm'` remains omitted: the lockfile already pins the
+      # tree, and the cache key would only add a second resolution path.
       - name: Install npm dependencies
         working-directory: npm
-        run: npm install
+        run: npm ci
 
       - name: Build NAPI bindings (debug)
         working-directory: npm
