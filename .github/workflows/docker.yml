@@ -223,11 +223,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Issue #4143: this step declared `images:` but no `tags:`, so
+      # metadata-action produced an empty tag list and `name-canonical`
+      # came back empty. The build step then runs with
+      # `outputs: type=image,push-by-digest=true,name-canonical=true`,
+      # and buildx aborts with "tag is needed when pushing to registry".
+      # Dormant for the same reason as every other step in this job --
+      # `build-and-test` used to fail first and the matrix never ran.
+      #
+      # The tag set intentionally mirrors `merge-manifests` (no
+      # `type=ref,event=pr`): this job pushes per-arch *by digest*, and
+      # the final tag list is applied to the merged manifest list.
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha
 
       # Issue #3580 — see the matching step in `build-and-test`.
       # `docker pull --quiet` by digest is fail-closed: any upstream
