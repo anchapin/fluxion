@@ -90,6 +90,14 @@ jobs:
             type=semver,pattern={{version}}
             type=sha
 
+      # Issue #4216: Docker layer caching silently reuses a stale
+      # `apt-get install` layer, so the image can ship weeks-old packages
+      # with known CVEs. Pass the ISO week as APT_CACHE_BUST so the package
+      # layers refresh weekly and Trivy scans current packages.
+      - name: Compute apt cache-bust week (Issue #4216)
+        id: apt-bust
+        run: echo "week=$(date -u +%Y-W%V)" >> "$GITHUB_OUTPUT"
+
       # Issue #3580 — pull each Dockerfile `FROM` base image by its
       # pinned `@sha256:DIGEST` so a tag rotation upstream (or a
       # compromised mirror serving a different manifest) cannot
@@ -148,6 +156,9 @@ jobs:
           context: .
           push: false
           load: true
+          # Issue #4216: weekly apt cache-bust so Trivy scans fresh packages.
+          build-args: |
+            APT_CACHE_BUST=${{ steps.apt-bust.outputs.week }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=build-test-v3
@@ -235,6 +246,11 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
+      # Issue #4216: same weekly apt cache-bust as build-and-test.
+      - name: Compute apt cache-bust week (Issue #4216)
+        id: apt-bust
+        run: echo "week=$(date -u +%Y-W%V)" >> "$GITHUB_OUTPUT"
+
       # Issue #3580 — see the matching step in `build-and-test`.
       # `docker pull --quiet` by digest is fail-closed: any upstream
       # tag rotation that changes the manifest digest produces a
@@ -289,6 +305,9 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,push-by-digest=true,name-canonical=true
+          # Issue #4216: weekly apt cache-bust so Trivy scans fresh packages.
+          build-args: |
+            APT_CACHE_BUST=${{ steps.apt-bust.outputs.week }}
           cache-from: type=gha,scope=build-${{ matrix.slug }}-v3
           cache-to: type=gha,scope=build-${{ matrix.slug }}-v3,mode=max
 

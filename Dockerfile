@@ -54,7 +54,12 @@
 #     now gates the tag against `rust-version`.
 FROM rust:1.98.0-bookworm@sha256:82150a52ec202c1b14d7817e14516c392bb7f5cfebd88f1ed531cb37ebd39922 AS builder
 
-RUN apt-get update && apt-get install -y \
+# Issue #4216: Docker layer caching silently reuses a stale `apt-get install`
+# layer, so the image can ship weeks-old packages with known CVEs even though
+# the Dockerfile runs `apt-get update`. CI passes the ISO week as
+# APT_CACHE_BUST to force a fresh package refresh weekly.
+ARG APT_CACHE_BUST=1
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     pkg-config \
     libssl-dev \
     ca-certificates \
@@ -103,7 +108,10 @@ RUN cargo build --release --bin fluxion-rest --no-default-features
 #   * Refresh: re-run `scripts/pin_docker_base_images.sh` (quarterly cadence).
 FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS runtime
 
-RUN apt-get update && apt-get install -y \
+# Issue #4216: see the builder-stage note — same cache-bust for the runtime
+# package layer so Trivy never scans weeks-old curl/openssl again.
+ARG APT_CACHE_BUST=1
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     ca-certificates \
     libssl3 \
     libgomp1 \
