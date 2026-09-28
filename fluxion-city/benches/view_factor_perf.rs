@@ -10,7 +10,7 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use fluxion_city::{MonteCarloViewFactor, Surface3D};
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use std::time::{Duration, Instant};
 
 // ────────────────── random surface pair generation ──────────────────

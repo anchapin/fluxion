@@ -565,7 +565,7 @@ where
 mod tests {
     use super::*;
     use rand::rngs::StdRng;
-    use rand::Rng;
+    use rand::RngExt;
     use rand::SeedableRng;
 
     #[test]
