@@ -1,0 +1,151 @@
+name: ASHRAE 140 Fabric Harness Gate (Issue #3986-A+2)
+
+# Path-filtered required check (Refs #3986-A+2 / #4117, ADR-0016 Lane 2
+# sibling to `physics-pr.yml`'s strict-energy-gate).
+#
+# Runs the multi-selector fabric harness
+# (`tests/all_tests/ashrae_140_fabric_multiselector.rs`) on every PR that
+# touches the selector wiring / dispatch path. Compares the captured
+# (case × selector × metric) measurements and the per-case
+# selector-parity ratios against the recorded baseline at
+# `tests/reference_data/ashrae_140_fabric/baseline.json` via
+# `scripts/check_ashrae_140_fabric_regression.py`.
+#
+# The harness is intentionally narrow:
+# - Catches selector-wiring drift (e.g. a refactor that flips the
+#   dispatch path on one (case, selector) combination).
+# - Catches selector-parity drift (the FiveROneC / NineRFourC ratio
+#   shifts beyond the recorded tolerance — a silent regression).
+#
+# Does NOT catch:
+# - ASHRAE 140 ±15% band violations (covered by
+#   `physics-pr.yml`'s strict-energy-gate).
+# - Absolute-value physics regressions that affect both selectors
+#   identically (also covered by the strict-energy-gate for the
+#   cases it observes).
+#
+# PR-A+2 stays path-filtered to the selector / validator / thermal
+# model surface; docs-only and workflow-only PRs skip it (the
+# docs-only-gate listener reports neutral-success so branch
+# protection's required-check expectation stays met).
+
+on:
+  pull_request:
+    paths:
+      # Selector + dispatch + fabric harness surface — same shape as
+      # the physics-pr.yml strict-energy-gate's path filter.
+      - "src/sim/thermal_selector.rs"
+      - "src/sim/thermal_model*/**"
+      - "src/sim/step_dispatcher.rs"
+      - "src/validation/ashrae_140_validator/**"
+      - "src/validation/ashrae_140_multi_zone.rs"
+      - "src/validation/ashrae_140_cases.rs"
+      - "src/validation/ashrae140/**"
+      - "tests/all_tests/ashrae_140_fabric_multiselector.rs"
+      - "tests/all_tests/ashrae_140_validator_fabric.rs"
+      - "tests/all_tests/ashrae_140_validator_selector_parity.rs"
+      - "tests/reference_data/ashrae_140_fabric/**"
+      - "scripts/check_ashrae_140_fabric_regression.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel any in-flight run when a new commit lands on the PR branch.
+concurrency:
+  group: >-
+    ashrae-140-fabric-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
+jobs:
+  ashrae-140-fabric:
+    name: "ASHRAE 140 Fabric Harness Gate (Issue #3986-A+2)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c175235 # v4.2.2
+        with:
+          fetch-depth: 1
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@5775e857f6137e738adf93c80ad3d6c81e29a8fe # 2024-07-20
+        with:
+          toolchain: stable
+
+      # Issue #3398: cargo cache for the PR-blocking gate. Keys entries
+      # on the rustc invocation so feature-set changes cannot poison
+      # each other.
+      - name: Cache cargo workspace
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          workspaces: |
+            .
+            fluxion-core -> target
+            fluxion-city -> target
+            fluxion-fluid -> target
+            fluxion-grid -> target
+            fluxion-behavior -> target
+            fluxion-mcp -> target
+            fluxion-wasm -> target
+            crates/fluxion-toon -> target
+            crates/fluxion-twin -> target
+            crates/fluxion-evaluator -> target
+            fluxion-cfd -> target
+            fluxion-tauri/src-tauri -> target
+
+      - name: Run multi-selector fabric harness (transparent measurement)
+        # The harness prints parseable lines; the regression-check step
+        # below parses them and compares against the recorded baseline.
+        # Test 1/3 (always-run): the harness exercises Cases 600/900/950
+        # across FiveROneC + NineRFourC selectors via `run_blind_annual_energy`
+        # (engine-level isolation, spec-only path).
+        run: |
+          cargo test --release --verbose \
+            --test all_tests ashrae_140_fabric_multiselector:: \
+            -- --nocapture \
+            2>&1 | tee /tmp/fabric_output.txt
+          echo "fabric-raw-exit=$?" >> /tmp/fabric_output.txt
+
+      - name: Self-test the regression gate (parser hardening)
+        # Verifies the Python gate's parser invariant before the real
+        # regression check; protects against a future refactor that
+        # silently breaks the regex / verdict logic.
+        run: |
+          python3 scripts/check_ashrae_140_fabric_regression.py --self-test
+
+      - name: Regression check vs. fabric baseline (Refs #3986-A+2)
+        # Parses the measured (H/C) values and selector-parity ratios,
+        # compares against `tests/reference_data/ashrae_140_fabric/baseline.json`,
+        # fails on regression beyond the recorded tolerance or on a
+        # missing (case × selector × metric) measurement.
+        run: |
+          set -euo pipefail
+          # Strip ANSI colour codes for grep / the parser.
+          sed -i 's/\x1b\[[0-9;]*m//g' /tmp/fabric_output.txt
+          python3 scripts/check_ashrae_140_fabric_regression.py \
+            --baseline tests/reference_data/ashrae_140_fabric/baseline.json \
+            /tmp/fabric_output.txt
+
+      - name: Upload fabric harness log
+        if: always()
+        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
+        with:
+          name: ashrae-140-fabric-gate
+          path: /tmp/fabric_output.txt
+          retention-days: 14

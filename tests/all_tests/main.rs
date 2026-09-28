@@ -45,6 +45,7 @@ mod ashrae_140_case_non_residential;
 mod ashrae_140_cases_800_810;
 mod ashrae_140_coverage;
 mod ashrae_140_diagnostic_test;
+mod ashrae_140_fabric_multiselector;
 mod ashrae_140_free_floating;
 mod ashrae_140_integration;
 mod ashrae_140_setback_ventilation;
