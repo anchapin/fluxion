@@ -46,6 +46,7 @@ Every active gate is wired into a workflow job, a pre-commit (manual) hook, or i
 | `check_doc_inventory_fresh.py` | `docs/doc-inventory.md` byte-equal to the generator's output (#2765) | docs-hygiene.yml, pre-commit (manual) |
 | `check_doc_link_integrity.py` | Markdown `[..](path)` / `<path>` references resolve on disk | docs-hygiene.yml |
 | `check_docs_summaries.py` | 7-line summary at lines 2–8 of every `docs/*.md` (#2466) | docs-hygiene.yml, pre-commit (manual) |
+| `check_docker_base_image_msrv.py` | Dockerfile base-image builder tag vs. `rust-version`, digest-pin well-formedness, and Dockerfile↔docker.yml digest parity (#4150; the script the Dockerfile has cited since #4138) | scripts-tests.yml |
 | `check_env_setvar_serialized.py` | `ENV_LOCK` guard for `tests/**/*.rs` `std::env::set_var` callers (#3453) | scripts-tests.yml |
 | `check_evaluator_dynamic_secure.py` | `fluxion-evaluator` dynamic-loader security acceptance (#3554) | security.yml |
 | `check_fluxion_core_dep_budget.py` | `fluxion-core` default-feature dependency-budget regression (#3467) | run locally before changing `fluxion-core/Cargo.toml` (doc cross-ref only) |
@@ -226,7 +227,9 @@ Runs in `python-tests.yml` (Python 3.10–3.13 matrix, coverage via `scripts/pyt
 | `test_check_doc_inventory_fresh.py` | `check_doc_inventory_fresh.py` (#2765) |
 | `test_check_doc_link_integrity.py` | `check_doc_link_integrity.py` |
 | `test_check_docs_summaries.py` | `check_docs_summaries.py` (#2466) |
+| `test_check_docker_base_image_msrv.py` | `check_docker_base_image_msrv.py` (#4150) |
 | `test_check_env_setvar_serialized.py` | `check_env_setvar_serialized.py` (#3453) |
+| `test_pin_docker_base_images.py` | `pin_docker_base_images.sh` — digest-prefix, parseable-reference, and idempotency invariants (#4149) |
 | `test_check_fluxion_core_dep_budget.py` | `check_fluxion_core_dep_budget.py` (#3467) |
 | `test_check_ignore_tracking.py` | `check_ignore_tracking.py` |
 | `test_check_known_issues_links.py` | `check_known_issues_links.py` |
