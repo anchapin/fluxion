@@ -84,6 +84,66 @@ def test_check_validation_gates_fails_when_pass_rate_below_floor(checker, tmp_pa
     assert by_name["overall_pass_rate"].passed is False
 
 
+def test_check_validation_gates_fails_just_below_floor(checker, tmp_path):
+    """Pass rate 59.9% vs the 60% floor → the gate fires.
+
+    Issue #4159 acceptance criterion (c). The point of this test is the
+    *boundary*, not a comfortable margin: the workflow re-raise step
+    guarding this gate was dead code (it read ``steps.check.outcome`` on a
+    ``continue-on-error: true`` step, which Actions pins to 'success'), so
+    nothing in CI could ever observe this False. This asserts the checker
+    produces a falsifiable result for the workflow to act on. The
+    threshold itself is NOT relaxed -- 60.0 stands.
+    """
+    rg = _make_checker(checker, tmp_path, _MINIMAL_VALIDATION_CONFIG)
+    results = rg.check_validation_gates(_results(pass_rate=59.9))
+    by_name = {r.name: r for r in results}
+    assert by_name["overall_pass_rate"].passed is False
+    assert by_name["overall_pass_rate"].value == 59.9
+    # The aggregate the workflow's terminal step re-raises must be False.
+    assert all(r.passed for r in results) is False
+
+
+def test_check_validation_gates_passes_exactly_at_floor(checker, tmp_path):
+    """Pass rate exactly 60.0% vs the 60% floor → the gate passes.
+
+    Pins the inclusive comparison (``>=``) so a future edit that makes the
+    boundary exclusive silently re-tightens the standard.
+    """
+    rg = _make_checker(checker, tmp_path, _MINIMAL_VALIDATION_CONFIG)
+    results = rg.check_validation_gates(_results(pass_rate=60.0))
+    by_name = {r.name: r for r in results}
+    assert by_name["overall_pass_rate"].passed is True
+    assert by_name["overall_pass_rate"].value == 60.0
+    assert all(r.passed for r in results) is True
+
+
+def test_check_validation_gates_uses_configured_floor_not_default(
+    checker, tmp_path
+):
+    """A relaxed config floor (e.g. the 40% patch-release tier) is honored.
+
+    Guards against the 59.9/60.0 boundary tests passing only because the
+    hardcoded 60.0 default happens to equal the fixture's floor.
+    """
+    config = {
+        "validation": {
+            "min_pass_rate": 40.0,
+            "max_mae": 50.0,
+            "individual": {
+                "max_deviation": 100.0,
+                "extreme_deviation_limit": 2,
+                "known_failures": [],
+            },
+        }
+    }
+    rg = _make_checker(checker, tmp_path, config)
+    results = rg.check_validation_gates(_results(pass_rate=59.9))
+    by_name = {r.name: r for r in results}
+    assert by_name["overall_pass_rate"].passed is True
+    assert by_name["overall_pass_rate"].threshold == 40.0
+
+
 def test_check_validation_gates_fails_when_mae_above_limit(checker, tmp_path):
     """MAE 60% with max 50% → MAE gate fails."""
     rg = _make_checker(checker, tmp_path, _MINIMAL_VALIDATION_CONFIG)

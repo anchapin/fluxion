@@ -163,6 +163,7 @@ Every active gate under `scripts/check_*.py` (40 scripts at head) is wired into 
 | `scripts/check_test_inventory_drift.py` | Test-count ratchet vs. `test_inventory_baseline.json` (#3442) | `scripts-tests.yml` | #6 |
 | `scripts/check_topology_drift.py` | Topology artifact drift gate — byte-compares regenerated reference topologies + Mermaid/SVG diagrams vs. committed tree, `topology lint --strict` per case (#3966) | `topology_visualizer.yml` | #5 |
 | `scripts/check_workflow_pin.py` | SHA-pinned `uses:` in `.github/workflows/*.yml` (#3475) | `scripts-tests.yml` | #6 |
+| `scripts/check_workflow_continue_on_error.py` | Reject `steps.<id>.outcome` reads on a `continue-on-error: true` step — Actions pins `.outcome` to `'success'`, so such a re-raise is dead code (#4159; the `validation.min_pass_rate: 60.0` gate was unenforceable because of it) | `scripts-tests.yml` | #1, #6 |
 
 ## Git and CI Workflow
 

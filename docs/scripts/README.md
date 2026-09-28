@@ -71,6 +71,7 @@ Every active gate is wired into a workflow job, a pre-commit (manual) hook, or i
 | `check_tdqs_regression.py` | TDQS (Temporal Decision Quality Score) criterion-bench regression | tdqs_regression.yml |
 | `check_test_inventory_drift.py` | Test-count ratchet vs. `test_inventory_baseline.json` (#3442) | scripts-tests.yml |
 | `check_workflow_pin.py` | Fail on non-SHA-pinned `uses:` in `.github/workflows/*.yml` (#3475) | scripts-tests.yml |
+| `check_workflow_continue_on_error.py` | Reject `steps.<id>.outcome` reads on a `continue-on-error: true` step — such a re-raise is dead code (#4159) | scripts-tests.yml |
 
 ---
 
@@ -250,6 +251,7 @@ Runs in `python-tests.yml` (Python 3.10–3.13 matrix, coverage via `scripts/pyt
 | `test_check_tdqs_regression.py` | `check_tdqs_regression.py` |
 | `test_check_test_inventory_drift.py` | `check_test_inventory_drift.py` (#3442) |
 | `test_check_workflow_pin.py` | `check_workflow_pin.py` (#3475) |
+| `test_check_workflow_continue_on_error.py` | `check_workflow_continue_on_error.py` (#4159) |
 | `test_cleanup_root_strays.py` | `cleanup_root_strays.sh` (#3438) |
 | `test_cleanup_stale_worktrees.py` | `cleanup_stale_worktrees.sh` (#3069, #3118) |
 | `test_cloud_campaign_manager.py` | `cloud_campaign_manager.py` (#1847) |

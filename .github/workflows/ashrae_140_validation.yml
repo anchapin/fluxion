@@ -295,7 +295,10 @@ jobs:
         # docs/KNOWN_ISSUES.md closes (GaugeSolver routing #1465/#1462/#3297),
         # so on pull_request events this is advisory only. It is NOT
         # best-effort: the terminal "Fail if validation gate failed" step
-        # re-raises steps.check.outcome == 'failure' on push/schedule events.
+        # re-raises steps.check.conclusion == 'failure' on push/schedule
+        # events. Issue #4159: this read `.outcome`, which Actions pins to
+        # 'success' for a continue-on-error step, so the re-raise was dead
+        # code and the 60% min_pass_rate gate could never fail CI.
         continue-on-error: true
         run: |
           # Run centralized release gate checker for validation gates
@@ -354,7 +357,7 @@ jobs:
         continue-on-error: true
 
       - name: Fail if validation gate failed
-        if: (failure() || steps.check.outcome == 'failure') && github.event_name != 'pull_request'
+        if: (failure() || steps.check.conclusion == 'failure') && github.event_name != 'pull_request'
         run: |
           echo "❌ Release gate check failed"
           echo ""

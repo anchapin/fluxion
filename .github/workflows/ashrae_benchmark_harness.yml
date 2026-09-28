@@ -167,7 +167,7 @@ jobs:
 
       - name: Check harness exit code
         run: |
-          EXIT_CODE=${{ steps.harness.outcome == 'failure' && '1' || '0' }}
+          EXIT_CODE=${{ steps.harness.conclusion == 'failure' && '1' || '0' }}
           echo "Harness exit code: $EXIT_CODE"
           # Allow regression on non-main branches (warn only); fail on main
           if [ "${{ github.ref }}" = "refs/heads/main" ] && [ "$EXIT_CODE" = "1" ]; then
