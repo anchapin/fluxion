@@ -132,6 +132,7 @@ Every active gate under `scripts/check_*.py` (40 scripts at head) is wired into 
 | `scripts/check_branch_protection_diff.py` | `develop` branch-protection diagnostic vs. `release_gates.yaml` (#3383) — diagnostic half of `scripts/apply_branch_protection.py`, **does not** apply PUTs | operator diagnostic (run manually before/after a branch-protection PUT) | #6 |
 | `scripts/check_cli_doc_stubs.py` | `fluxion` CLI stub-path fail-loud contract per issue `#2947` (#3550) | `docs-hygiene.yml`, pre-commit (`manual`) | #6 |
 | `scripts/check_concurrency_keys.py` | ADR-0015 per-`head_sha` concurrency block on every workflow (#3366 / #3444) | `scripts-tests.yml` | #6 |
+| `scripts/check_continue_on_error_outcome.py` | Reject `continue-on-error: true` + downstream `steps.<id>.outcome` re-raise (`.outcome` is always 'success' on masked steps; use `.conclusion`) (#4159) | `scripts-tests.yml` | #6 |
 | `scripts/check_cycle_downward_trend.py` | `sim ↔ validation` coupling must *shrink* toward zero, not stay frozen (#2768) | `rust-tests.yml` | #5 |
 | `scripts/check_doc_drift.py` | Stale cycle-claim sentences inside Rust doc-comments (#2895) | `architecture_drift.yml`, pre-commit (`manual`) | #5 |
 | `scripts/check_doc_inventory_fresh.py` | `docs/doc-inventory.md` byte-equal to the generator's output (#2765) | `docs-hygiene.yml`, pre-commit (`manual`) | #6 |

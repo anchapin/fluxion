@@ -113,7 +113,10 @@ jobs:
           retention-days: 30
 
       - name: Create GitHub issue on failure
-        if: failure() && steps.regression.outcome == 'failure'
+        # Issue #4159: `steps.regression` has `continue-on-error: true`,
+        # so `.outcome` is always 'success' here and `failure()` is false
+        # on the suppressed path — `.conclusion` carries the real result.
+        if: steps.regression.conclusion == 'failure'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         env:
           REGRESSION_OUTPUT_FILE: regression_output.txt
@@ -121,7 +124,8 @@ jobs:
           script-path: .github/workflows/scripts/post_nightly_regression_issue.js
 
       - name: Fail if regression test failed
-        if: failure() && steps.regression.outcome == 'failure'
+        # Issue #4159: see above — `.conclusion`, not `.outcome`.
+        if: steps.regression.conclusion == 'failure'
         run: |
           echo "❌ Nightly ASHRAE 140 regression test failed"
           exit 1
@@ -184,7 +188,10 @@ jobs:
           retention-days: 30
 
       - name: Fail if HVAC BESTEST failed
-        if: failure() && steps.validation.outcome == 'failure'
+        # Issue #4159: `steps.validation` has `continue-on-error: true`,
+        # so `.outcome` is always 'success' here — `.conclusion` carries
+        # the real result.
+        if: steps.validation.conclusion == 'failure'
         run: |
           echo "❌ HVAC BESTEST validation failed"
           exit 1
