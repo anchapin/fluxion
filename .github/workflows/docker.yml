@@ -118,9 +118,23 @@ jobs:
             # Inspect by `@digest` reference so `.RepoDigests[0]` is
             # populated (`.RepoDigests` is empty on `:tag` after
             # pull-by-digest).
-            actual="$(docker inspect --format='{{index .RepoDigests 0}}' "${image}@${expected}" 2>/dev/null || true)"
-            if [[ "${actual}" != "${image}@${expected}" ]]; then
-                echo "::error::Base image digest mismatch for $image: expected ${image}@${expected}, got ${actual:-<unset>}" >&2
+            #
+            # Issue #3815 follow-up — Docker normalises the repository
+            # in `.RepoDigests` to `name` with the **tag stripped**, so
+            # for `rust:1.87-bookworm@sha256:…` this returns
+            # `rust@sha256:…`. Comparing it against the full
+            # `${image}@${expected}` could therefore never succeed for
+            # a tagged image, and this step false-failed every push to
+            # `main`/`develop` (the gate was structurally
+            # unsatisfiable, not a real digest mismatch — the digests
+            # matched byte-for-byte). Compare the digest and the
+            # untagged repository as two separate invariants instead.
+            actual_ref="$(docker inspect --format='{{index .RepoDigests 0}}' "${image}@${expected}" 2>/dev/null || true)"
+            actual_digest="${actual_ref##*@}"
+            actual_repo="${actual_ref%@*}"
+            expected_repo="${image%:*}"
+            if [[ -z "${actual_ref}" || "${actual_digest}" != "${expected}" || "${actual_repo}" != "${expected_repo}" ]]; then
+                echo "::error::Base image digest mismatch for $image: expected ${expected_repo}@${expected}, got ${actual_ref:-<unset>}" >&2
                 exit 1
               fi
           done
@@ -213,10 +227,15 @@ jobs:
             image="${pair%%|*}"
             expected="${pair##*|}"
             # Issue #3815 — same fix as build-and-test: inspect by
-            # `@digest` reference so `.RepoDigests[0]` is populated.
-            actual="$(docker inspect --format='{{index .RepoDigests 0}}' "${image}@${expected}" 2>/dev/null || true)"
-            if [[ "${actual}" != "${image}@${expected}" ]]; then
-                echo "::error::Base image digest mismatch for $image: expected ${image}@${expected}, got ${actual:-<unset>}" >&2
+            # `@digest` reference so `.RepoDigests[0]` is populated,
+            # and compare digest + untagged repository separately
+            # because Docker strips the tag from `.RepoDigests`.
+            actual_ref="$(docker inspect --format='{{index .RepoDigests 0}}' "${image}@${expected}" 2>/dev/null || true)"
+            actual_digest="${actual_ref##*@}"
+            actual_repo="${actual_ref%@*}"
+            expected_repo="${image%:*}"
+            if [[ -z "${actual_ref}" || "${actual_digest}" != "${expected}" || "${actual_repo}" != "${expected_repo}" ]]; then
+                echo "::error::Base image digest mismatch for $image: expected ${expected_repo}@${expected}, got ${actual_ref:-<unset>}" >&2
                 exit 1
               fi
           done
