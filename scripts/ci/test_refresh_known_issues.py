@@ -28,8 +28,6 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "refresh_known_issues.sh"
 STALE_SCRIPT = REPO_ROOT / "scripts" / "check_known_issues_stale.py"
