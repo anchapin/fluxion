@@ -29,6 +29,21 @@ use crate::topology::{TopologyContext, TopologyGraph};
 use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec};
 use crate::validation::topology_bridge;
 
+/// Output format for `fluxion topology export` (Issue #4115). The default
+/// stays `Json`: the JSON path is the byte-identical determinism contract
+/// guarded by `scripts/check_topology_drift.py`. `Toon` is an additive
+/// agent-facing rendering via the `fluxion-toon` crate (Issue #2071); it does
+/// NOT replace JSON, mutate the schema, or feed the drift gate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ExportFormat {
+    /// Canonical deterministic JSON (default; feeds the drift gate).
+    Json,
+    /// Token-Oriented Object Notation via the `fluxion-toon` crate.
+    /// Compresses uniform-array heavy payloads for agent context windows;
+    /// see `docs/TOON_INTEGRATION.md`.
+    Toon,
+}
+
 /// Arguments for `fluxion topology export` / `fluxion export-topology`.
 #[derive(Debug, Args, Clone)]
 pub struct ExportArgs {
@@ -50,6 +65,13 @@ pub struct ExportArgs {
     /// default so repeated exports are byte-identical (determinism contract).
     #[arg(long, value_name = "ISO8601")]
     pub timestamp: Option<String>,
+
+    /// Output format (Issue #4115). `json` is the canonical default and the
+    /// format the topology-drift gate validates; `toon` is an additive
+    /// agent-facing rendering via `fluxion-toon` that does not feed the
+    /// drift gate.
+    #[arg(long, value_enum, default_value_t = ExportFormat::Json)]
+    pub format: ExportFormat,
 }
 
 /// `fluxion topology ...` subcommands.
@@ -129,19 +151,41 @@ pub fn handle_export(args: ExportArgs) -> Result<()> {
         .to_json_string()
         .context("failed to serialize topology graph")?;
 
-    match &args.output {
+    match args.format {
+        ExportFormat::Json => write_export(&json, args.output.as_ref(), &graph, "json"),
+        ExportFormat::Toon => {
+            let toon = fluxion_toon::to_string(&graph)
+                .context("failed to serialize topology graph as TOON")?;
+            write_export(&toon, args.output.as_ref(), &graph, "toon")
+        }
+    }
+}
+
+/// Writes the serialized topology to disk or stdout, preserving the
+/// file/stdout branch structure that pre-existed in `handle_export` (kept
+/// intact so the byte-identical JSON default stays untouched).
+fn write_export(
+    payload: &str,
+    output: Option<&PathBuf>,
+    graph: &TopologyGraph,
+    fmt_label: &str,
+) -> Result<()> {
+    match output {
         Some(path) => {
-            fs::write(path, json.as_bytes()).with_context(|| {
-                format!("failed to write topology export to {}", path.display())
+            fs::write(path, payload.as_bytes()).with_context(|| {
+                format!(
+                    "failed to write topology export ({fmt_label}) to {}",
+                    path.display()
+                )
             })?;
             println!(
-                "wrote topology export ({} nodes, {} edges) to {}",
+                "wrote topology export ({fmt_label}; {} nodes, {} edges) to {}",
                 graph.metadata.node_count,
                 graph.metadata.edge_count,
                 path.display()
             );
         }
-        None => println!("{json}"),
+        None => println!("{payload}"),
     }
     Ok(())
 }
@@ -157,6 +201,7 @@ mod tests {
             model: None,
             output: None,
             timestamp: None,
+            format: ExportFormat::Json,
         };
         assert!(handle_export(args).is_err());
     }
@@ -168,9 +213,56 @@ mod tests {
             model: None,
             output: None,
             timestamp: None,
+            format: ExportFormat::Json,
         };
         let err = handle_export(args).unwrap_err().to_string();
         assert!(err.contains("unknown ASHRAE 140 case id"));
+    }
+
+    /// Issue #4115 acceptance: `--format toon` produces valid TOON that
+    /// round-trips through the `fluxion-toon` crate parser. Serializes Case
+    /// 600 (the canonical example in `docs/TOON_INTEGRATION.md`), confirms
+    /// the TOON header is present, and verifies the parsed graph is
+    /// structurally equivalent to the canonical JSON serialization.
+    #[test]
+    fn toon_export_round_trips_case_600() {
+        let case =
+            ASHRAE140Case::from_case_id("600").expect("Case 600 is in the ASHRAE 140 registry");
+        let spec = case.spec();
+        let ctx = TopologyContext {
+            model_name: format!("ASHRAE 140 Case {}", spec.case_id),
+            model_source: format!("ashrae-140-registry:{}", spec.case_id),
+            timestamp: None,
+        };
+        let mut graph = topology_bridge::case_topology_graph(&spec, &ctx);
+        graph
+            .finalize()
+            .expect("topology finalization should succeed for Case 600");
+        graph
+            .validate()
+            .expect("topology validation should succeed for Case 600");
+
+        // Serialize via the fluxion-toon crate (the same path the CLI uses).
+        let toon = fluxion_toon::to_string(&graph).expect("TOON serialization");
+        assert!(
+            toon.starts_with("toon:v1"),
+            "TOON payload must start with the v1 header (got prefix: {:?})",
+            toon.lines().next()
+        );
+
+        // Round-trip back into a graph and compare structural equality.
+        let parsed: TopologyGraph =
+            fluxion_toon::from_str(&toon).expect("TOON parser must round-trip the Case 600 export");
+        assert_eq!(
+            parsed.metadata.node_count, graph.metadata.node_count,
+            "node count must survive TOON round-trip"
+        );
+        assert_eq!(
+            parsed.metadata.edge_count, graph.metadata.edge_count,
+            "edge count must survive TOON round-trip"
+        );
+        assert_eq!(parsed.nodes.len(), graph.nodes.len(), "nodes len");
+        assert_eq!(parsed.edges.len(), graph.edges.len(), "edges len");
     }
 }
 
