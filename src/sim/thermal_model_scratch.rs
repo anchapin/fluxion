@@ -260,97 +260,6 @@ impl PhysicsScratch5r1c {
     }
 }
 
-pub(crate) struct PhysicsScratch6r2c {
-    pub num_zones: usize,
-    pub phi_ia: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
-    pub phi_st: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
-    pub phi_m_env: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
-    pub phi_m_int: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
-    pub ground_coeff: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
-    pub den: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
-    pub num_rest: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
-    pub t_i_act: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
-    pub t_s: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
-    pub new_env: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
-    pub new_int: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
-    /// Issue #3370: scratch buffer for `compute_zone_hvac_load`'s per-zone
-    /// demand vector (replaces the per-call `vec![0.0; n]` allocation).
-    pub hvac_combined_demand: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
-}
-
-impl PhysicsScratch6r2c {
-    pub fn new(num_zones: usize) -> Self {
-        Self {
-            num_zones,
-            phi_ia: SmallVec::from_elem(0.0, num_zones),
-            phi_st: SmallVec::from_elem(0.0, num_zones),
-            phi_m_env: SmallVec::from_elem(0.0, num_zones),
-            phi_m_int: SmallVec::from_elem(0.0, num_zones),
-            ground_coeff: SmallVec::from_elem(0.0, num_zones),
-            den: SmallVec::from_elem(0.0, num_zones),
-            num_rest: SmallVec::from_elem(0.0, num_zones),
-            t_i_act: SmallVec::from_elem(0.0, num_zones),
-            t_s: SmallVec::from_elem(0.0, num_zones),
-            new_env: SmallVec::from_elem(0.0, num_zones),
-            new_int: SmallVec::from_elem(0.0, num_zones),
-            hvac_combined_demand: SmallVec::from_elem(0.0, num_zones),
-        }
-    }
-
-    /// Resize every field back to `num_zones` and zero-fill in place. See
-    /// [`PhysicsScratch5r1c::fill_zero`] for the rationale.
-    pub fn fill_zero(&mut self) {
-        let n = self.num_zones;
-        self.phi_ia.resize(n, 0.0);
-        self.phi_st.resize(n, 0.0);
-        self.phi_m_env.resize(n, 0.0);
-        self.phi_m_int.resize(n, 0.0);
-        self.ground_coeff.resize(n, 0.0);
-        self.den.resize(n, 0.0);
-        self.num_rest.resize(n, 0.0);
-        self.t_i_act.resize(n, 0.0);
-        self.t_s.resize(n, 0.0);
-        self.new_env.resize(n, 0.0);
-        self.new_int.resize(n, 0.0);
-        self.hvac_combined_demand.resize(n, 0.0);
-        for v in &mut self.phi_ia {
-            *v = 0.0;
-        }
-        for v in &mut self.phi_st {
-            *v = 0.0;
-        }
-        for v in &mut self.phi_m_env {
-            *v = 0.0;
-        }
-        for v in &mut self.phi_m_int {
-            *v = 0.0;
-        }
-        for v in &mut self.ground_coeff {
-            *v = 0.0;
-        }
-        for v in &mut self.den {
-            *v = 0.0;
-        }
-        for v in &mut self.num_rest {
-            *v = 0.0;
-        }
-        for v in &mut self.t_i_act {
-            *v = 0.0;
-        }
-        for v in &mut self.t_s {
-            *v = 0.0;
-        }
-        for v in &mut self.new_env {
-            *v = 0.0;
-        }
-        for v in &mut self.new_int {
-            *v = 0.0;
-        }
-        for v in &mut self.hvac_combined_demand {
-            *v = 0.0;
-        }
-    }
-}
 
 pub(crate) struct PhysicsScratch9r4c {
     pub n: usize,
@@ -492,7 +401,6 @@ impl PhysicsScratch9r4c {
 /// and forced #1966 to construct locally (see module docs).
 pub(crate) struct PhysicsScratchPool {
     pub r5r1c: Option<PhysicsScratch5r1c>,
-    pub r6r2c: Option<PhysicsScratch6r2c>,
     pub r9r4c: Option<PhysicsScratch9r4c>,
 }
 
@@ -500,7 +408,6 @@ impl PhysicsScratchPool {
     pub fn new() -> Self {
         Self {
             r5r1c: None,
-            r6r2c: None,
             r9r4c: None,
         }
     }
@@ -522,20 +429,6 @@ impl PhysicsScratchPool {
     /// timestep. Cheap (one `Option` write); does not reallocate.
     pub fn return_5r1c(&mut self, scratch: PhysicsScratch5r1c) {
         self.r5r1c = Some(scratch);
-    }
-
-    /// Take the 6R2C scratch out of the pool (owned). See
-    /// [`PhysicsScratchPool::checkout_5r1c`].
-    pub fn checkout_6r2c(&mut self, num_zones: usize) -> PhysicsScratch6r2c {
-        self.r6r2c
-            .take()
-            .unwrap_or_else(|| PhysicsScratch6r2c::new(num_zones))
-    }
-
-    /// Restore a checked-out 6R2C scratch. See
-    /// [`PhysicsScratchPool::return_5r1c`].
-    pub fn return_6r2c(&mut self, scratch: PhysicsScratch6r2c) {
-        self.r6r2c = Some(scratch);
     }
 
     /// Take the 9R4C scratch out of the pool (owned). See
