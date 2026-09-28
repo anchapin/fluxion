@@ -48,7 +48,7 @@ env:
   RUST_BUILDER_IMAGE: rust:1.98.0-bookworm
   RUST_BUILDER_DIGEST: sha256:82150a52ec202c1b14d7817e14516c392bb7f5cfebd88f1ed531cb37ebd39922
   DEBIAN_RUNTIME_IMAGE: debian:bookworm-slim
-  DEBIAN_RUNTIME_DIGEST: sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
+  DEBIAN_RUNTIME_DIGEST: sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
 
 # Least-privilege GITHUB_TOKEN default (Issue #2526). Each job that pushes to
 # ghcr.io or uploads SARIF escalates via its own job-level permissions block
