@@ -270,7 +270,7 @@ BASELINE_LIB_IGNORED = 9
 #   test_box_solid_fraction_returns_none_without_reference_data,
 #   test_box_apparent_cp_at_wall_delegates_to_material). Stacked on PR-A's
 #   8821 baseline.
-BASELINE_WORKSPACE_TESTS = 8838  # 2026-09-28: 8837 -> 8838 — core-engine batch (#4213) net +1 (same lib test counted in the workspace total). Stacked on develop's 8837 baseline (test-audit cleanup deleted the same 5 inventoried lib tests).
+BASELINE_WORKSPACE_TESTS = 8839  # 2026-09-28: 8838 -> 8839 — per-surface exterior boundary (#4166) net +1 (6 new: 5 unit tests in src/sim/exterior_boundary.rs — wall/roof F_sky acceptance, tilt convention, windward selection, aggregation identity, sol-air formula — plus the FF sol-air attribution diagnostic — minus the 5 deleted h_tr_em_wind_dependent bit-consistency tests whose helper was superseded and removed).
                                   # Previous: 2026-09-28: 8836 -> 8839 — three new `fabric_case_*_measurement` tests in `tests/all_tests/ashrae_140_fabric_multiselector.rs` (PR-A+2 fabric harness, Refs #3986-A+2 / #4117). CI's authoritative cargo --list count rises 8836 -> 8839 (local 8131). Ratchet must equal or exceed CI live count per Issue #3442 protocol.
                                   # Previous: 2026-09-27: 8829 -> 8833 — post-rebase AST delta for PR-A + PR-B's combined consolidated-runner modules (7 selector-parity + 8 PCM box tests).
                                  # unmet-hours lib tests in src/api/schema.rs

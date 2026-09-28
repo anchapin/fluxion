@@ -32,10 +32,10 @@ use fluxion::sim::exterior_boundary::{
 };
 use fluxion::sim::sky_radiation::SolAirTemperature;
 use fluxion::sim::thermal_model_core::ThermalModel;
+use fluxion::solar::calculate_solar_position;
 use fluxion::solar::surface_irradiance::{
     calculate_surface_irradiance, Orientation as SolarOrientation,
 };
-use fluxion::solar::{calculate_solar_position, SolarPosition};
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion_core::ashrae_cases::Orientation;
 
@@ -123,7 +123,8 @@ fn build_diag_surfaces(case_id: &str) -> (Vec<DiagSurface>, f64) {
         let is_roof = tilt < 45.0;
         // R_materials from the U-value: R_total = 1/U, subtract film
         // resistances to isolate the material stack (mirrors the
-        // h_tr_em_wind_dependent convention in step_5r1c.rs).
+        // ExteriorBoundarySurface::h_tr_em convention in
+        // src/sim/exterior_boundary.rs).
         let r_materials = (1.0 / s.u_value - 0.13 - 0.04).max(0.5);
         out.push(DiagSurface {
             area_opaque_m2: area_opaque,

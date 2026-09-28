@@ -13,29 +13,29 @@
     "case_600_heating": {
       "published_range_mwh": [4.36, 5.79],
       "band_mwh": [4.314, 5.836],
-      "value_mwh": 5.182,
+      "value_mwh": 5.126,
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     },
     "case_600_cooling": {
       "published_range_mwh": [3.92, 6.14],
       "band_mwh": [4.275, 5.784],
-      "value_mwh": 2.546,
-      "gap_pct_of_mid": 34.3772,
+      "value_mwh": 3.456,
+      "gap_pct_of_mid": 16.2839,
       "status": "known_fail"
     },
     "case_800_heating": {
       "published_range_mwh": [4.50, 5.80],
       "band_mwh": [4.378, 5.923],
-      "value_mwh": 5.453,
+      "value_mwh": 5.383,
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     },
     "case_800_cooling": {
       "published_range_mwh": [5.00, 6.50],
       "band_mwh": [4.888, 6.612],
-      "value_mwh": 2.007,
-      "gap_pct_of_mid": 50.1043,
+      "value_mwh": 2.848,
+      "gap_pct_of_mid": 35.4783,
       "status": "known_fail"
     },
     "case_810_heating": {

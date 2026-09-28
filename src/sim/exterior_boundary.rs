@@ -29,10 +29,15 @@
 //!   and T_sol_air,eff = Σ_s (h_tr_em,s * T_sol_air,s) / h_tr_em
 //! ```
 //!
-//! The sol-air formula mirrors `SolAirTemperature::for_wall_with_f_sky` /
-//! `for_roof` (`crate::sim::sky_radiation`) exactly; it is re-implemented here
-//! (rather than imported) so this module adds no `use crate::physics::` edge
-//! — the `physics ↔ sim` cycle guard (`scripts/check_physics_sim_cycle.py`)
+//! The sol-air formula follows the ASHRAE convention
+//! (`T_sol = T_out + α·I/h_c − F_sky·ε·ΔR/h_c` with
+//! `ΔR = σ·(T_out⁴ − T_sky⁴)`, positive for a colder sky, so the LW term
+//! depresses sol-air). It is re-implemented here (rather than imported from
+//! `crate::sim::sky_radiation`) for two reasons: it corrects the operand
+//! order of the legacy `SolAirTemperature` longwave term (whose swapped
+//! `ΔR` makes a cold sky *raise* sol-air — tracked as Issue #4224),
+//! and it keeps this module free of `use crate::physics::` edges — the
+//! `physics ↔ sim` cycle guard (`scripts/check_physics_sim_cycle.py`)
 //! counts those, and the caller (`step_5r1c.rs`) already owns the
 //! `exterior_convection` import.
 //!
@@ -103,12 +108,18 @@ impl ExteriorBoundarySurface {
 
     /// Sol-air temperature for this surface (°C).
     ///
-    /// Mirrors `SolAirTemperature::for_wall_with_f_sky` with `f_sky = 1.0`
-    /// reducing to the `for_roof` formula:
+    /// ASHRAE convention (`T_sol = T_out + α·I/h_c − F_sky·ε·ΔR/h_c`):
     /// ```text
     /// T_sol = T_out + α·I/h_c − F_sky·ε·ΔR/h_c
-    /// ΔR = σ·(T_sky,K⁴ − T_out,K⁴)
+    /// ΔR = σ·(T_out,K⁴ − T_sky,K⁴)
     /// ```
+    /// `ΔR` is the net longwave loss, positive when the sky is colder than
+    /// the air, so the LW term *depresses* sol-air (nighttime radiative
+    /// cooling) — the direction stated in Issue #4166. This deliberately
+    /// differs from `SolAirTemperature::{for_roof, for_wall_with_f_sky}`
+    /// (`crate::sim::sky_radiation`), whose `ΔR` has the operands swapped so
+    /// a cold sky *raises* sol-air; that legacy sign is tracked as Issue
+    /// #4224 and is not replicated here.
     /// where `I` is the total incident irradiance (beam + diffuse + ground).
     /// The `(1 − F_sky)` fraction radiates to the ground, approximated as
     /// ambient outdoor air (no net exchange) — the same convention as
@@ -122,7 +133,10 @@ impl ExteriorBoundarySurface {
 
         let t_out_k = outdoor_temp_c + 273.15;
         let t_sky_k = sky_temp_c + 273.15;
-        let delta_r = STEFAN_BOLTZMANN * (t_sky_k.powi(4) - t_out_k.powi(4));
+        // ASHRAE ΔR: net longwave loss, positive when the sky is colder than
+        // the air. The `- F_sky·ε·ΔR/h_c` term therefore depresses sol-air
+        // (radiative cooling), per Issue #4166.
+        let delta_r = STEFAN_BOLTZMANN * (t_out_k.powi(4) - t_sky_k.powi(4));
         let longwave_term = eps * delta_r / h_c;
 
         let f_sky = self.f_sky.clamp(0.0, 1.0);
@@ -250,18 +264,20 @@ mod tests {
         let t_wall = wall.sol_air_temperature(outdoor, sky);
         let t_roof = roof.sol_air_temperature(outdoor, sky);
 
-        // Analytic expectation: ΔT = (F_sky,roof − F_sky,wall)·ε·ΔR/h_c.
+        // Analytic expectation: ΔT = (F_sky,roof − F_sky,wall)·ε·ΔR/h_c with
+        // ΔR = σ·(T_out⁴ − T_sky⁴) > 0 for a colder sky. The LW term
+        // depresses sol-air, so the roof (F_sky = 1.0, full sky view) sits
+        // *below* the wall (F_sky = 0.5): radiative cooling is strongest on
+        // the surface that sees the most sky. The wall−roof difference is
+        // 0.5·ε·ΔR/h_c.
         let t_out_k = outdoor + 273.15;
         let t_sky_k = sky + 273.15;
-        let delta_r = STEFAN_BOLTZMANN * (t_sky_k.powi(4) - t_out_k.powi(4));
+        let delta_r = STEFAN_BOLTZMANN * (t_out_k.powi(4) - t_sky_k.powi(4));
         let expected_diff = 0.5 * eps * delta_r / h_c;
 
-        // ΔR is negative (sky colder than air), so −F_sky·ε·ΔR/h_c is positive:
-        // the roof (F_sky = 1.0) gets the full positive LW offset and sits
-        // *above* the wall. The wall−roof difference is 0.5·ε·ΔR/h_c.
         assert!(
-            t_roof > t_wall,
-            "roof sol-air ({t_roof:.4}) should be above wall sol-air ({t_wall:.4}) for cold sky"
+            t_roof < t_wall,
+            "roof sol-air ({t_roof:.4}) should be below wall sol-air ({t_wall:.4}) for cold sky"
         );
         let actual_diff = t_wall - t_roof;
         assert!(
