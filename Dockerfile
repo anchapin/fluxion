@@ -49,6 +49,9 @@ COPY fluxion-mcp/ ./fluxion-mcp/
 COPY fluxion-wasm/ ./fluxion-wasm/
 COPY crates/fluxion-toon/ ./crates/fluxion-toon/
 COPY crates/fluxion-twin/ ./crates/fluxion-twin/
+COPY crates/fluxion-evaluator/ ./crates/fluxion-evaluator/
+COPY fluxion-cfd/ ./fluxion-cfd/
+COPY fluxion-tauri/src-tauri/ ./fluxion-tauri/src-tauri/
 COPY src/ ./src/
 # `Cargo.toml` references a few bench harnesses; copy them so the
 # manifest parses even when we are only building the `fluxion-rest`
