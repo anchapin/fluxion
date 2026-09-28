@@ -589,6 +589,24 @@ ci:
     # path-filtered required checks, Issue #3810 / #3805).
     - "Cargo Deny"
 
+    # Issue #3535: Scorecard Data-Source Consistency Gate. Enforces that the
+    # three committed sources that feed SCORECARD.md's headline metrics
+    # (`SCORECARD.md`, `docs/ASHRAE140_RESULTS.md`, and
+    # `validation/performance_history.latest.json`) all agree on the same
+    # pass-rate and MAE numbers within the script's tolerance bands (0.1 pp
+    # pass-rate, 0.5 pp MAE). Read-only check; never auto-mutates protected
+    # branches. Path-filtered via a positive `pull_request.paths:` list
+    # (runs only when one of the three sources or one of the regenerator
+    # scripts changes); stays out of `required_checks_workflow_only` per
+    # the Issue #3810 path-filtered-required pattern (see the explanatory
+    # comment block below). Sibling-defence to `scorecard-drift.yml`:
+    # `scorecard-drift.yml` catches drift in the *content* of SCORECARD.md
+    # when its generator inputs change (Issue #3128 / #2496); this gate
+    # catches drift in the *headline numbers* the scorecard cites when the
+    # three canonical sources move independently (Issue #3535). Wired in
+    # Issue #4123.
+    - "Scorecard Data-Source Consistency Gate (Issue #3535)"
+
     # 2026-09-25: "Audit Ignore Freshness (Issue #2912)" DEMOTED from required to advisory
     # (physics-core focus). The gate is UNCHANGED: it still runs as a
     # non-required check on every PR; see its `workflow_index` entry below.
@@ -864,6 +882,31 @@ ci:
       workflow: ".github/workflows/surrogate-drift.yml"
       issue: 1784
       triggered_by: "PR + push to develop/main (path-filter: **/surrogate*.rs, **/Surrogate*.rs, models/**, tests/reference_data/surrogate/**)"
+
+    - job: "Scorecard Data-Source Consistency Gate (Issue #3535)"
+      # Cross-source consistency check that fails when SCORECARD.md's
+      # headline metrics (pass_rate, MAE) diverge from either of its two
+      # committed sources by more than the script-defined tolerance bands
+      # (0.1 pp pass-rate, 0.5 pp MAE). Reads
+      # `validation/performance_history.latest.json` (canonical, per the
+      # Issue #3535 scope guard) + `docs/ASHRAE140_RESULTS.md` +
+      # `SCORECARD.md` and asserts they agree. Sibling-defence to the
+      # `scorecard-drift.yml` content-drift gate (Issue #3128):
+      # `scorecard-drift.yml` catches drift in the *content* of
+      # SCORECARD.md when its generator inputs change; this gate catches
+      # drift in the *headline numbers* the scorecard cites when the
+      # three canonical sources move independently. Read-only — never
+      # auto-mutates protected branches; divergence must be reconciled
+      # by hand (regenerate SCORECARD.md from a fresh validation run, OR
+      # refresh `docs/ASHRAE140_RESULTS.md`, OR bump the snapshot, OR
+      # close the gap with a follow-up PR). Path-filtered via a positive
+      # `pull_request.paths:` list; stays out of
+      # `ci.required_checks_workflow_only` per the Issue #3810
+      # path-filtered-required pattern. Closes Issue #4123 (the wiring
+      # of the Issue #3535-script gate into CI as a required check).
+      workflow: ".github/workflows/scorecard-source-consistency.yml"
+      issue: 3535
+      triggered_by: "PR (path-filter: SCORECARD.md, docs/ASHRAE140_RESULTS.md, validation/performance_history*.json, scripts/check_scorecard_data_sources_consistent.py, scripts/generate_scorecard.py, scripts/generate_perf_baseline.py, release_gates.yaml) + push to develop/main (no path-filter)"
 
     - job: "Fluxion Determinism Gate (Issue #1351)"
       # The listener job is defined in `ashrae_validation.yml`; it
