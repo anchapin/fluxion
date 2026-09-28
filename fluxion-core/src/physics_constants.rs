@@ -29,6 +29,21 @@
 /// and matches within 0.06 % — well below any meaningful error contribution.
 pub const STEFAN_BOLTZMANN: f64 = 5.67e-8;
 
+/// Interior surface heat transfer coefficient [W/m²K] (Issue #4164).
+///
+/// ASHRAE 140 simplified 5R1C value. This is the canonical single source;
+/// the four former `const H_SI: f64 = 3.45` declarations now reuse it.
+///
+/// IMPORTANT — area basis differs by call site (preserved, not unified):
+/// - `src/api/server/simulate.rs`: multiplied by floor area
+/// - `src/sim/thermal_model_core/mod.rs`: multiplied by floor area
+/// - `src/sim/thermal_model_physics/dispatch_state.rs`: multiplied by zone area
+/// - `fluxion-core/src/construction.rs::calc_h_tr_is`: multiplied by supplied surface area
+///
+/// Do not unify the formulas; the coefficient value is identical, the
+/// multiplicand is intentionally site-specific.
+pub const H_SI: f64 = 3.45;
+
 #[cfg(test)]
 mod tests {
     use super::*;

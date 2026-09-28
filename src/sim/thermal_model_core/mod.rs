@@ -17,6 +17,8 @@ use crate::sim::hvac_controller::{HvacSystemMode, IdealHVACController};
 use crate::sim::occupancy::BuildingType as OccupancyBuildingType;
 #[cfg(feature = "gauge-solver")]
 use fluxion_core::zone_count_policy::ZoneCountPolicy;
+// Issue #4164: canonical H_SI from fluxion-core::physics_constants.
+use fluxion_core::physics_constants::H_SI;
 // Issue #1349 (Phase 2 crate split): `BuildingAssembly` moved to `fluxion_core::assembly`.
 use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
@@ -1252,7 +1254,7 @@ impl ThermalModel<VectorField> {
             // instead of detailed surface-specific film coefficients
             // Note: opaque_area is still needed for h_tr_em calculations below
             let opaque_area = zone_wall_area - zone_window_area;
-            const H_SI: f64 = 3.45; // W/m²K - ASHRAE 140 simplified 5R1C value
+            // Issue #4164: H_SI from fluxion_core::physics_constants (3.45 W/m²K).
             let total_h_tr_is = H_SI * zone_floor_area;
             h_tr_is_vec.push(total_h_tr_is);
 
