@@ -209,6 +209,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         use crate::physics::exterior_convection::{
             h_c_ext_wind_dependent, wind_at_building_height_from_10m, ExteriorSurfaceDirection,
         };
+        use crate::sim::exterior_boundary::{
+            aggregate_zone_boundary, is_windward, ExteriorBoundarySurface, ABSORPTANCE_ROOF,
+            ABSORPTANCE_WALL,
+        };
+        use fluxion_core::ashrae_cases::Orientation;
         let v_wind_building = self
             .0
             .solar
@@ -216,10 +221,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .as_ref()
             .map(|w| wind_at_building_height_from_10m(w.wind_speed, 2.7))
             .unwrap_or(3.4);
-        let h_c_ext_wind = h_c_ext_wind_dependent(
-            ExteriorSurfaceDirection::HorizontalRoofWindward,
-            v_wind_building,
-        );
+        // Issue #4166: wind direction (meteorological, degrees) for
+        // windward/leeward exterior convection selection. `None` when the
+        // weather source does not provide it (synthetic weather, tests);
+        // surfaces fall back to the windward coefficient.
+        let wind_direction = self.0.solar.weather.as_ref().and_then(|w| w.wind_direction);
         // Issue #2868: the sky-longwave term of the sol-air temperature scales
         // with the *exterior* IR emittance of the envelope. That emittance used
         // to be the hard-coded `ashrae_140_default()` value (ε = 0.9) for every
@@ -231,7 +237,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // (`ThermalModelData::exterior_emissivity`, populated in `from_spec`);
         // every case whose outermost layer keeps the default 0.9 emissivity
         // (600-660, 900-960) is bit-identical to the previous behaviour.
-        let alpha_sol_default = SolAirTemperature::ashrae_140_default().solar_absorptance;
         let eps_ext_default = SolAirTemperature::ashrae_140_default().emissivity;
         // Issue #2873: overwrite `scratch.t_sol_air_zone` with the
         // opaque-irradiance-based sol-air values used by the 5R1C envelope
@@ -247,21 +252,86 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // and `fill_zero()` resizes the scratch field back to `num_zones` on
         // every checkout so the post-`prepare_solvers_and_sol_air` length is
         // preserved exactly.
+        //
+        // Issue #4166: the zone sol-air and h_tr_em are now aggregated from
+        // per-surface exterior boundaries (orientation, tilt, sky view factor,
+        // windward/leeward convection, absorbed irradiance) instead of a
+        // single roof-style value with a direction-blind coefficient.
         let exterior_emissivity_ref = self.0.conduction.exterior_emissivity.as_ref();
-        for (i, &opaque_solar) in opaque_solar_ref
-            .iter()
-            .take(self.0.hvac.num_zones)
-            .enumerate()
-        {
+        let num_zones = self.0.hvac.num_zones;
+        // Reused per-zone surface buffer (avoids per-timestep allocation).
+        let mut boundary_surfaces: Vec<ExteriorBoundarySurface> = Vec::new();
+        for i in 0..num_zones {
             // opaque_solar is the effective opaque irradiance on exterior surfaces (W/m²)
             // This is the combined wall + roof irradiance for the zone
             let eps_ext = exterior_emissivity_ref
                 .get(i)
                 .copied()
                 .unwrap_or(eps_ext_default);
-            let sol_air_calc = SolAirTemperature::new(alpha_sol_default, eps_ext, h_c_ext_wind);
-            let t_sol_air_i = sol_air_calc.for_roof(outdoor_temp, opaque_solar, sky_temp);
+            boundary_surfaces.clear();
+            if let Some(zone_surfaces) = self.0.solar.surfaces.get(i) {
+                let irr_bd = self.0.solar.orientation_irradiance_beam_diffuse.get(i);
+                let irr_gr = self.0.solar.orientation_irradiance_ground.get(i);
+                for s in zone_surfaces {
+                    let opaque_area = (s.area - s.window_area).max(0.0);
+                    if opaque_area <= 0.0 {
+                        continue;
+                    }
+                    // Floors (Down) are not part of the exterior solar boundary.
+                    if s.orientation == Orientation::Down {
+                        continue;
+                    }
+                    let is_roof =
+                        matches!(s.orientation, Orientation::Up | Orientation::Horizontal);
+                    let tilt_deg = match s.orientation {
+                        Orientation::Up | Orientation::Horizontal => 0.0,
+                        _ => 90.0,
+                    };
+                    let oi = s.orientation as usize;
+                    let irr_beam_diffuse = irr_bd.map(|a| a[oi]).unwrap_or(0.0);
+                    let irr_ground = irr_gr.map(|a| a[oi]).unwrap_or(0.0);
+                    // Windward/leeward selection from actual wind direction.
+                    // Horizontal surfaces (azimuth -1) use the windward
+                    // coefficient (matches pre-#4166 behaviour).
+                    let azimuth = s.orientation.azimuth_deg();
+                    let windward = if azimuth < 0.0 {
+                        true
+                    } else {
+                        wind_direction
+                            .map(|wd| is_windward(wd, azimuth))
+                            .unwrap_or(true)
+                    };
+                    let direction = match (is_roof, windward) {
+                        (true, true) => ExteriorSurfaceDirection::HorizontalRoofWindward,
+                        (true, false) => ExteriorSurfaceDirection::HorizontalRoofLeeward,
+                        (false, true) => ExteriorSurfaceDirection::VerticalWallWindward,
+                        (false, false) => ExteriorSurfaceDirection::VerticalWallLeeward,
+                    };
+                    let h_c_ext = h_c_ext_wind_dependent(direction, v_wind_building);
+                    boundary_surfaces.push(ExteriorBoundarySurface {
+                        area_opaque_m2: opaque_area,
+                        azimuth_deg: azimuth,
+                        tilt_deg,
+                        f_sky: ExteriorBoundarySurface::sky_view_factor_from_tilt(tilt_deg),
+                        h_c_ext,
+                        windward: if azimuth < 0.0 { None } else { Some(windward) },
+                        convection_ab: direction.ashrae_140_coefficients(),
+                        irradiance_beam_diffuse_wm2: irr_beam_diffuse,
+                        irradiance_ground_wm2: irr_ground,
+                        absorptance: if is_roof {
+                            ABSORPTANCE_ROOF
+                        } else {
+                            ABSORPTANCE_WALL
+                        },
+                        emissivity: eps_ext,
+                        r_materials: (1.0 / s.u_value - 0.13 - 0.04).max(0.5),
+                    });
+                }
+            }
+            let (h_tr_em, t_sol_air_i) =
+                aggregate_zone_boundary(&boundary_surfaces, outdoor_temp, sky_temp);
             scratch.t_sol_air_zone[i] = t_sol_air_i;
+            scratch.h_tr_em_zone[i] = h_tr_em;
         }
         // Issue #2873: `scratch.t_sol_air_zone` is intentionally NOT
         // `mem::take`'n here. The downstream sites (`h_tr_em *
@@ -276,6 +346,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // each step (`scratch.t_sol_air_zone[i] = …` above), so the values
         // are always fresh at use time.
         let t_sol_air: &[f64] = scratch.t_sol_air_zone.as_slice();
+        // Issue #4166: per-zone h_tr_em aggregated from per-surface exterior
+        // boundaries (populated above alongside t_sol_air_zone).
+        let h_tr_em_zone: &[f64] = scratch.h_tr_em_zone.as_slice();
 
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
@@ -546,33 +619,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         .get(i)
                         .copied()
                         .unwrap_or(20.0);
-                    // Issue #3063 — wind-dependent `h_tr_em`. Recomputed
-                    // per-timestep from material R-values and the same
-                    // exterior film convention used by the sol-air call
-                    // (`HorizontalRoofWindward` at `v_wind_building`).
-                    let h_tr_em_i = h_tr_em_wind_dependent(
-                        self.0
-                            .conduction
-                            .opaque_wall_area
-                            .as_ref()
-                            .get(i)
-                            .copied()
-                            .unwrap_or(0.0),
-                        self.0.conduction.r_materials_wall,
-                        crate::physics::exterior_convection::ExteriorSurfaceDirection::HorizontalRoofWindward,
-                        v_wind_building,
-                    ) + h_tr_em_wind_dependent(
-                        self.0
-                            .conduction
-                            .roof_area_zone
-                            .as_ref()
-                            .get(i)
-                            .copied()
-                            .unwrap_or(0.0),
-                        self.0.conduction.r_materials_roof,
-                        crate::physics::exterior_convection::ExteriorSurfaceDirection::HorizontalRoofWindward,
-                        v_wind_building,
-                    );
+                    // Issue #4166 — wind-dependent `h_tr_em`. Uses the
+                    // per-surface-aggregated zone value from
+                    // `scratch.h_tr_em_zone` (populated in the per-surface
+                    // sol-air loop above) instead of the wall+roof
+                    // `HorizontalRoofWindward` recomputation.
+                    let h_tr_em_i = h_tr_em_zone.get(i).copied().unwrap_or(0.0);
                     let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
 
                     // Net CTF contribution (CTF - 5R1C)
@@ -623,33 +675,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         .get(i)
                         .copied()
                         .unwrap_or(20.0);
-                    // Issue #3063 — wind-dependent `h_tr_em`. Recomputed
-                    // per-timestep from material R-values and the same
-                    // exterior film convention used by the sol-air call
-                    // (`HorizontalRoofWindward` at `v_wind_building`).
-                    let h_tr_em_i = h_tr_em_wind_dependent(
-                        self.0
-                            .conduction
-                            .opaque_wall_area
-                            .as_ref()
-                            .get(i)
-                            .copied()
-                            .unwrap_or(0.0),
-                        self.0.conduction.r_materials_wall,
-                        crate::physics::exterior_convection::ExteriorSurfaceDirection::HorizontalRoofWindward,
-                        v_wind_building,
-                    ) + h_tr_em_wind_dependent(
-                        self.0
-                            .conduction
-                            .roof_area_zone
-                            .as_ref()
-                            .get(i)
-                            .copied()
-                            .unwrap_or(0.0),
-                        self.0.conduction.r_materials_roof,
-                        crate::physics::exterior_convection::ExteriorSurfaceDirection::HorizontalRoofWindward,
-                        v_wind_building,
-                    );
+                    // Issue #4166 — wind-dependent `h_tr_em`. Uses the
+                    // per-surface-aggregated zone value from
+                    // `scratch.h_tr_em_zone` (populated in the per-surface
+                    // sol-air loop above) instead of the wall+roof
+                    // `HorizontalRoofWindward` recomputation.
+                    let h_tr_em_i = h_tr_em_zone.get(i).copied().unwrap_or(0.0);
                     let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
 
                     // Add net FD flux (FD - 5R1C)
@@ -1668,31 +1699,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             if i == 0 && timestep < 3 {
                 let tm = mass_temps_ref[i];
                 let cm_dt = cm / dt;
-                // Issue #3063 — wind-dependent `h_tr_em` (debug-physics
+                // Issue #4166 — wind-dependent `h_tr_em` (debug-physics
                 // snapshot mirrors the production BE/CN integrators above).
-                let h_tr_em_i = h_tr_em_wind_dependent(
-                    self.0
-                        .conduction
-                        .opaque_wall_area
-                        .as_ref()
-                        .get(i)
-                        .copied()
-                        .unwrap_or(0.0),
-                    self.0.conduction.r_materials_wall,
-                    crate::physics::exterior_convection::ExteriorSurfaceDirection::HorizontalRoofWindward,
-                    v_wind_building,
-                ) + h_tr_em_wind_dependent(
-                    self.0
-                        .conduction
-                        .roof_area_zone
-                        .as_ref()
-                        .get(i)
-                        .copied()
-                        .unwrap_or(0.0),
-                    self.0.conduction.r_materials_roof,
-                    crate::physics::exterior_convection::ExteriorSurfaceDirection::HorizontalRoofWindward,
-                    v_wind_building,
-                );
+                let h_tr_em_i = h_tr_em_zone.get(i).copied().unwrap_or(0.0);
                 let h_tr_3_i = h_tr_3_ref_2[i];
                 let half_cond = 0.5 * (h_tr_3_i + h_tr_em_i);
                 let denom = cm_dt + half_cond;
@@ -1709,39 +1718,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             // Use physics-based h_tr_em and h_tr_ms (mode-specific factors removed)
             // The conductances are now calculated from first principles:
-            // h_tr_em = A / (R_materials + 1/h_c_ext_wind_dependent)  [Issue #3063]
-            //   Previously h_tr_em was baked at construction time with the
-            //   default exterior film coefficient (`EXTERIOR_FILM_COEFF_DEFAULT`
-            //   = 18.3 W/m²·K), which overstated `h_tr_em` at low wind speeds
-            //   and biased hours into the cooling deadband. We now recompute
-            //   `h_tr_em` per-timestep using the same `v_wind_building` and
-            //   `HorizontalRoofWindward` convention as the sol-air call.
+            // h_tr_em = Σ A_s / (R_materials,s + 1/h_c_ext,s)  [Issue #4166]
+            //   Aggregated per-surface from the exterior boundary (orientation,
+            //   tilt, sky view factor, windward/leeward convection). Previously
+            //   recomputed per-timestep as wall+roof with the
+            //   `HorizontalRoofWindward` convention [Issue #3063].
             // h_tr_ms = k * A / d (thermal conductivity * area / thickness)
-            // Issue #3063 — wind-dependent `h_tr_em`. Recomputed per-timestep
-            // from material R-values and the wind-dependent exterior film.
-            let h_tr_em = h_tr_em_wind_dependent(
-                self.0
-                    .conduction
-                    .opaque_wall_area
-                    .as_ref()
-                    .get(i)
-                    .copied()
-                    .unwrap_or(0.0),
-                self.0.conduction.r_materials_wall,
-                crate::physics::exterior_convection::ExteriorSurfaceDirection::HorizontalRoofWindward,
-                v_wind_building,
-            ) + h_tr_em_wind_dependent(
-                self.0
-                    .conduction
-                    .roof_area_zone
-                    .as_ref()
-                    .get(i)
-                    .copied()
-                    .unwrap_or(0.0),
-                self.0.conduction.r_materials_roof,
-                crate::physics::exterior_convection::ExteriorSurfaceDirection::HorizontalRoofWindward,
-                v_wind_building,
-            );
+            // Issue #4166 — per-surface-aggregated `h_tr_em` from
+            // `scratch.h_tr_em_zone` (populated in the per-surface sol-air
+            // loop above).
+            let h_tr_em = h_tr_em_zone.get(i).copied().unwrap_or(0.0);
             // Issue #2868: `h_tr_ms` is now consumed through `h_air_mass`
             // (computed above with the degenerate-`H_tr,3` fallback).
             let _h_tr_ms = h_tr_ms_ref[i];
@@ -1918,6 +1904,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 // The helper is kept local to `step_5r1c.rs` until 6R2C/9R4C adopt it; it moves
 // to `exterior_convection.rs` at that point so all three paths share one
 // canonical implementation.
+// Issue #4166: retained for the unit tests below; production now uses the
+// per-surface-aggregated `scratch.h_tr_em_zone`.
+#[allow(dead_code)]
 pub(crate) fn h_tr_em_wind_dependent(
     opaque_area: f64,
     r_materials: f64,

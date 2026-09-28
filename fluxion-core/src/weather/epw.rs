@@ -844,6 +844,13 @@ impl EpwWeatherSource {
         let dni = parse_field_coercing_sentinel(fields[14], EPW_SOLAR_SENTINEL, 0.0);
         let dhi = parse_field_coercing_sentinel(fields[15], EPW_SOLAR_SENTINEL, 0.0);
         let wind_speed = parse_field(fields[21], "wind speed")?;
+        // Issue #4166: wind direction (EPW field 20, 0-based) for
+        // windward/leeward exterior convection selection. EPW uses 999 for
+        // missing; coerce to None so callers fall back to windward.
+        let wind_direction = fields
+            .get(20)
+            .and_then(|s| s.trim().parse::<f64>().ok())
+            .filter(|&d| d >= 0.0 && d <= 360.0);
         let horizontal_infrared =
             parse_field_coercing_sentinel(fields[12], EPW_SOLAR_SENTINEL, 0.0);
 
@@ -942,6 +949,7 @@ impl EpwWeatherSource {
             dhi,
             ghi,
             wind_speed,
+            wind_direction,
             humidity,
             horizontal_infrared,
             hour_of_year,

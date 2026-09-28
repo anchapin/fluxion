@@ -46,6 +46,17 @@ pub struct SolarState<T: ContinuousTensor<f64>> {
     /// solar/distribution hot loops.
     pub surfaces: Vec<Vec<WallSurface>>,
 
+    /// Per-orientation incident solar irradiance (beam + diffuse, W/m²),
+    /// indexed by zone then by `Orientation as usize` (Issue #4166).
+    /// Populated by `calculate_zone_solar_gain` each timestep so the 5R1C
+    /// path can build per-surface exterior boundaries without recomputing
+    /// solar position. Index 5 (Down) is unused (floors skipped).
+    pub orientation_irradiance_beam_diffuse: Vec<[f64; 7]>,
+
+    /// Per-orientation ground-reflected irradiance (W/m²), same indexing.
+    /// (Issue #4166).
+    pub orientation_irradiance_ground: Vec<[f64; 7]>,
+
     /// Internal radiative heat gains to thermal mass (Plan 17-04).
     pub internal_radiative_to_mass: f64,
 }
@@ -74,6 +85,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for SolarState<T> {
             zero_vector: self.zero_vector.clone(),
 
             surfaces: self.surfaces.clone(),
+            orientation_irradiance_beam_diffuse: self.orientation_irradiance_beam_diffuse.clone(),
+            orientation_irradiance_ground: self.orientation_irradiance_ground.clone(),
             internal_radiative_to_mass: self.internal_radiative_to_mass,
         }
     }

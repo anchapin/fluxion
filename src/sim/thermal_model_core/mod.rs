@@ -3993,6 +3993,8 @@ impl ThermalModel<VectorField> {
                 sun_pos_cache: std::collections::HashMap::new(),
                 zero_vector: VectorField::from_scalar(0.0, num_zones),
                 surfaces,
+                orientation_irradiance_beam_diffuse: vec![[0.0; 7]; num_zones],
+                orientation_irradiance_ground: vec![[0.0; 7]; num_zones],
                 internal_radiative_to_mass: 0.0,
             },
             mass: MassState {

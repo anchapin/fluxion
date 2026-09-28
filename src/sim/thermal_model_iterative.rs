@@ -269,6 +269,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // doesn't conflict with the immutable borrow of `self.0.solar.surfaces` (E0502).
         let sun_pos = self.cached_solar_position(timestep, year, month, day, hour);
 
+        // Issue #4166: zero the per-orientation irradiance stash for this zone
+        // so orientations absent this timestep don't carry stale values.
+        if zone_idx < self.0.solar.orientation_irradiance_beam_diffuse.len() {
+            self.0.solar.orientation_irradiance_beam_diffuse[zone_idx] = [0.0; 7];
+            self.0.solar.orientation_irradiance_ground[zone_idx] = [0.0; 7];
+        }
+
         // Calculate solar gain for each surface in the zone
         let mut total_window_gain = 0.0;
         let mut total_opaque_gain = 0.0;
@@ -409,6 +416,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     orientation,
                     Some(0.2), // Ground reflectance
                 );
+
+                // Issue #4166: stash per-orientation irradiance for the 5R1C
+                // per-surface exterior boundary. Indexed by `Orientation as
+                // usize` so step_5r1c.rs can look up each surface's incidence
+                // without recomputing solar position.
+                let oi = orientation as usize;
+                if zone_idx < self.0.solar.orientation_irradiance_beam_diffuse.len() && oi < 7 {
+                    self.0.solar.orientation_irradiance_beam_diffuse[zone_idx][oi] =
+                        irradiance.beam_wm2 + irradiance.diffuse_wm2;
+                    self.0.solar.orientation_irradiance_ground[zone_idx][oi] =
+                        irradiance.ground_reflected_wm2;
+                }
 
                 // Distribute solar gain to each surface with this orientation
                 for surface in zone_surfaces {
