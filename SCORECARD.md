@@ -75,6 +75,7 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | ASHRAE 140 Strict Energy Gate (Issue #1333) | #1333 |
 | Nextest Subset (GH) | — |
 | Cargo Deny | — |
+| Fluxion Core Dependency Budget Gate (Issue #4176) | #4176 |
 | Scorecard Data-Source Consistency Gate (Issue #3535) | #3535 |
 | ASHRAE 140 Fabric Harness Gate (Issue #3986-A+2) | #3986 |
 
@@ -100,6 +101,7 @@ Advisory-only checks that collect signal nightly per ADR-0016. These never block
 | CUDA Smoke Test (Issue #1603) | #1603 |
 | MSRV Check (Issue #2934) | #2934 |
 | Teacher Validation Suite (Issue #3986) | #3986 |
+| Full Workspace Tests (Issue #4177) | #4177 |
 
 - **Validation gate policy** (`release_gates.yaml`): major/minor releases require validation + benchmark + drift gates; patches relax validation to 40% pass (see `release_requirements.patch`).
 - **Drift guard** (`drift.*`): max ±2.0 pp pass-rate change, ±5.0 pp MAE change, ≤1 pass→fail flip vs `validation_baseline.json`.
