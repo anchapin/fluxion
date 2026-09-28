@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Quarantine registry synchroniser (Issue #3211, #3393).
 
-Scans ``tests/**/*.rs`` for ``#[ignore]`` attributes and cross-references
-them against the human-curated registry at ``tests/QUARANTINE.md``.
+Scans ``tests/**/*.rs``, the root crate's ``src/**/*.rs`` and every
+workspace member's ``src/**/*.rs`` and ``tests/**/*.rs`` for
+``#[ignore]`` attributes
+(override the scan roots per-invocation with ``--scan-root``) and
+cross-references them against the human-curated registry at
+``tests/QUARANTINE.md``.
 
 Purpose: close the 149-vs-78 gap documented by Issue #3393 — every
 ``#[ignore]`` attribute should have a corresponding entry in the registry
@@ -20,7 +24,7 @@ existing 71 orphans are triaged into the registry.
 Output:
 
   === Fluxion quarantine registry audit (Issue #3211 / #3393) ===
-  Tests directory: tests/
+  Scan roots: tests/ src/ fluxion-fluid/src/ ...
   Registry:        tests/QUARANTINE.md
 
   Scanned 149 #[ignore] attribute(s) across 47 file(s).
@@ -36,6 +40,7 @@ Usage::
     python3 scripts/generate_quarantine_registry.py             # default (informational)
     python3 scripts/generate_quarantine_registry.py --strict    # fail on orphan
     python3 scripts/generate_quarantine_registry.py --json      # machine-readable
+    python3 scripts/generate_quarantine_registry.py --scan-root tests  # narrower scan
 """
 
 from __future__ import annotations
@@ -50,19 +55,51 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 TESTS_DIR = REPO_ROOT / "tests"
 QUARANTINE_MD = REPO_ROOT / "tests" / "QUARANTINE.md"
 
+
+def _workspace_members() -> list[str]:
+    """Parse ``[workspace] members`` from the root ``Cargo.toml``.
+
+    Minimal regex parse (no toml dependency): captures the quoted
+    entries of the ``members = [...]`` array. Used to derive the
+    default per-crate ``src/`` scan roots (Issue #4178).
+    """
+    cargo = REPO_ROOT / "Cargo.toml"
+    try:
+        text = cargo.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    match = re.search(r"members\s*=\s*\[(.*?)\]", text, re.DOTALL)
+    if not match:
+        return []
+    return re.findall(r'"([^"]+)"', match.group(1))
+
+
+def _default_scan_roots() -> list[Path]:
+    """Default ``#[ignore]`` scan roots (Issue #4178).
+
+    ``tests/``, the root crate's ``src/``, and every workspace
+    member's ``src/`` and ``tests/`` that exist on disk. Override
+    per-invocation with ``--scan-root`` (repeatable, relative to the
+    repo root).
+    """
+    roots = [REPO_ROOT / "tests", REPO_ROOT / "src"]
+    for member in _workspace_members():
+        for sub in ("src", "tests"):
+            candidate = REPO_ROOT / member / sub
+            if candidate.is_dir() and candidate not in roots:
+                roots.append(candidate)
+    return roots
+
+
 # ---------------------------------------------------------------------------
-# Downward-only ratchet for the quarantine registry (Issue #3443).
+# Downward-only ratchet for the quarantine registry (Issue #3443,
+# hardened by Issue #4179).
 #
-# Mirrors the `BASELINE_KNOWN_ORPHANS` pattern from
-# `scripts/check_orphan_modules.py` (Issue #3459) and the
-# `BASELINE_WIRED_BUT_DEAD` pattern (Issue #3458): the constants below
-# record the *highest* `len(ORPHANED_IGNORES)` / `len(GHOST_ROWS)` the
-# audit has ever accepted. The script FAILS (exit 1) the moment the live
-# counts exceed those baselines — adding a new orphan or ghost without
-# editing the baseline (with a documenting comment naming the tracking
-# issue) is rejected. Lowering the baselines is the only authorised
-# change; companion cleanup PRs that resolve an orphan or fix a ghost
-# are expected to lower the corresponding baseline by one entry.
+# As of Issue #4179 the ratchet is a KEY-MEMBERSHIP check, not a bare
+# integer comparison: ``--strict`` fails when ANY orphan/ghost key is
+# absent from the freeze snapshot below, regardless of the total
+# count. The integer baselines are retained as documentation of the
+# last accepted totals; the freeze SETS are authoritative.
 #
 # History:
 #   - 82 → seed (Issue #3443): initial triage of the 82 orphan
@@ -96,68 +133,37 @@ QUARANTINE_MD = REPO_ROOT / "tests" / "QUARANTINE.md"
 #     Diagnostic sections) and raises this baseline to 9 with the
 #     matching freeze-set entries below.
 # ---------------------------------------------------------------------------
-BASELINE_ORPHANED_IGNORES = 11
+#   - 11 → 0 (Issue #4179): the integer comparison had 11 slots of
+#     unused headroom while the live audit reported 0 orphans, so up
+#     to 11 brand-new unregistered `#[ignore]` attributes merged green.
+#     The freeze snapshot is now authoritative (key-membership ratchet)
+#     and, because every known orphan is registered, the snapshot is
+#     EMPTY. Any new orphan fails `--strict`; registering it (with a
+#     real QUARANTINE.md row) is the only way back to green. Lowering
+#     the ratchet is the explicitly authorised direction.
+# ---------------------------------------------------------------------------
+BASELINE_ORPHANED_IGNORES = 0
 BASELINE_GHOST_ROWS = 0
 
-# Freeze snapshot of the orphan allowlist (Issue #3443 ratchet).
+# Freeze snapshot of the orphan allowlist (Issue #3443 ratchet,
+# hardened by Issue #4179).
 #
-# Mirrors the `_BASELINE_KNOWN_ORPHANS_SET` / freeze-snapshot pattern
-# from `scripts/check_orphan_modules.py`. Populated by the Issue #3443
-# reconciliation (see the BASELINE_ORPHANED_IGNORES history above):
-# the 10 rows added to `tests/QUARANTINE.md` for the #3572 /
-# #3585 / #3551 / #3552 ignores that landed without registry rows.
-# Future cleanup PRs that resolve an orphan will not need to touch
-# this freeze set; only PRs that reintroduce an orphan (e.g. by
-# re-adding a `#[ignore]` attribute without updating the registry)
-# will fail the ratchet check, and such PRs are the only ones that
-# need to add the new entry to this set AND raise
-# `BASELINE_ORPHANED_IGNORES`.
-_BASELINE_ORPHANED_IGNORES_SET: frozenset[tuple[str, str]] = frozenset({
-    ("tests/zone_balance_eplus_isolation.rs", "test_case_800_annual_energy_ashrae140_tolerance"),
-    ("tests/zone_balance_eplus_isolation.rs", "test_case_810_annual_energy_ashrae140_tolerance"),
-    ("tests/zone_balance_eplus_isolation.rs", "test_case_920_annual_energy_ashrae140_tolerance"),
-    ("tests/zone_balance_eplus_isolation.rs", "test_case_950_annual_energy_ashrae140_tolerance"),
-    ("tests/zone_balance_eplus_isolation.rs", "test_case_960_annual_energy_ashrae140_tolerance"),
-    ("tests/zone_balance_eplus_isolation.rs", "test_case_970_annual_energy_ashrae140_tolerance"),
-    ("tests/ashrae_140_case_970_validation.rs", "test_case_970_annual_energy_band"),
-    ("tests/diagnostics/case_950_hvac_mode_seasonal_attribution.rs", "test_case_950_hvac_mode_seasonal_attribution"),
-    ("tests/diagnostics/case_970_multi_zone_seasonal_attribution.rs", "case_970_per_zone_seasonal_attribution_placeholder"),
-    # PR #4111: add 2 registry rows for the `diag_air_node_equilibration`
-    # `#[ignore]` attributes (Issue #2536) that pre-date the Issue #3443
-    # ratchet but were never registered. The canonical source row covers
-    # `tests/diagnostics/diag_air_node_equilibration.rs:133`; the second
-    # row is the consolidated runner re-export at
-    # `tests/all_tests/diag_air_node_equilibration.rs:133` (same test,
-    # tracked at the canonical source row).
-    ("tests/diagnostics/diag_air_node_equilibration.rs", "diag_air_node_equilibration"),
-    ("tests/all_tests/diag_air_node_equilibration.rs", "diag_air_node_equilibration"),
-})
+# EMPTY as of Issue #4179: every `#[ignore]` known at the time is
+# registered in `tests/QUARANTINE.md`, so there is nothing to
+# grandfather. Under the key-membership ratchet, a PR that adds an
+# `#[ignore]` without a registry row fails `--strict` with the new
+# key named; the fix is to add the row (the freeze set must NOT be
+# extended to launder it).
+_BASELINE_ORPHANED_IGNORES_SET: frozenset[tuple[str, str]] = frozenset()
 
-# Freeze snapshot of the ghost rows (Issue #3443 ratchet). Same shape
-# as the orphan freeze set: a `frozenset` of `(file, function)` pairs
-# that mirrors the registry at freeze time. Editing this set is the
-# "raise the ghost baseline" lever — any new ghost MUST be added here
-# AND to the registry (and `BASELINE_GHOST_ROWS` must be raised to
-# match), with a documenting comment naming the tracking issue.
+# Freeze snapshot of the ghost rows (Issue #3443 ratchet).
 #
-# 2026-09-11 (Issue #3599): the 3 Phase-A8 `src/` scratch_pool rows —
-# permanent ghosts because the scanner only covers `tests/`.
-_BASELINE_GHOST_ROWS_SET: frozenset[tuple[str, str]] = frozenset(
-    {
-        (
-            "src/sim/thermal_model_physics/physics_impl/mod.rs",
-            "scratch_pool_9r4c_is_reused_across_timesteps",
-        ),
-        (
-            "src/sim/thermal_model_physics/physics_impl/mod.rs",
-            "scratch_pool_9r4c_restored_on_free_float_early_return",
-        ),
-        (
-            "src/sim/thermal_model_physics/physics_impl/step_9r4c.rs",
-            "scratch_pool_9r4c_is_reused_across_timesteps",
-        ),
-    }
-)
+# EMPTY as of Issue #4179. (The 2026-09-11 entries for the 3 Phase-A8
+# `src/` scratch_pool rows were "permanent ghosts" only because the
+# scanner never left `tests/`; Issue #4178 widened the scan to `src/`
+# and every workspace member's `src/`, so those rows now match real
+# `#[ignore]` attributes and the grandfathering is obsolete.)
+_BASELINE_GHOST_ROWS_SET: frozenset[tuple[str, str]] = frozenset()
 
 # `#[ignore]` and `#[ignore = "reason"]` (with optional reason string).
 # Tolerant of whitespace and trailing comments.
@@ -183,13 +189,51 @@ _TEST_FN_RE = re.compile(
     re.MULTILINE,
 )
 
-# A QUARANTINE.md registry row is a markdown table row whose first cell
-# is a backtick-wrapped file path. Example:
-#   | `tests/foo.rs` | `test_foo` | #1234 | ... | `pending` |
-_TABLE_ROW_RE = re.compile(
-    r"^\|\s*`([^`]+)`\s*\|\s*`?([^|`]+)`?\s*\|",
-    re.MULTILINE,
+# Frozen registry schema (Issue #4179). QUARANTINE.md presents itself
+# as a "Machine-readable registry"; these are the columns every row
+# must carry, and the only legitimate Category values. `scan_registry`
+# resolves column positions from the table header, so column ORDER is
+# not significant — but every required column must be present.
+_REQUIRED_COLUMNS: tuple[str, ...] = (
+    "Test File",
+    "Test Name",
+    "Category",
+    "Blocking Issue",
+    "Owner",
+    "Un-Ignore Criteria",
+    "Status",
 )
+
+# The legitimate Category values (Issue #4179). These are the
+# `classify_ignore` buckets as realised in the QUARANTINE.md
+# `## Category:` sections — including `manual-baseline`, which the
+# issue text omitted but the registry's "Manual Baseline Regeneration"
+# section and the classifier both use.
+_VALID_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "calibration",
+        "ci-broken",
+        "diagnostic",
+        "hardware",
+        "manual-baseline",
+        "other",
+        "performance",
+        "structural",
+    }
+)
+
+
+def _split_row(line: str) -> list[str]:
+    """Split a markdown table row into raw cells."""
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def _clean_cell(cell: str) -> str:
+    """Strip whitespace and one layer of backtick wrapping."""
+    cell = cell.strip()
+    if len(cell) >= 2 and cell.startswith("`") and cell.endswith("`"):
+        cell = cell[1:-1].strip()
+    return cell
 
 
 def _is_comment_only(line: str) -> bool:
@@ -266,9 +310,7 @@ def scan_ignores(tests_dir: Path) -> list[dict]:
     # reporting both would inflate orphan / ghost counts and obscure
     # the actual quarantine state.
     unconditional_keys: set[tuple[str, str]] = {
-        (r["file"], r["function"])
-        for r in raw_results
-        if not r["conditional"]
+        (r["file"], r["function"]) for r in raw_results if not r["conditional"]
     }
     results: list[dict] = []
     for entry in raw_results:
@@ -302,24 +344,89 @@ def _nearest_fn(text: str, attr_start: int, attr_end: int) -> str:
 
 
 def scan_registry(quarantine_md: Path) -> list[dict]:
-    """Scan ``quarantine_md`` for table rows.
+    """Scan ``quarantine_md`` for registry rows.
 
-    Returns a list of dicts with keys ``file``, ``function`` (best-effort,
-    the second column). The third column is the blocking-issue(s), but
-    the audit script only consumes file + function for the orphan/ghost
-    cross-check.
+    Returns a list of dicts with keys ``file``, ``function``,
+    ``category``, ``issue``, ``owner``, ``unignore_criteria``,
+    ``status`` and ``line`` (1-based source line, for diagnostics).
+    Column positions are resolved from the table header, so column
+    order is not significant. Rows whose file cell does not end in
+    ``.rs`` (e.g. the ``## Summary`` table, category sub-header rows)
+    are skipped.
     """
     if not quarantine_md.exists():
         return []
-    text = quarantine_md.read_text(encoding="utf-8")
+    lines = quarantine_md.read_text(encoding="utf-8").splitlines()
+    col_index: dict[str, int] = {}
     rows: list[dict] = []
-    for match in _TABLE_ROW_RE.finditer(text):
-        file_cell = match.group(1).strip()
-        fn_cell = match.group(2).strip()
+    for lineno, line in enumerate(lines, start=1):
+        if not line.strip().startswith("|"):
+            continue
+        cells = [_clean_cell(c) for c in _split_row(line)]
+        if not col_index:
+            # First table row mentioning "Test File" is the header;
+            # any earlier `|` table (there is none today) is ignored.
+            lowered = [c.lower() for c in cells]
+            if "test file" not in lowered:
+                continue
+            for required in _REQUIRED_COLUMNS:
+                rl = required.lower()
+                if rl in lowered:
+                    col_index[required] = lowered.index(rl)
+            continue  # the header row itself is never a data row
+        if all((not c) or set(c) <= set("-:") for c in cells):
+            continue  # markdown separator row
+
+        def cell(name: str) -> str:
+            idx = col_index.get(name, -1)
+            return cells[idx] if 0 <= idx < len(cells) else ""
+
+        file_cell = cell("Test File")
         if not file_cell.endswith(".rs"):
-            continue  # skip category-header rows
-        rows.append({"file": file_cell, "function": fn_cell})
+            continue  # category sub-header / summary-table row
+        rows.append(
+            {
+                "file": file_cell,
+                "function": cell("Test Name"),
+                "category": cell("Category"),
+                "issue": cell("Blocking Issue"),
+                "owner": cell("Owner"),
+                "unignore_criteria": cell("Un-Ignore Criteria"),
+                "status": cell("Status"),
+                "line": lineno,
+            }
+        )
     return rows
+
+
+def validate_registry_schema(rows: list[dict]) -> list[str]:
+    """Schema pass over parsed registry rows (Issue #4179).
+
+    Returns a list of human-readable violation strings; empty means
+    the registry is schema-clean. Fails on any empty Category /
+    Blocking Issue / Owner / Un-Ignore Criteria / Status cell, and on
+    any Category outside ``_VALID_CATEGORIES``. ``--strict`` turns any
+    violation into exit 1.
+    """
+    violations: list[str] = []
+    for row in rows:
+        where = f"{row['file']} :: {row['function']} (line {row['line']})"
+        for key, label in (
+            ("category", "Category"),
+            ("issue", "Blocking Issue"),
+            ("owner", "Owner"),
+            ("unignore_criteria", "Un-Ignore Criteria"),
+            ("status", "Status"),
+        ):
+            if not row.get(key, "").strip():
+                violations.append(f"{where}: empty {label}")
+        cat = row.get("category", "").strip().lower()
+        if cat and cat not in _VALID_CATEGORIES:
+            violations.append(
+                f"{where}: unknown Category {row['category']!r} "
+                f"(expected one of {sorted(_VALID_CATEGORIES)})"
+            )
+    return violations
 
 
 def classify_ignore(ignore: dict) -> str:
@@ -416,19 +523,21 @@ def audit(ignores: list[dict], registry: list[dict]) -> tuple[list[dict], list[d
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Quarantine registry audit (Issue #3211 / #3393 / #3443). Default mode "
-            "is informational; --strict fails on orphan #[ignore] entries OR on "
-            "growth above the BASELINE_ORPHANED_IGNORES / BASELINE_GHOST_ROWS ratchet."
+            "Quarantine registry audit (Issue #3211 / #3393 / #3443 / "
+            "#4178 / #4179). Default mode is informational; --strict "
+            "fails on any orphan #[ignore] entry absent from the freeze "
+            "snapshot, on any ghost registry row absent from the freeze "
+            "snapshot, or on any QUARANTINE.md row-schema violation."
         )
     )
     parser.add_argument(
         "--strict",
         action="store_true",
         help=(
-            "Fail (exit 1) on any orphan #[ignore] not in QUARANTINE.md, "
-            "on any ghost registry row, or on growth above the "
-            "BASELINE_ORPHANED_IGNORES / BASELINE_GHOST_ROWS downward-only "
-            "ratchet (Issue #3443)."
+            "Fail (exit 1) on any orphan #[ignore] absent from the "
+            "QUARANTINE.md registry (key-membership ratchet, Issue "
+            "#3443/#4179), on any ghost registry row, or on any "
+            "registry row-schema violation (Issue #4179)."
         ),
     )
     parser.add_argument(
@@ -436,10 +545,31 @@ def main() -> int:
         action="store_true",
         help="Emit JSON output for CI consumption.",
     )
+    parser.add_argument(
+        "--scan-root",
+        action="append",
+        default=None,
+        metavar="DIR",
+        help=(
+            "Replacement #[ignore] scan root, relative to the repo root "
+            "(repeatable). Defaults to tests/, src/ and every workspace "
+            "member's src/ and tests/ (Issue #4178)."
+        ),
+    )
     args = parser.parse_args()
 
-    ignores = scan_ignores(TESTS_DIR)
+    if args.scan_root:
+        scan_roots = [
+            (REPO_ROOT / r) if not Path(r).is_absolute() else Path(r)
+            for r in args.scan_root
+        ]
+    else:
+        scan_roots = _default_scan_roots()
+    ignores: list[dict] = []
+    for scan_root in scan_roots:
+        ignores.extend(scan_ignores(scan_root))
     registry = scan_registry(QUARANTINE_MD)
+    schema_violations = validate_registry_schema(registry)
     orphans, ghosts = audit(ignores, registry)
 
     by_category: dict[str, int] = {}
@@ -447,38 +577,45 @@ def main() -> int:
         cat = classify_ignore(ignore)
         by_category[cat] = by_category.get(cat, 0) + 1
 
-    orphan_keys: set[tuple[str, str]] = {
-        (o["file"], o["function"]) for o in orphans
-    }
-    ghost_keys: set[tuple[str, str]] = {
-        (g["file"], g["function"]) for g in ghosts
-    }
+    orphan_keys: set[tuple[str, str]] = {(o["file"], o["function"]) for o in orphans}
+    ghost_keys: set[tuple[str, str]] = {(g["file"], g["function"]) for g in ghosts}
+
+    # Key-membership ratchet (Issue #3443, hardened by Issue #4179):
+    # any orphan/ghost key ABSENT from the freeze snapshot is new,
+    # regardless of the total count. The integer baselines above are
+    # documentation; these sets are authoritative.
+    new_orphan_keys = sorted(orphan_keys - _BASELINE_ORPHANED_IGNORES_SET)
+    new_ghost_keys = sorted(ghost_keys - _BASELINE_GHOST_ROWS_SET)
 
     if args.json:
         out = {
-            "tests_dir": str(TESTS_DIR.relative_to(REPO_ROOT)),
+            "scan_roots": [str(r.relative_to(REPO_ROOT)) for r in scan_roots],
             "registry": str(QUARANTINE_MD.relative_to(REPO_ROOT)),
             "total_ignores": len(ignores),
             "registered": len(registry),
             "orphans": [{k: v for k, v in o.items()} for o in orphans],
             "ghosts": [{k: v for k, v in g.items()} for g in ghosts],
             "by_category": by_category,
+            "schema_violations": schema_violations,
             "baseline_orphaned_ignores": BASELINE_ORPHANED_IGNORES,
             "baseline_ghost_rows": BASELINE_GHOST_ROWS,
             "strict": args.strict,
             "would_fail": (
-                (len(orphans) > BASELINE_ORPHANED_IGNORES
-                 or len(ghosts) > BASELINE_GHOST_ROWS
-                 or len(orphans) > 0
-                 or len(ghosts) > 0)
+                (
+                    bool(new_orphan_keys)
+                    or bool(new_ghost_keys)
+                    or bool(schema_violations)
+                )
                 and args.strict
             ),
         }
         print(json.dumps(out, indent=2, sort_keys=True))
     else:
-        print("=== Fluxion quarantine registry audit "
-              "(Issue #3211 / #3393 / #3443) ===")
-        print(f"Tests directory: {TESTS_DIR.relative_to(REPO_ROOT)}/")
+        print("=== Fluxion quarantine registry audit (Issue #3211 / #3393 / #3443) ===")
+        print(
+            "Scan roots: "
+            + ", ".join(str(r.relative_to(REPO_ROOT)) + "/" for r in scan_roots)
+        )
         print(f"Registry:        {QUARANTINE_MD.relative_to(REPO_ROOT)}")
         print()
         print(
@@ -488,15 +625,13 @@ def main() -> int:
         print(f"Registered:      {len(registry)} (in QUARANTINE.md)")
         print(f"Orphan:          {len(orphans)} (in code, not in registry)")
         print(f"Ghost:           {len(ghosts)} (in registry, not in code)")
+        print(f"Schema violations: {len(schema_violations)}")
         print()
         print(
             f"Orphan ratchet baseline (BASELINE_ORPHANED_IGNORES): "
             f"{BASELINE_ORPHANED_IGNORES}"
         )
-        print(
-            f"Ghost  ratchet baseline (BASELINE_GHOST_ROWS): "
-            f"{BASELINE_GHOST_ROWS}"
-        )
+        print(f"Ghost  ratchet baseline (BASELINE_GHOST_ROWS): {BASELINE_GHOST_ROWS}")
         print()
         print("By category:")
         for cat in sorted(by_category):
@@ -539,63 +674,52 @@ def main() -> int:
     if not args.strict:
         return 0
 
-    # Downward-only ratchet (Issue #3443): reject growth above the
-    # documented baseline, mirroring the BASELINE_KNOWN_ORPHANS /
-    # BASELINE_WIRED_BUT_DEAD pattern from scripts/check_orphan_modules.py.
-    if len(orphans) > BASELINE_ORPHANED_IGNORES:
-        new_keys = sorted(orphan_keys - _BASELINE_ORPHANED_IGNORES_SET)
+    # Key-membership ratchet (Issue #3443, hardened by Issue #4179):
+    # --strict fails when ANY orphan/ghost key is absent from the
+    # freeze snapshot, regardless of the total count. Registering the
+    # new key with a real QUARANTINE.md row is the only way back to
+    # green; extending the freeze set to launder it is forbidden.
+    if new_orphan_keys:
         print(
-            "ORPHAN COUNT GREW ABOVE BASELINE (CI FAILURE — Issue #3443 "
-            "downward-only ratchet):"
+            "NEW ORPHAN #[ignore] ENTRIES NOT IN THE FREEZE SNAPSHOT "
+            "(CI FAILURE — Issue #3443/#4179 key-membership ratchet):"
         )
-        print(
-            f"  len(orphans) = {len(orphans)} > "
-            f"BASELINE_ORPHANED_IGNORES = {BASELINE_ORPHANED_IGNORES}"
-        )
-        if new_keys:
-            print("  Newly added orphan entries (not in the freeze snapshot):")
-            for file_cell, fn_cell in new_keys:
-                print(f"    {file_cell} :: {fn_cell}")
+        for file_cell, fn_cell in new_orphan_keys:
+            print(f"  - {file_cell} :: {fn_cell}")
         print(
             "\n"
-            "Adding a new orphan to tests/QUARANTINE.md is allowed only\n"
-            "when the new orphan is tracked by a documented issue AND the\n"
-            "baseline constant is raised with a justifying comment naming\n"
-            "the tracking issue. Otherwise the orphan count will silently\n"
-            "grow back. Companion cleanup PRs that *resolve* an existing\n"
-            "orphan (e.g. by closing the underlying tracking issue and\n"
-            "un-ignoring the test) are expected to LOWER\n"
-            "BASELINE_ORPHANED_IGNORES by one.\n"
+            "Fix: add a row to tests/QUARANTINE.md for each new orphan "
+            "(Category, Blocking Issue, Owner, Un-Ignore Criteria, "
+            "Status). Do NOT add the key to "
+            "_BASELINE_ORPHANED_IGNORES_SET to silence this check.\n"
         )
         return 1
-    if len(ghosts) > BASELINE_GHOST_ROWS:
-        new_keys = sorted(ghost_keys - _BASELINE_GHOST_ROWS_SET)
+    if new_ghost_keys:
         print(
-            "GHOST COUNT GREW ABOVE BASELINE (CI FAILURE — Issue #3443 "
-            "downward-only ratchet):"
+            "NEW GHOST REGISTRY ROWS NOT IN THE FREEZE SNAPSHOT "
+            "(CI FAILURE — Issue #3443/#4179 key-membership ratchet):"
         )
-        print(
-            f"  len(ghosts) = {len(ghosts)} > "
-            f"BASELINE_GHOST_ROWS = {BASELINE_GHOST_ROWS}"
-        )
-        if new_keys:
-            print("  Newly added ghost entries (not in the freeze snapshot):")
-            for file_cell, fn_cell in new_keys:
-                print(f"    {file_cell} :: {fn_cell}")
+        for file_cell, fn_cell in new_ghost_keys:
+            print(f"  - {file_cell} :: {fn_cell}")
         print(
             "\n"
-            "Adding a new ghost to tests/QUARANTINE.md is allowed only\n"
-            "when the stale registry row is tracked by a documented issue\n"
-            "AND the baseline constant is raised with a justifying comment\n"
-            "naming the tracking issue. Companion cleanup PRs that *fix* a\n"
-            "ghost (e.g. by re-pointing the registry row to the actual\n"
-            "function name or removing a duplicate) are expected to LOWER\n"
-            "BASELINE_GHOST_ROWS by one.\n"
+            "Fix: the test may have been un-ignored without updating "
+            "the registry, or the file path / function name has "
+            "drifted. Update or remove the registry row.\n"
         )
         return 1
-    if orphans or ghosts:
-        # Either count is non-zero but within baseline — informational.
-        return 0
+    if schema_violations:
+        print("REGISTRY SCHEMA VIOLATIONS (CI FAILURE — Issue #4179 row-schema gate):")
+        for violation in schema_violations:
+            print(f"  - {violation}")
+        print(
+            "\n"
+            "Fix: every QUARANTINE.md row must carry non-empty "
+            "Category / Blocking Issue / Owner / Un-Ignore Criteria / "
+            "Status cells, and Category must be one of "
+            f"{sorted(_VALID_CATEGORIES)}.\n"
+        )
+        return 1
     return 0
 
 
