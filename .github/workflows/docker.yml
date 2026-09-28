@@ -275,6 +275,17 @@ jobs:
               fi
           done
 
+      # Issue #4145: `name-canonical=true` tells buildx to derive the
+      # image name from the `--tag` values. Without a `tags:` input here
+      # the command carried no `--tag` at all, so buildx had no
+      # reference to canonicalise and aborted with "tag is needed when
+      # pushing to registry".
+      #
+      # The tags are needed even though this step pushes by DIGEST: the
+      # digest push needs a named repository to push into, and
+      # `steps.build.outputs.digest` (consumed by "Export digest") is
+      # only produced once the build succeeds. `merge-manifests` then
+      # applies the tag list to the assembled manifest list.
       - name: Build and push platform image
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
@@ -282,6 +293,7 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,push-by-digest=true,name-canonical=true
           cache-from: type=gha,scope=build-${{ matrix.slug }}-v3
