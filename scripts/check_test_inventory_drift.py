@@ -243,7 +243,8 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #   test in `pcm_test_box.rs::tests` (the `default_layer_thickness_matches_documented_value`
 #   guard test) plus the AST-scan delta for the new `tests/all_tests/teacher_validation_pcm_box.rs`
 #   module's integration tests. Stacked on PR-A's 4273 baseline.
-BASELINE_LIB_TESTS = 4277  # 2026-09-27: 4274 -> 4277 — post-rebase AST delta for PR-A + PR-B's combined inline tests (the 7 selector-parity tests are counted as workspace-integration rather than lib, so the lib bump comes from the 4 inline tests in `phase_change_material.rs::tests` + `pcm_test_box.rs::tests` plus the AST scan delta for PR-A's `tests.rs` guards).
+BASELINE_LIB_TESTS = 4278  # 2026-09-28: 4277 -> 4278 — Issue #4115 adds one lib unit test (`toon_export_round_trips_case_600` in `src/cli/topology.rs::tests`). Stacked on PR-A+2's 4277 baseline.
+                        # 2026-09-27: 4274 -> 4277 — post-rebase AST delta for PR-A + PR-B's combined inline tests (the 7 selector-parity tests are counted as workspace-integration rather than lib, so the lib bump comes from the 4 inline tests in `phase_change_material.rs::tests` + `pcm_test_box.rs::tests` plus the AST scan delta for PR-A's `tests.rs` guards).
                         # (+2 hvac setpoint CLI tests in src/cli/hvac_commands.rs:
                         # ZoneControl delegation + CLI-to-system propagation);
                         # stacked on the merged 4263 fluxion-#4086 bump.
@@ -268,7 +269,8 @@ BASELINE_LIB_IGNORED = 9
 #   test_box_solid_fraction_returns_none_without_reference_data,
 #   test_box_apparent_cp_at_wall_delegates_to_material). Stacked on PR-A's
 #   8821 baseline.
-BASELINE_WORKSPACE_TESTS = 8839  # 2026-09-28: 8836 -> 8839 — three new `fabric_case_*_measurement` tests in `tests/all_tests/ashrae_140_fabric_multiselector.rs` (PR-A+2 fabric harness, Refs #3986-A+2 / #4117). CI's authoritative cargo --list count rises 8836 -> 8839 (local 8131). Ratchet must equal or exceed CI live count per Issue #3442 protocol.
+BASELINE_WORKSPACE_TESTS = 8840  # 2026-09-28: 8839 -> 8840 — Issue #4115's `toon_export_round_trips_case_600` is counted by the AST scan as a workspace-integration test as well as a lib test, so the new lib unit test moves this ratchet by the same +1. Stacked on PR-A+2's 8839 baseline.
+                                  # Previous: 2026-09-28: 8836 -> 8839 — three new `fabric_case_*_measurement` tests in `tests/all_tests/ashrae_140_fabric_multiselector.rs` (PR-A+2 fabric harness, Refs #3986-A+2 / #4117). CI's authoritative cargo --list count rises 8836 -> 8839 (local 8131). Ratchet must equal or exceed CI live count per Issue #3442 protocol.
                                   # Previous: 2026-09-27: 8829 -> 8833 — post-rebase AST delta for PR-A + PR-B's combined consolidated-runner modules (7 selector-parity + 8 PCM box tests).
                                  # unmet-hours lib tests in src/api/schema.rs
                                  # (tolerance default, all-hours divergence,
