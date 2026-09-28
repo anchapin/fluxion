@@ -334,6 +334,17 @@ keeps the pin fresh on a quarterly cadence.
   followed by a `docker inspect --format='{{index .RepoDigests 0}}'`
   cross-check. A digest drift fails the step with `::error::` and a
   non-zero exit, halting the workflow before any build cost is paid.
+- **The cross-check compares two invariants, not one string.** The
+  daemon normalises `.RepoDigests[0]` to `<repo-without-tag>@<digest>`,
+  so pulling `rust:1.87-bookworm@sha256:…` reports
+  `rust@sha256:…`. Comparing the raw value against the full
+  `rust:1.87-bookworm@sha256:…` pin is therefore unsatisfiable for any
+  tagged image — it false-failed every `main`/`develop` push while the
+  digests actually matched byte-for-byte (Issue #3815 follow-up). The
+  step now compares the **digest** and the **untagged repository
+  separately**, which keeps all three failure modes fail-closed: digest
+  rotation, repository substitution by a mirror/attacker, and an
+  unpopulated `RepoDigests`.
 - **The `docker-compose.yml` local image tag** is `fluxion-rest:local`
   (replacing the previous `fluxion-rest:latest`). The image is built
   by the in-file `build:` block and is never pulled from a registry,
