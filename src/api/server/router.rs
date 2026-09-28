@@ -268,3 +268,159 @@ pub fn router_with_security(
         .layer(cfg.cors_layer())
         .layer(middleware_stack)
 }
+
+// =========================================================================
+// Issue #4201 — TraceLayer credential-redaction regression tests.
+//
+// The production deploy checklist (`docs/SECURITY.md`) names the regression
+// test `tracelayer_does_not_log_credentials` as the guard for the OWASP
+// A09 credential-leak control: `SafeHeaderMakeSpan` records only an
+// explicit allow-list of safe headers onto the `tower_http` TraceLayer
+// span, omitting credential headers by construction. These tests keep that
+// control live: one asserts the allow-list is exactly the three vetted
+// headers (any widening fails), the other routes a credential-carrying
+// request through `SafeHeaderMakeSpan`'s span construction with a
+// `tracing_subscriber` capture buffer and asserts neither the credential
+// header names nor their secret values appear in the emitted span fields.
+// =========================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    /// Capture buffer mirroring the `AuditCaptureBuf` pattern from
+    /// `src/api/server/tests.rs` (Issue #3652): routes fmt-layer output
+    /// into an in-memory buffer for assertion.
+    #[derive(Clone)]
+    struct SpanCaptureBuf(Arc<Mutex<Vec<u8>>>);
+
+    impl std::io::Write for SpanCaptureBuf {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for SpanCaptureBuf {
+        type Writer = SpanCaptureBuf;
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    /// Build a request carrying one allow-listed header (positive control)
+    /// plus the four credential headers the checklist names, each with a
+    /// distinctive secret value that must never appear in span output.
+    fn credential_carrying_request() -> axum::http::Request<()> {
+        let mut request = axum::http::Request::builder()
+            .method("GET")
+            .uri("/v1/healthz")
+            .body(())
+            .expect("request builder");
+        let headers = request.headers_mut();
+        headers.insert("user-agent", "fluxion-test-agent/1.0".parse().unwrap());
+        headers.insert(
+            "authorization",
+            "Bearer sk-4201-secret-bearer-token".parse().unwrap(),
+        );
+        headers.insert(
+            "cookie",
+            "session=4201-secret-session-cookie".parse().unwrap(),
+        );
+        headers.insert("x-api-key", "4201-secret-api-key".parse().unwrap());
+        headers.insert(
+            "x-amz-security-token",
+            "4201-secret-amz-session-token".parse().unwrap(),
+        );
+        request
+    }
+
+    /// The exact allow-list the OWASP A09 control is built on: assert the
+    /// full contents so widening (new entry, rename, reorder) fails loudly
+    /// instead of silently expanding what the TraceLayer records.
+    #[test]
+    fn safe_header_allowlist_is_exactly_the_vetted_three() {
+        // Compare as a slice so widening the const fails this assertion at
+        // runtime (array-vs-array `assert_eq!` would fail to compile
+        // instead, which is a noisier signal in CI logs).
+        assert_eq!(
+            SAFE_HEADER_ALLOWLIST.as_slice(),
+            ["x-request-id", "content-type", "user-agent"],
+            "SAFE_HEADER_ALLOWLIST must stay exactly the three vetted headers \
+             (Issues #2504 / #4201); do not widen it to any credential-bearing header"
+        );
+        assert_eq!(
+            SAFE_HEADER_ALLOWLIST.len(),
+            3,
+            "allow-list growth must be a deliberate, reviewed change"
+        );
+    }
+
+    #[test]
+    fn tracelayer_does_not_log_credentials() {
+        let buf = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(SpanCaptureBuf(buf.clone()))
+            .with_max_level(tracing::Level::INFO)
+            .with_target(false)
+            .with_ansi(false)
+            .without_time()
+            .finish();
+        let _dispatch_guard = tracing::dispatcher::set_default(&tracing::Dispatch::new(subscriber));
+
+        let request = credential_carrying_request();
+        let mut make_span = SafeHeaderMakeSpan::new();
+        // `MakeSpan::make_span` is synchronous — no async runtime needed.
+        let span = make_span.make_span(&request);
+        // The default fmt layer prints span fields as context on event
+        // lines (span creation alone emits nothing), so enter the span and
+        // emit one event — mirroring how TraceLayer holds the span open for
+        // the request — to get the fields into the capture buffer.
+        let _entered = span.enter();
+        tracing::info!("tracelayer credential-redaction probe");
+        drop(_entered);
+        drop(span);
+        drop(_dispatch_guard);
+
+        let captured = String::from_utf8(buf.lock().unwrap().clone()).expect("fmt output is UTF-8");
+
+        // Positive control: the allow-listed header must be recorded, which
+        // proves the span was actually emitted to the buffer (an empty
+        // buffer would pass the negative assertions trivially).
+        assert!(
+            captured.contains("fluxion-test-agent/1.0"),
+            "allow-listed user-agent value must be recorded on the span; captured: {captured}"
+        );
+
+        // Credential header names must not appear (fmt field names are
+        // lowercase; compare case-insensitively to be thorough).
+        let lowered = captured.to_lowercase();
+        for name in [
+            "authorization",
+            "cookie",
+            "x-api-key",
+            "x-amz-security-token",
+        ] {
+            assert!(
+                !lowered.contains(name),
+                "credential header name {name:?} must not appear in span output; captured: {captured}"
+            );
+        }
+        // Credential values must not appear.
+        for secret in [
+            "sk-4201-secret-bearer-token",
+            "4201-secret-session-cookie",
+            "4201-secret-api-key",
+            "4201-secret-amz-session-token",
+        ] {
+            assert!(
+                !captured.contains(secret),
+                "credential value {secret:?} must not appear in span output; captured: {captured}"
+            );
+        }
+    }
+}
