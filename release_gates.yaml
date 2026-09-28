@@ -607,6 +607,29 @@ ci:
     # Issue #4123.
     - "Scorecard Data-Source Consistency Gate (Issue #3535)"
 
+    # Issue #3986-A+2: ASHRAE 140 Fabric Harness Gate. Per-component
+    # annual-energy selector-parity drift detection. The companion to
+    # the strict ±15% ASHRAE 140 annual-energy gate (Issue #1333):
+    # the strict gate observes Cases 600/800/810/900/920/950/960/970
+    # in aggregate (heating + cooling summed); this gate observes
+    # Cases 600 / 900 / 950 per-component (H and C separately) across
+    # the FiveROneC + NineRFourC selectors via engine-level isolation
+    # (`run_blind_annual_energy`), so a regression that flips the
+    # dispatch path on one (case × selector) combination is caught
+    # PR-time before it compounds into an aggregate error.
+    #
+    # Closes the deferred PR-A+2 follow-up from #4122 ("the broader
+    # multi-selector fabric comparison... needs engine-level
+    # isolation via run_blind_annual_energy"). Excludes Case 600
+    # cooling from absolute-value ASHRAE band assertions because that
+    # is a documented structural gap (#1147 / #1333); the
+    # selector-parity ratio is still tracked so dispatch-path
+    # regressions on Case 600 cooling are caught. Path-filtered on
+    # the selector / dispatch / fabric harness surface; stays out of
+    # `required_checks_workflow_only` per the Issue #3810
+    # path-filtered-required pattern (see the comment block below).
+    - "ASHRAE 140 Fabric Harness Gate (Issue #3986-A+2)"
+
     # 2026-09-25: "Audit Ignore Freshness (Issue #2912)" DEMOTED from required to advisory
     # (physics-core focus). The gate is UNCHANGED: it still runs as a
     # non-required check on every PR; see its `workflow_index` entry below.
@@ -907,6 +930,63 @@ ci:
       workflow: ".github/workflows/scorecard-source-consistency.yml"
       issue: 3535
       triggered_by: "PR (path-filter: SCORECARD.md, docs/ASHRAE140_RESULTS.md, validation/performance_history*.json, scripts/check_scorecard_data_sources_consistent.py, scripts/generate_scorecard.py, scripts/generate_perf_baseline.py, release_gates.yaml) + push to develop/main (no path-filter)"
+
+    - job: "ASHRAE 140 Fabric Harness Gate (Issue #3986-A+2)"
+      # Per-component annual-energy selector-parity drift gate. The
+      # companion to the strict ±15% ASHRAE 140 annual-energy gate
+      # (Issue #1333): the strict gate observes Cases 600/800/810/900/
+      # 920/950/960/970 in aggregate (heating + cooling summed); this
+      # gate observes the same case families per-component (H and C
+      # separately) across the FiveROneC + NineRFourC selectors so a
+      # regression that flips the dispatch path on one (case × selector)
+      # combination is caught before it compounds into an aggregate
+      # error.
+      #
+      # Owned workflow: `.github/workflows/ashrae_140_fabric.yml`.
+      # Backed by:
+      # - `tests/all_tests/ashrae_140_fabric_multiselector.rs` (the
+      #   multi-selector measurement harness, blind spec-only path).
+      # - `scripts/check_ashrae_140_fabric_regression.py` (the
+      #   regression-check parser + verdict; mirrors the Issue #2506
+      #   strict-energy-gate pattern).
+      # - `tests/reference_data/ashrae_140_fabric/baseline.json` (the
+      #   recorded (case × selector × metric) + per-case
+      #   selector-parity ratios).
+      #
+      # Coverage scope:
+      # - Catches selector-wiring drift (refactor flips dispatch path).
+      # - Catches selector-parity drift (FiveROneC / NineRFourC ratio
+      #   shifts beyond the recorded tolerance).
+      # - Does NOT catch ASHRAE 140 ±15% band violations (covered by
+      #   the strict-energy-gate Issue #1333).
+      # - Does NOT catch absolute-value regressions that affect both
+      #   selectors identically (also covered by Issue #1333 for the
+      #   cases it observes).
+      #
+      # Path-filtered required check on the selector / dispatch /
+      # fabric harness surface; stays out of
+      # `required_checks_workflow_only` per the Issue #3810
+      # path-filtered-required pattern (same as `Scorecard Data-Source
+      # Consistency Gate (Issue #3535)` above and the prior
+      # path-filtered required cohort). The gate is path-filtered to
+      # `src/sim/thermal_selector.rs`, the `src/sim/thermal_model*/`
+      # tree, the validator + thermal-model public API, the harness
+      # itself, and the baseline JSON — so workflow-only / docs-only
+      # PRs skip it cleanly.
+      #
+      # Closes the deferred PR-A+2 follow-up from #4122 ("the broader
+      # multi-selector fabric comparison... needs engine-level
+      # isolation via run_blind_annual_energy"). Excludes Case 600
+      # cooling (a documented structural gap per #1147 / #1333; tracked
+      # in `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`)
+      # because the gate's role is selector-wiring regression
+      # detection, not ASHRAE band validation. Case 600 cooling IS
+      # captured by the harness (so the per-case selector-parity ratio
+      # remains in band) but its ABSOLUTE value is not asserted
+      # against the ASHRAE band — that is Issue #1333's job.
+      workflow: ".github/workflows/ashrae_140_fabric.yml"
+      issue: 3986
+      triggered_by: "PR (path-filter: src/sim/thermal_selector.rs, src/sim/thermal_model*/**, src/sim/step_dispatcher.rs, src/validation/ashrae_140_validator/**, src/validation/ashrae_140_multi_zone.rs, src/validation/ashrae_140_cases.rs, src/validation/ashrae140/**, tests/all_tests/ashrae_140_fabric_multiselector.rs, tests/all_tests/ashrae_140_validator_fabric.rs, tests/all_tests/ashrae_140_validator_selector_parity.rs, tests/reference_data/ashrae_140_fabric/**, scripts/check_ashrae_140_fabric_regression.py) + push to develop/main (no path-filter)"
 
     - job: "Fluxion Determinism Gate (Issue #1351)"
       # The listener job is defined in `ashrae_validation.yml`; it
