@@ -34,6 +34,19 @@ use crate::validation::topology_bridge;
 /// guarded by `scripts/check_topology_drift.py`. `Toon` is an additive
 /// agent-facing rendering via the `fluxion-toon` crate (Issue #2071); it does
 /// NOT replace JSON, mutate the schema, or feed the drift gate.
+///
+/// Acceptance numbers (measured against committed topology fixtures;
+/// Issue #4153):
+///
+/// | Case | JSON bytes | JSON tokens (cl100k_base) | TOON bytes | TOON tokens | Token save |
+/// |------|------------|---------------------------|------------|-------------|------------|
+/// | 600  | 24,757     | 8,382                     | 18,102     | 6,042       | +27.9%     |
+/// | 900  | 24,783     | 8,406                     | 18,128     | 6,066       | +27.8%     |
+/// | 960  | 50,892     | 17,227                    | 37,117     | 12,406      | +28.0%     |
+///
+/// Case 960 (71 nodes / 120 edges, ~2x the payload of 600/900) holds the
+/// saving at +28.0%, within 0.2 points of the smaller cases — the reduction
+/// is a property of the encoding, not of one graph shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum ExportFormat {
     /// Canonical deterministic JSON (default; feeds the drift gate).
