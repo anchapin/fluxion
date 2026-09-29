@@ -444,8 +444,8 @@ pub fn engine_decision_constraint_warning(
 
 /// Current HVAC horizon decision wrapped as `OrchestrationDecision`.
 ///
-/// chosen = "24h_fixed" — matches what PR #776's tracing span emits at
-/// `ThermalModel::new_with_validation`.
+/// NOTE: The corresponding tracing span in `ThermalModel::new_with_validation`
+/// was deleted in #4173. This function is kept for benchmark compatibility.
 pub fn engine_decision_hvac_horizon(
     weather_forecast_confidence: f64,
     dr_event_probability_72h: f64,

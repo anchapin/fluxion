@@ -271,7 +271,6 @@ mod test_thermal_mass_coupling;
 mod test_thermal_mass_dynamics;
 mod test_thermal_mass_integration;
 mod test_tmy3_download;
-mod test_validation_integration;
 mod test_validation_report;
 mod test_validator_core;
 mod test_ventilation;

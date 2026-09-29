@@ -11,8 +11,8 @@
 //! | `SolverSelection` | `src/physics/method_selector.rs::ThermalMethodSelector::select_method` |
 //! | `AdaptiveTimestep` | `src/sim/adaptive_timestep.rs::TimestepMode::get_timestep` |
 //! | `SurrogateRouting` | `src/ai/surrogate.rs` (stub — wired when batch-oracle lands) |
-//! | `ConstraintWarning` | `src/sim/thermal_model_core.rs::ThermalModel::new_with_validation` |
-//! | `HvacHorizon` | `src/sim/thermal_model_core.rs::ThermalModel::new_with_validation` |
+//! | `ConstraintWarning` | (deleted — was `src/sim/thermal_model_core/mod.rs::ThermalModel::new_with_validation`; #4173) |
+//! | `HvacHorizon` | (deleted — was `src/sim/thermal_model_core/mod.rs::ThermalModel::new_with_validation`; #4173) |
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -43,14 +43,16 @@ pub enum OrchestrationDecisionKind {
 
     /// Pre-simulation constraint / parameter validation decision.
     ///
-    /// Emitted at `ThermalModel::new_with_validation` once all conductance and setpoint
-    /// checks have run.  `chosen` is `"passed"` or the name of the first failing field.
+    /// NOTE: The tracing span for this variant was deleted in #4173 along with
+    /// `ThermalModel::new_with_validation`. The enum variant is retained for
+    /// backward compatibility with any recorded decision logs.
     ConstraintWarning,
 
     /// HVAC prediction-horizon selection.
     ///
-    /// Currently fixed at 24 h; the `chosen` field will reflect "24h_fixed" until an
-    /// adaptive horizon is implemented.
+    /// NOTE: The tracing span for this variant was deleted in #4173 along with
+    /// `ThermalModel::new_with_validation`. The enum variant is retained for
+    /// backward compatibility with any recorded decision logs.
     HvacHorizon,
 }
 
