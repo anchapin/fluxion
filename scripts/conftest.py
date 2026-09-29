@@ -152,8 +152,45 @@ class _FakeSNSClient:
         return {"MessageId": "fake-message-id"}
 
 
+# ---------------------------------------------------------------------------
+# Fallback ClientError for environments without botocore.
+#
+# ``cloud_campaign_manager.py`` handles missing botocore by setting
+# ``ClientError = Exception``.  The fake S3 client must also handle this
+# case so that tests can run in environments without botocore installed.
+# ---------------------------------------------------------------------------
+
+
+class _FallbackClientError(Exception):
+    """Fake ClientError that mimics the interface when botocore is unavailable.
+
+    Real ``botocore.exceptions.ClientError`` takes a ``response`` dict and an
+    ``operation_name`` string.  This fallback stores the response dict so that
+    ``except ClientError as e: e.response["Error"]["Code"]`` checks work
+    regardless of whether botocore is installed.
+    """
+
+    def __init__(self, response: dict[str, Any], operation_name: str = "") -> None:
+        self.response = response
+        self.operation_name = operation_name
+        super().__init__(
+            f"ClientError: {response.get('Error', {}).get('Code', 'Unknown')}: "
+            f"{response.get('Error', {}).get('Message', '')}"
+        )
+
+
+def _get_client_error_class():
+    """Return the real ClientError if available, otherwise the fallback class."""
+    try:
+        from botocore.exceptions import ClientError
+
+        return ClientError
+    except ImportError:
+        return _FallbackClientError
+
+
 def _make_client_error(code: int, error_code: str, key: str) -> Exception:
-    from botocore.exceptions import ClientError
+    ClientError = _get_client_error_class()
 
     return ClientError(
         {
@@ -166,7 +203,7 @@ def _make_client_error(code: int, error_code: str, key: str) -> Exception:
 
 def _make_client_error_for_get(code: int, error_code: str, key: str) -> Exception:
     """Like ``_make_client_error`` but stamps the operation as ``GetObject``."""
-    from botocore.exceptions import ClientError
+    ClientError = _get_client_error_class()
 
     return ClientError(
         {

@@ -648,7 +648,11 @@ def test_get_campaign_state_round_trips_existing_state(fake_aws_clients, base_st
 
 
 def test_get_campaign_state_propagates_non_404_client_error(fake_aws_clients):
-    from botocore.exceptions import ClientError
+    # Use ccm.ClientError to support environments without botocore installed.
+    # When botocore is unavailable, ccm.ClientError is Exception (see
+    # cloud_campaign_manager.py imports), and _FallbackClientError in conftest
+    # inherits from Exception, so the test works in both environments.
+    ClientError = ccm.ClientError
 
     s3 = fake_aws_clients["s3"]
     # Override the S3 client to raise a non-404 ClientError.
