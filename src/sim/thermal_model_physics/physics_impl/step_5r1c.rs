@@ -1092,6 +1092,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Issue #1585: step the air-node ODE state forward for the next
         // timestep.  t_i_free (the new zone-air temperature) becomes
         // t_air_old on the next call to step_physics_5r1c.
+        // Issue #4241: snapshot the PRIOR-step air temperatures into the
+        // free `air_node_solar_lag` scratch buffer BEFORE the state update
+        // overwrites them. (The function-level `t_air_old_ref` immutable
+        // borrow conflicts with the mutable state write below — E0502 —
+        // so the HVAC residual calls use this snapshot instead.)
+        scratch
+            .air_node_solar_lag
+            .as_mut()
+            .copy_from_slice(self.0.mass.air_temperatures.as_ref());
+        let t_air_old: &[f64] = &scratch.air_node_solar_lag.as_ref()[..self.0.hvac.num_zones];
         // Issue #3370: scratch pool buffer (`air_node_t_i_free_slice`)
         // replaces the per-step `t_i_free.as_ref().to_vec()` allocation.
         scratch
@@ -1136,18 +1146,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let ideal_loads_for_equipment: T = if self.0.hvac.free_float {
             T::from(self.0.solar.zero_vector.clone())
         } else {
-            // Issue #1163: symmetric ideal-HVAC formula uses t_i_free as the
-            // driving temperature for both heating and cooling (mass
-            // heat-release is already embedded in t_i_free via num_tm).
-            // Issue #2826: per-zone setpoint vectors now drive the HVAC
-            // demand; the scalar fields are the fallback when the per-zone
-            // vector is shorter than `num_zones`.
+            // Issue #4241: discrete energy balance residual HVAC load.
+            // Thread the full numerator (num_tm + num_rest) through so gains
+            // are included in the load calculation.
             self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
                 self.0.setpoints.heating_setpoints.as_ref(),
                 self.0.setpoints.cooling_setpoints.as_ref(),
                 self.0.setpoints.heating_setpoint,
                 self.0.setpoints.cooling_setpoint,
+                num_tm_ref,
+                num_rest_ref,
+                den_ref,
+                term_rest_1_ref,
+                c_air_ref,
+                t_air_old,
+                dt,
                 &mut scratch.hvac_combined_demand,
             )
         };
@@ -1233,20 +1247,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             // FIX: For multi-zone buildings (e.g., Case 960), use per-zone HVAC demand
             // instead of broadcasting a single scalar value to all zones.
-            // Use IdealLoadsSystem thermodynamic formulas (mass_flow * cp * delta_t)
-            // instead of sensitivity-based (setpoint - temp) / sensitivity
+            // Use discrete energy balance residual formula (Issue #4241).
             //
-            // Issue #1163: symmetric ideal-HVAC formula (mass heat-release is
-            // already embedded in t_i_free via num_tm).
-            // Issue #2826: per-zone setpoint vectors drive HVAC demand;
-            // scalar `heating_setpoint` / `cooling_setpoint` (from
-            // `self.0.setpoints.heating_setpoint` above) are used as fallback.
+            // Issue #4241: discrete energy balance residual HVAC load.
             let hvac_output = self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
                 self.0.setpoints.heating_setpoints.as_ref(),
                 self.0.setpoints.cooling_setpoints.as_ref(),
                 heating_setpoint,
                 cooling_setpoint,
+                num_tm_ref,
+                num_rest_ref,
+                den_ref,
+                term_rest_1_ref,
+                c_air_ref,
+                t_air_old,
+                dt,
                 &mut scratch.hvac_combined_demand,
             );
 
@@ -1295,18 +1311,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // so it needs to be returned for both branches
             hvac_output
         } else {
-            // Use IdealLoadsSystem thermodynamic formulas for energy
+            // Use discrete energy balance residual formula (Issue #4241).
             //
-            // Issue #1163: symmetric ideal-HVAC formula (mass heat-release is
-            // already embedded in t_i_free via num_tm).
-            // Issue #2826: per-zone setpoint vectors drive HVAC demand;
-            // scalar fallback when vectors are shorter than `num_zones`.
+            // Issue #4241: discrete energy balance residual HVAC load.
             let hvac_output_raw = self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
                 self.0.setpoints.heating_setpoints.as_ref(),
                 self.0.setpoints.cooling_setpoints.as_ref(),
                 self.0.setpoints.heating_setpoint,
                 self.0.setpoints.cooling_setpoint,
+                num_tm_ref,
+                num_rest_ref,
+                den_ref,
+                term_rest_1_ref,
+                c_air_ref,
+                t_air_old,
+                dt,
                 &mut scratch.hvac_combined_demand,
             );
 
@@ -1378,16 +1398,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let hvac_for_temp_calc = if self.0.hvac.free_float {
             T::from(self.0.solar.zero_vector.clone())
         } else {
-            // Issue #1163: symmetric ideal-HVAC formula (mass heat-release is
-            // already embedded in t_i_free via num_tm).
-            // Issue #2826: per-zone setpoint vectors drive HVAC demand;
-            // scalar fallback when vectors are shorter than `num_zones`.
+            // Issue #4241: discrete energy balance residual HVAC load.
+            // Thread the full numerator (num_tm + num_rest) through so gains
+            // are included in the load calculation.
             self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
                 self.0.setpoints.heating_setpoints.as_ref(),
                 self.0.setpoints.cooling_setpoints.as_ref(),
                 self.0.setpoints.heating_setpoint,
                 self.0.setpoints.cooling_setpoint,
+                num_tm_ref,
+                num_rest_ref,
+                den_ref,
+                term_rest_1_ref,
+                c_air_ref,
+                t_air_old,
+                dt,
                 &mut scratch.hvac_combined_demand,
             )
         };

@@ -403,6 +403,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Calculate free-floating temperature using 5R1C network
+        // Issue #4241: keep a copy of num_tm for the 9R4C HVAC residual block —
+        // the 9R4C numerator is num_tm + num_phi_st + num_rest_with_iz.
+        let num_tm_hvac = num_tm.clone();
         let mut t_i_free = num_tm;
         t_i_free.add_assign(&num_phi_st);
         t_i_free.add_assign(&num_rest_with_iz);
@@ -885,10 +888,27 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // HVAC mode: use multi-node t_air (from _t_i_free_mn) when available
             let heat_cap = self.0.hvac.hvac_heating_capacity;
             let cool_cap = self.0.hvac.hvac_cooling_capacity;
+            // Issue #4241: the 9R4C block inlines the discrete energy-balance
+            // residual load law (the 5R1C path calls `compute_zone_hvac_load`).
+            // The 9R4C air-node numerator is num_tm + num_phi_st + num_rest_with_iz
+            // (the same three terms that define t_i_free above); `den` is the
+            // night-vent-aware denominator. `setpoints.temperatures` still holds
+            // the previous step's conditioned T_air here (it is updated at the
+            // end of this function), so it is the 9R4C t_prev.
+            let den_9r4c = den.as_ref();
+            let num_tm_9r4c = num_tm_hvac.as_ref();
+            let num_phi_st_9r4c = num_phi_st.as_ref();
+            let num_rest_9r4c = num_rest_with_iz.as_ref();
+            // Fresh borrow here (not via the function-level `term_rest_1`):
+            // that borrow's lifetime would span the `&mut self` solar-position
+            // call above (E0502).
+            let scale_9r4c = self.0.conduction.derived_term_rest_1.as_ref();
+            let c_air_9r4c = self.0.mass.air_thermal_capacitance.as_ref();
+            let t_prev_9r4c = self.0.setpoints.temperatures.as_ref();
             // Issue #1524: hvac/t_i_act live in the local `scratch` struct, so
             // `scratch.hvac[i]` / `scratch.t_i_act[i]` (mutable borrows of a
-            // local) coexist freely with `self.compute_hvac_coefficient(i)`
-            // (an `&self` borrow) — the exact conflict that sank #1436.
+            // local) coexist freely with the `&self` borrows above — the exact
+            // conflict that sank #1436.
             for i in 0..self.0.hvac.num_zones {
                 // Issue #860: Prefer multi-node t_air over 5R1C t_free for HVAC demand
                 let t_free_val =
@@ -902,10 +922,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     } else {
                         t_i_free_5r1c.as_ref()[i]
                     };
-                // Issue #907: HVAC coefficient is the full 5R1C/6R2C Norton equivalent
-                // at the air node (see `compute_hvac_coefficient`). Use it here so the
-                // self-consistent t_act = t_free + Q/h_coeff check matches T_setpoint
-                // (h_tr_1 + h_ve alone is too small — it ignores mass/ground paths).
+                // Issue #907 (superseded by #4241): the Norton-equivalent
+                // `compute_hvac_coefficient` is no longer the load law; it is
+                // kept only for the debug-physics breakdown below.
+                #[cfg(feature = "debug-physics")]
                 let h_coeff = self.compute_hvac_coefficient(i);
                 let _h_tr_ms = self.0.conduction.h_tr_ms.as_ref()[i];
 
@@ -979,25 +999,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     );
                 }
 
-                // CORRECTED cooling formula (symmetric with heating):
-                //
-                // For heating: Q = h_coeff × (T_heat_sp − T_free) > 0
-                // For cooling: Q = h_coeff × (T_cool_sp − T_free) < 0  [same form]
-                //
-                // The driving temperature for BOTH is the FREE-FLOATING zone air temperature
-                // (t_i_free), which already includes all heat flows (solar, internal, conduction,
-                // ventilation, AND the dynamic mass heat exchange via the 5R1C network).
-                //
-                // Using t_free (zone air temperature) is correct because:
-                // - t_free represents the equilibrium temperature the zone reaches WITHOUT HVAC
-                // - If t_free > T_cool_sp, the zone needs cooling to bring it down
-                // - If t_free < T_heat_sp, the zone needs heating to bring it up
-                //
-                // The OLD formula used t_mass_mn (conductance-weighted mass temperature) as
-                // the driving temperature for cooling, which is WRONG because:
-                // - During summer peak, T_mass ≈ 28-30°C but T_zone ≈ 33-36°C
-                // - The HVAC needs to cool T_zone to 27°C, not T_mass to 27°C
-                // - Using t_mass gives ~162 W demand instead of ~730 W (4.5× underestimate)
+                // Issue #4241 supersedes the CORRECTED-cooling Norton formula:
+                // the load law is now the discrete energy-balance residual
+                // (see the block below), where num_tm + num_phi_st + num_rest
+                // are the 9R4C numerator terms. The multi-node t_air preference
+                // for `t_free_val` is retained: it is the free-float anchor for
+                // setpoint selection and the fallback for t_i_act.
                 //
                 // Issue #2826: per-zone setpoints are read from the
                 // `heating_setpoints` / `cooling_setpoints` vectors (with the
@@ -1021,34 +1028,58 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     .get(i)
                     .copied()
                     .unwrap_or(self.0.setpoints.cooling_setpoint);
-                let q = if t_free_val < heating_setpoint_i {
-                    // Heating: Q = h_coeff × (T_heat_sp − T_free) > 0
-                    h_coeff * (heating_setpoint_i - t_free_val)
-                } else if t_free_val > cooling_setpoint_i {
-                    // Cooling: Q = h_coeff × (T_cool_sp − T_free) = −h_coeff × (T_free − T_cool_sp) < 0
-                    // Driving temperature is t_free (zone air), NOT t_mass_mn
-                    -h_coeff * (t_free_val - cooling_setpoint_i)
+                // Issue #4241: discrete energy-balance residual load law.
+                //
+                // The ideal-system load is the residual of the discrete zone air
+                // energy balance over the timestep, solved for the active setpoint:
+                //
+                //   Q_HVAC = (den*T_sp − num_tm − num_phi_st − num_rest) / term_rest_1
+                //          + C_air*(T_sp − T_prev)/dt
+                //
+                // where num_tm + num_phi_st + num_rest_with_iz is the 9R4C
+                // numerator that defines t_i_free above. `den` and the numerator
+                // terms arrive in the SCALED basis (× term_rest_1), so the
+                // residual is divided by term_rest_1 to recover physical watts
+                // (Issue #2868 pattern); the capacitive term uses the physical
+                // (unscaled) C_air. t_free_val (multi-node t_air when available)
+                // drives only the active-setpoint choice. The ASHRAE 140 ideal
+                // system has unlimited capacity and tracks the active setpoint
+                // continuously — no deadband.
+                let dist_to_heat = (t_free_val - heating_setpoint_i).abs();
+                let dist_to_cool = (t_free_val - cooling_setpoint_i).abs();
+                let t_sp_i = if dist_to_heat <= dist_to_cool {
+                    heating_setpoint_i
                 } else {
-                    // Zone air is within deadband: no HVAC demand
+                    cooling_setpoint_i
+                };
+                let num_total_i = num_tm_9r4c[i] + num_phi_st_9r4c[i] + num_rest_9r4c[i];
+                let den_i = den_9r4c[i];
+                let scale_i = scale_9r4c.get(i).copied().unwrap_or(1.0);
+                let scale_i = if scale_i > 0.0 { scale_i } else { 1.0 };
+                let c_air_i = c_air_9r4c.get(i).copied().unwrap_or(0.0);
+                let t_prev_i = t_prev_9r4c.get(i).copied().unwrap_or(t_free_val);
+                let c_dt_i = if dt > 0.0 && c_air_i > 0.0 {
+                    c_air_i / dt
+                } else {
                     0.0
                 };
+                let q = (den_i * t_sp_i - num_total_i) / scale_i + c_dt_i * (t_sp_i - t_prev_i);
 
                 let q_clamped = q.clamp(-cool_cap, heat_cap);
                 scratch.hvac[i] = q_clamped;
 
-                // Self-consistent: t_act = t_free + Q / h_coeff = T_setpoint (when not clamped)
-                //
-                // Issue #900 note: the "self-consistent" formula here uses
-                // h_loss only. For a heating demand (q > 0) sized to the
-                // Issue #925 formula, this gives t_i_act = T_setpoint, which
-                // is the design intent. For a cooling demand that includes
-                // the dynamic mass heat release term, this can give
-                // t_i_act below T_cool_sp; that over-cooling is a known
-                // limitation of the steady-state t_i_free approximation
-                // (see #917, #924) and is accepted as a tractable
-                // approximation here.
-                if h_coeff > 0.0 && q_clamped.abs() > 1e-6 {
-                    scratch.t_i_act[i] = t_free_val + q_clamped / h_coeff;
+                // Backward-Euler-exact conditioned air temperature, in physical
+                // (unscaled) units to match the load above:
+                //   C*(T_act − T_prev)/dt = num_true − den_true*T_act + Q
+                // → T_act = (num_true + Q + C*T_prev/dt) / (den_true + C/dt).
+                // When the load is unclamped this is exactly T_setpoint (the
+                // design intent of the old self-consistent t_free + Q/h_coeff
+                // form); when clamped it is the physically achievable temp.
+                let den_true_i = den_i / scale_i;
+                let num_true_i = num_total_i / scale_i;
+                let denom_i = den_true_i + c_dt_i;
+                if q_clamped.abs() > 1e-6 && denom_i > 0.0 {
+                    scratch.t_i_act[i] = (num_true_i + q_clamped + c_dt_i * t_prev_i) / denom_i;
                 } else {
                     scratch.t_i_act[i] = t_free_val;
                 }
