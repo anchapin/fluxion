@@ -70,6 +70,78 @@ FLUXION_SRC = REPO_ROOT / "src"
 FLUXION_CORE_SRC = REPO_ROOT / "fluxion-core" / "src"
 
 # ---------------------------------------------------------------------------
+# Swap-point modules for thermal-dispatch contract drift (Issue #4198)
+# ---------------------------------------------------------------------------
+#
+# These modules contain doc-comments that describe the thermal dispatch
+# contract (which ZoneSolverKind arms exist, which paths panic, etc.).
+# When an arm is removed or a fall-through is eliminated, the doc must
+# be updated or it becomes a lying contract.
+
+# Thermal-dispatch swap-point modules to scan for stale claims.
+# Order: thermal_selector.rs (selector enum), thermal_model/ (trait/mod),
+# thermal_model_physics/ (dispatcher).
+_SWAP_POINT_MODULES: tuple[str, ...] = (
+    "src/sim/thermal_selector.rs",
+    "src/sim/thermal_model/mod.rs",
+    "src/sim/thermal_model/physics.rs",
+    "src/sim/thermal_model_physics/step_dispatcher.rs",
+)
+
+# Non-existent ZoneSolverKind arms that must NOT appear in dispatch docs.
+# These were mentioned in older docs but are uncallable or don't exist.
+_NONEXISTENT_ARMS: tuple[str, ...] = (
+    "6r2c",
+    "8r3c",
+)
+
+# Patterns that claim the removed Gauge → 5R1C/9R4C fall-through exists
+# in the default build (no gauge-solver feature). Per ADR-0017 (#3978),
+# Gauge panics in default builds; the silent fall-through is gone.
+# We match affirmative claims ("routes to", "falls through to", etc.),
+# NOT negations ("was removed", "is gone", etc.) which correctly describe
+# the current state.
+_REMOVED_FALLTHROUGH_RE = re.compile(
+    r"\b(?:routes?|goes?|dispatches?|calls?)\s+(?:to|through)\b"
+    r".*"
+    r"\b(?:gauge|Gauge)\b"
+    r".*"
+    r"\b(?:5r1c|legacy)\b"
+    r".*"
+    r"\bdefault\s+build\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+# Patterns that claim a non-existent arm is callable.
+_NONEXISTENT_ARM_CLAIM_RE = re.compile(
+    r"\b(?:"
+    + r"6r2c|8r3c"
+    + r")\b.*\b(?:callable|route|dispatch|arm|path|implementation)\b"
+    r"|\b(?:callable|route|dispatch|arm|path)\b.*\b(?:"
+    + r"6r2c|8r3c"
+    + r")\b",
+    re.IGNORECASE,
+)
+
+# Patterns that claim legacy model-check functions still exist.
+_REMOVED_CHECK_RE = re.compile(
+    r"\b(?:is_9r4c_model|is_8r3c_model|is_6r2c_model)\b"
+    r"|\b(?:legacy\s+)?(?:is_9r4c_model|is_8r3c_model|is_6r2c_model)\b"
+    r"|\b(?:is_9r4c_model|is_8r3c_model|is_6r2c_model)\b.*\b(?:legacy\s+)?checks?\b",
+    re.IGNORECASE,
+)
+
+# A mention is NOT a claim when the sentence/paragraph negates it
+# ("is not callable", "are gone", "was removed", "no longer exists", ...).
+# The gate must not false-positive on docs that correctly describe the
+# removed/retired state — otherwise the first honest doc rewrite breaks CI.
+_NEGATION_RE = re.compile(
+    r"\b(?:not|n't|never|no\s+longer|gone|removed|retired|eliminated|"
+    r"unavailable|unreachable|does\s+not\s+exist|do\s+not\s+exist)\b",
+    re.IGNORECASE,
+)
+
+# ---------------------------------------------------------------------------
 # Cycle-claim detection in doc-comments
 # ---------------------------------------------------------------------------
 #
@@ -342,8 +414,113 @@ def _extract_pair_from_bullet(bullet: str) -> str | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Swap-point module doc scanning (Issue #4198)
+# ---------------------------------------------------------------------------
+
+
+def _iter_swap_point_modules() -> Iterable[tuple[Path, str]]:
+    """Yield (absolute_path, relative_path_str) for each swap-point module."""
+    for rel in _SWAP_POINT_MODULES:
+        path = REPO_ROOT / rel
+        if path.exists():
+            yield path, rel
+        else:
+            print(f"    WARN: swap-point module not found: {rel}")
+
+
+def _scan_swap_point_modules() -> list[tuple[str, int, str]]:
+    """Scan swap-point module docs for stale dispatch contract claims.
+
+    Returns a list of (module_rel, line_no, failure_message) for any
+    stale claims found. Stale claims include:
+
+    1. References to non-existent ZoneSolverKind arms (6R2C, 8R3C)
+       as if they were callable.
+    2. Claims that the Gauge → 5R1C/9R4C fall-through exists in the
+       default build (per ADR-0017, it panics in default builds).
+    3. References to removed legacy model-check functions
+       (is_9r4c_model, is_8r3c_model, is_6r2c_model) as if they
+       still exist.
+
+    The actual load-bearing predicate is `is_nine_r4c_model()`.
+    """
+    from typing import Iterable
+
+    failures: list[tuple[str, int, str]] = []
+
+    for path, rel in _iter_swap_point_modules():
+        try:
+            content = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            print(f"    WARN: could not read {rel}: {exc}")
+            continue
+
+        doc_lines: list[tuple[int, str]] = []
+        for lineno, raw in enumerate(content.splitlines(), start=1):
+            stripped = raw.strip()
+            # Collect module-level and item-level doc comments
+            if stripped.startswith("//!") or stripped.startswith("///"):
+                body = _strip_doc_marker(stripped)
+                doc_lines.append((lineno, body))
+
+        # Join doc lines for multi-line pattern matching, but keep
+        # line numbers for reporting.
+        full_doc = "\n".join(body for _, body in doc_lines)
+        full_doc_lower = full_doc.lower()
+
+        # Check for non-existent arm claims (skip negated statements such as
+        # "6R2C and 8R3C are not callable" — the doc is correct, not stale).
+        for lineno, body in doc_lines:
+            if _NONEXISTENT_ARM_CLAIM_RE.search(body) and not _NEGATION_RE.search(body):
+                failures.append((
+                    rel,
+                    lineno,
+                    f"doc-comment claims a non-existent ZoneSolverKind arm "
+                    f"(6R2C/8R3C) is callable; these are experimental/unavailable "
+                    f"(see thermal_selector.rs EXPERIMENTAL_ZONE_SOLVERS)",
+                ))
+
+        # Check for removed fall-through claims (only in multi-line context).
+        # Only flag if the paragraph context mentions "default build"
+        # AND "gauge" AND "5r1c" together — single-line comments are
+        # likely describing gauge-solver builds correctly.
+        for idx, (lineno, body) in enumerate(doc_lines):
+            para_start = max(0, idx - 3)
+            para_end = min(len(doc_lines), idx + 3)
+            para = "\n".join(b for _, b in doc_lines[para_start:para_end])
+            if _REMOVED_FALLTHROUGH_RE.search(para):
+                failures.append((
+                    rel,
+                    lineno,
+                    f"doc-comment claims Gauge → 5R1C/9R4C fall-through "
+                    f"exists in default build; per ADR-0017 (#3978) Gauge "
+                    f"panics in default builds — the silent fall-through was removed",
+                ))
+
+        # Check for removed legacy model-check references. Use a paragraph
+        # window (the negation often lands on the next line, e.g.
+        # "... is_8r3c_model()`\n//! singletons are gone"). Skip negated
+        # paragraphs — they describe the correct retired state, not a claim.
+        for idx, (lineno, body) in enumerate(doc_lines):
+            para_start = max(0, idx - 3)
+            para_end = min(len(doc_lines), idx + 3)
+            para = "\n".join(b for _, b in doc_lines[para_start:para_end])
+            if _REMOVED_CHECK_RE.search(para) and not _NEGATION_RE.search(para):
+                failures.append((
+                    rel,
+                    lineno,
+                    f"doc-comment references legacy model-check function "
+                    f"(is_9r4c_model/is_8r3c_model/is_6r2c_model); "
+                    f"only is_nine_r4c_model() exists and is the "
+                    f"HighMass auto-promotion predicate",
+                ))
+
+    return failures
+
+
 def main() -> int:
-    print(f"Doc-comment drift check for cycle claims (issue #2895; repo: {REPO_ROOT})")
+    print(f"Doc-comment drift check for cycle/contract claims (issues #2895, #4198; repo: {REPO_ROOT})")
     print()
 
     failures: list[str] = []
@@ -443,12 +620,48 @@ def main() -> int:
         print("     was retired by a specific issue.")
         return 1
 
+    # Issue #4198: scan swap-point thermal-dispatch modules for stale
+    # contract claims (non-existent arms, removed fall-throughs).
+    print("[5/5] scanning swap-point thermal-dispatch modules for stale contract claims ...")
+    swap_failures = _scan_swap_point_modules()
+    if swap_failures:
+        for rel, lineno, msg in swap_failures:
+            failures.append(f"{rel}:{lineno}: {msg}")
+    print(f"    OK: {len(swap_failures)} stale claim(s) in swap-point modules")
+
+    if failures:
+        print()
+        print("DOC-COMMENT DRIFT DETECTED:")
+        for f in failures:
+            print(f"  {f}")
+        print()
+        print("A doc-comment names a cycle state or thermal-dispatch")
+        print("contract that the current codebase contradicts.")
+        print()
+        print("Cycle claim remediation:")
+        print("  1. Update the doc-comment to reflect the resolved state")
+        print("     (the cycle was broken by a prior issue, e.g. #2462).")
+        print("  2. Revert the code change that retired the cycle edge")
+        print("     (only valid if the cycle was re-introduced).")
+        print("  3. Add the cycle to ARCHITECTURE.md §'Remaining cycles'")
+        print("     as a struck-through '~~...~~' entry to acknowledge it")
+        print("     was retired by a specific issue.")
+        print()
+        print("Swap-point module remediation:")
+        print("  1. Update the doc-comment to match current dispatch arms")
+        print("     (6R2C/8R3C are experimental/unavailable; Gauge panics")
+        print("     in default builds per ADR-0017 #3978).")
+        print("  2. Use is_nine_r4c_model() as the HighMass auto-promotion")
+        print("     predicate (the legacy is_*_model() singletons are gone).")
+        return 1
+
     present_claims = [c for c in claims if c[3]]
     print(
         f"No doc-comment drift. {len(present_claims)} present-tense "
         f"cycle claim(s) in fluxion-core/src/lib.rs are consistent with "
         f"the current cycle baselines ({len(active_pairs)} active, "
-        f"{len(resolved_pairs)} resolved)."
+        f"{len(resolved_pairs)} resolved); "
+        f"{len(swap_failures)} stale claim(s) in swap-point modules."
     )
     return 0
 

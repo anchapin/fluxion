@@ -1,24 +1,36 @@
 //! Physics-step dispatcher for `ThermalModel`.
 //!
 //! Hosts [`ThermalModel::step_physics`], the dispatcher that routes to
-//! the correct 5R1C/6R2C/8R3C/9R4C implementation based on the model's
-//! configured network type. Originally part of the monolithic
-//! `thermal_model_physics.rs` (Issue #898), extracted as part of the
-//! Issue #902 modular split.
+//! the correct 5R1C/9R4C implementation based on the model's configured
+//! [`ZoneSolverKind`] selector. The three live dispatch arms are:
+//!   - [`ZoneSolverKind::Gauge`] — ISO 13790 §C gauge solver; in
+//!     `gauge-solver` builds it is the production path (ADR-0007
+//!     Phase A8). The gauge backend has no thermal-mass dynamics, so
+//!     HighMass specs are auto-promoted to 9R4C via
+//!     [`is_nine_r4c_model()`][Self::is_nine_r4c_model] (#3817).
+//!   - [`ZoneSolverKind::FiveROneC`] — legacy 5R1C network (ISO 13790);
+//!     the default selector in default builds (ADR-0017, issue #3978).
+//!   - [`ZoneSolverKind::NineRFourC`] — high-mass 9R4C network.
 //!
-//! Issue #3280 / #3291 / #3816 / #3297: selector-driven dispatch. The
-//! [`ZoneSolverKind::Gauge`] selector tries the gauge single- and
-//! multi-zone arms first; `FiveROneC` and `NineRFourC` selectors always
-//! route to the legacy physics. §LIMIT-21 (Issue #3297) flipped the
-//! production gate: with `gauge-solver` enabled, gauge dispatch is now
-//! unconditional — a missing gauge backend is a hard error (panics),
-//! not the old β-phase warn+fallthrough to legacy 5R1C/9R4C. The
-//! `gauge-solver` cargo feature is retained for CI/β-soak purposes
-//! (Issue #3286); the default build (no feature) routes `Gauge` to
-//! legacy 5R1C/9R4C via the `match` arm below. The legacy
-//! `is_9r4c_model()` / `is_8r3c_model()` / `is_6r2c_model()` checks
-//! are gone — `thermal_model_type` is set exclusively by the selector
-//! (Issue #3277).
+//! The experimental solvers 6R2C and 8R3C are not callable; they have
+//! no [`ZoneSolverKind`] variants. The `"6r2c"` / `"8r3c"` selector
+//! identifiers are rejected behind the `FLUXION_EXPERIMENTAL_ZONE_SOLVERS=1`
+//! env gate and stay unavailable until the experimental cargo feature
+//! ships (issue #3291).
+//!
+//! **ADR-0017 (#3978) — default-build `Gauge` panic:** In builds without
+//! the `gauge-solver` cargo feature, an explicit `ZoneSolverKind::Gauge`
+//! selector panics loudly at the dispatcher entry point (line ~145).
+//! The old β-phase silent fall-through to legacy 5R1C/9R4C was removed.
+//! The `gauge-solver` feature is retained for CI/β-soak purposes only
+//! (issue #3286).
+//!
+//! **HighMass auto-promotion predicate:** The legacy
+//! `is_nine_r4c_model()` / `is_8r3c_model()` / `is_6r2c_model()`
+//! singletons are gone; `is_nine_r4c_model()` is the sole load-bearing
+//! predicate (used at lines 114, 157, 173) for HighMass spec
+//! auto-promotion. It is set exclusively by `from_spec_with_selector`
+//! (Issue #3277 PR2.1) and honoured exactly in every dispatch arm.
 
 use crate::api::error::FluxionError;
 use crate::physics::cta::{ContinuousTensor, VectorField};
