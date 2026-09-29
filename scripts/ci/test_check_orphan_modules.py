@@ -693,4 +693,4 @@ def test_disposition_gate_passes_on_real_allowlist(checker, capsys):
     assert rc == 0, f"expected PASS on real repo, got rc={rc}\noutput:\n{out}"
     assert "Rows missing for live modules: 0" in out
     assert "Stale rows (module no longer wired-but-dead): 0" in out
-    assert "Disposition registry in lock-step (32 row(s)" in out
+    assert "Disposition registry in lock-step (33 row(s)" in out
