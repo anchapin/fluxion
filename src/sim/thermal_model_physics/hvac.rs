@@ -303,4 +303,109 @@ mod tests {
             expected
         );
     }
+
+    /// Analytic test for the discrete residual HVAC formulation (Issue #4241).
+    ///
+    /// Verifies that compute_zone_hvac_load implements:
+    ///   Q_HVAC = C_air * (T_sp - T_prev)/dt + h_coeff * (T_sp - T_free)
+    ///
+    /// to within 0.1% tolerance on a simple single-zone case with known
+    /// closed-form solution.
+    #[test]
+    fn test_residual_formulation_analytic() {
+        use smallvec::SmallVec;
+
+        let mut model = ThermalModel::<VectorField>::new(1);
+        // Set up simple network: h_tr_is=100, h_tr_ms=100, h_tr_w=30, h_ve=70
+        // h_coeff = (30+70) + 100*100/200 = 150 W/K
+        model.0.conduction.h_tr_is = VectorField::from_scalar(100.0, 1);
+        model.0.conduction.h_tr_ms = VectorField::from_scalar(100.0, 1);
+        model.0.conduction.h_tr_w = VectorField::from_scalar(30.0, 1);
+        model.0.conduction.h_ve = VectorField::from_scalar(70.0, 1);
+        // C_air = 156000 J/K (Case 600 value)
+        model.0.mass.air_thermal_capacitance = VectorField::from_scalar(156000.0, 1);
+        // Enable HVAC
+        model.0.hvac.hvac_enabled = VectorField::from_scalar(1.0, 1);
+        // Set capacities high (no clamping)
+        model.0.hvac.hvac_heating_capacity = 1e9;
+        model.0.hvac.hvac_cooling_capacity = 1e9;
+
+        // Test case: T_free=15°C, T_prev=18°C, heating SP=20°C, dt=3600s
+        // Expected Q_heat = C_air*(20-18)/3600 + 150*(20-15)
+        //                = 156000*2/3600 + 150*5
+        //                = 86.67 + 750 = 836.67 W
+        let t_free = 15.0;
+        let t_prev = 18.0;
+        let heating_sp = 20.0;
+        let cooling_sp = 27.0;
+        let dt = 3600.0;
+
+        let zone_temps = vec![t_free];
+        let heating_sps = vec![heating_sp];
+        let cooling_sps = vec![cooling_sp];
+        let t_prev_vec = vec![t_prev];
+        let mut scratch = SmallVec::<[f64; 4]>::new();
+
+        let result = model.compute_zone_hvac_load(
+            &zone_temps,
+            &heating_sps,
+            &cooling_sps,
+            heating_sp,
+            cooling_sp,
+            &t_prev_vec,
+            dt,
+            &mut scratch,
+        );
+
+        let q_computed = result.as_ref()[0];
+        let h_coeff = 150.0; // (30+70) + 50
+        let q_expected = 156000.0 * (heating_sp - t_prev) / dt + h_coeff * (heating_sp - t_free);
+
+        let rel_err = ((q_computed - q_expected) / q_expected).abs();
+        assert!(
+            rel_err < 1e-3, // 0.1% tolerance
+            "Residual Q_heat {} differs from analytic {} (rel_err={})",
+            q_computed,
+            q_expected,
+            rel_err
+        );
+
+        // Verify cooling case: T_free=30°C, T_prev=28°C, cooling SP=27°C
+        // Expected Q_cool = C_air*(27-28)/3600 + 150*(27-30)
+        //                = -43.33 + (-450) = -493.33 W (negative = cooling)
+        let t_free_cool = 30.0;
+        let t_prev_cool = 28.0;
+        let zone_temps_cool = vec![t_free_cool];
+        let t_prev_vec_cool = vec![t_prev_cool];
+        let mut scratch2 = SmallVec::<[f64; 4]>::new();
+
+        let result_cool = model.compute_zone_hvac_load(
+            &zone_temps_cool,
+            &heating_sps,
+            &cooling_sps,
+            heating_sp,
+            cooling_sp,
+            &t_prev_vec_cool,
+            dt,
+            &mut scratch2,
+        );
+
+        let q_cool_computed = result_cool.as_ref()[0];
+        let q_cool_expected =
+            156000.0 * (cooling_sp - t_prev_cool) / dt + h_coeff * (cooling_sp - t_free_cool);
+
+        let rel_err_cool = ((q_cool_computed - q_cool_expected) / q_cool_expected.abs()).abs();
+        assert!(
+            rel_err_cool < 1e-3,
+            "Residual Q_cool {} differs from analytic {} (rel_err={})",
+            q_cool_computed,
+            q_cool_expected,
+            rel_err_cool
+        );
+        assert!(
+            q_cool_computed < 0.0,
+            "Cooling load must be negative, got {}",
+            q_cool_computed
+        );
+    }
 }
