@@ -43,7 +43,7 @@
       "timestamp": "2026-08-12T18:00:00+00:00",
       "commit": "73d15a6",
       "source": "coverage-extension-issue-2766",
-      "reason": "Issue #2766 extended check_physics_sim_cycle.py Phase 2 from 2 guarded sim files (construction.rs + per_surface_conduction.rs) to ALL src/sim/**/*.rs files. The extension surfaced 84 pre-existing `use crate::physics::` imports across 26 sim files that the pre-#2766 guard never scanned (thermal_model.rs, engine.rs, ventilation.rs, ...). The 84 edges existed all along \u2014 this is a one-time coverage-driven re-baselining (sim_to_physics 0 -> 84, total 215 -> 299), NOT a regression: BASELINE_SIM_TO_PHYSICS in check_physics_sim_cycle.py was raised from 0 to 84 in the same commit. The +84 is entirely pre-existing coupling made visible; no new cycle edges were introduced. Downward trend from this new baseline is enforced by R1/R2/R3 going forward.",
+      "reason": "Issue #2766 extended check_physics_sim_cycle.py Phase 2 from 2 guarded sim files (construction.rs + per_surface_conduction.rs) to ALL src/sim/**/*.rs files. The extension surfaced 84 pre-existing `use crate::physics::` imports across 26 sim files that the pre-#2766 guard never scanned (thermal_model.rs, engine.rs, ventilation.rs, ...). The 84 edges existed all along — this is a one-time coverage-driven re-baselining (sim_to_physics 0 -> 84, total 215 -> 299), NOT a regression: BASELINE_SIM_TO_PHYSICS in check_physics_sim_cycle.py was raised from 0 to 84 in the same commit. The +84 is entirely pre-existing coupling made visible; no new cycle edges were introduced. Downward trend from this new baseline is enforced by R1/R2/R3 going forward.",
       "totals": {
         "sim_to_validation": 72,
         "validation_to_sim": 58,
@@ -133,7 +133,7 @@
       },
       "total": 303,
       "edge_signature": "24d267982e2e446c96c342faa34203edb52b8b32b82926a98998db6bd94068cf",
-      "reason": "PR #3020 (issue #2896) deleted doc-only stub modules src/sim/thermal_model_hvac.rs (no physics imports) and src/sim/thermal_model_network.rs (one `use crate::physics::cta::{ContinuousTensor, VectorField};` import) and consolidated their documentation into src/sim/thermal_model.rs. The deletion removed 1 sim->physics edge; sim_to_physics dropped 84 -> 83 (total 304 -> 303). BASELINE_SIM_TO_PHYSICS in scripts/check_physics_sim_cycle.py was lowered from 84 to 83 in the same PR (companion cycle-removal work authorised by ARCHITECTURE.md \u00a7Regression guard). No new cycle edges were introduced; this is a net cycle reduction, not a swap. R1/R2/R3 trend guards continue to enforce downward pressure from this new baseline."
+      "reason": "PR #3020 (issue #2896) deleted doc-only stub modules src/sim/thermal_model_hvac.rs (no physics imports) and src/sim/thermal_model_network.rs (one `use crate::physics::cta::{ContinuousTensor, VectorField};` import) and consolidated their documentation into src/sim/thermal_model.rs. The deletion removed 1 sim->physics edge; sim_to_physics dropped 84 -> 83 (total 304 -> 303). BASELINE_SIM_TO_PHYSICS in scripts/check_physics_sim_cycle.py was lowered from 84 to 83 in the same PR (companion cycle-removal work authorised by ARCHITECTURE.md §Regression guard). No new cycle edges were introduced; this is a net cycle reduction, not a swap. R1/R2/R3 trend guards continue to enforce downward pressure from this new baseline."
     },
     {
       "timestamp": "2026-08-15T17:09:50+00:00",
@@ -149,7 +149,7 @@
       },
       "total": 305,
       "edge_signature": "22a4d3917a9c23f70c6cc76ac089952ef7173e90f1b390214bcdc4d2c6bfaf3c",
-      "reason": "PR #3024 (issue #2891) implements wind-velocity-dependent exterior convection (ASHRAE 140 \u00a75.2.6) by introducing src/physics/exterior_convection.rs and importing its helpers (h_c_ext_wind_dependent, wind_at_building_height_from_10m, ExteriorSurfaceDirection) from two new sim call sites: src/sim/thermal_model_core.rs:243 (sol-air temperature path) and src/sim/thermal_model_physics/physics_impl.rs:322 (5R1C FD boundary condition path). This adds 2 legitimate sim->physics edges; sim_to_physics grew 83 -> 85 (total 303 -> 305). The new edges are authorised by ARCHITECTURE.md \u00a7Regression guard as companion cycle work for the new physics module: PR #3024 creates the ONLY consumer of the new physics helpers in the 5R1C path it modifies, so any companion cycle-removal that hoists these helpers to fluxion_core would also have to move the wind-convection algorithm itself. Companion cycle-removal work stays open until #2462 phase 3 elides the entire sim->physics edge family. BASELINE_SIM_TO_PHYSICS in scripts/check_physics_sim_cycle.py was raised from 83 to 85 in the same PR, and ARCHITECTURE.md \u00a7Regression guard was updated to match. R1/R2/R3 trend guards continue to enforce downward pressure from this new 305 floor."
+      "reason": "PR #3024 (issue #2891) implements wind-velocity-dependent exterior convection (ASHRAE 140 §5.2.6) by introducing src/physics/exterior_convection.rs and importing its helpers (h_c_ext_wind_dependent, wind_at_building_height_from_10m, ExteriorSurfaceDirection) from two new sim call sites: src/sim/thermal_model_core.rs:243 (sol-air temperature path) and src/sim/thermal_model_physics/physics_impl.rs:322 (5R1C FD boundary condition path). This adds 2 legitimate sim->physics edges; sim_to_physics grew 83 -> 85 (total 303 -> 305). The new edges are authorised by ARCHITECTURE.md §Regression guard as companion cycle work for the new physics module: PR #3024 creates the ONLY consumer of the new physics helpers in the 5R1C path it modifies, so any companion cycle-removal that hoists these helpers to fluxion_core would also have to move the wind-convection algorithm itself. Companion cycle-removal work stays open until #2462 phase 3 elides the entire sim->physics edge family. BASELINE_SIM_TO_PHYSICS in scripts/check_physics_sim_cycle.py was raised from 83 to 85 in the same PR, and ARCHITECTURE.md §Regression guard was updated to match. R1/R2/R3 trend guards continue to enforce downward pressure from this new 305 floor."
     },
     {
       "timestamp": "2026-08-16T00:00:00+00:00",
@@ -165,7 +165,7 @@
       },
       "total": 299,
       "edge_signature": "2c4c5e685a69e4e7807b90cf82bc872de565965e3769338f1a6dbf3e3e9e5765",
-      "reason": "PR #3034 (issue #2878) split the legacy src/sim/thermal_model_data.rs god-struct (~140 fields, 145-line Clone impl) into 6 per-domain sub-structs in src/sim/thermal_model_data/ (conduction_backend, conduction_state, diagnostics_state, hvac_state, mass_state, setpoint_state, solar_state). The deletion removed 8 use crate::physics:: imports (cta::{ContinuousTensor, VectorField}, ctf_coefficients::CTFCoefficients, ctf_solver::CTFSolver, ctf_zone_coupling::CtfZoneCouplingSolver, fd_solver::ImplicitFDSolver, gauge_zone_solver::GaugeZoneSolver, multi_node_solver::MultiNodeSolver, solver_manager::SolverManager); the per-domain split adds 2 consolidated pub use crate::physics::{...} lines in the new mod.rs (one consolidated block covering 7 types, one cfg-gated re-export of GaugeZoneSolver). Net effect: sim_to_physics 85 -> 79 (-6). BASELINE_SIM_TO_PHYSICS in scripts/check_physics_sim_cycle.py was lowered from 85 to 79 in the same PR (companion cycle-removal work authorised by ARCHITECTURE.md \u00a7Regression guard: the god-struct split is itself a cycle-removal operation that reduces sim->physics coupling surface). R1/R2/R3 trend guards continue to enforce downward pressure from this new 299 floor."
+      "reason": "PR #3034 (issue #2878) split the legacy src/sim/thermal_model_data.rs god-struct (~140 fields, 145-line Clone impl) into 6 per-domain sub-structs in src/sim/thermal_model_data/ (conduction_backend, conduction_state, diagnostics_state, hvac_state, mass_state, setpoint_state, solar_state). The deletion removed 8 use crate::physics:: imports (cta::{ContinuousTensor, VectorField}, ctf_coefficients::CTFCoefficients, ctf_solver::CTFSolver, ctf_zone_coupling::CtfZoneCouplingSolver, fd_solver::ImplicitFDSolver, gauge_zone_solver::GaugeZoneSolver, multi_node_solver::MultiNodeSolver, solver_manager::SolverManager); the per-domain split adds 2 consolidated pub use crate::physics::{...} lines in the new mod.rs (one consolidated block covering 7 types, one cfg-gated re-export of GaugeZoneSolver). Net effect: sim_to_physics 85 -> 79 (-6). BASELINE_SIM_TO_PHYSICS in scripts/check_physics_sim_cycle.py was lowered from 85 to 79 in the same PR (companion cycle-removal work authorised by ARCHITECTURE.md §Regression guard: the god-struct split is itself a cycle-removal operation that reduces sim->physics coupling surface). R1/R2/R3 trend guards continue to enforce downward pressure from this new 299 floor."
     },
     {
       "timestamp": "2026-08-25T00:00:00+00:00",
@@ -213,7 +213,7 @@
       },
       "total": 337,
       "edge_signature": "591115b68be868e58edd99d52f8b758dd01b7fe0948427e34bca14465e74ac94",
-      "reason": "PR #3347 (issue #3324) adopts the algebraic-FP reduction helpers (algebraic_add, algebraic_mul, algebraic_sub, algebraic_div) introduced by PR #3338 (issue #3322) inside the solar kernels, adding 4 new sim->physics edges: src/sim/interzone_radiation.rs (algebraic_mul, algebraic_sub), src/sim/longwave_exchange.rs (algebraic_add, algebraic_mul), src/sim/solar.rs (algebraic_add), and src/sim/solar_gain_distribution.rs (algebraic_add, algebraic_mul, algebraic_div). Default-feature builds stay bit-identical because the helpers reduce to native +/*/-/ under --features default; the imports exist only so the same kernel source compiles unchanged under --features fast-math. Sanctioned by ARCHITECTURE.md \u00a7Regression guard as companion cycle work for #3322 (these are the ONLY sim->physics consumers of the new fluxion-core::physics::fp_algebraic helpers, so any cycle-removal that hoisted them to fluxion-core would also have to move the helpers themselves). BASELINE_SIM_TO_PHYSICS in scripts/check_physics_sim_cycle.py raised 79 -> 83 in the same PR; ARCHITECTURE.md \u00a7Regression guard was updated to match. R1/R2/R3 trend guards continue to enforce downward pressure from this new 337 floor. Companion cycle-removal work stays open under the #2462 phase-3 sim->physics edge elision."
+      "reason": "PR #3347 (issue #3324) adopts the algebraic-FP reduction helpers (algebraic_add, algebraic_mul, algebraic_sub, algebraic_div) introduced by PR #3338 (issue #3322) inside the solar kernels, adding 4 new sim->physics edges: src/sim/interzone_radiation.rs (algebraic_mul, algebraic_sub), src/sim/longwave_exchange.rs (algebraic_add, algebraic_mul), src/sim/solar.rs (algebraic_add), and src/sim/solar_gain_distribution.rs (algebraic_add, algebraic_mul, algebraic_div). Default-feature builds stay bit-identical because the helpers reduce to native +/*/-/ under --features default; the imports exist only so the same kernel source compiles unchanged under --features fast-math. Sanctioned by ARCHITECTURE.md §Regression guard as companion cycle work for #3322 (these are the ONLY sim->physics consumers of the new fluxion-core::physics::fp_algebraic helpers, so any cycle-removal that hoisted them to fluxion-core would also have to move the helpers themselves). BASELINE_SIM_TO_PHYSICS in scripts/check_physics_sim_cycle.py raised 79 -> 83 in the same PR; ARCHITECTURE.md §Regression guard was updated to match. R1/R2/R3 trend guards continue to enforce downward pressure from this new 337 floor. Companion cycle-removal work stays open under the #2462 phase-3 sim->physics edge elision."
     },
     {
       "timestamp": "2026-09-07T00:47:17+00:00",
@@ -245,7 +245,7 @@
       },
       "total": 339,
       "edge_signature": "pending-rerun-after-baseline-bump",
-      "reason": "Issue #3571 (closes +2 validation->sim cycle regression in scripts/check_ashrae_cases_cycle.py): the Phase A8 follow-up #3276/#3277 (`from_spec()` -> `from_spec_with_selector()` migration, commit 396ef26) added `ThermalSelector::default()` construction at every validator call site, which introduced two new src/validation/ashrae_140_multi_zone.rs edges at lines 15-16 (`use crate::sim::engine::ThermalModel` and `use crate::sim::thermal_selector::ThermalSelector`). validation_to_sim grew 65 -> 67 (+2); total 337 -> 339 (+2). BASELINE_VALIDATION_TO_SIM in scripts/check_ashrae_cases_cycle.py was raised from 65 to 67 in the same PR, and the ARCHITECTURE.md \u00a7Regression guard cycle-edge prose (line 255 + line 265) was updated from 'baseline 65' / '+ 65 validation->sim' to 'baseline 67' / '+ 67 validation->sim' to match. The new edges are intentional and authorised by ARCHITECTURE.md \u00a7Regression guard: the multi-zone validator legitimately needs the engine entry point and selector to drive the 8760-step Case 960/970 physics simulations. Lowering this baseline remains reserved for the companion cycle-removal work tracked under #1441. R1/R2/R3 trend guards continue to enforce downward pressure from this new 339 floor."
+      "reason": "Issue #3571 (closes +2 validation->sim cycle regression in scripts/check_ashrae_cases_cycle.py): the Phase A8 follow-up #3276/#3277 (`from_spec()` -> `from_spec_with_selector()` migration, commit 396ef26) added `ThermalSelector::default()` construction at every validator call site, which introduced two new src/validation/ashrae_140_multi_zone.rs edges at lines 15-16 (`use crate::sim::engine::ThermalModel` and `use crate::sim::thermal_selector::ThermalSelector`). validation_to_sim grew 65 -> 67 (+2); total 337 -> 339 (+2). BASELINE_VALIDATION_TO_SIM in scripts/check_ashrae_cases_cycle.py was raised from 65 to 67 in the same PR, and the ARCHITECTURE.md §Regression guard cycle-edge prose (line 255 + line 265) was updated from 'baseline 65' / '+ 65 validation->sim' to 'baseline 67' / '+ 67 validation->sim' to match. The new edges are intentional and authorised by ARCHITECTURE.md §Regression guard: the multi-zone validator legitimately needs the engine entry point and selector to drive the 8760-step Case 960/970 physics simulations. Lowering this baseline remains reserved for the companion cycle-removal work tracked under #1441. R1/R2/R3 trend guards continue to enforce downward pressure from this new 339 floor."
     },
     {
       "timestamp": "2026-09-13T19:16:48+00:00",
@@ -309,7 +309,7 @@
       },
       "total": 288,
       "edge_signature": "f2e011da65a1989d93a3800d0b8930e8e13939443351ad080082006b469c5fb5",
-      "reason": "Issue #3871 \u2014 leaf-module hoist of ZoneCountPolicy + MAX_ZONES into fluxion-core::zone_count_policy (Phase 3 sim->physics edge elision that #2462 deferred). Re-closes the edge admitted by PR #3869 for the #3731 typed ZoneCountPolicy import; live scan back at 80, baseline #2463 cycle guard restored to 80."
+      "reason": "Issue #3871 — leaf-module hoist of ZoneCountPolicy + MAX_ZONES into fluxion-core::zone_count_policy (Phase 3 sim->physics edge elision that #2462 deferred). Re-closes the edge admitted by PR #3869 for the #3731 typed ZoneCountPolicy import; live scan back at 80, baseline #2463 cycle guard restored to 80."
     },
     {
       "timestamp": "2026-09-27T20:33:44+00:00",
@@ -326,6 +326,22 @@
       "total": 288,
       "edge_signature": "df8954c577668d2900c2770d57970dedbd8a9a55c5fb71cc3c6ae155c4651f4c",
       "reason": "Issue #3986-A threads ThermalSelector through ASHRAE140Validator + ASHRAE140MultiZoneValidator. Previously the validator hardcoded ThermalSelector::default() at 7 production-path sites, creating transient validation->sim edges via the default() constructor. After the refactor the validator stores a ThermalSelector field and uses &self.selector, which shifts the edge signature: validation->sim -1 (one fewer default() construction), validation->physics -2 (two fewer reference resolutions), sim->physics +3 (the new selector field + getter + new_with_selector siblings reference ThermalSelector's type, which now flows through the field). Total cycle edge count unchanged at 288. Per #2768 R3 net-flat-swap rule, this manual baseline bump documents the legitimate edge redistribution that tracks the architectural shift toward 'validator stores selector, not constructs it' (ADR-0017)."
+    },
+    {
+      "timestamp": "2026-09-29T00:19:17.963245+00:00",
+      "commit": "dd13bc38",
+      "source": "pr-4222-issue-4166",
+      "totals": {
+        "sim_to_validation": 51,
+        "validation_to_sim": 66,
+        "validation_to_physics": 63,
+        "validation_to_weather": 25,
+        "physics_to_sim": 0,
+        "sim_to_physics": 79
+      },
+      "total": 284,
+      "edge_signature": "pending-ci-verification",
+      "reason": "Issue #4166 / PR #4222 — per-surface exterior boundary. Deleted the obsolete h_tr_em_wind_dependent helper and its five tests from src/sim/thermal_model_physics/physics_impl/step_5r1c.rs, removing 3 sim->physics use edges (82 -> 79). The per-surface ExteriorBoundarySurface::h_tr_em keeps the caller-owned exterior_convection import."
     }
   ]
 }
