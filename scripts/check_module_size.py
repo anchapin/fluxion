@@ -9,7 +9,7 @@ to its current line count).
 
 Each entry in ``LIMITS`` defines:
 - ``path``: source file (relative to repo root, OR absolute).
-- ``max_lines``: hard ceiling (PR-blocking). The YAML ``max_lines`` is the
+- ``max_lines``: hard ceiling (PR-blocking). The ``max_lines`` is the
   active ceiling; the ratchet JSON holds the historical maximum for
   visibility (``effective_max = max(max_lines, ratchet_max)``). To tighten
   the bound, lower ``max_lines`` in this script.
@@ -20,16 +20,20 @@ Each entry in ``LIMITS`` defines:
 - ``reason``: human-readable rationale, surfaced in failure messages and
   JSON output.
 
-Going forward, the ``LIMITS`` list itself is ratcheted downward-only via
-``BASELINE_MODULE_SIZE_LIMITS`` and ``_BASELINE_MODULE_SIZE_LIMITS_SET``,
-mirroring the ``BASELINE_KNOWN_ORPHANS`` /
+Issue #4243 refactor: LIMITS are read from the canonical data file
+``scripts/data/module_size_limits.json`` instead of being hardcoded in this
+script. The ``LIMITS`` list itself stays ratcheted downward-only, but the
+baseline now lives in the data file's ``"baseline"`` section (``count`` +
+``paths``), mirroring the ``BASELINE_KNOWN_ORPHANS`` /
 ``_BASELINE_KNOWN_ORPHANS_SET`` pattern from
-``scripts/check_orphan_modules.py`` (Issues #3458 / #3459). Adding a new
-entry is PR-blocking unless the baseline is raised (with a documenting
-comment naming the tracking issue) AND the matching path is added to
-``_BASELINE_MODULE_SIZE_LIMITS_SET``. Companion cleanup PRs that
-decompose a gated file should remove its entry AND lower the baseline by
-one.
+``scripts/check_orphan_modules.py`` (Issues #3458 / #3459): adding a new
+entry without updating the baseline section is PR-blocking drift. Use
+``--write-baseline [--reason ...]`` to update the data file AND the
+baseline section atomically (records a history entry naming the reason),
+and ``--remove-entries`` to handle decomposition cleanup (removes entries
+and optionally deletes associated ratchet JSONs; companion cleanup PRs
+that decompose a gated file should remove its entry AND lower the
+baseline by one).
 
 Exit codes:
 - 0 — all entries within bounds, no drift against the freeze.
@@ -39,17 +43,22 @@ Exit codes:
 
 Usage:
     python3 scripts/check_module_size.py [--json] [--write-ratchet]
+    python3 scripts/check_module_size.py --write-baseline           # update data file
+    python3 scripts/check_module_size.py --remove-entries src/foo.rs [--delete-ratchets]
 """
 
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_LIMITS_FILE = REPO_ROOT / "scripts" / "data" / "module_size_limits.json"
+RATCHET_DIR = REPO_ROOT / "tests" / "reference_data" / "module_size"
 
 
 # ---------------------------------------------------------------------------
@@ -62,208 +71,205 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # removed) are expected to drop the matching entry AND lower this baseline
 # by one. Raising the baseline is reserved for legitimately gating a new
 # large file, and MUST be accompanied by a documenting comment naming the
-# tracking issue AND a matching addition to
-# ``_BASELINE_MODULE_SIZE_LIMITS_SET``.
+# tracking issue AND a matching addition to the data file.
 #
-# History:
-#   2 → 12 (Issue #3457): initial extension beyond the single ratcheted
-#     file. The original 2 entries (``thermal_model_data.rs`` + the
-#     ``mod.rs`` directory form, both Issue #2878) are retained, plus the
-#     10 largest ``src/`` files identified by the gap-issues
-#     ``auto-improvement-loop`` audit pass on 2026-09-07 (HEAD
-#     ``436de25``). The bound for each new entry is the file's CURRENT
-#     line count snapshotted as both ``max_lines`` (YAML ceiling) and the
-#     ratchet JSON's ``max_lines`` (historical max); going forward the
-#     bound can only tighten as the YAML ceiling is lowered alongside
-#     file decomposition.
-#   12 → 11 (Issue #3543, part 1): ``src/api/server.rs`` was decomposed into
-#     a per-route submodule tree under ``src/api/server/`` (mod.rs +
-#     api_error, batch, campaigns, constants, health, import_format,
-#     router, schema_store, simulate, state, tests). No new entry is
-#     added because the largest child submodule (~750 LoC) is well below
-#     the smallest ratcheted threshold (~2000 LoC); the decomposition
-#     itself is the ratchet-lowering event.
-#     - ``src/sim/thermal_model_core.rs`` → ``src/sim/thermal_model_core/``
-#       directory (mod.rs + tests). Largest child: mod.rs (~4.1k LoC) —
-#       still over the ratchet but only because of the bare
-#       ``impl ThermalModel<VectorField>`` block; further decomposition
-#       is out of scope for #3543 (tracked separately).
-#     - ``src/validation/ashrae_140_validator.rs`` →
-#       ``src/validation/ashrae_140_validator/`` directory (mod.rs + tests).
-#       Largest child: mod.rs (~3.1k LoC).
-#     Two entries removed; baseline lowered by two.
-#   9 → 17 (Issue #3574): Issue #3543's decomposition of
-#     ``src/api/server.rs``, ``src/sim/thermal_model_core.rs``, and
-#     ``src/validation/ashrae_140_validator.rs`` (PR #3566) shrank three
-#     entries out of the LIMITS list but exposed eight additional files
-#     above the smallest ratcheted threshold (~2000 LoC) that were
-#     previously invisible to the gate. Each is added at its current line
-#     count plus a small buffer (max of +5% or +100 lines) so the gate
-#     passes immediately but tightens against any further growth.
-#     Companion cleanup PRs that decompose any of these files should
-#     remove the matching entry AND lower this baseline by one. Eight
-#     entries added; baseline raised by eight.
-#   17 → 16 (Issue #3625): ``src/interop/fmi/mod.rs`` was decomposed into
-#     responsibility submodules under ``src/interop/fmi/`` (``common``,
-#     ``export``, ``import``, ``cosim``, ``xml``, ``ffd`` plus the
-#     ``tests``/``ffd_tests`` modules). Entry removed from ``LIMITS`` and
-#     from the freeze snapshot; baseline lowered by one. The largest
-#     child (``ffd.rs``, ~1.1k LoC) is well below the smallest ratcheted
-#     threshold (~2000 LoC), so no new entry is added — the
-#     decomposition itself is the ratchet-lowering event.
-#   16 → 15 (surrogate.rs decomposition, tracked under issue #3669):
-#     ``src/ai/surrogate.rs`` (6,909 lines) was decomposed into the
-#     ``src/ai/surrogate/`` submodule tree (session_pool, integrity,
-#     metrics, manager). The entry is removed and
-#     ``surrogate_ratchet.json`` deleted per the companion-cleanup
-#     convention (cf. Issue #3543, which likewise added no child entries
-#     for its decomposed modules). The largest child,
-#     ``src/ai/surrogate/manager.rs`` (~2.1k LoC), is left ungated for a
-#     future #3574-style audit pass.
-#     (Merge resolution: the #3625 fmi decomposition landed first; the
-#     surrogate lowering stacks on top of it.)
-#   16 → 15 (model_bindings.rs decomposition, final PR of the 8-PR
-#     improvement run):
-#     ``src/python/model_bindings.rs`` (2,485 lines) was decomposed into the
-#     ``src/python/model_bindings/`` submodule tree (model, hvac, batch)
-#     behind a thin facade (~30 lines). The entry is removed and
-#     ``python_model_bindings_ratchet.json`` deleted per the
-#     companion-cleanup convention (cf. Issue #3543 and the surrogate.rs /
-#     fmi/mod.rs decompositions, which likewise added no child entries for
-#     their decomposed modules). The largest child,
-#     ``src/python/model_bindings/model.rs`` (~2.1k LoC), is left ungated
-#     for a future #3574-style audit pass.
-#     (Merge resolution: the #3625 fmi decomposition landed first; the
-#     model_bindings lowering stacks on top of it.)
-#     (Second merge resolution: the model_bindings lowering landed on
-#     develop first; the surrogate lowering stacks on top of it -> 14.)
-#   14 → 13 (Issue #3790, multi_node_solver/mod.rs decomposition):
-#     ``src/physics/multi_node_solver/mod.rs`` (2666 lines) was decomposed
-#     into a child tree (helpers.rs with the free helpers —
-#     ``h_series`` / ``air_sky_conductance`` / etc. and the
-#     ``SurfaceExteriorTemperatures`` struct, and tests.rs with the inline
-#     ``mod tests`` block) per the PR #3688 ``coverage_tests`` precedent.
-#     The ``HeatConductionSolver`` trait impl stays in ``mod.rs`` so the
-#     ``solver_trait.rs`` swap-point surface path is unchanged. The parent
-#     lands at ~1670 lines, below the ~2000-line audit threshold;
-#     no child entries are added. The decomposition itself is the
-#     ratchet-lowering event. The public API at
-#     ``crate::physics::multi_node_solver::*`` is preserved via the
-#     ``pub use helpers::{...}`` re-export shim in ``mod.rs``.
-#   13 → 12 (Issue #3788, merged via PR for #3788): ``src/validation/report.rs``
-#     (4136 lines) was decomposed into the ``report/`` submodule tree
-#     (``mod.rs`` re-export shim + ``benchmark.rs`` holding both
-#     ``impl BenchmarkReport`` blocks + ``multi_zone.rs`` holding the
-#     multi-zone/Case960/Case970/summary/``ValidationSuite`` family +
-#     ``tests.rs`` holding the extracted ``#[cfg(test)] mod tests``
-#     body). The largest child, ``benchmark.rs`` (~1690 LoC), is
-#     below the smallest ratcheted threshold (~2000 LoC), so no new
-#     LIMITS entry is added; the ``report`` parent lands below the
-#     audit threshold for the future ``#3574``-style child audit pass.
-#     The ``report.rs`` LIMITS entry is removed and
-#     ``tests/reference_data/module_size/report_ratchet.json`` deleted
-#     per the companion-cleanup convention (cf. Issue #3543 #3625
-#     #3669 surrogate.rs / fmi / model_bindings decompositions).
-#   12 → 11 (Issue #3787, state_space_ctf/mod.rs decomposition):
-#     ``src/physics/state_space_ctf/mod.rs`` (4347 lines) was decomposed
-#     into a child tree:
-#       - ``tests.rs`` with the inline ``mod tests`` (basic matrix ops +
-#         state-space / capavg / cross-coupling cases)
-#       - ``expm_debug_tests.rs`` with the inline ``mod expm_debug_tests``
-#         (Padé vs Taylor / Schur vs Padé 4-layer / 6×6 / 2×2 cases)
-#       - ``debug_new_expm_tests.rs`` with the inline
-#         ``mod debug_new_expm_tests`` (Schur reconstruction, 4-layer
-#         Padé, proptest convergence, thermal-mass conservation)
-#       - ``linalg.rs`` with the dense linear-algebra kernel
-#         (``matrix_exponential`` family — explicit-QR, ``faer``,
-#         Higham Padé-13, real-Schur/Francis double-shift, legacy Padé,
-#         Taylor — plus mat-mul helpers, Householder QR/Hessenberg,
-#         ``matrix_inverse``, norms). Self-contained pure math with no
-#         CTF-domain coupling.
-#     The public API on ``crate::physics::state_space_ctf`` is preserved
-#     unchanged via the re-export shim in ``mod.rs`` (``pub use
-#     linalg::matrix_exponential_faer``); the pipeline
-#     (``compute_state_space_ctf``, ``build_state_space_matrices``,
-#     ``compute_ctf_from_state_space``) re-imports the few symbols it
-#     needs from ``super::linalg``. Parent lands at ~933 lines (below
-#     the ~2000-line audit threshold); ``linalg`` at ~1471 lines (also
-#     below the audit threshold); no child entries are added. The
-#     decomposition itself is the ratchet-lowering event.
-BASELINE_MODULE_SIZE_LIMITS = 11
+# NOTE: As of Issue #4243, these constants are DERIVED from the LIMITS
+# data file at module load time. The values here are fallbacks for when
+# the data file is absent (e.g., in old checkouts). The data file
+# (``scripts/data/module_size_limits.json``) is the authoritative source.
+# ---------------------------------------------------------------------------
 
-# Freeze snapshot of the gated paths (Issue #3457 ratchet).
-#
-# Mirrors ``_BASELINE_KNOWN_ORPHANS_SET`` from
-# ``scripts/check_orphan_modules.py``: this frozenset snapshots which
-# files are gated at the moment the ratchet was introduced. It exists
-# separately so the ratchet check can report *which* new entries were
-# added to ``LIMITS`` since the freeze, not just the total count.
-# Editing this set is the "raise the baseline" lever — any new entry MUST
-# be added here AND to ``LIMITS`` (and ``BASELINE_MODULE_SIZE_LIMITS``
-# must be raised to match the new size), with a documenting comment
-# naming the tracking issue. Editing ``LIMITS`` alone, without mirroring
-# the change here, makes the diff visible in the CI failure message.
-_BASELINE_MODULE_SIZE_LIMITS_SET: frozenset[str] = frozenset(
+# Fallback default LIMITS (Issue #4243: replaced by data file).
+_DEFAULT_LIMITS: list[dict] = [
     {
-        # Issue #2878 (retained).
-        "src/sim/thermal_model_data.rs",
-        "src/sim/thermal_model_data/mod.rs",
-        # Issue #3457 — 7 largest src/ files at freeze time.
-        # Removed in Issue #3543 (decomposed):
-        #   - ``src/api/server.rs`` (part 1) — per-route submodule tree
-        #   - ``src/sim/thermal_model_core.rs`` (part 2) — mod.rs + tests
-        #   - ``src/validation/ashrae_140_validator.rs`` (part 3) — mod.rs + tests
-        # Removed in the surrogate.rs decomposition (issue #3669):
-        #   - ``src/ai/surrogate.rs`` — src/ai/surrogate/ submodule tree
-        #     (session_pool, integrity, metrics, manager)
-        # Removed in Issue #3788 (decomposed into src/validation/report/ submodules):
-        #   - ``src/validation/report.rs`` — mod.rs + benchmark.rs +
-        #     multi_zone.rs + tests.rs (largest child ~1690 LoC, below audit threshold)
-        # Removed in Issue #3787 (decomposed into src/physics/state_space_ctf/
-        # submodules — tests.rs + expm_debug_tests.rs + debug_new_expm_tests.rs
-        # + linalg.rs — per the PR #3688 ``coverage_tests`` precedent; the
-        # ``compute_state_space_ctf`` / ``build_state_space_matrices`` /
-        # ``compute_ctf_from_state_space`` pipeline stays in ``mod.rs`` so the
-        # public API is preserved via the re-export shim; parent lands at
-        # ~933 lines, ``linalg`` at ~1471 lines, both below the ~2000-line
-        # audit threshold, no child entries added).
-        "src/validation/ashrae_140_cases.rs",
-        # Removed in Issue #3790 (decomposed into
-        # ``src/physics/multi_node_solver/`` submodules — helpers.rs +
-        # tests.rs — per the PR #3688 ``coverage_tests`` precedent; the
-        # ``HeatConductionSolver`` trait impl stays in ``mod.rs`` so the
-        # swap-point surface path is unchanged; parent lands at ~1670 lines,
-        # below the audit threshold, no child entries added).
-        # Replaced in Issue #3789 (merged via PR #3843) — the 3061-line
-        # ``src/sim/thermal_model.rs`` was split into a ``thermal_model/``
-        # directory: ``mod.rs`` (288 lines, the only child at the ~2k
-        # audit threshold or above? — no, 288 is below audit, so it does
-        # not get a child entry) + ``physics.rs`` (163) + ``surrogate.rs``
-        # (295) + ``hybrid.rs`` (953) + ``unified.rs`` (281) +
-        # ``comfort.rs`` (96) + ``tests.rs`` (1079). The ``HybridThermalModel``
-        # body migrated to ``hybrid.rs`` and ``ThermalModelTrait`` stays in
-        # ``mod.rs``; the swap-point surface path is unchanged. The
-        # replacement limit below targets the new ``mod.rs`` so future
-        # growth in this concern continues to trigger the gate.
-        "src/sim/thermal_model/mod.rs",
-        # Issue #3574 — 8 files newly over the ~2000-LoC threshold after
-        # the Issue #3543 decomposition. Each is ratcheted at its current
-        # size plus a small buffer; companion cleanup PRs that decompose
-        # any of them should remove the matching entry AND lower
-        # BASELINE_MODULE_SIZE_LIMITS by one.
-        "src/api/security.rs",
-        "src/sim/thermal_model_core/mod.rs",
-        "src/validation/ashrae_140_validator/mod.rs",
-        "src/physics/geometry_tensor.rs",
-        # Removed in the model_bindings.rs decomposition (final PR of the
-        # 8-PR improvement run):
-        #   - ``src/python/model_bindings.rs`` — src/python/model_bindings/
-        #     submodule tree (model, hvac, batch)
-        "src/validation/reporter.rs",
-        "fluxion-city/src/lib.rs",
-        "fluxion-mcp/src/tools.rs",
-    }
-)
+        "path": "src/sim/thermal_model_data.rs",
+        "max_lines": 200,
+        "ratchet_basename": "thermal_model_data_ratchet.json",
+        "reason": (
+            "Issue #2878 acceptance: drop ThermalModelData below 200 lines "
+            "so the god-struct (~140 fields, 145-line Clone impl) does not "
+            "regress. Per-config clone must touch ≤6 fields."
+        ),
+    },
+    {
+        "path": "src/sim/thermal_model_data/mod.rs",
+        "max_lines": 200,
+        "ratchet_basename": "thermal_model_data_ratchet.json",
+        "reason": (
+            "Issue #2878 acceptance (directory form): drop ThermalModelData "
+            "below 200 lines so the god-struct (~140 fields, 145-line Clone "
+            "impl) does not regress. Per-config clone must touch ≤6 fields."
+        ),
+    },
+    {
+        "path": "src/validation/ashrae_140_cases.rs",
+        "max_lines": 4764,
+        "ratchet_basename": "ashrae_140_cases_ratchet.json",
+        "reason": (
+            "Issue #3457: ASHRAE 140 cases module ratcheted at current "
+            "size (4764 lines); v1.3 validation work depends on this module."
+        ),
+    },
+    {
+        "path": "src/sim/thermal_model/mod.rs",
+        "max_lines": 3061,
+        "ratchet_basename": "thermal_model_mod_ratchet.json",
+        "reason": (
+            "Issue #3457 (originally) → Issue #3789 (decomposed via PR "
+            "#3843): the 3061-line single-file ``src/sim/thermal_model.rs`` "
+            "was split into a ``thermal_model/`` directory; the original "
+            "ceiling (3061) is preserved as the ratchet for the new "
+            "``mod.rs`` so the audit thread keeps firing on growth. Hosts "
+            "the ``ThermalModelTrait`` swap point; zero-headroom entry (Issue "
+            "#3747) — further growth beyond the ceiling goes through a "
+            "documented protocol bump."
+        ),
+    },
+    {
+        "path": "src/api/security.rs",
+        "max_lines": 2199,
+        "ratchet_basename": "api_security_ratchet.json",
+        "reason": (
+            "Issue #3574: ``src/api/security.rs`` crossed the smallest "
+            "ratcheted threshold (~2000 LoC) after the Issue #3543 "
+            "decomposition. Ratcheted at current size + buffer (max of "
+            "+5% or +100 lines = 2199); decomposition tracked separately."
+        ),
+    },
+    {
+        "path": "src/sim/thermal_model_core/mod.rs",
+        "max_lines": 4260,
+        "ratchet_basename": "thermal_model_core_mod_ratchet.json",
+        "reason": (
+            "Issue #3574: ``src/sim/thermal_model_core/mod.rs`` is the "
+            "largest child of the Issue #3543 decomposition (~4.1k LoC), "
+            "still over the ratchet because of the bare "
+            "``impl ThermalModel<VectorField>`` block. Ratcheted at "
+            "current size 4057 lines + buffer (4260); further decomposition "
+            "tracked separately."
+        ),
+    },
+    {
+        "path": "src/validation/ashrae_140_validator/mod.rs",
+        "max_lines": 3247,
+        "ratchet_basename": "ashrae_140_validator_mod_ratchet.json",
+        "reason": (
+            "Issue #3574: ``src/validation/ashrae_140_validator/mod.rs`` "
+            "is the largest child of the Issue #3543 decomposition. "
+            "Ratcheted at current size 3092 lines + buffer (3247); "
+            "further decomposition tracked separately."
+        ),
+    },
+    {
+        "path": "src/physics/geometry_tensor.rs",
+        "max_lines": 2932,
+        "ratchet_basename": "geometry_tensor_ratchet.json",
+        "reason": (
+            "Issue #3574: ``src/physics/geometry_tensor.rs`` crossed the "
+            "smallest ratcheted threshold after Issue #3543. Ratcheted at "
+            "current size 2792 lines + buffer (2932; raised from 2486/2610 "
+            "by #3731's typed ZoneCountPolicy wrapper); decomposition "
+            "tracked separately."
+        ),
+    },
+    {
+        "path": "src/validation/reporter.rs",
+        "max_lines": 2292,
+        "ratchet_basename": "validation_reporter_ratchet.json",
+        "reason": (
+            "Issue #3574: ``src/validation/reporter.rs`` crossed the "
+            "smallest ratcheted threshold after Issue #3543. Ratcheted at "
+            "current size 2183 lines + buffer (2292); decomposition "
+            "tracked separately."
+        ),
+    },
+    {
+        "path": "fluxion-city/src/lib.rs",
+        "max_lines": 2814,
+        "ratchet_basename": "fluxion_city_lib_ratchet.json",
+        "reason": (
+            "Issue #3574: workspace sibling ``fluxion-city/src/lib.rs`` "
+            "crossed the smallest ratcheted threshold after Issue #3543. "
+            "Ratcheted at current size 2680 lines + buffer (2814); "
+            "decomposition tracked separately."
+        ),
+    },
+    {
+        "path": "fluxion-mcp/src/tools.rs",
+        "max_lines": 1748,
+        "ratchet_basename": "fluxion_mcp_tools_ratchet.json",
+        "reason": (
+            "Issue #3574: workspace sibling ``fluxion-mcp/src/tools.rs`` "
+            "crossed the smallest ratcheted threshold after Issue #3543. "
+            "Ratcheted at current size 1648 lines + buffer (1748); "
+            "decomposition tracked separately."
+        ),
+    },
+]
+
+
+def _load_limits_file(limits_file: Path) -> dict | None:
+    """Load the raw canonical LIMITS JSON data file (None if absent/unreadable)."""
+    if not limits_file.exists():
+        return None
+    try:
+        data = json.loads(limits_file.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _load_limits_from_file(limits_file: Path) -> list[dict] | None:
+    """Load LIMITS from the canonical JSON data file."""
+    data = _load_limits_file(limits_file)
+    if data is None:
+        return None
+    return data.get("limits", None)
+
+
+def _now_iso() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def _get_limits_data(limits_file: Path = DEFAULT_LIMITS_FILE) -> tuple[list[dict], Path]:
+    """Get the LIMITS list, reading from the data file if available.
+
+    Returns a tuple of (limits_list, limits_file_path). The file path is
+    returned so callers know where to write updates.
+    """
+    data_limits = _load_limits_from_file(limits_file)
+    if data_limits is not None:
+        return data_limits, limits_file
+    # Fall back to hardcoded defaults
+    return _DEFAULT_LIMITS, limits_file
+
+
+def _build_limits(limits_data: list[dict], repo_root: Path = REPO_ROOT) -> list["Limit"]:
+    """Build the LIMITS list from the data format."""
+    limits = []
+    for entry in limits_data:
+        path = repo_root / entry["path"]
+        ratchet_basename = entry.get("ratchet_basename")
+        ratchet_path = None
+        if ratchet_basename:
+            ratchet_path = RATCHET_DIR / ratchet_basename
+        limits.append(
+            Limit(
+                path=path,
+                max_lines=entry["max_lines"],
+                reason=entry["reason"],
+                ratchet_path=ratchet_path,
+            )
+        )
+    return limits
+
+
+# Load LIMITS from data file (or fall back to hardcoded defaults)
+_LIMITS_FILE_DATA = _load_limits_file(DEFAULT_LIMITS_FILE)
+if _LIMITS_FILE_DATA is not None and _LIMITS_FILE_DATA.get("limits") is not None:
+    _LIMITS_DATA = _LIMITS_FILE_DATA["limits"]
+else:
+    _LIMITS_DATA = _DEFAULT_LIMITS
 
 
 @dataclass
@@ -287,6 +293,28 @@ class Limit:
         return max(self.max_lines, ratchet_max)
 
 
+# The LIMITS list used by the gate (derived from data file)
+LIMITS: list[Limit] = _build_limits(_LIMITS_DATA)
+
+# Freeze snapshot + count baseline, stored in the data file's "baseline" section
+# (Issue #4243). The gate compares the live LIMITS list against these stored
+# values, so adding an entry without updating the baseline is PR-blocking drift —
+# same forcing function as the old hardcoded constants, but the churn lives in
+# the JSON data file instead of the script. `python3
+# scripts/check_module_size.py --write-baseline` updates the section atomically
+# (with a history entry); hand-editing is equivalent. When the data file is
+# absent (old checkouts), the baseline falls back to the live list (neutral).
+_stored_baseline: dict = (_LIMITS_FILE_DATA or {}).get("baseline") or {}
+_BASELINE_MODULE_SIZE_LIMITS_SET: frozenset[str] = frozenset(
+    _stored_baseline.get("paths", [entry["path"] for entry in _LIMITS_DATA])
+)
+
+# Baseline count: stored in the data file's "baseline" section.
+BASELINE_MODULE_SIZE_LIMITS: int = int(
+    _stored_baseline.get("count", len(_LIMITS_DATA))
+)
+
+
 @dataclass
 class Result:
     path: Path
@@ -294,221 +322,6 @@ class Result:
     max: int
     passed: bool
     reason: str = ""
-
-
-# Module-size limits (Issues #2878, #3457).
-#
-# Each entry is keyed by its repository-relative path; the ratchet JSON
-# (when present) holds the historical maximum line count observed for
-# that file. The active ceiling is ``max_lines``; ``effective_max()``
-# falls back to the ratchet's max when the YAML ceiling is below it. New
-# entries beyond the freeze baseline must be reflected in
-# ``BASELINE_MODULE_SIZE_LIMITS`` and ``_BASELINE_MODULE_SIZE_LIMITS_SET``.
-LIMITS: list[Limit] = [
-    # ------------------------------------------------------------------
-    # Issue #2878 — original god-struct limit (retained).
-    # ------------------------------------------------------------------
-    Limit(
-        path=REPO_ROOT / "src" / "sim" / "thermal_model_data.rs",
-        max_lines=200,
-        ratchet_path=REPO_ROOT
-        / "tests"
-        / "reference_data"
-        / "module_size"
-        / "thermal_model_data_ratchet.json",
-        reason=(
-            "Issue #2878 acceptance: drop ThermalModelData below 200 lines "
-            "so the god-struct (~140 fields, 145-line Clone impl) does not "
-            "regress. Per-config clone must touch ≤6 fields."
-        ),
-    ),
-    Limit(
-        path=REPO_ROOT / "src" / "sim" / "thermal_model_data" / "mod.rs",
-        max_lines=200,
-        ratchet_path=REPO_ROOT
-        / "tests"
-        / "reference_data"
-        / "module_size"
-        / "thermal_model_data_ratchet.json",
-        reason=(
-            "Issue #2878 acceptance (directory form): drop ThermalModelData "
-            "below 200 lines so the god-struct (~140 fields, 145-line Clone "
-            "impl) does not regress. Per-config clone must touch ≤6 fields."
-        ),
-    ),
-    # ------------------------------------------------------------------
-    # Issue #3457 — extend gate to the ten largest src/ files.
-    #
-    # ``max_lines`` is set to the file's CURRENT line count so the gate
-    # passes immediately (no new failures) but tightens over time as
-    # companion cleanup PRs decompose the file and lower ``max_lines``
-    # alongside the ratchet JSON.
-    #
-    # ``src/interop/fmi/mod.rs`` was removed here in Issue #3625 (entry
-    # + freeze-snapshot line dropped, baseline lowered 17 → 16) after
-    # decomposition into ``src/interop/fmi/`` responsibility submodules.
-    # ------------------------------------------------------------------
-    Limit(
-        path=REPO_ROOT / "src" / "validation" / "ashrae_140_cases.rs",
-        max_lines=4764,
-        ratchet_path=REPO_ROOT
-        / "tests"
-        / "reference_data"
-        / "module_size"
-        / "ashrae_140_cases_ratchet.json",
-        reason=(
-            "Issue #3457: ASHRAE 140 cases module ratcheted at current "
-            "size (4764 lines); v1.3 validation work depends on this "
-            "module."
-        ),
-    ),
-    Limit(
-        path=REPO_ROOT / "src" / "sim" / "thermal_model" / "mod.rs",
-        max_lines=3061,
-        ratchet_path=REPO_ROOT
-        / "tests"
-        / "reference_data"
-        / "module_size"
-        / "thermal_model_mod_ratchet.json",
-        reason=(
-            "Issue #3457 (originally) → Issue #3789 (decomposed via PR "
-            "#3843): the 3061-line single-file ``src/sim/thermal_model.rs`` "
-            "was split into a ``thermal_model/`` directory (``mod.rs`` + "
-            "``physics.rs`` + ``surrogate.rs`` + ``hybrid.rs`` + "
-            "``unified.rs`` + ``comfort.rs`` + ``tests.rs``); the original "
-            "ceiling (3061) is preserved as the ratchet for the new "
-            "``mod.rs`` so the audit thread keeps firing on growth in this "
-            "concern. Hosts the ``ThermalModelTrait`` swap point the gauge "
-            "dispatcher work keeps touching; zero-headroom entry (Issue "
-            "#3747) — further growth beyond the ceiling goes through a "
-            "documented protocol bump (split another child, or justify), "
-            "not a reflexive raise."
-        ),
-    ),
-    # ------------------------------------------------------------------
-    # Issue #3574 — extend gate to 8 files newly over the ~2000-LoC
-    # threshold after the Issue #3543 decomposition. ``max_lines`` is set
-    # to the file's CURRENT line count plus a small buffer (max of +5%
-    # or +100 lines, whichever is larger) so the gate passes immediately
-    # but tightens against any further growth. Companion cleanup PRs that
-    # decompose any of these files should remove the matching entry AND
-    # lower ``BASELINE_MODULE_SIZE_LIMITS`` by one.
-    # ------------------------------------------------------------------
-    Limit(
-        path=REPO_ROOT / "src" / "api" / "security.rs",
-        max_lines=2199,
-        ratchet_path=REPO_ROOT
-        / "tests"
-        / "reference_data"
-        / "module_size"
-        / "api_security_ratchet.json",
-        reason=(
-            "Issue #3574: ``src/api/security.rs`` crossed the smallest "
-            "ratcheted threshold (~2000 LoC) after the Issue #3543 "
-            "decomposition of ``src/api/server.rs``. Ratcheted at current "
-            "size 2094 lines + buffer (max of +5% or +100 lines = 2199); "
-            "decomposition tracked separately."
-        ),
-    ),
-    Limit(
-        path=REPO_ROOT / "src" / "sim" / "thermal_model_core" / "mod.rs",
-        max_lines=4260,
-        ratchet_path=REPO_ROOT
-        / "tests"
-        / "reference_data"
-        / "module_size"
-        / "thermal_model_core_mod_ratchet.json",
-        reason=(
-            "Issue #3574: ``src/sim/thermal_model_core/mod.rs`` is the "
-            "largest child of the Issue #3543 decomposition (~4.1k LoC), "
-            "still over the ratchet because of the bare "
-            "``impl ThermalModel<VectorField>`` block. Ratcheted at "
-            "current size 4057 lines + buffer (max of +5% or +100 lines = "
-            "4260); further decomposition tracked separately."
-        ),
-    ),
-    Limit(
-        path=REPO_ROOT
-        / "src"
-        / "validation"
-        / "ashrae_140_validator"
-        / "mod.rs",
-        max_lines=3247,
-        ratchet_path=REPO_ROOT
-        / "tests"
-        / "reference_data"
-        / "module_size"
-        / "ashrae_140_validator_mod_ratchet.json",
-        reason=(
-            "Issue #3574: ``src/validation/ashrae_140_validator/mod.rs`` "
-            "is the largest child of the Issue #3543 decomposition. "
-            "Ratcheted at current size 3092 lines + buffer (max of +5% or "
-            "+100 lines = 3247); further decomposition tracked separately."
-        ),
-    ),
-    Limit(
-        path=REPO_ROOT / "src" / "physics" / "geometry_tensor.rs",
-        max_lines=2932,
-        ratchet_path=REPO_ROOT
-        / "tests"
-        / "reference_data"
-        / "module_size"
-        / "geometry_tensor_ratchet.json",
-        reason=(
-            "Issue #3574: ``src/physics/geometry_tensor.rs`` crossed the "
-            "smallest ratcheted threshold after Issue #3543. Ratcheted at "
-            "current size 2792 lines + buffer (max of +5% or +100 lines = "
-            "2932; raised from 2486/2610 by #3731's typed ZoneCountPolicy "
-            "wrapper which added a struct + impl + doc + 5 unit tests, "
-            "+306 lines / +12.3%); decomposition tracked separately."
-        ),
-    ),
-    Limit(
-        path=REPO_ROOT / "src" / "validation" / "reporter.rs",
-        max_lines=2292,
-        ratchet_path=REPO_ROOT
-        / "tests"
-        / "reference_data"
-        / "module_size"
-        / "validation_reporter_ratchet.json",
-        reason=(
-            "Issue #3574: ``src/validation/reporter.rs`` crossed the "
-            "smallest ratcheted threshold after Issue #3543. Ratcheted at "
-            "current size 2183 lines + buffer (max of +5% or +100 lines = "
-            "2292); decomposition tracked separately."
-        ),
-    ),
-    Limit(
-        path=REPO_ROOT / "fluxion-city" / "src" / "lib.rs",
-        max_lines=2814,
-        ratchet_path=REPO_ROOT
-        / "tests"
-        / "reference_data"
-        / "module_size"
-        / "fluxion_city_lib_ratchet.json",
-        reason=(
-            "Issue #3574: workspace sibling ``fluxion-city/src/lib.rs`` "
-            "crossed the smallest ratcheted threshold after Issue #3543. "
-            "Ratcheted at current size 2680 lines + buffer (max of +5% or "
-            "+100 lines = 2814); decomposition tracked separately."
-        ),
-    ),
-    Limit(
-        path=REPO_ROOT / "fluxion-mcp" / "src" / "tools.rs",
-        max_lines=1748,
-        ratchet_path=REPO_ROOT
-        / "tests"
-        / "reference_data"
-        / "module_size"
-        / "fluxion_mcp_tools_ratchet.json",
-        reason=(
-            "Issue #3574: workspace sibling ``fluxion-mcp/src/tools.rs`` "
-            "crossed the smallest ratcheted threshold after Issue #3543. "
-            "Ratcheted at current size 1648 lines + buffer (max of +5% or "
-            "+100 lines = 1748); decomposition tracked separately."
-        ),
-    ),
-]
 
 
 def count_lines(path: Path) -> int:
@@ -562,48 +375,149 @@ def update_ratchet(result: Result) -> None:
         )
 
 
-def check_baseline_drift() -> list[str]:
+def check_baseline_drift(
+    limits: list["Limit"] | None = None,
+    freeze_set: frozenset[str] | None = None,
+    baseline_count: int | None = None,
+) -> list[str]:
     """Return human-readable drift messages (empty list = no drift).
 
     Compares the live ``LIMITS`` table against the freeze snapshot
-    (``_BASELINE_MODULE_SIZE_LIMITS_SET``) and the count baseline
+    (``_BASELINE_MODULE_SIZE_LIMITS_SET``, stored in the data file's
+    ``"baseline"`` section) and the count baseline
     (``BASELINE_MODULE_SIZE_LIMITS``). Mirrors
     ``BASELINE_KNOWN_ORPHANS`` / ``_BASELINE_KNOWN_ORPHANS_SET`` from
     ``check_orphan_modules.py``: adding entries without raising the
     baseline is treated as drift, and the failing messages name which
     entries are new so the diff is visible in CI output.
+
+    The optional parameters exist so tests can drive the check against
+    synthetic data without monkeypatching module state; production calls
+    use the module-level defaults.
     """
+    if limits is None:
+        limits = LIMITS
+    if freeze_set is None:
+        freeze_set = _BASELINE_MODULE_SIZE_LIMITS_SET
+    if baseline_count is None:
+        baseline_count = BASELINE_MODULE_SIZE_LIMITS
     messages: list[str] = []
     live_paths: set[str] = set()
-    for lim in LIMITS:
+    for lim in limits:
         try:
             rel = lim.path.relative_to(REPO_ROOT)
         except ValueError:
             rel = lim.path
         live_paths.add(str(rel))
-    new_paths = sorted(live_paths - set(_BASELINE_MODULE_SIZE_LIMITS_SET))
+    new_paths = sorted(live_paths - set(freeze_set))
     if new_paths:
         joined = "\n".join(f"    - {p}" for p in new_paths)
         messages.append(
             "NEW LIMITS entries (regression): "
             f"{len(new_paths)} (not in freeze snapshot)\n{joined}\n"
-            "If these entries are intentional, raise "
-            "BASELINE_MODULE_SIZE_LIMITS to match the new size AND add "
-            "the paths to _BASELINE_MODULE_SIZE_LIMITS_SET, with a "
-            "documenting comment naming the tracking issue."
+            "If these entries are intentional, update the baseline section of "
+            "scripts/data/module_size_limits.json (use --write-baseline, with "
+            "--reason naming the tracking issue)."
         )
-    if len(LIMITS) > BASELINE_MODULE_SIZE_LIMITS:
+    if len(limits) > baseline_count:
         messages.append(
             "BASELINE_MODULE_SIZE_LIMITS drift: "
-            f"len(LIMITS)={len(LIMITS)} > "
-            f"BASELINE_MODULE_SIZE_LIMITS={BASELINE_MODULE_SIZE_LIMITS}\n"
-            "Either raise BASELINE_MODULE_SIZE_LIMITS (with a documenting "
-            "comment naming the tracking issue) or remove the surplus "
+            f"len(LIMITS)={len(limits)} > "
+            f"BASELINE_MODULE_SIZE_LIMITS={baseline_count}\n"
+            "Either update the baseline section of "
+            "scripts/data/module_size_limits.json (use --write-baseline, with "
+            "--reason naming the tracking issue) or remove the surplus "
             "entry. The companion cleanup PRs that decompose a gated "
-            "file are expected to lower BASELINE_MODULE_SIZE_LIMITS by "
-            "one."
+            "file are expected to lower the baseline by one."
         )
     return messages
+
+
+def write_baseline_file(
+    limits_file: Path,
+    limits_data: list[dict],
+    dry_run: bool = False,
+    reason: str | None = None,
+) -> None:
+    """Write the LIMITS data to the canonical JSON file.
+
+    This function updates the data file to match the current LIMITS table,
+    updates the "baseline" section (count + path freeze) atomically, and
+    appends a history entry. It preserves the schema_version.
+    """
+    if limits_file.exists():
+        try:
+            existing = json.loads(limits_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            existing = {"schema_version": 1}
+    else:
+        existing = {"schema_version": 1}
+
+    # Update the file
+    existing["limits"] = limits_data
+    existing["generated_at"] = _now_iso()
+    existing["source_script"] = "scripts/check_module_size.py"
+
+    # Update the baseline section atomically with the limits (Issue #4243:
+    # the drift gate compares the live list against this stored baseline).
+    existing["baseline"] = {
+        "count": len(limits_data),
+        "paths": sorted(entry["path"] for entry in limits_data),
+    }
+
+    # Add history entry
+    history = existing.get("history", [])
+    action = "updated via --write-baseline"
+    if reason:
+        action += f": {reason}"
+    history.append({
+        "at": _now_iso()[:10],  # date only
+        "len": len(limits_data),
+        "action": action,
+    })
+    existing["history"] = history[-10:]  # keep last 10
+
+    output = json.dumps(existing, indent=2, sort_keys=True) + "\n"
+
+    if dry_run:
+        print(f"[dry-run] Would write {len(output)} bytes to {limits_file}:")
+        print(output[:500] + "..." if len(output) > 500 else output)
+    else:
+        limits_file.parent.mkdir(parents=True, exist_ok=True)
+        limits_file.write_text(output, encoding="utf-8")
+        print(f"Updated {limits_file} ({len(limits_data)} entries)")
+
+
+def remove_entries_from_limits(
+    limits_data: list[dict],
+    remove_paths: list[str],
+    delete_ratchets: bool = False,
+    dry_run: bool = False,
+) -> tuple[list[dict], list[str]]:
+    """Remove entries from LIMITS data.
+
+    Args:
+        limits_data: current LIMITS list
+        remove_paths: list of paths to remove (relative to repo root)
+        delete_ratchets: if True, also delete the associated ratchet JSONs
+        dry_run: if True, don't modify anything
+
+    Returns:
+        tuple of (new_limits_data, deleted_ratchet_files)
+    """
+    remove_set = set(remove_paths)
+    new_limits = [entry for entry in limits_data if entry["path"] not in remove_set]
+    deleted_ratchets: list[str] = []
+
+    if delete_ratchets and not dry_run:
+        for entry in limits_data:
+            if entry["path"] in remove_set and entry.get("ratchet_basename"):
+                ratchet_path = RATCHET_DIR / entry["ratchet_basename"]
+                if ratchet_path.exists():
+                    ratchet_path.unlink()
+                    deleted_ratchets.append(str(ratchet_path))
+
+    return new_limits, deleted_ratchets
 
 
 def main() -> int:
@@ -618,8 +532,89 @@ def main() -> int:
         action="store_true",
         help="Tighten the ratchet JSON to reflect observed line counts (PR-friendly).",
     )
+    parser.add_argument(
+        "--write-baseline",
+        action="store_true",
+        help=(
+            "Write the current LIMITS table to the canonical data file "
+            "(scripts/data/module_size_limits.json), updating the baseline "
+            "section atomically. Pair with --reason to record why."
+        ),
+    )
+    parser.add_argument(
+        "--reason",
+        default=None,
+        help=(
+            "Reason recorded in the data file's history entry when used with "
+            "--write-baseline (name the tracking issue, e.g. "
+            "'Issue #4243 refactor')."
+        ),
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be written without modifying any files.",
+    )
+    parser.add_argument(
+        "--remove-entries",
+        nargs="+",
+        metavar="PATH",
+        help=(
+            "Remove the specified paths from LIMITS. Use this for "
+            "decomposition cleanup PRs. Combine with --write-baseline to "
+            "update the data file and --delete-ratchets to remove associated "
+            "ratchet JSONs."
+        ),
+    )
+    parser.add_argument(
+        "--delete-ratchets",
+        action="store_true",
+        help=(
+            "When used with --remove-entries, also delete the associated "
+            "ratchet JSON files. Default: keep ratchet files for audit trail."
+        ),
+    )
+    parser.add_argument(
+        "--limits-file",
+        type=Path,
+        default=None,
+        help=f"Path to the LIMITS data file (default: {DEFAULT_LIMITS_FILE.relative_to(REPO_ROOT)}).",
+    )
     args = parser.parse_args()
 
+    # Handle --remove-entries first (mutating operation)
+    if args.remove_entries:
+        limits_data, limits_file = _get_limits_data(args.limits_file or DEFAULT_LIMITS_FILE)
+        new_limits, deleted = remove_entries_from_limits(
+            limits_data,
+            args.remove_entries,
+            delete_ratchets=args.delete_ratchets,
+            dry_run=args.dry_run,
+        )
+        if args.dry_run:
+            print(f"[dry-run] Would remove entries: {args.remove_entries}")
+            print(f"[dry-run] New LIMITS count: {len(new_limits)} (was {len(limits_data)})")
+            if deleted:
+                print(f"[dry-run] Would delete ratchets: {deleted}")
+        else:
+            print(f"Removed {len(limits_data) - len(new_limits)} entries from LIMITS")
+            if deleted:
+                print(f"Deleted ratchet files: {deleted}")
+            print(f"New BASELINE_MODULE_SIZE_LIMITS should be: {len(new_limits)}")
+            print("Run with --write-baseline to update the data file.")
+
+        # With --write-baseline, also update the file
+        if args.write_baseline and not args.dry_run:
+            write_baseline_file(limits_file, new_limits, reason=args.reason)
+        return 0
+
+    # Handle --write-baseline (write-only operation)
+    if args.write_baseline:
+        limits_data, limits_file = _get_limits_data(args.limits_file or DEFAULT_LIMITS_FILE)
+        write_baseline_file(limits_file, limits_data, dry_run=args.dry_run, reason=args.reason)
+        return 0
+
+    # Normal gate operation
     drift_messages = check_baseline_drift()
     results: list[Result] = []
     for limit in LIMITS:
@@ -655,6 +650,7 @@ def main() -> int:
     else:
         print("=== Fluxion module-size gate (Issues #2878, #3457) ===")
         print(f"Repo: {REPO_ROOT}")
+        print(f"LIMITS data file: {DEFAULT_LIMITS_FILE.relative_to(REPO_ROOT)}")
         print()
         if drift_messages:
             print("BASELINE DRIFT (PR-blocking unless baseline is raised):")

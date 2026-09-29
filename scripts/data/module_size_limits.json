@@ -1,0 +1,103 @@
+{
+  "baseline": {
+    "count": 11,
+    "paths": [
+      "fluxion-city/src/lib.rs",
+      "fluxion-mcp/src/tools.rs",
+      "src/api/security.rs",
+      "src/physics/geometry_tensor.rs",
+      "src/sim/thermal_model/mod.rs",
+      "src/sim/thermal_model_core/mod.rs",
+      "src/sim/thermal_model_data.rs",
+      "src/sim/thermal_model_data/mod.rs",
+      "src/validation/ashrae_140_cases.rs",
+      "src/validation/ashrae_140_validator/mod.rs",
+      "src/validation/reporter.rs"
+    ]
+  },
+  "description": "Canonical LIMITS table for the module-size gate. Source of truth for max_lines per path. Ratchet JSONs track historical maxima; this file tracks active ceilings.",
+  "generated_at": "2026-09-29T15:18:30.783427+00:00",
+  "history": [
+    {
+      "action": "seed from check_module_size.py LIMITS table (Issue #4243 refactor)",
+      "at": "2026-09-29",
+      "len": 11
+    },
+    {
+      "action": "updated via --write-baseline: Issue #4243 refactor: seed baseline section from LIMITS table",
+      "at": "2026-09-29",
+      "len": 11
+    }
+  ],
+  "limits": [
+    {
+      "max_lines": 200,
+      "path": "src/sim/thermal_model_data.rs",
+      "ratchet_basename": "thermal_model_data_ratchet.json",
+      "reason": "Issue #2878 acceptance: drop ThermalModelData below 200 lines so the god-struct (~140 fields, 145-line Clone impl) does not regress. Per-config clone must touch \u22646 fields."
+    },
+    {
+      "max_lines": 200,
+      "path": "src/sim/thermal_model_data/mod.rs",
+      "ratchet_basename": "thermal_model_data_ratchet.json",
+      "reason": "Issue #2878 acceptance (directory form): drop ThermalModelData below 200 lines so the god-struct (~140 fields, 145-line Clone impl) does not regress. Per-config clone must touch \u22646 fields."
+    },
+    {
+      "max_lines": 4764,
+      "path": "src/validation/ashrae_140_cases.rs",
+      "ratchet_basename": "ashrae_140_cases_ratchet.json",
+      "reason": "Issue #3457: ASHRAE 140 cases module ratcheted at current size (4764 lines); v1.3 validation work depends on this module."
+    },
+    {
+      "max_lines": 3061,
+      "path": "src/sim/thermal_model/mod.rs",
+      "ratchet_basename": "thermal_model_mod_ratchet.json",
+      "reason": "Issue #3457 (originally) \u2192 Issue #3789 (decomposed via PR #3843): the 3061-line single-file src/sim/thermal_model.rs was split into a thermal_model/ directory; the original ceiling (3061) is preserved as the ratchet for the new mod.rs so the audit thread keeps firing on growth in this concern. Hosts the ThermalModelTrait swap point the gauge dispatcher work keeps touching; zero-headroom entry (Issue #3747)."
+    },
+    {
+      "max_lines": 2199,
+      "path": "src/api/security.rs",
+      "ratchet_basename": "api_security_ratchet.json",
+      "reason": "Issue #3574: src/api/security.rs crossed the smallest ratcheted threshold (~2000 LoC) after the Issue #3543 decomposition of src/api/server.rs. Ratcheted at current size 2094 lines + buffer (max of +5% or +100 lines = 2199); decomposition tracked separately."
+    },
+    {
+      "max_lines": 4260,
+      "path": "src/sim/thermal_model_core/mod.rs",
+      "ratchet_basename": "thermal_model_core_mod_ratchet.json",
+      "reason": "Issue #3574: src/sim/thermal_model_core/mod.rs is the largest child of the Issue #3543 decomposition (~4.1k LoC), still over the ratchet because of the bare impl ThermalModel<VectorField> block. Ratcheted at current size 4057 lines + buffer (max of +5% or +100 lines = 4260); further decomposition tracked separately."
+    },
+    {
+      "max_lines": 3247,
+      "path": "src/validation/ashrae_140_validator/mod.rs",
+      "ratchet_basename": "ashrae_140_validator_mod_ratchet.json",
+      "reason": "Issue #3574: src/validation/ashrae_140_validator/mod.rs is the largest child of the Issue #3543 decomposition. Ratcheted at current size 3092 lines + buffer (max of +5% or +100 lines = 3247); further decomposition tracked separately."
+    },
+    {
+      "max_lines": 2932,
+      "path": "src/physics/geometry_tensor.rs",
+      "ratchet_basename": "geometry_tensor_ratchet.json",
+      "reason": "Issue #3574: src/physics/geometry_tensor.rs crossed the smallest ratcheted threshold after Issue #3543. Ratcheted at current size 2792 lines + buffer (max of +5% or +100 lines = 2932; raised from 2486/2610 by #3731's typed ZoneCountPolicy wrapper which added a struct + impl + doc + 5 unit tests, +306 lines / +12.3%); decomposition tracked separately."
+    },
+    {
+      "max_lines": 2292,
+      "path": "src/validation/reporter.rs",
+      "ratchet_basename": "validation_reporter_ratchet.json",
+      "reason": "Issue #3574: src/validation/reporter.rs crossed the smallest ratcheted threshold after Issue #3543. Ratcheted at current size 2183 lines + buffer (max of +5% or +100 lines = 2292); decomposition tracked separately."
+    },
+    {
+      "max_lines": 2814,
+      "path": "fluxion-city/src/lib.rs",
+      "ratchet_basename": "fluxion_city_lib_ratchet.json",
+      "reason": "Issue #3574: workspace sibling fluxion-city/src/lib.rs crossed the smallest ratcheted threshold after Issue #3543. Ratcheted at current size 2680 lines + buffer (max of +5% or +100 lines = 2814); decomposition tracked separately."
+    },
+    {
+      "max_lines": 1748,
+      "path": "fluxion-mcp/src/tools.rs",
+      "ratchet_basename": "fluxion_mcp_tools_ratchet.json",
+      "reason": "Issue #3574: workspace sibling fluxion-mcp/src/tools.rs crossed the smallest ratcheted threshold after Issue #3543. Ratcheted at current size 1648 lines + buffer (max of +5% or +100 lines = 1748); decomposition tracked separately."
+    }
+  ],
+  "ratchet_dir": "tests/reference_data/module_size",
+  "schema_version": 1,
+  "source_script": "scripts/check_module_size.py"
+}
