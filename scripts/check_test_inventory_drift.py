@@ -506,6 +506,160 @@ def _check_ratchet(
         )
 
 
+def _check_agents_md_citations(
+    agents_md_path: Path,
+    live_totals: dict,
+) -> list[str]:
+    """Issue #4180 — verify AGENTS.md citations agree with live inventory.
+
+    Extracts the four headline figures cited in ``AGENTS.md`` from the
+    ``tests/test_inventory.json::totals`` block and compares them against
+    the live inventory. Mismatch means the documentation drifted from
+    reality — a PR that changes test counts without refreshing AGENTS.md
+    must be rejected.
+
+    Extracted figures:
+      - lib_tests_root (from the table's ``cargo test --lib`` row)
+      - workspace_tests (from the table's ``cargo test --workspace`` row)
+      - workspace_ignored (from the table's ``cargo test --workspace`` row)
+      - test_binaries (from the table's ``Cargo test binaries`` row)
+      - lib_tests_root (from the workspace-scope rule paragraph)
+      - sibling_crate_tests (from the workspace-scope rule paragraph)
+
+    Returns a list of failure messages (empty == all citations match).
+    """
+    import re
+
+    failures: list[str] = []
+
+    try:
+        text = agents_md_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        # A missing AGENTS.md is itself a docs-hygiene failure: the check is
+        # fail-closed, never silently green on absent input.
+        return [f"  AGENTS.md: file not found at {agents_md_path}"]
+
+    live_lib = live_totals.get("lib_tests_root", 0)
+    live_workspace = live_totals.get("workspace_tests", 0)
+    live_sibling = live_workspace - live_lib
+
+    # Table-row citations — process each row exactly once.
+    # Markdown table format (pipe-split with leading/trailing empty cells):
+    #   | Source | Suite | Tests | Ignored | Notes |
+    #   idx 0      1       2       3         4       5
+    #
+    # row_checks: (description_substring, expected_tests_field, expected_ignored_field)
+    # expected_tests_field / expected_ignored_field are keys into live_totals
+    # (None = no check for that column)
+    row_checks = [
+        (
+            "`cargo test --lib`",
+            "lib_tests_root",
+            "lib_ignored_root",
+        ),
+        (
+            "`cargo test --workspace --exclude fluxion-tauri`",
+            "workspace_tests",
+            "workspace_ignored",
+        ),
+        (
+            "Cargo test binaries",
+            "test_binaries",
+            None,  # no Ignored column for this row
+        ),
+    ]
+
+    lines = text.split('\n')
+    for desc, tests_field, ignored_field in row_checks:
+        cited_tests_raw = None
+        cited_ignored_raw = None
+        for line in lines:
+            if desc in line and line.strip().startswith('|'):
+                parts = [p.strip() for p in line.split('|')]
+                if len(parts) >= 5:
+                    cited_tests_raw = parts[3]
+                    cited_ignored_raw = parts[4]
+                    break
+        if cited_tests_raw is None:
+            failures.append(
+                f"  AGENTS.md: could not find table row for {tests_field!r}"
+            )
+            continue
+        expected_tests = live_totals.get(tests_field, 0)
+        try:
+            cited_tests_val = int(cited_tests_raw.replace(",", ""))
+        except ValueError:
+            failures.append(
+                f"  AGENTS.md {tests_field}: unparseable Tests value "
+                f"{cited_tests_raw!r}"
+            )
+        else:
+            if cited_tests_val != expected_tests:
+                failures.append(
+                    f"  AGENTS.md {tests_field}: cited={cited_tests_val}, "
+                    f"inventory={expected_tests} "
+                    f"(diff {cited_tests_val - expected_tests:+,d})"
+                )
+        if ignored_field is not None:
+            expected_ignored = live_totals.get(ignored_field, 0)
+            try:
+                cited_ignored_val = (
+                    None
+                    if cited_ignored_raw == "n/a"
+                    else int(cited_ignored_raw.replace(",", ""))
+                )
+            except ValueError:
+                failures.append(
+                    f"  AGENTS.md {tests_field} (ignored): "
+                    f"unparseable Ignored value {cited_ignored_raw!r}"
+                )
+            else:
+                if cited_ignored_val != expected_ignored:
+                    failures.append(
+                        f"  AGENTS.md {tests_field} (ignored): "
+                        f"cited={cited_ignored_val}, inventory={expected_ignored}"
+                    )
+
+    # Workspace-scope paragraph: "N,NNN lib tests" and "M,MMM sibling-crate tests"
+    scope_pattern = re.compile(
+        r"bare\s+`cargo test`\s+therefore runs the root crate ONLY "
+        r"\(([^\)]+)\)\s+and silently SKIPS the remaining "
+        r"(\d[\d,]*)\s+sibling-crate tests",
+        re.IGNORECASE,
+    )
+    m_scope = scope_pattern.search(text)
+    if m_scope:
+        # group 1 is "4,276 lib tests + the root `[[test]]` entries" — extract leading number
+        lib_text = m_scope.group(1)
+        lib_match = re.match(r"(\d+)", lib_text.replace(",", ""))
+        if lib_match is None:
+            failures.append(
+                "  AGENTS.md: could not parse lib-test count in workspace-scope paragraph"
+            )
+            return failures
+        cited_root = int(lib_match.group(1))
+        cited_sibling = int(m_scope.group(2).replace(",", ""))
+        if cited_root != live_lib:
+            failures.append(
+                f"  AGENTS.md lib_tests_root (scope paragraph): "
+                f"cited={cited_root}, inventory={live_lib} "
+                f"(diff {cited_root - live_lib:+,d})"
+            )
+        if cited_sibling != live_sibling:
+            failures.append(
+                f"  AGENTS.md sibling_crate_tests (scope paragraph): "
+                f"cited={cited_sibling}, inventory={live_sibling} "
+                f"(diff {cited_sibling - live_sibling:+,d})"
+            )
+    else:
+        failures.append(
+            "  AGENTS.md: could not parse workspace-scope paragraph "
+            "lib/sibling-crate test counts"
+        )
+
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Test-inventory drift gate (Issue #3442)."
@@ -582,6 +736,23 @@ def main() -> int:
     live_workspace = totals.get("workspace_tests", 0)
     live_workspace_ignored = totals.get("workspace_ignored", 0)
     live_binaries = totals.get("test_binaries", 0)
+
+    # Stage 0 (Issue #4180): AGENTS.md citation check.
+    # Fail immediately if the docs cite stale numbers. The path is resolved
+    # from REPO_ROOT at call time (not a module-level constant) so tests can
+    # redirect REPO_ROOT at a synthetic tree.
+    agents_md_path = REPO_ROOT / "AGENTS.md"
+    agents_md_failures = _check_agents_md_citations(agents_md_path, totals)
+    if agents_md_failures:
+        for line in agents_md_failures:
+            print(line, file=sys.stderr)
+        print(
+            "AGENTS.md citations do not match tests/test_inventory.json. "
+            "Refresh the cited figures in AGENTS.md before submitting.",
+            file=sys.stderr,
+        )
+        return 1
+
 
     # Stage 2: baseline. For --update-baseline, skip the comparison
     # entirely and rewrite the file with the live snapshot. Both the

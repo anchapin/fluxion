@@ -78,9 +78,9 @@
   "metrics_ast": {
     "lib_ignored": 8,
     "lib_tests": 4276,
-    "test_binaries": 51,
-    "workspace_ignored": 138,
-    "workspace_tests": 8839
+    "test_binaries": 52,
+    "workspace_ignored": 144,
+    "workspace_tests": 8857
   },
   "ratchet": {
     "BASELINE_LIB_IGNORED": 9,

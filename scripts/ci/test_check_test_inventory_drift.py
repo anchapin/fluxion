@@ -58,6 +58,35 @@ def _write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _write_agents_md(agents_md_path: Path, totals: dict) -> None:
+    """Write a synthetic AGENTS.md whose cited figures match ``totals``.
+
+    Stage 0 of the drift gate (Issue #4180) compares the AGENTS.md
+    citations against the live inventory. Synthetic test trees must keep
+    the two in sync, otherwise every test trips the citation check
+    before reaching the drift/ratchet logic it targets.
+    """
+    lib = totals["lib_tests_root"]
+    lib_ignored = totals["lib_ignored_root"]
+    workspace = totals["workspace_tests"]
+    workspace_ignored = totals["workspace_ignored"]
+    binaries = totals["test_binaries"]
+    sibling = workspace - lib
+    agents_md_path.write_text(
+        "# Synthetic AGENTS.md for drift-gate tests\n\n"
+        f"The bare `cargo test` therefore runs the root crate ONLY ({lib} lib tests + "
+        f"the root `[[test]]` entries) and silently SKIPS the remaining "
+        f"{sibling} sibling-crate tests.\n\n"
+        "| Source | Suite | Tests | Ignored | Notes |\n"
+        "|---|---|---|---|---|\n"
+        f"| `cargo test --lib` | root crate unit tests | {lib} | {lib_ignored} | synthetic |\n"
+        f"| `cargo test --workspace --exclude fluxion-tauri` | full workspace "
+        f"| {workspace} | {workspace_ignored} | synthetic |\n"
+        f"| Cargo test binaries | test binaries | {binaries} | n/a | synthetic |\n",
+        encoding="utf-8",
+    )
+
+
 def _scrub_argv(monkeypatch: pytest.MonkeyPatch) -> None:
     """Reset ``sys.argv`` so the script's argparse doesn't see pytest's CLI."""
     monkeypatch.setattr(sys, "argv", [SCRIPT_NAME])
@@ -127,6 +156,12 @@ def _redirect_paths(
     monkeypatch.setattr(drift_gate, "DEFAULT_BASELINE", baseline_path)
     monkeypatch.setattr(drift_gate, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(drift_gate, "GENERATOR_SCRIPT", generator_script)
+
+    # Keep the synthetic AGENTS.md citations in sync with the synthetic
+    # inventory (Issue #4180 Stage 0 compares the two). Read back what was
+    # actually written so custom inventories stay consistent.
+    written_totals = json.loads(inventory_path.read_text(encoding="utf-8"))["totals"]
+    _write_agents_md(tmp_path / "AGENTS.md", written_totals)
 
     def _fake_regenerate(cargo_target_dir, verify):  # noqa: ARG001
         return json.loads(inventory_path.read_text(encoding="utf-8"))
@@ -461,6 +496,7 @@ def test_mode_aware_baseline_selection(drift_gate, tmp_path, monkeypatch, capsys
     #    against ``metrics``: the same live counts against metrics_ast
     #    would trip the drift threshold in the other direction.
     inventory_path.write_text(json.dumps(verified_inventory), encoding="utf-8")
+    _write_agents_md(tmp_path / "AGENTS.md", verified_inventory["totals"])
     _scrub_argv(monkeypatch)
     rc = drift_gate.main()
     assert rc == 0, "verified live counts must compare against metrics"
@@ -474,6 +510,7 @@ def test_mode_aware_baseline_selection(drift_gate, tmp_path, monkeypatch, capsys
     stripped_baseline = {k: v for k, v in baseline.items() if k != "metrics_ast"}
     baseline_path.write_text(json.dumps(stripped_baseline), encoding="utf-8")
     inventory_path.write_text(json.dumps(ast_inventory), encoding="utf-8")
+    _write_agents_md(tmp_path / "AGENTS.md", ast_inventory["totals"])
     _scrub_argv(monkeypatch)
     rc = drift_gate.main()
     assert rc == 1, "legacy single-dict baselines must keep prior behavior"
@@ -581,3 +618,37 @@ def test_json_output_shape(drift_gate, tmp_path, monkeypatch, capsys):
     assert "ratchet_baselines" in payload
     assert payload["ratchet_baselines"]["BASELINE_LIB_TESTS"] == drift_gate.BASELINE_LIB_TESTS
     assert payload["would_fail"] is False
+
+
+# ---------------------------------------------------------------------------
+# Test 7: AGENTS.md citation check fires on stale docs (Issue #4180)
+# ---------------------------------------------------------------------------
+
+
+def test_agents_md_citation_check_fires_on_stale_docs(
+    drift_gate, tmp_path, monkeypatch, capsys
+):
+    """Stage 0 (Issue #4180): an AGENTS.md whose figures diverge from the
+    live inventory fails the gate before the drift/ratchet stages run.
+
+    This is the acceptance criterion of Issue #4180 made durable: the
+    claim in AGENTS.md that "the drift gate will fail any PR that does
+    not refresh AGENTS.md to match" is now actually true.
+    """
+    _redirect_paths(drift_gate, tmp_path, monkeypatch)  # default totals 100/1/250/5/10
+    _scrub_argv(monkeypatch)
+
+    # Corrupt one cited figure in the synthetic AGENTS.md.
+    agents_md = tmp_path / "AGENTS.md"
+    text = agents_md.read_text(encoding="utf-8")
+    assert "(100 lib tests" in text
+    agents_md.write_text(text.replace("(100 lib tests", "(999 lib tests"), encoding="utf-8")
+
+    rc = drift_gate.main()
+    captured = capsys.readouterr()
+
+    assert rc == 1, f"expected FAIL (stale AGENTS.md citations), got rc={rc}"
+    assert "AGENTS.md" in captured.err
+    assert "cited=999" in captured.err
+    # Stage 0 fires before the drift header is printed.
+    assert "Drift-threshold violations" not in captured.out
