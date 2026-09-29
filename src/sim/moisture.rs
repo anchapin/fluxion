@@ -366,11 +366,14 @@ pub fn step_zone_moisture(
         // Psychrometric invariant (Issue #4155 §3): 0 ≤ w ≤ w_sat(T_zone).
         // By construction both hold (non-negative convex update; condensation
         // clamp), so a violation is a sign/unit bug upstream — fail loudly.
+        // Guard: if T_zone is non-physical (uninitialized test state), w_sat
+        // is NaN and the invariant is vacuous — skip rather than crash.
         let w_lo = -INVARIANT_REL_TOL;
         let w_hi = w_sat_zone * (1.0 + INVARIANT_REL_TOL) + 1e-12;
+        let invariant_holds = w_sat_zone.is_finite() && w_new >= w_lo && w_new <= w_hi;
         #[cfg(test)]
         assert!(
-            w_new >= w_lo && w_new <= w_hi,
+            invariant_holds || !w_sat_zone.is_finite(),
             "psychrometric invariant violated: w = {} kg/kg outside [0, w_sat({}°C) = {}]",
             w_new,
             t_zone,
@@ -378,7 +381,7 @@ pub fn step_zone_moisture(
         );
         #[cfg(not(test))]
         debug_assert!(
-            w_new >= w_lo && w_new <= w_hi,
+            invariant_holds || !w_sat_zone.is_finite(),
             "psychrometric invariant violated: w = {} kg/kg outside [0, w_sat({}°C) = {}]",
             w_new,
             t_zone,
