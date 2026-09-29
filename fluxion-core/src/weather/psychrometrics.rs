@@ -590,6 +590,101 @@ pub fn enthalpy_from_weather(weather: &HourlyWeatherData) -> f64 {
     weather.enthalpy()
 }
 
+/// Calculates the saturation humidity ratio at a given dry-bulb temperature.
+///
+/// This is the humidity ratio of saturated moist air (RH = 100%) — the maximum
+/// water-vapor mass fraction the air can hold at `temperature`. It is the
+/// psychrometric ceiling used by the zone moisture-balance invariant
+/// (`0 ≤ w_zone ≤ w_sat(T_zone)`, Issue #4155).
+///
+/// # Formula (ASHRAE HoF Ch.1 Eq. 22 at saturation)
+///
+/// ```text
+/// W_s = 0.62198 · p_ws(T) / (P − p_ws(T))
+/// ```
+///
+/// # Arguments
+///
+/// * `temperature` - Dry-bulb temperature in °C
+/// * `pressure` - Total atmospheric pressure in Pa
+///
+/// # Returns
+///
+/// Saturation humidity ratio in kg_water_vapor / kg_dry_air
+///
+/// # Example
+///
+/// ```
+/// use fluxion_core::weather::psychrometrics::saturation_humidity_ratio;
+///
+/// let w_s = saturation_humidity_ratio(20.0, 101325.0);
+/// assert!((w_s - 0.0147).abs() < 0.0002); // ≈ 0.0147 kg/kg at 20°C
+/// ```
+pub fn saturation_humidity_ratio(temperature: f64, pressure: f64) -> f64 {
+    calculate_humidity_ratio(temperature, 100.0, pressure)
+}
+
+/// Calculates the latent heat of vaporization of water at a given temperature.
+///
+/// Uses the Watson corresponding-states correlation for the latent heat along
+/// the saturation dome, anchored at the triple-point value. This replaces the
+/// fixed 2.501e6 J/kg constant previously hard-coded in the (test-only)
+/// latent-load path: the ideal-system latent load (Issue #4155) evaluates
+/// `h_fg` at the zone air temperature each timestep.
+///
+/// # Formula (Watson correlation)
+///
+/// ```text
+/// h_fg(T) = h_fg,ref · ((1 − T/T_c) / (1 − T_ref/T_c))^0.38
+/// ```
+///
+/// Where:
+/// - `h_fg,ref` = 2 501 000 J/kg at the triple point (T_ref = 273.16 K)
+/// - `T_c` = 647.096 K (critical temperature of water)
+/// - `T` = absolute temperature (K)
+///
+/// # Arguments
+///
+/// * `temperature` - Temperature in °C (evaluated at the zone air temperature
+///   by the Issue #4155 latent-load path)
+///
+/// # Returns
+///
+/// Latent heat of vaporization in J/kg
+///
+/// # Reference values (steam tables)
+///
+/// | T (°C) | h_fg (kJ/kg) |
+/// |--------|--------------|
+/// | 0      | 2501         |
+/// | 20     | 2453         |
+/// | 25     | 2442         |
+/// | 50     | 2381         |
+///
+/// The correlation reproduces steam-table values within 0.6% over the
+/// building operating range (0–50°C); it is clamped to 0–60°C, outside of
+/// which the corresponding-states form is not validated.
+///
+/// # Example
+///
+/// ```
+/// use fluxion_core::weather::psychrometrics::latent_heat_vaporization;
+///
+/// let h_fg = latent_heat_vaporization(20.0);
+/// assert!((h_fg - 2_449_000.0).abs() < 15_000.0); // ≈ 2449 kJ/kg at 20°C
+/// ```
+pub fn latent_heat_vaporization(temperature: f64) -> f64 {
+    const T_CRIT_K: f64 = 647.096; // Critical temperature of water (K)
+    const T_REF_K: f64 = 273.16; // Triple-point temperature (K)
+    const H_FG_REF_J_PER_KG: f64 = 2_501_000.0; // h_fg at the triple point (J/kg)
+    const WATSON_EXPONENT: f64 = 0.38;
+
+    // Clamp to the validated building-operating range; the correlation is a
+    // saturation-dome fit and degrades toward the critical point.
+    let t_k = (temperature + 273.15).clamp(273.15, 333.15);
+    H_FG_REF_J_PER_KG * ((1.0 - t_k / T_CRIT_K) / (1.0 - T_REF_K / T_CRIT_K)).powf(WATSON_EXPONENT)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -606,6 +701,72 @@ mod tests {
 
         let p_sat_30 = saturation_vapor_pressure(30.0);
         assert!((p_sat_30 - 4246.0).abs() < 5.0, "p_sat(30°C) ≈ 4246 Pa");
+    }
+
+    #[test]
+    fn test_saturation_humidity_ratio_reference_values() {
+        // Cross-check against calculate_humidity_ratio at 100% RH and against
+        // hand-computed ASHRAE values (tolerance ±2%).
+        let w_s = saturation_humidity_ratio(20.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+        assert!(
+            (w_s - 0.0147).abs() < 0.0003,
+            "w_sat(20°C) ≈ 0.0147 kg/kg, got {}",
+            w_s
+        );
+        // Identity with the 100%-RH humidity ratio by construction.
+        for t_c in [-10.0, 0.0, 13.0, 27.0, 40.0] {
+            let a = saturation_humidity_ratio(t_c, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+            let b = calculate_humidity_ratio(t_c, 100.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+            assert!(
+                (a - b).abs() < 1e-15,
+                "saturation_humidity_ratio must equal humidity ratio at 100% RH"
+            );
+        }
+    }
+
+    #[test]
+    fn test_latent_heat_vaporization_steam_table_values() {
+        // Steam-table reference values (kJ/kg); tolerance 1% per the Issue
+        // #4155 acceptance discussion (Watson fit is within 0.6% at 0–50°C).
+        let refs: &[(f64, f64)] = &[
+            (0.0, 2501.0),
+            (10.0, 2477.2),
+            (20.0, 2453.5),
+            (25.0, 2441.7),
+            (30.0, 2430.7),
+            (50.0, 2381.0),
+        ];
+        for &(t_c, h_ref_kj) in refs {
+            let h_fg = latent_heat_vaporization(t_c);
+            let rel_err = ((h_fg / 1000.0 - h_ref_kj) / h_ref_kj).abs();
+            assert!(
+                rel_err < 0.01,
+                "h_fg({}°C) = {} kJ/kg, steam table = {} (rel_err = {:.3}%)",
+                t_c,
+                h_fg / 1000.0,
+                h_ref_kj,
+                rel_err * 100.0
+            );
+        }
+    }
+
+    #[test]
+    fn test_latent_heat_vaporization_decreases_with_temperature() {
+        // h_fg must fall monotonically as temperature rises toward the
+        // critical point (less latent heat at higher saturation temperature).
+        let mut prev = f64::INFINITY;
+        for t_c in [0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0] {
+            let h_fg = latent_heat_vaporization(t_c);
+            assert!(
+                h_fg < prev,
+                "h_fg must decrease with T: h_fg({}) = {} >= prev {}",
+                t_c,
+                h_fg,
+                prev
+            );
+            assert!(h_fg.is_finite() && h_fg > 0.0);
+            prev = h_fg;
+        }
     }
 
     #[test]

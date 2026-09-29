@@ -73,12 +73,27 @@ pub struct HvacState<T: ContinuousTensor<f64>> {
     /// Issue #1628 — timestep index when peak cooling occurred for each zone.
     pub zone_peak_cooling_timestep: Vec<usize>,
     pub annual_heating_energy: f64,
+    /// Annual cooling energy (kWh), **sensible + latent** (Issue #4155). The
+    /// ideal-system load is a total energy, so the latent dehumidification
+    /// load is included here; the latent part is tracked separately in
+    /// `annual_latent_cooling_energy`.
     pub annual_cooling_energy: f64,
     pub annual_electrical_energy: f64,
+    /// Issue #4155 — annual latent cooling energy (kWh), the dehumidification
+    /// part of `annual_cooling_energy`. This field carries the split.
+    pub annual_latent_cooling_energy: f64,
     /// Issue #1288 — per-zone heating energy (kWh).
     pub zone_heating_energy_kwh: T,
     /// Issue #1288 — per-zone cooling energy (kWh).
     pub zone_cooling_energy_kwh: T,
+    /// Issue #4155 — per-zone latent cooling energy (kWh), the
+    /// dehumidification part of `zone_cooling_energy_kwh`.
+    pub zone_latent_cooling_energy_kwh: T,
+    /// Issue #4155 — per-zone zone-air humidity ratio state (kg water / kg
+    /// dry air), integrated by `crate::sim::moisture::step_zone_moisture`.
+    /// A negative entry means "uninitialized" and is seeded from the outdoor
+    /// humidity ratio on the first step.
+    pub zone_humidity_ratio: T,
 
     // PR #821 / Issue #825 — most recent zone-0 phi_ia/phi_st/phi_m captured for
     // the `pr821-diag` CSV writer. Always 0.0 when the feature is disabled.
@@ -136,8 +151,11 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for HvacState<T> {
             annual_heating_energy: self.annual_heating_energy,
             annual_cooling_energy: self.annual_cooling_energy,
             annual_electrical_energy: self.annual_electrical_energy,
+            annual_latent_cooling_energy: self.annual_latent_cooling_energy,
             zone_heating_energy_kwh: self.zone_heating_energy_kwh.clone(),
             zone_cooling_energy_kwh: self.zone_cooling_energy_kwh.clone(),
+            zone_latent_cooling_energy_kwh: self.zone_latent_cooling_energy_kwh.clone(),
+            zone_humidity_ratio: self.zone_humidity_ratio.clone(),
 
             #[cfg(feature = "pr821-diag")]
             last_phi_ia: self.last_phi_ia,

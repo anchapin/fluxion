@@ -272,7 +272,7 @@ BASELINE_LIB_IGNORED = 9
 #   test_box_solid_fraction_returns_none_without_reference_data,
 #   test_box_apparent_cp_at_wall_delegates_to_material). Stacked on PR-A's
 #   8821 baseline.
-BASELINE_WORKSPACE_TESTS = 8867  # 2026-09-29: 8857 -> 8867 — Issue #4207 adds 10 linalg.rs unit tests (same +10 as BASELINE_LIB_TESTS).
+BASELINE_WORKSPACE_TESTS = 8873  # 2026-09-29 (Issue #4155): 8867 -> 8873 — zone moisture balance + ideal-system latent load; 6 new unit tests in src/sim/moisture.rs. Stacked on #4207's 8867 baseline.
                                   # Previous: 2026-09-28: 8836 -> 8839 — three new `fabric_case_*_measurement` tests in `tests/all_tests/ashrae_140_fabric_multiselector.rs` (PR-A+2 fabric harness, Refs #3986-A+2 / #4117). CI's authoritative cargo --list count rises 8836 -> 8839 (local 8131). Ratchet must equal or exceed CI live count per Issue #3442 protocol.
                                   # Previous: 2026-09-27: 8829 -> 8833 — post-rebase AST delta for PR-A + PR-B's combined consolidated-runner modules (7 selector-parity + 8 PCM box tests).
                                  # unmet-hours lib tests in src/api/schema.rs

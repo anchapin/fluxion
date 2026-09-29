@@ -4,10 +4,14 @@ use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::physics::multi_node_solver::SurfaceExteriorTemperatures;
 use crate::sim::boundary::distribute_opaque_solar_gains;
 use crate::sim::hvac::{HVACMode as EquipmentHVACMode, VariableCapacityEquipment};
+use crate::sim::moisture::step_zone_moisture;
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::calculate_surface_irradiance;
 use crate::sim::thermal_model_core::ThermalModel;
 use crate::sim::ventilation::capped_h_tr_is_ach_multiplier;
+use fluxion_core::weather::psychrometrics::{
+    calculate_humidity_ratio, STANDARD_ATMOSPHERIC_PRESSURE_Pa,
+};
 use smallvec::SmallVec;
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
@@ -1319,6 +1323,98 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     zone_heating_slice[i] += energy_kwh;
                 } else {
                     zone_cooling_slice[i] += -energy_kwh;
+                }
+            }
+
+            // === Issue #4155: zone moisture balance + ideal-system latent load ===
+            //
+            // Same model as the 5R1C path: the ideal system that delivers the
+            // sensible load above also dehumidifies (supply air saturated at
+            // 13 °C; moisture removed at h_fg(T_zone)). The latent load joins
+            // the total cooling energy (the ideal-system load is a total
+            // energy), with the latent part tracked separately in
+            // zone_latent_cooling_energy_kwh / annual_latent_cooling_energy.
+            //
+            // The moisture state and latent path are required for correct
+            // ideal-system physics in humid climates (e.g. Baltimore, Miami
+            // — 98.7% of Miami cooling hours exceed the 13 °C coil ADP vs
+            // 3.0% in Denver). In dry climates the annual latent is
+            // negligible, which is the correct physical result, not a bug.
+            //
+            // In free-float mode the moisture state still advances (the
+            // psychrometric invariant must hold every step) but no latent
+            // energy is booked — Issues #738/#821 require free-float HVAC
+            // output to be exactly zero.
+            {
+                let n = self.0.hvac.num_zones;
+                // Outdoor humidity ratio from the current step's EPW weather
+                // (the annual loop calls set_weather per step; humidity is
+                // the parsed EPW relative humidity).
+                let w_out = self
+                    .0
+                    .solar
+                    .weather
+                    .as_ref()
+                    .map(|w| {
+                        calculate_humidity_ratio(
+                            w.dry_bulb_temp,
+                            w.humidity,
+                            STANDARD_ATMOSPHERIC_PRESSURE_Pa,
+                        )
+                        .max(0.0)
+                    })
+                    .unwrap_or(0.0);
+                // Per-zone ventilation conductance for moisture transport:
+                // the pure infiltration h_ve (derived_h_ext also carries
+                // h_tr_w, which moves heat but not moisture) plus the active
+                // night-ventilation flow on zone 0. Stack-allocated for the
+                // usual zone counts — no per-step heap allocation.
+                let mut h_ve_moist: SmallVec<[f64; 4]> =
+                    self.0.conduction.h_ve.as_ref().iter().copied().collect();
+                if night_vent_active_now {
+                    if let Some(first) = h_ve_moist.first_mut() {
+                        *first += h_ve_night;
+                    }
+                }
+                // Enabled-masked per-zone sensible HVAC power (W), matching
+                // the accumulation loop above.
+                let mut hvac_sen: SmallVec<[f64; 4]> = SmallVec::new();
+                hvac_sen.extend(
+                    hvac_output
+                        .as_ref()
+                        .iter()
+                        .zip(enabled_vec.iter())
+                        .map(|(&o, &e)| if e > 0.5 { o } else { 0.0 }),
+                );
+                let mut latent_w: SmallVec<[f64; 4]> = SmallVec::new();
+                step_zone_moisture(
+                    self.0.hvac.zone_humidity_ratio.as_mut(),
+                    self.0.setpoints.temperatures.as_ref(),
+                    hvac_sen.as_slice(),
+                    self.0.setpoints.cooling_setpoints.as_ref(),
+                    h_ve_moist.as_slice(),
+                    self.0.setpoints.zone_volume.as_ref(),
+                    w_out,
+                    dt,
+                    &mut latent_w,
+                );
+                if !self.0.hvac.free_float {
+                    let zone_latent_slice = self.0.hvac.zone_latent_cooling_energy_kwh.as_mut();
+                    let mut latent_sum = 0.0;
+                    for i in 0..n {
+                        let q_lat = latent_w[i];
+                        latent_sum += q_lat;
+                        // dt is in seconds, convert to kWh: watts * seconds /
+                        // 3.6e6
+                        let e_lat_kwh = q_lat * dt / 3.6e6;
+                        zone_latent_slice[i] += e_lat_kwh;
+                        zone_cooling_slice[i] += e_lat_kwh;
+                    }
+                    self.0.hvac.annual_latent_cooling_energy += latent_sum * dt / 3.6e6;
+                    // The annual sensible cooling was already accumulated
+                    // above; add the latent part so the reported annual
+                    // cooling is the sensible + latent total.
+                    self.0.hvac.annual_cooling_energy += latent_sum * dt / 3.6e6;
                 }
             }
 
