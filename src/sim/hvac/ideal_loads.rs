@@ -164,6 +164,12 @@ impl ZoneIdealLoads {
     /// * `zone_humidity_ratio` - Zone humidity ratio (kg_water/kg_dry_air)
     /// * `supply_humidity_ratio` - Supply air humidity ratio
     /// * `airflow_m3s` - Supply airflow rate (m³/s)
+    /// * `h_fg_j_per_kg` - Latent heat of vaporization evaluated at the zone air
+    ///   temperature (J/kg); use
+    ///   `fluxion_core::weather::psychrometrics::latent_heat_vaporization`
+    ///   (Watson saturation-dome correlation). The previous fixed 2.501e6 J/kg
+    ///   constant was replaced in Issue #4155 because h_fg varies by ~2% over
+    ///   the building operating range.
     ///
     /// # Returns
     /// Latent cooling load in watts
@@ -171,18 +177,18 @@ impl ZoneIdealLoads {
         zone_humidity_ratio: f64,
         supply_humidity_ratio: f64,
         airflow_m3s: f64,
+        h_fg_j_per_kg: f64,
     ) -> f64 {
         if zone_humidity_ratio <= supply_humidity_ratio {
             return 0.0;
         }
 
         let rho = 1.2; // kg/m³
-        let h_fg = 2501000.0; // J/kg (latent heat of vaporization at 20°C)
 
         let mass_flow = airflow_m3s * rho;
         let humidity_diff = zone_humidity_ratio - supply_humidity_ratio;
 
-        mass_flow * humidity_diff * h_fg
+        mass_flow * humidity_diff * h_fg_j_per_kg
     }
 
     /// Determine the required HVAC mode based on loads

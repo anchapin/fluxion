@@ -244,9 +244,7 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #   test in `pcm_test_box.rs::tests` (the `default_layer_thickness_matches_documented_value`
 #   guard test) plus the AST-scan delta for the new `tests/all_tests/teacher_validation_pcm_box.rs`
 #   module's integration tests. Stacked on PR-A's 4273 baseline.
-BASELINE_LIB_TESTS = 4288  # 2026-09-29: 4278 -> 4288 — Issue #4207 adds 10 linalg.rs unit tests for the retained production numerics (identity/mat_mul/inverse/powers); stacked on #4173's 4278.
-                        # 2026-09-29: 4276 -> 4278 — Issue #4173 deletes the two dead sim constructors: +3 lib tests (2 validate_assembly guards in validation::config::tests + ported new_runtime_validation in thermal_model_core::tests), -1 doc-test from the deleted new_with_validation example.
-                        # 2026-09-28: 4275 -> 4276 — core-engine batch (#4213) adds one net lib test (new tests for ONNX sidecars/transactional topology/planning sync outweigh step_6r2c.rs deletion). Stacked on develop's 4275 baseline (test-audit cleanup deleted 5 inventoried lib tests).
+BASELINE_LIB_TESTS = 4294  # 2026-09-29 (Issue #4155): 4288 -> 4294 — zone moisture balance; 6 new unit tests in src/sim/moisture.rs. Stacked on #4207's 4288 baseline.
                         # 2026-09-27: 4274 -> 4277 — post-rebase AST delta for PR-A + PR-B's combined inline tests (the 7 selector-parity tests are counted as workspace-integration rather than lib, so the lib bump comes from the 4 inline tests in `phase_change_material.rs::tests` + `pcm_test_box.rs::tests` plus the AST scan delta for PR-A's `tests.rs` guards).
                         # (+2 hvac setpoint CLI tests in src/cli/hvac_commands.rs:
                         # ZoneControl delegation + CLI-to-system propagation);
@@ -272,7 +270,7 @@ BASELINE_LIB_IGNORED = 9
 #   test_box_solid_fraction_returns_none_without_reference_data,
 #   test_box_apparent_cp_at_wall_delegates_to_material). Stacked on PR-A's
 #   8821 baseline.
-BASELINE_WORKSPACE_TESTS = 8867  # 2026-09-29: 8857 -> 8867 — Issue #4207 adds 10 linalg.rs unit tests (same +10 as BASELINE_LIB_TESTS).
+BASELINE_WORKSPACE_TESTS = 8873  # 2026-09-29 (Issue #4155): 8867 -> 8873 — zone moisture balance + ideal-system latent load; 6 new unit tests in src/sim/moisture.rs. Stacked on #4207's 8867 baseline.
                                   # Previous: 2026-09-28: 8836 -> 8839 — three new `fabric_case_*_measurement` tests in `tests/all_tests/ashrae_140_fabric_multiselector.rs` (PR-A+2 fabric harness, Refs #3986-A+2 / #4117). CI's authoritative cargo --list count rises 8836 -> 8839 (local 8131). Ratchet must equal or exceed CI live count per Issue #3442 protocol.
                                   # Previous: 2026-09-27: 8829 -> 8833 — post-rebase AST delta for PR-A + PR-B's combined consolidated-runner modules (7 selector-parity + 8 PCM box tests).
                                  # unmet-hours lib tests in src/api/schema.rs

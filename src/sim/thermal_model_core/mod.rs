@@ -454,8 +454,22 @@ where
     }
 
     /// Get cumulative cooling energy in kilowatt-hours (kWh)
+    ///
+    /// Issue #4155: this is the **sensible + latent total** — the ASHRAE 140
+    /// reference programs report the ideal-system load as a total energy and
+    /// every cooling band is a total-load band. Use
+    /// `get_latent_cooling_energy_kwh` for the dehumidification part.
     pub fn get_cooling_energy_kwh(&self) -> f64 {
         self.0.hvac.annual_cooling_energy
+    }
+
+    /// Get cumulative latent cooling energy in kilowatt-hours (kWh)
+    ///
+    /// Issue #4155: the dehumidification part of `get_cooling_energy_kwh`
+    /// (ideal-system moisture removal at h_fg(T_zone), plus any zone-surface
+    /// condensation). Zero when the ideal system never dehumidifies.
+    pub fn get_latent_cooling_energy_kwh(&self) -> f64 {
+        self.0.hvac.annual_latent_cooling_energy
     }
 
     /// Get cumulative electrical energy consumption in kilowatt-hours (kWh)
@@ -505,12 +519,16 @@ where
     pub fn reset_heating_cooling_energy(&mut self) {
         self.0.hvac.annual_heating_energy = 0.0;
         self.0.hvac.annual_cooling_energy = 0.0;
+        // Issue #4155: latent cooling is part of the annual cooling total.
+        self.0.hvac.annual_latent_cooling_energy = 0.0;
         // Reset per-zone energy tracking (Issue #1288)
         let heating_slice = self.0.hvac.zone_heating_energy_kwh.as_mut();
         let cooling_slice = self.0.hvac.zone_cooling_energy_kwh.as_mut();
+        let latent_slice = self.0.hvac.zone_latent_cooling_energy_kwh.as_mut();
         for i in 0..self.0.hvac.num_zones {
             heating_slice[i] = 0.0;
             cooling_slice[i] = 0.0;
+            latent_slice[i] = 0.0;
         }
     }
 
@@ -541,6 +559,10 @@ where
             self.0.mass.internal_mass_temperatures.as_mut()[i] = init_temp;
             self.0.mass.air_temperatures.as_mut()[i] = init_temp;
             self.0.mass.solar_lag.as_mut()[i] = 0.0;
+            // Issue #4155: reset the moisture state to the uninitialized
+            // sentinel so the next run re-seeds from the outdoor humidity
+            // ratio instead of inheriting the previous run's end state.
+            self.0.hvac.zone_humidity_ratio.as_mut()[i] = -1.0;
         }
         // Mass-energy-change accumulators (Plan 18-08, used by step_physics_5r1c)
         self.0.mass.envelope_mass_energy_change_cumulative = 0.0;
@@ -3680,8 +3702,13 @@ impl ThermalModel<VectorField> {
                 annual_heating_energy: 0.0,
                 annual_cooling_energy: 0.0,
                 annual_electrical_energy: 0.0,
+                annual_latent_cooling_energy: 0.0,
                 zone_heating_energy_kwh: VectorField::from_scalar(0.0, num_zones),
                 zone_cooling_energy_kwh: VectorField::from_scalar(0.0, num_zones),
+                zone_latent_cooling_energy_kwh: VectorField::from_scalar(0.0, num_zones),
+                // Issue #4155: negative sentinel → seeded from the outdoor
+                // humidity ratio on the first moisture step.
+                zone_humidity_ratio: VectorField::from_scalar(-1.0, num_zones),
                 #[cfg(feature = "pr821-diag")]
                 last_phi_ia: 0.0,
                 #[cfg(feature = "pr821-diag")]
