@@ -10,7 +10,7 @@
 //! to the unified `ThermalModel<T>` type.
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
-use crate::sim::thermal_model_core::{ThermalModel, ThermalModelType};
+use crate::sim::thermal_model_core::ThermalModel;
 use smallvec::SmallVec;
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
@@ -40,9 +40,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ///   - Air → Surface → Mass → Outdoor (via `h_tr_ms` × `h_tr_em` chain, captured by
     ///     H_tr,1 coupling)
     ///   - Air → Outdoor via windows (`h_tr_w`)
-    ///   - Air → Outdoor via ventilation (`h_ve` is already implicit in the air node
-    ///     heat balance that produces T_free; `T_free` includes the h_ve term in its
-    ///     `den` denominator).
+    ///   - Air → Outdoor via ventilation (`h_ve`, explicit in the coefficient since
+    ///     Issue #4241; previously claimed implicit via `T_free`, which was incorrect
+    ///     — embedding `h_ve` in `T_free` puts it in the driving temperature, not
+    ///     in the coefficient).
     ///
     /// # History (Issue #1457)
     ///
@@ -66,31 +67,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // in this function - it's only used for internal mass dynamics, not for
         // the building-to-outdoor HVAC coupling.
 
-        // Issue #4241: Unified conductance for 5R1C/9R4C (was #4240).
+        // Issue #4156: Unified conductance (was #4241 branch).
         // The HVAC coefficient is the total effective conductance from the
         // zone air node to the outdoor boundary:
-        //   h_coeff = (h_tr_w + h_ve) + h_interior_path
+        //   h_coeff = (h_tr_w + h_ve) + h_tr_is*h_tr_ms/(h_tr_is+h_tr_ms)
         // where:
         //   - (h_tr_w + h_ve) is the direct exterior path (windows + ventilation)
-        //   - h_interior_path is the air→surface→mass series path:
-        //     - 5R1C: h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms)
-        //     - 9R4C: derived_h_tr_3 (ISO 13790 combined air-to-mass conductance)
+        //   - h_tr_is*h_tr_ms/(h_tr_is+h_tr_ms) is the air→surface→mass series path
+        //     (ISO 13790 §C.3)
+        //
+        // Both 5R1C and 9R4C use this single formula (per Alex 2026-09-29).
+        // The 9R4C-specific derived_h_tr_3 is NOT used here — it includes h_ve
+        // and h_tr_w in its derivation, which would double-count those terms.
         //
         // Issue #2227: h_tr_me is the coupling between envelope mass and internal mass
         // (furniture/partitions), NOT the building-to-outdoor coupling. Using h_tr_me
         // would incorrectly include furniture thermal mass in the HVAC demand calculation.
-        let h_interior_path = if self.0.hvac.thermal_model_type == ThermalModelType::NineRFourC {
-            // 9R4C: derived_h_tr_3 (≈ 42.66 W/K for Case 900) is the effective
-            // thermal coupling from zone air to the building's thermal mass.
-            self.0.conduction.derived_h_tr_3.as_ref()[zone_idx]
+        let h_interior_path = if h_tr_is + h_tr_ms > 0.0 {
+            h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms)
         } else {
-            // 5R1C/6R2C: ISO 13790 §C.3 series combination of air-to-surface
-            // film (h_tr_is) and surface-to-mass coupling (h_tr_ms)
-            if h_tr_is + h_tr_ms > 0.0 {
-                h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms)
-            } else {
-                0.0
-            }
+            0.0
         };
         // Unified: direct exterior (windows + ventilation) + interior mass path
         (h_tr_w + h_ve) + h_interior_path
