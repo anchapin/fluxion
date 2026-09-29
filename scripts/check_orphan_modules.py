@@ -507,7 +507,12 @@ _CFG_TEST_BODY_RE = re.compile(
 # four dead `h_interior`/`h_exterior` fields and their `#[allow(dead_code)]`
 # attributes on `CTFSolverWrapper` and `FDSolverWrapper` (dead since the
 # constructors' values were never wired into the solvers' boundary conditions).
-BASELINE_DEAD_CODE_ALLOWS = 43
+# 2026-09-29: Issue #4207 — retired 11 dead-but-test-reachable numerics sites
+# from state_space_ctf/linalg.rs (householder_to_hessenberg, apply_householder_*,
+# vector_norm, transpose, francis_qr_schur, implicit_double_shift_bulge_chase,
+# matrix_exponential_old_pade, matrix_exponential_taylor, matrix_norm_inf).
+# Reduced from 43 to 32.
+BASELINE_DEAD_CODE_ALLOWS = 32
 
 # ---------------------------------------------------------------------------
 # Wired-but-dead disposition registry (Issue #3748).
