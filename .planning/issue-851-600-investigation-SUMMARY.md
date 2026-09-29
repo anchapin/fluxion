@@ -35,7 +35,7 @@ requires either (a) migrating 600-series to the multi-node 9R4C solver or
 ```bash
 cd /home/alex/Projects/worktrees/issue-851-600-investigation
 git checkout 9ff8e42  # base of investigation
-cargo test --test ashrae_140_case_600_series 2>&1 | grep -E "Case 6.*MWh|Case 6.*°C"
+cargo test --test all_tests ashrae_140_case_600_series:: 2>&1 | grep -E "Case 6.*MWh|Case 6.*°C"
 ```
 
 Pre-fix baseline (matches the issue summary):
@@ -111,7 +111,7 @@ Annual heating (cherry-pick alone, no other change):
 - Case 630: 10.06 → 10.81 MWh (1.67x)
 - Case 640: 10.83 → 10.09 MWh (2.65x — still above 2x acceptance)
 
-`cargo test --test ashrae_140_case_600_series` → **7 pass / 19 fail** (the
+`cargo test --test all_tests ashrae_140_case_600_series::` → **7 pass / 19 fail** (the
 remaining 19 are the same set that fail pre-cherry-pick, with the 600FF max
 test now passing).
 
@@ -268,7 +268,7 @@ suite at that commit.
 ### Post-cherry-pick (current branch HEAD = 2d89348)
 
 ```
-cargo test --test ashrae_140_case_600_series
+cargo test --test all_tests ashrae_140_case_600_series::
 test result: FAILED. 7 passed; 19 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 

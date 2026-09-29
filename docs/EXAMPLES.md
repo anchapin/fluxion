@@ -4,7 +4,7 @@ This document explains the inputs and outputs used by the scripts in
 `examples/`, how to interpret the printed results, and shows small
 recipes for normalising the toy-metric currently produced by the
 physics engine. The examples are kept in lock-step with the live
-PyO3 / axum surface — see `tests/examples_smoke.rs` (Issue #1411) for
+PyO3 / axum surface — see `tests/all_tests/examples_smoke.rs` (Issue #1411) for
 the CI guard that fails the build if the fixtures and example
 scripts drift away from the public types.
 
@@ -16,7 +16,7 @@ scripts drift away from the public types.
 | `run_oracle.py`            | `fluxion.BatchOracle.evaluate_population` (Python) | Works as written              |
 | `quick_start.sh`           | Helper: `maturin develop` + run `run_oracle.py` | Works as written                |
 | `run_rest.sh`              | `curl` against `fluxion-rest` on port 8080      | Works as written (added #1411)  |
-| `tests/fixtures/single_zone.json` | Canonical `SimulationSchemaV1` for `POST /v1/simulate` | Round-tripped by `tests/examples_smoke.rs` on every CI run |
+| `tests/fixtures/single_zone.json` | Canonical `SimulationSchemaV1` for `POST /v1/simulate` | Round-tripped by `tests/all_tests/examples_smoke.rs` on every CI run |
 | `dummy_surrogate.onnx`     | Pre-generated dummy ONNX for `Model.load_surrogate` | Works (1.2-constant)        |
 | `multi_zone_demo.rs`       | `MultiZoneThermalModel` from Rust               | Reference only                  |
 | `tutorial_custom_model.rs` | Custom thermal model demo (Rust)                | Reference only                  |
@@ -101,7 +101,7 @@ nor accepted by `fluxion-rest`. They were moved out of the top of
 historical reference only. The canonical REST request body — and the
 only JSON document the `POST /v1/simulate` endpoint is validated
 against — is `tests/fixtures/single_zone.json`, which is round-tripped
-by `tests/examples_smoke.rs` on every CI run.
+by `tests/all_tests/examples_smoke.rs` on every CI run.
 
 ### 2.4 `run_rest.sh` — REST API curl examples
 
@@ -208,7 +208,7 @@ print(f"Raw: {raw:.1f}, normalized avg temp-gap per zone (°C-hr): {normalized:.
 - Pin your Python interpreter (venv) in CI to match the
   maturin-built wheel platform.
 - The REST `single_zone.json` fixture is round-tripped by
-  `tests/examples_smoke.rs` on every CI run — keep that test green
+  `tests/all_tests/examples_smoke.rs` on every CI run — keep that test green
   and your docs/examples stay in sync with the live API.
 - To avoid flakiness, set the random seed in `run_oracle.py` (or
   use NumPy RNG) and/or mock the `SurrogateManager`.

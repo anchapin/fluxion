@@ -146,7 +146,7 @@ No chicken-and-egg: t_i_free uses OLD mass temp, Q_hc depends on t_i_free (OLD m
 
 ## Risk Mitigation
 
-1. **Incremental testing**: After each change, run `cargo test --test ashrae_140_case_900`
+1. **Incremental testing**: After each change, run `cargo test --test all_tests ashrae_140_case_900::`
 2. **Free-float preservation**: 900FF must stay in 41.8-46.4°C range. If it breaks, check phi_m_tot assembly
 3. **Stability**: C-N can produce negative denominators if `0.5×(H_tr_3 + h_tr_em) > Cm/dt`. Already handled by existing fallback
 4. **Gain routing**: Already correct for ASHRAE 140 (solar_distribution_to_air = 0.0). DO NOT modify gain routing

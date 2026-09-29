@@ -154,7 +154,7 @@ for i in 0..self.num_zones {
 cargo test --lib test_hvac_control_comprehensive
 
 # 2. Run ASHRAE validation
-cargo test --test ashrae_140_validation
+cargo test --test all_tests ashrae_140_validation::
 
 # 3. Run benchmarks
 cargo bench --bench engine_bench -- --sample-size 3
@@ -166,7 +166,7 @@ cargo bench --bench engine_bench -- --sample-size 3
 cargo test --lib step_physics
 
 # 2. Run ASHRAE validation
-cargo test --test ashrae_140_validation
+cargo test --test all_tests ashrae_140_validation::
 ```
 
 ---

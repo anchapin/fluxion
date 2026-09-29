@@ -62,13 +62,13 @@ mock / analytical fallback in `src/ai/surrogate`.
 | Multi-zone test variant | `cargo test --features multi-zone` |
 | Concurrency tests | `LOOM=1 cargo test --features loom --test loom_concurrency_tests` |
 | Heap profile | `cargo build --features dhat` |
-| ASHRAE 140 with GaugeSolver | `cargo test --features gauge-solver --test ashrae_140_case_600_series` |
+| ASHRAE 140 with GaugeSolver | `cargo test --features gauge-solver --test all_tests ashrae_140_case_600_series::` |
 | D-Wave client test | `cargo test --features dwave -p fluxion quantum::dwave_client` |
 | Kafka consumer test | `cargo test --features kafka -p fluxion twin::kafka_telemetry_consumer` |
 | Algebraic-FP helper smoke test | `cargo test --features fast-math -p fluxion physics::fp_algebraic` (**non-deterministic mode**) |
-| TMY3 download integration tests | `cargo test --features tmy3-download --test test_tmy3_download` |
-| JSON validation trace | `cargo test --features tracing-subscriber-json --test ashrae_140_validation` |
-| SIMD-kernel invariant battery | `cargo test --features simd-kernels --test solar_simd_evolution` |
+| TMY3 download integration tests | `cargo test --features tmy3-download --test all_tests test_tmy3_download::` |
+| JSON validation trace | `cargo test --features tracing-subscriber-json --test all_tests ashrae_140_validation::` |
+| SIMD-kernel invariant battery | `cargo test --features simd-kernels --test all_tests solar_simd_evolution::` |
 
 Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
 
@@ -191,7 +191,7 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
   uses the v2023 values (e.g. `EXTERIOR_FILM_COEFF = 18.3 W/m²K`); enable this flag to
   reproduce the legacy v2021 spec. Mutually exclusive in spirit with the v2023 defaults —
   do not mix in the same test run.
-- **Build:** `cargo test --features ashrae_140_v2021 --test ashrae_140_validation`.
+- **Build:** `cargo test --features ashrae_140_v2021 --test all_tests ashrae_140_validation::`.
 - **CI implication:** Advisory ASHRAE variant; the strict ±15 % energy gate
   (`ASHRAE 140 Strict Energy Gate`, Issue #1333) runs against the v2023 defaults.
 - **Default:** off (v2023 is the active spec).
@@ -236,10 +236,10 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
 
 - **Enables:** `tracing-subscriber/json` — structured JSON-formatted tracing output from
   the validation module, suitable for ingestion by Loki/Elastic (Issue #2500). Running
-  `cargo test --features tracing-subscriber-json --test ashrae_140_validation` emits
+  `cargo test --features tracing-subscriber-json --test all_tests ashrae_140_validation::` emits
   machine-parseable per-case pass/fail events (wired in
-  `tests/ashrae_140_validation.rs`).
-- **Build:** `cargo test --features tracing-subscriber-json --test ashrae_140_validation`.
+  `tests/all_tests/ashrae_140_validation.rs`).
+- **Build:** `cargo test --features tracing-subscriber-json --test all_tests ashrae_140_validation::`.
 - **CI implication:** None — local / log-pipeline use only.
 - **Default:** off.
 
@@ -261,7 +261,7 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
   `tests/test_tmy3_download.rs`) opt in. Mirrors the workspace's other opt-in
   network/TLS features (`ort`, `fluid`, `fluxion-city`, `fluxion-cfd`).
 - **Build:** `cargo build --features tmy3-download`; tests via
-  `cargo test --features tmy3-download --test test_tmy3_download`.
+  `cargo test --features tmy3-download --test all_tests test_tmy3_download::`.
 - **CI implication:** None as a matrix variant — the gated integration tests are opt-in.
 - **Default:** off.
 
@@ -423,7 +423,7 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
   `simd_kernels` tolerance widens from 1e-9 to 1e-6 to allow last-ulp
   reassociation/contraction drift — **not** for energy-balance or ASHRAE 140 baselines.
   Default-feature builds remain byte-identical to today.
-- **Build:** `cargo test --features simd-kernels --test solar_simd_evolution`.
+- **Build:** `cargo test --features simd-kernels --test all_tests solar_simd_evolution::`.
 - **CI implication:** None — evaluation harness only; never in validation CI.
 - **Default:** off (must stay off outside kernel-conversion evaluation).
 

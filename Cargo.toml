@@ -190,7 +190,7 @@ dwave = []
 debug-physics = []
 # Feature flag to emit structured JSON tracing output from the validation
 # module, suitable for ingestion by Loki/Elastic. Enables tracing-subscriber's
-# JSON formatter so `cargo test --test ashrae_140_validation --features
+# JSON formatter so `cargo test --test all_tests ashrae_140_validation:: --features
 # tracing-subscriber-json` produces machine-parseable per-case pass/fail
 # events. (Issue #2500)
 tracing-subscriber-json = ["tracing-subscriber/json"]

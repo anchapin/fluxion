@@ -86,11 +86,11 @@ After update:
 "900" => EnergyRange { min: 1.17, max: 2.04, source: "EnergyPlus 23.x" }
 ```
 
-Run: cargo test --test ashrae_140_blind_validation to see effect of true references
+Run: cargo test --test all_tests ashrae_140_blind_validation:: to see effect of true references
   </action>
   <verify>
     cargo check --lib
-    cargo test --test ashrae_140_blind_validation 2>&1 | grep -E "(PASS|FAIL|baseline)" | head -20
+    cargo test --test all_tests ashrae_140_blind_validation:: 2>&1 | grep -E "(PASS|FAIL|baseline)" | head -20
   </verify>
   <done>benchmark.rs uses true reference data, calibrated ranges removed</done>
 </task>
@@ -98,7 +98,7 @@ Run: cargo test --test ashrae_140_blind_validation to see effect of true referen
 </tasks>
 
 <verification>
-Run: cargo test --test ashrae_140_blind_validation
+Run: cargo test --test all_tests ashrae_140_blind_validation::
 
 Verify:
 - benchmark.rs loads from data/ashrae_140_true_reference/

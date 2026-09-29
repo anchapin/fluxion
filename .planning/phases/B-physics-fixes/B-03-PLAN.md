@@ -142,11 +142,11 @@ After fix:
 1. Re-run free_floating_temperature_validation
 2. Confirm min/max temperatures are physically reasonable (10-50°C range, not 125°C)
 3. Confirm HVAC energy = 0 for all free-float cases
-4. Run blind validation: cargo test --test ashrae_140_blind_validation
+4. Run blind validation: cargo test --test all_tests ashrae_140_blind_validation::
   </action>
   <verify>
     cargo test --test free_floating_temperature_validation 2>&1 | grep -E "(max|min|°C|PASS|FAIL)"
-    cargo test --test ashrae_140_blind_validation 2>&1 | grep -E "(FF|PASS|FAIL)" | head -20
+    cargo test --test all_tests ashrae_140_blind_validation:: 2>&1 | grep -E "(FF|PASS|FAIL)" | head -20
   </verify>
   <done>Free-floating temperature fix implemented, temperatures in 10-50°C range, HVAC inactive</done>
 </task>

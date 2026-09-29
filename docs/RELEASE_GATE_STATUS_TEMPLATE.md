@@ -130,7 +130,7 @@ If any gate shows ❌:
 1. **Validation gates failed:**
    - Review `validation_results.json` for failing cases
    - Check for recent changes affecting thermal modeling
-   - Run `cargo test --test ashrae_140_validation --release -- --nocapture` locally
+   - Run `cargo test --test all_tests ashrae_140_validation:: --release -- --nocapture` locally
    - Consider whether a new baseline is appropriate (use `--update-baseline`)
 
 2. **Benchmark gates failed:**

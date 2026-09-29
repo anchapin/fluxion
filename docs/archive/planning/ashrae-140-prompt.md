@@ -25,7 +25,7 @@ Looking at the Fluxion repository, I can see it's a hybrid neuro-symbolic buildi
 ```bash
 # Map all physics modules involved in validation
 grep -r "CTF\|conduction\|thermal_mass\|damping" src/
-cargo test --test ashrae_140_validation -- --nocapture 2>&1 | tee validation_audit.log
+cargo test --test all_tests ashrae_140_validation:: -- --nocapture 2>&1 | tee validation_audit.log
 ```
 
 **Key investigation areas:**
@@ -136,7 +136,7 @@ python tools/sensitivity_analysis.py --physics-params
 
 ```bash
 # Run complete validation
-cargo test --test ashrae_140_validation -- --nocapture
+cargo test --test all_tests ashrae_140_validation:: -- --nocapture
 # Generate comparison against all reference programs
 python tools/generate_validation_report.py --compare-all
 ```
@@ -200,7 +200,7 @@ For each ASHRAE 140 case:
 ```bash
 # 1. Set up detailed physics diagnostics
 git checkout develop
-cargo test --test ashrae_140_validation -- --nocapture 2>&1 | tee baseline_failures.log
+cargo test --test all_tests ashrae_140_validation:: -- --nocapture 2>&1 | tee baseline_failures.log
 
 # 2. Implement first physics improvement (finite volume for a single layer)
 mkdir -p src/physics/thermal/finite_volume

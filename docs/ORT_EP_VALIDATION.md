@@ -98,7 +98,7 @@ FLUXION_ONNX_BACKEND=cuda RUST_LOG=info cargo run -p fluxion --bin fluxion -- \
     benchmark --model models/surrogate_zone_thermal.onnx --runs 10 2>&1 \
     | grep -Ei 'cuda|fall.?back|backend'
 # or run any ONNX-gated integration test with the backend env var set:
-FLUXION_ONNX_BACKEND=cuda RUST_LOG=info cargo test --features ort,cuda --test surrogate_cold_start_test -- --nocapture
+FLUXION_ONNX_BACKEND=cuda RUST_LOG=info cargo test --features ort,cuda --test all_tests surrogate_cold_start_test:: -- --nocapture
 ```
 
 Expected: the ignored test passes (probe verdict `activated`, real inference through

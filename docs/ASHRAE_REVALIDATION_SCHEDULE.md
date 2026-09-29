@@ -55,7 +55,7 @@ Before running re-validation:
 
 1. **Execute validation:**
    ```bash
-   cargo test --test ashrae_140_validation --release
+   cargo test --test all_tests ashrae_140_validation:: --release
    ```
 
 2. **Collect results:**

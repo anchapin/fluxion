@@ -17,7 +17,7 @@ surfaces are:
   ≥150 configs/sec on commodity CI runners (see `release_gates.yaml` →
   `performance.throughput.min_configs_per_sec`).
 - **ASHRAE 140 / BESTEST validation harness** —
-  `cargo test --test ashrae_140_validation` runs the Standard 140
+  `cargo test --test all_tests ashrae_140_validation::` runs the Standard 140
   BESTEST case suite against the 5R1C thermal network; current pass
   rates are in [`docs/ASHRAE140_RESULTS.md`](ASHRAE140_RESULTS.md).
 
@@ -246,7 +246,7 @@ CLI surface.
 If you want a `SimulationSchemaV1` you can hand to `fluxion-rest`, the
 canonical example is [`tests/fixtures/single_zone.json`](../tests/fixtures/single_zone.json).
 It matches `fluxion::api::schema::SimulationSchemaV1` byte-for-byte
-(`tests/examples_smoke.rs` round-trips it on every CI run).
+(`tests/all_tests/examples_smoke.rs` round-trips it on every CI run).
 
 ## Next Steps
 

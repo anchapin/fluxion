@@ -113,10 +113,10 @@ The production-path switchover is accepted when **all** of the following are tru
 
 ### Required CI gates green
 
-1. `cargo test --test ashrae_140_validation` — strict ±15% band gate
-2. `cargo test --test zone_balance_eplus_isolation` — energy conservation gate
+1. `cargo test --test all_tests ashrae_140_validation::` — strict ±15% band gate
+2. `cargo test --test all_tests zone_balance_eplus_isolation::` — energy conservation gate
 3. `cargo test --test integration-cli` — CLI behavior / stub guards
-4. `cargo test -p fluxion --test ashrae_140_case_600_series` — Case 600 series (was 13/14 pass pre-GaugeSolver; target 14/14 or 15/15)
+4. `cargo test -p fluxion --test all_tests ashrae_140_case_600_series::` — Case 600 series (was 13/14 pass pre-GaugeSolver; target 14/14 or 15/15)
 5. `tests/known_issues_regression.rs::issue_1457_case_600_series_tracking` — the 14 quarantined metrics flip green
 6. `tests/gauge_validation_case_900.rs` — Case 900 high-mass validation harness passes
 7. No `#[ignore]` removals that were not explicitly enabled by this PR

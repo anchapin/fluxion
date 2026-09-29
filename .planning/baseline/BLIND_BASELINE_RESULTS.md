@@ -147,5 +147,5 @@ Phase A.3 should focus on identifying which correction factors have the largest 
 ## Test Command
 
 ```bash
-cargo test --test ashrae_140_blind_validation -- --nocapture
+cargo test --test all_tests ashrae_140_blind_validation:: -- --nocapture
 ```

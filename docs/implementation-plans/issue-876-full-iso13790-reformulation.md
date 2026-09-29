@@ -135,8 +135,8 @@ Replace the 5R1C thermal network formula in `step_physics_9r4c()` with the ISO 1
 #### Testing
 
 ```bash
-cargo test --test ashrae_140_case_900
-cargo test --test ashrae_140_free_floating -- test_case_900ff
+cargo test --test all_tests ashrae_140_case_900::
+cargo test --test all_tests ashrae_140_free_floating:: -- test_case_900ff
 ```
 
 #### Acceptance Criteria
@@ -208,8 +208,8 @@ git checkout src/sim/thermal_model_physics.rs
 #### Testing
 
 ```bash
-cargo test --test ashrae_140_case_900
-cargo test --test ashrae_140_free_floating
+cargo test --test all_tests ashrae_140_case_900::
+cargo test --test all_tests ashrae_140_free_floating::
 ```
 
 #### Acceptance Criteria
@@ -308,8 +308,8 @@ This is mathematically equivalent to the coefficient approach with `h_coeff = H_
 #### Testing
 
 ```bash
-cargo test --test ashrae_140_case_900
-cargo test --test ashrae_140_integration
+cargo test --test all_tests ashrae_140_case_900::
+cargo test --test all_tests ashrae_140_integration::
 ```
 
 #### Acceptance Criteria
@@ -385,10 +385,10 @@ The second pass ensures the mass temperature reflects the actual HVAC energy inp
 #### Testing
 
 ```bash
-cargo test --test ashrae_140_case_900
-cargo test --test ashrae_140_free_floating
-cargo test --test ashrae_140_integration
-cargo test --test ashrae_140_validation
+cargo test --test all_tests ashrae_140_case_900::
+cargo test --test all_tests ashrae_140_free_floating::
+cargo test --test all_tests ashrae_140_integration::
+cargo test --test all_tests ashrae_140_validation::
 ```
 
 #### Acceptance Criteria
@@ -427,13 +427,13 @@ git checkout src/sim/thermal_model_physics.rs
 
 1. **Run full test suite:**
    ```bash
-   cargo test --test ashrae_140_case_900
-   cargo test --test ashrae_140_free_floating
-   cargo test --test ashrae_140_integration
-   cargo test --test ashrae_140_validation
-   cargo test --test ashrae_140_setback_ventilation
-   cargo test --test ashrae_140_solar_gain_variants
-   cargo test --test ashrae_140_solid_conduction_variants
+   cargo test --test all_tests ashrae_140_case_900::
+   cargo test --test all_tests ashrae_140_free_floating::
+   cargo test --test all_tests ashrae_140_integration::
+   cargo test --test all_tests ashrae_140_validation::
+   cargo test --test all_tests ashrae_140_setback_ventilation::
+   cargo test --test all_tests ashrae_140_solar_gain_variants::
+   cargo test --test all_tests ashrae_140_solid_conduction_variants::
    ```
 
 2. **Edge case handling:**

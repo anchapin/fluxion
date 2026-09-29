@@ -88,7 +88,7 @@ Include tests for:
 At minimum: 18 cases that can be run headlessly.
   </action>
   <verify>
-    cargo test --test ashrae_140_blind_validation 2>&1 | tail -40
+    cargo test --test all_tests ashrae_140_blind_validation:: 2>&1 | tail -40
   </verify>
   <done>Blind validation test file exists and runs successfully</done>
 </task>
@@ -100,7 +100,7 @@ At minimum: 18 cases that can be run headlessly.
 Run the blind validation test and capture the full output:
 
 ```bash
-cargo test --test ashrae_140_blind_validation -- --nocapture 2>&1 | tee /tmp/blind_baseline.log
+cargo test --test all_tests ashrae_140_blind_validation:: -- --nocapture 2>&1 | tee /tmp/blind_baseline.log
 ```
 
 Analyze the results and create .planning/baseline/BLIND_BASELINE_RESULTS.md with:
@@ -144,7 +144,7 @@ For each failing case, document:
     4. Check that free-floating temperature failures are extreme (expected: 125°C vs 41-46°C)
 
     Commands to verify:
-    - cargo test --test ashrae_140_blind_validation -- --nocapture
+    - cargo test --test all_tests ashrae_140_blind_validation:: -- --nocapture
     - cat .planning/baseline/BLIND_BASELINE_RESULTS.md
   </how-to-verify>
   <resume-signal>
@@ -155,7 +155,7 @@ For each failing case, document:
 </tasks>
 
 <verification>
-Run: cargo test --test ashrae_140_blind_validation 2>&1
+Run: cargo test --test all_tests ashrae_140_blind_validation:: 2>&1
 
 Verify:
 - Test executes without panics

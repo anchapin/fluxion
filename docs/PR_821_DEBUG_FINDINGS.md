@@ -132,25 +132,25 @@ double-count the ISO 13790 lumped correction.
 
 ```bash
 # Reproduce the failing 600FF/650FF tests (must FAIL before fix, PASS after):
-cargo test --test ashrae_140_case_600_series test_max_temperature \
+cargo test --test all_tests ashrae_140_case_600_series:: test_max_temperature \
     -- --test-threads=1
 
 # Phase 0 diagnostic CSVs (8 760-row CSVs in target/diag/):
-cargo test --test ashrae_140_case_600_series test_max_temperature \
+cargo test --test all_tests ashrae_140_case_600_series:: test_max_temperature \
     --features pr821-diag -- --test-threads=1 --nocapture
 
 # Free-float HVAC zero-output regression:
-cargo test --test ashrae_140_case_600_series free_float_hvac_guard \
+cargo test --test all_tests ashrae_140_case_600_series:: free_float_hvac_guard \
     -- --test-threads=1
 
 # Full 600-series count:
-cargo test --test ashrae_140_case_600_series -- --test-threads=1
+cargo test --test all_tests ashrae_140_case_600_series:: -- --test-threads=1
 # Pass count: 3 → 6 (+2 max-temp, +3 new FF guard tests, -2 pre-existing
 # 640::annual_cooling and 650::min_temperature that were marginally inside
 # their bands and shifted slightly out under the corrected physics).
 
 # 900-series regression check (must not regress passing tests):
-cargo test --test ashrae_140_case_900 -- --test-threads=1
+cargo test --test all_tests ashrae_140_case_900:: -- --test-threads=1
 # Pass count: 10 → 9.
 # - test_case_900ff_max_temperature_within_reference_range: still fails
 #   (was 26.45 °C, now 25.22 °C; reference 41.8-46.4 °C; out of scope #715/#730).

@@ -165,7 +165,7 @@ _Describe the suspected physics error in 2-3 sentences._
 
 ### Environment
 - [ ] `cargo build --release` succeeds
-- [ ] `cargo test --test ashrae_140_validation -- --nocapture` runs without panic
+- [ ] `cargo test --test all_tests ashrae_140_validation:: -- --nocapture` runs without panic
 - [ ] Reference data files present in `tests/reference_data/`
 - [ ] `.sdd/traces/` directory exists and is writable
 

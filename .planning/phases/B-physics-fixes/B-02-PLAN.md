@@ -121,12 +121,12 @@ Fix: Derive h_tr_ms for 6R2C from first principles, not calibration.
 After fix:
 1. Re-run thermal_mass_time_constant_validation
 2. Confirm τ matches ISO 13790 within ±5%
-3. Run blind validation: cargo test --test ashrae_140_blind_validation
+3. Run blind validation: cargo test --test all_tests ashrae_140_blind_validation::
 4. 900 series annual energy should improve
   </action>
   <verify>
     cargo test --test thermal_mass_time_constant_validation 2>&1 | grep -E "(PASS|FAIL|τ|tau)"
-    cargo test --test ashrae_140_blind_validation 2>&1 | grep -E "(900.*heating|900.*cooling)" | head -5
+    cargo test --test all_tests ashrae_140_blind_validation:: 2>&1 | grep -E "(900.*heating|900.*cooling)" | head -5
   </verify>
   <done>Time constant fix implemented, τ matches ISO 13790 within ±5%, 900 series annual energy improved</done>
 </task>
