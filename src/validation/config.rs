@@ -744,7 +744,11 @@ mod tests {
             .build()
             .expect("good concrete assembly should build");
         let result = validate_assembly(&assembly, "test.json");
-        assert!(result.is_valid(), "valid assembly must pass; errors: {:?}", result.errors);
+        assert!(
+            result.is_valid(),
+            "valid assembly must pass; errors: {:?}",
+            result.errors
+        );
     }
 
     #[test]
@@ -757,7 +761,11 @@ mod tests {
             .build()
             .expect("two-layer assembly should build");
         let result = validate_assembly(&assembly, "test.json");
-        assert!(result.is_valid(), "valid two-layer assembly must pass; errors: {:?}", result.errors);
+        assert!(
+            result.is_valid(),
+            "valid two-layer assembly must pass; errors: {:?}",
+            result.errors
+        );
     }
 
     #[test]
