@@ -61,37 +61,39 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_tr_is = self.0.conduction.h_tr_is.as_ref()[zone_idx];
         let h_tr_ms = self.0.conduction.h_tr_ms.as_ref()[zone_idx];
         let h_tr_w = self.0.conduction.h_tr_w.as_ref()[zone_idx];
+        let h_ve = self.0.conduction.h_ve.as_ref()[zone_idx];
         // Note: h_tr_me (envelope-to-internal-mass coupling) is intentionally NOT used
         // in this function - it's only used for internal mass dynamics, not for
         // the building-to-outdoor HVAC coupling.
 
-        // For 9R4C models (Case 900), the HVAC coupling to zone air uses
-        // derived_h_tr_3 + h_tr_w instead of the 5R1C series formula
-        // h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms).
+        // Issue #4241: Unified conductance for 5R1C/9R4C (was #4240).
+        // The HVAC coefficient is the total effective conductance from the
+        // zone air node to the outdoor boundary:
+        //   h_coeff = (h_tr_w + h_ve) + h_interior_path
+        // where:
+        //   - (h_tr_w + h_ve) is the direct exterior path (windows + ventilation)
+        //   - h_interior_path is the air→surface→mass series path:
+        //     - 5R1C: h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms)
+        //     - 9R4C: derived_h_tr_3 (ISO 13790 combined air-to-mass conductance)
         //
         // Issue #2227: h_tr_me is the coupling between envelope mass and internal mass
         // (furniture/partitions), NOT the building-to-outdoor coupling. Using h_tr_me
         // would incorrectly include furniture thermal mass in the HVAC demand calculation.
-        //
-        // The correct formula uses derived_h_tr_3 (ISO 13790 combined air-to-mass conductance
-        // ≈ 42.66 W/K for Case 900) which represents the effective thermal coupling from
-        // zone air to the building's thermal mass (envelope), plus h_tr_w for windows.
-        let hvac_coeff = if self.0.hvac.thermal_model_type == ThermalModelType::NineRFourC {
-            // 9R4C: derived_h_tr_3 + h_tr_w is the total HVAC coupling
-            let derived_h_tr_3 = self.0.conduction.derived_h_tr_3.as_ref()[zone_idx];
-            derived_h_tr_3 + h_tr_w
+        let h_interior_path = if self.0.hvac.thermal_model_type == ThermalModelType::NineRFourC {
+            // 9R4C: derived_h_tr_3 (≈ 42.66 W/K for Case 900) is the effective
+            // thermal coupling from zone air to the building's thermal mass.
+            self.0.conduction.derived_h_tr_3.as_ref()[zone_idx]
         } else {
             // 5R1C/6R2C: ISO 13790 §C.3 series combination of air-to-surface
             // film (h_tr_is) and surface-to-mass coupling (h_tr_ms)
-            let h_tr_1 = if h_tr_is + h_tr_ms > 0.0 {
+            if h_tr_is + h_tr_ms > 0.0 {
                 h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms)
             } else {
                 0.0
-            };
-            // ISO 13790 §12.2.1 — h_coeff = H_tr,1 + H_tr,w
-            h_tr_1 + h_tr_w
+            }
         };
-        hvac_coeff
+        // Unified: direct exterior (windows + ventilation) + interior mass path
+        (h_tr_w + h_ve) + h_interior_path
     }
 
     /// Compute HVAC demand using the symmetric ASHRAE 140 ideal HVAC
@@ -251,15 +253,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 mod tests {
     use super::*;
 
-    /// Documents the current 5R1C HVAC coefficient formula (Issue #4240).
+    /// Tests the corrected 5R1C HVAC coefficient formula (Issue #4241).
     ///
-    /// The 5R1C arm uses `h_tr_is*h_tr_ms/(h_tr_is+h_tr_ms) + h_tr_w`.
-    /// NOTE: this omits `h_ve` (Issue #4156a). The coefficient fix is deferred
-    /// to #4241 (discrete residual formulation), where it lands together with
-    /// the load-law change. This test pins the current behavior so #4241's
-    /// diff is explicit.
+    /// The 5R1C arm uses `(h_tr_w + h_ve) + h_tr_is*h_tr_ms/(h_tr_is+h_tr_ms)`.
+    /// This includes `h_ve` (ventilation) in the direct exterior path, fixing
+    /// the omission noted in Issue #4156a.
     #[test]
-    fn test_5r1c_coefficient_current_formula() {
+    fn test_5r1c_coefficient_corrected_formula() {
         let mut model = ThermalModel::<VectorField>::new(1);
         // Ensure 5R1C type (default).
         model.0.conduction.h_tr_is = VectorField::from_scalar(100.0, 1);
@@ -269,15 +269,14 @@ mod tests {
 
         let h_coeff = model.compute_hvac_coefficient(0);
 
-        // Current: (100*100/200) + 30 = 80 (h_ve NOT included).
-        // After #4241: (30 + 70) + 50 = 150.
-        let expected_current = 80.0;
-        let rel_err = ((h_coeff - expected_current) / expected_current).abs();
+        // Corrected: (30 + 70) + (100*100/200) = 100 + 50 = 150.
+        let expected = 150.0;
+        let rel_err = ((h_coeff - expected) / expected).abs();
         assert!(
             rel_err < 1e-9,
-            "5R1C coefficient {} differs from current formula {}",
+            "5R1C coefficient {} differs from corrected formula {}",
             h_coeff,
-            expected_current
+            expected
         );
     }
 }
