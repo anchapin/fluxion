@@ -1,7 +1,7 @@
 # Scripts Catalog
 
 > **TL;DR**: Complete catalog of every executable script under `scripts/` — CI gate checks, generators, operator tooling, and the `scripts/ci/` pytest harness — with one-line purpose and wiring per script.
-> **Counts at head**: 39 `check_*.py` gates | 41 top-level Python tools | 29 shell scripts | 55 `scripts/ci/` pytest files (+fixtures, +1 bash test) | 1 Node drift gate — 167 code files total.
+> **Counts at head**: 55 `check_*.py` gates | 41 top-level Python tools | 29 shell scripts | 55 `scripts/ci/` pytest files (+fixtures, +1 bash test) | 1 Node drift gate — 168 code files total.
 > **Wiring legend**: bare workflow names are `.github/workflows/*.yml` files; `pre-commit (manual)` = `.pre-commit-config.yaml` manual-stage hook; "operator" = intentionally unwired, run locally/manually per AGENTS.md.
 > **Source of truth**: purposes merge each script's docstring/argparse help with the AGENTS.md §"CI Gates You Can Run Locally" table; wiring was derived by scanning every workflow for `scripts/` references (verified 2026-09-10 vs. head, post-#3654).
 > **Status**: current as of 2026-09-10; the stale 2026-07-13 snapshot and the `in-progress` self-flag (issue #1534 tracking) were replaced by this regeneration (issue #3645).
@@ -14,7 +14,7 @@
 
 | Category | Count | Notes |
 |---|---|---|
-| CI gate checks (`scripts/check_*.py`) | 39 | One row per gate below; wiring matches AGENTS.md and `release_gates.yaml` |
+| CI gate checks (`scripts/check_*.py`) | 55 | One row per gate below; wiring matches AGENTS.md and `release_gates.yaml` |
 | Top-level Python tools (`scripts/*.py`, non-gate) | 41 | Generators, verifiers, campaign infra, shared `conftest.py` |
 | Shell scripts (`scripts/*.sh`) | 29 | 27 top-level + 2 under `scripts/ci/` |
 | `scripts/ci/` pytest harness | 55 pytest files | Plus `__init__.py`, `conftest.py`, and `ci/test_build_pgo.sh` (bash) |
@@ -25,7 +25,7 @@ Non-executable support files are listed at the end.
 
 ---
 
-## CI gate checks (`scripts/check_*.py` — 39)
+## CI gate checks (`scripts/check_*.py` — 55)
 
 Every active gate is wired into a workflow job, a pre-commit (manual) hook, or is an explicit operator diagnostic. The table matches AGENTS.md §"CI Gates You Can Run Locally"; run the matching command locally before opening a PR.
 
@@ -70,6 +70,23 @@ Every active gate is wired into a workflow job, a pre-commit (manual) hook, or i
 | `check_stub_modules.py` | Stub-module detector — future-extraction marker files (#2896) | architecture_drift.yml |
 | `check_tdqs_regression.py` | TDQS (Temporal Decision Quality Score) criterion-bench regression | tdqs_regression.yml |
 | `check_test_inventory_drift.py` | Test-count ratchet vs. `test_inventory_baseline.json` (#3442) | scripts-tests.yml |
+| `check_ashrae_140_fabric_regression.py` | Per-component annual-energy selector-parity drift gate — Cases 600/900/950 × FiveROneC + NineRFourC engine-level blind isolation (#3986-A+2) | ashrae_140_fabric.yml |
+| `check_continue_on_error_outcome.py` | Reject `continue-on-error: true` + downstream `.outcome` re-raise (#4159) | scripts-tests.yml |
+| `check_criterion_2_drift.py` | β-soak Criterion 2 cohort-drift detector — compares failing-test set against canonical §LIMIT-21 cohort (#3744) | nightly-ashrae-140-gauge.yml |
+| `check_docker_base_image_msrv.py` | Dockerfile base-image pins must agree with workspace MSRV and `docker.yml` env pins (#4150) | scripts-tests.yml |
+| `check_docker_workspace_members.py` | Every `[workspace] members` in `Cargo.toml` must have a `COPY` in `Dockerfile` (#4135) | scripts-tests.yml |
+| `check_no_destructive_scripts.py` | Reject scripts containing destructive operations outside `tmp/` or `test_results/` | operator diagnostic |
+| `check_pip_pinning.py` | Reject unpinned `pip install` in credential-bearing workflow jobs (#3812) | scripts-tests.yml |
+| `check_tauri_csp.py` | `fluxion-tauri/tauri.conf.json` must declare a strict production CSP (#3727) | rust-tests-listeners.yml |
+| `check_teacher_validation_suite.py` | Teacher Validation Suite umbrella gate — ASHRAE 140 fabric + 1052-RP + PCM test-box (#3986 / #4116) | teacher_validation_suite.yml |
+| `check_thermal_selector_default_claim.py` | Thermal selector default-claim drift gate — validates `default()` parity across selector variants | operator diagnostic |
+| `check_topology_drift.py` | Topology artifact drift gate — byte-compares regenerated reference topologies + Mermaid/SVG vs. committed tree (#3966) | topology_visualizer.yml |
+| `check_trivy_scan_target.py` | Trivy `scan-type: 'fs'` drift guard — every trivy step must scan the built image (#4186) | scripts-tests.yml |
+| `check_workflow_dup_keys.py` | Reject duplicate YAML mapping keys in `.github/workflows/*.yml` (#4068) | scripts-tests.yml |
+| `check_gate_inventory_sync.py` | Gate-inventory sync detector — every `scripts/check_*.py` basename must appear in the AGENTS.md gate table and this catalog (#4181) | scripts-tests.yml |
+| `check_nextest_doc_drift.py` | Fail when a documented nextest command does not appear in any workflow (#4177) | scripts-tests.yml |
+| `check_npm_pinning.py` | Deterministic npm install gate: exact-pinned deps + lockfile + `npm ci` | scripts-tests.yml |
+| `check_strict_energy_gate_regression.py` | Strict ±15% ASHRAE 140 energy-gate regression checker (#2506) | physics-pr.yml |
 | `check_workflow_pin.py` | Fail on non-SHA-pinned `uses:` in `.github/workflows/*.yml` (#3475) | scripts-tests.yml |
 
 ---

@@ -33,6 +33,11 @@ on:
       # that can trip it, or the required check would never report and
       # the PR would be unmergeable (the Issue #3898 lesson).
       - "fluxion-core/Cargo.toml"
+      # Issue #4181: the gate-inventory sync gate fires when AGENTS.md
+      # or docs/scripts/README.md changes, since they are the canonical
+      # gate-inventory tables this gate enforces.
+      - "AGENTS.md"
+      - "docs/scripts/README.md"
       - ".github/workflows/**"
   push:
     branches:
@@ -216,6 +221,14 @@ jobs:
       # the end-to-end against the real tree.
       - name: Enforce no duplicate workflow YAML keys (Issue #4068)
         run: python3 scripts/check_workflow_dup_keys.py
+
+      # Issue #4181: enforce that every check_*.py basename appears in
+      # AGENTS.md §"CI Gates You Can Run Locally" and
+      # docs/scripts/README.md §"CI gate checks". The "one-stop lookup"
+      # promise is enforced rather than asserted -- drift is caught in
+      # CI before it reaches the contributor.
+      - name: Enforce gate inventory sync (Issue #4181)
+        run: python3 scripts/check_gate_inventory_sync.py
 
       # Issue #3530: reject the named mutable GitHub Actions refs without
       # weakening the stricter SHA-only gate above. The checker reports every
