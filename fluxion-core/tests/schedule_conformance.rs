@@ -97,7 +97,13 @@ fn sub_hour_samples() -> impl Iterator<Item = f64> + Clone {
     // Test at hour start, midpoint, and just before next hour
     (0..24).flat_map(|h| {
         let base = h as f64;
-        [base + 0.0, base + 0.25, base + 0.5, base + 0.75, base + 0.999]
+        [
+            base + 0.0,
+            base + 0.25,
+            base + 0.5,
+            base + 0.75,
+            base + 0.999,
+        ]
     })
 }
 
