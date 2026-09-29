@@ -47,8 +47,6 @@
 mod batched_solver;
 mod dispatch_state;
 mod hvac;
-#[cfg(test)]
-mod hvac_diagnostic;
 mod physics_impl;
 mod solver_core;
 mod step_dispatcher;
