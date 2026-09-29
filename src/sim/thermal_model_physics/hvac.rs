@@ -10,7 +10,7 @@
 //! to the unified `ThermalModel<T>` type.
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
-use crate::sim::thermal_model_core::ThermalModel;
+use crate::sim::thermal_model_core::{ThermalModel, ThermalModelType};
 use smallvec::SmallVec;
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
@@ -20,51 +20,57 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// from the zone air node to all boundaries, used in the ideal-system load
     /// `Q_HVAC = h_coeff * (T_setpoint - T_free)`.
     ///
-    /// # Unified conductance (Issue #4240)
+    /// # Conductance definitions (Issue #4240)
     ///
-    /// Both the 5R1C and 9R4C arms use the identical expression — the total
-    /// air-node conductance:
+    /// **5R1C/6R2C arms:** the total air-node conductance:
     ///
     /// ```text
     ///   h_hvac = (h_tr_w + h_ve) + (h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms))
     /// ```
     ///
-    /// where:
-    ///   - `h_tr_w + h_ve` is the direct exterior conductance (windows +
-    ///     ventilation air exchange), both direct air-to-outdoor paths;
-    ///   - `h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms)` is the interior mass path
-    ///     (air → surface → mass series combination).
-    ///
-    /// This corrects the prior 5R1C formula which omitted `h_ve` (Issue #4156:
-    /// for Case 600 the code used 134 W/K vs the true 212 W/K, a 0.63x
-    /// sensitivity). The doc comment claiming `h_ve` was implicit in `T_free`
-    /// was false — `h_ve` belongs in the conductance, not the driving
+    /// where `h_tr_w + h_ve` is the direct exterior conductance (windows +
+    /// ventilation air exchange) and the second term is the interior mass path
+    /// (air → surface → mass series). This corrects the prior formula which
+    /// omitted `h_ve` (Issue #4156a: Case 600 was 134 W/K vs true 212 W/K,
+    /// a 0.63x sensitivity). The doc comment claiming `h_ve` was implicit in
+    /// `T_free` was false — `h_ve` belongs in the conductance, not the driving
     /// temperature.
     ///
-    /// Note: `derived_h_tr_1` (`= h_ve*h_tr_is/(h_ve+h_tr_is)`, ISO 13790 §C.6)
-    /// is NOT used here. It is an intermediate in the Crank-Nicolson mass-update
-    /// chain (`derived_h_tr_1 → derived_h_tr_2 → derived_h_tr_3`); `derived_h_tr_3`
-    /// is consumed by the thermal time-constant calculation (Issue #894), so the
-    /// chain is retained for that purpose. The HVAC coefficient uses the direct
-    /// exterior conductance, not the §C.6 series form.
+    /// **9R4C arm:** `derived_h_tr_3 + h_tr_w`, unchanged. The 9R4C network has
+    /// a different topology (separate wall/roof/floor mass nodes); the ISO
+    /// 13790 §C.6-C.8 chain (`derived_h_tr_1 → derived_h_tr_2 → derived_h_tr_3`)
+    /// already incorporates `h_ve` via `derived_h_tr_1 = h_ve*h_tr_is/(h_ve+h_tr_is)`,
+    /// so no correction is needed. `derived_h_tr_3` is also consumed by the
+    /// thermal time-constant calculation (Issue #894).
+    ///
+    /// Both arms now correctly include ventilation in the air-node conductance;
+    /// the formulas differ because the network topologies differ, but the
+    /// physical quantity (total air-node conductance to boundaries) is consistent.
     pub(crate) fn compute_hvac_coefficient(&self, zone_idx: usize) -> f64 {
         let h_tr_is = self.0.conduction.h_tr_is.as_ref()[zone_idx];
         let h_tr_ms = self.0.conduction.h_tr_ms.as_ref()[zone_idx];
         let h_tr_w = self.0.conduction.h_tr_w.as_ref()[zone_idx];
-        let h_ve = self.0.conduction.h_ve.as_ref()[zone_idx];
         // Note: h_tr_me (envelope-to-internal-mass coupling) is intentionally NOT used
         // in this function - it's only used for internal mass dynamics, not for
         // the building-to-outdoor HVAC coupling.
 
-        // Interior mass path: air → surface → mass series combination.
-        let h_is_m = if h_tr_is + h_tr_ms > 0.0 {
-            h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms)
+        if self.0.hvac.thermal_model_type == ThermalModelType::NineRFourC {
+            // 9R4C: derived_h_tr_3 + h_tr_w (unchanged; already includes h_ve
+            // via the derived_h_tr_1 chain). See Issue #2227 for why h_tr_me
+            // is excluded.
+            let derived_h_tr_3 = self.0.conduction.derived_h_tr_3.as_ref()[zone_idx];
+            derived_h_tr_3 + h_tr_w
         } else {
-            0.0
-        };
-        // Unified air-node conductance: direct exterior + interior mass path.
-        // Identical for 5R1C and 9R4C arms (Issue #4240).
-        (h_tr_w + h_ve) + h_is_m
+            // 5R1C/6R2C: total air-node conductance including ventilation.
+            // Issue #4240: added h_ve (was missing, 0.63x sensitivity).
+            let h_ve = self.0.conduction.h_ve.as_ref()[zone_idx];
+            let h_is_m = if h_tr_is + h_tr_ms > 0.0 {
+                h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms)
+            } else {
+                0.0
+            };
+            (h_tr_w + h_ve) + h_is_m
+        }
     }
 
     /// Compute HVAC demand using the symmetric ASHRAE 140 ideal HVAC
@@ -223,7 +229,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::physics::cta::VectorField;
 
     /// Analytic test for the unified HVAC conductance (Issue #4240).
     ///
