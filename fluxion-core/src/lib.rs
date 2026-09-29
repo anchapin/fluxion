@@ -74,6 +74,7 @@
 //! | `zone_count_policy` | Moved (#3871, leaf-only follow-up to #3731) | `MAX_ZONES = 100` constant + `ZoneCountTier` enum + `ZoneCountPolicy` typed wrapper + `ZoneCountError` typed rejection (thiserror enum). Closes the residual sim→physics edge admitted by PR #3869 for the `#3731` typed `ZoneCountPolicy` import. |
 //! | `ashrae_cases`| Moved (#1441) | `Orientation`, `WindowArea`, `ConstructionType`, `ShadingType`, `ShadingDevice`, `GlassType`, `WindowSpec`, `InternalLoads`, `HvacSchedule`, `NightVentilation`, `BuildingType`, `GeometrySpec`, `ConductanceReferences` — pure-data leaf types from `validation::ashrae_140_cases`. Breaks the `sim ↔ validation` cycle (5 sim callers + 3 indirect sim callers). |
 //! | `error`       | New (error-unification PR) | `FluxionError` — the ONE unified engine error type (thiserror enum, `Clone` + `PartialEq`) replacing the fragmented `fluxion::api::error::FluxionError` / `fluxion::napi::error::FluxionError` pair — plus `SimulationDiagnostics` (issue #2547) and the `FluxionResult` alias. thiserror + serde only. |
+//! | `hvac_equipment` | Moved (#4157) | `AnyEquipment`, `VariableCapacityEquipment`, `HVACMode`, `HeatPumpMode`, `EfficiencyCurve`, `Chiller`, `Boiler`, `VAVTerminal`, `CAVSystem`, `HeatPump` — simplified hvac equipment types. Breaks the `validation ↔ sim` cycle driven by `CaseSpec`'s `hvac_equipment` field. |
 //!
 //! ## Cycle break (#1349)
 //!
@@ -127,6 +128,12 @@ pub mod earth_tube;
 /// Unified engine error type ([`error::FluxionError`]) + [`error::SimulationDiagnostics`].
 /// Dependency-light (thiserror + serde only); shared by the Python and NAPI binding layers.
 pub mod error;
+/// HVAC equipment types — moved from `fluxion::sim::hvac::equipment` (issue #4157).
+/// Contains `AnyEquipment`, `VariableCapacityEquipment` trait, and the 5 equipment
+/// types (`Chiller`, `Boiler`, `VAVTerminal`, `CAVSystem`, `HeatPump`). Hoisted into
+/// `fluxion_core` to break the `validation ↔ sim` cycle driven by `CaseSpec`'s
+/// `hvac_equipment` field.
+pub mod hvac_equipment;
 pub mod multi_node;
 /// Parser size/depth/repetition limits — DoS hardening (issue #2527).
 /// Dependency-light leaf; must not import sim/physics/ai/validation.
