@@ -426,3 +426,248 @@ def test_script_exits_zero_on_real_repo(repo_root):
     # LIMITS entry without updating the freeze (regression) or
     # changed the drift message wording (cosmetic).
     assert "BASELINE DRIFT" not in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# Issue #4243 — data file read/write
+# ---------------------------------------------------------------------------
+
+
+def test_load_limits_from_data_file(checker, tmp_path, monkeypatch):
+    """LIMITS data file must be loadable and produce correct Limit objects."""
+    # Write a synthetic data file
+    data_dir = tmp_path / "scripts" / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    data_file = data_dir / "module_size_limits.json"
+    data_file.write_text(
+        '{"schema_version": 1, "limits": ['
+        '{"path": "src/foo.rs", "max_lines": 100, '
+        '"ratchet_basename": "foo_ratchet.json", "reason": "test"}'
+        ']}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(checker, "DEFAULT_LIMITS_FILE", data_file)
+    # Reload via _get_limits_data
+    limits_data, _ = checker._get_limits_data(data_file)
+    assert len(limits_data) == 1
+    assert limits_data[0]["path"] == "src/foo.rs"
+    assert limits_data[0]["max_lines"] == 100
+
+
+def test_load_limits_falls_back_to_defaults(checker, tmp_path, monkeypatch):
+    """Missing data file must fall back to hardcoded defaults."""
+    missing_file = tmp_path / "scripts" / "data" / "missing.json"
+    monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
+    limits_data, _ = checker._get_limits_data(missing_file)
+    # Should return the hardcoded defaults
+    assert limits_data is not None
+    assert len(limits_data) > 0
+
+
+def test_write_baseline_updates_file(checker, tmp_path, monkeypatch, capsys):
+    """--write-baseline must write the LIMITS to the data file."""
+    data_dir = tmp_path / "scripts" / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    data_file = data_dir / "module_size_limits.json"
+    # Initialize with some data
+    data_file.write_text(
+        '{"schema_version": 1, "limits": [{"path": "old", "max_lines": 50, "reason": "old"}]}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(checker, "DEFAULT_LIMITS_FILE", data_file)
+    # Build new limits from defaults
+    limits_data, _ = checker._get_limits_data(data_file)
+    checker.write_baseline_file(data_file, limits_data)
+    # Read back
+    import json
+    updated = json.loads(data_file.read_text(encoding="utf-8"))
+    assert "limits" in updated
+    assert len(updated["limits"]) > 0
+    assert updated["generated_at"] is not None
+
+
+def test_remove_entries_filters_correctly(checker, tmp_path, monkeypatch):
+    """--remove-entries must filter paths from LIMITS."""
+    limits_data = [
+        {"path": "src/a.rs", "max_lines": 100, "reason": "a", "ratchet_basename": "a.json"},
+        {"path": "src/b.rs", "max_lines": 200, "reason": "b", "ratchet_basename": "b.json"},
+        {"path": "src/c.rs", "max_lines": 300, "reason": "c", "ratchet_basename": "c.json"},
+    ]
+    new_limits, _ = checker.remove_entries_from_limits(
+        limits_data, ["src/b.rs"], delete_ratchets=False
+    )
+    assert len(new_limits) == 2
+    assert any(e["path"] == "src/a.rs" for e in new_limits)
+    assert any(e["path"] == "src/c.rs" for e in new_limits)
+    assert not any(e["path"] == "src/b.rs" for e in new_limits)
+
+
+def test_remove_entries_with_delete_ratchets(checker, tmp_path, monkeypatch):
+    """--remove-entries --delete-ratchets must delete associated ratchet files."""
+    ratchet_dir = tmp_path / "tests" / "reference_data" / "module_size"
+    ratchet_dir.mkdir(parents=True, exist_ok=True)
+    # Create ratchet files
+    (ratchet_dir / "a.json").write_text('{"max_lines": 100}', encoding="utf-8")
+    (ratchet_dir / "b.json").write_text('{"max_lines": 200}', encoding="utf-8")
+    monkeypatch.setattr(checker, "RATCHET_DIR", ratchet_dir)
+    limits_data = [
+        {"path": "src/a.rs", "max_lines": 100, "reason": "a", "ratchet_basename": "a.json"},
+        {"path": "src/b.rs", "max_lines": 200, "reason": "b", "ratchet_basename": "b.json"},
+    ]
+    new_limits, deleted = checker.remove_entries_from_limits(
+        limits_data, ["src/b.rs"], delete_ratchets=True
+    )
+    assert len(new_limits) == 1
+    assert (ratchet_dir / "a.json").exists()
+    assert not (ratchet_dir / "b.json").exists()
+    # deleted contains full paths
+    assert any("b.json" in d for d in deleted)
+
+
+def test_baseline_derived_from_data_file(checker, tmp_path, monkeypatch):
+    """BASELINE_MODULE_SIZE_LIMITS must equal len(LIMITS) when data file is present."""
+    data_dir = tmp_path / "scripts" / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    data_file = data_dir / "module_size_limits.json"
+    # Create a data file with 5 entries
+    data_file.write_text(
+        '{"schema_version": 1, "limits": ['
+        '{"path": "a", "max_lines": 1, "reason": "a"},'
+        '{"path": "b", "max_lines": 2, "reason": "b"},'
+        '{"path": "c", "max_lines": 3, "reason": "c"},'
+        '{"path": "d", "max_lines": 4, "reason": "d"},'
+        '{"path": "e", "max_lines": 5, "reason": "e"}'
+        ']}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(checker, "DEFAULT_LIMITS_FILE", data_file)
+    # Trigger reload
+    limits_data, _ = checker._get_limits_data(data_file)
+    limits = checker._build_limits(limits_data, tmp_path)
+    assert len(limits) == 5
+
+
+# ---------------------------------------------------------------------------
+# Negative tests — enforcement is NOT weakened
+# ---------------------------------------------------------------------------
+
+
+def test_gate_still_detects_oversized_file(checker, tmp_path, monkeypatch):
+    """NEGATIVE TEST: adding a new entry without updating baseline must fail.
+
+    This test verifies the refactor did NOT weaken enforcement. A new LIMITS
+    entry added without raising the baseline must still trigger the drift check.
+    """
+    _redirect(checker, tmp_path, monkeypatch)
+    # Add a new entry that is over budget
+    new_file = tmp_path / "src" / "validation" / "new_big_file.rs"
+    _write_source(new_file, 5000)
+    extra = checker.Limit(
+        path=new_file,
+        max_lines=3000,  # file is 5000, this is over budget
+        ratchet_path=None,
+        reason="Synthetic: new oversized file",
+    )
+    # Add to LIMITS but DON'T update baseline
+    monkeypatch.setattr(checker, "LIMITS", list(checker.LIMITS) + [extra])
+    drift = checker.check_baseline_drift()
+    assert len(drift) > 0, "expected drift messages for new entry without baseline raise"
+    assert any("NEW LIMITS entries" in msg for msg in drift)
+
+
+def test_gate_still_detects_oversized_file_violation(checker, tmp_path, monkeypatch):
+    """NEGATIVE TEST: a file over its limit must still trigger FAIL.
+
+    This test verifies the refactor did NOT weaken the per-file ceiling check.
+    """
+    _redirect(checker, tmp_path, monkeypatch)
+    # Make the first file exceed its limit
+    src = tmp_path / "src" / "sim" / "thermal_model_data.rs"
+    _write_source(src, 250)  # limit is 200
+    result = checker.check(checker.LIMITS[0])
+    assert result is not None
+    assert result.passed is False, "expected FAIL for file over limit"
+    assert result.actual == 250
+
+
+# ---------------------------------------------------------------------------
+# check_baseline_drift — explicit-argument form (Issue #4243 supervisor review)
+# ---------------------------------------------------------------------------
+#
+# The module-level freeze snapshot is read from the data file's "baseline"
+# section. These tests drive check_baseline_drift() with explicit arguments
+# (no monkeypatching of the freeze into a production-impossible state), which
+# is the honest way to exercise the drift contract after the #4243 refactor.
+
+
+def _two_entry_limits(checker, tmp_path):
+    return [
+        checker.Limit(
+            path=tmp_path / "src" / "a.rs",
+            max_lines=100,
+            ratchet_path=None,
+            reason="synthetic",
+        ),
+        checker.Limit(
+            path=tmp_path / "src" / "b.rs",
+            max_lines=100,
+            ratchet_path=None,
+            reason="synthetic",
+        ),
+    ]
+
+
+def test_drift_explicit_args_detects_new_entry(checker, tmp_path, monkeypatch):
+    """An entry missing from the freeze snapshot must surface as drift."""
+    monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
+    drift = checker.check_baseline_drift(
+        limits=_two_entry_limits(checker, tmp_path),
+        freeze_set=frozenset({"src/a.rs"}),
+        baseline_count=1,
+    )
+    assert any("src/b.rs" in msg for msg in drift), f"b.rs not reported: {drift}"
+    assert any("BASELINE_MODULE_SIZE_LIMITS" in msg for msg in drift), (
+        f"count drift not reported: {drift}"
+    )
+
+
+def test_drift_explicit_args_clean_when_baseline_matches(checker, tmp_path, monkeypatch):
+    """Freeze + count matching the live list is clean."""
+    monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
+    drift = checker.check_baseline_drift(
+        limits=_two_entry_limits(checker, tmp_path),
+        freeze_set=frozenset({"src/a.rs", "src/b.rs"}),
+        baseline_count=2,
+    )
+    assert drift == [], f"expected no drift, got: {drift}"
+
+
+def test_shipped_data_file_baseline_matches_limits(checker):
+    """Production path: the shipped JSON's baseline section must agree with
+    its own limits list, otherwise the gate fails on a clean tree."""
+    assert checker.check_baseline_drift() == []
+
+
+def test_write_baseline_updates_baseline_section(checker, tmp_path, monkeypatch):
+    """--write-baseline must update the baseline section atomically and
+    record the reason in history."""
+    import json
+
+    data_dir = tmp_path / "scripts" / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    data_file = data_dir / "module_size_limits.json"
+    data_file.write_text(
+        '{"schema_version": 1, "limits": ['
+        '{"path": "src/a.rs", "max_lines": 1, "reason": "a"},'
+        '{"path": "src/b.rs", "max_lines": 2, "reason": "b"}]}',
+        encoding="utf-8",
+    )
+    limits_data, _ = checker._get_limits_data(data_file)
+    checker.write_baseline_file(data_file, limits_data, reason="Issue #4243 test")
+    updated = json.loads(data_file.read_text(encoding="utf-8"))
+    assert updated["baseline"]["count"] == 2
+    assert updated["baseline"]["paths"] == ["src/a.rs", "src/b.rs"]
+    assert "Issue #4243 test" in updated["history"][-1]["action"]
