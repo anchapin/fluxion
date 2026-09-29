@@ -926,6 +926,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let c_air_ref = self.0.mass.air_thermal_capacitance.as_ref();
         let cm_ref = self.0.mass.thermal_capacitance.as_ref();
         let t_air_old_ref = self.0.mass.air_temperatures.as_ref();
+        // Issue #4241: Save previous air temperature for the discrete residual
+        // HVAC formulation. The ODE below overwrites the working buffer, so we
+        // need a copy of T_prev for the Q_HVAC residual calculation.
+        // Issue #3370: use scratch pool buffer to avoid allocation.
+        scratch
+            .air_node_t_prev
+            .as_mut()
+            .copy_from_slice(t_air_old_ref);
         // term_rest_1 = h_tr_ms + h_tr_is scales the entire 5R1C air-node
         // equation (num and den are both multiplied by it to clear the
         // denominator in the surface-temperature elimination). The air-node
@@ -1142,12 +1150,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Issue #2826: per-zone setpoint vectors now drive the HVAC
             // demand; the scalar fields are the fallback when the per-zone
             // vector is shorter than `num_zones`.
+            // Issue #4241: discrete residual formulation needs T_prev and dt.
+            let t_prev_slice: &[f64] = scratch.air_node_t_prev.as_ref();
+            // Note: borrow checker requires we copy the slice reference before
+            // the mutable borrow of hvac_combined_demand below. The slice
+            // remains valid because air_node_t_prev is not modified by the call.
+            let dt_copy = dt;
             self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
                 self.0.setpoints.heating_setpoints.as_ref(),
                 self.0.setpoints.cooling_setpoints.as_ref(),
                 self.0.setpoints.heating_setpoint,
                 self.0.setpoints.cooling_setpoint,
+                t_prev_slice,
+                dt_copy,
                 &mut scratch.hvac_combined_demand,
             )
         };
@@ -1241,12 +1257,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Issue #2826: per-zone setpoint vectors drive HVAC demand;
             // scalar `heating_setpoint` / `cooling_setpoint` (from
             // `self.0.setpoints.heating_setpoint` above) are used as fallback.
+            // Issue #4241: discrete residual formulation needs T_prev and dt.
+            let t_prev_slice2: &[f64] = scratch.air_node_t_prev.as_ref();
+            let dt_copy2 = dt;
             let hvac_output = self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
                 self.0.setpoints.heating_setpoints.as_ref(),
                 self.0.setpoints.cooling_setpoints.as_ref(),
                 heating_setpoint,
                 cooling_setpoint,
+                t_prev_slice2,
+                dt_copy2,
                 &mut scratch.hvac_combined_demand,
             );
 
@@ -1301,12 +1322,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // already embedded in t_i_free via num_tm).
             // Issue #2826: per-zone setpoint vectors drive HVAC demand;
             // scalar fallback when vectors are shorter than `num_zones`.
+            // Issue #4241: discrete residual formulation needs T_prev and dt.
+            let t_prev_slice3: &[f64] = scratch.air_node_t_prev.as_ref();
+            let dt_copy3 = dt;
             let hvac_output_raw = self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
                 self.0.setpoints.heating_setpoints.as_ref(),
                 self.0.setpoints.cooling_setpoints.as_ref(),
                 self.0.setpoints.heating_setpoint,
                 self.0.setpoints.cooling_setpoint,
+                t_prev_slice3,
+                dt_copy3,
                 &mut scratch.hvac_combined_demand,
             );
 
@@ -1382,12 +1408,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // already embedded in t_i_free via num_tm).
             // Issue #2826: per-zone setpoint vectors drive HVAC demand;
             // scalar fallback when vectors are shorter than `num_zones`.
+            // Issue #4241: discrete residual formulation needs T_prev and dt.
+            let t_prev_slice4: &[f64] = scratch.air_node_t_prev.as_ref();
+            let dt_copy4 = dt;
             self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
                 self.0.setpoints.heating_setpoints.as_ref(),
                 self.0.setpoints.cooling_setpoints.as_ref(),
                 self.0.setpoints.heating_setpoint,
                 self.0.setpoints.cooling_setpoint,
+                t_prev_slice4,
+                dt_copy4,
                 &mut scratch.hvac_combined_demand,
             )
         };

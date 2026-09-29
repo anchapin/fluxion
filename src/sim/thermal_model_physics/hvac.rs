@@ -170,12 +170,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         cooling_setpoints: &[f64],
         default_heating_setpoint: f64,
         default_cooling_setpoint: f64,
+        t_prev: &[f64],
+        dt: f64,
         scratch: &mut SmallVec<[f64; 4]>,
     ) -> T {
         let enabled_vec = self.0.hvac.hvac_enabled.as_ref();
 
         let heat_cap = self.0.hvac.hvac_heating_capacity;
         let cool_cap = self.0.hvac.hvac_cooling_capacity;
+        let c_air_vec = self.0.mass.air_thermal_capacitance.as_ref();
 
         // Issue #3370: reuse the caller-provided scratch buffer instead of
         // heap-allocating `vec![0.0; n_zones]` on every call. The scratch is
@@ -193,17 +196,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 continue;
             }
 
-            // Issue #907: Norton-equivalent heat-transfer coefficient at the air node
-            // (see `compute_hvac_coefficient` doc-comment for derivation).
+            // Issue #4241: Discrete zone energy-balance residual (replaces Norton product).
+            //
+            // The HVAC load is the residual of the discrete air-node energy balance,
+            // solved for the Q_HVAC needed to bring the zone to the setpoint:
+            //
+            //   Q_HVAC = C_air * (T_sp - T_prev)/dt + h_coeff * (T_sp - T_free)
+            //
+            // where:
+            //   - C_air * (T_sp - T_prev)/dt: energy to change air temp from T_prev to T_sp
+            //   - h_coeff * (T_sp - T_free): steady-state load to maintain T_sp
+            //     (h_coeff is the corrected conductance from #4240, including h_ve)
+            //   - T_free: free-floating temperature (equilibrium without HVAC)
+            //
+            // This replaces the static Norton product Q = h_coeff * (T_sp - T_free),
+            // which omitted the capacitance term and could not reproduce
+            // capacitance-driven peak damping.
             let h_coeff = self.compute_hvac_coefficient(zone_idx);
-
-            // Issue #1163: Both branches use the free-floating zone air temperature
-            // (T_free), which is the correct driving temperature for the ASHRAE 140
-            // ideal HVAC sensitivity formulation. T_free already embeds the mass
-            // heat-release term via the 5R1C heat balance (`num_tm` in
-            // `step_physics_5r1c`), so the mass contribution is captured exactly
-            // once — not zero times, not twice.
             let t_free = zone_temps[zone_idx];
+            let t_prev_zone = t_prev.get(zone_idx).copied().unwrap_or(t_free);
+            let c_air = c_air_vec.get(zone_idx).copied().unwrap_or(0.0);
 
             // Issue #2826: per-zone setpoint read with scalar fallback. The
             // fallback is intentional — `apply_parameters` (BatchOracle) writes
@@ -219,25 +231,37 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .copied()
                 .unwrap_or(default_cooling_setpoint);
 
-            let demand = if t_free <= heating_setpoint {
-                // Heating: Q = h_coeff × (T_heat_sp − T_free).
-                // Use <= so the system actively maintains the setpoint (a zone
-                // exactly at the heating setpoint still needs heat input to
-                // offset envelope losses).
-                h_coeff * (heating_setpoint - t_free)
-            } else if t_free >= cooling_setpoint {
-                // Cooling: Q = -h_coeff × (T_free − T_cool_sp).
-                // Symmetric with heating. The mass heat-release contribution is
-                // already in T_free via `num_tm = h_ms_is_prod × T_mass`.
-                -h_coeff * (t_free - cooling_setpoint)
+            // Compute residual loads for both setpoints
+            let q_heat = if dt > 0.0 {
+                c_air * (heating_setpoint - t_prev_zone) / dt
+                    + h_coeff * (heating_setpoint - t_free)
             } else {
-                // Deadband: T_heat_sp < T_free < T_cool_sp — no HVAC demand.
-                // This is the correct ASHRAE 140 behavior: the ideal HVAC system
-                // is off when the zone is within the deadband, regardless of the
-                // mass temperature. The mass may be warmer than the cooling
-                // setpoint, but that heat reaches the zone through the 5R1C
-                // coupling and will be removed NEXT timestep once T_free crosses
-                // T_cool_sp. Cooling during deadband would violate ASHRAE 140.
+                h_coeff * (heating_setpoint - t_free)
+            };
+            let q_cool = if dt > 0.0 {
+                c_air * (cooling_setpoint - t_prev_zone) / dt
+                    + h_coeff * (cooling_setpoint - t_free)
+            } else {
+                h_coeff * (cooling_setpoint - t_free)
+            };
+
+            // Issue #4241: Load-based deadband (replaces T_free-based deadband).
+            //
+            // The ASHRAE 140 ideal system has unlimited capacity and tracks the
+            // active setpoint continuously. Instead of using T_free to decide
+            // heating/cooling/deadband, we use the sign of the residual load:
+            //   - If Q_heat > 0: heating is needed (zone would drift below heating SP)
+            //   - Else if Q_cool < 0: cooling is needed (zone would drift above cooling SP)
+            //   - Else: true deadband (no load needed to maintain either setpoint)
+            let demand = if q_heat > 0.0 {
+                // Heating: positive load needed to reach/maintain heating setpoint
+                q_heat
+            } else if q_cool < 0.0 {
+                // Cooling: negative load needed to reach/maintain cooling setpoint
+                q_cool
+            } else {
+                // Deadband: no HVAC demand. The zone is within the control band
+                // and the residual loads for both setpoints are non-driving.
                 0.0
             };
 
