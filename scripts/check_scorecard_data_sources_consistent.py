@@ -29,15 +29,23 @@ green. The gate now compares the ``SCORECARD.md`` headline directly
 against the canonical source (perf-history snapshot when present, else
 the ASHRAE doc) with the same tolerances. No tolerances changed.
 
+Issue #4183 extended the gate to also check ``README.md`` headline
+metrics (badge, status blockquote, metric block, Known Limitations MAE)
+against the canonical source. Previously README.md was load-bearing for
+the scorecard (it is read for the BatchOracle throughput claim in
+``generate_scorecard.py``) but was unguarded in the other direction --
+a stale README headline could silently disagree with all other sources.
+
 Exit codes:
-    0 -- the two sources agree within tolerance on both headline figures,
-        the ``SCORECARD.md`` headline agrees with the canonical source
-        within tolerance, AND ``docs/KNOWN_ISSUES.md`` has no stale
-        SCORECARD cross-references.
+    0 -- the two committed sources agree within tolerance on both headline
+        figures, the ``SCORECARD.md`` headline agrees with the canonical
+        source within tolerance, ``README.md`` headline agrees with the
+        canonical source within tolerance, AND ``docs/KNOWN_ISSUES.md`` has
+        no stale SCORECARD cross-references.
     1 -- divergence exceeds the tolerance on either pass-rate or MAE --
-        between the two sources, or between the ``SCORECARD.md`` headline
-        and the canonical source -- OR KNOWN_ISSUES.md quotes a stale
-        SCORECARD headline figure.
+        between any two sources, or between ``SCORECARD.md``/``README.md``
+        headlines and the canonical source -- OR KNOWN_ISSUES.md quotes a
+        stale SCORECARD headline figure.
     2 -- a source file is missing or could not be parsed.
 
 Tolerances (chosen to absorb normal floating-point rounding between the
@@ -64,10 +72,12 @@ PERF_SNAPSHOT = REPO_ROOT / "validation" / "performance_history.latest.json"
 ASHRAE_DOC = REPO_ROOT / "docs" / "ASHRAE140_RESULTS.md"
 SCORECARD_MD = REPO_ROOT / "SCORECARD.md"
 KNOWN_ISSUES = REPO_ROOT / "docs" / "KNOWN_ISSUES.md"
+README_MD = REPO_ROOT / "README.md"
 PERF_SNAPSHOT_ATTR = "validation/performance_history.latest.json"
 ASHRAE_DOC_ATTR = "docs/ASHRAE140_RESULTS.md"
 SCORECARD_ATTR = "SCORECARD.md"
 KNOWN_ISSUES_ATTR = "docs/KNOWN_ISSUES.md"
+README_ATTR = "README.md"
 
 # Tolerances -- see module docstring.
 PASS_RATE_TOLERANCE_PP = 0.1
@@ -109,6 +119,16 @@ _SC_MAE_RE = re.compile(
     r"Mean Absolute Error\s*\(MAE\).*?\*\*(\d+\.\d+)\s*%\*\*"
 )
 _SC_LAST_UPDATED_RE = re.compile(r"Last Updated[:\s*]+(\d{4}-\d{2}-\d{2})")
+
+# README.md headline regexes (Issue #4183). Parses the metric block table
+# that mirrors SCORECARD.md headline figures.
+_RM_PASS_RATE_RE = re.compile(
+    r"Pass rate\s*\(metric-level\)\s*\|\s*\*\*(\d+\.\d+)%\*\*"
+)
+_RM_MAE_RE = re.compile(
+    r"Mean Absolute Error\s*\(MAE\)\s*\|\s*\*\*(\d+\.\d+)%\*\*"
+)
+_RM_GENERATED_RE = re.compile(r"\(generated\s+(\d{4}-\d{2}-\d{2})\)")
 
 # Percentage pattern used by the KNOWN_ISSUES scan. Captures the numeric
 # value before an optional space and the literal ``%``.
@@ -192,6 +212,32 @@ def _load_scorecard_headline() -> tuple[float | None, float | None, str]:
         return float(m.group(1)) if m else None
 
     return _f(pr_m), _f(mae_m), lu_m.group(1) if lu_m else ""
+
+
+def _load_readme_headline() -> tuple[float | None, float | None, str]:
+    """Return ``(pass_rate, mae, generated_date)`` from ``README.md``.
+
+    README.md headline metrics are the status blockquote, the metric-block
+    table, and the Known Limitations MAE. Issue #4183 extended the gate to
+    catch README headline drift from the canonical source (the perf-history
+    snapshot, or the ASHRAE doc as fallback).
+
+    Returns ``(None, None, "")`` for any missing/unparseable component --
+    the caller treats ``None`` values as outside-tolerance so the gate
+    fails loud rather than silent-green.
+    """
+    if not README_MD.exists():
+        return None, None, ""
+    text = README_MD.read_text(encoding="utf-8")
+
+    pr_m = _RM_PASS_RATE_RE.search(text)
+    mae_m = _RM_MAE_RE.search(text)
+    gen_m = _RM_GENERATED_RE.search(text)
+
+    def _f(m: re.Match[str] | None) -> float | None:
+        return float(m.group(1)) if m else None
+
+    return _f(pr_m), _f(mae_m), gen_m.group(1) if gen_m else ""
 
 
 def _scan_known_issues_for_stale_scorecard_tokens(
@@ -288,6 +334,7 @@ def main(argv: list[str] | None = None) -> int:
         f"Sources: {PERF_SNAPSHOT_ATTR} (preferred, newer) | "
         f"{ASHRAE_DOC_ATTR} (fallback, older) | "
         f"{SCORECARD_ATTR} (headline, Issue #4208) | "
+        f"{README_ATTR} (headline, Issue #4183) | "
         f"{KNOWN_ISSUES_ATTR} (Issue #3578 cross-reference scan)"
     )
     print(f"Tolerances: pass_rate ≤ {args.pass_rate_tolerance} pp | "
@@ -400,6 +447,53 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  | diff = {diff:.3f} pp  ✗ (>{tol} pp)")
             failures.append(
                 f"SCORECARD.md headline {label} diverges from canonical "
+                f"{canonical_src} by {diff:.3f} pp > {tol} pp tolerance"
+            )
+    print()
+
+    # README.md headline vs canonical source (Issue #4183). README.md is
+    # load-bearing for the scorecard (read for BatchOracle throughput claim
+    # in generate_scorecard.py) but was unguarded in the other direction --
+    # a stale README headline could silently disagree with all other sources.
+    rm_pr, rm_mae, rm_gen = _load_readme_headline()
+    ts_rm = rm_gen or "(missing)"
+
+    print()
+    print("=== README.md headline vs canonical source (Issue #4183) ===")
+    print(
+        f"README.md validation timestamp: {ts_rm}  |  "
+        f"canonical (perf-history): {ts_perf}"
+    )
+    print(
+        f"README.md headline: pass rate = "
+        f"{rm_pr if rm_pr is not None else '(missing)'}% | "
+        f"MAE = {rm_mae if rm_mae is not None else '(missing)'}%"
+    )
+    for label, rm_val, perf_val, doc_val, tol in (
+        ("pass_rate", rm_pr, perf_pr, doc_pr, args.pass_rate_tolerance),
+        ("mae", rm_mae, perf_mae, doc_mae, args.mae_tolerance),
+    ):
+        if perf_val is not None:
+            canonical_val, canonical_src = perf_val, PERF_SNAPSHOT_ATTR
+        else:
+            canonical_val, canonical_src = doc_val, ASHRAE_DOC_ATTR
+        print(
+            f"  {label}:  README.md = "
+            f"{rm_val if rm_val is not None else '(missing)':>6}  |  "
+            f"canonical ({canonical_src}) = "
+            f"{canonical_val if canonical_val is not None else '(missing)':>6}",
+            end="",
+        )
+        ok, diff = _compare(rm_val, canonical_val, tol)
+        if diff is None:
+            print("  | MISSING ON ONE SIDE")
+            failures.append(f"README.md headline {label}: missing on one side")
+        elif ok:
+            print(f"  | diff = {diff:.3f} pp  ✓")
+        else:
+            print(f"  | diff = {diff:.3f} pp  ✗ (>{tol} pp)")
+            failures.append(
+                f"README.md headline {label} diverges from canonical "
                 f"{canonical_src} by {diff:.3f} pp > {tol} pp tolerance"
             )
     print()

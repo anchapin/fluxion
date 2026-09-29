@@ -2,7 +2,7 @@
 
 **Fluxion** is a next-generation Building Energy Modeling (BEM) engine. It is designed to be differentiable, quantum-ready, and exponentially faster than legacy monolithic tools by utilizing a hybrid Neuro-Symbolic architecture.
 
-> **Status:** Fluxion is **in active development** — specifically mid-milestone on **v1.3 "Blind ASHRAE 140 Validation"** (physics-only, no calibration factors). It is **not** production-ready. Current ASHRAE 140-2023 validation pass rate is **14.1%** (see [Current Validation Status](#current-validation-status) below). Use it as a high-throughput research/oracle tool, not as a drop-in EnergyPlus replacement.
+> **Status:** Fluxion is **in active development** — specifically mid-milestone on **v1.3 "Blind ASHRAE 140 Validation"** (physics-only, no calibration factors). It is **not** production-ready. Current ASHRAE 140-2023 validation pass rate is **9.8%** (see [Current Validation Status](#current-validation-status) below). Use it as a high-throughput research/oracle tool, not as a drop-in EnergyPlus replacement.
 
 ## 🏗 Architecture
 
@@ -10,17 +10,17 @@ Fluxion separates the "heavy lifting" of physics (CFD/Radiation) into AI surroga
 
 ## Current Validation Status
 
-![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-14.1%25%20pass-red)
+![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-9.8%25%20pass-red)
 ![Version](https://img.shields.io/badge/status-in--development-orange)
 
-Fluxion is **not yet ASHRAE 140-compliant**. The figures below come from the committed validation suite (generated 2026-09-07); see [`docs/ASHRAE140_RESULTS.md`](docs/ASHRAE140_RESULTS.md) for the full case-by-case breakdown and [`SCORECARD.md`](SCORECARD.md) for the consolidated, reproducible release-readiness view.
+Fluxion is **not yet ASHRAE 140-compliant**. The figures below come from the committed validation suite (generated 2026-09-26); see [`docs/ASHRAE140_RESULTS.md`](docs/ASHRAE140_RESULTS.md) for the full case-by-case breakdown and [`SCORECARD.md`](SCORECARD.md) for the consolidated, reproducible release-readiness view.
 
 | Metric | Current | Target (release gate) | Status |
 |--------|---------|-----------------------|--------|
-| Pass rate (metric-level) | **14.1%** (12/84) | ≥ 60% | ❌ Fail |
-| Mean Absolute Error (MAE) | **49.82%** | ≤ 50% | ✅ Pass |
+| Pass rate (metric-level) | **9.8%** (11/84) | ≥ 60% | ❌ Fail |
+| Mean Absolute Error (MAE) | **45.27%** | ≤ 50% | ✅ Pass |
 | Cases fully passing | 0/18 (0.0%) | — | ❌ |
-| Max single-case deviation | 470.11% | — | ℹ️ |
+| Max single-case deviation | 100.00% | — | ℹ️ |
 
 ### v1.3 Milestone — Blind ASHRAE 140 Validation (Physics Only)
 
@@ -40,7 +40,7 @@ These are documented **structural failures** (also listed in `release_gates.yaml
 
 - **Baseline 600-series (low-mass):** All 6 cases FAIL. Simplified envelope model over-predicts peak loads (e.g. peak heating ~4.36 kW vs 2.80–3.80 kW reference band).
 - **High-mass 900-series:** All 6 cases FAIL. Heating is over-predicted by ~**200%** due to a 5R1C/CTF thermal-mass limitation (e.g. Case 900 annual heating 5,130 kWh vs 1,170–2,040 kWh reference band, per `docs/KNOWN_ISSUES.md` §LIMIT-05 UPDATE #2453).
-- **Overall accuracy:** 49.82% MAE, driven by the high-mass annual-energy deviation above.
+- **Overall accuracy:** 45.27% MAE, driven by the high-mass annual-energy deviation above.
 - **Peak load accuracy:** High-mass peak loads UNDER-estimated post-#1280 (Case 900 0.86 kW vs 2.10–3.50 kW reference band; full peak accuracy gated on the DAE teacher validation suite (#3986), which per ADR-0017 holds flip authority on the cfg-dependent default selector (superseding the §LIMIT-21 closure plan, Issue #3297).
 
 For the historical v0.8.0 snapshot (Peak Load & Free-Float Validation narrative), see [`docs/archive/ASHRAE140_RESULTS_v0.8.0.md`](docs/archive/ASHRAE140_RESULTS_v0.8.0.md) (archived; superseded by the current blind-validation figures above).
