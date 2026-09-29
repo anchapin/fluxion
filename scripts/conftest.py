@@ -152,29 +152,28 @@ class _FakeSNSClient:
         return {"MessageId": "fake-message-id"}
 
 
-def _make_client_error(code: int, error_code: str, key: str) -> Exception:
-    from botocore.exceptions import ClientError
+class _FakeClientError(Exception):
+    """Minimal stand-in for botocore.exceptions.ClientError.
 
-    return ClientError(
-        {
-            "Error": {"Code": error_code, "Message": f"missing {key}"},
-            "ResponseMetadata": {"HTTPStatusCode": code},
-        },
-        "HeadObject",
-    )
+    The production code only accesses ``e.response["Error"]["Code"]``,
+    so we don't need the real botocore dependency in tests.
+    """
+
+    def __init__(self, error_code: str, message: str, http_status: int):
+        super().__init__(message)
+        self.response = {
+            "Error": {"Code": error_code, "Message": message},
+            "ResponseMetadata": {"HTTPStatusCode": http_status},
+        }
+
+
+def _make_client_error(code: int, error_code: str, key: str) -> Exception:
+    return _FakeClientError(error_code, f"missing {key}", code)
 
 
 def _make_client_error_for_get(code: int, error_code: str, key: str) -> Exception:
     """Like ``_make_client_error`` but stamps the operation as ``GetObject``."""
-    from botocore.exceptions import ClientError
-
-    return ClientError(
-        {
-            "Error": {"Code": error_code, "Message": f"missing {key}"},
-            "ResponseMetadata": {"HTTPStatusCode": code},
-        },
-        "GetObject",
-    )
+    return _FakeClientError(error_code, f"missing {key}", code)
 
 
 @pytest.fixture

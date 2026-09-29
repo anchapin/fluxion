@@ -648,20 +648,14 @@ def test_get_campaign_state_round_trips_existing_state(fake_aws_clients, base_st
 
 
 def test_get_campaign_state_propagates_non_404_client_error(fake_aws_clients):
-    from botocore.exceptions import ClientError
+    from conftest import _FakeClientError
 
     s3 = fake_aws_clients["s3"]
     # Override the S3 client to raise a non-404 ClientError.
     s3.get_object = MagicMock(
-        side_effect=ClientError(
-            {
-                "Error": {"Code": "AccessDenied", "Message": "no"},
-                "ResponseMetadata": {"HTTPStatusCode": 403},
-            },
-            "GetObject",
-        )
+        side_effect=_FakeClientError("AccessDenied", "no", 403)
     )
-    with pytest.raises(ClientError):
+    with pytest.raises(_FakeClientError):
         ccm.get_campaign_state("x", "b", "p")
 
 
