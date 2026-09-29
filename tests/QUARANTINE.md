@@ -63,6 +63,8 @@ manually for investigation. They are NOT part of CI gates.
 | `tests/all_tests/diag_air_node_equilibration.rs` | `diag_air_node_equilibration` | `diagnostic` | #2536 | `unassigned` | Consolidated runner re-export of `tests/diagnostics/diag_air_node_equilibration.rs::diag_air_node_equilibration`; tracked at the canonical source row above | `pending` |
 | `tests/all_tests/ashrae_140_case_920.rs` | `test_case_920_per_month_attribution` | `diagnostic` | #2454, #2536 | `unassigned` | Add assertions; convert to CI gate | `pending` |
 | `tests/all_tests/ashrae_140_case_920.rs` | `test_case_920_engine_vs_reference_per_month` | `diagnostic` | #2454, #2536 | `unassigned` | Add assertions; convert to CI gate | `pending` |
+| `fluxion-core/tests/schedule_conformance.rs` | `diagnostic_case_640_ramp_profile` | `diagnostic` | #4196 | `unassigned` | Prints the Case 640 ramp profile (hours 6-10) for investigation; convert to a CI gate only if ramp-characterization drift gating is warranted | `pending` |
+| `fluxion-core/tests/schedule_conformance.rs` | `diagnostic_case_940_ramp_profile` | `diagnostic` | #4196 | `unassigned` | Prints the Case 940 ramp profile (hours 6-10) for investigation; convert to a CI gate only if ramp-characterization drift gating is warranted | `pending` |
 
 ---
 
@@ -70,6 +72,21 @@ manually for investigation. They are NOT part of CI gates.
 
 These tests are `#[ignore]` because they fail due to known physics/architecture gaps
 documented in `docs/KNOWN_ISSUES.md`. They are tracked by LIMIT-* entries.
+
+### Documented deviation: 2-hour setback ramp (Issues #4196 / #4226)
+
+These tests fail against the discrete ASHRAE 140 setpoint profile because the
+implemented boundary condition carries a documented 2-hour linear setback ramp
+(see `docs/investigations/issue-4196-setback-ramp-deviation.md` for the
+committed failure output). They are ignored pending the keep/remove decision
+in #4226 — not a LIMIT-* gap, a recorded specification deviation.
+
+| Test File | Test Name | Category | Blocking Issue | Owner | Un-Ignore Criteria | Status |
+|-----------|-----------|----------|----------------|-------|-------------------|--------|
+| `fluxion-core/tests/schedule_conformance.rs` | `conformance_case_640_integer_hours` | `structural` | #4196, #4226 | `unassigned` | Ramp keep/remove decision (#4226) lands; un-ignore after the decision is recorded | `pending` |
+| `fluxion-core/tests/schedule_conformance.rs` | `conformance_case_640_sub_hour` | `structural` | #4196, #4226 | `unassigned` | Ramp keep/remove decision (#4226) lands; un-ignore after the decision is recorded | `pending` |
+| `fluxion-core/tests/schedule_conformance.rs` | `conformance_case_940_integer_hours` | `structural` | #4196, #4226 | `unassigned` | Ramp keep/remove decision (#4226) lands; un-ignore after the decision is recorded | `pending` |
+| `fluxion-core/tests/schedule_conformance.rs` | `conformance_case_940_sub_hour` | `structural` | #4196, #4226 | `unassigned` | Ramp keep/remove decision (#4226) lands; un-ignore after the decision is recorded | `pending` |
 
 ### LIMIT-05 / LIMIT-12 / LIMIT-14 / LIMIT-16 / LIMIT-17 / LIMIT-18 / LIMIT-19 / LIMIT-20
 
