@@ -54,14 +54,6 @@ pub struct FDSolverWrapper {
     discretization: Option<WallDiscretization>,
     /// Number of nodes per layer
     nodes_per_layer: usize,
-    /// Interior convective coefficient [W/m²·K]
-    // Set via `with_convection` and asserted in tests; not yet wired into
-    // the solver's boundary conditions.
-    #[allow(dead_code)]
-    h_interior: f64,
-    /// Exterior convective coefficient [W/m²·K]
-    #[allow(dead_code)]
-    h_exterior: f64,
     /// Current heat flux [W/m²]
     q_flux: f64,
     /// Initialized flag
@@ -77,8 +69,6 @@ impl FDSolverWrapper {
             solver: None,
             discretization: None,
             nodes_per_layer: 10, // Default discretization
-            h_interior: 8.0,
-            h_exterior: 25.0,
             q_flux: 0.0,
             initialized: false,
             valid: false,
@@ -89,15 +79,6 @@ impl FDSolverWrapper {
     pub fn with_discretization(nodes_per_layer: usize) -> Self {
         Self {
             nodes_per_layer,
-            ..Self::new()
-        }
-    }
-
-    /// Create wrapper with custom convective coefficients.
-    pub fn with_convection(h_interior: f64, h_exterior: f64) -> Self {
-        Self {
-            h_interior,
-            h_exterior,
             ..Self::new()
         }
     }
@@ -365,20 +346,9 @@ mod tests {
     // === Phase 3: Additional coverage tests ===
 
     #[test]
-    fn test_fd_wrapper_with_convection() {
-        let wrapper = FDSolverWrapper::with_convection(5.0, 30.0);
-        assert!(!wrapper.initialized);
-        assert!(!wrapper.valid);
-        assert_eq!(wrapper.h_interior, 5.0);
-        assert_eq!(wrapper.h_exterior, 30.0);
-    }
-
-    #[test]
     fn test_fd_wrapper_default() {
         let wrapper = FDSolverWrapper::default();
         assert_eq!(wrapper.nodes_per_layer, 10);
-        assert_eq!(wrapper.h_interior, 8.0);
-        assert_eq!(wrapper.h_exterior, 25.0);
     }
 
     #[test]

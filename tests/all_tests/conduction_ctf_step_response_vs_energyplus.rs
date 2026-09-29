@@ -211,7 +211,7 @@ fn run_ctf_step_response(
     construction_name: &str,
     tolerance: f64,
 ) -> CtfTestResult {
-    let mut wrapper = CTFSolverWrapper::with_convection(H_INTERIOR, H_EXTERIOR);
+    let mut wrapper = CTFSolverWrapper::new();
     wrapper.initialize(spec).expect("CTF initialize");
 
     let hourly = aggregate_hourly(ref_data);
