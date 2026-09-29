@@ -1,0 +1,11 @@
+{
+  "memoryFiles": ["AGENTS.md", "CLAUDE.md"],
+  "budgetTokens": 5000,
+  "skillsDir": ".agents/skills",
+  "skillSearchPaths": [],
+  "discovery": {
+    "harnesses": ["opencode"],
+    "since": "30d",
+    "minUserTurns": 2
+  }
+}
