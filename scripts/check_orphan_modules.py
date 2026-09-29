@@ -493,7 +493,11 @@ _CFG_TEST_BODY_RE = re.compile(
 # Issue #4174 lowered the baseline by 1 (48 → 47): deleting the unreachable
 # `src/sim/thermal_model_physics/physics_impl/step_6r2c.rs` removed its
 # `allow(dead_code)` site.
-BASELINE_DEAD_CODE_ALLOWS = 47
+# 2026-09-29 (Issue #4165): lowered the baseline by 4 (47 → 43) — removed the
+# four dead `h_interior`/`h_exterior` fields and their `#[allow(dead_code)]`
+# attributes on `CTFSolverWrapper` and `FDSolverWrapper` (dead since the
+# constructors' values were never wired into the solvers' boundary conditions).
+BASELINE_DEAD_CODE_ALLOWS = 43
 
 # ---------------------------------------------------------------------------
 # Wired-but-dead disposition registry (Issue #3748).

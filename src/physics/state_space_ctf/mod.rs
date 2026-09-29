@@ -23,6 +23,7 @@ use super::ctf_coefficients::{CTFCoefficients, CTFMaterial};
 // is robust for clustered eigenvalues.
 
 /// Surface film resistances [m²K/W] (ASHRAE 140 standard values).
+/// These are used as defaults when no custom values are provided.
 const R_SI: f64 = 0.125; // Interior film
 const R_SE: f64 = 0.044; // Exterior film
 
@@ -186,6 +187,25 @@ impl FlatMatrix {
 ///
 /// This is the algorithm EnergyPlus actually uses internally — NOT pole/residue.
 /// It avoids all the problems with degenerate pole structure that plague the
+/// Compute CTF coefficients with the default ASHRAE 140 film resistances
+/// (R_SI=0.125, R_SE=0.044).
+pub fn compute_state_space_ctf(layers: &[CTFMaterial], timestep: f64) -> CTFCoefficients {
+    compute_state_space_ctf_with_films(layers, timestep, R_SI, R_SE)
+}
+
+/// Compute CTF coefficients with custom surface film resistances.
+///
+/// # Arguments
+///
+/// * `layers` - Material layers (interior to exterior)
+/// * `timestep` - Simulation timestep [s]
+/// * `r_si` - Interior surface thermal resistance [m²K/W] (1/h_interior)
+/// * `r_se` - Exterior surface thermal resistance [m²K/W] (1/h_exterior)
+///
+/// # Returns
+///
+/// CTF coefficients (X, Y, Z, Φ) for heat flux calculation with custom films.
+///
 /// Laplace-domain approach for film-dominated walls.
 ///
 /// **Two-phase approach matching E+:**
@@ -199,7 +219,12 @@ impl FlatMatrix {
 ///   Φ_filmed[i] = Φ_bare[i] / denom
 ///
 /// At steady state: ΣX_filmed = U_bare / denom = U_filmed ✓
-pub fn compute_state_space_ctf(layers: &[CTFMaterial], timestep: f64) -> CTFCoefficients {
+pub fn compute_state_space_ctf_with_films(
+    layers: &[CTFMaterial],
+    timestep: f64,
+    r_si: f64,
+    r_se: f64,
+) -> CTFCoefficients {
     // Step 1: Determine number of nodes per layer (E+ method)
     let nodes_per_layer = compute_nodes_per_layer(layers, timestep);
     let total_nodes: usize = nodes_per_layer.iter().sum();
@@ -209,7 +234,7 @@ pub fn compute_state_space_ctf(layers: &[CTFMaterial], timestep: f64) -> CTFCoef
         coeffs.num_coeffs = 1;
         coeffs.total_state_nodes = 0;
         let total_r_wall: f64 = layers.iter().map(|l| l.resistance()).sum();
-        let u_filmed = 1.0 / (R_SI + total_r_wall + R_SE);
+        let u_filmed = 1.0 / (r_si + total_r_wall + r_se);
         coeffs.x[0] = u_filmed;
         coeffs.y[0] = u_filmed;
         coeffs.z[0] = u_filmed;
@@ -339,12 +364,12 @@ pub fn compute_state_space_ctf(layers: &[CTFMaterial], timestep: f64) -> CTFCoef
     // After uniform scaling by 1/denom, the DC gain becomes:
     //   DC_f = (ΣX/denom) / (1 + ΣΦ/denom) = ΣX / (denom + ΣΦ)
     //
-    // We want DC_f = U_filmed = 1/(R_wall + R_SE + R_SI), so:
+    // We want DC_f = U_filmed = 1/(R_wall + r_se + r_si), so:
     //   denom = ΣX / U_filmed - ΣΦ
     let x_sum_bare: f64 = coeffs.x.iter().sum();
     let phi_sum_bare: f64 = coeffs.phi.iter().sum();
     let r_wall: f64 = layers.iter().map(|l| l.resistance()).sum();
-    let u_filmed = 1.0 / (R_SI + r_wall + R_SE);
+    let u_filmed = 1.0 / (r_si + r_wall + r_se);
     let denom = x_sum_bare / u_filmed - phi_sum_bare;
 
     #[cfg(feature = "debug-physics")]
@@ -357,7 +382,7 @@ pub fn compute_state_space_ctf(layers: &[CTFMaterial], timestep: f64) -> CTFCoef
         eprintln!(
             "  Film scaling: denom = {:.6}, U_filmed = {:.6}",
             denom,
-            u_bare / (1.0 + u_bare * (R_SE + R_SI))
+            u_bare / (1.0 + u_bare * (r_se + r_si))
         );
     }
 
@@ -381,7 +406,7 @@ pub fn compute_state_space_ctf(layers: &[CTFMaterial], timestep: f64) -> CTFCoef
         let x_sum: f64 = coeffs.x.iter().sum();
         let _y_sum: f64 = coeffs.y.iter().sum();
         let phi_sum: f64 = coeffs.phi.iter().sum();
-        let u_filmed = 1.0 / (R_SI + r_wall + R_SE);
+        let u_filmed = 1.0 / (r_si + r_wall + r_se);
         let dc_gain = x_sum / (1.0 + phi_sum);
         eprintln!("  Filmed: ΣX = {:.6}, ΣΦ = {:.6}", x_sum, phi_sum);
         eprintln!(

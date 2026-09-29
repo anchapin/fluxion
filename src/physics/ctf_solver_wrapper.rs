@@ -42,23 +42,40 @@ use crate::physics::units::{FromF64, HeatFlux, HeatTransferCoefficient, Temperat
 use crate::physics::wall_properties::WallProperties;
 use crate::physics::wall_spec::WallSpec;
 
+/// Default interior convective coefficient [W/m²·K], matching the ASHRAE 140
+/// interior film resistance (R_SI=0.125) baked into the CTF coefficients.
+const DEFAULT_H_INTERIOR: f64 = 8.0;
+/// Default exterior convective coefficient [W/m²·K], matching the ASHRAE 140
+/// exterior film resistance (R_SE=0.044). Note this is 1/0.044 ≈ 22.73, *not*
+/// 25.0: the old dead `with_convection` default of 25.0 silently selected
+/// custom films (R_se=0.040) and diverged from `compute_state_space_ctf`.
+const DEFAULT_H_EXTERIOR: f64 = 1.0 / 0.044;
+
 /// CTF solver wrapper implementing the common HeatConductionSolver trait.
 ///
 /// This wrapper adapts the CTFSolver to work with the unified solver interface,
 /// handling conversion from BuildingAssembly to CTF coefficients and managing
 /// boundary condition transformations.
+///
+/// # Film Resistance Handling
+///
+/// CTF coefficients include the effects of surface film resistances (interior
+/// and exterior convective heat transfer coefficients). The `h_interior` and
+/// `h_exterior` values passed to `step()` are used to compute the film
+/// resistances (R = 1/h) that are baked into the CTF coefficients during
+/// initialization.
+///
+/// If the same wrapper is used with different h values across calls, the
+/// coefficients will be recomputed with the new values on the first call
+/// that differs from the stored values.
 pub struct CTFSolverWrapper {
     /// Underlying CTF solver
     solver: Option<CTFSolver>,
     /// CTF coefficients (cached after initialization)
     coefficients: Option<CTFCoefficients>,
-    /// Interior convective coefficient [W/m²·K]
-    // Set via `with_convection` and asserted in tests; not yet wired into
-    // the solver's boundary conditions.
-    #[allow(dead_code)]
+    /// Interior convective coefficient [W/m²·K] - used for CTF coefficient computation
     h_interior: f64,
-    /// Exterior convective coefficient [W/m²·K]
-    #[allow(dead_code)]
+    /// Exterior convective coefficient [W/m²·K] - used for CTF coefficient computation
     h_exterior: f64,
     /// Previous interior heat flux for convection approximation [W/m²]
     prev_q_flux: f64,
@@ -66,29 +83,25 @@ pub struct CTFSolverWrapper {
     initialized: bool,
     /// Valid flag (coefficients converged)
     valid: bool,
+    /// Wall spec cached for potential coefficient recomputation
+    wall_spec: Option<WallSpec>,
 }
 
 impl CTFSolverWrapper {
     /// Create a new uninitialized CTF solver wrapper.
+    ///
+    /// The wrapper uses default film resistances (R_SI=0.125, R_SE=0.044)
+    /// until the first `step()` call provides actual h values.
     pub fn new() -> Self {
         Self {
             solver: None,
             coefficients: None,
-            h_interior: 8.0,
-            h_exterior: 25.0,
+            h_interior: DEFAULT_H_INTERIOR,
+            h_exterior: DEFAULT_H_EXTERIOR,
             prev_q_flux: 0.0,
             initialized: false,
             valid: false,
-        }
-    }
-
-    /// Create wrapper with custom convective coefficients.
-    pub fn with_convection(h_interior: f64, h_exterior: f64) -> Self {
-        Self {
-            h_interior,
-            h_exterior,
-            prev_q_flux: 0.0,
-            ..Self::new()
+            wall_spec: None,
         }
     }
 
@@ -133,6 +146,9 @@ impl HeatConductionSolver for CTFSolverWrapper {
     }
 
     fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError> {
+        // Cache the wall spec for potential coefficient recomputation
+        self.wall_spec = Some(wall.clone());
+
         // Convert WallSpec to wall properties (the seam)
         let wall_props = wall.to_wall_properties();
 
@@ -145,9 +161,22 @@ impl HeatConductionSolver for CTFSolverWrapper {
             ));
         }
 
-        // Compute CTF coefficients for 1-hour timestep
+        // Compute CTF coefficients for 1-hour timestep.
+        // Use custom film resistances only when h differs from the defaults
+        // (compared in h-space so the default path is bit-identical to
+        // `compute_state_space_ctf`).
         let timestep = 3600.0; // Default 1 hour
-        let coeffs = CTFCalculator::with_defaults(&materials, timestep).compute_coefficients();
+        let uses_custom_films = (self.h_interior - DEFAULT_H_INTERIOR).abs() > 1e-6
+            || (self.h_exterior - DEFAULT_H_EXTERIOR).abs() > 1e-6;
+
+        let coeffs = if uses_custom_films {
+            let r_si = 1.0 / self.h_interior;
+            let r_se = 1.0 / self.h_exterior;
+            CTFCalculator::with_film_resistances(&materials, timestep, 50, r_si, r_se)
+                .compute_coefficients()
+        } else {
+            CTFCalculator::with_defaults(&materials, timestep).compute_coefficients()
+        };
 
         // Validate coefficients
         if !Self::validate_coefficients(&coeffs) {
@@ -182,8 +211,8 @@ impl HeatConductionSolver for CTFSolverWrapper {
         timestep: Time,
         T_interior: Temperature,
         T_exterior: Temperature,
-        _h_interior: HeatTransferCoefficient,
-        _h_exterior: HeatTransferCoefficient,
+        h_interior: HeatTransferCoefficient,
+        h_exterior: HeatTransferCoefficient,
     ) -> Result<HeatFlux, SolverError> {
         if !self.initialized {
             return Err(SolverError::InvalidConfig(
@@ -195,6 +224,66 @@ impl HeatConductionSolver for CTFSolverWrapper {
             return Err(SolverError::ConvergenceError(
                 "CTF solver is not valid (coefficients may be invalid)".to_string(),
             ));
+        }
+
+        let h_int = h_interior.to_value();
+        let h_ext = h_exterior.to_value();
+
+        // Check if film resistances have changed significantly
+        // If so, recompute CTF coefficients with new values
+        let needs_recompute =
+            (h_int - self.h_interior).abs() > 0.01 || (h_ext - self.h_exterior).abs() > 0.01;
+
+        if needs_recompute {
+            log::debug!(
+                "CTF: Film coefficients changed (h_int: {:.2} -> {:.2}, h_ext: {:.2} -> {:.2}). Recomputing CTF coefficients.",
+                self.h_interior, h_int, self.h_exterior, h_ext
+            );
+
+            // Update stored h values
+            self.h_interior = h_int;
+            self.h_exterior = h_ext;
+
+            // Recompute coefficients with new film resistances
+            let wall = self.wall_spec.as_ref().ok_or_else(|| {
+                SolverError::InvalidConfig("Wall spec not cached for recomputation".to_string())
+            })?;
+
+            // Re-run initialization with new h values
+            let wall_props = wall.to_wall_properties();
+            let materials = Self::wall_properties_to_ctf_materials(&wall_props);
+
+            if materials.is_empty() {
+                return Err(SolverError::ConstructionError(
+                    "Wall assembly has no layers".to_string(),
+                ));
+            }
+
+            let solver_timestep = 3600.0;
+            let r_si = 1.0 / self.h_interior;
+            let r_se = 1.0 / self.h_exterior;
+
+            let coeffs =
+                CTFCalculator::with_film_resistances(&materials, solver_timestep, 50, r_si, r_se)
+                    .compute_coefficients();
+
+            if !Self::validate_coefficients(&coeffs) {
+                self.valid = false;
+                return Err(SolverError::CoefficientError(
+                    "CTF coefficient recalculation failed".to_string(),
+                ));
+            }
+
+            // Reinitialize solver with new coefficients
+            let config = CTFSolverConfig::new(solver_timestep, 50);
+            self.solver = Some(CTFSolver::with_warmup(
+                coeffs.clone(),
+                config,
+                T_interior.to_value(),
+                T_exterior.to_value(),
+                7, // warmup_days
+            ));
+            self.coefficients = Some(coeffs);
         }
 
         // Get mutable reference to solver
@@ -215,15 +304,14 @@ impl HeatConductionSolver for CTFSolverWrapper {
             );
         }
 
-        // The CTF coefficients already include film resistance scaling
-        // (R_SI=0.125, R_SE=0.044). Input temperatures should be AIR temperatures,
-        // not surface temperatures — applying a surface correction would double-count
-        // the film resistance and cause instability.
-        let t_interior_surface = T_interior.to_value();
-        let t_exterior_surface = T_exterior.to_value();
+        // The CTF coefficients already include film resistance scaling.
+        // Input temperatures should be AIR temperatures, not surface temperatures
+        // — applying a surface correction would double-count the film resistance.
+        let t_interior_air = T_interior.to_value();
+        let t_exterior_air = T_exterior.to_value();
 
-        // Step the CTF solver with surface temperatures
-        let q_flux = solver.step(t_interior_surface, t_exterior_surface);
+        // Step the CTF solver with air temperatures
+        let q_flux = solver.step(t_interior_air, t_exterior_air);
 
         // Store flux for next timestep approximation
         self.prev_q_flux = q_flux;
@@ -233,10 +321,15 @@ impl HeatConductionSolver for CTFSolverWrapper {
 
     /// Issue #1418: Pure-query steady-state flux from cached CTF coefficients.
     ///
-    /// Returns `ΣX_n × (T_ext − T_int)` — the steady-state limit of the CTF
-    /// transfer function. For a well-formed CTF, `ΣX_n` equals the overall
-    /// U-value (including film resistances already baked into the coefficients),
-    /// so this is equivalent to `U × ΔT` (Fourier's law in steady state).
+    /// Returns the steady-state limit of the CTF recurrence
+    /// `q = ΣX_j·T_o − ΣY_j·T_i − ΣΦ_j·q_prev` (the recurrence skips Φ_0):
+    /// `q·(1 + Σ_{j≥1}Φ_j) = ΣX·T_ext − ΣY·T_int`.
+    ///
+    /// Note the Φ terms must be included: the film scaling in
+    /// `compute_state_space_ctf_with_films` targets `ΣX/(1+ΣΦ) = U_filmed`,
+    /// so ΣX alone is *not* the U-value (for film-dominated walls the Φ sum
+    /// is far from zero). A ΣX-only query under-reports the flux ~5x for
+    /// the test wall with custom films.
     ///
     /// This does NOT advance solver state — it reads only the cached
     /// `coefficients` field populated during `initialize()`.
@@ -251,7 +344,10 @@ impl HeatConductionSolver for CTFSolverWrapper {
             )
         })?;
         let sum_x: f64 = coeffs.x.iter().copied().sum();
-        let q = sum_x * (T_exterior.to_value() - T_interior.to_value());
+        let sum_y: f64 = coeffs.y.iter().copied().sum();
+        // Mirror the recurrence exactly: it consumes Φ_1.. (phi[j+1]), never Φ_0.
+        let sum_phi: f64 = coeffs.phi.iter().skip(1).copied().sum();
+        let q = (sum_x * T_exterior.to_value() - sum_y * T_interior.to_value()) / (1.0 + sum_phi);
         Ok(HeatFlux::from_value(q))
     }
 
@@ -369,27 +465,16 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_ctf_wrapper_with_convection() {
-        let mut wrapper = CTFSolverWrapper::with_convection(10.0, 30.0);
-        let wall = create_test_wall();
-
-        let result = wrapper.initialize(&wall);
-        assert!(result.is_ok());
-
-        // Custom convection coefficients should be stored
-        assert!((wrapper.h_interior - 10.0).abs() < 1e-10);
-        assert!((wrapper.h_exterior - 30.0).abs() < 1e-10);
-    }
-
     // === Phase 3: Additional coverage tests ===
 
     #[test]
     fn test_ctf_wrapper_default() {
         let wrapper = CTFSolverWrapper::default();
-        assert_eq!(wrapper.h_interior, 8.0);
-        assert_eq!(wrapper.h_exterior, 25.0);
+        assert_eq!(wrapper.h_interior, DEFAULT_H_INTERIOR);
+        assert_eq!(wrapper.h_exterior, DEFAULT_H_EXTERIOR);
         assert_eq!(wrapper.prev_q_flux, 0.0);
+        assert!(wrapper.wall_spec.is_none());
+        assert!(!wrapper.initialized);
     }
 
     #[test]
@@ -522,23 +607,185 @@ mod tests {
     }
 
     #[test]
-    fn test_ctf_wrapper_step_ignored_convection() {
+    fn test_ctf_wrapper_step_with_custom_h_values() {
+        // Test that CTF honors custom h_interior and h_exterior values:
+        // after stepping with a custom h pair, the steady-state flux
+        // (U*ΔT from the film-scaled coefficients) must match the analytic
+        // U-value for that h pair — not the default-film U-value.
         let mut wrapper = CTFSolverWrapper::new();
         let wall = create_test_wall();
         wrapper.initialize(&wall).unwrap();
 
-        // Convection parameters are ignored by the step function
-        // Should still work with any h_interior, h_exterior values
+        // Step once with custom h values to trigger coefficient recomputation.
+        // (h_ext=50 is far from the 1/0.044≈22.73 default, so the custom-film
+        //  and default-film U-values are well separated.)
+        let h_int = 8.0;
+        let h_ext = 50.0;
         let flux = wrapper
             .step(
                 Time::from_value(3600.0),
                 Temperature::from_value(20.0),
-                Temperature::from_value(10.0),
-                HeatTransferCoefficient::from_value(100.0),
-                HeatTransferCoefficient::from_value(200.0),
+                Temperature::from_value(0.0),
+                HeatTransferCoefficient::from_value(h_int),
+                HeatTransferCoefficient::from_value(h_ext),
             )
             .unwrap();
-        assert!(flux.to_value().is_finite());
+        assert!(flux.to_value().is_finite(), "CTF flux should be finite");
+
+        // Analytic U for 200mm concrete (k=1.4 -> R=0.2/1.4) with these films.
+        let r_wall = 0.2 / 1.4;
+        let u_expected = 1.0 / (1.0 / h_int + r_wall + 1.0 / h_ext);
+        let q_expected = u_expected * 20.0;
+
+        let q_ss = wrapper
+            .steady_state_flux(Temperature::from_value(20.0), Temperature::from_value(0.0))
+            .unwrap()
+            .to_value()
+            .abs();
+        assert!(
+            (q_ss - q_expected).abs() / q_expected < 0.01,
+            "CTF steady-state flux {:.4} should match analytic U*ΔT {:.4} for h=({:.1},{:.1})",
+            q_ss,
+            q_expected,
+            h_int,
+            h_ext
+        );
+
+        // And it must NOT match the default-film U-value (proves the custom
+        // films were actually used, not the ASHRAE 140 defaults).
+        let u_default = 1.0 / (0.125 + r_wall + 0.044);
+        assert!(
+            (q_ss - u_default * 20.0).abs() / q_expected > 0.01,
+            "CTF flux should reflect custom films, not default films"
+        );
+    }
+
+    #[test]
+    fn test_ctf_wrapper_step_recomputes_coefficients_on_h_change() {
+        // Test that CTF recomputes coefficients when h values change significantly
+
+        let mut wrapper = CTFSolverWrapper::new();
+        let wall = create_test_wall();
+        wrapper.initialize(&wall).unwrap();
+
+        // First step with h_interior=8.0
+        let flux1 = wrapper
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0),
+                Temperature::from_value(0.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap();
+
+        // Second step with different h_interior (10.0 instead of 8.0)
+        // This should trigger coefficient recomputation
+        let flux2 = wrapper
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0),
+                Temperature::from_value(0.0),
+                HeatTransferCoefficient::from_value(10.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap();
+
+        // With higher h_interior (lower R_si), the surface resistance decreases,
+        // so the wall should respond faster to temperature changes.
+        // The exact difference depends on the wall's thermal mass, but there should be a difference.
+        // Both fluxes should be finite.
+        assert!(flux1.to_value().is_finite(), "First flux should be finite");
+        assert!(flux2.to_value().is_finite(), "Second flux should be finite");
+
+        // Verify the wrapper tracked the new h values
+        assert!(
+            (wrapper.h_interior - 10.0).abs() < 0.01,
+            "h_interior should be updated to 10.0"
+        );
+    }
+
+    #[test]
+    fn test_ctf_wrapper_vs_fd_wrapper_same_h() {
+        // Test that CTF and FD wrappers converge to the same steady-state
+        // interior flux when given identical h values. Comparing
+        // steady-state (not transient) fluxes: the two solvers have
+        // different transient dynamics, but both must settle to U*ΔT with
+        // the films the caller specified. This is the key test for issue
+        // #4165: it proves the CTF wrapper actually honors the h values
+        // instead of silently using the ASHRAE 140 defaults.
+        use crate::physics::fd_solver_wrapper::FDSolverWrapper;
+
+        let wall = create_test_wall();
+        let h_int = 8.0;
+        let h_ext = 25.0;
+
+        let mut ctf_wrapper = CTFSolverWrapper::new();
+        ctf_wrapper.initialize(&wall).unwrap();
+
+        let mut fd_wrapper = FDSolverWrapper::new();
+        fd_wrapper.initialize(&wall).unwrap();
+
+        // Drive both to steady state (200mm concrete settles in ~15h;
+        // 200 hourly steps is >13 time constants).
+        let (mut q_ctf, mut q_fd) = (0.0_f64, 0.0_f64);
+        for _ in 0..200 {
+            q_ctf = ctf_wrapper
+                .step(
+                    Time::from_value(3600.0),
+                    Temperature::from_value(20.0),
+                    Temperature::from_value(0.0),
+                    HeatTransferCoefficient::from_value(h_int),
+                    HeatTransferCoefficient::from_value(h_ext),
+                )
+                .unwrap()
+                .to_value()
+                .abs();
+
+            q_fd = fd_wrapper
+                .step(
+                    Time::from_value(3600.0),
+                    Temperature::from_value(20.0),
+                    Temperature::from_value(0.0),
+                    HeatTransferCoefficient::from_value(h_int),
+                    HeatTransferCoefficient::from_value(h_ext),
+                )
+                .unwrap()
+                .to_value()
+                .abs();
+        }
+
+        assert!(q_ctf.is_finite(), "CTF flux should be finite");
+        assert!(q_fd.is_finite(), "FD flux should be finite");
+
+        // Analytic steady state for 200mm concrete (k=1.4) with these films.
+        let r_wall = 0.2 / 1.4;
+        let q_expected = 20.0 / (1.0 / h_int + r_wall + 1.0 / h_ext);
+
+        // Sanity bound against the analytic value. 10% is loose on purpose:
+        // the FD wrapper's own boundary-condition modeling sits ~6% above
+        // analytic here (pre-existing FD behavior, not this issue's scope);
+        // the CTF wrapper is verified tightly against analytic in
+        // test_ctf_wrapper_step_with_custom_h_values.
+        for (name, q) in [("CTF", q_ctf), ("FD", q_fd)] {
+            assert!(
+                (q - q_expected).abs() / q_expected < 0.10,
+                "{} steady-state flux {:.3} should be near analytic U*ΔT {:.3} for h=({:.1},{:.1})",
+                name,
+                q,
+                q_expected,
+                h_int,
+                h_ext
+            );
+        }
+
+        // The two solvers must agree with each other, not just the analytic value.
+        assert!(
+            (q_ctf - q_fd).abs() / q_expected < 0.08,
+            "CTF ({:.3}) and FD ({:.3}) steady-state fluxes should agree",
+            q_ctf,
+            q_fd
+        );
     }
 
     #[test]

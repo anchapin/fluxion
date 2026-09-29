@@ -209,6 +209,12 @@ pub struct CTFCalculator<'a> {
     layers: &'a [CTFMaterial],
     timestep: f64,
     max_coeffs: usize,
+    /// Optional custom interior film resistance [m²K/W].
+    /// If None, uses default R_SI = 0.125 from state_space_ctf.
+    r_si: Option<f64>,
+    /// Optional custom exterior film resistance [m²K/W].
+    /// If None, uses default R_SE = 0.044 from state_space_ctf.
+    r_se: Option<f64>,
 }
 
 // The transmission-matrix private methods below (find_poles,
@@ -253,6 +259,8 @@ impl<'a> CTFCalculator<'a> {
             layers,
             timestep,
             max_coeffs,
+            r_si: None,
+            r_se: None,
         }
     }
 
@@ -261,17 +269,61 @@ impl<'a> CTFCalculator<'a> {
         Self::new(layers, timestep, 50)
     }
 
+    /// Create calculator with custom surface film resistances.
+    ///
+    /// This allows specifying non-standard film resistances for the CTF
+    /// coefficient calculation. The resistances are expressed as
+    /// thermal resistances (R = 1/h) rather than heat transfer coefficients.
+    ///
+    /// # Arguments
+    ///
+    /// * `layers` - Material layers (interior to exterior)
+    /// * `timestep` - Simulation timestep [s]
+    /// * `max_coeffs` - Maximum number of coefficients to compute
+    /// * `r_si` - Interior surface thermal resistance [m²K/W]
+    /// * `r_se` - Exterior surface thermal resistance [m²K/W]
+    pub fn with_film_resistances(
+        layers: &'a [CTFMaterial],
+        timestep: f64,
+        max_coeffs: usize,
+        r_si: f64,
+        r_se: f64,
+    ) -> Self {
+        Self {
+            layers,
+            timestep,
+            max_coeffs,
+            r_si: Some(r_si),
+            r_se: Some(r_se),
+        }
+    }
+
     /// Compute CTF coefficients for the wall construction.
     ///
     /// Uses the state-space method (Seem 1987) which is the same algorithm
     /// EnergyPlus uses internally. This replaces the previous pole/residue
     /// method which was fundamentally limited for film-dominated walls.
     ///
+    /// If custom film resistances were provided via `with_film_resistances`,
+    /// those values are used instead of the default ASHRAE 140 values.
+    ///
     /// # Returns
     ///
     /// CTF coefficients (X, Y, Z, Φ) for heat flux calculation.
     pub fn compute_coefficients(&self) -> CTFCoefficients {
-        crate::physics::state_space_ctf::compute_state_space_ctf(self.layers, self.timestep)
+        match (self.r_si, self.r_se) {
+            (Some(r_si), Some(r_se)) => {
+                crate::physics::state_space_ctf::compute_state_space_ctf_with_films(
+                    self.layers,
+                    self.timestep,
+                    r_si,
+                    r_se,
+                )
+            }
+            _ => {
+                crate::physics::state_space_ctf::compute_state_space_ctf(self.layers, self.timestep)
+            }
+        }
     }
 
     /// Find poles of the wall transfer function Y(s) = 1/A(s).
