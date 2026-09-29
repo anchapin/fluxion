@@ -340,7 +340,7 @@
         "sim_to_physics": 79
       },
       "total": 284,
-      "edge_signature": "pending-ci-verification",
+      "edge_signature": "dbdac840c5472a0c",
       "reason": "Issue #4166 / PR #4222 — per-surface exterior boundary. Deleted the obsolete h_tr_em_wind_dependent helper and its five tests from src/sim/thermal_model_physics/physics_impl/step_5r1c.rs, removing 3 sim->physics use edges (82 -> 79). The per-surface ExteriorBoundarySurface::h_tr_em keeps the caller-owned exterior_convection import."
     }
   ]
