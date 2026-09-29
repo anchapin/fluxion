@@ -53,6 +53,12 @@ pub(crate) struct PhysicsScratch5r1c {
     /// per-step `h_ve_night_zone` Vec and the `h_ext_owned` Vec that
     /// `step_physics_5r1c` built every call.
     pub h_ext_owned_zone: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    /// Issue #4166: per-zone mass-to-outdoor transmission conductance
+    /// aggregated from per-surface exterior boundaries (conductance- and
+    /// area-weighted). Populated by `prepare_solvers_and_sol_air` alongside
+    /// `t_sol_air_zone`; replaces the four duplicated wall+roof
+    /// `h_tr_em_wind_dependent` computations.
+    pub h_tr_em_zone: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
     /// Issue #3370: scratch buffers for the LW radiation exchange network
     /// snapshot in `step_physics_5r1c` (Issue #2890). Each field replaces a
     /// per-step `Vec<f64>::to_vec()` allocation that was needed to bridge
@@ -120,6 +126,7 @@ impl PhysicsScratch5r1c {
             wall_surface_correction: SmallVec::from_elem(0.0, num_zones),
             t_sol_air_zone: SmallVec::from_elem(0.0, num_zones),
             h_ext_owned_zone: SmallVec::from_elem(0.0, num_zones),
+            h_tr_em_zone: SmallVec::from_elem(0.0, num_zones),
             lw_surface_emissivity: SmallVec::from_elem(0.0, num_zones),
             lw_t_zone: SmallVec::from_elem(0.0, num_zones),
             lw_a_floor: SmallVec::from_elem(0.0, num_zones),

@@ -720,7 +720,21 @@ describe('@fluxion/native', () => {
     // per-step metered loads driven by assets/weather/WD600.epw — the
     // same drive as the engine-side Case 600 validation suite (which
     // records 3299.30 kWh for the same case in docs/ASHRAE140_RESULTS.md).
-    const COOLING_RECORDED_KWH = 3135.32;
+    //
+    // Re-recorded 2026-09-28 by PR #4222 (issue #4166): the per-surface
+    // exterior boundary replaced the legacy lumped SolAirTemperature on
+    // the 5R1C path and corrected the sol-air longwave sign to the ASHRAE
+    // direction (cold sky now depresses sol-air instead of warming it).
+    // The engine's real per-step metered loads are now 4777.08 kWh heating
+    // (inside the published [4314, 5836] band) and 4010.89 kWh cooling —
+    // a 27.9% increase in cooling energy (3135.32->4010.89); the shortfall
+    // to the published [4275, 5784] band lower bound fell 76.8%
+    // (1139.68->264.11 kWh).
+    // This is a genuine physics improvement, not a tuned constant, so the
+    // regression band is re-pointed at the new recorded value per the
+    // strict-energy-gate's "lower the baseline when the engine genuinely
+    // improved" rule.
+    const COOLING_RECORDED_KWH = 4010.89;
     const COOLING_REGRESSION_TOLERANCE = 0.15;
     const COOLING_MIN_KWH = COOLING_RECORDED_KWH * (1 - COOLING_REGRESSION_TOLERANCE);
     const COOLING_MAX_KWH = COOLING_RECORDED_KWH * (1 + COOLING_REGRESSION_TOLERANCE);

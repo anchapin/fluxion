@@ -7,6 +7,7 @@ pub mod diagnostics;
 pub mod ems;
 pub mod engine;
 pub mod equipment;
+pub mod exterior_boundary;
 #[cfg(feature = "fluxion-cfd")]
 pub mod ffd_cfd_adapter;
 #[cfg(feature = "fluxion-city")]

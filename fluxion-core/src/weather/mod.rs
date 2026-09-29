@@ -83,6 +83,15 @@ pub struct HourlyWeatherData {
     /// Horizontal wind speed measured at a standard height of 10 meters above ground.
     pub wind_speed: f64,
 
+    /// Wind direction (degrees, meteorological convention)
+    ///
+    /// Direction FROM which the wind blows, clockwise from north
+    /// (0° = North, 90° = East). Used for windward/leeward exterior
+    /// convection selection (Issue #4166). `None` when the source does not
+    /// provide direction (synthetic weather, tests); callers fall back to
+    /// the windward coefficient.
+    pub wind_direction: Option<f64>,
+
     /// Relative humidity (%)
     ///
     /// Ratio of the partial pressure of water vapor to the equilibrium vapor
@@ -191,6 +200,7 @@ impl HourlyWeatherData {
             dhi,
             ghi,
             wind_speed,
+            wind_direction: None,
             humidity,
             horizontal_infrared: 0.0, // Default, can be set via with_infrared()
             hour_of_year,
@@ -233,6 +243,7 @@ impl HourlyWeatherData {
             dhi,
             ghi,
             wind_speed,
+            wind_direction: None,
             humidity,
             horizontal_infrared,
             hour_of_year,

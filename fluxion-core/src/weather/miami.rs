@@ -163,6 +163,7 @@ impl MiamiTmyWeather {
             dhi,
             ghi,
             wind_speed,
+            wind_direction: None,
             humidity,
             horizontal_infrared,
             hour_of_year: hour,

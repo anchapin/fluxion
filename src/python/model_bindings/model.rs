@@ -1352,6 +1352,7 @@ impl Model {
                 dhi: dhi_vec[t],
                 ghi: ghi_vec[t],
                 wind_speed: wind_vec[t],
+                wind_direction: None,
                 humidity: humidity_vec[t],
                 horizontal_infrared: hir_vec[t],
                 hour_of_year: t,

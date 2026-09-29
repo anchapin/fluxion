@@ -122,18 +122,23 @@ fn test_electrical_results_match_recorded_baseline() {
     // (January), `test_config()`, `ghi`-as-POA proxy. All 48 steps are heating
     // load (no clamping needed); the battery rides the SoC floor at 10%.
     //
+    // Re-recorded 2026-09-28 by PR #4222 (issue #4166): the per-surface
+    // exterior boundary corrected the sol-air longwave sign to the ASHRAE
+    // direction (cold sky now depresses sol-air), raising January heating
+    // load. Genuine physics change, not a tuned constant.
+    //
     // Cross-checks the physics wiring, not just the adapter: thermal/3 ==
     // electrical_load, and the battery stock (0.5 → 0.1 of 10 kWh) equals
     // charge − discharge. Regenerate by running with
     // FLUXION_PRINT_GRID_BASELINE=1 -- --nocapture.
-    const EXPECTED_THERMAL_KWH: f64 = 109.23951450955386;
-    const EXPECTED_ELECTRICAL_LOAD_KWH: f64 = 36.413171503184614;
-    const EXPECTED_PV_KWH: f64 = 8.923912979376766;
-    const EXPECTED_BATTERY_CHARGE_KWH: f64 = 0.2735260847011477;
-    const EXPECTED_BATTERY_DISCHARGE_KWH: f64 = 4.273526084701147;
-    const EXPECTED_GRID_IMPORT_KWH: f64 = 23.696030495736668;
-    const EXPECTED_GRID_EXPORT_KWH: f64 = 0.014396109721113066;
-    const EXPECTED_PEAK_NET_DEMAND_KW: f64 = 0.9635481319110748;
+    const EXPECTED_THERMAL_KWH: f64 = 118.85227128764205;
+    const EXPECTED_ELECTRICAL_LOAD_KWH: f64 = 39.61742376254734;
+    const EXPECTED_PV_KWH: f64 = 8.92391297937677;
+    const EXPECTED_BATTERY_CHARGE_KWH: f64 = 0.09800097614247;
+    const EXPECTED_BATTERY_DISCHARGE_KWH: f64 = 4.09800097614247;
+    const EXPECTED_GRID_IMPORT_KWH: f64 = 26.89479052471566;
+    const EXPECTED_GRID_EXPORT_KWH: f64 = 0.00515794611276;
+    const EXPECTED_PEAK_NET_DEMAND_KW: f64 = 1.04191466682572;
     const EXPECTED_FINAL_SOC_FRACTION: f64 = 0.1;
 
     let tol = 1e-9;
