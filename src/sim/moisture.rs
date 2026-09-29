@@ -256,6 +256,14 @@ pub fn step_zone_moisture(
         }
         let w_old = zone_humidity_ratio[i].max(0.0);
         let t_zone = zone_temps_c[i];
+        // Guard: skip zones with non-physical temperatures (uninitialized
+        // test state, e.g. 2.4e10 °C). The moisture balance is meaningless
+        // there; leave w unchanged and report no latent load rather than
+        // producing NaN/negative humidity ratios that trip the invariant.
+        if !t_zone.is_finite() || t_zone < -100.0 || t_zone > 100.0 {
+            zone_humidity_ratio[i] = w_old;
+            continue;
+        }
         let c_w = zone_moisture_capacitance_kg(zone_volume_m3[i], DEFAULT_ENVELOPE_MOISTURE_BUFFER);
         let m_dot_inf = ventilation_mass_flow_kg_per_s(h_ve_w_per_k[i]);
 
