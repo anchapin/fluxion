@@ -80,10 +80,7 @@ fn diagnostic_case_600_coefficient_ratio() {
         "Pre-fix coefficient must be lower (h_ve omitted)"
     );
     // The h_ve contribution is the delta
-    assert!(
-        (new - old - h_ve).abs() < 1e-9,
-        "Delta must equal h_ve"
-    );
+    assert!((new - old - h_ve).abs() < 1e-9, "Delta must equal h_ve");
 }
 
 #[test]
@@ -94,8 +91,8 @@ fn diagnostic_case_900_coefficient_ratio() {
     //
     // From #4242 PR body: derived_h_tr_3 ≈ 42.66 W/K for Case 900
     let derived_h_tr_3 = 42.66;
-    let h_tr_w = 15.0;  // Representative Case 900 window conductance
-    let h_ve = 35.0;    // Representative Case 900 ventilation conductance
+    let h_tr_w = 15.0; // Representative Case 900 window conductance
+    let h_ve = 35.0; // Representative Case 900 ventilation conductance
 
     let old = old_coefficient_9r4c(derived_h_tr_3, h_tr_w);
     // New coefficient (post-fix formula):
@@ -130,8 +127,5 @@ fn diagnostic_case_900_coefficient_ratio() {
         old < new,
         "Pre-fix coefficient must be lower (h_ve omitted)"
     );
-    assert!(
-        (new - old - h_ve).abs() < 1e-9,
-        "Delta must equal h_ve"
-    );
+    assert!((new - old - h_ve).abs() < 1e-9, "Delta must equal h_ve");
 }
