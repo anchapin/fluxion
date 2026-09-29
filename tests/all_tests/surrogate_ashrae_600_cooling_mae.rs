@@ -27,8 +27,9 @@
 //! The surrogate's per-timestep temperature drift gate (`surrogate_drift_gate`,
 //! Issue #1784) catches >1% per-timestep drift from the 9R4C physics baseline,
 //! but a compounded 0.5%-per-timestep divergence (≈5% annual) slips through
-//! that gate. The strict ±15% annual-energy gate (`ashrae_140_strict_energy_gate`,
-//! Issue #1333) is a system-level gate that fires AFTER ASHRAE 140 metrics are
+//! that gate. The strict ±15% annual-energy gate (job: "ASHRAE 140 Strict Energy
+//! Gate (Issue #1333)" in `.github/workflows/physics-pr.yml`, Issue #1333) is a
+//! system-level gate that fires AFTER ASHRAE 140 metrics are
 //! computed; an upstream surrogate regression that pushes any surrogate-routed
 //! case's annual cooling 5% above the band is caught by #1333, but a
 //! 0.5%-per-timestep surrogate divergence on a case other than 600/900 is NOT.

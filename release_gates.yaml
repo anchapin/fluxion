@@ -408,11 +408,11 @@ ci:
   # Job names (NOT workflow names) must match the `jobs.<id>.name`
   # field in each workflow file. To find them, look for
   # `name: ASHRAE 140 Strict Energy Gate (Issue #1333)` in
-  # `.github/workflows/ashrae_140_strict_energy_gate.yml`.
+  # `.github/workflows/physics-pr.yml`.
   required_checks:
     # Issue #3898: "ASHRAE 140 Strict Energy Gate (Issue #1333)" was
     # REMOVED from this list (2026-09-25) because
-    # `ashrae_140_strict_energy_gate.yml` declared
+    # (that gate workflow's file is now deleted per Issue #4007)
     # `pull_request.paths-ignore` for docs/markdown, making docs-only
     # PRs structurally unmergeable. Issue #4007 SUPERSEDES that removal:
     # the gate moved into `physics-pr.yml` with a docs-only-gate skip
@@ -539,8 +539,8 @@ ci:
     # `workflow_index` entry below.
 
     # Issue #4007: PROMOTED to required. The strict ±15% annual-energy
-    # tolerance gate moved from `ashrae_140_strict_energy_gate.yml`
-    # (deleted) into `physics-pr.yml`. Keeps the docs-only-gate skip
+    # tolerance gate moved from the now-deleted gate workflow into
+    # `physics-pr.yml`. Keeps the docs-only-gate skip
     # (Issue #3810 listener pattern) so docs-only PRs stay mergeable.
     - "ASHRAE 140 Strict Energy Gate (Issue #1333)"
 
@@ -777,7 +777,7 @@ ci:
   # wave-orchestrator all-checks-green merge criterion, and the
   # ADR-0016 Lane-3 nightly authority.
   #
-  #   - ASHRAE 140 Strict Energy Gate (Issue #1333)   — ashrae_140_strict_energy_gate.yml paths-ignore: docs/**
+  #   - ASHRAE 140 Strict Energy Gate (Issue #1333)   — .github/workflows/physics-pr.yml paths-ignore: docs/** (was removed from required_checks per Issue #3898, re-promoted per Issue #4007)
   #   - Surrogate ASHRAE 140 MAE Gate (Issue #2924)   — ashrae_validation.yml paths-ignore: docs/**
   #   - h_tr_em Regression Gate (LIMIT-13)            — h_tr_em_regression_gate.yml paths-ignore: docs/**
   #   - Tracked-vs-Ignored Gate (Issue #3356)         — tracked-vs-ignored.yml paths-ignore: docs-only changes
@@ -890,7 +890,7 @@ ci:
       # Issue #3355: expanded upstream scope to `[main, develop]` so this
       # PR-blocking strict-tolerance check actually fires for develop PRs.
       # Issue #4007: PROMOTED back to required and moved from the deleted
-      # `ashrae_140_strict_energy_gate.yml` into `physics-pr.yml`. The
+      # gate workflow into `physics-pr.yml`. The
       # Issue #3898 removal comment in `required_checks` above is
       # superseded: the docs-only-gate skip now lives in the
       # `strict-precheck` job, and the `-listener` job reports

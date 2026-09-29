@@ -16,6 +16,12 @@ A checked reference is one of:
    (Issue #4199: issue #3764 consolidated the standalone test binaries into
    the single `all_tests` runner, so doc commands naming the old binaries
    abort with `error: no test target named 'X'`).
+4. References to `.github/workflows/*.yml` paths — verified to exist on disk
+   (Issue #4184: prevents doc rot where citations point at deleted workflows).
+   Matches backticked and bare tokens in prose; fenced code blocks are
+   excluded (they hold example commands like `ci-local.sh
+   .github/workflows/foo.yml`). Known proposal-record exceptions are listed
+   in WORKFLOW_PATH_REF_EXCEPTIONS.
 
 Bare path-shaped tokens are NOT heuristically matched (this avoids false
 positives on code-block-like text such as `dyn Trait` or `release_gates.yaml`
@@ -59,6 +65,33 @@ CARGO_TEST_TARGET_RE = re.compile(r"--test\s+([a-zA-Z0-9_\-]+)")
 # Directory holding the per-module sources consolidated into the
 # single `all_tests` runner by issue #3764.
 ALL_TESTS_DIR = REPO_ROOT / "tests" / "all_tests"
+
+# Directory holding the CI workflow files cited by docs.
+WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
+
+# 4. Inline `.github/workflows/<name>.yml` references in prose (Issue #4184).
+# Matches backticked and bare tokens; fenced code blocks are stripped before
+# matching so example commands (e.g. `ci-local.sh .github/workflows/foo.yml`)
+# are not treated as citations.
+WORKFLOW_PATH_RE = re.compile(r"\.github/workflows/([A-Za-z0-9_.\-]+\.ya?ml)")
+
+# Issue #4184 — (repo-relative markdown file, workflow filename) pairs that
+# name a workflow file which does not exist on disk but are NOT doc rot:
+#   - docs/ripr_investigation_1254.md names `ripr.yml` as a PROPOSAL inside a
+#     historical investigation record (the proposal later landed as
+#     `ripr-preflight.yml`); editing the record would falsify history.
+#   - .planning/** names `validation.yml` in historical plan/research notes;
+#     those docs describe intended wiring, not current CI state.
+WORKFLOW_PATH_REF_EXCEPTIONS = frozenset(
+    {
+        ("docs/ripr_investigation_1254.md", "ripr.yml"),
+        (
+            ".planning/phases/47-performance-validation-optimization/47-03-PLAN.md",
+            "validation.yml",
+        ),
+        (".planning/research/ARCHITECTURE.md", "validation.yml"),
+    }
+)
 
 # Files in scope: AGENTS.md allow-listed root docs + docs/**/*.md
 ROOT_ALLOW = (
@@ -134,6 +167,19 @@ def is_consolidation_drift_target(target: str, valid_targets: set[str]) -> bool:
     Names that are neither declared targets nor consolidated modules
     (placeholders, filters, other-crate targets) are NOT this class."""
     return target not in valid_targets and (ALL_TESTS_DIR / f"{target}.rs").is_file()
+
+
+def extract_workflow_path_refs(text: str) -> list[tuple[str, int]]:
+    """Return `(workflow_filename, line_no)` for every
+    `.github/workflows/<name>.yml` token in prose `text` (Issue #4184).
+    Fenced code blocks are stripped first, so example commands are not
+    treated as citations."""
+    found: list[tuple[str, int]] = []
+    cleaned = strip_code_fences(text)
+    for line_no, line in enumerate(cleaned.splitlines(), start=1):
+        for match in WORKFLOW_PATH_RE.finditer(line):
+            found.append((match.group(1), line_no))
+    return found
 
 
 def collect_markdown_files() -> list[Path]:
@@ -252,6 +298,9 @@ def main() -> int:
     # fences that name a consolidated-away standalone binary.
     drift_failures: list[tuple[str, Path, int]] = []
     drift_warnings: list[tuple[str, Path, int]] = []
+    # Issue #4184: (file, line, workflow filename) for prose references to
+    # `.github/workflows/*.yml` paths that do not exist on disk.
+    workflow_failures: list[tuple[Path, int, str]] = []
     valid_test_targets = load_cargo_test_targets()
     for file_path in files:
         try:
@@ -259,6 +308,12 @@ def main() -> int:
         except (OSError, UnicodeDecodeError) as exc:
             sys.stderr.write(f"::warning::could not read {file_path}: {exc}\n")
             continue
+        rel_posix = file_path.relative_to(REPO_ROOT).as_posix()
+        for wf_name, wf_line in extract_workflow_path_refs(text):
+            if (rel_posix, wf_name) in WORKFLOW_PATH_REF_EXCEPTIONS:
+                continue
+            if not (WORKFLOWS_DIR / wf_name).is_file():
+                workflow_failures.append((file_path, wf_line, wf_name))
         for target, line_no in extract_cargo_test_targets(text):
             if target in valid_test_targets:
                 continue
@@ -308,6 +363,18 @@ def main() -> int:
         print()
         print(f"FAIL: {len(drift_failures)} stale cargo test target(s) "
               f"detected (issue #4199).")
+        return 1
+
+    if workflow_failures:
+        print()
+        print("Doc references to .github/workflows/*.yml paths that do not "
+              "exist on disk (issue #4184):")
+        for file_path, line_no, wf_name in workflow_failures:
+            rel = file_path.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_no}: .github/workflows/{wf_name}")
+        print()
+        print(f"FAIL: {len(workflow_failures)} doc reference(s) to missing "
+              f"workflow file(s) detected.")
         return 1
 
     if failures:

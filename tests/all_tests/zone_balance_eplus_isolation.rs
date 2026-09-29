@@ -919,7 +919,8 @@ fn test_case_600_blind_energy_infrastructure() {
 /// Case 600 STRICT ASHRAE 140 tolerance — IGNORED pending physics fix.
 ///
 /// The strict ±15% annual-energy tolerance gate (issue #1333) is wired
-/// in `.github/workflows/ashrae_140_strict_energy_gate.yml` and runs on
+/// in `.github/workflows/physics-pr.yml` (job: "ASHRAE 140 Strict Energy Gate
+/// (Issue #1333)") and runs on
 /// every PR. Per issue #2506 this gate no longer reports these tests as
 /// silently `ignored`/green: the workflow runs them with
 /// `--include-ignored`, parses the printed H/C values, and compares the
@@ -1015,7 +1016,8 @@ fn test_case_900_blind_energy_infrastructure() {
 /// Case 900 STRICT ASHRAE 140 tolerance — IGNORED pending physics fix.
 ///
 /// The strict ±15% annual-energy tolerance gate (issue #1333) is wired
-/// in `.github/workflows/ashrae_140_strict_energy_gate.yml` and runs on
+/// in `.github/workflows/physics-pr.yml` (job: "ASHRAE 140 Strict Energy Gate
+/// (Issue #1333)") and runs on
 /// every PR. Per issue #2506 this gate no longer reports these tests as
 /// silently `ignored`/green: the workflow runs them with
 /// `--include-ignored`, parses the printed H/C values, and compares the

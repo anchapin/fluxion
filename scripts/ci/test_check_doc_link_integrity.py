@@ -119,3 +119,55 @@ def test_consolidation_drift_classification(checker, tmp_path, monkeypatch):
     assert checker.is_consolidation_drift_target("ashrae_140_validation", valid)
     assert not checker.is_consolidation_drift_target("all_tests", valid)
     assert not checker.is_consolidation_drift_target("physics_validation", valid)
+
+
+def test_extract_workflow_path_refs_ignores_fences(checker):
+    """Issue #4184 -- backticked and bare `.github/workflows/*.yml` tokens in
+    prose are extracted; fenced example commands (the `foo.yml` class) are
+    not treated as citations."""
+    text = (
+        "prose cites `.github/workflows/physics-pr.yml` and bare .github/workflows/ci.yml\n"
+        "```\n"
+        "./scripts/ci-local.sh .github/workflows/foo.yml\n"
+        "```\n"
+    )
+    assert checker.extract_workflow_path_refs(text) == [
+        ("physics-pr.yml", 1),
+        ("ci.yml", 1),
+    ]
+
+
+def test_workflow_path_ref_missing_file_fails(checker, monkeypatch, tmp_path, capsys):
+    """Issue #4184 -- a prose citation of a workflow file that does not exist
+    on disk fails the gate."""
+    monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(checker, "WORKFLOWS_DIR", tmp_path / ".github" / "workflows")
+    (tmp_path / ".github" / "workflows").mkdir(parents=True)
+    (tmp_path / ".github" / "workflows" / "real.yml").write_text("on: push", encoding="utf-8")
+    monkeypatch.setattr(checker, "ROOT_ALLOW", ("README.md",))
+    monkeypatch.setattr(checker, "WORKFLOW_PATH_REF_EXCEPTIONS", frozenset())
+    (tmp_path / "README.md").write_text(
+        "gate lives in `.github/workflows/real.yml` but also `.github/workflows/gone.yml`",
+        encoding="utf-8",
+    )
+    assert checker.main() == 1
+    assert "gone.yml" in capsys.readouterr().out
+
+
+def test_workflow_path_ref_valid_and_exceptions_pass(checker, monkeypatch, tmp_path, capsys):
+    """Issue #4184 -- citations of existing workflows pass, and the documented
+    exception list is honored for proposal-record references."""
+    monkeypatch.setattr(checker, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(checker, "WORKFLOWS_DIR", tmp_path / ".github" / "workflows")
+    (tmp_path / ".github" / "workflows").mkdir(parents=True)
+    (tmp_path / ".github" / "workflows" / "real.yml").write_text("on: push", encoding="utf-8")
+    monkeypatch.setattr(checker, "ROOT_ALLOW", ("README.md",))
+    monkeypatch.setattr(
+        checker, "WORKFLOW_PATH_REF_EXCEPTIONS", frozenset({("README.md", "planned.yml")})
+    )
+    (tmp_path / "README.md").write_text(
+        "gate lives in `.github/workflows/real.yml`; proposal names .github/workflows/planned.yml",
+        encoding="utf-8",
+    )
+    assert checker.main() == 0
+    assert "PASS" in capsys.readouterr().out

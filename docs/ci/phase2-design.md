@@ -29,7 +29,7 @@ build — the ~15+ tariff from the issue):
 | `performance_dashboard.yml` (via `workflow_run`) | perf gates |
 | `determinism_check.yml` (via `workflow_run`) | 3-OS determinism |
 | `code-coverage.yml` (via `workflow_run`) | coverage |
-| `ashrae_140_strict_energy_gate.yml` (via `workflow_run`) | strict ±15% gate |
+| `.github/workflows/physics-pr.yml` (job: "ASHRAE 140 Strict Energy Gate (Issue #1333)") | strict ±15% gate |
 | `ashrae_140_validation.yml`, `fast_math_check.yml`, `h_tr_em_regression_gate.yml` | path-filtered physics gates |
 
 **Phase-gated CI today (ADR-0016 + #4018/#4019).** `ci-gates.yml` holds the 14
@@ -266,7 +266,7 @@ decision (below) is likewise deferred pending 30-day usage data.
   `Physics-Sim-Cycle-Check (GH)`, `Cycle Downward Trend Guard (Issue #2768)`
   (all folded verbatim from `ci-gates.yml`); `ASHRAE 140 Strict Energy Gate
   (Issue #1333)` (PROMOTED from the deleted
-  `ashrae_140_strict_energy_gate.yml`, with `strict-precheck` docs-only-gate
+  `.github/workflows/physics-pr.yml`, with `strict-precheck` docs-only-gate
   + `strict-energy-gate-listener` neutral-success so docs-only PRs stay
   mergeable — Issue #3810 pattern); `Nextest Subset (GH)` (NEW curated
   signal: root lib tests + the two `all_tests` regression modules, single

@@ -33,7 +33,7 @@ explicitly forbids that placement:
 > signal. Use a separate job instead.
 
 The same separation protects the existing ASHRAE strict gates
-(`ashrae_140_strict_energy_gate.yml`, `ashrae_validation.yml`, and friends)
+(`.github/workflows/physics-pr.yml`, `ashrae_validation.yml`, and friends)
 — they continue to run under default features and never touch the
 `fast-math` build path.
 
@@ -234,7 +234,7 @@ commit:
 
 - `src/physics/fp_algebraic.rs` — the algebraic-FP helper layer (#3322)
 - `.github/workflows/determinism_check.yml` — the bit-identical cross-platform determinism contract that this workflow is **explicitly separate from** (issues #1297, #2549)
-- `.github/workflows/ashrae_140_strict_energy_gate.yml` — the ASHRAE strict ±15% annual-energy tolerance gate (#1333)
+- `.github/workflows/physics-pr.yml` (job: "ASHRAE 140 Strict Energy Gate (Issue #1333)") — the ASHRAE strict ±15% annual-energy tolerance gate (#1333)
 - `tests/zone_balance_eplus_isolation.rs` — the InvariantChecker machinery the residual ceiling reuses (#1295)
 - `docs/ci/branch-protection-strict-mode.md` — the workflow-only required-checks rationale (#3142)
 - `release_gates.yaml::ci.required_checks` — where this check will be promoted when ready
