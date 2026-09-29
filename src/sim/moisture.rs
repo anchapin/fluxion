@@ -361,7 +361,10 @@ pub fn step_zone_moisture(
 
         // Condensation: supersaturation at the zone temperature condenses
         // instantaneously; the released latent heat joins the cooling load.
-        let mut w_new = w_new_raw;
+        // Clamp w_new >= 0 — the exact update can produce negative values
+        // from garbage inputs (uninitialized test state); the invariant
+        // below is a bug-catcher, not a garbage-in filter.
+        let mut w_new = w_new_raw.max(0.0);
         let mut q_lat = q_lat_coil;
         let w_sat_zone = saturation_humidity_ratio(t_zone, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
         if w_new > w_sat_zone && dt > 0.0 {

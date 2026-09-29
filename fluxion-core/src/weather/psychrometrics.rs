@@ -621,6 +621,14 @@ pub fn enthalpy_from_weather(weather: &HourlyWeatherData) -> f64 {
 /// assert!((w_s - 0.0147).abs() < 0.0002); // ≈ 0.0147 kg/kg at 20°C
 /// ```
 pub fn saturation_humidity_ratio(temperature: f64, pressure: f64) -> f64 {
+    // At/above the boiling point (p_sat >= p), the air is all steam —
+    // the saturation humidity ratio is unbounded. Return infinity so
+    // callers' w <= w_sat invariants hold vacuously instead of
+    // producing negative garbage from a zero/negative denominator.
+    let p_sat = saturation_vapor_pressure(temperature);
+    if p_sat >= pressure {
+        return f64::INFINITY;
+    }
     calculate_humidity_ratio(temperature, 100.0, pressure)
 }
 
