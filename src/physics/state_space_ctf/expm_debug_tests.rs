@@ -5,6 +5,7 @@
 //! Children see the parent module's items through `use super::*;` —
 //! the PR #3688 `coverage_tests` precedent.
 
+use super::debug_numerics::matrix_exponential_old_pade;
 use super::linalg::*;
 use super::*;
 

@@ -4,9 +4,8 @@
 //! (the parent landed at 4347/4347 lines, see
 //! `tests/reference_data/module_size/state_space_ctf_ratchet.json`). The
 //! kernel is self-contained pure math — small dense matrix operations,
-//! matrix-exponential variants (Higham Padé [13/13], real-Schur/Francis
-//! double-shift, legacy Padé, Taylor), and the Householder
-//! QR/Hessenberg machinery — with no CTF-domain coupling.
+//! matrix-exponential variants (Higham Padé [13/13]), and the Gauss-Jordan
+//! `matrix_inverse` — with no CTF-domain coupling.
 //!
 //! The pipeline (`compute_state_space_ctf`, `compute_ctf_from_state_space`,
 //! `build_state_space_matrices`) re-imports the symbols it needs via
@@ -25,13 +24,6 @@
 //!   `matrix_exponential_faer`)
 //! - Higham Padé [13/13] (`expm_higham_padé13` + `solve_linear_system_lu`,
 //!   `matrix_norm_1`, `compute_powers`, `expm_2x2`)
-//! - Real-Schur / Francis QR (`householder_to_hessenberg`,
-//!   `apply_householder_left` / `apply_householder_right` /
-//!   `apply_householder_right_unitary`, `vector_norm`, `transpose`,
-//!   `francis_qr_schur`, `implicit_double_shift_bulge_chase`)
-//! - Reference implementations kept for the test suite
-//!   (`matrix_exponential_old_pade`, `matrix_exponential_taylor`,
-//!   `matrix_norm_inf`)
 //! - Gauss-Jordan `matrix_inverse`
 //!
 //! ## Visibility
@@ -532,454 +524,6 @@ pub fn expm_2x2(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {
 
     vec![vec![r11, r12], vec![r21, r22]]
 }
-/// Householder reduction of a general n×n matrix A to upper Hessenberg form.
-///
-/// Returns (H, U) such that A = U · H · U^T, where H is upper Hessenberg
-/// (h[i][j] = 0 for i > j+1) and U is the product of Householder reflections
-/// (orthogonal).
-#[allow(dead_code)]
-pub fn householder_to_hessenberg(a: &[Vec<f64>]) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
-    let n = a.len();
-    let mut h = a.to_vec();
-    let mut u = identity(n);
-
-    if n <= 2 {
-        return (h, u);
-    }
-
-    for k in 0..n.saturating_sub(2) {
-        // Extract the column vector x = h[k+2..n, k] (entries BELOW the subdiagonal).
-        // The subdiagonal h[k+1, k] is preserved (it's a feature of Hessenberg form).
-        // For a tridiagonal A, x is already zero, so we skip.
-        if n - (k + 2) < 1 {
-            continue; // Nothing to zero out below the subdiagonal
-        }
-        let mut x: Vec<f64> = (k + 2..n).map(|i| h[i][k]).collect();
-        let x_norm = vector_norm(&x);
-        if x_norm < 1e-15 {
-            continue; // Already zero below subdiagonal
-        }
-
-        // Householder vector: v = x + sign(x[0]) * ||x|| * e_0
-        let sign = if x[0] >= 0.0 { 1.0 } else { -1.0 };
-        x[0] += sign * x_norm;
-        let v_norm = vector_norm(&x);
-        if v_norm < 1e-15 {
-            continue;
-        }
-        for vi in x.iter_mut() {
-            *vi /= v_norm;
-        }
-        let v = x;
-
-        // Apply H = I - 2 v v^T from the left to h[k+2..n, k..n]
-        apply_householder_left(&mut h, &v, k + 2, k, n);
-
-        // Apply H = I - 2 v v^T from the right to h[0..n, k+2..n]
-        apply_householder_right(&mut h, &v, 0, k + 2, n);
-
-        // Update U = U · H_k
-        // H_k = I - 2 v v^T (acting on rows k+2..n, cols k+2..n)
-        // Equivalently, U_new = U · (I - 2 v v^T)
-        apply_householder_right_unitary(&mut u, &v, k + 2, n);
-    }
-
-    (h, u)
-}
-
-/// Apply Householder (I - 2 v v^T) to rows [start..n] of h, columns [col_start..n].
-#[allow(dead_code)]
-pub fn apply_householder_left(
-    h: &mut [Vec<f64>],
-    v: &[f64],
-    start: usize,
-    col_start: usize,
-    n: usize,
-) {
-    // h[start..n, col_start..n] -= 2 v (v^T h[start..n, col_start..n])
-    // Step 1: w = v^T h[start..n, col_start..n]  (a row vector of length n-col_start)
-    let mut w = vec![0.0; n - col_start];
-    for j in 0..n - col_start {
-        let mut s = 0.0;
-        for i in 0..v.len() {
-            s += v[i] * h[start + i][col_start + j];
-        }
-        w[j] = s;
-    }
-    // Step 2: h[start..n, col_start..n] -= 2 v w
-    for i in 0..v.len() {
-        for j in 0..n - col_start {
-            h[start + i][col_start + j] -= 2.0 * v[i] * w[j];
-        }
-    }
-}
-
-/// Apply Householder (I - 2 v v^T) to columns [start..n] of h, rows [0..row_end].
-#[allow(dead_code)]
-pub fn apply_householder_right(
-    h: &mut [Vec<f64>],
-    v: &[f64],
-    row_end: usize,
-    start: usize,
-    _n: usize,
-) {
-    // h[0..row_end, start..n] -= 2 (h[0..row_end, start..n] v) v^T
-    // Step 1: w = h[0..row_end, start..n] v  (a column vector of length row_end)
-    let mut w = vec![0.0; row_end];
-    for i in 0..row_end {
-        let mut s = 0.0;
-        for j in 0..v.len() {
-            s += h[i][start + j] * v[j];
-        }
-        w[i] = s;
-    }
-    // Step 2: h[0..row_end, start..n] -= 2 w v^T
-    for i in 0..row_end {
-        for j in 0..v.len() {
-            h[i][start + j] -= 2.0 * w[i] * v[j];
-        }
-    }
-}
-
-/// Apply Householder (I - 2 v v^T) to a unitary (orthogonal) matrix U, columns [start..n].
-/// This is the same as apply_householder_right but treats U as n×n.
-#[allow(dead_code)]
-pub fn apply_householder_right_unitary(u: &mut [Vec<f64>], v: &[f64], start: usize, n: usize) {
-    apply_householder_right(u, v, n, start, n);
-}
-
-#[allow(dead_code)]
-pub fn vector_norm(v: &[f64]) -> f64 {
-    v.iter().map(|x| x * x).sum::<f64>().sqrt()
-}
-
-#[allow(dead_code)]
-pub fn transpose(a: &[Vec<f64>]) -> Vec<Vec<f64>> {
-    let n = a.len();
-    if n == 0 {
-        return vec![];
-    }
-    let m = a[0].len();
-    let mut t = vec![vec![0.0; n]; m];
-    for i in 0..n {
-        for j in 0..m {
-            t[j][i] = a[i][j];
-        }
-    }
-    t
-}
-
-/// Francis double-shift QR iteration to reduce an upper Hessenberg matrix H
-/// to real quasi-upper-triangular Schur form T.
-///
-/// Returns (T, V) such that H = V · T · V^T, where T has 1×1 blocks
-/// (real eigenvalues) and 2×2 blocks (complex-conjugate eigenvalue pairs)
-/// on its diagonal.
-///
-/// This is a simplified implementation suitable for small matrices
-/// (n ≤ ~50) — the same algorithm E+ uses internally. For our 6-24 node
-/// state-space matrices, this is more than adequate.
-#[allow(dead_code)]
-pub fn francis_qr_schur(h: &[Vec<f64>]) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
-    let n = h.len();
-    let mut t = h.to_vec();
-    let mut v = identity(n);
-
-    if n <= 2 {
-        return (t, v);
-    }
-
-    // Wilkinson shift + implicit double-shift QR with deflation
-    let max_iter = 200 * n; // plenty of iterations for convergence
-    let tol = 1e-14;
-    let mut iter = 0;
-    let mut nn = n; // size of the active submatrix
-    let start = 0; // start of the active submatrix
-
-    while nn > 2 && iter < max_iter {
-        // Check if the BOTTOM subdiagonal of the active submatrix is small.
-        // If so, the bottom-right eigenvalue has converged, and we can deflate.
-        let bot_sub = t[start + nn - 1][start + nn - 2].abs();
-        let bot_diag_sum =
-            t[start + nn - 1][start + nn - 1].abs() + t[start + nn - 2][start + nn - 2].abs();
-        if bot_sub < tol * bot_diag_sum.max(1e-30) {
-            t[start + nn - 1][start + nn - 2] = 0.0;
-            nn -= 1;
-            continue;
-        }
-
-        // Implicit double-shift QR bulge chase on the active submatrix
-        // t[start..start+nn, start..start+nn]
-        implicit_double_shift_bulge_chase(&mut t, &mut v, start, nn);
-
-        // Force small subdiagonals to zero after the chase
-        for i in 1..nn {
-            if t[start + i][start + i - 1].abs() < 1e-12 {
-                t[start + i][start + i - 1] = 0.0;
-            }
-        }
-
-        iter += 1;
-    }
-
-    // Final: if 2×2 block remains, ensure it's in standard form
-    if nn == 2 {
-        // Already small enough — the result is a 2×2 block (real or complex eigenvalues)
-    }
-
-    (t, v)
-}
-
-/// Implicit double-shift QR bulge chase on the active submatrix t[start..start+nn, start..start+nn].
-///
-/// Uses the Wilkinson shift (the eigenvalue of the trailing 2×2 block
-#[allow(dead_code)]
-/// closest to a22). The implicit shift theorem gives the first column
-/// of p(T) = T² - s T + p I, where s and p are the trace and determinant
-/// of the trailing 2×2 block.
-pub fn implicit_double_shift_bulge_chase(
-    t: &mut [Vec<f64>],
-    v: &mut [Vec<f64>],
-    start: usize,
-    nn: usize,
-) {
-    if nn < 3 {
-        return;
-    }
-
-    // Compute s and p from the trailing 2x2 block
-    let a11 = t[start + nn - 2][start + nn - 2];
-    let a12 = t[start + nn - 2][start + nn - 1];
-    let a21 = t[start + nn - 1][start + nn - 2];
-    let a22 = t[start + nn - 1][start + nn - 1];
-    let s = a11 + a22;
-    let p = a11 * a22 - a12 * a21;
-
-    // p(T) e_0 = T (T e_0) - s T e_0 + p e_0
-    // Step 1: v = T e_0 = first column of T (active submatrix)
-    let mut v_col = vec![0.0; nn];
-    for i in 0..nn {
-        v_col[i] = t[start + i][start];
-    }
-    // Step 2: w = T v_col (apply Hessenberg T to v_col)
-    let mut w = vec![0.0; nn];
-    for i in 0..nn {
-        let lo = i.saturating_sub(1);
-        let hi = (i + 2).min(nn);
-        let mut s_acc = 0.0;
-        for j in lo..hi {
-            s_acc += t[start + i][start + j] * v_col[j];
-        }
-        w[i] = s_acc;
-    }
-    // Step 3: pt = w - s * v_col + p * e_0
-    let mut pt: Vec<f64> = w
-        .iter()
-        .enumerate()
-        .map(|(i, &wi)| wi - s * v_col[i])
-        .collect();
-    pt[0] += p;
-
-    // Now chase the bulge
-    let mut m = 0_usize; // offset within the active submatrix
-    while m < nn - 2 {
-        // Determine vector to eliminate (the bulge column)
-        let num_rows = (nn - m).min(3);
-        let mut hh = vec![0.0; num_rows];
-        hh[..num_rows].copy_from_slice(&pt[m..(num_rows + m)]);
-        // Normalize and form Householder
-        let hh_norm = vector_norm(&hh);
-        if hh_norm < 1e-15 {
-            m += 1;
-            continue;
-        }
-        let sign = if hh[0] >= 0.0 { 1.0 } else { -1.0 };
-        hh[0] += sign * hh_norm;
-        let hh_v_norm = vector_norm(&hh);
-        if hh_v_norm < 1e-15 {
-            m += 1;
-            continue;
-        }
-        for vi in hh.iter_mut() {
-            *vi /= hh_v_norm;
-        }
-
-        // Apply Householder to t[m+start..m+start+3, m+start..start+nn]
-        // From the left: rows m+start..m+start+num_rows
-        for j in m + start..start + nn {
-            let mut s_acc = 0.0;
-            for i in 0..num_rows {
-                s_acc += hh[i] * t[m + start + i][j];
-            }
-            for i in 0..num_rows {
-                t[m + start + i][j] -= 2.0 * hh[i] * s_acc;
-            }
-        }
-        // From the right: cols m+start..m+start+num_rows, rows 0..start+nn
-        for i in 0..start + nn {
-            let mut s_acc = 0.0;
-            for j in 0..num_rows {
-                s_acc += t[i][m + start + j] * hh[j];
-            }
-            for j in 0..num_rows {
-                t[i][m + start + j] -= 2.0 * s_acc * hh[j];
-            }
-        }
-        // Update V: V = V · H (apply Householder to columns m+start..m+start+num_rows of V)
-        for i in 0..v.len() {
-            let mut s_acc = 0.0;
-            for j in 0..num_rows {
-                s_acc += v[i][m + start + j] * hh[j];
-            }
-            for j in 0..num_rows {
-                v[i][m + start + j] -= 2.0 * s_acc * hh[j];
-            }
-        }
-        // Clear the bulge below the subdiagonal
-        for i in 1..num_rows {
-            t[m + start + i][m + start] = 0.0;
-        }
-        if num_rows >= 2 {
-            t[m + start + 2][m + start] = 0.0;
-        }
-
-        m += 1;
-    }
-}
-
-#[allow(dead_code)]
-pub fn matrix_exponential_old_pade(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {
-    let n = a.len();
-
-    // Scale A·t
-    let mut scaled = vec![vec![0.0; n]; n];
-    for i in 0..n {
-        for j in 0..n {
-            scaled[i][j] = a[i][j] * t;
-        }
-    }
-
-    // Find scaling factor s such that ||scaled/2^s|| < 0.5
-    let norm_inf = matrix_norm_inf(&scaled);
-    let mut s = 0;
-    let mut scale_factor = 1.0;
-    while norm_inf / scale_factor > 0.5 {
-        scale_factor *= 2.0;
-        s += 1;
-    }
-
-    // Apply scaling
-    if s > 0 {
-        for row in &mut scaled {
-            for val in row.iter_mut() {
-                *val /= scale_factor;
-            }
-        }
-    }
-
-    // Padé [6/6] approximant
-    // exp(B) ≈ D6^(-1) · N6 where:
-    // N6 = sum_{k=0}^{6} c_k · B^k
-    // D6 = sum_{k=0}^{6} (-1)^k · c_k · B^k
-    // c_k = (2p-k)! p! / ((2p)! k! (p-k)!)
-    // For p=6: c = [1, 1/2, 5/44, 1/66, 1/792, 1/15840, 1/665280]
-    let p = 6;
-    let c: [f64; 7] = [
-        1.0,
-        0.5,
-        5.0 / 44.0,
-        1.0 / 66.0,
-        1.0 / 792.0,
-        1.0 / 15840.0,
-        1.0 / 665280.0,
-    ];
-
-    // Compute powers of B
-    let b_powers = compute_powers(&scaled, p);
-
-    // Compute numerator N6 and denominator D6
-    let mut numer = vec![vec![0.0; n]; n];
-    let mut denom = vec![vec![0.0; n]; n];
-
-    for k in 0..=p {
-        let sign = if k % 2 == 0 { 1.0 } else { -1.0 };
-        for i in 0..n {
-            for j in 0..n {
-                numer[i][j] += c[k] * b_powers[k][i][j];
-                denom[i][j] += sign * c[k] * b_powers[k][i][j];
-            }
-        }
-    }
-
-    // exp(B) = D6^(-1) · N6
-    let d_inv = matrix_inverse(&denom).unwrap_or_else(|| identity(n));
-    let mut result = mat_mat_mul(&d_inv, &numer);
-
-    // Square s times
-    for _ in 0..s {
-        result = mat_mat_mul(&result, &result);
-    }
-
-    result
-}
-
-/// Compute matrix exponential exp(A·t) using a direct Taylor series.
-///
-/// exp(A·t) = Σ_{k=0}^N (A·t)^k / k!
-///
-/// For a 24×24 matrix with ||A·t|| ≈ 1.93, the Taylor series converges
-/// in about 30 terms to machine precision. Each term requires a matrix
-/// multiplication; for n=24, this is O(n^3) per term.
-///
-/// **This is the "foolproof" fallback** for cases where the Schur-based
-/// algorithm or Padé scaling-and-squaring fails (e.g., multi-layer walls
-/// with 20,000× eigenvalue spread). The Taylor series makes no assumptions
-/// about the matrix structure and converges for any stable A.
-#[allow(dead_code)]
-pub fn matrix_exponential_taylor(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {
-    let n = a.len();
-    if n == 0 {
-        return vec![];
-    }
-    if n == 1 {
-        return vec![vec![(a[0][0] * t).exp()]];
-    }
-
-    // Number of terms: chosen so (||A·t||)^N / N! < 1e-15
-    // For ||A·t|| ≈ 1.93: N=30 gives (1.93)^30/30! ≈ 1e-21
-    let n_terms = 30;
-
-    // B = A·t
-    let mut b = vec![vec![0.0; n]; n];
-    for i in 0..n {
-        for j in 0..n {
-            b[i][j] = a[i][j] * t;
-        }
-    }
-
-    // Initialize result = I, current_term = I (which is B^0 / 0!)
-    let mut result = identity(n);
-    let mut current_term = identity(n); // B^0 / 0! = I
-
-    for k in 1..=n_terms {
-        // current_term = current_term · B / k = B^k / k!
-        current_term = mat_mat_mul(&current_term, &b);
-        let scale = 1.0 / k as f64;
-        for i in 0..n {
-            for j in 0..n {
-                current_term[i][j] *= scale;
-            }
-        }
-        // result += current_term
-        for i in 0..n {
-            for j in 0..n {
-                result[i][j] += current_term[i][j];
-            }
-        }
-    }
-
-    result
-}
 
 /// Compute powers B^0, B^1, ..., B^max_power.
 pub fn compute_powers(b: &[Vec<f64>], max_power: usize) -> Vec<Vec<Vec<f64>>> {
@@ -995,14 +539,6 @@ pub fn compute_powers(b: &[Vec<f64>], max_power: usize) -> Vec<Vec<Vec<f64>>> {
         powers.push(mat_mat_mul(&powers[k - 1], b));
     }
     powers
-}
-
-/// Infinity norm of matrix.
-#[allow(dead_code)]
-pub fn matrix_norm_inf(a: &[Vec<f64>]) -> f64 {
-    a.iter()
-        .map(|row| row.iter().map(|v| v.abs()).sum::<f64>())
-        .fold(0.0f64, f64::max)
 }
 
 /// Compute matrix inverse using Gauss-Jordan elimination.
@@ -1067,4 +603,172 @@ pub fn matrix_inverse(a: &[Vec<f64>]) -> Option<Vec<Vec<f64>>> {
     }
 
     Some(inv)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_identity_matrix() {
+        let i2 = identity(2);
+        assert_eq!(i2.len(), 2);
+        assert_eq!(i2[0], vec![1.0, 0.0]);
+        assert_eq!(i2[1], vec![0.0, 1.0]);
+
+        let i4 = identity(4);
+        assert_eq!(i4.len(), 4);
+        for i in 0..4 {
+            for j in 0..4 {
+                assert_eq!(i4[i][j], if i == j { 1.0 } else { 0.0 });
+            }
+        }
+    }
+
+    #[test]
+    fn test_matrix_inverse_2x2() {
+        // Test with a simple 2x2 invertible matrix
+        let a = vec![vec![4.0, 7.0], vec![2.0, 6.0]];
+        let inv = matrix_inverse(&a).expect("Matrix should be invertible");
+
+        // A * A^-1 should be identity
+        let product = mat_mat_mul(&a, &inv);
+        for i in 0..2 {
+            for j in 0..2 {
+                let expected = if i == j { 1.0 } else { 0.0 };
+                assert!(
+                    (product[i][j] - expected).abs() < 1e-10,
+                    "A*A^-1[{}][{}] = {} != {}",
+                    i,
+                    j,
+                    product[i][j],
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_matrix_inverse_3x3() {
+        // Test with a 3x3 matrix
+        let a = vec![
+            vec![1.0, 2.0, 3.0],
+            vec![0.0, 4.0, 5.0],
+            vec![1.0, 0.0, 6.0],
+        ];
+        let inv = matrix_inverse(&a).expect("Matrix should be invertible");
+
+        // A * A^-1 should be identity
+        let product = mat_mat_mul(&a, &inv);
+        for i in 0..3 {
+            for j in 0..3 {
+                let expected = if i == j { 1.0 } else { 0.0 };
+                assert!(
+                    (product[i][j] - expected).abs() < 1e-10,
+                    "A*A^-1[{}][{}] = {} != {}",
+                    i,
+                    j,
+                    product[i][j],
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_matrix_inverse_singular() {
+        // A singular matrix (two identical rows)
+        let singular = vec![vec![1.0, 2.0], vec![2.0, 4.0]];
+        assert!(matrix_inverse(&singular).is_none());
+    }
+
+    #[test]
+    fn test_mat_mat_mul() {
+        let a = vec![vec![1.0, 2.0], vec![3.0, 4.0]];
+        let b = vec![vec![5.0, 6.0], vec![7.0, 8.0]];
+        let c = mat_mat_mul(&a, &b);
+
+        // Expected: [[1*5+2*7, 1*6+2*8], [3*5+4*7, 3*6+4*8]]
+        //         = [[5+14, 6+16], [15+28, 18+32]]
+        //         = [[19, 22], [43, 50]]
+        assert_eq!(c[0][0], 19.0);
+        assert_eq!(c[0][1], 22.0);
+        assert_eq!(c[1][0], 43.0);
+        assert_eq!(c[1][1], 50.0);
+    }
+
+    #[test]
+    fn test_mat_mul_gen() {
+        // 2x3 times 3x2 should give 2x2
+        let a = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]];
+        let b = vec![vec![7.0, 8.0], vec![9.0, 10.0], vec![11.0, 12.0]];
+        let c = mat_mul_gen(&a, &b);
+
+        assert_eq!(c.len(), 2);
+        assert_eq!(c[0].len(), 2);
+        // Row 0: [1*7+2*9+3*11, 1*8+2*10+3*12] = [7+18+33, 8+20+36] = [58, 64]
+        assert_eq!(c[0][0], 58.0);
+        assert_eq!(c[0][1], 64.0);
+        // Row 1: [4*7+5*9+6*11, 4*8+5*10+6*12] = [28+45+66, 32+50+72] = [139, 154]
+        assert_eq!(c[1][0], 139.0);
+        assert_eq!(c[1][1], 154.0);
+    }
+
+    #[test]
+    fn test_scale_columns() {
+        let a = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]];
+        let scaled = scale_columns(&a, 2.0);
+
+        assert_eq!(scaled[0], vec![2.0, 4.0, 6.0]);
+        assert_eq!(scaled[1], vec![8.0, 10.0, 12.0]);
+    }
+
+    #[test]
+    fn test_matrix_sub_identity() {
+        let a = vec![vec![3.0, 4.0], vec![5.0, 6.0]];
+        let result = matrix_sub_identity(&a);
+
+        assert_eq!(result[0][0], 2.0); // 3 - 1
+        assert_eq!(result[0][1], 4.0);
+        assert_eq!(result[1][0], 5.0);
+        assert_eq!(result[1][1], 5.0); // 6 - 1
+    }
+
+    #[test]
+    fn test_expm_higham_padé13_identity() {
+        // exp(I * t) should be e^t * I
+        let identity_2 = identity(2);
+        let exp_i = matrix_exponential(&identity_2, 1.0);
+        let expected = identity(2);
+
+        for i in 0..2 {
+            for j in 0..2 {
+                let expected_val = if i == j { std::f64::consts::E } else { 0.0 };
+                assert!(
+                    (exp_i[i][j] - expected_val).abs() < 1e-10,
+                    "exp(I)[{}][{}] = {} != {}",
+                    i,
+                    j,
+                    exp_i[i][j],
+                    expected_val
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_expm_higham_padé13_2x2() {
+        // A 2x2 diagonal matrix: diag(-1, -2)
+        let a = vec![vec![-1.0, 0.0], vec![0.0, -2.0]];
+        let exp_a = matrix_exponential(&a, 1.0);
+
+        // exp(A) should be diag(e^-1, e^-2)
+        let e1 = (-1.0f64).exp();
+        let e2 = (-2.0f64).exp();
+
+        assert!((exp_a[0][0] - e1).abs() < 1e-10);
+        assert!((exp_a[1][1] - e2).abs() < 1e-10);
+        assert!(exp_a[0][1].abs() < 1e-10);
+        assert!(exp_a[1][0].abs() < 1e-10);
+    }
 }

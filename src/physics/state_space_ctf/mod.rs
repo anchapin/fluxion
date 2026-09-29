@@ -963,6 +963,8 @@ mod coverage_tests;
 #[cfg(test)]
 mod debug_new_expm_tests;
 #[cfg(test)]
+mod debug_numerics;
+#[cfg(test)]
 mod expm_debug_tests;
 #[cfg(test)]
 mod tests;

@@ -10,6 +10,9 @@
 //! Schur-Parlett with 1/(λᵢ-λⱼ) recurrence (see the module-level
 //! doc-comment in `matrix_exponential_faer`).
 
+use super::debug_numerics::{
+    francis_qr_schur, householder_to_hessenberg, matrix_exponential_taylor, transpose,
+};
 use super::linalg::*;
 use super::*;
 use crate::physics::ctf_coefficients::CTFMaterial;

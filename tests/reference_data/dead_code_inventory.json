@@ -2,7 +2,7 @@
   "schema_version": 1,
   "description": "Inventory of production #[allow(dead_code)] sites in the root fluxion crate, governed by scripts/check_orphan_modules.py (Issue #3752). Regenerate with: python3 scripts/check_orphan_modules.py --update-dead-code-inventory",
   "governing_issue": 3752,
-  "site_count": 43,
+  "site_count": 32,
   "sites": [
     {
       "file": "src/ai/surrogate/session_pool.rs",
@@ -61,72 +61,6 @@
     {
       "file": "src/physics/ctf_coefficients.rs",
       "signature": "impl<'a> CTFCalculator<'a> {",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/physics/state_space_ctf/linalg.rs",
-      "signature": "pub fn apply_householder_left(",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/physics/state_space_ctf/linalg.rs",
-      "signature": "pub fn apply_householder_right(",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/physics/state_space_ctf/linalg.rs",
-      "signature": "pub fn apply_householder_right_unitary(u: &mut [Vec<f64>], v: &[f64], start: usize, n: usize) {",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/physics/state_space_ctf/linalg.rs",
-      "signature": "pub fn francis_qr_schur(h: &[Vec<f64>]) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/physics/state_space_ctf/linalg.rs",
-      "signature": "pub fn householder_to_hessenberg(a: &[Vec<f64>]) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/physics/state_space_ctf/linalg.rs",
-      "signature": "pub fn implicit_double_shift_bulge_chase(",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/physics/state_space_ctf/linalg.rs",
-      "signature": "pub fn matrix_exponential_old_pade(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/physics/state_space_ctf/linalg.rs",
-      "signature": "pub fn matrix_exponential_taylor(a: &[Vec<f64>], t: f64) -> Vec<Vec<f64>> {",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/physics/state_space_ctf/linalg.rs",
-      "signature": "pub fn matrix_norm_inf(a: &[Vec<f64>]) -> f64 {",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/physics/state_space_ctf/linalg.rs",
-      "signature": "pub fn transpose(a: &[Vec<f64>]) -> Vec<Vec<f64>> {",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/physics/state_space_ctf/linalg.rs",
-      "signature": "pub fn vector_norm(v: &[f64]) -> f64 {",
       "index": 1,
       "issue": 3752
     },
