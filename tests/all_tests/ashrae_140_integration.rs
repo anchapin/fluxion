@@ -192,7 +192,8 @@ fn test_case_600_baseline() {
 /// inverse (a test that always fails on a known issue blocks every PR).
 ///
 /// The annual COOLING gap is additionally regression-gated by the strict-
-/// energy-gate workflow (`ashrae_140_strict_energy_gate.yml`) against a
+/// energy-gate job in `.github/workflows/physics-pr.yml` ("ASHRAE 140 Strict
+/// Energy Gate (Issue #1333)") against a
 /// recorded baseline (`tests/reference_data/zone_balance/strict_energy_gate_
 /// baseline.json`, run via `tests/zone_balance_eplus_isolation.rs::
 /// test_case_600_annual_energy_ashrae140_tolerance` with `--include-ignored`),

@@ -421,7 +421,7 @@ def load_all_workflows() -> dict[str, dict]:
         return out
     for path in sorted(WORKFLOWS_DIR.glob("*.yml")):
         # Key by the *relative path* used in workflow_index entries, e.g.
-        # ".github/workflows/ashrae_140_strict_energy_gate.yml".
+        # ".github/workflows/physics-pr.yml".
         rel = path.relative_to(REPO_ROOT).as_posix()
         try:
             out[rel] = parse_workflow(path)

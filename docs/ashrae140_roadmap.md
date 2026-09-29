@@ -210,10 +210,10 @@ Fluxion's 5R1C/9R4C Norton-equivalent `h_coeff` under-predicts Case 960 peak hea
 
 The acceptance criteria in `release_gates.yaml` require **both** ASHRAE 140 and HVAC BESTEST ≥ 60%. Currently only ASHRAE 140 is wired into the required checks.
 
-**Goal:** Wire `tests/hvac_bestest_validation.rs` and `src/validation/hvac_bestest/{cases,runner}.rs` into the same release-gate CI workflow (`.github/workflows/ashrae_140_strict_energy_gate.yml`) that enforces the ASHRAE 140 60% gate, so both become a single blocking check.
+**Goal:** Wire `tests/hvac_bestest_validation.rs` and `src/validation/hvac_bestest/{cases,runner}.rs` into the same release-gate CI workflow (`.github/workflows/physics-pr.yml`) that enforces the ASHRAE 140 60% gate (job: "ASHRAE 140 Strict Energy Gate (Issue #1333)"), so both become a single blocking check.
 
 **Touch points:**
-- `.github/workflows/ashrae_140_strict_energy_gate.yml` — Add HVAC BESTEST job
+- `.github/workflows/physics-pr.yml` — Add HVAC BESTEST job (or wire into existing "ASHRAE 140 Strict Energy Gate (Issue #1333)" job)
 - `tests/hvac_bestest_validation.rs` — RP-865 cases AE101–AE445
 - `tests/validation/hvac_bestest/README.md` — Case documentation
 

@@ -66,7 +66,7 @@ Every active gate is wired into a workflow job, a pre-commit (manual) hook, or i
 | `check_rumqttc_upstream.py` | rumqttc / rustls-webpki security-cluster upstream watch (#2853) | rumqttc-upstream.yml |
 | `check_runner_routing_policy.py` | `FLUXION_LINUX_RUNNER` trust-boundary on PR triggers (#3445 / #3531) | scripts-tests.yml |
 | `check_scorecard_data_sources_consistent.py` | SCORECARD headline figures consistent across `performance_history.latest.json` vs. `ASHRAE140_RESULTS.md` (#3535) | run locally before regenerating SCORECARD.md (enforced by `.github/workflows/scorecard-source-consistency.yml`; wired by Issue #4123) |
-| `check_strict_energy_gate_regression.py` | Strict ±15% ASHRAE 140 annual-energy tolerance regression (#2506 / #3572) | ashrae_140_strict_energy_gate.yml |
+| `check_strict_energy_gate_regression.py` | Strict ±15% ASHRAE 140 annual-energy tolerance regression (#2506 / #3572) | `.github/workflows/physics-pr.yml` (job: "ASHRAE 140 Strict Energy Gate (Issue #1333)") |
 | `check_stub_modules.py` | Stub-module detector — future-extraction marker files (#2896) | architecture_drift.yml |
 | `check_tdqs_regression.py` | TDQS (Temporal Decision Quality Score) criterion-bench regression | tdqs_regression.yml |
 | `check_test_inventory_drift.py` | Test-count ratchet vs. `test_inventory_baseline.json` (#3442) | scripts-tests.yml |

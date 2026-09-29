@@ -39,7 +39,7 @@ to report `success` before any PR can be merged:
 
 | # | Status check name (exact)                            | Workflow / job                                              | Source issue |
 |---|------------------------------------------------------|-------------------------------------------------------------|--------------|
-| 1 | `ASHRAE 140 Strict Energy Gate (Issue #1333)`        | `.github/workflows/ashrae_140_strict_energy_gate.yml`       | #1333        |
+| 1 | `ASHRAE 140 Strict Energy Gate (Issue #1333)`        | `.github/workflows/physics-pr.yml` (job: "ASHRAE 140 Strict Energy Gate (Issue #1333)")       | #1333        |
 | 2 | `Fluxion Determinism Gate (Issue #1351)`             | `.github/workflows/ashrae_validation.yml` (`fluxion-determinism-gate` listener job) | #1351 / #1297 |
 
 The list is mirrored in `release_gates.yaml` under `ci.required_checks`

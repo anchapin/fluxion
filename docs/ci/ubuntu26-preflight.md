@@ -30,7 +30,7 @@ Single `runs-on: ubuntu-latest`. The 0/30-night counter (Issue #3286, §LIMIT-21
 
 ### 2b. Physics / ASHRAE lanes
 - `ashrae_validation.yml` (27 refs, mixed plain + `FLUXION_LINUX_RUNNER` expression form), `rust-tests.yml` (15 refs, heavy apt-install — see §2e).
-- Companion gates on the vars-expression form: `ashrae_140_strict_energy_gate.yml`, `h_tr_em_regression_gate.yml`, plus `ashrae_140_validation.yml`, `fast_math_check.yml`, `determinism_check.yml`.
+- Companion gates on the vars-expression form: `.github/workflows/physics-pr.yml` (job: "ASHRAE 140 Strict Energy Gate (Issue #1333)"), `h_tr_em_regression_gate.yml`, plus `ashrae_140_validation.yml`, `fast_math_check.yml`, `determinism_check.yml`.
 - Determinism gate is environment-sensitive by definition — absolute-output comparisons across an OS flip are exactly what it exists to catch.
 
 ### 2c. Perf lanes
