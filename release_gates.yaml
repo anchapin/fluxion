@@ -542,7 +542,14 @@ ci:
     # tolerance gate moved from the now-deleted gate workflow into
     # `physics-pr.yml`. Keeps the docs-only-gate skip
     # (Issue #3810 listener pattern) so docs-only PRs stay mergeable.
-    - "ASHRAE 140 Strict Energy Gate (Issue #1333)"
+    # 2026-09-29: TEMPORARILY DEMOTED from required to advisory (owner
+    # decision). While structural physics changes are landing, annual-
+    # energy results may bounce even when the physics change is correct.
+    # The gate is UNCHANGED: it still runs as a non-required check on
+    # every PR via `physics-pr.yml`; see its `workflow_index` entry.
+    # RE-REQUIRE once energy results settle and the tracked ASHRAE 140
+    # cases are compliant, to prevent future regressions. Live `develop`
+    # branch protection flipped via API the same day.
 
     # Issue #4007: NEW required check. Curated nextest subset (root lib
     # tests + the two `all_tests` regression modules, single
@@ -797,7 +804,8 @@ ci:
     # Issue #4007: strict gate promoted to required; runs on
     # workflow-only PRs (docs-only skip does not apply). The curated
     # nextest subset also runs — both live in `physics-pr.yml`.
-    - "ASHRAE 140 Strict Energy Gate (Issue #1333)"
+    # 2026-09-29: TEMPORARILY DEMOTED to advisory (owner decision) —
+    # see the note in `required_checks` above. Still runs non-required.
     - "Nextest Subset (GH)"
 
     # 2026-09-25: "FFI Feature Check (GH)" DEMOTED from required to advisory
