@@ -72,7 +72,6 @@ Required branch-protection checks (`release_gates.yaml` → `ci.required_checks`
 | Energy Conservation (GH) | — |
 | Rustfmt (GH) | — |
 | Clippy (GH) | — |
-| ASHRAE 140 Strict Energy Gate (Issue #1333) | #1333 |
 | Nextest Subset (GH) | — |
 | Cargo Deny | — |
 | Fluxion Core Dependency Budget Gate (Issue #4176) | #4176 |

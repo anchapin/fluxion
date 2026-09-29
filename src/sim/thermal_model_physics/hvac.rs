@@ -246,3 +246,38 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         T::from(VectorField::from_smallvec(std::mem::take(scratch)))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Documents the current 5R1C HVAC coefficient formula (Issue #4240).
+    ///
+    /// The 5R1C arm uses `h_tr_is*h_tr_ms/(h_tr_is+h_tr_ms) + h_tr_w`.
+    /// NOTE: this omits `h_ve` (Issue #4156a). The coefficient fix is deferred
+    /// to #4241 (discrete residual formulation), where it lands together with
+    /// the load-law change. This test pins the current behavior so #4241's
+    /// diff is explicit.
+    #[test]
+    fn test_5r1c_coefficient_current_formula() {
+        let mut model = ThermalModel::<VectorField>::new(1);
+        // Ensure 5R1C type (default).
+        model.0.conduction.h_tr_is = VectorField::from_scalar(100.0, 1);
+        model.0.conduction.h_tr_ms = VectorField::from_scalar(100.0, 1);
+        model.0.conduction.h_tr_w = VectorField::from_scalar(30.0, 1);
+        model.0.conduction.h_ve = VectorField::from_scalar(70.0, 1);
+
+        let h_coeff = model.compute_hvac_coefficient(0);
+
+        // Current: (100*100/200) + 30 = 80 (h_ve NOT included).
+        // After #4241: (30 + 70) + 50 = 150.
+        let expected_current = 80.0;
+        let rel_err = ((h_coeff - expected_current) / expected_current).abs();
+        assert!(
+            rel_err < 1e-9,
+            "5R1C coefficient {} differs from current formula {}",
+            h_coeff,
+            expected_current
+        );
+    }
+}
