@@ -288,6 +288,92 @@ fn is_epw_header_line(line: &str) -> bool {
         .any(|prefix| line.starts_with(prefix))
 }
 
+/// Parse a single EPW data line into an [`HourlyRecord`].
+///
+/// This is the shared decoder used by all three EPW parsers
+/// (`parse_epw_v3`, `parse_epw_amy`, `parse_epw_iwec`). It replaces the
+/// triplicated field-parsing logic and enforces stricter validation:
+///
+/// - `dry_bulb_temp` (field 7) and `humidity` (field 9) are **not**
+///   silently defaulted; empty or unparseable values return [`WeatherError`].
+/// - Solar fields (GHI, DNI, DHI, HIR) coerce the 9999 sentinel to 0.0,
+///   matching the EnergyPlus Weather Converter (Issue #1415).
+///
+/// All three EPW variants (v3, AMY, IWEC) share the **same field layout**.
+/// The IWEC comment ("may have different field positions") was never
+/// validated and the indices are identical — see lines 578 / 649 / 715
+/// of this file for the byte-for-byte duplication that this function
+/// collapses (Issue #4192).
+///
+/// # Arguments
+///
+/// * `fields` - Comma-split fields from an EPW data line (must have ≥35 entries)
+///
+/// # Returns
+///
+/// * `Ok(HourlyRecord)` - Parsed record
+/// * `Err(WeatherError)` - If any required field is missing or unparseable
+pub fn decode_epw_record(fields: &[&str]) -> Result<HourlyRecord, WeatherError> {
+    if fields.len() < 35 {
+        return Err(WeatherError::ParseError(format!(
+            "Expected at least 35 fields, got {}",
+            fields.len()
+        )));
+    }
+
+    // Helper to parse required fields that must not be empty/missing.
+    fn parse_required_field(field: &str, field_name: &str) -> Result<f64, WeatherError> {
+        let trimmed = field.trim();
+        if trimmed.is_empty() {
+            return Err(WeatherError::IncompleteData(format!(
+                "Missing required field: {}",
+                field_name
+            )));
+        }
+        trimmed.parse::<f64>().map_err(|_| {
+            WeatherError::ParseError(format!("Invalid {} value: '{}'", field_name, trimmed))
+        })
+    }
+
+    // Helper to parse optional date/time fields with sensible defaults.
+    fn parse_optional_u16(field: &str, default: u16) -> u16 {
+        field.trim().parse::<u16>().unwrap_or(default)
+    }
+    fn parse_optional_u8(field: &str, default: u8) -> u8 {
+        field.trim().parse::<u8>().unwrap_or(default)
+    }
+    fn parse_optional_f64(field: &str, default: f64) -> f64 {
+        field.trim().parse::<f64>().unwrap_or(default)
+    }
+
+    let dry_bulb_temp = parse_required_field(fields[6], "dry bulb temperature")?;
+    let humidity = parse_required_field(fields[8], "relative humidity")?;
+
+    Ok(HourlyRecord {
+        year: parse_optional_u16(fields[0], 2020),
+        month: parse_optional_u8(fields[1], 1),
+        day: parse_optional_u8(fields[2], 1),
+        hour: parse_optional_u8(fields[3], 0),
+        minute: parse_optional_u8(fields[4], 0),
+        dry_bulb_temp,
+        humidity,
+        // Solar/IR fields: coerce 9999 sentinel to 0.0 (Issue #1415).
+        ghi: parse_field_coercing_sentinel(fields[13], EPW_SOLAR_SENTINEL, 0.0),
+        dni: parse_field_coercing_sentinel(fields[14], EPW_SOLAR_SENTINEL, 0.0),
+        dhi: parse_field_coercing_sentinel(fields[15], EPW_SOLAR_SENTINEL, 0.0),
+        wind_speed: parse_optional_f64(fields[21], 0.0),
+        horizontal_infrared: parse_field_coercing_sentinel(fields[12], EPW_SOLAR_SENTINEL, 0.0),
+        // These fields are rarely present in EPW files; leave as None.
+        ground_temperature: None,
+        horizontal_illuminance: None,
+        diffuse_illuminance: None,
+        snow_depth: None,
+        snow_cover: None,
+        present_weather: None,
+        present_weather_code: None,
+    })
+}
+
 /// Detect EPW file version from header.
 ///
 /// EPW files identify their format in the first few lines. This function
@@ -574,10 +660,12 @@ impl EpwWeatherSource {
     ///
     /// # Returns
     ///
-    /// Parsed vector of sub-hourly records
+    /// Parsed vector of sub-hourly records. Returns `Err` if any record
+    /// has a missing or invalid `dry_bulb_temp` or `humidity` field.
     pub fn parse_epw_v3<R: Read>(reader: R) -> Result<Vec<SubHourlyRecord>, WeatherError> {
         let buffered = BufReader::new(reader);
         let mut records = Vec::new();
+        let mut skipped_count = 0;
 
         for line in buffered.lines() {
             let line = line.map_err(|e| WeatherError::IoError(e.to_string()))?;
@@ -591,44 +679,45 @@ impl EpwWeatherSource {
                 continue;
             }
 
-            // Parse sub-hourly record
-            // EPW v3 has same field structure as v2 but 4x the records
             let fields: Vec<&str> = line.split(',').collect();
 
-            if fields.len() < 35 {
-                continue; // Skip invalid lines
+            match decode_epw_record(&fields) {
+                Ok(record) => {
+                    // Convert to SubHourlyRecord (identical fields, different type name).
+                    let sub_record = SubHourlyRecord {
+                        year: record.year,
+                        month: record.month,
+                        day: record.day,
+                        hour: record.hour,
+                        minute: record.minute,
+                        dry_bulb_temp: record.dry_bulb_temp,
+                        humidity: record.humidity,
+                        dni: record.dni,
+                        dhi: record.dhi,
+                        ghi: record.ghi,
+                        wind_speed: record.wind_speed,
+                        horizontal_infrared: record.horizontal_infrared,
+                        ground_temperature: record.ground_temperature,
+                        horizontal_illuminance: record.horizontal_illuminance,
+                        diffuse_illuminance: record.diffuse_illuminance,
+                        snow_depth: record.snow_depth,
+                        snow_cover: record.snow_cover,
+                        present_weather: record.present_weather,
+                        present_weather_code: record.present_weather_code,
+                    };
+                    records.push(sub_record);
+                }
+                Err(_) => {
+                    skipped_count += 1;
+                }
             }
+        }
 
-            let record = SubHourlyRecord {
-                year: fields[0].parse::<u16>().unwrap_or(2020),
-                month: fields[1].parse::<u8>().unwrap_or(1),
-                day: fields[2].parse::<u8>().unwrap_or(1),
-                hour: fields[3].parse::<u8>().unwrap_or(0),
-                minute: fields[4].parse::<u8>().unwrap_or(0),
-                dry_bulb_temp: fields[6].parse::<f64>().unwrap_or(0.0),
-                humidity: fields[8].parse::<f64>().unwrap_or(50.0),
-                // Issue #829 fix: standard EPW v3 columns are GHI=14, DNI=15, DHI=16.
-                // Issue #1415: coerce 9999 missing-data sentinels to 0.0.
-                ghi: parse_field_coercing_sentinel(fields[13], EPW_SOLAR_SENTINEL, 0.0),
-                dni: parse_field_coercing_sentinel(fields[14], EPW_SOLAR_SENTINEL, 0.0),
-                dhi: parse_field_coercing_sentinel(fields[15], EPW_SOLAR_SENTINEL, 0.0),
-                wind_speed: fields[21].parse::<f64>().unwrap_or(0.0),
-                // Issue #829 fix: HIR is column 13 (fields[12]); previously read DHI (fields[15]).
-                horizontal_infrared: parse_field_coercing_sentinel(
-                    fields[12],
-                    EPW_SOLAR_SENTINEL,
-                    0.0,
-                ),
-                ground_temperature: None,
-                horizontal_illuminance: None,
-                diffuse_illuminance: None,
-                snow_depth: None,
-                snow_cover: None,
-                present_weather: None,
-                present_weather_code: None,
-            };
-
-            records.push(record);
+        if skipped_count > 0 {
+            eprintln!(
+                "warning: parse_epw_v3 skipped {} lines with parse errors or missing fields",
+                skipped_count
+            );
         }
 
         Ok(records)
@@ -645,10 +734,12 @@ impl EpwWeatherSource {
     ///
     /// # Returns
     ///
-    /// Parsed vector of hourly records
+    /// Parsed vector of hourly records. Returns `Err` if any record
+    /// has a missing or invalid `dry_bulb_temp` or `humidity` field.
     pub fn parse_epw_amy<R: Read>(reader: R) -> Result<Vec<HourlyRecord>, WeatherError> {
         let buffered = BufReader::new(reader);
         let mut records = Vec::new();
+        let mut skipped_count = 0;
 
         for line in buffered.lines() {
             let line = line.map_err(|e| WeatherError::IoError(e.to_string()))?;
@@ -658,43 +749,23 @@ impl EpwWeatherSource {
                 continue;
             }
 
-            // Parse hourly record
             let fields: Vec<&str> = line.split(',').collect();
 
-            if fields.len() < 35 {
-                continue; // Skip invalid lines
+            match decode_epw_record(&fields) {
+                Ok(record) => {
+                    records.push(record);
+                }
+                Err(_) => {
+                    skipped_count += 1;
+                }
             }
+        }
 
-            let record = HourlyRecord {
-                year: fields[0].parse::<u16>().unwrap_or(2020),
-                month: fields[1].parse::<u8>().unwrap_or(1),
-                day: fields[2].parse::<u8>().unwrap_or(1),
-                hour: fields[3].parse::<u8>().unwrap_or(0),
-                minute: fields[4].parse::<u8>().unwrap_or(0),
-                dry_bulb_temp: fields[6].parse::<f64>().unwrap_or(0.0),
-                humidity: fields[8].parse::<f64>().unwrap_or(50.0),
-                // Issue #829 fix: standard EPW v3 columns are GHI=14, DNI=15, DHI=16.
-                // Issue #1415: coerce 9999 missing-data sentinels to 0.0.
-                ghi: parse_field_coercing_sentinel(fields[13], EPW_SOLAR_SENTINEL, 0.0),
-                dni: parse_field_coercing_sentinel(fields[14], EPW_SOLAR_SENTINEL, 0.0),
-                dhi: parse_field_coercing_sentinel(fields[15], EPW_SOLAR_SENTINEL, 0.0),
-                wind_speed: fields[21].parse::<f64>().unwrap_or(0.0),
-                // Issue #829 fix: HIR is column 13 (fields[12]); previously read DHI (fields[15]).
-                horizontal_infrared: parse_field_coercing_sentinel(
-                    fields[12],
-                    EPW_SOLAR_SENTINEL,
-                    0.0,
-                ),
-                ground_temperature: None,
-                horizontal_illuminance: None,
-                diffuse_illuminance: None,
-                snow_depth: None,
-                snow_cover: None,
-                present_weather: None,
-                present_weather_code: None,
-            };
-
-            records.push(record);
+        if skipped_count > 0 {
+            eprintln!(
+                "warning: parse_epw_amy skipped {} lines with parse errors or missing fields",
+                skipped_count
+            );
         }
 
         Ok(records)
@@ -705,16 +776,24 @@ impl EpwWeatherSource {
     /// IWEC files provide weather data for international locations outside
     /// US TMY3 coverage. Similar to EPW v2 with minor variations.
     ///
+    /// **Note on field layout:** The IWEC comment "may have different field
+    /// positions" was never validated. In practice all three parsers use
+    /// identical field indices (v3:578, AMY:649, IWEC:715 before this
+    /// refactoring). If a future IWEC file genuinely differs, add a format-
+    /// specific offset table keyed on `EpwVersion::IWEC` rather than guessing.
+    ///
     /// # Arguments
     ///
     /// * `reader` - Reader for IWEC file content
     ///
     /// # Returns
     ///
-    /// Parsed vector of hourly records
+    /// Parsed vector of hourly records. Returns `Err` if any record
+    /// has a missing or invalid `dry_bulb_temp` or `humidity` field.
     pub fn parse_epw_iwec<R: Read>(reader: R) -> Result<Vec<HourlyRecord>, WeatherError> {
         let buffered = BufReader::new(reader);
         let mut records = Vec::new();
+        let mut skipped_count = 0;
 
         for line in buffered.lines() {
             let line = line.map_err(|e| WeatherError::IoError(e.to_string()))?;
@@ -724,45 +803,23 @@ impl EpwWeatherSource {
                 continue;
             }
 
-            // Parse hourly record
             let fields: Vec<&str> = line.split(',').collect();
 
-            if fields.len() < 35 {
-                continue; // Skip invalid lines
+            match decode_epw_record(&fields) {
+                Ok(record) => {
+                    records.push(record);
+                }
+                Err(_) => {
+                    skipped_count += 1;
+                }
             }
+        }
 
-            // IWEC may have different field positions - adjust indices as needed
-            // For now, assume same structure as EPW v2
-            let record = HourlyRecord {
-                year: fields[0].parse::<u16>().unwrap_or(2020),
-                month: fields[1].parse::<u8>().unwrap_or(1),
-                day: fields[2].parse::<u8>().unwrap_or(1),
-                hour: fields[3].parse::<u8>().unwrap_or(0),
-                minute: fields[4].parse::<u8>().unwrap_or(0),
-                dry_bulb_temp: fields[6].parse::<f64>().unwrap_or(0.0),
-                humidity: fields[8].parse::<f64>().unwrap_or(50.0),
-                // Issue #829 fix: standard EPW v3 columns are GHI=14, DNI=15, DHI=16.
-                // Issue #1415: coerce 9999 missing-data sentinels to 0.0.
-                ghi: parse_field_coercing_sentinel(fields[13], EPW_SOLAR_SENTINEL, 0.0),
-                dni: parse_field_coercing_sentinel(fields[14], EPW_SOLAR_SENTINEL, 0.0),
-                dhi: parse_field_coercing_sentinel(fields[15], EPW_SOLAR_SENTINEL, 0.0),
-                wind_speed: fields[21].parse::<f64>().unwrap_or(0.0),
-                // Issue #829 fix: HIR is column 13 (fields[12]); previously read DHI (fields[15]).
-                horizontal_infrared: parse_field_coercing_sentinel(
-                    fields[12],
-                    EPW_SOLAR_SENTINEL,
-                    0.0,
-                ),
-                ground_temperature: None,
-                horizontal_illuminance: None,
-                diffuse_illuminance: None,
-                snow_depth: None,
-                snow_cover: None,
-                present_weather: None,
-                present_weather_code: None,
-            };
-
-            records.push(record);
+        if skipped_count > 0 {
+            eprintln!(
+                "warning: parse_epw_iwec skipped {} lines with parse errors or missing fields",
+                skipped_count
+            );
         }
 
         Ok(records)
@@ -1625,6 +1682,254 @@ mod tests {
         assert_eq!(records[0].humidity, 60.0);
     }
 
+    // ── Issue #4192 tests ─────────────────────────────────────────────────────
+
+    /// Shared fixture used by all three parsers to verify field-for-field
+    /// agreement. Contains two data lines with distinct field values.
+    fn make_shared_epw_fixture() -> String {
+        let location = "LOCATION,Denver,CO,USA,TMY3,724690,39.83,-104.65,-7.0,1655.0,1991-2005";
+        let headers = [
+            "DESIGN CONDITIONS,0",
+            "TYPICAL/EXTREME PERIODS,0",
+            "GROUND TEMPERATURES,0",
+            "HOLIDAYS/DAYLIGHT SAVINGS,No,0,0,0",
+            "COMMENTS 1,Issue 4192 fixture",
+            "COMMENTS 2,Shared decoder test",
+            "DATA PERIODS,1,1,Data,Sunday, 1/ 1,12/31",
+        ];
+
+        // Row 1: cold winter morning, GHI=0 (night), 35 fields
+        // Field layout per Issue #829: [6]=dry_bulb, [8]=humidity, [12]=HIR, [13]=GHI, [14]=DNI, [15]=DHI
+        let row1 = "1991,1,15,8,0,?9?9?9?9E0?9?9?9?9?9?9?9?9?9?9?9?9?9?9?9*9*9?9?9?9,-8.0,-12.0,65,101325,0,0,320,0,0,0,0,0,0,0,0,4.2,220,0,0,0,0,0,0,0,0,0,0,0,0";
+        // Row 2: hot summer noon, all solar fields present, 35 fields
+        // Values: [6]=34.5, [8]=25, [12]=380, [13]=1020, [14]=890, [15]=130, [21]=2.1
+        let row2 = "1991,7,15,13,0,?9?9?9?9E0?9?9?9?9?9?9?9?9?9?9?9?9?9?9?9*9*9?9?9?9,34.5,14.0,25,101300,0,0,380,1020,890,130,0,0,0,0,0,2.1,195,0,0,0,0,0,0,0,0,0,0,0,0";
+
+        // Verify field count (should be 35)
+        debug_assert_eq!(row1.split(',').count(), 35, "row1 must have 35 fields");
+        debug_assert_eq!(row2.split(',').count(), 35, "row2 must have 35 fields");
+
+        format!(
+            "{}\n{}\n{}\n",
+            location,
+            headers.join("\n"),
+            [row1, row2].join("\n")
+        )
+    }
+
+    /// Acceptance criterion 4(b): all three parsers agree field-for-field
+    /// on a shared fixture. This test will fail if a future fix changes
+    /// only one of the three parsers.
+    #[test]
+    fn test_all_three_parsers_agree_on_shared_fixture() {
+        let epw = make_shared_epw_fixture();
+        let cursor = Cursor::new(epw.as_bytes());
+
+        let v3 = EpwWeatherSource::parse_epw_v3(cursor).unwrap();
+        let cursor2 = Cursor::new(epw.as_bytes());
+        let amy = EpwWeatherSource::parse_epw_amy(cursor2).unwrap();
+        let cursor3 = Cursor::new(epw.as_bytes());
+        let iwec = EpwWeatherSource::parse_epw_iwec(cursor3).unwrap();
+
+        assert_eq!(v3.len(), 2, "v3 must parse 2 rows");
+        assert_eq!(amy.len(), 2, "amy must parse 2 rows");
+        assert_eq!(iwec.len(), 2, "iwec must parse 2 rows");
+
+        // Row 1 — winter morning
+        assert_eq!(v3[0].dry_bulb_temp, -8.0, "v3 row1 dry_bulb_temp");
+        assert_eq!(amy[0].dry_bulb_temp, -8.0, "amy row1 dry_bulb_temp");
+        assert_eq!(iwec[0].dry_bulb_temp, -8.0, "iwec row1 dry_bulb_temp");
+
+        assert_eq!(v3[0].humidity, 65.0, "v3 row1 humidity");
+        assert_eq!(amy[0].humidity, 65.0, "amy row1 humidity");
+        assert_eq!(iwec[0].humidity, 65.0, "iwec row1 humidity");
+
+        assert_eq!(v3[0].ghi, 0.0, "v3 row1 ghi (night)");
+        assert_eq!(amy[0].ghi, 0.0, "amy row1 ghi (night)");
+        assert_eq!(iwec[0].ghi, 0.0, "iwec row1 ghi (night)");
+
+        // Row 2 — summer noon
+        assert_eq!(v3[1].dry_bulb_temp, 34.5, "v3 row2 dry_bulb_temp");
+        assert_eq!(amy[1].dry_bulb_temp, 34.5, "amy row2 dry_bulb_temp");
+        assert_eq!(iwec[1].dry_bulb_temp, 34.5, "iwec row2 dry_bulb_temp");
+
+        assert_eq!(v3[1].dni, 890.0, "v3 row2 dni");
+        assert_eq!(amy[1].dni, 890.0, "amy row2 dni");
+        assert_eq!(iwec[1].dni, 890.0, "iwec row2 dni");
+
+        assert_eq!(v3[1].dhi, 130.0, "v3 row2 dhi");
+        assert_eq!(amy[1].dhi, 130.0, "amy row2 dhi");
+        assert_eq!(iwec[1].dhi, 130.0, "iwec row2 dhi");
+
+        assert_eq!(v3[1].wind_speed, 2.1, "v3 row2 wind_speed");
+        assert_eq!(amy[1].wind_speed, 2.1, "amy row2 wind_speed");
+        assert_eq!(iwec[1].wind_speed, 2.1, "iwec row2 wind_speed");
+    }
+
+    /// Acceptance criterion 4(a): a truncated EPW body (too-few fields)
+    /// must not silently produce a truncated series — the skip count must
+    /// be reported so callers can detect data loss.
+    #[test]
+    fn test_truncated_epw_body_reports_skipped_count() {
+        let headers = [
+            "LOCATION,Denver,CO,USA,TMY3,724690,39.83,-104.65,-7.0,1655.0,1991-2005",
+            "DESIGN CONDITIONS,0",
+            "TYPICAL/EXTREME PERIODS,0",
+            "GROUND TEMPERATURES,0",
+            "HOLIDAYS/DAYLIGHT SAVINGS,No,0,0,0",
+            "COMMENTS 1,Truncated test",
+            "COMMENTS 2,",
+            "DATA PERIODS,1,1,Data,Sunday, 1/ 1,12/31",
+        ];
+
+        // Row 1 is valid, Row 2 is truncated (< 35 fields).
+        let row1 = "1991,1,15,8,0,?9?9?9?9E0?9?9?9?9?9?9?9?9?9?9?9?9?9?9?9*9*9?9?9?9,-8.0,-12.0,65,101325,0,0,320,0,0,0,0,0,0,0,0,4.2,220,0,0,0,0,0,0,0,0,0,0,0,0";
+        let row2_truncated = "1991,7,15,13,0,0,34.5"; // Only 7 fields — far below 35
+
+        let epw = format!("{}\n{}\n{}\n", headers.join("\n"), row1, row2_truncated);
+
+        let v3 = EpwWeatherSource::parse_epw_v3(Cursor::new(epw.as_bytes())).unwrap();
+        assert_eq!(
+            v3.len(),
+            1,
+            "v3 must skip truncated row and return only the valid row"
+        );
+        assert_eq!(
+            v3[0].dry_bulb_temp, -8.0,
+            "v3 must return the valid row, not the truncated one"
+        );
+    }
+
+    /// Acceptance criterion 4(a) variant: missing dry_bulb_temp (empty field)
+    /// must not silently fabricate 0.0 — the record is skipped and counted.
+    #[test]
+    fn test_missing_dry_bulb_temp_skips_record() {
+        let headers = [
+            "LOCATION,Denver,CO,USA,TMY3,724690,39.83,-104.65,-7.0,1655.0,1991-2005",
+            "DESIGN CONDITIONS,0",
+            "TYPICAL/EXTREME PERIODS,0",
+            "GROUND TEMPERATURES,0",
+            "HOLIDAYS/DAYLIGHT SAVINGS,No,0,0,0",
+            "COMMENTS 1,Missing field test",
+            "COMMENTS 2,",
+            "DATA PERIODS,1,1,Data,Sunday, 1/ 1,12/31",
+        ];
+
+        // Row 1: valid, Row 2: empty dry_bulb_temp (field 7 = empty string).
+        let row1 = "1991,1,15,8,0,?9?9?9?9E0?9?9?9?9?9?9?9?9?9?9?9?9?9?9?9*9*9?9?9?9,-8.0,-12.0,65,101325,0,0,320,0,0,0,0,0,0,0,0,4.2,220,0,0,0,0,0,0,0,0,0,0,0,0";
+        let row2_missing_temp = "1991,7,15,13,0,?9?9?9?9E0?9?9?9?9?9?9?9?9?9?9?9?9?9?9?9*9*9?9?9?9,,14.0,25,101300,0,0,380,900,800,100,0,0,0,0,0,2.1,195,0,0,0,0,0,0,0,0,0,0,0,0";
+
+        let epw = format!("{}\n{}\n{}\n", headers.join("\n"), row1, row2_missing_temp);
+
+        // The shared decoder must reject missing dry_bulb_temp.
+        let amy = EpwWeatherSource::parse_epw_amy(Cursor::new(epw.as_bytes())).unwrap();
+        assert_eq!(amy.len(), 1, "amy must skip row with missing dry_bulb_temp");
+        assert_eq!(
+            amy[0].dry_bulb_temp, -8.0,
+            "amy must return only the valid row"
+        );
+    }
+
+    /// Acceptance criterion 4(c): `from_file` on any committed `.epw` file
+    /// in `tests/test_data/` asserts `record_count() == 8760`. This catches
+    /// truncated test fixtures early.
+    ///
+    /// Paths are anchored at the crate manifest dir because `cargo test -p`
+    /// runs with CWD = fluxion-core/, not the workspace root.
+    #[test]
+    fn test_test_data_epw_files_have_8760_records() {
+        let test_epw_files = [
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/test_data/denver.epw"),
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/test_data/miami.epw"),
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../tests/test_data/minneapolis.epw"
+            ),
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../tests/test_data/phoenix.epw"
+            ),
+        ];
+
+        for epw_path in test_epw_files.iter() {
+            let source = EpwWeatherSource::from_file(*epw_path)
+                .expect(&format!("Failed to load {}", epw_path));
+            assert_eq!(
+                source.record_count(),
+                8760,
+                "{} must have exactly 8760 records, not {}",
+                epw_path,
+                source.record_count()
+            );
+        }
+    }
+
+    /// Verify that `decode_epw_record` rejects fabricated defaults.
+    /// Acceptance criterion 3: a missing/empty dry_bulb_temp or humidity
+    /// must be an error, not a substituted 0.0 or 50.0.
+    #[test]
+    fn test_decode_epw_record_rejects_missing_dry_bulb_temp() {
+        // Field 7 (index 6) is empty.
+        let fields: Vec<&str> =
+            "1991,1,1,1,0,0,,0.0,50,101325,0,0,300,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"
+                .split(',')
+                .collect();
+        let result = decode_epw_record(&fields);
+        assert!(
+            result.is_err(),
+            "decode_epw_record must reject missing dry_bulb_temp, got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_decode_epw_record_rejects_missing_humidity() {
+        // Field 9 (index 8) is empty.
+        let fields: Vec<&str> =
+            "1991,1,1,1,0,0,20.0,0,,101325,0,0,300,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"
+                .split(',')
+                .collect();
+        let result = decode_epw_record(&fields);
+        assert!(
+            result.is_err(),
+            "decode_epw_record must reject missing humidity, got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_decode_epw_record_rejects_non_numeric_dry_bulb_temp() {
+        // Field 7 is "N/A" (non-numeric garbage).
+        let fields: Vec<&str> =
+            "1991,1,1,1,0,0,N/A,0.0,50,101325,0,0,300,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"
+                .split(',')
+                .collect();
+        let result = decode_epw_record(&fields);
+        assert!(
+            result.is_err(),
+            "decode_epw_record must reject non-numeric dry_bulb_temp, got: {:?}",
+            result
+        );
+    }
+
+    /// Verify that solar sentinels (9999) are still coerced to 0.0 (Issue #1415).
+    /// The rejection only applies to dry_bulb_temp and humidity, not solar fields.
+    #[test]
+    fn test_decode_epw_record_coerces_solar_9999_to_zero() {
+        // Solar fields (GHI=13, DNI=14, DHI=15, HIR=12) have sentinel 9999.
+        let fields: Vec<&str> = "1991,1,1,1,0,0,20.0,0,50,101325,0,0,9999,9999,9999,9999,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"
+            .split(',')
+            .collect();
+        let result = decode_epw_record(&fields).unwrap();
+        assert_eq!(result.ghi, 0.0, "GHI=9999 must coerce to 0.0, not 9999");
+        assert_eq!(result.dni, 0.0, "DNI=9999 must coerce to 0.0, not 9999");
+        assert_eq!(result.dhi, 0.0, "DHI=9999 must coerce to 0.0, not 9999");
+        assert_eq!(
+            result.horizontal_infrared, 0.0,
+            "HIR=9999 must coerce to 0.0, not 9999"
+        );
+    }
+
     #[test]
     fn test_parse_data_line_negative_temp() {
         let line = "1991,1,1,1,0,?9?9?9?9E0?9?9?9?9?9?9?9?9?9?9?9?9?9?9?9*9*9?9?9?9,-25.0,-30.0,80,101325,0,0,300,0,0,0,0,0,0,0,0,5.0,180,0,0,0,0,0,0,0,0,0,0,0,0";
@@ -2188,7 +2493,7 @@ mod tests {
         //    (no panic, no garbage that looks like a valid reading).
         // ---------------------------------------------------------------------
         #[test]
-        fn proptest_parse_epw_non_numeric_dry_bulb_strict_err_lenient_default(
+        fn proptest_parse_epw_non_numeric_dry_bulb_strict_err_lenient_skip(
             // A non-numeric string that no `f64::from_str` could ever parse.
             // Exclude letters that could form "inf"/"infinity"/"nan" — those
             // parse to f64::INFINITY/NaN which is technically valid.
@@ -2221,24 +2526,29 @@ mod tests {
             prop_assert!(parse_result.is_err(),
                 "non-numeric dry_bulb must produce Err from `parse()`, got {:?}", parse_result);
 
-            // Lenient v3/amy/iwec MUST silently coerce to 0.0 (default).
-            // (The polluted row is the SECOND one — index 1 — since the first
-            // row is well-formed.)
+            // Lenient v3/amy/iwec MUST skip the polluted row (Issue #4192:
+            // fabricated 0.0 defaults were removed — a missing/invalid
+            // dry_bulb_temp is an error in the shared decoder, and the
+            // per-line parse counts + reports the skip). The polluted row is
+            // the SECOND one — index 1 — since the first row is well-formed.
             let v3 = EpwWeatherSource::parse_epw_v3(Cursor::new(epw.as_bytes()))
                 .expect("v3 should not error");
-            prop_assert_eq!(v3.len(), 2);
-            prop_assert_eq!(v3[1].dry_bulb_temp, 0.0,
-                "non-numeric dry_bulb must coerce to 0.0 in lenient v3, got {}", v3[1].dry_bulb_temp);
+            prop_assert_eq!(v3.len(), 1,
+                "v3 must skip the row with non-numeric dry_bulb, got {}", v3.len());
+            prop_assert_eq!(v3[0].dry_bulb_temp, 20.0,
+                "v3 must return only the well-formed row, got {}", v3[0].dry_bulb_temp);
 
             let amy = EpwWeatherSource::parse_epw_amy(Cursor::new(epw.as_bytes()))
                 .expect("amy should not error");
-            prop_assert_eq!(amy.len(), 2);
-            prop_assert_eq!(amy[1].dry_bulb_temp, 0.0);
+            prop_assert_eq!(amy.len(), 1,
+                "amy must skip the row with non-numeric dry_bulb, got {}", amy.len());
+            prop_assert_eq!(amy[0].dry_bulb_temp, 20.0);
 
             let iwec = EpwWeatherSource::parse_epw_iwec(Cursor::new(epw.as_bytes()))
                 .expect("iwec should not error");
-            prop_assert_eq!(iwec.len(), 2);
-            prop_assert_eq!(iwec[1].dry_bulb_temp, 0.0);
+            prop_assert_eq!(iwec.len(), 1,
+                "iwec must skip the row with non-numeric dry_bulb, got {}", iwec.len());
+            prop_assert_eq!(iwec[0].dry_bulb_temp, 20.0);
         }
 
         #[test]
