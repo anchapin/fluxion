@@ -244,7 +244,8 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #   test in `pcm_test_box.rs::tests` (the `default_layer_thickness_matches_documented_value`
 #   guard test) plus the AST-scan delta for the new `tests/all_tests/teacher_validation_pcm_box.rs`
 #   module's integration tests. Stacked on PR-A's 4273 baseline.
-BASELINE_LIB_TESTS = 4276  # 2026-09-28: 4275 -> 4276 — core-engine batch (#4213) adds one net lib test (new tests for ONNX sidecars/transactional topology/planning sync outweigh step_6r2c.rs deletion). Stacked on develop's 4275 baseline (test-audit cleanup deleted 5 inventoried lib tests).
+BASELINE_LIB_TESTS = 4278  # 2026-09-29: 4276 -> 4278 — Issue #4173 deletes the two dead sim constructors: +3 lib tests (2 validate_assembly guards in validation::config::tests + ported new_runtime_validation in thermal_model_core::tests), -1 doc-test from the deleted new_with_validation example.
+                        # 2026-09-28: 4275 -> 4276 — core-engine batch (#4213) adds one net lib test (new tests for ONNX sidecars/transactional topology/planning sync outweigh step_6r2c.rs deletion). Stacked on develop's 4275 baseline (test-audit cleanup deleted 5 inventoried lib tests).
                         # 2026-09-27: 4274 -> 4277 — post-rebase AST delta for PR-A + PR-B's combined inline tests (the 7 selector-parity tests are counted as workspace-integration rather than lib, so the lib bump comes from the 4 inline tests in `phase_change_material.rs::tests` + `pcm_test_box.rs::tests` plus the AST scan delta for PR-A's `tests.rs` guards).
                         # (+2 hvac setpoint CLI tests in src/cli/hvac_commands.rs:
                         # ZoneControl delegation + CLI-to-system propagation);

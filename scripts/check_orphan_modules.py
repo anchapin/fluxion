@@ -332,6 +332,13 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
         "ukf",
         "validation",
         "writer",
+        # [keep-dead] Issue #4173 deleted the ThermalModel validation-gated
+        # constructors, which were the sole in-workspace callers of
+        # ``validation::config`` (validate_assembly). The module is retained
+        # as tested public API; re-wire or delete in a follow-up. (Leaf name
+        # ``config`` is unambiguous here: ``ai::sweeps::config`` has live
+        # callers and is not wired-but-dead.)
+        "config",
     }
 )
 
@@ -365,7 +372,10 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
 #     ``validation_hybrid_empirical_test`` target) — the module is no
 #     longer wired-but-dead, so its allowlist entry and its Issue
 #     #3748 disposition row are dropped in the same PR.
-BASELINE_WIRED_BUT_DEAD = 32  # raised 19 → 32 in PR for fluxion-#4197: corrected
+BASELINE_WIRED_BUT_DEAD = 33  # raised 19 → 32 in PR for fluxion-#4197: corrected;
+#   raised 32 → 33 in PR for fluxion-#4173: validation::config lost its
+#   only in-workspace callers when the validation-gated ThermalModel
+#   constructors were deleted; tracked as keep-dead cleanup backlog
 # detector (qualified-path-aware, comment-stripping) surfaced 13 additional
 # wired-but-dead modules; documented correction, not a regression.
                               # src/sim/thermal_model_solvers.rs (methods moved to the private

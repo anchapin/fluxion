@@ -10,7 +10,7 @@ mod tests {
     //! constraint #0) and reproduced here as `approx_eq` checks.
     use crate::sim::construction::{Construction, ConstructionLayer, SurfaceType};
     use crate::sim::thermal_model_core::*;
-    use fluxion_core::assembly::{AssemblyBuilder, ConcreteMaterial};
+    use fluxion_core::assembly::{AssemblyBuilder, BuildingAssembly, ConcreteMaterial};
     use fluxion_core::construction::wall_cap_for;
 
     const TOL: f64 = 1e-9;
@@ -752,41 +752,67 @@ mod tests {
         );
     }
 
-    // ===== Issue #3732: new_with_assembly_validation must apply assembly
+    // ===== Issue #4173: ported from deleted tests/all_tests/test_validation_integration.rs =====
+    //
+    // The deleted integration file's constructor-validation tests died with
+    // ThermalModel::new_with_validation, but this one tests ThermalModel::new
+    // itself and must survive.
+    #[test]
+    fn new_runtime_validation() {
+        // Runtime validation in new() should not panic with valid defaults
+        let model = ThermalModel::new(1);
+        assert_eq!(model.hvac.num_zones, 1);
+    }
+
+    // ===== Issue #3732: assembly U-value must apply to wall/roof/floor
     // properties, not silently drop them =====
     //
-    // The previous implementation constructed `ThermalModel::new(num_zones)`
-    // and stopped at a TODO, so the validated U-values were checked and
-    // then discarded (the returned model ran on hardcoded wall_u_value=0.5).
-    // The new contract is fail-closed: the assembly U-value must flow
-    // through to `setpoints.wall_u_value` (and roof/floor) AND into the
-    // derived conductances used by the conduction solver.
+    // These tests verify the contract: when an assembly's U-value is
+    // computed and applied via ThermalModel::new + manual field setup,
+    // it must flow through to wall_u_value/roof_u_value/floor_u_value
+    // AND into the derived conductances used by the conduction solver.
+    // Note: ThermalModel::new_with_assembly_validation was deleted in
+    // #4173; callers should use validate_assembly from validation::config
+    // and apply the U-value manually.
 
-    /// Compute the expected assembly U-value (matching the production
-    /// formula in `new_with_assembly_validation`).
-    fn expected_assembly_u_value(r_layers: f64) -> f64 {
+    /// Compute the expected assembly U-value from the sum of layer R-values
+    /// plus the ASHRAE 140 standard interior + exterior film resistances.
+    fn compute_assembly_u_value(assembly: &BuildingAssembly) -> f64 {
         use fluxion_core::construction::{interior_film_coeff, EXTERIOR_FILM_COEFF};
+        let r_layers = assembly.total_r_value();
         let r_films = 1.0 / interior_film_coeff() + 1.0 / EXTERIOR_FILM_COEFF;
         1.0 / (r_layers + r_films)
     }
 
+    /// Build a ThermalModel with assembly U-value applied (port of the deleted
+    /// ThermalModel::new_with_assembly_validation constructor logic).
+    fn model_with_assembly(
+        num_zones: usize,
+        assembly: &BuildingAssembly,
+    ) -> ThermalModel<VectorField> {
+        let assembly_u_value = compute_assembly_u_value(assembly);
+        let mut model = ThermalModel::new(num_zones);
+        model.setpoints.wall_u_value = assembly_u_value;
+        model.setpoints.roof_u_value = assembly_u_value;
+        model.setpoints.floor_u_value = assembly_u_value;
+        model.update_derived_parameters();
+        model
+    }
+
     #[test]
-    fn new_with_assembly_validation_applies_wall_u_value() {
+    fn assembly_u_value_applies_to_wall() {
         // ConcreteMaterial default: thickness=0.1 m, conductivity=1.4 W/mK
         // → R_layer = 0.1/1.4 ≈ 0.07143 m²K/W
         // With ASHRAE 140 films (8.29 interior, 18.3 exterior) the
         // expected U-value is roughly 4.05 W/m²K — well above the
         // ThermalModel::new default of 0.5 W/m²K, so a "still 0.5" model
-        // would unambiguously catch the pre-#3732 silent-drop bug.
+        // would unambiguously catch a silent-drop bug.
         let assembly = AssemblyBuilder::new("concrete_wall".to_string())
             .add_layer(Box::new(ConcreteMaterial::new(0.1)))
             .build()
             .expect("valid concrete assembly");
-        let r_layers = 0.1_f64 / 1.4_f64;
-        let expected_u = expected_assembly_u_value(r_layers);
-
-        let model = ThermalModel::new_with_assembly_validation(1, &assembly)
-            .expect("validated assembly must succeed");
+        let expected_u = compute_assembly_u_value(&assembly);
+        let model = model_with_assembly(1, &assembly);
 
         assert!(
             (model.0.setpoints.wall_u_value - expected_u).abs() < 1e-9,
@@ -795,7 +821,7 @@ mod tests {
             expected_u
         );
         // Sanity-check the magnitude: this must be far from the
-        // pre-#3732 silent-drop value of 0.5 W/m²K.
+        // default 0.5 W/m²K.
         assert!(
             (model.0.setpoints.wall_u_value - 0.5).abs() > 1.0,
             "wall_u_value must differ from the default 0.5 sentinel; got {}",
@@ -804,7 +830,7 @@ mod tests {
     }
 
     #[test]
-    fn new_with_assembly_validation_applies_roof_and_floor_u_value() {
+    fn assembly_u_value_applies_to_roof_and_floor() {
         // Same U-value applies to all three opaque envelopes because
         // BuildingAssembly does not partition by surface type — this is
         // the ASHRAE 140 single-zone convention used by
@@ -813,8 +839,7 @@ mod tests {
             .add_layer(Box::new(ConcreteMaterial::new(0.1)))
             .build()
             .expect("valid concrete assembly");
-        let model = ThermalModel::new_with_assembly_validation(2, &assembly)
-            .expect("validated assembly must succeed");
+        let model = model_with_assembly(2, &assembly);
         assert!(approx_eq(
             model.0.setpoints.wall_u_value,
             model.0.setpoints.roof_u_value,
@@ -828,19 +853,15 @@ mod tests {
     }
 
     #[test]
-    fn new_with_assembly_validation_propagates_into_derived_conductances() {
-        // Issue #3732 follow-up: the assembly U-value must reach the
-        // derived conductances, not just sit on setpoints. We mutate
-        // setpoints.wall_u_value, then call update_derived_parameters
-        // inside the constructor; h_tr_floor (W/K) is the easiest
-        // derived conductance to inspect (it scales linearly with
-        // floor_u_value × zone_area).
+    fn assembly_u_value_propagates_into_derived_conductances() {
+        // The assembly U-value must reach the derived conductances, not just
+        // sit on setpoints. h_tr_floor (W/K) is the easiest derived
+        // conductance to inspect (it scales linearly with floor_u_value × zone_area).
         let assembly = AssemblyBuilder::new("propagation_check".to_string())
             .add_layer(Box::new(ConcreteMaterial::new(0.1)))
             .build()
             .expect("valid concrete assembly");
-        let model = ThermalModel::new_with_assembly_validation(1, &assembly)
-            .expect("validated assembly must succeed");
+        let model = model_with_assembly(1, &assembly);
 
         let u_value = model.0.setpoints.wall_u_value;
         // update_derived_parameters sets h_tr_floor = zone_area × floor_u_value.
@@ -853,8 +874,7 @@ mod tests {
             .first()
             .copied()
             .unwrap_or(0.0);
-        // zone_area default = 20.0 m² (ThermalModel::new), floor_u_value
-        // = u_value (set by new_with_assembly_validation).
+        // zone_area default = 20.0 m² (ThermalModel::new).
         let expected_h_tr_floor = 20.0 * u_value;
         assert!(
             (h_tr_floor_first - expected_h_tr_floor).abs() < 1e-9,
@@ -862,22 +882,18 @@ mod tests {
             h_tr_floor_first,
             expected_h_tr_floor
         );
-        // And the magnitude must differ from the pre-#3732 silent-drop
-        // value of zone_area × 0.039 = 0.78 W/K.
+        // And the magnitude must differ from the default value of zone_area × 0.039 = 0.78 W/K.
         assert!(
             (h_tr_floor_first - 0.78).abs() > 1.0,
-            "h_tr_floor must differ from the silent-drop sentinel 0.78; got {}",
+            "h_tr_floor must differ from the default sentinel 0.78; got {}",
             h_tr_floor_first
         );
     }
 
     #[test]
-    fn new_with_assembly_validation_thicker_assembly_yields_lower_u_value() {
+    fn thicker_assembly_yields_lower_u_value() {
         // Physical sanity check: a thicker (more insulative) assembly
-        // must produce a *lower* U-value, which is the whole point of
-        // the fail-closed fix. If a regression re-introduces the
-        // silent-drop bug, both U-values will return 0.5 and the
-        // ordering assertion will fail.
+        // must produce a *lower* U-value.
         let thin = AssemblyBuilder::new("thin".to_string())
             .add_layer(Box::new(ConcreteMaterial::new(0.05)))
             .build()
@@ -886,10 +902,8 @@ mod tests {
             .add_layer(Box::new(ConcreteMaterial::new(0.20)))
             .build()
             .expect("valid thick assembly");
-        let thin_model = ThermalModel::new_with_assembly_validation(1, &thin)
-            .expect("validated thin assembly must succeed");
-        let thick_model = ThermalModel::new_with_assembly_validation(1, &thick)
-            .expect("validated thick assembly must succeed");
+        let thin_model = model_with_assembly(1, &thin);
+        let thick_model = model_with_assembly(1, &thick);
         let thin_u = thin_model.0.setpoints.wall_u_value;
         let thick_u = thick_model.0.setpoints.wall_u_value;
         assert!(
@@ -898,48 +912,7 @@ mod tests {
             thick_u,
             thin_u
         );
-        // Both must be strictly positive and finite (a regression to
-        // the hardcoded 0.5 sentinel would also fail this).
+        // Both must be strictly positive and finite.
         assert!(thick_u > 0.0 && thin_u.is_finite());
-    }
-
-    #[test]
-    fn new_with_assembly_validation_propagates_validation_failure() {
-        // The constructor must still fail-closed on a *physically
-        // invalid* assembly (e.g., negative thickness). This guards the
-        // pre-existing validate_assembly contract that the fail-closed
-        // wiring must not have weakened.
-        use fluxion_core::assembly::{InsulationMaterial, MaterialLayer};
-        // Build a layer with negative thickness via direct construction.
-        // InsulationMaterial::new only takes thickness, so we layer two
-        // legitimate materials but force a downstream failure: assemble
-        // something that fails the builder's own validation by using a
-        // raw layer with a hand-rolled negative r_value would require a
-        // custom layer type; instead, we exploit that `AssemblyBuilder::build`
-        // already returns `Err(NoLayers)` for an empty builder, and the
-        // constructor would never see an empty assembly. To exercise the
-        // validate_assembly path inside new_with_assembly_validation, we
-        // round-trip a valid builder (AssemblyBuilder already validates
-        // physical ranges at .build() time, so a "bad" assembly cannot
-        // reach new_with_assembly_validation via the public Builder API).
-        //
-        // The realistic bad-assembly path is the validate_assembly
-        // function's range checks (e.g., emissivity outside [0,1]),
-        // which require hand-rolled layers. Confirm the happy path
-        // remains Ok and that the error message format from
-        // validate_assembly stays intact by checking a fresh model
-        // succeeds.
-        let _good = AssemblyBuilder::new("good".to_string())
-            .add_layer(Box::new(ConcreteMaterial::new(0.1)))
-            .build()
-            .expect("good assembly");
-        let _good_with_insulation = AssemblyBuilder::new("good_two_layer".to_string())
-            .add_layer(Box::new(ConcreteMaterial::new(0.1)))
-            .add_layer(Box::new(InsulationMaterial::new(0.05)))
-            .build()
-            .expect("two-layer assembly");
-        // Reference the trait symbol to avoid unused-import lint in case
-        // signature shrinks.
-        let _: &dyn MaterialLayer = &ConcreteMaterial::new(0.1);
     }
 }

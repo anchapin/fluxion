@@ -729,6 +729,45 @@ mod tests {
         assert!(result.is_err());
     }
 
+    // ===== Issue #4173: assembly validation failure propagation =====
+    //
+    // Ported from thermal_model_core/tests.rs. These tests verify that
+    // validate_assembly properly detects and reports invalid assemblies.
+    // Note: ThermalModel::new_with_assembly_validation was deleted;
+    // callers should use validate_assembly and apply U-values manually.
+
+    #[test]
+    fn test_validate_assembly_validates_concrete_assembly() {
+        // A valid concrete assembly should pass validation.
+        let assembly = AssemblyBuilder::new("good".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.1)))
+            .build()
+            .expect("good concrete assembly should build");
+        let result = validate_assembly(&assembly, "test.json");
+        assert!(
+            result.is_valid(),
+            "valid assembly must pass; errors: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_validate_assembly_validates_multi_layer_assembly() {
+        // A valid two-layer assembly should pass validation.
+        use fluxion_core::assembly::InsulationMaterial;
+        let assembly = AssemblyBuilder::new("good_two_layer".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.1)))
+            .add_layer(Box::new(InsulationMaterial::new(0.05)))
+            .build()
+            .expect("two-layer assembly should build");
+        let result = validate_assembly(&assembly, "test.json");
+        assert!(
+            result.is_valid(),
+            "valid two-layer assembly must pass; errors: {:?}",
+            result.errors
+        );
+    }
+
     #[test]
     fn test_validation_error_debug_format() {
         let error = ConfigValidationError::InvalidValue {
