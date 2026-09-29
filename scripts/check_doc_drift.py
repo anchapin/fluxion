@@ -62,6 +62,7 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
+from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LIB_RS = REPO_ROOT / "fluxion-core" / "src" / "lib.rs"
@@ -445,8 +446,6 @@ def _scan_swap_point_modules() -> list[tuple[str, int, str]]:
 
     The actual load-bearing predicate is `is_nine_r4c_model()`.
     """
-    from typing import Iterable
-
     failures: list[tuple[str, int, str]] = []
 
     for path, rel in _iter_swap_point_modules():
@@ -464,11 +463,6 @@ def _scan_swap_point_modules() -> list[tuple[str, int, str]]:
                 body = _strip_doc_marker(stripped)
                 doc_lines.append((lineno, body))
 
-        # Join doc lines for multi-line pattern matching, but keep
-        # line numbers for reporting.
-        full_doc = "\n".join(body for _, body in doc_lines)
-        full_doc_lower = full_doc.lower()
-
         # Check for non-existent arm claims (skip negated statements such as
         # "6R2C and 8R3C are not callable" — the doc is correct, not stale).
         for lineno, body in doc_lines:
@@ -476,9 +470,9 @@ def _scan_swap_point_modules() -> list[tuple[str, int, str]]:
                 failures.append((
                     rel,
                     lineno,
-                    f"doc-comment claims a non-existent ZoneSolverKind arm "
-                    f"(6R2C/8R3C) is callable; these are experimental/unavailable "
-                    f"(see thermal_selector.rs EXPERIMENTAL_ZONE_SOLVERS)",
+                    "doc-comment claims a non-existent ZoneSolverKind arm "
+                    "(6R2C/8R3C) is callable; these are experimental/unavailable "
+                    "(see thermal_selector.rs EXPERIMENTAL_ZONE_SOLVERS)",
                 ))
 
         # Check for removed fall-through claims (only in multi-line context).
@@ -493,9 +487,9 @@ def _scan_swap_point_modules() -> list[tuple[str, int, str]]:
                 failures.append((
                     rel,
                     lineno,
-                    f"doc-comment claims Gauge → 5R1C/9R4C fall-through "
-                    f"exists in default build; per ADR-0017 (#3978) Gauge "
-                    f"panics in default builds — the silent fall-through was removed",
+                    "doc-comment claims Gauge → 5R1C/9R4C fall-through "
+                    "exists in default build; per ADR-0017 (#3978) Gauge "
+                    "panics in default builds — the silent fall-through was removed",
                 ))
 
         # Check for removed legacy model-check references. Use a paragraph
@@ -510,10 +504,10 @@ def _scan_swap_point_modules() -> list[tuple[str, int, str]]:
                 failures.append((
                     rel,
                     lineno,
-                    f"doc-comment references legacy model-check function "
-                    f"(is_9r4c_model/is_8r3c_model/is_6r2c_model); "
-                    f"only is_nine_r4c_model() exists and is the "
-                    f"HighMass auto-promotion predicate",
+                    "doc-comment references legacy model-check function "
+                    "(is_9r4c_model/is_8r3c_model/is_6r2c_model); "
+                    "only is_nine_r4c_model() exists and is the "
+                    "HighMass auto-promotion predicate",
                 ))
 
     return failures
