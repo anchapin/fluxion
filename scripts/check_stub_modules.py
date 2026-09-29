@@ -89,6 +89,9 @@ SCAN_DIRS: tuple[str, ...] = (
 # match for block comments so the first `*/` closes the comment.
 _BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 _LINE_COMMENT_RE = re.compile(r"//[^\n]*")
+# Strip leading doc-comment markers: `//!`, `///`, `/*!`, `/**`
+# Order matters: longer patterns first so `///` is matched before `//`.
+_DOC_MARKER_RE = re.compile(r"^(?:///|//\!|/\*!|/\*\*) ?", re.MULTILINE)
 
 
 def strip_rust_comments(source: str) -> str:
@@ -103,6 +106,27 @@ def strip_rust_comments(source: str) -> str:
     """
     without_block = _BLOCK_COMMENT_RE.sub("", source)
     return _LINE_COMMENT_RE.sub("", without_block)
+
+
+def _normalize_doc_comments(source: str) -> str:
+    """Strip doc-comment markers and collapse whitespace.
+
+    This allows sentinel phrase detection to work even when the phrase
+    is split across lines, e.g.:
+
+        //! This module is a marker for future
+        //! extraction.
+
+    After normalisation the text becomes a single line with collapsed
+    whitespace: ``this module is a marker for future extraction.``
+
+    We operate on the raw source *before* comment stripping so the
+    sentinels can be detected regardless of line-wrap in doc comments.
+    """
+    # Strip leading doc markers (//!  ///  /*!  /**) from each line
+    unmarked = _DOC_MARKER_RE.sub("", source)
+    # Collapse all whitespace sequences (including newlines) to a single space
+    return " ".join(unmarked.split())
 
 
 def count_non_blank_non_comment_lines(source: str) -> int:
@@ -140,8 +164,11 @@ def find_stubs() -> list[tuple[Path, int, tuple[str, ...]]]:
         loc = count_non_blank_non_comment_lines(source)
         if loc >= MIN_NON_COMMENT_LOC:
             continue
-        lowered = source.lower()
-        hits = tuple(p for p in SENTINEL_PHRASES if p in lowered)
+        # Normalise doc comments before checking sentinel phrases so that
+        # line-wrapped phrases (e.g. "marker for future\\nextraction") are
+        # detected (Issue #4198).
+        normalized = _normalize_doc_comments(source).lower()
+        hits = tuple(p for p in SENTINEL_PHRASES if p in normalized)
         if not hits:
             continue
         out.append((path, loc, hits))
