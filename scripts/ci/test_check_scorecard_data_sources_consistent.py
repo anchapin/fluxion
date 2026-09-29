@@ -1,16 +1,19 @@
-"""Tests for ``scripts/check_scorecard_data_sources_consistent.py`` -- Issue #4208.
+"""Tests for ``scripts/check_scorecard_data_sources_consistent.py`` --
+Issues #4208 / #4183.
 
 The gate checks that the committed sources feeding the ``SCORECARD.md``
 headline agree: ``validation/performance_history.latest.json`` (preferred)
 vs ``docs/ASHRAE140_RESULTS.md`` (fallback), the ``SCORECARD.md`` headline
 itself against the canonical source (Issue #4208 -- previously parsed but
-never compared), and ``docs/KNOWN_ISSUES.md`` for stale SCORECARD
+never compared), ``README.md`` headline against the canonical source
+(Issue #4183 -- README is load-bearing for the scorecard but was
+unguarded), and ``docs/KNOWN_ISSUES.md`` for stale SCORECARD
 cross-references (Issue #3578).
 
 The tests below drive ``main()`` against hermetic ``tmp_path`` fixture
 repos (the ``load_script`` + ``monkeypatch`` pattern): a consistent
-fixture passes (exit 0); a SCORECARD headline that disagrees with the
-performance history / ASHRAE results fails (exit 1); source-vs-source
+fixture passes (exit 0); a SCORECARD/README headline that disagrees with
+the performance history / ASHRAE results fails (exit 1); source-vs-source
 divergence and stale KNOWN_ISSUES tokens fail (exit 1). The end-to-end
 against the real tree is the direct script invocation in
 ``scorecard-source-consistency.yml`` (path-filtered required check).
@@ -44,6 +47,7 @@ def _redirect(checker, monkeypatch, tmp_path: Path) -> dict[str, Path]:
         "ashrae": tmp_path / "docs" / "ASHRAE140_RESULTS.md",
         "scorecard": tmp_path / "SCORECARD.md",
         "known_issues": tmp_path / "docs" / "KNOWN_ISSUES.md",
+        "readme": tmp_path / "README.md",
     }
     for p in paths.values():
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -51,6 +55,7 @@ def _redirect(checker, monkeypatch, tmp_path: Path) -> dict[str, Path]:
     monkeypatch.setattr(checker, "ASHRAE_DOC", paths["ashrae"])
     monkeypatch.setattr(checker, "SCORECARD_MD", paths["scorecard"])
     monkeypatch.setattr(checker, "KNOWN_ISSUES", paths["known_issues"])
+    monkeypatch.setattr(checker, "README_MD", paths["readme"])
     return paths
 
 
@@ -100,6 +105,38 @@ def _write_known_issues(path: Path, body: str = "") -> None:
     )
 
 
+def _write_readme(path: Path, pass_rate: str = "9.8",
+                  mae: str = "45.27",
+                  generated_date: str = "2026-09-26") -> None:
+    """Write a minimal README.md with headline metrics matching the regexes
+    used by the gate's _load_readme_headline() function."""
+    path.write_text(
+        "# Fluxion: AI-Accelerated Building Energy Engine\n"
+        "\n"
+        f"> **Status:** Current ASHRAE 140-2023 validation pass rate is "
+        f"**{pass_rate}%** (generated {generated_date}).\n"
+        "\n"
+        "## Current Validation Status\n"
+        "\n"
+        "![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-"
+        f"{pass_rate}%25%20pass-red)\n"
+        "\n"
+        "The figures below come from the committed validation suite "
+        f"(generated {generated_date}); see SCORECARD.md.\n"
+        "\n"
+        "| Metric | Current | Target (release gate) | Status |\n"
+        "|--------|---------|-----------------------|--------|\n"
+        f"| Pass rate (metric-level) | **{pass_rate}%** (11/84) | "
+        "≥ 60% | ❌ Fail |\n"
+        f"| Mean Absolute Error (MAE) | **{mae}%** | ≤ 50% | ✅ Pass |\n"
+        "\n"
+        "### Known Limitations\n"
+        "\n"
+        f"- **Overall accuracy:** {mae}% MAE.\n",
+        encoding="utf-8",
+    )
+
+
 def _consistent_repo(checker, monkeypatch, tmp_path: Path) -> dict[str, Path]:
     """A mock repo where all sources agree within tolerance."""
     paths = _redirect(checker, monkeypatch, tmp_path)
@@ -107,6 +144,7 @@ def _consistent_repo(checker, monkeypatch, tmp_path: Path) -> dict[str, Path]:
     _write_ashrae_doc(paths["ashrae"])
     _write_scorecard(paths["scorecard"])
     _write_known_issues(paths["known_issues"])
+    _write_readme(paths["readme"])
     return paths
 
 
@@ -209,3 +247,85 @@ def test_stale_known_issues_token_fails(checker, monkeypatch, tmp_path,
     assert checker.main([]) == 1
     out = capsys.readouterr().out
     assert "stale SCORECARD cross-reference" in out
+
+
+# ---------------------------------------------------------------------------
+# main(): README.md headline vs canonical source (Issue #4183)
+# ---------------------------------------------------------------------------
+
+
+def test_readme_headline_agrees_with_canonical_passes(
+        checker, monkeypatch, tmp_path, capsys):
+    """A README.md headline that agrees with the canonical perf-history
+    source passes -- the Issue #4183 acceptance criterion (positive case)."""
+    paths = _consistent_repo(checker, monkeypatch, tmp_path)
+    # README headline matches perf-history values within tolerance.
+    _write_readme(paths["readme"], pass_rate="9.8", mae="45.27",
+                  generated_date="2026-09-26")
+
+    assert checker.main([]) == 0
+    out = capsys.readouterr().out
+    # Check that the README headline section passes the check.
+    assert "README.md =    9.8" in out
+    assert "README.md =  45.27" in out
+    # Both pass within tolerance (0.017 pp and 0.000 pp respectively).
+    assert "diff = 0.017 pp  ✓" in out
+    assert "diff = 0.000 pp  ✓" in out
+
+
+def test_readme_headline_stale_pass_rate_fails(
+        checker, monkeypatch, tmp_path, capsys):
+    """A README.md headline with a stale pass rate fails -- the
+    Issue #4183 negative regression case (stale figures should be caught)."""
+    paths = _consistent_repo(checker, monkeypatch, tmp_path)
+    # Plant the stale 14.1% pass rate from the issue #4183 description.
+    _write_readme(paths["readme"], pass_rate="14.1", mae="45.27",
+                  generated_date="2026-09-07")
+
+    assert checker.main([]) == 1
+    out = capsys.readouterr().out
+    assert "README.md headline pass_rate diverges" in out
+    assert "diff" in out and "pp" in out
+
+
+def test_readme_headline_stale_mae_fails(
+        checker, monkeypatch, tmp_path, capsys):
+    """A README.md headline with a stale MAE fails -- the
+    Issue #4183 negative regression case."""
+    paths = _consistent_repo(checker, monkeypatch, tmp_path)
+    # Plant the stale 49.82% MAE from the issue #4183 description.
+    _write_readme(paths["readme"], pass_rate="9.8", mae="49.82",
+                  generated_date="2026-09-07")
+
+    assert checker.main([]) == 1
+    out = capsys.readouterr().out
+    assert "README.md headline mae diverges" in out
+    assert "diff" in out and "pp" in out
+
+
+def test_unparseable_readme_headline_fails_loud(
+        checker, monkeypatch, tmp_path, capsys):
+    """A README.md whose headline cannot be parsed fails loud rather
+    than silent-green (``None`` is outside tolerance by contract)."""
+    paths = _consistent_repo(checker, monkeypatch, tmp_path)
+    paths["readme"].write_text(
+        "# Fluxion\n\nNo validation metrics here.\n", encoding="utf-8")
+
+    assert checker.main([]) == 1
+    out = capsys.readouterr().out
+    assert "MISSING ON ONE SIDE" in out
+
+
+def test_readme_headline_falls_back_to_ashrae_doc(
+        checker, monkeypatch, tmp_path, capsys):
+    """Without a perf-history snapshot the ASHRAE doc is the canonical
+    source for the README headline comparison (Issue #4183 fallback)."""
+    paths = _redirect(checker, monkeypatch, tmp_path)
+    _write_ashrae_doc(paths["ashrae"])
+    _write_scorecard(paths["scorecard"])
+    _write_known_issues(paths["known_issues"])
+    _write_readme(paths["readme"])
+    # No perf snapshot: README headline should be compared against ASHRAE doc.
+    assert checker.main([]) == 1
+    out = capsys.readouterr().out
+    assert "canonical (docs/ASHRAE140_RESULTS.md)" in out
