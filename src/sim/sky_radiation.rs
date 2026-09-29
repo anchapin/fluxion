@@ -373,10 +373,18 @@ impl SolAirTemperature {
     }
 
     /// Calculates the longwave radiation difference for sol-air temperature.
+    ///
+    /// Returns ASHRAE ΔR (positive = net longwave loss): `ΔR = σ·(T_out⁴ − T_sky⁴)`.
+    ///
+    /// When the sky is colder than outdoor air (typical night condition),
+    /// ΔR is positive, representing radiative cooling that reduces the
+    /// sol-air temperature below outdoor air temperature.
     fn calculate_longwave_radiation_difference(&self, outdoor_temp: f64, sky_temp: f64) -> f64 {
         let t_outdoor_k = outdoor_temp + 273.15;
         let t_sky_k = sky_temp + 273.15;
-        STEFAN_BOLTZMANN * (t_sky_k.powi(4) - t_outdoor_k.powi(4))
+        // ASHRAE ΔR: positive when surface (at T_outdoor) is warmer than sky,
+        // representing net radiative heat loss from the surface.
+        STEFAN_BOLTZMANN * (t_outdoor_k.powi(4) - t_sky_k.powi(4))
     }
 
     /// Calculates sol-air temperature for a roof (horizontal surface).
@@ -743,10 +751,13 @@ mod tests {
         let t_sol = sol.calculate(35.0, 500.0, -10.0, None);
         assert!(t_sol > 35.0); // Sol-air higher than air temp due to solar
 
-        // Night conditions (no solar): cold sky
+        // Night conditions (no solar): cold sky causes radiative cooling,
+        // which reduces sol-air temperature below outdoor air (windshield-frost effect).
         let t_sol_night = sol.calculate(25.0, 0.0, -20.0, None);
-        // The sol-air temp should be higher than outdoor due to radiative cooling effect
-        assert!(t_sol_night > 25.0);
+        assert!(
+            t_sol_night < 25.0,
+            "Radiative cooling to cold sky should lower sol-air below outdoor temp"
+        );
     }
 
     #[test]

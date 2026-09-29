@@ -319,13 +319,15 @@ fn test_sol_air_clear_sky_daytime() {
     // Summer clear day: 35°C ambient, 800 W/m² solar, cold sky
     let t_sol = sol.calculate(35.0, 800.0, -10.0, None);
 
-    // Analytical:
-    // Solar term: α × I / h_o = 0.6 × 800 / 22.7 = 21.1°C
-    // Longwave term: ε × ΔR / h_o = 0.9 × (-300) / 22.7 ≈ -11.9°C (sky is cold)
-    // T_sol-air ≈ 35 + 21.1 - (-11.9) = 68°C
+    // Analytical (using ASHRAE 140 defaults: α=0.7, h=18.3):
+    // Solar term: α × I / h_o = 0.7 × 800 / 18.3 = 30.6°C
+    // ΔR = σ(T_out⁴ - T_sky⁴) = σ(308.15⁴ - 263.15⁴) ≈ 241 W/m² (positive, net LW loss)
+    // Longwave term: ε × ΔR / h_o = 0.9 × 241 / 18.3 ≈ 11.9°C
+    // T_sol-air = T_out + solar - εΔR/h = 35 + 30.6 - 11.9 ≈ 53.7°C
+    // Cold sky causes radiative cooling, reducing sol-air from what solar alone would give.
     assert!(
-        t_sol > 55.0 && t_sol < 75.0,
-        "Sol-air for clear sky daytime: {:.1}°C, expected 55-75°C",
+        t_sol > 50.0 && t_sol < 60.0,
+        "Sol-air for clear sky daytime: {:.1}°C, expected 50-60°C",
         t_sol
     );
 }
@@ -335,23 +337,24 @@ fn test_sol_air_clear_sky_daytime() {
 fn test_sol_air_overcast_daytime() {
     let sol = SolAirTemperature::ashrae_140_default();
 
-    // Overcast day: low solar, warmer sky
+    // Overcast day: low solar, warmer sky (15°C vs outdoor 25°C)
     let t_sol = sol.calculate(25.0, 100.0, 15.0, None);
 
-    // With overcast, solar contribution is minimal
-    // T_sol-air should be close to outdoor temperature
+    // With overcast, sky is warmer than outdoor (T_sky > T_out)
+    // ASHRAE ΔR = σ(T_out⁴ - T_sky⁴) is NEGATIVE (sky radiates TO surface)
+    // -εΔR/h becomes positive, adding to sol-air temperature
     assert!(
-        t_sol > 20.0 && t_sol < 35.0,
-        "Sol-air for overcast daytime: {:.1}°C, expected 20-35°C",
+        t_sol > 25.0 && t_sol < 35.0,
+        "Overcast sol-air {:.1}°C should exceed outdoor (25°C) due to warm sky radiation",
         t_sol
     );
 
-    // Overcast sol-air should be LOWER than clear sky
-    // (warmer sky → less longwave cooling → lower sol-air correction)
+    // Overcast sol-air should be HIGHER than clear sky
+    // (warmer sky → negative ΔR → adds to sol-air, vs cold clear sky positive ΔR subtracts)
     let t_sol_clear = sol.calculate(25.0, 100.0, -10.0, None);
     assert!(
-        t_sol < t_sol_clear,
-        "Overcast sol-air {:.1} should be LOWER than clear {:.1} due to warmer sky",
+        t_sol > t_sol_clear,
+        "Overcast sol-air {:.1} should be HIGHER than clear {:.1} due to warmer sky",
         t_sol,
         t_sol_clear
     );
@@ -365,13 +368,13 @@ fn test_sol_air_nighttime() {
     // Night: zero solar, cold sky
     let t_sol = sol.calculate(15.0, 0.0, -20.0, None);
 
-    // Nighttime: T_sol-air = T_outdoor - (ε × ΔR / h_o)
-    // ΔR = σ × (T_sky^4 - T_outdoor^4) = negative (sky cooler)
-    // So we subtract a negative = add positive
-    // T_sol-air > T_outdoor due to radiative cooling effect
+    // Nighttime: T_sol-air = T_outdoor - ε×ΔR/h_o
+    // ASHRAE ΔR = σ(T_out⁴ - T_sky⁴) is positive when sky is colder (net LW loss)
+    // Cold sky radiative cooling reduces sol-air BELOW outdoor temperature
+    // (windshield-frost effect: surface loses heat to cold sky)
     assert!(
-        t_sol > 15.0,
-        "Nighttime sol-air {:.1}°C should be higher than outdoor 15°C due to longwave term",
+        t_sol < 15.0,
+        "Nighttime sol-air {:.1}°C should be lower than outdoor 15°C due to radiative cooling",
         t_sol
     );
 }
@@ -435,13 +438,12 @@ fn test_sol_air_polar_night() {
     // Extreme cold, no solar (polar night)
     let t_sol = sol.calculate(-40.0, 0.0, -60.0, None);
 
-    // Even with no solar, longwave term affects sol-air
-    // T_sol-air = T_outdoor - ε×ΔR/h
-    // ΔR is negative (cold sky), so -ε×ΔR/h = positive correction
-    // T_sol-air should be HIGHER than ambient (longwave "heating" from cold sky)
+    // ASHRAE ΔR = σ(T_out⁴ - T_sky⁴) is positive (cold sky, net LW loss)
+    // Radiative cooling reduces sol-air BELOW outdoor temperature
+    // T_sol-air = T_outdoor - ε×ΔR/h (cold sky makes this less than T_outdoor)
     assert!(
-        t_sol > -40.0,
-        "Polar night sol-air {:.1}°C should be ABOVE outdoor -40°C due to longwave correction",
+        t_sol < -40.0,
+        "Polar night sol-air {:.1}°C should be BELOW outdoor -40°C due to radiative cooling to cold sky",
         t_sol
     );
 }
