@@ -66,7 +66,7 @@
       "test_binaries": 1
     }
   },
-  "generated_at": "2026-09-29T18:45:49.363247+00:00",
+  "generated_at": "2026-09-29T23:39:46.201123+00:00",
   "repo_root": "unknown",
   "schema_version": 1,
   "scope": {
@@ -79,13 +79,13 @@
     "lib_ignored_root": 8,
     "lib_tests_root": 4297,
     "test_binaries": 52,
-    "test_source_files": 376,
+    "test_source_files": 377,
     "workspace_ignored": 144,
     "workspace_integration_ignored": 124,
-    "workspace_integration_tests": 3464,
+    "workspace_integration_tests": 3466,
     "workspace_lib_ignored": 20,
     "workspace_lib_tests": 5420,
-    "workspace_tests": 8884
+    "workspace_tests": 8886
   },
   "verify": {
     "command": [
@@ -98,7 +98,7 @@
       "--list"
     ],
     "error": "FileNotFoundError: [Errno 2] No such file or directory: 'cargo'",
-    "executed_at": "2026-09-29T18:45:49.364252+00:00",
+    "executed_at": "2026-09-29T23:39:46.205240+00:00",
     "matched": false
   }
 }
