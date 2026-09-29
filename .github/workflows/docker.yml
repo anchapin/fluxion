@@ -153,6 +153,28 @@ jobs:
           cache-from: type=gha,scope=build-test-v3
           cache-to: type=gha,scope=build-test-v3,mode=max
 
+      # Issue #4186: hand the built image to the `security` job. The
+      # Trivy step used to run `scan-type: fs` against the repository
+      # tree, which structurally cannot see the `apt-get install` layers
+      # (`ca-certificates`, `libssl3`, `libgomp1`, `curl`, ...) that
+      # `docs/SECURITY.md` explicitly defers to Trivy. A tarball is used
+      # rather than a registry reference because the image is only pushed
+      # when `github.event_name != 'pull_request'`, so a registry ref
+      # would not resolve on PRs.
+      - name: Save image tarball for vulnerability scanning
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}"
+          docker save -o image.tar "$IMAGE"
+          ls -lh image.tar
+
+      - name: Upload image tarball for Trivy
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: docker-image-tarball
+          path: image.tar
+          retention-days: 1
+          if-no-files-found: error
+
       - name: Run container smoke test
         if: github.event_name != 'pull_request'
         run: |
@@ -369,13 +391,36 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
+      - name: Download image tarball
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: docker-image-tarball
+          path: .
+
       - name: Run Trivy vulnerability scanner
         # Pinned to commit SHA for supply-chain security (master as of 2026-05-12)
         # To update: get latest SHA from https://github.com/aquasecurity/trivy-action/commits/master
+        #
+        # Issue #4186: this scanned `scan-type: fs` / `scan-ref: .` — the
+        # repository source tree — so it could not see the OS packages the
+        # Dockerfile installs, which `docs/SECURITY.md` names as the
+        # compensating control for the unpinned `apt-get` layers. It now
+        # scans the built image tarball produced by `build-and-test`.
+        #
+        # `exit-code` is set explicitly: the action has no default for it, so
+        # `TRIVY_EXIT_CODE` was never exported and Trivy's own default (0)
+        # applied — the step could not fail on any finding. The threshold is
+        # CRITICAL-only so the check is fail-closed without being noisy
+        # against an unbaselined package set; widen `severity` only after a
+        # real run has produced a `.trivyignore` baseline.
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
-          scan-type: 'fs'
-          scan-ref: '.'
+          scan-type: 'image'
+          input: 'image.tar'
+          exit-code: '1'
+          severity: 'CRITICAL'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
           format: 'sarif'
           output: 'trivy-results.sarif'
 

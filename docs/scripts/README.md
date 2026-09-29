@@ -71,6 +71,7 @@ Every active gate is wired into a workflow job, a pre-commit (manual) hook, or i
 | `check_tdqs_regression.py` | TDQS (Temporal Decision Quality Score) criterion-bench regression | tdqs_regression.yml |
 | `check_test_inventory_drift.py` | Test-count ratchet vs. `test_inventory_baseline.json` (#3442) | scripts-tests.yml |
 | `check_workflow_pin.py` | Fail on non-SHA-pinned `uses:` in `.github/workflows/*.yml` (#3475) | scripts-tests.yml |
+| `check_trivy_scan_target.py` | Reject Trivy source-tree scans / missing `exit-code` (#4186) | scripts-tests.yml |
 
 ---
 
@@ -116,9 +117,7 @@ Every active gate is wired into a workflow job, a pre-commit (manual) hook, or i
 | `generate_diagnostic_data.py` | Synthetic reference data for ASHRAE 140 Cases 195–470 (diagnostic validation) | operator |
 | `generate_monthly_aggregate.py` | Aggregate hourly EnergyPlus reference data into monthly heating/cooling totals (#2748) | operator |
 | `generate_reference_data.py` | Synthetic reference data for ASHRAE 140 Cases 800–810 (HVAC equipment) | operator |
-| `grid_search_h_si.py` | Grid search for `H_SI` (interior surface convective coefficient) calibration | operator |
 | `issue-2448-seasonal-attribution.py` | Issue #2453 / #2448 seasonal-attribution analyser | operator |
-| `sweep_h_ms_coeff.py` | Sweep `h_ms_coeff` for Case 900FF to locate the tolerance-satisfying window | operator |
 | `verify_gauge_solver_regression.py` | TDD snapshot diff verifier for the `ThermalModelData` god-struct split (#3070) | pytest harness (`ci/test_verify_gauge_solver_regression.py`) |
 | `verify_h_tr_em_regression.py` | `h_tr_em` wind-dependent per-step recompute regression verifier (#3549) | h_tr_em_regression_gate.yml |
 
@@ -250,6 +249,7 @@ Runs in `python-tests.yml` (Python 3.10–3.13 matrix, coverage via `scripts/pyt
 | `test_check_tdqs_regression.py` | `check_tdqs_regression.py` |
 | `test_check_test_inventory_drift.py` | `check_test_inventory_drift.py` (#3442) |
 | `test_check_workflow_pin.py` | `check_workflow_pin.py` (#3475) |
+| `test_check_trivy_scan_target.py` | `check_trivy_scan_target.py` (#4186) |
 | `test_cleanup_root_strays.py` | `cleanup_root_strays.sh` (#3438) |
 | `test_cleanup_stale_worktrees.py` | `cleanup_stale_worktrees.sh` (#3069, #3118) |
 | `test_cloud_campaign_manager.py` | `cloud_campaign_manager.py` (#1847) |

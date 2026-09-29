@@ -366,6 +366,17 @@ keeps the pin fresh on a quarterly cadence.
   follow-up — for now, Trivy (`docker.yml::security`) catches
   package-level CVEs.
 
+  **Issue #4186:** that compensating control previously did not exist.
+  The step ran `scan-type: fs` against the repository source tree, which
+  structurally cannot see OS packages installed into the image, and it set
+  no `exit-code`, so it could not fail on any finding either. It now scans
+  the built image (`scan-type: image` over a `docker save` tarball from the
+  `build-and-test` job) with an explicit `exit-code` threshold and a
+  `.trivyignore` policy. `scripts/check_trivy_scan_target.py` fails if a
+  Trivy step regresses to a source-tree scan or loses its `exit-code`,
+  without a documented justification — so this paragraph and the step can
+  no longer diverge silently.
+
 ### 7. Adding a new workflow — checklist
 
 1. Add a top-level `permissions:` block. Start from `contents: read` and add a

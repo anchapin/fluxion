@@ -163,6 +163,7 @@ Every active gate under `scripts/check_*.py` (40 scripts at head) is wired into 
 | `scripts/check_test_inventory_drift.py` | Test-count ratchet vs. `test_inventory_baseline.json` (#3442) | `scripts-tests.yml` | #6 |
 | `scripts/check_topology_drift.py` | Topology artifact drift gate — byte-compares regenerated reference topologies + Mermaid/SVG diagrams vs. committed tree, `topology lint --strict` per case (#3966) | `topology_visualizer.yml` | #5 |
 | `scripts/check_workflow_pin.py` | SHA-pinned `uses:` in `.github/workflows/*.yml` (#3475) | `scripts-tests.yml` | #6 |
+| `scripts/check_trivy_scan_target.py` | Reject a Trivy step that scans the repo tree instead of the built image, or omits `exit-code` — `docs/SECURITY.md` names it the compensating control for the unpinned `apt-get` layers (#4186) | `scripts-tests.yml` | #6 |
 
 ## Git and CI Workflow
 

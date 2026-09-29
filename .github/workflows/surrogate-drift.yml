@@ -27,6 +27,13 @@ on:
     branches: [main, develop]
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
+      # Issue #4161: `**/surrogate*.rs` cannot match the surrogate module
+      # directory — GitHub's `*` does not cross `/`, so
+      # `src/ai/surrogate/{integrity,manager,metrics,session_pool}.rs` (the
+      # entire loader) matched none of these patterns and the required
+      # drift gate could not fire on the code it covers.
+      - 'src/ai/surrogate.rs'
+      - 'src/ai/surrogate/**'
       - '**/surrogate*.rs'
       - '**/Surrogate*.rs'
       - 'models/**'

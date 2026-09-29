@@ -14,15 +14,21 @@
 #    committed, its actual SHA-256 matches the hash in the manifest
 #    (`sha256sum -c` is the canonical verification command).
 # 3. The Rust unit tests for `verify_onnx_signature`
-#    (`src/ai/surrogate.rs`) still pass — these tests exercise the
+#    (`src/ai/surrogate/integrity.rs`) still pass — these tests exercise the
 #    happy-path, tampered, env-override, and malformed-manifest branches.
+#    Issue #4161: `src/ai/surrogate.rs` was decomposed into the
+#    `src/ai/surrogate/` module directory by #3686; the enforcement lives in
+#    `integrity.rs` (`open_and_verify_onnx`), called from `manager.rs` and
+#    `session_pool.rs`.
 #
 # Trigger policy
 # --------------
 # Runs on every PR that touches ANY of:
 #   - `models/surrogate_zone_thermal.onnx` (the model itself)
 #   - `models/surrogate_zone_thermal.onnx.sha256` (the manifest)
-#   - `src/ai/surrogate.rs` (the load / verify code path)
+#   - `src/ai/surrogate.rs` and `src/ai/surrogate/**` (the load / verify
+#     code path; Issue #4161 — the module directory was missing here, so the
+#     gate could not fire on the code it claimed to cover)
 #   - this workflow file (so edits are validated)
 # Also runs on pushes to main and develop, and on workflow_dispatch for
 # manual re-runs. Does NOT block the surrogate_drift_gate job — that gate
@@ -58,6 +64,10 @@ on:
       - 'models/surrogate_zone_thermal.onnx'
       - 'models/surrogate_zone_thermal.onnx.sha256'
       - 'src/ai/surrogate.rs'
+      # Issue #4161: the surrogate module directory. Without this the ONNX
+      # fail-closed signature gate never runs when `integrity.rs` (the
+      # actual `open_and_verify_onnx` enforcement) changes.
+      - 'src/ai/surrogate/**'
       - '.github/workflows/onnx-integrity.yml'
   workflow_dispatch:
 

@@ -1,0 +1,19 @@
+# Trivy ignore policy for the container image scan (Issue #4186).
+#
+# `docker.yml::security` scans the built image with `exit-code: 1` and
+# `severity: CRITICAL`, so an entry here is the only way to accept a
+# known finding. Keep the list minimal and justified: every entry is a
+# deliberate waiver, and a stale one should be deleted.
+#
+# Format: one CVE per line, `CVE-YYYY-NNNN` or a Trivy vulnerability ID.
+# Lines beginning with `#` are comments; blank lines are ignored.
+#
+# No entries yet. The first live scan run establishes the baseline: add
+# an entry only with (a) a linked issue, (b) a stated expiry or removal
+# condition, and (c) a note on why the finding is not actionable for this
+# image. An unexplained entry is a regression.
+#
+# Reference: the scan targets the image tarball from `build-and-test`, so
+# it covers the `apt-get install` layers (`ca-certificates`, `libssl3`,
+# `libgomp1`, `curl`, `pkg-config`, `libssl-dev`) that `docs/SECURITY.md`
+# §7 explicitly defers to this control.

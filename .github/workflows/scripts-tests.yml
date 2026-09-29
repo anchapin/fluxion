@@ -148,6 +148,15 @@ jobs:
       - name: Enforce ADR-0015 concurrency keys (Issue #3366, #3444)
         run: python3 scripts/check_concurrency_keys.py
 
+      # Issue #4186: rejects a `trivy-action` step that scans the repo
+      # source tree (`scan-type: fs`) or omits `exit-code`. `docs/SECURITY.md`
+      # names this step as the compensating control for the unpinned
+      # `apt-get` layers, and a source scan cannot see them; without
+      # `exit-code` the action's own default (0) applies, so the step cannot
+      # fail. A documented justification comment is the single escape hatch.
+      - name: Reject Trivy source-tree scans (Issue #4186)
+        run: python3 scripts/check_trivy_scan_target.py
+
       # Issue #4135: Dockerfile/`[workspace] members` drift guard.
       # ``cargo build --bin fluxion-rest --no-default-features`` resolves
       # the WHOLE workspace, so a member whose manifest is absent from the
