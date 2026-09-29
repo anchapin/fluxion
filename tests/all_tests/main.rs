@@ -131,6 +131,7 @@ mod hvac_bestest_analytical_free_float;
 mod hvac_bestest_reporting;
 mod hvac_bestest_validation;
 mod hvac_bottom_up_validation;
+mod hvac_coefficient_diagnostic_4241;
 mod hvac_doas_winter_humidification;
 mod hvac_equipment;
 mod hvac_predictive_modulation;

@@ -61,37 +61,39 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_tr_is = self.0.conduction.h_tr_is.as_ref()[zone_idx];
         let h_tr_ms = self.0.conduction.h_tr_ms.as_ref()[zone_idx];
         let h_tr_w = self.0.conduction.h_tr_w.as_ref()[zone_idx];
+        let h_ve = self.0.conduction.h_ve.as_ref()[zone_idx];
         // Note: h_tr_me (envelope-to-internal-mass coupling) is intentionally NOT used
         // in this function - it's only used for internal mass dynamics, not for
         // the building-to-outdoor HVAC coupling.
 
-        // For 9R4C models (Case 900), the HVAC coupling to zone air uses
-        // derived_h_tr_3 + h_tr_w instead of the 5R1C series formula
-        // h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms).
+        // Issue #4241: Unified conductance for 5R1C/9R4C (was #4240).
+        // The HVAC coefficient is the total effective conductance from the
+        // zone air node to the outdoor boundary:
+        //   h_coeff = (h_tr_w + h_ve) + h_interior_path
+        // where:
+        //   - (h_tr_w + h_ve) is the direct exterior path (windows + ventilation)
+        //   - h_interior_path is the air→surface→mass series path:
+        //     - 5R1C: h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms)
+        //     - 9R4C: derived_h_tr_3 (ISO 13790 combined air-to-mass conductance)
         //
         // Issue #2227: h_tr_me is the coupling between envelope mass and internal mass
         // (furniture/partitions), NOT the building-to-outdoor coupling. Using h_tr_me
         // would incorrectly include furniture thermal mass in the HVAC demand calculation.
-        //
-        // The correct formula uses derived_h_tr_3 (ISO 13790 combined air-to-mass conductance
-        // ≈ 42.66 W/K for Case 900) which represents the effective thermal coupling from
-        // zone air to the building's thermal mass (envelope), plus h_tr_w for windows.
-        let hvac_coeff = if self.0.hvac.thermal_model_type == ThermalModelType::NineRFourC {
-            // 9R4C: derived_h_tr_3 + h_tr_w is the total HVAC coupling
-            let derived_h_tr_3 = self.0.conduction.derived_h_tr_3.as_ref()[zone_idx];
-            derived_h_tr_3 + h_tr_w
+        let h_interior_path = if self.0.hvac.thermal_model_type == ThermalModelType::NineRFourC {
+            // 9R4C: derived_h_tr_3 (≈ 42.66 W/K for Case 900) is the effective
+            // thermal coupling from zone air to the building's thermal mass.
+            self.0.conduction.derived_h_tr_3.as_ref()[zone_idx]
         } else {
             // 5R1C/6R2C: ISO 13790 §C.3 series combination of air-to-surface
             // film (h_tr_is) and surface-to-mass coupling (h_tr_ms)
-            let h_tr_1 = if h_tr_is + h_tr_ms > 0.0 {
+            if h_tr_is + h_tr_ms > 0.0 {
                 h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms)
             } else {
                 0.0
-            };
-            // ISO 13790 §12.2.1 — h_coeff = H_tr,1 + H_tr,w
-            h_tr_1 + h_tr_w
+            }
         };
-        hvac_coeff
+        // Unified: direct exterior (windows + ventilation) + interior mass path
+        (h_tr_w + h_ve) + h_interior_path
     }
 
     /// Compute HVAC demand using the symmetric ASHRAE 140 ideal HVAC
@@ -168,12 +170,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         cooling_setpoints: &[f64],
         default_heating_setpoint: f64,
         default_cooling_setpoint: f64,
+        t_prev: &[f64],
+        dt: f64,
         scratch: &mut SmallVec<[f64; 4]>,
     ) -> T {
         let enabled_vec = self.0.hvac.hvac_enabled.as_ref();
 
         let heat_cap = self.0.hvac.hvac_heating_capacity;
         let cool_cap = self.0.hvac.hvac_cooling_capacity;
+        let c_air_vec = self.0.mass.air_thermal_capacitance.as_ref();
 
         // Issue #3370: reuse the caller-provided scratch buffer instead of
         // heap-allocating `vec![0.0; n_zones]` on every call. The scratch is
@@ -191,17 +196,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 continue;
             }
 
-            // Issue #907: Norton-equivalent heat-transfer coefficient at the air node
-            // (see `compute_hvac_coefficient` doc-comment for derivation).
+            // Issue #4241: Discrete zone energy-balance residual (replaces Norton product).
+            //
+            // The HVAC load is the residual of the discrete air-node energy balance,
+            // solved for the Q_HVAC needed to bring the zone to the setpoint:
+            //
+            //   Q_HVAC = C_air * (T_sp - T_prev)/dt + h_coeff * (T_sp - T_free)
+            //
+            // where:
+            //   - C_air * (T_sp - T_prev)/dt: energy to change air temp from T_prev to T_sp
+            //   - h_coeff * (T_sp - T_free): steady-state load to maintain T_sp
+            //     (h_coeff is the corrected conductance from #4240, including h_ve)
+            //   - T_free: free-floating temperature (equilibrium without HVAC)
+            //
+            // This replaces the static Norton product Q = h_coeff * (T_sp - T_free),
+            // which omitted the capacitance term and could not reproduce
+            // capacitance-driven peak damping.
             let h_coeff = self.compute_hvac_coefficient(zone_idx);
-
-            // Issue #1163: Both branches use the free-floating zone air temperature
-            // (T_free), which is the correct driving temperature for the ASHRAE 140
-            // ideal HVAC sensitivity formulation. T_free already embeds the mass
-            // heat-release term via the 5R1C heat balance (`num_tm` in
-            // `step_physics_5r1c`), so the mass contribution is captured exactly
-            // once — not zero times, not twice.
             let t_free = zone_temps[zone_idx];
+            let t_prev_zone = t_prev.get(zone_idx).copied().unwrap_or(t_free);
+            let c_air = c_air_vec.get(zone_idx).copied().unwrap_or(0.0);
 
             // Issue #2826: per-zone setpoint read with scalar fallback. The
             // fallback is intentional — `apply_parameters` (BatchOracle) writes
@@ -217,25 +231,37 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .copied()
                 .unwrap_or(default_cooling_setpoint);
 
-            let demand = if t_free <= heating_setpoint {
-                // Heating: Q = h_coeff × (T_heat_sp − T_free).
-                // Use <= so the system actively maintains the setpoint (a zone
-                // exactly at the heating setpoint still needs heat input to
-                // offset envelope losses).
-                h_coeff * (heating_setpoint - t_free)
-            } else if t_free >= cooling_setpoint {
-                // Cooling: Q = -h_coeff × (T_free − T_cool_sp).
-                // Symmetric with heating. The mass heat-release contribution is
-                // already in T_free via `num_tm = h_ms_is_prod × T_mass`.
-                -h_coeff * (t_free - cooling_setpoint)
+            // Compute residual loads for both setpoints
+            let q_heat = if dt > 0.0 {
+                c_air * (heating_setpoint - t_prev_zone) / dt
+                    + h_coeff * (heating_setpoint - t_free)
             } else {
-                // Deadband: T_heat_sp < T_free < T_cool_sp — no HVAC demand.
-                // This is the correct ASHRAE 140 behavior: the ideal HVAC system
-                // is off when the zone is within the deadband, regardless of the
-                // mass temperature. The mass may be warmer than the cooling
-                // setpoint, but that heat reaches the zone through the 5R1C
-                // coupling and will be removed NEXT timestep once T_free crosses
-                // T_cool_sp. Cooling during deadband would violate ASHRAE 140.
+                h_coeff * (heating_setpoint - t_free)
+            };
+            let q_cool = if dt > 0.0 {
+                c_air * (cooling_setpoint - t_prev_zone) / dt
+                    + h_coeff * (cooling_setpoint - t_free)
+            } else {
+                h_coeff * (cooling_setpoint - t_free)
+            };
+
+            // Issue #4241: Load-based deadband (replaces T_free-based deadband).
+            //
+            // The ASHRAE 140 ideal system has unlimited capacity and tracks the
+            // active setpoint continuously. Instead of using T_free to decide
+            // heating/cooling/deadband, we use the sign of the residual load:
+            //   - If Q_heat > 0: heating is needed (zone would drift below heating SP)
+            //   - Else if Q_cool < 0: cooling is needed (zone would drift above cooling SP)
+            //   - Else: true deadband (no load needed to maintain either setpoint)
+            let demand = if q_heat > 0.0 {
+                // Heating: positive load needed to reach/maintain heating setpoint
+                q_heat
+            } else if q_cool < 0.0 {
+                // Cooling: negative load needed to reach/maintain cooling setpoint
+                q_cool
+            } else {
+                // Deadband: no HVAC demand. The zone is within the control band
+                // and the residual loads for both setpoints are non-driving.
                 0.0
             };
 
@@ -251,15 +277,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 mod tests {
     use super::*;
 
-    /// Documents the current 5R1C HVAC coefficient formula (Issue #4240).
+    /// Tests the corrected 5R1C HVAC coefficient formula (Issue #4241).
     ///
-    /// The 5R1C arm uses `h_tr_is*h_tr_ms/(h_tr_is+h_tr_ms) + h_tr_w`.
-    /// NOTE: this omits `h_ve` (Issue #4156a). The coefficient fix is deferred
-    /// to #4241 (discrete residual formulation), where it lands together with
-    /// the load-law change. This test pins the current behavior so #4241's
-    /// diff is explicit.
+    /// The 5R1C arm uses `(h_tr_w + h_ve) + h_tr_is*h_tr_ms/(h_tr_is+h_tr_ms)`.
+    /// This includes `h_ve` (ventilation) in the direct exterior path, fixing
+    /// the omission noted in Issue #4156a.
     #[test]
-    fn test_5r1c_coefficient_current_formula() {
+    fn test_5r1c_coefficient_corrected_formula() {
         let mut model = ThermalModel::<VectorField>::new(1);
         // Ensure 5R1C type (default).
         model.0.conduction.h_tr_is = VectorField::from_scalar(100.0, 1);
@@ -269,15 +293,119 @@ mod tests {
 
         let h_coeff = model.compute_hvac_coefficient(0);
 
-        // Current: (100*100/200) + 30 = 80 (h_ve NOT included).
-        // After #4241: (30 + 70) + 50 = 150.
-        let expected_current = 80.0;
-        let rel_err = ((h_coeff - expected_current) / expected_current).abs();
+        // Corrected: (30 + 70) + (100*100/200) = 100 + 50 = 150.
+        let expected = 150.0;
+        let rel_err = ((h_coeff - expected) / expected).abs();
         assert!(
             rel_err < 1e-9,
-            "5R1C coefficient {} differs from current formula {}",
+            "5R1C coefficient {} differs from corrected formula {}",
             h_coeff,
-            expected_current
+            expected
+        );
+    }
+
+    /// Analytic test for the discrete residual HVAC formulation (Issue #4241).
+    ///
+    /// Verifies that compute_zone_hvac_load implements:
+    ///   Q_HVAC = C_air * (T_sp - T_prev)/dt + h_coeff * (T_sp - T_free)
+    ///
+    /// to within 0.1% tolerance on a simple single-zone case with known
+    /// closed-form solution.
+    #[test]
+    fn test_residual_formulation_analytic() {
+        use smallvec::SmallVec;
+
+        let mut model = ThermalModel::<VectorField>::new(1);
+        // Set up simple network: h_tr_is=100, h_tr_ms=100, h_tr_w=30, h_ve=70
+        // h_coeff = (30+70) + 100*100/200 = 150 W/K
+        model.0.conduction.h_tr_is = VectorField::from_scalar(100.0, 1);
+        model.0.conduction.h_tr_ms = VectorField::from_scalar(100.0, 1);
+        model.0.conduction.h_tr_w = VectorField::from_scalar(30.0, 1);
+        model.0.conduction.h_ve = VectorField::from_scalar(70.0, 1);
+        // C_air = 156000 J/K (Case 600 value)
+        model.0.mass.air_thermal_capacitance = VectorField::from_scalar(156000.0, 1);
+        // Enable HVAC
+        model.0.hvac.hvac_enabled = VectorField::from_scalar(1.0, 1);
+        // Set capacities high (no clamping)
+        model.0.hvac.hvac_heating_capacity = 1e9;
+        model.0.hvac.hvac_cooling_capacity = 1e9;
+
+        // Test case: T_free=15°C, T_prev=18°C, heating SP=20°C, dt=3600s
+        // Expected Q_heat = C_air*(20-18)/3600 + 150*(20-15)
+        //                = 156000*2/3600 + 150*5
+        //                = 86.67 + 750 = 836.67 W
+        let t_free = 15.0;
+        let t_prev = 18.0;
+        let heating_sp = 20.0;
+        let cooling_sp = 27.0;
+        let dt = 3600.0;
+
+        let zone_temps = vec![t_free];
+        let heating_sps = vec![heating_sp];
+        let cooling_sps = vec![cooling_sp];
+        let t_prev_vec = vec![t_prev];
+        let mut scratch = SmallVec::<[f64; 4]>::new();
+
+        let result = model.compute_zone_hvac_load(
+            &zone_temps,
+            &heating_sps,
+            &cooling_sps,
+            heating_sp,
+            cooling_sp,
+            &t_prev_vec,
+            dt,
+            &mut scratch,
+        );
+
+        let q_computed = result.as_ref()[0];
+        let h_coeff = 150.0; // (30+70) + 50
+        let q_expected = 156000.0 * (heating_sp - t_prev) / dt + h_coeff * (heating_sp - t_free);
+
+        let rel_err = ((q_computed - q_expected) / q_expected).abs();
+        assert!(
+            rel_err < 1e-3, // 0.1% tolerance
+            "Residual Q_heat {} differs from analytic {} (rel_err={})",
+            q_computed,
+            q_expected,
+            rel_err
+        );
+
+        // Verify cooling case: T_free=30°C, T_prev=28°C, cooling SP=27°C
+        // Expected Q_cool = C_air*(27-28)/3600 + 150*(27-30)
+        //                = -43.33 + (-450) = -493.33 W (negative = cooling)
+        let t_free_cool = 30.0;
+        let t_prev_cool = 28.0;
+        let zone_temps_cool = vec![t_free_cool];
+        let t_prev_vec_cool = vec![t_prev_cool];
+        let mut scratch2 = SmallVec::<[f64; 4]>::new();
+
+        let result_cool = model.compute_zone_hvac_load(
+            &zone_temps_cool,
+            &heating_sps,
+            &cooling_sps,
+            heating_sp,
+            cooling_sp,
+            &t_prev_vec_cool,
+            dt,
+            &mut scratch2,
+        );
+
+        let q_cool_computed = result_cool.as_ref()[0];
+        let q_cool_expected =
+            156000.0 * (cooling_sp - t_prev_cool) / dt + h_coeff * (cooling_sp - t_free_cool);
+
+        let rel_err_cool = ((q_cool_computed - q_cool_expected) / q_cool_expected.abs()).abs();
+        assert!(
+            rel_err_cool < 1e-3,
+            "Residual Q_cool {} differs from analytic {} (rel_err={})",
+            q_cool_computed,
+            q_cool_expected,
+            rel_err_cool
+        );
+        assert!(
+            q_cool_computed < 0.0,
+            "Cooling load must be negative, got {}",
+            q_cool_computed
         );
     }
 }

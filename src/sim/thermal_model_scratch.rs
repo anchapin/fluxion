@@ -82,6 +82,10 @@ pub(crate) struct PhysicsScratch5r1c {
     /// regression that resurfaced with `3c0521b`).
     pub air_node_t_air: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
     pub air_node_solar_lag: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    /// Issue #4241: scratch buffer for previous air temperature (T_prev).
+    /// Saved before the air-node ODE overwrites the working buffer, used by
+    /// the discrete residual HVAC formulation.
+    pub air_node_t_prev: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
     /// Issue #3370: per-sub-step computed air-node temperature (write) and
     /// the post-lag-correction view. `air_node_t_i_free` is built fresh each
     /// sub-step; `air_node_corrected` is the lag-corrected one. Both were
@@ -137,6 +141,7 @@ impl PhysicsScratch5r1c {
             lw_u_wall: SmallVec::from_elem(0.0, num_zones),
             air_node_t_air: SmallVec::from_elem(0.0, num_zones),
             air_node_solar_lag: SmallVec::from_elem(0.0, num_zones),
+            air_node_t_prev: SmallVec::from_elem(0.0, num_zones),
             air_node_t_i_free: SmallVec::from_elem(0.0, num_zones),
             air_node_corrected: SmallVec::from_elem(0.0, num_zones),
             air_node_t_i_free_slice: SmallVec::from_elem(0.0, num_zones),
@@ -180,6 +185,7 @@ impl PhysicsScratch5r1c {
         self.lw_u_wall.resize(n, 0.0);
         self.air_node_t_air.resize(n, 0.0);
         self.air_node_solar_lag.resize(n, 0.0);
+        self.air_node_t_prev.resize(n, 0.0);
         self.air_node_t_i_free.resize(n, 0.0);
         self.air_node_corrected.resize(n, 0.0);
         self.air_node_t_i_free_slice.resize(n, 0.0);
@@ -244,6 +250,9 @@ impl PhysicsScratch5r1c {
             *v = 0.0;
         }
         for v in &mut self.air_node_solar_lag {
+            *v = 0.0;
+        }
+        for v in &mut self.air_node_t_prev {
             *v = 0.0;
         }
         for v in &mut self.air_node_t_i_free {
