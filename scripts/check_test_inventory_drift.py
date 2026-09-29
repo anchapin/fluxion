@@ -244,7 +244,7 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #   test in `pcm_test_box.rs::tests` (the `default_layer_thickness_matches_documented_value`
 #   guard test) plus the AST-scan delta for the new `tests/all_tests/teacher_validation_pcm_box.rs`
 #   module's integration tests. Stacked on PR-A's 4273 baseline.
-BASELINE_LIB_TESTS = 4294  # 2026-09-29 (Issue #4155): 4288 -> 4294 — zone moisture balance; 6 new unit tests in src/sim/moisture.rs. Stacked on #4207's 4288 baseline.
+BASELINE_LIB_TESTS = 4296  # 2026-09-29 (Issue #4240): 4294 -> 4296 — unified HVAC conductance; 2 new unit tests in src/sim/thermal_model_physics/hvac.rs (closed-form conductance, h_ve inclusion). Stacked on #4155's 4294 baseline.
                         # 2026-09-27: 4274 -> 4277 — post-rebase AST delta for PR-A + PR-B's combined inline tests (the 7 selector-parity tests are counted as workspace-integration rather than lib, so the lib bump comes from the 4 inline tests in `phase_change_material.rs::tests` + `pcm_test_box.rs::tests` plus the AST scan delta for PR-A's `tests.rs` guards).
                         # (+2 hvac setpoint CLI tests in src/cli/hvac_commands.rs:
                         # ZoneControl delegation + CLI-to-system propagation);
