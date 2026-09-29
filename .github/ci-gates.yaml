@@ -1,0 +1,81 @@
+# CI Gate Registry
+# Issue #4254: Reduce workflow YAML changes to reduce one-time PAT usage.
+#
+# This file defines all CI gates that run on PRs. Adding a new gate,
+# changing a gate's script, or updating gate metadata does NOT require
+# modifying `.github/workflows/*.yml` files (which need a PAT with
+# `workflow` scope). Just edit this file and push normally.
+#
+# The `gate-runner.yml` workflow reads this config and executes each gate.
+# Gates are run in the order listed. Each gate specifies:
+#   - name: Unique identifier (used in CI check names)
+#   - script: Python/shell script to run (relative to repo root)
+#   - args: Optional list of arguments to pass to the script
+#   - paths: Optional list of path filters (gate only runs if these paths changed)
+#   - required: Whether this gate is a required check (default: true)
+#   - timeout_minutes: Max runtime before timeout (default: 10)
+#
+# To add a new gate:
+#   1. Write your check script in `scripts/`
+#   2. Add an entry below
+#   3. Push normally (no PAT needed!)
+#
+# To disable a gate temporarily:
+#   Set `enabled: false` (gate will be skipped but still listed)
+
+version: 1
+
+gates:
+  # ---------------------------------------------------------------------------
+  # Documentation Gates
+  # ---------------------------------------------------------------------------
+  - name: docs-hygiene
+    description: "Enforce root .md policy and 7-line-summary coverage (Issue #2466)"
+    script: scripts/check_docs_summaries.py
+    paths:
+      - "**/*.md"
+      - "docs/**"
+      - "AGENTS.md"
+    required: true
+    timeout_minutes: 5
+
+  - name: doc-inventory-fresh
+    description: "Verify docs/doc-inventory.md is fresh (Issue #2765)"
+    script: scripts/check_doc_inventory_fresh.py
+    paths:
+      - "docs/**"
+      - "scripts/generate_doc_inventory.py"
+    required: true
+    timeout_minutes: 5
+
+  # ---------------------------------------------------------------------------
+  # Test Inventory Gates
+  # ---------------------------------------------------------------------------
+  - name: test-inventory-drift
+    description: "Check test inventory has no drift (Issue #2817)"
+    script: scripts/check_test_inventory_drift.py
+    required: true
+    timeout_minutes: 5
+
+  # ---------------------------------------------------------------------------
+  # Scripts Test Suite
+  # ---------------------------------------------------------------------------
+  - name: scripts-test-suite
+    description: "Run Python scripts test suite (Issue #2817)"
+    script: scripts/run_scripts_tests.py
+    args: ["--quick"]
+    required: true
+    timeout_minutes: 15
+
+  # ---------------------------------------------------------------------------
+  # Template for new gates (copy and customize)
+  # ---------------------------------------------------------------------------
+  # - name: my-new-gate
+  #   description: "What this gate checks (Issue #XXXX)"
+  #   script: scripts/my_check.py
+  #   args: ["--strict"]
+  #   paths:
+  #     - "src/**"
+  #   required: true
+  #   timeout_minutes: 10
+  #   enabled: true

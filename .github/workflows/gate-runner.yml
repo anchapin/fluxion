@@ -1,0 +1,77 @@
+name: CI Gate Runner
+
+# Issue #4254: Gate Registry Pattern to reduce workflow YAML changes.
+#
+# This is the ONLY workflow file that needs to change when adding/removing
+# CI gates. Instead of modifying this file, edit `.github/ci-gates.yaml`
+# (which does NOT require a PAT with workflow scope).
+#
+# How it works:
+#   1. On PR/push, this workflow reads `.github/ci-gates.yaml`
+#   2. For each enabled gate, it runs the specified script
+#   3. Each gate becomes a separate check run via the GitHub API
+#
+# To add a new gate: edit `.github/ci-gates.yaml` (no PAT needed!)
+
+on:
+  pull_request:
+    paths:
+      - ".github/ci-gates.yaml"
+      - "scripts/**"
+      - "docs/**"
+      - "**/*.md"
+      - "**/*.py"
+      - "**/*.rs"
+  push:
+    branches:
+      - develop
+      - main
+    paths:
+      - ".github/ci-gates.yaml"
+      - "scripts/**"
+
+concurrency:
+  group: gate-runner-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Job 1: Parse the gate config and generate a matrix
+  parse-gates:
+    name: Parse gate registry
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.parse.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse ci-gates.yaml into matrix
+        id: parse
+        run: |
+          python3 scripts/parse_ci_gates.py \
+            --config .github/ci-gates.yaml \
+            --output $GITHUB_OUTPUT
+
+  # Job 2: Run each gate from the matrix
+  run-gate:
+    name: Gate - ${{ matrix.gate.name }}
+    needs: parse-gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ matrix.gate.timeout_minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        gate: ${{ fromJson(needs.parse-gates.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run gate script
+        run: |
+          echo "Running gate: ${{ matrix.gate.name }}"
+          echo "Description: ${{ matrix.gate.description }}"
+          echo "Script: ${{ matrix.gate.script }}"
+          python3 ${{ matrix.gate.script }} ${{ join(matrix.gate.args, ' ') }}
