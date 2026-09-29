@@ -7,7 +7,7 @@ Audience: contributors who already read `AGENTS.md` §Validation Strategy and
 `ARCHITECTURE.md` §"Cycle break (#1441)". Docs only — no code changes here.
 Closes #2542.
 
-*Last Updated: 2026-08-10*
+*Last Updated: 2026-09-29*
 
 ## TL;DR — the five touch points
 
@@ -19,8 +19,8 @@ else needs to change:
 | 1 | `fluxion-core/src/ashrae_cases.rs` | New leaf type **only if** the case introduces a new enum/struct that `sim` or `validation` will share (e.g. a new `Orientation` variant, a new `BuildingType`). Most cases skip this. |
 | 2 | `src/validation/ashrae_140_cases.rs` | (a) new variant on `ASHRAE140Case` enum, (b) new `CaseBuilder::case_XXXX()` factory, (c) match arm in `ASHRAE140Case::spec()`. |
 | 3 | `src/validation/benchmark.rs` | `data.insert("XXX".to_string(), BenchmarkData { … })` entry with ASHRAE 140-2023 reference min/max ranges. |
-| 4 | `src/validation/ashrae_140_validator.rs` | Add `ASHRAE140Case::CaseXXX` to the `cases` vec in `validate_with_diagnostics` (and `validate_analytical_engine` if it should run by default). |
-| 5 | `tests/ashrae_140_validation.rs` | Add the case ID to the `case_ids` array in `test_all_cases_instantiation`. |
+| 4 | `src/validation/ashrae_140_validator/mod.rs` | Add `ASHRAE140Case::CaseXXX` to the `cases` vec in `validate_with_diagnostics` (and `validate_analytical_engine` if it should run by default). |
+| 5 | `tests/all_tests/ashrae_140_validation.rs` | Add the case ID to the `case_ids` array in `test_all_cases_instantiation`. |
 | 6 (opt) | `tests/reference_data/ashrae140/monthly/case_XXX_monthly_reference.csv` | Monthly EnergyPlus reference series, if you want bottom-up module checks alongside the annual benchmark. |
 
 That's the whole surface. The rest of this guide walks each step, then shows
@@ -85,11 +85,11 @@ diagnostic 195–470 together, HVAC 800-series together).
 ### 2b. Write a `CaseBuilder::case_XXX()` factory
 
 Add a `pub fn case_XXX_description() -> CaseSpec` to
-`impl CaseBuilder` (around `src/validation/ashrae_140_cases.rs:1271`). Use the
+`impl CaseBuilder` (around `src/validation/ashrae_140_cases.rs:1248`). Use the
 builder API — `CaseBuilder::new()`, `.with_case_id(...)`, `.with_dimensions(...)`,
 `.add_zone(...)`, `.with_window(...)`, `.with_hvac(...)`, etc. — and finish
 with `.build().expect("case_XXX spec is well-formed")`. Copy a neighbouring
-factory (e.g. `case_610_south_shading` at L1752) as a template.
+factory (e.g. `case_610_south_shading` at L2703) as a template.
 
 The leaf types you construct with (`Orientation::South`,
 `WindowSpec::double_clear_glass()`, `HvacSchedule::constant(...)`,
@@ -99,7 +99,7 @@ The leaf types you construct with (`Orientation::South`,
 
 ### 2c. Wire the variant to the factory in `spec()`
 
-Add one match arm to `ASHRAE140Case::spec()` (`src/validation/ashrae_140_cases.rs:796`):
+Add one match arm to `ASHRAE140Case::spec()` (`src/validation/ashrae_140_cases.rs:802`):
 
 ```rust
 ASHRAE140Case::CaseXXX => CaseBuilder::case_XXX_description(),
@@ -137,7 +137,7 @@ data.insert(
 > an external standard, not a free parameter.
 
 For a free-floating-only case, set the annual heating/cooling ranges to
-`0.00..0.00` (see Case 650 at L217).
+`0.00..0.00` (see Case 650 at L238).
 
 ### Optional: add a monthly EnergyPlus reference series
 
@@ -150,21 +150,21 @@ on PATH; see `tests/reference_data/README.md`).
 
 ## Step 4 — Add the case to the validator's run set
 
-Open `src/validation/ashrae_140_validator.rs` and add `ASHRAE140Case::CaseXXX`
-to the `cases` vec inside `validate_with_diagnostics` (L446) and/or
-`validate_analytical_engine` (L1145), grouped with its series. The first is
+Open `src/validation/ashrae_140_validator/mod.rs` and add `ASHRAE140Case::CaseXXX`
+to the `cases` vec inside `validate_with_diagnostics` (L503) and/or
+`validate_analytical_engine` (L1276), grouped with its series. The first is
 the full diagnostic run; the second is the analytical-engine run used by the
 `ASHRAE 140 Strict Energy Gate` branch-protection check (issue #1333).
 
 If the case belongs to a named diagnostic range (`"800-810"`, `"195-470"`,
 `"non-residential"`, `"solid-conduction"`, `"solar-gain"`), also extend the
-corresponding arm of `expand_diagnostic_range` (L355) so
+corresponding arm of `expand_diagnostic_range` (L429) so
 `validator.add_diagnostic_case_range(...)` picks it up.
 
 ## Step 5 — Update the instantiation test
 
-Open `tests/ashrae_140_validation.rs` and add `"XXX"` to the `case_ids` array
-in `test_all_cases_instantiation` (L48), plus the corresponding
+Open `tests/all_tests/ashrae_140_validation.rs` and add `"XXX"` to the `case_ids` array
+in `test_all_cases_instantiation` (L62, with `case_ids` at L69), plus the corresponding
 `"XXX" => ASHRAE140Case::CaseXXX,` arm in the `match` directly below it. This
 test asserts `spec.case_id == id` and `spec.validate().is_ok()` for every
 case, which catches the most common mistakes (mismatched ID, invalid
@@ -196,7 +196,7 @@ cargo test --test all_tests zone_balance_eplus_isolation:: -- --nocapture
 ```
 
 A "round-trip" means: the new `CaseBuilder` factory produces a `CaseSpec` that
-(1) passes `CaseSpec::validate()` (`src/validation/ashrae_140_cases.rs:1048`),
+(1) passes `CaseSpec::validate()` (`src/validation/ashrae_140_cases.rs:984`),
 (2) the analytical engine can step through a full TMY year without violating
 energy conservation, and (3) the resulting annual/peak loads fall inside the
 `BenchmarkData` reference ranges you entered in Step 3.
