@@ -66,10 +66,10 @@
     }
   },
   "parity_ratios": {
-    "_doc": "Recorded selector-parity ratios per case (FiveROneC_value / NineRFourC_value, per metric). Case 600 shows non-unity ratios (5R1C vs 9R4C take different paths for a low-mass spec); Cases 900/950 show exactly 1.0 because high-mass specs auto-promote to 9R4C for both selectors (per ADR-0017). The Python gate bounds the per-case ratio drift against these recorded values.",
+    "_doc": "Recorded selector-parity ratios per case (FiveROneC_value / NineRFourC_value, per metric). Case 600 shows non-unity ratios (5R1C vs 9R4C take different paths for a low-mass spec); Cases 900/950 show exactly 1.0 because high-mass specs auto-promote to 9R4C for both selectors (per ADR-0017). The Python gate bounds the per-case ratio drift against these recorded values. Updated 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance shifts 5R1C/9R4C parity for low-mass Case 600.",
     "case_600": {
-      "ratio_H": 1.1246,
-      "ratio_C": 0.7113
+      "ratio_H": 1.4409,
+      "ratio_C": 0.9098
     },
     "case_900": {
       "ratio_H": 1.0,
