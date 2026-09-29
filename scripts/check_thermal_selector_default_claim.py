@@ -124,7 +124,6 @@ def _is_negated(match_start: int, line: str) -> bool:
     words = prefix.split()
     if not words:
         return False
-    last_word = words[-1].lower()
     # Check if any negation word appears in the last few words.
     recent = " ".join(words[-5:])
     return bool(_NEGATION_RE.search(recent))
@@ -160,11 +159,11 @@ def _check_file(path: Path) -> list[tuple[int, str]]:
             if not _is_negated(m.start(), line):
                 failures.append((
                     lineno,
-                    f"line asserts unconditional Gauge default "
-                    f"(pre-ADR-0017 false claim); per Issue #3978 "
-                    f"the default is cfg-dependent and explicit "
-                    f"(Gauge with gauge-solver feature, FiveROneC without; "
-                    f"no silent fall-through)",
+                    "line asserts unconditional Gauge default "
+                    "(pre-ADR-0017 false claim); per Issue #3978 "
+                    "the default is cfg-dependent and explicit "
+                    "(Gauge with gauge-solver feature, FiveROneC without; "
+                    "no silent fall-through)",
                 ))
 
         # Pattern 2: "default() resolves to Gauge in both feature states".
@@ -172,11 +171,11 @@ def _check_file(path: Path) -> list[tuple[int, str]]:
             if not _is_negated(m.start(), line):
                 failures.append((
                     lineno,
-                    f"line asserts default() resolves to Gauge in both "
-                    f"feature states (pre-ADR-0017 false claim); per "
-                    f"Issue #3978 the default is cfg-dependent: "
-                    f"ZoneSolverKind::Gauge with gauge-solver feature, "
-                    f"ZoneSolverKind::FiveROneC in default builds",
+                    "line asserts default() resolves to Gauge in both "
+                    "feature states (pre-ADR-0017 false claim); per "
+                    "Issue #3978 the default is cfg-dependent: "
+                    "ZoneSolverKind::Gauge with gauge-solver feature, "
+                    "ZoneSolverKind::FiveROneC in default builds",
                 ))
 
         # Pattern 3: separate gate controlling fall-through.
@@ -184,11 +183,11 @@ def _check_file(path: Path) -> list[tuple[int, str]]:
             if not _is_negated(m.start(), line):
                 failures.append((
                     lineno,
-                    f"line asserts gauge-solver feature separately gates a "
-                    f"fall-through to legacy 5R1C/9R4C (pre-ADR-0017 false "
-                    f"claim); per Issue #3978 the default selector is "
-                    f"cfg-dependent and explicit; no silent fall-through "
-                    f"exists",
+                    "line asserts gauge-solver feature separately gates a "
+                    "fall-through to legacy 5R1C/9R4C (pre-ADR-0017 false "
+                    "claim); per Issue #3978 the default selector is "
+                    "cfg-dependent and explicit; no silent fall-through "
+                    "exists",
                 ))
 
     return failures
@@ -196,7 +195,7 @@ def _check_file(path: Path) -> list[tuple[int, str]]:
 
 def main() -> int:
     print(
-        f"ThermalSelector default claim anti-drift gate "
+        "ThermalSelector default claim anti-drift gate "
         f"(Issue #4160 / ADR-0017, repo: {REPO_ROOT})"
     )
     print()
@@ -215,7 +214,7 @@ def main() -> int:
                 all_failures.append((str(doc.relative_to(REPO_ROOT)), lineno, msg))
             print(f"    DRIFT: {len(failures)} stale claim(s)")
         else:
-            print(f"    OK")
+            print("    OK")
 
     print()
     if all_failures:

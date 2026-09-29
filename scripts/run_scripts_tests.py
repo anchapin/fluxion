@@ -17,9 +17,9 @@ def ensure_pytest():
     # the scripts under test (pyyaml, numpy, boto3, ...).
     req_file = "scripts/requirements-test.txt"
     try:
+        import numpy  # noqa: F401
         import pytest  # noqa: F401
         import yaml  # noqa: F401
-        import numpy  # noqa: F401
     except ImportError:
         print(f"Installing test deps from {req_file}...", flush=True)
         result = subprocess.run(
