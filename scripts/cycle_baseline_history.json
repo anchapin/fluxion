@@ -326,22 +326,6 @@
       "total": 288,
       "edge_signature": "df8954c577668d2900c2770d57970dedbd8a9a55c5fb71cc3c6ae155c4651f4c",
       "reason": "Issue #3986-A threads ThermalSelector through ASHRAE140Validator + ASHRAE140MultiZoneValidator. Previously the validator hardcoded ThermalSelector::default() at 7 production-path sites, creating transient validation->sim edges via the default() constructor. After the refactor the validator stores a ThermalSelector field and uses &self.selector, which shifts the edge signature: validation->sim -1 (one fewer default() construction), validation->physics -2 (two fewer reference resolutions), sim->physics +3 (the new selector field + getter + new_with_selector siblings reference ThermalSelector's type, which now flows through the field). Total cycle edge count unchanged at 288. Per #2768 R3 net-flat-swap rule, this manual baseline bump documents the legitimate edge redistribution that tracks the architectural shift toward 'validator stores selector, not constructs it' (ADR-0017)."
-    },
-    {
-      "timestamp": "2026-09-29T00:19:17.963245+00:00",
-      "commit": "dd13bc38",
-      "source": "pr-4222-issue-4166",
-      "totals": {
-        "sim_to_validation": 51,
-        "validation_to_sim": 66,
-        "validation_to_physics": 63,
-        "validation_to_weather": 25,
-        "physics_to_sim": 0,
-        "sim_to_physics": 79
-      },
-      "total": 284,
-      "edge_signature": "dbdac840c5472a0c",
-      "reason": "Issue #4166 / PR #4222 — per-surface exterior boundary. Deleted the obsolete h_tr_em_wind_dependent helper and its five tests from src/sim/thermal_model_physics/physics_impl/step_5r1c.rs, removing 3 sim->physics use edges (82 -> 79). The per-surface ExteriorBoundarySurface::h_tr_em keeps the caller-owned exterior_convection import."
     }
   ]
 }
