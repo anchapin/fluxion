@@ -2,7 +2,7 @@
   "schema_version": 1,
   "description": "Inventory of production #[allow(dead_code)] sites in the root fluxion crate, governed by scripts/check_orphan_modules.py (Issue #3752). Regenerate with: python3 scripts/check_orphan_modules.py --update-dead-code-inventory",
   "governing_issue": 3752,
-  "site_count": 32,
+  "site_count": 28,
   "sites": [
     {
       "file": "src/ai/surrogate/session_pool.rs",
@@ -103,30 +103,6 @@
     {
       "file": "src/twin/kafka_telemetry_consumer.rs",
       "signature": "tx: Sender<TelemetryMsg>,",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/validation/ashrae_140_multi_zone.rs",
-      "signature": "base_validator: ASHRAE140Validator,",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/validation/ashrae_140_multi_zone.rs",
-      "signature": "case_960_reference: Option<Case960Reference>,",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/validation/ashrae_140_multi_zone.rs",
-      "signature": "case_970_reference: Option<Case970Reference>,",
-      "index": 1,
-      "issue": 3752
-    },
-    {
-      "file": "src/validation/ashrae_140_multi_zone.rs",
-      "signature": "case_980_reference: Option<Case960Reference>,",
       "index": 1,
       "issue": 3752
     },
