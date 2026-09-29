@@ -2,7 +2,7 @@
   "schema_version": 1,
   "description": "Per-module disposition registry for the wired-but-dead pub mods allowlisted in scripts/check_orphan_modules.py::WIRED_BUT_DEAD (Issue #3748). Every allowlist entry must carry exactly one row with an owner-assigned wire-or-delete decision; the registry must stay in lock-step with the live wired-but-dead set. Resolving a module (wiring it up or deleting it) requires dropping its row AND lowering BASELINE_WIRED_BUT_DEAD by one in the same PR.",
   "governing_issue": 3748,
-  "module_count": 32,
+  "module_count": 33,
   "modules": [
     {
       "module": "ems",
@@ -227,6 +227,13 @@
       "issue": 4197,
       "owner": "anchapin",
       "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
+    },
+    {
+      "module": "config",
+      "disposition": "keep-dead",
+      "issue": 4173,
+      "owner": "anchapin",
+      "rationale": "validation::config (validate_assembly assembly-validation API): its only in-workspace callers were the ThermalModel validation-gated constructors deleted in #4173. Retained as tested public API; re-wire or delete in a follow-up. (ai::sweeps::config has live callers and is unaffected.)"
     }
   ]
 }
