@@ -1,5 +1,6 @@
 use crate::physics::cta::VectorField;
 use crate::sim::engine::{IdealHVACController, ThermalModel};
+use crate::sim::schedule::DailySchedule;
 use crate::sim::thermal_selector::ThermalSelector;
 use crate::sim::warmup::{run_warmup, WarmupConfig};
 use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec};
@@ -34,6 +35,78 @@ pub enum ValidationMode {
     /// Used for true blind validation per ASHRAE 140 Blind Validation Plan v1.3.
     Blind,
 }
+
+/// Per-hour thermostat setpoints resolved for one zone (Issue #4167).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ZoneSetpoints {
+    /// Heating setpoint in degrees Celsius for this hour.
+    pub heating_c: f64,
+    /// Cooling setpoint in degrees Celsius for this hour.
+    pub cooling_c: f64,
+}
+
+/// Resolve the ASHRAE 140 thermostat schedule for every zone at one hour.
+///
+/// Issue #4167: this is the single source of truth for per-hour setpoint
+/// resolution across every validator entry point. Before this existed,
+/// `simulate_case` resolved per hour while `simulate_case_with_ideal_control`
+/// and `simulate_case_with_diagnostics` assigned the raw scalar
+/// `HvacSchedule::heating_setpoint` / `cooling_setpoint` fields with no hour
+/// argument, silently discarding `setback_setpoint`, `setback_hours` and
+/// `operating_hours`. Cases 640, 940, 950 and 960 therefore ran a flat 20/27
+/// for all 8760 hours in those paths — a different building from the one the
+/// report path simulated.
+///
+/// The heating side goes through `heating_setpoint_at_fractional_hour` (the
+/// ramp-aware lookup, Issue #2870; see #4196 / #4226 for the ramp-vs-step
+/// deviation record). The cooling side reads the model's `cooling_schedule`,
+/// which `from_spec` populates with the operating-hours mask.
+///
+/// Night-ventilation overrides are deliberately NOT applied here: they are a
+/// separate boundary condition applied by the caller after resolution.
+pub(crate) fn resolve_zone_setpoints(
+    spec: &CaseSpec,
+    cooling_schedule: &DailySchedule,
+    hour_of_day: usize,
+    num_zones: usize,
+) -> Vec<ZoneSetpoints> {
+    let fractional_hour = hour_of_day as f64 + 0.5;
+    let scheduled_cooling = cooling_schedule.value(hour_of_day);
+
+    // Zone 0 (or the only zone) sets the default every zone inherits, matching
+    // the long-standing single-zone behavior of `simulate_case`.
+    let (default_heating, default_cooling) = match spec.hvac.first() {
+        Some(primary) => (
+            primary
+                .heating_setpoint_at_fractional_hour(fractional_hour)
+                .unwrap_or(primary.heating_setpoint),
+            scheduled_cooling,
+        ),
+        None => (20.0, 27.0),
+    };
+
+    let mut resolved = vec![
+        ZoneSetpoints {
+            heating_c: default_heating,
+            cooling_c: default_cooling,
+        };
+        num_zones
+    ];
+
+    for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
+        if zone_idx < num_zones {
+            resolved[zone_idx] = ZoneSetpoints {
+                heating_c: hvac
+                    .heating_setpoint_at_fractional_hour(fractional_hour)
+                    .unwrap_or(hvac.heating_setpoint),
+                cooling_c: scheduled_cooling,
+            };
+        }
+    }
+
+    resolved
+}
+
 
 impl Default for ValidationMode {
     fn default() -> Self {
@@ -930,31 +1003,41 @@ impl ASHRAE140Validator {
             // Update weather data on model for solar gain calculation (Issue #278)
             model.solar.weather = Some(weather_data);
 
-            // Apply dynamic setpoints from schedule - use zone-specific setpoints (Issue #375, Case 960)
-            // For multi-zone buildings like Case 960, each zone may have different HVAC control
-            if spec.hvac.len() > 1 {
-                // Multi-zone case: update zone-specific setpoints
-                // Default to enabled for zones without explicit HVAC spec
-                let mut heating_sps = vec![20.0; num_zones];
-                let mut cooling_sps = vec![27.0; num_zones];
-                let mut hvac_enabled_vals = vec![1.0; num_zones];
-                for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
-                    if zone_idx < num_zones {
-                        heating_sps[zone_idx] = hvac.heating_setpoint;
-                        cooling_sps[zone_idx] = hvac.cooling_setpoint;
-                        // Update hvac_enabled per zone (1.0 if enabled, 0.0 if free-floating)
-                        hvac_enabled_vals[zone_idx] = if hvac.is_enabled() { 1.0 } else { 0.0 };
+            // Apply dynamic setpoints from schedule (Issue #375, Case 960).
+            //
+            // Issue #4167: resolved through `resolve_zone_setpoints`, the same
+            // function `simulate_case` uses. This path previously assigned the
+            // raw scalar `hvac.heating_setpoint` / `cooling_setpoint` with no
+            // hour argument, so `setback_setpoint`, `setback_hours` and
+            // `operating_hours` were never consulted and Cases 640/940/950/960
+            // ran a flat 20/27 for all 8760 hours here while the report path
+            // applied the schedule.
+            if !spec.hvac.is_empty() {
+                let resolved = resolve_zone_setpoints(
+                    spec,
+                    &model.setpoints.cooling_schedule,
+                    hour_of_day,
+                    num_zones,
+                );
+
+                model.setpoints.heating_setpoint = resolved[0].heating_c;
+                model.setpoints.cooling_setpoint = resolved[0].cooling_c;
+                model.setpoints.heating_setpoints =
+                    VectorField::new(resolved.iter().map(|z| z.heating_c).collect());
+                model.setpoints.cooling_setpoints =
+                    VectorField::new(resolved.iter().map(|z| z.cooling_c).collect());
+
+                if spec.hvac.len() > 1 {
+                    // Multi-zone: refresh hvac_enabled per zone (1.0 enabled, 0.0 free-floating)
+                    let mut hvac_enabled_vals = vec![1.0; num_zones];
+                    for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
+                        if zone_idx < num_zones {
+                            hvac_enabled_vals[zone_idx] =
+                                if hvac.is_enabled() { 1.0 } else { 0.0 };
+                        }
                     }
+                    model.hvac.hvac_enabled = VectorField::new(hvac_enabled_vals);
                 }
-                model.setpoints.heating_setpoints = VectorField::new(heating_sps);
-                model.setpoints.cooling_setpoints = VectorField::new(cooling_sps);
-                model.hvac.hvac_enabled = VectorField::new(hvac_enabled_vals);
-            } else if let Some(hvac_schedule) = spec.hvac.first() {
-                // Single zone case: use the same setpoint for all zones (original behavior)
-                let heating_sp = hvac_schedule.heating_setpoint;
-                let cooling_sp = hvac_schedule.cooling_setpoint;
-                model.setpoints.heating_setpoint = heating_sp;
-                model.setpoints.cooling_setpoint = cooling_sp;
             }
 
             // Apply night ventilation. Issue #2858 — guard hardened:
@@ -2355,12 +2438,28 @@ impl ASHRAE140Validator {
             // Set weather data on model for solar gain calculations
             model.set_weather(weather_data);
 
-            // Apply dynamic setpoints
-            if let Some(hvac_schedule) = spec.hvac.first() {
-                let heating_sp = hvac_schedule.heating_setpoint;
-                let cooling_sp = hvac_schedule.cooling_setpoint;
-                model.setpoints.heating_setpoint = heating_sp;
-                model.setpoints.cooling_setpoint = cooling_sp;
+            // Apply dynamic setpoints.
+            //
+            // Issue #4167: resolved through `resolve_zone_setpoints`, the same
+            // function `simulate_case` uses. This path previously assigned the
+            // raw scalar `hvac_schedule.heating_setpoint` / `cooling_setpoint`
+            // with no hour argument, so `setback_setpoint`, `setback_hours` and
+            // `operating_hours` were never consulted: Cases 640/940/950/960 ran
+            // a flat 20/27 for all 8760 hours in the diagnostic path while the
+            // report path applied the schedule.
+            if !spec.hvac.is_empty() {
+                let resolved = resolve_zone_setpoints(
+                    spec,
+                    &model.setpoints.cooling_schedule,
+                    hour_of_day,
+                    num_zones,
+                );
+                model.setpoints.heating_setpoint = resolved[0].heating_c;
+                model.setpoints.cooling_setpoint = resolved[0].cooling_c;
+                model.setpoints.heating_setpoints =
+                    VectorField::new(resolved.iter().map(|z| z.heating_c).collect());
+                model.setpoints.cooling_setpoints =
+                    VectorField::new(resolved.iter().map(|z| z.cooling_c).collect());
             }
 
             // Apply night ventilation. Issue #2858 — guard hardened:
@@ -2973,10 +3072,28 @@ pub fn validate_case_with_diagnostics_with_selector(
         let dry_bulb_temp = weather_data.dry_bulb_temp;
         model.set_weather(weather_data);
 
-        // Apply dynamic setpoints
-        if let Some(hvac_schedule) = spec.hvac.first() {
-            model.setpoints.heating_setpoint = hvac_schedule.heating_setpoint;
-            model.setpoints.cooling_setpoint = hvac_schedule.cooling_setpoint;
+        // Apply dynamic setpoints.
+        //
+        // Issue #4167: resolved through `resolve_zone_setpoints`, the same
+        // function `simulate_case` uses. This path previously assigned the raw
+        // scalar `hvac_schedule.heating_setpoint` / `cooling_setpoint` with no
+        // hour argument, so the diagnostic artifact engineers read (via
+        // `fluxion validate --diagnostics`) never applied the setback for
+        // Cases 640/940/950/960.
+        if !spec.hvac.is_empty() {
+            let hour_of_day = step % 24;
+            let resolved = resolve_zone_setpoints(
+                spec,
+                &model.setpoints.cooling_schedule,
+                hour_of_day,
+                num_zones,
+            );
+            model.setpoints.heating_setpoint = resolved[0].heating_c;
+            model.setpoints.cooling_setpoint = resolved[0].cooling_c;
+            model.setpoints.heating_setpoints =
+                VectorField::new(resolved.iter().map(|z| z.heating_c).collect());
+            model.setpoints.cooling_setpoints =
+                VectorField::new(resolved.iter().map(|z| z.cooling_c).collect());
         }
 
         // Step physics (includes diagnostics recording if enabled)
