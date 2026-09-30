@@ -3083,10 +3083,10 @@ pub fn validate_case_with_diagnostics_with_selector(
         if !spec.hvac.is_empty() {
             let hour_of_day = step % 24;
             let resolved = resolve_zone_setpoints(
-                spec,
+                &spec,
                 &model.setpoints.cooling_schedule,
                 hour_of_day,
-                num_zones,
+                spec.num_zones,
             );
             model.setpoints.heating_setpoint = resolved[0].heating_c;
             model.setpoints.cooling_setpoint = resolved[0].cooling_c;
