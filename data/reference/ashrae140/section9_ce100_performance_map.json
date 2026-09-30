@@ -1,0 +1,949 @@
+{
+  "_source": "CE100MAP.xls (Aug 7, 2007), ASHRAE 140-2023 Std140_CE_a_Files/Normative Materials; Tables 9-5 through 9-10 of the standard",
+  "_scope": "Section 9.2.1 and 9.2.2, Space-Cooling Equipment Performance analytical verification (Cases CE100-CE200)",
+  "_units": "SI. Capacities kW, compressor power kW, temperatures degC",
+  "_note": "IP tables 26b, 26d and 26f are the same data in IP and are not duplicated here",
+  "edb_columns_C": [
+    22.2,
+    23.3,
+    24.4,
+    25.6,
+    26.7
+  ],
+  "rules": {
+    "dry_coil": "where sensible capacity exceeds total capacity the coil is dry; in that case total capacity equals sensible capacity",
+    "wet_coil_only": "compressor power, apparatus dew point and total capacity are valid only for a wet coil",
+    "rating_basis": "0.425 m3/s airflow with 7.62 m of 19.05 mm suction and 7.94 mm liquid lines"
+  },
+  "fan_heat": {
+    "manufacturer_default_W": 329,
+    "actual_W": 230,
+    "net_definition": "gross capacities with the manufacturer default fan heat of 329 W deducted",
+    "adjusted_net_definition": "gross capacities with the actual fan heat of 230 W deducted"
+  },
+  "ari_rating_point": {
+    "conditions": {
+      "EDB_C": 26.7,
+      "EWB_C": 19.4,
+      "ODB_C": 35.0
+    },
+    "net_total_capacity_W": 7852,
+    "gross_total_capacity_W": 8181,
+    "adjusted_net_total_capacity_W": 7951,
+    "airflow_m3_s": 0.425,
+    "apparatus_dew_point_C": 13.8,
+    "compressor_power_W": 1858,
+    "indoor_fan_power_W": 230,
+    "outdoor_fan_power_W": 108,
+    "COP": 3.62,
+    "COP_SEER": 3.78
+  },
+  "tables": {
+    "net_Table_26a": {
+      "29.4": {
+        "15.0": {
+          "total_capacity_kW": 7.09,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 6.21,
+            "23.3": 6.77,
+            "24.4": 7.18,
+            "25.6": 7.38,
+            "26.7": 7.56
+          },
+          "compressor_power_kW": 1.62,
+          "apparatus_dew_point_C": 8.9
+        },
+        "17.2": {
+          "total_capacity_kW": 7.68,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 5.16,
+            "23.3": 5.71,
+            "24.4": 6.27,
+            "25.6": 6.8,
+            "26.7": 7.35
+          },
+          "compressor_power_kW": 1.66,
+          "apparatus_dew_point_C": 11.1
+        },
+        "19.4": {
+          "total_capacity_kW": 8.32,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 4.01,
+            "23.3": 4.57,
+            "24.4": 5.13,
+            "25.6": 5.65,
+            "26.7": 6.21
+          },
+          "compressor_power_kW": 1.71,
+          "apparatus_dew_point_C": 13.4
+        },
+        "21.7": {
+          "total_capacity_kW": 8.97,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 2.87,
+            "23.3": 3.4,
+            "24.4": 3.96,
+            "25.6": 4.48,
+            "26.7": 5.04
+          },
+          "compressor_power_kW": 1.76,
+          "apparatus_dew_point_C": 15.8
+        }
+      },
+      "32.2": {
+        "15.0": {
+          "total_capacity_kW": 6.91,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 6.12,
+            "23.3": 6.68,
+            "24.4": 7.03,
+            "25.6": 7.21,
+            "26.7": 7.41
+          },
+          "compressor_power_kW": 1.69,
+          "apparatus_dew_point_C": 9.1
+        },
+        "17.2": {
+          "total_capacity_kW": 7.47,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 5.1,
+            "23.3": 5.63,
+            "24.4": 6.18,
+            "25.6": 6.71,
+            "26.7": 7.27
+          },
+          "compressor_power_kW": 1.74,
+          "apparatus_dew_point_C": 11.3
+        },
+        "19.4": {
+          "total_capacity_kW": 8.09,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 3.93,
+            "23.3": 4.48,
+            "24.4": 5.04,
+            "25.6": 5.57,
+            "26.7": 6.12
+          },
+          "compressor_power_kW": 1.79,
+          "apparatus_dew_point_C": 13.6
+        },
+        "21.7": {
+          "total_capacity_kW": 8.7,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 2.75,
+            "23.3": 3.31,
+            "24.4": 3.87,
+            "25.6": 4.39,
+            "26.7": 4.95
+          },
+          "compressor_power_kW": 1.84,
+          "apparatus_dew_point_C": 15.9
+        }
+      },
+      "35.0": {
+        "15.0": {
+          "total_capacity_kW": 6.71,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 6.07,
+            "23.3": 6.59,
+            "24.4": 6.89,
+            "25.6": 7.06,
+            "26.7": 7.24
+          },
+          "compressor_power_kW": 1.77,
+          "apparatus_dew_point_C": 9.3
+        },
+        "17.2": {
+          "total_capacity_kW": 7.27,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 5.01,
+            "23.3": 5.54,
+            "24.4": 6.09,
+            "25.6": 6.62,
+            "26.7": 7.18
+          },
+          "compressor_power_kW": 1.81,
+          "apparatus_dew_point_C": 11.4
+        },
+        "19.4": {
+          "total_capacity_kW": 7.85,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 3.84,
+            "23.3": 4.39,
+            "24.4": 4.95,
+            "25.6": 5.48,
+            "26.7": 6.04
+          },
+          "compressor_power_kW": 1.86,
+          "apparatus_dew_point_C": 13.8
+        },
+        "21.7": {
+          "total_capacity_kW": 8.47,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 2.67,
+            "23.3": 3.22,
+            "24.4": 3.75,
+            "25.6": 4.31,
+            "26.7": 4.86
+          },
+          "compressor_power_kW": 1.91,
+          "apparatus_dew_point_C": 16.2
+        }
+      },
+      "37.8": {
+        "15.0": {
+          "total_capacity_kW": 6.53,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 5.98,
+            "23.3": 6.53,
+            "24.4": 6.71,
+            "25.6": 6.89,
+            "26.7": 7.06
+          },
+          "compressor_power_kW": 1.85,
+          "apparatus_dew_point_C": 9.4
+        },
+        "17.2": {
+          "total_capacity_kW": 7.06,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 4.92,
+            "23.3": 5.45,
+            "24.4": 6.01,
+            "25.6": 6.53,
+            "26.7": 7.06
+          },
+          "compressor_power_kW": 1.89,
+          "apparatus_dew_point_C": 11.6
+        },
+        "19.4": {
+          "total_capacity_kW": 7.62,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 3.75,
+            "23.3": 4.31,
+            "24.4": 4.83,
+            "25.6": 5.39,
+            "26.7": 5.95
+          },
+          "compressor_power_kW": 1.94,
+          "apparatus_dew_point_C": 13.9
+        },
+        "21.7": {
+          "total_capacity_kW": 8.17,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 2.58,
+            "23.3": 3.14,
+            "24.4": 3.66,
+            "25.6": 4.22,
+            "26.7": 4.75
+          },
+          "compressor_power_kW": 1.98,
+          "apparatus_dew_point_C": 16.3
+        }
+      },
+      "40.6": {
+        "15.0": {
+          "total_capacity_kW": 6.33,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 5.89,
+            "23.3": 6.39,
+            "24.4": 6.53,
+            "25.6": 6.71,
+            "26.7": 6.89
+          },
+          "compressor_power_kW": 1.94,
+          "apparatus_dew_point_C": 9.6
+        },
+        "17.2": {
+          "total_capacity_kW": 6.83,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 4.83,
+            "23.3": 5.36,
+            "24.4": 5.92,
+            "25.6": 6.45,
+            "26.7": 6.89
+          },
+          "compressor_power_kW": 1.98,
+          "apparatus_dew_point_C": 11.8
+        },
+        "19.4": {
+          "total_capacity_kW": 7.35,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 3.66,
+            "23.3": 4.22,
+            "24.4": 4.75,
+            "25.6": 5.3,
+            "26.7": 5.83
+          },
+          "compressor_power_kW": 2.02,
+          "apparatus_dew_point_C": 14.2
+        },
+        "21.7": {
+          "total_capacity_kW": 7.91,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 2.49,
+            "23.3": 3.02,
+            "24.4": 3.57,
+            "25.6": 4.13,
+            "26.7": 4.66
+          },
+          "compressor_power_kW": 2.06,
+          "apparatus_dew_point_C": 16.6
+        }
+      },
+      "46.1": {
+        "15.0": {
+          "total_capacity_kW": 5.92,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 5.71,
+            "23.3": 6.04,
+            "24.4": 6.21,
+            "25.6": 6.36,
+            "26.7": 6.5
+          },
+          "compressor_power_kW": 2.11,
+          "apparatus_dew_point_C": 10.0
+        },
+        "17.2": {
+          "total_capacity_kW": 6.39,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 4.66,
+            "23.3": 5.19,
+            "24.4": 5.74,
+            "25.6": 6.27,
+            "26.7": 6.5
+          },
+          "compressor_power_kW": 2.14,
+          "apparatus_dew_point_C": 12.2
+        },
+        "19.4": {
+          "total_capacity_kW": 6.89,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 3.49,
+            "23.3": 4.04,
+            "24.4": 4.57,
+            "25.6": 5.13,
+            "26.7": 5.65
+          },
+          "compressor_power_kW": 2.18,
+          "apparatus_dew_point_C": 14.6
+        },
+        "21.7": {
+          "total_capacity_kW": 7.38,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 2.31,
+            "23.3": 2.84,
+            "24.4": 3.4,
+            "25.6": 3.93,
+            "26.7": 4.48
+          },
+          "compressor_power_kW": 2.21,
+          "apparatus_dew_point_C": 16.9
+        }
+      }
+    },
+    "gross_Table_26c": {
+      "29.4": {
+        "15.0": {
+          "total_capacity_kW": 7.42,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 6.54,
+            "23.3": 7.1,
+            "24.4": 7.51,
+            "25.6": 7.71,
+            "26.7": 7.89
+          },
+          "compressor_power_kW": 1.62,
+          "apparatus_dew_point_C": 8.9
+        },
+        "17.2": {
+          "total_capacity_kW": 8.01,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 5.49,
+            "23.3": 6.04,
+            "24.4": 6.6,
+            "25.6": 7.13,
+            "26.7": 7.68
+          },
+          "compressor_power_kW": 1.66,
+          "apparatus_dew_point_C": 11.1
+        },
+        "19.4": {
+          "total_capacity_kW": 8.65,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 4.34,
+            "23.3": 4.9,
+            "24.4": 5.46,
+            "25.6": 5.98,
+            "26.7": 6.54
+          },
+          "compressor_power_kW": 1.71,
+          "apparatus_dew_point_C": 13.4
+        },
+        "21.7": {
+          "total_capacity_kW": 9.29,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 3.2,
+            "23.3": 3.73,
+            "24.4": 4.28,
+            "25.6": 4.81,
+            "26.7": 5.37
+          },
+          "compressor_power_kW": 1.76,
+          "apparatus_dew_point_C": 15.8
+        }
+      },
+      "32.2": {
+        "15.0": {
+          "total_capacity_kW": 7.24,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 6.45,
+            "23.3": 7.01,
+            "24.4": 7.36,
+            "25.6": 7.54,
+            "26.7": 7.74
+          },
+          "compressor_power_kW": 1.69,
+          "apparatus_dew_point_C": 9.1
+        },
+        "17.2": {
+          "total_capacity_kW": 7.8,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 5.43,
+            "23.3": 5.95,
+            "24.4": 6.51,
+            "25.6": 7.04,
+            "26.7": 7.6
+          },
+          "compressor_power_kW": 1.74,
+          "apparatus_dew_point_C": 11.3
+        },
+        "19.4": {
+          "total_capacity_kW": 8.42,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 4.26,
+            "23.3": 4.81,
+            "24.4": 5.37,
+            "25.6": 5.9,
+            "26.7": 6.45
+          },
+          "compressor_power_kW": 1.79,
+          "apparatus_dew_point_C": 13.6
+        },
+        "21.7": {
+          "total_capacity_kW": 9.03,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 3.08,
+            "23.3": 3.64,
+            "24.4": 4.2,
+            "25.6": 4.72,
+            "26.7": 5.28
+          },
+          "compressor_power_kW": 1.84,
+          "apparatus_dew_point_C": 15.9
+        }
+      },
+      "35.0": {
+        "15.0": {
+          "total_capacity_kW": 7.04,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 6.39,
+            "23.3": 6.92,
+            "24.4": 7.21,
+            "25.6": 7.39,
+            "26.7": 7.57
+          },
+          "compressor_power_kW": 1.77,
+          "apparatus_dew_point_C": 9.3
+        },
+        "17.2": {
+          "total_capacity_kW": 7.6,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 5.34,
+            "23.3": 5.87,
+            "24.4": 6.42,
+            "25.6": 6.95,
+            "26.7": 7.51
+          },
+          "compressor_power_kW": 1.81,
+          "apparatus_dew_point_C": 11.4
+        },
+        "19.4": {
+          "total_capacity_kW": 8.18,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 4.17,
+            "23.3": 4.72,
+            "24.4": 5.28,
+            "25.6": 5.81,
+            "26.7": 6.36
+          },
+          "compressor_power_kW": 1.86,
+          "apparatus_dew_point_C": 13.8
+        },
+        "21.7": {
+          "total_capacity_kW": 8.8,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 3.0,
+            "23.3": 3.55,
+            "24.4": 4.08,
+            "25.6": 4.64,
+            "26.7": 5.19
+          },
+          "compressor_power_kW": 1.91,
+          "apparatus_dew_point_C": 16.2
+        }
+      },
+      "37.8": {
+        "15.0": {
+          "total_capacity_kW": 6.86,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 6.31,
+            "23.3": 6.86,
+            "24.4": 7.04,
+            "25.6": 7.21,
+            "26.7": 7.39
+          },
+          "compressor_power_kW": 1.85,
+          "apparatus_dew_point_C": 9.4
+        },
+        "17.2": {
+          "total_capacity_kW": 7.39,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 5.25,
+            "23.3": 5.78,
+            "24.4": 6.34,
+            "25.6": 6.86,
+            "26.7": 7.39
+          },
+          "compressor_power_kW": 1.89,
+          "apparatus_dew_point_C": 11.6
+        },
+        "19.4": {
+          "total_capacity_kW": 7.95,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 4.08,
+            "23.3": 4.64,
+            "24.4": 5.16,
+            "25.6": 5.72,
+            "26.7": 6.28
+          },
+          "compressor_power_kW": 1.94,
+          "apparatus_dew_point_C": 13.9
+        },
+        "21.7": {
+          "total_capacity_kW": 8.5,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 2.91,
+            "23.3": 3.46,
+            "24.4": 3.99,
+            "25.6": 4.55,
+            "26.7": 5.08
+          },
+          "compressor_power_kW": 1.98,
+          "apparatus_dew_point_C": 16.3
+        }
+      },
+      "40.6": {
+        "15.0": {
+          "total_capacity_kW": 6.66,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 6.22,
+            "23.3": 6.72,
+            "24.4": 6.86,
+            "25.6": 7.04,
+            "26.7": 7.21
+          },
+          "compressor_power_kW": 1.94,
+          "apparatus_dew_point_C": 9.6
+        },
+        "17.2": {
+          "total_capacity_kW": 7.16,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 5.16,
+            "23.3": 5.69,
+            "24.4": 6.25,
+            "25.6": 6.77,
+            "26.7": 7.21
+          },
+          "compressor_power_kW": 1.98,
+          "apparatus_dew_point_C": 11.8
+        },
+        "19.4": {
+          "total_capacity_kW": 7.68,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 3.99,
+            "23.3": 4.55,
+            "24.4": 5.08,
+            "25.6": 5.63,
+            "26.7": 6.16
+          },
+          "compressor_power_kW": 2.02,
+          "apparatus_dew_point_C": 14.2
+        },
+        "21.7": {
+          "total_capacity_kW": 8.24,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 2.82,
+            "23.3": 3.35,
+            "24.4": 3.9,
+            "25.6": 4.46,
+            "26.7": 4.99
+          },
+          "compressor_power_kW": 2.06,
+          "apparatus_dew_point_C": 16.6
+        }
+      },
+      "46.1": {
+        "15.0": {
+          "total_capacity_kW": 6.25,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 6.04,
+            "23.3": 6.36,
+            "24.4": 6.54,
+            "25.6": 6.69,
+            "26.7": 6.83
+          },
+          "compressor_power_kW": 2.11,
+          "apparatus_dew_point_C": 10.0
+        },
+        "17.2": {
+          "total_capacity_kW": 6.72,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 4.99,
+            "23.3": 5.52,
+            "24.4": 6.07,
+            "25.6": 6.6,
+            "26.7": 6.83
+          },
+          "compressor_power_kW": 2.14,
+          "apparatus_dew_point_C": 12.2
+        },
+        "19.4": {
+          "total_capacity_kW": 7.21,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 3.82,
+            "23.3": 4.37,
+            "24.4": 4.9,
+            "25.6": 5.46,
+            "26.7": 5.98
+          },
+          "compressor_power_kW": 2.18,
+          "apparatus_dew_point_C": 14.6
+        },
+        "21.7": {
+          "total_capacity_kW": 7.71,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 2.64,
+            "23.3": 3.17,
+            "24.4": 3.73,
+            "25.6": 4.26,
+            "26.7": 4.81
+          },
+          "compressor_power_kW": 2.21,
+          "apparatus_dew_point_C": 16.9
+        }
+      }
+    },
+    "adjusted_net_Table_26e": {
+      "29.4": {
+        "15.0": {
+          "total_capacity_kW": 7.19,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 6.31,
+            "23.3": 6.87,
+            "24.4": 7.28,
+            "25.6": 7.48,
+            "26.7": 7.66
+          },
+          "compressor_power_kW": 1.62,
+          "apparatus_dew_point_C": 8.9
+        },
+        "17.2": {
+          "total_capacity_kW": 7.78,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 5.26,
+            "23.3": 5.81,
+            "24.4": 6.37,
+            "25.6": 6.9,
+            "26.7": 7.45
+          },
+          "compressor_power_kW": 1.66,
+          "apparatus_dew_point_C": 11.1
+        },
+        "19.4": {
+          "total_capacity_kW": 8.42,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 4.11,
+            "23.3": 4.67,
+            "24.4": 5.23,
+            "25.6": 5.75,
+            "26.7": 6.31
+          },
+          "compressor_power_kW": 1.71,
+          "apparatus_dew_point_C": 13.4
+        },
+        "21.7": {
+          "total_capacity_kW": 9.06,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 2.97,
+            "23.3": 3.5,
+            "24.4": 4.05,
+            "25.6": 4.58,
+            "26.7": 5.14
+          },
+          "compressor_power_kW": 1.76,
+          "apparatus_dew_point_C": 15.8
+        }
+      },
+      "32.2": {
+        "15.0": {
+          "total_capacity_kW": 7.01,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 6.22,
+            "23.3": 6.78,
+            "24.4": 7.13,
+            "25.6": 7.31,
+            "26.7": 7.51
+          },
+          "compressor_power_kW": 1.69,
+          "apparatus_dew_point_C": 9.1
+        },
+        "17.2": {
+          "total_capacity_kW": 7.57,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 5.2,
+            "23.3": 5.72,
+            "24.4": 6.28,
+            "25.6": 6.81,
+            "26.7": 7.37
+          },
+          "compressor_power_kW": 1.74,
+          "apparatus_dew_point_C": 11.3
+        },
+        "19.4": {
+          "total_capacity_kW": 8.19,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 4.03,
+            "23.3": 4.58,
+            "24.4": 5.14,
+            "25.6": 5.67,
+            "26.7": 6.22
+          },
+          "compressor_power_kW": 1.79,
+          "apparatus_dew_point_C": 13.6
+        },
+        "21.7": {
+          "total_capacity_kW": 8.8,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 2.85,
+            "23.3": 3.41,
+            "24.4": 3.97,
+            "25.6": 4.49,
+            "26.7": 5.05
+          },
+          "compressor_power_kW": 1.84,
+          "apparatus_dew_point_C": 15.9
+        }
+      },
+      "35.0": {
+        "15.0": {
+          "total_capacity_kW": 6.81,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 6.16,
+            "23.3": 6.69,
+            "24.4": 6.98,
+            "25.6": 7.16,
+            "26.7": 7.34
+          },
+          "compressor_power_kW": 1.77,
+          "apparatus_dew_point_C": 9.3
+        },
+        "17.2": {
+          "total_capacity_kW": 7.37,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 5.11,
+            "23.3": 5.64,
+            "24.4": 6.19,
+            "25.6": 6.72,
+            "26.7": 7.28
+          },
+          "compressor_power_kW": 1.81,
+          "apparatus_dew_point_C": 11.4
+        },
+        "19.4": {
+          "total_capacity_kW": 7.95,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 3.94,
+            "23.3": 4.49,
+            "24.4": 5.05,
+            "25.6": 5.58,
+            "26.7": 6.13
+          },
+          "compressor_power_kW": 1.86,
+          "apparatus_dew_point_C": 13.8
+        },
+        "21.7": {
+          "total_capacity_kW": 8.57,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 2.77,
+            "23.3": 3.32,
+            "24.4": 3.85,
+            "25.6": 4.41,
+            "26.7": 4.96
+          },
+          "compressor_power_kW": 1.91,
+          "apparatus_dew_point_C": 16.2
+        }
+      },
+      "37.8": {
+        "15.0": {
+          "total_capacity_kW": 6.63,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 6.08,
+            "23.3": 6.63,
+            "24.4": 6.81,
+            "25.6": 6.98,
+            "26.7": 7.16
+          },
+          "compressor_power_kW": 1.85,
+          "apparatus_dew_point_C": 9.4
+        },
+        "17.2": {
+          "total_capacity_kW": 7.16,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 5.02,
+            "23.3": 5.55,
+            "24.4": 6.11,
+            "25.6": 6.63,
+            "26.7": 7.16
+          },
+          "compressor_power_kW": 1.89,
+          "apparatus_dew_point_C": 11.6
+        },
+        "19.4": {
+          "total_capacity_kW": 7.72,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 3.85,
+            "23.3": 4.41,
+            "24.4": 4.93,
+            "25.6": 5.49,
+            "26.7": 6.05
+          },
+          "compressor_power_kW": 1.94,
+          "apparatus_dew_point_C": 13.9
+        },
+        "21.7": {
+          "total_capacity_kW": 8.27,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 2.68,
+            "23.3": 3.23,
+            "24.4": 3.76,
+            "25.6": 4.32,
+            "26.7": 4.85
+          },
+          "compressor_power_kW": 1.98,
+          "apparatus_dew_point_C": 16.3
+        }
+      },
+      "40.6": {
+        "15.0": {
+          "total_capacity_kW": 6.43,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 5.99,
+            "23.3": 6.49,
+            "24.4": 6.63,
+            "25.6": 6.81,
+            "26.7": 6.98
+          },
+          "compressor_power_kW": 1.94,
+          "apparatus_dew_point_C": 9.6
+        },
+        "17.2": {
+          "total_capacity_kW": 6.93,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 4.93,
+            "23.3": 5.46,
+            "24.4": 6.02,
+            "25.6": 6.54,
+            "26.7": 6.98
+          },
+          "compressor_power_kW": 1.98,
+          "apparatus_dew_point_C": 11.8
+        },
+        "19.4": {
+          "total_capacity_kW": 7.45,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 3.76,
+            "23.3": 4.32,
+            "24.4": 4.85,
+            "25.6": 5.4,
+            "26.7": 5.93
+          },
+          "compressor_power_kW": 2.02,
+          "apparatus_dew_point_C": 14.2
+        },
+        "21.7": {
+          "total_capacity_kW": 8.01,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 2.59,
+            "23.3": 3.12,
+            "24.4": 3.67,
+            "25.6": 4.23,
+            "26.7": 4.76
+          },
+          "compressor_power_kW": 2.06,
+          "apparatus_dew_point_C": 16.6
+        }
+      },
+      "46.1": {
+        "15.0": {
+          "total_capacity_kW": 6.02,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 5.81,
+            "23.3": 6.13,
+            "24.4": 6.31,
+            "25.6": 6.46,
+            "26.7": 6.6
+          },
+          "compressor_power_kW": 2.11,
+          "apparatus_dew_point_C": 10.0
+        },
+        "17.2": {
+          "total_capacity_kW": 6.49,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 4.76,
+            "23.3": 5.29,
+            "24.4": 5.84,
+            "25.6": 6.37,
+            "26.7": 6.6
+          },
+          "compressor_power_kW": 2.14,
+          "apparatus_dew_point_C": 12.2
+        },
+        "19.4": {
+          "total_capacity_kW": 6.98,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 3.59,
+            "23.3": 4.14,
+            "24.4": 4.67,
+            "25.6": 5.23,
+            "26.7": 5.75
+          },
+          "compressor_power_kW": 2.18,
+          "apparatus_dew_point_C": 14.6
+        },
+        "21.7": {
+          "total_capacity_kW": 7.48,
+          "sensible_capacity_kW_by_edb": {
+            "22.2": 2.41,
+            "23.3": 2.94,
+            "24.4": 3.5,
+            "25.6": 4.03,
+            "26.7": 4.58
+          },
+          "compressor_power_kW": 2.21,
+          "apparatus_dew_point_C": 16.9
+        }
+      }
+    }
+  }
+}
