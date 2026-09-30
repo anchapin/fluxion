@@ -1,0 +1,146 @@
+{
+  "_purpose": "Provenance chain for ASHRAE 140 accompanying files. fluxion is a public repository and ASHRAE sells Standard 140, so these bytes are NOT redistributed here. This record lets anyone holding a licensed copy verify that the files they supply are the normative ones, and lets CI refuse to publish a conformance claim resting on unverified inputs.",
+  "_how": "scripts/fetch_ashrae140.py record --archive <extracted-dir>   (once, by a licence holder)\nscripts/fetch_ashrae140.py install --archive <extracted-dir>\nscripts/fetch_ashrae140.py verify                             (the CI gate)",
+  "chain": {
+    "publisher": "ASHRAE (American Society of Heating, Refrigerating and Air-Conditioning Engineers)",
+    "page_url": "https://data.ashrae.org/standard140/accompany.html",
+    "section6_manifest_url": "https://data.ashrae.org/standard140/AccompanyingSection6.html",
+    "download_url": "https://www.ashrae.org/technical-resources/bookstore/supplemental-files/ansi-ashrae-standard-140-2023-method-of-test-for-evaluating-building-performance-simulation-software",
+    "edition": "ANSI/ASHRAE Standard 140-2023",
+    "originating_addendum": "The WD (Weather Drivers) file set entered the standard via 140-2020 Addendum A.",
+    "edition_note": "Per ASHRAE, 140-2023 changed folder and file names to match the new section numbering and updated headers; the content of the files did not otherwise change from 140-2020.",
+    "archive_sha256": null,
+    "retrieved_utc": null,
+    "publisher_hashes_recorded_utc": null,
+    "redistribution": "NOT redistributed in this repository. Terms have not been confirmed, so the safe default is to require the user to supply their own licensed copy."
+  },
+  "_working_copy_caveat": "working_copy_sha256 records what is currently committed under assets/weather. It is NOT evidence of provenance: those files predate this record and their origin was never documented. Treat them as usable for development and not citable as evidence until a publisher hash is recorded and matches.",
+  "file_groups": [
+    {
+      "id": "section6_wd",
+      "section": "6",
+      "title": "Weather Drivers Comparative Tests",
+      "install_dir": "assets/weather",
+      "files": [
+        {
+          "name": "WD100.epw",
+          "archive_path": "Std140_WD_Files\\\\Normative Materials\\\\WD100.EPW",
+          "normative": true,
+          "publisher_sha256": "publisher_hash_unrecorded",
+          "working_copy_sha256": "a06b60a8ae89ba0db6a8c24d169cb3c9beb25a522fbb2513ec540f63e55cc014",
+          "working_copy_bytes": 1496423
+        },
+        {
+          "name": "WD100.tmy3",
+          "archive_path": "Std140_WD_Files\\\\Normative Materials\\\\WD100.TMY3",
+          "normative": true,
+          "publisher_sha256": "publisher_hash_unrecorded",
+          "working_copy_sha256": "c7fe4c6c7d5976105a3fd7264ce9f5e6d217875756552b7d312e166b7b700188",
+          "working_copy_bytes": 1691689
+        },
+        {
+          "name": "WD200.epw",
+          "archive_path": "Std140_WD_Files\\\\Normative Materials\\\\WD200.EPW",
+          "normative": true,
+          "publisher_sha256": "publisher_hash_unrecorded",
+          "working_copy_sha256": "f3de148bae6f04b1c9c4782e6030b7faa9074724a2aff6cf8a687cc9b94b941d",
+          "working_copy_bytes": 1599884
+        },
+        {
+          "name": "WD200.tmy3",
+          "archive_path": "Std140_WD_Files\\\\Normative Materials\\\\WD200.TMY3",
+          "normative": true,
+          "publisher_sha256": "publisher_hash_unrecorded",
+          "working_copy_sha256": "6a3cd4ab3f3dcabf428dcc8b8c995985e764eea2148c6a4e55864e480f3b8f3f",
+          "working_copy_bytes": 1726715
+        },
+        {
+          "name": "WD300.epw",
+          "archive_path": "Std140_WD_Files\\\\Normative Materials\\\\WD300.EPW",
+          "normative": true,
+          "publisher_sha256": "publisher_hash_unrecorded",
+          "working_copy_sha256": "5e66bcaeaeae2cf999e34f8ef6cb0d56358f84f17d2771ae0a1351cb24ca52dc",
+          "working_copy_bytes": 1427677
+        },
+        {
+          "name": "WD300.tmy3",
+          "archive_path": "Std140_WD_Files\\\\Normative Materials\\\\WD300.TMY3",
+          "normative": true,
+          "publisher_sha256": "publisher_hash_unrecorded",
+          "working_copy_sha256": "d3bbf2dd13d9182dfc14a3c28d1db1c3cc3656d4e525335b4e14f443f12a67be",
+          "working_copy_bytes": 1672738
+        },
+        {
+          "name": "WD400.epw",
+          "archive_path": "Std140_WD_Files\\\\Normative Materials\\\\WD400.EPW",
+          "normative": true,
+          "publisher_sha256": "publisher_hash_unrecorded",
+          "working_copy_sha256": "80127a0da8a771a7949706768f46195e608b2fbf145028bf37daa507722bfcae",
+          "working_copy_bytes": 1594777
+        },
+        {
+          "name": "WD400.tmy3",
+          "archive_path": "Std140_WD_Files\\\\Normative Materials\\\\WD400.TMY3",
+          "normative": true,
+          "publisher_sha256": "publisher_hash_unrecorded",
+          "working_copy_sha256": "618fe828bbd9e84ffe17033f60b6fec04b1c282c11ce4f3fdb844051132b6961",
+          "working_copy_bytes": 1728716
+        },
+        {
+          "name": "WD500.epw",
+          "archive_path": "Std140_WD_Files\\\\Normative Materials\\\\WD500.EPW",
+          "normative": true,
+          "publisher_sha256": "publisher_hash_unrecorded",
+          "working_copy_sha256": "ed74f52f5388110624c25dcc49a9e74719321234288dfe40be1f69d6a00a927b",
+          "working_copy_bytes": 1432158
+        },
+        {
+          "name": "WD500.tmy3",
+          "archive_path": "Std140_WD_Files\\\\Normative Materials\\\\WD500.TMY3",
+          "normative": true,
+          "publisher_sha256": "publisher_hash_unrecorded",
+          "working_copy_sha256": "c4d2d6a5239619af600d7910155fc46f0c1703f70c359d7796b5a9ae05578a22",
+          "working_copy_bytes": 1709538
+        },
+        {
+          "name": "WD600.epw",
+          "archive_path": "Std140_WD_Files\\\\Normative Materials\\\\WD600.EPW",
+          "normative": true,
+          "publisher_sha256": "publisher_hash_unrecorded",
+          "working_copy_sha256": "8cace1999401a2b32da03631b3e85b3b3684fe1168e693dd4a45c590f91d8a2b",
+          "working_copy_bytes": 1513943
+        },
+        {
+          "name": "WD600.tmy3",
+          "archive_path": "Std140_WD_Files\\\\Normative Materials\\\\WD600.TMY3",
+          "normative": true,
+          "publisher_sha256": "publisher_hash_unrecorded",
+          "working_copy_sha256": "4edb4a246863ff9d7becf631164a365b2e70d405ff352deb9649823fcc0bf71b",
+          "working_copy_bytes": 1709209
+        }
+      ]
+    },
+    {
+      "id": "section6_reports",
+      "section": "6",
+      "title": "Section 6 Standard Output Report templates",
+      "install_dir": "assets/ashrae140/section6",
+      "files": [
+        {
+          "name": "Std140_WD_Output.xlsx",
+          "archive_path": "Std140_WD_Files\\\\Normative Materials\\\\Std140_WD_Output.xlsx",
+          "normative": true,
+          "publisher_sha256": "publisher_hash_unrecorded",
+          "note": "Standard Output Report template, Normative Annex A2. Required reporting format for Section 6."
+        },
+        {
+          "name": "S140outNotes.TXT",
+          "archive_path": "Std140_WD_Files\\\\Normative Materials\\\\S140outNotes.TXT",
+          "normative": true,
+          "publisher_sha256": "publisher_hash_unrecorded",
+          "note": "Standard Output Report for modeling notes, Normative Annex A2."
+        }
+      ]
+    }
+  ]
+}

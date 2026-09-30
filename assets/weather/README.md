@@ -61,11 +61,32 @@ TMY3 CSV header (`WMO,"NAME",ST,TZ,lat,lon,elev`) and 8761 lines including the c
 row; the `.epw` files carry the eight-line EPW header and 8768 lines. Both encode the same
 8760 hours.
 
-**Unresolved:** the conversion tooling that produced these two representations is not
-recorded anywhere in the repository, and neither is the ASHRAE distribution they were
-derived from. Both need to be established and written here before a Section 6 conformance
-claim is published. Do not treat the table above as a provenance chain; it is a description
-of what the committed bytes contain.
+### Provenance, and why these bytes are not redistributed
+
+ASHRAE ships **both** `.epw` and `.tmy3` for every WD case, and Normative Annex A1
+defines both formats. So the two representations are not a local conversion
+artifact: they are two normative inputs, and reading the same case from either and
+getting the same answer is itself part of the test.
+
+fluxion is a public repository and ASHRAE sells Standard 140, so this repository
+does **not** redistribute the accompanying files. Instead it records a provenance
+chain and verifies a copy you supply yourself:
+
+```
+scripts/fetch_ashrae140.py record  --archive <extracted-dir>   # once, by a licence holder
+scripts/fetch_ashrae140.py install --archive <extracted-dir>
+scripts/fetch_ashrae140.py verify                              # the CI gate
+scripts/fetch_ashrae140.py status
+```
+
+The chain lives in `data/reference/ashrae140/provenance.json`. Obtain the archive
+from [data.ashrae.org/standard140](https://data.ashrae.org/standard140/accompany.html);
+the Section 6 files are in `\Std140_WD_Files\Normative Materials`.
+
+**The files currently committed here have no recorded publisher hash.** They predate
+this record and their origin was never documented, so `verify` fails until someone
+holding a licensed copy runs `record`. Treat them as usable for development and not
+citable as evidence. See #4284.
 
 ## Other weather files
 
