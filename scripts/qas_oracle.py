@@ -195,7 +195,7 @@ def _dewpoint_from_wetbulb(tdb, twb):
 
 def fan_coil(a):
     """Four-pipe fan coil, single zone, no economizer, no return fan."""
-    accsv = sasv = rosv = 13.5
+    accsv = rosv = 13.5
     sahr = rohr = mahr = a.oahr
     for _ in range(MAX_ITER):
         prev = (accsv, sahr)
@@ -215,7 +215,6 @@ def fan_coil(a):
         rohr = sahr + a.gro / rosmf
         mahr = mahr_new
         accsv = specific_volume(tacc, sahr)
-        sasv = specific_volume(rosat, sahr)
         rosv = specific_volume(a.r1_t, rohr)
         if abs(accsv - prev[0]) < TOL and abs(sahr - prev[1]) < TOL:
             break
@@ -228,7 +227,7 @@ def fan_coil(a):
 
 def single_zone(a, rdhg=0.0):
     """Single-zone air handler with return fan, economizer disabled."""
-    accsv = sasv = rosv = rfisv = rasv = 13.5
+    accsv = rosv = rfisv = 13.5
     sahr = rohr = rahr = mahr = a.oahr
     for _ in range(MAX_ITER):
         prev = (accsv, sahr)
@@ -255,10 +254,8 @@ def single_zone(a, rdhg=0.0):
         rahr = rohr
         mahr = mahr_new
         accsv = specific_volume(tacc, sahr)
-        sasv = specific_volume(rosat, sahr)
         rosv = specific_volume(a.r1_t, rohr)
         rfisv = specific_volume(rfit, rohr)
-        rasv = specific_volume(rat, rohr)
         if abs(accsv - prev[0]) < TOL and abs(sahr - prev[1]) < TOL:
             break
     qh = (rosmf * 60.0) * mash * (tahc - mat)
@@ -271,8 +268,8 @@ def single_zone(a, rdhg=0.0):
 def _two_zone_reheat(a, variable_volume, rdhg=0.0):
     """Shared CAV / VAV solver. Both have a preheat coil, a cooling coil at the
     supply setpoint, and a reheat coil per zone."""
-    accsv = sasv = 13.5
-    rosv = rtsv = mrsv = rfisv = rasv = 13.5
+    accsv = 13.5
+    rosv = rtsv = rfisv = 13.5
     sahr = rohr = rthr = rahr = mahr = a.oahr
     sat = SASP
     for _ in range(MAX_ITER):
@@ -324,13 +321,10 @@ def _two_zone_reheat(a, variable_volume, rdhg=0.0):
         rahr = ((rohr * rormf + rthr * rtrmf) / trmf) if trmf else sahr
         mahr = mahr_new
         accsv = specific_volume(tacc, sahr)
-        sasv = specific_volume(sat, sahr)
         rosv = specific_volume(a.r1_t, rohr)
         rtsv = specific_volume(a.r2_t, rthr)
         if trmf:
-            mrsv = specific_volume(mrt, rahr)
             rfisv = specific_volume(rfit, rahr)
-            rasv = specific_volume(rat, rahr)
         if (abs(accsv - prev[0]) < TOL and abs(sahr - prev[1]) < TOL
                 and abs(sat - prev[2]) < TOL):
             break

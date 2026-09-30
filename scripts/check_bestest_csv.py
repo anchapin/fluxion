@@ -12,7 +12,12 @@ Usage:
 
 Exit code 0 when the file is safe to hand to the populate script, 1 otherwise.
 """
-import argparse, csv, json, os, re, sys
+import argparse
+import csv
+import json
+import os
+import re
+import sys
 
 DEFAULT_CONTRACT = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), os.pardir,
