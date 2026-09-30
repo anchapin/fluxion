@@ -90,12 +90,27 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // 9R4C: Derive equivalent single h_tr_ms from per-surface values.
             // The three mass couplings (wall, roof, floor) are in parallel
             // from the interior surface node, so they sum.
-            let h_ms_wall = self.0.conduction.h_tr_ms_wall.as_ref()
-                .and_then(|v| v.as_ref().get(zone_idx).copied()).unwrap_or(0.0);
-            let h_ms_roof = self.0.conduction.h_tr_ms_roof.as_ref()
-                .and_then(|v| v.as_ref().get(zone_idx).copied()).unwrap_or(0.0);
-            let h_ms_floor = self.0.conduction.h_tr_ms_floor.as_ref()
-                .and_then(|v| v.as_ref().get(zone_idx).copied()).unwrap_or(0.0);
+            let h_ms_wall = self
+                .0
+                .conduction
+                .h_tr_ms_wall
+                .as_ref()
+                .and_then(|v| v.as_ref().get(zone_idx).copied())
+                .unwrap_or(0.0);
+            let h_ms_roof = self
+                .0
+                .conduction
+                .h_tr_ms_roof
+                .as_ref()
+                .and_then(|v| v.as_ref().get(zone_idx).copied())
+                .unwrap_or(0.0);
+            let h_ms_floor = self
+                .0
+                .conduction
+                .h_tr_ms_floor
+                .as_ref()
+                .and_then(|v| v.as_ref().get(zone_idx).copied())
+                .unwrap_or(0.0);
             let h_ms_9r4c = h_ms_wall + h_ms_roof + h_ms_floor;
             if h_tr_is + h_ms_9r4c > 0.0 {
                 h_tr_is * h_ms_9r4c / (h_tr_is + h_ms_9r4c)
