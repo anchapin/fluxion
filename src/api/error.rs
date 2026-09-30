@@ -4,19 +4,19 @@
 //! actionable error messages to Python users. All exceptions inherit from
 //! a base FluxionError to enable structured error handling.
 //!
-//! The Rust-side error type ([`FluxionError`]) and [`SimulationDiagnostics`]
-//! are re-exported from the `fluxion-core` leaf crate
-//! ([`fluxion_core::error`]) — the ONE unified engine error type. The PyO3
-//! exception classes and the `From<FluxionError> for PyErr` mapping below
+//! The Rust-side error type ([`FluxionError`]) and [`fluxion_core::error::SimulationDiagnostics`]
+//! (aliased from [`fluxion_core::error::DivergenceDiagnostics`]) are re-exported from
+//! the `fluxion-core` leaf crate ([`fluxion_core::error`]) — the ONE unified engine error type.
+//! The PyO3 exception classes and the `From<FluxionError> for PyErr` mapping below
 //! are defined here and keep their exact historic behavior, so the Python
 //! `FluxionError` / `ValidationError` / `SurrogateError` /
 //! `SimulationError` hierarchy (including the `diagnostics` attribute on
 //! `SimulationError`, issue #2547) is unchanged.
 //!
-//! It also defines [`SimulationDiagnostics`] — a machine-readable record of
-//! why a simulation diverged (NaN, infinite temperature, energy-balance
-//! violation, non-convergent timestep). Issue #2547 surfaces this on the
-//! `ApiError::SimulationFailed` REST envelope and the Python
+//! [`fluxion_core::error::DivergenceDiagnostics`]: the renamed divergence-attachment payload
+//! (formerly `SimulationDiagnostics`, renamed in issue #4172 to resolve the name collision
+//! with `fluxion_core::diagnostics::SimulationDiagnostics`).
+//! Issue #2547 surfaces this on the `ApiError::SimulationFailed` REST envelope and the Python
 //! `SimulationError` exception so clients can attribute failure to a
 //! specific timestep / zone instead of receiving a bare string.
 

@@ -271,7 +271,7 @@ BASELINE_LIB_IGNORED = 9
 #   test_box_solid_fraction_returns_none_without_reference_data,
 #   test_box_apparent_cp_at_wall_delegates_to_material). Stacked on PR-A's
 #   8821 baseline.
-BASELINE_WORKSPACE_TESTS = 8884  # 2026-09-29 (Issue #4241): 8881 -> 8884 — 2 new diagnostic tests in tests/all_tests/hvac_coefficient_diagnostic_4241.rs (Case 600/900 pre/post coefficient ratios) + 1 analytic residual test counted in lib. Stacked on #4192's 8881 baseline.
+BASELINE_WORKSPACE_TESTS = 8885  # 2026-09-29 (Issue #4172): 8884 -> 8885 — hoist SimulationDiagnostics to fluxion-core (12 new tests in fluxion-core/src/diagnostics.rs, net +1 after -11 pre-existing drift from #4194-#4257). Stacked on #4241's 8884 baseline.
                                   # 2026-09-29 (Issue #4192): 8873 -> 8881 — collapse triplicated EPW decoder; 8 new tests in fluxion-core/src/weather/epw.rs (shared-fixture agreement, truncated/missing-field skips, 8760-count fixture guard, sentinel coercion). Stacked on #4155's 8873 baseline.
                                   # Previous: 2026-09-28: 8836 -> 8839 — three new `fabric_case_*_measurement` tests in `tests/all_tests/ashrae_140_fabric_multiselector.rs` (PR-A+2 fabric harness, Refs #3986-A+2 / #4117). CI's authoritative cargo --list count rises 8836 -> 8839 (local 8131). Ratchet must equal or exceed CI live count per Issue #3442 protocol.
                                   # Previous: 2026-09-27: 8829 -> 8833 — post-rebase AST delta for PR-A + PR-B's combined consolidated-runner modules (7 selector-parity + 8 PCM box tests).
