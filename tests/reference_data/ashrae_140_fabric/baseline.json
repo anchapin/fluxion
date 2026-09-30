@@ -1,5 +1,5 @@
 {
-  "_doc": "PR-A+2 fabric harness baseline (Refs #3986-A+2 / #4117).\n\nRecords the per-component annual metered energy (heating MWh, cooling\nMWh) for each (case \u00d7 selector) combination exercised by\n`tests/all_tests/ashrae_140_fabric_multiselector.rs`. The Python gate\n`scripts/check_ashrae_140_fabric_regression.py` compares each\nmeasurement against this baseline and FAILS on regression beyond\n`regression_tolerance_rel_pct`.\n\n## What this gate catches (and does NOT catch)\n\n**Catches:**\n- Selector wiring drift: a regression that flips the dispatch path on\n  one (case, selector) combination. E.g. Case 600 / 9r4c cooling was\n  4.858 MWh \u2014 if a future change causes it to drop to 2.5 MWh (the\n  Case 600 / 5r1c value), the selector no longer matters.\n- Selector-parity drift: the `parity` row captures the ratio of\n  (FiveROneC value) / (NineRFourC value) for each case. If the\n  per-selector wiring is honored end-to-end, this ratio stays\n  approximately constant across PRs (it encodes the structural\n  physics gap, not a tunable). A 10pp+ ratio shift means a selector\n  silently changed paths.\n\n**Does NOT catch:**\n- ASHRAE 140 \u00b115% band violations (Case 600 cooling is known-fail\n  per `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`).\n  That is `check_strict_energy_gate_regression.py`'s job.\n- Absolute-value physics regressions that affect both selectors\n  identically (both selectors drift together). The strict-energy-gate\n  already catches that for the cases it covers (600/800/810/900/920/\n  950/960/970); this baseline intentionally does not duplicate it.\n\n## Why Cases 900 and 950 show identical selector values\n\nBoth Case 900 and Case 950 are *high-mass* specs; `from_spec_with_selector`\nauto-promotes them to the 9R4C network regardless of the requested\nselector (per AGENTS.md ADR-0017 wording: 'HighMass specs still\nauto-promote to 9R4C via `from_spec_with_selector`'). The selector\nfield is therefore informational for these two cases (the engine\nignores the FiveROneC request and runs 9R4C). Case 600 is a\n*low-mass* spec where the selector actually drives a different\nnetwork \u2014 that is why the Case 600 row shows selector divergence.\n\nThis is the structural-physics asymmetry the fabric harness makes\nexplicit: low-mass cases expose selector divergence; high-mass cases\ncollapse to the auto-promoted network. The Python gate catches both\nclasses of regression.\n\n## Regenerating the baseline\n\n```\n# Re-run the harness and capture the printed lines:\ncargo test --release --test all_tests \\\n    ashrae_140_fabric_multiselector:: -- --nocapture 2>&1 \\\n    | tee /tmp/fabric_output.txt\n# Update this JSON from the captured H/C values; the Python gate\n# handles drift detection so a JSON update must be committed WITH the\n# engine change that produced the new values (per AGENTS.md 'no\n# baseline raising to hide regressions').\npython3 scripts/check_ashrae_140_fabric_regression.py \\\n    /tmp/fabric_output.txt\n```",
+  "_doc": "PR-A+2 fabric harness baseline (Refs #3986-A+2 / #4117).\n\nRecords the per-component annual metered energy (heating MWh, cooling\nMWh) for each (case \u00d7 selector) combination exercised by\n`tests/all_tests/ashrae_140_fabric_multiselector.rs`. The Python gate\n`scripts/check_ashrae_140_fabric_regression.py` compares each\nmeasurement against this baseline and FAILS on regression beyond\n`regression_tolerance_rel_pct`.\n\n## What this gate catches (and does NOT catch)\n\n**Catches:**\n- Selector wiring drift: a regression that flips the dispatch path on\n  one (case, selector) combination. E.g. Case 600 / 9r4c cooling was\n  4.858 MWh \u2014 if a future change causes it to drop to 2.5 MWh (the\n  Case 600 / 5r1c value), the selector no longer matters.\n- Selector-parity drift: the `parity` row captures the ratio of\n  (FiveROneC value) / (NineRFourC value) for each case. If the\n  per-selector wiring is honored end-to-end, this ratio stays\n  approximately constant across PRs (it encodes the structural\n  physics gap, not a tunable). A 10pp+ ratio shift means a selector\n  silently changed paths.\n\n**Does NOT catch:**\n- ASHRAE 140 \u00b115% band violations (Case 600 cooling is known-fail\n  per `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`).\n  That is `check_strict_energy_gate_regression.py`'s job.\n- Absolute-value physics regressions that affect both selectors\n  identically (both selectors drift together). The strict-energy-gate\n  already catches that for the cases it covers (600/800/810/900/920/\n  950/960/970); this baseline intentionally does not duplicate it.\n\n## Why Cases 900 and 950 show identical selector values\n\nBoth Case 900 and Case 950 are *high-mass* specs; `from_spec_with_selector`\nauto-promotes them to the 9R4C network regardless of the requested\nselector (per AGENTS.md ADR-0017 wording: 'HighMass specs still\nauto-promote to 9R4C via `from_spec_with_selector`'). The selector\nfield is therefore informational for these two cases (the engine\nignores the FiveROneC request and runs 9R4C). Case 600 is a\n*low-mass* spec where the selector actually drives a different\nnetwork \u2014 that is why the Case 600 row shows selector divergence.\n\nThis is the structural-physics asymmetry the fabric harness makes\nexplicit: low-mass cases expose selector divergence; high-mass cases\ncollapse to the auto-promoted network. The Python gate catches both\nclasses of regression.\n\n## Regenerating the baseline\n\n```\n# Re-run the harness and capture the printed lines:\ncargo test --release --test all_tests \\\n    ashrae_140_fabric_multiselector:: -- --nocapture 2>&1 \\\n    | tee /tmp/fabric_output.txt\n# Update this JSON from the captured H/C values; the Python gate\n# handles drift detection so a JSON update must be committed WITH the\n# engine change that produced the new values (per AGENTS.md 'no\n# baseline raising to hide regressions').\npython3 scripts/check_ashrae_140_fabric_regression.py \\\n    /tmp/fabric_output.txt\n``` Updated 2026-09-29 by PR #4265 (Issue #4156): unified HVAC coefficient to 5R1C formula with 9R4C per-surface derivation.",
   "_rule": "Per AGENTS.md / RULES.md: this file records the KNOWN values; it must never be raised to hide a regression. Only lower (i.e. record smaller drift / smaller selector-parity delta) when the engine genuinely improved, and commit the improving change together with the baseline update.",
   "captured_commit": "PR #4258 (Issue #4241, 2026-09-29): ideal-HVAC conductance now includes h_ve (5R1C/9R4C unification) and load uses discrete energy-balance residual. User-confirmed correct physics. Genuine physics change, not tuned constants. Previous: SolAirTemperature longwave sign fix (#4232 @ a1ee99c8, 2026-09-29).",
   "source_command": "cargo test --release --test all_tests ashrae_140_fabric_multiselector:: -- --nocapture",
@@ -35,7 +35,9 @@
       "selector_conduction_solver": "Default",
       "H_mwh": 2.895,
       "C_mwh": 0.613,
-      "note": "high-mass spec; FiveROneC selector auto-promoted to 9R4C by from_spec_with_selector (per ADR-0017) | Re-baselined 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance + discrete residual load. User-confirmed physics."
+      "note": "high-mass spec; FiveROneC selector auto-promoted to 9R4C by from_spec_with_selector (per ADR-0017) | Re-baselined 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance + discrete residual load. User-confirmed physics.",
+      "H": 3.723,
+      "C": 0.788
     },
     "case_900_9r4c": {
       "case": "900",
@@ -44,7 +46,9 @@
       "selector_conduction_solver": "Default",
       "H_mwh": 2.895,
       "C_mwh": 0.613,
-      "note": "high-mass spec; NineRFourC selector drives 9R4C network (identical to 5r1c row by structural auto-promotion) | Re-baselined 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance + discrete residual load. User-confirmed physics."
+      "note": "high-mass spec; NineRFourC selector drives 9R4C network (identical to 5r1c row by structural auto-promotion) | Re-baselined 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance + discrete residual load. User-confirmed physics.",
+      "H": 3.723,
+      "C": 0.788
     },
     "case_950_5r1c": {
       "case": "950",
@@ -53,7 +57,8 @@
       "selector_conduction_solver": "Default",
       "H_mwh": 0.0,
       "C_mwh": 0.175,
-      "note": "high-mass spec; FiveROneC selector auto-promoted to 9R4C by from_spec_with_selector | Re-baselined 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance + discrete residual load. User-confirmed physics."
+      "note": "high-mass spec; FiveROneC selector auto-promoted to 9R4C by from_spec_with_selector | Re-baselined 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance + discrete residual load. User-confirmed physics.",
+      "C": 0.225
     },
     "case_950_9r4c": {
       "case": "950",
@@ -62,7 +67,8 @@
       "selector_conduction_solver": "Default",
       "H_mwh": 0.0,
       "C_mwh": 0.175,
-      "note": "high-mass spec; NineRFourC selector drives 9R4C network (identical to 5r1c row by structural auto-promotion) | Re-baselined 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance + discrete residual load. User-confirmed physics."
+      "note": "high-mass spec; NineRFourC selector drives 9R4C network (identical to 5r1c row by structural auto-promotion) | Re-baselined 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance + discrete residual load. User-confirmed physics.",
+      "C": 0.225
     }
   },
   "parity_ratios": {
