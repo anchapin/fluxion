@@ -92,7 +92,13 @@ MOVED_LEAF_TYPES = {
 # technique already used by `scan_fluxion_core_for_upward_deps` below and
 # by `check_physics_sim_cycle.py`'s physics->sim direction.
 # ---------------------------------------------------------------------------
-BASELINE_SIM_TO_VALIDATION = 50  # src/sim/**    -> crate::validation::* (was 51; #4173 deleted new_with_validation + new_with_assembly_validation, removing 1 edge)
+BASELINE_SIM_TO_VALIDATION = 48  # src/sim/**    -> crate::validation::* (was 50; #4172 hoisted SimulationDiagnostics to fluxion_core::diagnostics, removing 2 edges: diagnostics_state.rs and thermal_model_core/mod.rs imports)
+# Issue #4172: The validation telemetry SimulationDiagnostics was hoisted from
+# fluxion::validation::diagnostics to fluxion_core::diagnostics. This broke 2
+# sim->validation edges:
+#   - src/sim/thermal_model_data/diagnostics_state.rs (import of validation::diagnostics::SimulationDiagnostics)
+#   - src/sim/thermal_model_core/mod.rs (import of validation::diagnostics::SimulationDiagnostics)
+# Both files now import from fluxion_core::diagnostics::SimulationDiagnostics instead.
 # Issue #3291 (umbrella: GaugeSolver production-path wiring + default
 # flip, PR2 commit `13648c3`): +22 sim->validation edges from
 # `src/sim/thermal_model_core.rs` and `src/sim/thermal_model_physics/
@@ -105,7 +111,7 @@ BASELINE_SIM_TO_VALIDATION = 50  # src/sim/**    -> crate::validation::* (was 51
 # proxy). Lowering this baseline is still reserved for the companion
 # cycle-removal work; raising (as here) accommodates a one-shot
 # feature-driven growth with rationale.
-BASELINE_VALIDATION_TO_SIM = 67  # src/validation/** -> crate::sim::* (was 58; +7 for #3291, +2 for #3571)
+BASELINE_VALIDATION_TO_SIM = 68  # src/validation/** -> crate::sim::* (was 67; +1 for #4172 / PR #4299 — `pub use crate::sim::diagnostics_ext::SimulationDiagnosticsExt` in src/validation/diagnostics.rs so the trait is re-exported from the historical path for compatibility; the data types themselves live in fluxion_core::diagnostics)
 # Issue #3291: +7 validation->sim edges. Validation now imports
 # `crate::sim::thermal_selector::{ThermalSelector, ZoneSolverKind,
 # ConductionSolverKind}` to drive the per-case selector in
@@ -136,7 +142,7 @@ BASELINE_VALIDATION_TO_SIM = 67  # src/validation/** -> crate::sim::* (was 58; +
 # for the placeholder-completion work tracked by #2980. Lowering this
 # baseline is still reserved for the companion cycle-removal work; raising
 # (as here) accommodates a one-shot feature-driven growth with rationale.
-BASELINE_VALIDATION_TO_PHYSICS = 65  # src/validation/** -> crate::physics::* (was 62; +3 for #2980)
+BASELINE_VALIDATION_TO_PHYSICS = 62  # src/validation/** -> crate::physics::* (was 65; -3 for #4172 / PR #4299 — the cycle removal leaves validation->physics reduced by 3 edges as composite types drop refs to physics constants now hosted in fluxion_core::physics_constants).
 BASELINE_VALIDATION_TO_WEATHER = 25  # src/validation/** -> crate::weather::* (was 23; +2 for #2980)
 
 

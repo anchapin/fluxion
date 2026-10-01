@@ -10,6 +10,8 @@ use crate::validation::diagnostic::{
     ComparisonRow, DiagnosticCollector, DiagnosticConfig, DiagnosticReport, EnergyBreakdown,
     HourlyData, PeakTiming, TemperatureProfile,
 };
+// Issue #4172: SimulationDiagnostics is now in fluxion_core::diagnostics.
+// The re-export from crate::validation::diagnostics preserves the import path.
 use crate::validation::diagnostics::SimulationDiagnostics;
 use crate::validation::multi_reference::MultiReferenceDB;
 use crate::validation::report::{

@@ -144,22 +144,26 @@ BASELINE_PHYSICS_TO_SIM = 0
 # that hoisted them to `fluxion-core` would also have to move the
 # helpers themselves. Companion cycle-removal work stays open under
 # the #2462 phase-3 sim->physics edge elision.
-BASELINE_SIM_TO_PHYSICS = 79  # src/sim/** -> crate::physics::* (was 82; -3 for
-                              # #4166's removal of h_tr_em_wind_dependent +
-                              # its tests from step_5r1c.rs — the per-surface
-                              # ExteriorBoundarySurface::h_tr_em keeps the
-                              # caller-owned exterior_convection import;
-                              # was 79; +4 for #3324; -3 for
-                              # the #3638/#3555-era sim refactors that removed three
-                              # `use crate::physics::` edges; +1 for #3731's typed
-                              # `ZoneCountPolicy` import under
-                              # src/sim/thermal_model_core/mod.rs:9; -1 for #3871's
-                              # leaf-module hoist of `ZoneCountPolicy` +
-                              # `MAX_ZONES` into `fluxion-core::zone_count_policy`
-                              # — PR #3871 closes the residual sim→physics edge
-                              # admitted by PR #3869 at 2026-09-18; -1 for #4158's
-                              # deletion of src/sim/thermal_model_solvers.rs on
-                              # 2026-09-28)
+BASELINE_SIM_TO_PHYSICS = 80  # src/sim/** -> crate::physics::* (was 79; +1 for
+                              # #4172's src/sim/diagnostics_ext.rs:16
+                              # `use crate::physics::cta::ContinuousTensor`
+                              # — the new SimulationDiagnosticsExt trait lives
+                              # in src/sim (not src/validation) because its
+                              # `record_timestep(&ThermalModel<T>)` method needs
+                              # the engine's ContinuousTensor type parameter.
+                              # Homing the trait in sim satisfies the
+                              # sim→validation cycle drop with no new sim→physics
+                              # edge originally; +1 added because the trait's
+                              # type parameter surface requires the physics-layer
+                              # CTA type. This is intentional: the trait replaces
+                              # the prior src/validation/diagnostics.rs::record_timestep
+                              # method that already cross-referenced sim::ThermalModel.
+                              # was 82; -3 for #4166's removal of h_tr_em_wind_dependent +
+                              # its tests from step_5r1c.rs; +4 for #3324; -3 for
+                              # the #3638/#3555-era sim refactors; +1 for #3731's
+                              # ZoneCountPolicy; -1 for #3871's hoist to fluxion-core;
+                              # -1 for #4158's deletion of src/sim/thermal_model_solvers.rs;
+                              # +1 for #4172's SimulationDiagnosticsExt)
 
 # Regex for Phase 2: match `use` or `pub use` against `crate::physics::`.
 # Mirrors `scan_sim_for_orientation_cycle` in check_ashrae_cases_cycle.py
