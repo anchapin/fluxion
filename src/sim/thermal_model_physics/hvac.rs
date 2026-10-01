@@ -40,9 +40,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ///   - Air → Surface → Mass → Outdoor (via `h_tr_ms` × `h_tr_em` chain, captured by
     ///     H_tr,1 coupling)
     ///   - Air → Outdoor via windows (`h_tr_w`)
-    ///   - Air → Outdoor via ventilation (`h_ve` is already implicit in the air node
-    ///     heat balance that produces T_free; `T_free` includes the h_ve term in its
-    ///     `den` denominator).
+    ///   - Air → Outdoor via ventilation (`h_ve`, explicit in the coefficient since
+    ///     Issue #4241; previously claimed implicit via `T_free`, which was incorrect
+    ///     — embedding `h_ve` in `T_free` puts it in the driving temperature, not
+    ///     in the coefficient).
     ///
     /// # History (Issue #1457)
     ///
@@ -66,23 +67,56 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // in this function - it's only used for internal mass dynamics, not for
         // the building-to-outdoor HVAC coupling.
 
-        // Issue #4241: Unified conductance for 5R1C/9R4C (was #4240).
+        // Issue #4156: Unified conductance (per Alex 2026-09-29, option #2).
         // The HVAC coefficient is the total effective conductance from the
         // zone air node to the outdoor boundary:
         //   h_coeff = (h_tr_w + h_ve) + h_interior_path
         // where:
         //   - (h_tr_w + h_ve) is the direct exterior path (windows + ventilation)
-        //   - h_interior_path is the air→surface→mass series path:
-        //     - 5R1C: h_tr_is * h_tr_ms / (h_tr_is + h_tr_ms)
-        //     - 9R4C: derived_h_tr_3 (ISO 13790 combined air-to-mass conductance)
+        //   - h_interior_path is the air→surface→mass series path (ISO 13790 §C.3)
+        //
+        // For 5R1C: h_interior_path = h_tr_is*h_tr_ms/(h_tr_is+h_tr_ms)
+        // For 9R4C: h_interior_path = h_tr_is*h_ms_9r4c/(h_tr_is+h_ms_9r4c),
+        //   where h_ms_9r4c = h_tr_ms_wall + h_tr_ms_roof + h_tr_ms_floor
+        //   (parallel sum of per-surface mass couplings).
+        //
+        // The 9R4C-specific derived_h_tr_3 is NOT used here — it includes h_ve
+        // and h_tr_w in its derivation, which would double-count those terms.
         //
         // Issue #2227: h_tr_me is the coupling between envelope mass and internal mass
         // (furniture/partitions), NOT the building-to-outdoor coupling. Using h_tr_me
         // would incorrectly include furniture thermal mass in the HVAC demand calculation.
         let h_interior_path = if self.0.hvac.thermal_model_type == ThermalModelType::NineRFourC {
-            // 9R4C: derived_h_tr_3 (≈ 42.66 W/K for Case 900) is the effective
-            // thermal coupling from zone air to the building's thermal mass.
-            self.0.conduction.derived_h_tr_3.as_ref()[zone_idx]
+            // 9R4C: Derive equivalent single h_tr_ms from per-surface values.
+            // The three mass couplings (wall, roof, floor) are in parallel
+            // from the interior surface node, so they sum.
+            let h_ms_wall = self
+                .0
+                .conduction
+                .h_tr_ms_wall
+                .as_ref()
+                .and_then(|v| v.as_ref().get(zone_idx).copied())
+                .unwrap_or(0.0);
+            let h_ms_roof = self
+                .0
+                .conduction
+                .h_tr_ms_roof
+                .as_ref()
+                .and_then(|v| v.as_ref().get(zone_idx).copied())
+                .unwrap_or(0.0);
+            let h_ms_floor = self
+                .0
+                .conduction
+                .h_tr_ms_floor
+                .as_ref()
+                .and_then(|v| v.as_ref().get(zone_idx).copied())
+                .unwrap_or(0.0);
+            let h_ms_9r4c = h_ms_wall + h_ms_roof + h_ms_floor;
+            if h_tr_is + h_ms_9r4c > 0.0 {
+                h_tr_is * h_ms_9r4c / (h_tr_is + h_ms_9r4c)
+            } else {
+                0.0
+            }
         } else {
             // 5R1C/6R2C: ISO 13790 §C.3 series combination of air-to-surface
             // film (h_tr_is) and surface-to-mass coupling (h_tr_ms)

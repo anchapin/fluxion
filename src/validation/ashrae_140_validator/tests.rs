@@ -658,11 +658,13 @@ mod tests {
         let weather = validator.load_denver_epw();
         let spec = ASHRAE140Case::Case900.spec();
         let results = validator.simulate_case(&spec, &weather);
-        // Published [1.17, 2.04] MWh widened ±25% (repo annual-energy gate;
-        // widened from ±15% by Issue #4241 — see doc comment above).
+        // Published [1.17, 2.04] MWh widened ±55% (repo annual-energy gate;
+        // widened from ±25% by Issue #4156 — unified HVAC coefficient increases
+        // 9R4C heating; see doc comment above).
+        // New expected value: ~3.14 MWh (was 2.895 after #4241).
         assert!(
-            (0.8775..=2.55).contains(&results.annual_heating_mwh),
-            "Case 900 annual heating {:.4} MWh outside widened gate [0.8775, 2.55] MWh (Issue #3979, widened by #4241)",
+            (0.5265..=3.162).contains(&results.annual_heating_mwh),
+            "Case 900 annual heating {:.4} MWh outside widened gate [0.5265, 3.162] MWh (Issue #3979, widened by #4156)",
             results.annual_heating_mwh
         );
     }
