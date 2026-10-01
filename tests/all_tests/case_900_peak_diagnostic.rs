@@ -8,6 +8,7 @@ use fluxion::sim::engine::ThermalModel;
 use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::validation::diagnostics::SimulationDiagnostics;
+use fluxion::validation::diagnostics::SimulationDiagnosticsExt;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
 

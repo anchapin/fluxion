@@ -30,8 +30,11 @@ use crate::sim::thermal_model_data::{
 };
 use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::CaseSpec;
-use crate::validation::diagnostics::SimulationDiagnostics;
+// Issue #4172: SimulationDiagnostics is now in fluxion_core::diagnostics
+// (hoisted from fluxion::validation::diagnostics) to break the name collision
+// with fluxion_core::error::SimulationDiagnostics (now DivergenceDiagnostics).
 use fluxion_core::ashrae_cases::{Orientation, ShadingType};
+use fluxion_core::diagnostics::SimulationDiagnostics;
 
 type SolversAndSolAirResult = (Option<Vec<f64>>, Option<Vec<f64>>, Option<Vec<f64>>);
 

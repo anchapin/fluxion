@@ -13,7 +13,7 @@
 //! bindings and engine code converge on. It lives in the `fluxion-core` leaf
 //! crate so it can be shared without pulling in heavy dependencies: the only
 //! crates used here are `thiserror` (the enum) and `serde` (the
-//! [`SimulationDiagnostics`] payload), both inside the leaf's dependency
+//! [`DivergenceDiagnostics`] payload), both inside the leaf's dependency
 //! budget (see `scripts/check_fluxion_core_dep_budget.py`).
 //!
 //! [`FluxionError`] is deliberately dependency-light and `Clone`, so binding
@@ -30,7 +30,7 @@ use thiserror::Error;
 /// (per-timestep zone temperatures, energy-balance residual). When the
 /// REST handler or Python binding detects divergence (NaN / infinity /
 /// energy-balance violation / non-convergence), it builds a
-/// `SimulationDiagnostics` from that data and threads it into
+/// `DivergenceDiagnostics` from that data and threads it into
 /// `FluxionError::Simulation` so clients get failing-timestep,
 /// failing-zone, residual and last-known-good-timestep attribution instead
 /// of a plain string.
@@ -42,8 +42,14 @@ use thiserror::Error;
 /// (Hoisted verbatim from `fluxion::api::error`, issue #2547, so the Python
 /// `SimulationError.diagnostics` attribute and the REST
 /// `ApiError::SimulationFailed` envelope keep byte-identical payloads.)
+///
+/// Renamed from `SimulationDiagnostics` in issue #4172 to resolve the name
+/// collision with `fluxion_core::diagnostics::SimulationDiagnostics` (the
+/// validation telemetry accumulator). A `pub use` alias is retained under
+/// the old name for one release cycle to avoid silent breakage in
+/// downstream code.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct SimulationDiagnostics {
+pub struct DivergenceDiagnostics {
     /// First timestep index (0-based, hourly) at which divergence was
     /// detected — a NaN / infinity in the zone temperature trace, or the
     /// timestep at which the energy-balance residual exceeded tolerance.
@@ -65,7 +71,14 @@ pub struct SimulationDiagnostics {
     pub last_known_good_timestep: u64,
 }
 
-impl SimulationDiagnostics {
+/// Backward-compatibility alias — issue #4172 renamed the type to
+/// `DivergenceDiagnostics` to avoid the name collision with
+/// `fluxion_core::diagnostics::SimulationDiagnostics`. Downstream code
+/// importing `SimulationDiagnostics` from this module will continue to work
+/// for one release cycle.
+pub use DivergenceDiagnostics as SimulationDiagnostics;
+
+impl DivergenceDiagnostics {
     /// Construct a diagnostics record from the per-zone hourly temperature
     /// trace that `ThermalModel::get_hourly_temperatures` already collects.
     ///
@@ -99,7 +112,7 @@ impl SimulationDiagnostics {
         let failing_timestep = failing_timestep?;
         let last_known_good = failing_timestep.saturating_sub(1);
 
-        Some(SimulationDiagnostics {
+        Some(DivergenceDiagnostics {
             failing_timestep,
             failing_zone,
             max_residual_pct: 0.0,
@@ -130,11 +143,11 @@ pub enum FluxionError {
     Surrogate(String),
 
     /// Simulation error (maps to `SimulationError` in Python). Carries an
-    /// optional [`SimulationDiagnostics`] so clients get
+    /// optional [`DivergenceDiagnostics`] so clients get
     /// failing-timestep / failing-zone attribution instead of a bare
     /// message string.
     #[error("Simulation error: {0}")]
-    Simulation(String, Option<SimulationDiagnostics>),
+    Simulation(String, Option<DivergenceDiagnostics>),
 }
 
 /// Convenience alias for fallible Fluxion engine operations.
@@ -186,18 +199,18 @@ mod tests {
     }
 
     #[test]
-    fn test_simulation_diagnostics_from_clean_trace_is_none() {
+    fn test_divergence_diagnostics_from_clean_trace_is_none() {
         let trace = vec![vec![20.0, 20.5, 21.0]];
-        assert!(SimulationDiagnostics::from_temperature_trace(&trace).is_none());
+        assert!(DivergenceDiagnostics::from_temperature_trace(&trace).is_none());
     }
 
     #[test]
-    fn test_simulation_diagnostics_from_nan_trace() {
+    fn test_divergence_diagnostics_from_nan_trace() {
         let trace = vec![
             vec![20.0, 21.0, f64::NAN, 22.0],
             vec![20.0, 21.0, 22.0, 23.0],
         ];
-        let diag = SimulationDiagnostics::from_temperature_trace(&trace)
+        let diag = DivergenceDiagnostics::from_temperature_trace(&trace)
             .expect("NaN should produce diagnostics");
         assert_eq!(diag.failing_timestep, 2);
         assert_eq!(diag.failing_zone.as_deref(), Some("zone_0"));
@@ -206,15 +219,15 @@ mod tests {
     }
 
     #[test]
-    fn test_simulation_diagnostics_serde_round_trip() {
-        let diag = SimulationDiagnostics {
+    fn test_divergence_diagnostics_serde_round_trip() {
+        let diag = DivergenceDiagnostics {
             failing_timestep: 42,
             failing_zone: Some("zone_3".to_string()),
             max_residual_pct: 137.5,
             last_known_good_timestep: 41,
         };
         let json = serde_json::to_string(&diag).unwrap();
-        let back: SimulationDiagnostics = serde_json::from_str(&json).unwrap();
+        let back: DivergenceDiagnostics = serde_json::from_str(&json).unwrap();
         assert_eq!(diag, back);
         // Verify JSON field names match the spec in issue #2547.
         assert!(json.contains("\"failing_timestep\":42"));
