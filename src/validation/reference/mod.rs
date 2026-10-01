@@ -173,7 +173,7 @@ pub fn load_series_800_reference(
     let case_num: u32 = case_num_str.parse().map_err(|_| {
         ReferenceDataError::InvalidValue(format!("Invalid case number: {}", case_num_str))
     })?;
-    let path = Path::new("data/reference/ashrae140/series_800.csv");
+    let path = Path::new("data/synthetic/ashrae140/series_800.csv");
 
     if !path.exists() {
         return Err(ReferenceDataError::FileNotFound(
@@ -217,7 +217,7 @@ pub fn load_series_195_reference(
     let case_num: u32 = case_num_str.parse().map_err(|_| {
         ReferenceDataError::InvalidValue(format!("Invalid case number: {}", case_num_str))
     })?;
-    let path = Path::new("data/reference/ashrae140/series_195.csv");
+    let path = Path::new("data/synthetic/ashrae140/series_195.csv");
 
     if !path.exists() {
         return Err(ReferenceDataError::FileNotFound(
