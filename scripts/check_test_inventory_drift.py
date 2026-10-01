@@ -272,7 +272,8 @@ BASELINE_LIB_IGNORED = 9
 #   test_box_solid_fraction_returns_none_without_reference_data,
 #   test_box_apparent_cp_at_wall_delegates_to_material). Stacked on PR-A's
 #   8821 baseline.
-BASELINE_WORKSPACE_TESTS = 8887  # 2026-09-30 (Issue #4167, PR #4292 supersede): 8884 -> 8887 — 3 new validator tests (same 3 as BASELINE_LIB_TESTS bump; counts once in lib and once in workspace). Stacked on #4241's 8884 baseline.
+BASELINE_WORKSPACE_TESTS = 8889  # 2026-09-30 (Issue #4156, PR #4265 supersede): 8887 -> 8889 — 2 new diagnostic tests in tests/all_tests/hvac_coefficient_diagnostic_4156.rs (Case 600/900 unified coefficient pre/post ratios; mirrors the prior hvac_coefficient_diagnostic_4241.rs added by Issue #4241). Stacked on the #4292 supersede's 8887 baseline.
+                                   # 2026-09-30 (Issue #4167, PR #4292 supersede): 8884 -> 8887 — 3 new validator tests (same 3 as BASELINE_LIB_TESTS bump; counts once in lib and once in workspace). Stacked on #4241's 8884 baseline.
                                    # 2026-09-29 (Issue #4241): 8881 -> 8884 — 2 new diagnostic tests in tests/all_tests/hvac_coefficient_diagnostic_4241.rs (Case 600/900 pre/post coefficient ratios) + 1 analytic residual test counted in lib. Stacked on #4192's 8881 baseline.
                                   # 2026-09-29 (Issue #4192): 8873 -> 8881 — collapse triplicated EPW decoder; 8 new tests in fluxion-core/src/weather/epw.rs (shared-fixture agreement, truncated/missing-field skips, 8760-count fixture guard, sentinel coercion). Stacked on #4155's 8873 baseline.
                                   # Previous: 2026-09-28: 8836 -> 8839 — three new `fabric_case_*_measurement` tests in `tests/all_tests/ashrae_140_fabric_multiselector.rs` (PR-A+2 fabric harness, Refs #3986-A+2 / #4117). CI's authoritative cargo --list count rises 8836 -> 8839 (local 8131). Ratchet must equal or exceed CI live count per Issue #3442 protocol.
@@ -837,13 +838,27 @@ def main() -> int:
     # run whose cargo cross-check failed) are compared against
     # ``metrics_ast``, and cargo-verified live counts (``--verify`` with
     # ``verify.matched``) against ``metrics``. Baselines without
-    # ``metrics_ast`` keep the previous single-dict behavior.
+    # ``metrics_ast`` keep the previous single-dict behavior. Newer
+    # baselines (PR #4265 supersede, Issue #4156) carry the canonical
+    # numbers in ``totals`` and drop the duplicated ``metrics`` /
+    # ``metrics_ast`` blocks; read from ``totals`` when those blocks are
+    # absent.
     live_is_ast = (not args.verify) or not bool(
         (live.get("verify") or {}).get("matched")
     )
-    baseline_metrics = baseline.get("metrics", {})
-    if live_is_ast and "metrics_ast" in baseline:
-        baseline_metrics = baseline["metrics_ast"]
+    if "metrics" in baseline or "metrics_ast" in baseline:
+        baseline_metrics = baseline.get("metrics", {})
+        if live_is_ast and "metrics_ast" in baseline:
+            baseline_metrics = baseline["metrics_ast"]
+    else:
+        baseline_totals = baseline.get("totals", {})
+        baseline_metrics = {
+            "lib_tests": baseline_totals.get("lib_tests_root", 0),
+            "lib_ignored": baseline_totals.get("lib_ignored_root", 0),
+            "workspace_tests": baseline_totals.get("workspace_tests", 0),
+            "workspace_ignored": baseline_totals.get("workspace_ignored", 0),
+            "test_binaries": baseline_totals.get("test_binaries", 0),
+        }
     base_lib = baseline_metrics.get("lib_tests", 0)
     base_lib_ignored = baseline_metrics.get("lib_ignored", 0)
     base_workspace = baseline_metrics.get("workspace_tests", 0)
