@@ -1,0 +1,806 @@
+{
+  "_source": "ASHRAE 140-2023 Informative Annex B8 Section B8.2 (Std140_GC_Results.pdf), Tables B8.2-1 through B8.2-11",
+  "_scope": "Section 8, Ground-Coupled Slab-on-Grade Analytical Verification Tests",
+  "_DISCLAIMER": "Every table in the source carries this note verbatim: \"The statistics in the tables below are based on the Standard 140 informative example results. These statistics do not have any substantial importance and are not to be interpreted as acceptance criteria.\" Only the GC10a analytical solution and the two physics identities below are hard targets. Everything else is diagnostic context.",
+  "_verified_numerical_models": "TRNSYS 16.1 (TESS), FLUENT 6.0.20 (PAAET), MATLAB 7.0.4.365 R14 (Dublin Institute of Technology). These are verified numerical models, not analytical solutions; their agreement is evidence, not proof.",
+  "_other_simulation_programs": [
+    "GHT (NREL)",
+    "SUNREL-GC 1.14.01 (NREL)",
+    "EnergyPlus 2.0.0.025 (GARD)",
+    "VA114 2.20/ISO-13370 (VABI)",
+    "ESP-r/BASESIMP (CETC)",
+    "BASECALC V1.0e (CETC)"
+  ],
+  "hard_targets": {
+    "GC10a_analytical_solution": {
+      "metric": "steady-state floor conduction",
+      "value_W": 2433,
+      "derivation": "Delsante, Stokes and Walsh (1983), CSIRO",
+      "assumption": "semi-infinite solid (E and F infinite)",
+      "verified_numerical": {
+        "TRNSYS_TESS": 2427,
+        "FLUENT_PAAET": 2425,
+        "MATLAB_DIT": 2432,
+        "min": 2425,
+        "max": 2432,
+        "published_spread_pct": 0.3
+      },
+      "proposed_criterion_pct": 0.5,
+      "note": "the three verified numerical models all sit within 0.33% of the analytical value"
+    },
+    "zone_load_equals_floor_conduction": {
+      "rule": "(zone heating load) - (floor conduction) must be approximately zero for the b-series",
+      "observed_steady_state_W": {
+        "min": 0,
+        "max": 6
+      },
+      "observed_steady_periodic_kWh": {
+        "min": 0,
+        "max": 54
+      },
+      "proposed_tolerance_W": 10,
+      "proposed_tolerance_kWh": 60,
+      "why": "a physics identity, not an example result, so it is a legitimate hard check"
+    },
+    "zone_air_temperature": {
+      "value_C": 30.0,
+      "why": "every Section 8 case holds the zone at exactly 30.0 C in every participant and table"
+    },
+    "minimum_outdoor_drybulb": {
+      "value_C": [
+        2.0,
+        2.1
+      ],
+      "occurs": "8 January, hour 4",
+      "why": "a property of the supplied weather files, so a mismatch means the file was read wrong"
+    }
+  },
+  "steady_state_floor_conduction_W": {
+    "GC10a": {
+      "TRNSYS_TESS": 2427,
+      "FLUENT_PAAET": 2425,
+      "MATLAB_DIT": 2432,
+      "min": 2425,
+      "max": 2432,
+      "published_spread_pct": 0.3
+    },
+    "GC30a": {
+      "TRNSYS_TESS": 2642,
+      "FLUENT_PAAET": 2585,
+      "MATLAB_DIT": 2695,
+      "min": 2585,
+      "max": 2695,
+      "published_spread_pct": 4.2
+    },
+    "GC30b": {
+      "TRNSYS_TESS": 2533,
+      "FLUENT_PAAET": 2504,
+      "MATLAB_DIT": 2570,
+      "min": 2504,
+      "max": 2570,
+      "published_spread_pct": 2.6,
+      "other_models_min": 2341,
+      "other_models_max": 2652
+    },
+    "GC30c": {
+      "TRNSYS_TESS": 2137,
+      "FLUENT_PAAET": 2123,
+      "MATLAB_DIT": 2154,
+      "min": 2123,
+      "max": 2154,
+      "published_spread_pct": 1.5,
+      "other_models_min": 1973,
+      "other_models_max": 2308
+    },
+    "GC60b": {
+      "TRNSYS_TESS": 2113,
+      "FLUENT_PAAET": 2104,
+      "MATLAB_DIT": 2128,
+      "min": 2104,
+      "max": 2128,
+      "published_spread_pct": 1.1,
+      "other_models_min": 1999,
+      "other_models_max": 2219
+    },
+    "GC65b": {
+      "TRNSYS_TESS": 1994,
+      "FLUENT_PAAET": 1991,
+      "MATLAB_DIT": 2004,
+      "min": 1991,
+      "max": 2004,
+      "published_spread_pct": 0.7,
+      "other_models_min": 1616,
+      "other_models_max": 1920
+    }
+  },
+  "steady_state_zone_heating_load_W": {
+    "GC30b": {
+      "other_models_min": 2341,
+      "other_models_max": 2652
+    },
+    "GC30c": {
+      "other_models_min": 2003,
+      "other_models_max": 2308
+    },
+    "GC60b": {
+      "other_models_min": 1999,
+      "other_models_max": 2219
+    },
+    "GC65b": {
+      "other_models_min": 1616,
+      "other_models_max": 1925
+    }
+  },
+  "steady_periodic_annual_floor_conduction_kWh": {
+    "GC40a": {
+      "TRNSYS_TESS": 23033,
+      "FLUENT_PAAET": 22761,
+      "MATLAB_DIT": 23609,
+      "min": 22761,
+      "max": 23609,
+      "published_spread_pct": 3.7
+    },
+    "GC40b": {
+      "TRNSYS_TESS": 22099,
+      "FLUENT_PAAET": 21932,
+      "MATLAB_DIT": 22513,
+      "min": 21932,
+      "max": 22513,
+      "published_spread_pct": 2.6,
+      "other_models_min": 20513,
+      "other_models_max": 23204
+    },
+    "GC45b": {
+      "TRNSYS_TESS": 32758,
+      "FLUENT_PAAET": 32456,
+      "MATLAB_DIT": 33483,
+      "min": 32456,
+      "max": 33483,
+      "published_spread_pct": 3.1,
+      "other_models_min": 30856,
+      "other_models_max": 33415
+    },
+    "GC50b": {
+      "TRNSYS_TESS": 277923,
+      "FLUENT_PAAET": 277988,
+      "MATLAB_DIT": 281418,
+      "min": 277923,
+      "max": 281418,
+      "published_spread_pct": 1.3,
+      "other_models_min": 289925,
+      "other_models_max": 324257
+    },
+    "GC55b": {
+      "TRNSYS_TESS": 35075,
+      "FLUENT_PAAET": 34879,
+      "MATLAB_DIT": 35491,
+      "min": 34879,
+      "max": 35491,
+      "published_spread_pct": 1.7,
+      "other_models_min": 31601,
+      "other_models_max": 39932
+    },
+    "GC70b": {
+      "TRNSYS_TESS": 17396,
+      "FLUENT_PAAET": 17434,
+      "MATLAB_DIT": 17552,
+      "min": 17396,
+      "max": 17552,
+      "published_spread_pct": 0.9,
+      "other_models_min": 15553,
+      "other_models_max": 16817
+    },
+    "GC80b": {
+      "TRNSYS_TESS": 6029,
+      "FLUENT_PAAET": 5939,
+      "MATLAB_DIT": 6151,
+      "min": 5939,
+      "max": 6151,
+      "published_spread_pct": 3.5,
+      "other_models_min": 5661,
+      "other_models_max": 6059
+    },
+    "GC40c": {
+      "TRNSYS_TESS": 18649,
+      "FLUENT_PAAET": 18598,
+      "MATLAB_DIT": 18873,
+      "min": 18598,
+      "max": 18873,
+      "published_spread_pct": 1.5,
+      "other_models_min": 17285,
+      "other_models_max": 20255
+    },
+    "GC45c": {
+      "TRNSYS_TESS": 27004,
+      "FLUENT_PAAET": 26906,
+      "MATLAB_DIT": 27392,
+      "min": 26906,
+      "max": 27392,
+      "published_spread_pct": 1.8,
+      "other_models_min": 23849,
+      "other_models_max": 28707
+    },
+    "GC55c": {
+      "TRNSYS_TESS": 20760,
+      "FLUENT_PAAET": 20714,
+      "MATLAB_DIT": 20986,
+      "min": 20714,
+      "max": 20986,
+      "published_spread_pct": 1.3,
+      "other_models_min": 20172,
+      "other_models_max": 22570
+    },
+    "GC80c": {
+      "TRNSYS_TESS": 9192,
+      "FLUENT_PAAET": 9137,
+      "MATLAB_DIT": 9314,
+      "min": 9137,
+      "max": 9314,
+      "published_spread_pct": 1.9,
+      "other_models_min": 8635,
+      "other_models_max": 10073
+    }
+  },
+  "steady_periodic_annual_zone_heating_load_kWh": {
+    "GC40b": {
+      "other_models_min": 20513,
+      "other_models_max": 23204
+    },
+    "GC45b": {
+      "other_models_min": 30924,
+      "other_models_max": 33415
+    },
+    "GC50b": {
+      "other_models_min": 291502,
+      "other_models_max": 324257
+    },
+    "GC55b": {
+      "other_models_min": 31654,
+      "other_models_max": 39932
+    },
+    "GC70b": {
+      "other_models_min": 15553,
+      "other_models_max": 16865
+    },
+    "GC80b": {
+      "other_models_min": 5661,
+      "other_models_max": 6059
+    },
+    "GC40c": {
+      "other_models_min": 17545,
+      "other_models_max": 20255
+    },
+    "GC45c": {
+      "other_models_min": 24185,
+      "other_models_max": 28707
+    },
+    "GC55c": {
+      "other_models_min": 20221,
+      "other_models_max": 22570
+    },
+    "GC80c": {
+      "other_models_min": 8848,
+      "other_models_max": 10073
+    }
+  },
+  "steady_periodic_peak_hour_floor_conduction_W": {
+    "_note": "value with the date and hour each verified numerical model reported it",
+    "GC40a": {
+      "TRNSYS_TESS": [
+        3087,
+        "1-Feb",
+        12
+      ],
+      "FLUENT_PAAET": [
+        3042,
+        "1-Feb",
+        12
+      ],
+      "MATLAB_DIT": [
+        3174,
+        "1-Feb",
+        12
+      ],
+      "spread_pct": 4.2
+    },
+    "GC40b": {
+      "TRNSYS_TESS": [
+        2941,
+        "1-Feb",
+        13
+      ],
+      "FLUENT_PAAET": [
+        2914,
+        "3-Feb",
+        13
+      ],
+      "MATLAB_DIT": [
+        3002,
+        "2-Feb",
+        13
+      ],
+      "spread_pct": 3.0
+    },
+    "GC45b": {
+      "TRNSYS_TESS": [
+        4444,
+        "1-Feb",
+        13
+      ],
+      "FLUENT_PAAET": [
+        4396,
+        "2-Feb",
+        13
+      ],
+      "MATLAB_DIT": [
+        4551,
+        "2-Feb",
+        13
+      ],
+      "spread_pct": 3.5
+    },
+    "GC50b": {
+      "TRNSYS_TESS": [
+        34531,
+        "4-Feb",
+        13
+      ],
+      "FLUENT_PAAET": [
+        34510,
+        "3-Feb",
+        13
+      ],
+      "MATLAB_DIT": [
+        35033,
+        "3-Feb",
+        13
+      ],
+      "spread_pct": 1.5
+    },
+    "GC55b": {
+      "TRNSYS_TESS": [
+        4366,
+        "22-Jan",
+        13
+      ],
+      "FLUENT_PAAET": [
+        4336,
+        "21-Jan",
+        13
+      ],
+      "MATLAB_DIT": [
+        4427,
+        "21-Jan",
+        13
+      ],
+      "spread_pct": 2.1
+    },
+    "GC70b": {
+      "TRNSYS_TESS": [
+        2254,
+        "11-Feb",
+        16
+      ],
+      "FLUENT_PAAET": [
+        2259,
+        "11-Feb",
+        15
+      ],
+      "MATLAB_DIT": [
+        2276,
+        "11-Feb",
+        16
+      ],
+      "spread_pct": 1.0
+    },
+    "GC80b": {
+      "TRNSYS_TESS": [
+        776,
+        "7-Feb",
+        20
+      ],
+      "FLUENT_PAAET": [
+        763,
+        "8-Feb",
+        19
+      ],
+      "MATLAB_DIT": [
+        794,
+        "7-Feb",
+        19
+      ],
+      "spread_pct": 4.0
+    },
+    "GC40c": {
+      "TRNSYS_TESS": [
+        2454,
+        "7-Feb",
+        14
+      ],
+      "FLUENT_PAAET": [
+        2444,
+        "7-Feb",
+        14
+      ],
+      "MATLAB_DIT": [
+        2487,
+        "6-Feb",
+        14
+      ],
+      "spread_pct": 1.7
+    },
+    "GC45c": {
+      "TRNSYS_TESS": [
+        3634,
+        "4-Feb",
+        14
+      ],
+      "FLUENT_PAAET": [
+        3618,
+        "6-Feb",
+        14
+      ],
+      "MATLAB_DIT": [
+        3691,
+        "6-Feb",
+        14
+      ],
+      "spread_pct": 2.0
+    },
+    "GC55c": {
+      "TRNSYS_TESS": [
+        2710,
+        "4-Feb",
+        14
+      ],
+      "FLUENT_PAAET": [
+        2703,
+        "6-Feb",
+        14
+      ],
+      "MATLAB_DIT": [
+        2744,
+        "6-Feb",
+        14
+      ],
+      "spread_pct": 1.5
+    },
+    "GC80c": {
+      "TRNSYS_TESS": [
+        1190,
+        "9-Feb",
+        17
+      ],
+      "FLUENT_PAAET": [
+        1181,
+        "9-Feb",
+        17
+      ],
+      "MATLAB_DIT": [
+        1207,
+        "8-Feb",
+        17
+      ],
+      "spread_pct": 2.2
+    }
+  },
+  "phase_shift_hours_from_coldest_hour": {
+    "_reference_hour": "15 January, hour 4",
+    "GC40a": {
+      "TRNSYS_TESS": 416,
+      "FLUENT_PAAET": 416,
+      "MATLAB_DIT": 416,
+      "min": 416,
+      "max": 416,
+      "published_spread_pct": 0.0
+    },
+    "GC40b": {
+      "TRNSYS_TESS": 417,
+      "FLUENT_PAAET": 465,
+      "MATLAB_DIT": 441,
+      "min": 417,
+      "max": 465,
+      "published_spread_pct": 10.9
+    },
+    "GC45b": {
+      "TRNSYS_TESS": 417,
+      "FLUENT_PAAET": 441,
+      "MATLAB_DIT": 441,
+      "min": 417,
+      "max": 441,
+      "published_spread_pct": 5.5
+    },
+    "GC50b": {
+      "TRNSYS_TESS": 489,
+      "FLUENT_PAAET": 465,
+      "MATLAB_DIT": 465,
+      "min": 465,
+      "max": 489,
+      "published_spread_pct": 5.1
+    },
+    "GC55b": {
+      "TRNSYS_TESS": 177,
+      "FLUENT_PAAET": 153,
+      "MATLAB_DIT": 153,
+      "min": 153,
+      "max": 177,
+      "published_spread_pct": 14.9
+    },
+    "GC70b": {
+      "TRNSYS_TESS": 660,
+      "FLUENT_PAAET": 659,
+      "MATLAB_DIT": 660,
+      "min": 659,
+      "max": 660,
+      "published_spread_pct": 0.2
+    },
+    "GC80b": {
+      "TRNSYS_TESS": 568,
+      "FLUENT_PAAET": 591,
+      "MATLAB_DIT": 567,
+      "min": 567,
+      "max": 591,
+      "published_spread_pct": 4.2
+    },
+    "GC40c": {
+      "TRNSYS_TESS": 562,
+      "FLUENT_PAAET": 562,
+      "MATLAB_DIT": 538,
+      "min": 538,
+      "max": 562,
+      "published_spread_pct": 4.3
+    },
+    "GC45c": {
+      "TRNSYS_TESS": 490,
+      "FLUENT_PAAET": 538,
+      "MATLAB_DIT": 538,
+      "min": 490,
+      "max": 538,
+      "published_spread_pct": 9.2
+    },
+    "GC55c": {
+      "TRNSYS_TESS": 490,
+      "FLUENT_PAAET": 538,
+      "MATLAB_DIT": 538,
+      "min": 490,
+      "max": 538,
+      "published_spread_pct": 9.2
+    },
+    "GC80c": {
+      "TRNSYS_TESS": 613,
+      "FLUENT_PAAET": 613,
+      "MATLAB_DIT": 589,
+      "min": 589,
+      "max": 613,
+      "published_spread_pct": 4.0
+    },
+    "_note": "GC40a is the tightest diagnostic in the whole suite: all three models agree exactly at 416 h"
+  },
+  "delta_steady_state_conduction_W": {
+    "GC30a-GC10a": {
+      "TRNSYS_TESS": 214,
+      "FLUENT_PAAET": 160,
+      "MATLAB_DIT": 263,
+      "min": 160,
+      "max": 263,
+      "published_spread_pct": 48.5
+    },
+    "GC30a-GC30b": {
+      "TRNSYS_TESS": 109,
+      "FLUENT_PAAET": 81,
+      "MATLAB_DIT": 125,
+      "min": 81,
+      "max": 125,
+      "published_spread_pct": 41.7
+    },
+    "GC30a-GC30c": {
+      "TRNSYS_TESS": 505,
+      "FLUENT_PAAET": 462,
+      "MATLAB_DIT": 541,
+      "min": 462,
+      "max": 541,
+      "published_spread_pct": 15.6
+    },
+    "GC30b-GC60b": {
+      "TRNSYS_TESS": 420,
+      "FLUENT_PAAET": 400,
+      "MATLAB_DIT": 442,
+      "min": 400,
+      "max": 442,
+      "published_spread_pct": 10.0
+    },
+    "GC60b-GC65b": {
+      "TRNSYS_TESS": 120,
+      "FLUENT_PAAET": 114,
+      "MATLAB_DIT": 125,
+      "min": 114,
+      "max": 125,
+      "published_spread_pct": 9.3
+    },
+    "GC30b-GC65b": {
+      "TRNSYS_TESS": 539,
+      "FLUENT_PAAET": 513,
+      "MATLAB_DIT": 566,
+      "min": 513,
+      "max": 566,
+      "published_spread_pct": 9.9
+    }
+  },
+  "delta_steady_periodic_annual_conduction_kWh": {
+    "GC40a-GC40b": {
+      "TRNSYS_TESS": 933,
+      "FLUENT_PAAET": 829,
+      "MATLAB_DIT": 1096,
+      "min": 829,
+      "max": 1096,
+      "published_spread_pct": 28.1
+    },
+    "GC45b-GC40b": {
+      "TRNSYS_TESS": 10659,
+      "FLUENT_PAAET": 10524,
+      "MATLAB_DIT": 10971,
+      "min": 10524,
+      "max": 10971,
+      "published_spread_pct": 4.2
+    },
+    "GC40b-GC50b": {
+      "TRNSYS_TESS": 15846,
+      "FLUENT_PAAET": 15677,
+      "MATLAB_DIT": 16181,
+      "min": 15677,
+      "max": 16181,
+      "published_spread_pct": 3.2
+    },
+    "GC55b-GC40b": {
+      "TRNSYS_TESS": 12976,
+      "FLUENT_PAAET": 12947,
+      "MATLAB_DIT": 12978,
+      "min": 12947,
+      "max": 12978,
+      "published_spread_pct": 0.2
+    },
+    "GC40b-GC70b": {
+      "TRNSYS_TESS": 4704,
+      "FLUENT_PAAET": 4498,
+      "MATLAB_DIT": 4961,
+      "min": 4498,
+      "max": 4961,
+      "published_spread_pct": 9.8
+    },
+    "GC40b-GC80b": {
+      "TRNSYS_TESS": 16071,
+      "FLUENT_PAAET": 15993,
+      "MATLAB_DIT": 16362,
+      "min": 15993,
+      "max": 16362,
+      "published_spread_pct": 2.3
+    },
+    "GC45c-GC40c": {
+      "TRNSYS_TESS": 8355,
+      "FLUENT_PAAET": 8309,
+      "MATLAB_DIT": 8519,
+      "min": 8309,
+      "max": 8519,
+      "published_spread_pct": 2.5
+    },
+    "GC55c-GC40c": {
+      "TRNSYS_TESS": 2111,
+      "FLUENT_PAAET": 2117,
+      "MATLAB_DIT": 2113,
+      "min": 2111,
+      "max": 2117,
+      "published_spread_pct": 0.3
+    },
+    "GC40c-GC80c": {
+      "TRNSYS_TESS": 9457,
+      "FLUENT_PAAET": 9461,
+      "MATLAB_DIT": 9559,
+      "min": 9457,
+      "max": 9559,
+      "published_spread_pct": 1.1
+    },
+    "_GC50b_normalization": "GC50b / (80 x 80) x (12 x 12)"
+  },
+  "delta_steady_periodic_peak_hour_conduction_W": {
+    "GC40a-GC40b": {
+      "TRNSYS_TESS": 145,
+      "FLUENT_PAAET": 128,
+      "MATLAB_DIT": 171,
+      "min": 128,
+      "max": 171,
+      "published_spread_pct": 29.1
+    },
+    "GC45b-GC40b": {
+      "TRNSYS_TESS": 1503,
+      "FLUENT_PAAET": 1482,
+      "MATLAB_DIT": 1549,
+      "min": 1482,
+      "max": 1549,
+      "published_spread_pct": 4.4
+    },
+    "GC40b-GC50b": {
+      "TRNSYS_TESS": 2164,
+      "FLUENT_PAAET": 2138,
+      "MATLAB_DIT": 2214,
+      "min": 2138,
+      "max": 2214,
+      "published_spread_pct": 3.5
+    },
+    "GC55b-GC40b": {
+      "TRNSYS_TESS": 1425,
+      "FLUENT_PAAET": 1422,
+      "MATLAB_DIT": 1425,
+      "min": 1422,
+      "max": 1425,
+      "published_spread_pct": 0.2
+    },
+    "GC40b-GC70b": {
+      "TRNSYS_TESS": 687,
+      "FLUENT_PAAET": 655,
+      "MATLAB_DIT": 726,
+      "min": 655,
+      "max": 726,
+      "published_spread_pct": 10.2
+    },
+    "GC40b-GC80b": {
+      "TRNSYS_TESS": 2166,
+      "FLUENT_PAAET": 2151,
+      "MATLAB_DIT": 2208,
+      "min": 2151,
+      "max": 2208,
+      "published_spread_pct": 2.6
+    },
+    "GC45c-GC40c": {
+      "TRNSYS_TESS": 1180,
+      "FLUENT_PAAET": 1173,
+      "MATLAB_DIT": 1205,
+      "min": 1173,
+      "max": 1205,
+      "published_spread_pct": 2.7
+    },
+    "GC55c-GC40c": {
+      "TRNSYS_TESS": 256,
+      "FLUENT_PAAET": 258,
+      "MATLAB_DIT": 258,
+      "min": 256,
+      "max": 258,
+      "published_spread_pct": 0.9
+    },
+    "GC40c-GC80c": {
+      "TRNSYS_TESS": 1265,
+      "FLUENT_PAAET": 1264,
+      "MATLAB_DIT": 1279,
+      "min": 1264,
+      "max": 1279,
+      "published_spread_pct": 1.2
+    }
+  },
+  "case_variants": {
+    "GC10a": "linear dT",
+    "GC30a": "adiabatic wall, ideal films",
+    "GC30b": "adiabatic wall, h = 100",
+    "GC30c": "h,int = 7.95; h,ext = ideal",
+    "GC60b": "h,int = 7.95; h,ext = 100",
+    "GC65b": "h,int = 7.95; h,ext = 11.95",
+    "GC40a": "steady-periodic, ideal films",
+    "GC40b": "steady-periodic, h = 100",
+    "GC45b": "aspect ratio 36 x 4",
+    "GC50b": "large slab (results divided by 10 in charts)",
+    "GC55b": "2 m depth",
+    "GC70b": "h,int = 7.95; h,ext = 11.95",
+    "GC80b": "k = 0.5",
+    "GC40c": "h,int = 7.95; h,ext = ideal",
+    "GC45c": "aspect ratio 36 x 4",
+    "GC55c": "5 m depth",
+    "GC80c": "k = 0.85"
+  },
+  "weather_files": {
+    "GC30a": "GC30a.TM2",
+    "GC30b": "GC30b.TM2",
+    "GC65b": "GC65b.TM2",
+    "GC40a": "GC40a.TM2",
+    "GC40b": "GC40b.TM2",
+    "GC70b": "GC70b.TM2",
+    "_description": "TMY2 format; a-series 40.0 m/s wind, b-series 19.9 m/s, GC65b/GC70b 1.0 m/s; 10 C constant ODB for the 30-series, harmonically varying about a 10 C mean for the 40-series"
+  }
+}

@@ -135,6 +135,7 @@ Every active gate under `scripts/check_*.py` (55 scripts at head) is wired into 
 | `scripts/check_audit_ignores_fresh.py` | `.cargo/audit.toml` ignore-block removal-condition audit (#2912) | `security.yml`, `rumqttc-upstream.yml` | #6 |
 | `scripts/check_audit_deny_agree.py` | `.cargo/audit.toml` ↔ `deny.toml` advisory-ignore drift gate: deny ⊆ audit + `deny-scope-exempt` marker contract (#3654) | `security.yml` | #6 |
 | `scripts/check_beta_soak_gate.py` | β-soak 30-night GaugeSolver production-path gate (Issue #3286) | `nightly-ashrae-140-gauge.yml` | #5 |
+| `scripts/check_bestest_csv.py` | Section 7 BESTEST-GSV output contract: detect malformed timestamps, packed arrays, headers, and duplicate case keys in the CSV `fluxion validate --report` emits (Refs #4276) | `scripts-tests.yml` | #6 |
 | `scripts/check_branch_protection_diff.py` | `develop` branch-protection diagnostic vs. `release_gates.yaml` (#3383) — diagnostic half of `scripts/apply_branch_protection.py`, **does not** apply PUTs | operator diagnostic (run manually before/after a branch-protection PUT) | #6 |
 | `scripts/check_cli_doc_stubs.py` | `fluxion` CLI stub-path fail-loud contract per issue `#2947` (#3550) | `docs-hygiene.yml`, pre-commit (`manual`) | #6 |
 | `scripts/check_concurrency_keys.py` | ADR-0015 per-`head_sha` concurrency block on every workflow (#3366 / #3444) | `scripts-tests.yml` | #6 |
