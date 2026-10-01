@@ -1,12 +1,25 @@
 // Copyright 2026 Fluxion. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-//! GENERATED FILE — WD600 (ASHRAE 140 Annex B) hourly dry-bulb temperatures.
+//! GENERATED FILE: WD600 hourly dry-bulb temperatures.
 //!
 //! 8760 comma-separated values in degrees C at 0.1 degree resolution, extracted
-//! from column 7 (dry bulb) of `assets/weather/WD600.epw` — the canonical
-//! ASHRAE 140 Section B2 synthetic weather drive used by the engine-side
-//! Case 600 validation suite (`tests/ashrae_140_case_600_series.rs`).
+//! from EPW field 6, zero-based (dry bulb), of `assets/weather/WD600.epw`, used
+//! by the engine-side Case 600 validation suite
+//! (`tests/ashrae_140_case_600_series.rs`).
+//!
+//! Provenance. WD600 belongs to ASHRAE 140 **Section 6** (Weather Driver Tests).
+//! It is **not** synthetic and is **not** from Annex B; an earlier version of
+//! this comment claimed both. It is real Denver Intl AP TMY3 data (WMO 725650,
+//! 39.833 N, 104.650 W, UTC-7, elevation 1650 m).
+//!
+//! WD600 is byte-identical to WD100 in every EPW field except field 32 (albedo),
+//! which is 0.2 here and 0 in WD100. That single-field difference is the whole
+//! point of the WD100/WD600 pair: it isolates ground-reflected shortwave. Dry
+//! bulb is therefore identical between the two files, so this series is equally
+//! valid as the WD100 dry-bulb series and must not be read as WD600-specific.
+//!
+//! See `assets/weather/README.md` for the full provenance record and checksums.
 //!
 //! The companion fidelity test
 //! `weather::tests::wd600_schedule_matches_epw_fixture` (native-only) re-parses

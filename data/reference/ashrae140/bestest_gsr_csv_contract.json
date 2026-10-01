@@ -1,0 +1,213 @@
+{
+  "_purpose": "Machine-readable contract for the results CSV fluxion emits for the Section 7 (Building Thermal Envelope and Fabric Load) cases, consumed by BESTEST-GSR results/bestest_populate_report.rb to populate the ASHRAE 140 Standard Output Report.",
+  "_scope": "Section 7 only. These cases run IDEAL heating and cooling with unlimited capacity, so the reported quantities are envelope LOADS expressed as energy (annual MWh) and hourly integrated peak loads (kW). This is not equipment modelling. The bestest_ce_reporting (144 fields, Section 9 DX equipment) and bestest_he_reporting (7 fields, Section 10 furnace) columns report what a machine CONSUMED and are out of scope until the equipment layer exists.",
+  "consumer": {
+    "repo": "NatLabRockies/BESTEST-GSR",
+    "script": "results/bestest_populate_report.rb",
+    "filename_required": "workflow_results.csv",
+    "run_from": "results/",
+    "requires": "ruby + rubyXL gem",
+    "requires_energyplus": false,
+    "template": "results/resources/RESULTS5-2A.xlsx",
+    "sheet": "YourData"
+  },
+  "key_column": {
+    "header": "bestest.case_num",
+    "value_format": "<case> - <description>, or bare <case>",
+    "lookup_rule": "script keys on row.fields[0].split(' ').first, so the first whitespace token must be the case id"
+  },
+  "field_prefix": "bestest_building_thermal_envelope_and_fabric_load_reporting",
+  "header_form": "dotted: <prefix>.<field>. Ruby's header_converters: :symbol strips the dot at read time; emit the dotted form, never the symbol form.",
+  "fields": {
+    "scalar": [
+      "annual_cooling",
+      "annual_heating",
+      "avg_temp",
+      "east_incident_solar_radiation",
+      "horizontal_incident_solar_radiation",
+      "max_index_position",
+      "max_temp",
+      "min_index_position",
+      "min_temp",
+      "north_incident_solar_radiation",
+      "peak_cooling_value",
+      "peak_heating_value",
+      "sky_avg_temp",
+      "sky_max_index_position",
+      "sky_max_temp",
+      "sky_min_index_position",
+      "sky_min_temp",
+      "south_incident_solar_radiation",
+      "surf_out_inst_slr_rad_0201_zone_surface_roof",
+      "surf_out_inst_slr_rad_0201_zone_surface_south",
+      "surf_out_inst_slr_rad_0201_zone_surface_west",
+      "surf_out_inst_slr_rad_0504_zone_surface_roof",
+      "surf_out_inst_slr_rad_0504_zone_surface_south",
+      "surf_out_inst_slr_rad_0504_zone_surface_west",
+      "surf_out_inst_slr_rad_0714_zone_surface_roof",
+      "surf_out_inst_slr_rad_0714_zone_surface_south",
+      "surf_out_inst_slr_rad_0714_zone_surface_west",
+      "surf_win_trans_rad_0201_zone_surface_south",
+      "surf_win_trans_rad_0504_zone_surface_south",
+      "surf_win_trans_rad_0714_zone_surface_south",
+      "west_incident_solar_radiation",
+      "zone_total_transmitted_solar_radiation"
+    ],
+    "timestamp": [
+      "peak_cooling_time",
+      "peak_heating_time"
+    ],
+    "monthly_array": [
+      "monthly_clg_cons",
+      "monthly_clg_peak_time",
+      "monthly_clg_peak_val",
+      "monthly_htg_cons",
+      "monthly_htg_peak_time",
+      "monthly_htg_peak_val"
+    ],
+    "day_profile_array": [
+      "sens_htg_clg_0201",
+      "sens_htg_clg_0714",
+      "site_sky_temp_0201",
+      "site_sky_temp_0504",
+      "site_sky_temp_0714",
+      "temp_0201",
+      "temp_0714"
+    ],
+    "other_packed": [
+      "temp_bins"
+    ],
+    "trailing_unprefixed": [
+      "building_name",
+      "dir_name",
+      "status"
+    ]
+  },
+  "timestamp_format": {
+    "pattern": "DD-MMM-HH:MM",
+    "example": "28-NOV-12:00",
+    "day": "two characters, zero padded, offset 0-1",
+    "month": "three-letter uppercase abbreviation, offset 3-5",
+    "hour": "two characters, offset 7-8",
+    "minute": "two characters, offset 10-11",
+    "CRITICAL": "the consumer increments the hour when minutes are nonzero: 26-JUN-16:40 is read as hour 17. Padding or offset errors produce a wrong hour with no error raised."
+  },
+  "array_format": {
+    "encoding": "comma-joined inside one quoted CSV cell; consumer re-splits on ','",
+    "monthly_length": 12,
+    "monthly_order": "calendar, January first",
+    "day_profile": "label element(s) first, then 24 hourly values"
+  },
+  "template_map": {
+    "_note": "sheet YourData, rows and columns as rubyXL addresses them",
+    "annual_heating": {
+      "rows": [
+        69,
+        114
+      ],
+      "col": 2
+    },
+    "annual_cooling": {
+      "rows": [
+        69,
+        114
+      ],
+      "col": 3
+    },
+    "peak_heating_value": {
+      "rows": [
+        69,
+        114
+      ],
+      "col": 4
+    },
+    "peak_heating_time": {
+      "rows": [
+        69,
+        114
+      ],
+      "cols": [
+        5,
+        6,
+        7
+      ],
+      "parsed_into": [
+        "month",
+        "day",
+        "hour"
+      ]
+    },
+    "peak_cooling_value": {
+      "rows": [
+        69,
+        114
+      ],
+      "col": 8
+    },
+    "peak_cooling_time": {
+      "rows": [
+        69,
+        114
+      ],
+      "cols": [
+        9,
+        10,
+        11
+      ],
+      "parsed_into": [
+        "month",
+        "day",
+        "hour"
+      ]
+    },
+    "avg_temp": {
+      "rows": [
+        129,
+        135
+      ],
+      "col": 2,
+      "applies_to": "free-float cases"
+    },
+    "min_temp": {
+      "rows": [
+        129,
+        135
+      ],
+      "col": 3,
+      "date_cols": [
+        4,
+        5,
+        6
+      ],
+      "date_from": "min_index_position"
+    },
+    "max_temp": {
+      "rows": [
+        129,
+        135
+      ],
+      "col": 7,
+      "date_cols": [
+        8,
+        9,
+        10
+      ],
+      "date_from": "max_index_position"
+    },
+    "monthly_arrays": {
+      "rows": [
+        189,
+        200
+      ],
+      "note": "Cases 600 and 900 only, split from the monthly_* fields"
+    }
+  },
+  "counts": {
+    "main_block_cases": 46,
+    "free_float_cases": 7,
+    "monthly_rows": 12,
+    "cell_writes": 81,
+    "envelope_columns_in_reference_csv": 48,
+    "columns_the_script_reads": 45
+  }
+}

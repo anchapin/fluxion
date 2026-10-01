@@ -4,6 +4,7 @@ pub mod boundary;
 pub mod construction;
 pub mod demand_response;
 pub mod diagnostics;
+pub mod diagnostics_ext;
 pub mod ems;
 pub mod engine;
 pub mod equipment;

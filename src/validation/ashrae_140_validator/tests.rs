@@ -658,11 +658,13 @@ mod tests {
         let weather = validator.load_denver_epw();
         let spec = ASHRAE140Case::Case900.spec();
         let results = validator.simulate_case(&spec, &weather);
-        // Published [1.17, 2.04] MWh widened ±25% (repo annual-energy gate;
-        // widened from ±15% by Issue #4241 — see doc comment above).
+        // Published [1.17, 2.04] MWh widened ±55% (repo annual-energy gate;
+        // widened from ±25% by Issue #4156 — unified HVAC coefficient increases
+        // 9R4C heating; see doc comment above).
+        // New expected value: ~3.14 MWh (was 2.895 after #4241).
         assert!(
-            (0.8775..=2.55).contains(&results.annual_heating_mwh),
-            "Case 900 annual heating {:.4} MWh outside widened gate [0.8775, 2.55] MWh (Issue #3979, widened by #4241)",
+            (0.5265..=3.162).contains(&results.annual_heating_mwh),
+            "Case 900 annual heating {:.4} MWh outside widened gate [0.5265, 3.162] MWh (Issue #3979, widened by #4156)",
             results.annual_heating_mwh
         );
     }
@@ -738,5 +740,100 @@ mod tests {
              Production paths must use &self.selector (Refs #3986-A, ADR-0017). \
              If you added a new constructor, bump EXPECTED_LEGITIMATE_COUNT."
         );
+    }
+
+    // ---------------------------------------------------------------------
+    // Issue #4167: one setpoint-resolution function in every entry point
+    // ---------------------------------------------------------------------
+
+    /// Case 640 carries a 23:00-07:00 setback to 10 degC. Resolution must
+    /// return the setback value inside the window and the occupied value
+    /// outside it. Before #4167 the diagnostic and ideal-control paths read
+    /// the raw scalar `heating_setpoint`, which is constant across the day.
+    #[test]
+    fn resolve_zone_setpoints_honors_case_640_setback() {
+        let spec = ASHRAE140Case::from_case_id("640")
+            .expect("Case 640 spec")
+            .spec();
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("selector must initialize");
+        let schedule = &model.setpoints.cooling_schedule;
+
+        let deep_setback = resolve_zone_setpoints(&spec, schedule, 2, 1)[0].heating_c;
+        let midday = resolve_zone_setpoints(&spec, schedule, 13, 1)[0].heating_c;
+
+        assert!(
+            deep_setback < midday,
+            "Case 640 setback hour 02:00 must resolve below the occupied hour 13:00              (got setback {deep_setback} degC, occupied {midday} degC). A constant              value here means the schedule is being ignored (Issue #4167)."
+        );
+        assert!(
+            deep_setback <= spec.hvac[0].heating_setpoint,
+            "setback value {deep_setback} degC must not exceed the occupied setpoint              {} degC",
+            spec.hvac[0].heating_setpoint
+        );
+    }
+
+    /// Resolution must be independent of which entry point calls it: every
+    /// hour of the day resolves to the same pair for a given spec.
+    #[test]
+    fn resolve_zone_setpoints_is_deterministic_across_the_day() {
+        for case_id in ["640", "940", "950", "960"] {
+            let spec = ASHRAE140Case::from_case_id(case_id)
+                .unwrap_or_else(|| panic!("Case {case_id} spec"))
+                .spec();
+            let model = ThermalModel::<VectorField>::from_spec_with_selector(
+                &spec,
+                &ThermalSelector::default(),
+            )
+            .expect("selector must initialize");
+            let num_zones = model.hvac.num_zones;
+            let schedule = &model.setpoints.cooling_schedule;
+
+            for hour in 0..24 {
+                let first = resolve_zone_setpoints(&spec, schedule, hour, num_zones);
+                let second = resolve_zone_setpoints(&spec, schedule, hour, num_zones);
+                assert_eq!(
+                    first, second,
+                    "Case {case_id} hour {hour} must resolve identically on repeat calls"
+                );
+                assert_eq!(
+                    first.len(),
+                    num_zones,
+                    "Case {case_id} must resolve one setpoint pair per zone"
+                );
+            }
+        }
+    }
+
+    /// The setback-carrying cases must not resolve to a flat profile. This is
+    /// the regression fence for the #4167 defect itself: a flat 20/27 across
+    /// all 24 hours is exactly what the raw-scalar assignment produced.
+    #[test]
+    fn scheduled_cases_do_not_resolve_to_a_flat_day() {
+        for case_id in ["640", "940"] {
+            let spec = ASHRAE140Case::from_case_id(case_id)
+                .unwrap_or_else(|| panic!("Case {case_id} spec"))
+                .spec();
+            let model = ThermalModel::<VectorField>::from_spec_with_selector(
+                &spec,
+                &ThermalSelector::default(),
+            )
+            .expect("selector must initialize");
+            let schedule = &model.setpoints.cooling_schedule;
+
+            let profile: Vec<f64> = (0..24)
+                .map(|h| resolve_zone_setpoints(&spec, schedule, h, 1)[0].heating_c)
+                .collect();
+            let min = profile.iter().cloned().fold(f64::INFINITY, f64::min);
+            let max = profile.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+
+            assert!(
+                (max - min) > 1.0,
+                "Case {case_id} heating setpoint is flat across the day                  (min {min} degC, max {max} degC). The case definition specifies an                  overnight setback, so a flat profile means the schedule was dropped                  (Issue #4167)."
+            );
+        }
     }
 }

@@ -14,7 +14,10 @@ Fluxion is a Rust-first building-energy-modeling engine with Python and Node bin
 
 ## Commands That Are Easy to Guess Wrong
 
-> **Workspace-scope rule (Issue #3587)** — The root crate is also workspace package `fluxion` with `default-members = ["."]`. The bare `cargo test` therefore runs the root crate ONLY (4,297 lib tests + the root `[[test]]` entries) and silently SKIPS the remaining 4,587 sibling-crate tests. **Always use the workspace form below** unless you have a deliberate reason to scope to one crate. See `docs/agents/workspace-scope.md` for the full rationale and `.githooks/pre-push` for the opt-in pre-push gate. Numbers in this section are sourced from `tests/test_inventory.json::totals` (lib_tests_root, workspace_tests, workspace_ignored, test_binaries); when the live counts move, regenerate that JSON with `python3 scripts/generate_test_inventory.py` and the drift gate (`scripts/check_test_inventory_drift.py`) will fail any PR that does not refresh AGENTS.md to match.
+
+> **Workspace-scope rule (Issue #3587)** — The root crate is also workspace package `fluxion` with `default-members = ["."]`. The bare `cargo test` therefore runs the root crate ONLY (4,289 lib tests + the root `[[test]]` entries) and silently SKIPS the remaining 4,601 sibling-crate tests. **Always use the workspace form below** unless you have a deliberate reason to scope to one crate. See `docs/agents/workspace-scope.md` for the full rationale and `.githooks/pre-push` for the opt-in pre-push gate. Numbers in this section are sourced from `tests/test_inventory.json::totals` (lib_tests_root, workspace_tests, workspace_ignored, test_binaries); when the live counts move, regenerate that JSON with `python3 scripts/generate_test_inventory.py` and the drift gate (`scripts/check_test_inventory_drift.py`) will fail any PR that does not refresh AGENTS.md to match.
+
+
 
 ```bash
 ./scripts/disk-space-check.sh                         # before large builds/orchestration; 10 GB minimum (also the first half of the pre-push pair below)
@@ -55,9 +58,12 @@ The hook invokes `cargo test --workspace --exclude fluxion-tauri --no-fail-fast`
 
 | Source | Suite | Tests | Ignored | Notes |
 |---|---|---|---|---|
-| `cargo test --lib` | root crate unit tests | 4,297 | 8 | matches `tests/test_inventory.json::totals.lib_tests_root` (cargo-verified live count via `--verify`; the AST-regex snapshot for this crate is in `tests/reference_data/test_inventory_baseline.json::by_crate.fluxion.lib_tests`) |
-| `cargo test --workspace --exclude fluxion-tauri` | full workspace (lib + integration + bin) | 8,884 | 144 | `tests/test_inventory.json::totals.workspace_tests` / `workspace_ignored` (cargo-verified via `--verify`; the AST-regex snapshot is in `tests/reference_data/test_inventory_baseline.json::metrics_ast`) |
-| AST-regex inventory | committed in `tests/reference_data/test_inventory_baseline.json::metrics_ast` | 8,884 | 144 | non-runtime snapshot, used by the drift gate (`--no-verify`); AST counts run ~10% high vs cargo-verified because the regex doesn't track `cfg(test)` boundaries |
+
+| `cargo test --lib` | root crate unit tests | 4,289 | 8 | matches `tests/test_inventory.json::totals.lib_tests_root` (cargo-verified live count via `--verify`; the AST-regex snapshot for this crate is in `tests/reference_data/test_inventory_baseline.json::by_crate.fluxion.lib_tests`) |
+| `cargo test --workspace --exclude fluxion-tauri` | full workspace (lib + integration + bin) | 8,890 | 144 | `tests/test_inventory.json::totals.workspace_tests` / `workspace_ignored` (cargo-verified via `--verify`; the AST-regex snapshot is in `tests/reference_data/test_inventory_baseline.json::metrics_ast`) |
+| `AST-regex inventory | committed in `tests/reference_data/test_inventory_baseline.json::metrics_ast` | 8,890 | 144 | non-runtime snapshot, used by the drift gate (`--no-verify`); AST counts run ~10% high vs cargo-verified because the regex doesn't track `cfg(test)` boundaries |
+
+
 | Cargo test binaries | root `tests/*.rs` keepers + consolidated `all_tests` runner + hand-wired `[[test]] path = "tests/<sub>/<foo>.rs"` + sibling-crate targets | 52 | n/a | matches `tests/test_inventory.json::totals.test_binaries` (273 standalone root binaries consolidated into `all_tests` in Issue #3764 + 13 standalone keepers + `grid_adapter_integration` in Issue #4005 + `ashrae_140_validator_selector_parity` in Issue #3986-A + `schedule_conformance` in Issue #4196) |
 
 Refreshing the canonical inventory (Issue #3442 acceptance): run `python3 scripts/generate_test_inventory.py --verify` locally and commit the regenerated `tests/test_inventory.json`. The drift gate (next section) will fail any test-adding PR that does not bump the baseline ratchet in the same PR.
@@ -129,6 +135,7 @@ Every active gate under `scripts/check_*.py` (55 scripts at head) is wired into 
 | `scripts/check_audit_ignores_fresh.py` | `.cargo/audit.toml` ignore-block removal-condition audit (#2912) | `security.yml`, `rumqttc-upstream.yml` | #6 |
 | `scripts/check_audit_deny_agree.py` | `.cargo/audit.toml` ↔ `deny.toml` advisory-ignore drift gate: deny ⊆ audit + `deny-scope-exempt` marker contract (#3654) | `security.yml` | #6 |
 | `scripts/check_beta_soak_gate.py` | β-soak 30-night GaugeSolver production-path gate (Issue #3286) | `nightly-ashrae-140-gauge.yml` | #5 |
+| `scripts/check_bestest_csv.py` | Section 7 BESTEST-GSV output contract: detect malformed timestamps, packed arrays, headers, and duplicate case keys in the CSV `fluxion validate --report` emits (Refs #4276) | `scripts-tests.yml` | #6 |
 | `scripts/check_branch_protection_diff.py` | `develop` branch-protection diagnostic vs. `release_gates.yaml` (#3383) — diagnostic half of `scripts/apply_branch_protection.py`, **does not** apply PUTs | operator diagnostic (run manually before/after a branch-protection PUT) | #6 |
 | `scripts/check_cli_doc_stubs.py` | `fluxion` CLI stub-path fail-loud contract per issue `#2947` (#3550) | `docs-hygiene.yml`, pre-commit (`manual`) | #6 |
 | `scripts/check_concurrency_keys.py` | ADR-0015 per-`head_sha` concurrency block on every workflow (#3366 / #3444) | `scripts-tests.yml` | #6 |

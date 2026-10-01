@@ -2,6 +2,7 @@
 
 use crate::api::error::FluxionError;
 use crate::physics::cta::{ContinuousTensor, VectorField};
+use crate::sim::diagnostics_ext::SimulationDiagnosticsExt;
 use crate::sim::hvac::{HVACMode as EquipmentHVACMode, VariableCapacityEquipment};
 use crate::sim::moisture::step_zone_moisture;
 use crate::sim::sky_radiation::SolAirTemperature;

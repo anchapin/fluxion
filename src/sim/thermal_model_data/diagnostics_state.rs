@@ -5,7 +5,10 @@
 //! the pre-refactor `ThermalModelData::clone` behaviour) so a per-config
 //! clone in `BatchOracle` never deep-copies reporting state.
 
-use crate::validation::diagnostics::SimulationDiagnostics;
+// Issue #4172: SimulationDiagnostics is now in fluxion-core::diagnostics
+// (hoisted from fluxion::validation::diagnostics) to break the name collision
+// with fluxion_core::error::SimulationDiagnostics (now DivergenceDiagnostics).
+use fluxion_core::diagnostics::SimulationDiagnostics;
 use std::collections::BTreeMap;
 
 use super::incident_solar_accumulator::IncidentSolarAccumulator;

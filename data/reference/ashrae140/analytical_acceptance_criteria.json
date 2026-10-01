@@ -1,0 +1,324 @@
+{
+  "_purpose": "Quantitative acceptance targets for the ASHRAE 140-2023 ANALYTICAL verification tests. Unlike the Annex B8 Section B8.1 comparative statistics, the two entries here are genuine solutions: a closed-form analytical solution (Section 8 Case GC10a) and a quasi-analytical solution model (Section 11). These are the only quantitative pass/fail anchors available anywhere in Standard 140.",
+  "_standard_structure": {
+    "source": "Standard140-2023_SectionSourceMap.pdf",
+    "finding": "Standard 140-2023 contains NO acceptance-criteria clause. Its normative structure is: 1 Purpose, 2 Scope, 3 Definitions, 4 Methods of Testing, 5 General Test Procedures (5.1 Class I / 5.2 Class II, each Modeling Approach + Output Requirements), then one section per test suite (6 Weather Drivers, 7 Envelope and Fabric Class I, 8 Ground-Coupled Slab-on-Grade, 9 Space-Cooling Equipment, 10 Space-Heating Equipment, 11 Air-Side HVAC, 12 Envelope and Fabric Class II), each with Test Descriptions, Input Specifications and Output Requirements. There is no clause defining a threshold a program must meet.",
+    "comparing_output": "Section 4.4, 'Comparing Output to Other Results', is marked INFORMATIVE (was 140-2020 section 4.4). Guidance on comparing against the example results is therefore non-normative.",
+    "consequence": "Standard 140 is a method of test, not a rating or compliance threshold. Conformance means running the specified procedures with the specified inputs and reporting the specified outputs in the Annex A2 Standard Output Report format. It does not mean scoring above a number. A pass rate is our own invention and must not be labelled ASHRAE 140 compliance.",
+    "section_numbering_2020_to_2023": {
+      "6 Weather Drivers": {
+        "test_descriptions": "4.3.1.6",
+        "inputs": "5.6",
+        "outputs": "6.6"
+      },
+      "7 Envelope and Fabric (Class I)": {
+        "test_descriptions": "4.3.1 up to 4.3.1.1.4",
+        "inputs": "5.2 up to 5.2.4",
+        "outputs": "6.2.1"
+      },
+      "8 Ground-Coupled Slab-on-Grade": {
+        "test_descriptions": "4.3.1.1.4",
+        "inputs": "5.2.4",
+        "outputs": "6.2.2"
+      },
+      "9 Space-Cooling Equipment": {
+        "test_descriptions": "4.3.1.2 and 4.3.1.3",
+        "inputs": "5.3",
+        "outputs": "6.3"
+      },
+      "10 Space-Heating Equipment": {
+        "test_descriptions": "4.3.1.4",
+        "inputs": "5.4",
+        "outputs": "6.4"
+      },
+      "11 Air-Side HVAC Equipment": {
+        "test_descriptions": "4.3.1.5",
+        "inputs": "5.5",
+        "outputs": "6.5"
+      },
+      "12 Envelope and Fabric (Class II)": {
+        "test_descriptions": "4.3.2",
+        "inputs": "7.2",
+        "outputs": "8.2"
+      },
+      "note": "All annexes keep their 140-2020 numbering."
+    }
+  },
+  "section_8_ground_coupled": {
+    "_source": "ASHRAE 140-2023 Informative Annex B8 Section B8.2, Table B8.2-1 (Std140_GC_Results.pdf)",
+    "analytical_solution": {
+      "case": "GC10a",
+      "metric": "steady-state floor conduction",
+      "value": 2433.0,
+      "units": "W",
+      "derivation": "Delsante, Stokes and Walsh (1983), CSIRO; implemented by NREL/JNA",
+      "assumption": "semi-infinite solid (E = infinity depth, F = infinity far-field)",
+      "is_closed_form": true,
+      "acceptance": "This is the one hard target in Section 8. The three independent verified numerical models (TRNSYS/TESS 2427, FLUENT/PAAET 2425, MATLAB/DIT 2432) span 0.3% and all sit within 0.33% of the analytical 2433 W. A conduction solver that cannot land inside that spread has a defect, not a modelling difference. Proposed criterion: |fluxion - 2433| / 2433 <= 0.5%, with the three verified-numerical results reported alongside."
+    },
+    "verified_numerical_models_not_analytical": {
+      "note": "Every other Section 8 case has NO closed-form solution. GC30a/GC40a and the b/c series are bracketed only by verified numerical models, and Annex B8.2 carries the same disclaimer as B8.1: 'These statistics do not have any substantial importance and are not to be interpreted as acceptance criteria.' Report these as diagnostic context, never as a gate.",
+      "verified_numerical_spread_W": {
+        "GC10a": {
+          "min": 2425,
+          "max": 2432,
+          "spread_pct": 0.3
+        },
+        "GC30a": {
+          "min": 2585,
+          "max": 2695,
+          "spread_pct": 4.2
+        }
+      },
+      "GC40a_annual_kWh": {
+        "min": 22761,
+        "max": 23609,
+        "spread_pct": 3.7
+      },
+      "GC40a_phase_shift_hours": {
+        "min": 416,
+        "max": 416,
+        "spread_pct": 0.0,
+        "note": "All three verified numerical models agree exactly at 416 h from the coldest hour (Jan 15 h4). A tight, useful diagnostic."
+      },
+      "steady_state_floor_conduction_W": {
+        "GC30b": {
+          "vnm_min": 2504,
+          "vnm_max": 2570
+        },
+        "GC30c": {
+          "vnm_min": 2123,
+          "vnm_max": 2154
+        },
+        "GC60b": {
+          "vnm_min": 2104,
+          "vnm_max": 2128
+        },
+        "GC65b": {
+          "vnm_min": 1991,
+          "vnm_max": 2004
+        }
+      },
+      "steady_periodic_annual_floor_conduction_kWh": {
+        "GC40b": {
+          "vnm_min": 21932,
+          "vnm_max": 22513
+        },
+        "GC45b": {
+          "vnm_min": 32456,
+          "vnm_max": 33483
+        },
+        "GC50b": {
+          "vnm_min": 277923,
+          "vnm_max": 281418
+        },
+        "GC55b": {
+          "vnm_min": 34879,
+          "vnm_max": 35491
+        },
+        "GC70b": {
+          "vnm_min": 17396,
+          "vnm_max": 17552
+        },
+        "GC80b": {
+          "vnm_min": 5939,
+          "vnm_max": 6151
+        },
+        "GC40c": {
+          "vnm_min": 18598,
+          "vnm_max": 18873
+        },
+        "GC45c": {
+          "vnm_min": 26906,
+          "vnm_max": 27392
+        },
+        "GC55c": {
+          "vnm_min": 20714,
+          "vnm_max": 20986
+        },
+        "GC80c": {
+          "vnm_min": 9137,
+          "vnm_max": 9314
+        }
+      }
+    },
+    "internal_consistency_check": {
+      "rule": "(Zone Heating Load) - (Floor Conduction) must be ~0 for the b-series",
+      "evidence": "Table B8.2-2 and B8.2-4 show 0 to 6 W steady-state and 0 to 54 kWh steady-periodic for the b-series across every participant. This is a physics identity, not an example result, so it IS a legitimate hard check on fluxion's own output regardless of the disclaimer.",
+      "proposed_tolerance_W": 10,
+      "proposed_tolerance_kWh": 60
+    },
+    "zone_air_temperature_check": {
+      "value": 30.0,
+      "units": "degC",
+      "note": "All Section 8 cases hold the zone at 30.0 C exactly, in every participant and every table. A setpoint that does not resolve to 30.0 is a defect."
+    }
+  },
+  "section_11_airside": {
+    "_source": "QASv2.xlsm quasi-analytical solution workbook (ASHRAE 140-2023, Annex B17 Section B17.3.2)",
+    "provenance": "Merged from two independent solutions by Gren Yuill and Jeff Haberl under ASHRAE Technical Research Project 865 (Yuill and Haberl 2002). Merge details in Part II of the RP-865 final report.",
+    "why_this_is_a_real_gate": "The QAS is a computable model, not a spread of program results. Given the case inputs it returns a single coil load per system per case. Re-implementing its equations gives fluxion a per-case analytical target with no dependence on any example-result statistic.",
+    "systems": {
+      "FC": "four-pipe fan coil",
+      "SZ": "single-zone air handler",
+      "CAV": "constant air volume with zone reheat",
+      "VAV": "variable air volume with zone reheat"
+    },
+    "case_selection_note": "The rightmost digit of the AE case number selects the ambient condition: AE103, AE203, AE303 and AE403 all use test case 3.",
+    "test_case_inputs": {
+      "_columns": "OAT_F, OAWB_F, room1_Tset_F, room1_Qsens_Btuh, room1_Qlat_Btuh, room1_supply_cfm, room1_exhaust_cfm, room2_Tset_F, room2_Qsens_Btuh, room2_Qlat_Btuh, room2_supply_cfm, room2_exhaust_cfm, OADP_F, humidity_ratio_lb_per_lbda",
+      "1": [
+        -20.2,
+        -20.2,
+        70.0,
+        -10000,
+        2000,
+        600,
+        200,
+        72,
+        -8000,
+        3000,
+        700,
+        300,
+        -20.2,
+        0.000259
+      ],
+      "2": [
+        30.02,
+        19.756,
+        71.0,
+        -2000,
+        2000,
+        600,
+        200,
+        73,
+        1000,
+        3000,
+        700,
+        300,
+        null,
+        null
+      ],
+      "3": [
+        59.9,
+        44.972,
+        74.0,
+        5000,
+        2000,
+        600,
+        200,
+        76,
+        8000,
+        3000,
+        700,
+        300,
+        26.6,
+        0.002926
+      ],
+      "4": [
+        80.42,
+        74.191,
+        75.0,
+        10000,
+        2000,
+        600,
+        200,
+        77,
+        12000,
+        3000,
+        700,
+        300,
+        71.78,
+        0.016769
+      ],
+      "5": [
+        76.82,
+        55.452,
+        74.0,
+        5000,
+        2000,
+        600,
+        200,
+        76,
+        8000,
+        3000,
+        700,
+        300,
+        36.32,
+        0.004478
+      ],
+      "6": [
+        73.4,
+        70.744,
+        74.0,
+        5000,
+        2000,
+        600,
+        200,
+        76,
+        8000,
+        3000,
+        700,
+        300,
+        69.62,
+        0.015557
+      ],
+      "_note": "Wet bulb was adjusted so the humidity ratio computed in the workbook agrees with the specification. Case 2 dew point / humidity ratio are blank in the source table."
+    },
+    "universal_inputs": {
+      "atmospheric_pressure_psia": 14.69597535,
+      "design_fan_efficiency_pct": 70,
+      "supply_fan_pressure_rise_in_wg": 2,
+      "return_fan_pressure_rise_in_wg": 1,
+      "supply_air_setpoint_F_CAV_VAV": 55,
+      "preheat_setpoint_F_CAV_VAV": 45,
+      "nominal_supply_cfm_CAV_VAV": 1300,
+      "nominal_return_cfm_CAV_VAV": 800
+    },
+    "constants": {
+      "gas_constant_dry_air_ft_lbf_per_lbda_R": 53.35,
+      "cp_dry_air_Btu_per_lbm_F": 0.2403,
+      "cp_water_vapor_Btu_per_lbm_F": 0.44378,
+      "cp_evaporation_Btu_per_lbm_F": 0.565,
+      "molecular_mass_ratio_water_over_air": 0.621945,
+      "molecular_mass_ratio_air_over_water": 1.607858,
+      "fan_work_to_heat_constant": 0.006685,
+      "_note": "Mass ratios changed to 0.621945 / 1.607858 per the 2009 ASHRAE Handbook of Fundamentals (QAS change log, from version 13)."
+    },
+    "case_1_reference_outputs": {
+      "_conditions": "test case 1 (OAT -20.2 F / -29 C), no economizer, enthalpy control, zero return duct heat gain",
+      "_units": "Btu/h",
+      "FC": {
+        "heating_coil": 28729,
+        "cooling_total": 0,
+        "cooling_sensible": 0,
+        "cooling_latent": 0
+      },
+      "SZ": {
+        "heating_coil": 28525,
+        "cooling_total": 0,
+        "cooling_sensible": 0,
+        "cooling_latent": 0
+      },
+      "CAV": {
+        "preheat_coil": 10056,
+        "zone1_reheat": 26317,
+        "zone2_reheat": 28624,
+        "total_reheat": 54941,
+        "total_heat": 64997,
+        "cooling_total": 0
+      },
+      "VAV": {
+        "preheat_coil": 35008,
+        "zone1_reheat": 15353,
+        "zone2_reheat": 16642,
+        "total_reheat": 31994,
+        "total_heat": 67002,
+        "cooling_total": 0
+      },
+      "_note": "Read directly off the workbook as delivered, which is set to case 1. Cases 2 through 6 require re-evaluating the model; the equations are fully specified in the workbook's formula columns (columns E and J of each system tab) and are reimplementable."
+    },
+    "iterative_calculation_requirement": "The workbook needs iterative calculation enabled at max 200 iterations and max change 0.00001. Any reimplementation must converge to the same tolerance.",
+    "proposed_acceptance": "Reimplement the QAS as a test oracle, evaluate it per case per system, and require fluxion's coil loads to agree within a stated tolerance of the QAS value. This is a true analytical criterion and is the correct model for Section 11 and, by the same logic, for Section 9.2.1/9.2.2 (CE100-CE200) once CE100MAP.xls is transcribed."
+  }
+}

@@ -3,6 +3,7 @@
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::physics::multi_node_solver::SurfaceExteriorTemperatures;
 use crate::sim::boundary::distribute_opaque_solar_gains;
+use crate::sim::diagnostics_ext::SimulationDiagnosticsExt;
 use crate::sim::hvac::{HVACMode as EquipmentHVACMode, VariableCapacityEquipment};
 use crate::sim::moisture::step_zone_moisture;
 use crate::sim::sky_radiation::SolAirTemperature;
