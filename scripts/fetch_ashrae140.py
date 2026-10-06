@@ -83,7 +83,9 @@ def find_in_archive(archive: str, archive_path: str) -> str | None:
     direct = os.path.join(archive, archive_path.replace("\\", os.sep))
     if os.path.exists(direct):
         return direct
-    want = os.path.basename(archive_path).lower()
+    # os.path.basename does not split on backslashes on POSIX, and the archive
+    # ships Windows-style paths, so normalise before taking the basename.
+    want = os.path.basename(archive_path.replace("\\", os.sep)).lower()
     for root, _dirs, names in os.walk(archive):
         for name in names:
             if name.lower() == want:

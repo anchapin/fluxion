@@ -119,12 +119,20 @@ ENGINE = _load_engine_values(REF_DIR / "strict_energy_gate_baseline.json")
 # Known-issue references keyed by (case, metric) for the xfail reasons.
 # Routes each gap to its docs/KNOWN_ISSUES.md section + upstream issue.
 KNOWN_GAP_REFS = {
+    ("600", "heating"): (
+        "docs/KNOWN_ISSUES.md Sec LIMIT-06 (600-Series Annual Heating "
+        "Correction, #522)"
+    ),
     ("600", "cooling"): (
         "docs/KNOWN_ISSUES.md Sec LIMIT-05 / Sec SOLAR-02 (issues #1457 / #2239)"
     ),
     ("900", "cooling"): (
         "docs/KNOWN_ISSUES.md Sec SOLAR-02 UPDATE (#2239) + "
         "Sec LIMIT-05 UPDATE (#2453): GaugeSolver #1465"
+    ),
+    ("900", "heating"): (
+        "docs/KNOWN_ISSUES.md Sec LIMIT-05 UPDATE (#2453): 900-series "
+        "bidirectional annual-energy cohort; GaugeSolver #1465 / #1462"
     ),
     ("920", "heating"): (
         "docs/KNOWN_ISSUES.md Sec LIMIT-05 UPDATE (#2453): "

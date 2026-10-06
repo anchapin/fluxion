@@ -58,7 +58,9 @@ from typing import Optional
 
 SCHEMA_VERSION = "1"
 
-# Test targets to time individually.  Each maps to a file at tests/<target>.rs
+# Test targets to time individually.  The ASHRAE test files now live as modules
+# of the single `all_tests` integration-test target (tests/all_tests/), so each
+# entry is run as `cargo test --test all_tests <module>:: -- --nocapture`.
 # The comprehensive validator is listed first — its --nocapture output drives
 # the per-case pass/fail breakdown.
 TEST_TARGETS = [
@@ -192,10 +194,10 @@ def _run_cargo_test(
     target: str, release: bool = True, timeout: int = 300
 ) -> tuple[str, float, int]:
     """
-    Run `cargo test --test <target> [--release] -- --nocapture`.
+    Run `cargo test --test all_tests <target>:: [--release] -- --nocapture`.
     Returns (combined_stdout_stderr, duration_s, exit_code).
     """
-    cmd = ["cargo", "test", "--test", target]
+    cmd = ["cargo", "test", "--test", "all_tests", f"{target}::"]
     if release:
         cmd.append("--release")
     cmd += ["--", "--nocapture"]
