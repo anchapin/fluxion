@@ -66,13 +66,14 @@ def _write_fixture(
     else:
         preamble = "# Known Issues\n\nNo marker in this file.\n\n"
     sections = (
-        "\n## Limits\n\n"
-        "### LIMIT-01: Example limit\n\n"
-        "**Status:** Open — under investigation\n"
+        "\n## Structural limitations (LIMIT)\n\n"
+        "| ID | Symptom | Current value vs band | Issue | Closes when | Status | History |\n"
+        "|---|---|---|---|---|---|---|\n"
+        "| **LIMIT-01** | Example limit | — | — | — | open | [history](investigations/limit-01-example.md) |\n"
     )
-    # The derived counts see the same headers/sections with or without the
-    # rendered table (the table itself contributes no `### ` headers), so
-    # deriving from the table-less body is exact.
+    # The derived counts see the same sections/rows with or without the
+    # rendered table (the table itself contributes no `## ` category
+    # headings), so deriving from the table-less body is exact.
     counts = summary_mod.extract_counts(preamble + sections)
     table = summary_mod.render_table(counts) + summary_mod.render_legend()
     target = tmp_path / "docs" / "KNOWN_ISSUES.md"
