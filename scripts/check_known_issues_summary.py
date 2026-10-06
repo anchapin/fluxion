@@ -162,15 +162,30 @@ def render_legend() -> str:
 
 
 def extract_existing_table(text: str) -> tuple[int, int] | None:
-    """Locate the `## Summary` table and return (start_offset, end_offset) of
-    the entire table block (header + body + legend), so the regen can replace
-    it cleanly. Returns None if the `## Summary` header is not present.
+    """Locate the `## Summary` block and return (start_offset, end_offset) of
+    the entire block (header + table + legend), so the regen can replace it
+    cleanly. The block ends at the end of the legend line - NOT at the next
+    `## ` heading - so content sitting between the legend and the following
+    heading (e.g. the doc intro and `*Last Updated:*` marker, as lost in
+    PR #4309) is never swallowed by a regeneration. Returns None if the
+    `## Summary` header is not present.
     """
     m = re.search(r"^##\s+Summary\s*$", text, re.MULTILINE)
     if not m:
         return None
     start = m.start()
-    # Find the first H2 (`## `) after the table; that's the end of the block.
+    # The generated block ends with the legend line rendered by
+    # render_legend(): a single italic line starting "*Counts derived from".
+    legend_m = re.search(
+        r"^\*Counts derived from the per-row catalog tables.*?\*\s*$",
+        text[start:],
+        re.MULTILINE,
+    )
+    if legend_m:
+        end = start + legend_m.end()
+        return start, end
+    # Fallback for a legacy file with no legend: the first H2 after the
+    # table is the end of the block.
     end_m = re.search(r"^##\s+", text[start + 1 :], re.MULTILINE)
     end = start + 1 + end_m.start() if end_m else len(text)
     return start, end
