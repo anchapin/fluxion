@@ -287,6 +287,7 @@ Once trained, the ONNX model is wired to the Rust `SurrogateManager` for inferen
 A set of small, self-contained examples are included in the `examples/` folder to help new users get started quickly:
 
 - `examples/run_model.py`: Creates a `Model`, runs a 1-year simulation with and without surrogates, and prints results.
+- `examples/run_ashrae_check.py`: **Recommended first run.** Runs the ASHRAE 140-2023 validation pipeline in fast mode (provenance verify + strict ±15% energy gate + honesty guard) in ~5 seconds, no Rust toolchain needed. A real ASHRAE comparison against the published reference bands (recorded suite values, not a fresh engine run; the full ~10 min end-to-end run is `python3 scripts/ashrae_140_pipeline.py`).
 - `examples/run_oracle.py`: Creates a `BatchOracle`, generates a small random population (20 candidates) and evaluates it using surrogates.
 - `examples/quick_start.sh`: A helper script that installs `maturin` (if necessary), builds the Python bindings locally, and runs the oracle example.
 
@@ -307,7 +308,13 @@ pip install maturin
 maturin develop
 ```
 
-3) Run the oracle example to see actual results:
+3) Run the ASHRAE 140 check to see real validation results (recommended first run, ~5 seconds):
+
+```bash
+python examples/run_ashrae_check.py
+```
+
+   Or run the oracle example (requires `maturin develop` first; shows the throughput API with deterministic mock loads):
 
 ```bash
 python examples/run_oracle.py
