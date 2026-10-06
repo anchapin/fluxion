@@ -506,7 +506,7 @@ jobs:
         continue-on-error: true
 
       - name: Download previous benchmark data (default features, from main)
-        uses: dawidd6/action-download-artifact@634d83b91986fcec9be314054943fa5c976aeb0e  # v25
+        uses: dawidd6/action-download-artifact@eab87c9830c39eff17e5a6eadb20bfb4bc880477  # v27
         with:
           workflow: performance_dashboard.yml
           name: benchmark-results
