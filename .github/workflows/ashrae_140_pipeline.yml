@@ -1,0 +1,64 @@
+name: ASHRAE 140 Pipeline
+
+# End-to-end validation pipeline (scripts/ashrae_140_pipeline.py):
+# provenance verify -> strict ±15% annual-energy gate -> Python honesty
+# guard -> engine benchmark vs stored baseline, with energy-balance
+# verdicts surfaced first.
+#
+# Trigger choice (deliberate): the full pipeline builds the engine and
+# runs the case series (~10 min), so it stays off the per-push path.
+# The nightly ASHRAE 140 Validation workflow (ashrae_140_validation.yml)
+# already covers push/PR validation; this workflow is the daily
+# end-to-end self-check behind the README's "Run the validation pipeline"
+# section — nightly schedule plus manual dispatch.
+on:
+  schedule:
+    # Nightly, after ashrae_140_validation.yml (2 AM UTC) has had its window.
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+
+# Least-privilege GITHUB_TOKEN grants (Issue #2526): read-only run.
+permissions:
+  contents: read
+
+jobs:
+  pipeline:
+    name: ashrae_140_pipeline.py (full run)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+
+      - name: Install Rust
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
+        with:
+          max_attempts: 3
+          timeout_minutes: 10
+          retry_wait_seconds: 15
+          command: rustup toolchain install stable --profile default
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        with:
+          workspaces: |
+            .
+
+      - name: Install uv
+        # The pipeline's honesty-guard stage runs `uv run --frozen pytest`.
+        run: pip install uv
+
+      - name: Run ASHRAE 140 pipeline
+        run: python3 scripts/ashrae_140_pipeline.py --output pipeline_report.json
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ashrae-140-pipeline-report
+          path: pipeline_report.json
+          retention-days: 30
