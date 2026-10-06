@@ -40,7 +40,6 @@ import json
 import os
 import subprocess
 import sys
-import time
 from datetime import datetime, timezone
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -76,7 +75,7 @@ class Stage:
 def stage_provenance():
     s = Stage("provenance: suite files match ASHRAE publisher hashes", critical=False)
     r = run([PY, PROVENANCE_SCRIPT, "verify"], timeout=120)
-    tail = [l for l in (r.stdout + r.stderr).strip().splitlines() if l.strip()]
+    tail = [line for line in (r.stdout + r.stderr).strip().splitlines() if line.strip()]
     s.detail = tail[-1] if tail else "no output"
     s.verdict = "PASS" if r.returncode == 0 else "FAIL"
     return s
@@ -112,7 +111,7 @@ def stage_honesty_guard():
     r = run(["uv", "run", "--frozen", "pytest", os.path.relpath(HONESTY_TEST_DIR, REPO),
              "-q", "--no-header"], timeout=1800)
     lines = (r.stdout + r.stderr).strip().splitlines()
-    summary = [l for l in lines if "passed" in l or "failed" in l or "error" in l.lower()]
+    summary = [line for line in lines if "passed" in line or "failed" in line or "error" in line.lower()]
     s.detail = summary[-1] if summary else (lines[-1] if lines else "no pytest output")
     if "No such file" in s.detail or "not found" in s.detail.lower():
         s.verdict, s.detail = "ERROR", "uv/pytest unavailable or test path wrong: " + s.detail
@@ -128,7 +127,7 @@ def stage_engine_benchmark():
         cmd += ["--compare", BENCH_BASELINE]
     r = run(cmd, timeout=7200)
     lines = (r.stdout + r.stderr).strip().splitlines()
-    counts = [l for l in lines if "Rust tests (all)" in l or "REGRESSION" in l]
+    counts = [line for line in lines if "Rust tests (all)" in line or "REGRESSION" in line]
     s.detail = (counts[-1] if counts else (lines[-1] if lines else "no harness output"))
     if r.returncode == 2:
         s.verdict = "ERROR"
