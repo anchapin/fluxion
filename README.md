@@ -159,6 +159,17 @@ python -m pip install 'maturin>=1.0,<2.0'
 
 Cargo builds pick up memory-safe defaults from [`.cargo/config.toml`](.cargo/config.toml): a linker wrapper that prefers `mold`, then `lld`, and falls back to the system `cc` driver when neither is installed, plus `split-debuginfo = "unpacked"` on dev/test builds so DWARF data never streams through the linker. Constrain parallelism on RAM-constrained machines with `cargo build -j <n>` or `[build] jobs` in `~/.cargo/config.toml` — see [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for details.
 
+## Repo-root pointers
+
+A few repo-root files are agent/maintainer-facing rather than reviewer-facing:
+
+| Path | What it is |
+|------|------------|
+| [`RULES.md`](RULES.md) | Repo rules for agents and maintainers (incl. the no-parameter-tuning rule) |
+| [`SCORECARD.md`](SCORECARD.md) | Consolidated release-readiness scorecard |
+| `agent-orchestrator.yaml`, `bernstein.yaml`, `delta_config.yaml` | Agent-orchestration config consumed by local automation |
+| `test_results/` | Scratch output from local test runs (not authoritative; CI artifacts are) |
+
 ## 🌳 Contributing & Branching
 
 **Development Workflow**:
