@@ -156,7 +156,7 @@ jobs:
           command: rustup toolchain install nightly --profile default --component llvm-tools-preview
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172  # v2
+        uses: taiki-e/install-action@861a07ce7084f55488e375df125cdc99bba60eb7  # v2
         with:
           tool: cargo-llvm-cov
 
