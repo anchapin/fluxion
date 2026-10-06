@@ -18,6 +18,11 @@
 | **Total** | **59** | **3** | **53** | **3** | **0** |
 
 *Counts derived from the per-row catalog tables under each category section (`| **CATEGORY-NN** | ... |`) via `scripts/check_known_issues_summary.py`. Edit a row in place (or add a new row) and the table updates on the next regen. Status columns (`Fixed` / `Open` / `Partial` / `Won't Fix`) derive from each row's Status cell: `resolved` -> Fixed, `open` -> Open, `tracking only` -> Partial, `Won't Fix` -> Won't Fix. Rows without a recognized status are counted in the Total column but contribute 0 to the status columns. To regenerate: `python3 scripts/check_known_issues_summary.py --regen | sponge docs/KNOWN_ISSUES.md`.*
+
+Catalog of known systematic issues affecting ASHRAE 140 validation compliance.
+Engineering team and AI agents — reference before modifying physics or validation code.
+
+*Last Updated: 2026-09-30*
 ## How to read this document
 
 Each limitation is **one row** in the tables below: its current measured value against
