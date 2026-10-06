@@ -222,6 +222,75 @@ def test_summary_table_still_matches_after_run(tmp_path, load_script, monkeypatc
 
 
 # ---------------------------------------------------------------------------
+# Summary block bounds (post-#4309 hardening)
+# ---------------------------------------------------------------------------
+
+
+def _write_fixture_with_interstitial(tmp_path, load_script) -> Path:
+    """Fixture with real content sitting between the Summary legend and the
+    next `## ` heading - the shape PR #4309 damaged."""
+    target = _write_fixture(tmp_path, load_script, last_updated=TODAY)
+    text = target.read_text(encoding="utf-8")
+    # Insert content after the legend line, before the first category
+    # section: the doc intro and a *Last Updated:* marker, as lost in #4309.
+    interstitial = (
+        "\nIntro paragraph that a regen must never swallow.\n\n"
+        f"*Last Updated: {TODAY.isoformat()} (review note)*\n"
+    )
+    idx = text.index("\n## Structural limitations (LIMIT)")
+    target.write_text(
+        text[:idx] + "\n" + interstitial + text[idx:], encoding="utf-8"
+    )
+    return target
+
+
+def test_extract_existing_table_ends_at_legend_line(tmp_path, load_script):
+    """The Summary block ends at the legend line, not the next `## ` heading,
+    so regeneration cannot eat content between them (the PR #4309 trap)."""
+    target = _write_fixture_with_interstitial(tmp_path, load_script)
+    summary_mod = load_script("check_known_issues_summary")
+    text = target.read_text(encoding="utf-8")
+
+    block = summary_mod.extract_existing_table(text)
+    assert block is not None
+    start, end = block
+    assert text[start:end].startswith("## Summary")
+    # The block contains the legend and nothing beyond it.
+    assert "Counts derived from the per-row catalog tables" in text[start:end]
+    assert "Intro paragraph that a regen must never swallow." not in text[start:end]
+    # The interstitial content (with the Last Updated marker) survives
+    # outside the block.
+    assert "*Last Updated:" in text[end:]
+
+
+def test_regen_preserves_content_between_legend_and_next_heading(
+    tmp_path, load_script, monkeypatch
+):
+    """A regen replacement over the extracted block leaves the interstitial
+    content byte-identical."""
+    target = _write_fixture_with_interstitial(tmp_path, load_script)
+    before = target.read_text(encoding="utf-8")
+    summary_mod = load_script("check_known_issues_summary")
+
+    # The committed table still matches, so --check passes with the
+    # interstitial in place.
+    assert _summary_check(target, load_script, monkeypatch) == 0
+
+    # Simulate a regen write-back: replace the extracted block with fresh
+    # output and verify the interstitial survives.
+    start, end = summary_mod.extract_existing_table(before)
+    counts = summary_mod.extract_counts(before)
+    new_block = summary_mod.render_table(counts) + summary_mod.render_legend()
+    after = before[:start] + new_block + before[end:]
+    assert "*Last Updated:" in after
+    assert "Intro paragraph that a regen must never swallow." in after
+
+    # And the regenerated document is self-consistent.
+    target.write_text(after, encoding="utf-8")
+    assert _summary_check(target, load_script, monkeypatch) == 0
+
+
+# ---------------------------------------------------------------------------
 # CLI contract
 # ---------------------------------------------------------------------------
 
