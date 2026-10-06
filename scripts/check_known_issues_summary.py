@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
 Regenerate the `## Summary` table at the top of `docs/KNOWN_ISSUES.md` from
-the actual `### ` section headers in the file.
+the per-row catalog tables under each `## ` category section.
 
 Issue #3513: the hand-maintained table undercounted the LIMIT entries by
-17+ and the SOLAR / BASE / MULTI counts were also stale. This script
-replaces the table with one derived from a fresh grep of the section
-anchors; a CI gate (`check_known_issues_summary.py`) verifies the table
-matches the derived counts.
+17+ and the SOLAR / BASE / MULTI counts were also stale. Issue #4288 then
+restructured the document body from `### CATEGORY-NN:` sections into
+per-category tables whose rows look like `| **BASE-01** | ... | open | ... |`,
+so this script counts each catalog row and its Status column.
 
 Usage:
-    python3 scripts/check_known_issues_summary.py [--check]
+    python3 scripts/check_known_issues_summary.py [--check] [--regen]
 
 Exit codes:
     0 — derived counts match the committed table (or no --check flag)
@@ -29,7 +29,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 KNOWN_ISSUES = REPO_ROOT / "docs" / "KNOWN_ISSUES.md"
 
-# Map of category prefix → table row label.
+# Map of category prefix -> table row label.
 CATEGORY_ROWS = [
     ("BASE", "Foundation (BASE)"),
     ("SOLAR", "Solar (SOLAR)"),
@@ -41,71 +41,82 @@ CATEGORY_ROWS = [
     ("CI", "CI/Infrastructure (CI)"),
     ("FLUID", "fluxion-fluid (FLUID)"),
     ("FFD", "FFD/CFD (FFD)"),
+    ("REF", "Reference data (REF)"),
 ]
 
-# Per-category status counts. Issue #3513 acceptance #3 says these should
-# derive from the per-section `**Status:**` field. We extract the most
-# common status tokens (`Fixed`, `Open`, `Partial`, `Won't Fix`) from each
-# section's `**Status:**` line.
-STATUS_TOKEN_FIXED = re.compile(r"✅\s*Fixed|Fixed\s*\(Phase", re.IGNORECASE)
-STATUS_TOKEN_OPEN = re.compile(r"🔄\s*Open|🔄\s*Open\s*\(|🔄\s*OPEN", re.IGNORECASE)
-STATUS_TOKEN_PARTIAL = re.compile(r"🟡|Partially", re.IGNORECASE)
-STATUS_TOKEN_WONT_FIX = re.compile(r"Won'?t\s*Fix|WONTFIX|wontfix", re.IGNORECASE)
-STATUS_LINE = re.compile(r"^[\s\-]*\*\*Status:\*\*\s+(.+)$", re.MULTILINE)
+# A catalog row in a category table: `| **BASE-01** | ... |` (also matches
+# suffixed IDs like `**BASE-01b**` and multi-case prefixes like
+# `**PeakHeatingLimit-01**`, which are attributed to their section).
+ROW_RE = re.compile(r"^\|\s*\*\*([A-Za-z]+)-(\d+)([a-z]?)\*\*\s*\|")
+
+# A category section heading. The category token is either the
+# parenthesized suffix - `## Foundation (BASE)` - or the bare heading text
+# (`## CI`).
+HEADING_CATEGORY_RE = re.compile(r"\(([A-Z]+)\)\s*$")
+
+# Status column vocabulary (post-#4288). The cell is compared
+# case-insensitively after whitespace stripping; anything outside this map
+# leaves the row counted in the Total column only.
+STATUS_MAP = {
+    "resolved": "fixed",
+    "fixed": "fixed",
+    "open": "open",
+    "tracking only": "partial",
+    "partial": "partial",
+    "won't fix": "wont_fix",
+    "wontfix": "wont_fix",
+}
 
 
 def extract_counts(text: str) -> dict[str, dict[str, int]]:
-    """Walk every `### CATEGORY-NN:` header and the following section body,
-    and count per-category status tokens.
+    """Walk every `## ` category section and count its catalog table rows,
+    classifying each row by its Status column.
 
     Returns: {row_label: {"total": N, "fixed": F, "open": O, "partial": P,
                          "wont_fix": W}}
     """
     # Build a list of (category_prefix, start_offset) for every top-level
-    # `### CATEGORY-NN:` header. Ignore `### CATEGORY-NN UPDATE` sub-sections.
+    # `## ` heading that maps to a known category.
     section_starts: list[tuple[str, int]] = []
-    for m in re.finditer(r"^###\s+([A-Za-z]+(?:-[A-Za-z]+)?)-(\d+)([a-z]?):\s+", text, re.MULTILINE):
-        prefix = m.group(1)
-        suffix_letter = m.group(3)
-        # Treat `### BASE-01b: ...` as a sub-section of BASE (counted under BASE).
-        # Treat `### LIMIT-05 UPDATE ...` (not matched because no colon) as a
-        # sub-section (not a top-level entry). The regex above requires the `:`
-        # so updates without a colon are skipped.
-        section_starts.append((prefix, m.start(), suffix_letter))
+    for m in re.finditer(r"^##\s+(.+?)\s*$", text, re.MULTILINE):
+        heading = m.group(1)
+        if heading == "Summary":
+            continue
+        hm = HEADING_CATEGORY_RE.search(heading)
+        prefix = hm.group(1) if hm else heading.strip()
+        section_starts.append((prefix, m.start()))
 
     # Build the result dict, defaulting all counts to 0.
     result: dict[str, dict[str, int]] = {}
-    for prefix, label in CATEGORY_ROWS:
+    for _prefix, label in CATEGORY_ROWS:
         result[label] = {"total": 0, "fixed": 0, "open": 0, "partial": 0, "wont_fix": 0}
 
-    for i, (prefix, start, suffix_letter) in enumerate(section_starts):
-        # Find the next `### ` (any prefix) or EOF.
+    for i, (prefix, start) in enumerate(section_starts):
+        # Find the next `## ` (any heading) or EOF.
         end = section_starts[i + 1][1] if i + 1 < len(section_starts) else len(text)
         body = text[start:end]
 
-        # Find the row label for this prefix.
+        # Find the row label for this section's category.
         label = next((lbl for pfx, lbl in CATEGORY_ROWS if pfx == prefix), None)
         if label is None:
-            # Unknown prefix (e.g., a new category not in CATEGORY_ROWS).
+            # Not a category section (e.g. `## How to read this document`).
             continue
-        result[label]["total"] += 1
 
-        # Extract the first `**Status:**` line in the body.
-        sm = STATUS_LINE.search(body)
-        if not sm:
-            continue
-        status_text = sm.group(1)
-        if STATUS_TOKEN_FIXED.search(status_text):
-            result[label]["fixed"] += 1
-        elif STATUS_TOKEN_OPEN.search(status_text):
-            result[label]["open"] += 1
-        elif STATUS_TOKEN_PARTIAL.search(status_text):
-            result[label]["partial"] += 1
-        elif STATUS_TOKEN_WONT_FIX.search(status_text):
-            result[label]["wont_fix"] += 1
-        # Default: if no token matched, leave the section uncounted in the
-        # status columns (only the total moves). This matches the
-        # pre-regen table's "ignore weak status" pattern.
+        for line in body.splitlines():
+            rm = ROW_RE.match(line)
+            if not rm:
+                continue
+            result[label]["total"] += 1
+
+            # The Status column sits between `Closes when` and `History`:
+            # `| ID | Symptom | Current | Issue | Closes | Status | History |`.
+            cells = [c.strip() for c in line.split("|")]
+            if len(cells) < 8:
+                continue
+            status = STATUS_MAP.get(cells[6].lower())
+            if status is not None:
+                result[label][status] += 1
+            # Unrecognized status text leaves the row counted in Total only.
     return result
 
 
@@ -137,14 +148,15 @@ def render_legend() -> str:
     """Render the table-derivation legend (the source-of-truth contract)."""
     return (
         "\n"
-        "*Counts derived from `grep -cE '^### CATEGORY-NN:' docs/KNOWN_ISSUES.md` "
-        "via `scripts/check_known_issues_summary.py`. Edit the per-section `**Status:**` "
-        "lines (or add new `### CATEGORY-NN:` headers) and the table updates on the next "
-        "regen. Status columns (`Fixed` / `Open` / `Partial` / `Won't Fix`) derive from "
-        "the first `**Status:**` line in each section. Sections without a `**Status:**` "
-        "line are counted in the Total column but contribute 0 to the status columns — "
-        "treat the missing line as a TODO and either add the line or document the "
-        "exception in the section body. To regenerate: `python3 "
+        "*Counts derived from the per-row catalog tables under each category "
+        "section (`| **CATEGORY-NN** | ... |`) via "
+        "`scripts/check_known_issues_summary.py`. Edit a row in place (or add a "
+        "new row) and the table updates on the next regen. Status columns "
+        "(`Fixed` / `Open` / `Partial` / `Won't Fix`) derive from each row's "
+        "Status cell: `resolved` -> Fixed, `open` -> Open, `tracking only` -> "
+        "Partial, `Won't Fix` -> Won't Fix. Rows without a recognized status are "
+        "counted in the Total column but contribute 0 to the status columns. To "
+        "regenerate: `python3 "
         "scripts/check_known_issues_summary.py --regen | sponge docs/KNOWN_ISSUES.md`.*\n"
     )
 
@@ -192,7 +204,7 @@ def main() -> int:
         if existing_range is None:
             print(
                 f"FAIL: {KNOWN_ISSUES.relative_to(REPO_ROOT)} is missing the "
-                f"`## Summary` table — re-run `python3 scripts/check_known_issues_summary.py "
+                f"`## Summary` table - re-run `python3 scripts/check_known_issues_summary.py "
                 f"--regen | sponge docs/KNOWN_ISSUES.md`",
                 file=sys.stderr,
             )
@@ -207,7 +219,7 @@ def main() -> int:
         )
         if not m:
             print(
-                "FAIL: could not parse the existing `## Summary` table — "
+                "FAIL: could not parse the existing `## Summary` table - "
                 "re-run `python3 scripts/check_known_issues_summary.py --regen | "
                 "sponge docs/KNOWN_ISSUES.md`",
                 file=sys.stderr,

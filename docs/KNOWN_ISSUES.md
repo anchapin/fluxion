@@ -4,25 +4,20 @@
 
 | Category | Total Issues | Fixed | Open | Partial | Won't Fix |
 |----------|-------------:|------:|-----:|--------:|----------:|
-| Foundation (BASE) | 0 | 0 | 0 | 0 | 0 |
-| Solar (SOLAR) | 0 | 0 | 0 | 0 | 0 |
-| Free-Float (FREE) | 0 | 0 | 0 | 0 | 0 |
-| Temperature (TEMP) | 0 | 0 | 0 | 0 | 0 |
-| Multi-Zone (MULTI) | 0 | 0 | 0 | 0 | 0 |
-| Model Limits (LIMIT) | 0 | 0 | 0 | 0 | 0 |
-| Reporting (REPORT) | 0 | 0 | 0 | 0 | 0 |
-| CI/Infrastructure (CI) | 0 | 0 | 0 | 0 | 0 |
-| fluxion-fluid (FLUID) | 0 | 0 | 0 | 0 | 0 |
-| FFD/CFD (FFD) | 0 | 0 | 0 | 0 | 0 |
-| **Total** | **0** | **0** | **0** | **0** | **0** |
+| Foundation (BASE) | 5 | 0 | 5 | 0 | 0 |
+| Solar (SOLAR) | 4 | 0 | 4 | 0 | 0 |
+| Free-Float (FREE) | 3 | 0 | 3 | 0 | 0 |
+| Temperature (TEMP) | 1 | 0 | 1 | 0 | 0 |
+| Multi-Zone (MULTI) | 4 | 0 | 4 | 0 | 0 |
+| Model Limits (LIMIT) | 30 | 1 | 26 | 3 | 0 |
+| Reporting (REPORT) | 4 | 0 | 4 | 0 | 0 |
+| CI/Infrastructure (CI) | 3 | 1 | 2 | 0 | 0 |
+| fluxion-fluid (FLUID) | 2 | 0 | 2 | 0 | 0 |
+| FFD/CFD (FFD) | 2 | 1 | 1 | 0 | 0 |
+| Reference data (REF) | 1 | 0 | 1 | 0 | 0 |
+| **Total** | **59** | **3** | **53** | **3** | **0** |
 
-*Counts derived from `grep -cE '^### CATEGORY-NN:' docs/KNOWN_ISSUES.md` via `scripts/check_known_issues_summary.py`. Edit the per-section `**Status:**` lines (or add new `### CATEGORY-NN:` headers) and the table updates on the next regen. Status columns (`Fixed` / `Open` / `Partial` / `Won't Fix`) derive from the first `**Status:**` line in each section. Sections without a `**Status:**` line are counted in the Total column but contribute 0 to the status columns — treat the missing line as a TODO and either add the line or document the exception in the section body. To regenerate: `python3 scripts/check_known_issues_summary.py --regen | sponge docs/KNOWN_ISSUES.md`.*
-
-Catalog of known systematic issues affecting ASHRAE 140 validation compliance.
-Engineering team and AI agents — reference before modifying physics or validation code.
-
-*Last Updated: 2026-09-30*
-
+*Counts derived from the per-row catalog tables under each category section (`| **CATEGORY-NN** | ... |`) via `scripts/check_known_issues_summary.py`. Edit a row in place (or add a new row) and the table updates on the next regen. Status columns (`Fixed` / `Open` / `Partial` / `Won't Fix`) derive from each row's Status cell: `resolved` -> Fixed, `open` -> Open, `tracking only` -> Partial, `Won't Fix` -> Won't Fix. Rows without a recognized status are counted in the Total column but contribute 0 to the status columns. To regenerate: `python3 scripts/check_known_issues_summary.py --regen | sponge docs/KNOWN_ISSUES.md`.*
 ## How to read this document
 
 Each limitation is **one row** in the tables below: its current measured value against
