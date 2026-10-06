@@ -257,7 +257,7 @@ test result: ok. 2 passed; 0 failed
 """
 
     def fake_run(cmd, **kwargs):
-        target = cmd[3] if len(cmd) > 3 else "?"
+        target = next((a for a in cmd if a.endswith("::")), "?").removesuffix("::")
         if target == "ashrae_140_validation":
             return _make_run(0, stdout=summary_output, stderr="")
         return _make_run(0, stdout="test result: ok. 5 passed; 0 failed", stderr="")
@@ -290,7 +290,7 @@ Case 900 : Heating=99.0 (Ref: 4.50-5.50), Cooling=8.10 (Ref: 7.50-8.50)
 """
 
     def fake_run(cmd, **kwargs):
-        target = cmd[3] if len(cmd) > 3 else "?"
+        target = next((a for a in cmd if a.endswith("::")), "?").removesuffix("::")
         if target == "ashrae_140_validation":
             return _make_run(0, stdout=summary_output, stderr="")
         return _make_run(0, stdout="test result: ok. 1 passed; 0 failed", stderr="")

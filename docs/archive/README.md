@@ -19,6 +19,10 @@ references for current Fluxion development.
   - `PHASE_44_WAVE_0_SUMMARY.md`, `PHASE_45_WAVE_0_SUMMARY.md`
   - `PLAN_ashrae140_improvement.md`, `PLAN_ashrae140_remainder.md`
   - `ashrae-140-prompt.md`
+- `worklogs/` — completed agent worklogs, investigation findings, and
+  planning notes moved out of the `docs/` root so the top level holds
+  only current, authoritative documentation (2026-10-06 docs-hygiene
+  pass).
 - `security/` — Superseded security reports. The current security
   advisory is at the repo root in
   `SECURITY_REPORT_CVE-2026-27448_GHSA-fv5p-p927-qmxr.md`.
