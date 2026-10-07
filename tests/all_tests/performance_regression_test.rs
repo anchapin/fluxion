@@ -337,9 +337,40 @@ fn check_regression(
 
 /// Integration test: Performance regression detection
 ///
+/// Report-only TRUE single-config latency (Issue #4205).
+///
+/// `release_gates.yaml` declares `benchmark.latency.max_ms_per_config: 10.0`,
+/// but the gate's `latency_per_config_ms` divides a parallel 100-config wall
+/// time by 100 — a throughput derivative, not per-config latency. This
+/// measures what the budget actually describes: ONE config through
+/// `evaluate_population` (1 warm-up + 1 measured sequential run, 3-parameter
+/// fixture matching `run_performance_test`'s generator at idx = 0).
+/// Report-only — no pass/fail anywhere; the value feeds
+/// `benchmark_results.json.latency_single_config_ms` (performance_dashboard)
+/// and the committed baseline in `tests/perf_baseline.json` so the 10 ms
+/// figure in `release_gates.yaml` can be re-derived from data.
+fn measure_single_config_latency() -> f64 {
+    use fluxion::physics::cta::VectorField;
+    use fluxion::sim::engine::ThermalModel;
+    use fluxion::BatchOracle;
+
+    let base_model = ThermalModel::<VectorField>::new(1);
+    let oracle = BatchOracle::from_model(base_model).unwrap();
+    // idx = 0 of `run_performance_test`'s fixture generator.
+    let population: Vec<Vec<f64>> = vec![vec![1.5, 20.0, 24.0]];
+
+    // Warm-up: settle the rayon pool and allocator before the timed run.
+    let _ = oracle.evaluate_population(population.clone(), false);
+
+    let start = Instant::now();
+    let _ = oracle.evaluate_population(population, false);
+    start.elapsed().as_secs_f64() * 1000.0
+}
+
 /// This test verifies that performance doesn't regress by more than the
 /// threshold documented in `release_gates.yaml`
 /// (`benchmark.regression_threshold`, currently 5%). Run with:
+///
 /// ```
 /// cargo test performance_regression --release
 /// ```
@@ -365,6 +396,11 @@ fn test_performance_regression() {
         "  Latency per config: {:.3}ms",
         metrics.latency_per_config_ms
     );
+    // Issue #4205: report-only TRUE single-config latency (see
+    // `measure_single_config_latency`). NOT part of the regression or
+    // absolute-gate evaluation — informational only.
+    let single_config_ms = measure_single_config_latency();
+    println!("  Single-config latency: {:.3}ms", single_config_ms);
     println!(
         "  Regression threshold: {:.1}% (from {})",
         threshold * 100.0,

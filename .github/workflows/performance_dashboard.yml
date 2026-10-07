@@ -750,15 +750,23 @@ jobs:
 
           throughput_re = re.compile(r'Throughput:\s*([\d.]+)\s*configs/sec')
           latency_re = re.compile(r'Latency per config:\s*([\d.]+)ms')
+          # Issue #4205: report-only TRUE single-config latency (one config
+          # through evaluate_population, sequential). No gate reads this key;
+          # it is recorded so the 10 ms/config budget in release_gates.yaml
+          # becomes measurable over time.
+          single_latency_re = re.compile(r'Single-config latency:\s*([\d.]+)ms')
 
-          throughputs, latencies = [], []
+          throughputs, latencies, single_latencies = [], [], []
           for path in sorted(glob.glob('run_*.txt')):
               txt = open(path, errors='replace').read()
               t = throughput_re.findall(txt)
               l = latency_re.findall(txt)
+              s = single_latency_re.findall(txt)
               if t and l:
                   throughputs.append(float(t[-1]))
                   latencies.append(float(l[-1]))
+                  if s:
+                      single_latencies.append(float(s[-1]))
                   print(f"{path}: throughput={t[-1]} cfg/s, latency={l[-1]} ms")
               else:
                   print(f"WARNING: {path} produced no parseable metrics")
@@ -776,6 +784,8 @@ jobs:
 
           print(f"\nSamples: throughput={throughputs}")
           print(f"         latency={latencies}")
+          if single_latencies:
+              print(f"         single-config latency={single_latencies} (report-only, Issue #4205)")
           print(f"Median throughput: {med_throughput:.1f} configs/sec")
           print(f"Median latency:    {med_latency:.3f} ms/config")
 
@@ -791,6 +801,13 @@ jobs:
                   "strategy": "median-of-3",
               },
           }
+          # Issue #4205: report-only true single-config latency. Stored but
+          # never gate-evaluated; absence never fails anything.
+          if single_latencies:
+              med_single = statistics.median(single_latencies)
+              results["metrics"]["latency_single_config_ms"] = med_single
+              results["samples"]["latency_single_config"] = single_latencies
+              print(f"Median single-config latency (report-only): {med_single:.3f} ms")
           with open('benchmark_results.json', 'w') as f:
               json.dump(results, f, indent=2)
           print("\nWrote benchmark_results.json")
@@ -819,6 +836,10 @@ jobs:
           echo "Enforces \`release_gates.yaml\` absolute floors on every PR:" >> $GITHUB_STEP_SUMMARY
           echo "- throughput ≥ 150 configs/sec" >> $GITHUB_STEP_SUMMARY
           echo "- latency ≤ 10 ms/config" >> $GITHUB_STEP_SUMMARY
+          if [ -f benchmark_results.json ]; then
+            SINGLE_MS=$(python3 -c "import json;print(json.load(open('benchmark_results.json'))['metrics'].get('latency_single_config_ms','n/a'))")
+            echo "- single-config latency (report-only, Issue #4205): ${SINGLE_MS} ms/config" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Noise suppression:** median of 3 \`performance_regression_test\` runs (population = 100, release build, default features)." >> $GITHUB_STEP_SUMMARY
           echo "**Runner:** \`ubuntu-24.04\` (the 150 cfg/s floor was calibrated here; self-hosted runners measure a different absolute throughput)." >> $GITHUB_STEP_SUMMARY
