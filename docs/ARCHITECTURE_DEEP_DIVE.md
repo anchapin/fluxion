@@ -77,7 +77,7 @@ tests/
 ├── case_600.rs    # Baseline low-mass
 ├── case_900.rs    # High-mass
 ├── case_960.rs    # Sunspace
-└── ashrae_140_validator.rs
+└── ashrae_140_validator/ (mod.rs)
 ```
 
 ## Data Flow

@@ -517,7 +517,7 @@ dependency). Wired into the main crate through the `TwinCorrection` struct and
 the `set_twin_correction` method on `ThermalModelTrait` — the thermal model
 accepts corrections produced by `UkfTwinAdapter::correct()`.
 
-**Entry point**: `crates/fluxion-twin/src/lib.rs` + `src/telemetry/mod.rs`
+**Entry point**: `crates/fluxion-twin/src/lib.rs` + `crates/fluxion-twin/src/telemetry/mod.rs`
 
 #### Public Surface
 
@@ -680,7 +680,7 @@ main `fluxion` crate, not the leaf. Issues #1255, #1349, #1441, #2462,
   `fluxion-core/src/weather/tmy3.rs` (NREL TMY3 download + on-disk
   SHA-256 cache). The root `fluxion` crate forwards the feature as
   `tmy3-download = ["fluxion-core/tmy3-download"]` so consumers like
-  `tests/test_tmy3_download.rs` opt in explicitly.
+  `tests/all_tests/test_tmy3_download.rs` opt in explicitly.
 
 **Regression gate** (`scripts/check_fluxion_core_dep_budget.py`):
 

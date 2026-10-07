@@ -314,7 +314,7 @@ cargo run -p fluxion --bin run_multi_zone_validation -- case960
 
 - **Code**:
   - `src/validation/ashrae_140_multi_zone.rs` — rewritten
-  - `src/validation/ashrae_140_validator.rs` — `validate_case_960` (real)
+  - `src/validation/ashrae_140_validator/mod.rs` — `validate_case_960` (real)
   - `src/validation/benchmark.rs` — `CASE_960_*` reference constants
   - `src/validation/ashrae_140_cases.rs` — `Case970` variant +
     `case_970_five_zone_cross_coupling()` builder (#1446)

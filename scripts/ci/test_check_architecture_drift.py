@@ -265,6 +265,56 @@ def test_extract_documented_files_catches_src_paths(drift, fragment):
 
 
 # ---------------------------------------------------------------------------
+# extract_documented_files widening + AGENTS.md citation gate (Issue #4185)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "fragment",
+    [
+        "the trait lives in `sim/thermal_model.rs`",
+        "node label (validation/report/mod.rs) in backticks: `validation/report/mod.rs`",
+        "`fluxion-core/src/construction.rs` is a leaf",
+    ],
+)
+def test_extract_documented_files_catches_prefixless_paths(drift, fragment):
+    files = drift.extract_documented_files(fragment)
+    assert len(files) == 1, files
+
+
+def test_check_doc_path_citations_flags_missing_file(drift, tmp_path, monkeypatch):
+    doc = tmp_path / "AGENTS.md"
+    doc.write_text("guard is `tests/regression_exterior_film_unification.rs`.\n")
+    monkeypatch.setattr(drift, "CITED_PATH_DOCS", [doc])
+    monkeypatch.setattr(drift, "REPO_ROOT", tmp_path)
+    findings = drift.check_doc_path_citations()
+    assert any("regression_exterior_film_unification" in f for f in findings)
+
+
+def test_check_doc_path_citations_flags_stale_line(drift, tmp_path, monkeypatch):
+    real = tmp_path / "src"
+    (real / "sim").mkdir(parents=True)
+    (real / "sim" / "short.rs").write_text("a\nb\nc\n")
+    doc = tmp_path / "AGENTS.md"
+    doc.write_text("see `src/sim/short.rs:59`.\n")
+    monkeypatch.setattr(drift, "CITED_PATH_DOCS", [doc])
+    monkeypatch.setattr(drift, "REPO_ROOT", tmp_path)
+    findings = drift.check_doc_path_citations()
+    assert any("past end-of-file" in f for f in findings)
+
+
+def test_check_doc_path_citations_clean(drift, tmp_path, monkeypatch):
+    real = tmp_path / "src" / "sim"
+    real.mkdir(parents=True)
+    (real / "short.rs").write_text("a\nb\nc\n")
+    doc = tmp_path / "AGENTS.md"
+    doc.write_text("see `src/sim/short.rs:2` and `sim/short.rs`.\n")
+    monkeypatch.setattr(drift, "CITED_PATH_DOCS", [doc])
+    monkeypatch.setattr(drift, "REPO_ROOT", tmp_path)
+    assert drift.check_doc_path_citations() == []
+
+
+# ---------------------------------------------------------------------------
 # parse_guard_constant / check_cycle_edge_count_drift (Issue #3460)
 # ---------------------------------------------------------------------------
 

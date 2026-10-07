@@ -205,10 +205,11 @@ curl -s -X POST http://localhost:8080/v1/batch \
   | jq '.results | length'
 ```
 
-<!-- src/api/server.rs: BatchRequest 746, BatchResponse 752, batch_simulate 1461,
-     MAX_BATCH_SIMULATIONS 96, MAX_CAMPAIGN_STEPS 104, BatchTooLarge 810,
-     StepBudgetExceeded 811, spawn_blocking dispatch 1526;
-     MAX_REQUEST_BODY_BYTES src/api/security.rs:49 -->
+<!-- src/api/server/batch.rs: BatchRequest 24, BatchResponse 30, batch_simulate 49,
+     spawn_blocking dispatch 96; src/api/server/constants.rs:
+     MAX_BATCH_SIMULATIONS 37, MAX_CAMPAIGN_STEPS 45; src/api/server/api_error.rs:
+     BatchTooLarge 45, StepBudgetExceeded 47;
+     MAX_REQUEST_BODY_BYTES src/api/security/mod.rs:76 -->
 
 ### `POST /v1/simulate/stream`
 
@@ -247,8 +248,8 @@ curl -N -X POST http://localhost:8080/v1/simulate/stream \
 # => ...
 ```
 
-<!-- src/api/server.rs: simulate_stream 1361, TimestepEvent 758,
-     mpsc + tokio::spawn 1391-1422, SSE framing 1424-1453 -->
+<!-- src/api/server/simulate.rs: simulate_stream 796, TimestepEvent 789,
+     mpsc + tokio::spawn 826-838, SSE framing 887 -->
 
 ### `GET /v1/simulation/:id/status`
 
@@ -271,9 +272,9 @@ curl -s http://localhost:8080/v1/simulation/sim-3/status | jq '.state'
 # => "completed"
 ```
 
-<!-- src/api/server.rs: get_simulation_status 1554, SimulationStatus 351,
-     SimulationStateEnum 361, SIM_ID_PREFIX 78, register_simulation 481,
-     InMemorySimulationStateStore::get_status 228,
+<!-- src/api/server/batch.rs: get_simulation_status 35; src/api/server/state.rs:
+     SimulationStatus 298, SimulationStateEnum 316, SIM_ID_PREFIX constants.rs:19,
+     register_simulation 168, InMemorySimulationStateStore::get_status 88,
      ApiError::SimulationNotFound 774 -->
 
 ### `POST /v1/campaigns`
@@ -303,9 +304,10 @@ curl -s -X POST http://localhost:8080/v1/campaigns \
 # => "camp-0"
 ```
 
-<!-- src/api/server.rs: submit_campaign 1576, CampaignSpec 383,
-     CampaignSubmitResponse 1567, CAMPAIGN_ID_PREFIX 81, caps 1590-1611,
-     spawned worker task 1619-1673 -->
+<!-- src/api/server/campaigns.rs: submit_campaign 28; src/api/server/state.rs:
+     CampaignSpec 396, CampaignSubmitResponse 476, CAMPAIGN_ID_PREFIX constants.rs:22,
+     caps src/api/server/campaigns.rs 45-56,
+     spawned worker task src/api/server/campaigns.rs (submit_campaign body) -->
 
 ### `GET /v1/campaigns/:id/status`
 
@@ -334,9 +336,10 @@ curl -s http://localhost:8080/v1/campaigns/camp-0/status \
 # => {"state":"completed","progress":1.0,"completed":6,"total":6}
 ```
 
-<!-- src/api/server.rs: get_campaign_status 1679, CampaignStatus 391,
-     CampaignStateEnum 404, CampaignResult 438, CampaignSimulationResult 444,
-     get_campaign_status body assembly 535-606, ApiError::CampaignNotFound 775 -->
+<!-- src/api/server/campaigns.rs: get_campaign_status 136; src/api/server/state.rs:
+     CampaignStatus 407, CampaignStateEnum 427, CampaignResult 462,
+     CampaignSimulationResult 468; src/api/server/api_error.rs:
+     ApiError::CampaignNotFound 33 -->
 
 ### `GET /v1/readyz`
 
@@ -382,9 +385,10 @@ curl -s http://localhost:8080/v1/readyz | jq '.checks.onnx.status'
 # => "ok"
 ```
 
-<!-- src/api/server.rs: readyz 1047, run_readiness_probes_with 1006,
-     probe_onnx 947, probe_weather 981, probe_appstate 998, ReadinessReport 921,
-     ReadinessChecks 908, public route 2063, 200-on-happy-path test 3517,
+<!-- src/api/server/health.rs: readyz 228, run_readiness_probes_with 187,
+     probe_onnx 113, probe_weather 156, probe_appstate 179, ReadinessReport 91,
+     ReadinessChecks 79, public route src/api/server/router.rs:245-258,
+     200-on-happy-path test src/api/server/tests.rs:78 -->
      503-when-not-ready test 3540 -->
 
 ## Acceptance criteria
@@ -485,7 +489,7 @@ cargo test --test all_tests api_integration_tests::
 
 | Path                          | Purpose                                           |
 |-------------------------------|---------------------------------------------------|
-| `src/api/server.rs`           | Router, handlers, AppState, error mapping          |
+| `src/api/server/` (mod.rs, router.rs, batch.rs, simulate.rs, campaigns.rs, health.rs, state.rs, schema_store.rs, api_error.rs, constants.rs) | Router, handlers, AppState, error mapping |
 | `src/api/openapi.yaml`        | Hand-authored OpenAPI 3.1 contract                |
 | `src/bin/fluxion_rest.rs`     | Binary entrypoint with env-var resolution         |
 | `tests/api_integration_tests.rs` | End-to-end HTTP tests                          |

@@ -142,7 +142,7 @@ The ASHRAE 140 validation uses:
 "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw"
 ```
 
-This path is hardcoded in `src/bin/fluxion.rs` and `src/validation/ashrae_140_validator.rs`. This is acceptable for ASHRAE 140 compliance — the path is versioned in git and the SHA256 hash is documented above.
+This path is hardcoded in `src/bin/fluxion.rs` and `src/validation/ashrae_140_validator/mod.rs`. This is acceptable for ASHRAE 140 compliance — the path is versioned in git and the SHA256 hash is documented above.
 
 ---
 
