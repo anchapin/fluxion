@@ -116,6 +116,71 @@ fn predict_loads_batched_into_zero_steady_state_growth() {
 }
 
 // ===========================================================================
+// Issue #4204 — single-sample zero-alloc ONNX-path gate.
+//
+// `predict_loads_into_with_scratch` is the single-sample twin of the #2771
+// batched `predict_loads_batched_into` fix: with a real ONNX model loaded,
+// the prior `predict_loads_onnx_impl` allocated ≥ 3 heap blocks per call
+// (flattened f32 `Vec`, owned input tensor, returned f64 `Vec`). The `_into`
+// variant builds the tensor from a borrowed `TensorRef` view over the caller's
+// f32 scratch and spills results into the caller's f64 buffer, so the
+// steady-state call must allocate nothing. As with the batched gate above,
+// the mock path exercises the identical clear/extend/resize reuse machinery;
+// the ONNX branch additionally reuses the flattened f32 input via a borrowed
+// `TensorRef` (verified to compile under `--features ort`).
+// ===========================================================================
+
+/// Single-sample steady-state probe iterations (Issue #4204).
+const SINGLE_STEADY_ITERS: usize = 1000;
+
+#[test]
+#[ignore]
+fn predict_loads_into_with_scratch_zero_steady_state_growth() {
+    let _profiler = dhat::Profiler::builder().testing().build();
+
+    let m = SurrogateManager::new().expect("SurrogateManager::new");
+    // One config, N_ZONES zones — the per-timestep shape of the hybrid /
+    // orchestrator single-sample hot loop.
+    let temps: Vec<f64> = vec![20.0; N_ZONES];
+
+    // Hoisted reuse buffers — exactly as `HybridThermalModel` holds
+    // `surrogate_input_scratch_f32` / `surrogate_load_scratch` above the
+    // 8 760-step loop.
+    let mut scratch_in: Vec<f32> = Vec::new();
+    let mut out: Vec<f64> = Vec::new();
+
+    // Warm-up: drive both buffers to steady-state capacity.
+    for _ in 0..WARMUP_ITERS {
+        m.predict_loads_into_with_scratch(&temps, &mut scratch_in, &mut out);
+    }
+    assert_eq!(out.len(), N_ZONES);
+    assert!(out.iter().all(|&v| v == 1.2));
+
+    let warm_blocks = dhat::HeapStats::get().total_blocks;
+
+    // Steady-state probe: these iterations must allocate nothing.
+    for _ in 0..SINGLE_STEADY_ITERS {
+        m.predict_loads_into_with_scratch(&temps, &mut scratch_in, &mut out);
+    }
+
+    let steady_delta = dhat::HeapStats::get().total_blocks - warm_blocks;
+
+    println!(
+        "predict_loads_into_with_scratch steady-state probe \
+         (1 config × {N_ZONES} zones, {SINGLE_STEADY_ITERS} iterations): \
+         warm_blocks={warm_blocks}, steady_delta={steady_delta}",
+    );
+
+    assert_eq!(
+        steady_delta, 0,
+        "predict_loads_into_with_scratch must perform ZERO heap allocation in steady state, \
+         but allocated {steady_delta} block(s) over {SINGLE_STEADY_ITERS} iterations after \
+         warm-up. This is the single-sample ONNX-path regression tracked in #4204 — the \
+         f32 input scratch and f64 output buffer must be reused, not reallocated.",
+    );
+}
+
+// ===========================================================================
 // Issue #2751 — GPU-path submit_with_sender + ping-pong buffer reuse gate.
 //
 // The batched GPU path in `BatchOracle::evaluate_population` (src/batch_oracle.rs)

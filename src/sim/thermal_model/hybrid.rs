@@ -260,6 +260,11 @@ pub struct HybridThermalModel {
     /// per-step `Vec<f64>` that `predict_loads_with_fallback` returned
     /// from each `predict_loads_onnx_impl` success path (Issue #2860).
     surrogate_load_scratch: Vec<f64>,
+    /// Flattened `f32` input scratch for the zero-alloc single-sample ONNX
+    /// surrogate path (Issue #4204). Held beside `surrogate_load_scratch`
+    /// so the per-step `predict_loads_into_with_scratch` call builds its
+    /// ONNX tensor from a borrowed view without allocating.
+    surrogate_input_scratch_f32: Vec<f32>,
     /// Reuse buffer for hourly zone temperature snapshots (Issue #2860).
     ///
     /// Pre-allocated to `num_zones` inner Vecs in
@@ -306,6 +311,8 @@ impl Clone for HybridThermalModel {
             surrogate_conduction_calls: self.surrogate_conduction_calls,
             surrogate_ventilation_calls: self.surrogate_ventilation_calls,
             surrogate_load_scratch: self.surrogate_load_scratch.clone(),
+            // Issue #4204: same reuse rationale as `surrogate_load_scratch`.
+            surrogate_input_scratch_f32: self.surrogate_input_scratch_f32.clone(),
             // Issue #2860: clones get a fresh outer Vec sized to
             // `num_zones` with empty inner Vecs. The first
             // `solve_timesteps` call on the clone grows inner Vec
@@ -378,6 +385,8 @@ impl HybridThermalModel {
             // `clear()` then `extend_from_slice` into a grown Vec; subsequent
             // calls reuse the existing capacity.
             surrogate_load_scratch: Vec::with_capacity(num_zones),
+            // Issue #4204: same zero-alloc rationale as `surrogate_load_scratch`.
+            surrogate_input_scratch_f32: Vec::with_capacity(num_zones),
             // Issue #2860: pre-allocate the hourly snapshot buffer's outer
             // Vec to `num_zones` empty inner Vecs. Inner Vec capacity is
             // grown lazily to the requested `steps` on the first
@@ -401,6 +410,8 @@ impl HybridThermalModel {
             surrogate_ventilation_calls: 0,
             // Issue #2921: same zero-alloc rationale as `new`.
             surrogate_load_scratch: Vec::with_capacity(spec.num_zones),
+            // Issue #4204: same zero-alloc rationale as `surrogate_load_scratch`.
+            surrogate_input_scratch_f32: Vec::with_capacity(spec.num_zones),
             // Issue #2860: same zero-alloc rationale as `new`.
             hourly_buf: (0..spec.num_zones).map(|_| Vec::new()).collect(),
         }
@@ -424,6 +435,8 @@ impl HybridThermalModel {
             surrogate_ventilation_calls: 0,
             // Issue #2921: same zero-alloc rationale as `new`.
             surrogate_load_scratch: Vec::with_capacity(spec.num_zones),
+            // Issue #4204: same zero-alloc rationale as `surrogate_load_scratch`.
+            surrogate_input_scratch_f32: Vec::with_capacity(spec.num_zones),
             // Issue #2860: same zero-alloc rationale as `new`.
             hourly_buf: (0..spec.num_zones).map(|_| Vec::new()).collect(),
         }
@@ -515,6 +528,8 @@ impl HybridThermalModel {
         // state but the pre-allocated capacity is preserved — the
         // `predict_loads_into` hot path stays zero-alloc on every solve.
         self.surrogate_load_scratch.clear();
+        // Issue #4204: clear (NOT deallocate) the f32 ONNX input scratch too.
+        self.surrogate_input_scratch_f32.clear();
     }
 
     /// Get the full hourly zone temperature profiles from the last simulation.
@@ -686,8 +701,14 @@ impl ThermalModelTrait for HybridThermalModel {
                             // SmallVec for ≤ 4 zones (no heap alloc) — covering the
                             // 1-zone and small-multi-zone regimes that drive the
                             // absolute-perf-gate harness.
-                            surrogates.predict_loads_into(
+                            // Issue #4204: zero-alloc single-sample ONNX path —
+                            // the f32 input tensor is a borrowed view over the
+                            // pre-allocated `surrogate_input_scratch_f32`
+                            // buffer, so a loaded ONNX model no longer
+                            // allocates ~3 Vecs per timestep here.
+                            surrogates.predict_loads_into_with_scratch(
                                 self.inner.setpoints.temperatures.as_ref(),
+                                &mut self.surrogate_input_scratch_f32,
                                 &mut self.surrogate_load_scratch,
                             );
                             self.inner.setpoints.loads = crate::physics::cta::VectorField::from_slice(
@@ -706,8 +727,11 @@ impl ThermalModelTrait for HybridThermalModel {
                         // as the OOD-enabled branch above. The `Err` arm goes
                         // away — `predict_loads_into` always succeeds (with a
                         // mock fallback on ONNX failure).
-                        surrogates.predict_loads_into(
+                        // Issue #4204: same zero-alloc single-sample swap as
+                        // the OOD-enabled branch above.
+                        surrogates.predict_loads_into_with_scratch(
                             self.inner.setpoints.temperatures.as_ref(),
+                            &mut self.surrogate_input_scratch_f32,
                             &mut self.surrogate_load_scratch,
                         );
                         self.inner.setpoints.loads = crate::physics::cta::VectorField::from_slice(
