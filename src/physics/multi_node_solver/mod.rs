@@ -925,13 +925,31 @@ impl MultiNodeSolver {
         let min_tau = wall_tau.min(roof_tau).min(floor_tau);
 
         // Determine number of sub-steps needed
-        let num_sub_steps =
-            if min_tau.is_finite() && min_tau > 0.0 && dt > min_tau * STIFFNESS_FACTOR {
-                let required = (dt / (min_tau * STIFFNESS_FACTOR)).ceil() as u32;
-                required.clamp(MIN_SUB_STEPS, MAX_SUB_STEPS)
-            } else {
-                MIN_SUB_STEPS
-            };
+        //
+        // === §LIMIT-05 prototype (DO-NOT-MERGE review artifact) — env-gated
+        // sub-step override. === The whole-step Case 900 probe
+        // (docs/investigations/limit-35-case-900-heating-out-of-band.md)
+        // showed annual heating converging monotonically into the published
+        // band [1170, 2040] kWh as the timestep is refined (3249.6 kWh @
+        // dt=3600 s → 1802.7 @ 900 s → 1305.7 @ 600 s). This override forces
+        // the multi-node mass integration to N sub-steps per hour
+        // (FLUXION_MASS_SUBSTEPS) so the timestep-refinement limit can be
+        // evaluated inside the production path without changing the air node
+        // or HVAC metering. Unset or 0 keeps the adaptive logic above
+        // bit-identical to develop. NOT validated across the case suite —
+        // pending Alex's physics review.
+        let env_sub_steps: u32 = std::env::var("FLUXION_MASS_SUBSTEPS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let num_sub_steps = if env_sub_steps > 0 {
+            env_sub_steps.clamp(1, 240)
+        } else if min_tau.is_finite() && min_tau > 0.0 && dt > min_tau * STIFFNESS_FACTOR {
+            let required = (dt / (min_tau * STIFFNESS_FACTOR)).ceil() as u32;
+            required.clamp(MIN_SUB_STEPS, MAX_SUB_STEPS)
+        } else {
+            MIN_SUB_STEPS
+        };
 
         let sub_dt = dt / num_sub_steps as f64;
 
