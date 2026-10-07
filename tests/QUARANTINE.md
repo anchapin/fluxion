@@ -244,6 +244,7 @@ unit-test CI. They are run manually for memory profiling.
 | `tests/dhat_alloc_budget.rs` | `batch_oracle_hot_loop_alloc_budget` | `performance` | Performance | `unassigned` | CI profile budget defined; run in perf CI | `pending` |
 | `tests/dhat_batched_surrogate_zero_growth.rs` | `predict_loads_batched_into_zero_steady_state_growth` | `performance` | Performance | `unassigned` | CI profile budget defined; run in perf CI | `pending` |
 | `tests/dhat_batched_surrogate_zero_growth.rs` | `submit_with_sender_pingpong_steady_state_floor` | `performance` | Performance | `unassigned` | CI profile budget defined; run in perf CI | `pending` |
+| `tests/dhat_batched_surrogate_zero_growth.rs` | `predict_loads_into_with_scratch_zero_steady_state_growth` | `performance` | Performance | `unassigned` | CI profile budget defined; run in perf CI (Issue #4204 single-sample zero-alloc gate) | `pending` |
 | `tests/dhat_evaluate_population_numpy_zero_copy.rs` | `evaluate_population_from_slice_zero_steady_state_growth` | `performance` | Performance | `unassigned` | CI profile budget defined; run in perf CI | `pending` |
 | `tests/dhat_hybrid_zero_alloc.rs` | `hybrid_solve_timesteps_surrogate_load_branch_zero_steady_state_growth` | `performance` | Performance | `unassigned` | CI profile budget defined; run in perf CI | `pending` |
 | `tests/dhat_step_physics_zero_alloc.rs` | `step_physics_day_mode_steady_state_alloc_budget` | `performance` | Performance | `unassigned` | CI profile budget defined; run in perf CI | `pending` |
