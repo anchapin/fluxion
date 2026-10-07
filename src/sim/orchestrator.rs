@@ -405,11 +405,18 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
                     // per timestep (`get_temperatures`, `predict_loads`,
                     // `set_loads`'s `to_vec`) — ~26 M heap allocations for a
                     // 1 000-config × 8 760-timestep run. The `_into` /
-                    // `_from_slice` variants reuse capacity, so after warm-up
-                    // the inner loop performs no heap allocation here. The
-                    // bytes flowing into `step_physics` are bit-identical.
+                    // `_from_slice` variants reuse capacity. Issue #4204:
+                    // with a real ONNX model loaded the single-sample path
+                    // additionally allocated ≥ 3 Vecs per inference (flattened
+                    // f32 input, owned input tensor, returned f64 output);
+                    // `predict_loads_into_with_scratch` builds the tensor from
+                    // a borrowed view over the hoisted f32 scratch instead, so
+                    // after warm-up the inner loop performs no heap allocation
+                    // here. The bytes flowing into `step_physics` are
+                    // bit-identical.
                     let mut temps_buf: Vec<f64> = Vec::new();
                     let mut loads_buf: Vec<f64> = Vec::new();
+                    let mut onnx_scratch_in: Vec<f32> = Vec::new();
                     for t in 0..8760 {
                         let hour_of_day = t % 24;
                         let daily_cycle =
@@ -419,7 +426,11 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
                         let outdoor_temp = 10.0 + 10.0 * daily_cycle;
 
                         model.get_temperatures_into(&mut temps_buf);
-                        surrogates.predict_loads_into(&temps_buf, &mut loads_buf);
+                        surrogates.predict_loads_into_with_scratch(
+                            &temps_buf,
+                            &mut onnx_scratch_in,
+                            &mut loads_buf,
+                        );
                         model.set_loads(&loads_buf);
                         energy_kwh += model.step_physics(t, outdoor_temp, 3600.0);
                     }

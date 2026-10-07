@@ -12,7 +12,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 #[cfg(feature = "ort")]
@@ -596,6 +596,29 @@ impl Default for SurrogateManager {
 /// (Issue #2920). `compare_exchange(false, true, …)` ensures exactly one warn
 /// per process even under parallel callers; tests reset to `false` so the
 /// assertion can re-trigger the path.
+/// Issue #4204: counted one-shot warn guards for the per-timestep surrogate
+/// fallback sites. A persistently failing model previously emitted a fully
+/// formatted `warn!` on all 8,760 timesteps per config; each guard now logs
+/// the first occurrence in full and re-emits a summary every 1,000th, so the
+/// flood is bounded while the raw count stays visible (never silent).
+pub(crate) static RESIDUAL_REROUTE_WARN_COUNT: AtomicUsize = AtomicUsize::new(0);
+pub(crate) static ONNX_FALLBACK_ANALYTICAL_WARN_COUNT: AtomicUsize = AtomicUsize::new(0);
+pub(crate) static ONNX_FALLBACK_MOCK_WARN_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+/// Warn-gate helper (Issue #4204). Counts every occurrence; emits the full
+/// message on the first and a running-total summary on every 1,000th.
+pub(crate) fn rate_limited_warn(guard: &AtomicUsize, site: &str, detail: &str) {
+    let n = guard.fetch_add(1, Ordering::Relaxed);
+    if n == 0 {
+        warn!("{site}: {detail}");
+    } else if n.is_multiple_of(1000) {
+        warn!(
+            "{site}: {detail} (occurrence #{}; suppressed 999 identical warnings since the last summary)",
+            n + 1
+        );
+    }
+}
+
 pub(crate) static BACKEND_DOWNGRADE_WARNED: AtomicBool = AtomicBool::new(false);
 
 impl SurrogateManager {
@@ -1103,9 +1126,13 @@ impl SurrogateManager {
         match self.predict_loads_onnx(temps) {
             Ok(loads) => {
                 if let Err(violation) = self.check_inference_residual(temps, &loads) {
-                    warn!(
-                        "surrogate residual violation: sample {} predicted {:.2} W expected {:.2} W residual {:.2} W² — rerouting to analytical fallback",
-                        violation.sample_index, violation.predicted, violation.expected, violation.residual
+                    rate_limited_warn(
+                        &RESIDUAL_REROUTE_WARN_COUNT,
+                        "surrogate residual violation",
+                        &format!(
+                            "sample {} predicted {:.2} W expected {:.2} W residual {:.2} W² — rerouting to analytical fallback",
+                            violation.sample_index, violation.predicted, violation.expected, violation.residual
+                        ),
                     );
                     *self.residual_reroute_count.lock() += 1;
                     metrics::counter!("surrogate_residual_reroutes_total", "mode" => "neural_with_fallback").increment(1);
@@ -1115,9 +1142,10 @@ impl SurrogateManager {
                 Ok(loads)
             }
             Err(e) => {
-                warn!(
-                    "ONNX inference failed ({}), falling back to analytical_loads",
-                    e
+                rate_limited_warn(
+                    &ONNX_FALLBACK_ANALYTICAL_WARN_COUNT,
+                    "ONNX inference failed",
+                    &format!("({e}), falling back to analytical_loads"),
                 );
                 self.record_onnx_fallback_metric();
                 self.analytical_loads(temps)
@@ -1606,14 +1634,156 @@ impl SurrogateManager {
                 out.extend_from_slice(&loads);
             }
             Err(e) => {
-                warn!(
-                    "ONNX inference failed ({}), falling back to mock placeholder",
-                    e
+                rate_limited_warn(
+                    &ONNX_FALLBACK_MOCK_WARN_COUNT,
+                    "ONNX inference failed",
+                    &format!("({e}), falling back to mock placeholder"),
                 );
                 out.clear();
                 out.resize(current_temps.len(), 1.2);
             }
         }
+    }
+
+    /// Zero-allocation variant of [`Self::predict_loads_into`] for the
+    /// single-sample per-timestep hot loop (Issue #4204, mirroring the
+    /// batched twin from Issue #2771).
+    ///
+    /// Reuses two caller-supplied scratch buffers across calls:
+    /// - `scratch_in` — flattened `f32` input fed to the ONNX runtime,
+    /// - `out`        — the per-zone load vector.
+    ///
+    /// When a real ONNX model is loaded the input tensor is built from a
+    /// *borrowed* `&[f32]` view (`ort::value::TensorRef::from_array_view`)
+    /// over `scratch_in` rather than an owned `Vec`, and results are spilled
+    /// into `out` — so the steady-state call performs no heap allocation
+    /// (previously ≥ 3 allocations per call: the flattened f32 `Vec`, the
+    /// owned input tensor, and the returned f64 `Vec`). The bytes produced
+    /// are identical to `predict_loads_into`; only buffer ownership differs,
+    /// so simulation output is bit-identical. Callers that run this once per
+    /// timestep should hoist both buffers above the loop.
+    pub fn predict_loads_into_with_scratch(
+        &self,
+        current_temps: &[f64],
+        scratch_in: &mut Vec<f32>,
+        out: &mut Vec<f64>,
+    ) {
+        if let Some(ref comp) = self.composite {
+            // The composite path produces a fresh Vec internally; spill it
+            // into the reuse buffer (one allocation saved at this call site).
+            let loads = comp.predict_loads(current_temps);
+            out.clear();
+            out.extend_from_slice(&loads);
+            return;
+        }
+
+        if !self.model_loaded {
+            // Mock fallback: constant 1.2 load per zone, into the reuse buffer.
+            out.clear();
+            out.resize(current_temps.len(), 1.2);
+            return;
+        }
+
+        // Real ONNX path with graceful fallback to mock on failure. The
+        // fallback warn is rate-limited (Issue #4204): counted, first
+        // occurrence only.
+        #[cfg(feature = "ort")]
+        match self.predict_loads_onnx_into(current_temps, scratch_in, out) {
+            Ok(()) => {}
+            Err(e) => {
+                rate_limited_warn(
+                    &ONNX_FALLBACK_MOCK_WARN_COUNT,
+                    "ONNX inference failed",
+                    &format!("({e}), falling back to mock placeholder"),
+                );
+                out.clear();
+                out.resize(current_temps.len(), 1.2);
+            }
+        }
+
+        #[cfg(not(feature = "ort"))]
+        {
+            let _ = scratch_in;
+            out.clear();
+            out.resize(current_temps.len(), 1.2);
+        }
+    }
+
+    /// Explicit zero-alloc ONNX inference (single sample) — writes the
+    /// prediction into `out`, reusing its existing capacity. Mirrors
+    /// [`Self::predict_loads_onnx`] but reuses `scratch_in` for the
+    /// flattened f32 input via a borrowed tensor view (Issue #4204). No
+    /// metric-free twin exists: instrumentation wraps the attempt exactly
+    /// as [`Self::predict_loads_onnx`] does (Issue #2498).
+    #[cfg(feature = "ort")]
+    pub fn predict_loads_onnx_into(
+        &self,
+        current_temps: &[f64],
+        scratch_in: &mut Vec<f32>,
+        out: &mut Vec<f64>,
+    ) -> Result<(), String> {
+        let backend = self.backend.as_str();
+        let start = std::time::Instant::now();
+        let result = self.predict_loads_onnx_impl_into(current_temps, scratch_in, out);
+        let elapsed_secs = start.elapsed().as_secs_f64();
+        self.record_onnx_inference_metrics(backend, 1, elapsed_secs, result.is_ok());
+        result
+    }
+
+    /// Pure zero-alloc ONNX inference (single sample) without metric
+    /// instrumentation. Wrapped by [`Self::predict_loads_onnx_into`]
+    /// (Issue #4204). The input tensor is a borrowed view over
+    /// `scratch_in`; the output is spilled into `out` — after warm-up
+    /// neither the input nor the output allocation recurs.
+    #[cfg(feature = "ort")]
+    fn predict_loads_onnx_impl_into(
+        &self,
+        current_temps: &[f64],
+        scratch_in: &mut Vec<f32>,
+        out: &mut Vec<f64>,
+    ) -> Result<(), String> {
+        if !self.model_loaded {
+            return Err("No ONNX model loaded".to_string());
+        }
+        let pool = self
+            .session_pool
+            .as_ref()
+            .ok_or_else(|| "No session pool available".to_string())?;
+
+        // Refill the flattened f32 input buffer in place; no reallocation
+        // after warm-up (Issue #4204).
+        scratch_in.clear();
+        scratch_in.extend(current_temps.iter().map(|&x| x as f32));
+        let n_input = scratch_in.len();
+
+        let mut session_guard = pool
+            .get_or_create_session()
+            .map_err(|e| format!("Could not acquire ORT session: {}", e))?;
+
+        // Borrowed tensor view (Issue #2771 pattern): the runtime reads
+        // `scratch_in` by reference instead of taking ownership of a
+        // freshly allocated Vec. The shape is a stack `[i64; 2]`.
+        let input_tensor =
+            ort::value::TensorRef::from_array_view(([1_i64, n_input as i64], &scratch_in[..]))
+                .map_err(|e| format!("Failed to create input tensor: {}", e))?;
+
+        let outputs = session_guard
+            .run(ort::inputs![input_tensor])
+            .map_err(|e| format!("ONNX inference error: {}", e))?;
+
+        if outputs.len() == 0 {
+            return Err("ONNX inference returned no outputs".to_string());
+        }
+        let array_view = outputs[0]
+            .try_extract_array::<f32>()
+            .map_err(|e| format!("Failed to extract tensor: {}", e))?;
+        // Refill the f64 results buffer in place (Issue #4204).
+        out.clear();
+        out.extend(array_view.iter().copied().map(|x| x as f64));
+        if out.is_empty() {
+            return Err("ONNX inference returned empty output".to_string());
+        }
+        Ok(())
     }
 
     /// Explicit ONNX inference — returns an error instead of panicking
