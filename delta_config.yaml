@@ -111,6 +111,7 @@ base:
   epw_path: null
   hvac_equipment: null
   ground_temperature_c: 9.4
+  floor_u_value_override: null
   building_type: Residential
 variants:
 - name: high_infil
