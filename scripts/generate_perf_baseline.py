@@ -40,6 +40,10 @@ DEFAULT_OUT = REPO_ROOT / "tests" / "perf_baseline.json"
 
 THROUGHPUT_RE = re.compile(r"Throughput:\s*([\d.]+)\s*configs/sec")
 LATENCY_RE = re.compile(r"Latency per config:\s*([\d.]+)ms")
+# Issue #4205: report-only TRUE single-config latency (one config through
+# evaluate_population, sequential). Recorded in the baseline for visibility;
+# never gate-evaluated.
+SINGLE_LATENCY_RE = re.compile(r"Single-config latency:\s*([\d.]+)ms")
 
 CMD = [
     # Post-#3764 the standalone `performance_regression_test` binary is
@@ -60,6 +64,7 @@ def one_run(idx: int, n: int) -> dict:
     out = proc.stdout + "\n--stderr--\n" + proc.stderr
     th = THROUGHPUT_RE.findall(out)
     la = LATENCY_RE.findall(out)
+    sl = SINGLE_LATENCY_RE.findall(out)
     if not th or not la:
         print(f"  WARNING: run {idx} produced no parseable metrics "
               f"(rc={proc.returncode}). Excerpt:", flush=True)
@@ -70,7 +75,10 @@ def one_run(idx: int, n: int) -> dict:
     print(f"  run {idx}: throughput={throughput:.1f} cfg/s, "
           f"latency={latency:.4f} ms/cfg  (wall={dt:.1f}s, rc={proc.returncode})",
           flush=True)
-    return {"throughput": throughput, "latency": latency}
+    result = {"throughput": throughput, "latency": latency}
+    if sl:
+        result["single_config_latency"] = float(sl[-1])
+    return result
 
 
 def main() -> int:
@@ -115,6 +123,13 @@ def main() -> int:
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "throughput_analytical": round(med_t, 3),
         "latency_ms": round(med_l, 6),
+        # Issue #4205: report-only TRUE single-config latency (median). No
+        # gate reads this key; recorded so the 10 ms/config budget in
+        # release_gates.yaml is re-derivable from data.
+        **({"latency_single_config_ms": round(statistics.median(
+                [s["single_config_latency"] for s in samples
+                 if "single_config_latency" in s]), 6)}
+           if any("single_config_latency" in s for s in samples) else {}),
         "population_size": 100,
         "_meta": {
             "measured_at": datetime.now(timezone.utc).date().isoformat(),
@@ -130,6 +145,10 @@ def main() -> int:
             "samples": {
                 "throughput_configs_per_sec": [round(x, 3) for x in throughputs],
                 "latency_ms_per_config": [round(x, 6) for x in latencies],
+                # Issue #4205: report-only; absent when a run predates the
+                # single-config latency harness.
+                **({"latency_single_config_ms": [round(s["single_config_latency"], 6) for s in samples if "single_config_latency" in s]}
+                   if any("single_config_latency" in s for s in samples) else {}),
             },
             "machine": {
                 "platform": platform.platform(),
