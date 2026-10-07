@@ -157,7 +157,7 @@ def render_legend() -> str:
         "Partial, `Won't Fix` -> Won't Fix. Rows without a recognized status are "
         "counted in the Total column but contribute 0 to the status columns. To "
         "regenerate: `python3 "
-        "scripts/check_known_issues_summary.py --regen | sponge docs/KNOWN_ISSUES.md`.*\n"
+        "scripts/check_known_issues_summary.py --regen --in-place`.*\n"
     )
 
 
@@ -201,7 +201,16 @@ def main() -> int:
     parser.add_argument(
         "--regen",
         action="store_true",
-        help="Print the regenerated table to stdout (used to write back to the file).",
+        help="Print the full regenerated file (table spliced in place) to stdout.",
+    )
+    parser.add_argument(
+        "--in-place",
+        action="store_true",
+        help=(
+            "Splice the regenerated table into docs/KNOWN_ISSUES.md directly "
+            "(atomic write). The only safe way to regen in place: a stdout "
+            "redirect onto the same file truncates it before the script reads it."
+        ),
     )
     args = parser.parse_args()
 
@@ -209,8 +218,40 @@ def main() -> int:
     counts = extract_counts(text)
     new_table = render_table(counts) + render_legend()
 
-    if args.regen:
-        sys.stdout.write(new_table)
+    if args.regen or args.in_place:
+        # Issue / PR #4317 regression: --regen used to print only the
+        # Summary table, so `--regen --in-place` (or any
+        # redirect) replaced the whole document with the bare table and
+        # silently dropped everything outside the block — including the
+        # `*Last Updated:*` staleness marker. Splice the freshly rendered
+        # table into the full document in-process instead: --regen prints
+        # the complete regenerated file, and --in-place rewrites it
+        # atomically (temp file + rename), which is the only safe in-place
+        # form — a shell stdout redirect onto the same file truncates it
+        # before this script can read it.
+        existing_range = extract_existing_table(text)
+        if existing_range is None:
+            print(
+                f"FAIL: {KNOWN_ISSUES.relative_to(REPO_ROOT)} is missing the "
+                "`## Summary` table - refusing to regen (regen output would "
+                "not be a valid document); restore the table by hand first.",
+                file=sys.stderr,
+            )
+            return 2
+        regenerated = (
+            text[: existing_range[0]] + new_table + text[existing_range[1] :]
+        )
+        if args.in_place:
+            tmp = KNOWN_ISSUES.with_suffix(".md.regen-tmp")
+            tmp.write_text(regenerated, encoding="utf-8")
+            tmp.replace(KNOWN_ISSUES)
+            print(
+                f"OK: regenerated Summary table in "
+                f"{KNOWN_ISSUES.relative_to(REPO_ROOT)} in place "
+                f"(Total {sum(c['total'] for c in counts.values())})."
+            )
+            return 0
+        sys.stdout.write(regenerated)
         return 0
 
     if args.check:
@@ -220,7 +261,7 @@ def main() -> int:
             print(
                 f"FAIL: {KNOWN_ISSUES.relative_to(REPO_ROOT)} is missing the "
                 f"`## Summary` table - re-run `python3 scripts/check_known_issues_summary.py "
-                f"--regen | sponge docs/KNOWN_ISSUES.md`",
+                f"--regen --in-place`",
                 file=sys.stderr,
             )
             return 2
@@ -235,8 +276,8 @@ def main() -> int:
         if not m:
             print(
                 "FAIL: could not parse the existing `## Summary` table - "
-                "re-run `python3 scripts/check_known_issues_summary.py --regen | "
-                "sponge docs/KNOWN_ISSUES.md`",
+                "re-run `python3 scripts/check_known_issues_summary.py "
+                "--regen --in-place`",
                 file=sys.stderr,
             )
             return 2
@@ -253,8 +294,7 @@ def main() -> int:
                 f"FAIL: {KNOWN_ISSUES.relative_to(REPO_ROOT)} summary table drift\n"
                 f"  existing totals: {existing_totals}\n"
                 f"  derived totals:  {derived_totals}\n"
-                f"  re-run `python3 scripts/check_known_issues_summary.py --regen | "
-                f"sponge docs/KNOWN_ISSUES.md` to fix.",
+                f"  re-run `python3 scripts/check_known_issues_summary.py --regen --in-place` to fix.",
                 file=sys.stderr,
             )
             return 1
