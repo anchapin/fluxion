@@ -29,6 +29,8 @@ on:
     paths:
       - '**/surrogate*.rs'
       - '**/Surrogate*.rs'
+      - 'src/ai/surrogate/**'
+      - 'src/ai/surrogate.rs'
       - 'models/**'
       - 'tests/reference_data/surrogate/**'
       - '.github/workflows/surrogate-drift.yml'

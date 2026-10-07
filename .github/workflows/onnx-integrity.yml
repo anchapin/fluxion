@@ -14,7 +14,7 @@
 #    committed, its actual SHA-256 matches the hash in the manifest
 #    (`sha256sum -c` is the canonical verification command).
 # 3. The Rust unit tests for `verify_onnx_signature`
-#    (`src/ai/surrogate.rs`) still pass — these tests exercise the
+#    (`src/ai/surrogate/integrity.rs`) still pass — these tests exercise the
 #    happy-path, tampered, env-override, and malformed-manifest branches.
 #
 # Trigger policy
@@ -23,6 +23,9 @@
 #   - `models/surrogate_zone_thermal.onnx` (the model itself)
 #   - `models/surrogate_zone_thermal.onnx.sha256` (the manifest)
 #   - `src/ai/surrogate.rs` (the load / verify code path)
+#   - `src/ai/surrogate/**` (its submodules: integrity.rs holds
+#     `open_and_verify_onnx` / `verify_onnx_signature`, plus manager.rs,
+#     session_pool.rs and metrics.rs which call it)
 #   - this workflow file (so edits are validated)
 # Also runs on pushes to main and develop, and on workflow_dispatch for
 # manual re-runs. Does NOT block the surrogate_drift_gate job — that gate
@@ -58,6 +61,7 @@ on:
       - 'models/surrogate_zone_thermal.onnx'
       - 'models/surrogate_zone_thermal.onnx.sha256'
       - 'src/ai/surrogate.rs'
+      - 'src/ai/surrogate/**'
       - '.github/workflows/onnx-integrity.yml'
   workflow_dispatch:
 
