@@ -9,18 +9,15 @@
 | Free-Float (FREE) | 3 | 0 | 3 | 0 | 0 |
 | Temperature (TEMP) | 1 | 0 | 1 | 0 | 0 |
 | Multi-Zone (MULTI) | 4 | 0 | 4 | 0 | 0 |
-| Model Limits (LIMIT) | 31 | 1 | 27 | 3 | 0 |
+| Model Limits (LIMIT) | 31 | 2 | 26 | 3 | 0 |
 | Reporting (REPORT) | 4 | 0 | 4 | 0 | 0 |
-| CI/Infrastructure (CI) | 4 | 1 | 3 | 0 | 0 |
+| CI/Infrastructure (CI) | 4 | 2 | 2 | 0 | 0 |
 | fluxion-fluid (FLUID) | 2 | 0 | 2 | 0 | 0 |
 | FFD/CFD (FFD) | 2 | 1 | 1 | 0 | 0 |
 | Reference data (REF) | 1 | 0 | 1 | 0 | 0 |
-| **Total** | **61** | **3** | **55** | **3** | **0** |
+| **Total** | **61** | **5** | **53** | **3** | **0** |
 
 *Counts derived from the per-row catalog tables under each category section (`| **CATEGORY-NN** | ... |`) via `scripts/check_known_issues_summary.py`. Edit a row in place (or add a new row) and the table updates on the next regen. Status columns (`Fixed` / `Open` / `Partial` / `Won't Fix`) derive from each row's Status cell: `resolved` -> Fixed, `open` -> Open, `tracking only` -> Partial, `Won't Fix` -> Won't Fix. Rows without a recognized status are counted in the Total column but contribute 0 to the status columns. To regenerate: `python3 scripts/check_known_issues_summary.py --regen | sponge docs/KNOWN_ISSUES.md`.*
-
-Catalog of known systematic issues affecting ASHRAE 140 validation compliance.
-Engineering team and AI agents — reference before modifying physics or validation code.
 
 *Last Updated: 2026-10-07*
 ## How to read this document
@@ -133,7 +130,7 @@ That registry, not this document, is canonical for quarantine state.
 | **LIMIT-30** | ASHRAE 140 Case 600 series per-tilt / per-azimuth solar distribution audit — Phase B1a PHYSICS-01 | Case 600 cooling 2.546 MWh vs [4.275, 5.784] (−34.4 %); to_air 0.30 vs 0.0 | #3797 | per-surface solar routing re-derivation (B1b / #3798) | open | [history](investigations/limit-30-ashrae-140-case-600-series-per.md) |
 | **LIMIT-31** | CTF↔zone coupling defect — conduction backends bypassed for conditioned high-mass cases | conditioned high-mass bypassed the CTF backend; Case 900 heating 5.05 → ≈1.165 MWh | #3979 | resolved in #3979; CTF stays the 5R1C cross-check | open | [history](investigations/limit-31-ctf-zone-coupling-defect-conduction-backends.md) |
 | **LIMIT-32** | CTF steady-state flux for low-mass walls has the wrong sign | 80 mm EPS steady-state flux −5.53 W/m² (physical +3.69 W/m²) | #4062 | y-coefficient clamping fixed for τ ≪ dt walls | open | [history](investigations/limit-32-ctf-steady-state-flux-for-low.md) |
-| **LIMIT-33** | #4241 ideal-HVAC discrete storage residual inflates Case 600 annual heating ~50% out of the published band — blocks 2 CI gates | FIXED in physics (PR pending review, branch `fix/limit33-state-feedback`): Option A state feedback — the residual load now drives the 5R1C air-node state to the active setpoint on unclamped conditioned hours. NAPI/WD600 Case 600: heating 7181.51 → 5590.48 kWh (in [4314, 5836]), cooling 6026.39 → 4675.48 kWh (in [4275, 5784]). Case 900 unchanged (9R4C-insensitive). Recorded-value baselines re-recorded from the corrected engine (surrogate fallback, strict-energy, fabric parity, Case 600 January grid, npm cooling 4010.89 → 4675.48). Known side effects flagged for review: strict-energy blind-path 600 C 5.187 → 4.023 MWh (just below band, gap 5.01%) and 800 C 4.270 → 3.314 MWh | #4314 | merge of the state-feedback PR closes the NAPI + drift-gate symptom; exact-exponential hold metering (`Q_exact`) left as follow-up study (dt/τ ≈ 7.5 for Case 600 converges toward steady-state) | open | [history](investigations/limit-33-ideal-hvac-storage-residual-inflates-case-600.md) |
+| **LIMIT-33** | #4241 ideal-HVAC discrete storage residual inflates Case 600 annual heating ~50% out of the published band — blocks 2 CI gates | FIXED in physics (merged as `9ef9c8f4`, PR #4316): Option A state feedback — the residual load now drives the 5R1C air-node state to the active setpoint on unclamped conditioned hours. NAPI/WD600 Case 600: heating 7181.51 → 5590.48 kWh (in [4314, 5836]), cooling 6026.39 → 4675.48 kWh (in [4275, 5784]). Case 900 unchanged (9R4C-insensitive). Recorded-value baselines re-recorded from the corrected engine (surrogate fallback, strict-energy, fabric parity, Case 600 January grid, npm cooling 4010.89 → 4675.48). Known side effects flagged for review: strict-energy blind-path 600 C 5.187 → 4.023 MWh (just below band, gap 5.01%) and 800 C 4.270 → 3.314 MWh | #4314 | merge of the state-feedback PR closes the NAPI + drift-gate symptom; exact-exponential hold metering (`Q_exact`) left as follow-up study (dt/τ ≈ 7.5 for Case 600 converges toward steady-state) | resolved | [history](investigations/limit-33-ideal-hvac-storage-residual-inflates-case-600.md) |
 
 ## Reference data (REF)
 
@@ -157,7 +154,7 @@ That registry, not this document, is canonical for quarantine state.
 | **CI-01** | Code coverage gate (issue #1932) — RESOLVED (min_branch_floor hard floors enforced) | min_branch_floor hard floors enforced | #1932 | RESOLVED | resolved | [history](investigations/ci-01-code-coverage-gate-issue-1932-resolved.md) |
 | **CI-02** | Debug build linking crashes with rust-lld segfault (issue #2297) | — | #2297 | — | open | [history](investigations/ci-02-debug-build-linking-crashes-with-rust.md) |
 | **CI-03** | `ort` pinned to a release candidate (issue #2691) — no stable 2.0 on crates.io | — | #2691 | — | open | [history](investigations/ci-03-ort-pinned-to-a-release-candidate.md) |
-| **CI-04** | Node/NAPI Bindings (ubuntu-24.04 + windows-latest) and Surrogate Drift Tolerance Gate (#1784) red on develop — blocked on §LIMIT-33 | RESOLVED in physics by §LIMIT-33 fix (PR pending review): NAPI Case 600 heating 5590.48 kWh in [4314, 5836] (was 7181.51), cooling re-pointed 4010.89 → 4675.48 (in published band); surrogate drift baseline re-recorded 2665.03 → 4603.62 kWh (value reproduces identically on develop and the fix branch — Case 900 is 9R4C-insensitive; clears the pre-#4241 drift). npm suite 54/54 pass locally | #4314 | merge of the state-feedback PR | open | [history](investigations/ci-04-napi-and-surrogate-drift-gates-red-limit-33.md) |
+| **CI-04** | Node/NAPI Bindings (ubuntu-24.04 + windows-latest) and Surrogate Drift Tolerance Gate (#1784) red on develop — blocked on §LIMIT-33 | RESOLVED in physics by §LIMIT-33 fix (merged as `9ef9c8f4`, PR #4316): NAPI Case 600 heating 5590.48 kWh in [4314, 5836] (was 7181.51), cooling re-pointed 4010.89 → 4675.48 (in published band); surrogate drift baseline re-recorded 2665.03 → 4603.62 kWh (value reproduces identically on develop and the fix branch — Case 900 is 9R4C-insensitive; clears the pre-#4241 drift). npm suite 54/54 pass locally | #4314 | merged as `9ef9c8f4` (PR #4316) | resolved | [history](investigations/ci-04-napi-and-surrogate-drift-gates-red-limit-33.md) |
 
 ## fluxion-fluid autodiff (FLUID)
 
