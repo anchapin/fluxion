@@ -273,7 +273,7 @@ BASELINE_LIB_IGNORED = 9
 #   test_box_apparent_cp_at_wall_delegates_to_material). Stacked on PR-A's
 #   8821 baseline.
 
-BASELINE_WORKSPACE_TESTS = 8890  # 2026-09-29 (Issue #4172, PR #4299 supersede): 8889 -> 8890 — hoist SimulationDiagnostics to fluxion-core (12 new tests in fluxion-core/src/diagnostics.rs, net +1 after -11 pre-existing drift from #4194-#4257). Stacked on the #4298 supersede's 8889 baseline (combined 4,300 lib + 2 workspace-integration tests from #4292 and #4265).
+BASELINE_WORKSPACE_TESTS = 8891  # 2026-10-07 (Issue #4204): 8890 -> 8891 — one new steady-state test in tests/dhat_batched_surrogate_zero_growth.rs (predict_loads_into_with_scratch_zero_steady_state_growth). Stacked on the 2026-09-29 #4299-supersede baseline of 8890.
 
                                   # 2026-09-29 (Issue #4192): 8873 -> 8881 — collapse triplicated EPW decoder; 8 new tests in fluxion-core/src/weather/epw.rs (shared-fixture agreement, truncated/missing-field skips, 8760-count fixture guard, sentinel coercion). Stacked on #4155's 8873 baseline.
                                   # Previous: 2026-09-28: 8836 -> 8839 — three new `fabric_case_*_measurement` tests in `tests/all_tests/ashrae_140_fabric_multiselector.rs` (PR-A+2 fabric harness, Refs #3986-A+2 / #4117). CI's authoritative cargo --list count rises 8836 -> 8839 (local 8131). Ratchet must equal or exceed CI live count per Issue #3442 protocol.
