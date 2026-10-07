@@ -431,9 +431,17 @@ fn test_cosimulation_master_do_step_calls_step_physics() {
     assert!(zone_out.zone_temperature > 200.0 && zone_out.zone_temperature < 320.0);
     // The master advanced time by one communication step.
     assert_eq!(master.current_time(), 3600.0);
-    // The zone temperature should have moved away from the initial 20 °C
-    // (293.15 K) under the cold boundary condition.
-    assert_ne!(zone_out.zone_temperature, initial_temp_k);
+    // LIMIT-33 (issue #4314) Option A — state feedback: under a cold
+    // boundary with sufficient ideal-loads capacity the zone air is held
+    // AT the heating setpoint (the initial 20 °C / 293.15 K), with the
+    // heating load carrying the envelope loss instead of letting the
+    // zone drift. The old free-float expectation (assert_ne) no longer
+    // applies.
+    assert!((zone_out.zone_temperature - initial_temp_k).abs() < 1e-6);
+    assert!(
+        zone_out.heating_load > 0.0,
+        "heating must engage under a 263.15 K outdoor boundary"
+    );
 }
 
 #[test]
