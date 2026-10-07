@@ -22,7 +22,7 @@
 Catalog of known systematic issues affecting ASHRAE 140 validation compliance.
 Engineering team and AI agents — reference before modifying physics or validation code.
 
-*Last Updated: 2026-10-06*
+*Last Updated: 2026-10-07*
 ## How to read this document
 
 Each limitation is **one row** in the tables below: its current measured value against
@@ -133,7 +133,7 @@ That registry, not this document, is canonical for quarantine state.
 | **LIMIT-30** | ASHRAE 140 Case 600 series per-tilt / per-azimuth solar distribution audit — Phase B1a PHYSICS-01 | Case 600 cooling 2.546 MWh vs [4.275, 5.784] (−34.4 %); to_air 0.30 vs 0.0 | #3797 | per-surface solar routing re-derivation (B1b / #3798) | open | [history](investigations/limit-30-ashrae-140-case-600-series-per.md) |
 | **LIMIT-31** | CTF↔zone coupling defect — conduction backends bypassed for conditioned high-mass cases | conditioned high-mass bypassed the CTF backend; Case 900 heating 5.05 → ≈1.165 MWh | #3979 | resolved in #3979; CTF stays the 5R1C cross-check | open | [history](investigations/limit-31-ctf-zone-coupling-defect-conduction-backends.md) |
 | **LIMIT-32** | CTF steady-state flux for low-mass walls has the wrong sign | 80 mm EPS steady-state flux −5.53 W/m² (physical +3.69 W/m²) | #4062 | y-coefficient clamping fixed for τ ≪ dt walls | open | [history](investigations/limit-32-ctf-steady-state-flux-for-low.md) |
-| **LIMIT-33** | #4241 ideal-HVAC discrete storage residual inflates Case 600 annual heating ~50% out of the published band — blocks 2 CI gates | Case 600 annual heating 7181.51 kWh vs [4314, 5836] (+23% over max); storage term alone contributes +1587 kWh/yr (verified: 5594.26 kWh with it disabled, in band) | #4314 | correct discrete ideal-loads semantics in `compute_zone_hvac_load` + baseline re-record from corrected engine | open | [history](investigations/limit-33-ideal-hvac-storage-residual-inflates-case-600.md) |
+| **LIMIT-33** | #4241 ideal-HVAC discrete storage residual inflates Case 600 annual heating ~50% out of the published band — blocks 2 CI gates | FIXED in physics (PR pending review, branch `fix/limit33-state-feedback`): Option A state feedback — the residual load now drives the 5R1C air-node state to the active setpoint on unclamped conditioned hours. NAPI/WD600 Case 600: heating 7181.51 → 5590.48 kWh (in [4314, 5836]), cooling 6026.39 → 4675.48 kWh (in [4275, 5784]). Case 900 unchanged (9R4C-insensitive). Recorded-value baselines re-recorded from the corrected engine (surrogate fallback, strict-energy, fabric parity, Case 600 January grid, npm cooling 4010.89 → 4675.48). Known side effects flagged for review: strict-energy blind-path 600 C 5.187 → 4.023 MWh (just below band, gap 5.01%) and 800 C 4.270 → 3.314 MWh | #4314 | merge of the state-feedback PR closes the NAPI + drift-gate symptom; exact-exponential hold metering (`Q_exact`) left as follow-up study (dt/τ ≈ 7.5 for Case 600 converges toward steady-state) | open | [history](investigations/limit-33-ideal-hvac-storage-residual-inflates-case-600.md) |
 
 ## Reference data (REF)
 
@@ -157,7 +157,7 @@ That registry, not this document, is canonical for quarantine state.
 | **CI-01** | Code coverage gate (issue #1932) — RESOLVED (min_branch_floor hard floors enforced) | min_branch_floor hard floors enforced | #1932 | RESOLVED | resolved | [history](investigations/ci-01-code-coverage-gate-issue-1932-resolved.md) |
 | **CI-02** | Debug build linking crashes with rust-lld segfault (issue #2297) | — | #2297 | — | open | [history](investigations/ci-02-debug-build-linking-crashes-with-rust.md) |
 | **CI-03** | `ort` pinned to a release candidate (issue #2691) — no stable 2.0 on crates.io | — | #2691 | — | open | [history](investigations/ci-03-ort-pinned-to-a-release-candidate.md) |
-| **CI-04** | Node/NAPI Bindings (ubuntu-24.04 + windows-latest) and Surrogate Drift Tolerance Gate (#1784) red on develop — blocked on §LIMIT-33 | NAPI Case 600 heating 7181.51 kWh vs [4314, 5836]; drift peak 50.0000% vs 2665.03 kWh fallback baseline, both deterministic since #4258 | #4314 | §LIMIT-33 fix + recorded-value baseline re-record (no threshold widened, no gate skipped) | open | [history](investigations/ci-04-napi-and-surrogate-drift-gates-red-limit-33.md) |
+| **CI-04** | Node/NAPI Bindings (ubuntu-24.04 + windows-latest) and Surrogate Drift Tolerance Gate (#1784) red on develop — blocked on §LIMIT-33 | RESOLVED in physics by §LIMIT-33 fix (PR pending review): NAPI Case 600 heating 5590.48 kWh in [4314, 5836] (was 7181.51), cooling re-pointed 4010.89 → 4675.48 (in published band); surrogate drift baseline re-recorded 2665.03 → 4603.62 kWh (value reproduces identically on develop and the fix branch — Case 900 is 9R4C-insensitive; clears the pre-#4241 drift). npm suite 54/54 pass locally | #4314 | merge of the state-feedback PR | open | [history](investigations/ci-04-napi-and-surrogate-drift-gates-red-limit-33.md) |
 
 ## fluxion-fluid autodiff (FLUID)
 

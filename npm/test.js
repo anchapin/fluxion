@@ -734,7 +734,23 @@ describe('@fluxion/native', () => {
     // regression band is re-pointed at the new recorded value per the
     // strict-energy-gate's "lower the baseline when the engine genuinely
     // improved" rule.
-    const COOLING_RECORDED_KWH = 4010.89;
+    //
+    // Re-recorded 2026-10-07 by the LIMIT-33 fix (issue #4314, Option A
+    // state feedback): the #4241 discrete residual load now drives the 5R1C
+    // zone air to the active setpoint on unclamped conditioned hours — the
+    // controlled state (T_prev for the next step's residual) is persisted in
+    // `setpoints.temperatures`, and the free-float state stays in
+    // `mass.air_temperatures` (the invariant-gate convention) — so the
+    // storage term charges once per recovery transient instead of
+    // re-charging every hour. Metered loads are now 5590.48 kWh heating and
+    // 4675.48 kWh cooling, both inside their published bands ([4314, 5836]
+    // and [4275, 5784]) for the first time on this drive. Genuine physics
+    // correction, not a tuned constant; the recorded-value band is
+    // re-pointed at the corrected engine per the same re-record rule.
+    // NOTE: with cooling now inside the published band, COOLING could be
+    // re-pinned to the published band edges in a follow-up (kept as a
+    // recorded-value band here to keep this diff physics-only).
+    const COOLING_RECORDED_KWH = 4675.48;
     const COOLING_REGRESSION_TOLERANCE = 0.15;
     const COOLING_MIN_KWH = COOLING_RECORDED_KWH * (1 - COOLING_REGRESSION_TOLERANCE);
     const COOLING_MAX_KWH = COOLING_RECORDED_KWH * (1 + COOLING_REGRESSION_TOLERANCE);

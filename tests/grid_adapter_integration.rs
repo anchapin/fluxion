@@ -122,6 +122,15 @@ fn test_electrical_results_match_recorded_baseline() {
     // (January), `test_config()`, `ghi`-as-POA proxy. All 48 steps are heating
     // load (no clamping needed); the battery rides the SoC floor at 10%.
     //
+    // Re-recorded 2026-10-07 by the LIMIT-33 fix (issue #4314, Option A
+    // state feedback): the #4241 residual load now drives the 5R1C zone air
+    // to the active setpoint on unclamped conditioned hours (controlled
+    // state persisted in `setpoints.temperatures`, free-float state kept in
+    // `mass.air_temperatures`), so the storage term charges once per
+    // recovery transient instead of re-charging every hour. Thermal
+    // 178.31811814894678 -> 139.35135840182244 kWh. Genuine physics change,
+    // not a tuned constant.
+    //
     // Re-recorded 2026-09-29 by PR #4258 (issue #4241): the ideal-HVAC
     // conductance now includes h_ve (5R1C/9R4C unification) and the load
     // uses the discrete zone energy-balance residual. Genuine physics
@@ -136,14 +145,14 @@ fn test_electrical_results_match_recorded_baseline() {
     // electrical_load, and the battery stock (0.5 → 0.1 of 10 kWh) equals
     // charge − discharge. Regenerate by running with
     // FLUXION_PRINT_GRID_BASELINE=1 -- --nocapture.
-    const EXPECTED_THERMAL_KWH: f64 = 178.31811814894678;
-    const EXPECTED_ELECTRICAL_LOAD_KWH: f64 = 59.43937271631561;
+    const EXPECTED_THERMAL_KWH: f64 = 139.35135840182244;
+    const EXPECTED_ELECTRICAL_LOAD_KWH: f64 = 46.45045280060749;
     const EXPECTED_PV_KWH: f64 = 8.92391297937677;
     const EXPECTED_BATTERY_CHARGE_KWH: f64 = 0.00000000000000;
     const EXPECTED_BATTERY_DISCHARGE_KWH: f64 = 4.00000000000000;
-    const EXPECTED_GRID_IMPORT_KWH: f64 = 46.68265379254594;
+    const EXPECTED_GRID_IMPORT_KWH: f64 = 33.70974375036340;
     const EXPECTED_GRID_EXPORT_KWH: f64 = 0.00000000000000;
-    const EXPECTED_PEAK_NET_DEMAND_KW: f64 = 1.56990371126777;
+    const EXPECTED_PEAK_NET_DEMAND_KW: f64 = 1.22160526193861;
     const EXPECTED_FINAL_SOC_FRACTION: f64 = 0.1;
 
     let tol = 1e-9;
