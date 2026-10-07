@@ -930,11 +930,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Issue #4241: Save previous air temperature for the discrete residual
         // HVAC formulation. The ODE below overwrites the working buffer, so we
         // need a copy of T_prev for the Q_HVAC residual calculation.
+        // LIMIT-33 (issue #4314, Option A — state feedback): T_prev is the
+        // PREVIOUS STEP'S CONTROLLED air state (`setpoints.temperatures` holds
+        // the last step's `t_i_act` — the setpoint on unclamped conditioned
+        // hours, the free temperature otherwise), not the free-float state in
+        // `mass.air_temperatures`. The #4241 residual is derived by requiring
+        // T^{n+1} = T_sp from the state the previous balance ended at, so the
+        // storage term must charge off the controlled trajectory. First step
+        // falls back to the from_spec initial temperature, which
+        // `setpoints.temperatures` is initialized to.
         // Issue #3370: use scratch pool buffer to avoid allocation.
         scratch
             .air_node_t_prev
             .as_mut()
-            .copy_from_slice(t_air_old_ref);
+            .copy_from_slice(self.0.setpoints.temperatures.as_ref());
         // term_rest_1 = h_tr_ms + h_tr_is scales the entire 5R1C air-node
         // equation (num and den are both multiplied by it to clear the
         // denominator in the surface-temperature elimination). The air-node
@@ -1485,6 +1494,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_tr_is_vec = self.0.conduction.h_tr_is.as_ref();
         let den_slice = den.as_ref();
         let term_rest_1_slice = self.0.conduction.derived_term_rest_1.as_ref();
+        let heating_setpoint_vec = self.0.setpoints.heating_setpoints.as_ref();
+        let cooling_setpoint_vec = self.0.setpoints.cooling_setpoints.as_ref();
+        let default_heating_sp = self.0.setpoints.heating_setpoint;
+        let default_cooling_sp = self.0.setpoints.cooling_setpoint;
         let t_free = t_i_free.as_ref();
         let hvac = hvac_for_temp_calc.as_ref();
         for i in 0..self.0.hvac.num_zones {
@@ -1496,8 +1509,32 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 (Some(&d), Some(&t)) if t > 0.0 && d > 0.0 => d / t,
                 _ => h_is,
             };
+            // LIMIT-33 (issue #4314, Option A — state feedback): the #4241
+            // residual load is derived by requiring T^{n+1} = T_sp in the
+            // implicit-Euler air-node balance. Under that derivation the
+            // computed load must actually drive the air-node state to the
+            // setpoint. When the demand is active and unclamped (ideal
+            // system, capacity sufficient), hold the zone air at the active
+            // setpoint. When capacity-clamped the setpoint is unreachable;
+            // keep the residual partial update t_free + Q/den_true, which
+            // bounds the feedback loop.
+            let heat_cap = self.0.hvac.hvac_heating_capacity;
+            let cool_cap = self.0.hvac.hvac_cooling_capacity;
+            let clamped = hvac[i] >= heat_cap || hvac[i] <= -cool_cap;
             if den_true > 0.0 && hvac[i].abs() > 1e-6 {
-                scratch.t_i_act[i] = t_free[i] + hvac[i] / den_true;
+                if clamped {
+                    scratch.t_i_act[i] = t_free[i] + hvac[i] / den_true;
+                } else if hvac[i] > 0.0 {
+                    scratch.t_i_act[i] = heating_setpoint_vec
+                        .get(i)
+                        .copied()
+                        .unwrap_or(default_heating_sp);
+                } else {
+                    scratch.t_i_act[i] = cooling_setpoint_vec
+                        .get(i)
+                        .copied()
+                        .unwrap_or(default_cooling_sp);
+                }
             } else {
                 scratch.t_i_act[i] = t_free[i];
             }
@@ -1505,6 +1542,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let t_i_act = T::from(VectorField::from_smallvec(std::mem::take(
             &mut scratch.t_i_act,
         )));
+
+        // LIMIT-33 (issue #4314, Option A — state feedback): the controlled
+        // state is persisted in `setpoints.temperatures` (assigned below),
+        // where the next step's `air_node_t_prev` copy reads it and where the
+        // strict-energy invariant gate already reads the controlled
+        // temperature. `mass.air_temperatures` keeps holding the free-float
+        // air state (the convention the invariant checker and the gauge
+        // mass-state proxy rely on), so free-floating diagnostics are
+        // unaffected and the mass-node energy balance stays auditable.
 
         // Use hvac_for_temp_calc for energy (matches what was used for temperature update)
         // This ensures energy calculation is consistent with temperature physics
