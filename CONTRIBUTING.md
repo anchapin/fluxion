@@ -249,7 +249,7 @@ when you want to validate a change end-to-end.
   #[rustfmt::skip]
   pub const FIXTURE_DATA: [f64; 1000] = [/* ... */];
   ```
-  See `tests/per_tilt_per_azimuth_fixture_data.rs` for a working example.
+  See `tests/all_tests/per_tilt_per_azimuth_fixture_data.rs` for a working example.
 - If `cargo fmt --check` fails on your PR with many unrelated drift items, the drift is pre-existing on `develop`. Rebase onto `develop` first; if the drift persists after rebase, file a follow-up issue — do NOT auto-fix 200 files of mechanical drift as part of a feature PR.
 
 ### Avoid scope creep on CI failures

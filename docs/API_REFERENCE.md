@@ -629,9 +629,12 @@ extended it with `x-request-id` propagation, structured tracing, and a
 `/v1/metrics` Prometheus endpoint (Issue **#1447**).
 
 The canonical machine-readable contract is `src/api/openapi.yaml` (also served
-at `GET /v1/openapi.yaml`). A drift test in `src/api/server.rs`
-(`openapi_yaml_paths_match_router`) fails CI if a route is added to either
-side without the other, so the spec cannot silently orphan itself.
+at `GET /v1/openapi.yaml`). The route registry `REST_ROUTES` in
+`src/api/server/router.rs:157` is the single source of truth for the served
+paths, and the integration test `router_has_all_endpoints`
+(`src/api/server/tests.rs:78`) fails CI if a registered route stops
+responding, so the spec cannot silently orphan itself. (The dedicated
+spec↔router drift checker was retired in Issue #3874.)
 
 For installation, environment variables, error semantics, and full design notes
 see [`docs/REST_API.md`](REST_API.md). This section enumerates the endpoint
@@ -671,7 +674,7 @@ a 5xx with the structured log line emitted by `TraceLayer`.
 
 The 7 routes are pinned in two places that must stay in sync:
 
-- `Router::new()` in `src/api/server.rs:476` (axum-style `:id`/`:fmt`)
+- `router_with_security()` in `src/api/server/router.rs:215` (axum-style `:id`/`:fmt`)
 - `paths:` in `src/api/openapi.yaml` (OpenAPI-style `{id}`/`{fmt}`)
 
 ### `GET /v1/healthz`
@@ -713,7 +716,7 @@ unique id per request does not fragment cardinality.
 ### `GET /v1/openapi.{json,yaml}`
 
 Two views of the same embedded `src/api/openapi.yaml` (compiled in via
-`include_str!` at `src/api/server.rs:247`, so the served spec cannot drift
+`include_str!` at `src/api/server/schema_store.rs:26`, so the served spec cannot drift
 from the on-disk spec).
 
 ```bash
@@ -810,7 +813,7 @@ explicit `zone_solver: "gauge"` rejection (#3305) prevents the
 post-#3291 dispatcher panic. The field is omitted on non-REST uses of
 the schema.
 
-Errors are returned via the `ApiError` envelope (`src/api/server.rs:189`):
+Errors are returned via the `ApiError` envelope (`src/api/server/api_error.rs:23`):
 
 | Status | `error.kind`        | Trigger                                            |
 |--------|---------------------|----------------------------------------------------|
@@ -868,7 +871,8 @@ Response `200 OK`:
 
 - [`docs/REST_API.md`](REST_API.md) — installation, environment variables, error
   semantics, design notes.
-- `src/api/server.rs` — router definition (lines 476-486) and handlers.
+- `src/api/server/` — router definition (`router.rs`) and handlers (`batch.rs`,
+  `simulate.rs`, `campaigns.rs`, `health.rs`).
 - `src/api/openapi.yaml` — canonical OpenAPI 3.1 contract.
 - `tests/api_integration_tests.rs`, `tests/api_observability_tests.rs` —
   end-to-end HTTP tests for the surface documented above.

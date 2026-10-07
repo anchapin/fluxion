@@ -293,7 +293,7 @@ Fluxion Case 960 Results:
 
 - **ASHRAE Standard 140-2023**: Standard Method of Test for the Evaluation of Building Energy Analysis Computer Programs
 - **ASHRAE 140 User Manual**: `docs/140UsersManual-PartI-Final (050825).pdf`
-- **Fluxion Implementation**: `src/validation/ashrae_140_validator.rs`
+- **Fluxion Implementation**: `src/validation/ashrae_140_validator/mod.rs`
 - **Test Cases**: `src/validation/ashrae_140_cases.rs`
 - **Benchmarks**: `src/validation/benchmark.rs`
 

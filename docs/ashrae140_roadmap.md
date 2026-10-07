@@ -119,7 +119,7 @@ Fluxion's 5R1C/9R4C Norton-equivalent `h_coeff` under-predicts Case 960 peak hea
 - `src/physics/method_selector.rs` — Add `Gauge` variant to `ThermalMethod` enum; extend `select_method` so 5R1C stays low-mass fast path and Gauge becomes high-mass / Case-600 default
 - `src/physics/gauge_solver.rs` — Promote `energy_storage_rate` from the 0.0 stub to the actual scalar-field derivative
 - `src/physics/gauge_zone_solver.rs` — Air-node ODE (lines 36–40) must consume the post-#1522 `air_thermal_capacitance` field on `ThermalModelData`
-- `src/validation/ashrae_140_validator.rs::enable_advanced_solver` (line ~1471) — Extend solver-selection branch to opt Case-600 metrics into Gauge (mirror existing CTF/FD dispatch)
+- `src/validation/ashrae_140_validator/mod.rs::enable_advanced_solver` (line ~1471) — Extend solver-selection branch to opt Case-600 metrics into Gauge (mirror existing CTF/FD dispatch)
 - `tests/known_issues_regression.rs::test_issue1457_remaining_600_series_metrics` — Remove `#[ignore]` when Track 1 lands
 
 **Why first:** Per the #1522 investigation, no 5R1C-side air-node ODE can resolve the simultaneous `peak_cooling OVER / peak_heating UNDER` signature. GaugeSolver is the only path consistent with `AGENTS.md` ("no parameter tuning").

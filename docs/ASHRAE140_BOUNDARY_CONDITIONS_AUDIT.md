@@ -249,7 +249,7 @@ ASHRAE 140 Table B1-3 specifies double clear glass:
 
 | Output Type | ASHRAE 140 Requirement | Fluxion Implementation | Code Location |
 |-------------|------------------------|------------------------|---------------|
-| Annual energy | Jan 1 – Dec 31 (8760 hours) | Annual accumulation loop | `src/validation/ashrae_140_validator.rs` |
+| Annual energy | Jan 1 – Dec 31 (8760 hours) | Annual accumulation loop | `src/validation/ashrae_140_validator/mod.rs` |
 | Peak loads | Design-day peak (not annual peak) | Peak detection in `FreeFloatValidationResult` | `src/validation/diagnostic.rs` |
 
 ---

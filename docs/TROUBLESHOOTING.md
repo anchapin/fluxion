@@ -41,7 +41,7 @@ Python 3.10+ is required for `maturin develop`.
 to 2015 and breaks on `?` / `async`. Confirm `rust-toolchain.toml`
 pins **stable** + rustfmt + clippy. Stable rustfmt has **no `exclude`**:
 auto-generated fixture data must use `#[rustfmt::skip]` per-item (see
-`tests/per_tilt_per_azimuth_fixture_data.rs`).
+`tests/all_tests/per_tilt_per_azimuth_fixture_data.rs`).
 
 ### Clippy CI runs out of memory
 
@@ -129,7 +129,7 @@ This is a **regression**. The only correct value is
 surfaces, ~3.4 m/s wind), defined in
 `src/physics/constants/thermal/ashrae_140/v2023.rs`. The legacy `29.3
 W/m²K` (6.7 m/s) must **not** appear in any computation path. Guard:
-`tests/regression_exterior_film_unification.rs`.
+`tests/all_tests/regression_exterior_film_unification.rs`.
 
 ### ASHRAE 140 material constants (`HW_CONCRETE_K`, `FOAM_BOARD_K`, `GYPSUM_K`, …)
 

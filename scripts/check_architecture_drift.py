@@ -432,7 +432,14 @@ def extract_documented_traits(arch_content: str) -> set[str]:
 
 
 def extract_documented_files(arch_content: str) -> set[str]:
-    """Extract file paths mentioned in ARCHITECTURE.md."""
+    """Extract file paths mentioned in ARCHITECTURE.md.
+
+    Widened for Issue #4185: in addition to explicit ``src/…`` paths, also
+    catches prefix-less citations (``sim/…``, ``physics/…``, ``validation/…``,
+    ``fluxion-core/…``) as they appear in prose and mermaid nodes, so a module
+    split cannot orphan a citation just because the doc dropped the ``src/``
+    prefix.
+    """
     files = set()
     for match in re.finditer(r"`(src/[\w/]+\.rs)`", arch_content):
         files.add(match.group(1))
@@ -441,7 +448,60 @@ def extract_documented_files(arch_content: str) -> set[str]:
     # From the Key Files table
     for match in re.finditer(r"`(src/[\w/]+\.rs)`", arch_content):
         files.add(match.group(1))
+    # Issue #4185: prefix-less module citations, e.g. `sim/thermal_model.rs`
+    # in prose, mermaid node labels and headings.
+    for match in re.finditer(
+        r"`((?:sim|physics|validation|fluxion-core)/[\w/]+\.rs)`", arch_content
+    ):
+        files.add(match.group(1))
     return files
+
+
+# Issue #4185: document whose every path citation must resolve against disk.
+CITED_PATH_DOCS: list[Path] = [
+    REPO_ROOT / "AGENTS.md",
+]
+
+# Path prefixes eligible for the citation gate (repo-relative source trees).
+CITABLE_PATH_RE = re.compile(r"`((?:src|tests|sim|physics|validation|fluxion-core)/[\w/]+\.(?:rs|py|toml))(?::(\d+)(?:-\d+)?)?`")
+
+
+def check_doc_path_citations() -> list[str]:
+    """Resolve every source-path citation in AGENTS.md against disk (Issue #4185).
+
+    A citation of the form ``path/file.rs`` must exist on disk; a citation of
+    the form ``path/file.rs:<line>[-<line>]`` must additionally point at or
+    before end-of-file. ARCHITECTURE.md / CODEBASE_MAP.md are covered by the
+    extract_documented_files existence gates above instead — their historical
+    before→after migration tables deliberately cite pre-refactor paths and
+    must not fail the gate.
+    """
+    findings: list[str] = []
+    for doc in CITED_PATH_DOCS:
+        if not doc.exists():
+            continue
+        content = doc.read_text(encoding="utf-8", errors="replace")
+        for match in CITABLE_PATH_RE.finditer(content):
+            path, line = match.group(1), match.group(2)
+            full = REPO_ROOT / path
+            # Re-add the conventional src/ prefix for prefix-less citations.
+            if not full.exists() and not path.startswith(("src/", "tests/")):
+                full = REPO_ROOT / "src" / path
+            if not full.exists():
+                findings.append(
+                    f"DRIFT: `{match.group(1)}` cited in {doc.name} does not exist on disk"
+                )
+                continue
+            if line:
+                n_lines = len(
+                    full.read_text(encoding="utf-8", errors="replace").splitlines()
+                )
+                if int(line) > n_lines:
+                    findings.append(
+                        f"DRIFT: `{match.group(1)}:{line}` cited in {doc.name} "
+                        f"points past end-of-file ({n_lines} lines)"
+                    )
+    return findings
 
 
 def parse_guard_constant(script_path: Path, constant: str) -> int | None:
@@ -947,10 +1007,30 @@ def check_drift() -> tuple[list[str], bool]:
     # --- Check 2: Documented files that no longer exist ---
     documented_files = extract_documented_files(arch_content)
     for doc_file in sorted(documented_files):
-        if not (REPO_ROOT / doc_file).exists():
+        # Prefix-less module citations (sim/…, physics/…, …) resolve against
+        # src/ by repo convention (Issue #4185).
+        probe = REPO_ROOT / doc_file
+        if not probe.exists() and not doc_file.startswith(("src/", "tests/", "fluxion-core/")):
+            probe = REPO_ROOT / "src" / doc_file
+        if not probe.exists():
             findings.append(
                 f"DRIFT: File `{doc_file}` referenced in ARCHITECTURE.md no longer exists"
             )
+
+    # --- Check 2b: same file-existence gate for CODEBASE_MAP.md (#4185) ---
+    codebase_map = REPO_ROOT / "CODEBASE_MAP.md"
+    if codebase_map.exists():
+        for doc_file in sorted(extract_documented_files(codebase_map.read_text(encoding="utf-8"))):
+            probe = REPO_ROOT / doc_file
+            if not probe.exists() and not doc_file.startswith(("src/", "tests/", "fluxion-core/")):
+                probe = REPO_ROOT / "src" / doc_file
+            if not probe.exists():
+                findings.append(
+                    f"DRIFT: File `{doc_file}` referenced in CODEBASE_MAP.md no longer exists"
+                )
+
+    # --- Check 2c: every path citation in the load-bearing docs resolves (#4185) ---
+    findings.extend(check_doc_path_citations())
 
     # --- Check 3: Documented traits that no longer exist in code ---
     for trait_name in sorted(documented_traits):

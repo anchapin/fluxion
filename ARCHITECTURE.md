@@ -64,7 +64,7 @@ feature** (default OFF). The feature gates the
 `fluxion-core/src/weather/tmy3.rs` module (NREL TMY3 download + on-disk
 SHA-256 cache) and its `reqwest` / `directories` / `sha2` deps. The
 root `fluxion` crate exposes `tmy3-download = ["fluxion-core/tmy3-download"]`
-so consumers like the CLI / `tests/test_tmy3_download.rs` opt in
+so consumers like the CLI / `tests/all_tests/test_tmy3_download.rs` opt in
 explicitly (`cargo test --features tmy3-download`).
 
 The regression gate (`scripts/check_fluxion_core_dep_budget.py`)
@@ -434,7 +434,7 @@ graph TD
     end
 
     subgraph ZoneBalance ["Zone Heat Balance"]
-        ZB["ThermalModelTrait<br/>(sim/thermal_model.rs)"]
+        ZB["ThermalModelTrait<br/>(sim/thermal_model/mod.rs)"]
         PHY["PhysicsThermalModel"]
         SUR["SurrogateThermalModel"]
         UNI["UnifiedThermalModel"]
@@ -447,7 +447,7 @@ graph TD
     subgraph Gauge ["Gauge-Theory Foundation (#1461 + #1462 + #1465) + Phase A8 #3291"]
         TM["ThermalManifold<br/>(physics/geometry_tensor/<br/>manifold.rs)"]
         GS["GaugeSolver — unconditional default zone solver under --features gauge-solver<br/>(physics/gauge_solver.rs)"]
-        GV["Case 900 Validation Harness<br/>(tests/gauge_validation_case_900.rs)"]
+        GV["Case 900 Validation Harness<br/>(tests/all_tests/gauge_validation_case_900.rs)"]
     end
 
     subgraph Quantum ["Quantum Annealing Bridge (Phase 2b — #1464)"]
@@ -575,7 +575,7 @@ graph TD
 - `calculate_surface_irradiance(sun_pos, dni, dhi, ghi, orientation) -> SurfaceIrradiance`
 - `calculate_hourly_solar(...) -> (SolarGain, SolarPosition, SurfaceIrradiance)`
 
-**Per-surface distribution** (#1119): Solar gain distribution across multiple surfaces is tracked via the `IncidentSolarAccumulator` (`sim/thermal_model_data/incident_solar_accumulator.rs`). The `IncidentSolar` metric type (#1132, `validation/report/mod.rs` post-Issue #3788) records per-surface solar radiation for diagnostics and validation. The legacy `sim/solar_gain_distribution.rs` module was deleted in Issue #3555 as a wired-but-dead sibling of `sim/solar.rs`.
+**Per-surface distribution** (#1119): Solar gain distribution across multiple surfaces is tracked via the `IncidentSolarAccumulator` (`sim/thermal_model_data/incident_solar_accumulator.rs`). The `IncidentSolar` metric type (#1132, `validation/report/mod.rs` post-Issue #3788) records per-surface solar radiation for diagnostics and validation. The legacy `solar_gain_distribution` module was deleted in Issue #3555 as a wired-but-dead sibling of `sim/solar.rs`.
 
 **Ground-reflected component** (#1326): The `ground_reflected` field of `SurfaceIrradiance` uses the standard isotropic view-factor form
 `E_g = ρ · GHI · (1 - cos β) / 2` for β ∈ (0°, 180°), with the two endpoint tilts pinned explicitly so the boundary physics is correct:
@@ -590,7 +590,7 @@ The standard formula's endpoint limits (0 at β=0 and ρ·GHI at β=180) are inv
 - `surface_irradiance_south.csv` — hour, beam, diffuse, ground_reflected
 - `solar_gain_distribution.csv` — per-surface solar gain distribution (#1119)
 
-**Isolation test**: `tests/solar_isolation.rs` — position within 0.5°, beam annual energy within 1%, ground-reflected mean within 1%, sol-air temperature analytical (#1146).
+**Isolation test**: `tests/all_tests/solar_isolation.rs` — position within 0.5°, beam annual energy within 1%, ground-reflected mean within 1%, sol-air temperature analytical (#1146).
 
 ---
 
@@ -608,7 +608,7 @@ The standard formula's endpoint limits (0 at β=0 and ρ·GHI at β=180) are inv
 | Exterior h coefficient | `f64` [W/m2K] | Sky radiation |
 | Timestep | `f64` [s] | Engine |
 
-> **Canonical exterior film coefficient** (`h_exterior` / `EXTERIOR_FILM_COEFF`): The v2023 ASHRAE 140 value is **18.3 W/m²K** (vertical surfaces, ~3.4 m/s wind), defined as `pub const EXTERIOR_FILM_COEFF: f64 = 18.3` in `src/physics/constants/thermal/ashrae_140/v2023.rs`. This replaced the legacy 29.3 W/m²K (6.7 m/s wind) per #1140 / #1419 / #1489. All production paths (`method_selector`, `ctf_solver`, `wall_properties`, `sky_radiation`, `construction`) read from `EXTERIOR_FILM_COEFF` — the literal `1.0 / 29.3` must not appear in any `src/` computation path (enforced by `tests/architecture_drift_check.rs`).
+> **Canonical exterior film coefficient** (`h_exterior` / `EXTERIOR_FILM_COEFF`): The v2023 ASHRAE 140 value is **18.3 W/m²K** (vertical surfaces, ~3.4 m/s wind), defined as `pub const EXTERIOR_FILM_COEFF: f64 = 18.3` in `src/physics/constants/thermal/ashrae_140/v2023.rs`. This replaced the legacy 29.3 W/m²K (6.7 m/s wind) per #1140 / #1419 / #1489. All production paths (`method_selector`, `ctf_solver`, `wall_properties`, `sky_radiation`, `construction`) read from `EXTERIOR_FILM_COEFF` — the literal `1.0 / 29.3` must not appear in any `src/` computation path (enforced by `tests/all_tests/architecture_drift_check.rs`).
 
 | Output | Type | Consumer |
 |--------|------|----------|
@@ -653,7 +653,7 @@ pub trait HeatConductionSolver: Send + Sync {
 >
 > **Rule**: `PhysicsSurfaceFluxProvider::surface_heat_flux` (a query path) must NOT call `solver.step()`. It must call `solver.steady_state_flux(T_int, T_ext)` (closed-form `q_ss = (T_ext − T_int) / R_total` for `FiveR1CSolver`). Mixing them causes two consecutive `surface_heat_flux()` calls with identical args to return different values — a parity violation that breaks the `MockSurfaceFluxProvider` test contract and the ML-surrogate swap-point.
 >
-> If a caller needs state advancement, call `solver.step()` explicitly *outside* the flux-provider path. The `Energy Conservation` CI gate and the `test_swap_point_*` parity tests in `tests/surface_flux_provider_isolation.rs` enforce this contract.
+> If a caller needs state advancement, call `solver.step()` explicitly *outside* the flux-provider path. The `Energy Conservation` CI gate and the `test_swap_point_*` parity tests in `tests/all_tests/surface_flux_provider_isolation.rs` enforce this contract.
 >
 > > **Production wiring for state advancement** (Issue #1409):
 > >
@@ -661,7 +661,7 @@ pub trait HeatConductionSolver: Send + Sync {
 > >
 > > `SolverManager::step_all(surfaces, dt, T_int, T_ext)` (`src/physics/solver_manager.rs:340`) is the batch-stepping entry point used by the per-(wall_index, assembly) registry. The provider-level `step_all` and the manager-level `step_all` share the same `HeatConductionSolver::step()` semantics — Issue #1409 makes the provider the wiring surface for production code paths so the existing per-zone `ctf_solvers`/`fd_solvers` field-driven conduction (per `physics_impl.rs::prepare_solvers_and_sol_air`) is joined by an opt-in manager-driven path that does not silently zero high-mass flux.
 > >
-> > Regression: `tests/conduction_solver_manager_production_wiring.rs`.
+> > Regression: `tests/all_tests/conduction_solver_manager_production_wiring.rs`.
 
 **Implementations & `SolverRegistry`**: Four `HeatConductionSolver` implementations are available through the registry / manager system. Since Issue #2494, **all four** are constructible directly via `SolverRegistry::construct` (previously CTF/FD were reachable only through `SolverManager::select`):
 
@@ -670,9 +670,9 @@ pub trait HeatConductionSolver: Send + Sync {
 | `FiveR1CSolver` | `SolverRegistry::construct("5r1c", &wall)` — key `registry_keys::FIVE_R1C` | `physics/five_r1c_solver.rs` |
 | `CTFSolverWrapper` | `SolverRegistry::construct("ctf", &wall)` — key `registry_keys::CTF` (Issue #2494); same construction as `SolverManager::select`'s CTF method | `physics/ctf_solver_wrapper.rs` |
 | `FDSolverWrapper` | `SolverRegistry::construct("fd", &wall)` — key `registry_keys::FD` (Issue #2494); same construction as `SolverManager::select`'s FD method / CTF fallback | `physics/fd_solver_wrapper.rs` |
-| `MultiNodeSolver` (9R4C) | `SolverRegistry::construct("multinode_9r4c", &wall)` — key `registry_keys::MULTINODE_9R4C` (PR #1491 / commit 82f76b2, Issue #1429 / ADR-002) | `physics/multi_node_solver.rs` |
+| `MultiNodeSolver` (9R4C) | `SolverRegistry::construct("multinode_9r4c", &wall)` — key `registry_keys::MULTINODE_9R4C` (PR #1491 / commit 82f76b2, Issue #1429 / ADR-002) | `physics/multi_node_solver/mod.rs` |
 
-`SolverRegistry` (`physics/solver_registry.rs`) owns the constructor dispatch: callers pass a string key + `&WallSpec` (+ `floor_area`, used only by `multinode_9r4c`) and receive a `Box<dyn HeatConductionSolver>`. Built-in keys are enumerated in `registry_keys::BUILTIN_KEYS` and dispatched on a lock-free match path. `SolverManager` wraps the registry and auto-selects between 5R1C / CTF / FD based on thermal mass; `MultiNodeSolver` is selected explicitly for high-mass constructions per ADR-002. The drift-check test (`tests/architecture_drift_check.rs`) verifies ≥ 3 solver constructors are exported.
+`SolverRegistry` (`physics/solver_registry.rs`) owns the constructor dispatch: callers pass a string key + `&WallSpec` (+ `floor_area`, used only by `multinode_9r4c`) and receive a `Box<dyn HeatConductionSolver>`. Built-in keys are enumerated in `registry_keys::BUILTIN_KEYS` and dispatched on a lock-free match path. `SolverManager` wraps the registry and auto-selects between 5R1C / CTF / FD based on thermal mass; `MultiNodeSolver` is selected explicitly for high-mass constructions per ADR-002. The drift-check test (`tests/all_tests/architecture_drift_check.rs`) verifies ≥ 3 solver constructors are exported.
 
 > **Pluggable registration** (Issue #2494): `SolverRegistry::register_solver(key, factory)` lets third-party code (e.g. an ML-surrogate adapter, a research solver, or a `FluxionCitySurfaceFluxProvider`-style provider) register a `SolverFactory` (`Fn(&WallSpec, f64) -> Result<Box<dyn HeatConductionSolver>, SolverError> + Send + Sync`) under a custom key. `SolverRegistry::construct` dispatches registered keys exactly like built-ins, so the rest of the pipeline (registry insertion, `PhysicsSurfaceFluxProvider::add_surface`, stats aggregation) is reused. Built-in keys (`5r1c` / `ctf` / `fd` / `multinode_9r4c`) cannot be shadowed or overridden; `unregister_solver` / `is_known_key` / `registered_keys` manage the custom set. This is the constructor-level analogue of the `FluxionCitySurfaceFluxProvider` wrapper pattern — rather than wrapping an already-constructed solver, it plugs into construction dispatch.
 
@@ -686,13 +686,13 @@ pub trait HeatConductionSolver: Send + Sync {
 > | **Per-wall transient solver** (`FiveR1CSolver`) | `physics/five_r1c_solver.rs` (Module 3) | **Yes** — explicit Euler `T_mass += (T_ext − T_mass) / (R_total · C_total) · dt`; returned flux `(T_mass − T_int) / R_total`; `energy_storage_rate()` returns `Q_ext = (T_ext − T_mass) / R_total`. The first `step()` after `initialize()` is a steady-state seed (`T_mass = (T_int + T_ext) / 2`, `q = ΔT / R_total`, `energy_storage_rate = 0`) so single-step callers continue to observe `q_ss`. Closed by #1277. | No (Module 3 isolation only) |
 > | **Zone-level ISO 13790 thermal network** (5R1C / 6R2C / 9R4C) | `sim/thermal_model_core/` + `sim/thermal_model_physics/` (Module 5) | **Yes** (coefficient-tuned 5R1C / backward-Euler 9R4C) | **Yes** — this is the network that produces zone air temperature, heating/cooling loads, and free-floating temperatures |
 >
-> ADR-002 (`docs/adr/0002-promote-9r4c-high-mass-default.md`) resolved the drift by documenting this split and selecting the **9R4C zone-level network** as the sole solver for high-mass constructions (see Module 5). The Module 3 `FiveR1CSolver` is the transient per-surface solver validated against the 1% conduction tolerance criterion in `tests/conduction_5r1c_isolation.rs`.
+> ADR-002 (`docs/adr/0002-promote-9r4c-high-mass-default.md`) resolved the drift by documenting this split and selecting the **9R4C zone-level network** as the sole solver for high-mass constructions (see Module 5). The Module 3 `FiveR1CSolver` is the transient per-surface solver validated against the 1% conduction tolerance criterion in `tests/all_tests/conduction_5r1c_isolation.rs`.
 
 **Validation target**: Inside surface heat flux within 1% of E+ for step-change temperature test on 200mm concrete wall.
 
 #### `h_exterior` canonical constant (Issue #1419 / #1504)
 
-All conduction paths in Module 3 use a single source of truth for the exterior film coefficient: `EXTERIOR_FILM_COEFF = 18.3 W/m²K`, defined in `src/physics/constants/thermal/ashrae_140/v2023.rs` and re-exported at `fluxion::physics::constants::EXTERIOR_FILM_COEFF`. The value matches ASHRAE 140 v2023 Section 5.2 for vertical surfaces at the ~3.4 m/s design wind. Any code path that needs the surface resistance must derive it as `1.0 / EXTERIOR_FILM_COEFF` — never as a bare numeric literal. The legacy 6.7 m/s design-wind value (`h_ext = 29.3 W/m²K`) is preserved only at `src/physics/constants/thermal/ashrae_140/materials.rs` as the named constant `ASHRAE140_H_EXT` for backward compatibility with legacy ASHRAE 140 design-wind scenarios; even there, the reciprocal must be derived via `1.0 / ASHRAE140_H_EXT`, never the bare literal `1.0 / 29.3`. The regression guard `tests/regression_exterior_film_unification.rs` pins `EXTERIOR_FILM_COEFF == 18.3` and fails CI if any `.rs` file under `src/` contains the bare arithmetic `1.0 / 29.3` (or whitespace-equivalent forms), with a clear error pointing to the file and line. This guard was added in response to issue #1504 after PR #1420/#1490 re-introduced the legacy literal in an ASHRAE 140 Case 900 test assertion and silently broke CI across 8+ concurrent PRs rebased onto the post-#1419 main.
+All conduction paths in Module 3 use a single source of truth for the exterior film coefficient: `EXTERIOR_FILM_COEFF = 18.3 W/m²K`, defined in `src/physics/constants/thermal/ashrae_140/v2023.rs` and re-exported at `fluxion::physics::constants::EXTERIOR_FILM_COEFF`. The value matches ASHRAE 140 v2023 Section 5.2 for vertical surfaces at the ~3.4 m/s design wind. Any code path that needs the surface resistance must derive it as `1.0 / EXTERIOR_FILM_COEFF` — never as a bare numeric literal. The legacy 6.7 m/s design-wind value (`h_ext = 29.3 W/m²K`) is preserved only at `src/physics/constants/thermal/ashrae_140/materials.rs` as the named constant `ASHRAE140_H_EXT` for backward compatibility with legacy ASHRAE 140 design-wind scenarios; even there, the reciprocal must be derived via `1.0 / ASHRAE140_H_EXT`, never the bare literal `1.0 / 29.3`. The regression guard `tests/all_tests/regression_exterior_film_unification.rs` pins `EXTERIOR_FILM_COEFF == 18.3` and fails CI if any `.rs` file under `src/` contains the bare arithmetic `1.0 / 29.3` (or whitespace-equivalent forms), with a clear error pointing to the file and line. This guard was added in response to issue #1504 after PR #1420/#1490 re-introduced the legacy literal in an ASHRAE 140 Case 900 test assertion and silently broke CI across 8+ concurrent PRs rebased onto the post-#1419 main.
 
 ---
 
@@ -789,7 +789,7 @@ flips" plan (§LIMIT-21 / #3297). The legacy
 gone — `thermal_model_type` is set exclusively by the selector
 (Issue #3277 PR2.1).
 
-**Key trait**: `ThermalModelTrait` in `sim/thermal_model.rs`
+**Key trait**: `ThermalModelTrait` in `sim/thermal_model/mod.rs`
 
 ```rust
 pub trait ThermalModelTrait: Send + Sync {
@@ -859,7 +859,7 @@ Thermal properties: `U = 0.5 W/m²K`, `A = 100 m²`.
 
 The `SurrogateDomain::energy_balance_residual` method (`src/ai/surrogate.rs`) computes the per-sample residual `||Q_loads − Q_expected||²` from `SurrogateInputs` + predicted loads for use in the training loop (`tools/train_surrogate.py`). The `--pinn-constraint` flag (default `true`) toggles the physics loss on/off.
 
-**Hybrid mode — `HybridRouting` (PR #1498 / Issue #1431)**: Per-component dispatch between physics and surrogate is governed by the `HybridRouting` struct (`sim/thermal_model.rs`):
+**Hybrid mode — `HybridRouting` (PR #1498 / Issue #1431)**: Per-component dispatch between physics and surrogate is governed by the `HybridRouting` struct (`sim/thermal_model/mod.rs`):
 
 ```rust
 pub struct HybridRouting {
@@ -888,7 +888,7 @@ Each flag independently routes one subsystem to the surrogate path (`true`) or t
 
 In the default `gauge-solver` build the **Gauge** selector is now the unconditional default — neither row of this table is reached without an explicit `ThermalSelector { zone_solver: FiveROneC / NineRFourC, .. }` from the caller.
 
-The 9R4C model (`sim/multi_node_thermal.rs`, `physics/multi_node_solver.rs`) separates thermal mass into 4 nodes (wall, roof, floor, internal) for heavy-mass buildings (#715). Per ADR-002, the 9R4C path is the **sole** driver of high-mass free-float **and** HVAC — the legacy coefficient-tuned `h_ms_coeff` (13.4) no longer drives the high-mass air temperature. The free-float commit in `physics_impl.rs::step_physics` writes the 9R4C multi-node air temperature (`t_i_free_mn`) for high-mass zones (and the 5R1C `t_i_free` for low-mass zones). CTF remains available as a secondary dynamic path but is non-default (CTF↔5R1C coupling instability for 900FF, per #1152).
+The 9R4C model (`sim/multi_node_thermal.rs`, `physics/multi_node_solver/mod.rs`) separates thermal mass into 4 nodes (wall, roof, floor, internal) for heavy-mass buildings (#715). Per ADR-002, the 9R4C path is the **sole** driver of high-mass free-float **and** HVAC — the legacy coefficient-tuned `h_ms_coeff` (13.4) no longer drives the high-mass air temperature. The free-float commit in `physics_impl.rs::step_physics` writes the 9R4C multi-node air temperature (`t_i_free_mn`) for high-mass zones (and the 5R1C `t_i_free` for low-mass zones). CTF remains available as a secondary dynamic path but is non-default (CTF↔5R1C coupling instability for 900FF, per #1152).
 
 **Issue #1281 — 9R4C mass-to-air coupling mode** (`MassAirCouplingMode`): the multi-node solver supports two formulations for how the per-surface mass nodes couple to the zone air node, selected per-`MultiNodeSolver` via `coupling_mode`:
 
@@ -976,7 +976,7 @@ pub trait FfdSolver: Send + Sync {
 
 ---
 
-**FFD/CFD Production Adapter (Issue #2460)**: `src/sim/ffd_cfd_adapter.rs` provides `FfdCfdAdapter`, which conforms `fluxion_cfd::FfdCfdSolver` (the real GPU-accelerated FFD solver in the `fluxion-cfd` workspace member) to the BES-side `FfdSolver` trait. The adapter is gated behind the `fluxion-cfd` feature flag (`dep:fluxion-cfd`) so the default build stays small; the CPU solver path is sufficient for the regression test in `tests/ffd_cfd_adapter_integration.rs` (CUDA is not required). The two FFD interfaces are deliberately different — `fluxion_cfd::FfdConfig` is grid-shape focused while `loose_coupling::FfdSolver` is exchange focused — and the adapter keeps the `fluxion-cfd` types opaque to the BES side per Module N+2's coordinator-as-integration-point design.
+**FFD/CFD Production Adapter (Issue #2460)**: `src/sim/ffd_cfd_adapter.rs` provides `FfdCfdAdapter`, which conforms `fluxion_cfd::FfdCfdSolver` (the real GPU-accelerated FFD solver in the `fluxion-cfd` workspace member) to the BES-side `FfdSolver` trait. The adapter is gated behind the `fluxion-cfd` feature flag (`dep:fluxion-cfd`) so the default build stays small; the CPU solver path is sufficient for the regression test in `tests/all_tests/ffd_cfd_adapter_integration.rs` (CUDA is not required). The two FFD interfaces are deliberately different — `fluxion_cfd::FfdConfig` is grid-shape focused while `loose_coupling::FfdSolver` is exchange focused — and the adapter keeps the `fluxion-cfd` types opaque to the BES side per Module N+2's coordinator-as-integration-point design.
 
 ---
 
@@ -1336,7 +1336,7 @@ pub enum ManifoldIndex { Air = 0, Wall = 1, Roof = 2, Floor = 3 }
 
 #### Phase 3 validation harness (issue #1465)
 
-**File**: `tests/gauge_validation_case_900.rs` + `tests/reference_data/gauge/case_900_diurnal_reference.csv`.
+**File**: `tests/all_tests/gauge_validation_case_900.rs` + `tests/reference_data/gauge/case_900_diurnal_reference.csv`.
 **Companion issue**: #1465 (Phase 3 of the gauge-theory research program — `GaugeSolver` validation).
 
 > **Status note (Phase A8 / Issue #3291, merged via PR #3482):** `GaugeSolver` is no longer "shadow-mode" — the dispatcher in `src/sim/thermal_model_physics/step_dispatcher.rs` runs the gauge path every step for `ZoneSolverKind::Gauge` (the `ThermalSelector::default()`) under `--features gauge-solver`, with no fall-through to legacy 5R1C/9R4C. The Phase 3 harness below remains the regression gate for the gauge integrator itself (`ThermalManifold` ↔ `GaugeSolver` ↔ dispatch); Phase A8 collapses the production dispatch onto this gate rather than running a parallel shadow path.
@@ -1366,7 +1366,7 @@ The Phase 3 harness exercises the `GaugeSolver` on the production dispatch path 
 **Documented gaps (per AGENTS.md "no parameter tuning to make system tests pass")**:
 - **Annual heating / cooling energy within ±15 %** of ASHRAE 140 Case 900: the engine currently under-predicts Case 900 cooling load by ~90 % due to the well-documented roof-solar under-counting (issue #1280 / #1281 / #1289 investigation chain, see Module 5). This is a Module 2 (Solar) gap, not a gauge-solver gap.
 - **Peak heating / cooling load**: same root cause as the annual-energy gap.
-- **Free-floating diurnal swing**: depends on the multi-zone 9R4C thermal network (`physics/multi_node_solver.rs`), not the per-wall `GaugeSolver`.
+- **Free-floating diurnal swing**: depends on the multi-zone 9R4C thermal network (`physics/multi_node_solver/mod.rs`), not the per-wall `GaugeSolver`.
 
 The Phase 3 harness ships the **geometric** validation surface that future `GaugeSolver` iterations can benchmark against. As the Module 2 cooling-load gap closes (issue #1289 follow-up), the same test file can be extended with end-to-end annual Case 900 assertions.
 
@@ -1506,7 +1506,7 @@ All functions take SI units (Pa, K/°C, kg/kg). Module is in `fluxion-core` to r
 
 **VAV terminal unit** (#1764): `src/sim/hvac/vav_terminal.rs` composes `FanComponent` (#1761), `CoolingCoil` (#1762), and `HeatingCoilComponent` (#1763) into a [`VavTerminalUnit`] with damper-modulated mass flow. The [`VavTerminal`] trait exposes a stateless `compute_terminal_performance` that translates a [`VavTerminalControl`] (damper position, cooling-active flag, optional reheat setpoint) into a [`VavTerminalPerformance`] carrying the supply-air state, all component capacities, fan power, and condensate rate. The damper position maps linearly to a fan speed fraction bounded by the minimum airflow ratio, so airflow modulates between `r_min · Q̇_max` and `Q̇_max`. Fan shaft power is dissipated into the airstream as fan heat between the fan and the coils.
 
-The coupled step uses a sequential implicit operator split: backward-Euler 9R4C half-step → implicit algebraic zone-air solve → backward-Euler half-step → implicit air projection, followed by a backward-Euler humidity-ratio balance. Supply sensible conductance is `H_sa = m_da × 1000 × (1.006 + 1.86 W_sa)` [W/K], and the air solve enforces `Q_env + H_ve(T_out − T_z) + H_sa(T_sa − T_z) + φ_ia = 0`. Sensible and latent supply heat reconstruct the ASHRAE Ch.1 moist-air enthalpy flow exactly; the per-step interface residual must remain below `1e-7 W`. The accepted timestep domain is `0 < dt ≤ 360 s`; non-finite inputs, supersaturated post-mixing states, and larger timesteps return typed errors without committing partial state. The coupling is opt-in and does not modify `ThermalModel::step_physics_9r4c`, preserving existing ASHRAE 140 envelope outputs. Regression: `tests/hvac_airside_9r4c_integration.rs`.
+The coupled step uses a sequential implicit operator split: backward-Euler 9R4C half-step → implicit algebraic zone-air solve → backward-Euler half-step → implicit air projection, followed by a backward-Euler humidity-ratio balance. Supply sensible conductance is `H_sa = m_da × 1000 × (1.006 + 1.86 W_sa)` [W/K], and the air solve enforces `Q_env + H_ve(T_out − T_z) + H_sa(T_sa − T_z) + φ_ia = 0`. Sensible and latent supply heat reconstruct the ASHRAE Ch.1 moist-air enthalpy flow exactly; the per-step interface residual must remain below `1e-7 W`. The accepted timestep domain is `0 < dt ≤ 360 s`; non-finite inputs, supersaturated post-mixing states, and larger timesteps return typed errors without committing partial state. The coupling is opt-in and does not modify `ThermalModel::step_physics_9r4c`, preserving existing ASHRAE 140 envelope outputs. Regression: `tests/all_tests/hvac_airside_9r4c_integration.rs`.
 
 **Dedicated Outdoor Air System (DOAS)** (#1765, #2464): `src/sim/hvac/doas.rs` composes `FanComponent` (#1761), `CoolingCoil` (#1762), `HeatingCoilComponent` (#1763), and optionally a `HumidifierComponent` (#2464, `src/sim/hvac/humidifier.rs`) into a [`DoasUnit`] that conditions **100 % outdoor air** at constant volume to a fixed dew-point target and a neutral supply dry-bulb, delivering decoupled ventilation. The [`Doas`] trait exposes a stateless `compute_doas_performance` that translates a [`DoasControl`] (active flag, outdoor-air state, target dew-point, neutral supply dry-bulb) into a [`DoasPerformance`] carrying the supply-air `MoistAirState`, operating mode (`CoolingDehumidification`, `HeatingOnly`, `SensibleCooling`, `Ventilation`, `Off`), component capacities, fan power, condensate rate, and humidifier capacity / moisture rate. The cooling/dehumidification path drives the leaving state toward saturation at the target dew-point so that `w_target = w_sat(T_dp,target)`, making the leaving dew-point equal the target regardless of entering-air humidity (the decoupling guarantee), provided rated cooling capacity is not exceeded; when it is, the leaving state is interpolated along the psychrometric line by `f = rated / required`. A sensible-only reheat coil then raises the dry-bulb to the neutral supply setpoint at constant humidity ratio. An optional **winter humidification** stage (#2464) — engaged when the DOAS is equipped with a `HumidifierComponent` and the post-reheat humidity ratio is below `w_sat(target_dew_point)` — drives the leaving humidity ratio to the target via an adiabatic humidifier (precedent: `EnergyPlus Humidifier:Steam:Adiabatic`), restoring the ASHRAE 62.1 §6.4 minimum indoor humidity guidance in cold-dry climates (4–6 months/year in ASHRAE 169 climate zones 5B, 6A, 7, 8). The latent heat `Q_lat = ṁ_h2o · h_fg` is delivered to the airstream and credited by [`airside_coupling`](crate::sim::hvac::airside_coupling) via `supply_latent_heat_w`. When no humidifier is configured (the default) or the outdoor air is already at/above the target, behavior is identical to the pre-#2464 implementation.
 
@@ -1603,7 +1603,7 @@ contract.
 **Trait-level contract — population-level cloning for `BatchOracle`.**
 `BatchOracle::evaluate_population` (`src/lib.rs`) clones `base_model` once per
 candidate in the input population and then solves each clone independently
-(`src/lib.rs:1338`):
+(`src/batch_oracle.rs:246`):
 
 ```text
 population.par_iter().map(|params| {
@@ -1637,7 +1637,7 @@ hand because its fields have divergent clone semantics:
 | `surrogate_load_calls`, `physics_conduction_calls`, `surrogate_conduction_calls`, `surrogate_ventilation_calls` | **Preserved verbatim** | These are observable routing-counters (Issue #1702 regression guards assert on them); preserving them lets a caller snapshot routing statistics across branches. |
 
 The asymmetry is intentional but easy to misuse. End-to-end regression coverage
-lives in `tests/hybrid_clone_preserves_dispatch_counters.rs` (Issue #2925): the
+lives in `tests/all_tests/hybrid_clone_preserves_dispatch_counters.rs` (Issue #2925): the
 first test (`clone_preserves_dispatch_counters_mid_solve`) pins counter
 preservation across `clone()` after a mid-solve snapshot, and the second
 (`clone_resets_solver_and_schedule_slots_independently`) pins the
@@ -1752,7 +1752,7 @@ The `InferenceBackend` enum (`src/ai/surrogate.rs:26-33`) wires five execution p
 2. When no ONNX model is loaded, `predict_loads_with_fallback` routes to `deterministic_analytical_loads` (issue #1335) — the analytical sine-cycle surrogate is **deterministic across runs**, which is the ground truth the CPU-vs-CUDA parity harness compares against.
 3. CUDA build is gated behind `--features cuda` (implies `ort/cuda` + `ort/tensorrt`). At runtime, `SessionPool::create_session` for `InferenceBackend::CUDA` adds `CUDAExecutionProvider`; if the runtime has no CUDA device, the EP registration fails and `with_gpu_backend` returns a typed error with the message `"CUDA backend requested but fluxion was built without the `cuda` feature"` (no panic, no silent CPU fallback).
 
-**Parity test design** (issue #1336, `tests/surrogate_backend_parity.rs`):
+**Parity test design** (issue #1336, `tests/all_tests/surrogate_backend_parity.rs`):
 
 - **Always-on CPU baseline**: 4 ASHRAE 140-style cases × 100 timesteps × 5 zones = 2,000 inputs fed through `predict_loads_with_fallback` and compared to `deterministic_analytical_loads` (max relative error ≤ 1e-12). This pins the CPU reference that any CUDA path must match.
 - **CPU determinism**: two consecutive runs through the CPU backend must produce bit-identical outputs.
@@ -1919,7 +1919,7 @@ Each CSV column must match a function output exactly so tests can loop row-by-ro
 | **5B** | Denver/Golden, CO | `weather/denver_tmy3_reference.csv`, `solar/solar_position_denver.csv`, `ventilation/infiltration_denver_*.csv` | Cool-Dry |
 | **6A** | Minneapolis, MN | `weather/minneapolis_tmy3_reference.csv`, `solar/solar_position_minneapolis.csv`, `ventilation/infiltration_minneapolis_05ach.csv` | Cold-Humid |
 
-Cross-zone solar physics consistency is validated by `tests/multi_climate_solar_invariant.rs`; the generation script is `tests/reference_data/generate_multi_climate_reference.py`.
+Cross-zone solar physics consistency is validated by `tests/reference_data/multi_climate_solar_invariant.rs`; the generation script is `tests/reference_data/generate_multi_climate_reference.py`.
 
 ---
 
@@ -1973,7 +1973,7 @@ Surrogates must match physics within 2% on held-out data. v3.0 surrogate trainin
 | Ventilation | Yes | Yes (`VentilationSchedule`) | Yes | Yes |
 | Zone Balance | Yes | Yes (`ThermalModelTrait`) | Yes | Yes |
 | Gauge-Theory Foundation (#1461 — Phase 1a) | **Yes** (data structures only — no production solver wiring) | N/A — gauge transport is a stub method on `ThermalManifold`; Phase 1b (#1462) wires the production `GaugeSolver` | N/A — Phase 3 (#1465) is the ASHRAE 140 Case 900 validation gate | **Yes** — 27 unit tests in `src/physics/geometry_tensor/manifold.rs` (`test_manifold_*`, `test_from_5r1c_*`, `test_from_9r4c_*`, `test_parallel_transport_*`, `test_validate_*`); matrix-form tracks the 5R1C discrete ODE to 7.1e-15 (Python verification at `.agents/results/issue-1461-python-verification.py`) |
-| GaugeSolver Production Wiring + ASHRAE 140 Case 900 Validation (#1462 — Phase 1b, #1465 — Phase 3; Phase A8 default flip — #3291, PR #3482) | **Yes** — Phase 1b `GaugeSolver` shadow-mode production wiring + Phase A8 unconditional-default zone dispatch (Issue #3291, merged via PR #3482) + Phase 3 ASHRAE 140 Case 900 validation harness | Yes (`HeatConductionSolver` impl on `GaugeSolver`); `ThermalSelector::default()` resolves to `ZoneSolverKind::Gauge` (`src/sim/thermal_selector.rs`) | **Partial** — Phase 3 diurnal reference CSV (`tests/reference_data/gauge/case_900_diurnal_reference.csv`) is synthetic/analytical (not from EnergyPlus); annual-aggregate reference is at `tests/reference_data/zone_balance/case_900_energy_reference.csv` (PROVENANCE.md) | **Yes** — 3 unit tests in `src/physics/gauge_solver.rs` (#1462); 4 unit tests in `src/thermal/physics_adapter.rs` (#1462 shadow wiring); **8 validation tests in `tests/gauge_validation_case_900.rs` (#1465 Phase 3)** covering ThermalManifold layout, Cm metric, diurnal response, no-clamp behaviour, shadow parity, gauge-connection translation, MAX_ZONES invariant, and CSV reference parity. Annual ±15% Case 900 energy tolerance tests are `#[ignore]` pending the Module 2 cooling-load fix (issue #1289 follow-up). |
+| GaugeSolver Production Wiring + ASHRAE 140 Case 900 Validation (#1462 — Phase 1b, #1465 — Phase 3; Phase A8 default flip — #3291, PR #3482) | **Yes** — Phase 1b `GaugeSolver` shadow-mode production wiring + Phase A8 unconditional-default zone dispatch (Issue #3291, merged via PR #3482) + Phase 3 ASHRAE 140 Case 900 validation harness | Yes (`HeatConductionSolver` impl on `GaugeSolver`); `ThermalSelector::default()` resolves to `ZoneSolverKind::Gauge` (`src/sim/thermal_selector.rs`) | **Partial** — Phase 3 diurnal reference CSV (`tests/reference_data/gauge/case_900_diurnal_reference.csv`) is synthetic/analytical (not from EnergyPlus); annual-aggregate reference is at `tests/reference_data/zone_balance/case_900_energy_reference.csv` (PROVENANCE.md) | **Yes** — 3 unit tests in `src/physics/gauge_solver.rs` (#1462); 4 unit tests in `src/thermal/physics_adapter.rs` (#1462 shadow wiring); **8 validation tests in `tests/all_tests/gauge_validation_case_900.rs` (#1465 Phase 3)** covering ThermalManifold layout, Cm metric, diurnal response, no-clamp behaviour, shadow parity, gauge-connection translation, MAX_ZONES invariant, and CSV reference parity. Annual ±15% Case 900 energy tolerance tests are `#[ignore]` pending the Module 2 cooling-load fix (issue #1289 follow-up). |
 | Quantum Annealing Bridge (#1464 — Phase 2b) | **Yes** (mathematical mapping only — no annealer SDK wiring, deferred to Phase 2c) | N/A — QUBO / Ising are concrete structs in `src/quantum/qubo_mapping.rs`, not a runtime-polymorphic trait | N/A — energy equivalence is proven algebraically and verified by unit tests, not by annealer output | **Yes** — 18 unit tests in `src/quantum/qubo_mapping.rs` (`test_config_*`, `test_encode_decode_round_trip_default`, `test_qubo_size_scales_with_k`, `test_round_trip_5r1c_energy_matches`, `test_round_trip_9r4c_with_gauge`, `test_qubo_is_symmetric_for_random_manifold`, `test_qubo_rejects_nan_manifold`, `test_qubo_to_ising_matches_qubo_energy`, `test_qubo_max_abs_and_normalize`, `test_num_variables_is_manifold_dim_times_bits`); QUBO energy `x^T Q x` matches the continuous `T^T M T` to floating-point precision across 5R1C, 9R4C, and flat manifold scenes; QUBO ↔ Ising round-trip verified across 16 random binary solutions (Python verification at `.agents/results/issue-1464-qubo-verification.py`) |
 
 **Zone Balance detail**: Multi-node 9R4C model and Case 900 multi-node HVAC validation are complete. Free-floating calibration and annual re-validation CI gate landed (#1154, #1137, #669). Issue #1147 extended the zone balance isolation tests to cover metered energy load validation against ASHRAE 140 reference CSVs (`tests/reference_data/zone_balance/case_600_energy_reference.csv`, `case_900_energy_reference.csv`). Tests use true blind execution (spec-only, no case ID to the engine). The strict ±15% annual energy tolerance tests are `#[ignore]` until the cooling-load physics gap is closed (current cooling underestimates ASHRAE 140 by ~90%; per the Issue #1281 / #1280 investigation, the root cause is roof-solar under-counting — see `docs/investigations/issue-1280-ctf-peak-load.md` §4 — NOT the 5R1C solver nor the `h_ms_total` additive formulation; per AGENTS.md "no parameter tuning, fix the math", no corrections are applied). The Issue #1281 architectural fix adds the `MassAirCouplingMode::ParallelResistance` formulation to `MultiNodeSolver` as a more physically correct alternative to the additive coupling; it does NOT by itself close the ASHRAE 140 cooling gap (Python verification at `.agents/results/issue-1281-python-verification.py`). Hourly E+ regeneration is available via `generate_case_600_900_energy.py`. Marked "Isolated=Yes" because the bottom-up module isolation required by Phase 1 is complete for Weather, Solar, Conduction, and Ventilation, and the Zone Balance test infrastructure now covers both free-floating temperature and metered energy loads.

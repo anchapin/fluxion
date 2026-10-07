@@ -18,7 +18,7 @@ PASS if: ref_min ≤ result ≤ ref_max
 FAIL if: result < ref_min  OR  result > ref_max
 ```
 
-See `src/validation/ashrae_140_validator.rs` and issue [#723](https://github.com/anchapin/fluxion/issues/723) for the comparator fix.
+See `src/validation/ashrae_140_validator/mod.rs` and issue [#723](https://github.com/anchapin/fluxion/issues/723) for the comparator fix.
 
 ## Provisional Values
 
