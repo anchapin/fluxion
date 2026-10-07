@@ -8,6 +8,7 @@ runtime.
 
 | File / directory                       | What it shows                                                              |
 |----------------------------------------|----------------------------------------------------------------------------|
+| `ashrae_case_demo.rs`                   | Live single-case ASHRAE 140 demo: runs Case 600 end-to-end and prints annual heating/cooling vs the published bands (`cargo run --release --manifest-path examples/Cargo.toml --bin ashrae_case_demo`, from the repo root) |
 | `run_model.py`                          | `fluxion.Model(num_zones=N).simulate(...)` (analytical + ONNX surrogate)  |
 | `run_oracle.py`                         | `fluxion.BatchOracle().evaluate_population(...)` (parallel population eval) |
 | `run_rest.sh`                           | `curl` against `fluxion-rest` on port 8080 (`/v1/healthz`, `/v1/simulate`, `/v1/schema/{id}`) |
