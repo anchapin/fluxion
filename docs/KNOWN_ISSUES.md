@@ -9,20 +9,20 @@
 | Free-Float (FREE) | 3 | 0 | 3 | 0 | 0 |
 | Temperature (TEMP) | 1 | 0 | 1 | 0 | 0 |
 | Multi-Zone (MULTI) | 4 | 0 | 4 | 0 | 0 |
-| Model Limits (LIMIT) | 30 | 1 | 26 | 3 | 0 |
+| Model Limits (LIMIT) | 31 | 1 | 27 | 3 | 0 |
 | Reporting (REPORT) | 4 | 0 | 4 | 0 | 0 |
-| CI/Infrastructure (CI) | 3 | 1 | 2 | 0 | 0 |
+| CI/Infrastructure (CI) | 4 | 1 | 3 | 0 | 0 |
 | fluxion-fluid (FLUID) | 2 | 0 | 2 | 0 | 0 |
 | FFD/CFD (FFD) | 2 | 1 | 1 | 0 | 0 |
 | Reference data (REF) | 1 | 0 | 1 | 0 | 0 |
-| **Total** | **59** | **3** | **53** | **3** | **0** |
+| **Total** | **61** | **3** | **55** | **3** | **0** |
 
 *Counts derived from the per-row catalog tables under each category section (`| **CATEGORY-NN** | ... |`) via `scripts/check_known_issues_summary.py`. Edit a row in place (or add a new row) and the table updates on the next regen. Status columns (`Fixed` / `Open` / `Partial` / `Won't Fix`) derive from each row's Status cell: `resolved` -> Fixed, `open` -> Open, `tracking only` -> Partial, `Won't Fix` -> Won't Fix. Rows without a recognized status are counted in the Total column but contribute 0 to the status columns. To regenerate: `python3 scripts/check_known_issues_summary.py --regen | sponge docs/KNOWN_ISSUES.md`.*
 
 Catalog of known systematic issues affecting ASHRAE 140 validation compliance.
 Engineering team and AI agents — reference before modifying physics or validation code.
 
-*Last Updated: 2026-09-30*
+*Last Updated: 2026-10-06*
 ## How to read this document
 
 Each limitation is **one row** in the tables below: its current measured value against
@@ -133,6 +133,7 @@ That registry, not this document, is canonical for quarantine state.
 | **LIMIT-30** | ASHRAE 140 Case 600 series per-tilt / per-azimuth solar distribution audit — Phase B1a PHYSICS-01 | Case 600 cooling 2.546 MWh vs [4.275, 5.784] (−34.4 %); to_air 0.30 vs 0.0 | #3797 | per-surface solar routing re-derivation (B1b / #3798) | open | [history](investigations/limit-30-ashrae-140-case-600-series-per.md) |
 | **LIMIT-31** | CTF↔zone coupling defect — conduction backends bypassed for conditioned high-mass cases | conditioned high-mass bypassed the CTF backend; Case 900 heating 5.05 → ≈1.165 MWh | #3979 | resolved in #3979; CTF stays the 5R1C cross-check | open | [history](investigations/limit-31-ctf-zone-coupling-defect-conduction-backends.md) |
 | **LIMIT-32** | CTF steady-state flux for low-mass walls has the wrong sign | 80 mm EPS steady-state flux −5.53 W/m² (physical +3.69 W/m²) | #4062 | y-coefficient clamping fixed for τ ≪ dt walls | open | [history](investigations/limit-32-ctf-steady-state-flux-for-low.md) |
+| **LIMIT-33** | #4241 ideal-HVAC discrete storage residual inflates Case 600 annual heating ~50% out of the published band — blocks 2 CI gates | Case 600 annual heating 7181.51 kWh vs [4314, 5836] (+23% over max); storage term alone contributes +1587 kWh/yr (verified: 5594.26 kWh with it disabled, in band) | #4314 | correct discrete ideal-loads semantics in `compute_zone_hvac_load` + baseline re-record from corrected engine | open | [history](investigations/limit-33-ideal-hvac-storage-residual-inflates-case-600.md) |
 
 ## Reference data (REF)
 
@@ -156,6 +157,7 @@ That registry, not this document, is canonical for quarantine state.
 | **CI-01** | Code coverage gate (issue #1932) — RESOLVED (min_branch_floor hard floors enforced) | min_branch_floor hard floors enforced | #1932 | RESOLVED | resolved | [history](investigations/ci-01-code-coverage-gate-issue-1932-resolved.md) |
 | **CI-02** | Debug build linking crashes with rust-lld segfault (issue #2297) | — | #2297 | — | open | [history](investigations/ci-02-debug-build-linking-crashes-with-rust.md) |
 | **CI-03** | `ort` pinned to a release candidate (issue #2691) — no stable 2.0 on crates.io | — | #2691 | — | open | [history](investigations/ci-03-ort-pinned-to-a-release-candidate.md) |
+| **CI-04** | Node/NAPI Bindings (ubuntu-24.04 + windows-latest) and Surrogate Drift Tolerance Gate (#1784) red on develop — blocked on §LIMIT-33 | NAPI Case 600 heating 7181.51 kWh vs [4314, 5836]; drift peak 50.0000% vs 2665.03 kWh fallback baseline, both deterministic since #4258 | #4314 | §LIMIT-33 fix + recorded-value baseline re-record (no threshold widened, no gate skipped) | open | [history](investigations/ci-04-napi-and-surrogate-drift-gates-red-limit-33.md) |
 
 ## fluxion-fluid autodiff (FLUID)
 
