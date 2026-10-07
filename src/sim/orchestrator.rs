@@ -383,6 +383,7 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
             return Vec::new();
         }
 
+        let n_configs = configs.len();
         let chunk_size = self.chunk_size.min(configs.len());
 
         // par_chunks gives each rayon worker a contiguous slice of
@@ -393,11 +394,17 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
         // is determined by rayon chunk completion order (not
         // population-index order); the caller is responsible for
         // placing results at `results[idx]`.
+        // Issue #4188: consume the population by value -- `into_par_iter()
+        // .chunks()` hands each rayon worker an *owned* `Vec` of its configs
+        // (a move, not a copy), so the previous `chunk.iter().cloned()` deep
+        // clone of every model inside each worker is gone. At most one
+        // worker-chunk of models is live per rayon worker thread.
         let per_chunk: Vec<Vec<CpuResult>> = configs
-            .par_chunks(chunk_size)
+            .into_par_iter()
+            .chunks(chunk_size)
             .map(|chunk| {
                 let mut chunk_results: Vec<CpuResult> = Vec::with_capacity(chunk.len());
-                for (idx, mut model) in chunk.iter().cloned() {
+                for (idx, mut model) in chunk {
                     let mut energy_kwh = 0.0_f64;
                     // Issue #2687: hoist the per-timestep surrogate I/O
                     // buffers out of the 8 760-step inner loop and reuse them
@@ -448,7 +455,7 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
             })
             .collect();
 
-        let mut out: Vec<CpuResult> = Vec::with_capacity(configs.len());
+        let mut out: Vec<CpuResult> = Vec::with_capacity(n_configs);
         for chunk_results in per_chunk {
             out.extend(chunk_results);
         }
@@ -506,10 +513,20 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
         // Split into contiguous worker-owned slices (each worker processes a
         // strided-but-contiguous block; ordering within a worker is preserved).
         let slice_cap = n.div_ceil(n_workers);
-        let slices: Vec<Vec<(usize, ThermalModel<VectorField>)>> = configs
-            .chunks(slice_cap.max(1))
-            .map(|c| c.to_vec())
-            .collect();
+        // Issue #4188: move the configs into per-worker slices instead of
+        // `chunks(..).map(|c| c.to_vec())`, which was a second full deep
+        // clone of the entire population. `into_iter().take(slice_cap)`
+        // transfers ownership slice by slice -- zero model copies.
+        let mut slices: Vec<Vec<(usize, ThermalModel<VectorField>)>> = Vec::new();
+        let mut rest = configs.into_iter();
+        loop {
+            let slice: Vec<(usize, ThermalModel<VectorField>)> =
+                rest.by_ref().take(slice_cap.max(1)).collect();
+            if slice.is_empty() {
+                break;
+            }
+            slices.push(slice);
+        }
         let n_workers = slices.len();
         // Per-worker config count is constant across timesteps (workers own a
         // fixed slice), so we precompute it once for the scatter slicing.
@@ -770,6 +787,7 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
             return Vec::new();
         }
 
+        let n_configs = configs.len();
         let chunk_size = self.chunk_size.min(configs.len());
 
         // Same `Vec<Vec<CpuResult>>` flatten pattern as `run_cpu_surrogate`
@@ -778,8 +796,13 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
         // equivalent here — `StepParameters::build_analytical()` is cheap
         // and constructed per chunk worker, sidestepping the type's
         // `!Send + !Sync` auto-trait failure).
+        // Issue #4188: consume the population by value -- `into_par_iter()
+        // .chunks()` hands each rayon worker an *owned* `Vec` of its configs
+        // (a move, not a copy), so the previous `chunk.iter().cloned()` deep
+        // clone of every model inside each worker is gone.
         let per_chunk: Vec<Vec<CpuResult>> = configs
-            .par_chunks(chunk_size)
+            .into_par_iter()
+            .chunks(chunk_size)
             .map(|chunk| {
                 // Per-worker `StepParameters` (the type is !Send via its
                 // `equipment: Option<Vec<Box<dyn Equipment>>>` field; the
@@ -816,7 +839,7 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
             })
             .collect();
 
-        let mut out: Vec<CpuResult> = Vec::with_capacity(configs.len());
+        let mut out: Vec<CpuResult> = Vec::with_capacity(n_configs);
         for chunk_results in per_chunk {
             out.extend(chunk_results);
         }

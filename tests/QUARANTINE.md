@@ -256,6 +256,7 @@ unit-test CI. They are run manually for memory profiling.
 |-----------|-----------|----------|----------------|-------|-------------------|--------|
 | `tests/all_tests/bdf_solver_tests.rs` | `benchmark_bdf_stiff_network_100` | `performance` | Performance (manual benchmark) | `unassigned` | Run in perf CI under `--release` with `--nocapture` | `pending` |
 | `tests/all_tests/bdf_solver_tests.rs` | `benchmark_bdf_stiff_network_100_throughput` | `performance` | Performance (manual benchmark) | `unassigned` | Run in perf CI under `--release` with `--nocapture` | `pending` |
+| `tests/batch_oracle_memory_budget.rs` | `multi_zone_10k_population_peak_rss_under_budget` | `performance` | Performance (10k x 8760-step workload; ~60 s release) | `unassigned` | Nightly memory-budget workflow runs it via `scripts/memory-budget-gate.sh` (Issue #4189) | `pending` |
 | `tests/all_tests/lib_batch_oracle.rs` | `test_batch_oracle_*` (5 tests) | `performance` | Slow (full-year simulation) | `unassigned` | Integration CI profile; run on perf runner | `pending` |
 
 ### TIMING suites (debug-mode absolute thresholds — #3957)

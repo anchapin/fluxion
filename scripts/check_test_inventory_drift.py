@@ -273,7 +273,8 @@ BASELINE_LIB_IGNORED = 9
 #   test_box_apparent_cp_at_wall_delegates_to_material). Stacked on PR-A's
 #   8821 baseline.
 
-BASELINE_WORKSPACE_TESTS = 8891  # 2026-10-07 (Issue #4204): 8890 -> 8891 — one new steady-state test in tests/dhat_batched_surrogate_zero_growth.rs (predict_loads_into_with_scratch_zero_steady_state_growth). Stacked on the 2026-09-29 #4299-supersede baseline of 8890.
+BASELINE_WORKSPACE_TESTS = 8893  # 2026-10-07 (Issue #4188): 8891 -> 8893 — new `tests/batch_oracle_memory_budget.rs` test target (2 tests: pre-#4188 EUI bit-identity guard + #[ignore]d 10k population RSS budget). Stacked on the 2026-10-07 #4204 baseline of 8891.
+                                  # 2026-10-07 (Issue #4204): 8890 -> 8891 — one new steady-state test in tests/dhat_batched_surrogate_zero_growth.rs (predict_loads_into_with_scratch_zero_steady_state_growth). Stacked on the 2026-09-29 #4299-supersede baseline of 8890.
 
                                   # 2026-09-29 (Issue #4192): 8873 -> 8881 — collapse triplicated EPW decoder; 8 new tests in fluxion-core/src/weather/epw.rs (shared-fixture agreement, truncated/missing-field skips, 8760-count fixture guard, sentinel coercion). Stacked on #4155's 8873 baseline.
                                   # Previous: 2026-09-28: 8836 -> 8839 — three new `fabric_case_*_measurement` tests in `tests/all_tests/ashrae_140_fabric_multiselector.rs` (PR-A+2 fabric harness, Refs #3986-A+2 / #4117). CI's authoritative cargo --list count rises 8836 -> 8839 (local 8131). Ratchet must equal or exceed CI live count per Issue #3442 protocol.
@@ -344,7 +345,8 @@ BASELINE_WORKSPACE_IGNORED = 153  # Issue #4058: bumped from 147 (+6) — the si
 #   existing consolidated `all_tests` runner and does not add a new
 #   binary. The AST scanner's module-detection heuristic is consistent
 #   with cargo's `--list` reporting.
-BASELINE_TEST_BINARIES = 52  # 2026-09-28: 51 -> 52 — schedule conformance tests (#4196) add fluxion-core/tests/schedule_conformance.rs test binary.
+BASELINE_TEST_BINARIES = 53  # 2026-10-07 (Issue #4188): 52 -> 53 — new batch-oracle-memory-budget [[test]] target.
+                             # 2026-09-28: 51 -> 52 — schedule conformance tests (#4196) add fluxion-core/tests/schedule_conformance.rs test binary.
 
 # Sanity-check constants — the verified cargo counts at HEAD
 # ``12856a9``. Operators checking the drift gate's accuracy can

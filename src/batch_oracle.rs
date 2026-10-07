@@ -299,7 +299,7 @@ impl BatchOracle {
         use_surrogates: bool,
     ) -> Result<Vec<f64>, crate::api::error::FluxionError> {
         debug_assert_eq!(flat.len(), n_candidates * n_params);
-        use crate::physics::cta::ContinuousTensor;
+
         use rayon::prelude::*;
 
         // 1. Validate and initialize all models upfront (parallel). Issue
@@ -309,20 +309,65 @@ impl BatchOracle {
         //    `population_vec.par_iter()` was preceded by a
         //    `(0..n_candidates).map(|i| vec![...]).collect()` that
         //    allocated one outer Vec + N inner Vec<f64>s + 3N f64 copies.
-        let mut valid_configs: Vec<(usize, ThermalModel<VectorField>)> = (0..n_candidates)
-            .into_par_iter()
-            .filter_map(|i| {
-                let params = &flat[i * n_params..(i + 1) * n_params];
-                if Self::validate_parameters(params).is_err() {
-                    return None;
-                }
-                let mut model = self.base_model.clone();
-                model.apply_parameters(params);
-                Some((i, model))
-            })
-            .collect();
-
         let mut results = vec![f64::NAN; n_candidates];
+
+        // Issue #4188: stream the population through the physics in bounded
+        // slices instead of materializing all N deep-cloned models up front.
+        // Each slice is validated, `apply_parameters`-d, stepped, and then
+        // dropped before the next slice is built, so peak resident memory for
+        // the candidate models is O(slice) (~ n_cpus x chunk_size models)
+        // rather than O(N x model_size). Per-config results are bit-identical
+        // because every config's 8 760-step evaluation is independent of the
+        // slice boundaries (verified by
+        // `tests/batch_oracle_hotloop_equivalence.rs` and the memory-budget
+        // test's bit-identity check against the single-slice path).
+        //
+        // The slice bound mirrors the orchestrator's own residency:
+        // `recommended_chunk_size(N)` models per rayon worker x n_cpus
+        // workers.
+        let n_cpus = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
+        let chunk = crate::sim::orchestrator::recommended_chunk_size(n_candidates);
+        let stream_cap = chunk.saturating_mul(n_cpus).max(1);
+        for start in (0..n_candidates).step_by(stream_cap) {
+            let end = (start + stream_cap).min(n_candidates);
+            // Issue #2874: index the row slices directly from the contiguous
+            // `flat` buffer in the closure -- no per-row Vec<f64> allocation,
+            // no element copies.
+            let valid_configs: Vec<(usize, ThermalModel<VectorField>)> = (start..end)
+                .into_par_iter()
+                .filter_map(|i| {
+                    let params = &flat[i * n_params..(i + 1) * n_params];
+                    if Self::validate_parameters(params).is_err() {
+                        return None;
+                    }
+                    let mut model = self.base_model.clone();
+                    model.apply_parameters(params);
+                    Some((i, model))
+                })
+                .collect();
+            self.dispatch_population_slice(valid_configs, &mut results, use_surrogates)?;
+        }
+
+        Ok(results)
+    }
+
+    /// Dispatch one already-validated, bounded population slice through the
+    /// GPU / CPU-surrogate / analytical paths and write each config's EUI
+    /// into `results[idx]` (population indices are global, so slices may
+    /// write anywhere in the caller's `results`).
+    ///
+    /// Extracted verbatim from `evaluate_population_from_slice`'s former
+    /// single-pass body (Issue #4188); behavior is unchanged for a slice that
+    /// spans the whole population.
+    fn dispatch_population_slice(
+        &self,
+        mut valid_configs: Vec<(usize, ThermalModel<VectorField>)>,
+        results: &mut [f64],
+        use_surrogates: bool,
+    ) -> Result<(), crate::api::error::FluxionError> {
+        use crate::physics::cta::ContinuousTensor;
 
         if use_surrogates && !valid_configs.is_empty() {
             let use_gpu = self.surrogates.gpu_supported();
@@ -507,7 +552,7 @@ impl BatchOracle {
             }
         }
 
-        Ok(results)
+        Ok(())
     }
 }
 
