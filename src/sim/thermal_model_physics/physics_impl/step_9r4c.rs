@@ -536,7 +536,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 solver.h_tr_is /= h_tr_is_multiplier_pre;
             }
 
-            solver.set_zone_temperature(t_air_mn_pre);
+            // §LIMIT-35 §9 (issue #4332): couple the multi-node mass network to
+            // the CONDITIONED zone air. Previously the solver's internal air
+            // node was always set to the free-float t_air_mn_pre, so the
+            // wall/roof/floor mass nodes stepped against an air temperature
+            // that excluded HVAC heat entirely: the mass free-ran 3-9 K cold
+            // in winter and the setpoint feedback over-requested heating
+            // against a phantom unheated building every hour (measured:
+            // validator Case 900 H 3,588.28 -> 2,322.94 kWh, C 801.09 ->
+            // 552.83, with the mass coupled; see
+            // docs/investigations/limit-35-case-900-heating-out-of-band.md §9
+            // on the post-#4335 develop). In HVAC mode, step the mass against
+            // the previous step's committed controlled air temperature
+            // (setpoints.temperatures holds t_act on the 9R4C HVAC path);
+            // free-float keeps the original free-float air (the #1175/ADR-002
+            // free-float commit semantics are untouched).
+            if self.0.hvac.free_float {
+                solver.set_zone_temperature(t_air_mn_pre);
+            } else {
+                solver.set_zone_temperature(self.0.setpoints.temperatures.as_ref()[zone_idx]);
+            }
             solver.set_surface_temperature(t_surface);
 
             let (surface_ext_temps, wall_irr_val, roof_irr_val) =
