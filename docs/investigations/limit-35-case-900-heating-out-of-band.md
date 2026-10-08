@@ -297,6 +297,7 @@ and the baselines below re-recorded FROM the corrected engine, per the
 | Hotloop golden EUIs | — | unchanged (gate passes; workload does not exercise the horizontal ground term) | — |
 | Grid thermal (Case 600 January) | — | unchanged (gate passes) | — |
 | Surrogate drift (Case 900 fallback) | H / C / total | 4594.6127 / 9.0086 / 4603.6213 kWh | reproduces exactly (synthetic fallback, not irradiance-driven) |
+| Validator `simulate_case` widened gate | Case 900 H | ~3.144 MWh (gate ≤ 3.162) | 3.2493 MWh; gate re-centered ≤ 3.6 per the #4156 precedent (regression ratchet around the corrected engine, not a band fix) |
 
 Test premises updated honestly (not baselines, not the engine):
 `solar_isolation::test_horizontal_ground_reflected` (in the original PR) and
