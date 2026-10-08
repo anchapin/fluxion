@@ -1,35 +1,41 @@
 {
-  "timestamp": "2026-10-07T21:34:54+00:00",
-  "throughput_analytical": 153.0,
-  "latency_ms": 3.732,
-  "latency_single_config_ms": 7.53,
+  "timestamp": "2026-10-08T00:36:07+00:00",
+  "throughput_analytical": 264.0,
+  "latency_ms": 3.786,
+  "latency_single_config_ms": 7.653,
   "population_size": 100,
   "_meta": {
-    "measured_at": "2026-10-07",
-    "methodology": "Median of N runs of `cargo test --test all_tests performance_regression_test:: --release test_performance_regression` (population=100, 1 warmup + 1 measured per run). Same harness CI's absolute-perf-gate (#2693) and performance.yml use. Computed via Python statistics.median (RULES.md constraint #0).",
-    "n_runs": 5,
+    "measured_at": "2026-10-08",
+    "methodology": "Median of N runs of `cargo test --test all_tests performance_regression_test:: --release test_performance_regression` (population=100, 3 warmups + 1 measured per run, Issue #4190 de-noising) Same harness CI's absolute-perf-gate (#2693) and performance.yml use. Computed via Python statistics.median (RULES.md constraint #0).",
+    "n_runs": 7,
     "strategy": "median",
     "samples": {
       "throughput_configs_per_sec": [
-        153.0,
-        153.0,
-        153.0,
-        153.0,
-        153.0
+        257.0,
+        264.0,
+        264.0,
+        273.0,
+        264.0,
+        256.0,
+        265.0
       ],
       "latency_ms_per_config": [
-        3.675,
-        3.882,
-        3.732,
-        3.69,
-        3.799
+        3.884,
+        3.785,
+        3.792,
+        3.669,
+        3.786,
+        3.91,
+        3.774
       ],
       "latency_single_config_ms": [
-        7.912,
-        7.51,
-        7.502,
-        7.53,
-        7.537
+        7.692,
+        7.524,
+        7.731,
+        7.543,
+        7.653,
+        7.715,
+        7.627
       ]
     },
     "machine": {

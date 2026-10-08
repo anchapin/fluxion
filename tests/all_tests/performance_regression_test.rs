@@ -195,8 +195,14 @@ fn run_performance_test(population_size: usize) -> PerformanceMetrics {
         })
         .collect();
 
-    // Warm-up run
-    let _ = oracle.evaluate_population(population.clone(), false);
+    // Issue #4190: three warm-up runs, not one — a single warm-up does not
+    // settle the rayon pool and the allocator on a 2-vCPU runner, which left
+    // the measured run's first-moment cost inside the sample. Extra warm-ups
+    // are cheap (population = 100) and only de-noise the harness; the
+    // measured run is unchanged.
+    for _ in 0..3 {
+        let _ = oracle.evaluate_population(population.clone(), false);
+    }
 
     // Actual benchmark
     let start = Instant::now();
