@@ -28,17 +28,22 @@ const napiBin = path.join(
 console.log(`Building Fluxion native bindings for ${platform}-${arch}...`);
 
 try {
-  // Ensure napi-rs CLI is installed
+  // Ensure napi-rs CLI is installed (Issue #4337). Prefer the exact-pinned
+  // CLI that `npm ci`/`npm install` placed in this package's
+  // node_modules/.bin; fall back to a PATH `napi` only if that exists; only
+  // then install, with --save-exact so the "3.10.5" pin in package.json /
+  // package-lock.json stays intact (Issue #4202).
   console.log('Checking for @napi-rs/cli...');
-  try {
-    execSync('napi --version', { stdio: 'inherit' });
-  } catch (error) {
-    // Prefer the CLI that `npm ci`/`npm install` already placed in this
-    // package's node_modules/.bin (Issue #4337): it is exact-pinned by
-    // package.json and avoids a redundant install on direct invocation.
-    if (fs.existsSync(napiBin)) {
-      console.log(`Using local napi CLI at ${napiBin}...`);
-    } else {
+  let napiCmd;
+  if (fs.existsSync(napiBin)) {
+    console.log(`Using local napi CLI at ${napiBin}...`);
+    napiCmd = `"${napiBin}"`;
+  } else {
+    try {
+      execSync('napi --version', { stdio: 'inherit' });
+      console.log('Using napi CLI from PATH...');
+      napiCmd = 'napi';
+    } catch (error) {
       // Deterministic fallback: pin to the exact version in package.json's
       // devDependencies (Issue #4202). `npm ci` in CI always installs the
       // CLI from the lockfile, so this path only fires for local builds
@@ -50,6 +55,7 @@ try {
       if (!fs.existsSync(napiBin)) {
         throw new Error(`@napi-rs/cli installed but ${napiBin} is missing`);
       }
+      napiCmd = `"${napiBin}"`;
     }
   }
 
@@ -68,7 +74,7 @@ try {
     buildArgs.push('--release');
   }
 
-  execSync(`"${napiBin}" ${buildArgs.join(' ')}`, {
+  execSync(`${napiCmd} ${buildArgs.join(' ')}`, {
     stdio: 'inherit',
     env: {
       ...process.env,
