@@ -724,17 +724,18 @@ jobs:
       - name: Build release (default features)
         run: cargo build --release
 
-      # Median-of-3 noise suppression. Each run invokes the single
-      # `test_performance_regression` test (population = 100), which prints
-      # exactly one `Throughput:` and one `Latency per config:` line. We
-      # tolerate a nonzero test exit (e.g. a baseline-regression panic that
+      # Median-of-5 noise suppression (Issue #4190: median-of-3 crossed the
+      # 150 cfg/s floor on ordinary runner noise alone). Each run invokes the
+      # single `test_performance_regression` test (population = 100), which
+      # prints exactly one `Throughput:` and one `Latency per config:` line.
+      # We tolerate a nonzero test exit (e.g. a baseline-regression panic that
       # does not reflect an absolute-gate breach) with `|| true`; the
       # throughput/latency lines are printed before the baseline check.
-      - name: Run benchmark (median of 3)
+      - name: Run benchmark (median of 5)
         run: |
           rm -f run_*.txt
-          for i in 1 2 3; do
-            echo "=== measurement run ${i}/3 ==="
+          for i in 1 2 3 4 5; do
+            echo "=== measurement run ${i}/5 ==="
             # --ignored: test_performance_regression is quarantined from the
             # debug lanes under #3957; this release-mode gate is its
             # designated measurement home (Issue #3952 / #3957).
@@ -763,7 +764,10 @@ jobs:
               l = latency_re.findall(txt)
               s = single_latency_re.findall(txt)
               if t and l:
-                  throughputs.append(float(t[-1]))
+                  # Issue #4190: the test prints the measured throughput
+                  # first and the baseline's recorded throughput second;
+                  # sample the measured (first) line.
+                  throughputs.append(float(t[0]))
                   latencies.append(float(l[-1]))
                   if s:
                       single_latencies.append(float(s[-1]))
@@ -789,16 +793,21 @@ jobs:
           print(f"Median throughput: {med_throughput:.1f} configs/sec")
           print(f"Median latency:    {med_latency:.3f} ms/config")
 
+          # Issue #4190: record per-sample min/max so a run whose median
+          # clears the 150 cfg/s floor but whose minimum falls below it is
+          # visible in the gate summary rather than silently green.
           results = {
               "metrics": {
                   "throughput_configs_per_sec": med_throughput,
                   "latency_ms_per_config": med_latency,
+                  "throughput_min_configs_per_sec": min(throughputs),
+                  "throughput_max_configs_per_sec": max(throughputs),
               },
               "samples": {
                   "throughput": throughputs,
                   "latency": latencies,
                   "runs": len(throughputs),
-                  "strategy": "median-of-3",
+                  "strategy": "median-of-5",
               },
           }
           # Issue #4205: report-only true single-config latency. Stored but
@@ -841,7 +850,9 @@ jobs:
             echo "- single-config latency (report-only, Issue #4205): ${SINGLE_MS} ms/config" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Noise suppression:** median of 3 \`performance_regression_test\` runs (population = 100, release build, default features)." >> $GITHUB_STEP_SUMMARY
+          echo "**Noise suppression:** median of 5 \`performance_regression_test\` runs (population = 100, release build, default features)." >> $GITHUB_STEP_SUMMARY
+          MIN_T=$(python3 -c "import json;d=json.load(open('benchmark_results.json'))['metrics'];print(f\"{d['throughput_min_configs_per_sec']:.1f} / {d['throughput_max_configs_per_sec']:.1f}\");" 2>/dev/null || echo n/a)
+          echo "- throughput min/max across samples: ${MIN_T} configs/sec (Issue #4190)" >> $GITHUB_STEP_SUMMARY
           echo "**Runner:** \`ubuntu-24.04\` (the 150 cfg/s floor was calibrated here; self-hosted runners measure a different absolute throughput)." >> $GITHUB_STEP_SUMMARY
           if [ -f gate_status.json ]; then
             echo '```json' >> $GITHUB_STEP_SUMMARY

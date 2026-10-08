@@ -70,7 +70,13 @@ def one_run(idx: int, n: int) -> dict:
               f"(rc={proc.returncode}). Excerpt:", flush=True)
         print("    " + out[-800:].replace("\n", "\n    "), flush=True)
         return {}
-    throughput = float(th[-1])
+    # Issue #4190: `test_performance_regression` prints the measured
+    # throughput first and then echoes the *baseline's* throughput in its
+    # "Baseline metrics" block. Taking the last match recorded the baseline's
+    # own value (153.0) into every regenerated baseline — self-perpetuating
+    # and independent of the actual measurement. The measured line always
+    # comes first, so take `th[0]`.
+    throughput = float(th[0])
     latency = float(la[-1])
     print(f"  run {idx}: throughput={throughput:.1f} cfg/s, "
           f"latency={latency:.4f} ms/cfg  (wall={dt:.1f}s, rc={proc.returncode})",
@@ -135,8 +141,8 @@ def main() -> int:
             "measured_at": datetime.now(timezone.utc).date().isoformat(),
             "methodology": (
                 "Median of N runs of `cargo test --test all_tests performance_regression_test:: "
-                "--release test_performance_regression` (population=100, 1 warmup + "
-                "1 measured per run). Same harness CI's absolute-perf-gate (#2693) "
+                "--release test_performance_regression` (population=100, 3 warmups + 1 measured per run, Issue #4190 de-noising) "
+                "Same harness CI's absolute-perf-gate (#2693) "
                 "and performance.yml use. Computed via Python statistics.median "
                 "(RULES.md constraint #0)."
             ),
