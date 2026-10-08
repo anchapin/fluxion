@@ -257,29 +257,27 @@ pub fn calculate_surface_irradiance(
     //     E_g = ρ · GHI · (1 − cos β) / 2
     // (ASHRAE Handbook — Fundamentals, Ch. 14; Duffie & Beckman Eq. 2.12.1).
     //
-    // Issue #1326: This view-factor form is correct for the open interval
-    // β ∈ (0°, 180°) — at β = 90° (vertical wall) it yields 0.5·ρ·GHI, the
-    // value E+ and the building energy community use.  However, the formula
-    // collapses to 0 at β = 0° (horizontal up-facing roof), while a
-    // horizontal roof actually sees the full hemisphere of ground-reflected
-    // radiation and must receive E_g = ρ · GHI.  Symmetrically, at β = 180°
-    // (down-facing) the formula returns ρ · GHI, but a down-facing surface
-    // sees no ground and must receive 0.
+    // Issue #1326 pinned the two endpoint tilts as β=0° → ρ·GHI and
+    // β=180° → 0. That premise was physically backwards: an up-facing
+    // horizontal plane's normal points at the zenith, so the entire ground
+    // hemisphere lies BEHIND the plane and the isotropic view factor
+    // (1 − cos β)/2 correctly gives 0 at β = 0°. Symmetrically a down-facing
+    // plane (β = 180°) faces the ground fully and receives ρ·GHI. The
+    // repo's own EnergyPlus 25.2 reference data agrees: the Case 900 roof
+    // CSV (tests/reference_data/solar/case_900_roof_solar_hourly.csv,
+    // tilt=0) records ground_diffuse_irradiance = 0.0 for all 8760 hours.
     //
-    // We therefore pin the two endpoint tilts explicitly:
-    //   tilt =   0°  →  ρ · GHI        (full ground hemisphere)
-    //   tilt = 180°  →  0              (down-facing: no ground)
-    //   tilt ∈ (0°, 180°)  →  ρ · GHI · (1 − cos β) / 2   (unchanged)
+    // §LIMIT-35 solar-delivery investigation (issue #4332, 2026-10-08)
+    // measured the wrong pin inflating engine roof-plane irradiance by
+    // ρ·GHI ≈ 348 kWh/m²·yr (+19% over the EPW GHI) on the ASHRAE 140
+    // Denver weather.
     //
-    // No parameter tuning — just the correct boundary conditions.
-    let ground_reflected = if tilt_deg.abs() < 1e-9 {
-        // Horizontal up-facing: surface normal points to zenith, sees all
-        // ground-reflected radiation arriving from the lower hemisphere.
-        ghi * ground_reflectance
-    } else if (tilt_deg - 180.0).abs() < 1e-9 {
-        // Down-facing: surface normal points to nadir, sees no ground.
-        0.0
-    } else {
+    // The view-factor formula below is therefore used CONTINUOUSLY at the
+    // endpoints — no pins at all:
+    //   tilt =   0°  →  0                        (up-facing horizontal: no ground seen)
+    //   tilt =  90°  →  0.5 · ρ · GHI            (vertical wall — unchanged)
+    //   tilt = 180°  →  ρ · GHI                  (down-facing: full ground view)
+    let ground_reflected = {
         let surface_tilt = tilt_deg.to_radians();
         let ground_factor = (1.0 - surface_tilt.cos()) / 2.0;
         ghi * ground_reflectance * ground_factor

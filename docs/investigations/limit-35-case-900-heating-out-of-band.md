@@ -201,3 +201,256 @@ fraction, shading path on the 900 geometry vs 600) against the ASHRAE 140
 reference assumptions, and measure what solar-delivery delta would bring
 heating into [1,170, 2,040] kWh. Recorded in `docs/KNOWN_ISSUES.md`
 §LIMIT-35.
+
+## 8. Solar-delivery investigation (2026-10-08): roof-solar under-counting falsified; horizontal ground-reflection over-count found instead
+
+Alex's option (3): attack Case 900 heating via the solar-delivery path.
+Method: reproduce the recorded numbers first (validator Case 900
+3,477.88 / 923.56 kWh H/C; Case 600 harness 5,590.48 / 4,675.48 kWh —
+both exact), then isolate with split experiments (temporary in-place
+edits, reverted after each measurement; never committed).
+
+### Measurements
+
+**Irradiance source.** With the engine's own solar-position and
+`calculate_surface_irradiance` formulas over the Denver-Stapleton TMY
+EPW, the horizontal (roof) plane receives **2,180.4 kWh/m²·yr** while the
+EPW's own GHI is **1,831.9 kWh/m²·yr** — a **+19% over-count** (348
+kWh/m²·yr ≈ ρ·GHI, ρ = 0.2). Cause: Issue #1326 pinned the isotropic
+ground-reflected view factor at β = 0° to the FULL ρ·GHI, on the premise
+that "a horizontal roof sees the full ground hemisphere". That premise is
+physically backwards — an up-facing horizontal plane's normal points at
+the zenith, so the ground hemisphere is entirely behind the plane and the
+view factor (1 − cos β)/2 correctly gives **0** there. The repo's own
+EnergyPlus 25.2 reference data confirms:
+`tests/reference_data/solar/case_900_roof_solar_hourly.csv` (Case 900
+roof, tilt = 0) records `ground_diffuse_irradiance = 0.0` for all 8,760
+hours. Oct–Apr roof-plane: 952.3 vs GHI 802.0 kWh/m² (+18.7%).
+
+**Geometry / shading / absorptance (900 vs 600).** Identical: 48 m² roof
+(U ≈ 0.317), 12 m² south glazing, no overhangs or fins on either case,
+α_roof = 0.7 / α_wall = 0.6, same site (lat 39.83, lon −104.65). The
+cases differ only in mass and in `solar_distribution_to_air` (900 → 0.0,
+600 → 0.3). No Case-900-specific solar under-delivery exists in geometry
+or shading.
+
+**Delivery routes and split experiments** (validator path, Denver EPW;
+ΔH/ΔC in kWh/yr):
+
+| Route | Experiment | ΔH | ΔC |
+|---|---|---|---|
+| Roof sol-air BC (`t_ext_roof`, step_9r4c) | drop ground term from roof irradiance | +110.4 | −122.5 |
+| Roof sol-air BC | double roof irradiance | −572.6 | +913.8 |
+| Conducted opaque gain → mass node (`phi_m`) | double the injection | **bit-identical** | **bit-identical** |
+
+The `phi_m` opaque route has zero observable effect on Case 900 annual
+H/C — the internal mass node it feeds does not drive the conditioned-air
+trajectory (consistent with §3). The only effective roof-solar lever is
+the sol-air boundary condition, at ≈ 0.26–0.32 kWh of heating per
+kWh/m²·yr of roof-plane irradiance.
+
+### Verdict
+
+**The roof-solar under-counting hypothesis (§LIMIT-05 suspect) is
+falsified.** Roof solar is if anything OVER-counted (+19% at the
+irradiance source), and correcting the over-count moves Case 900 heating
+*up* (3,477.88 → 3,588.28 under the full fix, i.e. further out of
+band). Quantitatively, reaching the band [1,170, 2,040] kWh through roof
+solar alone would require ΔH = −1,438 kWh (upper bound) to −1,873 kWh
+(midpoint), i.e. +4,600–7,100 kWh/m²·yr of roof-plane irradiance on top
+of the current 2,180 — 3–4.5× the physically correct value — while
+cooling would swing +1,900 to +2,900 kWh toward its own band. No
+physical roof-solar correction can close the heating gap.
+
+The ground-reflection finding is still a genuine physics bug (E+-backed),
+prepared as DO-NOT-MERGE PR: fix `fix/horizontal-ground-reflection` —
+view factor used continuously at the endpoints (β=0° → 0, β=180° → ρ·GHI),
+premise test `test_horizontal_ground_reflected` updated with the
+corrected physics. **Do not merge and do not re-record baselines before
+Alex's physics review** (#4314 precedent). Measured outcome of the fix:
+validator Case 900 H 3,477.88 → 3,588.28, C 923.56 → 801.09; validator
+Case 600 (Denver path) H 6,165.34 → 6,238.59, C 4,666.73 → 4,498.34;
+engine roof-plane irradiance 2,180.4 → 1,814.2 kWh/m²·yr (ratio to GHI
+0.990).
+
+Next suspect for Case 900 heating: the air-node/HVAC setpoint-feedback
+loop at hour resolution on the 9R4C path (§4's original direction), and
+the winter storage-release coupling of the mass network — both outside
+the solar-delivery path.
+
+### UPDATE 2026-10-08 (same day): physics approved and merged; baselines re-recorded from the corrected engine
+
+Alex approved the ground-reflection physics the same day. PR #4335 merged
+with the conflict resolution against the post-#4334 doc (§7 kept, §8 kept)
+and the baselines below re-recorded FROM the corrected engine, per the
+#4314 discipline (code first, never the reverse). Old → new, measured:
+
+| Gate | Quantity | develop | this fix |
+|---|---|---|---|
+| Strict ±15% gate | Case 900 H | 3.723 MWh (gap 116.95%) | 3.823 MWh (gap 123.18%) |
+| Strict ±15% gate | Case 900 C | 0.788 MWh (gap 57.83%) | 0.689 MWh (gap 61.24%) |
+| Strict ±15% gate | Case 600 H | 6.000 MWh (gap 3.23%) | 6.072 MWh (gap 4.65%) |
+| Strict ±15% gate | Case 600 C | 4.023 MWh (gap 5.01%) | 3.877 MWh (gap 7.91%) |
+| Fabric parity | case_600 ratio_H / ratio_C | 1.1218 / 0.7057 | 1.1246 / 0.6926 |
+| Fabric | case_900_5r1c H / C | 3.723 / 0.788 | 3.823 / 0.689 |
+| NAPI (npm) | Case 600 H / C | 5,590.48 / 4,675.48 kWh | 5,654.86 / 4,509.99 kWh (in published band) |
+| Hotloop golden EUIs | — | unchanged (gate passes; workload does not exercise the horizontal ground term) | — |
+| Grid thermal (Case 600 January) | — | unchanged (gate passes) | — |
+| Surrogate drift (Case 900 fallback) | H / C / total | 4594.6127 / 9.0086 / 4603.6213 kWh | reproduces exactly (synthetic fallback, not irradiance-driven) |
+| Validator `simulate_case` widened gate | Case 900 H | ~3.144 MWh (gate ≤ 3.162) | 3.2493 MWh; gate re-centered ≤ 3.6 per the #4156 precedent (regression ratchet around the corrected engine, not a band fix) |
+
+Test premises updated honestly (not baselines, not the engine):
+`solar_isolation::test_horizontal_ground_reflected` (in the original PR) and
+`solar_horizontal_isolation::test_roof_solar_gain_ratio_to_vertical` (this
+merge) — the latter asserted "roof receives more ground-reflected than the
+vertical wall", which is exactly the removed #1326 endpoint pin; under the
+corrected view factor the roof (β = 0°) sees NO ground and the assertion is
+inverted with an exact-zero check plus the E+ reference citation. Both
+premise flips verified to pass on origin/develop and fail with the fix
+before rewriting.
+
+Pre-existing reds untouched and re-confirmed on origin/develop via a
+detached worktree: 12 `solar`-filter failures, the Case 600
+energy-balance-conservation checks (zone_balance and cross-platform),
+and the `cta_bench` clippy compile error.
+
+The Case 900 heating gap remains, now slightly wider (3,477.88 → 3,588.28
+kWh validator / 3.723 → 3.823 MWh strict path). The next suspect moves off
+the solar-delivery path entirely: the 9R4C air-node/HVAC setpoint-feedback
+loop at hour resolution and the winter mass storage-release coupling — see
+§9.
+
+## 9. 9R4C air-node/HVAC setpoint-feedback loop + winter mass storage-release coupling (2026-10-08, opened after the §8 merge)
+
+With the solar-delivery path closed by §8 (the ground-reflection fix merged
+as PR #4335 and the corrected baseline recorded), the next suspect named at
+the end of §8 is attacked here with measurements. Method as before:
+reproduce first, instrument the production path, quantify by split
+experiments, never tune outputs.
+
+### Reproduction (corrected engine, PR #4335 merged)
+
+- Validator `simulate_case_with_diagnostics`, Denver EPW: Case 900
+  **H = 3,588.28 kWh, C = 801.09 kWh** (exact match to the §8 record);
+  Case 600 H = 6,238.59 / C = 4,498.34 kWh.
+- Standalone 9R4C harness (Case 900 spec + Denver EPW, 14-day warmup,
+  8760 hourly steps): H = 3,249.34 / C = 796.86 kWh — matches the
+  validator's `simulate_case` path (3.2493 MWh) exactly.
+
+### Instrumentation: where the mass network gets its heat
+
+Reading the production path (`step_9r4c.rs` + `multi_node_solver/mod.rs`):
+
+1. Each hour, the multi-node solver's `zone_temperature` (its internal air
+   node) is set to `t_air_mn_pre` — the FREE-FLOAT air implied by the
+   previous state (step_9r4c.rs ~line 539).
+2. `solver.step_with_gains(...)` then advances the wall/roof/floor mass
+   nodes by backward Euler **against that free-float air** — before the
+   HVAC demand is computed (step_9r4c.rs ~line 694).
+3. The HVAC demand `Q = h_coeff × (T_heat_sp − t_free)` is computed from
+   the free-float air `t_i_free_mn` that the (cold) mass just produced, and
+   `t_i_act = t_free + Q/h_coeff = T_setpoint` is committed to
+   `setpoints.temperatures`.
+4. **Nothing writes the conditioned air back into the multi-node solver.**
+   The 9R4C mass network free-runs on the un-conditioned trajectory for the
+   entire simulation. Only the legacy 5R1C lumped mass receives `t_i_act`
+   (post-HVAC integrator, step_9r4c.rs ~line 1175), and per §8's `phi_m`
+   split experiment that lumped mass has zero observable effect on the
+   Case 900 air trajectory.
+
+Measured consequence (harness, January, corrected engine): the 9R4C
+envelope (conductance-weighted mass) sits at **11.4–14 °C overnight and
+peaks at 17.0 °C at 15:00** — 3–9 K below the 20 °C setpoint-held air —
+while `mass.air_temperatures[0]` reads exactly 20.00 °C for every winter
+hour (the controlled state; the free state the feedback loop actually sees
+lives inside the solver). The storage-release cycle seen by the setpoint
+feedback is solar/ambient-driven storage in a phantom free-floating
+building: the mass charges from sun by day and discharges overnight into
+an air node nobody is heating, and every hour the cold mass drags
+`t_free` down, inflating `Q`. The HVAC energy extracted to hold the
+setpoint never charges the mass it will be measured against next hour.
+
+### Seasonal shape vs the reference data
+
+E+ 25.2 hourly reference `tests/reference_data/zone_balance/case_920_energy_hourly.csv`
+(Golden EPW; no Case 900 hourly reference exists in-repo) vs the engine's
+Case 920 on the same EPW (harness, corrected engine), monthly share of
+annual heating:
+
+| Month | E+ | engine |
+|---|---|---|
+| Jan | 19.0% | 19.3% |
+| Feb | 18.9% | 19.5% |
+| Mar | 11.6% | 13.0% |
+| Apr | 4.4% | 4.1% |
+| May | 2.3% | 1.9% |
+| Jun–Aug | 0.2% | 0.0% |
+| Sep | 0.4% | 0.1% |
+| Oct | 6.1% | 5.1% |
+| Nov | 14.7% | 14.6% |
+| Dec | 22.5% | 22.4% |
+
+The shapes agree within ≈1.5 pp per month (DJF: E+ 60.4% vs engine 61.2%).
+The engine's error on Case 920 is a clean +24.6% scale factor (5,295 vs
+4,251 kWh), and on Case 900 a +71% scale factor. **The seasonal profile is
+not distorted — the gap is a magnitude problem, not a timing problem.** No
+storage-release timing shift is hiding in the shape.
+
+### Split experiment A: couple the mass to the conditioned air
+
+Temporary in-place edit (measured, then reverted; never committed): before
+`step_with_gains`, in HVAC mode, set the solver's `zone_temperature` to the
+previous step's committed `t_act` (`setpoints.temperatures[0]`, i.e. the
+setpoint on heating hours) instead of `t_air_mn_pre`; free-float mode keeps
+the original behavior.
+
+| Quantity | corrected engine | experiment A |
+|---|---|---|
+| Validator Case 900 H / C | 3,588.28 / 801.09 kWh | **2,322.94 / 552.83 kWh** |
+| Harness Case 900 H / C | 3,249.34 / 796.86 kWh | 2,101.98 / 550.03 kWh |
+| Strict-gate Case 900 H / C | 3.823 / 0.689 MWh | 2.455 / 0.478 MWh |
+| Strict-gate Case 920 H | 5.252 MWh (out) | **3.302 MWh (IN band [3.213, 4.347])** |
+| Strict-gate Case 960 H | 6.426 MWh | 4.055 MWh (still out of [1.742, 2.357]) |
+| Strict-gate Case 810 H | 3.823 MWh (in) | 2.455 MWh (falls BELOW band [3.357, 4.543]) |
+| Strict-gate Case 970 H | 8.822 MWh | 6.079 MWh (falls BELOW band [10.540, 14.260]) |
+| Case 600 (both paths) | unchanged | unchanged |
+| Case 950 C | 0.198 MWh | 0.173 MWh |
+
+Coupling the mass to the conditioned air removes **1,265 kWh/yr (35%)** of
+Case 900 heating — from 3,588.28 down to 2,322.94 kWh, with cooling moving
+3,588.28-side too (801.09 → 552.83 kWh). The remaining gap to the published
+upper bound (2,040 kWh) is ≈283 kWh (≈14% of the band midpoint), the same
+order as the neighboring documented gaps.
+
+### Verdict
+
+**Genuine physics bug, high confidence: the 9R4C mass network is thermally
+decoupled from the conditioned zone.** HVAC heat extraction never charges
+the wall/roof/floor mass nodes that produce the free-float air temperature
+driving the next hour's setpoint feedback, so (a) the mass free-runs 3–9 K
+cold in winter, (b) the feedback loop over-requests heating against a
+phantom cold mass every hour, and (c) the metered "heating" is the load of
+holding a setpoint over a building whose thermal mass behaves as if
+unheated. The winter storage charge/release timing itself is not the
+distortion — the shape matches E+ — it is the missing charge route that
+scales the whole heating season up. Quantitatively the decoupling accounts
+for ≈1,265 kWh/yr of the Case 900 gap (3,588 → 2,323 kWh), i.e. the
+majority of the 3,588 − 2,040 = 1,548 kWh excess over the published upper
+bound.
+
+Caveats for Alex's physics review:
+- Experiment A is a deliberately minimal one-line coupling (previous-step
+  `t_act`, zone 0 only). A production fix should couple within the same
+  step (the mass still steps against the free air in step A) and handle
+  multi-zone (per-zone index); expect the production numbers to differ
+  somewhat from the experiment's.
+- The side-effect footprint is mixed: Case 920 heating enters its band,
+  Case 960 moves toward its band, but Case 810 and Case 970 heating move
+  BELOW their bands, and Case 970 is a multi-zone case where the
+  experiment's zone-0-only coupling is not meaningful. This needs a
+  physics decision, not a mechanical merge.
+
+Fix prepared as PR **DO NOT MERGE** (pending Alex's physics review, #4314
+precedent): branch `investigation/9r4c-mass-hvac-coupling`, no baselines
+re-recorded. Scratch harness preserved at
+`~/OS3/fluxion-case900-setpoint/tests/zz_scratch_setpoint900.rs`.
