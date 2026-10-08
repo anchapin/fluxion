@@ -14,6 +14,23 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Refresh apt lists (Linux)
+      # Issue #4341: the runner image's apt lists can reference versions the
+      # apt mirror has already replaced (404 mid-install during an Ubuntu
+      # point release), and the cache-apt action below does not reliably
+      # refresh them first. Refresh explicitly, with retries.
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        for attempt in 1 2 3; do
+          if sudo apt-get update; then
+            exit 0
+          fi
+          echo "apt-get update failed (attempt $attempt); retrying in 15s"
+          sleep 15
+        done
+        exit 1
+
     - name: Install system dependencies (Linux)
       if: runner.os == 'Linux'
       uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9  # latest
@@ -23,6 +40,20 @@ runs:
         retry: 3
         retry_wait_seconds: 10
         update: ${{ inputs.update == 'true' }}
+
+    - name: Verify system dependencies (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        set -eu
+        missing=0
+        for pkg in $(echo '${{ inputs.packages }}' | tr ',' ' '); do
+          if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+            echo "::error::apt package '$pkg' did not install; the install step above can mask an apt failure (e.g. a mirror 404 during a point release). Re-run the job, or apt-get update first. See issue #4341."
+            missing=1
+          fi
+        done
+        exit $missing
 
     - name: Install system dependencies (macOS)
       if: runner.os == 'macOS'
