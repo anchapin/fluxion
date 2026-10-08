@@ -498,3 +498,115 @@ except the two gates re-recorded above and the pre-existing
 `cross_language_contract` python/node `BatchOracle` divergence
 (0.01135 vs 168.77 kWh, bit-identical on develop when both surfaces are
 built — previously masked locally by a missing surface).
+
+## 10. Residual-gap thread after the #4336 merge: what still drives Case 900 heating (2026-10-08, opened post-merge)
+
+Fresh thread per the merge follow-up. Method unchanged: reproduce the known
+numbers first, then quantify each candidate lever by split experiment. No
+engine change is made in this section; nothing below is tuned to pass.
+
+### Reproduction (develop `654db3ca`, post-#4336)
+
+Exact match to the §9.1 record on all four numbers:
+
+- Validator `simulate_case_with_diagnostics`, Denver EPW: Case 900
+  **H = 2,322.94 kWh, C = 552.83 kWh** (band [1,170, 2,040]; residual
+  ≈283 kWh over the upper bound); Case 600 H = 6,238.59 / C = 4,498.34.
+- Standalone 9R4C harness (Case 900 spec + Denver EPW, 14-day warmup,
+  8,760 hourly steps): H = 2,101.98 / C = 550.03 kWh.
+- Harness annual regime (from the committed `t_act` and metered energy):
+  heating 3,667 h, deadband 3,263 h, cooling 1,830 h.
+
+### Lever A — §9.1 metering basis on clamped hours: FALSIFIED
+
+The §9.1 variant note says the committed previous-step `t_act` coupling
+differs from a within-step coupling only on capacity-clamped hours and the
+first hour. Measured over the full year:
+
+- **Zero capacity-clamped hours.** The committed controlled air stays
+  exactly within [20.00, 27.00] °C all year — the ideal-load demand is never
+  capacity-clamped, so there is no clamped-hour population at all.
+- Heating energy metered on hours *following* a `t_act` that deviated from
+  both setpoints (the only hours where the two metering bases can differ):
+  **5.11 kWh/yr** — two orders of magnitude below the 283 kWh residual.
+
+The metering-basis refinement cannot close the residual. The §9.1 variant
+choice is hereby exonerated as a Case 900 residual driver.
+
+### Lever B — envelope/ventilation basis vs the reference: FALSIFIED
+
+The engine's ventilation conductance is `h_ve = 21.708 W/K` on the Case 900
+geometry (8 × 6 × 2.7 m = 129.6 m³), which is exactly the published
+0.5 ACH ASHRAE 140 basis (0.5 ach × 129.6 m³ × 1.2 kg/m³ × 1005 J/kgK /
+3600 s = 21.7 W/K); the spec confirms `infiltration = 0.500 ach`. The
+assumption matches the reference — there is no mismatch to correct.
+
+Sensitivity (harness, `h_ve` scaled, diagnostic only): −10 % ventilation →
+H 2,101.98 → 1,929.23 kWh (−172.8 kWh, ≈ −17.3 kWh per 1 % of `h_ve`).
+Closing the 283 kWh residual through ventilation would require ≈ −16 %
+(≈ 0.42 ach), which contradicts the verified 0.5 ach basis. Falsified.
+
+### Lever C — window-transmitted solar (9R4C-specific): OPEN SUSPECT #1
+
+Split experiment (temporary in-place edit, reverted; never committed):
+window solar gain into the 9R4C gain tensor scaled ×1.25.
+
+| Quantity | baseline | ×1.25 window solar |
+|---|---|---|
+| Validator Case 900 H | 2,322.94 kWh (out) | **1,856.59 kWh (IN [1,170, 2,040])** |
+| Validator Case 900 C | 552.83 kWh | 768.33 kWh |
+| Validator Case 600 (both) | 6,238.59 / 4,498.34 | **bit-identical** (5R1C path — the edit is 9R4C-only, confirming Case 600's separate +6.9 %-over-band residual shares no mechanism with this one) |
+
+Sensitivity ≈ −18.6 kWh heating per +1 % window solar: closing the residual
+needs **+15.2 %** window-transmitted solar on the 9R4C path. The §8 record
+falsified *roof* solar under-counting; the *window* transmission/angle
+route has not been cross-checked against the E+ reference CSVs. No
+reference mismatch is identified yet, so this stays an open suspect with a
+measured lever, not a bug.
+
+### Lever D — opaque-solar `phi_m` route: OBSERVABLY INERT (flagged)
+
+The `phi_m` tensor route (`scratch.phi_m` → `phi_m_zone` →
+`distribute_opaque_solar_gains` → per-surface mass gains,
+step_9r4c.rs ~lines 150-156/631/672) shows **zero** observable effect on
+the Case 900 trajectory: scaling the opaque contribution at the tensor
+assembly by ×1.25 and again by ×2.0 leaves validator and harness numbers
+bit-identical (2,322.94 / 552.83), despite the zone-0 opaque solar input
+being nonzero (measured 1,901.82 kWh/yr). By contrast the same split on the
+window solar (lever C) moves the numbers substantially, so the gain tensor
+is live — only the `phi_m`-routed portion is inert on this path.
+
+Two readings: (a) intentional double-count avoidance — opaque absorption
+already reaches the surfaces through the sol-air boundary condition (§8
+measured its lever as small), and window beam-to-mass through another
+channel (the #864 gain capture), making the `phi_m` routing a legacy/no-op
+path; or (b) a real unapplied-gain defect. Distinguishing them needs the
+multi-node gain-injection path traced, which is its own thread. Recorded as
+a flagged suspect; **no engine fix prepared** — it changes no current
+number, and whether it is a bug at all is a physics question for Alex.
+
+### Cooling-side asymmetry: SEPARATE CAUSE, UNCHANGED
+
+Cooling 552.83 kWh vs band [2,130, 3,670] is 4× under the lower bound, and
+was already 4–5× under before the coupling (801.09 pre-#4336, 923.56
+pre-#4335). The lever-C split bounds any window-solar explanation: cooling
+moves ≈ +0.86 kWh per +1 % window solar, so reaching the 2,130 lower bound
+would need ≈ +1,800 % — impossible. The heating over-prediction and the
+cooling under-prediction do not share a window-solar magnitude cause. The
+asymmetry's mechanism (why the high-mass free-float air so rarely exceeds
+the 27 °C cooling setpoint — 1,830 cooling hours vs 3,263 deadband hours)
+is unexplained and remains open.
+
+### Verdict
+
+The 283 kWh residual is **not** the §9.1 metering basis (≤ 5 kWh/yr), not
+a ventilation-assumption mismatch (engine matches 0.5 ach exactly), and not
+the inert `phi_m` route (zero effect). The only quantified lever that
+reaches into the band is window-transmitted solar on the 9R4C path
+(+15.2 % closes it; ×1.25 lands at 1,856.59 kWh, in band), but no reference
+mismatch is identified for that route. Case 600's +6.9 % over-band residual
+is confirmed mechanically independent (5R1C path, bit-identical under the
+9R4C split). Next thread: cross-check the 9R4C window solar
+transmission/angle model against `tests/reference_data/solar/` E+ CSVs, and
+trace the multi-node gain-injection path to settle lever D's two readings.
+Scratch harness preserved at `~/OS3/fluxion-case900-residual/tests/`.
