@@ -394,10 +394,19 @@ mod sky_temperature_traces {
 
         let max_sol_air = trace_temps.iter().fold(f64::MIN, |a, &b| a.max(b));
 
+        // Issue #4232 corrected the longwave sign: a cold sky (−10°C here)
+        // cools the surface, so under this trace (peak 150 W/m² absorbed-solar
+        // equivalent, α/h_o lift ≈ +6°C vs ε·ΔR/h_o drop ≈ −7°C) the roof
+        // sol-air peaks *below* outdoor air. Pre-#4232 this asserted > 30°C;
+        // that premise described the wrong-sign physics.
         assert!(
-            max_sol_air > 30.0,
-            "Peak sol-air temp should exceed 30°C, got {:.1}°C",
+            max_sol_air < 25.0,
+            "With a cold sky the roof sol-air should peak below outdoor air, got {:.1}°C",
             max_sol_air
+        );
+        assert!(
+            trace_temps.iter().cloned().fold(f64::MAX, f64::min) < 25.0,
+            "Night sol-air must sit below outdoor air under radiative cooling"
         );
     }
 }
@@ -648,9 +657,14 @@ mod longwave_boundary_conditions {
             t_sol_day
         );
 
+        // Issue #4232 corrected the longwave sign: with the sky at −20°C the
+        // night sol-air must fall *below* outdoor temp (net radiative loss).
+        // Pre-#4232 this asserted > 25.0°C, which matched the wrong-sign
+        // physics; see the ASHRAE ΔR convention on
+        // `calculate_longwave_radiation_difference`.
         assert!(
-            t_sol_night > 25.0,
-            "Night sol-air should exceed outdoor temp ({:.1}°C), got {:.1}°C (sky cooling effect)",
+            t_sol_night < 25.0,
+            "Night sol-air should be below outdoor temp ({:.1}°C), got {:.1}°C (sky cooling effect)",
             25.0,
             t_sol_night
         );
