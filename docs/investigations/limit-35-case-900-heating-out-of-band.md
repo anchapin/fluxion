@@ -454,3 +454,47 @@ Fix prepared as PR **DO NOT MERGE** (pending Alex's physics review, #4314
 precedent): branch `investigation/9r4c-mass-hvac-coupling`, no baselines
 re-recorded. Scratch harness preserved at
 `~/OS3/fluxion-case900-setpoint/tests/zz_scratch_setpoint900.rs`.
+
+### §9.1 Decision and merge record (2026-10-08)
+
+Alex approved the coupling fix on 2026-10-08 ("I approve of the changes in
+4336. Proceed to fix failing ci checks and merge it. Re-run baseline,
+etc."). The PR branch was rebased onto develop `968e629d` (the §8
+ground-reflection engine) before any numbers below were recorded, and the
+probe reproduced the experiment-A table exactly (validator Case 900
+2,322.94 / 552.83 kWh; harness 2,101.98 / 550.03; Case 600 6,238.59 /
+4,498.34 unchanged).
+
+**Variant choice (recorded per the review ask).** The production fix keeps
+the **previous-step committed `t_act` coupling, per-zone**
+(`setpoints.temperatures[zone_idx]`), not a within-step re-stepping of the
+mass. Rationale: in HVAC mode the committed `t_act` *is* the active
+setpoint on every unclamped conditioned hour, so the mass steps against
+the same setpoint-held air a within-step coupling would use — the two
+variants differ only in the metering basis of the clamped hours and the
+first hour of simulation. Restructuring the 1,600-line step function for a
+snapshot/re-step corrector (with its #864 gain-capture and night-vent
+boost side effects) was judged not worth that second-order difference;
+recorded here as the deliberate choice and left as a possible refinement.
+
+**Honest side effects (recorded, not hidden):** Case 810 heating falls
+below its band (3.823 → 2.455 MWh strict; the strict baseline row moves
+pass → known_fail) and Case 970 heating drops further below (8.822 →
+6.081 MWh; §LIMIT-23 updated). Case 920 heating re-enters its band
+(5.252 → 3.302 MWh, now pass). Case 960 remains out (6.426 → 4.055).
+Case 950 cooling 0.198 → 0.173 MWh. Case 600/800 (5R1C path) reproduce
+unchanged.
+
+**Re-record list (all measured from the corrected engine):**
+strict-energy gate baseline (all 16 metrics), fabric harness baseline
+(case_900 H/C 3.823/0.689 → 2.455/0.478 MWh; case_950 C 0.198 → 0.173;
+Case 600 rows and parity ratios reproduce), surrogate fallback baseline
+(4,594.61/9.01 → 3,160.02/95.02 kWh), KNOWN_ISSUES §LIMIT-35/§LIMIT-23
+rows + regenerated summary. Hotloop golden EUIs, npm suite (54/54), grid
+thermal, and the engine-keyed src unit gates reproduce unchanged. Local
+all_tests reds were diffed against a develop worktree per module: every
+failing module fails on the identical test names on develop (pre-existing)
+except the two gates re-recorded above and the pre-existing
+`cross_language_contract` python/node `BatchOracle` divergence
+(0.01135 vs 168.77 kWh, bit-identical on develop when both surfaces are
+built — previously masked locally by a missing surface).
