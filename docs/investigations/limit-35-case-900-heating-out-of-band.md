@@ -319,3 +319,138 @@ kWh validator / 3.723 → 3.823 MWh strict path). The next suspect moves off
 the solar-delivery path entirely: the 9R4C air-node/HVAC setpoint-feedback
 loop at hour resolution and the winter mass storage-release coupling — see
 §9.
+
+## 9. 9R4C air-node/HVAC setpoint-feedback loop + winter mass storage-release coupling (2026-10-08, opened after the §8 merge)
+
+With the solar-delivery path closed by §8 (the ground-reflection fix merged
+as PR #4335 and the corrected baseline recorded), the next suspect named at
+the end of §8 is attacked here with measurements. Method as before:
+reproduce first, instrument the production path, quantify by split
+experiments, never tune outputs.
+
+### Reproduction (corrected engine, PR #4335 merged)
+
+- Validator `simulate_case_with_diagnostics`, Denver EPW: Case 900
+  **H = 3,588.28 kWh, C = 801.09 kWh** (exact match to the §8 record);
+  Case 600 H = 6,238.59 / C = 4,498.34 kWh.
+- Standalone 9R4C harness (Case 900 spec + Denver EPW, 14-day warmup,
+  8760 hourly steps): H = 3,249.34 / C = 796.86 kWh — matches the
+  validator's `simulate_case` path (3.2493 MWh) exactly.
+
+### Instrumentation: where the mass network gets its heat
+
+Reading the production path (`step_9r4c.rs` + `multi_node_solver/mod.rs`):
+
+1. Each hour, the multi-node solver's `zone_temperature` (its internal air
+   node) is set to `t_air_mn_pre` — the FREE-FLOAT air implied by the
+   previous state (step_9r4c.rs ~line 539).
+2. `solver.step_with_gains(...)` then advances the wall/roof/floor mass
+   nodes by backward Euler **against that free-float air** — before the
+   HVAC demand is computed (step_9r4c.rs ~line 694).
+3. The HVAC demand `Q = h_coeff × (T_heat_sp − t_free)` is computed from
+   the free-float air `t_i_free_mn` that the (cold) mass just produced, and
+   `t_i_act = t_free + Q/h_coeff = T_setpoint` is committed to
+   `setpoints.temperatures`.
+4. **Nothing writes the conditioned air back into the multi-node solver.**
+   The 9R4C mass network free-runs on the un-conditioned trajectory for the
+   entire simulation. Only the legacy 5R1C lumped mass receives `t_i_act`
+   (post-HVAC integrator, step_9r4c.rs ~line 1175), and per §8's `phi_m`
+   split experiment that lumped mass has zero observable effect on the
+   Case 900 air trajectory.
+
+Measured consequence (harness, January, corrected engine): the 9R4C
+envelope (conductance-weighted mass) sits at **11.4–14 °C overnight and
+peaks at 17.0 °C at 15:00** — 3–9 K below the 20 °C setpoint-held air —
+while `mass.air_temperatures[0]` reads exactly 20.00 °C for every winter
+hour (the controlled state; the free state the feedback loop actually sees
+lives inside the solver). The storage-release cycle seen by the setpoint
+feedback is solar/ambient-driven storage in a phantom free-floating
+building: the mass charges from sun by day and discharges overnight into
+an air node nobody is heating, and every hour the cold mass drags
+`t_free` down, inflating `Q`. The HVAC energy extracted to hold the
+setpoint never charges the mass it will be measured against next hour.
+
+### Seasonal shape vs the reference data
+
+E+ 25.2 hourly reference `tests/reference_data/zone_balance/case_920_energy_hourly.csv`
+(Golden EPW; no Case 900 hourly reference exists in-repo) vs the engine's
+Case 920 on the same EPW (harness, corrected engine), monthly share of
+annual heating:
+
+| Month | E+ | engine |
+|---|---|---|
+| Jan | 19.0% | 19.3% |
+| Feb | 18.9% | 19.5% |
+| Mar | 11.6% | 13.0% |
+| Apr | 4.4% | 4.1% |
+| May | 2.3% | 1.9% |
+| Jun–Aug | 0.2% | 0.0% |
+| Sep | 0.4% | 0.1% |
+| Oct | 6.1% | 5.1% |
+| Nov | 14.7% | 14.6% |
+| Dec | 22.5% | 22.4% |
+
+The shapes agree within ≈1.5 pp per month (DJF: E+ 60.4% vs engine 61.2%).
+The engine's error on Case 920 is a clean +24.6% scale factor (5,295 vs
+4,251 kWh), and on Case 900 a +71% scale factor. **The seasonal profile is
+not distorted — the gap is a magnitude problem, not a timing problem.** No
+storage-release timing shift is hiding in the shape.
+
+### Split experiment A: couple the mass to the conditioned air
+
+Temporary in-place edit (measured, then reverted; never committed): before
+`step_with_gains`, in HVAC mode, set the solver's `zone_temperature` to the
+previous step's committed `t_act` (`setpoints.temperatures[0]`, i.e. the
+setpoint on heating hours) instead of `t_air_mn_pre`; free-float mode keeps
+the original behavior.
+
+| Quantity | corrected engine | experiment A |
+|---|---|---|
+| Validator Case 900 H / C | 3,588.28 / 801.09 kWh | **2,322.94 / 552.83 kWh** |
+| Harness Case 900 H / C | 3,249.34 / 796.86 kWh | 2,101.98 / 550.03 kWh |
+| Strict-gate Case 900 H / C | 3.823 / 0.689 MWh | 2.455 / 0.478 MWh |
+| Strict-gate Case 920 H | 5.252 MWh (out) | **3.302 MWh (IN band [3.213, 4.347])** |
+| Strict-gate Case 960 H | 6.426 MWh | 4.055 MWh (still out of [1.742, 2.357]) |
+| Strict-gate Case 810 H | 3.823 MWh (in) | 2.455 MWh (falls BELOW band [3.357, 4.543]) |
+| Strict-gate Case 970 H | 8.822 MWh | 6.079 MWh (falls BELOW band [10.540, 14.260]) |
+| Case 600 (both paths) | unchanged | unchanged |
+| Case 950 C | 0.198 MWh | 0.173 MWh |
+
+Coupling the mass to the conditioned air removes **1,265 kWh/yr (35%)** of
+Case 900 heating — from 3,588.28 down to 2,322.94 kWh, with cooling moving
+3,588.28-side too (801.09 → 552.83 kWh). The remaining gap to the published
+upper bound (2,040 kWh) is ≈283 kWh (≈14% of the band midpoint), the same
+order as the neighboring documented gaps.
+
+### Verdict
+
+**Genuine physics bug, high confidence: the 9R4C mass network is thermally
+decoupled from the conditioned zone.** HVAC heat extraction never charges
+the wall/roof/floor mass nodes that produce the free-float air temperature
+driving the next hour's setpoint feedback, so (a) the mass free-runs 3–9 K
+cold in winter, (b) the feedback loop over-requests heating against a
+phantom cold mass every hour, and (c) the metered "heating" is the load of
+holding a setpoint over a building whose thermal mass behaves as if
+unheated. The winter storage charge/release timing itself is not the
+distortion — the shape matches E+ — it is the missing charge route that
+scales the whole heating season up. Quantitatively the decoupling accounts
+for ≈1,265 kWh/yr of the Case 900 gap (3,588 → 2,323 kWh), i.e. the
+majority of the 3,588 − 2,040 = 1,548 kWh excess over the published upper
+bound.
+
+Caveats for Alex's physics review:
+- Experiment A is a deliberately minimal one-line coupling (previous-step
+  `t_act`, zone 0 only). A production fix should couple within the same
+  step (the mass still steps against the free air in step A) and handle
+  multi-zone (per-zone index); expect the production numbers to differ
+  somewhat from the experiment's.
+- The side-effect footprint is mixed: Case 920 heating enters its band,
+  Case 960 moves toward its band, but Case 810 and Case 970 heating move
+  BELOW their bands, and Case 970 is a multi-zone case where the
+  experiment's zone-0-only coupling is not meaningful. This needs a
+  physics decision, not a mechanical merge.
+
+Fix prepared as PR **DO NOT MERGE** (pending Alex's physics review, #4314
+precedent): branch `investigation/9r4c-mass-hvac-coupling`, no baselines
+re-recorded. Scratch harness preserved at
+`~/OS3/fluxion-case900-setpoint/tests/zz_scratch_setpoint900.rs`.
