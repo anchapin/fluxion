@@ -13,9 +13,14 @@ def generator(load_script):
 
 
 def test_one_run_extracts_last_metrics(generator, monkeypatch):
+    # Issue #4190: the harness prints the MEASURED throughput first, then the
+    # baseline's recorded throughput in its "Baseline metrics" echo. The
+    # generator must sample the measured (first) line — the old last-match
+    # behavior recorded the baseline's own value into every regeneration.
+    # Latency has no baseline echo, so its last line is still the measured one.
     class Result:
         returncode = 0
-        stdout = "Throughput: 10.0 configs/sec\nThroughput: 12.5 configs/sec"
+        stdout = "Throughput: 12.5 configs/sec\nThroughput: 10.0 configs/sec"
         stderr = "Latency per config: 4.0ms\nLatency per config: 3.5ms"
 
     monkeypatch.setattr(generator.subprocess, "run", lambda *args, **kwargs: Result())
