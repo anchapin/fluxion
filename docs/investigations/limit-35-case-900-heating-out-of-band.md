@@ -610,3 +610,112 @@ is confirmed mechanically independent (5R1C path, bit-identical under the
 transmission/angle model against `tests/reference_data/solar/` E+ CSVs, and
 trace the multi-node gain-injection path to settle lever D's two readings.
 Scratch harness preserved at `~/OS3/fluxion-case900-residual/tests/`.
+
+## §11 — Window-solar cross-check against the in-repo E+ 25.2 reference CSVs (lever C follow-up)
+
+Date: 2026-10-08. Scratch harnesses: `~/OS3/fluxion-case900-windowsolar/tests/`
+(`zz_scratch_wsolar.rs` — §10 baseline reproduction + per-hour window-gain and
+south-irradiance trace; `zz_scratch_residual900.rs` copied from the §10 thread).
+All engine numbers below re-measured on develop `c74fed92`; reproduction was
+exact (validator Case 900 2,322.94 / 552.83 kWh; harness 2,101.98 / 550.03 kWh).
+
+### Method
+
+The §10 lever C asked whether the 9R4C window solar transmission is
+under-counted. The engine window-solar pipeline is
+`calculate_zone_solar_gain` → per-orientation `calculate_window_solar_gain`
+(beam: `SHGC × ratio(θ)` on the ASHRAE-Fundamentals Ch.15 table; sky diffuse:
+`0.9 × SHGC`; ground-reflected: `0.85 × SHGC`) → W/m²-normalized
+`solar.solar_gains` → 9R4C tensor split
+(`phi_ia = sol_to_air`, `phi_st = remaining × (1 − beam_to_mass)`,
+`phi_m = remaining × beam_to_mass + opaque_sol_w`; step_9r4c.rs ~lines 129-156,
+629-656). Cross-checked at three levels against
+`tests/reference_data/solar/` (E+ 25.2, Golden TMY3 EPW), keeping the §10
+caution: the `zone_balance` CSVs and `data/ashrae140_reference.json` were not
+mixed in.
+
+**Weather confound, handled.** The validator runs the Denver-Stapleton
+(724690) EPW; the reference CSVs were generated from the Golden-NREL
+(724666) EPW, which is also in-repo. Comparing the engine on Stapleton against
+a Golden reference conflates weather with model. The cross-check therefore runs
+the same harness on both EPWs; model-vs-reference statements are made on the
+Golden run only.
+
+### Results (Golden EPW, same weather as the reference)
+
+Annual, south-facing 12 m² window:
+
+| Quantity | Engine | E+ 25.2 reference implies | ratio |
+|---|---|---|---|
+| South incident (beam+sky+ground), kWh/m²·yr | 1,214.6 | 1,312.6 | **0.925** |
+| Window transmitted (with SHGC 0.77 model applied to reference irradiance), kWh/yr | 9,519 | 10,315 | **0.923** |
+| Transmission fraction (transmitted / incident×12 m²) | 0.653 | 0.655 | **0.996** |
+
+Monthly incident ratios span 0.87-0.93 — every month low, no seasonal sign
+flip. Component decomposition:
+
+| Component (annual Wh/m² on south wall) | Engine | E+ | ratio |
+|---|---|---|---|
+| ground-reflected | 160,120 | 161,904 | **0.989** |
+| beam + sky-diffuse | 1,054,522 | 1,150,655 | **0.916** |
+
+Hour-level discriminator (beam-dominated hours `DNI·cosθ > DHI`, n=1,088 vs
+diffuse-dominated n=7,672): engine/E+ = **1.160** on beam-dominated hours,
+**0.887** on diffuse-dominated hours. So the gap sits in the tilted
+sky-diffuse model — the engine's Perez tilted-diffuse implementation delivers
+≈11 % less than E+ 25.2 on diffuse-heavy hours — while the ground-reflected
+isotropic model matches within 1.1 % and the engine beam is if anything
+higher. Both engines are Perez-form; this is an implementation-level
+divergence, not a model-choice difference. The December Stapleton-vs-Golden
+"anomaly" (+65 %) in the naive cross-check was pure weather-file difference:
+on the same weather the engine is uniformly ≈7-13 % low, not high.
+
+### Split experiments (temporary, assert-guarded, reverted; tree verified clean and baselines bit-identical after revert)
+
+1. **Transmittance / incidence-angle model: no divergence.** The engine's
+   transmitted/incident fraction (0.653) matches the ASHRAE-table
+   reconstruction of the E+ reference irradiance to 0.4 %. The §10 "×1.25
+   window solar" lever is not explained by the SHGC or angle model.
+2. **Gain-injection path: live.** A null-control run scaling only the traced
+   (harness-side) window gain left H bit-identical (2,101.98), while the §10
+   in-engine ×1.25 split moved the validator to 1,856.59 — confirming
+   `step_physics` consumes exactly the tensor route traced above.
+   Observed on the `phi_m` route while mapping it: `phi_m` carries BOTH the
+   window beam-to-mass share (`remaining_sol × m_sol_frac`) and the opaque
+   term (`opaque_sol_w`); §10 scaled only the opaque term and saw no effect.
+   Lever D's trace (which of the two channels is dead inside
+   `step_with_gains`) remains the follow-up.
+3. **Measured E+-matching diffuse correction (diagnostic, not a fix).**
+   Temporary patch scaling the tilted Perez diffuse ×1.1286 (the measured
+   diffuse-hour E+ ratio):
+
+| Quantity | baseline | ×1.1286 tilted diffuse |
+|---|---|---|
+| Validator Case 900 H | 2,322.94 kWh (out) | 2,280.12 kWh (still out) |
+| Validator Case 900 C | 552.83 kWh | 583.10 kWh |
+| Validator Case 600 H / C | 6,238.59 / 4,498.34 | 6,148.74 / 4,665.82 (moves — the irradiance path is shared, unlike the 9R4C-only splits) |
+| Harness Case 900 H / C | 2,101.98 / 550.03 | 2,060.48 / 580.14 |
+
+### Verdict
+
+The §10 +15.2 % window-solar under-delivery hypothesis is **falsified as a
+transmission bug**: the window transmittance, incidence-angle model and
+gain-injection path all match the E+ reference basis. What the cross-check
+*did* find is a genuine, quantified divergence **upstream** of the window: the
+tilted-surface Perez sky-diffuse implementation delivers ≈11 % less than
+E+ 25.2 on diffuse-dominated hours (−8.4 % beam+sky, −7.5 % total incident on
+the south wall annually, uniform across months). But the measured heating
+sensitivity to fully correcting it is only **−42.8 kWh of the 283 kWh
+residual (≈15 %)** — the corrected Case 900 (2,280.12 kWh) remains
+above the 2,040 kWh upper bound, and the correction would also move Case 600
+and every other solar-driven metric, requiring re-records. No engine change is
+prepared: whether the Perez tilted-diffuse divergence is a defect to repair or
+an accepted model-form difference is a physics decision, and no single
+window-solar lever reaches into the band.
+
+The remaining ≈240 kWh residual is not explained by window solar, the metering
+basis (§10: ≤5 kWh/yr), ventilation (§10: falsified), or the opaque `phi_m`
+route (§10: inert). Next thread, if pursued: the Perez tilted-diffuse
+divergence on its own terms (it depresses solar gains in ALL cases, and
+low-sun diffuse hours dominate the annual window budget), and lever D's
+multi-node gain-injection trace.
