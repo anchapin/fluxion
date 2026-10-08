@@ -113,3 +113,60 @@ re-checked per the re-record discipline — never tuned to pass.
 
 Both hooks exist to make §3's numbers reproducible by anyone; neither is
 wired into any gate.
+
+## 6. Implementation (2026-10-08): conditioned-hour sub-hourly inner loop — measured outcome, DO NOT MERGE
+
+Alex's direction (2026-10-07): implement sub-hourly timesteps for the
+conditioned-hour air-node + HVAC-metering inner loop, "maybe 10 or 15
+minutes". Implemented in `try_step_physics`
+(`src/sim/thermal_model_physics/step_dispatcher.rs`): every hourly
+(dt = 3600 s) physics step now runs as an inner loop of N = 4 equal
+sub-steps (15-minute; `FLUXION_CONDITIONED_SUBSTEPS` overrides N for
+investigation), with loads/solar computed once per hour and per-sub-step
+HVAC metering summed to the hour. The `FLUXION_MASS_SUBSTEPS`
+multi-node measurement hook from §5 is retained; the zero-effect lumped
+9R4C hook was folded away as the doc suggested.
+
+### Decisive finding: the production Case 900 path does not respond to outer-dt refinement
+
+The §2 convergence was measured on the **standalone plain-`ThermalModel`
+(5R1C, synthetic Denver) harness**. On the production validator/EPW path —
+where the Case 900 HighMass spec is auto-promoted to the **9R4C** network —
+refining the outer step is a near no-op:
+
+| Path | N=1 | N=4 (15 min) | N=6 (10 min) |
+|---|---|---|---|
+| Case 900 spec → 9R4C (EPW, 14-day warmup, standalone) | 3,143.8 kWh | 3,147.7 kWh | 3,148.2 kWh |
+| Validator Case 900 (default N=4 on this branch) | — | **3.47 MWh — unchanged, still out of band** | — |
+
+The 9R4C air node is quasi-steady and its multi-node mass block already
+sub-steps internally (τ-adaptive), so outer-dt refinement cannot move it.
+Consistent with §3: the discretization error that puts Case 900 heating out
+of band is not reachable through the timestep at all on this path.
+
+### What the loop does move: the 5R1C path — Case 600 regresses
+
+| Quantity (NAPI/WD600 harness) | develop (hourly) | this branch (N=4) | band |
+|---|---|---|---|
+| Case 600 heating | 5,590.48 kWh | **4,450.67 kWh** (in) | [4,314, 5,836] |
+| Case 600 cooling | 4,675.48 kWh | **9,777.69 kWh (out, +109%)** | [4,275, 5,784] |
+
+The golden-EUI hotloop gates (no weather) also move
+([1.2518, 1.2522, 1.2526] analytical) — **not re-recorded**, per the
+#4314 precedent: baselines are never re-recorded while the physics change
+is unreviewed. Verification ladder on this branch: ASHRAE pipeline engine
+stage 102 passed / 26 failed; strict ±15% annual-energy gate FAIL (same
+reason); npm suite 53/54 (the Case 600 published-band test fails on
+cooling); `cargo fmt` clean.
+
+### Status and ask
+
+Per Alex's standing rule this PR is DO-NOT-MERGE. The decision needed:
+the sub-hourly conditioned-hour loop as directed (a) does not fix Case 900
+(9R4C path is timestep-robust — the LIMIT-05-family roof-solar
+under-counting is the live suspect there), and (b) buys Case 600 heating
+margin at the cost of blowing Case 600 out of its cooling band. Options
+for review: (1) revert this loop and attack Case 900 via the solar
+delivery path; (2) keep the loop but scope it to conditioned 5R1C models
+only and re-record the affected baselines; (3) drop it. The env var
+`FLUXION_CONDITIONED_SUBSTEPS=1` restores hourly behavior exactly.

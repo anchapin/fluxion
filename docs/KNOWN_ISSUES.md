@@ -9,13 +9,13 @@
 | Free-Float (FREE) | 3 | 0 | 3 | 0 | 0 |
 | Temperature (TEMP) | 1 | 0 | 1 | 0 | 0 |
 | Multi-Zone (MULTI) | 4 | 0 | 4 | 0 | 0 |
-| Model Limits (LIMIT) | 31 | 2 | 26 | 3 | 0 |
+| Model Limits (LIMIT) | 32 | 2 | 27 | 3 | 0 |
 | Reporting (REPORT) | 4 | 0 | 4 | 0 | 0 |
 | CI/Infrastructure (CI) | 4 | 2 | 2 | 0 | 0 |
 | fluxion-fluid (FLUID) | 2 | 0 | 2 | 0 | 0 |
 | FFD/CFD (FFD) | 2 | 1 | 1 | 0 | 0 |
 | Reference data (REF) | 1 | 0 | 1 | 0 | 0 |
-| **Total** | **61** | **5** | **53** | **3** | **0** |
+| **Total** | **62** | **5** | **54** | **3** | **0** |
 
 *Counts derived from the per-row catalog tables under each category section (`| **CATEGORY-NN** | ... |`) via `scripts/check_known_issues_summary.py`. Edit a row in place (or add a new row) and the table updates on the next regen. Status columns (`Fixed` / `Open` / `Partial` / `Won't Fix`) derive from each row's Status cell: `resolved` -> Fixed, `open` -> Open, `tracking only` -> Partial, `Won't Fix` -> Won't Fix. Rows without a recognized status are counted in the Total column but contribute 0 to the status columns. To regenerate: `python3 scripts/check_known_issues_summary.py --regen --in-place`.*
 
@@ -131,6 +131,7 @@ That registry, not this document, is canonical for quarantine state.
 | **LIMIT-31** | CTF↔zone coupling defect — conduction backends bypassed for conditioned high-mass cases | conditioned high-mass bypassed the CTF backend; Case 900 heating 5.05 → ≈1.165 MWh | #3979 | resolved in #3979; CTF stays the 5R1C cross-check | open | [history](investigations/limit-31-ctf-zone-coupling-defect-conduction-backends.md) |
 | **LIMIT-32** | CTF steady-state flux for low-mass walls has the wrong sign | 80 mm EPS steady-state flux −5.53 W/m² (physical +3.69 W/m²) | #4062 | y-coefficient clamping fixed for τ ≪ dt walls | open | [history](investigations/limit-32-ctf-steady-state-flux-for-low.md) |
 | **LIMIT-33** | #4241 ideal-HVAC discrete storage residual inflates Case 600 annual heating ~50% out of the published band — blocks 2 CI gates | FIXED in physics (merged as `9ef9c8f4`, PR #4316): Option A state feedback — the residual load now drives the 5R1C air-node state to the active setpoint on unclamped conditioned hours. NAPI/WD600 Case 600: heating 7181.51 → 5590.48 kWh (in [4314, 5836]), cooling 6026.39 → 4675.48 kWh (in [4275, 5784]). Case 900 unchanged (9R4C-insensitive). Recorded-value baselines re-recorded from the corrected engine (surrogate fallback, strict-energy, fabric parity, Case 600 January grid, npm cooling 4010.89 → 4675.48). Known side effects flagged for review: strict-energy blind-path 600 C 5.187 → 4.023 MWh (just below band, gap 5.01%) and 800 C 4.270 → 3.314 MWh | #4314 | merge of the state-feedback PR closes the NAPI + drift-gate symptom; exact-exponential hold metering (`Q_exact`) left as follow-up study (dt/τ ≈ 7.5 for Case 600 converges toward steady-state) | resolved | [history](investigations/limit-33-ideal-hvac-storage-residual-inflates-case-600.md) |
+| **LIMIT-35** | Case 900 annual heating out of band (+70.6%) — whole-step refinement converges on the standalone 5R1C harness, but the production 9R4C path is outer-dt-invariant; sub-hourly conditioned-hour inner loop implemented per Alex's direction does NOT converge Case 900 and moves Case 600 cooling out of band | validator 3,477.88 kWh vs [1,170, 2,040]; 9R4C path: 3,143.8 (N=1) → 3,148.2 kWh (N=6); Case 600 NAPI/WD600 under N=4: heating 5590.48 → 4450.67 kWh (in), cooling 4675.48 → 9777.69 kWh (out, +109%) | #4332 | decision pending Alex's physics review (revert / scope-to-5R1C / drop — see investigations/limit-35 doc §6); `FLUXION_CONDITIONED_SUBSTEPS=1` restores hourly behavior | open | [history](investigations/limit-35-case-900-heating-out-of-band.md) |
 
 ## Reference data (REF)
 

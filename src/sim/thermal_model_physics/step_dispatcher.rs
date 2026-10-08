@@ -80,6 +80,52 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.calc_analytical_loads(timestep, true, dt_seconds);
         }
 
+        // §LIMIT-35 (PR #4327 investigation,
+        // docs/investigations/limit-35-case-900-heating-out-of-band.md):
+        // conditioned-hour sub-hourly refinement. The whole-step timestep
+        // refinement experiment showed Case 900 annual heating converging
+        // into the published band [1,170, 2,040] kWh as the physics step is
+        // refined (3,249.6 kWh @ dt=3600 s → 1,802.7 @ 900 s → 1,305.7 @
+        // 600 s), while mass-node-only sub-stepping was falsified as the
+        // cause. The engine therefore runs its hourly ASHRAE 140 step as an
+        // inner loop of CONDITIONED_SUBSTEPS equal physics sub-steps with
+        // the same hourly weather drivers (Alex's direction: "use sub
+        // hourly timesteps maybe 10 or 15 minutes" → 4 × 15-minute
+        // sub-steps). Loads/solar are computed once per hour (the drivers
+        // are hourly); the air-node balance, HVAC setpoint feedback and
+        // metering advance at sub-hour resolution and the per-sub-step
+        // kWh metering sums to the hour. FLUXION_CONDITIONED_SUBSTEPS
+        // overrides N for investigation (0/unset → 4). Sub-hourly callers
+        // (dt < 3600 s) pass through unchanged.
+        const CONDITIONED_SUBSTEPS_DEFAULT: u32 = 4;
+        let conditioned_substeps: u32 = std::env::var("FLUXION_CONDITIONED_SUBSTEPS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(CONDITIONED_SUBSTEPS_DEFAULT);
+        if dt_seconds >= 3600.0 && conditioned_substeps > 1 {
+            let sub_dt = dt_seconds / conditioned_substeps as f64;
+            let mut total_kwh = 0.0;
+            for _ in 0..conditioned_substeps {
+                total_kwh += self.dispatch_physics_arm(timestep, outdoor_temp, sub_dt)?;
+            }
+            return Ok(total_kwh);
+        }
+
+        self.dispatch_physics_arm(timestep, outdoor_temp, dt_seconds)
+    }
+
+    /// Selector-driven single physics step (assumes loads already set).
+    ///
+    /// Extracted verbatim from `try_step_physics` for §LIMIT-35 so the
+    /// conditioned-hour sub-hourly loop can invoke the dispatch arm once per
+    /// sub-step. Behavior is identical to the pre-refactor dispatch tail.
+    fn dispatch_physics_arm(
+        &mut self,
+        timestep: usize,
+        outdoor_temp: f64,
+        dt_seconds: f64,
+    ) -> Result<f64, FluxionError> {
         // Issue #3280 / #3291 / #3816: selector-driven dispatch. The
         // `Gauge` selector tries the gauge single- and multi-zone arms
         // first; `FiveROneC` and `NineRFourC` selectors always go
