@@ -72,44 +72,22 @@ jobs:
           python-version: '3.10'
       - name: Build
         run: cargo build --release --features multi-zone
-      - name: Run 10-zone test with memory monitoring
+      # Issue #4189: the old inline polling sampled cargo's own RSS - the
+      # simulation runs in a grandchild process, so its footprint was never
+      # measured - and watched a workload (10-zone network round-trip) that
+      # never calls BatchOracle::evaluate_population, so the population
+      # materialization the gate exists to catch was invisible. Use the
+      # correct implementation that has been in the repo since #3766:
+      # scripts/memory-budget-gate.sh walks the whole child process tree,
+      # sums subtree RSS, and aborts on --headroom breach BEFORE the OOM
+      # killer. The workload is now the population-memory test from #4188
+      # (10-zone / 10,000-config evaluate_population with a 64 MiB in-test
+      # peak-HWM assertion), which is #[ignore]d precisely so this nightly
+      # job can run it explicitly.
+      # Gate exit codes: 0 OK, 1 warn (> 10 GB), 2 exit-threshold breach,
+      # 3 wrapped command failed, 4 headroom breached.
+      - name: Run population workload under memory-budget gate (Issue #4189)
         run: |
-          # Run the 10-zone test in background while monitoring RSS
-          (
-            cargo test --release --features multi-zone --test all_tests multi_zone_n_zone_network:: -- multi_zone_n_zone_network_10_zone_round_trip --nocapture
-          ) &
-          CARGO_PID=$!
-
-          MAX_RSS_KB=0
-          while kill -0 $CARGO_PID 2>/dev/null; do
-            RSS=$(ps -o rss= -p $CARGO_PID 2>/dev/null || echo 0)
-            if [[ "$RSS" -gt "$MAX_RSS_KB" ]]; then
-              MAX_RSS_KB=$RSS
-            fi
-            sleep 0.5
-          done
-          wait $CARGO_PID
-          TEST_EXIT=$?
-
-          MAX_RSS_GB=$(echo "scale=2; $MAX_RSS_KB / 1024 / 1024" | bc)
-          echo ""
-          echo "=== Memory Budget Check ==="
-          echo "Peak RSS: ${MAX_RSS_GB} GB"
-          echo "Test exit code: $TEST_EXIT"
-
-          WARN_GB=10
-          WARN_KB=$((WARN_GB * 1024 * 1024))
-
-          if [[ "$MAX_RSS_KB" -gt "$WARN_KB" ]]; then
-            echo ""
-            echo "WARNING: Peak RSS ${MAX_RSS_GB} GB exceeds 10 GB budget"
-            echo "This may indicate a memory regression in large simulations."
-            if [[ "$TEST_EXIT" -ne 0 ]]; then
-              echo "Note: Test also failed (exit code $TEST_EXIT)"
-              exit 1
-            fi
-            exit 0
-          else
-            echo "Memory budget check passed (${MAX_RSS_GB} GB < ${WARN_GB} GB)"
-            exit $TEST_EXIT
-          fi
+          bash scripts/memory-budget-gate.sh \
+            --warn 10 --exit 12 --headroom 2 \
+            --command "cargo test --release --features multi-zone --test batch-oracle-memory-budget -- --ignored --nocapture"
