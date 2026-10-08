@@ -803,6 +803,11 @@ opt-level = 3
 
 # Explicitly include Phase 6 performance optimization test targets
 [[test]]
+name = "batch-oracle-memory-budget"
+path = "tests/batch_oracle_memory_budget.rs"
+harness = true
+
+[[test]]
 name = "validation-multi_reference_integration"
 path = "tests/validation/multi_reference_integration.rs"
 harness = true
