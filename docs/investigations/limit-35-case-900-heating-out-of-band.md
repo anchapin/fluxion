@@ -201,3 +201,79 @@ fraction, shading path on the 900 geometry vs 600) against the ASHRAE 140
 reference assumptions, and measure what solar-delivery delta would bring
 heating into [1,170, 2,040] kWh. Recorded in `docs/KNOWN_ISSUES.md`
 §LIMIT-35.
+
+## 8. Solar-delivery investigation (2026-10-08): roof-solar under-counting falsified; horizontal ground-reflection over-count found instead
+
+Alex's option (3): attack Case 900 heating via the solar-delivery path.
+Method: reproduce the recorded numbers first (validator Case 900
+3,477.88 / 923.56 kWh H/C; Case 600 harness 5,590.48 / 4,675.48 kWh —
+both exact), then isolate with split experiments (temporary in-place
+edits, reverted after each measurement; never committed).
+
+### Measurements
+
+**Irradiance source.** With the engine's own solar-position and
+`calculate_surface_irradiance` formulas over the Denver-Stapleton TMY
+EPW, the horizontal (roof) plane receives **2,180.4 kWh/m²·yr** while the
+EPW's own GHI is **1,831.9 kWh/m²·yr** — a **+19% over-count** (348
+kWh/m²·yr ≈ ρ·GHI, ρ = 0.2). Cause: Issue #1326 pinned the isotropic
+ground-reflected view factor at β = 0° to the FULL ρ·GHI, on the premise
+that "a horizontal roof sees the full ground hemisphere". That premise is
+physically backwards — an up-facing horizontal plane's normal points at
+the zenith, so the ground hemisphere is entirely behind the plane and the
+view factor (1 − cos β)/2 correctly gives **0** there. The repo's own
+EnergyPlus 25.2 reference data confirms:
+`tests/reference_data/solar/case_900_roof_solar_hourly.csv` (Case 900
+roof, tilt = 0) records `ground_diffuse_irradiance = 0.0` for all 8,760
+hours. Oct–Apr roof-plane: 952.3 vs GHI 802.0 kWh/m² (+18.7%).
+
+**Geometry / shading / absorptance (900 vs 600).** Identical: 48 m² roof
+(U ≈ 0.317), 12 m² south glazing, no overhangs or fins on either case,
+α_roof = 0.7 / α_wall = 0.6, same site (lat 39.83, lon −104.65). The
+cases differ only in mass and in `solar_distribution_to_air` (900 → 0.0,
+600 → 0.3). No Case-900-specific solar under-delivery exists in geometry
+or shading.
+
+**Delivery routes and split experiments** (validator path, Denver EPW;
+ΔH/ΔC in kWh/yr):
+
+| Route | Experiment | ΔH | ΔC |
+|---|---|---|---|
+| Roof sol-air BC (`t_ext_roof`, step_9r4c) | drop ground term from roof irradiance | +110.4 | −122.5 |
+| Roof sol-air BC | double roof irradiance | −572.6 | +913.8 |
+| Conducted opaque gain → mass node (`phi_m`) | double the injection | **bit-identical** | **bit-identical** |
+
+The `phi_m` opaque route has zero observable effect on Case 900 annual
+H/C — the internal mass node it feeds does not drive the conditioned-air
+trajectory (consistent with §3). The only effective roof-solar lever is
+the sol-air boundary condition, at ≈ 0.26–0.32 kWh of heating per
+kWh/m²·yr of roof-plane irradiance.
+
+### Verdict
+
+**The roof-solar under-counting hypothesis (§LIMIT-05 suspect) is
+falsified.** Roof solar is if anything OVER-counted (+19% at the
+irradiance source), and correcting the over-count moves Case 900 heating
+*up* (3,477.88 → 3,588.28 under the full fix, i.e. further out of
+band). Quantitatively, reaching the band [1,170, 2,040] kWh through roof
+solar alone would require ΔH = −1,438 kWh (upper bound) to −1,873 kWh
+(midpoint), i.e. +4,600–7,100 kWh/m²·yr of roof-plane irradiance on top
+of the current 2,180 — 3–4.5× the physically correct value — while
+cooling would swing +1,900 to +2,900 kWh toward its own band. No
+physical roof-solar correction can close the heating gap.
+
+The ground-reflection finding is still a genuine physics bug (E+-backed),
+prepared as DO-NOT-MERGE PR: fix `fix/horizontal-ground-reflection` —
+view factor used continuously at the endpoints (β=0° → 0, β=180° → ρ·GHI),
+premise test `test_horizontal_ground_reflected` updated with the
+corrected physics. **Do not merge and do not re-record baselines before
+Alex's physics review** (#4314 precedent). Measured outcome of the fix:
+validator Case 900 H 3,477.88 → 3,588.28, C 923.56 → 801.09; validator
+Case 600 (Denver path) H 6,165.34 → 6,238.59, C 4,666.73 → 4,498.34;
+engine roof-plane irradiance 2,180.4 → 1,814.2 kWh/m²·yr (ratio to GHI
+0.990).
+
+Next suspect for Case 900 heating: the air-node/HVAC setpoint-feedback
+loop at hour resolution on the 9R4C path (§4's original direction), and
+the winter storage-release coupling of the mass network — both outside
+the solar-delivery path.

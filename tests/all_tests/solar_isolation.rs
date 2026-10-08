@@ -847,32 +847,35 @@ fn test_per_tilt_sweep() {
 ///     E_g(β =   0°) = ρ · GHI      (horizontal roof sees full ground hemisphere)
 ///     E_g(β = 180°) = 0            (down-facing surface sees no ground)
 ///
-/// The 1.0 + 0.5 thresholds at the two endpoints are exact (not 0.5 ± ε).
-/// Fluxion's existing implementation, prior to the Issue #1326 fix, returned
-/// 0 at β = 0° (a horizontal roof received ZERO ground-reflected radiation,
-/// under-counting roof solar by up to ρ·GHI on a clear summer day) and
-/// returned ρ·GHI at β = 180° (down-facing surface received full ground
-/// radiation — also wrong).  This function encodes the corrected analytical
-/// reference.
+/// Analytical isotropic ground-reflected reference, E_g = ρ·GHI·(1 − cos β)/2
+/// (ASHRAE Handbook — Fundamentals Ch.14; Duffie & Beckman Eq. 2.12.1),
+/// evaluated continuously including the endpoints.
+///
+/// UPDATE 2026-10-08 (§LIMIT-35 solar-delivery investigation, issue #4332):
+/// the Issue #1326 endpoint premise was physically backwards. An up-facing
+/// horizontal plane (β = 0°) has its normal at the zenith, so the ground
+/// hemisphere lies entirely behind the plane and E_g = 0; a down-facing
+/// plane (β = 180°) faces the ground fully and receives ρ·GHI. The repo's
+/// own EnergyPlus 25.2 reference data confirms this:
+/// tests/reference_data/solar/case_900_roof_solar_hourly.csv (tilt=0)
+/// records ground_diffuse_irradiance = 0.0 for all 8760 hours. The engine
+/// now uses the view-factor formula continuously — this helper matches it.
 fn analytical_ground_reflected(ghi: f64, albedo: f64, tilt_deg: f64) -> f64 {
-    if tilt_deg.abs() < 1e-9 {
-        // Horizontal up-facing: full ground hemisphere.
-        albedo * ghi
-    } else if (tilt_deg - 180.0).abs() < 1e-9 {
-        // Down-facing: no ground seen.
-        0.0
-    } else {
-        let beta = tilt_deg.to_radians();
-        albedo * ghi * (1.0 - beta.cos()) / 2.0
-    }
+    let beta = tilt_deg.to_radians();
+    albedo * ghi * (1.0 - beta.cos()) / 2.0
 }
 
 #[test]
 fn test_horizontal_ground_reflected() {
-    // Issue #1326 acceptance #1 + #2 + #3 + #4: ground-reflected component
-    // for a horizontal surface (tilt = 0) equals albedo · GHI exactly;
-    // for a vertical surface (tilt = 90) equals 0.5 · albedo · GHI exactly;
-    // for a down-facing surface (tilt = 180) equals 0 exactly.
+    // UPDATE 2026-10-08 (§LIMIT-35 solar-delivery investigation, issue
+    // #4332): the old premise (Issue #1326 acceptance #1–#4: tilt=0 →
+    // ρ·GHI, tilt=180 → 0) was physically backwards and asserted exactly
+    // the endpoint pins the §LIMIT-35 fix removed, so this test's premises
+    // were updated with the physics, not the engine. Corrected acceptance:
+    // tilt=0 → 0 exactly; tilt=90 → 0.5·ρ·GHI (unchanged); tilt=180 →
+    // ρ·GHI. Backed by E+ 25.2 reference data (tilt=0 ground diffuse 0.0
+    // for all 8760 hours in tests/reference_data/solar/
+    // case_900_roof_solar_hourly.csv).
     //
     // Note: A per-tilt E+ CSV for ground-reflected would be ideal but the
     // surface_irradiance_horizontal.csv is owned by B#2 (reference-data
@@ -890,6 +893,7 @@ fn test_horizontal_ground_reflected() {
     let mut sum_calc_vert = 0.0f64;
     let mut sum_ref_vert = 0.0f64;
     let mut sum_calc_down = 0.0f64;
+    let mut sum_ref_down = 0.0f64;
     let mut max_abs_dev_horiz = 0.0f64;
     let mut max_abs_dev_vert = 0.0f64;
     let mut max_abs_dev_down = 0.0f64;
@@ -976,6 +980,7 @@ fn test_horizontal_ground_reflected() {
         );
         let ref_d = analytical_ground_reflected(row.ghi, albedo, 180.0);
         sum_calc_down += irr_d.ground_reflected_wm2;
+        sum_ref_down += ref_d;
         let dev_d = (irr_d.ground_reflected_wm2 - ref_d).abs();
         if dev_d > max_abs_dev_down {
             max_abs_dev_down = dev_d;
@@ -983,9 +988,13 @@ fn test_horizontal_ground_reflected() {
         hours_compared_down += 1;
     }
 
-    // Acceptance #1: tilt=0  ground_reflected / (albedo * GHI) ∈ [0.995, 1.005]
-    let ratio_horiz = sum_calc_horiz / sum_ref_horiz;
-    let err_pct_horiz = (sum_calc_horiz - sum_ref_horiz).abs() / sum_ref_horiz * 100.0;
+    // Acceptance #1 (corrected): tilt=0 ground_reflected == 0 exactly.
+    let ratio_horiz = if sum_ref_horiz > 0.0 {
+        sum_calc_horiz / sum_ref_horiz
+    } else {
+        0.0
+    };
+    let err_pct_horiz = 0.0;
 
     // Acceptance #2: tilt=90 ground_reflected / (0.5 * albedo * GHI) ∈ [0.995, 1.005]
     let ratio_vert = sum_calc_vert / sum_ref_vert;
@@ -1054,18 +1063,15 @@ fn test_horizontal_ground_reflected() {
         max_abs_dev_down
     );
 
-    // Acceptance #1: tilt=0 ratio within ±0.005
-    assert!(
-        (0.995..=1.005).contains(&ratio_horiz),
-        "tilt=0 annual ratio {ratio_horiz:.6} outside [0.995, 1.005]"
-    );
-    assert!(
-        err_pct_horiz < 0.5,
-        "tilt=0 annual error {err_pct_horiz:.4}% exceeds 0.5%"
+    // Acceptance #1 (corrected): tilt=0 receives exactly zero ground-
+    // reflected irradiance — the ground hemisphere is behind the plane.
+    assert_eq!(
+        sum_calc_horiz, 0.0,
+        "tilt=0 annual ground-reflected {sum_calc_horiz:.6e} Wh/m2 must be exactly 0"
     );
     assert_eq!(
-        hours_over_005pct_horiz, 0,
-        "tilt=0: {hours_over_005pct_horiz} hours exceed 0.5% per-hour tolerance"
+        max_abs_dev_horiz, 0.0,
+        "tilt=0 max abs deviation {max_abs_dev_horiz:.4e} W/m² must be exactly 0"
     );
 
     // Acceptance #2: tilt=90 ratio within ±0.005
@@ -1082,19 +1088,23 @@ fn test_horizontal_ground_reflected() {
         "tilt=90: {hours_over_005pct_vert} hours exceed 0.5% per-hour tolerance"
     );
 
-    // Acceptance #3: tilt=180 ground_reflected = 0 ± 1e-6 W/m²
+    // Acceptance #3 (corrected): tilt=180 ground_reflected == ρ·GHI per
+    // hour (down-facing sees the full ground hemisphere).
+    let ref_down_err = (sum_calc_down - sum_ref_down).abs();
     assert!(
-        down_max < 1e-6,
-        "tilt=180 max abs deviation {down_max:.4e} W/m² exceeds 1e-6 W/m²"
+        ref_down_err / sum_ref_down.max(1.0) < 5e-3,
+        "tilt=180 annual ground-reflected error {ref_down_err:.4e} exceeds 0.5%"
     );
 
-    // Acceptance #4: tilt=0 reference 1000 W/m² GHI / 0.2 albedo = 200 W/m²
+    // Acceptance #4 (corrected): tilt=0, GHI=1000, albedo=0.2 → 0 W/m²;
+    // tilt=180 same inputs → 200 W/m² (mechanism proof: only the view
+    // factor moved between the endpoints; the ρ·GHI magnitude is intact).
     let sun_above = SolarPosition {
         altitude_deg: 30.0,
         azimuth_deg: 180.0,
         zenith_deg: 60.0,
     };
-    let irr_ref = calculate_surface_irradiance(
+    let irr_up = calculate_surface_irradiance(
         &sun_above,
         800.0,
         100.0,
@@ -1103,22 +1113,38 @@ fn test_horizontal_ground_reflected() {
         0.2,
         172,
     );
-    let expected = 0.2 * 1000.0; // 200 W/m²
     assert!(
-        (irr_ref.ground_reflected_wm2 - expected).abs() < 0.1,
-        "Reference case: tilt=0, GHI=1000, albedo=0.2: expected {expected:.2} W/m², \
-         got {:.4} W/m²",
-        irr_ref.ground_reflected_wm2
+        irr_up.ground_reflected_wm2.abs() < 1e-9,
+        "Reference case tilt=0: expected 0.0000 W/m², got {:.4} W/m²",
+        irr_up.ground_reflected_wm2
+    );
+    let irr_down = calculate_surface_irradiance(
+        &sun_above,
+        800.0,
+        100.0,
+        Some(1000.0),
+        Orientation::Down,
+        0.2,
+        172,
+    );
+    let expected_down = 0.2 * 1000.0; // 200 W/m²
+    assert!(
+        (irr_down.ground_reflected_wm2 - expected_down).abs() < 0.1,
+        "Reference case tilt=180: expected {expected_down:.2} W/m², got {:.4} W/m²",
+        irr_down.ground_reflected_wm2
     );
     println!();
-    println!("  Reference case (GHI=1000, albedo=0.2, tilt=0):");
-    println!("    Expected:                      {:.4} W/m²", expected);
+    println!("  Reference case (GHI=1000, albedo=0.2):");
     println!(
-        "    Got:                           {:.4} W/m²",
-        irr_ref.ground_reflected_wm2
+        "    tilt=0   expected 0.0000 W/m², got {:.4} W/m²",
+        irr_up.ground_reflected_wm2
+    );
+    println!(
+        "    tilt=180 expected {:.4} W/m², got {:.4} W/m²",
+        expected_down, irr_down.ground_reflected_wm2
     );
     println!();
-    println!("  ✓ All Issue #1326 acceptance criteria PASS");
+    println!("  ✓ All corrected (§LIMIT-35, issue #4332) acceptance criteria PASS");
 }
 
 #[test]
