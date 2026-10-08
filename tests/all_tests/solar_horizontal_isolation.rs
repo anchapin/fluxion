@@ -315,7 +315,7 @@ fn test_roof_solar_gain_ratio_to_vertical() {
     println!("Ratio (roof/south-vertical): {:.2}x", ratio);
     println!();
     println!("ASHRAE HOF Ch.14 expectation: ~1.2-1.5x for summer noon at mid-latitudes");
-    println!("(Roof gets beam + full sky diffuse + ground-reflected;");
+    println!("(Roof gets beam + full sky diffuse; a vertical wall also sees part of the ground);");
     println!(" vertical wall gets beam at oblique angle + partial sky diffuse + partial ground)");
 
     assert!(
@@ -324,9 +324,22 @@ fn test_roof_solar_gain_ratio_to_vertical() {
         ratio
     );
 
+    // Issue #1326 premise update: the old assertion ("roof receives more
+    // ground-reflected than the vertical wall") encoded the #1326 endpoint pin
+    // that fed an up-facing horizontal plane the full rho*GHI. Physically an
+    // up-facing plane's normal points at the zenith, so the isotropic view
+    // factor (1-cos beta)/2 gives ground_reflected = 0 at beta = 0 (confirmed
+    // by E+ 25.2: tests/reference_data/solar/case_900_roof_solar_hourly.csv
+    // records ground_diffuse_irradiance = 0.0 for all 8,760 hours), while a
+    // vertical wall sees half the ground hemisphere. Under the corrected
+    // continuous view factor the inequality reverses.
+    assert_eq!(
+        irr_roof.ground_reflected_wm2, 0.0,
+        "Up-facing horizontal plane must see zero ground-reflected irradiance"
+    );
     assert!(
-        irr_roof.ground_reflected_wm2 > irr_south.ground_reflected_wm2,
-        "Roof should receive more ground-reflected than vertical wall"
+        irr_south.ground_reflected_wm2 > 0.0,
+        "Vertical wall should receive half the ground hemisphere (0.5 * rho * GHI)"
     );
 }
 

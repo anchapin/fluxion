@@ -277,3 +277,44 @@ Next suspect for Case 900 heating: the air-node/HVAC setpoint-feedback
 loop at hour resolution on the 9R4C path (§4's original direction), and
 the winter storage-release coupling of the mass network — both outside
 the solar-delivery path.
+
+### UPDATE 2026-10-08 (same day): physics approved and merged; baselines re-recorded from the corrected engine
+
+Alex approved the ground-reflection physics the same day. PR #4335 merged
+with the conflict resolution against the post-#4334 doc (§7 kept, §8 kept)
+and the baselines below re-recorded FROM the corrected engine, per the
+#4314 discipline (code first, never the reverse). Old → new, measured:
+
+| Gate | Quantity | develop | this fix |
+|---|---|---|---|
+| Strict ±15% gate | Case 900 H | 3.723 MWh (gap 116.95%) | 3.823 MWh (gap 123.18%) |
+| Strict ±15% gate | Case 900 C | 0.788 MWh (gap 57.83%) | 0.689 MWh (gap 61.24%) |
+| Strict ±15% gate | Case 600 H | 6.000 MWh (gap 3.23%) | 6.072 MWh (gap 4.65%) |
+| Strict ±15% gate | Case 600 C | 4.023 MWh (gap 5.01%) | 3.877 MWh (gap 7.91%) |
+| Fabric parity | case_600 ratio_H / ratio_C | 1.1218 / 0.7057 | 1.1246 / 0.6926 |
+| Fabric | case_900_5r1c H / C | 3.723 / 0.788 | 3.823 / 0.689 |
+| NAPI (npm) | Case 600 H / C | 5,590.48 / 4,675.48 kWh | 5,654.86 / 4,509.99 kWh (in published band) |
+| Hotloop golden EUIs | — | unchanged (gate passes; workload does not exercise the horizontal ground term) | — |
+| Grid thermal (Case 600 January) | — | unchanged (gate passes) | — |
+| Surrogate drift (Case 900 fallback) | H / C / total | 4594.6127 / 9.0086 / 4603.6213 kWh | reproduces exactly (synthetic fallback, not irradiance-driven) |
+
+Test premises updated honestly (not baselines, not the engine):
+`solar_isolation::test_horizontal_ground_reflected` (in the original PR) and
+`solar_horizontal_isolation::test_roof_solar_gain_ratio_to_vertical` (this
+merge) — the latter asserted "roof receives more ground-reflected than the
+vertical wall", which is exactly the removed #1326 endpoint pin; under the
+corrected view factor the roof (β = 0°) sees NO ground and the assertion is
+inverted with an exact-zero check plus the E+ reference citation. Both
+premise flips verified to pass on origin/develop and fail with the fix
+before rewriting.
+
+Pre-existing reds untouched and re-confirmed on origin/develop via a
+detached worktree: 12 `solar`-filter failures, the Case 600
+energy-balance-conservation checks (zone_balance and cross-platform),
+and the `cta_bench` clippy compile error.
+
+The Case 900 heating gap remains, now slightly wider (3,477.88 → 3,588.28
+kWh validator / 3.723 → 3.823 MWh strict path). The next suspect moves off
+the solar-delivery path entirely: the 9R4C air-node/HVAC setpoint-feedback
+loop at hour resolution and the winter mass storage-release coupling — see
+§9.

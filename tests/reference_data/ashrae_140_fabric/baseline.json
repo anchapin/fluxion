@@ -1,83 +1,83 @@
 {
-  "_doc": "PR-A+2 fabric harness baseline (Refs #3986-A+2 / #4117).\n\nRecords the per-component annual metered energy (heating MWh, cooling\nMWh) for each (case \u00d7 selector) combination exercised by\n`tests/all_tests/ashrae_140_fabric_multiselector.rs`. The Python gate\n`scripts/check_ashrae_140_fabric_regression.py` compares each\nmeasurement against this baseline and FAILS on regression beyond\n`regression_tolerance_rel_pct`.\n\n## What this gate catches (and does NOT catch)\n\n**Catches:**\n- Selector wiring drift: a regression that flips the dispatch path on\n  one (case, selector) combination. E.g. Case 600 / 9r4c cooling was\n  4.858 MWh \u2014 if a future change causes it to drop to 2.5 MWh (the\n  Case 600 / 5r1c value), the selector no longer matters.\n- Selector-parity drift: the `parity` row captures the ratio of\n  (FiveROneC value) / (NineRFourC value) for each case. If the\n  per-selector wiring is honored end-to-end, this ratio stays\n  approximately constant across PRs (it encodes the structural\n  physics gap, not a tunable). A 10pp+ ratio shift means a selector\n  silently changed paths.\n\n**Does NOT catch:**\n- ASHRAE 140 \u00b115% band violations (Case 600 cooling is known-fail\n  per `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`).\n  That is `check_strict_energy_gate_regression.py`'s job.\n- Absolute-value physics regressions that affect both selectors\n  identically (both selectors drift together). The strict-energy-gate\n  already catches that for the cases it covers (600/800/810/900/920/\n  950/960/970); this baseline intentionally does not duplicate it.\n\n## Why Cases 900 and 950 show identical selector values\n\nBoth Case 900 and Case 950 are *high-mass* specs; `from_spec_with_selector`\nauto-promotes them to the 9R4C network regardless of the requested\nselector (per AGENTS.md ADR-0017 wording: 'HighMass specs still\nauto-promote to 9R4C via `from_spec_with_selector`'). The selector\nfield is therefore informational for these two cases (the engine\nignores the FiveROneC request and runs 9R4C). Case 600 is a\n*low-mass* spec where the selector actually drives a different\nnetwork \u2014 that is why the Case 600 row shows selector divergence.\n\nThis is the structural-physics asymmetry the fabric harness makes\nexplicit: low-mass cases expose selector divergence; high-mass cases\ncollapse to the auto-promoted network. The Python gate catches both\nclasses of regression.\n\n## Regenerating the baseline\n\n```\n# Re-run the harness and capture the printed lines:\ncargo test --release --test all_tests \\\n    ashrae_140_fabric_multiselector:: -- --nocapture 2>&1 \\\n    | tee /tmp/fabric_output.txt\n# Update this JSON from the captured H/C values; the Python gate\n# handles drift detection so a JSON update must be committed WITH the\n# engine change that produced the new values (per AGENTS.md 'no\n# baseline raising to hide regressions').\npython3 scripts/check_ashrae_140_fabric_regression.py \\\n    /tmp/fabric_output.txt\n``` Updated 2026-09-29 by PR #4265 (Issue #4156): unified HVAC coefficient to 5R1C formula with 9R4C per-surface derivation.",
-  "_rule": "Per AGENTS.md / RULES.md: this file records the KNOWN values; it must never be raised to hide a regression. Only lower (i.e. record smaller drift / smaller selector-parity delta) when the engine genuinely improved, and commit the improving change together with the baseline update.",
-  "captured_commit": "LIMIT-33 fix (issue #4314, branch fix/limit33-state-feedback, 2026-10-07): Option A state feedback. Only case_600_5r1c moves (H 7.707->6.000, C 5.187->4.023); case_600_9r4c and the high-mass 900/950 rows reproduce the prior recorded values exactly. Previous: PR #4298 supersede (Issue #4156, 2026-09-30).",
-  "source_command": "cargo test --release --test all_tests ashrae_140_fabric_multiselector:: -- --nocapture",
-  "source_path": "tests/all_tests/ashrae_140_fabric_multiselector.rs::run_blind_annual_with_selector",
-  "weather_epw": "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw",
-  "regression_tolerance_rel_pct": 10.0,
-  "_regression_tolerance_rel_pct_doc": "Per-measurement relative tolerance (% of recorded value). 10% absorbs floating-point noise from cross-runner builds without masking a real selector-wiring drift. Tighten in a follow-up PR if cross-runner noise is lower than expected.",
-  "regression_tolerance_ratio_abs": 0.1,
-  "_regression_tolerance_ratio_abs_doc": "Per-case selector-parity ratio tolerance (absolute deviation from baseline ratio). 0.10 = a 10pp shift in the ratio (e.g. baseline ratio 0.54 must stay in [0.44, 0.64]). Absorbs floating-point noise without masking a structural selector-wiring regression.",
-  "metrics": {
-    "case_600_5r1c": {
-      "case": "600",
-      "selector": "5r1c",
-      "selector_zone_solver": "FiveROneC",
-      "selector_conduction_solver": "Default",
-      "H_mwh": 6.0,
-      "C_mwh": 4.023,
-      "note": "low-mass spec; FiveROneC selector drives 5R1C network; per-surface exterior boundary (Issue #4166, PR #4222) with ASHRAE LW sign (was 4.901/2.620 with legacy lumped SolAirTemperature) | Re-baselined 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance + discrete residual load. User-confirmed physics. | Re-baselined 2026-10-07 by the LIMIT-33 fix (issue #4314, Option A state feedback): the #4241 residual load now drives the 5R1C air-node state to setpoint on unclamped conditioned hours. H 7.707->5.669, C 5.187->3.820. Physics corrected first, baseline re-recorded after. | Re-baselined 2026-10-07 by the LIMIT-33 fix (issue #4314, Option A state feedback): zone air held at the active setpoint on unclamped conditioned hours, controlled state persisted in setpoints.temperatures, free state kept in mass.air_temperatures. H 7.707->6.000, C 5.187->4.023. Physics corrected first, baseline re-recorded after."
-    },
-    "case_600_9r4c": {
-      "case": "600",
-      "selector": "9r4c",
-      "selector_zone_solver": "NineRFourC",
-      "selector_conduction_solver": "Default",
-      "H_mwh": 5.348,
-      "C_mwh": 5.701,
-      "note": "low-mass spec; NineRFourC selector drives 9R4C network (diverges from 5R1C, as expected) | Re-baselined 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance + discrete residual load. User-confirmed physics."
-    },
-    "case_900_5r1c": {
-      "case": "900",
-      "selector": "5r1c",
-      "selector_zone_solver": "FiveROneC",
-      "selector_conduction_solver": "Default",
-      "H_mwh": 3.723,
-      "C_mwh": 0.788,
-      "note": "high-mass spec; FiveROneC selector auto-promoted to 9R4C by from_spec_with_selector (per ADR-0017) | Re-baselined 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance + discrete residual load. User-confirmed physics. | Re-baselined 2026-09-30 by supersede #4298 (Issue #4156, Refs #4265): unified HVAC coefficient; H_mwh/C_mwh refreshed to post-#4156 measured values; H/C extra fields removed."
-    },
-    "case_900_9r4c": {
-      "case": "900",
-      "selector": "9r4c",
-      "selector_zone_solver": "NineRFourC",
-      "selector_conduction_solver": "Default",
-      "H_mwh": 3.723,
-      "C_mwh": 0.788,
-      "note": "high-mass spec; NineRFourC selector drives 9R4C network (identical to 5r1c row by structural auto-promotion) | Re-baselined 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance + discrete residual load. User-confirmed physics. | Re-baselined 2026-09-30 by supersede #4298 (Issue #4156, Refs #4265): unified HVAC coefficient; H_mwh/C_mwh refreshed to post-#4156 measured values; H/C extra fields removed."
-    },
-    "case_950_5r1c": {
-      "case": "950",
-      "selector": "5r1c",
-      "selector_zone_solver": "FiveROneC",
-      "selector_conduction_solver": "Default",
-      "H_mwh": 0.0,
-      "C_mwh": 0.225,
-      "note": "high-mass spec; FiveROneC selector auto-promoted to 9R4C by from_spec_with_selector | Re-baselined 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance + discrete residual load. User-confirmed physics. | Re-baselined 2026-09-30 by supersede #4298 (Issue #4156, Refs #4265): unified HVAC coefficient; H_mwh/C_mwh refreshed to post-#4156 measured values; H/C extra fields removed."
-    },
-    "case_950_9r4c": {
-      "case": "950",
-      "selector": "9r4c",
-      "selector_zone_solver": "NineRFourC",
-      "selector_conduction_solver": "Default",
-      "H_mwh": 0.0,
-      "C_mwh": 0.225,
-      "note": "high-mass spec; NineRFourC selector drives 9R4C network (identical to 5r1c row by structural auto-promotion) | Re-baselined 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance + discrete residual load. User-confirmed physics. | Re-baselined 2026-09-30 by supersede #4298 (Issue #4156, Refs #4265): unified HVAC coefficient; H_mwh/C_mwh refreshed to post-#4156 measured values; H/C extra fields removed."
-    }
+ "_doc": "PR-A+2 fabric harness baseline (Refs #3986-A+2 / #4117).\n\nRecords the per-component annual metered energy (heating MWh, cooling\nMWh) for each (case × selector) combination exercised by\n`tests/all_tests/ashrae_140_fabric_multiselector.rs`. The Python gate\n`scripts/check_ashrae_140_fabric_regression.py` compares each\nmeasurement against this baseline and FAILS on regression beyond\n`regression_tolerance_rel_pct`.\n\n## What this gate catches (and does NOT catch)\n\n**Catches:**\n- Selector wiring drift: a regression that flips the dispatch path on\n  one (case, selector) combination. E.g. Case 600 / 9r4c cooling was\n  4.858 MWh — if a future change causes it to drop to 2.5 MWh (the\n  Case 600 / 5r1c value), the selector no longer matters.\n- Selector-parity drift: the `parity` row captures the ratio of\n  (FiveROneC value) / (NineRFourC value) for each case. If the\n  per-selector wiring is honored end-to-end, this ratio stays\n  approximately constant across PRs (it encodes the structural\n  physics gap, not a tunable). A 10pp+ ratio shift means a selector\n  silently changed paths.\n\n**Does NOT catch:**\n- ASHRAE 140 ±15% band violations (Case 600 cooling is known-fail\n  per `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`).\n  That is `check_strict_energy_gate_regression.py`'s job.\n- Absolute-value physics regressions that affect both selectors\n  identically (both selectors drift together). The strict-energy-gate\n  already catches that for the cases it covers (600/800/810/900/920/\n  950/960/970); this baseline intentionally does not duplicate it.\n\n## Why Cases 900 and 950 show identical selector values\n\nBoth Case 900 and Case 950 are *high-mass* specs; `from_spec_with_selector`\nauto-promotes them to the 9R4C network regardless of the requested\nselector (per AGENTS.md ADR-0017 wording: 'HighMass specs still\nauto-promote to 9R4C via `from_spec_with_selector`'). The selector\nfield is therefore informational for these two cases (the engine\nignores the FiveROneC request and runs 9R4C). Case 600 is a\n*low-mass* spec where the selector actually drives a different\nnetwork — that is why the Case 600 row shows selector divergence.\n\nThis is the structural-physics asymmetry the fabric harness makes\nexplicit: low-mass cases expose selector divergence; high-mass cases\ncollapse to the auto-promoted network. The Python gate catches both\nclasses of regression.\n\n## Regenerating the baseline\n\n```\n# Re-run the harness and capture the printed lines:\ncargo test --release --test all_tests \\\n    ashrae_140_fabric_multiselector:: -- --nocapture 2>&1 \\\n    | tee /tmp/fabric_output.txt\n# Update this JSON from the captured H/C values; the Python gate\n# handles drift detection so a JSON update must be committed WITH the\n# engine change that produced the new values (per AGENTS.md 'no\n# baseline raising to hide regressions').\npython3 scripts/check_ashrae_140_fabric_regression.py \\\n    /tmp/fabric_output.txt\n``` Updated 2026-09-29 by PR #4265 (Issue #4156): unified HVAC coefficient to 5R1C formula with 9R4C per-surface derivation.",
+ "_rule": "Per AGENTS.md / RULES.md: this file records the KNOWN values; it must never be raised to hide a regression. Only lower (i.e. record smaller drift / smaller selector-parity delta) when the engine genuinely improved, and commit the improving change together with the baseline update.",
+ "captured_commit": "Ground-reflection endpoint fix (issue #1326, PR #4335, 2026-10-08): view factor continuous at the endpoints; re-recorded from the corrected engine per the #4314 precedent. Previous: LIMIT-33 fix (issue #4314, 2026-10-07).",
+ "source_command": "cargo test --release --test all_tests ashrae_140_fabric_multiselector:: -- --nocapture",
+ "source_path": "tests/all_tests/ashrae_140_fabric_multiselector.rs::run_blind_annual_with_selector",
+ "weather_epw": "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw",
+ "regression_tolerance_rel_pct": 10.0,
+ "_regression_tolerance_rel_pct_doc": "Per-measurement relative tolerance (% of recorded value). 10% absorbs floating-point noise from cross-runner builds without masking a real selector-wiring drift. Tighten in a follow-up PR if cross-runner noise is lower than expected.",
+ "regression_tolerance_ratio_abs": 0.1,
+ "_regression_tolerance_ratio_abs_doc": "Per-case selector-parity ratio tolerance (absolute deviation from baseline ratio). 0.10 = a 10pp shift in the ratio (e.g. baseline ratio 0.54 must stay in [0.44, 0.64]). Absorbs floating-point noise without masking a structural selector-wiring regression.",
+ "metrics": {
+  "case_600_5r1c": {
+   "case": "600",
+   "selector": "5r1c",
+   "selector_zone_solver": "FiveROneC",
+   "selector_conduction_solver": "Default",
+   "H_mwh": 6.072,
+   "C_mwh": 3.877,
+   "note": "low-mass spec; FiveROneC selector drives 5R1C network; per-surface exterior boundary (Issue #4166, PR #4222) with ASHRAE LW sign (was 4.901/2.620 with legacy lumped SolAirTemperature) | Re-baselined 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance + discrete residual load. User-confirmed physics. | Re-baselined 2026-10-07 by the LIMIT-33 fix (issue #4314, Option A state feedback): the #4241 residual load now drives the 5R1C air-node state to setpoint on unclamped conditioned hours. H 7.707->5.669, C 5.187->3.820. Physics corrected first, baseline re-recorded after. | Re-baselined 2026-10-07 by the LIMIT-33 fix (issue #4314, Option A state feedback): zone air held at the active setpoint on unclamped conditioned hours, controlled state persisted in setpoints.temperatures, free state kept in mass.air_temperatures. H 7.707->6.000, C 5.187->4.023. Physics corrected first, baseline re-recorded after. | Re-baselined 2026-10-08 by PR #4335 (issue #1326 ground-reflection endpoint fix): horizontal ground-reflected view factor continuous at endpoints (beta=0 -> 0, beta=180 -> rho*GHI); re-recorded from the corrected engine after Alex approved the physics."
   },
-  "parity_ratios": {
-    "_doc": "Recorded selector-parity ratios per case (FiveROneC_value / NineRFourC_value, per metric). Case 600 shows non-unity ratios (5R1C vs 9R4C take different paths for a low-mass spec); Cases 900/950 show exactly 1.0 because high-mass specs auto-promote to 9R4C for both selectors (per ADR-0017). The Python gate bounds the per-case ratio drift against these recorded values. Updated 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance shifts 5R1C/9R4C parity for low-mass Case 600. Updated 2026-10-07 by the LIMIT-33 fix (issue #4314, Option A state feedback): 5R1C Case 600 energy drops to H=5.669/C=3.820 MWh; 9R4C rows unchanged, so the parity ratios shift accordingly. Updated 2026-10-07 by the LIMIT-33 fix (issue #4314, Option A state feedback).",
-    "case_600": {
-      "ratio_H": 1.1218,
-      "ratio_C": 0.7057
-    },
-    "case_900": {
-      "ratio_H": 1.0,
-      "ratio_C": 1.0
-    },
-    "case_950": {
-      "ratio_H": 1.0,
-      "ratio_C": 1.0
-    }
+  "case_600_9r4c": {
+   "case": "600",
+   "selector": "9r4c",
+   "selector_zone_solver": "NineRFourC",
+   "selector_conduction_solver": "Default",
+   "H_mwh": 5.399,
+   "C_mwh": 5.599,
+   "note": "low-mass spec; NineRFourC selector drives 9R4C network (diverges from 5R1C, as expected) | Re-baselined 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance + discrete residual load. User-confirmed physics. | Re-baselined 2026-10-08 by PR #4335 (issue #1326 ground-reflection endpoint fix): horizontal ground-reflected view factor continuous at endpoints (beta=0 -> 0, beta=180 -> rho*GHI); re-recorded from the corrected engine after Alex approved the physics."
+  },
+  "case_900_5r1c": {
+   "case": "900",
+   "selector": "5r1c",
+   "selector_zone_solver": "FiveROneC",
+   "selector_conduction_solver": "Default",
+   "H_mwh": 3.823,
+   "C_mwh": 0.689,
+   "note": "high-mass spec; FiveROneC selector auto-promoted to 9R4C by from_spec_with_selector (per ADR-0017) | Re-baselined 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance + discrete residual load. User-confirmed physics. | Re-baselined 2026-09-30 by supersede #4298 (Issue #4156, Refs #4265): unified HVAC coefficient; H_mwh/C_mwh refreshed to post-#4156 measured values; H/C extra fields removed. | Re-baselined 2026-10-08 by PR #4335 (issue #1326 ground-reflection endpoint fix): horizontal ground-reflected view factor continuous at endpoints (beta=0 -> 0, beta=180 -> rho*GHI); re-recorded from the corrected engine after Alex approved the physics."
+  },
+  "case_900_9r4c": {
+   "case": "900",
+   "selector": "9r4c",
+   "selector_zone_solver": "NineRFourC",
+   "selector_conduction_solver": "Default",
+   "H_mwh": 3.823,
+   "C_mwh": 0.689,
+   "note": "high-mass spec; NineRFourC selector drives 9R4C network (identical to 5r1c row by structural auto-promotion) | Re-baselined 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance + discrete residual load. User-confirmed physics. | Re-baselined 2026-09-30 by supersede #4298 (Issue #4156, Refs #4265): unified HVAC coefficient; H_mwh/C_mwh refreshed to post-#4156 measured values; H/C extra fields removed. | Re-baselined 2026-10-08 by PR #4335 (issue #1326 ground-reflection endpoint fix): horizontal ground-reflected view factor continuous at endpoints (beta=0 -> 0, beta=180 -> rho*GHI); re-recorded from the corrected engine after Alex approved the physics."
+  },
+  "case_950_5r1c": {
+   "case": "950",
+   "selector": "5r1c",
+   "selector_zone_solver": "FiveROneC",
+   "selector_conduction_solver": "Default",
+   "H_mwh": 0.0,
+   "C_mwh": 0.198,
+   "note": "high-mass spec; FiveROneC selector auto-promoted to 9R4C by from_spec_with_selector | Re-baselined 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance + discrete residual load. User-confirmed physics. | Re-baselined 2026-09-30 by supersede #4298 (Issue #4156, Refs #4265): unified HVAC coefficient; H_mwh/C_mwh refreshed to post-#4156 measured values; H/C extra fields removed. | Re-baselined 2026-10-08 by PR #4335 (issue #1326 ground-reflection endpoint fix): horizontal ground-reflected view factor continuous at endpoints (beta=0 -> 0, beta=180 -> rho*GHI); re-recorded from the corrected engine after Alex approved the physics."
+  },
+  "case_950_9r4c": {
+   "case": "950",
+   "selector": "9r4c",
+   "selector_zone_solver": "NineRFourC",
+   "selector_conduction_solver": "Default",
+   "H_mwh": 0.0,
+   "C_mwh": 0.198,
+   "note": "high-mass spec; NineRFourC selector drives 9R4C network (identical to 5r1c row by structural auto-promotion) | Re-baselined 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance + discrete residual load. User-confirmed physics. | Re-baselined 2026-09-30 by supersede #4298 (Issue #4156, Refs #4265): unified HVAC coefficient; H_mwh/C_mwh refreshed to post-#4156 measured values; H/C extra fields removed. | Re-baselined 2026-10-08 by PR #4335 (issue #1326 ground-reflection endpoint fix): horizontal ground-reflected view factor continuous at endpoints (beta=0 -> 0, beta=180 -> rho*GHI); re-recorded from the corrected engine after Alex approved the physics."
   }
+ },
+ "parity_ratios": {
+  "_doc": "Recorded selector-parity ratios per case (FiveROneC_value / NineRFourC_value, per metric). Case 600 shows non-unity ratios (5R1C vs 9R4C take different paths for a low-mass spec); Cases 900/950 show exactly 1.0 because high-mass specs auto-promote to 9R4C for both selectors (per ADR-0017). The Python gate bounds the per-case ratio drift against these recorded values. Updated 2026-09-29 by PR #4258 (Issue #4241): h_ve in HVAC conductance shifts 5R1C/9R4C parity for low-mass Case 600. Updated 2026-10-07 by the LIMIT-33 fix (issue #4314, Option A state feedback): 5R1C Case 600 energy drops to H=5.669/C=3.820 MWh; 9R4C rows unchanged, so the parity ratios shift accordingly. Updated 2026-10-07 by the LIMIT-33 fix (issue #4314, Option A state feedback).",
+  "case_600": {
+   "ratio_H": 1.1246,
+   "ratio_C": 0.6926
+  },
+  "case_900": {
+   "ratio_H": 1.0,
+   "ratio_C": 1.0
+  },
+  "case_950": {
+   "ratio_H": 1.0,
+   "ratio_C": 1.0
+  }
+ }
 }
