@@ -719,3 +719,99 @@ route (§10: inert). Next thread, if pursued: the Perez tilted-diffuse
 divergence on its own terms (it depresses solar gains in ALL cases, and
 low-sun diffuse hours dominate the annual window budget), and lever D's
 multi-node gain-injection trace.
+
+## §12 — Lever-D trace: the multi-node `step_with_gains` internals (2026-10-08)
+
+This section settles §10 lever D's two readings by tracing the gain-injection
+path with instrumented reads (temporary env-gated patches, measured, reverted;
+tree verified clean and baseline bit-identical after revert). Nothing below
+tunes outputs to pass; the only engine change prepared is the DO-NOT-MERGE
+candidate at the end.
+
+### Method
+
+Standalone 9R4C harness (Case 900 spec, Denver-Stapleton EPW, 14-day warmup,
+8,760 hourly steps — the §10 harness). Baseline reproduced exactly:
+**H = 2,101.98 kWh, C = 550.03 kWh**. Three env-gated diagnostic hooks were
+added to `step_9r4c.rs` / the harness (default no-op, never committed):
+a per-step CSV trace at the `phi_m` assembly and after `step_with_gains` /
+`step_per_surface`, a `LEVER_OPAQUE` scale on `opaque_sol_w` at the tensor
+assembly (the §10 experiment, now reproducible), and a
+`LEVER_PHIM_TO_ENVELOPE` reroute used only to size the fix candidate.
+
+### What `phi_m` carries, and where it goes
+
+At assembly (step_9r4c.rs ~line 156):
+`phi_m[i] = load_w·m_air_frac + remaining_sol·m_sol_frac + opaque_sol_w`.
+Case 900 has no internal loads, so zone 0's `phi_m` is the window
+beam-to-mass share plus the opaque term. Traced over the year (zone 0):
+
+- total `phi_m` routed: **19,590.82 kWh/yr**
+- opaque term (by difference, ×1 vs ×0 runs): **7,001.74 kWh/yr**
+- window beam-to-mass share (residual): **12,589.08 kWh/yr**
+
+`phi_m_zone` is consumed by exactly two channels, and **both are dead**:
+
+1. **`gains_internal` → internal mass node.** `step_with_gains` injects the
+   whole `phi_m_zone` into the internal (furniture) node's backward-Euler
+   numerator. The node absorbs it — traced internal-node temperature swings
+   20 → 41.6 °C, and zeroing the opaque term moves the node by up to
+   **4.68 K** — but nothing reads it back: BOTH air-node balances
+   (`compute_zone_air_temperature_additive` and `..._parallel_resistance`)
+   contain only surface, ventilation, sky, and `phi_ia` terms; the internal
+   node's temperature is read solely by the First-Law debug assert
+   (Issue #1024). Energy entering it leaves the conserved system.
+2. **`distribute_opaque_solar_gains` → `step_per_surface`.** The same
+   `phi_m_zone` is distributed to per-surface gains (traced 11,237.49 wall /
+   8,343.68 roof / 9.65 floor kWh/yr), but `step_per_surface`'s refined
+   `surface_temperature` write-back is clobbered before any consumer reads
+   it: the pre-step block (step_9r4c.rs ~line 490) recomputes
+   `surface_temperature` from pre-step mass-node temperatures, and the
+   post-step block (~line 832) recomputes it again from the updated mass
+   nodes. The #1005 integration point ("providing a more accurate air-side
+   temperature for the air node energy balance") is therefore never reached.
+
+Zeroing the opaque term at the assembly moves zone, wall, roof and floor
+temperatures by exactly **0.0** — the two channels are jointly inert, which
+is why §10's ×1.25/×2.0 scales (reproduced here at ×2.0: bit-identical
+2,101.98 / 550.03) showed nothing.
+
+### Verdict: defect (§10 reading b), not double-count avoidance
+
+- No other route carries these gains: window solar reaches the zone only via
+  `phi_ia` (applied) and `phi_st` (applied, envelope nodes); the
+  `m_sol_frac` share routed through `phi_m` and 100 % of the opaque
+  `phi_m` term have no live consumer in the multi-node path. The §8
+  sol-air boundary carries only opaque-absorbed exterior solar (small
+  measured lever) and does not overlap the `phi_m` window share.
+- The 5R1C semantics this path mirrors feed `phi_m` into the mass node that
+  IS coupled to the zone (mass → `h_ms·T_s` → air). The multi-node
+  implementation instead routes it to a node the air balances omit, so the
+  **19,590.8 kWh/yr is computed, injected, and dropped**.
+- §11's observation resolved: of the two shares `phi_m` carries, the dead
+  channel inside `step_with_gains` is the `gains_internal` (internal mass
+  node) channel — and the parallel per-surface channel is equally dead
+  downstream.
+
+### Fix candidate sized, not merged (DO NOT MERGE)
+
+Diagnostic reroute (env-gated, harness): distribute `phi_m_zone` to the
+envelope wall/roof/floor nodes proportional to `h_tr_ms` (the live return
+path, mirroring 5R1C) and zero `gains_internal`:
+
+| Quantity | baseline | phi_m → envelope nodes |
+|---|---|---|
+| Harness Case 900 H | 2,101.98 kWh | **1,201.52 kWh** (in band [1,170, 2,040]) |
+| Harness Case 900 C | 550.03 kWh | **1,402.97 kWh** (band [2,130, 3,670]) |
+| Harness, reroute + opaque ×2.0 | — | 1,036.43 kWh (lever now live, as expected) |
+
+This is a first-order −900 kWh heating swing and +853 kWh cooling swing —
+far larger than the 283 kWh residual, i.e. the dropped gains were masking a
+much bigger model-structure question. Whether envelope rerouting is the
+physically correct delivery (vs reviving the #1005 per-surface path and
+retiring the internal-node injection — reviving BOTH would double-count the
+same `phi_m`) is a physics decision. Prepared as a DO-NOT-MERGE PR pending
+Alex's review; validator Case 900/600 numbers with the fix are to be
+measured in that PR. Scratch harness and traces preserved at
+`~/OS3/fluxion-case900-windowsolar/` (harness) and `/tmp` traces copied to
+`~/OS3/fluxion-case900-windowsolar/traces-leverd/`.
