@@ -463,16 +463,12 @@ mod case_630 {
         assert!(heating_mwh >= r.annual_heating_min && heating_mwh <= r.annual_heating_max);
     }
 
-    // Quarantined 2026-10-09 (E+ Perez coefficient-table fix, see §LIMIT-39):
-    // the corrected solar stack raises Case 630 annual cooling out of the
-    // published band's UPPER side — over-band, direction inverted relative to
-    // the cooling-chain LIMIT rows. Re-measured 2026-10-09 under the adopted
-    // mid-hour sun-position convention (see §LIMIT-39): 4.07 MWh vs
-    // [2.13, 3.70], +10% over. Tracked in docs/KNOWN_ISSUES.md §LIMIT-39;
-    // un-ignore when the engine re-enters the published band (no band
-    // widening).
+    // Un-quarantined 2026-10-09 (§LIMIT-39 RESOLVED by the E/W shading-path
+    // fix, loop round 4): the dead fins arm + phantom overhang gap were
+    // under-shading the E/W windows; with the spec-correct shading, annual
+    // cooling returns INSIDE the published band (3.000 MWh vs [2.13, 3.70],
+    // validator path). See docs/KNOWN_ISSUES.md §LIMIT-39.
     #[test]
-    #[ignore = "§LIMIT-39 (2026-10-09, E+ Perez coefficient-table fix + adopted mid-hour sun convention): annual                 cooling 4.07 MWh vs published band [2.13, 3.70] (+10% over upper                 bound). Previously in band on the 1990-journal coefficient set.                 Un-ignore when the engine re-enters the band — no band widening."]
     fn test_annual_cooling() {
         let r = CASE_630;
         let (_, cooling_j, _, _) = run_annual_simulation(ASHRAE140Case::Case630);

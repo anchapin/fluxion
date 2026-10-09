@@ -1057,40 +1057,47 @@ impl ThermalModel<VectorField> {
                     WallSurface::new(total_area, u_value, orientation).with_window(win_area);
 
                 // Add shading if applicable to this orientation
+                // NOTE: two separate `match`es by design — a single match would
+                // let the `Overhang | OverhangAndFins` arm consume OverhangAndFins
+                // and leave the fins arm dead (the Case 630/930 fins were never
+                // attached; found by the §LIMIT-39 loop round 4 investigation).
                 if let Some(shading) = &spec.shading {
                     match shading.shading_type {
                         ShadingType::Overhang | ShadingType::OverhangAndFins if win_area > 0.0 => {
-                            // Get window geometry to compute distance_above
-                            // distance_above = mounting_height - window_top (positive = gap above window)
-                            let win_geom = spec.windows.get(zone_idx).and_then(|zone_wins| {
-                                zone_wins.iter().find(|w| w.orientation == orientation)
-                            });
-                            let (win_sill, win_height) = win_geom
-                                .map(|w| (w.sill_height, w.height))
-                                .unwrap_or((0.2, 3.0)); // Default values if not found
-                            let window_top = win_sill + win_height;
-                            // distance_above is positive when overhang is above window top (gap)
-                            // mounting_height is the height of the overhang above ground
-                            let distance_above = (shading.mounting_height - window_top).max(0.0);
+                            // ASHRAE 140 mounts the overhang AT the top of the
+                            // window (Case 630/930 spec: "1 m horizontal overhang,
+                            // projection from the plane of the glass, at the top of
+                            // the window"; Case 610/910 same south overhang) — gap 0.
+                            // The old `(mounting_height - window_top).max(0)` with
+                            // mounting_height = wall height (2.7) vs window top
+                            // (sill 0.2 + height 2.0 = 2.2) invented a phantom
+                            // 0.5 m gap that under-shaded every shaded case
+                            // (§LIMIT-39 loop round 4, 2026-10-09).
                             surface.overhang = Some(Overhang {
                                 depth: shading.overhang_depth,
-                                distance_above,
+                                distance_above: 0.0,
                                 extension: 10.0, // "Infinite"
                             });
                         }
+                        _ => {}
+                    }
+                }
+                if let Some(shading) = &spec.shading {
+                    match shading.shading_type {
                         ShadingType::Fins | ShadingType::OverhangAndFins if win_area > 0.0 => {
-                            // Fin height: from mounting_height to window top
-                            // fin_height = (sill_height + window_height) - mounting_height
-                            // When mounting_height = 0, fin extends from floor to window top
                             // Get window geometry from spec.windows for this zone and orientation
                             let win_geom = spec.windows.get(zone_idx).and_then(|zone_wins| {
                                 zone_wins.iter().find(|w| w.orientation == orientation)
                             });
-                            let (win_sill, win_height) = win_geom
-                                .map(|w| (w.sill_height, w.height))
-                                .unwrap_or((0.2, 3.0)); // Default values if not found
-                            let window_top = win_sill + win_height;
-                            let fin_height = (window_top - shading.mounting_height).max(0.0);
+                            let win_height = win_geom.map(|w| w.height).unwrap_or(2.0);
+                            // ASHRAE 140 fins span the FULL window height
+                            // (Case 630/930 spec: 1 m fins at the left and right
+                            // window edges). The old
+                            // `(window_top - mounting_height).max(0)` clipped them
+                            // to zero height (2.2 - 2.7 < 0), and worse, the single
+                            // `match` above left this arm DEAD for OverhangAndFins
+                            // — the fins were never attached at all.
+                            let fin_height = win_height;
                             surface.fins.push(ShadeFin {
                                 depth: shading.fin_width,
                                 distance_from_edge: 0.0,

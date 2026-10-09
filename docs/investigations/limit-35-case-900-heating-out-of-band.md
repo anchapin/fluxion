@@ -1126,3 +1126,62 @@ Alex with the adoption decision; they are recorded here and in the baselines, no
 630 cooling is 4.07 MWh on the landed engine (matches §14's probe): further over its published
 band [2.13, 3.70]. The integration-convention hypothesis stays falsified as 630's cause; the
 shading-path investigation is the next loop round (§16).
+
+## §16 — The E/W shading-path investigation: root cause CONFIRMED and FIXED (2026-10-09, physics loop round 4)
+
+Follows §14/§LIMIT-39: with the mid-hour convention landed (§15), the remaining Case 630 cooling
+suspect was the east/west shading path (overhang + fins on the E/W glazing). Reproduced on
+develop 6766ba55 with a scratch harness (annual 630 through `from_spec_with_selector` +
+`step_physics`, values matching the strict gate exactly: H 6.884 / C 3.353 MWh).
+
+### Root cause — two defects in the ASHRAE 140 shading wiring (`thermal_model_core`)
+
+1. **The fins were never attached.** A single `match shading.shading_type` armed
+   `Overhang | OverhangAndFins` first, so for `OverhangAndFins` the value was consumed by the
+   overhang arm and the `Fins | OverhangAndFins` arm was DEAD CODE: Case 630/930 surfaces carried
+   `fins: []` (verified by dumping `model.solar.surfaces`). The fins have never contributed on
+   any production path.
+2. **The overhang carried a phantom gap.** `distance_above = (mounting_height − window_top).max(0)`
+   with `mounting_height` = wall height (2.7) vs window top (sill 0.2 + height 2.0 = 2.2) mounted
+   every ASHRAE 140 overhang 0.5 m above the window, under-shading it.
+
+### Fix (spec-conforming, Alex fidelity-first standing direction)
+
+Split into two `match`es (fins arm reachable); fins span the FULL window height; overhang mounted
+AT the window top (`distance_above = 0`) per the ASHRAE 140 Case 630/930/610/910 definitions.
+Beam-weighted E/W shaded fraction: 0.298/0.257 → 0.418/0.354 (symmetric devices; the E/W
+asymmetry that remains is the morning-weighted EPW beam, matching E+'s own asymmetry).
+
+### Measurements (fresh runs on the fixed engine; strict gate log + harness)
+
+| case | old H/C (MWh) | new H/C (MWh) | strict band H | strict band C | outcome |
+|---|---|---|---|---|---|
+| 610 | 5.969 / 4.044 | 6.122 / 3.596 | [4.314, 5.836] | [4.275, 5.784] | both known_fail (further out — recorded) |
+| 620 | 6.794 / 3.705 | unchanged | | | pass / pass |
+| 630 | 6.884 / 3.353 | 7.232 / **2.901** | [4.896, 6.624] | [2.478, 3.352] | H known_fail (further over); **C RE-ENTERS BAND** |
+| 910 | 1.614 / 1.325 | 1.734 / 1.220 | [1.611, 2.179] | [1.147, 1.552] | both pass (H gap → 0) |
+| 930 | 2.523 / 1.547 | 2.715 / 1.373 | [4.029, 5.451] | [1.394, 1.886] | H known_fail (narrows); C leaves band by 0.021 (now known_fail, recorded) |
+
+All thirteen unshaded annual cases and all four free-float cases reproduce bit-identically.
+Checker: 13 PASS / 29 KNOWN-FAIL / 0 REGRESSION. Fabric harness (600/900/950, no shading): PASS,
+baseline untouched. Premise outcome sets: 600-series identical except the intended
+`case_630::test_annual_cooling` ignored → ok (**un-quarantined**); conservation premises
+identical (only the pre-existing Case 600 red). Validator: 630 AnnualCooling 3,527.03 Warning →
+**3,000.25 kWh Pass**; 630 AnnualHeating now 7,404.36 kWh (further over [5,050, 6,470], the
+heating-side cost of correct shading); 600/900 rows unchanged (600 peak C 4,518.42, 900 H
+1,104.94 — §15's accepted tradeoffs stand).
+
+Reproduced unchanged: hotloop golden EUIs (6/6), surrogate fallback (3,160.02/95.02/3,255.04 kWh),
+npm 54/54 (fresh napi build), solar-SIMD seeds (9/9), cross-language contract (4/4),
+delta_config.yaml bit-for-bit.
+
+### Open thread left recorded, not pursued this round
+
+The shading-geometry window shape in `calculate_zone_solar_gain` derives width/height from a
+sqrt(area/1.5) heuristic (2 m × 3 m for a 6 m² E/W window) rather than the spec's window
+dimensions (3 m × 2 m). Measured end-to-end via a temporary hook (spec 3:2 aspect): 630 C drops
+further to 2.638, 930 C to 1.266, 610 C to 3.142 — all "more shading" moves. NOT landed this
+round: the correct form is to thread the spec's window dimensions through to the shading call,
+and the 610/910 south-overhang cases move further from E+ under any more-shading variant, which
+suggests a compensating error elsewhere in the cooling chain that should be diagnosed first
+(next loop round candidate).
