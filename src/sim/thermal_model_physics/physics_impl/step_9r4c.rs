@@ -650,10 +650,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 1.0 / 3.0
             };
             // phi_st goes to envelope nodes, phi_m goes to internal node
-            let gains_wall = phi_st_zone * wall_frac;
-            let gains_roof = phi_st_zone * roof_frac;
-            let gains_floor = phi_st_zone * floor_frac;
-            let gains_internal = phi_m_zone;
+            // LIMIT-35 §12: phi_m routed to gains_internal reaches the internal
+            // mass node, which NEITHER air-node balance reads back — both the
+            // additive and parallel-resistance balances contain only surface,
+            // ventilation, sky and phi_ia terms — so the gains (19,590.8 kWh/yr
+            // on Case 900 zone 0: 12,589.1 window beam-to-mass + 7,001.7 opaque)
+            // are computed and dropped. The per-surface channel
+            // (distribute_opaque_solar_gains -> step_per_surface) is equally
+            // dead: its surface_temperature write-back is clobbered each step.
+            // Deliver phi_m through the live return path instead: the envelope
+            // mass nodes, proportional to h_tr_ms, mirroring the 5R1C
+            // phi_m -> mass -> h_ms*T_s -> air semantics. gains_internal is
+            // zeroed so the same phi_m is not counted twice.
+            // DO NOT MERGE without physics review (LIMIT-35 §12): harness
+            // H 2,101.98 -> 1,201.52 kWh, C 550.03 -> 1,402.97 kWh.
+            let gains_wall = phi_st_zone * wall_frac + phi_m_zone * wall_frac;
+            let gains_roof = phi_st_zone * roof_frac + phi_m_zone * roof_frac;
+            let gains_floor = phi_st_zone * floor_frac + phi_m_zone * floor_frac;
+            let gains_internal = 0.0;
             // Floor gets no direct solar (horizontal down orientation)
             let floor_irr_val = 0.0;
 
