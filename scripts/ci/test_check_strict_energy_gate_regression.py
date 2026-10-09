@@ -612,11 +612,16 @@ def test_full_production_scope_real_baseline_matches(checker, tmp_path):
             f"(band {m['band_mwh'][0]}-{m['band_mwh'][1]}), "
             f"C={c['value_mwh']} MWh (band {c['band_mwh'][0]}-{c['band_mwh'][1]})"
         )
+    # Derive the FF log lines from the baseline itself (mid-hour convention
+    # re-record, 2026-10-09): hard-coding the measured FF values here made this
+    # fixture a stale-golden trap — any honest baseline re-record broke the
+    # fixture before the checker logic was ever exercised.
     ff_vals = {
-        "600FF": (-18.48, 57.45),
-        "650FF": (-24.45, 57.09),
-        "900FF": (-6.95, 41.32),
-        "950FF": (-22.45, 37.61),
+        case: (
+            real["metrics"][f"ff_{case.lower()}_min"]["value_c"],
+            real["metrics"][f"ff_{case.lower()}_max"]["value_c"],
+        )
+        for case in ("600FF", "650FF", "900FF", "950FF")
     }
     log_lines.append(_write_ff_lines(ff_vals))
     log = tmp_path / "log.txt"
@@ -653,11 +658,14 @@ def test_completeness_fails_closed_on_missing_ff_line(checker, tmp_path, capsys)
             f"(band {m['band_mwh'][0]}-{m['band_mwh'][1]}), "
             f"C={c['value_mwh']} MWh (band {c['band_mwh'][0]}-{c['band_mwh'][1]})"
         )
-    # Only three of the four FF cases — 950FF line missing.
+    # Only three of the four FF cases — 950FF line missing. FF values derived
+    # from the baseline (see test_full_production_scope_real_baseline_matches).
     log_lines.append(_write_ff_lines({
-        "600FF": (-18.48, 57.45),
-        "650FF": (-24.45, 57.09),
-        "900FF": (-6.95, 41.32),
+        case: (
+            real["metrics"][f"ff_{case.lower()}_min"]["value_c"],
+            real["metrics"][f"ff_{case.lower()}_max"]["value_c"],
+        )
+        for case in ("600FF", "650FF", "900FF")
     }))
     log = tmp_path / "log.txt"
     log.write_text("\n".join(log_lines))
