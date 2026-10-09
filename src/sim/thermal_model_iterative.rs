@@ -387,18 +387,40 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         .copied(),
                 );
 
-                // Create window geometry for shading calculations (needed when overhang/fins present)
+                // Create window geometry for shading calculations (needed when overhang/fins present).
+                // Physics loop round 5: prefer the spec's real window dimensions
+                // threaded via `WallSurface.window_dims` (ASHRAE 140 windows are
+                // 2 m tall, width = area / 2, sill 0.2 m). Only fall back to the
+                // area heuristic for surfaces with no spec dims.
                 let geometry = if overhang.is_some() || !fins_buf.is_empty() {
-                    // Calculate window dimensions from area (assume square-ish window)
-                    let width = (total_win_area / 1.5_f64).sqrt();
-                    let height = total_win_area / width;
-                    // Use a default window geometry - typical window
+                    let spec_dims: Vec<_> = zone_surfaces
+                        .iter()
+                        .filter(|s| s.orientation == orientation && s.window_area > 0.0)
+                        .filter_map(|s| s.window_dims)
+                        .collect();
+                    let (width, height, sill_height) = if !spec_dims.is_empty() {
+                        // Combine the orientation's windows into one equivalent
+                        // window: the overhang shaded fraction depends on the
+                        // window height, the fin fraction on the width.
+                        (
+                            spec_dims.iter().map(|d| d.width).sum::<f64>(),
+                            spec_dims.iter().map(|d| d.height).fold(f64::MIN, f64::max),
+                            spec_dims
+                                .iter()
+                                .map(|d| d.sill_height)
+                                .fold(f64::INFINITY, f64::min),
+                        )
+                    } else {
+                        // Calculate window dimensions from area (assume square-ish window)
+                        let width = (total_win_area / 1.5_f64).sqrt();
+                        (width, total_win_area / width, 0.8)
+                    };
                     Some(WindowArea {
                         area: total_win_area,
                         orientation,
                         height,
                         width,
-                        sill_height: 0.8,
+                        sill_height,
                         left_offset: 0.0,
                     })
                 } else {

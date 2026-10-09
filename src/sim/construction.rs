@@ -61,12 +61,33 @@ pub struct WallSurface {
     pub overhang: Option<Overhang>,
     /// List of vertical shade fins.
     pub fins: Vec<ShadeFin>,
+    /// Spec window dimensions (height/width/sill) threaded through to the
+    /// shading-geometry call. Populated by `from_spec_with_selector` from the
+    /// case's `windows` list; `None` falls back to the area heuristic.
+    pub window_dims: Option<WindowDims>,
     /// Optional multi-layer wall specification (Issue #3272 / umbrella #3291).
     ///
     /// `None` preserves the existing single-U-value behaviour used by the
     /// legacy solvers. When set, multi-node / GaugeSolver code paths can read
     /// the full layer stack instead of collapsing to the aggregate `u_value`.
     pub wall_spec: Option<WallSpec>,
+}
+
+/// Spec window dimensions for shading geometry (physics loop round 5).
+///
+/// ASHRAE 140 defines its windows with real dimensions (2 m tall, width =
+/// area / 2, sill 0.2 m). The shading shaded-fraction calculation needs the
+/// true height/width/sill — a heuristic derived from area alone invented a
+/// 4.24 m-tall 12 m² south window whose top sits above the 2.7 m wall and
+/// under-shaded Cases 610/910 (loop round 5, §LIMIT-35 doc §17).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WindowDims {
+    /// Window width in meters (m).
+    pub width: f64,
+    /// Window height in meters (m).
+    pub height: f64,
+    /// Offset from floor in meters (m).
+    pub sill_height: f64,
 }
 
 impl WallSurface {
@@ -79,6 +100,7 @@ impl WallSurface {
             orientation,
             overhang: None,
             fins: Vec::new(),
+            window_dims: None,
             wall_spec: None,
         }
     }
@@ -86,6 +108,12 @@ impl WallSurface {
     /// Create a new WallSurface with a window.
     pub fn with_window(mut self, window_area: f64) -> Self {
         self.window_area = window_area;
+        self
+    }
+
+    /// Attach spec window dimensions for the shading-geometry call.
+    pub fn with_window_dims(mut self, dims: WindowDims) -> Self {
+        self.window_dims = Some(dims);
         self
     }
 

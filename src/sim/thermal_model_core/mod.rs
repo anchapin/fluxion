@@ -1056,6 +1056,40 @@ impl ThermalModel<VectorField> {
                 let mut surface =
                     WallSurface::new(total_area, u_value, orientation).with_window(win_area);
 
+                // Thread the spec's window dimensions through to the shading
+                // call (physics loop round 5). The old sqrt(area/1.5) + sill-0.8
+                // heuristic invented a 4.24 m-tall 12 m² south window whose top
+                // (5.04 m) sits above the 2.7 m wall, under-shading the Cases
+                // 610/910 overhang (§LIMIT-35 doc §17).
+                if win_area > 0.0 {
+                    surface.window_dims = spec
+                        .windows
+                        .get(zone_idx)
+                        .and_then(|ws| {
+                            ws.iter().find(|w| w.orientation == orientation).map(|w| {
+                                crate::sim::construction::WindowDims {
+                                    width: w.width,
+                                    height: w.height,
+                                    sill_height: w.sill_height,
+                                }
+                            })
+                        })
+                        .or_else(|| {
+                            // Multi-zone cases store windows only on zone 0 in
+                            // some builders — fall back to the first zone's
+                            // entry for the same orientation.
+                            spec.windows.first().and_then(|ws| {
+                                ws.iter().find(|w| w.orientation == orientation).map(|w| {
+                                    crate::sim::construction::WindowDims {
+                                        width: w.width,
+                                        height: w.height,
+                                        sill_height: w.sill_height,
+                                    }
+                                })
+                            })
+                        });
+                }
+
                 // Add shading if applicable to this orientation
                 // NOTE: two separate `match`es by design — a single match would
                 // let the `Overhang | OverhangAndFins` arm consume OverhangAndFins
