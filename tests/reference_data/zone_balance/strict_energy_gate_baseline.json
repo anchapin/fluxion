@@ -2,7 +2,7 @@
  "_doc": "Known structural-failure baseline for the ASHRAE 140 strict +/-15% annual-energy gate (issue #2506, extended in issue #3572 to cover the eight cases 600/800/810/900/920/950/960/970). The Case 600/900 annual COOLING physics gap is NOT yet fixed (tracked by the post-#1323 / #1213 / #1328 cooling-load chain); these two metrics are expected to FAIL the +/-15% band today. The strict-energy-gate workflow runs the eight `#[ignore]`'d strict tests with `--include-ignored`, parses the printed H/C values, computes each metric's gap as a percentage of the band midpoint, and compares against this baseline. The gate FAILS only when a metric REGRESSES beyond `regression_tolerance_pp` percentage points worse than its recorded `gap_pct_of_mid` (or when a previously-`pass` metric starts failing beyond the tolerance). When the physics is fixed and a cooling metric re-enters its band (gap == 0), lower its value here and eventually un-ignore the tests (issues #1333 / #2506 / #3572 acceptance). Do NOT raise a baseline gap to make a regression disappear (RULES.md: no parameter tuning). Updated 2026-09-29 by PR #4265 (Issue #4156): unified HVAC coefficient. Refreshed 2026-09-30 by the PR #4265 follow-up to also reflect the Case 900 H, Case 960 H, and the 13 other per-case measurements not covered by the original PR. The original PR's `value_mwh=3.144, gap_pct_of_mid=65.36` for Case 900 H was internally inconsistent (the gap did not correspond to the value under the standard band_pct_of_mid formula) and has been corrected to the measured 3.723/116.95 pair.",
  "_doc_issue3572": "Cases 800 / / 810 are tracked as `known_fail` here even though they lack a formal structural LIMIT entry in docs/KNOWN_ISSUES.md (they appear under \u00a7Systematic Issues -> HVAC Load Calculation, not as \u00a7LIMIT-NN). Per RULES.md (\"never raise baselines to hide regressions\") we mark the current measured gap as `known_fail` rather than claiming pass; a follow-up PR should add \u00a7LIMIT-25 / \u00a7LIMIT-26 entries to docs/KNOWN_ISSUES.md so the structural rationale is co-located with the failure record. Cases 920 / 950 / 960 / 970 each have a documented LIMIT entry (920 -> \u00a7LIMIT-05 UPDATE #2453 cohort, 950 -> -> \u00a7LIMIT-17 / \u00a7LIMIT-24, 960 -> \u00a7LIMIT-14, 970 -> \u00a7LIMIT-23).",
  "_rule": "Per AGENTS.md / RULES.md: this file records the KNOWN gap; it must never be loosened to hide a regression. Only lower a gap when the engine genuinely improved, and commit the improving change together with the baseline update.",
- "captured_commit": "E+ Perez coefficient table (2026-10-09, this PR): the Perez F1/F2 coefficient set in src/solar/surface_irradiance.rs was replaced with the EnergyPlus-adopted values (Perez et al. private communication 5/21/99, published in the EnergyPlus Engineering Reference 'Sky Radiance Model' Fij table). Reference basis: in-repo E+ 25.2 per-surface incident-solar CSVs (tests/reference_data/solar/ashrae_140_surface_incident_solar.csv, Golden TMY3) - per-orientation annual irradiance ratios engine/E+ moved from N 0.659 / E 0.948 / S 0.916 / W 0.755 / roof 0.973 to N 0.971 / E 1.257 / S 0.813 / W 0.861 / roof 1.008; the residual E/W asymmetry is an open hour-convention thread (doc 13). Measured movement (old -> new): 600 H 6.072->5.932 (still out, closer), 600 C 3.877->4.616 RE-ENTERS BAND; 800 H 6.377->6.226, C 3.176->3.824 (both still out); 810 H 1.649->1.575 (still below), C 1.207->1.514; 900 H 1.649->1.575 STAYS IN BAND, C 1.207->1.514 (closer below); 920 H 2.615->2.488 (further below - LIMIT-37 worsens, recorded not tuned), C 1.395->1.683 (closer below); 950 H 0.000 unchanged, C 0.436->0.564 RE-ENTERS BAND; 960 H 2.877->2.743 (still above, closer), C 0.257->0.406 (closer below); 970 H 4.807->4.620 (further below), C 1.937->2.277 (closer below). Re-recorded from the corrected engine per the #4314/#4347 precedents.",
+ "captured_commit": "Mid-hour sun-position convention ADOPTED (E+ Timestep=1 convention; Alex fidelity decision 2026-10-09, this PR): the 5R1C per-orientation path evaluates the solar position at the timestep midpoint (hour + 0.5) in thermal_model_iterative::calculate_zone_solar_gain; the 9R4C opaque sol-air BC already used hour + 0.5 (issues #1212/#1391) and is unchanged, while its window-solar gains shift with the 5R1C per-orientation stash. Irradiance fidelity is the priority (all five surfaces within ~5% of the E+ 25.2 reference; limit-35 doc \u00a714). Accepted validator regressions, recorded not tuned: production validator Case 600 peak cooling 4,583.79 -> 4,518.42 kWh (Warning -> Fail); Case 900 annual heating 1,124.09 -> 1,104.94 kWh (further below [1,170, 2,040]); quarantined Case 630 annual cooling 4.03 -> 4.07 MWh (further over its published band). NOTE: limit-35 \u00a714's 'patched' strict-gate column came from a probe patch inside cached_solar_position that double-shifted the 9R4C path to hour + 1.0 (and tripped the Case 920/960 conservation premise tests); the landed convention measures slightly differently (e.g. 900 H 1.578 probe -> 1.566 landed; conservation tests unchanged vs develop). Re-recorded from the corrected engine per the #4314/#4347 precedents. Old -> new: 600 H 5.932->5.883 (known_fail); 600 C 4.616->4.7 (pass); 610 H 6.018->5.969 (known_fail); 610 C 3.984->4.044 (known_fail); 620 H 6.824->6.794 (known_fail); 620 C 3.686->3.705 (pass); 630 H 6.914->6.884 (known_fail); 630 C 3.334->3.353 (known_fail); 640 H 5.932->5.883 (known_fail); 640 C 4.616->4.7 (known_fail); 650 H 0.0->0.0 (pass); 650 C 3.644->3.713 (known_fail); 800 H 6.226->6.175 (known_fail); 800 C 3.824->3.888 (known_fail); 810 H 1.575->1.566 (known_fail); 810 C 1.514->1.57 (known_fail); 900 H 1.575->1.566 (pass); 900 C 1.514->1.57 (known_fail); 910 H 1.623->1.614 (pass); 910 C 1.277->1.325 (pass); 920 H 2.488->2.47 (known_fail); 920 C 1.683->1.688 (known_fail); 930 H 2.541->2.523 (known_fail); 930 C 1.542->1.547 (pass); 940 H 1.575->1.566 (known_fail); 940 C 1.514->1.57 (known_fail); 950 H 0.0->0.0 (pass); 950 C 0.564->0.596 (pass); 960 H 2.743->2.729 (known_fail); 960 C 0.406->0.444 (known_fail); 970 H 4.62->4.616 (known_fail); 970 C 2.277->2.341 (known_fail); 195 H 1.951->1.942 (known_fail); 195 C 0.669->0.683 (pass); 600ff min -18.48->-18.45 (pass); 600ff max 57.45->57.25 (known_fail); 650ff min -24.45->-24.45 (known_fail); 650ff max 57.09->56.53 (known_fail); 900ff min -6.95->-6.71 (known_fail); 900ff max 41.32->41.96 (pass); 950ff min -22.45->-22.44 (known_fail); 950ff max 37.61->37.98 (pass)",
  "source_command": "cargo test --release --features ort --test all_tests _annual_energy_ashrae140_tolerance -- --include-ignored --nocapture",
  "source_path": "run_blind_annual_energy() in tests/zone_balance_eplus_isolation.rs (blind zone-balance path, NOT the Informed benchmark.rs path)",
  "tolerance_fraction": 0.15,
@@ -19,8 +19,8 @@
     4.314,
     5.836
    ],
-   "value_mwh": 5.932,
-   "gap_pct_of_mid": 1.89,
+   "value_mwh": 5.883,
+   "gap_pct_of_mid": 0.93,
    "status": "known_fail"
   },
   "case_600_cooling": {
@@ -32,7 +32,7 @@
     4.275,
     5.784
    ],
-   "value_mwh": 4.616,
+   "value_mwh": 4.7,
    "gap_pct_of_mid": 0.0,
    "status": "pass"
   },
@@ -45,8 +45,8 @@
     4.378,
     5.923
    ],
-   "value_mwh": 6.226,
-   "gap_pct_of_mid": 5.88,
+   "value_mwh": 6.175,
+   "gap_pct_of_mid": 4.89,
    "status": "known_fail"
   },
   "case_800_cooling": {
@@ -58,8 +58,8 @@
     4.888,
     6.612
    ],
-   "value_mwh": 3.824,
-   "gap_pct_of_mid": 18.5,
+   "value_mwh": 3.888,
+   "gap_pct_of_mid": 17.39,
    "status": "known_fail"
   },
   "case_810_heating": {
@@ -71,8 +71,8 @@
     3.357,
     4.543
    ],
-   "value_mwh": 1.575,
-   "gap_pct_of_mid": 45.11,
+   "value_mwh": 1.566,
+   "gap_pct_of_mid": 45.34,
    "status": "known_fail"
   },
   "case_810_cooling": {
@@ -84,8 +84,8 @@
     3.74,
     5.06
    ],
-   "value_mwh": 1.514,
-   "gap_pct_of_mid": 50.59,
+   "value_mwh": 1.57,
+   "gap_pct_of_mid": 49.32,
    "status": "known_fail"
   },
   "case_900_heating": {
@@ -97,7 +97,7 @@
     1.364,
     1.846
    ],
-   "value_mwh": 1.575,
+   "value_mwh": 1.566,
    "gap_pct_of_mid": 0.0,
    "status": "pass"
   },
@@ -110,8 +110,8 @@
     2.465,
     3.335
    ],
-   "value_mwh": 1.514,
-   "gap_pct_of_mid": 32.79,
+   "value_mwh": 1.57,
+   "gap_pct_of_mid": 30.86,
    "status": "known_fail"
   },
   "case_920_heating": {
@@ -123,8 +123,8 @@
     3.213,
     4.347
    ],
-   "value_mwh": 2.488,
-   "gap_pct_of_mid": 19.18,
+   "value_mwh": 2.47,
+   "gap_pct_of_mid": 19.66,
    "status": "known_fail"
   },
   "case_920_cooling": {
@@ -136,8 +136,8 @@
     2.189,
     2.961
    ],
-   "value_mwh": 1.683,
-   "gap_pct_of_mid": 19.65,
+   "value_mwh": 1.688,
+   "gap_pct_of_mid": 19.46,
    "status": "known_fail"
   },
   "case_950_heating": {
@@ -162,7 +162,7 @@
     0.557,
     0.753
    ],
-   "value_mwh": 0.564,
+   "value_mwh": 0.596,
    "gap_pct_of_mid": 0.0,
    "status": "pass"
   },
@@ -175,8 +175,8 @@
     1.742,
     2.357
    ],
-   "value_mwh": 2.743,
-   "gap_pct_of_mid": 18.83,
+   "value_mwh": 2.729,
+   "gap_pct_of_mid": 18.15,
    "status": "known_fail"
   },
   "case_960_cooling": {
@@ -188,8 +188,8 @@
     1.84,
     2.49
    ],
-   "value_mwh": 0.406,
-   "gap_pct_of_mid": 66.24,
+   "value_mwh": 0.444,
+   "gap_pct_of_mid": 64.48,
    "status": "known_fail"
   },
   "case_970_heating": {
@@ -201,8 +201,8 @@
     10.54,
     14.26
    ],
-   "value_mwh": 4.62,
-   "gap_pct_of_mid": 47.74,
+   "value_mwh": 4.616,
+   "gap_pct_of_mid": 47.77,
    "status": "known_fail"
   },
   "case_970_cooling": {
@@ -214,8 +214,8 @@
     7.391,
     9.999
    ],
-   "value_mwh": 2.277,
-   "gap_pct_of_mid": 58.82,
+   "value_mwh": 2.341,
+   "gap_pct_of_mid": 58.08,
    "status": "known_fail"
   },
   "case_610_heating": {
@@ -227,8 +227,8 @@
     4.314,
     5.836
    ],
-   "value_mwh": 6.018,
-   "gap_pct_of_mid": 3.59,
+   "value_mwh": 5.969,
+   "gap_pct_of_mid": 2.62,
    "status": "known_fail"
   },
   "case_610_cooling": {
@@ -240,8 +240,8 @@
     4.275,
     5.784
    ],
-   "value_mwh": 3.984,
-   "gap_pct_of_mid": 5.79,
+   "value_mwh": 4.044,
+   "gap_pct_of_mid": 4.59,
    "status": "known_fail"
   },
   "case_620_heating": {
@@ -253,8 +253,8 @@
     3.746,
     5.067
    ],
-   "value_mwh": 6.824,
-   "gap_pct_of_mid": 39.87,
+   "value_mwh": 6.794,
+   "gap_pct_of_mid": 39.19,
    "status": "known_fail"
   },
   "case_620_cooling": {
@@ -266,7 +266,7 @@
     3.504,
     4.741
    ],
-   "value_mwh": 3.686,
+   "value_mwh": 3.705,
    "gap_pct_of_mid": 0.0,
    "status": "pass"
   },
@@ -279,8 +279,8 @@
     4.896,
     6.624
    ],
-   "value_mwh": 6.914,
-   "gap_pct_of_mid": 5.03,
+   "value_mwh": 6.884,
+   "gap_pct_of_mid": 4.51,
    "status": "known_fail"
   },
   "case_630_cooling": {
@@ -292,9 +292,9 @@
     2.478,
     3.352
    ],
-   "value_mwh": 3.334,
-   "gap_pct_of_mid": 0.0,
-   "status": "pass"
+   "value_mwh": 3.353,
+   "gap_pct_of_mid": 0.03,
+   "status": "known_fail"
   },
   "case_640_heating": {
    "published_range_mwh": [
@@ -305,8 +305,8 @@
     2.784,
     3.766
    ],
-   "value_mwh": 5.932,
-   "gap_pct_of_mid": 66.14,
+   "value_mwh": 5.883,
+   "gap_pct_of_mid": 64.64,
    "status": "known_fail"
   },
   "case_640_cooling": {
@@ -318,8 +318,8 @@
     5.971,
     8.079
    ],
-   "value_mwh": 4.616,
-   "gap_pct_of_mid": 19.29,
+   "value_mwh": 4.7,
+   "gap_pct_of_mid": 18.09,
    "status": "known_fail"
   },
   "case_650_heating": {
@@ -344,8 +344,8 @@
     5.049,
     6.831
    ],
-   "value_mwh": 3.644,
-   "gap_pct_of_mid": 23.59,
+   "value_mwh": 3.713,
+   "gap_pct_of_mid": 22.49,
    "status": "known_fail"
   },
   "case_910_heating": {
@@ -357,7 +357,7 @@
     1.611,
     2.179
    ],
-   "value_mwh": 1.623,
+   "value_mwh": 1.614,
    "gap_pct_of_mid": 0.0,
    "status": "pass"
   },
@@ -370,7 +370,7 @@
     1.147,
     1.552
    ],
-   "value_mwh": 1.277,
+   "value_mwh": 1.325,
    "gap_pct_of_mid": 0.0,
    "status": "pass"
   },
@@ -383,8 +383,8 @@
     4.029,
     5.451
    ],
-   "value_mwh": 2.541,
-   "gap_pct_of_mid": 31.39,
+   "value_mwh": 2.523,
+   "gap_pct_of_mid": 31.77,
    "status": "known_fail"
   },
   "case_930_cooling": {
@@ -396,7 +396,7 @@
     1.394,
     1.886
    ],
-   "value_mwh": 1.542,
+   "value_mwh": 1.547,
    "gap_pct_of_mid": 0.0,
    "status": "pass"
   },
@@ -409,8 +409,8 @@
     0.935,
     1.265
    ],
-   "value_mwh": 1.575,
-   "gap_pct_of_mid": 28.18,
+   "value_mwh": 1.566,
+   "gap_pct_of_mid": 27.36,
    "status": "known_fail"
   },
   "case_940_cooling": {
@@ -422,8 +422,8 @@
     2.393,
     3.237
    ],
-   "value_mwh": 1.514,
-   "gap_pct_of_mid": 31.23,
+   "value_mwh": 1.57,
+   "gap_pct_of_mid": 29.24,
    "status": "known_fail"
   },
   "case_195_heating": {
@@ -435,8 +435,8 @@
     3.471,
     4.697
    ],
-   "value_mwh": 1.951,
-   "gap_pct_of_mid": 37.22,
+   "value_mwh": 1.942,
+   "gap_pct_of_mid": 37.44,
    "status": "known_fail"
   },
   "case_195_cooling": {
@@ -448,7 +448,7 @@
     0.554,
     0.75
    ],
-   "value_mwh": 0.669,
+   "value_mwh": 0.683,
    "gap_pct_of_mid": 0.0,
    "status": "pass"
   },
@@ -461,7 +461,7 @@
     -18.8,
     -15.6
    ],
-   "value_c": -18.48,
+   "value_c": -18.45,
    "gap_pct_of_mid": 0.0,
    "status": "pass"
   },
@@ -474,8 +474,8 @@
     64.9,
     75.1
    ],
-   "value_c": 57.45,
-   "gap_pct_of_mid": 17.93,
+   "value_c": 57.25,
+   "gap_pct_of_mid": 18.21,
    "status": "known_fail"
   },
   "ff_650ff_min": {
@@ -500,8 +500,8 @@
     63.2,
     73.5
    ],
-   "value_c": 57.09,
-   "gap_pct_of_mid": 16.47,
+   "value_c": 56.53,
+   "gap_pct_of_mid": 17.29,
    "status": "known_fail"
   },
   "ff_900ff_min": {
@@ -513,8 +513,8 @@
     -6.4,
     -1.6
    ],
-   "value_c": -6.95,
-   "gap_pct_of_mid": 73.75,
+   "value_c": -6.71,
+   "gap_pct_of_mid": 67.75,
    "status": "known_fail"
   },
   "ff_900ff_max": {
@@ -526,9 +526,9 @@
     41.8,
     46.4
    ],
-   "value_c": 41.32,
-   "gap_pct_of_mid": 6.3,
-   "status": "known_fail"
+   "value_c": 41.96,
+   "gap_pct_of_mid": 0.0,
+   "status": "pass"
   },
   "ff_950ff_min": {
    "published_range_c": [
@@ -539,8 +539,8 @@
     -20.2,
     -17.8
    ],
-   "value_c": -22.45,
-   "gap_pct_of_mid": 18.16,
+   "value_c": -22.44,
+   "gap_pct_of_mid": 18.11,
    "status": "known_fail"
   },
   "ff_950ff_max": {
@@ -552,7 +552,7 @@
     35.5,
     38.5
    ],
-   "value_c": 37.61,
+   "value_c": 37.98,
    "gap_pct_of_mid": 0.0,
    "status": "pass"
   }

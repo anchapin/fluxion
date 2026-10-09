@@ -1024,3 +1024,105 @@ morning-weighted EPW beam delivery, not the integration convention.
 whether the mid-hour convention's fidelity gain is worth the two validator
 regressions and the full re-record cascade — an Alex-level tradeoff call,
 not a loop-level one.
+
+## §15 — The mid-hour sun-position convention ADOPTED (2026-10-09, physics loop round 4)
+
+Alex's decision (2026-10-09 10:26 ET): "adopt the mid-hour sun-convention. Then start another loop
+round on the shading-path thread." Standing direction: prioritize increasing fidelity and
+physics-based accuracy over time and more work — fidelity wins even when it costs validator
+regressions and re-record cascades, provided the physics is right and everything is re-recorded
+honestly. This section records the LANDED implementation and its measurements, which supersede the
+§14 "patched" column where they differ.
+
+### Implementation note: §14's probe patch double-shifted the 9R4C path
+
+The §14 probe patched *inside* `cached_solar_position` (`hour → hour + 0.5`). But the 9R4C
+per-surface path already passed `hour + 0.5` at its call sites (issues #1212/#1391), so the probe
+pushed that path to hour + 1.0 — and tripped the Case 920/960 energy-balance conservation premise
+tests (`cross_platform_fp_regression`), whose `InvariantChecker` mirrors the integrator's sun
+position. The landed convention instead patches the **5R1C call site**
+(`thermal_model_iterative::calculate_zone_solar_gain`: `hour → hour + 0.5`), which is the only
+path that still sampled at the hour start; the 9R4C sol-air BC stays at the true midpoint. The
+5R1C per-orientation stash also feeds the 9R4C window-solar gains, so high-mass cases still move.
+Conservation tests on the landed engine are unchanged vs develop (only the known pre-existing
+Case 600 conservation red). §14's probe column for 9R4C-path strict metrics (900 H 1.578, 920 H
+2.491, 970 H 4.623, …) is therefore an hour+1.0 measurement; the landed values below are the
+convention's actual effect.
+
+### Strict ±15% gate — landed values (MWh, all 17 annual + 4 free-float cases re-measured)
+
+Old values are the post-#4349 recorded baseline. Status flips are honest: Case 630 cooling leaves
+its ±15% band by 0.03% (3.353 vs [2.478, 3.352], tracked known_fail); ff_900ff_max RE-ENTERS its
+band (41.96 vs [41.8, 46.4]).
+
+| metric | old | new | status | metric | old | new | status |
+|---|---|---|---|---|---|---|---|
+| 600 H | 5.932 | 5.883 | known_fail | 930 H | 2.541 | 2.523 | known_fail |
+| 600 C | 4.616 | 4.700 | pass | 930 C | 1.542 | 1.547 | pass |
+| 610 H | 6.018 | 5.969 | known_fail | 940 H | 1.575 | 1.566 | known_fail |
+| 610 C | 3.984 | 4.044 | known_fail | 940 C | 1.514 | 1.570 | known_fail |
+| 620 H | 6.824 | 6.794 | known_fail | 950 H | 0.000 | 0.000 | pass |
+| 620 C | 3.686 | 3.705 | pass | 950 C | 0.564 | 0.596 | pass |
+| 630 H | 6.914 | 6.884 | known_fail | 960 H | 2.743 | 2.729 | known_fail |
+| 630 C | 3.334 | 3.353 | known_fail (0.03%) | 960 C | 0.406 | 0.444 | known_fail |
+| 640 H | 5.932 | 5.883 | known_fail | 970 H | 4.620 | 4.616 | known_fail |
+| 640 C | 4.616 | 4.700 | known_fail | 970 C | 2.277 | 2.341 | known_fail |
+| 650 H | 0.000 | 0.000 | pass | 195 H | 1.951 | 1.942 | known_fail |
+| 650 C | 3.644 | 3.713 | known_fail | 195 C | 0.669 | 0.683 | pass |
+| 800 H | 6.226 | 6.175 | known_fail | 600FF min/max | −18.48/57.45 | −18.45/57.25 | pass/known_fail |
+| 800 C | 3.824 | 3.888 | known_fail | 650FF min/max | −24.45/57.09 | −24.45/56.53 | known_fail/known_fail |
+| 810 H | 1.575 | 1.566 | known_fail | 900FF min/max | −6.95/41.32 | −6.71/41.96 | known_fail/**pass** |
+| 810 C | 1.514 | 1.570 | known_fail | 950FF min/max | −22.45/37.61 | −22.44/37.98 | known_fail/pass |
+| 900 H | 1.575 | 1.566 | pass | | | | |
+| 900 C | 1.514 | 1.570 | known_fail | | | | |
+| 920 H | 2.488 | 2.470 | known_fail | | | | |
+| 920 C | 1.683 | 1.688 | known_fail | | | | |
+
+Checker: `scripts/check_strict_energy_gate_regression.py` → 13 PASS / 29 KNOWN-FAIL / 0 REGRESSION
+(the checker's ff gap convention is |value − mid| / |mid|, hence e.g. 600ff max 18.21%).
+
+### Fabric harness (all six case × selector rows re-measured, fresh run)
+
+case_600 5r1c H/C 5.932/4.616 → 5.883/4.700; case_600 9r4c 5.329/6.369 → 5.321/6.464 (parity
+ratios 1.1131/0.7249 → 1.1057/0.7271); case_900 both selectors 1.575/1.514 → 1.566/1.570; case_950
+both selectors C 0.564 → 0.596 (ratios stay 1.0, auto-promotion). Checker → PASS.
+
+### Reproduced UNCHANGED on the landed engine (dated provenance in the baselines or this section)
+
+- Hotloop golden EUIs (`batch_oracle_hotloop_equivalence`): 3/3 pass, bit-identical.
+- Surrogate fallback (`fallback_annual_hvac_diagnostic`): 3,160.02/95.02/3,255.04 kWh — the
+  analytical fallback path does not read the cached solar position.
+- Grid thermal (`grid_adapter_integration`): 3/3 pass.
+- delta_config.yaml: generator reproduces the committed file bit-for-bit.
+- Solar-SIMD evolution seeds (`solar_simd_evolution`): 9/9 pass (single-moment irradiance probes
+  call `calculate_solar_position` directly; the convention change does not touch them).
+- npm suite (fresh napi build): 54/54 pass.
+- Reference CSVs (tests/reference_data/ashrae140/, zone_balance/): published NREL BESTEST
+  literature values — never move with engine fixes.
+- Premise outcome sets, develop vs branch (sorted pass/fail lists identical): `ashrae_140_case_600_series`
+  (9 pass / 18 fail both), `ashrae_140_case_900` (identical), `cross_platform_fp_regression`
+  (17 pass / 1 known conservation red both), `cross_language_contract` (the known
+  `test_float_fields_within_tolerance_across_surfaces` red reproduces on develop too).
+- The only premise text updated: `case_630::test_annual_cooling` `#[ignore]` reason and comment
+  (4.03 → 4.07 MWh, +9% → +10%), and the `cached_solar_position` hour-slot docstring.
+
+### Production validator (Stapleton EPW, kWh, develop → landed) — the accepted tradeoffs
+
+| metric | develop | landed | effect |
+|---|---|---|---|
+| 600 annual H | 5,533.13 (pass) | 5,466.31 | stays in band |
+| 600 annual C | 5,242.01 (pass) | 5,334.79 | stays in band |
+| 600 peak C | 4,583.79 (Warning) | 4,518.42 | **REGRESSES Warning→Fail** (band 4,800–6,200) |
+| 630 annual C | 3,486.91 (Warning) | 3,527.03 | Warning both |
+| 900 annual H | 1,124.09 (below band) | 1,104.94 | **worse** — further below [1,170, 2,040] |
+| 900 annual C | 1,791.96 | 1,860.88 | improves, still under [2,130, 3,670] |
+| 900 peak C | 1,456.63 (Fail) | 1,524.75 | improves to Warning |
+
+Both named regressions (validator 600 peak cooling, validator 900 H) were accepted explicitly by
+Alex with the adoption decision; they are recorded here and in the baselines, not tuned.
+
+### Consequence for §LIMIT-39
+
+630 cooling is 4.07 MWh on the landed engine (matches §14's probe): further over its published
+band [2.13, 3.70]. The integration-convention hypothesis stays falsified as 630's cause; the
+shading-path investigation is the next loop round (§16).

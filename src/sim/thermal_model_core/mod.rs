@@ -398,7 +398,9 @@ where
     /// * `month` - Month (1-12)
     /// * `day` - Day of month
     /// * `hour` - Hour of day. The cache is keyed by `hour * 2` rounded, so the
-    ///   5R1C path (which passes integer hours) and the 9R4C path (which passes
+    ///   5R1C path (which passes `hour + 0.5` for the timestep midpoint since
+    ///   the mid-hour sun-position convention was adopted, see
+    ///   `calculate_zone_solar_gain`) and the 9R4C path (which passes
     ///   `hour + 0.5` for the timestep center) each get their own slot.
     ///   Previously the cache was keyed only by `timestep`, which caused the
     ///   second caller to silently read the first caller's value — a 0.5-hour

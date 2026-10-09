@@ -267,7 +267,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // hoisting in the 9R4C path (Issue #1212). This is computed *before* the
         // `if let Some(zone_surfaces)` block so the mutable borrow for the cache
         // doesn't conflict with the immutable borrow of `self.0.solar.surfaces` (E0502).
-        let sun_pos = self.cached_solar_position(timestep, year, month, day, hour);
+        // Mid-hour sun-position convention (E+ Timestep=1 convention): the 5R1C
+        // per-orientation path evaluates the sun at the timestep midpoint, not
+        // the hour start. The 9R4C path already passes `hour + 0.5` (see
+        // step_9r4c.rs); this completes the convention on the 5R1C path.
+        // Adopted per Alex's 2026-10-09 fidelity decision (irradiance fidelity
+        // over validator regressions); measured in limit-35 doc §14/§15.
+        let sun_pos = self.cached_solar_position(timestep, year, month, day, hour + 0.5);
 
         // Issue #4166: zero the per-orientation irradiance stash for this zone
         // so orientations absent this timestep don't carry stale values.
