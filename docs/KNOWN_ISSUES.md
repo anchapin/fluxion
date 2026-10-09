@@ -5,7 +5,7 @@
 | Category | Total Issues | Fixed | Open | Partial | Won't Fix |
 |----------|-------------:|------:|-----:|--------:|----------:|
 | Foundation (BASE) | 5 | 0 | 5 | 0 | 0 |
-| Solar (SOLAR) | 4 | 0 | 4 | 0 | 0 |
+| Solar (SOLAR) | 5 | 0 | 5 | 0 | 0 |
 | Free-Float (FREE) | 3 | 0 | 3 | 0 | 0 |
 | Temperature (TEMP) | 1 | 0 | 1 | 0 | 0 |
 | Multi-Zone (MULTI) | 4 | 0 | 4 | 0 | 0 |
@@ -15,7 +15,7 @@
 | fluxion-fluid (FLUID) | 2 | 0 | 2 | 0 | 0 |
 | FFD/CFD (FFD) | 2 | 1 | 1 | 0 | 0 |
 | Reference data (REF) | 1 | 0 | 1 | 0 | 0 |
-| **Total** | **66** | **9** | **55** | **2** | **0** |
+| **Total** | **67** | **9** | **56** | **2** | **0** |
 
 *Counts derived from the per-row catalog tables under each category section (`| **CATEGORY-NN** | ... |`) via `scripts/check_known_issues_summary.py`. Edit a row in place (or add a new row) and the table updates on the next regen. Status columns (`Fixed` / `Open` / `Partial` / `Won't Fix`) derive from each row's Status cell: `resolved` -> Fixed, `open` -> Open, `tracking only` -> Partial, `Won't Fix` -> Won't Fix. Rows without a recognized status are counted in the Total column but contribute 0 to the status columns. To regenerate: `python3 scripts/check_known_issues_summary.py --regen --in-place`.*
 
