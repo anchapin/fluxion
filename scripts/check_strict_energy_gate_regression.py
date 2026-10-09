@@ -428,7 +428,7 @@ def self_test() -> int:
     # Completeness assertion smoke: VALIDATOR_ANNUAL_CASES × 2 keys must all
     # be constructible.
     if len(VALIDATOR_ANNUAL_CASES) * 2 != len({
-        f"case_{c}_{l}" for c in VALIDATOR_ANNUAL_CASES for l in ("heating", "cooling")
+        f"case_{c}_{label}" for c in VALIDATOR_ANNUAL_CASES for label in ("heating", "cooling")
     }):
         print("FAIL: VALIDATOR_ANNUAL_CASES contains duplicates", file=sys.stderr)
         return 1

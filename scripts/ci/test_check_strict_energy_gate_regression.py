@@ -595,7 +595,6 @@ def test_full_production_scope_real_baseline_matches(checker, tmp_path):
     completeness assertion requires to be complete) and drives it with
     the measured values recorded in the baseline itself.
     """
-    import copy
     import json as _json
 
     real = _json.loads(
