@@ -1273,3 +1273,98 @@ Sorted develop-vs-branch outcome diff: exactly two changes — `case_610::test_a
 `case_610::test_annual_cooling` newly fail the published Annex B ranges (H 6.412 > 5.79;
 C 2.724 < 3.92). Both premise tests are quarantined with dated reasons (this section); no other
 premise outcome moves (case_900 module diff is empty; conservation premises unchanged).
+
+## §19 — The unshaded 600/900 cooling-base decomposition: the carrier is the metering-pair mismatch on 900, and free-float under-exceedance on 600 (2026-10-09, physics loop round 6)
+
+Round-6 priority 1: decompose the unshaded 600/900 cooling base deficit (Case 600 C 4.704 vs
+E+ mean 5.856, −20 %; Case 900 C 1.574 vs 2.467, −36 %) and isolate the carrying term.
+Worktree loop/p6-cooling-base off origin/develop a521c6c3; strict-gate-pattern scratch harness
+(`from_spec_with_selector` + `step_physics`, Golden-NREL EPW) reproduces §17's numbers exactly
+(600 H 5.890 / C 4.704; 900 H 1.569 / C 1.574), so the measurements below are on the strict
+engine path.
+
+### Method
+
+Env-gated, never-committed per-step trace hooks at both metering points (`step_physics_5r1c`
+and `step_physics_9r4c`) dumping per step: outdoor temp, `t_i_free` (both networks on 9R4C),
+`h_coeff`, window solar, heating/cooling sums and running annuals; plus env-gated gain-zeroing
+(FLX_ZERO_SOLAR / FLX_ZERO_INTERNAL) and an env-gated metering-driver flip (FLX_METER_5R1C).
+All hooks reverted before this section was written; the tree is clean.
+
+### Fact 1 — the metering residual is 100 % steady-state; no clamp, overshoot or latent loss
+
+Case 600: Σ h_coeff·(T_free−27) over cooling hours reproduces the metered 4.704 MWh to 0.5 %
+(the C_air transient term and latent are negligible). Identical on 900 (1.570e6 vs 1.570e6 W·h).
+66 hours show t_act > 27.05, all with sub-0.5 K overshoot (well under 0.1 MWh annual scale). The demand clamp (±100 kW) never binds. The
+deficit is therefore NOT in the metering arithmetic or capacity semantics — it is fully inside
+`T_free` exceedance.
+
+### Fact 2 — Case 900 (−36 %): the carrier is the 5R1C-h_coeff × multi-node-T_free mixed pair
+
+On one identical 900 run (Golden EPW):
+
+| quantity | value |
+|---|---|
+| metered cooling | 1.574 MWh |
+| cooling exceedance of the multi-node air node (t_air_mn > 27) | 12,992 K·h (3,295 h) |
+| cooling exceedance of the 5R1C free temperature (t_i_free_5r1c > 27) | 19,701 K·h (3,567 h) |
+| h_coeff applied by the demand formula | 120.9 W/K |
+| implied E+ reference exceedance at that h_coeff (2.467 MWh / 120.9) | 20,405 K·h |
+
+The demand formula multiplies the multi-node air-node under-exceedance by the 5R1C conductance
+stack. Flipping only the metering driver to the 5R1C free temperature (env-gated, otherwise
+bit-identical run) gives **900 H 2.082 / C 2.389**: C lands −3 % from the E+ reference mean and
+inside the strict band [2.267, 2.714], while H rises above its band [1.364, 1.846] — the two
+networks bracket the reference on opposite metrics. This is the direct, per-term confirmation
+of the SOLAR-02 / LIMIT-30 routing: the residual 900 cooling deficit is the air–mass
+distribution mismatch between the network that produces the free temperature and the
+conductance stack that meters demand, and the fix is the GaugeSolver air–mass unification
+(#1465/#1462), not a cooling-chain knob.
+
+### Fact 3 — Case 600 (−20 %): conductance audit and the solar term exclude every quick suspect
+
+Spec hand-calc vs traced conductances (Case 600, 5R1C path): h_ve 21.7 W/K vs 140 spec
+0.5 ACH = 21.7 (exact); h_tr_w 27.2 W/K vs 140 spec 3.0 W/m²K × 12 m² = 36.0 (−24 %, see fact 5);
+opaque h_tr_em 59.3 W/K vs ~63–65 hand-calc; total h_coeff 146.9 W/K vs ~123–135 hand-calc
+(+10–20 %). A conductance excess of this sign would RAISE cooling, so the envelope stack cannot
+carry the deficit.
+
+Gain attribution (env-gated zeroing): window solar contributes 4.27 of the 4.704 MWh (91 %);
+internal gains 0.71 MWh; solar magnitudes are verified against the reference engine
+(transmission fraction 0.653 vs E+ 0.655, incident 0.925–1.0 across the mid-hour sweep, §15/§16),
+so the remaining −20 % is the under-exceedance of the free-float trajectory itself:
+
+- 600FF max 57.25 °C vs band [62.4, 68.4] (−5.2 K below the lower bound);
+- 600FF min −18.45 °C vs band [−13.8, −9.9] (−4.6 K below the lower bound);
+
+the zone under-swings at BOTH ends relative to reference — the FREE-01/02 family signature
+(gain capture and loss timing in the discretized low-mass 5R1C), not a cooling-metering defect.
+
+### Fact 4 — the in-repo E+ IDFs are not a decomposition reference
+
+The checked-in ashrae_140_case_600/900.idf files predate the 25.2 IDD (GLASS_DBL_CLEAR enum,
+FenestrationSurface field shift, missing Spectral Data Set Name) and, once patched to run, the
+Case 600 file carries a bare 100 mm slab-to-ground floor that dumps 3.8–6.8 kW continuously —
+not the 140 spec floor — giving 0.2 MWh cooling, physically implausible. Even the carefully
+built 920/950 models (validated against their tracked CSVs) sit below the published reference
+means (920 C 2.267 vs mean 2.786; 950 C 0.417 vs 0.634). No local E+ run is therefore
+apples-to-apples for a term decomposition; the published bands and the §13–§16 E+ surface
+references remain the only trusted engine side.
+
+### Fact 5 — window U-value path divergence (new defect candidate)
+
+The strict path (`CaseSpec` → `window_properties.u_value`) conducts windows at ~2.27 W/m²K
+effective (27.2 W/K over 12 m²), while the ASHRAE 140 Case 600 value is 3.0 W/m²K → 36 W/K, the
+value the validator setup path (series_600.rs line 106) explicitly overrides to. The two engine
+entry points disagree on a spec constant; magnitude ~+3–9 W/K; back-of-envelope correction effect ≈ +2–3 % cooling, −2–3 % heating (estimate, not measured). Small and the wrong sign to explain the deficit, but a genuine spec-fidelity defect; row WINDOW-01 filed.
+
+### Verdict
+
+- Case 900 −36 %: genuine defect, root-caused to the mixed metering pair (fact 2); fix routed to
+  the GaugeSolver air–mass distribution rework (#1465/#1462) where a physics-correct variant
+  already meters 900 C at 2.340 MWh (−5 %). No cooling-chain code change this round.
+- Case 600 −20 %: not a metering or solar defect (facts 1, 3); carrier is free-float trajectory
+  under-exceedance (FREE-01/02), same routed rework; conductance audit recorded (fact 3), window
+  U divergence filed (fact 5, WINDOW-01).
+- No engine numbers changed this round; all diagnostic hooks reverted (worktree clean, harness
+  removed).
