@@ -1173,7 +1173,11 @@ fn test_case_900_hvac_demand_calculation_analysis() {
 /// zone heating in Case 900FF.
 ///
 /// This test sweeps solar_beam_to_mass_fraction values to verify:
-/// - Higher values produce LOWER max temp (more solar to mass = stored = lower peak)
+/// - Post-#4347 (LIMIT-35 §12) the parameter is INERT on the 9R4C per-surface
+///   path: phi_st and phi_m are delivered through the same envelope mass nodes
+///   with identical orientation weights, and phi_st + phi_m is independent of
+///   the split, so every fraction must produce an IDENTICAL free-float peak
+///   (issue #4339).
 /// - The current calibration (0.6) should produce max temp within reference range
 #[test]
 fn test_case_900ff_solar_beam_to_mass_fraction_sweep() {
@@ -1240,17 +1244,25 @@ fn test_case_900ff_solar_beam_to_mass_fraction_sweep() {
 
     println!("\n=== Analysis ===");
 
-    // Verify monotonic relationship: higher frac -> lower max temp
-    let is_monotonic = results.windows(2).all(|window| {
-        let (f1, _, max1, _, _) = window[0];
-        let (f2, _, max2, _, _) = window[1];
-        f2 > f1 && max2 < max1
+    // Issue #4339: after #4347 (LIMIT-35 §12) the beam-to-mass split is
+    // structurally inert on the 9R4C per-surface path — step_9r4c delivers
+    // phi_st and phi_m through the same wall/roof/floor mass-node weights, and
+    // phi_st + phi_m = load_w*rad_frac + remaining_sol + opaque_sol_w is
+    // independent of solar_beam_to_mass_fraction (sol_to_air goes to phi_ia,. The old
+    // monotonic-decrease premise (verified live at c5b3231c, dead at
+    // 04a4e031) described a parameter that no longer feeds any output on this
+    // path. The stronger, mechanistic assertion is fraction-INVARIANCE:
+    let is_fraction_invariant = results.windows(2).all(|window| {
+        let (_, _, max1, _, _) = window[0];
+        let (_, _, max2, _, _) = window[1];
+        (max1 - max2).abs() < 1e-9
     });
     assert!(
-        is_monotonic,
-        "Temperature should decrease monotonically as fraction increases"
+        is_fraction_invariant,
+        "solar_beam_to_mass_fraction must be inert on the 9R4C per-surface path post-#4347 (issue #4339): all fractions should produce identical peak temps, got {:?}",
+        results.iter().map(|(f, _, m, _, _)| (*f, *m)).collect::<Vec<_>>()
     );
-    println!("✓ Temperature decreases monotonically as fraction increases");
+    println!("✓ Peak temperature is fraction-invariant on the 9R4C per-surface path (parameter inert post-#4347, issue #4339)");
 
     // Current calibration (0.6) should be in range
     let &(_, _, max_temp, _, in_range) = results.iter().find(|(f, _, _, _, _)| *f == 0.6).unwrap();
@@ -1261,20 +1273,11 @@ fn test_case_900ff_solar_beam_to_mass_fraction_sweep() {
     );
     println!("✓ Current calibration (0.6) is within reference range");
 
-    // Find best fraction for reference center
-    let ref_center = (ref_max_min + ref_max_max) / 2.0;
-    let &(best_frac, _, best_max, _, _) = results
-        .iter()
-        .min_by(|(_, _, a, _, _), (_, _, b, _, _)| {
-            (a - ref_center)
-                .abs()
-                .partial_cmp(&(b - ref_center).abs())
-                .unwrap()
-        })
-        .unwrap();
+    // Issue #4339: post-#4347 all fractions tie (the parameter is inert on
+    // this path), so no fraction is "closer to center" than another.
     println!(
-        "\nBest fraction for reference center: {:.1} (Max={:.2}°C)",
-        best_frac, best_max
+        "\nAll fractions produce Max={:.2}°C (fraction-invariant; no best fraction exists post-#4347)",
+        results[0].2
     );
 
     println!("\n✅ Issue #700 hypothesis verified");
