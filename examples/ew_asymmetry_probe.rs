@@ -29,7 +29,9 @@ const ORIENTATIONS: [(usize, &str); 5] = [
 const REF: [f64; 5] = [278_100.0, 902_100.0, 1_150_700.0, 780_100.0, 1_621_300.0];
 
 fn month_day(doy0: usize) -> (u32, u32) {
-    let cum = [0usize, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365];
+    let cum = [
+        0usize, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365,
+    ];
     let doy = doy0 + 1; // 1-based
     for m in 0..12 {
         if doy <= cum[m + 1] {
@@ -63,7 +65,13 @@ fn annual_sums(mode: Mode, weather: &EpwWeatherSource) -> [f64; 5] {
         match mode {
             Mode::Offset(off) => {
                 positions.push(calculate_solar_position(
-                    LAT, LON, 2024, month, day, h0 + off, UTC_OFFSET,
+                    LAT,
+                    LON,
+                    2024,
+                    month,
+                    day,
+                    h0 + off,
+                    UTC_OFFSET,
                 ));
             }
             Mode::SubAvg(n) | Mode::SubBeamAvg(n) => {
@@ -107,10 +115,18 @@ fn annual_sums(mode: Mode, weather: &EpwWeatherSource) -> [f64; 5] {
                     // Reuse calculate_surface_irradiance for diffuse/ground at
                     // the center position, then swap in the integrated beam.
                     let base = calculate_surface_irradiance(
-                        &center, wd.dni, wd.dhi, None, orientation, 0.2, doy,
+                        &center,
+                        wd.dni,
+                        wd.dhi,
+                        None,
+                        orientation,
+                        0.2,
+                        doy,
                     );
                     fluxion::solar::surface_irradiance::SurfaceIrradiance::new(
-                        beam, base.diffuse_wm2, base.ground_reflected_wm2,
+                        beam,
+                        base.diffuse_wm2,
+                        base.ground_reflected_wm2,
                     )
                 }
                 _ => {
