@@ -1,9 +1,9 @@
 {
   "_doc": "Known structural-failure baseline for the ASHRAE 140 strict +/-15% annual-energy gate (issue #2506, extended in issue #3572 to cover the eight cases 600/800/810/900/920/950/960/970). The Case 600/900 annual COOLING physics gap is NOT yet fixed (tracked by the post-#1323 / #1213 / #1328 cooling-load chain); these two metrics are expected to FAIL the +/-15% band today. The strict-energy-gate workflow runs the eight `#[ignore]`'d strict tests with `--include-ignored`, parses the printed H/C values, computes each metric's gap as a percentage of the band midpoint, and compares against this baseline. The gate FAILS only when a metric REGRESSES beyond `regression_tolerance_pp` percentage points worse than its recorded `gap_pct_of_mid` (or when a previously-`pass` metric starts failing beyond the tolerance). When the physics is fixed and a cooling metric re-enters its band (gap == 0), lower its value here and eventually un-ignore the tests (issues #1333 / #2506 / #3572 acceptance). Do NOT raise a baseline gap to make a regression disappear (RULES.md: no parameter tuning). Updated 2026-09-29 by PR #4265 (Issue #4156): unified HVAC coefficient. Refreshed 2026-09-30 by the PR #4265 follow-up to also reflect the Case 900 H, Case 960 H, and the 13 other per-case measurements not covered by the original PR. The original PR's `value_mwh=3.144, gap_pct_of_mid=65.36` for Case 900 H was internally inconsistent (the gap did not correspond to the value under the standard band_pct_of_mid formula) and has been corrected to the measured 3.723/116.95 pair.",
-  "_doc_issue3572": "Cases 800 / / 810 are tracked as `known_fail` here even though they lack a formal structural LIMIT entry in docs/KNOWN_ISSUES.md (they appear under §Systematic Issues -> HVAC Load Calculation, not as §LIMIT-NN). Per RULES.md (\"never raise baselines to hide regressions\") we mark the current measured gap as `known_fail` rather than claiming pass; a follow-up PR should add §LIMIT-25 / §LIMIT-26 entries to docs/KNOWN_ISSUES.md so the structural rationale is co-located with the failure record. Cases 920 / 950 / 960 / 970 each have a documented LIMIT entry (920 -> §LIMIT-05 UPDATE #2453 cohort, 950 -> -> §LIMIT-17 / §LIMIT-24, 960 -> §LIMIT-14, 970 -> §LIMIT-23).",
+  "_doc_issue3572": "Cases 800 / / 810 are tracked as `known_fail` here even though they lack a formal structural LIMIT entry in docs/KNOWN_ISSUES.md (they appear under \u00a7Systematic Issues -> HVAC Load Calculation, not as \u00a7LIMIT-NN). Per RULES.md (\"never raise baselines to hide regressions\") we mark the current measured gap as `known_fail` rather than claiming pass; a follow-up PR should add \u00a7LIMIT-25 / \u00a7LIMIT-26 entries to docs/KNOWN_ISSUES.md so the structural rationale is co-located with the failure record. Cases 920 / 950 / 960 / 970 each have a documented LIMIT entry (920 -> \u00a7LIMIT-05 UPDATE #2453 cohort, 950 -> -> \u00a7LIMIT-17 / \u00a7LIMIT-24, 960 -> \u00a7LIMIT-14, 970 -> \u00a7LIMIT-23).",
   "_rule": "Per AGENTS.md / RULES.md: this file records the KNOWN gap; it must never be loosened to hide a regression. Only lower a gap when the engine genuinely improved, and commit the improving change together with the baseline update.",
-  "captured_commit": "9R4C mass/HVAC coupling fix (issue #4332, §LIMIT-35 §9, PR #4336 branch investigation/9r4c-mass-hvac-coupling rebased onto develop 968e629d, 2026-10-08): the multi-node mass network now steps against the conditioned zone air (previous-step committed t_act per zone) instead of the free-float air, so HVAC extraction charges the mass. Re-recorded from the corrected engine per the #4314 precedent after Alex approved the physics (2026-10-08). Case 920 heating re-enters its band (5.252->3.302 MWh, status pass); Case 810 heating falls below its band (3.823->2.455 MWh) and Case 970 heating drops further below (8.822->6.081 MWh) — recorded as KNOWN_ISSUES rows, not hidden. Case 600/800 (5R1C path) unchanged; Case 950 cooling 0.198->0.173 (below-band gap widens as a direct consequence of removing spurious over-cooling, physics approved).",
-  "source_command": "cargo test --release --features ort --test zone_balance_eplus_isolation _annual_energy_ashrae140_tolerance -- --include-ignored --nocapture",
+  "captured_commit": "Envelope-reroute phi_m delivery (issue #4332, LIMIT-35 12, PR #4347, branch fix/limit35-phi-m-envelope-reroute rebased onto develop 95f09286, 2026-10-08): phi_m gains are now delivered via the envelope mass nodes instead of being computed-but-dropped; re-recorded from the corrected engine per the #4314 precedent after Alex approved the merge (2026-10-08 20:50 ET verdict: go with merge option). Case 900 heating re-enters its band (2.455->1.649 MWh, status pass); Case 920 heating leaves its band (3.302->2.615 MWh); Case 810 heating falls further below (2.455->1.649 MWh) and Case 970 heating drops further below (6.081->4.807 MWh) - recorded as KNOWN_ISSUES rows, not hidden. Case 600/800 (5R1C path) unchanged. All cooling metrics rise (e.g. 900 C 0.478->1.207, 920 C 0.633->1.395, 950 C 0.173->0.436, 970 C 1.109->1.937) yet every one stays below its band; below-band gaps narrowed accordingly, recorded not hidden. source_command corrected from the stale --test zone_balance_eplus_isolation form to the actual --test all_tests invocation used to capture these values.",
+  "source_command": "cargo test --release --features ort --test all_tests _annual_energy_ashrae140_tolerance -- --include-ignored --nocapture",
   "source_path": "run_blind_annual_energy() in tests/zone_balance_eplus_isolation.rs (blind zone-balance path, NOT the Informed benchmark.rs path)",
   "tolerance_fraction": 0.15,
   "_tolerance_fraction_doc": "Band edges = midpoint(published_range) * (1 +/- tolerance_fraction). Matches ANNUAL_TOLERANCE_PCT in tests/zone_balance_eplus_isolation.rs.",
@@ -71,8 +71,8 @@
         3.357,
         4.543
       ],
-      "value_mwh": 2.455,
-      "gap_pct_of_mid": 22.84,
+      "value_mwh": 1.649,
+      "gap_pct_of_mid": 43.24,
       "status": "known_fail"
     },
     "case_810_cooling": {
@@ -84,8 +84,8 @@
         3.74,
         5.06
       ],
-      "value_mwh": 0.478,
-      "gap_pct_of_mid": 74.14,
+      "value_mwh": 1.207,
+      "gap_pct_of_mid": 57.57,
       "status": "known_fail"
     },
     "case_900_heating": {
@@ -97,9 +97,9 @@
         1.364,
         1.846
       ],
-      "value_mwh": 2.455,
-      "gap_pct_of_mid": 37.94,
-      "status": "known_fail"
+      "value_mwh": 1.649,
+      "gap_pct_of_mid": 0.0,
+      "status": "pass"
     },
     "case_900_cooling": {
       "published_range_mwh": [
@@ -110,8 +110,8 @@
         2.465,
         3.335
       ],
-      "value_mwh": 0.478,
-      "gap_pct_of_mid": 68.52,
+      "value_mwh": 1.207,
+      "gap_pct_of_mid": 43.38,
       "status": "known_fail"
     },
     "case_920_heating": {
@@ -123,9 +123,9 @@
         3.213,
         4.347
       ],
-      "value_mwh": 3.302,
-      "gap_pct_of_mid": 0.0,
-      "status": "pass"
+      "value_mwh": 2.615,
+      "gap_pct_of_mid": 15.82,
+      "status": "known_fail"
     },
     "case_920_cooling": {
       "published_range_mwh": [
@@ -136,8 +136,8 @@
         2.189,
         2.961
       ],
-      "value_mwh": 0.633,
-      "gap_pct_of_mid": 60.43,
+      "value_mwh": 1.395,
+      "gap_pct_of_mid": 30.83,
       "status": "known_fail"
     },
     "case_950_heating": {
@@ -162,8 +162,8 @@
         2.465,
         3.335
       ],
-      "value_mwh": 0.173,
-      "gap_pct_of_mid": 58.63,
+      "value_mwh": 0.436,
+      "gap_pct_of_mid": 18.47,
       "status": "known_fail"
     },
     "case_960_heating": {
@@ -175,8 +175,8 @@
         1.742,
         2.357
       ],
-      "value_mwh": 4.055,
-      "gap_pct_of_mid": 82.85,
+      "value_mwh": 2.877,
+      "gap_pct_of_mid": 25.37,
       "status": "known_fail"
     },
     "case_960_cooling": {
@@ -188,8 +188,8 @@
         1.84,
         2.49
       ],
-      "value_mwh": 0.038,
-      "gap_pct_of_mid": 83.23,
+      "value_mwh": 0.257,
+      "gap_pct_of_mid": 73.12,
       "status": "known_fail"
     },
     "case_970_heating": {
@@ -201,8 +201,8 @@
         10.54,
         14.26
       ],
-      "value_mwh": 6.081,
-      "gap_pct_of_mid": 35.96,
+      "value_mwh": 4.807,
+      "gap_pct_of_mid": 46.23,
       "status": "known_fail"
     },
     "case_970_cooling": {
@@ -214,8 +214,8 @@
         7.391,
         9.999
       ],
-      "value_mwh": 1.109,
-      "gap_pct_of_mid": 72.25,
+      "value_mwh": 1.937,
+      "gap_pct_of_mid": 62.73,
       "status": "known_fail"
     }
   }
