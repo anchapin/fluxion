@@ -898,3 +898,129 @@ rows; parity case_600 1.1131/0.7249). NAPI/npm Case 600 baseline test passes
 (57/57). Solar-SIMD evolution seed references re-generated from the corrected
 engine (85.234 → 119.842; 23.795 → 24.680 W/m²). Case 630 annual cooling moves
 over its published band — quarantined and recorded as §LIMIT-39.
+
+## §14 — Intra-hour solar integration: the asymmetry root cause CONFIRMED, the candidate integration measured and NOT landed (2026-10-09, physics loop round 3)
+
+Follow-up to §13's open thread. Branch `loop/ew-asymmetry` off develop
+`21c00103`; every number below measured on this branch, patch applied and
+reverted per loop discipline.
+
+### Correction to §13: the per-orientation table had East and South transposed
+
+The §13 harness read the `[f64; 7]` `orientation_irradiance_beam_diffuse`
+stash by `orientation as usize` and labeled indices 0..4 as
+N/E/S/W/Up — but the `solar::surface_irradiance::Orientation` enum order is
+`North, South, East, West, Up, …`, so index 1 is South and index 2 is East.
+The §13 tables' "East" row is South and vice versa; the orientation→azimuth
+mapping itself (`orientation_to_angles`) is correct. Corrected post-fix table
+(re-measured directly through `calculate_solar_position` +
+`calculate_surface_irradiance` over all 8,760 Golden-EPW hours; matches the
+§13 live-engine values exactly once the swap is undone — N 270,300, W
+665,992, Up 1,633,555 agree to ≤0.7%):
+
+| surface | engine (hour-start) | E+ 25.2 | ratio | E/W or S/W |
+|---|---|---|---|---|
+| North | 270,300 | 278,100 | 0.972 | |
+| South | 1,131,035 | 1,150,700 | 0.983 | S/W = 1.698 |
+| East | 941,820 | 902,100 | 1.044 | E/W = 1.414 |
+| West | 665,992 | 780,100 | 0.854 | |
+| Up | 1,633,555 | 1,621,300 | 1.008 | |
+
+Consequently §13's headline "engine E/W 1.69 vs E+ 1.16" was actually
+**S/W 1.698**; the true east/west comparison is **E/W 1.414 (engine) vs 1.156
+(E+)**. The physical finding stands unchanged — the engine amplifies the
+EPW's morning DNI weighting into a too-large morning/afternoon (E/W) and
+S/W asymmetry, and the dominant residual is the **west under-prediction
+(0.854)** — but the recorded ratio was mislabeled.
+
+### Root cause CONFIRMED: EnergyPlus samples the sun at the timestep midpoint
+
+Sweeping the sun-position offset across the hour against the E+ 25.2
+per-surface reference (all values Wh/m²·yr, beam+sky):
+
+| offset | N | E | S | W | Up | E/W | Σ\|dev\| |
+|---|---|---|---|---|---|---|---|
+| +0.00 h (engine) | 0.972 | 1.044 | 0.983 | 0.854 | 1.008 | 1.414 | 0.243 |
+| +0.25 h | 0.968 | 0.996 | 0.991 | 0.912 | 1.016 | 1.263 | 0.150 |
+| **+0.50 h (mid-hour)** | **0.964** | **0.956** | **0.997** | **0.969** | **1.021** | **1.141** | **0.136** |
+| +0.75 h | 0.955 | 0.901 | 0.994 | 1.009 | 1.023 | 1.032 | 0.181 |
+| +1.00 h (hour-end) | 0.942 | 0.843 | 0.988 | 1.041 | 1.021 | 0.937 | 0.288 |
+| intra-hour beam avg ×12 (E+ multi-timestep mean analogue) | 0.964 | 0.950 | 0.993 | 0.962 | 1.019 | 1.142 | 0.150 |
+
+Mid-hour — E+'s documented Timestep=1 sun position (hour midpoint) — brings
+ALL five surfaces to within 5% of the reference simultaneously and lands E/W
+at 1.141 vs E+ 1.156. No other single offset does this; the intra-hour
+beam-average is statistically indistinguishable from mid-hour. §13's
+contrary verdict ("hour-start matches better, 0.75 vs 1.02") was an artifact
+of the transposed table: its "south broke under mid-hour" row was actually
+east, and its mid-hour probe shifted the DNI↔position pairing differently.
+
+### Candidate engine change measured end-to-end (temporary patch, reverted)
+
+One-line patch in `thermal_model_core::cached_solar_position`:
+`hour → hour + 0.5` at the sun-position evaluation (covers both the 5R1C
+per-orientation path and the 9R4C path; nothing else reads the hour for
+solar).
+
+**Strict ±15% gate (MWh, develop → patched):**
+
+| metric | develop | patched | effect |
+|---|---|---|---|
+| 600 H | 5.932 (known_fail +1.9%) | 5.883 (+0.9% over) | improves |
+| 600 C | 4.616 (pass) | 4.700 | stays in band |
+| 800 H | 6.226 | 6.175 | improves |
+| 800 C | 3.824 | 3.888 | improves |
+| 810 H | 1.575 | 1.578 | ~unchanged |
+| 810 C | 1.514 | 1.555 | improves |
+| 900 H | 1.575 (pass) | 1.578 | stays in band |
+| 900 C | 1.514 (−32.8%) | 1.555 (−31.4%) | improves |
+| 920 H | 2.488 | 2.491 | ~unchanged |
+| 920 C | 1.683 | 1.684 | ~unchanged |
+| 950 C | 0.564 (pass) | 0.591 | stays in band |
+| 960 H | 2.743 | 2.740 | ~unchanged |
+| 960 C | 0.406 | 0.428 | improves |
+| 970 H | 4.620 | 4.623 | ~unchanged |
+| 970 C | 2.277 | 2.312 | improves |
+
+No metric regresses; all four passing metrics hold; cooling rows move 2–5%
+toward band. Modest.
+
+**Production validator (Stapleton EPW, kWh, develop → patched):**
+
+| metric | develop | patched | effect |
+|---|---|---|---|
+| 600 annual H | 5,533.13 (pass) | 5,466.31 | stays in band |
+| 600 annual C | 5,242.01 (pass) | 5,334.79 | stays in band |
+| 600 peak C | 4,583.79 (Warning) | 4,518.42 (band 4,800–6,200) | **REGRESSES Warning→Fail** |
+| 630 annual C | 3,486.91 | 3,527.03 | in band both |
+| 900 annual H | 1,124.09 (below band) | 1,112.14 | **worse** (further below [1,170, 2,040]) |
+| 900 annual C | 1,791.96 | 1,835.84 | improves, still under band |
+
+**Case 630 quarantined annual cooling (600-series 5R1C path, §LIMIT-39):**
+4.03 → **4.07 MWh** — moves FURTHER OVER its published band [2.13, 3.70].
+(630 annual heating 6.65 → 6.60, closer to the 6.47 top.)
+
+### Verdict: documented, not landed
+
+The integration-convention divergence is real, reference-supported, and
+correctly diagnosed — the engine samples the sun an hour-half earlier than
+its reference engine. But adopting the E+ midpoint convention does NOT close
+either open target: §LIMIT-39 (Case 630 cooling) moves the wrong way, the
+re-opened validator Case 900 heating row worsens slightly, and validator
+Case 600 peak cooling drops out of its Warning margin. The aggregate
+strict-gate improvement (+2–5% on under-band cooling rows) does not
+compensate. Per loop rules (no landing without the gaps closing, no
+regressions), the hour-start convention is kept and this section records the
+full measurement for a future decision.
+
+**Consequence for §LIMIT-39**: the intra-hour integration hypothesis is now
+FALSIFIED as 630's cause — 630's over-band cooling persists (and worsens)
+under the E+-convention sun position. The remaining suspect for 630 is the
+east/west shading path (overhang + fins on E/W glazing) interacting with the
+morning-weighted EPW beam delivery, not the integration convention.
+
+**Consequence for the §13 open thread**: RESOLVED at the irradiance level
+(root cause identified and quantified); the residual validation question is
+whether the mid-hour convention's fidelity gain is worth the two validator
+regressions and the full re-record cascade — an Alex-level tradeoff call,
+not a loop-level one.
