@@ -575,11 +575,16 @@ fn test_perez_diffuse_clear_sky() {
     );
 
     // Clear sky: significant circumsolar and horizon components
-    // Diffuse on vertical surface should be 30-60% of DHI
+    // With the E+ Perez-1999 coefficient table (F2 horizon row is
+    // negative-sloped; see src/solar/surface_irradiance.rs) the measured
+    // clear-sky ratio on a sun-facing vertical wall is ~0.85 — the old
+    // 0.2-0.8 envelope encoded the 1990-journal F2 row. The physical
+    // invariant is that the tilted diffuse stays below ~DHI on this
+    // geometry, so the upper bound tracks the corrected reference engine.
     let ratio = diffuse / dhi;
     assert!(
-        ratio > 0.2 && ratio < 0.8,
-        "Clear sky diffuse ratio {:.2} should be 0.2-0.8 for vertical surface",
+        ratio > 0.2 && ratio < 1.0,
+        "Clear sky diffuse ratio {:.2} should be 0.2-1.0 for vertical surface",
         ratio
     );
 }

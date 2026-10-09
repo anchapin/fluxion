@@ -211,9 +211,15 @@ fn issue_1163_annual_heating_nonzero_for_case_900() {
     let heating_mwh = model.hvac.annual_heating_energy / 1000.0;
     println!("Case 900 annual heating (post-#1163): {heating_mwh:.3} MWh");
 
-    // Heating must be positive and in a reasonable range (2-4 MWh for Case 900).
+    // Heating must be positive and in a reasonable range. Upper sanity
+    // bound unchanged (6 MWh); lower bound 1.0 -> 0.5 MWh (2026-10-09,
+    // E+ Perez coefficient-table fix): corrected larger window solar
+    // delivery lowers Case 900 heating to 0.907 MWh on this
+    // DenverTmyWeather default-selector path — positive and physically
+    // consistent with the strict-gate Case 900 value (1.575 MWh on the
+    // canonical EPW path).
     assert!(
-        (1.0..=6.0).contains(&heating_mwh),
+        (0.5..=6.0).contains(&heating_mwh),
         "Annual heating out of expected range: {heating_mwh:.3} MWh"
     );
 }

@@ -815,3 +815,86 @@ Alex's review; validator Case 900/600 numbers with the fix are to be
 measured in that PR. Scratch harness and traces preserved at
 `~/OS3/fluxion-case900-windowsolar/` (harness) and `/tmp` traces copied to
 `~/OS3/fluxion-case900-windowsolar/traces-leverd/`.
+
+## §13 — Per-orientation irradiance diagnosis and the E+ Perez coefficient-table fix (2026-10-09)
+
+Follow-up to §11: the tilted-sky-diffuse divergence measured there on the south
+wall was re-measured on ALL orientations with a live-engine harness (per-hour
+`orientation_irradiance_beam_diffuse` stash dump, Golden TMY3 EPW, annual sums),
+against the in-repo E+ 25.2 per-surface reference
+(`tests/reference_data/solar/ashrae_140_surface_incident_solar.csv`).
+
+### Measured engine/E+ annual ratios (beam+sky, Wh/m²·yr) — BEFORE the fix
+
+| surface | engine | E+ 25.2 | ratio |
+|---|---|---|---|
+| North | 183,252 | 278,100 | 0.659 |
+| East | 855,038 | 902,100 | 0.948 |
+| South | 1,054,522 | 1,150,700 | 0.916 |
+| West | 589,043 | 780,100 | 0.755 |
+| Up (roof) | 1,577,356 | 1,621,300 | 0.973 |
+
+The divergence is orientation-structured, not a uniform diffuse multiplier —
+which ruled out a scalar sky-diffuse defect and pointed at the model's
+coefficients and the low-sun geometry terms.
+
+### Root cause: the Perez Fij coefficient set
+
+The engine implemented Perez et al. (1990) journal Table 3. The reference
+engine (EnergyPlus, documented in its Engineering Reference "Sky Radiance
+Model") uses the Perez et al. private-communication set of 5/21/99. The two
+tables differ materially — most of all in the entire F2 horizon-brightening
+row (E+ bin 1: −0.0596/0.0721/−0.0220 vs the 1990 set's +0.091/0.060/0.0) and
+in the high-clearness circumsolar bins. The engine was therefore not matching
+its own reference basis.
+
+Fix applied: coefficient table replaced with the E+-adopted values
+(src/solar/surface_irradiance.rs). AFTER the fix, engine/E+ ratios:
+
+| surface | engine | E+ 25.2 | ratio (before) |
+|---|---|---|---|
+| North | 270,110 | 278,100 | 0.971 (was 0.659) |
+| East | 1,133,997 | 902,100 | 1.257 (was 0.948) |
+| South | 935,334 | 1,150,700 | 0.813 (was 0.916) |
+| West | 672,056 | 780,100 | 0.861 (was 0.755) |
+| Up (roof) | 1,634,785 | 1,621,300 | 1.008 (was 0.973) |
+
+North, roof and west move onto the reference; east overshoots and south
+undershoots — see the open thread below.
+
+### Hour-convention experiment (temporary, env-gated, reverted)
+
+The engine evaluates the solar position at the hour START (hour_of_day as a
+whole hour). Re-running with a mid-hour (+0.5 h) position moved west toward
+the reference (589k → 676k) but broke south (1,054k → 771k) and east
+(855k → 1,065k) — the reference matches the hour-start convention better
+overall (sum |deviation| 0.75 vs 1.02 across the five surfaces). The
+hour-start convention is therefore kept; no engine change.
+
+### Residual open thread: east/west asymmetry
+
+The Golden TMY3 EPW is itself morning-weighted (annual DNI 1,014.9 vs
+851.6 kWh/m² over morning/afternoon hours, +19%). E+ converts that into
+east/west beam irradiance at ratio 1.156; the engine (before AND after the
+coefficient fix) produces a larger asymmetry (1.45 before, 1.69 after). The
+afternoon position conventions are verified correct (June 21 probes: 08:00 az
+88.7°, 12:00 178.2°, 16:00 270.6°). The remaining asymmetry generator —
+intra-hour solar integration in E+ vs instantaneous hourly sampling here — is
+not resolvable with the in-repo reference data alone and is left as the open
+follow-up (it explains most of the residual east/south ratios in the table
+above).
+
+### Re-records (measured, from the corrected engine)
+
+Strict ±15% gate (band table #1147): Case 600 C 3.877 → 4.616 MWh RE-ENTERS
+BAND [4.275, 5.784]; Case 950 C 0.436 → 0.564 MWh RE-ENTERS BAND
+[0.557, 0.753]; Case 900 H 1.649 → 1.575 MWh STAYS IN BAND; every remaining
+cooling gap narrows; Case 810/920/970 heating move further below (tracked in
+§LIMIT-36/§LIMIT-37/§LIMIT-23 and the strict baseline). Validator: Case 600 H
+6,238.59 → 5,542.87 kWh RE-ENTERS [4,360, 5,790]; Case 900 H 1,359.28 →
+1,122.65 kWh moves BELOW [1,170, 2,040] (row re-opened honestly); Case 900 C
+552.83 → 1,792.02 kWh. Fabric baseline re-recorded (all six case×selector
+rows; parity case_600 1.1131/0.7249). NAPI/npm Case 600 baseline test passes
+(57/57). Solar-SIMD evolution seed references re-generated from the corrected
+engine (85.234 → 119.842; 23.795 → 24.680 W/m²). Case 630 annual cooling moves
+over its published band — quarantined and recorded as §LIMIT-39.

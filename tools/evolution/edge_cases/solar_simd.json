@@ -17,11 +17,11 @@
       },
       "kernel_focus": "perez_diffuse_tilted",
       "reference": {
-        "diffuse_tilted_wm2": 85.23380303132869
+        "diffuse_tilted_wm2": 119.84231163649308
       },
       "tolerance": {
-        "default": 1e-9,
-        "simd_kernels": 1e-6
+        "default": 1e-09,
+        "simd_kernels": 1e-06
       }
     },
     {
@@ -44,8 +44,8 @@
         "diffuse_tilted_wm2": 25.0
       },
       "tolerance": {
-        "default": 1e-9,
-        "simd_kernels": 1e-6
+        "default": 1e-09,
+        "simd_kernels": 1e-06
       }
     },
     {
@@ -65,11 +65,11 @@
       },
       "kernel_focus": "perez_diffuse_tilted",
       "reference": {
-        "diffuse_tilted_wm2": 23.79488238411466
+        "diffuse_tilted_wm2": 24.6801247213373
       },
       "tolerance": {
-        "default": 1e-9,
-        "simd_kernels": 1e-6
+        "default": 1e-09,
+        "simd_kernels": 1e-06
       }
     },
     {
@@ -90,8 +90,8 @@
         "q_w": 2213.530587986769
       },
       "tolerance": {
-        "default": 1e-9,
-        "simd_kernels": 1e-6
+        "default": 1e-09,
+        "simd_kernels": 1e-06
       }
     },
     {
@@ -112,8 +112,8 @@
         "q_w": 0.0
       },
       "tolerance": {
-        "default": 1e-9,
-        "simd_kernels": 1e-6
+        "default": 1e-09,
+        "simd_kernels": 1e-06
       }
     },
     {
@@ -134,8 +134,8 @@
         "q_w": 836.2078013252352
       },
       "tolerance": {
-        "default": 1e-9,
-        "simd_kernels": 1e-6
+        "default": 1e-09,
+        "simd_kernels": 1e-06
       }
     },
     {
@@ -154,8 +154,8 @@
         "net_flux_wm2": -186.27587986148814
       },
       "tolerance": {
-        "default": 1e-9,
-        "simd_kernels": 1e-6
+        "default": 1e-09,
+        "simd_kernels": 1e-06
       }
     },
     {
@@ -174,8 +174,8 @@
         "net_flux_wm2": -38.629442868009306
       },
       "tolerance": {
-        "default": 1e-9,
-        "simd_kernels": 1e-6
+        "default": 1e-09,
+        "simd_kernels": 1e-06
       }
     },
     {
@@ -194,8 +194,8 @@
         "net_flux_wm2": 0.0
       },
       "tolerance": {
-        "default": 1e-9,
-        "simd_kernels": 1e-6
+        "default": 1e-09,
+        "simd_kernels": 1e-06
       }
     }
   ],

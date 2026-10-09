@@ -368,27 +368,40 @@ impl PerezSkyModel {
         ebin
     }
 
-    /// Perez model F1 and F2 coefficients from Table 3 of Perez et al. (1990).
+    /// Perez model F1 and F2 coefficients.
+    ///
+    /// Values are the EnergyPlus-adopted set (Perez et al., private
+    /// communication 5/21/99, published in the EnergyPlus Engineering
+    /// Reference "Sky Radiance Model" Fij table) — not the Perez et al.
+    /// (1990) journal Table 3 set previously used here. The E+ 25.2
+    /// per-surface reference CSVs (tests/reference_data/solar/
+    /// ashrae_140_surface_incident_solar.csv) are generated with the E+
+    /// set; using the 1990 journal values under-predicted vertical-surface
+    /// irradiance by 3-34% depending on orientation (measured 2026-10-08,
+    /// see docs/investigations/limit-35-case-900-heating-out-of-band.md §13).
+    /// The two tables differ most in the F2 horizon-brightening row (E+
+    /// bin 1: -0.0596/0.0721/-0.0220 vs 1990's +0.091/0.060/0.0) and in
+    /// the high-clearness circumsolar bins.
     pub(crate) fn get_perez_coefficients(ebin: usize) -> ([f64; 3], [f64; 3]) {
         const F1C: [[f64; 3]; 8] = [
-            [-0.008317, 0.587728, -0.062064],
-            [0.129967, 0.682595, -0.151375],
-            [0.329676, 0.486861, -0.221272],
-            [0.568205, 0.187452, -0.295250],
-            [0.873018, -0.393289, -0.369150],
-            [1.321297, -1.176777, -0.393994],
-            [0.999852, -1.634380, -0.291495],
-            [0.553776, 0.631414, -0.209172],
+            [-0.0083117, 0.5877285, -0.0620636],
+            [0.1299457, 0.6825954, -0.1513752],
+            [0.3296958, 0.4868735, -0.2210958],
+            [0.5682053, 0.1874525, -0.2951290],
+            [0.8730280, -0.3920403, -0.3616149],
+            [1.1326077, -1.2367284, -0.4118494],
+            [1.0601591, -1.5999137, -0.3589221],
+            [0.6777470, -0.3272588, -0.2504286],
         ];
         const F2C: [[f64; 3]; 8] = [
-            [0.091000, 0.060000, 0.000000],
-            [0.055000, 0.060000, 0.000000],
-            [0.025000, 0.060000, 0.000000],
-            [-0.015000, 0.060000, 0.000000],
-            [-0.065000, 0.060000, 0.000000],
-            [-0.115000, 0.060000, 0.000000],
-            [-0.165000, 0.060000, 0.000000],
-            [-0.215000, 0.060000, 0.000000],
+            [-0.0596012, 0.0721249, -0.0220216],
+            [-0.0189325, 0.0659650, -0.0288748],
+            [0.0554140, -0.0639588, -0.0260542],
+            [0.1088631, -0.1519229, -0.0139754],
+            [0.2255647, -0.4620442, 0.0012448],
+            [0.2877813, -0.8230357, 0.0558651],
+            [0.2642124, -1.1272340, 0.1310694],
+            [0.1561313, -1.3765031, 0.2506212],
         ];
 
         let ebin_clamped = ebin.min(7);
