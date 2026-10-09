@@ -19,9 +19,9 @@ the provenance; the current state is the `LIMIT-38` row in
   phi_st and phi_m through the same envelope mass nodes with the same
   wall/roof/floor weights (`gains_wall = (phi_st + phi_m) * wall_frac`, …)
   and zeroes `gains_internal`. Because
-  `phi_st + phi_m = load_w·rad_frac + remaining_sol + sol_to_air +
-  opaque_sol_w` is independent of the split, every fraction-invariant input
-  produces identical output. The split between the fast surface node and the
+  `phi_st + phi_m = load_w·rad_frac + remaining_sol + opaque_sol_w` is
+  independent of the split (the `sol_to_air` share goes to phi_ia), the
+  split between the fast surface node and the
   damped mass node no longer exists on this path.
 - **What was changed (PR for issue #4339):** the sweep test's
   monotonic-decrease assertion was replaced with the stronger, mechanistic

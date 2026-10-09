@@ -1247,8 +1247,8 @@ fn test_case_900ff_solar_beam_to_mass_fraction_sweep() {
     // Issue #4339: after #4347 (LIMIT-35 §12) the beam-to-mass split is
     // structurally inert on the 9R4C per-surface path — step_9r4c delivers
     // phi_st and phi_m through the same wall/roof/floor mass-node weights, and
-    // phi_st + phi_m = load_w*rad_frac + remaining_sol*1 + sol_to_air +
-    // opaque_sol_w is independent of solar_beam_to_mass_fraction. The old
+    // phi_st + phi_m = load_w*rad_frac + remaining_sol + opaque_sol_w is
+    // independent of solar_beam_to_mass_fraction (sol_to_air goes to phi_ia,. The old
     // monotonic-decrease premise (verified live at c5b3231c, dead at
     // 04a4e031) described a parameter that no longer feeds any output on this
     // path. The stronger, mechanistic assertion is fraction-INVARIANCE:
