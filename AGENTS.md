@@ -60,8 +60,8 @@ The hook invokes `cargo test --workspace --exclude fluxion-tauri --no-fail-fast`
 |---|---|---|---|---|
 
 | `cargo test --lib` | root crate unit tests | 4,289 | 8 | matches `tests/test_inventory.json::totals.lib_tests_root` (cargo-verified live count via `--verify`; the AST-regex snapshot for this crate is in `tests/reference_data/test_inventory_baseline.json::by_crate.fluxion.lib_tests`) |
-| `cargo test --workspace --exclude fluxion-tauri` | full workspace (lib + integration + bin) | 8,906 | 160 | `tests/test_inventory.json::totals.workspace_tests` / `workspace_ignored` (cargo-verified via `--verify`; the AST-regex snapshot is in `tests/reference_data/test_inventory_baseline.json::metrics_ast`) |
-| `AST-regex inventory | committed in `tests/reference_data/test_inventory_baseline.json::metrics_ast` | 8,906 | 160 | non-runtime snapshot, used by the drift gate (`--no-verify`); AST counts vs cargo-verified because the regex doesn't track `cfg(test)` boundaries |
+| `cargo test --workspace --exclude fluxion-tauri` | full workspace (lib + integration + bin) | 8,906 | 159 | `tests/test_inventory.json::totals.workspace_tests` / `workspace_ignored` (cargo-verified via `--verify`; the AST-regex snapshot is in `tests/reference_data/test_inventory_baseline.json::metrics_ast`) |
+| `AST-regex inventory | committed in `tests/reference_data/test_inventory_baseline.json::metrics_ast` | 8,906 | 159 | non-runtime snapshot, used by the drift gate (`--no-verify`); AST counts vs cargo-verified because the regex doesn't track `cfg(test)` boundaries |
 
 
 | Cargo test binaries | root `tests/*.rs` keepers + consolidated `all_tests` runner + hand-wired `[[test]] path = "tests/<sub>/<foo>.rs"` + sibling-crate targets | 53 | n/a | matches `tests/test_inventory.json::totals.test_binaries` (273 standalone root binaries consolidated into `all_tests` in Issue #3764 + 13 standalone keepers + `grid_adapter_integration` in Issue #4005 + `ashrae_140_validator_selector_parity` in Issue #3986-A + `schedule_conformance` in Issue #4196) |
