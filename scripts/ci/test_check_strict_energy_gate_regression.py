@@ -19,10 +19,12 @@ both inputs in ``tmp_path`` and invokes ``main()`` via
 ``sys.argv`` injection.
 
 Issue #3572 extended the gate from 2 cases (600/900) to 8 cases
-(600/800/810/900/920/950/960/970). The legacy 2-case tests below pin
-their scope via ``--require-cases 600,900`` so they keep their original
-intent; new tests at the bottom exercise the full 8-case coverage
-that the production strict-energy-gate workflow consumes.
+(600/800/810/900/920/950/960/970); issue #4170 extended it to the full
+17-case annual list plus the free-float cohort. The legacy and 8-case
+tests below pin their scope via ``--require-cases`` so they keep their
+original intent under the wider production default; tests that pass the
+full ``checker.SUPPORTED_CASES`` scope exercise the production path
+(including the #4170 completeness assertion).
 """
 
 from __future__ import annotations
@@ -493,7 +495,7 @@ def test_main_passes_when_all_eight_cases_match_baseline(checker, tmp_path):
     """Issue #3572: full eight-case log + matching baseline → exit 0."""
     baseline = _write_baseline_8_cases(tmp_path)
     log = _write_log_8_cases(tmp_path)
-    assert _invoke(checker, log, baseline, require_cases=",".join(checker.SUPPORTED_CASES)) == 0
+    assert _invoke(checker, log, baseline, require_cases="600,800,810,900,920,950,960,970") == 0
 
 
 def test_main_returns_one_when_log_missing_one_of_eight_cases(checker, tmp_path, capsys):
@@ -505,7 +507,7 @@ def test_main_returns_one_when_log_missing_one_of_eight_cases(checker, tmp_path,
     """
     baseline = _write_baseline_8_cases(tmp_path)
     log = _write_log_8_cases(tmp_path, drop_case="970")
-    rc = _invoke(checker, log, baseline, require_cases=",".join(checker.SUPPORTED_CASES))
+    rc = _invoke(checker, log, baseline, require_cases="600,800,810,900,920,950,960,970")
     out = capsys.readouterr().out
     assert rc == 1, f"expected exit 1 when 970 missing, got {rc}\noutput:\n{out}"
     assert "970" in out
@@ -526,7 +528,7 @@ def test_main_returns_one_when_new_case_metric_regresses(checker, tmp_path, caps
         tmp_path,
         overrides={"800": {"h": 5.453, "c": 0.500}},
     )
-    rc = _invoke(checker, log, baseline, require_cases=",".join(checker.SUPPORTED_CASES))
+    rc = _invoke(checker, log, baseline, require_cases="600,800,810,900,920,950,960,970")
     out = capsys.readouterr().out
     assert rc == 1, f"expected exit 1 on Case 800 C regression, got {rc}\noutput:\n{out}"
     assert "REGRESSION" in out
@@ -546,7 +548,7 @@ def test_main_returns_one_when_new_case_pass_metric_exits_band(checker, tmp_path
         tmp_path,
         overrides={"800": {"h": 12.0, "c": 2.007}},
     )
-    rc = _invoke(checker, log, baseline, require_cases=",".join(checker.SUPPORTED_CASES))
+    rc = _invoke(checker, log, baseline, require_cases="600,800,810,900,920,950,960,970")
     out = capsys.readouterr().out
     assert rc == 1, f"expected exit 1 on Case 800 H regression, got {rc}\noutput:\n{out}"
     assert "REGRESSION" in out
@@ -562,3 +564,109 @@ def test_self_test_passes_when_all_eight_cases_present(checker):
     finally:
         sys.argv[:] = saved
     assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# Issue #4170: free-float cohort + completeness assertion (production scope)
+# ---------------------------------------------------------------------------
+
+
+def _write_ff_lines(case_min_max: dict[str, tuple[float, float]]) -> str:
+    lines = []
+    for case, (tmin, tmax) in case_min_max.items():
+        bands = {
+            "600FF": (-18.8, -15.6, 64.9, 75.1),
+            "650FF": (-23.0, -21.0, 63.2, 73.5),
+            "900FF": (-6.4, -1.6, 41.8, 46.4),
+            "950FF": (-20.2, -17.8, 35.5, 38.5),
+        }
+        mlo, mhi, xlo, xhi = bands[case]
+        lines.append(
+            f"[#4170 Case {case} strict] Tmin={tmin} band [{mlo} to {mhi}], "
+            f"Tmax={tmax} band [{xlo} to {xhi}]"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def test_full_production_scope_real_baseline_matches(checker, tmp_path):
+    """#4170: the real baseline + a full 17-case + FF log → exit 0.
+
+    Loads the repo's real strict_energy_gate_baseline.json (which the
+    completeness assertion requires to be complete) and drives it with
+    the measured values recorded in the baseline itself.
+    """
+    import json as _json
+
+    real = _json.loads(
+        (checker.REPO_ROOT / "tests/reference_data/zone_balance/strict_energy_gate_baseline.json").read_text()
+    )
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(_json.dumps(real))
+
+    log_lines = []
+    for case in checker.SUPPORTED_CASES:
+        m = real["metrics"][f"case_{case}_heating"]
+        c = real["metrics"][f"case_{case}_cooling"]
+        log_lines.append(
+            f"[#4170 Case {case} strict] H={m['value_mwh']} MWh "
+            f"(band {m['band_mwh'][0]}-{m['band_mwh'][1]}), "
+            f"C={c['value_mwh']} MWh (band {c['band_mwh'][0]}-{c['band_mwh'][1]})"
+        )
+    ff_vals = {
+        "600FF": (-18.48, 57.45),
+        "650FF": (-24.45, 57.09),
+        "900FF": (-6.95, 41.32),
+        "950FF": (-22.45, 37.61),
+    }
+    log_lines.append(_write_ff_lines(ff_vals))
+    log = tmp_path / "log.txt"
+    log.write_text("\n".join(log_lines))
+
+    rc = _invoke(
+        checker, log, baseline,
+        require_cases=",".join(checker.SUPPORTED_CASES),
+    )
+    out = capsys_safe(rc, checker)
+    assert rc == 0, out
+
+
+def capsys_safe(rc, checker):
+    return f"exit={rc}"
+
+
+def test_completeness_fails_closed_on_missing_ff_line(checker, tmp_path, capsys):
+    """#4170: full production scope, an FF strict line missing → exit 1."""
+    import json as _json
+
+    real = _json.loads(
+        (checker.REPO_ROOT / "tests/reference_data/zone_balance/strict_energy_gate_baseline.json").read_text()
+    )
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(_json.dumps(real))
+
+    log_lines = []
+    for case in checker.SUPPORTED_CASES:
+        m = real["metrics"][f"case_{case}_heating"]
+        c = real["metrics"][f"case_{case}_cooling"]
+        log_lines.append(
+            f"[#4170 Case {case} strict] H={m['value_mwh']} MWh "
+            f"(band {m['band_mwh'][0]}-{m['band_mwh'][1]}), "
+            f"C={c['value_mwh']} MWh (band {c['band_mwh'][0]}-{c['band_mwh'][1]})"
+        )
+    # Only three of the four FF cases — 950FF line missing.
+    log_lines.append(_write_ff_lines({
+        "600FF": (-18.48, 57.45),
+        "650FF": (-24.45, 57.09),
+        "900FF": (-6.95, 41.32),
+    }))
+    log = tmp_path / "log.txt"
+    log.write_text("\n".join(log_lines))
+
+    rc = _invoke(
+        checker, log, baseline,
+        require_cases=",".join(checker.SUPPORTED_CASES),
+    )
+    out = capsys.readouterr().out
+    assert rc == 1, out
+    assert "950FF" in out
+    assert "free-float" in out

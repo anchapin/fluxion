@@ -273,7 +273,7 @@ BASELINE_LIB_IGNORED = 9
 #   test_box_apparent_cp_at_wall_delegates_to_material). Stacked on PR-A's
 #   8821 baseline.
 
-BASELINE_WORKSPACE_TESTS = 8893  # 2026-10-07 (Issue #4188): 8891 -> 8893 — new `tests/batch_oracle_memory_budget.rs` test target (2 tests: pre-#4188 EUI bit-identity guard + #[ignore]d 10k population RSS budget). Stacked on the 2026-10-07 #4204 baseline of 8891.
+BASELINE_WORKSPACE_TESTS = 8906  # 2026-10-09 (Issue #4170): 8893 -> 8906 — 13 new tests in tests/all_tests/zone_balance_eplus_isolation.rs (nine strict annual-energy gate tests for the previously-ungated cases 610/620/630/640/650/910/930/940/195 + four free-float strict-gate tests 600FF/650FF/900FF/950FF). Stacked on the 2026-10-07 #4188 baseline of 8893.
                                   # 2026-10-07 (Issue #4204): 8890 -> 8891 — one new steady-state test in tests/dhat_batched_surrogate_zero_growth.rs (predict_loads_into_with_scratch_zero_steady_state_growth). Stacked on the 2026-09-29 #4299-supersede baseline of 8890.
 
                                   # 2026-09-29 (Issue #4192): 8873 -> 8881 — collapse triplicated EPW decoder; 8 new tests in fluxion-core/src/weather/epw.rs (shared-fixture agreement, truncated/missing-field skips, 8760-count fixture guard, sentinel coercion). Stacked on #4155's 8873 baseline.
@@ -300,7 +300,15 @@ BASELINE_WORKSPACE_TESTS = 8893  # 2026-10-07 (Issue #4188): 8891 -> 8893 — ne
 # bumping the ratchet here keeps the nightly gauge soak's
 # ``scripts-tests.yml`` invocation green until a dedicated cleanup PR
 # can attribute them per-crate.
-BASELINE_WORKSPACE_IGNORED = 153  # Issue #4058: bumped from 147 (+6) — the six
+BASELINE_WORKSPACE_IGNORED = 160  # 2026-10-09 (Issue #4170): 153 -> 160 — all
+                                  # thirteen new strict-gate tests in
+                                  # tests/all_tests/zone_balance_eplus_isolation.rs
+                                  # are #[ignore]d (nine annual-energy tests for the
+                                  # previously-ungated cases 610/620/630/640/650/
+                                  # 910/930/940/195 + four free-float strict-gate
+                                  # tests 600FF/650FF/900FF/950FF). Previous:
+                                  # Issue #4058 bump
+                                  # from 147 (+6) — the six
                                   # FD-vs-EnergyPlus step-response tests quarantined
                                   # ``awaiting #4058`` (their former flux channel was
                                   # a circular identity exposed by the #3981

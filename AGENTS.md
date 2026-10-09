@@ -15,7 +15,7 @@ Fluxion is a Rust-first building-energy-modeling engine with Python and Node bin
 ## Commands That Are Easy to Guess Wrong
 
 
-> **Workspace-scope rule (Issue #3587)** — The root crate is also workspace package `fluxion` with `default-members = ["."]`. The bare `cargo test` therefore runs the root crate ONLY (4,289 lib tests + the root `[[test]]` entries) and silently SKIPS the remaining 4,604 sibling-crate tests. **Always use the workspace form below** unless you have a deliberate reason to scope to one crate. See `docs/agents/workspace-scope.md` for the full rationale and `.githooks/pre-push` for the opt-in pre-push gate. Numbers in this section are sourced from `tests/test_inventory.json::totals` (lib_tests_root, workspace_tests, workspace_ignored, test_binaries); when the live counts move, regenerate that JSON with `python3 scripts/generate_test_inventory.py` and the drift gate (`scripts/check_test_inventory_drift.py`) will fail any PR that does not refresh AGENTS.md to match.
+> **Workspace-scope rule (Issue #3587)** — The root crate is also workspace package `fluxion` with `default-members = ["."]`. The bare `cargo test` therefore runs the root crate ONLY (4,289 lib tests + the root `[[test]]` entries) and silently SKIPS the remaining 4,617 sibling-crate tests. **Always use the workspace form below** unless you have a deliberate reason to scope to one crate. See `docs/agents/workspace-scope.md` for the full rationale and `.githooks/pre-push` for the opt-in pre-push gate. Numbers in this section are sourced from `tests/test_inventory.json::totals` (lib_tests_root, workspace_tests, workspace_ignored, test_binaries); when the live counts move, regenerate that JSON with `python3 scripts/generate_test_inventory.py` and the drift gate (`scripts/check_test_inventory_drift.py`) will fail any PR that does not refresh AGENTS.md to match.
 
 
 
@@ -60,8 +60,8 @@ The hook invokes `cargo test --workspace --exclude fluxion-tauri --no-fail-fast`
 |---|---|---|---|---|
 
 | `cargo test --lib` | root crate unit tests | 4,289 | 8 | matches `tests/test_inventory.json::totals.lib_tests_root` (cargo-verified live count via `--verify`; the AST-regex snapshot for this crate is in `tests/reference_data/test_inventory_baseline.json::by_crate.fluxion.lib_tests`) |
-| `cargo test --workspace --exclude fluxion-tauri` | full workspace (lib + integration + bin) | 8,893 | 147 | `tests/test_inventory.json::totals.workspace_tests` / `workspace_ignored` (cargo-verified via `--verify`; the AST-regex snapshot is in `tests/reference_data/test_inventory_baseline.json::metrics_ast`) |
-| `AST-regex inventory | committed in `tests/reference_data/test_inventory_baseline.json::metrics_ast` | 8,893 | 147 | non-runtime snapshot, used by the drift gate (`--no-verify`); AST counts run ~10% high vs cargo-verified because the regex doesn't track `cfg(test)` boundaries |
+| `cargo test --workspace --exclude fluxion-tauri` | full workspace (lib + integration + bin) | 8,906 | 160 | `tests/test_inventory.json::totals.workspace_tests` / `workspace_ignored` (cargo-verified via `--verify`; the AST-regex snapshot is in `tests/reference_data/test_inventory_baseline.json::metrics_ast`) |
+| `AST-regex inventory | committed in `tests/reference_data/test_inventory_baseline.json::metrics_ast` | 8,906 | 160 | non-runtime snapshot, used by the drift gate (`--no-verify`); AST counts vs cargo-verified because the regex doesn't track `cfg(test)` boundaries |
 
 
 | Cargo test binaries | root `tests/*.rs` keepers + consolidated `all_tests` runner + hand-wired `[[test]] path = "tests/<sub>/<foo>.rs"` + sibling-crate targets | 53 | n/a | matches `tests/test_inventory.json::totals.test_binaries` (273 standalone root binaries consolidated into `all_tests` in Issue #3764 + 13 standalone keepers + `grid_adapter_integration` in Issue #4005 + `ashrae_140_validator_selector_parity` in Issue #3986-A + `schedule_conformance` in Issue #4196) |

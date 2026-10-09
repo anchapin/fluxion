@@ -325,9 +325,15 @@ def scan_ignores(tests_dir: Path) -> list[dict]:
 def _nearest_fn(text: str, attr_start: int, attr_end: int) -> str:
     """Find the nearest ``fn name(`` to an attribute offset.
 
-    Searches a ±2 KB window around the attribute and returns the
-    closest ``fn`` declaration in either direction. Returns
-    ``"unknown"`` if no test function is found within the window.
+    Searches a ±2 KB window around the attribute. Rust attributes
+    precede the item they decorate, so a ``fn`` AFTER the attribute is
+    preferred: forward matches use their raw offset distance, backward
+    matches are penalised 3x. Without the penalty, dense back-to-back
+    single-statement tests tie on line distance and the previous test's
+    ``fn`` (a few closing-brace characters behind) wins over the
+    attribute's own ``fn`` a couple of lines ahead — mis-attributing
+    the quarantine key. Returns ``"unknown"`` if no test function is
+    found within the window.
     """
     window_start = max(0, attr_start - 2000)
     window_end = min(len(text), attr_end + 2000)
@@ -336,10 +342,12 @@ def _nearest_fn(text: str, attr_start: int, attr_end: int) -> str:
     if not fn_matches:
         return "unknown"
     ignore_offset = attr_start - window_start
-    fn_match = min(
-        fn_matches,
-        key=lambda m: abs(m.start() - ignore_offset),
-    )
+
+    def _distance(m: re.Match) -> int:
+        d = m.start() - ignore_offset
+        return d if d >= 0 else -d * 3
+
+    fn_match = min(fn_matches, key=_distance)
     return fn_match.group(1)
 
 

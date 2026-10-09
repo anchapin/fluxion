@@ -52,10 +52,61 @@ from pathlib import Path
 
 # Issue #3572: the regex now matches all eight cases (600 / 800 / 810 /
 # 900 / 920 / 950 / 960 / 970) the strict ±15% annual-energy gate observes.
+# Issue #4170: extended to the nine previously-ungated annual cases
+# (610 / 620 / 630 / 640 / 650 / 910 / 930 / 940 / 195).
 # Match:  [#1147 Case 600 strict] H=5.236 MWh (band 4.314-5.836), C=2.455 MWh (band 4.275-5.784)
 # The H/C order is stable (the test prints H first, then C). Band edges are
 # formatted to 3 decimals by the Rust `:.3` formatter.
-SUPPORTED_CASES = ("600", "800", "810", "900", "920", "950", "960", "970")
+SUPPORTED_CASES = (
+    "600",
+    "800",
+    "810",
+    "900",
+    "920",
+    "950",
+    "960",
+    "970",
+    # Issue #4170 coverage extension:
+    "610",
+    "620",
+    "630",
+    "640",
+    "650",
+    "910",
+    "930",
+    "940",
+    "195",
+)
+# Issue #4170: the full case list `validate_analytical_engine` runs that
+# reports AnnualHeating/AnnualCooling. The completeness assertion below
+# fails the gate closed if any of these lacks a baseline metrics key.
+VALIDATOR_ANNUAL_CASES = (
+    "600",
+    "610",
+    "620",
+    "630",
+    "640",
+    "650",
+    "800",
+    "810",
+    "900",
+    "910",
+    "920",
+    "930",
+    "940",
+    "950",
+    "960",
+    "970",
+    "195",
+)
+# Issue #4170: free-float cohort, gated on min/max temperature with the same
+# ±15%-of-midpoint basis (bands from src/validation/benchmark.rs).
+FF_CASES = ("600FF", "650FF", "900FF", "950FF")
+FF_LINE_RE = re.compile(
+    r"Case\s+(?P<case>600FF|650FF|900FF|950FF)\s+strict\]?\s+"
+    r"Tmin=(?P<tmin>[-0-9.]+)\s+band\s+\[(?P<mlo>[-0-9.]+)\s+to\s+(?P<mhi>[-0-9.]+)\],\s+"
+    r"Tmax=(?P<tmax>[-0-9.]+)\s+band\s+\[(?P<xlo>[-0-9.]+)\s+to\s+(?P<xhi>[-0-9.]+)\]"
+)
 LINE_RE = re.compile(
     r"Case\s+(?P<case>(?:" + "|".join(SUPPORTED_CASES) + r"))\s+strict.*?"
     r"H=(?P<h>[-0-9.]+)\s+MWh\s+\(band\s+(?P<hlo>[-0-9.]+)-(?P<hhi>[-0-9.]+)\)"
@@ -104,6 +155,37 @@ def parse_measured(log_text: str) -> dict[str, dict[str, float]]:
     return measured
 
 
+def ff_gap_pct_of_mid(value: float, band_lo: float, band_hi: float) -> float:
+    """Free-float analogue of `gap_pct_of_mid`, sign-safe for negative bands.
+
+    Free-float MIN bands straddle zero or sit below it (e.g. Case 900FF
+    min ∈ [-6.4, -1.6] °C), so the midpoint can be negative and the annual
+    formula's `mid <= 0 → inf` rule would be wrong. Here the distance
+    outside the band is expressed as a percentage of |midpoint|.
+    """
+    if value < band_lo or value > band_hi:
+        mid = 0.5 * (band_lo + band_hi)
+        if mid == 0:
+            return float("inf")
+        return abs(value - mid) / abs(mid) * 100.0
+    return 0.0
+
+
+def parse_ff_measured(log_text: str) -> dict[str, dict[str, float]]:
+    """Return {'600FF': {'Tmin':..,'mlo':..,'mhi':..,'Tmax':..,'xlo':..,'xhi':..}, ...}."""
+    measured: dict[str, dict[str, float]] = {}
+    for m in FF_LINE_RE.finditer(log_text):
+        measured[m.group("case")] = {
+            "Tmin": float(m.group("tmin")),
+            "mlo": float(m.group("mlo")),
+            "mhi": float(m.group("mhi")),
+            "Tmax": float(m.group("tmax")),
+            "xlo": float(m.group("xlo")),
+            "xhi": float(m.group("xhi")),
+        }
+    return measured
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("log", nargs="?", default="/tmp/strict_gate_output.txt",
@@ -121,6 +203,7 @@ def main() -> int:
     metrics_baseline = baseline["metrics"]
 
     measured = parse_measured(log_text)
+    ff_measured = parse_ff_measured(log_text)
 
     required = [c.strip() for c in args.require_cases.split(",") if c.strip()]
     missing = [c for c in required if c not in measured]
@@ -133,6 +216,34 @@ def main() -> int:
               "'[#1147 Case 600 strict] H=5.236 MWh (band 4.314-5.836), "
               "C=2.455 MWh (band 4.275-5.784)'")
         return 1
+
+    # Issue #4170 completeness assertion: on the FULL production run (all
+    # supported cases required, free-float cohort included) the gate fails
+    # CLOSED on missing coverage. Narrower runs (`--require-cases`, used by
+    # the unit tests and ad-hoc debugging) skip this check.
+    missing_ff_lines = [c for c in FF_CASES if c not in ff_measured]
+    if set(required) == set(SUPPORTED_CASES):
+        missing_metrics = [
+            f"case_{c}_{label}"
+            for c in VALIDATOR_ANNUAL_CASES
+            for label in ("heating", "cooling")
+            if f"case_{c}_{label}" not in metrics_baseline
+        ]
+        missing_ff_keys = [
+            f"ff_{c.lower()}_{mm}" for c in FF_CASES for mm in ("min", "max")
+            if f"ff_{c.lower()}_{mm}" not in metrics_baseline
+        ]
+        if missing_metrics or missing_ff_keys:
+            print("::error::Strict gate baseline is INCOMPLETE (issue #4170 "
+                  "completeness assertion): missing keys "
+                  f"{missing_metrics + missing_ff_keys}.")
+            return 1
+        if missing_ff_lines:
+            print("::error::Strict gate could not parse free-float measured "
+                  f"values for case(s) {missing_ff_lines}. Expected lines like: "
+                  "'[#4170 Case 600FF strict] Tmin=-18.48 band [-18.8 to -15.6], "
+                  "Tmax=57.45 band [64.9 to 75.1]'")
+            return 1
 
     print("=== ASHRAE 140 strict ±15% gate — transparent regression check ===")
     print(f"   baseline: {Path(args.baseline).name}  "
@@ -194,6 +305,52 @@ def main() -> int:
             print(f"{key:<20}{mv:>9.3f}{f'[{blo:.3f}, {bhi:.3f}]':>22}"
                   f"{cur_gap:>9.2f}{base_gap:>9.2f}{verdict:>16}")
 
+    # Issue #4170: free-float min/max gate — same verdict logic, sign-safe
+    # gap formula, units °C. Runs only on the full production scope (the
+    # FF cohort ships no per-case band set for narrowed ad-hoc runs).
+    if set(required) == set(SUPPORTED_CASES):
+      for case in FF_CASES:
+        for metric, label, lo_k, hi_k in (
+            ("Tmin", "min", "mlo", "mhi"),
+            ("Tmax", "max", "xlo", "xhi"),
+        ):
+            key = f"ff_{case.lower()}_{label}"
+            b = metrics_baseline[key]
+            mv = ff_measured[case][metric]
+            blo = ff_measured[case][lo_k]
+            bhi = ff_measured[case][hi_k]
+            cur_gap = ff_gap_pct_of_mid(mv, blo, bhi)
+            base_gap = float(b["gap_pct_of_mid"])
+            base_status = b["status"]
+
+            if cur_gap == 0.0:
+                verdict = "PASS"
+                n_pass += 1
+            elif cur_gap <= base_gap + tol_pp + 1e-9:
+                if base_status == "pass" and cur_gap > tol_pp + 1e-9:
+                    verdict = "REGRESSION"
+                    regressions.append(
+                        f"{key}: was PASS (gap 0.00), now gap {cur_gap:.2f}pp "
+                        f"(value {mv:.2f} °C outside band [{blo:.2f}, {bhi:.2f}])"
+                    )
+                else:
+                    verdict = "KNOWN-FAIL"
+                    n_known += 1
+            else:
+                verdict = "REGRESSION"
+                regressions.append(
+                    f"{key}: gap worsened {base_gap:.2f}pp -> {cur_gap:.2f}pp "
+                    f"(> baseline+{tol_pp:.2f}pp tolerance); "
+                    f"value {mv:.2f} °C outside band [{blo:.2f}, {bhi:.2f}]"
+                )
+            if 0 < base_gap and cur_gap < base_gap - 0.5 and verdict != "REGRESSION":
+                improvements.append(
+                    f"{key}: gap improved {base_gap:.2f}pp -> {cur_gap:.2f}pp "
+                    f"(lower the baseline in the same PR)"
+                )
+            print(f"{key:<20}{mv:>9.2f}{f'[{blo:.2f}, {bhi:.2f}]':>22}"
+                  f"{cur_gap:>9.2f}{base_gap:>9.2f}{verdict:>16}")
+
     print()
     print(f"   summary: {n_pass} PASS, {n_known} KNOWN-FAIL (tracked), "
           f"{len(regressions)} REGRESSION")
@@ -236,11 +393,44 @@ def self_test() -> int:
         "[#1147 Case 950 strict] H=0.000 MWh (band 0.000-0.000), C=0.028 MWh (band 0.557-0.753)",
         "[#1147 Case 960 strict] H=2.924 MWh (band 1.742-2.357), C=0.144 MWh (band 1.840-2.490)",
         "[#1147 Case 970 strict] H=3.580 MWh (band 10.540-14.260), C=1.654 MWh (band 7.391-9.999)",
+        # Issue #4170 coverage extension:
+        "[#4170 Case 610 strict] H=6.018 MWh (band 4.314-5.836), C=3.984 MWh (band 4.275-5.784)",
+        "[#4170 Case 620 strict] H=6.824 MWh (band 3.746-5.067), C=3.686 MWh (band 3.504-4.741)",
+        "[#4170 Case 630 strict] H=6.914 MWh (band 4.896-6.624), C=3.334 MWh (band 2.478-3.352)",
+        "[#4170 Case 640 strict] H=5.932 MWh (band 2.784-3.766), C=4.616 MWh (band 5.971-8.079)",
+        "[#4170 Case 650 strict] H=0.000 MWh (band 0.000-0.000), C=3.644 MWh (band 5.049-6.831)",
+        "[#4170 Case 910 strict] H=1.623 MWh (band 1.611-2.179), C=1.277 MWh (band 1.147-1.552)",
+        "[#4170 Case 930 strict] H=2.541 MWh (band 4.029-5.451), C=1.542 MWh (band 1.394-1.886)",
+        "[#4170 Case 940 strict] H=1.575 MWh (band 0.935-1.265), C=1.514 MWh (band 2.393-3.237)",
+        "[#4170 Case 195 strict] H=1.951 MWh (band 3.471-4.697), C=0.669 MWh (band 0.554-0.750)",
+        "[#4170 Case 600FF strict] Tmin=-18.48 band [-18.8 to -15.6], Tmax=57.45 band [64.9 to 75.1]",
+        "[#4170 Case 650FF strict] Tmin=-24.45 band [-23.0 to -21.0], Tmax=57.09 band [63.2 to 73.5]",
+        "[#4170 Case 900FF strict] Tmin=-6.95 band [-6.4 to -1.6], Tmax=41.32 band [41.8 to 46.4]",
+        "[#4170 Case 950FF strict] Tmin=-22.45 band [-20.2 to -17.8], Tmax=37.61 band [35.5 to 38.5]",
     ]
     measured = parse_measured("\n".join(lines))
     missing = [c for c in SUPPORTED_CASES if c not in measured]
     if missing:
         print(f"FAIL: parser dropped cases {missing} (regex/format drift)", file=sys.stderr)
+        return 1
+    ff_measured = parse_ff_measured("\n".join(lines))
+    missing_ff = [c for c in FF_CASES if c not in ff_measured]
+    if missing_ff:
+        print(f"FAIL: FF parser dropped cases {missing_ff} (regex/format drift)", file=sys.stderr)
+        return 1
+    # Issue #4170: sign-safe FF gap formula invariants (negative bands).
+    if ff_gap_pct_of_mid(-6.95, -6.4, -1.6) != abs(-6.95 + 4.0) / 4.0 * 100.0:
+        print("FAIL: ff_gap_pct_of_mid negative-band formula drifted", file=sys.stderr)
+        return 1
+    if ff_gap_pct_of_mid(-18.48, -18.8, -15.6) != 0.0:
+        print("FAIL: ff_gap_pct_of_mid in-band value != 0", file=sys.stderr)
+        return 1
+    # Completeness assertion smoke: VALIDATOR_ANNUAL_CASES × 2 keys must all
+    # be constructible.
+    if len(VALIDATOR_ANNUAL_CASES) * 2 != len({
+        f"case_{c}_{label}" for c in VALIDATOR_ANNUAL_CASES for label in ("heating", "cooling")
+    }):
+        print("FAIL: VALIDATOR_ANNUAL_CASES contains duplicates", file=sys.stderr)
         return 1
     for case in SUPPORTED_CASES:
         for band_key in ("hlo", "hhi", "clo", "chi"):
