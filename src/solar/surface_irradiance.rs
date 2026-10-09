@@ -368,27 +368,40 @@ impl PerezSkyModel {
         ebin
     }
 
-    /// Perez model F1 and F2 coefficients from Table 3 of Perez et al. (1990).
+    /// Perez model F1 and F2 coefficients.
+    ///
+    /// Values are the EnergyPlus-adopted set (Perez et al., private
+    /// communication 5/21/99, published in the EnergyPlus Engineering
+    /// Reference "Sky Radiance Model" Fij table) — not the Perez et al.
+    /// (1990) journal Table 3 set previously used here. The E+ 25.2
+    /// per-surface reference CSVs (tests/reference_data/solar/
+    /// ashrae_140_surface_incident_solar.csv) are generated with the E+
+    /// set; using the 1990 journal values under-predicted vertical-surface
+    /// irradiance by 3-34% depending on orientation (measured 2026-10-08,
+    /// see docs/investigations/limit-35-case-900-heating-out-of-band.md §13).
+    /// The two tables differ most in the F2 horizon-brightening row (E+
+    /// bin 1: -0.0596/0.0721/-0.0220 vs 1990's +0.091/0.060/0.0) and in
+    /// the high-clearness circumsolar bins.
     pub(crate) fn get_perez_coefficients(ebin: usize) -> ([f64; 3], [f64; 3]) {
         const F1C: [[f64; 3]; 8] = [
-            [-0.008317, 0.587728, -0.062064],
-            [0.129967, 0.682595, -0.151375],
-            [0.329676, 0.486861, -0.221272],
-            [0.568205, 0.187452, -0.295250],
-            [0.873018, -0.393289, -0.369150],
-            [1.321297, -1.176777, -0.393994],
-            [0.999852, -1.634380, -0.291495],
-            [0.553776, 0.631414, -0.209172],
+            [-0.0083117, 0.5877285, -0.0620636],
+            [0.1299457, 0.6825954, -0.1513752],
+            [0.3296958, 0.4868735, -0.2210958],
+            [0.5682053, 0.1874525, -0.2951290],
+            [0.8730280, -0.3920403, -0.3616149],
+            [1.1326077, -1.2367284, -0.4118494],
+            [1.0601591, -1.5999137, -0.3589221],
+            [0.6777470, -0.3272588, -0.2504286],
         ];
         const F2C: [[f64; 3]; 8] = [
-            [0.091000, 0.060000, 0.000000],
-            [0.055000, 0.060000, 0.000000],
-            [0.025000, 0.060000, 0.000000],
-            [-0.015000, 0.060000, 0.000000],
-            [-0.065000, 0.060000, 0.000000],
-            [-0.115000, 0.060000, 0.000000],
-            [-0.165000, 0.060000, 0.000000],
-            [-0.215000, 0.060000, 0.000000],
+            [-0.0596012, 0.0721249, -0.0220216],
+            [-0.0189325, 0.0659650, -0.0288748],
+            [0.0554140, -0.0639588, -0.0260542],
+            [0.1088631, -0.1519229, -0.0139754],
+            [0.2255647, -0.4620442, 0.0012448],
+            [0.2877813, -0.8230357, 0.0558651],
+            [0.2642124, -1.1272340, 0.1310694],
+            [0.1561313, -1.3765031, 0.2506212],
         ];
 
         let ebin_clamped = ebin.min(7);
@@ -718,18 +731,46 @@ mod tests {
 
     #[test]
     fn test_perez_f2_coefficients_monotonic_non_increasing() {
+        // The E+ Perez-1999 Fij table (adopted 2026-10-09, PR #4349) is
+        // single-peaked in F2[0] over the ε bins: it rises monotonically
+        // from bin 1 to the peak at bin 5, then falls monotonically to
+        // bin 8. (The 1990 journal set was monotone non-increasing; the
+        // table-value test above pins the set itself.)
+        let (_, first) = PerezSkyModel::get_perez_coefficients(0);
+        let mut peak = first[0];
+        let mut peak_bin = 0;
+        for ebin in 1..8 {
+            let (_, f2c) = PerezSkyModel::get_perez_coefficients(ebin);
+            if f2c[0] > peak {
+                peak = f2c[0];
+                peak_bin = ebin;
+            }
+        }
+        assert_eq!(peak_bin, 5, "F2[0] peak should be at bin 6 (ε≥2.80)");
         for ebin in 0..7 {
             let (_, f2c_curr) = PerezSkyModel::get_perez_coefficients(ebin);
             let (_, f2c_next) = PerezSkyModel::get_perez_coefficients(ebin + 1);
-
-            assert!(
-                f2c_curr[0] >= f2c_next[0],
-                "F2[0] at bin {} ({}) should be >= F2[0] at bin {} ({})",
-                ebin,
-                f2c_curr[0],
-                ebin + 1,
-                f2c_next[0]
-            );
+            if ebin < peak_bin {
+                assert!(
+                    f2c_curr[0] <= f2c_next[0],
+                    "F2[0] at bin {} ({}) should be <= F2[0] at bin {} ({}) \
+                     on the rising segment",
+                    ebin,
+                    f2c_curr[0],
+                    ebin + 1,
+                    f2c_next[0]
+                );
+            } else {
+                assert!(
+                    f2c_curr[0] >= f2c_next[0],
+                    "F2[0] at bin {} ({}) should be >= F2[0] at bin {} ({}) \
+                     on the falling segment",
+                    ebin,
+                    f2c_curr[0],
+                    ebin + 1,
+                    f2c_next[0]
+                );
+            }
         }
     }
 
@@ -761,26 +802,31 @@ mod tests {
 
     #[test]
     fn test_perez_f1_f2_coefficients_table_values() {
+        // Expected values are the EnergyPlus Engineering Reference
+        // "Sky Radiance Model" Fij table (Perez et al. private
+        // communication 5/21/99) — the reference-basis set adopted in
+        // this file (2026-10-09, PR #4349). The previously asserted
+        // values were the Perez et al. (1990) journal Table 3 set.
         let f1c_all = [
-            [-0.008317, 0.587728, -0.062064],
-            [0.129967, 0.682595, -0.151375],
-            [0.329676, 0.486861, -0.221272],
-            [0.568205, 0.187452, -0.295250],
-            [0.873018, -0.393289, -0.369150],
-            [1.321297, -1.176777, -0.393994],
-            [0.999852, -1.634380, -0.291495],
-            [0.553776, 0.631414, -0.209172],
+            [-0.0083117, 0.5877285, -0.0620636],
+            [0.1299457, 0.6825954, -0.1513752],
+            [0.3296958, 0.4868735, -0.2210958],
+            [0.5682053, 0.1874525, -0.2951290],
+            [0.8730280, -0.3920403, -0.3616149],
+            [1.1326077, -1.2367284, -0.4118494],
+            [1.0601591, -1.5999137, -0.3589221],
+            [0.6777470, -0.3272588, -0.2504286],
         ];
 
         let f2c_all = [
-            [0.091000, 0.060000, 0.000000],
-            [0.055000, 0.060000, 0.000000],
-            [0.025000, 0.060000, 0.000000],
-            [-0.015000, 0.060000, 0.000000],
-            [-0.065000, 0.060000, 0.000000],
-            [-0.115000, 0.060000, 0.000000],
-            [-0.165000, 0.060000, 0.000000],
-            [-0.215000, 0.060000, 0.000000],
+            [-0.0596012, 0.0721249, -0.0220216],
+            [-0.0189325, 0.0659650, -0.0288748],
+            [0.0554140, -0.0639588, -0.0260542],
+            [0.1088631, -0.1519229, -0.0139754],
+            [0.2255647, -0.4620442, 0.0012448],
+            [0.2877813, -0.8230357, 0.0558651],
+            [0.2642124, -1.1272340, 0.1310694],
+            [0.1561313, -1.3765031, 0.2506212],
         ];
 
         for ebin in 0..8 {
@@ -837,6 +883,13 @@ mod tests {
 
     #[test]
     fn test_perez_f2_decreases_at_each_sky_clearness_transition() {
+        // Kept as a bin-resolution check of the E+ Perez-1999 set (adopted
+        // 2026-10-09, PR #4349): that table is single-peaked in F2[0]
+        // (peak at bin 5), so the strict non-increasing form of the 1990
+        // journal set no longer holds — see the #[ignore]d F1 transition
+        // test above for the analogous F1 case. The invariants that
+        // survive: F2[0] stays inside the documented table's range at
+        // every transition and the peak sits at bin 5.
         let transitions = [
             (0.0, 1.065),
             (1.065, 1.23),
@@ -855,15 +908,29 @@ mod tests {
             let (_, f2c_above) = PerezSkyModel::get_perez_coefficients(bin_above);
 
             assert!(
-                f2c_above[0] <= f2c_below[0],
-                "F2[0] should be non-increasing across transition at epsilon={}: \
-                 bin {} (F2={}) -> bin {} (F2={})",
+                f2c_below[0].is_finite() && f2c_above[0].is_finite(),
+                "F2[0] must stay finite across transition at epsilon={}",
+                eps_above
+            );
+            assert!(
+                (-0.0596012..=0.2877813).contains(&f2c_above[0]),
+                "F2[0] out of the E+ table range across transition at \
+                 epsilon={}: {}",
                 eps_above,
-                bin_below,
-                f2c_below[0],
-                bin_above,
                 f2c_above[0]
             );
         }
+
+        // Single-peak position — the shape property of the E+ set.
+        let mut peak_bin = 0;
+        let mut peak = f64::MIN;
+        for ebin in 0..8 {
+            let (_, f2c) = PerezSkyModel::get_perez_coefficients(ebin);
+            if f2c[0] > peak {
+                peak = f2c[0];
+                peak_bin = ebin;
+            }
+        }
+        assert_eq!(peak_bin, 5, "F2[0] peak should be at bin 6 (ε≥2.80)");
     }
 }
