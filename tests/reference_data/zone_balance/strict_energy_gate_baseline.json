@@ -155,16 +155,16 @@
   },
   "case_950_cooling": {
    "published_range_mwh": [
-    2.13,
-    3.67
+    0.39,
+    0.92
    ],
    "band_mwh": [
-    2.465,
-    3.335
+    0.557,
+    0.753
    ],
    "value_mwh": 0.564,
-   "gap_pct_of_mid": 65.55,
-   "status": "known_fail"
+   "gap_pct_of_mid": 0.0,
+   "status": "pass"
   },
   "case_960_heating": {
    "published_range_mwh": [
@@ -217,6 +217,345 @@
    "value_mwh": 2.277,
    "gap_pct_of_mid": 58.82,
    "status": "known_fail"
+  },
+  "case_610_heating": {
+   "published_range_mwh": [
+    4.36,
+    5.79
+   ],
+   "band_mwh": [
+    4.314,
+    5.836
+   ],
+   "value_mwh": 6.018,
+   "gap_pct_of_mid": 3.59,
+   "status": "known_fail"
+  },
+  "case_610_cooling": {
+   "published_range_mwh": [
+    3.92,
+    6.14
+   ],
+   "band_mwh": [
+    4.275,
+    5.784
+   ],
+   "value_mwh": 3.984,
+   "gap_pct_of_mid": 5.79,
+   "status": "known_fail"
+  },
+  "case_620_heating": {
+   "published_range_mwh": [
+    4.094,
+    4.719
+   ],
+   "band_mwh": [
+    3.746,
+    5.067
+   ],
+   "value_mwh": 6.824,
+   "gap_pct_of_mid": 39.87,
+   "status": "known_fail"
+  },
+  "case_620_cooling": {
+   "published_range_mwh": [
+    3.841,
+    4.404
+   ],
+   "band_mwh": [
+    3.504,
+    4.741
+   ],
+   "value_mwh": 3.686,
+   "gap_pct_of_mid": 0.0,
+   "status": "pass"
+  },
+  "case_630_heating": {
+   "published_range_mwh": [
+    5.05,
+    6.47
+   ],
+   "band_mwh": [
+    4.896,
+    6.624
+   ],
+   "value_mwh": 6.914,
+   "gap_pct_of_mid": 5.03,
+   "status": "known_fail"
+  },
+  "case_630_cooling": {
+   "published_range_mwh": [
+    2.13,
+    3.7
+   ],
+   "band_mwh": [
+    2.478,
+    3.352
+   ],
+   "value_mwh": 3.334,
+   "gap_pct_of_mid": 0.0,
+   "status": "pass"
+  },
+  "case_640_heating": {
+   "published_range_mwh": [
+    2.75,
+    3.8
+   ],
+   "band_mwh": [
+    2.784,
+    3.766
+   ],
+   "value_mwh": 5.932,
+   "gap_pct_of_mid": 66.14,
+   "status": "known_fail"
+  },
+  "case_640_cooling": {
+   "published_range_mwh": [
+    5.95,
+    8.1
+   ],
+   "band_mwh": [
+    5.971,
+    8.079
+   ],
+   "value_mwh": 4.616,
+   "gap_pct_of_mid": 19.29,
+   "status": "known_fail"
+  },
+  "case_650_heating": {
+   "published_range_mwh": [
+    0.0,
+    0.0
+   ],
+   "band_mwh": [
+    0.0,
+    0.0
+   ],
+   "value_mwh": 0.0,
+   "gap_pct_of_mid": 0.0,
+   "status": "pass"
+  },
+  "case_650_cooling": {
+   "published_range_mwh": [
+    4.82,
+    7.06
+   ],
+   "band_mwh": [
+    5.049,
+    6.831
+   ],
+   "value_mwh": 3.644,
+   "gap_pct_of_mid": 23.59,
+   "status": "known_fail"
+  },
+  "case_910_heating": {
+   "published_range_mwh": [
+    1.51,
+    2.28
+   ],
+   "band_mwh": [
+    1.611,
+    2.179
+   ],
+   "value_mwh": 1.623,
+   "gap_pct_of_mid": 0.0,
+   "status": "pass"
+  },
+  "case_910_cooling": {
+   "published_range_mwh": [
+    0.82,
+    1.88
+   ],
+   "band_mwh": [
+    1.147,
+    1.552
+   ],
+   "value_mwh": 1.277,
+   "gap_pct_of_mid": 0.0,
+   "status": "pass"
+  },
+  "case_930_heating": {
+   "published_range_mwh": [
+    4.14,
+    5.34
+   ],
+   "band_mwh": [
+    4.029,
+    5.451
+   ],
+   "value_mwh": 2.541,
+   "gap_pct_of_mid": 31.39,
+   "status": "known_fail"
+  },
+  "case_930_cooling": {
+   "published_range_mwh": [
+    1.04,
+    2.24
+   ],
+   "band_mwh": [
+    1.394,
+    1.886
+   ],
+   "value_mwh": 1.542,
+   "gap_pct_of_mid": 0.0,
+   "status": "pass"
+  },
+  "case_940_heating": {
+   "published_range_mwh": [
+    0.79,
+    1.41
+   ],
+   "band_mwh": [
+    0.935,
+    1.265
+   ],
+   "value_mwh": 1.575,
+   "gap_pct_of_mid": 28.18,
+   "status": "known_fail"
+  },
+  "case_940_cooling": {
+   "published_range_mwh": [
+    2.08,
+    3.55
+   ],
+   "band_mwh": [
+    2.393,
+    3.237
+   ],
+   "value_mwh": 1.514,
+   "gap_pct_of_mid": 31.23,
+   "status": "known_fail"
+  },
+  "case_195_heating": {
+   "published_range_mwh": [
+    3.951,
+    4.217
+   ],
+   "band_mwh": [
+    3.471,
+    4.697
+   ],
+   "value_mwh": 1.951,
+   "gap_pct_of_mid": 37.22,
+   "status": "known_fail"
+  },
+  "case_195_cooling": {
+   "published_range_mwh": [
+    0.592,
+    0.712
+   ],
+   "band_mwh": [
+    0.554,
+    0.75
+   ],
+   "value_mwh": 0.669,
+   "gap_pct_of_mid": 0.0,
+   "status": "pass"
+  },
+  "ff_600ff_min": {
+   "published_range_c": [
+    -18.8,
+    -15.6
+   ],
+   "band_c": [
+    -18.8,
+    -15.6
+   ],
+   "value_c": -18.48,
+   "gap_pct_of_mid": 0.0,
+   "status": "pass"
+  },
+  "ff_600ff_max": {
+   "published_range_c": [
+    64.9,
+    75.1
+   ],
+   "band_c": [
+    64.9,
+    75.1
+   ],
+   "value_c": 57.45,
+   "gap_pct_of_mid": 17.93,
+   "status": "known_fail"
+  },
+  "ff_650ff_min": {
+   "published_range_c": [
+    -23.0,
+    -21.0
+   ],
+   "band_c": [
+    -23.0,
+    -21.0
+   ],
+   "value_c": -24.45,
+   "gap_pct_of_mid": 11.14,
+   "status": "known_fail"
+  },
+  "ff_650ff_max": {
+   "published_range_c": [
+    63.2,
+    73.5
+   ],
+   "band_c": [
+    63.2,
+    73.5
+   ],
+   "value_c": 57.09,
+   "gap_pct_of_mid": 16.47,
+   "status": "known_fail"
+  },
+  "ff_900ff_min": {
+   "published_range_c": [
+    -6.4,
+    -1.6
+   ],
+   "band_c": [
+    -6.4,
+    -1.6
+   ],
+   "value_c": -6.95,
+   "gap_pct_of_mid": 73.75,
+   "status": "known_fail"
+  },
+  "ff_900ff_max": {
+   "published_range_c": [
+    41.8,
+    46.4
+   ],
+   "band_c": [
+    41.8,
+    46.4
+   ],
+   "value_c": 41.32,
+   "gap_pct_of_mid": 6.3,
+   "status": "known_fail"
+  },
+  "ff_950ff_min": {
+   "published_range_c": [
+    -20.2,
+    -17.8
+   ],
+   "band_c": [
+    -20.2,
+    -17.8
+   ],
+   "value_c": -22.45,
+   "gap_pct_of_mid": 18.16,
+   "status": "known_fail"
+  },
+  "ff_950ff_max": {
+   "published_range_c": [
+    35.5,
+    38.5
+   ],
+   "band_c": [
+    35.5,
+    38.5
+   ],
+   "value_c": 37.61,
+   "gap_pct_of_mid": 0.0,
+   "status": "pass"
   }
- }
+ },
+ "_doc_issue4170": "Issue #4170 (2026-10-09): strict-gate coverage extended to the nine previously-ungated annual cases (610/620/630/640/650/910/930/940/195) and the free-float min/max cohort (600FF/650FF/900FF/950FF, units degC, sign-safe gap formula on |midpoint|). Bands transcribed from src/validation/benchmark.rs published ranges; no band moved. All values measured on the blind Golden-EPW path at develop 21c00103 and recorded downward-only. Judgment calls: (1) Case 640/940 values are byte-identical to Case 600/900 because the blind annual path does not resolve the setback schedule (issue #4167) \u2014 recorded as measured, not worked around; (2) Case 630 annual cooling measures IN band on this blind path (3.334 MWh) even though the 600-series test path is over band (4.03, section LIMIT-39) \u2014 the two harnesses differ and each records its own value; (3) FF min bands with negative midpoints use distance/|mid| in the checker (ff_gap_pct_of_mid). Correction in the same pass: case_950_cooling's stored published_range/band held Case 900's cooling band ([2.13,3.67]/[2.465,3.335]) \u2014 a pre-existing copy error that let any value inside Case 900's band pass; restored to the published Case 950 envelope [0.39,0.92], band [0.557,0.753], matching the Rust CASE_950_REF const."
 }

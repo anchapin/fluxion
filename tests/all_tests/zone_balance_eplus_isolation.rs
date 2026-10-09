@@ -1268,6 +1268,353 @@ fn test_case_970_annual_energy_ashrae140_tolerance() {
     );
 }
 
+// ===========================================================================
+// Issue #4170: strict ±15% annual-energy gate extended to the nine
+// previously-ungated annual cases (610 / 620 / 630 / 640 / 650 / 910 / 930 /
+// 940 / 195) and to the free-float min/max cohort (600FF / 650FF / 900FF /
+// 950FF). Same pattern as the eight #3572 tests above: `#[ignore]`'d,
+// executed by the strict-energy-gate workflow with `--include-ignored`,
+// printed in the `[Case NNN strict]` format the regression checker parses,
+// baselines recorded downward-only in strict_energy_gate_baseline.json.
+// Bands come from `src/validation/benchmark.rs` (published ranges) — no new
+// reference value is introduced by this issue.
+// ===========================================================================
+
+/// Issue #4170: published bands for the nine newly-gated annual cases,
+/// transcribed from `src/validation/benchmark.rs` (`get_all_benchmark_data`,
+/// byte-equal to the blind table for these cases).
+const CASE_610_REF: EnergyReference = EnergyReference {
+    case_id: "610",
+    annual_heating_min_mwh: 4.36,
+    annual_heating_max_mwh: 5.79,
+    annual_cooling_min_mwh: 3.92,
+    annual_cooling_max_mwh: 6.14,
+    peak_heating_min_kw: 4.30,
+    peak_heating_max_kw: 5.70,
+    peak_cooling_min_kw: 2.20,
+    peak_cooling_max_kw: 2.90,
+};
+const CASE_620_REF: EnergyReference = EnergyReference {
+    case_id: "620",
+    annual_heating_min_mwh: 4.094,
+    annual_heating_max_mwh: 4.719,
+    annual_cooling_min_mwh: 3.841,
+    annual_cooling_max_mwh: 4.404,
+    peak_heating_min_kw: 3.038,
+    peak_heating_max_kw: 3.385,
+    peak_cooling_min_kw: 3.955,
+    peak_cooling_max_kw: 4.797,
+};
+const CASE_630_REF: EnergyReference = EnergyReference {
+    case_id: "630",
+    annual_heating_min_mwh: 5.05,
+    annual_heating_max_mwh: 6.47,
+    annual_cooling_min_mwh: 2.13,
+    annual_cooling_max_mwh: 3.70,
+    peak_heating_min_kw: 4.70,
+    peak_heating_max_kw: 6.10,
+    peak_cooling_min_kw: 1.80,
+    peak_cooling_max_kw: 2.40,
+};
+const CASE_640_REF: EnergyReference = EnergyReference {
+    case_id: "640",
+    annual_heating_min_mwh: 2.75,
+    annual_heating_max_mwh: 3.80,
+    annual_cooling_min_mwh: 5.95,
+    annual_cooling_max_mwh: 8.10,
+    peak_heating_min_kw: 4.30,
+    peak_heating_max_kw: 5.70,
+    peak_cooling_min_kw: 2.80,
+    peak_cooling_max_kw: 3.70,
+};
+// Case 650 (night ventilation): heating published envelope is degenerate
+// [0.00, 0.00] MWh — same handling as Case 950 above.
+const CASE_650_REF: EnergyReference = EnergyReference {
+    case_id: "650",
+    annual_heating_min_mwh: 0.00,
+    annual_heating_max_mwh: 0.00,
+    annual_cooling_min_mwh: 4.82,
+    annual_cooling_max_mwh: 7.06,
+    peak_heating_min_kw: 0.00,
+    peak_heating_max_kw: 0.00,
+    peak_cooling_min_kw: 1.90,
+    peak_cooling_max_kw: 2.50,
+};
+const CASE_910_REF: EnergyReference = EnergyReference {
+    case_id: "910",
+    annual_heating_min_mwh: 1.51,
+    annual_heating_max_mwh: 2.28,
+    annual_cooling_min_mwh: 0.82,
+    annual_cooling_max_mwh: 1.88,
+    peak_heating_min_kw: 1.90,
+    peak_heating_max_kw: 2.50,
+    peak_cooling_min_kw: 1.20,
+    peak_cooling_max_kw: 1.60,
+};
+const CASE_930_REF: EnergyReference = EnergyReference {
+    case_id: "930",
+    annual_heating_min_mwh: 4.14,
+    annual_heating_max_mwh: 5.34,
+    annual_cooling_min_mwh: 1.04,
+    annual_cooling_max_mwh: 2.24,
+    peak_heating_min_kw: 2.30,
+    peak_heating_max_kw: 3.00,
+    peak_cooling_min_kw: 1.10,
+    peak_cooling_max_kw: 1.50,
+};
+const CASE_940_REF: EnergyReference = EnergyReference {
+    case_id: "940",
+    annual_heating_min_mwh: 0.79,
+    annual_heating_max_mwh: 1.41,
+    annual_cooling_min_mwh: 2.08,
+    annual_cooling_max_mwh: 3.55,
+    peak_heating_min_kw: 1.90,
+    peak_heating_max_kw: 2.50,
+    peak_cooling_min_kw: 1.70,
+    peak_cooling_max_kw: 2.30,
+};
+const CASE_195_REF: EnergyReference = EnergyReference {
+    case_id: "195",
+    annual_heating_min_mwh: 3.951,
+    annual_heating_max_mwh: 4.217,
+    annual_cooling_min_mwh: 0.592,
+    annual_cooling_max_mwh: 0.712,
+    peak_heating_min_kw: 1.791,
+    peak_heating_max_kw: 1.802,
+    peak_cooling_min_kw: 0.944,
+    peak_cooling_max_kw: 1.118,
+};
+
+/// Shared body for the #4170 strict annual-energy tests: same print format
+/// (`[#1147 Case NNN strict] H=… C=…`) and assertion shape as the #3572
+/// tests, so the regression checker needs no per-case special-casing.
+fn strict_annual_energy_body(
+    label: &str,
+    spec: &fluxion::validation::ashrae_140_cases::CaseSpec,
+    reference: &EnergyReference,
+) {
+    let (h, c, _ph, _pc) =
+        run_blind_annual_energy(spec, "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw");
+    let (h_lo, h_hi) = reference.annual_heating_band();
+    let (c_lo, c_hi) = reference.annual_cooling_band();
+
+    println!(
+        "[#4170 Case {} strict] H={h:.3} MWh (band {h_lo:.3}-{h_hi:.3}), \
+         C={c:.3} MWh (band {c_lo:.3}-{c_hi:.3})",
+        label
+    );
+
+    assert!(
+        h >= h_lo && h <= h_hi,
+        "Case {label} annual heating {h:.3} MWh outside ±15% band [{h_lo:.3}, {h_hi:.3}]"
+    );
+    assert!(
+        c >= c_lo && c <= c_hi,
+        "Case {label} annual cooling {c:.3} MWh outside ±15% band [{c_lo:.3}, {c_hi:.3}]"
+    );
+}
+
+#[ignore = "Issue #4170: strict-gate coverage extension — observed by the \
+            strict-energy-gate workflow with --include-ignored; baseline \
+            records the current gap downward-only."]
+#[test]
+fn test_case_610_annual_energy_ashrae140_tolerance() {
+    strict_annual_energy_body("610", &ASHRAE140Case::Case610.spec(), &CASE_610_REF);
+}
+
+#[ignore = "Issue #4170: strict-gate coverage extension — observed by the \
+            strict-energy-gate workflow with --include-ignored; baseline \
+            records the current gap downward-only."]
+#[test]
+fn test_case_620_annual_energy_ashrae140_tolerance() {
+    strict_annual_energy_body("620", &ASHRAE140Case::Case620.spec(), &CASE_620_REF);
+}
+
+// Case 630 annual cooling is quarantined separately as §LIMIT-39 (issue
+// #4332) — that row is OBSERVED by this gate like any other known-fail
+// metric; the quarantine on the 600-series test file is unaffected.
+#[ignore = "Issue #4170: strict-gate coverage extension — observed by the \
+            strict-energy-gate workflow with --include-ignored; baseline \
+            records the current gap downward-only."]
+#[test]
+fn test_case_630_annual_energy_ashrae140_tolerance() {
+    strict_annual_energy_body("630", &ASHRAE140Case::Case630.spec(), &CASE_630_REF);
+}
+
+#[ignore = "Issue #4170: strict-gate coverage extension — observed by the \
+            strict-energy-gate workflow with --include-ignored; baseline \
+            records the current gap downward-only."]
+#[test]
+fn test_case_640_annual_energy_ashrae140_tolerance() {
+    strict_annual_energy_body("640", &ASHRAE140Case::Case640.spec(), &CASE_640_REF);
+}
+
+#[ignore = "Issue #4170: strict-gate coverage extension — observed by the \
+            strict-energy-gate workflow with --include-ignored; baseline \
+            records the current gap downward-only."]
+#[test]
+fn test_case_650_annual_energy_ashrae140_tolerance() {
+    strict_annual_energy_body("650", &ASHRAE140Case::Case650.spec(), &CASE_650_REF);
+}
+
+#[ignore = "Issue #4170: strict-gate coverage extension — observed by the \
+            strict-energy-gate workflow with --include-ignored; baseline \
+            records the current gap downward-only."]
+#[test]
+fn test_case_910_annual_energy_ashrae140_tolerance() {
+    strict_annual_energy_body("910", &ASHRAE140Case::Case910.spec(), &CASE_910_REF);
+}
+
+#[ignore = "Issue #4170: strict-gate coverage extension — observed by the \
+            strict-energy-gate workflow with --include-ignored; baseline \
+            records the current gap downward-only."]
+#[test]
+fn test_case_930_annual_energy_ashrae140_tolerance() {
+    strict_annual_energy_body("930", &ASHRAE140Case::Case930.spec(), &CASE_930_REF);
+}
+
+#[ignore = "Issue #4170: strict-gate coverage extension — observed by the \
+            strict-energy-gate workflow with --include-ignored; baseline \
+            records the current gap downward-only."]
+#[test]
+fn test_case_940_annual_energy_ashrae140_tolerance() {
+    strict_annual_energy_body("940", &ASHRAE140Case::Case940.spec(), &CASE_940_REF);
+}
+
+#[ignore = "Issue #4170: strict-gate coverage extension — observed by the \
+            strict-energy-gate workflow with --include-ignored; baseline \
+            records the current gap downward-only."]
+#[test]
+fn test_case_195_annual_energy_ashrae140_tolerance() {
+    strict_annual_energy_body("195", &ASHRAE140Case::Case195.spec(), &CASE_195_REF);
+}
+
+// ---------------------------------------------------------------------------
+// Issue #4170: free-float min/max temperature gate (600FF/650FF/900FF/950FF).
+// Blind, spec-only; same ±15%-of-midpoint basis as the annual-energy gate.
+// ---------------------------------------------------------------------------
+
+/// Free-float published band from `src/validation/benchmark.rs`:
+/// (min_lo, min_hi, max_lo, max_hi) °C.
+struct FreeFloatReference {
+    case_id: &'static str,
+    min_band: (f64, f64),
+    max_band: (f64, f64),
+}
+
+const FF_600_REF: FreeFloatReference = FreeFloatReference {
+    case_id: "600FF",
+    min_band: (-18.8, -15.6),
+    max_band: (64.9, 75.1),
+};
+const FF_650_REF: FreeFloatReference = FreeFloatReference {
+    case_id: "650FF",
+    min_band: (-23.0, -21.0),
+    max_band: (63.2, 73.5),
+};
+const FF_900_REF: FreeFloatReference = FreeFloatReference {
+    case_id: "900FF",
+    min_band: (-6.4, -1.6),
+    max_band: (41.8, 46.4),
+};
+const FF_950_REF: FreeFloatReference = FreeFloatReference {
+    case_id: "950FF",
+    min_band: (-20.2, -17.8),
+    max_band: (35.5, 38.5),
+};
+
+/// Blind free-float run (spec only, HVAC disabled, Golden EPW — the strict
+/// gate's canonical weather): returns (min_T, max_T) °C.
+fn run_blind_free_float(
+    spec: &fluxion::validation::ashrae_140_cases::CaseSpec,
+    epw_path: &str,
+) -> (f64, f64) {
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
+    let weather = fluxion::weather::epw::EpwWeatherSource::from_file(epw_path)
+        .expect("EPW weather file must be present in assets/weather/");
+
+    // Disable HVAC for free-floating mode (mirrors simulate_free_float).
+    model.setpoints.heating_setpoint = -999.0;
+    model.setpoints.cooling_setpoint = 999.0;
+    model.hvac.hvac_heating_capacity = 0.0;
+    model.hvac.hvac_cooling_capacity = 0.0;
+
+    let mut min_t = f64::INFINITY;
+    let mut max_t = f64::NEG_INFINITY;
+    for step in 0..8760 {
+        let weather_data = weather.get_hourly_data(step).unwrap();
+        model.solar.weather = Some(weather_data.clone());
+        model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        if let Some(&t) = model.setpoints.temperatures.as_slice().first() {
+            min_t = min_t.min(t);
+            max_t = max_t.max(t);
+        }
+    }
+    (min_t, max_t)
+}
+
+fn ff_gate_body(case: ASHRAE140Case, reference: &FreeFloatReference) {
+    let (min_t, max_t) = run_blind_free_float(
+        &case.spec(),
+        "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw",
+    );
+    println!(
+        "[#4170 Case {} strict] Tmin={min_t:.2} band [{:.1} to {:.1}], \
+         Tmax={max_t:.2} band [{:.1} to {:.1}]",
+        reference.case_id,
+        reference.min_band.0,
+        reference.min_band.1,
+        reference.max_band.0,
+        reference.max_band.1
+    );
+    assert!(
+        min_t >= reference.min_band.0 && min_t <= reference.min_band.1,
+        "Case {} min free-float temp {min_t:.2}°C outside band {:?}",
+        reference.case_id,
+        reference.min_band
+    );
+    assert!(
+        max_t >= reference.max_band.0 && max_t <= reference.max_band.1,
+        "Case {} max free-float temp {max_t:.2}°C outside band {:?}",
+        reference.case_id,
+        reference.max_band
+    );
+}
+
+#[ignore = "Issue #4170: free-float gate — observed by the strict-energy-gate \
+            workflow with --include-ignored; baseline records the current gap \
+            downward-only."]
+#[test]
+fn test_case_600ff_free_float_strict_gate() {
+    ff_gate_body(ASHRAE140Case::Case600FF, &FF_600_REF);
+}
+
+#[ignore = "Issue #4170: free-float gate — observed by the strict-energy-gate \
+            workflow with --include-ignored; baseline records the current gap \
+            downward-only."]
+#[test]
+fn test_case_650ff_free_float_strict_gate() {
+    ff_gate_body(ASHRAE140Case::Case650FF, &FF_650_REF);
+}
+
+#[ignore = "Issue #4170: free-float gate — observed by the strict-energy-gate \
+            workflow with --include-ignored; baseline records the current gap \
+            downward-only."]
+#[test]
+fn test_case_900ff_free_float_strict_gate() {
+    ff_gate_body(ASHRAE140Case::Case900FF, &FF_900_REF);
+}
+
+#[ignore = "Issue #4170: free-float gate — observed by the strict-energy-gate \
+            workflow with --include-ignored; baseline records the current gap \
+            downward-only."]
+#[test]
+fn test_case_950ff_free_float_strict_gate() {
+    ff_gate_body(ASHRAE140Case::Case950FF, &FF_950_REF);
+}
+
 /// Verify the reference CSV files are present and parseable (acceptance
 /// criterion: "tests/reference_data/zone_balance/ contains E+ reference CSV for
 /// Case 600 (and Case 900 if available)").

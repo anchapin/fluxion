@@ -357,6 +357,12 @@ jobs:
           echo "---"
           echo "strict-tolerance-raw-exit=$ec (non-zero expected: cooling assertions fail today)"
           echo "strict-tolerance-raw-exit=$ec" >> /tmp/strict_gate_output.txt
+          # Issue #4170: the free-float min/max cohort is gated on the same
+          # log; the checker parses both line formats.
+          cargo test --release --verbose \
+            --test all_tests free_float_strict_gate \
+            -- --include-ignored --nocapture \
+            2>&1 | tee -a /tmp/strict_gate_output.txt
           exit 0
 
       - name: ValidationMode::Blind Case 600 infrastructure (must pass)
