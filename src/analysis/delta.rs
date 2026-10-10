@@ -934,7 +934,12 @@ mod tests {
         let base_spec = ASHRAE140Case::Case600.spec();
         // Create variant with higher window U-value (worse insulation) to change loads
         let mut variant_spec = base_spec.clone();
-        // Case600 default window U is around 3.0; change to 5.0
+        // WINDOW-01 (loop round 7): the effective window U-value is driven by
+        // `window_u_value_override` (the ASHRAE 140 spec 3.0 W/m²K on this
+        // spec); varying `window_properties.u_value` alone no longer changes
+        // the engine. Set the override to 5.0 to create the worse-insulation
+        // variant, and keep the glazing U consistent.
+        variant_spec.window_u_value_override = Some(5.0);
         variant_spec.window_properties.u_value = 5.0;
         let variants = vec![("high_u_window".to_string(), variant_spec)];
         let (report, base_result) = run_comparison(&base_spec, &variants, true, 0).unwrap();

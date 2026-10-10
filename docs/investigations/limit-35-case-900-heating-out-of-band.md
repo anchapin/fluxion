@@ -1368,3 +1368,54 @@ entry points disagree on a spec constant; magnitude ~+3–9 W/K; back-of-envelop
   U divergence filed (fact 5, WINDOW-01).
 - No engine numbers changed this round; all diagnostic hooks reverted (worktree clean, harness
   removed).
+
+## §20 — WINDOW-01 resolved: the 140 spec window U threaded through the CaseSpec path (2026-10-09, physics loop round 7)
+
+§19 fact 5's window U-value path divergence is fixed: `CaseSpec` carries a data-driven
+`window_u_value_override` (mirroring `floor_u_value_override`), set to the ASHRAE 140 spec
+constant `WINDOW_U_VALUE` = 3.0 W/m²K in every double-clear-glass 600/900-series builder.
+`from_spec_with_selector` honours it for both `solar.window_u_value` and the `h_tr_w`
+conductance (the spec constant already includes the frame; the frame-bridge composition is
+skipped when the override is present), and the ISO 13790 audit conductances read it too.
+Both engine entry points now conduct the 600/900 windows identically at 36 W/K.
+
+### Measured movement (branch vs develop 05b93343, Golden-NREL EPW, strict CaseSpec path)
+
+- Low-mass: H +12–15 %, C −8–10 %. 600 H 5.883 → 6.758 / C 4.700 → 4.301; 610 H 6.412 → 7.307 /
+  C 2.724 → 2.456; 620 H 6.794 → 7.666 / C 3.705 → 3.396; 630 H 7.353 → 8.243 / C 2.638 → 2.414;
+  640 H 5.883 → 6.758 / C 4.700 → 4.301; 650 C 3.713 → 3.508.
+- High-mass: H and C both +7–8 %. 900 H 1.566 → 1.680 / C 1.570 → 1.684; 910/920/930/940/950
+  move proportionally.
+- 800/810 inherit `case_600_baseline` and move with it; 195/960/970 carry no override and are
+  bit-identical (195 is the no-window control).
+
+### The §19 estimate is falsified in sign
+
+§19 estimated "≈ +2–3 % cooling, −2–3 % heating (sign: toward reference)". The measured sign is
+the opposite: the physically-correct higher-U window raises conductive winter losses (heating UP)
+and cuts summer/shoulder-season conductive gain (cooling DOWN). Adopted per the fidelity-first
+direction; nothing tuned.
+
+### Re-record ledger (old → new, all from the corrected engine)
+
+- Strict gate (17 annual + 4 free-float): baseline rewritten with dated provenance; 620/630
+  cooling leave their bands low; 600/620/630/640 heating gaps deepen; 900-series cooling gaps
+  narrow (900 C gap 30.86 % → 26.93 %); 910 H stays in band; 600FF Tmin −18.45 → −19.00 leaves
+  its band by 0.2 K; 600FF Tmax 57.25 → 54.87; 900FF/950FF bit-identical.
+- Fabric parity: all six (case × selector) rows re-recorded; Case 600 parity ratio_C 0.7271 →
+  0.6571 (ratio_H 1.1056 → 1.1225); 900/950 parity stays 1.0.
+- Surrogate fallback: Case 900 fallback annual HVAC heating 3160.02 → 3390.10 kWh, cooling
+  95.02 → 101.93 kWh (within the 10 % drift tolerance).
+- Grid thermal goldens: Case 600 January thermal 139.351 → 150.255 kWh; electrical 46.450 →
+  50.085 kWh; grid import 33.710 → 37.321 kWh; peak 1.2216 → 1.3153 kW; PV/battery/SoC unchanged.
+- npm: 57/57 green after re-pinning the Case 600 heating premise in test.js (dated WINDOW-01
+  comment; cooling stays pinned to the published band).
+- Validator family improves: Case 600-series failures 19 → 15 on develop (no new failures);
+  Case 900 `test_case_900_annual_cooling_within_reference_range` re-enters range (12 → 11);
+  `ashrae_140_output_validation` 27 passed / 8 xfailed, xfail reasons computed live.
+- Hotloop goldens reproduce unchanged (3/3 green, no re-record needed).
+
+§19's routing verdicts are unchanged: the 900 cooling residual remains the mixed metering pair
+(fact 2), routed to the GaugeSolver air–mass rework (#1465/#1462); the 600 free-float
+under-exceedance family (FREE-01/02) is recorded as measured. 900FF's single-clear glazing is a
+pre-existing spec question, deliberately out of scope here.

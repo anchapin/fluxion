@@ -756,7 +756,11 @@ impl ThermalModel<VectorField> {
         model.setpoints.ceiling_height = VectorField::from_scalar(geometry.height, num_zones);
         model.setpoints.window_ratio =
             VectorField::from_scalar(total_window_area / wall_area, num_zones);
-        model.solar.window_u_value = spec.window_properties.u_value;
+        // WINDOW-01: spec-level window U override wins (ASHRAE 140 spec
+        // conductance 3.0 W/m²K); otherwise the glazing U from the window spec.
+        model.solar.window_u_value = spec
+            .window_u_value_override
+            .unwrap_or(spec.window_properties.u_value);
         // Issue #2303: Set surface areas from spec geometry for correct gain distribution
         model.setpoints.wall_area = VectorField::from_scalar(wall_area, num_zones);
         model.setpoints.roof_area = VectorField::from_scalar(roof_area, num_zones);
@@ -1287,12 +1291,18 @@ impl ThermalModel<VectorField> {
             // Method `effective_u_value_with_frame` (WindowSpec) implements
             // the area-weighted glass vs frame balance and the linear edge
             // conductance.
-            let mut window_props = spec.window_properties;
-            if window_props.frame_area_fraction > 0.0 && window_props.frame_perimeter <= 0.0 {
-                window_props.frame_perimeter = frame_perimeter;
-            }
-            let u_value_eff =
-                window_props.effective_u_value_with_frame(zone_window_area, FRAME_LINEAR_EDGE_PSI);
+            let u_value_eff = if let Some(u_override) = spec.window_u_value_override {
+                // WINDOW-01: the spec-level constant (e.g. the ASHRAE 140
+                // 3.0 W/m²K window conductance) already includes the frame;
+                // no bridge composition on top.
+                u_override
+            } else {
+                let mut window_props = spec.window_properties;
+                if window_props.frame_area_fraction > 0.0 && window_props.frame_perimeter <= 0.0 {
+                    window_props.frame_perimeter = frame_perimeter;
+                }
+                window_props.effective_u_value_with_frame(zone_window_area, FRAME_LINEAR_EDGE_PSI)
+            };
 
             // Window conductance (h_tr_w = U_eff * Window Area)
             // Issue #2889 — uses effective U-value with frame thermal bridge.
