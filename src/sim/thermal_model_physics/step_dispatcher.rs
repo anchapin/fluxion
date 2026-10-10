@@ -106,12 +106,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // that satisfies the strict-energy-balance gate's invariant exactly
         // (see `write_gauge_mass_state_proxy`, Issue #3297).
         //
-        // The #3817 heavyweight-spec exception is preserved:
-        // `is_nine_r4c_model()` — auto-promoted by `from_spec_with_selector`
-        // for HighMass construction — routes directly to 9R4C because the
-        // gauge solver has no thermal-mass modeling and cannot satisfy the
-        // `zone_balance_eplus_isolation` swing-reduction sanity bound without
-        // the 9R4C's wall/roof/floor mass nodes.
+        // The #3817 heavyweight-spec exception is preserved (2026-10-10
+        // round 9, LIMIT-35 §23): the PR-d lift was built and MEASURED —
+        // gauge-routed Case 900 gives H 19.261 / C 1.969 MWh (strict bands
+        // 1.36–1.85 / 2.47–3.34; §21 unification target C 2.39–2.47) —
+        // so the unified path is NOT acceptance-ready on HighMass and the
+        // bypass stays until the gauge envelope's cold free-float bias is
+        // closed. The measurement and the decision deferral to Alex
+        // (engine-semantics judgment call) are recorded in the round-9
+        // loop notes; re-attempt when the bias is resolved.
         #[cfg(feature = "gauge-solver")]
         if selector_zone_solver == ZoneSolverKind::Gauge && !self.is_nine_r4c_model() {
             if let Some(ekwh) =
