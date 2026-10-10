@@ -283,6 +283,24 @@ pub(crate) struct SurfaceExteriorInputs {
 /// the wall's real layer stack (BDF2 time integration per #3980). Layer
 /// order is reversed from the `WallSpec` exterior→interior convention to
 /// the fd_solver interior→exterior convention (node 0 = interior face).
+/// FD solver factory. Windows are excluded (LIMIT-35 §23, PR-a): thin
+/// glazing (5 mm, ~9.4 kJ/m²K) carries no meaningful through-thickness
+/// thermal gradient, so the window enters the envelope through the steady
+/// A/R conductance and the lumped interior node with its real (small)
+/// glazing mass — the standard quasi-steady glazing treatment. Its FD
+/// sub-step response to a solar-pool kick has a sign-flipping emission
+/// slope that destabilized the coupled air update (measured, round 8).
+fn build_surface_fd(
+    wall: &WallSpec,
+    initial_temp_c: f64,
+    surface_type: &SurfaceType,
+) -> Option<ImplicitFDSolver> {
+    if matches!(surface_type, SurfaceType::Window) {
+        return None;
+    }
+    build_fd_solver(wall, initial_temp_c)
+}
+
 fn build_fd_solver(wall: &WallSpec, initial_temp_c: f64) -> Option<ImplicitFDSolver> {
     if wall.layers.is_empty() {
         return None;
@@ -495,7 +513,7 @@ impl Clone for SurfaceGaugeSolver {
             fd: self
                 .wall_spec
                 .as_ref()
-                .and_then(|w| build_fd_solver(w, 20.0)),
+                .and_then(|w| build_surface_fd(w, 20.0, &self.surface_type)),
             T_surface: 20.0,
             last_solar_absorbed_w: 0.0,
             last_fd_emitted_wm2: 0.0,
@@ -655,8 +673,8 @@ impl GaugeZoneSolver {
             zone_id,
             couplings: Vec::new(),
             inter_zone_conductance: HashMap::new(),
-            sub_hour_air_node_steps: 3, // default: 3 sub-steps per timestep (matching 5R1C)
-            previous_T_surface: 0.0,    // Issue #3920: initialized to 0, computed each step
+            sub_hour_air_node_steps: 12, // per-air-substep network advance: N=12 measured stable, N=3 diverges (see LIMIT-35 §23)
+            previous_T_surface: 0.0,     // Issue #3920: initialized to 0, computed each step
         }
     }
 
@@ -759,7 +777,7 @@ impl GaugeZoneSolver {
         // layer stack; solar is absorbed at the interior-face node. Built
         // at the same 20 °C reference as `T_surface` (state reset on
         // clone/initialize per the #3729 contract).
-        surface.fd = build_fd_solver(wall, 20.0);
+        surface.fd = build_surface_fd(wall, 20.0, &surface_type);
 
         self.surfaces.push(surface);
         self.num_surfaces = self.surfaces.len();
@@ -816,7 +834,7 @@ impl GaugeZoneSolver {
                 // test-only `disable_fd_for_test` path — both must stay
                 // `None` through re-initialization.
                 if surface.fd.is_some() {
-                    surface.fd = build_fd_solver(wall, 20.0);
+                    surface.fd = build_surface_fd(wall, 20.0, &surface.surface_type);
                 }
                 surface.T_surface = 20.0;
                 surface.last_solar_absorbed_w = 0.0;
@@ -1024,103 +1042,81 @@ impl GaugeZoneSolver {
         // average (Issue #3918 architectural fix). `h_interior` is the
         // network's air-side conductance — it enters den_air below as the
         // implicit-conductance counterpart of φ_st.
-        let (phi_st, h_interior) = self.step_interior_surface_network(
-            dt_seconds,
-            surface_pool,
-            mass_pool,
-            solar_surface_pool,
-            solar_mass_pool,
-            h_tr_is,
-            &ext_inputs,
-        );
-        net_power_watts += phi_st;
+        // [PR-a] Consistent operator splitting: the interior-surface network
+        // and the air node now advance TOGETHER over each air sub-step.
+        // Previously the network was stepped ONCE over the full hour with the
+        // interior BC frozen at T_air_old, and the hour-scale emission ledger
+        // (through-wall transmission + storage release, which is not
+        // proportional to any air-side conductance) was then consumed by the
+        // quasi-steady air update. At dt/tau_air >> 1 that frozen hour-scale
+        // flux drove the air node hundreds of kelvin in one step (the
+        // beta-soak "wild oscillation", measured 416/8760 steps |T_air| > 60
+        // degC on zero-gain Case 600). Stepping the network per sub-step keeps
+        // the frozen-flux window at dt_sub and lets the wall state respond to
+        // the air within the hour. No new constants; both updates keep their
+        // existing implicit forms.
+        let net_base_w = net_power_watts;
 
-        // Infiltration/ventilation coupling
-        // Issue #3904: Ventilation ACH is now passed as a parameter instead of hardcoded 0.
-        // infiltration_ach remains 0.5 for ASHRAE 140 Case 600 (baseline infiltration).
+        // Infiltration/ventilation coupling (moved with the sub-step loop)
         let infiltration_ach = 0.5; // ASHRAE 140 Case 600
         let h_inf = air_constants::RHO_AIR
             * air_constants::CP_AIR
             * (infiltration_ach / 3600.0)
             * self.zone_volume;
-        // Issue #3904: h_vent is computed from ventilation_ach parameter (night ventilation)
         let h_vent = air_constants::RHO_AIR
             * air_constants::CP_AIR
             * (ventilation_ach / 3600.0)
             * self.zone_volume;
         let h_total = h_vent + h_inf;
-
-        // Issue #3918: envelope transmission conductance Σ_i A_i/R_i [W/K] over
-        // all non-inter-zone surfaces — the gauge analog of the 5R1C air-node
-        // denominator terms H_tr,1 + H_tr,w (opaque + window transmission).
-        //
-        // The per-surface fluxes accumulated in `net_power_watts` were
-        // evaluated at T_air_old and are linear in T_air with slope −h_env
-        // (q_flux = (t_ext − T_air)/R_total). Omitting h_env from the air-node
-        // denominator therefore treats the envelope loss as a fixed heat
-        // source divided by the ventilation-only conductance (~21.7 W/K vs
-        // ~90 W/K of envelope coupling for Case 600), yielding the physically
-        // impossible steady state −169 °C at ΔT = 38 K and the unstable
-        // fixed-point map T_{n+1} = T_ext + Q_env(T_n)/h_ve with slope
-        // ≈ −UA/h_ve ≈ −4 (observed oscillation 20 → −54 → 19 °C).
         let h_env = self.surface_to_air_conductance();
-        // True air-node denominator — the exact analog of 5R1C's den_true
-        // (step_5r1c.rs:963-967: den_true = den / term_rest_1 =
-        // H_tr,1 + H_tr,w + H_ve + H_tr,floor + h_ms_is_prod/term_rest_1).
-        //
-        // Issue #3918 follow-up: `h_interior` (Σ h_tr_is,i of the interior
-        // network) is the air-side conductance the T_s network presents to
-        // the air node. φ_st inside `net_power_watts` is its frozen-flux
-        // driving counterpart — the same implicit linearization the envelope
-        // fluxes get through `h_env` — so the ultimate steady state stays
-        // T_ext + Φ_gains/(h_env + h_total): the interior film circulates
-        // heat but leaks nothing.
-        let den_air = h_env + h_total + h_interior;
-
         let T_ext_val = T_exterior.to_value();
-        // Quasi-steady-state temperature (constant over all sub-steps, like 5R1C's "steady")
-        //
-        // Issue #3918: exact analog of 5R1C `steady = num / den`
-        // (step_5r1c.rs:926). The surface fluxes inside `net_power_watts`
-        // are frozen at T_air_old, so linearize them implicitly around that
-        // point:  Q_surface(T) ≈ Q_surface(T_air_old) + h_env·(T_air_old − T).
-        // The quasi-steady state of
-        //   C_air·dT/dt = Q_net(T_air_old) + h_env·(T_air_old − T) + h_total·(T_ext − T)
-        // is therefore bounded:
-        //   t_steady = T_air_old + [Q_net(T_air_old) + h_total·(T_ext − T_air_old)] / (h_env + h_total)
-        // instead of the divergent `T_ext + Q_net / h_total` that produced
-        // −169 °C driving temperatures and the 20 → −54 °C oscillation.
-        // Issue #3918 follow-up: `net_power_watts` already carries the full
-        // interior absorbed-gain response φ_st from the per-surface T_s
-        // network, replacing the former scalar solar-lag temperature
-        // increment.
-        let T_air_old = self.T_air;
-        let (t_steady, tau_air) = if den_air > 0.0 {
-            (
-                T_air_old + (net_power_watts + h_total * (T_ext_val - T_air_old)) / den_air,
-                self.C_air / den_air,
-            )
-        } else {
-            // No air-coupled conductance at all (no surfaces, no ventilation):
-            // hold the air state (exp(−dt/∞) = 1).
-            (T_air_old, f64::INFINITY)
-        };
-        // Sub-stepping for the exact exponential solution
+
         let steps = self.sub_hour_air_node_steps as usize;
         let dt_sub = dt_seconds / steps as f64;
         let mut T_air_current = self.T_air;
-
+        // Hour-integrated interior-surface emission, restored to the
+        // returned net load (the sub-step loop consumed `phi_st` that the
+        // pre-splitting code added once per hour; the return convention
+        // "positive = heating needed" must keep seeing it).
+        let mut phi_st_hour_w = 0.0;
         for _ in 0..steps {
-            // Exact exponential update over dt_sub
-            let exponent = -dt_sub / tau_air;
-            T_air_current = t_steady + (T_air_current - t_steady) * exponent.exp();
+            // [PR-a] The sub-step air temperature IS the network's interior
+            // BC: with the BC frozen at the hour's old value the emission
+            // ledger keeps its sign and magnitude into arbitrarily hot air
+            // (measured +2.5 kW into 60-98 degC air, sub-step slope ~25 W/K
+            // for the massive stacks) and the excursion runs away inside the
+            // hour. Feeding T_air_current through closes the loop within the
+            // hour; the exact affine slope below then makes the coupled map
+            // implicit and unconditionally stable. No new constants.
+            let (phi_st_sub, _h_interior_sub, slope_sub) = self.step_interior_surface_network(
+                dt_sub,
+                surface_pool,
+                mass_pool,
+                solar_surface_pool,
+                solar_mass_pool,
+                h_tr_is,
+                T_air_current,
+                &ext_inputs,
+            );
+            phi_st_hour_w += phi_st_sub;
+            // [PR-a] Implicit air-surface coupling at sub-step scale: the
+            // exact sub-step emission slope closes the one-sub-step lag
+            // between the air quasi-steady update and the wall response.
+            let den_air = h_env + h_total + slope_sub;
+            if den_air > 0.0 {
+                let t_steady = T_air_current
+                    + (net_base_w + phi_st_sub + h_total * (T_ext_val - T_air_current)) / den_air;
+                let tau_air = self.C_air / den_air;
+                let exponent = -dt_sub / tau_air;
+                T_air_current = t_steady + (T_air_current - t_steady) * exponent.exp();
+            }
         }
 
         // Update T_air
         self.T_air = T_air_current;
 
         // Add infiltration heat contribution to net power for return value
-        net_power_watts += Q_infiltration_w;
+        net_power_watts += Q_infiltration_w + phi_st_hour_w;
 
         // Return net energy in kWh
         // Convention: positive = heating needed, negative = cooling needed
@@ -1325,13 +1321,14 @@ impl GaugeZoneSolver {
         // Solar-only pool portions for the per-surface absorption telemetry.
         let solar_surface_pool = remaining_sol * st_sol_frac;
         let solar_mass_pool = remaining_sol * bc.solar_beam_to_mass_fraction;
-        let (phi_st, h_interior) = self.step_interior_surface_network(
+        let (phi_st, h_interior, _phi_st_neg_slope_mz) = self.step_interior_surface_network(
             dt_seconds,
             surface_pool,
             mass_pool,
             solar_surface_pool,
             solar_mass_pool,
             bc.h_tr_is,
+            self.T_air,
             &ext_inputs,
         );
         let gains_w = phi_ia_sol + phi_ia_int + phi_st;
@@ -1598,9 +1595,10 @@ impl GaugeZoneSolver {
         solar_surface_pool_w: f64,
         solar_mass_pool_w: f64,
         h_tr_is_zone: f64,
+        t_air_bc: f64,
         ext_inputs: &[SurfaceExteriorInputs],
-    ) -> (f64, f64) {
-        let t_air = self.T_air;
+    ) -> (f64, f64, f64) {
+        let t_air = t_air_bc;
 
         // First pass: geometry sums. Per-surface air-side conductance is the
         // ZONE h_tr_is threaded from the thermal model (the same ISO 13790
@@ -1635,11 +1633,23 @@ impl GaugeZoneSolver {
         if sum_h <= 0.0 {
             // No interior surface can couple to the air node: deliver the
             // absorbed gains instantly (energy must not vanish).
-            return (surface_pool_w + mass_pool_w, 0.0);
+            return (surface_pool_w + mass_pool_w, 0.0, 0.0);
         }
 
         let mut emitted_j = 0.0;
         let mut h_weighted_ts = 0.0;
+        // [PR-a] Total NEGATIVE slope of the emission in the interior BC
+        // temperature [W/K]: emitted_total(t) is exactly affine in t (the
+        // FD update is linear in its boundary conditions), and the air-node
+        // update must couple through this slope, not through the nominal
+        // film conductance. Dividing the ledger's VALUE at T_air_old by a
+        // denominator that assumes the slope couples the storage release is
+        // the frozen-flux error that drove the +/-300 K beta-soak
+        // oscillation: the storage-release part of `emitted` is not
+        // proportional to any air-side conductance. Evaluated exactly, no
+        // new constants.
+
+        let mut neg_slope_wk = 0.0;
         for (surface_idx, s) in self.surfaces.iter_mut().enumerate() {
             if !surface_is_absorbing(&s.surface_type) {
                 continue;
@@ -1682,6 +1692,7 @@ impl GaugeZoneSolver {
                 let q_ext_before = fd
                     .exterior_heat_flux(ext.h_exterior_effective, ext.t_sol_air_effective_c)
                     * area;
+                let state_before = fd.temperatures.clone();
                 fd.step(dt_seconds, &interior_bc, &exterior_bc);
                 let e_after = fd.stored_energy(t_air) * area;
                 let q_ext_after = fd
@@ -1699,6 +1710,26 @@ impl GaugeZoneSolver {
                 } else {
                     0.0
                 };
+                // [PR-a] Exact affine slope probe: re-run the same step from
+                // the same initial state with the interior BC 1 K warmer, then
+                // restore the post-real-step state. emitted(t+1) - emitted(t)
+                // is the exact d(emitted)/d(T_air) over this step [J/K],
+                // including the exterior-path response.
+                {
+                    let state_after = fd.temperatures.clone();
+                    fd.temperatures = state_before.clone();
+                    let interior_bc_probe =
+                        SurfaceBC::new_exterior(h_prime, t_air + 1.0, q_abs_i / area);
+                    fd.step(dt_seconds, &interior_bc_probe, &exterior_bc);
+                    let e_after_p = fd.stored_energy(t_air) * area;
+                    let q_ext_after_p = fd
+                        .exterior_heat_flux(ext.h_exterior_effective, ext.t_sol_air_effective_c)
+                        * area;
+                    let ext_in_p = 0.5 * (q_ext_before + q_ext_after_p) * dt_seconds;
+                    let emitted_p = q_abs_i * dt_seconds + ext_in_p - (e_after_p - e_before);
+                    neg_slope_wk += -(emitted_p - emitted_i_j) / dt_seconds;
+                    fd.temperatures = state_after;
+                }
                 s.T_surface = fd.interior_surface_temp();
             } else {
                 let steady = t_air + q_abs_i / h_i;
@@ -1710,6 +1741,11 @@ impl GaugeZoneSolver {
                 };
                 // Energy-exact emission over the step: absorbed − stored.
                 emitted_j += q_abs_i * dt_seconds - c_i * (new_ts - s.T_surface);
+                // [PR-a] Analytic slope: d(emitted)/d(T_air) = -c_i·(1-e^{-dt/τ}).
+                if c_i > 0.0 && dt_seconds > 0.0 {
+                    let tau_i = c_i / h_i;
+                    neg_slope_wk += c_i * (1.0 - (-dt_seconds / tau_i).exp()) / dt_seconds;
+                }
                 s.T_surface = new_ts;
             }
             h_weighted_ts += h_i * s.T_surface;
@@ -1717,9 +1753,9 @@ impl GaugeZoneSolver {
         self.previous_T_surface = h_weighted_ts / sum_h;
 
         if dt_seconds > 0.0 {
-            (emitted_j / dt_seconds, sum_h)
+            (emitted_j / dt_seconds, sum_h, neg_slope_wk)
         } else {
-            (surface_pool_w + mass_pool_w, sum_h)
+            (surface_pool_w + mass_pool_w, sum_h, 0.0)
         }
     }
 
