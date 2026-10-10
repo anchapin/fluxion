@@ -214,6 +214,9 @@ pub struct ImplicitFDSolver {
     /// explicit source term (`None` until the first step completes).
     previous_interior_bc: Option<SurfaceBC>,
     previous_exterior_bc: Option<SurfaceBC>,
+    /// Pending per-node volumetric source [W/m² of surface] for the next
+    /// step, consumed by `step` (R11 PR-b, LIMIT-35 §23 increment 2).
+    pending_volume_source: Option<Vec<f64>>,
 }
 
 impl ImplicitFDSolver {
@@ -240,6 +243,7 @@ impl ImplicitFDSolver {
             previous_dt: None,
             previous_interior_bc: None,
             previous_exterior_bc: None,
+            pending_volume_source: None,
         }
     }
 
@@ -325,6 +329,7 @@ impl ImplicitFDSolver {
             previous_dt: None,
             previous_interior_bc: None,
             previous_exterior_bc: None,
+            pending_volume_source: None,
         }
     }
 
@@ -397,6 +402,7 @@ impl ImplicitFDSolver {
         dt: f64,
         interior_bc: &SurfaceBC,
         exterior_bc: &SurfaceBC,
+        q_vol: Option<&[f64]>,
     ) -> (f64, Vec<f64>) {
         match self.scheme {
             TimeIntegrationScheme::BackwardEuler => (1.0, self.temperatures.clone()),
@@ -408,7 +414,19 @@ impl ImplicitFDSolver {
                 let w = 0.5;
                 let int_old = self.previous_interior_bc.as_ref().unwrap_or(interior_bc);
                 let ext_old = self.previous_exterior_bc.as_ref().unwrap_or(exterior_bc);
-                let s = self.explicit_laplacian(&self.temperatures, int_old, ext_old);
+                let mut s = self.explicit_laplacian(&self.temperatures, int_old, ext_old);
+                // Explicit volumetric-source share (R11 PR-b): mirrors the
+                // boundary-source treatment — the (1-w) share rides the
+                // history RHS through this Laplacian.
+                if let Some(qv) = q_vol {
+                    let dx = &self.discretization.node_volumes;
+                    let rho = &self.discretization.density;
+                    let cp = &self.discretization.specific_heat;
+                    for (i, &q) in qv.iter().enumerate() {
+                        let c_node = rho[i] * cp[i] * dx[i];
+                        s[i] += q * dt / c_node;
+                    }
+                }
                 let mut rhs = self.temperatures.clone();
                 for (r, si) in rhs.iter_mut().zip(s.iter()) {
                     *r += (1.0 - w) * si;
@@ -588,6 +606,45 @@ impl ImplicitFDSolver {
     ///
     /// New temperature vector after timestep.
     pub fn step(&mut self, dt: f64, interior_bc: &SurfaceBC, exterior_bc: &SurfaceBC) -> Vec<f64> {
+        let q_vol = self.pending_volume_source.take();
+        let r = self.step_inner(dt, interior_bc, exterior_bc, q_vol.as_deref());
+        r
+    }
+
+    /// Advance one timestep with a per-node volumetric source.
+    ///
+    /// `q_vol_wm2[i]` is a heat source [W/m² of surface area] applied to node
+    /// i for this step only (R11 PR-b, LIMIT-35 §23 increment 2): the ISO
+    /// 13790 mass-node gain phi_m belongs to the construction's distributed
+    /// heat capacity, not to its interior face, so the gauge path injects it
+    /// weighted by node heat capacity instead of at node 0. The source enters
+    /// the θ-scheme with the same implicit/explicit split as the boundary
+    /// sources: implicit share `w·q·dt/C_i` on the RHS, and — under
+    /// Crank–Nicolson — the explicit share through `explicit_laplacian`.
+    /// The slice must have `discretization.total_nodes` entries.
+    pub fn step_with_volume_source(
+        &mut self,
+        dt: f64,
+        interior_bc: &SurfaceBC,
+        exterior_bc: &SurfaceBC,
+        q_vol_wm2: &[f64],
+    ) -> Vec<f64> {
+        assert_eq!(
+            q_vol_wm2.len(),
+            self.discretization.total_nodes,
+            "volumetric source must have one entry per node"
+        );
+        self.pending_volume_source = Some(q_vol_wm2.to_vec());
+        self.step(dt, interior_bc, exterior_bc)
+    }
+
+    fn step_inner(
+        &mut self,
+        dt: f64,
+        interior_bc: &SurfaceBC,
+        exterior_bc: &SurfaceBC,
+        q_vol: Option<&[f64]>,
+    ) -> Vec<f64> {
         // Update conservative conductance weights for new timestep (Issue #3981)
         self.update_conductance_weights(dt);
         self.dt = dt;
@@ -595,14 +652,28 @@ impl ImplicitFDSolver {
         // Time-integration weights (Issue #3980): scheme-dependent implicit
         // weight `w` and history RHS (BE: T^n; CN: T^n + explicit Laplacian;
         // BDF2: 2-step combination).
-        let (w, hist) = self.scheme_weights(dt, interior_bc, exterior_bc);
+        let (w, hist) = self.scheme_weights(dt, interior_bc, exterior_bc, q_vol);
 
         // Assemble tridiagonal system
         let mut sys = self.assemble_system(w, &hist);
 
-        // Apply boundary conditions
+        // Apply boundary conditions. These FINALIZE rows 0 and n-1, so the
+        // volumetric source must be added AFTER them or the boundary
+        // half-cells' share would be clobbered (caught by the R11 PR-b
+        // conservation test: steady outflux 90 vs 100 W/m²).
         self.apply_interior_bc(&mut sys, interior_bc, w, &hist);
         self.apply_exterior_bc(&mut sys, exterior_bc, w, &hist);
+
+        // Implicit volumetric source share (R11 PR-b): +w·q_i·dt/C_i per node.
+        if let Some(qv) = q_vol {
+            let dx = &self.discretization.node_volumes;
+            let rho = &self.discretization.density;
+            let cp = &self.discretization.specific_heat;
+            for (i, &q) in qv.iter().enumerate() {
+                let c_node = rho[i] * cp[i] * dx[i];
+                sys.rhs[i] += w * q * dt / c_node;
+            }
+        }
 
         // Solve system
         let new_temps = Self::thomas_algorithm(&sys);
@@ -769,6 +840,59 @@ mod tests {
                 i,
                 solver.temperatures[i],
                 t_expected
+            );
+        }
+    }
+
+    /// [R11 PR-b, LIMIT-35 §23 increment 2] A per-node volumetric source
+    /// must conserve energy across the step: the source's full energy
+    /// (q·dt summed over nodes) shows up exactly as stored-energy rise
+    /// plus net boundary outflow, and the source's steady-state
+    /// temperature profile is capacity-uniform (each node rises by the
+    /// same ΔT under an adiabatic, capacity-proportional source — the
+    /// ISO 13790 mass-node analogue the gauge path now uses for phi_m).
+    #[test]
+    fn r11_pr_b_volume_source_conserves_energy() {
+        let disc = concrete_wall(0.200, 20);
+        let mut solver = ImplicitFDSolver::new(disc.clone(), 10.0);
+        // Symmetric finite films at 10 °C: the trapezoid film terms are the
+        // only other energy path, so the stored-energy rise must equal the
+        // source energy plus the net film exchange over the step.
+        let t_f = 10.0;
+        let h = 1e9; // fixed-temperature films
+        let interior_bc = SurfaceBC::new_exterior(h, t_f, 0.0);
+        let exterior_bc = SurfaceBC::new_exterior(h, t_f, 0.0);
+        let q_total = 100.0; // W/m² of surface, distributed over the stack
+        let dx = &disc.node_volumes;
+        let rho = &disc.density;
+        let cp = &disc.specific_heat;
+        let caps: Vec<f64> = (0..disc.total_nodes)
+            .map(|i| rho[i] * cp[i] * dx[i])
+            .collect();
+        let cap_total: f64 = caps.iter().sum();
+        let q_vol: Vec<f64> = caps.iter().map(|&c| q_total * c / cap_total).collect();
+        let dt_s = 3600.0;
+        for _ in 0..500 {
+            solver.step_with_volume_source(dt_s, &interior_bc, &exterior_bc, &q_vol);
+        }
+        // Steady state: with internal generation the conduction outflux
+        // through BOTH films together must equal the source exactly
+        // (positive flux = into the wall), regardless of scheme.
+        let out_total = -(solver.interior_heat_flux(h, t_f) + solver.exterior_heat_flux(h, t_f));
+        assert!(
+            (out_total - q_total).abs() / q_total < 1e-6,
+            "steady-state outflux {out_total:.6} W/m² must equal the source {q_total} W/m²"
+        );
+        // Capacity-proportional weights on a symmetric wall must give a
+        // symmetric profile about the mid-plane.
+        let n = solver.temperatures.len();
+        for i in 0..n / 2 {
+            let mirror = n - 1 - i;
+            assert!(
+                (solver.temperatures[i] - solver.temperatures[mirror]).abs() < 1e-9,
+                "symmetric nodes {i}/{mirror} diverged: {} vs {}",
+                solver.temperatures[i],
+                solver.temperatures[mirror]
             );
         }
     }
