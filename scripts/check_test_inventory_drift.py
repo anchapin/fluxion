@@ -244,7 +244,7 @@ DIFF_TOLERANCE_ABS = int(os.environ.get("TEST_INVENTORY_DRIFT_ABS", "25"))
 #   test in `pcm_test_box.rs::tests` (the `default_layer_thickness_matches_documented_value`
 #   guard test) plus the AST-scan delta for the new `tests/all_tests/teacher_validation_pcm_box.rs`
 #   module's integration tests. Stacked on PR-A's 4273 baseline.
-BASELINE_LIB_TESTS = 4289  # 2026-09-29 (Issue #4172, PR #4299 supersede): 4300 -> 4289 — hoist SimulationDiagnostics to fluxion-core (12 new tests in fluxion-core/src/diagnostics.rs, net -11 after -23 tests moved out of fluxion::validation::diagnostics that became redundant with the new core diagnostics module). Stacked on the #4292 supersede's 4300 baseline.
+BASELINE_LIB_TESTS = 4290  # 2026-10-10 (loop round 9 PR-b): 4289 -> 4290 — +1 gauge infiltration ACH liveness unit test (test_infiltration_ach_parameter_is_live, gauge_zone_solver.rs). Prior baseline: 4289 (2026-09-29, #4172). (Issue #4172, PR #4299 supersede): 4300 -> 4289 — hoist SimulationDiagnostics to fluxion-core (12 new tests in fluxion-core/src/diagnostics.rs, net -11 after -23 tests moved out of fluxion::validation::diagnostics that became redundant with the new core diagnostics module). Stacked on the #4292 supersede's 4300 baseline.
                         # 2026-09-29 (Issue #4241): 4296 -> 4297 — analytic residual-formulation test (test_residual_formulation_analytic); stacked on #4193's 4296 baseline.
                         # 2026-09-29 (Issue #4193): 4295 -> 4296 — multi-zone validator reference-data invariant test (test_multi_zone_validator_uses_real_reference_data_not_placeholders); +1 on the post-#4242 4295 baseline during #4247 rebase.
                         # 2026-09-27: 4274 -> 4277 — post-rebase AST delta for PR-A + PR-B's combined inline tests (the 7 selector-parity tests are counted as workspace-integration rather than lib, so the lib bump comes from the 4 inline tests in `phase_change_material.rs::tests` + `pcm_test_box.rs::tests` plus the AST scan delta for PR-A's `tests.rs` guards).
@@ -273,7 +273,7 @@ BASELINE_LIB_IGNORED = 9
 #   test_box_apparent_cp_at_wall_delegates_to_material). Stacked on PR-A's
 #   8821 baseline.
 
-BASELINE_WORKSPACE_TESTS = 8906  # 2026-10-09 (Issue #4170): 8893 -> 8906 — 13 new tests in tests/all_tests/zone_balance_eplus_isolation.rs (nine strict annual-energy gate tests for the previously-ungated cases 610/620/630/640/650/910/930/940/195 + four free-float strict-gate tests 600FF/650FF/900FF/950FF). Stacked on the 2026-10-07 #4188 baseline of 8893.
+BASELINE_WORKSPACE_TESTS = 8907  # 2026-10-10 (loop round 9 PR-b): 8906 -> 8907 — same +1 gauge infiltration unit test. Prior: 8906 (2026-10-09, #4170): 8893 -> 8906 — 13 new tests in tests/all_tests/zone_balance_eplus_isolation.rs (nine strict annual-energy gate tests for the previously-ungated cases 610/620/630/640/650/910/930/940/195 + four free-float strict-gate tests 600FF/650FF/900FF/950FF). Stacked on the 2026-10-07 #4188 baseline of 8893.
                                   # 2026-10-07 (Issue #4204): 8890 -> 8891 — one new steady-state test in tests/dhat_batched_surrogate_zero_growth.rs (predict_loads_into_with_scratch_zero_steady_state_growth). Stacked on the 2026-09-29 #4299-supersede baseline of 8890.
 
                                   # 2026-09-29 (Issue #4192): 8873 -> 8881 — collapse triplicated EPW decoder; 8 new tests in fluxion-core/src/weather/epw.rs (shared-fixture agreement, truncated/missing-field skips, 8760-count fixture guard, sentinel coercion). Stacked on #4155's 8873 baseline.

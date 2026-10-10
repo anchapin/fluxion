@@ -190,6 +190,7 @@ fn gauge_primary_path_absorbs_full_window_solar_under_convention() {
         5.0,   // t_sky
         5.5,   // h_rad_sky (retained-but-ignored param)
         0.0,   // ventilation_ach
+        0.5,   // infiltration_ach — Case 600 spec value (PR-b threading)
         0.0,   // h_tr_3 (retained-but-ignored)
         0.0,   // cm (retained-but-ignored)
         814.0, // h_tr_is — Case 600 zone star-node conductance
@@ -235,7 +236,8 @@ fn gauge_split_mechanism_fractions_still_partition() {
         0.0,
         5.0,
         5.5,
-        0.0,
+        0.0, // ventilation_ach
+        0.5, // infiltration_ach — Case 600 spec value (PR-b threading)
         0.0,
         0.0,
         814.0,

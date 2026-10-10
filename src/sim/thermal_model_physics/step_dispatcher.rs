@@ -246,6 +246,8 @@ struct GaugeInputs {
     h_ext: f64,
     // Issue #3904: Ventilation ACH from night_ventilation schedule
     ventilation_ach: f64,
+    // PR-b: per-zone spec infiltration ACH (setpoints.infiltration_rate)
+    infiltration_ach: Vec<f64>,
     // Issue #3918: Threading for solar lag correction (per-zone values)
     h_tr_3: Vec<f64>,      // combined air-to-mass conductance [W/K]
     cm: Vec<f64>,          // zone thermal capacitance [J/K]
@@ -313,6 +315,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             solar_gains,
             h_ext,
             ventilation_ach,
+            infiltration_ach: self.0.setpoints.infiltration_rate.as_ref().to_vec(),
             h_tr_3,
             cm,
             h_tr_is,
@@ -434,10 +437,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // gauge solver splits window solar the same way the 5R1C model does.
                 self.0.solar.solar_distribution_to_air,
                 q_internal_w,
-                0.0, // Q_infiltration_w — would need proper infiltration calculation
+                // PR-b: the infiltration PHYSICS is the ACH conductance
+                // threaded below (the gauge solver forms h_inf from it);
+                // no separate W-flux term is used, so this stays 0.0.
+                0.0,
                 t_sky,
                 h_rad_sky,
                 inputs.ventilation_ach,
+                inputs.infiltration_ach.first().copied().unwrap_or(0.0),
                 // Issue #3918: Thread lag correction parameters (single-zone: use first element)
                 inputs.h_tr_3.first().copied().unwrap_or(0.0),
                 inputs.cm.first().copied().unwrap_or(0.0),
@@ -679,7 +686,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                 .unwrap_or(0.0),
                             Q_internal_w: q_internal,
                             Q_infiltration_w: 0.0,
-                            infiltration_ach: 0.5, // ASHRAE 140 default; per-zone wiring is #3280
+                            // PR-b: per-zone spec infiltration ACH threaded
+                            // from setpoints.infiltration_rate (was 0.5
+                            // hardcoded; per-zone wiring is #3280)
+                            infiltration_ach: inputs
+                                .infiltration_ach
+                                .get(zone_idx)
+                                .copied()
+                                .unwrap_or(0.0),
                             ventilation_ach: inputs.ventilation_ach, // Issue #3904
                             inter_zone_heat: 0.0,
                             t_sky,
