@@ -5,7 +5,7 @@
 | Category | Total Issues | Fixed | Open | Partial | Won't Fix |
 |----------|-------------:|------:|-----:|--------:|----------:|
 | Foundation (BASE) | 5 | 0 | 5 | 0 | 0 |
-| Solar (SOLAR) | 4 | 0 | 4 | 0 | 0 |
+| Solar (SOLAR) | 5 | 0 | 5 | 0 | 0 |
 | Free-Float (FREE) | 3 | 0 | 3 | 0 | 0 |
 | Temperature (TEMP) | 1 | 0 | 1 | 0 | 0 |
 | Multi-Zone (MULTI) | 4 | 0 | 4 | 0 | 0 |
@@ -15,7 +15,7 @@
 | fluxion-fluid (FLUID) | 2 | 0 | 2 | 0 | 0 |
 | FFD/CFD (FFD) | 2 | 1 | 1 | 0 | 0 |
 | Reference data (REF) | 1 | 0 | 1 | 0 | 0 |
-| **Total** | **66** | **9** | **55** | **2** | **0** |
+| **Total** | **67** | **9** | **56** | **2** | **0** |
 
 *Counts derived from the per-row catalog tables under each category section (`| **CATEGORY-NN** | ... |`) via `scripts/check_known_issues_summary.py`. Edit a row in place (or add a new row) and the table updates on the next regen. Status columns (`Fixed` / `Open` / `Partial` / `Won't Fix`) derive from each row's Status cell: `resolved` -> Fixed, `open` -> Open, `tracking only` -> Partial, `Won't Fix` -> Won't Fix. Rows without a recognized status are counted in the Total column but contribute 0 to the status columns. To regenerate: `python3 scripts/check_known_issues_summary.py --regen --in-place`.*
 
@@ -69,15 +69,16 @@ That registry, not this document, is canonical for quarantine state.
 | ID | Symptom | Current value vs band | Issue | Closes when | Status | History |
 |---|---|---|---|---|---|---|
 | **SOLAR-01** | Peak Cooling Load Under-Prediction | — | — | — | open | [history](investigations/solar-01-peak-cooling-load-under-prediction.md) |
-| **SOLAR-02** | Annual Cooling Energy Under-Prediction (High-Mass) | validator Case 900 annual cooling 1,792.02 kWh vs [2,130, 3,670] (−15.9% under the lower bound; was 552.83 before 2026-10-09). UPDATE 2026-10-09, E+ Perez coefficient-table fix (doc §13): the under-prediction was largely the Perez Fij coefficient mismatch — all high-mass cooling numbers move strongly toward band (900 C 552.83 → 1,792.02; Case 950 C re-enters band on both validator and strict-gate bases; Case 960 C 1.776 MWh re-enters band; 970 C 1.937 → 2.277 MWh); residual tracked in the strict-gate baseline | #2239 | residual GaugeSolver air-mass distribution | open | [history](investigations/solar-02-annual-cooling-energy-under-prediction-high.md) |
+| **SOLAR-02** | Annual Cooling Energy Under-Prediction (High-Mass) | validator Case 900 annual cooling 1,792.02 kWh vs [2,130, 3,670] (−15.9% under the lower bound; was 552.83 before 2026-10-09). UPDATE 2026-10-09, E+ Perez coefficient-table fix (doc §13): the under-prediction was largely the Perez Fij coefficient mismatch — all high-mass cooling numbers move strongly toward band (900 C 552.83 → 1,792.02; Case 950 C re-enters band on both validator and strict-gate bases; Case 960 C 1.776 MWh re-enters band; 970 C 1.937 → 2.277 MWh); residual tracked in the strict-gate baseline. UPDATE 2026-10-09, round 6 (doc §19): the residual is per-term confirmed as the metering-pair mismatch — the strict-gate 900 demand is 100 % h_coeff_5R1C × ΔT(t_air_multinode); on an identical run the multi-node air node exceeds 27 °C by 12,992 K·h vs the 5R1C free temperature's 19,701 K·h (E+ implied 20,405); metering from the 5R1C pair gives C 2.389 MWh (−3 % vs mean, in band) at H 2.082 (leaves band high) — the two networks bracket the reference on opposite metrics | #2239 | residual GaugeSolver air-mass distribution | open | [history](investigations/solar-02-annual-cooling-energy-under-prediction-high.md) |
 | **SOLAR-03** | Solar Shading Cases Not Sensitive to Shading Changes | — | — | — | open | [history](investigations/solar-03-solar-shading-cases-not-sensitive-to.md) |
 | **SOLAR-04** | Night Ventilation Cooling Ineffective | — | — | — | open | [history](investigations/solar-04-night-ventilation-cooling-ineffective.md) |
+| **WINDOW-01** | Window U-value path divergence: strict CaseSpec path conducts Case 600 windows at ~2.27 W/m²K effective (h_tr_w 27.2 W/K / 12 m²) vs ASHRAE 140 spec 3.0 W/m²K → 36 W/K, which the validator setup path (series_600.rs) explicitly overrides to — one spec constant, two engine entry points disagree | measured on develop a521c6c3, round 6 (doc §19); correcting moves C +2–3 % and H −2–3 % (sign: toward reference) | — | window_u_value threaded from the 140 spec (3.0) through CaseSpec so both paths agree | open | [history](investigations/limit-35-case-900-heating-out-of-band.md) |
 
 ## Free-floating temperature (FREE)
 
 | ID | Symptom | Current value vs band | Issue | Closes when | Status | History |
 |---|---|---|---|---|---|---|
-| **FREE-01** | Maximum Free-Floating Temperature Under-Prediction (Low-Mass) | — | — | — | open | [history](investigations/free-01-maximum-free-floating-temperature-under-prediction.md) |
+| **FREE-01** | Maximum Free-Floating Temperature Under-Prediction (Low-Mass) | UPDATE 2026-10-09, round 6 (doc §19): strict-gate 600FF max 57.25 °C vs [62.4, 68.4] (−5.2 K below bound) and min −18.45 °C vs [−13.8, −9.9]; conductance audit excludes the envelope stack as carrier (h_ve exact vs spec, h_tr_w −24 %, total h_coeff +10–20 % — excess conductance raises cooling, wrong sign); window solar contributes 91 % of Case 600 cooling and its magnitude matches the reference engine — the carrier is the free-float under-exceedance itself, routed with the GaugeSolver rework | — | GaugeSolver air-mass distribution rework (#1465/#1462) | open | [history](investigations/free-01-maximum-free-floating-temperature-under-prediction.md) |
 | **FREE-02** | Minimum Free-Floating Temperature Over-Prediction (High-Mass) | — | — | — | open | [history](investigations/free-02-minimum-free-floating-temperature-over-prediction.md) |
 | **FREE-03** | Free-Floating Temperature Swings Reduced Compared to Reference | — | #2339 | — | open | [history](investigations/free-03-free-floating-temperature-swings-reduced-compared.md) |
 
