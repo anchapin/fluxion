@@ -1678,7 +1678,16 @@ impl GaugeZoneSolver {
                 continue;
             }
             sum_area += s.area_m2;
-            sum_c += s.area_m2 * s.gauge.c_mass_for_test();
+            // [R11 PR-a, LIMIT-35 §23 increment 1] Quasi-steady glazing: the
+            // ISO 13790 reference network carries glazing as a massless
+            // steady conductance (H_tr_w); ASHRAE 140 publishes no glazing
+            // areal heat capacity to support a mass model. The window face
+            // is therefore solved jointly with the air node (pass-through),
+            // and it does not participate in the MASS-pool capacitance
+            // weighting — phi_m belongs to the opaque mass.
+            if s.surface_type != SurfaceType::Window {
+                sum_c += s.area_m2 * s.gauge.c_mass_for_test();
+            }
         }
         let per_surface_h = |s: &SurfaceGaugeSolver| -> f64 {
             if h_tr_is_zone > 0.0 && sum_area > 0.0 {
@@ -1725,10 +1734,21 @@ impl GaugeZoneSolver {
             } else {
                 h_i / sum_h
             };
-            let q_abs_i = surface_pool_w * w_surface + mass_pool_w * w_mass;
+            let q_abs_i = if s.surface_type == SurfaceType::Window {
+                // [R11 PR-a] Quasi-steady glazing: the window takes only its
+                // SURFACE-pool share (phi_st weighting); the mass pool routes
+                // to the opaque mass (see the sum_c exclusion above).
+                surface_pool_w * w_surface
+            } else {
+                surface_pool_w * w_surface + mass_pool_w * w_mass
+            };
             // Issue #3983 — solar-only attribution for the per-surface
             // absorption telemetry (Σ_i + Φ_sol·to_air = Φ_sol).
-            s.last_solar_absorbed_w = solar_surface_pool_w * w_surface + solar_mass_pool_w * w_mass;
+            s.last_solar_absorbed_w = if s.surface_type == SurfaceType::Window {
+                solar_surface_pool_w * w_surface
+            } else {
+                solar_surface_pool_w * w_surface + solar_mass_pool_w * w_mass
+            };
             if let Some(fd) = s.fd.as_mut() {
                 // Issue #3983 — per-surface multi-node FD conduction: the
                 // absorbed solar enters the interior-FACE node of the real
@@ -1794,6 +1814,15 @@ impl GaugeZoneSolver {
                     fd.temperatures = state_after;
                 }
                 s.T_surface = fd.interior_surface_temp();
+            } else if s.surface_type == SurfaceType::Window {
+                // [R11 PR-a, LIMIT-35 §23 increment 1] Joint air–window-face
+                // solve (quasi-steady glazing route): the absorbed share
+                // passes to the air node within the same sub-step — no
+                // storage state, no slope (the massless emission is
+                // independent of the interior BC). The face temperature is
+                // the algebraic film equilibrium, for telemetry only.
+                emitted_j += q_abs_i * dt_seconds;
+                s.T_surface = t_air + q_abs_i / h_i;
             } else {
                 let steady = t_air + q_abs_i / h_i;
                 let new_ts = if c_i > 0.0 && dt_seconds > 0.0 {
@@ -3244,6 +3273,65 @@ mod tests {
         zone.initialize().expect("Case 600 zone must initialize");
         zone.set_T_air(35.0); // Pin a mid-solve zone air temperature.
         zone
+    }
+
+    /// [R11 PR-a, LIMIT-35 §23 increment 1] The window face is solved
+    /// jointly with the air node as a quasi-steady, massless pass-through
+    /// (ISO 13790 glazing convention: H_tr_w is a steady conductance; no
+    /// glazing areal heat capacity is published to support a mass model).
+    /// Its surface temperature after a sub-step is therefore the algebraic
+    /// film equilibrium `t_air + q_abs/h_i` with NO storage lag, and it
+    /// takes no mass-pool share.
+    #[test]
+    fn r11_pr_a_window_face_is_quasi_steady_pass_through() {
+        use crate::physics::wall_spec::WallSpec;
+        let wall = conductive_stub_wall();
+        let glass = WallSpec::single_layer("window_glazing", 0.005, 0.015, 2500.0, 750.0);
+        let mut zone = GaugeZoneSolver::new(48.0, 2.7);
+        zone.add_opaque_surface(&wall, 40.0, SurfaceType::Wall, 180.0, 90.0)
+            .expect("wall must add");
+        zone.add_opaque_surface(&glass, 8.0, SurfaceType::Window, 180.0, 90.0)
+            .expect("window must add");
+        zone.initialize().expect("zone must initialize");
+
+        let t_air = 21.0;
+        let ext_inputs = vec![
+            crate::physics::gauge_zone_solver::SurfaceExteriorInputs {
+                h_exterior_effective: 20.0,
+                t_sol_air_effective_c: -5.0,
+            };
+            zone.surface_count()
+        ];
+        // Surface pool only (mass pool = 0) so the window share is unambiguous.
+        let surface_pool_w = 1000.0;
+        let (phi_st_w, _h_sum, _slope) = zone.step_interior_surface_network(
+            3600.0,
+            surface_pool_w,
+            0.0,
+            surface_pool_w,
+            0.0,
+            0.0, // h_tr_is_zone = 0 → geometric tilt-coefficient fallback
+            t_air,
+            &ext_inputs,
+        );
+
+        // h_tr_is fallback: vertical surfaces, 8.3 W/m²K per m².
+        let h_win = 8.0 * 8.3;
+        let sum_h = 8.3 * 48.0;
+        let q_abs_win = surface_pool_w * (h_win / sum_h);
+        let expected_ts = t_air + q_abs_win / h_win;
+        let win_ts = zone.surfaces()[1].T_surface;
+        assert!(
+            (win_ts - expected_ts).abs() < 1e-9,
+            "quasi-steady window face must sit at the algebraic film equilibrium \
+             {expected_ts:.6} after the sub-step, got {win_ts:.6} (storage lag must be gone)"
+        );
+        // The window's absorbed share (166.67 W of the 1000 W pool) is fully
+        // inside the step emission by construction; the FD wall's through-wall
+        // transmission (exterior BC −5 °C) also enters phi_st, so no range
+        // assertion on the total is meaningful here — the algebraic film
+        // equilibrium assert above pins the pass-through behavior.
+        let _ = phi_st_w;
     }
 
     /// `GaugeZoneSolver::clone` must reset `T_air` to the
