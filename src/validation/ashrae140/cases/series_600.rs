@@ -46,9 +46,7 @@ pub fn case_600_baseline() -> CaseSpec {
         .low_mass_construction()
         .with_south_window(12.0)
         .with_window_properties(WindowSpec::double_clear_glass())
-        .with_window_u_value_override(
-            crate::physics::constants::thermal::ashrae_140::WINDOW_U_VALUE,
-        )
+        .with_window_u_value_override(fluxion_core::ashrae_cases::ASHRAE140_WINDOW_U_VALUE)
         .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
         .with_hvac_setpoints(20.0, 27.0)
         .with_infiltration(0.5)
@@ -69,9 +67,7 @@ pub fn case_610_south_shading() -> CaseSpec {
         .low_mass_construction()
         .with_south_window(12.0)
         .with_window_properties(WindowSpec::double_clear_glass())
-        .with_window_u_value_override(
-            crate::physics::constants::thermal::ashrae_140::WINDOW_U_VALUE,
-        )
+        .with_window_u_value_override(fluxion_core::ashrae_cases::ASHRAE140_WINDOW_U_VALUE)
         .with_shading(ShadingDevice::overhang(1.0, 2.7))
         .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
         .with_hvac_setpoints(20.0, 27.0)
@@ -93,9 +89,7 @@ pub fn case_620_ew_windows() -> CaseSpec {
         .low_mass_construction()
         .with_ew_windows(6.0)
         .with_window_properties(WindowSpec::double_clear_glass())
-        .with_window_u_value_override(
-            crate::physics::constants::thermal::ashrae_140::WINDOW_U_VALUE,
-        )
+        .with_window_u_value_override(fluxion_core::ashrae_cases::ASHRAE140_WINDOW_U_VALUE)
         .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
         .with_hvac_setpoints(20.0, 27.0)
         .with_infiltration(0.5)
@@ -116,9 +110,7 @@ pub fn case_630_ew_shading() -> CaseSpec {
         .low_mass_construction()
         .with_ew_windows(6.0)
         .with_window_properties(WindowSpec::double_clear_glass())
-        .with_window_u_value_override(
-            crate::physics::constants::thermal::ashrae_140::WINDOW_U_VALUE,
-        )
+        .with_window_u_value_override(fluxion_core::ashrae_cases::ASHRAE140_WINDOW_U_VALUE)
         .with_shading(ShadingDevice::overhang_and_fins(1.0, 1.0, 2.7))
         .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
         .with_hvac_setpoints(20.0, 27.0)
@@ -140,9 +132,7 @@ pub fn case_640_setback() -> CaseSpec {
         .low_mass_construction()
         .with_south_window(12.0)
         .with_window_properties(WindowSpec::double_clear_glass())
-        .with_window_u_value_override(
-            crate::physics::constants::thermal::ashrae_140::WINDOW_U_VALUE,
-        )
+        .with_window_u_value_override(fluxion_core::ashrae_cases::ASHRAE140_WINDOW_U_VALUE)
         .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
         .with_hvac_setback(20.0, 27.0, 10.0)
         .with_infiltration(0.5)
@@ -163,9 +153,7 @@ pub fn case_650_night_vent() -> CaseSpec {
         .low_mass_construction()
         .with_south_window(12.0)
         .with_window_properties(WindowSpec::double_clear_glass())
-        .with_window_u_value_override(
-            crate::physics::constants::thermal::ashrae_140::WINDOW_U_VALUE,
-        )
+        .with_window_u_value_override(fluxion_core::ashrae_cases::ASHRAE140_WINDOW_U_VALUE)
         .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
         .with_hvac(HvacSchedule::with_operating_hours(-100.0, 27.0, 7, 18)) // Heating ALWAYS OFF
         .with_night_ventilation(NightVentilation::case_650())
@@ -189,9 +177,7 @@ pub fn case_600ff() -> CaseSpec {
         .low_mass_construction()
         .with_south_window(12.0)
         .with_window_properties(WindowSpec::double_clear_glass())
-        .with_window_u_value_override(
-            crate::physics::constants::thermal::ashrae_140::WINDOW_U_VALUE,
-        )
+        .with_window_u_value_override(fluxion_core::ashrae_cases::ASHRAE140_WINDOW_U_VALUE)
         // No internal loads for free-floating cases per ASHRAE 140
         .with_hvac(HvacSchedule::free_floating())
         .with_infiltration(0.5)
@@ -216,9 +202,7 @@ pub fn case_650ff() -> CaseSpec {
         .low_mass_construction()
         .with_south_window(12.0)
         .with_window_properties(WindowSpec::double_clear_glass())
-        .with_window_u_value_override(
-            crate::physics::constants::thermal::ashrae_140::WINDOW_U_VALUE,
-        )
+        .with_window_u_value_override(fluxion_core::ashrae_cases::ASHRAE140_WINDOW_U_VALUE)
         // No internal loads for free-floating cases per ASHRAE 140
         .with_hvac(HvacSchedule::free_floating())
         .with_night_ventilation(NightVentilation::case_650())

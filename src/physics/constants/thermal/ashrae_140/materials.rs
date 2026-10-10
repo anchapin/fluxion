@@ -124,7 +124,7 @@ pub const SURFACE_EMISSIVITY: f64 = 0.9;
 /// Window SHGC (double-pane clear glass): 0.787
 pub const WINDOW_SHGC: f64 = 0.787;
 /// Window U-value: 3.0 W/m2K
-pub const WINDOW_U_VALUE: f64 = 3.0;
+pub const WINDOW_U_VALUE: f64 = fluxion_core::ashrae_cases::ASHRAE140_WINDOW_U_VALUE;
 
 #[cfg(test)]
 mod tests {

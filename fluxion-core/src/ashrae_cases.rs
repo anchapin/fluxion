@@ -323,6 +323,16 @@ pub struct WindowSpec {
     pub frame_perimeter: f64,
 }
 
+/// ASHRAE 140 §5.2 / BESTEST window conductance for the 600/900-series
+/// double-clear-glazing cases: 3.0 W/m²K (36 W/K over the 12 m² south
+/// window). WINDOW-01 (loop round 7): this is the single source of truth for
+/// the spec-level window U-value; the engine's `physics::constants` table
+/// re-exports it, and the 600/900-series CaseSpec builders thread it through
+/// `window_u_value_override` so both engine entry points agree. Lives here
+/// (downward) so validation-side builders can reference it without adding a
+/// validation→physics cycle edge (issue #1441/#2495 guards).
+pub const ASHRAE140_WINDOW_U_VALUE: f64 = 3.0;
+
 impl WindowSpec {
     /// Creates a new window specification.
     pub fn new(u_value: f64, shgc: f64, normal_transmittance: f64, glass_type: GlassType) -> Self {
