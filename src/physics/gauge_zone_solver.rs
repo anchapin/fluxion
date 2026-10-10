@@ -912,6 +912,10 @@ impl GaugeZoneSolver {
         _h_rad_sky: f64,
         // Issue #3904: Ventilation ACH from night_ventilation schedule
         ventilation_ach: f64,
+        // PR-b (LIMIT-35 §22 backlog 1): spec infiltration ACH threaded
+        // through the CaseSpec path; the former 0.5 hardcode applied the
+        // Case 600 baseline to every case.
+        infiltration_ach: f64,
         // Issue #3918 + follow-up: the former scalar lag-correction inputs
         // `h_tr_3`, `cm`, and `term_rest_1` are retained for API stability
         // but no longer used — the per-surface T_s network derives its time
@@ -1058,7 +1062,6 @@ impl GaugeZoneSolver {
         let net_base_w = net_power_watts;
 
         // Infiltration/ventilation coupling (moved with the sub-step loop)
-        let infiltration_ach = 0.5; // ASHRAE 140 Case 600
         let h_inf = air_constants::RHO_AIR
             * air_constants::CP_AIR
             * (infiltration_ach / 3600.0)
@@ -1069,6 +1072,12 @@ impl GaugeZoneSolver {
             * self.zone_volume;
         let h_total = h_vent + h_inf;
         let h_env = self.surface_to_air_conductance();
+        if std::env::var("FLX_TMP_DBG").is_ok() {
+            eprintln!(
+                "DBG h_inf={h_inf:.2} h_vent={h_vent:.2} h_env={:.2}",
+                self.surface_to_air_conductance()
+            );
+        }
         let T_ext_val = T_exterior.to_value();
 
         let steps = self.sub_hour_air_node_steps as usize;
@@ -2292,6 +2301,7 @@ mod tests {
                 0.0, // t_sky
                 0.0, // h_rad_sky
                 0.0, // ventilation_ach (Issue #3904: 0 = no night vent)
+                0.5, // infiltration_ach (PR-b)
                 // Issue #3918: solar lag parameters (0.0 = lag disabled)
                 0.0, // h_tr_3
                 0.0, // cm
@@ -2312,6 +2322,57 @@ mod tests {
 
         // Energy should be positive (heating required)
         assert!(energy > 0.0, "Heating energy should be positive");
+    }
+
+    /// PR-b (LIMIT-35 §22 backlog 1): the infiltration ACH parameter is
+    /// live — a higher ACH must couple the zone more strongly to a cold
+    /// exterior (colder final air, more heating energy). Guards against the
+    /// parameter being threaded but ignored.
+    #[test]
+    fn test_infiltration_ach_parameter_is_live() {
+        let mut mk = || {
+            let mut zone = GaugeZoneSolver::new(48.0, 2.7);
+            zone.add_opaque_surface(&conductive_stub_wall(), 48.0, SurfaceType::Wall, 0.0, 90.0)
+                .unwrap();
+            zone.initialize().unwrap();
+            zone
+        };
+        let step_with = |mut zone: GaugeZoneSolver, ach: f64| {
+            zone.step(
+                0,
+                3600.0,
+                Temperature::from_value(-10.0),
+                // Weak exterior film so the envelope does not equilibrate the
+                // zone within the hour — the ACH coupling must be the driver.
+                HeatTransferCoefficient::from_value(0.5),
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0, // ventilation_ach
+                ach, // infiltration_ach (PR-b liveness probe)
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+            )
+            .unwrap();
+            (
+                zone.T_air().to_value(),
+                zone.infiltration_conductance_WK(ach),
+            )
+        };
+        let (t_low, _) = step_with(mk(), 0.0);
+        let (t_high, h_inf) = step_with(mk(), 2.0);
+        assert!(
+            t_high < t_low - 1.0,
+            "2 ACH infiltration into -10 degC exterior must cool the zone below the 0 ACH case: {t_high} vs {t_low}"
+        );
+        assert!(h_inf > 0.0);
     }
 
     #[test]
@@ -2488,6 +2549,7 @@ mod tests {
             0.0, // t_sky
             0.0, // h_rad_sky
             0.0, // ventilation_ach (Issue #3904: 0 = no night vent)
+            0.5, // infiltration_ach (PR-b)
             // Issue #3918: solar lag parameters (0.0 = lag disabled)
             0.0, // h_tr_3
             0.0, // cm
@@ -2717,6 +2779,7 @@ mod tests {
                 0.0,   // t_sky
                 0.0,   // h_rad_sky
                 0.0,   // ventilation_ach (Issue #3904: 0 = no night vent)
+                0.5,   // infiltration_ach (PR-b)
                 // Issue #3918: solar lag parameters (0.0 = lag disabled)
                 0.0, // h_tr_3
                 0.0, // cm
@@ -2767,6 +2830,7 @@ mod tests {
             0.0,
             0.0,
             0.0,
+            0.5, // infiltration_ach (PR-b)
             0.0,
         )
         .unwrap();
@@ -2839,6 +2903,7 @@ mod tests {
             0.0,    // t_sky
             0.0,    // h_rad_sky
             0.0,    // ventilation_ach
+            0.5,    // infiltration_ach (PR-b)
             5.0,    // h_tr_3
             5000.0, // cm
             500.0,  // h_tr_is (zone total)
@@ -2929,6 +2994,7 @@ mod tests {
                     0.0,     // t_sky
                     0.0,     // h_rad_sky
                     10.0,    // ventilation_ach — sink keeps T_air bounded
+                    0.5,     // infiltration_ach (PR-b)
                     5.0,     // h_tr_3
                     5000.0,  // cm
                     74.52,   // h_tr_is zone total = 3.45 W/m²K × 21.6 m²
@@ -3272,6 +3338,7 @@ mod tests {
             0.0, // t_sky
             0.0, // h_rad_sky
             0.0, // ventilation_ach (Issue #3904: 0 = no night vent)
+            0.5, // infiltration_ach (PR-b)
             // Issue #3918: solar lag parameters (0.0 = lag disabled)
             0.0, // h_tr_3
             0.0, // cm
@@ -3288,6 +3355,7 @@ mod tests {
             0.0, // t_sky
             0.0, // h_rad_sky
             0.0, // ventilation_ach (Issue #3904: 0 = no night vent)
+            0.5, // infiltration_ach (PR-b)
             // Issue #3918: solar lag parameters (0.0 = lag disabled)
             0.0, // h_tr_3
             0.0, // cm
