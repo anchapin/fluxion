@@ -1589,3 +1589,80 @@ PR-a is therefore NOT landed this round: the splitting fix alone is clean for ze
 the solver must be correct with gains before any gauge-cohort numbers are worth re-recording.
 The variant table above is the round-8 measured record; the scratch diff (splitting + slope
 probe + N=12) is preserved in the round-8 loop notes for the next session to resume from.
+
+## §23 — Round 10: the gauge envelope's cold free-float bias — ground coupling was missing on the gauge path (fixed); the residual is the per-surface FD stacks' day/night storage-release split (2026-10-10, physics loop round 10)
+
+Round-9 numbers reproduce exactly on develop ee64066a (strict blind harness, Golden-NREL EPW,
+`--features gauge-solver`, `FLX_LIFT_3817` scratch env gate lifting the #3817 bypass; harness
+preserved in the round-10 loop records, never committed):
+
+- gauge-routed 600 H/C 26.679/8.759 MWh; lifted 900 H 19.261 / C 1.969 MWh;
+- gauge FF (lift): 600FF −22.035/48.383 °C, 650FF −24.472/51.107, 900FF −16.184/49.834,
+  950FF −22.960/39.005;
+- default-build FF (bypassed, 9R4C): 600FF −19.00/54.87, 650FF −24.45/54.37,
+  900FF −6.71/41.96, 950FF −22.44/37.98 — matching the strict FF gate's known-fail record.
+
+The bias is an UNDER-SWING, not a one-sided cold shift: the gauge HighMass free-float runs
+both colder in winter AND (on 900FF/950FF) hotter in summer than the legacy 9R4C envelope on
+the same weather.
+
+### Per-term decomposition (env-gated trace + zeroing, gauge path, never committed)
+
+600FF annual term budget (trace over 8760 h): Φ_sol 10.30 MWh splits phi_ia 3.09 /
+surface pool 5.05 / mass pool 2.16 (5R1C fractions); envelope flux (non-FD surfaces)
+net +1.15 MWh; infiltration conductance small (h_total ≈ 22 W/K). At the coldest night
+(900FF, ground-fixed) the air node loses net_base ≈ −0.7 kW to the envelope and receives
+phi_st ≈ +0.9 kW from the interior-surface network — the trajectory is self-consistent; the
+bias is in what the surfaces store and release, not in the air update.
+
+Single-term levers, all measured pre-fix: on 900FF (lift) the interior-film coupling sweep
+(h_tr_is ×2: Tmin +1.6 K / Tmax −3.3 K; ×0.5: Tmin −1.8 K), zero-sky (Tmin +0.7 K),
+zero-infiltration (≈ 0 K) and solar ×1.3 (Tmax +1.5 K, Tmin +0.7 K) each move ≤ 3.3 K; on
+600FF zero-solar moves Tmin only −22.035 → −22.644. No single gain or loss term explains
+the ~9 K HighMass Tmin gap vs the legacy path — the deficit is structural.
+
+### Finding 1 (fixed): the gauge path never applied the Annex B §B3.3 ground boundary
+
+The legacy paths couple the floor slab to the constant ground temperature since #746
+(`t_ext_floor = t_g`, T_ground = 9.4 °C for Denver): 9R4C passes `t_ext_floor: t_g`
+(step_9r4c.rs) and 5R1C carries `derived_ground_coeff` (step_5r1c.rs). The gauge path built
+every FD surface's exterior face — floor included — from the outdoor sol-air blend, anchoring
+the massive slab to −25 °C winter nights instead of 9.4 °C. Measured effect of the fix
+(threaded from `conduction.ground_temperature`, same `t_ext_floor = t_g` convention):
+
+| metric | pre-fix | post-fix |
+|---|---|---|
+| 600 gauge H/C (MWh) | 26.679/8.759 | 26.192/8.533 |
+| lifted 900 H/C (MWh) | 19.261/1.969 | 18.649/1.602 |
+| 600FF Tmin/Tmax (°C, lift) | −22.035/48.383 | −19.901/50.949 |
+| 900FF Tmin/Tmax (°C, lift) | −16.184/49.834 | −15.277/48.665 |
+
+Real but small (Tmin +0.9–2.1 K); the 900 C target (2.39–2.47) moves AWAY (1.969 → 1.602) —
+a warmer envelope lowers cooling demand.
+
+### Finding 2 (documented, remains blocking): the per-surface FD stacks' storage-release split
+
+Disabling the per-surface FD stacks (env-gated `disable_fd_for_test` scratch, 900FF lift)
+moves Tmin −16.18 → −9.93 and Tmax 49.83 → 38.50 — toward the legacy 9R4C night behavior on
+Tmin but away on Tmax. The FD walls hold solar by day and release far less by night:
+mid-December daily wall→air emission (phi_st, 900FF lift), FD vs lumped-gauge (no-FD):
+day 16.4/8.0, 6.4/0.9, 2.0/1.6, 3.6/3.6, 4.4/5.6, 16.9/6.4, 9.0/9.4 kWh; night
+4.4/13.1, 2.2/10.3, −0.3/6.3, 2.1/6.8, 4.2/11.9, 4.3/12.4, 6.7/15.7 kWh. The FD wall
+ledgers are self-consistent (emitted = q_abs + ext_in − ΔE, zone conservation exact), so
+the day's solar either persists in the stacks or leaves through the exterior film without
+passing through the air node — the trajectory-level effect is the compressed-under-then-
+over-swing envelope the §21 unification measurement inherits.
+
+### Round-10 verdict
+
+1. The §21/#3817 acceptance (900 C ≈ 2.39–2.47 with H in band) is NOT met and is not
+   reachable this round: post-fix lifted 900 H 18.649 (band 1.364–1.846), C 1.602. The
+   #3817 bypass STAYS.
+2. The ground-coupling omission is a genuine spec-compliance defect on the gauge path and is
+   fixed (round-10 PR); gauge-build-only, default build verified bit-identical (600 strict
+   6.758/4.301 on and off the branch).
+3. The remaining cold bias localizes to the per-surface FD stacks' day/night storage-release
+   behavior on HighMass. Candidate next increments (recorded, not guessed): give the window
+   stack a real glazing mass model or solve the air–window-face coupling jointly (§22
+   addendum), then re-audit whether the wall pools' interior-face injection depth matches the
+   ISO 13790 surface-node convention. Fidelity-first: nothing here was tuned to a band.

@@ -602,6 +602,13 @@ pub struct GaugeZoneSolver {
     /// reduces dt/τ to ≈ 3.6/N, within stability bounds when N ≥ 3.
     /// Default: 3 (matching 5R1C sub_hour_air_node_steps).
     sub_hour_air_node_steps: u32,
+    /// ASHRAE 140-2023 Annex B §B3.3 ground boundary temperature [°C] for
+    /// floor slabs (physics loop round 10). `None` keeps the pre-round-10
+    /// behavior (floor exterior face coupled to the outdoor sol-air
+    /// temperature); the gauge dispatcher threads
+    /// `conduction.ground_temperature` — the same boundary the legacy
+    /// 5R1C/9R4C paths have applied since #746.
+    t_ground_c: Option<f64>,
     // Issue #3920 / LIMIT-21: Area-weighted mean interior surface temperature for
     // h_tr_is coupling. Computed as T_air + Q_gauge_total / h_tr_is where
     // Q_gauge_total = sum of q_flux * area for all surfaces. Stored for use
@@ -631,7 +638,8 @@ impl Clone for GaugeZoneSolver {
             couplings: self.couplings.clone(),
             inter_zone_conductance: self.inter_zone_conductance.clone(),
             sub_hour_air_node_steps: self.sub_hour_air_node_steps, // preserved on clone
-            previous_T_surface: 0.0, // RESET — see struct doc-comment.
+            t_ground_c: self.t_ground_c, // preserved on clone (boundary config)
+            previous_T_surface: 0.0,     // RESET — see struct doc-comment.
         }
     }
 }
@@ -674,6 +682,7 @@ impl GaugeZoneSolver {
             couplings: Vec::new(),
             inter_zone_conductance: HashMap::new(),
             sub_hour_air_node_steps: 12, // per-air-substep network advance: N=12 measured stable, N=3 diverges (see LIMIT-35 §23)
+            t_ground_c: None,            // threaded by the gauge dispatcher (see field docs)
             previous_T_surface: 0.0,     // Issue #3920: initialized to 0, computed each step
         }
     }
@@ -797,6 +806,16 @@ impl GaugeZoneSolver {
     /// Set number of sub-steps per timestep for air-node update.
     /// At dt/τ_air ≈ 3.6 on a 1-hour timestep, use N ≥ 3 for stability.
     /// Default is 3 (matching 5R1C sub_hour_air_node_steps).
+    /// Thread the ASHRAE 140 Annex B §B3.3 ground boundary temperature [°C]
+    /// for floor slabs (physics loop round 10). The dispatcher calls this
+    /// each step from `conduction.ground_temperature`; `step` and
+    /// `step_with_coupling` apply it as the exterior-face boundary of
+    /// `SurfaceType::Floor` surfaces (the same `t_ext_floor = t_g`
+    /// convention the legacy 9R4C path uses).
+    pub fn set_ground_temperature_c(&mut self, t_ground_c: f64) {
+        self.t_ground_c = Some(t_ground_c);
+    }
+
     pub fn set_sub_hour_air_node_steps(&mut self, steps: u32) {
         self.sub_hour_air_node_steps = steps;
     }
@@ -993,9 +1012,18 @@ impl GaugeZoneSolver {
             } else {
                 t_exterior_c
             };
+            // ASHRAE 140-2023 Annex B §B3.3 (#746): the floor slab's
+            // exterior face sits on the constant ground boundary, not on the
+            // outdoor sol-air temperature. Same `t_ext_floor = t_g`
+            // convention as the legacy 9R4C FD path; the exterior film
+            // conductance doubles as the ground contact conductance.
+            let t_ext_surface = match self.t_ground_c {
+                Some(t_g) if surface.surface_type == SurfaceType::Floor => t_g,
+                _ => t_sol_air_eff,
+            };
             ext_inputs.push(SurfaceExteriorInputs {
                 h_exterior_effective: h_ext_eff,
-                t_sol_air_effective_c: t_sol_air_eff,
+                t_sol_air_effective_c: t_ext_surface,
             });
 
             // Issue #3983 — FD-backed surfaces carry their through-wall
@@ -1271,9 +1299,18 @@ impl GaugeZoneSolver {
             } else {
                 t_exterior_c
             };
+            // ASHRAE 140-2023 Annex B §B3.3 (#746): the floor slab's
+            // exterior face sits on the constant ground boundary, not on the
+            // outdoor sol-air temperature. Same `t_ext_floor = t_g`
+            // convention as the legacy 9R4C FD path; the exterior film
+            // conductance doubles as the ground contact conductance.
+            let t_ext_surface = match self.t_ground_c {
+                Some(t_g) if surface.surface_type == SurfaceType::Floor => t_g,
+                _ => t_sol_air_eff,
+            };
             ext_inputs.push(SurfaceExteriorInputs {
                 h_exterior_effective: h_ext_eff,
-                t_sol_air_effective_c: t_sol_air_eff,
+                t_sol_air_effective_c: t_ext_surface,
             });
 
             // Issue #3983 — FD-backed surfaces carry their through-wall
@@ -2011,6 +2048,14 @@ impl MultiZoneGaugeSolver {
     /// Get the number of zones.
     pub fn num_zones(&self) -> usize {
         self.num_zones
+    }
+
+    /// Thread the ASHRAE 140 Annex B §B3.3 ground boundary to every zone
+    /// (physics loop round 10). See [`GaugeZoneSolver::set_ground_temperature_c`].
+    pub fn set_ground_temperature_c(&mut self, t_ground_c: f64) {
+        for z in &mut self.zones {
+            z.set_ground_temperature_c(t_ground_c);
+        }
     }
 
     /// Get zone by ID.
@@ -3478,5 +3523,60 @@ mod tests {
             "original zone[0].T_air must remain at 28.0 (independence guarantee)"
         );
         assert!(mz.is_initialized());
+    }
+
+    /// Round 10 (ground coupling): the Annex B §B3.3 boundary threaded by
+    /// `set_ground_temperature_c` must be live on Floor surfaces — a warm
+    /// ground boundary must hold the floor's interior face (and through it
+    /// the zone) warmer than a cold one, everything else equal. The
+    /// boundary is the same `t_ext_floor = t_g` convention the legacy
+    /// 9R4C path applies (issue #746).
+    #[test]
+    fn floor_ground_boundary_is_live() {
+        let run = |t_ground: f64| -> (f64, f64) {
+            let wall = WallSpec::single_layer("floor_slab", 0.203, 1.31, 2243.0, 837.0);
+            let mut zone = GaugeZoneSolver::new(48.0, 2.7);
+            zone.add_opaque_surface(&wall, 48.0, SurfaceType::Floor, 0.0, 180.0)
+                .unwrap();
+            zone.set_ground_temperature_c(t_ground);
+            zone.initialize().unwrap();
+            let mut t_face_final = f64::NAN;
+            for step in 0..48 {
+                zone.step(
+                    step,
+                    3600.0,
+                    Temperature::from_value(-10.0),
+                    HeatTransferCoefficient::from_value(25.0),
+                    0.0,   // solar
+                    0.0,   // solar_distribution_to_air
+                    0.0,   // Q_internal
+                    0.0,   // Q_infiltration
+                    -10.0, // t_sky
+                    0.0,   // h_rad_sky (retained)
+                    0.0,   // ventilation_ach
+                    0.0,   // infiltration_ach
+                    0.0,   // h_tr_3 (retained)
+                    0.0,   // cm (retained)
+                    0.0,   // h_tr_is
+                    0.0,   // term_rest_1 (retained)
+                    0.0,   // convective_fraction
+                    0.0,   // solar_beam_to_mass_fraction
+                )
+                .unwrap();
+                t_face_final = zone.surface_interior_temperatures()[0];
+            }
+            (t_face_final, zone.T_air().to_value())
+        };
+
+        let (warm_face, warm_air) = run(40.0);
+        let (cold_face, cold_air) = run(9.4);
+        assert!(
+            warm_face > cold_face + 1.0,
+            "warm ground must hold the floor face warmer: {warm_face:.2} vs {cold_face:.2}"
+        );
+        assert!(
+            warm_air > cold_air,
+            "warm ground must hold the zone air warmer: {warm_air:.2} vs {cold_air:.2}"
+        );
     }
 }
