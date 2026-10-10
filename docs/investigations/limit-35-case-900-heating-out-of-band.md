@@ -1462,3 +1462,130 @@ E+'s implied C:H exceedance ratio is ≈ 1.54; the mn network's is 1.00, the 5R1
 **Blocked on Alex's decision: route 3(a) (GaugeSolver program) or 3(b) (targeted 9R4C
 air-node dynamics revision).** The reproduction harness, hooks diff and per-step trace are
 preserved in the round-7 loop records; nothing in this section changed engine code.
+
+## §22 — Route (a) adopted: GaugeSolver unification reconnaissance — the gauge zone path is not yet a solver, and the β-soak oscillation is root-caused (2026-10-10, physics loop round 8)
+
+Alex chose route (a) (2026-10-09 23:28 ET). This section records the round-8 reconnaissance:
+the §21 numbers reproduce exactly on develop 035ee6c2, and the first forcing experiment plus a
+per-component trace localize the gauge zone solver's failure mode precisely enough to define
+the program's PR sequence.
+
+### Reproduction (develop 035ee6c2, strict blind harness, Golden-NREL EPW)
+
+Scratch-worktree env-gated hooks (`FLX_R8_TRACE` per-step metering pair, `FLX_METER_5R1C`
+demand flip; hooks never committed) reproduce §21 to the printed digit:
+
+- current mixed pair: 900 H 1.6805 / C 1.6845 MWh (baseline 1.680 / 1.684);
+- `FLX_METER_5R1C` flip: H 2.4581 / C 2.4072 MWh;
+- exceedances: mn air 12,991 K·h C / 12,960 K·h H; 5R1C free 18,577 / 18,923; mean
+  `h_coeff` 129.7 W/K. C:H ratio 1.00 (mn) / 0.98 (5R1C) vs E+ implied ≈ 1.54.
+
+### Forcing experiment: Case 900 through the gauge zone path
+
+With `--features gauge-solver` the gauge backend is already built for HighMass specs
+(single-zone, windows included); only the dispatcher's #3817 `is_nine_r4c_model()` bypass
+routes 900 to 9R4C. Forcing the gauge arm (scratch env gate):
+
+| case | gauge H (band) | gauge C (band) |
+|---|---|---|
+| 600 | 11.015 (5.836–7.787) | 12.046 (3.633–4.931) |
+| 900 | 6.647 (1.364–1.846) | 6.872 (2.465–3.335) |
+
+Both cases are 2–4× over every band. Gain attribution (env-gated zeroing, gauge 600):
+zeroing window solar gives H 13.246 / C 7.866; zeroing internal gains 11.709 / 11.521;
+zeroing both 14.026 / 7.432 — **the envelope path alone produces 7.4 MWh of cooling**, so the
+defect is not gain injection; it is the solver's own dynamics.
+
+### Root cause: the air-node update divides a storage-release ledger by the air conductance
+
+Per-component trace on diverging steps (`FLX_GAUGE_TRACE2/3`):
+
+- The gauge free-float air temperature leaves [20, 27] violently: 416 of 8760 steps with
+  |T_air| > 60 °C, extremes −266 / +180 °C (zero-gain run). This is the nightly gauge
+  β-soak "wild oscillation" mechanism (tracker doc's `max ΔT` symptom), still live on
+  035ee6c2; the oscillation-era `case_600_reference_csv` cohort has since been fixed, and the
+  current nightly failures (19 on 2026-10-09) are band-membership failures of the same
+  dynamics.
+- Every diverging step is driven by `phi_st`, the interior-surface network's emission ledger:
+  per-surface `emitted = q_abs·dt + ext_in − ΔE_wall` where `ext_in` is the FD stack's
+  exterior-face boundary flux (measured −123 MJ/h on the wall in a −3 °C hour with the wall
+  stack near 20 °C) and `ΔE_wall` the full-storage change.
+- The air-node quasi-steady update (`t_steady = T_old + (net + h_total·(T_ext − T_old)) /
+  den_air`, den ≈ 187 W/K) treats that ledger as a constant source. But the ledger's storage
+  release is **not proportional to the air-side conductance** `h_interior` that sits in the
+  denominator: a MJ-scale transient release divided by 187 W/K moves the air node hundreds of
+  kelvin in one step. The HVAC clamp then forces T_air back to a setpoint, the interior film
+  BC re-kicks the FD stacks, and the oscillation sustains itself all year.
+- Structure of the defect: the FD emission at interior temperature t is exactly affine in t
+  (the FD step is linear in its boundary conditions), but the update only uses its value at
+  T_old — the slope, which is what would make the coupling implicit and unconditionally
+  stable, is discarded. This is the same frozen-flux linearization error class #3918 fixed for
+  the envelope path; the interior-surface network path still has it.
+
+### Other gauge-path deficits measured or read this round (program backlog)
+
+1. **Infiltration is missing**: the dispatcher passes `Q_infiltration_w = 0.0` ("would need
+   proper infiltration calculation") and the zone solver hardcodes `infiltration_ach = 0.5`
+   with the comment "ASHRAE 140 Case 600" — a hardcoded-results violation for every other
+   case and no ventilation coupling outside the night-vent ACH.
+2. **The mixed metering pair is reproduced inside the gauge path**: the arm meters demand as
+   `compute_hvac_coefficient(0)` (the 5R1C Norton stack, 129.7 W/K on 900) × the gauge air
+   node — the same network-foreign-conductance pairing §19 fact 2 ruled out on the legacy
+   path.
+3. **The gauge window spec predates WINDOW-01**: `window_glass_wall_spec` still builds the
+   2.1 W/m²K-effective glazing spec; the 3.0 W/m²K `window_u_value_override` is not threaded.
+4. The #3817 comment "the gauge solver has no thermal-mass modeling" is stale as written —
+   the #3983 per-surface FD stacks carry real layer mass — but it is *functionally* true
+   today because of the oscillation above.
+
+### Program plan (route (a), PR sequence; each lands with the full loop discipline)
+
+1. **PR-a: air-node emission coupling fix** — make the interior-surface network's emission
+   enter the air-node update with its exact affine slope in T_air (two-probe evaluation of
+   the linear FD response; no new constants), so the coupling is implicit and the ±300 K
+   excursions cannot form. Gate: zero-gain gauge 600 free-float stays within physical
+   bounds; the 416-step divergence cohort is empty.
+2. **PR-b: infiltration threading** — spec ACH through the CaseSpec path into the gauge arm;
+   remove the hardcoded 0.5 and the 0.0 W dispatcher stub.
+3. **PR-c: self-consistent gauge metering** — meter demand from the gauge network's own
+   air-node conductance (its `h_env + h_total + h_interior` stack), retiring the
+   network-foreign 5R1C `h_coeff` pairing in the gauge arm.
+4. **PR-d: lift the #3817 bypass** — route HighMass through the gauge arm once 1–3 hold;
+   thread WINDOW-01 through `window_glass_wall_spec` in the same increment.
+5. Then the §21 unification measurement: does the unified network's own free-air trajectory
+   carry the seasonal asymmetry (C:H ≈ 1.54), and does its self-consistent pair land 900 C
+   in the 2.39–2.47 target? Fidelity-first: whatever it gives is recorded, not tuned.
+
+Nothing in this section changed committed engine code; the forcing/trace hooks live in the
+round-8 scratch worktree only.
+
+### §22 addendum — PR-a stability-fix attempt, measured (same round)
+
+Three fix variants were built and measured in the scratch worktree (env-gated traces; never
+committed):
+
+| variant | zero-gain 600 diverging steps (|T|>60 °C) | gauge 600 H/C (MWh) | gauge 900 H/C |
+|---|---|---|---|
+| develop 035ee6c2 (baseline) | 416 | 11.01 / 12.05 | 6.65 / 6.87 |
+| exact affine emission slope in the hour-step den | 220 | 0.94 / 23.97 | 0.79 / 11.65 |
+| + per-sub-step network advance (operator splitting) | 49 (N=3) → **0** (N=12) | 8.73 / 11.93 (N=3) | 4.46 / 4.67 (N=3) |
+| + sub-step slope in den (N=12) | 0 zero-gain; **169 with gains** (max +98 °C) | 7.70 / 3.75 | 2.58 / 0.73 |
+
+Findings:
+
+1. The hour-scale frozen-flux window is confirmed as the primary defect: splitting the
+   interior-surface network advance into the air sub-step loop cures the zero-gain
+   oscillation outright (416 → 0 at N=12) and roughly halves the gain-path one.
+2. The residual gain-path instability localizes to solar-pool hours: the transmitted-solar
+   pools are injected at the FD interior faces, where the thin-glass window stack (3 mm,
+   6-node) has near-no capacitance at sub-step scale and the emitted response's slope flips
+   sign between sub-steps. The remaining 169 diverging steps all carry large surface pools.
+3. Neither the per-surface slope clamp nor the signed slope in the denominator is sufficient
+   at gain hours; the defensible next increment is to isolate the window stack (give the
+   window a real glazing mass model or solve the air–window-face coupling jointly), then
+   re-measure the cohort. Guessing a damping constant is not an option under loop rules.
+
+PR-a is therefore NOT landed this round: the splitting fix alone is clean for zero-gain but
+the solver must be correct with gains before any gauge-cohort numbers are worth re-recording.
+The variant table above is the round-8 measured record; the scratch diff (splitting + slope
+probe + N=12) is preserved in the round-8 loop notes for the next session to resume from.
