@@ -122,7 +122,16 @@ Blocks preserved: 2. No wording was changed, softened or deleted.
   | Annual cooling | 3299.30 kWh | [3920.00, 6140.00] kWh | **−16 % UNDER** | ❌ FAIL |
   | Peak heating | 4.38 kW | [2.80, 3.80] kW | **+15.3 % OVER** | ❌ FAIL |
   | Peak cooling | 3.72 kW | [4.80, 6.20] kW | **−22.5 % UNDER** | ❌ FAIL |
-  | `case_600_cooling` strict ±15 % gate | 2.546 MWh | [4.275, 5.784] MWh | **−34.38 % UNDER** | KNOWN-FAIL |
+  | `case_600_cooling` strict ±15 % gate | 4.301 MWh (2026-10-10 refresh, develop ee64066a; was 2.546 MWh pre-round-4) | [4.275, 5.784] MWh | −0.6 %, in band | PASS |
+
+  > 2026-10-10 refresh (physics loop round 10): the quoted 2.546 MWh
+  > predates the mid-hour sun convention (round 4), the E+ Perez
+  > coefficient-table fix (round 3), WINDOW-01 (round 7) and the
+  > GaugeSolver PR-c/d metering (round 9). On develop ee64066a the
+  > default-build strict-gate Case 600 H/C is 6.758/4.301 MWh — cooling
+  > in band. The gauge-build strict cohort is separate and currently
+  > quarantined (gauge-routed 600 H/C 26.192/8.533 MWh after the
+  > round-10 ground-coupling fix; see LIMIT-35 §23).
 
   3/4 Case 600 metrics fail the ±15 % strict-energy gate per
   `python3 scripts/check_strict_energy_gate_regression.py`
