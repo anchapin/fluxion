@@ -663,7 +663,7 @@ mod tests {
     fn window_glass_wall_spec_matches_u_value() {
         use fluxion_core::ashrae_cases::WindowSpec;
         let window_props = WindowSpec::double_clear_glass(); // U = 2.1
-        let spec = window_glass_wall_spec(&window_props, 12.0);
+        let spec = window_glass_wall_spec(window_props.u_value, 12.0);
         assert_eq!(spec.layers.len(), 1);
         // k = U × thickness; R = thickness / k = 1 / U.
         let expected_r = 1.0 / window_props.u_value;
@@ -677,7 +677,7 @@ mod tests {
             0.0,
             fluxion_core::ashrae_cases::GlassType::SingleClear,
         );
-        let fallback = window_glass_wall_spec(&zero_u, 12.0);
+        let fallback = window_glass_wall_spec(zero_u.u_value, 12.0);
         assert!(fallback.layers[0].conductivity > 0.0);
     }
 

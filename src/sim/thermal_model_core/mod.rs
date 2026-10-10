@@ -690,14 +690,20 @@ fn wall_spec_from_construction(
 /// multi-layer glass with frame U-value composition (#2889).
 #[cfg(feature = "gauge-solver")]
 fn window_glass_wall_spec(
-    window_properties: &fluxion_core::ashrae_cases::WindowSpec,
+    u_value_w_m2k: f64,
     _window_area_m2: f64,
 ) -> crate::physics::wall_spec::WallSpec {
     use crate::physics::wall_spec::WallSpec;
     const GLASS_THICKNESS_M: f64 = 0.005; // 5 mm — typical soda-lime glass
     const GLASS_DENSITY_KG_M3: f64 = 2500.0;
     const GLASS_CP_J_KG_K: f64 = 750.0;
-    let u = window_properties.u_value;
+    // PR-d (LIMIT-35 §22 backlog 3, WINDOW-01): the caller passes the
+    // WINDOW-01-effective U (spec-level override when present, e.g. the
+    // ASHRAE 140 3.0 W/m²K conductance; else the glazing-spec U). The
+    // quasi-steady window enters the gauge envelope as A/R through this
+    // layer stack with no additional films (r_total is layers-only), so
+    // k = U·d makes the gauge conductance A·U exactly.
+    let u = u_value_w_m2k;
     // k = U * d. Guard against degenerate U values.
     let conductivity = if u > 0.0 && u.is_finite() {
         (u * GLASS_THICKNESS_M).max(0.001)
@@ -3550,7 +3556,8 @@ impl ThermalModel<VectorField> {
             if let Some(ref mut gauge) = self.0.conduction.backend.gauge_zone_solver {
                 for window in windows {
                     if window.area > 0.0 {
-                        let glass_spec = window_glass_wall_spec(window_props, window.area);
+                        let u_eff = spec.window_u_value_override.unwrap_or(window_props.u_value);
+                        let glass_spec = window_glass_wall_spec(u_eff, window.area);
                         let azimuth = window.orientation.azimuth_deg();
                         gauge
                             .add_opaque_surface(
@@ -3599,8 +3606,10 @@ impl ThermalModel<VectorField> {
                     if let Some(windows) = spec.windows.get(zone_idx) {
                         for window in windows {
                             if window.area > 0.0 {
-                                let glass_spec =
-                                    window_glass_wall_spec(&spec.window_properties, window.area);
+                                let u_eff = spec
+                                    .window_u_value_override
+                                    .unwrap_or(spec.window_properties.u_value);
+                                let glass_spec = window_glass_wall_spec(u_eff, window.area);
                                 let azimuth = window.orientation.azimuth_deg();
                                 multi_zone
                                     .add_opaque_surface_to_zone(
