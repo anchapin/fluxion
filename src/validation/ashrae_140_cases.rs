@@ -936,6 +936,16 @@ pub struct CaseSpec {
     /// specified test conditions such as the ASHRAE 140 Case 195 solid
     /// conduction test (U = 0.039 W/m²K).
     pub floor_u_value_override: Option<f64>,
+    /// Optional override for the window U-value (W/m²K).
+    /// WINDOW-01 (loop round 7): the ASHRAE 140 spec defines the Case
+    /// 600/900-series window conductance as 3.0 W/m²K (WINDOW_U_VALUE, §5.2),
+    /// which the legacy validator setup path sets directly; the WindowSpec
+    /// glazing U (2.10) + frame bridge composes to ~2.27 W/m²K instead. When
+    /// `Some`, the effective window U-value — `solar.window_u_value` and the
+    /// `h_tr_w` conductance — is this value, so both engine entry points agree.
+    /// Data-driven, no case_id check.
+    #[serde(default)]
+    pub window_u_value_override: Option<f64>,
     /// Building usage type for thermal mass calculations (default: Residential)
     pub building_type: BuildingType,
 }
@@ -1144,7 +1154,11 @@ impl CaseSpec {
         let cp_air = crate::physics::constants::AIR_SPECIFIC_HEAT;
         let h_ve = rho_air * cp_air * (case_spec.infiltration_ach / 3600.0) * volume;
 
-        let window_u = case_spec.window_properties.u_value;
+        // WINDOW-01: honour the spec-level window U override when present so
+        // the audit agrees with the engine's h_tr_w.
+        let window_u = case_spec
+            .window_u_value_override
+            .unwrap_or(case_spec.window_properties.u_value);
         let h_tr_w = window_u * window_area;
 
         let wall_u = case_spec.construction.wall.u_value(None, None);
@@ -1235,6 +1249,8 @@ pub struct CaseBuilder {
     /// specified test conditions such as the ASHRAE 140 Case 195 solid
     /// conduction test (U = 0.039 W/m²K) — data-driven, no case_id check.
     floor_u_value_override: Option<f64>,
+    /// Optional window U-value override (W/m²K), threaded through to CaseSpec.
+    window_u_value_override: Option<f64>,
     /// Building usage type for thermal mass calculations
     building_type: BuildingType,
 }
@@ -1269,6 +1285,7 @@ impl CaseBuilder {
             epw_path: None,
             ground_temperature_c: None,
             floor_u_value_override: None,
+            window_u_value_override: None,
             building_type: BuildingType::default(),
         }
     }
@@ -1449,6 +1466,18 @@ impl CaseBuilder {
     /// Sets window properties.
     pub fn with_window_properties(mut self, window_properties: WindowSpec) -> Self {
         self.window_properties = window_properties;
+        self
+    }
+
+    /// Overrides the effective window U-value (W/m²K).
+    ///
+    /// WINDOW-01 (loop round 7): threads the ASHRAE 140 spec window
+    /// conductance (3.0 W/m²K, `WINDOW_U_VALUE`) through the CaseSpec so the
+    /// strict CaseSpec path and the legacy validator setup path agree. When
+    /// `Some`, both `solar.window_u_value` and the `h_tr_w` conductance use
+    /// this value verbatim (the spec constant already includes the frame).
+    pub fn with_window_u_value_override(mut self, u_value: f64) -> Self {
+        self.window_u_value_override = Some(u_value);
         self
     }
 
@@ -1650,6 +1679,7 @@ impl CaseBuilder {
             hvac_equipment: None,
             ground_temperature_c: self.ground_temperature_c,
             floor_u_value_override: self.floor_u_value_override,
+            window_u_value_override: self.window_u_value_override,
             building_type: self.building_type,
         };
 

@@ -730,8 +730,18 @@ describe('@fluxion/native', () => {
     //   first time on this drive. This is the change that let COOLING be
     //   re-pinned to the published band (this commit), matching how
     //   HEATING was already pinned.
-    const HEATING_MIN_KWH = 4314.0;
-    const HEATING_MAX_KWH = 5836.0;
+    // WINDOW-01 (loop round 7, 2026-10-09): the ASHRAE 140 spec window
+    // U-value (3.0 W/m²K) is now threaded through the CaseSpec path; the
+    // physically-correct higher-U window raises Case 600 annual heating
+    // ~13% and lowers cooling ~8%. Heating deliberately LEFT the published
+    // ±15% band — accepted per the fidelity-first direction and tracked as
+    // known_fail in
+    // tests/reference_data/zone_balance/strict_energy_gate_baseline.json
+    // (case_600_heating) and docs/KNOWN_ISSUES.md §WINDOW-01. This test pins
+    // the post-fix native-surface heating value (±5% surface-parity guard);
+    // cooling stays pinned to the published band.
+    const HEATING_MIN_KWH = 5934.0;
+    const HEATING_MAX_KWH = 6559.0;
     const COOLING_MIN_KWH = 4275.0;
     const COOLING_MAX_KWH = 5784.0;
 

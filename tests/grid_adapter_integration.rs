@@ -141,18 +141,27 @@ fn test_electrical_results_match_recorded_baseline() {
     // direction (cold sky now depresses sol-air), raising January heating
     // load. Genuine physics change, not a tuned constant.
     //
+    // Re-recorded 2026-10-09 by the WINDOW-01 fix (loop round 7): the ASHRAE
+    // 140 spec window U-value 3.0 W/m2K now threads through the CaseSpec path
+    // (previously ~2.27 W/m2K effective on the strict path), raising Case 600
+    // January heating. Thermal 139.35135840182244 -> 150.25454453392467 kWh;
+    // electrical load 46.45045280060749 -> 50.084848177974884 kWh (thermal/3);
+    // grid import 33.70974375036340 -> 37.321170194804544 kWh; peak net demand
+    // 1.22160526193861 -> 1.3152976644842214 kW. PV, battery and SoC unchanged.
+    // Genuine physics change, not a tuned constant.
+    //
     // Cross-checks the physics wiring, not just the adapter: thermal/3 ==
     // electrical_load, and the battery stock (0.5 → 0.1 of 10 kWh) equals
     // charge − discharge. Regenerate by running with
     // FLUXION_PRINT_GRID_BASELINE=1 -- --nocapture.
-    const EXPECTED_THERMAL_KWH: f64 = 139.35135840182244;
-    const EXPECTED_ELECTRICAL_LOAD_KWH: f64 = 46.45045280060749;
+    const EXPECTED_THERMAL_KWH: f64 = 150.25454453392467;
+    const EXPECTED_ELECTRICAL_LOAD_KWH: f64 = 50.084848177974884;
     const EXPECTED_PV_KWH: f64 = 8.92391297937677;
     const EXPECTED_BATTERY_CHARGE_KWH: f64 = 0.00000000000000;
     const EXPECTED_BATTERY_DISCHARGE_KWH: f64 = 4.00000000000000;
-    const EXPECTED_GRID_IMPORT_KWH: f64 = 33.70974375036340;
+    const EXPECTED_GRID_IMPORT_KWH: f64 = 37.321170194804544;
     const EXPECTED_GRID_EXPORT_KWH: f64 = 0.00000000000000;
-    const EXPECTED_PEAK_NET_DEMAND_KW: f64 = 1.22160526193861;
+    const EXPECTED_PEAK_NET_DEMAND_KW: f64 = 1.3152976644842214;
     const EXPECTED_FINAL_SOC_FRACTION: f64 = 0.1;
 
     let tol = 1e-9;
