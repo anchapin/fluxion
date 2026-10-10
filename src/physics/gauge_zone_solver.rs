@@ -1506,6 +1506,23 @@ impl GaugeZoneSolver {
             .collect()
     }
 
+    /// PR-c (LIMIT-35 §22 backlog 2): the gauge network's own air-node
+    /// conductance [W/K] — envelope transmission (Σ A/R over non-FD
+    /// surfaces), infiltration + ventilation, and the interior-surface star
+    /// (Σ h_tr_is). This is the gauge analog of the 5R1C Norton equivalent
+    /// at the air node and the self-consistent coefficient for the §C.3
+    /// demand form `Q = H·(T_set − T_air)`; metering that demand with the
+    /// 5R1C `compute_hvac_coefficient` reproduced the network-foreign
+    /// conductance pairing §19 ruled out (measured 129.7 W/K on Case 900).
+    pub fn air_node_conductance_WK(&self, ventilation_ach: f64, infiltration_ach: f64) -> f64 {
+        let h_inf = self.infiltration_conductance_WK(infiltration_ach);
+        let h_vent = air_constants::RHO_AIR
+            * air_constants::CP_AIR
+            * (ventilation_ach / 3600.0)
+            * self.zone_volume;
+        self.surface_to_air_conductance() + h_inf + h_vent + self.compute_h_tr_is()
+    }
+
     /// Issue #3911 — Infiltration conductance [W/K] from the most recent step.
     ///
     /// Computed as: ρ_air · c_p,air · (ACH / 3600) · V_zone

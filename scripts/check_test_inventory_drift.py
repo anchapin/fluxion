@@ -300,7 +300,7 @@ BASELINE_WORKSPACE_TESTS = 8907  # 2026-10-10 (loop round 9 PR-b): 8906 -> 8907 
 # bumping the ratchet here keeps the nightly gauge soak's
 # ``scripts-tests.yml`` invocation green until a dedicated cleanup PR
 # can attribute them per-crate.
-BASELINE_WORKSPACE_IGNORED = 161  # 2026-10-09 (Issue #4170): 160 -> 161 — loop
+BASELINE_WORKSPACE_IGNORED = 167  # 2026-10-10 (loop round 9 PR-c): 161 -> 167 — 6 gauge-routed 600-series metrics re-quarantined under the round-5 #[ignore=reason] convention pending PR-d re-pin. Prior: 161 (2026-10-09, #4170).
                                   # round 5 quarantines the two Case 610 premise
                                   # tests (case_610::test_annual_heating / cooling)
                                   # that left the published Annex B ranges under

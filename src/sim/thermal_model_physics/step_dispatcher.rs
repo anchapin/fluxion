@@ -383,10 +383,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             return None;
         }
 
-        // Issue #3918 Fix B: compute the §C.3 load coefficient BEFORE the
-        // scoped gauge borrow below — `compute_hvac_coefficient` immutably
-        // borrows `self`, which conflicts with the mutable gauge borrow.
-        let h_coeff = self.compute_hvac_coefficient(0);
+        // PR-c (LIMIT-35 §22 backlog 2): the §C.3 load coefficient is the
+        // GAUGE network's own air-node conductance, evaluated from the
+        // solver after its step (inside the scope below) — no longer the
+        // 5R1C `compute_hvac_coefficient` Norton stack, which metered the
+        // gauge air node with a network-foreign conductance (the pairing
+        // §19 ruled out on the legacy path; 129.7 W/K measured on 900).
         // Run the step inside a scoped mutable borrow so the result and
         // the post-step T_air can both be captured without re-borrowing.
         let (energy_kwh, new_t_air) = {
@@ -454,6 +456,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 inputs.solar_beam_to_mass_fraction,
             );
             let t_air_free_final = gauge.T_air().to_value();
+            // PR-c: self-consistent §C.3 coefficient from the gauge network.
+            let h_coeff = gauge.air_node_conductance_WK(
+                inputs.ventilation_ach,
+                inputs.infiltration_ach.first().copied().unwrap_or(0.0),
+            );
             let (energy_out, t_air) = if r.is_err() || !is_conditioned {
                 // Step failed (fall through to legacy per the β-gate) or the
                 // zone is not conditioned: keep the ledger semantics of the
