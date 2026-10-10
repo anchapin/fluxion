@@ -1419,3 +1419,46 @@ direction; nothing tuned.
 (fact 2), routed to the GaugeSolver air–mass rework (#1465/#1462); the 600 free-float
 under-exceedance family (FREE-01/02) is recorded as measured. 900FF's single-clear glazing is a
 pre-existing spec question, deliberately out of scope here.
+
+## §21 — Round 7 GaugeSolver reproduction + design options (2026-10-09, blocked on a design decision)
+
+§19 fact 2 (mixed metering pair) was reproduced on develop e45b663f with env-gated
+diagnostic hooks (`FLX_R7_TRACE` per-step drivers, `FLX_METER_5R1C` metering flip; hooks
+used in a scratch worktree only, never committed):
+
+- Air-node exceedances over 27 °C (cooling) / under 20 °C (heating), Case 900 annual,
+  Golden-NREL EPW, strict harness: multi-node air node 12,991 K·h cooling / 12,960 K·h
+  heating; 5R1C free temperature 18,577 / 18,923 K·h; mean `h_coeff` 129.7 W/K
+  (post-WINDOW-01). §19's pre-fix figures (12,992 / 19,701 K·h at 120.9 W/K) reproduce
+  on 05b93343.
+- `FLX_METER_5R1C` full-run flip: H 2.458 MWh (band [1.364, 1.846]: +33 % over the top),
+  C 2.407 MWh (band [2.465, 3.335]: 2.3 % below the bottom).
+
+### Options, with measured numbers (e45b663f)
+
+| metering pair | H exceed K·h | C exceed K·h | H MWh (band 1.364–1.846) | C MWh (band 2.465–3.335) |
+|---|---|---|---|---|
+| mn air node × `h_coeff` (current) | 12,960 | 12,991 | 1.680 ✓ | 1.684 ✗ (−32 %) |
+| 5R1C free × `h_coeff` (self-consistent) | 18,923 | 18,577 | 2.454 ✗ (+33 %) | 2.407 ✗ (−2.3 %) |
+| E+ implied (band midpoints ÷ 129.7 W/K) | ≈ 12,375 | ≈ 19,015 | 1.605 | 2.900 |
+
+E+'s implied C:H exceedance ratio is ≈ 1.54; the mn network's is 1.00, the 5R1C's is 0.98.
+
+1. **Adopt the self-consistent 5R1C pair** (one-line metering flip). C lands at 2.407 —
+   just below its band — and H leaves its band by +33 %. Net band score worse than status
+   quo (one in-band vs zero in-band). Not recommended.
+2. **Season-hybrid metering** (mn for heating hours, 5R1C for cooling hours): H 1.680 ✓ /
+   C 2.407 ✗. Even this does not satisfy both bands, and it deepens the mixed-pair
+   anti-pattern round 6 ruled out. Not recommended.
+3. **Rework the solver's air–mass distribution so the free-air trajectory itself carries
+   E+'s seasonal asymmetry**, then meter from that network's own self-consistent pair.
+   This is the only route that can satisfy both bands, and it is a solver-design program:
+   either (a) the GaugeSolver unification routed in round 6 (#1465/#1462), or (b) a
+   targeted revision of the 9R4C multi-node air-node dynamics (air capacitance / surface
+   coupling). The issues do not settle which — nor what the physically correct air–mass
+   coupling is, and round 6's discipline (and this loop's) forbids picking a coupling
+   constant to hit a band.
+
+**Blocked on Alex's decision: route 3(a) (GaugeSolver program) or 3(b) (targeted 9R4C
+air-node dynamics revision).** The reproduction harness, hooks diff and per-step trace are
+preserved in the round-7 loop records; nothing in this section changed engine code.
