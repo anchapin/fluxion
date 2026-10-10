@@ -259,6 +259,10 @@ struct GaugeInputs {
     // Fractionation parameters needed for phi_st computation
     convective_fraction: f64, // convective fraction of internal gains
     solar_beam_to_mass_fraction: f64, // solar beam-to-mass fraction
+    // Round 10 (ground coupling): ASHRAE 140 Annex B §B3.3 ground boundary
+    // temperature [°C] read from `conduction.ground_temperature` — the same
+    // boundary the legacy 5R1C/9R4C paths apply to the floor slab.
+    t_ground_c: f64,
 }
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
@@ -325,6 +329,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             term_rest_1,
             convective_fraction,
             solar_beam_to_mass_fraction,
+            t_ground_c: self
+                .0
+                .conduction
+                .ground_temperature
+                .ground_temperature(timestep),
         }
     }
 
@@ -402,6 +411,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .gauge_zone_solver
                 .as_mut()
                 .expect("checked Some above");
+            // Round 10 (ground coupling): Annex B §B3.3 floor boundary.
+            gauge.set_ground_temperature_c(inputs.t_ground_c);
             let h_sp: f64 = inputs
                 .heating_setpoints
                 .first()
@@ -651,6 +662,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let num_zones = self.0.hvac.num_zones;
 
             if let Some(multi_zone) = self.0.conduction.backend.gauge_multi_zone_solver.as_mut() {
+                // Round 10 (ground coupling): Annex B §B3.3 floor boundary.
+                multi_zone.set_ground_temperature_c(inputs.t_ground_c);
                 // Issue #3928: Build boundary conditions with h_tr_is computed from gauge surfaces.
                 // This activates the solar lag correction that was previously disabled (h_tr_is = 0.0).
                 let mut boundary_conditions: HashMap<usize, ZoneBoundaryConditions> =
