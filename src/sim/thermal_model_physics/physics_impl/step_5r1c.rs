@@ -339,6 +339,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             scratch.t_sol_air_zone[i] = t_sol_air_i;
             scratch.h_tr_em_zone[i] = h_tr_em;
         }
+        // Strict-energy premise refresh: persist the applied per-zone
+        // boundary so `invariant_checker` reconstructs the mass-node
+        // identity from the same wind-dependent aggregated values this
+        // step used (the checker's legacy roof-style reconstruction
+        // predates #4113/#4166 and no longer matches the integrator).
+        self.0.conduction.applied_5r1c_boundary = Some((
+            scratch.h_tr_em_zone.to_vec(),
+            scratch.t_sol_air_zone.to_vec(),
+        ));
         // Issue #2873: `scratch.t_sol_air_zone` is intentionally NOT
         // `mem::take`'n here. The downstream sites (`h_tr_em *
         // (t_sol_air - T_mass)` at lines 614/663, the LW block at line 774,

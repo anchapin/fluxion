@@ -3907,6 +3907,7 @@ impl ThermalModel<VectorField> {
                 derived_h_tr_1: VectorField::from_scalar(0.0, num_zones),
                 derived_h_tr_2: VectorField::from_scalar(0.0, num_zones),
                 derived_h_tr_3: VectorField::from_scalar(0.0, num_zones),
+                applied_5r1c_boundary: None,
             },
             diagnostics_state: DiagnosticsState::default(),
         });

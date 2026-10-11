@@ -79,6 +79,14 @@ pub struct ConductionState<T: ContinuousTensor<f64>> {
     pub derived_h_ms_is_prod: T,
     pub derived_den: T,
     pub derived_ground_coeff: T,
+    /// Applied per-zone 5R1C exterior boundary from the most recent step —
+    /// the wind-dependent aggregated `h_tr_em` [W/K] and sol-air [°C] the
+    /// step actually used (#4113/#4166 semantics). The strict-energy
+    /// invariant checker consumes these so its mass-node identity is
+    /// reconstructed from the applied values rather than the legacy
+    /// roof-style reconstruction that predates the wind-dependent film.
+    /// `None` before the first 5R1C step (checker falls back).
+    pub applied_5r1c_boundary: Option<(Vec<f64>, Vec<f64>)>,
 }
 
 impl<T: ContinuousTensor<f64> + Clone> Clone for ConductionState<T> {
@@ -120,6 +128,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ConductionState<T> {
             derived_h_ms_is_prod: self.derived_h_ms_is_prod.clone(),
             derived_den: self.derived_den.clone(),
             derived_ground_coeff: self.derived_ground_coeff.clone(),
+            applied_5r1c_boundary: self.applied_5r1c_boundary.clone(),
         }
     }
 }
