@@ -1800,3 +1800,83 @@ After #4371, the cold-Tmin residual splits into two measured terms:
    contact-conductance question from PR #4371's review.
 
 Nothing tuned; no band widened.
+
+## §26 — Round 13: the four named lumped-path suspects measured; none is a defect; the residual is a structural air–surface coupling difference (2026-10-11, physics loop round 13)
+
+Round-12 numbers reproduced exactly on develop `283e991d` with the round-10 gauge harness
+(scratch `zz_scratch_r13` + env-gated hooks, never committed; logs and the interrupt-run
+hook diff in `round13-artifacts/`): 600 gauge H/C 28.635/5.715 MWh; lifted 900 H/C
+21.379/0.829; 600FF −19.413/42.719 °C; 650FF −24.143/42.420; 900FF −14.723/34.917;
+950FF −22.621/33.617; FD-off lumped 900FF −10.288/38.586. Harness proven before any
+experiment.
+
+(Also this round: the Cross-Platform Determinism workflow red on develop since the first
+real execution was root-caused and fixed first — PR #4373, squash `b27e142c`. The Case 600
+conservation tests failed with a 97.5% residual because the checker's mass-node identity
+still reconstructed the pre-#4113 roof-style sol-air and static `h_tr_em`; bisect pinned
+the premise break to `8772c78d`. Checker-premise repair only; the integrator conserves.
+Recorded here because it gated every determinism lane this round ran through.)
+
+Measured on develop `b27e142c` (gauge build, scratch #3817 lift), one suspect at a time
+(baseline in parentheses):
+
+### (a) Interior-film / surface-network coupling — biggest lever, no defect; documented model difference
+
+- FD on (lifted): h_tr_is ×0.5 / ×2 moves 900FF Tmin −16.415 / −13.534 (baseline −14.723)
+  and 600FF Tmin −20.143 / −18.940 (baseline −19.413). ×1.5: 900FF −13.977, 600FF −19.122
+  (600FF Tmax 44.515, still in band).
+- FD off (lumped-path isolation): ×2 recovers 1.26 K of the 3.58 K lumped-path term
+  (−10.288 → −9.028). ×0.5 in FD-off mode is numerically unstable (|T| ~ 5e14) — the
+  air–surface film is load-bearing for the lumped network's stability, consistent with the
+  round-9 sub-step findings.
+- Verdict: the gauge distributes the ISO 13790 zone star-node `h_tr_is` by area share —
+  the audited round-11 semantics, and the documented reference. The #3928 tilt
+  coefficients (≈×2.2 stronger) were already evaluated and rejected as over-damping in
+  the #3918 follow-up. A stronger film warms free-float monotonically, but adopting it
+  would be tuning, not physics. Recorded as the dominant structural model difference.
+
+### (b) #3918 night-sky neutralization — small with FD on, exactly zero in the lumped path
+
+- FD on: removing the night neutralization (`t_sky` applied at night) cools 900FF Tmin
+  −14.723 → −15.053 (−0.33 K), 600FF −19.413 → −20.094; deleting the sky term entirely
+  warms +0.15 K / +0.05 K. Correct signs, sub-0.5 K levers.
+- FD off: **bit-identical** output (−10.288/38.586 with and without the neutralization).
+  The sky term never reaches the lumped air balance in FD-off mode, so it cannot be the
+  lumped-path term. Not a defect; the neutralization matches 5R1C semantics by design.
+
+### (c) Infiltration — spec-threaded correctly; pure magnitude lever, no defect
+
+- The gauge applies infiltration as an ACH→`h_inf` conductance (round 9 PR-b); the
+  `Q_infiltration_w` step argument is §C.3 metering only and does not move free-float
+  temperatures (bit-identical when scaled).
+- ACH lever (live, FD on): ACH=0 warms 900FF Tmin −14.723 → −12.925 (+1.80 K), 600FF
+  −17.900; ACH=2 cools −16.077. Both paths consume the same spec ACH, so this lever does
+  not separate gauge from legacy. No defect.
+
+### (d) Floor-ground contact conductance (#4371 review question) — closed
+
+- Scaling the floor film conductance ×10 / ×0.1 (FD on): ≤0.11 K on any case.
+- Replacing the ground boundary with outdoor sol-air (`GAIR`) moves only the FD floor
+  faces (900FF −15.831, 600FF −21.540 — the ground coupling WARMS free-float, so it is
+  not the source of a gauge-colder-than-legacy residual) and is **bit-identical in FD-off
+  mode**: the lumped path's ground contact enters through the network ground conductance,
+  not the exterior film. The #4371 review question does not bear on the lumped-path term.
+
+### Round-13 residual decomposition (replaces §25's)
+
+Of the lifted 900FF cold-Tmin gap (−14.723 gauge vs −6.71 legacy 9R4C, ~8 K): ~4.4 K is
+FD-storage release (§25), ~1.2–1.3 K is interior-film coupling strength (a), ~0–0.5 K is
+sky (b), 0 is ground (d) and 0 is infiltration metering (c). Of the 3.58 K lumped-path
+term specifically (FD-off): ~1.3 K film coupling (a), 0 sky (b), 0 ground (d); the
+remaining ~2.3 K is the gauge air-node/mass-network topology vs the legacy 9R4C star
+(h_tr_3 series, BE mass update, sub-stepping) — a structural model difference with no
+named single defect. No candidate justified an engine-physics change; nothing tuned; no
+band widened.
+
+### Milestone: §21/#3817 re-lift — NOT met; bypass STAYS
+
+No engine change landed this round, so the acceptance numbers stand at the round-12
+values: lifted 900 H/C 21.379/0.829 MWh vs H band [1.364, 1.846] and C target 2.39–2.47.
+The measured levers, even combined optimistically (film ×1.2 K + infiltration 0),
+do not approach the target. The bypass remains; unification stays blocked on the
+structural air–surface coupling difference documented above.
