@@ -144,7 +144,12 @@ BASELINE_PHYSICS_TO_SIM = 0
 # that hoisted them to `fluxion-core` would also have to move the
 # helpers themselves. Companion cycle-removal work stays open under
 # the #2462 phase-3 sim->physics edge elision.
-BASELINE_SIM_TO_PHYSICS = 80  # src/sim/** -> crate::physics::* (was 79; +1 for
+BASELINE_SIM_TO_PHYSICS = 82  # was 80 (round 12, PR #4371): +2 for the gauge
+                              # exterior-film fix's two `use crate::physics::
+                              # exterior_convection::{...}` edges in
+                              # step_dispatcher.rs (production + test) — the same
+                              # legitimate-correlation-import class the 79→80
+                              # escalation admitted
                               # #4172's src/sim/diagnostics_ext.rs:16
                               # `use crate::physics::cta::ContinuousTensor`
                               # — the new SimulationDiagnosticsExt trait lives
