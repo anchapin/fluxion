@@ -253,9 +253,23 @@ impl InvariantChecker {
             // Issue #1580: previously only 9R4C had a non-uniform t_sol_air;
             // the 5R1C branch was hardcoded to outdoor_temp (causing the
             // 168-violation energy-balance regression).
+            // Strict-energy premise refresh: after #4113/#4166 the 5R1C
+            // integrator applies a wind-dependent aggregated per-zone
+            // (h_tr_em, t_sol_air) each step. Consume the applied values
+            // when present so the mass-node identity matches the integrator
+            // exactly; the roof-style reconstruction stays as the pre-step
+            // / legacy fallback.
+            let applied = model.conduction.applied_5r1c_boundary.as_ref();
             let t_sol_air_zone = match model.hvac.thermal_model_type {
                 ThermalModelType::NineRFourC => t_sol_air_9r4c[i],
-                _ => t_sol_air_5r1c[i],
+                _ => match applied {
+                    Some((_, ts)) if i < ts.len() => ts[i],
+                    _ => t_sol_air_5r1c[i],
+                },
+            };
+            let h_tr_em_applied = match model.hvac.thermal_model_type {
+                ThermalModelType::NineRFourC => None,
+                _ => applied.and_then(|(he, _)| he.get(i).copied()),
             };
             let zone_balance = self.zone_balance_for(
                 model,
@@ -268,6 +282,7 @@ impl InvariantChecker {
                 solar_gains[i] * area[i],
                 opaque_solar_gains[i] * area[i],
                 t_sol_air_zone,
+                h_tr_em_applied,
             );
 
             total_balance += zone_balance;
@@ -298,6 +313,7 @@ impl InvariantChecker {
         solar_w: f64,
         opaque_sol_w: f64,
         t_sol_air_zone: f64,
+        h_tr_em_applied: Option<f64>,
     ) -> f64
     where
         T: ContinuousTensor<f64>
@@ -306,7 +322,7 @@ impl InvariantChecker {
             + AsMut<[f64]>
             + Index<usize, Output = f64>,
     {
-        let h_tr_em = model.conduction.h_tr_em[i];
+        let h_tr_em = h_tr_em_applied.unwrap_or(model.conduction.h_tr_em[i]);
         let h_tr_ms = model.conduction.h_tr_ms[i];
         let h_tr_3 = *model
             .conduction
@@ -596,9 +612,17 @@ impl InvariantChecker {
         let mut zone_imbalances = Vec::with_capacity(num_zones);
 
         for i in 0..num_zones {
+            let applied = model.conduction.applied_5r1c_boundary.as_ref();
             let t_sol_air_zone = match model.hvac.thermal_model_type {
                 ThermalModelType::NineRFourC => t_sol_air_9r4c[i],
-                _ => t_sol_air_5r1c[i],
+                _ => match applied {
+                    Some((_, ts)) if i < ts.len() => ts[i],
+                    _ => t_sol_air_5r1c[i],
+                },
+            };
+            let h_tr_em_applied = match model.hvac.thermal_model_type {
+                ThermalModelType::NineRFourC => None,
+                _ => applied.and_then(|(he, _)| he.get(i).copied()),
             };
             let zone_balance = self.zone_balance_for(
                 model,
@@ -611,6 +635,7 @@ impl InvariantChecker {
                 solar_gains[i] * area[i],
                 opaque_solar_gains[i] * area[i],
                 t_sol_air_zone,
+                h_tr_em_applied,
             );
 
             total_balance += zone_balance;
