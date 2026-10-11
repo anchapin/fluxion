@@ -1757,7 +1757,35 @@ impl GaugeZoneSolver {
                 // with the combined ambient film (conv + linearized sky).
                 let area = s.area_m2.max(1e-12);
                 let h_prime = h_i / area; // interior film [W/m²K]
-                let interior_bc = SurfaceBC::new_exterior(h_prime, t_air, q_abs_i / area);
+                                          // [R11 PR-b, LIMIT-35 §23 increment 2] Injection depth vs
+                                          // the ISO 13790 surface-node convention: the SURFACE-pool
+                                          // share is a surface-node source and stays on the interior
+                                          // face (the FD analogue of the ISO s-node). The MASS-pool
+                                          // share belongs to the construction's distributed heat
+                                          // capacity (the ISO mass node) and is injected weighted by
+                                          // node heat capacity across the stack, not at the face.
+                let q_face_pool_w = surface_pool_w * w_surface;
+                let q_mass_pool_w = if s.surface_type == SurfaceType::Window {
+                    0.0 // massless quasi-steady glazing (R11 PR-a)
+                } else {
+                    mass_pool_w * w_mass
+                };
+                let q_vol_wm2 = if q_mass_pool_w.abs() > 0.0 {
+                    let dx = &fd.discretization.node_volumes;
+                    let rho = &fd.discretization.density;
+                    let cp = &fd.discretization.specific_heat;
+                    let caps: Vec<f64> = (0..fd.discretization.total_nodes)
+                        .map(|i| rho[i] * cp[i] * dx[i])
+                        .collect();
+                    let cap_total: f64 = caps.iter().sum();
+                    let q_flux_total = q_mass_pool_w / area;
+                    caps.iter()
+                        .map(|&c| q_flux_total * c / cap_total)
+                        .collect::<Vec<f64>>()
+                } else {
+                    Vec::new()
+                };
+                let interior_bc = SurfaceBC::new_exterior(h_prime, t_air, q_face_pool_w / area);
                 let ext = ext_inputs.get(surface_idx).copied().unwrap_or_default();
                 let exterior_bc = SurfaceBC::new_exterior(
                     ext.h_exterior_effective,
@@ -1776,7 +1804,11 @@ impl GaugeZoneSolver {
                     .exterior_heat_flux(ext.h_exterior_effective, ext.t_sol_air_effective_c)
                     * area;
                 let state_before = fd.temperatures.clone();
-                fd.step(dt_seconds, &interior_bc, &exterior_bc);
+                if q_vol_wm2.is_empty() {
+                    fd.step(dt_seconds, &interior_bc, &exterior_bc);
+                } else {
+                    fd.step_with_volume_source(dt_seconds, &interior_bc, &exterior_bc, &q_vol_wm2);
+                }
                 let e_after = fd.stored_energy(t_air) * area;
                 let q_ext_after = fd
                     .exterior_heat_flux(ext.h_exterior_effective, ext.t_sol_air_effective_c)
@@ -1802,8 +1834,17 @@ impl GaugeZoneSolver {
                     let state_after = fd.temperatures.clone();
                     fd.temperatures = state_before.clone();
                     let interior_bc_probe =
-                        SurfaceBC::new_exterior(h_prime, t_air + 1.0, q_abs_i / area);
-                    fd.step(dt_seconds, &interior_bc_probe, &exterior_bc);
+                        SurfaceBC::new_exterior(h_prime, t_air + 1.0, q_face_pool_w / area);
+                    if q_vol_wm2.is_empty() {
+                        fd.step(dt_seconds, &interior_bc_probe, &exterior_bc);
+                    } else {
+                        fd.step_with_volume_source(
+                            dt_seconds,
+                            &interior_bc_probe,
+                            &exterior_bc,
+                            &q_vol_wm2,
+                        );
+                    }
                     let e_after_p = fd.stored_energy(t_air) * area;
                     let q_ext_after_p = fd
                         .exterior_heat_flux(ext.h_exterior_effective, ext.t_sol_air_effective_c)
