@@ -1666,3 +1666,53 @@ over-swing envelope the §21 unification measurement inherits.
    stack a real glazing mass model or solve the air–window-face coupling jointly (§22
    addendum), then re-audit whether the wall pools' interior-face injection depth matches the
    ISO 13790 surface-node convention. Fidelity-first: nothing here was tuned to a band.
+
+## §24 — Round 11: both §23 increments landed; the day/night-split hypothesis is refuted in direction; the #3817 lift re-measured further from acceptance (2026-10-10, physics loop round 11)
+
+Both §23 increments landed as separate physics PRs (gauge-build-only; default build verified
+bit-identical on each — Case 600 strict golden 6.758/4.301 unchanged, all required checks
+green, rubber-duck review posted on each PR before merge):
+
+1. **PR-a (#4366, squash `01764489`) — quasi-steady glazing on the gauge window face.** The
+   route choice: the reference data (spec window U = 3.0 W/m²K with no glazing areal heat
+   capacity recorded) supports a quasi-steady joint air–window-face solve rather than a
+   fabricated glazing mass model — the window face is solved jointly with the air node's
+   sub-step coupling instead of carrying an invented mass. Post-PR-a gauge build (strict
+   harness, Golden-NREL EPW): 600 26.192/8.533 → 26.936/8.125 MWh; lifted 900 (scratch
+   `FLX_LIFT_3817`) 19.360/1.476 MWh; 900FF Tmin −15.277 → −15.557 °C.
+2. **PR-b (#4369, squash `5172e056`) — capacity-weighted mass-pool injection depth (ISO 13790
+   surface-node audit).** Measured first with env-gated scratch hooks (reverted after): the
+   pool SPLIT formulas match the 5R1C/ISO 13790 reference exactly (`phi_ia`/`phi_st`/`phi_m`,
+   `step_5r1c.rs`), and the surface-pool share at the FD interior face is the correct analogue
+   of the ISO s-node. The genuine defect: the MASS-pool share was also injected at the
+   interior face, where the ISO mass node is the construction's distributed heat capacity.
+   Fixed via `ImplicitFDSolver::step_with_volume_source` (implicit w·q·dt/C RHS share, applied
+   after the boundary rows finalize; a conservation unit test caught a real half-cell clobber
+   in the first implementation before landing). Post-PR-b gauge build: 600 27.328/7.295 MWh;
+   lifted 900 19.832/1.225 MWh; 900FF Tmin −15.802 °C.
+
+### Re-measured on develop `5172e056` (gauge build, scratch lift, this run)
+
+| Case | Round 10 | Round 11 (post PR-a + PR-b) |
+|---|---|---|
+| 600 gauge H/C (MWh) | 26.192/8.533 | 27.328/7.295 |
+| lifted 900 H/C (MWh, scratch) | 18.649/1.602 | 19.832/1.225 |
+| 600FF Tmin/Tmax (°C, lift) | −19.901/50.949 | −20.178/50.564 |
+| 650FF (lift) | −24.146/50.490 | −24.187/49.695 |
+| 900FF (lift) | −15.277/48.665 | −15.802/49.747 |
+| 950FF (lift) | −22.698/40.351 | −22.741/39.246 |
+
+### Round-11 verdict
+
+1. **§21/#3817 acceptance NOT met — the bypass STAYS.** Lifted 900 C 1.602 → 1.225 MWh moves
+   FURTHER from the 2.39–2.47 target, and H 18.649 → 19.832 moves further from the
+   1.364–1.846 band. Recorded, not tuned.
+2. **The §23 day/night storage-release hypothesis is REFUTED IN DIRECTION.** Both candidate
+   increments act on how much absorbed solar the FD stacks store and where — and both move
+   the free-float envelope colder, not warmer (deeper/distributed storage lengthens the
+   release tail). The injection depth is already ISO-correct post-PR-b, and glazing mass is
+   not the missing term. The cold-bias residual needs a different decomposition; the
+   falsified branch is now measured, not assumed.
+3. Fidelity-first: both PRs are correct ISO-convention physics landed on their own merits
+   (600 gauge moved 26.192/8.533 → 27.328/7.295), with the acceptance movement recorded as
+   the honest cost. No band widened, no coupling constant tuned.
