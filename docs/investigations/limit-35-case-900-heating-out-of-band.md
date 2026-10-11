@@ -1716,3 +1716,87 @@ green, rubber-duck review posted on each PR before merge):
 3. Fidelity-first: both PRs are correct ISO-convention physics landed on their own merits
    (600 gauge moved 26.192/8.533 → 27.328/7.295), with the acceptance movement recorded as
    the honest cost. No band widened, no coupling constant tuned.
+
+## §25 — Round 12: the exterior-film category defect (candidate a) LANDED; candidate (b) resolved as a converged model difference; the #3817 lift re-measured further from acceptance (2026-10-11, physics loop round 12)
+
+Round-11 numbers reproduced exactly on develop `58d10201` with the round-10 gauge harness
+(scratch `zz_scratch_r12`, never committed): 600 gauge H/C 27.328/7.295 MWh; lifted 900
+H/C 19.832/1.225 MWh; 600FF −20.178/50.564 °C; 900FF −15.802/49.747; 650FF −24.187/49.695;
+950FF −22.741/39.246. Harness proven before any experiment.
+
+### Candidate (a) — exterior-film release path: GENUINE DEFECT, landed as PR #4371 (squash `45a4fa62`)
+
+The gauge path seeded its exterior film coefficient from `derived_h_ext` — the ISO 13790
+zone-level air-to-outdoor conductance `h_tr_w + h_ve` in **W/K** — into a field every consumer
+reads as a **surface film in W/m²·K** (per-surface FD stack Robin BCs; sol-air blend
+`t_sol_air = (h·T_ext + h_rad·T_sky)/h_eff`). Measured with a worktree-only diagnostic print:
+**57.7–93.3 "W/m²·K"** on the 600/900 specs, 2.3–3.7× the production convention. The seeding
+dates to the Phase 1b wiring (#2316, "use exterior film coefficient from derived_h_ext") with
+no unit analysis — a wiring shortcut that survived every later gauge increment, not a
+compensating calibration. Consequence: the exterior node was over-pinned to outdoor air
+(faster night cooldown → less interior release) *and* the sol-air solar rise G/h was damped
+~3× (less stored solar). The fix uses the same exterior convection every production path
+uses: `h_c_ext_wind_dependent(VerticalWallWindward, V@2.7 m)` — ASHRAE 140 §5.2.6, identical
+to `thermal_model_core::prepare_solvers_and_sol_air`'s FD boundary convention. No new
+constants; linearized sky term unchanged. Gauge-build-only (diff entirely inside
+`gauge-solver` cfg gates); default build bit-identical — the strict family on the PR head
+reproduced develop's values exactly (Case 600 6.758/4.301, Case 900 1.680/1.684), no
+re-record battery owed.
+
+Post-fix gauge build (Golden-NREL, scratch #3817 lift for the 900/950 rows):
+
+| Case | Round 11 | Round 12 (post #4371) | Band/target |
+|---|---|---|---|
+| 600 gauge H/C (MWh) | 27.328/7.295 | 28.635/5.715 | — |
+| lifted 900 H/C (MWh) | 19.832/1.225 | 21.379/0.829 | §21 target C 2.39–2.47; H band 1.364–1.846 |
+| 600FF Tmin/Tmax (°C) | −20.178/50.564 | −19.413/**42.719** | Tmax band [41.8, 46.4] — INTO BAND |
+| 650FF | −24.187/49.695 | −24.143/**42.420** | INTO BAND |
+| 900FF | −15.802/49.747 | −14.723/34.917 | Tmax now BELOW band (over-corrected) |
+| 950FF | −22.741/39.246 | −22.621/33.617 | Tmax now BELOW band |
+
+Both faces of the defect moved as the mechanism predicts: day-side Tmax fell into band for
+the low-mass free-float cases, night-side Tmin warmed slightly. The 900FF/950FF Tmax
+over-correction and the cold Tmin residual are recorded, not tuned. Flagged in the PR review
+and still open: on Floor surfaces the exterior film doubles as the ground contact conductance
+(`t_ext_floor = t_g`, #4365), so the §B3.3 ground boundary's correct conductance is a separate
+unresolved question (measured effect on the slab cases is small and in the warm direction).
+
+### Candidate (b) — lumped-vs-FD envelope capacitance split: DEFENSIBLE MODEL DIFFERENCE, documented, no change landed
+
+Measured on the film-fixed engine with env-gated hooks (reverted after; numbers in
+`/tmp/r12-b-*.log`, this round's artifacts):
+
+- **FD-off (lumped reference)**: 900FF −10.288/38.586; 600FF −19.301/49.497; 650FF
+  −24.003/46.567; 950FF −20.872/35.597. The FD stacks own ~4.4 K of 900FF's cold Tmin —
+  but 600FF/650FF Tmin barely move (≤0.2 K): their cold Tmin is NOT an FD term.
+- **Capacitance scale sweep** (900FF, C×0.5/×1/×2): Tmin −17.933/−14.723/−12.910 — monotone
+  in the right direction, but 2× capacitance recovers only ~1.8 K of the ~8 K gap to the
+  legacy 9R4C value (−6.71). No clamp or saturation; a pure magnitude lever, and it is not
+  the missing term.
+- **Resolution**: 12 vs 6 nodes/layer moves 900FF Tmin by 0.03 K (−14.757 vs −14.723) — the
+  discretization is converged at the production resolution. The "wrong effective
+  capacitance" hypothesis is falsified: the split is a structural lumped-vs-distributed
+  model difference with multi-day release tails, not a discretization defect.
+
+### Milestone: §21/#3817 re-lift — NOT met; bypass STAYS
+
+Lifted 900 C 1.225 → **0.829** MWh vs the 2.39–2.47 target (further away); H 19.832 →
+21.379 vs band 1.364–1.846 (further out). Recorded, not tuned. The corrected film is the
+production-convention physics and lands on its own merits; the unification acceptance is
+now further from reach, and the bypass remains.
+
+### Round-12 residual decomposition (next round's starting point)
+
+After #4371, the cold-Tmin residual splits into two measured terms:
+
+1. **FD-storage term** (~4.4 K on 900FF, ~0 on 600FF/650FF): the distributed stacks'
+   multi-day release tail. Converged, monotone; a *model difference* vs the lumped
+   reference unless a per-surface release mechanism is missing.
+2. **Lumped-path term** (~3.6 K on 900FF: gauge-lumped FD-off −10.288 vs legacy 9R4C
+   −6.71): present even with FD stacks disabled — a difference between the gauge's lumped
+   surface network and the legacy 9R4C path itself. Named suspects for the next round: the
+   interior-film/surface-network coupling (h_tr_is star-node distribution), the #3918 night
+   sky-radiation neutralization, and infiltration handling. Plus the open floor-ground
+   contact-conductance question from PR #4371's review.
+
+Nothing tuned; no band widened.
