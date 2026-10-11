@@ -280,14 +280,37 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let zone_volumes = self.0.setpoints.zone_volume.as_ref().to_vec();
         let loads = self.0.setpoints.loads.as_ref().to_vec();
         let solar_gains = self.0.solar.solar_gains.as_ref().to_vec();
-        let h_ext = self
-            .0
-            .conduction
-            .derived_h_ext
-            .as_ref()
-            .first()
-            .copied()
-            .unwrap_or(25.0);
+        // Round 12 (LIMIT-40 doc §25): the gauge path's exterior film was
+        // seeded from `derived_h_ext` — the ISO 13790 zone-level
+        // air-to-outdoor conductance `h_tr_w + h_ve` in W/K — but every
+        // consumer (`GaugeSolver::step`, the per-surface FD stack Robin BCs
+        // and the sol-air blend `t_sol_air = (h·T_ext + h_rad·T_sky)/h_eff`)
+        // reads it as a SURFACE film coefficient in W/m²·K. Measured
+        // 57.7–93.3 "W/m²·K" on the 600/900 specs, 2.3–3.7× the production
+        // convention; the seeding dates to the Phase 1b wiring (#2316,
+        // "use exterior film coefficient from derived_h_ext") with no unit
+        // analysis. The fix uses the same exterior convection every
+        // production path uses: the ASHRAE 140 §5.2.6 wind-dependent
+        // correlation (vertical-wall windward) at the 2.7 m building height,
+        // identical to `thermal_model_core::prepare_solvers_and_sol_air`'s
+        // FD boundary convention. The linearized sky term stays per-surface
+        // (`h_rad_sky_for_gauge`), as before.
+        let h_ext = {
+            use crate::physics::exterior_convection::{
+                h_c_ext_wind_dependent, wind_at_building_height_from_10m, ExteriorSurfaceDirection,
+            };
+            let v_wind_building = self
+                .0
+                .solar
+                .weather
+                .as_ref()
+                .map(|w| wind_at_building_height_from_10m(w.wind_speed, 2.7))
+                .unwrap_or(3.4);
+            h_c_ext_wind_dependent(
+                ExteriorSurfaceDirection::VerticalWallWindward,
+                v_wind_building,
+            )
+        };
         // Issue #3904: Compute ventilation_ach from night_ventilation schedule
         let hour_of_day = (timestep % 24) as u8;
         let mut ventilation_ach = 0.0;
@@ -1091,5 +1114,42 @@ mod tests {
 
         let energy = model.step_physics(0, 20.0, 0.0);
         assert_eq!(energy, 0.0);
+    }
+
+    /// Round 12 (LIMIT-40 doc §25): the gauge path's exterior film must be
+    /// the ASHRAE 140 §5.2.6 wind-dependent surface coefficient (W/m²·K),
+    /// NOT the zone-level `derived_h_ext` conductance (h_tr_w + h_ve, W/K)
+    /// the Phase 1b wiring fed in. Liveness test: with a zone conductance
+    /// deliberately set far from any surface-film scale, the collected
+    /// gauge input film still equals the §5.2.6 correlation at the model's
+    /// weather wind speed (no-weather fallback 3.4 m/s here).
+    #[cfg(feature = "gauge-solver")]
+    #[test]
+    fn gauge_exterior_film_is_wind_correlation_not_zone_conductance() {
+        use crate::physics::exterior_convection::{
+            h_c_ext_wind_dependent, ExteriorSurfaceDirection,
+        };
+
+        let mut model = ThermalModel::<VectorField>::new(1);
+        // A zone air-to-outdoor conductance far from any plausible surface
+        // film (W/K vs W/m²·K): if the film regressed to reading
+        // `derived_h_ext`, this value would leak through verbatim.
+        model.0.conduction.derived_h_ext = VectorField::from_scalar(93.3, 1);
+
+        let inputs = model.collect_gauge_inputs(0);
+        let expected = h_c_ext_wind_dependent(ExteriorSurfaceDirection::VerticalWallWindward, 3.4);
+        assert!(
+            (inputs.h_ext - expected).abs() < 1e-9,
+            "gauge film {} != §5.2.6 correlation {expected}",
+            inputs.h_ext
+        );
+        assert_ne!(
+            inputs.h_ext, 93.3,
+            "regression: the zone conductance leaked into the gauge film"
+        );
+        assert_ne!(
+            inputs.h_ext, 25.0,
+            "regression: the removed 25.0 fallback came back"
+        );
     }
 }
