@@ -33,20 +33,26 @@ runs:
 
     - name: Install system dependencies (Linux)
       if: runner.os == 'Linux'
-      uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9  # latest
-      with:
-        packages: ${{ inputs.packages }}
-        # version bumped 1.0 -> 2.0 (round 14 loose end, 4fd57f64 follow-up):
-        # apt-get update (above, #4342) refreshes lists, but a cache entry
-        # created while the mirror 404'd on the point-release .deb was
-        # restored with CACHE_HIT: true and silently skipped the install of
-        # libfontconfig1-dev — the #4341 verify step then failed on all four
-        # performance_dashboard jobs. Bumping this input changes the cache
-        # key, forcing one fresh install through the refreshed mirror.
-        version: 2.0
-        retry: 3
-        retry_wait_seconds: 10
-        update: ${{ inputs.update == 'true' }}
+      shell: bash
+      # Issue #4341 follow-up (round 14): the awalsh128/cache-apt-pkgs-action
+      # path is retired. Its cache can be created incomplete while the apt
+      # mirror is mid point-release (run 38191732988: cache saved without
+      # libssl-dev/pkg-config/fontconfig tarballs, restored as CACHE_HIT, and
+      # the #4341 verify failed on all performance_dashboard jobs), it
+      # silently ignores this composite's `retry`/`update` inputs, and
+      # restored tarballs are not registered in dpkg's database so `dpkg -s`
+      # cannot see them. Install directly instead — the update step above has
+      # already refreshed the lists — with retries around the install itself.
+      run: |
+        pkgs=$(echo '${{ inputs.packages }}' | tr ',' ' ')
+        for attempt in 1 2 3; do
+          if sudo apt-get install -y $pkgs; then
+            exit 0
+          fi
+          echo "apt-get install failed (attempt $attempt); retrying in 15s"
+          sleep 15
+        done
+        exit 1
 
     - name: Verify system dependencies (Linux)
       if: runner.os == 'Linux'
