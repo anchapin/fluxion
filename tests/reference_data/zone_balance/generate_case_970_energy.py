@@ -14,12 +14,18 @@ Geometry
 
 Reference bands
 ---------------
-The reference bands below come from the ASHRAE 140-2017 §B6.7 inter-program
-envelope published in the ASHRAE 140-2023 Annex B8-3 reference table
-(validated across EnergyPlus 25.2.0, TRNSYS, ESP-r, DOE-2, BSIMAC, CSE,
-DeST — see issue #1446). The bands are the authoritative source of truth;
-the midpoints printed in the CSV are derived from the bands and used as
-the comparison reference inside ``ASHRAE140MultiZoneValidator``.
+NOTE (loop round 20, 2026-10-12, provenance correction): the bands below
+were introduced at Issue #1446 as the "ASHRAE 140-2017 §B6.7 / 140-2023
+Annex B8-3 inter-program envelope", but no published ASHRAE 140 source
+available to this repository contains a Case 970: the in-repo 140-2017(a)
+PDF (docs/140_2017_a_20200901.pdf) has no Case 970 anywhere, and the
+authoritative 140-2023 Annex B8 §B8.1 transcription
+(data/reference/ashrae140/annex_b8_section7_statistics.json) lists cases
+...950, 960, 980, 985 with no 970. Treat these values as an INTERNAL
+TARGET BAND OF UNVERIFIED ORIGIN, not a published inter-program envelope.
+See docs/investigations/limit-23b-case-970-provenance-and-envelope.md.
+
+The reference bands below were recorded at Issue #1446
 
 Annual heating band: 10.54 -- 14.26 MWh (midpoint 12.400 MWh)
 Annual cooling band:  7.39 -- 10.00 MWh (midpoint  8.695 MWh)
@@ -62,8 +68,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 OUTPUT_DIR = REPO_ROOT / "tests/reference_data/zone_balance"
 OUTPUT_PATH = OUTPUT_DIR / "case_970_energy_reference.csv"
 
-# Canonical ASHRAE 140-2017 §B6.7 / 140-2023 Annex B8-3 reference bands.
-# See module docstring and issue #1446 acceptance criteria.
+# Internal target bands of unverified origin (see module docstring and
+# docs/investigations/limit-23b-case-970-provenance-and-envelope.md):
+# recorded at issue #1446; no published ASHRAE 140 source contains Case 970.
 HEAT_REF_MIN = 10.54
 HEAT_REF_MAX = 14.26
 COOL_REF_MIN = 7.39
@@ -127,13 +134,13 @@ def main() -> int:
             "annual_heating", "MWh",
             HEAT_REF_MIN, HEAT_REF_MAX, heat_mid, TOLERANCE_PCT,
             heat_accept_min, heat_accept_max,
-            "5-zone cross-coupling, ASHRAE 140-2017 §B6.7 (ref 10.54-14.26 MWh)",
+            "5-zone cross-coupling, internal target of unverified origin (ref 10.54-14.26 MWh)",
         ),
         (
             "annual_cooling", "MWh",
             COOL_REF_MIN, COOL_REF_MAX, cool_mid, TOLERANCE_PCT,
             cool_accept_min, cool_accept_max,
-            "5-zone cross-coupling, ASHRAE 140-2017 §B6.7 (ref 7.39-10.00 MWh)",
+            "5-zone cross-coupling, internal target of unverified origin (ref 7.39-10.00 MWh)",
         ),
         (
             "peak_heating", "kW",
@@ -150,12 +157,13 @@ def main() -> int:
     ]
 
     with open(OUTPUT_PATH, "w", newline="") as f:
-        f.write("# EnergyPlus Reference: ASHRAE 140 Case 970 — Annual + Peak Energy\n")
-        f.write("# Source: ASHRAE Standard 140-2017 §B6.7 (5-zone multi-zone cross-coupling)\n")
-        f.write("#         ASHRAE Standard 140-2023 Annex B8-3 reference table\n")
+        f.write("# Case 970 Reference (internal target band) — Annual + Peak Energy\n")
+        f.write("# Source: internal target band recorded at issue #1446 (5-zone multi-zone cross-coupling)\n")
+        f.write("# NOT a published ASHRAE 140 envelope: no Case 970 exists in ASHRAE 140-2017(a) or the\n")
+        f.write("# 140-2023 Annex B8 §B8.1 transcription (see docs/investigations/limit-23b-case-970-...md)\n")
         f.write("# EPW baseline: USA_CO_Golden-NREL.724666_TMY3.epw (ARCHITECTURE.md §Reference Data)\n")
         f.write("# Tolerance: ±15% annual energy / ±10% peak load per ASHRAE 140 acceptance criteria\n")
-        f.write("# Bands validated across EnergyPlus 25.2.0, TRNSYS, ESP-r, DOE-2, BSIMAC, CSE, DeST\n")
+        f.write("# Bands are internal targets of unverified origin (see the Source note above);\n")
         f.write(
             f"# Generated: {datetime.now(timezone.utc).isoformat()}\n"
         )
