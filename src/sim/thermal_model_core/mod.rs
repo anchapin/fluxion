@@ -746,6 +746,14 @@ impl ThermalModel<VectorField> {
         let num_zones = spec.num_zones;
         let mut model = ThermalModel::new(num_zones);
 
+        // Round 21 (§LIMIT-23b): perimeter-only exterior surfaces. When the
+        // spec carries zone plan origins, exterior facade areas are derived
+        // from zone adjacency and interior partition fabric is split from the
+        // exterior envelope; `None` keeps the legacy behaviour (every zone
+        // wall outdoor-exposed) so existing specs simulate unchanged.
+        let exterior_faces = spec.exterior_wall_areas_by_zone();
+        let partition_areas = spec.partition_wall_area_by_zone();
+
         // Physics-based: No correction factors needed
         // The thermal network physics should produce correct results without empirical adjustments
         // τ = Cm / (h_tr_ms + h_tr_me) is determined by actual construction properties (Issue 693 fix)
@@ -1045,14 +1053,35 @@ impl ThermalModel<VectorField> {
 
             for &orientation in &orientations {
                 // Use zone-specific window area for multi-zone buildings
-                let win_area = spec.window_area_by_zone_and_orientation(zone_idx, orientation);
+                let mut win_area = spec.window_area_by_zone_and_orientation(zone_idx, orientation);
 
-                let total_area = match orientation {
+                let mut total_area = match orientation {
                     Orientation::South | Orientation::North => geo.width * geo.height,
                     Orientation::East | Orientation::West => geo.depth * geo.height,
                     Orientation::Up | Orientation::Down => geo.width * geo.depth,
                     _ => 0.0,
                 };
+
+                // Round 21 (§LIMIT-23b): with zone origins, a facade only
+                // keeps its perimeter (outdoor-exposed) area; a facade fully
+                // covered by an adjacent zone becomes an interior partition
+                // face — no outdoor exposure and no solar aperture (a window
+                // in an interior partition receives no sun).
+                if let Some(faces) = &exterior_faces {
+                    let face_idx = match orientation {
+                        Orientation::South => Some(0usize),
+                        Orientation::West => Some(1),
+                        Orientation::North => Some(2),
+                        Orientation::East => Some(3),
+                        _ => None,
+                    };
+                    if let (Some(fi), Some(f)) = (face_idx, faces.get(zone_idx)) {
+                        total_area = f[fi];
+                        if total_area <= 0.0 {
+                            win_area = 0.0;
+                        }
+                    }
+                }
 
                 // ASHRAE 140 simplified 5R1C model uses single interior film coefficient (8.29 W/m²K)
                 // Do NOT use surface-type-specific coefficients (SurfaceType) - they are for detailed models
@@ -1257,6 +1286,41 @@ impl ThermalModel<VectorField> {
             .map(|&orientation| spec.window_area_by_zone_and_orientation(zone_idx, orientation))
             .sum();
 
+            // Round 21 (§LIMIT-23b): split the zone fabric into the
+            // perimeter (outdoor-exposed) envelope and the interior partition
+            // share when zone origins are present. Mass-bearing fabric is
+            // perimeter + partition share; exterior coupling (sol-air,
+            // h_tr_em, opaque conduction fluxes) uses the perimeter area
+            // only, and windows on interior partition faces contribute
+            // neither window conductance nor solar gain.
+            let (ext_wall_area, zone_window_area_ext, mass_wall_area) =
+                match (&exterior_faces, &partition_areas) {
+                    (Some(faces), Some(parts)) => {
+                        let f = faces.get(zone_idx).copied().unwrap_or([0.0; 4]);
+                        let ext_area: f64 = f.iter().sum();
+                        let mut win_ext = 0.0;
+                        for (fi, &o) in [
+                            fluxion_core::ashrae_cases::Orientation::South,
+                            fluxion_core::ashrae_cases::Orientation::West,
+                            fluxion_core::ashrae_cases::Orientation::North,
+                            fluxion_core::ashrae_cases::Orientation::East,
+                        ]
+                        .iter()
+                        .enumerate()
+                        {
+                            if f[fi] > 0.0 {
+                                win_ext += spec.window_area_by_zone_and_orientation(zone_idx, o);
+                            }
+                        }
+                        (
+                            ext_area,
+                            win_ext,
+                            ext_area + parts.get(zone_idx).copied().unwrap_or(0.0),
+                        )
+                    }
+                    _ => (zone_wall_area, zone_window_area, zone_wall_area),
+                };
+
             // Issue #2889 — ASHRAE 140 §5.2.4 frame-to-glazing thermal bridge.
             // Compute total frame perimeter across all windows in this zone
             // (per `WindowArea::perimeter` = 2 × (height + width)). If the
@@ -1307,12 +1371,13 @@ impl ThermalModel<VectorField> {
                 if window_props.frame_area_fraction > 0.0 && window_props.frame_perimeter <= 0.0 {
                     window_props.frame_perimeter = frame_perimeter;
                 }
-                window_props.effective_u_value_with_frame(zone_window_area, FRAME_LINEAR_EDGE_PSI)
+                window_props
+                    .effective_u_value_with_frame(zone_window_area_ext, FRAME_LINEAR_EDGE_PSI)
             };
 
             // Window conductance (h_tr_w = U_eff * Window Area)
             // Issue #2889 — uses effective U-value with frame thermal bridge.
-            h_tr_w_vec.push(zone_window_area * u_value_eff);
+            h_tr_w_vec.push(zone_window_area_ext * u_value_eff);
 
             // Infiltration conductance (h_ve = ACH * V * ρ * cp / 3600)
             let zone_air_cap = zone_volume * 1.2 * 1005.0;
@@ -1335,7 +1400,10 @@ impl ThermalModel<VectorField> {
             // Issue #714 Fix: Use H_SI = 3.45 W/m²K × floor_area (ASHRAE 140 simplified method)
             // instead of detailed surface-specific film coefficients
             // Note: opaque_area is still needed for h_tr_em calculations below
-            let opaque_area = zone_wall_area - zone_window_area;
+            let opaque_area = (mass_wall_area - zone_window_area_ext).max(0.0);
+            // Perimeter-only opaque area for exterior-coupled quantities
+            // (sol-air exposure, h_tr_em, opaque conduction fluxes).
+            let opaque_area_ext = (ext_wall_area - zone_window_area_ext).max(0.0);
             // Issue #4164: H_SI from fluxion_core::physics_constants (3.45 W/m²K).
             let total_h_tr_is = H_SI * zone_floor_area;
             h_tr_is_vec.push(total_h_tr_is);
@@ -1600,7 +1668,7 @@ impl ThermalModel<VectorField> {
             }
 
             // h_tr_em_base = opaque_area / R_exterior_to_mass
-            let h_tr_em_base = opaque_area / r_exterior_to_mass;
+            let h_tr_em_base = opaque_area_ext / r_exterior_to_mass;
 
             // PHASE 34-02 FIX: Add roof contribution to h_tr_em
             // Roof construction also contributes to exterior-to-mass conductance
@@ -1695,7 +1763,7 @@ impl ThermalModel<VectorField> {
             // half-insulation values because the 9R4C topology has a
             // dedicated mass node per surface and does NOT consume the
             // lumped `h_tr_em`.
-            let h_op_walls_roof = spec.construction.wall.u_value(None, None) * opaque_area
+            let h_op_walls_roof = spec.construction.wall.u_value(None, None) * opaque_area_ext
                 + spec.construction.roof.u_value(None, None) * zone_floor_area;
 
             let h_tr_em_total = if h_op_walls_roof > 0.0 && h_op_walls_roof < h_ms_iso_13790 {
@@ -1707,7 +1775,7 @@ impl ThermalModel<VectorField> {
 
             // Debug output for all contributions
             h_tr_em_vec.push(h_tr_em_total.max(0.1));
-            opaque_wall_area_vec.push(opaque_area);
+            opaque_wall_area_vec.push(opaque_area_ext);
             roof_area_zone_vec.push(zone_floor_area);
             // Store per-surface h_tr_em for 9R4C model (Phase 6B, Issue #715)
             h_tr_em_wall_vec.push(h_tr_em_physics);

@@ -13,7 +13,7 @@ use crate::sim::construction::Assemblies;
 use crate::validation::ashrae140::ASHRAE140CaseDefinition;
 use crate::validation::ashrae_140_cases::ASHRAE140Case;
 use crate::validation::ashrae_140_cases::{
-    CaseBuilder, CaseSpec, HvacSchedule, InternalLoads, Orientation,
+    CaseBuilder, CaseSpec, HvacSchedule, InternalLoads, Orientation, ZoneOrigin,
 };
 
 /// Thin routing shim for Case 960 (Issue #3546).
@@ -62,6 +62,14 @@ pub fn case_960_sunspace() -> CaseSpec {
         .with_infiltration(0.5)
         .with_door_geometry(2.0, 1.5) // Door opening: height=2.0m, area=1.5m² (Plan 04-04)
         .with_num_zones(2)
+        // Zone plan origins (round 21, §LIMIT-23b): the 21.6 m² (8 m × 2.7 m)
+        // common wall forces the sunspace south of the back-zone, which also
+        // puts both south windows on outdoor-exposed facades. The sunspace's
+        // north wall is correctly derived as the shared partition.
+        .with_zone_origins(vec![
+            ZoneOrigin::new(0.0, 2.0), // zone 0: back-zone x 0-8, y 2-8
+            ZoneOrigin::new(0.0, 0.0), // zone 1: sunspace  x 0-8, y 0-2
+        ])
         .with_ground_temperature(
             crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
         )

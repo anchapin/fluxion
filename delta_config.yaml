@@ -105,6 +105,7 @@ base:
   infiltration_ach: 0.5
   opaque_absorptance: 0.6
   num_zones: 1
+  zone_origins: null
   weather_data: null
   door_height: null
   door_area: null

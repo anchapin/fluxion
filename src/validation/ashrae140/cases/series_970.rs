@@ -12,7 +12,9 @@
 use crate::sim::construction::Assemblies;
 use crate::validation::ashrae140::ASHRAE140CaseDefinition;
 use crate::validation::ashrae_140_cases::ASHRAE140Case;
-use crate::validation::ashrae_140_cases::{CaseBuilder, CaseSpec, InternalLoads, Orientation};
+use crate::validation::ashrae_140_cases::{
+    CaseBuilder, CaseSpec, InternalLoads, Orientation, ZoneOrigin,
+};
 
 /// Thin routing shim for Case 970 (Issue #3546).
 pub fn build_case(case: ASHRAE140Case) -> ASHRAE140CaseDefinition {
@@ -92,6 +94,18 @@ pub fn case_970_five_zone_cross_coupling() -> CaseSpec {
         .with_common_wall(3, 4, 10.8, Assemblies::concrete_wall(0.200))
         .with_infiltration(0.5)
         .with_num_zones(5)
+        // Zone plan origins (round 21, §LIMIT-23b): zone 0 west core at the
+        // origin, east strip x ∈ [4, 8]; zones stacked along the 6 m depth
+        // with zone 1 at the north edge and zone 4 at the south edge. These
+        // let the engine derive the real 75.6 m² perimeter envelope from
+        // adjacency instead of treating every partition face as exterior.
+        .with_zone_origins(vec![
+            ZoneOrigin::new(0.0, 0.0), // zone 0: west core   x 0-4, y 0-6
+            ZoneOrigin::new(4.0, 4.5), // zone 1: north strip x 4-8, y 4.5-6
+            ZoneOrigin::new(4.0, 3.0), // zone 2: x 4-8, y 3-4.5
+            ZoneOrigin::new(4.0, 1.5), // zone 3: x 4-8, y 1.5-3
+            ZoneOrigin::new(4.0, 0.0), // zone 4: south strip x 4-8, y 0-1.5
+        ])
         .with_ground_temperature(
             crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
         )
