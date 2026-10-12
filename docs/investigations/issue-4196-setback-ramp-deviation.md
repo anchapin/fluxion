@@ -1,6 +1,6 @@
 # Issue #4196: Two-Hour Setback Ramp — Specified-Boundary Deviation for Cases 640 and 940
 
-**Status:** Deviation REMOVED (round 16, 2026-10-12 — see §8; pending Alex's final keep/remove confirmation)  
+**Status:** Deviation REMOVED and ACCEPTED (Alex's keep/remove verdict, 2026-10-12 — the removal stands; see §8/§9)  
 **Date:** 2026-09-28 (record); 2026-10-12 (removal)  
 **Severity:** Specification Conformance  
 **Affected Cases:** 640 (low-mass), 940 (high-mass)  
@@ -197,9 +197,10 @@ Measured old → new (Denver EPW, `simulate_case_with_diagnostics`, develop `53a
 
 Reproduced unchanged branch-vs-develop: full strict ±15% family (17 annual + 4 free-float lines byte-identical; checker 9 PASS / 33 KNOWN-FAIL / 0 REGRESSION — the blind path does not consume the schedules, so 640/940 strict rows are the 600/900 twins both before and after), fabric multiselector (600/900/950 green vs baseline), surrogate fallback diagnostic (3,390.099745 kWh byte-identical), pytest output-validation (27 passed / 8 xfailed), `ashrae_140_blind_validation` (same single pre-existing 920-orientation failure on both tips), schedule conformance (59 passed).
 
-**Direction check:** the #4196 §4 prediction (ramp suppresses morning peak; removal raises it) is confirmed — 640 peak heating rose 5.27 → 6.30 kW and now sits ABOVE the published band, while annual heating rises into band. The movement is recorded honestly; nothing is tuned. **Keep/remove remains Alex's call**: KEEP means restoring the ramp (revert this change, re-ignore the conformance tests, re-record the validator-family movements); REMOVE (landed state) means accepting the peak-heating out-of-band as a fidelity-first recorded gap.
+**Direction check:** the #4196 §4 prediction (ramp suppresses morning peak; removal raises it) is confirmed — 640 peak heating rose 5.27 → 6.30 kW and now sits ABOVE the published band, while annual heating rises into band. The movement is recorded honestly; nothing is tuned. **VERDICT (2026-10-12, Alex): the removal STANDS.** The landed step-change is permanent; the Case 640 peak-heating out-of-band miss (6.304 kW vs [4.30, 5.70]) is accepted as the honest cost of spec-fidelity — noted in §LIMIT-12, never tuned away.
 
-## §9 Governance trail (round 16)
+## §9 Governance trail (round 16, closed round 18)
 
 - Removal landed under RULES.md as a physics change (never a band adjustment).
-- Alex approved "measure-then-decide" for #4226 in the round-16 package (2026-10-12); the measured decision table above is presented for the final verdict.
+- Alex approved "measure-then-decide" for #4226 in the round-16 package (2026-10-12); the measured decision table above was presented for the final verdict.
+- **Alex's verdict (2026-10-12 12:18 ET): keep the removal.** Issue #4226 closed with the decision recorded; §LIMIT-12 status resolved (deviation removed and accepted).
