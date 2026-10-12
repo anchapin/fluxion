@@ -1880,3 +1880,85 @@ values: lifted 900 H/C 21.379/0.829 MWh vs H band [1.364, 1.846] and C target 2.
 The measured levers, even combined optimistically (film ×1.2 K + infiltration 0),
 do not approach the target. The bypass remains; unification stays blocked on the
 structural air–surface coupling difference documented above.
+
+## §27 — Round 14: the option-(b) topology probe measured — the bounded air–mass coupling restructure FAILS the §22-class decision bar; option (a) adopted deliberately (2026-10-11, physics loop round 14)
+
+The gauge-topology decision brief (round 13 follow-up, `/home/alex/OS3/fluxion-gauge-topology-brief/`)
+recommended a bounded, probe-first option (b): restructure the gauge's air–mass coupling toward
+the 9R4C/ISO series semantics in scratch, with the hard decision rule (i) zero diverging steps
+with gains and (ii) 900FF Tmin ≥ −8-class (legacy-comparable) without giving back round-12's
+Tmax gains (600FF/650FF Tmax in [41.8, 46.4]). Alex approved proceeding on the recommendation
+(2026-10-11 19:49 ET). All scratch work env-gated in a worktree on develop `e56c3d61`, reverted
+afterwards; hooks + harness preserved at `fluxion-physics-loop/round14-artifacts/`.
+
+### Anchor reproduction (this run, develop `e56c3d61`, harness `zz_scratch_r14` = round-10 pattern + harness-side `FLX_LIFT_3817` lift via `reset_to_5r1c()`)
+
+Every brief anchor reproduced exactly: gauge 600 H/C 28.635/5.715 MWh; lifted 900 21.379/0.829;
+600FF −19.413/42.719 °C; 650FF (lift) −24.143/42.420; 900FF (lift) −14.723/34.917; default-build
+legacy 900FF Tmin −6.712 °C.
+
+### Probe variants (env `FLX_R14_PROBE`, one gate, no new constants anywhere)
+
+1. **`FLX_R14_PROBE=N` (sub-step-count sweep):** the round-13 mechanism statement — the air node
+   pinned each sub-step to the FD stacks' interior faces (exact affine slope 1.4–4.6 kW/K folded
+   into the air denominator) — re-expressed at the 9R4C's hourly mass-advance structure is
+   N=1. Measured 900FF (lift): N=1 Tmin −230.207/Tmax 194.055 °C; N=2 −73.642/69.532; N=3
+   −53.576/66.635; N=4 −35.995/55.473; N=6 −14.495/44.746 (Tmax OUT of band); N=8
+   −14.718/38.829; N=12 = baseline −14.723/34.917. The sweep does not restructure anything: it
+   diverges below N≈8 (the round-8/§22 instability, now re-measured WITH the exact-slope folding
+   — the exact affine slope makes the within-hour map implicit but does not stabilize the
+   hour-to-hour map at N=1) and converges monotonically back to the status quo as N→12. The
+   sub-stepped slope-pinned coupling is the stable implementation of this architecture, not an
+   arbitrary choice.
+
+2. **`FLX_R14_PROBE=iso` (the literal brief design):** the interior-surface network advanced ONCE
+   per hour at the frozen T_air_old BC, then the 9R4C `compute_zone_air_temperature` form —
+   T_air = (h_int·T̄_s + h_env·T_air_old + Q_lumped + φ_ia + h_total·T_ext)/(h_int + h_env +
+   h_total) — reading the FD stacks' area-weighted interior-face temperature. **STABLE: zero
+   diverging steps (|T_air| > 100 °C counter: 0/8760) across the whole anchor set.** Full anchor
+   table: 600 H/C 20.611/12.648 MWh; lifted 900 15.577/3.499; 600FF −17.843/**52.290** °C;
+   650FF −23.849/50.857; 900FF −13.685/37.553. **FAILS BOTH LEGS of the decision bar:** 900FF
+   Tmin −13.685 recovers only ~1.0 K of the ~2.3 K structural term (target ≥ −8-class), and
+   600FF/650FF Tmax 52.290/50.857 give back round-12's band membership entirely (target
+   [41.8, 46.4]). The restructured coupling also warms 600 H → 20.611 and C → 12.648, far off
+   the audited gauge-cohort strict numbers.
+
+3. **`FLX_R14_PROBE=mass` (9R4C lumped-mass-node read):** same form, but the air node reads each
+   FD stack's capacity-weighted mean temperature (the 9R4C mass-node read) instead of the face.
+   Stable (0 diverging steps). 900FF −15.978/32.820 — COLDER than baseline on Tmin: the stack
+   bulk sits below its interior face at night, so the legacy lumped read moves the trajectory
+   the wrong way.
+
+### Why the bounded restructure cannot close the term (mechanism, from the same runs)
+
+The legacy 9R4C's free-float band membership comes from its mass NODE structure, not from the
+air-side read: an 18.0 MJ/K lumped node stepped BE hourly, coupled to the exterior only through
+the derived lumped `h_tr_em` and to the air only through the `h_tr_3` series (~40 W/K) — the
+mass barely feels a single cold night on either side. The gauge's mass lives in per-surface FD
+stacks whose exterior faces carry the full ASHRAE 140 §5.2.6 film (post-#4371), so the stack
+bulk genuinely tracks the exterior-driven series response. Re-instantiating the legacy mass-node coupling inside the gauge solver
+therefore means retiring the FD stacks for the zone — i.e. the full path unification of option
+(c), whose free-float outcome is already measured (the legacy path IS that network: −6.712, with
+the §19 mixed-metering dead end on its own conditioned numbers: legacy 900 C 1.684 vs band
+[2.465, 3.335], −32 %). There is no bounded increment between the measured probe points and that
+end state; the brief's own evidence split (ISO star vs 9R4C lumping as fidelity reference)
+resolves, on these measurements, toward: the reference trajectory is reproduced by the 9R4C's
+specific LUMPING, and matching it is unification, not a coupling rewiring.
+
+### Decision: option (a) adopted deliberately
+
+The probe fails the bar. Per the brief's pre-committed fork, option (a) is adopted:
+
+- **The #3817 re-lift is RETIRED as a goal.** The bypass is not a temporary state awaiting a fix;
+  it is the correct routing (high-mass conditioned cases belong on the 9R4C network).
+- The gauge star stays as a **self-consistent alternative model**: round-9 PR-c metering, audited
+  ISO film semantics, converged FD. Its free-float cohort remains known-fail against the
+  published bands (900FF Tmin −14.723 vs [−6.4, −1.6]), recorded, not tuned.
+- The **§19 mixed-metering problem is recorded as an accepted open limitation of the legacy
+  path** (no metering pair satisfies both Case 900 bands; E+'s implied C:H ≈ 1.54 vs both
+  networks' ≈ 1.0).
+- No engine change landed this round; default build untouched; no re-record owed. No tuning at
+  any step — every probe constant was already in the repo.
+
+Round budget: probe design + 11 measured annual runs (5 anchor + 6 variant), all on one scratch
+build. Scratch reverted; worktree removed after merge.
