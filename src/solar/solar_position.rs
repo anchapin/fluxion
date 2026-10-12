@@ -80,9 +80,9 @@ pub fn calculate_day_of_year(year: i32, month: u32, day: u32) -> usize {
 }
 
 /// Issue #4384 follow-up (round 19): single-source derivation of the solar
-/// calendar date from an hour-of-year, in the engine's non-leap-year (2024)
+/// calendar date from an hour-of-year, in the engine's non-leap-year convention
 /// convention, with the mid-hour sun position (`+0.5` h). This is the inverse
-/// of `calculate_day_of_year` for the engine's 8760-hour year and reproduces
+/// of `calculate_day_of_year` for a non-leap reference year and reproduces
 /// `timestep_to_date`'s month/day exactly (#4385's requirement).
 ///
 /// The 9R4C integrator sites (`step_9r4c.rs` sol-air boundary and the
@@ -340,7 +340,11 @@ mod tests {
     fn test_derive_solar_step_date_round_trips_through_calculate_day_of_year() {
         for hoy in 0..8760usize {
             let d = derive_solar_step_date(hoy);
-            let doy = calculate_day_of_year(2024, d.month, d.day);
+            // Non-leap reference year: the engine's 8760-hour year has
+            // February = 28 days (the `timestep_to_date` convention), while
+            // calendar 2024 is a leap year and would offset every day after
+            // Feb 28 by one.
+            let doy = calculate_day_of_year(2023, d.month, d.day);
             assert_eq!(doy, hoy / 24 + 1, "hoy={hoy}");
         }
     }
