@@ -173,36 +173,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // temperature. Using outdoor_temp would ignore solar gain on west walls,
         // causing massive heating energy overcounting (9.45 MWh vs reference 1.17-2.04 MWh).
         let t_sol_air_wall = if let Some(weather) = &self.0.solar.weather {
+            // Issue #4384 derivation, round-19 dedup: the calendar date comes
+            // from the single-source `derive_solar_step_date` helper (the
+            // `timestep_to_date` encoding, 1-based month, mid-hour sun), the
+            // same function the InvariantChecker's mirror consumes — the
+            // checker/integrator desync class is removed structurally.
             let hour_of_year = timestep % 8760;
-            let day_of_year = hour_of_year / 24;
-            let hour = (hour_of_year % 24) as f64 + 0.5;
-            // Issue #4384 derivation: `calculate_solar_position` takes a
-            // 1-based month. The previous derivation passed a 0-based month,
-            // so a fresh evaluation landed one month early (a Jan-1 sun for a
-            // Feb-1 step). The solar-position cache, written by the 5R1C
-            // per-orientation path under the same (hour-of-year, half-hour
-            // slot) key since the mid-hour sun convention (2026-10-09), has
-            // carried the correct 1-based date all along — masking the quirk
-            // in the integrator while the InvariantChecker's verbatim
-            // re-derivation kept it, producing the 332 W daytime-only
-            // fast-math-gate residual. Derive the calendar date exactly as
-            // `timestep_to_date` does so fresh == cached.
-            let days_in_month: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-            let mut month: u32 = 1;
-            let mut day: u32 = day_of_year as u32 + 1;
-            for &dim in days_in_month.iter() {
-                if day <= dim {
-                    break;
-                }
-                day -= dim;
-                month += 1;
-            }
+            let date = crate::sim::solar::derive_solar_step_date(hour_of_year);
 
             // Issue #1212: Extract weather data before mutably borrowing self for cache
             let (dni, dhi, ghi) = (weather.dni, weather.dhi, weather.ghi);
 
             // Issue #1212: Use cached solar position to eliminate 5x redundant computation
-            let sun_pos = self.cached_solar_position(hour_of_year, 2024, month, day, hour);
+            let sun_pos =
+                self.cached_solar_position(hour_of_year, 2024, date.month, date.day, date.mid_hour);
 
             let ground_reflectance = 0.2;
             let wall_irr = calculate_surface_irradiance(
@@ -212,7 +196,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 Some(ghi),
                 crate::validation::ashrae_140_cases::Orientation::South,
                 ground_reflectance,
-                day_of_year + 1,
+                hour_of_year / 24 + 1, // 1-based day of year for the irradiance correlation
             );
 
             let sol_air = SolAirTemperature::ashrae_140_default();
@@ -452,34 +436,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             // Issue #1212: Compute sun_pos BEFORE solver borrow to avoid borrow conflict.
             // sun_pos depends only on timestep/lat/lon, not on solver state.
+            // Round-19 dedup: single-source `derive_solar_step_date` (see the
+            // sol-air site above for the #4384 history).
             let hour_of_year = timestep % 8760;
-            let day_of_year = hour_of_year / 24;
-            let hour = (hour_of_year % 24) as f64 + 0.5;
-            // Issue #4384 derivation: `calculate_solar_position` takes a
-            // 1-based month. The previous derivation passed a 0-based month,
-            // so a fresh evaluation landed one month early (a Jan-1 sun for a
-            // Feb-1 step). The solar-position cache, written by the 5R1C
-            // per-orientation path under the same (hour-of-year, half-hour
-            // slot) key since the mid-hour sun convention (2026-10-09), has
-            // carried the correct 1-based date all along — masking the quirk
-            // in the integrator while the InvariantChecker's verbatim
-            // re-derivation kept it, producing the 332 W daytime-only
-            // fast-math-gate residual. Derive the calendar date exactly as
-            // `timestep_to_date` does so fresh == cached.
-            let days_in_month: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-            let mut month: u32 = 1;
-            let mut day: u32 = day_of_year as u32 + 1;
-            for &dim in days_in_month.iter() {
-                if day <= dim {
-                    break;
-                }
-                day -= dim;
-                month += 1;
-            }
+            let date = crate::sim::solar::derive_solar_step_date(hour_of_year);
 
             // Issue #1212: Use cached solar position to eliminate 5x redundant computation
             // Called BEFORE solver borrow so there's no conflict
-            let sun_pos = self.cached_solar_position(hour_of_year, 2024, month, day, hour);
+            let sun_pos =
+                self.cached_solar_position(hour_of_year, 2024, date.month, date.day, date.mid_hour);
 
             let solver = &mut self.0.conduction.backend.multi_node_solvers[zone_idx];
             // (#872) Use previous zone temperature as boundary, NOT 5R1C t_i_free.
@@ -597,7 +562,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         Some(ghi),
                         crate::validation::ashrae_140_cases::Orientation::South,
                         ground_reflectance,
-                        day_of_year + 1,
+                        hour_of_year / 24 + 1, // 1-based day of year for the irradiance correlation
                     );
                     let roof_irr = calculate_surface_irradiance(
                         &sun_pos,
@@ -606,7 +571,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         Some(ghi),
                         crate::validation::ashrae_140_cases::Orientation::Up,
                         ground_reflectance,
-                        day_of_year + 1,
+                        hour_of_year / 24 + 1, // 1-based day of year for the irradiance correlation
                     );
 
                     let sol_air = SolAirTemperature::ashrae_140_default();

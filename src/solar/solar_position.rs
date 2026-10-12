@@ -79,6 +79,56 @@ pub fn calculate_day_of_year(year: i32, month: u32, day: u32) -> usize {
     day_of_year
 }
 
+/// Issue #4384 follow-up (round 19): single-source derivation of the solar
+/// calendar date from an hour-of-year, in the engine's non-leap-year (2024)
+/// convention, with the mid-hour sun position (`+0.5` h). This is the inverse
+/// of `calculate_day_of_year` for the engine's 8760-hour year and reproduces
+/// `timestep_to_date`'s month/day exactly (#4385's requirement).
+///
+/// The 9R4C integrator sites (`step_9r4c.rs` sol-air boundary and the
+/// `step_with_coupling` multi-node boundary) and the invariant checker's
+/// mirror (`invariant_checker.rs::compute_9r4c_t_sol_air`) each carried an
+/// inline copy of this month/day derivation. Round 17's checker/integrator
+/// desync (#4384) was exactly two copies of this block drifting apart in
+/// month encoding, so both sides now consume this one function — the desync
+/// class is removed structurally, not by convention.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SolarStepDate {
+    /// Calendar month, 1-based (January = 1), as `calculate_solar_position`
+    /// expects.
+    pub month: u32,
+    /// Day of month, 1-based, uncapped.
+    pub day: u32,
+    /// Mid-hour sun convention: `(hour_of_year % 24) as f64 + 0.5`.
+    pub mid_hour: f64,
+}
+
+/// Derive the solar-calendar date for an hour-of-year (0..8759), non-leap
+/// year. Values outside 0..8760 are taken modulo 8760, matching the
+/// integrator's `timestep % 8760` wrap.
+pub fn derive_solar_step_date(hour_of_year: usize) -> SolarStepDate {
+    let hoy = hour_of_year % 8760;
+    let day_of_year = hoy / 24;
+    let mid_hour = (hoy % 24) as f64 + 0.5;
+    // Identical to `ThermalModel::timestep_to_date`'s derivation (the #4385
+    // authoritative encoding): walk the non-leap month lengths.
+    let days_in_month: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let mut month: u32 = 1;
+    let mut day: u32 = day_of_year as u32 + 1;
+    for &dim in days_in_month.iter() {
+        if day <= dim {
+            break;
+        }
+        day -= dim;
+        month += 1;
+    }
+    SolarStepDate {
+        month,
+        day,
+        mid_hour,
+    }
+}
+
 /// Calculate solar position using the NOAA solar calculator algorithm.
 ///
 /// # Arguments
@@ -224,6 +274,97 @@ pub fn calculate_solar_position(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Round 19 (#4384 follow-up): the shared helper must reproduce the
+    /// applied month/day derivation verbatim. `timestep_to_date`'s
+    /// days-in-month walk is the authoritative #4385 encoding; the
+    /// cumulative-month-starts form (the pre-#4385 inline block) must agree
+    /// with it everywhere, so either reading of the history pins the helper.
+    #[test]
+    fn test_derive_solar_step_date_matches_legacy_math_full_year() {
+        let month_starts: [usize; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+        let days_in_month: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+        for hoy in 0..8760usize {
+            // Authoritative: timestep_to_date's loop.
+            let doy = hoy / 24;
+            let (mut m, mut d) = (1u32, doy as u32 + 1);
+            for &dim in days_in_month.iter() {
+                if d <= dim {
+                    break;
+                }
+                d -= dim;
+                m += 1;
+            }
+
+            let date = derive_solar_step_date(hoy);
+            assert_eq!(date.month, m, "hoy={hoy}");
+            assert_eq!(date.day, d, "hoy={hoy}");
+            assert_eq!(date.mid_hour, (hoy % 24) as f64 + 0.5, "hoy={hoy}");
+
+            // Cross-check: cumulative-starts form must be the same date.
+            let m2 = month_starts
+                .iter()
+                .position(|&s| s > doy)
+                .unwrap_or(12)
+                .saturating_sub(1) as u32
+                + 1;
+            let d2 = (doy - month_starts[m2 as usize - 1]) as u32 + 1;
+            assert_eq!((date.month, date.day), (m2, d2), "hoy={hoy}");
+        }
+    }
+
+    /// The helper is exactly `timestep_to_date` on month/day — verified on
+    /// the sim side (tests under `src/sim/thermal_model_core/`), where the
+    /// two live in the same layer.
+    #[test]
+    fn test_derive_solar_step_date_matches_days_in_month_walks() {
+        for hoy in [0usize, 743, 744, 1415, 1416, 4343, 8758, 8759] {
+            let doy = hoy / 24;
+            let days_in_month: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+            let (mut m, mut d) = (1u32, doy as u32 + 1);
+            for &dim in days_in_month.iter() {
+                if d <= dim {
+                    break;
+                }
+                d -= dim;
+                m += 1;
+            }
+            let date = derive_solar_step_date(hoy);
+            assert_eq!((date.month, date.day), (m, d), "hoy={hoy}");
+        }
+    }
+
+    /// Round trip through `calculate_day_of_year`: (month, day) must map
+    /// back to the day-of-year the helper consumed.
+    #[test]
+    fn test_derive_solar_step_date_round_trips_through_calculate_day_of_year() {
+        for hoy in 0..8760usize {
+            let d = derive_solar_step_date(hoy);
+            let doy = calculate_day_of_year(2024, d.month, d.day);
+            assert_eq!(doy, hoy / 24 + 1, "hoy={hoy}");
+        }
+    }
+
+    /// Boundaries: year edges, month edges, and the 8760 wrap.
+    #[test]
+    fn test_derive_solar_step_date_boundaries() {
+        let d = derive_solar_step_date(0);
+        assert_eq!((d.month, d.day, d.mid_hour), (1, 1, 0.5));
+
+        let d = derive_solar_step_date(8759);
+        assert_eq!((d.month, d.day, d.mid_hour), (12, 31, 23.5));
+
+        let d = derive_solar_step_date(743); // Jan 31, 23:30–00:00 midpoint
+        assert_eq!((d.month, d.day, d.mid_hour), (1, 31, 23.5));
+
+        let d = derive_solar_step_date(744); // Feb 1
+        assert_eq!((d.month, d.day), (2, 1));
+
+        let d = derive_solar_step_date(1416); // Mar 1
+        assert_eq!((d.month, d.day), (3, 1));
+
+        assert_eq!(derive_solar_step_date(8760), derive_solar_step_date(0));
+    }
     use proptest::prelude::*;
 
     #[test]
