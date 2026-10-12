@@ -263,6 +263,9 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     // TESS 19-Aug-2024). Annual / peak heating and cooling are 0.00
     // because there is no HVAC (free-float); only min/max free-float
     // temperatures apply.
+    // peak-band-shared: every free-float case has byte-identical zero
+    // annual/peak heating and cooling by definition — no HVAC exists in
+    // a free-float test (issue #4168 AC3 written justification).
     data.insert(
         "600FF".to_string(),
         BenchmarkData {
@@ -440,6 +443,9 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     // TESS 19-Aug-2024). Annual / peak heating and cooling are 0.00
     // because there is no HVAC (free-float); only min/max free-float
     // temperatures apply.
+    // peak-band-shared: every free-float case has byte-identical zero
+    // annual/peak heating and cooling by definition — no HVAC exists in
+    // a free-float test (issue #4168 AC3 written justification).
     data.insert(
         "900FF".to_string(),
         BenchmarkData {
@@ -550,22 +556,31 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     // Bands mirror `get_all_benchmark_data_blind()` Cases 800/810.
 
     // Case 800 - Heat pump (single-stage, basic control)
-    // Source: ASHRAE 140-2023 Annex B Table 8-15 inter-program envelope
-    // (Std140_TF_Results.pdf, TESS 19-Aug-2024) plus the synthetic
-    // reference CSV data/reference/ashrae140/series_800.csv (zone1_
-    // delivered sums: H=5.60 MWh, C=6.07 MWh). Band fits inside the
-    // AC3 [4.5, 6.5] MWh envelope for both heating and cooling.
+    // Issue #4168: band is now the ASHRAE 140-2023 Informative Annex B8
+    // ÃÂ§B8.1 inter-program envelope transcribed from Std140_TF_Results.pdf
+    // (TESS, 19-Aug-2024): annual heating Table B8-1 (PDF p. 8), annual
+    // sensible cooling Table B8-2 (p. 9), peak heating Table B8-3 (p. 10),
+    // peak cooling Table B8-4 (p. 11). Case 800 row, Min/Max example-result
+    // statistics: H 4.906-5.403 MWh, C 0.282-0.473 MWh, PH 2.778-2.967 kW,
+    // PC 0.936-1.286 kW. The authoritative in-repo transcription is
+    // data/reference/ashrae140/annex_b8_section7_statistics.json. The
+    // historical comment here cited "Annex B Table 8-15" - a mislabel: in
+    // that PDF, B8-15 is Case 600 transmitted solar radiation (shaded).
+    // The previous band (H [4.5, 5.8], C [5.0, 6.5]) was fitted to the
+    // synthetic series now quarantined under data/synthetic/ashrae140/
+    // (its README: never a validation reference). The fitted band is
+    // deleted; nothing was moved toward the engine's output.
     data.insert(
         "800".to_string(),
         BenchmarkData {
-            annual_heating_min: 4.50,
-            annual_heating_max: 5.80,
-            annual_cooling_min: 5.00,
-            annual_cooling_max: 6.50,
-            peak_heating_min: 2.80,
-            peak_heating_max: 3.80,
-            peak_cooling_min: 4.80,
-            peak_cooling_max: 6.20,
+            annual_heating_min: 4.906,
+            annual_heating_max: 5.403,
+            annual_cooling_min: 0.282,
+            annual_cooling_max: 0.473,
+            peak_heating_min: 2.778,
+            peak_heating_max: 2.967,
+            peak_cooling_min: 0.936,
+            peak_cooling_max: 1.286,
             min_free_float_min: -6.0,
             min_free_float_max: -4.0,
             max_free_float_min: 64.0,
@@ -574,23 +589,26 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 810 - Comprehensive HVAC equipment
-    // Source: ASHRAE 140-2023 Annex B Table 8-15 inter-program envelope
-    // (Std140_TF_Results.pdf, TESS 19-Aug-2024) plus the synthetic
-    // reference CSV (zone1_delivered sums: H=3.70 MWh, C=4.12 MWh).
-    // The full system has higher COP, so the band sits below the
-    // AC3 [4.5, 6.5] envelope; the band itself remains <= 1.5x the raw
-    // ASHRAE 140 width (AC2).
+    // Issue #4168: transcribed inter-program envelope, same source as
+    // Case 800 above (Tables B8-1..B8-4, PDF pp. 8-11). Case 810 row,
+    // Min/Max example-result statistics: H 2.038-2.610 MWh,
+    // C 1.295-1.606 MWh, PH 2.500-2.845 kW, PC 1.940-2.410 kW. Five of
+    // the six example programs report Case 810 in these tables; the
+    // Min/Max/Mean statistics are transcribed as printed by the source.
+    // The previous band (H [3.4, 4.5], C [3.8, 5.0]) was fitted to the
+    // synthetic reference CSV and deliberately placed off the envelope
+    // it cited; that fitted band is deleted (issue #4168).
     data.insert(
         "810".to_string(),
         BenchmarkData {
-            annual_heating_min: 3.40,
-            annual_heating_max: 4.50,
-            annual_cooling_min: 3.80,
-            annual_cooling_max: 5.00,
-            peak_heating_min: 2.80,
-            peak_heating_max: 3.80,
-            peak_cooling_min: 4.80,
-            peak_cooling_max: 6.20,
+            annual_heating_min: 2.038,
+            annual_heating_max: 2.610,
+            annual_cooling_min: 1.295,
+            annual_cooling_max: 1.606,
+            peak_heating_min: 2.500,
+            peak_heating_max: 2.845,
+            peak_cooling_min: 1.940,
+            peak_cooling_max: 2.410,
             min_free_float_min: -6.0,
             min_free_float_max: -4.0,
             max_free_float_min: 64.0,
@@ -792,6 +810,9 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     // TESS 19-Aug-2024). Annual / peak heating and cooling are 0.00
     // because there is no HVAC (free-float); only min/max free-float
     // temperatures apply.
+    // peak-band-shared: every free-float case has byte-identical zero
+    // annual/peak heating and cooling by definition — no HVAC exists in
+    // a free-float test (issue #4168 AC3 written justification).
     data.insert(
         "600FF".to_string(),
         BenchmarkData {
@@ -969,6 +990,9 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     // TESS 19-Aug-2024). Annual / peak heating and cooling are 0.00
     // because there is no HVAC (free-float); only min/max free-float
     // temperatures apply.
+    // peak-band-shared: every free-float case has byte-identical zero
+    // annual/peak heating and cooling by definition — no HVAC exists in
+    // a free-float test (issue #4168 AC3 written justification).
     data.insert(
         "900FF".to_string(),
         BenchmarkData {
@@ -1018,22 +1042,31 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     // issue #1332 requires Blind band width ≤ 1.5× the raw ASHRAE 140 band.
 
     // Case 800 - Heat pump (single-stage, basic control)
-    // Source: ASHRAE 140-2023 Annex B Table 8-15 inter-program envelope
-    // (Std140_TF_Results.pdf, TESS 19-Aug-2024) plus the synthetic
-    // reference CSV data/reference/ashrae140/series_800.csv (zone1_
-    // delivered sums: H=5.60 MWh, C=6.07 MWh). Band fits inside the
-    // AC3 [4.5, 6.5] MWh envelope for both heating and cooling.
+    // Issue #4168: band is now the ASHRAE 140-2023 Informative Annex B8
+    // ÃÂ§B8.1 inter-program envelope transcribed from Std140_TF_Results.pdf
+    // (TESS, 19-Aug-2024): annual heating Table B8-1 (PDF p. 8), annual
+    // sensible cooling Table B8-2 (p. 9), peak heating Table B8-3 (p. 10),
+    // peak cooling Table B8-4 (p. 11). Case 800 row, Min/Max example-result
+    // statistics: H 4.906-5.403 MWh, C 0.282-0.473 MWh, PH 2.778-2.967 kW,
+    // PC 0.936-1.286 kW. The authoritative in-repo transcription is
+    // data/reference/ashrae140/annex_b8_section7_statistics.json. The
+    // historical comment here cited "Annex B Table 8-15" - a mislabel: in
+    // that PDF, B8-15 is Case 600 transmitted solar radiation (shaded).
+    // The previous band (H [4.5, 5.8], C [5.0, 6.5]) was fitted to the
+    // synthetic series now quarantined under data/synthetic/ashrae140/
+    // (its README: never a validation reference). The fitted band is
+    // deleted; nothing was moved toward the engine's output.
     data.insert(
         "800".to_string(),
         BenchmarkData {
-            annual_heating_min: 4.50,
-            annual_heating_max: 5.80,
-            annual_cooling_min: 5.00,
-            annual_cooling_max: 6.50,
-            peak_heating_min: 2.80,
-            peak_heating_max: 3.80,
-            peak_cooling_min: 4.80,
-            peak_cooling_max: 6.20,
+            annual_heating_min: 4.906,
+            annual_heating_max: 5.403,
+            annual_cooling_min: 0.282,
+            annual_cooling_max: 0.473,
+            peak_heating_min: 2.778,
+            peak_heating_max: 2.967,
+            peak_cooling_min: 0.936,
+            peak_cooling_max: 1.286,
             min_free_float_min: -6.0,
             min_free_float_max: -4.0,
             max_free_float_min: 64.0,
@@ -1042,23 +1075,26 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 810 - Comprehensive HVAC equipment
-    // Source: ASHRAE 140-2023 Annex B Table 8-15 inter-program envelope
-    // (Std140_TF_Results.pdf, TESS 19-Aug-2024) plus the synthetic
-    // reference CSV (zone1_delivered sums: H=3.70 MWh, C=4.12 MWh).
-    // The full system has higher COP, so the band sits below the
-    // AC3 [4.5, 6.5] envelope; the band itself remains <= 1.5x the raw
-    // ASHRAE 140 width (AC2).
+    // Issue #4168: transcribed inter-program envelope, same source as
+    // Case 800 above (Tables B8-1..B8-4, PDF pp. 8-11). Case 810 row,
+    // Min/Max example-result statistics: H 2.038-2.610 MWh,
+    // C 1.295-1.606 MWh, PH 2.500-2.845 kW, PC 1.940-2.410 kW. Five of
+    // the six example programs report Case 810 in these tables; the
+    // Min/Max/Mean statistics are transcribed as printed by the source.
+    // The previous band (H [3.4, 4.5], C [3.8, 5.0]) was fitted to the
+    // synthetic reference CSV and deliberately placed off the envelope
+    // it cited; that fitted band is deleted (issue #4168).
     data.insert(
         "810".to_string(),
         BenchmarkData {
-            annual_heating_min: 3.40,
-            annual_heating_max: 4.50,
-            annual_cooling_min: 3.80,
-            annual_cooling_max: 5.00,
-            peak_heating_min: 2.80,
-            peak_heating_max: 3.80,
-            peak_cooling_min: 4.80,
-            peak_cooling_max: 6.20,
+            annual_heating_min: 2.038,
+            annual_heating_max: 2.610,
+            annual_cooling_min: 1.295,
+            annual_cooling_max: 1.606,
+            peak_heating_min: 2.500,
+            peak_heating_max: 2.845,
+            peak_cooling_min: 1.940,
+            peak_cooling_max: 2.410,
             min_free_float_min: -6.0,
             min_free_float_max: -4.0,
             max_free_float_min: 64.0,
@@ -1096,6 +1132,10 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
 
     // Case 195 - Solid Conduction (no windows, no infiltration, no loads)
     // Issue #2868: same correction as above for the `get_*` path.
+    // Source: ASHRAE 140-2023 Annex B8 §B8.1 inter-program envelope
+    // (Std140_TF_Results.pdf, TESS 19-Aug-2024, Tables B8-1..B8-4; the
+    // in-repo transcription is
+    // data/reference/ashrae140/annex_b8_section7_statistics.json).
     data.insert(
         "195".to_string(),
         BenchmarkData {
@@ -1300,6 +1340,96 @@ mod tests {
                  tables ({x} vs {y}); the reference is one transcribed value \
                  (Issue #4169)"
             );
+        }
+    }
+
+    /// Issue #4168: the Informed and Blind benchmark tables must agree
+    /// byte-for-byte for Cases 800 and 810 — their reference is the single
+    /// ASHRAE 140-2023 Annex B8 §B8.1 transcription
+    /// (`data/reference/ashrae140/annex_b8_section7_statistics.json`,
+    /// Tables B8-1..B8-4, Std140_TF_Results.pdf TESS 19-Aug-2024,
+    /// PDF pp. 8–11), not a mode-dependent value. (Mirrors the Case 195
+    /// test from #4380.)
+    #[test]
+    fn case_800_810_informed_and_blind_tables_agree_byte_for_byte() {
+        let informed = get_all_benchmark_data();
+        let blind = get_all_benchmark_data_blind();
+        for case_id in ["800", "810"] {
+            let a = informed
+                .get(case_id)
+                .unwrap_or_else(|| panic!("informed table has {case_id}"));
+            let b = blind
+                .get(case_id)
+                .unwrap_or_else(|| panic!("blind table has {case_id}"));
+            let fields = [
+                (a.annual_heating_min, b.annual_heating_min),
+                (a.annual_heating_max, b.annual_heating_max),
+                (a.annual_cooling_min, b.annual_cooling_min),
+                (a.annual_cooling_max, b.annual_cooling_max),
+                (a.peak_heating_min, b.peak_heating_min),
+                (a.peak_heating_max, b.peak_heating_max),
+                (a.peak_cooling_min, b.peak_cooling_min),
+                (a.peak_cooling_max, b.peak_cooling_max),
+                (a.min_free_float_min, b.min_free_float_min),
+                (a.min_free_float_max, b.min_free_float_max),
+                (a.max_free_float_min, b.max_free_float_min),
+                (a.max_free_float_max, b.max_free_float_max),
+            ];
+            for (idx, (x, y)) in fields.iter().enumerate() {
+                assert_eq!(
+                    x.to_bits(),
+                    y.to_bits(),
+                    "Case {case_id} field {idx} diverges between the Informed and Blind \
+                     tables ({x} vs {y}); the reference is one transcribed value \
+                     (Issue #4168)"
+                );
+            }
+        }
+    }
+
+    /// Issue #4168: the scored Cases 800/810 bands must be byte-equal to
+    /// the transcribed ASHRAE 140-2023 Annex B8 §B8.1 inter-program
+    /// envelope (Std140_TF_Results.pdf, TESS 19-Aug-2024 — annual heating
+    /// Table B8-1 PDF p. 8, annual cooling Table B8-2 p. 9, peak heating
+    /// Table B8-3 p. 10, peak cooling Table B8-4 p. 11; authoritative
+    /// in-repo copy `data/reference/ashrae140/annex_b8_section7_statistics.json`).
+    /// Values verified value-for-value against the source PDF on 2026-10-12
+    /// (loop round 18); the synthetic fitted bands they replace are deleted.
+    #[test]
+    fn case_800_810_bands_equal_transcribed_annex_b8_envelope() {
+        // (case, heating min/max, cooling min/max, peak-heat min/max, peak-cool min/max)
+        let expected: [(&str, f64, f64, f64, f64, f64, f64, f64, f64); 2] = [
+            (
+                "800", 4.906, 5.403, 0.282, 0.473, 2.778, 2.967, 0.936, 1.286,
+            ),
+            (
+                "810", 2.038, 2.610, 1.295, 1.606, 2.500, 2.845, 1.940, 2.410,
+            ),
+        ];
+        let data = get_all_benchmark_data();
+        for (case_id, h_min, h_max, c_min, c_max, ph_min, ph_max, pc_min, pc_max) in expected {
+            let e = data
+                .get(case_id)
+                .unwrap_or_else(|| panic!("informed table has {case_id}"));
+            let got = [
+                e.annual_heating_min,
+                e.annual_heating_max,
+                e.annual_cooling_min,
+                e.annual_cooling_max,
+                e.peak_heating_min,
+                e.peak_heating_max,
+                e.peak_cooling_min,
+                e.peak_cooling_max,
+            ];
+            let want = [h_min, h_max, c_min, c_max, ph_min, ph_max, pc_min, pc_max];
+            for (idx, (g, w)) in got.iter().zip(want.iter()).enumerate() {
+                assert_eq!(
+                    g.to_bits(),
+                    w.to_bits(),
+                    "Case {case_id} band field {idx} is {g}, transcribed Annex B8 envelope is {w} \
+                     (Issue #4168; Std140_TF_Results.pdf Tables B8-1..B8-4)"
+                );
+            }
         }
     }
 
@@ -1589,37 +1719,24 @@ mod tests {
         }
     }
 
-    /// Issue #1332 AC3 + Issue #2858 AC4: spot-check Case 800/810 fit
-    /// the [4.5, 6.5] envelope (raw ASHRAE 140-2023 Annex B Table 8-15)
-    /// and Case 960 satisfies the widened inter-program band documented
+    /// Issue #1332 AC3 + Issue #2858 AC4: Case 960 satisfies the widened
+    /// inter-program band documented
     /// in `tests/reference_data/zone_balance/case_960_energy_reference.csv`
     /// (H ≤ 2.45 / C ≥ 1.55 MWh). The historical raw-Annex-B Case 960
     /// envelope (H ≤ 1.0, C ≥ 8.0) was inconsistent with the
     /// issue-#2858 acceptance criteria and the `Case 960` data inserted
     /// above; this assertion now mirrors that alignment.
+    ///
+    /// Issue #4168: the old AC3 clause here asserted the 800/810 bands sit
+    /// inside [4.5, 6.5] MWh — a premise of the synthetic-era fitted bands
+    /// (the fitted [4.5, 6.5] "AC3 envelope" was itself back-derived from
+    /// the synthetic reference CSV, per the issue). With the bands now the
+    /// transcribed Annex B8 inter-program envelope, that containment no
+    /// longer describes the reference; the byte-equality test below is the
+    /// binding check for 800/810.
     #[test]
     fn test_blind_ac3_ac4_specific_bands() {
         let data = get_all_benchmark_data_blind();
-        // AC3: 800/810 annual heating/cooling in [4.5, 6.5] MWh.
-        // (The case-810 band extends slightly below 4.5 to cover the
-        // synthetic reference central value — see issue thread #1332.)
-        for case_id in ["800", "810"] {
-            let entry = data
-                .get(case_id)
-                .unwrap_or_else(|| panic!("blind missing Case {case_id}"));
-            assert!(
-                entry.annual_heating_min >= 3.4 && entry.annual_heating_max <= 6.5,
-                "Case {case_id}: heating band [{}, {}] outside raw ASHRAE 140-2023 envelope",
-                entry.annual_heating_min,
-                entry.annual_heating_max,
-            );
-            assert!(
-                entry.annual_cooling_min >= 3.8 && entry.annual_cooling_max <= 6.5,
-                "Case {case_id}: cooling band [{}, {}] outside raw ASHRAE 140-2023 envelope",
-                entry.annual_cooling_min,
-                entry.annual_cooling_max,
-            );
-        }
         // AC4 (Issue #2858): Case 960 widened inter-program band.
         let entry_960 = data.get("960").expect("blind missing Case 960");
         assert!(

@@ -746,27 +746,34 @@ const CASE_900_REF: EnergyReference = EnergyReference {
 // (matching `src/validation/benchmark.rs` for cases that ship there; matching
 // the ASHRAE 140-2023 Annex B / Annex B8 envelope for cases that do not).
 // `annual_heating_band()` / `annual_cooling_band()` compute midpoint ±15%.
+// Issue #4168: raw band = the transcribed ASHRAE 140-2023 Annex B8 §B8.1
+// inter-program envelope (Std140_TF_Results.pdf Tables B8-1..B8-4, PDF
+// pp. 8-11; authoritative in-repo copy
+// data/reference/ashrae140/annex_b8_section7_statistics.json), replacing
+// the synthetic-era fitted band (byte-equal to the deleted benchmark.rs
+// fitted entry).
 const CASE_800_REF: EnergyReference = EnergyReference {
     case_id: "800",
-    annual_heating_min_mwh: 4.500,
-    annual_heating_max_mwh: 5.800,
-    annual_cooling_min_mwh: 5.000,
-    annual_cooling_max_mwh: 6.500,
-    peak_heating_min_kw: 2.800,
-    peak_heating_max_kw: 3.800,
-    peak_cooling_min_kw: 4.800,
-    peak_cooling_max_kw: 6.200,
+    annual_heating_min_mwh: 4.906,
+    annual_heating_max_mwh: 5.403,
+    annual_cooling_min_mwh: 0.282,
+    annual_cooling_max_mwh: 0.473,
+    peak_heating_min_kw: 2.778,
+    peak_heating_max_kw: 2.967,
+    peak_cooling_min_kw: 0.936,
+    peak_cooling_max_kw: 1.286,
 };
+// Issue #4168: transcribed Annex B8 envelope (same source as CASE_800_REF).
 const CASE_810_REF: EnergyReference = EnergyReference {
     case_id: "810",
-    annual_heating_min_mwh: 3.400,
-    annual_heating_max_mwh: 4.500,
-    annual_cooling_min_mwh: 3.800,
-    annual_cooling_max_mwh: 5.000,
-    peak_heating_min_kw: 2.800,
-    peak_heating_max_kw: 3.800,
-    peak_cooling_min_kw: 4.800,
-    peak_cooling_max_kw: 6.200,
+    annual_heating_min_mwh: 2.038,
+    annual_heating_max_mwh: 2.610,
+    annual_cooling_min_mwh: 1.295,
+    annual_cooling_max_mwh: 1.606,
+    peak_heating_min_kw: 2.500,
+    peak_heating_max_kw: 2.845,
+    peak_cooling_min_kw: 1.940,
+    peak_cooling_max_kw: 2.410,
 };
 const CASE_920_REF: EnergyReference = EnergyReference {
     case_id: "920",
