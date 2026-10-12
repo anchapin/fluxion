@@ -129,10 +129,7 @@ pub use hvac_bestest::{
 pub use physics_validator::{
     generate_validation_report, PhysicsValidationResult, PhysicsValidator, TemperatureViolation,
 };
-pub use reference::{
-    load_reference_data, load_series_195_reference, load_series_800_reference, HourlyDataPoint,
-    ReferenceDataError, ReferenceDataset,
-};
+pub use reference::{load_reference_data, HourlyDataPoint, ReferenceDataError, ReferenceDataset};
 pub use reference_catalog::{
     CoverageReport, ReferenceCatalog, ReferenceCategory, ReferenceEntry, ReferenceSource,
     REFERENCE_DATA_ROOT,
