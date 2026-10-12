@@ -9,17 +9,17 @@
 | Free-Float (FREE) | 3 | 0 | 3 | 0 | 0 |
 | Temperature (TEMP) | 1 | 0 | 1 | 0 | 0 |
 | Multi-Zone (MULTI) | 4 | 0 | 4 | 0 | 0 |
-| Model Limits (LIMIT) | 37 | 6 | 29 | 2 | 0 |
+| Model Limits (LIMIT) | 37 | 7 | 28 | 2 | 0 |
 | Reporting (REPORT) | 4 | 0 | 4 | 0 | 0 |
 | CI/Infrastructure (CI) | 4 | 2 | 2 | 0 | 0 |
 | fluxion-fluid (FLUID) | 2 | 0 | 2 | 0 | 0 |
 | FFD/CFD (FFD) | 2 | 1 | 1 | 0 | 0 |
 | Reference data (REF) | 1 | 0 | 1 | 0 | 0 |
-| **Total** | **68** | **10** | **56** | **2** | **0** |
+| **Total** | **68** | **11** | **55** | **2** | **0** |
 
 *Counts derived from the per-row catalog tables under each category section (`| **CATEGORY-NN** | ... |`) via `scripts/check_known_issues_summary.py`. Edit a row in place (or add a new row) and the table updates on the next regen. Status columns (`Fixed` / `Open` / `Partial` / `Won't Fix`) derive from each row's Status cell: `resolved` -> Fixed, `open` -> Open, `tracking only` -> Partial, `Won't Fix` -> Won't Fix. Rows without a recognized status are counted in the Total column but contribute 0 to the status columns. To regenerate: `python3 scripts/check_known_issues_summary.py --regen --in-place`.*
 
-*Last Updated: 2026-10-11*
+*Last Updated: 2026-10-12*
 ## How to read this document
 
 Each limitation is **one row** in the tables below: its current measured value against
@@ -112,7 +112,7 @@ That registry, not this document, is canonical for quarantine state.
 | **LIMIT-09** | Case 950 5R1C free-float night-vent override — pre-existing test failure | Case 950 5R1C free-float night-vent override fails | #3071 | GaugeSolver production path | open | [history](investigations/limit-09-case-950-5r1c-free-float-night.md) |
 | **LIMIT-10** | Case 960 sunspace winter mean 0 °C vs pre-#1456 15 °C — assertion aligned with post-#1456 ground truth | Case 960 sunspace winter mean ≈ 0 °C (was ≈ 15 °C pre-#1456) | #3065 | band assertion (−10, 50) °C holds post-fix | open | [history](investigations/limit-10-case-960-sunspace-winter-mean-0.md) |
 | **LIMIT-11** | Case 195 high-mass walls — pre-existing zero-energy assertion | Case 195 high-mass 0.00 kWh vs baseline −18.21 kWh | #3064 | non-zero high-mass energy without tuning | open | [history](investigations/limit-11-case-195-high-mass-walls-pre.md) |
-| **LIMIT-12** | Case 940 annual heating CTF-validator vs blind-diagnostic path divergence — setback-recovery overshoot | Case 940 annual heating 5,158 kWh (CTF) vs 1,289.9 kWh (blind). UPDATE 2026-10-12 (loop round 16, #4226): the 2-hour setback ramp behind the #2870/#3062 setback-recovery overshoot was REMOVED (spec-conformant step change at the setback-end hour); validator-path Case 940 heating 0.632 → 0.742 MWh, peak 2.437 → 2.626 kW, cooling ~unchanged; Case 640 heating 3.393 → 3.747 MWh (re-enters [2.75, 3.80]) but peak heating 5.271 → 6.304 kW leaves [4.30, 5.70] high. Strict/fabric/surrogate families byte-identical (blind path does not consume the schedules). Keep/remove verdict pending Alex — see docs/investigations/issue-4196-setback-ramp-deviation.md §8 | #3062 | the two paths agree | open | [history](investigations/limit-12-case-940-annual-heating-ctf-validator.md) |
+| **LIMIT-12** | Case 940 annual heating CTF-validator vs blind-diagnostic path divergence — setback-recovery overshoot | Case 940 annual heating 5,158 kWh (CTF) vs 1,289.9 kWh (blind). UPDATE 2026-10-12 (loop round 16, #4226): the 2-hour setback ramp behind the #2870/#3062 setback-recovery overshoot was REMOVED (spec-conformant step change at the setback-end hour); validator-path Case 940 heating 0.632 → 0.742 MWh, peak 2.437 → 2.626 kW, cooling ~unchanged; Case 640 heating 3.393 → 3.747 MWh (re-enters [2.75, 3.80]) but peak heating 5.271 → 6.304 kW leaves [4.30, 5.70] high. Strict/fabric/surrogate families byte-identical (blind path does not consume the schedules). VERDICT 2026-10-12 (Alex): the removal STANDS — the Case 640 peak-heating out-of-band miss is accepted as the honest cost of spec-fidelity and is recorded, not tuned. See docs/investigations/issue-4196-setback-ramp-deviation.md §8/§9 | #3062 | resolved — deviation removed and accepted | resolved | [history](investigations/limit-12-case-940-annual-heating-ctf-validator.md) |
 | **LIMIT-13** | `h_tr_em` (envelope-to-mass conductance) remains time-invariant in 5R1C path — tracking stub | h_tr_em time-invariant in 5R1C; 18.3 W/m²K film coefficient fenced | #3063 | time-varying h_tr_em in the production path | tracking only | [history](investigations/limit-13-htrem-envelope-to-mass-conductance-remains.md) |
 | **LIMIT-14** | Case 960 sunspace annual cooling and peak heating below band — GaugeSolver-blocked air-mass distribution gap | Case 960 annual cooling 1.776 MWh vs [1.55, 2.78]; peak heating 2.58 kW vs [2.0, 8.0] — both IN BAND. UPDATE 2026-10-09, E+ Perez coefficient-table fix (doc §13): annual cooling 0.63 → 1.776 MWh re-enters band; peak heating 1.17 → 2.58 kW re-enters band. RESOLVED by the corrected reference-engine solar stack | #3061 | GaugeSolver air-mass distribution | resolved | [history](investigations/limit-14-case-960-sunspace-annual-cooling-and.md) |
 | **LIMIT-15** | ASHRAE 140 Case 195 — Denver TMY min −12.47 °C vs DRYCOLD.TM2 min −24.4 °C weather data source mismatch | Denver TMY3 min −12.47 °C vs DRYCOLD.TM2 −24.4 °C; ≈0.6 MWh residual | #3060 | maintainer decision on #3060 (3 options documented) | open | [history](investigations/limit-15-ashrae-140-case-195-denver-tmy.md) |
