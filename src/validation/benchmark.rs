@@ -507,6 +507,11 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 195 - Solid Conduction (no windows, no infiltration, no loads)
+    // Issue #4169: the min_free_float/max_free_float fields below are carried
+    // only because BenchmarkData is a flat struct — Case 195 is NOT a
+    // free-floating case, so no consumer scores these four numbers for it
+    // (the free-float scoring path keys on `spec.is_free_floating()`). They
+    // are inert placeholders, kept out of the scored metrics by construction.
     // Issue #2868: corrected against the authoritative ASHRAE 140-2023
     // inter-program ranges in `data/ashrae140_reference.json` (BSIMAC,
     // CSE, DeST, EnergyPlus, ESP-r, TRNSYS — sourced from Std140_TF_
@@ -1259,6 +1264,44 @@ pub fn get_cases_by_category() -> HashMap<String, Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Issue #4169: the Informed and Blind benchmark tables must agree
+    /// byte-for-byte for Case 195 — the §5.2.2.1.5 Solid Conduction case's
+    /// reference is the single ASHRAE 140-2023 Annex B8 transcription
+    /// (`data/reference/ashrae140/annex_b8_section7_statistics.json`,
+    /// Tables B8-1..B8-4), not a mode-dependent value. A divergence here
+    /// would make the metric uninterpretable (the exact defect class #4169
+    /// records against the historical KNOWN_ISSUES text).
+    #[test]
+    fn case_195_informed_and_blind_tables_agree_byte_for_byte() {
+        let informed = get_all_benchmark_data();
+        let blind = get_all_benchmark_data_blind();
+        let a = informed.get("195").expect("informed table has 195");
+        let b = blind.get("195").expect("blind table has 195");
+        let fields = [
+            (a.annual_heating_min, b.annual_heating_min),
+            (a.annual_heating_max, b.annual_heating_max),
+            (a.annual_cooling_min, b.annual_cooling_min),
+            (a.annual_cooling_max, b.annual_cooling_max),
+            (a.peak_heating_min, b.peak_heating_min),
+            (a.peak_heating_max, b.peak_heating_max),
+            (a.peak_cooling_min, b.peak_cooling_min),
+            (a.peak_cooling_max, b.peak_cooling_max),
+            (a.min_free_float_min, b.min_free_float_min),
+            (a.min_free_float_max, b.min_free_float_max),
+            (a.max_free_float_min, b.max_free_float_min),
+            (a.max_free_float_max, b.max_free_float_max),
+        ];
+        for (idx, (x, y)) in fields.iter().enumerate() {
+            assert_eq!(
+                x.to_bits(),
+                y.to_bits(),
+                "Case 195 field {idx} diverges between the Informed and Blind \
+                 tables ({x} vs {y}); the reference is one transcribed value \
+                 (Issue #4169)"
+            );
+        }
+    }
 
     #[test]
     fn test_get_all_benchmark_data() {
