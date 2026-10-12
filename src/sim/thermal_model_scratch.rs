@@ -103,6 +103,13 @@ pub(crate) struct PhysicsScratch5r1c {
     /// `vec![0.0; n]` semantics without a heap allocation once the pool is
     /// warm.
     pub hvac_combined_demand: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    /// Round 16 (issue #2687/#2709 dhat ratchet): reused per-zone exterior
+    /// boundary surface list for `step_physics_5r1c`'s sol-air aggregation.
+    /// The previous code built a fresh `Vec::new()` every call and pushed the
+    /// zone's surfaces into it — one heap allocation per timestep per config
+    /// (the last ~1 alloc/step on the dhat budget run). `fill_zero` clears it
+    /// so the pooled capacity persists across steps.
+    pub boundary_surfaces: Vec<crate::sim::exterior_boundary::ExteriorBoundarySurface>,
     /// Issue #3370: scratch buffer for `step_physics_5r1c`'s conditional
     /// night-ventilation `den` vector (only allocated when `night_vent` is
     /// configured; the test fixture has `night_vent == None` so this path
@@ -148,6 +155,7 @@ impl PhysicsScratch5r1c {
             hvac_combined_demand: SmallVec::from_elem(0.0, num_zones),
             night_vent_den: SmallVec::from_elem(0.0, num_zones),
             previous_temperatures: SmallVec::from_elem(0.0, num_zones),
+            boundary_surfaces: Vec::new(),
         }
     }
 
@@ -165,6 +173,8 @@ impl PhysicsScratch5r1c {
     /// that the post-`new()` state is fully zeroed).
     pub fn fill_zero(&mut self) {
         let n = self.num_zones;
+        // Round 16: keep the pooled capacity; only the length resets.
+        self.boundary_surfaces.clear();
         self.phi_ia.resize(n, 0.0);
         self.phi_st.resize(n, 0.0);
         self.phi_m.resize(n, 0.0);

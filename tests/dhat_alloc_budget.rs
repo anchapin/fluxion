@@ -113,6 +113,15 @@ const NUM_CONFIGS: usize = 10;
 ///   small that single-step allocator noise dominates the variance and
 ///   we want the gate to keep catching regressions rather than flake on
 ///   unrelated overhead). 414 × 1.45 ≈ 600.
+///
+///   **Round 16 (2026-10-12) UPDATE:** the gate went red honestly on
+///   2026-10-07 — 88 085 blocks (8 808/config), one ~416 B allocation per
+///   timestep: `step_physics_5r1c` built its exterior boundary-surface
+///   list in a fresh `Vec::new()` every call (regression introduced by
+///   the #4166 per-surface sol-air aggregation, dark while the dashboard
+///   was apt-red). The buffer moved into the pooled
+///   `PhysicsScratch5r1c.boundary_surfaces`; measured 495 blocks
+///   (49/config). The 600 budget stands — no re-pin needed.
 const ALLOC_BLOCKS_BUDGET: u64 = 600;
 
 /// Total allocated bytes ceiling for the reduced run.
@@ -125,11 +134,22 @@ const ALLOC_BLOCKS_BUDGET: u64 = 600;
 ///   2026-09-06 on the same commit as [`ALLOC_BLOCKS_BUDGET`]. Same
 ///   ratchet rule: `measured × 1.20 + tiny slack`, rounded to keep the
 ///   number stable across CI reruns. 335 529 × 1.20 ≈ 402 635 → 410 000.
-///
+/// - **Round 16 (2026-10-12), boundary-surface buffer pooled:** the last
+///   ~1 alloc/step (the per-call `Vec::new()` for
+///   `step_physics_5r1c`'s exterior boundary surfaces, ~416 B/step since
+///   the #4166 per-surface aggregation) moved into the pooled
+///   `PhysicsScratch5r1c.boundary_surfaces` buffer. Measured 495 blocks /
+///   457 211 bytes (49/config) on `loop/r16-dhat-boundary` at the fix
+///   commit; same ratchet rule as the block budget, `measured × 1.45`:
+///   457 211 × 1.45 ≈ 662 956 → 665 000. The old 410 000 floor dated
+///   from a 335 529-byte engine whose allocation profile was the same
+///   sites minus the #4166 boundary aggregation; the honest floor of the
+///   current engine is 457 211 bytes.
+const ALLOC_BYTES_BUDGET: u64 = 665_000;
+
 /// Pairs with the block-count budget so a pathological *size* growth
 /// (e.g. a large `Vec` rebuilt every timestep) is caught even if the
 /// *count* stays flat.
-const ALLOC_BYTES_BUDGET: u64 = 410_000;
 
 /// Build the same single-zone analytical model the other allocation fixtures
 /// use (`tests/test_allocation_tracking.rs`), so this gate measures the

@@ -1498,8 +1498,7 @@ pub fn check_boot_guard_from_env() -> Result<(), String> {
                 .and_then(|p| p.trim().parse::<u16>().ok())
                 .unwrap_or(DEFAULT_REST_PORT);
             let detail = resolve_rest_bind_addr(&bind_or_default, port)
-                .err()
-                .expect("decision function flagged the same value as unresolvable");
+                .expect_err("decision function flagged the same value as unresolvable");
             return Err(format!(
                 "fluxion-rest: refusing to boot — {detail} (Issue #3742): the listener would \
                  silently substitute {DEFAULT_REST_BIND}:{port} instead of the intended bind. Use \
