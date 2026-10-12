@@ -2388,7 +2388,30 @@ impl ASHRAE140Validator {
 
         // Issue #744: Run warm-up period to reach periodic steady state per ASHRAE 140 §B2
         // Warm-up uses wrapping weather data (hour % 8760) to simulate initial conditions
-        run_warmup(&mut model, weather, &WarmupConfig::default());
+        //
+        // Issue #2363 / #4167: Disable warmup for Case 950, exactly as
+        // `simulate_case` does. Warmup does not apply the night ventilation
+        // override (cooling_setpoint = 999 when night vent is active), so the
+        // warmed-up zone starts at the wrong temperature and the annual loop
+        // inherits massive phantom cooling demand. Without this the diagnostic
+        // path simulated a different building from the report path for 950.
+        let warmup_config = if spec.case_id == "950" {
+            WarmupConfig::disabled()
+        } else {
+            WarmupConfig::default()
+        };
+        run_warmup(&mut model, weather, &warmup_config);
+
+        // Issue #4167: Reset peak power and energy tracking AFTER warmup, the
+        // same placement as `simulate_case`. The pre-warmup resets above are
+        // not enough: the warm-up year's HVAC energy and peaks were landing in
+        // the model's annual counters and inflating every diagnostic-path
+        // number (measured: Case 640 heating 3.977 vs the report path's
+        // 3.393 MWh). Without this the diagnostic artifact reported a
+        // different building than the report path even after the setpoint
+        // resolution was unified.
+        model.reset_peak_power();
+        model.reset_heating_cooling_energy();
 
         // Issue #761: Track peak power and timestamp
         let mut peak_heating_power_kw: f64 = 0.0;
