@@ -1,7 +1,7 @@
 # Issue #4196: Two-Hour Setback Ramp — Specified-Boundary Deviation for Cases 640 and 940
 
-**Status:** Documented Deviation  
-**Date:** 2026-09-28  
+**Status:** Deviation REMOVED (round 16, 2026-10-12 — see §8; pending Alex's final keep/remove confirmation)  
+**Date:** 2026-09-28 (record); 2026-10-12 (removal)  
 **Severity:** Specification Conformance  
 **Affected Cases:** 640 (low-mass), 940 (high-mass)  
 **Reference:** ASHRAE 140-2023 §5.5 (Thermostat Setback)
@@ -175,3 +175,31 @@ cargo test --package fluxion-core --test schedule_conformance -- --ignored
 |------|--------|
 | 2026-09-28 | Initial documented-deviation record (Issue #4196) |
 | 2026-09-28 | 4 ramp-deviation conformance tests quarantined pending the keep/remove decision (#4226); Case 940 metric figures corrected to unmeasured |
+
+
+---
+
+## 8. Round-16 removal measurement (issue #4226, loop round 16)
+
+The 2-hour linear ramp was **removed** on `loop/r16-4226-setback-step`: `heating_setpoint_at_fractional_hour` now returns the discrete scheduled setpoint (step change at the setback-end hour, per ASHRAE 140-2023 §5.5). The four #4196 conformance tests are un-ignored and pass against the discrete reader (2 diagnostic ramp-profile prints stay ignored by design). The three call-site comment blocks in `src/validation/ashrae_140_validator/mod.rs` were updated to match.
+
+Measured old → new (Denver EPW, `simulate_case_with_diagnostics`, develop `53aa2e50` vs branch):
+
+| Case | Metric | Ramp (old) | Step (new) | Published band | Movement |
+|------|--------|-----------|-----------|----------------|----------|
+| 640 | Annual heating | 3.3926 MWh | 3.7465 MWh | [2.75, 3.80] | **RE-ENTERS band** |
+| 640 | Peak heating | 5.2712 kW | 6.3041 kW | [4.30, 5.70] | **LEAVES band high** (12.1% of mid) |
+| 640 | Annual cooling | 4.8658 MWh | 4.8691 MWh | — | ~unchanged |
+| 940 | Annual heating | 0.6323 MWh | 0.7420 MWh | — | +17% |
+| 940 | Peak heating | 2.4366 kW | 2.6258 kW | — | +7.8% |
+| 940 | Annual cooling | 1.9796 MWh | 1.9835 MWh | — | ~unchanged |
+| 600 (control) | H/C/PH/PC | 6.3588 / 4.8859 / 5.8459 / 4.4363 | byte-identical | — | untouched path |
+
+Reproduced unchanged branch-vs-develop: full strict ±15% family (17 annual + 4 free-float lines byte-identical; checker 9 PASS / 33 KNOWN-FAIL / 0 REGRESSION — the blind path does not consume the schedules, so 640/940 strict rows are the 600/900 twins both before and after), fabric multiselector (600/900/950 green vs baseline), surrogate fallback diagnostic (3,390.099745 kWh byte-identical), pytest output-validation (27 passed / 8 xfailed), `ashrae_140_blind_validation` (same single pre-existing 920-orientation failure on both tips), schedule conformance (59 passed).
+
+**Direction check:** the #4196 §4 prediction (ramp suppresses morning peak; removal raises it) is confirmed — 640 peak heating rose 5.27 → 6.30 kW and now sits ABOVE the published band, while annual heating rises into band. The movement is recorded honestly; nothing is tuned. **Keep/remove remains Alex's call**: KEEP means restoring the ramp (revert this change, re-ignore the conformance tests, re-record the validator-family movements); REMOVE (landed state) means accepting the peak-heating out-of-band as a fidelity-first recorded gap.
+
+## §9 Governance trail (round 16)
+
+- Removal landed under RULES.md as a physics change (never a band adjustment).
+- Alex approved "measure-then-decide" for #4226 in the round-16 package (2026-10-12); the measured decision table above is presented for the final verdict.

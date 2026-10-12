@@ -83,10 +83,6 @@ in #4226 — not a LIMIT-* gap, a recorded specification deviation.
 
 | Test File | Test Name | Category | Blocking Issue | Owner | Un-Ignore Criteria | Status |
 |-----------|-----------|----------|----------------|-------|-------------------|--------|
-| `fluxion-core/tests/schedule_conformance.rs` | `conformance_case_640_integer_hours` | `structural` | #4196, #4226 | `unassigned` | Ramp keep/remove decision (#4226) lands; un-ignore after the decision is recorded | `pending` |
-| `fluxion-core/tests/schedule_conformance.rs` | `conformance_case_640_sub_hour` | `structural` | #4196, #4226 | `unassigned` | Ramp keep/remove decision (#4226) lands; un-ignore after the decision is recorded | `pending` |
-| `fluxion-core/tests/schedule_conformance.rs` | `conformance_case_940_integer_hours` | `structural` | #4196, #4226 | `unassigned` | Ramp keep/remove decision (#4226) lands; un-ignore after the decision is recorded | `pending` |
-| `fluxion-core/tests/schedule_conformance.rs` | `conformance_case_940_sub_hour` | `structural` | #4196, #4226 | `unassigned` | Ramp keep/remove decision (#4226) lands; un-ignore after the decision is recorded | `pending` |
 
 ### LIMIT-05 / LIMIT-12 / LIMIT-14 / LIMIT-16 / LIMIT-17 / LIMIT-18 / LIMIT-19 / LIMIT-20
 

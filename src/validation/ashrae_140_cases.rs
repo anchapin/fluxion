@@ -2939,17 +2939,19 @@ mod tests {
     }
 
     #[test]
-    fn test_hvac_schedule_fractional_hour_ramp() {
-        // Issue #2870 (Case 940 setback recovery): the discrete hourly lookup
-        // would jump from the setback setpoint at hour 7 straight to the
-        // occupied setpoint, producing a single oversized heating spike at
-        // the wake-up hour on a high-mass building. The fractional-hour path
-        // adds a 2-hour linear morning ramp from the setback setpoint up to
-        // the occupied setpoint across `[setback_end, setback_end + 2)`.
+    fn test_hvac_schedule_fractional_hour_step() {
+        // Issue #2870 (Case 940 setback recovery) originally added a 2-hour
+        // linear morning ramp over [setback_end, setback_end + 2); removed in
+        // round 16 per the #4196/#4226 keep/remove decision — ASHRAE 140-2023
+        // §5.5 specifies a STEP change at the setback-end hour, and the ramp
+        // was a specified-boundary deviation (see
+        // docs/investigations/issue-4196-setback-ramp-deviation.md §8).
+        // The fractional-hour lookup must now match the discrete hourly
+        // lookup at every fractional hour.
         let schedule = HvacSchedule::with_setback(20.0, 27.0, 10.0, 23, 7);
 
-        // Outside the ramp window: behavior must match the discrete lookup
-        // exactly so the surrounding integer-hour wiring is unchanged.
+        // Setback window (wraparound 23→7): setback setpoint at every
+        // fractional hour strictly inside it.
         assert_eq!(
             schedule.heating_setpoint_at_fractional_hour(0.0),
             Some(10.0),
@@ -2960,10 +2962,32 @@ mod tests {
             Some(10.0),
             "last instants of setback (just before wake-up hour) still at setback"
         );
+
+        // Step change at the setback-end hour: occupied from 7.0 onward.
+        assert_eq!(
+            schedule.heating_setpoint_at_fractional_hour(7.0),
+            Some(20.0),
+            "step change: occupied setpoint from the setback-end hour"
+        );
+        assert_eq!(
+            schedule.heating_setpoint_at_fractional_hour(7.5),
+            Some(20.0),
+            "no interpolation may remain inside the former ramp window (7.5h)"
+        );
+        assert_eq!(
+            schedule.heating_setpoint_at_fractional_hour(8.0),
+            Some(20.0),
+            "hour 8 stays at the occupied setpoint (former mid-ramp)"
+        );
+        assert_eq!(
+            schedule.heating_setpoint_at_fractional_hour(8.5),
+            Some(20.0),
+            "8.5h stays at the occupied setpoint (former 3/4-ramp)"
+        );
         assert_eq!(
             schedule.heating_setpoint_at_fractional_hour(9.0),
             Some(20.0),
-            "ramp endpoint must equal occupied setpoint"
+            "occupied setpoint through the morning"
         );
         assert_eq!(
             schedule.heating_setpoint_at_fractional_hour(12.0),
@@ -2974,28 +2998,6 @@ mod tests {
             schedule.heating_setpoint_at_fractional_hour(23.0),
             Some(10.0),
             "evening setback setpoint unchanged"
-        );
-
-        // Ramp window: monotone rise from setback → occupied across the
-        // 2-hour morning window `[7, 9)`.
-        assert!(
-            (schedule.heating_setpoint_at_fractional_hour(7.0).unwrap() - 10.0).abs() < 1e-9,
-            "ramp start = setback (10°C); got {:?}",
-            schedule.heating_setpoint_at_fractional_hour(7.0)
-        );
-        let mid = schedule.heating_setpoint_at_fractional_hour(7.5).unwrap();
-        assert!(
-            (mid - 12.5).abs() < 1e-9,
-            "mid-ramp at 7.5h must be 12.5°C; got {mid}"
-        );
-        assert!(
-            (schedule.heating_setpoint_at_fractional_hour(8.0).unwrap() - 15.0).abs() < 1e-9,
-            "hour 8 halfway through ramp must be 15°C"
-        );
-        let three_quarter = schedule.heating_setpoint_at_fractional_hour(8.5).unwrap();
-        assert!(
-            (three_quarter - 17.5).abs() < 1e-9,
-            "3/4 through ramp at 8.5h must be 17.5°C; got {three_quarter}"
         );
 
         // Wraparound: negative fractional hours wrap into [0, 24) and land at

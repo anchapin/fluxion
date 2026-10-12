@@ -257,7 +257,6 @@ fn conformance_case_630_integer_hours() {
 /// include; un-ignored it fails. The failure output is preserved in
 /// docs/investigations/issue-4196-setback-ramp-deviation.md.
 #[test]
-#[ignore = "documented deviation: 2h setback ramp (issues #4196, #4226)"]
 fn conformance_case_640_integer_hours() {
     let schedule = case_640_schedule();
     let mut failures = Vec::new();
@@ -376,7 +375,6 @@ fn conformance_case_930_integer_hours() {
 /// include; un-ignored it fails. The failure output is preserved in
 /// docs/investigations/issue-4196-setback-ramp-deviation.md.
 #[test]
-#[ignore = "documented deviation: 2h setback ramp (issues #4196, #4226)"]
 fn conformance_case_940_integer_hours() {
     let schedule = case_940_schedule();
     let mut failures = Vec::new();
@@ -444,7 +442,6 @@ fn conformance_case_600_sub_hour() {
 /// Case 640 applies a 2-hour linear ramp from 10°C to 20°C between 07:00 and
 /// 09:00; un-ignored it fails against the discrete reader.
 #[test]
-#[ignore = "documented deviation: 2h setback ramp (issues #4196, #4226)"]
 fn conformance_case_640_sub_hour() {
     let schedule = case_640_schedule();
     let mut failures = Vec::new();
@@ -490,7 +487,6 @@ fn conformance_case_900_sub_hour() {
 /// Case 940 applies a 2-hour linear ramp from 10°C to 20°C between 07:00 and
 /// 09:00; un-ignored it fails against the discrete reader.
 #[test]
-#[ignore = "documented deviation: 2h setback ramp (issues #4196, #4226)"]
 fn conformance_case_940_sub_hour() {
     let schedule = case_940_schedule();
     let mut failures = Vec::new();
