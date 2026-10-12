@@ -218,6 +218,7 @@
    "gap_pct_of_mid": 58.08,
    "status": "known_fail"
   },
+  "_doc_limit23b": "UPDATE 2026-10-12 (loop round 20, docs/investigations/limit-23b-case-970-provenance-and-envelope.md): provenance correction only, no values touched. The Case 970 published_range_mwh band has no published ASHRAE 140 source: Case 970 does not exist in the in-repo ASHRAE 140-2017(a) PDF (docs/140_2017_a_20200901.pdf) nor in the authoritative ASHRAE 140-2023 Annex B8 Section B8.1 transcription (data/reference/ashrae140/annex_b8_section7_statistics.json; case list ...950, 960, 980, 985). The band entered at Issue #1446 as if published and is an internal target of unverified origin. Recorded value_mwh/gap_pct_of_mid/status are retained unchanged; known_fail therefore means distance from that internal target, not ASHRAE non-conformance. Reproduction on 7e321a22: H 4.616 / C 2.341 MWh, matching the recorded values.",
   "case_610_heating": {
    "published_range_mwh": [
     4.36,
