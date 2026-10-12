@@ -36,7 +36,14 @@ runs:
       uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9  # latest
       with:
         packages: ${{ inputs.packages }}
-        version: 1.0
+        # version bumped 1.0 -> 2.0 (round 14 loose end, 4fd57f64 follow-up):
+        # apt-get update (above, #4342) refreshes lists, but a cache entry
+        # created while the mirror 404'd on the point-release .deb was
+        # restored with CACHE_HIT: true and silently skipped the install of
+        # libfontconfig1-dev — the #4341 verify step then failed on all four
+        # performance_dashboard jobs. Bumping this input changes the cache
+        # key, forcing one fresh install through the refreshed mirror.
+        version: 2.0
         retry: 3
         retry_wait_seconds: 10
         update: ${{ inputs.update == 'true' }}
