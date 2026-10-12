@@ -344,10 +344,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // identity from the same wind-dependent aggregated values this
         // step used (the checker's legacy roof-style reconstruction
         // predates #4113/#4166 and no longer matches the integrator).
-        self.0.conduction.applied_5r1c_boundary = Some((
-            scratch.h_tr_em_zone.to_vec(),
-            scratch.t_sol_air_zone.to_vec(),
-        ));
+        // Issue #4373 follow-up (loop round 15): reuse the two buffers
+        // instead of reallocating a fresh `Some((Vec, Vec))` every step. The
+        // `to_vec()` pair put 2+ heap allocations per timestep back into the
+        // BatchOracle hot loop and blew the dhat allocation-COUNT budget
+        // (26,317 blocks/config vs the 60/config budget, CI run 38195944789).
+        // `extend_from_slice` into the persisted buffers allocates only on
+        // the first step; readers see the same applied values.
+        let applied = self
+            .0
+            .conduction
+            .applied_5r1c_boundary
+            .get_or_insert_with(|| (Vec::new(), Vec::new()));
+        applied.0.clear();
+        applied.0.extend_from_slice(&scratch.h_tr_em_zone);
+        applied.1.clear();
+        applied.1.extend_from_slice(&scratch.t_sol_air_zone);
         // Issue #2873: `scratch.t_sol_air_zone` is intentionally NOT
         // `mem::take`'n here. The downstream sites (`h_tr_em *
         // (t_sol_air - T_mass)` at lines 614/663, the LW block at line 774,
