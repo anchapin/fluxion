@@ -5,7 +5,7 @@
 
 // Re-export pure solar functions and types — these have ZERO sim:: dependencies
 pub use crate::solar::solar_position::{
-    calculate_day_of_year, calculate_solar_position, SolarPosition,
+    calculate_day_of_year, calculate_solar_position, derive_solar_step_date, SolarPosition,
 };
 pub use crate::solar::surface_irradiance::{orientation_to_angles, SurfaceIrradiance};
 

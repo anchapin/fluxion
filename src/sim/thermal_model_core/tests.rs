@@ -632,6 +632,26 @@ mod tests {
         assert!(model.0.solar.sun_pos_cache.contains_key(&(5, 23)));
     }
 
+    /// Round 19 (#4384 follow-up): the single-source solar-date helper and
+    /// `timestep_to_date` must agree everywhere. The 9R4C integrator sites
+    /// and the InvariantChecker's mirror both consume
+    /// `derive_solar_step_date`; if anyone re-introduces a divergent date
+    /// encoding on either side of the checker/integrator boundary, this is
+    /// the test that catches it.
+    #[test]
+    fn test_derive_solar_step_date_agrees_with_timestep_to_date_full_year() {
+        for t in 0..8760usize {
+            let (year, month, day, hour) =
+                ThermalModel::<crate::physics::cta::VectorField>::timestep_to_date(t);
+            assert_eq!(year, 2024);
+            let date = crate::sim::solar::derive_solar_step_date(t);
+            assert_eq!((date.month, date.day), (month, day), "t={t}");
+            // Call sites evaluate the sun at the mid-hour; timestep_to_date
+            // gives the hour start.
+            assert_eq!(date.mid_hour, hour + 0.5, "t={t}");
+        }
+    }
+
     // ===== Issue #3291 (PR2.3–PR2.5): gauge-init helpers =====
 
     fn two_layer_construction() -> Construction {

@@ -463,34 +463,19 @@ impl InvariantChecker {
         }
 
         // Replicate step_physics_9r4c's month/day/hour derivation from the
-        // hour-of-year. Issue #4384: this mirror and the integrator both
-        // previously passed a 0-based month to `calculate_solar_position`
-        // (1-based), landing one month early; the integrator's solar-position
-        // cache masked it with the correct date written by the 5R1C
-        // per-orientation path, so this stale re-derivation was the 332 W
-        // daytime fast-math-gate residual. Both sides now derive the calendar
-        // date exactly as `timestep_to_date` does (1-based month).
-        let hour_of_year = weather.hour_of_year;
-        let day_of_year = hour_of_year / 24;
-        let hour = (hour_of_year % 24) as f64 + 0.5;
-        let days_in_month: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-        let mut month: u32 = 1;
-        let mut day: u32 = day_of_year as u32 + 1;
-        for &dim in days_in_month.iter() {
-            if day <= dim {
-                break;
-            }
-            day -= dim;
-            month += 1;
-        }
+        // hour-of-year. Round-19 dedup: this mirror consumes the same
+        // single-source `derive_solar_step_date` helper as the integrator
+        // sites (the #4385 `timestep_to_date` encoding, 1-based month,
+        // mid-hour sun), so the #4384 desync class cannot recur.
+        let date = crate::sim::solar::derive_solar_step_date(weather.hour_of_year);
 
         let sun_pos = calculate_solar_position(
             model.solar.latitude_deg,
             model.solar.longitude_deg,
             2024,
-            month,
-            day,
-            hour,
+            date.month,
+            date.day,
+            date.mid_hour,
             None,
         );
 
@@ -502,7 +487,9 @@ impl InvariantChecker {
             Some(weather.ghi),
             Orientation::South,
             ground_reflectance,
-            day_of_year + 1,
+            // Irradiance uses the 1-based day of year, independent of the
+            // solar-position date (pre-existing convention).
+            weather.hour_of_year / 24 + 1,
         );
 
         let sol_air = SolAirTemperature::ashrae_140_default();

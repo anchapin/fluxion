@@ -29,7 +29,10 @@ pub mod surface_irradiance;
 // optional dependency, so the re-export only exists with `--features grid`.
 #[cfg(feature = "grid")]
 pub use fluxion_grid::{PvPanel, PvSystem, SimpleInverter};
-pub use solar_position::{calculate_day_of_year, calculate_solar_position, SolarPosition};
+pub use solar_position::{
+    calculate_day_of_year, calculate_solar_position, derive_solar_step_date, SolarPosition,
+    SolarStepDate,
+};
 pub use surface_irradiance::{
     calculate_surface_irradiance, extraterrestrial_irradiance, orientation_to_angles,
     relative_airmass, PerezSkyModel, SurfaceIrradiance,
