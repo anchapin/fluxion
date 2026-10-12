@@ -396,6 +396,11 @@ fn validate_endpoint_host_allowlisted(endpoint: &str) -> Result<(), EmailError> 
     }
     // Issue #3741 — allow-list unset / empty / misconfigured: release
     // refuses, debug warns.
+    // Clippy 1.98 `question_mark` suggests `...?` here, but that would change
+    // debug-build behavior (debug warns and continues; only release returns
+    // the error from inside the cfg'd block) — allowed deliberately.
+    // (Round 16, 2026-10-12: pre-existing lint fix so Clippy (GH) is green.)
+    #[allow(clippy::question_mark)]
     if let Err(err) = endpoint_allowlist_release_decision(
         Some(endpoint),
         allowlist_raw.as_deref(),

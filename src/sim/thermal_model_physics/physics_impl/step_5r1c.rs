@@ -266,7 +266,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let exterior_emissivity_ref = self.0.conduction.exterior_emissivity.as_ref();
         let num_zones = self.0.hvac.num_zones;
         // Reused per-zone surface buffer (avoids per-timestep allocation).
-        let mut boundary_surfaces: Vec<ExteriorBoundarySurface> = Vec::new();
+        // Round 16 (issue #2687/#2709 dhat ratchet): the buffer now lives in
+        // the pooled scratch (`boundary_surfaces` field) instead of a fresh
+        // `Vec::new()` per call — the fresh Vec re-grew from capacity 0 every
+        // timestep, one heap allocation per step per config. `fill_zero`
+        // clears it on checkout so the semantics (empty at loop start) are
+        // unchanged; the capacity persists across steps.
+        let boundary_surfaces = &mut scratch.boundary_surfaces;
         for i in 0..num_zones {
             // opaque_solar is the effective opaque irradiance on exterior surfaces (W/m²)
             // This is the combined wall + roof irradiance for the zone
@@ -335,7 +341,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 }
             }
             let (h_tr_em, t_sol_air_i) =
-                aggregate_zone_boundary(&boundary_surfaces, outdoor_temp, sky_temp);
+                aggregate_zone_boundary(boundary_surfaces, outdoor_temp, sky_temp);
             scratch.t_sol_air_zone[i] = t_sol_air_i;
             scratch.h_tr_em_zone[i] = h_tr_em;
         }
