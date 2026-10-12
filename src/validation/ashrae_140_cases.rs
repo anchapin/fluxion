@@ -860,6 +860,28 @@ impl CommonWall {
     }
 }
 
+/// Zone plan origin (meters) for perimeter-adjacency derivation.
+///
+/// Round 21 (§LIMIT-23b): multi-zone cases whose zones are laid out on a
+/// shared plan (origin + width/depth per zone) can declare these origins so
+/// the engine derives which facades lie on the building perimeter. Without
+/// origins every zone keeps the legacy behaviour (all six surfaces treated
+/// as outdoor-exposed), so existing specs parse and simulate unchanged.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct ZoneOrigin {
+    /// West-edge x coordinate (meters)
+    pub x: f64,
+    /// South-edge y coordinate (meters, y grows northward)
+    pub y: f64,
+}
+
+impl ZoneOrigin {
+    /// Creates a zone plan origin.
+    pub fn new(x: f64, y: f64) -> Self {
+        ZoneOrigin { x, y }
+    }
+}
+
 /// Complete case specification for an ASHRAE 140 test case.
 ///
 /// This struct contains all the information needed to configure a ThermalModel
@@ -911,6 +933,13 @@ pub struct CaseSpec {
 
     /// Number of zones (1 for most cases, 2 for Case 960 sunspace)
     pub num_zones: usize,
+
+    /// Optional per-zone plan origins (meters), indexed by zone.
+    /// When present, the engine derives perimeter-only exterior facade areas
+    /// from zone adjacency (§LIMIT-23b, round 21) instead of treating every
+    /// zone's walls as outdoor-exposed. `None` keeps the legacy behaviour.
+    #[serde(default)]
+    pub zone_origins: Option<Vec<ZoneOrigin>>,
 
     /// Weather data for solar gain calculation (Issue #278)
     /// Hourly weather data (temperature, DNI, DHI, GHI, wind, humidity)
@@ -1046,6 +1075,94 @@ impl CaseSpec {
     /// Returns the total window area across all orientations and zones.
     pub fn total_window_area(&self) -> f64 {
         self.windows.iter().flatten().map(|w| w.area).sum()
+    }
+
+    /// Per-zone exterior facade areas `[South, West, North, East]` in m²,
+    /// derived from zone plan origins and adjacency (round 21, §LIMIT-23b).
+    ///
+    /// Returns `None` when `zone_origins` is absent (legacy behaviour: every
+    /// zone wall treated as outdoor-exposed) or malformed. A facade is
+    /// exterior where no adjacent zone covers it: the covered length of a
+    /// face is the sum of the overlaps of neighbouring zones that share the
+    /// face plane, so partially covered faces keep their exposed remainder.
+    pub fn exterior_wall_areas_by_zone(&self) -> Option<Vec<[f64; 4]>> {
+        const ADJACENCY_EPS: f64 = 1e-6;
+        let origins = self.zone_origins.as_ref()?;
+        if origins.len() < self.num_zones || self.geometry.len() < self.num_zones {
+            return None;
+        }
+        let extent = |i: usize, vertical: bool| -> (f64, f64) {
+            let g = &self.geometry[i];
+            let o = &origins[i];
+            if vertical {
+                (o.x, o.x + g.width)
+            } else {
+                (o.y, o.y + g.depth)
+            }
+        };
+        let mut out = Vec::with_capacity(self.num_zones);
+        for i in 0..self.num_zones {
+            let covered_len =
+                |span_along_x: bool, span: (f64, f64), touches: &dyn Fn(usize) -> bool| -> f64 {
+                    let mut covered = 0.0;
+                    for j in 0..self.num_zones {
+                        if j == i || !touches(j) {
+                            continue;
+                        }
+                        let (t0, t1) = extent(j, span_along_x);
+                        let overlap = (span.1.min(t1) - span.0.max(t0)).max(0.0);
+                        covered += overlap;
+                    }
+                    covered
+                };
+            let g = &self.geometry[i];
+            let o = &origins[i];
+            let (x0, x1) = (o.x, o.x + g.width);
+            let (y0, y1) = (o.y, o.y + g.depth);
+            // South face: plane y = y0; a neighbour covers it when the
+            // neighbour's north edge (y + depth) coincides with y0.
+            let s_covered = covered_len(true, (x0, x1), &|j| {
+                (origins[j].y + self.geometry[j].depth - y0).abs() < ADJACENCY_EPS
+            });
+            // West face: plane x = x0; neighbour's east edge coincides.
+            let w_covered = covered_len(false, (y0, y1), &|j| {
+                (origins[j].x + self.geometry[j].width - x0).abs() < ADJACENCY_EPS
+            });
+            // North face: plane y = y1; neighbour's south edge coincides.
+            let n_covered = covered_len(true, (x0, x1), &|j| {
+                (origins[j].y - y1).abs() < ADJACENCY_EPS
+            });
+            // East face: plane x = x1; neighbour's west edge coincides.
+            let e_covered = covered_len(false, (y0, y1), &|j| {
+                (origins[j].x - x1).abs() < ADJACENCY_EPS
+            });
+            out.push([
+                ((x1 - x0) - s_covered).max(0.0) * g.height,
+                ((y1 - y0) - w_covered).max(0.0) * g.height,
+                ((x1 - x0) - n_covered).max(0.0) * g.height,
+                ((y1 - y0) - e_covered).max(0.0) * g.height,
+            ]);
+        }
+        Some(out)
+    }
+
+    /// Per-zone share of interior partition wall area in m², derived from
+    /// `common_walls` (round 21, §LIMIT-23b): each partition's area is split
+    /// evenly between the two zones it separates, so per-zone fabric mass is
+    /// not double-counted. Returns `None` when `zone_origins` is absent.
+    pub fn partition_wall_area_by_zone(&self) -> Option<Vec<f64>> {
+        self.zone_origins.as_ref()?;
+        let mut out = vec![0.0; self.num_zones];
+        for wall in &self.common_walls {
+            let half = wall.area / 2.0;
+            if wall.zone_a < self.num_zones {
+                out[wall.zone_a] += half;
+            }
+            if wall.zone_b < self.num_zones {
+                out[wall.zone_b] += half;
+            }
+        }
+        Some(out)
     }
 
     /// Returns window area for a specific orientation in the first zone.
@@ -1231,6 +1348,7 @@ pub struct CaseBuilder {
     hvac: Vec<HvacSchedule>,
     night_ventilation: Option<NightVentilation>,
     common_walls: Vec<CommonWall>,
+    zone_origins: Option<Vec<ZoneOrigin>>,
     infiltration_ach: f64,
     opaque_absorptance: f64,
     num_zones: usize,
@@ -1277,6 +1395,7 @@ impl CaseBuilder {
             hvac: Vec::new(),
             night_ventilation: None,
             common_walls: Vec::new(),
+            zone_origins: None,
             infiltration_ach: 0.5,
             opaque_absorptance: 0.6,
             num_zones: 1,
@@ -1365,6 +1484,14 @@ impl CaseBuilder {
     ) -> Self {
         self.common_walls
             .push(CommonWall::new(zone_a, zone_b, area, construction));
+        self
+    }
+
+    /// Sets the per-zone plan origins (meters) for perimeter-adjacency
+    /// derivation (§LIMIT-23b, round 21). The vector must have one entry per
+    /// zone; see [`CaseSpec::zone_origins`].
+    pub fn with_zone_origins(mut self, origins: Vec<ZoneOrigin>) -> Self {
+        self.zone_origins = Some(origins);
         self
     }
 
@@ -1672,6 +1799,7 @@ impl CaseBuilder {
             infiltration_ach: self.infiltration_ach,
             opaque_absorptance: self.opaque_absorptance,
             num_zones: self.num_zones,
+            zone_origins: self.zone_origins.clone(),
             weather_data: None, // Will be loaded separately for solar calculations
             door_height: self.door_height,
             door_area: self.door_area,
@@ -2830,6 +2958,83 @@ impl CaseBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Round 21 (§LIMIT-23b): Case 970's perimeter envelope derived from
+    /// zone adjacency must be 75.6 m² of wall (perimeter 28 m × 2.7 m),
+    /// not the legacy 164.7 m² every-partition-exterior total.
+    #[test]
+    fn test_case_970_perimeter_from_adjacency() {
+        let spec = ASHRAE140Case::Case970.spec();
+        let faces = spec
+            .exterior_wall_areas_by_zone()
+            .expect("Case 970 carries zone origins");
+        assert_eq!(faces.len(), 5);
+        // Face order [S, W, N, E]; wall height 2.7 m.
+        // Zone 0 (west core): S and N exterior (4 m each); W exterior
+        // (6 m); E fully covered by the east strip.
+        assert!((faces[0][0] - 4.0 * 2.7).abs() < 1e-9); // S
+        assert!((faces[0][1] - 6.0 * 2.7).abs() < 1e-9); // W
+        assert!((faces[0][2] - 4.0 * 2.7).abs() < 1e-9); // N
+        assert!(faces[0][3].abs() < 1e-9); // E interior
+                                           // East-strip zones: E facade exterior (1.5 m each); exactly one of
+                                           // them (zone 4) is exterior to the south, one (zone 1) to the north.
+        for z in 1..5 {
+            assert!((faces[z][3] - 1.5 * 2.7).abs() < 1e-9); // E
+            assert!(faces[z][1].abs() < 1e-9); // W interior (core)
+        }
+        assert!((faces[1][2] - 4.0 * 2.7).abs() < 1e-9); // zone 1 N
+        assert!(faces[1][0].abs() < 1e-9); // zone 1 S interior
+        assert!(faces[2][0].abs() < 1e-9 && faces[2][2].abs() < 1e-9);
+        assert!(faces[3][0].abs() < 1e-9 && faces[3][2].abs() < 1e-9);
+        assert!((faces[4][0] - 4.0 * 2.7).abs() < 1e-9); // zone 4 S
+        assert!(faces[4][2].abs() < 1e-9);
+        let total: f64 = faces.iter().flat_map(|f| f.iter()).sum();
+        assert!((total - 75.6).abs() < 1e-9, "total exterior wall {total}");
+        // Partition split: 7 common walls, half to each side.
+        let parts = spec.partition_wall_area_by_zone().unwrap();
+        let wall0 = parts[0];
+        assert!((wall0 - 4.0 * 4.05 / 2.0).abs() < 1e-9); // 4 walls to strip
+        assert!((parts[1] - (4.05 + 10.8) / 2.0).abs() < 1e-9);
+        let part_total: f64 = parts.iter().sum();
+        let common_total: f64 = spec.common_walls.iter().map(|w| w.area).sum();
+        assert!((part_total - common_total).abs() < 1e-9);
+    }
+
+    /// Round 21 (§LIMIT-23b): Case 960 sunspace — the sunspace's north wall
+    /// is the shared partition; only the back-zone and sunspace perimeter
+    /// facades are outdoor-exposed.
+    #[test]
+    fn test_case_960_perimeter_from_adjacency() {
+        let spec = ASHRAE140Case::Case960.spec();
+        let faces = spec
+            .exterior_wall_areas_by_zone()
+            .expect("Case 960 carries zone origins");
+        // Back-zone (y 2-8): S is the shared partition (interior);
+        // N, W, E exterior.
+        assert!((faces[0][0]).abs() < 1e-9);
+        assert!((faces[0][1] - 6.0 * 2.7).abs() < 1e-9);
+        assert!((faces[0][2] - 8.0 * 2.7).abs() < 1e-9);
+        assert!((faces[0][3] - 6.0 * 2.7).abs() < 1e-9);
+        // Sunspace (y 0-2): S exterior (8 m), N interior (shared
+        // partition), E/W exterior (2 m each).
+        assert!((faces[1][0] - 8.0 * 2.7).abs() < 1e-9);
+        assert!(faces[1][2].abs() < 1e-9);
+        assert!((faces[1][1] - 2.0 * 2.7).abs() < 1e-9);
+        assert!((faces[1][3] - 2.0 * 2.7).abs() < 1e-9);
+        let total: f64 = faces.iter().flat_map(|f| f.iter()).sum();
+        // Building perimeter 2*(8+8) m × 2.7 m = 86.4 m².
+        assert!((total - 86.4).abs() < 1e-9, "total exterior wall {total}");
+    }
+
+    /// Specs without zone origins keep the legacy behaviour: the adjacency
+    /// helpers return `None` and every zone wall stays outdoor-exposed.
+    #[test]
+    fn test_no_origins_keeps_legacy_behaviour() {
+        let spec = ASHRAE140Case::Case900.spec();
+        assert!(spec.zone_origins.is_none());
+        assert!(spec.exterior_wall_areas_by_zone().is_none());
+        assert!(spec.partition_wall_area_by_zone().is_none());
+    }
 
     #[test]
     fn test_ashrae_case_enum() {

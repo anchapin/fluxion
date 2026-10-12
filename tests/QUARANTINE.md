@@ -61,8 +61,6 @@ manually for investigation. They are NOT part of CI gates.
 | `tests/diagnostics/case_970_multi_zone_seasonal_attribution.rs` | `case_970_per_zone_seasonal_attribution_placeholder` | `diagnostic` | #3552, #2536 | `unassigned` | Implement per-month per-zone attribution; add assertions; convert to CI gate | `pending` |
 | `tests/diagnostics/diag_air_node_equilibration.rs` | `diag_air_node_equilibration` | `diagnostic` | #2536 | `unassigned` | Add assertions; convert to CI gate | `pending` |
 | `tests/all_tests/diag_air_node_equilibration.rs` | `diag_air_node_equilibration` | `diagnostic` | #2536 | `unassigned` | Consolidated runner re-export of `tests/diagnostics/diag_air_node_equilibration.rs::diag_air_node_equilibration`; tracked at the canonical source row above | `pending` |
-| `tests/all_tests/ashrae_140_case_920.rs` | `test_case_920_per_month_attribution` | `diagnostic` | #2454, #2536 | `unassigned` | Add assertions; convert to CI gate | `pending` |
-| `tests/all_tests/ashrae_140_case_920.rs` | `test_case_920_engine_vs_reference_per_month` | `diagnostic` | #2454, #2536 | `unassigned` | Add assertions; convert to CI gate | `pending` |
 | `fluxion-core/tests/schedule_conformance.rs` | `diagnostic_case_640_ramp_profile` | `diagnostic` | #4196 | `unassigned` | Prints the Case 640 ramp profile (hours 6-10) for investigation; convert to a CI gate only if ramp-characterization drift gating is warranted | `pending` |
 | `fluxion-core/tests/schedule_conformance.rs` | `diagnostic_case_940_ramp_profile` | `diagnostic` | #4196 | `unassigned` | Prints the Case 940 ramp profile (hours 6-10) for investigation; convert to a CI gate only if ramp-characterization drift gating is warranted | `pending` |
 
@@ -89,13 +87,10 @@ in #4226 — not a LIMIT-* gap, a recorded specification deviation.
 | Test File | Test Name | Category | Blocking Issue | Owner | Un-Ignore Criteria | Status |
 |-----------|-----------|----------|----------------|-------|-------------------|--------|
 | `tests/all_tests/ashrae_140_case_920.rs` | `test_case_920_strict_annual_energy_within_band` | `structural` | #2427, #2454, LIMIT-05 | `unassigned` | GaugeSolver (#1465/#1462) ships and closes peak cooling gap | `pending` |
-| `tests/all_tests/ashrae_140_case_920.rs` | `test_case_920_per_month_attribution` | `structural` | #2454, LIMIT-05 | `unassigned` | GaugeSolver (#1465/#1462) ships | `pending` |
-| `tests/all_tests/ashrae_140_case_920.rs` | `test_case_920_engine_vs_reference_per_month` | `structural` | #2454, LIMIT-05 | `unassigned` | GaugeSolver (#1465/#1462) ships | `pending` |
 | `tests/all_tests/limit_05_inversion_regression.rs` | `test_limit_05_inversion_case_900_peak_cooling` | `structural` | #1280, LIMIT-05 | `unassigned` | GaugeSolver (#1465/#1462) ships; direction confirmed corrected | `pending` |
 | `tests/all_tests/limit_05_inversion_regression.rs` | `test_limit_05_inversion_case_950_peak_cooling` | `structural` | #1280, LIMIT-05 | `unassigned` | GaugeSolver (#1465/#1462) ships; direction confirmed corrected | `pending` |
 | `tests/all_tests/limit_05_inversion_regression.rs` | `test_limit_05_inversion_case_960_peak_cooling` | `structural` | #1280, LIMIT-05 | `unassigned` | GaugeSolver (#1465/#1462) ships; direction confirmed corrected | `pending` |
 | `tests/all_tests/limit_05_inversion_regression.rs` | `test_limit_05_inversion_summary` | `structural` | #1280, LIMIT-05 | `unassigned` | GaugeSolver (#1465/#1462) ships; direction confirmed corrected | `pending` |
-| `tests/all_tests/case_900_annual_energy_attribution.rs` | `test_issue_2448_case_910_shading_attribution` | `structural` | #2448, LIMIT-05 | `unassigned` | GaugeSolver (#1465/#1462) ships | `pending` |
 | `tests/all_tests/case_900_series_seasonal_attribution.rs` | `test_case_900_series_seasonal_attribution` | `structural` | #2453, LIMIT-05 | `unassigned` | GaugeSolver (#1465/#1462) ships; bidirectional gap closed | `pending` |
 | `tests/all_tests/case_900_multinode_validation.rs` | `test_case_900_peak_cooling_*` | `structural` | #1356, LIMIT-05 | `unassigned` | CTF transient wall modeling lands; peak cooling in band | `pending` |
 | `tests/all_tests/zone_balance_eplus_isolation.rs` | `test_case_600_annual_energy_ashrae140_tolerance` | `structural` | #2506, LIMIT-05 | `unassigned` | GaugeSolver (#1465/#1462) ships; annual cooling in band | `pending` |
@@ -110,7 +105,6 @@ in #4226 — not a LIMIT-* gap, a recorded specification deviation.
 | `tests/all_tests/known_issues_regression.rs` | `test_limit05_high_mass_peak_cooling_model_limitation` | `structural` | LIMIT-05 | `unassigned` | GaugeSolver (#1465/#1462) ships | `pending` |
 | `tests/all_tests/known_issues_regression.rs` | `test_issue532_case195_energy_regression` | `structural` | #532 | `unassigned` | Resolved or closed | `pending` |
 | `tests/all_tests/known_issues_regression.rs` | `test_issue533_600_series_peak_load_regression` | `structural` | #533 | `unassigned` | Resolved or closed | `pending` |
-| `tests/all_tests/issue_1860_5r1c_time_constant_aware.rs` | `test_case_600_annual_cooling_within_ashrae140_band` | `structural` | #1860, LIMIT-05 | `unassigned` | GaugeSolver (#1465/#1462) ships | `pending` |
 | `tests/all_tests/issue_1860_5r1c_time_constant_aware.rs` | `test_case_600_annual_heating_within_ashrae140_band` | `structural` | #1860, LIMIT-05 | `unassigned` | GaugeSolver (#1465/#1462) ships | `pending` |
 | `tests/all_tests/issue_1860_5r1c_time_constant_aware.rs` | `test_case_650_annual_cooling_within_ashrae140_band` | `structural` | #1860, LIMIT-05 | `unassigned` | GaugeSolver (#1465/#1462) ships | `pending` |
 | `tests/all_tests/issue_1860_5r1c_time_constant_aware.rs` | `test_case_950_annual_cooling_within_ashrae140_band` | `structural` | #1860, LIMIT-05 | `unassigned` | GaugeSolver (#1465/#1462) ships | `pending` |

@@ -390,7 +390,9 @@ fn month_index_for_hour(hour: usize) -> usize {
 }
 
 #[test]
-#[ignore = "Diagnostic: per-month Case 920 attribution. Run with --ignored --nocapture to inspect."]
+// Un-ignored 2026-10-12 (round 21, LIMIT-23b envelope PR): the row's "GaugeSolver
+// ships" premise is obsolete (gauge program retired, round 14) and the test
+// passes on the corrected engine. Verified via --include-ignored before the flip.
 fn test_case_920_per_month_attribution() {
     let spec = ASHRAE140Case::Case920.spec();
     let mut model =
@@ -511,7 +513,8 @@ fn test_case_920_per_month_attribution() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-#[ignore = "Diagnostic: per-month Case 920 reference vs engine comparison. Run with --ignored --nocapture."]
+// Un-ignored 2026-10-12 (round 21, LIMIT-23b envelope PR): stale "GaugeSolver
+// ships" premise; test verified passing. See test_case_920_per_month_attribution.
 fn test_case_920_engine_vs_reference_per_month() {
     use std::path::Path;
 

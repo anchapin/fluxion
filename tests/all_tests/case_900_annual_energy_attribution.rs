@@ -234,7 +234,8 @@ fn annual_zone_solar_kwh(attribution: &AnnualEnergyAttribution) -> f64 {
 }
 
 #[test]
-#[ignore = "Diagnostic: #2448 strict cooling bands require GaugeSolver #1465/#1462"]
+// Un-ignored 2026-10-12 (round 21, LIMIT-23b envelope PR): stale "GaugeSolver
+// #1465/#1462" premise (gauge program retired, round 14); test verified passing.
 fn test_issue_2448_case_910_shading_attribution() {
     let (case_900, model_900) = simulate_case(&ASHRAE140Case::Case900);
     let (case_910, model_910) = simulate_case(&ASHRAE140Case::Case910);

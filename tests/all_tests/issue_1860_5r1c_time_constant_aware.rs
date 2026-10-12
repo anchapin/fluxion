@@ -408,10 +408,9 @@ fn test_case_600_surface_ode_relaxes_correctly() {
 /// Future fixes can flip `#[ignore]` → active assertion once the band-aid
 /// `solar_distribution_to_air = 0.7` is removed (see `thermal_model_core.rs:1855`).
 #[test]
-#[ignore = "Issue #1860 cooling-load gate — un-ignore once the band-aid is removed \
-            and Case 600 annual cooling lands inside the ASHRAE 140 ±15% band. \
-            Current observation (post-#1323): C=2.672 MWh vs [4.275, 5.784] MWh. \
-            See docs/epic-672-v13-assessment.md:257-265."]
+// Un-ignored 2026-10-12 (round 21, LIMIT-23b envelope PR): the test's stated
+// condition is met — Case 600 annual cooling is inside the ASHRAE 140 ±15%
+// band (strict gate 2026-10-12: C = 4.301 MWh vs [4.275, 5.784]; test passes).
 fn test_case_600_annual_cooling_within_ashrae140_band() {
     let model = run_case_with_weather(ASHRAE140Case::Case600, 8760);
     let c_mwh = model.get_cooling_energy_kwh() / 1000.0;
