@@ -845,4 +845,64 @@ mod tests {
             );
         }
     }
+
+    /// Issue #4167 acceptance: the report path (`simulate_case`, behind
+    /// `run_ashrae_validation` / docs/ASHRAE140_RESULTS.md) and the diagnostic
+    /// path (`simulate_case_with_diagnostics`, behind
+    /// `fluxion validate --diagnostics`) must simulate the SAME building. For
+    /// the schedule-carrying cases (640/940 setback, 950/960 night
+    /// ventilation / sunspace) the two paths must return byte-identical
+    /// annual heating/cooling energy and peak powers.
+    ///
+    /// Before #4167 the diagnostic path assigned the raw scalar setpoints
+    /// (no schedule) and Case 950 also kept the wrong #2363 warmup, so 640/940
+    /// measured byte-identical to 600/900 here — the failure this test fences.
+    #[test]
+    fn issue_4167_report_and_diagnostic_paths_parity() {
+        let weather = EpwWeatherSource::from_file(
+            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        )
+        .expect("Denver EPW weather file must be present for validator tests");
+        let validator = ASHRAE140Validator::new();
+
+        for case in [
+            ASHRAE140Case::Case640,
+            ASHRAE140Case::Case940,
+            ASHRAE140Case::Case950,
+            ASHRAE140Case::Case960,
+        ] {
+            let spec = case.spec();
+            let case_id = case.number();
+
+            let report = validator.simulate_case(&spec, &weather);
+            let (diagnostic, _) =
+                validator.simulate_case_with_diagnostics(&spec, &weather, &case_id);
+
+            assert_eq!(
+                report.annual_heating_mwh, diagnostic.annual_heating_mwh,
+                "case {case_id}: annual heating diverges between the report \
+                 and diagnostic paths ({:?} vs {:?} MWh) — the two entry \
+                 points are simulating different buildings (Issue #4167)",
+                report.annual_heating_mwh, diagnostic.annual_heating_mwh
+            );
+            assert_eq!(
+                report.annual_cooling_mwh, diagnostic.annual_cooling_mwh,
+                "case {case_id}: annual cooling diverges between the report \
+                 and diagnostic paths ({:?} vs {:?} MWh) — Issue #4167",
+                report.annual_cooling_mwh, diagnostic.annual_cooling_mwh
+            );
+            assert_eq!(
+                report.peak_heating_kw, diagnostic.peak_heating_kw,
+                "case {case_id}: peak heating diverges between the report \
+                 and diagnostic paths ({:?} vs {:?} kW) — Issue #4167",
+                report.peak_heating_kw, diagnostic.peak_heating_kw
+            );
+            assert_eq!(
+                report.peak_cooling_kw, diagnostic.peak_cooling_kw,
+                "case {case_id}: peak cooling diverges between the report \
+                 and diagnostic paths ({:?} vs {:?} kW) — Issue #4167",
+                report.peak_cooling_kw, diagnostic.peak_cooling_kw
+            );
+        }
+    }
 }
