@@ -462,27 +462,34 @@ impl InvariantChecker {
             return fallback;
         }
 
-        // Replicate step_physics_9r4c:1978-1988 (month/day/hour derivation
-        // from the hour-of-year, ignoring leap year).
+        // Replicate step_physics_9r4c's month/day/hour derivation from the
+        // hour-of-year. Issue #4384: this mirror and the integrator both
+        // previously passed a 0-based month to `calculate_solar_position`
+        // (1-based), landing one month early; the integrator's solar-position
+        // cache masked it with the correct date written by the 5R1C
+        // per-orientation path, so this stale re-derivation was the 332 W
+        // daytime fast-math-gate residual. Both sides now derive the calendar
+        // date exactly as `timestep_to_date` does (1-based month).
         let hour_of_year = weather.hour_of_year;
-        let month_days: [usize; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
         let day_of_year = hour_of_year / 24;
         let hour = (hour_of_year % 24) as f64 + 0.5;
-        let month = month_days
-            .iter()
-            .position(|&d| d > day_of_year)
-            .unwrap_or(12)
-            .saturating_sub(1) as u32;
-        let day = (day_of_year - month_days.get(month as usize).copied().unwrap_or(0)) as u32 + 1;
+        let days_in_month: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+        let mut month: u32 = 1;
+        let mut day: u32 = day_of_year as u32 + 1;
+        for &dim in days_in_month.iter() {
+            if day <= dim {
+                break;
+            }
+            day -= dim;
+            month += 1;
+        }
 
-        // Solar position — note `day.min(28)` matches the integrator's guard
-        // against month-days indices that would otherwise exceed month length.
         let sun_pos = calculate_solar_position(
             model.solar.latitude_deg,
             model.solar.longitude_deg,
             2024,
             month,
-            day.min(28),
+            day,
             hour,
             None,
         );
