@@ -1035,6 +1035,20 @@ impl CaseSpec {
             }
         }
 
+        // Round 21 (§LIMIT-23b): a malformed zone-origins vector must not
+        // silently fall back to the every-wall-exterior legacy behaviour —
+        // the adjacency helpers return `None` on a length mismatch, so
+        // surface derivation would quietly revert. Reject it instead.
+        if let Some(origins) = &self.zone_origins {
+            if origins.len() != self.num_zones {
+                return Err(format!(
+                    "zone_origins length ({}) must match num_zones ({})",
+                    origins.len(),
+                    self.num_zones
+                ));
+            }
+        }
+
         // Check windows
         if self.windows.len() != self.num_zones {
             return Err("Windows vector length must match num_zones".to_string());
