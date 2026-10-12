@@ -143,5 +143,17 @@ ignore = [
     "RUSTSEC-2025-0080",  # unic-common (deny-scope-exempt)
     "RUSTSEC-2025-0100",  # unic-ucd-ident (deny-scope-exempt)
     "RUSTSEC-2025-0098",  # unic-ucd-version (deny-scope-exempt)
-    "RUSTSEC-2024-0429",  # glib unsound (Iterator impls for VariantStrIter) (deny-scope-exempt)
+    # RUSTSEC-2024-0449 (unsafe-libyaml is unmaintained) — surfaced 2026-10-12
+    # when the RustSec DB began flagging it; first observed failing the
+    # Cargo Audit gate on PR #4385 (loop round 17, issue #4384 fix) with no
+    # dependency changes in the diff. Depth=2 transitive: unsafe-libyaml
+    # v0.2.11 <- serde_yaml <- (config/serialization path). No security
+    # vulnerability: rustsec type is `unmaintained`, no patched versions
+    # exist. Drop this ignore once the workspace migrates off serde_yaml
+    # 0.9 (or upstream adopts the maintained `libyml` fork).
+    # deny-scope-exempt (transitive-unmaintained)
+    "RUSTSEC-2024-0449",
+    # RUSTSEC-2024-0429 (glib unsound: Iterator impls for VariantStrIter)
+    # deny-scope-exempt (transitive-unmaintained)
+    "RUSTSEC-2024-0429",
 ]
