@@ -59,9 +59,10 @@ pub(crate) struct ZoneSetpoints {
 /// for all 8760 hours in those paths — a different building from the one the
 /// report path simulated.
 ///
-/// The heating side goes through `heating_setpoint_at_fractional_hour` (the
-/// ramp-aware lookup, Issue #2870; see #4196 / #4226 for the ramp-vs-step
-/// deviation record). The cooling side reads the model's `cooling_schedule`,
+/// The heating side goes through `heating_setpoint_at_fractional_hour`
+/// (the discrete scheduled lookup; Issue #2870 added a 2-hour ramp here,
+/// removed in round 16 — see #4196 / #4226 for the deviation record and
+/// the keep/remove decision). The cooling side reads the model's `cooling_schedule`,
 /// which `from_spec` populates with the operating-hours mask.
 ///
 /// Night-ventilation overrides are deliberately NOT applied here: they are a
@@ -1791,10 +1792,10 @@ impl ASHRAE140Validator {
             // Apply dynamic setpoints based on HVAC schedule (for setback cases)
             if let Some(hvac_schedule) = spec.hvac.first() {
                 let hour = hour_of_day as u8;
-                // Issue #2870: substitute the sub-hour ramp-aware setpoint
-                // lookup so the overnight setback→occupied transition is
-                // smoothed across a 2-hour linear ramp instead of producing
-                // a single oversized heating spike at the wake-up hour.
+                // Issue #2870: substitute the scheduled setpoint lookup.
+                // (#2870's 2-hour linear ramp over the setback→occupied
+                // transition was removed in round 16 per the #4226 decision —
+                // ASHRAE 140 §5.5 specifies a step change; see #4196.)
                 let heating_sp = hvac_schedule
                     .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
                     .unwrap_or(hvac_schedule.heating_setpoint);
@@ -2061,10 +2062,10 @@ impl ASHRAE140Validator {
             // Apply dynamic setpoints based on HVAC schedule (for setback cases)
             if let Some(hvac_schedule) = spec.hvac.first() {
                 let hour = hour_of_day as u8;
-                // Issue #2870: substitute the sub-hour ramp-aware setpoint
-                // lookup so the overnight setback→occupied transition is
-                // smoothed across a 2-hour linear ramp instead of producing
-                // a single oversized heating spike at the wake-up hour.
+                // Issue #2870: substitute the scheduled setpoint lookup.
+                // (#2870's 2-hour linear ramp over the setback→occupied
+                // transition was removed in round 16 per the #4226 decision —
+                // ASHRAE 140 §5.5 specifies a step change; see #4196.)
                 let heating_sp = hvac_schedule
                     .heating_setpoint_at_fractional_hour(hour_of_day as f64 + 0.5)
                     .unwrap_or(hvac_schedule.heating_setpoint);

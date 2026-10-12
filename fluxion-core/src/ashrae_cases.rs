@@ -636,20 +636,13 @@ impl HvacSchedule {
 
     /// Returns the heating setpoint at a fractional hour of day in `[0.0, 24.0)`.
     ///
-    /// Implements sub-hour HVAC mode interpolation (Issue #2870 — Case 940
-    /// morning overshoot). For wraparound setback schedules (start > end, e.g.,
-    /// `23→7`) the discrete `setback → occupied` jump at the setback-end hour is
-    /// replaced with a 2-hour linear ramp from the setback setpoint up to the
-    /// occupied setpoint. Outside the ramp window the function degrades to the
-    /// discrete `heating_setpoint_at_hour` floor-hour lookup.
-    ///
-    /// The ramp applies only when:
-    ///   * the schedule has a setback window with `setback_start > setback_end`
-    ///     (wraparound overnight setback — covers ASHRAE 140 Cases 640/940),
-    ///   * `setback_end` is in `[1, 12]` so the ramp falls inside the morning
-    ///     window between wake-up time and midday occupied heating, and
-    ///   * the setback setpoint is distinct from the occupied setpoint (no ramp
-    ///     is added when the two values are equal).
+    /// Returns the discrete scheduled setpoint at the floor hour, mirroring
+    /// `heating_setpoint_at_hour`. (Issue #2870 originally added a 2-hour
+    /// linear ramp from the setback setpoint to the occupied setpoint over
+    /// wraparound morning setback ends; removed in round 16 per issue #4226 —
+    /// ASHRAE 140-2023 §5.5 specifies a step change at the setback-end hour,
+    /// and the ramp was a specified-boundary deviation recorded in
+    /// docs/investigations/issue-4196-setback-ramp-deviation.md.)
     ///
     /// `None` is returned when the schedule is disabled (free-floating), mirroring
     /// `heating_setpoint_at_hour`.
@@ -680,30 +673,6 @@ impl HvacSchedule {
         } else {
             occupied
         };
-
-        // Sub-hour ramp: linear blend between setback and occupied spanning
-        // the 2-hour window from `setback_end` to `setback_end + RAMP_HOURS`.
-        const RAMP_HOURS: f64 = 2.0;
-        let ramp_eligible =
-            sb_start > sb_end && sb_end >= 1 && sb_end <= 12 && (setback - occupied).abs() > 1e-9;
-        if ramp_eligible {
-            let ramp_start = f64::from(sb_end);
-            let ramp_end = (f64::from(sb_end) + RAMP_HOURS).min(24.0);
-            if fh >= ramp_start && fh < ramp_end {
-                let t = (fh - ramp_start) / (ramp_end - ramp_start);
-                let ramped = setback + t * (occupied - setback);
-                // Respect operating-hours gate (e.g., Case 950 disables heat entirely).
-                let (start, end) = self.operating_hours;
-                let is_operating = if start < end {
-                    h_floor >= start && h_floor < end
-                } else if start > end {
-                    h_floor >= start || h_floor < end
-                } else {
-                    true
-                };
-                return if is_operating { Some(ramped) } else { None };
-            }
-        }
 
         // Respect operating-hours gate (mirrors `heating_setpoint_at_hour`).
         let (start, end) = self.operating_hours;
