@@ -1,15 +1,15 @@
-//! Enhanced reference data loading module for ASHRAE 140 validation
+//! Reference data types for ASHRAE 140 validation
 //!
-//! This module provides CSV-based reference data loading for expanded ASHRAE 140
-//! cases (800-810 and 195-470) with caching and proper error handling.
+//! Previously this module loaded CSV fixtures from data/synthetic/ashrae140/
+//! (series_195.csv, series_800.csv). Those generated fixtures were removed —
+//! they were never engine outputs and are not usable as validation reference.
+//! The dataset types remain for compatibility; see the quarantine README in
+//! data/synthetic/ashrae140/.
 
 use crate::validation::ashrae140::ASHRAE140Case;
-use csv::Reader;
 use once_cell::sync::Lazy;
-use serde::Deserialize;
 use std::collections::HashMap;
 use std::fmt;
-use std::path::Path;
 use std::sync::Mutex;
 
 /// Error type for reference data loading operations
@@ -51,32 +51,6 @@ impl From<csv::Error> for ReferenceDataError {
     fn from(err: csv::Error) -> Self {
         ReferenceDataError::CsvError(err)
     }
-}
-
-/// Reference data row structure matching CSV format for series 800
-#[derive(Debug, Deserialize)]
-struct Series800DataRow {
-    case: u32,
-    hour: u32,
-    zone1_temp: f64,
-    zone1_heating: f64,
-    zone1_cooling: f64,
-    zone2_temp: Option<f64>,
-    zone2_heating: Option<f64>,
-    zone2_cooling: Option<f64>,
-    total_energy: f64,
-}
-
-/// Reference data row structure matching CSV format for series 195
-#[derive(Debug, Deserialize)]
-struct Series195DataRow {
-    case: u32,
-    hour: u32,
-    zone1_temp: f64,
-    zone1_heating: f64,
-    zone1_cooling: f64,
-    total_energy: f64,
-    peak_load: Option<f64>,
 }
 
 /// Reference dataset structure for storing loaded case data
@@ -165,89 +139,6 @@ pub struct HourlyDataPoint {
     pub total_energy: f64,
 }
 
-/// Load reference data for series 800 cases (HVAC equipment validation)
-pub fn load_series_800_reference(
-    case: ASHRAE140Case,
-) -> Result<ReferenceDataset, ReferenceDataError> {
-    let case_num_str = case.number();
-    let case_num: u32 = case_num_str.parse().map_err(|_| {
-        ReferenceDataError::InvalidValue(format!("Invalid case number: {}", case_num_str))
-    })?;
-    let path = Path::new("data/synthetic/ashrae140/series_800.csv");
-
-    if !path.exists() {
-        return Err(ReferenceDataError::FileNotFound(
-            path.to_string_lossy().into_owned(),
-        ));
-    }
-
-    let mut reader = Reader::from_path(path)?;
-    let mut dataset = ReferenceDataset::new(case);
-
-    for result in reader.deserialize() {
-        let record: Series800DataRow = result?;
-        if record.case == case_num {
-            dataset.add_hourly_data(
-                record.hour,
-                record.zone1_temp,
-                record.zone1_heating,
-                record.zone1_cooling,
-                record.total_energy,
-            );
-            if let Some(zone2_temp) = record.zone2_temp {
-                dataset.add_zone2_data(
-                    record.hour,
-                    zone2_temp,
-                    record.zone2_heating.unwrap_or(0.0),
-                    record.zone2_cooling.unwrap_or(0.0),
-                );
-            }
-        }
-    }
-
-    dataset.validate_completeness()?;
-    Ok(dataset)
-}
-
-/// Load reference data for series 195 cases (diagnostic validation)
-pub fn load_series_195_reference(
-    case: ASHRAE140Case,
-) -> Result<ReferenceDataset, ReferenceDataError> {
-    let case_num_str = case.number();
-    let case_num: u32 = case_num_str.parse().map_err(|_| {
-        ReferenceDataError::InvalidValue(format!("Invalid case number: {}", case_num_str))
-    })?;
-    let path = Path::new("data/synthetic/ashrae140/series_195.csv");
-
-    if !path.exists() {
-        return Err(ReferenceDataError::FileNotFound(
-            path.to_string_lossy().into_owned(),
-        ));
-    }
-
-    let mut reader = Reader::from_path(path)?;
-    let mut dataset = ReferenceDataset::new(case);
-
-    for result in reader.deserialize() {
-        let record: Series195DataRow = result?;
-        if record.case == case_num {
-            dataset.add_hourly_data(
-                record.hour,
-                record.zone1_temp,
-                record.zone1_heating,
-                record.zone1_cooling,
-                record.total_energy,
-            );
-            if let Some(peak_load) = record.peak_load {
-                dataset.set_peak_load(record.hour, peak_load);
-            }
-        }
-    }
-
-    dataset.validate_completeness()?;
-    Ok(dataset)
-}
-
 /// Cached reference data loading
 static REFERENCE_CACHE: Lazy<Mutex<HashMap<ASHRAE140Case, ReferenceDataset>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
@@ -263,42 +154,13 @@ pub fn load_reference_data(case: ASHRAE140Case) -> Result<ReferenceDataset, Refe
     }
 
     // Load from file
-    let dataset = match case {
-        ASHRAE140Case::Case800
-        | ASHRAE140Case::Case801
-        | ASHRAE140Case::Case802
-        | ASHRAE140Case::Case803
-        | ASHRAE140Case::Case804
-        | ASHRAE140Case::Case805
-        | ASHRAE140Case::Case806
-        | ASHRAE140Case::Case807
-        | ASHRAE140Case::Case808
-        | ASHRAE140Case::Case809
-        | ASHRAE140Case::Case810 => load_series_800_reference(case),
-        ASHRAE140Case::Case195
-        | ASHRAE140Case::Case195HighMass
-        | ASHRAE140Case::Case195NoLoads
-        | ASHRAE140Case::Case195NoSolar
-        | ASHRAE140Case::Case195ThermalBridge
-        | ASHRAE140Case::Case195SHGC03
-        | ASHRAE140Case::Case195SHGC06
-        | ASHRAE140Case::Case195SHGC09
-        | ASHRAE140Case::Case195Albedo01
-        | ASHRAE140Case::Case195Albedo05
-        | ASHRAE140Case::Case195Albedo09
-        | ASHRAE140Case::Case196
-        | ASHRAE140Case::Case197
-        | ASHRAE140Case::Case198
-        | ASHRAE140Case::Case200
-        | ASHRAE140Case::Case470 => load_series_195_reference(case),
-        _ => {
-            // Fallback to legacy reference loading for other cases
-            return Err(ReferenceDataError::UnsupportedCase(format!(
-                "Case {:?}",
-                case
-            )));
-        }
-    }?;
+    //
+    // The synthetic CSV fixtures (data/synthetic/ashrae140/series_*.csv) and
+    // their loaders were removed: generated fixtures, never engine outputs,
+    // not usable as validation reference. See the quarantine README there.
+    let dataset = Err::<ReferenceDataset, ReferenceDataError>(
+        ReferenceDataError::UnsupportedCase(format!("{:?}", case)),
+    )?;
 
     // Cache the result
     REFERENCE_CACHE
@@ -313,76 +175,6 @@ pub fn load_reference_data(case: ASHRAE140Case) -> Result<ReferenceDataset, Refe
 mod tests {
     use super::*;
     use crate::validation::ashrae_140_cases::ASHRAE140Case;
-
-    #[test]
-    fn test_load_series_800_reference() {
-        let case = ASHRAE140Case::Case800;
-        let result = load_series_800_reference(case);
-
-        match result {
-            Ok(dataset) => {
-                assert_eq!(dataset.case, case);
-                assert_eq!(dataset.hourly_data.len(), 8760);
-                assert!(dataset.peak_load.is_none()); // Series 800 doesn't have peak_load in CSV
-            }
-            Err(ReferenceDataError::FileNotFound(_)) => {
-                // File doesn't exist in test environment, which is expected
-                println!("Test skipped: series_800.csv not found");
-            }
-            Err(e) => panic!("Unexpected error: {}", e),
-        }
-    }
-
-    #[test]
-    fn test_load_series_195_reference() {
-        let case = ASHRAE140Case::Case195;
-        let result = load_series_195_reference(case);
-
-        match result {
-            Ok(dataset) => {
-                assert_eq!(dataset.case, case);
-                assert_eq!(dataset.hourly_data.len(), 8760);
-                assert!(dataset.peak_load.is_some()); // Series 195 has peak_load
-            }
-            Err(ReferenceDataError::FileNotFound(_)) => {
-                // File doesn't exist in test environment, which is expected
-                println!("Test skipped: series_195.csv not found");
-            }
-            Err(e) => panic!("Unexpected error: {}", e),
-        }
-    }
-
-    #[test]
-    fn test_reference_data_caching() {
-        // This test verifies that caching works by loading the same case twice
-        // and ensuring it returns the same instance
-        let case = ASHRAE140Case::Case800;
-
-        // Clear cache first
-        REFERENCE_CACHE.lock().unwrap().clear();
-
-        // First load (should hit file system or fail)
-        let first_result = load_series_800_reference(case);
-
-        // Second load (should hit cache if first succeeded)
-        let second_result = load_reference_data(case);
-
-        match (first_result, second_result) {
-            (Ok(first), Ok(second)) => {
-                assert_eq!(first.case, second.case);
-                assert_eq!(first.hourly_data.len(), second.hourly_data.len());
-            }
-            (
-                Err(ReferenceDataError::FileNotFound(_)),
-                Err(ReferenceDataError::UnsupportedCase(_)),
-            ) => {
-                // Expected in test environment without files
-                println!("Test skipped: reference files not found");
-            }
-            (Err(e1), Err(e2)) => panic!("Both loads failed: {} and {}", e1, e2),
-            _ => panic!("Inconsistent results between cached and non-cached loads"),
-        }
-    }
 
     #[test]
     fn test_dataset_completeness_validation() {
