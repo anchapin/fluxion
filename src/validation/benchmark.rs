@@ -1399,8 +1399,12 @@ mod tests {
     fn case_800_810_bands_equal_transcribed_annex_b8_envelope() {
         // (case, heating min/max, cooling min/max, peak-heat min/max, peak-cool min/max)
         let expected: [(&str, f64, f64, f64, f64, f64, f64, f64, f64); 2] = [
-            ("800", 4.906, 5.403, 0.282, 0.473, 2.778, 2.967, 0.936, 1.286),
-            ("810", 2.038, 2.610, 1.295, 1.606, 2.500, 2.845, 1.940, 2.410),
+            (
+                "800", 4.906, 5.403, 0.282, 0.473, 2.778, 2.967, 0.936, 1.286,
+            ),
+            (
+                "810", 2.038, 2.610, 1.295, 1.606, 2.500, 2.845, 1.940, 2.410,
+            ),
         ];
         let data = get_all_benchmark_data();
         for (case_id, h_min, h_max, c_min, c_max, ph_min, ph_max, pc_min, pc_max) in expected {
