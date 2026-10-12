@@ -142,6 +142,7 @@ Every active gate under `scripts/check_*.py` (55 scripts at head) is wired into 
 | `scripts/check_nextest_doc_drift.py` | Documented `cargo nextest run` commands (AGENTS.md, `docs/`) must appear in a workflow — no doc-fiction CI commands (#4177) | `scripts-tests.yml` | #6 |
 | `scripts/check_npm_pinning.py` | Deterministic npm install: exact-pinned `npm/package.json` specs, committed in-sync `npm/package-lock.json`, `npm ci` (not bare `npm install`) in `node-bindings.yml` (#4202) | `scripts-tests.yml` | #6 |
 | `scripts/check_continue_on_error_outcome.py` | Reject `continue-on-error: true` + downstream `steps.<id>.outcome` re-raise (`.outcome` is always 'success' on masked steps; use `.conclusion`) (#4159) | `scripts-tests.yml` | #6 |
+| `scripts/check_benchmark_band_provenance.py` | Scorecard-band provenance — per-metric source citations in `benchmark.rs`, byte-identical peak-tuple justification, strict-baseline `published_range_mwh` byte-equality, synthetic-provenance conflicts (#4168) | `.github/workflows/benchmark-band-provenance.yml` (path-filtered) | #6 |
 | `scripts/check_cycle_downward_trend.py` | `sim ↔ validation` coupling must *shrink* toward zero, not stay frozen (#2768) | `rust-tests.yml` | #5 |
 | `scripts/check_doc_drift.py` | Stale cycle-claim sentences inside Rust doc-comments (#2895) | `architecture_drift.yml`, pre-commit (`manual`) | #5 |
 | `scripts/check_doc_inventory_fresh.py` | `docs/doc-inventory.md` byte-equal to the generator's output (#2765) | `docs-hygiene.yml`, pre-commit (`manual`) | #6 |

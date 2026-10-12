@@ -14,7 +14,7 @@
 
 | Category | Count | Notes |
 |---|---|---|
-| CI gate checks (`scripts/check_*.py`) | 55 | One row per gate below; wiring matches AGENTS.md and `release_gates.yaml` |
+| CI gate checks (`scripts/check_*.py`) | 56 | One row per gate below; wiring matches AGENTS.md and `release_gates.yaml` |
 | Top-level Python tools (`scripts/*.py`, non-gate) | 41 | Generators, verifiers, campaign infra, shared `conftest.py` |
 | Shell scripts (`scripts/*.sh`) | 29 | 27 top-level + 2 under `scripts/ci/` |
 | `scripts/ci/` pytest harness | 55 pytest files | Plus `__init__.py`, `conftest.py`, and `ci/test_build_pgo.sh` (bash) |
@@ -25,7 +25,7 @@ Non-executable support files are listed at the end.
 
 ---
 
-## CI gate checks (`scripts/check_*.py` — 55)
+## CI gate checks (`scripts/check_*.py` — 56)
 
 Every active gate is wired into a workflow job, a pre-commit (manual) hook, or is an explicit operator diagnostic. The table matches AGENTS.md §"CI Gates You Can Run Locally"; run the matching command locally before opening a PR.
 
@@ -42,6 +42,7 @@ Every active gate is wired into a workflow job, a pre-commit (manual) hook, or i
 | `check_branch_protection_diff.py` | `develop` branch-protection diagnostic vs. `release_gates.yaml` (#3383); never applies PUTs | operator diagnostic (pair with `apply_branch_protection.py`) |
 | `check_cli_doc_stubs.py` | `fluxion` CLI stub-path fail-loud contract per issue #2947 (#3550) | docs-hygiene.yml, pre-commit (manual) |
 | `check_concurrency_keys.py` | ADR-0015 per-`head_sha` concurrency block on every workflow (#3366 / #3444) | scripts-tests.yml |
+| `check_benchmark_band_provenance.py` | Scorecard-band provenance — citations, identical-peak-tuple justification, strict-baseline byte-equality, synthetic provenance (#4168) | `.github/workflows/benchmark-band-provenance.yml` |
 | `check_cycle_downward_trend.py` | `sim ↔ validation` coupling must shrink toward zero, not stay frozen (#2768) | rust-tests.yml |
 | `check_doc_drift.py` | Stale cycle-claim sentences inside Rust doc-comments (#2895) | architecture_drift.yml, pre-commit (manual) |
 | `check_doc_inventory_fresh.py` | `docs/doc-inventory.md` byte-equal to the generator's output (#2765) | docs-hygiene.yml, pre-commit (manual) |
