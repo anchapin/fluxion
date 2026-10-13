@@ -827,13 +827,19 @@ impl ThermalModel<VectorField> {
         model.setpoints.floor_u_values = VectorField::from_slice(
             &(0..num_zones)
                 .map(|i| {
-                    zc(i).floor.u_value(
-                        Some(crate::sim::construction::SurfaceType::Floor),
-                        None,
-                    )
+                    zc(i)
+                        .floor
+                        .u_value(Some(crate::sim::construction::SurfaceType::Floor), None)
                 })
                 .collect::<Vec<f64>>(),
         );
+
+        // Spec-level floor override (e.g. Case 195's 0.039 W/m²K) wins over
+        // the construction-derived per-zone floor U, mirroring the scalar
+        // assignment below — the two paths must never disagree.
+        if let Some(override_u) = spec.floor_u_value_override {
+            model.setpoints.floor_u_values = VectorField::from_scalar(override_u, num_zones);
+        }
 
         // Floor U-value for ground coupling. A spec-provided override (e.g. the
         // ASHRAE 140 Case 195 solid-conduction test's specified 0.039 W/m²K)

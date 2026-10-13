@@ -795,9 +795,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // `zone_constructions` split; the vectors are broadcast from
                 // the legacy scalars when no per-zone construction exists, so
                 // this reads identically for every pre-existing case.
-                scratch.lw_u_floor.as_mut().copy_from_slice(self.0.setpoints.floor_u_values.as_ref());
-                scratch.lw_u_ceiling.as_mut().copy_from_slice(self.0.setpoints.roof_u_values.as_ref());
-                scratch.lw_u_wall.as_mut().copy_from_slice(self.0.setpoints.wall_u_values.as_ref());
+                scratch
+                    .lw_u_floor
+                    .as_mut()
+                    .copy_from_slice(self.0.setpoints.floor_u_values.as_ref());
+                scratch
+                    .lw_u_ceiling
+                    .as_mut()
+                    .copy_from_slice(self.0.setpoints.roof_u_values.as_ref());
+                scratch
+                    .lw_u_wall
+                    .as_mut()
+                    .copy_from_slice(self.0.setpoints.wall_u_values.as_ref());
             }
             // Issue #2890: persist the per-zone interior surface state
             // (floor, ceiling, wall) for the floor-ceiling-wall longwave
