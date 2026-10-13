@@ -13,7 +13,7 @@ use crate::sim::construction::Assemblies;
 use crate::validation::ashrae140::ASHRAE140CaseDefinition;
 use crate::validation::ashrae_140_cases::ASHRAE140Case;
 use crate::validation::ashrae_140_cases::{
-    CaseBuilder, CaseSpec, HvacSchedule, InternalLoads, Orientation, ZoneOrigin,
+    CaseBuilder, CaseSpec, ConstructionSpec, HvacSchedule, InternalLoads, Orientation, ZoneOrigin,
 };
 
 /// Thin routing shim for Case 960 (Issue #3546).
@@ -44,14 +44,39 @@ pub fn case_960_sunspace() -> CaseSpec {
         .with_description("Sunspace - 2-zone building (back-zone + sunspace)".to_string())
         // Zone 0: Back-zone (8m x 6m x 2.7m)
         .with_dimensions(8.0, 6.0, 2.7)
+        // Global (sun-zone) construction: heavyweight, exactly Case 900
+        // (§5.2.2.2.7 preamble: "the sun zone shall be of heavyweight
+        // construction" and §5.2.2.2.7.3: sun-zone properties same as Case
+        // 900). The back zone overrides this per zone below.
         .high_mass_construction()
         .with_construction(
             Assemblies::high_mass_wall_standard(),
             Assemblies::high_mass_roof(),
             Assemblies::high_mass_floor(),
         )
-        .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
-        .with_zone_window(0, 12.0, Orientation::South) // Back-zone south window
+        // Round 24 (§LIMIT-14): the back zone is LIGHTWEIGHT — "the geometric
+        // and thermal properties of the back zone shall be exactly the same as
+        // for Case 600" (§5.2.2.2.7.1a), i.e. the Case 600 low-mass
+        // assemblies. The legacy single global construction made both zones
+        // high-mass, contradicting the spec.
+        .with_zone_constructions(vec![
+            ConstructionSpec::new(
+                Assemblies::low_mass_wall(),
+                Assemblies::low_mass_roof(),
+                Assemblies::insulated_floor(),
+            ),
+            ConstructionSpec::new(
+                Assemblies::high_mass_wall_standard(),
+                Assemblies::high_mass_roof(),
+                Assemblies::high_mass_floor(),
+            ),
+        ])
+        .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6)) // back zone only; sun zone = 0 W (§5.2.2.2.7.3g)
+        // §5.2.2.2.7.1a: the back zone's south wall/windows are REPLACED by
+        // the common wall — no back-zone window. (Verified inert as-built:
+        // with zone origins the back-zone south facade is the shared
+        // partition, which carries no exterior window; round-24 E3 experiment
+        // bit-identical.)
         .with_hvac_setpoints(20.0, 27.0)
         // Zone 1: Sunspace (8m x 2m x 2.7m)
         .add_zone(8.0, 2.0, 2.7)
@@ -59,8 +84,10 @@ pub fn case_960_sunspace() -> CaseSpec {
         .with_zone_window(1, 12.0, Orientation::South) // Sun-zone south glazing: TWO 3x2 m windows = 12 m2 (140-2017 §5.2.2.2.7.3c, Fig. 5-96; round 22 §LIMIT-14)
         // Common Wall (8m x 2.7m = 21.6 m2)
         .with_common_wall(0, 1, 21.6, Assemblies::concrete_wall(0.200))
-        .with_infiltration(0.5)
-        .with_door_geometry(2.0, 1.5) // Door opening: height=2.0m, area=1.5m² (Plan 04-04)
+        .with_infiltration(0.5) // No door: §5.2.2.2.7 specifies no door anywhere in Case 960 and no
+        // inter-zonal air exchange (§5.2.2.2.7.6). (The retired
+        // with_door_geometry entry was verified inert as-built — round-24 E6
+        // experiment bit-identical.)
         .with_num_zones(2)
         // Zone plan origins (round 21, §LIMIT-23b): the 21.6 m² (8 m × 2.7 m)
         // common wall forces the sunspace south of the back-zone, which also

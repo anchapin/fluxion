@@ -1122,6 +1122,7 @@ pub fn case_spec_from_idf(idf: &IdfFile, case_id: &str) -> Result<CaseSpec, IdfE
         opaque_absorptance: 0.7,
         num_zones: 1,
         zone_origins: None,
+        zone_constructions: None,
         weather_data: None,
         door_height: None,
         door_area: None,

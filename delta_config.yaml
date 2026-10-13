@@ -106,6 +106,7 @@ base:
   opaque_absorptance: 0.6
   num_zones: 1
   zone_origins: null
+  zone_constructions: null
   weather_data: null
   door_height: null
   door_area: null
