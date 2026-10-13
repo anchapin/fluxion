@@ -113,3 +113,30 @@ Blocks preserved: 1. No wording was changed, softened or deleted.
 **COMMON_WALL_FRACTION 0.25 → 1.0.** With stable coupling the physics value is usable. Strict gate (Golden-NREL): 960 H 2.517 → 2.085 MWh, IN BAND [1.742, 2.357] (gap 7.81 → 0 pp); C 0.414 → 0.511 (gap 65.87 → 61.39 pp, cooling-chain family gap stands). 970 H 3.300 → 2.004, C 2.026 → 0.869 (both further below the internal target of unverified origin; recorded in §LIMIT-23). All 15 single-zone annual cases and 4 free-float observables bit-identical.
 
 **Superseded:** the round-22 fraction sweep (0.25/0.50/0.75 → H 2.517/2.362/2.341) is history; those values were never adopted.
+
+## Round 24 (2026-10-13): spec-construction split — back zone lightweight per §5.2.2.2.7
+
+**Interrupted-run note.** This round's first run was interrupted mid-execution by the service; state review found a coherent uncommitted diff in `/tmp/r24-wt` (the `zone_constructions` mechanism: `CaseSpec::zone_constructions`, builder `with_zone_constructions`, length validation, per-zone surface/capacitance build in `from_spec_with_selector`, serde-default `None`) plus the round-24 decomposition harness — mechanism complete, no measurements recorded, no 960 spec change, nothing pushed. The diff was adopted as-is, probes reverted, and the round continued from it.
+
+**Decomposition (harness `zz_r24`, blind 8760-step, Golden-NREL; baseline reproduced exactly: 600 6.758/4.301, 900 1.680/1.684, 960 2.085/0.511, 970 2.004/0.869 MWh H/C):**
+
+| Variant | H | C | Reading |
+|---|---|---|---|
+| E1 baseline (develop 76762935) | 2.085 | 0.511 | recorded |
+| E2 both zones low-mass | 13.577 | 0.000 | not a candidate (whole-case swap) |
+| E3 remove back-zone south window | 2.085 | 0.511 | bit-identical — the window already lands on the shared partition (round-21 zone-origin machinery), no solar aperture |
+| E5 back zone low-mass only | 2.508 | 1.037 | **the 960-specific term** |
+| E6 remove door entry | 2.085 | 0.511 | bit-identical — the door has no modeled air/conduction path since round 22 |
+| E8 E5+E3+E6 (spec-corrected) | 2.508 | 1.037 | adopted |
+
+**Spec finding.** 140-2017 §5.2.2.2.7 preamble: "The back zone shall be of lightweight construction, and the sun zone shall be of heavyweight construction"; §5.2.2.2.7.1a makes the back zone exactly Case 600 thermally. The shipped spec applied the Case 900 high-mass construction to BOTH zones. Frame/FF/900FF share nothing here — the residual was 960-specific (the 900-family cooling-chain gap remains as the under-band mechanism, now measured through a spec-compliant case).
+
+**Fix.** `CaseSpec.zone_constructions` (optional, serde-default `None` → bit-identical legacy for every other case; length validated against `num_zones`); the 960 factory carries [Case-600 low-mass, Case-900 high-mass]. Inert-as-built entries removed as spec hygiene (E3/E6 bit-identical): the back-zone 12 m² south-window entry (§5.2.2.2.7.1a — replaced by the common wall) and the door entry (§5.2.2.2.7 specifies no door; §5.2.2.2.7.6 no inter-zonal exchange).
+
+**Strict-gate re-record (Golden-NREL, both filters):** 960 H 2.085 → 2.508 MWh — heating LEAVES its band [1.742, 2.357] high (gap 0 → 7.37 pp of mid), recorded as known-fail with dated provenance (`_doc_round24`); C 0.511 → 1.037 MWh (gap 61.39 → 37.09 pp, improvement lowered in the same PR). Checker 9 PASS / 33 KNOWN-FAIL / 0 REGRESSION. 600/900/970 and all single-zone observables unchanged.
+
+**Honest-cost statement.** The round-23 heating in-band result was reached with a spec-noncompliant both-high-mass back zone; the standard-mandated low-mass back zone costs 7.37 pp of heating gap. Per the fidelity-first standing direction the correct physics is adopted and the gap recorded, never tuned away.
+
+**Rubber-duck follow-up (round 24 review, item 3):** the 5R1C longwave path (`step_5r1c.rs` ≈ line 797) broadcasts the GLOBAL `setpoints.wall_u_value/roof_u_value/floor_u_value` scalars to every zone, so the Case 960 low-mass back zone's LW surface exchange uses the sun-zone high-mass U. Pre-existing multi-zone simplification (Case 970 carries it too); round-24 numbers include it. Follow-up scope: thread per-zone U through the LW exchange buffers.
+
+**Closes when:** the §5.2.2.2.7 construction split is landed with the re-record (this round) AND the remaining cooling under-band — the shared 900-family cooling-chain gap (§LIMIT-05/§LIMIT-17) — closes for the 960 geometry.

@@ -196,8 +196,8 @@
       "case": "960",
       "model_name": "ASHRAE 140 Case 960",
       "model_source": "ashrae-140-registry:960",
-      "node_count": 71,
-      "edge_count": 120,
+      "node_count": 70,
+      "edge_count": 106,
       "lint": {
         "clean": true,
         "errors": 0,
@@ -212,11 +212,11 @@
         "payload": "docs/architecture/topology/payloads/case-960.json"
       },
       "sha256": {
-        "reference": "7bbf50c6f82fa393dd1093a06efdf1ff3b3f1a50b69fd6c71b0d12f90d8953b2",
+        "reference": "023bd3d65a22573d6482649b8c8011d9afe0849d75c8ef988ba14e072fd46dd6",
         "lint": "90ff6d9069558503bdd5cc328ed40019173b570b62084dc1661f05b1d9080a52",
-        "mermaid": "8b65b583960d2e791ad218d70a7f87263378e2c0d0b01cb4df551895c4931544",
-        "svg": "3c7bb9462cf16f95a2acae626381501d04a6e0b98e48fbfcda5dbc98baffa095",
-        "payload": "7bbf50c6f82fa393dd1093a06efdf1ff3b3f1a50b69fd6c71b0d12f90d8953b2"
+        "mermaid": "70643575dd19b0babc2722c048288d16ef64cba358a38e43dc15b4b8886fa074",
+        "svg": "b6ace57dae5b55d7e8294449853f4295a06a86cd93adb3e9756b19944bb9b6d7",
+        "payload": "023bd3d65a22573d6482649b8c8011d9afe0849d75c8ef988ba14e072fd46dd6"
       }
     }
   ]

@@ -941,6 +941,16 @@ pub struct CaseSpec {
     #[serde(default)]
     pub zone_origins: Option<Vec<ZoneOrigin>>,
 
+    /// Per-zone construction assemblies (round 24, §LIMIT-14).
+    ///
+    /// `None` (serde default, every existing case) keeps the legacy single
+    /// `construction` for all zones — bit-identical behaviour. When present,
+    /// length must equal `num_zones`, and each zone builds from its own
+    /// `ConstructionSpec` (140-2017 §5.2.2.2.7: Case 960's back zone is
+    /// Case 600 lightweight while the sun zone is Case 900 heavyweight —
+    /// not expressible with the single global construction).
+    pub zone_constructions: Option<Vec<ConstructionSpec>>,
+
     /// Weather data for solar gain calculation (Issue #278)
     /// Hourly weather data (temperature, DNI, DHI, GHI, wind, humidity)
     pub weather_data: Option<HourlyWeatherData>,
@@ -1039,6 +1049,15 @@ impl CaseSpec {
         // silently fall back to the every-wall-exterior legacy behaviour —
         // the adjacency helpers return `None` on a length mismatch, so
         // surface derivation would quietly revert. Reject it instead.
+        if let Some(cons) = &self.zone_constructions {
+            if cons.len() != self.num_zones {
+                return Err(format!(
+                    "zone_constructions length ({}) must match num_zones ({})",
+                    cons.len(),
+                    self.num_zones
+                ));
+            }
+        }
         if let Some(origins) = &self.zone_origins {
             if origins.len() != self.num_zones {
                 return Err(format!(
@@ -1363,6 +1382,7 @@ pub struct CaseBuilder {
     night_ventilation: Option<NightVentilation>,
     common_walls: Vec<CommonWall>,
     zone_origins: Option<Vec<ZoneOrigin>>,
+    zone_constructions: Option<Vec<ConstructionSpec>>,
     infiltration_ach: f64,
     opaque_absorptance: f64,
     num_zones: usize,
@@ -1409,6 +1429,7 @@ impl CaseBuilder {
             hvac: Vec::new(),
             night_ventilation: None,
             common_walls: Vec::new(),
+            zone_constructions: None,
             zone_origins: None,
             infiltration_ach: 0.5,
             opaque_absorptance: 0.6,
@@ -1742,6 +1763,16 @@ impl CaseBuilder {
         self
     }
 
+    /// Sets per-zone construction assemblies (round 24, §LIMIT-14).
+    ///
+    /// When set, length must equal `num_zones`; each zone then builds from its
+    /// own `ConstructionSpec` instead of the single global `construction`.
+    /// See `CaseSpec::zone_constructions`.
+    pub fn with_zone_constructions(mut self, cons: Vec<ConstructionSpec>) -> Self {
+        self.zone_constructions = Some(cons);
+        self
+    }
+
     /// Overrides the construction-derived floor U-value (W/m²K) for ground coupling.
     ///
     /// For specified test conditions such as the ASHRAE 140 Case 195 solid
@@ -1814,6 +1845,7 @@ impl CaseBuilder {
             opaque_absorptance: self.opaque_absorptance,
             num_zones: self.num_zones,
             zone_origins: self.zone_origins.clone(),
+            zone_constructions: self.zone_constructions.clone(),
             weather_data: None, // Will be loaded separately for solar calculations
             door_height: self.door_height,
             door_area: self.door_area,
@@ -3510,6 +3542,49 @@ mod tests {
             assert_eq!(heat, None, "Hour {} heating should be None", hour);
             assert_eq!(cool, None, "Hour {} cooling should be None", hour);
         }
+    }
+
+    /// Round 24 (§LIMIT-14): per-zone constructions. `zone_constructions`
+    /// length must equal `num_zones` (rejected at validation, mirroring the
+    /// round-21 `zone_origins` guard), and the shipped Case 960 spec must
+    /// carry the §5.2.2.2.7 construction split: lightweight (Case 600)
+    /// back zone, heavyweight (Case 900) sun zone.
+    #[test]
+    fn test_zone_constructions_validation_and_case960_spec_split() {
+        // Length mismatch is rejected at validation.
+        let mut spec = ASHRAE140Case::Case960.spec();
+        spec.zone_constructions = Some(Vec::new());
+        let err = spec.validate().expect_err("mismatch must be rejected");
+        assert!(
+            err.contains("zone_constructions"),
+            "message must name the field: {err}"
+        );
+
+        // The shipped Case 960 spec carries the split. Assert the mechanism
+        // (back-zone wall capacitance per area strictly below the sun-zone's,
+        // and the sun zone equals the global construction), not a calibrated
+        // number.
+        let spec = ASHRAE140Case::Case960.spec();
+        let zc = spec
+            .zone_constructions
+            .as_ref()
+            .expect("Case 960 must set zone_constructions (§5.2.2.2.7)");
+        assert_eq!(zc.len(), spec.num_zones);
+        // Raw areal heat capacity (feature-independent rho*c*d sum); the ISO
+        // effective kappa is position-weighted and does not order these two
+        // assemblies the same way under every feature set (CI multi-zone).
+        let cap_back = zc[0].wall.thermal_capacitance_per_area();
+        let cap_sun = zc[1].wall.thermal_capacitance_per_area();
+        assert!(
+            cap_back < cap_sun,
+            "back zone must be lightweight ({cap_back}) vs heavyweight sun zone ({cap_sun})"
+        );
+        assert_eq!(
+            zc[1].wall.thermal_capacitance_per_area(),
+            spec.construction.wall.thermal_capacitance_per_area(),
+            "sun zone must equal the global (Case 900 heavyweight) construction"
+        );
+        assert!(spec.validate().is_ok());
     }
 
     /// Issue #1293 — every numbered ASHRAE 140 case from 600 through 999 must
