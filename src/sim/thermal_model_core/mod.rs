@@ -807,6 +807,34 @@ impl ThermalModel<VectorField> {
         model.setpoints.wall_u_value = spec.construction.wall.u_value(None, None);
         model.setpoints.roof_u_value = spec.construction.roof.u_value(None, None);
 
+        // ROUND25 (§LIMIT-14 follow-up): thread the per-zone constructions
+        // into the 5R1C longwave-exchange path. Without this, a spec that
+        // splits zone constructions (Case 960: lightweight back zone,
+        // heavyweight sun zone) still longwave-exchanges every zone with the
+        // GLOBAL wall/roof/floor U-values. When `zone_constructions` is
+        // `None` the store already holds the global construction per zone,
+        // so the vectors equal the scalar broadcast bit-identically.
+        model.setpoints.wall_u_values = VectorField::from_slice(
+            &(0..num_zones)
+                .map(|i| zc(i).wall.u_value(None, None))
+                .collect::<Vec<f64>>(),
+        );
+        model.setpoints.roof_u_values = VectorField::from_slice(
+            &(0..num_zones)
+                .map(|i| zc(i).roof.u_value(None, None))
+                .collect::<Vec<f64>>(),
+        );
+        model.setpoints.floor_u_values = VectorField::from_slice(
+            &(0..num_zones)
+                .map(|i| {
+                    zc(i).floor.u_value(
+                        Some(crate::sim::construction::SurfaceType::Floor),
+                        None,
+                    )
+                })
+                .collect::<Vec<f64>>(),
+        );
+
         // Floor U-value for ground coupling. A spec-provided override (e.g. the
         // ASHRAE 140 Case 195 solid-conduction test's specified 0.039 W/m²K)
         // takes precedence over the construction-derived value — data-driven,
@@ -3870,6 +3898,9 @@ impl ThermalModel<VectorField> {
                 wall_u_value: 0.5,
                 roof_u_value: 0.5,
                 floor_u_value: 0.039,
+                wall_u_values: VectorField::from_scalar(0.5, num_zones),
+                roof_u_values: VectorField::from_scalar(0.5, num_zones),
+                floor_u_values: VectorField::from_scalar(0.039, num_zones),
                 zone_volume: VectorField::from_scalar(zone_area * ceiling_height, num_zones),
                 common_wall_area: 0.0,
                 thermal_bridge_coefficient: 0.0,
