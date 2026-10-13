@@ -143,7 +143,7 @@ ignore = [
     "RUSTSEC-2025-0080",  # unic-common (deny-scope-exempt)
     "RUSTSEC-2025-0100",  # unic-ucd-ident (deny-scope-exempt)
     "RUSTSEC-2025-0098",  # unic-ucd-version (deny-scope-exempt)
-    # RUSTSEC-2024-0449 (unsafe-libyaml is unmaintained) — surfaced 2026-10-12
+    # RUSTSEC-2024-0449 (unsafe-libyaml is unmaintained) — surfaced 12 Oct 2026
     # when the RustSec DB began flagging it; first observed failing the
     # Cargo Audit gate on PR #4385 (loop round 17, issue #4384 fix) with no
     # dependency changes in the diff. Depth=2 transitive: unsafe-libyaml

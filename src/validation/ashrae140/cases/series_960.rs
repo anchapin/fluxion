@@ -56,7 +56,7 @@ pub fn case_960_sunspace() -> CaseSpec {
         // Zone 1: Sunspace (8m x 2m x 2.7m)
         .add_zone(8.0, 2.0, 2.7)
         .with_zone_hvac(1, HvacSchedule::free_floating())
-        .with_zone_window(1, 6.0, Orientation::South) // Sunspace south window
+        .with_zone_window(1, 12.0, Orientation::South) // Sun-zone south glazing: TWO 3x2 m windows = 12 m2 (140-2017 §5.2.2.2.7.3c, Fig. 5-96; round 22 §LIMIT-14)
         // Common Wall (8m x 2.7m = 21.6 m2)
         .with_common_wall(0, 1, 21.6, Assemblies::concrete_wall(0.200))
         .with_infiltration(0.5)

@@ -1030,53 +1030,79 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // fallback when the slice is too short — slice read at index
                 // `i` here is the same index used in `compute_zone_hvac_load`,
                 // so the two paths produce identical demand figures).
-                let heating_setpoint_i = self
-                    .0
-                    .setpoints
-                    .heating_setpoints
-                    .as_ref()
-                    .get(i)
-                    .copied()
-                    .unwrap_or(self.0.setpoints.heating_setpoint);
-                let cooling_setpoint_i = self
-                    .0
-                    .setpoints
-                    .cooling_setpoints
-                    .as_ref()
-                    .get(i)
-                    .copied()
-                    .unwrap_or(self.0.setpoints.cooling_setpoint);
-                let q = if t_free_val < heating_setpoint_i {
-                    // Heating: Q = h_coeff × (T_heat_sp − T_free) > 0
-                    h_coeff * (heating_setpoint_i - t_free_val)
-                } else if t_free_val > cooling_setpoint_i {
-                    // Cooling: Q = h_coeff × (T_cool_sp − T_free) = −h_coeff × (T_free − T_cool_sp) < 0
-                    // Driving temperature is t_free (zone air), NOT t_mass_mn
-                    -h_coeff * (t_free_val - cooling_setpoint_i)
-                } else {
-                    // Zone air is within deadband: no HVAC demand
-                    0.0
-                };
-
-                let q_clamped = q.clamp(-cool_cap, heat_cap);
-                scratch.hvac[i] = q_clamped;
-
-                // Self-consistent: t_act = t_free + Q / h_coeff = T_setpoint (when not clamped)
                 //
-                // Issue #900 note: the "self-consistent" formula here uses
-                // h_loss only. For a heating demand (q > 0) sized to the
-                // Issue #925 formula, this gives t_i_act = T_setpoint, which
-                // is the design intent. For a cooling demand that includes
-                // the dynamic mass heat release term, this can give
-                // t_i_act below T_cool_sp; that over-cooling is a known
-                // limitation of the steady-state t_i_free approximation
-                // (see #917, #924) and is accepted as a tractable
-                // approximation here.
-                if h_coeff > 0.0 && q_clamped.abs() > 1e-6 {
-                    scratch.t_i_act[i] = t_free_val + q_clamped / h_coeff;
+                // Round 22 (§LIMIT-14): a zone with `hvac_enabled = 0` is
+                // free-floating (`HvacSchedule::free_floating()` carries
+                // degenerate 0/0 setpoints with `efficiency = 0`). The demand
+                // formula below must not drive such a zone: it previously
+                // computed `q = h_coeff × (0 − t_free)` for the disabled
+                // zone and committed `t_act = 0 °C`, pinning the Case 960
+                // sunspace at 0 °C all year while the (masked) demand never
+                // reached the energy accounting — a 0 °C heat sink draining
+                // the conditioned zone through `h_tr_iz`. Fix: skip the
+                // ideal-system drive entirely for disabled zones and commit
+                // the free-floating temperature.
+                let zone_enabled = self
+                    .0
+                    .hvac
+                    .hvac_enabled
+                    .as_ref()
+                    .get(i)
+                    .copied()
+                    .unwrap_or(1.0);
+                let (q_clamped, t_i_act_zone) = if zone_enabled < 0.5 {
+                    (0.0, t_free_val)
                 } else {
-                    scratch.t_i_act[i] = t_free_val;
-                }
+                    let heating_setpoint_i = self
+                        .0
+                        .setpoints
+                        .heating_setpoints
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(self.0.setpoints.heating_setpoint);
+                    let cooling_setpoint_i = self
+                        .0
+                        .setpoints
+                        .cooling_setpoints
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(self.0.setpoints.cooling_setpoint);
+                    let q = if t_free_val < heating_setpoint_i {
+                        // Heating: Q = h_coeff × (T_heat_sp − T_free) > 0
+                        h_coeff * (heating_setpoint_i - t_free_val)
+                    } else if t_free_val > cooling_setpoint_i {
+                        // Cooling: Q = h_coeff × (T_cool_sp − T_free) = −h_coeff × (T_free − T_cool_sp) < 0
+                        // Driving temperature is t_free (zone air), NOT t_mass_mn
+                        -h_coeff * (t_free_val - cooling_setpoint_i)
+                    } else {
+                        // Zone air is within deadband: no HVAC demand
+                        0.0
+                    };
+
+                    let q_clamped = q.clamp(-cool_cap, heat_cap);
+
+                    // Self-consistent: t_act = t_free + Q / h_coeff = T_setpoint (when not clamped)
+                    //
+                    // Issue #900 note: the "self-consistent" formula here uses
+                    // h_loss only. For a heating demand (q > 0) sized to the
+                    // Issue #925 formula, this gives t_i_act = T_setpoint, which
+                    // is the design intent. For a cooling demand that includes
+                    // the dynamic mass heat release term, this can give
+                    // t_i_act below T_cool_sp; that over-cooling is a known
+                    // limitation of the steady-state t_i_free approximation
+                    // (see #917, #924) and is accepted as a tractable
+                    // approximation here.
+                    let t_act = if h_coeff > 0.0 && q_clamped.abs() > 1e-6 {
+                        t_free_val + q_clamped / h_coeff
+                    } else {
+                        t_free_val
+                    };
+                    (q_clamped, t_act)
+                };
+                scratch.hvac[i] = q_clamped;
+                scratch.t_i_act[i] = t_i_act_zone;
             }
             (
                 T::from(VectorField::from_smallvec(std::mem::take(
