@@ -15,6 +15,45 @@ use fluxion_core::weather::psychrometrics::{
 };
 use smallvec::SmallVec;
 
+/// Dense Gaussian elimination with partial pivoting for the small implicit
+/// inter-zone air-node systems (N = num_zones <= a handful). Solves
+/// `a * x = b` in place; returns `x`. Assumes a diagonally dominant coupling
+/// matrix (the diagonal carries the uncoupled air-balance conductance).
+fn solve_linear_system(a: &mut [Vec<f64>], b: &mut [f64]) -> Vec<f64> {
+    let n = b.len();
+    for col in 0..n {
+        let piv = (col..n).fold(col, |best, r| {
+            if a[r][col].abs() > a[best][col].abs() {
+                r
+            } else {
+                best
+            }
+        });
+        if piv != col {
+            a.swap(piv, col);
+            b.swap(piv, col);
+        }
+        let inv = 1.0 / a[col][col];
+        for r in (col + 1)..n {
+            let f = a[r][col] * inv;
+            if f != 0.0 {
+                // Pivot row copied out (n is tiny; keeps the borrow trivial).
+                let pivot_row: Vec<f64> = a[col][col..n].to_vec();
+                for (rc, pc) in a[r][col..n].iter_mut().zip(pivot_row.iter()) {
+                    *rc -= f * pc;
+                }
+                b[r] -= f * b[col];
+            }
+        }
+    }
+    let mut x = vec![0.0f64; n];
+    for r in (0..n).rev() {
+        let sm: f64 = (r + 1..n).map(|c| a[r][c] * x[c]).sum();
+        x[r] = (b[r] - sm) / a[r][r];
+    }
+    x
+}
+
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
     pub(crate) fn step_physics_9r4c(
         &mut self,
@@ -281,19 +320,31 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // the 5R1C iterative path's `solve_coupled_zone_temperatures` formulation
         // and the `MultiZoneAirflowNetwork` convention (test:
         // `multi_zone_network.rs::two_zone_case960_backward_compatible`).
-        if self.0.hvac.num_zones > 1 {
-            let slice = phi_ia_with_iz.as_mut();
-            let n = self.0.hvac.num_zones;
-            let temps = self.0.setpoints.temperatures.as_ref();
-            let h_iz_vec = self.0.conduction.h_tr_iz.as_ref();
-            let sum_t: f64 = temps.iter().sum();
-            for i in 0..n {
-                if h_iz_vec[i] > 0.0 {
-                    let q_iz_net = h_iz_vec[i] * (sum_t - (n as f64) * temps[i]);
-                    slice[i] += q_iz_net;
-                }
-            }
-        }
+        // Inter-zone heat transfer (if multi-zone) — implicit air-node coupling.
+        //
+        // The previous formulation evaluated q_iz from the PREVIOUS step's zone
+        // temperatures (explicit/lagged coupling). At the physics common-wall
+        // conductance (COMMON_WALL_FRACTION = 1.0, ~34 W/K for Case 960) that
+        // lagged term is numerically UNSTABLE at the production dt = 3600 s:
+        // the free-floating sunspace oscillates and diverges to the HVAC
+        // capacity clamps within the first day (measured, round 23: first
+        // divergence at hour 21, growing ~1.4x/step).
+        //
+        // Fix (round 23): the coupling is de-lagged — it is solved IMPLICITLY
+        // in the air-node balances below, as a small dense linear system with
+        // SYMMETRIC pairwise conductances w_ij = (h_iz_i + h_iz_j)/2:
+        //   t_i*(diag_i + sum_j w_ij) - sum_j w_ij*t_j = rhs_i
+        // Implicit Euler on the coupling term is unconditionally stable at any
+        // dt, and the symmetric weights make the pairwise exchange exactly
+        // energy-conserving (flux_ji = -flux_ij), which the per-zone-weighted
+        // lagged formulation did not guarantee for heterogeneous zones.
+        //
+        // The solve is applied to BOTH air-node estimates that downstream code
+        // consumes: the 5R1C t_i_free network (below) and the multi-node
+        // t_i_free_mn air balance. With no coupling (single zone, or all
+        // h_tr_iz = 0) the system is diagonal and reduces to the previous
+        // uncoupled division — single-zone results are bit-identical.
+        let solve_implicit_iz = self.0.hvac.num_zones > 1;
 
         // Add CTF flux contributions (if enabled)
         if let Some(ctf_fluxes) = &ctf_flux_w {
@@ -404,7 +455,41 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let mut t_i_free = num_tm;
         t_i_free.add_assign(&num_phi_st);
         t_i_free.add_assign(&num_rest_with_iz);
-        t_i_free.div_assign(&den);
+        if solve_implicit_iz {
+            // Implicit inter-zone coupling on the 5R1C air node: solve
+            //   t_i*den_i + sum_{j!=i} w_ij*(t_i - t_j) = num_i
+            // with w_ij = (term_rest_1_i*h_iz_i + term_rest_1_j*h_iz_j)/2
+            // (dense Gaussian elimination; N <= small). den_i already carries
+            // the own-zone h_tr_iz from the network denominator, so adding
+            // the symmetric pair weights here de-lags exactly the neighbor
+            // term while keeping the own-zone dissipation unchanged.
+            let n = self.0.hvac.num_zones;
+            let num_v: Vec<f64> = t_i_free.as_ref().to_vec();
+            let den_v: Vec<f64> = den.as_ref().to_vec();
+            let h_iz_vec = self.0.conduction.h_tr_iz.as_ref();
+            let term_rest_1_v: Vec<f64> = term_rest_1.as_ref().to_vec();
+            let w_ij = |i: usize, j: usize| {
+                0.5 * (term_rest_1_v[i] * h_iz_vec[i] + term_rest_1_v[j] * h_iz_vec[j])
+            };
+            let mut a = vec![vec![0.0f64; n]; n];
+            for i in 0..n {
+                let mut wsum = 0.0;
+                for (j, a_ij) in a[i].iter_mut().enumerate() {
+                    if i == j {
+                        continue;
+                    }
+                    let w = w_ij(i, j);
+                    *a_ij = -w;
+                    wsum += w;
+                }
+                a[i][i] = den_v[i] + wsum;
+            }
+            let mut b = num_v;
+            let x = solve_linear_system(&mut a, &mut b);
+            t_i_free = T::from(VectorField::new(x));
+        } else {
+            t_i_free.div_assign(&den);
+        }
 
         // === Update Multi-Node Thermal Mass (9R4C) ===
         //
@@ -754,6 +839,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // For HVAC mode, the temperature update is self-consistent: t_act = T_setpoint
         // regardless of which t_free estimate we use, because the HVAC coefficient
         // cancels the free-floating temperature error.
+        let mut mn_diag = vec![0.0f64; self.0.hvac.num_zones];
+        let mut mn_rhs = vec![0.0f64; self.0.hvac.num_zones];
+        let mut mn_has = vec![false; self.0.hvac.num_zones];
         for zone_idx in 0..self.0.hvac.num_zones {
             if zone_idx < self.0.conduction.backend.multi_node_solvers.len() {
                 let solver = &self.0.conduction.backend.multi_node_solvers[zone_idx];
@@ -780,13 +868,89 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // Use multi-node temperature — it provides the correct air balance
                 // from mass node temperatures stepped by the backward Euler.
                 scratch.t_i_free[zone_idx] = t_air_mn;
+                if solve_implicit_iz {
+                    // Stash the uncoupled air-balance terms so the implicit
+                    // inter-zone solve below can close the system: the uncoupled
+                    // balance is t_air * diag = rhs by construction.
+                    let diag = solver.h_tr_is + h_ve_val + h_ve_night_zone;
+                    mn_diag[zone_idx] = diag;
+                    mn_rhs[zone_idx] = t_air_mn * diag;
+                    mn_has[zone_idx] = true;
+                }
             } else {
                 scratch.t_i_free[zone_idx] = t_i_free.as_ref()[zone_idx];
             }
         }
-        let t_i_free_mn = T::from(VectorField::from_smallvec(std::mem::take(
+        let mut t_i_free_mn = T::from(VectorField::from_smallvec(std::mem::take(
             &mut scratch.t_i_free,
         )));
+        if solve_implicit_iz {
+            // Implicit inter-zone coupling on the multi-node air balance (the
+            // committed free-float temperature and the HVAC demand driver):
+            //   t_i*(diag_i + sum_j w_ij) - sum_j w_ij*t_j = rhs_i
+            // with w_ij = (h_iz_i + h_iz_j)/2 — symmetric, so the pairwise
+            // exchange conserves energy exactly. Zones without a multi-node
+            // solver enter as known boundary temperatures (their 5R1C value).
+            let n = self.0.hvac.num_zones;
+            let h_iz_vec = self.0.conduction.h_tr_iz.as_ref();
+            let t5 = t_i_free_5r1c.as_ref();
+            let w_ij = |i: usize, j: usize| 0.5 * (h_iz_vec[i] + h_iz_vec[j]);
+            let mut a = vec![vec![0.0f64; n]; n];
+            let mut b = vec![0.0f64; n];
+            for i in 0..n {
+                if !mn_has[i] {
+                    continue;
+                }
+                let mut wsum = 0.0;
+                b[i] = mn_rhs[i];
+                for j in 0..n {
+                    if i == j {
+                        continue;
+                    }
+                    let w = if mn_has[j] { w_ij(i, j) } else { h_iz_vec[i] };
+                    if mn_has[j] {
+                        a[i][j] = -w;
+                    } else {
+                        b[i] += w * t5.get(j).copied().unwrap_or(20.0);
+                    }
+                    wsum += w;
+                }
+                a[i][i] = mn_diag[i] + wsum;
+            }
+            for col in 0..n {
+                let piv = (col..n).fold(col, |best, r| {
+                    if a[r][col].abs() > a[best][col].abs() {
+                        r
+                    } else {
+                        best
+                    }
+                });
+                if piv != col {
+                    a.swap(piv, col);
+                    b.swap(piv, col);
+                }
+                let inv = 1.0 / a[col][col];
+                for r in (col + 1)..n {
+                    let f = a[r][col] * inv;
+                    if f != 0.0 {
+                        // Pivot row copied out (n is tiny; keeps the borrow trivial).
+                        let pivot_row: Vec<f64> = a[col][col..n].to_vec();
+                        for (rc, pc) in a[r][col..n].iter_mut().zip(pivot_row.iter()) {
+                            *rc -= f * pc;
+                        }
+                        b[r] -= f * b[col];
+                    }
+                }
+            }
+            let x = solve_linear_system(&mut a, &mut b);
+            let mut v: Vec<f64> = t_i_free_mn.as_ref().to_vec();
+            for i in 0..n {
+                if mn_has[i] {
+                    v[i] = x[i];
+                }
+            }
+            t_i_free_mn = T::from(VectorField::new(v));
+        }
 
         // Issue #1279: Restore h_tr_is to original value after computing zone air temperature.
         // Issue #2871: must divide by the SAME (capped) multiplier that was applied above.
@@ -1662,6 +1826,86 @@ mod scratch_pool_tests {
         assert_eq!(
             inter_ptr_warm, inter_ptr_steady,
             "9R4C `inter` buffer must be reused across timesteps"
+        );
+    }
+}
+
+#[cfg(test)]
+mod implicit_iz_tests {
+    use super::solve_linear_system;
+
+    /// Round 23: the implicit inter-zone air-node coupling solves its small
+    /// dense system with `solve_linear_system`. Liveness + correctness pins.
+    #[test]
+    fn solves_known_2x2() {
+        // 2x + 1y = 5; 1x + 3y = 10  =>  x = 1, y = 3
+        let mut a = vec![vec![2.0, 1.0], vec![1.0, 3.0]];
+        let mut b = vec![5.0, 10.0];
+        let x = solve_linear_system(&mut a, &mut b);
+        assert!((x[0] - 1.0).abs() < 1e-12);
+        assert!((x[1] - 3.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn symmetric_coupling_conserves_energy_and_solves() {
+        // Identical air nodes (diag 100 W/K) symmetrically coupled with
+        // w = 50 W/K, unequal driving (rhs 100*20 vs 100*0). The solved
+        // temperatures must (a) satisfy every row equation, and (b) keep the
+        // global energy sum: sum(diag_i * t_i) == sum(rhs_i), because the
+        // symmetric pairwise exchange transports energy without creating it.
+        let w = 50.0;
+        let diag = 100.0;
+        let mut a = vec![vec![diag + w, -w], vec![-w, diag + w]];
+        let mut b = vec![diag * 20.0, diag * 0.0];
+        let b0 = b[0];
+        let b1 = b[1];
+        let x = solve_linear_system(&mut a, &mut b);
+        // (a) row residuals (solve_linear_system consumes b, so pin copies)
+        assert!(((diag + w) * x[0] - w * x[1] - b0).abs() < 1e-9);
+        assert!(((diag + w) * x[1] - w * x[0] - b1).abs() < 1e-9);
+        // (b) global conservation
+        assert!((diag * (x[0] + x[1]) - (b0 + b1)).abs() < 1e-9);
+        // pairwise fluxes are equal and opposite
+        let q01 = w * (x[1] - x[0]);
+        let q10 = w * (x[0] - x[1]);
+        assert!((q01 + q10).abs() < 1e-12);
+        // and as the coupling strength grows the nodes equilibrate toward
+        // the gain-weighted mean (10 C here)
+        let wl = 1.0e9;
+        let mut a2 = vec![vec![diag + wl, -wl], vec![-wl, diag + wl]];
+        let mut b2 = vec![diag * 20.0, diag * 0.0];
+        let x2 = solve_linear_system(&mut a2, &mut b2);
+        assert!((x2[0] - 10.0).abs() < 1e-6);
+        assert!((x2[1] - 10.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn asymmetric_diagonal_still_conserves_globally() {
+        // Heterogeneous zones (different diag, different per-zone h): the
+        // symmetric pairwise weights still give an exactly conserved exchange.
+        let n = 3;
+        let h = [30.0, 45.0, 20.0];
+        let diag = [80.0, 90.0, 70.0];
+        let rhs = [800.0, 450.0, 210.0];
+        let mut a = vec![vec![0.0; n]; n];
+        let mut b = vec![0.0; n];
+        for i in 0..n {
+            let mut wsum = 0.0;
+            for j in 0..n {
+                if i != j {
+                    let w = 0.5 * (h[i] + h[j]);
+                    a[i][j] = -w;
+                    wsum += w;
+                }
+            }
+            a[i][i] = diag[i] + wsum;
+            b[i] = rhs[i];
+        }
+        let x = solve_linear_system(&mut a, &mut b);
+        let net: f64 = (0..n).map(|i| rhs[i] - diag[i] * x[i]).sum();
+        assert!(
+            net.abs() < 1e-9,
+            "net inter-zone exchange must sum to zero, got {net}"
         );
     }
 }

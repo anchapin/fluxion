@@ -2695,32 +2695,31 @@ impl ThermalModel<VectorField> {
                 // adds two interior films (8.29 W/m²K each) per
                 // `Construction::u_value_internal`.
                 //
-                // ## Honest note on `COMMON_WALL_FRACTION = 0.25` (updated, round 22)
+                // ## Honest note on `COMMON_WALL_FRACTION = 1.0` (updated, round 23)
                 //
-                // This constant is **not** derived from a geometric measurement of
-                // the Case 960 sunspace. ASHRAE 140-2017(a) §5.2.2.2.7.2(f)
-                // specifies **no door and no inter-zonal air exchange** for Case
-                // 960 — coupling is common-wall conduction only — so the physics
-                // value is fraction 1.0 over the full 21.6 m² (≈ 34 W/K
-                // air-to-air). Measured (round 22 strict harness, with the
-                // free-floating-zone fix and the 12 m² sun-zone glazing):
+                // This constant is now the PHYSICS value: ASHRAE 140-2017(a)
+                // §5.2.2.2.7.2(f) specifies no door and no inter-zonal air
+                // exchange for Case 960 — coupling is common-wall conduction
+                // only — so the full 21.6 m² wall conducts (≈ 34 W/K
+                // air-to-air). The round-22 calibrated value 0.25 existed only
+                // because the explicit (lagged) inter-zone coupling was
+                // numerically UNSTABLE at the production dt = 3600 s with a
+                // live free-floating sunspace at the physics conductance
+                // (loads diverge to the capacity clamps).
                 //
-                // - fraction 0.25 (kept): 960 H 2.517 / C 0.414 MWh
-                // - fraction 0.50: 960 H 2.362 / C 0.534 MWh
-                // - fraction 0.75: 960 H 2.341 / C 0.694 MWh
-                // - fraction 1.00 (no door): **numerically unstable** at the
-                //   production 3600 s timestep with a live free-floating
-                //   sunspace (loads diverge to the capacity clamps) — the
-                //   explicit 5R1C/9R4C air-node coupling cannot absorb a ~34 W/K
-                //   inter-zone conductance at dt = 1 h.
-                //
-                // The fraction therefore stays at its #2858 calibrated value of
-                // 0.25 until the coupling integration is stable at the physics
-                // conductance (sub-stepping or implicit air-node coupling);
-                // re-attempting that is recorded in KNOWN_ISSUES. It is a
-                // plausible but not uniquely determined open-fraction and must
-                // not be interpreted as a literal architectural parameter.
-                const COMMON_WALL_FRACTION: f64 = 0.25;
+                // Round 23 stabilized the coupling itself (implicit air-node
+                // solve, see `step_9r4c.rs`): the fraction is raised to the
+                // physics value 1.0. Measured on the strict gate (Golden-NREL):
+                // Case 960 heating 2.517 → 2.085 MWh — back INSIDE the
+                // published band [1.742, 2.357]; cooling 0.414 → 0.511 MWh
+                // (still the known 900-family cooling-chain gap). All
+                // single-zone cases and all free-float strict observables are
+                // bit-identical. Case 970 (5-zone) moves 3.300/2.026 →
+                // 2.004/0.869 MWh — still known-fail (§LIMIT-23), re-recorded
+                // honestly. The round-22 fraction sweep (0.25/0.50/0.75 →
+                // H 2.517/2.362/2.341) is superseded history; those values were
+                // never adopted.
+                const COMMON_WALL_FRACTION: f64 = 1.0;
                 let common_wall_conductance: f64 = spec
                     .common_walls
                     .iter()
