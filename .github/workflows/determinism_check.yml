@@ -516,20 +516,44 @@ jobs:
           hashes = {}
           all_values = {}
 
-          # Read hashes and values from all platforms
-          for os_name in ['ubuntu-24.04', 'windows-latest', 'macos-14']:
-              hash_file = os.path.join(artifacts_dir, f'determinism-gate-output-{os_name}', 'output_hash.txt')
-              values_file = os.path.join(artifacts_dir, f'determinism-gate-output-{os_name}', 'output_values.json')
+          # Round 25 (issue #3061 loop): harden against the artifact-collection
+          # race. The soft `os.path.exists` reads below used to let a missing
+          # or partially-uploaded platform artifact silently shrink the
+          # comparison set — 2-of-3 (even 1-of-3) platforms all sharing one
+          # hash reported SUCCESS. Every expected platform must now deliver
+          # BOTH files, or the gate fails loudly naming what is absent.
+          PLATFORMS = ['ubuntu-24.04', 'windows-latest', 'macos-14']
+          incomplete = {}
+          for os_name in PLATFORMS:
+              platform_dir = os.path.join(artifacts_dir, f'determinism-gate-output-{os_name}')
+              hash_file = os.path.join(platform_dir, 'output_hash.txt')
+              values_file = os.path.join(platform_dir, 'output_values.json')
+              absent = [p for p in (hash_file, values_file) if not os.path.exists(p)]
+              if absent:
+                  incomplete[os_name] = absent
+                  continue
+              with open(hash_file, 'r') as f:
+                  lines = f.readlines()
+                  if lines:
+                      hashes[os_name] = lines[0].strip()
+              with open(values_file, 'r') as f:
+                  all_values[os_name] = json.load(f)
 
-              if os.path.exists(hash_file):
-                  with open(hash_file, 'r') as f:
-                      lines = f.readlines()
-                      if lines:
-                          hashes[os_name] = lines[0].strip()
-
-              if os.path.exists(values_file):
-                  with open(values_file, 'r') as f:
-                      all_values[os_name] = json.load(f)
+          if incomplete or len(hashes) != len(PLATFORMS):
+              print("❌ INCOMPLETE: artifact collection race or lost artifact — refusing to compare a partial set")
+              for os_name, absent in incomplete.items():
+                  print(f"  {os_name}: missing {absent}")
+              print(f"  platforms with readable hashes: {sorted(hashes)} (need all {len(PLATFORMS)})")
+              result = {
+                  'status': 'FAIL',
+                  'all_identical': False,
+                  'incomplete_platforms': incomplete,
+                  'platform_hashes': hashes,
+                  'values': all_values
+              }
+              with open('comparison_result.json', 'w') as f:
+                  json.dump(result, f, indent=2)
+              sys.exit(1)
 
           print("=" * 60)
           print("Cross-Platform Determinism Check Results")

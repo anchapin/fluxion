@@ -20,6 +20,7 @@
 #![allow(dead_code)] // merged former `fn main()` entry points are dead here
 
 mod adaptive_timestep_integration;
+mod sim_per_zone_u_lw;
 mod ai_ort_ep_probe;
 mod air_side_duct_tests;
 mod analytical_step_response;
