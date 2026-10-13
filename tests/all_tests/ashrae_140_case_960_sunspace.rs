@@ -1092,12 +1092,28 @@ fn test_case_960_coupling_is_common_wall_conduction_only() {
         ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
             .expect("default selector must initialize");
 
+    // Round 23 (issue #3061): the coupling integration is stable at the
+    // physics conductance (implicit air-node solve), so COMMON_WALL_FRACTION
+    // is the physics value 1.0 over the full 21.6 m² common wall —
+    // U_internal(2×8.29 W/m²K films) × U_concrete × A ≈ 51.6 W/K. The
+    // premise this test pinned (the round-22 calibrated 0.25 fraction,
+    // ≈ 12.9 W/K) existed only because the explicit lagged coupling
+    // diverged there; with the de-lagged coupling the fraction is no
+    // longer a free parameter. Mechanism assertion: the conductance must
+    // equal exactly the full common-wall product (no door terms, no
+    // inter-zonal air exchange, per 140-2017 §5.2.2.2.7.2(f)).
     let h_iz = model.conduction.h_tr_iz.as_ref()[0];
+    let u_int = spec.common_walls[0].construction.u_value_internal();
+    let expected = spec.common_walls[0].area * u_int;
     assert!(
-        h_iz > 12.0 && h_iz < 14.0,
-        "Case 960 inter-zone coupling must be common-wall conduction only \
-         (≈ 12.9 W/K with fraction 0.25; door terms removed per 140-2017 \
-         §5.2.2.2.7.2(f)), got {h_iz:.3} W/K"
+        (h_iz - expected).abs() < 1e-9,
+        "Case 960 inter-zone coupling must be the FULL common-wall \
+         conduction (fraction 1.0, round 23: implicit air-node coupling \
+         made the physics value stable), got {h_iz:.3} W/K, expected {expected:.3} W/K"
+    );
+    assert!(
+        (h_iz > 50.0 && h_iz < 53.0),
+        "sanity: full-wall conductance ≈ 51.6 W/K, got {h_iz:.3}"
     );
 }
 
