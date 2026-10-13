@@ -3570,17 +3570,18 @@ mod tests {
             .as_ref()
             .expect("Case 960 must set zone_constructions (§5.2.2.2.7)");
         assert_eq!(zc.len(), spec.num_zones);
-        let cap_back = zc[0].wall.iso_13790_effective_capacitance_per_area();
-        let cap_sun = zc[1].wall.iso_13790_effective_capacitance_per_area();
+        // Raw areal heat capacity (feature-independent rho*c*d sum); the ISO
+        // effective kappa is position-weighted and does not order these two
+        // assemblies the same way under every feature set (CI multi-zone).
+        let cap_back = zc[0].wall.thermal_capacitance_per_area();
+        let cap_sun = zc[1].wall.thermal_capacitance_per_area();
         assert!(
             cap_back < cap_sun,
             "back zone must be lightweight ({cap_back}) vs heavyweight sun zone ({cap_sun})"
         );
         assert_eq!(
-            zc[1].wall.iso_13790_effective_capacitance_per_area(),
-            spec.construction
-                .wall
-                .iso_13790_effective_capacitance_per_area(),
+            zc[1].wall.thermal_capacitance_per_area(),
+            spec.construction.wall.thermal_capacitance_per_area(),
             "sun zone must equal the global (Case 900 heavyweight) construction"
         );
         assert!(spec.validate().is_ok());

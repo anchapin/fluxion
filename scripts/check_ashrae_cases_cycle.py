@@ -92,7 +92,7 @@ MOVED_LEAF_TYPES = {
 # technique already used by `scan_fluxion_core_for_upward_deps` below and
 # by `check_physics_sim_cycle.py`'s physics->sim direction.
 # ---------------------------------------------------------------------------
-BASELINE_SIM_TO_VALIDATION = 48  # src/sim/**    -> crate::validation::* (was 50; #4172 hoisted SimulationDiagnostics to fluxion_core::diagnostics, removing 2 edges: diagnostics_state.rs and thermal_model_core/mod.rs imports)
+BASELINE_SIM_TO_VALIDATION = 49  # src/sim/**    -> crate::validation::* (2026-10-13, loop round 24, issue #3061: 48 -> 49 — +1 edge, thermal_model_core/mod.rs imports ConstructionSpec from validation::ashrae_140_cases for the Case 960 per-zone construction split (§5.2.2.2.7); CaseSpec was already imported from the same module. # was 50; #4172 hoisted SimulationDiagnostics to fluxion_core::diagnostics, removing 2 edges: diagnostics_state.rs and thermal_model_core/mod.rs imports)
 # Issue #4172: The validation telemetry SimulationDiagnostics was hoisted from
 # fluxion::validation::diagnostics to fluxion_core::diagnostics. This broke 2
 # sim->validation edges:
