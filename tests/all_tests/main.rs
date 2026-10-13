@@ -20,7 +20,6 @@
 #![allow(dead_code)] // merged former `fn main()` entry points are dead here
 
 mod adaptive_timestep_integration;
-mod sim_per_zone_u_lw;
 mod ai_ort_ep_probe;
 mod air_side_duct_tests;
 mod analytical_step_response;
@@ -167,6 +166,7 @@ mod multi_climate_multi_building_validation;
 mod multi_zone_n_zone_network;
 mod multinode_9r4c_isolation;
 mod multinode_9r4c_sky_radiative;
+mod sim_per_zone_u_lw;
 // Issue #3734: NAPI panic-safety hook + `catch_unwind` boundary
 // regression (parity with `unsafe_pyo3_panic_safety`). The module is
 // `#[cfg(feature = "napi-bindings")]`-gated internally because it
