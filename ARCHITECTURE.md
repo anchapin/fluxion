@@ -262,7 +262,7 @@ invariants and is wired into CI (run from repo root):
    `fluxion`.
 2. `fluxion_core::ashrae_cases` contains all 13 moved leaf types.
 3. `src/sim/**` → `crate::validation::*` edge count is at or below the
-   documented baseline (currently 48). This counts *every* reference — not
+   documented baseline (currently 49). This counts *every* reference — not
    just the leaf-type `Orientation` import the original #1441 guard forbid,
    but the composite types that actually drive the cycle (`CaseSpec`,
    `CaseBuilder`, `ASHRAE140Case`, `CommonWall`, `ConstructionSpec`) plus
