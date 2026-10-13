@@ -260,6 +260,42 @@ fn test_case_950_night_vent_high_mass() {
 }
 
 #[test]
+fn test_case_940_setback_schedule_reaches_demand() {
+    // Round 26 mechanism assertion: the from-spec `heating_schedule`
+    // (ASHRAE 140 §5.2.2.1.4.1: 20 °C 07:00-23:00, 10 °C 23:00-07:00) must
+    // actually reach the HVAC demand. Before the fix the demand read only
+    // the constant per-zone `heating_setpoints` vector, Case 940 simulated
+    // byte-identical to Case 900 on the strict gate, and the manual scalar
+    // setpoint writes in `simulate_case` were silently overridden by the
+    // per-zone vector (Issue #2826 contract).
+    let spec = ASHRAE140Case::Case940.spec();
+    let mut model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
+    let weather = DenverTmyWeather::new();
+
+    // Step 0 → hour 0 → inside the 23:00-07:00 setback window.
+    let wd_night = weather.get_hourly_data(0).unwrap();
+    model.solar.weather = Some(wd_night.clone());
+    let _ = model.step_physics(0, wd_night.dry_bulb_temp, 3600.0);
+    assert_eq!(
+        model.setpoints.heating_setpoints.as_ref()[0],
+        10.0,
+        "setback setpoint (10 °C) must be applied during the 23:00-07:00 window"
+    );
+
+    // Step 12 → hour 12 → occupied hours, 20 °C.
+    let wd_day = weather.get_hourly_data(12).unwrap();
+    model.solar.weather = Some(wd_day.clone());
+    let _ = model.step_physics(12, wd_day.dry_bulb_temp, 3600.0);
+    assert_eq!(
+        model.setpoints.heating_setpoints.as_ref()[0],
+        20.0,
+        "occupied setpoint (20 °C) must be applied during 07:00-23:00"
+    );
+}
+
+#[test]
 fn test_setback_reduces_heating() {
     // Compare Case 600 (baseline) vs Case 640 (setback)
     // Setback should reduce heating energy
@@ -271,8 +307,17 @@ fn test_setback_reduces_heating() {
         heating_600, heating_640
     );
 
-    // Note: This test documents current behavior
-    // The actual reduction depends on proper setback implementation
+    // Round 26: the setback schedule is now consumed by the default HVAC
+    // demand path (per-zone vectors synced from `heating_schedule` each
+    // step), so Case 640 must heat strictly less than Case 600 (the ASHRAE
+    // 140 §5.2.2.1.4.1 setback lowers the overnight setpoint 20 °C → 10 °C).
+    // Previously this file only "documented current behavior": the demand
+    // read the constant per-zone vector, the manual scalar writes here were
+    // silently overridden, and 640 simulated identical to 600.
+    assert!(
+        heating_640 < heating_600,
+        "Case 640 setback must reduce annual heating vs Case 600 (got 640={heating_640} >= 600={heating_600})"
+    );
 }
 
 #[test]

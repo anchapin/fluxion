@@ -460,6 +460,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
         }
 
+        // Round 26: consume the heating setpoint schedule (mirrors the 9R4C
+        // path). The from-spec builder constructs `heating_schedule` (the
+        // Case 640 thermostat setback, ASHRAE 140 §5.2.2.1.4.1: 20 °C
+        // 07:00-23:00, step to 10 °C 23:00-07:00) but the HVAC demand below
+        // read only the constant per-zone `heating_setpoints` vector, so the
+        // setback never reached the demand and Case 640 simulated
+        // byte-identical to 600 on the strict gate. Sync the per-zone vectors
+        // from the schedule every step; a constant schedule writes back its
+        // own constant bit-for-bit, so every non-setback case is unchanged.
+        if !self.0.hvac.free_float {
+            let h_sp_now = self.0.setpoints.heating_schedule.value(timestep % 24);
+            for v in self.0.setpoints.heating_setpoints.as_mut().iter_mut() {
+                *v = h_sp_now;
+            }
+        }
+
         // Build per-zone h_ext that includes the night-vent contribution when
         // active, writing into `scratch.h_ext_owned_zone` (no per-step Vec
         // alloc, no clone of `derived_h_ext`). When night-vent is inactive the
