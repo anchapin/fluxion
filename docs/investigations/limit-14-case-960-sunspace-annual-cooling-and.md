@@ -137,4 +137,6 @@ Blocks preserved: 1. No wording was changed, softened or deleted.
 
 **Honest-cost statement.** The round-23 heating in-band result was reached with a spec-noncompliant both-high-mass back zone; the standard-mandated low-mass back zone costs 7.37 pp of heating gap. Per the fidelity-first standing direction the correct physics is adopted and the gap recorded, never tuned away.
 
+**Rubber-duck follow-up (round 24 review, item 3):** the 5R1C longwave path (`step_5r1c.rs` ≈ line 797) broadcasts the GLOBAL `setpoints.wall_u_value/roof_u_value/floor_u_value` scalars to every zone, so the Case 960 low-mass back zone's LW surface exchange uses the sun-zone high-mass U. Pre-existing multi-zone simplification (Case 970 carries it too); round-24 numbers include it. Follow-up scope: thread per-zone U through the LW exchange buffers.
+
 **Closes when:** the §5.2.2.2.7 construction split is landed with the re-record (this round) AND the remaining cooling under-band — the shared 900-family cooling-chain gap (§LIMIT-05/§LIMIT-17) — closes for the 960 geometry.
