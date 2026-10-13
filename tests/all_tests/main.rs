@@ -166,6 +166,7 @@ mod multi_climate_multi_building_validation;
 mod multi_zone_n_zone_network;
 mod multinode_9r4c_isolation;
 mod multinode_9r4c_sky_radiative;
+mod sim_per_zone_u_lw;
 // Issue #3734: NAPI panic-safety hook + `catch_unwind` boundary
 // regression (parity with `unsafe_pyo3_panic_safety`). The module is
 // `#[cfg(feature = "napi-bindings")]`-gated internally because it

@@ -770,7 +770,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                        // reads via `.get(i)` as before — only the buffer ownership
                                        // changes (now `&mut SmallVec` via `.as_mut()` instead of an
                                        // owned `Vec`). Saves ~8 heap allocations per step.
-            let n = self.0.hvac.num_zones;
             scratch
                 .lw_surface_emissivity
                 .as_mut()
@@ -792,19 +791,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .as_mut()
                 .copy_from_slice(self.0.setpoints.wall_area.as_ref());
             {
-                let u_floor = self.0.setpoints.floor_u_value;
-                let u_ceiling = self.0.setpoints.roof_u_value;
-                let u_wall = self.0.setpoints.wall_u_value;
-                let buf_f = scratch.lw_u_floor.as_mut();
-                let buf_c = scratch.lw_u_ceiling.as_mut();
-                let buf_w = scratch.lw_u_wall.as_mut();
-                for i in 0..n {
-                    buf_f[i] = u_floor;
-                    buf_c[i] = u_ceiling;
-                    buf_w[i] = u_wall;
-                }
+                // ROUND25 (§LIMIT-14 follow-up): per-zone U-values from the
+                // `zone_constructions` split; the vectors are broadcast from
+                // the legacy scalars when no per-zone construction exists, so
+                // this reads identically for every pre-existing case.
+                scratch
+                    .lw_u_floor
+                    .as_mut()
+                    .copy_from_slice(self.0.setpoints.floor_u_values.as_ref());
+                scratch
+                    .lw_u_ceiling
+                    .as_mut()
+                    .copy_from_slice(self.0.setpoints.roof_u_values.as_ref());
+                scratch
+                    .lw_u_wall
+                    .as_mut()
+                    .copy_from_slice(self.0.setpoints.wall_u_values.as_ref());
             }
-
             // Issue #2890: persist the per-zone interior surface state
             // (floor, ceiling, wall) for the floor-ceiling-wall longwave
             // radiation exchange network. The initial implementation wires

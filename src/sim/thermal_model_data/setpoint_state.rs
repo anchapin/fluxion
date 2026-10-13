@@ -33,10 +33,18 @@ pub struct SetpointState<T: ContinuousTensor<f64>> {
     pub aspect_ratio: T,
     pub infiltration_rate: T,
 
-    // Opaque surface U-values from construction (Issue #375).
+    // Opaque surface U-values from construction (Issue #375). The scalar
+    // forms are the legacy global-construction values; the per-zone vectors
+    // (round 25, §LIMIT-14 follow-up) carry the `zone_constructions` split
+    // into the 5R1C longwave-exchange path. They are broadcast from the
+    // scalars by default, so every case without `zone_constructions`
+    // behaves bit-identically.
     pub wall_u_value: f64,
     pub roof_u_value: f64,
     pub floor_u_value: f64,
+    pub wall_u_values: T,
+    pub roof_u_values: T,
+    pub floor_u_values: T,
 
     // Per-zone zone volume (m³) and inter-zone common-wall area (m²).
     pub zone_volume: T,
@@ -75,6 +83,9 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for SetpointState<T> {
             wall_u_value: self.wall_u_value,
             roof_u_value: self.roof_u_value,
             floor_u_value: self.floor_u_value,
+            wall_u_values: self.wall_u_values.clone(),
+            roof_u_values: self.roof_u_values.clone(),
+            floor_u_values: self.floor_u_values.clone(),
 
             zone_volume: self.zone_volume.clone(),
             common_wall_area: self.common_wall_area,
