@@ -1960,5 +1960,76 @@ The probe fails the bar. Per the brief's pre-committed fork, option (a) is adopt
 - No engine change landed this round; default build untouched; no re-record owed. No tuning at
   any step — every probe constant was already in the repo.
 
+## §28 — Round 25: the 900-family cooling-chain decomposition extended across the family; the §19 carrier is reaffirmed, no new defect isolated (2026-10-13, physics loop round 25)
+
+Round-25 scope: run the decomposition harness on the shared 900-family cooling chain
+(Cases 900/810/920/950/960) and isolate which term carries the cooling under-prediction.
+Two runs contributed the measurements: an interrupted round-25 execution (state review found
+no PR, no worktree and no commit; its never-committed throwaway harness and experiment logs
+were adopted as this round's artifacts) and the completion run on develop `2170ddd2`.
+
+### Baseline reproduction (strict engine path, Golden-NREL EPW)
+
+The strict gate on `2170ddd2` reproduces every recorded number exactly (17 annual + 4
+free-float observables): 900 H 1.680 / C 1.684 (band [2.13, 3.67] cooling, gap 26.93 pp of
+mid); 920 H 2.646 / C 1.807 (gap 14.83); 950 C 0.640 (in band [0.39, 0.92]); 960 H 2.508 /
+C 1.037 (gap 37.09); 810 H 1.680 / C 1.684 (cooling gap 1.10); 600 6.758 / 4.301 (cooling in
+band); 970 2.004 / 0.869. The free-float cohort on the DEFAULT path (600FF Tmin −19.00,
+650FF −24.45, 900FF −6.71, 950FF −22.44) matches its recorded known-fail state — the
+interrupted run's "repro" log that showed FF failures was baseline state, not a regression.
+
+### Family decomposition — where the deficit lives, per case
+
+Metering arithmetic: re-confirmed clean (§19 fact 1 carries over: Σ h·(T_free−T_set)
+reproduces the metered annual to <1%, no clamp loss — the interrupted run's probes show
+`clamp_loss_GJ=0.000` on every variant, raw == delivered per month). The deficit is fully
+inside the free-temperature exceedance on every family case, exactly as §19 found for 900:
+
+| case | engine C (MWh) | strict band (printed) | recorded gap (% of mid) | interrupted-run probe (zone 0) |
+|---|---|---|---|---|
+| 900  | 1.684 | [2.465, 3.335] | 26.93 | mean h_coeff 121.6 W/K, raw cool 18.6 GJ, solar 54.4 GJ |
+| 920  | 1.807 | [2.189, 2.961] | 14.83 | night-setback variant of 900 |
+| 950  | 0.640 | [0.557, 0.753] | 0 (pass) | night-vent variant of 900 |
+| 960  | 1.037 | [1.840, 2.490] | 37.09 | spec-compliant split, sunspace + back zone |
+
+Response-direction checks against the reference family deltas:
+
+- **Night ventilation (900→950):** the reference band midpoint drops 2.90 → 0.655
+  (−2.245 MWh); the engine drops 1.684 → 0.640 (−1.044 MWh). The engine's night-vent term
+  is roughly HALF as effective as the reference's, but 950 still lands in band because the
+  entire family deficit is the entire family deficit is the
+  base-case free-temperature trajectory, which the vent term rides on. A vent-magnitude
+  "fix" would be tuning against the wrong carrier; the 140 spec's fixed vent ACH is
+  applied as specified (audited in earlier rounds).
+- **Heating setback (900→920):** engine cooling RISES 1.684 → 1.807 (+0.123) where the
+  reference band midpoint FALLS 2.90 → 2.575 (−0.325). Small (≈0.12 MWh) and opposite in
+  sign. The heating direction
+  matches the reference (920 H above 900 H in both). No mechanism defect was isolated: the
+  setback schedule construction is verified correct (`fill_range` wraps midnight; cooling
+  schedule unaffected), so the sign anomaly is another face of the same free-temperature
+  trajectory term (colder winter mass nights → different summer starting states through the
+  annual integration). Recorded, not tuned; below the materiality of the base-carrier term.
+- **Solar aperture / envelope conductance / ventilation terms:** §17's compensating-chain
+  falsification and §19 fact 3's conductance audit carry over unchanged — solar magnitudes
+  are reference-verified (§13–§16), and the conductance stack's sign is wrong to carry a
+  cooling deficit. The interrupted run's h-coefficient sweep (variants at mean h 92.3 / 121.6
+  / 123.9 / 129.7 W/K) moved cooling monotonically with no anomaly, confirming the chain has
+  no hidden insensitivity (same conclusion as §17 for shading).
+
+### Verdict
+
+- The family-wide carrier remains the §19/§27 free-temperature (air–mass distribution)
+  term, an ACCEPTED open limitation of the legacy 9R4C lumping after round 14's option-(a)
+  decision; the round-25 decomposition found no new term and no new defect in the chain.
+- The interrupted run left no engine change; nothing was adopted from its probes beyond
+  measurements and the throwaway harness.
+- Round-25 landings (separate PRs, both measured no-movement on the strict gate): the
+  round-24 follow-up per-zone U-value threading to the 5R1C LW path (premise that it moves
+  960/970 measured FALSE — both cases condition on the 9R4C network, which round 24 already
+  per-zoned; latent-fidelity fix only), and the determinism workflow's Compare Hashes
+  hardening against the artifact-collection race.
+- No engine number changed this round; no re-record owed; the §LIMIT-05/§LIMIT-17 rows
+  stand with their recorded gaps.
+
 Round budget: probe design + 11 measured annual runs (5 anchor + 6 variant), all on one scratch
 build. Scratch reverted; worktree removed after merge.
