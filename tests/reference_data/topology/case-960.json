@@ -752,7 +752,7 @@
       "kind": "exterior_surface",
       "zone_id": "zone-1:air",
       "name": "Zone 1 wall-south exterior film",
-      "area_m2": 15.600000000000001,
+      "area_m2": 9.600000000000001,
       "azimuth_deg": 180.0,
       "tilt_deg": 90.0
     },
@@ -761,7 +761,7 @@
       "kind": "interior_surface",
       "zone_id": "zone-1:air",
       "name": "Zone 1 wall-south interior film",
-      "area_m2": 15.600000000000001,
+      "area_m2": 9.600000000000001,
       "azimuth_deg": 180.0,
       "tilt_deg": 90.0
     },
@@ -770,8 +770,8 @@
       "kind": "wall_layer",
       "zone_id": "zone-1:air",
       "name": "Zone 1 wall-south layer 0",
-      "capacitance_j_per_k": 66970.79999999999,
-      "area_m2": 15.600000000000001,
+      "capacitance_j_per_k": 41212.8,
+      "area_m2": 9.600000000000001,
       "azimuth_deg": 180.0,
       "tilt_deg": 90.0,
       "attributes": {
@@ -786,8 +786,8 @@
       "kind": "wall_layer",
       "zone_id": "zone-1:air",
       "name": "Zone 1 wall-south layer 1",
-      "capacitance_j_per_k": 18804.239999999998,
-      "area_m2": 15.600000000000001,
+      "capacitance_j_per_k": 11571.840000000002,
+      "area_m2": 9.600000000000001,
       "azimuth_deg": 180.0,
       "tilt_deg": 90.0,
       "attributes": {
@@ -802,8 +802,8 @@
       "kind": "wall_layer",
       "zone_id": "zone-1:air",
       "name": "Zone 1 wall-south layer 2",
-      "capacitance_j_per_k": 1834560.0000000005,
-      "area_m2": 15.600000000000001,
+      "capacitance_j_per_k": 1128960.0000000002,
+      "area_m2": 9.600000000000001,
       "azimuth_deg": 180.0,
       "tilt_deg": 90.0,
       "attributes": {
@@ -884,7 +884,7 @@
       "kind": "window",
       "zone_id": "zone-1:air",
       "name": "Zone 1 window south #0",
-      "area_m2": 6.0,
+      "area_m2": 12.0,
       "azimuth_deg": 180.0,
       "tilt_deg": 90.0,
       "attributes": {
@@ -982,7 +982,7 @@
       "source_id": "ambient",
       "target_id": "zone-1:wall-south:ext",
       "coupling_type": "convection_exterior",
-      "conductance_w_per_k": 285.48,
+      "conductance_w_per_k": 175.68000000000004,
       "bidirectional": false
     },
     {
@@ -996,7 +996,7 @@
       "source_id": "ambient",
       "target_id": "zone-1:window-south:0",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 13.200000000000001,
+      "conductance_w_per_k": 26.400000000000002,
       "bidirectional": true
     },
     {
@@ -1006,7 +1006,7 @@
       "fraction": 0.77,
       "bidirectional": false,
       "attributes": {
-        "window_area_m2": 6.0
+        "window_area_m2": 12.0
       }
     },
     {
@@ -1016,7 +1016,7 @@
       "fraction": 0.77,
       "bidirectional": false,
       "attributes": {
-        "window_area_m2": 6.0
+        "window_area_m2": 12.0
       }
     },
     {
@@ -1643,14 +1643,14 @@
       "source_id": "zone-1:wall-south:ext",
       "target_id": "zone-1:wall-south:layer-0",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 485.33333333333354,
+      "conductance_w_per_k": 298.66666666666674,
       "bidirectional": true
     },
     {
       "source_id": "zone-1:wall-south:int",
       "target_id": "zone-1:air",
       "coupling_type": "convection_interior",
-      "conductance_w_per_k": 129.324,
+      "conductance_w_per_k": 79.584,
       "bidirectional": false
     },
     {
@@ -1663,21 +1663,21 @@
       "source_id": "zone-1:wall-south:layer-0",
       "target_id": "zone-1:wall-south:layer-1",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 20.292682926829272,
+      "conductance_w_per_k": 12.487804878048783,
       "bidirectional": true
     },
     {
       "source_id": "zone-1:wall-south:layer-1",
       "target_id": "zone-1:wall-south:layer-2",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 159.12,
+      "conductance_w_per_k": 97.92000000000002,
       "bidirectional": true
     },
     {
       "source_id": "zone-1:wall-south:layer-2",
       "target_id": "zone-1:wall-south:int",
       "coupling_type": "conduction",
-      "conductance_w_per_k": 159.12,
+      "conductance_w_per_k": 97.92000000000002,
       "bidirectional": true
     },
     {
@@ -1734,7 +1734,7 @@
       "fraction": 0.30800000000000005,
       "bidirectional": false,
       "attributes": {
-        "window_area_m2": 6.0
+        "window_area_m2": 12.0
       }
     },
     {
@@ -1744,7 +1744,7 @@
       "fraction": 0.385,
       "bidirectional": false,
       "attributes": {
-        "window_area_m2": 6.0
+        "window_area_m2": 12.0
       }
     },
     {
@@ -1754,7 +1754,7 @@
       "fraction": 0.11549999999999999,
       "bidirectional": false,
       "attributes": {
-        "window_area_m2": 6.0
+        "window_area_m2": 12.0
       }
     },
     {
@@ -1764,7 +1764,7 @@
       "fraction": 0.038500000000000006,
       "bidirectional": false,
       "attributes": {
-        "window_area_m2": 6.0
+        "window_area_m2": 12.0
       }
     },
     {
@@ -1774,7 +1774,7 @@
       "fraction": 0.11549999999999999,
       "bidirectional": false,
       "attributes": {
-        "window_area_m2": 6.0
+        "window_area_m2": 12.0
       }
     },
     {
@@ -1784,7 +1784,7 @@
       "fraction": 0.1925,
       "bidirectional": false,
       "attributes": {
-        "window_area_m2": 6.0
+        "window_area_m2": 12.0
       }
     },
     {
@@ -1794,7 +1794,7 @@
       "fraction": 0.11549999999999999,
       "bidirectional": false,
       "attributes": {
-        "window_area_m2": 6.0
+        "window_area_m2": 12.0
       }
     },
     {
@@ -1804,7 +1804,7 @@
       "fraction": 0.07700000000000001,
       "bidirectional": false,
       "attributes": {
-        "window_area_m2": 6.0
+        "window_area_m2": 12.0
       }
     },
     {
@@ -1814,7 +1814,7 @@
       "fraction": 0.11549999999999999,
       "bidirectional": false,
       "attributes": {
-        "window_area_m2": 6.0
+        "window_area_m2": 12.0
       }
     },
     {
@@ -1824,7 +1824,7 @@
       "fraction": 0.07700000000000001,
       "bidirectional": false,
       "attributes": {
-        "window_area_m2": 6.0
+        "window_area_m2": 12.0
       }
     }
   ]
