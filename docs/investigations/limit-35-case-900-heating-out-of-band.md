@@ -2033,3 +2033,79 @@ Response-direction checks against the reference family deltas:
 
 Round budget: probe design + 11 measured annual runs (5 anchor + 6 variant), all on one scratch
 build. Scratch reverted; worktree removed after merge.
+
+## §29 — Round 26: the "920 setback" premise is FALSE; the real defect is that the heating setback schedule was never consumed by the default sim paths (Cases 640/940 byte-identical to 600/900) — FIXED and re-recorded (2026-10-13, physics loop round 26)
+
+### Premise correction
+
+§28 recorded the 920 cooling sign anomaly as "heating setback (900→920)" and described
+Case 920 as the "night-setback variant of 900". That premise is false on both sides:
+
+- **The 140 spec:** Case 920 is §5.2.2.2.3, *High Mass East/West Window Orientation* —
+  modeled exactly as Case 620 with the 900-series materials. It has the same thermostat
+  strategy as 600/900 (20 °C heat / 27 °C cool, no setback, no night ventilation). The
+  setback cases are **640** (§5.2.2.1.4) and **940** (§5.2.2.2.5).
+- **The repo's CaseSpec:** `series_900.rs::case_920_ew_windows()` is 6 m² east + 6 m² west
+  windows with `with_hvac_setpoints(20.0, 27.0)` — no setback, no vent.
+
+So the §28 "sign anomaly" (engine 900→920 cooling 1.684 → 1.807 rising while the reference
+band midpoint falls 2.90 → 2.575) is **not a setback effect at all** — it is the S→E/W
+window-orientation response. The mechanism is the §14/§15-recorded E/W irradiance residual
+(engine/E+ incident ratio 1.414 on E/W vs 1.156 — §13's table, S/W corrected in §14): the
+engine over-predicts east/west incident solar, so its E/W-window case gains cooling where
+the reference loses it. That residual is already recorded as an accepted model-form
+difference after the mid-hour convention adoption (§15); no new defect, no new carrier.
+
+### The real setback defect (measured, not inferred)
+
+Round 26's falsification of the "setback variant" premise exposed that the engine had
+**never applied a heating setback anywhere on the default simulation paths**:
+
+- `from_spec_with_selector` correctly builds `setpoints.heating_schedule` from
+  `HvacSchedule` setback data (thermal_model_core/mod.rs, the §5.2.2.1.4.1 schedule:
+  20 °C 07:00–23:00, step to 10 °C 23:00–07:00).
+- But the HVAC demand in **both** `step_5r1c` and `step_9r4c` read only the constant
+  per-zone `heating_setpoints` vector (set once from `spec.hvac[zone].heating_setpoint`);
+  the schedule was consulted only for cooling (operating hours + economizer setpoint).
+- Consequence, visible on the strict gate since the family was first recorded: strict
+  **Case 640 printed exactly 600's numbers (6.758/4.301) and Case 940 exactly 900's
+  (1.680/1.684)** — byte-identical, because the setback never reached the demand. The
+  round-16 note in §LIMIT-12 ("strict/fabric/surrogate families byte-identical — blind
+  path does not consume the schedules") recorded this face without isolating it. The
+  per-step manual setpoint writes in the setback integration-test harness
+  (`ashrae_140_setback_ventilation.rs::simulate_case`) were silently overridden by the
+  per-zone vector too — which is why `test_setback_reduces_heating` could only
+  "document current behavior".
+
+The round-25 §28 questions (integration history vs coupling artifact) are therefore
+moot for 920 — there is no setback transition in that case to track, and the seasonal
+mass-state probe is not needed: the sign flip is fully attributed to the E/W orientation
+residual above.
+
+### Fix (landed this round)
+
+Per-step sync of the per-zone `heating_setpoints` vectors from
+`heating_schedule.value(step % 24)` at the top of the HVAC-demand section in both
+`step_5r1c.rs` and `step_9r4c.rs` (free-float guarded out). A constant schedule writes
+back its own constant bit-for-bit, so every non-setback case is untouched.
+
+Measured (Golden-NREL EPW, strict engine path, 2026-10-13, develop a0c78f6e vs branch):
+
+| case | H old→new (MWh) | band | C old→new (MWh) | band |
+|---|---|---|---|---|
+| 600 | 6.758 → 6.758 (bit-identical) | [4.314, 5.836] | 4.301 → 4.301 | [4.275, 5.784] |
+| 640 | 6.758 → **4.152** (gap 91.36 → 11.79 pp) | [2.784, 3.766] | 4.301 → 4.287 | [5.971, 8.079] |
+| 900 | 1.680 → 1.680 (bit-identical) | [1.364, 1.846] | 1.684 → 1.684 | [2.465, 3.335] |
+| 920 | 2.646 → 2.646 (bit-identical) | [3.213, 4.347] | 1.807 → 1.807 | [2.189, 2.961] |
+| 940 | 1.680 → **1.130 — IN BAND** (gap 37.73 → 0) | [0.935, 1.265] | 1.684 → 1.671 (gap 25.19 → 25.65 pp) | [2.393, 3.237] |
+
+All other annual cases and all four free-float observables bit-identical; checker
+10 PASS / 32 KNOWN-FAIL / 0 REGRESSION after the in-PR baseline re-record. Monthly
+attribution (harness, kWh): the 640 heating reduction is concentrated Nov–Mar
+(1057.6→693.8, 1262.6→902.4, 1254.3→899.6 for Jan/Feb/Dec); cooling moves ≤2 kWh/month —
+the spec-conformant setback cools the night mass slightly, which the reference's odd
+published 640-cooling-above-600 does not show; recorded, not tuned.
+
+Residual note: the GaugeSolver dispatch path (`step_dispatcher.rs` inputs) still reads the
+per-zone vectors and does not consume the schedule — gauge build only, recorded as
+follow-up scope, not fixed late.
