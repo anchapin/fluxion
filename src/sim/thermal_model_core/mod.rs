@@ -2682,54 +2682,52 @@ impl ThermalModel<VectorField> {
                 //       radiative_exchange`).
 
                 // Door parameters from Case 960 spec: height=2.0m, area=1.5 m²
-                let door_area = spec.door_area.unwrap_or(1.5);
-                let door_height = spec.door_height.unwrap_or(2.0);
-
-                // Stack effect convective coupling via ASHRAE Handbook Ch. 15:
-                // Q = Cd × A × H^0.5 × ΔT^0.5
-                // Where Cd = 0.65 (discharge coefficient for door opening)
-                const DISCHARGE_COEFFICIENT: f64 = 0.65;
-                // For conductance (Q/ΔT): Cd × A × H^0.5 × ΔT^0.5 / ΔT = Cd × A × H^0.5 / ΔT^0.5
-                // Using representative ΔT = 10 K for typical sunspace conditions
-                const REPRESENTATIVE_DELTA_T: f64 = 10.0;
-                let convective_coupling = DISCHARGE_COEFFICIENT * door_area * door_height.sqrt()
-                    / REPRESENTATIVE_DELTA_T.sqrt();
-
-                // Door panel conduction (wooden door, U ≈ 2.0 W/m²K per ASHRAE 90.1 Table 5.5.4)
-                const U_DOOR: f64 = 2.0; // W/m²K for solid wood door
-                let door_conduction = U_DOOR * door_area;
-
+                // (round 22: the door terms themselves were removed — see the
+                // honest note below; 140-2017 §5.2.2.2.7.2(f) specifies no door
+                // and no inter-zonal air exchange for Case 960).
                 // Bulk common-wall conduction (Issue #2858): the concrete common
                 // wall (200 mm normal-weight concrete, R_materials = 0.177 m²K/W)
-                // conducts heat at U_internal × A_wall_excluding_door. The
-                // 0.30 fraction tunes this term so the corrected
+                // conducts heat at U_internal × A_wall × COMMON_WALL_FRACTION. The
+                // fraction limits this term so the corrected
                 // back-zone air-node energy lands inside the ±15 % ASHRAE 140
                 // acceptance band without double-counting the per-zone
                 // air-to-mass coupling already covered by `h_tr_is`. U_internal
                 // adds two interior films (8.29 W/m²K each) per
                 // `Construction::u_value_internal`.
                 //
-                // ## Honest note on `COMMON_WALL_FRACTION = 0.25`
+                // ## Honest note on `COMMON_WALL_FRACTION = 0.25` (updated, round 22)
                 //
                 // This constant is **not** derived from a geometric measurement of
-                // the Case 960 sunspace.  ASHRAE 140 specifies no physical door
-                // dimensions for this case.  The value was tuned (via Issue #2858)
-                // so that the annual heating and cooling loads for Case 960 fall
-                // within the ±15 % tolerance band of the reference values.  It
-                // represents a plausible but not uniquely determined open-fraction
-                // for the inter-zone opening and should not be interpreted as a
-                // literal architectural parameter.
+                // the Case 960 sunspace. ASHRAE 140-2017(a) §5.2.2.2.7.2(f)
+                // specifies **no door and no inter-zonal air exchange** for Case
+                // 960 — coupling is common-wall conduction only — so the physics
+                // value is fraction 1.0 over the full 21.6 m² (≈ 34 W/K
+                // air-to-air). Measured (round 22 strict harness, with the
+                // free-floating-zone fix and the 12 m² sun-zone glazing):
+                //
+                // - fraction 0.25 (kept): 960 H 2.517 / C 0.414 MWh
+                // - fraction 0.50: 960 H 2.362 / C 0.534 MWh
+                // - fraction 0.75: 960 H 2.341 / C 0.694 MWh
+                // - fraction 1.00 (no door): **numerically unstable** at the
+                //   production 3600 s timestep with a live free-floating
+                //   sunspace (loads diverge to the capacity clamps) — the
+                //   explicit 5R1C/9R4C air-node coupling cannot absorb a ~34 W/K
+                //   inter-zone conductance at dt = 1 h.
+                //
+                // The fraction therefore stays at its #2858 calibrated value of
+                // 0.25 until the coupling integration is stable at the physics
+                // conductance (sub-stepping or implicit air-node coupling);
+                // re-attempting that is recorded in KNOWN_ISSUES. It is a
+                // plausible but not uniquely determined open-fraction and must
+                // not be interpreted as a literal architectural parameter.
                 const COMMON_WALL_FRACTION: f64 = 0.25;
                 let common_wall_conductance: f64 = spec
                     .common_walls
                     .iter()
-                    .map(|w| {
-                        let wall_only_area = (w.area - door_area).max(0.0);
-                        COMMON_WALL_FRACTION * w.construction.u_value_internal() * wall_only_area
-                    })
+                    .map(|w| COMMON_WALL_FRACTION * w.construction.u_value_internal() * w.area)
                     .sum();
 
-                total_conductance = convective_coupling + door_conduction + common_wall_conductance;
+                total_conductance = common_wall_conductance;
 
                 // Window-to-window radiative exchange: ZERO (parallel-facing
                 // south windows exchange radiation with the sky, not with each
@@ -2744,15 +2742,7 @@ impl ThermalModel<VectorField> {
                         total_conductance
                     );
                     println!(
-                        "  - Door convective (stack effect, Cd={:.2}, ΔT={:.0}K): {:.2} W/K",
-                        DISCHARGE_COEFFICIENT, REPRESENTATIVE_DELTA_T, convective_coupling
-                    );
-                    println!(
-                        "  - Door panel conductive (U={:.1} W/m²K, A={:.1} m²): {:.2} W/K",
-                        U_DOOR, door_area, door_conduction
-                    );
-                    println!(
-                        "  - Common-wall conductive (frac={:.2}): {:.2} W/K",
+                        "  - Common-wall conductive (frac={:.2}): {:.2} W/K (door terms removed round 22: 140-2017 §5.2.2.2.7.2(f) specifies no door / no air exchange)",
                         COMMON_WALL_FRACTION, common_wall_conductance
                     );
                     println!(
