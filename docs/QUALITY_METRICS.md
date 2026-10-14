@@ -1,5 +1,14 @@
 # Quality Metrics Tracker
 
+> **STALE SNAPSHOT (noted 2026-10-14, loop round 29)** — this historical dashboard is
+> deliberately not consumed by the scorecard generator (issue #1167) and does not reflect
+> the current engine or reference data. The Case 640 and Case 940 reference bands printed
+> below (640 H 2.75–3.80 / C 5.95–8.10; 940 H 0.79–1.41 / C 2.08–3.55) are the pre-audit
+> rows proven to be of unverified origin in docs/investigations/limit-35-case-900-heating-
+> out-of-band.md §31 (round 28, Case 640) and §32 (round 29, Case 940), and were replaced
+> in the authoritative sources (benchmark.rs, strict-gate baseline) by the published
+> ASHRAE 140-2023 Annex B8 values. Do not cite this file for reference values.
+
 *Generated: 2026-09-21 23:04 UTC
 
 ## Current Status
