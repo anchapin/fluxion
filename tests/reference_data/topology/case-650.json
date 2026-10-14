@@ -519,12 +519,12 @@
       "source_id": "zone-0:air",
       "target_id": "ambient",
       "coupling_type": "air_exchange",
-      "conductance_w_per_k": 571.12632,
+      "conductance_w_per_k": 469.46666666666664,
       "bidirectional": true,
       "attributes": {
         "adds_heat": 0.0,
         "end_hour": 7.0,
-        "fan_capacity_m3_per_h": 1703.16,
+        "fan_capacity_m3_per_h": 1400.0,
         "start_hour": 18.0
       }
     },

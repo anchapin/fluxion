@@ -158,11 +158,11 @@
         "payload": "docs/architecture/topology/payloads/case-650.json"
       },
       "sha256": {
-        "reference": "d460de5d172359b5a16354323ad1598f737bf4471c0a618da3ff224c7a6f263f",
+        "reference": "0333236c6f025f65939a56593a0a28161a3234ea633effd1e38c8840031f7cc7",
         "lint": "8d4bb978a0269aaa41a35a39f676de62514714ddfd5462b4b839f31c4a59df83",
         "mermaid": "b79934eb887abb06ae7ec02cf591d4994e4944a4e351cb305207005dd847c1f5",
         "svg": "be04941538615184928a3076c50b3e549fa55e13a37313aa8892b2aeb5d85c55",
-        "payload": "d460de5d172359b5a16354323ad1598f737bf4471c0a618da3ff224c7a6f263f"
+        "payload": "0333236c6f025f65939a56593a0a28161a3234ea633effd1e38c8840031f7cc7"
       }
     },
     {
