@@ -2331,3 +2331,37 @@ Peak-heating note: the recorded 940 peak heating 2.626 kW (round-16 re-record, L
 published [3.052, 3.882] it is BELOW the published low by 13 %. The 940 peak-heating question
 is recorded, not chased: the strict gate does not gate peaks, and the engine target is the
 published tables.
+
+## §33 — Round 29: GaugeSolver first increment — premise measured STALE on the routed path; increment not landed (2026-10-14)
+
+Round 28's brief (§31 / #1465/#1462) called for the GaugeSolver first increment: an implicit
+symmetric air-node solve replacing the FD storage-release divisor on the routed gauge path,
+gauge-build-only, with default-build bit-identity as the landing gate. Before writing any
+solver code, the premise was re-measured on develop `9eec51f4` (gauge feature build,
+Golden-NREL EPW, the preserved round-10 scratch harness plus an env-gated per-sub-step
+T_air trace; both scratch-only, never committed):
+
+- **Reproduction is clean**: gauge-routed 600 H/C 28.635/5.715 MWh and 640 17.798/5.176 MWh
+  match the develop/round-27 records to the printed digit.
+- **The β-soak divergence cohort is EMPTY**: across all traced gauge sub-steps on Case 600
+  (and 640), ZERO steps with |T_air| > 60 °C; the annual extreme is |T_air| = 42.7 °C
+  (600) / 41.4 °C (640). The round-8 pathology (§22: 416 zero-gain diverging steps; §22
+  addendum: 169 diverging gain-hours) no longer reproduces on the routed path — the
+  committed PR-a operator splitting plus the round-10 ground coupling and round-26/27
+  schedule consumption cured the gross instability as a side effect.
+
+Consequence for the increment: the named change was motivated as the cure for that
+instability (§22: "the slope, which would make the coupling implicit, is discarded"). The
+routed air-node update has been implicit (sub-step affine slope in the denominator,
+exponential relaxation) since PR-a landed, and it is stable. Replacing it with the round-23
+symmetric dense solve would now be a structural rewrite whose stability rationale has
+evaporated and whose accuracy rationale lives elsewhere — the remaining gauge-path defects
+are the §LIMIT-40 day/night storage-release split, the network-foreign 5R1C metering pair
+(§22 PR-c) and the missing infiltration threading (§22 PR-b), none of which the symmetric
+air-node solve addresses.
+
+**Verdict: increment NOT landed; premise updated instead of half-landing a rewrite**
+(the brief's own escape clause). Recommended round-30 sequence, in the §22 program order:
+PR-b (infiltration threading — small, spec-consumption-shaped like round 26/27) and then
+PR-c (self-consistent gauge metering) — each independently measurable on the gauge-gated
+harness that this round verified reproduces the recorded gauge numbers.
