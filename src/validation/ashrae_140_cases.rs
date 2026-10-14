@@ -3305,7 +3305,8 @@ mod tests {
     #[test]
     fn test_night_ventilation() {
         let vent = NightVentilation::case_650();
-        assert_eq!(vent.fan_capacity, 1703.16);
+        // 1400 m³/h: Table 5-160 sea-level route (loop round 26 correction).
+        assert_eq!(vent.fan_capacity, 1400.0);
         assert_eq!(vent.operating_hours, (18, 7));
         assert!(!vent.adds_heat);
         assert!(vent.is_active_at_hour(20)); // 20:00 is active
@@ -3502,7 +3503,7 @@ mod tests {
     #[test]
     fn test_setpoint_at_hour_wrapping_range() {
         // Night ventilation: 18-7 (overnight, wraps midnight)
-        let night_vent = NightVentilation::new(1703.16, 18, 7);
+        let night_vent = NightVentilation::new(1400.0, 18, 7);
 
         // Hours 18-23 and 0-6 should be active
         for hour in 18..24 {
