@@ -391,7 +391,10 @@ fn test_gauge_dispatch_consumes_setback_schedule() {
     let epw = EpwWeatherSource::from_file("assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw")
         .expect("Golden-NREL EPW must be present");
 
-    fn gauge_annual(case: ASHRAE140Case, epw: &fluxion::weather::epw::EpwWeatherSource) -> (f64, f64) {
+    fn gauge_annual(
+        case: ASHRAE140Case,
+        epw: &fluxion::weather::epw::EpwWeatherSource,
+    ) -> (f64, f64) {
         let spec = case.spec();
         let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
             &spec,

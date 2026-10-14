@@ -285,44 +285,40 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // are guarded out like the default paths. Gauge-build-only: the
         // default build does not compile this module body
         // (`cfg(feature = "gauge-solver")`).
-        let heating_setpoints = if !self.0.hvac.free_float
-            && !self.0.setpoints.heating_schedule.is_constant()
-        {
-            let h_sp_now = self.0.setpoints.heating_schedule.value(timestep % 24);
-            let mut v = self.0.setpoints.heating_setpoints.as_ref().to_vec();
-            for entry in v.iter_mut() {
-                *entry = h_sp_now;
-            }
-            v
-        } else {
-            self.0.setpoints.heating_setpoints.as_ref().to_vec()
-        };
-        let default_heating_sp = if !self.0.hvac.free_float
-            && !self.0.setpoints.heating_schedule.is_constant()
-        {
-            self.0.setpoints.heating_schedule.value(timestep % 24)
-        } else {
-            self.0.setpoints.heating_setpoint
-        };
-        let cooling_setpoints = if !self.0.hvac.free_float
-            && !self.0.setpoints.cooling_schedule.is_constant()
-        {
-            let c_sp_now = self.0.setpoints.cooling_schedule.value(timestep % 24);
-            let mut v = self.0.setpoints.cooling_setpoints.as_ref().to_vec();
-            for entry in v.iter_mut() {
-                *entry = c_sp_now;
-            }
-            v
-        } else {
-            self.0.setpoints.cooling_setpoints.as_ref().to_vec()
-        };
-        let default_cooling_sp = if !self.0.hvac.free_float
-            && !self.0.setpoints.cooling_schedule.is_constant()
-        {
-            self.0.setpoints.cooling_schedule.value(timestep % 24)
-        } else {
-            self.0.setpoints.cooling_setpoint
-        };
+        let heating_setpoints =
+            if !self.0.hvac.free_float && !self.0.setpoints.heating_schedule.is_constant() {
+                let h_sp_now = self.0.setpoints.heating_schedule.value(timestep % 24);
+                let mut v = self.0.setpoints.heating_setpoints.as_ref().to_vec();
+                for entry in v.iter_mut() {
+                    *entry = h_sp_now;
+                }
+                v
+            } else {
+                self.0.setpoints.heating_setpoints.as_ref().to_vec()
+            };
+        let default_heating_sp =
+            if !self.0.hvac.free_float && !self.0.setpoints.heating_schedule.is_constant() {
+                self.0.setpoints.heating_schedule.value(timestep % 24)
+            } else {
+                self.0.setpoints.heating_setpoint
+            };
+        let cooling_setpoints =
+            if !self.0.hvac.free_float && !self.0.setpoints.cooling_schedule.is_constant() {
+                let c_sp_now = self.0.setpoints.cooling_schedule.value(timestep % 24);
+                let mut v = self.0.setpoints.cooling_setpoints.as_ref().to_vec();
+                for entry in v.iter_mut() {
+                    *entry = c_sp_now;
+                }
+                v
+            } else {
+                self.0.setpoints.cooling_setpoints.as_ref().to_vec()
+            };
+        let default_cooling_sp =
+            if !self.0.hvac.free_float && !self.0.setpoints.cooling_schedule.is_constant() {
+                self.0.setpoints.cooling_schedule.value(timestep % 24)
+            } else {
+                self.0.setpoints.cooling_setpoint
+            };
         let zone_areas = self.0.setpoints.zone_area.as_ref().to_vec();
         let zone_volumes = self.0.setpoints.zone_volume.as_ref().to_vec();
         let loads = self.0.setpoints.loads.as_ref().to_vec();
