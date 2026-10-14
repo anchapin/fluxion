@@ -2365,3 +2365,141 @@ air-node solve addresses.
 PR-b (infiltration threading — small, spec-consumption-shaped like round 26/27) and then
 PR-c (self-consistent gauge metering) — each independently measurable on the gauge-gated
 harness that this round verified reproduces the recorded gauge numbers.
+
+## §34 — Round 30: the §22 PR-b/PR-c premise is ALSO stale — both landed in round 9 (2026-10-14)
+
+§33's closing recommendation (round-30 sequence PR-b then PR-c) was written against the
+§22 backlog list without a git-history check. Before writing any code this round, the
+premise was verified against the current tip (`bc988dc8` — round 29 tip `14ca4c93` plus the
+approved dependabot batch #4398 `86f91e16` / #4396 `e41a4aae` / #4397 `bc988dc8`):
+
+- **PR-b is landed**: commit `c1df7120` (round 9, PR #4360, "fix(physics): thread spec
+  infiltration ACH through the gauge arm (LIMIT-35 §22 backlog 1, loop round 9 PR-b)").
+  The per-zone spec value (`setpoints.infiltration_rate`, seeded from
+  `CaseSpec::infiltration_ach` by `from_spec`) reaches BOTH gauge step paths via
+  `GaugeInputs.infiltration_ach` — the single-zone arm passes it as the `step(...)` ACH
+  argument and the multi-zone arm builds it into `ZoneBoundaryConditions.infiltration_ach`,
+  consumed in the air-node coupling (`h_inf = ρ·cp·ACH/3600·V`) and in
+  `infiltration_conductance_WK`. The §22-era hardcoded 0.5 is gone from both arms; the
+  0.0 W `Q_infiltration_w` dispatcher argument stays, now correctly documented ("the
+  infiltration PHYSICS is the ACH conductance threaded below"). A committed liveness test
+  (`test_infiltration_ach_parameter_is_live`) guards the parameter.
+- **PR-c is landed (single-zone arm)**: commit `801751f6` (round 9, PR #4361). The routed
+  single-zone arm meters demand with the gauge network's own
+  `air_node_conductance_WK` §C.3 coefficient, not the 5R1C Norton stack.
+- **No engine code changed this round.** Docs-only premise correction.
+
+Verification measurements on `bc988dc8` (all in this round, Golden-NREL EPW):
+
+- **Reproduce-first (default build, `--release --features ort`)**: all 17 annual strict-gate
+  H/C values and all 4 free-float observables byte-identical to the recorded baseline;
+  checker **10 PASS / 32 KNOWN-FAIL / 0 REGRESSION**. The dependabot batch moved no numerics.
+- **Gauge-routed family (gauge build, `--features ort,gauge-solver`, same strict harness)** —
+  the current routed values, matching the round-27 post-schedule-fix records exactly:
+  600 28.635/5.715; **640 17.798/5.176**; 900 1.680/1.684 and 940 1.130/1.671
+  (9R4C-bypassed, unchanged); 810 1.680/1.684. Other routed 5R1C diagnostics (gauge-build
+  only, not strict-gate targets): 610 29.963/3.415, 620 29.911/6.408, 630 31.186/4.911,
+  650 0.000/2.892, 195 19.846/0.120.
+- **Gauge suite**: 29 passed / 0 failed as CI runs it; with `--include-ignored` the
+  Issue #1669-quarantined `test_case_900_gauge_fiver1c_diurnal_parity` runs and fails by
+  design (unchanged quarantine).
+
+Residual observations recorded (not landed; each needs its own measured increment):
+
+1. The **multi-zone gauge arm** still derives per-zone energy from the −`net_power` ledger
+   inside `GaugeZoneState::step` — PR-c's self-consistent §C.3 coefficient is
+   single-zone-arm only. Candidate future increment; measure before landing.
+2. The §LIMIT-40 day/night storage-release split remains the open structural defect.
+
+## §35 — Round 31: the multi-zone gauge arm's −net_power ledger metering is REPLACED with the self-consistent §C.3 form (2026-10-14)
+
+§34's residual observation 1, verified live in code and now landed. Premise check on `f0f7e745`:
+the multi-zone arm (`try_run_gauge_multi_zone`) forced each conditioned zone's `T_air` to its mode
+setpoint BEFORE `MultiZoneGaugeSolver::step`, then summed the per-zone `step_with_coupling` return —
+the −`net_power` ledger (`GaugeZoneSolver::step_with_coupling`, `energy_kwh = -(net_power·Δt)`),
+evaluated at the pre-forced air temperature and carrying the frozen-flux linearization error the
+single-zone arm's Issue #3918 Fix B diagnosed. Worse, a free-floating zone's ledger flux (the Case
+960 sunspace in principle) was billed to the building's HVAC total. `air_node_conductance_WK` was
+consumed by the single-zone arm only.
+
+**The increment (gauge-build-only):** the pre-step setpoint forcing is removed — the multi-zone step
+runs free-float — and each conditioned zone meters
+`Q = clamp(h_coeff·(T_set − t_air_free_final), −cool_cap, heat_cap)` with `h_coeff` the zone's own
+`air_node_conductance_WK` (PR-c's coefficient), propagating the ISO closed-form final temperature
+`t_free + Q/h_coeff`. Unconditioned zones meter zero; non-conditioned models and `free_float` setups
+keep the ledger return, mirroring the single-zone arm exactly.
+
+**Measured (Golden-NREL EPW, `f0f7e745` + this change):**
+
+- **Default-build landing gate**: all 17 annual + 4 free-float strict-gate observables
+  byte-identical to the round-30 baseline (checker 10 PASS / 32 KNOWN-FAIL / 0 REGRESSION).
+- **Gauge-build strict family**: byte-identical before→after — no strict-gate case routes the
+  multi-zone arm (Case 960 is HighMass and keeps the selector-independent 9R4C auto-promotion, so
+  the gauge dispatch skips it; the multi-zone arm's only strict-harness exposure is nil). The routed
+  single-zone family reproduces §34 exactly (600 28.635/5.715, 640 17.798/5.176).
+- **Mechanism pin** (`gauge_multi_zone_meters_c3_closed_form_not_ledger`, lib test, gauge-gated): a
+  synthetic two-zone insulated backend (deliberately NOT the Case 960 spec — its gauge multi-zone
+  integration is the §LIMIT-22 / Issue #3297 quarantined instability; measured this round as NaN φ_st
+  from the high-mass FD stacks on the first conditioned step) driven through one hourly step: the
+  conditioned model's returned energy equals `Σ clamp(h_coeff_z·(T_h − t_free_z))·Δt/3.6e6` against a
+  free-float twin to 1e-6, and the propagated zone temperatures equal the closed form. The old
+  forcing+ledger construction cannot satisfy this pin.
+- **Gauge suite** (as CI runs it): 29 passed / 0 failed / 1 ignored-by-design (#1669). The
+  `gauge_solver_dense_not_cheaper_than_ring` timing check flaked once across repeated local runs
+  (wall-clock 0.9 tolerance; the test drives the solver directly and does not touch the dispatcher) —
+  pre-existing flake, not caused by this change.
+
+No strict-gate number moved; no baseline re-record owed beyond the test-inventory ratchet
+(+1 lib test, 4308 → 4309 lib / 8931 → 8932 workspace, drift gate refreshed).
+
+Residual observations (unchanged): §LIMIT-40 day/night storage-release split; multi-node night vent;
+the §LIMIT-22 Case 960 gauge multi-zone instability now additionally observed as a first-step NaN φ_st
+on the high-mass FD stacks.
+
+## §36 — Round 31: remaining benchmark-row provenance audit against the 140-2023 Annex B8 transcription (2026-10-14)
+
+Round-28 (§31) audited Case 640 and round-29 (§32) Case 940; this round extends the same
+method — byte-compare every recorded annual H/C row in `src/validation/benchmark.rs`
+(both `get_all_benchmark_data` and `get_all_benchmark_data_blind`) against the authoritative
+transcription `data/reference/ashrae140/annex_b8_section7_statistics.json`
+(Tables B8-1/B8-2, TESS Std140_TF_Results.pdf 19-Aug-2024). Read-only audit; no values changed.
+
+**Verified rows (byte-match the transcription):** 195, 620, 640, 800, 810, 940.
+
+**Rows that do NOT match the transcription** (recorded [Hmin,Hmax] / [Cmin,Cmax] vs published):
+
+| case | recorded H | published H | recorded C | published C |
+|---|---|---|---|---|
+| 600 | [4.360, 5.790] | [3.993, 4.504] | [3.920, 6.140] | [5.432, 6.162] |
+| 610 | [4.360, 5.790] | [4.066, 4.592] | [3.920, 6.140] | [4.117, 4.382] |
+| 630 | [5.050, 6.470] | [4.356, 5.139] | [2.130, 3.700] | [2.573, 3.074] |
+| 650 | H 0 (correct) | — | [4.820, 7.060] | [4.186, 4.945] |
+| 900 | [1.170, 2.040] | [1.379, 1.814] | [2.130, 3.670] | [2.267, 2.714] |
+| 910 | [1.510, 2.280] | [1.648, 2.163] | [0.820, 1.880] | [1.191, 1.490] |
+| 920 | [3.260, 4.300] | [2.956, 3.607] | [1.840, 3.310] | [2.549, 3.128] |
+| 930 | [4.140, 5.340] | [3.524, 4.384] | [1.040, 2.240] | [1.654, 2.161] |
+| 950 | H 0 (correct) | — | [0.390, 0.920] | [0.586, 0.707] |
+| 960 | [1.650, 2.450] | [2.522, 2.860] | [1.550, 2.780] | [0.789, 0.950] |
+
+Case 970 has no entry in the transcription (§LIMIT-23 finding 1 stands; labeled, not correctable).
+Free-float benchmark fields are not adjudicated by this audit (the transcription's free-float
+section is temperature-based, not energy-based).
+
+Signature notes, consistent with the §31/§32 findings:
+
+- The recorded 600-family rows share values across 600/610 (and the 900-family shape across
+  900/910/920/930), the bootstrap pattern of `b0bd4119` — one hand-written row per family with
+  the #3803 blanket "Source: Annex B8" comment added later without changing numbers.
+- **The recorded 600 row is itself unverified** — the strict-gate 600 heating band
+  [4.314, 5.836] descends from it. Against the published [3.993, 4.504] (±15 % band
+  [3.738, 4.591]) the engine's 6.758 MWh heating is a ~60 %-of-mid over-prediction, far larger
+  than the current known-fail framing suggests (consistent with the §30 600-family reading).
+- **900 heating would flip to PASS** against the published row: engine 1.680 MWh sits inside the
+  published band [1.326, 1.868] — the §28 attribution (cooling-chain carrier, no heating defect
+  on 900) is consistent with the true target.
+
+**Not corrected in this round.** Each row correction moves its strict-gate band and potentially
+flips statuses (900 heating 900-family cooling gaps re-frame substantially); per the loop rule
+each correction lands with its own measured re-record battery, not batched into an audit note.
+This is the recorded queue for the next rounds, in descending value: 600 (the family anchor),
+900/910/920/930 (family re-frame), 630/650/950/960/610.
