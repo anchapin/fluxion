@@ -469,7 +469,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // byte-identical to 600 on the strict gate. Sync the per-zone vectors
         // from the schedule every step; a constant schedule writes back its
         // own constant bit-for-bit, so every non-setback case is unchanged.
-        if !self.0.hvac.free_float {
+        if !self.0.hvac.free_float && !self.0.setpoints.heating_schedule.is_constant() {
             let h_sp_now = self.0.setpoints.heating_schedule.value(timestep % 24);
             for v in self.0.setpoints.heating_setpoints.as_mut().iter_mut() {
                 *v = h_sp_now;
