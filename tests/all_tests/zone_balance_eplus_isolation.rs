@@ -383,9 +383,10 @@ fn simulate_free_float(case: ASHRAE140Case) -> (f64, f64, usize) {
 
 /// ASHRAE 140 Case 600FF — Low-mass free-floating.
 ///
-/// Reference range (ASHRAE 140-2023):
-/// - min_T ∈ [-18.8, -15.6]°C
-/// - max_T ∈ [64.9, 75.1]°C
+/// Reference range (ASHRAE 140-2023 Annex B8 Table B8-5, round 32 provenance
+/// correction 2026-10-14):
+/// - min_T ∈ [-13.8, -9.9]°C
+/// - max_T ∈ [62.4, 68.4]°C
 ///
 /// Note: Reference ranges assume a specific TMY file. We use Denver
 /// TMY (USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw), so we apply a
@@ -718,14 +719,15 @@ impl EnergyReference {
 
 const CASE_600_REF: EnergyReference = EnergyReference {
     case_id: "600",
-    annual_heating_min_mwh: 4.36,
-    annual_heating_max_mwh: 5.79,
-    annual_cooling_min_mwh: 3.92,
-    annual_cooling_max_mwh: 6.14,
-    peak_heating_min_kw: 2.8,
-    peak_heating_max_kw: 3.8,
-    peak_cooling_min_kw: 1.9,
-    peak_cooling_max_kw: 2.5,
+    // Round 32 provenance correction (2026-10-14): prior row (H 4.36-5.79,
+    annual_heating_min_mwh: 3.993,
+    annual_heating_max_mwh: 4.504,
+    annual_cooling_min_mwh: 5.432,
+    annual_cooling_max_mwh: 6.162,
+    peak_heating_min_kw: 3.02,
+    peak_heating_max_kw: 3.359,
+    peak_cooling_min_kw: 5.422,
+    peak_cooling_max_kw: 6.481,
 };
 
 const CASE_900_REF: EnergyReference = EnergyReference {
@@ -1450,8 +1452,10 @@ struct FreeFloatReference {
 
 const FF_600_REF: FreeFloatReference = FreeFloatReference {
     case_id: "600FF",
-    min_band: (-18.8, -15.6),
-    max_band: (64.9, 75.1),
+    // Round 32 provenance correction (2026-10-14): 140-2023 Annex B8 Table B8-5
+    // published values (prior -18.8..-15.6 / 64.9..75.1 were of unverified origin).
+    min_band: (-13.8, -9.9),
+    max_band: (62.4, 68.4),
 };
 const FF_650_REF: FreeFloatReference = FreeFloatReference {
     case_id: "650FF",

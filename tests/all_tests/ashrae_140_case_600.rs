@@ -10,20 +10,22 @@ use fluxion::validation::ashrae140::Case600Model;
 /// These ranges represent the acceptable results from industry-standard BEM tools.
 mod reference {
     /// Annual heating energy consumption (MWh)
-    pub const ANNUAL_HEATING_MIN: f64 = 4.30;
-    pub const ANNUAL_HEATING_MAX: f64 = 5.71;
+    // Round 32 provenance correction (2026-10-14): 140-2023 Annex B8
+    // published values (prior row was the original issue-#54 recording).
+    pub const ANNUAL_HEATING_MIN: f64 = 3.993;
+    pub const ANNUAL_HEATING_MAX: f64 = 4.504;
 
     /// Annual cooling energy consumption (MWh)
-    pub const ANNUAL_COOLING_MIN: f64 = 6.14;
-    pub const ANNUAL_COOLING_MAX: f64 = 8.45;
+    pub const ANNUAL_COOLING_MIN: f64 = 5.432;
+    pub const ANNUAL_COOLING_MAX: f64 = 6.162;
 
     /// Peak heating demand (kW)
-    pub const PEAK_HEATING_MIN: f64 = 5.20;
-    pub const PEAK_HEATING_MAX: f64 = 6.60;
+    pub const PEAK_HEATING_MIN: f64 = 3.02;
+    pub const PEAK_HEATING_MAX: f64 = 3.359;
 
     /// Peak cooling demand (kW)
-    pub const PEAK_COOLING_MIN: f64 = 6.80;
-    pub const PEAK_COOLING_MAX: f64 = 8.50;
+    pub const PEAK_COOLING_MIN: f64 = 5.422;
+    pub const PEAK_COOLING_MAX: f64 = 6.481;
 }
 
 #[test]

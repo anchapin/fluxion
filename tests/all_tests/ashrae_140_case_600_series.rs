@@ -133,10 +133,12 @@ const CASE_600FF: CaseReference = CaseReference {
     peak_heating_max: 0.0,
     peak_cooling_min: 0.0,
     peak_cooling_max: 0.0,
-    min_free_float_min: -18.8,
-    min_free_float_max: -15.6,
-    max_free_float_min: 64.9,
-    max_free_float_max: 75.1,
+    // 600FF free-float bounds corrected 2026-10-14 (round 32) to the
+    // 140-2023 Annex B8 Table B8-5 published values.
+    min_free_float_min: -13.8,
+    min_free_float_max: -9.9,
+    max_free_float_min: 62.4,
+    max_free_float_max: 68.4,
 };
 
 const CASE_650FF: CaseReference = CaseReference {
@@ -329,9 +331,10 @@ mod case_610 {
     use super::*;
 
     #[ignore = "Physics loop round 5 (2026-10-09, doc §18): spec window dims threaded to the \
-shading call; Case 610 annual heating 6.412 MWh vs published [4.36, 5.79] — further over under \
-spec-correct shading (accepted fidelity tradeoff; §LIMIT-35). Un-ignore when the engine \
-re-enters the band; the band is not widened."]
+shading call; Case 610 annual heating 6.412 MWh vs its recorded row [4.36, 5.79] — further \
+over under spec-correct shading (accepted fidelity tradeoff; §LIMIT-35). NOTE (round 32, \
+2026-10-14): the 610 recorded row is of unverified bootstrap origin (doc §36) and is queued \
+for its own Annex B8 provenance correction; the band is not widened here."]
     #[test]
     fn test_annual_heating() {
         let r = CASE_610;

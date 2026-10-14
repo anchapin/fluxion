@@ -1286,7 +1286,8 @@ fn test_case_900ff_solar_beam_to_mass_fraction_sweep() {
 /// Test paired comparison of 600FF vs 900FF from Issue #700
 ///
 /// Issue #700 stated:
-/// - 600FF: Max=54.60°C (too LOW vs reference 64.9-75.1°C)
+/// - 600FF: Max=54.60°C (too LOW vs reference 64.9-75.1°C; corrected to
+///   [62.4, 68.4] by the round-32 Annex B8 provenance fix)
 /// - 900FF: Max=64.47°C (too HIGH vs reference 41.8-46.4°C)
 ///
 /// Both being wrong in opposite directions suggested solar distribution issue.
@@ -1340,8 +1341,8 @@ fn test_case_600ff_vs_900ff_paired_comparison() {
     println!("=== Issue #700: Paired Comparison ===");
     println!("\nCase 600FF (low-mass):");
     println!("  Result: Min={:.2}°C, Max={:.2}°C", min_600, max_600);
-    println!("  Reference: [64.9, 75.1]°C");
-    let in_range_600 = (64.9..=75.1).contains(&max_600);
+    println!("  Reference: [62.4, 68.4]°C (140-2023 Annex B8, round 32)");
+    let in_range_600 = (62.4..=68.4).contains(&max_600);
     println!(
         "  Status: {}",
         if in_range_600 {
