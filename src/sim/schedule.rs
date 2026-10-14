@@ -186,10 +186,20 @@ impl DailySchedule {
     /// keep working against constant/default schedules.
     pub fn is_constant(&self) -> bool {
         match &self.values {
-            ScheduleValues::Daily(arr) => arr.iter().all(|&v| v == arr[0]),
+            // Bit-pattern comparison is deliberate: the schedules are built
+            // by `constant` / `fill_range` from the same f64 values, so a
+            // "constant" schedule is bit-uniform by construction, and
+            // bit-uniformity is exactly the property the demand-path guard
+            // needs.
+            ScheduleValues::Daily(arr) => {
+                let first = arr[0].to_bits();
+                arr.iter().all(|&v| v.to_bits() == first)
+            }
             ScheduleValues::Weekly(weekly) => {
-                let first = weekly[0][0];
-                weekly.iter().all(|day| day.iter().all(|&v| v == first))
+                let first = weekly[0][0].to_bits();
+                weekly
+                    .iter()
+                    .all(|day| day.iter().all(|&v| v.to_bits() == first))
             }
         }
     }
