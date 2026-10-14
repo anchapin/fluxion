@@ -2109,3 +2109,77 @@ published 640-cooling-above-600 does not show; recorded, not tuned.
 Residual note: the GaugeSolver dispatch path (`step_dispatcher.rs` inputs) still reads the
 per-zone vectors and does not consume the schedule — gauge build only, recorded as
 follow-up scope, not fixed late.
+
+## §30 — Round 27: the free-temperature carrier attribution COMPLETES on Case 640 — the cooling chain has no remaining defect; the deficit is entirely the FREE-family trajectory under-exceedance, plus a reference-row consistency caveat (2026-10-14, physics loop round 27)
+
+Round-27 item 1: the §19/§27/§28 free-temperature carrier, pulled to a definitive endpoint on
+ONE representative case. Case 640 selected (cleanest geometry — byte-identical envelope to
+Case 600, plus only the heating setback schedule; single-zone 5R1C, no night-vent, no 9R4C
+multi-node, no metering-pair ambiguity).
+
+### Method
+
+Strict engine path reproduced exactly on develop `270de03a` (600 H 6.758 / C 4.301; 640 H
+4.152 / C 4.287 — strict-gate bit-equal). Temporary env-gated per-step trace hook in
+`compute_zone_hvac_load` (the §19 method: `FLX_R27_TRACE`, never committed, reverted after
+measurement) dumping `t_free, t_prev, C_air, h_coeff, h_sp, c_sp, demand_W, solar_W, loads_W`;
+a temporary ignored diagnostic harness dumping per-step outdoor/solar/loads context. All hooks
+reverted; tree clean.
+
+### Fact 1 — the demand chain reproduces metered energy exactly; the #4241 residual adds only 0.6 %
+
+Reconstructing the annual sum from the traced per-step residual
+(`C_air·(T_sp−T_prev)/dt + h_coeff·(T_sp−T_free)`) reproduces the metered 4.301 (600) and
+4.287 (640) MWh to the printed digit — zero metering leakage. The capacitance term of the
+#4241 discrete residual contributes 0.026 MWh of 640's 4.287 (0.6 %); the clamp never binds.
+What remained after §19 fact 1 stands: the deficit is entirely inside `T_free` exceedance.
+
+### Fact 2 — the exceedance accounting, per month
+
+Case 640 annual cooling exceedance over 27 °C: **27,745 K·h over 2,810 h**. The band-low
+reference implied at the metered conductance (h_coeff = 155.70 W/K):
+5.971 MWh → **38,350 K·h**. Deficit **10,606 K·h = 27.7 % below the band LOW bound**
+(1.684 MWh at band low); reaching the band low needs a uniform **+3.77 K** on every
+exceedance hour — the FREE-01/02 under-swing magnitude, now stated in exceedance units.
+
+Monthly: the exceedance is summer-dominated (Jul 3,778 + Aug 4,602 + Sep 3,817 K·h) but
+**6,708 K·h (24 %) falls in heating months (Nov–Mar)**, where midday solar spikes push
+`t_free` past 27 °C and the ideal-loads model meters ~1,028 kWh of winter cooling. The
+exceedance is essentially all in conditioned day hours (setback window 23:00–07:00 carries
+85 K·h — the schedule does not touch the cooling trajectory).
+
+### Fact 3 — the twin comparison: setback moves cooling by −0.3 %; the reference row implies +40 %
+
+| | engine 600 | engine 640 | E+ 600 | E+ 640 |
+|---|---|---|---|---|
+| annual cooling (MWh) | 4.301 | 4.287 (−0.3 %) | band [4.275, 5.784] | band [5.971, 8.079] (+40 % at mid) |
+
+The engine twin delta is −0.014 MWh; monthly exceedance agrees between 600 and 640 to ≤1 %
+in every month. Physically a heating-only night setback cannot raise annual cooling; the
+engine (both pre- and post-round-26) and the round-26 re-record agree with the physics. The
+published 640 reference row nonetheless sits 40 % above the 600 row at midpoint. This is
+recorded as a **reference-consistency caveat, not tuning material**: no band is widened, no
+number adjusted; the 640-family cooling KNOWN-FAIL inherits (a) the base-case free-temperature
+under-exceedance and (b) a reference-row step between 600 and 640 that the engine's physics
+cannot produce.
+
+### Fact 4 — the exceedance-hour balance: solar and gains enter at the verified magnitudes
+
+Least-squares fit on the 2,810 exceedance hours:
+`t_free − t_ext = 4.56 + 0.127·solar + 1.42·loads` (600 twin: 4.96 + 0.127·solar + 1.33·loads).
+The solar-to-free-temperature gain corresponds to a ~7.9 W/K air-side share of the 155.7 W/K
+`h_coeff` — consistent with `solar_distribution_to_air`; the solar magnitudes were already
+verified against the reference engine (§15/§16: transmission 0.653 vs E+ 0.655). With the
+conductance audit (§19 fact 3), the metering identity (fact 1 above) and the ventilation-term
+fix (round 26, SOLAR-04), every term of the cooling chain is now accounted for at verified
+magnitude.
+
+### Verdict
+
+**The free-temperature carrier attribution is COMPLETE, with no remaining engine defect found
+on the 5R1C cooling chain.** The 640-family cooling deficit decomposes fully into the
+documented FREE-01/02/03 trajectory under-exceedance (+3.77 K uniform equivalent) plus the
+fact-3 reference-row caveat. The remaining fix is the routed GaugeSolver air–mass distribution
+rework (#1465/#1462, §LIMIT-28) or an Alex-level review of the 640/940 reference rows' proven
+provenance — no cooling-chain code change is indicated by this round. No engine numbers
+changed; all diagnostic hooks reverted (tree clean).
