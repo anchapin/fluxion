@@ -135,6 +135,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             0.0
         };
 
+        // Round 26: consume the heating setpoint schedule. The from-spec
+        // builder constructs `heating_schedule` (the Case 640/940 thermostat
+        // setback, ASHRAE 140 §5.2.2.1.4.1: 20 °C 07:00-23:00, step to 10 °C
+        // 23:00-07:00) but the HVAC demand below read only the constant
+        // per-zone `heating_setpoints` vector, so the setback never reached
+        // the demand and Cases 640/940 simulated byte-identical to 600/900
+        // on the strict gate. Sync the per-zone vectors from the schedule
+        // every step, but only when the schedule actually varies: constant
+        // schedules are skipped so callers that drive the demand by writing
+        // the vectors directly (the Issue #2826 contract) keep working, and
+        // every non-setback case is unchanged.
+        if !self.0.hvac.free_float && !self.0.setpoints.heating_schedule.is_constant() {
+            let h_sp_now = self.0.setpoints.heating_schedule.value(timestep % 24);
+            for v in self.0.setpoints.heating_setpoints.as_mut().iter_mut() {
+                *v = h_sp_now;
+            }
+        }
+
         // Prepare sol-air temperatures and fluxes
         // Issue #2873: the helper now writes its per-zone sol-air temperatures
         // into a caller-supplied buffer instead of returning a fresh Vec.
