@@ -2455,3 +2455,51 @@ No strict-gate number moved; no baseline re-record owed beyond the test-inventor
 Residual observations (unchanged): §LIMIT-40 day/night storage-release split; multi-node night vent;
 the §LIMIT-22 Case 960 gauge multi-zone instability now additionally observed as a first-step NaN φ_st
 on the high-mass FD stacks.
+
+## §36 — Round 31: remaining benchmark-row provenance audit against the 140-2023 Annex B8 transcription (2026-10-14)
+
+Round-28 (§31) audited Case 640 and round-29 (§32) Case 940; this round extends the same
+method — byte-compare every recorded annual H/C row in `src/validation/benchmark.rs`
+(both `get_all_benchmark_data` and `get_all_benchmark_data_blind`) against the authoritative
+transcription `data/reference/ashrae140/annex_b8_section7_statistics.json`
+(Tables B8-1/B8-2, TESS Std140_TF_Results.pdf 19-Aug-2024). Read-only audit; no values changed.
+
+**Verified rows (byte-match the transcription):** 195, 620, 640, 800, 810, 940.
+
+**Rows that do NOT match the transcription** (recorded [Hmin,Hmax] / [Cmin,Cmax] vs published):
+
+| case | recorded H | published H | recorded C | published C |
+|---|---|---|---|---|
+| 600 | [4.360, 5.790] | [3.993, 4.504] | [3.920, 6.140] | [5.432, 6.162] |
+| 610 | [4.360, 5.790] | [4.066, 4.592] | [3.920, 6.140] | [4.117, 4.382] |
+| 630 | [5.050, 6.470] | [4.356, 5.139] | [2.130, 3.700] | [2.573, 3.074] |
+| 650 | H 0 (correct) | — | [4.820, 7.060] | [4.186, 4.945] |
+| 900 | [1.170, 2.040] | [1.379, 1.814] | [2.130, 3.670] | [2.267, 2.714] |
+| 910 | [1.510, 2.280] | [1.648, 2.163] | [0.820, 1.880] | [1.191, 1.490] |
+| 920 | [3.260, 4.300] | [2.956, 3.607] | [1.840, 3.310] | [2.549, 3.128] |
+| 930 | [4.140, 5.340] | [3.524, 4.384] | [1.040, 2.240] | [1.654, 2.161] |
+| 950 | H 0 (correct) | — | [0.390, 0.920] | [0.586, 0.707] |
+| 960 | [1.650, 2.450] | [2.522, 2.860] | [1.550, 2.780] | [0.789, 0.950] |
+
+Case 970 has no entry in the transcription (§LIMIT-23 finding 1 stands; labeled, not correctable).
+Free-float benchmark fields are not adjudicated by this audit (the transcription's free-float
+section is temperature-based, not energy-based).
+
+Signature notes, consistent with the §31/§32 findings:
+
+- The recorded 600-family rows share values across 600/610 (and the 900-family shape across
+  900/910/920/930), the bootstrap pattern of `b0bd4119` — one hand-written row per family with
+  the #3803 blanket "Source: Annex B8" comment added later without changing numbers.
+- **The recorded 600 row is itself unverified** — the strict-gate 600 heating band
+  [4.314, 5.836] descends from it. Against the published [3.993, 4.504] (±15 % band
+  [3.738, 4.591]) the engine's 6.758 MWh heating is a ~60 %-of-mid over-prediction, far larger
+  than the current known-fail framing suggests (consistent with the §30 600-family reading).
+- **900 heating would flip to PASS** against the published row: engine 1.680 MWh sits inside the
+  published band [1.326, 1.868] — the §28 attribution (cooling-chain carrier, no heating defect
+  on 900) is consistent with the true target.
+
+**Not corrected in this round.** Each row correction moves its strict-gate band and potentially
+flips statuses (900 heating 900-family cooling gaps re-frame substantially); per the loop rule
+each correction lands with its own measured re-record battery, not batched into an audit note.
+This is the recorded queue for the next rounds, in descending value: 600 (the family anchor),
+900/910/920/930 (family re-frame), 630/650/950/960/610.
