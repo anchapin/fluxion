@@ -2265,3 +2265,69 @@ entirely the FREE-family under-exceedance inherited from 600 (7.96 % of mid resi
 Not changed, recorded for follow-up: the Case 940 benchmark row ([0.79, 1.41] / [2.08, 3.55])
 also does not exactly match the transcription ([0.863, 1.389] / [2.203, 2.613]) but has the
 correct shape (940 H < 900 H, 940 C ≈ 900 C); it needs its own audit before correction.
+
+## §32 — Round 29: Case 940 reference-row provenance audit (2026-10-14)
+
+Question (round-28 §31 follow-up): the recorded 940 row has the correct shape (940 H < 900 H,
+940 C ≈ 900 C) but does not exactly match the 140-2023 Annex B8 transcription — where did it
+come from, and does the corrected target keep the round-26 in-band heating status?
+
+**Verdict: values of unverified origin with falsely attributed provenance (same signature as
+the round-28 Case 640 finding); corrected in place to the published values.**
+
+Evidence chain:
+
+1. Recorded values: heating [0.79, 1.41] MWh, cooling [2.08, 3.55] MWh, peaks
+   1.90–2.50 / 1.70–2.30 kW, free-float fields [-6.2, -1.4] / [40.8, 46.2] — present in
+   `src/validation/benchmark.rs` (both `get_all_benchmark_data` and
+   `get_all_benchmark_data_blind`), duplicated as `CASE_940_REF` in
+   `tests/all_tests/zone_balance_eplus_isolation.rs` (the strict-gate band source) and as
+   `reference::case_940` consts in `tests/all_tests/ashrae_140_setback_ventilation.rs`
+   (display only). These produced the strict baseline's case_940_heating band [0.935, 1.265]
+   and case_940_cooling band [2.393, 3.237].
+2. Origin: commit `b0bd4119` (2026-02-13, issue #54, validation-framework bootstrap) — the
+   940 row was INSERTED by that commit with these exact values and no cited source anywhere
+   in the commit (same bootstrap that inserted the unverified 640 row; `git log -S
+   "annual_heating_min: 0.79"` shows b0bd4119's insertion, #1272's byte-identical carry
+   through the blind-validation rewrite, and #4351, which copied the values unchanged into
+   the strict-gate `CASE_940_REF` at the round-25 strict-gate extension).
+3. #3803 (`6d8d4835`, 2026-09-16) added the blanket "Source: ASHRAE 140-2023 Annex B Tables
+   B8-1..B8-5" comment to the 940 block while changing NONE of the numbers (diff-verified —
+   the only row whose values it actually replaced was 900). Same false-attribution signature
+   as the round-28 640 finding.
+4. The authoritative 140-2023 Annex B8 §B8.1 transcription
+   (`data/reference/ashrae140/annex_b8_section7_statistics.json`; Tables B8-1..B8-4, TESS
+   Std140_TF_Results.pdf 19-Aug-2024) gives Case 940: heating [0.863, 1.389] mean 1.109
+   (B8-1), cooling [2.203, 2.613] mean 2.401 (B8-2), peak heating [3.052, 3.882] kW (B8-3),
+   peak cooling [2.556, 3.376] kW (B8-4). The recorded row matches NONE of the eight bounds.
+   Table B8-5 has no 940 entry (940 is not a free-float case), so the benchmark row's
+   free-float fields are not adjudicable against the transcription and were LEFT AS RECORDED.
+5. Shape check (why the row "has the correct shape"): published 940 H mean 1.109 vs 900's
+   1.626 — the heating-setback drop is real in the published tables, and 940 C mean 2.401 vs
+   900's 2.467 is the expected ≈ flat. The recorded row reproduces this shape but with
+   different bounds. Diagnostic detail: the recorded heating-band midpoint (1.10) matches the
+   published heating MEAN (1.109) almost exactly while no recorded bound matches a published
+   bound — the signature of a transcribed mean with guessed bounds, not of a different
+   published source. (The cooling midpoint does not match the published mean, so the row is
+   not a consistent mean-transcription either.) No published source for the recorded row
+   exists anywhere in the repo's history.
+6. Verdict route: per the round-28 640 precedent (#4170 case_950_cooling restoration pattern),
+   authoritative published values exist in-repo, so the recording is CORRECTED rather than
+   merely labeled.
+
+Landed correction (target-only; zero engine changes):
+
+| metric | published (B8) | band (±15 % of mid) | engine (unchanged) | gap before → after |
+|---|---|---|---|---|
+| case_940_heating | [0.863, 1.389] MWh | [0.935, 1.265] → [0.957, 1.295] | 1.130 MWh | 0.00 → 0.00 (stays PASS) |
+| case_940_cooling | [2.203, 2.613] MWh | [2.393, 3.237] → [2.047, 2.769] | 1.671 MWh | 25.65 → 15.61 % of mid |
+
+Statuses unchanged: heating stays pass (the round-26 schedule-consumption fix's 940 heating
+re-entry HOLDS under the true published target — measured 1.130 sits inside the new band
+[0.957, 1.295] with more margin on the upper edge); cooling stays known_fail (the gap
+narrows from 25.65 to 15.61 % of mid purely because the unfit recorded target is replaced).
+Peak-heating note: the recorded 940 peak heating 2.626 kW (round-16 re-record, LIMIT-12) sat
+"out of band" only against the unverified [1.90, 2.50] row from the other side — against the
+published [3.052, 3.882] it is BELOW the published low by 13 %. The 940 peak-heating question
+is recorded, not chased: the strict gate does not gate peaks, and the engine target is the
+published tables.

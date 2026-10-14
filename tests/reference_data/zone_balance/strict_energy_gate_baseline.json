@@ -403,12 +403,12 @@
     },
     "case_940_heating": {
       "published_range_mwh": [
-        0.79,
-        1.41
+        0.863,
+        1.389
       ],
       "band_mwh": [
-        0.935,
-        1.265
+        0.957,
+        1.295
       ],
       "value_mwh": 1.13,
       "gap_pct_of_mid": 0.0,
@@ -416,15 +416,15 @@
     },
     "case_940_cooling": {
       "published_range_mwh": [
-        2.08,
-        3.55
+        2.203,
+        2.613
       ],
       "band_mwh": [
-        2.393,
-        3.237
+        2.047,
+        2.769
       ],
       "value_mwh": 1.671,
-      "gap_pct_of_mid": 25.65,
+      "gap_pct_of_mid": 15.61,
       "status": "known_fail"
     },
     "case_195_heating": {
@@ -566,5 +566,6 @@
   "_doc_round24": "Re-recorded 2026-10-13 (loop round 24, issue #3061): Case 960 per-zone construction split (140-2017 5.2.2.2.7: back zone lightweight = Case 600 assemblies, sun zone heavyweight = Case 900; new serde-default CaseSpec.zone_constructions). Case 960 H 2.085 -> 2.508 MWh (gap 0 -> 7.37 pp of mid; heating LEAVES its band high) and C 0.511 -> 1.037 MWh (gap 61.39 -> 37.09 pp). The heating raise is honest movement from a sanctioned fidelity-first spec correction (round-21/22 precedent): the standard mandates the low-mass back zone; recorded, not tuned. The cooling fall is a genuine improvement. All other 30 observables unchanged (checker 9 PASS / 32 KNOWN-FAIL after re-record).",
   "_doc_round26": "2026-10-13 loop round 26: Cases 640/940 re-recorded from the corrected engine (heating setback schedule now consumed by the default sim demand paths, see PR round-26). All other cases bit-identical to the previous record.",
   "_doc_round26_pr2": "2026-10-13 loop round 26 (PR #4404): night-vent capacity corrected to the ASHRAE 140 Table 5-160 sea-level route (1400 m3/h; fixed rho=1.2 engine). Only the vent cases moved: 650 C 3.508->3.498, 950 C 0.640->0.654 (in band), 650FF Tmin -24.45->-24.33 / Tmax 54.37->54.30, 950FF Tmin -22.44->-21.97 / Tmax 37.98->38.05 (in band). Re-applied on this PR's rebase after the #4404 auto-merge kept stale rows.",
-  "_doc_round28": "2026-10-14 loop round 28 (Case 640 reference-row provenance audit): the recorded 640 row (heating [2.75,3.80], cooling [5.95,8.10]) entered at issue #54 (commit b0bd4119) with no cited source and matches none of the bounds of the authoritative 140-2023 Annex B8 transcription (data/reference/ashrae140/annex_b8_section7_statistics.json: heating [2.403,2.682], cooling [5.237,5.893]); #3803 added the B8-1..B8-5 source comment without changing the numbers. Rows corrected to the published values (target correction, not an engine change): case_640_heating gap 11.79 -> 48.3 % of mid, case_640_cooling gap 23.97 -> 7.96 % of mid; measured values 4.152 / 4.287 unchanged, both statuses unchanged (known_fail); checker counts unchanged. Resolves the round-27 640-vs-600 cooling reference-consistency caveat (doc section 30 fact 3): the +40% step existed only in the unverified recorded row, not in the published tables."
+  "_doc_round28": "2026-10-14 loop round 28 (Case 640 reference-row provenance audit): the recorded 640 row (heating [2.75,3.80], cooling [5.95,8.10]) entered at issue #54 (commit b0bd4119) with no cited source and matches none of the bounds of the authoritative 140-2023 Annex B8 transcription (data/reference/ashrae140/annex_b8_section7_statistics.json: heating [2.403,2.682], cooling [5.237,5.893]); #3803 added the B8-1..B8-5 source comment without changing the numbers. Rows corrected to the published values (target correction, not an engine change): case_640_heating gap 11.79 -> 48.3 % of mid, case_640_cooling gap 23.97 -> 7.96 % of mid; measured values 4.152 / 4.287 unchanged, both statuses unchanged (known_fail); checker counts unchanged. Resolves the round-27 640-vs-600 cooling reference-consistency caveat (doc section 30 fact 3): the +40% step existed only in the unverified recorded row, not in the published tables.",
+  "_doc_round29": "2026-10-14 loop round 29 (Case 940 reference-row provenance audit): the recorded 940 row (heating [0.79,1.41], cooling [2.08,3.55], peaks [1.90,2.50]/[1.70,2.30]) entered at issue #54 (commit b0bd4119) with no cited table, survived byte-identical through #1272, and matches none of the bounds of the authoritative 140-2023 Annex B8 transcription (data/reference/ashrae140/annex_b8_section7_statistics.json: heating [0.863,1.389], cooling [2.203,2.613], peaks [3.052,3.882]/[2.556,3.376]); #3803's blanket B8-1..B8-5 source comment never touched the numbers (diff-verified). Rows corrected to the published values (target correction, not an engine change): case_940_heating stays PASS at 1.130 (band [0.935,1.265] -> [0.957,1.295], measured value still inside, gap 0), case_940_cooling gap 25.65 -> 15.61 % of mid (still known_fail); measured 1.130/1.671 unchanged."
 }

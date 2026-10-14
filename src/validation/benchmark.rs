@@ -405,19 +405,30 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 940 - Thermostat Setback (High Mass)
-    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
-    // TESS 19-Aug-2024). Same inter-program source set as Case 900 above.
+    // Source: ANSI/ASHRAE Standard 140-2023, Informative Annex B8 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024), Tables B8-1..B8-4 — authoritative transcription
+    // data/reference/ashrae140/annex_b8_section7_statistics.json.
+    // Round 29 provenance correction (2026-10-14): the prior row (heating 0.79-1.41,
+    // cooling 2.08-3.55, peaks 1.90-2.50/1.70-2.30) entered at issue #54 (commit b0bd4119)
+    // with no cited table and matches none of the eight published bounds; it survived
+    // byte-identical through #1272, and #3803's blanket B8-1..B8-5 source comment never
+    // touched these numbers (diff-verified). Replaced with
+    // the published values (the free-float fields are left as recorded: Case 940 is not a
+    // free-float case and Table B8-5 has no 940 entry). The recorded heating-band midpoint
+    // (1.10) matched the published mean (1.109) almost exactly while no bound matched — a
+    // transcribed-mean-with-guessed-bounds signature, not a different published source.
+    // Band movement is a target correction, not an engine change.
     data.insert(
         "940".to_string(),
         BenchmarkData {
-            annual_heating_min: 0.79,
-            annual_heating_max: 1.41,
-            annual_cooling_min: 2.08,
-            annual_cooling_max: 3.55,
-            peak_heating_min: 1.90,
-            peak_heating_max: 2.50,
-            peak_cooling_min: 1.70,
-            peak_cooling_max: 2.30,
+            annual_heating_min: 0.863,
+            annual_heating_max: 1.389,
+            annual_cooling_min: 2.203,
+            annual_cooling_max: 2.613,
+            peak_heating_min: 3.052,
+            peak_heating_max: 3.882,
+            peak_cooling_min: 2.556,
+            peak_cooling_max: 3.376,
             min_free_float_min: -6.2,
             min_free_float_max: -1.4,
             max_free_float_min: 40.8,
@@ -962,19 +973,30 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 940 - Thermostat Setback (High Mass)
-    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
-    // TESS 19-Aug-2024). Same inter-program source set as Case 900 above.
+    // Source: ANSI/ASHRAE Standard 140-2023, Informative Annex B8 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024), Tables B8-1..B8-4 — authoritative transcription
+    // data/reference/ashrae140/annex_b8_section7_statistics.json.
+    // Round 29 provenance correction (2026-10-14): the prior row (heating 0.79-1.41,
+    // cooling 2.08-3.55, peaks 1.90-2.50/1.70-2.30) entered at issue #54 (commit b0bd4119)
+    // with no cited table and matches none of the eight published bounds; it survived
+    // byte-identical through #1272, and #3803's blanket B8-1..B8-5 source comment never
+    // touched these numbers (diff-verified). Replaced with
+    // the published values (the free-float fields are left as recorded: Case 940 is not a
+    // free-float case and Table B8-5 has no 940 entry). The recorded heating-band midpoint
+    // (1.10) matched the published mean (1.109) almost exactly while no bound matched — a
+    // transcribed-mean-with-guessed-bounds signature, not a different published source.
+    // Band movement is a target correction, not an engine change.
     data.insert(
         "940".to_string(),
         BenchmarkData {
-            annual_heating_min: 0.79,
-            annual_heating_max: 1.41,
-            annual_cooling_min: 2.08,
-            annual_cooling_max: 3.55,
-            peak_heating_min: 1.90,
-            peak_heating_max: 2.50,
-            peak_cooling_min: 1.70,
-            peak_cooling_max: 2.30,
+            annual_heating_min: 0.863,
+            annual_heating_max: 1.389,
+            annual_cooling_min: 2.203,
+            annual_cooling_max: 2.613,
+            peak_heating_min: 3.052,
+            peak_heating_max: 3.882,
+            peak_cooling_min: 2.556,
+            peak_cooling_max: 3.376,
             min_free_float_min: -6.2,
             min_free_float_max: -1.4,
             max_free_float_min: 40.8,
