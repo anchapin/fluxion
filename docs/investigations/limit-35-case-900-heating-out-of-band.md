@@ -2365,3 +2365,48 @@ air-node solve addresses.
 PR-b (infiltration threading — small, spec-consumption-shaped like round 26/27) and then
 PR-c (self-consistent gauge metering) — each independently measurable on the gauge-gated
 harness that this round verified reproduces the recorded gauge numbers.
+
+## §34 — Round 30: the §22 PR-b/PR-c premise is ALSO stale — both landed in round 9 (2026-10-14)
+
+§33's closing recommendation (round-30 sequence PR-b then PR-c) was written against the
+§22 backlog list without a git-history check. Before writing any code this round, the
+premise was verified against the current tip (`bc988dc8` — round 29 tip `14ca4c93` plus the
+approved dependabot batch #4398 `86f91e16` / #4396 `e41a4aae` / #4397 `bc988dc8`):
+
+- **PR-b is landed**: commit `c1df7120` (round 9, PR #4360, "fix(physics): thread spec
+  infiltration ACH through the gauge arm (LIMIT-35 §22 backlog 1, loop round 9 PR-b)").
+  The per-zone spec value (`setpoints.infiltration_rate`, seeded from
+  `CaseSpec::infiltration_ach` by `from_spec`) reaches BOTH gauge step paths via
+  `GaugeInputs.infiltration_ach` — the single-zone arm passes it as the `step(...)` ACH
+  argument and the multi-zone arm builds it into `ZoneBoundaryConditions.infiltration_ach`,
+  consumed in the air-node coupling (`h_inf = ρ·cp·ACH/3600·V`) and in
+  `infiltration_conductance_WK`. The §22-era hardcoded 0.5 is gone from both arms; the
+  0.0 W `Q_infiltration_w` dispatcher argument stays, now correctly documented ("the
+  infiltration PHYSICS is the ACH conductance threaded below"). A committed liveness test
+  (`test_infiltration_ach_parameter_is_live`) guards the parameter.
+- **PR-c is landed (single-zone arm)**: commit `801751f6` (round 9, PR #4361). The routed
+  single-zone arm meters demand with the gauge network's own
+  `air_node_conductance_WK` §C.3 coefficient, not the 5R1C Norton stack.
+- **No engine code changed this round.** Docs-only premise correction.
+
+Verification measurements on `bc988dc8` (all in this round, Golden-NREL EPW):
+
+- **Reproduce-first (default build, `--release --features ort`)**: all 17 annual strict-gate
+  H/C values and all 4 free-float observables byte-identical to the recorded baseline;
+  checker **10 PASS / 32 KNOWN-FAIL / 0 REGRESSION**. The dependabot batch moved no numerics.
+- **Gauge-routed family (gauge build, `--features ort,gauge-solver`, same strict harness)** —
+  the current routed values, matching the round-27 post-schedule-fix records exactly:
+  600 28.635/5.715; **640 17.798/5.176**; 900 1.680/1.684 and 940 1.130/1.671
+  (9R4C-bypassed, unchanged); 810 1.680/1.684. Other routed 5R1C diagnostics (gauge-build
+  only, not strict-gate targets): 610 29.963/3.415, 620 29.911/6.408, 630 31.186/4.911,
+  650 0.000/2.892, 195 19.846/0.120.
+- **Gauge suite**: 29 passed / 0 failed as CI runs it; with `--include-ignored` the
+  Issue #1669-quarantined `test_case_900_gauge_fiver1c_diurnal_parity` runs and fails by
+  design (unchanged quarantine).
+
+Residual observations recorded (not landed; each needs its own measured increment):
+
+1. The **multi-zone gauge arm** still derives per-zone energy from the −`net_power` ledger
+   inside `GaugeZoneState::step` — PR-c's self-consistent §C.3 coefficient is
+   single-zone-arm only. Candidate future increment; measure before landing.
+2. The §LIMIT-40 day/night storage-release split remains the open structural defect.
