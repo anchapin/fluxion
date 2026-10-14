@@ -749,9 +749,21 @@ impl NightVentilation {
     }
 
     /// Creates the ASHRAE 140 Case 650 night ventilation specification.
+    ///
+    /// Fan capacity 1400 standard m³/h (10.80 ach on the 129.6 m³ test cell),
+    /// per ASHRAE 140 Table 5-160: the 1400 m³/h input is the value specified
+    /// for "programs with fixed assumption that site is at sea level (no
+    /// automatic correction of fan mass flow)". This engine applies a fixed
+    /// ρ = 1.2 kg/m³ everywhere (infiltration included), so the
+    /// altitude-correcting route's 1703.16 m³/h input (13.14 ach, density
+    /// 1.0156 kg/m³ at the table's 1650.9 m reference altitude) does NOT
+    /// apply to it: pairing 1703.16 with ρ = 1.2 ventilated at
+    /// 2043.8 kg/h — 21.7 % more mass flow than this route's 1400 × 1.2 =
+    /// 1680 kg/h and 18 % more than the altitude-correcting route's
+    /// 1703.16 × 1.0156 = 1730 kg/h. Corrected loop round 26 (2026-10-13).
     pub fn case_650() -> Self {
         NightVentilation {
-            fan_capacity: 1703.16,    // standard m³/h (from ASHRAE 140 spec)
+            fan_capacity: 1400.0, // standard m³/h (ASHRAE 140 Table 5-160, sea-level route)
             operating_hours: (18, 7), // 18:00 to 07:00 (wraps midnight)
             adds_heat: false,
         }

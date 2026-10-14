@@ -488,8 +488,8 @@
         -23.0,
         -21.0
       ],
-      "value_c": -24.45,
-      "gap_pct_of_mid": 11.14,
+      "value_c": -24.33,
+      "gap_pct_of_mid": 10.59,
       "status": "known_fail"
     },
     "ff_650ff_max": {
@@ -501,8 +501,8 @@
         63.2,
         73.5
       ],
-      "value_c": 54.37,
-      "gap_pct_of_mid": 20.45,
+      "value_c": 54.3,
+      "gap_pct_of_mid": 20.56,
       "status": "known_fail"
     },
     "ff_900ff_min": {
@@ -540,8 +540,8 @@
         -20.2,
         -17.8
       ],
-      "value_c": -22.44,
-      "gap_pct_of_mid": 18.11,
+      "value_c": -21.97,
+      "gap_pct_of_mid": 15.63,
       "status": "known_fail"
     },
     "ff_950ff_max": {
@@ -553,7 +553,7 @@
         35.5,
         38.5
       ],
-      "value_c": 37.98,
+      "value_c": 38.05,
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     }

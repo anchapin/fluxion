@@ -392,7 +392,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // === Issue #824: Night-ventilation air-side coupling (was missing entirely) ===
         //
         // For ASHRAE 140 Case 650 / 650FF the spec defines a night-ventilation
-        // fan that runs 18:00 → 07:00 at 1703.16 m³/h, supplying outside air
+        // fan that runs 18:00 → 07:00 at 1400 m³/h (ASHRAE 140 Table 5-160
+        // sea-level route), supplying outside air
         // directly to the zone. Per ASHRAE 140 §5.4 (Case 650 description), this
         // is an *air-side* path: the fan moves outdoor air through the zone
         // and removes heat at rate

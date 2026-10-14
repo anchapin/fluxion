@@ -1001,7 +1001,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // The forced-convection contribution to h_tr_is is applied via the
         // capped multiplier `capped_h_tr_is_ach_multiplier(ach_night_vent)` —
         // see Issue #2871 cap. When the natural multiplier (e.g. 2.91× at the
-        // Case 650 spec ACH=13.14) exceeds `MAX_CONVECTIVE_TO_AIR_MULTIPLIER
+        // Case 650 spec ACH=10.80 after the round-26 Table 5-160 sea-level
+        // capacity correction) exceeds `MAX_CONVECTIVE_TO_AIR_MULTIPLIER
         // = 2.0×`, the cap engages and the morning ramp can no longer
         // pulsed-charge the air node through the surface coupling.
         let mut ach_night_vent: f64 = 0.0;
