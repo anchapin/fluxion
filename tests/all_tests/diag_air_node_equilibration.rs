@@ -182,7 +182,7 @@ fn diag_air_node_equilibration() {
         c_gauge,
         h_gauge / c_gauge
     );
-    println!("ASHRAE reference: heating = 2.75–3.80 MWh, cooling = 5.95–8.10 MWh");
+    println!("ASHRAE reference (140-2023 Annex B8, round-28 corrected): heating = 2.403–2.682 MWh, cooling = 5.237–5.893 MWh");
 
     // Compute effective equilibration per timestep (exclude setback/transient hours)
     // Focus on stable hours where |T_air - T_out| > 2 K

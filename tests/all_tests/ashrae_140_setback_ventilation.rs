@@ -24,10 +24,12 @@ use fluxion::weather::WeatherSource;
 mod reference {
     // Case 640 - Low mass with thermostat setback
     pub mod case_640 {
-        pub const ANNUAL_HEATING_MIN: f64 = 2.75;
-        pub const ANNUAL_HEATING_MAX: f64 = 3.80;
-        pub const ANNUAL_COOLING_MIN: f64 = 5.95;
-        pub const ANNUAL_COOLING_MAX: f64 = 8.10;
+        // Round 28 provenance correction: published 140-2023 Annex B8 values (was:
+        // 2.75/3.80, 5.95/8.10 — issue #54 values of unverified origin; see benchmark.rs).
+        pub const ANNUAL_HEATING_MIN: f64 = 2.403;
+        pub const ANNUAL_HEATING_MAX: f64 = 2.682;
+        pub const ANNUAL_COOLING_MIN: f64 = 5.237;
+        pub const ANNUAL_COOLING_MAX: f64 = 5.893;
     }
 
     // Case 650 - Low mass with night ventilation

@@ -215,19 +215,29 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 640 - Thermostat Setback (Low Mass)
-    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
-    // TESS 19-Aug-2024). Same inter-program source set as Case 600 above.
+    // Source: ANSI/ASHRAE Standard 140-2023, Informative Annex B8 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024), Tables B8-1..B8-4 — authoritative transcription
+    // data/reference/ashrae140/annex_b8_section7_statistics.json.
+    // Round 28 provenance correction (2026-10-14): the prior row (heating 2.75-3.80,
+    // cooling 5.95-8.10, peaks 4.30-5.70/2.80-3.70) entered at issue #54 (commit b0bd4119)
+    // with no cited source and matches none of the eight published bounds; #3803 added the
+    // B8-1..B8-5 source comment without changing the numbers. Replaced with the published
+    // values. Physics cross-check: Case 640 = Case 600 + heating setback only
+    // (140-2017 §5.2.2.1.4), so 640 cooling must track 600 cooling — published 5.636 vs
+    // 5.856 MWh mean (-3.8%); the prior row implied +40%, which no heating setback can
+    // produce. Prior values were of unverified origin; band movement is a target
+    // correction, not an engine change (engine values unchanged, still known_fail).
     data.insert(
         "640".to_string(),
         BenchmarkData {
-            annual_heating_min: 2.75,
-            annual_heating_max: 3.80,
-            annual_cooling_min: 5.95,
-            annual_cooling_max: 8.10,
-            peak_heating_min: 4.30,
-            peak_heating_max: 5.70,
-            peak_cooling_min: 2.80,
-            peak_cooling_max: 3.70,
+            annual_heating_min: 2.403,
+            annual_heating_max: 2.682,
+            annual_cooling_min: 5.237,
+            annual_cooling_max: 5.893,
+            peak_heating_min: 4.039,
+            peak_heating_max: 4.658,
+            peak_cooling_min: 5.365,
+            peak_cooling_max: 6.429,
             min_free_float_min: -18.6,
             min_free_float_max: -15.4,
             max_free_float_min: 63.5,
@@ -762,19 +772,29 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 640 - Thermostat Setback (Low Mass)
-    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
-    // TESS 19-Aug-2024). Same inter-program source set as Case 600 above.
+    // Source: ANSI/ASHRAE Standard 140-2023, Informative Annex B8 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024), Tables B8-1..B8-4 — authoritative transcription
+    // data/reference/ashrae140/annex_b8_section7_statistics.json.
+    // Round 28 provenance correction (2026-10-14): the prior row (heating 2.75-3.80,
+    // cooling 5.95-8.10, peaks 4.30-5.70/2.80-3.70) entered at issue #54 (commit b0bd4119)
+    // with no cited source and matches none of the eight published bounds; #3803 added the
+    // B8-1..B8-5 source comment without changing the numbers. Replaced with the published
+    // values. Physics cross-check: Case 640 = Case 600 + heating setback only
+    // (140-2017 §5.2.2.1.4), so 640 cooling must track 600 cooling — published 5.636 vs
+    // 5.856 MWh mean (-3.8%); the prior row implied +40%, which no heating setback can
+    // produce. Prior values were of unverified origin; band movement is a target
+    // correction, not an engine change (engine values unchanged, still known_fail).
     data.insert(
         "640".to_string(),
         BenchmarkData {
-            annual_heating_min: 2.75,
-            annual_heating_max: 3.80,
-            annual_cooling_min: 5.95,
-            annual_cooling_max: 8.10,
-            peak_heating_min: 4.30,
-            peak_heating_max: 5.70,
-            peak_cooling_min: 2.80,
-            peak_cooling_max: 3.70,
+            annual_heating_min: 2.403,
+            annual_heating_max: 2.682,
+            annual_cooling_min: 5.237,
+            annual_cooling_max: 5.893,
+            peak_heating_min: 4.039,
+            peak_heating_max: 4.658,
+            peak_cooling_min: 5.365,
+            peak_cooling_max: 6.429,
             min_free_float_min: -18.6,
             min_free_float_max: -15.4,
             max_free_float_min: 63.5,

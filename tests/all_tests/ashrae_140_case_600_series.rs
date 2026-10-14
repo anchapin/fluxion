@@ -89,16 +89,18 @@ const CASE_630: CaseReference = CaseReference {
     max_free_float_max: 66.2,
 };
 
+// Round 28 provenance correction (2026-10-14): published 140-2023 Annex B8 B8-1..B8-4
+// values (see benchmark.rs; prior values were issue #54's, of unverified origin).
 const CASE_640: CaseReference = CaseReference {
     case_id: "640",
-    annual_heating_min: 2.75,
-    annual_heating_max: 3.80,
-    annual_cooling_min: 5.95,
-    annual_cooling_max: 8.10,
-    peak_heating_min: 4.30,
-    peak_heating_max: 5.70,
-    peak_cooling_min: 2.80,
-    peak_cooling_max: 3.70,
+    annual_heating_min: 2.403,
+    annual_heating_max: 2.682,
+    annual_cooling_min: 5.237,
+    annual_cooling_max: 5.893,
+    peak_heating_min: 4.039,
+    peak_heating_max: 4.658,
+    peak_cooling_min: 5.365,
+    peak_cooling_max: 6.429,
     min_free_float_min: -18.6,
     min_free_float_max: -15.4,
     max_free_float_min: 63.5,
@@ -922,7 +924,7 @@ fn test_case_640_hourly_peak_week_diagnostic() {
     eprintln!(
         "\n=== Annual Totals ===\n\
         Total Annual Heating: {:.3} MWh\n\
-        Total Annual Cooling: {:.3} MWh (Ref: 5.95-8.10 MWh)\n\
+        Total Annual Cooling: {:.3} MWh (Ref: 5.237-5.893 MWh)\n\
         Peak Week Cooling: {:.3} MWh\n\
         CSV written to: {}",
         annual_heating_mwh,
@@ -930,7 +932,8 @@ fn test_case_640_hourly_peak_week_diagnostic() {
         peak_week_cooling_mwh,
         csv_path.display()
     );
-    // Note: The remaining gap to ASHRAE reference (5.95-8.10 MWh) is tracked in
+    // Note: The remaining gap to the ASHRAE 140-2023 Annex B8 reference
+    // (5.237-5.893 MWh; row corrected from unverified values in round 28) is tracked in
     // LIMIT-30 (solar distribution). This diagnostic reports values for
     // investigation; ASHRAE validation is handled by the formal test suite.
 }

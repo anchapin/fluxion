@@ -2160,6 +2160,28 @@ engine (both pre- and post-round-26) and the round-26 re-record agree with the p
 published 640 reference row nonetheless sits 40 % above the 600 row at midpoint. This is
 recorded as a **reference-consistency caveat, not tuning material**: no band is widened, no
 number adjusted; the 640-family cooling KNOWN-FAIL inherits (a) the base-case free-temperature
+
+**RESOLVED 2026-10-14 (loop round 28, reference-row provenance audit): the step was never
+published.** Git archaeology: the recorded 640 row (heating 2.75–3.80, cooling 5.95–8.10 MWh)
+entered at issue #54 (commit `b0bd4119`, 2026-02-13, validation-framework bootstrap, no source
+cited) and survived byte-identical through #1272 and #3803; #3803 added the "Source: ASHRAE
+140-2023 Annex B Tables B8-1..B8-5" comment WITHOUT changing the numbers (diff verified — only
+Case 620's values were actually replaced in that commit). The authoritative 140-2023 Annex B8
+§B8.1 transcription (`data/reference/ashrae140/annex_b8_section7_statistics.json`, Table B8-2,
+TESS Std140_TF_Results.pdf 19-Aug-2024) gives 640 cooling [5.237, 5.893] mean 5.636 — i.e. the
+published tables agree with the physics: 640 cooling ≈ 600 cooling (−3.8 % published, −0.3 %
+engine). The in-repo 140-2017(a) PDF carries no inter-program 640 ranges (its Annex B8 is
+single-program example output). No published source for the recorded row exists anywhere in the
+repo's history. Verdict: values of unverified origin with falsely attributed provenance
+(same signature as the round-21 Case 970 finding, but with authoritative published values
+in-repo, so — per the #4170 case_950_cooling precedent — the recording is CORRECTED rather
+than merely labeled). The row (benchmark.rs both maps, `CASE_640_REF`, setback reference
+consts, strict baseline) now carries the published values; measured engine values are
+unchanged and both 640 statuses remain known_fail (heating gap 11.79 → 48.30 % of mid under
+the true published target — the engine's low-mass heating over-prediction is larger against
+the published 640 than the unverified row suggested; cooling gap 23.97 → 7.96 % of mid). §31
+records the round-28 audit in full.
+
 under-exceedance and (b) a reference-row step between 600 and 640 that the engine's physics
 cannot produce.
 
@@ -2183,3 +2205,63 @@ fact-3 reference-row caveat. The remaining fix is the routed GaugeSolver air–m
 rework (#1465/#1462, §LIMIT-28) or an Alex-level review of the 640/940 reference rows' proven
 provenance — no cooling-chain code change is indicated by this round. No engine numbers
 changed; all diagnostic hooks reverted (tree clean).
+
+## §31 — Round 28: Case 640 reference-row provenance audit (2026-10-14)
+
+Question (Alex, 2026-10-14 06:54 ET): where did the recorded 640 cooling band/reference values
+come from — published-and-correct, transcription error, or unverified origin like 970's band?
+
+**Verdict: internal values of unverified origin, falsely attributed to the published tables;
+corrected in place to the published values.**
+
+Evidence chain:
+
+1. Recorded values: heating [2.75, 3.80] MWh, cooling [5.95, 8.10] MWh, peaks
+   4.30–5.70 / 2.80–3.70 — present in `src/validation/benchmark.rs` (both
+   `get_all_benchmark_data` and `get_all_benchmark_data_blind`), duplicated as `CASE_640_REF`
+   in `tests/all_tests/zone_balance_eplus_isolation.rs` (the strict-gate band source) and as
+   `reference::case_640` consts in `tests/all_tests/ashrae_140_setback_ventilation.rs`
+   (display only). These produced the strict baseline's case_640_cooling
+   published_range [5.95, 8.1] / band [5.971, 8.079].
+2. Origin: commit `b0bd4119` (2026-02-13, issue #54, "validation framework enhancements",
+   co-authored-by Claude Sonnet 4.5) — no source cited anywhere in the commit.
+3. The values survived byte-identical through #1272 (1aa3cc59, "add raw ASHRAE 140-2023
+   benchmark data") and #3803 (6d8d4835, 2026-09-16, "replace 5R1C-calibrated ranges with true
+   ASHRAE reference values"). #3803's diff ADDS the "Source: ASHRAE 140-2023 Annex B Tables
+   B8-1..B8-5 (Std140_TF_Results.pdf, TESS 19-Aug-2024)" comment to the 640 block while
+   changing NONE of the numbers — the only 600-series row whose values it actually replaced
+   was Case 620 (which matches the authoritative transcription exactly).
+4. The authoritative 140-2023 Annex B8 §B8.1 transcription
+   (`data/reference/ashrae140/annex_b8_section7_statistics.json`; provenance per #4292–#4300,
+   the round-18 Table 8-15 verification pattern) gives Case 640:
+   heating [2.403, 2.682] mean 2.612 (B8-1), cooling [5.237, 5.893] mean 5.636 (B8-2),
+   peak heating [4.039, 4.658] kW (B8-3), peak cooling [5.365, 6.429] kW (B8-4).
+   The recorded row matches NONE of the eight bounds.
+5. Physics cross-check: Case 640 is Case 600 plus a heating-only night setback
+   (140-2017(a) §5.2.2.1.4, in-repo licensed PDF). Published 2023: 640 cooling mean 5.636 vs
+   600's 5.856 — −3.8 %. Engine: 4.287 vs 4.301 — −0.3 %. The recorded row's +40 % step at
+   midpoint cannot be produced by any heating setback; it exists ONLY in the unverified row.
+6. The in-repo 140-2017(a) PDF (`docs/140_2017_a_20200901.pdf`, full-text searched) publishes
+   no inter-program 640 ranges (its Annex B8 is single-program example output, e.g. B8-H17) —
+   no alternative published source for the recorded numbers exists in the repo.
+7. Round-21 precedent comparison: Case 970's band is likewise of unverified origin
+   (§LIMIT-23 finding 1), but no authoritative 970 values exist, so it is labeled, not
+   corrected. For 640 the authoritative published values ARE in-repo, so the recording is
+   corrected — the same route as #4170's case_950_cooling published-range restoration.
+
+Landed correction (target-only; zero engine changes):
+
+| metric | published (B8) | band (±15 % of mid) | engine (unchanged) | gap before → after |
+|---|---|---|---|---|
+| case_640_heating | [2.403, 2.682] MWh | [2.161, 2.924] | 4.152 MWh | 11.79 → 48.30 % of mid |
+| case_640_cooling | [5.237, 5.893] MWh | [4.730, 6.400] | 4.287 MWh | 23.97 → 7.96 % of mid |
+
+Both statuses remain known_fail; checker counts unchanged. Reading: against the TRUE published
+target the engine's 640 heating over-prediction is far larger than the unverified row implied
+(consistent with the 600-family low-mass heating gap), and the 640 cooling known-fail is almost
+entirely the FREE-family under-exceedance inherited from 600 (7.96 % of mid residual), not a
+640-specific defect.
+
+Not changed, recorded for follow-up: the Case 940 benchmark row ([0.79, 1.41] / [2.08, 3.55])
+also does not exactly match the transcription ([0.863, 1.389] / [2.203, 2.613]) but has the
+correct shape (940 H < 900 H, 940 C ≈ 900 C); it needs its own audit before correction.
