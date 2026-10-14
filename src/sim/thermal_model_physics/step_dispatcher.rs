@@ -806,42 +806,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     );
                 }
 
-                // Issue #3904: HVAC mode detection per zone.
-                // Force T_air to appropriate setpoint based on mode (heating/cooling).
-                if is_conditioned {
-                    for zone_idx in 0..num_zones {
-                        let zone_conditioned =
-                            inputs.hvac_enabled.get(zone_idx).copied().unwrap_or(0.0) >= 0.5;
-                        if !zone_conditioned {
-                            continue;
-                        }
-                        let t_air_current = multi_zone
-                            .get_zone(zone_idx)
-                            .map(|z| z.T_air().to_value())
-                            .unwrap_or(20.0);
-                        let h_sp: f64 = inputs
-                            .heating_setpoints
-                            .get(zone_idx)
-                            .copied()
-                            .unwrap_or(inputs.default_heating_sp);
-                        let c_sp: f64 = inputs
-                            .cooling_setpoints
-                            .get(zone_idx)
-                            .copied()
-                            .unwrap_or(inputs.default_cooling_sp);
-                        // Determine mode based on current zone temperature
-                        let setpoint_for_mode = if t_air_current <= h_sp {
-                            h_sp // Heating mode
-                        } else if t_air_current >= c_sp {
-                            c_sp // Cooling mode
-                        } else {
-                            t_air_current // Deadband/off - free float
-                        };
-                        if let Some(zone) = multi_zone.get_zone_mut(zone_idx) {
-                            zone.set_T_air(setpoint_for_mode);
-                        }
-                    }
-                }
+                // Round 31 (LIMIT-35 §34 obs. 1): NO pre-step setpoint
+                // forcing. The §C.3 self-consistent metering below needs the
+                // FREE-FLOAT post-step air temperature per zone — the same
+                // construction as the single-zone arm since Issue #3918 Fix
+                // B. The old forcing put T_air at the mode setpoint before
+                // the step, so the −net_power ledger was evaluated at a
+                // pre-forced air temperature and the demand never saw the
+                // network's own hold cost.
                 multi_zone.step(dt_seconds, &boundary_conditions)
             } else {
                 return None;
@@ -886,9 +858,101 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
         }
 
+        // Round 31 (LIMIT-35 §34 obs. 1) — §C.3 self-consistent per-zone
+        // metering, the multi-zone mirror of the single-zone arm's Issue
+        // #3918 Fix B + PR-c (#4361). The −net_power ledger this arm
+        // previously summed is evaluated at the pre-forced air temperature
+        // and carries the frozen-flux linearization error Fix B diagnosed;
+        // worse, a free-floating zone's ledger flux (e.g. the Case 960
+        // sunspace) was billed to the building's HVAC total. Instead, run
+        // the step free-float (no forcing above) and derive each
+        // conditioned zone's load from its free-float final temperature
+        // via the §C.3 form, reusing the exact coefficient and clamp
+        // semantics of the single-zone arm:
+        //
+        //   Q_hvac = clamp(h_coeff·(T_set − t_air_free_final),
+        //                  −cool_cap, heat_cap)
+        //
+        // with h_coeff the gauge network's own air-node conductance
+        // (`air_node_conductance_WK`, PR-c). The propagated per-zone T_air
+        // is the ISO closed-form conditioned temperature
+        // t_air_free_final + Q_hvac/h_coeff (exactly T_set unclamped,
+        // partial when capacity-limited, free-float inside the deadband).
+        // Unconditioned zones meter zero (a free-floating zone consumes no
+        // HVAC); non-conditioned models and `free_float` setups keep the
+        // ledger return exactly like the single-zone arm.
+        let per_zone_metered: HashMap<usize, f64> = if is_conditioned && !self.0.hvac.free_float {
+            let mut metered: HashMap<usize, f64> = HashMap::new();
+            let multi_zone = self
+                .0
+                .conduction
+                .backend
+                .gauge_multi_zone_solver
+                .as_mut()
+                .expect("multi-zone backend checked Some above");
+            for (zone_idx, _ledger_kwh) in per_zone_ekwh {
+                let zone_conditioned =
+                    inputs.hvac_enabled.get(zone_idx).copied().unwrap_or(0.0) >= 0.5;
+                if !zone_conditioned {
+                    metered.insert(zone_idx, 0.0);
+                    continue;
+                }
+                let (h_sp, c_sp, t_air_free_final, h_coeff) = {
+                    let zone = multi_zone
+                        .get_zone(zone_idx)
+                        .expect("zone exists (stepped above)");
+                    let h_sp: f64 = inputs
+                        .heating_setpoints
+                        .get(zone_idx)
+                        .copied()
+                        .unwrap_or(inputs.default_heating_sp);
+                    let c_sp: f64 = inputs
+                        .cooling_setpoints
+                        .get(zone_idx)
+                        .copied()
+                        .unwrap_or(inputs.default_cooling_sp);
+                    let t_free = zone.T_air().to_value();
+                    let h_coeff = zone.air_node_conductance_WK(
+                        inputs.ventilation_ach,
+                        inputs
+                            .infiltration_ach
+                            .get(zone_idx)
+                            .copied()
+                            .unwrap_or(0.0),
+                    );
+                    (h_sp, c_sp, t_free, h_coeff)
+                };
+                let demand = if t_air_free_final <= h_sp {
+                    h_coeff * (h_sp - t_air_free_final)
+                } else if t_air_free_final >= c_sp {
+                    -h_coeff * (t_air_free_final - c_sp)
+                } else {
+                    0.0
+                };
+                let q_hvac = demand.clamp(
+                    -self.0.hvac.hvac_cooling_capacity,
+                    self.0.hvac.hvac_heating_capacity,
+                );
+                let energy = q_hvac * dt_seconds / 3_600_000.0;
+                let t_air_final = if h_coeff > 0.0 {
+                    t_air_free_final + q_hvac / h_coeff
+                } else {
+                    t_air_free_final
+                };
+                multi_zone
+                    .get_zone_mut(zone_idx)
+                    .expect("zone exists (stepped above)")
+                    .set_T_air(t_air_final);
+                metered.insert(zone_idx, energy);
+            }
+            metered
+        } else {
+            per_zone_ekwh
+        };
+
         // Aggregate per-zone kWh into a single return value.
         // Convention: positive = heating, negative = cooling.
-        let total_kwh: f64 = per_zone_ekwh.values().sum();
+        let total_kwh: f64 = per_zone_metered.values().sum();
 
         // Issue #3304 (multi-zone mirror of the single-zone arm) —
         // peak-power accounting: the legacy arms feed the annual /
@@ -902,7 +966,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // untouched. Conditioning gates and zero-conditions gating
         // mirror `try_run_gauge_single_zone` exactly.
         if is_conditioned && !self.0.hvac.free_float {
-            for (zone_idx, energy_kwh) in per_zone_ekwh {
+            for (zone_idx, energy_kwh) in per_zone_metered {
                 if energy_kwh > 0.0 && self.0.hvac.hvac_heating_capacity > 0.0 {
                     self.0.hvac.annual_heating_energy += energy_kwh;
                     let zone_heating = self.0.hvac.zone_heating_energy_kwh.as_mut();
@@ -1157,6 +1221,153 @@ mod tests {
 
         let energy = model.step_physics(0, 20.0, 0.0);
         assert_eq!(energy, 0.0);
+    }
+
+    /// Round 31 (LIMIT-35 §34 obs. 1) — the multi-zone gauge arm meters its
+    /// demand with the §C.3 closed form on the gauge network's own per-zone
+    /// air-node conductance (`air_node_conductance_WK`), evaluated at the
+    /// FREE-FLOAT post-step temperature, and not with the −`net_power`
+    /// ledger the arm used before (the multi-zone mirror of the
+    /// single-zone arm's Issue #3918 Fix B + PR-c #4361).
+    ///
+    /// Vehicle: a SYNTHETIC two-zone low-mass gauge backend (insulated
+    /// R ≈ 2.4 walls, no FD stacks) hand-wired onto a `ThermalModel::new(2)`
+    /// — deliberately NOT the Case 960 sunspace spec, whose gauge multi-zone
+    /// integration is the §LIMIT-22 / Issue #3297 quarantined instability
+    /// (NaN φ_st on the high-mass FD stacks; measured this round). The pin:
+    /// step a conditioned model and a free-float twin through one identical
+    /// hourly step; the conditioned model's returned energy must equal
+    /// `Σ clamp(h_coeff_z·(T_h − t_free_z))·Δt/3.6e6` with `t_free_z` the
+    /// twin's post-step air temperature, and the propagated zone
+    /// temperatures must equal the ISO closed form
+    /// `t_free_z + Q_hvac,z / h_coeff_z` (exactly the setpoint when
+    /// unclamped).
+    #[cfg(feature = "gauge-solver")]
+    #[test]
+    fn gauge_multi_zone_meters_c3_closed_form_not_ledger() {
+        // NOTE: physics paths are fully qualified below (no `use crate::physics`
+        // imports) so the sim→physics import-cycle baseline
+        // (BASELINE_SIM_TO_PHYSICS, scripts/check_physics_sim_cycle.py) is
+        // untouched by this test.
+        use crate::sim::thermal_selector::ThermalSelector;
+
+        let make = || {
+            let mut model = ThermalModel::<VectorField>::new(2);
+            model.0.hvac.thermal_selector = ThermalSelector::default();
+            // Synthetic insulated two-zone envelope (stability: R ≈ 2.4
+            // walls, hourly dt, see the #3817 analysis in gauge_zone_solver).
+            let wall = crate::physics::wall_spec::WallSpec::single_layer(
+                "Insulated",
+                0.24,
+                0.1,
+                50.0,
+                50.0,
+            );
+            let mut mz = crate::physics::gauge_zone_solver::MultiZoneGaugeSolver::new();
+            for zone_id in 0..2 {
+                mz.add_zone(zone_id, 20.0, 3.0);
+                // Roof + floor + four walls per zone, all insulated.
+                mz.add_opaque_surface_to_zone(
+                    zone_id,
+                    &wall,
+                    20.0,
+                    crate::physics::gauge_zone_solver::SurfaceType::Roof,
+                    0.0,
+                    0.0,
+                )
+                .unwrap();
+                mz.add_opaque_surface_to_zone(
+                    zone_id,
+                    &wall,
+                    20.0,
+                    crate::physics::gauge_zone_solver::SurfaceType::Floor,
+                    0.0,
+                    180.0,
+                )
+                .unwrap();
+                for azimuth in [0.0, 90.0, 180.0, 270.0] {
+                    mz.add_opaque_surface_to_zone(
+                        zone_id,
+                        &wall,
+                        17.2,
+                        crate::physics::gauge_zone_solver::SurfaceType::Wall,
+                        azimuth,
+                        90.0,
+                    )
+                    .unwrap();
+                }
+            }
+            mz.add_zone_coupling(0, 1, 4.0, 0.5).unwrap();
+            mz.initialize().unwrap();
+            model.0.conduction.backend.gauge_multi_zone_solver = Some(mz);
+            model
+        };
+        let mut model = make(); // conditioned twin
+        let mut free = make(); // free-float twin: identical step numerics
+        free.0.hvac.hvac_enabled = VectorField::from_scalar(0.0, 2);
+
+        // Deterministic conditioning: both zones heated at 20 °C.
+        model.0.hvac.hvac_enabled = VectorField::from_scalar(1.0, 2);
+        model.0.setpoints.heating_setpoints = VectorField::from_scalar(20.0, 2);
+        model.0.setpoints.cooling_setpoints = VectorField::from_scalar(26.0, 2);
+        model.0.hvac.hvac_heating_capacity = 1.0e9;
+        model.0.hvac.hvac_cooling_capacity = 1.0e9;
+
+        let dt = 3600.0;
+        let outdoor = -5.0;
+        let energy = model
+            .try_step_physics(0, outdoor, dt)
+            .expect("conditioned step must succeed");
+        assert_eq!(
+            model.0.hvac.effective_zone_solver,
+            crate::sim::thermal_selector::ZoneSolverKind::Gauge,
+            "conditioned model must route the gauge multi-zone arm, got {:?}",
+            model.0.hvac.effective_zone_solver
+        );
+        free.try_step_physics(0, outdoor, dt)
+            .expect("free-float twin step must succeed");
+
+        let t_free = free.0.setpoints.temperatures.as_ref().to_vec();
+        let inputs = model.collect_gauge_inputs(0);
+        let mz = model
+            .0
+            .conduction
+            .backend
+            .gauge_multi_zone_solver
+            .as_ref()
+            .expect("multi-zone gauge backend must be populated");
+
+        let mut expected_energy = 0.0;
+        for (zone_idx, &t_free_z) in t_free.iter().enumerate() {
+            let zone = mz.get_zone(zone_idx).expect("zone exists");
+            let h_coeff = zone.air_node_conductance_WK(
+                inputs.ventilation_ach,
+                inputs
+                    .infiltration_ach
+                    .get(zone_idx)
+                    .copied()
+                    .unwrap_or(0.0),
+            );
+            assert!(h_coeff > 0.0, "zone {zone_idx}: h_coeff must be positive");
+            // Deep cold outdoor: each zone floats below the heating
+            // setpoint, so the demand is the unclamped heating form.
+            assert!(
+                t_free_z < 20.0,
+                "zone {zone_idx} free-float {t_free_z} must sit below the 20 °C setpoint"
+            );
+            let q = h_coeff * (20.0 - t_free_z);
+            expected_energy += q * dt / 3_600_000.0;
+            let t_model = model.0.setpoints.temperatures.as_ref()[zone_idx];
+            let t_expected = t_free_z + q / h_coeff;
+            assert!(
+                (t_model - t_expected).abs() < 1e-6,
+                "zone {zone_idx}: propagated T_air {t_model} != closed form {t_expected}"
+            );
+        }
+        assert!(
+            (energy - expected_energy).abs() < 1e-6,
+            "metered energy {energy} != §C.3 closed form {expected_energy} (t_free={t_free:?})"
+        );
     }
 
     /// Round 12 (LIMIT-40 doc §25): the gauge path's exterior film must be

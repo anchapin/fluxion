@@ -2410,3 +2410,48 @@ Residual observations recorded (not landed; each needs its own measured incremen
    inside `GaugeZoneState::step` — PR-c's self-consistent §C.3 coefficient is
    single-zone-arm only. Candidate future increment; measure before landing.
 2. The §LIMIT-40 day/night storage-release split remains the open structural defect.
+
+## §35 — Round 31: the multi-zone gauge arm's −net_power ledger metering is REPLACED with the self-consistent §C.3 form (2026-10-14)
+
+§34's residual observation 1, verified live in code and now landed. Premise check on `f0f7e745`:
+the multi-zone arm (`try_run_gauge_multi_zone`) forced each conditioned zone's `T_air` to its mode
+setpoint BEFORE `MultiZoneGaugeSolver::step`, then summed the per-zone `step_with_coupling` return —
+the −`net_power` ledger (`GaugeZoneSolver::step_with_coupling`, `energy_kwh = -(net_power·Δt)`),
+evaluated at the pre-forced air temperature and carrying the frozen-flux linearization error the
+single-zone arm's Issue #3918 Fix B diagnosed. Worse, a free-floating zone's ledger flux (the Case
+960 sunspace in principle) was billed to the building's HVAC total. `air_node_conductance_WK` was
+consumed by the single-zone arm only.
+
+**The increment (gauge-build-only):** the pre-step setpoint forcing is removed — the multi-zone step
+runs free-float — and each conditioned zone meters
+`Q = clamp(h_coeff·(T_set − t_air_free_final), −cool_cap, heat_cap)` with `h_coeff` the zone's own
+`air_node_conductance_WK` (PR-c's coefficient), propagating the ISO closed-form final temperature
+`t_free + Q/h_coeff`. Unconditioned zones meter zero; non-conditioned models and `free_float` setups
+keep the ledger return, mirroring the single-zone arm exactly.
+
+**Measured (Golden-NREL EPW, `f0f7e745` + this change):**
+
+- **Default-build landing gate**: all 17 annual + 4 free-float strict-gate observables
+  byte-identical to the round-30 baseline (checker 10 PASS / 32 KNOWN-FAIL / 0 REGRESSION).
+- **Gauge-build strict family**: byte-identical before→after — no strict-gate case routes the
+  multi-zone arm (Case 960 is HighMass and keeps the selector-independent 9R4C auto-promotion, so
+  the gauge dispatch skips it; the multi-zone arm's only strict-harness exposure is nil). The routed
+  single-zone family reproduces §34 exactly (600 28.635/5.715, 640 17.798/5.176).
+- **Mechanism pin** (`gauge_multi_zone_meters_c3_closed_form_not_ledger`, lib test, gauge-gated): a
+  synthetic two-zone insulated backend (deliberately NOT the Case 960 spec — its gauge multi-zone
+  integration is the §LIMIT-22 / Issue #3297 quarantined instability; measured this round as NaN φ_st
+  from the high-mass FD stacks on the first conditioned step) driven through one hourly step: the
+  conditioned model's returned energy equals `Σ clamp(h_coeff_z·(T_h − t_free_z))·Δt/3.6e6` against a
+  free-float twin to 1e-6, and the propagated zone temperatures equal the closed form. The old
+  forcing+ledger construction cannot satisfy this pin.
+- **Gauge suite** (as CI runs it): 29 passed / 0 failed / 1 ignored-by-design (#1669). The
+  `gauge_solver_dense_not_cheaper_than_ring` timing check flaked once across repeated local runs
+  (wall-clock 0.9 tolerance; the test drives the solver directly and does not touch the dispatcher) —
+  pre-existing flake, not caused by this change.
+
+No strict-gate number moved; no baseline re-record owed beyond the test-inventory ratchet
+(+1 lib test, 4308 → 4309 lib / 8931 → 8932 workspace, drift gate refreshed).
+
+Residual observations (unchanged): §LIMIT-40 day/night storage-release split; multi-node night vent;
+the §LIMIT-22 Case 960 gauge multi-zone instability now additionally observed as a first-step NaN φ_st
+on the high-mass FD stacks.
