@@ -1960,5 +1960,408 @@ The probe fails the bar. Per the brief's pre-committed fork, option (a) is adopt
 - No engine change landed this round; default build untouched; no re-record owed. No tuning at
   any step — every probe constant was already in the repo.
 
+## §28 — Round 25: the 900-family cooling-chain decomposition extended across the family; the §19 carrier is reaffirmed, no new defect isolated (2026-10-13, physics loop round 25)
+
+Round-25 scope: run the decomposition harness on the shared 900-family cooling chain
+(Cases 900/810/920/950/960) and isolate which term carries the cooling under-prediction.
+Two runs contributed the measurements: an interrupted round-25 execution (state review found
+no PR, no worktree and no commit; its never-committed throwaway harness and experiment logs
+were adopted as this round's artifacts) and the completion run on develop `2170ddd2`.
+
+### Baseline reproduction (strict engine path, Golden-NREL EPW)
+
+The strict gate on `2170ddd2` reproduces every recorded number exactly (17 annual + 4
+free-float observables): 900 H 1.680 / C 1.684 (band [2.13, 3.67] cooling, gap 26.93 pp of
+mid); 920 H 2.646 / C 1.807 (gap 14.83); 950 C 0.640 (in band [0.39, 0.92]); 960 H 2.508 /
+C 1.037 (gap 37.09); 810 H 1.680 / C 1.684 (cooling gap 1.10); 600 6.758 / 4.301 (cooling in
+band); 970 2.004 / 0.869. The free-float cohort on the DEFAULT path (600FF Tmin −19.00,
+650FF −24.45, 900FF −6.71, 950FF −22.44) matches its recorded known-fail state — the
+interrupted run's "repro" log that showed FF failures was baseline state, not a regression.
+
+### Family decomposition — where the deficit lives, per case
+
+Metering arithmetic: re-confirmed clean (§19 fact 1 carries over: Σ h·(T_free−T_set)
+reproduces the metered annual to <1%, no clamp loss — the interrupted run's probes show
+`clamp_loss_GJ=0.000` on every variant, raw == delivered per month). The deficit is fully
+inside the free-temperature exceedance on every family case, exactly as §19 found for 900:
+
+| case | engine C (MWh) | strict band (printed) | recorded gap (% of mid) | interrupted-run probe (zone 0) |
+|---|---|---|---|---|
+| 900  | 1.684 | [2.465, 3.335] | 26.93 | mean h_coeff 121.6 W/K, raw cool 18.6 GJ, solar 54.4 GJ |
+| 920  | 1.807 | [2.189, 2.961] | 14.83 | night-setback variant of 900 |
+| 950  | 0.640 | [0.557, 0.753] | 0 (pass) | night-vent variant of 900 |
+| 960  | 1.037 | [1.840, 2.490] | 37.09 | spec-compliant split, sunspace + back zone |
+
+Response-direction checks against the reference family deltas:
+
+- **Night ventilation (900→950):** the reference band midpoint drops 2.90 → 0.655
+  (−2.245 MWh); the engine drops 1.684 → 0.640 (−1.044 MWh). The engine's night-vent term
+  is roughly HALF as effective as the reference's, but 950 still lands in band because the
+  entire family deficit is the entire family deficit is the
+  base-case free-temperature trajectory, which the vent term rides on. A vent-magnitude
+  "fix" would be tuning against the wrong carrier; the 140 spec's fixed vent ACH is
+  applied as specified (audited in earlier rounds).
+- **Heating setback (900→920):** engine cooling RISES 1.684 → 1.807 (+0.123) where the
+  reference band midpoint FALLS 2.90 → 2.575 (−0.325). Small (≈0.12 MWh) and opposite in
+  sign. The heating direction
+  matches the reference (920 H above 900 H in both). No mechanism defect was isolated: the
+  setback schedule construction is verified correct (`fill_range` wraps midnight; cooling
+  schedule unaffected), so the sign anomaly is another face of the same free-temperature
+  trajectory term (colder winter mass nights → different summer starting states through the
+  annual integration). Recorded, not tuned; below the materiality of the base-carrier term.
+- **Solar aperture / envelope conductance / ventilation terms:** §17's compensating-chain
+  falsification and §19 fact 3's conductance audit carry over unchanged — solar magnitudes
+  are reference-verified (§13–§16), and the conductance stack's sign is wrong to carry a
+  cooling deficit. The interrupted run's h-coefficient sweep (variants at mean h 92.3 / 121.6
+  / 123.9 / 129.7 W/K) moved cooling monotonically with no anomaly, confirming the chain has
+  no hidden insensitivity (same conclusion as §17 for shading).
+
+### Verdict
+
+- The family-wide carrier remains the §19/§27 free-temperature (air–mass distribution)
+  term, an ACCEPTED open limitation of the legacy 9R4C lumping after round 14's option-(a)
+  decision; the round-25 decomposition found no new term and no new defect in the chain.
+- The interrupted run left no engine change; nothing was adopted from its probes beyond
+  measurements and the throwaway harness.
+- Round-25 landings (separate PRs, both measured no-movement on the strict gate): the
+  round-24 follow-up per-zone U-value threading to the 5R1C LW path (premise that it moves
+  960/970 measured FALSE — both cases condition on the 9R4C network, which round 24 already
+  per-zoned; latent-fidelity fix only), and the determinism workflow's Compare Hashes
+  hardening against the artifact-collection race.
+- No engine number changed this round; no re-record owed; the §LIMIT-05/§LIMIT-17 rows
+  stand with their recorded gaps.
+
 Round budget: probe design + 11 measured annual runs (5 anchor + 6 variant), all on one scratch
 build. Scratch reverted; worktree removed after merge.
+
+## §29 — Round 26: the "920 setback" premise is FALSE; the real defect is that the heating setback schedule was never consumed by the default sim paths (Cases 640/940 byte-identical to 600/900) — FIXED and re-recorded (2026-10-13, physics loop round 26)
+
+### Premise correction
+
+§28 recorded the 920 cooling sign anomaly as "heating setback (900→920)" and described
+Case 920 as the "night-setback variant of 900". That premise is false on both sides:
+
+- **The 140 spec:** Case 920 is §5.2.2.2.3, *High Mass East/West Window Orientation* —
+  modeled exactly as Case 620 with the 900-series materials. It has the same thermostat
+  strategy as 600/900 (20 °C heat / 27 °C cool, no setback, no night ventilation). The
+  setback cases are **640** (§5.2.2.1.4) and **940** (§5.2.2.2.5).
+- **The repo's CaseSpec:** `series_900.rs::case_920_ew_windows()` is 6 m² east + 6 m² west
+  windows with `with_hvac_setpoints(20.0, 27.0)` — no setback, no vent.
+
+So the §28 "sign anomaly" (engine 900→920 cooling 1.684 → 1.807 rising while the reference
+band midpoint falls 2.90 → 2.575) is **not a setback effect at all** — it is the S→E/W
+window-orientation response. The mechanism is the §14/§15-recorded E/W irradiance residual
+(engine/E+ incident ratio 1.414 on E/W vs 1.156 — §13's table, S/W corrected in §14): the
+engine over-predicts east/west incident solar, so its E/W-window case gains cooling where
+the reference loses it. That residual is already recorded as an accepted model-form
+difference after the mid-hour convention adoption (§15); no new defect, no new carrier.
+
+### The real setback defect (measured, not inferred)
+
+Round 26's falsification of the "setback variant" premise exposed that the engine had
+**never applied a heating setback anywhere on the default simulation paths**:
+
+- `from_spec_with_selector` correctly builds `setpoints.heating_schedule` from
+  `HvacSchedule` setback data (thermal_model_core/mod.rs, the §5.2.2.1.4.1 schedule:
+  20 °C 07:00–23:00, step to 10 °C 23:00–07:00).
+- But the HVAC demand in **both** `step_5r1c` and `step_9r4c` read only the constant
+  per-zone `heating_setpoints` vector (set once from `spec.hvac[zone].heating_setpoint`);
+  the schedule was consulted only for cooling (operating hours + economizer setpoint).
+- Consequence, visible on the strict gate since the family was first recorded: strict
+  **Case 640 printed exactly 600's numbers (6.758/4.301) and Case 940 exactly 900's
+  (1.680/1.684)** — byte-identical, because the setback never reached the demand. The
+  round-16 note in §LIMIT-12 ("strict/fabric/surrogate families byte-identical — blind
+  path does not consume the schedules") recorded this face without isolating it. The
+  per-step manual setpoint writes in the setback integration-test harness
+  (`ashrae_140_setback_ventilation.rs::simulate_case`) were silently overridden by the
+  per-zone vector too — which is why `test_setback_reduces_heating` could only
+  "document current behavior".
+
+The round-25 §28 questions (integration history vs coupling artifact) are therefore
+moot for 920 — there is no setback transition in that case to track, and the seasonal
+mass-state probe is not needed: the sign flip is fully attributed to the E/W orientation
+residual above.
+
+### Fix (landed this round)
+
+Per-step sync of the per-zone `heating_setpoints` vectors from
+`heating_schedule.value(step % 24)` at the top of the HVAC-demand section in both
+`step_5r1c.rs` and `step_9r4c.rs` (free-float guarded out). A constant schedule writes
+back its own constant bit-for-bit, so every non-setback case is untouched.
+
+Measured (Golden-NREL EPW, strict engine path, 2026-10-13, develop a0c78f6e vs branch):
+
+| case | H old→new (MWh) | band | C old→new (MWh) | band |
+|---|---|---|---|---|
+| 600 | 6.758 → 6.758 (bit-identical) | [4.314, 5.836] | 4.301 → 4.301 | [4.275, 5.784] |
+| 640 | 6.758 → **4.152** (gap 91.36 → 11.79 pp) | [2.784, 3.766] | 4.301 → 4.287 | [5.971, 8.079] |
+| 900 | 1.680 → 1.680 (bit-identical) | [1.364, 1.846] | 1.684 → 1.684 | [2.465, 3.335] |
+| 920 | 2.646 → 2.646 (bit-identical) | [3.213, 4.347] | 1.807 → 1.807 | [2.189, 2.961] |
+| 940 | 1.680 → **1.130 — IN BAND** (gap 37.73 → 0) | [0.935, 1.265] | 1.684 → 1.671 (gap 25.19 → 25.65 pp) | [2.393, 3.237] |
+
+All other annual cases and all four free-float observables bit-identical; checker
+10 PASS / 32 KNOWN-FAIL / 0 REGRESSION after the in-PR baseline re-record. Monthly
+attribution (harness, kWh): the 640 heating reduction is concentrated Nov–Mar
+(1057.6→693.8, 1262.6→902.4, 1254.3→899.6 for Jan/Feb/Dec); cooling moves ≤2 kWh/month —
+the spec-conformant setback cools the night mass slightly, which the reference's odd
+published 640-cooling-above-600 does not show; recorded, not tuned.
+
+Residual note: the GaugeSolver dispatch path (`step_dispatcher.rs` inputs) still reads the
+per-zone vectors and does not consume the schedule — gauge build only, recorded as
+follow-up scope, not fixed late.
+
+## §30 — Round 27: the free-temperature carrier attribution COMPLETES on Case 640 — the cooling chain has no remaining defect; the deficit is entirely the FREE-family trajectory under-exceedance, plus a reference-row consistency caveat (2026-10-14, physics loop round 27)
+
+Round-27 item 1: the §19/§27/§28 free-temperature carrier, pulled to a definitive endpoint on
+ONE representative case. Case 640 selected (cleanest geometry — byte-identical envelope to
+Case 600, plus only the heating setback schedule; single-zone 5R1C, no night-vent, no 9R4C
+multi-node, no metering-pair ambiguity).
+
+### Method
+
+Strict engine path reproduced exactly on develop `270de03a` (600 H 6.758 / C 4.301; 640 H
+4.152 / C 4.287 — strict-gate bit-equal). Temporary env-gated per-step trace hook in
+`compute_zone_hvac_load` (the §19 method: `FLX_R27_TRACE`, never committed, reverted after
+measurement) dumping `t_free, t_prev, C_air, h_coeff, h_sp, c_sp, demand_W, solar_W, loads_W`;
+a temporary ignored diagnostic harness dumping per-step outdoor/solar/loads context. All hooks
+reverted; tree clean.
+
+### Fact 1 — the demand chain reproduces metered energy exactly; the #4241 residual adds only 0.6 %
+
+Reconstructing the annual sum from the traced per-step residual
+(`C_air·(T_sp−T_prev)/dt + h_coeff·(T_sp−T_free)`) reproduces the metered 4.301 (600) and
+4.287 (640) MWh to the printed digit — zero metering leakage. The capacitance term of the
+#4241 discrete residual contributes 0.026 MWh of 640's 4.287 (0.6 %); the clamp never binds.
+What remained after §19 fact 1 stands: the deficit is entirely inside `T_free` exceedance.
+
+### Fact 2 — the exceedance accounting, per month
+
+Case 640 annual cooling exceedance over 27 °C: **27,745 K·h over 2,810 h**. The band-low
+reference implied at the metered conductance (h_coeff = 155.70 W/K):
+5.971 MWh → **38,350 K·h**. Deficit **10,606 K·h = 27.7 % below the band LOW bound**
+(1.684 MWh at band low); reaching the band low needs a uniform **+3.77 K** on every
+exceedance hour — the FREE-01/02 under-swing magnitude, now stated in exceedance units.
+
+Monthly: the exceedance is summer-dominated (Jul 3,778 + Aug 4,602 + Sep 3,817 K·h) but
+**6,708 K·h (24 %) falls in heating months (Nov–Mar)**, where midday solar spikes push
+`t_free` past 27 °C and the ideal-loads model meters ~1,028 kWh of winter cooling. The
+exceedance is essentially all in conditioned day hours (setback window 23:00–07:00 carries
+85 K·h — the schedule does not touch the cooling trajectory).
+
+### Fact 3 — the twin comparison: setback moves cooling by −0.3 %; the reference row implies +40 %
+
+| | engine 600 | engine 640 | E+ 600 | E+ 640 |
+|---|---|---|---|---|
+| annual cooling (MWh) | 4.301 | 4.287 (−0.3 %) | band [4.275, 5.784] | band [5.971, 8.079] (+40 % at mid) |
+
+The engine twin delta is −0.014 MWh; monthly exceedance agrees between 600 and 640 to ≤1 %
+in every month. Physically a heating-only night setback cannot raise annual cooling; the
+engine (both pre- and post-round-26) and the round-26 re-record agree with the physics. The
+published 640 reference row nonetheless sits 40 % above the 600 row at midpoint. This is
+recorded as a **reference-consistency caveat, not tuning material**: no band is widened, no
+number adjusted; the 640-family cooling KNOWN-FAIL inherits (a) the base-case free-temperature
+
+**RESOLVED 2026-10-14 (loop round 28, reference-row provenance audit): the step was never
+published.** Git archaeology: the recorded 640 row (heating 2.75–3.80, cooling 5.95–8.10 MWh)
+entered at issue #54 (commit `b0bd4119`, 2026-02-13, validation-framework bootstrap, no source
+cited) and survived byte-identical through #1272 and #3803; #3803 added the "Source: ASHRAE
+140-2023 Annex B Tables B8-1..B8-5" comment WITHOUT changing the numbers (diff verified — only
+Case 620's values were actually replaced in that commit). The authoritative 140-2023 Annex B8
+§B8.1 transcription (`data/reference/ashrae140/annex_b8_section7_statistics.json`, Table B8-2,
+TESS Std140_TF_Results.pdf 19-Aug-2024) gives 640 cooling [5.237, 5.893] mean 5.636 — i.e. the
+published tables agree with the physics: 640 cooling ≈ 600 cooling (−3.8 % published, −0.3 %
+engine). The in-repo 140-2017(a) PDF carries no inter-program 640 ranges (its Annex B8 is
+single-program example output). No published source for the recorded row exists anywhere in the
+repo's history. Verdict: values of unverified origin with falsely attributed provenance
+(same signature as the round-21 Case 970 finding, but with authoritative published values
+in-repo, so — per the #4170 case_950_cooling precedent — the recording is CORRECTED rather
+than merely labeled). The row (benchmark.rs both maps, `CASE_640_REF`, setback reference
+consts, strict baseline) now carries the published values; measured engine values are
+unchanged and both 640 statuses remain known_fail (heating gap 11.79 → 48.30 % of mid under
+the true published target — the engine's low-mass heating over-prediction is larger against
+the published 640 than the unverified row suggested; cooling gap 23.97 → 7.96 % of mid). §31
+records the round-28 audit in full.
+
+under-exceedance and (b) a reference-row step between 600 and 640 that the engine's physics
+cannot produce.
+
+### Fact 4 — the exceedance-hour balance: solar and gains enter at the verified magnitudes
+
+Least-squares fit on the 2,810 exceedance hours:
+`t_free − t_ext = 4.56 + 0.127·solar + 1.42·loads` (600 twin: 4.96 + 0.127·solar + 1.33·loads).
+The solar-to-free-temperature gain corresponds to a ~7.9 W/K air-side share of the 155.7 W/K
+`h_coeff` — consistent with `solar_distribution_to_air`; the solar magnitudes were already
+verified against the reference engine (§15/§16: transmission 0.653 vs E+ 0.655). With the
+conductance audit (§19 fact 3), the metering identity (fact 1 above) and the ventilation-term
+fix (round 26, SOLAR-04), every term of the cooling chain is now accounted for at verified
+magnitude.
+
+### Verdict
+
+**The free-temperature carrier attribution is COMPLETE, with no remaining engine defect found
+on the 5R1C cooling chain.** The 640-family cooling deficit decomposes fully into the
+documented FREE-01/02/03 trajectory under-exceedance (+3.77 K uniform equivalent) plus the
+fact-3 reference-row caveat. The remaining fix is the routed GaugeSolver air–mass distribution
+rework (#1465/#1462, §LIMIT-28) or an Alex-level review of the 640/940 reference rows' proven
+provenance — no cooling-chain code change is indicated by this round. No engine numbers
+changed; all diagnostic hooks reverted (tree clean).
+
+## §31 — Round 28: Case 640 reference-row provenance audit (2026-10-14)
+
+Question (Alex, 2026-10-14 06:54 ET): where did the recorded 640 cooling band/reference values
+come from — published-and-correct, transcription error, or unverified origin like 970's band?
+
+**Verdict: internal values of unverified origin, falsely attributed to the published tables;
+corrected in place to the published values.**
+
+Evidence chain:
+
+1. Recorded values: heating [2.75, 3.80] MWh, cooling [5.95, 8.10] MWh, peaks
+   4.30–5.70 / 2.80–3.70 — present in `src/validation/benchmark.rs` (both
+   `get_all_benchmark_data` and `get_all_benchmark_data_blind`), duplicated as `CASE_640_REF`
+   in `tests/all_tests/zone_balance_eplus_isolation.rs` (the strict-gate band source) and as
+   `reference::case_640` consts in `tests/all_tests/ashrae_140_setback_ventilation.rs`
+   (display only). These produced the strict baseline's case_640_cooling
+   published_range [5.95, 8.1] / band [5.971, 8.079].
+2. Origin: commit `b0bd4119` (2026-02-13, issue #54, "validation framework enhancements",
+   co-authored-by Claude Sonnet 4.5) — no source cited anywhere in the commit.
+3. The values survived byte-identical through #1272 (1aa3cc59, "add raw ASHRAE 140-2023
+   benchmark data") and #3803 (6d8d4835, 2026-09-16, "replace 5R1C-calibrated ranges with true
+   ASHRAE reference values"). #3803's diff ADDS the "Source: ASHRAE 140-2023 Annex B Tables
+   B8-1..B8-5 (Std140_TF_Results.pdf, TESS 19-Aug-2024)" comment to the 640 block while
+   changing NONE of the numbers — the only 600-series row whose values it actually replaced
+   was Case 620 (which matches the authoritative transcription exactly).
+4. The authoritative 140-2023 Annex B8 §B8.1 transcription
+   (`data/reference/ashrae140/annex_b8_section7_statistics.json`; provenance per #4292–#4300,
+   the round-18 Table 8-15 verification pattern) gives Case 640:
+   heating [2.403, 2.682] mean 2.612 (B8-1), cooling [5.237, 5.893] mean 5.636 (B8-2),
+   peak heating [4.039, 4.658] kW (B8-3), peak cooling [5.365, 6.429] kW (B8-4).
+   The recorded row matches NONE of the eight bounds.
+5. Physics cross-check: Case 640 is Case 600 plus a heating-only night setback
+   (140-2017(a) §5.2.2.1.4, in-repo licensed PDF). Published 2023: 640 cooling mean 5.636 vs
+   600's 5.856 — −3.8 %. Engine: 4.287 vs 4.301 — −0.3 %. The recorded row's +40 % step at
+   midpoint cannot be produced by any heating setback; it exists ONLY in the unverified row.
+6. The in-repo 140-2017(a) PDF (`docs/140_2017_a_20200901.pdf`, full-text searched) publishes
+   no inter-program 640 ranges (its Annex B8 is single-program example output, e.g. B8-H17) —
+   no alternative published source for the recorded numbers exists in the repo.
+7. Round-21 precedent comparison: Case 970's band is likewise of unverified origin
+   (§LIMIT-23 finding 1), but no authoritative 970 values exist, so it is labeled, not
+   corrected. For 640 the authoritative published values ARE in-repo, so the recording is
+   corrected — the same route as #4170's case_950_cooling published-range restoration.
+
+Landed correction (target-only; zero engine changes):
+
+| metric | published (B8) | band (±15 % of mid) | engine (unchanged) | gap before → after |
+|---|---|---|---|---|
+| case_640_heating | [2.403, 2.682] MWh | [2.161, 2.924] | 4.152 MWh | 11.79 → 48.30 % of mid |
+| case_640_cooling | [5.237, 5.893] MWh | [4.730, 6.400] | 4.287 MWh | 23.97 → 7.96 % of mid |
+
+Both statuses remain known_fail; checker counts unchanged. Reading: against the TRUE published
+target the engine's 640 heating over-prediction is far larger than the unverified row implied
+(consistent with the 600-family low-mass heating gap), and the 640 cooling known-fail is almost
+entirely the FREE-family under-exceedance inherited from 600 (7.96 % of mid residual), not a
+640-specific defect.
+
+Not changed, recorded for follow-up: the Case 940 benchmark row ([0.79, 1.41] / [2.08, 3.55])
+also does not exactly match the transcription ([0.863, 1.389] / [2.203, 2.613]) but has the
+correct shape (940 H < 900 H, 940 C ≈ 900 C); it needs its own audit before correction.
+
+## §32 — Round 29: Case 940 reference-row provenance audit (2026-10-14)
+
+Question (round-28 §31 follow-up): the recorded 940 row has the correct shape (940 H < 900 H,
+940 C ≈ 900 C) but does not exactly match the 140-2023 Annex B8 transcription — where did it
+come from, and does the corrected target keep the round-26 in-band heating status?
+
+**Verdict: values of unverified origin with falsely attributed provenance (same signature as
+the round-28 Case 640 finding); corrected in place to the published values.**
+
+Evidence chain:
+
+1. Recorded values: heating [0.79, 1.41] MWh, cooling [2.08, 3.55] MWh, peaks
+   1.90–2.50 / 1.70–2.30 kW, free-float fields [-6.2, -1.4] / [40.8, 46.2] — present in
+   `src/validation/benchmark.rs` (both `get_all_benchmark_data` and
+   `get_all_benchmark_data_blind`), duplicated as `CASE_940_REF` in
+   `tests/all_tests/zone_balance_eplus_isolation.rs` (the strict-gate band source) and as
+   `reference::case_940` consts in `tests/all_tests/ashrae_140_setback_ventilation.rs`
+   (display only). These produced the strict baseline's case_940_heating band [0.935, 1.265]
+   and case_940_cooling band [2.393, 3.237].
+2. Origin: commit `b0bd4119` (2026-02-13, issue #54, validation-framework bootstrap) — the
+   940 row was INSERTED by that commit with these exact values and no cited source anywhere
+   in the commit (same bootstrap that inserted the unverified 640 row; `git log -S
+   "annual_heating_min: 0.79"` shows b0bd4119's insertion, #1272's byte-identical carry
+   through the blind-validation rewrite, and #4351, which copied the values unchanged into
+   the strict-gate `CASE_940_REF` at the round-25 strict-gate extension).
+3. #3803 (`6d8d4835`, 2026-09-16) added the blanket "Source: ASHRAE 140-2023 Annex B Tables
+   B8-1..B8-5" comment to the 940 block while changing NONE of the numbers (diff-verified —
+   the only row whose values it actually replaced was 900). Same false-attribution signature
+   as the round-28 640 finding.
+4. The authoritative 140-2023 Annex B8 §B8.1 transcription
+   (`data/reference/ashrae140/annex_b8_section7_statistics.json`; Tables B8-1..B8-4, TESS
+   Std140_TF_Results.pdf 19-Aug-2024) gives Case 940: heating [0.863, 1.389] mean 1.109
+   (B8-1), cooling [2.203, 2.613] mean 2.401 (B8-2), peak heating [3.052, 3.882] kW (B8-3),
+   peak cooling [2.556, 3.376] kW (B8-4). The recorded row matches NONE of the eight bounds.
+   Table B8-5 has no 940 entry (940 is not a free-float case), so the benchmark row's
+   free-float fields are not adjudicable against the transcription and were LEFT AS RECORDED.
+5. Shape check (why the row "has the correct shape"): published 940 H mean 1.109 vs 900's
+   1.626 — the heating-setback drop is real in the published tables, and 940 C mean 2.401 vs
+   900's 2.467 is the expected ≈ flat. The recorded row reproduces this shape but with
+   different bounds. Diagnostic detail: the recorded heating-band midpoint (1.10) matches the
+   published heating MEAN (1.109) almost exactly while no recorded bound matches a published
+   bound — the signature of a transcribed mean with guessed bounds, not of a different
+   published source. (The cooling midpoint does not match the published mean, so the row is
+   not a consistent mean-transcription either.) No published source for the recorded row
+   exists anywhere in the repo's history.
+6. Verdict route: per the round-28 640 precedent (#4170 case_950_cooling restoration pattern),
+   authoritative published values exist in-repo, so the recording is CORRECTED rather than
+   merely labeled.
+
+Landed correction (target-only; zero engine changes):
+
+| metric | published (B8) | band (±15 % of mid) | engine (unchanged) | gap before → after |
+|---|---|---|---|---|
+| case_940_heating | [0.863, 1.389] MWh | [0.935, 1.265] → [0.957, 1.295] | 1.130 MWh | 0.00 → 0.00 (stays PASS) |
+| case_940_cooling | [2.203, 2.613] MWh | [2.393, 3.237] → [2.047, 2.769] | 1.671 MWh | 25.65 → 15.61 % of mid |
+
+Statuses unchanged: heating stays pass (the round-26 schedule-consumption fix's 940 heating
+re-entry HOLDS under the true published target — measured 1.130 sits inside the new band
+[0.957, 1.295] with more margin on the upper edge); cooling stays known_fail (the gap
+narrows from 25.65 to 15.61 % of mid purely because the unfit recorded target is replaced).
+Peak-heating note: the recorded 940 peak heating 2.626 kW (round-16 re-record, LIMIT-12) sat
+"out of band" only against the unverified [1.90, 2.50] row from the other side — against the
+published [3.052, 3.882] it is BELOW the published low by 13 %. The 940 peak-heating question
+is recorded, not chased: the strict gate does not gate peaks, and the engine target is the
+published tables.
+
+## §33 — Round 29: GaugeSolver first increment — premise measured STALE on the routed path; increment not landed (2026-10-14)
+
+Round 28's brief (§31 / #1465/#1462) called for the GaugeSolver first increment: an implicit
+symmetric air-node solve replacing the FD storage-release divisor on the routed gauge path,
+gauge-build-only, with default-build bit-identity as the landing gate. Before writing any
+solver code, the premise was re-measured on develop `9eec51f4` (gauge feature build,
+Golden-NREL EPW, the preserved round-10 scratch harness plus an env-gated per-sub-step
+T_air trace; both scratch-only, never committed):
+
+- **Reproduction is clean**: gauge-routed 600 H/C 28.635/5.715 MWh and 640 17.798/5.176 MWh
+  match the develop/round-27 records to the printed digit.
+- **The β-soak divergence cohort is EMPTY**: across all traced gauge sub-steps on Case 600
+  (and 640), ZERO steps with |T_air| > 60 °C; the annual extreme is |T_air| = 42.7 °C
+  (600) / 41.4 °C (640). The round-8 pathology (§22: 416 zero-gain diverging steps; §22
+  addendum: 169 diverging gain-hours) no longer reproduces on the routed path — the
+  committed PR-a operator splitting plus the round-10 ground coupling and round-26/27
+  schedule consumption cured the gross instability as a side effect.
+
+Consequence for the increment: the named change was motivated as the cure for that
+instability (§22: "the slope, which would make the coupling implicit, is discarded"). The
+routed air-node update has been implicit (sub-step affine slope in the denominator,
+exponential relaxation) since PR-a landed, and it is stable. Replacing it with the round-23
+symmetric dense solve would now be a structural rewrite whose stability rationale has
+evaporated and whose accuracy rationale lives elsewhere — the remaining gauge-path defects
+are the §LIMIT-40 day/night storage-release split, the network-foreign 5R1C metering pair
+(§22 PR-c) and the missing infiltration threading (§22 PR-b), none of which the symmetric
+air-node solve addresses.
+
+**Verdict: increment NOT landed; premise updated instead of half-landing a rewrite**
+(the brief's own escape clause). Recommended round-30 sequence, in the §22 program order:
+PR-b (infiltration threading — small, spec-consumption-shaped like round 26/27) and then
+PR-c (self-consistent gauge metering) — each independently measurable on the gauge-gated
+harness that this round verified reproduces the recorded gauge numbers.

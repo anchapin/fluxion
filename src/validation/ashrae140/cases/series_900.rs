@@ -843,7 +843,10 @@ mod tests {
             .night_ventilation
             .expect("Case 950 must have night ventilation configured");
         assert_eq!(nv.operating_hours, (18, 7));
-        assert!((nv.fan_capacity - 1703.16).abs() < 1e-9);
+        // 1400 standard m³/h: Table 5-160 sea-level route (fixed ρ = 1.2 kg/m³
+        // engine); was 1703.16 (the altitude-correcting route's input) until
+        // loop round 26 — that pairing over-ventilated by 21.7 % of mass flow.
+        assert!((nv.fan_capacity - 1400.0).abs() < 1e-9);
         assert!(!nv.adds_heat);
     }
 

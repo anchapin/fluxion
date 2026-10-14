@@ -319,7 +319,9 @@ fn run_case_with_attribution(case_enum: ASHRAE140Case) -> CaseAttribution {
         ASHRAE140Case::Case910 => (1.51, 2.28, 0.82, 1.88),
         ASHRAE140Case::Case920 => (3.26, 4.30, 1.84, 3.31),
         ASHRAE140Case::Case930 => (4.14, 5.34, 1.04, 2.24),
-        ASHRAE140Case::Case940 => (0.79, 1.41, 2.08, 3.55),
+        // Round 29 provenance correction: published ASHRAE 140-2023 Annex B8 values
+        // (see benchmark.rs Case 940 note; prior row was of unverified origin).
+        ASHRAE140Case::Case940 => (0.863, 1.389, 2.203, 2.613),
         _ => (0.0, 0.0, 0.0, 0.0),
     };
     let h_mid = (h_min + h_max) / 2.0;

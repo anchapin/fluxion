@@ -178,6 +178,32 @@ impl DailySchedule {
     }
 
     /// Returns the value for a given hour (for daily schedules).
+    /// Returns true when every hour carries the same value, i.e. the
+    /// schedule conveys no time-varying information. Round 26: the HVAC
+    /// demand paths sync the per-zone setpoint vectors from
+    /// `heating_schedule` only when it varies, so callers that drive the
+    /// demand by writing the vectors directly (the Issue #2826 contract)
+    /// keep working against constant/default schedules.
+    pub fn is_constant(&self) -> bool {
+        match &self.values {
+            // Bit-pattern comparison is deliberate: the schedules are built
+            // by `constant` / `fill_range` from the same f64 values, so a
+            // "constant" schedule is bit-uniform by construction, and
+            // bit-uniformity is exactly the property the demand-path guard
+            // needs.
+            ScheduleValues::Daily(arr) => {
+                let first = arr[0].to_bits();
+                arr.iter().all(|&v| v.to_bits() == first)
+            }
+            ScheduleValues::Weekly(weekly) => {
+                let first = weekly[0][0].to_bits();
+                weekly
+                    .iter()
+                    .all(|day| day.iter().all(|&v| v.to_bits() == first))
+            }
+        }
+    }
+
     pub fn value(&self, hour: usize) -> f64 {
         match &self.values {
             ScheduleValues::Daily(arr) => arr[hour % 24],
@@ -876,5 +902,25 @@ mod tests {
         let mut schedule = DailySchedule::weekly("Test".to_string());
         schedule.fill_range_for_day(0, 10, 10, 1.0);
         assert_eq!(schedule.value_for_day(DayType::Monday, 10), 0.0);
+    }
+}
+
+#[cfg(test)]
+mod round26_tests {
+    use super::*;
+
+    #[test]
+    fn is_constant_reflects_schedule_shape() {
+        let mut s = DailySchedule::new();
+        assert!(s.is_constant(), "fresh all-zero schedule is constant");
+        s.fill_range(0, 24, 20.0).expect("fill cannot fail");
+        assert!(s.is_constant(), "uniform fill is constant");
+        s.fill_range(23, 7, 10.0).expect("fill cannot fail");
+        assert!(
+            !s.is_constant(),
+            "the §5.2.2.2.1.4.1 setback shape (20 °C day / 10 °C night) is not constant"
+        );
+        assert_eq!(s.value(0), 10.0);
+        assert_eq!(s.value(12), 20.0);
     }
 }

@@ -15,7 +15,7 @@ Open the viewer at `fluxion-tauri/frontend/public/topology-standalone.html` and 
 | 640 | ASHRAE 140 Case 640 | 35 | 58 | ✅ clean | [case-640.mmd](case-640.mmd) | [case-640.svg](case-640.svg) | [payloads/case-640.json](payloads/case-640.json) |
 | 650 | ASHRAE 140 Case 650 | 35 | 59 | ✅ clean | [case-650.mmd](case-650.mmd) | [case-650.svg](case-650.svg) | [payloads/case-650.json](payloads/case-650.json) |
 | 900 | ASHRAE 140 Case 900 | 35 | 58 | ✅ clean | [case-900.mmd](case-900.mmd) | [case-900.svg](case-900.svg) | [payloads/case-900.json](payloads/case-900.json) |
-| 960 | ASHRAE 140 Case 960 | 71 | 120 | ✅ clean | [case-960.mmd](case-960.mmd) | [case-960.svg](case-960.svg) | [payloads/case-960.json](payloads/case-960.json) |
+| 960 | ASHRAE 140 Case 960 | 70 | 106 | ✅ clean | [case-960.mmd](case-960.mmd) | [case-960.svg](case-960.svg) | [payloads/case-960.json](payloads/case-960.json) |
 
 ## How to regenerate
 

@@ -392,7 +392,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // === Issue #824: Night-ventilation air-side coupling (was missing entirely) ===
         //
         // For ASHRAE 140 Case 650 / 650FF the spec defines a night-ventilation
-        // fan that runs 18:00 → 07:00 at 1703.16 m³/h, supplying outside air
+        // fan that runs 18:00 → 07:00 at 1400 m³/h (ASHRAE 140 Table 5-160
+        // sea-level route), supplying outside air
         // directly to the zone. Per ASHRAE 140 §5.4 (Case 650 description), this
         // is an *air-side* path: the fan moves outdoor air through the zone
         // and removes heat at rate
@@ -456,6 +457,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     .copied()
                     .unwrap_or(1005.0);
                 h_ve_night = night_vent.fan_capacity * rho * cp / 3600.0;
+            }
+        }
+
+        // Round 26: consume the heating setpoint schedule (mirrors the 9R4C
+        // path). The from-spec builder constructs `heating_schedule` (the
+        // Case 640 thermostat setback, ASHRAE 140 §5.2.2.1.4.1: 20 °C
+        // 07:00-23:00, step to 10 °C 23:00-07:00) but the HVAC demand below
+        // read only the constant per-zone `heating_setpoints` vector, so the
+        // setback never reached the demand and Case 640 simulated
+        // byte-identical to 600 on the strict gate. Sync the per-zone vectors
+        // from the schedule every step, but only when the schedule actually
+        // varies: constant schedules are skipped so callers that drive the
+        // demand by writing the vectors directly (the Issue #2826 contract)
+        // keep working, and every non-setback case is unchanged.
+        if !self.0.hvac.free_float && !self.0.setpoints.heating_schedule.is_constant() {
+            let h_sp_now = self.0.setpoints.heating_schedule.value(timestep % 24);
+            for v in self.0.setpoints.heating_setpoints.as_mut().iter_mut() {
+                *v = h_sp_now;
             }
         }
 
@@ -770,7 +789,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                        // reads via `.get(i)` as before — only the buffer ownership
                                        // changes (now `&mut SmallVec` via `.as_mut()` instead of an
                                        // owned `Vec`). Saves ~8 heap allocations per step.
-            let n = self.0.hvac.num_zones;
             scratch
                 .lw_surface_emissivity
                 .as_mut()
@@ -792,19 +810,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .as_mut()
                 .copy_from_slice(self.0.setpoints.wall_area.as_ref());
             {
-                let u_floor = self.0.setpoints.floor_u_value;
-                let u_ceiling = self.0.setpoints.roof_u_value;
-                let u_wall = self.0.setpoints.wall_u_value;
-                let buf_f = scratch.lw_u_floor.as_mut();
-                let buf_c = scratch.lw_u_ceiling.as_mut();
-                let buf_w = scratch.lw_u_wall.as_mut();
-                for i in 0..n {
-                    buf_f[i] = u_floor;
-                    buf_c[i] = u_ceiling;
-                    buf_w[i] = u_wall;
-                }
+                // ROUND25 (§LIMIT-14 follow-up): per-zone U-values from the
+                // `zone_constructions` split; the vectors are broadcast from
+                // the legacy scalars when no per-zone construction exists, so
+                // this reads identically for every pre-existing case.
+                scratch
+                    .lw_u_floor
+                    .as_mut()
+                    .copy_from_slice(self.0.setpoints.floor_u_values.as_ref());
+                scratch
+                    .lw_u_ceiling
+                    .as_mut()
+                    .copy_from_slice(self.0.setpoints.roof_u_values.as_ref());
+                scratch
+                    .lw_u_wall
+                    .as_mut()
+                    .copy_from_slice(self.0.setpoints.wall_u_values.as_ref());
             }
-
             // Issue #2890: persist the per-zone interior surface state
             // (floor, ceiling, wall) for the floor-ceiling-wall longwave
             // radiation exchange network. The initial implementation wires

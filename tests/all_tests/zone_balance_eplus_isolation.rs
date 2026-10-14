@@ -1323,16 +1323,22 @@ const CASE_630_REF: EnergyReference = EnergyReference {
     peak_cooling_min_kw: 1.80,
     peak_cooling_max_kw: 2.40,
 };
+// Round 28 provenance correction (2026-10-14): values replaced with the published
+// ANSI/ASHRAE 140-2023 Annex B8 Tables B8-1..B8-4 inter-program ranges (authoritative
+// transcription data/reference/ashrae140/annex_b8_section7_statistics.json). The prior
+// values (2.75-3.80 / 5.95-8.10 / peaks 4.30-5.70 / 2.80-3.70) entered at issue #54 with
+// no cited source and match none of the published bounds; see the benchmark.rs block
+// comment. Target correction only — measured engine values unchanged, still known_fail.
 const CASE_640_REF: EnergyReference = EnergyReference {
     case_id: "640",
-    annual_heating_min_mwh: 2.75,
-    annual_heating_max_mwh: 3.80,
-    annual_cooling_min_mwh: 5.95,
-    annual_cooling_max_mwh: 8.10,
-    peak_heating_min_kw: 4.30,
-    peak_heating_max_kw: 5.70,
-    peak_cooling_min_kw: 2.80,
-    peak_cooling_max_kw: 3.70,
+    annual_heating_min_mwh: 2.403,
+    annual_heating_max_mwh: 2.682,
+    annual_cooling_min_mwh: 5.237,
+    annual_cooling_max_mwh: 5.893,
+    peak_heating_min_kw: 4.039,
+    peak_heating_max_kw: 4.658,
+    peak_cooling_min_kw: 5.365,
+    peak_cooling_max_kw: 6.429,
 };
 // Case 650 (night ventilation): heating published envelope is degenerate
 // [0.00, 0.00] MWh — same handling as Case 950 above.
@@ -1369,16 +1375,20 @@ const CASE_930_REF: EnergyReference = EnergyReference {
     peak_cooling_min_kw: 1.10,
     peak_cooling_max_kw: 1.50,
 };
+// Round 29 provenance correction: values are the published ASHRAE 140-2023 Annex B8
+// inter-program envelope (transcription data/reference/ashrae140/annex_b8_section7_statistics.json);
+// the prior row (0.79-1.41 / 2.08-3.55, peaks 1.90-2.50/1.70-2.30) entered at #1272 with
+// no cited table and matches none of the eight published bounds.
 const CASE_940_REF: EnergyReference = EnergyReference {
     case_id: "940",
-    annual_heating_min_mwh: 0.79,
-    annual_heating_max_mwh: 1.41,
-    annual_cooling_min_mwh: 2.08,
-    annual_cooling_max_mwh: 3.55,
-    peak_heating_min_kw: 1.90,
-    peak_heating_max_kw: 2.50,
-    peak_cooling_min_kw: 1.70,
-    peak_cooling_max_kw: 2.30,
+    annual_heating_min_mwh: 0.863,
+    annual_heating_max_mwh: 1.389,
+    annual_cooling_min_mwh: 2.203,
+    annual_cooling_max_mwh: 2.613,
+    peak_heating_min_kw: 3.052,
+    peak_heating_max_kw: 3.882,
+    peak_cooling_min_kw: 2.556,
+    peak_cooling_max_kw: 3.376,
 };
 const CASE_195_REF: EnergyReference = EnergyReference {
     case_id: "195",

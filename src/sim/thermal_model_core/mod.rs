@@ -30,6 +30,7 @@ use crate::sim::thermal_model_data::{
 };
 use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::CaseSpec;
+use crate::validation::ashrae_140_cases::ConstructionSpec;
 // Issue #4172: SimulationDiagnostics is now in fluxion_core::diagnostics
 // (hoisted from fluxion::validation::diagnostics) to break the name collision
 // with fluxion_core::error::SimulationDiagnostics (now DivergenceDiagnostics).
@@ -746,6 +747,22 @@ impl ThermalModel<VectorField> {
         let num_zones = spec.num_zones;
         let mut model = ThermalModel::new(num_zones);
 
+        // ROUND24 (§LIMIT-14 decomposition): per-zone constructions. Spec
+        // 140-2017 §5.2.2.2.7 requires a LIGHTWEIGHT back zone with a
+        // HEAVYWEIGHT sun zone for Case 960; the legacy single
+        // `spec.construction` cannot express that. `zone_constructions`
+        // (serde-default `None`) keeps every existing case bit-identical;
+        // when present it overrides the global construction per zone index.
+        let zone_constructions_store: Vec<ConstructionSpec> = spec
+            .zone_constructions
+            .clone()
+            .unwrap_or_else(|| (0..num_zones).map(|_| spec.construction.clone()).collect());
+        let zc = |i: usize| -> &ConstructionSpec {
+            zone_constructions_store
+                .get(i)
+                .unwrap_or(&spec.construction)
+        };
+
         // Round 21 (§LIMIT-23b): perimeter-only exterior surfaces. When the
         // spec carries zone plan origins, exterior facade areas are derived
         // from zone adjacency and interior partition fabric is split from the
@@ -789,6 +806,40 @@ impl ThermalModel<VectorField> {
         // Issue #375: Set opaque surface U-values from construction
         model.setpoints.wall_u_value = spec.construction.wall.u_value(None, None);
         model.setpoints.roof_u_value = spec.construction.roof.u_value(None, None);
+
+        // ROUND25 (§LIMIT-14 follow-up): thread the per-zone constructions
+        // into the 5R1C longwave-exchange path. Without this, a spec that
+        // splits zone constructions (Case 960: lightweight back zone,
+        // heavyweight sun zone) still longwave-exchanges every zone with the
+        // GLOBAL wall/roof/floor U-values. When `zone_constructions` is
+        // `None` the store already holds the global construction per zone,
+        // so the vectors equal the scalar broadcast bit-identically.
+        model.setpoints.wall_u_values = VectorField::from_slice(
+            &(0..num_zones)
+                .map(|i| zc(i).wall.u_value(None, None))
+                .collect::<Vec<f64>>(),
+        );
+        model.setpoints.roof_u_values = VectorField::from_slice(
+            &(0..num_zones)
+                .map(|i| zc(i).roof.u_value(None, None))
+                .collect::<Vec<f64>>(),
+        );
+        model.setpoints.floor_u_values = VectorField::from_slice(
+            &(0..num_zones)
+                .map(|i| {
+                    zc(i)
+                        .floor
+                        .u_value(Some(crate::sim::construction::SurfaceType::Floor), None)
+                })
+                .collect::<Vec<f64>>(),
+        );
+
+        // Spec-level floor override (e.g. Case 195's 0.039 W/m²K) wins over
+        // the construction-derived per-zone floor U, mirroring the scalar
+        // assignment below — the two paths must never disagree.
+        if let Some(override_u) = spec.floor_u_value_override {
+            model.setpoints.floor_u_values = VectorField::from_scalar(override_u, num_zones);
+        }
 
         // Floor U-value for ground coupling. A spec-provided override (e.g. the
         // ASHRAE 140 Case 195 solid-conduction test's specified 0.039 W/m²K)
@@ -1086,9 +1137,9 @@ impl ThermalModel<VectorField> {
                 // ASHRAE 140 simplified 5R1C model uses single interior film coefficient (8.29 W/m²K)
                 // Do NOT use surface-type-specific coefficients (SurfaceType) - they are for detailed models
                 let u_value = match orientation {
-                    Orientation::Up => spec.construction.roof.u_value(None, None),
-                    Orientation::Down => spec.construction.floor.u_value(None, None),
-                    _ => spec.construction.wall.u_value(None, None),
+                    Orientation::Up => zc(zone_idx).roof.u_value(None, None),
+                    Orientation::Down => zc(zone_idx).floor.u_value(None, None),
+                    _ => zc(zone_idx).wall.u_value(None, None),
                 };
 
                 // Create surface with total area and optional window
@@ -1205,10 +1256,10 @@ impl ThermalModel<VectorField> {
         // Source-of-truth is unchanged (no new JSON files); the conversion
         // here is the same `WallSpec::multi_layer` construction the previous
         // A7.1 inline gauge init did.
-        let wall_spec_for_walls = wall_spec_from_construction(&spec.construction.wall, "wall");
-        let wall_spec_for_roof = wall_spec_from_construction(&spec.construction.roof, "roof");
-        let wall_spec_for_floor = wall_spec_from_construction(&spec.construction.floor, "floor");
-        for zone_surfaces in model.solar.surfaces.iter_mut() {
+        for (zone_idx, zone_surfaces) in model.solar.surfaces.iter_mut().enumerate() {
+            let wall_spec_for_walls = wall_spec_from_construction(&zc(zone_idx).wall, "wall");
+            let wall_spec_for_roof = wall_spec_from_construction(&zc(zone_idx).roof, "roof");
+            let wall_spec_for_floor = wall_spec_from_construction(&zc(zone_idx).floor, "floor");
             for surface in zone_surfaces.iter_mut() {
                 surface.wall_spec = Some(match surface.orientation {
                     fluxion_core::ashrae_cases::Orientation::Up => wall_spec_for_roof.clone(),
@@ -1456,14 +1507,10 @@ impl ThermalModel<VectorField> {
             // (#2229 calibration). See the helper doc-comment for the full
             // design rationale.
             let wall_cap =
-                fluxion_core::construction::wall_cap_for(&spec.construction.wall, opaque_area);
-            let roof_cap = spec
-                .construction
-                .roof
-                .iso_13790_effective_capacitance_per_area()
-                * zone_floor_area;
-            let floor_cap = spec
-                .construction
+                fluxion_core::construction::wall_cap_for(&zc(zone_idx).wall, opaque_area);
+            let roof_cap =
+                zc(zone_idx).roof.iso_13790_effective_capacitance_per_area() * zone_floor_area;
+            let floor_cap = zc(zone_idx)
                 .floor
                 .iso_13790_effective_capacitance_per_area()
                 * zone_floor_area;
@@ -1477,7 +1524,7 @@ impl ThermalModel<VectorField> {
             // - The insulation layer contributes half its conductance to each side.
             // - Layers interior to insulation contribute their full conductance.
 
-            let wall_construction = &spec.construction.wall;
+            let wall_construction = &zc(zone_idx).wall;
             let ins_idx = wall_construction.find_dominant_insulation_layer_index();
             let mut r_interior_to_mass = 0.0; // No interior film here (it's in h_tr_is)
 
@@ -1498,7 +1545,7 @@ impl ThermalModel<VectorField> {
 
             // PHASE 34-02 FIX: Add roof contribution to h_tr_ms
             // Roof construction also contributes to thermal mass coupling
-            let roof_construction = &spec.construction.roof;
+            let roof_construction = &zc(zone_idx).roof;
             let roof_ins_idx = roof_construction.find_dominant_insulation_layer_index();
             let mut r_interior_to_mass_roof = 0.0;
 
@@ -1519,7 +1566,7 @@ impl ThermalModel<VectorField> {
 
             // PHASE 34-02 FIX: Add floor contribution to h_tr_ms
             // Floor construction also contributes to thermal mass coupling
-            let floor_construction = &spec.construction.floor;
+            let floor_construction = &zc(zone_idx).floor;
             let floor_ins_idx = floor_construction.find_dominant_insulation_layer_index();
             let mut r_interior_to_mass_floor = 0.0;
 
@@ -1556,16 +1603,9 @@ impl ThermalModel<VectorField> {
             // stored on the per-surface vectors below — they feed the 9R4C multi-node
             // solver (Issue #715), where each surface has its own mass node.
 
-            let kappa_wall = spec
-                .construction
-                .wall
-                .iso_13790_effective_capacitance_per_area();
-            let kappa_roof = spec
-                .construction
-                .roof
-                .iso_13790_effective_capacitance_per_area();
-            let kappa_floor = spec
-                .construction
+            let kappa_wall = zc(zone_idx).wall.iso_13790_effective_capacitance_per_area();
+            let kappa_roof = zc(zone_idx).roof.iso_13790_effective_capacitance_per_area();
+            let kappa_floor = zc(zone_idx)
                 .floor
                 .iso_13790_effective_capacitance_per_area();
 
@@ -1609,7 +1649,7 @@ impl ThermalModel<VectorField> {
             //
             // Verified: flag and wall mass agree across all 65 ASHRAE 140 case
             // variants, so every validated case keeps its exact current value.
-            let kappa_wall_full = spec.construction.wall.thermal_capacitance_per_area();
+            let kappa_wall_full = zc(zone_idx).wall.thermal_capacitance_per_area();
             let h_ms_coeff = fluxion_core::construction::h_ms_of_kappa(kappa_wall_full);
             let h_ms_iso_13790 = h_ms_coeff * a_m;
 
@@ -1635,7 +1675,7 @@ impl ThermalModel<VectorField> {
             // Where R_exterior_to_mass = R_exterior_film + Σ(R_layers exterior to mass)
 
             // Calculate h_tr_em from wall construction layers
-            let wall_construction = &spec.construction.wall;
+            let wall_construction = &zc(zone_idx).wall;
             let ins_idx = wall_construction.find_dominant_insulation_layer_index();
 
             // Calculate resistance from exterior to mass node
@@ -1672,7 +1712,7 @@ impl ThermalModel<VectorField> {
 
             // PHASE 34-02 FIX: Add roof contribution to h_tr_em
             // Roof construction also contributes to exterior-to-mass conductance
-            let roof_construction = &spec.construction.roof;
+            let roof_construction = &zc(zone_idx).roof;
             let roof_ins_idx = roof_construction.find_dominant_insulation_layer_index();
 
             // Calculate resistance from exterior to mass node for roof
@@ -1709,13 +1749,13 @@ impl ThermalModel<VectorField> {
 
             // PHASE 34-02 FIX: Add floor contribution to h_tr_em
             // Floor construction also contributes to exterior-to-mass conductance
-            let floor_construction = &spec.construction.floor;
+            let floor_construction = &zc(zone_idx).floor;
             let _floor_ins_idx = floor_construction.find_dominant_insulation_layer_index();
 
             // Calculate resistance from exterior to mass node for floor
             // For floor, exterior is typically ground, so we use a different approach
             // Use the floor's U-value which already includes ground coupling
-            let floor_u = spec.construction.floor.u_value(None, None);
+            let floor_u = zc(zone_idx).floor.u_value(None, None);
             let r_exterior_to_mass_floor = 1.0 / floor_u; // Resistance = 1/U
             let h_tr_em_floor = zone_floor_area / r_exterior_to_mass_floor;
 
@@ -1763,8 +1803,8 @@ impl ThermalModel<VectorField> {
             // half-insulation values because the 9R4C topology has a
             // dedicated mass node per surface and does NOT consume the
             // lumped `h_tr_em`.
-            let h_op_walls_roof = spec.construction.wall.u_value(None, None) * opaque_area_ext
-                + spec.construction.roof.u_value(None, None) * zone_floor_area;
+            let h_op_walls_roof = zc(zone_idx).wall.u_value(None, None) * opaque_area_ext
+                + zc(zone_idx).roof.u_value(None, None) * zone_floor_area;
 
             let h_tr_em_total = if h_op_walls_roof > 0.0 && h_op_walls_roof < h_ms_iso_13790 {
                 1.0 / (1.0 / h_op_walls_roof - 1.0 / h_ms_iso_13790)
@@ -1807,13 +1847,13 @@ impl ThermalModel<VectorField> {
             // The south wall has heavy foam-core insulated panels (R-19.4 ft²·°F·h/Btu ≈ R-3.4 SI)
             // that should present ~25 W/K, not the lumped interior film coefficient (~74 W/K).
             // Use the total R-value for the south wall (includes interior film + all wall layers + exterior film).
-            let wall_construction = &spec.construction.wall;
+            let wall_construction = &zc(zone_idx).wall;
             let r_south_total = wall_construction.r_value_total(Some(SurfaceType::Wall), None);
             let h_tr_is_south = south_opaque_area / r_south_total.max(0.001);
 
             // Compute R_exterior_to_mass for south wall (layers exterior to mass node)
             // Mass node is at the dominant insulation layer (ISO 13790 half-insulation rule)
-            let wall_construction = &spec.construction.wall;
+            let wall_construction = &zc(zone_idx).wall;
             let ins_idx = wall_construction.find_dominant_insulation_layer_index();
             let r_ext_film_south =
                 1.0 / crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF_DEFAULT;
@@ -2860,10 +2900,10 @@ impl ThermalModel<VectorField> {
                     .unwrap_or(0.9)
                     .clamp(0.0, 1.0)
             };
-            let eps_wall = exterior_layer_emissivity(&spec.construction.wall);
-            let eps_roof = exterior_layer_emissivity(&spec.construction.roof);
             let mut eps_vec = Vec::with_capacity(num_zones);
             for zone_idx in 0..num_zones {
+                let eps_wall = exterior_layer_emissivity(&zc(zone_idx).wall);
+                let eps_roof = exterior_layer_emissivity(&zc(zone_idx).roof);
                 let geom = if zone_idx < spec.geometry.len() {
                     &spec.geometry[zone_idx]
                 } else {
@@ -3864,6 +3904,9 @@ impl ThermalModel<VectorField> {
                 wall_u_value: 0.5,
                 roof_u_value: 0.5,
                 floor_u_value: 0.039,
+                wall_u_values: VectorField::from_scalar(0.5, num_zones),
+                roof_u_values: VectorField::from_scalar(0.5, num_zones),
+                floor_u_values: VectorField::from_scalar(0.039, num_zones),
                 zone_volume: VectorField::from_scalar(zone_area * ceiling_height, num_zones),
                 common_wall_area: 0.0,
                 thermal_bridge_coefficient: 0.0,

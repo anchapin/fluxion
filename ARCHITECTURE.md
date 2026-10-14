@@ -262,7 +262,7 @@ invariants and is wired into CI (run from repo root):
    `fluxion`.
 2. `fluxion_core::ashrae_cases` contains all 13 moved leaf types.
 3. `src/sim/**` → `crate::validation::*` edge count is at or below the
-   documented baseline (currently 48). This counts *every* reference — not
+   documented baseline (currently 49). This counts *every* reference — not
    just the leaf-type `Orientation` import the original #1441 guard forbid,
    but the composite types that actually drive the cycle (`CaseSpec`,
    `CaseBuilder`, `ASHRAE140Case`, `CommonWall`, `ConstructionSpec`) plus
@@ -277,9 +277,11 @@ moved the 13 pure-data leaf types; the composite types (`ASHRAE140Case`,
 `CaseSpec`, `CaseBuilder`, `CommonWall`, `ConstructionSpec`) stayed in
 `validation::ashrae_140_cases` because they carry upward deps to
 `crate::sim::*` / `crate::physics::*`, and `src/validation/**` legitimately
-drives the engine, weather sources, and physics tensors. As a result ~203
-directional edges remain (48 sim→validation + 68 validation→sim + 62
-validation→physics + 25 validation→weather) — 203 total. The guard therefore mirrors
+drives the engine, weather sources, and physics tensors. As a result ~204
+directional edges remain (49 sim→validation + 68 validation→sim + 62
+validation→physics + 25 validation→weather) — 204 total (round 24, issue
+#3061: +1 sim→validation edge, `thermal_model_core/mod.rs` importing
+`ConstructionSpec` for the Case 960 per-zone construction split). The guard therefore mirrors
 `scripts/check_physics_sim_cycle.py`: it snapshots the current counts as
 baselines and **fails only on regression** (a count grows above baseline),
 rather than requiring the full cycle removal in one step. Lowering a
