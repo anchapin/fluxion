@@ -1,6 +1,13 @@
 # ASHRAE Standard 140 Validation Results
 
 > **DEPRECATED** — SUPERSEDED by ASHRAE140_RESULTS.md — this file is obsolete. All citations should point to ASHRAE140_RESULTS.md.
+>
+> **Reference-data provenance (noted 2026-10-14, loop round 29):** the Case 640 row below
+> (H 2.75–3.80 / C 5.95–8.10 MWh) and the Case 940 row (H 0.79–1.41 / C 2.08–3.55 MWh)
+> carry the pre-audit reference rows proven to be of unverified origin in
+> docs/investigations/limit-35-case-900-heating-out-of-band.md §31/§32 (rounds 28–29) and
+> replaced in the authoritative sources by the published ASHRAE 140-2023 Annex B8 values.
+> Do not cite this file for reference values.
 
 ASHRAE 140 validation results snapshot — 64 test cases comparing Fluxion to EnergyPlus reference.
 Engineering team and CI — check this for pass/fail status; updated per PR and on merge to main.

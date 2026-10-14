@@ -2265,3 +2265,103 @@ entirely the FREE-family under-exceedance inherited from 600 (7.96 % of mid resi
 Not changed, recorded for follow-up: the Case 940 benchmark row ([0.79, 1.41] / [2.08, 3.55])
 also does not exactly match the transcription ([0.863, 1.389] / [2.203, 2.613]) but has the
 correct shape (940 H < 900 H, 940 C ≈ 900 C); it needs its own audit before correction.
+
+## §32 — Round 29: Case 940 reference-row provenance audit (2026-10-14)
+
+Question (round-28 §31 follow-up): the recorded 940 row has the correct shape (940 H < 900 H,
+940 C ≈ 900 C) but does not exactly match the 140-2023 Annex B8 transcription — where did it
+come from, and does the corrected target keep the round-26 in-band heating status?
+
+**Verdict: values of unverified origin with falsely attributed provenance (same signature as
+the round-28 Case 640 finding); corrected in place to the published values.**
+
+Evidence chain:
+
+1. Recorded values: heating [0.79, 1.41] MWh, cooling [2.08, 3.55] MWh, peaks
+   1.90–2.50 / 1.70–2.30 kW, free-float fields [-6.2, -1.4] / [40.8, 46.2] — present in
+   `src/validation/benchmark.rs` (both `get_all_benchmark_data` and
+   `get_all_benchmark_data_blind`), duplicated as `CASE_940_REF` in
+   `tests/all_tests/zone_balance_eplus_isolation.rs` (the strict-gate band source) and as
+   `reference::case_940` consts in `tests/all_tests/ashrae_140_setback_ventilation.rs`
+   (display only). These produced the strict baseline's case_940_heating band [0.935, 1.265]
+   and case_940_cooling band [2.393, 3.237].
+2. Origin: commit `b0bd4119` (2026-02-13, issue #54, validation-framework bootstrap) — the
+   940 row was INSERTED by that commit with these exact values and no cited source anywhere
+   in the commit (same bootstrap that inserted the unverified 640 row; `git log -S
+   "annual_heating_min: 0.79"` shows b0bd4119's insertion, #1272's byte-identical carry
+   through the blind-validation rewrite, and #4351, which copied the values unchanged into
+   the strict-gate `CASE_940_REF` at the round-25 strict-gate extension).
+3. #3803 (`6d8d4835`, 2026-09-16) added the blanket "Source: ASHRAE 140-2023 Annex B Tables
+   B8-1..B8-5" comment to the 940 block while changing NONE of the numbers (diff-verified —
+   the only row whose values it actually replaced was 900). Same false-attribution signature
+   as the round-28 640 finding.
+4. The authoritative 140-2023 Annex B8 §B8.1 transcription
+   (`data/reference/ashrae140/annex_b8_section7_statistics.json`; Tables B8-1..B8-4, TESS
+   Std140_TF_Results.pdf 19-Aug-2024) gives Case 940: heating [0.863, 1.389] mean 1.109
+   (B8-1), cooling [2.203, 2.613] mean 2.401 (B8-2), peak heating [3.052, 3.882] kW (B8-3),
+   peak cooling [2.556, 3.376] kW (B8-4). The recorded row matches NONE of the eight bounds.
+   Table B8-5 has no 940 entry (940 is not a free-float case), so the benchmark row's
+   free-float fields are not adjudicable against the transcription and were LEFT AS RECORDED.
+5. Shape check (why the row "has the correct shape"): published 940 H mean 1.109 vs 900's
+   1.626 — the heating-setback drop is real in the published tables, and 940 C mean 2.401 vs
+   900's 2.467 is the expected ≈ flat. The recorded row reproduces this shape but with
+   different bounds. Diagnostic detail: the recorded heating-band midpoint (1.10) matches the
+   published heating MEAN (1.109) almost exactly while no recorded bound matches a published
+   bound — the signature of a transcribed mean with guessed bounds, not of a different
+   published source. (The cooling midpoint does not match the published mean, so the row is
+   not a consistent mean-transcription either.) No published source for the recorded row
+   exists anywhere in the repo's history.
+6. Verdict route: per the round-28 640 precedent (#4170 case_950_cooling restoration pattern),
+   authoritative published values exist in-repo, so the recording is CORRECTED rather than
+   merely labeled.
+
+Landed correction (target-only; zero engine changes):
+
+| metric | published (B8) | band (±15 % of mid) | engine (unchanged) | gap before → after |
+|---|---|---|---|---|
+| case_940_heating | [0.863, 1.389] MWh | [0.935, 1.265] → [0.957, 1.295] | 1.130 MWh | 0.00 → 0.00 (stays PASS) |
+| case_940_cooling | [2.203, 2.613] MWh | [2.393, 3.237] → [2.047, 2.769] | 1.671 MWh | 25.65 → 15.61 % of mid |
+
+Statuses unchanged: heating stays pass (the round-26 schedule-consumption fix's 940 heating
+re-entry HOLDS under the true published target — measured 1.130 sits inside the new band
+[0.957, 1.295] with more margin on the upper edge); cooling stays known_fail (the gap
+narrows from 25.65 to 15.61 % of mid purely because the unfit recorded target is replaced).
+Peak-heating note: the recorded 940 peak heating 2.626 kW (round-16 re-record, LIMIT-12) sat
+"out of band" only against the unverified [1.90, 2.50] row from the other side — against the
+published [3.052, 3.882] it is BELOW the published low by 13 %. The 940 peak-heating question
+is recorded, not chased: the strict gate does not gate peaks, and the engine target is the
+published tables.
+
+## §33 — Round 29: GaugeSolver first increment — premise measured STALE on the routed path; increment not landed (2026-10-14)
+
+Round 28's brief (§31 / #1465/#1462) called for the GaugeSolver first increment: an implicit
+symmetric air-node solve replacing the FD storage-release divisor on the routed gauge path,
+gauge-build-only, with default-build bit-identity as the landing gate. Before writing any
+solver code, the premise was re-measured on develop `9eec51f4` (gauge feature build,
+Golden-NREL EPW, the preserved round-10 scratch harness plus an env-gated per-sub-step
+T_air trace; both scratch-only, never committed):
+
+- **Reproduction is clean**: gauge-routed 600 H/C 28.635/5.715 MWh and 640 17.798/5.176 MWh
+  match the develop/round-27 records to the printed digit.
+- **The β-soak divergence cohort is EMPTY**: across all traced gauge sub-steps on Case 600
+  (and 640), ZERO steps with |T_air| > 60 °C; the annual extreme is |T_air| = 42.7 °C
+  (600) / 41.4 °C (640). The round-8 pathology (§22: 416 zero-gain diverging steps; §22
+  addendum: 169 diverging gain-hours) no longer reproduces on the routed path — the
+  committed PR-a operator splitting plus the round-10 ground coupling and round-26/27
+  schedule consumption cured the gross instability as a side effect.
+
+Consequence for the increment: the named change was motivated as the cure for that
+instability (§22: "the slope, which would make the coupling implicit, is discarded"). The
+routed air-node update has been implicit (sub-step affine slope in the denominator,
+exponential relaxation) since PR-a landed, and it is stable. Replacing it with the round-23
+symmetric dense solve would now be a structural rewrite whose stability rationale has
+evaporated and whose accuracy rationale lives elsewhere — the remaining gauge-path defects
+are the §LIMIT-40 day/night storage-release split, the network-foreign 5R1C metering pair
+(§22 PR-c) and the missing infiltration threading (§22 PR-b), none of which the symmetric
+air-node solve addresses.
+
+**Verdict: increment NOT landed; premise updated instead of half-landing a rewrite**
+(the brief's own escape clause). Recommended round-30 sequence, in the §22 program order:
+PR-b (infiltration threading — small, spec-consumption-shaped like round 26/27) and then
+PR-c (self-consistent gauge metering) — each independently measurable on the gauge-gated
+harness that this round verified reproduces the recorded gauge numbers.

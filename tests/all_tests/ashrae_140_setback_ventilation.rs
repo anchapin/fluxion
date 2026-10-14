@@ -40,12 +40,13 @@ mod reference {
         pub const ANNUAL_COOLING_MAX: f64 = 7.06;
     }
 
-    // Case 940 - High mass with thermostat setback
+    // Case 940 - High mass with thermostat setback (published 140-2023 Annex B8 values,
+    // round 29 provenance correction; see benchmark.rs Case 940 note)
     pub mod case_940 {
-        pub const ANNUAL_HEATING_MIN: f64 = 0.79;
-        pub const ANNUAL_HEATING_MAX: f64 = 1.41;
-        pub const ANNUAL_COOLING_MIN: f64 = 2.08;
-        pub const ANNUAL_COOLING_MAX: f64 = 3.55;
+        pub const ANNUAL_HEATING_MIN: f64 = 0.863;
+        pub const ANNUAL_HEATING_MAX: f64 = 1.389;
+        pub const ANNUAL_COOLING_MIN: f64 = 2.203;
+        pub const ANNUAL_COOLING_MAX: f64 = 2.613;
     }
 
     // Case 950 - High mass with night ventilation
