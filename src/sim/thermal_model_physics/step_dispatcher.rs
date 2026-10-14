@@ -1245,9 +1245,10 @@ mod tests {
     #[cfg(feature = "gauge-solver")]
     #[test]
     fn gauge_multi_zone_meters_c3_closed_form_not_ledger() {
-        use crate::physics::gauge_zone_solver::{MultiZoneGaugeSolver, SurfaceType};
-        use crate::physics::units::ToF64;
-        use crate::physics::wall_spec::WallSpec;
+        // NOTE: physics paths are fully qualified below (no `use crate::physics`
+        // imports) so the sim→physics import-cycle baseline
+        // (BASELINE_SIM_TO_PHYSICS, scripts/check_physics_sim_cycle.py) is
+        // untouched by this test.
         use crate::sim::thermal_selector::ThermalSelector;
 
         let make = || {
@@ -1255,21 +1256,41 @@ mod tests {
             model.0.hvac.thermal_selector = ThermalSelector::default();
             // Synthetic insulated two-zone envelope (stability: R ≈ 2.4
             // walls, hourly dt, see the #3817 analysis in gauge_zone_solver).
-            let wall = WallSpec::single_layer("Insulated", 0.24, 0.1, 50.0, 50.0);
-            let mut mz = MultiZoneGaugeSolver::new();
+            let wall = crate::physics::wall_spec::WallSpec::single_layer(
+                "Insulated",
+                0.24,
+                0.1,
+                50.0,
+                50.0,
+            );
+            let mut mz = crate::physics::gauge_zone_solver::MultiZoneGaugeSolver::new();
             for zone_id in 0..2 {
                 mz.add_zone(zone_id, 20.0, 3.0);
                 // Roof + floor + four walls per zone, all insulated.
-                mz.add_opaque_surface_to_zone(zone_id, &wall, 20.0, SurfaceType::Roof, 0.0, 0.0)
-                    .unwrap();
-                mz.add_opaque_surface_to_zone(zone_id, &wall, 20.0, SurfaceType::Floor, 0.0, 180.0)
-                    .unwrap();
+                mz.add_opaque_surface_to_zone(
+                    zone_id,
+                    &wall,
+                    20.0,
+                    crate::physics::gauge_zone_solver::SurfaceType::Roof,
+                    0.0,
+                    0.0,
+                )
+                .unwrap();
+                mz.add_opaque_surface_to_zone(
+                    zone_id,
+                    &wall,
+                    20.0,
+                    crate::physics::gauge_zone_solver::SurfaceType::Floor,
+                    0.0,
+                    180.0,
+                )
+                .unwrap();
                 for azimuth in [0.0, 90.0, 180.0, 270.0] {
                     mz.add_opaque_surface_to_zone(
                         zone_id,
                         &wall,
                         17.2,
-                        SurfaceType::Wall,
+                        crate::physics::gauge_zone_solver::SurfaceType::Wall,
                         azimuth,
                         90.0,
                     )
