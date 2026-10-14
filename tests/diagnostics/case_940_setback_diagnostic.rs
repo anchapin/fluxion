@@ -186,7 +186,9 @@ fn test_case_940_setback_diagnostic() {
 
     println!("\n[#2452 Case 940 annual summary]");
     println!(
-        "  Annual Heating: {:.3} MWh  (ref band [0.79, 1.41] MWh)",
+        // Round 29 provenance correction: band is the published ASHRAE 140-2023
+        // Annex B8 envelope (prior [0.79, 1.41] was of unverified origin).
+        "  Annual Heating: {:.3} MWh  (ref band [0.863, 1.389] MWh)",
         annual_h_mwh
     );
     println!(
@@ -202,10 +204,10 @@ fn test_case_940_setback_diagnostic() {
         peak_c_kw
     );
 
-    let dev_h = (annual_h_mwh / 1.41 - 1.0) * 100.0;
-    let dev_c = (annual_c_mwh / 3.55 - 1.0) * 100.0;
-    let dev_h_peak = (peak_h_kw / 2.50 - 1.0) * 100.0;
-    let dev_c_peak = (peak_c_kw / 2.30 - 1.0) * 100.0;
+    let dev_h = (annual_h_mwh / 1.389 - 1.0) * 100.0;
+    let dev_c = (annual_c_mwh / 2.613 - 1.0) * 100.0;
+    let dev_h_peak = (peak_h_kw / 3.882 - 1.0) * 100.0;
+    let dev_c_peak = (peak_c_kw / 3.376 - 1.0) * 100.0;
     println!(
         "  Deviation from upper band: H={:+.1}%, C={:+.1}%, peak_H={:+.1}%, peak_C={:+.1}%",
         dev_h, dev_c, dev_h_peak, dev_c_peak
