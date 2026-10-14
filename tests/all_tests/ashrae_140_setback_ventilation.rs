@@ -373,3 +373,62 @@ fn test_case_specifications() {
         "Case 950 should have night ventilation"
     );
 }
+
+/// Round 27 (§LIMIT-41 follow-up): on a `gauge-solver` build the gauge
+/// dispatch path must consume `heating_schedule`/`cooling_schedule` the same
+/// way the default demand paths do since round 26 (PR #4403). Before the
+/// per-step sync in `collect_gauge_inputs`, gauge-routed Case 640 was
+/// simulated byte-identical to Case 600 (measured: both H 28.635 / C
+/// 5.715 MWh on develop 270de03a, gauge build, Golden-NREL EPW) because the
+/// dispatch read only the constant per-zone setpoint vectors. Gauge-build
+/// only: the default build compiles this arm out.
+#[cfg(feature = "gauge-solver")]
+#[test]
+fn test_gauge_dispatch_consumes_setback_schedule() {
+    use fluxion::weather::epw::EpwWeatherSource;
+    use fluxion::weather::WeatherSource;
+
+    let epw = EpwWeatherSource::from_file("assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw")
+        .expect("Golden-NREL EPW must be present");
+
+    fn gauge_annual(case: ASHRAE140Case, epw: &fluxion::weather::epw::EpwWeatherSource) -> (f64, f64) {
+        let spec = case.spec();
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
+        let mut h = 0.0_f64;
+        let mut c = 0.0_f64;
+        for step in 0..8760 {
+            let w = epw.get_hourly_data(step).unwrap();
+            model.solar.weather = Some(w.clone());
+            let ekwh = model.step_physics(step, w.dry_bulb_temp, 3600.0);
+            if ekwh > 0.0 {
+                h += ekwh;
+            } else {
+                c += -ekwh;
+            }
+        }
+        (h / 1000.0, c / 1000.0)
+    }
+
+    let (h600, c600) = gauge_annual(ASHRAE140Case::Case600, &epw);
+    let (h640, c640) = gauge_annual(ASHRAE140Case::Case640, &epw);
+
+    // The setback must reach the gauge demand: 640's nights are held at
+    // 10 °C instead of 20 °C, so its annual heating must be strictly below
+    // the identical-geometry 600 twin. Before the sync both were
+    // byte-identical (28.635 MWh).
+    assert!(
+        h640 < h600 * 0.95,
+        "gauge-routed Case 640 heating ({h640:.3} MWh) must be below Case 600 \
+         ({h600:.3} MWh) — the setback schedule is not reaching the gauge demand"
+    );
+    // Cooling barely moves (setback is heating-only; recorded twin delta
+    // is -0.3 %): a sanity bound, not a band assertion.
+    assert!(
+        (c640 - c600).abs() < 0.2 * c600,
+        "gauge-routed 640 cooling ({c640:.3}) drifted from its 600 twin ({c600:.3})"
+    );
+}
