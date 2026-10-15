@@ -20,17 +20,17 @@ Fluxion separates the "heavy lifting" of physics (CFD/Radiation) into AI surroga
 ![ASHRAE 140 strict gate](https://img.shields.io/badge/ASHRAE140%20strict%20gate-9%20PASS%20%2F%2033%20KNOWN--FAIL%20%2F%200%20REGRESSION-red)
 ![Version](https://img.shields.io/badge/status-in--development-orange)
 
-Fluxion is **not yet ASHRAE 140-compliant**. The current strict ±15% annual-energy gate at the develop tip is **9 PASS / 33 KNOWN-FAIL / 0 REGRESSION** (verified 2026-10-15 at `6c18425e`; KNOWN-FAIL rows are the documented structural failures in [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md), not hidden regressions). The metric-level table below is a **stored snapshot from 2026-09-26** (`validation/performance_history.latest.json`) and is not the live gate; see [`docs/ASHRAE140_RESULTS.md`](docs/ASHRAE140_RESULTS.md) for the full case-by-case breakdown and [`SCORECARD.md`](SCORECARD.md) for the consolidated, reproducible release-readiness view.
+Fluxion is **not yet ASHRAE 140-compliant**. The current strict ±15% annual-energy gate at the develop tip is **9 PASS / 33 KNOWN-FAIL / 0 REGRESSION** (verified 2026-10-15 at `ad88bfa9`; KNOWN-FAIL rows are the documented structural failures in [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md), not hidden regressions). The metric-level table below is the **live validator sweep regenerated 2026-10-15** at `ad88bfa9` (round 37; supersedes the stored 2026-09-26 snapshot) — see [`docs/ASHRAE140_RESULTS.md`](docs/ASHRAE140_RESULTS.md) for the full case-by-case breakdown and [`SCORECARD.md`](SCORECARD.md) for the consolidated, reproducible release-readiness view.
 
 | Metric | Current | Target (release gate) | Status |
 |--------|---------|-----------------------|--------|
-| Strict ±15% annual-energy gate (live, 2026-10-15 @ `6c18425e`) | **9 PASS / 33 KNOWN-FAIL / 0 REGRESSION** | 0 REGRESSION sustained; KNOWN-FAIL count trending down | ℹ️ tracked |
-| Pass rate (metric-level) | **9.8%** (11/84) | ≥ 60% | ❌ Fail |
-| Mean Absolute Error (MAE) | **45.27%** | ≤ 50% | ✅ Pass |
+| Strict ±15% annual-energy gate (live, 2026-10-15 @ `ad88bfa9`) | **9 PASS / 33 KNOWN-FAIL / 0 REGRESSION** | 0 REGRESSION sustained; KNOWN-FAIL count trending down | ℹ️ tracked |
+| Pass rate (metric-level) | **6.0%** (5/84) | ≥ 60% | ❌ Fail |
+| Mean Absolute Error (MAE) | **78.50%** | ≤ 50% | ❌ Fail |
 | Cases fully passing (stored snapshot) | 0/18 (0.0%) | — | ❌ |
-| Max single-case deviation | 100.00% | — | ℹ️ |
+| Max single-case deviation | 964.17% | — | ℹ️ |
 
-*The four metric-level rows above are a stored snapshot (generated 2026-09-26 from `validation/performance_history.latest.json`), not the live gate; the strict-gate row above them is current.*
+*The four metric-level rows above are regenerated (generated 2026-10-15 from a live `fluxion validate` sweep at `ad88bfa9`, promoted into `validation/performance_history.latest.json`); the strict-gate row above them is the live regression gate. The metric-level regression vs the 2026-09-26 snapshot (9.8% → 6.0% pass, 45.27% → 78.50% MAE) reflects the round-26+ fidelity-first engine changes measured against the un-tuned validator reference bands — see the round-37 loop notes; no validator band or engine constant was adjusted to move these figures.*
 
 ### Run the validation pipeline
 
