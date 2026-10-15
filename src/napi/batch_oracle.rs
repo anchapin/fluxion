@@ -6,9 +6,6 @@
 //! Provides JavaScript interface for evaluating populations of building configurations
 //! with >10,000 configs/sec throughput. Critical for optimization workflows in BIM tools.
 
-use crate::sim::engine::ThermalModel;
-use crate::sim::thermal_selector::ThermalSelector;
-use crate::validation::ashrae_140_cases::CaseBuilder;
 use crate::BatchOracle as CoreBatchOracle;
 
 // Issue #3734: catch_unwind wrapper that converts a panic on the NAPI
@@ -89,15 +86,14 @@ impl BatchOracle {
         // backend missing in Phase A8 would abort the host Node process
         // for what should be a recoverable constructor error. Now mapped
         // to `NapiError` so the JS caller sees a thrown Error instead.
-        let spec = CaseBuilder::case_600_baseline();
-        let thermal_model =
-            ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::default()).map_err(
-                |e| {
-                    napi::bindgen_prelude::Error::from_reason(format!(
-                        "Failed to create BatchOracle (default selector initialization): {e}"
-                    ))
-                },
-            )?;
+        // Issue #4343: route through the shared canonical default base model
+        // so the NAPI and Python default constructors are identical by
+        // construction (was: an inline, textually-duplicated Case 600 build).
+        let thermal_model = CoreBatchOracle::default_model().map_err(|e| {
+            napi::bindgen_prelude::Error::from_reason(format!(
+                "Failed to create BatchOracle (default selector initialization): {e}"
+            ))
+        })?;
 
         let inner = CoreBatchOracle::from_model(thermal_model).map_err(|e| {
             napi::bindgen_prelude::Error::from_reason(format!("Failed to create BatchOracle: {e}"))
