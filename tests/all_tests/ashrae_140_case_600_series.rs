@@ -73,16 +73,18 @@ const CASE_620: CaseReference = CaseReference {
     max_free_float_max: 71.5,
 };
 
+// Round 33 provenance correction (2026-10-14): published 140-2023 Annex B8 B8-1..B8-4
+// values (see benchmark.rs; prior values were issue #54's, of unverified origin).
 const CASE_630: CaseReference = CaseReference {
     case_id: "630",
-    annual_heating_min: 5.05,
-    annual_heating_max: 6.47,
-    annual_cooling_min: 2.13,
-    annual_cooling_max: 3.70,
-    peak_heating_min: 4.70,
-    peak_heating_max: 6.10,
-    peak_cooling_min: 1.80,
-    peak_cooling_max: 2.40,
+    annual_heating_min: 4.356,
+    annual_heating_max: 5.139,
+    annual_cooling_min: 2.573,
+    annual_cooling_max: 3.074,
+    peak_heating_min: 3.039,
+    peak_heating_max: 3.388,
+    peak_cooling_min: 3.526,
+    peak_cooling_max: 4.212,
     min_free_float_min: -18.0,
     min_free_float_max: -14.8,
     max_free_float_min: 58.5,
@@ -484,7 +486,9 @@ mod case_630 {
     // Un-quarantined 2026-10-09 (§LIMIT-39 RESOLVED by the E/W shading-path
     // fix, loop round 4): the dead fins arm + phantom overhang gap were
     // under-shading the E/W windows; with the spec-correct shading, annual
-    // cooling returns INSIDE the published band (3.000 MWh vs [2.13, 3.70],
+    // cooling returns INSIDE the published band (3.000 MWh,
+    // validator path; round 33 row correction puts the published band at
+    // [2.573, 3.074] and 3.000 stays inside).
     // validator path). See docs/KNOWN_ISSUES.md §LIMIT-39.
     #[test]
     fn test_annual_cooling() {

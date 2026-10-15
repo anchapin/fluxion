@@ -1321,16 +1321,19 @@ const CASE_620_REF: EnergyReference = EnergyReference {
     peak_cooling_min_kw: 3.955,
     peak_cooling_max_kw: 4.797,
 };
+// Round 33 provenance correction: published ASHRAE 140-2023 Annex B8 values
+// (transcription data/reference/ashrae140/annex_b8_section7_statistics.json);
+// the prior row entered at #54/#1272 with no cited source.
 const CASE_630_REF: EnergyReference = EnergyReference {
     case_id: "630",
-    annual_heating_min_mwh: 5.05,
-    annual_heating_max_mwh: 6.47,
-    annual_cooling_min_mwh: 2.13,
-    annual_cooling_max_mwh: 3.70,
-    peak_heating_min_kw: 4.70,
-    peak_heating_max_kw: 6.10,
-    peak_cooling_min_kw: 1.80,
-    peak_cooling_max_kw: 2.40,
+    annual_heating_min_mwh: 4.356,
+    annual_heating_max_mwh: 5.139,
+    annual_cooling_min_mwh: 2.573,
+    annual_cooling_max_mwh: 3.074,
+    peak_heating_min_kw: 3.039,
+    peak_heating_max_kw: 3.388,
+    peak_cooling_min_kw: 3.526,
+    peak_cooling_max_kw: 4.212,
 };
 // Round 28 provenance correction (2026-10-14): values replaced with the published
 // ANSI/ASHRAE 140-2023 Annex B8 Tables B8-1..B8-4 inter-program ranges (authoritative
