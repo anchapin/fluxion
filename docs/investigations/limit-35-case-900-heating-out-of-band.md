@@ -2847,3 +2847,30 @@ Statuses unchanged; arithmetic corrected, recorded not tuned.
 Copies corrected: `benchmark.rs` (both maps, 950 values + dated comments),
 `CASE_950_REF`, `mod reference::case_950ff`, strict baseline
 (`case_950_cooling` re-recorded + `_doc_round33b`).
+
+## §46 — Round 33 verification sweep: 900FF/650FF provenance residuals (2026-10-15)
+
+Full re-read of every row merged in rounds 32–33 (600, 900/900FF, 910, 920,
+930, 630, 650/650FF, 950/950FF) against the primary transcription. Result:
+the annual energy/peak rows for 600, 900, 910, 920, 930, 630, 650 are all
+byte-equal to the JSON — the round-32/33 premise verification held. Three
+residuals found, all pure provenance (no measured value, band edge, or
+status changes except as noted):
+
+1. **Dedicated 900FF rows in `benchmark.rs` (both maps)** still carried the
+   1995 BESTEST ff values ([-6.4, -1.6] / [41.8, 46.4]) that round 32's
+   #4414 removed from the Case 900 row and FF_900_REF but left on the
+   dedicated row. Corrected to the transcription Table B8-5 row
+   ([0.6, 2.2] / [43.3, 46.0]) — the same values FF_900_REF already
+   carries. ff_900ff_min/max statuses unchanged (both already known_fail
+   in the strict gate, which reads FF_900_REF).
+2. **`mod reference::case_650ff` constants** in `ashrae_140_free_floating.rs`
+   still pre-#4420 (display/warn-only; #4420 fixed only the
+   diagnostic-summary tuple). Corrected to [-17.8, -16.7] / [61.1, 66.8].
+3. **Strict-baseline ff_650ff_min/max gap fields** held gaps computed
+   against the pre-#4420 band (37.86 / 10.63) instead of the corrected band
+   (41.04 / 15.09); statuses unchanged. Same stale-arithmetic class as the
+   ff_950ff gaps fixed in §45.
+
+Checker unchanged from §45's 8 PASS / 34 KNOWN-FAIL / 0 REGRESSION (full
+battery re-run on the branch, 2026-10-15).

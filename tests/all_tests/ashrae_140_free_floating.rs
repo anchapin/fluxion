@@ -32,10 +32,14 @@ mod reference {
 
     // Case 650FF - Low mass free-floating with night ventilation
     pub mod case_650ff {
-        pub const MIN_TEMP_MIN: f64 = -23.0;
-        pub const MIN_TEMP_MAX: f64 = -21.0;
-        pub const MAX_TEMP_MIN: f64 = 63.2;
-        pub const MAX_TEMP_MAX: f64 = 73.5;
+        // Round 33 sweep correction (2026-10-15): re-transcribed from Table
+        // B8-5 (annex_b8_section7_statistics.json); the prior constants
+        // (-23.0..-21.0 / 63.2..73.5) were of unverified origin and were
+        // missed by #4420 (which corrected only the diagnostic-summary tuple).
+        pub const MIN_TEMP_MIN: f64 = -17.8;
+        pub const MIN_TEMP_MAX: f64 = -16.7;
+        pub const MAX_TEMP_MIN: f64 = 61.1;
+        pub const MAX_TEMP_MAX: f64 = 66.8;
     }
 
     // Case 900FF - High mass free-floating
