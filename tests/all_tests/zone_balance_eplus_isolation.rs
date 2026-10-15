@@ -1311,16 +1311,22 @@ fn test_case_970_annual_energy_ashrae140_tolerance() {
 /// Issue #4170: published bands for the nine newly-gated annual cases,
 /// transcribed from `src/validation/benchmark.rs` (`get_all_benchmark_data`,
 /// byte-equal to the blind table for these cases).
+// Round 33 provenance correction (2026-10-15): the prior row (H [4.36, 5.79],
+// C [3.92, 6.14], peaks [4.30, 5.70] / [2.20, 2.90]) was the 140-2017-era
+// bootstrap row of unverified origin; replaced with the 140-2023 Annex B8
+// transcription values (annex_b8_section7_statistics.json, Tables B8-1..B8-4).
+// Target-only: engine unchanged; measured H 7.307 / C 2.456 MWh bit-identical,
+// both remain known_fail under the true target (doc §49).
 const CASE_610_REF: EnergyReference = EnergyReference {
     case_id: "610",
-    annual_heating_min_mwh: 4.36,
-    annual_heating_max_mwh: 5.79,
-    annual_cooling_min_mwh: 3.92,
-    annual_cooling_max_mwh: 6.14,
-    peak_heating_min_kw: 4.30,
-    peak_heating_max_kw: 5.70,
-    peak_cooling_min_kw: 2.20,
-    peak_cooling_max_kw: 2.90,
+    annual_heating_min_mwh: 4.066,
+    annual_heating_max_mwh: 4.592,
+    annual_cooling_min_mwh: 4.117,
+    annual_cooling_max_mwh: 4.382,
+    peak_heating_min_kw: 3.021,
+    peak_heating_max_kw: 3.36,
+    peak_cooling_min_kw: 5.331,
+    peak_cooling_max_kw: 6.432,
 };
 const CASE_620_REF: EnergyReference = EnergyReference {
     case_id: "620",

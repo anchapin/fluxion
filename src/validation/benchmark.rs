@@ -158,19 +158,29 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 610 - South Shading (Low Mass)
-    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // Round 33 provenance correction (2026-10-15): the prior row (H [4.36,
+    // 5.79], C [3.92, 6.14], peaks [4.30, 5.70] / [2.20, 2.90]) was the
+    // 140-2017-era bootstrap row of unverified origin (doc §36 queue);
+    // replaced with the 140-2023 Annex B8 transcription values read
+    // directly from annex_b8_section7_statistics.json (Tables B8-1..B8-4).
+    // The min/max_free_float fields are inert placeholders: Case 610 is not
+    // a free-floating case (free-float scoring keys on spec.is_free_
+    // floating()) and the transcription's Table B8-5 carries no 610FF row,
+    // so no consumer scores these four numbers (same pattern as the 195
+    // placeholders below).
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-4 (Std140_TF_Results.pdf,
     // TESS 19-Aug-2024). Same inter-program source set as Case 600 above.
     data.insert(
         "610".to_string(),
         BenchmarkData {
-            annual_heating_min: 4.36,
-            annual_heating_max: 5.79,
-            annual_cooling_min: 3.92,
-            annual_cooling_max: 6.14,
-            peak_heating_min: 4.30,
-            peak_heating_max: 5.70,
-            peak_cooling_min: 2.20,
-            peak_cooling_max: 2.90,
+            annual_heating_min: 4.066,
+            annual_heating_max: 4.592,
+            annual_cooling_min: 4.117,
+            annual_cooling_max: 4.382,
+            peak_heating_min: 3.021,
+            peak_heating_max: 3.36,
+            peak_cooling_min: 5.331,
+            peak_cooling_max: 6.432,
             min_free_float_min: -19.2,
             min_free_float_max: -16.0,
             max_free_float_min: 60.2,
@@ -812,19 +822,29 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 610 - South Shading (Low Mass)
-    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
+    // Round 33 provenance correction (2026-10-15): the prior row (H [4.36,
+    // 5.79], C [3.92, 6.14], peaks [4.30, 5.70] / [2.20, 2.90]) was the
+    // 140-2017-era bootstrap row of unverified origin (doc §36 queue);
+    // replaced with the 140-2023 Annex B8 transcription values read
+    // directly from annex_b8_section7_statistics.json (Tables B8-1..B8-4).
+    // The min/max_free_float fields are inert placeholders: Case 610 is not
+    // a free-floating case (free-float scoring keys on spec.is_free_
+    // floating()) and the transcription's Table B8-5 carries no 610FF row,
+    // so no consumer scores these four numbers (same pattern as the 195
+    // placeholders below).
+    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-4 (Std140_TF_Results.pdf,
     // TESS 19-Aug-2024). Same inter-program source set as Case 600 above.
     data.insert(
         "610".to_string(),
         BenchmarkData {
-            annual_heating_min: 4.36,
-            annual_heating_max: 5.79,
-            annual_cooling_min: 3.92,
-            annual_cooling_max: 6.14,
-            peak_heating_min: 4.30,
-            peak_heating_max: 5.70,
-            peak_cooling_min: 2.20,
-            peak_cooling_max: 2.90,
+            annual_heating_min: 4.066,
+            annual_heating_max: 4.592,
+            annual_cooling_min: 4.117,
+            annual_cooling_max: 4.382,
+            peak_heating_min: 3.021,
+            peak_heating_max: 3.36,
+            peak_cooling_min: 5.331,
+            peak_cooling_max: 6.432,
             min_free_float_min: -19.2,
             min_free_float_max: -16.0,
             max_free_float_min: 60.2,

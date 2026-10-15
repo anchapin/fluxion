@@ -221,28 +221,28 @@
     "_doc_limit23b": "UPDATE 2026-10-12 (loop round 20, docs/investigations/limit-23b-case-970-provenance-and-envelope.md): provenance correction only, no values touched. The Case 970 published_range_mwh band has no published ASHRAE 140 source: Case 970 does not exist in the in-repo ASHRAE 140-2017(a) PDF (docs/140_2017_a_20200901.pdf) nor in the authoritative ASHRAE 140-2023 Annex B8 Section B8.1 transcription (data/reference/ashrae140/annex_b8_section7_statistics.json; case list ...950, 960, 980, 985). The band entered at Issue #1446 as if published and is an internal target of unverified origin. Recorded value_mwh/gap_pct_of_mid/status are retained unchanged; known_fail therefore means distance from that internal target, not ASHRAE non-conformance. Reproduction on 7e321a22: H 4.616 / C 2.341 MWh, matching the recorded values.",
     "case_610_heating": {
       "published_range_mwh": [
-        4.36,
-        5.79
+        4.066,
+        4.592
       ],
       "band_mwh": [
-        4.314,
-        5.836
+        3.68,
+        4.978
       ],
       "value_mwh": 7.307,
-      "gap_pct_of_mid": 28.99,
+      "gap_pct_of_mid": 53.8,
       "status": "known_fail"
     },
     "case_610_cooling": {
       "published_range_mwh": [
-        3.92,
-        6.14
+        4.117,
+        4.382
       ],
       "band_mwh": [
-        4.275,
-        5.784
+        3.612,
+        4.887
       ],
       "value_mwh": 2.456,
-      "gap_pct_of_mid": 36.17,
+      "gap_pct_of_mid": 27.2,
       "status": "known_fail"
     },
     "case_620_heating": {
@@ -573,5 +573,6 @@
   "_doc_round33": "Round 33 (2026-10-14): Case 910 row corrected to the 140-2023 Annex B8 published values (PR ref-row-910); target-only, measured values unchanged from round 32. Case 920 row corrected to the 140-2023 Annex B8 published values (PR ref-row-920); target-only. Case 930 row corrected to the 140-2023 Annex B8 published values (PR ref-row-930); target-only. Case 630 row corrected to the 140-2023 Annex B8 published values (PR ref-row-630); target-only. Case 650/650FF row corrected to the 140-2023 Annex B8 published values (PR ref-row-650); target-only. Case 950/950FF row corrected to the 140-2023 Annex B8 published values (PR ref-row-950); target-only.",
   "_doc_round33b": "Round 33 correction (2026-10-15, branch fix/ref-row-950-transcription): #4421's 950 cooling published_range [3.703, 4.265] had been transcribed from stale round notes; re-transcribed directly from annex_b8_section7_statistics.json (annual_sensible_cooling_mwh 950 = [0.586, 0.707]). Band recomputed as midpoint +/- 15%; measured 0.654 MWh is inside the band, so case_950_cooling re-frames known_fail -> pass. No measured value changed; nothing tuned.",
   "_doc_round33c": "Round 33 verification sweep (2026-10-15, branch fix/sweep-900ff-650ff-provenance): two pure-provenance residuals from the round-32/33 row PRs, found by re-reading every merged row against annex_b8_section7_statistics.json. (1) ff_650ff_min/max gap_pct_of_mid held gaps computed against the PRE-#4420 band (37.86/10.63) instead of the corrected band (41.04/15.09); values and statuses unchanged (the checker had tolerated the stale arithmetic because the correct gaps are larger). (2) the dedicated 900FF BenchmarkData rows in benchmark.rs (both maps) still carried the 1995 BESTEST ff values ([-6.4,-1.6]/[41.8,46.4]) that #4414 removed from the Case 900 row and FF_900_REF; replaced with the transcription Table B8-5 row ([0.6,2.2]/[43.3,46.0]), the same values FF_900_REF already carries. The free_floating.rs case_650ff mod constants (display-only, warn-only assertions) were also still pre-#4420 and are corrected. Nothing tuned; no measured value changed.",
-  "_doc_round33d": "Round 33 (2026-10-15, PR #4424): Case 960 reference row corrected to the 140-2023 Annex B8 transcription (prior row was the issue-#2858 widened synthetic-era band of unverified origin: H [1.65,2.45], C [1.55,2.78] -> published H [2.522,2.86], C [0.789,0.95]). Target-only; measured 2.508/1.037 MWh bit-identical. case_960_heating RE-ENTERS its true +/-15% band [2.287,3.095]: known_fail -> pass (gap 0). case_960_cooling gap 37.09 -> 4.26 % of mid (checker convention: distance beyond the band edge, % of mid; still known_fail, the 900-family cooling-chain gap). Nothing tuned."
+  "_doc_round33d": "Round 33 (2026-10-15, PR #4424): Case 960 reference row corrected to the 140-2023 Annex B8 transcription (prior row was the issue-#2858 widened synthetic-era band of unverified origin: H [1.65,2.45], C [1.55,2.78] -> published H [2.522,2.86], C [0.789,0.95]). Target-only; measured 2.508/1.037 MWh bit-identical. case_960_heating RE-ENTERS its true +/-15% band [2.287,3.095]: known_fail -> pass (gap 0). case_960_cooling gap 37.09 -> 4.26 % of mid (checker convention: distance beyond the band edge, % of mid; still known_fail, the 900-family cooling-chain gap). Nothing tuned.",
+  "_doc_round33e": "Round 33 (2026-10-15, PR #4426): Case 610 reference row corrected to the 140-2023 Annex B8 transcription (prior row was the 140-2017-era bootstrap of unverified origin: H [4.36,5.79], C [3.92,6.14] -> published H [4.066,4.592], C [4.117,4.382]). Target-only; measured H 7.307 / C 2.456 MWh bit-identical. Both remain known_fail (H gap 28.99 -> 53.79, C gap 36.17 -> 27.2 % of mid, checker beyond-band-edge convention); the 600-series shading-family engine gap widens on heating under the true target and narrows on cooling. Nothing tuned; band edges not moved to fit the engine."
 }
