@@ -1376,16 +1376,19 @@ const CASE_910_REF: EnergyReference = EnergyReference {
     peak_cooling_min_kw: 2.081,
     peak_cooling_max_kw: 2.722,
 };
+// Round 33 provenance correction: published ASHRAE 140-2023 Annex B8 values
+// (transcription data/reference/ashrae140/annex_b8_section7_statistics.json);
+// the prior row entered at #54/#1272 with no cited source.
 const CASE_930_REF: EnergyReference = EnergyReference {
     case_id: "930",
-    annual_heating_min_mwh: 4.14,
-    annual_heating_max_mwh: 5.34,
-    annual_cooling_min_mwh: 1.04,
-    annual_cooling_max_mwh: 2.24,
-    peak_heating_min_kw: 2.30,
-    peak_heating_max_kw: 3.00,
-    peak_cooling_min_kw: 1.10,
-    peak_cooling_max_kw: 1.50,
+    annual_heating_min_mwh: 3.524,
+    annual_heating_max_mwh: 4.384,
+    annual_cooling_min_mwh: 1.654,
+    annual_cooling_max_mwh: 2.161,
+    peak_heating_min_kw: 2.537,
+    peak_heating_max_kw: 2.968,
+    peak_cooling_min_kw: 2.335,
+    peak_cooling_max_kw: 3.052,
 };
 // Round 29 provenance correction: values are the published ASHRAE 140-2023 Annex B8
 // inter-program envelope (transcription data/reference/ashrae140/annex_b8_section7_statistics.json);
