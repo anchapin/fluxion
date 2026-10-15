@@ -25,10 +25,12 @@ Fluxion is **not yet ASHRAE 140-compliant**. The current strict ±15% annual-ene
 | Metric | Current | Target (release gate) | Status |
 |--------|---------|-----------------------|--------|
 | Strict ±15% annual-energy gate (live, 2026-10-15 @ `6c18425e`) | **9 PASS / 33 KNOWN-FAIL / 0 REGRESSION** | 0 REGRESSION sustained; KNOWN-FAIL count trending down | ℹ️ tracked |
-| Pass rate (metric-level; **stored 2026-09-26 snapshot**) | 9.8% (11/84) | ≥ 60% | ❌ Fail |
-| Mean Absolute Error (MAE; stored snapshot) | 45.27% | ≤ 50% | ✅ Pass |
+| Pass rate (metric-level) | **9.8%** (11/84) | ≥ 60% | ❌ Fail |
+| Mean Absolute Error (MAE) | **45.27%** | ≤ 50% | ✅ Pass |
 | Cases fully passing (stored snapshot) | 0/18 (0.0%) | — | ❌ |
-| Max single-case deviation (stored snapshot) | 100.00% | — | ℹ️ |
+| Max single-case deviation | 100.00% | — | ℹ️ |
+
+*The four metric-level rows above are a stored snapshot (generated 2026-09-26 from `validation/performance_history.latest.json`), not the live gate; the strict-gate row above them is current.*
 
 ### Run the validation pipeline
 
