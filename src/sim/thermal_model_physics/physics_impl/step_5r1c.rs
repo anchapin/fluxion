@@ -1958,8 +1958,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // and air nodes are an order of magnitude more strongly coupled, so the
             // mass already tracks the air-side ventilation cooling without the
             // empirical 30% boost. Setting `h_vent_mass_zone = 0` removes the
-            // double-counting and restores Case 650FF peak free-float temperature
-            // to within the ASHRAE 140 reference band [63.2, 73.5] °C.
+            // double-counting. (The original note claimed this restores the
+            // Case 650FF peak free-float temperature "to within the ASHRAE 140
+            // reference band [63.2, 73.5] °C" — that band was the pre-round-33
+            // value of unverified origin; the published Table B8-5 650FF Tmax
+            // band is [61.1, 66.8] °C and the measured peak remains 54.30 °C,
+            // below it. The mechanism claim stands; the band claim did not.)
             //
             // The air-side ventilation increase under night-vent is still routed
             // through `phi_m_with_vent`/`phi_ia_with_vent` further down (where the
