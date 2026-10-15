@@ -329,25 +329,32 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     // ==================== High Mass Cases (900 Series) ====================
 
     // Case 900 - Baseline (High Mass)
-    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
-    // TESS 19-Aug-2024). Cross-referenced with NREL/TP-472-6231 (1995
-    // BESTEST) Tables 3-2..3-4; see tests/reference_data/zone_balance/
-    // PROVENANCE.md for the reconciliation.
+    // ANSI/ASHRAE Standard 140-2023, Informative Annex B8 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024), Tables B8-1..B8-5 — authoritative transcription
+    // data/reference/ashrae140/annex_b8_section7_statistics.json.
+    // Round 32 provenance correction (2026-10-14): the prior row (heating
+    // [1.17, 2.04], cooling [2.13, 3.67], peaks [1.80, 2.40]/[1.60, 2.10],
+    // free-float [-6.4, -1.6]/[41.8, 46.4]) matched the 1995 BESTEST
+    // (NREL/TP-472-6231) reconciliation, not the 140-2023 Annex B8 row; the
+    // §36 audit classifies it as unverified against the transcription.
+    // Replaced with the published values. Target-only: engine unchanged; the
+    // published heating band re-frames Case 900 heating to PASS and 900FF
+    // Tmin/Tmax re-frames the free-float gaps (doc §38).
     data.insert(
         "900".to_string(),
         BenchmarkData {
-            annual_heating_min: 1.17,
-            annual_heating_max: 2.04,
-            annual_cooling_min: 2.13,
-            annual_cooling_max: 3.67,
-            peak_heating_min: 1.80,
-            peak_heating_max: 2.40,
-            peak_cooling_min: 1.60,
-            peak_cooling_max: 2.10,
-            min_free_float_min: -6.4,
-            min_free_float_max: -1.6,
-            max_free_float_min: 41.8,
-            max_free_float_max: 46.4,
+            annual_heating_min: 1.379,
+            annual_heating_max: 1.814,
+            annual_cooling_min: 2.267,
+            annual_cooling_max: 2.714,
+            peak_heating_min: 2.443,
+            peak_heating_max: 2.778,
+            peak_cooling_min: 2.556,
+            peak_cooling_max: 3.376,
+            min_free_float_min: 0.6,
+            min_free_float_max: 2.2,
+            max_free_float_min: 43.3,
+            max_free_float_max: 46.0,
         },
     );
 
@@ -902,25 +909,32 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     // ==================== High Mass Cases (900 Series) ====================
 
     // Case 900 - Baseline (High Mass)
-    // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
-    // TESS 19-Aug-2024). Cross-referenced with NREL/TP-472-6231 (1995
-    // BESTEST) Tables 3-2..3-4; see tests/reference_data/zone_balance/
-    // PROVENANCE.md for the reconciliation.
+    // ANSI/ASHRAE Standard 140-2023, Informative Annex B8 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024), Tables B8-1..B8-5 — authoritative transcription
+    // data/reference/ashrae140/annex_b8_section7_statistics.json.
+    // Round 32 provenance correction (2026-10-14): the prior row (heating
+    // [1.17, 2.04], cooling [2.13, 3.67], peaks [1.80, 2.40]/[1.60, 2.10],
+    // free-float [-6.4, -1.6]/[41.8, 46.4]) matched the 1995 BESTEST
+    // (NREL/TP-472-6231) reconciliation, not the 140-2023 Annex B8 row; the
+    // §36 audit classifies it as unverified against the transcription.
+    // Replaced with the published values. Target-only: engine unchanged; the
+    // published heating band re-frames Case 900 heating to PASS and 900FF
+    // Tmin/Tmax re-frames the free-float gaps (doc §38).
     data.insert(
         "900".to_string(),
         BenchmarkData {
-            annual_heating_min: 1.17,
-            annual_heating_max: 2.04,
-            annual_cooling_min: 2.13,
-            annual_cooling_max: 3.67,
-            peak_heating_min: 1.80,
-            peak_heating_max: 2.40,
-            peak_cooling_min: 1.60,
-            peak_cooling_max: 2.10,
-            min_free_float_min: -6.4,
-            min_free_float_max: -1.6,
-            max_free_float_min: 41.8,
-            max_free_float_max: 46.4,
+            annual_heating_min: 1.379,
+            annual_heating_max: 1.814,
+            annual_cooling_min: 2.267,
+            annual_cooling_max: 2.714,
+            peak_heating_min: 2.443,
+            peak_heating_max: 2.778,
+            peak_cooling_min: 2.556,
+            peak_cooling_max: 3.376,
+            min_free_float_min: 0.6,
+            min_free_float_max: 2.2,
+            max_free_float_min: 43.3,
+            max_free_float_max: 46.0,
         },
     );
 

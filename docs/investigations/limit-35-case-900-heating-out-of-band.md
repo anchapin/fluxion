@@ -2555,3 +2555,63 @@ band and is now an honestly tracked known-fail (engine 4.301 vs published band
 [5.432, 6.162]: 19% under the band floor). Checker expected 9 PASS / 33
 KNOWN-FAIL / 0 REGRESSION. The remaining §36 queue (900/910/920/930, then
 630/650/950/960/610) is unchanged.
+
+## §38 — Round 32: Case 900 reference-row provenance correction to the 140-2023 Annex B8 published values (2026-10-14)
+
+The §36 queue's second row. The recorded Case 900 row (heating [1.17, 2.04],
+cooling [2.13, 3.67], peaks [1.80, 2.40]/[1.60, 2.10], 900FF Tmin [-6.4, -1.6]°C,
+Tmax [41.8, 46.4]°C) is the one row whose history points at a real source — the
+1995 BESTEST reconciliation (NREL/TP-472-6231 Tables 3-2..3-4, cited in the
+Case 900 energy-reference CSV and the benchmark.rs block comments). It matches
+that reconciliation, but NOT the 140-2023 Annex B8 transcription, which is the
+repo's canonical target since the round-28 640 correction. Per §36 it is
+classified unverified against the transcription; corrected target-only to the
+published row: heating [1.379, 1.814] (mean 1.626), cooling [2.267, 2.714]
+(mean 2.467), peak heating [2.443, 2.778] kW, peak cooling [2.556, 3.376] kW,
+900FF Tmin [0.6, 2.2]°C, Tmax [43.3, 46.0]°C
+(`data/reference/ashrae140/annex_b8_section7_statistics.json`).
+
+Target-only across all duplicated copies: `benchmark.rs` (both maps), the
+benchmark.rs 900 block comments (BESTEST cross-reference superseded, dated),
+`CASE_900_REF` and `FF_900_REF` (zone_balance_eplus_isolation.rs),
+`case_900_energy_reference.csv` (source header updated, BESTEST history
+preserved), the 900FF blocks in `ashrae_140_case_900.rs` (doc comment, reference
+struct, live reference prints/comparisons; the two `#[ignore]` quarantine texts
+and the historical "was 41.80" notes kept as narrative),
+`ashrae_140_free_floating.rs` (900FF consts, table row, reference print), and
+the strict-gate baseline (`_doc_round32b`). Not moved: 910/920/930/950/960 rows
+(independent queued corrections), the 640/940 corrected rows, historical
+investigation/archive text.
+
+Engine untouched; measured values bit-identical to develop: 900 H 1.680 /
+C 1.684 MWh, 900FF Tmin −6.71 / Tmax 41.96 °C. Status changes recorded:
+
+| metric | old published → new published | old gap → new gap (% of mid) | status |
+|---|---|---|---|
+| case_900_heating | [1.17, 2.04] → [1.379, 1.814] | 0.00 → 0.00 | PASS (unchanged) |
+| case_900_cooling | [2.13, 3.67] → [2.267, 2.714] | 26.93 → 17.39 | known_fail (narrowed) |
+| ff_900ff_min | [-6.4, -1.6] → [0.6, 2.2] | 67.75 → 579.29 | known_fail (re-framed) |
+| ff_900ff_max | [41.8, 46.4] → [43.3, 46.0] | 0.00 → 6.02 | PASS → KNOWN-FAIL |
+
+Readings, recorded not tuned:
+
+- **900 heating PASS now means something.** The §28 attribution ("cooling-chain
+  carrier; no heating defect on 900") holds against the true published target,
+  not just the BESTEST-derived one: engine 1.680 MWh sits in the published band
+  [1.379, 1.814].
+- **The published 900FF Tmin band is positive** ([0.6, 2.2]°C): the reference
+  engine's high-mass free-float case never goes below freezing on the B8 runs,
+  while this engine measures −6.71 °C. The ~8.1 K cold free-float miss is far
+  larger than the previous [−6.4, −1.6] framing suggested — consistent in
+  direction with the §23–§27 gauge decomposition (cold free-float bias), but on
+  the DEFAULT 9R4C path it is now a first-class known-fail with a much larger
+  gap. The ff_900ff_min row is the strict gate's dominant re-frame; a physics
+  investigation of the default-path 900FF cold bias is the natural next thread
+  (the §27 gauge thread was retired as a goal, not as a diagnosis).
+- **ff_900ff_max** (41.96 vs [43.3, 46.0]) was PASS under the old band and
+  becomes a marginal 6.02 pp known-fail under the published one — the LIMIT-05
+  over-damping story unchanged in kind.
+- Checker expected 9 PASS / 33 KNOWN-FAIL / 0 REGRESSION for this PR on its own
+  (develop 10/32/0 → loses ff_900ff_max; #4412's 600 correction independently
+  trades case_600_cooling PASS for case_600 heating staying known_fail, so the
+  combined tip is also 9/33 once both land).

@@ -47,12 +47,12 @@ fn load_denver_epw() -> EpwWeatherSource {
 /// - Window-to-Wall Ratio: 0.15 (same as Case 600)
 ///
 /// Reference Values (ASHRAE 140 Standard):
-/// - Annual Heating: 1.17 - 2.04 MWh
+/// - Annual Heating: 1.379 - 1.814 MWh (140-2023 Annex B8, round 32)
 /// - Annual Cooling: 2.13 - 3.67 MWh
 /// - Peak Heating: 1.10 - 2.10 kW
 /// - Peak Cooling: 2.10 - 3.50 kW
 /// - Free-Floating Min: -6.40 to -1.60°C
-/// - Free-Floating Max: 41.80 to 46.40°C
+/// - Free-Floating Max: 43.30 to 46.00°C (140-2023 Annex B8, round 32)
 ///   Reference ranges for Case 900 (ASHRAE 140)
 #[derive(Debug, Clone)]
 struct Case900Reference {
@@ -80,12 +80,12 @@ struct Case900Reference {
 
 /// ASHRAE 140 reference values for Case 900
 const CASE_900_REFERENCE: Case900Reference = Case900Reference {
-    annual_heating: (1.17, 2.04),      // MWh
+    annual_heating: (1.379, 1.814),    // MWh (140-2023 Annex B8, round 32)
     annual_cooling: (2.13, 3.67),      // MWh
     peak_heating: (1.10, 2.10),        // kW
     peak_cooling: (2.10, 3.50),        // kW
     free_floating_min: (-6.40, -1.60), // °C
-    free_floating_max: (41.80, 46.40), // °C
+    free_floating_max: (43.30, 46.00), // °C (round 32)
     swing_reduction: 19.6,             // % reduction vs 600FF
 };
 
@@ -393,7 +393,7 @@ fn calculate_temperature_swing(min_temp: f64, max_temp: f64) -> f64 {
 
 #[test]
 fn test_case_900_annual_heating_within_reference_range() {
-    // Test 1: Case 900 annual heating energy within reference range [1.17, 2.04] MWh
+    // Test 1: Case 900 annual heating energy within reference range [1.379, 1.814] MWh
 
     let (annual_heating_j, _, _, _) = simulate_case_900();
     let annual_heating_mwh = annual_heating_j * J_TO_MWH;
@@ -1288,7 +1288,7 @@ fn test_case_900ff_solar_beam_to_mass_fraction_sweep() {
 /// Issue #700 stated:
 /// - 600FF: Max=54.60°C (too LOW vs reference 64.9-75.1°C; corrected to
 ///   [62.4, 68.4] by the round-32 Annex B8 provenance fix)
-/// - 900FF: Max=64.47°C (too HIGH vs reference 41.8-46.4°C)
+/// - 900FF: Max=64.47°C (too HIGH vs reference 43.3-46.0°C, round 32)
 ///
 /// Both being wrong in opposite directions suggested solar distribution issue.
 /// This test verifies current state.
@@ -1354,8 +1354,8 @@ fn test_case_600ff_vs_900ff_paired_comparison() {
 
     println!("\nCase 900FF (high-mass):");
     println!("  Result: Min={:.2}°C, Max={:.2}°C", min_900, max_900);
-    println!("  Reference: [41.8, 46.4]°C");
-    let in_range_900 = (41.80..=46.40).contains(&max_900);
+    println!("  Reference: [43.3, 46.0]°C (140-2023 Annex B8, round 32)");
+    let in_range_900 = (43.30..=46.00).contains(&max_900);
     println!(
         "  Status: {}",
         if in_range_900 {

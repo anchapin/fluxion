@@ -1,14 +1,16 @@
 # EnergyPlus Reference: ASHRAE 140 Case 900 — Annual + Peak Energy
-# Source: NREL/TP-472-6231 (1995 BESTEST) Table 3-2 (annual loads) and Tables 3-3/3-4
-#         (peak loads), reconciled with src/validation/benchmark.rs (Informed path).
-#         See tests/reference_data/zone_balance/PROVENANCE.md for the full citation
-#         chain and issue #1408 reconciliation history.
+# Source (2026-10-14, round 32): ANSI/ASHRAE Standard 140-2023 Annex B8
+#         (Std140_TF_Results.pdf, TESS 19-Aug-2024) — authoritative transcription
+#         data/reference/ashrae140/annex_b8_section7_statistics.json. The prior
+#         row cited NREL/TP-472-6231 (1995 BESTEST) Tables 3-2..3-4 and matched
+#         that reconciliation, not the 140-2023 row (§36: unverified vs the
+#         transcription). See PROVENANCE.md and the #1408 history.
 # EPW baseline: USA_CO_Golden-NREL.724666_TMY3.epw (ARCHITECTURE.md §Reference Data)
 # Model: High-mass 6x8x2.7m (200mm concrete), 12m² south window, 0.5 ACH, 20°C heat / 27°C cool
 # Tolerance: ±15% annual energy per ASHRAE 140 acceptance criteria (issue #1147)
 # Hourly E+ output: regenerate via generate_case_600_900_energy.py (Case 900 IDF pending)
 metric,unit,ref_min,ref_max,ref_midpoint,tolerance_pct,accept_min,accept_max,notes
-annual_heating,MWh,1.17,2.04,1.605,15,1.364,1.846,Heavy mass retains solar, cuts winter heating
-annual_cooling,MWh,2.13,3.67,2.900,15,2.465,3.335,Mass releases stored heat overnight, raises cooling
-peak_heating,kW,1.80,2.40,2.100,15,1.785,2.415,Smaller heating peak than Case 600 (high-mass retention)
-peak_cooling,kW,1.60,2.10,1.850,15,1.5725,2.1275,Smaller cooling peak than Case 600 (high-mass retention)
+annual_heating,MWh,1.379,1.814,1.5965,15,1.357,1.836,Heavy mass retains solar, cuts winter heating (round 32 Annex B8 provenance correction)
+annual_cooling,MWh,2.267,2.714,2.4905,15,2.117,2.864,Mass releases stored heat overnight, raises cooling (round 32 Annex B8 provenance correction)
+peak_heating,kW,2.443,2.778,2.6105,15,2.219,3.002,Smaller heating peak than Case 600 (high-mass retention) (round 32 Annex B8 provenance correction)
+peak_cooling,kW,2.556,3.376,2.966,15,2.521,3.411,Smaller cooling peak than Case 600 (high-mass retention) (round 32 Annex B8 provenance correction)
