@@ -802,17 +802,20 @@ const CASE_920_REF: EnergyReference = EnergyReference {
 // value=0 against that band.
 // Round 33 provenance correction: published ASHRAE 140-2023 Annex B8 values
 // (transcription data/reference/ashrae140/annex_b8_section7_statistics.json);
-// the prior row entered at #54/#1272 with no cited source.
+// the prior row entered at #54/#1272 with no cited source. Round 33 correction
+// (2026-10-15): #4421's cooling/peak-cooling values ([3.703, 4.265] /
+// [3.229, 3.797]) came from stale round notes; re-transcribed directly from
+// the JSON: C [0.586, 0.707] MWh, peak C [2.054, 2.388] kW.
 const CASE_950_REF: EnergyReference = EnergyReference {
     case_id: "950",
     annual_heating_min_mwh: 0.00,
     annual_heating_max_mwh: 0.00,
-    annual_cooling_min_mwh: 3.703,
-    annual_cooling_max_mwh: 4.265,
+    annual_cooling_min_mwh: 0.586,
+    annual_cooling_max_mwh: 0.707,
     peak_heating_min_kw: 0.00,
     peak_heating_max_kw: 0.00,
-    peak_cooling_min_kw: 3.229,
-    peak_cooling_max_kw: 3.797,
+    peak_cooling_min_kw: 2.054,
+    peak_cooling_max_kw: 2.388,
 };
 const CASE_960_REF: EnergyReference = EnergyReference {
     case_id: "960",
