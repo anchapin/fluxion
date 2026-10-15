@@ -540,6 +540,12 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     // TESS 19-Aug-2024). Annual / peak heating and cooling are 0.00
     // because there is no HVAC (free-float); only min/max free-float
     // temperatures apply.
+    // Round 33 sweep correction (2026-10-15): the ff_ fields below still
+    // carried the 1995 BESTEST reconciliation values ([-6.4, -1.6] /
+    // [41.8, 46.4]) that round 32's #4414 removed from the Case 900 row and
+    // FF_900_REF but left on this dedicated row. Replaced with the
+    // transcription Table B8-5 row (Tmin [0.6, 2.2], Tmax [43.3, 46.0]) —
+    // the same values FF_900_REF already carries. Target-only.
     // peak-band-shared: every free-float case has byte-identical zero
     // annual/peak heating and cooling by definition — no HVAC exists in
     // a free-float test (issue #4168 AC3 written justification).
@@ -554,10 +560,10 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
             peak_heating_max: 0.00,
             peak_cooling_min: 0.00,
             peak_cooling_max: 0.00,
-            min_free_float_min: -6.4,
-            min_free_float_max: -1.6,
-            max_free_float_min: 41.8,
-            max_free_float_max: 46.4,
+            min_free_float_min: 0.6,
+            min_free_float_max: 2.2,
+            max_free_float_min: 43.3,
+            max_free_float_max: 46.0,
         },
     );
 
@@ -1183,6 +1189,12 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     // TESS 19-Aug-2024). Annual / peak heating and cooling are 0.00
     // because there is no HVAC (free-float); only min/max free-float
     // temperatures apply.
+    // Round 33 sweep correction (2026-10-15): the ff_ fields below still
+    // carried the 1995 BESTEST reconciliation values ([-6.4, -1.6] /
+    // [41.8, 46.4]) that round 32's #4414 removed from the Case 900 row and
+    // FF_900_REF but left on this dedicated row. Replaced with the
+    // transcription Table B8-5 row (Tmin [0.6, 2.2], Tmax [43.3, 46.0]) —
+    // the same values FF_900_REF already carries. Target-only.
     // peak-band-shared: every free-float case has byte-identical zero
     // annual/peak heating and cooling by definition — no HVAC exists in
     // a free-float test (issue #4168 AC3 written justification).
@@ -1197,10 +1209,10 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
             peak_heating_max: 0.00,
             peak_cooling_min: 0.00,
             peak_cooling_max: 0.00,
-            min_free_float_min: -6.4,
-            min_free_float_max: -1.6,
-            max_free_float_min: 41.8,
-            max_free_float_max: 46.4,
+            min_free_float_min: 0.6,
+            min_free_float_max: 2.2,
+            max_free_float_min: 43.3,
+            max_free_float_max: 46.0,
         },
     );
 
