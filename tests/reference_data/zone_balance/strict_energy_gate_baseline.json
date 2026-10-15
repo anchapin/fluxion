@@ -155,16 +155,16 @@
     },
     "case_950_cooling": {
       "published_range_mwh": [
-        3.703,
-        4.265
+        0.586,
+        0.707
       ],
       "band_mwh": [
-        3.386,
-        4.582
+        0.55,
+        0.743
       ],
       "value_mwh": 0.654,
-      "gap_pct_of_mid": 68.58,
-      "status": "known_fail"
+      "gap_pct_of_mid": 0.0,
+      "status": "pass"
     },
     "case_960_heating": {
       "published_range_mwh": [
@@ -221,28 +221,28 @@
     "_doc_limit23b": "UPDATE 2026-10-12 (loop round 20, docs/investigations/limit-23b-case-970-provenance-and-envelope.md): provenance correction only, no values touched. The Case 970 published_range_mwh band has no published ASHRAE 140 source: Case 970 does not exist in the in-repo ASHRAE 140-2017(a) PDF (docs/140_2017_a_20200901.pdf) nor in the authoritative ASHRAE 140-2023 Annex B8 Section B8.1 transcription (data/reference/ashrae140/annex_b8_section7_statistics.json; case list ...950, 960, 980, 985). The band entered at Issue #1446 as if published and is an internal target of unverified origin. Recorded value_mwh/gap_pct_of_mid/status are retained unchanged; known_fail therefore means distance from that internal target, not ASHRAE non-conformance. Reproduction on 7e321a22: H 4.616 / C 2.341 MWh, matching the recorded values.",
     "case_610_heating": {
       "published_range_mwh": [
-        4.36,
-        5.79
+        4.066,
+        4.592
       ],
       "band_mwh": [
-        4.314,
-        5.836
+        3.68,
+        4.978
       ],
       "value_mwh": 7.307,
-      "gap_pct_of_mid": 28.99,
+      "gap_pct_of_mid": 53.8,
       "status": "known_fail"
     },
     "case_610_cooling": {
       "published_range_mwh": [
-        3.92,
-        6.14
+        4.117,
+        4.382
       ],
       "band_mwh": [
-        4.275,
-        5.784
+        3.612,
+        4.887
       ],
       "value_mwh": 2.456,
-      "gap_pct_of_mid": 36.17,
+      "gap_pct_of_mid": 27.2,
       "status": "known_fail"
     },
     "case_620_heating": {
@@ -570,5 +570,7 @@
   "_doc_round29": "2026-10-14 loop round 29 (Case 940 reference-row provenance audit): the recorded 940 row (heating [0.79,1.41], cooling [2.08,3.55], peaks [1.90,2.50]/[1.70,2.30]) entered at issue #54 (commit b0bd4119) with no cited table, survived byte-identical through #1272, and matches none of the bounds of the authoritative 140-2023 Annex B8 transcription (data/reference/ashrae140/annex_b8_section7_statistics.json: heating [0.863,1.389], cooling [2.203,2.613], peaks [3.052,3.882]/[2.556,3.376]); #3803's blanket B8-1..B8-5 source comment never touched the numbers (diff-verified). Rows corrected to the published values (target correction, not an engine change): case_940_heating stays PASS at 1.130 (band [0.935,1.265] -> [0.957,1.295], measured value still inside, gap 0), case_940_cooling gap 25.65 -> 15.61 % of mid (still known_fail); measured 1.130/1.671 unchanged.",
   "_doc_round32": "2026-10-14 loop round 32 (Case 600 reference-row provenance audit, doc section 37): the recorded 600 row (heating [4.36,5.79], cooling [3.92,6.14], peaks [2.8,3.8]/[4.8,6.2], free-float [-18.8,-15.6]/[64.9,75.1]) entered at issue #54 (commit b0bd4119) with no cited source and was rewritten by #1272 (commit 1aa3cc59) to values matching none of the published bounds of the authoritative 140-2023 Annex B8 transcription (data/reference/ashrae140/annex_b8_section7_statistics.json: heating [3.993,4.504], cooling [5.432,6.162], peaks [3.02,3.359]/[5.422,6.481], 600FF Tmin [-13.8,-9.9], Tmax [62.4,68.4]). Rows corrected to the published values (target correction, not an engine change; measured values 6.758/4.301 MWh and -19.00/54.87 C unchanged from the develop repro at a1307d01): case_600_heating gap 18.17 -> 44.06 % of mid (status known_fail unchanged); case_600_cooling gap 0.00 -> 10.80 % and status PASS -> KNOWN-FAIL (engine cooling 4.301 sits below the published band that itself moved up ~1.5 MWh; recorded honestly, not tuned); ff_600ff_min gap 10.47 -> 60.34; ff_600ff_max gap 21.61 -> 16.10 (both known_fail unchanged). Checker expected 9 PASS / 33 KNOWN-FAIL / 0 REGRESSION on the branch. Case 610/630/650 recorded rows are independent queued corrections and were NOT moved here.",
   "_doc_round32b": "2026-10-14 loop round 32 (Case 900 reference-row provenance audit, doc \u00a738): the recorded 900 row (heating [1.17,2.04], cooling [2.13,3.67], peaks [1.80,2.40]/[1.60,2.10], 900FF Tmin [-6.4,-1.6] / Tmax [41.8,46.4]) traced to the 1995 BESTEST (NREL/TP-472-6231) reconciliation, not the 140-2023 Annex B8 row (\u00a736: unverified vs the transcription). Corrected target-only to the published values: heating [1.379,1.814], cooling [2.267,2.714], peaks [2.443,2.778]/[2.556,3.376], 900FF Tmin [0.6,2.2], Tmax [43.3,46.0]. Engine untouched; measured values unchanged (900 H 1.680 / C 1.684 MWh, 900FF Tmin -6.71 / Tmax 41.96 \u00b0C). Status/gap changes: case_900_heating stays PASS (gap 0.00; the published band still brackets the engine \u2014 the \u00a728 'no heating defect on 900' attribution now holds against the true target); case_900_cooling gap 26.93 -> 17.39 % of mid (known_fail; narrows \u2014 the published cooling band sits higher); ff_900ff_min gap 67.75 -> 579.29 % of mid (known_fail; the published 900FF Tmin band is positive and the engine sits 8.1 K below its midpoint \u2014 the dominant cold free-float re-frame, consistent with the \u00a723-27 gauge decomposition); ff_900ff_max PASS -> KNOWN-FAIL (gap 0.00 -> 6.02). Checker expected 9 PASS / 33 KNOWN-FAIL / 0 REGRESSION on the branch (600 correction net zero: heating known_fail -> PASS replaces ff_900ff_max PASS -> known_fail; but that PR is separate, so this PR alone moves 10/32/0 -> 9/33/0).",
-  "_doc_round33": "Round 33 (2026-10-14): Case 910 row corrected to the 140-2023 Annex B8 published values (PR ref-row-910); target-only, measured values unchanged from round 32. Case 920 row corrected to the 140-2023 Annex B8 published values (PR ref-row-920); target-only. Case 930 row corrected to the 140-2023 Annex B8 published values (PR ref-row-930); target-only. Case 630 row corrected to the 140-2023 Annex B8 published values (PR ref-row-630); target-only. Case 650/650FF row corrected to the 140-2023 Annex B8 published values (PR ref-row-650); target-only. Case 950/950FF row corrected to the 140-2023 Annex B8 published values (PR ref-row-950); target-only."
+  "_doc_round33": "Round 33 (2026-10-14): Case 910 row corrected to the 140-2023 Annex B8 published values (PR ref-row-910); target-only, measured values unchanged from round 32. Case 920 row corrected to the 140-2023 Annex B8 published values (PR ref-row-920); target-only. Case 930 row corrected to the 140-2023 Annex B8 published values (PR ref-row-930); target-only. Case 630 row corrected to the 140-2023 Annex B8 published values (PR ref-row-630); target-only. Case 650/650FF row corrected to the 140-2023 Annex B8 published values (PR ref-row-650); target-only. Case 950/950FF row corrected to the 140-2023 Annex B8 published values (PR ref-row-950); target-only.",
+  "_doc_round33b": "Round 33 correction (2026-10-15, branch fix/ref-row-950-transcription): #4421's 950 cooling published_range [3.703, 4.265] had been transcribed from stale round notes; re-transcribed directly from annex_b8_section7_statistics.json (annual_sensible_cooling_mwh 950 = [0.586, 0.707]). Band recomputed as midpoint +/- 15%; measured 0.654 MWh is inside the band, so case_950_cooling re-frames known_fail -> pass. No measured value changed; nothing tuned.",
+  "_doc_round33e": "Round 33 (2026-10-15, branch fix/ref-row-610-provenance): Case 610 reference row corrected to the 140-2023 Annex B8 transcription (prior row was the 140-2017-era bootstrap of unverified origin: H [4.36,5.79], C [3.92,6.14] -> published H [4.066,4.592], C [4.117,4.382]). Target-only; measured H 7.307 / C 2.456 MWh bit-identical. Both remain known_fail (H gap 28.99 -> 53.79, C gap 36.17 -> 27.21 % of mid, checker beyond-band-edge convention); the 600-series shading-family engine gap widens on heating under the true target and narrows on cooling. Nothing tuned; band edges not moved to fit the engine."
 }

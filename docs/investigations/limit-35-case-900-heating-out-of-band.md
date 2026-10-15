@@ -2814,3 +2814,66 @@ Checker 9 PASS / 33 KNOWN-FAIL / 0 REGRESSION → **7 PASS / 35 KNOWN-FAIL /
 0 REGRESSION** after this PR. Recorded, not tuned: all three widenings are the
 same unverified-bootstrap-row signature the §36 audit has found on every row
 corrected so far.
+
+## §45 — Round 33 correction: #4421's 950/950FF rows re-transcribed from the primary JSON (2026-10-15)
+
+The round-33 worker's report flagged its own #4421 row: the cooling band it
+recorded ([3.703, 4.265]) was taken from stale round notes, not from the
+transcription. Re-read directly from the authoritative transcription
+(`data/reference/ashrae140/annex_b8_section7_statistics.json`, 2026-10-15):
+
+| metric | #4421 recorded (wrong) | transcription value | measured (unchanged) |
+|---|---|---|---|
+| case_950_cooling | [3.703, 4.265] | **[0.586, 0.707]** (mean 0.634) | 0.654 MWh |
+| case_950 peak cooling | [3.229, 3.797] kW | **[2.054, 2.388] kW** | (peak not gated) |
+| 950 heating / peak heating | [0, 0] | [0, 0] ✓ | 0.000 |
+| 950FF Tmin / Tmax | [-13.4, -12.5] / [36.1, 37.1] | same ✓ (these #4421 values were correct) | −21.97 / 38.05 °C |
+
+Status change: case_950_cooling **known_fail → PASS** (gap 68.58 → 0.00; the
+measured 0.654 MWh sits inside both the published envelope and the ±15 % gate
+band [0.550, 0.743]). Checker 7/35/0 → **8 PASS / 34 KNOWN-FAIL / 0
+REGRESSION**. All 16 other annual + 4 free-float measured values
+bit-identical (full strict battery re-run on the branch, 2026-10-15).
+
+Also corrected here (missed by #4421, found in the verification sweep): the
+`mod reference::case_950ff` constants in `ashrae_140_free_floating.rs` still
+carried the pre-#4421 unverified values (−20.2..−17.8 / 35.5..38.5; #4421
+corrected only the diagnostic-summary tuple); and the strict-gate baseline's
+ff_950ff_min/max gap fields still held gaps computed against the OLD band
+(66.18 / 2.60) instead of the corrected band (69.65 / 3.96) — the checker
+tolerated the stale arithmetic because the correct gaps are LARGER.
+Statuses unchanged; arithmetic corrected, recorded not tuned.
+
+Copies corrected: `benchmark.rs` (both maps, 950 values + dated comments),
+`CASE_950_REF`, `mod reference::case_950ff`, strict baseline
+(`case_950_cooling` re-recorded + `_doc_round33b`).
+
+## §49 — Round 33: Case 610 reference-row provenance correction (2026-10-15)
+
+Tenth row of the §36 queue. The recorded 610 row (H [4.36, 5.79], C
+[3.92, 6.14], peaks [4.30, 5.70] / [2.20, 2.90] kW) is the 140-2017-era
+bootstrap row of unverified origin. Re-transcribed directly from
+`annex_b8_section7_statistics.json`: **H [4.066, 4.592], C [4.117, 4.382],
+pH [3.021, 3.36], pC [5.331, 6.432]**. The `min/max_free_float` fields are
+left as inert placeholders: the transcription's Table B8-5 has no 610FF row
+(free-float cases are 600FF/900FF/650FF/950FF/680FF/980FF) and Case 610 is
+not a free-floating case, so no consumer scores them (the same pattern the
+195 placeholders document).
+
+Copies corrected: both `benchmark.rs` maps and the `CASE_610` const in
+`ashrae_140_case_600_series.rs`. Test annotations re-based with re-measured
+values on the branch: annual heating 6.79 MWh (far over), annual cooling
+3.07 MWh (far below), peak heating 4.79 kW (over), and `test_peak_cooling`
+now quarantined — measured 3.19 kW vs [5.331, 6.432]. That test was already
+failing on develop (3.19 vs the old bootstrap [2.20, 2.90]): a latent
+failure this correction surfaces and records honestly. The 600-series
+suite's remaining failures (600FF/630/640/650/650FF, 8 tests) are
+byte-identical to develop (verified by stash-run on develop) and belong to
+their own stale-local-const audit pass, not this row.
+
+Engine untouched; measured strict-gate H 7.307 / C 2.456 MWh bit-identical
+(CASE_610_REF and the gate baseline re-recorded, `_doc_round33e`). Both
+strict metrics remain known_fail under the true target: heating gap
+28.99 → 53.79 % of mid (widens), cooling 36.17 → 27.21 % of mid (narrows) —
+recorded, not tuned, per the round-33 fidelity direction. The 600-series
+suite tests above quarantine independently. Provenance and doc gates green.
