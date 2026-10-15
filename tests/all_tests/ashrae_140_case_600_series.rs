@@ -91,6 +91,8 @@ const CASE_630: CaseReference = CaseReference {
     peak_heating_max: 3.388,
     peak_cooling_min: 3.526,
     peak_cooling_max: 4.212,
+    // ff fields below are inert placeholders (Case 630 is conditioned; no
+    // Table B8-5 row exists — same handling as CASE_610).
     min_free_float_min: -18.0,
     min_free_float_max: -14.8,
     max_free_float_min: 58.5,
@@ -109,6 +111,8 @@ const CASE_640: CaseReference = CaseReference {
     peak_heating_max: 4.658,
     peak_cooling_min: 5.365,
     peak_cooling_max: 6.429,
+    // ff fields below are inert placeholders (Case 640 is conditioned; no
+    // Table B8-5 row exists — same handling as CASE_610).
     min_free_float_min: -18.6,
     min_free_float_max: -15.4,
     max_free_float_min: 63.5,
@@ -127,6 +131,10 @@ const CASE_650: CaseReference = CaseReference {
     peak_heating_max: 0.00,
     peak_cooling_min: 5.045,
     peak_cooling_max: 6.29,
+    // ff fields below are inert placeholders (Case 650 is conditioned; no
+    // Table B8-5 650 row exists). The values happen to be Case 650FF's
+    // published Table B8-5 row, placed here by #4420 — retained only to
+    // fill the struct; unused by every test in this file.
     min_free_float_min: -17.8,
     min_free_float_max: -16.7,
     max_free_float_min: 61.1,
@@ -161,10 +169,17 @@ const CASE_650FF: CaseReference = CaseReference {
     peak_heating_max: 0.0,
     peak_cooling_min: 0.0,
     peak_cooling_max: 0.0,
-    min_free_float_min: -23.0,
-    min_free_float_max: -21.0,
-    max_free_float_min: 63.2,
-    max_free_float_max: 73.5,
+    // Round 34 provenance correction (2026-10-15): re-transcribed from
+    // Table B8-5 (annex_b8_section7_statistics.json); the prior constants
+    // (-23.0..-21.0 / 63.2..73.5) were of unverified origin (the 1995
+    // BESTEST reconciliation) and were missed by #4420/#4423, which
+    // corrected the free-floating and strict-gate copies only. (The ff
+    // fields of CASE_650 above are inert placeholders for that conditioned
+    // case; #4420 had placed this row's published values there.)
+    min_free_float_min: -17.8,
+    min_free_float_max: -16.7,
+    max_free_float_min: 61.1,
+    max_free_float_max: 66.8,
 };
 
 fn run_annual_simulation(case_enum: ASHRAE140Case) -> (f64, f64, f64, f64) {

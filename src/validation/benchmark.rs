@@ -302,6 +302,10 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
             peak_heating_max: 0.00,
             peak_cooling_min: 5.045,
             peak_cooling_max: 6.29,
+            // ff_* fields are inert placeholders: Case 650 is conditioned and
+            // the transcription carries no Table B8-5 row for it (same handling
+            // as Case 620/630; the legacy values below are unused by the
+            // validator for this case).
             min_free_float_min: -23.0,
             min_free_float_max: -21.0,
             max_free_float_min: 58.8,
@@ -328,10 +332,15 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
             peak_heating_max: 0.00,
             peak_cooling_min: 0.00,
             peak_cooling_max: 0.00,
-            min_free_float_min: -18.8,
-            min_free_float_max: -15.6,
-            max_free_float_min: 64.9,
-            max_free_float_max: 75.1,
+            // Round 34 provenance correction (2026-10-15): the ff bounds here
+            // (-18.8..-15.6 / 64.9..75.1) were the pre-round-32 values of
+            // unverified origin missed by #4412; replaced with the 140-2023
+            // Annex B8 Table B8-5 published 600FF row (Tmin [-13.8, -9.9] /
+            // Tmax [62.4, 68.4]).
+            min_free_float_min: -13.8,
+            min_free_float_max: -9.9,
+            max_free_float_min: 62.4,
+            max_free_float_max: 68.4,
         },
     );
 
@@ -966,6 +975,10 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
             peak_heating_max: 0.00,
             peak_cooling_min: 5.045,
             peak_cooling_max: 6.29,
+            // ff_* fields are inert placeholders: Case 650 is conditioned and
+            // the transcription carries no Table B8-5 row for it (same handling
+            // as Case 620/630; the legacy values below are unused by the
+            // validator for this case).
             min_free_float_min: -23.0,
             min_free_float_max: -21.0,
             max_free_float_min: 58.8,
@@ -992,10 +1005,15 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
             peak_heating_max: 0.00,
             peak_cooling_min: 0.00,
             peak_cooling_max: 0.00,
-            min_free_float_min: -18.8,
-            min_free_float_max: -15.6,
-            max_free_float_min: 64.9,
-            max_free_float_max: 75.1,
+            // Round 34 provenance correction (2026-10-15): the ff bounds here
+            // (-18.8..-15.6 / 64.9..75.1) were the pre-round-32 values of
+            // unverified origin missed by #4412; replaced with the 140-2023
+            // Annex B8 Table B8-5 published 600FF row (Tmin [-13.8, -9.9] /
+            // Tmax [62.4, 68.4]).
+            min_free_float_min: -13.8,
+            min_free_float_max: -9.9,
+            max_free_float_min: 62.4,
+            max_free_float_max: 68.4,
         },
     );
 
