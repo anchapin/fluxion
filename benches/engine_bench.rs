@@ -41,7 +41,15 @@ fn bench_5r1c_single_config(c: &mut Criterion) {
     });
 }
 
-/// Benchmark 6R2C single configuration performance
+/// Single configuration with the 6R2C flag set.
+///
+/// GATE-04 (round 35, #4175): the 6R2C *solver step* no longer exists —
+/// `step_physics_6r2c` was removed and the dispatcher
+/// (`thermal_model_physics/step_dispatcher.rs`) routes only 5R1C, 9R4C and
+/// Gauge. `configure_6r2c_model()` sets the `thermal_model_type` flag and
+/// splits the mass capacitances, but with `is_nine_r4c_model()` false the
+/// dispatcher's legacy arm runs `step_physics_5r1c`. This benchmark therefore
+/// measures the 5R1C solver on a 6R2C-flagged model, and is named to say so.
 fn bench_6r2c_single_config(c: &mut Criterion) {
     let mut model = ThermalModel::<VectorField>::new(1);
     model.configure_6r2c_model(0.75, 100.0, None);
@@ -50,7 +58,7 @@ fn bench_6r2c_single_config(c: &mut Criterion) {
     // Warm up
     model.solve_timesteps(100, &surrogates, false, None, None, None);
 
-    c.bench_function("6r2c_single_config_1year", |b| {
+    c.bench_function("5r1c_solver_6r2cflag_single_config_1year", |b| {
         b.iter(|| {
             // Clone to reset state for each iteration
             let mut model = model.clone();
@@ -72,9 +80,9 @@ fn bench_5r1c_single_config_quick(c: &mut Criterion) {
     });
 }
 
-/// Quick benchmark 6R2C single configuration (100 timesteps)
+/// Quick benchmark: 6R2C-flagged model (runs the 5R1C solver — see above)
 fn bench_6r2c_single_config_quick(c: &mut Criterion) {
-    c.bench_function("6r2c_single_config_100steps", |b| {
+    c.bench_function("5r1c_solver_6r2cflag_single_config_100steps", |b| {
         b.iter(|| {
             let mut model = ThermalModel::<VectorField>::new(1);
             model.configure_6r2c_model(0.75, 100.0, None);
@@ -113,7 +121,8 @@ fn bench_5r1c_throughput(c: &mut Criterion) {
     );
 }
 
-/// Benchmark 6R2C population throughput
+/// Population throughput on 6R2C-flagged models (runs the 5R1C solver — see
+/// `bench_6r2c_single_config` above).
 fn bench_6r2c_throughput(c: &mut Criterion) {
     let population_size = 100; // Reduced from 1000 for faster benchmarking
     let population: Vec<Vec<f64>> = (0..population_size)
@@ -121,7 +130,7 @@ fn bench_6r2c_throughput(c: &mut Criterion) {
         .collect();
 
     c.bench_with_input(
-        BenchmarkId::new("6r2c_throughput", population_size),
+        BenchmarkId::new("5r1c_solver_6r2cflag_throughput", population_size),
         &population,
         |b, population| {
             b.iter(|| {

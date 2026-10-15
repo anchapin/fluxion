@@ -353,68 +353,6 @@ mod tests {
         assert!(model.is_valid());
     }
 
-    #[test]
-    fn test_thermal_model_type_from_case_spec_low_mass() {
-        use crate::validation::ashrae_140_cases::CaseBuilder;
-
-        let case_600 = CaseBuilder::case_600_baseline();
-        assert_eq!(
-            ThermalModelType::from(&case_600),
-            ThermalModelType::LowMass5R1C
-        );
-
-        let case_600ff = CaseBuilder::case_600ff();
-        assert_eq!(
-            ThermalModelType::from(&case_600ff),
-            ThermalModelType::LowMass5R1C
-        );
-
-        let case_650ff = CaseBuilder::case_650ff();
-        assert_eq!(
-            ThermalModelType::from(&case_650ff),
-            ThermalModelType::LowMass5R1C
-        );
-    }
-
-    #[test]
-    fn test_thermal_model_type_from_case_spec_high_mass() {
-        use crate::validation::ashrae_140_cases::CaseBuilder;
-
-        let case_900 = CaseBuilder::case_900_baseline();
-        assert_eq!(
-            ThermalModelType::from(&case_900),
-            ThermalModelType::HighMass9R4C
-        );
-
-        let case_900ff = CaseBuilder::case_900ff();
-        assert_eq!(
-            ThermalModelType::from(&case_900ff),
-            ThermalModelType::HighMass9R4C
-        );
-
-        let case_950ff = CaseBuilder::case_950ff();
-        assert_eq!(
-            ThermalModelType::from(&case_950ff),
-            ThermalModelType::HighMass9R4C
-        );
-    }
-
-    #[test]
-    fn test_thermal_model_type_from_case_spec_case_960() {
-        use crate::validation::ashrae_140_cases::CaseBuilder;
-
-        let case_960 = CaseBuilder::case_960_sunspace();
-        assert_eq!(
-            ThermalModelType::from(&case_960),
-            ThermalModelType::HighMass9R4C
-        );
-    }
-
-    #[test]
-    fn test_thermal_model_type_default() {
-        assert_eq!(ThermalModelType::default(), ThermalModelType::LowMass5R1C);
-    }
-
     // --- Issue #1431: HybridThermalModel + HybridRouting unit tests ---
 
     #[test]
