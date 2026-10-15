@@ -2648,3 +2648,34 @@ combined-tip count on `a1c79ff2` is 8/34, not the 9/33 recorded there (CI run
 38666380510 on `a1c79ff2` prints "8 PASS, 34 KNOWN-FAIL (tracked), 0 REGRESSION";
 the baseline carries exactly 8 `pass` statuses) — the measured values, gaps and
 0-regression verdicts in §37/§38 are unchanged and reproduce byte-identically.
+
+## §40 — Round 33: Case 920 reference-row provenance correction to the 140-2023 Annex B8 published values (2026-10-14)
+
+The §36 queue's fourth row (900-family re-frame, second of three). The recorded
+Case 920 row (heating [3.26, 4.30], cooling [1.84, 3.31], peaks
+[2.10, 2.80]/[1.40, 1.90]) entered at issue #54 (`b0bd4119`) and was carried
+into the blind map by #1272 (`1aa3cc59`) with no cited source; it matches none
+of the sixteen published bounds. Corrected target-only to the transcription
+(`data/reference/ashrae140/annex_b8_section7_statistics.json`,
+Tables B8-1..B8-4): heating [2.956, 3.607] (mean 3.2815), cooling
+[2.549, 3.128] (mean 2.8385), peak heating [2.512, 2.895] kW, peak cooling
+[2.71, 3.481] kW.
+
+Target-only across all duplicated copies: `benchmark.rs` (both maps + dated
+block comments), `CASE_920_REF` (`zone_balance_eplus_isolation.rs`), the
+`case_900_series_seasonal_attribution.rs` reference tuple, and the strict-gate
+baseline (`_doc_round33` extended). Not moved: the 920 ff_* fields (conditioned
+case, unused; no transcription free-float row — Case 620 handling), the
+`energyplus_comparison_tests.rs` midpoint fixture (round-32 precedent), the
+`case_920_energy_reference.csv` (E+ reference series, published literature —
+not a recorded-band carrier), other queued rows.
+
+Engine untouched; measured values bit-identical to develop `a1c79ff2`
+(repro run 2026-10-14: 920 H 2.646 / C 1.807 MWh). Status changes:
+
+| metric | old published → new published | old gap → new gap (% of mid) | status |
+|---|---|---|---|
+| case_920_heating | [3.26, 4.30] → [2.956, 3.607] | 15.00 → 4.36 | known_fail (narrowed) |
+| case_920_cooling | [1.84, 3.31] → [2.549, 3.128] | 14.83 → 21.35 | known_fail (widened — the published cooling band sits ~0.7 MWh higher; recorded, not tuned) |
+
+Checker 8 PASS / 34 KNOWN-FAIL / 0 REGRESSION.
