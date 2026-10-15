@@ -322,7 +322,9 @@ fn run_case_with_attribution(case_enum: ASHRAE140Case) -> CaseAttribution {
         // Round 33 provenance correction: 140-2023 Annex B8 published values
         // (see CASE_920_REF / benchmark.rs Case 920 note).
         ASHRAE140Case::Case920 => (2.956, 3.607, 2.549, 3.128),
-        ASHRAE140Case::Case930 => (4.14, 5.34, 1.04, 2.24),
+        // Round 33 provenance correction: 140-2023 Annex B8 published values
+        // (see CASE_930_REF / benchmark.rs Case 930 note).
+        ASHRAE140Case::Case930 => (3.524, 4.384, 1.654, 2.161),
         // Round 29 provenance correction: published ASHRAE 140-2023 Annex B8 values
         // (see benchmark.rs Case 940 note; prior row was of unverified origin).
         ASHRAE140Case::Case940 => (0.863, 1.389, 2.203, 2.613),

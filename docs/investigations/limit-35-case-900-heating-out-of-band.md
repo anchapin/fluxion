@@ -2679,3 +2679,33 @@ Engine untouched; measured values bit-identical to develop `a1c79ff2`
 | case_920_cooling | [1.84, 3.31] → [2.549, 3.128] | 14.83 → 21.35 | known_fail (widened — the published cooling band sits ~0.7 MWh higher; recorded, not tuned) |
 
 Checker 8 PASS / 34 KNOWN-FAIL / 0 REGRESSION.
+
+## §41 — Round 33: Case 930 reference-row provenance correction to the 140-2023 Annex B8 published values (2026-10-14)
+
+The §36 queue's fifth row (900-family re-frame, final of three). The recorded
+Case 930 row (heating [4.14, 5.34], cooling [1.04, 2.24], peaks
+[2.30, 3.00]/[1.10, 1.50]) entered at issue #54 (`b0bd4119`) and was carried
+into the blind map by #1272 (`1aa3cc59`) with no cited source; it matches none
+of the sixteen published bounds. Corrected target-only to the transcription
+(`data/reference/ashrae140/annex_b8_section7_statistics.json`,
+Tables B8-1..B8-4): heating [3.524, 4.384] (mean 3.954), cooling
+[1.654, 2.161] (mean 1.9075), peak heating [2.537, 2.968] kW, peak cooling
+[2.335, 3.052] kW.
+
+Target-only across all duplicated copies: `benchmark.rs` (both maps + dated
+block comments), `CASE_930_REF` (`zone_balance_eplus_isolation.rs`), the
+`case_900_series_seasonal_attribution.rs` reference tuple, and the strict-gate
+baseline (`_doc_round33` extended). Not moved: the 930 ff_* fields (conditioned
+case, unused; no transcription free-float row — Case 620 handling), the
+`energyplus_comparison_tests.rs` midpoint fixture (round-32 precedent), other
+queued rows.
+
+Engine untouched; measured values bit-identical to develop (repro run
+2026-10-14: 930 H 2.977 / C 1.356 MWh). Status changes:
+
+| metric | old published → new published | old gap → new gap (% of mid) | status |
+|---|---|---|---|
+| case_930_heating | [4.14, 5.34] → [3.524, 4.384] | 22.19 → 9.71 | known_fail (narrowed) |
+| case_930_cooling | [1.04, 2.24] → [1.654, 2.161] | 2.32 → 13.89 | known_fail (widened — published band ~0.6 MWh higher; recorded, not tuned) |
+
+Checker 8 PASS / 34 KNOWN-FAIL / 0 REGRESSION.
