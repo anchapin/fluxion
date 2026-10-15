@@ -2777,3 +2777,40 @@ changes:
 
 Checker 9 PASS / 33 KNOWN-FAIL / 0 REGRESSION (unchanged — no status flips;
 the 650FF max known-fail narrows but does not close: 54.30 vs lower bound 61.1).
+
+## §44 — Round 33: Case 950/950FF reference-row provenance correction to the 140-2023 Annex B8 published values (2026-10-14)
+
+The §36 queue's eighth row (900-family, carries the 950FF free-float cohort).
+The recorded 950 row (cooling [0.39, 0.92], peak cooling [0.70, 0.90]) and
+950FF ff_ row (Tmin [-20.2, -17.8], Tmax [35.5, 38.5]) entered at issue #54
+(`b0bd4119`) and were carried into the blind map by #1272 (`1aa3cc59`) with no
+cited source; the ff_ row matches the 1995 BESTEST reconciliation, not the
+transcription Table B8-5 row. Corrected target-only to the transcription
+(`data/reference/ashrae140/annex_b8_section7_statistics.json`): 950 cooling
+[3.703, 4.265] (mean 3.984), peak cooling [3.229, 3.797] kW (heating stays
+degenerate [0, 0]); 950FF Tmin [-13.4, -12.5] °C, Tmax [36.1, 37.1] °C.
+
+Target-only across all duplicated copies: `benchmark.rs` (both maps: the 950
+rows + dated comments, the dedicated 950FF ff_ rows + dated comments),
+`CASE_950_REF` and `FF_950_REF` (`zone_balance_eplus_isolation.rs`), the
+950FF tuple in `ashrae_140_free_floating.rs`, and the strict-gate baseline
+(`_doc_round33` extended).
+
+Engine untouched; measured values bit-identical to develop (repro run
+2026-10-14: 950 C 0.654 MWh; 950FF Tmin −21.97 / Tmax 38.05 °C; an earlier
+draft of this section carried 2.431 for 950 C from stale round notes — the
+battery's engine output is authoritative and the section was corrected before
+the PR landed). Status
+changes — this row is the round's most consequential honest re-frame: the old
+recorded bands were flattering the engine on every 950-family metric:
+
+| metric | old published → new published | old gap → new gap (% of mid) | status |
+|---|---|---|---|
+| case_950_cooling | [0.39, 0.92] → [3.703, 4.265] | 0.00 → 68.58 | **PASS → known_fail** (the recorded cooling band was ~3 MWh below the published one; measured 0.654 MWh — the §24 night-vent cooling under-prediction was far larger than the old row admitted) |
+| ff_950ff_min | [-20.2, -17.8] → [-13.4, -12.5] | 15.63 → 66.18 | known_fail (widened — published Tmin ~7 K warmer) |
+| ff_950ff_max | [35.5, 38.5] → [36.1, 37.1] | 0.00 → 2.60 | **PASS → known_fail** (marginal: 38.05 vs upper bound 37.1; 0.95 K over) |
+
+Checker 9 PASS / 33 KNOWN-FAIL / 0 REGRESSION → **7 PASS / 35 KNOWN-FAIL /
+0 REGRESSION** after this PR. Recorded, not tuned: all three widenings are the
+same unverified-bootstrap-row signature the §36 audit has found on every row
+corrected so far.

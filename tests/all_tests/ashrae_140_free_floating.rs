@@ -358,7 +358,8 @@ fn test_free_floating_diagnostic_summary() {
         // Round 33 provenance correction: published Table B8-5 values.
         ("650FF", ASHRAE140Case::Case650FF, -17.8, -16.7, 61.1, 66.8),
         ("900FF", ASHRAE140Case::Case900FF, 0.6, 2.2, 43.3, 46.0),
-        ("950FF", ASHRAE140Case::Case950FF, -20.2, -17.8, 35.5, 38.5),
+        // Round 33 provenance correction: published Table B8-5 values.
+        ("950FF", ASHRAE140Case::Case950FF, -13.4, -12.5, 36.1, 37.1),
     ];
 
     let mut _all_min_ok = true;

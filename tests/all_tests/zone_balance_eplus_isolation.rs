@@ -800,16 +800,19 @@ const CASE_920_REF: EnergyReference = EnergyReference {
 // `annual_heating_band()` would collapse to (0, 0); see the script's
 // degenerate-band handling in `gap_pct_of_mid` for how the gate treats
 // value=0 against that band.
+// Round 33 provenance correction: published ASHRAE 140-2023 Annex B8 values
+// (transcription data/reference/ashrae140/annex_b8_section7_statistics.json);
+// the prior row entered at #54/#1272 with no cited source.
 const CASE_950_REF: EnergyReference = EnergyReference {
     case_id: "950",
     annual_heating_min_mwh: 0.00,
     annual_heating_max_mwh: 0.00,
-    annual_cooling_min_mwh: 0.39,
-    annual_cooling_max_mwh: 0.92,
+    annual_cooling_min_mwh: 3.703,
+    annual_cooling_max_mwh: 4.265,
     peak_heating_min_kw: 0.00,
     peak_heating_max_kw: 0.00,
-    peak_cooling_min_kw: 0.70,
-    peak_cooling_max_kw: 0.90,
+    peak_cooling_min_kw: 3.229,
+    peak_cooling_max_kw: 3.797,
 };
 const CASE_960_REF: EnergyReference = EnergyReference {
     case_id: "960",
@@ -1492,10 +1495,12 @@ const FF_900_REF: FreeFloatReference = FreeFloatReference {
     min_band: (0.6, 2.2),
     max_band: (43.3, 46.0),
 };
+// Round 33 provenance correction: published 140-2023 Annex B8 Table B8-5
+// values (prior -20.2..-17.8 / 35.5..38.5 were of unverified origin).
 const FF_950_REF: FreeFloatReference = FreeFloatReference {
     case_id: "950FF",
-    min_band: (-20.2, -17.8),
-    max_band: (35.5, 38.5),
+    min_band: (-13.4, -12.5),
+    max_band: (36.1, 37.1),
 };
 
 /// Blind free-float run (spec only, HVAC disabled, Golden EPW — the strict
