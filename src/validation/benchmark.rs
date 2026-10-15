@@ -204,19 +204,28 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 630 - East/West Shading (Low Mass)
+    // Round 33 provenance correction (2026-10-14): the prior row (heating
+    // [5.05, 6.47], cooling [2.13, 3.70], peaks [4.70, 6.10]/[1.80, 2.40])
+    // entered at issue #54 (b0bd4119) and was carried into the blind map by
+    // #1272 (1aa3cc59) with no cited source; it matches none of the sixteen
+    // published bounds in the 140-2023 Annex B8 transcription. Replaced with
+    // the transcription values (Tables B8-1..B8-4). Target-only: engine
+    // unchanged. The ff_* fields below are unused by the validator for this
+    // conditioned case and the transcription carries no 630 free-float row
+    // (same handling as Case 620).
     // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
     // TESS 19-Aug-2024). Same inter-program source set as Case 600 above.
     data.insert(
         "630".to_string(),
         BenchmarkData {
-            annual_heating_min: 5.05,
-            annual_heating_max: 6.47,
-            annual_cooling_min: 2.13,
-            annual_cooling_max: 3.70,
-            peak_heating_min: 4.70,
-            peak_heating_max: 6.10,
-            peak_cooling_min: 1.80,
-            peak_cooling_max: 2.40,
+            annual_heating_min: 4.356,
+            annual_heating_max: 5.139,
+            annual_cooling_min: 2.573,
+            annual_cooling_max: 3.074,
+            peak_heating_min: 3.039,
+            peak_heating_max: 3.388,
+            peak_cooling_min: 3.526,
+            peak_cooling_max: 4.212,
             min_free_float_min: -18.0,
             min_free_float_max: -14.8,
             max_free_float_min: 58.5,
@@ -811,19 +820,28 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     );
 
     // Case 630 - East/West Shading (Low Mass)
+    // Round 33 provenance correction (2026-10-14): the prior row (heating
+    // [5.05, 6.47], cooling [2.13, 3.70], peaks [4.70, 6.10]/[1.80, 2.40])
+    // entered at issue #54 (b0bd4119) and was carried into the blind map by
+    // #1272 (1aa3cc59) with no cited source; it matches none of the sixteen
+    // published bounds in the 140-2023 Annex B8 transcription. Replaced with
+    // the transcription values (Tables B8-1..B8-4). Target-only: engine
+    // unchanged. The ff_* fields below are unused by the validator for this
+    // conditioned case and the transcription carries no 630 free-float row
+    // (same handling as Case 620).
     // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
     // TESS 19-Aug-2024). Same inter-program source set as Case 600 above.
     data.insert(
         "630".to_string(),
         BenchmarkData {
-            annual_heating_min: 5.05,
-            annual_heating_max: 6.47,
-            annual_cooling_min: 2.13,
-            annual_cooling_max: 3.70,
-            peak_heating_min: 4.70,
-            peak_heating_max: 6.10,
-            peak_cooling_min: 1.80,
-            peak_cooling_max: 2.40,
+            annual_heating_min: 4.356,
+            annual_heating_max: 5.139,
+            annual_cooling_min: 2.573,
+            annual_cooling_max: 3.074,
+            peak_heating_min: 3.039,
+            peak_heating_max: 3.388,
+            peak_cooling_min: 3.526,
+            peak_cooling_max: 4.212,
             min_free_float_min: -18.0,
             min_free_float_max: -14.8,
             max_free_float_min: 58.5,

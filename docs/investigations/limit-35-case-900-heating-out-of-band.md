@@ -2709,3 +2709,37 @@ Engine untouched; measured values bit-identical to develop (repro run
 | case_930_cooling | [1.04, 2.24] → [1.654, 2.161] | 2.32 → 13.89 | known_fail (widened — published band ~0.6 MWh higher; recorded, not tuned) |
 
 Checker 8 PASS / 34 KNOWN-FAIL / 0 REGRESSION.
+
+## §42 — Round 33: Case 630 reference-row provenance correction to the 140-2023 Annex B8 published values (2026-10-14)
+
+The §36 queue's sixth row (600-family). The recorded Case 630 row (heating
+[5.05, 6.47], cooling [2.13, 3.70], peaks [4.70, 6.10]/[1.80, 2.40]) entered at
+issue #54 (`b0bd4119`) and was carried into the blind map by #1272 (`1aa3cc59`)
+with no cited source; it matches none of the sixteen published bounds.
+Corrected target-only to the transcription
+(`data/reference/ashrae140/annex_b8_section7_statistics.json`,
+Tables B8-1..B8-4): heating [4.356, 5.139] (mean 4.7475), cooling
+[2.573, 3.074] (mean 2.8235), peak heating [3.039, 3.388] kW, peak cooling
+[3.526, 4.212] kW.
+
+Target-only across all duplicated copies: `benchmark.rs` (both maps + dated
+block comments), `CASE_630_REF` (`zone_balance_eplus_isolation.rs`),
+`CASE_630` (`ashrae_140_case_600_series.rs`, including a dated refresh of the
+un-quarantined `case_630::test_annual_cooling` premise comment: the validator
+path's 3.000 MWh stays inside the new published band [2.573, 3.074] — the
+§LIMIT-39 resolution premise survives the row correction), and the strict-gate
+baseline (`_doc_round33` extended). Not moved: the 630 ff_* fields (conditioned
+case, unused; no transcription free-float row — Case 620 handling), the
+`energyplus_comparison_tests.rs` midpoint fixture (round-32 precedent).
+
+Engine untouched; measured values bit-identical to develop (repro run
+2026-10-14: 630 H 8.243 / C 2.414 MWh strict-gate). Status changes:
+
+| metric | old published → new published | old gap → new gap (% of mid) | status |
+|---|---|---|---|
+| case_630_heating | [5.05, 6.47] → [4.356, 5.139] | 28.11 → 58.62 | known_fail (widened — the recorded heating band was inflated ~1.3 MWh above the published one; the over-prediction is real and now honestly framed) |
+| case_630_cooling | [2.13, 3.70] → [2.573, 3.074] | 2.20 → 0.00 | KNOWN-FAIL → **PASS** (2.414 in [2.400, 3.247]; the §16/§18 shading repair's in-band result now holds against the true published band) |
+
+Checker 8 PASS / 34 KNOWN-FAIL / 0 REGRESSION (net +1 PASS / −1 KNOWN-FAIL on
+this PR; count 9/33 after this PR for the first time — matching the number
+§37/§38 misattributed to the round-32 tip).
