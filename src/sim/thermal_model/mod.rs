@@ -153,28 +153,16 @@ pub enum ThermalModelMode {
     Hybrid,
 }
 
-/// Thermal model type for routing between different thermal network complexities.
-///
-/// Used to determine whether to use 5R1C (low-mass) or 9R4C (high-mass) model.
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Default)]
-pub enum ThermalModelType {
-    /// 5R1C model for low-mass buildings (Case 600, 650 series)
-    #[default]
-    LowMass5R1C,
-    /// 9R4C model for high-mass buildings (Case 900 series)
-    HighMass9R4C,
-}
-
-impl From<&crate::validation::ashrae_140_cases::CaseSpec> for ThermalModelType {
-    fn from(spec: &crate::validation::ashrae_140_cases::CaseSpec) -> Self {
-        use crate::validation::ashrae_140_cases::ConstructionType;
-        match spec.construction_type {
-            ConstructionType::LowMass => ThermalModelType::LowMass5R1C,
-            ConstructionType::HighMass => ThermalModelType::HighMass9R4C,
-            ConstructionType::Special => ThermalModelType::LowMass5R1C,
-        }
-    }
-}
+// NOTE (#4175, round 35 GATE-04): the former duplicate routing enum
+// `ThermalModelType { LowMass5R1C, HighMass9R4C }` that lived here — plus its
+// `From<&CaseSpec>` impl and tests — has been removed. It shared a name with
+// the live `thermal_model_core::ThermalModelType` (FiveROneC/SixRTwoC/
+// EightRThreeC/NineRFourC, re-exported as `sim::engine::ThermalModelType`)
+// but was referenced by nothing outside its own tests, so it invited exactly
+// the dispatch-drift confusion external review flagged. Routing authority is
+// `thermal_selector::ZoneSolverKind` plus the dispatcher's
+// `is_nine_r4c_model()` consult (ADR-0017, issue #3978); the single
+// remaining discriminator unification is tracked in #4175.
 
 /// Comfort metrics for a thermal zone.
 ///
