@@ -153,16 +153,16 @@ pub enum ThermalModelMode {
     Hybrid,
 }
 
-/// NOTE (#4175, round 35 GATE-04): the former duplicate routing enum
-/// `ThermalModelType { LowMass5R1C, HighMass9R4C }` that lived here — plus its
-/// `From<&CaseSpec>` impl and tests — has been removed. It shared a name with
-/// the live `thermal_model_core::ThermalModelType` (FiveROneC/SixRTwoC/
-/// EightRThreeC/NineRFourC, re-exported as `sim::engine::ThermalModelType`)
-/// but was referenced by nothing outside its own tests, so it invited exactly
-/// the dispatch-drift confusion external review flagged. Routing authority is
-/// `thermal_selector::ZoneSolverKind` plus the dispatcher's
-/// `is_nine_r4c_model()` consult (ADR-0017, issue #3978); the single
-/// remaining discriminator unification is tracked in #4175.
+// NOTE (#4175, round 35 GATE-04): the former duplicate routing enum
+// `ThermalModelType { LowMass5R1C, HighMass9R4C }` that lived here — plus its
+// `From<&CaseSpec>` impl and tests — has been removed. It shared a name with
+// the live `thermal_model_core::ThermalModelType` (FiveROneC/SixRTwoC/
+// EightRThreeC/NineRFourC, re-exported as `sim::engine::ThermalModelType`)
+// but was referenced by nothing outside its own tests, so it invited exactly
+// the dispatch-drift confusion external review flagged. Routing authority is
+// `thermal_selector::ZoneSolverKind` plus the dispatcher's
+// `is_nine_r4c_model()` consult (ADR-0017, issue #3978); the single
+// remaining discriminator unification is tracked in #4175.
 
 /// Comfort metrics for a thermal zone.
 ///
