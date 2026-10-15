@@ -787,26 +787,28 @@ mod tests {
         // Issue #1407: previously asserted the hardcoded stub values
         // 12.4 / 8.7 / 5.2 / 4.8 — those were placeholders that did
         // not match any reference program and produced fabricated PASS.
-        // Now asserts the canonical ASHRAE 140-2023 inter-program
-        // midpoints sourced from `validation::benchmark`.
+        // Now asserts the canonical ASHRAE 140-2023 Annex B8 transcription
+        // midpoints sourced from `validation::benchmark` (round 33
+        // provenance correction, 2026-10-15: the prior #2858-widened
+        // midpoints 2.05 / 2.165 / 5.0 / 2.0 were of unverified origin).
         assert!(
-            (reference.annual_heating - 2.05).abs() < 1e-9,
-            "annual_heating should equal benchmark midpoint 2.05 MWh, got {}",
+            (reference.annual_heating - 2.691).abs() < 1e-9,
+            "annual_heating should equal benchmark midpoint 2.691 MWh, got {}",
             reference.annual_heating
         );
         assert!(
-            (reference.annual_cooling - 2.165).abs() < 1e-9,
-            "annual_cooling should equal benchmark midpoint 2.165 MWh, got {}",
+            (reference.annual_cooling - 0.8695).abs() < 1e-9,
+            "annual_cooling should equal benchmark midpoint 0.8695 MWh, got {}",
             reference.annual_cooling
         );
         assert!(
-            (reference.peak_heating - 5.0).abs() < 1e-9,
-            "peak_heating should equal benchmark midpoint 5.0 kW, got {}",
+            (reference.peak_heating - 2.1925).abs() < 1e-9,
+            "peak_heating should equal benchmark midpoint 2.1925 kW, got {}",
             reference.peak_heating
         );
         assert!(
-            (reference.peak_cooling - 2.0).abs() < 1e-9,
-            "peak_cooling should equal benchmark midpoint 2.0 kW, got {}",
+            (reference.peak_cooling - 1.409).abs() < 1e-9,
+            "peak_cooling should equal benchmark midpoint 1.409 kW, got {}",
             reference.peak_cooling
         );
 
@@ -823,14 +825,15 @@ mod tests {
         // benchmark — this is what prevents the validator from drifting
         // from the strict ±15% CI gate (#1368).
         let bounds = ASHRAE140MultiZoneValidator::case_960_inter_program_bounds();
-        assert!((bounds.annual_heating_min - 1.65).abs() < 1e-9);
-        assert!((bounds.annual_heating_max - 2.45).abs() < 1e-9);
-        assert!((bounds.annual_cooling_min - 1.55).abs() < 1e-9);
-        assert!((bounds.annual_cooling_max - 2.78).abs() < 1e-9);
-        assert!((bounds.peak_heating_min - 2.0).abs() < 1e-9);
-        assert!((bounds.peak_heating_max - 8.0).abs() < 1e-9);
-        assert!((bounds.peak_cooling_min - 0.0).abs() < 1e-9);
-        assert!((bounds.peak_cooling_max - 4.0).abs() < 1e-9);
+        // Annex B8 transcription bounds (round 33 provenance correction)
+        assert!((bounds.annual_heating_min - 2.522).abs() < 1e-9);
+        assert!((bounds.annual_heating_max - 2.86).abs() < 1e-9);
+        assert!((bounds.annual_cooling_min - 0.789).abs() < 1e-9);
+        assert!((bounds.annual_cooling_max - 0.95).abs() < 1e-9);
+        assert!((bounds.peak_heating_min - 2.085).abs() < 1e-9);
+        assert!((bounds.peak_heating_max - 2.3).abs() < 1e-9);
+        assert!((bounds.peak_cooling_min - 1.338).abs() < 1e-9);
+        assert!((bounds.peak_cooling_max - 1.48).abs() < 1e-9);
     }
 
     #[test]
@@ -966,12 +969,14 @@ mod tests {
         let result = validator.validate_case_960(&model, &reference);
 
         // (2) The validator must NOT fabricate PASS for the current
-        //     engine output. The current model produces ~7.47 MWh
-        //     heating (verified by `cargo test -p fluxion --test
-        //     ashrae_140_case_960_sunspace test_case_960_comprehensive_energy_validation`),
-        //     which is ~265% above the canonical midpoint 2.05 MWh —
-        //     far outside ±15%. The validator must therefore return
-        //     `in_range = false`.
+        //     engine output. The multi-zone path produces heating far
+        //     above the canonical Annex B8 midpoint 2.691 MWh — far
+        //     outside ±15%. The validator must therefore return
+        //     `in_range = false`. (Premise re-checked 2026-10-15, round
+        //     33: the strict-gate single-zone 960 result is 2.508 MWh,
+        //     IN band, but this test drives the multi-zone validator
+        //     path, which remains out of band; recorded honestly if
+        //     that ever changes.)
         //
         //     Note: when Wave 6 / #1446 lands and the multi-zone model
         //     produces results inside ±15%, this assertion will need
@@ -980,7 +985,7 @@ mod tests {
         assert!(
             !result.in_range,
             "Validator must NOT fabricate PASS for the current engine output \
-             (heating ~7.47 MWh is far outside the 1.65-2.45 MWh canonical band). \
+             (heating is far outside the 2.522-2.86 MWh canonical Annex B8 band). \
              Got in_range = true — likely the stub is still installed. \
              error_pct = {:.1}%",
             result.error_pct
@@ -992,10 +997,10 @@ mod tests {
         //     validator's *comparison* code is correct independent of
         //     the engine's current accuracy.
         let outcome = validator.compare_against_reference(
-            2.05,  // canonical annual heating midpoint
-            2.165, // canonical annual cooling midpoint
-            5.0,   // canonical peak heating midpoint
-            2.0,   // canonical peak cooling midpoint
+            2.691,  // canonical Annex B8 annual heating midpoint
+            0.8695, // canonical Annex B8 annual cooling midpoint
+            2.1925, // canonical Annex B8 peak heating midpoint
+            1.409,  // canonical Annex B8 peak cooling midpoint
         );
         assert!(
             outcome.all_in_range,
@@ -1012,8 +1017,8 @@ mod tests {
         let broken = validator.compare_against_reference(
             12.4,  // pre-#1407 hardcoded placeholder (4-7× too high)
             8.7,   // pre-#1407 hardcoded placeholder (3-4× too high)
-            100.0, // wildly above the 2.0-8.0 kW band
-            100.0, // wildly above the 0.0-4.0 kW band
+            100.0, // wildly above the Annex B8 peak heating band
+            100.0, // wildly above the Annex B8 peak cooling band
         );
         assert!(
             !broken.all_in_range,
