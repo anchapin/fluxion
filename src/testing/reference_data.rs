@@ -417,7 +417,8 @@ mod tests {
         let cooling = case.annual_cooling_mwh();
         assert!(heating > 0.0, "Case 600 annual heating must be > 0");
         assert!(cooling > 0.0, "Case 600 annual cooling must be > 0");
-        // ASHRAE 140 Case 600 ref band: heating 4.36-5.79 MWh, cooling 3.92-6.14 MWh
+        // ASHRAE 140 Case 600 ref band (140-2023 Annex B8, round 32 provenance
+        // correction): heating 3.993-4.504 MWh, cooling 5.432-6.162 MWh
         assert!((4.0..6.5).contains(&heating));
         assert!((3.5..6.5).contains(&cooling));
     }

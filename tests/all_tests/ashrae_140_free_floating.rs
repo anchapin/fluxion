@@ -21,10 +21,13 @@ use fluxion::weather::WeatherSource;
 mod reference {
     // Case 600FF - Low mass free-floating
     pub mod case_600ff {
-        pub const MIN_TEMP_MIN: f64 = -18.8;
-        pub const MIN_TEMP_MAX: f64 = -15.6;
-        pub const MAX_TEMP_MIN: f64 = 64.9;
-        pub const MAX_TEMP_MAX: f64 = 75.1;
+        // Round 32 provenance correction (2026-10-14): 140-2023 Annex B8
+        // Table B8-5 published values (prior -18.8..-15.6 / 64.9..75.1 were
+        // of unverified origin).
+        pub const MIN_TEMP_MIN: f64 = -13.8;
+        pub const MIN_TEMP_MAX: f64 = -9.9;
+        pub const MAX_TEMP_MIN: f64 = 62.4;
+        pub const MAX_TEMP_MAX: f64 = 68.4;
     }
 
     // Case 650FF - Low mass free-floating with night ventilation
@@ -348,7 +351,7 @@ fn test_free_floating_diagnostic_summary() {
     println!("╠═════════╪════════╪════════════╪═════════════════╪═══════════════════╣");
 
     let test_cases = [
-        ("600FF", ASHRAE140Case::Case600FF, -18.8, -15.6, 64.9, 75.1),
+        ("600FF", ASHRAE140Case::Case600FF, -13.8, -9.9, 62.4, 68.4),
         ("650FF", ASHRAE140Case::Case650FF, -23.0, -21.0, 63.2, 73.5),
         ("900FF", ASHRAE140Case::Case900FF, -6.4, -1.6, 41.8, 46.4),
         ("950FF", ASHRAE140Case::Case950FF, -20.2, -17.8, 35.5, 38.5),
@@ -1312,7 +1315,7 @@ fn test_900ff_without_ctf() {
         println!("⚠️ High-mass has LARGER swing than low-mass (REVERSED - BUG)");
     }
 
-    println!("\nReference: 600FF Min=-18.8 to -15.6°C, Max=64.9-75.1°C");
+    println!("\nReference: 600FF Min=-13.8 to -9.9°C, Max=62.4-68.4°C");
     println!("           900FF Min=-6.4 to -1.6°C, Max=41.8-46.4°C");
 }
 
