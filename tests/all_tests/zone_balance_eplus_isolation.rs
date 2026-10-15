@@ -730,14 +730,18 @@ const CASE_600_REF: EnergyReference = EnergyReference {
 
 const CASE_900_REF: EnergyReference = EnergyReference {
     case_id: "900",
-    annual_heating_min_mwh: 1.17,
-    annual_heating_max_mwh: 2.04,
-    annual_cooling_min_mwh: 2.13,
-    annual_cooling_max_mwh: 3.67,
-    peak_heating_min_kw: 1.80,
-    peak_heating_max_kw: 2.40,
-    peak_cooling_min_kw: 1.60,
-    peak_cooling_max_kw: 2.10,
+    // Round 32 provenance correction (2026-10-14): the prior row (H [1.17, 2.04],
+    // C [2.13, 3.67], peaks [1.80, 2.40]/[1.60, 2.10]) traced to the 1995 BESTEST
+    // reconciliation, not the 140-2023 Annex B8 row; replaced with the published
+    // values (annex_b8_section7_statistics.json). Target-only.
+    annual_heating_min_mwh: 1.379,
+    annual_heating_max_mwh: 1.814,
+    annual_cooling_min_mwh: 2.267,
+    annual_cooling_max_mwh: 2.714,
+    peak_heating_min_kw: 2.443,
+    peak_heating_max_kw: 2.778,
+    peak_cooling_min_kw: 2.556,
+    peak_cooling_max_kw: 3.376,
 };
 
 // Issue #3572: the strict ±15% annual-energy gate (Issue #1333 / #2506)
@@ -1460,8 +1464,12 @@ const FF_650_REF: FreeFloatReference = FreeFloatReference {
 };
 const FF_900_REF: FreeFloatReference = FreeFloatReference {
     case_id: "900FF",
-    min_band: (-6.4, -1.6),
-    max_band: (41.8, 46.4),
+    // Round 32 provenance correction (2026-10-14): 140-2023 Annex B8 Table B8-5
+    // published values (prior -6.4..-1.6 / 41.8..46.4 traced to the 1995 BESTEST
+    // reconciliation). The engine's -6.7 °C Tmin is far below the published
+    // [0.6, 2.2] — re-framed known-fail, recorded not tuned (doc §38).
+    min_band: (0.6, 2.2),
+    max_band: (43.3, 46.0),
 };
 const FF_950_REF: FreeFloatReference = FreeFloatReference {
     case_id: "950FF",

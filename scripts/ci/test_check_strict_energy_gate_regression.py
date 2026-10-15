@@ -572,18 +572,25 @@ def test_self_test_passes_when_all_eight_cases_present(checker):
 
 
 def _write_ff_lines(case_min_max: dict[str, tuple[float, float]]) -> str:
+    # Derive the printed bands from the repo's real baseline (round 32,
+    # 2026-10-14): hard-coding the bands here made this fixture a
+    # stale-golden trap of the same kind the measured values were before
+    # the mid-hour re-record — any honest reference-row correction broke
+    # the fixture before the checker logic was ever exercised.
+    # scripts/ci/test_*.py -> scripts/ci -> scripts -> repo root
+    repo_root = Path(__file__).resolve().parents[2]
+    real = json.loads(
+        (repo_root / "tests/reference_data/zone_balance/strict_energy_gate_baseline.json").read_text()
+    )
     lines = []
     for case, (tmin, tmax) in case_min_max.items():
-        bands = {
-            "600FF": (-18.8, -15.6, 64.9, 75.1),
-            "650FF": (-23.0, -21.0, 63.2, 73.5),
-            "900FF": (-6.4, -1.6, 41.8, 46.4),
-            "950FF": (-20.2, -17.8, 35.5, 38.5),
-        }
-        mlo, mhi, xlo, xhi = bands[case]
+        key = f"ff_{case.lower()}"
+        mlo, mhi = real["metrics"][f"{key}_min"]["band_c"]
+        xlo, xhi = real["metrics"][f"{key}_max"]["band_c"]
+        # The gate prints FF bands with one decimal (Tmin={:.2} band [{:.1} to {:.1}]).
         lines.append(
-            f"[#4170 Case {case} strict] Tmin={tmin} band [{mlo} to {mhi}], "
-            f"Tmax={tmax} band [{xlo} to {xhi}]"
+            f"[#4170 Case {case} strict] Tmin={tmin} band [{float(mlo):.1f} to {float(mhi):.1f}], "
+            f"Tmax={tmax} band [{float(xlo):.1f} to {float(xhi):.1f}]"
         )
     return "\n".join(lines) + "\n"
 
