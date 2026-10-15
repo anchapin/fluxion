@@ -505,21 +505,28 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     // TESS 19-Aug-2024). Annual heating and peak heating are 0.00 (HVAC
     // is OFF per ASHRAE 140-2023 §B8.5; night ventilation alone provides
     // cooling).
+    // Round 33 provenance correction (2026-10-14): the prior row (cooling
+    // [0.39, 0.92], peak cooling [0.70, 0.90], ff_ [-20.2, -17.8]/[35.5, 38.5])
+    // entered at issue #54 (b0bd4119) and was carried into the blind map by
+    // #1272 (1aa3cc59) with no cited source; it matches none of the published
+    // bounds in the 140-2023 Annex B8 transcription. Replaced with the
+    // transcription values (Tables B8-1..B8-4 / B8-5). Target-only: engine
+    // unchanged.
     data.insert(
         "950".to_string(),
         BenchmarkData {
             annual_heating_min: 0.00,
             annual_heating_max: 0.00,
-            annual_cooling_min: 0.39,
-            annual_cooling_max: 0.92,
+            annual_cooling_min: 3.703,
+            annual_cooling_max: 4.265,
             peak_heating_min: 0.00,
             peak_heating_max: 0.00,
-            peak_cooling_min: 0.70,
-            peak_cooling_max: 0.90,
-            min_free_float_min: -20.2,
-            min_free_float_max: -17.8,
-            max_free_float_min: 35.5,
-            max_free_float_max: 38.5,
+            peak_cooling_min: 3.229,
+            peak_cooling_max: 3.797,
+            min_free_float_min: -13.4,
+            min_free_float_max: -12.5,
+            max_free_float_min: 36.1,
+            max_free_float_max: 37.1,
         },
     );
 
@@ -553,6 +560,10 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     // Source: ASHRAE 140-2023 Annex B Table B8-5 (Std140_TF_Results.pdf,
     // TESS 19-Aug-2024). Annual / peak heating and cooling are 0.00
     // because there is no HVAC; only min/max free-float temperatures apply.
+    // Round 33 provenance correction (2026-10-14): the prior ff_ row
+    // ([-20.2, -17.8] / [35.5, 38.5]) is of unverified origin (it matches the
+    // 1995 BESTEST reconciliation, not the transcription Table B8-5 row);
+    // replaced with the published Tmin [-13.4, -12.5] / Tmax [36.1, 37.1].
     data.insert(
         "950FF".to_string(),
         BenchmarkData {
@@ -564,10 +575,10 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
             peak_heating_max: 0.00,
             peak_cooling_min: 0.00,
             peak_cooling_max: 0.00,
-            min_free_float_min: -20.2,
-            min_free_float_max: -17.8,
-            max_free_float_min: 35.5,
-            max_free_float_max: 38.5,
+            min_free_float_min: -13.4,
+            min_free_float_max: -12.5,
+            max_free_float_min: 36.1,
+            max_free_float_max: 37.1,
         },
     );
 
@@ -1132,21 +1143,28 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     // TESS 19-Aug-2024). Annual heating and peak heating are 0.00 (HVAC
     // is OFF per ASHRAE 140-2023 §B8.5; night ventilation alone provides
     // cooling).
+    // Round 33 provenance correction (2026-10-14): the prior row (cooling
+    // [0.39, 0.92], peak cooling [0.70, 0.90], ff_ [-20.2, -17.8]/[35.5, 38.5])
+    // entered at issue #54 (b0bd4119) and was carried into the blind map by
+    // #1272 (1aa3cc59) with no cited source; it matches none of the published
+    // bounds in the 140-2023 Annex B8 transcription. Replaced with the
+    // transcription values (Tables B8-1..B8-4 / B8-5). Target-only: engine
+    // unchanged.
     data.insert(
         "950".to_string(),
         BenchmarkData {
             annual_heating_min: 0.00,
             annual_heating_max: 0.00,
-            annual_cooling_min: 0.39,
-            annual_cooling_max: 0.92,
+            annual_cooling_min: 3.703,
+            annual_cooling_max: 4.265,
             peak_heating_min: 0.00,
             peak_heating_max: 0.00,
-            peak_cooling_min: 0.70,
-            peak_cooling_max: 0.90,
-            min_free_float_min: -20.2,
-            min_free_float_max: -17.8,
-            max_free_float_min: 35.5,
-            max_free_float_max: 38.5,
+            peak_cooling_min: 3.229,
+            peak_cooling_max: 3.797,
+            min_free_float_min: -13.4,
+            min_free_float_max: -12.5,
+            max_free_float_min: 36.1,
+            max_free_float_max: 37.1,
         },
     );
 
@@ -1180,6 +1198,10 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     // Source: ASHRAE 140-2023 Annex B Table B8-5 (Std140_TF_Results.pdf,
     // TESS 19-Aug-2024). Annual / peak heating and cooling are 0.00
     // because there is no HVAC; only min/max free-float temperatures apply.
+    // Round 33 provenance correction (2026-10-14): the prior ff_ row
+    // ([-20.2, -17.8] / [35.5, 38.5]) is of unverified origin (it matches the
+    // 1995 BESTEST reconciliation, not the transcription Table B8-5 row);
+    // replaced with the published Tmin [-13.4, -12.5] / Tmax [36.1, 37.1].
     data.insert(
         "950FF".to_string(),
         BenchmarkData {
@@ -1191,10 +1213,10 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
             peak_heating_max: 0.00,
             peak_cooling_min: 0.00,
             peak_cooling_max: 0.00,
-            min_free_float_min: -20.2,
-            min_free_float_max: -17.8,
-            max_free_float_min: 35.5,
-            max_free_float_max: 38.5,
+            min_free_float_min: -13.4,
+            min_free_float_max: -12.5,
+            max_free_float_min: 36.1,
+            max_free_float_max: 37.1,
         },
     );
 
