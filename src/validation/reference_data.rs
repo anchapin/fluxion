@@ -386,10 +386,12 @@ mod tests {
     fn test_load_case_960_reference() {
         let reference = load_case_960_reference().unwrap();
 
-        assert_eq!(reference.annual_heating, 2.05);
-        assert_eq!(reference.annual_cooling, 2.165);
-        assert_eq!(reference.peak_heating, 5.0);
-        assert_eq!(reference.peak_cooling, 2.0);
+        // Annex B8 transcription midpoints (round 33 provenance correction,
+        // 2026-10-15; the loader reads the benchmark::CASE_960_* constants).
+        assert_eq!(reference.annual_heating, 2.691);
+        assert_eq!(reference.annual_cooling, 0.8695);
+        assert_eq!(reference.peak_heating, 2.1925);
+        assert_eq!(reference.peak_cooling, 1.409);
         assert_eq!(reference.energy_tolerance, 0.15);
         assert_eq!(reference.load_tolerance, 0.10);
         assert_eq!(reference.temperature_tolerance, 1.0);
@@ -414,7 +416,8 @@ mod tests {
     fn test_load_multi_zone_reference() {
         let reference_960 = load_multi_zone_reference("960").unwrap();
         assert_eq!(reference_960.case_id, "960");
-        assert_eq!(reference_960.annual_heating, 2.05);
+        // Annex B8 transcription midpoint (round 33 provenance correction).
+        assert_eq!(reference_960.annual_heating, 2.691);
 
         let reference_970 = load_multi_zone_reference("970").unwrap();
         assert_eq!(reference_970.case_id, "970");
