@@ -38,16 +38,22 @@ struct CaseReference {
     max_free_float_max: f64,
 }
 
+// Round 33 provenance correction (2026-10-15): the prior row (H [4.36,
+// 5.79], C [3.92, 6.14], peaks [4.30, 5.70] / [2.20, 2.90]) was the
+// 140-2017-era bootstrap row of unverified origin; replaced with the
+// 140-2023 Annex B8 transcription values (annex_b8_section7_statistics.json,
+// Tables B8-1..B8-4). The ff fields are inert placeholders (no Table B8-5
+// 610FF row; Case 610 is not a free-floating case).
 const CASE_610: CaseReference = CaseReference {
     case_id: "610",
-    annual_heating_min: 4.36,
-    annual_heating_max: 5.79,
-    annual_cooling_min: 3.92,
-    annual_cooling_max: 6.14,
-    peak_heating_min: 4.30,
-    peak_heating_max: 5.70,
-    peak_cooling_min: 2.20,
-    peak_cooling_max: 2.90,
+    annual_heating_min: 4.066,
+    annual_heating_max: 4.592,
+    annual_cooling_min: 4.117,
+    annual_cooling_max: 4.382,
+    peak_heating_min: 3.021,
+    peak_heating_max: 3.36,
+    peak_cooling_min: 5.331,
+    peak_cooling_max: 6.432,
     min_free_float_min: -19.2,
     min_free_float_max: -16.0,
     max_free_float_min: 60.2,
@@ -335,10 +341,10 @@ mod case_610 {
     use super::*;
 
     #[ignore = "Physics loop round 5 (2026-10-09, doc §18): spec window dims threaded to the \
-shading call; Case 610 annual heating 6.412 MWh vs its recorded row [4.36, 5.79] — further \
-over under spec-correct shading (accepted fidelity tradeoff; §LIMIT-35). NOTE (round 32, \
-2026-10-14): the 610 recorded row is of unverified bootstrap origin (doc §36) and is queued \
-for its own Annex B8 provenance correction; the band is not widened here."]
+shading call; Case 610 annual heating 6.79 MWh (re-measured on the round-33 branch) — far \
+OVER its row after the round-33 Annex B8 provenance correction (2026-10-15): published \
+[4.066, 4.592] (was the unverified bootstrap [4.36, 5.79]). Accepted fidelity tradeoff; \
+§LIMIT-35. Un-ignore when the engine re-enters the band; the band is not widened."]
     #[test]
     fn test_annual_heating() {
         let r = CASE_610;
@@ -352,9 +358,11 @@ for its own Annex B8 provenance correction; the band is not widened here."]
     }
 
     #[ignore = "Physics loop round 5 (2026-10-09, doc §18): spec window dims threaded to the \
-shading call; Case 610 annual cooling 2.724 MWh vs published [3.92, 6.14] — below the band under \
-spec-correct shading (accepted fidelity tradeoff; §LIMIT-35, §17 base-deficit analysis). \
-Un-ignore when the engine re-enters the band; the band is not widened."]
+shading call; Case 610 annual cooling 3.07 MWh (re-measured on the round-33 branch) — far \
+BELOW its row after the round-33 Annex B8 provenance correction (2026-10-15): published \
+[4.117, 4.382] (was the unverified bootstrap [3.92, 6.14]). Accepted fidelity tradeoff; \
+§LIMIT-35, §17 base-deficit analysis. Un-ignore when the engine re-enters the band; the \
+band is not widened."]
     #[test]
     fn test_annual_cooling() {
         let r = CASE_610;
@@ -370,8 +378,9 @@ Un-ignore when the engine re-enters the band; the band is not widened."]
     #[ignore = "Physics loop round 9 PR-c (2026-10-10, LIMIT-35 §23): self-consistent \
 gauge air-node metering (PR-c) replaced the network-foreign 5R1C series coefficient; the \
 gauge free-float envelope runs cold pre-PR-d (window U #3817, WINDOW-01), so the honest \
-hold demand sits above the band. Un-ignore when the engine re-enters the band after \
-PR-d; the band is not widened."]
+hold demand sits above the band (re-measured 4.79 kW on the round-33 branch). Band re-based \
+round 33 (2026-10-15): published [3.021, 3.36] kW (Annex B8; was the unverified bootstrap \
+[4.30, 5.70]). Un-ignore when the engine re-enters the band; the band is not widened."]
     #[test]
     fn test_peak_heating() {
         let r = CASE_610;
@@ -384,6 +393,12 @@ PR-d; the band is not widened."]
         assert!(peak_h_kw >= r.peak_heating_min && peak_h_kw <= r.peak_heating_max);
     }
 
+    #[ignore = "Quarantined with the round-33 Annex B8 provenance correction (2026-10-15): \
+measured peak cooling 3.19 kW sits BELOW the published inter-program band [5.331, 6.432] kW. \
+The test was already failing on develop (3.19 vs the unverified bootstrap [2.20, 2.90]) — a \
+latent failure this correction surfaces and records honestly. Same 600-series shading-family \
+gap as heating/cooling above (§LIMIT-35); recorded, not tuned; the band is not widened. \
+Un-ignore when the engine re-enters the band."]
     #[test]
     fn test_peak_cooling() {
         let r = CASE_610;

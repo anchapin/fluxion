@@ -2944,3 +2944,32 @@ surface, not a live mass node. No genuine defect exists behind the
 observation; recorded so the hypothesis is not re-raised.
 
 Engine untouched in this section; no measured values changed.
+## §49 — Round 33: Case 610 reference-row provenance correction (2026-10-15)
+
+Tenth row of the §36 queue. The recorded 610 row (H [4.36, 5.79], C
+[3.92, 6.14], peaks [4.30, 5.70] / [2.20, 2.90] kW) is the 140-2017-era
+bootstrap row of unverified origin. Re-transcribed directly from
+`annex_b8_section7_statistics.json`: **H [4.066, 4.592], C [4.117, 4.382],
+pH [3.021, 3.36], pC [5.331, 6.432]**. The `min/max_free_float` fields are
+left as inert placeholders: the transcription's Table B8-5 has no 610FF row
+(free-float cases are 600FF/900FF/650FF/950FF/680FF/980FF) and Case 610 is
+not a free-floating case, so no consumer scores them (the same pattern the
+195 placeholders document).
+
+Copies corrected: both `benchmark.rs` maps and the `CASE_610` const in
+`ashrae_140_case_600_series.rs`. Test annotations re-based with re-measured
+values on the branch: annual heating 6.79 MWh (far over), annual cooling
+3.07 MWh (far below), peak heating 4.79 kW (over), and `test_peak_cooling`
+now quarantined — measured 3.19 kW vs [5.331, 6.432]. That test was already
+failing on develop (3.19 vs the old bootstrap [2.20, 2.90]): a latent
+failure this correction surfaces and records honestly. The 600-series
+suite's remaining failures (600FF/630/640/650/650FF, 8 tests) are
+byte-identical to develop (verified by stash-run on develop) and belong to
+their own stale-local-const audit pass, not this row.
+
+Engine untouched; measured strict-gate H 7.307 / C 2.456 MWh bit-identical
+(CASE_610_REF and the gate baseline re-recorded, `_doc_round33e`). Both
+strict metrics remain known_fail under the true target: heating gap
+28.99 → 53.79 % of mid (widens), cooling 36.17 → 27.21 % of mid (narrows) —
+recorded, not tuned, per the round-33 fidelity direction. The 600-series
+suite tests above quarantine independently. Provenance and doc gates green.
