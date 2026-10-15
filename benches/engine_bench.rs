@@ -53,6 +53,14 @@ fn bench_5r1c_single_config(c: &mut Criterion) {
 fn bench_6r2c_single_config(c: &mut Criterion) {
     let mut model = ThermalModel::<VectorField>::new(1);
     model.configure_6r2c_model(0.75, 100.0, None);
+    // #4175 selector pin: this benchmark measures the 5R1C solver on a
+    // 6R2C-flagged model — assert that routing intent before benchmarking
+    // so a future dispatcher change cannot silently re-point it.
+    assert!(model.is_6r2c_model(), "6R2C flag must be set");
+    assert!(
+        !model.is_nine_r4c_model(),
+        "6R2C-flagged bench must not route to 9R4C"
+    );
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
     // Warm up

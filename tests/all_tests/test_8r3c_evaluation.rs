@@ -28,18 +28,21 @@ fn test_8r3c_structure_exists() {
     );
     println!("✓ 8R3C fields are optional in default ThermalModel");
 
-    // Test 3: Verify is_8r3c_model() method
+    // Test 3: 8R3C is a flag-only state (#4175 retired is_8r3c_model());
+    // assert the state field directly.
     let model_5r1c = ThermalModel::new(1);
-    assert!(
-        !model_5r1c.is_8r3c_model(),
+    assert_eq!(
+        model_5r1c.hvac.thermal_model_type,
+        ThermalModelType::FiveROneC,
         "Default model should not be 8R3C"
     );
-    println!("✓ is_8r3c_model() method works");
+    println!("✓ default model flag is FiveROneC");
 
     // Test 4: new_8r3c() constructor
     let model_8r3c = ThermalModel::new_8r3c(1);
-    assert!(
-        model_8r3c.is_8r3c_model(),
+    assert_eq!(
+        model_8r3c.hvac.thermal_model_type,
+        ThermalModelType::EightRThreeC,
         "new_8r3c() should create 8R3C model"
     );
     assert!(
