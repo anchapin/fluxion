@@ -122,23 +122,33 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     // Issue #1270 superseded the prior "calibrated for 5R1C model"
     // (5.5-7.5 heating, 8.0-10.5 cooling); current band is the inter-program
     // spread from the Annex B source above.
-    // ASHRAE 140-2023 Annex B raw reference values (issue #1270)
-    // Previously calibrated for 5R1C model (5.5-7.5 heating, 8.0-10.5 cooling)
+    // ANSI/ASHRAE Standard 140-2023, Informative Annex B8 (Std140_TF_Results.pdf,
+    // TESS 19-Aug-2024), Tables B8-1..B8-5 — authoritative transcription
+    // data/reference/ashrae140/annex_b8_section7_statistics.json.
+    // Round 32 provenance correction (2026-10-14): the prior row (heating 4.36-5.79,
+    // cooling 3.92-6.14, peaks 2.8-3.8/4.8-6.2, free-float -18.8..-15.6/64.9..75.1)
+    // entered at issue #54 (commit b0bd4119) with no cited source and was rewritten
+    // by #1272 (commit 1aa3cc59, "issue #1270") to values matching none of the
+    // sixteen published B8 bounds. Replaced with the published values. Family
+    // anchor: 610/630/640/650 are 600 + shading/setback variants, so their rows
+    // must bracket 600 (cooling: published 600 5.856 vs 640 5.636 mean, -3.8%).
+    // Prior values were of unverified origin; band movement is a target
+    // correction, not an engine change (engine values unchanged).
     data.insert(
         "600".to_string(),
         BenchmarkData {
-            annual_heating_min: 4.36,
-            annual_heating_max: 5.79,
-            annual_cooling_min: 3.92,
-            annual_cooling_max: 6.14,
-            peak_heating_min: 2.8,
-            peak_heating_max: 3.8,
-            peak_cooling_min: 4.8,
-            peak_cooling_max: 6.2,
-            min_free_float_min: -6.0,
-            min_free_float_max: -4.0,
-            max_free_float_min: 64.0,
-            max_free_float_max: 68.0,
+            annual_heating_min: 3.993,
+            annual_heating_max: 4.504,
+            annual_cooling_min: 5.432,
+            annual_cooling_max: 6.162,
+            peak_heating_min: 3.02,
+            peak_heating_max: 3.359,
+            peak_cooling_min: 5.422,
+            peak_cooling_max: 6.481,
+            min_free_float_min: -13.8,
+            min_free_float_max: -9.9,
+            max_free_float_min: 62.4,
+            max_free_float_max: 68.4,
         },
     );
 
@@ -695,25 +705,30 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
     // TESS 19-Aug-2024). Inter-program range from BSIMAC 9.0.74, CSE 0.861.1,
     // DeST 2.0, EnergyPlus 9.0.1, ESP-r 13.3, TRNSYS 18.01.0001.
-    // Issue #1270 superseded the prior "calibrated for 5R1C model"
-    // (5.5-7.5 heating, 8.0-10.5 cooling); current band is the inter-program
-    // spread from the Annex B source above.
-    // Raw ASHRAE 140-2023 Annex B values (issue #1270)
+    // Round 32 provenance correction (2026-10-14): the prior row (heating 4.36-5.79,
+    // cooling 3.92-6.14, peaks 2.8-3.8/4.8-6.2, free-float -18.8..-15.6/64.9..75.1)
+    // entered at issue #54 (commit b0bd4119) with no cited source and was rewritten
+    // by #1272 (commit 1aa3cc59, "issue #1270") to values matching none of the
+    // sixteen published B8 bounds. Replaced with the published values. Family
+    // anchor: 610/630/640/650 are 600 + shading/setback variants, so their rows
+    // must bracket 600 (cooling: published 600 5.856 vs 640 5.636 mean, -3.8%).
+    // Prior values were of unverified origin; band movement is a target
+    // correction, not an engine change (engine values unchanged).
     data.insert(
         "600".to_string(),
         BenchmarkData {
-            annual_heating_min: 4.36,
-            annual_heating_max: 5.79,
-            annual_cooling_min: 3.92,
-            annual_cooling_max: 6.14,
-            peak_heating_min: 2.8,
-            peak_heating_max: 3.8,
-            peak_cooling_min: 4.8,
-            peak_cooling_max: 6.2,
-            min_free_float_min: -6.0,
-            min_free_float_max: -4.0,
-            max_free_float_min: 64.0,
-            max_free_float_max: 68.0,
+            annual_heating_min: 3.993,
+            annual_heating_max: 4.504,
+            annual_cooling_min: 5.432,
+            annual_cooling_max: 6.162,
+            peak_heating_min: 3.02,
+            peak_heating_max: 3.359,
+            peak_cooling_min: 5.422,
+            peak_cooling_max: 6.481,
+            min_free_float_min: -13.8,
+            min_free_float_max: -9.9,
+            max_free_float_min: 62.4,
+            max_free_float_max: 68.4,
         },
     );
 
@@ -1508,10 +1523,10 @@ mod tests {
 
         let data = case_600.unwrap();
         // Raw ASHRAE 140-2023 Annex B values (issue #1270)
-        assert_eq!(data.annual_heating_min, 4.36);
-        assert_eq!(data.annual_heating_max, 5.79);
-        assert_eq!(data.annual_cooling_min, 3.92);
-        assert_eq!(data.annual_cooling_max, 6.14);
+        assert_eq!(data.annual_heating_min, 3.993);
+        assert_eq!(data.annual_heating_max, 4.504);
+        assert_eq!(data.annual_cooling_min, 5.432);
+        assert_eq!(data.annual_cooling_max, 6.162);
     }
 
     #[test]
@@ -1670,10 +1685,10 @@ mod tests {
 
         // Case 600 should have raw ASHRAE 140-2023 values (issue #1270)
         let case_600 = data.get("600").expect("Case 600 should exist");
-        assert_eq!(case_600.annual_heating_min, 4.36);
-        assert_eq!(case_600.annual_heating_max, 5.79);
-        assert_eq!(case_600.annual_cooling_min, 3.92);
-        assert_eq!(case_600.annual_cooling_max, 6.14);
+        assert_eq!(case_600.annual_heating_min, 3.993);
+        assert_eq!(case_600.annual_heating_max, 4.504);
+        assert_eq!(case_600.annual_cooling_min, 5.432);
+        assert_eq!(case_600.annual_cooling_max, 6.162);
 
         // Blind data should match informed data for Case 600
         let informed_data = get_all_benchmark_data();
@@ -1715,8 +1730,9 @@ mod tests {
 
     /// Issue #1332 AC2: every Blind band must be no wider than 1.5× the
     /// raw ASHRAE 140 Annex B band. The "raw" reference is the band
-    /// published in ASHRAE 140-2023 Annex B (Case 600: H=[4.36, 5.79],
-    /// C=[3.92, 6.14] per #1270; Case 960: H≤1.0, C≥8.0 per #1332 AC4).
+    /// published in ASHRAE 140-2023 Annex B8 (Case 600: H=[3.993, 4.504],
+    /// C=[5.432, 6.162] per the round-32 provenance correction; Case 960:
+    /// H≤1.0, C≥8.0 per #1332 AC4).
     ///
     /// AC2's intent is to catch the #1270 "2-3× wider calibrated ranges"
     /// regression, so we assert the Blind band width is at most 1.5× the

@@ -2504,6 +2504,58 @@ each correction lands with its own measured re-record battery, not batched into 
 This is the recorded queue for the next rounds, in descending value: 600 (the family anchor),
 900/910/920/930 (family re-frame), 630/650/950/960/610.
 
+## §37 — Round 32: Case 600 reference-row provenance correction to the 140-2023 Annex B8 published values (2026-10-14)
+
+The §36 audit's first queued row is corrected. The recorded Case 600 row
+(heating [4.36, 5.79], cooling [3.92, 6.14], peaks [2.8, 3.8]/[4.8, 6.2],
+free-float [-18.8, -15.6]/[64.9, 75.1]) entered at issue #54 (commit `b0bd4119`,
+Feb 2026) with no cited source; #1272 (commit `1aa3cc59`, "issue #1270") later
+rewrote it to the current values, which match NONE of the sixteen published
+bounds — the same bootstrap signature §36 established for 640/940. The
+authoritative transcription (`data/reference/ashrae140/annex_b8_section7_statistics.json`,
+Tables B8-1..B8-5) gives heating [3.993, 4.504] (mean 4.213), cooling
+[5.432, 6.162] (mean 5.856), peak heating [3.02, 3.359] kW, peak cooling
+[5.422, 6.481] kW, 600FF Tmin [-13.8, -9.9] °C, Tmax [62.4, 68.4] °C.
+
+Physics cross-check (family anchor): 640 = 600 + heating setback only, and the
+published cooling means track (600 5.856 vs 640 5.636, −3.8%) — the round-28
+640 correction was consistent with a 600 cooling band of [5.432, 6.162] all
+along; the previously recorded 600 cooling band ([3.92, 6.14]) sat ~1.5 MWh
+below the published one, which is why the engine's 4.301 MWh strict-gate
+cooling had been scored PASS.
+
+Target-only correction across all duplicated copies: `benchmark.rs` (both maps,
+including the free-float fields — B8-5 has a 600FF entry, unlike 640/940),
+`CASE_600_REF` (zone_balance_eplus_isolation.rs), `FF_600_REF`,
+`ashrae_140_case_600_series.rs` (600FF block; the Case 610 quarantine text now
+notes its own row is the unverified queued one), `ashrae_140_free_floating.rs`,
+`ashrae_140_case_900.rs` (600FF reference), `ashrae_140_case_600.rs`
+(reference consts — the original #54 values), `src/testing/reference_data.rs`,
+and the strict-gate baseline. Not moved: CASE_610_REF/630/650 rows (independent
+queued corrections), the validator unit-test fixtures in
+`ashrae_140_validator/tests.rs` and `report/tests.rs` (arithmetic fixtures, not
+reference data), historical investigation/archive docs.
+
+Measured strict-gate values are unchanged from the develop repro at `a1307d01`
+(engine untouched): 600 H 6.758 / C 4.301 MWh, 600FF Tmin −19.00 / Tmax 54.87 °C.
+Status changes recorded honestly, no tuning:
+
+| metric | old published → new published | old gap → new gap (% of mid) | status |
+|---|---|---|---|
+| case_600_heating | [4.36, 5.79] → [3.993, 4.504] | 18.17 → 44.06 | known_fail (unchanged) |
+| case_600_cooling | [3.92, 6.14] → [5.432, 6.162] | 0.00 → 10.80 | PASS → KNOWN-FAIL |
+| ff_600ff_min | [-18.8, -15.6] → [-13.8, -9.9] | 10.47 → 60.34 | known_fail (unchanged) |
+| ff_600ff_max | [64.9, 75.1] → [62.4, 68.4] | 21.61 → 16.10 | known_fail (unchanged) |
+
+The §36 implication stands, now quantified against the published row: engine
+600 heating 6.758 MWh is +50% over the published MAXIMUM (4.504), not +12% over
+the old recorded maximum — the gap framing for the whole 600 family changes
+dramatically. The 600 cooling PASS was an artifact of the unverified recorded
+band and is now an honestly tracked known-fail (engine 4.301 vs published band
+[5.432, 6.162]: 19% under the band floor). Checker expected 9 PASS / 33
+KNOWN-FAIL / 0 REGRESSION. The remaining §36 queue (900/910/920/930, then
+630/650/950/960/610) is unchanged.
+
 ## §38 — Round 32: Case 900 reference-row provenance correction to the 140-2023 Annex B8 published values (2026-10-14)
 
 The §36 queue's second row. The recorded Case 900 row (heating [1.17, 2.04],
