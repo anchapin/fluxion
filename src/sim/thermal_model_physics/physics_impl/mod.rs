@@ -151,8 +151,9 @@ mod scratch_pool_tests {
     #[test]
     fn scratch_pool_9r4c_is_reused_across_timesteps() {
         let mut model = multizone_model();
-        model.0.hvac.thermal_model_type =
-            crate::sim::thermal_model_core::ThermalModelType::NineRFourC;
+        // Issue #4175: enable_9r4c_model() writes both the state flag and
+        // the dispatch selector — the selector is the dispatch authority.
+        model.enable_9r4c_model();
 
         assert!(model.0.hvac.scratch_pool.r9r4c.is_none());
 
@@ -195,8 +196,9 @@ mod scratch_pool_tests {
     #[test]
     fn scratch_pool_9r4c_restored_on_free_float_early_return() {
         let mut model = multizone_model();
-        model.0.hvac.thermal_model_type =
-            crate::sim::thermal_model_core::ThermalModelType::NineRFourC;
+        // Issue #4175: enable_9r4c_model() writes both the state flag and
+        // the dispatch selector — the selector is the dispatch authority.
+        model.enable_9r4c_model();
         model.0.hvac.free_float = true;
 
         for step in 0..20 {

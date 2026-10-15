@@ -3130,6 +3130,19 @@ impl ThermalModel<VectorField> {
             }
         }
 
+        // Issue #4175 — selector normalization. `enable_9r4c_model()` now
+        // writes BOTH the state flag and the dispatch selector, and the
+        // HighMass auto-promotion above (before the selector was stored at
+        // the top of this method) already set the flag for every HighMass
+        // construction. Re-assert it here so the stored selector ends in
+        // lockstep with the flag in all builds: a `Gauge` selector on a
+        // HighMass spec dispatches 9R4C exactly as before (the flag blocked
+        // the gauge arms; now the selector routes straight to the 9R4C arm),
+        // and `FiveROneC` on HighMass keeps the #3817/#1522 promotion.
+        if spec.construction_type == fluxion_core::ashrae_cases::ConstructionType::HighMass {
+            model.enable_9r4c_model();
+        }
+
         Ok(model)
     }
 
