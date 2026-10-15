@@ -18,21 +18,26 @@ use super::report::BenchmarkData;
 use std::collections::HashMap;
 
 /// Case 960 reference data constants
-/// ASHRAE 140-2017 Case 960: Two-zone sunspace building
-pub const CASE_960_ANNUAL_HEATING_REF: f64 = 2.05; // Midpoint of reference range (1.65-2.45)
-pub const CASE_960_ANNUAL_COOLING_REF: f64 = 2.165; // Midpoint of reference range (1.55-2.78)
-pub const CASE_960_PEAK_HEATING_REF: f64 = 5.0; // Midpoint of reference range (2.0-8.0)
-pub const CASE_960_PEAK_COOLING_REF: f64 = 2.0; // Midpoint of reference range (0.0-4.0)
+/// ASHRAE 140-2017 Case 960: Two-zone sunspace building.
+/// Round 33 provenance correction (2026-10-15): the prior constants
+/// (H [1.65, 2.45], C [1.55, 2.78], peaks [2.0, 8.0] / [0.0, 4.0]) were the
+/// issue-#2858 widened synthetic-era band, of unverified origin; replaced
+/// with the 140-2023 Annex B8 transcription values
+/// (annex_b8_section7_statistics.json, Tables B8-1..B8-4).
+pub const CASE_960_ANNUAL_HEATING_REF: f64 = 2.691; // Midpoint of published range (2.522-2.86)
+pub const CASE_960_ANNUAL_COOLING_REF: f64 = 0.8695; // Midpoint of published range (0.789-0.95)
+pub const CASE_960_PEAK_HEATING_REF: f64 = 2.1925; // Midpoint of published range (2.085-2.3)
+pub const CASE_960_PEAK_COOLING_REF: f64 = 1.409; // Midpoint of published range (1.338-1.48)
 
 /// Case 960 tolerance ranges
-pub const CASE_960_ANNUAL_HEATING_MIN: f64 = 1.65;
-pub const CASE_960_ANNUAL_HEATING_MAX: f64 = 2.45;
-pub const CASE_960_ANNUAL_COOLING_MIN: f64 = 1.55;
-pub const CASE_960_ANNUAL_COOLING_MAX: f64 = 2.78;
-pub const CASE_960_PEAK_HEATING_MIN: f64 = 2.0;
-pub const CASE_960_PEAK_HEATING_MAX: f64 = 8.0;
-pub const CASE_960_PEAK_COOLING_MIN: f64 = 0.0;
-pub const CASE_960_PEAK_COOLING_MAX: f64 = 4.0;
+pub const CASE_960_ANNUAL_HEATING_MIN: f64 = 2.522;
+pub const CASE_960_ANNUAL_HEATING_MAX: f64 = 2.86;
+pub const CASE_960_ANNUAL_COOLING_MIN: f64 = 0.789;
+pub const CASE_960_ANNUAL_COOLING_MAX: f64 = 0.95;
+pub const CASE_960_PEAK_HEATING_MIN: f64 = 2.085;
+pub const CASE_960_PEAK_HEATING_MAX: f64 = 2.3;
+pub const CASE_960_PEAK_COOLING_MIN: f64 = 1.338;
+pub const CASE_960_PEAK_COOLING_MAX: f64 = 1.48;
 
 /// Case 960 tolerance constants per ASHRAE 140
 pub const CASE_960_ENERGY_TOLERANCE: f64 = 0.15; // 15% tolerance
@@ -596,26 +601,31 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     // ==================== Special Cases ====================
 
     // Case 960 - Sunspace (2-zone)
+    // Round 33 provenance correction (2026-10-15): the prior row (H [1.65,
+    // 2.45], C [1.55, 2.78], peaks [2.0, 8.0] / [0.0, 4.0], ff_ [-2.8, 6.0] /
+    // [48.9, 55.3]) was the issue-#2858 widened synthetic-era band of
+    // unverified origin ("the peak_heating band 2.0-8.0 kW reflects the wide
+    // inter-program spread" was assertion, not transcription — the
+    // transcription carries no such spread). Replaced with the 140-2023
+    // Annex B8 transcription values (Tables B8-1..B8-5), read directly from
+    // annex_b8_section7_statistics.json. Target-only: engine unchanged.
     // Source: ASHRAE 140-2023 Annex B Tables B8-1..B8-5 (Std140_TF_Results.pdf,
-    // TESS 19-Aug-2024). The peak_heating band 2.0-8.0 kW reflects the
-    // wide inter-program spread for the sunspace geometry; annual heating
-    // and cooling bands (1.65-2.45 / 1.55-2.78 MWh) match Issue #2858.
-    // Values align with data/ashrae140_reference.json (Tables B8-1..B8-4).
+    // TESS 19-Aug-2024).
     data.insert(
         "960".to_string(),
         BenchmarkData {
-            annual_heating_min: 1.65,
-            annual_heating_max: 2.45,
-            annual_cooling_min: 1.55,
-            annual_cooling_max: 2.78,
-            peak_heating_min: 2.0,
-            peak_heating_max: 8.0,
-            peak_cooling_min: 0.0,
-            peak_cooling_max: 4.0,
-            min_free_float_min: -2.8,
-            min_free_float_max: 6.0,
-            max_free_float_min: 48.9,
-            max_free_float_max: 55.3,
+            annual_heating_min: 2.522,
+            annual_heating_max: 2.86,
+            annual_cooling_min: 0.789,
+            annual_cooling_max: 0.95,
+            peak_heating_min: 2.085,
+            peak_heating_max: 2.3,
+            peak_cooling_min: 1.338,
+            peak_cooling_max: 1.48,
+            min_free_float_min: 4.2,
+            min_free_float_max: 8.0,
+            max_free_float_min: 48.1,
+            max_free_float_max: 53.2,
         },
     );
 
@@ -1314,28 +1324,29 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     // ==================== Special Cases ====================
 
     // Case 960 - Sunspace (2-zone)
-    // Issue #2858: band aligned with the ASHRAE 140 acceptance criteria
-    // documented in `tests/reference_data/zone_balance/case_960_energy_reference.csv`
-    // and the constants `CASE_960_ANNUAL_HEATING_MIN/MAX` etc. above. The
-    // previous raw-Annex-B entry (H=[0,1], C=[8,12]) represented a single-
-    // program envelope and was inconsistent with the inter-program range the
-    // rest of the validator reads; updating so the JSON-loaded and hardcoded
-    // fallback paths agree.
+    // Round 33 provenance correction (2026-10-15): the #2858-widened row
+    // (H [1.65, 2.45] / C [1.55, 2.78]) was itself of unverified origin; the
+    // authoritative inter-program range is the 140-2023 Annex B8
+    // transcription row (Source: Table B8-1..B8-5, Std140_TF_Results.pdf;
+    // H [2.522, 2.86] / C [0.789, 0.95], peaks
+    // [2.085, 2.3] / [1.338, 1.48], ff_ [4.2, 8.0] / [48.1, 53.2]). The
+    // constants CASE_960_* were corrected in the same commit, so the
+    // JSON-loaded and hardcoded fallback paths still agree. Target-only.
     data.insert(
         "960".to_string(),
         BenchmarkData {
-            annual_heating_min: 1.65,
-            annual_heating_max: 2.45,
-            annual_cooling_min: 1.55,
-            annual_cooling_max: 2.78,
-            peak_heating_min: 2.00,
-            peak_heating_max: 8.00,
-            peak_cooling_min: 0.00,
-            peak_cooling_max: 4.00,
-            min_free_float_min: -2.8,
-            min_free_float_max: 6.0,
-            max_free_float_min: 48.9,
-            max_free_float_max: 55.3,
+            annual_heating_min: 2.522,
+            annual_heating_max: 2.86,
+            annual_cooling_min: 0.789,
+            annual_cooling_max: 0.95,
+            peak_heating_min: 2.085,
+            peak_heating_max: 2.3,
+            peak_cooling_min: 1.338,
+            peak_cooling_max: 1.48,
+            min_free_float_min: 4.2,
+            min_free_float_max: 8.0,
+            max_free_float_min: 48.1,
+            max_free_float_max: 53.2,
         },
     );
 
@@ -1876,8 +1887,8 @@ mod tests {
     /// regression, so we assert the Blind band width is at most 1.5× the
     /// Informed band width for cases present in both tables, plus an
     /// absolute 5.0 MWh sanity guard that catches any future oversized
-    /// entry (the legitimate raw Annex B cooling band for Case 960 is
-    /// 4.0 MWh wide; 5.0 is a generous head-room cap).
+    /// entry (the widest legitimate raw Annex B cooling band in the table
+    /// is 4.0 MWh wide; 5.0 is a generous head-room cap).
     #[test]
     fn test_blind_band_not_too_wide_vs_informed_issue_1332() {
         let blind = get_all_benchmark_data_blind();
@@ -1929,13 +1940,14 @@ mod tests {
         }
     }
 
-    /// Issue #1332 AC3 + Issue #2858 AC4: Case 960 satisfies the widened
-    /// inter-program band documented
-    /// in `tests/reference_data/zone_balance/case_960_energy_reference.csv`
-    /// (H ≤ 2.45 / C ≥ 1.55 MWh). The historical raw-Annex-B Case 960
-    /// envelope (H ≤ 1.0, C ≥ 8.0) was inconsistent with the
-    /// issue-#2858 acceptance criteria and the `Case 960` data inserted
-    /// above; this assertion now mirrors that alignment.
+    /// Issue #1332 AC3 + Issue #2858 AC4. PREMISE CORRECTED 2026-10-15
+    /// (round 33 provenance correction): the "#2858 widened inter-program
+    /// band" (H ≤ 2.45 / C ≥ 1.55) was itself of unverified origin — the
+    /// authoritative inter-program range is the 140-2023 Annex B8
+    /// transcription row (H [2.522, 2.86] / C [0.789, 0.95]). The old
+    /// containment assertion would have pinned the corrected row out of its
+    /// own published target, so it now asserts byte-equality with the
+    /// published values (the same binding form used for 800/810).
     ///
     /// Issue #4168: the old AC3 clause here asserted the 800/810 bands sit
     /// inside [4.5, 6.5] MWh — a premise of the synthetic-era fitted bands
@@ -1943,21 +1955,24 @@ mod tests {
     /// the synthetic reference CSV, per the issue). With the bands now the
     /// transcribed Annex B8 inter-program envelope, that containment no
     /// longer describes the reference; the byte-equality test below is the
-    /// binding check for 800/810.
+    /// binding check for 800/810 (and, since the 2026-10-15 round-33
+    /// provenance correction, for 960 as well).
     #[test]
     fn test_blind_ac3_ac4_specific_bands() {
         let data = get_all_benchmark_data_blind();
         // AC4 (Issue #2858): Case 960 widened inter-program band.
         let entry_960 = data.get("960").expect("blind missing Case 960");
-        assert!(
-            entry_960.annual_heating_max <= 2.45,
-            "Case 960: heating_max {} > 2.45 MWh (AC4 violation, issue #2858 band)",
-            entry_960.annual_heating_max,
+        // Round 33 provenance correction: byte-equality with the Annex B8
+        // transcription row (the #2858 containment premise is retired).
+        assert_eq!(
+            (entry_960.annual_heating_min, entry_960.annual_heating_max),
+            (2.522, 2.86),
+            "Case 960: heating band must equal the Annex B8 transcription row"
         );
-        assert!(
-            entry_960.annual_cooling_min >= 1.55,
-            "Case 960: cooling_min {} < 1.55 MWh (AC4 violation, issue #2858 band)",
-            entry_960.annual_cooling_min,
+        assert_eq!(
+            (entry_960.annual_cooling_min, entry_960.annual_cooling_max),
+            (0.789, 0.95),
+            "Case 960: cooling band must equal the Annex B8 transcription row"
         );
     }
 
@@ -1993,11 +2008,12 @@ mod tests {
         fn test_case_960_benchmark_creation() {
             let benchmark = get_case_960_benchmark();
 
-            // Verify reference values match ASHRAE 140-2017
-            assert_eq!(benchmark.annual_heating_ref, 2.05);
-            assert_eq!(benchmark.annual_cooling_ref, 2.165);
-            assert_eq!(benchmark.peak_heating_ref, 5.0);
-            assert_eq!(benchmark.peak_cooling_ref, 2.0);
+            // Verify reference values match the 140-2023 Annex B8
+            // transcription (round 33 provenance correction, doc §47).
+            assert_eq!(benchmark.annual_heating_ref, 2.691);
+            assert_eq!(benchmark.annual_cooling_ref, 0.8695);
+            assert_eq!(benchmark.peak_heating_ref, 2.1925);
+            assert_eq!(benchmark.peak_cooling_ref, 1.409);
 
             // Verify tolerances
             assert_eq!(benchmark.energy_tolerance, 0.15);
@@ -2009,20 +2025,20 @@ mod tests {
             let benchmark = get_case_960_benchmark();
 
             // Test annual heating tolerance (15%)
-            let (pass, pct) = benchmark.validate_annual_heating(2.05);
+            let (pass, pct) = benchmark.validate_annual_heating(2.691);
             assert!(pass);
             assert_eq!(pct, 0.0);
 
-            let (pass, pct) = benchmark.validate_annual_heating(2.05 * 1.15); // Exactly 15% above
+            let (pass, pct) = benchmark.validate_annual_heating(2.691 * 1.15); // Exactly 15% above
             assert!(pass);
             assert!(pct <= 15.01); // Allow small floating point tolerance
 
-            let (pass, pct) = benchmark.validate_annual_heating(2.05 * 0.85); // Exactly 15% below
+            let (pass, pct) = benchmark.validate_annual_heating(2.691 * 0.85); // Exactly 15% below
             assert!(pass);
             assert!(pct <= 15.01); // Allow small floating point tolerance
 
             // Test that values outside tolerance fail
-            let (pass, pct) = benchmark.validate_annual_heating(2.4); // > 15% above
+            let (pass, pct) = benchmark.validate_annual_heating(3.2); // > 15% above
             assert!(!pass);
             assert!(pct > 15.0);
         }
@@ -2032,20 +2048,20 @@ mod tests {
             let benchmark = get_case_960_benchmark();
 
             // Test peak heating tolerance (10%)
-            let (pass, pct) = benchmark.validate_peak_heating(5.0);
+            let (pass, pct) = benchmark.validate_peak_heating(2.1925);
             assert!(pass);
             assert_eq!(pct, 0.0);
 
-            let (pass, pct) = benchmark.validate_peak_heating(5.5); // 5.0 * 1.10
+            let (pass, pct) = benchmark.validate_peak_heating(2.1925 * 1.10);
             assert!(pass);
-            assert!(pct <= 10.0);
+            assert!(pct <= 10.01); // Allow small floating point tolerance
 
-            let (pass, pct) = benchmark.validate_peak_heating(4.5); // 5.0 * 0.90
+            let (pass, pct) = benchmark.validate_peak_heating(2.1925 * 0.90);
             assert!(pass);
             assert!(pct <= 10.0);
 
             // Test that values outside tolerance fail
-            let (pass, pct) = benchmark.validate_peak_heating(5.6); // > 10% above
+            let (pass, pct) = benchmark.validate_peak_heating(2.5); // > 10% above
             assert!(!pass);
             assert!(pct > 10.0);
         }
@@ -2069,15 +2085,16 @@ mod tests {
         fn test_case_960_benchmark_data_conversion() {
             let benchmark_data = get_case_960_benchmark_data();
 
-            // Verify conversion to BenchmarkData format
-            assert_eq!(benchmark_data.annual_heating_min, 1.65);
-            assert_eq!(benchmark_data.annual_heating_max, 2.45);
-            assert_eq!(benchmark_data.annual_cooling_min, 1.55);
-            assert_eq!(benchmark_data.annual_cooling_max, 2.78);
-            assert_eq!(benchmark_data.peak_heating_min, 2.0);
-            assert_eq!(benchmark_data.peak_heating_max, 8.0);
-            assert_eq!(benchmark_data.peak_cooling_min, 0.0);
-            assert_eq!(benchmark_data.peak_cooling_max, 4.0);
+            // Verify conversion to BenchmarkData format (Annex B8
+            // transcription values, round 33 provenance correction)
+            assert_eq!(benchmark_data.annual_heating_min, 2.522);
+            assert_eq!(benchmark_data.annual_heating_max, 2.86);
+            assert_eq!(benchmark_data.annual_cooling_min, 0.789);
+            assert_eq!(benchmark_data.annual_cooling_max, 0.95);
+            assert_eq!(benchmark_data.peak_heating_min, 2.085);
+            assert_eq!(benchmark_data.peak_heating_max, 2.3);
+            assert_eq!(benchmark_data.peak_cooling_min, 1.338);
+            assert_eq!(benchmark_data.peak_cooling_max, 1.48);
         }
     }
 
@@ -2094,7 +2111,7 @@ mod tests {
     /// use fluxion::validation::benchmark::get_case_960_benchmark;
     ///
     /// let benchmark = get_case_960_benchmark();
-    /// let (heating_pass, heating_pct) = benchmark.validate_annual_heating(2.1);
+    /// let (heating_pass, heating_pct) = benchmark.validate_annual_heating(2.6);
     /// assert!(heating_pass); // Should pass within 15% tolerance
     /// ```
     pub fn get_case_960_benchmark() -> Case960Benchmark {
@@ -2118,10 +2135,12 @@ mod tests {
             peak_heating_max: CASE_960_PEAK_HEATING_MAX,
             peak_cooling_min: CASE_960_PEAK_COOLING_MIN,
             peak_cooling_max: CASE_960_PEAK_COOLING_MAX,
-            min_free_float_min: -2.8,
-            min_free_float_max: 6.0,
-            max_free_float_min: 48.9,
-            max_free_float_max: 55.3,
+            // Round 33 provenance correction (2026-10-15): transcription
+            // Table B8-5 960 row (prior ff_ values of unverified origin).
+            min_free_float_min: 4.2,
+            min_free_float_max: 8.0,
+            max_free_float_min: 48.1,
+            max_free_float_max: 53.2,
         }
     }
 }

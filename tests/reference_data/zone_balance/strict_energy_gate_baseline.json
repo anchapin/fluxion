@@ -168,28 +168,28 @@
     },
     "case_960_heating": {
       "published_range_mwh": [
-        1.65,
-        2.45
+        2.522,
+        2.86
       ],
       "band_mwh": [
-        1.742,
-        2.357
+        2.287,
+        3.095
       ],
       "value_mwh": 2.508,
-      "gap_pct_of_mid": 7.37,
-      "status": "known_fail"
+      "gap_pct_of_mid": 0.0,
+      "status": "pass"
     },
     "case_960_cooling": {
       "published_range_mwh": [
-        1.55,
-        2.78
+        0.789,
+        0.95
       ],
       "band_mwh": [
-        1.84,
-        2.49
+        0.739,
+        1.0
       ],
       "value_mwh": 1.037,
-      "gap_pct_of_mid": 37.09,
+      "gap_pct_of_mid": 4.26,
       "status": "known_fail"
     },
     "case_970_heating": {
@@ -572,5 +572,6 @@
   "_doc_round32b": "2026-10-14 loop round 32 (Case 900 reference-row provenance audit, doc \u00a738): the recorded 900 row (heating [1.17,2.04], cooling [2.13,3.67], peaks [1.80,2.40]/[1.60,2.10], 900FF Tmin [-6.4,-1.6] / Tmax [41.8,46.4]) traced to the 1995 BESTEST (NREL/TP-472-6231) reconciliation, not the 140-2023 Annex B8 row (\u00a736: unverified vs the transcription). Corrected target-only to the published values: heating [1.379,1.814], cooling [2.267,2.714], peaks [2.443,2.778]/[2.556,3.376], 900FF Tmin [0.6,2.2], Tmax [43.3,46.0]. Engine untouched; measured values unchanged (900 H 1.680 / C 1.684 MWh, 900FF Tmin -6.71 / Tmax 41.96 \u00b0C). Status/gap changes: case_900_heating stays PASS (gap 0.00; the published band still brackets the engine \u2014 the \u00a728 'no heating defect on 900' attribution now holds against the true target); case_900_cooling gap 26.93 -> 17.39 % of mid (known_fail; narrows \u2014 the published cooling band sits higher); ff_900ff_min gap 67.75 -> 579.29 % of mid (known_fail; the published 900FF Tmin band is positive and the engine sits 8.1 K below its midpoint \u2014 the dominant cold free-float re-frame, consistent with the \u00a723-27 gauge decomposition); ff_900ff_max PASS -> KNOWN-FAIL (gap 0.00 -> 6.02). Checker expected 9 PASS / 33 KNOWN-FAIL / 0 REGRESSION on the branch (600 correction net zero: heating known_fail -> PASS replaces ff_900ff_max PASS -> known_fail; but that PR is separate, so this PR alone moves 10/32/0 -> 9/33/0).",
   "_doc_round33": "Round 33 (2026-10-14): Case 910 row corrected to the 140-2023 Annex B8 published values (PR ref-row-910); target-only, measured values unchanged from round 32. Case 920 row corrected to the 140-2023 Annex B8 published values (PR ref-row-920); target-only. Case 930 row corrected to the 140-2023 Annex B8 published values (PR ref-row-930); target-only. Case 630 row corrected to the 140-2023 Annex B8 published values (PR ref-row-630); target-only. Case 650/650FF row corrected to the 140-2023 Annex B8 published values (PR ref-row-650); target-only. Case 950/950FF row corrected to the 140-2023 Annex B8 published values (PR ref-row-950); target-only.",
   "_doc_round33b": "Round 33 correction (2026-10-15, branch fix/ref-row-950-transcription): #4421's 950 cooling published_range [3.703, 4.265] had been transcribed from stale round notes; re-transcribed directly from annex_b8_section7_statistics.json (annual_sensible_cooling_mwh 950 = [0.586, 0.707]). Band recomputed as midpoint +/- 15%; measured 0.654 MWh is inside the band, so case_950_cooling re-frames known_fail -> pass. No measured value changed; nothing tuned.",
-  "_doc_round33c": "Round 33 verification sweep (2026-10-15, branch fix/sweep-900ff-650ff-provenance): two pure-provenance residuals from the round-32/33 row PRs, found by re-reading every merged row against annex_b8_section7_statistics.json. (1) ff_650ff_min/max gap_pct_of_mid held gaps computed against the PRE-#4420 band (37.86/10.63) instead of the corrected band (41.04/15.09); values and statuses unchanged (the checker had tolerated the stale arithmetic because the correct gaps are larger). (2) the dedicated 900FF BenchmarkData rows in benchmark.rs (both maps) still carried the 1995 BESTEST ff values ([-6.4,-1.6]/[41.8,46.4]) that #4414 removed from the Case 900 row and FF_900_REF; replaced with the transcription Table B8-5 row ([0.6,2.2]/[43.3,46.0]), the same values FF_900_REF already carries. The free_floating.rs case_650ff mod constants (display-only, warn-only assertions) were also still pre-#4420 and are corrected. Nothing tuned; no measured value changed."
+  "_doc_round33c": "Round 33 verification sweep (2026-10-15, branch fix/sweep-900ff-650ff-provenance): two pure-provenance residuals from the round-32/33 row PRs, found by re-reading every merged row against annex_b8_section7_statistics.json. (1) ff_650ff_min/max gap_pct_of_mid held gaps computed against the PRE-#4420 band (37.86/10.63) instead of the corrected band (41.04/15.09); values and statuses unchanged (the checker had tolerated the stale arithmetic because the correct gaps are larger). (2) the dedicated 900FF BenchmarkData rows in benchmark.rs (both maps) still carried the 1995 BESTEST ff values ([-6.4,-1.6]/[41.8,46.4]) that #4414 removed from the Case 900 row and FF_900_REF; replaced with the transcription Table B8-5 row ([0.6,2.2]/[43.3,46.0]), the same values FF_900_REF already carries. The free_floating.rs case_650ff mod constants (display-only, warn-only assertions) were also still pre-#4420 and are corrected. Nothing tuned; no measured value changed.",
+  "_doc_round33d": "Round 33 (2026-10-15, PR #4424): Case 960 reference row corrected to the 140-2023 Annex B8 transcription (prior row was the issue-#2858 widened synthetic-era band of unverified origin: H [1.65,2.45], C [1.55,2.78] -> published H [2.522,2.86], C [0.789,0.95]). Target-only; measured 2.508/1.037 MWh bit-identical. case_960_heating RE-ENTERS its true +/-15% band [2.287,3.095]: known_fail -> pass (gap 0). case_960_cooling gap 37.09 -> 4.26 % of mid (checker convention: distance beyond the band edge, % of mid; still known_fail, the 900-family cooling-chain gap). Nothing tuned."
 }
