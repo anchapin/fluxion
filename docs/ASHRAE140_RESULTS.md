@@ -2,6 +2,8 @@
 
 *Generated: 2026-09-26 17:16 UTC*
 
+> **Snapshot note (2026-10-15):** this document is a stored run, not the live gate. The current strict ±15% annual-energy gate at the develop tip reads **9 PASS / 33 KNOWN-FAIL / 0 REGRESSION** (`scripts/check_strict_energy_gate_regression.py` against `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`, verified at `6c18425e`).
+
 ## Summary
 
 | Metric | Value |
