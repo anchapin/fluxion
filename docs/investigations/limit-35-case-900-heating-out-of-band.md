@@ -2743,3 +2743,37 @@ Engine untouched; measured values bit-identical to develop (repro run
 Checker 8 PASS / 34 KNOWN-FAIL / 0 REGRESSION (net +1 PASS / −1 KNOWN-FAIL on
 this PR; count 9/33 after this PR for the first time — matching the number
 §37/§38 misattributed to the round-32 tip).
+## §43 — Round 33: Case 650/650FF reference-row provenance correction to the 140-2023 Annex B8 published values (2026-10-14)
+
+The §36 queue's seventh row (600-family, carries the 650FF free-float cohort).
+The recorded Case 650 row (cooling [4.82, 7.06], peak cooling [1.90, 2.50];
+heating degenerate [0, 0]) and 650FF ff_ row (Tmin [-23.0, -21.0], Tmax
+[63.2, 73.5]) entered at issue #54 (`b0bd4119`) and were carried into the
+blind map by #1272 (`1aa3cc59`) with no cited source. The ff_ row matches the
+1995 BESTEST reconciliation, not the transcription Table B8-5 row (the same
+round-32 Case 900 signature). Corrected target-only to the transcription
+(`data/reference/ashrae140/annex_b8_section7_statistics.json`):
+650 cooling [4.186, 4.945] (mean 4.5655), peak cooling [5.045, 6.29] kW,
+heating stays degenerate [0, 0] (the published row is 0 in both); 650FF Tmin
+[-17.8, -16.7] °C, Tmax [61.1, 66.8] °C.
+
+Target-only across all duplicated copies: `benchmark.rs` (both maps: the 650
+rows + dated comments, the 650FF ff_ rows + dated comments),
+`CASE_650_REF` and `FF_650_REF` (`zone_balance_eplus_isolation.rs`),
+`CASE_650` (`ashrae_140_case_600_series.rs`), the 650FF tuple in
+`ashrae_140_free_floating.rs`, and the strict-gate baseline (`_doc_round33`
+extended). Not moved: the `energyplus_comparison_tests.rs` fixture
+(round-32 precedent), other queued rows.
+
+Engine untouched; measured values bit-identical to develop (repro run
+2026-10-14: 650 C 3.498 MWh; 650FF Tmin −24.33 / Tmax 54.30 °C). Status
+changes:
+
+| metric | old published → new published | old gap → new gap (% of mid) | status |
+|---|---|---|---|
+| case_650_cooling | [4.82, 7.06] → [4.186, 4.945] | 26.11 → 8.39 | known_fail (narrowed) |
+| ff_650ff_min | [-23.0, -21.0] → [-17.8, -16.7] | 10.59 → 37.86 | known_fail (widened — published Tmin is ~5 K warmer; the night-vent case's cold bias is real and now honestly framed) |
+| ff_650ff_max | [63.2, 73.5] → [61.1, 66.8] | 20.56 → 10.63 | known_fail (narrowed) |
+
+Checker 9 PASS / 33 KNOWN-FAIL / 0 REGRESSION (unchanged — no status flips;
+the 650FF max known-fail narrows but does not close: 54.30 vs lower bound 61.1).

@@ -109,20 +109,22 @@ const CASE_640: CaseReference = CaseReference {
     max_free_float_max: 72.8,
 };
 
+// Round 33 provenance correction (2026-10-14): published 140-2023 Annex B8 B8-1..B8-4
+// values (see benchmark.rs; prior values were issue #54's, of unverified origin).
 const CASE_650: CaseReference = CaseReference {
     case_id: "650",
-    annual_heating_min: 0.0,
-    annual_heating_max: 0.0,
-    annual_cooling_min: 4.82,
-    annual_cooling_max: 7.06,
-    peak_heating_min: 0.0,
-    peak_heating_max: 0.0,
-    peak_cooling_min: 1.90,
-    peak_cooling_max: 2.50,
-    min_free_float_min: -23.0,
-    min_free_float_max: -21.0,
-    max_free_float_min: 58.8,
-    max_free_float_max: 67.5,
+    annual_heating_min: 0.00,
+    annual_heating_max: 0.00,
+    annual_cooling_min: 4.186,
+    annual_cooling_max: 4.945,
+    peak_heating_min: 0.00,
+    peak_heating_max: 0.00,
+    peak_cooling_min: 5.045,
+    peak_cooling_max: 6.29,
+    min_free_float_min: -17.8,
+    min_free_float_max: -16.7,
+    max_free_float_min: 61.1,
+    max_free_float_max: 66.8,
 };
 
 const CASE_600FF: CaseReference = CaseReference {

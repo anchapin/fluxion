@@ -1354,16 +1354,19 @@ const CASE_640_REF: EnergyReference = EnergyReference {
 };
 // Case 650 (night ventilation): heating published envelope is degenerate
 // [0.00, 0.00] MWh — same handling as Case 950 above.
+// Round 33 provenance correction: published ASHRAE 140-2023 Annex B8 values
+// (transcription data/reference/ashrae140/annex_b8_section7_statistics.json);
+// the prior row entered at #54/#1272 with no cited source.
 const CASE_650_REF: EnergyReference = EnergyReference {
     case_id: "650",
     annual_heating_min_mwh: 0.00,
     annual_heating_max_mwh: 0.00,
-    annual_cooling_min_mwh: 4.82,
-    annual_cooling_max_mwh: 7.06,
+    annual_cooling_min_mwh: 4.186,
+    annual_cooling_max_mwh: 4.945,
     peak_heating_min_kw: 0.00,
     peak_heating_max_kw: 0.00,
-    peak_cooling_min_kw: 1.90,
-    peak_cooling_max_kw: 2.50,
+    peak_cooling_min_kw: 5.045,
+    peak_cooling_max_kw: 6.29,
 };
 // Round 33 provenance correction: published ASHRAE 140-2023 Annex B8 values
 // (transcription data/reference/ashrae140/annex_b8_section7_statistics.json);
@@ -1473,10 +1476,12 @@ const FF_600_REF: FreeFloatReference = FreeFloatReference {
     min_band: (-13.8, -9.9),
     max_band: (62.4, 68.4),
 };
+// Round 33 provenance correction: published 140-2023 Annex B8 Table B8-5
+// values (prior -23.0..-21.0 / 63.2..73.5 were of unverified origin).
 const FF_650_REF: FreeFloatReference = FreeFloatReference {
     case_id: "650FF",
-    min_band: (-23.0, -21.0),
-    max_band: (63.2, 73.5),
+    min_band: (-17.8, -16.7),
+    max_band: (61.1, 66.8),
 };
 const FF_900_REF: FreeFloatReference = FreeFloatReference {
     case_id: "900FF",
