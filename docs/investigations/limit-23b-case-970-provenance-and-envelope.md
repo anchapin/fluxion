@@ -200,3 +200,19 @@ band, C = 4.301 vs [4.275, 5.784] — is now met). The remaining rows
 genuinely fail (LIMIT-05 inversion diagnostics lock in the inverted
 state; solar01/02, free01–03, blind-mode 960, 920 strict, 970 band, 960
 comprehensive) and stay quarantined with real conditions.
+
+## Round 34 (2026-10-15) — Finding 1 label sweep, no numbers moved
+
+Finding 1 was recorded in round 20 but the code and doc surfaces still carried
+the false "canonical ASHRAE 140-2017 §B6.7 / 140-2023 Annex B8-3 inter-program
+envelope" attribution. This round relabels those surfaces to "internal target
+band of unverified origin (Finding 1)" without changing any band value, gap, or
+asserted midpoint: `Case970Reference::load_case_970_reference_data` docstring,
+the §B6.7 comments/assert-messages in `ashrae_140_multi_zone.rs` tests, the
+`ashrae_140_case_970_validation.rs` header and `reference` module doc, the
+Case 970 sections of `docs/ASHRAE140_MULTI_ZONE_RESULTS.md`, and a dated
+`_doc_round34` note on the strict baseline's Case 970 entries (field name kept
+for checker compatibility). Replacement with a Case-900-envelope expectation
+was considered and rejected: it would change the target the strict gate
+regresses against and read as tuning. Round-20's decision — keep the band as
+an internal regression target, values unchanged — stands.

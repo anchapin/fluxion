@@ -19,7 +19,9 @@
 detail):* fluxion commit `dad85ec` (Case 970 reference + MultiZoneNetwork e2e
 validation, #1446/#1467), with prior `4fb03a4` (Case 960 sunspace coupling fix,
 #1456/#1466) and `84c7c58` (real-physics Case 960 validator, #1407); ASHRAE
-140 reference set post-#1407 (1.65-2.45 MWh Case 960, 10.54-14.26 MWh Case 970);
+140 reference set post-#1407 (Case 960 now the Annex B8 transcription band
+per round 33; Case 970 the internal target of unverified origin, §LIMIT-23
+Finding 1 — 10.54-14.26 MWh);
 Case 960 / Case 970 reference CSVs at
 `tests/reference_data/zone_balance/case_960_energy_reference.csv` and
 `tests/reference_data/zone_balance/case_970_energy_reference.csv`.
@@ -29,7 +31,9 @@ Case 960 / Case 970 reference CSVs at
 This document presents the validation of Fluxion's multi-zone solver
 against ASHRAE 140 Case 960 (two-zone sunspace building) and Case 970
 (5-zone multi-zone cross-coupling), as specified in
-ASHRAE 140-2017 §6.4 / §B6.7 (and ASHRAE 140-2023 Annex B8 / B8-3).
+ASHRAE 140-2023 Annex B8 (Case 960 — authoritative transcription); the Case
+970 bands are internal targets of unverified origin (§LIMIT-23 Finding 1),
+not a published envelope.
 The Case 960 validator now exercises the full 8760-step physics
 simulation through `ASHRAE140Validator::validate_case_960` and
 compares against the canonical inter-program envelope published in
@@ -131,8 +135,10 @@ high enough to drive back-zone cooling.
 
 ## Case 970 — Multi-Zone Cross-Coupling (Issue #1446)
 
-Case 970 is the 5-zone multi-zone cross-coupling building specified in
-ASHRAE 140-2017 §B6.7 / 140-2023 Annex B8-3: 8 m × 6 m × 2.7 m
+Case 970 is the 5-zone multi-zone cross-coupling building recorded at
+Issue #1446 under an "ASHRAE 140-2017 §B6.7 / 140-2023 Annex B8-3"
+attribution that is of UNVERIFIED ORIGIN (round-20 Finding 1, §LIMIT-23;
+no Case 970 exists in either published source): 8 m × 6 m × 2.7 m
 high-mass concrete envelope divided into 5 zones by interior
 partitions (1 west core zone + 4 east-strip zones, 7 common walls,
 200 mm concrete interior partitions). It exercises
@@ -141,9 +147,14 @@ partitions (1 west core zone + 4 east-strip zones, 7 common walls,
 
 ### Case 970 Reference Data
 
-The reference values below come from the ASHRAE 140-2017 §B6.7
-inter-program envelope, validated across EnergyPlus 25.2.0, TRNSYS,
-ESP-r, DOE-2, BSIMAC, CSE, and DeST. They are emitted into
+The reference values below are the Case 970 INTERNAL TARGET BAND OF
+UNVERIFIED ORIGIN recorded at Issue #1446 (round-20 Finding 1,
+§LIMIT-23 / docs/investigations/limit-23b-case-970-provenance-and-envelope.md):
+no Case 970 exists in ASHRAE 140-2017(a) or in the 140-2023 Annex B8
+transcription, and the historical "§B6.7 inter-program envelope validated
+across EnergyPlus 25.2.0, TRNSYS, ESP-r, DOE-2, BSIMAC, CSE, and DeST"
+attribution is false. The band is kept as an internal regression target,
+values unchanged. They are emitted into
 `tests/reference_data/zone_balance/case_970_energy_reference.csv`
 by `tests/reference_data/zone_balance/generate_case_970_energy.py`
 and re-exported through `validation::ashrae_140_multi_zone::
@@ -157,7 +168,9 @@ Case970Reference::load_case_970_reference_data`.
 | Peak Cooling (kW)     |  2.50         |  5.50         |  4.000   |
 
 The ±15% / ±10% acceptance gates from issue #1368 apply on top of
-this envelope. The annual heating PASS band is therefore
+this internal target (a diagnostic reference, not a published acceptance
+envelope — Annex B8 carries the standard's own "not acceptance criteria"
+note). The annual heating PASS band is therefore
 [10.540, 14.260] MWh and the annual cooling PASS band is
 [7.391, 9.999] MWh.
 
@@ -204,7 +217,7 @@ building spec — closing the "loom-tested only" gap from `#1384`.
 | `MultiZoneNetwork` 8760-hour e2e conservation (Σ q_iz < 1e-6 W) | ✅ |
 | `cargo test -p fluxion --test all_tests multi_zone_n_zone_network::` (5-zone round-trip) | ✅ (6 tests pass, regression-free) |
 | `Case960` regression: `case_920/950/960_energy_reference.csv` unchanged | ✅ (regression test `test_case_920_950_960_reference_files_unchanged`) |
-| Engine annual heating output inside [10.54, 14.26] MWh band | ⚠️ pending — see "Open gap" below |
+| Engine annual heating output inside [10.54, 14.26] MWh internal-target band (unverified origin) | ⚠️ pending — see "Open gap" below |
 
 ### Open gap (deferred)
 
@@ -297,8 +310,9 @@ cargo run -p fluxion --bin run_multi_zone_validation -- case960
       (`case_970_five_zone_cross_coupling()`, 8 m × 6 m × 2.7 m
       high-mass, 5 zones, 7 common walls).
 - [x] `tests/reference_data/zone_balance/case_970_energy_reference.csv`
-      regenerated from ASHRAE 140-2017 §B6.7 / 140-2023 Annex B8-3
-      reference bands (heating 10.54–14.26 MWh, cooling 7.39–10.00 MWh).
+      regenerated from the internal target bands of unverified origin
+      (heating 10.54–14.26 MWh, cooling 7.39–10.00 MWh; §LIMIT-23
+      Finding 1).
 - [x] Annual Case 970 heating in [10.54, 14.26] MWh AND cooling in
       [7.39, 10.00] MWh — band asserted by
       `test_case_970_annual_energy_band`.
@@ -326,8 +340,9 @@ cargo run -p fluxion --bin run_multi_zone_validation -- case960
 - **Reference data**:
   - `tests/reference_data/zone_balance/case_970_energy_reference.csv`
   - `tests/reference_data/zone_balance/generate_case_970_energy.py`
-- **Standards**: ASHRAE 140-2017 §6.4 / §B6.7,
-  ASHRAE 140-2023 Annex B8 / B8-3
+- **Standards**: ASHRAE 140-2017 §6.4 (Case 970's §B6.7 attribution is
+  of unverified origin, §LIMIT-23 Finding 1);
+  ASHRAE 140-2023 Annex B8 (authoritative for Case 960)
 - **Prior issues**: #1292, #1331, #1368, #1383, #1384, #1396, #1399,
   #1405, #1407, #1446
 
@@ -339,8 +354,8 @@ cargo run -p fluxion --bin run_multi_zone_validation -- case960
   high-mass, 5 zones, 7 common walls, 200 mm concrete interior
   partitions).
 - Added `tests/reference_data/zone_balance/case_970_energy_reference.csv`
-  with the canonical ASHRAE 140-2017 §B6.7 bands (heating 10.54–14.26
-  MWh, cooling 7.39–10.00 MWh) and
+  with the internal target bands of unverified origin (heating
+  10.54–14.26 MWh, cooling 7.39–10.00 MWh; relabelled round 34) and
   `tests/reference_data/zone_balance/generate_case_970_energy.py` to
   regenerate it.
 - `Case970Reference::load_case_970_reference_data` now sources its
@@ -387,7 +402,7 @@ flagged in issue #1443.
 | Case 960 reference source | `tests/reference_data/zone_balance/case_960_energy_reference.csv` (1.65-2.45 MWh heating, 1.55-2.78 MWh cooling, 2.0-8.0 kW peak heating, 0.0-4.0 kW peak cooling); ±15% / ±10% accept bands applied per #1368 |
 | Case 970 reference source | `tests/reference_data/zone_balance/case_970_energy_reference.csv` (10.54-14.26 MWh heating, 7.39-10.00 MWh cooling, 4.0-8.0 kW peak heating, 2.5-5.5 kW peak cooling); ±15% / ±10% accept bands applied per #1368 |
 | Validator path | `MultiZoneValidator::validate_case_960` rewritten in #1407 to delegate to `ASHRAE140Validator::validate_case_960` (real 8760-step physics); Case 970 via `tests/ashrae_140_case_970_validation.rs` (7 tests pass) |
-| Reference data version | ASHRAE 140-2017 §6.4 / §B6.7 / ASHRAE 140-2023 Annex B8 / B8-3 inter-program envelope, validated across EnergyPlus 25.2.0, TRNSYS, ESP-r, DOE-2, BSIMAC, CSE, DeST |
+| Reference data version | Case 960: ASHRAE 140-2023 Annex B8 transcription (authoritative). Case 970: internal target band of unverified origin (§LIMIT-23 Finding 1) |
 | IDF / E+ version | EnergyPlus 25.2.0 (per `tests/reference_data/zone_balance/PROVENANCE.md`) |
 | Weather file | `assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw` |
 
