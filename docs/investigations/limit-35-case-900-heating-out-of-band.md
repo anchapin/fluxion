@@ -2874,3 +2874,73 @@ status changes except as noted):
 
 Checker unchanged from §45's 8 PASS / 34 KNOWN-FAIL / 0 REGRESSION (full
 battery re-run on the branch, 2026-10-15).
+## §47 — Round 33: Case 960 reference-row provenance correction (2026-10-15)
+
+The §36 queue's ninth row. The recorded 960 row (H [1.65, 2.45], C [1.55,
+2.78], peaks [2.0, 8.0] / [0.0, 4.0], ff_ [-2.8, 6.0] / [48.9, 55.3]) is the
+issue-#2858 widened synthetic-era band: its own comment claimed a "wide
+inter-program spread" for the 2.0–8.0 kW peak-heating band, but the
+transcription carries no such spread — the row entered at #2858 to align with
+the synthetic-era `case_960_energy_reference.csv` acceptance, not with Annex
+B8. Re-transcribed directly from
+`annex_b8_section7_statistics.json`: **H [2.522, 2.86], C [0.789, 0.95],
+peaks [2.085, 2.3] / [1.338, 1.48] kW, ff Tmin [4.2, 8.0] / Tmax
+[48.1, 53.2] °C** (the transcription has a dedicated Table B8-5 960 row).
+
+Copies corrected: `benchmark.rs` (CASE_960_* constants + both maps +
+`get_case_960_benchmark_data` ff fields + the `validate_annual_heating(2.1)`
+doctest example → 2.6), `CASE_960_REF`, strict baseline
+(`case_960_heating`/`case_960_cooling` re-recorded, `_doc_round33d`), and the
+`test_blind_ac3_ac4_specific_bands` premise: the #2858 containment assertion
+(H ≤ 2.45 / C ≥ 1.55) would have pinned the corrected row outside its own
+published target, so it now asserts byte-equality with the transcription row
+(the same binding form the #4168 correction introduced for 800/810).
+
+Engine untouched; measured 960 H 2.508 / C 1.037 MWh bit-identical (full
+strict battery re-run on the branch, 2026-10-15). Status changes:
+
+| metric | old published → new published | old gap → new gap (% of mid) | status |
+|---|---|---|---|
+| case_960_heating | [1.65, 2.45] → [2.522, 2.86] | 7.37 → 0.00 | **known_fail → PASS** (measured 2.508 re-enters the true ±15 % band [2.287, 3.095]) |
+| case_960_cooling | [1.55, 2.78] → [0.789, 0.95] | 37.09 → 4.26 | known_fail (narrows; the 900-family cooling-chain gap) |
+
+Checker 8/34/0 → **9 PASS / 33 KNOWN-FAIL / 0 REGRESSION** on this branch.
+§LIMIT-14's round-24 premise ("heating LEAVES its band high") is corrected by
+this row: against the true target, the round-24 spec-split engine result is
+IN band; recorded, not tuned.
+## §48 — Round 33: 900FF cold-bias decomposition + the "frozen mass node" premise retired (2026-10-15)
+
+Item 4 of the round-33 brief. Two parts, both diagnostic-only (no engine
+change).
+
+**§48.1 Cold-bias decomposition (harness `zz_r33_900ff_decomp.rs`, kept in
+the round-33 loop artifacts, not the repo).** Single-term ablations on the
+strict-gate 900FF free-float year (Golden-NREL EPW), running the production
+`from_spec_with_selector` 9R4C path with HVAC pinned off. Findings against
+the base Tmin/Tmax (doc §42/§44 context): zeroing infiltration h_ve removes
+most of the cold bias; rewriting horizontal infrared to blackbody(T_amb)
+removes the rest; warming the ground boundary warms the floor node. The bias
+is therefore *boundary-condition-physically plausible*: the ASHRAE 140
+weather inputs (infiltration on ambient ΔT, sky depression on clear winter
+nights, cold ground) drive the free-float minimum — no engine term was found
+that manufactures cold out of nothing. The transcription band Tmin [0.6,
+2.2] °C remains a multi-program envelope whose cold edge comes from programs
+with different infiltration/sky treatments; §LIMIT-35 records the gap, and
+the ablation says the next fidelity lever is input provenance
+(infiltration/sky model per-program assumptions), not a solver defect.
+
+**§48.2 "Frozen 9R4C mass node at 20.000 °C" — premise RETIRED.** The
+round-33 draft hypothesis (§44 candidate) that a 9R4C mass node sits frozen
+at its 20 °C initialization all year does NOT reproduce on the current tip.
+An instrumented year-long probe (every step, all zones, tolerance 1e-6)
+shows all four live nodes — wall, roof, floor, internal — moving with
+correct seasonal and diurnal amplitude (zone 0, sampled: wall 19.2 → −2.4 →
+23.0 → 9.3 °C across the year; internal node tracks the envelope within
+≈1 K; zero FROZEN hits across 8760 steps). The 20.000 °C value the harness
+printed is `model.mass.air_temperatures`, the **5R1C mirror state** that
+issue #872 deliberately leaves unwritten on the 9R4C path ("the 5R1C model
+owns mass_temperatures"; step_9r4c.rs header comment) — an inert diagnostic
+surface, not a live mass node. No genuine defect exists behind the
+observation; recorded so the hypothesis is not re-raised.
+
+Engine untouched in this section; no measured values changed.

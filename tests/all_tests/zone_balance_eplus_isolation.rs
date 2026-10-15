@@ -817,16 +817,22 @@ const CASE_950_REF: EnergyReference = EnergyReference {
     peak_cooling_min_kw: 2.054,
     peak_cooling_max_kw: 2.388,
 };
+// Round 33 provenance correction (2026-10-15): the prior row (H [1.65, 2.45],
+// C [1.55, 2.78], peaks [2.00, 8.00] / [0.00, 4.00]) was the issue-#2858
+// widened synthetic-era band of unverified origin; replaced with the 140-2023
+// Annex B8 transcription values (annex_b8_section7_statistics.json,
+// Tables B8-1..B8-4). Target-only: engine unchanged; measured 960 H 2.508
+// MWh re-enters the true ±15% band [2.287, 3.095].
 const CASE_960_REF: EnergyReference = EnergyReference {
     case_id: "960",
-    annual_heating_min_mwh: 1.65,
-    annual_heating_max_mwh: 2.45,
-    annual_cooling_min_mwh: 1.55,
-    annual_cooling_max_mwh: 2.78,
-    peak_heating_min_kw: 2.00,
-    peak_heating_max_kw: 8.00,
-    peak_cooling_min_kw: 0.00,
-    peak_cooling_max_kw: 4.00,
+    annual_heating_min_mwh: 2.522,
+    annual_heating_max_mwh: 2.86,
+    annual_cooling_min_mwh: 0.789,
+    annual_cooling_max_mwh: 0.95,
+    peak_heating_min_kw: 2.085,
+    peak_heating_max_kw: 2.3,
+    peak_cooling_min_kw: 1.338,
+    peak_cooling_max_kw: 1.48,
 };
 const CASE_970_REF: EnergyReference = EnergyReference {
     case_id: "970",
