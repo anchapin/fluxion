@@ -2,7 +2,7 @@
 
 *Generated: 2026-09-26 17:16 UTC*
 
-> **Snapshot note (2026-10-15):** this document is a stored run, not the live gate. The current strict ±15% annual-energy gate at the develop tip reads **9 PASS / 33 KNOWN-FAIL / 0 REGRESSION** (`scripts/check_strict_energy_gate_regression.py` against `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`, verified at `6c18425e`).
+> **Snapshot note (2026-10-15):** this document is a stored run, not the live gate. The current strict ±15% annual-energy gate at the develop tip reads **9 PASS / 33 KNOWN-FAIL / 0 REGRESSION** (`scripts/check_strict_energy_gate_regression.py` against `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`, verified at `6c18425e`). In particular, the Case 195 row below (annual cooling 5.16 kWh) is superseded: #4169's round-36 reconciliation traced both entry points on the tip and they agree — signed-`step_physics` and internal-counter metering are bit-identical (Case 195 C = 682.533 kWh on Golden-NREL, matching the strict baseline's 0.683 MWh `pass`), validator-style hourly setpoint resolution changes nothing, and the Stapleton-vs-Golden EPW choice moves Case 195 by only ~12 % (C 767.6 vs 682.5 kWh). The 5.16 kWh figure is a pre-round-26 engine state, not a live harness divergence.
 
 ## Summary
 
