@@ -258,14 +258,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         self.0.hvac.thermal_model_type == ThermalModelType::SixRTwoC
     }
 
-    /// Check if this is an 8R3C thermal model (Phase 20 evaluation).
-    pub fn is_8r3c_model(&self) -> bool {
-        self.0.hvac.thermal_model_type == ThermalModelType::EightRThreeC
-    }
-
     /// Check if this is a 9R4C thermal model (Phase 6, Issue #715).
+    ///
+    /// Issue #4175 — this predicate is now a pure function of the dispatch
+    /// selector (`hvac.thermal_selector.zone_solver == NineRFourC`), not of
+    /// the parallel `hvac.thermal_model_type` state flag. The two were
+    /// written in lockstep by `from_spec_with_selector` but only by
+    /// convention; the selector is the single dispatch authority. The flag
+    /// remains maintained in lockstep (it still carries the 6R2C/8R3C
+    /// experimental states that have no selector variant) and is read by
+    /// the invariant checker and the h_interior path selection, but it no
+    /// longer decides dispatch.
     pub fn is_nine_r4c_model(&self) -> bool {
-        self.0.hvac.thermal_model_type == ThermalModelType::NineRFourC
+        self.0.hvac.thermal_selector.zone_solver
+            == crate::sim::thermal_selector::ZoneSolverKind::NineRFourC
     }
 
     /// Issue #3305 — read-only view of the zone solver the dispatcher
@@ -283,6 +289,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// with a single thermal mass node.
     pub fn reset_to_5r1c(&mut self) {
         self.0.hvac.thermal_model_type = ThermalModelType::FiveROneC;
+        // Issue #4175: keep the selector in lockstep — a 9R4C-selected
+        // model reset to 5R1C must dispatch 5R1C again. A `Gauge` selector
+        // is left untouched (reset never opted a model into gauge before).
+        if self.0.hvac.thermal_selector.zone_solver
+            == crate::sim::thermal_selector::ZoneSolverKind::NineRFourC
+        {
+            self.0.hvac.thermal_selector.zone_solver =
+                crate::sim::thermal_selector::ZoneSolverKind::FiveROneC;
+        }
     }
 
     /// Enable 9R4C thermal model for high-mass buildings (Phase 6).
@@ -293,13 +308,28 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// This method should be called during model construction for high-mass buildings.
     /// The per-surface conductances and MultiNodeSolver instances must already be
     /// initialized in `from_spec()` via the `is_9r4c_model` path.
+    /// Issue #4175 — writes BOTH the state flag and the dispatch selector,
+    /// so the selector remains the single dispatch authority (the flag is
+    /// kept in lockstep for the invariant checker and h_interior path).
     pub fn enable_9r4c_model(&mut self) {
         self.0.hvac.thermal_model_type = ThermalModelType::NineRFourC;
+        self.0.hvac.thermal_selector.zone_solver =
+            crate::sim::thermal_selector::ZoneSolverKind::NineRFourC;
     }
 
     /// Disable 6R2C model and revert to 5R1C with single thermal mass node.
+    ///
+    /// Issue #4175: also demotes a `NineRFourC` selector back to `FiveROneC`
+    /// so dispatch follows the reset (the selector is the single dispatch
+    /// authority). A `Gauge` selector is left untouched.
     pub fn disable_6r2c(&mut self) {
         self.0.hvac.thermal_model_type = ThermalModelType::FiveROneC;
+        if self.0.hvac.thermal_selector.zone_solver
+            == crate::sim::thermal_selector::ZoneSolverKind::NineRFourC
+        {
+            self.0.hvac.thermal_selector.zone_solver =
+                crate::sim::thermal_selector::ZoneSolverKind::FiveROneC;
+        }
     }
 
     /// Enable CTF (Conduction Transfer Function) solver for high-mass wall conduction.
