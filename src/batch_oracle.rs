@@ -201,6 +201,30 @@ impl BatchOracle {
         Ok(())
     }
 
+    /// Canonical default base model for `BatchOracle` default constructors
+    /// (Issue #4343).
+    ///
+    /// Both FFI default constructors must build the SAME base model or the
+    /// cross-language contract test can never pass on fresh surfaces. The
+    /// documented intent (the NAPI constructor's doc comment) is the ASHRAE
+    /// 600 baseline via the default selector; the Python `#[new]` previously
+    /// built a bare `ThermalModel::new(10)` template instead, which is what
+    /// produced the ~4-orders-of-magnitude Python/Node divergence measured
+    /// in #4343. This constructor is the single shared definition.
+    pub fn default_model() -> Result<ThermalModel<VectorField>, crate::api::error::FluxionError> {
+        let spec = crate::validation::ashrae_140_cases::CaseBuilder::case_600_baseline();
+        ThermalModel::from_spec_with_selector(
+            &spec,
+            &crate::sim::thermal_selector::ThermalSelector::default(),
+        )
+        .map_err(|e| {
+            crate::api::error::FluxionError::Simulation(
+                format!("default base model (ASHRAE 600 baseline) failed to initialize: {e}"),
+                None,
+            )
+        })
+    }
+
     /// Creates a new BatchOracle from a base thermal model.
     ///
     /// Issue #3635: construction of the surrogate manager is fallible
@@ -760,5 +784,34 @@ mod tests {
                 "from_model must map SurrogateManager failures to FluxionError::Surrogate, got: {other:?}"
             ),
         }
+    }
+}
+
+#[cfg(test)]
+mod default_model_tests_4343 {
+    use super::BatchOracle;
+
+    /// Issue #4343: the default base model must be identical to the model the
+    /// NAPI constructor builds inline (ASHRAE 600 baseline via default
+    /// selector). Before the fix the Python `#[new]` built a bare
+    /// `ThermalModel::new(10)` template and the two surfaces diverged ~4
+    /// orders of magnitude on identical parameters. The contract here is
+    /// bit-equality of the default model's population evaluation against a
+    /// model built the documented way.
+    #[test]
+    fn default_model_matches_case_600_via_default_selector() {
+        let mut via_default = BatchOracle::default_model().expect("default model builds");
+        let mut via_doc_path = crate::sim::engine::ThermalModel::from_spec_with_selector(
+            &crate::validation::ashrae_140_cases::CaseBuilder::case_600_baseline(),
+            &crate::sim::thermal_selector::ThermalSelector::default(),
+        )
+        .expect("documented construction builds");
+        let surrogates = crate::ai::surrogate::SurrogateManager::new().expect("surrogates");
+        let a = via_default.solve_timesteps(168, &surrogates, false, None, None, None);
+        let b = via_doc_path.solve_timesteps(168, &surrogates, false, None, None, None);
+        assert_eq!(
+            a, b,
+            "default_model() must be bit-identical to the documented construction"
+        );
     }
 }

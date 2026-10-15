@@ -25,8 +25,6 @@ use crate::batch_oracle::BatchOracle;
 #[cfg(feature = "python-bindings")]
 use crate::physics::cta::VectorField;
 #[cfg(feature = "python-bindings")]
-use crate::sim::engine::ThermalModel;
-
 #[cfg(feature = "python-bindings")]
 use std::time::Instant;
 
@@ -48,8 +46,18 @@ impl BatchOracle {
     // impl). Python-side visibility is governed by `#[new]`.
     #[new]
     pub(crate) fn new() -> PyResult<Self> {
+        // Issue #4343: use the shared canonical default base model (ASHRAE
+        // 600 baseline via the default selector), identical to the NAPI
+        // constructor. The previous bare `ThermalModel::new(10)` template
+        // made the Python and Node default oracles diverge ~4 orders of
+        // magnitude on identical parameters.
+        let base_model = Self::default_model().map_err(|e| {
+            SurrogateError::new_err(format!(
+                "Failed to create BatchOracle default base model: {e}"
+            ))
+        })?;
         Ok(BatchOracle {
-            base_model: ThermalModel::<VectorField>::new(10), // The "template" building
+            base_model,
             surrogates: SurrogateManager::new().map_err(|e| {
                 SurrogateError::new_err(format!("Failed to create SurrogateManager: {}", e))
             })?,
