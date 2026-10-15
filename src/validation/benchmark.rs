@@ -509,20 +509,25 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     // [0.39, 0.92], peak cooling [0.70, 0.90], ff_ [-20.2, -17.8]/[35.5, 38.5])
     // entered at issue #54 (b0bd4119) and was carried into the blind map by
     // #1272 (1aa3cc59) with no cited source; it matches none of the published
-    // bounds in the 140-2023 Annex B8 transcription. Replaced with the
-    // transcription values (Tables B8-1..B8-4 / B8-5). Target-only: engine
+    // bounds in the 140-2023 Annex B8 transcription. Round 33 correction
+    // (2026-10-15): that PR's cooling/peak-cooling values ([3.703, 4.265] /
+    // [3.229, 3.797]) had themselves been taken from stale round notes, not
+    // the transcription; re-transcribed directly from
+    // data/reference/ashrae140/annex_b8_section7_statistics.json
+    // (annual_sensible_cooling_mwh 950 = [0.586, 0.707],
+    // peak_sensible_cooling_kw 950 = [2.054, 2.388]). Target-only: engine
     // unchanged.
     data.insert(
         "950".to_string(),
         BenchmarkData {
             annual_heating_min: 0.00,
             annual_heating_max: 0.00,
-            annual_cooling_min: 3.703,
-            annual_cooling_max: 4.265,
+            annual_cooling_min: 0.586,
+            annual_cooling_max: 0.707,
             peak_heating_min: 0.00,
             peak_heating_max: 0.00,
-            peak_cooling_min: 3.229,
-            peak_cooling_max: 3.797,
+            peak_cooling_min: 2.054,
+            peak_cooling_max: 2.388,
             min_free_float_min: -13.4,
             min_free_float_max: -12.5,
             max_free_float_min: 36.1,
@@ -1147,20 +1152,25 @@ pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
     // [0.39, 0.92], peak cooling [0.70, 0.90], ff_ [-20.2, -17.8]/[35.5, 38.5])
     // entered at issue #54 (b0bd4119) and was carried into the blind map by
     // #1272 (1aa3cc59) with no cited source; it matches none of the published
-    // bounds in the 140-2023 Annex B8 transcription. Replaced with the
-    // transcription values (Tables B8-1..B8-4 / B8-5). Target-only: engine
+    // bounds in the 140-2023 Annex B8 transcription. Round 33 correction
+    // (2026-10-15): that PR's cooling/peak-cooling values ([3.703, 4.265] /
+    // [3.229, 3.797]) had themselves been taken from stale round notes, not
+    // the transcription; re-transcribed directly from
+    // data/reference/ashrae140/annex_b8_section7_statistics.json
+    // (annual_sensible_cooling_mwh 950 = [0.586, 0.707],
+    // peak_sensible_cooling_kw 950 = [2.054, 2.388]). Target-only: engine
     // unchanged.
     data.insert(
         "950".to_string(),
         BenchmarkData {
             annual_heating_min: 0.00,
             annual_heating_max: 0.00,
-            annual_cooling_min: 3.703,
-            annual_cooling_max: 4.265,
+            annual_cooling_min: 0.586,
+            annual_cooling_max: 0.707,
             peak_heating_min: 0.00,
             peak_heating_max: 0.00,
-            peak_cooling_min: 3.229,
-            peak_cooling_max: 3.797,
+            peak_cooling_min: 2.054,
+            peak_cooling_max: 2.388,
             min_free_float_min: -13.4,
             min_free_float_max: -12.5,
             max_free_float_min: 36.1,
