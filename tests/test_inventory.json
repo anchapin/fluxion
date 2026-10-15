@@ -66,7 +66,7 @@
       "test_binaries": 1
     }
   },
-  "generated_at": "2026-10-14T20:52:02.235111+00:00",
+  "generated_at": "2026-10-15T00:00:00Z",
   "repo_root": "f0f7e745d2ae",
   "schema_version": 1,
   "scope": {
@@ -80,8 +80,8 @@
     "lib_tests_root": 4309,
     "test_binaries": 53,
     "test_source_files": 379,
-    "workspace_ignored": 159,
-    "workspace_integration_ignored": 139,
+    "workspace_ignored": 160,
+    "workspace_integration_ignored": 140,
     "workspace_integration_tests": 3488,
     "workspace_lib_ignored": 20,
     "workspace_lib_tests": 5444,
