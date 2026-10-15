@@ -527,7 +527,11 @@ metrics.workspace = true
 metrics-exporter-prometheus = { version = "0.18", default-features = false }
 
 # ZIP archive writer for FMI 2.0 FMU packaging (#1339)
-zip = { version = "8.6", default-features = false, features = ["deflate"] }
+# 9.0: cargo-major bump (#4395 supersede, 2026-10-14) — dependabot's PR bumped
+# only Cargo.lock; the workspace req "8.6" rejected the locked 9.0.1 on every
+# fresh `--locked` resolution (MSRV Check failure). zip 9.0.1 declares MSRV
+# 1.88, below the 1.98.0 workspace floor.
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 # JSON Patch (RFC 6902) — Issue #1811 / Phase 1 (Declarative Deltas)
 # of the Hybrid Measure Approach. Used by `fluxion::measures::json_patch`
