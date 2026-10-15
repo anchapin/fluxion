@@ -5,7 +5,7 @@ edition = "2021"
 rust-version = "1.98.0"
 description = "Behavioral and thermal comfort models for fluxion — Fanger PMV/PPD, adaptive comfort, and occupant triggers"
 license = "Apache-2.0"
-authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
+authors = ["Alex Chapin <a.n.chapin@gmail.com>"]
 repository = "https://github.com/anchapin/fluxion"
 
 [dependencies]

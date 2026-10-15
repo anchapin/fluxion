@@ -6,7 +6,7 @@ rust-version = "1.98.0"
 description = "GPU-accelerated Fast Fluid Dynamics solver for building airflow simulation"
 license = "Apache-2.0"
 repository = "https://github.com/anchapin/fluxion"
-authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
+authors = ["Alex Chapin <a.n.chapin@gmail.com>"]
 
 [features]
 default = ["cpu"]

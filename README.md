@@ -2,14 +2,14 @@
 
 **Fluxion** is a next-generation Building Energy Modeling (BEM) engine. It is designed to be differentiable, quantum-ready, and exponentially faster than legacy monolithic tools by utilizing a hybrid Neuro-Symbolic architecture.
 
-> **Status:** Fluxion is **in active development** — specifically mid-milestone on **v1.3 "Blind ASHRAE 140 Validation"** (physics-only, no calibration factors). It is **not** production-ready. Current ASHRAE 140-2023 validation pass rate is **9.8%** (see [Current Validation Status](#current-validation-status) below). Use it as a high-throughput research/oracle tool, not as a drop-in EnergyPlus replacement.
+> **Status:** Fluxion is **in active development** — specifically mid-milestone on **v1.3 "Blind ASHRAE 140 Validation"** (physics-only, no calibration factors). It is **not** production-ready. The strict ±15% annual-energy gate on the current develop tip reads **9 PASS / 33 KNOWN-FAIL / 0 REGRESSION** (checker `scripts/check_strict_energy_gate_regression.py`, statuses in `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`, verified 2026-10-15 at commit `6c18425e`). Use it as a high-throughput research/oracle tool, not as a drop-in EnergyPlus replacement.
 
 [![CI](https://github.com/anchapin/fluxion/actions/workflows/ci.yml/badge.svg)](https://github.com/anchapin/fluxion/actions/workflows/ci.yml)
 [![ASHRAE 140 Validation](https://github.com/anchapin/fluxion/actions/workflows/ashrae_140_validation.yml/badge.svg)](https://github.com/anchapin/fluxion/actions/workflows/ashrae_140_validation.yml)
 
 ### Why the low pass rate is the point
 
-The 9.8% figure is real and it is *supposed* to look like that. Every number the suite reports is checked against a **strict ±15% annual-energy-balance gate** and an honesty guard that asserts each recorded engine value sits in the ASHRAE-published band or in an explicit xfail for a documented structural gap. Fluxion has **never been tuned to pass**: no calibration factors, no case-type hints — fixes go into the underlying physics, and the known failures are tracked publicly in [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) as the roadmap, not hidden. A red suite that tells the truth is the deliverable of this milestone; [`scripts/ashrae_140_pipeline.py`](scripts/ashrae_140_pipeline.py) reproduces the whole check in one command (see [Run the validation pipeline](#run-the-validation-pipeline)).
+The low numbers are real and they are *supposed* to look like that — both the stored metric-level snapshot (9.8%) and the live strict gate (9 of 42 case-metrics passing; 33 documented as KNOWN-FAIL). Every number the suite reports is checked against a **strict ±15% annual-energy-balance gate** and an honesty guard that asserts each recorded engine value sits in the ASHRAE-published band or in an explicit xfail for a documented structural gap. Fluxion has **never been tuned to pass**: no calibration factors, no case-type hints — fixes go into the underlying physics, and the known failures are tracked publicly in [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) as the roadmap, not hidden. A red suite that tells the truth is the deliverable of this milestone; [`scripts/ashrae_140_pipeline.py`](scripts/ashrae_140_pipeline.py) reproduces the whole check in one command (see [Run the validation pipeline](#run-the-validation-pipeline)).
 
 ## 🏗 Architecture
 
@@ -17,17 +17,20 @@ Fluxion separates the "heavy lifting" of physics (CFD/Radiation) into AI surroga
 
 ## Current Validation Status
 
-![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-9.8%25%20pass-red)
+![ASHRAE 140 strict gate](https://img.shields.io/badge/ASHRAE140%20strict%20gate-9%20PASS%20%2F%2033%20KNOWN--FAIL%20%2F%200%20REGRESSION-red)
 ![Version](https://img.shields.io/badge/status-in--development-orange)
 
-Fluxion is **not yet ASHRAE 140-compliant**. The figures below come from the committed validation suite (generated 2026-09-26); see [`docs/ASHRAE140_RESULTS.md`](docs/ASHRAE140_RESULTS.md) for the full case-by-case breakdown and [`SCORECARD.md`](SCORECARD.md) for the consolidated, reproducible release-readiness view.
+Fluxion is **not yet ASHRAE 140-compliant**. The current strict ±15% annual-energy gate at the develop tip is **9 PASS / 33 KNOWN-FAIL / 0 REGRESSION** (verified 2026-10-15 at `6c18425e`; KNOWN-FAIL rows are the documented structural failures in [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md), not hidden regressions). The metric-level table below is a **stored snapshot from 2026-09-26** (`validation/performance_history.latest.json`) and is not the live gate; see [`docs/ASHRAE140_RESULTS.md`](docs/ASHRAE140_RESULTS.md) for the full case-by-case breakdown and [`SCORECARD.md`](SCORECARD.md) for the consolidated, reproducible release-readiness view.
 
 | Metric | Current | Target (release gate) | Status |
 |--------|---------|-----------------------|--------|
+| Strict ±15% annual-energy gate (live, 2026-10-15 @ `6c18425e`) | **9 PASS / 33 KNOWN-FAIL / 0 REGRESSION** | 0 REGRESSION sustained; KNOWN-FAIL count trending down | ℹ️ tracked |
 | Pass rate (metric-level) | **9.8%** (11/84) | ≥ 60% | ❌ Fail |
 | Mean Absolute Error (MAE) | **45.27%** | ≤ 50% | ✅ Pass |
-| Cases fully passing | 0/18 (0.0%) | — | ❌ |
+| Cases fully passing (stored snapshot) | 0/18 (0.0%) | — | ❌ |
 | Max single-case deviation | 100.00% | — | ℹ️ |
+
+*The four metric-level rows above are a stored snapshot (generated 2026-09-26 from `validation/performance_history.latest.json`), not the live gate; the strict-gate row above them is current.*
 
 ### Run the validation pipeline
 

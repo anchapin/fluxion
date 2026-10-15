@@ -3,7 +3,7 @@ name = "fluxion"
 version = "1.0.0"
 edition = "2021"
 rust-version = "1.98.0"
-authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
+authors = ["Alex Chapin <a.n.chapin@gmail.com>"]
 description = "A differentiable, AI-accelerated Building Energy Modeling engine with multi-zone support."
 repository = "https://github.com/anchapin/fluxion"
 license = "Apache-2.0"
@@ -39,7 +39,7 @@ default-members = ["."]
 version = "1.0.0"
 edition = "2021"
 rust-version = "1.98.0"
-authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
+authors = ["Alex Chapin <a.n.chapin@gmail.com>"]
 license = "Apache-2.0"
 repository = "https://github.com/anchapin/fluxion"
 

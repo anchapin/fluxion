@@ -8,17 +8,17 @@ version = "1.0.0"
 requires-python = ">=3.10"
 authors = [
     {name = "Fluxion Team", email = "team@fluxion.org"},
-    {name = "Dr. Aris Thorne", email = "aris.thorne@fluxion.org"},
+    {name = "Alex Chapin", email = "a.n.chapin@gmail.com"},
 ]
 description = "A differentiable, AI-accelerated Building Energy Modeling engine with multi-zone support."
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "Apache-2.0"}
 keywords = ["building-energy", "simulation", "thermal-modeling", "ASHRAE", "machine-learning", "surrogate-model"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Rust",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
