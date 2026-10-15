@@ -781,16 +781,19 @@ const CASE_810_REF: EnergyReference = EnergyReference {
     peak_cooling_min_kw: 1.940,
     peak_cooling_max_kw: 2.410,
 };
+// Round 33 provenance correction: published ASHRAE 140-2023 Annex B8 values
+// (transcription data/reference/ashrae140/annex_b8_section7_statistics.json);
+// the prior row entered at #54/#1272 with no cited source.
 const CASE_920_REF: EnergyReference = EnergyReference {
     case_id: "920",
-    annual_heating_min_mwh: 3.26,
-    annual_heating_max_mwh: 4.30,
-    annual_cooling_min_mwh: 1.84,
-    annual_cooling_max_mwh: 3.31,
-    peak_heating_min_kw: 2.10,
-    peak_heating_max_kw: 2.80,
-    peak_cooling_min_kw: 1.40,
-    peak_cooling_max_kw: 1.90,
+    annual_heating_min_mwh: 2.956,
+    annual_heating_max_mwh: 3.607,
+    annual_cooling_min_mwh: 2.549,
+    annual_cooling_max_mwh: 3.128,
+    peak_heating_min_kw: 2.512,
+    peak_heating_max_kw: 2.895,
+    peak_cooling_min_kw: 2.71,
+    peak_cooling_max_kw: 3.481,
 };
 // Case 950 disables heating per ASHRAE 140-2023 §B8.5 (night ventilation
 // only): the published envelope is degenerate [0.00, 0.00] MWh. The strict
