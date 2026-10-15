@@ -1,16 +1,19 @@
 //! ASHRAE 140 Case 970 Validation — Multi-Zone Cross-Coupling (Issue #1446).
 //!
-//! Case 970 is the 5-zone multi-zone cross-coupling building specified in
-//! ASHRAE Standard 140-2017 §B6.7. The 8 m × 6 m × 2.7 m high-mass concrete
+//! Case 970 is the 5-zone multi-zone cross-coupling building recorded at
+//! Issue #1446 as "ASHRAE Standard 140-2017 §B6.7" — an attribution of
+//! UNVERIFIED ORIGIN (round-20 Finding 1, §LIMIT-23): no Case 970 exists in
+//! the in-repo 140-2017(a) PDF nor in the 140-2023 Annex B8 transcription.
+//! The 8 m × 6 m × 2.7 m high-mass concrete
 //! envelope is divided into 5 zones by interior partitions, producing a
 //! non-trivial 5×5 inter-zone conductance matrix that is exercised through
 //! `fluxion::sim::multi_zone_network::MultiZoneAirflowNetwork`.
 //!
 //! ## Reference data
 //!
-//! The canonical ASHRAE 140-2017 §B6.7 (and ASHRAE 140-2023 Annex B8-3)
-//! inter-program envelope, validated across EnergyPlus 25.2.0, TRNSYS, ESP-r,
-//! DOE-2, BSIMAC, CSE, DeST:
+//! The Case 970 INTERNAL TARGET BAND OF UNVERIFIED ORIGIN recorded at Issue
+//! #1446 (kept as an internal regression target; round-20 decision — band
+//! values deliberately not changed in either direction):
 //!
 //! | Metric                | Reference band     | Midpoint |
 //! |-----------------------|-------------------:|---------:|
@@ -47,7 +50,8 @@ use fluxion::weather::epw::EpwWeatherSource;
 use fluxion::weather::WeatherSource;
 use sha2::{Digest, Sha256};
 
-/// Canonical ASHRAE 140-2017 §B6.7 Case 970 reference bands.
+/// Case 970 internal-target reference bands of unverified origin
+/// (§LIMIT-23 Finding 1; relabelled round 34, values unchanged).
 ///
 /// Mirrors `tests/reference_data/zone_balance/case_970_energy_reference.csv`.
 /// Kept as a Rust-side copy so the test doesn't need to parse the CSV at
@@ -82,7 +86,7 @@ mod reference {
     #[allow(dead_code)]
     pub const PEAK_TOLERANCE: f64 = 0.10;
 
-    /// Path to the canonical ASHRAE 140-2017 §B6.7 Case 970 reference CSV
+    /// Path to the Case 970 internal-target reference CSV (unverified origin, Finding 1)
     /// (Issue #1446 acceptance criterion), relative to the package root
     /// (`CARGO_MANIFEST_DIR`).
     pub const REFERENCE_CSV_PATH: &str =
@@ -159,7 +163,7 @@ fn run_case_970_blind_energy(
 }
 
 /// Case 970 spec loads a 5-zone building — verifies geometry, common walls,
-/// HVAC, and total floor area match ASHRAE 140-2017 §B6.7.
+/// HVAC, and total floor area match the Case 970 internal-target spec (unverified origin, Finding 1).
 #[test]
 fn test_case_970_multi_zone_configuration() {
     let spec = ASHRAE140Case::Case970.spec();
@@ -212,7 +216,7 @@ fn test_case_970_multi_zone_configuration() {
         spec.common_walls.len()
     );
 
-    // All five zones are conditioned (per Issue #1446 §B6.7 — the multi-zone
+    // All five zones are conditioned (per the Issue #1446 internal target — the multi-zone
     // cross-coupling spec conditions every zone).
     for (i, hvac) in spec.hvac.iter().enumerate() {
         assert!(
@@ -228,7 +232,7 @@ fn test_case_970_multi_zone_configuration() {
     );
 }
 
-/// Canonical reference CSV exists and contains the ASHRAE 140-2017 §B6.7
+/// Canonical reference CSV exists and contains the Case 970 internal-target
 /// inter-program bands (Issue #1446 acceptance criterion #2).
 #[test]
 fn test_reference_data_file_exists() {
@@ -258,7 +262,7 @@ fn test_reference_data_file_exists() {
 }
 
 /// `Case970Reference` (in-process validator reference) must agree with the
-/// canonical ASHRAE 140-2017 §B6.7 bands (no drift between the validator and
+/// Case 970 internal-target bands of unverified origin (no drift between the validator and
 /// the CSV).
 #[test]
 fn test_case_970_reference_data_loading() {
@@ -277,13 +281,13 @@ fn test_case_970_reference_data_loading() {
 
     assert!(
         (reference.annual_heating - reference::ANNUAL_HEATING_MIDPOINT_MWH).abs() < 1e-9,
-        "annual_heating midpoint must equal the canonical ASHRAE 140-2017 §B6.7 midpoint {}; got {}",
+        "annual_heating midpoint must equal the Case 970 internal-target midpoint {}; got {}",
         reference::ANNUAL_HEATING_MIDPOINT_MWH,
         reference.annual_heating
     );
     assert!(
         (reference.annual_cooling - reference::ANNUAL_COOLING_MIDPOINT_MWH).abs() < 1e-9,
-        "annual_cooling midpoint must equal the canonical ASHRAE 140-2017 §B6.7 midpoint {}; got {}",
+        "annual_cooling midpoint must equal the Case 970 internal-target midpoint {}; got {}",
         reference::ANNUAL_COOLING_MIDPOINT_MWH,
         reference.annual_cooling
     );
@@ -305,7 +309,7 @@ fn test_case_970_reference_data_loading() {
     let total = reference.annual_heating + reference.annual_cooling;
     assert!(
         (17.9..=24.3).contains(&total),
-        "Total annual energy must sit inside the ASHRAE 140-2017 §B6.7 conservation band 17.9-24.3 MWh; got {total:.3} MWh"
+        "Total annual energy must sit inside the internal-target conservation band 17.9-24.3 MWh; got {total:.3} MWh"
     );
 }
 
@@ -396,7 +400,7 @@ fn test_case_970_validator_accepts_canonical_midpoints() {
 }
 
 /// Issue #1446 acceptance criterion #4: annual Case 970 heating must lie
-/// inside the ASHRAE 140-2017 §B6.7 band [10.54, 14.26] MWh and annual
+/// inside the internal-target band of unverified origin [10.54, 14.26] MWh and annual
 /// cooling must lie inside [7.39, 10.00] MWh.
 ///
 /// Issue #3585: prior to the fix this test was a *midpoint-constant
@@ -406,7 +410,7 @@ fn test_case_970_validator_accepts_canonical_midpoints() {
 /// band midpoint would still pass. The test is now driven by the real
 /// Case 970 8760-hour physics simulation (golden EPW, blind execution
 /// path) and the actual measured H/C values are asserted against the
-/// ASHRAE 140-2017 §B6.7 envelope.
+/// internal-target envelope of unverified origin (§LIMIT-23 Finding 1).
 #[ignore = "Issue #3585: kept #[ignore]'d while the multi-zone air-mass \
             distribution gap is open (docs/KNOWN_ISSUES.md §LIMIT-23, \
             Issue #3552 — GaugeSolver #1465/#1462 architectural rework \
@@ -473,7 +477,7 @@ fn test_case_970_annual_energy_band() {
 
     assert!(
         heat_in_range,
-        "annual heating {:.3} MWh must fall inside ASHRAE 140-2017 §B6.7 band [{}, {}] MWh \
+        "annual heating {:.3} MWh must fall inside the internal-target band of unverified origin [{}, {}] MWh \
          (see docs/KNOWN_ISSUES.md §LIMIT-23 for the current multi-zone air-mass distribution gap)",
         actual_heating_mwh,
         reference::ANNUAL_HEATING_MIN_MWH,
@@ -481,7 +485,7 @@ fn test_case_970_annual_energy_band() {
     );
     assert!(
         cool_in_range,
-        "annual cooling {:.3} MWh must fall inside ASHRAE 140-2017 §B6.7 band [{}, {}] MWh \
+        "annual cooling {:.3} MWh must fall inside the internal-target band of unverified origin [{}, {}] MWh \
          (see docs/KNOWN_ISSUES.md §LIMIT-23 for the current multi-zone air-mass distribution gap)",
         actual_cooling_mwh,
         reference::ANNUAL_COOLING_MIN_MWH,
