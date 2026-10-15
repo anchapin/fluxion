@@ -2615,3 +2615,36 @@ Readings, recorded not tuned:
   (develop 10/32/0 → loses ff_900ff_max; #4412's 600 correction independently
   trades case_600_cooling PASS for case_600 heating staying known_fail, so the
   combined tip is also 9/33 once both land).
+
+## §39 — Round 33: Case 910 reference-row provenance correction to the 140-2023 Annex B8 published values (2026-10-14)
+
+The §36 queue's third row (first of the 900-family re-frame). The recorded Case 910
+row (heating [1.51, 2.28], cooling [0.82, 1.88], peaks [1.90, 2.50]/[1.20, 1.60])
+entered at issue #54 (`b0bd4119`) as part of the hand-written 900-family row and was
+carried into the blind map by #1272 (`1aa3cc59`) with no cited source; it matches none
+of the sixteen published bounds. Corrected target-only to the transcription
+(`data/reference/ashrae140/annex_b8_section7_statistics.json`, Tables B8-1..B8-4):
+heating [1.648, 2.163] (mean 1.9055), cooling [1.191, 1.49] (mean 1.3405),
+peak heating [2.469, 2.799] kW, peak cooling [2.081, 2.722] kW.
+
+Target-only across all duplicated copies: `benchmark.rs` (both maps + dated block
+comments), `CASE_910_REF` (`zone_balance_eplus_isolation.rs`), the
+`case_900_series_seasonal_attribution.rs` reference tuple, and the strict-gate
+baseline (`_doc_round33`). Not moved: the 910 ff_* fields (conditioned case, unused
+by the validator; the transcription carries no 910 free-float row — same handling
+as Case 620), the `energyplus_comparison_tests.rs` midpoint fixture (approximate
+comparison harness, left untouched by round 32's precedent), other queued rows.
+
+Engine untouched; measured values bit-identical to develop `a1c79ff2` (repro run
+2026-10-14: 910 H 2.095 / C 1.064 MWh). Status changes:
+
+| metric | old published → new published | old gap → new gap (% of mid) | status |
+|---|---|---|---|
+| case_910_heating | [1.51, 2.28] → [1.648, 2.163] | 0.00 → 0.00 | PASS (unchanged; 2.095 in [1.620, 2.191]) |
+| case_910_cooling | [0.82, 1.88] → [1.191, 1.49] | 6.15 → 5.59 | known_fail (narrowed) |
+
+Checker 8 PASS / 34 KNOWN-FAIL / 0 REGRESSION. Count correction to §37/§38: the
+combined-tip count on `a1c79ff2` is 8/34, not the 9/33 recorded there (CI run
+38666380510 on `a1c79ff2` prints "8 PASS, 34 KNOWN-FAIL (tracked), 0 REGRESSION";
+the baseline carries exactly 8 `pass` statuses) — the measured values, gaps and
+0-regression verdicts in §37/§38 are unchanged and reproduce byte-identically.

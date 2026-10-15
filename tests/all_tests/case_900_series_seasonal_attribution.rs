@@ -316,7 +316,9 @@ fn run_case_with_attribution(case_enum: ASHRAE140Case) -> CaseAttribution {
     // midpoint derived from the band).
     let (h_min, h_max, c_min, c_max) = match case_enum {
         ASHRAE140Case::Case900 => (1.17, 2.04, 2.13, 3.67),
-        ASHRAE140Case::Case910 => (1.51, 2.28, 0.82, 1.88),
+        // Round 33 provenance correction: 140-2023 Annex B8 published values
+        // (see CASE_910_REF / benchmark.rs Case 910 note).
+        ASHRAE140Case::Case910 => (1.648, 2.163, 1.191, 1.49),
         ASHRAE140Case::Case920 => (3.26, 4.30, 1.84, 3.31),
         ASHRAE140Case::Case930 => (4.14, 5.34, 1.04, 2.24),
         // Round 29 provenance correction: published ASHRAE 140-2023 Annex B8 values
