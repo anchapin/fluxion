@@ -116,14 +116,40 @@ jobs:
       - name: Run TIMING cohort (release, ignore-stripped)
         # tee the console output to a log for the results artifact; pipefail
         # keeps the step red when nextest fails.
+        #
+        # Round 44 (2026-10-16): the two absolute-throughput tests gated at
+        # 150 cfg/s (performance_regression_test::test_performance_smoke_test,
+        # test_batch_oracle_throughput::test_throughput_analytical_1000_configs_sec)
+        # were calibrated in ISOLATION (docs/ci/perf-lane.md re-baselining
+        # table, 2026-09-26: smoke median 170 cfg/s vs the 150 floor) but ran
+        # here under --test-threads=2 beside the 44-49 s multi-zone
+        # regression, and failed every nightly with 90-149 cfg/s (20/20 red
+        # since the lane's creation). The thresholds are unchanged; they now
+        # execute under their calibration protocol — alone, in a dedicated
+        # invocation below. The remaining cohort keeps --test-threads=2.
         run: |
           set -o pipefail
           cargo nextest run --release \
             -p fluxion --test all_tests \
             -E 'test(performance_regression_test::) | test(throughput_benchmark::) | test(api_concurrent_throughput::) | test(hybrid_perf_regression::) | test(performance_ci_test::) | test(test_batch_oracle_throughput::) | test(security_rate_limit::)' \
+            -E 'not test(performance_regression_test::test_performance_smoke_test) and not test(test_batch_oracle_throughput::test_throughput_analytical_1000_configs_sec)' \
             --run-ignored=all \
             --test-threads=2 \
             --no-fail-fast 2>&1 | tee perf-lane-run.log
+
+      - name: Run 150 cfg/s-gated tests in isolation (calibration protocol)
+        # Measured alone, as the 2026-09-26 re-baselining did when it
+        # validated the 150 cfg/s floors (median 170 cfg/s smoke,
+        # 150.6 cfg/s batch-oracle-1000). No threshold change; the lane
+        # simply measures under the protocol the floors were set under.
+        run: |
+          set -o pipefail
+          cargo nextest run --release \
+            -p fluxion --test all_tests \
+            -E 'test(performance_regression_test::test_performance_smoke_test) | test(test_batch_oracle_throughput::test_throughput_analytical_1000_configs_sec)' \
+            --run-ignored=all \
+            --test-threads=1 \
+            --no-fail-fast 2>&1 | tee -a perf-lane-run.log
 
       - name: Upload results
         if: always()
