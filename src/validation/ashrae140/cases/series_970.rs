@@ -92,7 +92,7 @@ pub fn case_970_five_zone_cross_coupling() -> CaseSpec {
         .with_common_wall(1, 2, 10.8, Assemblies::concrete_wall(0.200))
         .with_common_wall(2, 3, 10.8, Assemblies::concrete_wall(0.200))
         .with_common_wall(3, 4, 10.8, Assemblies::concrete_wall(0.200))
-        .with_infiltration(0.5)
+        .with_infiltration(0.414)
         .with_num_zones(5)
         // Zone plan origins (round 21, §LIMIT-23b): zone 0 west core at the
         // origin, east strip x ∈ [4, 8]; zones stacked along the 6 m depth

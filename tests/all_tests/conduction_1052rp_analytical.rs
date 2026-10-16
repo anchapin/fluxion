@@ -884,6 +884,13 @@ fn run_ctf_steady_periodic(wall: &str, spinup_days: usize) -> FdRun {
 fn ctf_stays_within_linear_envelope() {
     // DC sanity probe first: constant forcing must converge to U*dT for
     // every wall (superposition demands the periodic mean equal this).
+    // Since #4229 the wrapper bakes the caller's h values in as film
+    // resistances, so the DC target is U at THIS test's films
+    // (H_INT=8.3, H_EXT=18.3), not the CTF golden's u, which carries the
+    // ASHRAE 140 default films (R_SI=0.125, R_SE=0.044) baked into
+    // compute_state_space_ctf. The layer resistance is recovered from the
+    // golden u by subtracting its films; the measured heavy-wall DC flux
+    // matches 1/(R_layers + 1/8.3 + 1/18.3) to 10 significant figures.
     for wall in ["heavy", "medium", "light", "multi"] {
         let mut wrapper = CTFSolverWrapper::new();
         wrapper.initialize(&wall_spec_for(wall)).expect("init");
@@ -901,7 +908,10 @@ fn ctf_stays_within_linear_envelope() {
                 .to_value();
         }
         let g = golden(&format!("{wall}_ctf"));
-        let dc_target = g.u * 8.0;
+        // Golden u carries the ASHRAE 140 default films; swap in this
+        // test's films to get the DC target the wrapper now realizes.
+        let r_layers = 1.0 / g.u - 0.125 - 0.044;
+        let dc_target = 8.0 / (r_layers + 1.0 / H_INT + 1.0 / H_EXT);
         assert!(
             (q_last - dc_target).abs() / dc_target < 0.005,
             "{wall}: CTF DC flux {q_last} vs U*dT {dc_target} exceeds 0.5%"

@@ -60,7 +60,7 @@ pub struct SimulationResult {
 /// - Cooling setpoint: 27°C
 /// - Efficiency: 100% (no losses)
 ///
-/// **Infiltration:** 0.5 ACH (Air Changes per Hour)
+/// **Infiltration:** 0.5 ACH nominal (ASHRAE 140 §5.2.1.6); 0.414 ach as input per Table 5-42
 ///
 /// **Internal Loads:** 200W continuous
 /// - Radiative: 120W (60%)
@@ -95,8 +95,8 @@ impl Case600Model {
         model.setpoints.zone_area = VectorField::from_scalar(floor_area, 1);
         model.setpoints.ceiling_height = VectorField::from_scalar(ceiling_height, 1);
 
-        // Set infiltration rate (0.5 ACH as specified in ASHRAE 140)
-        model.setpoints.infiltration_rate = VectorField::from_scalar(0.5, 1);
+        // Set infiltration rate (140 Table 5-42 adjusted rate: 0.5 nominal → 0.414 ach for fixed-sea-level-ρ programs)
+        model.setpoints.infiltration_rate = VectorField::from_scalar(0.414, 1);
 
         // Set HVAC setpoints (dual setpoint control)
         model.setpoints.heating_setpoint = 20.0;
@@ -144,8 +144,10 @@ impl Case600Model {
         // Ventilation conductance
         // Q_vent = ACH * Volume / 3600 (m³/s)
         // h_ve = ρ_air * cp_air * Q_vent
+        // 0.414 ach: ASHRAE 140 Table 5-42 (§5.2.1.6.1) adjusted rate for
+        // fixed-sea-level-ρ programs (0.5 × 1.0156/1.2255 = 0.414).
         let volume = floor_area * ceiling_height; // 48 × 2.7 = 129.6 m³
-        let q_vent = 0.5 * volume / 3600.0; // 0.5 ACH × 129.6 / 3600 = 0.018 m³/s
+        let q_vent = 0.414 * volume / 3600.0;
         let air_density = 1.2; // kg/m³
         let cp_air = 1000.0; // J/kg·K
         let h_ve = air_density * cp_air * q_vent;
