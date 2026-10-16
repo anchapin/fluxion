@@ -5,15 +5,16 @@
 // Standardized, stable translation between the continuous Riemannian metric
 // tensor of [`ThermalManifold`] and a Quadratic Unconstrained Binary
 // Optimization (QUBO) matrix. This replaces the fragile, research-grade
-// intermediate structs (the `QuboProblem` in `crate::quantum::qubo_mapping`,
-// which caches source tensors and mixes the matrix with its inputs) with a
+// intermediate structs of the research bridge (the archived `QuboProblem` in
+// the former `crate::quantum::qubo_mapping`, which cached source tensors and
+// mixed the matrix with its inputs) with a
 // self-contained [`QuboMatrix`] that carries only the QUBO data and its
 // encoding.
 //
 // The translation is intentionally narrow and lives next to the
 // [`ThermalManifold`] it operates on, so the metric-tensor → QUBO surface is
-// discoverable from the type that owns the tensor. The research bridge in
-// `crate::quantum` may delegate to this utility; it is not altered here.
+// discoverable from the type that owns the tensor. The former research bridge
+// (`crate::quantum`, archived round 38) delegated to this utility.
 //
 // [`QuboMatrix`]: super::manifold::QuboMatrix
 

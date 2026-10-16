@@ -286,7 +286,6 @@ including these 7 tests. Thresholds re-baselined in release mode — see
 | `tests/all_tests/performance_ci_test.rs` | `test_multi_zone_throughput` | `performance` | #3957 (debug-mode absolute threshold, deterministic miss) | `unassigned` | Migrated: runs in perf_lane.yml release nightly; threshold re-baselined 2026-09-26 | `migrated` |
 | `tests/all_tests/performance_regression_test.rs` | `test_performance_regression` | `performance` | #3957 (debug-mode absolute threshold, deterministic miss) | `unassigned` | Migrated: runs in perf_lane.yml release nightly; baseline regenerated 2026-09-26 via scripts/generate_perf_baseline.py (median-of-7) | `migrated` |
 | `tests/all_tests/performance_regression_test.rs` | `test_performance_smoke_test` | `performance` | #3957 (debug-mode absolute threshold, deterministic miss) | `unassigned` | Migrated: runs in perf_lane.yml release nightly; threshold re-baselined 2026-09-26 | `migrated` |
-| `tests/all_tests/quantum_topology_stress.rs` | `stress_20_zone_qubo_encoding_performance_k16` | `performance` | #3957 (debug-mode latency budget < 5 ms vs 8.9 ms measured, deterministic miss) | `unassigned` | Migrated: runs in perf_lane.yml release nightly; threshold re-baselined 2026-09-26 | `migrated` |
 
 ---
 
