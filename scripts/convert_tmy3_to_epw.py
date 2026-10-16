@@ -24,7 +24,6 @@ dew-point 34, RHum 37, pressure 40 (mbar), wind dir 43, wind speed 46.
 from __future__ import annotations
 
 import csv
-import json
 import sys
 import xml.etree.ElementTree as ET
 import zipfile
