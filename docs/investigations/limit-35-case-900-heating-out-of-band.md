@@ -3112,3 +3112,59 @@ The strict-gate legacy cohort (650FF/900FF/950FF) is the legacy path's own resid
 is tracked in its rows; nothing this round moves an engine number. No engine code,
 no default-build behavior change, no re-record battery owed; scratch harness deleted
 before commit.
+
+## §53 — Round 43: the legacy-path free-float cohort discriminating matrix — 650FF/950FF (2026-10-16)
+
+The last free-float residuals on the strict gate (650FF Tmin −18.71 vs [−17.8, −16.7];
+950FF Tmin −15.67 / Tmax 38.78 vs [−13.4, −12.5] / [36.1, 37.1]) taken through the same
+method as §52, on develop `04f62df4` (strict gate reproduced first: **13 PASS / 29
+KNOWN-FAIL / 0 REGRESSION**, every recorded value exact). Never-commit env-gated hooks
+(`FLX_R43_CM/HEM/HMS/HIS/HVE/HVEN/HFL/TG_EXT/TG_OFF/NOISB`) at the network primitives
+(`update_optimization_cache`-coherent init scaling), the `MultiNodeSolver` construction,
+and the 5R1C/9R4C night-vent terms; scratch reverted, engine untouched
+(`round43-artifacts/`).
+
+**Premise correction:** 650FF does NOT route the legacy 9R4C network — it is a low-mass
+spec on the 5R1C path (measured: every 9R4C-network hook is bit-identical on 650FF; the
+round-42 brief's "legacy 9R4C mass network" framing holds only for 950FF). Harness
+cross-validation: the base arm reproduces the strict gate bit-for-bit on both cases
+(650FF −18.71/54.37, 950FF −15.67/38.78).
+
+| Tmin/Tmax (°C) | 650FF (5R1C + night vent) | 950FF (9R4C + night vent) |
+|---|---|---|
+| base (strict gate) | −18.71 / 54.37 | −15.67 / 38.78 |
+| h_ve_night ×0.5 | −17.75 / 54.14 | −13.05 / 39.14 |
+| h_ve_night ×2 | −19.10 / 54.73 | −17.36 / 38.55 |
+| C_m ×1.25 | −18.63 / 52.05 | −15.46 / 37.77 |
+| C_m ×0.8 | −18.77 / 56.85 | −15.86 / 39.92 |
+| h_tr_ms ×1.25 | −18.68 / 52.22 | −15.20 / 38.48 |
+| h_tr_is ×2 | −18.56 / 53.67 | −15.50 / 38.88 |
+| ground → sol-air (tgext) | −19.18 / 55.72 | −15.83 / 39.85 |
+| floor film (h_tr_floor) ±25 % | −18.80..−18.60 / 55.09..53.50 | bit-identical |
+| night-vent film boost off (9R4C) | bit-identical (no boost on 5R1C) | −15.96 / 39.01 |
+| hven0.5 + C_m ×1.25 | −17.50 / 51.90 | −12.70 / 38.14 |
+
+Other single arms (≤ ±25 %): infiltration h_ve, h_tr_em, h_tr_ms ×0.8, tg_off +5 K all
+move ≤ 0.5 K on 650FF Tmin; h_tr_em ×0.8 +0.26 K Tmin on 950FF; h_ms_is and storage
+levers are monotone but an order of magnitude short of the Tmin gaps.
+
+**Attribution.** (1) Both Tmin residuals are owned by night-ventilation coupling
+strength: halving the fan conductance puts both INTO their bands (650FF −17.75,
+950FF −13.05; 950FF + C_m ×1.25 centers it at −12.70), and the sensitivity is ~2.6 K per
+halving/doubling on 950FF. But the fan flow is the primary-source value — Table 5-160
+1400 m³/h, sea-level route, round-26-verified (§SOLAR-04) — so the arm that reaches band
+is tuning, not physics. The 9R4C capped interior-film night-vent boost contributes only
+0.29 K of night cooling (boost-off measured); the 5R1C path has no boost at all; the
+mass-side vent path is disabled per #1422. (2) The 650FF Tmax residual (54.37 vs
+[61.1, 66.8], 6.73 K) is the 600FF-family structural Tmax floor (600FF 55.26 vs
+[62.4, 68.4]): the best single arm recovers +2.48 K (C_m ×0.8), best combination +2.22 K
+with hven0.5 — no measured state in band. (3) The 950FF Tmax residual (38.78 vs
+[36.1, 37.1], 1.68 K) is high-mass storage/conduction structure: C_m ×1.25 recovers
+1.01 K, every vent fix moves Tmax the wrong way, and no combination reaches band.
+
+**Verdict: defensible structural model difference, not a single defect.** No engine
+number moved; nothing tuned in either direction. Recorded as the legacy cohort's floor:
+650FF ≈ −17.8..−18.7 / 54.4..56.6 °C; 950FF Tmin reaches band only via a below-spec fan
+flow, with Tmax 37.8..38.8 °C. This closes the free-float decomposition program the
+round-41 canonical-weather binding opened: every strict-gate free-float residual now has
+a measured attribution (§52 gauge path, §53 legacy cohort).
