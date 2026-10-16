@@ -222,9 +222,10 @@ tools/verify_*.py
 tools/energyplus_*.csv
 
 # Planning artifacts that shouldn't be committed
-.planning/phases/
-.planning/debug/
-.planning/V07_RELEASE_DECISION.md
+# `.planning/` tracked planning artifacts were archived to branch
+# archive/v1-experimental-sprawl (round 38); agent runtime state under
+# `.planning/worktrees/` stays ignored via the blanket rule below.
+.planning/
 *_profile_hourly.csv
 
 # Auto Claude data directory

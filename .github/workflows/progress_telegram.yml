@@ -2,7 +2,7 @@ name: Weekly Progress Telegram
 
 # Plan pm-throughput-20260915 task T5 (ADR-0016 companion) — the weekly
 # "progress telegram" for the pinned v1.3 progress tracker issue #3804
-# (glossary: .planning/CONTEXT.md). Follows the stateless β-soak pattern
+# Follows the stateless β-soak pattern
 # from nightly-ashrae-140-gauge.yml: no state is committed back; the
 # week-over-week deltas are parsed from the marker embedded in the
 # previous telegram comment on the tracker issue.

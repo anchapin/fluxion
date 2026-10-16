@@ -34,7 +34,6 @@ session_*.md
 *~
 
 # === Planning files ===
-.planning/
 
 # === Build outputs ===
 target/
