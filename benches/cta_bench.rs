@@ -13,9 +13,5 @@ fn bench_map_vector(c: &mut Criterion) {
     c.bench_function("vector_map", |b| b.iter(|| v.map(|x| x * 1.001)));
 }
 
-criterion_group!(
-    cta_benches,
-    bench_map_raw,
-    bench_map_vector,
-);
+criterion_group!(cta_benches, bench_map_raw, bench_map_vector,);
 criterion_main!(cta_benches);
