@@ -7,7 +7,6 @@ examples/
 docs/
 .github/
 .githooks/
-.planning/
 tools/
 *.md
 !README.md

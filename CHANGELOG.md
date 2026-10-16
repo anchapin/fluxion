@@ -16,12 +16,12 @@ All notable changes to Fluxion will be documented in this file.
 ### Changed
 
 - README.md now links to Release Scorecard for consolidated status view
-- **ASHRAE 140 Blind Validation** (`.planning/ASHRAE_140_BLIND_VALIDATION_PLAN.md`): blind-validation methodology in progress for v1.3.0
+- **ASHRAE 140 Blind Validation**: blind-validation methodology in progress for v1.3.0 (the historical plan document lives on the `archive/v1-experimental-sprawl` branch)
 - **MSRV bumped from Rust 1.89 to 1.98.0** (#3321): all 13 `rust-version` declarations (root `[package]` + `[workspace.package]` + 11 member manifests) now read `1.98.0`, and the MSRV CI gate enforces `cargo +1.98.0 build --workspace --locked`. The floor was raised deliberately to unlock the Rust 1.98 std APIs — algebraic floating-point methods (`f32`/`f64::algebraic_*`) and buffered integer formatting (`format_into`/`NumBuffer`) — planned for follow-up adoption (opt-in fast-math, `fluxion-toon` serialization). Dependency floors (`nalgebra 0.35`, `safe_arch`, `statrs`, `wide`) remain satisfied. Contributors: run `rustup update` — `rust-toolchain.toml` still pins `channel = "stable"`, and local stable toolchains may lag 1.98.0.
 
 ### Scope
 
-- v1.3 scope anchor: see `.planning/PROJECT.md` (BASELINE-01 → SUSTAIN-02 — current requirements tracked live there). The v1.2 milestone summary at `.planning/MILESTONE_v1.2_SUMMARY.md` (2026-04-08) is frozen at the v1.2 cut and does not reflect ongoing v1.3 work.
+- v1.3 scope anchor: the historical `.planning/` planning tree (including `.planning/PROJECT.md` and the v1.2 milestone summary) was archived to the `archive/v1-experimental-sprawl` branch; current requirements are tracked in GitHub issues.
 
 ## [1.2.0] - 2026-04-08
 

@@ -67,7 +67,7 @@ The current milestone removes all post-simulation correction factors and case-ty
 - **Phase D — Blind Validation Pass:** Run the full blind suite targeting ≥80% pass.
 - **Phase E — Sustained Validation:** CI gate + regression tracking to hold the pass rate as the codebase evolves.
 
-See [`.planning/ROADMAP.md`](.planning/ROADMAP.md) and [`.planning/ASHRAE_140_BLIND_VALIDATION_PLAN.md`](.planning/ASHRAE_140_BLIND_VALIDATION_PLAN.md) for phase detail and requirements.
+Historical phase planning documents (`.planning/`, including the ASHRAE 140 blind validation plan) were archived to the `archive/v1-experimental-sprawl` branch.
 
 ### Known Limitations
 

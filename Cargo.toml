@@ -53,7 +53,6 @@ exclude = [
     "docs/",
     ".github/",
     ".githooks/",
-    ".planning/",
     "tools/",
     "benches/",
     "examples/",

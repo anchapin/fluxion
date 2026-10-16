@@ -178,7 +178,7 @@ jobs:
           FLAG="FLUXION_MQTT_ALLOW""_INSECURE"
           MATCHES=$(grep -rn "$FLAG" \
             --include="*.md" --include="*.toml" --include="*.yml" \
-            .github crates docs .planning CODEBASE_MAP.md AGENTS.md README.md 2>/dev/null || true)
+            .github crates docs CODEBASE_MAP.md AGENTS.md README.md 2>/dev/null || true)
           if [[ -n "$MATCHES" ]]; then
             echo "$MATCHES"
             echo "::error::Stale $FLAG documentation found — the flag was removed in #3162 (MQTT telemetry is always TLS with validated certificates, no runtime bypass); purge it (issues #3462 / #3162)"
