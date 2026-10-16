@@ -158,6 +158,7 @@ tests/ashrae_140_*.rs
 !tests/ashrae_140_case_970_validation.rs
 !tests/ashrae_140_case_600_660_plant.rs
 !tests/ashrae_140_case_600.rs
+!tests/ashrae_140_section6_weather_driver.rs
 !tests/ashrae_140_case_600_cz3.rs
 !tests/ashrae_140_case_600_cz7.rs
 !tests/ashrae_140_case_920.rs
