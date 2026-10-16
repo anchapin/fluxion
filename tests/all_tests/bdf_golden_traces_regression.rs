@@ -20,15 +20,19 @@ use std::process::Command;
 
 /// Locate the `bdf_evaluator` binary. Build it on demand if missing.
 fn bdf_evaluator_path() -> PathBuf {
-    // The binary lives at `target/release/bdf_evaluator` after
+    // The binary lives under the workspace `target/` directory (honoring
+    // `CARGO_TARGET_DIR` so shared-target-dir builds find it) after
     // `cargo build --release --bin bdf_evaluator -p fluxion`.
     // The debug-binary fallback keeps the test runnable in CI
     // profiles that omit release builds.
-    let release = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/release/bdf_evaluator");
+    let target_root = std::env::var("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target"));
+    let release = target_root.join("release/bdf_evaluator");
     if release.exists() {
         return release;
     }
-    let debug = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/debug/bdf_evaluator");
+    let debug = target_root.join("debug/bdf_evaluator");
     if debug.exists() {
         return debug;
     }
