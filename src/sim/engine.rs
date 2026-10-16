@@ -737,7 +737,7 @@ mod inter_zone_tests {
 
     #[test]
     fn test_total_interior_surface_area() {
-        use crate::validation::ashrae_140_cases::GeometrySpec;
+        use fluxion_core::ashrae_cases::GeometrySpec;
         let geometry = GeometrySpec::new(8.0, 6.0, 2.7);
         let area = ThermalModel::<VectorField>::calculate_total_interior_surface_area(&geometry);
         let expected = geometry.wall_area() + geometry.floor_area() + geometry.roof_area();

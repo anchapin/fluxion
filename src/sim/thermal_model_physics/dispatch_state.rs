@@ -383,8 +383,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             // Only vertical walls (S, W, N, E) - exclude roof/floor
                             !matches!(
                                 s.orientation,
-                                crate::validation::ashrae_140_cases::Orientation::Up
-                                    | crate::validation::ashrae_140_cases::Orientation::Down
+                                fluxion_core::ashrae_cases::Orientation::Up
+                                    | fluxion_core::ashrae_cases::Orientation::Down
                             )
                         })
                         .map(|s| s.area - s.window_area)

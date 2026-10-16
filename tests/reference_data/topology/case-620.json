@@ -550,10 +550,10 @@
       "source_id": "zone-0:air",
       "target_id": "ambient",
       "coupling_type": "air_exchange",
-      "conductance_w_per_k": 21.729600000000005,
+      "conductance_w_per_k": 17.992108800000004,
       "bidirectional": true,
       "attributes": {
-        "air_changes_per_hour": 0.5
+        "air_changes_per_hour": 0.414
       }
     },
     {
