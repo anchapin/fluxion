@@ -84,7 +84,7 @@ pub fn case_960_sunspace() -> CaseSpec {
         .with_zone_window(1, 12.0, Orientation::South) // Sun-zone south glazing: TWO 3x2 m windows = 12 m2 (140-2017 §5.2.2.2.7.3c, Fig. 5-96; round 22 §LIMIT-14)
         // Common Wall (8m x 2.7m = 21.6 m2)
         .with_common_wall(0, 1, 21.6, Assemblies::concrete_wall(0.200))
-        .with_infiltration(0.5) // No door: §5.2.2.2.7 specifies no door anywhere in Case 960 and no
+        .with_infiltration(0.414) // No door: §5.2.2.2.7 specifies no door anywhere in Case 960 and no
         // inter-zonal air exchange (§5.2.2.2.7.6). (The retired
         // with_door_geometry entry was verified inert as-built — round-24 E6
         // experiment bit-identical.)

@@ -63,7 +63,7 @@ fn build_case_800() -> ASHRAE140CaseDefinition {
             u_value: 0.45,       // W/m²K - exterior walls
             thermal_mass: 120.0, // kJ/m²K - lightweight construction
             window_wall_ratio: 0.2,
-            infiltration_rate: 0.5, // ACH
+            infiltration_rate: 0.414, // ACH — 140 Table 5-42 adjusted (0.5 nominal × 1.0156/1.2255)
             ..Default::default()
         },
         hvac: HVACSystem {
@@ -99,7 +99,7 @@ fn build_case_801() -> ASHRAE140CaseDefinition {
             u_value: 0.45,       // W/m²K
             thermal_mass: 120.0, // kJ/m²K
             window_wall_ratio: 0.2,
-            infiltration_rate: 0.5, // ACH
+            infiltration_rate: 0.414, // ACH — 140 Table 5-42 adjusted (0.5 nominal × 1.0156/1.2255)
             ..Default::default()
         },
         hvac: HVACSystem {
@@ -209,7 +209,7 @@ fn build_case_804() -> ASHRAE140CaseDefinition {
             u_value: 0.32,       // W/m²K
             thermal_mass: 220.0, // kJ/m²K
             window_wall_ratio: 0.25,
-            infiltration_rate: 0.5, // ACH
+            infiltration_rate: 0.414, // ACH — 140 Table 5-42 adjusted (0.5 nominal × 1.0156/1.2255)
             ..Default::default()
         },
         hvac: HVACSystem {

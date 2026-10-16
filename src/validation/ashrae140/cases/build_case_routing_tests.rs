@@ -188,8 +188,10 @@ fn build_case_case600_carries_spec_derived_building_fields() {
         building.floor_area
     );
     assert!(
-        (building.infiltration_rate - 0.5).abs() < 1e-6,
-        "Case 600 infiltration_rate should be 0.5 ACH, got {}",
+        // 0.414 ach: ASHRAE 140 Table 5-42 (§5.2.1.6.1) adjusted rate for
+        // fixed-sea-level-ρ programs (0.5 nominal × 1.0156/1.2255).
+        (building.infiltration_rate - 0.414).abs() < 1e-6,
+        "Case 600 infiltration_rate should be the 0.414 ACH Table 5-42 adjusted rate, got {}",
         building.infiltration_rate
     );
     assert_eq!(

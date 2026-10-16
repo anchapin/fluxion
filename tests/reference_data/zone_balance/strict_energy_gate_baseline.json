@@ -19,8 +19,8 @@
         3.611,
         4.886
       ],
-      "value_mwh": 6.758,
-      "gap_pct_of_mid": 44.06,
+      "value_mwh": 6.384,
+      "gap_pct_of_mid": 35.26,
       "status": "known_fail"
     },
     "case_600_cooling": {
@@ -32,8 +32,8 @@
         4.927,
         6.667
       ],
-      "value_mwh": 4.301,
-      "gap_pct_of_mid": 10.8,
+      "value_mwh": 4.468,
+      "gap_pct_of_mid": 7.92,
       "status": "known_fail"
     },
     "case_800_heating": {
@@ -45,8 +45,8 @@
         4.381,
         5.928
       ],
-      "value_mwh": 7.039,
-      "gap_pct_of_mid": 21.55,
+      "value_mwh": 6.67,
+      "gap_pct_of_mid": 14.4,
       "status": "known_fail"
     },
     "case_800_cooling": {
@@ -58,8 +58,8 @@
         0.321,
         0.434
       ],
-      "value_mwh": 3.591,
-      "gap_pct_of_mid": 836.29,
+      "value_mwh": 3.715,
+      "gap_pct_of_mid": 869.14,
       "status": "known_fail"
     },
     "case_810_heating": {
@@ -71,8 +71,8 @@
         1.975,
         2.673
       ],
-      "value_mwh": 1.68,
-      "gap_pct_of_mid": 12.69,
+      "value_mwh": 1.438,
+      "gap_pct_of_mid": 23.11,
       "status": "known_fail"
     },
     "case_810_cooling": {
@@ -84,8 +84,8 @@
         1.233,
         1.668
       ],
-      "value_mwh": 1.684,
-      "gap_pct_of_mid": 1.1,
+      "value_mwh": 1.82,
+      "gap_pct_of_mid": 10.48,
       "status": "known_fail"
     },
     "case_900_heating": {
@@ -97,7 +97,7 @@
         1.357,
         1.836
       ],
-      "value_mwh": 1.68,
+      "value_mwh": 1.438,
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     },
@@ -110,8 +110,8 @@
         2.117,
         2.864
       ],
-      "value_mwh": 1.684,
-      "gap_pct_of_mid": 17.39,
+      "value_mwh": 1.82,
+      "gap_pct_of_mid": 11.93,
       "status": "known_fail"
     },
     "case_920_heating": {
@@ -123,8 +123,8 @@
         2.789,
         3.774
       ],
-      "value_mwh": 2.646,
-      "gap_pct_of_mid": 4.36,
+      "value_mwh": 2.351,
+      "gap_pct_of_mid": 13.35,
       "status": "known_fail"
     },
     "case_920_cooling": {
@@ -136,8 +136,8 @@
         2.413,
         3.264
       ],
-      "value_mwh": 1.807,
-      "gap_pct_of_mid": 21.35,
+      "value_mwh": 1.914,
+      "gap_pct_of_mid": 17.58,
       "status": "known_fail"
     },
     "case_950_heating": {
@@ -162,7 +162,7 @@
         0.55,
         0.743
       ],
-      "value_mwh": 0.654,
+      "value_mwh": 0.673,
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     },
@@ -175,9 +175,9 @@
         2.287,
         3.095
       ],
-      "value_mwh": 2.508,
-      "gap_pct_of_mid": 0.0,
-      "status": "pass"
+      "value_mwh": 2.226,
+      "gap_pct_of_mid": 2.27,
+      "status": "known_fail"
     },
     "case_960_cooling": {
       "published_range_mwh": [
@@ -188,8 +188,8 @@
         0.739,
         1.0
       ],
-      "value_mwh": 1.037,
-      "gap_pct_of_mid": 4.26,
+      "value_mwh": 1.074,
+      "gap_pct_of_mid": 8.51,
       "status": "known_fail"
     },
     "case_970_heating": {
@@ -201,8 +201,8 @@
         10.54,
         14.26
       ],
-      "value_mwh": 2.004,
-      "gap_pct_of_mid": 68.84,
+      "value_mwh": 1.748,
+      "gap_pct_of_mid": 70.9,
       "status": "known_fail"
     },
     "case_970_cooling": {
@@ -214,8 +214,8 @@
         7.391,
         9.999
       ],
-      "value_mwh": 0.869,
-      "gap_pct_of_mid": 75.01,
+      "value_mwh": 0.93,
+      "gap_pct_of_mid": 74.31,
       "status": "known_fail"
     },
     "_doc_limit23b": "UPDATE 2026-10-12 (loop round 20, docs/investigations/limit-23b-case-970-provenance-and-envelope.md): provenance correction only, no values touched. The Case 970 published_range_mwh band has no published ASHRAE 140 source: Case 970 does not exist in the in-repo ASHRAE 140-2017(a) PDF (docs/140_2017_a_20200901.pdf) nor in the authoritative ASHRAE 140-2023 Annex B8 Section B8.1 transcription (data/reference/ashrae140/annex_b8_section7_statistics.json; case list ...950, 960, 980, 985). The band entered at Issue #1446 as if published and is an internal target of unverified origin. Recorded value_mwh/gap_pct_of_mid/status are retained unchanged; known_fail therefore means distance from that internal target, not ASHRAE non-conformance. Reproduction on 7e321a22: H 4.616 / C 2.341 MWh, matching the recorded values.",
@@ -228,8 +228,8 @@
         3.68,
         4.978
       ],
-      "value_mwh": 7.307,
-      "gap_pct_of_mid": 53.8,
+      "value_mwh": 6.923,
+      "gap_pct_of_mid": 44.93,
       "status": "known_fail"
     },
     "case_610_cooling": {
@@ -241,8 +241,8 @@
         3.612,
         4.887
       ],
-      "value_mwh": 2.456,
-      "gap_pct_of_mid": 27.2,
+      "value_mwh": 2.567,
+      "gap_pct_of_mid": 24.59,
       "status": "known_fail"
     },
     "case_620_heating": {
@@ -254,8 +254,8 @@
         3.746,
         5.067
       ],
-      "value_mwh": 7.666,
-      "gap_pct_of_mid": 58.98,
+      "value_mwh": 7.283,
+      "gap_pct_of_mid": 50.29,
       "status": "known_fail"
     },
     "case_620_cooling": {
@@ -267,9 +267,9 @@
         3.504,
         4.741
       ],
-      "value_mwh": 3.396,
-      "gap_pct_of_mid": 2.62,
-      "status": "known_fail"
+      "value_mwh": 3.525,
+      "gap_pct_of_mid": 0.0,
+      "status": "pass"
     },
     "case_630_heating": {
       "published_range_mwh": [
@@ -280,8 +280,8 @@
         4.035,
         5.46
       ],
-      "value_mwh": 8.243,
-      "gap_pct_of_mid": 58.62,
+      "value_mwh": 7.853,
+      "gap_pct_of_mid": 50.41,
       "status": "known_fail"
     },
     "case_630_cooling": {
@@ -293,7 +293,7 @@
         2.4,
         3.247
       ],
-      "value_mwh": 2.414,
+      "value_mwh": 2.506,
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     },
@@ -306,8 +306,8 @@
         2.161,
         2.924
       ],
-      "value_mwh": 4.152,
-      "gap_pct_of_mid": 48.3,
+      "value_mwh": 3.895,
+      "gap_pct_of_mid": 38.19,
       "status": "known_fail"
     },
     "case_640_cooling": {
@@ -319,8 +319,8 @@
         4.73,
         6.4
       ],
-      "value_mwh": 4.287,
-      "gap_pct_of_mid": 7.96,
+      "value_mwh": 4.455,
+      "gap_pct_of_mid": 4.94,
       "status": "known_fail"
     },
     "case_650_heating": {
@@ -345,8 +345,8 @@
         3.881,
         5.25
       ],
-      "value_mwh": 3.498,
-      "gap_pct_of_mid": 8.39,
+      "value_mwh": 3.592,
+      "gap_pct_of_mid": 6.33,
       "status": "known_fail"
     },
     "case_910_heating": {
@@ -358,7 +358,7 @@
         1.62,
         2.191
       ],
-      "value_mwh": 2.095,
+      "value_mwh": 1.813,
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     },
@@ -371,9 +371,9 @@
         1.139,
         1.542
       ],
-      "value_mwh": 1.064,
-      "gap_pct_of_mid": 5.59,
-      "status": "known_fail"
+      "value_mwh": 1.146,
+      "gap_pct_of_mid": 0.0,
+      "status": "pass"
     },
     "case_930_heating": {
       "published_range_mwh": [
@@ -384,8 +384,8 @@
         3.361,
         4.547
       ],
-      "value_mwh": 2.977,
-      "gap_pct_of_mid": 9.71,
+      "value_mwh": 2.667,
+      "gap_pct_of_mid": 17.55,
       "status": "known_fail"
     },
     "case_930_cooling": {
@@ -397,8 +397,8 @@
         1.621,
         2.194
       ],
-      "value_mwh": 1.356,
-      "gap_pct_of_mid": 13.89,
+      "value_mwh": 1.44,
+      "gap_pct_of_mid": 9.49,
       "status": "known_fail"
     },
     "case_940_heating": {
@@ -410,7 +410,7 @@
         0.957,
         1.295
       ],
-      "value_mwh": 1.13,
+      "value_mwh": 0.966,
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     },
@@ -423,8 +423,8 @@
         2.047,
         2.769
       ],
-      "value_mwh": 1.671,
-      "gap_pct_of_mid": 15.61,
+      "value_mwh": 1.806,
+      "gap_pct_of_mid": 10.01,
       "status": "known_fail"
     },
     "case_195_heating": {
@@ -462,8 +462,8 @@
         -13.8,
         -9.9
       ],
-      "value_c": -19.0,
-      "gap_pct_of_mid": 60.34,
+      "value_c": -18.77,
+      "gap_pct_of_mid": 58.4,
       "status": "known_fail"
     },
     "ff_600ff_max": {
@@ -475,8 +475,8 @@
         62.4,
         68.4
       ],
-      "value_c": 54.87,
-      "gap_pct_of_mid": 16.1,
+      "value_c": 55.88,
+      "gap_pct_of_mid": 14.56,
       "status": "known_fail"
     },
     "ff_650ff_min": {
@@ -501,8 +501,8 @@
         61.1,
         66.8
       ],
-      "value_c": 54.3,
-      "gap_pct_of_mid": 15.09,
+      "value_c": 55.25,
+      "gap_pct_of_mid": 13.6,
       "status": "known_fail"
     },
     "ff_900ff_min": {
@@ -514,8 +514,8 @@
         0.6,
         2.2
       ],
-      "value_c": -6.71,
-      "gap_pct_of_mid": 579.29,
+      "value_c": -5.87,
+      "gap_pct_of_mid": 519.29,
       "status": "known_fail"
     },
     "ff_900ff_max": {
@@ -527,8 +527,8 @@
         43.3,
         46.0
       ],
-      "value_c": 41.96,
-      "gap_pct_of_mid": 6.02,
+      "value_c": 42.54,
+      "gap_pct_of_mid": 4.73,
       "status": "known_fail"
     },
     "ff_950ff_min": {
@@ -540,8 +540,8 @@
         -13.4,
         -12.5
       ],
-      "value_c": -21.97,
-      "gap_pct_of_mid": 66.18,
+      "value_c": -21.94,
+      "gap_pct_of_mid": 69.42,
       "status": "known_fail"
     },
     "ff_950ff_max": {
@@ -553,8 +553,8 @@
         36.1,
         37.1
       ],
-      "value_c": 38.05,
-      "gap_pct_of_mid": 2.6,
+      "value_c": 38.28,
+      "gap_pct_of_mid": 4.59,
       "status": "known_fail"
     }
   },
@@ -575,5 +575,6 @@
   "_doc_round33c": "Round 33 verification sweep (2026-10-15, branch fix/sweep-900ff-650ff-provenance): two pure-provenance residuals from the round-32/33 row PRs, found by re-reading every merged row against annex_b8_section7_statistics.json. (1) ff_650ff_min/max gap_pct_of_mid held gaps computed against the PRE-#4420 band (37.86/10.63) instead of the corrected band (41.04/15.09); values and statuses unchanged (the checker had tolerated the stale arithmetic because the correct gaps are larger). (2) the dedicated 900FF BenchmarkData rows in benchmark.rs (both maps) still carried the 1995 BESTEST ff values ([-6.4,-1.6]/[41.8,46.4]) that #4414 removed from the Case 900 row and FF_900_REF; replaced with the transcription Table B8-5 row ([0.6,2.2]/[43.3,46.0]), the same values FF_900_REF already carries. The free_floating.rs case_650ff mod constants (display-only, warn-only assertions) were also still pre-#4420 and are corrected. Nothing tuned; no measured value changed.",
   "_doc_round33d": "Round 33 (2026-10-15, PR #4424): Case 960 reference row corrected to the 140-2023 Annex B8 transcription (prior row was the issue-#2858 widened synthetic-era band of unverified origin: H [1.65,2.45], C [1.55,2.78] -> published H [2.522,2.86], C [0.789,0.95]). Target-only; measured 2.508/1.037 MWh bit-identical. case_960_heating RE-ENTERS its true +/-15% band [2.287,3.095]: known_fail -> pass (gap 0). case_960_cooling gap 37.09 -> 4.26 % of mid (checker convention: distance beyond the band edge, % of mid; still known_fail, the 900-family cooling-chain gap). Nothing tuned.",
   "_doc_round33e": "Round 33 (2026-10-15, PR #4426): Case 610 reference row corrected to the 140-2023 Annex B8 transcription (prior row was the 140-2017-era bootstrap of unverified origin: H [4.36,5.79], C [3.92,6.14] -> published H [4.066,4.592], C [4.117,4.382]). Target-only; measured H 7.307 / C 2.456 MWh bit-identical. Both remain known_fail (H gap 28.99 -> 53.79, C gap 36.17 -> 27.2 % of mid, checker beyond-band-edge convention); the 600-series shading-family engine gap widens on heating under the true target and narrows on cooling. Nothing tuned; band edges not moved to fit the engine.",
-  "_doc_round34": "2026-10-15 (loop round 34, relabel-only): the Case 970 entries' published_range_mwh/band_mwh fields are the INTERNAL TARGET BAND OF UNVERIFIED ORIGIN recorded at issue #1446 (round-20 Finding 1, §LIMIT-23 / docs/investigations/limit-23b-case-970-provenance-and-envelope.md) — no Case 970 exists in ASHRAE 140-2017(a) or the 140-2023 Annex B8 §B8.1 transcription. The field name is kept for checker compatibility; values and gaps are unchanged (H 2.004 vs [10.54,14.26] gap 68.84, C 0.869 vs [7.391,9.999] gap 75.01, both known_fail). Code and doc labels aligned to 'internal target of unverified origin' in the same PR; nothing was tuned."
+  "_doc_round34": "2026-10-15 (loop round 34, relabel-only): the Case 970 entries' published_range_mwh/band_mwh fields are the INTERNAL TARGET BAND OF UNVERIFIED ORIGIN recorded at issue #1446 (round-20 Finding 1, \u00a7LIMIT-23 / docs/investigations/limit-23b-case-970-provenance-and-envelope.md) \u2014 no Case 970 exists in ASHRAE 140-2017(a) or the 140-2023 Annex B8 \u00a7B8.1 transcription. The field name is kept for checker compatibility; values and gaps are unchanged (H 2.004 vs [10.54,14.26] gap 68.84, C 0.869 vs [7.391,9.999] gap 75.01, both known_fail). Code and doc labels aligned to 'internal target of unverified origin' in the same PR; nothing was tuned.",
+  "_doc_round39": "Round 39 (2026-10-15): re-recorded from the corrected engine after the ASHRAE 140 Table 5-42 infiltration altitude adjustment (fixed-sea-level-rho programs input 0.414 ach, not 0.5; commit 1878300e). All 17 annual + 4 free-float cases re-measured; 22 metrics move toward their bands, 5 move away (800C, 810H/C, 920H, 930H) - recorded, not tuned."
 }

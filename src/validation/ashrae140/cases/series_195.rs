@@ -262,7 +262,7 @@ fn build_case_196() -> ASHRAE140CaseDefinition {
             u_value: 0.38,       // W/m²K
             thermal_mass: 100.0, // kJ/m²K - lightweight
             window_wall_ratio: 0.3,
-            infiltration_rate: 0.5, // ACH
+            infiltration_rate: 0.414, // ACH — 140 Table 5-42 adjusted (0.5 nominal × 1.0156/1.2255)
             ..Default::default()
         },
         hvac: HVACSystem {
@@ -295,7 +295,7 @@ fn build_case_197() -> ASHRAE140CaseDefinition {
             u_value: 0.38,       // W/m²K
             thermal_mass: 100.0, // kJ/m²K
             window_wall_ratio: 0.3,
-            infiltration_rate: 0.5, // ACH
+            infiltration_rate: 0.414, // ACH — 140 Table 5-42 adjusted (0.5 nominal × 1.0156/1.2255)
             ..Default::default()
         },
         hvac: HVACSystem {
@@ -328,7 +328,7 @@ fn build_case_198() -> ASHRAE140CaseDefinition {
             u_value: 0.38,       // W/m²K
             thermal_mass: 100.0, // kJ/m²K
             window_wall_ratio: 0.3,
-            infiltration_rate: 0.5, // ACH
+            infiltration_rate: 0.414, // ACH — 140 Table 5-42 adjusted (0.5 nominal × 1.0156/1.2255)
             ..Default::default()
         },
         hvac: HVACSystem {
@@ -361,7 +361,7 @@ fn build_case_200() -> ASHRAE140CaseDefinition {
             u_value: 0.38,       // W/m²K
             thermal_mass: 100.0, // kJ/m²K
             window_wall_ratio: 0.3,
-            infiltration_rate: 0.5, // ACH
+            infiltration_rate: 0.414, // ACH — 140 Table 5-42 adjusted (0.5 nominal × 1.0156/1.2255)
             ..Default::default()
         },
         hvac: HVACSystem {
@@ -495,7 +495,7 @@ fn build_case_400() -> ASHRAE140CaseDefinition {
             u_value: 0.38,       // W/m²K
             thermal_mass: 100.0, // kJ/m²K
             window_wall_ratio: 0.3,
-            infiltration_rate: 0.5, // ACH
+            infiltration_rate: 0.414, // ACH — 140 Table 5-42 adjusted (0.5 nominal × 1.0156/1.2255)
             ..Default::default()
         },
         hvac: HVACSystem {

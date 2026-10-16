@@ -1707,6 +1707,13 @@ impl CaseBuilder {
     }
 
     /// Sets the infiltration rate (ACH).
+    ///
+    /// Callers pass the ASHRAE 140 Table 5-42 (§5.2.1.6.1) adjusted rate for
+    /// programs with a fixed sea-level air density (this engine: ρ = 1.2
+    /// kg/m³), not the nominal 0.5 ach: 0.5 × (1.0156/1.2255) = 0.414 ach
+    /// yields the mass flow of the 1609 m altitude site. The same
+    /// fixed-sea-level convention sets the Case 650/950 vent fan to
+    /// 1400 m³/h (Table 5-160, `NightVentilation::case_650`).
     pub fn with_infiltration(mut self, ach: f64) -> Self {
         self.infiltration_ach = ach;
         self
@@ -2339,7 +2346,7 @@ impl CaseBuilder {
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(480.0, 0.6, 0.4)) // 480 W lighting
             .with_hvac_setpoints(20.0, 27.0)
-            .with_infiltration(0.5)
+            .with_infiltration(0.414)
             .with_num_zones(1)
             .build()
             .expect("Case 196 should validate")
@@ -2363,7 +2370,7 @@ impl CaseBuilder {
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(960.0, 0.6, 0.4)) // 960 W equipment
             .with_hvac_setpoints(20.0, 27.0)
-            .with_infiltration(0.5)
+            .with_infiltration(0.414)
             .with_num_zones(1)
             .build()
             .expect("Case 197 should validate")
@@ -2389,7 +2396,7 @@ impl CaseBuilder {
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(240.0, 0.6, 0.4)) // 240 W occupancy
             .with_hvac_setpoints(20.0, 27.0)
-            .with_infiltration(0.5)
+            .with_infiltration(0.414)
             .with_num_zones(1)
             .build()
             .expect("Case 198 should validate")
@@ -2417,7 +2424,7 @@ impl CaseBuilder {
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(1680.0, 0.6, 0.4)) // 1680 W total
             .with_hvac_setpoints(20.0, 27.0)
-            .with_infiltration(0.5)
+            .with_infiltration(0.414)
             .with_num_zones(1)
             .build()
             .expect("Case 200 should validate")
@@ -2439,7 +2446,7 @@ impl CaseBuilder {
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(1680.0, 0.6, 0.4)) // Same as Case200
             .with_hvac_setpoints(20.0, 27.0)
-            .with_infiltration(0.5)
+            .with_infiltration(0.414)
             .with_num_zones(1)
             .build()
             .expect("Case 250 should validate")
@@ -2463,7 +2470,7 @@ impl CaseBuilder {
             .with_internal_loads(InternalLoads::new(1680.0, 0.6, 0.4)) // Case200 loads
             .with_hvac_setpoints(999.0, 27.0) // No heating (999°C), cooling only
             .with_night_ventilation(NightVentilation::new(3.0, 20, 6)) // 3 ACH, 20:00-06:00
-            .with_infiltration(0.5)
+            .with_infiltration(0.414)
             .with_num_zones(1)
             .build()
             .expect("Case 300 should validate")
@@ -2487,7 +2494,7 @@ impl CaseBuilder {
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(1680.0, 0.6, 0.4)) // Case200 loads
             .with_hvac_setpoints(20.0, 27.0) // Standard setpoints (simplified)
-            .with_infiltration(0.5)
+            .with_infiltration(0.414)
             .with_num_zones(1)
             .build()
             .expect("Case 350 should validate")
@@ -2507,7 +2514,7 @@ impl CaseBuilder {
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(1680.0, 0.6, 0.4)) // Case200 loads
             .with_hvac_setpoints(999.0, 999.0) // No HVAC (both setpoints at 999°C)
-            .with_infiltration(0.5)
+            .with_infiltration(0.414)
             .with_num_zones(1)
             .build()
             .expect("Case 400 should validate")
@@ -2531,7 +2538,7 @@ impl CaseBuilder {
             .with_internal_loads(InternalLoads::new(1680.0, 0.6, 0.4)) // Case200 loads
             .with_hvac_setpoints(20.0, 27.0) // Standard setpoints
             .with_night_ventilation(NightVentilation::new(3.0, 20, 6)) // 3 ACH, 20:00-06:00
-            .with_infiltration(0.5)
+            .with_infiltration(0.414)
             .with_num_zones(1)
             .build()
             .expect("Case 470 should validate")
@@ -2565,7 +2572,7 @@ impl CaseBuilder {
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(10500.0, 0.6, 0.4)) // 10500 W total
             .with_hvac_setpoints(20.0, 27.0)
-            .with_infiltration(0.5)
+            .with_infiltration(0.414)
             .with_num_zones(1)
             .build()
             .expect("Office building should validate")
@@ -2597,7 +2604,7 @@ impl CaseBuilder {
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(16000.0, 0.6, 0.4)) // 16000 W total
             .with_hvac_setpoints(20.0, 27.0)
-            .with_infiltration(0.5)
+            .with_infiltration(0.414)
             .with_num_zones(1)
             .build()
             .expect("Retail building should validate")
@@ -2629,7 +2636,7 @@ impl CaseBuilder {
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(32250.0, 0.6, 0.4)) // 32250 W total
             .with_hvac_setpoints(20.0, 27.0)
-            .with_infiltration(0.5)
+            .with_infiltration(0.414)
             .with_num_zones(1)
             .build()
             .expect("School building should validate")
@@ -3372,7 +3379,7 @@ mod tests {
             .low_mass_construction()
             .with_south_window(12.0)
             .with_hvac_setpoints(20.0, 27.0)
-            .with_infiltration(0.5)
+            .with_infiltration(0.414)
             .build()
             .unwrap();
 

@@ -282,3 +282,25 @@ jobs:
         run: |
           cargo check --lib --features napi-bindings,python-bindings
           cargo clippy --lib --features napi-bindings -- -D warnings
+
+
+  # ---------------------------------------------------------------------------
+  # Benches compile check (issue round-39 hygiene): `benches/` targets are not
+  # part of `cargo check --all-targets` in any CI lane, so a stale import can
+  # sit undetected for months (cta_bench.rs imported the removed nd_array
+  # module). This single-compilation gate fails a named PR check instead.
+  # Same minimal shape as ffi-feature-check: no probe/Hetzner variants.
+  # ---------------------------------------------------------------------------
+  benches-check:
+    name: "Benches Compile Check (GH)"
+    runs-on: ubuntu-24.04
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Check benches compilation
+        run: cargo check --benches

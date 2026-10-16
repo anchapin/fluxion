@@ -2973,3 +2973,54 @@ strict metrics remain known_fail under the true target: heating gap
 28.99 → 53.79 % of mid (widens), cooling 36.17 → 27.21 % of mid (narrows) —
 recorded, not tuned, per the round-33 fidelity direction. The 600-series
 suite tests above quarantine independently. Provenance and doc gates green.
+
+## §50 — Round 39: the 900FF cold-bias infiltration term vs 140 Table 5-42 (2026-10-15)
+
+Item 2 of the round-39 brief, continuing §48's decomposition. §48 found the
+cold bias is carried by the infiltration term (~5.3 K of Tmin) and the
+sky/longwave term (~1.1 K), with no solver defect behind either. This section
+settles what the infiltration term gets wrong against the spec text.
+
+**Premise (primary source, in-repo standard text, §5.2.1.6.1 + Table 5-42):**
+the 140 weather site is 1609 m above sea level (density ≈ 80 % of sea level).
+Programs that do not automatically correct air density for altitude — this
+engine, which hard-codes ρ = 1.2 kg/m³ at every infiltration site — shall
+input the ADJUSTED rate: 0.5 ach × (1.0156/1.2255) = **0.414 ach**. The
+engine input the nominal 0.5 ach at sea-level density, i.e. ~21 % excess
+infiltration mass flow in every 140 case. The same fixed-sea-level convention
+was already applied to the Case 650/950 vent fan (1400 m³/h, Table 5-160,
+round-8 fix) — infiltration was the remaining unadjusted input.
+
+**Fix:** all 31 `with_infiltration(0.5)` spec sites + the direct literals
+(195/800 series, legacy default) + the standalone `case_600` builder now
+input 0.414 ach, with the Table 5-42 provenance at `with_infiltration`.
+
+**Measured (strict gate, Golden-NREL, full 17+4 battery, checker
+10 PASS / 32 KNOWN-FAIL / 0 REGRESSION against the re-recorded baseline):**
+900FF Tmin −6.71 → −5.87 °C (gap 579.29 → 519.29 % of mid) and Tmax
+41.96 → 42.54 (gap 6.02 → 4.73); 600FF Tmin −19.00 → −18.77, Tmax
+54.87 → 55.88; 650FF Tmax 54.30 → 55.25 (min unchanged). 22 annual metrics
+move toward band, 5 move away (800 C, 810 H/C, 920 H, 930 H) — recorded, not
+tuned. Case 195 (zero infiltration by spec) is bit-identical, confirming the
+change scopes to the infiltration term alone. Case 620 cooling and 910
+cooling re-enter band (known_fail → PASS); Case 900 heating stays in band
+(1.680 → 1.438 MWh vs [1.357, 1.836]).
+
+**Residual:** 900FF Tmin remains 519 % of mid outside the published
+[0.6, 2.2] °C band. The remaining gap is the sky/longwave term (§48: ~1.1 K
+from the EPW horizontal-infrared sky depression, a defensible input-provenance
+difference — the standard provides no normative Tsky and points programs to
+informative data) plus the deeper structural free-float behavior of the 9R4C
+mass network (§23: FD day/night storage-release split). Infiltration, the
+dominant lever, is now spec-conformant.
+
+**Sub-hourly convergence (item 1 of the round-39 brief) — documented closure
+of #4332:** the sub-hourly conditioned-hour inner loop was implemented on the
+DO-NOT-MERGE branch `physics/limit35-case900-conditioned-subhourly` and
+measured end-to-end (PR #4333): the production 9R4C path is outer-dt-invariant
+(3,143.8 → 3,148.2 kWh, N=1 → N=6) and the loop regressed Case 600 cooling
+out of band (+109 %). Alex chose to drop it (option 3, 2026-10-08). Case 900
+heating was subsequently brought in band by PRs #4336/#4347 (mass coupling +
+envelope phi_m reroute) and now holds at 1.438 MWh against the true
+140-2023 target [1.379, 1.814]. No sub-hourly defect exists to fix; the
+issue is closed as investigated-and-ruled-out with this evidence.

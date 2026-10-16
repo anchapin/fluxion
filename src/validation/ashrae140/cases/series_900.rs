@@ -37,7 +37,7 @@ pub fn build_case(case: ASHRAE140Case) -> ASHRAE140CaseDefinition {
 }
 
 /// Case 900 — high-mass baseline (8 m × 6 m × 2.7 m, 12 m² south double-clear
-/// window, 0.5 ACH, 20°C / 27°C, Denver ground-coupled).
+/// window, 0.414 ACH (140 Table 5-42 adjusted; 0.5 nominal), 20°C / 27°C, Denver ground-coupled).
 pub fn case_900_baseline() -> CaseSpec {
     CaseBuilder::new()
         .with_case_id("900".to_string())
@@ -56,7 +56,7 @@ pub fn case_900_baseline() -> CaseSpec {
         .with_window_u_value_override(fluxion_core::ashrae_cases::ASHRAE140_WINDOW_U_VALUE)
         .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
         .with_hvac_setpoints(20.0, 27.0)
-        .with_infiltration(0.5)
+        .with_infiltration(0.414)
         .with_num_zones(1)
         .with_ground_temperature(
             crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
@@ -83,7 +83,7 @@ pub fn case_910_south_shading() -> CaseSpec {
         .with_shading(ShadingDevice::overhang(1.0, 2.7))
         .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
         .with_hvac_setpoints(20.0, 27.0)
-        .with_infiltration(0.5)
+        .with_infiltration(0.414)
         .with_num_zones(1)
         .with_ground_temperature(
             crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
@@ -109,7 +109,7 @@ pub fn case_920_ew_windows() -> CaseSpec {
         .with_window_u_value_override(fluxion_core::ashrae_cases::ASHRAE140_WINDOW_U_VALUE)
         .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
         .with_hvac_setpoints(20.0, 27.0)
-        .with_infiltration(0.5)
+        .with_infiltration(0.414)
         .with_num_zones(1)
         .with_ground_temperature(
             crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
@@ -136,7 +136,7 @@ pub fn case_930_ew_shading() -> CaseSpec {
         .with_shading(ShadingDevice::overhang_and_fins(1.0, 1.0, 2.7))
         .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
         .with_hvac_setpoints(20.0, 27.0)
-        .with_infiltration(0.5)
+        .with_infiltration(0.414)
         .with_num_zones(1)
         .with_ground_temperature(
             crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
@@ -162,7 +162,7 @@ pub fn case_940_setback() -> CaseSpec {
         .with_window_u_value_override(fluxion_core::ashrae_cases::ASHRAE140_WINDOW_U_VALUE)
         .with_internal_loads(InternalLoads::new(200.0, 0.4, 0.6))
         .with_hvac_setback(20.0, 27.0, 10.0)
-        .with_infiltration(0.5)
+        .with_infiltration(0.414)
         .with_num_zones(1)
         .with_ground_temperature(
             crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
@@ -202,7 +202,7 @@ pub fn case_950_night_vent() -> CaseSpec {
             -100.0, 22, 6, // setback window 22:00-06:00 (setpoint -100 → no heating)
         ))
         .with_night_ventilation(NightVentilation::case_650())
-        .with_infiltration(0.5)
+        .with_infiltration(0.414)
         .with_num_zones(1)
         .with_ground_temperature(
             crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
@@ -229,7 +229,7 @@ pub fn case_900ff() -> CaseSpec {
         .with_window_properties(WindowSpec::single_clear_glass())
         // No internal loads for free-floating cases per ASHRAE 140
         .with_hvac(HvacSchedule::free_floating())
-        .with_infiltration(0.5)
+        .with_infiltration(0.414)
         .with_num_zones(1)
         .with_ground_temperature(
             crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
@@ -260,7 +260,7 @@ pub fn case_950ff() -> CaseSpec {
         // No internal loads for free-floating cases per ASHRAE 140
         .with_hvac(HvacSchedule::free_floating())
         .with_night_ventilation(NightVentilation::case_650())
-        .with_infiltration(0.5)
+        .with_infiltration(0.414)
         .with_num_zones(1)
         .with_ground_temperature(
             crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
@@ -278,7 +278,7 @@ pub fn case_950ff() -> CaseSpec {
 // `case_960.rs::Case960ReferenceImplementation::validate_case_960_result`)
 // but are single-zone: they consume a `CaseSpec` produced by
 // `ASHRAE140Case::Case920.spec()` (geometry 8m × 6m × 2.7m, 200 mm concrete,
-// 6 m² east + 6 m² west double-clear windows, 0.5 ACH, 20°C/27°C, Denver TMY3)
+// 6 m² east + 6 m² west double-clear windows, 0.414 ACH (Table 5-42 adjusted), 20°C/27°C, Denver TMY3)
 // and compare the simulation outputs against the ASHRAE 140-2023 Annex B8
 // reference bands recorded in
 // `tests/reference_data/zone_balance/case_920_energy_reference.csv`.
