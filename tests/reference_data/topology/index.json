@@ -23,11 +23,11 @@
         "payload": "docs/architecture/topology/payloads/case-600.json"
       },
       "sha256": {
-        "reference": "3ef941df7ac14d0fb157acc8ef69ccb843b17926807d77fcf6f000198f46c921",
+        "reference": "a5f9501dae2a00c7136dda60a7468c0bcf2de53a3d95980c3c905b7d13ca5d28",
         "lint": "82f710f2579c6f505baa9361aa1de1d7c50ac1f61ac891cef68750b4b4e1201b",
         "mermaid": "049346b57f9b509bd305dcdc0b9e24a4c4502ddf54ceeacc8966487de6267f19",
-        "svg": "6c37157f7486f007337eda1bd3471fd110f1656e6e1697dbd246070c217ebc84",
-        "payload": "3ef941df7ac14d0fb157acc8ef69ccb843b17926807d77fcf6f000198f46c921"
+        "svg": "84ae8af84501a51b28334d0d2a59c6f4b44d25d2009c4283b6f2d1f02cb74785",
+        "payload": "a5f9501dae2a00c7136dda60a7468c0bcf2de53a3d95980c3c905b7d13ca5d28"
       }
     },
     {
@@ -50,11 +50,11 @@
         "payload": "docs/architecture/topology/payloads/case-610.json"
       },
       "sha256": {
-        "reference": "04867f0726dfcd9ea3148f2866a0e7a68bfc0e39b153efb54d1820251cb27e93",
+        "reference": "e7c883b030fe57c376dcc6fa21a48eb75269fc1bc0a06f51ff3eee6cf209094a",
         "lint": "542ee3e95bc60564950996a3cb8989b361767dc5cb7569de419becdef7def5c7",
         "mermaid": "48eb6b70c192b84540a795712ac1b19bc5f3744e6e22582f88c2cd7733358672",
-        "svg": "744aa68c484bab80ed4dba67e825420764751a4cb93b707d5a914bef516b243b",
-        "payload": "04867f0726dfcd9ea3148f2866a0e7a68bfc0e39b153efb54d1820251cb27e93"
+        "svg": "8bf9e5dc7253461d84baf9affef3d159ef8a49e6bb8b286a40534b279af636df",
+        "payload": "e7c883b030fe57c376dcc6fa21a48eb75269fc1bc0a06f51ff3eee6cf209094a"
       }
     },
     {
@@ -77,11 +77,11 @@
         "payload": "docs/architecture/topology/payloads/case-620.json"
       },
       "sha256": {
-        "reference": "8fcc8d3b78d6da065dbcf8de70ddd9c6bdb51ad94621b7efcaff823ed0487309",
+        "reference": "5902a0d7ceddd859897f9986e9de8e0d967890322eebca93fc5090b6e8913cd1",
         "lint": "962f58050d38fa48fe2ec79764f04fa025fa905561d4dcee68b445cc80a039cd",
         "mermaid": "ddb548e125512fcec929dab6d03384d98ee848f18284c6f3a261712ea7e04728",
-        "svg": "d39b2892f84398298c487c291983ed46237a4dd13b520915a91098ccd08ef5f8",
-        "payload": "8fcc8d3b78d6da065dbcf8de70ddd9c6bdb51ad94621b7efcaff823ed0487309"
+        "svg": "aec2af4d9586cf4018585799332519482159e2b742e953dfb4410856f5825870",
+        "payload": "5902a0d7ceddd859897f9986e9de8e0d967890322eebca93fc5090b6e8913cd1"
       }
     },
     {
@@ -104,11 +104,11 @@
         "payload": "docs/architecture/topology/payloads/case-630.json"
       },
       "sha256": {
-        "reference": "97a35f9264136c66c7c98367df17532acbcf967bd6656a91dff6e698cced0bed",
+        "reference": "04eea2ff6ec866a903a914a454e15fee5bd1d96e3027526f0143e209a6221a62",
         "lint": "206e27f44abf8d2bdfeb417a13b4b5b20ddf98dd10a617d5d82661a69c5f723f",
         "mermaid": "08608f7b494e6c760836a36b7d7d8ffac39a8a4cf6022a1aceb33c2ab3ac4c96",
-        "svg": "1650b12f0ea05df5e3428bdc9fdab47054e3294a54ae4ae9ed67d135c3f41d57",
-        "payload": "97a35f9264136c66c7c98367df17532acbcf967bd6656a91dff6e698cced0bed"
+        "svg": "ad2cd8aae4635179636b53051af025f75e76ad7dcdec3803af77837adea045fb",
+        "payload": "04eea2ff6ec866a903a914a454e15fee5bd1d96e3027526f0143e209a6221a62"
       }
     },
     {
@@ -131,11 +131,11 @@
         "payload": "docs/architecture/topology/payloads/case-640.json"
       },
       "sha256": {
-        "reference": "06d11358424d610f0c5066f8376fb877dbd291d5dee712d186dbdd57b688eba1",
+        "reference": "d327a2506d076e1fdf6ab4ce20b02b3f6bad2f98474d1d4b9cc070b7d7438cfe",
         "lint": "b00aad5676ae6e049348f171579e64c746ca1a5e9c219d9d0c8a229ae181d987",
         "mermaid": "bdef0e92619eb823a513ed7d3a015ad5daa1fd83a3e4f57c96459721dbb46af5",
-        "svg": "5b13aeb8ae5666db6165f5cf295a01b36441e020d3eab621299974d7cc2a143a",
-        "payload": "06d11358424d610f0c5066f8376fb877dbd291d5dee712d186dbdd57b688eba1"
+        "svg": "226d85567b9d75b10199fc8decf265d084f00f0d52f4ac011da6237d01f6eec2",
+        "payload": "d327a2506d076e1fdf6ab4ce20b02b3f6bad2f98474d1d4b9cc070b7d7438cfe"
       }
     },
     {
@@ -158,11 +158,11 @@
         "payload": "docs/architecture/topology/payloads/case-650.json"
       },
       "sha256": {
-        "reference": "0333236c6f025f65939a56593a0a28161a3234ea633effd1e38c8840031f7cc7",
+        "reference": "c7b7d93cb8ab5179268b303c0510567c03abf8008c0c3e263af65bad9689da92",
         "lint": "8d4bb978a0269aaa41a35a39f676de62514714ddfd5462b4b839f31c4a59df83",
         "mermaid": "b79934eb887abb06ae7ec02cf591d4994e4944a4e351cb305207005dd847c1f5",
-        "svg": "be04941538615184928a3076c50b3e549fa55e13a37313aa8892b2aeb5d85c55",
-        "payload": "0333236c6f025f65939a56593a0a28161a3234ea633effd1e38c8840031f7cc7"
+        "svg": "b3b1ae2f302f0eb8cd6da29ea6aeb0264d5c848918dd748a0b4a223247f1a6ca",
+        "payload": "c7b7d93cb8ab5179268b303c0510567c03abf8008c0c3e263af65bad9689da92"
       }
     },
     {
@@ -185,11 +185,11 @@
         "payload": "docs/architecture/topology/payloads/case-900.json"
       },
       "sha256": {
-        "reference": "fde6f1fd95843fa4d31e115f3411e30a3319c136a5740b7e2eb33e6c6b26dd79",
+        "reference": "2773f3009c87b079e2d49bd0e2e75ebd9803688f9c89abe0d1305e66058f32ce",
         "lint": "b1dcb48f23df77ebee7a9dafb0761b3b87eda155eb4e1656eafcb3e4bbaa6938",
         "mermaid": "e115d4c542c6740c84dfda5ba8cb9cab99b3fcce67cb69083e374874de4aa6cc",
-        "svg": "8104be8d1cec6e2e6979c609c97a8288c748bd31e1bdddfbaccb8923dfab617e",
-        "payload": "fde6f1fd95843fa4d31e115f3411e30a3319c136a5740b7e2eb33e6c6b26dd79"
+        "svg": "b09a19da698d6e48cd6a308815ce517936001d0f489e87cb07075894ff6bbc29",
+        "payload": "2773f3009c87b079e2d49bd0e2e75ebd9803688f9c89abe0d1305e66058f32ce"
       }
     },
     {
@@ -212,11 +212,11 @@
         "payload": "docs/architecture/topology/payloads/case-960.json"
       },
       "sha256": {
-        "reference": "023bd3d65a22573d6482649b8c8011d9afe0849d75c8ef988ba14e072fd46dd6",
+        "reference": "50ee98186086e44eb1c1c84719b00606a86b01a63427046fdd5608d9ee70810c",
         "lint": "90ff6d9069558503bdd5cc328ed40019173b570b62084dc1661f05b1d9080a52",
         "mermaid": "70643575dd19b0babc2722c048288d16ef64cba358a38e43dc15b4b8886fa074",
-        "svg": "b6ace57dae5b55d7e8294449853f4295a06a86cd93adb3e9756b19944bb9b6d7",
-        "payload": "023bd3d65a22573d6482649b8c8011d9afe0849d75c8ef988ba14e072fd46dd6"
+        "svg": "f9de3e2af7ed013a4718d8c7b88f5e7c02f02fa9bbf6e9dd183e87ff1e21fbca",
+        "payload": "50ee98186086e44eb1c1c84719b00606a86b01a63427046fdd5608d9ee70810c"
       }
     }
   ]
