@@ -3024,3 +3024,36 @@ heating was subsequently brought in band by PRs #4336/#4347 (mass coupling +
 envelope phi_m reroute) and now holds at 1.438 MWh against the true
 140-2023 target [1.379, 1.814]. No sub-hourly defect exists to fix; the
 issue is closed as investigated-and-ruled-out with this evidence.
+
+## §51 — Round 40: the sky/longwave input-provenance verdict (2026-10-15)
+
+§50's residual attribution ("~1.1 K from the EPW horizontal-infrared sky
+depression, a defensible input-provenance difference") is corrected and
+completed in
+[investigations/sky-longwave-input-provenance-and-canonical-weather.md](sky-longwave-input-provenance-and-canonical-weather.md).
+Findings, from primary sources (in-repo standard text; the standard's own
+accompanying files downloaded and checksummed this round):
+
+1. The engine's sky term is spec-permitted formulation (b) — effective-
+   black-body Tsky from EPW field 13, corrected ASHRAE sol-air signs,
+   §5.2.1.9.3(a) time-step-varying IR route, ISO 13790 view factors. No defect.
+2. The 140-recommended Tsky (informative series, modified Martin–Berdahl,
+   computed from the NORMATIVE DRYCOLD 725650 weather) is COLDER than the
+   engine's EPW-HIR-derived sky (Tsky−Tdb −16.78 K vs −11.68 K annual mean;
+   Jan −21.29 vs −13.59) — the depression premise behind the cold-bias
+   attribution is inverted.
+3. First-order term is the weather binding, not the sky model: 900FF on the
+   canonical DRYCOLD file (weather-swap diagnostic, engine untouched) gives
+   Tmin −0.256 / Tmax 38.931 °C vs the published [0.6, 2.2] / [43.3, 46.0]
+   — ~5.6 K of the 6.5 K Tmin gap closes on provenance alone; the informative-
+   vs-neutralized sky choice inside that run is worth only ~1.25 K.
+4. The canonical-weather binding is feasible (files freely downloadable,
+   checksum-guarded, fetch-at-build) and carries the concrete 5-step spec in
+   the linked investigation; it is the sequenced backlog item 1 and owes the
+   full re-record battery when implemented.
+
+Reproduction this round on 542718b2 before the investigation: strict gate
+17 annual + 4 free-float reproduced (900FF Tmin −5.87 / Tmax 42.54; 600FF
+−18.77/55.88; 650FF −24.33/55.25; 950FF −21.94/38.28), checker 10 PASS /
+32 KNOWN-FAIL / 0 REGRESSION. Engine and all baselines untouched this round;
+scratch diagnostic deleted before commit.
