@@ -442,7 +442,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     overhang,               // Use overhang from surface
                     &fins_buf,              // Issue #2770: reused buffer
                     orientation,
-                    Some(0.2), // Ground reflectance
+                    // ASHRAE 140 §6 (Issue #4269): EPW-reported albedo drives
+                    // ground-reflected shortwave. A reported 0.0 means "not
+                    // measured" in TMY3-converted files (the canonical
+                    // DRYCOLD/Denver set reports 0), so it falls back to the
+                    // 0.2 default the 140 fabric cohort assumes; the §6 WD
+                    // files carry their authored values through (WD600 0.2).
+                    Some(weather.albedo.filter(|&a| a > 0.0).unwrap_or(0.2)), // Ground reflectance
                 );
 
                 // Issue #4166: stash per-orientation irradiance for the 5R1C

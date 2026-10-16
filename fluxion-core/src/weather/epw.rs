@@ -125,6 +125,9 @@ pub struct HourlyRecord {
     pub snow_cover: Option<f64>,
     pub present_weather: Option<String>,
     pub present_weather_code: Option<u32>,
+    /// Ground albedo (fraction, 0-1) from EPW 0-indexed field 32. `None` when
+    /// not reported (missing-data sentinel or absent field). Issue #4269.
+    pub albedo: Option<f64>,
 }
 
 /// Sub-hourly weather record from EPW v3 file.
@@ -371,6 +374,18 @@ pub fn decode_epw_record(fields: &[&str]) -> Result<HourlyRecord, WeatherError> 
         snow_cover: None,
         present_weather: None,
         present_weather_code: None,
+        // Ground albedo (0-indexed field 32, Issue #4269): 9999 missing-data
+        // sentinel or unparsable → None; a reported value (including an
+        // authored 0.0 in the §6 WD files) is kept.
+        albedo: {
+            let raw = fields.get(32).copied().unwrap_or("");
+            let val = parse_optional_field(raw, f64::NAN);
+            if raw.is_empty() || val.is_nan() || val < 0.0 {
+                None
+            } else {
+                Some(val)
+            }
+        },
     })
 }
 
@@ -1000,6 +1015,23 @@ impl EpwWeatherSource {
             .to_string()
         });
 
+        // Ground albedo (field 33 in 0-indexed array). ASHRAE 140 §6 (Issue
+        // #4269): the WD100/WD600 weather-driver pair differs in this field
+        // only, so it must be read per hour, never from a config constant.
+        // 9999 (missing-data sentinel) or an unparsable value → None.
+        // A reported 0.0 is kept: for the WD files it is an authored test
+        // value (WD100), not missing data.
+        let albedo = if fields.len() > 32 {
+            let val = parse_optional_field(fields[32], f64::NAN);
+            if val.is_nan() || val < 0.0 {
+                None
+            } else {
+                Some(val)
+            }
+        } else {
+            None
+        };
+
         Ok(HourlyWeatherData {
             dry_bulb_temp,
             dni,
@@ -1017,6 +1049,7 @@ impl EpwWeatherSource {
             snow_cover,
             present_weather,
             present_weather_code,
+            albedo,
         })
     }
 
@@ -2093,6 +2126,7 @@ mod tests {
             snow_cover: Some(0.0),
             present_weather: Some("Clear".to_string()),
             present_weather_code: Some(0),
+            albedo: None,
         };
         let cloned = record.clone();
         assert_eq!(cloned.dry_bulb_temp, record.dry_bulb_temp);
