@@ -174,6 +174,7 @@ impl MiamiTmyWeather {
             snow_cover: None,
             present_weather: None,
             present_weather_code: None,
+            albedo: None,
         }
     }
 

@@ -155,6 +155,18 @@ pub struct HourlyWeatherData {
     /// Numeric code from EPW field 22, representing weather observation
     /// type. Used for discrete weather condition classification.
     pub present_weather_code: Option<u32>,
+
+    /// Ground albedo (fraction, 0-1)
+    ///
+    /// EPW data field 33 (0-indexed field 32): hourly ground albedo
+    /// reported by the weather file. Drives the ground-reflected shortwave
+    /// component (ASHRAE 140 §6 Weather Driver Tests, Issue #4269: the
+    /// WD100/WD600 pair differs in this field only). `None` when the file
+    /// does not report it (missing-data sentinel 9999 or absent field);
+    /// callers fall back to the 0.2 default the ASHRAE 140 fabric cohort
+    /// assumes. A reported `0.0` is kept as `Some(0.0)` — for the §6 WD
+    /// files that is an authored test value, not missing data.
+    pub albedo: Option<f64>,
 }
 
 impl HourlyWeatherData {
@@ -211,6 +223,7 @@ impl HourlyWeatherData {
             snow_cover: None,
             present_weather: None,
             present_weather_code: None,
+            albedo: None,
         }
     }
 
@@ -254,6 +267,7 @@ impl HourlyWeatherData {
             snow_cover: None,
             present_weather: None,
             present_weather_code: None,
+            albedo: None,
         }
     }
 

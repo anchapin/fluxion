@@ -55,8 +55,11 @@ pub enum InitializationStrategy {
     Smart {
         /// Random seed for reproducibility
         seed: Option<u64>,
-        /// Weather data for context-aware initialization
-        weather: Option<HourlyWeatherData>,
+        /// Weather data for context-aware initialization. Boxed: the enum
+        /// otherwise trips clippy's `large_enum_variant` (the +8-byte
+        /// `albedo` field added in the §6 EPW-albedo change, Issue #4269,
+        /// pushed the variant-size delta over the 200-byte lint threshold).
+        weather: Option<Box<HourlyWeatherData>>,
         /// Building thermal mass (kg) for context-aware initialization
         thermal_mass: Option<f64>,
     },
@@ -183,7 +186,7 @@ impl ContextAwareParameterInitializer {
                 seed,
                 weather,
                 thermal_mass,
-            } => self.initialize_smart(population_size, *seed, weather.as_ref(), *thermal_mass),
+            } => self.initialize_smart(population_size, *seed, weather.as_deref(), *thermal_mass),
             InitializationStrategy::LHS { seed, samples } => self.initialize_lhs(*samples, *seed),
         }
     }

@@ -121,6 +121,7 @@ fn test_hourly_record_fields() {
         snow_cover: None,
         present_weather: None,
         present_weather_code: None,
+        albedo: None,
     };
     assert_eq!(record.year, 2023);
     assert_eq!(record.month, 1);
@@ -185,6 +186,7 @@ fn test_hourly_record_clone() {
         snow_cover: None,
         present_weather: None,
         present_weather_code: None,
+        albedo: None,
     };
     let cloned = record.clone();
     assert_eq!(record.year, cloned.year);
