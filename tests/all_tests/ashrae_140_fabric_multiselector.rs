@@ -79,7 +79,13 @@ const J_TO_MWH: f64 = 1.0 / 3.6e9;
 
 /// EPA TMY3 weather path used by `run_blind_annual_energy` (Case 600/900
 /// blind execution uses the same Golden CO file).
-const EPW_PATH: &str = "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw";
+/// Canonical strict-gate weather route (round-41 binding): the converted
+/// DRYCOLD TMY3 + informative-Tsky EPW by default, the historical
+/// Golden-NREL 724666 file opt-in via FLUXION_ASHRAE140_WEATHER=golden.
+/// See `strict_gate_weather_epw` in src/validation/ashrae_140_cases.rs.
+fn epw_path() -> String {
+    fluxion::validation::ashrae_140_cases::strict_gate_weather_epw()
+}
 
 /// Run `case_id` annual simulation with the given `selector` and return
 /// (heating_MWh, cooling_MWh). Mirrors the body of `run_blind_annual_energy`
@@ -92,7 +98,7 @@ fn run_blind_annual_with_selector(
 ) -> (f64, f64) {
     let mut model = ThermalModel::<VectorField>::from_spec_with_selector(spec, &selector)
         .expect("selector must initialise");
-    let weather = fluxion::weather::epw::EpwWeatherSource::from_file(EPW_PATH)
+    let weather = fluxion::weather::epw::EpwWeatherSource::from_file(&epw_path())
         .expect("EPW weather file must be present in assets/weather/");
 
     let mut total_heating_j = 0.0_f64;

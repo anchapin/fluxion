@@ -50,6 +50,29 @@ use crate::weather::{HourlyWeatherData, WeatherSource};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Weather route for the ASHRAE 140 strict gate and validator harnesses
+/// (canonical-weather binding, loop round 41).
+///
+/// Default: the standard's own normative weather — `DRYCOLD.TMY725650TY.CSV`
+/// (TMY3, Denver Intl AP, station 725650; §5.2.1.1.1.1 / Annex A1.1.1.1),
+/// converted to EPW with the informative modified Martin–Berdahl Tsky series
+/// emitted as EPW field 12 (HIR = σ·T_sky⁴; Annex A1.1.1.2). The files are
+/// fetched at build/test time by `scripts/fetch_ashrae140_weather.py`,
+/// converted by `scripts/convert_tmy3_to_epw.py`, and sha256-guarded by
+/// `scripts/check_ashrae140_weather.py`.
+///
+/// The historical Golden-NREL 724666 route — the pre-round-41 strict-gate
+/// weather and the E+ comparison basis for the per-surface irradiance traces —
+/// stays available opt-in via `FLUXION_ASHRAE140_WEATHER=golden`, so the
+/// historical baseline remains reproducible (see
+/// docs/investigations/sky-longwave-input-provenance-and-canonical-weather.md).
+pub fn strict_gate_weather_epw() -> String {
+    match std::env::var("FLUXION_ASHRAE140_WEATHER").as_deref() {
+        Ok("golden") => "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw".to_string(),
+        _ => "assets/weather/ashrae140/DRYCOLD_TMY725650TY.epw".to_string(),
+    }
+}
+
 /// ASHRAE 140 test case enumeration.
 ///
 /// Each variant represents a specific test case defined in ASHRAE Standard 140

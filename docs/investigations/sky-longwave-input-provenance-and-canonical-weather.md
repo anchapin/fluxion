@@ -121,6 +121,66 @@ Expected first-order movement (from this round's diagnostic): 900FF Tmin
 all 17 annual metrics move on the drier/colder DRYCOLD file — recorded, not
 tuned, per the standing fidelity direction.
 
+## Round 41 — implementation record (canonical-weather binding LANDED, 2026-10-15)
+
+The 5-step spec above was implemented as-is:
+
+1. `scripts/fetch_ashrae140_weather.py` — downloads the supplemental-files
+   package, extracts the two canonical files into git-ignored
+   `assets/weather/ashrae140/`, verifies SHA-256 against
+   `tests/reference_data/weather/ashrae140_canonical_checksums.json`
+   (csv `813e1051…3206`, xlsx `bc68ac83…60ec3`). CI restores the extracted
+   files via an actions-cache keyed on the checksum file.
+2. `scripts/convert_tmy3_to_epw.py` — TMY3 CSV (0-based cols: GHI 4, DNI 7,
+   DHI 10, dry-bulb 31, dew 34, RH 37, pressure 40, wind dir 43, spd 46) +
+   the `Informative-Tsky` sheet (column D, 8760 rows) →
+   `DRYCOLD_TMY725650TY.epw`; HIR = σ·T_sky⁴ in field 12. Self-check: the
+   emitted series reproduces the round-40 provenance measurement (Tsky−Tdb
+   annual mean −16.78 K) before writing.
+3. Harness repoint: `strict_gate_weather_epw()` in
+   `src/validation/ashrae_140_cases.rs` — default canonical, Golden-NREL
+   724666 opt-in via `FLUXION_ASHRAE140_WEATHER=golden`. Used by the strict
+   gate (`zone_balance_eplus_isolation.rs`, 13 call sites) and the fabric
+   harness (`ashrae_140_fabric_multiselector.rs`). E+ comparison families
+   (solar_isolation, per-surface traces, setback/multi-climate) stay on
+   Golden.
+4. Full re-record battery from the corrected configuration, `_doc_round41`:
+   strict gate + checker **13 PASS / 29 KNOWN-FAIL / 0 REGRESSION** (was
+   10/32/0); fabric re-recorded (all six rows moved, parity case_600
+   1.1148/0.6875 → 1.1588/0.6739); surrogate fallback bit-identical
+   (3278.75 kWh, drift 0.000% — synthetic weather loop); hotloop goldens
+   PASS; grid adapter PASS; delta_config.yaml regenerated bit-identical;
+   python-bindings untouched (no engine change).
+5. `scripts/check_ashrae140_weather.py` provenance gate + fetch/convert
+   steps wired into `physics-pr.yml` (strict-energy-gate) and
+   `ashrae_140_fabric.yml`.
+
+Headline old→new (Golden → canonical DRYCOLD, strict gate):
+
+| metric | old | new | band | old→new status |
+|---|---|---|---|---|
+| 900FF Tmin | −5.87 | **−0.26** | [0.6, 2.2] | known-fail → known-fail (gap 519→119 % of mid; 0.86 K from the band edge) |
+| 900FF Tmax | 42.54 | 43.28 | [43.3, 46.0] | known-fail → known-fail (0.02 below lower edge) |
+| 600FF Tmin | −18.77 | **−13.05** | [−13.8, −9.9] | known-fail → **PASS** |
+| 600FF Tmax | 55.88 | 55.26 | [62.4, 68.4] | known-fail |
+| 650FF Tmin | −24.33 | −18.71 | [−17.8, −16.7] | known-fail (gap 41.0→8.5) |
+| 900 H | 1.438 | 1.225 | [1.357, 1.836] | PASS → known-fail |
+| 900 C | 1.820 | 2.249 | [2.117, 2.864] | known-fail → **PASS** |
+| 600 C | 4.468 | 4.975 | [4.927, 6.667] | known-fail → **PASS** |
+| 640 C / 650 C / 930 C / 940 C | — | — | — | known-fail → **PASS** (4 more) |
+| 950 C | 0.673 | 0.918 | [0.550, 0.743] | PASS → known-fail |
+| 195 C | 0.683 | 0.867 | [0.554, 0.750] | PASS → known-fail |
+| 940 H | 0.966 | 0.766 | [0.957, 1.295] | PASS → known-fail |
+
+8 metrics enter band, 4 leave (all recorded, none tuned); 900FF lands 0.9 K
+from its Tmin band exactly as §"Expected first-order movement" predicted.
+The free-float residual cohort on the standard's own weather is now the
+§LIMIT-40 storage-release split and interior-film coupling. Licensing note:
+both files ship freely from ASHRAE's supplemental-files host (no membership
+gate); the direct package URL fetched without robots friction at adoption
+time (2026-10-15). The TMY3 underlying data are NREL public domain; files
+are fetched at build/test time, never committed.
+
 ## Closes when
 
 The canonical-weather binding lands (or is explicitly rejected as an Alex-level

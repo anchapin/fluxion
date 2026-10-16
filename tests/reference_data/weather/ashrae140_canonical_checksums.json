@@ -1,0 +1,18 @@
+{
+  "_doc": "SHA-256 provenance guard for the ASHRAE 140-2023 canonical weather binding (loop round 41). These checksums pin the two files extracted from ASHRAE's free supplemental-files package (see scripts/fetch_ashrae140_weather.py for the URL and member paths). The files themselves are fetched at build/test time and never committed (assets/weather/ashrae140/ is git-ignored). Verified 2026-10-15 on the direct download from https://xp20.ashrae.org/supplementalfiles/140-2023-AccompanyingFiles.zip.",
+  "source_url": "https://xp20.ashrae.org/supplementalfiles/140-2023-AccompanyingFiles.zip",
+  "verified_date": "2026-10-15",
+  "provenance": "ASHRAE Standard 140-2023 Accompanying Files; DRYCOLD.TMY725650TY.CSV is the normative weather (Std140 section 5.2.1.1.1.1 / Annex A1.1.1.1, TMY3 station 725650 Denver Intl AP); Tsky-Informative.xlsx is the informative modified Martin-Berdahl (1984) sky-temperature series with Clark-Allen cloud correction (Annex A1.1.1.2). Underlying TMY3 data are NREL public domain.",
+  "files": {
+    "DRYCOLD.TMY725650TY.CSV": {
+      "zip_member": "Accompanying FIles/Std140_TF_Files/Normative Materials/725650TY.csv",
+      "bytes": 1714268,
+      "sha256": "813e1051ae80e26573c0a178800e23c5c29a8111ea200f251e7a0bde37ce3206"
+    },
+    "Tsky-Informative.xlsx": {
+      "zip_member": "Accompanying FIles/Std140_TF_Files/Informative Materials/Tsky-Informative.xlsx",
+      "bytes": 3771656,
+      "sha256": "bc68ac8364a6ebf44880f628ac0ee42265807b8446ea4ab96936150ebf560ec3"
+    }
+  }
+}
