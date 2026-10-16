@@ -150,18 +150,28 @@ fn test_electrical_results_match_recorded_baseline() {
     // 1.22160526193861 -> 1.3152976644842214 kW. PV, battery and SoC unchanged.
     // Genuine physics change, not a tuned constant.
     //
+    // Re-recorded 2026-10-15 by the ASHRAE 140 Table 5-42 infiltration
+    // altitude adjustment (loop round 39, commit 1878300e): the engine uses a
+    // fixed sea-level air density, so the spec-adjusted input is 0.414 ach,
+    // not 0.5 (0.5 x 1.0156/1.2255); this lowers Case 600 January heating.
+    // Thermal 150.25454453392467 -> 145.58652387252914 kWh; electrical load
+    // 50.084848177974884 -> 48.52884129084303 kWh (thermal/3); grid import
+    // 37.321170194804544 -> 35.803981845836475 kWh; peak net demand
+    // 1.3152976644842214 -> 1.2751549581267079 kW. PV, battery and SoC
+    // unchanged. Genuine physics change, not a tuned constant.
+    //
     // Cross-checks the physics wiring, not just the adapter: thermal/3 ==
     // electrical_load, and the battery stock (0.5 → 0.1 of 10 kWh) equals
     // charge − discharge. Regenerate by running with
     // FLUXION_PRINT_GRID_BASELINE=1 -- --nocapture.
-    const EXPECTED_THERMAL_KWH: f64 = 150.25454453392467;
-    const EXPECTED_ELECTRICAL_LOAD_KWH: f64 = 50.084848177974884;
+    const EXPECTED_THERMAL_KWH: f64 = 145.58652387252914;
+    const EXPECTED_ELECTRICAL_LOAD_KWH: f64 = 48.52884129084303;
     const EXPECTED_PV_KWH: f64 = 8.92391297937677;
     const EXPECTED_BATTERY_CHARGE_KWH: f64 = 0.00000000000000;
     const EXPECTED_BATTERY_DISCHARGE_KWH: f64 = 4.00000000000000;
-    const EXPECTED_GRID_IMPORT_KWH: f64 = 37.321170194804544;
+    const EXPECTED_GRID_IMPORT_KWH: f64 = 35.803981845836475;
     const EXPECTED_GRID_EXPORT_KWH: f64 = 0.00000000000000;
-    const EXPECTED_PEAK_NET_DEMAND_KW: f64 = 1.3152976644842214;
+    const EXPECTED_PEAK_NET_DEMAND_KW: f64 = 1.2751549581267079;
     const EXPECTED_FINAL_SOC_FRACTION: f64 = 0.1;
 
     let tol = 1e-9;
