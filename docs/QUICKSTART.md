@@ -100,7 +100,12 @@ in this repo and runs the `fluxion-rest` binary on port **8080**:
 
 ```bash
 docker build -t fluxion-rest .
-docker run --rm -p 8080:8080 fluxion-rest
+# FLUXION_REST_AUTH is REQUIRED: a release build refuses to boot with
+# auth off while bound to 0.0.0.0 (fail-closed, Issues #2526/#4139).
+docker run --rm -p 8080:8080 \
+  -e FLUXION_REST_AUTH=token \
+  -e FLUXION_REST_AUTH_TOKEN=change-me \
+  fluxion-rest
 # In another terminal:
 curl -s http://localhost:8080/v1/healthz
 # => {"status":"ok","version":"..."}
