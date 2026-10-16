@@ -131,8 +131,7 @@ jobs:
           set -o pipefail
           cargo nextest run --release \
             -p fluxion --test all_tests \
-            -E 'test(performance_regression_test::) | test(throughput_benchmark::) | test(api_concurrent_throughput::) | test(hybrid_perf_regression::) | test(performance_ci_test::) | test(test_batch_oracle_throughput::) | test(security_rate_limit::)' \
-            -E 'not test(performance_regression_test::test_performance_smoke_test) and not test(test_batch_oracle_throughput::test_throughput_analytical_1000_configs_sec)' \
+            -E '(test(performance_regression_test::) | test(throughput_benchmark::) | test(api_concurrent_throughput::) | test(hybrid_perf_regression::) | test(performance_ci_test::) | test(test_batch_oracle_throughput::) | test(security_rate_limit::)) and not test(performance_regression_test::test_performance_smoke_test) and not test(test_batch_oracle_throughput::test_throughput_analytical_1000_configs_sec)' \
             --run-ignored=all \
             --test-threads=2 \
             --no-fail-fast 2>&1 | tee perf-lane-run.log
