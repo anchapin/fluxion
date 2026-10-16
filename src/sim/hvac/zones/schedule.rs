@@ -86,9 +86,8 @@ mod tests {
 
     #[test]
     fn test_convert_from_validation_hvac_schedule() {
-        let validation_spec = fluxion_core::ashrae_cases::HvacSchedule::with_setback(
-            20.0, 25.0, 15.0, 22, 6,
-        );
+        let validation_spec =
+            fluxion_core::ashrae_cases::HvacSchedule::with_setback(20.0, 25.0, 15.0, 22, 6);
 
         let unified: HVACSchedule = (&validation_spec).into();
 
@@ -110,9 +109,7 @@ mod tests {
     #[test]
     fn test_convert_with_operating_hours() {
         let validation_spec =
-            fluxion_core::ashrae_cases::HvacSchedule::with_operating_hours(
-                20.0, 25.0, 8, 18,
-            );
+            fluxion_core::ashrae_cases::HvacSchedule::with_operating_hours(20.0, 25.0, 8, 18);
 
         let unified: HVACSchedule = (&validation_spec).into();
 
@@ -122,9 +119,8 @@ mod tests {
 
     #[test]
     fn test_roundtrip_conversion() {
-        let validation_spec = fluxion_core::ashrae_cases::HvacSchedule::with_setback(
-            20.0, 25.0, 15.0, 22, 6,
-        );
+        let validation_spec =
+            fluxion_core::ashrae_cases::HvacSchedule::with_setback(20.0, 25.0, 15.0, 22, 6);
         let converted: HVACSchedule = (&validation_spec).into();
 
         assert_eq!(converted.heating_setpoint(10), 20.0);
