@@ -109,6 +109,22 @@ jobs:
             fluxion-cfd -> target
             fluxion-tauri/src-tauri -> target
 
+      # Round-41 canonical-weather binding: restore (or fetch) the
+      # sha256-guarded ASHRAE 140 normative weather + informative Tsky,
+      # convert to EPW, verify provenance (cache keyed on the checksum file).
+      - name: Restore canonical ASHRAE 140 weather cache
+        id: weather-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: assets/weather/ashrae140
+          key: ashrae140-weather-${{ hashFiles('tests/reference_data/weather/ashrae140_canonical_checksums.json') }}
+
+      - name: Fetch + convert + verify canonical ASHRAE 140 weather (round 41)
+        run: |
+          python3 scripts/fetch_ashrae140_weather.py --skip-download || python3 scripts/fetch_ashrae140_weather.py
+          python3 scripts/convert_tmy3_to_epw.py
+          python3 scripts/check_ashrae140_weather.py
+
       - name: Run multi-selector fabric harness (transparent measurement)
         # The harness prints parseable lines; the regression-check step
         # below parses them and compares against the recorded baseline.

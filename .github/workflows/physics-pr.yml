@@ -339,6 +339,25 @@ jobs:
             fluxion-cfd -> target
             fluxion-tauri/src-tauri -> target
 
+      # Round-41 canonical-weather binding: restore (or fetch) the
+      # sha256-guarded ASHRAE 140 normative weather (DRYCOLD.TMY725650TY.CSV)
+      # and the informative Tsky series, convert to EPW, and verify
+      # provenance before the strict suites run. Cache keyed on the checksum
+      # file; the upstream package is ~704 MB so a cache hit skips the
+      # download entirely (re-verification still runs).
+      - name: Restore canonical ASHRAE 140 weather cache
+        id: weather-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: assets/weather/ashrae140
+          key: ashrae140-weather-${{ hashFiles('tests/reference_data/weather/ashrae140_canonical_checksums.json') }}
+
+      - name: Fetch + convert + verify canonical ASHRAE 140 weather (round 41)
+        run: |
+          python3 scripts/fetch_ashrae140_weather.py --skip-download || python3 scripts/fetch_ashrae140_weather.py
+          python3 scripts/convert_tmy3_to_epw.py
+          python3 scripts/check_ashrae140_weather.py
+
       - name: Strict ±15% Case 600/800/810/900/920/950/960/970 tolerance (transparent measurement)
         # Runs the eight `*_annual_energy_ashrae140_tolerance` tests with
         # `--include-ignored` so their measured H/C values print. The
