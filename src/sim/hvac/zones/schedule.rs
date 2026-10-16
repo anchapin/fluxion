@@ -10,8 +10,8 @@ pub use crate::sim::schedule::HVACSchedule;
 pub use crate::sim::schedule::ScheduleType;
 pub use crate::sim::schedule::ScheduleValues;
 
-impl From<&crate::validation::ashrae_140_cases::HvacSchedule> for HVACSchedule {
-    fn from(spec: &crate::validation::ashrae_140_cases::HvacSchedule) -> Self {
+impl From<&fluxion_core::ashrae_cases::HvacSchedule> for HVACSchedule {
+    fn from(spec: &fluxion_core::ashrae_cases::HvacSchedule) -> Self {
         if spec.is_free_floating() {
             return HVACSchedule::free_floating()
                 .expect("free_floating() on fresh daily schedules cannot fail");
@@ -74,8 +74,8 @@ impl From<&crate::validation::ashrae_140_cases::HvacSchedule> for HVACSchedule {
     }
 }
 
-impl From<crate::validation::ashrae_140_cases::HvacSchedule> for HVACSchedule {
-    fn from(spec: crate::validation::ashrae_140_cases::HvacSchedule) -> Self {
+impl From<fluxion_core::ashrae_cases::HvacSchedule> for HVACSchedule {
+    fn from(spec: fluxion_core::ashrae_cases::HvacSchedule) -> Self {
         HVACSchedule::from(&spec)
     }
 }
@@ -86,7 +86,7 @@ mod tests {
 
     #[test]
     fn test_convert_from_validation_hvac_schedule() {
-        let validation_spec = crate::validation::ashrae_140_cases::HvacSchedule::with_setback(
+        let validation_spec = fluxion_core::ashrae_cases::HvacSchedule::with_setback(
             20.0, 25.0, 15.0, 22, 6,
         );
 
@@ -100,7 +100,7 @@ mod tests {
 
     #[test]
     fn test_convert_free_floating() {
-        let validation_spec = crate::validation::ashrae_140_cases::HvacSchedule::free_floating();
+        let validation_spec = fluxion_core::ashrae_cases::HvacSchedule::free_floating();
 
         let unified: HVACSchedule = (&validation_spec).into();
 
@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn test_convert_with_operating_hours() {
         let validation_spec =
-            crate::validation::ashrae_140_cases::HvacSchedule::with_operating_hours(
+            fluxion_core::ashrae_cases::HvacSchedule::with_operating_hours(
                 20.0, 25.0, 8, 18,
             );
 
@@ -122,7 +122,7 @@ mod tests {
 
     #[test]
     fn test_roundtrip_conversion() {
-        let validation_spec = crate::validation::ashrae_140_cases::HvacSchedule::with_setback(
+        let validation_spec = fluxion_core::ashrae_cases::HvacSchedule::with_setback(
             20.0, 25.0, 15.0, 22, 6,
         );
         let converted: HVACSchedule = (&validation_spec).into();

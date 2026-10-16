@@ -251,7 +251,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 dni,
                 dhi,
                 Some(ghi),
-                crate::validation::ashrae_140_cases::Orientation::South,
+                fluxion_core::ashrae_cases::Orientation::South,
                 ground_reflectance,
                 hour_of_year / 24 + 1, // 1-based day of year for the irradiance correlation
             );
@@ -663,7 +663,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         dni,
                         dhi,
                         Some(ghi),
-                        crate::validation::ashrae_140_cases::Orientation::South,
+                        fluxion_core::ashrae_cases::Orientation::South,
                         ground_reflectance,
                         hour_of_year / 24 + 1, // 1-based day of year for the irradiance correlation
                     );
@@ -672,7 +672,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         dni,
                         dhi,
                         Some(ghi),
-                        crate::validation::ashrae_140_cases::Orientation::Up,
+                        fluxion_core::ashrae_cases::Orientation::Up,
                         ground_reflectance,
                         hour_of_year / 24 + 1, // 1-based day of year for the irradiance correlation
                     );
