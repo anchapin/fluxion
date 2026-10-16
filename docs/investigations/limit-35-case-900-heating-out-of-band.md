@@ -3057,3 +3057,58 @@ Reproduction this round on 542718b2 before the investigation: strict gate
 −18.77/55.88; 650FF −24.33/55.25; 950FF −21.94/38.28), checker 10 PASS /
 32 KNOWN-FAIL / 0 REGRESSION. Engine and all baselines untouched this round;
 scratch diagnostic deleted before commit.
+
+## §52 — Round 42: the §LIMIT-40 storage-release-split discriminating experiment on canonical DRYCOLD (2026-10-16)
+
+The round-41 scoped opener, executed on `c7cb6169`-era develop (experiment branch off
+`d9bb2131`; engine untouched). First reproduction on `d9bb2131`, fresh run: strict gate
+**13 PASS / 29 KNOWN-FAIL / 0 REGRESSION** with every recorded value exact (900FF Tmin
+−0.26 / Tmax 43.28; fabric parity 1.1588/0.6739; checker PASS).
+
+Method: the round-14 scratch harness pattern re-based (never-commit env hooks
+`FLX_LIFT_3817`/`FLX_R42_NOFD`/`FLX_R42_HIS` in the dispatcher and gauge solver; the
+round-13 lift guard no longer fires because #4175 moved the HighMass promotion into the
+selector, so the scratch hook forces the gauge arm directly). Harness cross-validation:
+without the lift the harness reproduces the strict-gate legacy numbers bit-for-bit on the
+free-float cohort it shares (900FF −0.256/43.276, 950FF −15.670/38.781). All runs below on
+canonical DRYCOLD (DRYCOLD.TMY725650TY + informative Tsky EPW), gauge arm (600/600FF route
+to gauge in feature builds and are bit-identical with and without the lift — a live
+confirmation the 5R1C-class gauge routing is untouched by the lift).
+
+| 900FF (°C) | Tmin | Tmax |
+|---|---|---|
+| legacy 9R4C (strict gate) | −0.26 | 43.28 |
+| gauge FD on | −8.083 | 36.547 |
+| gauge FD off | −12.116 | 39.486 |
+| gauge FD off + h_tr_is ×2 | −2.938 | 38.226 |
+| gauge FD on + h_tr_is ×2 | −7.424 | 37.556 |
+
+| Tmin/Tmax (°C) | 650FF | 950FF |
+|---|---|---|
+| gauge FD on | −17.879 / 42.823 | −16.286 / 35.170 |
+| gauge FD off | −16.703 / 48.387 | −14.802 / 36.330 |
+| gauge FD off + h_tr_is ×2 | −16.621 / 48.196 | −13.027 / 34.573 |
+| gauge FD on + h_tr_is ×2 | −17.688 / 44.849 | −15.130 / 35.312 |
+
+Attribution (900FF gauge Tmin, the LIMIT-40 residual):
+
+- **Storage-release split owns ~4.03 K** of night warming (FD on → off: −8.083 → −12.116);
+  it is the leading single structural term, confirming §23's direction on the standard's
+  own weather.
+- **Interior-film coupling owns 0.66 K with FD on** (×2: −8.083 → −7.424) but **9.18 K with
+  FD off** (×2: −12.116 → −2.938) — strongly non-additive, because both terms act through
+  the same ISO 13790 star node; the round-13 conclusion (area-shared film is audited
+  reference semantics, and the film is load-bearing: ×0.5 diverges) stands unchanged.
+- **No state reaches band on both metrics**: FD off overshoots Tmax cold-storage the other
+  way on the low-mass twins (650FF 48.39, 600FF 50.86) exactly as §23 recorded on Golden;
+  neither extreme nor any lever combination measured lands the gauge free-float cohort in
+  band.
+
+Verdict: the §LIMIT-40 gap resolves into the documented structural model difference —
+the gauge star's free-float floor is now measured on canonical DRYCOLD and is
+**−8.1 °C / 36.5 °C on 900FF with FD storage active**; the residual is not a single
+defect (round-12/13/14 decomposition, now reproduced on the standard's own weather).
+The strict-gate legacy cohort (650FF/900FF/950FF) is the legacy path's own residual and
+is tracked in its rows; nothing this round moves an engine number. No engine code,
+no default-build behavior change, no re-record battery owed; scratch harness deleted
+before commit.
