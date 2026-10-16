@@ -15,7 +15,7 @@ Fluxion is a Rust-first building-energy-modeling engine with Python and Node bin
 ## Commands That Are Easy to Guess Wrong
 
 
-> **Workspace-scope rule (Issue #3587)** — The root crate is also workspace package `fluxion` with `default-members = ["."]`. The bare `cargo test` therefore runs the root crate ONLY (4,306 lib tests + the root `[[test]]` entries) and silently SKIPS the remaining 4,623 sibling-crate tests. **Always use the workspace form below** unless you have a deliberate reason to scope to one crate. See `docs/agents/workspace-scope.md` for the full rationale and `.githooks/pre-push` for the opt-in pre-push gate. Numbers in this section are sourced from `tests/test_inventory.json::totals` (lib_tests_root, workspace_tests, workspace_ignored, test_binaries); when the live counts move, regenerate that JSON with `python3 scripts/generate_test_inventory.py` and the drift gate (`scripts/check_test_inventory_drift.py`) will fail any PR that does not refresh AGENTS.md to match.
+> **Workspace-scope rule (Issue #3587)** — The root crate is also workspace package `fluxion` with `default-members = ["."]`. The bare `cargo test` therefore runs the root crate ONLY (4,254 lib tests + the root `[[test]]` entries) and silently SKIPS the remaining 4,600 sibling-crate tests. **Always use the workspace form below** unless you have a deliberate reason to scope to one crate. See `docs/agents/workspace-scope.md` for the full rationale and `.githooks/pre-push` for the opt-in pre-push gate. Numbers in this section are sourced from `tests/test_inventory.json::totals` (lib_tests_root, workspace_tests, workspace_ignored, test_binaries); when the live counts move, regenerate that JSON with `python3 scripts/generate_test_inventory.py` and the drift gate (`scripts/check_test_inventory_drift.py`) will fail any PR that does not refresh AGENTS.md to match.
 
 
 
@@ -59,8 +59,8 @@ The hook invokes `cargo test --workspace --exclude fluxion-tauri --no-fail-fast`
 | Source | Suite | Tests | Ignored | Notes |
 |---|---|---|---|---|
 
-| `cargo test --lib` | root crate unit tests | 4,306 | 8 | matches `tests/test_inventory.json::totals.lib_tests_root` (cargo-verified live count via `--verify`; the AST-regex snapshot for this crate is in `tests/reference_data/test_inventory_baseline.json::by_crate.fluxion.lib_tests`) |
-| `cargo test --workspace --exclude fluxion-tauri` | full workspace (lib + integration + bin) | 8,929 | 160 | `tests/test_inventory.json::totals.workspace_tests` / `workspace_ignored` (cargo-verified via `--verify`; the AST-regex snapshot is in `tests/reference_data/test_inventory_baseline.json::metrics_ast`) |
+| `cargo test --lib` | root crate unit tests | 4,254 | 8 | matches `tests/test_inventory.json::totals.lib_tests_root` (cargo-verified live count via `--verify`; the AST-regex snapshot for this crate is in `tests/reference_data/test_inventory_baseline.json::by_crate.fluxion.lib_tests`) |
+| `cargo test --workspace --exclude fluxion-tauri` | full workspace (lib + integration + bin) | 8,854 | 159 | `tests/test_inventory.json::totals.workspace_tests` / `workspace_ignored` (cargo-verified via `--verify`; the AST-regex snapshot is in `tests/reference_data/test_inventory_baseline.json::metrics_ast`) |
 | `AST-regex inventory | committed in `tests/reference_data/test_inventory_baseline.json::metrics_ast` | 8,906 | 161 | non-runtime snapshot, used by the drift gate (`--no-verify`); AST counts vs cargo-verified because the regex doesn't track `cfg(test)` boundaries |
 
 
@@ -104,7 +104,6 @@ Runtime configuration knobs referenced above and in `docs/FEATURES.md`. Defaults
 - `FLUXION_ONNX_MODEL` — explicit ONNX model path for `--features ort` builds. Fail-closed: routed through `validate_model_path` (`FLUXION_MODEL_DIR` allow-list, `.onnx` extension check, 256 MiB size cap); an explicit path that fails validation errors out instead of falling back. Unset falls back to `models/surrogate_zone_thermal.onnx`, then mock mode (`src/ai/surrogate.rs`).
 - `FLUXION_ONNX_BACKEND` — ONNX inference backend selector for `--features ort` builds: `cpu | cuda | coreml | directml | openvino` (default `cpu`; unknown values fall back to `cpu`). A `cuda` request that resolves to CPU — backend not built, or `FLUXION_GPU` forcing CPU — emits a one-shot `tracing::warn!` naming requested vs. resolved backend (#2920).
 - `FLUXION_GPU` — `FLUXION_GPU=0|false|<empty>` is an explicit runtime bypass that forces CPU surrogate inference even when the `cuda` feature is built. Leave unset (or `1`) to honor the built backend.
-- `DWAVE_API_TOKEN` — D-Wave API token, required at runtime for the `dwave` feature. Fail-closed: the client errors with `DwaveError::MissingApiToken` when unset (`src/quantum/dwave_client.rs`). Never commit tokens; supply per environment.
 - `PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1` — build-time knob for `python-bindings` wheel builds (maturin/PyO3): enables abi3 forward compatibility so wheels built on a newer Python run on older interpreters. Set in the CI workflows that build or test Python bindings.
 - `RUST_MIN_STACK=33554432` — build-time companion of the flag above for `python-bindings` wheel builds; enlarges the thread stack (32 MiB) to avoid linker SIGSEGV during maturin builds (see `docs/FEATURES.md`).
 - `LOOM=1` — test-only: enables loom concurrency-model execution in `cargo test --features loom --test loom_concurrency_tests` (`.github/workflows/loom-stress.yml`). Manual-only locally; requires ~32 GB RAM.

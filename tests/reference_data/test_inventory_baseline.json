@@ -17,8 +17,8 @@
     },
     "fluxion": {
       "lib_ignored": 8,
-      "lib_tests": 4297,
-      "test_binaries": 36
+      "lib_tests": 4254,
+      "test_binaries": 37
     },
     "fluxion-behavior": {
       "lib_ignored": 0,
@@ -37,7 +37,7 @@
     },
     "fluxion-core": {
       "lib_ignored": 0,
-      "lib_tests": 462,
+      "lib_tests": 474,
       "test_binaries": 3
     },
     "fluxion-fluid": {
@@ -66,39 +66,43 @@
       "test_binaries": 1
     }
   },
-  "generated_at": "2026-10-14T20:59:40.192885+00:00",
-  "repo_root": "578cea9f9449",
-  "schema_version": 1,
-  "scope": {
-    "workspace_exclude": [
-      "fluxion-tauri"
-    ]
+  "captured_at": "2026-10-16T00:24:37.844792+00:00",
+  "captured_from": "tests/test_inventory.json",
+  "metrics": {
+    "lib_ignored": 8,
+    "lib_tests": 4254,
+    "test_binaries": 53,
+    "workspace_ignored": 159,
+    "workspace_tests": 8854
   },
+  "metrics_ast": {
+    "lib_ignored": 8,
+    "lib_tests": 4254,
+    "test_binaries": 53,
+    "workspace_ignored": 159,
+    "workspace_tests": 8854
+  },
+  "ratchet": {
+    "BASELINE_LIB_IGNORED": 9,
+    "BASELINE_LIB_TESTS": 4254,
+    "BASELINE_TEST_BINARIES": 53,
+    "BASELINE_WORKSPACE_IGNORED": 167,
+    "BASELINE_WORKSPACE_TESTS": 8854
+  },
+  "ratchet_drift_tolerance_abs": 25,
+  "ratchet_drift_tolerance_pct": 5.0,
+  "schema_version": 1,
   "totals": {
     "doc_tests": 0,
     "lib_ignored_root": 8,
-    "lib_tests_root": 4309,
+    "lib_tests_root": 4254,
     "test_binaries": 53,
-    "test_source_files": 378,
-    "workspace_ignored": 160,
-    "workspace_integration_ignored": 141,
-    "workspace_integration_tests": 3482,
+    "test_source_files": 376,
+    "workspace_ignored": 159,
+    "workspace_integration_ignored": 139,
+    "workspace_integration_tests": 3465,
     "workspace_lib_ignored": 20,
-    "workspace_lib_tests": 5424,
-    "workspace_tests": 8932
-  },
-  "verify": {
-    "command": [
-      "cargo",
-      "test",
-      "--workspace",
-      "--exclude",
-      "fluxion-tauri",
-      "--",
-      "--list"
-    ],
-    "error": "FileNotFoundError: [Errno 2] No such file or directory: 'cargo'",
-    "executed_at": "2026-09-29T23:39:46.205240+00:00",
-    "matched": false
+    "workspace_lib_tests": 5389,
+    "workspace_tests": 8854
   }
 }

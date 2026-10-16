@@ -11,7 +11,7 @@
 #     `ashrae-shard.yml` workflow (single build warms sccache, six
 #     shards run against the warm cache),
 #   * the surrogate ASHRAE 140 MAE gate (Issue #2924),
-#   * the quantum-python verification and gauge-python diagnostic jobs,
+#   * the gauge-python diagnostic job,
 #   * the cross-workflow determinism / performance listeners.
 #
 # ----------------------------------------------------------------------------
@@ -467,48 +467,6 @@ jobs:
             exit 1
           fi
           echo "Surrogate ASHRAE 140 MAE Gate (Issue #2924) PASS"
-
-  # Python verification scripts — Issue #1699
-  # These scripts validate QUBO math (issue-1464) and diurnal parity (issue-1465).
-  # They are not built into the Rust binary; they run as standalone Python scripts
-  # and must execute without crashing for CI to pass.
-  quantum-python-verification:
-    name: Quantum Python Verification
-    needs: precheck
-    if: needs.precheck.outputs.should_run == 'true'
-    runs-on: ubuntu-24.04
-    # Issue #4018: in-workflow determinism-check/compare-hashes removed;
-    # determinism signal now comes from the standalone
-    # Cross-Platform Determinism CI workflow via the
-    # fluxion-determinism-gate listener (required check).
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev python3
-      - name: Install Rust
-        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
-        with:
-          max_attempts: 3
-          timeout_minutes: 10
-          retry_wait_seconds: 15
-          command: rustup toolchain install stable --profile default
-      - name: Cache cargo dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-      - name: Run Quantum Python Verification
-        run: "cargo test --test all_tests quantum_python_verification:: --release"
 
   gauge-python-diagnostic:
     name: Gauge Python Diagnostic

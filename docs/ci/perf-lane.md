@@ -29,12 +29,12 @@ class (`ubuntu-24.04` pinned, never `ubuntu-latest`).
 
 `cargo nextest run --release -p fluxion --test all_tests` with:
 
-- `-E 'test(<module>::) | ...'` over the 8 TIMING modules:
-  `performance_regression_test`, `quantum_topology_stress`,
+- `-E 'test(<module>::) | ...'` over the 7 TIMING modules:
+  `performance_regression_test`,
   `throughput_benchmark`, `api_concurrent_throughput`,
   `hybrid_perf_regression`, `performance_ci_test`,
   `test_batch_oracle_throughput`, `security_rate_limit`
-- `--run-ignored=all` — ignore-stripping: the 7 `#[ignore]`-quarantined
+- `--run-ignored=all` — ignore-stripping: the 6 `#[ignore]`-quarantined
   TIMING tests execute here while staying quarantined in the debug lanes.
   (No attribute churn; precedent: `performance_dashboard.yml` runs
   `test_performance_regression` via `-- --ignored`.)
