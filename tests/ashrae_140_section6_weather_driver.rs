@@ -699,3 +699,357 @@ fn emit_section6_workflow_csv() {
     println!("wrote {}", path.display());
     println!("{csv}");
 }
+
+// ===========================================================================
+// #4283 emitter + #4276 conformance table (round 48): consume the committed
+// workflow CSV rows and evaluate each case against the §6.2.1 output
+// requirements the in-repo standard PDF carries
+// (docs/140_2017_a_20200901.pdf, §6.2.1, extracted with pdftotext).
+//
+// Three states per case, per #4276 (rewritten 2026-09-30): conformant,
+// incomplete (ran, missing required outputs), not implemented. No score,
+// no percentage — Standard 140 defines no acceptance criteria (the #4277
+// finding), so the table reports coverage, not conformance-with-a-grade.
+// ===========================================================================
+
+/// One §6.2.1 output requirement the table tracks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Section6Requirement {
+    /// Normative section number in Standard 140-2017.
+    pub section: &'static str,
+    /// What the requirement asks for, in the table's words.
+    pub label: &'static str,
+    /// True when the harness emits this quantity today.
+    pub emitted_by_harness: bool,
+}
+
+/// §6.2.1.1.1 through §6.2.1.1.5 apply to all non-free-float cases; the
+/// harness runs the Case 600 configuration, so the Case-600-only additions
+/// (§6.2.1.2) and the §6.2.1.8 daily hourly outputs are tracked as well.
+/// Everything the harness does not emit is `missing`, never assumed.
+pub const SECTION6_REQUIREMENTS: &[Section6Requirement] = &[
+    Section6Requirement {
+        section: "6.2.1.1.1",
+        label: "annual heating load (MWh)",
+        emitted_by_harness: true,
+    },
+    Section6Requirement {
+        section: "6.2.1.1.2",
+        label: "annual sensible cooling load (MWh)",
+        emitted_by_harness: true,
+    },
+    Section6Requirement {
+        section: "6.2.1.1.3",
+        label: "annual hourly integrated peak heating load (kW) with occurrence",
+        emitted_by_harness: true,
+    },
+    Section6Requirement {
+        section: "6.2.1.1.4",
+        label: "annual hourly integrated peak cooling load (kW) with occurrence",
+        emitted_by_harness: true,
+    },
+    Section6Requirement {
+        section: "6.2.1.1.5",
+        label: "all §6.2.1.1 loads entered into the report as positive values",
+        emitted_by_harness: true,
+    },
+    Section6Requirement {
+        section: "6.2.1.2.1",
+        label: "annual incident unshaded total solar radiation on H/N/E/S/W (kWh/m2)",
+        emitted_by_harness: false,
+    },
+    Section6Requirement {
+        section: "6.2.1.2.2",
+        label: "unshaded annual transmitted solar radiation through south windows (kWh/m2)",
+        emitted_by_harness: false,
+    },
+    Section6Requirement {
+        section: "6.2.1.2.3",
+        label: "sky temperature: annual mean, min, max with occurrence (°C)",
+        emitted_by_harness: false,
+    },
+    Section6Requirement {
+        section: "6.2.1.2.4",
+        label: "monthly heating/cooling loads and monthly peaks with occurrence",
+        emitted_by_harness: true,
+    },
+    Section6Requirement {
+        section: "6.2.1.8",
+        label: "daily hourly output for the Table 6-1 days",
+        emitted_by_harness: false,
+    },
+];
+
+/// Per-case conformance record: one row of the table.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Section6ConformanceRow {
+    pub case_id: String,
+    pub weather_file: String,
+    /// True when the case ran and reported the §6.2.1.1 core outputs.
+    pub ran: bool,
+    /// `conformant`, `incomplete`, or `not implemented` (#4276 states).
+    pub status: &'static str,
+    /// Per-requirement statuses, same order as SECTION6_REQUIREMENTS.
+    /// `report` = emitted and satisfies the requirement's checks here;
+    /// `missing` = required, not emitted by this harness.
+    pub requirement_statuses: Vec<&'static str>,
+}
+
+/// Parses one flat workflow CSV row (quoted fields respected).
+/// Returns None for the header or a blank line.
+pub fn parse_section6_csv_row(line: &str) -> Option<Section6CaseResult> {
+    let mut fields = Vec::new();
+    let mut cur = String::new();
+    let mut in_quotes = false;
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if in_quotes {
+            if c == '"' {
+                if chars.peek() == Some(&'"') {
+                    cur.push('"');
+                    chars.next();
+                } else {
+                    in_quotes = false;
+                }
+            } else {
+                cur.push(c);
+            }
+        } else {
+            match c {
+                '"' => in_quotes = true,
+                ',' => {
+                    fields.push(std::mem::take(&mut cur));
+                }
+                _ => cur.push(c),
+            }
+        }
+    }
+    fields.push(cur);
+    if fields.len() < 15 || fields[0] == "case" {
+        return None;
+    }
+    let f = |i: usize| -> Option<f64> { fields.get(i)?.parse().ok() };
+    let arr12 = |i: usize| -> Option<[f64; 12]> {
+        let mut a = [0.0_f64; 12];
+        for (k, v) in fields[i].split('/').enumerate() {
+            a[k] = v.parse().ok()?;
+        }
+        Some(a)
+    };
+    Some(Section6CaseResult {
+        case_id: fields[0].clone(),
+        description: fields[1].clone(),
+        weather_file: fields[2].clone(),
+        city_state: fields[3].clone(),
+        latitude_deg: f(4)?,
+        longitude_deg: f(5)?,
+        utc_offset_hours: fields[6].parse().ok(),
+        annual_heating_mwh: f(7)?,
+        annual_cooling_mwh: f(8)?,
+        peak_heating_kw: f(9)?,
+        peak_heating_occurrence: fields[10].clone(),
+        peak_cooling_kw: f(11)?,
+        peak_cooling_occurrence: fields[12].clone(),
+        monthly_heating_mwh: arr12(13)?,
+        monthly_cooling_mwh: arr12(14)?,
+    })
+}
+
+/// Parses the whole workflow CSV (the #4283 emitter's input contract).
+pub fn parse_section6_workflow_csv(text: &str) -> Vec<Section6CaseResult> {
+    text.lines().filter_map(parse_section6_csv_row).collect()
+}
+
+/// Evaluates one case against the §6.2.1 requirements.
+pub fn evaluate_section6_conformance(r: &Section6CaseResult) -> Section6ConformanceRow {
+    // §6.2.1.1.5: every §6.2.1.1 load enters the report as a positive value.
+    let positivity_ok = r.annual_heating_mwh >= 0.0
+        && r.annual_cooling_mwh >= 0.0
+        && r.peak_heating_kw >= 0.0
+        && r.peak_cooling_kw >= 0.0
+        && r.monthly_heating_mwh.iter().all(|&v| v >= 0.0)
+        && r.monthly_cooling_mwh.iter().all(|&v| v >= 0.0);
+    let occurrence_ok = |s: &str| {
+        // MM-DD-HH shape from the engine's own calendar mapping.
+        let parts: Vec<_> = s.split('-').collect();
+        parts.len() == 3
+            && parts
+                .iter()
+                .all(|p| p.len() == 2 && p.chars().all(|c| c.is_ascii_digit()))
+    };
+    let core_checks = [
+        // 6.2.1.1.1 / .2: finite annual loads.
+        r.annual_heating_mwh.is_finite(),
+        r.annual_cooling_mwh.is_finite(),
+        // 6.2.1.1.3 / .4: finite peaks with MM-DD-HH occurrences.
+        r.peak_heating_kw.is_finite() && occurrence_ok(&r.peak_heating_occurrence),
+        r.peak_cooling_kw.is_finite() && occurrence_ok(&r.peak_cooling_occurrence),
+        positivity_ok,
+    ];
+    let mut statuses = Vec::with_capacity(SECTION6_REQUIREMENTS.len());
+    for (i, req) in SECTION6_REQUIREMENTS.iter().enumerate() {
+        if !req.emitted_by_harness {
+            statuses.push("missing");
+        } else if i < core_checks.len() {
+            statuses.push(if core_checks[i] { "report" } else { "missing" });
+        } else {
+            // 6.2.1.2.4: 12 monthly values each, finite.
+            statuses.push(
+                if r.monthly_heating_mwh.iter().all(|v| v.is_finite())
+                    && r.monthly_cooling_mwh.iter().all(|v| v.is_finite())
+                {
+                    "report"
+                } else {
+                    "missing"
+                },
+            );
+        }
+    }
+    let ran = r.is_finite();
+    let status = if ran && statuses.iter().all(|&s| s == "report") {
+        "conformant"
+    } else if ran {
+        "incomplete"
+    } else {
+        "not implemented"
+    };
+    Section6ConformanceRow {
+        case_id: r.case_id.clone(),
+        weather_file: r.weather_file.clone(),
+        ran,
+        status,
+        requirement_statuses: statuses,
+    }
+}
+
+/// Builds the full conformance table from workflow CSV rows.
+pub fn build_section6_conformance(results: &[Section6CaseResult]) -> Vec<Section6ConformanceRow> {
+    results.iter().map(evaluate_section6_conformance).collect()
+}
+
+/// CSV form of the conformance table.
+pub fn section6_conformance_csv(rows: &[Section6ConformanceRow]) -> String {
+    let mut out = String::from("case,weather_file,ran,status");
+    for req in SECTION6_REQUIREMENTS {
+        out.push_str(&format!(",{}", req.section));
+    }
+    out.push('\n');
+    for r in rows {
+        out.push_str(&r.case_id);
+        out.push(',');
+        out.push_str(&r.weather_file);
+        out.push(',');
+        out.push_str(if r.ran { "yes" } else { "no" });
+        out.push(',');
+        out.push_str(r.status);
+        for s in &r.requirement_statuses {
+            out.push(',');
+            out.push_str(s);
+        }
+        out.push('\n');
+    }
+    out
+}
+
+/// Markdown form of the conformance table, for the issue and the docs.
+pub fn section6_conformance_markdown(rows: &[Section6ConformanceRow]) -> String {
+    let mut out = String::from(
+        "# §6 conformance table (#4276)\n\n\
+         Coverage of the Standard 140 §6.2.1 output requirements for the six\n\
+         weather-driver cases, evaluated from the committed workflow CSV\n\
+         (`section6_workflow_results.csv`). States per #4276: `conformant`,\n\
+         `incomplete` (ran, missing required outputs), `not implemented`.\n\
+         No score, no percentage — Standard 140 defines no acceptance\n\
+         criteria (#4277). `report` = emitted and satisfies the checks here;\n\
+         `missing` = required, not emitted by the harness yet.\n\n",
+    );
+    out.push_str("| Case | Weather | Status |");
+    for req in SECTION6_REQUIREMENTS {
+        out.push_str(&format!(" {} |", req.section));
+    }
+    out.push_str("\n|---|---|---|");
+    out.push_str(&"---|".repeat(SECTION6_REQUIREMENTS.len()));
+    out.push('\n');
+    for r in rows {
+        out.push_str(&format!(
+            "| {} | {} | {} |",
+            r.case_id, r.weather_file, r.status
+        ));
+        for s in &r.requirement_statuses {
+            out.push_str(&format!(" {s} |"));
+        }
+        out.push('\n');
+    }
+    out
+}
+
+fn committed_workflow_csv() -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("data/reference/section6/section6_workflow_results.csv");
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("committed §6 workflow CSV unreadable: {e}"))
+}
+
+/// The #4283 emitter consumes the committed workflow CSV rows and the
+/// #4276 table evaluates them: every case ran, every §6.2.1.1 core output
+/// is present and satisfies its check, and the missing set is exactly the
+/// harness quantities not emitted yet (§6.2.1.2.1–.3, §6.2.1.8). Honest
+/// statuses only — nothing here upgrades an unemitted quantity.
+#[test]
+fn section6_conformance_table_from_committed_csv() {
+    let results = parse_section6_workflow_csv(&committed_workflow_csv());
+    assert_eq!(results.len(), 6, "six cases in the committed CSV");
+    let rows = build_section6_conformance(&results);
+    for r in &rows {
+        assert!(r.ran, "{} did not run", r.case_id);
+        assert_eq!(
+            r.status, "incomplete",
+            "{}: expected incomplete (ran, Case-600 additions not emitted)",
+            r.case_id
+        );
+        for (i, req) in SECTION6_REQUIREMENTS.iter().enumerate() {
+            let expected = if req.emitted_by_harness {
+                "report"
+            } else {
+                "missing"
+            };
+            assert_eq!(
+                r.requirement_statuses[i], expected,
+                "{} / §{}: status must be {expected}",
+                r.case_id, req.section
+            );
+        }
+    }
+}
+
+/// The emitted table must round-trip: regenerating it from the committed
+/// workflow CSV reproduces the committed conformance CSV byte-for-byte.
+#[test]
+fn section6_conformance_csv_artifact_matches_regeneration() {
+    let results = parse_section6_workflow_csv(&committed_workflow_csv());
+    let rows = build_section6_conformance(&results);
+    let regenerated = section6_conformance_csv(&rows);
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("data/reference/section6/section6_conformance.csv");
+    let committed = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("committed conformance CSV unreadable: {e}"));
+    assert_eq!(regenerated, committed, "committed conformance CSV is stale");
+}
+
+/// Writes both conformance artifacts into `data/reference/section6/`.
+/// Ignored, category `diagnostic`: run explicitly with
+/// `cargo test --release --test ashrae_140_section6_weather_driver -- --ignored emit_section6_conformance --nocapture`.
+#[test]
+#[ignore]
+fn emit_section6_conformance() {
+    let results = parse_section6_workflow_csv(&committed_workflow_csv());
+    let rows = build_section6_conformance(&results);
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/reference/section6");
+    std::fs::create_dir_all(&dir).expect("create section6 dir");
+    let csv_path = dir.join("section6_conformance.csv");
+    std::fs::write(&csv_path, section6_conformance_csv(&rows)).expect("write conformance CSV");
+    let md_path = dir.join("section6_conformance.md");
+    std::fs::write(&md_path, section6_conformance_markdown(&rows)).expect("write conformance md");
+    println!("wrote {} and {}", csv_path.display(), md_path.display());
+    println!("{}", section6_conformance_markdown(&rows));
+}
