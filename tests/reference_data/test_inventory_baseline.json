@@ -71,16 +71,16 @@
   "metrics": {
     "lib_ignored": 8,
     "lib_tests": 4254,
-    "test_binaries": 54,
-    "workspace_ignored": 159,
-    "workspace_tests": 8858
+    "test_binaries": 56,
+    "workspace_ignored": 163,
+    "workspace_tests": 8886
   },
   "metrics_ast": {
     "lib_ignored": 8,
     "lib_tests": 4254,
-    "test_binaries": 54,
-    "workspace_ignored": 159,
-    "workspace_tests": 8858
+    "test_binaries": 56,
+    "workspace_ignored": 163,
+    "workspace_tests": 8886
   },
   "ratchet": {
     "BASELINE_LIB_IGNORED": 9,
