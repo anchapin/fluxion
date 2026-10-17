@@ -391,8 +391,8 @@ pub fn index_by_case_metric(
 mod tests {
     use super::*;
 
-    const E100_CSV: &str = "tests/validation/hvac_bestest/data/comparative_bounds_e100_e200.csv";
-    const AE_CSV: &str = "tests/validation/hvac_bestest/data/comparative_bounds_ae101_ae445.csv";
+    const E100_CSV: &str = "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_e100_e200.csv";
+    const AE_CSV: &str = "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ae101_ae445.csv";
 
     // --- Unit-conversion correctness (every supported unit) ---------------
 

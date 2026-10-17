@@ -405,7 +405,9 @@ tests/
 ├── ashrae_140_case_900.rs       # Full physics stack
 ├── api_integration_tests.rs      # HTTP API
 ├── cli_integration.rs           # CLI
-└── hvac_bestest_validation.rs   # HVAC subsystem
+└── hvac_bestest_validation.rs   # HVAC subsystem (RP-865; the rated-equipment
+│                              #   harness itself is tests/validation/
+│                              #   hvac_equipment_rated_performance/, #4294)
 ```
 
 ## Running Tests

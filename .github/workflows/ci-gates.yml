@@ -186,7 +186,7 @@ jobs:
       # `regression_exterior_film_unification::`) that nextest applies
       # globally across EVERY selected target. As a result `--lib`
       # (3,853 tests), `--test validation_empirical_harness`,
-      # `--test hvac_bestest`, and the fluxion-behavior / fluxion-twin
+      # `--test hvac_equipment_rated_performance`, and the fluxion-behavior / fluxion-twin
       # selections each ran ~zero tests — the root lib suite executed
       # in NO per-PR required check, which is how #3935's five broken
       # lib tests shipped green (#3948). The two invocations below
@@ -229,7 +229,7 @@ jobs:
             -p fluxion \
             --lib \
             --test validation_empirical_harness \
-            --test hvac_bestest \
+            --test hvac_equipment_rated_performance \
             -p fluxion-behavior --test lighting_occupancy_integration \
             -p fluxion-twin --test mqtt_ukf_integration --test ukf_covariance_stability --test ukf_van_der_pol --test websocket_memory_leak \
             --test-threads=2 \

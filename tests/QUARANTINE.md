@@ -109,7 +109,7 @@ in #4226 — not a LIMIT-* gap, a recorded specification deviation.
 | `tests/all_tests/issue_1860_5r1c_time_constant_aware.rs` | `test_case_650_annual_cooling_within_ashrae140_band` | `structural` | #1860, LIMIT-05 | `unassigned` | GaugeSolver (#1465/#1462) ships | `pending` |
 | `tests/all_tests/issue_1860_5r1c_time_constant_aware.rs` | `test_case_950_annual_cooling_within_ashrae140_band` | `structural` | #1860, LIMIT-05 | `unassigned` | GaugeSolver (#1465/#1462) ships | `pending` |
 | `tests/all_tests/invariant_checker_test.rs` | `test_one_watt_artificial_gain_increases_imbalance` | `structural` | #3103, LIMIT-19 | `unassigned` | EnergyBalanceValidator (#1344) investigation resolves algebraic invariant confusion | `pending` |
-| `tests/validation/hvac_bestest/runner.rs` | `comparative_e200_cooling_vs_iea_task22_ensemble` | `structural` | LIMIT-05, SOLAR-02 | `unassigned` | GaugeSolver (#1465/#1462) ships; Case-600-class cooling closes | `pending` |
+| `tests/validation/hvac_equipment_rated_performance/runner.rs` | `comparative_e200_cooling_vs_iea_task22_ensemble` | `structural` | LIMIT-05, SOLAR-02 | `unassigned` | GaugeSolver (#1465/#1462) ships; Case-600-class cooling closes | `pending` |
 | `tests/all_tests/ffd_cosimulation_validation.rs` | `test_peak_cooling_load_tolerance` | `structural` | #2612, FFD-02 | `unassigned` | Real coupled BES↔FFD solver ships; stub `BuoyancyDrivenFfdSolver` replaced | `pending` |
 
 ### Issue #4078 — solar/zone-balance hermeticity triage cohort

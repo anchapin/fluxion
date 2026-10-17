@@ -2,7 +2,7 @@
 
 Issue #1755 (Plan T1.2). This directory holds the typed, provenance-bearing
 reference bounds consumed by the loader in
-`tests/validation/hvac_bestest/reference_data.rs`.
+`tests/validation/hvac_equipment_rated_performance/reference_data.rs`.
 
 ## Files
 

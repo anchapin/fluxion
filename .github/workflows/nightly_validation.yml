@@ -5,7 +5,8 @@
 #
 # Jobs:
 #   ashrae-regression  — test_ashrae_140_comprehensive_regression (integration)
-#   hvac-bestest      — hvac_bestest + hvac_bestest_validation test targets
+#   hvac-bestest      — hvac_equipment_rated_performance (formerly misnamed
+#     hvac_bestest, #4294) + hvac_bestest_validation test targets
 #
 # Both jobs share the same trigger policy (schedule + workflow_dispatch).
 # On push/pull_request, use ashrae_140_validation.yml / hvac_bestest_validation.yml
@@ -163,7 +164,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Run HVAC BESTEST scaffold
-        run: cargo test --test hvac_bestest
+        run: cargo test --test hvac_equipment_rated_performance
 
       - name: Run HVAC BESTEST Validation Tests
         id: validation
