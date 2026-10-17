@@ -1053,3 +1053,87 @@ fn emit_section6_conformance() {
     println!("wrote {} and {}", csv_path.display(), md_path.display());
     println!("{}", section6_conformance_markdown(&rows));
 }
+
+// ===========================================================================
+// Value pins (round 49, 2026-10-17, follow-up to the #4456 review finding):
+// the §6 conformance CSV carries statuses, not values, so its staleness gate
+// cannot trip on a numeric engine change. These pins make any engine change
+// that moves a WD-case output fail CI. Recorded values are the committed
+// `data/reference/section6/section6_workflow_results.csv` rows, which the
+// `emit_section6_workflow_csv` emitter above produces from this same harness.
+// When a physics-correct engine change moves a value, update the pin here AND
+// re-emit the CSV in the same PR, with the old→new provenance noted in the PR
+// description (same discipline as the strict-gate re-record battery).
+// Tolerance ±0.5%: wide enough for the 4-decimal CSV rounding (≤0.005%),
+// tight enough to catch any real engine drift.
+// ===========================================================================
+
+/// Recorded §6 output pins: (case, annual heating MWh, annual cooling MWh,
+/// peak heating kW, peak cooling kW, heating peak occurrence, cooling peak
+/// occurrence). From `section6_workflow_results.csv` as of 2026-10-17,
+/// develop `592ec089`, physics loop round 49.
+const SECTION6_VALUE_PINS: [(&str, f64, f64, f64, f64, &str, &str); 6] = [
+    (
+        "WD100", 6.2568, 3.9788, 4.6542, 4.0783, "02-09-05", "10-01-13",
+    ),
+    (
+        "WD200", 2.8683, 4.6949, 3.8725, 3.8667, "02-12-07", "11-11-14",
+    ),
+    (
+        "WD300", 3.5127, 2.2674, 2.6624, 2.7009, "07-22-07", "12-15-14",
+    ),
+    (
+        "WD400", 31.7243, 0.1292, 8.1737, 2.7594, "01-26-15", "08-13-14",
+    ),
+    (
+        "WD500", 0.3678, 13.4623, 1.6043, 5.4335, "12-30-07", "10-05-13",
+    ),
+    (
+        "WD600", 5.8903, 5.2570, 4.6339, 4.6264, "02-09-05", "10-01-13",
+    ),
+];
+
+const SECTION6_PIN_TOLERANCE: f64 = 0.005; // ±0.5%
+
+/// Any engine change that moves a §6 WD-case annual load, peak, or peak
+/// occurrence must fail here until the pins (and the committed CSV) are
+/// honestly re-recorded with dated provenance.
+#[test]
+fn section6_output_values_pinned_to_recorded_baseline() {
+    let results = harness_results();
+    assert_eq!(
+        results.len(),
+        SECTION6_VALUE_PINS.len(),
+        "pin table must cover every §6 case"
+    );
+    for (case_id, heat, cool, peak_h, peak_c, occ_h, occ_c) in SECTION6_VALUE_PINS {
+        let r = results
+            .iter()
+            .find(|r| r.case_id == case_id)
+            .unwrap_or_else(|| panic!("{case_id} missing from harness results"));
+        for (label, measured, pinned) in [
+            ("annual_heating_mwh", r.annual_heating_mwh, heat),
+            ("annual_cooling_mwh", r.annual_cooling_mwh, cool),
+            ("peak_heating_kw", r.peak_heating_kw, peak_h),
+            ("peak_cooling_kw", r.peak_cooling_kw, peak_c),
+        ] {
+            let rel = ((measured - pinned) / pinned).abs();
+            assert!(
+                rel <= SECTION6_PIN_TOLERANCE,
+                "{case_id} {label} drifted: measured {measured:.4} vs pinned {pinned:.4} \
+                 ({:.2}% > ±0.5%). If this is a physics-correct change, re-emit \
+                 section6_workflow_results.csv and update SECTION6_VALUE_PINS with \
+                 dated old→new provenance — do not tune the engine to the pins.",
+                rel * 100.0
+            );
+        }
+        assert_eq!(
+            r.peak_heating_occurrence, occ_h,
+            "{case_id} heating peak occurrence moved (sun/timestamp convention change?)"
+        );
+        assert_eq!(
+            r.peak_cooling_occurrence, occ_c,
+            "{case_id} cooling peak occurrence moved (sun/timestamp convention change?)"
+        );
+    }
+}
