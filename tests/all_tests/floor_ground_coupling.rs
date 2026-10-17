@@ -16,6 +16,7 @@
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::construction::SurfaceType as SimSurfaceType;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::validation::ashrae_140_cases::CaseBuilderExt;
 use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, CaseBuilder};
 
 fn approx_eq(a: f64, b: f64, tol: f64) -> bool {

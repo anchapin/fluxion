@@ -212,7 +212,7 @@ impl BatchOracle {
     /// produced the ~4-orders-of-magnitude Python/Node divergence measured
     /// in #4343. This constructor is the single shared definition.
     pub fn default_model() -> Result<ThermalModel<VectorField>, crate::api::error::FluxionError> {
-        let spec = crate::validation::ashrae_140_cases::CaseBuilder::case_600_baseline();
+        let spec = crate::validation::ashrae140::cases::series_600::case_600_baseline();
         ThermalModel::from_spec_with_selector(
             &spec,
             &crate::sim::thermal_selector::ThermalSelector::default(),
@@ -802,7 +802,7 @@ mod default_model_tests_4343 {
     fn default_model_matches_case_600_via_default_selector() {
         let mut via_default = BatchOracle::default_model().expect("default model builds");
         let mut via_doc_path = crate::sim::engine::ThermalModel::from_spec_with_selector(
-            &crate::validation::ashrae_140_cases::CaseBuilder::case_600_baseline(),
+            &crate::validation::ashrae140::cases::series_600::case_600_baseline(),
             &crate::sim::thermal_selector::ThermalSelector::default(),
         )
         .expect("documented construction builds");

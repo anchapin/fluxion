@@ -210,7 +210,7 @@ impl Default for ASHRAE140Validator {
 /// use fluxion::validation::ashrae_140_cases::CaseBuilder;
 /// use fluxion::validation::ashrae_140_validator::validate_ashrae_140;
 ///
-/// let case = CaseBuilder::case_900ff();
+/// let case = fluxion::validation::ashrae140::cases::series_900::case_900ff();
 /// let result = validate_ashrae_140(&case);
 /// println!("Min temp: {:.2}°C, Max temp: {:.2}°C",
 ///          result.free_float_min_temp, result.free_float_max_temp);
@@ -2743,7 +2743,7 @@ impl ASHRAE140Validator {
     /// use fluxion::validation::ashrae_140_cases::CaseBuilder;
     /// use fluxion::validation::ashrae_140_validator::validate_ashrae_140;
     ///
-    /// let case = CaseBuilder::case_900ff();
+    /// let case = fluxion::validation::ashrae140::cases::series_900::case_900ff();
     /// let result = validate_ashrae_140(&case);
     /// println!("Min temp: {:.2}°C, Max temp: {:.2}°C",
     ///          result.free_float_min_temp, result.free_float_max_temp);

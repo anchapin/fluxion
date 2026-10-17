@@ -736,7 +736,6 @@ mod case_650ff {
 // produces non-zero HVAC under FF, this test panics with an actionable message.
 mod free_float_hvac_guard {
     use super::*;
-    use fluxion::validation::ashrae_140_cases::CaseBuilder;
 
     fn run_and_check_ff_zero(case_enum: ASHRAE140Case) {
         let spec = case_enum.spec();
@@ -793,12 +792,12 @@ mod free_float_hvac_guard {
         // Sanity check the builder API agrees with the case enum mapping for
         // 600FF and 650FF. Catches future builder edits that could silently
         // turn an FF case into a setpoint case.
-        let s_600 = CaseBuilder::case_600ff();
+        let s_600 = fluxion::validation::ashrae140::cases::series_600::case_600ff();
         assert!(
             s_600.is_free_floating(),
             "case_600ff() must be free-floating"
         );
-        let s_650 = CaseBuilder::case_650ff();
+        let s_650 = fluxion::validation::ashrae140::cases::series_600::case_650ff();
         assert!(
             s_650.is_free_floating(),
             "case_650ff() must be free-floating"

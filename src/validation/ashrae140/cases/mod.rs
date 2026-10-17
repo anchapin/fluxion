@@ -9,6 +9,7 @@
 
 use crate::validation::ashrae140::ASHRAE140CaseDefinition;
 use crate::validation::ashrae_140_cases::ASHRAE140Case;
+use crate::validation::ashrae_140_cases::CaseBuilderExt;
 
 pub mod series_195;
 pub mod series_600;
@@ -220,7 +221,7 @@ pub fn build_spec(case: ASHRAE140Case) -> crate::validation::ashrae_140_cases::C
         | ASHRAE140Case::Case509
         | ASHRAE140Case::Case510
         | ASHRAE140Case::Case699 => {
-            let mut spec = CaseBuilder::case_600_baseline();
+            let mut spec = series_600::case_600_baseline();
             spec.case_id = format!("{:?}", case);
             spec.description = format!("{:?} (fallback baseline — see issue #1293)", case);
             spec

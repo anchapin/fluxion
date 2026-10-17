@@ -35,7 +35,9 @@ pub const SOLAR_ABSORPTANCE_DEFAULT: f64 = 0.7;
 ///
 /// T_ground = 9.4°C (annual mean Denver air temperature).
 /// Applies to ALL cases with floor slab (600, 610–650, 900–950 and free-float variants).
-pub const GROUND_TEMPERATURE_C: f64 = 9.4;
+// Issue #4157 (round 52): constant moved to `fluxion_core::physics_constants` as the
+// single source of truth; this historical path re-exports it unchanged.
+pub use fluxion_core::physics_constants::ASHRAE140_GROUND_TEMPERATURE_C as GROUND_TEMPERATURE_C;
 
 /// Ground thermal conductivity per ASHRAE 140-2023 Annex B §B3.3.
 /// **Value:** 1.28 W/m·K

@@ -121,6 +121,8 @@
 #![allow(nonstandard_style)]
 #![allow(clippy::all)]
 
+pub mod ashrae_case_builder;
+pub mod ashrae_case_series;
 pub mod ashrae_cases;
 pub mod assembly;
 pub mod construction;
