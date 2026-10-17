@@ -991,7 +991,7 @@ pub struct CaseSpec {
     /// Optional path to custom EPW weather file.
     pub epw_path: Option<PathBuf>,
     /// HVAC equipment (for Cases 800-810)
-    pub hvac_equipment: Option<crate::sim::hvac::AnyEquipment>,
+    pub hvac_equipment: Option<fluxion_core::ashrae_cases::EquipmentSelection>,
     /// Ground temperature boundary condition (°C) for floor slab.
     /// Per ASHRAE 140-2023 Annex B §B3.3: T_ground = 9.4°C for all cases with floor slab.
     /// When `None`, the model default (10.0°C) is used for backward compatibility.
@@ -2704,15 +2704,15 @@ impl CaseBuilder {
         spec.description = "Case 800: Heat pump (single-stage, basic control)".to_string();
 
         // Create single-stage heat pump equipment
-        let heatpump = crate::sim::hvac::HeatPump::new(
-            "HP-800".to_string(),
-            12000.0, // 12kW heating
-            10000.0, // 10kW cooling
-            3.5,     // COP 3.5
-            3.0,     // EER 3.0
-        );
-
-        spec.hvac_equipment = Some(crate::sim::hvac::AnyEquipment::HeatPump(heatpump));
+        spec.hvac_equipment = Some(fluxion_core::ashrae_cases::EquipmentSelection::HeatPump {
+            id: "HP-800".to_string(),
+            heating_capacity_w: 12000.0,
+            cooling_capacity_w: 10000.0,
+            heating_cop: 3.5,
+            cooling_eer: 3.0,
+            heating_curve: None,
+            cooling_curve: None,
+        });
         spec
     }
 
@@ -2721,40 +2721,28 @@ impl CaseBuilder {
         spec.case_id = "801".to_string();
         spec.description = "Case 801: Heat pump (two-stage, intermediate control)".to_string();
 
-        // Create two-stage heat pump with higher efficiency than single-stage
-        // Two-stage heat pumps typically achieve 10-15% higher efficiency due to
-        // intermediate capacity operation reducing cycling losses
-        let mut heatpump = crate::sim::hvac::HeatPump::new(
-            "HP-801-TwoStage".to_string(),
-            12000.0, // 12kW total heating (stage 2)
-            10000.0, // 10kW total cooling (stage 2)
-            3.5,     // Rated heating COP (higher than Case 800's 3.0)
-            11.5,    // Rated cooling EER (higher than Case 800's 10.0)
-        );
-
-        // Override default efficiency curves with two-stage heat pump curves
-        // Two-stage heat pumps have better part-load efficiency due to staging
-        use crate::sim::hvac::efficiency_curves::EfficiencyCurve;
-
+        // Two-stage heat pump with higher efficiency than single-stage.
         // Heating curve: COP = 4.0 - 0.9*PLR + 0.5*PLR² - 0.1*PLR³
         // At PLR=1.0: 4.0 - 0.9 + 0.5 - 0.1 = 3.5 (vs 3.0 for single-stage)
-        // Two-stage operation improves efficiency at intermediate loads
-        heatpump.efficiency_curve_heating = EfficiencyCurve::new(
-            [4.0, -0.9, 0.5, -0.1],
-            0.02, // Same temp degradation as single-stage
-            -5.0, // Design temp
-        );
-
         // Cooling curve: EER = 12.5 - 1.7*PLR + 1.1*PLR² - 0.4*PLR³
         // At PLR=1.0: 12.5 - 1.7 + 1.1 - 0.4 = 11.5 (vs 10.0 for single-stage)
-        // Intermediate staging reduces cycling losses and improves seasonal efficiency
-        heatpump.efficiency_curve_cooling = EfficiencyCurve::new(
-            [12.5, -1.7, 1.1, -0.4],
-            0.022, // Same temp degradation as single-stage
-            35.0,  // Design temp
-        );
-
-        spec.hvac_equipment = Some(crate::sim::hvac::AnyEquipment::HeatPump(heatpump));
+        spec.hvac_equipment = Some(fluxion_core::ashrae_cases::EquipmentSelection::HeatPump {
+            id: "HP-801-TwoStage".to_string(),
+            heating_capacity_w: 12000.0, // 12kW total heating (stage 2)
+            cooling_capacity_w: 10000.0, // 10kW total cooling (stage 2)
+            heating_cop: 3.5,            // Rated heating COP (higher than Case 800's 3.0)
+            cooling_eer: 11.5,           // Rated cooling EER (higher than Case 800's 10.0)
+            heating_curve: Some(fluxion_core::ashrae_cases::EfficiencyCurveSpec {
+                plr_coefficients: [4.0, -0.9, 0.5, -0.1],
+                temp_coefficient: 0.02, // Same temp degradation as single-stage
+                design_temp: -5.0,      // Design temp
+            }),
+            cooling_curve: Some(fluxion_core::ashrae_cases::EfficiencyCurveSpec {
+                plr_coefficients: [12.5, -1.7, 1.1, -0.4],
+                temp_coefficient: 0.022, // Same temp degradation as single-stage
+                design_temp: 35.0,       // Design temp
+            }),
+        });
         spec
     }
 
@@ -2764,15 +2752,15 @@ impl CaseBuilder {
         spec.description = "Case 802: Heat pump (variable-speed, advanced control)".to_string();
 
         // Create variable-speed heat pump equipment
-        let heatpump = crate::sim::hvac::HeatPump::new(
-            "HP-802-VariableSpeed".to_string(),
-            12000.0, // 12kW heating (continuous modulation)
-            10000.0, // 10kW cooling (continuous modulation)
-            3.5,     // COP 3.5
-            11.0,    // EER 11.0 (fixed: was 3.0, should be 11.0 for variable-speed HP)
-        );
-
-        spec.hvac_equipment = Some(crate::sim::hvac::AnyEquipment::HeatPump(heatpump));
+        spec.hvac_equipment = Some(fluxion_core::ashrae_cases::EquipmentSelection::HeatPump {
+            id: "HP-802-VariableSpeed".to_string(),
+            heating_capacity_w: 12000.0,
+            cooling_capacity_w: 10000.0,
+            heating_cop: 3.5,
+            cooling_eer: 11.0,
+            heating_curve: None,
+            cooling_curve: None,
+        });
         spec
     }
 
@@ -2782,14 +2770,12 @@ impl CaseBuilder {
         spec.description = "Case 803: Chiller plant (single chiller, basic control)".to_string();
 
         // Create single chiller equipment
-        let chiller = crate::sim::hvac::Chiller::new(
-            "CH-803-Single".to_string(),
-            10000.0, // 10kW cooling (fixed: was 100kW, too large for residential)
-            4.5,     // COP 4.5
-            35.0,    // Design temp 35°C
-        );
-
-        spec.hvac_equipment = Some(crate::sim::hvac::AnyEquipment::Chiller(chiller));
+        spec.hvac_equipment = Some(fluxion_core::ashrae_cases::EquipmentSelection::Chiller {
+            id: "CH-803-Single".to_string(),
+            cooling_capacity_w: 10000.0, // 10kW cooling (fixed: was 100kW, too large for residential)
+            cop: 4.5,                    // COP 4.5
+            design_temp_c: 35.0,         // Design temp 35°C
+        });
         spec
     }
 
@@ -2800,14 +2786,12 @@ impl CaseBuilder {
 
         // Create multiple chiller equipment (represented as larger chiller)
         // Note: Full staging logic would be implemented in control layer
-        let chiller = crate::sim::hvac::Chiller::new(
-            "CH-804-Dual".to_string(),
-            10000.0, // 2 × 5kW = 10kW total cooling (fixed: was 100kW, too large for residential)
-            4.5,     // COP 4.5
-            35.0,    // Design temp 35°C
-        );
-
-        spec.hvac_equipment = Some(crate::sim::hvac::AnyEquipment::Chiller(chiller));
+        spec.hvac_equipment = Some(fluxion_core::ashrae_cases::EquipmentSelection::Chiller {
+            id: "CH-804-Dual".to_string(),
+            cooling_capacity_w: 10000.0, // 2 × 5kW = 10kW total cooling (fixed: was 100kW, too large for residential)
+            cop: 4.5,                    // COP 4.5
+            design_temp_c: 35.0,         // Design temp 35°C
+        });
         spec
     }
 
@@ -2817,14 +2801,12 @@ impl CaseBuilder {
         spec.description = "Case 805: Boiler plant (single boiler, basic control)".to_string();
 
         // Create single boiler equipment
-        let boiler = crate::sim::hvac::Boiler::new(
-            "BO-805-Single".to_string(),
-            12000.0, // 12kW heating (fixed: was 100kW, too large for residential)
-            0.85,    // COP 0.85 (85% efficiency)
-            80.0,    // Design temp 80°C
-        );
-
-        spec.hvac_equipment = Some(crate::sim::hvac::AnyEquipment::Boiler(boiler));
+        spec.hvac_equipment = Some(fluxion_core::ashrae_cases::EquipmentSelection::Boiler {
+            id: "BO-805-Single".to_string(),
+            heating_capacity_w: 12000.0, // 12kW heating (fixed: was 100kW, too large for residential)
+            efficiency: 0.85,            // COP 0.85 (85% efficiency)
+            design_temp_c: 80.0,         // Design temp 80°C
+        });
         spec
     }
 
@@ -2835,14 +2817,12 @@ impl CaseBuilder {
 
         // Create multiple boiler equipment (represented as larger boiler)
         // Note: Full staging logic would be implemented in control layer
-        let boiler = crate::sim::hvac::Boiler::new(
-            "BO-806-Dual".to_string(),
-            12000.0, // 2 × 6kW = 12kW total heating (fixed: was 100kW, too large for residential)
-            0.85,    // COP 0.85 (85% efficiency)
-            80.0,    // Design temp 80°C
-        );
-
-        spec.hvac_equipment = Some(crate::sim::hvac::AnyEquipment::Boiler(boiler));
+        spec.hvac_equipment = Some(fluxion_core::ashrae_cases::EquipmentSelection::Boiler {
+            id: "BO-806-Dual".to_string(),
+            heating_capacity_w: 12000.0, // 2 × 6kW = 12kW total heating (fixed: was 100kW, too large for residential)
+            efficiency: 0.85,            // COP 0.85 (85% efficiency)
+            design_temp_c: 80.0,         // Design temp 80°C
+        });
         spec
     }
 
@@ -2854,15 +2834,15 @@ impl CaseBuilder {
         // Create heat pump as primary equipment
         // Note: Hybrid logic (HP primary above -5°C, boiler backup below -5°C)
         // would be implemented in control layer
-        let heatpump = crate::sim::hvac::HeatPump::new(
-            "HP-807-Hybrid".to_string(),
-            12000.0, // 12kW heating
-            10000.0, // 10kW cooling
-            3.5,     // COP 3.5
-            3.0,     // EER 3.0
-        );
-
-        spec.hvac_equipment = Some(crate::sim::hvac::AnyEquipment::HeatPump(heatpump));
+        spec.hvac_equipment = Some(fluxion_core::ashrae_cases::EquipmentSelection::HeatPump {
+            id: "HP-807-Hybrid".to_string(),
+            heating_capacity_w: 12000.0,
+            cooling_capacity_w: 10000.0,
+            heating_cop: 3.5,
+            cooling_eer: 3.0,
+            heating_curve: None,
+            cooling_curve: None,
+        });
         spec
     }
 
@@ -2874,13 +2854,13 @@ impl CaseBuilder {
         // Create VAV terminal unit with heat recovery
         // Note: VAVTerminal signature is (id, zone_id, max_airflow)
         // Heat recovery efficiency would be configured in VAVTerminal fields
-        let vav = crate::sim::hvac::VAVTerminal::new(
-            "VAV-808-WithRecovery".to_string(),
-            0,   // zone_id (single zone)
-            0.5, // max_airflow (m³/s per m²)
+        spec.hvac_equipment = Some(
+            fluxion_core::ashrae_cases::EquipmentSelection::VavTerminal {
+                id: "VAV-808-WithRecovery".to_string(),
+                zone_id: 0,                // zone_id (single zone)
+                max_airflow_m3_per_s: 0.5, // max_airflow (m³/s per m²)
+            },
         );
-
-        spec.hvac_equipment = Some(crate::sim::hvac::AnyEquipment::VAVTerminal(vav));
         spec
     }
 
@@ -2890,12 +2870,11 @@ impl CaseBuilder {
         spec.description = "Case 809: CAV system with economizer".to_string();
 
         // Create CAV system with economizer
-        let cav = crate::sim::hvac::CAVSystem::new(
-            "CAV-809-WithEconomizer".to_string(),
-            1.0, // Airflow rate (m³/s per m²)
-        );
-
-        spec.hvac_equipment = Some(crate::sim::hvac::AnyEquipment::CAVSystem(cav));
+        // Create CAV system with economizer
+        spec.hvac_equipment = Some(fluxion_core::ashrae_cases::EquipmentSelection::CavSystem {
+            id: "CAV-809-WithEconomizer".to_string(),
+            design_airflow_m3_per_s: 1.0, // Airflow rate (m³/s per m²)
+        });
         spec
     }
 
@@ -2908,15 +2887,15 @@ impl CaseBuilder {
         // Create heat pump as representative equipment
         // Note: Comprehensive system would include all equipment types
         // with advanced control logic (staging, economizer, heat recovery)
-        let heatpump = crate::sim::hvac::HeatPump::new(
-            "HP-810-Comprehensive".to_string(),
-            12000.0, // 12kW heating
-            10000.0, // 10kW cooling
-            3.5,     // COP 3.5
-            3.0,     // EER 3.0
-        );
-
-        spec.hvac_equipment = Some(crate::sim::hvac::AnyEquipment::HeatPump(heatpump));
+        spec.hvac_equipment = Some(fluxion_core::ashrae_cases::EquipmentSelection::HeatPump {
+            id: "HP-810-Comprehensive".to_string(),
+            heating_capacity_w: 12000.0,
+            cooling_capacity_w: 10000.0,
+            heating_cop: 3.5,
+            cooling_eer: 3.0,
+            heating_curve: None,
+            cooling_curve: None,
+        });
         spec
     }
 

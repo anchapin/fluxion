@@ -41,7 +41,8 @@
 //! ## What is NOT here (stays in `fluxion::validation::ashrae_140_cases`)
 //!
 //! - `ASHRAE140Case` — large enum with hundreds of body methods (depends on sim)
-//! - `CaseSpec` — has `Option<crate::sim::hvac::AnyEquipment>` field
+//! - `CaseSpec` — carries `Option<EquipmentSelection>` (data-only, slice 2 of
+//!   issue #4157) — still lives in the validation layer pending slice 3
 //! - `CaseBuilder` — builder that calls into sim/physics
 //! - `CommonWall`, `ConstructionSpec` — depend on `crate::sim::construction::Construction`
 //! - `WindowSpec::with_dimensions`-style high-level helpers that compose
@@ -50,6 +51,98 @@
 #![allow(clippy::option_as_ref_deref)]
 
 use serde::{Deserialize, Serialize};
+
+// =============================================================================
+// EquipmentSelection (issue #4157 slice 2)
+// =============================================================================
+
+/// Polynomial efficiency-curve parameters (issue #4157 slice 2).
+///
+/// Data-only mirror of `fluxion::sim::hvac::efficiency_curves::EfficiencyCurve`:
+/// the same three facts its `new` constructor takes, carried as parameters so a
+/// [`EquipmentSelection`] stays free of any `sim` dependency. The sim-side
+/// mapping site (issue #4157 slice 2) converts this to a real
+/// `EfficiencyCurve` with identical values.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EfficiencyCurveSpec {
+    /// Part-load-ratio polynomial coefficients (order 3 down to constant, as
+    /// `EfficiencyCurve::new` takes them).
+    pub plr_coefficients: [f64; 4],
+    /// Temperature degradation coefficient.
+    pub temp_coefficient: f64,
+    /// Design temperature (°C).
+    pub design_temp: f64,
+}
+
+/// Data-only HVAC equipment selection carried on `CaseSpec` (issue #4157
+/// slice 2).
+///
+/// Variant payloads are parameters only — capacities, efficiency ratings,
+/// design temperatures, curve coefficients, airflow rates — the same facts the
+/// `CaseBuilder` sites write today. `fluxion::sim::ThermalModel::from_spec*`
+/// maps this selection to the behavioral `AnyEquipment` family at a single
+/// site, so `CaseSpec` describes equipment without depending on `sim`.
+///
+/// Values are bit-identical to the pre-slice-2 builder output: the mapping
+/// calls the same constructors with the same numbers.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum EquipmentSelection {
+    /// Air-to-air heat pump (heating + cooling).
+    HeatPump {
+        /// System identifier.
+        id: String,
+        /// Rated heating capacity at design conditions (W).
+        heating_capacity_w: f64,
+        /// Rated cooling capacity at design conditions (W).
+        cooling_capacity_w: f64,
+        /// Rated heating COP at design conditions.
+        heating_cop: f64,
+        /// Rated cooling COP (EER) at design conditions.
+        cooling_eer: f64,
+        /// Overrides the default heating efficiency curve when present.
+        heating_curve: Option<EfficiencyCurveSpec>,
+        /// Overrides the default cooling efficiency curve when present.
+        cooling_curve: Option<EfficiencyCurveSpec>,
+    },
+    /// Chiller (cooling-only plant).
+    Chiller {
+        /// System identifier.
+        id: String,
+        /// Rated cooling capacity (W).
+        cooling_capacity_w: f64,
+        /// Rated cooling COP.
+        cop: f64,
+        /// Design temperature (°C).
+        design_temp_c: f64,
+    },
+    /// Boiler (heating-only plant).
+    Boiler {
+        /// System identifier.
+        id: String,
+        /// Rated heating capacity (W).
+        heating_capacity_w: f64,
+        /// Thermal efficiency (fraction of 1).
+        efficiency: f64,
+        /// Design supply temperature (°C).
+        design_temp_c: f64,
+    },
+    /// VAV terminal unit.
+    VavTerminal {
+        /// Unit identifier.
+        id: String,
+        /// Served zone index.
+        zone_id: usize,
+        /// Maximum airflow (m³/s).
+        max_airflow_m3_per_s: f64,
+    },
+    /// CAV (constant-volume) system.
+    CavSystem {
+        /// System identifier.
+        id: String,
+        /// Design airflow (m³/s).
+        design_airflow_m3_per_s: f64,
+    },
+}
 
 // =============================================================================
 // Orientation

@@ -2971,7 +2971,12 @@ impl ThermalModel<VectorField> {
 
         // Attach HVAC equipment from spec (if specified)
         // This is required for Cases 800-810 (HVAC equipment cases)
-        model.hvac.hvac_equipment = spec.hvac_equipment.clone();
+        // Issue #4157 slice 2: the single EquipmentSelection → AnyEquipment
+        // mapping site — spec carries data-only parameters, sim builds.
+        model.hvac.hvac_equipment = spec
+            .hvac_equipment
+            .as_ref()
+            .map(crate::sim::hvac::equipment::any_equipment_from_selection);
 
         // Issue #2345: Compute ventilation airflow for economizer free-cooling calculations.
         // Priority: 1) HVAC equipment design airflow, 2) night ventilation fan capacity, 3) 0.0
