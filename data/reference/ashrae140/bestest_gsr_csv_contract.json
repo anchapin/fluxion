@@ -179,7 +179,8 @@
         5,
         6
       ],
-      "date_from": "min_index_position"
+      "date_from": "min_index_position",
+   "_consumer_date_quirk": "The consumer derives the date from the raw index, not from any timestamp field: return_date_time_from_8760_index computes dd = 1 + ceil(index/24) - prior_month_days (day-of-year + 1) and hh = index % 24 (hour-beginning). A 0-based index 941 (Feb 9, hour-ending 06:00) renders FEB 10 05:00, and year-end indices render a literal DEC 32. Observed 2026-10-17 in the #4283 acceptance dry run against NatLabRockies/BESTEST-GSR results/bestest_populate_report.rb; upstream fix owed in that repo. Emitter indices are 0-based first-occurrence positions (tests/ashrae_140_section7_gsr_emitter.rs)."
     },
     "max_temp": {
       "rows": [

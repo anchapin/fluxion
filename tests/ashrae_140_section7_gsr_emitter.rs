@@ -271,8 +271,18 @@ fn strict_gate_epw_path() -> std::path::PathBuf {
 /// (increment the hour when minutes are nonzero) never fires and can never
 /// produce hour 25.
 fn format_dd_mmm_hhmm(at: (u32, u32, u32)) -> String {
+    // `at.0` is 1-based (1..=12); the "no peak" sentinel carries month 12 so
+    // this subtraction stays in range in debug builds too. Hour-ending form:
+    // `HH = hour0+1` (1..24), minutes always `00`, so the consumer's
+    // minute-rollover rule (increment the hour when minutes are nonzero)
+    // never fires and can never produce hour 25.
     let mon = MONTH_ABBR[(at.0 as usize - 1).clamp(0, 11)];
-    format!("{:02}-{}-{:02}:00", at.1, mon, (at.2 + 1).clamp(1, 24))
+    format!(
+        "{:02}-{}-{:02}:00",
+        at.1,
+        mon,
+        at.2.saturating_add(1).clamp(1, 24)
+    )
 }
 
 /// Runs one §7 case through the engine and returns its per-case outputs.
@@ -328,7 +338,12 @@ pub fn run_section7_case(def: &Section7CaseDef) -> Result<Section7CaseResult, St
     ];
 
     let j_to_mwh = 1.0 / 3.6e9;
-    let sentinel_at: (u32, u32, u32) = (0, 1, 0); // month 0 → rendered JAN day 1 hour 1
+    // Zero-load months keep the "no peak" sentinel, which renders as
+    // `01-DEC-01:00` in the emitted timestamps (month 12, day 1, hour 0).
+    // Earlier rounds used (0, 1, 0) here and depended on release-mode
+    // wraparound of `month - 1` in format_dd_mmm_hhmm to land on DEC —
+    // debug builds panicked instead. Same rendered bytes, valid arithmetic.
+    let sentinel_at: (u32, u32, u32) = (12, 1, 0); // renders 01-DEC-01:00
     let mut annual_heating_j = 0.0_f64;
     let mut annual_cooling_j = 0.0_f64;
     let mut peak_heating_w = 0.0_f64;
