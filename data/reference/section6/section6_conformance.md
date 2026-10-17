@@ -10,9 +10,9 @@ criteria (#4277). `report` = emitted and satisfies the checks here;
 
 | Case | Weather | Status | 6.2.1.1.1 | 6.2.1.1.2 | 6.2.1.1.3 | 6.2.1.1.4 | 6.2.1.1.5 | 6.2.1.2.1 | 6.2.1.2.2 | 6.2.1.2.3 | 6.2.1.2.4 | 6.2.1.8 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| WD100 | WD100.epw | incomplete | report | report | report | report | report | missing | missing | missing | report | missing |
-| WD200 | WD200.epw | incomplete | report | report | report | report | report | missing | missing | missing | report | missing |
-| WD300 | WD300.epw | incomplete | report | report | report | report | report | missing | missing | missing | report | missing |
-| WD400 | WD400.epw | incomplete | report | report | report | report | report | missing | missing | missing | report | missing |
-| WD500 | WD500.epw | incomplete | report | report | report | report | report | missing | missing | missing | report | missing |
-| WD600 | WD600.epw | incomplete | report | report | report | report | report | missing | missing | missing | report | missing |
+| WD100 | WD100.epw | conformant | report | report | report | report | report | report | report | report | report | report |
+| WD200 | WD200.epw | conformant | report | report | report | report | report | report | report | report | report | report |
+| WD300 | WD300.epw | conformant | report | report | report | report | report | report | report | report | report | report |
+| WD400 | WD400.epw | conformant | report | report | report | report | report | report | report | report | report | report |
+| WD500 | WD500.epw | conformant | report | report | report | report | report | report | report | report | report | report |
+| WD600 | WD600.epw | conformant | report | report | report | report | report | report | report | report | report | report |

@@ -14,7 +14,9 @@
 //! 4. WD400 (Barrow, lat 71.3): polar night/day hours produce finite,
 //!    non-negative irradiance.
 
-use fluxion::solar::solar_position::calculate_solar_position;
+use fluxion::sim::sky_radiation::SkyRadiationExchange;
+use fluxion::sim::solar::{calculate_window_solar_gain, WindowProperties};
+use fluxion::solar::solar_position::{calculate_day_of_year, calculate_solar_position};
 use fluxion::solar::surface_irradiance::{calculate_surface_irradiance, Orientation};
 use fluxion::weather::epw::EpwWeatherSource;
 use fluxion::weather::WeatherSource;
@@ -317,6 +319,94 @@ pub struct Section6CaseResult {
     /// Monthly diagnostics, calendar order (Section 6.2.1.2.4 shape, MWh).
     pub monthly_heating_mwh: [f64; 12],
     pub monthly_cooling_mwh: [f64; 12],
+    /// §6.2.1.2.1 — annual incident unshaded total solar radiation
+    /// (kWh/m²), order [horizontal, north, east, south, west]. Computed
+    /// with the engine's own `calculate_surface_irradiance`, the EPW's
+    /// per-hour authored albedo (the #4269 rule), and the case's own
+    /// EPW-driven solar position.
+    pub annual_incident_solar_kwh_m2: [f64; 5],
+    /// §6.2.1.2.2 — annual unshaded transmitted total solar radiation
+    /// through the south windows (kWh/m² of glazing), from the engine's
+    /// `calculate_window_solar_gain` with a 1 m² unshaded reference
+    /// window at the Case 600 spec SHGC.
+    pub annual_transmitted_south_kwh_m2: f64,
+    /// §6.2.1.2.3 — sky temperature (°C) annual mean / min / max with
+    /// MM-DD-HH occurrences, from the EPW horizontal infrared via the
+    /// engine's `SkyRadiationExchange::sky_temperature_from_ir`.
+    pub sky_temp_mean_c: f64,
+    pub sky_temp_min_c: f64,
+    pub sky_temp_min_occurrence: String,
+    pub sky_temp_max_c: f64,
+    pub sky_temp_max_occurrence: String,
+    /// §6.2.1.8 — Table 6-1 daily hourly outputs. Populated by the
+    /// harness run; empty on a row parsed from the flat workflow CSV
+    /// (the daily hourly series live in their own committed CSV).
+    pub daily_hourly: Vec<Section6DayHourly>,
+}
+
+/// The Table 6-1 daily hourly output days for the Case 600 configuration
+/// (Standard 140-2017 Table 6-1, extracted from the in-repo PDF):
+/// incident H/S/W on May 4, Jul 14, Mar 5 (plus S/W Jul 27); sky
+/// temperature Feb 1, May 4, Jul 14; transmitted south Feb 1, May 4,
+/// Jul 14; hourly integrated loads Feb 1, Jul 14, Jan 4 (plus hourly
+/// Jan 4). The harness captures all tracked quantities on all six days —
+/// a documented superset of each day's requirement.
+pub const SECTION6_TABLE61_DAYS: [(u32, u32); 6] =
+    [(1, 4), (2, 1), (3, 5), (5, 4), (7, 14), (7, 27)];
+
+/// One Table 6-1 day's hourly series for one case.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Section6DayHourly {
+    pub month: u8,
+    pub day: u8,
+    /// Hourly integrated incident unshaded total solar (Wh/m²).
+    pub incident_h_wh_m2: [f64; 24],
+    pub incident_s_wh_m2: [f64; 24],
+    pub incident_w_wh_m2: [f64; 24],
+    /// Hourly transmitted total solar through south windows (Wh/m²).
+    pub transmitted_south_wh_m2: [f64; 24],
+    /// Hourly integrated sky temperature (°C).
+    pub sky_temp_c: [f64; 24],
+    /// Hourly integrated heating (+) / sensible cooling (−) load (kWh),
+    /// signed: heating positive, cooling negative.
+    pub load_kwh: [f64; 24],
+}
+
+impl Section6DayHourly {
+    pub fn is_finite(&self) -> bool {
+        self.incident_h_wh_m2.iter().all(|v| v.is_finite())
+            && self.incident_s_wh_m2.iter().all(|v| v.is_finite())
+            && self.incident_w_wh_m2.iter().all(|v| v.is_finite())
+            && self.transmitted_south_wh_m2.iter().all(|v| v.is_finite())
+            && self.sky_temp_c.iter().all(|v| v.is_finite())
+            && self.load_kwh.iter().all(|v| v.is_finite())
+    }
+
+    pub fn csv_header() -> String {
+        "case,month,day,hour,incident_h_wh_m2,incident_s_wh_m2,incident_w_wh_m2,\
+transmitted_south_wh_m2,sky_temp_c,load_kwh"
+            .to_string()
+    }
+
+    pub fn csv_rows(&self, case_id: &str) -> String {
+        let mut out = String::new();
+        for h in 0..24 {
+            out.push_str(&format!(
+                "{},{},{},{},{:.2},{:.2},{:.2},{:.2},{:.3},{:.4}\n",
+                case_id,
+                self.month,
+                self.day,
+                h,
+                self.incident_h_wh_m2[h],
+                self.incident_s_wh_m2[h],
+                self.incident_w_wh_m2[h],
+                self.transmitted_south_wh_m2[h],
+                self.sky_temp_c[h],
+                self.load_kwh[h],
+            ));
+        }
+        out
+    }
 }
 
 impl Section6CaseResult {
@@ -328,13 +418,25 @@ impl Section6CaseResult {
             && self.peak_cooling_kw.is_finite()
             && self.monthly_heating_mwh.iter().all(|v| v.is_finite())
             && self.monthly_cooling_mwh.iter().all(|v| v.is_finite())
+            && self
+                .annual_incident_solar_kwh_m2
+                .iter()
+                .all(|v| v.is_finite())
+            && self.annual_transmitted_south_kwh_m2.is_finite()
+            && self.sky_temp_mean_c.is_finite()
+            && self.sky_temp_min_c.is_finite()
+            && self.sky_temp_max_c.is_finite()
+            && self.daily_hourly.iter().all(|d| d.is_finite())
     }
 
     /// CSV header for the flat workflow-results interchange file.
     pub fn csv_header() -> String {
         "case,description,weather_file,city_state,latitude_deg,longitude_deg,utc_offset_hours,\
 annual_heating_mwh,annual_cooling_mwh,peak_heating_kw,peak_heating_occurrence,\
-peak_cooling_kw,peak_cooling_occurrence,monthly_heating_mwh,monthly_cooling_mwh"
+peak_cooling_kw,peak_cooling_occurrence,monthly_heating_mwh,monthly_cooling_mwh,\
+annual_incident_h_kwh_m2,annual_incident_n_kwh_m2,annual_incident_e_kwh_m2,\
+annual_incident_s_kwh_m2,annual_incident_w_kwh_m2,annual_transmitted_south_kwh_m2,\
+sky_temp_mean_c,sky_temp_min_c,sky_temp_min_occurrence,sky_temp_max_c,sky_temp_max_occurrence"
             .to_string()
     }
 
@@ -349,7 +451,7 @@ peak_cooling_kw,peak_cooling_occurrence,monthly_heating_mwh,monthly_cooling_mwh"
         };
         let q = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
         format!(
-            "{},{},{},{},{:.3},{:.3},{},{:.4},{:.4},{:.4},{},{:.4},{},{},{}",
+            "{},{},{},{},{:.3},{:.3},{},{:.4},{:.4},{:.4},{},{:.4},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
             self.case_id,
             q(&self.description),
             self.weather_file,
@@ -367,6 +469,17 @@ peak_cooling_kw,peak_cooling_occurrence,monthly_heating_mwh,monthly_cooling_mwh"
             self.peak_cooling_occurrence,
             join12(&self.monthly_heating_mwh),
             join12(&self.monthly_cooling_mwh),
+            format!("{:.4}", self.annual_incident_solar_kwh_m2[0]),
+            format!("{:.4}", self.annual_incident_solar_kwh_m2[1]),
+            format!("{:.4}", self.annual_incident_solar_kwh_m2[2]),
+            format!("{:.4}", self.annual_incident_solar_kwh_m2[3]),
+            format!("{:.4}", self.annual_incident_solar_kwh_m2[4]),
+            format!("{:.4}", self.annual_transmitted_south_kwh_m2),
+            format!("{:.4}", self.sky_temp_mean_c),
+            format!("{:.4}", self.sky_temp_min_c),
+            self.sky_temp_min_occurrence,
+            format!("{:.4}", self.sky_temp_max_c),
+            self.sky_temp_max_occurrence,
         )
     }
 }
@@ -426,6 +539,56 @@ pub fn run_section6_case(def: &Section6CaseDef) -> Result<Section6CaseResult, St
     let mut monthly_heating_mwh = [0.0_f64; 12];
     let mut monthly_cooling_mwh = [0.0_f64; 12];
 
+    // §6.2.1.2 additions: incident solar (H/N/E/S/W, kWh/m²), unshaded
+    // transmitted south solar (kWh/m²), sky temperature statistics.
+    // Computed with the engine's own solar chain from each case's EPW —
+    // the same solar position, irradiance, window, and sky-temperature
+    // functions the engine and the rest of the validation suite call.
+    const INCIDENT_ORIENTATIONS: [Orientation; 5] = [
+        Orientation::Horizontal,
+        Orientation::North,
+        Orientation::East,
+        Orientation::South,
+        Orientation::West,
+    ];
+    let mut annual_incident_kwh_m2 = [0.0_f64; 5];
+    let mut annual_transmitted_south_kwh_m2 = 0.0_f64;
+    let mut sky_temp_sum = 0.0_f64;
+    let mut sky_temp_min = f64::INFINITY;
+    let mut sky_temp_min_at = (0_u32, 0_u32, 0_u32);
+    let mut sky_temp_max = f64::NEG_INFINITY;
+    let mut sky_temp_max_at = (0_u32, 0_u32, 0_u32);
+
+    // Case 600 spec window for the §6.2.1.2.2 transmitted-solar reference
+    // (1 m², unshaded: the requirement's "unshaded" wording, so no
+    // overhang/fin geometry is applied even though Case 600 carries one).
+    let window_spec_shgc = spec.window_properties.shgc;
+    let window_1m2 = WindowProperties::new(
+        1.0,
+        window_spec_shgc,
+        spec.window_properties.normal_transmittance,
+    );
+
+    // §6.2.1.8 Table 6-1 day capture.
+    let mut daily_hourly: Vec<Section6DayHourly> = SECTION6_TABLE61_DAYS
+        .iter()
+        .map(|&(m, d)| Section6DayHourly {
+            month: m as u8,
+            day: d as u8,
+            incident_h_wh_m2: [0.0; 24],
+            incident_s_wh_m2: [0.0; 24],
+            incident_w_wh_m2: [0.0; 24],
+            transmitted_south_wh_m2: [0.0; 24],
+            sky_temp_c: [0.0; 24],
+            load_kwh: [0.0; 24],
+        })
+        .collect();
+    let day_index = |month: u32, day: u32| -> Option<usize> {
+        SECTION6_TABLE61_DAYS
+            .iter()
+            .position(|&(m, d)| m == month && d == day)
+    };
+
     for step in 0..8760 {
         let weather_data = weather
             .get_hourly_data(step)
@@ -435,7 +598,7 @@ pub fn run_section6_case(def: &Section6CaseDef) -> Result<Section6CaseResult, St
         let energy_j = energy_kwh * 3.6e6;
         // Calendar month/day/hour from the engine's own timestep mapping so
         // the occurrence timestamps and monthly buckets match §6.2.1.1.3/4.
-        let (_year, month, day, hour) = fluxion::sim::engine::ThermalModel::<
+        let (year, month, day, hour) = fluxion::sim::engine::ThermalModel::<
             fluxion::physics::cta::VectorField,
         >::timestep_to_date(step);
         let mi = (month as usize - 1).min(11);
@@ -453,6 +616,106 @@ pub fn run_section6_case(def: &Section6CaseDef) -> Result<Section6CaseResult, St
                 peak_cooling_w = -energy_j / 3600.0;
                 peak_cooling_at = (month, day, hour as u32);
             }
+        }
+
+        // §6.2.1.2.1 / .2 / .3 per-hour quantities from the EPW record.
+        let sun = calculate_solar_position(
+            latitude_deg,
+            longitude_deg,
+            year,
+            month,
+            day,
+            hour,
+            utc_offset_hours,
+        );
+        let day_of_year = calculate_day_of_year(year, month, day);
+        // Authored EPW albedo passes through unfiltered (the #4269 rule
+        // above); fall back to the 0.2 default only when the file carries
+        // no albedo field at all.
+        let albedo = weather_data.albedo.unwrap_or(0.2);
+        for (o, orientation) in INCIDENT_ORIENTATIONS.iter().enumerate() {
+            let irr = calculate_surface_irradiance(
+                &sun,
+                weather_data.dni,
+                weather_data.dhi,
+                Some(weather_data.ghi),
+                *orientation,
+                albedo,
+                day_of_year,
+            );
+            annual_incident_kwh_m2[o] += irr.total_wm2 / 1000.0;
+        }
+        let irr_s = calculate_surface_irradiance(
+            &sun,
+            weather_data.dni,
+            weather_data.dhi,
+            Some(weather_data.ghi),
+            Orientation::South,
+            albedo,
+            day_of_year,
+        );
+        let gain_s = calculate_window_solar_gain(
+            &irr_s,
+            &window_1m2,
+            None,
+            None,
+            &[],
+            &sun,
+            Orientation::South.into(),
+        );
+        annual_transmitted_south_kwh_m2 += gain_s.total_gain_w / 1000.0;
+        let sky_temp_c =
+            SkyRadiationExchange::sky_temperature_from_ir(weather_data.horizontal_infrared);
+        sky_temp_sum += sky_temp_c;
+        if sky_temp_c < sky_temp_min {
+            sky_temp_min = sky_temp_c;
+            sky_temp_min_at = (month, day, hour as u32);
+        }
+        if sky_temp_c > sky_temp_max {
+            sky_temp_max = sky_temp_c;
+            sky_temp_max_at = (month, day, hour as u32);
+        }
+
+        // §6.2.1.8 Table 6-1 day capture.
+        if let Some(di) = day_index(month, day) {
+            let h = hour as usize;
+            let d = &mut daily_hourly[di];
+            for (o, orientation) in [
+                Orientation::Horizontal,
+                Orientation::South,
+                Orientation::West,
+            ]
+            .iter()
+            .enumerate()
+            {
+                let irr = calculate_surface_irradiance(
+                    &sun,
+                    weather_data.dni,
+                    weather_data.dhi,
+                    Some(weather_data.ghi),
+                    *orientation,
+                    albedo,
+                    day_of_year,
+                );
+                let v = irr.total_wm2;
+                match o {
+                    0 => d.incident_h_wh_m2[h] = v,
+                    1 => d.incident_s_wh_m2[h] = v,
+                    _ => d.incident_w_wh_m2[h] = v,
+                }
+            }
+            let gain = calculate_window_solar_gain(
+                &irr_s,
+                &window_1m2,
+                None,
+                None,
+                &[],
+                &sun,
+                Orientation::South.into(),
+            );
+            d.transmitted_south_wh_m2[h] = gain.total_gain_w;
+            d.sky_temp_c[h] = sky_temp_c;
+            d.load_kwh[h] = energy_kwh;
         }
     }
 
@@ -472,6 +735,14 @@ pub fn run_section6_case(def: &Section6CaseDef) -> Result<Section6CaseResult, St
         peak_cooling_occurrence: format_mdh(&peak_cooling_at),
         monthly_heating_mwh,
         monthly_cooling_mwh,
+        annual_incident_solar_kwh_m2: annual_incident_kwh_m2,
+        annual_transmitted_south_kwh_m2,
+        sky_temp_mean_c: sky_temp_sum / 8760.0,
+        sky_temp_min_c: sky_temp_min,
+        sky_temp_min_occurrence: format_mdh(&sky_temp_min_at),
+        sky_temp_max_c: sky_temp_max,
+        sky_temp_max_occurrence: format_mdh(&sky_temp_max_at),
+        daily_hourly,
     })
 }
 
@@ -756,17 +1027,23 @@ pub const SECTION6_REQUIREMENTS: &[Section6Requirement] = &[
     Section6Requirement {
         section: "6.2.1.2.1",
         label: "annual incident unshaded total solar radiation on H/N/E/S/W (kWh/m2)",
-        emitted_by_harness: false,
+        // Round 51 (2026-10-17): emitted from the EPW record via the
+        // engine's own calculate_surface_irradiance chain.
+        emitted_by_harness: true,
     },
     Section6Requirement {
         section: "6.2.1.2.2",
         label: "unshaded annual transmitted solar radiation through south windows (kWh/m2)",
-        emitted_by_harness: false,
+        // Round 51 (2026-10-17): emitted via calculate_window_solar_gain,
+        // 1 m² unshaded reference window at the Case 600 spec SHGC.
+        emitted_by_harness: true,
     },
     Section6Requirement {
         section: "6.2.1.2.3",
         label: "sky temperature: annual mean, min, max with occurrence (°C)",
-        emitted_by_harness: false,
+        // Round 51 (2026-10-17): emitted via sky_temperature_from_ir on
+        // the EPW horizontal infrared, with MM-DD-HH occurrences.
+        emitted_by_harness: true,
     },
     Section6Requirement {
         section: "6.2.1.2.4",
@@ -776,7 +1053,11 @@ pub const SECTION6_REQUIREMENTS: &[Section6Requirement] = &[
     Section6Requirement {
         section: "6.2.1.8",
         label: "daily hourly output for the Table 6-1 days",
-        emitted_by_harness: false,
+        // Round 51 (2026-10-17): the harness captures the Case-600-config
+        // Table 6-1 days' hourly series (incident H/S/W, transmitted
+        // south, sky temperature, signed loads) into
+        // section6_table61_daily_hourly.csv.
+        emitted_by_harness: true,
     },
 ];
 
@@ -825,13 +1106,20 @@ pub fn parse_section6_csv_row(line: &str) -> Option<Section6CaseResult> {
         }
     }
     fields.push(cur);
-    if fields.len() < 15 || fields[0] == "case" {
+    if fields.len() < 26 || fields[0] == "case" {
         return None;
     }
     let f = |i: usize| -> Option<f64> { fields.get(i)?.parse().ok() };
     let arr12 = |i: usize| -> Option<[f64; 12]> {
         let mut a = [0.0_f64; 12];
         for (k, v) in fields[i].split('/').enumerate() {
+            a[k] = v.parse().ok()?;
+        }
+        Some(a)
+    };
+    let arr5 = |i: usize| -> Option<[f64; 5]> {
+        let mut a = [0.0_f64; 5];
+        for (k, v) in fields[i..i + 5].iter().enumerate() {
             a[k] = v.parse().ok()?;
         }
         Some(a)
@@ -852,6 +1140,14 @@ pub fn parse_section6_csv_row(line: &str) -> Option<Section6CaseResult> {
         peak_cooling_occurrence: fields[12].clone(),
         monthly_heating_mwh: arr12(13)?,
         monthly_cooling_mwh: arr12(14)?,
+        annual_incident_solar_kwh_m2: arr5(15)?,
+        annual_transmitted_south_kwh_m2: f(20)?,
+        sky_temp_mean_c: f(21)?,
+        sky_temp_min_c: f(22)?,
+        sky_temp_min_occurrence: fields[23].clone(),
+        sky_temp_max_c: f(24)?,
+        sky_temp_max_occurrence: fields[25].clone(),
+        daily_hourly: Vec::new(),
     })
 }
 
@@ -886,6 +1182,30 @@ pub fn evaluate_section6_conformance(r: &Section6CaseResult) -> Section6Conforma
         r.peak_cooling_kw.is_finite() && occurrence_ok(&r.peak_cooling_occurrence),
         positivity_ok,
     ];
+    // §6.2.1.2.1: all five orientations finite and non-negative.
+    let incident_ok = r
+        .annual_incident_solar_kwh_m2
+        .iter()
+        .all(|&v| v.is_finite() && v >= 0.0);
+    // §6.2.1.2.2: finite and non-negative.
+    let transmitted_ok =
+        r.annual_transmitted_south_kwh_m2.is_finite() && r.annual_transmitted_south_kwh_m2 >= 0.0;
+    // §6.2.1.2.3: finite min/mean/max in order, with MM-DD-HH occurrences.
+    let sky_ok = r.sky_temp_mean_c.is_finite()
+        && r.sky_temp_min_c.is_finite()
+        && r.sky_temp_max_c.is_finite()
+        && r.sky_temp_min_c <= r.sky_temp_mean_c
+        && r.sky_temp_mean_c <= r.sky_temp_max_c
+        && occurrence_ok(&r.sky_temp_min_occurrence)
+        && occurrence_ok(&r.sky_temp_max_occurrence);
+    // §6.2.1.8: the Table 6-1 days present, 24 finite hourly records each.
+    let daily_ok = {
+        let mut ok = r.daily_hourly.len() == SECTION6_TABLE61_DAYS.len();
+        for (d, &(m, day)) in r.daily_hourly.iter().zip(SECTION6_TABLE61_DAYS.iter()) {
+            ok = ok && d.month as u32 == m && d.day as u32 == day && d.is_finite();
+        }
+        ok
+    };
     let mut statuses = Vec::with_capacity(SECTION6_REQUIREMENTS.len());
     for (i, req) in SECTION6_REQUIREMENTS.iter().enumerate() {
         if !req.emitted_by_harness {
@@ -893,16 +1213,23 @@ pub fn evaluate_section6_conformance(r: &Section6CaseResult) -> Section6Conforma
         } else if i < core_checks.len() {
             statuses.push(if core_checks[i] { "report" } else { "missing" });
         } else {
-            // 6.2.1.2.4: 12 monthly values each, finite.
-            statuses.push(
-                if r.monthly_heating_mwh.iter().all(|v| v.is_finite())
-                    && r.monthly_cooling_mwh.iter().all(|v| v.is_finite())
+            statuses.push(match i {
+                // 6.2.1.2.1
+                5 if incident_ok => "report",
+                // 6.2.1.2.2
+                6 if transmitted_ok => "report",
+                // 6.2.1.2.3
+                7 if sky_ok => "report",
+                // 6.2.1.2.4: 12 monthly values each, finite.
+                8 if r.monthly_heating_mwh.iter().all(|v| v.is_finite())
+                    && r.monthly_cooling_mwh.iter().all(|v| v.is_finite()) =>
                 {
                     "report"
-                } else {
-                    "missing"
-                },
-            );
+                }
+                // 6.2.1.8
+                9 if daily_ok => "report",
+                _ => "missing",
+            });
         }
     }
     let ran = r.is_finite();
@@ -922,9 +1249,90 @@ pub fn evaluate_section6_conformance(r: &Section6CaseResult) -> Section6Conforma
     }
 }
 
-/// Builds the full conformance table from workflow CSV rows.
+/// Parses the committed Table 6-1 daily hourly CSV into per-case day
+/// series. Returns (case_id, days) pairs in first-appearance order.
+pub fn parse_section6_daily_csv(text: &str) -> Vec<(String, Vec<Section6DayHourly>)> {
+    let mut order: Vec<String> = Vec::new();
+    let mut by_case: std::collections::HashMap<String, Vec<Section6DayHourly>> =
+        std::collections::HashMap::new();
+    for line in text.lines().skip(1) {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let f: Vec<&str> = line.split(',').collect();
+        if f.len() < 10 {
+            continue;
+        }
+        let (Ok(month), Ok(day), Ok(hour)) = (
+            f[1].parse::<u8>(),
+            f[2].parse::<u8>(),
+            f[3].parse::<usize>(),
+        ) else {
+            continue;
+        };
+        let case_id = f[0].to_string();
+        if !by_case.contains_key(&case_id) {
+            order.push(case_id.clone());
+        }
+        let days = by_case.entry(case_id).or_default();
+        let (month, day) = (month, day);
+        let d = match days.iter_mut().find(|d| d.month == month && d.day == day) {
+            Some(d) => d,
+            None => {
+                days.push(Section6DayHourly {
+                    month,
+                    day,
+                    incident_h_wh_m2: [0.0; 24],
+                    incident_s_wh_m2: [0.0; 24],
+                    incident_w_wh_m2: [0.0; 24],
+                    transmitted_south_wh_m2: [0.0; 24],
+                    sky_temp_c: [0.0; 24],
+                    load_kwh: [0.0; 24],
+                });
+                days.last_mut().unwrap()
+            }
+        };
+        let v = |i: usize| f[i].parse::<f64>().unwrap_or(f64::NAN);
+        if hour < 24 {
+            d.incident_h_wh_m2[hour] = v(4);
+            d.incident_s_wh_m2[hour] = v(5);
+            d.incident_w_wh_m2[hour] = v(6);
+            d.transmitted_south_wh_m2[hour] = v(7);
+            d.sky_temp_c[hour] = v(8);
+            d.load_kwh[hour] = v(9);
+        }
+    }
+    order
+        .into_iter()
+        .map(|c| {
+            let days = by_case.remove(&c).unwrap_or_default();
+            (c, days)
+        })
+        .collect()
+}
+
+/// Builds the full conformance table from workflow CSV rows plus the
+/// committed Table 6-1 daily hourly series (the §6.2.1.8 evidence).
+pub fn build_section6_conformance_with_daily(
+    results: &[Section6CaseResult],
+    daily_by_case: &[(String, Vec<Section6DayHourly>)],
+) -> Vec<Section6ConformanceRow> {
+    results
+        .iter()
+        .map(|r| {
+            let mut r = r.clone();
+            if let Some((_, days)) = daily_by_case.iter().find(|(c, _)| *c == r.case_id) {
+                r.daily_hourly = days.clone();
+            }
+            evaluate_section6_conformance(&r)
+        })
+        .collect()
+}
+
+/// Builds the conformance table from workflow rows only; the §6.2.1.8
+/// status stays `missing` unless daily hourly series are supplied.
 pub fn build_section6_conformance(results: &[Section6CaseResult]) -> Vec<Section6ConformanceRow> {
-    results.iter().map(evaluate_section6_conformance).collect()
+    build_section6_conformance_with_daily(results, &[])
 }
 
 /// CSV form of the conformance table.
@@ -983,6 +1391,13 @@ pub fn section6_conformance_markdown(rows: &[Section6ConformanceRow]) -> String 
     out
 }
 
+fn committed_daily_csv() -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("data/reference/section6/section6_table61_daily_hourly.csv");
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("committed §6 Table 6-1 daily CSV unreadable: {e}"))
+}
+
 fn committed_workflow_csv() -> String {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("data/reference/section6/section6_workflow_results.csv");
@@ -999,12 +1414,14 @@ fn committed_workflow_csv() -> String {
 fn section6_conformance_table_from_committed_csv() {
     let results = parse_section6_workflow_csv(&committed_workflow_csv());
     assert_eq!(results.len(), 6, "six cases in the committed CSV");
-    let rows = build_section6_conformance(&results);
+    let daily = parse_section6_daily_csv(&committed_daily_csv());
+    assert_eq!(daily.len(), 6, "six cases in the committed daily CSV");
+    let rows = build_section6_conformance_with_daily(&results, &daily);
     for r in &rows {
         assert!(r.ran, "{} did not run", r.case_id);
         assert_eq!(
-            r.status, "incomplete",
-            "{}: expected incomplete (ran, Case-600 additions not emitted)",
+            r.status, "conformant",
+            "{}: expected conformant once every §6.2.1 output is emitted and satisfies its check (round 51 upgraded the former missing set: §6.2.1.2.1–.3, §6.2.1.8)",
             r.case_id
         );
         for (i, req) in SECTION6_REQUIREMENTS.iter().enumerate() {
@@ -1027,7 +1444,8 @@ fn section6_conformance_table_from_committed_csv() {
 #[test]
 fn section6_conformance_csv_artifact_matches_regeneration() {
     let results = parse_section6_workflow_csv(&committed_workflow_csv());
-    let rows = build_section6_conformance(&results);
+    let daily = parse_section6_daily_csv(&committed_daily_csv());
+    let rows = build_section6_conformance_with_daily(&results, &daily);
     let regenerated = section6_conformance_csv(&rows);
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("data/reference/section6/section6_conformance.csv");
@@ -1036,21 +1454,95 @@ fn section6_conformance_csv_artifact_matches_regeneration() {
     assert_eq!(regenerated, committed, "committed conformance CSV is stale");
 }
 
+/// The committed Table 6-1 daily hourly CSV must cover all six cases, all
+/// six Table 6-1 days, and 24 finite hourly records per day, with
+/// non-negative solar and irradiance/temperature values.
+#[test]
+fn section6_daily_csv_covers_table61_days() {
+    let daily = parse_section6_daily_csv(&committed_daily_csv());
+    assert_eq!(daily.len(), 6, "six cases in the committed daily CSV");
+    for (case_id, days) in &daily {
+        assert_eq!(
+            days.len(),
+            SECTION6_TABLE61_DAYS.len(),
+            "{case_id}: Table 6-1 day coverage"
+        );
+        for (d, &(m, day)) in days.iter().zip(SECTION6_TABLE61_DAYS.iter()) {
+            assert_eq!(
+                (d.month as u32, d.day as u32),
+                (m, day),
+                "{case_id}: expected Table 6-1 day {m}-{day}"
+            );
+            assert!(
+                d.is_finite(),
+                "{case_id} {m}-{day}: non-finite hourly value"
+            );
+            for h in 0..24 {
+                assert!(
+                    d.incident_h_wh_m2[h] >= 0.0
+                        && d.incident_s_wh_m2[h] >= 0.0
+                        && d.incident_w_wh_m2[h] >= 0.0
+                        && d.transmitted_south_wh_m2[h] >= 0.0,
+                    "{case_id} {m}-{day} h{h}: solar quantities must be non-negative"
+                );
+            }
+        }
+    }
+}
+
+/// The emitted daily hourly artifact must round-trip byte-for-byte.
+#[test]
+fn section6_daily_csv_artifact_matches_regeneration() {
+    let results = harness_results();
+    let regenerated = section6_daily_csv(results);
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("data/reference/section6/section6_table61_daily_hourly.csv");
+    let committed = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("committed daily hourly CSV unreadable: {e}"));
+    assert_eq!(
+        regenerated, committed,
+        "committed daily hourly CSV is stale"
+    );
+}
+
+/// Flat CSV of all cases' Table 6-1 daily hourly series.
+pub fn section6_daily_csv(results: &[Section6CaseResult]) -> String {
+    let mut out = Section6DayHourly::csv_header();
+    out.push('\n');
+    for r in results {
+        for d in &r.daily_hourly {
+            out.push_str(&d.csv_rows(&r.case_id));
+        }
+    }
+    out
+}
+
 /// Writes both conformance artifacts into `data/reference/section6/`.
 /// Ignored, category `diagnostic`: run explicitly with
 /// `cargo test --release --test ashrae_140_section6_weather_driver -- --ignored emit_section6_conformance --nocapture`.
 #[test]
 #[ignore]
 fn emit_section6_conformance() {
-    let results = parse_section6_workflow_csv(&committed_workflow_csv());
-    let rows = build_section6_conformance(&results);
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/reference/section6");
     std::fs::create_dir_all(&dir).expect("create section6 dir");
+    // Daily hourly artifact first: the conformance table's §6.2.1.8
+    // status is evaluated from it.
+    let daily_path = dir.join("section6_table61_daily_hourly.csv");
+    std::fs::write(&daily_path, section6_daily_csv(harness_results()))
+        .expect("write daily hourly CSV");
+    let results = parse_section6_workflow_csv(&committed_workflow_csv());
+    let daily = parse_section6_daily_csv(&committed_daily_csv());
+    let rows = build_section6_conformance_with_daily(&results, &daily);
     let csv_path = dir.join("section6_conformance.csv");
     std::fs::write(&csv_path, section6_conformance_csv(&rows)).expect("write conformance CSV");
     let md_path = dir.join("section6_conformance.md");
     std::fs::write(&md_path, section6_conformance_markdown(&rows)).expect("write conformance md");
-    println!("wrote {} and {}", csv_path.display(), md_path.display());
+    println!(
+        "wrote {}, {} and {}",
+        csv_path.display(),
+        md_path.display(),
+        daily_path.display()
+    );
     println!("{}", section6_conformance_markdown(&rows));
 }
 
@@ -1094,6 +1586,218 @@ const SECTION6_VALUE_PINS: [(&str, f64, f64, f64, f64, &str, &str); 6] = [
 ];
 
 const SECTION6_PIN_TOLERANCE: f64 = 0.005; // ±0.5%
+
+// ---------------------------------------------------------------------------
+// Round 51 pins (2026-10-17, develop `17c3ed16`, physics loop round 51):
+// first recorded values for the formerly `missing` §6.2.1.2.1–.3 outputs,
+// emitted by the extended harness from each case's own EPW via the engine's
+// solar chain. Same ±0.5% discipline as SECTION6_VALUE_PINS; occurrences
+// exact. Provenance: harness extension only — the engine is untouched, so
+// these are recorded at the develop baseline.
+// ---------------------------------------------------------------------------
+/// (case, annual incident solar [H,N,E,S,W] kWh/m², annual unshaded
+/// transmitted south kWh/m², sky temp mean/min/max °C, sky min/max
+/// occurrence MM-DD-HH) — section6_workflow_results.csv columns 16–26.
+#[allow(clippy::type_complexity)]
+const SECTION6_SOLAR_SKY_PINS: [(&str, [f64; 5], f64, f64, f64, f64, &str, &str); 6] = [
+    (
+        "WD100",
+        [1692.0660, 265.4963, 940.6321, 1178.1116, 680.0683],
+        774.0371,
+        -2.0259,
+        -38.1241,
+        25.9857,
+        "12-31-23",
+        "08-04-14",
+    ),
+    (
+        "WD200",
+        [1706.8185, 294.4915, 870.3428, 1012.7436, 695.5009],
+        658.9191,
+        6.2808,
+        -31.9210,
+        29.3864,
+        "02-12-05",
+        "07-08-18",
+    ),
+    (
+        "WD300",
+        [1944.1705, 1234.5077, 1091.6968, 476.4039, 934.9494],
+        312.5566,
+        3.4066,
+        -19.6907,
+        23.8209,
+        "07-22-04",
+        "01-22-16",
+    ),
+    (
+        "WD400",
+        [724.9477, 240.8784, 437.4804, 603.6964, 391.5191],
+        418.4923,
+        -25.0215,
+        -64.7248,
+        8.7370,
+        "01-26-15",
+        "07-16-11",
+    ),
+    (
+        "WD500",
+        [1956.8986, 480.8809, 1123.3061, 1321.0755, 932.8583],
+        857.0100,
+        15.1553,
+        -11.6837,
+        37.3466,
+        "12-29-04",
+        "07-09-15",
+    ),
+    (
+        "WD600",
+        [1692.0660, 432.2374, 1107.3732, 1344.8527, 846.8094],
+        883.1691,
+        -2.0259,
+        -38.1241,
+        25.9857,
+        "12-31-23",
+        "08-04-14",
+    ),
+];
+
+/// §6.2.1.8 day-level pins from section6_table61_daily_hourly.csv:
+/// (case, daily total load kWh for Jan 4 / Feb 1 / Jul 14 (signed,
+/// heating +, cooling −), daily mean sky temp °C for Feb 1 / May 4 /
+/// Jul 14, daily total incident horizontal Wh/m² for Jul 14). These
+/// guard the hourly series' totals; the byte-identity staleness test on
+/// the committed CSV guards the full hourly shape.
+const SECTION6_TABLE61_DAY_PINS: [(&str, [f64; 3], [f64; 3], f64); 6] = [
+    (
+        "WD100",
+        [61.6570, 28.7311, -19.2624],
+        [-25.226, -1.577, 8.832],
+        8823.6,
+    ),
+    (
+        "WD200",
+        [21.5741, 32.1990, -30.6476],
+        [-1.514, 10.349, 19.353],
+        6868.2,
+    ),
+    (
+        "WD300",
+        [-14.2650, -19.1996, 21.5092],
+        [8.897, -1.019, -5.611],
+        3220.6,
+    ),
+    (
+        "WD400",
+        [116.3327, 116.0442, 12.6935],
+        [-26.286, -32.833, -3.490],
+        3756.7,
+    ),
+    (
+        "WD500",
+        [-6.8426, -18.9244, -27.7527],
+        [1.491, 23.641, 25.454],
+        3107.4,
+    ),
+    (
+        "WD600",
+        [60.2416, 24.9483, -28.2514],
+        [-25.226, -1.577, 8.832],
+        8823.6,
+    ),
+];
+
+/// Any engine change that moves a §6.2.1.2 solar/sky output or a Table 6-1
+/// daily aggregate must fail here until the pins and the committed CSVs are
+/// honestly re-recorded with dated provenance.
+#[test]
+fn section6_solar_sky_and_table61_values_pinned_to_recorded_baseline() {
+    let results = harness_results();
+    for (case_id, incident, transmitted, sky_mean, sky_min, sky_max, occ_min, occ_max) in
+        SECTION6_SOLAR_SKY_PINS
+    {
+        let r = results
+            .iter()
+            .find(|r| r.case_id == case_id)
+            .unwrap_or_else(|| panic!("{case_id} missing from harness results"));
+        for (o, (label, measured, pinned)) in [
+            ("incident H", r.annual_incident_solar_kwh_m2[0], incident[0]),
+            ("incident N", r.annual_incident_solar_kwh_m2[1], incident[1]),
+            ("incident E", r.annual_incident_solar_kwh_m2[2], incident[2]),
+            ("incident S", r.annual_incident_solar_kwh_m2[3], incident[3]),
+            ("incident W", r.annual_incident_solar_kwh_m2[4], incident[4]),
+            (
+                "transmitted S",
+                r.annual_transmitted_south_kwh_m2,
+                transmitted,
+            ),
+            ("sky mean", r.sky_temp_mean_c, sky_mean),
+            ("sky min", r.sky_temp_min_c, sky_min),
+            ("sky max", r.sky_temp_max_c, sky_max),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let rel = ((measured - pinned) / pinned).abs();
+            assert!(
+                rel <= SECTION6_PIN_TOLERANCE,
+                "{case_id} {label} drifted: measured {measured:.4} vs pinned {pinned:.4}                  ({:.2}% > ±0.5%). If this is a physics-correct change, re-emit the §6 CSVs                  and update the pins with dated old→new provenance — do not tune the engine.",
+                rel * 100.0
+            );
+            let _ = o;
+        }
+        assert_eq!(
+            r.sky_temp_min_occurrence, occ_min,
+            "{case_id} sky-temperature minimum occurrence moved"
+        );
+        assert_eq!(
+            r.sky_temp_max_occurrence, occ_max,
+            "{case_id} sky-temperature maximum occurrence moved"
+        );
+    }
+
+    for (case_id, loads, skys, incident_h_jul14) in SECTION6_TABLE61_DAY_PINS {
+        let r = results
+            .iter()
+            .find(|r| r.case_id == case_id)
+            .unwrap_or_else(|| panic!("{case_id} missing from harness results"));
+        let day = |m: u32, d: u32| {
+            r.daily_hourly
+                .iter()
+                .find(|x| x.month as u32 == m && x.day as u32 == d)
+                .unwrap_or_else(|| panic!("{case_id}: Table 6-1 day {m}-{d} missing"))
+        };
+        let jan4 = day(1, 4);
+        let feb1 = day(2, 1);
+        let may4 = day(5, 4);
+        let jul14 = day(7, 14);
+        let sum = |a: &[f64; 24]| a.iter().sum::<f64>();
+        for (label, measured, pinned) in [
+            ("Jan 4 load kWh", sum(&jan4.load_kwh), loads[0]),
+            ("Feb 1 load kWh", sum(&feb1.load_kwh), loads[1]),
+            ("Jul 14 load kWh", sum(&jul14.load_kwh), loads[2]),
+            ("Feb 1 sky mean °C", sum(&feb1.sky_temp_c) / 24.0, skys[0]),
+            ("May 4 sky mean °C", sum(&may4.sky_temp_c) / 24.0, skys[1]),
+            ("Jul 14 sky mean °C", sum(&jul14.sky_temp_c) / 24.0, skys[2]),
+            (
+                "Jul 14 incident H Wh/m²",
+                sum(&jul14.incident_h_wh_m2),
+                incident_h_jul14,
+            ),
+        ] {
+            let rel = if pinned != 0.0 {
+                ((measured - pinned) / pinned).abs()
+            } else {
+                measured.abs()
+            };
+            assert!(
+                rel <= SECTION6_PIN_TOLERANCE,
+                "{case_id} {label} drifted: measured {measured:.4} vs pinned {pinned:.4}                  ({:.2}% > ±0.5%). If this is a physics-correct change, re-emit the §6 CSVs                  and update the pins with dated old→new provenance — do not tune the engine.",
+                rel * 100.0
+            );
+        }
+    }
+}
 
 /// Any engine change that moves a §6 WD-case annual load, peak, or peak
 /// occurrence must fail here until the pins (and the committed CSV) are
