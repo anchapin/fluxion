@@ -1,5 +1,13 @@
 //! HVAC BESTEST Test Runner
 //!
+//! **Component smoke test, not ASHRAE 140 §9** (Issue #4294). The bin
+//! analysis below runs over a hardcoded synthetic outdoor-temperature
+//! distribution with invented hour counts and step-function part-load
+//! ratios (`total_energy_kwh *= 1.02` standby fudge included); the bins
+//! are synthetic, not climate data, and nothing here is validated against
+//! the §9 quasi-analytical solutions. See docs/KNOWN_ISSUES.md for the
+//! recorded §9 zero-cases status.
+//!
 //! Executes HVAC BESTEST cases and validates results against reference data.
 
 use crate::sim::hvac::{

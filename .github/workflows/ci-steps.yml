@@ -118,6 +118,6 @@ jobs:
           # Issue #1803 / Plan T10.1 — empirical validation harness skeleton.
           cargo test --test validation_empirical_harness --verbose ${{ inputs.cargo-features }}
           # Issue #1756 — HVAC BESTEST CI runner stub (dummy, always-green).
-          cargo test --test hvac_bestest --verbose ${{ inputs.cargo-features }}
+          cargo test --test hvac_equipment_rated_performance --verbose ${{ inputs.cargo-features }}
         env:
           PYO3_PYTHON: /usr/bin/python3

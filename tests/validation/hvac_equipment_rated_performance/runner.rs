@@ -2,7 +2,7 @@
 //!
 //! Previously (issues #1756 / #2307) this module was a *zero-case stub*: it
 //! registered zero cases (later: three cases hardcoded as `CaseStatus::Pass`
-//! without running any simulation), so `cargo test --test hvac_bestest` was
+//! without running any simulation), so `cargo test --test hvac_equipment_rated_performance` was
 //! **structurally incapable of failing**. That gave false confidence — a green
 //! CI badge that misrepresented the validation posture.
 //!
@@ -233,7 +233,7 @@ impl HvacBestestRunner {
 // ---------------------------------------------------------------------------
 // CI entry-point tests
 //
-// `cargo test --test hvac_bestest` discovers these. The tests below enforce
+// `cargo test --test hvac_equipment_rated_performance` discovers these. The tests below enforce
 // both the gate semantics AND the issue-#2684 structural guarantee that the
 // runner registers real, computed, non-zero cases.
 // ---------------------------------------------------------------------------
@@ -413,7 +413,7 @@ mod tests {
     // tests/reference_data/zone_balance/strict_energy_gate_baseline.json).
     //
     // Per issue #2684's preferred-fix clause (3), these are REAL cases that
-    // run on-demand via `cargo test --test hvac_bestest -- --ignored`, so the
+    // run on-demand via `cargo test --test hvac_equipment_rated_performance -- --ignored`, so the
     // gap is documented and measured rather than hidden, but they do NOT
     // block CI on every PR.
 
@@ -428,7 +428,7 @@ mod tests {
     /// below the ensemble midpoint — the same direction and magnitude as the
     /// ASHRAE 140 Case 600 cooling gap. Closing it requires the post-#1323 /
     /// #1213 / #1328 cooling-path fix, not a test-side constant. Run on demand:
-    /// `cargo test --test hvac_bestest comparative_e200 -- --ignored --nocapture`
+    /// `cargo test --test hvac_equipment_rated_performance comparative_e200 -- --ignored --nocapture`
     #[test]
     #[ignore = "blocked on Case-600-class cooling structural gap; see docs/KNOWN_ISSUES.md §LIMIT-05/§SOLAR-02"]
     fn comparative_e200_cooling_vs_iea_task22_ensemble() {

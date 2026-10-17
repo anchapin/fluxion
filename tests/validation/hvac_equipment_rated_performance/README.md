@@ -57,5 +57,5 @@ or placeholder correlations.
 Run the scaffold with:
 
 ```bash
-cargo test --test hvac_bestest
+cargo test --test hvac_equipment_rated_performance
 ```

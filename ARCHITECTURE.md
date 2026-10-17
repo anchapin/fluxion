@@ -1892,10 +1892,10 @@ The `case_600.rs`, `case_600_cz3.rs`, and `case_600_cz7.rs` files under `src/val
 
 #### HVAC BESTEST validation scaffold (#1754)
 
-`tests/validation/hvac_bestest/mod.rs` is the integration-test root for the
+`tests/validation/hvac_equipment_rated_performance/mod.rs` is the integration-test root for the
 RP-865-derived HVAC BESTEST track. It keeps analytical cases, comparative cases,
 and reference-data loading in separate test-only modules. The initial target is
-intentionally empty and runs with `cargo test --test hvac_bestest`; follow-on issues
+intentionally empty and runs with `cargo test --test hvac_equipment_rated_performance`; follow-on issues
 own all case definitions, reference bounds, and acceptance tolerances. This scaffold
 does not alter the production validation module or any physics dependency edge.
 
