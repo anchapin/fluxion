@@ -423,7 +423,8 @@ fn section6_workflow_csv_shape() {
     assert_eq!(rows, 6);
 }
 
-/// Writes the §6 workflow-results CSV into the repo (`results/`) so the
+/// Writes the §6 workflow-results CSV into the repo
+/// (`data/reference/section6/`) so the
 /// #4283 emitter and #4276 conformance table consume a fixed artifact.
 /// Ignored: run explicitly with
 /// `cargo test --release --test ashrae_140_section6_weather_driver -- --ignored emit_section6_workflow_csv --nocapture`.
@@ -437,7 +438,7 @@ fn emit_section6_workflow_csv() {
         csv.push_str(&r.csv_row());
         csv.push('\n');
     }
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("results");
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/reference/section6");
     std::fs::create_dir_all(&dir).expect("create results dir");
     let path = dir.join("section6_workflow_results.csv");
     std::fs::write(&path, &csv).expect("write section6 workflow CSV");
