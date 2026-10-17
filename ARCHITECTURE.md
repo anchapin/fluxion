@@ -142,7 +142,7 @@ no longer recompiles the 208 KB `validation::ashrae_140_cases` per mutant.
 | `src/sim/invariant_checker.rs:9` | `use fluxion_core::ashrae_cases::Orientation` |
 | `src/sim/shading.rs:6,178` | `use fluxion_core::ashrae_cases::WindowArea, Orientation` |
 | `src/sim/thermal_model_core/mod.rs:23` | split: `CaseSpec` stays in validation; `Orientation, ShadingType` move to `fluxion_core::ashrae_cases` |
-| `src/sim/thermal_model_core/mod.rs:25,641,945-950,1059,1062,1127-1130,1271,1451-1453,1634,1775,1825-1828,2231,2233,2234,2398,2837,2981,2999,3020-3034,3128,3130,3133,3141,3143,3144,3683-3686` (Issue #3586) | `WindowSpec`, `Orientation`, `ConstructionType`, `BuildingType` references migrated to fully-qualified `fluxion_core::ashrae_cases::*` (46 leaf edges removed); `CaseSpec` references at lines 25, 3112, 3328, 3383 stay in `crate::validation::ashrae_140_cases` (composite type with `Option<crate::sim::hvac::AnyEquipment>` field). Companion row below for `tests.rs`. |
+| `src/sim/thermal_model_core/mod.rs:25,641,945-950,1059,1062,1127-1130,1271,1451-1453,1634,1775,1825-1828,2231,2233,2234,2398,2837,2981,2999,3020-3034,3128,3130,3133,3141,3143,3144,3683-3686` (Issue #3586) | `WindowSpec`, `Orientation`, `ConstructionType`, `BuildingType` references migrated to fully-qualified `fluxion_core::ashrae_cases::*` (46 leaf edges removed); `CaseSpec` references at lines 25, 3112, 3328, 3383 stay in `crate::validation::ashrae_140_cases` (composite type; since issue #4157 slice 2, 2026-10-17, its equipment field is the data-only `fluxion_core::ashrae_cases::EquipmentSelection`, mapped to the `crate::sim::hvac::AnyEquipment` family in sim at `any_equipment_from_selection`). Companion row below for `tests.rs`. |
 | `src/sim/thermal_model_core/tests.rs:485,499` (Issue #3586) | `WindowSpec`, `GlassType` references migrated to fully-qualified `fluxion_core::ashrae_cases::*` (2 leaf edges removed); `ASHRAE140Case` references at lines 510, 531, 552 stay in `crate::validation::ashrae_140_cases` (composite type). |
 | `src/sim/thermal_model_data/hvac_state.rs:19` | `use fluxion_core::ashrae_cases::NightVentilation` |
 | `src/sim/thermal_model_data/solar_state.rs:13` | `use fluxion_core::ashrae_cases::Orientation` |
@@ -249,9 +249,15 @@ pub use fluxion_core::ashrae_cases::{
 
 The big non-leaf types in the same file (`ASHRAE140Case` — 800+ lines,
 `CaseSpec`, `CaseBuilder`, `CommonWall`, `ConstructionSpec`) stay put because
-they carry upward deps to `crate::sim::construction`, `crate::sim::hvac`,
+they carry upward deps to `crate::sim::construction`,
 `crate::physics::constants::thermal::ashrae_140::*`, etc. — they cannot move
-into `fluxion-core`.
+into `fluxion-core` yet. (Updated 2026-10-17, issue #4157 slice 2: the former
+`CaseSpec.hvac_equipment: Option<crate::sim::hvac::AnyEquipment>` upward dep
+is gone — `CaseSpec` now carries the data-only
+`fluxion_core::ashrae_cases::EquipmentSelection`, and `ThermalModel::from_spec`
+maps it to the `crate::sim::hvac::AnyEquipment` family at the single site
+`src/sim/hvac/equipment.rs::any_equipment_from_selection`. Slice 3 moves the
+trio to `fluxion-core`.)
 
 **Regression guard**: `scripts/check_ashrae_cases_cycle.py` enforces six
 invariants and is wired into CI (run from repo root):

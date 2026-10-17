@@ -1243,3 +1243,97 @@ mod tests {
         }
     }
 }
+
+// ============================================================================
+// Issue #4157 slice 2: the single EquipmentSelection → AnyEquipment mapping
+// site. CaseSpec carries data-only parameters; sim builds the behavioral
+// equipment family here. Constructors and values are identical to the
+// pre-slice-2 builder output (bit-identity landing gate).
+// ============================================================================
+
+/// Build the behavioral [`AnyEquipment`] from a data-only
+/// [`fluxion_core::ashrae_cases::EquipmentSelection`].
+///
+/// This is the single "spec describes, sim builds" boundary for HVAC
+/// equipment (issue #4157 slice 2). Each constructor call uses exactly the
+/// parameters the corresponding `CaseBuilder` site wrote before slice 2, so
+/// the resulting equipment is bit-identical to the previous direct
+/// construction. Curve overrides, when present, replace the default AHRI
+/// curves exactly as the Case 801 builder did.
+pub fn any_equipment_from_selection(
+    selection: &fluxion_core::ashrae_cases::EquipmentSelection,
+) -> AnyEquipment {
+    use fluxion_core::ashrae_cases::EquipmentSelection as ES;
+
+    match selection {
+        ES::HeatPump {
+            id,
+            heating_capacity_w,
+            cooling_capacity_w,
+            heating_cop,
+            cooling_eer,
+            heating_curve,
+            cooling_curve,
+        } => {
+            let mut hp = HeatPump::new(
+                id.clone(),
+                *heating_capacity_w,
+                *cooling_capacity_w,
+                *heating_cop,
+                *cooling_eer,
+            );
+            if let Some(curve) = heating_curve {
+                hp.efficiency_curve_heating =
+                    crate::sim::hvac::efficiency_curves::EfficiencyCurve::new(
+                        curve.plr_coefficients,
+                        curve.temp_coefficient,
+                        curve.design_temp,
+                    );
+            }
+            if let Some(curve) = cooling_curve {
+                hp.efficiency_curve_cooling =
+                    crate::sim::hvac::efficiency_curves::EfficiencyCurve::new(
+                        curve.plr_coefficients,
+                        curve.temp_coefficient,
+                        curve.design_temp,
+                    );
+            }
+            AnyEquipment::HeatPump(hp)
+        }
+        ES::Chiller {
+            id,
+            cooling_capacity_w,
+            cop,
+            design_temp_c,
+        } => AnyEquipment::Chiller(Chiller::new(
+            id.clone(),
+            *cooling_capacity_w,
+            *cop,
+            *design_temp_c,
+        )),
+        ES::Boiler {
+            id,
+            heating_capacity_w,
+            efficiency,
+            design_temp_c,
+        } => AnyEquipment::Boiler(Boiler::new(
+            id.clone(),
+            *heating_capacity_w,
+            *efficiency,
+            *design_temp_c,
+        )),
+        ES::VavTerminal {
+            id,
+            zone_id,
+            max_airflow_m3_per_s,
+        } => AnyEquipment::VAVTerminal(VAVTerminal::new(
+            id.clone(),
+            *zone_id,
+            *max_airflow_m3_per_s,
+        )),
+        ES::CavSystem {
+            id,
+            design_airflow_m3_per_s,
+        } => AnyEquipment::CAVSystem(CAVSystem::new(id.clone(), *design_airflow_m3_per_s)),
+    }
+}
