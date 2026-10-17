@@ -150,27 +150,20 @@ def test_fluxion_core_flags_each_upward_prefix(checker, tmp_path, monkeypatch, u
 
 
 # ---------------------------------------------------------------------------
-# verify_ashrae_cases_module  (all 13 moved leaf types must be present)
+# verify_ashrae_cases_module  (all moved leaf + composite types must be present)
 # ---------------------------------------------------------------------------
 
 
+def checker_all_types():
+    """The union the guard asserts (imported lazily so tests stay hermetic)."""
+    from check_ashrae_cases_cycle import COMPOSITE_CASE_TYPES, MOVED_LEAF_TYPES
+
+    return MOVED_LEAF_TYPES | COMPOSITE_CASE_TYPES
+
+
 def _all_leaf_types_source() -> str:
-    """Synthesize a source file declaring every moved leaf type."""
-    types = [
-        "Orientation",
-        "WindowArea",
-        "ConstructionType",
-        "ShadingType",
-        "ShadingDevice",
-        "GlassType",
-        "WindowSpec",
-        "InternalLoads",
-        "HvacSchedule",
-        "NightVentilation",
-        "BuildingType",
-        "GeometrySpec",
-        "ConductanceReferences",
-    ]
+    """Synthesize a source file declaring every moved leaf + composite type."""
+    types = sorted(checker_all_types())
     return "\n".join(f"pub enum {t} {{ Variant }}\n" for t in types)
 
 
@@ -192,10 +185,11 @@ def test_verify_module_reports_missing_file(checker, tmp_path, monkeypatch):
 
 def test_verify_module_reports_each_missing_type(checker, tmp_path, monkeypatch):
     _redirect(checker, tmp_path, monkeypatch)
-    # Declare only one leaf type -> the other 12 are reported missing.
+    # Declare only one leaf type -> every other leaf + composite type is
+    # reported missing (the #4157 slice-3 composite types are asserted too).
     _write(checker.ASHRAE_CASES_FILE, "pub enum Orientation { North }\n")
     out = checker.verify_ashrae_cases_module()
-    assert len(out) == len(checker.MOVED_LEAF_TYPES) - 1
+    assert len(out) == len(checker_all_types()) - 1
     assert all("missing pub" in line for line in out)
     assert not any("Orientation" in line for line in out)
 

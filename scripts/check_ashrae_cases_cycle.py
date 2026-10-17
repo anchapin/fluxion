@@ -74,6 +74,24 @@ MOVED_LEAF_TYPES = {
     "ConductanceReferences",
 }
 
+# Composite case types — #4157 slice 3 (loop round 50, 2026-10-17).
+#
+# After slice 2 (PR #4458) re-parameterized `CaseSpec.hvac_equipment` to a
+# data-only `EquipmentSelection`, the composite trio `CaseSpec`,
+# `ConstructionSpec`, `CommonWall` (plus its `ZoneOrigin` helper) had zero
+# remaining upward dependencies and moved to `fluxion_core::ashrae_cases`.
+# The structural assertion below pins them there, the same way the 13 leaf
+# types from #1441 are pinned in `MOVED_LEAF_TYPES`. `CaseBuilder` stays in
+# the validation layer for now (issue #4157 acceptance item 2 listed it, but
+# the round-50 slice scoped the trio; the builder is fluent API surface, not
+# a cycle edge driver).
+COMPOSITE_CASE_TYPES = {
+    "CaseSpec",
+    "ConstructionSpec",
+    "CommonWall",
+    "ZoneOrigin",
+}
+
 # ---------------------------------------------------------------------------
 # Documented baseline edge counts (issue #2495).
 #
@@ -92,7 +110,7 @@ MOVED_LEAF_TYPES = {
 # technique already used by `scan_fluxion_core_for_upward_deps` below and
 # by `check_physics_sim_cycle.py`'s physics->sim direction.
 # ---------------------------------------------------------------------------
-BASELINE_SIM_TO_VALIDATION = 49  # src/sim/**    -> crate::validation::* (2026-10-13, loop round 24, issue #3061: 48 -> 49 — +1 edge, thermal_model_core/mod.rs imports ConstructionSpec from validation::ashrae_140_cases for the Case 960 per-zone construction split (§5.2.2.2.7); CaseSpec was already imported from the same module. # was 50; #4172 hoisted SimulationDiagnostics to fluxion_core::diagnostics, removing 2 edges: diagnostics_state.rs and thermal_model_core/mod.rs imports)
+BASELINE_SIM_TO_VALIDATION = 25  # src/sim/**    -> crate::validation::* (2026-10-17, loop round 50, #4157 slice 3: 49 -> 25 — CaseSpec/ConstructionSpec/CommonWall/ZoneOrigin moved to fluxion_core::ashrae_cases after slice 2 (#4458) removed the last upward dep; #4171's round-45 re-point of the 14 residual leaf-type edges plus this extraction removed 24 textual sim->validation references. Count re-measured on the post-move tree by scripts/check_ashrae_cases_cycle.py; CaseBuilder stays in validation. # was 49, 2026-10-13 loop round 24, issue #3061: 48 -> 49 — +1 edge, thermal_model_core/mod.rs imports ConstructionSpec from validation::ashrae_140_cases for the Case 960 per-zone construction split (§5.2.2.2.7); CaseSpec was already imported from the same module. # was 50; #4172 hoisted SimulationDiagnostics to fluxion_core::diagnostics, removing 2 edges: diagnostics_state.rs and thermal_model_core/mod.rs imports)
 # Issue #4172: The validation telemetry SimulationDiagnostics was hoisted from
 # fluxion::validation::diagnostics to fluxion_core::diagnostics. This broke 2
 # sim->validation edges:
@@ -232,7 +250,7 @@ def verify_ashrae_cases_module() -> list[str]:
         offenders.append(f"{ASHRAE_CASES_FILE.relative_to(REPO_ROOT)}: file missing")
         return offenders
     content = ASHRAE_CASES_FILE.read_text(encoding="utf-8", errors="replace")
-    for type_name in MOVED_LEAF_TYPES:
+    for type_name in MOVED_LEAF_TYPES | COMPOSITE_CASE_TYPES:
         # Match `pub enum TypeName` or `pub struct TypeName`
         if not re.search(rf"\bpub\s+(enum|struct)\s+{type_name}\b", content):
             offenders.append(
@@ -292,7 +310,10 @@ def main() -> int:
         failures.extend(f"    {m}" for m in missing)
         print(f"    FAIL: {len(missing)} missing type(s)")
     else:
-        print(f"    OK: all {len(MOVED_LEAF_TYPES)} leaf types present")
+        print(
+            f"    OK: all {len(MOVED_LEAF_TYPES)} leaf + "
+            f"{len(COMPOSITE_CASE_TYPES)} composite types present"
+        )
 
     sim_to_validation = scan_sim_for_validation_deps()
     validation_to_sim = scan_validation_for_sim_deps()

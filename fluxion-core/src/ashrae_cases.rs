@@ -979,3 +979,542 @@ pub struct ConductanceReferences {
     /// Ventilation conductance
     pub h_ve: f64,
 }
+
+// ---------------------------------------------------------------------------
+// Composite case types — #4157 slice 3 (loop round 50).
+//
+// `CaseSpec`, `ConstructionSpec`, `CommonWall` and their helper `ZoneOrigin`
+// move here from `fluxion::validation::ashrae_140_cases` (issue #2495 called
+// these the composite types that keep the sim↔validation cycle alive). After
+// slice 2 (#4458) removed the last upward dependency (`hvac_equipment` became
+// `Option<EquipmentSelection>`), every remaining dependency of these types is
+// already in fluxion-core: the leaf types in this module, `Construction` /
+// `Materials` in `fluxion_core::construction`, and `HourlyWeatherData` in
+// `fluxion_core::weather`. The physics constants used by
+// `CaseSpec::calculate_iso13790_conductances` are the identical values from
+// `fluxion_core::construction` (the `crate::physics::constants` copies are
+// value-identical re-exports). `fluxion::validation::ashrae_140_cases`
+// re-exports them, so every existing path keeps compiling.
+// ---------------------------------------------------------------------------
+
+use std::path::PathBuf;
+
+use crate::construction::{
+    Construction, SurfaceType, AIR_DENSITY_SEA_LEVEL, AIR_SPECIFIC_HEAT,
+    INTERIOR_FILM_COEFF_CEILING, INTERIOR_FILM_COEFF_FLOOR, INTERIOR_FILM_COEFF_WALL,
+};
+
+use super::weather::HourlyWeatherData;
+
+/// Common wall specification for inter-zone coupling.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommonWall {
+    /// Index of first zone
+    pub zone_a: usize,
+    /// Index of second zone
+    pub zone_b: usize,
+    /// Area of the common wall in square meters (m²)
+    pub area: f64,
+    /// Construction assembly of the common wall
+    pub construction: Construction,
+}
+
+impl CommonWall {
+    /// Creates a new common wall specification.
+    pub fn new(zone_a: usize, zone_b: usize, area: f64, construction: Construction) -> Self {
+        CommonWall {
+            zone_a,
+            zone_b,
+            area,
+            construction,
+        }
+    }
+
+    /// Returns the inter-zone conductance (W/K).
+    pub fn conductance(&self) -> f64 {
+        self.construction.u_value_internal() * self.area
+    }
+}
+
+/// Zone plan origin (meters) for perimeter-adjacency derivation.
+///
+/// Round 21 (§LIMIT-23b): multi-zone cases whose zones are laid out on a
+/// shared plan (origin + width/depth per zone) can declare these origins so
+/// the engine derives which facades lie on the building perimeter. Without
+/// origins every zone keeps the legacy behaviour (all six surfaces treated
+/// as outdoor-exposed), so existing specs parse and simulate unchanged.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct ZoneOrigin {
+    /// West-edge x coordinate (meters)
+    pub x: f64,
+    /// South-edge y coordinate (meters, y grows northward)
+    pub y: f64,
+}
+
+impl ZoneOrigin {
+    /// Creates a zone plan origin.
+    pub fn new(x: f64, y: f64) -> Self {
+        ZoneOrigin { x, y }
+    }
+}
+
+/// Complete case specification for an ASHRAE 140 test case.
+///
+/// This struct contains all the information needed to configure a ThermalModel
+/// for a specific ASHRAE 140 test case, including geometry, construction,
+/// windows, shading, HVAC, internal loads, and infiltration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CaseSpec {
+    /// Case identifier (e.g., "600", "650FF")
+    pub case_id: String,
+
+    /// Human-readable description
+    pub description: String,
+
+    /// Geometry specifications (indexed by zone)
+    pub geometry: Vec<GeometrySpec>,
+
+    /// Construction type (LowMass, HighMass)
+    pub construction_type: ConstructionType,
+
+    /// Construction assemblies for each surface type
+    pub construction: ConstructionSpec,
+
+    /// Window specifications
+    pub windows: Vec<Vec<WindowArea>>, // Vec of windows per zone
+
+    /// Window properties (U-value, SHGC, etc.)
+    pub window_properties: WindowSpec,
+
+    /// Shading devices
+    pub shading: Option<ShadingDevice>,
+
+    /// Internal heat gains
+    pub internal_loads: Vec<Option<InternalLoads>>, // Per zone
+
+    /// HVAC control schedule
+    pub hvac: Vec<HvacSchedule>, // Per zone
+
+    /// Night ventilation (if applicable)
+    pub night_ventilation: Option<NightVentilation>,
+
+    /// Inter-zone common walls
+    pub common_walls: Vec<CommonWall>,
+
+    /// Infiltration rate in air changes per hour (ACH)
+    pub infiltration_ach: f64,
+
+    /// Solar absorptance of opaque surfaces (0.0 - 1.0)
+    pub opaque_absorptance: f64,
+
+    /// Number of zones (1 for most cases, 2 for Case 960 sunspace)
+    pub num_zones: usize,
+
+    /// Optional per-zone plan origins (meters), indexed by zone.
+    /// When present, the engine derives perimeter-only exterior facade areas
+    /// from zone adjacency (§LIMIT-23b, round 21) instead of treating every
+    /// zone's walls as outdoor-exposed. `None` keeps the legacy behaviour.
+    #[serde(default)]
+    pub zone_origins: Option<Vec<ZoneOrigin>>,
+
+    /// Per-zone construction assemblies (round 24, §LIMIT-14).
+    ///
+    /// `None` (serde default, every existing case) keeps the legacy single
+    /// `construction` for all zones — bit-identical behaviour. When present,
+    /// length must equal `num_zones`, and each zone builds from its own
+    /// `ConstructionSpec` (140-2017 §5.2.2.2.7: Case 960's back zone is
+    /// Case 600 lightweight while the sun zone is Case 900 heavyweight —
+    /// not expressible with the single global construction).
+    pub zone_constructions: Option<Vec<ConstructionSpec>>,
+
+    /// Weather data for solar gain calculation (Issue #278)
+    /// Hourly weather data (temperature, DNI, DHI, GHI, wind, humidity)
+    pub weather_data: Option<HourlyWeatherData>,
+
+    /// Door opening height (meters, for stack effect ACH)
+    pub door_height: Option<f64>,
+
+    /// Door opening area (square meters, for stack effect ACH)
+    pub door_area: Option<f64>,
+
+    /// Optional path to custom EPW weather file.
+    pub epw_path: Option<PathBuf>,
+    /// HVAC equipment (for Cases 800-810)
+    pub hvac_equipment: Option<EquipmentSelection>,
+    /// Ground temperature boundary condition (°C) for floor slab.
+    /// Per ASHRAE 140-2023 Annex B §B3.3: T_ground = 9.4°C for all cases with floor slab.
+    /// When `None`, the model default (10.0°C) is used for backward compatibility.
+    pub ground_temperature_c: Option<f64>,
+    /// Optional override for the floor U-value (W/m²K) used in ground coupling.
+    /// When `Some`, replaces the construction-derived floor U-value in both
+    /// `setpoints.floor_u_value` and the `h_tr_floor` conductance. Used for
+    /// specified test conditions such as the ASHRAE 140 Case 195 solid
+    /// conduction test (U = 0.039 W/m²K).
+    pub floor_u_value_override: Option<f64>,
+    /// Optional override for the window U-value (W/m²K).
+    /// WINDOW-01 (loop round 7): the ASHRAE 140 spec defines the Case
+    /// 600/900-series window conductance as 3.0 W/m²K (WINDOW_U_VALUE, §5.2),
+    /// which the legacy validator setup path sets directly; the WindowSpec
+    /// glazing U (2.10) + frame bridge composes to ~2.27 W/m²K instead. When
+    /// `Some`, the effective window U-value — `solar.window_u_value` and the
+    /// `h_tr_w` conductance — is this value, so both engine entry points agree.
+    /// Data-driven, no case_id check.
+    #[serde(default)]
+    pub window_u_value_override: Option<f64>,
+    /// Building usage type for thermal mass calculations (default: Residential)
+    pub building_type: BuildingType,
+}
+
+/// Construction specification for building envelope assemblies.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConstructionSpec {
+    /// Wall construction assembly
+    pub wall: Construction,
+    /// Roof construction assembly
+    pub roof: Construction,
+    /// Floor construction assembly
+    pub floor: Construction,
+}
+
+impl ConstructionSpec {
+    /// Creates a construction specification with given assemblies.
+    pub fn new(wall: Construction, roof: Construction, floor: Construction) -> Self {
+        ConstructionSpec { wall, roof, floor }
+    }
+
+    /// Returns the total wall U-value (with ASHRAE film coefficients).
+    pub fn wall_u_value(&self) -> f64 {
+        self.wall.u_value(Some(SurfaceType::Wall), None)
+    }
+
+    /// Returns the total roof U-value (with ASHRAE film coefficients).
+    pub fn roof_u_value(&self) -> f64 {
+        self.roof.u_value(Some(SurfaceType::Ceiling), None)
+    }
+
+    /// Returns the total floor U-value (with ASHRAE film coefficients).
+    pub fn floor_u_value(&self) -> f64 {
+        self.floor.u_value(Some(SurfaceType::Floor), None)
+    }
+}
+
+impl CaseSpec {
+    /// Validates the case specification.
+    ///
+    /// # Returns
+    /// Ok(()) if valid, Err(String) with description if invalid.
+    pub fn validate(&self) -> Result<(), String> {
+        // Check geometry
+        if self.num_zones == 0 {
+            return Err("Number of zones must be at least 1".to_string());
+        }
+        if self.geometry.len() != self.num_zones {
+            return Err("Geometry vector length must match num_zones".to_string());
+        }
+
+        for geo in &self.geometry {
+            if geo.width <= 0.0 || geo.depth <= 0.0 || geo.height <= 0.0 {
+                return Err("Geometry dimensions must be positive".to_string());
+            }
+        }
+
+        // Round 21 (§LIMIT-23b): a malformed zone-origins vector must not
+        // silently fall back to the every-wall-exterior legacy behaviour —
+        // the adjacency helpers return `None` on a length mismatch, so
+        // surface derivation would quietly revert. Reject it instead.
+        if let Some(cons) = &self.zone_constructions {
+            if cons.len() != self.num_zones {
+                return Err(format!(
+                    "zone_constructions length ({}) must match num_zones ({})",
+                    cons.len(),
+                    self.num_zones
+                ));
+            }
+        }
+        if let Some(origins) = &self.zone_origins {
+            if origins.len() != self.num_zones {
+                return Err(format!(
+                    "zone_origins length ({}) must match num_zones ({})",
+                    origins.len(),
+                    self.num_zones
+                ));
+            }
+        }
+
+        // Check windows
+        if self.windows.len() != self.num_zones {
+            return Err("Windows vector length must match num_zones".to_string());
+        }
+
+        for zone_windows in &self.windows {
+            for window in zone_windows {
+                if window.area <= 0.0 {
+                    return Err("Window area must be positive".to_string());
+                }
+                if window.height <= 0.0 || window.width <= 0.0 {
+                    return Err("Window dimensions must be positive".to_string());
+                }
+            }
+        }
+
+        // Check infiltration
+        if self.infiltration_ach < 0.0 {
+            return Err("Infiltration rate cannot be negative".to_string());
+        }
+
+        // Check HVAC schedules
+        if self.hvac.len() != self.num_zones {
+            return Err("HVAC vector length must match num_zones".to_string());
+        }
+
+        for hvac in &self.hvac {
+            if !hvac.is_free_floating() && hvac.heating_setpoint > hvac.cooling_setpoint {
+                return Err(
+                    "Heating setpoint must be less than or equal to cooling setpoint".to_string(),
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Returns the total window area across all orientations and zones.
+    pub fn total_window_area(&self) -> f64 {
+        self.windows.iter().flatten().map(|w| w.area).sum()
+    }
+
+    /// Per-zone exterior facade areas `[South, West, North, East]` in m²,
+    /// derived from zone plan origins and adjacency (round 21, §LIMIT-23b).
+    ///
+    /// Returns `None` when `zone_origins` is absent (legacy behaviour: every
+    /// zone wall treated as outdoor-exposed) or malformed. A facade is
+    /// exterior where no adjacent zone covers it: the covered length of a
+    /// face is the sum of the overlaps of neighbouring zones that share the
+    /// face plane, so partially covered faces keep their exposed remainder.
+    pub fn exterior_wall_areas_by_zone(&self) -> Option<Vec<[f64; 4]>> {
+        const ADJACENCY_EPS: f64 = 1e-6;
+        let origins = self.zone_origins.as_ref()?;
+        if origins.len() < self.num_zones || self.geometry.len() < self.num_zones {
+            return None;
+        }
+        let extent = |i: usize, vertical: bool| -> (f64, f64) {
+            let g = &self.geometry[i];
+            let o = &origins[i];
+            if vertical {
+                (o.x, o.x + g.width)
+            } else {
+                (o.y, o.y + g.depth)
+            }
+        };
+        let mut out = Vec::with_capacity(self.num_zones);
+        for i in 0..self.num_zones {
+            let covered_len =
+                |span_along_x: bool, span: (f64, f64), touches: &dyn Fn(usize) -> bool| -> f64 {
+                    let mut covered = 0.0;
+                    for j in 0..self.num_zones {
+                        if j == i || !touches(j) {
+                            continue;
+                        }
+                        let (t0, t1) = extent(j, span_along_x);
+                        let overlap = (span.1.min(t1) - span.0.max(t0)).max(0.0);
+                        covered += overlap;
+                    }
+                    covered
+                };
+            let g = &self.geometry[i];
+            let o = &origins[i];
+            let (x0, x1) = (o.x, o.x + g.width);
+            let (y0, y1) = (o.y, o.y + g.depth);
+            // South face: plane y = y0; a neighbour covers it when the
+            // neighbour's north edge (y + depth) coincides with y0.
+            let s_covered = covered_len(true, (x0, x1), &|j| {
+                (origins[j].y + self.geometry[j].depth - y0).abs() < ADJACENCY_EPS
+            });
+            // West face: plane x = x0; neighbour's east edge coincides.
+            let w_covered = covered_len(false, (y0, y1), &|j| {
+                (origins[j].x + self.geometry[j].width - x0).abs() < ADJACENCY_EPS
+            });
+            // North face: plane y = y1; neighbour's south edge coincides.
+            let n_covered = covered_len(true, (x0, x1), &|j| {
+                (origins[j].y - y1).abs() < ADJACENCY_EPS
+            });
+            // East face: plane x = x1; neighbour's west edge coincides.
+            let e_covered = covered_len(false, (y0, y1), &|j| {
+                (origins[j].x - x1).abs() < ADJACENCY_EPS
+            });
+            out.push([
+                ((x1 - x0) - s_covered).max(0.0) * g.height,
+                ((y1 - y0) - w_covered).max(0.0) * g.height,
+                ((x1 - x0) - n_covered).max(0.0) * g.height,
+                ((y1 - y0) - e_covered).max(0.0) * g.height,
+            ]);
+        }
+        Some(out)
+    }
+
+    /// Per-zone share of interior partition wall area in m², derived from
+    /// `common_walls` (round 21, §LIMIT-23b): each partition's area is split
+    /// evenly between the two zones it separates, so per-zone fabric mass is
+    /// not double-counted. Returns `None` when `zone_origins` is absent.
+    pub fn partition_wall_area_by_zone(&self) -> Option<Vec<f64>> {
+        self.zone_origins.as_ref()?;
+        let mut out = vec![0.0; self.num_zones];
+        for wall in &self.common_walls {
+            let half = wall.area / 2.0;
+            if wall.zone_a < self.num_zones {
+                out[wall.zone_a] += half;
+            }
+            if wall.zone_b < self.num_zones {
+                out[wall.zone_b] += half;
+            }
+        }
+        Some(out)
+    }
+
+    /// Returns window area for a specific orientation in the first zone.
+    pub fn window_area_by_orientation(&self, orientation: Orientation) -> f64 {
+        self.windows[0]
+            .iter()
+            .filter(|w| w.orientation == orientation)
+            .map(|w| w.area)
+            .sum()
+    }
+
+    /// Returns window area for a specific zone and orientation.
+    /// Returns 0.0 if zone index is out of range.
+    pub fn window_area_by_zone_and_orientation(
+        &self,
+        zone_idx: usize,
+        orientation: Orientation,
+    ) -> f64 {
+        if zone_idx >= self.windows.len() {
+            return 0.0;
+        }
+        self.windows[zone_idx]
+            .iter()
+            .filter(|w| w.orientation == orientation)
+            .map(|w| w.area)
+            .sum()
+    }
+
+    /// Returns true if this is a free-floating case (based on first zone).
+    pub fn is_free_floating(&self) -> bool {
+        self.hvac[0].is_free_floating()
+    }
+
+    /// Returns true if this case has night ventilation.
+    pub fn has_night_ventilation(&self) -> bool {
+        self.night_ventilation.is_some()
+    }
+
+    /// Returns true if this case has shading devices.
+    pub fn has_shading(&self) -> bool {
+        self.shading.is_some() && self.shading.as_ref().unwrap().shading_type != ShadingType::None
+    }
+
+    /// Returns reference conductance values for ASHRAE 140 Case 600.
+    ///
+    /// These values are derived from ASHRAE Standard 140 reference calculations
+    /// and serve as ground truth for validating conductance calculations.
+    ///
+    /// # Returns
+    /// ConductanceReferences with all 5R1C conductances in W/K
+    ///
+    /// # Note
+    /// These are reference values for Case 600 (low mass baseline).
+    /// Other cases have different conductances due to different geometries,
+    /// window areas, and construction types.
+    pub fn case600_reference_conductances(&self) -> ConductanceReferences {
+        CaseSpec::calculate_iso13790_conductances(self)
+    }
+
+    /// Calculate ISO 13790 / ASHRAE 140 compliant conductances from case geometry and materials.
+    ///
+    /// This function replaces placeholder values with physics-based calculations per the
+    /// ISO 13790 5R1C thermal network model:
+    ///
+    /// - **H_tr_em** (opaque envelope to external): Series combination of opaque U-values
+    ///   using ISO 13790 Eq. 64: h_em = 1 / (1/h_op - 1/h_ms)
+    /// - **H_tr_w** (windows): U_window × A_window
+    /// - **H_tr_ms** (mass-to-surface coupling): h_ms_coeff × A_m where h_ms_coeff=9.1 W/m²K (ISO 13790)
+    ///   and A_m = 2.5 × A_f (effective mass area per ISO 13790 Table C.2)
+    /// - **H_tr_is** (surface-to-indoor air): Σ(h_is × A_surface) for all interior surfaces
+    /// - **H_ve** (ventilation): ρ_air × c_p × V̇ where V̇ = ACH/3600 × V_zone
+    ///
+    /// # Arguments
+    /// * `case_spec` - The ASHRAE 140 case specification with geometry and construction
+    ///
+    /// # Returns
+    /// `ConductanceReferences` with all conductances in W/K
+    ///
+    /// # Calculation Details
+    ///
+    /// For Case 600 (low-mass baseline):
+    /// - Geometry: 8.0m × 6.0m × 2.7m (W×D×H)
+    /// - Floor area: 48.0 m², Volume: 129.6 m³
+    /// - Wall area: 75.6 m² (gross), 63.6 m² (opaque, 12 m² windows)
+    /// - Roof area: 48.0 m²
+    /// - Windows: 12.0 m² south-facing (double clear glass, U=2.10 W/m²K)
+    /// - ACH: 0.5
+    ///
+    /// Construction U-values (from material properties):
+    /// - Wall: 0.5119 W/m²K (plasterboard + fiberglass + wood siding)
+    /// - Roof: 0.3198 W/m²K (plasterboard + fiberglass + roof deck)
+    /// - Floor: 0.1837 W/m²K (timber + fiberglass, with ground coupling)
+    pub fn calculate_iso13790_conductances(case_spec: &CaseSpec) -> ConductanceReferences {
+        let geo = &case_spec.geometry[0];
+        let width = geo.width;
+        let depth = geo.depth;
+        let height = geo.height;
+        let floor_area = width * depth;
+        let volume = floor_area * height;
+        let gross_wall_area = 2.0 * (width + depth) * height;
+        let window_area = case_spec.total_window_area();
+        let opaque_wall_area = (gross_wall_area - window_area).max(0.0);
+        let roof_area = floor_area;
+
+        let rho_air = AIR_DENSITY_SEA_LEVEL;
+        let cp_air = AIR_SPECIFIC_HEAT;
+        let h_ve = rho_air * cp_air * (case_spec.infiltration_ach / 3600.0) * volume;
+
+        // WINDOW-01: honour the spec-level window U override when present so
+        // the audit agrees with the engine's h_tr_w.
+        let window_u = case_spec
+            .window_u_value_override
+            .unwrap_or(case_spec.window_properties.u_value);
+        let h_tr_w = window_u * window_area;
+
+        let wall_u = case_spec.construction.wall.u_value(None, None);
+        let roof_u = case_spec.construction.roof.u_value(None, None);
+
+        let h_op_walls = wall_u * opaque_wall_area;
+        let h_op_roof = roof_u * roof_area;
+        let h_op_total = h_op_walls + h_op_roof;
+
+        let a_m = 2.5 * floor_area;
+        let h_ms_coeff = 9.1;
+        let h_ms_iso = h_ms_coeff * a_m;
+
+        let h_tr_em = if h_op_total > 0.0 && h_op_total < h_ms_iso {
+            1.0 / (1.0 / h_op_total - 1.0 / h_ms_iso)
+        } else {
+            h_op_total + h_tr_w
+        };
+
+        let h_is_wall = INTERIOR_FILM_COEFF_WALL;
+        let h_is_ceiling = INTERIOR_FILM_COEFF_CEILING;
+        let h_is_floor = INTERIOR_FILM_COEFF_FLOOR;
+        let h_tr_is =
+            h_is_wall * gross_wall_area + h_is_ceiling * roof_area + h_is_floor * floor_area;
+
+        let h_tr_ms = h_ms_iso;
+
+        ConductanceReferences {
+            h_tr_em: h_tr_em.max(0.1),
+            h_tr_w,
+            h_tr_ms,
+            h_tr_is,
+            h_ve,
+        }
+    }
+}
