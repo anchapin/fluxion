@@ -34,6 +34,13 @@ fluxion-core/src/ashrae_cases/ # MOVED in #1441 (Orientation, WindowArea, Constr
                                #   ShadingType, ShadingDevice, GlassType, WindowSpec,
                                #   InternalLoads, HvacSchedule, NightVentilation,
                                #   BuildingType, GeometrySpec, ConductanceReferences)
+fluxion-core/src/ashrae_case_builder.rs # MOVED in #4157 round 52 (the `CaseBuilder`
+                               #   fluent builder + `build()`; re-exported through
+                               #   `ashrae_cases`) and `ashrae_case_series/` (the
+                               #   series_600/900/960/970 `CaseSpec` factories).
+                               #   The main crate keeps the engine-driving
+                               #   factories behind `CaseBuilderExt`
+                               #   (`crate::validation::ashrae_140_cases`).
 fluxion-core/src/error.rs      # NEW in error-unification PR (unified FluxionError +
                                #   SimulationDiagnostics + FluxionResult alias; thiserror +
                                #   serde only — converges the api/napi FluxionError pair)
@@ -1397,6 +1404,7 @@ These traits support the main physics pipeline and should also be documented:
 | Trait | File | Purpose |
 |-------|------|---------|
 | `SurfaceHeatFluxProvider` | `src/sim/surface_flux_provider.rs` | Surface-level heat flux abstraction (conduction + solar combined) |
+| `CaseBuilderExt` | `src/validation/ashrae_140_cases.rs` | Engine-driving ASHRAE 140 case factories (195/196–470/office presets/800 series, EPW weather) kept in the main crate while `CaseBuilder` itself lives in `fluxion-core` (#4157) |
 | `WeatherSource` | `fluxion-core/src/weather/mod.rs` | Weather data access abstraction |
 | `PsychrometricCalculations` | `fluxion-core/src/weather/psychrometrics.rs` | Moist air property calculations |
 | `MaterialLayer` | `src/sim/assembly.rs` | Building material layer interface |

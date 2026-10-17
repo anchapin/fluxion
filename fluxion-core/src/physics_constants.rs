@@ -63,3 +63,14 @@ mod tests {
         );
     }
 }
+
+/// Ground temperature boundary condition for floor slab per ASHRAE 140-2023 Annex B §B3.3.
+///
+/// T_ground = 9.4°C (annual mean Denver air temperature).
+/// Applies to ALL cases with floor slab (600, 610–650, 900–950 and free-float variants).
+///
+/// Issue #4157 (round 52): single source of truth moved into `fluxion-core` so the
+/// `ashrae_case_series` factories can reference it; the historical
+/// `fluxion::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C`
+/// path re-exports this constant.
+pub const ASHRAE140_GROUND_TEMPERATURE_C: f64 = 9.4;

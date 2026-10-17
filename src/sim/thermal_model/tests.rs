@@ -483,9 +483,7 @@ mod tests {
 
     #[test]
     fn test_hybrid_thermal_model_from_spec_uses_default_routing() {
-        use crate::validation::ashrae_140_cases::CaseBuilder;
-
-        let spec = CaseBuilder::case_600_baseline();
+        let spec = crate::validation::ashrae140::cases::series_600::case_600_baseline();
         let model = HybridThermalModel::from_spec(&spec);
         assert_eq!(model.mode(), ThermalModelMode::Hybrid);
         assert_eq!(model.routing(), HybridRouting::default());
@@ -493,9 +491,7 @@ mod tests {
 
     #[test]
     fn test_hybrid_thermal_model_from_spec_with_routing() {
-        use crate::validation::ashrae_140_cases::CaseBuilder;
-
-        let spec = CaseBuilder::case_600_baseline();
+        let spec = crate::validation::ashrae140::cases::series_600::case_600_baseline();
         let custom = HybridRouting::all_surrogate();
         let model = HybridThermalModel::from_spec_with_routing(&spec, custom);
         assert_eq!(model.mode(), ThermalModelMode::Hybrid);

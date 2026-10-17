@@ -1518,3 +1518,7 @@ impl CaseSpec {
         }
     }
 }
+
+// Issue #4157 (round 52): `CaseBuilder` moved to `ashrae_case_builder`; re-exported
+// here so historical `fluxion_core::ashrae_cases::CaseBuilder` paths resolve.
+pub use crate::ashrae_case_builder::CaseBuilder;

@@ -54,9 +54,8 @@ pub use fluxion_core::ashrae_cases::{
 // from core directly instead of through the `src/sim/construction.rs` re-export
 // shim, so the audit surface carries no false upward dependency.
 use crate::weather::{HourlyWeatherData, WeatherSource};
-use fluxion_core::construction::{Assemblies, Construction, Materials};
+use fluxion_core::construction::Assemblies;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 /// Weather route for the ASHRAE 140 strict gate and validator harnesses
 /// (canonical-weather binding, loop round 41).
@@ -861,526 +860,13 @@ impl ASHRAE140Case {
     }
 }
 
-/// Builder for creating ASHRAE 140 case specifications.
+pub use fluxion_core::ashrae_cases::CaseBuilder;
+
+/// Engine-driving factories that stay in the main crate (Issue #4157).
 ///
-/// The builder provides a fluent API for configuring test cases with sensible defaults
-/// and validation.
-///
-/// # Example
-///
-/// ```rust
-/// use fluxion::validation::ashrae_140_cases::CaseBuilder;
-///
-/// let spec = CaseBuilder::new()
-///     .low_mass_construction()
-///     .with_dimensions(8.0, 6.0, 2.7)
-///     .with_south_window(12.0)
-///     .with_hvac_setpoints(20.0, 27.0)
-///     .build()
-///     .unwrap();
-/// ```
-#[derive(Debug, Clone)]
-pub struct CaseBuilder {
-    case_id: Option<String>,
-    description: String,
-    geometry: Vec<GeometrySpec>,
-    construction_type: ConstructionType,
-    construction: Option<ConstructionSpec>,
-    windows: Vec<Vec<WindowArea>>,
-    window_properties: WindowSpec,
-    shading: Option<ShadingDevice>,
-    internal_loads: Vec<Option<InternalLoads>>,
-    hvac: Vec<HvacSchedule>,
-    night_ventilation: Option<NightVentilation>,
-    common_walls: Vec<CommonWall>,
-    zone_origins: Option<Vec<ZoneOrigin>>,
-    zone_constructions: Option<Vec<ConstructionSpec>>,
-    infiltration_ach: f64,
-    opaque_absorptance: f64,
-    num_zones: usize,
-    /// Door opening height (meters, for stack effect ACH)
-    door_height: Option<f64>,
-    /// Door opening area (square meters, for stack effect ACH)
-    door_area: Option<f64>,
-    /// Custom EPW weather file path (if using non-default weather)
-    epw_path: Option<PathBuf>,
-    /// Ground temperature boundary condition (°C) for floor slab (Issue #746).
-    /// Per ASHRAE 140-2023 Annex B §B3.3: T_ground = 9.4°C.
-    ground_temperature_c: Option<f64>,
-    /// Optional override for the floor U-value (W/m²K) used in ground coupling.
-    /// When `Some`, replaces the construction-derived floor U-value in both
-    /// `setpoints.floor_u_value` and the `h_tr_floor` conductance. Used for
-    /// specified test conditions such as the ASHRAE 140 Case 195 solid
-    /// conduction test (U = 0.039 W/m²K) — data-driven, no case_id check.
-    floor_u_value_override: Option<f64>,
-    /// Optional window U-value override (W/m²K), threaded through to CaseSpec.
-    window_u_value_override: Option<f64>,
-    /// Building usage type for thermal mass calculations
-    building_type: BuildingType,
-}
-
-impl Default for CaseBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl CaseBuilder {
-    /// Creates a new CaseBuilder with default values.
-    pub fn new() -> Self {
-        CaseBuilder {
-            case_id: None,
-            description: String::new(),
-            geometry: Vec::new(),
-            construction_type: ConstructionType::LowMass,
-            construction: None,
-            windows: Vec::new(),
-            window_properties: WindowSpec::double_clear_glass(),
-            shading: None,
-            internal_loads: Vec::new(),
-            hvac: Vec::new(),
-            night_ventilation: None,
-            common_walls: Vec::new(),
-            zone_constructions: None,
-            zone_origins: None,
-            infiltration_ach: 0.5,
-            opaque_absorptance: 0.6,
-            num_zones: 1,
-            door_height: None,
-            door_area: None,
-            epw_path: None,
-            ground_temperature_c: None,
-            floor_u_value_override: None,
-            window_u_value_override: None,
-            building_type: BuildingType::default(),
-        }
-    }
-
-    /// Sets the case identifier.
-    pub fn with_case_id(mut self, case_id: String) -> Self {
-        self.case_id = Some(case_id);
-        self
-    }
-
-    /// Sets the case description.
-    pub fn with_description(mut self, description: String) -> Self {
-        self.description = description;
-        self
-    }
-
-    /// Sets the zone dimensions for the first zone.
-    pub fn with_dimensions(mut self, width: f64, depth: f64, height: f64) -> Self {
-        if self.geometry.is_empty() {
-            self.geometry.push(GeometrySpec::new(width, depth, height));
-        } else {
-            self.geometry[0] = GeometrySpec::new(width, depth, height);
-        }
-        self
-    }
-
-    /// Adds a zone with specified dimensions.
-    pub fn add_zone(mut self, width: f64, depth: f64, height: f64) -> Self {
-        self.geometry.push(GeometrySpec::new(width, depth, height));
-        self.windows.push(Vec::new());
-        self.internal_loads.push(None);
-        self.hvac.push(HvacSchedule::constant(20.0, 27.0));
-        self.num_zones = self.geometry.len();
-        self
-    }
-
-    /// Adds a rectangular zone with specified dimensions.
-    ///
-    /// This is a convenience method for creating simple zones with optional naming.
-    /// Zones are automatically assigned sequential IDs if not named.
-    ///
-    /// # Arguments
-    /// * `length` - Zone length (width in X direction) in meters
-    /// * `width` - Zone width (depth in Y direction) in meters
-    /// * `height` - Zone height in meters
-    /// * `name` - Optional zone identifier; if None, a name like "zone0" is auto-generated
-    pub fn rectangular_zone(
-        mut self,
-        length: f64,
-        width: f64,
-        height: f64,
-        name: Option<&str>,
-    ) -> Self {
-        let name = name
-            .map(String::from)
-            .or_else(|| Some(format!("zone{}", self.geometry.len())));
-        self.geometry.push(GeometrySpec {
-            width: length,
-            depth: width,
-            height,
-            name,
-        });
-        self.windows.push(Vec::new());
-        self.internal_loads.push(None);
-        self.hvac.push(HvacSchedule::constant(20.0, 27.0));
-        self.num_zones = self.geometry.len();
-        self
-    }
-
-    /// Adds a common wall between two zones.
-    pub fn with_common_wall(
-        mut self,
-        zone_a: usize,
-        zone_b: usize,
-        area: f64,
-        construction: Construction,
-    ) -> Self {
-        self.common_walls
-            .push(CommonWall::new(zone_a, zone_b, area, construction));
-        self
-    }
-
-    /// Sets the per-zone plan origins (meters) for perimeter-adjacency
-    /// derivation (§LIMIT-23b, round 21). The vector must have one entry per
-    /// zone; see [`CaseSpec::zone_origins`].
-    pub fn with_zone_origins(mut self, origins: Vec<ZoneOrigin>) -> Self {
-        self.zone_origins = Some(origins);
-        self
-    }
-
-    /// Adds a common wall between two zones using a simple wall construction specified by R-value.
-    ///
-    /// This is a convenience method that creates a wall construction with the desired
-    /// material R-value using a default insulating layer. The zones are referenced by
-    /// their assigned names (see `rectangular_zone`).
-    ///
-    /// # Arguments
-    /// * `zone1_id` - Identifier of the first zone
-    /// * `zone2_id` - Identifier of the second zone
-    /// * `area` - Area of the common wall in square meters (m²)
-    /// * `r_value` - Desired thermal resistance of the wall materials (m²K/W)
-    pub fn add_common_wall(
-        mut self,
-        zone1_id: &str,
-        zone2_id: &str,
-        area: f64,
-        r_value: f64,
-    ) -> Self {
-        let idx1 = self.find_zone_index(zone1_id);
-        let idx2 = self.find_zone_index(zone2_id);
-        // Create a simple insulation wall with the given R-value using fiberglass (k=0.04)
-        let thickness = r_value * 0.04;
-        let layer = Materials::fiberglass(thickness);
-        let construction = Construction::new(vec![layer]);
-        self.common_walls
-            .push(CommonWall::new(idx1, idx2, area, construction));
-        self
-    }
-
-    /// Looks up the geometry index for a given zone name.
-    /// Panics if the zone name is not found.
-    fn find_zone_index(&self, id: &str) -> usize {
-        self.geometry
-            .iter()
-            .position(|g| g.name.as_ref().map(String::as_str) == Some(id))
-            .unwrap_or_else(|| panic!("Zone '{}' not found in builder", id))
-    }
-
-    /// Sets the construction type to low mass.
-    pub fn low_mass_construction(mut self) -> Self {
-        self.construction_type = ConstructionType::LowMass;
-        self
-    }
-
-    /// Sets the construction type to high mass.
-    pub fn high_mass_construction(mut self) -> Self {
-        self.construction_type = ConstructionType::HighMass;
-        self
-    }
-
-    /// Sets custom construction assemblies.
-    pub fn with_construction(
-        mut self,
-        wall: Construction,
-        roof: Construction,
-        floor: Construction,
-    ) -> Self {
-        self.construction = Some(ConstructionSpec::new(wall, roof, floor));
-        self
-    }
-
-    /// Adds a window to the first zone.
-    pub fn with_window(mut self, area: f64, orientation: Orientation) -> Self {
-        if self.windows.is_empty() {
-            self.windows.push(Vec::new());
-        }
-        self.windows[0].push(WindowArea::new(area, orientation));
-        self
-    }
-
-    /// Adds a window to a specific zone.
-    pub fn with_zone_window(
-        mut self,
-        zone_idx: usize,
-        area: f64,
-        orientation: Orientation,
-    ) -> Self {
-        while self.windows.len() <= zone_idx {
-            self.windows.push(Vec::new());
-        }
-        self.windows[zone_idx].push(WindowArea::new(area, orientation));
-        self
-    }
-
-    /// Adds a south-facing window to the first zone.
-    pub fn with_south_window(self, area: f64) -> Self {
-        self.with_window(area, Orientation::South)
-    }
-
-    /// Adds east and west windows with equal area to the first zone.
-    pub fn with_ew_windows(self, each_area: f64) -> Self {
-        self.with_window(each_area, Orientation::East)
-            .with_window(each_area, Orientation::West)
-    }
-
-    /// Sets window properties.
-    pub fn with_window_properties(mut self, window_properties: WindowSpec) -> Self {
-        self.window_properties = window_properties;
-        self
-    }
-
-    /// Overrides the effective window U-value (W/m²K).
-    ///
-    /// WINDOW-01 (loop round 7): threads the ASHRAE 140 spec window
-    /// conductance (3.0 W/m²K, `WINDOW_U_VALUE`) through the CaseSpec so the
-    /// strict CaseSpec path and the legacy validator setup path agree. When
-    /// `Some`, both `solar.window_u_value` and the `h_tr_w` conductance use
-    /// this value verbatim (the spec constant already includes the frame).
-    pub fn with_window_u_value_override(mut self, u_value: f64) -> Self {
-        self.window_u_value_override = Some(u_value);
-        self
-    }
-
-    /// Sets custom EPW weather file for the case.
-    ///
-    /// The path should point to a valid EPW file. The file will be loaded
-    /// during simulation setup. This overrides the default Denver TMY weather.
-    ///
-    /// # Arguments
-    /// * `path` - Path to the EPW weather file (string path)
-    pub fn with_weather_epw(mut self, path: &str) -> Self {
-        self.epw_path = Some(PathBuf::from(path));
-        self
-    }
-
-    /// Sets shading device.
-    pub fn with_shading(mut self, shading: ShadingDevice) -> Self {
-        self.shading = Some(shading);
-        self
-    }
-
-    /// Sets internal loads for the first zone.
-    pub fn with_internal_loads(mut self, loads: InternalLoads) -> Self {
-        if self.internal_loads.is_empty() {
-            self.internal_loads.push(Some(loads));
-        } else {
-            self.internal_loads[0] = Some(loads);
-        }
-        self
-    }
-
-    /// Sets HVAC schedule for the first zone.
-    pub fn with_hvac(mut self, hvac: HvacSchedule) -> Self {
-        if self.hvac.is_empty() {
-            self.hvac.push(hvac);
-        } else {
-            self.hvac[0] = hvac;
-        }
-        self
-    }
-
-    /// Sets HVAC schedule for a specific zone.
-    pub fn with_zone_hvac(mut self, zone_idx: usize, hvac: HvacSchedule) -> Self {
-        while self.hvac.len() <= zone_idx {
-            self.hvac.push(HvacSchedule::constant(20.0, 27.0));
-        }
-        self.hvac[zone_idx] = hvac;
-        self
-    }
-
-    /// Sets HVAC setpoints for the first zone.
-    pub fn with_hvac_setpoints(self, heating: f64, cooling: f64) -> Self {
-        self.with_hvac(HvacSchedule::constant(heating, cooling))
-    }
-
-    /// Sets HVAC with setback for the first zone.
-    pub fn with_hvac_setback(self, heating: f64, cooling: f64, setback: f64) -> Self {
-        self.with_hvac(HvacSchedule::with_setback(heating, cooling, setback, 23, 7))
-    }
-
-    /// Sets night ventilation.
-    pub fn with_night_ventilation(mut self, ventilation: NightVentilation) -> Self {
-        self.night_ventilation = Some(ventilation);
-        self
-    }
-
-    /// Sets the infiltration rate (ACH).
-    ///
-    /// Callers pass the ASHRAE 140 Table 5-42 (§5.2.1.6.1) adjusted rate for
-    /// programs with a fixed sea-level air density (this engine: ρ = 1.2
-    /// kg/m³), not the nominal 0.5 ach: 0.5 × (1.0156/1.2255) = 0.414 ach
-    /// yields the mass flow of the 1609 m altitude site. The same
-    /// fixed-sea-level convention sets the Case 650/950 vent fan to
-    /// 1400 m³/h (Table 5-160, `NightVentilation::case_650`).
-    pub fn with_infiltration(mut self, ach: f64) -> Self {
-        self.infiltration_ach = ach;
-        self
-    }
-
-    /// Sets the solar absorptance of opaque surfaces.
-    pub fn with_opaque_absorptance(mut self, absorptance: f64) -> Self {
-        self.opaque_absorptance = absorptance;
-        self
-    }
-
-    /// Sets the number of zones.
-    pub fn with_num_zones(mut self, num_zones: usize) -> Self {
-        self.num_zones = num_zones;
-        self
-    }
-
-    /// Sets the building type for thermal mass calculations.
-    ///
-    /// Determines the furniture factor (f_furniture) used in thermal mass calculations:
-    /// - `Residential`: f_furniture = 0.3 (lighter furniture)
-    /// - `Commercial`: f_furniture = 0.5 (heavier furniture)
-    /// - `Institutional`: f_furniture = 0.5 (heavier furniture, e.g., schools, hospitals)
-    ///
-    /// Default is `Residential` for backward compatibility.
-    pub fn with_building_type(mut self, building_type: BuildingType) -> Self {
-        self.building_type = building_type;
-        self
-    }
-
-    /// Configures door geometry for temperature-dependent air exchange (stack effect).
-    ///
-    /// Used for sunspace buildings (Case 960) where door openings between
-    /// conditioned and unconditioned zones have temperature-dependent airflow.
-    ///
-    /// # Arguments
-    /// * `height` - Door opening height (meters)
-    /// * `area` - Door opening area (square meters)
-    pub fn with_door_geometry(mut self, height: f64, area: f64) -> Self {
-        self.door_height = Some(height);
-        self.door_area = Some(area);
-        self
-    }
-
-    /// Sets the ground temperature boundary condition for the floor slab (°C).
-    ///
-    /// Per ASHRAE 140-2023 Annex B §B3.3, T_ground = 9.4°C (annual mean Denver
-    /// air temperature) applies to all cases with a floor slab (600, 610–650,
-    /// 900–950, and their free-float variants).
-    ///
-    /// When not set, the model default ground temperature (10.0°C) is used.
-    pub fn with_ground_temperature(mut self, temp_c: f64) -> Self {
-        self.ground_temperature_c = Some(temp_c);
-        self
-    }
-
-    /// Sets per-zone construction assemblies (round 24, §LIMIT-14).
-    ///
-    /// When set, length must equal `num_zones`; each zone then builds from its
-    /// own `ConstructionSpec` instead of the single global `construction`.
-    /// See `CaseSpec::zone_constructions`.
-    pub fn with_zone_constructions(mut self, cons: Vec<ConstructionSpec>) -> Self {
-        self.zone_constructions = Some(cons);
-        self
-    }
-
-    /// Overrides the construction-derived floor U-value (W/m²K) for ground coupling.
-    ///
-    /// For specified test conditions such as the ASHRAE 140 Case 195 solid
-    /// conduction test (U = 0.039 W/m²K). Data-driven: replaces the old
-    /// `case_id == "195"` hard-code in the thermal model.
-    pub fn with_floor_u_value_override(mut self, u_value: f64) -> Self {
-        self.floor_u_value_override = Some(u_value);
-        self
-    }
-
-    /// Builds and validates the case specification.
-    pub fn build(mut self) -> Result<CaseSpec, String> {
-        // Ensure vectors have correct length for num_zones
-        if self.num_zones == 1 && self.geometry.is_empty() {
-            return Err("Geometry must be specified".to_string());
-        }
-
-        if self.geometry.len() < self.num_zones {
-            return Err(format!(
-                "Only {} zone geometries provided for {} zones",
-                self.geometry.len(),
-                self.num_zones
-            ));
-        }
-        while self.windows.len() < self.num_zones {
-            self.windows.push(Vec::new());
-        }
-        while self.internal_loads.len() < self.num_zones {
-            self.internal_loads.push(None);
-        }
-        while self.hvac.len() < self.num_zones {
-            self.hvac.push(HvacSchedule::constant(20.0, 27.0));
-        }
-
-        // Use default construction if not specified
-        let construction = self
-            .construction
-            .unwrap_or_else(|| match self.construction_type {
-                ConstructionType::LowMass => ConstructionSpec::new(
-                    Assemblies::low_mass_wall(),
-                    Assemblies::low_mass_roof(),
-                    Assemblies::insulated_floor(),
-                ),
-                ConstructionType::HighMass => ConstructionSpec::new(
-                    Assemblies::high_mass_wall_standard(),
-                    Assemblies::high_mass_roof(),
-                    Assemblies::high_mass_floor(),
-                ),
-                ConstructionType::Special => ConstructionSpec::new(
-                    Assemblies::low_mass_wall(),
-                    Assemblies::low_mass_roof(),
-                    Assemblies::insulated_floor(),
-                ),
-            });
-
-        let spec = CaseSpec {
-            case_id: self.case_id.unwrap_or_else(|| "custom".to_string()),
-            description: self.description,
-            geometry: self.geometry,
-            construction_type: self.construction_type,
-            construction,
-            windows: self.windows,
-            window_properties: self.window_properties,
-            shading: self.shading,
-            internal_loads: self.internal_loads,
-            hvac: self.hvac,
-            night_ventilation: self.night_ventilation,
-            common_walls: self.common_walls.clone(),
-            infiltration_ach: self.infiltration_ach,
-            opaque_absorptance: self.opaque_absorptance,
-            num_zones: self.num_zones,
-            zone_origins: self.zone_origins.clone(),
-            zone_constructions: self.zone_constructions.clone(),
-            weather_data: None, // Will be loaded separately for solar calculations
-            door_height: self.door_height,
-            door_area: self.door_area,
-            epw_path: self.epw_path.clone(),
-            hvac_equipment: None,
-            ground_temperature_c: self.ground_temperature_c,
-            floor_u_value_override: self.floor_u_value_override,
-            window_u_value_override: self.window_u_value_override,
-            building_type: self.building_type,
-        };
-
-        // spec.validate()?; // Skip detailed validation for now to save time
-
-        Ok(spec)
-    }
-
+/// All methods are defaulted so a single empty `impl` attaches them to
+/// `CaseBuilder` (now defined in `fluxion_core::ashrae_cases`).
+pub trait CaseBuilderExt {
     /// Generate weather data for ASHRAE 140 cases using EPW file.
     ///
     /// This creates a vector of 8760 HourlyWeatherData instances representing
@@ -1388,7 +874,7 @@ impl CaseBuilder {
     ///
     /// Note: Weather data should be loaded dynamically from EpwWeatherSource in validation,
     /// not pre-generated here to avoid performance issues.
-    pub fn generate_denver_weather_data() -> Vec<HourlyWeatherData> {
+    fn generate_denver_weather_data() -> Vec<HourlyWeatherData> {
         use crate::weather::epw::EpwWeatherSource;
         let weather = EpwWeatherSource::from_file(
             "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
@@ -1418,7 +904,7 @@ impl CaseBuilder {
     // ============================================================
 
     /// Case 195 - Solid conduction (no windows, no infiltration, no loads).
-    pub fn case_195_solid_conduction() -> CaseSpec {
+    fn case_195_solid_conduction() -> CaseSpec {
         let mut wall = Assemblies::low_mass_wall();
         // Set low absorptance/emissivity for Case 195 (as per spec)
         for layer in &mut wall.layers {
@@ -1438,7 +924,7 @@ impl CaseBuilder {
             layer.emissivity = 0.1;
         }
 
-        Self::new()
+        CaseBuilder::new()
             .with_case_id("195".to_string())
             .with_description(
                 "Solid conduction - no windows, no infiltration, no loads".to_string(),
@@ -1464,7 +950,7 @@ impl CaseBuilder {
     // ========== Solar Gain Diagnostic Variants (195 series) ==========
 
     /// Case 195-SHGC0.3 - Low SHGC variant.
-    pub fn case_195_shgc_low() -> CaseSpec {
+    fn case_195_shgc_low() -> CaseSpec {
         let mut wall = Assemblies::low_mass_wall();
         for layer in &mut wall.layers {
             layer.absorptance = 0.1;
@@ -1483,7 +969,7 @@ impl CaseBuilder {
             layer.emissivity = 0.1;
         }
 
-        Self::new()
+        CaseBuilder::new()
             .with_case_id("195-SHGC0.3".to_string())
             .with_description("Case 195 with low SHGC (0.3) - reduced solar heat gain".to_string())
             .with_dimensions(8.0, 6.0, 2.7)
@@ -1500,7 +986,7 @@ impl CaseBuilder {
     }
 
     /// Case 195-SHGC0.6 - Medium SHGC variant.
-    pub fn case_195_shgc_medium() -> CaseSpec {
+    fn case_195_shgc_medium() -> CaseSpec {
         let mut wall = Assemblies::low_mass_wall();
         for layer in &mut wall.layers {
             layer.absorptance = 0.1;
@@ -1519,7 +1005,7 @@ impl CaseBuilder {
             layer.emissivity = 0.1;
         }
 
-        Self::new()
+        CaseBuilder::new()
             .with_case_id("195-SHGC0.6".to_string())
             .with_description(
                 "Case 195 with medium SHGC (0.6) - balanced solar heat gain".to_string(),
@@ -1538,7 +1024,7 @@ impl CaseBuilder {
     }
 
     /// Case 195-SHGC0.9 - High SHGC variant.
-    pub fn case_195_shgc_high() -> CaseSpec {
+    fn case_195_shgc_high() -> CaseSpec {
         let mut wall = Assemblies::low_mass_wall();
         for layer in &mut wall.layers {
             layer.absorptance = 0.1;
@@ -1557,7 +1043,7 @@ impl CaseBuilder {
             layer.emissivity = 0.1;
         }
 
-        Self::new()
+        CaseBuilder::new()
             .with_case_id("195-SHGC0.9".to_string())
             .with_description(
                 "Case 195 with high SHGC (0.9) - increased solar heat gain".to_string(),
@@ -1576,7 +1062,7 @@ impl CaseBuilder {
     }
 
     /// Case 195-ALB0.1 - Low albedo variant.
-    pub fn case_195_albedo_low() -> CaseSpec {
+    fn case_195_albedo_low() -> CaseSpec {
         let mut wall = Assemblies::low_mass_wall();
         for layer in &mut wall.layers {
             layer.absorptance = 0.9;
@@ -1595,7 +1081,7 @@ impl CaseBuilder {
             layer.emissivity = 0.9;
         }
 
-        Self::new()
+        CaseBuilder::new()
             .with_case_id("195-ALB0.1".to_string())
             .with_description(
                 "Case 195 with low albedo (0.1) - dark surface, high absorption".to_string(),
@@ -1614,7 +1100,7 @@ impl CaseBuilder {
     }
 
     /// Case 195-ALB0.5 - Medium albedo variant.
-    pub fn case_195_albedo_medium() -> CaseSpec {
+    fn case_195_albedo_medium() -> CaseSpec {
         let mut wall = Assemblies::low_mass_wall();
         for layer in &mut wall.layers {
             layer.absorptance = 0.5;
@@ -1633,7 +1119,7 @@ impl CaseBuilder {
             layer.emissivity = 0.5;
         }
 
-        Self::new()
+        CaseBuilder::new()
             .with_case_id("195-ALB0.5".to_string())
             .with_description(
                 "Case 195 with medium albedo (0.5) - gray surface, balanced reflection".to_string(),
@@ -1652,7 +1138,7 @@ impl CaseBuilder {
     }
 
     /// Case 195-ALB0.9 - High albedo variant.
-    pub fn case_195_albedo_high() -> CaseSpec {
+    fn case_195_albedo_high() -> CaseSpec {
         let mut wall = Assemblies::low_mass_wall();
         for layer in &mut wall.layers {
             layer.absorptance = 0.1;
@@ -1671,7 +1157,7 @@ impl CaseBuilder {
             layer.emissivity = 0.1;
         }
 
-        Self::new()
+        CaseBuilder::new()
             .with_case_id("195-ALB0.9".to_string())
             .with_description(
                 "Case 195 with high albedo (0.9) - reflective surface, low absorption".to_string(),
@@ -1690,7 +1176,7 @@ impl CaseBuilder {
     }
 
     /// Case 195-HM - High-mass walls.
-    pub fn case_195_high_mass() -> CaseSpec {
+    fn case_195_high_mass() -> CaseSpec {
         let mut wall = Assemblies::high_mass_wall_standard();
         for layer in &mut wall.layers {
             layer.absorptance = 0.1;
@@ -1709,7 +1195,7 @@ impl CaseBuilder {
             layer.emissivity = 0.1;
         }
 
-        Self::new()
+        CaseBuilder::new()
             .with_case_id("195-HM".to_string())
             .with_description("Case 195 with high-mass walls (concrete construction)".to_string())
             .with_dimensions(8.0, 6.0, 2.7)
@@ -1726,7 +1212,7 @@ impl CaseBuilder {
     }
 
     /// Case 195-NL - No internal loads.
-    pub fn case_195_no_loads() -> CaseSpec {
+    fn case_195_no_loads() -> CaseSpec {
         let mut wall = Assemblies::low_mass_wall();
         for layer in &mut wall.layers {
             layer.absorptance = 0.1;
@@ -1745,7 +1231,7 @@ impl CaseBuilder {
             layer.emissivity = 0.1;
         }
 
-        Self::new()
+        CaseBuilder::new()
             .with_case_id("195-NL".to_string())
             .with_description(
                 "Case 195 with no internal loads (lighting=0, equipment=0, occupancy=0)"
@@ -1765,7 +1251,7 @@ impl CaseBuilder {
     }
 
     /// Case 195-NS - No solar gains.
-    pub fn case_195_no_solar() -> CaseSpec {
+    fn case_195_no_solar() -> CaseSpec {
         let mut wall = Assemblies::low_mass_wall();
         for layer in &mut wall.layers {
             layer.absorptance = 0.1;
@@ -1784,7 +1270,7 @@ impl CaseBuilder {
             layer.emissivity = 0.1;
         }
 
-        Self::new()
+        CaseBuilder::new()
             .with_case_id("195-NS".to_string())
             .with_description(
                 "Case 195 with no solar gains (SHGC=0.0, absorptance=0.0)".to_string(),
@@ -1803,7 +1289,7 @@ impl CaseBuilder {
     }
 
     /// Case 195-TB - Thermal bridge.
-    pub fn case_195_thermal_bridge() -> CaseSpec {
+    fn case_195_thermal_bridge() -> CaseSpec {
         let mut wall = Assemblies::low_mass_wall();
         for layer in &mut wall.layers {
             layer.absorptance = 0.1;
@@ -1822,7 +1308,7 @@ impl CaseBuilder {
             layer.emissivity = 0.1;
         }
 
-        Self::new()
+        CaseBuilder::new()
             .with_case_id("195-TB".to_string())
             .with_description("Case 195 with thermal bridges (additional conductance)".to_string())
             .with_dimensions(8.0, 6.0, 2.7)
@@ -1844,10 +1330,10 @@ impl CaseBuilder {
     ///
     /// Tests lighting power density effects with 10 W/m² lighting,
     /// no equipment, no occupancy.
-    pub fn case_196_lighting_diagnostics() -> CaseSpec {
+    fn case_196_lighting_diagnostics() -> CaseSpec {
         // Floor area = 8.0 × 6.0 = 48 m²
         // Lighting load = 10 W/m² × 48 m² = 480 W
-        Self::new()
+        CaseBuilder::new()
             .with_case_id("196".to_string())
             .with_description(
                 "Lighting diagnostics - 10 W/m² lighting, no equipment, no occupancy".to_string(),
@@ -1868,10 +1354,10 @@ impl CaseBuilder {
     ///
     /// Tests equipment power density effects with 20 W/m² equipment,
     /// no lighting, no occupancy.
-    pub fn case_197_equipment_diagnostics() -> CaseSpec {
+    fn case_197_equipment_diagnostics() -> CaseSpec {
         // Floor area = 48 m²
         // Equipment load = 20 W/m² × 48 m² = 960 W
-        Self::new()
+        CaseBuilder::new()
             .with_case_id("197".to_string())
             .with_description(
                 "Equipment diagnostics - 20 W/m² equipment, no lighting, no occupancy".to_string(),
@@ -1892,12 +1378,12 @@ impl CaseBuilder {
     ///
     /// Tests occupancy density effects with 0.05 people/m²,
     /// no lighting, no equipment.
-    pub fn case_198_occupancy_diagnostics() -> CaseSpec {
+    fn case_198_occupancy_diagnostics() -> CaseSpec {
         // Floor area = 48 m²
         // Occupancy = 0.05 people/m² × 48 m² = 2.4 people
         // Assume 100 W per person (ASHRAE 90.1 typical)
         // Occupancy load = 2.4 × 100 = 240 W
-        Self::new()
+        CaseBuilder::new()
             .with_case_id("198".to_string())
             .with_description(
                 "Occupancy diagnostics - 0.05 people/m², no lighting, no equipment".to_string(),
@@ -1918,13 +1404,13 @@ impl CaseBuilder {
     ///
     /// Tests combined effects of lighting + equipment + occupancy
     /// at standard office levels.
-    pub fn case_200_combined_internal_loads() -> CaseSpec {
+    fn case_200_combined_internal_loads() -> CaseSpec {
         // Floor area = 48 m²
         // Lighting = 10 W/m² × 48 = 480 W
         // Equipment = 20 W/m² × 48 = 960 W
         // Occupancy = 0.05 people/m² × 48 × 100 W = 240 W
         // Total = 480 + 960 + 240 = 1680 W
-        Self::new()
+        CaseBuilder::new()
             .with_case_id("200".to_string())
             .with_description(
                 "Combined internal loads - 10 W/m² lighting + 20 W/m² equipment + 0.05 people/m²"
@@ -1946,8 +1432,8 @@ impl CaseBuilder {
     ///
     /// Tests thermal mass effects with high-mass concrete construction.
     /// Same internal loads as Case200 to isolate mass coupling effects.
-    pub fn case_250_thermal_mass_diagnostics() -> CaseSpec {
-        Self::new()
+    fn case_250_thermal_mass_diagnostics() -> CaseSpec {
+        CaseBuilder::new()
             .with_case_id("250".to_string())
             .with_description(
                 "Thermal mass diagnostics - high-mass construction with Case200 loads".to_string(),
@@ -1968,8 +1454,8 @@ impl CaseBuilder {
     ///
     /// Tests night ventilation cooling with no heating,
     /// night purge enabled (8pm-6am) with Case200 internal loads.
-    pub fn case_300_night_ventilation_diagnostics() -> CaseSpec {
-        Self::new()
+    fn case_300_night_ventilation_diagnostics() -> CaseSpec {
+        CaseBuilder::new()
             .with_case_id("300".to_string())
             .with_description(
                 "Night ventilation diagnostics - no heating, night purge with Case200 loads"
@@ -1992,10 +1478,10 @@ impl CaseBuilder {
     ///
     /// Tests thermostat setback effects with 16°C night (10pm-6am),
     /// 20°C day (8am-10pm) and Case200 internal loads.
-    pub fn case_350_setback_diagnostics() -> CaseSpec {
+    fn case_350_setback_diagnostics() -> CaseSpec {
         // Use schedule for setback: 20°C day (8am-10pm), 16°C night (10pm-6am)
         // For now, use average setpoint (18°C) until schedule support is fully implemented
-        Self::new()
+        CaseBuilder::new()
             .with_case_id("350".to_string())
             .with_description(
                 "Setback diagnostics - 16°C night/20°C day with Case200 loads".to_string(),
@@ -2016,8 +1502,8 @@ impl CaseBuilder {
     ///
     /// Tests free-floating operation with no HVAC control
     /// and Case200 internal loads. Tracks internal temperature variations.
-    pub fn case_400_free_floating_diagnostics() -> CaseSpec {
-        Self::new()
+    fn case_400_free_floating_diagnostics() -> CaseSpec {
+        CaseBuilder::new()
             .with_case_id("400".to_string())
             .with_description("Free-floating diagnostics - no HVAC with Case200 loads".to_string())
             .with_dimensions(8.0, 6.0, 2.7)
@@ -2036,8 +1522,8 @@ impl CaseBuilder {
     ///
     /// Tests all components together: high-mass construction,
     /// thermostat setback, night ventilation, and all internal loads.
-    pub fn case_470_comprehensive_diagnostics() -> CaseSpec {
-        Self::new()
+    fn case_470_comprehensive_diagnostics() -> CaseSpec {
+        CaseBuilder::new()
             .with_case_id("470".to_string())
             .with_description(
                 "Comprehensive diagnostics - high-mass + setback + night ventilation + all loads"
@@ -2063,31 +1549,31 @@ impl CaseBuilder {
     /// Tests office building with medium-mass construction, standard office hours (8am-6pm),
     /// moderate internal loads (lighting 10 W/m², equipment 20 W/m², occupancy 0.05 people/m²).
     /// Extends validation beyond lightweight residential assumptions.
-    pub fn office_building() -> CaseSpec {
+    fn office_building() -> CaseSpec {
         // Dimensions: 20.0 × 15.0 × 3.0 m = 300 m² floor area
         // Windows: 40.0 m² total (south 15m², east 10m², west 10m², north 5m²)
         // Internal loads: 10 W/m² lighting × 300 = 3000 W, 20 W/m² equipment × 300 = 6000 W,
         //                 0.05 people/m² × 300 × 100 W = 1500 W
         // Total = 3000 + 6000 + 1500 = 10500 W
-        Self::new()
-            .with_case_id("OFFICE".to_string())
-            .with_description(
-                "Office building - medium-mass, 8am-6pm schedule, 10 W/m² lighting + 20 W/m² equipment + 0.05 people/m²"
-                    .to_string(),
-            )
-            .with_dimensions(20.0, 15.0, 3.0)
-            .low_mass_construction()
-            .with_window(15.0, Orientation::South)  // 15 m² south
-            .with_window(10.0, Orientation::East)   // 10 m² east
-            .with_window(10.0, Orientation::West)   // 10 m² west
-            .with_window(5.0, Orientation::North)  // 5 m² north
-            .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(10500.0, 0.6, 0.4)) // 10500 W total
-            .with_hvac_setpoints(20.0, 27.0)
-            .with_infiltration(0.414)
-            .with_num_zones(1)
-            .build()
-            .expect("Office building should validate")
+        CaseBuilder::new()
+                .with_case_id("OFFICE".to_string())
+                .with_description(
+                    "Office building - medium-mass, 8am-6pm schedule, 10 W/m² lighting + 20 W/m² equipment + 0.05 people/m²"
+                        .to_string(),
+                )
+                .with_dimensions(20.0, 15.0, 3.0)
+                .low_mass_construction()
+                .with_window(15.0, Orientation::South)  // 15 m² south
+                .with_window(10.0, Orientation::East)   // 10 m² east
+                .with_window(10.0, Orientation::West)   // 10 m² west
+                .with_window(5.0, Orientation::North)  // 5 m² north
+                .with_window_properties(WindowSpec::double_clear_glass())
+                .with_internal_loads(InternalLoads::new(10500.0, 0.6, 0.4)) // 10500 W total
+                .with_hvac_setpoints(20.0, 27.0)
+                .with_infiltration(0.414)
+                .with_num_zones(1)
+                .build()
+                .expect("Office building should validate")
     }
 
     /// Retail building - non-residential case
@@ -2095,31 +1581,31 @@ impl CaseBuilder {
     /// Tests retail building with medium-mass construction, extended hours (9am-9pm),
     /// high lighting loads (12 W/m²) and moderate equipment (10 W/m², occupancy 0.1 people/m²).
     /// Validates retail load patterns and extended operating hours.
-    pub fn retail_building() -> CaseSpec {
+    fn retail_building() -> CaseSpec {
         // Dimensions: 25.0 × 20.0 × 4.0 m = 500 m² floor area
         // Windows: 60.0 m² total (south 20m², east 15m², west 15m², north 10m²)
         // Internal loads: 12 W/m² lighting × 500 = 6000 W, 10 W/m² equipment × 500 = 5000 W,
         //                 0.1 people/m² × 500 × 100 W = 5000 W
         // Total = 6000 + 5000 + 5000 = 16000 W
-        Self::new()
-            .with_case_id("RETAIL".to_string())
-            .with_description(
-                "Retail building - medium-mass, 9am-9pm schedule, 12 W/m² lighting + 10 W/m² equipment + 0.1 people/m²"
-                    .to_string(),
-            )
-            .with_dimensions(25.0, 20.0, 4.0)
-            .low_mass_construction()
-            .with_window(20.0, Orientation::South)  // 20 m² south
-            .with_window(15.0, Orientation::East)   // 15 m² east
-            .with_window(15.0, Orientation::West)   // 15 m² west
-            .with_window(10.0, Orientation::North)  // 10 m² north
-            .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(16000.0, 0.6, 0.4)) // 16000 W total
-            .with_hvac_setpoints(20.0, 27.0)
-            .with_infiltration(0.414)
-            .with_num_zones(1)
-            .build()
-            .expect("Retail building should validate")
+        CaseBuilder::new()
+                .with_case_id("RETAIL".to_string())
+                .with_description(
+                    "Retail building - medium-mass, 9am-9pm schedule, 12 W/m² lighting + 10 W/m² equipment + 0.1 people/m²"
+                        .to_string(),
+                )
+                .with_dimensions(25.0, 20.0, 4.0)
+                .low_mass_construction()
+                .with_window(20.0, Orientation::South)  // 20 m² south
+                .with_window(15.0, Orientation::East)   // 15 m² east
+                .with_window(15.0, Orientation::West)   // 15 m² west
+                .with_window(10.0, Orientation::North)  // 10 m² north
+                .with_window_properties(WindowSpec::double_clear_glass())
+                .with_internal_loads(InternalLoads::new(16000.0, 0.6, 0.4)) // 16000 W total
+                .with_hvac_setpoints(20.0, 27.0)
+                .with_infiltration(0.414)
+                .with_num_zones(1)
+                .build()
+                .expect("Retail building should validate")
     }
 
     /// School building - non-residential case
@@ -2127,31 +1613,31 @@ impl CaseBuilder {
     /// Tests school building with high-mass concrete construction, educational schedule (8am-3pm),
     /// moderate loads (lighting 8 W/m², equipment 15 W/m², occupancy 0.2 people/m²).
     /// Validates school load patterns and thermal mass effects.
-    pub fn school_building() -> CaseSpec {
+    fn school_building() -> CaseSpec {
         // Dimensions: 30.0 × 25.0 × 3.5 m = 750 m² floor area
         // Windows: 50.0 m² total (south 20m², east 10m², west 10m², north 10m²)
         // Internal loads: 8 W/m² lighting × 750 = 6000 W, 15 W/m² equipment × 750 = 11250 W,
         //                 0.2 people/m² × 750 × 100 W = 15000 W
         // Total = 6000 + 11250 + 15000 = 32250 W
-        Self::new()
-            .with_case_id("SCHOOL".to_string())
-            .with_description(
-                "School building - high-mass concrete, 8am-3pm schedule, 8 W/m² lighting + 15 W/m² equipment + 0.2 people/m²"
-                    .to_string(),
-            )
-            .with_dimensions(30.0, 25.0, 3.5)
-            .high_mass_construction()
-            .with_window(20.0, Orientation::South)  // 20 m² south
-            .with_window(10.0, Orientation::East)   // 10 m² east
-            .with_window(10.0, Orientation::West)   // 10 m² west
-            .with_window(10.0, Orientation::North)  // 10 m² north
-            .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(32250.0, 0.6, 0.4)) // 32250 W total
-            .with_hvac_setpoints(20.0, 27.0)
-            .with_infiltration(0.414)
-            .with_num_zones(1)
-            .build()
-            .expect("School building should validate")
+        CaseBuilder::new()
+                .with_case_id("SCHOOL".to_string())
+                .with_description(
+                    "School building - high-mass concrete, 8am-3pm schedule, 8 W/m² lighting + 15 W/m² equipment + 0.2 people/m²"
+                        .to_string(),
+                )
+                .with_dimensions(30.0, 25.0, 3.5)
+                .high_mass_construction()
+                .with_window(20.0, Orientation::South)  // 20 m² south
+                .with_window(10.0, Orientation::East)   // 10 m² east
+                .with_window(10.0, Orientation::West)   // 10 m² west
+                .with_window(10.0, Orientation::North)  // 10 m² north
+                .with_window_properties(WindowSpec::double_clear_glass())
+                .with_internal_loads(InternalLoads::new(32250.0, 0.6, 0.4)) // 32250 W total
+                .with_hvac_setpoints(20.0, 27.0)
+                .with_infiltration(0.414)
+                .with_num_zones(1)
+                .build()
+                .expect("School building should validate")
     }
 
     /// Warehouse building - light-commercial warehouse
@@ -2159,11 +1645,11 @@ impl CaseBuilder {
     /// Tests warehouse building with medium-mass construction, wide thermostat dead-band (16-30 °C),
     /// 1 ACH infiltration, and minimal internal loads (~3 W/m² lighting only, no occupants/equipment).
     /// Per ASHRAE 90.1 warehouse prototype: 8m × 6m × 6m high, 50% window-to-wall ratio.
-    pub fn warehouse_building() -> CaseSpec {
+    fn warehouse_building() -> CaseSpec {
         // Dimensions: 8.0 × 6.0 × 6.0 m = 48 m² floor area, 6m height (large volume)
         // Windows: ~10 m² total (south 5m², north 5m²), 50% WWR
         // Internal loads: ~3 W/m² lighting × 48 = 144 W (minimal - no occupants/equipment)
-        Self::new()
+        CaseBuilder::new()
             .with_case_id("WAREHOUSE".to_string())
             .with_description(
                 "Warehouse building - medium-mass, 16-30°C dead-band, 1 ACH, ~3 W/m² lighting"
@@ -2183,8 +1669,8 @@ impl CaseBuilder {
     }
 
     // HVAC equipment case methods (800-810)
-    pub fn case_800_heat_pump_single_stage() -> CaseSpec {
-        let mut spec = Self::case_600_baseline();
+    fn case_800_heat_pump_single_stage() -> CaseSpec {
+        let mut spec = crate::validation::ashrae140::cases::series_600::case_600_baseline();
         spec.case_id = "800".to_string();
         spec.description = "Case 800: Heat pump (single-stage, basic control)".to_string();
 
@@ -2201,8 +1687,8 @@ impl CaseBuilder {
         spec
     }
 
-    pub fn case_801_heat_pump_two_stage() -> CaseSpec {
-        let mut spec = Self::case_600_baseline();
+    fn case_801_heat_pump_two_stage() -> CaseSpec {
+        let mut spec = crate::validation::ashrae140::cases::series_600::case_600_baseline();
         spec.case_id = "801".to_string();
         spec.description = "Case 801: Heat pump (two-stage, intermediate control)".to_string();
 
@@ -2231,8 +1717,8 @@ impl CaseBuilder {
         spec
     }
 
-    pub fn case_802_heat_pump_variable_speed() -> CaseSpec {
-        let mut spec = Self::case_600_baseline();
+    fn case_802_heat_pump_variable_speed() -> CaseSpec {
+        let mut spec = crate::validation::ashrae140::cases::series_600::case_600_baseline();
         spec.case_id = "802".to_string();
         spec.description = "Case 802: Heat pump (variable-speed, advanced control)".to_string();
 
@@ -2249,8 +1735,8 @@ impl CaseBuilder {
         spec
     }
 
-    pub fn case_803_chiller_single() -> CaseSpec {
-        let mut spec = Self::case_600_baseline();
+    fn case_803_chiller_single() -> CaseSpec {
+        let mut spec = crate::validation::ashrae140::cases::series_600::case_600_baseline();
         spec.case_id = "803".to_string();
         spec.description = "Case 803: Chiller plant (single chiller, basic control)".to_string();
 
@@ -2264,8 +1750,8 @@ impl CaseBuilder {
         spec
     }
 
-    pub fn case_804_chiller_multiple() -> CaseSpec {
-        let mut spec = Self::case_600_baseline();
+    fn case_804_chiller_multiple() -> CaseSpec {
+        let mut spec = crate::validation::ashrae140::cases::series_600::case_600_baseline();
         spec.case_id = "804".to_string();
         spec.description = "Case 804: Chiller plant (multiple chillers, staging)".to_string();
 
@@ -2280,8 +1766,8 @@ impl CaseBuilder {
         spec
     }
 
-    pub fn case_805_boiler_single() -> CaseSpec {
-        let mut spec = Self::case_600_baseline();
+    fn case_805_boiler_single() -> CaseSpec {
+        let mut spec = crate::validation::ashrae140::cases::series_600::case_600_baseline();
         spec.case_id = "805".to_string();
         spec.description = "Case 805: Boiler plant (single boiler, basic control)".to_string();
 
@@ -2295,8 +1781,8 @@ impl CaseBuilder {
         spec
     }
 
-    pub fn case_806_boiler_multiple() -> CaseSpec {
-        let mut spec = Self::case_600_baseline();
+    fn case_806_boiler_multiple() -> CaseSpec {
+        let mut spec = crate::validation::ashrae140::cases::series_600::case_600_baseline();
         spec.case_id = "806".to_string();
         spec.description = "Case 806: Boiler plant (multiple boilers, staging)".to_string();
 
@@ -2311,8 +1797,8 @@ impl CaseBuilder {
         spec
     }
 
-    pub fn case_807_hybrid_heat_pump_boiler() -> CaseSpec {
-        let mut spec = Self::case_600_baseline();
+    fn case_807_hybrid_heat_pump_boiler() -> CaseSpec {
+        let mut spec = crate::validation::ashrae140::cases::series_600::case_600_baseline();
         spec.case_id = "807".to_string();
         spec.description = "Case 807: Hybrid system (heat pump + boiler)".to_string();
 
@@ -2331,8 +1817,8 @@ impl CaseBuilder {
         spec
     }
 
-    pub fn case_808_vav_heat_recovery() -> CaseSpec {
-        let mut spec = Self::case_600_baseline();
+    fn case_808_vav_heat_recovery() -> CaseSpec {
+        let mut spec = crate::validation::ashrae140::cases::series_600::case_600_baseline();
         spec.case_id = "808".to_string();
         spec.description = "Case 808: VAV system with heat recovery".to_string();
 
@@ -2349,8 +1835,8 @@ impl CaseBuilder {
         spec
     }
 
-    pub fn case_809_cav_economizer() -> CaseSpec {
-        let mut spec = Self::case_600_baseline();
+    fn case_809_cav_economizer() -> CaseSpec {
+        let mut spec = crate::validation::ashrae140::cases::series_600::case_600_baseline();
         spec.case_id = "809".to_string();
         spec.description = "Case 809: CAV system with economizer".to_string();
 
@@ -2363,8 +1849,8 @@ impl CaseBuilder {
         spec
     }
 
-    pub fn case_810_comprehensive_hvac() -> CaseSpec {
-        let mut spec = Self::case_900_baseline();
+    fn case_810_comprehensive_hvac() -> CaseSpec {
+        let mut spec = crate::validation::ashrae140::cases::series_900::case_900_baseline();
         spec.case_id = "810".to_string();
         spec.description =
             "Case 810: Comprehensive HVAC equipment (chillers + boilers + heat pumps)".to_string();
@@ -2383,109 +1869,9 @@ impl CaseBuilder {
         });
         spec
     }
-
-    // ============================================================
-    // Issue #3555: case-600/610/620/630/640/650/600FF/650FF,
-    // case-900/910/920/930/940/950/900FF/950FF, case-960, case-970
-    // factory bodies moved to `crate::validation::ashrae140::cases::series_*`.
-    // These thin shims preserve the `CaseBuilder::case_X()` call sites
-    // inside `tests/` and inside the legacy `tests/` module of this file
-    // during the migration window. Callers can move to
-    // `crate::validation::ashrae140::cases::series_X::case_X` directly in
-    // follow-up PRs.
-    // ============================================================
-
-    /// Issue #3555: see module-level note; delegates to
-    /// `crate::validation::ashrae140::cases::series_600::case_600_baseline`.
-    pub fn case_600_baseline() -> CaseSpec {
-        crate::validation::ashrae140::cases::series_600::case_600_baseline()
-    }
-    /// Issue #3555: see module-level note; delegates to
-    /// `crate::validation::ashrae140::cases::series_600::case_610_south_shading`.
-    pub fn case_610_south_shading() -> CaseSpec {
-        crate::validation::ashrae140::cases::series_600::case_610_south_shading()
-    }
-    /// Issue #3555: see module-level note; delegates to
-    /// `crate::validation::ashrae140::cases::series_600::case_620_ew_windows`.
-    pub fn case_620_ew_windows() -> CaseSpec {
-        crate::validation::ashrae140::cases::series_600::case_620_ew_windows()
-    }
-    /// Issue #3555: see module-level note; delegates to
-    /// `crate::validation::ashrae140::cases::series_600::case_630_ew_shading`.
-    pub fn case_630_ew_shading() -> CaseSpec {
-        crate::validation::ashrae140::cases::series_600::case_630_ew_shading()
-    }
-    /// Issue #3555: see module-level note; delegates to
-    /// `crate::validation::ashrae140::cases::series_600::case_640_setback`.
-    pub fn case_640_setback() -> CaseSpec {
-        crate::validation::ashrae140::cases::series_600::case_640_setback()
-    }
-    /// Issue #3555: see module-level note; delegates to
-    /// `crate::validation::ashrae140::cases::series_600::case_650_night_vent`.
-    pub fn case_650_night_vent() -> CaseSpec {
-        crate::validation::ashrae140::cases::series_600::case_650_night_vent()
-    }
-    /// Issue #3555: see module-level note; delegates to
-    /// `crate::validation::ashrae140::cases::series_600::case_600ff`.
-    pub fn case_600ff() -> CaseSpec {
-        crate::validation::ashrae140::cases::series_600::case_600ff()
-    }
-    /// Issue #3555: see module-level note; delegates to
-    /// `crate::validation::ashrae140::cases::series_600::case_650ff`.
-    pub fn case_650ff() -> CaseSpec {
-        crate::validation::ashrae140::cases::series_600::case_650ff()
-    }
-    /// Issue #3555: see module-level note; delegates to
-    /// `crate::validation::ashrae140::cases::series_900::case_900_baseline`.
-    pub fn case_900_baseline() -> CaseSpec {
-        crate::validation::ashrae140::cases::series_900::case_900_baseline()
-    }
-    /// Issue #3555: see module-level note; delegates to
-    /// `crate::validation::ashrae140::cases::series_900::case_910_south_shading`.
-    pub fn case_910_south_shading() -> CaseSpec {
-        crate::validation::ashrae140::cases::series_900::case_910_south_shading()
-    }
-    /// Issue #3555: see module-level note; delegates to
-    /// `crate::validation::ashrae140::cases::series_900::case_920_ew_windows`.
-    pub fn case_920_ew_windows() -> CaseSpec {
-        crate::validation::ashrae140::cases::series_900::case_920_ew_windows()
-    }
-    /// Issue #3555: see module-level note; delegates to
-    /// `crate::validation::ashrae140::cases::series_900::case_930_ew_shading`.
-    pub fn case_930_ew_shading() -> CaseSpec {
-        crate::validation::ashrae140::cases::series_900::case_930_ew_shading()
-    }
-    /// Issue #3555: see module-level note; delegates to
-    /// `crate::validation::ashrae140::cases::series_900::case_940_setback`.
-    pub fn case_940_setback() -> CaseSpec {
-        crate::validation::ashrae140::cases::series_900::case_940_setback()
-    }
-    /// Issue #3555: see module-level note; delegates to
-    /// `crate::validation::ashrae140::cases::series_900::case_950_night_vent`.
-    pub fn case_950_night_vent() -> CaseSpec {
-        crate::validation::ashrae140::cases::series_900::case_950_night_vent()
-    }
-    /// Issue #3555: see module-level note; delegates to
-    /// `crate::validation::ashrae140::cases::series_900::case_900ff`.
-    pub fn case_900ff() -> CaseSpec {
-        crate::validation::ashrae140::cases::series_900::case_900ff()
-    }
-    /// Issue #3555: see module-level note; delegates to
-    /// `crate::validation::ashrae140::cases::series_900::case_950ff`.
-    pub fn case_950ff() -> CaseSpec {
-        crate::validation::ashrae140::cases::series_900::case_950ff()
-    }
-    /// Issue #3555: see module-level note; delegates to
-    /// `crate::validation::ashrae140::cases::series_960::case_960_sunspace`.
-    pub fn case_960_sunspace() -> CaseSpec {
-        crate::validation::ashrae140::cases::series_960::case_960_sunspace()
-    }
-    /// Issue #3555: see module-level note; delegates to
-    /// `crate::validation::ashrae140::cases::series_970::case_970_five_zone_cross_coupling`.
-    pub fn case_970_five_zone_cross_coupling() -> CaseSpec {
-        crate::validation::ashrae140::cases::series_970::case_970_five_zone_cross_coupling()
-    }
 }
+
+impl CaseBuilderExt for CaseBuilder {}
 
 // ============================================================
 // Issue #3555: validate_case_920 + validate_case_950 and their
@@ -2825,7 +2211,7 @@ mod tests {
 
     #[test]
     fn test_case_spec_validation() {
-        let spec = CaseBuilder::case_600_baseline();
+        let spec = crate::validation::ashrae140::cases::series_600::case_600_baseline();
         assert!(spec.validate().is_ok());
 
         // Test invalid geometry
@@ -2843,7 +2229,7 @@ mod tests {
 
     #[test]
     fn test_case_spec_methods() {
-        let spec = CaseBuilder::case_600_baseline();
+        let spec = crate::validation::ashrae140::cases::series_600::case_600_baseline();
         assert_eq!(spec.case_id, "600");
         assert_eq!(spec.total_window_area(), 12.0);
         assert_eq!(spec.window_area_by_orientation(Orientation::South), 12.0);
@@ -2852,13 +2238,13 @@ mod tests {
         assert!(!spec.has_night_ventilation());
         assert!(!spec.has_shading());
 
-        let ff_spec = CaseBuilder::case_600ff();
+        let ff_spec = crate::validation::ashrae140::cases::series_600::case_600ff();
         assert!(ff_spec.is_free_floating());
 
-        let vent_spec = CaseBuilder::case_650_night_vent();
+        let vent_spec = crate::validation::ashrae140::cases::series_600::case_650_night_vent();
         assert!(vent_spec.has_night_ventilation());
 
-        let shade_spec = CaseBuilder::case_610_south_shading();
+        let shade_spec = crate::validation::ashrae140::cases::series_600::case_610_south_shading();
         assert!(shade_spec.has_shading());
     }
 
@@ -2895,23 +2281,23 @@ mod tests {
     fn test_all_case_presets() {
         // Test that all case presets can be built successfully
         let cases = vec![
-            CaseBuilder::case_600_baseline(),
-            CaseBuilder::case_610_south_shading(),
-            CaseBuilder::case_620_ew_windows(),
-            CaseBuilder::case_630_ew_shading(),
-            CaseBuilder::case_640_setback(),
-            CaseBuilder::case_650_night_vent(),
-            CaseBuilder::case_600ff(),
-            CaseBuilder::case_650ff(),
-            CaseBuilder::case_900_baseline(),
-            CaseBuilder::case_910_south_shading(),
-            CaseBuilder::case_920_ew_windows(),
-            CaseBuilder::case_930_ew_shading(),
-            CaseBuilder::case_940_setback(),
-            CaseBuilder::case_950_night_vent(),
-            CaseBuilder::case_900ff(),
-            CaseBuilder::case_950ff(),
-            CaseBuilder::case_960_sunspace(),
+            crate::validation::ashrae140::cases::series_600::case_600_baseline(),
+            crate::validation::ashrae140::cases::series_600::case_610_south_shading(),
+            crate::validation::ashrae140::cases::series_600::case_620_ew_windows(),
+            crate::validation::ashrae140::cases::series_600::case_630_ew_shading(),
+            crate::validation::ashrae140::cases::series_600::case_640_setback(),
+            crate::validation::ashrae140::cases::series_600::case_650_night_vent(),
+            crate::validation::ashrae140::cases::series_600::case_600ff(),
+            crate::validation::ashrae140::cases::series_600::case_650ff(),
+            crate::validation::ashrae140::cases::series_900::case_900_baseline(),
+            crate::validation::ashrae140::cases::series_900::case_910_south_shading(),
+            crate::validation::ashrae140::cases::series_900::case_920_ew_windows(),
+            crate::validation::ashrae140::cases::series_900::case_930_ew_shading(),
+            crate::validation::ashrae140::cases::series_900::case_940_setback(),
+            crate::validation::ashrae140::cases::series_900::case_950_night_vent(),
+            crate::validation::ashrae140::cases::series_900::case_900ff(),
+            crate::validation::ashrae140::cases::series_900::case_950ff(),
+            crate::validation::ashrae140::cases::series_960::case_960_sunspace(),
             CaseBuilder::case_195_solid_conduction(),
         ];
 

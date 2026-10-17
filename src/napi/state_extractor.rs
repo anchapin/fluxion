@@ -113,7 +113,7 @@ impl StateExtractor {
                 },
             },
         };
-        let spec = crate::validation::ashrae_140_cases::CaseBuilder::case_600_baseline();
+        let spec = crate::validation::ashrae140::cases::series_600::case_600_baseline();
         let thermal_model = ThermalModel::from_spec_with_selector(&spec, &selector)
             .map_err(|e| napi::bindgen_prelude::Error::from_reason(e.to_string()))?;
 
