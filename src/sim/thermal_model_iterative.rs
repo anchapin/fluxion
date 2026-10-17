@@ -448,7 +448,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // DRYCOLD/Denver set reports 0), so it falls back to the
                     // 0.2 default the 140 fabric cohort assumes; the §6 WD
                     // files carry their authored values through (WD600 0.2).
-                    Some(weather.albedo.filter(|&a| a > 0.0).unwrap_or(0.2)), // Ground reflectance
+                    // The §6 per-case override (`authored_epw_albedo`) lets
+                    // the weather-driver harness pass the authored value
+                    // through unfiltered — including WD100's explicit 0 — so
+                    // the WD100/WD600 single-variable isolation survives the
+                    // full engine path. Default off: fabric behavior is
+                    // byte-identical.
+                    Some(
+                        if self.0.solar.authored_epw_albedo {
+                            weather.albedo
+                        } else {
+                            weather.albedo.filter(|&a| a > 0.0)
+                        }
+                        .unwrap_or(0.2),
+                    ), // Ground reflectance
                 );
 
                 // Issue #4166: stash per-orientation irradiance for the 5R1C
@@ -782,10 +795,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
     }
 
+    /// §6 per-case override (Issue #4269): when `authored` is true, the
+    /// EPW-authored per-hour ground albedo passes through unfiltered —
+    /// including an explicit 0, as WD100 reports — instead of the
+    /// 0.0→0.2 fabric fallback. Default is off, so default-build behavior
+    /// is unchanged; the §6 weather-driver harness sets this per case.
+    pub fn set_authored_epw_albedo(&mut self, authored: bool) {
+        self.0.solar.authored_epw_albedo = authored;
+    }
+
     /// Set a constant ground temperature.
     ///
-    /// Use this for deep foundations where ground temperature is effectively constant.
-    ///
+    /// Use this for deep foundations where ground temperature is effectively constant.    ///
     /// # Arguments
     ///
     /// * `temperature` - Constant ground temperature (°C)
