@@ -70,24 +70,114 @@ pub struct Section7CaseDef {
 /// The pinned §7 case set: every ASHRAE140Case variant fluxion implements,
 /// in series order (600/900 series, then 960/970, then the free floats).
 pub const SECTION7_CASES: [Section7CaseDef; 18] = [
-    Section7CaseDef { case_id: "600", variant: ASHRAE140Case::Case600, free_float: false, description: "Low mass baseline" },
-    Section7CaseDef { case_id: "610", variant: ASHRAE140Case::Case610, free_float: false, description: "Low mass with south shading" },
-    Section7CaseDef { case_id: "620", variant: ASHRAE140Case::Case620, free_float: false, description: "Low mass with east/west windows" },
-    Section7CaseDef { case_id: "630", variant: ASHRAE140Case::Case630, free_float: false, description: "Low mass with east/west shading" },
-    Section7CaseDef { case_id: "640", variant: ASHRAE140Case::Case640, free_float: false, description: "Low mass with thermostat setback" },
-    Section7CaseDef { case_id: "650", variant: ASHRAE140Case::Case650, free_float: false, description: "Low mass with night ventilation" },
-    Section7CaseDef { case_id: "900", variant: ASHRAE140Case::Case900, free_float: false, description: "High mass baseline" },
-    Section7CaseDef { case_id: "910", variant: ASHRAE140Case::Case910, free_float: false, description: "High mass with south shading" },
-    Section7CaseDef { case_id: "920", variant: ASHRAE140Case::Case920, free_float: false, description: "High mass with east/west windows" },
-    Section7CaseDef { case_id: "930", variant: ASHRAE140Case::Case930, free_float: false, description: "High mass with east/west shading" },
-    Section7CaseDef { case_id: "940", variant: ASHRAE140Case::Case940, free_float: false, description: "High mass with thermostat setback" },
-    Section7CaseDef { case_id: "950", variant: ASHRAE140Case::Case950, free_float: false, description: "High mass with night ventilation" },
-    Section7CaseDef { case_id: "960", variant: ASHRAE140Case::Case960, free_float: false, description: "Sunspace" },
-    Section7CaseDef { case_id: "970", variant: ASHRAE140Case::Case970, free_float: false, description: "Five zone cross coupling" },
-    Section7CaseDef { case_id: "600FF", variant: ASHRAE140Case::Case600FF, free_float: true, description: "Low mass free float" },
-    Section7CaseDef { case_id: "650FF", variant: ASHRAE140Case::Case650FF, free_float: true, description: "Low mass night vent free float" },
-    Section7CaseDef { case_id: "900FF", variant: ASHRAE140Case::Case900FF, free_float: true, description: "High mass free float" },
-    Section7CaseDef { case_id: "950FF", variant: ASHRAE140Case::Case950FF, free_float: true, description: "High mass night vent free float" },
+    Section7CaseDef {
+        case_id: "600",
+        variant: ASHRAE140Case::Case600,
+        free_float: false,
+        description: "Low mass baseline",
+    },
+    Section7CaseDef {
+        case_id: "610",
+        variant: ASHRAE140Case::Case610,
+        free_float: false,
+        description: "Low mass with south shading",
+    },
+    Section7CaseDef {
+        case_id: "620",
+        variant: ASHRAE140Case::Case620,
+        free_float: false,
+        description: "Low mass with east/west windows",
+    },
+    Section7CaseDef {
+        case_id: "630",
+        variant: ASHRAE140Case::Case630,
+        free_float: false,
+        description: "Low mass with east/west shading",
+    },
+    Section7CaseDef {
+        case_id: "640",
+        variant: ASHRAE140Case::Case640,
+        free_float: false,
+        description: "Low mass with thermostat setback",
+    },
+    Section7CaseDef {
+        case_id: "650",
+        variant: ASHRAE140Case::Case650,
+        free_float: false,
+        description: "Low mass with night ventilation",
+    },
+    Section7CaseDef {
+        case_id: "900",
+        variant: ASHRAE140Case::Case900,
+        free_float: false,
+        description: "High mass baseline",
+    },
+    Section7CaseDef {
+        case_id: "910",
+        variant: ASHRAE140Case::Case910,
+        free_float: false,
+        description: "High mass with south shading",
+    },
+    Section7CaseDef {
+        case_id: "920",
+        variant: ASHRAE140Case::Case920,
+        free_float: false,
+        description: "High mass with east/west windows",
+    },
+    Section7CaseDef {
+        case_id: "930",
+        variant: ASHRAE140Case::Case930,
+        free_float: false,
+        description: "High mass with east/west shading",
+    },
+    Section7CaseDef {
+        case_id: "940",
+        variant: ASHRAE140Case::Case940,
+        free_float: false,
+        description: "High mass with thermostat setback",
+    },
+    Section7CaseDef {
+        case_id: "950",
+        variant: ASHRAE140Case::Case950,
+        free_float: false,
+        description: "High mass with night ventilation",
+    },
+    Section7CaseDef {
+        case_id: "960",
+        variant: ASHRAE140Case::Case960,
+        free_float: false,
+        description: "Sunspace",
+    },
+    Section7CaseDef {
+        case_id: "970",
+        variant: ASHRAE140Case::Case970,
+        free_float: false,
+        description: "Five zone cross coupling",
+    },
+    Section7CaseDef {
+        case_id: "600FF",
+        variant: ASHRAE140Case::Case600FF,
+        free_float: true,
+        description: "Low mass free float",
+    },
+    Section7CaseDef {
+        case_id: "650FF",
+        variant: ASHRAE140Case::Case650FF,
+        free_float: true,
+        description: "Low mass night vent free float",
+    },
+    Section7CaseDef {
+        case_id: "900FF",
+        variant: ASHRAE140Case::Case900FF,
+        free_float: true,
+        description: "High mass free float",
+    },
+    Section7CaseDef {
+        case_id: "950FF",
+        variant: ASHRAE140Case::Case950FF,
+        free_float: true,
+        description: "High mass night vent free float",
+    },
 ];
 
 /// The §7 day-profile days (contract `day_profile_array` names):
@@ -192,8 +282,8 @@ fn format_dd_mmm_hhmm(at: (u32, u32, u32)) -> String {
 /// see the coordinates note inside).
 pub fn run_section7_case(def: &Section7CaseDef) -> Result<Section7CaseResult, String> {
     let path = strict_gate_epw_path();
-    let weather =
-        EpwWeatherSource::from_file(&path).map_err(|e| format!("{}: EPW parse: {e:?}", def.case_id))?;
+    let weather = EpwWeatherSource::from_file(&path)
+        .map_err(|e| format!("{}: EPW parse: {e:?}", def.case_id))?;
 
     let spec = def.variant.spec();
     let mut model = ThermalModel::<fluxion::physics::cta::VectorField>::from_spec_with_selector(
@@ -214,11 +304,7 @@ pub fn run_section7_case(def: &Section7CaseDef) -> Result<Section7CaseResult, St
     let latitude_deg = model.0.solar.latitude_deg;
     let longitude_deg = model.0.solar.longitude_deg;
     let utc_offset_hours = model.0.solar.utc_offset_hours;
-    let _ = (
-        latitude_deg,
-        longitude_deg,
-        utc_offset_hours,
-    ); // recorded for provenance, not injected
+    let _ = (latitude_deg, longitude_deg, utc_offset_hours); // recorded for provenance, not injected
 
     // Free-float mode (mirrors run_blind_free_float, #4170): HVAC disabled.
     if def.free_float {
@@ -601,12 +687,7 @@ pub fn section7_gsr_csv_row(r: &Section7CaseResult) -> String {
     } else {
         "emitted"
     };
-    let join12_3 = |a: &[f64; 12]| {
-        a.iter()
-            .map(|v| fmt(*v, 3))
-            .collect::<Vec<_>>()
-            .join(",")
-    };
+    let join12_3 = |a: &[f64; 12]| a.iter().map(|v| fmt(*v, 3)).collect::<Vec<_>>().join(",");
     let join12_ts = |a: &[(u32, u32, u32); 12]| {
         a.iter()
             .map(|at| format_dd_mmm_hhmm(*at))
@@ -744,14 +825,30 @@ fn section7_all_cases_run_with_finite_outputs() {
         assert!(r.annual_heating_mwh.is_finite() && r.annual_cooling_mwh.is_finite());
         assert!(r.peak_heating_kw.is_finite() && r.peak_cooling_kw.is_finite());
         assert!(r.avg_temp_c.is_finite() && r.min_temp_c.is_finite() && r.max_temp_c.is_finite());
-        assert!(r.annual_incident_kwh_m2.iter().all(|v| v.is_finite() && *v >= 0.0));
+        assert!(r
+            .annual_incident_kwh_m2
+            .iter()
+            .all(|v| v.is_finite() && *v >= 0.0));
         assert!(r.annual_transmitted_south_kwh_m2.is_finite());
         assert!(r.sky_avg_temp_c.is_finite());
-        assert_eq!(r.temp_bins.iter().sum::<u64>(), 8760, "{}: temp_bins must preserve all 8760 hours", r.case_id);
+        assert_eq!(
+            r.temp_bins.iter().sum::<u64>(),
+            8760,
+            "{}: temp_bins must preserve all 8760 hours",
+            r.case_id
+        );
         assert_eq!(r.day_profiles.len(), 3);
         if r.free_float {
-            assert_eq!(r.annual_heating_mwh, 0.0, "{}: FF loads must be zero", r.case_id);
-            assert_eq!(r.annual_cooling_mwh, 0.0, "{}: FF loads must be zero", r.case_id);
+            assert_eq!(
+                r.annual_heating_mwh, 0.0,
+                "{}: FF loads must be zero",
+                r.case_id
+            );
+            assert_eq!(
+                r.annual_cooling_mwh, 0.0,
+                "{}: FF loads must be zero",
+                r.case_id
+            );
         } else {
             // Conditioned cases carry some ideal load. Cases 650/950 report
             // exactly zero heating on the canonical blind route (observed,
@@ -775,7 +872,11 @@ fn section7_gsr_csv_shape() {
     let csv = section7_gsr_csv(harness_results());
     let mut lines = csv.lines();
     let header: Vec<&str> = lines.next().unwrap().split(',').collect();
-    assert_eq!(header.len(), 52, "52 columns: key + 48 prefixed + 3 trailing");
+    assert_eq!(
+        header.len(),
+        52,
+        "52 columns: key + 48 prefixed + 3 trailing"
+    );
     assert_eq!(header[0], "bestest.case_num");
     assert_eq!(
         header[1],
@@ -812,11 +913,17 @@ fn section7_gsr_csv_shape() {
         cells.push(cur);
         assert_eq!(cells.len(), 52, "row must have 52 cells: {line}");
         let key = cells[0].split(' ').next().unwrap().to_string();
-        assert!(!key.is_empty(), "consumer keys on the first whitespace token");
+        assert!(
+            !key.is_empty(),
+            "consumer keys on the first whitespace token"
+        );
         assert!(seen.insert(key.clone()), "duplicate case key {key}");
         // Timestamp cells: peak times (cells 33,34) and the two 12-value
         // monthly peak-time arrays (cells 36, 39).
-        assert!(ts_re(&cells[33]) && ts_re(&cells[34]), "peak times DD-MMM-HH:MM");
+        assert!(
+            ts_re(&cells[33]) && ts_re(&cells[34]),
+            "peak times DD-MMM-HH:MM"
+        );
         for col in [36usize, 39usize] {
             for ts in cells[col].split(',') {
                 assert!(ts_re(ts), "monthly peak time {ts:?} must be DD-MMM-HH:MM");
@@ -824,18 +931,37 @@ fn section7_gsr_csv_shape() {
             assert_eq!(cells[col].split(',').count(), 12);
         }
         for col in [35usize, 37usize, 38usize, 40usize] {
-            assert_eq!(cells[col].split(',').count(), 12, "monthly array col {}", header[col]);
+            assert_eq!(
+                cells[col].split(',').count(),
+                12,
+                "monthly array col {}",
+                header[col]
+            );
         }
         // Day profiles: two labels + 24 values = 26 (cells 41-45);
         // temp profiles: one label + 24 = 25 (cells 46, 47);
         // temp_bins: two labels + 90 bins = 92 (cell 48).
         for col in 41..=45usize {
-            assert_eq!(cells[col].split(',').count(), 26, "day profile col {}", header[col]);
+            assert_eq!(
+                cells[col].split(',').count(),
+                26,
+                "day profile col {}",
+                header[col]
+            );
         }
         for col in [46usize, 47usize] {
-            assert_eq!(cells[col].split(',').count(), 25, "temp profile col {}", header[col]);
+            assert_eq!(
+                cells[col].split(',').count(),
+                25,
+                "temp profile col {}",
+                header[col]
+            );
         }
-        assert_eq!(cells[48].split(',').count(), 92, "temp_bins: 2 labels + 90 bins");
+        assert_eq!(
+            cells[48].split(',').count(),
+            92,
+            "temp_bins: 2 labels + 90 bins"
+        );
     }
     assert_eq!(seen.len(), 18, "18 unique case keys");
 }
