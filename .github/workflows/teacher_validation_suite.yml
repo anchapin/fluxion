@@ -58,7 +58,11 @@ jobs:
           fetch-depth: 1
 
       - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@5775e857f6137e738adf93c80ad3d6c81e29a8fe # 2024-07-20
+                # 2026-10-17 (loop round 50): the previous pin 5775e857f6137e738adf93c80ad3d6c81e29a8fe
+        # ("2024-07-20") no longer resolves upstream (dtolnay/rust-toolchain rewrites history;
+        # nightly run 39023951086 failed in 7s with "Unable to resolve action"). Pinned to the
+        # same ref crate-size.yml uses, which resolves and requests stable.
+        uses: dtolnay/rust-toolchain@8641a17e25bf5b40c118d48fe0f81e8655731839 # stable-capable ref, same as crate-size.yml
         with:
           toolchain: stable
 
