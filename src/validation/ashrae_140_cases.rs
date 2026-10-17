@@ -45,8 +45,12 @@ pub use fluxion_core::ashrae_cases::{
     WindowSpec,
 };
 
-use crate::sim::construction::{Assemblies, Construction, Materials};
+// #4157 slice 1 (path de-noise): `Assemblies`/`Construction`/`Materials` live in
+// `fluxion_core::construction` since the #2462 Phase 2 crate split; import them
+// from core directly instead of through the `src/sim/construction.rs` re-export
+// shim, so the audit surface carries no false upward dependency.
 use crate::weather::{HourlyWeatherData, WeatherSource};
+use fluxion_core::construction::{Assemblies, Construction, Materials};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -1032,19 +1036,19 @@ impl ConstructionSpec {
     /// Returns the total wall U-value (with ASHRAE film coefficients).
     pub fn wall_u_value(&self) -> f64 {
         self.wall
-            .u_value(Some(crate::sim::construction::SurfaceType::Wall), None)
+            .u_value(Some(fluxion_core::construction::SurfaceType::Wall), None)
     }
 
     /// Returns the total roof U-value (with ASHRAE film coefficients).
     pub fn roof_u_value(&self) -> f64 {
         self.roof
-            .u_value(Some(crate::sim::construction::SurfaceType::Ceiling), None)
+            .u_value(Some(fluxion_core::construction::SurfaceType::Ceiling), None)
     }
 
     /// Returns the total floor U-value (with ASHRAE film coefficients).
     pub fn floor_u_value(&self) -> f64 {
         self.floor
-            .u_value(Some(crate::sim::construction::SurfaceType::Floor), None)
+            .u_value(Some(fluxion_core::construction::SurfaceType::Floor), None)
     }
 }
 
