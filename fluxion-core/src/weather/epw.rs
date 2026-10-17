@@ -487,12 +487,31 @@ pub struct EpwLocation {
     /// UTC offset in decimal hours from EPW LOCATION column 9 (the
     /// `TimeZone` field). `None` if column 9 is missing or unparseable.
     pub utc_offset_hours: Option<f64>,
+    /// Latitude in decimal degrees from EPW LOCATION column 7 (split index
+    /// 6). `None` if missing or unparseable. Issue #4269: the §6 weather
+    /// driver harness sets the engine site from the file's own header.
+    pub latitude_deg: Option<f64>,
+    /// Longitude in decimal degrees from EPW LOCATION column 8 (split
+    /// index 7), east-positive matching the solar pipeline's convention.
+    /// `None` if missing or unparseable.
+    pub longitude_deg: Option<f64>,
 }
 
 impl EpwLocation {
     /// Returns the human-readable "City, State" string.
     pub fn city_state(&self) -> &str {
         &self.city_state
+    }
+
+    /// Latitude in decimal degrees from the LOCATION header, when present.
+    pub fn latitude_deg(&self) -> Option<f64> {
+        self.latitude_deg
+    }
+
+    /// Longitude in decimal degrees (east-positive) from the LOCATION
+    /// header, when present.
+    pub fn longitude_deg(&self) -> Option<f64> {
+        self.longitude_deg
     }
 }
 
@@ -654,6 +673,18 @@ impl EpwWeatherSource {
             .map(|s| s.trim().parse::<f64>().ok())
             .unwrap_or(None);
 
+        // Issue #4269: surface the header's latitude (split index 6) and
+        // longitude (split index 7) so callers can set the engine site from
+        // the file itself instead of a hardcoded default.
+        let latitude_deg = parts
+            .get(6)
+            .map(|s| s.trim().parse::<f64>().ok())
+            .unwrap_or(None);
+        let longitude_deg = parts
+            .get(7)
+            .map(|s| s.trim().parse::<f64>().ok())
+            .unwrap_or(None);
+
         if city.is_empty() && state.is_empty() {
             return Ok(None);
         }
@@ -661,6 +692,8 @@ impl EpwWeatherSource {
         Ok(Some(EpwLocation {
             city_state: format!("{}, {}", city, state),
             utc_offset_hours,
+            latitude_deg,
+            longitude_deg,
         }))
     }
 
@@ -1179,6 +1212,8 @@ mod tests {
         let expected = EpwLocation {
             city_state: "Denver, CO".to_string(),
             utc_offset_hours: Some(-7.0),
+            latitude_deg: Some(39.83),
+            longitude_deg: Some(-104.65),
         };
         assert_eq!(result, Some(expected));
     }
@@ -1636,6 +1671,8 @@ mod tests {
         let expected = EpwLocation {
             city_state: ", CA".to_string(),
             utc_offset_hours: None,
+            latitude_deg: None,
+            longitude_deg: None,
         };
         assert_eq!(result, Some(expected));
     }
@@ -2035,6 +2072,8 @@ mod tests {
             location: Some(EpwLocation {
                 city_state: "Test".to_string(),
                 utc_offset_hours: Some(0.0),
+                latitude_deg: None,
+                longitude_deg: None,
             }),
             hourly_data: vec![],
         };
@@ -2050,6 +2089,8 @@ mod tests {
             location: Some(EpwLocation {
                 city_state: "Test".to_string(),
                 utc_offset_hours: Some(0.0),
+                latitude_deg: None,
+                longitude_deg: None,
             }),
             hourly_data: vec![weather],
         };
@@ -2069,6 +2110,8 @@ mod tests {
             location: Some(EpwLocation {
                 city_state: "Test".to_string(),
                 utc_offset_hours: Some(0.0),
+                latitude_deg: None,
+                longitude_deg: None,
             }),
             hourly_data: vec![weather1, weather2, weather3],
         };
@@ -2086,6 +2129,8 @@ mod tests {
             location: Some(EpwLocation {
                 city_state: "Test".to_string(),
                 utc_offset_hours: Some(0.0),
+                latitude_deg: None,
+                longitude_deg: None,
             }),
             hourly_data: vec![weather],
         };

@@ -237,3 +237,210 @@ fn days_before(month: u32) -> usize {
     const ACC: [usize; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
     ACC[(month as usize - 1).min(11)]
 }
+
+// ===========================================================================
+// §6 case harness (Issue #4269): the six WD files driven through the engine
+// on the low-mass case configuration, producing the per-case outputs the
+// #4283 emitter and #4276 conformance table consume.
+// ===========================================================================
+
+use fluxion::validation::section6::{
+    run_all_section6_cases, section6_workflow_csv, Section6CaseResult,
+};
+
+/// One engine pass for the whole binary: each test reads the same results.
+fn harness_results() -> &'static Vec<Section6CaseResult> {
+    static RESULTS: std::sync::OnceLock<Vec<Section6CaseResult>> = std::sync::OnceLock::new();
+    RESULTS.get_or_init(|| run_all_section6_cases().expect("all six §6 cases must run"))
+}
+
+/// §6.2.1.1 outputs: every case runs the full year and reports finite
+/// heating, cooling, and peaks. A NaN or infinite value anywhere is a
+/// harness failure before any comparison is meaningful.
+#[test]
+fn section6_all_six_cases_run_with_finite_outputs() {
+    let results = harness_results();
+    assert_eq!(results.len(), 6, "six §6 cases must run");
+    for r in results {
+        assert!(
+            r.is_finite(),
+            "{} produced a non-finite output: {r:?}",
+            r.case_id
+        );
+        assert!(
+            r.annual_heating_mwh >= 0.0 && r.annual_cooling_mwh >= 0.0,
+            "{}: reported loads must be non-negative (§6.2.1.1.5)",
+            r.case_id
+        );
+    }
+}
+
+/// Site metadata must come from each file's own EPW LOCATION header, not
+/// the fabric cohort's Denver default — WD300/WD400/WD500 would otherwise
+/// run with the wrong sun entirely.
+#[test]
+fn section6_site_metadata_follows_each_epw_header() {
+    let results = harness_results();
+    let by_id = |id: &str| {
+        results
+            .iter()
+            .find(|r| r.case_id == id)
+            .unwrap_or_else(|| panic!("{id} missing"))
+    };
+    let wd100 = by_id("WD100");
+    let wd300 = by_id("WD300");
+    let wd400 = by_id("WD400");
+    let wd500 = by_id("WD500");
+
+    assert!((wd100.latitude_deg - 39.833).abs() < 1e-2, "WD100 lat");
+    assert!((wd100.longitude_deg - (-104.650)).abs() < 1e-2, "WD100 lon");
+    assert_eq!(wd100.utc_offset_hours, Some(-7.0));
+    assert!(
+        (wd300.latitude_deg - (-33.393)).abs() < 1e-2,
+        "WD300 southern latitude"
+    );
+    assert!(
+        (wd400.latitude_deg - 71.286).abs() < 1e-2,
+        "WD400 arctic latitude"
+    );
+    assert_eq!(wd500.utc_offset_hours, Some(5.5), "WD500 half-hour offset");
+}
+
+/// The sharpest test in the section: WD100 and WD600 are byte-identical
+/// except EPW field 33 (albedo 0 vs 0.2). Through the full engine path,
+/// with the §6 authored-albedo override, the pair must still produce
+/// different outputs — with the 0.0→0.2 fabric fallback they would come
+/// out identical and the isolation would silently vanish.
+#[test]
+fn section6_wd100_wd600_differ_through_full_engine_path() {
+    let results = harness_results();
+    let wd100 = results.iter().find(|r| r.case_id == "WD100").unwrap();
+    let wd600 = results.iter().find(|r| r.case_id == "WD600").unwrap();
+
+    let rel = |a: f64, b: f64| (a - b).abs() / a.abs().max(1e-9);
+    assert!(
+        rel(wd100.annual_heating_mwh, wd600.annual_heating_mwh) > 1e-4
+            || rel(wd100.annual_cooling_mwh, wd600.annual_cooling_mwh) > 1e-4,
+        "WD100 and WD600 must differ through the engine: albedo is not being read \
+         (heating {}/{} MWh, cooling {}/{} MWh)",
+        wd100.annual_heating_mwh,
+        wd600.annual_heating_mwh,
+        wd100.annual_cooling_mwh,
+        wd600.annual_cooling_mwh
+    );
+    // Direction: WD600's 0.2 ground reflects more shortwave onto the
+    // surfaces, so it cannot cool less than WD100.
+    assert!(
+        wd600.annual_cooling_mwh >= wd100.annual_cooling_mwh - 1e-6,
+        "WD600 (albedo 0.2) must not cool less than WD100 (albedo 0): \
+         {wd100:?} vs {wd600:?}"
+    );
+}
+
+/// WD300 (Santiago, lat −33.4): seasons are inverted — heating must
+/// concentrate in the southern winter (Jun–Aug) and cooling in the
+/// southern summer (Dec–Feb). A northern-hemisphere reading of the file
+/// inverts both.
+#[test]
+fn section6_wd300_southern_hemisphere_seasonality() {
+    let results = harness_results();
+    let wd300 = results.iter().find(|r| r.case_id == "WD300").unwrap();
+    let sum = |a: &[f64; 12], idx: &[usize]| idx.iter().map(|&i| a[i]).sum::<f64>();
+    let sh_winter = [5, 6, 7]; // Jun, Jul, Aug
+    let sh_summer = [11, 0, 1]; // Dec, Jan, Feb
+    let heat_winter = sum(&wd300.monthly_heating_mwh, &sh_winter);
+    let heat_summer = sum(&wd300.monthly_heating_mwh, &sh_summer);
+    let cool_winter = sum(&wd300.monthly_cooling_mwh, &sh_winter);
+    let cool_summer = sum(&wd300.monthly_cooling_mwh, &sh_summer);
+    assert!(
+        heat_winter > heat_summer,
+        "WD300 heating must peak in southern winter (Jun-Aug {heat_winter} MWh) \
+         over southern summer (Dec-Feb {heat_summer} MWh)"
+    );
+    assert!(
+        cool_summer > cool_winter,
+        "WD300 cooling must peak in southern summer (Dec-Feb {cool_summer} MWh) \
+         over southern winter (Jun-Aug {cool_winter} MWh)"
+    );
+}
+
+/// WD400 (Barrow, lat 71.3): arctic — the lowest annual cooling of the six
+/// and heating at or above every temperate case. Also the polar-finiteness
+/// acceptance at engine level (polar night/day through the full year).
+#[test]
+fn section6_wd400_arctic_extremes() {
+    let results = harness_results();
+    let wd400 = results.iter().find(|r| r.case_id == "WD400").unwrap();
+    for r in results {
+        if r.case_id != "WD400" {
+            assert!(
+                wd400.annual_cooling_mwh <= r.annual_cooling_mwh,
+                "WD400 must have the lowest annual cooling: {r:?}"
+            );
+        }
+    }
+    let wd200 = results.iter().find(|r| r.case_id == "WD200").unwrap();
+    assert!(
+        wd400.annual_heating_mwh > wd200.annual_heating_mwh,
+        "arctic Barrow must heat more than Atlanta: {} vs {} MWh",
+        wd400.annual_heating_mwh,
+        wd200.annual_heating_mwh
+    );
+}
+
+/// WD500 (New Delhi, +5.5 h): hot climate — cooling-dominant annual loads.
+#[test]
+fn section6_wd500_hot_climate_cooling_dominant() {
+    let results = harness_results();
+    let wd500 = results.iter().find(|r| r.case_id == "WD500").unwrap();
+    assert!(
+        wd500.annual_cooling_mwh > wd500.annual_heating_mwh,
+        "New Delhi must be cooling-dominant: cooling {} vs heating {} MWh",
+        wd500.annual_cooling_mwh,
+        wd500.annual_heating_mwh
+    );
+}
+
+/// The interchange artifact: one flat CSV row per case, case id first,
+/// matching the workflow-results shape #4276 adopts from BESTEST-GSR.
+#[test]
+fn section6_workflow_csv_shape() {
+    let csv = section6_workflow_csv().expect("workflow CSV");
+    let mut lines = csv.lines();
+    assert!(lines
+        .next()
+        .unwrap()
+        .starts_with("case,description,weather_file"));
+    let mut rows = 0;
+    for line in lines {
+        let first = line.split(',').next().unwrap();
+        assert!(
+            ["WD100", "WD200", "WD300", "WD400", "WD500", "WD600"].contains(&first),
+            "row must key on the case id first, got {first:?}"
+        );
+        rows += 1;
+    }
+    assert_eq!(rows, 6);
+}
+
+/// Writes the §6 workflow-results CSV into the repo (`results/`) so the
+/// #4283 emitter and #4276 conformance table consume a fixed artifact.
+/// Ignored: run explicitly with
+/// `cargo test --release --test ashrae_140_section6_weather_driver -- --ignored emit_section6_workflow_csv --nocapture`.
+#[test]
+#[ignore]
+fn emit_section6_workflow_csv() {
+    let results = harness_results();
+    let mut csv = String::from(Section6CaseResult::csv_header());
+    csv.push('\n');
+    for r in results.iter() {
+        csv.push_str(&r.csv_row());
+        csv.push('\n');
+    }
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("results");
+    std::fs::create_dir_all(&dir).expect("create results dir");
+    let path = dir.join("section6_workflow_results.csv");
+    std::fs::write(&path, &csv).expect("write section6 workflow CSV");
+    println!("wrote {}", path.display());
+    println!("{csv}");
+}

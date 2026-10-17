@@ -30,6 +30,7 @@ pub mod reference_catalog;
 pub mod reference_data;
 pub mod reference_loader;
 pub mod reporting;
+pub mod section6;
 pub mod tolerance;
 pub mod topology_bridge;
 

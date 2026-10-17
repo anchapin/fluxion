@@ -59,6 +59,12 @@ pub struct SolarState<T: ContinuousTensor<f64>> {
 
     /// Internal radiative heat gains to thermal mass (Plan 17-04).
     pub internal_radiative_to_mass: f64,
+
+    /// Issue #4269 §6 per-case override: when true, the EPW-authored
+    /// per-hour ground albedo passes through unfiltered (including an
+    /// explicit 0, as WD100 reports), instead of the 0.0→0.2 fabric
+    /// fallback. Default off, so default-build behavior is unchanged.
+    pub authored_epw_albedo: bool,
 }
 
 impl<T: ContinuousTensor<f64> + Clone> Clone for SolarState<T> {
@@ -88,6 +94,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for SolarState<T> {
             orientation_irradiance_beam_diffuse: self.orientation_irradiance_beam_diffuse.clone(),
             orientation_irradiance_ground: self.orientation_irradiance_ground.clone(),
             internal_radiative_to_mass: self.internal_radiative_to_mass,
+            authored_epw_albedo: self.authored_epw_albedo,
         }
     }
 }

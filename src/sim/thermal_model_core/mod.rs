@@ -3945,6 +3945,7 @@ impl ThermalModel<VectorField> {
                 orientation_irradiance_beam_diffuse: vec![[0.0; 7]; num_zones],
                 orientation_irradiance_ground: vec![[0.0; 7]; num_zones],
                 internal_radiative_to_mass: 0.0,
+                authored_epw_albedo: false,
             },
             mass: MassState {
                 mass_temperatures: VectorField::from_scalar(20.0, num_zones),
