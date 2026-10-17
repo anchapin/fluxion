@@ -141,7 +141,7 @@ no longer recompiles the 208 KB `validation::ashrae_140_cases` per mutant.
 | `src/sim/per_surface_conduction.rs:59` | `use fluxion_core::ashrae_cases::Orientation` |
 | `src/sim/invariant_checker.rs:9` | `use fluxion_core::ashrae_cases::Orientation` |
 | `src/sim/shading.rs:6,178` | `use fluxion_core::ashrae_cases::WindowArea, Orientation` |
-| `src/sim/thermal_model_core/mod.rs:23` | split: `CaseSpec` stays in validation; `Orientation, ShadingType` move to `fluxion_core::ashrae_cases` |
+| `src/sim/thermal_model_core/mod.rs:23` | split: `CaseSpec` moved to `fluxion_core::ashrae_cases` (#4157 slice 3, 2026-10-17; validation path keeps a `pub use` shim); `Orientation, ShadingType` move to `fluxion_core::ashrae_cases` |
 | `src/sim/thermal_model_core/mod.rs:25,641,945-950,1059,1062,1127-1130,1271,1451-1453,1634,1775,1825-1828,2231,2233,2234,2398,2837,2981,2999,3020-3034,3128,3130,3133,3141,3143,3144,3683-3686` (Issue #3586) | `WindowSpec`, `Orientation`, `ConstructionType`, `BuildingType` references migrated to fully-qualified `fluxion_core::ashrae_cases::*` (46 leaf edges removed); `CaseSpec` references at lines 25, 3112, 3328, 3383 stay in `crate::validation::ashrae_140_cases` (composite type; since issue #4157 slice 2, 2026-10-17, its equipment field is the data-only `fluxion_core::ashrae_cases::EquipmentSelection`, mapped to the `crate::sim::hvac::AnyEquipment` family in sim at `any_equipment_from_selection`). Companion row below for `tests.rs`. |
 | `src/sim/thermal_model_core/tests.rs:485,499` (Issue #3586) | `WindowSpec`, `GlassType` references migrated to fully-qualified `fluxion_core::ashrae_cases::*` (2 leaf edges removed); `ASHRAE140Case` references at lines 510, 531, 552 stay in `crate::validation::ashrae_140_cases` (composite type). |
 | `src/sim/thermal_model_data/hvac_state.rs:19` | `use fluxion_core::ashrae_cases::NightVentilation` |
@@ -248,16 +248,18 @@ pub use fluxion_core::ashrae_cases::{
 ```
 
 The big non-leaf types in the same file (`ASHRAE140Case` — 800+ lines,
-`CaseSpec`, `CaseBuilder`, `CommonWall`, `ConstructionSpec`) stay put because
-they carry upward deps to `crate::sim::construction`,
-`crate::physics::constants::thermal::ashrae_140::*`, etc. — they cannot move
-into `fluxion-core` yet. (Updated 2026-10-17, issue #4157 slice 2: the former
+`CaseBuilder`) stay put because they carry upward deps to the simulation
+and validation layers — they cannot move into `fluxion-core` yet. (Updated
+2026-10-17, issue #4157 slice 3: the composite trio `CaseSpec`,
+`CommonWall`, `ConstructionSpec` — plus the `ZoneOrigin` helper — moved to
+`fluxion_core::ashrae_cases` after slice 2 removed the last upward dep;
+2026-10-17 slice 2, issue #4157: the former
 `CaseSpec.hvac_equipment: Option<crate::sim::hvac::AnyEquipment>` upward dep
 is gone — `CaseSpec` now carries the data-only
 `fluxion_core::ashrae_cases::EquipmentSelection`, and `ThermalModel::from_spec`
 maps it to the `crate::sim::hvac::AnyEquipment` family at the single site
-`src/sim/hvac/equipment.rs::any_equipment_from_selection`. Slice 3 moves the
-trio to `fluxion-core`.)
+`src/sim/hvac/equipment.rs::any_equipment_from_selection`. The validation
+path keeps `pub use` shims, so every existing caller compiles unchanged.)
 
 **Regression guard**: `scripts/check_ashrae_cases_cycle.py` enforces six
 invariants and is wired into CI (run from repo root):
@@ -266,28 +268,32 @@ invariants and is wired into CI (run from repo root):
    `crate::ai::*` / `crate::validation::*` / `crate::interop::*` /
    `crate::python::*` / etc. references — keeps `fluxion-core` acyclic w.r.t.
    `fluxion`.
-2. `fluxion_core::ashrae_cases` contains all 13 moved leaf types.
+2. `fluxion_core::ashrae_cases` contains all 13 moved leaf types plus the 4
+   composite case types from #4157 slice 3 (`CaseSpec`, `ConstructionSpec`,
+   `CommonWall`, `ZoneOrigin`).
 3. `src/sim/**` → `crate::validation::*` edge count is at or below the
-   documented baseline (currently 49). This counts *every* reference — not
+   documented baseline (currently 25). This counts *every* reference — not
    just the leaf-type `Orientation` import the original #1441 guard forbid,
    but the composite types that actually drive the cycle (`CaseSpec`,
    `CaseBuilder`, `ASHRAE140Case`, `CommonWall`, `ConstructionSpec`) plus
    `validation::diagnostics` / `validation::config`, whether written as a
-   `use` import or a fully-qualified path in a signature / match arm.
+   `use` import or a fully-qualified path in a signature / match arm. The
+   baseline was 49 before #4157 slice 3 moved the composite trio to
+   fluxion-core (2026-10-17).
 4. `src/validation/**` → `crate::sim::*` (baseline 68).
  5. `src/validation/**` → `crate::physics::*` (baseline 62).
  6. `src/validation/**` → `crate::weather::*` (baseline 25).
 
 **The `sim ↔ validation` cycle is NOT fully removed.** Issue #1441 only
-moved the 13 pure-data leaf types; the composite types (`ASHRAE140Case`,
-`CaseSpec`, `CaseBuilder`, `CommonWall`, `ConstructionSpec`) stayed in
-`validation::ashrae_140_cases` because they carry upward deps to
-`crate::sim::*` / `crate::physics::*`, and `src/validation/**` legitimately
-drives the engine, weather sources, and physics tensors. As a result ~204
-directional edges remain (49 sim→validation + 68 validation→sim + 62
-validation→physics + 25 validation→weather) — 204 total (round 24, issue
-#3061: +1 sim→validation edge, `thermal_model_core/mod.rs` importing
-`ConstructionSpec` for the Case 960 per-zone construction split). The guard therefore mirrors
+moved the 13 pure-data leaf types; #4157 slice 3 (2026-10-17) moved the
+composite trio (`CaseSpec`, `CommonWall`, `ConstructionSpec` + `ZoneOrigin`)
+to fluxion-core. `ASHRAE140Case` and `CaseBuilder` stayed in
+`validation::ashrae_140_cases`, and `src/validation/**` legitimately
+drives the engine, weather sources, and physics tensors. As a result ~180
+directional edges remain (25 sim→validation + 68 validation→sim + 62
+validation→physics + 25 validation→weather) — 180 total (round 50,
+#4157 slice 3: sim→validation 49 → 25, the trio extraction plus #4171's
+leaf-edge re-point). The guard therefore mirrors
 `scripts/check_physics_sim_cycle.py`: it snapshots the current counts as
 baselines and **fails only on regression** (a count grows above baseline),
 rather than requiring the full cycle removal in one step. Lowering a
