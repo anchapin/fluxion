@@ -38,6 +38,7 @@ on:
       - "scripts/check_known_issues_summary.py"
       - "scripts/check_npm_readme_codeblocks.mjs"
       - "scripts/check_cli_doc_stubs.py"
+      - "data/reference/section7/**"
       - "npm/README.md"
       - "docs/doc-inventory.md"
       - "docs/**"
@@ -129,6 +130,16 @@ jobs:
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
           if [[ $EXIT_CODE -ne 0 ]]; then
             echo "::error::Doc inventory is stale — run \`python3 scripts/generate_doc_inventory.py\` and commit the result (issue #2765)"
+          fi
+
+      - name: Run BESTEST-GSR §7 results-CSV contract check
+        id: bestest_csv
+        run: |
+          python3 scripts/check_bestest_csv.py data/reference/section7/workflow_results.csv
+          EXIT_CODE=$?
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          if [[ $EXIT_CODE -ne 0 ]]; then
+            echo "::error::§7 results-CSV contract check failed (issue #4283) — the committed data/reference/section7/workflow_results.csv violates the BESTEST-GSR consumer contract"
           fi
 
       - name: Run npm/README.md code-block drift check

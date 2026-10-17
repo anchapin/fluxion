@@ -487,6 +487,7 @@ When a blocking issue is resolved, the test owner should:
 |-----------|-----------|----------|----------------|-------|-------------------|--------|
 | `tests/ashrae_140_section6_weather_driver.rs` | `emit_section6_workflow_csv` | `diagnostic` | #4269 | `unassigned` | Not blocking anything: manual artifact emission (`--ignored --nocapture`) that writes `data/reference/section6/section6_workflow_results.csv`; no assertions. Stays ignored so the default suite does not write repo files | `pending` |
 | `tests/ashrae_140_section6_weather_driver.rs` | `emit_section6_conformance` | `diagnostic` | #4276 | `unassigned` | Not blocking anything: manual artifact emission (`--ignored --nocapture`) that writes `data/reference/section6/section6_conformance.csv` and `section6_conformance.md` from the committed workflow CSV; no assertions beyond artifact write. Stays ignored so the default suite does not write repo files | `pending` |
+| `tests/ashrae_140_section7_gsr_emitter.rs` | `emit_section7_gsr_csv` | `diagnostic` | #4283 | `unassigned` | Not blocking anything: manual artifact emission (`--ignored --nocapture`) that writes `data/reference/section7/workflow_results.csv`; no assertions. Stays ignored so the default suite does not write repo files | `pending` |
 
 ---
 
