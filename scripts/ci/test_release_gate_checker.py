@@ -743,9 +743,14 @@ def test_main_returns_zero_on_clean_config(checker, tmp_path, monkeypatch, capsy
 
 
 def test_main_returns_one_when_validation_fails(checker, tmp_path, monkeypatch, capsys):
-    """End-to-end: failing validation result → exit 1.
+    """End-to-end: failing *gating* result → exit 1.
 
-    Mirrors the redirect pattern of
+    Since #4277 D the validation category is diagnostic (Standard 140
+    defines no percentage-based acceptance clause), so a low pass rate
+    alone cannot fail the release. The exit-1 path is exercised through
+    the §8 analytical gate instead (#4270): an injected tolerance of −1%
+    cannot be met by any real measurement, so the gate fails and main
+    must exit 1. Mirrors the redirect pattern of
     :func:`test_main_returns_zero_on_clean_config` — the script reads
     ``release_gates.yaml`` from its own ``project_root`` (the real repo),
     so we monkey-patch the YAML loader to inject the failing fixture.
@@ -760,6 +765,7 @@ def test_main_returns_one_when_validation_fails(checker, tmp_path, monkeypatch, 
                 "known_failures": [],
             },
         },
+        "analytical": {"gc10a_tolerance_pct": -1.0},
         "ci": {"fail_fast": True},
         "drift": {"enabled": False},
     }

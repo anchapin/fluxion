@@ -116,6 +116,8 @@ pub use fluxion_core::weather;
 // `crate::sim::multi_node_thermal::*` paths still resolve. Top-level re-exports
 // here make `crate::assembly::*` and `crate::multi_node::*` work too.
 pub use fluxion_core::{assembly, multi_node};
+// §8 GC10a analytical verification module (Issue #4270).
+pub use fluxion_core::ground_coupling;
 
 // #1441 (Phase 2 cycle break, continued): ASHRAE-140 leaf data types
 // (Orientation, WindowArea, ConstructionType, ShadingType, ShadingDevice,

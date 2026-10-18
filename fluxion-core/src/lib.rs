@@ -140,8 +140,9 @@ pub mod earth_tube;
 /// resolve the name collision with `fluxion_core::diagnostics::SimulationDiagnostics`;
 /// a `pub use` alias under the old name is retained for one release cycle.
 pub mod error;
-pub mod multi_node;
 /// Parser size/depth/repetition limits — DoS hardening (issue #2527).
+pub mod ground_coupling;
+pub mod multi_node;
 /// Dependency-light leaf; must not import sim/physics/ai/validation.
 pub mod parser_limits;
 pub mod per_surface_conduction;
