@@ -175,7 +175,12 @@ jobs:
             --baseline tests/reference_data/gauge_soak/criterion4_tracked_cohort_baseline.csv \
             --github-env "$GITHUB_ENV" \
             | tee criterion-4-verdict.json
-          echo "Criterion 4 verdict: ${CRITERION4_VERDICT}"
+          # CRITERION4_VERDICT (written via $GITHUB_ENV) is visible to
+          # LATER steps only, not this one — printing it here under
+          # `set -u` fails the step with an unbound variable even on a
+          # green verdict (found on the 2026-10-18 dispatch, run
+          # 39169277249: checker printed "green", step exited 1).
+          echo "Criterion 4 verdict recorded in criterion-4-verdict.json"
 
       # ADR-0007 criterion 5 — quarantined Case 600 metrics tracking.
       - name: Criterion 5 — issue_1457_case_600_series_tracking
