@@ -14,14 +14,38 @@
 # These gates prevent releasing when validation accuracy has regressed.
 
 validation:
-  # Minimum overall pass rate required (as percentage)
-  # ASHRAE 140 specifies minimum pass rates for certification; 60% is the practical
-  # minimum threshold below which the model cannot be considered validated against
-  # the standard test suite. Below this, the physics or implementation has
-  # fundamental issues that must be addressed before release.
-  min_pass_rate: 60.0
+  # Issue #4277 (resolved 2026-09-30): Standard 140 defines NO
+  # acceptance-criteria clause — it is a method of test, not a rating
+  # threshold, and its Section 4.4 ("Comparing Output to Other
+  # Results") is informative. The former score/percentage gates
+  # (`min_pass_rate: 60.0`, `max_mae: 50.0`) were therefore NOT
+  # ASHRAE 140 quantities and are retired as gates. They survive as
+  # labelled diagnostics under `diagnostics:` below — reported every
+  # release, watched by the drift gates, never gating a release.
+  #
+  # The release gate now watches:
+  #   1. `conformance:` — the #4276 conformance-report artifacts
+  #      (structural: present, parseable, per-case statuses carried).
+  #   2. `analytical:` — the real quantitative anchors that DO exist
+  #      (#4280): §8 GC10a closed-form solution (2433 W ±0.5%) and the
+  #      §11 QASv2 quasi-analytical anchors. Fail-closed until fluxion
+  #      implements the §8/§11 cases that measure them.
+  #   3. `drift:` — release-over-release movement of the diagnostic
+  #      rows (unchanged).
 
-  # Pass rate by case series - fail if any series drops below threshold
+  # Labelled diagnostics (NOT gates; never block a release).
+  # `min_pass_rate` / `max_mae` are reported per release so the
+  # fidelity trajectory stays visible; see the round-38 assessment on
+  # #4277 for why these numbers are what they are (structural §LIMIT
+  # cohorts, no tuning).
+  diagnostics:
+    min_pass_rate: 60.0   # reference line for the diagnostic report only
+    max_mae: 50.0         # reference line for the diagnostic report only
+
+  # Individual case thresholds
+
+  # Pass rate by case series — INFORMATIONAL since #4277 D (reported
+  # by the validator dashboard; not evaluated by the release gate).
   by_series:
     baseline:    # 600-650 series
       min_pass_rate: 50.0
@@ -36,12 +60,10 @@ validation:
       min_pass_rate: 50.0
       description: "Special test cases - 50% minimum due to edge-case simplifications"
 
-  # Maximum mean absolute error (MAE) allowed across all cases
-  # MAE measures average deviation from ASHRAE 140 reference values.
-  # 50% MAE means predictions average within 50% of reference values.
-  # CI baseline shows ~42% MAE with current physics; 50% threshold provides
-  # 8 percentage points of margin before blocking release.
-  max_mae: 50.0
+  # (diagnostic) Mean absolute error vs the ASHRAE 140 example-result
+  # band midpoints. Demoted from a gate by #4277 D: the ≤50% line was
+  # a scorecard invention with no clause in the standard behind it.
+  # Reported as a labelled diagnostic; drift-guarded, not gating.
 
   # Individual case thresholds
   individual:
@@ -115,6 +137,40 @@ validation:
       - "900"    # Case 900 - High-mass building heating deviation (B2b thermal-mass cohort, Issue #3800)
       - "940"    # Case 940 - High-mass setback-recovery overshoot (LIMIT-12)
       - "960"    # Case 960 - Multi-zone 5R1C structural (LIMIT cohort)
+
+# =============================================================================
+# CONFORMANCE GATE (Issue #4277 D)
+# =============================================================================
+# The claim Standard 140 actually supports: each implemented case ran the
+# specified inputs and produced every required output. The #4276 conformance
+# artifacts carry that checklist per section. This gate is STRUCTURAL: it
+# fails on missing/stale/malformed artifacts, never on a conformance
+# percentage (there is no such quantity in the standard).
+
+conformance:
+  artifacts:
+    - path: "data/reference/section6/section6_conformance.csv"
+      description: "§6 Weather Driver Tests per-case conformance (#4276)"
+    - path: "data/reference/section7/section7_conformance.csv"
+      description: "§7 Envelope & Fabric (Class I) per-case conformance (#4276/#4467)"
+  # Statuses the #4276 vocabulary allows per case.
+  allowed_statuses: ["conformant", "incomplete", "missing", "na"]
+
+# =============================================================================
+# ANALYTICAL TARGET GATE (Issue #4277 D, criteria per #4280)
+# =============================================================================
+# The only quantitative pass/fail anchors in Standard 140: the §8 GC10a
+# closed-form analytical solution and the §11 QASv2 quasi-analytical
+# solution. Fail-closed until fluxion implements the cases that measure
+# them — this is the honest red row that replaces the retired ≤50% MAE
+# scorecard line.
+
+analytical:
+  criteria_file: "data/reference/ashrae140/analytical_acceptance_criteria.json"
+  # Where a future §8/§11 case runner writes fluxion's measured values.
+  results_file: "data/reference/ashrae140/analytical_results.json"
+  # GC10a steady-state floor conduction: 2433 W ± 0.5%.
+  gc10a_tolerance_pct: 0.5
 
 # =============================================================================
 # BENCHMARK GATES

@@ -223,8 +223,8 @@ The acceptance criteria in `release_gates.yaml` require **both** ASHRAE 140 and 
 
 | Gate | Threshold | Primary Closer | Notes |
 |------|-----------|---------------|-------|
-| `validation.min_pass_rate` | ≥ 60% | Tracks 1+3 (bulk), Track 2 (Case 650/950), Track 4 (Case 960) | |
-| `validation.max_mae` | ≤ 50% | Track 1 (closes simultaneous OVER/UNDER signature on Case 600 series) | MAE cannot fall below ~80% without Track 1 |
+| `validation.diagnostics.min_pass_rate` | (was a ≥ 60% gate; retired as a gate by #4277 D — Standard 140 defines no acceptance-criteria clause) | Tracks 1+3 (bulk), Track 2 (Case 650/950), Track 4 (Case 960) | kept as a labelled diagnostic; drift-guarded |
+| `validation.diagnostics.max_mae` | (was a ≤ 50% gate; retired as a gate by #4277 D) | Track 1 (closes simultaneous OVER/UNDER signature on Case 600 series) | MAE cannot fall below ~80% without Track 1; the honest red anchor is now the analytical-targets gate (§8 GC10a / §11 QASv2) |
 | `validation.individual.max_deviation` | ≤ 100% | Tracks 1+2 (Case 600/650/950 within band) | 2 cases may exceed per `extreme_deviation_limit` |
 | `validation.by_series.baseline` | ≥ 50% | Track 1 | |
 | `validation.by_series.high_mass` | ≥ 50% | Tracks 3+4 | |

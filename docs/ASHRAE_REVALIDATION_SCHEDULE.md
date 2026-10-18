@@ -82,8 +82,13 @@ Before running re-validation:
      - Known limitation (document and accept)
 
 2. **Calculate metrics:**
-   - Overall pass rate (must be >= 60% per `release_gates.yaml → validation.min_pass_rate`)
-   - Mean Absolute Error (must be ≤ 50% per `release_gates.yaml → validation.max_mae`)
+   - Overall pass rate and Mean Absolute Error — reported as labelled
+     diagnostics per `release_gates.yaml → validation.diagnostics`
+     (Issue #4277 D: Standard 140 defines no acceptance-criteria
+     clause, so these numbers no longer gate; they are tracked
+     release-over-release by the drift gate). The real quantitative
+     anchors are the analytical-target gates (§8 GC10a / §11 QASv2)
+     and the per-case conformance report (#4276).
    - Comparison with previous year's results
 
 3. **Sign-off requirements:**
@@ -123,8 +128,8 @@ See `scripts/annual_ashrae_revalidation.sh` for full documentation.
 
 | Criterion | Target | Acceptable Range | Source of Truth |
 |-----------|--------|------------------|-----------------|
-| Pass Rate | >= 60% | 60-100% | `release_gates.yaml` `validation.min_pass_rate: 0.60` |
-| Mean Absolute Error | <= 50% | 0-50% | `release_gates.yaml` `validation.max_mae: 50` |
+| Pass Rate | (diagnostic) | reported | `release_gates.yaml` `validation.diagnostics.min_pass_rate` — not a gate (#4277 D) |
+| Mean Absolute Error | (diagnostic) | reported | `release_gates.yaml` `validation.diagnostics.max_mae` — not a gate (#4277 D); drift-guarded |
 | Failed Cases | within `extreme_deviation_limit: 2` | 0-2 cases | `release_gates.yaml` `validation.individual.known_failures: ["600","900"]` |
 
 ## Failed Case Handling

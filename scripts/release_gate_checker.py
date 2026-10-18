@@ -18,6 +18,7 @@ Exit codes:
 """
 
 import argparse
+import csv
 import json
 import sys
 from dataclasses import dataclass, field
@@ -44,13 +45,35 @@ import yaml  # type: ignore
 # present the YAML value always wins (the dict is only the safety net).
 DEFAULTS: dict[str, Any] = {
     "validation": {
-        "min_pass_rate": 60.0,
-        "max_mae": 50.0,
+        # Issue #4277 D: `min_pass_rate` / `max_mae` are diagnostics, not
+        # gates (Standard 140 defines no acceptance-criteria clause).
+        "diagnostics": {
+            "min_pass_rate": 60.0,
+            "max_mae": 50.0,
+        },
         "individual": {
             "max_deviation": 100.0,
             "extreme_deviation_limit": 2,
             "known_failures": ["195", "600", "620", "900", "940", "960"],
         },
+    },
+    "conformance": {
+        "artifacts": [
+            {
+                "path": "data/reference/section6/section6_conformance.csv",
+                "description": "§6 Weather Driver Tests per-case conformance (#4276)",
+            },
+            {
+                "path": "data/reference/section7/section7_conformance.csv",
+                "description": "§7 Envelope & Fabric (Class I) per-case conformance (#4276/#4467)",
+            },
+        ],
+        "allowed_statuses": ["conformant", "incomplete", "missing", "na"],
+    },
+    "analytical": {
+        "criteria_file": "data/reference/ashrae140/analytical_acceptance_criteria.json",
+        "results_file": "data/reference/ashrae140/analytical_results.json",
+        "gc10a_tolerance_pct": 0.5,
     },
     "benchmark": {
         "throughput": {
@@ -109,6 +132,11 @@ class GateResult:
     value: Optional[float] = None
     threshold: Optional[float] = None
     details: dict = field(default_factory=dict)
+    # Issue #4277 D: a diagnostic is reported every release but never
+    # contributes to overall_passed. Diagnostics carry passed=True so
+    # fail_fast / drift-skip logic is not tripped by them; their real
+    # state lives in `message` + `value`.
+    diagnostic: bool = False
 
 
 @dataclass
@@ -136,33 +164,48 @@ class ReleaseGateChecker:
         summary = validation_results.get("summary", {})
         cases = validation_results.get("cases", {})
 
-        # Overall pass rate
+        # Overall pass rate — DIAGNOSTIC since #4277 D. Standard 140
+        # defines no acceptance-criteria clause (the issue's finding),
+        # so a percentage pass rate is not an ASHRAE 140 quantity and
+        # cannot gate a release. Reported per release; drift-guarded.
         pass_rate = summary.get("pass_rate", 0.0)
-        min_pass_rate = validation_config.get(
-            "min_pass_rate", DEFAULTS["validation"]["min_pass_rate"]
+        min_pass_rate = validation_config.get("diagnostics", {}).get(
+            "min_pass_rate",
+            DEFAULTS["validation"]["diagnostics"]["min_pass_rate"],
         )
         results.append(
             GateResult(
                 name="overall_pass_rate",
                 category="validation",
-                passed=pass_rate >= min_pass_rate,
-                message=f"Pass rate {pass_rate:.1f}% vs required {min_pass_rate}%",
+                passed=True,
+                diagnostic=True,
+                message=(
+                    f"DIAGNOSTIC (not an ASHRAE 140 criterion — #4277): "
+                    f"pass rate {pass_rate:.1f}% vs reference line {min_pass_rate}%"
+                ),
                 value=pass_rate,
                 threshold=min_pass_rate,
             )
         )
 
-        # MAE check
+        # MAE — DIAGNOSTIC since #4277 D. The former ≤50% release target
+        # was a scorecard invention with no clause in the standard behind
+        # it. The number is still reported (honest fidelity trajectory)
+        # and drift-guarded release-over-release; it no longer gates.
         mae = summary.get("mae", 0.0)
-        max_mae = validation_config.get(
-            "max_mae", DEFAULTS["validation"]["max_mae"]
+        max_mae = validation_config.get("diagnostics", {}).get(
+            "max_mae", DEFAULTS["validation"]["diagnostics"]["max_mae"]
         )
         results.append(
             GateResult(
                 name="max_mae",
                 category="validation",
-                passed=mae <= max_mae,
-                message=f"MAE {mae:.2f}% vs max allowed {max_mae}%",
+                passed=True,
+                diagnostic=True,
+                message=(
+                    f"DIAGNOSTIC (not an ASHRAE 140 criterion — #4277): "
+                    f"MAE {mae:.2f}% vs reference line {max_mae}%"
+                ),
                 value=mae,
                 threshold=max_mae,
             )
@@ -675,6 +718,191 @@ class ReleaseGateChecker:
 
         return results
 
+    def check_conformance_gates(self) -> list[GateResult]:
+        """Structural gate over the #4276 conformance artifacts.
+
+        Issue #4277 D: the release claim Standard 140 supports is the
+        per-case conformance checklist, so the gate asserts the
+        artifacts are present, parseable, and carry a valid status for
+        every row. It deliberately does NOT score conformance — an
+        incomplete case is the honest state and is reported, not
+        failed.
+        """
+        results = []
+        config = self.config.get("conformance", {})
+        artifacts = config.get(
+            "artifacts", DEFAULTS["conformance"]["artifacts"]
+        )
+        allowed = set(
+            config.get(
+                "allowed_statuses",
+                DEFAULTS["conformance"]["allowed_statuses"],
+            )
+        )
+        for artifact in artifacts:
+            path = self.project_root / artifact["path"]
+            if not path.exists():
+                results.append(
+                    GateResult(
+                        name=f"conformance_artifact_{Path(artifact['path']).stem}",
+                        category="conformance",
+                        passed=False,
+                        message=(
+                            f"Missing conformance artifact {artifact['path']} "
+                            f"({artifact.get('description', '')}) — regenerate "
+                            f"it from the conformance harness; the release "
+                            f"cannot state a §-level conformance claim without it"
+                        ),
+                    )
+                )
+                continue
+            bad_rows = []
+            statuses: dict[str, int] = {}
+            with open(path, newline="") as f:
+                reader = csv.DictReader(f)
+                for i, row in enumerate(reader, start=2):
+                    status = (row.get("status") or "").strip()
+                    statuses[status] = statuses.get(status, 0) + 1
+                    if status not in allowed:
+                        bad_rows.append((i, status))
+            if bad_rows:
+                results.append(
+                    GateResult(
+                        name=f"conformance_artifact_{Path(artifact['path']).stem}",
+                        category="conformance",
+                        passed=False,
+                        message=(
+                            f"Malformed conformance artifact {artifact['path']}: "
+                            f"{len(bad_rows)} row(s) with status outside "
+                            f"{sorted(allowed)} (first: line {bad_rows[0][0]} "
+                            f"status {bad_rows[0][1]!r})"
+                        ),
+                    )
+                )
+            else:
+                total = sum(statuses.values())
+                detail = ", ".join(
+                    f"{k or 'EMPTY'}={v}" for k, v in sorted(statuses.items())
+                )
+                results.append(
+                    GateResult(
+                        name=f"conformance_artifact_{Path(artifact['path']).stem}",
+                        category="conformance",
+                        passed=True,
+                        message=(
+                            f"Conformance artifact {artifact['path']} present and "
+                            f"well-formed: {total} case rows ({detail}); "
+                            f"incomplete cases are reported, not scored"
+                        ),
+                        value=float(total),
+                        details={"statuses": statuses},
+                    )
+                )
+        return results
+
+    def check_analytical_gates(self) -> list[GateResult]:
+        """Gate on the real quantitative anchors (#4280), fail-closed.
+
+        §8 GC10a closed-form solution (2433 W ± 0.5%) and the §11 QASv2
+        anchors are the only quantitative pass/fail targets in Standard
+        140. fluxion does not yet implement the §8/§11 cases, so until
+        `analytical.results_file` exists the gate FAILS CLOSED with an
+        honest message — this is the red row that replaced the retired
+        ≤50% MAE scorecard line (Issue #4277 D).
+        """
+        config = self.config.get("analytical", {})
+        criteria_path = self.project_root / config.get(
+            "criteria_file",
+            DEFAULTS["analytical"]["criteria_file"],
+        )
+        results_path = self.project_root / config.get(
+            "results_file", DEFAULTS["analytical"]["results_file"]
+        )
+        tolerance_pct = float(
+            config.get(
+                "gc10a_tolerance_pct",
+                DEFAULTS["analytical"]["gc10a_tolerance_pct"],
+            )
+        )
+
+        if not criteria_path.exists():
+            return [
+                GateResult(
+                    name="analytical_targets",
+                    category="analytical",
+                    passed=False,
+                    message=(
+                        f"Missing analytical criteria file {criteria_path} "
+                        f"(#4280) — the acceptance anchors themselves are "
+                        f"absent; restore the file"
+                    ),
+                )
+            ]
+
+        with open(criteria_path) as f:
+            criteria = json.load(f)
+
+        gc10a = (
+            criteria.get("section_8_ground_coupled", {})
+            .get("analytical_solution", {})
+            .get("value")
+        )
+
+        if not results_path.exists():
+            return [
+                GateResult(
+                    name="analytical_targets",
+                    category="analytical",
+                    passed=False,
+                    message=(
+                        f"Analytical targets not yet met: fluxion has no §8 "
+                        f"GC10a / §11 QASv2 case results ({results_path} "
+                        f"absent). The anchors are real (GC10a = {gc10a} W "
+                        f"closed-form; QASv2 per Annex B17) — this row fails "
+                        f"honestly until the §8/§11 cases are implemented "
+                        f"(Issue #4277 D)"
+                    ),
+                    value=None,
+                    threshold=tolerance_pct,
+                )
+            ]
+
+        with open(results_path) as f:
+            measured = json.load(f)
+
+        gc10a_measured = measured.get("section_8_ground_coupled", {}).get(
+            "gc10a_steady_state_floor_conduction_w"
+        )
+        if gc10a_measured is None or not gc10a:
+            return [
+                GateResult(
+                    name="analytical_targets",
+                    category="analytical",
+                    passed=False,
+                    message=(
+                        f"Analytical results file {results_path} lacks the "
+                        f"GC10a steady-state floor conduction measurement "
+                        f"(expected key gc10a_steady_state_floor_conduction_w)"
+                    ),
+                )
+            ]
+
+        deviation_pct = abs(gc10a_measured - gc10a) / abs(gc10a) * 100.0
+        return [
+            GateResult(
+                name="analytical_targets",
+                category="analytical",
+                passed=deviation_pct <= tolerance_pct,
+                message=(
+                    f"GC10a steady-state floor conduction {gc10a_measured:.1f} W "
+                    f"vs closed-form {gc10a:.1f} W ({deviation_pct:.3f}% off, "
+                    f"tolerance ±{tolerance_pct}%)"
+                ),
+                value=deviation_pct,
+                threshold=tolerance_pct,
+            )
+        ]
+
     def check_crate_size_gates(
         self,
         crate_size_results: Optional[dict],
@@ -991,13 +1219,24 @@ class ReleaseGateChecker:
                 self.check_crate_size_gates(crate_size_results, crate_size_gate_filter)
             )
 
-        # Calculate overall
-        overall_passed = all(r.passed for r in self.results)
+        # Conformance gate (Issue #4277 D). Structural — always evaluated;
+        # orthogonal to the fail_fast triad like crate size.
+        self.results.extend(self.check_conformance_gates())
+
+        # Analytical-target gate (Issue #4277 D / criteria #4280). Always
+        # evaluated; fails closed until the §8/§11 cases produce results.
+        self.results.extend(self.check_analytical_gates())
+
+        # Calculate overall — diagnostics (#4277 D) never gate a release.
+        overall_passed = all(
+            r.passed for r in self.results if not r.diagnostic
+        )
 
         summary: dict = {
             "total": len(self.results),
-            "passed": sum(1 for r in self.results if r.passed),
-            "failed": sum(1 for r in self.results if not r.passed),
+            "passed": sum(1 for r in self.results if r.passed and not r.diagnostic),
+            "failed": sum(1 for r in self.results if not r.passed and not r.diagnostic),
+            "diagnostics": sum(1 for r in self.results if r.diagnostic),
             "by_category": {},
         }
 
@@ -1148,6 +1387,8 @@ def generate_markdown_report(report: GateReport) -> str:
             lines.append("")
 
         status = "✅" if result.passed else "❌"
+        if result.diagnostic:
+            status = "📊 DIAGNOSTIC"
         lines.append(f"{status} **{result.name}**")
         lines.append(f"> {result.message}")
         lines.append("")
@@ -1319,7 +1560,7 @@ def main():
             f"Timestamp: {report.timestamp}",
             f"Overall: {'✅ PASSED' if report.overall_passed else '❌ FAILED'}",
             "",
-            f"Total: {report.summary['total']} | Passed: {report.summary['passed']} | Failed: {report.summary['failed']}",
+            f"Total: {report.summary['total']} | Passed: {report.summary['passed']} | Failed: {report.summary['failed']} | Diagnostics (non-gating): {report.summary['diagnostics']}",
             "",
             "-" * 60,
         ]
