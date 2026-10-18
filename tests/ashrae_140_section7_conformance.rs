@@ -16,15 +16,17 @@
 //! (required, not emitted), `na` (not required for this case family).
 //! Honest statuses only — nothing upgrades an unemitted quantity.
 //!
-//! Known honest gaps recorded by this table (not engine defects — scope
-//! decisions to close in later rounds, each needing a harness change):
-//! - 6.2.1.3/.4/.5 (annual transmitted solar through the *shaded south* /
-//!   *west* / *shaded west* windows for Cases 610/620/630): the emitter's
-//!   `zone_total_transmitted_solar_radiation` is the 6.2.1.2.2 reference
-//!   quantity — a 1 m² *unshaded* south window — which does not satisfy
-//!   these by construction.
-//! - 6.2.1.6 for Case 960 requires free-float outputs for the *sun zone*
-//!   (5.2.2.2.7.7.b); the emitter records zone 1 only.
+//! Round 62 upgrades (2026-10-18, develop `88da4b1d`, canonical DRYCOLD
+//! blind §7 route): 6.2.1.3/.4/.5 (Cases 610/620/630) and Case 960's
+//! §6.2.1.6 sun-zone outputs are now emitted by the §7 emitter's
+//! companion artifact (`data/reference/section7/section621_outputs.csv`,
+//! byte-identity gated in `ashrae_140_section7_gsr_emitter.rs`) and this
+//! table evaluates them. Previously the table held these cells `missing`
+//! because the contract CSV's transmitted column is the 6.2.1.2.2 1 m²
+//! *unshaded* reference window and zone-1-only temperatures were recorded.
+//!
+//! Remaining honest gaps recorded by this table (not engine defects —
+//! scope decisions to close in later rounds):
 //! - 6.2.1.8 daily hourly: the emitted day-profile days are the GSR
 //!   contract days (Feb 1, May 4, Jul 14). The addendum PDF's Table 6-1
 //!   day cells carry unresolved tracked changes (candidate days Jan 4 /
@@ -68,6 +70,18 @@ struct Section7CsvRow {
     min_index: Option<f64>,
     max_temp: Option<f64>,
     max_index: Option<f64>,
+    /// §6.2.1.3/.4/.5 case-window annual transmitted solar (kWh/m²), from
+    /// the emitter's companion CSV (`section621_outputs.csv`); `None`
+    /// where the case does not carry the requirement or the cell is empty.
+    req_6213_shaded_south: Option<f64>,
+    req_6214_west: Option<f64>,
+    req_6215_shaded_west: Option<f64>,
+    /// Case 960 §6.2.1.6 sun-zone free-float temperature outputs.
+    sun_zone_min_temp: Option<f64>,
+    sun_zone_min_index: Option<f64>,
+    sun_zone_max_temp: Option<f64>,
+    sun_zone_max_index: Option<f64>,
+    sun_zone_mean_temp: Option<f64>,
     /// packed `label...,v...` fields keyed by their `MMDD,<label>` head.
     sens_load_0201: Option<[f64; 24]>,
     sens_load_0714: Option<[f64; 24]>,
@@ -247,6 +261,14 @@ fn parse_workflow_row(line: &str, c: &ColIdx) -> Option<Section7CsvRow> {
         temp_0201: parse_packed24(&g("temp_0201")),
         temp_0714: parse_packed24(&g("temp_0714")),
         temp_bins: parse_packed_bins(&g("temp_bins")),
+        req_6213_shaded_south: None,
+        req_6214_west: None,
+        req_6215_shaded_west: None,
+        sun_zone_min_temp: None,
+        sun_zone_min_index: None,
+        sun_zone_max_temp: None,
+        sun_zone_max_index: None,
+        sun_zone_mean_temp: None,
         status: g("status"),
     })
 }
@@ -256,6 +278,76 @@ fn parse_workflow_csv(text: &str) -> Vec<Section7CsvRow> {
     let header = lines.next().unwrap_or("");
     let cols = ColIdx::from_header(header);
     lines.filter_map(|l| parse_workflow_row(l, &cols)).collect()
+}
+
+/// One row of the emitter's §6.2.1 companion CSV
+/// (`section621_outputs.csv`, round 62).
+#[derive(Default)]
+struct Section621Row {
+    req_6213: Option<f64>,
+    req_6214: Option<f64>,
+    req_6215: Option<f64>,
+    sun_min: Option<f64>,
+    sun_min_idx: Option<f64>,
+    sun_max: Option<f64>,
+    sun_max_idx: Option<f64>,
+    sun_mean: Option<f64>,
+}
+
+fn parse_section621_csv(text: &str) -> BTreeMap<String, Section621Row> {
+    let mut out = BTreeMap::new();
+    let mut lines = text.lines();
+    let header = lines.next().unwrap_or("");
+    let cols = ColIdx::from_header(header);
+    for l in lines {
+        let f = split_csv_line(l);
+        if f.len() < 9 || f[0] == "case" {
+            continue;
+        }
+        let g = |name: &str| f[cols.i(name)].trim().to_string();
+        let p = |name: &str| parse_f(&g(name));
+        out.insert(
+            f[0].trim().to_string(),
+            Section621Row {
+                req_6213: p("req_6213_shaded_south_transmitted_kwh_m2"),
+                req_6214: p("req_6214_west_transmitted_kwh_m2"),
+                req_6215: p("req_6215_shaded_west_transmitted_kwh_m2"),
+                sun_min: p("sun_zone_min_temp_C"),
+                sun_min_idx: p("sun_zone_min_index"),
+                sun_max: p("sun_zone_max_temp_C"),
+                sun_max_idx: p("sun_zone_max_index"),
+                sun_mean: p("sun_zone_mean_temp_C"),
+            },
+        );
+    }
+    out
+}
+
+fn committed_section621_csv() -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("data/reference/section7/section621_outputs.csv");
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("committed §6.2.1 companion CSV unreadable: {e}"))
+}
+
+/// The committed workflow CSV merged with the committed §6.2.1 companion
+/// CSV: every row carries the round-62 conformance outputs.
+fn committed_rows() -> Vec<Section7CsvRow> {
+    let mut rows = parse_workflow_csv(&committed_workflow_csv());
+    let s621 = parse_section621_csv(&committed_section621_csv());
+    for r in rows.iter_mut() {
+        if let Some(x) = s621.get(&r.case_id) {
+            r.req_6213_shaded_south = x.req_6213;
+            r.req_6214_west = x.req_6214;
+            r.req_6215_shaded_west = x.req_6215;
+            r.sun_zone_min_temp = x.sun_min;
+            r.sun_zone_min_index = x.sun_min_idx;
+            r.sun_zone_max_temp = x.sun_max;
+            r.sun_zone_max_index = x.sun_max_idx;
+            r.sun_zone_mean_temp = x.sun_mean;
+        }
+    }
+    rows
 }
 
 /// `DD-MMM-HH:MM` shape check (the emitter's occurrence form).
@@ -385,15 +477,38 @@ fn evaluate(req: &str, r: &Section7CsvRow) -> &'static str {
                     .as_ref()
                     .map_or(false, |a| a.iter().all(|t| ts_ok(t)))
         }
-        // 6.2.1.3/.4/.5 shaded/west transmitted: NOT emitted — the CSV's
-        // transmitted column is the unshaded reference window, which does
-        // not satisfy these by construction.
-        "6.2.1.3" | "6.2.1.4" | "6.2.1.5" => false,
-        // 6.2.1.6 free-float temps (occurrence as 8760 index; 960 needs the
-        // sun zone, which is not the recorded zone 1).
+        // 6.2.1.3/.4/.5 shaded/west transmitted (round 62): the emitter's
+        // companion CSV carries the case-window annual transmitted solar
+        // (6.2.1.3.1 shaded south / 6.2.1.4.1 unshaded west / 6.2.1.5.1
+        // shaded west, kWh/m²), so a finite non-negative value reports.
+        "6.2.1.3" => r
+            .req_6213_shaded_south
+            .map_or(false, |v| v.is_finite() && v >= 0.0),
+        "6.2.1.4" => r.req_6214_west.map_or(false, |v| v.is_finite() && v >= 0.0),
+        "6.2.1.5" => r
+            .req_6215_shaded_west
+            .map_or(false, |v| v.is_finite() && v >= 0.0),
+        // 6.2.1.6 free-float temps (occurrence as 8760 index). Case 960
+        // (round 62): the requirement is sun-zone-only (5.2.2.2.7.7.b) and
+        // the companion CSV carries the sun zone (spec zone index 1)
+        // statistics, so 960 evaluates on those.
         "6.2.1.6.min" | "6.2.1.6.max" | "6.2.1.6.mean" => {
             if r.case_id == "960" {
-                return "missing";
+                let temps = [
+                    r.sun_zone_min_temp,
+                    r.sun_zone_max_temp,
+                    r.sun_zone_mean_temp,
+                ];
+                let idxs = [r.sun_zone_min_index, r.sun_zone_max_index];
+                return if temps.iter().all(|v| v.map_or(false, |x| x.is_finite()))
+                    && idxs
+                        .iter()
+                        .all(|v| v.map_or(false, |x| (0.0..=8759.0).contains(&x)))
+                {
+                    "report"
+                } else {
+                    "missing"
+                };
             }
             r.min_temp.map_or(false, |v| v.is_finite())
                 && r.max_temp.map_or(false, |v| v.is_finite())
@@ -508,11 +623,11 @@ fn conformance_markdown(rows: &[ConformanceRow]) -> String {
          committed workflow CSV (`data/reference/section7/workflow_results.csv`). Case states per \
          #4276: `conformant`, `incomplete` (ran, missing required outputs), `not implemented`. \
          Per-requirement cells: `report` / `partial` / `missing` / `na`. No score, no percentage \
-         (#4277).\n\nHonest gaps this table records (scope decisions, not engine defects):\n\n\
-         - 6.2.1.3/.4/.5: the emitted transmitted-solar quantity is the 6.2.1.2.2 unshaded \
-         reference window; the shaded-south (610), west (620) and shaded-west (630) annual \
-         transmissions are not emitted.\n\
-         - 6.2.1.6 for Case 960 requires the sun zone (5.2.2.2.7.7.b); the emitter records zone 1.\n\
+         (#4277).\n\nRound 62 (2026-10-18): 6.2.1.3/.4/.5 (Cases 610/620/630) and Case 960's \
+         6.2.1.6 sun-zone outputs are evaluated from the emitter's companion artifact \
+         `data/reference/section7/section621_outputs.csv` (case-window transmitted solar per \
+         6.2.1.3.1/6.2.1.4.1/6.2.1.5.1, and the sun zone = spec zone index 1 per 5.2.2.2.7.7.b); \
+         those cells now report and their cases upgraded honestly.\n\nHonest gaps this table records (scope decisions, not engine defects):\n\n\
          - 6.2.1.8: emitted days are the GSR contract days (Feb 1, May 4, Jul 14); the addendum \
          Table 6-1 day cells carry unresolved tracked changes (candidate days Jan 4 / Mar 5 / \
          Jul 27), so affected cases hold at `partial` pending a clean copy of the standard.\n\
@@ -546,7 +661,7 @@ fn committed_workflow_csv() -> String {
 /// carries the emitter's status marker.
 #[test]
 fn section7_conformance_parses_committed_csv() {
-    let results = parse_workflow_csv(&committed_workflow_csv());
+    let results = committed_rows();
     assert_eq!(results.len(), 18, "18 pinned §7 cases in the committed CSV");
     for r in &results {
         assert!(
@@ -562,16 +677,16 @@ fn section7_conformance_parses_committed_csv() {
 /// pinned here so a status change must be argued and re-recorded.
 #[test]
 fn section7_conformance_statuses_match_recorded_evaluation() {
-    let results = parse_workflow_csv(&committed_workflow_csv());
+    let results = committed_rows();
     let by_case: BTreeMap<String, Section7CsvRow> = results
         .into_iter()
         .map(|r| (r.case_id.clone(), r))
         .collect();
     let expected: [(&str, &str); 18] = [
         ("600", "incomplete"), // 6.2.1.8 partial (tracked-change day list)
-        ("610", "incomplete"), // 6.2.1.3 shaded-south transmitted not emitted
-        ("620", "incomplete"), // 6.2.1.4 west transmitted not emitted
-        ("630", "incomplete"), // 6.2.1.5 shaded-west transmitted not emitted
+        ("610", "conformant"), // 6.2.1.3 emitted (round 62 companion CSV)
+        ("620", "conformant"), // 6.2.1.4 emitted (round 62 companion CSV)
+        ("630", "conformant"), // 6.2.1.5 emitted (round 62 companion CSV)
         ("640", "incomplete"), // 6.2.1.8 partial
         ("650", "conformant"),
         ("900", "incomplete"), // 6.2.1.8 partial
@@ -580,7 +695,7 @@ fn section7_conformance_statuses_match_recorded_evaluation() {
         ("930", "conformant"),
         ("940", "incomplete"), // 6.2.1.8 partial
         ("950", "conformant"),
-        ("960", "incomplete"),   // 6.2.1.6 sun-zone temps not emitted
+        ("960", "conformant"),   // 6.2.1.6 sun-zone temps emitted (round 62)
         ("970", "conformant"),   // no 140-2017 definition; 6.2.1.1 only
         ("600FF", "incomplete"), // 6.2.1.8 partial
         ("650FF", "incomplete"), // 6.2.1.8 partial
@@ -600,7 +715,7 @@ fn section7_conformance_statuses_match_recorded_evaluation() {
 /// workflow CSV reproduces the committed conformance CSV byte-for-byte.
 #[test]
 fn section7_conformance_csv_artifact_matches_regeneration() {
-    let results = parse_workflow_csv(&committed_workflow_csv());
+    let results = committed_rows();
     let rows = build_conformance(&results);
     let regenerated = conformance_csv(&rows);
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -615,7 +730,7 @@ fn section7_conformance_csv_artifact_matches_regeneration() {
 
 #[test]
 fn section7_conformance_md_artifact_matches_regeneration() {
-    let results = parse_workflow_csv(&committed_workflow_csv());
+    let results = committed_rows();
     let rows = build_conformance(&results);
     let regenerated = conformance_markdown(&rows);
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -633,7 +748,7 @@ fn section7_conformance_md_artifact_matches_regeneration() {
 #[test]
 #[ignore]
 fn emit_section7_conformance() {
-    let results = parse_workflow_csv(&committed_workflow_csv());
+    let results = committed_rows();
     assert_eq!(results.len(), 18);
     let rows = build_conformance(&results);
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/reference/section7");

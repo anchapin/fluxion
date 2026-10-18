@@ -42,7 +42,9 @@
 //! `temp_bins` carries two label elements then 90 bin counts for the 1 °C
 //! bins −19…+70.
 
+use fluxion::ashrae_cases::ShadingType;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::shading::{Overhang, ShadeFin, Side};
 use fluxion::sim::sky_radiation::SkyRadiationExchange;
 use fluxion::sim::solar::{calculate_window_solar_gain, WindowProperties};
 use fluxion::sim::thermal_selector::ThermalSelector;
@@ -240,6 +242,40 @@ pub struct Section7CaseResult {
     /// count into the first bin and hours ≥ 70 °C into the last, so the
     /// 8760-hour total is preserved.
     pub temp_bins: [u64; 90],
+    /// §6.2.1.3 (Case 610 only): annual transmitted solar (diffuse +
+    /// direct-beam) through the case's shaded south window with its
+    /// horizontal overhang, kWh/m². Standard 140-2017 §6.2.1.3.1 notes
+    /// the quantity "does not include radiation that is absorbed in the
+    /// glass and conducted inward as heat" — emitted via the engine's own
+    /// `calculate_window_solar_gain` chain with the case window geometry and
+    /// the engine's spec→shading conversion (round 62; see the runner).
+    pub req_6213_shaded_south_transmitted_kwh_m2: Option<f64>,
+    /// §6.2.1.4 (Case 620 only): unshaded annual transmitted solar
+    /// through the case's west window, kWh/m² (§6.2.1.4.1).
+    pub req_6214_west_transmitted_kwh_m2: Option<f64>,
+    /// §6.2.1.5 (Case 630 only): annual transmitted solar through the
+    /// case's shaded west window with horizontal overhang and vertical
+    /// fins, kWh/m² (§6.2.1.5.1).
+    pub req_6215_shaded_west_transmitted_kwh_m2: Option<f64>,
+    /// §6.2.1.6 sun-zone free-float temperatures for Case 960 only
+    /// (140-2017 §5.2.2.2.7.7.b: "Sun zone only, all free-float case
+    /// outputs in accordance with Section 6.2.1.6"). The sun zone is the
+    /// spec's zone index 1 (sunspace; zone 0 is the conditioned back
+    /// zone). `None` for every other case — the FF cases' single zone is
+    /// already the recorded zone-1 output.
+    pub sun_zone: Option<Section7SunZoneStats>,
+}
+
+/// Case 960's sun-zone free-float temperature statistics (§6.2.1.6 form).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Section7SunZoneStats {
+    pub min_temp_c: f64,
+    /// 0-based 8760 index of the minimum's first occurrence.
+    pub min_index: usize,
+    pub max_temp_c: f64,
+    /// 0-based 8760 index of the maximum's first occurrence.
+    pub max_index: usize,
+    pub mean_temp_c: f64,
 }
 
 /// One profile day's hourly series for one case.
@@ -381,6 +417,91 @@ pub fn run_section7_case(def: &Section7CaseDef) -> Result<Section7CaseResult, St
         spec.window_properties.normal_transmittance,
     );
 
+    // Section 6.2.1.3/.4/.5 case-window route (round 62): the case's own
+    // window at its spec area/orientation, shaded per the engine's own
+    // spec-to-shading conversion (`from_spec_with_selector`, the post-
+    // LIMIT-39 wiring): overhang mounted at the window top
+    // (distance_above 0, "infinite" extension 10 m), fins at both window
+    // edges spanning the full window height. Requirements (in-repo
+    // standard, verified 2026-10-18): 6.2.1.3.1 (Case 610) annual
+    // transmitted through the shaded south window with horizontal
+    // overhang; 6.2.1.4.1 (Case 620) unshaded annual transmitted through
+    // the west window; 6.2.1.5.1 (Case 630) annual transmitted through
+    // the shaded west window with overhang and vertical fins.
+    let case_req: Option<(&'static str, Orientation)> = match def.case_id {
+        "610" => Some((
+            "req_6213_shaded_south_transmitted_kwh_m2",
+            Orientation::South,
+        )),
+        "620" => Some(("req_6214_west_transmitted_kwh_m2", Orientation::West)),
+        "630" => Some(("req_6215_shaded_west_transmitted_kwh_m2", Orientation::West)),
+        _ => None,
+    };
+    let case_window_geom = case_req.and_then(|(_, ori)| {
+        spec.windows
+            .first()
+            .and_then(|ws| ws.iter().find(|w| w.orientation == ori.into()))
+            .copied()
+    });
+    let case_window_props = case_window_geom.map(|g| {
+        WindowProperties::new(
+            g.area,
+            spec.window_properties.shgc,
+            spec.window_properties.normal_transmittance,
+        )
+    });
+    let case_overhang = spec
+        .shading
+        .as_ref()
+        .filter(|s| {
+            matches!(
+                s.shading_type,
+                ShadingType::Overhang | ShadingType::OverhangAndFins
+            )
+        })
+        .map(|s| Overhang {
+            depth: s.overhang_depth,
+            distance_above: 0.0,
+            extension: 10.0, // "Infinite" (engine wiring, LIMIT-39)
+        });
+    let case_fins: Vec<ShadeFin> = match spec.shading.as_ref() {
+        Some(s)
+            if matches!(
+                s.shading_type,
+                ShadingType::Fins | ShadingType::OverhangAndFins
+            ) =>
+        {
+            let h = case_window_geom.map(|g| g.height).unwrap_or(2.0);
+            vec![
+                ShadeFin {
+                    depth: s.fin_width,
+                    distance_from_edge: 0.0,
+                    side: Side::Left,
+                    height: h,
+                },
+                ShadeFin {
+                    depth: s.fin_width,
+                    distance_from_edge: 0.0,
+                    side: Side::Right,
+                    height: h,
+                },
+            ]
+        }
+        _ => Vec::new(),
+    };
+    let mut case_transmitted_kwh_m2 = 0.0_f64;
+
+    // Case 960 sun-zone free-float stats (zone index 1, sunspace). The
+    // back zone (index 0) is the conditioned zone recorded above; the sun
+    // zone carries `HvacSchedule::free_floating()` in the spec, so its
+    // temperature floats by physics without any emitter override.
+    let is_960 = def.case_id == "960";
+    let mut sun_zone_sum = 0.0_f64;
+    let mut sun_zone_min = f64::INFINITY;
+    let mut sun_zone_min_index = 0_usize;
+    let mut sun_zone_max = f64::NEG_INFINITY;
+    let mut sun_zone_max_index = 0_usize;
+
     let mut day_profiles: Vec<Section7DayHourly> = SECTION7_PROFILE_DAYS
         .iter()
         .map(|&(m, d)| Section7DayHourly {
@@ -461,6 +582,21 @@ pub fn run_section7_case(def: &Section7CaseDef) -> Result<Section7CaseResult, St
         let bin = ((zone_temp.floor() as i64).clamp(-19, 69) + 19) as usize;
         temp_bins[bin] += 1;
 
+        // Case 960 sun zone (zone index 1): free-float by spec.
+        if is_960 {
+            if let Some(t) = model.setpoints.temperatures.as_slice().get(1).copied() {
+                sun_zone_sum += t;
+                if t < sun_zone_min {
+                    sun_zone_min = t;
+                    sun_zone_min_index = step;
+                }
+                if t > sun_zone_max {
+                    sun_zone_max = t;
+                    sun_zone_max_index = step;
+                }
+            }
+        }
+
         // Per-hour solar/sky quantities from the EPW record (engine chain).
         let sun = calculate_solar_position(
             latitude_deg,
@@ -474,6 +610,7 @@ pub fn run_section7_case(def: &Section7CaseDef) -> Result<Section7CaseResult, St
         let day_of_year = calculate_day_of_year(year, month, day);
         let albedo = weather_data.albedo.unwrap_or(0.2);
         let mut irr_s = None;
+        let mut irr_w = None;
         for (o, orientation) in INCIDENT_ORIENTATIONS.iter().enumerate() {
             let irr = calculate_surface_irradiance(
                 &sun,
@@ -485,8 +622,10 @@ pub fn run_section7_case(def: &Section7CaseDef) -> Result<Section7CaseResult, St
                 day_of_year,
             );
             annual_incident_kwh_m2[o] += irr.total_wm2 / 1000.0;
-            if *orientation == Orientation::South {
-                irr_s = Some(irr);
+            match *orientation {
+                Orientation::South => irr_s = Some(irr),
+                Orientation::West => irr_w = Some(irr),
+                _ => {}
             }
         }
         let irr_s = irr_s.expect("South is in INCIDENT_ORIENTATIONS");
@@ -500,6 +639,28 @@ pub fn run_section7_case(def: &Section7CaseDef) -> Result<Section7CaseResult, St
             Orientation::South.into(),
         );
         annual_transmitted_south_kwh_m2 += gain_s.total_gain_w / 1000.0;
+        if let (Some(g), Some(props), Some((_, ori))) =
+            (case_window_geom, case_window_props, case_req)
+        {
+            let irr_case = if ori == Orientation::South {
+                irr_s
+            } else {
+                irr_w.expect("West is in INCIDENT_ORIENTATIONS")
+            };
+            let gain_case = calculate_window_solar_gain(
+                &irr_case,
+                &props,
+                Some(&g),
+                case_overhang.as_ref(),
+                &case_fins,
+                &sun,
+                ori.into(),
+            );
+            // Requirement form is kWh/m² of glazing (6.2.1.3.1/.4.1/.5.1);
+            // the engine gain is area-scaled watts, so normalise by the
+            // case window area.
+            case_transmitted_kwh_m2 += gain_case.total_gain_w / g.area / 1000.0;
+        }
         let sky_temp_c =
             SkyRadiationExchange::sky_temperature_from_ir(weather_data.horizontal_infrared);
         sky_temp_sum += sky_temp_c;
@@ -578,6 +739,32 @@ pub fn run_section7_case(def: &Section7CaseDef) -> Result<Section7CaseResult, St
         sky_max_index_position: sky_temp_max_index,
         day_profiles,
         temp_bins,
+        req_6213_shaded_south_transmitted_kwh_m2: if def.case_id == "610" {
+            Some(case_transmitted_kwh_m2)
+        } else {
+            None
+        },
+        req_6214_west_transmitted_kwh_m2: if def.case_id == "620" {
+            Some(case_transmitted_kwh_m2)
+        } else {
+            None
+        },
+        req_6215_shaded_west_transmitted_kwh_m2: if def.case_id == "630" {
+            Some(case_transmitted_kwh_m2)
+        } else {
+            None
+        },
+        sun_zone: if is_960 {
+            Some(Section7SunZoneStats {
+                min_temp_c: sun_zone_min,
+                min_index: sun_zone_min_index,
+                max_temp_c: sun_zone_max,
+                max_index: sun_zone_max_index,
+                mean_temp_c: sun_zone_sum / 8760.0,
+            })
+        } else {
+            None
+        },
     })
 }
 
@@ -1056,6 +1243,201 @@ fn emit_section7_gsr_csv() {
     let csv = section7_gsr_csv(harness_results());
     let path = dir.join("workflow_results.csv");
     std::fs::write(&path, &csv).expect("write §7 workflow_results.csv");
+    println!("wrote {}", path.display());
+    println!("{csv}");
+}
+
+// ===========================================================================
+// §6.2.1 conformance-output companion CSV (round 62).
+//
+// The GSR contract CSV (workflow_results.csv) is the BESTEST-GSR consumer's
+// contract surface and stays byte-stable in its 52-column shape; the
+// §6.2.1.3/.4/.5 case-window transmitted-solar quantities and Case 960's
+// §6.2.1.6 sun-zone free-float temperatures are emitted here instead, in a
+// companion artifact with its own byte-identity gate. The §7 conformance
+// table (ashrae_140_section7_conformance.rs) reads this file to upgrade the
+// 6.2.1.3 (610) / 6.2.1.4 (620) / 6.2.1.5 (630) and 960's 6.2.1.6 cells.
+// ===========================================================================
+
+/// Header of the companion CSV. One row per pinned §7 case, in series
+/// order; inapplicable cells are empty.
+pub fn section621_outputs_csv_header() -> String {
+    [
+        "case",
+        "req_6213_shaded_south_transmitted_kwh_m2",
+        "req_6214_west_transmitted_kwh_m2",
+        "req_6215_shaded_west_transmitted_kwh_m2",
+        "sun_zone_min_temp_C",
+        "sun_zone_min_index",
+        "sun_zone_max_temp_C",
+        "sun_zone_max_index",
+        "sun_zone_mean_temp_C",
+    ]
+    .join(",")
+}
+
+fn section621_outputs_csv_row(r: &Section7CaseResult) -> String {
+    let f4 = |v: Option<f64>| v.map(|x| fmt(x, 4)).unwrap_or_default();
+    let sun = match &r.sun_zone {
+        Some(s) => format!(
+            "{:.2},{},{:.2},{},{:.2}",
+            s.min_temp_c, s.min_index, s.max_temp_c, s.max_index, s.mean_temp_c
+        ),
+        None => ",,,,".to_string(),
+    };
+    [
+        r.case_id.clone(),
+        f4(r.req_6213_shaded_south_transmitted_kwh_m2),
+        f4(r.req_6214_west_transmitted_kwh_m2),
+        f4(r.req_6215_shaded_west_transmitted_kwh_m2),
+        sun,
+    ]
+    .join(",")
+}
+
+/// Full companion CSV text for all cases, series order.
+pub fn section621_outputs_csv(results: &[Section7CaseResult]) -> String {
+    let mut out = section621_outputs_csv_header();
+    out.push('\n');
+    for r in results {
+        out.push_str(&section621_outputs_csv_row(r));
+        out.push('\n');
+    }
+    out
+}
+
+fn committed_section621_csv() -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("data/reference/section7/section621_outputs.csv");
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("committed §6.2.1 companion CSV unreadable: {e}"))
+}
+
+/// Shape + physics sanity of the companion CSV: the three shaded/west
+/// transmitted cells are present exactly on cases 610/620/630 and finite
+/// non-negative there; the sun-zone stats are present exactly on 960,
+/// finite, with 8760-range indices and min ≤ mean ≤ max.
+#[test]
+fn section621_outputs_shape_and_cases() {
+    let results = harness_results();
+    assert_eq!(results.len(), 18);
+    for r in results {
+        let reqs = [
+            r.req_6213_shaded_south_transmitted_kwh_m2,
+            r.req_6214_west_transmitted_kwh_m2,
+            r.req_6215_shaded_west_transmitted_kwh_m2,
+        ];
+        let expected_some: [bool; 3] = [r.case_id == "610", r.case_id == "620", r.case_id == "630"];
+        for (v, want) in reqs.iter().zip(expected_some.iter()) {
+            assert_eq!(
+                v.is_some(),
+                *want,
+                "{}: §6.2.1.3/.4/.5 emitted-cell presence",
+                r.case_id
+            );
+            if let Some(v) = v {
+                assert!(
+                    v.is_finite() && *v >= 0.0,
+                    "{}: transmitted kWh/m²",
+                    r.case_id
+                );
+            }
+        }
+        match &r.sun_zone {
+            Some(s) => {
+                assert_eq!(r.case_id, "960", "sun-zone stats only on Case 960");
+                assert!(s.min_temp_c.is_finite() && s.max_temp_c.is_finite());
+                assert!(s.mean_temp_c.is_finite());
+                assert!(s.min_index <= 8759 && s.max_index <= 8759);
+                assert!(
+                    s.min_temp_c <= s.mean_temp_c + 1e-9 && s.mean_temp_c <= s.max_temp_c + 1e-9,
+                    "960: sun-zone min ≤ mean ≤ max"
+                );
+            }
+            None => assert_ne!(r.case_id, "960", "960 must carry sun-zone stats"),
+        }
+    }
+}
+
+/// The companion CSV must round-trip against the committed artifact
+/// byte-for-byte.
+#[test]
+fn section621_outputs_csv_artifact_matches_regeneration() {
+    let csv = section621_outputs_csv(harness_results());
+    assert_eq!(
+        csv,
+        committed_section621_csv(),
+        "committed §6.2.1 companion CSV is stale — re-emit"
+    );
+}
+
+/// Value pins for the round-62 emitted quantities (provenance: recorded
+/// 2026-10-18, loop round 62, develop `88da4b1d`, canonical DRYCOLD blind
+/// §7 route — first emission of these cells). Record pins, not validator
+/// bands: drift means the emission route moved and is re-recorded
+/// honestly, never tuned.
+#[test]
+fn section621_value_pins() {
+    let results = harness_results();
+    let by_id = |id: &str| results.iter().find(|r| r.case_id == id).unwrap();
+    // Case-window annual transmitted solar, kWh/m² of glazing.
+    pin_check(
+        "610",
+        by_id("610")
+            .req_6213_shaded_south_transmitted_kwh_m2
+            .unwrap(),
+        529.44,
+    );
+    pin_check(
+        "620",
+        by_id("620").req_6214_west_transmitted_kwh_m2.unwrap(),
+        457.30,
+    );
+    pin_check(
+        "630",
+        by_id("630")
+            .req_6215_shaded_west_transmitted_kwh_m2
+            .unwrap(),
+        324.44,
+    );
+    // Cross-checks against the round-48/53 reference quantities: the
+    // shaded-south figure must sit below the 6.2.1.2.2 unshaded south
+    // reference (774 kWh/m²), and shading must reduce the west figure
+    // (630 vs 620).
+    let ref_south = by_id("600").annual_transmitted_south_kwh_m2;
+    assert!(
+        by_id("610")
+            .req_6213_shaded_south_transmitted_kwh_m2
+            .unwrap()
+            < ref_south,
+        "610 shaded south must be below the unshaded {ref_south} reference"
+    );
+    assert!(
+        by_id("630")
+            .req_6215_shaded_west_transmitted_kwh_m2
+            .unwrap()
+            < by_id("620").req_6214_west_transmitted_kwh_m2.unwrap(),
+        "630 shaded west must be below 620 unshaded west"
+    );
+    // Case 960 sun zone (°C, 8760-index occurrences).
+    let sun = by_id("960").sun_zone.as_ref().unwrap();
+    pin_check("960", sun.min_temp_c, 5.42);
+    pin_check("960", sun.max_temp_c, 50.23);
+    pin_check("960", sun.mean_temp_c, 29.51);
+    assert_eq!(sun.min_index, 941);
+    assert_eq!(sun.max_index, 6086);
+}
+
+/// Writes the committed §6.2.1 companion CSV. Run explicitly:
+/// `cargo test --release --test ashrae_140_section7_gsr_emitter -- --ignored
+/// emit_section621_outputs --nocapture`.
+#[test]
+#[ignore]
+fn emit_section621_outputs() {
+    let csv = section621_outputs_csv(harness_results());
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("data/reference/section7/section621_outputs.csv");
+    std::fs::write(&path, &csv).expect("write §6.2.1 companion CSV");
     println!("wrote {}", path.display());
     println!("{csv}");
 }
