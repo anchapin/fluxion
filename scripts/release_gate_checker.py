@@ -888,6 +888,83 @@ class ReleaseGateChecker:
             ]
 
         deviation_pct = abs(gc10a_measured - gc10a) / abs(gc10a) * 100.0
+
+        # §11 QASv2 anchors (#4274): the results file must now carry the
+        # Section 11 quasi-analytical measurements, and case 1 must reproduce
+        # the published QASv2.xlsm values within the analytical tolerance.
+        section11 = measured.get("section_11_airside")
+        if not isinstance(section11, dict) or not section11:
+            return [
+                GateResult(
+                    name="analytical_targets",
+                    category="analytical",
+                    passed=False,
+                    message=(
+                        f"Analytical results file {results_path} lacks the §11 "
+                        f"QASv2 quasi-analytical measurements (expected key "
+                        f"section_11_airside) — the analytical row must measure "
+                        f"more than one anchor (#4274); regenerate via "
+                        f"`cargo run --release --example section8_gc10a_report`"
+                    ),
+                    value=deviation_pct,
+                    threshold=tolerance_pct,
+                )
+            ]
+
+        qas_tol = tolerance_pct
+        ref1 = criteria.get("section_11_airside", {}).get(
+            "case_1_reference_outputs", {}
+        )
+        mismatches = []
+        checked = 0
+        for system in ("FC", "SZ", "CAV", "VAV"):
+            sys_ref = ref1.get(system, {})
+            sys_meas = section11.get("case_1", {}).get(system, {})
+            for field_name, expected in sys_ref.items():
+                if field_name.startswith("_") or expected is None:
+                    continue
+                got = sys_meas.get(field_name)
+                if got is None:
+                    mismatches.append(f"{system}.{field_name}: missing")
+                    continue
+                checked += 1
+                if abs(expected) < 1e-9:
+                    if abs(got) >= 1.0:
+                        mismatches.append(
+                            f"{system}.{field_name}: expected ~0, got {got:.1f}"
+                        )
+                else:
+                    dev = abs(got - expected) / abs(expected) * 100.0
+                    if dev > qas_tol:
+                        mismatches.append(
+                            f"{system}.{field_name}: expected {expected:.0f}, "
+                            f"got {got:.1f} ({dev:.3f}% off)"
+                        )
+        if mismatches:
+            return [
+                GateResult(
+                    name="analytical_targets",
+                    category="analytical",
+                    passed=False,
+                    message=(
+                        "§11 QASv2 case-1 anchors do not reproduce the "
+                        "published workbook values: " + "; ".join(mismatches[:6])
+                    ),
+                    value=deviation_pct,
+                    threshold=qas_tol,
+                )
+            ]
+
+        worst_qas = section11.get("case_1_max_deviation_pct")
+        qas_note = (
+            f"§11 QASv2 case-1 anchors reproduced across {checked} published "
+            f"values (±{qas_tol}%); cases 2-6 emitted"
+            + (
+                f", worst case-1 deviation {worst_qas:.3f}%"
+                if isinstance(worst_qas, (int, float))
+                else ""
+            )
+        )
         return [
             GateResult(
                 name="analytical_targets",
@@ -896,7 +973,7 @@ class ReleaseGateChecker:
                 message=(
                     f"GC10a steady-state floor conduction {gc10a_measured:.1f} W "
                     f"vs closed-form {gc10a:.1f} W ({deviation_pct:.3f}% off, "
-                    f"tolerance ±{tolerance_pct}%)"
+                    f"tolerance ±{tolerance_pct}%); {qas_note}"
                 ),
                 value=deviation_pct,
                 threshold=tolerance_pct,

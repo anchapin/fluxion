@@ -118,6 +118,7 @@ pub use fluxion_core::weather;
 pub use fluxion_core::{assembly, multi_node};
 // §8 GC10a analytical verification module (Issue #4270).
 pub use fluxion_core::ground_coupling;
+pub use fluxion_core::qas_airside;
 
 // #1441 (Phase 2 cycle break, continued): ASHRAE-140 leaf data types
 // (Orientation, WindowArea, ConstructionType, ShadingType, ShadingDevice,

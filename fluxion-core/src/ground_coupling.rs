@@ -41,7 +41,11 @@
 //! moisture-dependent soil, finite-thickness slabs, or any configuration
 //! where the ramp-ring/singularity mesh sensitivity has not been
 //! re-demonstrated. This module is the §8 measuring case only; the §11
-//! QASv2 anchors are separate and remain unimplemented.
+//! QASv2 anchors live in [`crate::qas_airside`] (Issue #4274). The §8
+//! b-series (GC10b transient, GC30/GC60 periodic and convectively-coupled
+//! variants) remains unimplemented: its boundary-condition specification is
+//! not derivable from the in-repo sources, so those cases stay open on
+//! #4274 rather than improvised.
 
 use crate::error::FluxionError;
 
