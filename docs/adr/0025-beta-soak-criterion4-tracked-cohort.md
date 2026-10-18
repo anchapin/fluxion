@@ -1,6 +1,6 @@
 # ADR-0025: β-Soak Tracked-Cohort Design for Criterion 4 (Case 600 Series)
 
-- **Status:** 🟡 Proposed — **decision pending (Alex)**. This ADR changes gate semantics for the β-soak (Issue #3286); it must not be implemented without Alex's explicit approval.
+- **Status:** 🟢 **Accepted — Option C** (Alex, 2026-10-18, 16:57 ET). Implementation landed in the same round (round 63): `scripts/check_beta_soak_criterion4.py`, `tests/reference_data/gauge_soak/criterion4_tracked_cohort_baseline.csv`, and the Criterion 4 steps of `.github/workflows/nightly-ashrae-140-gauge.yml`.
 - **Date:** 2026-10-18
 - **Deciders:** Alex (gate-semantics owner)
 - **Supersedes:** None (amends the *interpretation* of one acceptance criterion in [ADR-0007](0007-gauge-solver-structural-work.md); ADR-0007's acceptance criteria themselves are untouched)
@@ -104,4 +104,11 @@ Streak semantics: a night counts only if every criterion's hard tier is green, t
 
 ## Decision
 
-**Pending — Alex.** On approval, implementation lands as its own PR: the baseline recorded from a fresh gauge-build run with provenance, the checker extended, the workflow edited, and the first counted night starting only after that PR's own nightly run is green under the new semantics.
+**Accepted — Option C** (Alex, 2026-10-18 16:57 ET, recorded in the round-63 loop). Implementation, landed in round 63:
+
+- **Baseline:** `tests/reference_data/gauge_soak/criterion4_tracked_cohort_baseline.csv` — recorded from a fresh gauge-build run at develop `beecc3d6` (canonical DRYCOLD route), provenance in-file; NOT borrowed from the strict-gate baseline (the round-61 finding). Hard-tier recorded statuses (6 pass / 12 ignored) are part of the same file; any deviation is fail-closed.
+- **Checker:** `scripts/check_beta_soak_criterion4.py` — parses the criterion-4 log, enforces the hard tier (fail-closed, exits non-zero) and the tracked tier (0.1% relative epsilon, the #4281 gate's value); verdicts `green` / `tracked-drift` / `re-pin-required` / `set-drift` / `hard-fail`.
+- **Workflow:** Criterion 4 runs with `--nocapture` into a captured log; the verdict step enforces the tiers; the night-verdict step runs **after** the streak state file is written, so a tracked-tier failure fails the night but no longer eats the streak file (the abort-eats-the-streak bug).
+- **Streak semantics unchanged otherwise:** any night that is not verdict-green fails, and the run-history streak resets through the ordinary run-conclusion path.
+
+The first counted night starts only after this change's own nightly run is green under the new semantics.

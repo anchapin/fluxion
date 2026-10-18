@@ -142,9 +142,40 @@ jobs:
       - name: Criterion 3 — integration-cli (CLI behaviour / stub guards)
         run: cargo test --locked --features gauge-solver --test integration-cli
 
-      # ADR-0007 criterion 4 — Case 600 series.
-      - name: Criterion 4 — ashrae_140_case_600_series
-        run: "cargo test --locked -p fluxion --features gauge-solver --test all_tests ashrae_140_case_600_series::"
+      # ADR-0007 criterion 4 — Case 600 series (ADR-0025 Option C).
+      # Alex's decision, 2026-10-18: hard tier on currently-green tests +
+      # drift-checked tracked tier on the 9 known-gap tests. The cargo
+      # step is always allowed to exit non-zero (the tracked tier IS
+      # red); the verdict step below enforces the two tiers. --nocapture
+      # is added so the tests' measured-value lines are parseable by
+      # scripts/check_beta_soak_criterion4.py (the baseline convention).
+      - name: Criterion 4 — ashrae_140_case_600_series (log capture)
+        run: |
+          set -uo pipefail
+          cargo test --locked -p fluxion --features gauge-solver --test all_tests \
+            ashrae_140_case_600_series:: -- --nocapture \
+            > criterion-4-output.log 2>&1 || true
+          echo "Criterion 4 log size: $(wc -l < criterion-4-output.log) lines"
+
+      # ADR-0025 Option C — Criterion 4 verdict. Hard tier: the six
+      # passing tests must stay green and the twelve quarantined tests
+      # must stay ignored (fail-closed on either deviation). Tracked
+      # tier: the 9 known-gap tests' measured values are diffed against
+      # tests/reference_data/gauge_soak/criterion4_tracked_cohort_baseline.csv
+      # at the #4281 gate's 0.1% relative epsilon. A tracked drift or a
+      # cohort member turning green (re-pin required) is recorded in
+      # CRITERION4_VERDICT and enforced by the night-verdict step — AFTER
+      # the streak state file is written, so a tracked-tier failure no
+      # longer eats the streak file (the ADR's abort-eats-the-streak fix).
+      - name: Criterion 4 verdict — tracked-cohort drift check (ADR-0025)
+        run: |
+          set -euo pipefail
+          python3 scripts/check_beta_soak_criterion4.py \
+            --log criterion-4-output.log \
+            --baseline tests/reference_data/gauge_soak/criterion4_tracked_cohort_baseline.csv \
+            --github-env "$GITHUB_ENV" \
+            | tee criterion-4-verdict.json
+          echo "Criterion 4 verdict: ${CRITERION4_VERDICT}"
 
       # ADR-0007 criterion 5 — quarantined Case 600 metrics tracking.
       - name: Criterion 5 — issue_1457_case_600_series_tracking
@@ -249,7 +280,25 @@ jobs:
           print(f"β-soak streak: {streak}/{target}")
           PY
 
+      # ADR-0025 Option C — night verdict for the Criterion 4 tracked
+      # cohort. Placed AFTER the streak state file is written so a
+      # tracked-tier failure (CRITERION4_VERDICT=tracked-drift or
+      # re-pin-required) still produces the state artifact: the run
+      # concludes failure, the run-history streak resets, and the file
+      # documents the night. The verdict step above already hard-failed
+      # the job for set-drift / hard-tier regressions (fail-closed).
+      - name: β-soak night verdict — Criterion 4 tracked cohort (ADR-0025)
+        run: |
+          set -euo pipefail
+          verdict="${CRITERION4_VERDICT:-green}"
+          echo "Criterion 4 tracked-cohort verdict: ${verdict}"
+          if [ "${verdict}" != "green" ]; then
+            echo "::error::Criterion 4 tracked cohort verdict ${verdict} — night fails (ADR-0025 Option C). ${verdict} details in criterion-4-verdict.json."
+            exit 1
+          fi
+
       - name: Upload β-soak state artifact
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: beta-soak-state
@@ -387,6 +436,7 @@ jobs:
             echo "- Solver selection: gauge+default (ThermalSelector::default(), metric label \`solver=\"gauge+default\"\`)"
             echo "- Criterion 2 failures summary: see \`beta-soak-criterion-2-failures\` artifact (Issue #3359 tracker)"
             echo "- Criterion 2 cohort drift: ${DRIFT_RC:-0} (0=clean, 1=drift; artifact: \`beta-soak-criterion-2-drift\`, Issue #3744)"
+            echo "- Criterion 4 tracked cohort (ADR-0025): ${CRITERION4_VERDICT:-n/a} (green | tracked-drift | re-pin-required)"
           } > comment.md
           gh issue comment "$SOAK_TRACKING_ISSUE" \
             --repo "$GITHUB_REPOSITORY" \
