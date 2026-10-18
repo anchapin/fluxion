@@ -24,6 +24,11 @@ pub mod interpolation;
 pub mod miami;
 pub mod minneapolis;
 pub mod psychrometrics;
+// Issue #4295 — TMY2 (`.TM2`) fixed-width reader for the §9 CE weather
+// set. Format per Annex A1.4 of Addendum a to Standard 140-2001; no
+// ASHRAE-distributed weather file is committed (see the module's
+// provenance notes and Issues #4284/#4285).
+pub mod tm2;
 // Issue #3467 — the TMY3 network-download / on-disk-cache module is gated
 // behind the `tmy3-download` cargo feature (default OFF). The default
 // dependency-light leaf does not compile reqwest / hyper / tokio / rustls
