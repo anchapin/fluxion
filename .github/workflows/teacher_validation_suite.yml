@@ -57,6 +57,17 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        # 2026-10-18 (round 59): the `yeslogic-fontconfig-sys` build script
+        # panicked on the runner (missing fontconfig headers), failing the
+        # "Build test binaries" step before any sub-suite ran — nightly run
+        # 39119329187. Every other cargo workflow installs these system
+        # deps; this nightly was the only one without the step.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+
       - name: Set up Rust toolchain
                 # 2026-10-17 (loop round 50): the previous pin 5775e857f6137e738adf93c80ad3d6c81e29a8fe
         # ("2024-07-20") no longer resolves upstream (dtolnay/rust-toolchain rewrites history;

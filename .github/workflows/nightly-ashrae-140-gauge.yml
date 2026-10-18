@@ -86,6 +86,27 @@ jobs:
       - name: Disk space guard
         run: ./scripts/disk-space-check.sh
 
+      # 2026-10-18 (round 59): the blind-infrastructure tests in the
+      # criterion-2 cohort (test_case_{600,900}_blind_energy_infrastructure)
+      # call `strict_gate_weather_epw()`, which requires the git-ignored
+      # canonical ASHRAE 140 weather assets. Without this restore the
+      # nightly reports them as new criterion-2 failures and the cohort-
+      # drift detector (#3744) fails the soak verdict even though the
+      # §LIMIT-21 cohort itself is unchanged — nightly runs 3906…/3911…/
+      # 3913… since 2026-10-16. Mirrors physics-pr.yml's restore+verify.
+      - name: Restore canonical ASHRAE 140 weather cache
+        id: weather-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: assets/weather/ashrae140
+          key: ashrae140-weather-${{ hashFiles('tests/reference_data/weather/ashrae140_canonical_checksums.json') }}
+
+      - name: Fetch + convert + verify canonical ASHRAE 140 weather
+        run: |
+          python3 scripts/fetch_ashrae140_weather.py --skip-download || python3 scripts/fetch_ashrae140_weather.py
+          python3 scripts/convert_tmy3_to_epw.py
+          python3 scripts/check_ashrae140_weather.py
+
       # Issue #3724 — gauge-solver-gated lib unit tests. These tests
       # (thermal_model_core/tests.rs gauge arms, step_dispatcher.rs gauge
       # paths) are compiled by every --test step but are NEVER executed:
