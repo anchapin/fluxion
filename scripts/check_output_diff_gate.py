@@ -40,7 +40,6 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -48,10 +47,8 @@ from pathlib import Path
 SCRIPTS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-from check_strict_energy_gate_regression import (  # noqa: E402
+from check_strict_energy_gate_regression import (
     FF_CASES,
-    FF_LINE_RE,
-    LINE_RE,
     SUPPORTED_CASES,
     parse_ff_measured,
     parse_measured,

@@ -14,7 +14,6 @@ The synthetic logs follow the same grammar the strict checker parses:
 from __future__ import annotations
 
 import csv
-import sys
 from pathlib import Path
 
 import pytest
