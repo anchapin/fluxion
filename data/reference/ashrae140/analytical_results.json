@@ -1,0 +1,13 @@
+{
+  "section_8_ground_coupled": {
+    "gc10a_steady_state_floor_conduction_w": 2429.8,
+    "method": "cell-centered finite volume, quarter domain, Jacobi-PCG (Issue #4270)",
+    "closed_form_check_w": 2432.60,
+    "deviation_pct": 0.117,
+    "unknowns": 642816,
+    "cg_iterations": 10552,
+    "relative_residual": 9.992e-10,
+    "mesh": {"fine_cell_m": 0.1, "far_field_m": 50, "ground_depth_m": 25},
+    "source": "Addendum a to ANSI/ASHRAE Standard 140-2011, Table 5-29 and Annex B11-1/B11-2 (Delsante, Stokes and Walsh 1983)"
+  }
+}
