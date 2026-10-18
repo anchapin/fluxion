@@ -12,11 +12,20 @@
 //!
 //! ## Case Taxonomy
 //!
-//! | Case | System | Description | Reference Tolerance |
-//! |------|--------|-------------|---------------------|
-//! | E100 | System A (CAV) | Electric resistance heating | ±5% |
-//! | E200 | System A (CAV) | Packaged AC (DX cooling) | ±5% |
-//! | E300 | System B (VAV) | VAV terminal with reheat | ±10% |
+//! **Synthetic self-consistency labels, NOT ASHRAE 140-2023 §9 cases.** The
+//! `E100/E200/E300` identifiers below are an internal synthetic taxonomy
+//! over a temperature-bin UA·ΔT load; they are not the §9 CE100–CE200
+//! equipment cases and are not validated against their quasi-analytical
+//! solutions. The real §9 family is generated per #4296
+//! (`scripts/generate_section9_ce_cases.py`) and its engine runs are still
+//! pending (KNOWN_ISSUES §LIMIT-42). The E200 comparative test against the
+//! Task 22 ensemble band is a deliberately-labelled structural-gap probe.
+//!
+//! | Label | System | Description | Reference Tolerance |
+//! |-------|--------|-------------|---------------------|
+//! | E100 (synthetic) | System A (CAV) | Electric resistance heating | ±5% |
+//! | E200 (synthetic) | System A (CAV) | Packaged AC (DX cooling) | ±5% |
+//! | E300 (synthetic) | System B (VAV) | VAV terminal with reheat | ±10% |
 //!
 //! ## Sources
 //!

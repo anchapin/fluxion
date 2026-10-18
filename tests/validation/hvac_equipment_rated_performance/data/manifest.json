@@ -10,7 +10,7 @@
     },
     "iea_task22_e100": {
       "citation": "IEA SHC Task 22. \"HVAC BESTEST, Volume 1: Cases E100-E200, Unitary Space Cooling Equipment.\" Building Energy Analysis Tools, International Energy Agency Solar Heating and Cooling Programme.",
-      "case_family": "E100-E200",
+      "case_family": "CE100-CE200 (Task 22 E100-E200)",
       "method": "analytical_and_comparative"
     }
   },
@@ -21,13 +21,13 @@
   },
   "files": [
     {
-      "filename": "comparative_bounds_e100_e200.csv",
-      "case_family": "E100-E200",
+      "filename": "comparative_bounds_ce100_ce200.csv",
+      "case_family": "CE100-CE200 (Task 22 E100-E200)",
       "publication_key": "iea_task22_e100",
       "recorded_energy_unit": "MWh",
       "recorded_power_unit": "kW",
       "recorded_temp_unit": "C",
-      "notes": "Unitary space-cooling equipment comparative bounds. E100-E140 dry-coil, E150-E200 wet-coil. Values are the qualified-program ensemble (min/max) ranges reported in the source."
+      "notes": "Unitary space-cooling equipment comparative bounds. CE100-CE140 dry-coil, CE150-CE200 wet-coil. Case IDs renamed from the original Task 22 E100-E200 to the 140-2023 CE100-CE200 identifiers (same cases; #4296). Values are the qualified-program ensemble (min/max) ranges reported in the source."
     },
     {
       "filename": "comparative_bounds_ae101_ae445.csv",

@@ -405,7 +405,7 @@ mod tests {
     // --- Comparative ensemble-bound case (STRUCTURAL GAP — #[ignore]) --------
     //
     // The IEA Task 22 / RP-865 PUBLISHED ensemble bounds
-    // (data/comparative_bounds_e100_e200.csv) require a full EnergyPlus-
+    // (data/comparative_bounds_ce100_ce200.csv) require a full EnergyPlus-
     // comparable annual zone simulation. Fluxion's cooling-load path has a
     // documented structural gap vs EnergyPlus (Case 600/900 annual cooling
     // ≈20-60% below the ensemble midpoint — see docs/KNOWN_ISSUES.md §LIMIT-05
@@ -434,7 +434,7 @@ mod tests {
     fn comparative_e200_cooling_vs_iea_task22_ensemble() {
         let case = run_e200();
         // Published IEA Task 22 E200 annual-cooling ensemble band (MWh), from
-        // data/comparative_bounds_e100_e200.csv (transcribed; provenance in the CSV).
+        // data/comparative_bounds_ce100_ce200.csv (transcribed; provenance in the CSV).
         let band_low_mwh = 5.60;
         let band_high_mwh = 6.70;
         let computed_mwh = case.computed_energy_kwh / 1000.0;

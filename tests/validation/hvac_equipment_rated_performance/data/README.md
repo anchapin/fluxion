@@ -9,7 +9,7 @@ reference bounds consumed by the loader in
 | File | Contents |
 |------|----------|
 | `manifest.json` | File-level provenance: publications, reference programs + versions, recorded units, status legend. |
-| `comparative_bounds_e100_e200.csv` | Comparative bounds for IEA SHC Task 22 Volume 1 unitary space-cooling cases (E100–E200). |
+| `comparative_bounds_ce100_ce200.csv` | Comparative bounds for the unitary space-cooling cases, 140-2023 identifiers CE100–CE200 (IEA SHC Task 22 Volume 1; originally published as E100–E200, renamed per #4296). |
 | `comparative_bounds_ae101_ae445.csv` | Comparative bounds for RP-865 airside HVAC cases (AE101–AE445). |
 
 ## Comparative vs analytical

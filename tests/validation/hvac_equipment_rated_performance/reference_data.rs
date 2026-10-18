@@ -2,7 +2,7 @@
 //!
 //! Issue #1755 (Plan T1.2). Typed, provenance-bearing loaders for the
 //! comparative reference bounds published in:
-//!   - IEA SHC Task 22, *HVAC BESTEST, Volume 1: Cases E100-E200*.
+//!   - IEA SHC Task 22, *HVAC BESTEST, Volume 1: Cases E100-E200* (140-2023 identifiers: CE100-CE200).
 //!   - Neymark et al., *Airside HVAC BESTEST (RP-865)*, NREL/TP-5500-66000 (2016).
 //!
 //! ## Design
@@ -391,8 +391,8 @@ pub fn index_by_case_metric(
 mod tests {
     use super::*;
 
-    const E100_CSV: &str =
-        "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_e100_e200.csv";
+    const CE_CSV: &str =
+        "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv";
     const AE_CSV: &str =
         "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ae101_ae445.csv";
 
@@ -502,11 +502,11 @@ mod tests {
     // --- Loader: real data files -----------------------------------------
 
     #[test]
-    fn e100_csv_loads_with_no_errors() {
-        let content = read_data_file(E100_CSV).expect("E100 csv present");
+    fn ce_csv_loads_with_no_errors() {
+        let content = read_data_file(CE_CSV).expect("CE100-CE200 csv present");
         let (bounds, errors) = load_bounds_csv(&content);
         assert!(errors.is_empty(), "parse errors: {errors:?}");
-        assert!(!bounds.is_empty(), "E100 csv produced zero bounds");
+        assert!(!bounds.is_empty(), "CE csv produced zero bounds");
     }
 
     #[test]
@@ -519,7 +519,7 @@ mod tests {
 
     #[test]
     fn every_bound_is_physically_sane() {
-        for &path in &[E100_CSV, AE_CSV] {
+        for &path in &[CE_CSV, AE_CSV] {
             let content = read_data_file(path).expect("csv present");
             let (bounds, _errs) = load_bounds_csv(&content);
             for b in &bounds {
@@ -539,7 +539,7 @@ mod tests {
     #[test]
     fn every_bound_has_complete_provenance() {
         // Acceptance criterion: documented provenance on every record.
-        for &path in &[E100_CSV, AE_CSV] {
+        for &path in &[CE_CSV, AE_CSV] {
             let content = read_data_file(path).expect("csv present");
             let (bounds, errors) = load_bounds_csv(&content);
             assert!(errors.is_empty(), "{}: {errors:?}", path);
@@ -561,7 +561,7 @@ mod tests {
     fn si_conversion_matches_recorded_value_times_documented_factor() {
         // No magic numbers: derive expected SI from the recorded value and the
         // documented factor for the recorded unit, per metric dimension.
-        for &path in &[E100_CSV, AE_CSV] {
+        for &path in &[CE_CSV, AE_CSV] {
             let content = read_data_file(path).expect("csv present");
             let (bounds, _) = load_bounds_csv(&content);
             for b in &bounds {
@@ -607,7 +607,7 @@ mod tests {
 
     #[test]
     fn mid_is_exactly_halfway_between_low_and_high() {
-        for &path in &[E100_CSV, AE_CSV] {
+        for &path in &[CE_CSV, AE_CSV] {
             let content = read_data_file(path).expect("csv present");
             let (bounds, _) = load_bounds_csv(&content);
             for b in &bounds {
@@ -626,12 +626,12 @@ mod tests {
 
     #[test]
     fn case_ids_belong_to_expected_families() {
-        let e100 = read_data_file(E100_CSV).unwrap();
+        let e100 = read_data_file(CE_CSV).unwrap();
         let (bounds, _) = load_bounds_csv(&e100);
         for b in &bounds {
             assert!(
-                b.case_id.starts_with('E') && b.case_id[1..].chars().all(|c| c.is_ascii_digit()),
-                "E100 csv contains non-E-family case `{}`",
+                b.case_id.starts_with("CE") && b.case_id[2..].chars().all(|c| c.is_ascii_digit()),
+                "CE csv contains non-CE-family case `{}`",
                 b.case_id,
             );
         }
