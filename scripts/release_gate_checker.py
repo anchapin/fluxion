@@ -920,24 +920,24 @@ class ReleaseGateChecker:
         for system in ("FC", "SZ", "CAV", "VAV"):
             sys_ref = ref1.get(system, {})
             sys_meas = section11.get("case_1", {}).get(system, {})
-            for field, expected in sys_ref.items():
-                if field.startswith("_") or expected is None:
+            for field_name, expected in sys_ref.items():
+                if field_name.startswith("_") or expected is None:
                     continue
-                got = sys_meas.get(field)
+                got = sys_meas.get(field_name)
                 if got is None:
-                    mismatches.append(f"{system}.{field}: missing")
+                    mismatches.append(f"{system}.{field_name}: missing")
                     continue
                 checked += 1
                 if abs(expected) < 1e-9:
                     if abs(got) >= 1.0:
                         mismatches.append(
-                            f"{system}.{field}: expected ~0, got {got:.1f}"
+                            f"{system}.{field_name}: expected ~0, got {got:.1f}"
                         )
                 else:
                     dev = abs(got - expected) / abs(expected) * 100.0
                     if dev > qas_tol:
                         mismatches.append(
-                            f"{system}.{field}: expected {expected:.0f}, "
+                            f"{system}.{field_name}: expected {expected:.0f}, "
                             f"got {got:.1f} ({dev:.3f}% off)"
                         )
         if mismatches:
