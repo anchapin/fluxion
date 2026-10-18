@@ -14,15 +14,15 @@
 
 | Metric | Current | Budget (gate) | Status | Source |
 |--------|---------|---------------|--------|--------|
-| ASHRAE 140 pass rate | **6.0%** (5/84 metrics) | ≥ 60% (`validation.min_pass_rate`) | ❌ Fail | `validation/performance_history.latest.json` (latest run 2026-10-15) |
-| Mean Absolute Error (MAE) | **78.50%** | ≤ 50% (`validation.max_mae`) | ❌ Fail | `validation/performance_history.latest.json` (latest run 2026-10-15) |
+| ASHRAE 140 pass rate | **6.0%** (5/84 metrics) | ref ≥ 60% (diagnostic, `validation.diagnostics.min_pass_rate` — not a gate, #4277) | 📊 Diagnostic | `validation/performance_history.latest.json` (latest run 2026-10-15) |
+| Mean Absolute Error (MAE) | **78.50%** | ref ≤ 50% (diagnostic, `validation.diagnostics.max_mae` — not a gate, #4277) | 📊 Diagnostic | `validation/performance_history.latest.json` (latest run 2026-10-15) |
 | BatchOracle throughput | **157 (CI) / 900 (release)** configs/sec | ≥ 150 (`benchmark.throughput.min_configs_per_sec`) | ✅ Pass | `release_gates.yaml` comment + `README.md` |
 | Validation-suite throughput | 90.76 cases/sec | (informational) | ℹ️ | `validation/performance_history.latest.json` (latest run 2026-10-15) |
 | Max single-case deviation | 964.17% | (ref: `individual.max_deviation` = 100%) | ℹ️ | `validation/performance_history.latest.json` (latest run 2026-10-15) |
 
 ## ASHRAE 140 Pass Rate
 
-- **Overall (metric-level):** 6.0% — 5 PASS / 9 WARN / 70 FAIL of 84 results. Below the 60% gate.
+- **Overall (metric-level):** 6.0% — 5 PASS / 9 WARN / 70 FAIL of 84 results. -54.0 pp vs the 60% reference line (diagnostic, not a gate — #4277: Standard 140 defines no acceptance-criteria clause).
 - **Case-level:** 0/18 cases fully PASS (0.0%).
 
 ### Per-Series Breakdown (case-level)
@@ -45,8 +45,8 @@
 
 ## MAE vs Budget
 
-- **Gate:** ≤ **50%** (`validation.max_mae`).
-- **Current:** **78.50%** — Over budget by +28.50 pp. Max single-case deviation 964.17%.
+- **Reference line (diagnostic, not a gate — #4277):** ≤ **50%** (`validation.diagnostics.max_mae`).
+- **Current:** **78.50%** — +28.50 pp vs the reference line. Max single-case deviation 964.17%. The MAE number is a labelled diagnostic since #4277 D (Standard 140 defines no acceptance threshold); release-over-release movement is guarded by the drift gate, and the honest red anchor is the analytical-targets gate (§8 GC10a / §11 QASv2).
 - *Driver:* high-mass annual-energy deviation (5R1C/CTF thermal-mass limitation; see Known Structural Failures).
 
 ## Known Structural Failures

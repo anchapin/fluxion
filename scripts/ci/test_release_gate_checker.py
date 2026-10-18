@@ -45,8 +45,11 @@ def _make_checker(checker, project_root: Path, config: dict):
 
 _MINIMAL_VALIDATION_CONFIG = {
     "validation": {
-        "min_pass_rate": 60.0,
-        "max_mae": 50.0,
+        # Issue #4277 D: pass rate / MAE are diagnostics, not gates.
+        "diagnostics": {
+            "min_pass_rate": 60.0,
+            "max_mae": 50.0,
+        },
         "individual": {
             "max_deviation": 100.0,
             "extreme_deviation_limit": 2,
@@ -66,61 +69,44 @@ def _results(
     }
 
 
-def test_check_validation_gates_passes_when_pass_rate_above_floor(checker, tmp_path):
-    """Pass rate 70% with min 60% → overall pass."""
+def test_check_validation_gates_reports_pass_rate_diagnostic(checker, tmp_path):
+    """Issue #4277 D: pass rate is a non-gating diagnostic, whatever its value."""
     rg = _make_checker(checker, tmp_path, _MINIMAL_VALIDATION_CONFIG)
     results = rg.check_validation_gates(_results(pass_rate=70.0))
     by_name = {r.name: r for r in results}
-    assert by_name["overall_pass_rate"].passed is True
-    assert by_name["overall_pass_rate"].value == 70.0
-    assert by_name["overall_pass_rate"].threshold == 60.0
+    d = by_name["overall_pass_rate"]
+    assert d.passed is True and d.diagnostic is True
+    assert d.value == 70.0
+    assert d.threshold == 60.0
+    assert "not an ASHRAE 140 criterion" in d.message
 
 
-def test_check_validation_gates_fails_when_pass_rate_below_floor(checker, tmp_path):
-    """Pass rate 40% with min 60% → overall fail."""
+def test_check_validation_gates_pass_rate_never_fails_low(checker, tmp_path):
+    """Issue #4277 D: 0% pass rate is reported, and still non-gating."""
     rg = _make_checker(checker, tmp_path, _MINIMAL_VALIDATION_CONFIG)
-    results = rg.check_validation_gates(_results(pass_rate=40.0))
+    results = rg.check_validation_gates(_results(pass_rate=0.0))
     by_name = {r.name: r for r in results}
-    assert by_name["overall_pass_rate"].passed is False
+    d = by_name["overall_pass_rate"]
+    assert d.passed is True and d.diagnostic is True
+    assert d.value == 0.0
 
 
-def test_check_validation_gates_fails_just_below_floor(checker, tmp_path):
-    """Issue #4159: pass rate 59.9% with min 60% → overall FAIL.
+def test_check_validation_gates_mae_is_diagnostic_not_gate(checker, tmp_path):
+    """Issue #4277 D: MAE 78.5% is reported honestly and never gates.
 
-    Boundary companion to the 60.0 case below: the gate must not admit
-    a below-floor pass rate through float rounding or an off-by-one
-    comparison. The comparison is ``pass_rate >= min_pass_rate`` with no
-    tolerance band — 59.9 is red.
+    The retired ≤50% release target was a scorecard invention (#4277);
+    the diagnostic row keeps the number visible with the reference line
+    in the message, but `passed` is always True so the release is not
+    blocked by a quantity the standard does not define.
     """
     rg = _make_checker(checker, tmp_path, _MINIMAL_VALIDATION_CONFIG)
-    results = rg.check_validation_gates(_results(pass_rate=59.9))
+    results = rg.check_validation_gates(_results(pass_rate=6.0, mae=78.5))
     by_name = {r.name: r for r in results}
-    assert by_name["overall_pass_rate"].passed is False
-    assert by_name["overall_pass_rate"].value == 59.9
-    assert by_name["overall_pass_rate"].threshold == 60.0
-
-
-def test_check_validation_gates_passes_exactly_at_floor(checker, tmp_path):
-    """Issue #4159: pass rate 60.0% with min 60% → overall PASS.
-
-    Boundary companion to the 59.9 case above: an exactly-at-floor pass
-    rate is green (``>=``, not ``>``). Guards against a future edit
-    flipping the comparison to strict ``>``.
-    """
-    rg = _make_checker(checker, tmp_path, _MINIMAL_VALIDATION_CONFIG)
-    results = rg.check_validation_gates(_results(pass_rate=60.0))
-    by_name = {r.name: r for r in results}
-    assert by_name["overall_pass_rate"].passed is True
-    assert by_name["overall_pass_rate"].value == 60.0
-    assert by_name["overall_pass_rate"].threshold == 60.0
-
-
-def test_check_validation_gates_fails_when_mae_above_limit(checker, tmp_path):
-    """MAE 60% with max 50% → MAE gate fails."""
-    rg = _make_checker(checker, tmp_path, _MINIMAL_VALIDATION_CONFIG)
-    results = rg.check_validation_gates(_results(pass_rate=70.0, mae=60.0))
-    by_name = {r.name: r for r in results}
-    assert by_name["max_mae"].passed is False
+    d = by_name["max_mae"]
+    assert d.passed is True and d.diagnostic is True
+    assert d.value == 78.5
+    assert d.threshold == 50.0
+    assert "not an ASHRAE 140 criterion" in d.message
 
 
 def test_check_validation_gates_excludes_known_failures(checker, tmp_path):
@@ -677,13 +663,24 @@ def test_main_returns_zero_on_clean_config(checker, tmp_path, monkeypatch, capsy
     """
     config = {
         "validation": {
-            "min_pass_rate": 50.0,
-            "max_mae": 50.0,
+            # Issue #4277 D: pass rate / MAE are diagnostics, not gates.
+            "diagnostics": {"min_pass_rate": 50.0, "max_mae": 50.0},
             "individual": {
                 "max_deviation": 150.0,
                 "extreme_deviation_limit": 5,
                 "known_failures": [],
             },
+        },
+        "conformance": {
+            "artifacts": [
+                {"path": str(tmp_path / "conformance_section6.csv")},
+            ],
+            "allowed_statuses": ["conformant", "incomplete", "missing", "na"],
+        },
+        "analytical": {
+            "criteria_file": str(tmp_path / "analytical_criteria.json"),
+            "results_file": str(tmp_path / "analytical_results.json"),
+            "gc10a_tolerance_pct": 0.5,
         },
         "ci": {"fail_fast": True},
         "drift": {"enabled": False},
@@ -694,6 +691,29 @@ def test_main_returns_zero_on_clean_config(checker, tmp_path, monkeypatch, capsy
             {
                 "summary": {"pass_rate": 75.0, "mae": 30.0},
                 "cases": {},
+            }
+        )
+    )
+    # Minimal well-formed conformance artifact.
+    (tmp_path / "conformance_section6.csv").write_text(
+        "case,status\nWD100,conformant\nWD600,incomplete\n"
+    )
+    # GC10a closed-form anchor + a fluxion measurement inside ±0.5%.
+    (tmp_path / "analytical_criteria.json").write_text(
+        json.dumps(
+            {
+                "section_8_ground_coupled": {
+                    "analytical_solution": {"value": 2433.0}
+                }
+            }
+        )
+    )
+    (tmp_path / "analytical_results.json").write_text(
+        json.dumps(
+            {
+                "section_8_ground_coupled": {
+                    "gc10a_steady_state_floor_conduction_w": 2430.0
+                }
             }
         )
     )
@@ -1071,3 +1091,167 @@ def test_cold_start_unmeasurable_ratio_does_not_poison_with_nan(checker, tmp_pat
     # bounds, which pass — no NaN-poisoned failure.
     assert gate.passed is True, gate.message
     assert "nan" not in gate.message.lower()
+
+
+# ---------------------------------------------------------------------------
+# Conformance + analytical gates (Issue #4277 D)
+# ---------------------------------------------------------------------------
+
+
+def test_check_conformance_gates_missing_artifact_fails(checker, tmp_path):
+    rg = _make_checker(
+        checker,
+        tmp_path,
+        {
+            "conformance": {
+                "artifacts": [{"path": "does/not/exist.csv"}],
+            }
+        },
+    )
+    (results,) = rg.check_conformance_gates()
+    assert results.passed is False and results.diagnostic is False
+    assert "Missing conformance artifact" in results.message
+
+
+def test_check_conformance_gates_bad_status_fails(checker, tmp_path):
+    (tmp_path / "conf.csv").write_text("case,status\nWD100,passed-83%\n")
+    rg = _make_checker(
+        checker,
+        tmp_path,
+        {
+            "conformance": {
+                "artifacts": [{"path": "conf.csv"}],
+                "allowed_statuses": ["conformant", "incomplete"],
+            }
+        },
+    )
+    (results,) = rg.check_conformance_gates()
+    assert results.passed is False
+    assert "status outside" in results.message
+
+
+def test_check_conformance_gates_incomplete_cases_still_pass(checker, tmp_path):
+    """Incomplete conformance is the honest state — reported, not failed."""
+    (tmp_path / "conf.csv").write_text(
+        "case,status\nWD100,conformant\nWD200,incomplete\n"
+    )
+    rg = _make_checker(
+        checker,
+        tmp_path,
+        {
+            "conformance": {
+                "artifacts": [{"path": "conf.csv"}],
+                "allowed_statuses": ["conformant", "incomplete"],
+            }
+        },
+    )
+    (results,) = rg.check_conformance_gates()
+    assert results.passed is True
+    assert "incomplete=1" in results.message
+
+
+def test_check_analytical_gates_fail_closed_without_results(checker, tmp_path):
+    (tmp_path / "criteria.json").write_text(
+        json.dumps(
+            {"section_8_ground_coupled": {"analytical_solution": {"value": 2433.0}}}
+        )
+    )
+    rg = _make_checker(
+        checker,
+        tmp_path,
+        {
+            "analytical": {
+                "criteria_file": "criteria.json",
+                "results_file": "results.json",
+            }
+        },
+    )
+    (results,) = rg.check_analytical_gates()
+    assert results.passed is False and results.diagnostic is False
+    assert "fails" in results.message or "not yet met" in results.message
+
+
+def test_check_analytical_gates_within_tolerance_passes(checker, tmp_path):
+    (tmp_path / "criteria.json").write_text(
+        json.dumps(
+            {"section_8_ground_coupled": {"analytical_solution": {"value": 2433.0}}}
+        )
+    )
+    (tmp_path / "results.json").write_text(
+        json.dumps(
+            {
+                "section_8_ground_coupled": {
+                    "gc10a_steady_state_floor_conduction_w": 2432.0
+                }
+            }
+        )
+    )
+    rg = _make_checker(
+        checker,
+        tmp_path,
+        {
+            "analytical": {
+                "criteria_file": "criteria.json",
+                "results_file": "results.json",
+                "gc10a_tolerance_pct": 0.5,
+            }
+        },
+    )
+    (results,) = rg.check_analytical_gates()
+    assert results.passed is True
+
+
+def test_check_analytical_gates_out_of_tolerance_fails(checker, tmp_path):
+    (tmp_path / "criteria.json").write_text(
+        json.dumps(
+            {"section_8_ground_coupled": {"analytical_solution": {"value": 2433.0}}}
+        )
+    )
+    (tmp_path / "results.json").write_text(
+        json.dumps(
+            {
+                "section_8_ground_coupled": {
+                    "gc10a_steady_state_floor_conduction_w": 2000.0
+                }
+            }
+        )
+    )
+    rg = _make_checker(
+        checker,
+        tmp_path,
+        {
+            "analytical": {
+                "criteria_file": "criteria.json",
+                "results_file": "results.json",
+                "gc10a_tolerance_pct": 0.5,
+            }
+        },
+    )
+    (results,) = rg.check_analytical_gates()
+    assert results.passed is False
+
+
+def test_overall_passed_ignores_diagnostics(checker, tmp_path):
+    """A failing analytic never hides behind a diagnostic; a diagnostic
+    red number never gates."""
+    rg = _make_checker(checker, tmp_path, {"ci": {"fail_fast": False}})
+    d = checker.GateResult(
+        name="max_mae",
+        category="validation",
+        passed=True,
+        message="DIAGNOSTIC",
+        diagnostic=True,
+    )
+    hard = checker.GateResult(
+        name="analytical_targets",
+        category="analytical",
+        passed=False,
+        message="not yet met",
+    )
+    rg.results = [d, hard]
+    report_passed = all(
+        r.passed for r in rg.results if not r.diagnostic
+    )
+    assert report_passed is False
+    rg.results = [d]
+    assert all(r.passed for r in rg.results if not r.diagnostic) is True

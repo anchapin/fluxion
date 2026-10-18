@@ -368,6 +368,10 @@ def _next_top_level_key(
 
 def parse_gates(yaml_text: str) -> Gates:
     g = Gates()
+    # Issue #4277 D: min_pass_rate / max_mae are diagnostics in
+    # release_gates.yaml (validation.diagnostics), not gates. The
+    # scorecard still reports the numbers against the reference lines,
+    # labelled as diagnostics.
     g.min_pass_rate = _yaml_num(yaml_text, "min_pass_rate") or g.min_pass_rate
     g.max_mae = _yaml_num(yaml_text, "max_mae") or g.max_mae
     g.min_throughput = _yaml_num(yaml_text, "min_configs_per_sec") or g.min_throughput
@@ -485,13 +489,15 @@ def render(
     p("|--------|---------|---------------|--------|--------|")
     p(
         f"| ASHRAE 140 pass rate | **{v.pass_rate:.1f}%** "
-        f"({v.passed}/{v.total} metrics) | ≥ {g.min_pass_rate:.0f}% "
-        f"(`validation.min_pass_rate`) | {_status(pass_ok)} | "
+        f"({v.passed}/{v.total} metrics) | ref ≥ {g.min_pass_rate:.0f}% "
+        f"(diagnostic, `validation.diagnostics.min_pass_rate` — not a gate, #4277) | "
+        f"{_status(pass_ok, '📊 Diagnostic', '📊 Diagnostic')} | "
         f"{throughput_source} |"
     )
     p(
         f"| Mean Absolute Error (MAE) | **{v.mae:.2f}%** | "
-        f"≤ {g.max_mae:.0f}% (`validation.max_mae`) | {_status(mae_ok)} | "
+        f"ref ≤ {g.max_mae:.0f}% (diagnostic, `validation.diagnostics.max_mae` — not a gate, #4277) | "
+        f"{_status(mae_ok, '📊 Diagnostic', '📊 Diagnostic')} | "
         f"{throughput_source} |"
     )
     thr_note = (
@@ -523,7 +529,9 @@ def render(
         f"- **Overall (metric-level):** {v.pass_rate:.1f}% — "
         f"{v.passed} PASS / {v.warnings} WARN / {v.failed} FAIL of "
         f"{v.total} results. "
-        f"{_status(pass_ok, 'Meets', 'Below')} the {g.min_pass_rate:.0f}% gate."
+        f"{v.pass_rate - g.min_pass_rate:+.1f} pp vs the "
+        f"{g.min_pass_rate:.0f}% reference line (diagnostic, not a gate — #4277: "
+        f"Standard 140 defines no acceptance-criteria clause)."
     )
     case_total = sum(r.cases for r in series)
     case_pass = sum(r.passed for r in series)
@@ -585,11 +593,17 @@ def render(
     # --- MAE vs budget -------------------------------------------------
     p("## MAE vs Budget")
     p("")
-    p(f"- **Gate:** ≤ **{g.max_mae:.0f}%** (`validation.max_mae`).")
     p(
-        f"- **Current:** **{v.mae:.2f}%** — {_status(mae_ok, 'Within budget', 'Over budget')} "
-        f"by {v.mae - g.max_mae:+.2f} pp. Max single-case deviation "
-        f"{v.max_deviation:.2f}%."
+        f"- **Reference line (diagnostic, not a gate — #4277):** "
+        f"≤ **{g.max_mae:.0f}%** (`validation.diagnostics.max_mae`)."
+    )
+    p(
+        f"- **Current:** **{v.mae:.2f}%** — "
+        f"{v.mae - g.max_mae:+.2f} pp vs the reference line. Max single-case deviation "
+        f"{v.max_deviation:.2f}%. The MAE number is a labelled diagnostic since "
+        f"#4277 D (Standard 140 defines no acceptance threshold); release-over-release "
+        f"movement is guarded by the drift gate, and the honest red anchor is the "
+        f"analytical-targets gate (§8 GC10a / §11 QASv2)."
     )
     p(
         "- *Driver:* high-mass annual-energy deviation (5R1C/CTF thermal-mass "
