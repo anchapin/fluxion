@@ -437,6 +437,10 @@ jobs:
           echo "=== Strict ±15% tolerance regression analysis ==="
           python3 scripts/check_strict_energy_gate_regression.py /tmp/strict_gate_output.txt
 
+          echo
+          echo "=== Output-diff gate (issue #4281): reported values vs recorded baseline ==="
+          python3 scripts/check_output_diff_gate.py /tmp/strict_gate_output.txt
+
       - name: Upload strict-gate log
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2

@@ -69,6 +69,7 @@ Every active gate is wired into a workflow job, a pre-commit (manual) hook, or i
 | `check_runner_routing_policy.py` | `FLUXION_LINUX_RUNNER` trust-boundary on PR triggers (#3445 / #3531) | scripts-tests.yml |
 | `check_scorecard_data_sources_consistent.py` | SCORECARD headline figures consistent across `performance_history.latest.json` vs. `ASHRAE140_RESULTS.md` (#3535) | run locally before regenerating SCORECARD.md (enforced by `.github/workflows/scorecard-source-consistency.yml`; wired by Issue #4123) |
 | `check_strict_energy_gate_regression.py` | Strict ±15% ASHRAE 140 annual-energy tolerance regression (#2506 / #3572) | `.github/workflows/physics-pr.yml` (job: "ASHRAE 140 Strict Energy Gate (Issue #1333)") |
+| `check_output_diff_gate.py` | Release-over-release output-diff gate — every reported strict-battery value diffed against `data/reference/ashrae140/output_diff_baseline.csv` at 0.1% relative epsilon; fail-closed on drift, metric-set change or parse failure; `--update-baseline` re-records with dated provenance (#4281) | `.github/workflows/physics-pr.yml` (strict-energy-gate) |
 | `check_ashrae140_weather.py` | Canonical-weather provenance gate (round 41) — sha256-verified DRYCOLD 725650 + informative Tsky before the strict/fabric suites; fetch via `fetch_ashrae140_weather.py`, convert via `convert_tmy3_to_epw.py` | `physics-pr.yml` (strict-energy-gate), `ashrae_140_fabric.yml` |
 | `check_stub_modules.py` | Stub-module detector — future-extraction marker files (#2896) | architecture_drift.yml |
 | `check_tdqs_regression.py` | TDQS (Temporal Decision Quality Score) criterion-bench regression | tdqs_regression.yml |
@@ -90,6 +91,7 @@ Every active gate is wired into a workflow job, a pre-commit (manual) hook, or i
 | `check_nextest_doc_drift.py` | Fail when a documented nextest command does not appear in any workflow (#4177) | scripts-tests.yml |
 | `check_npm_pinning.py` | Deterministic npm install gate: exact-pinned deps + lockfile + `npm ci` | scripts-tests.yml |
 | `check_strict_energy_gate_regression.py` | Strict ±15% ASHRAE 140 energy-gate regression checker (#2506) | physics-pr.yml |
+| `check_output_diff_gate.py` | Release-over-release output-diff gate — reported values vs committed baseline at 0.1% epsilon, fail-closed (#4281) | physics-pr.yml |
 | `check_workflow_pin.py` | Fail on non-SHA-pinned `uses:` in `.github/workflows/*.yml` (#3475) | scripts-tests.yml |
 
 ---
@@ -266,6 +268,7 @@ Runs in `python-tests.yml` (Python 3.10–3.13 matrix, coverage via `scripts/pyt
 | `test_check_root_md_policy.py` | `check_root_md_policy.py` (back-compat alias) |
 | `test_check_rumqttc_upstream.py` | `check_rumqttc_upstream.py` (#2853) |
 | `test_check_strict_energy_gate_regression.py` | `check_strict_energy_gate_regression.py` (#1333, #2506) |
+| `test_check_output_diff_gate.py` | `check_output_diff_gate.py` (#4281) |
 | `test_check_stub_modules.py` | `check_stub_modules.py` (#2896) |
 | `test_check_tdqs_regression.py` | `check_tdqs_regression.py` |
 | `test_check_test_inventory_drift.py` | `check_test_inventory_drift.py` (#3442) |
