@@ -1,0 +1,44 @@
+# ADR-0025 Option C — beta-soak Criterion 4 tracked-cohort baseline.
+# Decision: Alex, 2026-10-18 (Option C: hard tier + drift-checked tracked tier).
+# recorded_from: beecc3d63c41713af721a96316d74a6fd49668b6 (develop at record time)
+# recorded_at: 2026-10-18 (physics loop round 63, local alex-system)
+# route: cargo test --locked -p fluxion --features gauge-solver --test all_tests ashrae_140_case_600_series:: -- --nocapture
+#   (identical to the nightly workflow's Criterion 4 step plus --nocapture; --nocapture
+#    is added so the measured values below are parseable from the nightly's log)
+# weather: canonical DRYCOLD.TMY725650TY per assets/weather/ashrae140 (CI-faithful restore)
+# epsilon: 0.001 relative (the Issue #4281 output-diff gate epsilon)
+# NOT borrowed from the strict-gate baseline: this cohort is measured in the gauge-solver
+# build (round-61 finding — the soak cohort and the strict-gate cohort do not coincide).
+# Membership is machine-checked by scripts/check_beta_soak_criterion4.py against the log;
+# a test leaves the tracked cohort only by passing (re-pin required), never by drift.
+test_name,metric,measured_value,unit
+ashrae_140_case_600_series::case_600ff::test_max_temperature,max_free_float_temp,43.93,degC
+ashrae_140_case_600_series::case_630::test_annual_heating,annual_heating,29.23,MWh
+ashrae_140_case_600_series::case_630::test_annual_cooling,annual_cooling,6.44,MWh
+ashrae_140_case_600_series::case_630::test_peak_cooling,peak_cooling,13.43,kW
+ashrae_140_case_600_series::case_640::test_annual_cooling,annual_cooling,6.83,MWh
+ashrae_140_case_600_series::case_650::test_annual_cooling,annual_cooling,3.85,MWh
+ashrae_140_case_600_series::case_650::test_peak_cooling,peak_cooling,14.57,kW
+ashrae_140_case_600_series::case_650ff::test_min_temperature,min_free_float_temp,-17.89,degC
+ashrae_140_case_600_series::case_650ff::test_max_temperature,max_free_float_temp,43.33,degC
+# --- hard tier (ADR-0025 Option C): recorded state of the 15 executed/ignored
+# non-tracked members. Any deviation (a 'pass' regressing, a quarantined test
+# executing) is fail-closed. Generated from the same record-time run.
+hard,ashrae_140_case_600_series::case_600ff::test_min_temperature,pass
+hard,ashrae_140_case_600_series::case_650::test_annual_heating_near_zero,pass
+hard,ashrae_140_case_600_series::free_float_hvac_guard::builders_match_free_float_classification,pass
+hard,ashrae_140_case_600_series::free_float_hvac_guard::case_600ff_zero_hvac_energy,pass
+hard,ashrae_140_case_600_series::free_float_hvac_guard::case_650ff_zero_hvac_energy,pass
+hard,ashrae_140_case_600_series::test_case_640_hourly_peak_week_diagnostic,pass
+hard,ashrae_140_case_600_series::case_610::test_annual_heating,ignored
+hard,ashrae_140_case_600_series::case_610::test_annual_cooling,ignored
+hard,ashrae_140_case_600_series::case_610::test_peak_heating,ignored
+hard,ashrae_140_case_600_series::case_610::test_peak_cooling,ignored
+hard,ashrae_140_case_600_series::case_620::test_annual_heating,ignored
+hard,ashrae_140_case_600_series::case_620::test_annual_cooling,ignored
+hard,ashrae_140_case_600_series::case_620::test_peak_heating,ignored
+hard,ashrae_140_case_600_series::case_620::test_peak_cooling,ignored
+hard,ashrae_140_case_600_series::case_630::test_peak_heating,ignored
+hard,ashrae_140_case_600_series::case_640::test_annual_heating,ignored
+hard,ashrae_140_case_600_series::case_640::test_peak_heating,ignored
+hard,ashrae_140_case_600_series::case_640::test_peak_cooling,ignored
