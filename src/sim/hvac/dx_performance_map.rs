@@ -83,7 +83,6 @@ struct AriRatingPoint {
     #[serde(rename = "adjusted_net_total_capacity_W")]
     adjusted_net_total_capacity_w: f64,
     #[serde(rename = "compressor_power_W")]
-    #[allow(dead_code)]
     compressor_power_w: f64,
     #[serde(rename = "COP")]
     cop: f64,
@@ -113,7 +112,6 @@ struct CeCell {
     #[serde(rename = "compressor_power_kW")]
     compressor_power_kw: f64,
     #[serde(rename = "apparatus_dew_point_C")]
-    #[allow(dead_code)]
     apparatus_dew_point_c: f64,
 }
 
@@ -137,6 +135,8 @@ pub struct DxMapEvaluation {
     pub sensible_capacity_w: f64,
     /// Sensible heat ratio at the entering conditions (map-derived).
     pub shr: f64,
+    /// Apparatus dew point at this operating point [°C] (map-interpolated).
+    pub apparatus_dew_point_c: f64,
     /// Compressor power [W].
     pub compressor_power_w: f64,
     /// Indoor fan heat consistent with this evaluation's basis [W].
@@ -283,6 +283,7 @@ impl CePerformanceMap {
         let total_kw = self.interpolate_scalar(table, odb_c, ewb_c, |c| c.total_capacity_kw);
         let sensible_kw = self.interpolate_sensible(table, odb_c, ewb_c, edb_c);
         let power_kw = self.interpolate_scalar(table, odb_c, ewb_c, |c| c.compressor_power_kw);
+        let adp_c = self.interpolate_scalar(table, odb_c, ewb_c, |c| c.apparatus_dew_point_c);
         // The map's dry-coil rule: where sensible exceeds total the coil is
         // dry and total capacity equals sensible capacity.
         let (total_kw, sensible_kw) = if sensible_kw > total_kw {
@@ -303,6 +304,7 @@ impl CePerformanceMap {
             } else {
                 1.0
             },
+            apparatus_dew_point_c: adp_c,
             compressor_power_w: compressor_w,
             fan_heat_w,
             cop: if compressor_w + fan_heat_w > 0.0 {
@@ -326,6 +328,11 @@ impl CePerformanceMap {
             self.ari_rating_point.adjusted_net_total_capacity_w,
             self.ari_rating_point.cop,
         )
+    }
+
+    /// The AHRI rating point's transcribed compressor power [W] (1858 W).
+    pub fn ari_compressor_power_w(&self) -> f64 {
+        self.ari_rating_point.compressor_power_w
     }
 
     /// Manufacturer-default indoor fan heat (329 W).
@@ -399,6 +406,8 @@ mod tests {
         assert_eq!(e.compressor_power_w, 1620.0);
         // SHR at entering conditions from the map itself.
         assert!((e.shr - 6.21 / 7.09).abs() < 1e-12);
+        // Apparatus dew point reproduced from the table at the node.
+        assert_eq!(e.apparatus_dew_point_c, 8.9);
     }
 
     #[test]
@@ -409,6 +418,7 @@ mod tests {
         assert_eq!(net, 7852.0);
         assert_eq!(adjusted_net, 7951.0);
         assert!((cop - 3.62).abs() < 1e-12);
+        assert_eq!(m.ari_compressor_power_w(), 1858.0);
         // net = gross - 329 W manufacturer default; adjusted = gross - 230 W.
         assert!((gross - net - m.fan_heat_default_w()).abs() < 1e-9);
         assert!((gross - adjusted_net - m.fan_heat_actual_w()).abs() < 1e-9);
