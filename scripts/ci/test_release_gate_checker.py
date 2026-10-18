@@ -698,22 +698,20 @@ def test_main_returns_zero_on_clean_config(checker, tmp_path, monkeypatch, capsy
     (tmp_path / "conformance_section6.csv").write_text(
         "case,status\nWD100,conformant\nWD600,incomplete\n"
     )
-    # GC10a closed-form anchor + a fluxion measurement inside ±0.5%.
-    (tmp_path / "analytical_criteria.json").write_text(
-        json.dumps(
-            {
-                "section_8_ground_coupled": {
-                    "analytical_solution": {"value": 2433.0}
-                }
-            }
-        )
-    )
+    # GC10a closed-form anchor + a fluxion measurement inside ±0.5%, plus the
+    # §11 QASv2 block the gate now requires (#4274).
+    _q11_criteria, _q11_results = _qas11_criteria_and_results(None)
+    _q11_criteria["section_8_ground_coupled"] = {
+        "analytical_solution": {"value": 2433.0}
+    }
+    (tmp_path / "analytical_criteria.json").write_text(json.dumps(_q11_criteria))
     (tmp_path / "analytical_results.json").write_text(
         json.dumps(
             {
                 "section_8_ground_coupled": {
                     "gc10a_steady_state_floor_conduction_w": 2430.0
-                }
+                },
+                **_q11_results,
             }
         )
     )
@@ -1177,21 +1175,74 @@ def test_check_analytical_gates_fail_closed_without_results(checker, tmp_path):
     assert "fails" in results.message or "not yet met" in results.message
 
 
+def _qas11_criteria_and_results(results: dict) -> tuple[dict, dict]:
+    """§11 QASv2 fixtures matching the real gate contract (#4274): the
+    criteria carry the published case-1 workbook values and the results carry
+    a `section_11_airside` block that reproduces them."""
+    criteria = {
+        "section_11_airside": {
+            "case_1_reference_outputs": {
+                "FC": {"heating_coil": 28729, "cooling_total": 0},
+                "SZ": {"heating_coil": 28525, "cooling_total": 0},
+                "CAV": {
+                    "preheat_coil": 10056,
+                    "zone1_reheat": 26317,
+                    "zone2_reheat": 28624,
+                    "total_heat": 64997,
+                    "cooling_total": 0,
+                },
+                "VAV": {
+                    "preheat_coil": 35008,
+                    "zone1_reheat": 15353,
+                    "zone2_reheat": 16642,
+                    "total_heat": 67002,
+                    "cooling_total": 0,
+                },
+            }
+        }
+    }
+    section11 = {
+        "section_11_airside": {
+            "case_1": {
+                "FC": {"heating_coil": 28728.6, "cooling_total": 0.0},
+                "SZ": {"heating_coil": 28525.0, "cooling_total": 0.0},
+                "CAV": {
+                    "preheat_coil": 10055.6,
+                    "zone1_reheat": 26317.4,
+                    "zone2_reheat": 28624.1,
+                    "total_heat": 64997.1,
+                    "cooling_total": 0.0,
+                },
+                "VAV": {
+                    "preheat_coil": 35007.5,
+                    "zone1_reheat": 15352.5,
+                    "zone2_reheat": 16641.8,
+                    "total_heat": 67001.9,
+                    "cooling_total": 0.0,
+                },
+            }
+        }
+    }
+    if results is not None:
+        results.update(section11)
+    return criteria, results
+
+
 def test_check_analytical_gates_within_tolerance_passes(checker, tmp_path):
-    (tmp_path / "criteria.json").write_text(
-        json.dumps(
-            {"section_8_ground_coupled": {"analytical_solution": {"value": 2433.0}}}
-        )
+    criteria_extra, results = _qas11_criteria_and_results(
+        {"section_8_ground_coupled": {"gc10a_steady_state_floor_conduction_w": 2432.0}}
     )
-    (tmp_path / "results.json").write_text(
+    (tmp_path / "criteria.json").write_text(
         json.dumps(
             {
                 "section_8_ground_coupled": {
-                    "gc10a_steady_state_floor_conduction_w": 2432.0
-                }
+                    "analytical_solution": {"value": 2433.0}
+                },
+                **criteria_extra,
             }
         )
     )
+    (tmp_path / "results.json").write_text(json.dumps(results))
     rg = _make_checker(
         checker,
         tmp_path,
