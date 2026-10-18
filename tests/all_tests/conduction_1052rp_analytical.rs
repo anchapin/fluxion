@@ -952,11 +952,24 @@ fn ctf_stays_within_linear_envelope() {
             run.phi - g.zoh3600_phi,
             phi_env
         );
-        let mean_rel = (run.mean - g.qbar).abs() / g.qbar;
+        // Film-corrected mean target. The CTF golden constants carry the
+        // ASHRAE 140 default films (R_SI = 0.125, R_SE = 0.044) baked into
+        // compute_state_space_ctf, while this run uses THIS test's films
+        // (H_INT = 8.3, H_EXT = 18.3) — the same mismatch the DC probe
+        // above corrects for. For a linear wall the steady-periodic mean
+        // must equal U*dT at the run's own films (superposition), so the
+        // target is the film-corrected DC conductance, not the golden
+        // qbar. Comparing against the raw golden qbar over-pinned the
+        // heavy wall by −2.1 % (the suite's first-ever completed CI run,
+        // 2026-10-18, caught it; the engine's mean matches U*dT at the
+        // test films to ~1e-5 relative).
+        let r_layers_ctf = 1.0 / g.u - 0.125 - 0.044;
+        let mean_target = 8.0 / (r_layers_ctf + 1.0 / H_INT + 1.0 / H_EXT);
+        let mean_rel = (run.mean - mean_target).abs() / mean_target;
         assert!(
             mean_rel < mean_env,
-            "{wall}: CTF mean err {:+.4}% exceeds {:.0}% envelope",
-            100.0 * (run.mean - g.qbar) / g.qbar,
+            "{wall}: CTF mean err {:+.4}% exceeds {:.0}% envelope (film-corrected target {mean_target:.5})",
+            100.0 * (run.mean - mean_target) / mean_target,
             100.0 * mean_env
         );
     }
