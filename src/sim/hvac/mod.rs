@@ -10,6 +10,7 @@ pub mod cooling_coil;
 pub mod cycling;
 pub mod dhw;
 pub mod doas;
+pub mod dx_performance_map;
 pub mod economizer;
 pub mod efficiency_curves;
 pub mod equipment;
@@ -41,6 +42,7 @@ pub use cooling_coil::{CoilPerformance, CoolingCoil, CoolingCoilBehavior};
 pub use cycling::CyclingTracker;
 pub use dhw::{DHWResult, DHWTank, HeatingSource};
 pub use doas::{Doas, DoasControl, DoasMode, DoasPerformance, DoasUnit};
+pub use dx_performance_map::{CePerformanceMap, CeTable, DxMapEvaluation};
 pub use economizer::{calculate_free_cooling_capacity, is_economizer_active, EconomizerMode};
 pub use efficiency_curves::{
     default_ahri_coefficients, CurveCoefficients, EfficiencyCurve, EfficiencyCurveConfig,
