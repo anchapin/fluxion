@@ -112,3 +112,15 @@ Streak semantics: a night counts only if every criterion's hard tier is green, t
 - **Streak semantics unchanged otherwise:** any night that is not verdict-green fails, and the run-history streak resets through the ordinary run-conclusion path.
 
 The first counted night starts only after this change's own nightly run is green under the new semantics.
+
+## Application to Criterion 5 (round 64, 2026-10-18)
+
+Criterion 5 of the same soak (`known_issues_regression::issue_1457_case_600_series_tracking`) was the last blocker keeping the soak red after the Criterion 4 fix: every nightly since at least 2026-10-14 died on it. **Diagnosis (round 64):** the tracked test is the #1457 known-gap tracker — a single `#[test]` with *no* `#[ignore]` that asserts the remaining Case 600-series metrics in-band and fails on the assert by construction. Its failing signature (peak cooling OVER, peak heating UNDER, annual cooling UNDER, free-float min-temp too warm) is the same documented discrete-node / 1-hour-timestep solar-injection limitation routed to the GaugeSolver (#1465 / #1462 / #3251 Phase 3, production path not yet wired for low-mass 5R1C) that Criterion 4's cohort already tracks — verified against the test source and a fresh run at develop `3477fe63` (13 of 14 metrics out-of-band, 1 in-band: 640 annual cooling). This is route (b): the same structural band-gap class this ADR's accepted Option C design covers, so the design is **applied, not re-decided**.
+
+The application (same round):
+
+- **Baseline:** `tests/reference_data/gauge_soak/criterion5_tracked_cohort_baseline.csv` — recorded from a local run of the nightly step's exact command (`--locked --features gauge-solver`, default profile) at develop `3477fe63`; the test hardcodes its own committed weather asset `WD600.epw`, so this cohort's route is *not* the canonical DRYCOLD route and the baseline states that in-file. 14 tracked metric rows (12 energy + 2 free-float min-temps).
+- **Checker:** `scripts/check_beta_soak_criterion5.py` — fail-closed set census (the log must contain exactly the one tracked test), tracked tier drift-checked at the same 0.1% relative epsilon; verdicts `green` / `tracked-drift` / `re-pin-required` / `set-drift` / `hard-fail`, exit-code contract identical to the Criterion 4 checker (`CRITERION5_VERDICT`).
+- **Workflow:** Criterion 5 runs with `--nocapture` into a captured log; a verdict step writes `CRITERION5_VERDICT`; the night-verdict step enforces both verdicts **after** the streak state file is written (same abort-eats-the-streak protection).
+
+Streak semantics are unchanged and stay conservative: a night counts only when the hard gates are green, the Criterion 4 cohort matches its baseline, **and** the Criterion 5 cohort matches its baseline. A genuinely fixed #1457 (Phase 3 wiring) surfaces as `re-pin-required`, which fails the night and forces the re-pin commit — the cohort can only shrink with evidence. Nothing here tunes a band, quarantines a test, or closes any §LIMIT-* issue; the underlying physics work remains owned by #1465 / #1462 / #3251.

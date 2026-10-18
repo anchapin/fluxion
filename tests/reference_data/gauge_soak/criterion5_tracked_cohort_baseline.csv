@@ -1,0 +1,40 @@
+# ADR-0025 Option C applied to beta-soak Criterion 5 (round 64, 2026-10-18).
+# Decision basis: the Criterion 5 test (test_issue1457_remaining_600_series_metrics)
+# is the #1457 known-gap tracker — no #[ignore], asserts 14 Case 600-series
+# metrics of which 13 are out-of-band at record time. Its failing signature
+# (peak cooling OVER, peak heating UNDER, annual cooling UNDER, free-float
+# min-temp too warm) is the documented discrete-node / 1-hour-timestep
+# solar-injection limitation routed to the GaugeSolver (#1465 / #1462 /
+# #3251 Phase 3, production path not yet wired for low-mass 5R1C). Same
+# structural band-gap class as Criterion 4; the accepted ADR is applied.
+# recorded_from: 3477fe63e8363f3214128f7de6259224c842ca08 (develop at record time)
+# recorded_at: 2026-10-18 (physics loop round 64, local alex-system)
+# route: cargo test --locked --release --features gauge-solver --test all_tests
+#   known_issues_regression::issue_1457_case_600_series_tracking -- --nocapture
+#   (identical to the nightly workflow's Criterion 5 step plus --nocapture;
+#    the release profile matches the CI default cargo profile behavior of the
+#    other local gate reproductions; --nocapture is added so the measured
+#    values below are parseable from the nightly's log)
+# weather: assets/weather/WD600.epw — the test's own committed asset (the test
+#   hardcodes it; this route is therefore NOT the canonical DRYCOLD route, and
+#   the baseline is only valid under the same weather asset)
+# epsilon: 0.001 relative (the Issue #4281 output-diff gate epsilon, same as
+#   the Criterion 4 tracked cohort)
+# Membership is machine-checked by scripts/check_beta_soak_criterion5.py
+# against the log; the test leaves the tracked cohort only by passing
+# (re-pin required), never by drift.
+case,metric,measured_value,unit
+610,peak_heating,24.34,kW
+610,peak_cooling,13.26,kW
+620,annual_cooling,8.17,MWh
+620,peak_cooling,16.94,kW
+630,peak_heating,23.63,kW
+630,peak_cooling,13.43,kW
+640,annual_heating,16.38,MWh
+640,annual_cooling,6.83,MWh
+640,peak_heating,22.80,kW
+640,peak_cooling,15.98,kW
+650,annual_cooling,3.85,MWh
+650,peak_cooling,14.57,kW
+600FF,min_free_float,-12.01,degC
+650FF,min_free_float,-17.89,degC

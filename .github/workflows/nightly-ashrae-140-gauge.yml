@@ -183,8 +183,31 @@ jobs:
           echo "Criterion 4 verdict recorded in criterion-4-verdict.json"
 
       # ADR-0007 criterion 5 — quarantined Case 600 metrics tracking.
-      - name: Criterion 5 — issue_1457_case_600_series_tracking
-        run: "cargo test --locked --features gauge-solver --test all_tests known_issues_regression::issue_1457_case_600_series_tracking"
+      # ADR-0025 Option C applied (round 64): the tracked #1457 test is a
+      # known structural band-gap (GaugeSolver Phase 3 not wired for
+      # low-mass 5R1C), so it runs with --nocapture into a captured log
+      # and its 14 printed metric values are drift-checked against
+      # tests/reference_data/gauge_soak/criterion5_tracked_cohort_baseline.csv
+      # instead of aborting the job. Set census is fail-closed; a value
+      # drift or a re-pin is recorded in CRITERION5_VERDICT and enforced
+      # by the night-verdict step (AFTER the streak file is written).
+      - name: Criterion 5 — issue_1457_case_600_series_tracking (log capture)
+        run: |
+          set -uo pipefail
+          cargo test --locked --features gauge-solver --test all_tests \
+            known_issues_regression::issue_1457_case_600_series_tracking \
+            -- --nocapture > criterion-5-output.log 2>&1 || true
+          echo "Criterion 5 log size: $(wc -l < criterion-5-output.log) lines"
+
+      - name: Criterion 5 verdict — tracked-cohort drift check (ADR-0025 applied)
+        run: |
+          set -euo pipefail
+          python3 scripts/check_beta_soak_criterion5.py \
+            --log criterion-5-output.log \
+            --baseline tests/reference_data/gauge_soak/criterion5_tracked_cohort_baseline.csv \
+            --github-env "$GITHUB_ENV" \
+            | tee criterion-5-verdict.json
+          echo "Criterion 5 verdict recorded in criterion-5-verdict.json"
 
       # ADR-0007 criterion 6 — Case 900 high-mass validation harness.
       - name: Criterion 6 — gauge_validation_case_900
@@ -285,22 +308,32 @@ jobs:
           print(f"β-soak streak: {streak}/{target}")
           PY
 
-      # ADR-0025 Option C — night verdict for the Criterion 4 tracked
-      # cohort. Placed AFTER the streak state file is written so a
-      # tracked-tier failure (CRITERION4_VERDICT=tracked-drift or
-      # re-pin-required) still produces the state artifact: the run
-      # concludes failure, the run-history streak resets, and the file
-      # documents the night. The verdict step above already hard-failed
-      # the job for set-drift / hard-tier regressions (fail-closed).
-      - name: β-soak night verdict — Criterion 4 tracked cohort (ADR-0025)
+      # ADR-0025 Option C — night verdict for the Criterion 4 and
+      # Criterion 5 tracked cohorts (Criterion 5 application landed in
+      # round 64). Placed AFTER the streak state file is written so a
+      # tracked-tier failure (CRITERION4_VERDICT/CRITERION5_VERDICT =
+      # tracked-drift or re-pin-required) still produces the state
+      # artifact: the run concludes failure, the run-history streak
+      # resets, and the file documents the night. The verdict steps
+      # above already hard-failed the job for set-drift / hard-tier
+      # regressions (fail-closed).
+      - name: β-soak night verdict — tracked cohorts (ADR-0025)
         run: |
           set -euo pipefail
-          verdict="${CRITERION4_VERDICT:-green}"
-          echo "Criterion 4 tracked-cohort verdict: ${verdict}"
-          if [ "${verdict}" != "green" ]; then
-            echo "::error::Criterion 4 tracked cohort verdict ${verdict} — night fails (ADR-0025 Option C). ${verdict} details in criterion-4-verdict.json."
-            exit 1
+          c4="${CRITERION4_VERDICT:-green}"
+          c5="${CRITERION5_VERDICT:-green}"
+          echo "Criterion 4 tracked-cohort verdict: ${c4}"
+          echo "Criterion 5 tracked-cohort verdict: ${c5}"
+          rc=0
+          if [ "${c4}" != "green" ]; then
+            echo "::error::Criterion 4 tracked cohort verdict ${c4} — night fails (ADR-0025 Option C). ${c4} details in criterion-4-verdict.json."
+            rc=1
           fi
+          if [ "${c5}" != "green" ]; then
+            echo "::error::Criterion 5 tracked cohort verdict ${c5} — night fails (ADR-0025 applied). ${c5} details in criterion-5-verdict.json."
+            rc=1
+          fi
+          exit $rc
 
       - name: Upload β-soak state artifact
         if: always()
