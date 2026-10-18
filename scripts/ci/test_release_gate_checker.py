@@ -700,21 +700,14 @@ def test_main_returns_zero_on_clean_config(checker, tmp_path, monkeypatch, capsy
     )
     # GC10a closed-form anchor + a fluxion measurement inside ±0.5%, plus the
     # §11 QASv2 block the gate now requires (#4274).
-    _q11_criteria, _q11_results = _qas11_criteria_and_results(None)
+    _q11_criteria, _q11_results = _qas11_criteria_and_results(
+        {"section_8_ground_coupled": {"gc10a_steady_state_floor_conduction_w": 2430.0}}
+    )
     _q11_criteria["section_8_ground_coupled"] = {
         "analytical_solution": {"value": 2433.0}
     }
     (tmp_path / "analytical_criteria.json").write_text(json.dumps(_q11_criteria))
-    (tmp_path / "analytical_results.json").write_text(
-        json.dumps(
-            {
-                "section_8_ground_coupled": {
-                    "gc10a_steady_state_floor_conduction_w": 2430.0
-                },
-                **_q11_results,
-            }
-        )
-    )
+    (tmp_path / "analytical_results.json").write_text(json.dumps(_q11_results))
 
     def fake_yaml_load(stream):
         if hasattr(stream, "name") and "release_gates.yaml" in str(stream.name):
