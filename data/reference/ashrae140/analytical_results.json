@@ -9,5 +9,52 @@
     "relative_residual": 9.992e-10,
     "mesh": {"fine_cell_m": 0.1, "far_field_m": 50, "ground_depth_m": 25},
     "source": "Addendum a to ANSI/ASHRAE Standard 140-2011, Table 5-29 and Annex B11-1/B11-2 (Delsante, Stokes and Walsh 1983)"
+  },
+ "section_11_airside": {
+  "method": "QASv2 quasi-analytical solution reimplementation (Issue #4274); economizer off, no return-duct heat gain; iterative solve, max 200 iterations, convergence 1e-5",
+  "case_1_anchor_check": "13/13 published QASv2.xlsm case-1 values reproduced within 0.5% (13 mismatch lines absent)",
+  "case_1": {
+   "oadb_f": -20.20, "oadp_f": -20.20000, "oadp_derived_from_wetbulb": false,
+   "FC": {"heating_coil": 28728.6, "preheat_coil": 0.0, "zone1_reheat": 0.0, "zone2_reheat": 0.0, "total_reheat": 0.0, "total_heat": 0.0, "cooling_total": 0.0, "cooling_sensible": 0.0, "cooling_latent": 0.0, "mixed_air_temp": 39.2061, "return_air_temp": 0.0000, "supply_air_temp": 85.8599, "zone1_supply_temp": 0.0000, "zone2_supply_temp": 0.0000},
+   "SZ": {"heating_coil": 28525.2, "preheat_coil": 0.0, "zone1_reheat": 0.0, "zone2_reheat": 0.0, "total_reheat": 0.0, "total_heat": 0.0, "cooling_total": 0.0, "cooling_sensible": 0.0, "cooling_latent": 0.0, "mixed_air_temp": 39.5287, "return_air_temp": 70.4898, "supply_air_temp": 85.8599, "zone1_supply_temp": 0.0000, "zone2_supply_temp": 0.0000},
+   "CAV": {"heating_coil": 0.0, "preheat_coil": 10055.6, "zone1_reheat": 26317.4, "zone2_reheat": 28624.1, "total_reheat": 54941.5, "total_heat": 64997.1, "cooling_total": 0.0, "cooling_sensible": 0.0, "cooling_latent": 0.0, "mixed_air_temp": 38.1769, "return_air_temp": 0.0000, "supply_air_temp": 46.0109, "zone1_supply_temp": 84.7016, "zone2_supply_temp": 82.0811},
+   "VAV": {"heating_coil": 0.0, "preheat_coil": 35007.5, "zone1_reheat": 15352.5, "zone2_reheat": 16641.8, "total_reheat": 31994.4, "total_heat": 67001.9, "cooling_total": 0.0, "cooling_sensible": 0.0, "cooling_latent": 0.0, "mixed_air_temp": -20.2000, "return_air_temp": 0.0000, "supply_air_temp": 45.1343, "zone1_supply_temp": 116.4560, "zone2_supply_temp": 96.8703}
+  },
+  "case_2": {
+   "oadb_f": 30.02, "oadp_f": -35.62083, "oadp_derived_from_wetbulb": true,
+   "FC": {"heating_coil": 10116.7, "preheat_coil": 0.0, "zone1_reheat": 0.0, "zone2_reheat": 0.0, "total_reheat": 0.0, "total_heat": 0.0, "cooling_total": 0.0, "cooling_sensible": 0.0, "cooling_latent": 0.0, "mixed_air_temp": 57.3370, "return_air_temp": 0.0000, "supply_air_temp": 74.1037, "zone1_supply_temp": 0.0000, "zone2_supply_temp": 0.0000},
+   "SZ": {"heating_coil": 9890.3, "preheat_coil": 0.0, "zone1_reheat": 0.0, "zone2_reheat": 0.0, "total_reheat": 0.0, "total_heat": 0.0, "cooling_total": 0.0, "cooling_sensible": 0.0, "cooling_latent": 0.0, "mixed_air_temp": 57.6884, "return_air_temp": 71.5271, "supply_air_temp": 74.1037, "zone1_supply_temp": 0.0000, "zone2_supply_temp": 0.0000},
+   "CAV": {"heating_coil": 0.0, "preheat_coil": 0.0, "zone1_reheat": 12692.7, "zone2_reheat": 13034.1, "total_reheat": 25726.8, "total_heat": 25726.8, "cooling_total": 4158.5, "cooling_sensible": 4158.5, "cooling_latent": 0.0, "mixed_air_temp": 56.8431, "return_air_temp": 0.0000, "supply_air_temp": 55.0000, "zone1_supply_temp": 73.9927, "zone2_supply_temp": 71.7174},
+   "VAV": {"heating_coil": 0.0, "preheat_coil": 8027.7, "zone1_reheat": 7557.2, "zone2_reheat": 7946.5, "total_reheat": 15503.6, "total_heat": 23531.3, "cooling_total": 0.0, "cooling_sensible": 0.0, "cooling_latent": 0.0, "mixed_air_temp": 30.0200, "return_air_temp": 0.0000, "supply_air_temp": 45.1338, "zone1_supply_temp": 80.3091, "zone2_supply_temp": 69.8852}
+  },
+  "case_3": {
+   "oadb_f": 59.90, "oadp_f": 26.60000, "oadp_derived_from_wetbulb": false,
+   "FC": {"heating_coil": 0.0, "preheat_coil": 0.0, "zone1_reheat": 0.0, "zone2_reheat": 0.0, "total_reheat": 0.0, "total_heat": 0.0, "cooling_total": 2673.4, "cooling_sensible": 2673.4, "cooling_latent": 0.0, "mixed_air_temp": 69.3933, "return_air_temp": 0.0000, "supply_air_temp": 66.3585, "zone1_supply_temp": 0.0000, "zone2_supply_temp": 0.0000},
+   "SZ": {"heating_coil": 0.0, "preheat_coil": 0.0, "zone1_reheat": 0.0, "zone2_reheat": 0.0, "total_reheat": 0.0, "total_heat": 0.0, "cooling_total": 2921.3, "cooling_sensible": 2921.3, "cooling_latent": 0.0, "mixed_air_temp": 69.7722, "return_air_temp": 74.5627, "supply_air_temp": 66.3585, "zone1_supply_temp": 0.0000, "zone2_supply_temp": 0.0000},
+   "CAV": {"heating_coil": 0.0, "preheat_coil": 0.0, "zone1_reheat": 7706.1, "zone2_reheat": 8384.2, "total_reheat": 16090.4, "total_heat": 16090.4, "cooling_total": 22982.3, "cooling_sensible": 22982.3, "cooling_latent": 0.0, "mixed_air_temp": 69.8332, "return_air_temp": 0.0000, "supply_air_temp": 55.0000, "zone1_supply_temp": 66.5233, "zone2_supply_temp": 65.7462},
+   "VAV": {"heating_coil": 0.0, "preheat_coil": 0.0, "zone1_reheat": 0.0, "zone2_reheat": 0.0, "total_reheat": 0.0, "total_heat": 0.0, "cooling_total": 4975.0, "cooling_sensible": 4975.0, "cooling_latent": 0.0, "mixed_air_temp": 62.5195, "return_air_temp": 0.0000, "supply_air_temp": 55.0000, "zone1_supply_temp": 55.0000, "zone2_supply_temp": 55.0000}
+  },
+  "case_4": {
+   "oadb_f": 80.42, "oadp_f": 71.78000, "oadp_derived_from_wetbulb": false,
+   "FC": {"heating_coil": 0.0, "preheat_coil": 0.0, "zone1_reheat": 0.0, "zone2_reheat": 0.0, "total_reheat": 0.0, "total_heat": 0.0, "cooling_total": 18940.2, "cooling_sensible": 11930.6, "cooling_latent": 7009.6, "mixed_air_temp": 76.7621, "return_air_temp": 0.0000, "supply_air_temp": 59.9259, "zone1_supply_temp": 0.0000, "zone2_supply_temp": 0.0000},
+   "SZ": {"heating_coil": 0.0, "preheat_coil": 0.0, "zone1_reheat": 0.0, "zone2_reheat": 0.0, "total_reheat": 0.0, "total_heat": 0.0, "cooling_total": 19204.2, "cooling_sensible": 12194.6, "cooling_latent": 7009.6, "mixed_air_temp": 77.1583, "return_air_temp": 75.5871, "supply_air_temp": 59.9259, "zone1_supply_temp": 0.0000, "zone2_supply_temp": 0.0000},
+   "CAV": {"heating_coil": 0.0, "preheat_coil": 0.0, "zone1_reheat": 3389.4, "zone2_reheat": 5183.0, "total_reheat": 8572.4, "total_heat": 8572.4, "cooling_total": 56568.1, "cooling_sensible": 35213.8, "cooling_latent": 21354.3, "mixed_air_temp": 78.0318, "return_air_temp": 0.0000, "supply_air_temp": 55.0000, "zone1_supply_temp": 60.0628, "zone2_supply_temp": 61.6360},
+   "VAV": {"heating_coil": 0.0, "preheat_coil": 0.0, "zone1_reheat": 0.0, "zone2_reheat": 0.0, "total_reheat": 0.0, "total_heat": 0.0, "cooling_total": 45460.6, "cooling_sensible": 25246.4, "cooling_latent": 20214.2, "mixed_air_temp": 78.3066, "return_air_temp": 0.0000, "supply_air_temp": 55.0000, "zone1_supply_temp": 55.0000, "zone2_supply_temp": 55.0000}
+  },
+  "case_5": {
+   "oadb_f": 76.82, "oadp_f": 36.32000, "oadp_derived_from_wetbulb": false,
+   "FC": {"heating_coil": 0.0, "preheat_coil": 0.0, "zone1_reheat": 0.0, "zone2_reheat": 0.0, "total_reheat": 0.0, "total_heat": 0.0, "cooling_total": 6290.7, "cooling_sensible": 6290.7, "cooling_latent": 0.0, "mixed_air_temp": 74.9213, "return_air_temp": 0.0000, "supply_air_temp": 66.3612, "zone1_supply_temp": 0.0000, "zone2_supply_temp": 0.0000},
+   "SZ": {"heating_coil": 0.0, "preheat_coil": 0.0, "zone1_reheat": 0.0, "zone2_reheat": 0.0, "total_reheat": 0.0, "total_heat": 0.0, "cooling_total": 6538.6, "cooling_sensible": 6538.6, "cooling_latent": 0.0, "mixed_air_temp": 75.3001, "return_air_temp": 74.5625, "supply_air_temp": 66.3612, "zone1_supply_temp": 0.0000, "zone2_supply_temp": 0.0000},
+   "CAV": {"heating_coil": 0.0, "preheat_coil": 0.0, "zone1_reheat": 7710.8, "zone2_reheat": 8390.2, "total_reheat": 16101.0, "total_heat": 16101.0, "cooling_total": 32015.7, "cooling_sensible": 32015.7, "cooling_latent": 0.0, "mixed_air_temp": 76.0599, "return_air_temp": 0.0000, "supply_air_temp": 55.0000, "zone1_supply_temp": 66.5260, "zone2_supply_temp": 65.7500},
+   "VAV": {"heating_coil": 0.0, "preheat_coil": 0.0, "zone1_reheat": 0.0, "zone2_reheat": 0.0, "total_reheat": 0.0, "total_heat": 0.0, "cooling_total": 13997.6, "cooling_sensible": 13997.6, "cooling_latent": 0.0, "mixed_air_temp": 76.5275, "return_air_temp": 0.0000, "supply_air_temp": 55.0000, "zone1_supply_temp": 55.0000, "zone2_supply_temp": 55.0000}
+  },
+  "case_6": {
+   "oadb_f": 73.40, "oadp_f": 69.62000, "oadp_derived_from_wetbulb": false,
+   "FC": {"heating_coil": 0.0, "preheat_coil": 0.0, "zone1_reheat": 0.0, "zone2_reheat": 0.0, "total_reheat": 0.0, "total_heat": 0.0, "cooling_total": 8885.6, "cooling_sensible": 5574.5, "cooling_latent": 3311.1, "mixed_air_temp": 73.8031, "return_air_temp": 0.0000, "supply_air_temp": 66.3743, "zone1_supply_temp": 0.0000, "zone2_supply_temp": 0.0000},
+   "SZ": {"heating_coil": 0.0, "preheat_coil": 0.0, "zone1_reheat": 0.0, "zone2_reheat": 0.0, "total_reheat": 0.0, "total_heat": 0.0, "cooling_total": 9133.5, "cooling_sensible": 5822.4, "cooling_latent": 3311.1, "mixed_air_temp": 74.1803, "return_air_temp": 74.5615, "supply_air_temp": 66.3743, "zone1_supply_temp": 0.0000, "zone2_supply_temp": 0.0000},
+   "CAV": {"heating_coil": 0.0, "preheat_coil": 0.0, "zone1_reheat": 7719.9, "zone2_reheat": 8402.0, "total_reheat": 16121.8, "total_heat": 16121.8, "cooling_total": 49013.1, "cooling_sensible": 30440.1, "cooling_latent": 18573.0, "mixed_air_temp": 74.7935, "return_air_temp": 0.0000, "supply_air_temp": 55.0000, "zone1_supply_temp": 66.5314, "zone2_supply_temp": 65.7573},
+   "VAV": {"heating_coil": 0.0, "preheat_coil": 0.0, "zone1_reheat": 0.0, "zone2_reheat": 0.0, "total_reheat": 0.0, "total_heat": 0.0, "cooling_total": 28059.2, "cooling_sensible": 12404.5, "cooling_latent": 15654.7, "mixed_air_temp": 73.6907, "return_air_temp": 0.0000, "supply_air_temp": 55.0000, "zone1_supply_temp": 55.0000, "zone2_supply_temp": 55.0000}
   }
+ },
+ "_section_11_source": "QASv2.xlsm via Standard 140-2023 Informative Annex B17 Section B17.3.2; inputs and anchors recorded in data/reference/ashrae140/analytical_acceptance_criteria.json (section_11_airside); published case-1 outputs are the only workbook-verified values; cases 2-6 are model outputs pending a workbook cross-check"
 }

@@ -147,6 +147,8 @@ pub mod multi_node;
 pub mod parser_limits;
 pub mod per_surface_conduction;
 pub mod physics_constants;
+/// §11 air-side QASv2 quasi-analytical solution (Issue #4274).
+pub mod qas_airside;
 pub mod tensor;
 pub mod urban_radiation;
 pub mod weather;
