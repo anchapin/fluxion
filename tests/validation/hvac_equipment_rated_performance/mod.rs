@@ -24,3 +24,4 @@ mod comparative;
 mod ha00x;
 mod reference_data;
 mod runner;
+mod section9_ce;
