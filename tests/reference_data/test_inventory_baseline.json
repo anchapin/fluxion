@@ -73,14 +73,14 @@
     "lib_tests": 4254,
     "test_binaries": 56,
     "workspace_ignored": 163,
-    "workspace_tests": 8886
+    "workspace_tests": 8893
   },
   "metrics_ast": {
     "lib_ignored": 8,
     "lib_tests": 4254,
     "test_binaries": 56,
     "workspace_ignored": 163,
-    "workspace_tests": 8886
+    "workspace_tests": 8893
   },
   "ratchet": {
     "BASELINE_LIB_IGNORED": 9,
@@ -102,8 +102,8 @@
     "workspace_integration_ignored": 143,
     "workspace_integration_tests": 3497,
     "workspace_lib_ignored": 20,
-    "workspace_lib_tests": 5389,
-    "workspace_tests": 8886
+    "workspace_lib_tests": 5396,
+    "workspace_tests": 8893
   },
   "provenance": null
 }
