@@ -512,7 +512,7 @@ _CFG_TEST_BODY_RE = re.compile(
 # vector_norm, transpose, francis_qr_schur, implicit_double_shift_bulge_chase,
 # matrix_exponential_old_pade, matrix_exponential_taylor, matrix_norm_inf).
 # Reduced from 43 to 32.
-BASELINE_DEAD_CODE_ALLOWS = 32
+BASELINE_DEAD_CODE_ALLOWS = 28  # 2026-10-18 (loop round 63, #4296 part 2): 32 -> 28 — dx_performance_map.rs ships its map data live (apparatus_dew_point_c field on DxMapEvaluation, ari_compressor_power_w accessor) instead of allow(dead_code); -4 accumulated dead suppressions retired.
 
 # ---------------------------------------------------------------------------
 # Wired-but-dead disposition registry (Issue #3748).

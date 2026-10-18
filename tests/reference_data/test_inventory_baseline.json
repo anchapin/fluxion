@@ -70,14 +70,14 @@
   "captured_from": "tests/test_inventory.json",
   "metrics": {
     "lib_ignored": 8,
-    "lib_tests": 4254,
+    "lib_tests": 4262,
     "test_binaries": 56,
     "workspace_ignored": 163,
     "workspace_tests": 8896
   },
   "metrics_ast": {
     "lib_ignored": 8,
-    "lib_tests": 4254,
+    "lib_tests": 4262,
     "test_binaries": 56,
     "workspace_ignored": 163,
     "workspace_tests": 8896
