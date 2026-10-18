@@ -429,7 +429,10 @@ pub fn run_section7_case(def: &Section7CaseDef) -> Result<Section7CaseResult, St
     // the west window; 6.2.1.5.1 (Case 630) annual transmitted through
     // the shaded west window with overhang and vertical fins.
     let case_req: Option<(&'static str, Orientation)> = match def.case_id {
-        "610" => Some(("req_6213_shaded_south_transmitted_kwh_m2", Orientation::South)),
+        "610" => Some((
+            "req_6213_shaded_south_transmitted_kwh_m2",
+            Orientation::South,
+        )),
         "620" => Some(("req_6214_west_transmitted_kwh_m2", Orientation::West)),
         "630" => Some(("req_6215_shaded_west_transmitted_kwh_m2", Orientation::West)),
         _ => None,
@@ -1324,8 +1327,7 @@ fn section621_outputs_shape_and_cases() {
             r.req_6214_west_transmitted_kwh_m2,
             r.req_6215_shaded_west_transmitted_kwh_m2,
         ];
-        let expected_some: [bool; 3] =
-            [r.case_id == "610", r.case_id == "620", r.case_id == "630"];
+        let expected_some: [bool; 3] = [r.case_id == "610", r.case_id == "620", r.case_id == "630"];
         for (v, want) in reqs.iter().zip(expected_some.iter()) {
             assert_eq!(
                 v.is_some(),
@@ -1334,7 +1336,11 @@ fn section621_outputs_shape_and_cases() {
                 r.case_id
             );
             if let Some(v) = v {
-                assert!(v.is_finite() && *v >= 0.0, "{}: transmitted kWh/m²", r.case_id);
+                assert!(
+                    v.is_finite() && *v >= 0.0,
+                    "{}: transmitted kWh/m²",
+                    r.case_id
+                );
             }
         }
         match &r.sun_zone {
@@ -1344,8 +1350,7 @@ fn section621_outputs_shape_and_cases() {
                 assert!(s.mean_temp_c.is_finite());
                 assert!(s.min_index <= 8759 && s.max_index <= 8759);
                 assert!(
-                    s.min_temp_c <= s.mean_temp_c + 1e-9
-                        && s.mean_temp_c <= s.max_temp_c + 1e-9,
+                    s.min_temp_c <= s.mean_temp_c + 1e-9 && s.mean_temp_c <= s.max_temp_c + 1e-9,
                     "960: sun-zone min ≤ mean ≤ max"
                 );
             }
@@ -1401,11 +1406,16 @@ fn section621_value_pins() {
     // (630 vs 620).
     let ref_south = by_id("600").annual_transmitted_south_kwh_m2;
     assert!(
-        by_id("610").req_6213_shaded_south_transmitted_kwh_m2.unwrap() < ref_south,
+        by_id("610")
+            .req_6213_shaded_south_transmitted_kwh_m2
+            .unwrap()
+            < ref_south,
         "610 shaded south must be below the unshaded {ref_south} reference"
     );
     assert!(
-        by_id("630").req_6215_shaded_west_transmitted_kwh_m2.unwrap()
+        by_id("630")
+            .req_6215_shaded_west_transmitted_kwh_m2
+            .unwrap()
             < by_id("620").req_6214_west_transmitted_kwh_m2.unwrap(),
         "630 shaded west must be below 620 unshaded west"
     );

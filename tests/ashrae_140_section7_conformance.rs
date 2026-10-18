@@ -481,9 +481,13 @@ fn evaluate(req: &str, r: &Section7CsvRow) -> &'static str {
         // companion CSV carries the case-window annual transmitted solar
         // (6.2.1.3.1 shaded south / 6.2.1.4.1 unshaded west / 6.2.1.5.1
         // shaded west, kWh/m²), so a finite non-negative value reports.
-        "6.2.1.3" => r.req_6213_shaded_south.map_or(false, |v| v.is_finite() && v >= 0.0),
+        "6.2.1.3" => r
+            .req_6213_shaded_south
+            .map_or(false, |v| v.is_finite() && v >= 0.0),
         "6.2.1.4" => r.req_6214_west.map_or(false, |v| v.is_finite() && v >= 0.0),
-        "6.2.1.5" => r.req_6215_shaded_west.map_or(false, |v| v.is_finite() && v >= 0.0),
+        "6.2.1.5" => r
+            .req_6215_shaded_west
+            .map_or(false, |v| v.is_finite() && v >= 0.0),
         // 6.2.1.6 free-float temps (occurrence as 8760 index). Case 960
         // (round 62): the requirement is sun-zone-only (5.2.2.2.7.7.b) and
         // the companion CSV carries the sun zone (spec zone index 1)
@@ -497,9 +501,10 @@ fn evaluate(req: &str, r: &Section7CsvRow) -> &'static str {
                 ];
                 let idxs = [r.sun_zone_min_index, r.sun_zone_max_index];
                 return if temps.iter().all(|v| v.map_or(false, |x| x.is_finite()))
-                    && idxs.iter().all(|v| {
-                        v.map_or(false, |x| (0.0..=8759.0).contains(&x))
-                    }) {
+                    && idxs
+                        .iter()
+                        .all(|v| v.map_or(false, |x| (0.0..=8759.0).contains(&x)))
+                {
                     "report"
                 } else {
                     "missing"
