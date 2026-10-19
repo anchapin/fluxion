@@ -1143,6 +1143,38 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .copy_from_slice(scratch.air_node_corrected.as_ref());
         }
 
+        // Issue #4495: input-envelope guard. Extreme-but-finite inputs
+        // (|T_outdoor| ≳ ~1e306 °C, dt ≳ ~1e29 s) overflow the f64
+        // conductance × driving-temperature products in the network
+        // numerator, so the air-node advance below can be ±inf even though
+        // every input passed the finite/dt>0 checks. Without this guard the
+        // non-finite value propagates into the committed zone state
+        // (`mass.air_temperatures`, `setpoints.temperatures`) and corrupts
+        // every subsequent step. Same graceful-degradation contract as the
+        // Issue #3638 degenerate-dt/cm validation: typed `Validation` error,
+        // state left untouched; the legacy `step_physics` wrapper logs and
+        // returns 0.0 kWh for the step. Inputs far outside the solver's
+        // finite envelope are *rejected*, never clamped — no silent tuning.
+        for (i, &t) in scratch
+            .air_node_t_air
+            .as_ref()
+            .iter()
+            .enumerate()
+            .take(self.0.hvac.num_zones)
+        {
+            if !t.is_finite() {
+                // Issue #4495 rejection path must restore the pooled scratch
+                // (Issue #2756 contract): a leaked checkout empties the pool
+                // and the next step re-allocates (scratch_pool reuse gate).
+                self.0.hvac.scratch_pool.return_5r1c(scratch);
+                return Err(FluxionError::Validation(format!(
+                    "Air-node temperature became non-finite ({t}) for zone {i}: \
+                     the step's inputs are outside the solver's finite envelope \
+                     (issue #4495); step rejected, state untouched"
+                )));
+            }
+        }
+
         // After all sub-steps, air_node_t_air holds the final air-node
         // temperature and air_node_solar_lag holds the final solar-lag state.
         // Issue #3370: wrap the scratch SmallVec directly via `from_smallvec`
@@ -2041,6 +2073,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             };
 
             scratch.new_mass[i] = tm_new;
+        }
+
+        // Issue #4495: same input-envelope guard for the mass node — the
+        // Crank–Nicolson / implicit-Euler numerator multiplies conductances
+        // by the (possibly extreme) sol-air and outdoor driving temperatures,
+        // so the mass advance can overflow to ±inf for the same inputs. Must
+        // run before the mass-state commit below so a rejected step leaves
+        // the state untouched.
+        for (i, &t) in scratch.new_mass.iter().enumerate() {
+            if !t.is_finite() {
+                // Same pooled-scratch restoration as the air-node guard above.
+                self.0.hvac.scratch_pool.return_5r1c(scratch);
+                return Err(FluxionError::Validation(format!(
+                    "Mass-node temperature became non-finite ({t}) for zone {i}: \
+                     the step's inputs are outside the solver's finite envelope \
+                     (issue #4495); step rejected, state untouched"
+                )));
+            }
         }
 
         // Update the mass temperatures with new values (convert Vec to T type)
