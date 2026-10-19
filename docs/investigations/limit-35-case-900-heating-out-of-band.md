@@ -3298,3 +3298,92 @@ REGRESSES 0.851 → 0.995 MWh (gap 17.94 → 37.58 pp) — Case 195 is the degen
 no-window/no-ventilation configuration whose air–mass coupling rides the H_tr,3 = 0
 fallback branch, and the per-class series rewrites that coupling. Any default-flip design
 must resolve the 195 arm or carve the degenerate configuration explicitly. Default builds
+
+---
+
+## §56 — Round 70 (#3983 third increment): t_s-advance-first per-surface physics + Option A degenerate arm (harness, scratch, default build bit-identical)
+
+**Premise verified before coding.** Round 68's discriminator battery found the
+`FLX_R68_BEAM_PHIST` arm byte-identical and diagnosed why: every real construction
+capacitance selects Crank–Nicolson, and `crank_nicolson_iso13790` consumes `t_i` only —
+the per-class algebraic surface node `t_s_c` computed in the round-67 arm is dropped by
+the production mass advance. The interior per-surface network has real dynamic order in
+its *parameters* but zero dynamic order in its *execution*: `phi_st_c` partitions are
+inert on the production route. Separately, Alex directed (round 70) Option A for the
+degenerate zones (per-class `h_tr_ms`/`h_tr_3` fallback, no disk-space carve-out) and the
+t_s-consuming per-surface physics as the D5 requirement.
+
+**The harness** (`scratch/round70-ts-advance` on the round-68 branch @ `3546924c`, two
+env-gated layers, engine default untouched, commit noted in the branch):
+
+1. `FLX_R68_DEGEN_LUMPED` measured (Option A, already coded in the round-68 arm): a
+   degenerate zone (H_tr,3 = 0 fallback) advances all three classes with the lumped
+   `h_air_mass·w` interior coupling instead of the per-class series pair. Cross-check:
+   battery (R66+R67+R68_DEGEN) reproduces every §55 number exactly on the non-degenerate
+   family (600 H 5.813, 610 H 6.392, 620 H 6.997, 630 H 7.607, 650 C 4.024, 600FF
+   −12.69/55.61, 650FF −18.65/54.64) and lands the Case 195 discriminator on the round-68
+   predicted pair: H 2.142 → 1.717 MWh, C 0.995 → 0.769 MWh (gap 2.9 pp above band —
+   195 cooling returns nearly to its round-66 value 0.851). High-mass family
+   byte-identical. **Option A is validated: the degenerate carve-out recovers the 195
+   regression the per-class series introduced, at zero cost elsewhere.**
+
+2. `FLX_R70_TS_ADVANCE` (requires `FLX_R67_INTERIOR`) gives the per-class surface node a
+   step of real dynamics: it is advanced FIRST by backward Euler on its own heat balance
+   `C_s,dT_s/dt = h_is_c·(t_i − t_s) + h_ms_c·(t_m − t_s) + phi_st_c` — consuming its own
+   previous state — and the class mass advance then consumes that `t_s` (BE form, so
+   `t_s` actually binds; CN's `t_i`-only formulation is structurally incapable). Surface
+   state is stored per zone/class (`mass.r70_surface_node_temperatures`), initialized at
+   the algebraic value. Disclosed structural assumption, harness-only, not tuned to any
+   benchmark: `C_s_c = 0.1·cm_c` (interior surface layer ≈ 10 % of construction
+   capacitance). ISO 13790's own 5R1C keeps the surface node algebraic (§C.3); this arm
+   is a deliberate structural extension toward the #1522 dynamic-order requirement, not
+   an ISO conformance change.
+
+**Cross-validation.** Flag off: canonical gate metrics bit-identical to the round-start
+baseline `76dcabc9` — 13 PASS / 29 KNOWN-FAIL / 0 REGRESSION, all pins exact (900FF
+−0.26/43.28; 650FF −18.71/54.37; 950FF −15.67/38.78), output-diff 42/42. Battery with
+both new arms: high-mass family (900/810/910/920/930/940/950/960/970) and 900FF/950FF
+byte-identical to the flag-off run — the modified 5R1C advance is not on their path.
+
+**Measured effect of the t_s-first advance** (§55 record → +Option A → +t_s advance,
+MWh; gaps in pp of band midpoint; +beam column = `FLX_R68_BEAM_PHIST` on top):
+
+| Case | H (band) | H gap | C gap | FF peaks |
+|---|---|---|---|---|
+| 600 | 5.813 → 4.959 | 21.8 → **1.7** | PASS (5.045 → 5.489) | Tmin −12.69 → −11.39 PASS; Tmax 55.61 → 55.90 (14.72 → 13.15) |
+| 610 | 6.392 → 5.665 | 32.7 → 15.9 | −16.2 → −10.4 (improves) | — |
+| 620 | 6.997 → 6.460 | 43.8 → 31.6 | PASS | — |
+| 630 | 7.607 → 7.158 | 45.2 → 35.8 | PASS | — |
+| 640 | 3.448 → 2.859 | 20.6 → **PASS** | PASS | — |
+| 800 | 6.127 → 5.210 | 3.9 → **PASS** | 993.9 → 1118.7 (structural, worsens) | — |
+| 195 | 1.717 → 2.683 | −42.9 → −19.3 (improves) | **+2.9 → +71.9 (regresses hard)** | — |
+| 650 | — | — | **PASS → −5.2 (leaves band low)** | Tmin −18.65 → −18.51 (7.84 → 7.19, improves); Tmax 54.64 → 53.41 (10.06 → 12.04, worsens) |
+
+**D-b answered (phi_st beam-weighting re-measure).** With the t_s-consuming advance the
+beam-weighting arm is live for the first time: batteries B and C differ everywhere the
+t_s arm moved (600 H 4.959 → 4.970, 640 H 2.859 → 2.867, 600FF Tmax 55.90 → 55.94,
+650FF Tmax 53.41 → 53.47; ≤ 0.2 % annual, ≤ 0.06 K peaks). Round 68's byte-identical
+result was the CN route, not a property of beam weighting. The beam/area question is
+now measurable but second-order; the interior surface-node dynamics are first-order.
+
+**#1522 bidirectional criterion (2c).** The signature sought: free-float peaks move in
+opposite directions from a per-surface increment (Tmin up, Tmax down — spreading).
+Measured: 600FF Tmin +1.30 K AND Tmax +0.29 K (both warmer); 650FF Tmin +0.14 K (warmer,
+toward band) AND Tmax −1.23 K (cooler — the only opposing pair, and it moves Tmax away
+from band). Verdict: the t_s surface node adds storage and phase lag on the interior
+side, which warms the night trough — the dominant remaining direction is consistent with
+the §53 verdict that the 650FF Tmax floor is the 600FF-family structural gap, not
+sol-partitioning. **The #1522 bidirectional signature is not demonstrated by this
+harness either.** The unblocking path per the closed #1522 LIMIT-05 diagnosis stands:
+true air-node capacitance with sub-timestep integration (C_air is stored but the 5R1C
+step remains quasi-steady on the air node) plus a surface network on ALL surfaces, not
+the three construction classes. The measured LEVER, though, is unambiguous: the
+t_s-advance moves Case 600 heating within 1.7 pp of band — the single largest step of
+the #3983 program (round 66 ≤ 1 %, round 67 −5 pp, this arm −20 pp).
+
+**Disclosed residuals, not tuned:** 195 cooling +71.9 pp and 650 cooling −5.2 pp leave
+band under the t_s arm; 800 cooling and 650FF Tmax worsen; the §LIMIT-28 standing
+residuals persist. Any default-flip design must combine Option A (validated above) with
+the t_s arm and re-adjudicate 195/650, and faces Alex's standing fidelity-first call
+only if it regresses the canonical gate — these are scratch numbers, default builds are
+untouched (bit-identical, verified above). Scratch branch not merged.
