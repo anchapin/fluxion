@@ -101,16 +101,23 @@ mod issue_1457_case_600_series_tracking {
 
     /// One quarantined guard covering all 14 currently-failing #1457 metrics.
     ///
-    /// **UN-IGNORE BLOCKED**: This test is quarantined because:
-    /// 1. GaugeZoneSolver is only initialized for high-mass (9R4C) models
-    /// 2. Case 600 is a low-mass (5R1C) model, so GaugeZoneSolver is not used
-    /// 3. GaugeSolver (via PhysicsAdapter) is not wired into ThermalModel production path
-    ///
-    /// To un-ignore this test, Phase 3 (A7) must be completed:
-    /// - Wire GaugeZoneSolver into ThermalModel::step_physics for ALL cases (not just 9R4C)
-    /// - Or wire PhysicsAdapter as the primary solver
-    ///
-    /// See issue #3251 Phase 3 for the full production switchover plan.
+    /// **UN-IGNORE BLOCKED (round-65 audit, 2026-10-19 — supersedes the stale
+    /// "not wired / high-mass only" wording below):**
+    /// 1. The gauge production arm exists only under the `gauge-solver` feature;
+    ///    the default build's selector is the explicit legacy `FiveROneC`
+    ///    (ADR-0017 D4), and the unconditional default flip is gated on the
+    ///    #3986 teacher-validation verdict (closed = infrastructure shipped,
+    ///    not a passing flip verdict).
+    /// 2. Wiring the gauge arm into the low-mass default path is NOT the fix:
+    ///    recorded measurements (KNOWN_ISSUES §LIMIT-21, rounds 9–14) put the
+    ///    gauge arm further from band on every 600-series metric (600 gauge
+    ///    H/C 28.635/5.715 MWh vs legacy 6.758/4.301), and the #3817 bypass
+    ///    stays pending the engine-semantics deferral.
+    /// 3. The routed physics owner of this signature is #3983 (per-surface
+    ///    multi-node conduction with distributed solar), the ADR-0017 D5
+    ///    conduction-phase step replacing the lumped mass node (#1522).
+    ///    See docs/adr/0025-beta-soak-criterion4-tracked-cohort.md §
+    ///    "Round 65 (2026-10-19): Phase-3 premise audit".
     #[test]
     fn test_issue1457_remaining_600_series_metrics() {
         // (case, metric, band_lo, band_hi)
