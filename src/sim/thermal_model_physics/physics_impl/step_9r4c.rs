@@ -1455,6 +1455,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
                 scratch.new_mass[i] = tm_new;
             }
+            // Issue #4495: input-envelope guard — extreme-but-finite driving
+            // temperatures (|T| ≳ ~1e306 °C) overflow the f64 conductance ×
+            // temperature products in the backward-Euler numerator, so the
+            // mass advance can be ±inf even though every input passed the
+            // finite checks. Reject the step and leave the state untouched
+            // (no mass commit). `step_physics_9r4c` returns f64 (the typed
+            // envelope lives one level up in `try_step_physics`), so the
+            // rejection mirrors the legacy `step_physics` degradation
+            // contract (Issue #3638): log + 0.0 kWh for the step.
+            for (i, &t) in scratch.new_mass.iter().enumerate() {
+                if !t.is_finite() {
+                    log::error!(
+                        "physics step rejected (issue #4495): mass-node temperature \
+                         non-finite ({t}) for zone {i} — inputs outside the solver's \
+                         finite envelope; step degraded to 0.0 kWh, state untouched"
+                    );
+                    self.0.hvac.scratch_pool.return_9r4c(scratch);
+                    return 0.0;
+                }
+            }
             let new_mass_temps_vf: T =
                 VectorField::from_smallvec(std::mem::take(&mut scratch.new_mass)).into();
             self.0.mass.previous_mass_temperatures =
@@ -1475,6 +1495,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // its own dynamics but no longer drives the high-mass air temperature.
         // Low-mass free-float is unchanged.
         if self.0.hvac.free_float {
+            // Issue #4495: input-envelope guard — reject before committing a
+            // non-finite multi-node air temperature (same contract as the
+            // mass-node guard above: log + 0.0 kWh, state untouched).
+            for (i, &t) in t_i_free_mn.as_ref().iter().enumerate() {
+                if !t.is_finite() {
+                    log::error!(
+                        "physics step rejected (issue #4495): zone air temperature \
+                         non-finite ({t}) for zone {i} — inputs outside the solver's \
+                         finite envelope; step degraded to 0.0 kWh, state untouched"
+                    );
+                    self.0.hvac.scratch_pool.return_9r4c(scratch);
+                    return 0.0;
+                }
+            }
             let temps_slice = self.0.setpoints.temperatures.as_mut();
             for (i, t_val) in t_i_free_mn.as_ref().iter().enumerate() {
                 if i < temps_slice.len() {
@@ -1488,6 +1522,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Update zone temperatures with the HVAC-influenced t_i_act
+        // Issue #4495: input-envelope guard — reject before committing a
+        // non-finite controlled temperature (same contract as above).
+        for (i, &t) in t_i_act.as_ref().iter().enumerate() {
+            if !t.is_finite() {
+                log::error!(
+                    "physics step rejected (issue #4495): controlled zone temperature \
+                     non-finite ({t}) for zone {i} — inputs outside the solver's \
+                     finite envelope; step degraded to 0.0 kWh, state untouched"
+                );
+                self.0.hvac.scratch_pool.return_9r4c(scratch);
+                return 0.0;
+            }
+        }
         let temps_slice = self.0.setpoints.temperatures.as_mut();
         for (i, t_val) in t_i_act.as_ref().iter().enumerate() {
             if i < temps_slice.len() {
