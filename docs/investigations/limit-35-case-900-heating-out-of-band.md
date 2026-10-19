@@ -3169,6 +3169,8 @@ flow, with Tmax 37.8..38.8 °C. This closes the free-float decomposition program
 round-41 canonical-weather binding opened: every strict-gate free-float residual now has
 a measured attribution (§52 gauge path, §53 legacy cohort).
 
+are bit-identical this round; the default-flip decision stays Alex's.
+
 ## §54 — Round 66: the #3983 first increment — per-surface vs lumped-mass harness on the low-mass cohort (2026-10-18)
 
 ADR-0017 D5's next step is #3983 (per-surface multi-node conduction with distributed
@@ -3230,3 +3232,69 @@ Nothing tuned; no engine number moved (default builds bit-identical, flag off);
 scratch not merged. Next increment: per-surface interior film/surface-network coupling
 in the same harness before any DAE-side design is committed.
 
+
+## §55 — Round 67: the #3983 second increment — per-surface interior film/surface coupling on the low-mass cohort (2026-10-19)
+
+Round 66 (§54) established the D5 design constraint: the missing dynamic order must live
+in the per-surface *interior* film/surface network, since the per-surface *exterior* split
+with the interior re-aggregated moved ≤ 1 % annually and ≤ 0.07 K on peaks. This round
+extends the same env-gated harness to the interior side and measures it. Premise verified
+before coding against #3983 (multi-node per-surface conduction with distributed solar;
+fix must add dynamic order, not adjust parameters), the round-13 finding (doc §26:
+interior-film/surface-network coupling is the dominant lumped-path lever — h_tr_is ×2
+recovers 1.26 K of the 3.58 K FD-off term — while the ISO 13790 star-node `h_tr_is`
+semantics stay the audited reference), and ISO 13790's own structure: the 5R1C lumped
+`h_ms = h_ms_coeff × A_m` is itself a reduction of a per-element network, so the
+per-surface form is the primary formulation, not a new parameter.
+
+**The harness** (`FLX_R67_INTERIOR`, layered on `FLX_R66_PER_SURFACE`, commit `a2772db8`,
+scratch branch `scratch/round67-per-surface-interior`, engine default untouched): each
+surface class now advances with its own interior pair — its real construction mass
+conductance `h_ms_c` (`h_tr_ms_wall/roof/floor`, the half-insulation physics values the
+model already computes for every zone) and its own film `h_is_c = h_tr_is × w_c`
+(`w_c` = opaque-area share; the film coefficient per m² is the same for every surface),
+its real construction capacitance `cm_c` (`cm_wall/roof/floor`), and its own algebraic
+surface node `t_s_c = (h_ms_c·T_m + h_is_c·T_i + phi_st_c)/(h_ms_c + h_is_c)`;
+`phi_st_c = phi_st × w_c` and `phi_m_c = phi_m × w_c` (solar partition unchanged from
+round 66). `thermal_model_core` stores the per-class vectors for ALL construction types
+when the flag is set — the values are already computed unconditionally; only the 9R4C
+storage gate changes. The zone-level mass temperature read is the capacitance-weighted
+mean of the class nodes (energy-conserving); the exterior per-class driving is round 66's
+unchanged. Integration reuses the production BE/EE/CN selectors and
+`crank_nicolson_iso13790` unchanged.
+
+**Cross-validation.** Flag off: canonical gate metrics bit-identical to `b768397b` —
+13 PASS / 29 KNOWN-FAIL / 0 REGRESSION; 900FF −0.26/43.28; 650FF −18.71/54.37;
+950FF −15.67/38.78; 600FF −13.05/55.26; output-diff 42/42. `FLX_R66_PER_SURFACE` alone
+reproduces §54's numbers exactly in this tree (600 H 6.020, 640 H/C 3.619/4.966). With
+both flags, high-mass cases (900/810/910/920/930/940/950/960/970) are byte-identical —
+they do not route the modified 5R1C mass advance.
+
+**Measured effect of the per-surface interior coupling** (round-66 harness → +interior,
+MWh; strict-gate gaps in pp of band midpoint):
+
+| Case | H (band) | H gap | C (band) | C gap |
+|---|---|---|---|---|
+| 600 | 6.020 → 5.813 | 26.69 → 21.82 | 4.979 → 5.045 | PASS → PASS |
+| 610 | 6.587 → 6.392 | 37.17 → 32.66 | 2.940 → 2.925 | 15.81 → 16.17 |
+| 620 | 7.151 → 6.997 | 47.29 → 43.80 | 4.057 → 4.050 | PASS → PASS |
+| 630 | 7.745 → 7.607 | 48.13 → 45.22 | 2.977 → 2.932 | PASS → PASS |
+| 640 | 3.619 → 3.448 | 27.34 → 20.61 | 4.966 → 5.027 | PASS → PASS |
+| 650 | — | — | 3.972 → 4.024 | PASS → PASS |
+| 195 | 1.809 → 2.142 | 40.70 → 32.54 | 0.851 → 0.995 | 15.49 → 37.58 REGRESSION |
+| 800 | 6.302 → 6.127 | 7.26 → 3.86 | 4.173 → 4.186 | 990.46 → 993.91 |
+
+Free-float peaks (round-66 harness → +interior): 600FF Tmin −12.98 → −12.69 (PASS) /
+Tmax 55.25 → 55.61 (gap 15.52 → 14.72); 650FF Tmin −18.71 → −18.65 (gap 8.46 → 7.84) /
+Tmax 54.31 → 54.64 (gap 15.07 → 14.31); 900FF and 950FF byte-identical.
+
+**Attribution and D5 evidence.** Every low-mass HEATING metric moves toward band —
+600 H −4.9 pp, 640 H −6.7 pp, 195 H −8.2 pp, 800 H −3.4 pp — and both 600FF/650FF peak
+gaps shrink. The per-surface interior film/surface network does carry real dynamic order
+the exterior split did not: this is the positive D5 evidence round 66 lacked. It is not
+closure: 600 H remains 21.8 pp out of band and the #1522 bidirectional peak signature is
+not demonstrated by this harness. **Disclosed residual, not tuned:** Case 195 cooling
+REGRESSES 0.851 → 0.995 MWh (gap 17.94 → 37.58 pp) — Case 195 is the degenerate
+no-window/no-ventilation configuration whose air–mass coupling rides the H_tr,3 = 0
+fallback branch, and the per-class series rewrites that coupling. Any default-flip design
+must resolve the 195 arm or carve the degenerate configuration explicitly. Default builds
