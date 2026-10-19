@@ -2123,6 +2123,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             if use_r67 {
                                 let h_is_c = h_is_zone * w;
                                 let h_ms_c = cls_ms[c];
+                                // [R68 HARNESS — discriminating experiment
+                                // (scratch, loop round 68, #3983). FLX_R68_DEGEN_LUMPED
+                                // keeps the per-class interior network (t_s_c, cm_c,
+                                // h_ms_c/h_is_c surface node) but replaces the per-class
+                                // series coupling conductance with the zone-level
+                                // `h_air_mass` — the exact degenerate H_tr,3 = 0
+                                // fallback conductance the lumped path uses —
+                                // partitioned by w (Σ w = 1, energy-conserving). If
+                                // Case 195 cooling recovers toward 0.851 MWh, the
+                                // regression came through the degenerate-fallback
+                                // coupling rewrite; if it stays near 0.995, it comes
+                                // from per-surface interior coupling generally.
+                                // Non-degenerate zones are untouched.]
+                                let r68_degen_lumped =
+                                    std::env::var("FLX_R68_DEGEN_LUMPED").is_ok()
+                                        && h_tr_3_ref_2.get(i).copied().unwrap_or(0.0) <= 0.0;
                                 let (h_am_c, t_s_c) = if h_ms_c + h_is_c > 0.0 {
                                     (
                                         h_ms_c * h_is_c / (h_ms_c + h_is_c),
@@ -2132,13 +2148,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                 } else {
                                     (h_ms_c, t_i)
                                 };
+                                let h_am_eff = if r68_degen_lumped { h_air_mass * w } else { h_am_c };
                                 let cm_c = cls_cm[c];
                                 tm_w += (cm_c / cm_sum)
                                     * advance_node(
                                         cm_c,
                                         h_em_c,
                                         t_ext_c,
-                                        h_am_c,
+                                        h_am_eff,
                                         h_vent_mass_zone * w,
                                         phi_m_zone * w,
                                         t_s_c,
