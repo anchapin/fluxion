@@ -249,6 +249,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // per-surface-class nodes (wall / roof / floor) with distributed
         // sol-air driving. Off by default; bit-identical when unset.]
         let ps_enabled = std::env::var("FLX_R66_PER_SURFACE").is_ok();
+        // [R67 HARNESS — scratch, env-gated, loop round 67 (#3983 second
+        // increment). FLX_R67_INTERIOR makes the interior film/surface network
+        // per-surface too: each class couples to zone air through its own
+        // series (h_ms_c, h_is_c) with its real construction capacitance.
+        // Requires FLX_R66_PER_SURFACE; off by default, bit-identical when
+        // unset.]
+        let r67_interior = std::env::var("FLX_R67_INTERIOR").is_ok();
         let mut r66_cls: Vec<Option<([f64; 3], [f64; 3], [f64; 3])>> =
             vec![None; self.0.hvac.num_zones];
         // Issue #2873: overwrite `scratch.t_sol_air_zone` with the
@@ -2119,6 +2126,48 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 match r66_cls[i] {
                     Some((cls_g, cls_t, cls_area)) if cls_area.iter().sum::<f64>() > 1e-9 => {
                         let total_area: f64 = cls_area.iter().sum();
+                        // [R67 HARNESS — per-surface interior film/surface
+                        // network (scratch). When FLX_R67_INTERIOR is set and
+                        // the real per-class constructions are stored, each
+                        // class advances with its own series (h_ms_c, h_is_c)
+                        // interior pair, its own algebraic surface node
+                        // t_s_c = (h_ms_c·T_m + h_is_c·T_i + phi_st_c) /
+                        // (h_ms_c + h_is_c), and its real construction
+                        // capacitance cm_c; the zone-level read is the
+                        // capacitance-weighted mean (energy-conserving). The
+                        // area share w partitions h_is (same film coefficient
+                        // per m²), phi_st, phi_m and the night-vent coupling.
+                        // Without the flag the R66 form applies unchanged.]
+                        let (cls_cm, cls_ms) = if r67_interior {
+                            let cond = &self.0.conduction;
+                            let grab = |o: &Option<T>| {
+                                o.as_ref()
+                                    .and_then(|v| v.as_ref().get(i).copied())
+                            };
+                            let cm_w = grab(&cond.cm_wall);
+                            let cm_r = grab(&cond.cm_roof);
+                            let cm_f = grab(&cond.cm_floor);
+                            let ms_w = grab(&cond.h_tr_ms_wall);
+                            let ms_r = grab(&cond.h_tr_ms_roof);
+                            let ms_f = grab(&cond.h_tr_ms_floor);
+                            match (cm_w, cm_r, cm_f, ms_w, ms_r, ms_f) {
+                                (Some(a), Some(b), Some(c), Some(d), Some(e), Some(f)) => {
+                                    ([a, b, c], [d, e, f])
+                                }
+                                _ => ([cm; 3], [h_tr_ms_ref[i]; 3]),
+                            }
+                        } else {
+                            ([cm; 3], [h_tr_ms_ref[i]; 3])
+                        };
+                        let use_r67 = r67_interior
+                            && cls_cm.iter().sum::<f64>() > 1e-9
+                            && (cls_ms[0] != cls_ms[1]
+                                || cls_ms[1] != cls_ms[2]
+                                || cls_cm[0] != cls_cm[1]
+                                || cls_cm[1] != cls_cm[2]);
+                        let cm_sum: f64 = cls_cm.iter().sum();
+                        let h_is_zone = h_tr_is_ref_2.get(i).copied().unwrap_or(0.0);
+                        let phi_st_zone = phi_st_ref[i];
                         let mut tm_w = 0.0;
                         for c in 0..3 {
                             let w = cls_area[c] / total_area;
@@ -2130,17 +2179,43 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             } else {
                                 (cls_g[c], cls_t[c])
                             };
-                            tm_w += w
-                                * advance_node(
-                                    cm * w,
-                                    h_em_c,
-                                    t_ext_c,
-                                    h_air_mass * w,
-                                    h_vent_mass_zone * w,
-                                    phi_m_zone * w,
-                                    t_s,
-                                    t_i,
-                                )?;
+                            if use_r67 {
+                                let h_is_c = h_is_zone * w;
+                                let h_ms_c = cls_ms[c];
+                                let (h_am_c, t_s_c) = if h_ms_c + h_is_c > 0.0 {
+                                    (
+                                        h_ms_c * h_is_c / (h_ms_c + h_is_c),
+                                        (h_ms_c * tm_old + h_is_c * t_i + phi_st_zone * w)
+                                            / (h_ms_c + h_is_c),
+                                    )
+                                } else {
+                                    (h_ms_c, t_i)
+                                };
+                                let cm_c = cls_cm[c];
+                                tm_w += (cm_c / cm_sum)
+                                    * advance_node(
+                                        cm_c,
+                                        h_em_c,
+                                        t_ext_c,
+                                        h_am_c,
+                                        h_vent_mass_zone * w,
+                                        phi_m_zone * w,
+                                        t_s_c,
+                                        t_i,
+                                    )?;
+                            } else {
+                                tm_w += w
+                                    * advance_node(
+                                        cm * w,
+                                        h_em_c,
+                                        t_ext_c,
+                                        h_air_mass * w,
+                                        h_vent_mass_zone * w,
+                                        phi_m_zone * w,
+                                        t_s,
+                                        t_i,
+                                    )?;
+                            }
                         }
                         tm_w
                     }
