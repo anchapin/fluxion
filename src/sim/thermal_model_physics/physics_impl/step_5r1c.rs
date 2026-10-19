@@ -1642,6 +1642,33 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Per-zone energy accumulation (Issue #1288)
         // hvac_for_temp_calc: positive = heating, negative = cooling
         let hvac_vec = hvac_for_temp_calc.as_ref();
+
+        // Issue #4500: input-envelope guard on the HVAC demand itself. The
+        // ideal loads can overflow to ±inf for extreme-but-finite `dt` even
+        // though every input passed the finite checks and the #4495
+        // temperature guards passed (the demand is a conductance ×
+        // temperature-difference product whose magnitude scales with the
+        // implicit step). Check the demand and its dt product BEFORE any
+        // energy accumulation or state commit, mirroring the #4495
+        // leave-state-untouched contract.
+        {
+            // The returned/accumulated energy scales with the SUM of the
+            // zone demands, not the per-zone max — bound the product with
+            // the zone count so a multi-zone sum cannot slip past the
+            // per-zone check (issue #4500, crash-5447b7a2).
+            let w_scale = hvac_vec.iter().fold(0.0_f64, |m, &v| m.max(v.abs()));
+            let w_bound = w_scale * self.0.hvac.num_zones as f64;
+            if hvac_vec.iter().any(|&v| !v.is_finite()) || !(w_bound * dt).is_finite() {
+                self.0.hvac.scratch_pool.return_5r1c(scratch);
+                return Err(FluxionError::Validation(format!(
+                    "HVAC demand became non-finite or overflows the step energy \
+                     (max |W| = {w_scale}, dt = {dt} s): the step's inputs are \
+                     outside the solver's finite envelope (issue #4500); step \
+                     rejected, state untouched"
+                )));
+            }
+        }
+
         let zone_heating_slice = self.0.hvac.zone_heating_energy_kwh.as_mut();
         let zone_cooling_slice = self.0.hvac.zone_cooling_energy_kwh.as_mut();
         for i in 0..self.0.hvac.num_zones {
