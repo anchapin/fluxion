@@ -20,8 +20,10 @@
 //!
 //! **Invariants asserted:**
 //!   1. `step_physics` never panics for any finite or non-finite input.
-//!   2. The returned per-step energy is either finite and >= 0, or the call
-//!      is skipped because the input was non-finite (graceful).
+//!   2. The returned per-step energy is finite (it is SIGNED net HVAC
+//!      energy — heating minus cooling — so it may be negative on a
+//!      net-cooling step, issue #4500); the per-zone heating/cooling
+//!      accumulators stay finite and non-negative.
 //!   3. Zone temperatures after a step stay finite (no NaN/Inf propagation
 //!      into the thermal state, which would corrupt every subsequent step).
 
@@ -92,9 +94,11 @@ fuzz_target!(|input: SolverInput| {
         // === Invariant 1: step_physics must not panic. ===
         let energy = model.step_physics(t, outdoor_temp, dt);
 
-        // === Invariant 2: energy is finite and non-negative. ===
-        // (Energy consumption can legitimately be 0.0 in a deadband; it must
-        // never be negative because the solver clamps via `.max(0.0)`.)
+        // === Invariant 2: energy is finite, per the signed-net contract. ===
+        // `step_physics` returns SIGNED net HVAC energy (heating W*dt minus
+        // cooling W*dt — issue #4500), so a net-cooling step legitimately
+        // returns a negative value. Non-negative accounting lives in the
+        // per-zone accumulators, asserted below.
         assert!(
             energy.is_finite(),
             "step_physics returned non-finite energy at t={}: {} (outdoor={}, dt={})",
@@ -103,14 +107,24 @@ fuzz_target!(|input: SolverInput| {
             outdoor_temp,
             dt
         );
-        assert!(
-            energy >= 0.0,
-            "step_physics returned negative energy at t={}: {} (outdoor={}, dt={})",
-            t,
-            energy,
-            outdoor_temp,
-            dt
-        );
+
+        // === Invariant 2b: per-zone heating/cooling accumulators stay ===
+        // === finite and non-negative (issue #4500).                    ===
+        for (z, (&h, &c)) in model
+            .get_zone_heating_energy_kwh()
+            .iter()
+            .zip(model.get_zone_cooling_energy_kwh().iter())
+            .enumerate()
+        {
+            assert!(
+                h.is_finite() && h >= 0.0,
+                "zone {z} heating accumulator negative/non-finite at t={t}: {h}"
+            );
+            assert!(
+                c.is_finite() && c >= 0.0,
+                "zone {z} cooling accumulator negative/non-finite at t={t}: {c}"
+            );
+        }
 
         // === Invariant 3: zone temperatures stay finite after each step. ===
         for (z, &temp) in model.get_temperatures().iter().enumerate() {

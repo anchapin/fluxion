@@ -1545,6 +1545,36 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Calculate and return total HVAC output (energy)
         let hvac_output = hvac_for_temp_calc;
 
+        // Issue #4500: input-envelope guard on the HVAC demand itself — the
+        // ideal loads can overflow to ±inf for extreme-but-finite `dt` even
+        // though every input passed the finite checks and the #4495
+        // temperature guards passed. Reject before any energy accumulation
+        // or state commit. `step_physics_9r4c` returns f64 (the typed
+        // envelope lives one level up in `try_step_physics`), so the
+        // rejection mirrors the legacy `step_physics` degradation contract
+        // (Issue #3638): log + 0.0 kWh for the step, state untouched.
+        {
+            // The returned/accumulated energy scales with the SUM of the
+            // zone demands, not the per-zone max — bound the product with
+            // the zone count so a multi-zone sum cannot slip past the
+            // per-zone check (issue #4500, crash-5447b7a2).
+            let w_scale = hvac_output
+                .as_ref()
+                .iter()
+                .fold(0.0_f64, |m, &v| m.max(v.abs()));
+            let w_bound = w_scale * self.0.hvac.num_zones as f64;
+            if hvac_output.as_ref().iter().any(|&v| !v.is_finite()) || !(w_bound * dt).is_finite() {
+                log::error!(
+                    "physics step rejected (issue #4500): HVAC demand non-finite \
+                     or overflows the step energy (max |W| = {w_scale}, dt = {dt} s) \
+                     — inputs outside the solver's finite envelope; step degraded \
+                     to 0.0 kWh, state untouched"
+                );
+                self.0.hvac.scratch_pool.return_9r4c(scratch);
+                return 0.0;
+            }
+        }
+
         // Accumulate annual energy and track peak power without cloning
         let mut hvac_power_watts = 0.0;
         {

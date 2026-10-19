@@ -152,6 +152,7 @@ mod issue_2674_repro;
 mod issue_2891_outdoor_convection;
 mod issue_365_hvac_sensitivity_verification;
 mod issue_4495_zone_temp_nonfinite;
+mod issue_4500_fuzz_signed_energy;
 mod issue_900_cooling_demand;
 mod issue_925_hvac_h_coeff;
 mod known_issues_regression;

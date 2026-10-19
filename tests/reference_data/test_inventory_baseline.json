@@ -17,8 +17,8 @@
     },
     "fluxion": {
       "lib_ignored": 8,
-      "lib_tests": 4254,
-      "test_binaries": 38
+      "lib_tests": 4262,
+      "test_binaries": 40
     },
     "fluxion-behavior": {
       "lib_ignored": 0,
@@ -37,7 +37,7 @@
     },
     "fluxion-core": {
       "lib_ignored": 0,
-      "lib_tests": 474,
+      "lib_tests": 489,
       "test_binaries": 3
     },
     "fluxion-fluid": {
@@ -66,28 +66,28 @@
       "test_binaries": 1
     }
   },
-  "captured_at": "2026-10-16T00:24:37.844792+00:00",
+  "captured_at": "2026-10-19T22:21:52.784295+00:00",
   "captured_from": "tests/test_inventory.json",
   "metrics": {
     "lib_ignored": 8,
     "lib_tests": 4262,
     "test_binaries": 56,
-    "workspace_ignored": 163,
-    "workspace_tests": 8896
+    "workspace_ignored": 164,
+    "workspace_tests": 8922
   },
   "metrics_ast": {
     "lib_ignored": 8,
     "lib_tests": 4262,
     "test_binaries": 56,
-    "workspace_ignored": 163,
-    "workspace_tests": 8896
+    "workspace_ignored": 164,
+    "workspace_tests": 8922
   },
   "ratchet": {
     "BASELINE_LIB_IGNORED": 9,
-    "BASELINE_LIB_TESTS": 4254,
-    "BASELINE_TEST_BINARIES": 54,
+    "BASELINE_LIB_TESTS": 4262,
+    "BASELINE_TEST_BINARIES": 56,
     "BASELINE_WORKSPACE_IGNORED": 167,
-    "BASELINE_WORKSPACE_TESTS": 8858
+    "BASELINE_WORKSPACE_TESTS": 8922
   },
   "ratchet_drift_tolerance_abs": 25,
   "ratchet_drift_tolerance_pct": 5.0,
@@ -95,15 +95,14 @@
   "totals": {
     "doc_tests": 0,
     "lib_ignored_root": 8,
-    "lib_tests_root": 4254,
+    "lib_tests_root": 4262,
     "test_binaries": 56,
-    "test_source_files": 380,
-    "workspace_ignored": 163,
-    "workspace_integration_ignored": 143,
-    "workspace_integration_tests": 3497,
+    "test_source_files": 383,
+    "workspace_ignored": 164,
+    "workspace_integration_ignored": 144,
+    "workspace_integration_tests": 3510,
     "workspace_lib_ignored": 20,
-    "workspace_lib_tests": 5396,
-    "workspace_tests": 8896
-  },
-  "provenance": null
+    "workspace_lib_tests": 5412,
+    "workspace_tests": 8922
+  }
 }
