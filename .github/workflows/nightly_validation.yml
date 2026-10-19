@@ -86,8 +86,28 @@ jobs:
       - name: Build Fluxion with release profile
         run: cargo build --release --features python-bindings
 
-      - name: Install Python bindings
-        run: maturin develop --release
+      - name: Build & install Python bindings
+        # Issue #4486: `maturin develop` requires a virtualenv or conda env —
+        # maturin ≥1.14 refuses to install into setup-python's bare system
+        # interpreter (no VIRTUAL_ENV / CONDA_PREFIX / .venv on the runner),
+        # which failed every scheduled night since at least 2026-10-14.
+        # Mirror python-bindings.yml (#4018): `maturin build` + `pip install`
+        # the resulting wheel, then stage the compiled extension into the
+        # source `fluxion/` tree — the repo-root package shadows site-packages
+        # when the regression test shells out to `python -c "from fluxion
+        # import ..."` from the checkout. Linux-only runner, so `*.so` is the
+        # only compiled-extension form.
+        run: |
+          set -euo pipefail
+          maturin build --release --jobs 2
+          pip install --find-links ./target/wheels fluxion
+          SP="$(pip show fluxion | awk '/^Location:/{print $2}')"
+          if [ -z "$SP" ]; then
+            echo "::error::Could not determine fluxion install location via 'pip show fluxion'"
+            exit 1
+          fi
+          cp "$SP"/fluxion/*.so fluxion/
+          ls -la fluxion/*.so
 
       - name: Run comprehensive regression test
         id: regression
