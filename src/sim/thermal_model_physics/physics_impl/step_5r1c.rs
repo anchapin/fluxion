@@ -244,18 +244,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // every case whose outermost layer keeps the default 0.9 emissivity
         // (600-660, 900-960) is bit-identical to the previous behaviour.
         let eps_ext_default = SolAirTemperature::ashrae_140_default().emissivity;
-        // [R66 HARNESS — scratch, env-gated, loop round 66 (#3983 measurement).
-        // FLX_R66_PER_SURFACE splits the single lumped 5R1C mass node into
-        // per-surface-class nodes (wall / roof / floor) with distributed
-        // sol-air driving. Off by default; bit-identical when unset.]
-        let ps_enabled = std::env::var("FLX_R66_PER_SURFACE").is_ok();
-        // [R67 HARNESS — scratch, env-gated, loop round 67 (#3983 second
-        // increment). FLX_R67_INTERIOR makes the interior film/surface network
-        // per-surface too: each class couples to zone air through its own
-        // series (h_ms_c, h_is_c) with its real construction capacitance.
-        // Requires FLX_R66_PER_SURFACE; off by default, bit-identical when
-        // unset.]
-        let r67_interior = std::env::var("FLX_R67_INTERIOR").is_ok();
+        // [D5 DEFAULT (loop round 71, #3983 §57, Alex-directed default flip
+        // 2026-10-19): the per-surface-class mass split (wall / roof / floor)
+        // with distributed sol-air driving is now the engine default. Measured
+        // as the FLX_R66_PER_SURFACE harness arm in rounds 66-70 and verified
+        // bit-identical flag-off through round 71 before the flip; see
+        // docs/investigations/limit-35-case-900-heating-out-of-band.md §57.]
+        let ps_enabled = true;
+        // [D5 DEFAULT (loop round 71, #3983 §57): the interior film/surface
+        // network is per-surface too: each class couples to zone air through
+        // its own series (h_ms_c, h_is_c) with its real construction
+        // capacitance. Measured as the FLX_R67_INTERIOR harness arm in rounds
+        // 67-70; verified flag-off bit-identical through round 71.]
+        let r67_interior = true;
         let mut r66_cls: Vec<Option<([f64; 3], [f64; 3], [f64; 3], [f64; 3])>> =
             vec![None; self.0.hvac.num_zones];
         // Issue #2873: overwrite `scratch.t_sol_air_zone` with the
@@ -2207,7 +2208,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         // FLX_R70_TS_ADVANCE note inside the class loop.
                         // Old values snapshot before the loop; new values
                         // written back after `tm_new` is bound.]
-                        let r70_ts_on = std::env::var("FLX_R70_TS_ADVANCE").is_ok();
+                        // [D5 DEFAULT (loop round 71, #3983 §57): the t_s-first
+                        // advance (round-70 arm, FLX_R70_TS_ADVANCE) is on: the
+                        // per-class surface node is advanced first by backward
+                        // Euler consuming its own previous state, and the class
+                        // mass advance consumes that t_s. Disclosed structural
+                        // assumption carried from the round-70 record: the
+                        // interior surface layer capacitance C_s_c = 0.1·cm_c.]
+                        let r70_ts_on = true;
                         let n_z70 = self.0.hvac.num_zones;
                         let r70_ts_old: Vec<f64> = match self
                             .0
@@ -2247,9 +2255,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                 // coupling rewrite; if it stays near 0.995, it comes
                                 // from per-surface interior coupling generally.
                                 // Non-degenerate zones are untouched.]
+                                // [D5 DEFAULT (loop round 71, #3983 §57, Option
+                                // A): a degenerate zone (H_tr,3 = 0 fallback)
+                                // advances all three classes with the
+                                // per-class-lumped h_air_mass·w interior
+                                // coupling instead of the per-class series pair.
+                                // Round-70 Option A record: recovers the Case
+                                // 195 discriminator at zero cost elsewhere;
+                                // round-71 degen+t_s battery: 195 C 1.219 →
+                                // 0.931 MWh with every other case unchanged.]
                                 let r68_degen_lumped =
-                                    std::env::var("FLX_R68_DEGEN_LUMPED").is_ok()
-                                        && h_tr_3_ref_2.get(i).copied().unwrap_or(0.0) <= 0.0;
+                                    h_tr_3_ref_2.get(i).copied().unwrap_or(0.0) <= 0.0;
                                 // Beam-weighted phi_st_c replaces the area-only
                                 // phi_st_zone*w when the R68 arm is on (see the
                                 // R68 HARNESS note above).
@@ -2274,9 +2290,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                 };
                                 let h_am_eff = if r68_degen_lumped { h_air_mass * w } else { h_am_c };
                                 let cm_c = cls_cm[c];
-                                // [R70 HARNESS — t_s-advance arm (scratch, loop
-                                // round 70, #3983 D-b). FLX_R70_TS_ADVANCE (requires
-                                // FLX_R67_INTERIOR) gives the per-class surface node
+                                // [D5 DEFAULT — t_s-first advance (loop round 71
+                                // promotion of the round-70 arm, #3983 §57). The
+                                // per-class surface node
                                 // a step of real dynamics: it is advanced FIRST by
                                 // backward Euler on its own heat balance,
                                 //   C_s·dT_s/dt = h_is_c·(t_i − T_s) + h_ms_c·(T_m − T_s)
@@ -2351,9 +2367,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                     )?;
                             }
                         }
-                        // [R70 HARNESS — write the advanced per-class
-                        // surface-node state back (see the
-                        // FLX_R70_TS_ADVANCE note). Scratch arm only.]
+                        // [D5 DEFAULT — write the advanced per-class
+                        // surface-node state back (see the t_s-first note).]
                         if r70_ts_on {
                             let mut sv = smallvec::SmallVec::new();
                             sv.extend_from_slice(&r70_ts_new);

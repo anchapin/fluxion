@@ -62,10 +62,11 @@ pub struct MassState<T: ContinuousTensor<f64>> {
 
     /// [R70 HARNESS — scratch, env-gated (loop round 70, #3983 D-b). Dynamic
     /// per-class interior surface-node state `t_s_c` (wall/roof/floor × zone,
-    /// flat 3·num_zones) for the `FLX_R70_TS_ADVANCE` arm: the surface node is
-    /// advanced first (backward Euler, consuming its own previous state)
-    /// before the mass node, so `phi_st_c` acquires a step of real dynamics.
-    /// `None` until the first arm step initializes it algebraically.]
+    /// flat 3·num_zones) dynamic per-class interior surface-node state `t_s_c`
+    /// (wall/roof/floor × zone). D5 default since loop round 71 (#3983 §57):
+    /// the surface node is advanced first (backward Euler, consuming its own
+    /// previous state) before the mass node, so `phi_st_c` acquires a step of
+    /// real dynamics. `None` until the first step initializes it algebraically.]
     pub r70_surface_node_temperatures: Option<T>,
 }
 
