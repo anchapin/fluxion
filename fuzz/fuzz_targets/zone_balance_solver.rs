@@ -59,9 +59,17 @@ fuzz_target!(|input: SolverInput| {
     let mut model =
         fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::new(num_zones);
 
-    // Apply the fuzzer-supplied parameters. `apply_parameters` guards against
-    // swapped setpoints internally (it re-orders heating/cooling), so this
-    // must not panic even for NaN / Inf inputs.
+    // `apply_parameters` guards against swapped setpoints internally (it
+    // re-orders heating/cooling), but its documented contract PANICS on
+    // NaN / Inf parameters (dispatch_state.rs — "Use `validate_parameters()`
+    // before calling this method for graceful error handling"). Raw f64 bits
+    // from the corpus are arbitrary, so filter non-finite inputs here — the
+    // same graceful-reject pattern the outdoor_temp/dt loop below uses.
+    // Fixes the Nightly Fuzz Targets crash at dispatch_state.rs:681
+    // ("Window U-value (index 0) is NaN"), red every scheduled night.
+    if !u_value.is_finite() || !heating.is_finite() || !cooling.is_finite() {
+        return;
+    }
     model.apply_parameters(&[u_value, heating, cooling]);
 
     // Provide a non-zero internal load so the solver exercises the gains path
