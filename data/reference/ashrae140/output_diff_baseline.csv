@@ -1,29 +1,29 @@
-# repo_sha=8d0feb5945c9c429a56c787b9fb9fc01a539c28c
-# recorded_utc=2026-10-18T14:24:13Z
-# source=strict-energy-gate battery, canonical DRYCOLD, develop 8d0feb59 (/tmp/r59-base)
+# repo_sha=f8ad15c2e20be7328de4e3a736603d45c4fef057
+# recorded_utc=2026-10-19T23:10:18Z
+# source=strict-gate log r71-flip-combined.txt
 # Epsilon policy: 0.1% relative (issue #4281); intentional physics
 # changes re-record this file in the same PR via --update-baseline.
 case,metric,value,unit
-195,C,0.867000,MWh
-195,H,1.831000,MWh
-600,C,4.975000,MWh
-600,H,6.064000,MWh
-600FF,Tmax,55.260000,C
-600FF,Tmin,-13.050000,C
-610,C,2.943000,MWh
-610,H,6.626000,MWh
-620,C,4.050000,MWh
-620,H,7.178000,MWh
-630,C,2.976000,MWh
-630,H,7.769000,MWh
-640,C,4.962000,MWh
-640,H,3.651000,MWh
-650,C,3.989000,MWh
+195,C,0.931000,MWh
+195,H,2.136000,MWh
+600,C,5.489000,MWh
+600,H,4.959000,MWh
+600FF,Tmax,55.900000,C
+600FF,Tmin,-11.390000,C
+610,C,3.172000,MWh
+610,H,5.665000,MWh
+620,C,4.594000,MWh
+620,H,6.460000,MWh
+630,C,3.321000,MWh
+630,H,7.158000,MWh
+640,C,5.477000,MWh
+640,H,2.859000,MWh
+650,C,3.644000,MWh
 650,H,0.000000,MWh
-650FF,Tmax,54.370000,C
-650FF,Tmin,-18.710000,C
-800,C,4.171000,MWh
-800,H,6.345000,MWh
+650FF,Tmax,53.410000,C
+650FF,Tmin,-18.510000,C
+800,C,4.657000,MWh
+800,H,5.210000,MWh
 810,C,2.249000,MWh
 810,H,1.225000,MWh
 900,C,2.249000,MWh
