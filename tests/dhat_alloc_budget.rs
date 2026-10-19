@@ -122,7 +122,22 @@ const NUM_CONFIGS: usize = 10;
 ///   was apt-red). The buffer moved into the pooled
 ///   `PhysicsScratch5r1c.boundary_surfaces`; measured 495 blocks
 ///   (49/config). The 600 budget stands — no re-pin needed.
-const ALLOC_BLOCKS_BUDGET: u64 = 600;
+///
+///   **Round 70 (2026-10-19) UPDATE, fixture change (#4496):** the fixture
+///   moved from the degenerate bare `ThermalModel::new(1)` (which blew up
+///   numerically to inf/NaN by step 72 — see the provenance note in
+///   `tests/all_tests/batch_oracle_hotloop_equivalence.rs`) to the
+///   well-posed shared FFI default (`BatchOracle::default_model`, ASHRAE
+///   600 baseline). The ASHRAE 600 model carries real per-surface
+///   construction, so its pooled boundary/scratch buffers and the
+///   once-per-run setup allocations are larger: measured **1 289 blocks
+///   (128/config)** and **518 429 bytes** on develop `76dcabc9` with the
+///   new fixture, deterministic across repeat runs. This is a fixture
+///   re-baseline, not a hot-loop regression (the per-step profile is
+///   unchanged — once warm, the analytical loop still allocates nothing
+///   per step). Budgets re-pinned at `measured × 1.2`: 1 289 × 1.2 ≈
+///   1 547 → 1 550 blocks; 518 429 × 1.2 ≈ 622 115 → 625 000 bytes.
+const ALLOC_BLOCKS_BUDGET: u64 = 1_550;
 
 /// Total allocated bytes ceiling for the reduced run.
 ///
@@ -145,23 +160,31 @@ const ALLOC_BLOCKS_BUDGET: u64 = 600;
 ///   from a 335 529-byte engine whose allocation profile was the same
 ///   sites minus the #4166 boundary aggregation; the honest floor of the
 ///   current engine is 457 211 bytes.
-const ALLOC_BYTES_BUDGET: u64 = 665_000;
+///
+///   **Round 70 (2026-10-19) UPDATE, fixture change (#4496):** with the
+///   well-posed ASHRAE 600 fixture (see [`ALLOC_BLOCKS_BUDGET`]), measured
+///   518 429 bytes, deterministic across repeat runs. Re-pinned at
+///   `measured × 1.2`: 518 429 × 1.2 ≈ 622 115 → 625 000.
+const ALLOC_BYTES_BUDGET: u64 = 625_000;
 
 /// Pairs with the block-count budget so a pathological *size* growth
 /// (e.g. a large `Vec` rebuilt every timestep) is caught even if the
 /// *count* stays flat.
 
-/// Build the same single-zone analytical model the other allocation fixtures
-/// use (`tests/test_allocation_tracking.rs`), so this gate measures the
-/// identical code path.
+/// Build the same base model as the shared FFI default
+/// (`BatchOracle::default_model`) — the ASHRAE 600 baseline via the default
+/// selector — so this gate measures a well-posed model.
+///
+/// Issue #4496 (round 70): the previous bare `ThermalModel::new(1)` fixture
+/// was numerically unstable (state amplified to inf/NaN by step 72; see the
+/// `batch_oracle_hotloop_equivalence.rs` provenance note). Once the #4495
+/// input-envelope guards (#4497) land, every step past the blow-up would
+/// take the rejection path, whose `format!` allocations would breach this
+/// budget for a fixture reason, not a hot-loop regression. Same fixture as
+/// the equivalence gate from here on.
 fn create_single_zone_model() -> ThermalModel<VectorField> {
-    let mut model = ThermalModel::<VectorField>::new(1);
-    model.solar.window_u_value = 1.5;
-    model.setpoints.heating_setpoint = 20.0;
-    model.setpoints.cooling_setpoint = 26.0;
-    model.setpoints.temperatures = VectorField::from_scalar(20.0, 1);
-    model.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
-    model
+    fluxion::BatchOracle::default_model()
+        .expect("ASHRAE 600 baseline default model must initialize")
 }
 
 #[test]

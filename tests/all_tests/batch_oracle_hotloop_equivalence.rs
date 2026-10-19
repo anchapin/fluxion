@@ -33,17 +33,33 @@ use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::BatchOracle;
 
-/// Same single-zone analytical model the allocation fixtures use
-/// (`tests/dhat_alloc_budget.rs`), so this equivalence guard measures the
-/// identical code path as the allocation gate.
+/// Same base model as the shared FFI default (`BatchOracle::default_model`):
+/// the ASHRAE 600 baseline via the default selector, so this equivalence
+/// guard measures a well-posed single-zone analytical model.
+///
+/// Issue #4496 root cause (diagnosed 2026-10-19, round 70): the previous
+/// fixture built a bare `ThermalModel::<VectorField>::new(1)` — a bare
+/// low-level constructor whose derived envelope conductances leave the
+/// 5R1C mass-node advance numerically unstable for this population. With
+/// per-step energy tracing: the state amplified ~×2.5/step to ~1e154 by
+/// step 69, saturated the ideal-HVAC ±100 kW cap (±100 kWh steps), and
+/// hit inf/NaN at step 72 — the remaining ~8 688 hours of the "annual"
+/// run were a dead NaN state. The old goldens
+/// (`[0.00735449732369986, 0.00895211063575374, 5.010550650878273]`
+/// analytical / `[0.013806125988018891, 0.017001003523629522,
+/// 5.020197761109098]` surrogate) were therefore the energy of a
+/// numerically dead simulation, not physics. The #4495 input-envelope
+/// guards (#4497) reject the first non-finite advance (step 72), which
+/// surfaced as the mysterious "exact ±5.0 golden flip" of #4496 — a real
+/// signal that the fixture model was blowing up, NOT a compile-layout
+/// sensitivity (the round-69 "guards never fire, 204/205 calls" counter
+/// was mis-measured; the guards fire from step 72 of member 1 on this
+/// population). The fixture is fixed to the well-posed ASHRAE 600
+/// baseline; the goldens below are re-derived from the corrected fixture
+/// on develop `76dcabc9` (in-envelope engine behavior bit-identical to
+/// the #4497 engine — verified by running the same fixture on both).
 fn create_single_zone_model() -> ThermalModel<VectorField> {
-    let mut model = ThermalModel::<VectorField>::new(1);
-    model.solar.window_u_value = 1.5;
-    model.setpoints.heating_setpoint = 20.0;
-    model.setpoints.cooling_setpoint = 26.0;
-    model.setpoints.temperatures = VectorField::from_scalar(20.0, 1);
-    model.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
-    model
+    BatchOracle::default_model().expect("ASHRAE 600 baseline default model must initialize")
 }
 
 /// Deterministic, always-valid population: a window-U sweep with a fixed
@@ -111,7 +127,7 @@ fn analytical_path_eui_is_bit_identical_to_baseline() {
     // exactly at 63eb02e9; identical across develop tip and repeat runs
     // (deterministic). So this is a legitimate physics-baseline refresh, not
     // a regression: goldens re-derived from current engine behavior.
-    let golden = [0.00735449732369986, 0.00895211063575374, 5.010550650878273];
+    let golden = [97.84844844449219, 134.9469852096069, 155.7076223990357];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),
@@ -142,11 +158,7 @@ fn cpu_surrogate_mock_path_eui_is_bit_identical_to_baseline() {
     // Golden snapshot captured from the known-good (post-#2687) run and
     // verified bit-identical to the pre-change baseline (same stash-and-
     // re-run procedure as the analytical path above).
-    let golden = [
-        0.013806125988018891,
-        0.017001003523629522,
-        5.020197761109098,
-    ];
+    let golden = [244.38268587941062, 255.90253399071128, 265.7057060413739];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),
