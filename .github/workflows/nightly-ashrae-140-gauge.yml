@@ -297,7 +297,7 @@ jobs:
               "target": target,
               "unblocked": streak >= target,
               "runs_considered": len(runs),
-              "last_run_id": runs[0]["databaseId"] if runs else None,
+              "last_run_id": str(runs[0]["databaseId"]) if runs else None,
               "generated_at": datetime.now(timezone.utc).isoformat(),
           }
           with open("beta-soak-state.json", "w") as f:
