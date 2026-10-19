@@ -3168,3 +3168,65 @@ number moved; nothing tuned in either direction. Recorded as the legacy cohort's
 flow, with Tmax 37.8..38.8 °C. This closes the free-float decomposition program the
 round-41 canonical-weather binding opened: every strict-gate free-float residual now has
 a measured attribution (§52 gauge path, §53 legacy cohort).
+
+## §54 — Round 66: the #3983 first increment — per-surface vs lumped-mass harness on the low-mass cohort (2026-10-18)
+
+ADR-0017 D5's next step is #3983 (per-surface multi-node conduction with distributed
+solar, replacing the lumped 5R1C mass node). Premise verified before any solver work:
+#3979/#3980/#3981 (D1–D3) are closed, so #3983 is next in sequence; #3961 closed with
+upstream `solar_gains` verified exact and the 0.30/0.30 split measured load-bearing
+(PR #4079) — the structural closure routes here, exactly as the issue states.
+
+This round is measurement, not default-build change. Env-gated scratch harness
+(`FLX_R66_PER_SURFACE`, commit `68e3cf98`, scratch branch, engine default untouched):
+the single lumped 5R1C mass node is split into per-surface-class nodes —
+wall (tilt ≥ 45°) / roof / floor — each with (a) its own exterior conductance
+`Σ_s h_tr_em,s` and its own class sol-air driving temperature (h_tr_em-weighted mean of
+the per-surface sol-air values `exterior_boundary.rs` already computes per surface), and
+(b) capacitance, interior coupling `h_air_mass`, night-vent coupling, and `phi_m` all
+partitioned by opaque-area share (floor: no exterior term, mirroring the lumped path).
+The air side reads the capacitance-weighted mean of the class nodes, so the zone-level
+interior coupling is energy-conserving against the lumped node. Integration per node
+reuses the production BE/EE/CN selectors and `crank_nicolson_iso13790` unchanged.
+
+**Cross-validation.** Flag off: the strict gate reproduces `0d7fc019` exactly —
+13 PASS / 29 KNOWN-FAIL / 0 REGRESSION; 900FF −0.26/43.28; 650FF −18.71/54.37;
+950FF −15.67/38.78; Case 640 3.651/4.962. High-mass cases (900/810/910/920/930/940/
+950/960/970) are byte-identical with the flag ON — they do not route the modified
+5R1C mass advance, as expected.
+
+**Measured effect of the per-surface exterior split** (lumped → per-surface, MWh):
+
+| Case | H (band) | C (band) |
+|---|---|---|
+| 600 | 6.064 → 6.020 | 4.975 → 4.979 |
+| 610 | 6.626 → 6.587 | 2.943 → 2.940 |
+| 620 | 7.178 → 7.151 | 4.050 → 4.057 |
+| 630 | 7.769 → 7.745 | 2.976 → 2.977 |
+| 640 | 3.651 → 3.619 | 4.962 → 4.966 |
+| 650 | — | 3.989 → 3.972 |
+| 195 | 1.831 → 1.809 | 0.867 → 0.851 |
+| 800 | 6.345 → 6.302 | 4.171 → 4.173 |
+
+Free-float peaks (lumped → per-surface): 600FF Tmin −13.05 → −12.98 / Tmax 55.26 →
+55.25; 650FF Tmin −18.71 (unchanged) / Tmax 54.37 → 54.31; 900FF and 950FF
+byte-identical.
+
+**Attribution and design consequence.** The largest annual movement is Case 600 H
+−0.7 %; the largest peak movement is 0.07 K (600FF Tmin). Distributing the *exterior*
+conduction and sol-air across surface classes, with the interior side re-aggregated to
+one weighted mean, does not approach the #1522 bidirectional peak signature — the
+lumped-node defect the 600-series gap is blamed on is not primarily the exterior
+splitting. This isolates where the missing dynamic order must live: the *interior*
+star network. Each per-surface mass node must couple to the zone through its own
+interior surface temperature and film (the round-13 measured dominant lever,
+h_tr_is-class coupling), not through a re-aggregated weighted mean; a per-surface
+re-aggregation mathematically collapses back toward the lumped answer, which is what
+the ≤ 1 % movements here quantify. The D5 design decision this measurement buys: a
+per-surface formulation that keeps any weighted-mean interior collapse will not close
+the 600-series gap, whatever the exterior discretization.
+
+Nothing tuned; no engine number moved (default builds bit-identical, flag off);
+scratch not merged. Next increment: per-surface interior film/surface-network coupling
+in the same harness before any DAE-side design is committed.
+
