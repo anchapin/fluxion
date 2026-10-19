@@ -244,6 +244,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // every case whose outermost layer keeps the default 0.9 emissivity
         // (600-660, 900-960) is bit-identical to the previous behaviour.
         let eps_ext_default = SolAirTemperature::ashrae_140_default().emissivity;
+        // [R66 HARNESS — scratch, env-gated, loop round 66 (#3983 measurement).
+        // FLX_R66_PER_SURFACE splits the single lumped 5R1C mass node into
+        // per-surface-class nodes (wall / roof / floor) with distributed
+        // sol-air driving. Off by default; bit-identical when unset.]
+        let ps_enabled = std::env::var("FLX_R66_PER_SURFACE").is_ok();
+        let mut r66_cls: Vec<Option<([f64; 3], [f64; 3], [f64; 3])>> =
+            vec![None; self.0.hvac.num_zones];
         // Issue #2873: overwrite `scratch.t_sol_air_zone` with the
         // opaque-irradiance-based sol-air values used by the 5R1C envelope
         // conduction pathway (`h_tr_em * (t_sol_air - T_mass)` below). The
@@ -339,6 +346,40 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         r_materials: (1.0 / s.u_value - 0.13 - 0.04).max(0.5),
                     });
                 }
+            }
+            // [R66 HARNESS — per-class exterior aggregates (scratch).]
+            if ps_enabled {
+                let mut cls_g = [0.0f64; 3];
+                let mut cls_gt = [0.0f64; 3];
+                let mut cls_area = [0.0f64; 3];
+                for s in boundary_surfaces.iter() {
+                    let c = if s.tilt_deg >= 45.0 { 1 } else { 0 };
+                    let g = s.h_tr_em();
+                    let t = s.sol_air_temperature(outdoor_temp, sky_temp);
+                    cls_g[c] += g;
+                    cls_gt[c] += g * t;
+                    cls_area[c] += s.area_opaque_m2;
+                }
+                let floor_area: f64 = self
+                    .0
+                    .solar
+                    .surfaces
+                    .get(i)
+                    .map(|zs| {
+                        zs.iter()
+                            .filter(|s| s.orientation == Orientation::Down)
+                            .map(|s| (s.area - s.window_area).max(0.0))
+                            .sum()
+                    })
+                    .unwrap_or(0.0);
+                cls_area[2] = floor_area;
+                let mut cls_t = [outdoor_temp; 3];
+                for c in 0..2 {
+                    if cls_g[c] > 1e-9 {
+                        cls_t[c] = cls_gt[c] / cls_g[c];
+                    }
+                }
+                r66_cls[i] = Some((cls_g, cls_t, cls_area));
             }
             let (h_tr_em, t_sol_air_i) =
                 aggregate_zone_boundary(boundary_surfaces, outdoor_temp, sky_temp);
@@ -2033,7 +2074,89 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 0.0
             };
 
-            let tm_new = match method {
+            // [R66 HARNESS — env-gated per-surface mass-node advance (scratch).
+            // Each class node: capacitance cm·w, exterior conductance cls_g[c]
+            // driven by its own class sol-air (floor: no exterior term, mirrors
+            // the lumped path), interior coupling h_air_mass·w, night-vent
+            // coupling h_vent_mass_zone·w, gain share phi_m·w. The air side
+            // reads the capacitance-weighted mean, and Σ w = 1 with interior
+            // shares proportional to w, so the zone-level coupling is
+            // energy-conserving vs. the lumped node.]
+            let advance_node =
+                |cm_n: f64,
+                 h_em_n: f64,
+                 t_ext_n: f64,
+                 h_am_n: f64,
+                 h_vm_n: f64,
+                 phi_m_n: f64,
+                 t_s_n: f64,
+                 t_i_n: f64|
+                 -> Result<f64, FluxionError> {
+                    match select_integration_method(cm_n) {
+                        ThermalIntegrationMethod::BackwardEuler => {
+                            let cm_dt = cm_n / dt;
+                            Ok((cm_dt * tm_old
+                                + h_em_n * t_ext_n
+                                + h_am_n * t_s_n
+                                + h_vm_n * outdoor_temp
+                                + phi_m_n)
+                                / (cm_dt + h_em_n + h_am_n + h_vm_n))
+                        }
+                        ThermalIntegrationMethod::ExplicitEuler => {
+                            let q_vent_mass = h_vm_n * (outdoor_temp - tm_old);
+                            let q_m_net = h_em_n * (t_ext_n - tm_old)
+                                + h_am_n * (t_s_n - tm_old)
+                                + phi_m_n
+                                + q_vent_mass;
+                            Ok(tm_old + (q_m_net / cm_n) * dt)
+                        }
+                        ThermalIntegrationMethod::CrankNicolson => crank_nicolson_iso13790(
+                            tm_old, dt, cm_n, h_am_n + h_vm_n, h_em_n, t_ext_n, t_i_n, phi_m_n,
+                        ),
+                    }
+                };
+            let tm_new = if ps_enabled {
+                match r66_cls[i] {
+                    Some((cls_g, cls_t, cls_area)) if cls_area.iter().sum::<f64>() > 1e-9 => {
+                        let total_area: f64 = cls_area.iter().sum();
+                        let mut tm_w = 0.0;
+                        for c in 0..3 {
+                            let w = cls_area[c] / total_area;
+                            if w <= 0.0 {
+                                continue;
+                            }
+                            let (h_em_c, t_ext_c) = if c == 2 {
+                                (0.0, outdoor_temp)
+                            } else {
+                                (cls_g[c], cls_t[c])
+                            };
+                            tm_w += w
+                                * advance_node(
+                                    cm * w,
+                                    h_em_c,
+                                    t_ext_c,
+                                    h_air_mass * w,
+                                    h_vent_mass_zone * w,
+                                    phi_m_zone * w,
+                                    t_s,
+                                    t_i,
+                                )?;
+                        }
+                        tm_w
+                    }
+                    _ => advance_node(
+                        cm,
+                        h_tr_em,
+                        t_sol_air[i],
+                        h_air_mass,
+                        h_vent_mass_zone,
+                        phi_m_zone,
+                        t_s,
+                        t_i,
+                    )?,
+                }
+            } else {
+            match method {
                 ThermalIntegrationMethod::BackwardEuler => {
                     // Use implicit backward Euler for high thermal mass
                     // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
@@ -2097,6 +2220,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         phi_m_zone,
                     )?
                 }
+            }
             };
 
             scratch.new_mass[i] = tm_new;
