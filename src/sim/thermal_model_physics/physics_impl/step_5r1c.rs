@@ -1163,6 +1163,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .take(self.0.hvac.num_zones)
         {
             if !t.is_finite() {
+                // Issue #4495 rejection path must restore the pooled scratch
+                // (Issue #2756 contract): a leaked checkout empties the pool
+                // and the next step re-allocates (scratch_pool reuse gate).
+                self.0.hvac.scratch_pool.return_5r1c(scratch);
                 return Err(FluxionError::Validation(format!(
                     "Air-node temperature became non-finite ({t}) for zone {i}: \
                      the step's inputs are outside the solver's finite envelope \
@@ -2079,6 +2083,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // the state untouched.
         for (i, &t) in scratch.new_mass.iter().enumerate() {
             if !t.is_finite() {
+                // Same pooled-scratch restoration as the air-node guard above.
+                self.0.hvac.scratch_pool.return_5r1c(scratch);
                 return Err(FluxionError::Validation(format!(
                     "Mass-node temperature became non-finite ({t}) for zone {i}: \
                      the step's inputs are outside the solver's finite envelope \

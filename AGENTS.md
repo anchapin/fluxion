@@ -60,7 +60,7 @@ The hook invokes `cargo test --workspace --exclude fluxion-tauri --no-fail-fast`
 |---|---|---|---|---|
 
 | `cargo test --lib` | root crate unit tests | 4,262 | 8 | matches `tests/test_inventory.json::totals.lib_tests_root` (cargo-verified live count via `--verify`; the AST-regex snapshot for this crate is in `tests/reference_data/test_inventory_baseline.json::by_crate.fluxion.lib_tests`) |
-| `cargo test --workspace --exclude fluxion-tauri` | full workspace (lib + integration + bin) | 8,916 | 164 | `tests/test_inventory.json::totals.workspace_tests` / `workspace_ignored` (cargo-verified via `--verify`; the AST-regex snapshot is in `tests/reference_data/test_inventory_baseline.json::metrics_ast`) |
+| `cargo test --workspace --exclude fluxion-tauri` | full workspace (lib + integration + bin) | 8,919 | 164 | `tests/test_inventory.json::totals.workspace_tests` / `workspace_ignored` (cargo-verified via `--verify`; the AST-regex snapshot is in `tests/reference_data/test_inventory_baseline.json::metrics_ast`) |
 | `AST-regex inventory | committed in `tests/reference_data/test_inventory_baseline.json::metrics_ast` | 8,906 | 161 | non-runtime snapshot, used by the drift gate (`--no-verify`); AST counts vs cargo-verified because the regex doesn't track `cfg(test)` boundaries |
 
 
