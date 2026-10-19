@@ -2004,6 +2004,21 @@ impl ThermalModel<VectorField> {
             model.conduction.cm_floor = None;
             model.conduction.cm_internal = None;
             model.mass.multi_node_thermal_mass = None;
+            // [R67 HARNESS — scratch, env-gated (loop round 67, #3983 second
+            // increment). FLX_R67_INTERIOR stores the real per-class wall /
+            // roof / floor mass conductances and capacitances for ALL
+            // construction types so the env-gated per-surface interior arm in
+            // step_5r1c can read them on the low-mass 5R1C cohort. The values
+            // are the same ones computed above for every zone; only the
+            // storage gate changes. 9R4C multi-node init stays HighMass-only.]
+            if std::env::var("FLX_R67_INTERIOR").is_ok() {
+                model.conduction.h_tr_ms_wall = Some(VectorField::new(h_tr_ms_wall_vec.clone()));
+                model.conduction.h_tr_ms_roof = Some(VectorField::new(h_tr_ms_roof_vec.clone()));
+                model.conduction.h_tr_ms_floor = Some(VectorField::new(h_tr_ms_floor_vec.clone()));
+                model.conduction.cm_wall = Some(VectorField::new(cm_wall_vec.clone()));
+                model.conduction.cm_roof = Some(VectorField::new(cm_roof_vec.clone()));
+                model.conduction.cm_floor = Some(VectorField::new(cm_floor_vec.clone()));
+            }
         }
 
         // === Issue 692 FIX: Physics-Based h_tr_me Calculation ===
