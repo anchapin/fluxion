@@ -2144,6 +2144,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             0.0
                         };
                         let mut tm_w = 0.0;
+                        // [R70 HARNESS — t_s state read/write, see the
+                        // FLX_R70_TS_ADVANCE note inside the class loop.
+                        // Old values snapshot before the loop; new values
+                        // written back after `tm_new` is bound.]
+                        let r70_ts_on = std::env::var("FLX_R70_TS_ADVANCE").is_ok();
+                        let n_z70 = self.0.hvac.num_zones;
+                        let r70_ts_old: Vec<f64> = match self
+                            .0
+                            .mass
+                            .r70_surface_node_temperatures
+                            .as_ref()
+                        {
+                            Some(v) if v.as_ref().len() >= 3 * n_z70 => {
+                                v.as_ref()[..3 * n_z70].to_vec()
+                            }
+                            _ => vec![20.0; 3 * n_z70],
+                        };
+                        let mut r70_ts_new: Vec<f64> = r70_ts_old.clone();
                         for c in 0..3 {
                             let w = cls_area[c] / total_area;
                             if w <= 0.0 {
@@ -2197,17 +2215,69 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                 };
                                 let h_am_eff = if r68_degen_lumped { h_air_mass * w } else { h_am_c };
                                 let cm_c = cls_cm[c];
-                                tm_w += (cm_c / cm_sum)
-                                    * advance_node(
+                                // [R70 HARNESS — t_s-advance arm (scratch, loop
+                                // round 70, #3983 D-b). FLX_R70_TS_ADVANCE (requires
+                                // FLX_R67_INTERIOR) gives the per-class surface node
+                                // a step of real dynamics: it is advanced FIRST by
+                                // backward Euler on its own heat balance,
+                                //   C_s·dT_s/dt = h_is_c·(t_i − T_s) + h_ms_c·(T_m − T_s)
+                //                 + phi_st_c,
+                                // consuming its own previous state (t_s_old), and the
+                                // mass node then advances consuming that T_s. Round 68
+                                // proved the phi_st beam weighting structurally inert on
+                                // the production route because every real construction
+                                // capacitance selects Crank–Nicolson, and
+                                // `crank_nicolson_iso13790` consumes `t_i` only — the
+                                // algebraic `t_s_c` it is handed is dropped. ISO 13790's
+                                // own 5R1C keeps the surface node algebraic (§C.3), so
+                                // this arm is a deliberate structural extension toward
+                                // the #1522 dynamic-order requirement, not an ISO
+                                // conformance change. Disclosed structural assumption,
+                                // harness-only: C_s_c = 0.1·cm_c (interior surface
+                                // layer ≈ 10 % of construction capacitance); the class
+                                // mass integration switches to the BE form above so
+                                // T_s actually binds. Flag off = R67 arm unchanged.]
+                                let r70_ts_advance = r70_ts_on;
+                                let (t_s_eff, be_mass) = if r70_ts_advance {
+                                    let cs_c = 0.1 * cm_c;
+                                    let t_s_old = r70_ts_old[3 * i + c];
+                                    let cs_dt = cs_c / dt;
+                                    let denom_s = cs_dt + h_is_c + h_ms_c;
+                                    let t_s_new = if denom_s > 0.0 {
+                                        (cs_dt * t_s_old
+                                            + h_is_c * t_i
+                                            + h_ms_c * tm_old
+                                            + phi_st_c)
+                                            / denom_s
+                                    } else {
+                                        t_s_c
+                                    };
+                                    r70_ts_new[3 * i + c] = t_s_new;
+                                    (t_s_new, true)
+                                } else {
+                                    (t_s_c, false)
+                                };
+                                let tm_c_new = if be_mass {
+                                    let cm_dt = cm_c / dt;
+                                    (cm_dt * tm_old
+                                        + h_em_c * t_ext_c
+                                        + h_am_eff * t_s_eff
+                                        + h_vent_mass_zone * w * outdoor_temp
+                                        + phi_m_zone * w)
+                                        / (cm_dt + h_em_c + h_am_eff + h_vent_mass_zone * w)
+                                } else {
+                                    advance_node(
                                         cm_c,
                                         h_em_c,
                                         t_ext_c,
                                         h_am_eff,
                                         h_vent_mass_zone * w,
                                         phi_m_zone * w,
-                                        t_s_c,
+                                        t_s_eff,
                                         t_i,
-                                    )?;
+                                    )?
+                                };
+                                tm_w += (cm_c / cm_sum) * tm_c_new;
                             } else {
                                 tm_w += w
                                     * advance_node(
@@ -2221,6 +2291,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                         t_i,
                                     )?;
                             }
+                        }
+                        // [R70 HARNESS — write the advanced per-class
+                        // surface-node state back (see the
+                        // FLX_R70_TS_ADVANCE note). Scratch arm only.]
+                        if r70_ts_on {
+                            let mut sv = smallvec::SmallVec::new();
+                            sv.extend_from_slice(&r70_ts_new);
+                            let v = T::from(VectorField::from_smallvec(sv));
+                            self.0.mass.r70_surface_node_temperatures = Some(v);
                         }
                         tm_w
                     }

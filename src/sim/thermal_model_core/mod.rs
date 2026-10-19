@@ -3997,6 +3997,7 @@ impl ThermalModel<VectorField> {
                 envelope_mass_energy_change_cumulative: 0.0,
                 internal_mass_energy_change_cumulative: 0.0,
                 multi_node_thermal_mass: None,
+                r70_surface_node_temperatures: None,
             },
             conduction: ConductionState {
                 backend: ConductionBackend::default(),
