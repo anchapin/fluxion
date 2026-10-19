@@ -20,7 +20,7 @@ use std::path::PathBuf;
 /// # Example
 ///
 /// ```rust
-/// use fluxion::validation::ashrae_140_cases::CaseBuilder;
+/// use fluxion_core::ashrae_case_builder::CaseBuilder;
 ///
 /// let spec = CaseBuilder::new()
 ///     .low_mass_construction()
