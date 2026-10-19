@@ -59,6 +59,14 @@ pub struct MassState<T: ContinuousTensor<f64>> {
 
     /// Multi-node thermal mass state for the 9R4C model.
     pub multi_node_thermal_mass: Option<MultiNodeThermalMass>,
+
+    /// [R70 HARNESS — scratch, env-gated (loop round 70, #3983 D-b). Dynamic
+    /// per-class interior surface-node state `t_s_c` (wall/roof/floor × zone,
+    /// flat 3·num_zones) for the `FLX_R70_TS_ADVANCE` arm: the surface node is
+    /// advanced first (backward Euler, consuming its own previous state)
+    /// before the mass node, so `phi_st_c` acquires a step of real dynamics.
+    /// `None` until the first arm step initializes it algebraically.]
+    pub r70_surface_node_temperatures: Option<T>,
 }
 
 impl<T: ContinuousTensor<f64> + Clone> Clone for MassState<T> {
@@ -98,6 +106,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for MassState<T> {
             internal_mass_energy_change_cumulative: self.internal_mass_energy_change_cumulative,
 
             multi_node_thermal_mass: self.multi_node_thermal_mass.clone(),
+            r70_surface_node_temperatures: self.r70_surface_node_temperatures.clone(),
         }
     }
 }
