@@ -256,7 +256,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Requires FLX_R66_PER_SURFACE; off by default, bit-identical when
         // unset.]
         let r67_interior = std::env::var("FLX_R67_INTERIOR").is_ok();
-        let mut r66_cls: Vec<Option<([f64; 3], [f64; 3], [f64; 3])>> =
+        let mut r66_cls: Vec<Option<([f64; 3], [f64; 3], [f64; 3], [f64; 3])>> =
             vec![None; self.0.hvac.num_zones];
         // Issue #2873: overwrite `scratch.t_sol_air_zone` with the
         // opaque-irradiance-based sol-air values used by the 5R1C envelope
@@ -359,6 +359,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 let mut cls_g = [0.0f64; 3];
                 let mut cls_gt = [0.0f64; 3];
                 let mut cls_area = [0.0f64; 3];
+                let mut cls_beam = [0.0f64; 3];
                 for s in boundary_surfaces.iter() {
                     let c = if s.tilt_deg >= 45.0 { 1 } else { 0 };
                     let g = s.h_tr_em();
@@ -366,6 +367,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     cls_g[c] += g;
                     cls_gt[c] += g * t;
                     cls_area[c] += s.area_opaque_m2;
+                    // [R68 HARNESS — per-class incident irradiance×area
+                    // (scratch). The same weight convention as
+                    // distribute_opaque_solar_gains (Issue #864: area ×
+                    // irradiance, area fallback) used by the beam-weighted
+                    // phi_st solar partition (FLX_R68_BEAM_PHIST).]
+                    cls_beam[c] +=
+                        (s.irradiance_beam_diffuse_wm2 + s.irradiance_ground_wm2)
+                            * s.area_opaque_m2;
                 }
                 let floor_area: f64 = self
                     .0
@@ -386,7 +395,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         cls_t[c] = cls_gt[c] / cls_g[c];
                     }
                 }
-                r66_cls[i] = Some((cls_g, cls_t, cls_area));
+                r66_cls[i] = Some((cls_g, cls_t, cls_area, cls_beam));
             }
             let (h_tr_em, t_sol_air_i) =
                 aggregate_zone_boundary(boundary_surfaces, outdoor_temp, sky_temp);
@@ -2065,7 +2074,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 };
             let tm_new = if ps_enabled {
                 match r66_cls[i] {
-                    Some((cls_g, cls_t, cls_area)) if cls_area.iter().sum::<f64>() > 1e-9 => {
+                    Some((cls_g, cls_t, cls_area, cls_beam)) if cls_area.iter().sum::<f64>() > 1e-9 => {
                         let total_area: f64 = cls_area.iter().sum();
                         // [R67 HARNESS — per-surface interior film/surface
                         // network (scratch). When FLX_R67_INTERIOR is set and
@@ -2109,6 +2118,31 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         let cm_sum: f64 = cls_cm.iter().sum();
                         let h_is_zone = h_tr_is_ref_2.get(i).copied().unwrap_or(0.0);
                         let phi_st_zone = phi_st_ref[i];
+                        // [R68 HARNESS — beam-weighted phi_st solar partition
+                        // (scratch, loop round 68, #3983). FLX_R68_BEAM_PHIST
+                        // splits the zone-level phi_st into its solar component
+                        // (remaining_sol × st_sol_frac, recomputed from the same
+                        // zone solar terms used to build it) and its internal-
+                        // radiative component; the solar component partitions by
+                        // per-class incident irradiance×area (Issue #864
+                        // convention, area fallback when the zone sees no sun),
+                        // the internal component stays area-weighted. Σ_c
+                        // phi_st_c = phi_st_zone (energy-conserving). Without the
+                        // flag the R67 area-only partition applies unchanged.]
+                        let r68_beam_phist = std::env::var("FLX_R68_BEAM_PHIST").is_ok();
+                        let phi_st_sol = if r68_beam_phist {
+                            self.0.solar.solar_gains.as_ref().get(i).copied().unwrap_or(0.0)
+                                * self.0.setpoints.zone_area.as_ref().get(i).copied().unwrap_or(0.0)
+                                * (1.0 - self.0.solar.solar_distribution_to_air)
+                                * (1.0 - self.0.solar.solar_beam_to_mass_fraction)
+                        } else {
+                            0.0
+                        };
+                        let beam_sum: f64 = if r68_beam_phist {
+                            cls_beam.iter().sum()
+                        } else {
+                            0.0
+                        };
                         let mut tm_w = 0.0;
                         for c in 0..3 {
                             let w = cls_area[c] / total_area;
@@ -2139,10 +2173,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                 let r68_degen_lumped =
                                     std::env::var("FLX_R68_DEGEN_LUMPED").is_ok()
                                         && h_tr_3_ref_2.get(i).copied().unwrap_or(0.0) <= 0.0;
+                                // Beam-weighted phi_st_c replaces the area-only
+                                // phi_st_zone*w when the R68 arm is on (see the
+                                // R68 HARNESS note above).
+                                let phi_st_c = if r68_beam_phist {
+                                    (phi_st_zone - phi_st_sol) * w
+                                        + if beam_sum > 1e-9 {
+                                            phi_st_sol * cls_beam[c] / beam_sum
+                                        } else {
+                                            phi_st_sol * w
+                                        }
+                                } else {
+                                    phi_st_zone * w
+                                };
                                 let (h_am_c, t_s_c) = if h_ms_c + h_is_c > 0.0 {
                                     (
                                         h_ms_c * h_is_c / (h_ms_c + h_is_c),
-                                        (h_ms_c * tm_old + h_is_c * t_i + phi_st_zone * w)
+                                        (h_ms_c * tm_old + h_is_c * t_i + phi_st_c)
                                             / (h_ms_c + h_is_c),
                                     )
                                 } else {
