@@ -87,6 +87,43 @@ pub struct ConductionState<T: ContinuousTensor<f64>> {
     /// roof-style reconstruction that predates the wind-dependent film.
     /// `None` before the first 5R1C step (checker falls back).
     pub applied_5r1c_boundary: Option<(Vec<f64>, Vec<f64>)>,
+    /// Applied per-zone 5R1C per-class exterior boundary from the most recent
+    /// step (loop round 73, #1522/#4504). The D5-default per-surface mass
+    /// advance consumes per-class aggregates (wall/roof exterior conductance
+    /// and sol-air, per-class areas and incident-beam weights) plus the
+    /// per-zone scalars (`h_air_mass`, blended `t_i`, `phi_m`, `phi_st`,
+    /// night-vent mass conductance) that the class loop actually used. The
+    /// strict-energy invariant checker consumes these so its per-class
+    /// identity is reconstructed from the applied values instead of
+    /// re-deriving the ~130-line boundary-surface aggregation — the same
+    /// pattern as `applied_5r1c_boundary` (#4373). `None` before the first
+    /// step or when the per-surface path did not run (checker falls back).
+    pub applied_5r1c_class_boundary: Option<Vec<Option<Applied5R1CClassBoundary>>>,
+}
+
+/// Per-zone record of [`ConductionState::applied_5r1c_class_boundary`]
+/// (`None` for zones that did not run the per-class path).
+#[derive(Debug, Clone)]
+pub struct Applied5R1CClassBoundary {
+    /// Per-class exterior conductance [W/K] (wall, roof, floor=0).
+    pub cls_g: [f64; 3],
+    /// Per-class sol-air temperature [°C] (floor: outdoor).
+    pub cls_t: [f64; 3],
+    /// Per-class opaque area [m²] (floor: slab area).
+    pub cls_area: [f64; 3],
+    /// Per-class incident irradiance×area [W] (Issue #864 convention).
+    pub cls_beam: [f64; 3],
+    /// Zone air↔mass conductance actually used (ISO H_tr,3 or the
+    /// degenerate series fallback).
+    pub h_air_mass: f64,
+    /// Blended zone air temperature the mass advance consumed.
+    pub t_i: f64,
+    /// Zone mass-node heat gain [W].
+    pub phi_m_zone: f64,
+    /// Zone surface-node heat gain [W].
+    pub phi_st_zone: f64,
+    /// Night-vent mass conductance [W/K] (0 when inactive).
+    pub h_vent_mass_zone: f64,
 }
 
 impl<T: ContinuousTensor<f64> + Clone> Clone for ConductionState<T> {
@@ -129,6 +166,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ConductionState<T> {
             derived_den: self.derived_den.clone(),
             derived_ground_coeff: self.derived_ground_coeff.clone(),
             applied_5r1c_boundary: self.applied_5r1c_boundary.clone(),
+            applied_5r1c_class_boundary: self.applied_5r1c_class_boundary.clone(),
         }
     }
 }

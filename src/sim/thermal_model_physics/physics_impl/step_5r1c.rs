@@ -2028,6 +2028,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_tr_ms_ref = self.0.conduction.h_tr_ms.as_ref();
         let t_s_act_ref = t_s_act.as_ref();
         let t_i_act_ref = t_i_act.as_ref();
+        // [Round 73 (#1522/#4504) — checker persistence.] Reuse the applied
+        // class-boundary buffer across steps (allocation only on the first
+        // step; same dhat-budget pattern as the r71 driver persistence).
+        // Filled per zone in the mass loop below; restored after it.
+        let mut applied_class_buf: Vec<
+            Option<crate::sim::thermal_model_data::Applied5R1CClassBoundary>,
+        > = std::mem::take(&mut self.0.conduction.applied_5r1c_class_boundary).unwrap_or_default();
+        applied_class_buf.clear();
         let phi_m_ref = phi_m.as_ref();
         let h_tr_3_ref_2 = self.0.conduction.derived_h_tr_3.as_ref();
         let h_tr_is_ref_2 = self.0.conduction.h_tr_is.as_ref();
@@ -2476,6 +2484,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             sv.extend_from_slice(&r70_ts_new);
                             let v = T::from(VectorField::from_smallvec(sv));
                             self.0.mass.r70_surface_node_temperatures = Some(v);
+                            // [Round 73 (#1522/#4504)] Persist the `t_s_old`
+                            // snapshot this advance consumed so the checker
+                            // can recompute the surface-node identity
+                            // exactly. Write-only for the engine.
+                            let mut svp = smallvec::SmallVec::new();
+                            svp.extend_from_slice(&r70_ts_old);
+                            self.0.mass.r70_surface_node_temperatures_prev =
+                                Some(T::from(VectorField::from_smallvec(svp)));
                         }
                         tm_w
                     }
@@ -2559,7 +2575,33 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             };
 
             scratch.new_mass[i] = tm_new;
+
+            // [Round 73 (#1522/#4504) — checker persistence.] Record the
+            // per-class exterior aggregates and the per-zone scalars this
+            // step's mass advance actually consumed, so
+            // `invariant_checker` mirrors the post-D5 per-class identity
+            // from applied values (same pattern as
+            // `applied_5r1c_boundary`, #4373). Write-only for the engine.
+            match r66_cls[i] {
+                Some((cls_g, cls_t, cls_area, cls_beam)) => {
+                    applied_class_buf.push(Some(
+                        crate::sim::thermal_model_data::Applied5R1CClassBoundary {
+                            cls_g,
+                            cls_t,
+                            cls_area,
+                            cls_beam,
+                            h_air_mass,
+                            t_i,
+                            phi_m_zone,
+                            phi_st_zone: phi_st_ref[i],
+                            h_vent_mass_zone,
+                        },
+                    ));
+                }
+                None => applied_class_buf.push(None),
+            }
         }
+        self.0.conduction.applied_5r1c_class_boundary = Some(applied_class_buf);
 
         // Issue #4495: same input-envelope guard for the mass node — the
         // Crank–Nicolson / implicit-Euler numerator multiplies conductances

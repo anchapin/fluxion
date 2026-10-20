@@ -275,6 +275,7 @@ impl InvariantChecker {
                 model,
                 i,
                 dt_seconds,
+                outdoor_temp,
                 temps[i],
                 mass_temps[i],
                 prev_mass_temps[i],
@@ -306,6 +307,7 @@ impl InvariantChecker {
         model: &ThermalModel<T>,
         i: usize,
         dt_seconds: f64,
+        outdoor_temp: f64,
         t_air: f64,
         t_mass: f64,
         t_mass_prev: f64,
@@ -387,30 +389,169 @@ impl InvariantChecker {
                 denom * t_mass - numer
             }
             ThermalModelType::FiveROneC => {
-                let t_i_free = model.mass.air_temperatures.as_ref()[i];
-                let cm_dt = cm / dt_seconds;
-                let half_cond = 0.5 * (h_tr_3 + h_tr_em);
-                let alpha = if cm > 0.0 && h_tr_3 > 0.0 && dt_seconds > 0.0 {
-                    let tau_mass = cm / h_tr_3;
-                    1.0 - (-dt_seconds / tau_mass).exp()
+                // [Loop round 73 (#1522/#4504) — post-D5 checker identity.]
+                // The engine default now advances the mass node per
+                // construction class with the t_s-first backward-Euler
+                // surface layer (step_5r1c.rs `use_r67` path; D5 default,
+                // round 71). The legacy lumped Crank–Nicolson identity
+                // below no longer matches it (~600 W class-partition
+                // residual), so when the step persisted its per-class
+                // boundary and t_s state, mirror the per-class advance
+                // exactly from the applied values. Zones without the
+                // persisted state (identical-construction fallback path,
+                // pre-first-step) keep the legacy identity.
+                let applied_cls = model
+                    .conduction
+                    .applied_5r1c_class_boundary
+                    .as_ref()
+                    .and_then(|v| v.get(i))
+                    .and_then(|o| o.as_ref());
+                let ts_new = model.mass.r70_surface_node_temperatures.as_ref();
+                let ts_old = model.mass.r70_surface_node_temperatures_prev.as_ref();
+                if let (Some(rec), Some(tsn), Some(tso)) = (applied_cls, ts_new, ts_old) {
+                    let grab = |o: &Option<T>| o.as_ref().and_then(|v| v.as_ref().get(i).copied());
+                    let cond = &model.conduction;
+                    let (cls_cm, cls_ms) = match (
+                        grab(&cond.cm_wall),
+                        grab(&cond.cm_roof),
+                        grab(&cond.cm_floor),
+                        grab(&cond.h_tr_ms_wall),
+                        grab(&cond.h_tr_ms_roof),
+                        grab(&cond.h_tr_ms_floor),
+                    ) {
+                        (Some(a), Some(b), Some(c), Some(d), Some(e), Some(f)) => {
+                            ([a, b, c], [d, e, f])
+                        }
+                        _ => ([cm; 3], [h_tr_ms; 3]),
+                    };
+                    #[allow(clippy::float_cmp)]
+                    let use_r67 = cls_cm.iter().sum::<f64>() > 1e-9
+                        && (cls_ms[0] != cls_ms[1]
+                            || cls_ms[1] != cls_ms[2]
+                            || cls_cm[0] != cls_cm[1]
+                            || cls_cm[1] != cls_cm[2]);
+                    if !use_r67 {
+                        // Identical-construction fallback: the integrator
+                        // takes the per-class advance_node path without the
+                        // t_s-first layer; no persisted t_s identity to
+                        // mirror — keep the legacy lumped identity below.
+                        let t_i_free = model.mass.air_temperatures.as_ref()[i];
+                        return self.legacy_5r1c_residual(
+                            cm,
+                            h_tr_3,
+                            h_tr_em,
+                            dt_seconds,
+                            t_mass,
+                            t_mass_prev,
+                            t_sol_air_zone,
+                            t_air,
+                            t_i_free,
+                            phi_m,
+                        );
+                    }
+                    let cm_sum: f64 = cls_cm.iter().sum();
+                    let h_is_zone = model.conduction.h_tr_is[i];
+                    let total_area: f64 = rec.cls_area.iter().sum();
+                    let degen = h_tr_3 <= 0.0;
+                    let mut residual = 0.0f64;
+                    let mut tm_w = 0.0f64;
+                    for c in 0..3 {
+                        let w = rec.cls_area[c] / total_area;
+                        if w <= 0.0 {
+                            continue;
+                        }
+                        let (h_em_c, t_ext_c) = if c == 2 {
+                            (0.0, outdoor_temp)
+                        } else {
+                            (rec.cls_g[c], rec.cls_t[c])
+                        };
+                        let h_is_c = h_is_zone * w;
+                        let h_ms_c = cls_ms[c];
+                        // The R68 beam-weighted phi_st arm is a scratch
+                        // env-gated harness (FLX_R68_BEAM_PHIST); the
+                        // production route runs with the area-only
+                        // partition, which is what is mirrored here.
+                        let phi_st_c = rec.phi_st_zone * w;
+                        let (h_am_c, _t_s_c) = if h_ms_c + h_is_c > 0.0 {
+                            (
+                                h_ms_c * h_is_c / (h_ms_c + h_is_c),
+                                (h_ms_c * t_mass_prev + h_is_c * rec.t_i + phi_st_c)
+                                    / (h_ms_c + h_is_c),
+                            )
+                        } else {
+                            (h_ms_c, rec.t_i)
+                        };
+                        let h_am_eff = if degen { rec.h_air_mass * w } else { h_am_c };
+                        let cm_c = cls_cm[c];
+                        let cs_c = 0.1 * cm_c;
+                        let cs_dt = cs_c / dt_seconds;
+                        let denom_s = cs_dt + h_is_c + h_ms_c;
+                        let idx = 3 * i + c;
+                        // Surface-node identity: the recomputed t_s must
+                        // equal the stored post-step value exactly.
+                        if denom_s > 0.0 {
+                            let t_s_hat = (cs_dt * tso.as_ref()[idx]
+                                + h_is_c * rec.t_i
+                                + h_ms_c * t_mass_prev
+                                + phi_st_c)
+                                / denom_s;
+                            residual += denom_s * (t_s_hat - tsn.as_ref()[idx]);
+                        }
+                        // Mass-node identity: recompute the class state from
+                        // the stored t_s (the per-class BE equation is
+                        // satisfied identically by construction); the
+                        // nontrivial invariant is the aggregation below.
+                        let cm_dt = cm_c / dt_seconds;
+                        let denom_m = cm_dt + h_em_c + h_am_eff + rec.h_vent_mass_zone * w;
+                        let tm_c_new = (cm_dt * t_mass_prev
+                            + h_em_c * t_ext_c
+                            + h_am_eff * tsn.as_ref()[idx]
+                            + rec.h_vent_mass_zone * w * outdoor_temp
+                            + rec.phi_m_zone * w)
+                            / denom_m;
+                        tm_w += (cm_c / cm_sum) * tm_c_new;
+                    }
+                    // Aggregation identity: the capacitance-weighted class
+                    // mean recomputed from the stored t_s must equal the
+                    // observed zone mass temperature. Scaled by cm/dt so the
+                    // residual carries W units like the legacy identity.
+                    residual += (cm / dt_seconds) * (tm_w - t_mass);
+                    eprintln!(
+                        "[INV73] zone={} t_s_resid={} agg_resid={} tm_w={} t_mass={} dt={}",
+                        i,
+                        residual,
+                        (cm / dt_seconds) * (tm_w - t_mass),
+                        tm_w,
+                        t_mass,
+                        dt_seconds
+                    );
+                    residual
                 } else {
-                    1.0
-                };
-                let t_i = (1.0 - alpha) * t_i_free + alpha * t_air;
-                let st_int_frac = rad_frac * (1.0 - sol_dist_to_air);
-                let st_sol_frac = 1.0 - solar_beam_to_mass;
-                let phi_st = load_w * st_int_frac + remaining_sol * st_sol_frac;
-                let denom = cm_dt + half_cond;
-                let numer = t_mass_prev * (cm_dt - half_cond)
-                    + h_tr_em * t_sol_air_zone
-                    + h_tr_3 * t_i
-                    + phi_m;
-                let residual = denom * t_mass - numer;
-                eprintln!(
-                    "[INV] t_mass={:.4} t_mass_prev={:.4} t_i_free={:.4} t_i={:.4} alpha={:.6} h_tr_3={:.4} h_tr_em={:.4} phi_m={:.4} phi_st={:.4} denom={:.4} numer={:.4} residual={:.6} t_sol_air={:.4}",
-                    t_mass, t_mass_prev, t_i_free, t_i, alpha, h_tr_3, h_tr_em, phi_m, phi_st, denom, numer, residual, t_sol_air_zone
-                );
-                residual
+                    let t_i_free = model.mass.air_temperatures.as_ref()[i];
+                    let cm_dt = cm / dt_seconds;
+                    let half_cond = 0.5 * (h_tr_3 + h_tr_em);
+                    let alpha = if cm > 0.0 && h_tr_3 > 0.0 && dt_seconds > 0.0 {
+                        let tau_mass = cm / h_tr_3;
+                        1.0 - (-dt_seconds / tau_mass).exp()
+                    } else {
+                        1.0
+                    };
+                    let t_i = (1.0 - alpha) * t_i_free + alpha * t_air;
+                    let st_int_frac = rad_frac * (1.0 - sol_dist_to_air);
+                    let st_sol_frac = 1.0 - solar_beam_to_mass;
+                    let phi_st = load_w * st_int_frac + remaining_sol * st_sol_frac;
+                    let denom = cm_dt + half_cond;
+                    let numer = t_mass_prev * (cm_dt - half_cond)
+                        + h_tr_em * t_sol_air_zone
+                        + h_tr_3 * t_i
+                        + phi_m;
+                    let residual = denom * t_mass - numer;
+                    eprintln!(
+                        "[INV] t_mass={:.4} t_mass_prev={:.4} t_i_free={:.4} t_i={:.4} alpha={:.6} h_tr_3={:.4} h_tr_em={:.4} phi_m={:.4} phi_st={:.4} denom={:.4} numer={:.4} residual={:.6} t_sol_air={:.4}",
+                        t_mass, t_mass_prev, t_i_free, t_i, alpha, h_tr_3, h_tr_em, phi_m, phi_st, denom, numer, residual, t_sol_air_zone
+                    );
+                    residual
+                }
             }
             _ => {
                 // 6R2C, 8R3C: use original integrated flux form
@@ -419,6 +560,38 @@ impl InvariantChecker {
                     - (phi_m + h_tr_3 * (t_air - t_m_avg) + h_tr_em * (t_sol_air_zone - t_m_avg))
             }
         }
+    }
+
+    /// Legacy pre-D5 lumped Crank–Nicolson 5R1C identity, extracted so the
+    /// per-class branch (round 73, #1522/#4504) and the
+    /// identical-construction fallback share it verbatim.
+    #[allow(clippy::too_many_arguments)]
+    fn legacy_5r1c_residual(
+        &self,
+        cm: f64,
+        h_tr_3: f64,
+        h_tr_em: f64,
+        dt_seconds: f64,
+        t_mass: f64,
+        t_mass_prev: f64,
+        t_sol_air_zone: f64,
+        t_air: f64,
+        t_i_free: f64,
+        phi_m: f64,
+    ) -> f64 {
+        let cm_dt = cm / dt_seconds;
+        let half_cond = 0.5 * (h_tr_3 + h_tr_em);
+        let alpha = if cm > 0.0 && h_tr_3 > 0.0 && dt_seconds > 0.0 {
+            let tau_mass = cm / h_tr_3;
+            1.0 - (-dt_seconds / tau_mass).exp()
+        } else {
+            1.0
+        };
+        let t_i = (1.0 - alpha) * t_i_free + alpha * t_air;
+        let denom = cm_dt + half_cond;
+        let numer =
+            t_mass_prev * (cm_dt - half_cond) + h_tr_em * t_sol_air_zone + h_tr_3 * t_i + phi_m;
+        denom * t_mass - numer
     }
 
     /// Compute the South-wall sol-air temperature for the 9R4C path, matching
@@ -622,6 +795,7 @@ impl InvariantChecker {
                 model,
                 i,
                 dt_seconds,
+                outdoor_temp,
                 temps[i],
                 mass_temps[i],
                 prev_mass_temps[i],

@@ -389,6 +389,13 @@ jobs:
         || 'ubuntu-24.04'
       }}
     timeout-minutes: 10
+    # Round 73 (physics loop, #4504): honest executed-run accounting. When
+    # the phase-gate precheck skips the heavy jobs, `compare` is skipped —
+    # that is a neutral outcome (Issue #3810), NOT an executed PASS. The
+    # `executed` output lets the GH listener say so explicitly instead of
+    # letting a skipped run silently count as a green comparison.
+    outputs:
+      executed: ${{ steps.verify.outputs.executed }}
 
     steps:
       - name: Download probe artifacts
@@ -397,7 +404,9 @@ jobs:
           path: artifacts
 
       - name: Run comparison verifier
+        id: verify
         run: |
+          echo "executed=true" >> "$GITHUB_OUTPUT"
           set -euo pipefail
           python3 - << 'PYEOF'
           """
@@ -630,9 +639,20 @@ jobs:
         run: |
           set -uo pipefail
           RESULT="${{ needs.compare.result }}"
+          EXECUTED="${{ needs.compare.outputs.executed }}"
           echo "compare job result: ${RESULT}"
           if [[ "${RESULT}" != "success" && "${RESULT}" != "skipped" ]]; then
             echo "::error::Fast-Math compare job did not succeed: ${RESULT}"
             exit 1
+          fi
+          # Round 73 (#4504): a skipped compare is neutral-success per the
+          # Issue #3810 contract, but it is NOT an executed PASS. Say so
+          # explicitly so run history cannot be read as "the comparison
+          # passed" when no comparison ran.
+          if [[ "${RESULT}" == "skipped" || "${EXECUTED}" != "true" ]]; then
+            echo "::notice::Fast-Math comparison SKIPPED this run (phase-gate precheck) — neutral outcome, not an executed PASS."
+            echo "Fast-Math comparison: SKIPPED — no executed comparison this run (neutral per #3810; do not count as PASS)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Fast-Math comparison: EXECUTED and PASSED (comparison job ran to completion)" >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "Fast-Math vs IEEE-754 ASHRAE 600/900 Regression Gate (GH) PASS"
