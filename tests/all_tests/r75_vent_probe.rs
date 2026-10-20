@@ -14,9 +14,9 @@ fn r75_vent_probe() {
     use fluxion::physics::cta::VectorField;
     use fluxion::sim::engine::ThermalModel;
     use fluxion::sim::thermal_selector::ThermalSelector;
+    use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
     use fluxion::weather::epw::EpwWeatherSource;
     use fluxion::weather::WeatherSource;
-    use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
     let run = |flag: bool, label: &str| -> Vec<(usize, f64)> {
         let spec = ASHRAE140Case::Case650FF.spec();
