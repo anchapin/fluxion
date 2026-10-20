@@ -193,6 +193,7 @@ mod pyi_stub_completeness;
 mod quantum_energy_conservation_isolation_walls;
 mod reference_catalog_validation;
 mod regression_exterior_film_unification;
+mod r75_vent_probe;
 mod s3_upload_pipeline;
 mod security_rate_limit;
 mod shading_isolation;
