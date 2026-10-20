@@ -4002,6 +4002,8 @@ impl ThermalModel<VectorField> {
                 r71_air_driver_den_prev: VectorField::from_scalar(0.0, num_zones),
                 r75_vent_term_prev: VectorField::from_scalar(0.0, num_zones),
                 r75_vent_has_prev: false,
+                r76_sol_air_prev: VectorField::from_scalar(0.0, num_zones),
+                r76_has_prev: false,
             },
             conduction: ConductionState {
                 backend: ConductionBackend::default(),
