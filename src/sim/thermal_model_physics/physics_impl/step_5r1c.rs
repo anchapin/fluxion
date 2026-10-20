@@ -1112,6 +1112,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let r71_num_prev_ref = self.0.mass.r71_air_driver_num_prev.as_ref();
         let r71_den_prev_ref = self.0.mass.r71_air_driver_den_prev.as_ref();
 
+        // [R74 HARNESS — #1585 exact ramped-forcing increment, round 74.
+        // `FLX_R74_RAMP_EXACT` integrates the exact-exponential air-node ODE
+        // against the R71 linear driver ramp consistently: within each
+        // sub-step the R71 default holds the ramped steady state FROZEN at
+        // the sub-step midpoint fraction, then relaxes exponentially toward
+        // that constant. The exact solution of dT/dt = (s(t) - T)/tau with
+        // s(t) linear across the sub-step (s0 -> s1) is
+        //   T(dt) = s1 - tau*g + (T0 - s0 + tau*g) * exp(-dt/tau),
+        // g = (s1 - s0)/dt_sub; it reduces to the default form when g = 0
+        // (constant drivers, seed hours), so seed steps stay bit-identical.
+        // tau is evaluated at the same ramped-midpoint den as the default,
+        // isolating only the forcing-shape change. Harness arm: default
+        // build is untouched until measured evidence AND an explicit
+        // Alex-level flip decision (#1585 progress thread).]
+        let r74_ramp_exact = std::env::var("FLX_R74_RAMP_EXACT").is_ok();
+
         // Initialize air-node state from previous timestep
         // Issue #3370: `t_air_state` / `solar_lag_state` are scratch pool
         // buffers (no per-step allocation); the pre-#3370 implementation
@@ -1173,8 +1189,35 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         f64::INFINITY
                     };
                     let t_i_free_i = if c_air_i > 0.0 && tau_air.is_finite() && dt_sub > 0.0 {
-                        let exponent = -dt_sub / tau_air;
-                        steady + (t_air_old_i - steady) * exponent.exp()
+                        if r74_ramp_exact {
+                            // [R74 HARNESS] exact ramped-forcing solution;
+                            // see the FLX_R74_RAMP_EXACT note above.
+                            let nv = if night_vent_active_now && i == 0 {
+                                h_ve_night * outdoor_temp
+                            } else {
+                                0.0
+                            };
+                            let ramp = |f: f64, cur: f64, prev: f64| -> f64 {
+                                if prev != 0.0 {
+                                    prev + f * (cur - prev)
+                                } else {
+                                    cur
+                                }
+                            };
+                            let f0 = _step as f64 / steps as f64;
+                            let f1 = (_step as f64 + 1.0) / steps as f64;
+                            let num_base = num_tm_ref[i] + num_rest_ref[i];
+                            let s0 = (ramp(f0, num_base, r71_num_prev_ref[i]) + nv)
+                                / ramp(f0, den_ref[i], r71_den_prev_ref[i]);
+                            let s1 = (ramp(f1, num_base, r71_num_prev_ref[i]) + nv)
+                                / ramp(f1, den_ref[i], r71_den_prev_ref[i]);
+                            let g = (s1 - s0) / dt_sub;
+                            let exponent = -dt_sub / tau_air;
+                            s1 - tau_air * g + (t_air_old_i - s0 + tau_air * g) * exponent.exp()
+                        } else {
+                            let exponent = -dt_sub / tau_air;
+                            steady + (t_air_old_i - steady) * exponent.exp()
+                        }
                     } else {
                         steady
                     };

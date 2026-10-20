@@ -3555,3 +3555,59 @@ drivers, currently a midpoint-rule approximation); #1522 stays closed as the
 historical record with a routing cross-reference.
 
 Recorded 2026-10-19/20, loop round 73.
+
+## §60 — Round 74 (#1585): `FLX_R74_RAMP_EXACT` — exact ramped-forcing integration of the air-node ODE (harness, env-gated, default build bit-identical)
+
+The reopened #1585 residual, made precise: since the round-73 flip the air-node
+drivers ramp linearly across sub-steps, but within each sub-step the default
+holds the ramped steady state FROZEN at the sub-step midpoint fraction and
+relaxes exponentially toward that constant — a midpoint-rule approximation of
+the ramped forcing. The arm (`FLX_R74_RAMP_EXACT`, branch
+`loop74/ramp-exact-arm`) replaces it with the exact closed form for a
+first-order ODE with linearly varying forcing s(t) = s0 + g·t across the
+sub-step:
+
+    T(dt) = s1 - tau*g + (T0 - s0 + tau*g) * exp(-dt/tau),  g = (s1 - s0)/dt_sub
+
+s0/s1 are the ramped steady states at the sub-step's start/end fractions
+(including the night-vent numerator term, constant within the hour); tau stays
+evaluated at the same ramped-midpoint den as the default, isolating only the
+forcing-shape change. g = 0 on seed and constant-driver hours reduces the
+formula to the default form, so seed steps are bit-identical. τ_air = ∞
+degenerate zones keep the default direct-steady fallback.
+
+**Measurement** (strict gate, canonical DRYCOLD, on develop `0512ab21` + arm;
+reproduce-first on clean `0512ab21`: 13 PASS / 29 KNOWN-FAIL / 0 REGRESSION,
+output-diff 42/42 — the round-73 `_doc_round73` baseline reproduces exactly;
+flag-off battery on the branch bit-identical to develop across all 21 printed
+metric lines; checker-basis gaps below):
+
+| metric | default (ramp, midpoint-freeze) | arm (exact ramped forcing) | note |
+|---|---|---|---|
+| 650 C | 7.99 pp (3.516 MWh) | **7.69 pp** (3.530 MWh) | improves — moves toward band |
+| 650FF Tmax | 16.90 pp | 16.83 pp | improves marginally |
+| 195 H / 610 C | 32.84 / 11.48 pp | 32.81 / 11.41 pp | improve marginally |
+| 600 H | 0.45 pp (4.905) | 0.56 pp (4.910) | worsens — the near-in-band row moves 0.005 MWh away |
+| 630 C | 1.63 pp | 1.70 pp | worsens marginally |
+| 195 C | 26.84 pp | 26.99 pp | worsens marginally |
+| 650FF Tmin | 6.09 pp (−18.30 °C) | 6.78 pp (−18.42 °C) | worsens |
+| 800 C | 1094.57 pp | 1103.58 pp | checker REGRESSION — the degenerate structural row on an already-absurd gap; disclosed, not tuned |
+| 600 C / 640 H/C / 800 H / 950 H / 650 H | PASS | PASS | hold |
+| 900FF / 950FF | byte-identical | byte-identical | not on this path |
+
+Checker summary under the arm: **13 PASS / 28 KNOWN-FAIL / 1 REGRESSION** (the
+800 C structural row; every other move within the +5 pp tolerance).
+
+**Verdict:** the exact ramped-forcing form is mathematically correct and
+spec-permitted (it is what "integrate the exponential update against the
+linear ramp consistently" means exactly), but the measured effect is
+**second-order and direction-mixed**: the largest lever is ≤ 0.7 pp of band on
+any tracked row (650 C −0.30, 650FF Tmin +0.69), and the #1522 signature is
+untouched. This is NOT a decisive measurement: per the evidence-then-explicit-
+decision rule the arm lands **env-gated only** — the default keeps the
+midpoint-freeze ramp, and any default-side change waits on either a decisive
+measurement (none exists today) or an explicit Alex-level decision. The
+800 C REGRESSION is the known degenerate structural row (1094 pp class),
+recorded rather than tuned.
+
+Recorded 2026-10-20, loop round 74.
