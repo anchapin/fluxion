@@ -77,8 +77,8 @@ pub struct MassState<T: ContinuousTensor<f64>> {
     /// integrator); `None` before the first step.
     pub r70_surface_node_temperatures_prev: Option<T>,
 
-    /// [R71 HARNESS — env-gated `FLX_R71_AIR_CAP` (loop round 72, #1522
-    /// sub-hour driver resolution). Previous-hour per-zone air-node ODE
+    /// [R71 — sub-hour driver resolution, default since loop round 73
+    /// (#1522; env-gated harness `FLX_R71_AIR_CAP` in round 72). Previous-hour per-zone air-node ODE
     /// drivers — the numerator WITHOUT the night-vent term
     /// (`num_tm + num_rest`) and the denominator — persisted at the end of
     /// each step so the sub-step loop can linearly ramp the drivers across
@@ -86,8 +86,7 @@ pub struct MassState<T: ContinuousTensor<f64>> {
     /// (dt/τ_air ≈ 3.6 makes the frozen-driver steady state the dominant
     /// air-node response; #1585 gave the node true C_air but not
     /// sub-hour drivers). Zero-initialized; the first step detects zero and
-    /// seeds with the current values (no ramp on step 1). Default builds
-    /// never read these fields.]
+    /// seeds with the current values (no ramp on step 1).]
     pub r71_air_driver_num_prev: T,
     pub r71_air_driver_den_prev: T,
 }

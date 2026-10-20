@@ -19,8 +19,8 @@
         3.611,
         4.886
       ],
-      "value_mwh": 4.959,
-      "gap_pct_of_mid": 1.72,
+      "value_mwh": 4.905,
+      "gap_pct_of_mid": 0.45,
       "status": "known_fail"
     },
     "case_600_cooling": {
@@ -32,7 +32,7 @@
         4.927,
         6.667
       ],
-      "value_mwh": 5.489,
+      "value_mwh": 5.423,
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     },
@@ -45,7 +45,7 @@
         4.381,
         5.928
       ],
-      "value_mwh": 5.21,
+      "value_mwh": 5.132,
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     },
@@ -58,8 +58,8 @@
         0.321,
         0.434
       ],
-      "value_mwh": 4.657,
-      "gap_pct_of_mid": 1118.68,
+      "value_mwh": 4.566,
+      "gap_pct_of_mid": 1094.57,
       "status": "known_fail"
     },
     "case_810_heating": {
@@ -228,8 +228,8 @@
         3.68,
         4.978
       ],
-      "value_mwh": 5.665,
-      "gap_pct_of_mid": 15.87,
+      "value_mwh": 5.619,
+      "gap_pct_of_mid": 14.81,
       "status": "known_fail"
     },
     "case_610_cooling": {
@@ -241,8 +241,8 @@
         3.612,
         4.887
       ],
-      "value_mwh": 3.172,
-      "gap_pct_of_mid": 10.35,
+      "value_mwh": 3.124,
+      "gap_pct_of_mid": 11.48,
       "status": "known_fail"
     },
     "case_620_heating": {
@@ -254,8 +254,8 @@
         3.746,
         5.067
       ],
-      "value_mwh": 6.46,
-      "gap_pct_of_mid": 31.61,
+      "value_mwh": 6.431,
+      "gap_pct_of_mid": 30.95,
       "status": "known_fail"
     },
     "case_620_cooling": {
@@ -267,7 +267,7 @@
         3.504,
         4.741
       ],
-      "value_mwh": 4.594,
+      "value_mwh": 4.56,
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     },
@@ -280,8 +280,8 @@
         4.035,
         5.46
       ],
-      "value_mwh": 7.158,
-      "gap_pct_of_mid": 35.77,
+      "value_mwh": 7.137,
+      "gap_pct_of_mid": 35.32,
       "status": "known_fail"
     },
     "case_630_cooling": {
@@ -293,8 +293,8 @@
         2.4,
         3.247
       ],
-      "value_mwh": 3.321,
-      "gap_pct_of_mid": 2.62,
+      "value_mwh": 3.293,
+      "gap_pct_of_mid": 1.63,
       "status": "known_fail"
     },
     "case_640_heating": {
@@ -306,7 +306,7 @@
         2.161,
         2.924
       ],
-      "value_mwh": 2.859,
+      "value_mwh": 2.844,
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     },
@@ -319,7 +319,7 @@
         4.73,
         6.4
       ],
-      "value_mwh": 5.477,
+      "value_mwh": 5.412,
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     },
@@ -345,8 +345,8 @@
         3.881,
         5.25
       ],
-      "value_mwh": 3.644,
-      "gap_pct_of_mid": 5.19,
+      "value_mwh": 3.516,
+      "gap_pct_of_mid": 7.99,
       "status": "known_fail"
     },
     "case_910_heating": {
@@ -436,8 +436,8 @@
         3.471,
         4.697
       ],
-      "value_mwh": 2.136,
-      "gap_pct_of_mid": 32.69,
+      "value_mwh": 2.13,
+      "gap_pct_of_mid": 32.84,
       "status": "known_fail"
     },
     "case_195_cooling": {
@@ -449,8 +449,8 @@
         0.554,
         0.75
       ],
-      "value_mwh": 0.931,
-      "gap_pct_of_mid": 27.76,
+      "value_mwh": 0.925,
+      "gap_pct_of_mid": 26.84,
       "status": "known_fail"
     },
     "ff_600ff_min": {
@@ -464,7 +464,8 @@
       ],
       "value_c": -11.39,
       "gap_pct_of_mid": 0.0,
-      "status": "pass"
+      "status": "pass",
+      "value_mwh": -11.2
     },
     "ff_600ff_max": {
       "published_range_c": [
@@ -476,8 +477,9 @@
         68.4
       ],
       "value_c": 55.9,
-      "gap_pct_of_mid": 14.53,
-      "status": "known_fail"
+      "gap_pct_of_mid": 14.85,
+      "status": "known_fail",
+      "value_mwh": 55.69
     },
     "ff_650ff_min": {
       "published_range_c": [
@@ -489,8 +491,9 @@
         -16.7
       ],
       "value_c": -18.51,
-      "gap_pct_of_mid": 7.3,
-      "status": "known_fail"
+      "gap_pct_of_mid": 6.09,
+      "status": "known_fail",
+      "value_mwh": -18.3
     },
     "ff_650ff_max": {
       "published_range_c": [
@@ -502,8 +505,9 @@
         66.8
       ],
       "value_c": 53.41,
-      "gap_pct_of_mid": 16.48,
-      "status": "known_fail"
+      "gap_pct_of_mid": 16.9,
+      "status": "known_fail",
+      "value_mwh": 53.14
     },
     "ff_900ff_min": {
       "published_range_c": [
@@ -578,5 +582,6 @@
   "_doc_round34": "2026-10-15 (loop round 34, relabel-only): the Case 970 entries' published_range_mwh/band_mwh fields are the INTERNAL TARGET BAND OF UNVERIFIED ORIGIN recorded at issue #1446 (round-20 Finding 1, \u00a7LIMIT-23 / docs/investigations/limit-23b-case-970-provenance-and-envelope.md) \u2014 no Case 970 exists in ASHRAE 140-2017(a) or the 140-2023 Annex B8 \u00a7B8.1 transcription. The field name is kept for checker compatibility; values and gaps are unchanged (H 2.004 vs [10.54,14.26] gap 68.84, C 0.869 vs [7.391,9.999] gap 75.01, both known_fail). Code and doc labels aligned to 'internal target of unverified origin' in the same PR; nothing was tuned.",
   "_doc_round39": "Round 39 (2026-10-15): re-recorded from the corrected engine after the ASHRAE 140 Table 5-42 infiltration altitude adjustment (fixed-sea-level-rho programs input 0.414 ach, not 0.5; commit 1878300e). All 17 annual + 4 free-float cases re-measured; 22 metrics move toward their bands, 5 move away (800C, 810H/C, 920H, 930H) - recorded, not tuned.",
   "_doc_round41": "Canonical-weather binding (loop round 41, 2026-10-15): the strict gate now runs the ASHRAE 140-2023 normative weather (DRYCOLD.TMY725650TY.CSV, TMY3 station 725650) converted to EPW with the informative modified Martin-Berdahl Tsky series as EPW field 12 (HIR = sigma*Tsky^4), per the round-40 spec in docs/investigations/sky-longwave-input-provenance-and-canonical-weather.md. All 42 measured metrics re-recorded from the corrected configuration; every strict-gate number moved as expected. Old -> new values/gaps in the PR body; statuses re-derived from the published bands (out-of-band = known_fail, no tuning). Golden-NREL 724666 route kept opt-in via FLUXION_ASHRAE140_WEATHER=golden.",
-  "_doc_round71": "D5 default flip (loop round 71, 2026-10-19, #3983 \u00a757, Alex-directed): the per-surface 5R1C mass split + interior film/surface network + t_s-first surface advance + degenerate-zone Option A fallback promoted from the round-66..70 harness arms to engine defaults. All 42 measured metrics re-recorded from the corrected engine on branch loop71/d5-default-flip (stack verified flag-off bit-identical to the round-41 canonical-weather baseline before the flip; t_s battery reproduced \u00a756 exactly; degen+t_s battery differed only on Case 195). Disclosed regressions adopted, not tuned: 650 C leaves band low (night-vent class), 195 C/H and 630 C status changes recorded; 600 H 1.7 pp from band, 640 H/800 H/600FF Tmin enter band. Published bands untouched. Source: strict gate battery on the flip commit, canonical DRYCOLD route."
+  "_doc_round71": "D5 default flip (loop round 71, 2026-10-19, #3983 \u00a757, Alex-directed): the per-surface 5R1C mass split + interior film/surface network + t_s-first surface advance + degenerate-zone Option A fallback promoted from the round-66..70 harness arms to engine defaults. All 42 measured metrics re-recorded from the corrected engine on branch loop71/d5-default-flip (stack verified flag-off bit-identical to the round-41 canonical-weather baseline before the flip; t_s battery reproduced \u00a756 exactly; degen+t_s battery differed only on Case 195). Disclosed regressions adopted, not tuned: 650 C leaves band low (night-vent class), 195 C/H and 630 C status changes recorded; 600 H 1.7 pp from band, 640 H/800 H/600FF Tmin enter band. Published bands untouched. Source: strict gate battery on the flip commit, canonical DRYCOLD route.",
+  "_doc_round73": "2026-10-19 (loop round 73, R71 air-driver default flip #1522): the sub-hour air-node num/den driver ramp (env-gated FLX_R71_AIR_CAP harness in round 72, PR #4505) is now the engine default; metrics re-recorded from the corrected engine on loop73/air-cap-default-flip. 600 H 1.72->0.45 pp (4.959->4.905 MWh); narrows 630 C 2.62->1.63, 195 C 27.76->26.84, 650FF Tmin 7.30->6.09; worsens as disclosed 650 C 5.19->7.99 (LIMIT-28 night-vent coupling class), 600FF/650FF Tmax <=0.42 pp; all other movement follows the promoted physics. Nothing tuned; statuses re-derived honestly (no status changes)."
 }
