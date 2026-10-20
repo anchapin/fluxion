@@ -89,6 +89,19 @@ pub struct MassState<T: ContinuousTensor<f64>> {
     /// seeds with the current values (no ramp on step 1).]
     pub r71_air_driver_num_prev: T,
     pub r71_air_driver_den_prev: T,
+
+    /// [R75 HARNESS — #3983 free-float structural question, round 75.
+    /// `FLX_R75_VENT_RAMP`: previous-hour night-vent numerator term
+    /// (`h_ve_night · T_outdoor`, 0 when the vent was inactive) and a
+    /// first-step seed flag. The default applies the binary vent term at
+    /// its current-hour value inside the sub-step loop (spec-correct: the
+    /// 140 night-vent schedule holds for the whole hour, §5.2.1.10 /
+    /// Table 5-160); the arm interpolates it across the existing sub-steps
+    /// at the R71 midpoint fraction, resolving the 07:00 / 18:00 schedule
+    /// transitions intra-hour. Harness arm: the default build never reads
+    /// these fields (bit-identical).]
+    pub r75_vent_term_prev: T,
+    pub r75_vent_has_prev: bool,
 }
 
 impl<T: ContinuousTensor<f64> + Clone> Clone for MassState<T> {
@@ -132,6 +145,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for MassState<T> {
             r70_surface_node_temperatures_prev: self.r70_surface_node_temperatures_prev.clone(),
             r71_air_driver_num_prev: self.r71_air_driver_num_prev.clone(),
             r71_air_driver_den_prev: self.r71_air_driver_den_prev.clone(),
+            r75_vent_term_prev: self.r75_vent_term_prev.clone(),
+            r75_vent_has_prev: self.r75_vent_has_prev,
         }
     }
 }

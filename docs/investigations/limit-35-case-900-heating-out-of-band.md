@@ -3611,3 +3611,85 @@ measurement (none exists today) or an explicit Alex-level decision. The
 recorded rather than tuned.
 
 Recorded 2026-10-20, loop round 74.
+
+
+## §61 — Round 75 (#3983): `FLX_R75_VENT_RAMP` — the vent-transition / event-resolution experiment (harness, env-gated, default build bit-identical)
+
+Alex's round-75 focus question: **do structural limits prevent the free-float
+family reaching band, tested at the next rung of the incremental ladder** —
+resolving the binary night-vent coupling's intra-hour transitions instead of
+re-architecting. This section records the experiment and its verdict.
+
+**Premises verified in code (round 75, on `999d9a79`):**
+
+- The night-vent coupling is binary at schedule resolution:
+  `NightVentilation::is_active_at_hour(hour_of_day)` gates the whole hour
+  (Case 650/650FF: 18:00–07:00, 13 h; §5.2.1.10 / Table 5-160, round-26
+  input-side verification). LIMIT-28's night-vent attribution classes stand.
+- The R71 default (since round 73) already interpolates the driver **den**
+  across the sub-steps, and `den_prev` carries the vent conductance — so the
+  vent-coupling **conductance** transition is already event-resolved on the
+  default path. The one binary element left in the sub-step loop is the vent
+  **numerator** term `h_ve_night · T_outdoor`, re-applied at its full
+  current-hour value in every sub-step (the r71 `num_prev` persistence is
+  documentedly vent-less; step_5r1c.rs persist-block comment, round 72).
+
+**The arm** (`FLX_R75_VENT_RAMP`, branch `loop75/vent-transition-arm`):
+interpolates the night-vent numerator term across the existing sub-steps at
+the same midpoint fraction as the R71 driver ramp, seeded from the persisted
+previous-hour term (`MassState.r75_vent_term_prev` + `r75_vent_has_prev`;
+0 when the vent was inactive — ramps both the 07:00 off-transition and the
+18:00 on-transition). The `FLX_R74_RAMP_EXACT` endpoints consume the same
+ramped term (`nv_at(f0/f1)`), so the arms compose. Default build (flag
+unset) never reads the new fields and executes identical arithmetic.
+Coverage: the 5R1C sub-stepped vent cases (650 C / 650FF / 630 C family).
+900FF has no night vent (inert control); 950FF's vent enters through the
+hourly-stepped 9R4C FD network (`step_9r4c.rs`), whose event resolution
+would require sub-hour integration of that network (the LIMIT-28
+GaugeSolver route) — not attempted at this rung.
+
+**Measurement** (strict gate, canonical DRYCOLD, on the arm branch; flag-off
+battery bit-identical to develop across all 21 printed metric lines — the
+only sorted-diff differences are known-fail panic thread IDs):
+
+- **Arm-on: every printed strict-gate line is byte-identical to the
+  baseline** — 650 C 3.516 MWh (7.99 pp), 630 C 3.293 (1.63 pp), 650FF
+  Tmin −18.30 (6.09 pp) / Tmax 53.14 (16.90 pp), 900FF −0.26/43.28,
+  950FF −15.67/38.78, 600 H 0.45 pp, 195 C 26.84 pp. 0 REGRESSION.
+- Full-precision probe (`tests/all_tests/r75_vent_probe.rs`, ignored
+  scratch, three simulated 650FF days, flag toggled in-process): the
+  transition-hour zone temperatures move by **≤ 0.0075 K**
+  (max |Δ| = 0.00753 K across the sampled hours) — milli-Kelvin on the
+  forcing hours themselves.
+
+**Verdict — the free-float gap SURVIVES event-resolved vent forcing.** The
+binary vent-term application is not a material contributor to the
+out-of-band rows: the effect of resolving it intra-hour is below the strict
+gate's print resolution on every metric. Mechanistically the R71 sub-hour
+driver resolution already smoothed the dominant (conductance-side) vent
+transition; the residual binary numerator term is second-order. This is the
+**first direct evidence of a genuine grid-level structural limit** in the
+free-float cohort: within the 1-h-timestep / per-hour-weather / sub-stepped
+exact-exponential air-node architecture, no further vent-forcing resolution
+is available to close 650FF Tmin (6.09 pp), the 900FF floor (Tmin 118.57 pp
+/ Tmax 3.07 pp of band) or 650 C (7.99 pp).
+
+**What a re-architecture would have to address** (the answer to Alex's
+question, per LIMIT-28's mechanisms plus this measurement):
+
+1. **Mass-network diurnal damping** (600FF/900FF class): the lumped-mass
+   damped swing — the bidirectional signature (winter min too warm AND
+   summer max too cool) — is untouched by forcing-resolution levers
+   (§56/§58/§60 all second-order or direction-mixed). Closing it needs
+   sub-hour mass-state resolution: the FD/GaugeSolver per-surface network
+   integrated below 1 h, or a multi-node mass state on the 5R1C path.
+2. **950FF night-vent mass coupling**: event resolution there requires
+   sub-hour integration of the hourly 9R4C FD network (same lever as (1)).
+3. Weather-driver resolution (hourly EPW → sub-hour interpolation) bounds
+   all forcing-resolution levers; the 140 reference programs resolve the
+   same hourly weather, so this is not the gap.
+
+The default build is unchanged this round (bit-identical); no baseline
+re-record is owed. The arm stays env-gated, measured, not tuned.
+
+Recorded 2026-10-20, loop round 75.
