@@ -1111,6 +1111,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // (no ramp on the seed hour).]
         let r71_num_prev_ref = self.0.mass.r71_air_driver_num_prev.as_ref();
         let r71_den_prev_ref = self.0.mass.r71_air_driver_den_prev.as_ref();
+        let r75_vent_term_prev_ref = self.0.mass.r75_vent_term_prev.as_ref();
+        let r75_vent_has_prev = self.0.mass.r75_vent_has_prev;
 
         // [R74 HARNESS — #1585 exact ramped-forcing increment, round 74.
         // `FLX_R74_RAMP_EXACT` integrates the exact-exponential air-node ODE
@@ -1127,6 +1129,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // build is untouched until measured evidence AND an explicit
         // Alex-level flip decision (#1585 progress thread).]
         let r74_ramp_exact = std::env::var("FLX_R74_RAMP_EXACT").is_ok();
+
+        // [R75 HARNESS — #3983 free-float structural question, round 75.
+        // `FLX_R75_VENT_RAMP` resolves the binary night-vent coupling's
+        // intra-hour transitions: the R71 default ramps the num/den drivers
+        // (den already carries the vent conductance transition through
+        // den_prev) but re-applies the vent numerator term
+        // `h_ve_night · T_outdoor` at its full current-hour value in every
+        // sub-step — a step at the 07:00 / 18:00 schedule boundaries. The
+        // arm interpolates that term across the existing sub-steps at the
+        // same midpoint fraction, seeded from the persisted previous-hour
+        // term (0 when the vent was inactive). Isolates the vent-transition
+        // forcing shape; the R71 driver ramp, φ_st / solar-lag freezing and
+        // the exact-exponential integrator are untouched. Harness arm:
+        // default build (flag unset) never reads the r75 state fields and
+        // executes the identical arithmetic (bit-identical).]
+        let r75_vent_ramp = std::env::var("FLX_R75_VENT_RAMP").is_ok();
 
         // Initialize air-node state from previous timestep
         // Issue #3370: `t_air_state` / `solar_lag_state` are scratch pool
@@ -1151,6 +1169,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             {
                 let buf = scratch.air_node_t_i_free.as_mut();
                 for i in 0..self.0.hvac.num_zones {
+                    let f_r75 = (_step as f64 + 0.5) / steps as f64;
                     let mut num_i = num_tm_ref[i] + num_rest_ref[i];
                     {
                         // [R71 HARNESS -> default, round 73] sub-hour driver
@@ -1168,8 +1187,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // but the corresponding heat removal from the air-node energy balance was
                     // missing. The iterative solver correctly applies this to phi_m; we add
                     // the outdoor-temperature contribution here for the 5R1C steady-state.
-                    if night_vent_active_now && i == 0 {
-                        num_i += h_ve_night * outdoor_temp;
+                    let nv_cur = if night_vent_active_now && i == 0 {
+                        h_ve_night * outdoor_temp
+                    } else {
+                        0.0
+                    };
+                    // [R75 HARNESS] FLX_R75_VENT_RAMP: interpolate the
+                    // night-vent numerator term across the sub-steps at the
+                    // same midpoint fraction as the R71 driver ramp. Default
+                    // (flag unset): the full current-hour term — the identical
+                    // add as before this arm existed.
+                    if nv_cur != 0.0 || (r75_vent_ramp && r75_vent_has_prev) {
+                        let nv_applied = if r75_vent_ramp && r75_vent_has_prev {
+                            let nv_prev_i = r75_vent_term_prev_ref[i];
+                            nv_prev_i + f_r75 * (nv_cur - nv_prev_i)
+                        } else {
+                            nv_cur
+                        };
+                        num_i += nv_applied;
                     }
                     let den_i = {
                         let f = (_step as f64 + 0.5) / steps as f64;
@@ -1192,10 +1227,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         if r74_ramp_exact {
                             // [R74 HARNESS] exact ramped-forcing solution;
                             // see the FLX_R74_RAMP_EXACT note above.
-                            let nv = if night_vent_active_now && i == 0 {
-                                h_ve_night * outdoor_temp
-                            } else {
-                                0.0
+                            let nv_at = |ff: f64| -> f64 {
+                                let cur = if night_vent_active_now && i == 0 {
+                                    h_ve_night * outdoor_temp
+                                } else {
+                                    0.0
+                                };
+                                if r75_vent_ramp && r75_vent_has_prev {
+                                    let p = r75_vent_term_prev_ref[i];
+                                    p + ff * (cur - p)
+                                } else {
+                                    cur
+                                }
                             };
                             let ramp = |f: f64, cur: f64, prev: f64| -> f64 {
                                 if prev != 0.0 {
@@ -1207,9 +1250,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             let f0 = _step as f64 / steps as f64;
                             let f1 = (_step as f64 + 1.0) / steps as f64;
                             let num_base = num_tm_ref[i] + num_rest_ref[i];
-                            let s0 = (ramp(f0, num_base, r71_num_prev_ref[i]) + nv)
+                            let s0 = (ramp(f0, num_base, r71_num_prev_ref[i]) + nv_at(f0))
                                 / ramp(f0, den_ref[i], r71_den_prev_ref[i]);
-                            let s1 = (ramp(f1, num_base, r71_num_prev_ref[i]) + nv)
+                            let s1 = (ramp(f1, num_base, r71_num_prev_ref[i]) + nv_at(f1))
                                 / ramp(f1, den_ref[i], r71_den_prev_ref[i]);
                             let g = (s1 - s0) / dt_sub;
                             let exponent = -dt_sub / tau_air;
@@ -1347,6 +1390,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             for i in 0..self.0.hvac.num_zones {
                 num_prev[i] = num_tm_ref[i] + num_rest_ref[i];
                 den_prev[i] = den_ref[i];
+            }
+            // [R75 HARNESS] persist this hour's night-vent term as the next
+            // hour's ramp source; the seed flag flips after the first step
+            // (mirrors the R71 zero-prev seed convention).
+            {
+                let vent_prev = self.0.mass.r75_vent_term_prev.as_mut();
+                for i in 0..self.0.hvac.num_zones {
+                    vent_prev[i] = if night_vent_active_now && i == 0 {
+                        h_ve_night * outdoor_temp
+                    } else {
+                        0.0
+                    };
+                }
+                self.0.mass.r75_vent_has_prev = true;
             }
         }
 
