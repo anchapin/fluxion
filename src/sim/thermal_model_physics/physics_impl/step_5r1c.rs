@@ -1396,8 +1396,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // (mirrors the R71 zero-prev seed convention).
             {
                 let vent_prev = self.0.mass.r75_vent_term_prev.as_mut();
-                for i in 0..self.0.hvac.num_zones {
-                    vent_prev[i] = if night_vent_active_now && i == 0 {
+                for (i, slot) in vent_prev.iter_mut().take(self.0.hvac.num_zones).enumerate() {
+                    *slot = if night_vent_active_now && i == 0 {
                         h_ve_night * outdoor_temp
                     } else {
                         0.0

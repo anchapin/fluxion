@@ -79,8 +79,8 @@
     "lib_ignored": 8,
     "lib_tests": 4262,
     "test_binaries": 56,
-    "workspace_ignored": 164,
-    "workspace_tests": 8922
+    "workspace_ignored": 165,
+    "workspace_tests": 8923
   },
   "ratchet": {
     "BASELINE_LIB_IGNORED": 9,
