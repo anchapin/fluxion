@@ -3459,3 +3459,50 @@ demonstrated on this path; the remaining unblocking lever per the LIMIT-05 diagn
 is true sub-hour driver resolution on the air node (the exact-exponential air-node
 ODE from #1585 is live but drivers are frozen per hour).
 
+## §58 — Round 72 (#1522): `FLX_R71_AIR_CAP` — sub-hour air-node driver resolution (harness, env-gated, default build bit-identical)
+
+Implements the §57 unblocking lever: the exact-exponential air-node ODE has true
+`C_air` (§#1585) but its drivers (num, den) are frozen at their top-of-hour
+values, so with dt/τ_air ≈ 3.6 the node relaxes ~97% toward a staircase steady
+state within each hour. The arm (`FLX_R71_AIR_CAP`, branch `loop72/air-cap-arm`,
+commit `6df373a7`) linearly ramps the per-zone num/den drivers across the
+existing sub-steps at the midpoint fraction f = (k+½)/N, interpolated between
+the previous hour's drivers (persisted in `MassState.r71_air_driver_*_prev`)
+and the current hour's. Night-vent numerator stays at its current-hour value;
+φ_st / solar-lag stay hourly-frozen — the arm isolates the num/den driver
+resolution. Default builds (flag unset) never read the new fields.
+
+**Measurement** (strict gate, canonical DRYCOLD, on `6ada8d55` + arm vs the
+`_doc_round71` baseline; flag-off battery on the branch bit-identical to
+develop across all 21 printed metric lines):
+
+| metric | baseline gap | arm gap | note |
+|---|---|---|---|
+| 600 H | 1.72 pp (4.959 MWh) | **0.45 pp** (4.905 MWh) | 0.019 MWh from the band top 4.886 — the nearest row is now essentially at the edge |
+| 600 C | PASS | PASS (5.489 → 5.423) | stays in band |
+| 630 C | 2.62 pp | 1.63 pp | narrows |
+| 640 H / 640 C | PASS | PASS (2.844 / 5.412) | hold |
+| 800 H | PASS | PASS (5.132) | holds |
+| 195 C | 27.76 pp | 26.84 pp | narrows slightly |
+| 650 C | 5.19 pp | **7.99 pp** (3.516 MWh) | worsens — recorded, not tuned |
+| 650FF Tmin | 7.30 pp | 6.09 pp | narrows |
+| 600FF Tmax | 14.53 pp | 14.85 pp | worsens slightly |
+| 650FF Tmax | 16.48 pp | 16.90 pp | worsens slightly |
+| 900FF / 950FF | byte-identical | byte-identical | not on this path |
+
+Checker verdict under the arm: **0 REGRESSION** (every gap within the recorded
++5 pp tolerance; 600 C / 640 H/C / 600FF Tmin hold PASS).
+
+**Verdict:** sub-hour driver resolution is the real #1522 lever, exactly as the
+§57 diagnosis predicted — it moves the nearest row (600 H) to 0.45 pp of band
+without touching the mass-side families. The 650 C residual (LIMIT-28
+night-vent coupling class per §57) worsens mildly, and the free-float Tmax
+pair worsens ≤ 0.42 pp — both disclosed, nothing tuned. The #1522
+bidirectional peak signature (Tmin AND Tmax opposing) is still not
+demonstrated: 600FF moves warm on both ends, 650FF Tmin improves while Tmax
+worsens — one row opposes, not the signature. Default-flip decision (if any)
+follows the D5 evidence-then-explicit-decision path and is **not** executed
+this round; the arm stays env-gated.
+
+Recorded 2026-10-19/20, loop round 72.
+
