@@ -456,8 +456,16 @@ mod tests {
 
         #[test]
         fn deadband_heating_cooling() {
-            let mut model = ThermalModel::<VectorField>::new(1);
+            // [Loop round 73 (#1522): the R71 sub-hour air-driver default
+            // flip makes the num/den driver ramp the engine default. This
+            // test drives three phases through ONE model, all labelled
+            // timestep 0; under the promoted default the second and third
+            // calls ramp from the previous phase's persisted drivers, so
+            // each phase now gets a fresh model — restoring the test's
+            // original "isolated phase" premise without touching the
+            // engine or tuning any output.]
             let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+            let mut model = ThermalModel::<VectorField>::new(1);
 
             model.setpoints.heating_setpoint = 20.0;
             model.setpoints.heating_schedule =
@@ -481,6 +489,14 @@ mod tests {
             let energy_heating =
                 model.solve_single_step(0, outdoor_temp_cold, &step_params, 3600.0);
 
+            // Fresh model for the cooling phase (see the round-73 note).
+            let mut model = ThermalModel::<VectorField>::new(1);
+            model.setpoints.heating_setpoint = 20.0;
+            model.setpoints.heating_schedule =
+                DailySchedule::constant(20.0).expect("valid constant schedule");
+            model.setpoints.cooling_setpoint = 27.0;
+            model.setpoints.cooling_schedule =
+                DailySchedule::constant(27.0).expect("valid constant schedule");
             model.setpoints.temperatures = VectorField::from_scalar(28.0, 1);
             model.mass.mass_temperatures = VectorField::from_scalar(28.0, 1);
             let outdoor_temp_hot = 35.0;
@@ -494,6 +510,14 @@ mod tests {
             };
             let energy_cooling = model.solve_single_step(0, outdoor_temp_hot, &step_params, 3600.0);
 
+            // Fresh model for the deadband phase (see the round-73 note).
+            let mut model = ThermalModel::<VectorField>::new(1);
+            model.setpoints.heating_setpoint = 20.0;
+            model.setpoints.heating_schedule =
+                DailySchedule::constant(20.0).expect("valid constant schedule");
+            model.setpoints.cooling_setpoint = 27.0;
+            model.setpoints.cooling_schedule =
+                DailySchedule::constant(27.0).expect("valid constant schedule");
             model.setpoints.temperatures = VectorField::from_scalar(23.5, 1);
             model.mass.mass_temperatures = VectorField::from_scalar(23.5, 1);
             let step_params_2 = StepParameters {
