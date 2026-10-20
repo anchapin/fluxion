@@ -1091,7 +1091,52 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // to sub-step k+1. The driving terms (num, den, phi_st) remain constant;
         // only t_air_old and solar_lag_old change between sub-steps.
         let steps = self.0.mass.sub_hour_air_node_steps as usize;
+        // [R76 HARNESS — #3983 sub-hour mass-state resolution, round 76.
+        // FLX_R76_MASS_SUBSTEPS=N: advance the mass node(s) at dt/N inside
+        // this sub-step loop (Crank–Nicolson, the same integrator the
+        // hourly advance uses), with the exterior driving term ramped
+        // prev→current hour at the R71 midpoint fraction (persisted
+        // `r76_sol_air_prev`/`r76_has_prev`), the sub-step's own air
+        // temperature as the interior boundary, and the per-sub-step mass
+        // temperature refreshed into the air-node numerator (`num_tm`),
+        // which the default path freezes at its hour-start value. N also
+        // sets the sub-step count (the air-node resolution composes with
+        // the mass resolution). Structural choices disclosed for the arm:
+        // (1) the lumped-node CN form, not the D5 per-class t_s-first
+        // advance — the per-class decomposition is orthogonal and stays
+        // hourly; (2) night-vent mass conductance held at its current-hour
+        // value (R75 measured its transition effect at ≤0.0075 K);
+        // (3) φ_m at its current-hour value (hourly gains). Harness arm:
+        // default build (flag unset) executes the identical arithmetic
+        // (bit-identical); the sub-step payoff measurement is the round-76
+        // deliverable, no default change proposed.]
+        let r76_n: usize = std::env::var("FLX_R76_MASS_SUBSTEPS")
+            .ok()
+            .and_then(|v| v.trim().parse().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(0);
+        // The air-node sub-step count is NOT coupled to the mass resolution:
+        // the existing air sub-step loop is calibrated at its default
+        // (N=3 for the 600-series, #2339) and is NOT convergent in N — the
+        // per-sub-step solar-lag state injection grows with the sub-step
+        // count (measured round 76: 650FF Tmax 33.1 °C at N=3 → 218 °C at
+        // N=96 with the mass advance disabled; the R76 air-only diagnostic
+        // `FLX_R76_NO_MASS` isolates it). The mass node therefore gets its
+        // own independent sub-step count and the air machinery is untouched.
         let dt_sub = dt / steps as f64;
+        // Local sub-step mass-state buffer (allocated only when the arm is
+        // on); refreshed into the air-node numerator each sub-step and
+        // carried to the hourly mass-advance block as the end-of-hour mass
+        // state.
+        let mut r76_mass: Vec<f64> = if r76_n > 0 {
+            self.0.mass.mass_temperatures.as_ref()[..self.0.hvac.num_zones].to_vec()
+        } else {
+            Vec::new()
+        };
+        let r76_sol_air_prev_ref = self.0.mass.r76_sol_air_prev.as_ref();
+        let r76_has_prev = self.0.mass.r76_has_prev;
+        let mut r76_final: Option<Vec<f64>> = None;
+        let phi_m_ref_early = phi_m.as_ref();
 
         // [R71 — sub-hour air-node driver resolution, default since loop
         // round 73 (#1522; env-gated harness `FLX_R71_AIR_CAP` in round 72,
@@ -1170,7 +1215,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 let buf = scratch.air_node_t_i_free.as_mut();
                 for i in 0..self.0.hvac.num_zones {
                     let f_r75 = (_step as f64 + 0.5) / steps as f64;
-                    let mut num_i = num_tm_ref[i] + num_rest_ref[i];
+                    // [R76 HARNESS] with the arm on, the mass→air numerator
+                    // term uses this sub-step's mass temperature instead of
+                    // the hour-start value frozen into `num_tm_ref`.
+                    let r76_no_refresh = std::env::var("FLX_R76_NO_NUM_REFRESH").is_ok();
+                    let mut num_i = if r76_n > 0 && !r76_no_refresh {
+                        self.0.conduction.derived_h_ms_is_prod.as_ref()[i] * r76_mass[i]
+                            + num_rest_ref[i]
+                    } else {
+                        num_tm_ref[i] + num_rest_ref[i]
+                    };
                     {
                         // [R71 HARNESS -> default, round 73] sub-hour driver
                         // ramp: midpoint-fraction linear interpolation
@@ -1339,11 +1393,71 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 scratch.air_node_solar_lag.as_mut()[i] = new_solar_lag;
             }
 
+            // [R76 HARNESS] sub-step mass advance: Crank–Nicolson at dt_sub
+            // per zone, exterior term ramped at the midpoint fraction,
+            // interior boundary = this sub-step's air temperature. When the
+            // arm is off this block never runs (r76_n == 0).
+            let r76_no_mass = std::env::var("FLX_R76_NO_MASS").is_ok();
+            if r76_n > 0 && !r76_no_mass {
+                let mass_sub = r76_n;
+                let dt_m = dt_sub / mass_sub as f64;
+                let f_mid = (_step as f64 + 0.5) / steps as f64;
+                let h_tr_3_all = self.0.conduction.derived_h_tr_3.as_ref();
+                let h_is_all = self.0.conduction.h_tr_is.as_ref();
+                let h_ms_all = self.0.conduction.h_tr_ms.as_ref();
+                for i in 0..self.0.hvac.num_zones {
+                    let t_ext = if r76_has_prev {
+                        let p = r76_sol_air_prev_ref[i];
+                        p + f_mid * (t_sol_air[i] - p)
+                    } else {
+                        t_sol_air[i]
+                    };
+                    let h_tr_3_i = h_tr_3_all.get(i).copied().unwrap_or(0.0);
+                    let h_air_mass_i = if h_tr_3_i > 0.0 {
+                        h_tr_3_i
+                    } else {
+                        let h_is = h_is_all.get(i).copied().unwrap_or(0.0);
+                        let h_ms = h_ms_all.get(i).copied().unwrap_or(0.0);
+                        if h_is + h_ms > 0.0 {
+                            h_is * h_ms / (h_is + h_ms)
+                        } else {
+                            h_ms
+                        }
+                    };
+                    let h_vent_i = if night_vent_active_now && i == 0 {
+                        h_ve_night
+                    } else {
+                        0.0
+                    };
+                    let t_i_sub = scratch.air_node_t_air.as_ref()[i];
+                    let tm_new = crank_nicolson_iso13790(
+                        r76_mass[i],
+                        dt_m,
+                        cm_ref[i],
+                        h_air_mass_i + h_vent_i,
+                        h_tr_em_zone.get(i).copied().unwrap_or(0.0),
+                        t_ext,
+                        t_i_sub,
+                        phi_m_ref_early[i],
+                    )?;
+                    r76_mass[i] = tm_new;
+                }
+            }
             // Update t_air_state for next sub-step
             scratch
                 .air_node_t_air
                 .as_mut()
                 .copy_from_slice(scratch.air_node_corrected.as_ref());
+        }
+        if r76_n > 0 {
+            // Persist the sol-air ramp source for the next hour and carry
+            // the end-of-hour mass state to the mass-advance block.
+            let sol_prev = self.0.mass.r76_sol_air_prev.as_mut();
+            for (i, slot) in sol_prev.iter_mut().take(self.0.hvac.num_zones).enumerate() {
+                *slot = t_sol_air[i];
+            }
+            self.0.mass.r76_has_prev = true;
+            r76_final = Some(r76_mass.clone());
         }
 
         // Issue #4495: input-envelope guard. Extreme-but-finite inputs
@@ -2668,6 +2782,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         )?
                     }
                 }
+            };
+
+            // [R76 HARNESS] with the arm on, the end-of-hour mass state comes
+            // from the sub-step advances above and the hourly lumped/per-class
+            // advance result is discarded (the r70 surface-node advance and the
+            // applied-boundary recording above still run, recording the same
+            // current-hour aggregates — under the arm the per-class
+            // decomposition stays hourly by design). Flag-off: untouched.
+            let tm_new = if let Some(mv) = r76_final.as_ref() {
+                mv[i]
+            } else {
+                tm_new
             };
 
             scratch.new_mass[i] = tm_new;

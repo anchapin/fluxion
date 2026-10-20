@@ -192,6 +192,7 @@ mod property_energy_conservation_random_topologies;
 mod pyi_stub_completeness;
 mod quantum_energy_conservation_isolation_walls;
 mod r75_vent_probe;
+mod r76_mass_probe;
 mod reference_catalog_validation;
 mod regression_exterior_film_unification;
 mod s3_upload_pipeline;

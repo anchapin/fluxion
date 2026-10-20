@@ -102,6 +102,16 @@ pub struct MassState<T: ContinuousTensor<f64>> {
     /// these fields (bit-identical).]
     pub r75_vent_term_prev: T,
     pub r75_vent_has_prev: bool,
+
+    /// [R76 HARNESS — #3983 sub-hour mass-state resolution, round 76.
+    /// `FLX_R76_MASS_SUBSTEPS`: previous-hour per-zone sol-air driving
+    /// temperature and a first-step seed flag, persisted at the end of each
+    /// step so the sub-stepped mass advance can linearly ramp the exterior
+    /// driving term across the hour (same convention as the R71 driver
+    /// ramp). Harness arm: the default build never reads these fields
+    /// (bit-identical).]
+    pub r76_sol_air_prev: T,
+    pub r76_has_prev: bool,
 }
 
 impl<T: ContinuousTensor<f64> + Clone> Clone for MassState<T> {
@@ -147,6 +157,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for MassState<T> {
             r71_air_driver_den_prev: self.r71_air_driver_den_prev.clone(),
             r75_vent_term_prev: self.r75_vent_term_prev.clone(),
             r75_vent_has_prev: self.r75_vent_has_prev,
+            r76_sol_air_prev: self.r76_sol_air_prev.clone(),
+            r76_has_prev: self.r76_has_prev,
         }
     }
 }

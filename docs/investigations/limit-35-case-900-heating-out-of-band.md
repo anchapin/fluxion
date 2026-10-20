@@ -3693,3 +3693,70 @@ The default build is unchanged this round (bit-identical); no baseline
 re-record is owed. The arm stays env-gated, measured, not tuned.
 
 Recorded 2026-10-20, loop round 75.
+
+## §62 — Round 76 (#3983): `FLX_R76_MASS_SUBSTEPS` — sub-hour mass-state resolution on the 5R1C path (harness, env-gated, default build bit-identical)
+
+Alex's round-76 direction: **extend resolution below the hour on the mass
+state** — the round-75 verdict identified sub-hour mass-state resolution as
+the next rung after event-resolved vent forcing survived (≤0.0075 K). This
+section records the increment and its measurement.
+
+**Design (option a — sub-step integration of the mass node):** inside the
+existing air-node sub-step loop, the mass node advances at dt/N with the
+hourly advance's own integrator (Crank–Nicolson), the exterior sol-air term
+ramped prev→current hour at the R71 midpoint fraction (new persistence
+`r76_sol_air_prev`/`r76_has_prev`, R71 convention), the sub-step's own air
+temperature as the interior boundary, and the per-sub-step mass temperature
+refreshed into the air-node numerator — the coupling term the default path
+freezes at its hour-start value. Structural choices disclosed: the lumped
+CN form (the D5 per-class decomposition stays hourly — orthogonal), the
+night-vent mass conductance held at its current-hour value (R75: ≤0.0075 K
+transition effect), φ_m at its current-hour value. Coverage: the 5R1C
+low-mass 600-series; 900FF/950FF are HighMass auto-promoted to the 9R4C FD
+network and are untouched (GaugeSolver route).
+
+**Pre-existing discovery (air sub-step loop not convergent in N):** the
+existing air-node sub-step machinery — default N=3 for the 600-series
+(#2339) — diverges with the sub-step count: with the R76 mass advance
+disabled (`FLX_R76_NO_MASS` diagnostic), 650FF Tmax reaches 218 °C at
+N=96 vs 33.1 °C at the default. Mechanism: the per-sub-step solar-lag
+state injection (`corrected += new_solar_lag/den_true`, fed back into
+`t_air`) grows with the number of injections; the loop is calibrated, not
+convergent. The R76 arm therefore decouples the mass sub-step count from
+the air sub-step count. Implication for the grid-limit hypothesis: the
+air-node "sub-hour" resolution on the default path is a calibrated
+3-point operator, not a resolved integrator — any verdict about sub-hour
+air resolution must account for this.
+
+**Measurement** (strict gate, canonical DRYCOLD, on `loop76/sub-hour-mass-state`;
+flag-off battery sorted strict lines byte-identical to develop `00d22230`):
+
+- N=12 arm-on, free-float: 650FF Tmin −18.30 → **−17.24** (band
+  [−17.8, −16.7]: **enters band**); 650FF Tmax 53.14 → 44.59 (band
+  [61.1, 66.8]: further below); 600FF Tmin −11.20 → −3.49 (band
+  [−13.8, −9.9]: overshoots above); 900FF untouched (9R4C, inert control).
+- N=12 arm-on, conditioned: 195 H 2.130 → 3.930 MWh (band [3.471, 4.697]:
+  **enters band**); 610 C 3.124 → 2.032 (further below); 630 C 3.293 →
+  2.408 (band [2.400, 3.247]: **enters band**); 650 C 3.516 → 1.692
+  (further below); 600 H 4.905 → 4.985; 800 C 4.566 → 3.015.
+- Full-precision probe (`tests/all_tests/r76_mass_probe.rs`, N = 1…96):
+  650FF **dTmin converges** — +0.65 K by N=96 (monotone from N=2); 650FF
+  **dTmax is non-monotone in N** (−4.4 K at N=4, through zero near N≈40,
+  +2.0 K at N=96) — a residual dt-inconsistency in the coupled scheme that
+  this increment does not resolve. Diagnosis owed, not tuned.
+
+**Verdict — the sub-hour mass-state increment is a first-order lever, not
+a milli-Kelvin effect.** Unlike vent-transition resolution, sub-hour mass
+coupling moves strict-gate metrics by whole Kelvins / tens of percent of
+annual load in both directions: it materially improves some out-of-band
+rows (650FF Tmin, 195 H, 630 C — into band) while degrading others
+(650FF/650 C cooling-side, 600FF Tmin overshoot). The round-75
+grid-limit hypothesis is therefore **refined, not confirmed**: within the
+current architecture there IS a physical lever below the hour on the mass
+state, but its N-convergence is not clean (dTmax non-monotone) and its
+aggregate effect on the family is mixed — the next increment is the
+convergence diagnosis (per-sub-step solar-lag injection on the air side,
+coupled num/den persistence), not a default flip. The arm stays env-gated,
+measured, not tuned; no default change is proposed this round.
+
+Recorded 2026-10-20, loop round 76.
