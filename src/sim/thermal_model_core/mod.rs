@@ -2004,6 +2004,20 @@ impl ThermalModel<VectorField> {
             model.conduction.cm_floor = None;
             model.conduction.cm_internal = None;
             model.mass.multi_node_thermal_mass = None;
+            // [D5 DEFAULT (loop round 71, #3983 §57): the real per-class wall /
+            // roof / floor mass conductances and capacitances are stored for
+            // ALL construction types so the (now-default) per-surface interior
+            // network in step_5r1c reads them on the low-mass 5R1C cohort. The
+            // values are the same ones computed above for every zone; only the
+            // storage gate changes. 9R4C multi-node init stays HighMass-only.]
+            if true {
+                model.conduction.h_tr_ms_wall = Some(VectorField::new(h_tr_ms_wall_vec.clone()));
+                model.conduction.h_tr_ms_roof = Some(VectorField::new(h_tr_ms_roof_vec.clone()));
+                model.conduction.h_tr_ms_floor = Some(VectorField::new(h_tr_ms_floor_vec.clone()));
+                model.conduction.cm_wall = Some(VectorField::new(cm_wall_vec.clone()));
+                model.conduction.cm_roof = Some(VectorField::new(cm_roof_vec.clone()));
+                model.conduction.cm_floor = Some(VectorField::new(cm_floor_vec.clone()));
+            }
         }
 
         // === Issue 692 FIX: Physics-Based h_tr_me Calculation ===
@@ -3982,6 +3996,7 @@ impl ThermalModel<VectorField> {
                 envelope_mass_energy_change_cumulative: 0.0,
                 internal_mass_energy_change_cumulative: 0.0,
                 multi_node_thermal_mass: None,
+                r70_surface_node_temperatures: None,
             },
             conduction: ConductionState {
                 backend: ConductionBackend::default(),

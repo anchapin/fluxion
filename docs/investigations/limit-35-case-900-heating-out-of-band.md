@@ -3387,3 +3387,75 @@ residuals persist. Any default-flip design must combine Option A (validated abov
 the t_s arm and re-adjudicate 195/650, and faces Alex's standing fidelity-first call
 only if it regresses the canonical gate — these are scratch numbers, default builds are
 untouched (bit-identical, verified above). Scratch branch not merged.
+
+## §57 — Round 71 (#3983 fourth increment): D5 default flip — per-surface 5R1C physics promoted to engine default (Alex-directed 2026-10-19)
+
+**Verification before the flip** (branch `r71-ts-advance-consolidate` = develop
+`305a2143` + the round-66..70 scratch stack cherry-picked, weather assets restored):
+
+1. Flag-off battery **bit-identical** to the round-41 canonical-weather baseline on
+   every printed metric (strict-gate checker 13 PASS / 29 KNOWN-FAIL / 0 REGRESSION,
+   pins exact, output-diff 42/42) — the stack is inert when the flags are unset.
+2. t_s-only battery (R66+R67+R70) **reproduces every §56 number exactly** on the
+   current tip, including after the #4495/#4500 envelope guards (not on this path).
+3. **New degen+t_s combination battery** (R66+R67+R68_DEGEN+R70) — the §56 open
+   question "does the 195 C regression survive Option A combined with t_s-first?" —
+   is byte-identical to the t_s-only battery everywhere except Case 195:
+   H 2.683 → 2.136 MWh (gap −42.9 → −32.7 pp, improves) and **C 1.219 → 0.931 MWh
+   (+71.9 → +27.8 pp)**. Option A recovers most but not all of the t_s-induced 195 C
+   regression; 195 C remains above band (it was already +17.9 pp known-fail at the
+   pre-flip baseline).
+
+**Regression classification.** The 650 C regression (3.989 → 3.644 MWh, leaves band
+low at 5.19 pp) is present with and without Option A, moves opposite to its non-vent
+sibling (600 C rises 4.975 → 5.489 toward the band top) and is therefore attributed to
+the LIMIT-28 night-ventilation coupling class (§53 attribution), not a new mechanism.
+800 C worsens 4.171 → 4.657 MWh on the standing 1118.7 pp structural row (§LIMIT-14
+class). Nothing tuned.
+
+**The flip.** Alex directed the default flip 2026-10-19 ("Proceed with the flip"),
+amending the §56 decision hold. Commit `f8ad15c2` (branch `loop71/d5-default-flip`)
+makes the engine default: per-surface-class mass nodes (wall/roof/floor, distributed
+sol-air), the per-class interior film/surface series network (real `h_ms_c`/`h_is_c`
+construction pair), the t_s-first backward-Euler surface advance (disclosed
+structural assumption `C_s_c = 0.1·cm_c`), and the Option A per-class-lumped interior
+coupling for degenerate `H_tr,3 = 0` zones. `FLX_R68_BEAM_PHIST` stays a harness arm
+(§56: measurable but second-order). The harness env gates were removed; the physics
+is unconditional on the low-mass 5R1C path. High-mass (9R4C) family, 900FF and 950FF
+are byte-identical under the flip (not on the modified path) — verified in batteries
+2 and 3 above.
+
+**Full re-record battery** (`_doc_round71`, flip build, canonical DRYCOLD default
+route; values from the checker logs, never hand-derived):
+
+- Strict gate: **13 PASS / 29 KNOWN-FAIL / 0 REGRESSION** against the re-recorded
+  baseline; the flipped default reproduces the degen+t_s battery line-for-line
+  (all `Case NNN strict]` lines sorted-diff equal).
+- Row movements (old → new): 600 H 6.064 → 4.959 (**1.7 pp from band**, new nearest
+  row), 600 C PASS, 610 H −15.9, 610 C −10.4, 620 H −31.6, 620 C PASS, 630 H −35.8,
+  630 C PASS → KNOWN-FAIL (+2.6), **640 H KNOWN-FAIL → PASS**, 640 C PASS,
+  **650 C PASS → KNOWN-FAIL** (−5.2), **800 H KNOWN-FAIL → PASS**, 800 C +1118.7
+  (structural), 195 H −32.7, 195 C +27.8; **600FF Tmin −13.05 → −11.39 (enters
+  band)**, 600FF Tmax 55.26 → 55.90 (gap 15.50 → 14.53), 650FF Tmin −18.71 → −18.51
+  (gap 8.46 → 7.30), 650FF Tmax 54.37 → 53.41 (worsens), 900FF/950FF unchanged.
+  Status count unchanged at 13/29: three rows enter band (640 H, 800 H, 600FF Tmin),
+  two leave (650 C, 630 C).
+- Baselines re-recorded in-PR: strict-gate JSON (15 case metrics + 4 FF rows,
+  `_doc_round71` provenance), output-diff CSV (`--update-baseline`, 42 metrics),
+  fabric baseline (case_600 5r1c 6.064/4.975 → 4.959/5.489; parity 1.1588/0.6739 →
+  0.9476/0.7436; 9r4c rows unchanged). Fabric checker PASS after re-record.
+- 9R4C selector rows, 900/950 fabric parity, surrogate fallback, hotloop goldens,
+  grid adapter, delta_config.yaml regeneration: see the PR body for the final
+  battery table.
+
+**Energy balance:** the per-class split conserves Σ w = 1 with interior shares
+proportional to w (round-66 record) and the t_s advance is a disclosed capacitance
+repartition (0.1·cm_c), not a source or sink; no tuning applied anywhere.
+
+**#1522 note:** the t_s-first surface advance gives `phi_st` partitions real dynamic
+order for the first time (§56), but the §56 measured verdict stands — the
+bidirectional free-float peak signature (Tmin up AND Tmax down) is still not
+demonstrated on this path; the remaining unblocking lever per the LIMIT-05 diagnosis
+is true sub-hour driver resolution on the air node (the exact-exponential air-node
+ODE from #1585 is live but drivers are frozen per hour).
+

@@ -244,6 +244,30 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // every case whose outermost layer keeps the default 0.9 emissivity
         // (600-660, 900-960) is bit-identical to the previous behaviour.
         let eps_ext_default = SolAirTemperature::ashrae_140_default().emissivity;
+        // [D5 DEFAULT (loop round 71, #3983 §57, Alex-directed default flip
+        // 2026-10-19): the per-surface-class mass split (wall / roof / floor)
+        // with distributed sol-air driving is now the engine default. Measured
+        // as the FLX_R66_PER_SURFACE harness arm in rounds 66-70 and verified
+        // bit-identical flag-off through round 71 before the flip; see
+        // docs/investigations/limit-35-case-900-heating-out-of-band.md §57.]
+        let ps_enabled = true;
+        // [D5 DEFAULT (loop round 71, #3983 §57): the interior film/surface
+        // network is per-surface too: each class couples to zone air through
+        // its own series (h_ms_c, h_is_c) with its real construction
+        // capacitance. Measured as the FLX_R67_INTERIOR harness arm in rounds
+        // 67-70; verified flag-off bit-identical through round 71.]
+        let r67_interior = true;
+        // Per-class harness tuple: (cls_g, cls_t, cls_area, cls_beam) —
+        // per-class exterior conductance, sol-air, area and beam irradiance.
+        type R66ClassTuples = [f64; 3];
+        let mut r66_cls: Vec<
+            Option<(
+                R66ClassTuples,
+                R66ClassTuples,
+                R66ClassTuples,
+                R66ClassTuples,
+            )>,
+        > = vec![None; self.0.hvac.num_zones];
         // Issue #2873: overwrite `scratch.t_sol_air_zone` with the
         // opaque-irradiance-based sol-air values used by the 5R1C envelope
         // conduction pathway (`h_tr_em * (t_sol_air - T_mass)` below). The
@@ -273,6 +297,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // clears it on checkout so the semantics (empty at loop start) are
         // unchanged; the capacity persists across steps.
         let boundary_surfaces = &mut scratch.boundary_surfaces;
+        #[allow(clippy::needless_range_loop)]
+        // i indexes several parallel zone vectors, not just r66_cls
         for i in 0..num_zones {
             // opaque_solar is the effective opaque irradiance on exterior surfaces (W/m²)
             // This is the combined wall + roof irradiance for the zone
@@ -339,6 +365,48 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         r_materials: (1.0 / s.u_value - 0.13 - 0.04).max(0.5),
                     });
                 }
+            }
+            // [R66 HARNESS — per-class exterior aggregates (scratch).]
+            if ps_enabled {
+                let mut cls_g = [0.0f64; 3];
+                let mut cls_gt = [0.0f64; 3];
+                let mut cls_area = [0.0f64; 3];
+                let mut cls_beam = [0.0f64; 3];
+                for s in boundary_surfaces.iter() {
+                    let c = if s.tilt_deg >= 45.0 { 1 } else { 0 };
+                    let g = s.h_tr_em();
+                    let t = s.sol_air_temperature(outdoor_temp, sky_temp);
+                    cls_g[c] += g;
+                    cls_gt[c] += g * t;
+                    cls_area[c] += s.area_opaque_m2;
+                    // [R68 HARNESS — per-class incident irradiance×area
+                    // (scratch). The same weight convention as
+                    // distribute_opaque_solar_gains (Issue #864: area ×
+                    // irradiance, area fallback) used by the beam-weighted
+                    // phi_st solar partition (FLX_R68_BEAM_PHIST).]
+                    cls_beam[c] += (s.irradiance_beam_diffuse_wm2 + s.irradiance_ground_wm2)
+                        * s.area_opaque_m2;
+                }
+                let floor_area: f64 = self
+                    .0
+                    .solar
+                    .surfaces
+                    .get(i)
+                    .map(|zs| {
+                        zs.iter()
+                            .filter(|s| s.orientation == Orientation::Down)
+                            .map(|s| (s.area - s.window_area).max(0.0))
+                            .sum()
+                    })
+                    .unwrap_or(0.0);
+                cls_area[2] = floor_area;
+                let mut cls_t = [outdoor_temp; 3];
+                for c in 0..2 {
+                    if cls_g[c] > 1e-9 {
+                        cls_t[c] = cls_gt[c] / cls_g[c];
+                    }
+                }
+                r66_cls[i] = Some((cls_g, cls_t, cls_area, cls_beam));
             }
             let (h_tr_em, t_sol_air_i) =
                 aggregate_zone_boundary(boundary_surfaces, outdoor_temp, sky_temp);
@@ -2033,69 +2101,392 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 0.0
             };
 
-            let tm_new = match method {
-                ThermalIntegrationMethod::BackwardEuler => {
-                    // Use implicit backward Euler for high thermal mass
-                    // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
-                    // SESSION 72: Include ventilation-to-mass cooling
-                    // Issue #896 FIX: Use h_tr_3 instead of h_tr_ms for the air-to-mass bottleneck.
-                    // See detailed comment in the CrankNicolson branch below.
-                    // Issue #2868: `h_air_mass` is `H_tr,3` with the degenerate
-                    // `H_ve = H_tr,w = 0` fallback applied (see above).
-                    let h_tr_3_zone = h_air_mass;
-                    // Backward Euler with h_tr_3 and night ventilation:
-                    // (Cm/dt + h_tr_em + h_tr_3 + h_vent_mass_zone) * Tm_new =
-                    //     Cm/dt * Tm_old + h_tr_em * t_sol_air + h_tr_3 * t_s + h_vent_mass_zone * t_outdoor + phi_m
-                    let cm_dt = cm / dt;
-                    let denom = cm_dt + h_tr_em + h_tr_3_zone + h_vent_mass_zone;
-                    let numer = cm_dt * tm_old
-                        + h_tr_em * t_sol_air[i]
-                        + h_tr_3_zone * t_s
-                        + h_vent_mass_zone * outdoor_temp
-                        + phi_m_zone;
-                    numer / denom
-                }
-                ThermalIntegrationMethod::ExplicitEuler => {
-                    // Use explicit Euler for low thermal mass (faster, still stable)
-                    // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
-                    // SESSION 72: Include ventilation-to-mass cooling
-                    // Issue #896 FIX: Use h_tr_3 instead of h_tr_ms for the air-to-mass bottleneck.
-                    // See detailed comment in the CrankNicolson branch below.
-                    // Issue #2868: degenerate-`H_tr,3` fallback (see above).
-                    let h_tr_3_zone = h_air_mass;
-                    let q_vent_mass = h_vent_mass_zone * (outdoor_temp - tm_old);
-                    let q_m_net = h_tr_em * (t_sol_air[i] - tm_old)
-                        + h_tr_3_zone * (t_s - tm_old)
-                        + phi_m_zone
-                        + q_vent_mass;
-                    tm_old + (q_m_net / cm) * dt
-                }
-                ThermalIntegrationMethod::CrankNicolson => {
-                    // Crank-Nicolson for 2nd-order accuracy (ISO 13790 §C.4)
-                    // Issues #896 + #917 combined fix:
-                    // - Pass explicit temperature driving terms to the integrator (#917)
-                    // - Use t_i (zone air) as the boundary for h_tr_3, NOT t_s (surface temp) (#896)
-                    //   because t_s includes Tm_old feedback through h_tr_ms, creating an
-                    //   artificial self-coupling loop. t_i is the correct upstream boundary.
-                    // - t_ext = sol-air temperature (opaque envelope driving temp for h_tr_em)
-                    // - t_sup = zone air temperature (air-side network driving temp for h_tr_3)
-                    // Issue #1693: Add night ventilation (h_vent_mass_zone) to the mass balance.
-                    // Adding it to h_tr_3 approximates night vent as an additional conductance
-                    // from mass to zone air, which captures the cooling effect.
-                    // Issue #2868: degenerate-`H_tr,3` fallback (see above).
-                    let h_tr_3_with_vent = h_air_mass + h_vent_mass_zone;
-                    // Issue #3638: propagate a typed validation error (degenerate
-                    // dt/cm) instead of letting a panic abort the simulation.
-                    crank_nicolson_iso13790(
+            // [R66 HARNESS — env-gated per-surface mass-node advance (scratch).
+            // Each class node: capacitance cm·w, exterior conductance cls_g[c]
+            // driven by its own class sol-air (floor: no exterior term, mirrors
+            // the lumped path), interior coupling h_air_mass·w, night-vent
+            // coupling h_vent_mass_zone·w, gain share phi_m·w. The air side
+            // reads the capacitance-weighted mean, and Σ w = 1 with interior
+            // shares proportional to w, so the zone-level coupling is
+            // energy-conserving vs. the lumped node.]
+            let advance_node = |cm_n: f64,
+                                h_em_n: f64,
+                                t_ext_n: f64,
+                                h_am_n: f64,
+                                h_vm_n: f64,
+                                phi_m_n: f64,
+                                t_s_n: f64,
+                                t_i_n: f64|
+             -> Result<f64, FluxionError> {
+                match select_integration_method(cm_n) {
+                    ThermalIntegrationMethod::BackwardEuler => {
+                        let cm_dt = cm_n / dt;
+                        Ok((cm_dt * tm_old
+                            + h_em_n * t_ext_n
+                            + h_am_n * t_s_n
+                            + h_vm_n * outdoor_temp
+                            + phi_m_n)
+                            / (cm_dt + h_em_n + h_am_n + h_vm_n))
+                    }
+                    ThermalIntegrationMethod::ExplicitEuler => {
+                        let q_vent_mass = h_vm_n * (outdoor_temp - tm_old);
+                        let q_m_net = h_em_n * (t_ext_n - tm_old)
+                            + h_am_n * (t_s_n - tm_old)
+                            + phi_m_n
+                            + q_vent_mass;
+                        Ok(tm_old + (q_m_net / cm_n) * dt)
+                    }
+                    ThermalIntegrationMethod::CrankNicolson => crank_nicolson_iso13790(
                         tm_old,
                         dt,
+                        cm_n,
+                        h_am_n + h_vm_n,
+                        h_em_n,
+                        t_ext_n,
+                        t_i_n,
+                        phi_m_n,
+                    ),
+                }
+            };
+            let tm_new = if ps_enabled {
+                match r66_cls[i] {
+                    Some((cls_g, cls_t, cls_area, cls_beam))
+                        if cls_area.iter().sum::<f64>() > 1e-9 =>
+                    {
+                        let total_area: f64 = cls_area.iter().sum();
+                        // [R67 HARNESS — per-surface interior film/surface
+                        // network (scratch). When FLX_R67_INTERIOR is set and
+                        // the real per-class constructions are stored, each
+                        // class advances with its own series (h_ms_c, h_is_c)
+                        // interior pair, its own algebraic surface node
+                        // t_s_c = (h_ms_c·T_m + h_is_c·T_i + phi_st_c) /
+                        // (h_ms_c + h_is_c), and its real construction
+                        // capacitance cm_c; the zone-level read is the
+                        // capacitance-weighted mean (energy-conserving). The
+                        // area share w partitions h_is (same film coefficient
+                        // per m²), phi_st, phi_m and the night-vent coupling.
+                        // Without the flag the R66 form applies unchanged.]
+                        let (cls_cm, cls_ms) = if r67_interior {
+                            let cond = &self.0.conduction;
+                            let grab =
+                                |o: &Option<T>| o.as_ref().and_then(|v| v.as_ref().get(i).copied());
+                            let cm_w = grab(&cond.cm_wall);
+                            let cm_r = grab(&cond.cm_roof);
+                            let cm_f = grab(&cond.cm_floor);
+                            let ms_w = grab(&cond.h_tr_ms_wall);
+                            let ms_r = grab(&cond.h_tr_ms_roof);
+                            let ms_f = grab(&cond.h_tr_ms_floor);
+                            match (cm_w, cm_r, cm_f, ms_w, ms_r, ms_f) {
+                                (Some(a), Some(b), Some(c), Some(d), Some(e), Some(f)) => {
+                                    ([a, b, c], [d, e, f])
+                                }
+                                _ => ([cm; 3], [h_tr_ms_ref[i]; 3]),
+                            }
+                        } else {
+                            ([cm; 3], [h_tr_ms_ref[i]; 3])
+                        };
+                        // Structural equality on construction-derived f64s:
+                        // the values are copied from the same source vectors,
+                        // so bit-equality (not epsilon) is the intended test —
+                        // it distinguishes "all three classes identical" from
+                        // "distinct real constructions".
+                        #[allow(clippy::float_cmp)]
+                        let use_r67 = r67_interior
+                            && cls_cm.iter().sum::<f64>() > 1e-9
+                            && (cls_ms[0] != cls_ms[1]
+                                || cls_ms[1] != cls_ms[2]
+                                || cls_cm[0] != cls_cm[1]
+                                || cls_cm[1] != cls_cm[2]);
+                        let cm_sum: f64 = cls_cm.iter().sum();
+                        let h_is_zone = h_tr_is_ref_2.get(i).copied().unwrap_or(0.0);
+                        let phi_st_zone = phi_st_ref[i];
+                        // [R68 HARNESS — beam-weighted phi_st solar partition
+                        // (scratch, loop round 68, #3983). FLX_R68_BEAM_PHIST
+                        // splits the zone-level phi_st into its solar component
+                        // (remaining_sol × st_sol_frac, recomputed from the same
+                        // zone solar terms used to build it) and its internal-
+                        // radiative component; the solar component partitions by
+                        // per-class incident irradiance×area (Issue #864
+                        // convention, area fallback when the zone sees no sun),
+                        // the internal component stays area-weighted. Σ_c
+                        // phi_st_c = phi_st_zone (energy-conserving). Without the
+                        // flag the R67 area-only partition applies unchanged.]
+                        let r68_beam_phist = std::env::var("FLX_R68_BEAM_PHIST").is_ok();
+                        let phi_st_sol = if r68_beam_phist {
+                            self.0
+                                .solar
+                                .solar_gains
+                                .as_ref()
+                                .get(i)
+                                .copied()
+                                .unwrap_or(0.0)
+                                * self
+                                    .0
+                                    .setpoints
+                                    .zone_area
+                                    .as_ref()
+                                    .get(i)
+                                    .copied()
+                                    .unwrap_or(0.0)
+                                * (1.0 - self.0.solar.solar_distribution_to_air)
+                                * (1.0 - self.0.solar.solar_beam_to_mass_fraction)
+                        } else {
+                            0.0
+                        };
+                        let beam_sum: f64 = if r68_beam_phist {
+                            cls_beam.iter().sum()
+                        } else {
+                            0.0
+                        };
+                        let mut tm_w = 0.0;
+                        // [R70 HARNESS — t_s state read/write, see the
+                        // FLX_R70_TS_ADVANCE note inside the class loop.
+                        // Old values snapshot before the loop; new values
+                        // written back after `tm_new` is bound.]
+                        // [D5 DEFAULT (loop round 71, #3983 §57): the t_s-first
+                        // advance (round-70 arm, FLX_R70_TS_ADVANCE) is on: the
+                        // per-class surface node is advanced first by backward
+                        // Euler consuming its own previous state, and the class
+                        // mass advance consumes that t_s. Disclosed structural
+                        // assumption carried from the round-70 record: the
+                        // interior surface layer capacitance C_s_c = 0.1·cm_c.]
+                        let r70_ts_on = true;
+                        let n_z70 = self.0.hvac.num_zones;
+                        let r70_ts_old: Vec<f64> =
+                            match self.0.mass.r70_surface_node_temperatures.as_ref() {
+                                Some(v) if v.as_ref().len() >= 3 * n_z70 => {
+                                    v.as_ref()[..3 * n_z70].to_vec()
+                                }
+                                _ => vec![20.0; 3 * n_z70],
+                            };
+                        let mut r70_ts_new: Vec<f64> = r70_ts_old.clone();
+                        for c in 0..3 {
+                            let w = cls_area[c] / total_area;
+                            if w <= 0.0 {
+                                continue;
+                            }
+                            let (h_em_c, t_ext_c) = if c == 2 {
+                                (0.0, outdoor_temp)
+                            } else {
+                                (cls_g[c], cls_t[c])
+                            };
+                            if use_r67 {
+                                let h_is_c = h_is_zone * w;
+                                let h_ms_c = cls_ms[c];
+                                // [R68 HARNESS — discriminating experiment
+                                // (scratch, loop round 68, #3983). FLX_R68_DEGEN_LUMPED
+                                // keeps the per-class interior network (t_s_c, cm_c,
+                                // h_ms_c/h_is_c surface node) but replaces the per-class
+                                // series coupling conductance with the zone-level
+                                // `h_air_mass` — the exact degenerate H_tr,3 = 0
+                                // fallback conductance the lumped path uses —
+                                // partitioned by w (Σ w = 1, energy-conserving). If
+                                // Case 195 cooling recovers toward 0.851 MWh, the
+                                // regression came through the degenerate-fallback
+                                // coupling rewrite; if it stays near 0.995, it comes
+                                // from per-surface interior coupling generally.
+                                // Non-degenerate zones are untouched.]
+                                // [D5 DEFAULT (loop round 71, #3983 §57, Option
+                                // A): a degenerate zone (H_tr,3 = 0 fallback)
+                                // advances all three classes with the
+                                // per-class-lumped h_air_mass·w interior
+                                // coupling instead of the per-class series pair.
+                                // Round-70 Option A record: recovers the Case
+                                // 195 discriminator at zero cost elsewhere;
+                                // round-71 degen+t_s battery: 195 C 1.219 →
+                                // 0.931 MWh with every other case unchanged.]
+                                let r68_degen_lumped =
+                                    h_tr_3_ref_2.get(i).copied().unwrap_or(0.0) <= 0.0;
+                                // Beam-weighted phi_st_c replaces the area-only
+                                // phi_st_zone*w when the R68 arm is on (see the
+                                // R68 HARNESS note above).
+                                let phi_st_c = if r68_beam_phist {
+                                    (phi_st_zone - phi_st_sol) * w
+                                        + if beam_sum > 1e-9 {
+                                            phi_st_sol * cls_beam[c] / beam_sum
+                                        } else {
+                                            phi_st_sol * w
+                                        }
+                                } else {
+                                    phi_st_zone * w
+                                };
+                                let (h_am_c, t_s_c) = if h_ms_c + h_is_c > 0.0 {
+                                    (
+                                        h_ms_c * h_is_c / (h_ms_c + h_is_c),
+                                        (h_ms_c * tm_old + h_is_c * t_i + phi_st_c)
+                                            / (h_ms_c + h_is_c),
+                                    )
+                                } else {
+                                    (h_ms_c, t_i)
+                                };
+                                let h_am_eff = if r68_degen_lumped {
+                                    h_air_mass * w
+                                } else {
+                                    h_am_c
+                                };
+                                let cm_c = cls_cm[c];
+                                // [D5 DEFAULT — t_s-first advance (loop round 71
+                                // promotion of the round-70 arm, #3983 §57). The
+                                // per-class surface node
+                                // a step of real dynamics: it is advanced FIRST by
+                                // backward Euler on its own heat balance,
+                                //   C_s·dT_s/dt = h_is_c·(t_i − T_s) + h_ms_c·(T_m − T_s)
+                                //                 + phi_st_c,
+                                // consuming its own previous state (t_s_old), and the
+                                // mass node then advances consuming that T_s. Round 68
+                                // proved the phi_st beam weighting structurally inert on
+                                // the production route because every real construction
+                                // capacitance selects Crank–Nicolson, and
+                                // `crank_nicolson_iso13790` consumes `t_i` only — the
+                                // algebraic `t_s_c` it is handed is dropped. ISO 13790's
+                                // own 5R1C keeps the surface node algebraic (§C.3), so
+                                // this arm is a deliberate structural extension toward
+                                // the #1522 dynamic-order requirement, not an ISO
+                                // conformance change. Disclosed structural assumption,
+                                // harness-only: C_s_c = 0.1·cm_c (interior surface
+                                // layer ≈ 10 % of construction capacitance); the class
+                                // mass integration switches to the BE form above so
+                                // T_s actually binds. Flag off = R67 arm unchanged.]
+                                let r70_ts_advance = r70_ts_on;
+                                let (t_s_eff, be_mass) = if r70_ts_advance {
+                                    let cs_c = 0.1 * cm_c;
+                                    let t_s_old = r70_ts_old[3 * i + c];
+                                    let cs_dt = cs_c / dt;
+                                    let denom_s = cs_dt + h_is_c + h_ms_c;
+                                    let t_s_new = if denom_s > 0.0 {
+                                        (cs_dt * t_s_old
+                                            + h_is_c * t_i
+                                            + h_ms_c * tm_old
+                                            + phi_st_c)
+                                            / denom_s
+                                    } else {
+                                        t_s_c
+                                    };
+                                    r70_ts_new[3 * i + c] = t_s_new;
+                                    (t_s_new, true)
+                                } else {
+                                    (t_s_c, false)
+                                };
+                                let tm_c_new = if be_mass {
+                                    let cm_dt = cm_c / dt;
+                                    (cm_dt * tm_old
+                                        + h_em_c * t_ext_c
+                                        + h_am_eff * t_s_eff
+                                        + h_vent_mass_zone * w * outdoor_temp
+                                        + phi_m_zone * w)
+                                        / (cm_dt + h_em_c + h_am_eff + h_vent_mass_zone * w)
+                                } else {
+                                    advance_node(
+                                        cm_c,
+                                        h_em_c,
+                                        t_ext_c,
+                                        h_am_eff,
+                                        h_vent_mass_zone * w,
+                                        phi_m_zone * w,
+                                        t_s_eff,
+                                        t_i,
+                                    )?
+                                };
+                                tm_w += (cm_c / cm_sum) * tm_c_new;
+                            } else {
+                                tm_w += w * advance_node(
+                                    cm * w,
+                                    h_em_c,
+                                    t_ext_c,
+                                    h_air_mass * w,
+                                    h_vent_mass_zone * w,
+                                    phi_m_zone * w,
+                                    t_s,
+                                    t_i,
+                                )?;
+                            }
+                        }
+                        // [D5 DEFAULT — write the advanced per-class
+                        // surface-node state back (see the t_s-first note).]
+                        if r70_ts_on {
+                            let mut sv = smallvec::SmallVec::new();
+                            sv.extend_from_slice(&r70_ts_new);
+                            let v = T::from(VectorField::from_smallvec(sv));
+                            self.0.mass.r70_surface_node_temperatures = Some(v);
+                        }
+                        tm_w
+                    }
+                    _ => advance_node(
                         cm,
-                        h_tr_3_with_vent,
                         h_tr_em,
                         t_sol_air[i],
-                        t_i,
+                        h_air_mass,
+                        h_vent_mass_zone,
                         phi_m_zone,
-                    )?
+                        t_s,
+                        t_i,
+                    )?,
+                }
+            } else {
+                match method {
+                    ThermalIntegrationMethod::BackwardEuler => {
+                        // Use implicit backward Euler for high thermal mass
+                        // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
+                        // SESSION 72: Include ventilation-to-mass cooling
+                        // Issue #896 FIX: Use h_tr_3 instead of h_tr_ms for the air-to-mass bottleneck.
+                        // See detailed comment in the CrankNicolson branch below.
+                        // Issue #2868: `h_air_mass` is `H_tr,3` with the degenerate
+                        // `H_ve = H_tr,w = 0` fallback applied (see above).
+                        let h_tr_3_zone = h_air_mass;
+                        // Backward Euler with h_tr_3 and night ventilation:
+                        // (Cm/dt + h_tr_em + h_tr_3 + h_vent_mass_zone) * Tm_new =
+                        //     Cm/dt * Tm_old + h_tr_em * t_sol_air + h_tr_3 * t_s + h_vent_mass_zone * t_outdoor + phi_m
+                        let cm_dt = cm / dt;
+                        let denom = cm_dt + h_tr_em + h_tr_3_zone + h_vent_mass_zone;
+                        let numer = cm_dt * tm_old
+                            + h_tr_em * t_sol_air[i]
+                            + h_tr_3_zone * t_s
+                            + h_vent_mass_zone * outdoor_temp
+                            + phi_m_zone;
+                        numer / denom
+                    }
+                    ThermalIntegrationMethod::ExplicitEuler => {
+                        // Use explicit Euler for low thermal mass (faster, still stable)
+                        // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
+                        // SESSION 72: Include ventilation-to-mass cooling
+                        // Issue #896 FIX: Use h_tr_3 instead of h_tr_ms for the air-to-mass bottleneck.
+                        // See detailed comment in the CrankNicolson branch below.
+                        // Issue #2868: degenerate-`H_tr,3` fallback (see above).
+                        let h_tr_3_zone = h_air_mass;
+                        let q_vent_mass = h_vent_mass_zone * (outdoor_temp - tm_old);
+                        let q_m_net = h_tr_em * (t_sol_air[i] - tm_old)
+                            + h_tr_3_zone * (t_s - tm_old)
+                            + phi_m_zone
+                            + q_vent_mass;
+                        tm_old + (q_m_net / cm) * dt
+                    }
+                    ThermalIntegrationMethod::CrankNicolson => {
+                        // Crank-Nicolson for 2nd-order accuracy (ISO 13790 §C.4)
+                        // Issues #896 + #917 combined fix:
+                        // - Pass explicit temperature driving terms to the integrator (#917)
+                        // - Use t_i (zone air) as the boundary for h_tr_3, NOT t_s (surface temp) (#896)
+                        //   because t_s includes Tm_old feedback through h_tr_ms, creating an
+                        //   artificial self-coupling loop. t_i is the correct upstream boundary.
+                        // - t_ext = sol-air temperature (opaque envelope driving temp for h_tr_em)
+                        // - t_sup = zone air temperature (air-side network driving temp for h_tr_3)
+                        // Issue #1693: Add night ventilation (h_vent_mass_zone) to the mass balance.
+                        // Adding it to h_tr_3 approximates night vent as an additional conductance
+                        // from mass to zone air, which captures the cooling effect.
+                        // Issue #2868: degenerate-`H_tr,3` fallback (see above).
+                        let h_tr_3_with_vent = h_air_mass + h_vent_mass_zone;
+                        // Issue #3638: propagate a typed validation error (degenerate
+                        // dt/cm) instead of letting a panic abort the simulation.
+                        crank_nicolson_iso13790(
+                            tm_old,
+                            dt,
+                            cm,
+                            h_tr_3_with_vent,
+                            h_tr_em,
+                            t_sol_air[i],
+                            t_i,
+                            phi_m_zone,
+                        )?
+                    }
                 }
             };
 
