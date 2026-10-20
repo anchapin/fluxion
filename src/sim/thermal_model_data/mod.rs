@@ -24,7 +24,7 @@ mod setpoint_state;
 mod solar_state;
 
 pub use conduction_backend::ConductionBackend;
-pub use conduction_state::ConductionState;
+pub use conduction_state::{Applied5R1CClassBoundary, ConductionState};
 pub use diagnostics_state::DiagnosticsState;
 pub use hvac_state::HvacState;
 pub use incident_solar_accumulator::IncidentSolarAccumulator;

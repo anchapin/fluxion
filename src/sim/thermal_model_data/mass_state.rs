@@ -69,6 +69,14 @@ pub struct MassState<T: ContinuousTensor<f64>> {
     /// real dynamics. `None` until the first step initializes it algebraically.]
     pub r70_surface_node_temperatures: Option<T>,
 
+    /// Previous-step per-class interior surface-node temperatures (loop
+    /// round 73, #1522/#4504): the `t_s_old` snapshot the t_s-first backward
+    /// Euler advance consumed, persisted alongside the advanced state so the
+    /// strict-energy invariant checker can recompute the surface-node
+    /// identity exactly. Write-only for the engine (never read back by the
+    /// integrator); `None` before the first step.
+    pub r70_surface_node_temperatures_prev: Option<T>,
+
     /// [R71 HARNESS — env-gated `FLX_R71_AIR_CAP` (loop round 72, #1522
     /// sub-hour driver resolution). Previous-hour per-zone air-node ODE
     /// drivers — the numerator WITHOUT the night-vent term
@@ -122,6 +130,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for MassState<T> {
 
             multi_node_thermal_mass: self.multi_node_thermal_mass.clone(),
             r70_surface_node_temperatures: self.r70_surface_node_temperatures.clone(),
+            r70_surface_node_temperatures_prev: self.r70_surface_node_temperatures_prev.clone(),
             r71_air_driver_num_prev: self.r71_air_driver_num_prev.clone(),
             r71_air_driver_den_prev: self.r71_air_driver_den_prev.clone(),
         }

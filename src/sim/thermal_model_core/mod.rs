@@ -3997,6 +3997,7 @@ impl ThermalModel<VectorField> {
                 internal_mass_energy_change_cumulative: 0.0,
                 multi_node_thermal_mass: None,
                 r70_surface_node_temperatures: None,
+                r70_surface_node_temperatures_prev: None,
                 r71_air_driver_num_prev: VectorField::from_scalar(0.0, num_zones),
                 r71_air_driver_den_prev: VectorField::from_scalar(0.0, num_zones),
             },
@@ -4044,6 +4045,7 @@ impl ThermalModel<VectorField> {
                 derived_h_tr_2: VectorField::from_scalar(0.0, num_zones),
                 derived_h_tr_3: VectorField::from_scalar(0.0, num_zones),
                 applied_5r1c_boundary: None,
+                applied_5r1c_class_boundary: None,
             },
             diagnostics_state: DiagnosticsState::default(),
         });
