@@ -8,9 +8,14 @@
 //!
 //! Run: cargo test --release --test all_tests r75_vent_probe -- --include-ignored --nocapture
 
+/// ENV_LOCK (Issue #3453 convention): the probe mutates process env
+/// (flag off/on), so the mutation is serialized through a file-local mutex.
+static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[test]
 #[ignore]
 fn r75_vent_probe() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     use fluxion::physics::cta::VectorField;
     use fluxion::sim::engine::ThermalModel;
     use fluxion::sim::thermal_selector::ThermalSelector;
