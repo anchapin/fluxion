@@ -2648,12 +2648,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         // in `MassState` workspaces and reused. Values
                         // identical (clear + extend/resize reuses the
                         // allocation; contents equal the old copies).]
-                        let mut r70_ts_old: Vec<f64> = self
-                            .0
-                            .mass
-                            .r70_ts_old_workspace
-                            .take()
-                            .unwrap_or_default();
+                        let mut r70_ts_old: Vec<f64> =
+                            self.0.mass.r70_ts_old_workspace.take().unwrap_or_default();
                         r70_ts_old.clear();
                         match self.0.mass.r70_surface_node_temperatures.as_ref() {
                             Some(v) if v.as_ref().len() >= 3 * n_z70 => {
@@ -2661,12 +2657,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             }
                             _ => r70_ts_old.resize(3 * n_z70, 20.0),
                         }
-                        let mut r70_ts_new: Vec<f64> = self
-                            .0
-                            .mass
-                            .r70_ts_new_workspace
-                            .take()
-                            .unwrap_or_default();
+                        let mut r70_ts_new: Vec<f64> =
+                            self.0.mass.r70_ts_new_workspace.take().unwrap_or_default();
                         r70_ts_new.clear();
                         r70_ts_new.extend_from_slice(&r70_ts_old);
                         for c in 0..3 {

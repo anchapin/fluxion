@@ -105,8 +105,7 @@ pub struct ConductionState<T: ContinuousTensor<f64>> {
     /// D5 default flip rebuilt with `vec![None; num_zones]` every step (1
     /// heap allocation per timestep, #4512). `None` until the first step.
     /// Engine-private scratch; contents never read before overwrite.
-    pub r66_cls_workspace:
-        Option<Vec<Option<([f64; 3], [f64; 3], [f64; 3], [f64; 3])>>>,
+    pub r66_cls_workspace: Option<Vec<Option<([f64; 3], [f64; 3], [f64; 3], [f64; 3])>>>,
 }
 
 /// Per-zone record of [`ConductionState::applied_5r1c_class_boundary`]
