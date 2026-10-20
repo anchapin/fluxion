@@ -68,6 +68,20 @@ pub struct MassState<T: ContinuousTensor<f64>> {
     /// previous state) before the mass node, so `phi_st_c` acquires a step of
     /// real dynamics. `None` until the first step initializes it algebraically.]
     pub r70_surface_node_temperatures: Option<T>,
+
+    /// [R71 HARNESS — env-gated `FLX_R71_AIR_CAP` (loop round 72, #1522
+    /// sub-hour driver resolution). Previous-hour per-zone air-node ODE
+    /// drivers — the numerator WITHOUT the night-vent term
+    /// (`num_tm + num_rest`) and the denominator — persisted at the end of
+    /// each step so the sub-step loop can linearly ramp the drivers across
+    /// the hour instead of freezing them at their top-of-hour values
+    /// (dt/τ_air ≈ 3.6 makes the frozen-driver steady state the dominant
+    /// air-node response; #1585 gave the node true C_air but not
+    /// sub-hour drivers). Zero-initialized; the first step detects zero and
+    /// seeds with the current values (no ramp on step 1). Default builds
+    /// never read these fields.]
+    pub r71_air_driver_num_prev: T,
+    pub r71_air_driver_den_prev: T,
 }
 
 impl<T: ContinuousTensor<f64> + Clone> Clone for MassState<T> {
@@ -108,6 +122,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for MassState<T> {
 
             multi_node_thermal_mass: self.multi_node_thermal_mass.clone(),
             r70_surface_node_temperatures: self.r70_surface_node_temperatures.clone(),
+            r71_air_driver_num_prev: self.r71_air_driver_num_prev.clone(),
+            r71_air_driver_den_prev: self.r71_air_driver_den_prev.clone(),
         }
     }
 }

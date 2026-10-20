@@ -1093,6 +1093,25 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let steps = self.0.mass.sub_hour_air_node_steps as usize;
         let dt_sub = dt / steps as f64;
 
+        // [R71 HARNESS — env-gated `FLX_R71_AIR_CAP` (loop round 72, #1522).
+        // Sub-hour driver resolution: the exact-exponential air-node ODE has
+        // had true `C_air` since #1585, but the ODE drivers (num, den) are
+        // frozen at their top-of-hour values for the whole step. With
+        // dt/τ_air ≈ 3.6 the node relaxes ~97% toward the frozen steady state
+        // within the hour, so the air node sees a staircase, not the within-
+        // hour ramp of the real drivers. When the arm is on, each sub-step k
+        // evaluates the drivers at the sub-step midpoint fraction
+        // f = (k + 1/2)/N, linearly interpolated between the previous hour's
+        // drivers (persisted in `mass.r71_air_driver_*_prev`) and this
+        // hour's. Endpoint-consistent at f→1; the night-vent numerator term
+        // is applied at its current-hour value after the ramp (binary
+        // schedule, disclosed). φ_st / solar-lag stay hourly-frozen — the
+        // arm isolates the num/den driver resolution. Default builds
+        // (flag unset) are bit-identical to the frozen-driver path.]
+        let r71_air_cap = std::env::var("FLX_R71_AIR_CAP").is_ok();
+        let r71_num_prev_ref = self.0.mass.r71_air_driver_num_prev.as_ref();
+        let r71_den_prev_ref = self.0.mass.r71_air_driver_den_prev.as_ref();
+
         // Initialize air-node state from previous timestep
         // Issue #3370: `t_air_state` / `solar_lag_state` are scratch pool
         // buffers (no per-step allocation); the pre-#3370 implementation
@@ -1117,6 +1136,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 let buf = scratch.air_node_t_i_free.as_mut();
                 for i in 0..self.0.hvac.num_zones {
                     let mut num_i = num_tm_ref[i] + num_rest_ref[i];
+                    // [R71 HARNESS] sub-hour driver ramp (see `r71_air_cap`
+                    // above): midpoint-fraction linear interpolation between
+                    // the previous and current hour's drivers. Zero prev
+                    // values mean "first step" — seed, no ramp.
+                    if r71_air_cap {
+                        let f = (_step as f64 + 0.5) / steps as f64;
+                        let num_prev = r71_num_prev_ref[i];
+                        if num_prev != 0.0 {
+                            num_i = num_prev + f * (num_i - num_prev);
+                        }
+                    }
                     // LIMIT-17 fix: night ventilation removes heat from the zone proportional
                     // to (T_zone - T_outdoor). The h_ve_night term was added to h_ext (den)
                     // but the corresponding heat removal from the air-node energy balance was
@@ -1125,7 +1155,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     if night_vent_active_now && i == 0 {
                         num_i += h_ve_night * outdoor_temp;
                     }
-                    let den_i = den_ref[i];
+                    let den_i = if r71_air_cap {
+                        let f = (_step as f64 + 0.5) / steps as f64;
+                        let den_prev = r71_den_prev_ref[i];
+                        if den_prev != 0.0 {
+                            den_prev + f * (den_ref[i] - den_prev)
+                        } else {
+                            den_ref[i]
+                        }
+                    } else {
+                        den_ref[i]
+                    };
                     let steady = num_i / den_i;
                     let c_air_i = c_air_ref[i];
                     let t_air_old_i = scratch.air_node_t_air.as_ref()[i];
@@ -1158,7 +1198,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let corrected_t_i_free = scratch.air_node_corrected.as_mut();
 
             for i in 0..self.0.hvac.num_zones {
-                let den_i = den_ref[i];
+                // [R71 HARNESS] same sub-hour den ramp as the ODE loop, so
+                // den_true in the solar-lag correction sees the same driver
+                // pair as the steady state.
+                let den_i = if r71_air_cap {
+                    let f = (_step as f64 + 0.5) / steps as f64;
+                    let den_prev = r71_den_prev_ref[i];
+                    if den_prev != 0.0 {
+                        den_prev + f * (den_ref[i] - den_prev)
+                    } else {
+                        den_ref[i]
+                    }
+                } else {
+                    den_ref[i]
+                };
                 let cm_i = cm_ref[i];
                 let c_air_i = c_air_ref[i];
                 let term_rest_1_i = term_rest_1_ref[i];
@@ -1240,6 +1293,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                      the step's inputs are outside the solver's finite envelope \
                      (issue #4495); step rejected, state untouched"
                 )));
+            }
+        }
+
+        // [R71 HARNESS] persist this hour's drivers as the next hour's ramp
+        // source. Stored without the night-vent term (the vent addition is
+        // re-applied at its current-hour value inside the sub-step loop).
+        // Write happens after the sub-step loop, where the immutable
+        // `self.0.mass` borrows above are dead — same placement contract as
+        // the `air_temperatures` commit below.
+        if r71_air_cap {
+            let num_prev = self.0.mass.r71_air_driver_num_prev.as_mut();
+            let den_prev = self.0.mass.r71_air_driver_den_prev.as_mut();
+            for i in 0..self.0.hvac.num_zones {
+                num_prev[i] = num_tm_ref[i] + num_rest_ref[i];
+                den_prev[i] = den_ref[i];
             }
         }
 

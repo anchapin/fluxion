@@ -3997,6 +3997,8 @@ impl ThermalModel<VectorField> {
                 internal_mass_energy_change_cumulative: 0.0,
                 multi_node_thermal_mass: None,
                 r70_surface_node_temperatures: None,
+                r71_air_driver_num_prev: VectorField::from_scalar(0.0, num_zones),
+                r71_air_driver_den_prev: VectorField::from_scalar(0.0, num_zones),
             },
             conduction: ConductionState {
                 backend: ConductionBackend::default(),
