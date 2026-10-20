@@ -112,6 +112,19 @@ pub struct MassState<T: ContinuousTensor<f64>> {
     /// (bit-identical).]
     pub r76_sol_air_prev: T,
     pub r76_has_prev: bool,
+
+    /// [Round 78 (#4512) — pooled t_s-first advance workspaces.] Reusable
+    /// `t_s_old` / `t_s_new` buffers for the D5 per-class surface-node
+    /// advance (mass_state only; `None` until the first step). The D5
+    /// default flip (2e51d3ff, round 71) rebuilt both per zone per step
+    /// (`to_vec` + `clone`) — ~2 heap allocations per timestep that
+    /// breached the dhat BatchOracle allocation budget (#4512) while the
+    /// Performance Dashboard dhat job was skipped. Arithmetic unchanged:
+    /// the buffers carry the same values the per-step allocations did
+    /// (bit-identical). Engine-private scratch; never read back before
+    /// being overwritten.
+    pub r70_ts_old_workspace: Option<Vec<f64>>,
+    pub r70_ts_new_workspace: Option<Vec<f64>>,
 }
 
 impl<T: ContinuousTensor<f64> + Clone> Clone for MassState<T> {
@@ -159,6 +172,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for MassState<T> {
             r75_vent_has_prev: self.r75_vent_has_prev,
             r76_sol_air_prev: self.r76_sol_air_prev.clone(),
             r76_has_prev: self.r76_has_prev,
+            r70_ts_old_workspace: self.r70_ts_old_workspace.clone(),
+            r70_ts_new_workspace: self.r70_ts_new_workspace.clone(),
         }
     }
 }

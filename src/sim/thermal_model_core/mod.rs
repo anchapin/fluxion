@@ -4004,6 +4004,8 @@ impl ThermalModel<VectorField> {
                 r75_vent_has_prev: false,
                 r76_sol_air_prev: VectorField::from_scalar(0.0, num_zones),
                 r76_has_prev: false,
+                r70_ts_old_workspace: None,
+                r70_ts_new_workspace: None,
             },
             conduction: ConductionState {
                 backend: ConductionBackend::default(),
@@ -4050,6 +4052,7 @@ impl ThermalModel<VectorField> {
                 derived_h_tr_3: VectorField::from_scalar(0.0, num_zones),
                 applied_5r1c_boundary: None,
                 applied_5r1c_class_boundary: None,
+                r66_cls_workspace: None,
             },
             diagnostics_state: DiagnosticsState::default(),
         });

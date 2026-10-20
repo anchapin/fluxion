@@ -99,6 +99,14 @@ pub struct ConductionState<T: ContinuousTensor<f64>> {
     /// pattern as `applied_5r1c_boundary` (#4373). `None` before the first
     /// step or when the per-surface path did not run (checker falls back).
     pub applied_5r1c_class_boundary: Option<Vec<Option<Applied5R1CClassBoundary>>>,
+
+    /// [Round 78 (#4512) — pooled per-class tuple scratch.] Reusable buffer
+    /// for `step_physics_5r1c`'s per-zone R66/R67 class tuples, which the
+    /// D5 default flip rebuilt with `vec![None; num_zones]` every step (1
+    /// heap allocation per timestep, #4512). `None` until the first step.
+    /// Engine-private scratch; contents never read before overwrite.
+    pub r66_cls_workspace:
+        Option<Vec<Option<([f64; 3], [f64; 3], [f64; 3], [f64; 3])>>>,
 }
 
 /// Per-zone record of [`ConductionState::applied_5r1c_class_boundary`]
@@ -167,6 +175,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ConductionState<T> {
             derived_ground_coeff: self.derived_ground_coeff.clone(),
             applied_5r1c_boundary: self.applied_5r1c_boundary.clone(),
             applied_5r1c_class_boundary: self.applied_5r1c_class_boundary.clone(),
+            r66_cls_workspace: self.r66_cls_workspace.clone(),
         }
     }
 }
