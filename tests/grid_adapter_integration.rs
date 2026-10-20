@@ -118,6 +118,25 @@ fn test_electrical_results_match_recorded_baseline() {
     let results = results.unwrap();
     let expected_thermal_kwh: f64 = thermal_kwh.iter().map(|k| k.max(0.0)).sum();
 
+    // Baseline regeneration hook (the comment below has promised this since
+    // round 39; restored with the round-73 re-record). Run with
+    // FLUXION_PRINT_GRID_BASELINE=1 -- --nocapture to print the exact
+    // full-precision baseline values.
+    if std::env::var("FLUXION_PRINT_GRID_BASELINE").is_ok() {
+        println!(
+            "GRID_BASELINE thermal_kwh={:.17} electrical_load_kwh={:.17} pv_kwh={:.17} battery_charge_kwh={:.17} battery_discharge_kwh={:.17} grid_import_kwh={:.17} grid_export_kwh={:.17} peak_net_demand_kw={:.17} final_soc_fraction={:.17}",
+            expected_thermal_kwh,
+            results.total_electrical_load_kwh,
+            results.total_pv_kwh,
+            results.total_battery_charge_kwh,
+            results.total_battery_discharge_kwh,
+            results.total_grid_import_kwh,
+            results.total_grid_export_kwh,
+            results.peak_net_demand_kw,
+            results.final_soc_fraction
+        );
+    }
+
     // Recorded baseline for: ASHRAE 140 Case 600, Denver TMY steps 0..48
     // (January), `test_config()`, `ghi`-as-POA proxy. All 48 steps are heating
     // load (no clamping needed); the battery rides the SoC floor at 10%.
@@ -160,27 +179,29 @@ fn test_electrical_results_match_recorded_baseline() {
     // 1.3152976644842214 -> 1.2751549581267079 kW. PV, battery and SoC
     // unchanged. Genuine physics change, not a tuned constant.
     //
-    // Re-recorded 2026-10-19 by the D5 default flip (loop round 71, #3983
-    // §57, branch loop71/d5-default-flip): the per-surface 5R1C physics is
-    // now the engine default, so the Case 600 January heating baseline moves.
-    // Thermal 145.58652387252914 -> 138.81059158981444 kWh; electrical load
-    // 48.52884129084303 -> 46.270197196604805 kWh (thermal/3); grid import
-    // 35.803981845836475 -> 33.534319651216784 kWh; peak net demand
-    // 1.2751549581267079 -> 1.2180336040388786 kW. PV, battery and SoC
-    // unchanged. Genuine physics change, not a tuned constant.
+    // Re-recorded 2026-10-19 (loop round 73) by the R71 sub-hour air-driver
+    // default flip (#1522; env-gated `FLX_R71_AIR_CAP` harness in round 72,
+    // PR #4505): the 5R1C air-node advance changed, so the Case 600 January
+    // heating baseline moves. Thermal 138.81059158981444 ->
+    // 138.16772740591088109 kWh; electrical load 46.270197196604805 ->
+    // 46.05590913530362229 kWh (thermal/3); grid import 33.534319651216784 ->
+    // 33.31587775390797646 kWh; peak net demand 1.2180336040388786 ->
+    // 1.21467317388113916 kW. PV, battery and SoC unchanged. Genuine physics
+    // change, not a tuned constant. (Prior re-record 2026-10-19 round 71, D5
+    // flip: thermal 145.58652387252914 -> 138.81059158981444.)
     //
     // Cross-checks the physics wiring, not just the adapter: thermal/3 ==
     // electrical_load, and the battery stock (0.5 → 0.1 of 10 kWh) equals
     // charge − discharge. Regenerate by running with
     // FLUXION_PRINT_GRID_BASELINE=1 -- --nocapture.
-    const EXPECTED_THERMAL_KWH: f64 = 138.81059158981444;
-    const EXPECTED_ELECTRICAL_LOAD_KWH: f64 = 46.270197196604805;
-    const EXPECTED_PV_KWH: f64 = 8.923912979376766;
+    const EXPECTED_THERMAL_KWH: f64 = 138.16772740591088109;
+    const EXPECTED_ELECTRICAL_LOAD_KWH: f64 = 46.05590913530362229;
+    const EXPECTED_PV_KWH: f64 = 8.92391297937676597;
     const EXPECTED_BATTERY_CHARGE_KWH: f64 = 0.00000000000000;
     const EXPECTED_BATTERY_DISCHARGE_KWH: f64 = 4.00000000000000;
-    const EXPECTED_GRID_IMPORT_KWH: f64 = 33.534319651216784;
+    const EXPECTED_GRID_IMPORT_KWH: f64 = 33.31587775390797646;
     const EXPECTED_GRID_EXPORT_KWH: f64 = 0.00000000000000;
-    const EXPECTED_PEAK_NET_DEMAND_KW: f64 = 1.2180336040388786;
+    const EXPECTED_PEAK_NET_DEMAND_KW: f64 = 1.21467317388113916;
     const EXPECTED_FINAL_SOC_FRACTION: f64 = 0.1;
 
     let tol = 1e-9;

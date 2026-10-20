@@ -1560,28 +1560,34 @@ fn emit_section6_conformance() {
 // tight enough to catch any real engine drift.
 // ===========================================================================
 
-/// Recorded §6 output pins: (case, annual heating MWh, annual cooling MWh,
-/// peak heating kW, peak cooling kW, heating peak occurrence, cooling peak
-/// occurrence). From `section6_workflow_results.csv` as of 2026-10-17,
-/// develop `592ec089`, physics loop round 49.
+/// Re-recorded 2026-10-19: the R71 sub-hour air-driver default flip (loop
+/// round 73, #1522; env-gated harness `FLX_R71_AIR_CAP` in round 72) changed
+/// every 5R1C load path, so the §6 load pins moved; solar/sky pins did not
+/// move (not on the modified path). Old values (2026-10-17, develop
+/// `592ec089`, round 49): WD100 6.2568/3.9788/4.6542/4.0783,
+/// WD200 2.8683/4.6949/3.8725/3.8667, WD300 3.5127/2.2674/2.6624/2.7009,
+/// WD400 31.7243/0.1292/8.1737/2.7594, WD500 0.3678/13.4623/1.6043/5.4335,
+/// WD600 5.8903/5.2570/4.6339/4.6264. Recorded from the regenerated
+/// `section6_workflow_results.csv` (emit_section6_workflow_csv); nothing
+/// tuned.
 const SECTION6_VALUE_PINS: [(&str, f64, f64, f64, f64, &str, &str); 6] = [
     (
-        "WD100", 6.2568, 3.9788, 4.6542, 4.0783, "02-09-05", "10-01-13",
+        "WD100", 5.1468, 4.3117, 4.4012, 4.1700, "02-09-05", "10-01-13",
     ),
     (
-        "WD200", 2.8683, 4.6949, 3.8725, 3.8667, "02-12-07", "11-11-14",
+        "WD200", 2.2037, 5.1836, 3.5252, 3.9177, "02-12-07", "11-15-14",
     ),
     (
-        "WD300", 3.5127, 2.2674, 2.6624, 2.7009, "07-22-07", "12-15-14",
+        "WD300", 2.9688, 2.2645, 2.4531, 2.6061, "07-22-07", "12-15-15",
     ),
     (
-        "WD400", 31.7243, 0.1292, 8.1737, 2.7594, "01-26-15", "08-13-14",
+        "WD400", 30.7720, 0.1491, 8.1135, 2.8136, "01-26-16", "08-13-14",
     ),
     (
-        "WD500", 0.3678, 13.4623, 1.6043, 5.4335, "12-30-07", "10-05-13",
+        "WD500", 0.1365, 14.8884, 1.2383, 5.4561, "12-28-07", "11-07-14",
     ),
     (
-        "WD600", 5.8903, 5.2570, 4.6339, 4.6264, "02-09-05", "10-01-13",
+        "WD600", 4.7522, 5.7304, 4.3681, 4.7184, "02-09-05", "10-01-13",
     ),
 ];
 
@@ -1668,40 +1674,47 @@ const SECTION6_SOLAR_SKY_PINS: [(&str, [f64; 5], f64, f64, f64, f64, &str, &str)
 /// Jul 14, daily total incident horizontal Wh/m² for Jul 14). These
 /// guard the hourly series' totals; the byte-identity staleness test on
 /// the committed CSV guards the full hourly shape.
+/// Load totals re-recorded 2026-10-19 (loop round 73, R71 air-driver default
+/// flip #1522) from the regenerated `section6_table61_daily_hourly.csv`;
+/// solar/sky columns did not move (not on the modified path). Old load
+/// totals: WD100 [61.6570, 28.7311, -19.2624], WD200 [21.5741, 32.1990,
+/// -30.6476], WD300 [-14.2650, -19.1996, 21.5092], WD400 [116.3327,
+/// 116.0442, 12.6935], WD500 [-6.8426, -18.9244, -27.7527], WD600 [60.2416,
+/// 24.9483, -28.2514]. Nothing tuned.
 const SECTION6_TABLE61_DAY_PINS: [(&str, [f64; 3], [f64; 3], f64); 6] = [
     (
         "WD100",
-        [61.6570, 28.7311, -19.2624],
+        [56.4117, 22.2647, -19.8657],
         [-25.226, -1.577, 8.832],
         8823.6,
     ),
     (
         "WD200",
-        [21.5741, 32.1990, -30.6476],
+        [19.3804, 26.6657, -34.3077],
         [-1.514, 10.349, 19.353],
         6868.2,
     ),
     (
         "WD300",
-        [-14.2650, -19.1996, 21.5092],
+        [-15.2883, -19.4629, 19.5308],
         [8.897, -1.019, -5.611],
         3220.6,
     ),
     (
         "WD400",
-        [116.3327, 116.0442, 12.6935],
+        [113.7986, 117.64, 6.8947],
         [-26.286, -32.833, -3.490],
         3756.7,
     ),
     (
         "WD500",
-        [-6.8426, -18.9244, -27.7527],
+        [-12.6803, -22.1958, -31.8559],
         [1.491, 23.641, 25.454],
         3107.4,
     ),
     (
         "WD600",
-        [60.2416, 24.9483, -28.2514],
+        [54.7072, 18.2251, -29.7557],
         [-25.226, -1.577, 8.832],
         8823.6,
     ),

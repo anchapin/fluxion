@@ -127,15 +127,16 @@ fn analytical_path_eui_is_bit_identical_to_baseline() {
     // exactly at 63eb02e9; identical across develop tip and repeat runs
     // (deterministic). So this is a legitimate physics-baseline refresh, not
     // a regression: goldens re-derived from current engine behavior.
-    // Re-recorded 2026-10-19: the D5 default flip (loop round 71, #3983 §57,
-    // branch loop71/d5-default-flip) promoted the per-surface 5R1C physics
-    // (per-surface-class mass split + interior film/surface network +
-    // t_s-first surface advance + degenerate Option A fallback) to the engine
-    // default. Case 600 single-zone is on the modified path; the strict-gate,
-    // fabric, output-diff and this hotloop golden were re-recorded together
-    // from the corrected engine (same precedent as the 2026-10-07 #4258
-    // refresh: legitimate physics-baseline refresh, not a regression).
-    let golden = [59.46714897354147, 110.3238524931423, 136.48280523784027];
+    // Re-recorded 2026-10-19 (loop round 73): the R71 sub-hour air-driver
+    // default flip (#1522; env-gated `FLX_R71_AIR_CAP` harness in round 72,
+    // PR #4505) changed the 5R1C air-node advance, so Case 600 (single-zone,
+    // on the modified path) moves again; the strict-gate, fabric, output-diff
+    // and this hotloop golden were re-recorded together from the corrected
+    // engine on loop73/air-cap-default-flip (same precedent as the
+    // 2026-10-07 #4258 refresh: legitimate physics-baseline refresh, not a
+    // regression). Previous goldens (D5 flip, round 71):
+    // [59.46714897354147, 110.3238524931423, 136.48280523784027].
+    let golden = [58.99791056935924, 110.51711796412485, 136.651947557101];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),
@@ -166,9 +167,11 @@ fn cpu_surrogate_mock_path_eui_is_bit_identical_to_baseline() {
     // Golden snapshot captured from the known-good (post-#2687) run and
     // verified bit-identical to the pre-change baseline (same stash-and-
     // re-run procedure as the analytical path above).
-    // Re-recorded 2026-10-19 with the analytical path above (D5 default flip,
-    // loop round 71, #3983 §57): same corrected-engine refresh.
-    let golden = [238.26898220394858, 252.92568913230716, 264.3030402695419];
+    // Re-recorded 2026-10-19 with the analytical path above (R71 air-driver
+    // default flip, loop round 73, #1522): same corrected-engine refresh.
+    // Previous goldens (D5 flip, round 71):
+    // [238.26898220394858, 252.92568913230716, 264.3030402695419].
+    let golden = [238.26081821570014, 252.9180153722391, 264.2953715294398];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),

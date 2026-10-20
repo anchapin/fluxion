@@ -3506,3 +3506,52 @@ this round; the arm stays env-gated.
 
 Recorded 2026-10-19/20, loop round 72.
 
+
+## §59 — Round 73 (#1522): `FLX_R71_AIR_CAP` promoted to engine default (Alex-directed flip)
+
+Alex directed the flip 2026-10-19 ("Item 1 - proceed with flip and reopen 1585 as
+necessary"), following the §58 measurement. The sub-hour air-node driver ramp
+(midpoint-fraction linear interpolation of the per-zone num/den ODE drivers
+across the existing sub-steps; previous-hour drivers persisted in
+`MassState.r71_air_driver_*_prev`; night-vent term at current-hour value;
+φ_st/solar-lag hourly-frozen) is now **unconditional** — the env-gated harness
+form (`FLX_R71_AIR_CAP`, round 72) is retired and the ramp is the engine
+default. The ramp is seeded from zero previous drivers on the first step of
+each simulation (no ramp on the seed hour).
+
+**Post-flip re-record** (`_doc_round73`, canonical DRYCOLD, values from the
+checker logs on `loop73/air-cap-default-flip`, nothing tuned): strict gate
+**13 PASS / 29 KNOWN-FAIL / 0 REGRESSION**; the flipped default reproduces the
+§58 arm-on measurement line-for-line — 600 H **0.45 pp** of band (4.905 MWh,
+0.019 MWh from the band top), 600 C / 640 H/C / 800 H / 600FF Tmin hold PASS,
+630 C 2.62 → 1.63 pp and 195 C 27.76 → 26.84 pp narrow, 650FF Tmin 7.30 →
+6.09 pp. Disclosed residuals, recorded not tuned: **650 C worsens 5.19 →
+7.99 pp** (LIMIT-28 night-vent coupling class per §57) and the free-float Tmax
+pair worsens ≤ 0.42 pp (600FF 14.53 → 14.85, 650FF 16.48 → 16.90). 900FF/950FF
+and the high-mass family byte-identical (not on the modified path); Case 900
+heating unchanged at 8.27 pp.
+
+Baselines re-recorded together from the corrected engine with old→new
+provenance: strict-gate JSON (`_doc_round73`), output-diff CSV (42 metrics, 19
+moved), fabric baseline (case_600 5r1c 4.959/5.489 → 4.905/5.423, parity
+0.9476/0.7436 → 0.9374/0.7347; 9r4c and 900/950 rows unchanged), hotloop
+goldens (analytical and CPU-surrogate), grid-adapter baseline (thermal
+138.81059158981444 → 138.16772740591088109 kWh; the stale
+`FLUXION_PRINT_GRID_BASELINE` regeneration hook restored), §6 value pins +
+Table 6-1 day pins + regenerated CSVs (solar/sky columns unchanged), §7 GSR
+workflow CSV + headline pins. Two honest finds from the re-record: the §7
+headline pins were **stale since round 71** (they still carried pre-D5 values —
+the D5 flip missed this test; it has been red on develop), re-recorded here
+with that provenance; and the grid-adapter regeneration hook promised by its
+comment since round 39 did not exist in the test — restored.
+
+Issue routing (Alex: "reopen 1585 as necessary"): #1522's LIMIT-05
+"architecturally blocked" closure carries a stale premise — the algebraic
+pinning it names as root cause was retired by #1585/#1586 (true `C_air`
+exact-exponential ODE). **#1585 reopened** 2026-10-19 as the honest residual
+tracker (its own Required-Fix item 2 — sub-timestep integration — is exactly
+the remaining question: the exact-exponential integrator against ramped
+drivers, currently a midpoint-rule approximation); #1522 stays closed as the
+historical record with a routing cross-reference.
+
+Recorded 2026-10-19/20, loop round 73.
