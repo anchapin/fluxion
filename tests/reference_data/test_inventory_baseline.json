@@ -87,7 +87,7 @@
     "BASELINE_LIB_TESTS": 4262,
     "BASELINE_TEST_BINARIES": 56,
     "BASELINE_WORKSPACE_IGNORED": 167,
-    "BASELINE_WORKSPACE_TESTS": 8922
+    "BASELINE_WORKSPACE_TESTS": 8923
   },
   "ratchet_drift_tolerance_abs": 25,
   "ratchet_drift_tolerance_pct": 5.0,
