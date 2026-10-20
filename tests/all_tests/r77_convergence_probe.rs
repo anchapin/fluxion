@@ -76,9 +76,7 @@ fn r77_convergence_probe() {
         let r = run(Some(n), &format!("N={n}"));
         rows.push((n, r));
     }
-    println!(
-        "--- payoff vs baseline (Tmin delta, Tmax delta), {label} 3-day probe ---"
-    );
+    println!("--- payoff vs baseline (Tmin delta, Tmax delta), {label} 3-day probe ---");
     for (n, (tmin, tmax)) in &rows {
         println!(
             "N={n}: dTmin = {:+.9}  dTmax = {:+.9}",

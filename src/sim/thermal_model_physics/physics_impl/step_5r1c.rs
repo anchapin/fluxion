@@ -1332,8 +1332,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         };
                         let tau_lag_r77 = (tau_air_r77 * tau_mass_r77).sqrt();
                         let lag_input_r77 = if term_rest_1_r77 > 0.0 {
-                            h_tr_is_for_ti_free.as_ref()[i] * phi_st.as_ref()[i]
-                                / term_rest_1_r77
+                            h_tr_is_for_ti_free.as_ref()[i] * phi_st.as_ref()[i] / term_rest_1_r77
                         } else {
                             0.0
                         };
