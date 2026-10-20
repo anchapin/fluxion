@@ -3760,3 +3760,100 @@ coupled num/den persistence), not a default flip. The arm stays env-gated,
 measured, not tuned; no default change is proposed this round.
 
 Recorded 2026-10-20, loop round 76.
+
+## §63 — Round 77 (#3983): `FLX_R77_COUPLED_N` — coupled single-N sub-stepping; the air-node sub-step divergence root-caused and fixed (harness, env-gated, default build bit-identical)
+
+Alex's round-77 direction: couple the air and mass sub-steps at the same
+time resolution and/or related components (solar et al.) — the round-76
+verdict's named next increment.
+
+**Root cause (verified in code, ISO 13790 Annex C structure):** the
+incumbent air-node sub-step loop (default N=3, #2339) applies the
+solar-lag response as an ADDITIVE post-correction in every sub-step
+(`corrected += new_solar_lag/den_true`, with the corrected temperature fed
+back as the next sub-step's `t_air_old`). The lag STATE filter is exactly
+hour-consistent (the per-sub-step decays compose to the hourly filter),
+but the correction is injected N times per hour against a steady state
+that does not carry it, and only the ODE relaxation between sub-steps
+removes the previous injections — as dt_sub→0 that removal vanishes and
+the injected term accumulates ~linearly in N. ISO 13790's discrete scheme
+applies the lag correction ONCE per timestep; the per-sub-step
+re-application has no analogue in the standard. The night-vent numerator
+term (`h_ve_night·T_outdoor` at full current-hour value every sub-step)
+has the same per-sub-step additive structure (round 77 also ramps it —
+measured effect on the 650FF probe ≤ 1e-5 K, second-order on this case).
+
+**Fix (single consistent N):** `FLX_R77_COUPLED_N=N` sub-steps air and
+mass TOGETHER at dt/N. The solar-lag enters the air ODE as a per-sub-step
+DRIVER — the midpoint-frozen lag value added to the numerator as
+`lag_mid·term_rest_1` (algebraically `+lag_mid/den_true` on the steady
+state) — and the lag state advances once per sub-step at dt/N. The mass
+node advances at the same dt/N (R76 mechanics: CN, sol-air ramped at the
+midpoint fraction, sub-step air temperature as interior boundary,
+per-sub-step mass temperature refreshed into the air numerator). Each
+driver (solar via the lag filter, sol-air, vent term, boundary temps) is
+evaluated per sub-step exactly once; the scheme's N→∞ limit is the
+continuous-time solution of the 5R1C network with first-order solar lag.
+Flag-off arithmetic is bit-identical (sorted strict lines and FF cohort
+identical to develop `07639b45`, diff 42/42).
+
+**N-convergence (650FF, 3-day full-precision probe
+`tests/all_tests/r77_convergence_probe.rs`, deltas vs the hourly
+baseline):** dTmin +0.390 (N=3), +0.561 (6), +0.770 (12), +1.226 (24),
++1.881 (48), +2.461 (96), +2.849 (192), +3.073 (384); dTmax −7.341 (3),
+−8.159 (6), −8.120 (12), −6.345 (24), −3.657 (48), −1.368 (96),
++0.123 (192), +0.973 (384). The tail is first-order: per-doubling
+increments shrink by ~0.5–0.6 and both dTmin and dTmax approach finite
+limits (extrapolated dTmin ≈ +3.3 K, dTmax ≈ +2 K). The approach is
+monotone from N≥6; the N≈6–12 dTmax dip is a transient of two
+opposing first-order error components, disclosed not tuned. Contrast the
+incumbent operator: unbounded divergence (218 °C at N=96, §62). The R76
+mass arm reproduced §62's probe record exactly on this run (dTmin +0.643
+at N=96 vs recorded +0.65; dTmax −4.43 at N=4, +1.98 at N=96 vs recorded
+−4.4/+2.0). 600FF and 900FF probes: see the round-77 PR for the sweep
+logs (900FF is 9R4C — inert control).
+
+**Strict-gate measurement at N=12 (canonical DRYCOLD, annual):**
+650FF Tmin −18.30 → **−17.40** (band [−17.8, −16.7]: **in band**, beyond
+R76's −17.24); 195 H 2.130 → **3.933** (band [3.471, 4.697]: **in
+band**); 900FF/950FF byte-identical (9R4C, inert control). Mixed-family
+effect, honest and not tuned: 650FF Tmax 53.14 → 41.74 (further below
+[61.1, 66.8]); 600FF Tmin −11.20 → −3.78 (overshoots above); 600FF Tmax
+55.69 → 47.42 (further below); 630 C 2.408-at-R76-N12 → 2.030 (leaves
+band low); 650 C 3.516 → 1.186 (further below); the conditioned heating
+side moves away from band broadly (600 H 4.985 → 5.353, 610 H → 6.130,
+620 H → 6.894, 630 H → 7.579) and 195 C 0.925 → 1.560 worsens. Checker:
+10 PASS / 17 KNOWN-FAIL / 15 REGRESSION vs the hourly baseline — the
+expected full-battery movement of an env-gated measurement arm, recorded
+with old→new provenance.
+
+**Strict-gate at N=96 (annual, limit-proximity check):** 650FF Tmin
+−16.52 (ABOVE the band's warm edge −16.7 — the Tmin band is CROSSED over
+intermediate N and overshot at the limit); 650FF Tmax 41.50 (saturated,
+~35 pp below band — moved +0.24 K from N=12's 41.74 while the probe
+increments shrank 4×); 600FF Tmin −0.28 (far above); 600FF Tmax 47.35
+(saturated below); 900FF/950FF byte-identical. Conditioned side at the
+limit re-mixes: 600 H 4.480 **in band**, 195 C 0.761 (1.69 pp — near
+band), 630 H 6.180 (15.17 pp, improved from 35.32), 630 C 1.496 (further
+below), 195 H 2.466 (24.61 pp). Checker: 10 PASS / 23 KNOWN-FAIL /
+9 REGRESSION vs the hourly baseline.
+
+**Verdict on the structural-limit question:** a single-N consistent
+scheme DOES converge — the N→∞ limit exists, is finite, and is reached
+monotonically from N≥24 on both probes — so free-float residual verdicts
+can legitimately be read at the limit. Read at the limit: 650FF Tmin
+CROSSES its band around N≈12–48 (in band −17.40 at N=12, overshooting
+−16.52 at N=96) — some N reaches band, but the band is a crossing, not a
+fixed point; the incumbent hourly operator sits on the cold side of the
+continuous solution, which is itself warmer than the published band.
+650FF/600FF Tmax move FURTHER below their bands at every N≥3 and
+saturate ~11 K below the 650FF band floor — **no N reaches the
+free-float Tmax bands under a converged scheme**. The free-float peak
+gap is therefore structural (missing network dynamics, cf. §53's
+per-surface attribution and the §LIMIT-40 storage-release split), not a
+time-resolution artifact: refining dt cannot close it. No default flip
+proposed this round; the flip follows the evidence-then-explicit-decision
+path and must weigh the N-dependent conditioned-side movement recorded
+above.
+
+Recorded 2026-10-20, loop round 77.

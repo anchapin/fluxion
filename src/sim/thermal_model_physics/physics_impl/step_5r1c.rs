@@ -1123,12 +1123,42 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // N=96 with the mass advance disabled; the R76 air-only diagnostic
         // `FLX_R76_NO_MASS` isolates it). The mass node therefore gets its
         // own independent sub-step count and the air machinery is untouched.
+        // [R77 HARNESS — #3983 coupled single-N sub-stepping, round 77.
+        // `FLX_R77_COUPLED_N=N`: air and mass sub-stepped TOGETHER at the
+        // same dt/N, a single consistent N across the whole 5R1C network.
+        // Two structural fixes vs the incumbent operator:
+        // (1) the solar-lag term enters the air ODE as a per-sub-step DRIVER
+        // (midpoint-frozen lag value added to the numerator as
+        // `lag_mid * term_rest_1`, equivalent to adding `lag_mid/den_true` to
+        // the steady state) and the lag STATE advances once per sub-step at
+        // dt/N — the sub-step filters compose exactly to the hourly filter.
+        // The incumbent per-sub-step additive post-correction
+        // (`corrected += lag/den_true` fed back into `t_air_old`) is removed:
+        // it injects the hour's solar-lag response N times against a state
+        // that does not carry it, so the injected term accumulates ~linearly
+        // in N — the measured round-76 divergence (650FF Tmax 33.1 °C at N=3
+        // → 218 °C at N=96, `FLX_R76_NO_MASS` diagnostic).
+        // (2) the mass node advances at the same dt/N with the sub-step air
+        // temperature as interior boundary and the per-sub-step mass
+        // temperature refreshed into the air-node numerator (R76 arm
+        // mechanics, single N). Each driver is evaluated per sub-step exactly
+        // once; the scheme's N→∞ limit is the continuous-time solution of the
+        // 5R1C network with first-order solar lag. Harness arm: default build
+        // (flag unset) executes the identical arithmetic (bit-identical).]
+        let r77_n: usize = std::env::var("FLX_R77_COUPLED_N")
+            .ok()
+            .and_then(|v| v.trim().parse().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(0);
+        let r77_coupled = r77_n > 0;
+        let steps = if r77_coupled { r77_n } else { steps };
+        let eff_mass_n: usize = if r77_coupled { r77_n } else { r76_n };
         let dt_sub = dt / steps as f64;
         // Local sub-step mass-state buffer (allocated only when the arm is
         // on); refreshed into the air-node numerator each sub-step and
         // carried to the hourly mass-advance block as the end-of-hour mass
         // state.
-        let mut r76_mass: Vec<f64> = if r76_n > 0 {
+        let mut r76_mass: Vec<f64> = if eff_mass_n > 0 {
             self.0.mass.mass_temperatures.as_ref()[..self.0.hvac.num_zones].to_vec()
         } else {
             Vec::new()
@@ -1219,7 +1249,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // term uses this sub-step's mass temperature instead of
                     // the hour-start value frozen into `num_tm_ref`.
                     let r76_no_refresh = std::env::var("FLX_R76_NO_NUM_REFRESH").is_ok();
-                    let mut num_i = if r76_n > 0 && !r76_no_refresh {
+                    let mut num_i = if eff_mass_n > 0 && !r76_no_refresh {
                         self.0.conduction.derived_h_ms_is_prod.as_ref()[i] * r76_mass[i]
                             + num_rest_ref[i]
                     } else {
@@ -1251,8 +1281,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // same midpoint fraction as the R71 driver ramp. Default
                     // (flag unset): the full current-hour term — the identical
                     // add as before this arm existed.
-                    if nv_cur != 0.0 || (r75_vent_ramp && r75_vent_has_prev) {
-                        let nv_applied = if r75_vent_ramp && r75_vent_has_prev {
+                    // [R77 HARNESS] coupled mode ramps the vent term per
+                    // sub-step exactly once (R75 interpolation): the
+                    // incumbent full-current-hour value in every sub-step is
+                    // the same per-sub-step additive accumulation as the
+                    // solar-lag term and diverges with N.
+                    if nv_cur != 0.0
+                        || (r77_coupled && r75_vent_has_prev)
+                        || (r75_vent_ramp && r75_vent_has_prev)
+                    {
+                        let nv_applied = if (r77_coupled || r75_vent_ramp) && r75_vent_has_prev {
                             let nv_prev_i = r75_vent_term_prev_ref[i];
                             nv_prev_i + f_r75 * (nv_cur - nv_prev_i)
                         } else {
@@ -1269,6 +1307,52 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             den_ref[i]
                         }
                     };
+                    // [R77 HARNESS] solar-lag driver: midpoint-frozen lag
+                    // value enters the numerator exactly once per sub-step;
+                    // lag STATE advances once per sub-step at dt_sub
+                    // (composes to the hourly filter). Replaces the
+                    // incumbent additive post-correction in coupled mode.
+                    if r77_coupled {
+                        let term_rest_1_r77 = term_rest_1_ref[i];
+                        let den_true_r77 = if term_rest_1_r77 > 0.0 {
+                            den_i / term_rest_1_r77
+                        } else {
+                            den_i
+                        };
+                        let h_tr_3_r77 = self.0.conduction.derived_h_tr_3.as_ref()[i];
+                        let tau_air_r77 = if den_true_r77 > 0.0 && c_air_ref[i] > 0.0 {
+                            c_air_ref[i] / den_true_r77
+                        } else {
+                            600.0
+                        };
+                        let tau_mass_r77 = if h_tr_3_r77 > 0.0 && cm_ref[i] > 0.0 {
+                            cm_ref[i] / h_tr_3_r77
+                        } else {
+                            44000.0
+                        };
+                        let tau_lag_r77 = (tau_air_r77 * tau_mass_r77).sqrt();
+                        let lag_input_r77 = if term_rest_1_r77 > 0.0 {
+                            h_tr_is_for_ti_free.as_ref()[i] * phi_st.as_ref()[i] / term_rest_1_r77
+                        } else {
+                            0.0
+                        };
+                        let decay_r77 = if tau_lag_r77 > 0.0 && dt_sub > 0.0 {
+                            (-dt_sub / tau_lag_r77).exp()
+                        } else {
+                            0.0
+                        };
+                        let decay_half_r77 = if tau_lag_r77 > 0.0 && dt_sub > 0.0 {
+                            (-(dt_sub / (2.0 * tau_lag_r77))).exp()
+                        } else {
+                            0.0
+                        };
+                        let lag_old_r77 = scratch.air_node_solar_lag.as_ref()[i];
+                        let lag_mid_r77 =
+                            lag_old_r77 * decay_half_r77 + lag_input_r77 * (1.0 - decay_half_r77);
+                        scratch.air_node_solar_lag.as_mut()[i] =
+                            lag_old_r77 * decay_r77 + lag_input_r77 * (1.0 - decay_r77);
+                        num_i += lag_mid_r77 * term_rest_1_r77;
+                    }
                     let steady = num_i / den_i;
                     let c_air_i = c_air_ref[i];
                     let t_air_old_i = scratch.air_node_t_air.as_ref()[i];
@@ -1335,7 +1419,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .copy_from_slice(scratch.air_node_t_i_free.as_ref());
             let corrected_t_i_free = scratch.air_node_corrected.as_mut();
 
-            for i in 0..self.0.hvac.num_zones {
+            // [R77 HARNESS] coupled mode: the solar-lag state advanced
+            // inside the ODE loop above (per-sub-step driver, no additive
+            // post-correction) — this block is skipped.
+            for i in 0..(if r77_coupled {
+                0
+            } else {
+                self.0.hvac.num_zones
+            }) {
                 // [R71 HARNESS] same sub-hour den ramp as the ODE loop, so
                 // den_true in the solar-lag correction sees the same driver
                 // pair as the steady state.
@@ -1398,8 +1489,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // interior boundary = this sub-step's air temperature. When the
             // arm is off this block never runs (r76_n == 0).
             let r76_no_mass = std::env::var("FLX_R76_NO_MASS").is_ok();
-            if r76_n > 0 && !r76_no_mass {
-                let mass_sub = r76_n;
+            if eff_mass_n > 0 && !r76_no_mass {
+                let mass_sub = eff_mass_n;
                 let dt_m = dt_sub / mass_sub as f64;
                 let f_mid = (_step as f64 + 0.5) / steps as f64;
                 let h_tr_3_all = self.0.conduction.derived_h_tr_3.as_ref();
@@ -1449,7 +1540,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .as_mut()
                 .copy_from_slice(scratch.air_node_corrected.as_ref());
         }
-        if r76_n > 0 {
+        if r76_n > 0 || r77_coupled {
             // Persist the sol-air ramp source for the next hour and carry
             // the end-of-hour mass state to the mass-advance block.
             let sol_prev = self.0.mass.r76_sol_air_prev.as_mut();
