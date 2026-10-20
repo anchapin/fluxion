@@ -751,7 +751,14 @@ describe('@fluxion/native', () => {
     // the pin below is a ±5% regression guard around the recorded
     // post-fix engine value, not a widened band. Cooling unchanged (in
     // band, no engine movement on this drive).
-    const HEATING_RECORDED_KWH = 5894.85; // post-#4441 engine value, 2026-10-16
+    // Re-pinned 2026-10-19 (physics loop round 71): the D5 default flip
+    // (PR #4502, merge 2e51d3ff, #3983 §57) promoted the per-surface 5R1C
+    // physics to the engine default; the NAPI/WD600 Case 600 annual heating
+    // moves to 4806.97 kWh (both ubuntu-24.04 and windows-latest report the
+    // same value). Adopted per the fidelity-first direction; the ±5%
+    // regression guard moves with the recorded engine value. Cooling stays
+    // pinned to the published band.
+    const HEATING_RECORDED_KWH = 4806.97; // post-D5-flip engine value, 2026-10-19
     const HEATING_GUARD_PCT = 5.0;
     const HEATING_MIN_KWH = +(HEATING_RECORDED_KWH * (1 - HEATING_GUARD_PCT / 100)).toFixed(2);
     const HEATING_MAX_KWH = +(HEATING_RECORDED_KWH * (1 + HEATING_GUARD_PCT / 100)).toFixed(2);
