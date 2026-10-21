@@ -204,3 +204,58 @@ The residual is a **separate class**, not a blocker: it is the gauge star's own 
 ### Smallest next increment (documented, not yet built)
 
 An env-gated scratch arm (rounds-66–77 pattern) that disables the gauge FD stack's day-side solar storage split — the §52 `disable_fd_for_test`-class discriminator — on the low-mass FF cases only, to bound how much of the 17–23 K Tmax shortfall the storage-release split owns at the new operating point. If that bound comes back small, the honest conclusion is that the reference's FF Tmax carries an exterior-gain magnitude term neither network models (solar-absorption-to-surface partitioning), and the cohort floor moves to that class. Default build stays byte-identical either way; any future production routing decision remains Alex's.
+
+## Round 80 (2026-10-21) — the storage-release-split discriminator at the post-coupled-N operating point
+
+The round-79 scoped experiment, executed. Env-gated scratch harness
+(never-commit `FLX_R80_NOFD` / `FLX_R80_NOSTORE` in
+`src/physics/gauge_zone_solver.rs`, scratch branch, engine default untouched),
+gauge build (`--features gauge-solver`), canonical DRYCOLD, engine
+`2e41ae7a`. Harness cross-validation: flag-off reproduces the round-79 gauge
+arm bit-for-bit (600FF −11.99/45.19, 650FF −17.88/42.82; 900FF/950FF
+byte-identical). Arms:
+
+- `FLX_R80_NOFD` — drop the per-surface FD stacks entirely
+  (`disable_fd_for_test` semantics; the §52 discriminator, re-run at the new
+  operating point).
+- `FLX_R80_NOSTORE` — bypass only the day-side storage-release split: the
+  mass-pool share is injected at the interior face instead of as a
+  capacity-weighted volume source, so the FD stack still conducts
+  through-thickness but does not store/release the day's beam share.
+
+| Tmin/Tmax (°C) | 600FF | 650FF | 900FF | 950FF |
+|---|---|---|---|---|
+| gauge flag-off (baseline) | −11.99 / 45.19 | −17.88 / 42.82 | −0.26 / 43.28 | −15.67 / 38.78 |
+| gauge FD off (NOFD) | −11.61 / 50.86 | −16.70 / 48.39 | byte-identical | byte-identical |
+| gauge storage split bypassed (NOSTORE) | −11.95 / 46.73 | −17.87 / 43.55 | byte-identical | byte-identical |
+| band | [−13.8,−9.9] / [62.4,68.4] | [−17.8,−16.7] / [61.1,66.8] | [0.6,2.2] / [43.3,46.0] | [−13.4,−12.5] / [36.1,37.1] |
+
+**Attribution.** At the post-coupled-N operating point the storage-release
+split owns **+1.54 K of 600FF Tmax and +0.73 K of 650FF Tmax** (NOSTORE vs
+baseline) — a small bound against the 17.2 / 18.3 K shortfalls. Dropping the
+FD stacks entirely recovers **+5.67 K / +5.57 K** (NOFD) — so roughly a
+quarter of the shortfall is FD through-thickness damping in aggregate, of
+which the day/night storage split is only ~1/4 to 1/3. The high-mass family
+is byte-identical under both flags at this operating point (the 9R4C
+HighMass promotion is shared and inert, as round-79 recorded).
+
+Conditioned-family spillover (gauge build, annual tolerance battery):
+NOSTORE moves the low-mass conditioned family a few percent (650 C 4.008 →
+4.414 MWh, 610 C 4.715 → 5.279, 640 C 6.819 → 7.720, 620 C 8.067 → 8.850 —
+mixed direction, no band entries change class) and leaves Case 195
+bit-identical; NOFD reproduces the round-70 degenerate-`H_tr,3` signature
+(195 H 18.919 → 100.623 MWh) and is ruled out as a production arm, as
+before.
+
+**Verdict.** The bounded experiment answers the round-79 scope question: the
+missing 17–23 K low-mass FF diurnal peak is **not** owned by the
+storage-release split (≤ 1.5 K of 17–23 K), nor by FD through-thickness
+damping in aggregate (~5.6 K), nor by time resolution (§63), nor by the
+mass-split alone (round 79). Consistent with §52/§53, no measured state
+reaches band; the cohort floor moves to the **exterior-gain
+partitioning class** (solar-absorption-to-surface partitioning / gain
+magnitude the reference programs model and neither network does), with the
+interior surface/air coupling under free-float swing (round-70 finding) as
+the remaining in-network candidate. Nothing tuned; no engine code landed;
+scratch reverted before commit; default build untouched; no re-record
+battery owed.
