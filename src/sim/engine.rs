@@ -465,7 +465,18 @@ mod tests {
             // original "isolated phase" premise without touching the
             // engine or tuning any output.]
             let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
-            let mut model = ThermalModel::<VectorField>::new(1);
+            // Fresh models through the production `from_spec` path (loop
+            // round 78): bare `new(1)` models never initialize the
+            // conduction/mass network and diverge on both branches; the
+            // old sign assertions were reading garbage values that happened
+            // to have the right signs on develop. See the
+            // test_ground_coupling_affects_heating_load note.
+            let spec = crate::validation::ashrae_140_cases::ASHRAE140Case::Case600.spec();
+            let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+                &spec,
+                &crate::sim::thermal_selector::ThermalSelector::default(),
+            )
+            .expect("default selector must initialize");
 
             model.setpoints.heating_setpoint = 20.0;
             model.setpoints.heating_schedule =
@@ -490,7 +501,11 @@ mod tests {
                 model.solve_single_step(0, outdoor_temp_cold, &step_params, 3600.0);
 
             // Fresh model for the cooling phase (see the round-73 note).
-            let mut model = ThermalModel::<VectorField>::new(1);
+            let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+                &spec,
+                &crate::sim::thermal_selector::ThermalSelector::default(),
+            )
+            .expect("default selector must initialize");
             model.setpoints.heating_setpoint = 20.0;
             model.setpoints.heating_schedule =
                 DailySchedule::constant(20.0).expect("valid constant schedule");
@@ -511,7 +526,11 @@ mod tests {
             let energy_cooling = model.solve_single_step(0, outdoor_temp_hot, &step_params, 3600.0);
 
             // Fresh model for the deadband phase (see the round-73 note).
-            let mut model = ThermalModel::<VectorField>::new(1);
+            let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+                &spec,
+                &crate::sim::thermal_selector::ThermalSelector::default(),
+            )
+            .expect("default selector must initialize");
             model.setpoints.heating_setpoint = 20.0;
             model.setpoints.heating_schedule =
                 DailySchedule::constant(20.0).expect("valid constant schedule");
@@ -597,8 +616,28 @@ mod tests {
 
         #[test]
         fn test_ground_coupling_affects_heating_load() {
-            let mut model1 = ThermalModel::<VectorField>::new(1);
-            let mut model2 = ThermalModel::<VectorField>::new(1);
+            // Build both models through the production `from_spec` path
+            // (2026-10-20, loop round 78): this test previously stepped
+            // models built bare from `new(1)`, which never initialize the
+            // conduction/mass network — both branches diverge on that
+            // degenerate config (measured ~-1e33 after 24 h on develop AND
+            // on the round-78 branch; the old assertion passed only by the
+            // accident of which garbage value sorted larger). A Case 600
+            // spec model is physically grounded (its floor is the
+            // ground-coupled surface), so the comparison is between two
+            // real solutions differing only in T_ground.
+            use crate::sim::thermal_selector::ThermalSelector;
+            use crate::validation::ashrae_140_cases::ASHRAE140Case;
+            let mut model1 = ThermalModel::<VectorField>::from_spec_with_selector(
+                &ASHRAE140Case::Case600.spec(),
+                &ThermalSelector::default(),
+            )
+            .expect("default selector must initialize");
+            let mut model2 = ThermalModel::<VectorField>::from_spec_with_selector(
+                &ASHRAE140Case::Case600.spec(),
+                &ThermalSelector::default(),
+            )
+            .expect("default selector must initialize");
             let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
             model1.hvac.hvac_enabled = VectorField::from_scalar(0.0, 1);

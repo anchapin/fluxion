@@ -424,7 +424,17 @@ impl InvariantChecker {
                             t_comp = a * t_comp + b;
                         }
                         let denom_final = c[c.len() - 1];
-                        let r = (t_mass - t_comp) * denom_final;
+                        let mut r = (t_mass - t_comp) * denom_final;
+                        // The persisted coefficients encode the engine's own
+                        // phi_m for the committed hour. When the caller
+                        // supplies a modified load (the artificial-gain
+                        // probe), add the load delta's phi_m share
+                        // (`m_air_frac`, the same composition the mirror
+                        // identity below uses) so the probe sees the shift
+                        // instead of the mirror's exact zero.
+                        let engine_load_w = model.setpoints.loads.as_ref()[i]
+                            * model.setpoints.zone_area.as_ref()[i];
+                        r += (load_w - engine_load_w) * m_air_frac;
                         return r;
                     }
                 }
