@@ -47,10 +47,20 @@ fn test_multi_zone_throughput() {
         "Multi-zone ({} zone) throughput: {:.2} configs/sec",
         ZONE_COUNT, throughput
     );
+    // Machine-fair floor (#4517 follow-up): the absolute floor scales
+    // DOWN with measured machine speed (never up) so the gate keeps its
+    // relative sensitivity on slower CI runner classes.
+    let effective_floor = crate::hybrid_perf_regression::machine_fair_floor(MIN_CONFIGS_PER_SEC);
+    println!(
+        "  Machine scale: {:.3}",
+        crate::hybrid_perf_regression::machine_scale_once()
+    );
+    println!("  Effective floor: {effective_floor:.2} configs/sec");
     assert!(
-        throughput >= MIN_CONFIGS_PER_SEC,
-        "Multi-zone throughput {} configs/sec is below minimum {}",
+        throughput >= effective_floor,
+        "Multi-zone throughput {} configs/sec is below machine-fair minimum {} (absolute {})",
         throughput,
+        effective_floor,
         MIN_CONFIGS_PER_SEC
     );
 }
