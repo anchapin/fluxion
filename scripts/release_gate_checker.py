@@ -85,10 +85,11 @@ DEFAULTS: dict[str, Any] = {
         "multi_zone": {
             "min_configs_per_sec": 10,
         },
-        # Re-pinned 2026-10-20 (loop round 78, coupled-N default flip):
+        # Re-pinned 2026-10-20 (loop round 78, coupled-N default flip), then
+        # 30 -> 8 2026-10-21 (round 78 follow-up, CI-runner calibration):
         # matches release_gates.yaml benchmark.hybrid.min_configs_per_sec.
         "hybrid": {
-            "min_configs_per_sec": 30,
+            "min_configs_per_sec": 8,
         },
         "hybrid_multi_zone": {
             "min_configs_per_sec": 8,
