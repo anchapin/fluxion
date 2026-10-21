@@ -161,12 +161,13 @@ describe('@fluxion/native', () => {
       // The 5s threshold is flaky on Windows GitHub Actions runners under transient load;
       // see #3001 CI retry. 15s still verifies that the BatchOracle is functionally responsive
       // and catches real performance regressions (which would be orders of magnitude slower).
-      // Re-pinned 15s -> 20s 2026-10-21 (physics loop round 78): the coupled
+      // Re-pinned 15s -> 30s 2026-10-21 (physics loop round 78): the coupled
       // single-N default flip (PR #4514, merge 386cecb7) runs 12x the 5R1C
-      // sub-steps per hour; measured 16,194 ms on ubuntu-24.04 (run
-      // 39542539057) under the old 15 s budget. The budget rises only, with
-      // this dated provenance, and keeps regression headroom.
-      assert.ok(duration < 20000, `Evaluation took ${duration}ms, expected < 20000ms`);
+      // sub-steps per hour; measured 16,194 ms on ubuntu-24.04 and 24,810 ms
+      // on windows-latest (run 39543601020) under the pre-flip 15 s budget.
+      // The budget rises only, with this dated provenance, and still catches
+      // order-of-magnitude regressions on the slower runner.
+      assert.ok(duration < 30000, `Evaluation took ${duration}ms, expected < 30000ms`);
     });
 
     it('should produce consistent results for same inputs', () => {
