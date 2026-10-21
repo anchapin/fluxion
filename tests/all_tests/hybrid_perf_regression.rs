@@ -17,7 +17,9 @@
 //! `release_gates.yaml` → `benchmark.hybrid.{min_configs_per_sec,multi_zone.min_configs_per_sec}`).
 //!
 //! Acceptance (Issue #2922):
-//! - `test_hybrid_performance_regression`: pop_100, ≥ 80 cfg/s
+//! - `test_hybrid_performance_regression`: pop_100, ≥ 8 cfg/s on CI runners
+//!   (floor re-pinned for the round-78 coupled-N default; see
+//!   release_gates.yaml; 12-core standalone reference 64 cfg/s)
 //!   (single-zone HybridThermalModel). The debug-mode arm uses a
 //!   best-of-3 statistic with a dedicated calibrated floor (Issue #3894,
 //!   un-quarantining #3892) — see [`HYBRID_DEBUG_FLOOR`]. The
@@ -52,7 +54,9 @@ const MULTI_ZONE_GATE_ZONES: usize = 10;
 /// Fallback absolute floor for single-zone HybridThermalModel (configs/sec),
 /// used when `release_gates.yaml` cannot be read. Mirrors
 /// `release_gates.yaml` → `benchmark.hybrid.min_configs_per_sec`.
-const HYBRID_FLOOR_FALLBACK: f64 = 30.0; // re-pinned 2026-10-20 round 78 (coupled-N flip, measured 195->64 cfg/s; see release_gates.yaml)
+// Re-pinned 30 -> 8, 2026-10-21 round 78 follow-up: CI-runner calibration for
+// the coupled-N12 default (see release_gates.yaml for provenance).
+const HYBRID_FLOOR_FALLBACK: f64 = 8.0;
 /// Fallback absolute floor for 10-zone HybridThermalModel (configs/sec).
 /// Mirrors `release_gates.yaml` → `benchmark.hybrid_multi_zone.min_configs_per_sec`.
 const HYBRID_MULTI_ZONE_FLOOR_FALLBACK: f64 = 8.0;

@@ -215,7 +215,17 @@ benchmark:
     # multi_zone 8 — still pass with margin). # Floor 80 -> 30 keeps ~2.1x
     # headroom under the measured post-flip rate so a genuine regression
     # still trips it.
-    min_configs_per_sec: 30  # Single-zone HybridThermalModel, pop_100, default routing (re-pinned for the round-78 coupled-N flip; see above)
+    # Re-pinned 30 -> 8, 2026-10-21 (loop round 78 follow-up): the nightly
+    # perf-lane runner is a smaller machine class than the 12-core
+    # calibration reference — measured best-of-3 17 configs/sec on the
+    # post-flip develop tip (run 39547720061), ~0.3x the local 12-core
+    # rate, so the 30 floor was calibrated against the wrong machine
+    # class and is unreachable there. 8 keeps ~2.1x headroom under the
+    # CI-measured rate; the 12-core standalone rate stays 64 configs/sec.
+    # Follow-up routed: a machine-fair relative floor (measure a
+    # calibration workload in-run) so one floor can serve both machine
+    # classes without repeated re-pins.
+    min_configs_per_sec: 8  # Single-zone HybridThermalModel, pop_100, default routing (CI-runner calibration; see above)
     description: "Minimum throughput for single-zone HybridThermalModel"
   hybrid_multi_zone:
     min_configs_per_sec: 8  # 10-zone HybridThermalModel, pop_1000, default routing
