@@ -234,7 +234,6 @@ def test_main_warns_but_does_not_fail_on_stale_default_log(checker, tmp_path, mo
     """A stale DEFAULT-path log warns loudly (round-81 fake-drift pattern)
     but leaves the verdict untouched."""
     import time as _time
-    real_default = checker.__dict__.get("main")
     # main() hardcodes the default string, so exercise it via argv default:
     # instead call with the default path by monkeypatching Path.stat? Simpler:
     # call main with the literal default path pointing at our fixture via cwd.
