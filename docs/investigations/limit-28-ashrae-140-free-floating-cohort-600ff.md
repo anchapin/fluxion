@@ -391,3 +391,66 @@ the floor-dominant Table 5-138 per-surface routing deferred (§Round-81)
 to the per-surface interior network, and the 3.5 % window retransmission
 the lumped arms do not model. Nothing tuned; scratch reverted before
 commit; no engine code landed; no re-record battery owed.
+
+## §Round-83 (2026-10-21) — Table 5-138 per-surface routing measured INERT on the coupled-N default: the D5 mass state is recording-only; the 3.5 % retransmission measured at the live split site
+
+Round 82 named the floor-dominant Table 5-138 per-surface interior
+routing as the next discriminator, premised on the D5 per-surface
+interior network being live (§Round-71 flip). **Premise correction,
+verified in code on `f90157f6`:** since the round-78 coupled-N default
+flip, the hourly mass advance's per-surface (D5) result is **discarded**
+— `step_5r1c.rs` overrides the class `tm_new` with the sub-stepped
+lumped mass state (`let tm_new = if let Some(mv) =
+r76_final.as_ref() { mv[i] } else { tm_new }`), because the R77 coupled
+scheme advances one lumped mass node per sub-step (N=12). The per-class
+`r70` surface-node advance and the applied-boundary recording still run
+("recording the same current-hour aggregates", per the in-code R76
+note), so the checker mirrors an identity the mass state no longer
+consumes. The interior surface pool itself reaches the coupled route
+only through the **lumped** `h_tr_is·phi_st / term_rest_1` folded term
+of the air-node driver — a single s-term, so per-surface Table 5-138
+weighting is not representable there either.
+
+**Arms (env-gated scratch on `f90157f6`; flag-off reproduced the strict
+gate bit-for-bit first — checker 10 PASS / 32 KNOWN-FAIL / 0 REGRESSION,
+output-diff 42/42 +0.0000 %, fabric PASS, weather provenance OK, blind
+infrastructure PASS).**
+
+- Arm `FLX_R83_T5138` (+ `FLX_R83_RETRANS` variants): route the
+  transmitted-solar surface pool to the D5 per-surface classes by the
+  Table 5-138 shares (Floor 0.642, Ceiling 0.1678, walls 0.1566
+  combined), renormalized or with the 0.035 retransmission removed.
+  **Measured byte-identical to flag-off on all 42 output-diff metrics
+  under every variant** — the arms are structurally inert because the
+  D5 class mass advance they modify is dead on the default route. A
+  one-shot debug probe confirmed the class advance never binds the
+  committed mass state on Case 600FF.
+- Arm `FLX_R83_RETRANS` at the **live** spec-init split site (`phi_ia /
+  phi_st / phi_m` construction in `step_physics_5r1c`): transmitted
+  solar scaled by 0.965 (the Table 5-138 0.035 retransmitted-out share
+  as a spec sink out the glazing). Flag-off bit-identical (10/32/0 +
+  42/42); arm: **16 of 42 metrics move** — 600FF Tmax 47.42 -> 46.70,
+  650FF Tmax 41.74 -> 41.11 (both further below band), 600FF Tmin
+  −3.78 -> −3.90 (0.12 K toward a band it is 68 pp above); heating
+  +1–3 % (600 H 5.353 -> 5.459), cooling −4–8 % (600 C 2.966 -> 2.791);
+  high-mass family and 650FF Tmin unchanged; **no checker row changes
+  state** (10 PASS / 32 KNOWN-FAIL / 0 REGRESSION).
+
+**Verdict.** The Table 5-138 per-surface routing class is **UNREACHABLE
+on the current default route, not refuted**: its designated network (D5
+per-surface interior) has been recording-only for the mass state since
+the round-78 coupled-N flip. Making per-surface routing live requires
+the coupled sub-step mass advance itself to become per-class (3 coupled
+sub-stepped class nodes at N=12) — a design change, Alex's call, not a
+harness arm. The 3.5 % window retransmission is spec-correct, now
+measured at the live split site: directionally it worsens the
+free-float Tmax floor (the swing-compression question of rounds 75–82)
+and moves no strict-gate row across a boundary, so it is **not a fix
+candidate**; adopting it as a default (spec fidelity with disclosed
+conditioned-family shifts) stays Alex's explicit call. The free-float
+swing-compression residual now has no reachable in-network lever short
+of per-class coupled sub-stepping: every candidate rounds 75–82 named
+is either refuted in direction, premise-verified passing, or (this
+round) structurally inert on the default route. Nothing tuned; scratch
+reverted before commit; no engine code landed; no re-record battery
+owed.
