@@ -492,7 +492,13 @@ jobs:
 
   compare-hashes:
     name: Compare Hashes
-    needs: determinism-check
+    # Round 80 (issue follow-up to #3583 hardening): the expected platform set
+    # must come from the SAME matrix setup-matrix selected for this run. The
+    # previous hardcoded PLATFORMS list assumed the full 3-OS nightly matrix,
+    # so a workflow_run (ubuntu-only) run's Compare Hashes step failed
+    # INCOMPLETE even though its only matrix leg succeeded and uploaded its
+    # artifact (observed on develop 2e41ae7a, run 39593499936, 2026-10-21).
+    needs: [determinism-check, setup-matrix]
     runs-on: ubuntu-24.04
     steps:
       - name: Download all artifacts
@@ -501,6 +507,8 @@ jobs:
           path: artifacts
 
       - name: Compare hashes across platforms
+        env:
+          EXPECTED_PLATFORMS_JSON: ${{ needs.setup-matrix.outputs.matrix }}
         run: |
           python3 << 'EOF'
           import os
@@ -522,7 +530,16 @@ jobs:
           # comparison set — 2-of-3 (even 1-of-3) platforms all sharing one
           # hash reported SUCCESS. Every expected platform must now deliver
           # BOTH files, or the gate fails loudly naming what is absent.
-          PLATFORMS = ['ubuntu-24.04', 'windows-latest', 'macos-14']
+          import json as _json
+          # The expected platform set is the matrix this run actually selected
+          # (ubuntu-only on workflow_run PR lanes; the full 3-OS set on
+          # push/schedule/dispatch). Never a hardcoded list again.
+          PLATFORMS = sorted(
+              (_json.loads(os.environ.get('EXPECTED_PLATFORMS_JSON') or '{}') or {}).get('os', [])
+          )
+          if not PLATFORMS:
+              print("❌ INCOMPLETE: setup-matrix output missing — refusing to compare without the expected platform set")
+              sys.exit(1)
           incomplete = {}
           for os_name in PLATFORMS:
               platform_dir = os.path.join(artifacts_dir, f'determinism-gate-output-{os_name}')
