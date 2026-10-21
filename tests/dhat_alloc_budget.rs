@@ -165,6 +165,20 @@ const ALLOC_BLOCKS_BUDGET: u64 = 1_550;
 ///   well-posed ASHRAE 600 fixture (see [`ALLOC_BLOCKS_BUDGET`]), measured
 ///   518 429 bytes, deterministic across repeat runs. Re-pinned at
 ///   `measured × 1.2`: 518 429 × 1.2 ≈ 622 115 → 625 000.
+///
+///   **Round 78 (2026-10-20) UPDATE, #4512 regression fixed:** the first
+///   executed dhat verdict (2026-10-20, run 39486650747 — the job had been
+///   skipped on every prior develop run) measured 264 105 blocks, a
+///   genuine ~3-allocations-per-timestep regression introduced by the D5
+///   default flip (`2e51d3ff`, round 71; bisect `305a2143` good →
+///   `2e51d3ff` bad, both re-measured on alex-system). The three sites —
+///   the t_s-first advance's per-step `to_vec` + `clone` pair and the
+///   per-step `vec![None; num_zones]` class-tuple buffer — are pooled in
+///   `MassState`/`ConductionState` workspaces (bit-identical arithmetic).
+///   Measured 1 335 blocks / 540 557 bytes post-fix; the 1 550 / 625 000
+///   budgets stand (no re-pin). The +46 blocks vs the round-70 1 289 pin
+///   are once-per-run setup from the rounds 72–77 persisted-state fields,
+///   not per-step (a single per-step allocation would add ≥ 87 600).
 const ALLOC_BYTES_BUDGET: u64 = 625_000;
 
 /// Pairs with the block-count budget so a pathological *size* growth

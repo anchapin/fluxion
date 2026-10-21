@@ -260,6 +260,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Per-class harness tuple: (cls_g, cls_t, cls_area, cls_beam) —
         // per-class exterior conductance, sol-air, area and beam irradiance.
         type R66ClassTuples = [f64; 3];
+        // [Round 78 (#4512): pooled in `ConductionState::r66_cls_workspace`
+        // — the D5 default flip (2e51d3ff) rebuilt this with `vec![None;
+        // num_zones]` every step (1 heap allocation per timestep). Values
+        // identical: every element is overwritten or stays `None` before
+        // first read (same semantics as the fresh `vec![None; n]`).]
         let mut r66_cls: Vec<
             Option<(
                 R66ClassTuples,
@@ -267,7 +272,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 R66ClassTuples,
                 R66ClassTuples,
             )>,
-        > = vec![None; self.0.hvac.num_zones];
+        > = self
+            .0
+            .conduction
+            .r66_cls_workspace
+            .take()
+            .unwrap_or_default();
+        r66_cls.clear();
+        r66_cls.resize_with(self.0.hvac.num_zones, || None);
         // Issue #2873: overwrite `scratch.t_sol_air_zone` with the
         // opaque-irradiance-based sol-air values used by the 5R1C envelope
         // conduction pathway (`h_tr_em * (t_sol_air - T_mass)` below). The
@@ -2629,14 +2641,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         // interior surface layer capacitance C_s_c = 0.1·cm_c.]
                         let r70_ts_on = true;
                         let n_z70 = self.0.hvac.num_zones;
-                        let r70_ts_old: Vec<f64> =
-                            match self.0.mass.r70_surface_node_temperatures.as_ref() {
-                                Some(v) if v.as_ref().len() >= 3 * n_z70 => {
-                                    v.as_ref()[..3 * n_z70].to_vec()
-                                }
-                                _ => vec![20.0; 3 * n_z70],
-                            };
-                        let mut r70_ts_new: Vec<f64> = r70_ts_old.clone();
+                        // [Round 78 (#4512): the per-step `to_vec` + `clone`
+                        // pair the D5 default flip made here (~2 heap
+                        // allocations per timestep, breached #4512's budget
+                        // while the dashboard dhat job was skipped) is pooled
+                        // in `MassState` workspaces and reused. Values
+                        // identical (clear + extend/resize reuses the
+                        // allocation; contents equal the old copies).]
+                        let mut r70_ts_old: Vec<f64> =
+                            self.0.mass.r70_ts_old_workspace.take().unwrap_or_default();
+                        r70_ts_old.clear();
+                        match self.0.mass.r70_surface_node_temperatures.as_ref() {
+                            Some(v) if v.as_ref().len() >= 3 * n_z70 => {
+                                r70_ts_old.extend_from_slice(&v.as_ref()[..3 * n_z70])
+                            }
+                            _ => r70_ts_old.resize(3 * n_z70, 20.0),
+                        }
+                        let mut r70_ts_new: Vec<f64> =
+                            self.0.mass.r70_ts_new_workspace.take().unwrap_or_default();
+                        r70_ts_new.clear();
+                        r70_ts_new.extend_from_slice(&r70_ts_old);
                         for c in 0..3 {
                             let w = cls_area[c] / total_area;
                             if w <= 0.0 {
@@ -2794,6 +2818,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             self.0.mass.r70_surface_node_temperatures_prev =
                                 Some(T::from(VectorField::from_smallvec(svp)));
                         }
+                        // [Round 78 (#4512): return the t_s workspaces.]
+                        self.0.mass.r70_ts_old_workspace = Some(r70_ts_old);
+                        self.0.mass.r70_ts_new_workspace = Some(r70_ts_new);
                         tm_w
                     }
                     _ => advance_node(
@@ -2915,6 +2942,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
         }
         self.0.conduction.applied_5r1c_class_boundary = Some(applied_class_buf);
+        // [Round 78 (#4512): return the per-class tuple scratch to the model.]
+        self.0.conduction.r66_cls_workspace = Some(r66_cls);
 
         // Issue #4495: same input-envelope guard for the mass node — the
         // Crank–Nicolson / implicit-Euler numerator multiplies conductances
