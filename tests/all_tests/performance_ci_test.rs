@@ -5,7 +5,12 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::time::Instant;
 
-const MIN_CONFIGS_PER_SEC: f64 = 10.0;
+// Re-pinned 10 -> 1.5, 2026-10-21 (loop round 78 follow-up): the coupled
+// single-N default (#4514) runs 12 mass sub-steps per hour, and the nightly
+// perf-lane runner is ~0.3x the 12-core calibration machine — measured
+// 3.22 configs/sec on run 39547720061 at the new default. 1.5 keeps ~2x
+// headroom; a machine-fair relative floor is the routed follow-up.
+const MIN_CONFIGS_PER_SEC: f64 = 1.5;
 const ZONE_COUNT: usize = 10;
 
 fn generate_synthetic_population(size: usize) -> Vec<Vec<f64>> {
