@@ -758,7 +758,15 @@ describe('@fluxion/native', () => {
     // same value). Adopted per the fidelity-first direction; the ±5%
     // regression guard moves with the recorded engine value. Cooling stays
     // pinned to the published band.
-    const HEATING_RECORDED_KWH = 4806.97; // post-D5-flip engine value, 2026-10-19
+    // Re-pinned 2026-10-21 (physics loop round 78): the coupled single-N
+    // default flip (PR #4514, merge 386cecb7, #3983 §64) fixed the coupled
+    // sub-stepped 5R1C mass advance at N=12; the NAPI/WD600 Case 600 annual
+    // heating moves to 5163.19 kWh (ubuntu-24.04, post-merge run 39541491246).
+    // Adopted per the fidelity-first direction (round-42 precedent); the ±5%
+    // regression guard moves with the recorded engine value — the published
+    // ±15% band is not widened. Cooling stayed inside its round-71 guard on
+    // the same run and stays pinned.
+    const HEATING_RECORDED_KWH = 5163.19; // post-coupled-N12-flip engine value, 2026-10-21
     const HEATING_GUARD_PCT = 5.0;
     const HEATING_MIN_KWH = +(HEATING_RECORDED_KWH * (1 - HEATING_GUARD_PCT / 100)).toFixed(2);
     const HEATING_MAX_KWH = +(HEATING_RECORDED_KWH * (1 + HEATING_GUARD_PCT / 100)).toFixed(2);
