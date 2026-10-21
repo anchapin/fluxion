@@ -259,3 +259,74 @@ interior surface/air coupling under free-float swing (round-70 finding) as
 the remaining in-network candidate. Nothing tuned; no engine code landed;
 scratch reverted before commit; default build untouched; no re-record
 battery owed.
+
+## §Round-81 — exterior-gain partitioning discriminator (2026-10-21, engine `b6827776`)
+
+The round-80 verdict named the **exterior-gain partitioning class**
+(solar-absorption-to-surface partitioning) as the cohort floor. This section
+executes that class's discriminating experiment on the **default build**
+(coupled-N N=12, D5 per-surface, sub-hour air-driver ramp), where the strict
+free-float cohort actually runs.
+
+**Premise verified in code and primary source.**
+
+- Engine: at spec init (`thermal_model_core/mod.rs`) the transmitted-solar
+  split is `to_air = 0.30·(1−w_solar)` (lightweight → 0.30, Issue #2359's
+  ASHRAE 140 Table B-12 F_m; heavyweight → 0.0, ADR-002/#1175) and
+  `beam_to_mass = 0.30`; `step_physics_5r1c` applies it as
+  `phi_ia += Φ_sol·to_air`, `phi_st += Φ_sol·(1−to_air)·(1−beam)`,
+  `phi_m += Φ_sol·(1−to_air)·beam`. The gauge solver threads the same
+  fractions through the identical three-way split and distributes the
+  surface pool by area-share of `h_tr_is` (`step_interior_surface_network`).
+- ASHRAE 140-2017 §5.2.1.12 + Table 5-138 (Case 600): the fractional
+  distribution is **among interior surfaces only** — Floor 0.642, Ceiling
+  0.1678, East 0.038, West 0.038, North 0.053, South wall 0.0276, 0.035
+  retransmitted out the windows — and **nothing directly to zone air**.
+  (Programs computing interior distribution internally use interior solar
+  absorptance; §5.2.1.12.2 permits other values only with a mathematical,
+  physical, or logical basis, applied consistently.)
+- ISO 13790 §C.3 capacity-based split was already audited (#4369): formulas
+  correct, mass-pool share misplaced at the interior face — fixed (R11 PR-b).
+
+**Arms (env-gated scratch at the spec-init split site; one release build;
+flag-off reproduced the strict gate bit-for-bit before any arm ran — 42/42
+output-diff metrics +0.0000%, checker 10 PASS / 32 KNOWN-FAIL / 0
+REGRESSION on `b6827776`).**
+
+- Arm A `FLX_R81_TOAIR0`: `to_air = 0.0` for all masses (the §5.2.1.12
+  air-term endpoint; mass share unchanged 0.30).
+- Arm B `FLX_R81_SOL2ST`: `to_air = 0.0, beam_to_mass = 0.0` — 100 % of
+  transmitted solar absorbed at the (lumped) surface node, the closest
+  lumped representative of Table 5-138. The table's 3.5 % window
+  retransmission is NOT modeled (disclosed: arms B slightly over-absorbs).
+
+| strict (canonical DRYCOLD) | flag-off | Arm A to_air=0 | Arm B sol→st | band |
+|---|---|---|---|---|
+| 600FF Tmin / Tmax | −3.78 / 47.42 | −3.61 / **38.80** | −6.35 / **39.02** | [−13.8,−9.9] / [62.4,68.4] |
+| 650FF Tmin / Tmax | −17.40 / 41.74 | −17.39 / **34.64** | −17.49 / **35.30** | [−17.8,−16.7] / [61.1,66.8] |
+| 900FF Tmin / Tmax | −0.26 / 43.28 | byte-identical | byte-identical | [0.6,2.2] / [43.3,46.0] |
+| 950FF Tmin / Tmax | −15.67 / 38.78 | byte-identical | byte-identical | [−13.4,−12.5] / [36.1,37.1] |
+
+**Conditioned spillover (low-mass family; disclosed, nothing tuned).**
+Arm A: 600 H 5.353 → 5.876 MWh, 600 C 2.966 → 1.478; 650 C 1.186 → 0.318;
+610/620/630/640 move the same direction (H up, C down ~35–50 %). Arm B:
+600 H 7.497 / C 1.196; 650 C 0.457. High-mass rows (195, 810, 900, 920–970)
+byte-identical under both arms (`w_solar = 1` → `to_air` already 0 there;
+the arms never touch the 9R4C family).
+
+**Verdict.** The exterior-gain partitioning class is **REFUTED in direction**
+as the owner of the missing low-mass free-float diurnal peak: both honest
+§5.2.1.12 partitionings move 600FF/650FF Tmax **further below** band
+(−8.6 / −7.1 K and −7.1 / −6.4 K respectively), while the incumbent
+low-mass to_air = 0.30 term is load-bearing in the upward direction —
+consistent with the #3961 record (#4079) and #2359's Table B-12 premise.
+The floor is therefore NOT owned by solar partitioning among air/surface/
+mass; with §Round-80 (storage split ≤1.5 K, FD aggregate ~5.6 K) and §63
+(time resolution ruled out at any N), the remaining in-network candidate is
+the **magnitude/timing of the absorbed exterior gain itself** (per-tilt
+incidence on the real geometry — the LIMIT-30 B1b re-derivation) or an
+exterior-driver term neither network carries. A floor-dominant per-surface
+Table 5-138 weighting is not representable in the lumped 5R1C (single s-node)
+and is deferred to the per-surface interior network where it belongs. Nothing
+tuned; no engine code landed; scratch reverted before commit; default build
+untouched; no re-record battery owed.
