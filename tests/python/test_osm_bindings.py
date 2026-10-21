@@ -54,7 +54,13 @@ def assert_lossless_fields(left, right):
     assert_close(left_lon, right_lon, "weather.longitude")
 
 
-def test_osm_reader_writer_roundtrip_lossless_fields(tmp_path):
+def test_osm_reader_writer_roundtrip_lossless_fields(tmp_path, monkeypatch):
+    # The exporter is confined to the `FLUXION_EXPORT_DIR` allow-list
+    # (src/api/security/path_validation.rs); the default is `exports/`
+    # relative to the process CWD, which does not exist under CI's PyO3
+    # job. Point the allow-list at the test's own tmp_path so the
+    # round-trip exercises the exporter, not the confinement error path.
+    monkeypatch.setenv("FLUXION_EXPORT_DIR", str(tmp_path))
     original = fluxion.import_osm(str(FIXTURE))
     assert original["metadata"]["name"] == "Two Zone Fixture"
     assert [zone["name"] for zone in original["geometry"]["zones"]] == ["Zone A", "Zone B"]
@@ -67,7 +73,9 @@ def test_osm_reader_writer_roundtrip_lossless_fields(tmp_path):
     assert_lossless_fields(original, reimported)
 
 
-def test_osm_free_function_export_roundtrip(tmp_path):
+def test_osm_free_function_export_roundtrip(tmp_path, monkeypatch):
+    # Same confinement note as the writer round-trip above.
+    monkeypatch.setenv("FLUXION_EXPORT_DIR", str(tmp_path))
     original = fluxion.OsmReader.from_path(str(FIXTURE)).to_schema_dict()
     output = tmp_path / "free_function.osm"
 

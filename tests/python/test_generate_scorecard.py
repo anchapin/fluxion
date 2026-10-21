@@ -130,7 +130,7 @@ README_TEXT = """\
 
 
 @pytest.fixture
-def repo_dir(tmp_path, monkeypatch):
+def repo_dir(tmp_path, monkeypatch, gen_module):
     """Provide a tmp_path with stub ASHRAE / gates / README / SCORECARD and
     redirect the module-level path constants to point at it."""
     ashrae = tmp_path / "ASHRAE140_RESULTS.md"
@@ -141,6 +141,18 @@ def repo_dir(tmp_path, monkeypatch):
     readme.write_text(README_TEXT, encoding="utf-8")
     scorecard = tmp_path / "SCORECARD.md"
     scorecard.write_text("placeholder\n", encoding="utf-8")
+
+    # Issue #3436/#3535 lineage: ``load_all``/``apply_performance_history``
+    # prefer the tracked snapshot ``validation/performance_history.latest.json``
+    # over the ASHRAE results doc for headline metrics and return its source
+    # attribution. The tests stub the doc paths but run from the real repo,
+    # where that snapshot exists and would silently override the fixture
+    # figures. Redirect the snapshot into the fixture repo (absent there)
+    # so the documented fallback to ``docs/ASHRAE140_RESULTS.md`` applies,
+    # which is what the assertions below were written against.
+    monkeypatch.setattr(
+        gen_module, "PERF_SNAPSHOT", tmp_path / "validation" / "performance_history.latest.json"
+    )
 
     monkeypatch.setattr("builtins.print", lambda *a, **k: None, raising=False)
     return tmp_path, ashrae, gates, readme, scorecard
@@ -425,11 +437,14 @@ def test_load_all_returns_parsed_sources(gen_module, repo_dir, monkeypatch):
     monkeypatch.setattr(gen_module, "README_MD", readme)
     monkeypatch.setattr(gen_module, "SCORECARD", scorecard)
 
-    v, series, g, b = gen_module.load_all(verbose=False)
+    v, series, g, b, throughput_source = gen_module.load_all(verbose=False)
     assert v.total == 64
     assert v.pass_rate == pytest.approx(6.2)
     assert g.min_pass_rate == 60.0
     assert b.readme_release_throughput == pytest.approx(900.0)
+    # Snapshot redirected away by the ``repo_dir`` fixture → documented
+    # docs fallback attribution (issue #3436).
+    assert throughput_source == "`docs/ASHRAE140_RESULTS.md`"
     assert any(r.name == "Baseline Cases (600 Series)" for r in series)
 
 
