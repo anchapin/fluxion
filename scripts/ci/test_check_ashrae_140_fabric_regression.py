@@ -94,6 +94,12 @@ def _harness_log(values: dict[tuple[str, str, str], float] | None = None,
         lines.append(
             f"[#3986-A+2 Case {case} / parity] ratio_H={rh:.4f} ratio_C={rc:.4f}"
         )
+    # Real captured logs always end with cargo's summary line; the
+    # freshness guard (round 82) rejects logs without one.
+    lines.append(
+        "test result: FAILED. 0 passed; 3 failed; 0 ignored; "
+        "0 measured; 2853 filtered out; finished in 0.10s"
+    )
     return "\n".join(lines) + "\n"
 
 
@@ -213,6 +219,44 @@ def test_main_exit_0_on_clean_log(checker, tmp_path, capsys):
     log, base = _write_repo(tmp_path, _harness_log(), _baseline_fixture())
     assert checker.main([str(log), "--baseline", str(base)]) == 0
     assert "PASS: fabric harness holds" in capsys.readouterr().out
+
+
+def test_main_exit_2_on_truncated_log(checker, tmp_path, capsys):
+    """A log with no cargo `test result:` line is not a captured run --
+    the round-82 freshness guard rejects it before parsing."""
+    log, base = _write_repo(tmp_path, "[#3986-A+2 Case 600 / 5r1c] H=4.901 MWh\n",
+                            _baseline_fixture())
+    assert checker.main([str(log), "--baseline", str(base)]) == 2
+    assert "no `test result:` line" in capsys.readouterr().err
+
+
+def test_main_warns_but_does_not_fail_on_stale_default_log(checker, tmp_path, monkeypatch, capsys):
+    """A stale DEFAULT-path log warns loudly (round-81 fake-drift pattern)
+    but leaves the verdict untouched."""
+    import time as _time
+    real_default = checker.__dict__.get("main")
+    # main() hardcodes the default string, so exercise it via argv default:
+    # instead call with the default path by monkeypatching Path.stat? Simpler:
+    # call main with the literal default path pointing at our fixture via cwd.
+    log, base = _write_repo(tmp_path, _harness_log(), _baseline_fixture())
+    old = _time.time() - 48 * 3600.0
+    import os
+    os.utime(log, (old, old))
+    # Only the literal default path warns; invoke with no positional arg by
+    # chdir-ing so the relative default applies... the default is absolute
+    # (/tmp/fabric_output.txt), so assert the warning path via monkeypatched
+    # DEFAULT constant if present, else skip.
+    default = getattr(checker, "DEFAULT_LOG", None) or "/tmp/fabric_output.txt"
+    import shutil
+    shutil.copy(log, default)
+    os.utime(default, (old, old))
+    try:
+        rc = checker.main(["--baseline", str(base)])
+    finally:
+        os.remove(default)
+    err = capsys.readouterr().err
+    assert rc in (0, 1)
+    assert "likely" in err and "stale" in err
 
 
 def test_main_exit_1_on_regression(checker, tmp_path, capsys):
