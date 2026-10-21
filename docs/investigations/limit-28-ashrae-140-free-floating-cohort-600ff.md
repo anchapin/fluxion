@@ -330,3 +330,64 @@ Table 5-138 weighting is not representable in the lumped 5R1C (single s-node)
 and is deferred to the per-surface interior network where it belongs. Nothing
 tuned; no engine code landed; scratch reverted before commit; default build
 untouched; no re-record battery owed.
+
+## §Round-82 (2026-10-21) — the exterior-driver class measured: both terms present, correctly signed, no missing driver
+
+Round 81 named two remaining candidates for the low-mass free-float floor:
+(a) absorbed-gain magnitude/timing (per-tilt incidence, the LIMIT-30 B1b
+line) and (b) an exterior-driver term neither network carries.
+
+**Premise audit.** (a) is already primary-source verified as implemented:
+the LIMIT-30 B1a audit measured per-tilt/per-azimuth incident energy
+PASS (all tilts in [0.99, 1.01] vs analytical; 0/3573 sun hours over 1 %
+per-hour tolerance; 16x8760 tilt-azimuth parity grid), and the window
+transmission path applies the incidence-dependent SHGC ratio lookup
+(`ashrae_140_window_shgc_ratio`, ASHRAE Handbook Ch. 15 table), diffuse
+x0.9 / ground-reflected x0.85 factors, the mid-hour sun convention
+(adopted 2026-10-09), and the roof/wall absorptances 0.7/0.6 per Annex B1
+(#1140/#4166, #1323 closed). No identified primary-source magnitude or
+timing error remains on (a). (b) was therefore measured.
+
+**Discriminator (env-gated scratch at `ExteriorBoundarySurface::
+sol_air_temperature`, the single 5R1C exterior-driver construction site;
+flag-off reproduced the strict gate bit-for-bit first — 10 PASS / 32
+KNOWN-FAIL / 0 REGRESSION, output-diff 42/42 +0.0000 %, fabric harness
+PASS on `cb029e56`).** Two honest term-removal arms, no parameter changes:
+
+- Arm `FLX_R82_NOOPAQUE`: the `alpha*I/h_c` absorbed-opaque-solar term of
+  sol-air dropped (t_sol_air = T_out − F_sky*eps*dR/h_c).
+- Arm `FLX_R82_NOSKY`: the `−F_sky*eps*dR/h_c` sky-longwave term dropped.
+
+| strict (canonical DRYCOLD) | flag-off | NOOPAQUE | NOSKY | band |
+|---|---|---|---|---|
+| 600FF Tmin / Tmax | −3.78 / 47.42 | **−6.22 / 42.93** | **−1.71 / 49.62** | [−13.8,−9.9] / [62.4,68.4] |
+| 650FF Tmin / Tmax | −17.40 / 41.74 | −17.48 / 40.70 | −17.34 / 42.36 | [−17.8,−16.7] / [61.1,66.8] |
+| 900FF / 950FF family | — | byte-identical | byte-identical | (9R4C sol-air path, not this site) |
+
+Both-arms-removed (`NOOPAQUE+NOSKY`): 600FF −4.15 / 45.13 — strictly
+intermediate, confirming the two terms act independently in opposite
+directions.
+
+**Conditioned spillover (disclosed, nothing tuned).** NOOPAQUE degrades
+the whole low-mass family: 600 H 5.353 -> 7.299 MWh, 620 H 6.894 -> 9.319,
+630 H 7.579 -> 10.188, 195 H 3.933 -> 8.377, with cooling collapsing
+(600 C 2.966 -> 1.455); 14 strict-gate regressions. NOSKY: 600 H
+5.353 -> 4.211, 600 C 2.966 -> 4.093, 195 C 1.560 -> 1.730; 3 regressions.
+
+**Verdict.** The exterior-driver class is **REFUTED as a missing term**:
+both sol-air drivers are present, correctly signed, and load-bearing in
+the directions the standard's physics requires — the absorbed-opaque-solar
+term carries ~+4.5 K of 600FF Tmax upward (removal pushes the peak further
+below band), and the sky-longwave term carries ~−2.1 K of nighttime
+cooling (removal pushes Tmin further above band). Neither removal is a fix
+candidate; their magnitudes are the Annex B1 / ASHRAE-convention values,
+so raising them would be tuning. With (a) premise-verified passing and
+(b) now measured present-and-correctly-signed, the round-81 candidate
+list is exhausted: the low-mass free-float diurnal-swing compression is
+NOT owned by exterior gain magnitude, timing, partitioning, or exterior
+drivers. What remains in-network: the per-surface interior
+storage-release ordering already bounded at ~1.5 K (§Round-80 NOSTORE),
+the floor-dominant Table 5-138 per-surface routing deferred (§Round-81)
+to the per-surface interior network, and the 3.5 % window retransmission
+the lumped arms do not model. Nothing tuned; scratch reverted before
+commit; no engine code landed; no re-record battery owed.
