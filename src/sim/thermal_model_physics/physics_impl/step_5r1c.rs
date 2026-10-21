@@ -1157,11 +1157,30 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // once; the scheme's N→∞ limit is the continuous-time solution of the
         // 5R1C network with first-order solar lag. Harness arm: default build
         // (flag unset) executes the identical arithmetic (bit-identical).]
+        // [DEFAULT FLIP — loop round 78 (#3983 §63/§64), Alex-directed
+        // 2026-10-20 17:12 ET: "flip with N=12". The coupled single-N
+        // scheme (round 77 harness `FLX_R77_COUPLED_N`) is promoted to the
+        // engine default with the sub-step count FIXED at N=12 — the
+        // smallest value past the monotone-convergence threshold of the
+        // §63 N-sweep, chosen before the strict-gate re-record, NOT tuned
+        // to bands (the §63 sweep showed no N holds the 650FF Tmin band at
+        // the limit: the band is crossed, not held — the honesty proof).
+        // The env var remains a positive-N override for measurement
+        // (e.g. FLX_R77_COUPLED_N=96 reproduces §63's limit-proximity
+        // record); the un-coupled hourly operator is no longer reachable.
+        // Known cost, recorded honestly: N=12 executes 12× the default
+        // sub-steps on the 5R1C path — measured annual-gate wall time
+        // ~1.5× and hybrid throughput 195 → 64 configs/sec (3.0×; the
+        // hybrid release-gate floor re-pinned 80 → 40 with dated
+        // provenance in release_gates.yaml) — and the conditioned-family
+        // movement of §63's N=12 record is adopted as-is (checker
+        // statuses re-derived, rows in/out of band recorded, never
+        // tuned).]
         let r77_n: usize = std::env::var("FLX_R77_COUPLED_N")
             .ok()
             .and_then(|v| v.trim().parse().ok())
             .filter(|&n| n > 0)
-            .unwrap_or(0);
+            .unwrap_or(12);
         let r77_coupled = r77_n > 0;
         let steps = if r77_coupled { r77_n } else { steps };
         let eff_mass_n: usize = if r77_coupled { r77_n } else { r76_n };
@@ -1175,6 +1194,29 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         } else {
             Vec::new()
         };
+        // [Round 78 — checker persistence for the coupled scheme
+        // (checker-lags-integrator, #4504 class). When the coupled
+        // single-N scheme advances the mass node, record per zone the
+        // linear coefficients the sub-step CN advances actually consumed,
+        // `[a_0, b_0, a_1, b_1, …, a_{N−1}, b_{N−1}, denom_final]`, so
+        // `invariant_checker` can mirror the composite sub-step identity
+        // exactly (the hourly identity no longer matches a dt/N-mapped
+        // mass advance). Pooled buffer; cleared each step, capacity kept.]
+        let mut r77_coeffs: Vec<Vec<f64>> = self
+            .0
+            .mass
+            .r77_mass_substep_coeffs
+            .take()
+            .unwrap_or_default();
+        if r77_coupled {
+            if r77_coeffs.len() != self.0.hvac.num_zones {
+                r77_coeffs.clear();
+                r77_coeffs.resize_with(self.0.hvac.num_zones, Vec::new);
+            }
+            for v in r77_coeffs.iter_mut() {
+                v.clear();
+            }
+        }
         let r76_sol_air_prev_ref = self.0.mass.r76_sol_air_prev.as_ref();
         let r76_has_prev = self.0.mass.r76_has_prev;
         let mut r76_final: Option<Vec<f64>> = None;
@@ -1533,16 +1575,39 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         0.0
                     };
                     let t_i_sub = scratch.air_node_t_air.as_ref()[i];
+                    let h_tr_em_i = h_tr_em_zone.get(i).copied().unwrap_or(0.0);
+                    let h_tr3_arg_i = h_air_mass_i + h_vent_i;
                     let tm_new = crank_nicolson_iso13790(
                         r76_mass[i],
                         dt_m,
                         cm_ref[i],
-                        h_air_mass_i + h_vent_i,
-                        h_tr_em_zone.get(i).copied().unwrap_or(0.0),
+                        h_tr3_arg_i,
+                        h_tr_em_i,
                         t_ext,
                         t_i_sub,
                         phi_m_ref_early[i],
                     )?;
+                    // [Round 78] record this sub-step's linear coefficients
+                    // (same branch the integrator took: CN when its
+                    // denominator is positive, its forward-Euler fallback
+                    // otherwise — both are affine in tm_prev).
+                    if r77_coupled {
+                        let cm_dt_m = cm_ref[i] / dt_m;
+                        let half_cond = 0.5 * (h_tr3_arg_i + h_tr_em_i);
+                        let denom_m = cm_dt_m + half_cond;
+                        let numer_rest =
+                            h_tr_em_i * t_ext + h_tr3_arg_i * t_i_sub + phi_m_ref_early[i];
+                        let (a, b) = if denom_m > 0.0 {
+                            ((cm_dt_m - half_cond) / denom_m, numer_rest / denom_m)
+                        } else {
+                            let inv = dt_m / cm_ref[i];
+                            (1.0 - inv * (h_tr3_arg_i + h_tr_em_i), inv * numer_rest)
+                        };
+                        let c = &mut r77_coeffs[i];
+                        c.push(a);
+                        c.push(b);
+                        c.push(denom_m);
+                    }
                     r76_mass[i] = tm_new;
                 }
             }
@@ -2942,6 +3007,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
         }
         self.0.conduction.applied_5r1c_class_boundary = Some(applied_class_buf);
+        // [Round 78] the checker record persists only for a step that
+        // ran the coupled advance AND passed both input-envelope guards
+        // above (a rejected step leaves state untouched, so it must also
+        // leave no record for the checker to mirror).
+        self.0.mass.r77_mass_substep_coeffs = if r77_coupled { Some(r77_coeffs) } else { None };
         // [Round 78 (#4512): return the per-class tuple scratch to the model.]
         self.0.conduction.r66_cls_workspace = Some(r66_cls);
 

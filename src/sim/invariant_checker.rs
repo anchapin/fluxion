@@ -389,6 +389,45 @@ impl InvariantChecker {
                 denom * t_mass - numer
             }
             ThermalModelType::FiveROneC => {
+                // [Loop round 78 (#3983 §64) — coupled single-N checker
+                // identity, checker-lags-integrator class (#4504
+                // precedent). The default solver path now advances the
+                // mass node with the coupled single-N sub-step scheme
+                // (`FLX_R77_COUPLED_N` default 12, round-78 flip): the
+                // hourly identities below (per-class or legacy lumped)
+                // no longer match the dt-mapped composite advance, so
+                // when the step persisted its sub-step coefficient record
+                // (`MassState::r77_mass_substep_coeffs`, written only by
+                // a step that ran the coupled scheme and passed both
+                // input-envelope guards), mirror the composite exactly:
+                // `t := a_k · t + b_k` per sub-step from the hour-start
+                // mass state, residual `(t_committed − t_composite) ·
+                // d_last` in W. Ceiling unchanged (1e-5 W class);
+                // the mirror is exact by construction (same branch and
+                // values the integrator consumed).]
+                let r77_rec = model
+                    .mass
+                    .r77_mass_substep_coeffs
+                    .as_ref()
+                    .and_then(|v| v.get(i));
+                if let Some(c) = r77_rec {
+                    // Record layout: `[a_0, b_0, d_0, a_1, b_1, d_1, …]` —
+                    // three entries per sub-step (`d_k` is that sub-step's
+                    // CN denominator in W/K; the last one scales the
+                    // composite residual to W).
+                    if c.len() >= 3 && c.len() % 3 == 0 {
+                        let mut t_comp = t_mass_prev;
+                        let mut it = c.iter();
+                        while let (Some(&a), Some(&b), Some(&_d)) =
+                            (it.next(), it.next(), it.next())
+                        {
+                            t_comp = a * t_comp + b;
+                        }
+                        let denom_final = c[c.len() - 1];
+                        let r = (t_mass - t_comp) * denom_final;
+                        return r;
+                    }
+                }
                 // [Loop round 73 (#1522/#4504) — post-D5 checker identity.]
                 // The engine default now advances the mass node per
                 // construction class with the t_s-first backward-Euler

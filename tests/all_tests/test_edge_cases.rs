@@ -460,8 +460,13 @@ fn test_large_zone_count_edge_case() {
 
     // Check performance - should complete in reasonable time
     // (allow up to 10 seconds for 1000 zones in debug mode])
+    // Budget re-recorded 2026-10-20 (loop round 78): the coupled single-N
+    // default flip (`FLX_R77_COUPLED_N` default 12, #3983 §63/§64) runs 12
+    // mass sub-steps per hour on the 5R1C path (the disclosed cost of the
+    // fidelity-first direction), so 1000 zones x 1 year measures ~23 s;
+    // budget 10 s -> 30 s. Measured, not tuned.
     assert!(
-        duration.as_secs() < 10,
+        duration.as_secs() < 30,
         "Solver took too long: {:?}",
         duration
     );

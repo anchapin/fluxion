@@ -3857,3 +3857,87 @@ path and must weigh the N-dependent conditioned-side movement recorded
 above.
 
 Recorded 2026-10-20, loop round 77.
+
+## §64 — Round 78 (#3983): `FLX_R77_COUPLED_N` promoted to the engine default at fixed N=12 (Alex-directed flip)
+
+**Decision (Alex, 2026-10-20 17:12 ET, via OS3):** flip the coupled
+single-N scheme into the engine default with the sub-step count fixed at
+**N=12** — the smallest value past the monotone-convergence threshold of
+the §63 N-sweep, chosen before the strict-gate re-record, not tuned to
+bands. The §63 record is explicit that no N holds the 650FF Tmin band
+(the band is crossed, not held); that honesty proof is the reason the
+flip can adopt N=12's conditioned-side movement as-is.
+
+**Change (loop78/coupled-n12-default, stacked on the #4512 allocation
+fix #4513):**
+
+1. `step_5r1c` default: `FLX_R77_COUPLED_N` `unwrap_or(0)` →
+   `unwrap_or(12)`; the env var remains a positive-N override for
+   measurement (e.g. `FLX_R77_COUPLED_N=96` reproduces §63's
+   limit-proximity record). The un-coupled hourly mass operator is no
+   longer reachable from the default build.
+2. Known cost, disclosed not restructured: the coupled path advances the
+   mass node at dt/N per hour (12× the sub-steps on the 5R1C path).
+   Measured perf cost: annual-gate wall ~1.5×, hybrid throughput
+   best-of-3 195 → 64 configs/sec (3.0×) — the hybrid release-gate
+   floor re-pinned 80 → 40 with dated provenance in release_gates.yaml
+   (measured, accepted tradeoff; other floors pass with margin); the
+   1000-zone edge-case budget 10 s → 30 s (measured ~23 s).
+3. Checker mirror (`invariant_checker` FiveROneC arm, checker-lags-
+   integrator per the #4504 precedent): the engine now persists, per
+   step that runs the coupled advance AND passes both input-envelope
+   guards, each zone's per-sub-step linear coefficients
+   `[a_0, b_0, d_0, …]` (`MassState::r77_mass_substep_coeffs`, write-only
+   for the engine); the checker mirrors the composite
+   `t := a_k·t + b_k` from the hour-start mass state and returns
+   `(t_committed − t_composite) · d_last` in W. Ceiling unchanged
+   (1e-5 W class); the mirror is exact by construction — the fast-math
+   probe residual moved 2,378.008 W / 9,096 violations → 0.0 W / 0
+   violations with annual totals byte-identical.
+
+**Re-record battery (all from the flipped default build, which is
+byte-identical to the §63 N=12 env-gated measurement — sorted strict
+lines equal):**
+
+- Strict-gate baseline JSON: all 42 metrics re-recorded; statuses
+  re-derived honestly. Post-record tally 10 PASS / 32 KNOWN-FAIL /
+  0 REGRESSION. Rows entering their band moved to PASS: **650FF Tmin
+  −18.51 → −17.40 (in band)** and **195 H 2.130 → 3.933 (in band)**.
+  Rows leaving the band became honest known-fail rows: 600FF Tmin
+  −11.39 → −3.78 (68.10 pp above band), 650FF Tmax 53.41 → 41.74
+  (34.73 pp below), 650 C 3.516 → 1.186 (59.03 pp below), 620 C leaves
+  the band (16.16 pp), 640 C 5.412 → 2.966 (31.70 pp). The 9R4C family
+  (900/920/930/940/960/970, 900FF/950FF) is byte-unchanged — inert
+  control confirming the flip only touches the 5R1C path.
+- output_diff_baseline.csv: re-recorded via `--update-baseline`
+  (42 metrics, dated provenance).
+- Fabric baseline: case_600_5r1c H 4.905 → 5.353 / C 5.423 → 2.966,
+  parity ratios 0.9374/0.7347 → 1.0229/0.4018; 9r4c rows and Cases
+  900/950 byte-unchanged.
+- Hotloop goldens: analytical [58.998, 110.517, 136.652] →
+  [98.479, 131.927, 152.402]; surrogate [238.261, 252.918, 264.295] →
+  [245.000, 256.980, 266.941] (dated provenance in-file).
+- Grid-adapter consts: thermal 138.168 → 89.107 kWh; electrical 46.056 →
+  29.702; grid import 33.316 → 17.116; battery now cycles (charge
+  1.607 / discharge 5.607 / export 0.085) because the lighter January
+  load no longer pins the battery at its charge floor.
+- §6 pins + CSVs: annual/peak pins re-recorded (WD100 H 5.1468 → 5.5870
+  MWh etc.); peak occurrences moved on five rows (dated old→new in-file);
+  §6.2.1.8 day totals re-recorded; solar/sky columns byte-unchanged
+  (weather-only path).
+- §7 headline pins: 600 4.905/5.423 → 5.353/2.966; 600FF −11.20/55.69 →
+  −3.78/47.42; 650FF −18.30/53.14 → −17.40/41.74; 900/900FF/950FF
+  unchanged; workflow_results.csv re-emitted.
+
+**Verdicts after the flip (default build, N=12):** the §63/§62 free-float
+structural attribution stands unchanged at the new operating point —
+650FF Tmin is in band at N=12 but §63 showed the band is crossed, not
+held (N=96 overshoots); 650FF/600FF Tmax remain far below their bands
+(missing network dynamics, not time resolution). The known-fail rows that
+moved further from their bands under the coupled scheme (650 C, 620 C,
+640 C, 610) are recorded as the honest cost of the fidelity-first
+direction: the coupled scheme is the corrected physics; the band
+movement is what the corrected physics measures on these fragile
+low-mass cases.
+
+Recorded 2026-10-20, loop round 78.
