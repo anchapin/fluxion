@@ -573,6 +573,23 @@ where
         // Mass-energy-change accumulators (Plan 18-08, used by step_physics_5r1c)
         self.0.mass.envelope_mass_energy_change_cumulative = 0.0;
         self.0.mass.internal_mass_energy_change_cumulative = 0.0;
+        // Issue #4519: the rounds-71/75/76 adaptive previous-step memory is
+        // part of the transient state. `reset_state` originally left these
+        // fields carrying the previous run's end-of-run values, so the first
+        // `simulate_multi_zone`/`simulate` call in a process ran on the
+        // constructor zeros while every later call ran on stale end-state —
+        // sequential runs on one instance diverged by ~1e-5 relative (the
+        // PyO3 determinism tests failed on all platforms; the divergence is
+        // platform-independent because it is accumulated state, not FP
+        // variance). Restore the constructor defaults: zero drivers, no
+        // previous sample (`*_has_prev = false`).
+        self.0.mass.r71_air_driver_num_prev = T::from(VectorField::from_scalar(0.0, n));
+        self.0.mass.r71_air_driver_den_prev = T::from(VectorField::from_scalar(0.0, n));
+        self.0.mass.r75_vent_term_prev = T::from(VectorField::from_scalar(0.0, n));
+        self.0.mass.r75_vent_has_prev = false;
+        self.0.mass.r76_sol_air_prev = T::from(VectorField::from_scalar(0.0, n));
+        self.0.mass.r76_has_prev = false;
+
         // Drop per-step diagnostic traces so the next call rebuilds them.
         self.0.diagnostics_state.hourly_temperatures = None;
         self.0.diagnostics_state.nodal_temperatures = None;
