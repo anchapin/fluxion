@@ -44,6 +44,7 @@ import argparse
 import json
 import re
 import sys
+import time
 from pathlib import Path
 
 # ---------- Constants ----------
@@ -351,7 +352,35 @@ def main(argv: list[str] | None = None) -> int:
     if not log_path.exists():
         print(f"ERROR: log file does not exist: {log_path}", file=sys.stderr)
         return 2
+    # Freshness guard (round-81 follow-up): the default log path
+    # (/tmp/fabric_output.txt) is shared across runs, and /tmp survives
+    # between rounds on a long-lived machine. A stale-but-complete log from
+    # an older engine produced a fake regression drift in loop round 81.
+    # Two cheap guards: (1) hard-fail on a truncated log (no cargo `test
+    # result:` line); (2) warn loudly when the DEFAULT path is older than
+    # 24 h, so the caller re-tees fresh output (passing the log explicitly
+    # stays exempt from the warning since that is the deliberate fresh path).
     log_text = log_path.read_text(errors="replace")
+    if "test result:" not in log_text:
+        print(
+            "ERROR: fabric log has no `test result:` line — truncated or "
+            "not a captured cargo test run. Re-run the harness and tee a "
+            f"fresh log (got: {log_path})",
+            file=sys.stderr,
+        )
+        return 2
+    if args.log == "/tmp/fabric_output.txt":
+        age_h = (time.time() - log_path.stat().st_mtime) / 3600.0
+        if age_h > 24.0:
+            print(
+                f"WARNING: default fabric log is {age_h:.1f} h old — likely "
+                "stale from an earlier round/engine. Re-run "
+                "`cargo test --release --test all_tests -- "
+                "ashrae_140_fabric_multiselector --nocapture` and tee a "
+                "fresh log before trusting this verdict "
+                "(round-81 fake-drift pattern).",
+                file=sys.stderr,
+            )
 
     baseline_path = Path(args.baseline)
     if not baseline_path.exists():
