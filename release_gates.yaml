@@ -205,7 +205,17 @@ benchmark:
   # (e.g. to the surrogate-load branch) would slip through both gates
   # silently. These floors close that gap.
   hybrid:
-    min_configs_per_sec: 80  # Single-zone HybridThermalModel, pop_100, default routing
+    # Re-pinned 2026-10-20 (loop round 78, #3983 §63/§64): the coupled
+    # single-N default flip (`FLX_R77_COUPLED_N` default 12, Alex-directed
+    # fidelity-first decision) runs 12 mass sub-steps per hour on the 5R1C
+    # path — a measured, accepted 3.0x hybrid throughput cost (best-of-3
+    # 195 -> 64 configs/sec on the 12-core calibration machine), NOT a
+    # dispatch regression (per-step dispatch path unchanged; the strict
+    # suite's other floors — analytical 150, multi_zone 10, hybrid
+    # multi_zone 8 — still pass with margin). # Floor 80 -> 30 keeps ~2.1x
+    # headroom under the measured post-flip rate so a genuine regression
+    # still trips it.
+    min_configs_per_sec: 30  # Single-zone HybridThermalModel, pop_100, default routing (re-pinned for the round-78 coupled-N flip; see above)
     description: "Minimum throughput for single-zone HybridThermalModel"
   hybrid_multi_zone:
     min_configs_per_sec: 8  # 10-zone HybridThermalModel, pop_1000, default routing

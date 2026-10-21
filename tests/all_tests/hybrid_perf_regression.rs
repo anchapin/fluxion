@@ -52,7 +52,7 @@ const MULTI_ZONE_GATE_ZONES: usize = 10;
 /// Fallback absolute floor for single-zone HybridThermalModel (configs/sec),
 /// used when `release_gates.yaml` cannot be read. Mirrors
 /// `release_gates.yaml` → `benchmark.hybrid.min_configs_per_sec`.
-const HYBRID_FLOOR_FALLBACK: f64 = 80.0;
+const HYBRID_FLOOR_FALLBACK: f64 = 30.0; // re-pinned 2026-10-20 round 78 (coupled-N flip, measured 195->64 cfg/s; see release_gates.yaml)
 /// Fallback absolute floor for 10-zone HybridThermalModel (configs/sec).
 /// Mirrors `release_gates.yaml` → `benchmark.hybrid_multi_zone.min_configs_per_sec`.
 const HYBRID_MULTI_ZONE_FLOOR_FALLBACK: f64 = 8.0;

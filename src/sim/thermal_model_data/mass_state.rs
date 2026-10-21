@@ -125,6 +125,17 @@ pub struct MassState<T: ContinuousTensor<f64>> {
     /// being overwritten.
     pub r70_ts_old_workspace: Option<Vec<f64>>,
     pub r70_ts_new_workspace: Option<Vec<f64>>,
+
+    /// [Round 78 — coupled-scheme checker record (#3983 §64,
+    /// checker-lags-integrator, #4504 class).] Per zone, the linear
+    /// coefficients the coupled single-N mass advance consumed this step,
+    /// `[a_0, b_0, …, a_{N−1}, b_{N−1}, denom_final]` (odd length ≥ 3;
+    /// `denom_final` in W/K scales the composite residual to W). The
+    /// hourly mass identity no longer matches a mass node advanced by the
+    /// coupled dt/N-mapped sub-step scheme, so `invariant_checker` mirrors
+    /// the composite from this record instead. Write-only for the engine;
+    /// `None` on any step that did not run the coupled scheme.
+    pub r77_mass_substep_coeffs: Option<Vec<Vec<f64>>>,
 }
 
 impl<T: ContinuousTensor<f64> + Clone> Clone for MassState<T> {
@@ -174,6 +185,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for MassState<T> {
             r76_has_prev: self.r76_has_prev,
             r70_ts_old_workspace: self.r70_ts_old_workspace.clone(),
             r70_ts_new_workspace: self.r70_ts_new_workspace.clone(),
+            r77_mass_substep_coeffs: self.r77_mass_substep_coeffs.clone(),
         }
     }
 }

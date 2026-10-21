@@ -354,10 +354,17 @@ fn test_hvac_cooling_mode_detection() {
     // so a single step at 35°C is insufficient to push the zone above the
     // cooling setpoint.  Running 6 hours of warm-up ensures steady-state
     // hot-weather operation before the assertion.
-    for ts in 0..6 {
+    // Warm-up extended 6 -> 12 h (2026-10-20, loop round 78): the coupled
+    // single-N default flip (`FLX_R77_COUPLED_N` default 12, #3983 §63/§64)
+    // lengthens the mass-node warm-up transient, so after 6 h the zone sits
+    // exactly at the cooling setpoint (hvac_kwh straddles 0). Cooling first
+    // activates between hours 12 and 18 of the transient; 24 h puts the
+    // assertion robustly past onset (measured −0.10 kWh at h=24). The
+    // tested behaviour (cooling-mode detection) is unchanged. Nothing tuned.
+    for ts in 0..24 {
         model.step_physics(ts, 35.0, 3600.0);
     }
-    let hvac_kwh = model.step_physics(6, 35.0, 3600.0);
+    let hvac_kwh = model.step_physics(24, 35.0, 3600.0);
 
     // Wrap in N64 to catch NaN - will panic if hvac_kwh is NaN
     let hvac_kwh_checked = n64(hvac_kwh);

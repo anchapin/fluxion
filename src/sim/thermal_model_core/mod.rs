@@ -4006,6 +4006,7 @@ impl ThermalModel<VectorField> {
                 r76_has_prev: false,
                 r70_ts_old_workspace: None,
                 r70_ts_new_workspace: None,
+                r77_mass_substep_coeffs: None,
             },
             conduction: ConductionState {
                 backend: ConductionBackend::default(),

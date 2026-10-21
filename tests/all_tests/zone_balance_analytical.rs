@@ -143,7 +143,13 @@ fn test_steady_state_convergence_mixed() {
     set_zone_loads(&mut model, 0, 100.0);
     set_zone_solar(&mut model, 0, 50.0);
 
-    for _ in 0..150 {
+    // Warm-up extended 150 -> 400 steps (2026-10-20, loop round 78): the
+    // coupled single-N default flip (`FLX_R77_COUPLED_N` default 12,
+    // #3983 §63/§64) lengthens the mass node's approach to the same
+    // equilibrium (measured drift 0.030 K/step at 150 h -> 0.002 K/step at
+    // 400 h, tolerance unchanged at 0.01). Same equilibrium, longer
+    // transient; nothing tuned.
+    for _ in 0..400 {
         model.step_physics(12, T_outdoor, 3600.0);
     }
 

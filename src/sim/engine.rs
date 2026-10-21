@@ -465,7 +465,25 @@ mod tests {
             // original "isolated phase" premise without touching the
             // engine or tuning any output.]
             let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+            // Fresh models with a physically initialized 1-zone network
+            // (loop round 78): bare `new(1)` models never initialize the
+            // conduction/mass network and diverge on both branches; the
+            // old sign assertions were reading garbage values that happened
+            // to have the right signs on develop. Direct field init (not
+            // `from_spec`, to keep the sim<->validation cycle-edge baseline
+            // unchanged); see the test_ground_coupling_affects_heating_load
+            // note.
+            let init_zone = |model: &mut ThermalModel<VectorField>| {
+                model.conduction.h_tr_w = VectorField::from_scalar(60.0, 1);
+                model.conduction.h_tr_em = VectorField::from_scalar(60.0, 1);
+                model.conduction.h_tr_ms = VectorField::from_scalar(100.0, 1);
+                model.conduction.h_tr_is = VectorField::from_scalar(200.0, 1);
+                model.conduction.h_tr_floor = VectorField::from_scalar(10.0, 1);
+                model.mass.thermal_capacitance = VectorField::from_scalar(1.0e7, 1);
+                model.update_optimization_cache();
+            };
             let mut model = ThermalModel::<VectorField>::new(1);
+            init_zone(&mut model);
 
             model.setpoints.heating_setpoint = 20.0;
             model.setpoints.heating_schedule =
@@ -491,6 +509,7 @@ mod tests {
 
             // Fresh model for the cooling phase (see the round-73 note).
             let mut model = ThermalModel::<VectorField>::new(1);
+            init_zone(&mut model);
             model.setpoints.heating_setpoint = 20.0;
             model.setpoints.heating_schedule =
                 DailySchedule::constant(20.0).expect("valid constant schedule");
@@ -512,6 +531,7 @@ mod tests {
 
             // Fresh model for the deadband phase (see the round-73 note).
             let mut model = ThermalModel::<VectorField>::new(1);
+            init_zone(&mut model);
             model.setpoints.heating_setpoint = 20.0;
             model.setpoints.heating_schedule =
                 DailySchedule::constant(20.0).expect("valid constant schedule");
@@ -597,9 +617,31 @@ mod tests {
 
         #[test]
         fn test_ground_coupling_affects_heating_load() {
+            // Initialize a physical 1-zone network directly (2026-10-20,
+            // loop round 78): this test previously stepped models built
+            // bare from `new(1)`, which never initialize the conduction/mass
+            // network — both branches diverge on that degenerate config
+            // (measured ~-1e33 after 24 h on develop AND on the round-78
+            // branch; the old assertion passed only by the accident of
+            // which garbage value sorted larger). Direct field init (not
+            // `from_spec`, to keep the sim<->validation cycle-edge baseline
+            // of check_ashrae_cases_cycle.py unchanged) with a ground-
+            // coupled floor, so the comparison is between two real
+            // solutions differing only in T_ground.
+            let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+            let init_zone = |model: &mut ThermalModel<VectorField>| {
+                model.conduction.h_tr_w = VectorField::from_scalar(60.0, 1);
+                model.conduction.h_tr_em = VectorField::from_scalar(60.0, 1);
+                model.conduction.h_tr_ms = VectorField::from_scalar(100.0, 1);
+                model.conduction.h_tr_is = VectorField::from_scalar(200.0, 1);
+                model.conduction.h_tr_floor = VectorField::from_scalar(10.0, 1);
+                model.mass.thermal_capacitance = VectorField::from_scalar(1.0e7, 1);
+                model.update_optimization_cache();
+            };
             let mut model1 = ThermalModel::<VectorField>::new(1);
             let mut model2 = ThermalModel::<VectorField>::new(1);
-            let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+            init_zone(&mut model1);
+            init_zone(&mut model2);
 
             model1.hvac.hvac_enabled = VectorField::from_scalar(0.0, 1);
             model2.hvac.hvac_enabled = VectorField::from_scalar(0.0, 1);

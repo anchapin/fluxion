@@ -136,7 +136,15 @@ fn analytical_path_eui_is_bit_identical_to_baseline() {
     // 2026-10-07 #4258 refresh: legitimate physics-baseline refresh, not a
     // regression). Previous goldens (D5 flip, round 71):
     // [59.46714897354147, 110.3238524931423, 136.48280523784027].
-    let golden = [58.99791056935924, 110.51711796412485, 136.651947557101];
+    // Re-recorded 2026-10-20 (loop round 78): the coupled single-N default
+    // flip (`FLX_R77_COUPLED_N` promoted to the engine default at fixed
+    // N=12, Alex-directed 2026-10-20 17:12 ET, #3983 §63/§64) changed the
+    // 5R1C mass/air advance again; same corrected-engine refresh precedent
+    // (strict-gate, fabric, output-diff and this golden re-recorded
+    // together from the flipped default build). Previous goldens (R71
+    // air-driver flip, round 73):
+    // [58.99791056935924, 110.51711796412485, 136.651947557101].
+    let golden = [98.47883488604658, 131.92702641312698, 152.40195691921105];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),
@@ -171,7 +179,12 @@ fn cpu_surrogate_mock_path_eui_is_bit_identical_to_baseline() {
     // default flip, loop round 73, #1522): same corrected-engine refresh.
     // Previous goldens (D5 flip, round 71):
     // [238.26898220394858, 252.92568913230716, 264.3030402695419].
-    let golden = [238.26081821570014, 252.9180153722391, 264.2953715294398];
+    // Re-recorded 2026-10-20 with the analytical path above (coupled
+    // single-N default flip, loop round 78, #3983 §63/§64): same
+    // corrected-engine refresh. Previous goldens (R71 air-driver flip,
+    // round 73):
+    // [238.26081821570014, 252.9180153722391, 264.2953715294398].
+    let golden = [244.9999907038609, 256.9802090722031, 266.941327636793];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),

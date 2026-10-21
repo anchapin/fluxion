@@ -1,29 +1,29 @@
-# repo_sha=b8850b270d6f70b6588923bd875ee709c2f42c3f
-# recorded_utc=2026-10-20T02:43:26Z
-# source=strict-gate log strict_gate_output.txt
+# repo_sha=28be550c25d02448fad9bbad7ff86ba34607a25f
+# recorded_utc=2026-10-20T22:31:48Z
+# source=strict-gate log r78b-gate.log
 # Epsilon policy: 0.1% relative (issue #4281); intentional physics
 # changes re-record this file in the same PR via --update-baseline.
 case,metric,value,unit
-195,C,0.925000,MWh
-195,H,2.130000,MWh
-600,C,5.423000,MWh
-600,H,4.905000,MWh
-600FF,Tmax,55.690000,C
-600FF,Tmin,-11.200000,C
-610,C,3.124000,MWh
-610,H,5.619000,MWh
-620,C,4.560000,MWh
-620,H,6.431000,MWh
-630,C,3.293000,MWh
-630,H,7.137000,MWh
-640,C,5.412000,MWh
-640,H,2.844000,MWh
-650,C,3.516000,MWh
+195,C,1.560000,MWh
+195,H,3.933000,MWh
+600,C,2.966000,MWh
+600,H,5.353000,MWh
+600FF,Tmax,47.420000,C
+600FF,Tmin,-3.780000,C
+610,C,1.621000,MWh
+610,H,6.130000,MWh
+620,C,2.838000,MWh
+620,H,6.894000,MWh
+630,C,2.030000,MWh
+630,H,7.579000,MWh
+640,C,2.966000,MWh
+640,H,3.121000,MWh
+650,C,1.186000,MWh
 650,H,0.000000,MWh
-650FF,Tmax,53.140000,C
-650FF,Tmin,-18.300000,C
-800,C,4.566000,MWh
-800,H,5.132000,MWh
+650FF,Tmax,41.740000,C
+650FF,Tmin,-17.400000,C
+800,C,2.966000,MWh
+800,H,5.353000,MWh
 810,C,2.249000,MWh
 810,H,1.225000,MWh
 900,C,2.249000,MWh
