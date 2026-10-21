@@ -174,3 +174,33 @@ Blocks preserved: 1. No wording was changed, softened or deleted.
   `known_failures` exclusion is *predicated on*, so adding the FF
   cases to the §LIMIT-05 / #3072 cohort would conflate the meta-issue
   with its own justification).
+
+## Round 79 (2026-10-21) — sub-hour FD assessment: the gauge arm measured at the post-coupled-N operating point
+
+**Scope question (round-76/§63 handoff).** §63 established no sub-step count N reaches the free-float Tmax bands under the coupled 5R1C scheme (650FF/600FF Tmax "unreachable under any converged N — missing network dynamics, not time resolution"), and named the GaugeSolver route (hourly per-surface FD network) as where sub-hour spatial resolution exists. This section records the assessment's three questions and the first measurement increment. **No engine code changed; no default-build output moved.**
+
+### Measurement increment (smallest honest one — no code, no env gate beyond the existing cargo feature)
+
+The gauge build (`cargo test --features gauge-solver --test all_tests free_float_strict_gate -- --include-ignored --nocapture`) was run at develop `dc1ad186` (engine identical at the round-79 merge tip `ca5b9ecf`; the intervening commit touched only two PyO3 test files outside this harness). Canonical DRYCOLD weather. Raw results, old (default build, §64 `_doc_round78` operating point) → new (gauge arm, same tip):
+
+| metric | default build (legacy routing) | gauge arm (per-surface FD) | band |
+|---|---|---|---|
+| 600FF Tmin | −3.78 | **−11.99 (IN BAND)** | [−13.8, −9.9] |
+| 600FF Tmax | 55.26-class floor | 45.19 (17.2 below floor) | [62.4, 68.4] |
+| 650FF Tmin | −17.40 (in band) | −17.88 (0.08 K below floor) | [−17.8, −16.7] |
+| 650FF Tmax | 41.74 (34.7 pp) | 42.82 (18.3 below floor) | [61.1, 66.8] |
+| 900FF / 950FF Tmin+Tmax | byte-identical | byte-identical | (HighMass 9R4C promotion shared; inert) |
+
+The strict-band tests panic on out-of-band metrics by design (`--include-ignored` transparent-measurement pattern); the printed lines above are the record. Nothing tuned.
+
+### Assessment answer 1 — what per-surface FD conduction on the FF cases requires
+
+It already exists as a measurement route: the gauge arm's per-surface FD stacks (12+ nodes/layer, converged per §25; §5.2.6 wind-dependent exterior film post-#4371; §B3.3 ground boundary post-round-10) route the low-mass FF family with zero new code. What a *production* per-surface FD route would additionally require is exactly what §LIMIT-40 records: resolving the FD stacks' day/night storage-release split (the ~4 K leading night-warming term, §52) and the star-node film coupling (~1.2–1.3 K, §26) — both documented structural model differences of the gauge network, not wiring defects.
+
+### Assessment answer 2 — the gauge arm's 600-series topology residual: separate class, and it does not close Tmax
+
+The residual is a **separate class**, not a blocker: it is the gauge star's own FD storage-release + film-coupling structure (§23–§27, §LIMIT-40), distinct from the legacy path's §53 floors. The fresh measurement sharpens the §63 verdict: at the post-coupled-N operating point the gauge arm *improves* the FF Tmin row (600FF enters band; 650FF within 0.08 K of the floor) but *lowers* the Tmax floor further (45.19/42.82 vs the legacy 55.26-class/41.74 against the same 62.4/61.1 band floors). Both networks undershoot the reference diurnal peak by 17–23 K on the low-mass FF cases. The missing term is therefore not time resolution (§63), not the lumped-vs-per-surface mass split alone (this measurement), and not the FD stacks' exterior coupling (post-#4371 measured) — the remaining candidates are the §LIMIT-40 storage-release split itself and the interior surface/air coupling under free-float swing, consistent with the round-70 finding that the interior network carries the dynamic order.
+
+### Smallest next increment (documented, not yet built)
+
+An env-gated scratch arm (rounds-66–77 pattern) that disables the gauge FD stack's day-side solar storage split — the §52 `disable_fd_for_test`-class discriminator — on the low-mass FF cases only, to bound how much of the 17–23 K Tmax shortfall the storage-release split owns at the new operating point. If that bound comes back small, the honest conclusion is that the reference's FF Tmax carries an exterior-gain magnitude term neither network models (solar-absorption-to-surface partitioning), and the cohort floor moves to that class. Default build stays byte-identical either way; any future production routing decision remains Alex's.
