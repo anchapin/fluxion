@@ -79,7 +79,10 @@ fn hand_rolled_model() -> ThermalModel<VectorField> {
 /// path.
 fn mass_advance_equilibrium_is_invariant() {
     let dt = 3600.0;
-    for (label, make) in [("lumped", hand_rolled_model as fn() -> _), ("per-class", spec_model_night)] {
+    for (label, make) in [
+        ("lumped", hand_rolled_model as fn() -> _),
+        ("per-class", spec_model_night),
+    ] {
         let mut m = make();
         let t_ext = 10.0;
         let mut incs = Vec::new();
@@ -119,7 +122,10 @@ fn mass_advance_equilibrium_is_invariant() {
 /// replicate-fallback violated by tens of kelvin in the round-85 A/B.
 fn mass_advance_relaxation_is_bounded() {
     let dt = 3600.0;
-    for (label, make) in [("lumped", hand_rolled_model as fn() -> _), ("per-class", spec_model_night)] {
+    for (label, make) in [
+        ("lumped", hand_rolled_model as fn() -> _),
+        ("per-class", spec_model_night),
+    ] {
         let mut m = make();
         // Warm start: settle near 24 °C by stepping at 24 °C, then drive at
         // −10 °C and check bounded approach for several steps.

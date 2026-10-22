@@ -78,13 +78,13 @@
     "doc_tests": 0,
     "lib_ignored_root": 8,
     "lib_tests_root": 4262,
-    "test_binaries": 56,
+    "test_binaries": 57,
     "test_source_files": 386,
     "workspace_ignored": 167,
     "workspace_integration_ignored": 147,
     "workspace_integration_tests": 3513,
     "workspace_lib_ignored": 20,
     "workspace_lib_tests": 5412,
-    "workspace_tests": 8925
+    "workspace_tests": 8929
   }
 }
