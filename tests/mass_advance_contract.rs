@@ -25,6 +25,13 @@
 use fluxion::batch_oracle::BatchOracle;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use std::sync::Mutex;
+
+// Issue #3453 convention: this suite flips `FLX_R84_PERCLASS` in-process
+// (contract 4's A/B), so every env mutation is serialized through this
+// file-local mutex and the mutating test body holds the guard for its
+// whole lifetime.
+static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 /// A spec-built Case 600 baseline (per-class construction tensors present,
 /// so the default arm engages). Solar/loads neutralized so the driving is
@@ -189,11 +196,13 @@ fn per_class_arm_agrees_with_lumped_under_uniform_driving() {
         perclass.step_physics(h, 24.0, dt);
     }
     let mut lumped = spec_model_night();
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::set_var("FLX_R84_PERCLASS", "0");
     for h in 0..4 {
         lumped.step_physics(h, 24.0, dt);
     }
     std::env::remove_var("FLX_R84_PERCLASS");
+    drop(_env_guard);
     let a = perclass.mass.mass_temperatures[0];
     let b = lumped.mass.mass_temperatures[0];
     assert!(
