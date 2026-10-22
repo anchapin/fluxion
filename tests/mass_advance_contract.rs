@@ -241,7 +241,9 @@ fn per_class_arm_agrees_with_lumped_under_uniform_driving() {
 /// (setpoints outside any band, capacities 0) so the driving is the outdoor
 /// dry-bulb plus the night-vent routing alone — the run_blind_free_float
 /// fixture pattern.
-fn spec_model_free_float(vent: Option<fluxion::validation::NightVentilation>) -> ThermalModel<VectorField> {
+fn spec_model_free_float(
+    vent: Option<fluxion::validation::NightVentilation>,
+) -> ThermalModel<VectorField> {
     let mut m = spec_model_night();
     m.setpoints.heating_setpoint = -999.0;
     m.setpoints.cooling_setpoint = 999.0;
