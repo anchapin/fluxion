@@ -168,7 +168,16 @@ fn analytical_path_eui_is_bit_identical_to_baseline() {
     // [74.00399446463592, 115.20549183194221, 140.4909718771871] ->
     // [60.698137054765, 109.47558035782295, 139.72333408786784]
     // (−18 %/−5 %/−0.5 %). Nothing tuned.
-    let golden = [60.698137054765, 109.47558035782295, 139.72333408786784];
+    // Re-recorded 2026-10-22 (loop round 89b, item 2a): the mass-node
+    // full time-coverage fix promoted to the engine default
+    // (`FLX_R89_MASS_DT_ALIGN`, Alex-directed standing rule; flip commit
+    // ceb19b0b). The analytical EUI moved
+    // [60.698137054765, 109.47558035782295, 139.72333408786784] ->
+    // [78.39195778347752, 128.81993774427215, 156.4015468093156]
+    // (+29 %/+18 %/+12 %) — the mass node now integrates the full hour
+    // (coverage 300 s -> 3600 s/hour); deterministic across runs.
+    // Nothing tuned.
+    let golden = [78.39195778347752, 128.81993774427215, 156.4015468093156];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),
@@ -218,7 +227,11 @@ fn cpu_surrogate_mock_path_eui_is_bit_identical_to_baseline() {
     // (`FLX_R88_PHIST_MASS_SHARE`, #3983 round 89). Previous goldens
     // (round 85 per-class flip):
     // [237.20858313258188, 252.24156042826417, 263.7616804309977].
-    let golden = [236.6238139068431, 252.05392915614644, 263.75261896509267];
+    // Re-recorded 2026-10-22 (loop round 89b, item 2a mass-node
+    // time-coverage default flip):
+    // [236.6238139068431, 252.05392915614644, 263.75261896509267] ->
+    // [238.29500516989185, 253.05445617909788, 264.43994131835].
+    let golden = [238.29500516989185, 253.05445617909788, 264.43994131835];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),

@@ -1,29 +1,29 @@
-# repo_sha=d2e8438d69384d424ad0e35892fd196b3d37b915
-# recorded_utc=2026-10-22T19:49:09Z
-# source=strict-gate log, round-89 surface-pool mass share default flip (engine branch physics/r89-phist-share-default on d2e8438d; FLX_R88_PHIST_MASS_SHARE default share-on; flag-off falsy-token route verified bit-identical to this file's previous record: 42/42 rows +0.0000% on the same round)
+# repo_sha=ceb19b0b
+# recorded_utc=2026-10-22T21:14:28Z
+# source=strict-gate log, round-89b mass-node time-coverage default flip (engine branch physics/r89-mass-dt-align on ceb19b0b; FLX_R89_MASS_DT_ALIGN default full coverage; falsy "0" legacy route verified bit-identical to this file's previous record: 42/42 rows green on the same round)
 # Epsilon policy: 0.1% relative (issue #4281); intentional physics
 # changes re-record this file in the same PR via --update-baseline.
 case,metric,value,unit
-195,C,1.556000,MWh
-195,H,3.936000,MWh
-600,C,3.124000,MWh
-600,H,4.467000,MWh
-600FF,Tmax,46.840000,C
-600FF,Tmin,-2.560000,C
-610,C,1.677000,MWh
-610,H,5.435000,MWh
-620,C,3.134000,MWh
-620,H,6.456000,MWh
-630,C,2.203000,MWh
-630,H,7.246000,MWh
-640,C,3.124000,MWh
-640,H,2.473000,MWh
-650,C,2.237000,MWh
+195,C,1.867000,MWh
+195,H,4.467000,MWh
+600,C,4.700000,MWh
+600,H,5.937000,MWh
+600FF,Tmax,53.400000,C
+600FF,Tmin,-12.850000,C
+610,C,2.755000,MWh
+610,H,6.593000,MWh
+620,C,3.944000,MWh
+620,H,7.292000,MWh
+630,C,2.879000,MWh
+630,H,7.931000,MWh
+640,C,4.700000,MWh
+640,H,3.549000,MWh
+650,C,3.825000,MWh
 650,H,0.000000,MWh
-650FF,Tmax,45.460000,C
-650FF,Tmin,-15.970000,C
-800,C,3.124000,MWh
-800,H,4.467000,MWh
+650FF,Tmax,52.790000,C
+650FF,Tmin,-17.620000,C
+800,C,4.700000,MWh
+800,H,5.937000,MWh
 810,C,2.249000,MWh
 810,H,1.225000,MWh
 900,C,2.249000,MWh
