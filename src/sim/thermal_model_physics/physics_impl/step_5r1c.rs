@@ -1641,7 +1641,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     let cls_tensors_ready = {
                         let cond = &self.0.conduction;
                         let has_i =
-                            |o: &Option<T>| o.as_ref().map_or(false, |v| v.as_ref().len() > i);
+                            |o: &Option<T>| o.as_ref().is_some_and(|v| v.as_ref().len() > i);
                         has_i(&cond.cm_wall)
                             && has_i(&cond.cm_roof)
                             && has_i(&cond.cm_floor)
