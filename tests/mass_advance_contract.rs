@@ -5,6 +5,17 @@
 //! (step_5r1c; lumped CN / FE-fallback since round 78, per-class composite
 //! arm default since round 85, `FLX_R84_PERCLASS` falsy-token opt-out).
 //!
+//! ROUND 87 UPDATE (2026-10-22, Alex-approved "I approve the vent arm",
+//! #3983 §66): the mass-side night-vent coupling is now 0 BY DEFAULT on
+//! both live sites (the sub-step `h_vent_i` folded into h3, and the legacy
+//! hourly `h_vent_mass_zone`; `FLX_R86_VENT_AIR_ONLY=0` restores it for
+//! A/B verification only) — night ventilation ships as an air-side
+//! exchange (ISO 13790 §C.4 Eq. C.10; 9R4C parity since LIMIT-17). The
+//! vent contracts below are state-level and pass unchanged under the
+//! air-only default; their pre-round-87 shape pinned the coupled routing
+//! (slice 2, loop round 86). The Tmin-band consequence is recorded as
+//! §LIMIT-43 (loop round 87).
+//!
 //! Component input/output inventory (blitz slice 1 scope):
 //! - inputs: `tm_prev` (mass state), `cm` (mass capacitance; per class
 //!   `cm_wall/cm_roof/cm_floor` when present), exterior driving per class

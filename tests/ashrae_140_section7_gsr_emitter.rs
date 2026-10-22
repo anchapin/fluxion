@@ -1205,13 +1205,16 @@ fn pin_check(case_id: &str, actual: f64, expected: f64) {
 fn section7_headline_value_pins() {
     let results = harness_results();
     let by_id = |id: &str| results.iter().find(|r| r.case_id == id).unwrap();
-    // Re-recorded 2026-10-21 (loop round 85): the per-class coupled
-    // sub-step mass advance promoted to the engine default
-    // (`FLX_R84_PERCLASS`, Alex-directed 2026-10-21 21:18 ET, #3983 §65)
-    // moved the 5R1C rows again; values cross-check the re-recorded
-    // strict_energy_gate_baseline.json (600 5.271/2.939 MWh, 600FF
-    // −3.93/47.24, 650FF −17.41/41.89; 900/900FF/950FF unchanged) and the
-    // re-emitted data/reference/section7/workflow_results.csv. Round-78
+    // Re-recorded 2026-10-22 (loop round 87): the mass-side night-vent
+    // coupling removed from the 5R1C default (air-only vent routing,
+    // Alex-approved 2026-10-22 06:41 ET "I approve the vent arm";
+    // FLX_R86_VENT_AIR_ONLY; #821 double-count removal, ISO 13790 §C.4;
+    // #3983 §66) moved the 650FF rows: −17.41/41.89 → −16.20/46.11
+    // (Tmin honestly leaves [−17.8, −16.7], §LIMIT-43). Values cross-check
+    // the re-recorded strict_energy_gate_baseline.json (600 5.271/2.939
+    // MWh, 600FF −3.93/47.24; 900/900FF/950FF unchanged) and the
+    // re-emitted data/reference/section7/workflow_results.csv. Round-85
+    // pins (per-class flip, #3983 §65): 650FF −17.41/41.89. Round-78
     // pins (coupled single-N flip, #3983 §63/§64): 600 5.353/2.966, 600FF
     // −3.78/47.42, 650FF −17.40/41.74. Nothing tuned.
     let pins: &[(&str, fn(&Section7CaseResult) -> f64, f64)] = &[
@@ -1221,8 +1224,8 @@ fn section7_headline_value_pins() {
         ("900", |r| r.annual_cooling_mwh, 2.249),
         ("600FF", |r| r.min_temp_c, -3.93),
         ("600FF", |r| r.max_temp_c, 47.24),
-        ("650FF", |r| r.min_temp_c, -17.41),
-        ("650FF", |r| r.max_temp_c, 41.89),
+        ("650FF", |r| r.min_temp_c, -16.20),
+        ("650FF", |r| r.max_temp_c, 46.11),
         ("900FF", |r| r.min_temp_c, -0.26),
         ("900FF", |r| r.max_temp_c, 43.28),
         ("950FF", |r| r.min_temp_c, -15.67),

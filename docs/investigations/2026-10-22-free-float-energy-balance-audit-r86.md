@@ -153,3 +153,54 @@ The flag is read per step through `util::env_bool` and gates two `eprintln!`
 sites plus two class-loop sites; the flag-off path adds no floating-point
 operations, so engine outputs are bit-identical with the audit off (the
 strict battery and output-diff pass unchanged on this branch).
+
+## Round-87 execution record (2026-10-22, same day)
+
+Candidate experiment 1 above was executed the same day, Alex-approved at
+2026-10-22 06:41 ET ("I approve the vent arm"). Branch
+`physics/r87-vent-air-default` on develop a77be343.
+
+**Implementation discovered a sharper shape than the audit proposed.** The
+audit targeted `h_vent_mass_zone`, but the first arm at that site was
+byte-neutral on the strict battery: on the live R76/R85 sub-step path the
+mass-side coupling enters as `h_vent_i` folded into the h3 air↔mass
+coupling (step_5r1c, per-class site h3_c = h_am_c + h_vent_i·w and lumped
+site h_tr3_arg_i = h_air_mass_i + h_vent_i), while `h_vent_mass_zone`
+lives only in the legacy hourly advance that the coupled-N default
+discards (the round-83 finding, restated). The flip therefore zeroes BOTH
+sites behind `FLX_R86_VENT_AIR_ONLY` (falsy token restores the pre-87
+coupling; default air-only). The invariant checker needed no change: its
+receipt field `ConductionState::h_vent_mass_zone` is never written by the
+engine (always 0), so the checker identity already assumed air-only — the
+flip makes the receipt truthful rather than widening anything.
+
+**Measured old → new** (canonical weather, strict battery, branch vs
+a77be343):
+
+| row | old | new | published band | verdict move |
+|---|---|---|---|---|
+| 650 C | 1.226 MWh | 2.270 MWh | [3.881, 5.250] | gap 58.15 → 35.29 pp (improves, still under-band) |
+| 650FF Tmin | −17.41 °C | −16.20 °C | [−17.8, −16.7] | leaves band upward; honest known_fail 6.09 pp (§LIMIT-43) |
+| 650FF Tmax | 41.89 °C | 46.11 °C | [61.1, 66.8] | gap 34.50 → 27.90 pp (improves; the missing-afternoon-stack problem remains) |
+
+Every other strict row, all four free-float observables for
+600FF/900FF/950FF, and Case 950 (0.918 MWh) are byte-identical: 950 is
+high-mass and auto-promotes to 9R4C, where the mass-side term was already
+removed by LIMIT-17 — the strict-path 5R1C night-vent family is exactly
+{650, 650FF}, as the routing split predicted. Run B
+(`FLX_R86_VENT_AIR_ONLY=0`) reproduces the pre-flip record bit-for-bit
+(strict + output-diff both green against the old baselines), so the
+opt-out is a faithful A/B restore of the audited coupling.
+
+The audit's 3.1× mass-side estimate compares to a measured
+sensitivity: removing the term recovered 1.21 K of the −17.41 °C
+over-chill (7.0% of the recorded value) and lifted 650 C by +1.044 MWh
+(+85%), consistent with the term having acted through the mass most of
+the year while the air-side exchange does the ISO-correct work.
+
+Re-records in the same PR: strict JSON (3 rows + dated _doc), output-diff
+CSV (650/C, 650FF/Tmin, 650FF/Tmax), §7 headline pins + re-emitted
+workflow_results.csv; §6 (WD100–600 cases), fabric (600/900/950), hotloop
+goldens (Case 600), grid-adapter baseline (Case 600), and the #4536 vent
+contracts all verified unchanged. Checker recount: 9 PASS / 33 KNOWN-FAIL
+/ 0 REGRESSION (ff_650ff_min pass → known_fail).
