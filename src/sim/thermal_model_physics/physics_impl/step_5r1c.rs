@@ -1553,8 +1553,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // [R84 HARNESS — flag read for the per-class coupled
                 // sub-step mass advance (see the arm block below). Flag
                 // off: this call reads one env var and changes nothing.]
-                let r84_perclass =
-                    crate::util::env_bool::env_bool("FLX_R84_PERCLASS", false);
+                let r84_perclass = crate::util::env_bool::env_bool("FLX_R84_PERCLASS", false);
                 for i in 0..self.0.hvac.num_zones {
                     let t_ext = if r76_has_prev {
                         let p = r76_sol_air_prev_ref[i];
@@ -1633,16 +1632,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                     grab(&cond.h_tr_ms_roof),
                                     grab(&cond.h_tr_ms_floor),
                                 );
-                                let (cls_cm, cls_ms) =
-                                    match (cm_w, cm_r, cm_f, ms_w, ms_r, ms_f) {
-                                        (Some(a), Some(b), Some(c), Some(d), Some(e), Some(f)) => {
-                                            ([a, b, c], [d, e, f])
-                                        }
-                                        _ => (
-                                            [cm_ref[i]; 3],
-                                            [h_ms_all.get(i).copied().unwrap_or(0.0); 3],
-                                        ),
-                                    };
+                                let (cls_cm, cls_ms) = match (cm_w, cm_r, cm_f, ms_w, ms_r, ms_f) {
+                                    (Some(a), Some(b), Some(c), Some(d), Some(e), Some(f)) => {
+                                        ([a, b, c], [d, e, f])
+                                    }
+                                    _ => (
+                                        [cm_ref[i]; 3],
+                                        [h_ms_all.get(i).copied().unwrap_or(0.0); 3],
+                                    ),
+                                };
                                 let h_is_i = h_is_all.get(i).copied().unwrap_or(0.0);
                                 let degenerate = h_tr_3_i <= 0.0;
                                 let cm_sum: f64 = cls_cm.iter().sum();
