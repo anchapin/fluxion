@@ -578,10 +578,20 @@ fn test_performance_smoke_test() {
     let min_throughput = if cfg!(debug_assertions) {
         20.0 // Much lower threshold for debug builds
     } else {
-        // 150 configs/sec: conservative floor that catches real regressions
-        // while tolerating CI machine variability (shared runners measure
-        // ~150-200; dev machines/release gates enforce the 200+ target).
-        150.0
+        // 15 configs/sec (re-pinned 2026-10-22, Issue #4542): the prior
+        // 150 floor was calibrated 2026-09-26, before the round-78
+        // coupled single-N flip multiplied the 5R1C per-hour work x12
+        // (N=12 sub-stepping). Perf Lane run 39786228323 measured
+        // 27 cfg/s on ubuntu-latest at develop 29e879a9 while the
+        // strict annual energy gate and the #4539 pop-100 test both
+        // passed on the same tree — stale floor, not an engine
+        // regression (same family as #4527/#4532/#4534/#4539). The new
+        // floor keeps ~1.8x margin under the measured value and still
+        // trips on a true sub-stepping-era regression (a further ~45%
+        // drop). Re-measure and re-pin with provenance when the engine
+        // changes its per-hour work again; never tune the engine to
+        // the floor.
+        15.0
     };
 
     println!("Smoke test results:");
