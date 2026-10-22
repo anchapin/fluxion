@@ -411,8 +411,10 @@ fn per_class_arm_agrees_with_lumped_under_night_vent() {
 // consuming the same value so the checker mirror stays exact).
 //
 // Contracts pinned here (record pins, not validator bands):
-// 1. flag-off bit-identity — unset vs falsy "0" token step to identical
-//    states (both take the flag-off code path);
+// 1. default-polarity bit-identity — unset vs truthy "1" token step to
+//    identical states (both take the share-on code path since the
+//    round-89 default flip; the falsy "0" token is the pre-89 legacy
+//    route, kept for A/B archaeology);
 // 2. flag-on non-inertness with the mass-side direction pin — under pure
 //    constant solar driving the mass share deposits energy in the mass, so
 //    the flag-on mass is strictly warmer than flag-off, and the air state is
@@ -433,11 +435,14 @@ fn spec_model_solar() -> ThermalModel<VectorField> {
 const R88_SOLAR_WM2: f64 = 250.0;
 
 #[test]
-/// Contract 8 — flag-off bit-identity: with FLX_R88_PHIST_MASS_SHARE unset
-/// and with its falsy "0" token, the solar-driven spec model steps to
-/// bit-identical air and mass states (both runs take the flag-off code
-/// path; any visible difference means the flag gate leaks arithmetic).
-fn r88_share_off_is_bit_identical() {
+/// Contract 8 — default-polarity bit-identity: with
+/// FLX_R88_PHIST_MASS_SHARE unset (round-89 default: share on) and with its
+/// truthy "1" token, the solar-driven spec model steps to bit-identical air
+/// and mass states (both runs take the share-on code path; any visible
+/// difference means the flag gate leaks arithmetic). The falsy "0" token
+/// takes the pre-89 legacy route and is pinned as non-identical under solar
+/// driving by contract 9.
+fn r88_share_default_is_bit_identical() {
     let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dt = 3600.0;
     let mut unset = spec_model_solar();
@@ -445,22 +450,22 @@ fn r88_share_off_is_bit_identical() {
     for h in 0..48 {
         unset.step_physics(h, 12.0, dt);
     }
-    std::env::set_var("FLX_R88_PHIST_MASS_SHARE", "0");
-    let mut falsy = spec_model_solar();
-    falsy.solar.solar_gains = VectorField::from_scalar(R88_SOLAR_WM2, falsy.hvac.num_zones);
+    std::env::set_var("FLX_R88_PHIST_MASS_SHARE", "1");
+    let mut truthy = spec_model_solar();
+    truthy.solar.solar_gains = VectorField::from_scalar(R88_SOLAR_WM2, truthy.hvac.num_zones);
     for h in 0..48 {
-        falsy.step_physics(h, 12.0, dt);
+        truthy.step_physics(h, 12.0, dt);
     }
     std::env::remove_var("FLX_R88_PHIST_MASS_SHARE");
     let n88 = unset.hvac.num_zones;
     for z in 0..n88 {
         assert_eq!(
-            unset.mass.air_temperatures[z], falsy.mass.air_temperatures[z],
-            "flag-off air-node state differs between unset and falsy token (zone {z})"
+            unset.mass.air_temperatures[z], truthy.mass.air_temperatures[z],
+            "share-on air-node state differs between unset and truthy token (zone {z})"
         );
         assert_eq!(
-            unset.mass.mass_temperatures[z], falsy.mass.mass_temperatures[z],
-            "flag-off mass state differs between unset and falsy token (zone {z})"
+            unset.mass.mass_temperatures[z], truthy.mass.mass_temperatures[z],
+            "share-on mass state differs between unset and truthy token (zone {z})"
         );
     }
 }
@@ -475,6 +480,9 @@ fn r88_share_off_is_bit_identical() {
 fn r88_share_reaches_mass() {
     let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dt = 3600.0;
+    // Round-89 default flip: the flag-off leg pins the falsy token
+    // explicitly — unset now takes the share-on default path.
+    std::env::set_var("FLX_R88_PHIST_MASS_SHARE", "0");
     let mut off = spec_model_solar();
     off.solar.solar_gains = VectorField::from_scalar(R88_SOLAR_WM2, off.hvac.num_zones);
     // Free-float driving: the Case 600 ideal HVAC would clamp the air node
@@ -518,6 +526,9 @@ fn r88_share_reaches_mass() {
 fn r88_share_lumped_site_pairs() {
     let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dt = 3600.0;
+    // Round-89 default flip: the flag-off leg pins the falsy token
+    // explicitly — unset now takes the share-on default path.
+    std::env::set_var("FLX_R88_PHIST_MASS_SHARE", "0");
     // The bare ThermalModel defaults send ALL transmitted solar to the air
     // (solar_distribution_to_air = 1), which zeroes phi_st and would make
     // the arm trivially inert — give the fixture a Case-600-like 0.3/0.7
