@@ -1,6 +1,6 @@
-# repo_sha=6d3e7ee9182e6ad9f92811f15e23decee4eba6c8
-# recorded_utc=2026-10-22T03:06:46Z
-# source=strict-gate log r85 per-class default flip (engine 6d3e7ee9, guarded; measured lines identical to round-84 flag-on on e4278703)
+# repo_sha=a77be343e43ee2749f425b713de07e4db9c21a13
+# recorded_utc=2026-10-22T11:21:55Z
+# source=strict-gate log, round-87 vent-air-only flip (engine branch physics/r87-vent-air-default on a77be343; FLX_R86_VENT_AIR_ONLY default air-only; legacy opt-out FLX_R86_VENT_AIR_ONLY=0 verified byte-identical to this file's previous record)
 # Epsilon policy: 0.1% relative (issue #4281); intentional physics
 # changes re-record this file in the same PR via --update-baseline.
 case,metric,value,unit
@@ -18,10 +18,10 @@ case,metric,value,unit
 630,H,7.586000,MWh
 640,C,2.939000,MWh
 640,H,3.052000,MWh
-650,C,1.226000,MWh
+650,C,2.270000,MWh
 650,H,0.000000,MWh
-650FF,Tmax,41.890000,C
-650FF,Tmin,-17.410000,C
+650FF,Tmax,46.110000,C
+650FF,Tmin,-16.200000,C
 800,C,2.939000,MWh
 800,H,5.271000,MWh
 810,C,2.249000,MWh
