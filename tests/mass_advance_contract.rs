@@ -395,3 +395,162 @@ fn per_class_arm_agrees_with_lumped_under_night_vent() {
         "per-class and lumped vent routing diverged: worst mass {worst_mass:.4} K, worst zone {worst_zone:.4} K"
     );
 }
+
+// ===================================================================
+// Slice 3 (loop round 88): surface-pool mass share (FLX_R88_PHIST_MASS_SHARE)
+// ===================================================================
+//
+// Premise (code-verified this round, Item 1): on the live coupled-N path the
+// per-class sub-step mass advance consumed phi_c = phi_m_c ONLY — the ISO
+// 13790 §C.3 mass share of the surface pool, H_ms/(H_ms + H_is)·phi_st,
+// never reached the mass node, while the FULL phi_st entered the air node
+// through the R77 solar-lag filter. The arm (flag on) restores the
+// conductance-share split at three paired sites: the lag-filter input keeps
+// (1 − share_zone)·phi_st, the per-class mass drive adds s_c·phi_st·w_c,
+// and the lumped sites add s·phi_st (with the r77 coefficient recorder
+// consuming the same value so the checker mirror stays exact).
+//
+// Contracts pinned here (record pins, not validator bands):
+// 1. flag-off bit-identity — unset vs falsy "0" token step to identical
+//    states (both take the flag-off code path);
+// 2. flag-on non-inertness with the mass-side direction pin — under pure
+//    constant solar driving the mass share deposits energy in the mass, so
+//    the flag-on mass is strictly warmer than flag-off, and the air state is
+//    not identical (it now sees only the air share through the filter);
+// 3. the same pairing on the lumped site for tensor-less zones.
+
+/// Spec-built Case 600 with its solar gains intact (phi_st > 0) and loads
+/// neutralized, so the driving is solar + outdoor dry-bulb.
+fn spec_model_solar() -> ThermalModel<VectorField> {
+    let mut m = BatchOracle::default_model().expect("spec model builds");
+    let n = m.hvac.num_zones;
+    m.setpoints.loads = VectorField::new(vec![0.0; n]);
+    m.solar.opaque_solar_gains = VectorField::new(vec![0.0; n]);
+    m
+}
+
+/// Constant-magnitude solar gain (W/m²) used by the slice-3 contracts.
+const R88_SOLAR_WM2: f64 = 250.0;
+
+#[test]
+/// Contract 8 — flag-off bit-identity: with FLX_R88_PHIST_MASS_SHARE unset
+/// and with its falsy "0" token, the solar-driven spec model steps to
+/// bit-identical air and mass states (both runs take the flag-off code
+/// path; any visible difference means the flag gate leaks arithmetic).
+fn r88_share_off_is_bit_identical() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dt = 3600.0;
+    let mut unset = spec_model_solar();
+    unset.solar.solar_gains = VectorField::from_scalar(R88_SOLAR_WM2, unset.hvac.num_zones);
+    for h in 0..48 {
+        unset.step_physics(h, 12.0, dt);
+    }
+    std::env::set_var("FLX_R88_PHIST_MASS_SHARE", "0");
+    let mut falsy = spec_model_solar();
+    falsy.solar.solar_gains = VectorField::from_scalar(R88_SOLAR_WM2, falsy.hvac.num_zones);
+    for h in 0..48 {
+        falsy.step_physics(h, 12.0, dt);
+    }
+    std::env::remove_var("FLX_R88_PHIST_MASS_SHARE");
+    let n88 = unset.hvac.num_zones;
+    for z in 0..n88 {
+        assert_eq!(
+            unset.mass.air_temperatures[z], falsy.mass.air_temperatures[z],
+            "flag-off air-node state differs between unset and falsy token (zone {z})"
+        );
+        assert_eq!(
+            unset.mass.mass_temperatures[z], falsy.mass.mass_temperatures[z],
+            "flag-off mass state differs between unset and falsy token (zone {z})"
+        );
+    }
+}
+
+#[test]
+/// Contract 9 — flag-on non-inertness with the mass-side direction pin:
+/// under pure constant solar driving the flag-on mass is strictly warmer
+/// than flag-off (the mass share deposits solar in the mass), and the air
+/// state is not identical (it now receives only the air share through the
+/// lag filter). This is the existence proof that the share reaches the
+/// mass node on the real path; magnitudes are measurement, not bands.
+fn r88_share_reaches_mass() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dt = 3600.0;
+    let mut off = spec_model_solar();
+    off.solar.solar_gains = VectorField::from_scalar(R88_SOLAR_WM2, off.hvac.num_zones);
+    // Free-float driving: the Case 600 ideal HVAC would clamp the air node
+    // to the setpoints under this solar load, masking the air-side share;
+    // open the band wide so the zone floats and the air assert is a real
+    // observation.
+    off.setpoints.heating_setpoint = -50.0;
+    off.setpoints.cooling_setpoint = 100.0;
+    for h in 0..24 {
+        off.step_physics(h, 12.0, dt);
+    }
+    std::env::set_var("FLX_R88_PHIST_MASS_SHARE", "1");
+    let mut on = spec_model_solar();
+    on.solar.solar_gains = VectorField::from_scalar(R88_SOLAR_WM2, on.hvac.num_zones);
+    on.setpoints.heating_setpoint = -50.0;
+    on.setpoints.cooling_setpoint = 100.0;
+    for h in 0..24 {
+        on.step_physics(h, 12.0, dt);
+    }
+    std::env::remove_var("FLX_R88_PHIST_MASS_SHARE");
+    let m_off = off.mass.mass_temperatures[0];
+    let m_on = on.mass.mass_temperatures[0];
+    assert!(
+        m_on > m_off + 1e-9,
+        "flag-on mass not warmer under solar driving: off={m_off:.6} on={m_on:.6}"
+    );
+    let a_off = off.mass.air_temperatures[0];
+    let a_on = on.mass.air_temperatures[0];
+    assert!(
+        (a_on - a_off).abs() > 1e-9,
+        "flag-on air-node state identical to flag-off: the arm is inert on the lag-filter path (off={a_off:.6} on={a_on:.6})"
+    );
+}
+
+#[test]
+/// Contract 10 — lumped-site pairing: a tensor-less (hand-rolled) zone on
+/// the lumped sub-step advance shows the same flag-on behavior — the mass
+/// gains the zone-level share s = h_ms/(h_ms + h_is)·phi_st and the air
+/// keeps only (1 − s) through the filter. Pairs with the R85 guard, which
+/// keeps tensor-less zones on the lumped advance.
+fn r88_share_lumped_site_pairs() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dt = 3600.0;
+    // The bare ThermalModel defaults send ALL transmitted solar to the air
+    // (solar_distribution_to_air = 1), which zeroes phi_st and would make
+    // the arm trivially inert — give the fixture a Case-600-like 0.3/0.7
+    // split so the surface pool is real. Shared hand_rolled_model() is left
+    // untouched (its other consumers zero solar).
+    let mut off = hand_rolled_model();
+    off.solar.solar_distribution_to_air = 0.3;
+    off.solar.solar_gains = VectorField::from_scalar(R88_SOLAR_WM2, 1);
+    off.setpoints.heating_setpoint = -50.0;
+    off.setpoints.cooling_setpoint = 100.0;
+    for h in 0..24 {
+        off.step_physics(h, 12.0, dt);
+    }
+    std::env::set_var("FLX_R88_PHIST_MASS_SHARE", "1");
+    let mut on = hand_rolled_model();
+    on.solar.solar_distribution_to_air = 0.3;
+    on.solar.solar_gains = VectorField::from_scalar(R88_SOLAR_WM2, 1);
+    on.setpoints.heating_setpoint = -50.0;
+    on.setpoints.cooling_setpoint = 100.0;
+    for h in 0..24 {
+        on.step_physics(h, 12.0, dt);
+    }
+    std::env::remove_var("FLX_R88_PHIST_MASS_SHARE");
+    let m_off = off.mass.mass_temperatures[0];
+    let m_on = on.mass.mass_temperatures[0];
+    assert!(
+        m_on > m_off + 1e-9,
+        "lumped-site flag-on mass not warmer under solar driving: off={m_off:.6} on={m_on:.6}"
+    );
+    let a_off = off.mass.air_temperatures[0];
+    let a_on = on.mass.air_temperatures[0];
+    assert!(
+        (a_on - a_off).abs() > 1e-9,
+        "lumped-site flag-on air-node state identical to flag-off: the arm is inert (off={a_off:.6} on={a_on:.6})"
+    );
+}
