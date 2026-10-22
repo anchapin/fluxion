@@ -1336,9 +1336,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // to FP rounding and no energy is created or destroyed. The
         // persisted r77 affine record embeds the same share the mass CN
         // consumed, so the invariant-checker mirror stays exact by
-        // construction. Harness arm for measurement: flag off (default)
-        // adds no floating-point operations — bit-identical.]
-        let r88_phist_share = crate::util::env_bool::env_bool("FLX_R88_PHIST_MASS_SHARE", false);
+        // construction.]
+        // [DEFAULT FLIP — loop round 89, Alex-directed 2026-10-22 14:57 ET:
+        // "shouldn't we enable by default correct ISO physics even if it
+        // doesn't directly benefit the free-float fix?" — the share split is
+        // correct spec-shaped physics and goes to the engine default on its
+        // own merits, band outcomes being a downstream check, not the target.
+        // Measured honestly (round-88 arm battery): every moved free-float
+        // metric drifts slightly AWAY from the published band on the current
+        // lag-filter + mass-coverage operator — recorded in KNOWN_ISSUES,
+        // never tuned away. The falsy "0" token restores the pre-89 all-air
+        // lag-filter route for A/B archaeology only; any other value behaves
+        // as unset, i.e. the share-on default.]
+        let r88_phist_share = crate::util::env_bool::env_bool("FLX_R88_PHIST_MASS_SHARE", true);
         let mut r88_share_zone: Vec<f64> = Vec::new();
         if r88_phist_share {
             let n_z88 = self.0.hvac.num_zones;

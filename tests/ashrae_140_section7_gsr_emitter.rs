@@ -1217,15 +1217,24 @@ fn section7_headline_value_pins() {
     // pins (per-class flip, #3983 §65): 650FF −17.41/41.89. Round-78
     // pins (coupled single-N flip, #3983 §63/§64): 600 5.353/2.966, 600FF
     // −3.78/47.42, 650FF −17.40/41.74. Nothing tuned.
+    // Re-recorded 2026-10-22 (loop round 89): the ISO 13790 §C.3
+    // surface-pool mass share promoted to the engine default
+    // (`FLX_R88_PHIST_MASS_SHARE`, Alex-directed 2026-10-22 14:57 ET,
+    // round-88 arm #4543) moved the 600-family rows: 600 5.271/2.939 →
+    // 4.467/3.124 MWh (heating enters its band), 600FF −3.93/47.24 →
+    // −2.56/46.84, 650FF −16.20/46.11 → −15.97/45.46 (cohort drifts
+    // slightly away from band — recorded, not tuned, §LIMIT-28). Values
+    // cross-check the re-recorded strict_energy_gate_baseline.json
+    // (_doc_round89). 900/900FF/950FF unchanged (9R4C inert control).
     let pins: &[(&str, fn(&Section7CaseResult) -> f64, f64)] = &[
-        ("600", |r| r.annual_heating_mwh, 5.271),
-        ("600", |r| r.annual_cooling_mwh, 2.939),
+        ("600", |r| r.annual_heating_mwh, 4.467),
+        ("600", |r| r.annual_cooling_mwh, 3.124),
         ("900", |r| r.annual_heating_mwh, 1.225),
         ("900", |r| r.annual_cooling_mwh, 2.249),
-        ("600FF", |r| r.min_temp_c, -3.93),
-        ("600FF", |r| r.max_temp_c, 47.24),
-        ("650FF", |r| r.min_temp_c, -16.20),
-        ("650FF", |r| r.max_temp_c, 46.11),
+        ("600FF", |r| r.min_temp_c, -2.56),
+        ("600FF", |r| r.max_temp_c, 46.84),
+        ("650FF", |r| r.min_temp_c, -15.97),
+        ("650FF", |r| r.max_temp_c, 45.46),
         ("900FF", |r| r.min_temp_c, -0.26),
         ("900FF", |r| r.max_temp_c, 43.28),
         ("950FF", |r| r.min_temp_c, -15.67),
