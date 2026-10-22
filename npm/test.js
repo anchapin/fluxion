@@ -809,7 +809,18 @@ describe('@fluxion/native', () => {
     // advance. Round-42/round-71 precedent: correct physics over the
     // published band; the pin becomes a ±5% regression guard around the
     // recorded engine value, not a widened band.
-    const COOLING_RECORDED_KWH = 3186.12; // post-coupled-N12-flip engine value, 2026-10-21
+    // Re-pinned 2026-10-22 (physics loop round 89b, same two default
+    // flips as heating above): the NAPI/WD600 Case 600 annual cooling
+    // moves to 4954.20 kWh (PR #4548's own run 39861653088,
+    // bit-identical on ubuntu-24.04 and windows-latest). The cooling
+    // guard was masked in runs 39858296366/39860474484 — the Case-600
+    // subtest asserts heating first and aborts on its throw, so cooling
+    // only came up once heating's guard was re-pinned. Consistent with
+    // the strict-route §7 600 C movement (5.423 -> 2.966 -> 4.700 MWh
+    // across the two flips). Published band deliberately not widened
+    // (WINDOW-01); the pin stays a ±5% regression guard (round-42/71/78
+    // precedent).
+    const COOLING_RECORDED_KWH = 4954.20; // post-mass-coverage-flip engine value, 2026-10-22
     const COOLING_GUARD_PCT = 5.0;
     const COOLING_MIN_KWH = +(COOLING_RECORDED_KWH * (1 - COOLING_GUARD_PCT / 100)).toFixed(2);
     const COOLING_MAX_KWH = +(COOLING_RECORDED_KWH * (1 + COOLING_GUARD_PCT / 100)).toFixed(2);
