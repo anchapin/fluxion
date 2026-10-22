@@ -1313,6 +1313,101 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .as_mut()
             .copy_from_slice(self.0.mass.solar_lag.as_ref());
 
+        // [R88 HARNESS — surface-pool mass share (FLX_R88_PHIST_MASS_SHARE,
+        // loop round 88, Item 1). Premise verified on the live coupled-N
+        // path: the per-class sub-step mass advance consumes
+        // phi_c = phi_m_c only, so the ISO 13790 §C.3 mass share of the
+        // surface pool, phi_st_ms = H_ms/(H_ms + H_is) · phi_st, never
+        // reaches the mass node — the FULL phi_st enters the air node
+        // through the R77 solar-lag filter (lag_input = h_tr_is·phi_st /
+        // term_rest_1, tau_lag = sqrt(tau_air·tau_mass)). The ISO
+        // algebraic surface node instead splits phi_st by conductance
+        // share: the air share H_is/(H_ms + H_is) stays in the lag filter
+        // and the mass share enters the mass ODE, returning on the mass's
+        // own time constant. This arm restores the split. Per zone,
+        // share_zone = sum_c w_c · s_c with s_c = h_ms_c/(h_ms_c +
+        // h_is_i·w_c) when real per-class constructions exist (R85
+        // routing, the same cls tensors the mass advance consumes), else
+        // the zone-level s = h_ms/(h_ms + h_is) (tensor-less zones keep
+        // the lumped sub-step advance — same pairing the R85 guard
+        // uses). The lag-filter input scales by (1 − share_zone) and the
+        // mass drives add their shares (per-class site: s_c·phi_st·w_c;
+        // lumped sites: s·phi_st), so air + mass shares sum to phi_st up
+        // to FP rounding and no energy is created or destroyed. The
+        // persisted r77 affine record embeds the same share the mass CN
+        // consumed, so the invariant-checker mirror stays exact by
+        // construction. Harness arm for measurement: flag off (default)
+        // adds no floating-point operations — bit-identical.]
+        let r88_phist_share = crate::util::env_bool::env_bool("FLX_R88_PHIST_MASS_SHARE", false);
+        let mut r88_share_zone: Vec<f64> = Vec::new();
+        if r88_phist_share {
+            let n_z88 = self.0.hvac.num_zones;
+            r88_share_zone.resize(n_z88, 0.0);
+            let h_is_all88 = self.0.conduction.h_tr_is.as_ref();
+            let h_ms_all88 = self.0.conduction.h_tr_ms.as_ref();
+            let cond88 = &self.0.conduction;
+            let rd88 =
+                |o: &Option<T>, i: usize| o.as_ref().and_then(|v| v.as_ref().get(i).copied());
+            for i in 0..n_z88 {
+                let h_is_i = h_is_all88.get(i).copied().unwrap_or(0.0);
+                let h_ms_i = h_ms_all88.get(i).copied().unwrap_or(0.0);
+                let (cm_w, cm_r, cm_f) = (
+                    rd88(&cond88.cm_wall, i),
+                    rd88(&cond88.cm_roof, i),
+                    rd88(&cond88.cm_floor, i),
+                );
+                let (ms_w, ms_r, ms_f) = (
+                    rd88(&cond88.h_tr_ms_wall, i),
+                    rd88(&cond88.h_tr_ms_roof, i),
+                    rd88(&cond88.h_tr_ms_floor, i),
+                );
+                match (
+                    cm_w,
+                    cm_r,
+                    cm_f,
+                    ms_w,
+                    ms_r,
+                    ms_f,
+                    r66_cls[i].as_ref(),
+                ) {
+                    (
+                        Some(_a),
+                        Some(_b),
+                        Some(_c),
+                        Some(d),
+                        Some(e),
+                        Some(f),
+                        Some((_g, _t, cls_area, _beam)),
+                    ) if cls_area.iter().sum::<f64>() > 1e-9 => {
+                        let cls_ms88 = [d, e, f];
+                        let total88: f64 = cls_area.iter().sum();
+                        let mut share88 = 0.0;
+                        for cc88 in 0..3 {
+                            let w88 = cls_area[cc88] / total88;
+                            if w88 <= 0.0 {
+                                continue;
+                            }
+                            let h_is_c88 = h_is_i * w88;
+                            let s_c88 = if cls_ms88[cc88] + h_is_c88 > 0.0 {
+                                cls_ms88[cc88] / (cls_ms88[cc88] + h_is_c88)
+                            } else {
+                                0.0
+                            };
+                            share88 += w88 * s_c88;
+                        }
+                        r88_share_zone[i] = share88;
+                    }
+                    _ => {
+                        r88_share_zone[i] = if h_ms_i + h_is_i > 0.0 {
+                            h_ms_i / (h_ms_i + h_is_i)
+                        } else {
+                            0.0
+                        };
+                    }
+                }
+            }
+        }
+
         for _step in 0..steps {
             // === Air-node ODE (exact exponential solution) ===
             // Issue #3370: scratch pool buffer instead of per-sub-step
@@ -1407,11 +1502,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             44000.0
                         };
                         let tau_lag_r77 = (tau_air_r77 * tau_mass_r77).sqrt();
-                        let lag_input_r77 = if term_rest_1_r77 > 0.0 {
+                        let mut lag_input_r77 = if term_rest_1_r77 > 0.0 {
                             h_tr_is_for_ti_free.as_ref()[i] * phi_st.as_ref()[i] / term_rest_1_r77
                         } else {
                             0.0
                         };
+                        // [R88 ARM — keep only the ISO §C.3 air share
+                        // H_is/(H_ms + H_is) of the surface pool in the lag
+                        // filter; the mass share enters the mass advance
+                        // below (same share value, so air + mass = phi_st).
+                        // Flag off: never executes, bit-identical.]
+                        if r88_phist_share && term_rest_1_r77 > 0.0 {
+                            lag_input_r77 *= 1.0 - r88_share_zone[i];
+                        }
                         let decay_r77 = if tau_lag_r77 > 0.0 && dt_sub > 0.0 {
                             (-dt_sub / tau_lag_r77).exp()
                         } else {
@@ -1699,6 +1802,28 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             && has_i(&cond.h_tr_ms_roof)
                             && has_i(&cond.h_tr_ms_floor)
                     };
+                    // [R88 ARM — the lumped sub-step drive gains the ISO
+                    // §C.3 mass share of the surface pool for zones on the
+                    // lumped advance (tensor-less, or FLX_R84_PERCLASS
+                    // opted out): s·phi_st with s = h_ms/(h_ms + h_is) —
+                    // the same zone share the air-side lag filter consumed
+                    // (r88_share_zone[i] holds exactly this value for
+                    // tensor-less zones). The r77 coefficient recorder
+                    // below consumes the same value so the persisted
+                    // affine record mirrors the committed state exactly.
+                    // Flag off: phi_m only, bit-identical.]
+                    let phi_lumped_88 = if r88_phist_share {
+                        let h_is_i88 = h_is_all.get(i).copied().unwrap_or(0.0);
+                        let h_ms_i88 = h_ms_all.get(i).copied().unwrap_or(0.0);
+                        let s88 = if h_ms_i88 + h_is_i88 > 0.0 {
+                            h_ms_i88 / (h_ms_i88 + h_is_i88)
+                        } else {
+                            0.0
+                        };
+                        phi_m_ref_early[i] + s88 * phi_st.as_ref()[i]
+                    } else {
+                        phi_m_ref_early[i]
+                    };
                     let tm_new = if r84_perclass && ps_enabled && cls_tensors_ready {
                         match r66_cls[i] {
                             Some((cls_g, cls_t_c, cls_area, _cls_beam))
@@ -1768,7 +1893,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                     // (checker-lags-integrator, #4504
                                     // class).
                                     let h3_c = h_am_c + h_vent_i * w;
-                                    let phi_c = phi_m_i * w;
+                                    // [R88 ARM — the class mass drive gains
+                                    // the ISO §C.3 mass share of the surface
+                                    // pool: s_c·phi_st·w with
+                                    // s_c = h_ms_c/(h_ms_c + h_is_i·w) —
+                                    // the same s_c the zone share sum above
+                                    // consumed, so the air-side (1 − Σ w·s_c)
+                                    // and the mass-side shares partition
+                                    // phi_st. Flag off: phi_m·w unchanged,
+                                    // bit-identical.]
+                                    let phi_c = if r88_phist_share {
+                                        let h_is_c88 = h_is_i * w;
+                                        let s_c88 = if h_ms_c + h_is_c88 > 0.0 {
+                                            h_ms_c / (h_ms_c + h_is_c88)
+                                        } else {
+                                            0.0
+                                        };
+                                        phi_m_i * w + s_c88 * phi_st.as_ref()[i] * w
+                                    } else {
+                                        phi_m_i * w
+                                    };
                                     let cm_dt_c = cls_cm[c] / dt_m;
                                     let half_c = 0.5 * (h3_c + h_em_c);
                                     let den_c = cm_dt_c + half_c;
@@ -1821,7 +1965,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                 h_tr_em_i,
                                 t_ext,
                                 t_i_sub,
-                                phi_m_ref_early[i],
+                                phi_lumped_88,
                             )?,
                         }
                     } else {
@@ -1833,7 +1977,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             h_tr_em_i,
                             t_ext,
                             t_i_sub,
-                            phi_m_ref_early[i],
+                            phi_lumped_88,
                         )?
                     };
                     // [Round 78; round 85 per-class composite] record this
@@ -1854,7 +1998,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             let half_cond = 0.5 * (h_tr3_arg_i + h_tr_em_i);
                             let denom_m = cm_dt_m + half_cond;
                             let numer_rest =
-                                h_tr_em_i * t_ext + h_tr3_arg_i * t_i_sub + phi_m_ref_early[i];
+                                h_tr_em_i * t_ext + h_tr3_arg_i * t_i_sub + phi_lumped_88;
                             let (a, b) = if denom_m > 0.0 {
                                 ((cm_dt_m - half_cond) / denom_m, numer_rest / denom_m)
                             } else {
