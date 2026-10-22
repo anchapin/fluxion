@@ -232,6 +232,24 @@ benchmark:
     zones: 10
     description: "Minimum throughput for 10-zone HybridThermalModel"
 
+  # Single-zone BatchOracle pop_100 absolute floor (Issue #4534).
+  # Re-pinned 50 -> 10, 2026-10-22 (loop round 87): the "original CI
+  # baseline" 50 configs/sec floor predates both the round-78 coupled
+  # single-N default flip (#3983 section 63/64; measured 195 -> 64
+  # configs/sec on the 12-core calibration machine) and the round-85
+  # per-class coupled sub-step mass advance (#3983 section 65; ~-6%
+  # pop-100 smoke), and was calibrated against a machine class the
+  # nightly perf-lane runner does not belong to: it measured 12.36
+  # configs/sec on run 39705410679 (2026-10-21). Floor 10 keeps ~2.4x
+  # headroom under that measured nightly rate on the runner's own
+  # terms; the test additionally applies the #4526/#4527 machine-fair
+  # scale-down (burst + sustained calibration), so the floor relaxes
+  # only on genuinely slower machines and can never rise above the
+  # recorded absolute value.
+  batch_oracle_pop100:
+    min_configs_per_sec: 10
+    description: "Minimum throughput for single-zone BatchOracle, pop_100"
+
   # Cross-validation latency
   cross_validation:
     max_ms: 500
