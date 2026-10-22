@@ -19,8 +19,8 @@
         3.611,
         4.886
       ],
-      "value_mwh": 5.353,
-      "gap_pct_of_mid": 10.992115,
+      "value_mwh": 5.271,
+      "gap_pct_of_mid": 9.06,
       "status": "known_fail"
     },
     "case_600_cooling": {
@@ -32,8 +32,8 @@
         4.927,
         6.667
       ],
-      "value_mwh": 2.966,
-      "gap_pct_of_mid": 33.827842,
+      "value_mwh": 2.939,
+      "gap_pct_of_mid": 34.29,
       "status": "known_fail"
     },
     "case_800_heating": {
@@ -45,7 +45,7 @@
         4.381,
         5.928
       ],
-      "value_mwh": 5.353,
+      "value_mwh": 5.271,
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     },
@@ -58,8 +58,8 @@
         0.321,
         0.434
       ],
-      "value_mwh": 2.966,
-      "gap_pct_of_mid": 670.728477,
+      "value_mwh": 2.939,
+      "gap_pct_of_mid": 663.58,
       "status": "known_fail"
     },
     "case_810_heating": {
@@ -72,7 +72,7 @@
         2.673
       ],
       "value_mwh": 1.225,
-      "gap_pct_of_mid": 32.271945,
+      "gap_pct_of_mid": 32.27,
       "status": "known_fail"
     },
     "case_810_cooling": {
@@ -85,7 +85,7 @@
         1.668
       ],
       "value_mwh": 2.249,
-      "gap_pct_of_mid": 40.055153,
+      "gap_pct_of_mid": 40.06,
       "status": "known_fail"
     },
     "case_900_heating": {
@@ -98,7 +98,7 @@
         1.836
       ],
       "value_mwh": 1.225,
-      "gap_pct_of_mid": 8.268086,
+      "gap_pct_of_mid": 8.27,
       "status": "known_fail"
     },
     "case_900_cooling": {
@@ -124,7 +124,7 @@
         3.774
       ],
       "value_mwh": 2.289,
-      "gap_pct_of_mid": 15.236934,
+      "gap_pct_of_mid": 15.24,
       "status": "known_fail"
     },
     "case_920_cooling": {
@@ -137,7 +137,7 @@
         3.264
       ],
       "value_mwh": 2.409,
-      "gap_pct_of_mid": 0.140919,
+      "gap_pct_of_mid": 0.14,
       "status": "known_fail"
     },
     "case_950_heating": {
@@ -163,7 +163,7 @@
         0.743
       ],
       "value_mwh": 0.918,
-      "gap_pct_of_mid": 27.068832,
+      "gap_pct_of_mid": 27.07,
       "status": "known_fail"
     },
     "case_960_heating": {
@@ -176,7 +176,7 @@
         3.095
       ],
       "value_mwh": 2.111,
-      "gap_pct_of_mid": 6.54032,
+      "gap_pct_of_mid": 6.54,
       "status": "known_fail"
     },
     "case_960_cooling": {
@@ -189,7 +189,7 @@
         1.0
       ],
       "value_mwh": 1.273,
-      "gap_pct_of_mid": 31.397355,
+      "gap_pct_of_mid": 31.4,
       "status": "known_fail"
     },
     "case_970_heating": {
@@ -202,7 +202,7 @@
         14.26
       ],
       "value_mwh": 1.594,
-      "gap_pct_of_mid": 72.145161,
+      "gap_pct_of_mid": 72.15,
       "status": "known_fail"
     },
     "case_970_cooling": {
@@ -215,7 +215,7 @@
         9.999
       ],
       "value_mwh": 1.292,
-      "gap_pct_of_mid": 70.143761,
+      "gap_pct_of_mid": 70.14,
       "status": "known_fail"
     },
     "_doc_limit23b": "UPDATE 2026-10-12 (loop round 20, docs/investigations/limit-23b-case-970-provenance-and-envelope.md): provenance correction only, no values touched. The Case 970 published_range_mwh band has no published ASHRAE 140 source: Case 970 does not exist in the in-repo ASHRAE 140-2017(a) PDF (docs/140_2017_a_20200901.pdf) nor in the authoritative ASHRAE 140-2023 Annex B8 Section B8.1 transcription (data/reference/ashrae140/annex_b8_section7_statistics.json; case list ...950, 960, 980, 985). The band entered at Issue #1446 as if published and is an internal target of unverified origin. Recorded value_mwh/gap_pct_of_mid/status are retained unchanged; known_fail therefore means distance from that internal target, not ASHRAE non-conformance. Reproduction on 7e321a22: H 4.616 / C 2.341 MWh, matching the recorded values.",
@@ -228,8 +228,8 @@
         3.68,
         4.978
       ],
-      "value_mwh": 6.13,
-      "gap_pct_of_mid": 26.611227,
+      "value_mwh": 6.069,
+      "gap_pct_of_mid": 25.2,
       "status": "known_fail"
     },
     "case_610_cooling": {
@@ -241,8 +241,8 @@
         3.612,
         4.887
       ],
-      "value_mwh": 1.621,
-      "gap_pct_of_mid": 46.852571,
+      "value_mwh": 1.571,
+      "gap_pct_of_mid": 48.03,
       "status": "known_fail"
     },
     "case_620_heating": {
@@ -254,8 +254,8 @@
         3.746,
         5.067
       ],
-      "value_mwh": 6.894,
-      "gap_pct_of_mid": 41.461477,
+      "value_mwh": 6.884,
+      "gap_pct_of_mid": 41.23,
       "status": "known_fail"
     },
     "case_620_cooling": {
@@ -267,8 +267,8 @@
         3.504,
         4.741
       ],
-      "value_mwh": 2.838,
-      "gap_pct_of_mid": 16.155246,
+      "value_mwh": 2.792,
+      "gap_pct_of_mid": 17.27,
       "status": "known_fail"
     },
     "case_630_heating": {
@@ -280,8 +280,8 @@
         4.035,
         5.46
       ],
-      "value_mwh": 7.579,
-      "gap_pct_of_mid": 44.634018,
+      "value_mwh": 7.586,
+      "gap_pct_of_mid": 44.78,
       "status": "known_fail"
     },
     "case_630_cooling": {
@@ -293,8 +293,8 @@
         2.4,
         3.247
       ],
-      "value_mwh": 2.03,
-      "gap_pct_of_mid": 13.104303,
+      "value_mwh": 1.973,
+      "gap_pct_of_mid": 15.12,
       "status": "known_fail"
     },
     "case_640_heating": {
@@ -306,8 +306,8 @@
         2.161,
         2.924
       ],
-      "value_mwh": 3.121,
-      "gap_pct_of_mid": 7.748279,
+      "value_mwh": 3.052,
+      "gap_pct_of_mid": 5.03,
       "status": "known_fail"
     },
     "case_640_cooling": {
@@ -319,8 +319,8 @@
         4.73,
         6.4
       ],
-      "value_mwh": 2.966,
-      "gap_pct_of_mid": 31.698113,
+      "value_mwh": 2.939,
+      "gap_pct_of_mid": 32.18,
       "status": "known_fail"
     },
     "case_650_heating": {
@@ -345,8 +345,8 @@
         3.881,
         5.25
       ],
-      "value_mwh": 1.186,
-      "gap_pct_of_mid": 59.029679,
+      "value_mwh": 1.226,
+      "gap_pct_of_mid": 58.15,
       "status": "known_fail"
     },
     "case_910_heating": {
@@ -385,7 +385,7 @@
         4.547
       ],
       "value_mwh": 2.615,
-      "gap_pct_of_mid": 18.86697,
+      "gap_pct_of_mid": 18.87,
       "status": "known_fail"
     },
     "case_930_cooling": {
@@ -411,7 +411,7 @@
         1.295
       ],
       "value_mwh": 0.766,
-      "gap_pct_of_mid": 16.9627,
+      "gap_pct_of_mid": 16.96,
       "status": "known_fail"
     },
     "case_940_cooling": {
@@ -436,7 +436,7 @@
         3.471,
         4.697
       ],
-      "value_mwh": 3.933,
+      "value_mwh": 3.936,
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     },
@@ -449,8 +449,8 @@
         0.554,
         0.75
       ],
-      "value_mwh": 1.56,
-      "gap_pct_of_mid": 124.233129,
+      "value_mwh": 1.556,
+      "gap_pct_of_mid": 123.62,
       "status": "known_fail"
     },
     "ff_600ff_min": {
@@ -462,10 +462,9 @@
         -13.8,
         -9.9
       ],
-      "value_c": -3.78,
-      "gap_pct_of_mid": 68.101266,
-      "status": "known_fail",
-      "value_mwh": -11.2
+      "value_c": -3.93,
+      "gap_pct_of_mid": 66.84,
+      "status": "known_fail"
     },
     "ff_600ff_max": {
       "published_range_c": [
@@ -476,10 +475,9 @@
         62.4,
         68.4
       ],
-      "value_c": 47.42,
-      "gap_pct_of_mid": 27.492355,
-      "status": "known_fail",
-      "value_mwh": 55.69
+      "value_c": 47.24,
+      "gap_pct_of_mid": 27.77,
+      "status": "known_fail"
     },
     "ff_650ff_min": {
       "published_range_c": [
@@ -490,10 +488,9 @@
         -17.8,
         -16.7
       ],
-      "value_c": -17.4,
+      "value_c": -17.41,
       "gap_pct_of_mid": 0.0,
-      "status": "pass",
-      "value_mwh": -18.3
+      "status": "pass"
     },
     "ff_650ff_max": {
       "published_range_c": [
@@ -504,10 +501,9 @@
         61.1,
         66.8
       ],
-      "value_c": 41.74,
-      "gap_pct_of_mid": 34.730258,
-      "status": "known_fail",
-      "value_mwh": 53.14
+      "value_c": 41.89,
+      "gap_pct_of_mid": 34.5,
+      "status": "known_fail"
     },
     "ff_900ff_min": {
       "published_range_c": [
@@ -519,7 +515,7 @@
         2.2
       ],
       "value_c": -0.26,
-      "gap_pct_of_mid": 118.571429,
+      "gap_pct_of_mid": 118.57,
       "status": "known_fail"
     },
     "ff_900ff_max": {
@@ -532,7 +528,7 @@
         46.0
       ],
       "value_c": 43.28,
-      "gap_pct_of_mid": 3.068309,
+      "gap_pct_of_mid": 3.07,
       "status": "known_fail"
     },
     "ff_950ff_min": {
@@ -545,7 +541,7 @@
         -12.5
       ],
       "value_c": -15.67,
-      "gap_pct_of_mid": 21.003861,
+      "gap_pct_of_mid": 21.0,
       "status": "known_fail"
     },
     "ff_950ff_max": {
@@ -558,7 +554,7 @@
         37.1
       ],
       "value_c": 38.78,
-      "gap_pct_of_mid": 5.956284,
+      "gap_pct_of_mid": 5.96,
       "status": "known_fail"
     }
   },
@@ -584,5 +580,6 @@
   "_doc_round41": "Canonical-weather binding (loop round 41, 2026-10-15): the strict gate now runs the ASHRAE 140-2023 normative weather (DRYCOLD.TMY725650TY.CSV, TMY3 station 725650) converted to EPW with the informative modified Martin-Berdahl Tsky series as EPW field 12 (HIR = sigma*Tsky^4), per the round-40 spec in docs/investigations/sky-longwave-input-provenance-and-canonical-weather.md. All 42 measured metrics re-recorded from the corrected configuration; every strict-gate number moved as expected. Old -> new values/gaps in the PR body; statuses re-derived from the published bands (out-of-band = known_fail, no tuning). Golden-NREL 724666 route kept opt-in via FLUXION_ASHRAE140_WEATHER=golden.",
   "_doc_round71": "D5 default flip (loop round 71, 2026-10-19, #3983 \u00a757, Alex-directed): the per-surface 5R1C mass split + interior film/surface network + t_s-first surface advance + degenerate-zone Option A fallback promoted from the round-66..70 harness arms to engine defaults. All 42 measured metrics re-recorded from the corrected engine on branch loop71/d5-default-flip (stack verified flag-off bit-identical to the round-41 canonical-weather baseline before the flip; t_s battery reproduced \u00a756 exactly; degen+t_s battery differed only on Case 195). Disclosed regressions adopted, not tuned: 650 C leaves band low (night-vent class), 195 C/H and 630 C status changes recorded; 600 H 1.7 pp from band, 640 H/800 H/600FF Tmin enter band. Published bands untouched. Source: strict gate battery on the flip commit, canonical DRYCOLD route.",
   "_doc_round73": "2026-10-19 (loop round 73, R71 air-driver default flip #1522): the sub-hour air-node num/den driver ramp (env-gated FLX_R71_AIR_CAP harness in round 72, PR #4505) is now the engine default; metrics re-recorded from the corrected engine on loop73/air-cap-default-flip. 600 H 1.72->0.45 pp (4.959->4.905 MWh); narrows 630 C 2.62->1.63, 195 C 27.76->26.84, 650FF Tmin 7.30->6.09; worsens as disclosed 650 C 5.19->7.99 (LIMIT-28 night-vent coupling class), 600FF/650FF Tmax <=0.42 pp; all other movement follows the promoted physics. Nothing tuned; statuses re-derived honestly (no status changes).",
-  "_doc_round78": "2026-10-20 (loop round 78): full re-record for the coupled single-N default flip (`FLX_R77_COUPLED_N` promoted to the engine default at fixed N=12, Alex-directed 2026-10-20 17:12 ET, #3983 \u00a763/\u00a764). Every value re-recorded from the corrected engine on the flipped default build (bit-identical to the \u00a763 N=12 env-gated measurement, sorted strict lines equal); checker statuses re-derived honestly \u2014 rows entering the band moved to pass (650FF Tmin -17.40, 195 H 3.933), rows leaving the band became honest known-fail rows (650FF Tmax 41.74 / 650 C further below band, structural under any N per \u00a763; 600FF Tmin -3.78 overshoots above; 630 C leaves the band low; conditioned heating side moves away from band broadly). Bands and the regression tolerance untouched. Post-record tally: 10 pass / 32 known-fail."
+  "_doc_round78": "2026-10-20 (loop round 78): full re-record for the coupled single-N default flip (`FLX_R77_COUPLED_N` promoted to the engine default at fixed N=12, Alex-directed 2026-10-20 17:12 ET, #3983 \u00a763/\u00a764). Every value re-recorded from the corrected engine on the flipped default build (bit-identical to the \u00a763 N=12 env-gated measurement, sorted strict lines equal); checker statuses re-derived honestly \u2014 rows entering the band moved to pass (650FF Tmin -17.40, 195 H 3.933), rows leaving the band became honest known-fail rows (650FF Tmax 41.74 / 650 C further below band, structural under any N per \u00a763; 600FF Tmin -3.78 overshoots above; 630 C leaves the band low; conditioned heating side moves away from band broadly). Bands and the regression tolerance untouched. Post-record tally: 10 pass / 32 known-fail.",
+  "_doc_round85": "2026-10-21 (loop round 85): full re-record for the per-class coupled sub-step mass advance default flip (`FLX_R84_PERCLASS` promoted to the engine default, Alex-directed 2026-10-21 21:18 ET, #3983 \u00a765). Every value re-recorded from the corrected engine on the flipped default build; measured lines are identical to the round-84 \u00a764 env-gated flag-on measurement on e4278703, and the R85 tensor-presence guard (hand-rolled models keep the lumped sub-step advance) is output-neutral on spec models \u2014 sorted strict lines equal across the guard. Checker statuses re-derived honestly; no band crossings this round (same pass/known-fail partition as round 78); checker reports three gap improvements (ff_600ff_min 68.10->66.84 pp, case_650_cooling 59.03->58.15 pp, case_195_cooling 124.23->123.62 pp). Bands and the regression tolerance untouched. Nothing tuned. Bookkeeping repair carried in the same re-record: the ff_* rows carried a stale value_mwh key left behind by the round-73 recording script (value_c is the live key for temperature rows); the stale key is removed so future recording scripts cannot write into it."
 }
