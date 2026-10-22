@@ -120,9 +120,24 @@ const HYBRID_DEBUG_FLOOR: f64 = 26.0;
 /// best-of-2 warm calibration throughput 73.2 configs/sec (2026-10-21,
 /// three independent runs 70.3 / 73.2 / 75.8 — median pinned; release
 /// build, coupled-N12 default).
+///
+/// Sustained-load leg (round 84, #4527): the 2026-10-21 nightly showed
+/// the burst calibration reading machine scale 1.0 on a hosted runner
+/// while the sustained ~5-minute 10-zone workload ran ~12 % under the
+/// absolute floor — burst-fast/sustained-slow contention/thermal
+/// behavior a short best-of-2 calibration cannot see. The scale is now
+/// taken from the SLOWER of the burst and a ~30 s sustained loop of the
+/// same calibration workload (trailing aggregate throughput), so the
+/// floor absorbs the sustained-runner residual the same way it absorbs
+/// uniform machine slowness. On the reference machine the sustained
+/// leg sits at or above the burst value, so the scale stays 1.0 and
+/// the floor is never loosened. Cost: one extra ≤30 s per test process
+/// (cached in the same OnceLock).
 const CAL_REF_CFG_S: f64 = 73.2;
 const CAL_POP: usize = 8;
 const CAL_MEASURED_RUNS: usize = 2;
+/// Wall-clock budget of the sustained-load calibration leg (seconds).
+const CAL_SUSTAINED_SECS: u64 = 30;
 
 /// Measured machine scale. Cached after the first call (one calibration
 /// per test process keeps the added runtime bounded).
@@ -142,7 +157,25 @@ pub(crate) fn machine_scale_once() -> f64 {
         let best = (0..CAL_MEASURED_RUNS)
             .map(|_| timed_population_pass(&base, &surrogates, &population).throughput)
             .fold(f64::NEG_INFINITY, f64::max);
-        (best / CAL_REF_CFG_S).clamp(0.05, 1.0)
+        // Sustained-load leg (#4527): loop the same calibration workload
+        // for CAL_SUSTAINED_SECS and take the trailing aggregate
+        // throughput — the sustained rate a long gate run actually
+        // experiences. The scale keys on the SLOWER of the two legs
+        // (burst stays a lower bound on machine speed, never raises the
+        // scale past it).
+        let sustained_start = std::time::Instant::now();
+        let mut sustained_configs = 0usize;
+        while sustained_start.elapsed().as_secs() < CAL_SUSTAINED_SECS {
+            let _ = timed_population_pass(&base, &surrogates, &population);
+            sustained_configs += CAL_POP;
+        }
+        let sustained_elapsed = sustained_start.elapsed().as_secs_f64();
+        let sustained = if sustained_elapsed > 0.0 {
+            sustained_configs as f64 / sustained_elapsed
+        } else {
+            best
+        };
+        (best.min(sustained) / CAL_REF_CFG_S).clamp(0.05, 1.0)
     })
 }
 
