@@ -60,5 +60,17 @@ jobs:
       # doc-adjacent targets nextest owns), two threads per binary
       # (matches GH free-runner vCPU count, Issue #3366 / ADR-0014),
       # no fail-fast so one red test cannot hide the rest.
+      # (#4540, loop round 88) `--all-targets` dropped: it over-selects
+      # [[bench]] targets, and the criterion-based TDQS bench
+      # (`orchestration_decisions`) emits blank lines between benchmark
+      # groups in its `--list` output, which nextest's list parser rejects —
+      # `line "" did not end with the string ": test" or ": benchmark"` ->
+      # exit 104 TEST_LIST_CREATION_FAILED, with zero FAIL lines because
+      # no test ever ran. Reproduced locally on nextest 0.9.143 (the same
+      # version @latest resolves today), so this is not a version-bump
+      # regression; the lane has been red on every run since creation
+      # (24/24 since 2026-09-29). The documented intent above — lib + bins
+      # + integration tests — never included benches; they are run by their
+      # own tdqs_regression.yml job.
       - name: Run full-workspace nextest suite (Issue #4177)
-        run: cargo nextest run --workspace --exclude fluxion-tauri --all-targets --test-threads=2 --no-fail-fast
+        run: cargo nextest run --workspace --exclude fluxion-tauri --test-threads=2 --no-fail-fast

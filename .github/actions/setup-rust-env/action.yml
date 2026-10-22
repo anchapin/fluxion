@@ -125,12 +125,21 @@ runs:
     # The download is subject to the same transient failures as sccache
     # (#2813). Retry up to 3x using the same pattern as `dtolnay/rust-toolchain`
     # and `mozilla-actions/sccache-action` above.
+    #
+    # Version pin (#4540, loop round 88): `tool: cargo-nextest` unpinned
+    # resolved to @latest (0.9.143 on 2026-10-22). Pinned so every lane —
+    # and any future exit-code-semantics debugging — runs a known runner.
+    # 0.9.143 is the version the nightly lane's failure was reproduced on
+    # locally (see the #4540 PR description), i.e. the pin deliberately does
+    # NOT change the version the failing lane already ran; the lane's exit
+    # 104 (TEST_LIST_CREATION_FAILED) is addressed by the workflow-side
+    # target-set fix, not by this pin.
     - name: Install cargo-nextest (attempt 1/3)
       id: nextest_1
       if: inputs.nextest == 'true'
       uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d  # v2
       with:
-        tool: cargo-nextest
+        tool: cargo-nextest@0.9.143
       continue-on-error: true
 
     - name: Install cargo-nextest (attempt 2/3)
@@ -138,7 +147,7 @@ runs:
       if: inputs.nextest == 'true' && steps.nextest_1.outcome == 'failure'
       uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d  # v2
       with:
-        tool: cargo-nextest
+        tool: cargo-nextest@0.9.143
       continue-on-error: true
 
     - name: Install cargo-nextest (attempt 3/3)
@@ -146,7 +155,7 @@ runs:
       if: inputs.nextest == 'true' && steps.nextest_2.outcome == 'failure'
       uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d  # v2
       with:
-        tool: cargo-nextest
+        tool: cargo-nextest@0.9.143
 
     # Cargo registry/git cache — covers downloaded crate source and metadata.
     # target/ caching is intentionally omitted when sccache is enabled because

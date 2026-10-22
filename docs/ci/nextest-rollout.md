@@ -338,3 +338,12 @@ the verified cargo counts at HEAD `12856a9` and are documented as
 Operators reviewing the audit can diff AST vs verified values; the
 ratio is stable (~10% AST over-count because the regex does not
 honor `#[cfg(test)]` boundaries or feature gates).
+## Update 2026-10-22 (Issue #4540): `--all-targets` dropped from the Nightly Full-Workspace lane
+
+The nightly lane's exit 104 was nextest's `TEST_LIST_CREATION_FAILED`: `--all-targets` pulled the
+criterion-based `orchestration_decisions` bench into the lane, and that bench emits blank lines
+between benchmark groups in its `--list` output, which nextest's list parser rejects
+(`line "" did not end with ": test" or ": benchmark"`). Reproduced locally on nextest 0.9.143;
+the lane had been red on every run since creation (24/24 since 2026-09-29). The canonical command
+above now targets lib + bins + integration tests; benches remain in their own `tdqs_regression.yml`
+job, and `cargo-nextest` is pinned (0.9.143) in `setup-rust-env` for reproducible runner semantics.
