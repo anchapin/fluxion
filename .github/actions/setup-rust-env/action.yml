@@ -139,7 +139,7 @@ runs:
       if: inputs.nextest == 'true'
       uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d  # v2
       with:
-        tool: cargo-nextest@0.9.143@0.9.143
+        tool: cargo-nextest@0.9.143
       continue-on-error: true
 
     - name: Install cargo-nextest (attempt 2/3)
