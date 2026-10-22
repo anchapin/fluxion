@@ -1226,15 +1226,25 @@ fn section7_headline_value_pins() {
     // slightly away from band — recorded, not tuned, §LIMIT-28). Values
     // cross-check the re-recorded strict_energy_gate_baseline.json
     // (_doc_round89). 900/900FF/950FF unchanged (9R4C inert control).
+    // Re-recorded 2026-10-22 (loop round 89b, item 2a): the mass-node
+    // full time-coverage fix promoted to the engine default
+    // (`FLX_R89_MASS_DT_ALIGN`, flip commit ceb19b0b) moved the
+    // 600-family rows: 600 4.467/3.124 -> 5.937/4.700 MWh (heating
+    // honestly leaves its band — recorded, §LIMIT-28), 600FF
+    // -2.56/46.84 -> -12.85/53.40 (Tmin ENTERS [-13.80, -9.90] for the
+    // first time), 650FF -15.97/45.46 -> -17.62/52.79 (Tmin ENTERS
+    // [-17.80, -16.70] for the first time). Values cross-check the
+    // re-recorded strict_energy_gate_baseline.json (_doc_round89b).
+    // 900/900FF/950FF unchanged (9R4C inert control).
     let pins: &[(&str, fn(&Section7CaseResult) -> f64, f64)] = &[
-        ("600", |r| r.annual_heating_mwh, 4.467),
-        ("600", |r| r.annual_cooling_mwh, 3.124),
+        ("600", |r| r.annual_heating_mwh, 5.937),
+        ("600", |r| r.annual_cooling_mwh, 4.700),
         ("900", |r| r.annual_heating_mwh, 1.225),
         ("900", |r| r.annual_cooling_mwh, 2.249),
-        ("600FF", |r| r.min_temp_c, -2.56),
-        ("600FF", |r| r.max_temp_c, 46.84),
-        ("650FF", |r| r.min_temp_c, -15.97),
-        ("650FF", |r| r.max_temp_c, 45.46),
+        ("600FF", |r| r.min_temp_c, -12.85),
+        ("600FF", |r| r.max_temp_c, 53.40),
+        ("650FF", |r| r.min_temp_c, -17.62),
+        ("650FF", |r| r.max_temp_c, 52.79),
         ("900FF", |r| r.min_temp_c, -0.26),
         ("900FF", |r| r.max_temp_c, 43.28),
         ("950FF", |r| r.min_temp_c, -15.67),

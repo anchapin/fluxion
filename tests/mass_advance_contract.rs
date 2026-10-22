@@ -623,7 +623,9 @@ fn r89_mass_state_at(align: Option<&str>, n: usize, hours: usize) -> Vec<f64> {
         Some(v) => std::env::set_var("FLX_R89_MASS_DT_ALIGN", v),
         None => std::env::remove_var("FLX_R89_MASS_DT_ALIGN"),
     }
-    (0..m.hvac.num_zones).map(|z| m.mass.mass_temperatures[z]).collect::<Vec<f64>>()
+    (0..m.hvac.num_zones)
+        .map(|z| m.mass.mass_temperatures[z])
+        .collect::<Vec<f64>>()
 }
 
 #[test]
@@ -688,7 +690,6 @@ fn r89_align_converges_to_refined_limit() {
         "aligned N=12 not closer to the N=96 limit than unaligned: aligned={aligned_err:.6e} unaligned={unaligned_err:.6e}"
     );
 }
-
 
 #[test]
 /// Contract 14 — decomposition pin (round-89 A/B/C experiment): the
