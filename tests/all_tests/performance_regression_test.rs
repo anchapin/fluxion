@@ -721,9 +721,7 @@ fn test_multi_zone_performance_regression() {
             crate::hybrid_perf_regression::machine_scale_once()
         );
     }
-    println!(
-        "  Effective floor: {effective_floor:.0} configs/sec"
-    );
+    println!("  Effective floor: {effective_floor:.0} configs/sec");
     println!(
         "✓ Absolute floor OK: {:.0} ≥ {:.0} configs/sec",
         metrics.throughput, effective_floor
