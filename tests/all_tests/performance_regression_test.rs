@@ -695,7 +695,11 @@ fn test_multi_zone_performance_regression() {
         // without red-herring on every dev `cargo test` run.
         absolute_floor * 0.1
     } else {
-        absolute_floor
+        // Machine-fair floor (#4527 coverage leg): the absolute floor
+        // scales DOWN with measured machine speed (never up), matching
+        // the wiring #4526 applied to the hybrid gates and
+        // performance_ci_test. The yaml floor itself is untouched.
+        crate::hybrid_perf_regression::machine_fair_floor(absolute_floor)
     };
 
     assert!(
@@ -710,6 +714,16 @@ fn test_multi_zone_performance_regression() {
         MULTI_ZONE_GATE_ZONES,
     );
 
+    #[cfg(not(tarpaulin))]
+    if !cfg!(debug_assertions) {
+        println!(
+            "  Machine scale: {:.3}",
+            crate::hybrid_perf_regression::machine_scale_once()
+        );
+    }
+    println!(
+        "  Effective floor: {effective_floor:.0} configs/sec"
+    );
     println!(
         "✓ Absolute floor OK: {:.0} ≥ {:.0} configs/sec",
         metrics.throughput, effective_floor
