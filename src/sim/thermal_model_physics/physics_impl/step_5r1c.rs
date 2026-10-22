@@ -26,6 +26,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ) -> Result<f64, FluxionError> {
         let dt = dt_seconds; // Use provided timestep duration
 
+        // [Loop round 86 — free-float energy-balance audit dump (read-only,
+        // env-gated: FLX_FF_EB_AUDIT). Emits FFAUDIT_P/_Z/_C/_D lines for the
+        // offline attribution harness (scripts/audit_free_float_balance.py);
+        // default off, no effect on any computed value.]
+        let ff_audit = crate::util::env_bool::env_bool("FLX_FF_EB_AUDIT", false);
+
         // Prepare sol-air temperature and calculate CTF/FD heat fluxes early to avoid borrow conflicts
         // Calculate sky temperature for proper sol-air calculation with longwave radiation
         let sky_temp = self
@@ -156,6 +162,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.0.hvac.last_phi_ia = phi_ia.as_ref().first().copied().unwrap_or(0.0);
             self.0.hvac.last_phi_st = phi_st.as_ref().first().copied().unwrap_or(0.0);
             self.0.hvac.last_phi_m = phi_m.as_ref().first().copied().unwrap_or(0.0);
+        }
+        if ff_audit {
+            let fmt_slice = |v: &T| {
+                v.as_ref()
+                    .iter()
+                    .map(|x| format!("{x:.6}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            };
+            eprintln!(
+                "FFAUDIT_P {} phi_ia={} phi_st={} phi_m={}",
+                timestep,
+                fmt_slice(&phi_ia),
+                fmt_slice(&phi_st),
+                fmt_slice(&phi_m)
+            );
         }
 
         // === Issue #1860: wall-surface ODE (pre-air-node-equilibrium step) ===
@@ -1729,6 +1751,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                         let inv = dt_m / cls_cm[c];
                                         (1.0 - inv * (h3_c + h_em_c), inv * numer_rest_c)
                                     };
+                                    if ff_audit && _step == steps - 1 {
+                                        eprintln!(
+                                            "FFAUDIT_C {} {} {} w={:.6} cm_c={:.6} a={:.6} b={:.6} h_am={:.6} h_em={:.6} h3={:.6} t_ext={:.6} phi={:.6} tm_prev={:.6}",
+                                            timestep, i, c, w, cls_cm[c], a_c, b_c, h_am_c, h_em_c, h3_c, t_ext_c, phi_c, r76_mass[i]
+                                        );
+                                    }
                                     let w_cap = cls_cm[c] / cm_sum;
                                     a_sum += w_cap * a_c;
                                     b_sum += w_cap * b_c;
@@ -1743,6 +1771,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                         t_i_sub,
                                         phi_c,
                                     )?;
+                                    if ff_audit {
+                                        eprintln!(
+                                            "FFAUDIT_D {} {} {} {:.9}",
+                                            timestep,
+                                            i,
+                                            c,
+                                            cls_cm[c] * (tm_c_new - r76_mass[i])
+                                        );
+                                    }
                                     tm_w += w_cap * tm_c_new;
                                 }
                                 perclass_coeffs = Some((a_sum, b_sum, d_sum));
@@ -3199,6 +3236,35 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     ));
                 }
                 None => applied_class_buf.push(None),
+            }
+            if ff_audit {
+                eprintln!(
+                    "FFAUDIT_Z {} {} t_out={:.6} t_sky={:.6} t_g={:.6} t_sol_air={:.6} h_tr_em={:.6} t_air={:.6} t_m_new={:.6} tm_start={:.6} cm={:.6} c_air={:.6} g_coeff={:.6} h_air_mass={:.6} h_ext={:.6} h_ve_night={:.6} nv={} h_vent_mass={:.6} phi_m={:.6} phi_st={:.6} lag={:.6} solar_gains={:.6} loads={:.6} term_rest_1={:.6}",
+                    timestep, i,
+                    outdoor_temp, sky_temp, t_g,
+                    scratch.t_sol_air_zone.as_ref().get(i).copied().unwrap_or(f64::NAN),
+                    scratch.h_tr_em_zone.as_ref().get(i).copied().unwrap_or(f64::NAN),
+                    // The pooled air-node buffer is drained back to the model
+                    // before this site; the committed `air_temperatures` is
+                    // the same final value.
+                    self.0.mass.air_temperatures.as_ref().get(i).copied().unwrap_or(f64::NAN),
+                    scratch.new_mass.get(i).copied().unwrap_or(f64::NAN),
+                    self.0.mass.mass_temperatures.as_ref().get(i).copied().unwrap_or(f64::NAN),
+                    cm_ref[i],
+                    self.0.mass.air_thermal_capacitance.as_ref().get(i).copied().unwrap_or(f64::NAN),
+                    self.0.conduction.derived_ground_coeff.as_ref().get(i).copied().unwrap_or(f64::NAN),
+                    h_air_mass,
+                    scratch.h_ext_owned_zone.as_ref().get(i).copied().unwrap_or(f64::NAN),
+                    h_ve_night,
+                    night_vent_active_now as u8,
+                    h_vent_mass_zone,
+                    phi_m_zone,
+                    phi_st_ref[i],
+                    scratch.air_node_solar_lag.as_ref().get(i).copied().unwrap_or(f64::NAN),
+                    self.0.solar.solar_gains.as_ref().get(i).copied().unwrap_or(f64::NAN),
+                    self.0.setpoints.loads.as_ref().get(i).copied().unwrap_or(f64::NAN),
+                    self.0.conduction.derived_term_rest_1.as_ref().get(i).copied().unwrap_or(f64::NAN),
+                );
             }
         }
         self.0.conduction.applied_5r1c_class_boundary = Some(applied_class_buf);
