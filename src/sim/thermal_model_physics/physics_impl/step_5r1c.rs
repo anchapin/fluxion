@@ -1550,10 +1550,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 let h_tr_3_all = self.0.conduction.derived_h_tr_3.as_ref();
                 let h_is_all = self.0.conduction.h_tr_is.as_ref();
                 let h_ms_all = self.0.conduction.h_tr_ms.as_ref();
-                // [R84 HARNESS — flag read for the per-class coupled
-                // sub-step mass advance (see the arm block below). Flag
-                // off: this call reads one env var and changes nothing.]
-                let r84_perclass = crate::util::env_bool::env_bool("FLX_R84_PERCLASS", false);
+                // [R85 FLIP — the per-class coupled sub-step mass advance
+                // is the engine default since loop round 85 (Alex-directed
+                // 2026-10-21 21:18 ET: "Flip the per class mass bind"; the
+                // arm was verified env-gated in round 84, PR #4531).
+                // FLX_R84_PERCLASS set to a falsy token (0/false/no/off)
+                // opts back out to the pre-85 lumped sub-step advance for
+                // A/B measurement; any other value behaves as unset, i.e.
+                // the per-class default.]
+                let r84_perclass = crate::util::env_bool::env_bool("FLX_R84_PERCLASS", true);
                 for i in 0..self.0.hvac.num_zones {
                     let t_ext = if r76_has_prev {
                         let p = r76_sol_air_prev_ref[i];
@@ -1610,14 +1615,52 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // the current-hour cls_t values. The R77 folded
                     // air-side term stays the lumped aggregate
                     // recording (unchanged), so the arm isolates the
-                    // mass state. Flag off: bit-identical to the
-                    // coupled-N default.]
-                    let tm_new = if r84_perclass && ps_enabled {
+                    // mass state. Default on since loop round 85
+                    // (Alex-directed 2026-10-21 21:18 ET); setting
+                    // FLX_R84_PERCLASS to a falsy token measures the pre-85
+                    // lumped sub-step path (bit-identical to the round-84
+                    // flag-off state).]
+                    let mut perclass_coeffs: Option<(f64, f64, f64)> = None;
+                    // [R85 GUARD — the per-class advance requires real
+                    // per-class construction state for this zone. The class
+                    // tensors (cm_wall/cm_roof/cm_floor,
+                    // h_tr_ms_wall/roof/floor) are assigned only by the
+                    // spec-built constructor (from_spec stores them for every
+                    // construction type since the D5 default, round 71).
+                    // Hand-rolled models (ThermalModel::new plus scalar
+                    // conductances) carry none: replicating the lumped
+                    // scalar across three classes and re-partitioning the
+                    // exterior driving through the class aggregates is NOT
+                    // equivalent to the lumped advance there. Round-85 A/B
+                    // evidence: CZ3, edge-case and metering regressions with
+                    // the arm engaged on tensor-less zones (bounded state,
+                    // negative energy accounting, 1 kW gains invisible).
+                    // Zones without the tensors keep the lumped sub-step
+                    // advance — the pre-85 state — so the arm commits class
+                    // physics only where class constructions exist.]
+                    let cls_tensors_ready = {
+                        let cond = &self.0.conduction;
+                        let has_i =
+                            |o: &Option<T>| o.as_ref().is_some_and(|v| v.as_ref().len() > i);
+                        has_i(&cond.cm_wall)
+                            && has_i(&cond.cm_roof)
+                            && has_i(&cond.cm_floor)
+                            && has_i(&cond.h_tr_ms_wall)
+                            && has_i(&cond.h_tr_ms_roof)
+                            && has_i(&cond.h_tr_ms_floor)
+                    };
+                    let tm_new = if r84_perclass && ps_enabled && cls_tensors_ready {
                         match r66_cls[i] {
                             Some((cls_g, cls_t_c, cls_area, _cls_beam))
                                 if cls_area.iter().sum::<f64>() > 1e-9 =>
                             {
                                 let total_area: f64 = cls_area.iter().sum();
+                                // [R85] affine-map accumulators for the
+                                // checker composite record (see the r77
+                                // coefficient push below).
+                                let mut a_sum = 0.0;
+                                let mut b_sum = 0.0;
+                                let mut d_sum = 0.0;
                                 let cond = &self.0.conduction;
                                 let grab = |o: &Option<T>| {
                                     o.as_ref().and_then(|v| v.as_ref().get(i).copied())
@@ -1665,18 +1708,44 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                     } else {
                                         h_ms_c
                                     };
+                                    // [R85] Bind the exact per-class CN
+                                    // arguments and derive this class's
+                                    // affine map from the same algebra the
+                                    // call below consumes (including its
+                                    // forward-Euler fallback), so the
+                                    // persisted composite mirrors the
+                                    // committed state exactly
+                                    // (checker-lags-integrator, #4504
+                                    // class).
+                                    let h3_c = h_am_c + h_vent_i * w;
+                                    let phi_c = phi_m_i * w;
+                                    let cm_dt_c = cls_cm[c] / dt_m;
+                                    let half_c = 0.5 * (h3_c + h_em_c);
+                                    let den_c = cm_dt_c + half_c;
+                                    let numer_rest_c = h_em_c * t_ext_c + h3_c * t_i_sub + phi_c;
+                                    let (a_c, b_c) = if den_c > 0.0 {
+                                        ((cm_dt_c - half_c) / den_c, numer_rest_c / den_c)
+                                    } else {
+                                        let inv = dt_m / cls_cm[c];
+                                        (1.0 - inv * (h3_c + h_em_c), inv * numer_rest_c)
+                                    };
+                                    let w_cap = cls_cm[c] / cm_sum;
+                                    a_sum += w_cap * a_c;
+                                    b_sum += w_cap * b_c;
+                                    d_sum += w_cap * den_c;
                                     let tm_c_new = crank_nicolson_iso13790(
                                         r76_mass[i],
                                         dt_m,
                                         cls_cm[c],
-                                        h_am_c + h_vent_i * w,
+                                        h3_c,
                                         h_em_c,
                                         t_ext_c,
                                         t_i_sub,
-                                        phi_m_i * w,
+                                        phi_c,
                                     )?;
-                                    tm_w += (cls_cm[c] / cm_sum) * tm_c_new;
+                                    tm_w += w_cap * tm_c_new;
                                 }
+                                perclass_coeffs = Some((a_sum, b_sum, d_sum));
                                 tm_w
                             }
                             _ => crank_nicolson_iso13790(
@@ -1702,21 +1771,32 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             phi_m_ref_early[i],
                         )?
                     };
-                    // [Round 78] record this sub-step's linear coefficients
-                    // (same branch the integrator took: CN when its
-                    // denominator is positive, its forward-Euler fallback
-                    // otherwise — both are affine in tm_prev).
+                    // [Round 78; round 85 per-class composite] record this
+                    // sub-step's linear coefficients — same branch the
+                    // integrator took: CN when its denominator is positive,
+                    // its forward-Euler fallback otherwise (both affine in
+                    // tm_prev). When the per-class arm produced the state,
+                    // the recorded triple is the capacitance-weighted
+                    // composite of the per-class affine maps,
+                    // (A, B, D) = Σ_c (cm_c/cm_sum)·(a_c, b_c, den_c), so
+                    // the checker's composite mirror stays exact by
+                    // construction (checker-lags-integrator, #4504 class).
                     if r77_coupled {
-                        let cm_dt_m = cm_ref[i] / dt_m;
-                        let half_cond = 0.5 * (h_tr3_arg_i + h_tr_em_i);
-                        let denom_m = cm_dt_m + half_cond;
-                        let numer_rest =
-                            h_tr_em_i * t_ext + h_tr3_arg_i * t_i_sub + phi_m_ref_early[i];
-                        let (a, b) = if denom_m > 0.0 {
-                            ((cm_dt_m - half_cond) / denom_m, numer_rest / denom_m)
+                        let (a, b, denom_m) = if let Some((a_s, b_s, d_s)) = perclass_coeffs {
+                            (a_s, b_s, d_s)
                         } else {
-                            let inv = dt_m / cm_ref[i];
-                            (1.0 - inv * (h_tr3_arg_i + h_tr_em_i), inv * numer_rest)
+                            let cm_dt_m = cm_ref[i] / dt_m;
+                            let half_cond = 0.5 * (h_tr3_arg_i + h_tr_em_i);
+                            let denom_m = cm_dt_m + half_cond;
+                            let numer_rest =
+                                h_tr_em_i * t_ext + h_tr3_arg_i * t_i_sub + phi_m_ref_early[i];
+                            let (a, b) = if denom_m > 0.0 {
+                                ((cm_dt_m - half_cond) / denom_m, numer_rest / denom_m)
+                            } else {
+                                let inv = dt_m / cm_ref[i];
+                                (1.0 - inv * (h_tr3_arg_i + h_tr_em_i), inv * numer_rest)
+                            };
+                            (a, b, denom_m)
                         };
                         let c = &mut r77_coeffs[i];
                         c.push(a);

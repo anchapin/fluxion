@@ -1582,24 +1582,35 @@ fn emit_section6_conformance() {
 // 07-22-06, WD400 C 08-13-14→08-15-14, WD500 H 12-28-07→01-01-06, WD500 C
 // 11-07-14→10-10-13). Solar/sky columns did not move (weather-only path).
 // Nothing tuned.
+// Re-recorded 2026-10-21 (loop round 85): the per-class coupled sub-step
+// mass advance promoted to the engine default (`FLX_R84_PERCLASS`,
+// Alex-directed 2026-10-21 21:18 ET, #3983 §65) moved the 5R1C load values
+// again, on the spec-built WD harness models (per-class construction
+// tensors present). Old values (round 78): WD100 [5.5870, 2.2174, 3.3912,
+// 2.9266], WD200 [2.3630, 3.2045, 2.7602, 2.9644], WD300 [3.0172, 1.1242,
+// 1.9765, 1.6364], WD400 [32.6207, 0.0188, 7.6981, 1.2946], WD500
+// [0.0913, 11.8580, 0.8382, 4.2703], WD600 [5.1168, 3.1923, 3.3177,
+// 3.4114]. Peak occurrences unchanged this round. Solar/sky columns did
+// not move (weather-only path). Re-emitted section6_workflow_results.csv
+// in the same commit; nothing tuned.
 const SECTION6_VALUE_PINS: [(&str, f64, f64, f64, f64, &str, &str); 6] = [
     (
-        "WD100", 5.5870, 2.2174, 3.3912, 2.9266, "02-09-05", "09-11-12",
+        "WD100", 5.5169, 2.1927, 3.4070, 2.9103, "02-09-05", "09-11-12",
     ),
     (
-        "WD200", 2.3630, 3.2045, 2.7602, 2.9644, "02-12-07", "08-19-13",
+        "WD200", 2.3281, 3.1367, 2.7677, 2.9446, "02-12-07", "08-19-13",
     ),
     (
-        "WD300", 3.0172, 1.1242, 1.9765, 1.6364, "07-22-06", "02-13-14",
+        "WD300", 3.1111, 1.0444, 2.0025, 1.6020, "07-22-06", "02-13-14",
     ),
     (
-        "WD400", 32.6207, 0.0188, 7.6981, 1.2946, "01-26-16", "08-15-14",
+        "WD400", 32.3156, 0.0199, 7.6659, 1.3362, "01-26-16", "08-15-14",
     ),
     (
-        "WD500", 0.0913, 11.8580, 0.8382, 4.2703, "01-01-06", "10-10-13",
+        "WD500", 0.0876, 11.6552, 0.8439, 4.2467, "01-01-06", "10-10-13",
     ),
     (
-        "WD600", 5.1168, 3.1923, 3.3177, 3.4114, "02-09-05", "09-11-12",
+        "WD600", 5.0666, 3.1355, 3.3389, 3.3883, "02-09-05", "09-11-12",
     ),
 ];
 
@@ -1686,49 +1697,50 @@ const SECTION6_SOLAR_SKY_PINS: [(&str, [f64; 5], f64, f64, f64, f64, &str, &str)
 /// Jul 14, daily total incident horizontal Wh/m² for Jul 14). These
 /// guard the hourly series' totals; the byte-identity staleness test on
 /// the committed CSV guards the full hourly shape.
-/// Load totals re-recorded 2026-10-20 (loop round 78, coupled single-N
-/// default flip, `FLX_R77_COUPLED_N` default 12, #3983 §63/§64) from the
-/// regenerated `section6_table61_daily_hourly.csv`; solar/sky columns did
-/// not move (weather-only path). Prior re-record 2026-10-19 (loop round 73,
-/// R71 air-driver default flip #1522). Round-73 load totals: WD100
-/// [56.4117, 22.2647, -19.8657], WD200 [19.3804, 26.6657, -34.3077], WD300
-/// [-15.2883, -19.4629, 19.5308], WD400 [113.7986, 117.64, 6.8947], WD500
-/// [-12.6803, -22.1958, -31.8559], WD600 [54.7072, 18.2251, -29.7557].
-/// Nothing tuned.
+/// Load totals re-recorded 2026-10-21 (loop round 85, per-class coupled
+/// sub-step mass advance promoted to default, `FLX_R84_PERCLASS`,
+/// Alex-directed 2026-10-21 21:18 ET, #3983 §65) from the regenerated
+/// `section6_table61_daily_hourly.csv`; solar/sky columns did not move
+/// (weather-only path). Round-78 load totals (coupled single-N default
+/// flip, #3983 §63/§64; prior re-record 2026-10-19 round 73, R71
+/// air-driver default flip #1522): WD100 [42.0251, 35.4767, -12.2571],
+/// WD200 [20.114, 24.8932, -26.9096], WD300 [-4.4409, -12.8254, 24.7269],
+/// WD400 [85.1847, 139.5708, 18.0445], WD500 [-3.6218, -12.0011,
+/// -36.948], WD600 [40.8985, 32.4421, -19.5713]. Nothing tuned.
 const SECTION6_TABLE61_DAY_PINS: [(&str, [f64; 3], [f64; 3], f64); 6] = [
     (
         "WD100",
-        [42.0251, 35.4767, -12.2571],
+        [42.7781, 35.1745, -11.5262],
         [-25.226, -1.577, 8.832],
         8823.6,
     ),
     (
         "WD200",
-        [20.114, 24.8932, -26.9096],
+        [20.7252, 23.9342, -25.9208],
         [-1.514, 10.349, 19.353],
         6868.2,
     ),
     (
         "WD300",
-        [-4.4409, -12.8254, 24.7269],
+        [-4.6488, -11.9670, 24.6486],
         [8.897, -1.019, -5.611],
         3220.6,
     ),
     (
         "WD400",
-        [85.1847, 139.5708, 18.0445],
+        [87.3840, 137.1279, 17.8526],
         [-26.286, -32.833, -3.490],
         3756.7,
     ),
     (
         "WD500",
-        [-3.6218, -12.0011, -36.948],
+        [-4.2797, -12.0047, -35.2561],
         [1.491, 23.641, 25.454],
         3107.4,
     ),
     (
         "WD600",
-        [40.8985, 32.4421, -19.5713],
+        [41.6243, 32.2406, -18.5057],
         [-25.226, -1.577, 8.832],
         8823.6,
     ),

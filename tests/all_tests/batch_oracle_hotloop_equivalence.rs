@@ -144,7 +144,20 @@ fn analytical_path_eui_is_bit_identical_to_baseline() {
     // together from the flipped default build). Previous goldens (R71
     // air-driver flip, round 73):
     // [58.99791056935924, 110.51711796412485, 136.651947557101].
-    let golden = [98.47883488604658, 131.92702641312698, 152.40195691921105];
+    // Re-recorded 2026-10-21 (loop round 85): the per-class coupled
+    // sub-step mass advance promoted to the engine default
+    // (`FLX_R84_PERCLASS`, Alex-directed 2026-10-21 21:18 ET, #3983 §65)
+    // changed the 5R1C mass/air advance on the spec-built Case 600
+    // baseline again; same corrected-engine refresh precedent as rounds
+    // 73/78 (strict-gate, fabric, output-diff, §6/§7 pins, grid adapter
+    // and this golden re-recorded together from the flipped default
+    // build). The analytical path's EUI is highly sensitive to the mass
+    // advance (round 78 moved it +67 %); this round moved it
+    // [98.47883488604658, 131.92702641312698, 152.40195691921105] ->
+    // [74.00399446463592, 115.20549183194221, 140.4909718771871]
+    // (−25 %/−13 %/−8 %), the largest swing since round 78 — flagged for
+    // review, deterministic across runs. Nothing tuned.
+    let golden = [74.00399446463592, 115.20549183194221, 140.4909718771871];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),
@@ -184,7 +197,12 @@ fn cpu_surrogate_mock_path_eui_is_bit_identical_to_baseline() {
     // corrected-engine refresh. Previous goldens (R71 air-driver flip,
     // round 73):
     // [238.26081821570014, 252.9180153722391, 264.2953715294398].
-    let golden = [244.9999907038609, 256.9802090722031, 266.941327636793];
+    // Re-recorded 2026-10-21 (loop round 85) with the analytical path
+    // above: per-class coupled sub-step mass advance default
+    // (`FLX_R84_PERCLASS`, #3983 §65). Previous goldens (round 78
+    // coupled-N flip):
+    // [244.9999907038609, 256.9802090722031, 266.941327636793].
+    let golden = [237.20858313258188, 252.24156042826417, 263.7616804309977];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),
