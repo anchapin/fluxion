@@ -772,7 +772,22 @@ describe('@fluxion/native', () => {
     // regression guard moves with the recorded engine value — the published
     // ±15% band is not widened. Cooling stayed inside its round-71 guard on
     // the same run and stays pinned.
-    const HEATING_RECORDED_KWH = 5163.19; // post-coupled-N12-flip engine value, 2026-10-21
+    // Re-pinned 2026-10-22 (physics loop round 89a+89b, two default flips
+    // landing in sequence): the ISO 13790 §C.3 surface-pool mass share flip
+    // (PR #4546, merge 78871095) moves the NAPI/WD600 Case 600 annual
+    // heating to 4292.26 kWh (run 39858296366 — outside the old guard, red
+    // on develop between the merges), and the mass-node full time-coverage
+    // fix (PR #4547, merge d387aee3 — the sub-step mass advance previously
+    // integrated only 1/12 of real time) moves it again to 5791.80 kWh
+    // (run 39860474484, post-#4547 tip, bit-identical on ubuntu-24.04 and
+    // windows-latest). Net +12.2% vs the round-78 pin. Both flips are
+    // verified physics corrections adopted on their own merits per the
+    // 2026-10-22 standing direction; strict-route context recorded in
+    // KNOWN_ISSUES §LIMIT-28 (_doc_round89/_doc_round89b) — the published
+    // band is deliberately not widened (WINDOW-01); the pin stays a ±5%
+    // regression guard around the recorded engine value (round-42/71/78
+    // precedent).
+    const HEATING_RECORDED_KWH = 5791.80; // post-mass-coverage-flip engine value, 2026-10-22
     const HEATING_GUARD_PCT = 5.0;
     const HEATING_MIN_KWH = +(HEATING_RECORDED_KWH * (1 - HEATING_GUARD_PCT / 100)).toFixed(2);
     const HEATING_MAX_KWH = +(HEATING_RECORDED_KWH * (1 + HEATING_GUARD_PCT / 100)).toFixed(2);
