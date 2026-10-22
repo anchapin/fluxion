@@ -157,7 +157,18 @@ fn analytical_path_eui_is_bit_identical_to_baseline() {
     // [74.00399446463592, 115.20549183194221, 140.4909718771871]
     // (−25 %/−13 %/−8 %), the largest swing since round 78 — flagged for
     // review, deterministic across runs. Nothing tuned.
-    let golden = [74.00399446463592, 115.20549183194221, 140.4909718771871];
+    // Re-recorded 2026-10-22 (loop round 89): the ISO 13790 §C.3
+    // surface-pool mass share promoted to the engine default
+    // (`FLX_R88_PHIST_MASS_SHARE`, Alex-directed 2026-10-22 14:57 ET,
+    // round-88 arm #4543) changed the 5R1C mass/air advance again; same
+    // corrected-engine refresh precedent as rounds 73/78/85
+    // (strict-gate, fabric, output-diff, §6/§7 pins and this golden
+    // re-recorded together from the flipped default build). This round
+    // moved the analytical EUI
+    // [74.00399446463592, 115.20549183194221, 140.4909718771871] ->
+    // [60.698137054765, 109.47558035782295, 139.72333408786784]
+    // (−18 %/−5 %/−0.5 %). Nothing tuned.
+    let golden = [60.698137054765, 109.47558035782295, 139.72333408786784];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),
@@ -202,7 +213,12 @@ fn cpu_surrogate_mock_path_eui_is_bit_identical_to_baseline() {
     // (`FLX_R84_PERCLASS`, #3983 §65). Previous goldens (round 78
     // coupled-N flip):
     // [244.9999907038609, 256.9802090722031, 266.941327636793].
-    let golden = [237.20858313258188, 252.24156042826417, 263.7616804309977];
+    // Re-recorded 2026-10-22 (loop round 89) with the analytical path
+    // above: ISO §C.3 surface-pool mass share default
+    // (`FLX_R88_PHIST_MASS_SHARE`, #3983 round 89). Previous goldens
+    // (round 85 per-class flip):
+    // [237.20858313258188, 252.24156042826417, 263.7616804309977].
+    let golden = [236.6238139068431, 252.05392915614644, 263.75261896509267];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),

@@ -220,14 +220,28 @@ fn test_electrical_results_match_recorded_baseline() {
     // 0.08457704966616977 -> 0.07889524521217187. PV unchanged; battery
     // still cycles; SoC still 0.1. Genuine physics change, not a tuned
     // constant.
-    const EXPECTED_THERMAL_KWH: f64 = 90.89525579502979724;
-    const EXPECTED_ELECTRICAL_LOAD_KWH: f64 = 30.29841859834327167;
+    //
+    // Re-recorded 2026-10-22 (loop round 89): the ISO 13790 §C.3
+    // surface-pool mass share promoted to the engine default
+    // (`FLX_R88_PHIST_MASS_SHARE`, Alex-directed 2026-10-22 14:57 ET,
+    // round-88 arm #4543) changed the 5R1C advance again. Thermal
+    // 90.89525579502979724 -> 91.03243793720206156 kWh; electrical load
+    // 30.29841859834327167 -> 30.34414597906735267 kWh (thermal/3);
+    // grid import 17.70933307992547512 -> 17.75529617272509597 kWh;
+    // peak net demand 0.81848002062825786 -> 0.81835574092125685 kW;
+    // battery charge 1.49900965903126360 -> 1.48987563680459334 and
+    // discharge 5.49900965903126249 -> 5.48987563680459356; export
+    // 0.07889524521217187 -> 0.07841450720024182. PV unchanged; battery
+    // still cycles; SoC still 0.1. Genuine physics change, not a tuned
+    // constant.
+    const EXPECTED_THERMAL_KWH: f64 = 91.03243793720206156;
+    const EXPECTED_ELECTRICAL_LOAD_KWH: f64 = 30.34414597906735267;
     const EXPECTED_PV_KWH: f64 = 8.92391297937676597;
-    const EXPECTED_BATTERY_CHARGE_KWH: f64 = 1.49900965903126360;
-    const EXPECTED_BATTERY_DISCHARGE_KWH: f64 = 5.49900965903126249;
-    const EXPECTED_GRID_IMPORT_KWH: f64 = 17.70933307992547512;
-    const EXPECTED_GRID_EXPORT_KWH: f64 = 0.07889524521217187;
-    const EXPECTED_PEAK_NET_DEMAND_KW: f64 = 0.81848002062825786;
+    const EXPECTED_BATTERY_CHARGE_KWH: f64 = 1.48987563680459334;
+    const EXPECTED_BATTERY_DISCHARGE_KWH: f64 = 5.48987563680459356;
+    const EXPECTED_GRID_IMPORT_KWH: f64 = 17.75529617272509597;
+    const EXPECTED_GRID_EXPORT_KWH: f64 = 0.07841450720024182;
+    const EXPECTED_PEAK_NET_DEMAND_KW: f64 = 0.81835574092125685;
     const EXPECTED_FINAL_SOC_FRACTION: f64 = 0.1;
 
     let tol = 1e-9;
