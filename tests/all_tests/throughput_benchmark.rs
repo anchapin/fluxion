@@ -17,6 +17,12 @@ use std::time::Instant;
 
 const RELEASE_GATE_THROUGHPUT: f64 = 150.0;
 
+/// Absolute pop-100 floor for [`test_batch_oracle_throughput_100`], mirrored
+/// from `release_gates.yaml` (`benchmark.batch_oracle_pop100.
+/// min_configs_per_sec`, Issue #4534). The YAML file is the source of truth;
+/// [`test_batch_oracle_pop100_floor_matches_yaml`] fails when the two drift.
+const BATCH_ORACLE_POP100_FLOOR_FALLBACK: f64 = 10.0;
+
 fn create_single_zone_model() -> ThermalModel<VectorField> {
     let mut model = ThermalModel::<VectorField>::new(1);
     model.solar.window_u_value = 1.5;
@@ -140,9 +146,15 @@ fn test_batch_oracle_throughput_1000() {
 
 /// Small batch throughput test - verifies performance on smaller populations.
 ///
-/// Small batches have higher per-config overhead. Using the original threshold
-/// of 50 configs/sec which was the established CI baseline before the
-/// release gate was created.
+/// Small batches have higher per-config overhead. The absolute floor lives in
+/// `release_gates.yaml` (`benchmark.batch_oracle_pop100.min_configs_per_sec`)
+/// and is machine-fair per #4526/#4527: the recorded absolute value scales
+/// DOWN only, keyed on an in-run calibration (burst + sustained) so one floor
+/// serves both the 12-core calibration reference and the smaller nightly
+/// perf-lane runner (Issue #4534: the previous hard-coded "original CI
+/// baseline" 50 configs/sec predated the round-78 coupled single-N flip and
+/// the round-85 per-class mass advance, and the nightly runner measured
+/// 12.36 configs/sec against it on run 39705410679).
 #[test]
 #[ignore = "awaiting #3957"]
 fn test_batch_oracle_throughput_100() {
@@ -151,16 +163,63 @@ fn test_batch_oracle_throughput_100() {
 
     let (throughput, count, _) = measure_throughput(&oracle, &population);
 
+    let absolute_floor = pop100_floor_from_yaml();
+    #[cfg(not(tarpaulin))]
+    let effective_floor = crate::hybrid_perf_regression::machine_fair_floor(absolute_floor);
+    #[cfg(tarpaulin)]
+    let effective_floor = absolute_floor * 0.1;
     println!(
-        "Small batch (100) throughput: {:.2} configs/sec",
-        throughput
+        "Small batch (100) throughput: {:.2} configs/sec (machine scale {:.3}, effective floor {:.0})",
+        throughput,
+        crate::hybrid_perf_regression::machine_scale_once(),
+        effective_floor,
     );
 
     assert_eq!(count, 100);
     assert!(
-        throughput >= 50.0,
-        "Small batch throughput {:.2} configs/sec is below 50 configs/sec (original CI baseline)",
-        throughput
+        throughput >= effective_floor,
+        "Small batch throughput {:.2} configs/sec is below the machine-fair floor {:.0} \
+         (release_gates.yaml benchmark.batch_oracle_pop100.min_configs_per_sec; Issue #4534). \
+         A breach is either a genuine pop-100 throughput regression or a machine slower \
+         than the in-run calibration measured - investigate per-config overhead in \
+         BatchOracle::evaluate_population before merging.",
+        throughput,
+        effective_floor,
+    );
+}
+
+/// Reads `benchmark.batch_oracle_pop100.min_configs_per_sec` from
+/// `release_gates.yaml`. Returns the fallback when the file is absent or
+/// malformed (mirrors the #4527 hybrid floor readers).
+fn pop100_floor_from_yaml() -> f64 {
+    let content = match std::fs::read_to_string("release_gates.yaml") {
+        Ok(s) => s,
+        Err(_) => return BATCH_ORACLE_POP100_FLOOR_FALLBACK,
+    };
+    let yaml = match serde_yaml::from_str::<serde_yaml::Value>(&content) {
+        Ok(v) => v,
+        Err(_) => return BATCH_ORACLE_POP100_FLOOR_FALLBACK,
+    };
+    let v = yaml
+        .get("benchmark")
+        .and_then(|b| b.get("batch_oracle_pop100"))
+        .and_then(|s| s.get("min_configs_per_sec"))
+        .and_then(|v| v.as_f64());
+    v.unwrap_or(BATCH_ORACLE_POP100_FLOOR_FALLBACK)
+}
+
+/// Drift guard for [`BATCH_ORACLE_POP100_FLOOR_FALLBACK`] (Issue #4534,
+/// same discipline as the #4527 hybrid floor-match guards).
+#[test]
+fn test_batch_oracle_pop100_floor_matches_yaml() {
+    let yaml_floor = pop100_floor_from_yaml();
+    assert!(
+        (yaml_floor - BATCH_ORACLE_POP100_FLOOR_FALLBACK).abs() < 1e-9,
+        "BATCH_ORACLE_POP100_FLOOR_FALLBACK ({}) does not match release_gates.yaml \
+         benchmark.batch_oracle_pop100.min_configs_per_sec ({}). The YAML is the source \
+         of truth - update the constant to match.",
+        BATCH_ORACLE_POP100_FLOOR_FALLBACK,
+        yaml_floor,
     );
 }
 
