@@ -1550,6 +1550,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 let h_tr_3_all = self.0.conduction.derived_h_tr_3.as_ref();
                 let h_is_all = self.0.conduction.h_tr_is.as_ref();
                 let h_ms_all = self.0.conduction.h_tr_ms.as_ref();
+                // [R84 HARNESS — flag read for the per-class coupled
+                // sub-step mass advance (see the arm block below). Flag
+                // off: this call reads one env var and changes nothing.]
+                let r84_perclass =
+                    crate::util::env_bool::env_bool("FLX_R84_PERCLASS", false);
                 for i in 0..self.0.hvac.num_zones {
                     let t_ext = if r76_has_prev {
                         let p = r76_sol_air_prev_ref[i];
@@ -1577,16 +1582,128 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     let t_i_sub = scratch.air_node_t_air.as_ref()[i];
                     let h_tr_em_i = h_tr_em_zone.get(i).copied().unwrap_or(0.0);
                     let h_tr3_arg_i = h_air_mass_i + h_vent_i;
-                    let tm_new = crank_nicolson_iso13790(
-                        r76_mass[i],
-                        dt_m,
-                        cm_ref[i],
-                        h_tr3_arg_i,
-                        h_tr_em_i,
-                        t_ext,
-                        t_i_sub,
-                        phi_m_ref_early[i],
-                    )?;
+                    // [R84 HARNESS — per-class coupled sub-step mass
+                    // advance (env-gated, FLX_R84_PERCLASS, loop round
+                    // 84). Round 83 proved the hourly per-class mass
+                    // advance is discarded on the coupled-N default: the
+                    // R76 sub-stepped lumped mass state (r76_final)
+                    // overrides it, so the Table 5-138 routing class is
+                    // unreachable, not refuted. This arm moves the
+                    // per-class decomposition INTO the sub-step: each
+                    // zone's mass advances per class at dt_m with the
+                    // same Crank-Nicolson integrator the lumped path
+                    // uses — per-class capacitance cm_c (wall/roof/floor
+                    // constructions, [cm; 3] fallback), per-class
+                    // exterior driving (cls_g/cls_t R66 aggregates,
+                    // floor class exterior-free), interior coupling
+                    // h_am_c = series h_ms_c*h_is_c/(h_ms_c + h_is_c),
+                    // or the degenerate h_air_mass*w fallback when
+                    // H_tr,3 = 0, each partitioned by area share w
+                    // (sum w = 1 over classes, so coupling, phi_m and
+                    // night-vent partition energy-conservingly). The
+                    // sub-step end state is the capacitance-weighted
+                    // mean sum (cm_c/cm_sum)*tm_c. Disclosed
+                    // simplifications vs. the hourly D5 route: the
+                    // sub-step uses the algebraic-series interior
+                    // coupling (no t_s-first surface-node sub-state),
+                    // and the zone-level sol-air midpoint ramp source is
+                    // not carried per class — class exterior temps are
+                    // the current-hour cls_t values. The R77 folded
+                    // air-side term stays the lumped aggregate
+                    // recording (unchanged), so the arm isolates the
+                    // mass state. Flag off: bit-identical to the
+                    // coupled-N default.]
+                    let tm_new = if r84_perclass && ps_enabled {
+                        match r66_cls[i] {
+                            Some((cls_g, cls_t_c, cls_area, _cls_beam))
+                                if cls_area.iter().sum::<f64>() > 1e-9 =>
+                            {
+                                let total_area: f64 = cls_area.iter().sum();
+                                let cond = &self.0.conduction;
+                                let grab = |o: &Option<T>| {
+                                    o.as_ref().and_then(|v| v.as_ref().get(i).copied())
+                                };
+                                let (cm_w, cm_r, cm_f) = (
+                                    grab(&cond.cm_wall),
+                                    grab(&cond.cm_roof),
+                                    grab(&cond.cm_floor),
+                                );
+                                let (ms_w, ms_r, ms_f) = (
+                                    grab(&cond.h_tr_ms_wall),
+                                    grab(&cond.h_tr_ms_roof),
+                                    grab(&cond.h_tr_ms_floor),
+                                );
+                                let (cls_cm, cls_ms) =
+                                    match (cm_w, cm_r, cm_f, ms_w, ms_r, ms_f) {
+                                        (Some(a), Some(b), Some(c), Some(d), Some(e), Some(f)) => {
+                                            ([a, b, c], [d, e, f])
+                                        }
+                                        _ => (
+                                            [cm_ref[i]; 3],
+                                            [h_ms_all.get(i).copied().unwrap_or(0.0); 3],
+                                        ),
+                                    };
+                                let h_is_i = h_is_all.get(i).copied().unwrap_or(0.0);
+                                let degenerate = h_tr_3_i <= 0.0;
+                                let cm_sum: f64 = cls_cm.iter().sum();
+                                let phi_m_i = phi_m_ref_early[i];
+                                let mut tm_w = 0.0;
+                                for c in 0..3 {
+                                    let w = cls_area[c] / total_area;
+                                    if w <= 0.0 {
+                                        continue;
+                                    }
+                                    let (h_em_c, t_ext_c) = if c == 2 {
+                                        (0.0, outdoor_temp)
+                                    } else {
+                                        (cls_g[c], cls_t_c[c])
+                                    };
+                                    let h_ms_c = cls_ms[c];
+                                    let h_is_c = h_is_i * w;
+                                    let h_am_c = if degenerate {
+                                        h_air_mass_i * w
+                                    } else if h_ms_c + h_is_c > 0.0 {
+                                        h_ms_c * h_is_c / (h_ms_c + h_is_c)
+                                    } else {
+                                        h_ms_c
+                                    };
+                                    let tm_c_new = crank_nicolson_iso13790(
+                                        r76_mass[i],
+                                        dt_m,
+                                        cls_cm[c],
+                                        h_am_c + h_vent_i * w,
+                                        h_em_c,
+                                        t_ext_c,
+                                        t_i_sub,
+                                        phi_m_i * w,
+                                    )?;
+                                    tm_w += (cls_cm[c] / cm_sum) * tm_c_new;
+                                }
+                                tm_w
+                            }
+                            _ => crank_nicolson_iso13790(
+                                r76_mass[i],
+                                dt_m,
+                                cm_ref[i],
+                                h_tr3_arg_i,
+                                h_tr_em_i,
+                                t_ext,
+                                t_i_sub,
+                                phi_m_ref_early[i],
+                            )?,
+                        }
+                    } else {
+                        crank_nicolson_iso13790(
+                            r76_mass[i],
+                            dt_m,
+                            cm_ref[i],
+                            h_tr3_arg_i,
+                            h_tr_em_i,
+                            t_ext,
+                            t_i_sub,
+                            phi_m_ref_early[i],
+                        )?
+                    };
                     // [Round 78] record this sub-step's linear coefficients
                     // (same branch the integrator took: CN when its
                     // denominator is positive, its forward-Euler fallback
