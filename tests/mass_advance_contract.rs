@@ -565,3 +565,159 @@ fn r88_share_lumped_site_pairs() {
         "lumped-site flag-on air-node state identical to flag-off: the arm is inert (off={a_off:.6} on={a_on:.6})"
     );
 }
+
+// Slice 4 (loop round 89): mass-node time-coverage alignment
+// ==========================================================
+//
+// Premise (code-verified this round, Item 2a): in the coupled sub-step
+// loop the mass advance forms its Crank–Nicolson coefficients at
+// dt_m = dt_sub / mass_sub (N=12 ⇒ 25 s) but executes exactly ONE CN
+// step per sub-step — there is no inner loop over mass_sub — so the mass
+// node integrates N·25 s = 300 s of physics per hour (1/12 of real time)
+// while the air node integrates the full 3600 s. The R77 scheme's
+// documented N→∞ limit (the continuous-time 5R1C solution) therefore
+// does NOT hold for the mass state: its limit depends on N. The
+// FLX_R89_MASS_DT_ALIGN now DEFAULTS to the fix (loop round 89 Item-2a
+// flip, Alex-directed standing rule): the default runs mass_sub composed
+// CN applications at dt_m = dt_sub/mass_sub — full 3600 s/hour coverage
+// at the engine's established 25 s step accuracy, with the composed
+// affine pair recorded so the checker mirror stays exact by
+// construction. Harness values kept for archaeology: "0" = legacy
+// 1/12-coverage route, "1" = coarse single-step full coverage,
+// "2" = explicit inner-loop default. The round-89 A/B/C decomposition
+// (contract 14) showed coarse ≈ inner-loop to ~0.4-1.4% of the movement:
+// the fix is coverage physics, not step-size numerics.
+//
+// Contracts pinned here (record pins, not validator bands):
+// 1. flag-off bit-identity — unset vs falsy "0" step to identical states;
+// 2. non-inertness with the coverage direction pin — flag-on mass state
+//    differs from flag-off under solar + outdoor driving;
+// 3. convergence — at N=12 the aligned mass state is strictly closer to
+//    the N=96 aligned refinement limit than the unaligned N=12 state is
+//    (the unaligned operator's mass coverage shrinks as 3600/N per hour,
+//    so its own N→∞ limit is a frozen mass, not the continuous solution).
+
+/// Run the spec solar model at a given coupled N with the R89 alignment
+/// flag in a given state, returning the final mass temperatures. Holds
+/// ENV_LOCK for the whole run; restores both variables afterwards.
+fn r89_mass_state_at(align: Option<&str>, n: usize, hours: usize) -> Vec<f64> {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let prev_align = std::env::var("FLX_R89_MASS_DT_ALIGN").ok();
+    let prev_n = std::env::var("FLX_R77_COUPLED_N").ok();
+    match align {
+        Some(v) => std::env::set_var("FLX_R89_MASS_DT_ALIGN", v),
+        None => std::env::remove_var("FLX_R89_MASS_DT_ALIGN"),
+    }
+    std::env::set_var("FLX_R77_COUPLED_N", n.to_string());
+    let mut m = spec_model_solar();
+    m.solar.solar_gains = VectorField::from_scalar(R88_SOLAR_WM2, m.hvac.num_zones);
+    let dt = 3600.0;
+    for h in 0..hours {
+        m.step_physics(h, 12.0, dt);
+    }
+    match prev_n {
+        Some(v) => std::env::set_var("FLX_R77_COUPLED_N", v),
+        None => std::env::remove_var("FLX_R77_COUPLED_N"),
+    }
+    match prev_align {
+        Some(v) => std::env::set_var("FLX_R89_MASS_DT_ALIGN", v),
+        None => std::env::remove_var("FLX_R89_MASS_DT_ALIGN"),
+    }
+    (0..m.hvac.num_zones).map(|z| m.mass.mass_temperatures[z]).collect::<Vec<f64>>()
+}
+
+#[test]
+/// Contract 11 — default polarity bit-identity (re-pinned by the Item-2a
+/// flip): with FLX_R89_MASS_DT_ALIGN unset and with its explicit "2"
+/// token, the model steps to bit-identical mass states (unset takes the
+/// inner-loop full-coverage default; any visible difference means the
+/// mode gate leaks arithmetic). The falsy "0" token is the LEGACY
+/// 1/12-coverage route and must differ (contract 12).
+fn r89_align_off_is_bit_identical() {
+    let unset = r89_mass_state_at(None, 12, 48);
+    let explicit_default = r89_mass_state_at(Some("2"), 12, 48);
+    assert_eq!(
+        unset, explicit_default,
+        "default mass state differs between unset and the explicit \"2\" token"
+    );
+}
+
+#[test]
+/// Contract 12 — non-inertness with the coverage direction pin: with the
+/// arm on, the mass node integrates the full sub-step interval, so under
+/// sustained solar + outdoor driving the aligned mass state must differ
+/// from the unaligned one (the unaligned mass receives only 1/12 of real
+/// time).
+fn r89_align_changes_mass_state() {
+    let off = r89_mass_state_at(Some("0"), 12, 48);
+    let on = r89_mass_state_at(None, 12, 48);
+    let max_delta = off
+        .iter()
+        .zip(on.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0_f64, f64::max);
+    assert!(
+        max_delta > 1e-9,
+        "aligned mass state identical to unaligned: the arm is inert (max |ΔT_m| = {max_delta:.6e})"
+    );
+}
+
+#[test]
+/// Contract 13 — convergence (re-anchored to the flipped default): the
+/// default (inner-loop full-coverage) N=12 mass state is strictly closer
+/// to the default N=96 refinement limit than the legacy ("0")
+/// 1/12-coverage N=12 state is. This is the consistency proof the R77
+/// scheme's docstring claims: only the full-coverage operator's limit is
+/// the continuous system for BOTH nodes.
+fn r89_align_converges_to_refined_limit() {
+    let align12 = r89_mass_state_at(None, 12, 48);
+    let align96 = r89_mass_state_at(None, 96, 48);
+    let off12 = r89_mass_state_at(Some("0"), 12, 48);
+    let aligned_err = align12
+        .iter()
+        .zip(align96.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0_f64, f64::max);
+    let unaligned_err = off12
+        .iter()
+        .zip(align96.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0_f64, f64::max);
+    assert!(
+        aligned_err < unaligned_err,
+        "aligned N=12 not closer to the N=96 limit than unaligned: aligned={aligned_err:.6e} unaligned={unaligned_err:.6e}"
+    );
+}
+
+
+#[test]
+/// Contract 14 — decomposition pin (round-89 A/B/C experiment): the
+/// coarse single-step full-coverage variant ("1") and the default
+/// inner-loop full-coverage variant (unset) agree closely relative to
+/// their common distance from the legacy 1/12-coverage route — i.e. the
+/// measured movement is time-coverage PHYSICS, not step-size numerics.
+/// Threshold 10% of the legacy delta: measured ~0.4-1.4% across the
+/// strict rows (600 H 1.4%, 600FF Tmin 0.4%).
+fn r89_coverage_physics_dominates_step_size() {
+    let coarse = r89_mass_state_at(Some("1"), 12, 48);
+    let inner = r89_mass_state_at(None, 12, 48);
+    let legacy = r89_mass_state_at(Some("0"), 12, 48);
+    let bc = coarse
+        .iter()
+        .zip(inner.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0_f64, f64::max);
+    let lc = legacy
+        .iter()
+        .zip(inner.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0_f64, f64::max);
+    assert!(
+        lc > 1e-9,
+        "coverage fix inert in this configuration (max |ΔT_m| = {lc:.3e})"
+    );
+    assert!(
+        bc < 0.10 * lc,
+        "coarse vs inner-loop gap not small relative to the coverage movement: B-C={bc:.6e} legacy-C={lc:.6e}"
+    );
+}
