@@ -17,7 +17,10 @@
 //! - contracts pinned here (through the public `step_physics` seam, no
 //!   internals): equilibrium invariance, relaxation bounds (no overshoot),
 //!   conductance monotonicity, and per-class-vs-lumped agreement under
-//!   uniform night driving.
+//!   uniform night driving. Slice 2 (loop round 86) adds the night-vent
+//!   coupling contracts: vent-off inertness, vent-on monotone approach
+//!   toward outdoor, and per-class-vs-lumped agreement under live vent
+//!   driving (see the slice-2 header below the slice-1 contracts).
 //!
 //! These are record pins, not validator bands: a violation means the mass
 //! advance moved and must be re-examined, never tuned around.
@@ -28,9 +31,13 @@ use fluxion::sim::engine::ThermalModel;
 use std::sync::Mutex;
 
 // Issue #3453 convention: this suite flips `FLX_R84_PERCLASS` in-process
-// (contract 4's A/B), so every env mutation is serialized through this
-// file-local mutex and the mutating test body holds the guard for its
-// whole lifetime.
+// (contracts 4 and 7 A/B the flag), and the engine reads the flag PER STEP
+// (`step_physics_5r1c`), so every stepping test — not only the mutating
+// ones — observes another test's mutation unless the whole suite
+// serializes. Every test in this file therefore holds this file-local
+// mutex for its entire lifetime (loop round 86: the parallel run could
+// interleave a flipping and a stepping test and fail contracts 3/5 with
+// cross-contaminated state; single-threaded runs were always green).
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 /// A spec-built Case 600 baseline (per-class construction tensors present,
@@ -85,6 +92,7 @@ fn hand_rolled_model() -> ThermalModel<VectorField> {
 /// (lumped or per-class) breaks the affine map's `|a| < 1` through the real
 /// path.
 fn mass_advance_equilibrium_is_invariant() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dt = 3600.0;
     for (label, make) in [
         ("lumped", hand_rolled_model as fn() -> _),
@@ -128,6 +136,7 @@ fn mass_advance_equilibrium_is_invariant() {
 /// same bound at hourly dt). This is the contract the tensor-less
 /// replicate-fallback violated by tens of kelvin in the round-85 A/B.
 fn mass_advance_relaxation_is_bounded() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dt = 3600.0;
     for (label, make) in [
         ("lumped", hand_rolled_model as fn() -> _),
@@ -163,6 +172,7 @@ fn mass_advance_relaxation_is_bounded() {
 /// temperature. Pins that the mass advance consumes `h_tr_em`-side driving
 /// with the expected sign.
 fn mass_advance_is_monotone_in_conductance() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dt = 3600.0;
     let mut base = spec_model_night();
     for h in 0..4 {
@@ -190,23 +200,187 @@ fn mass_advance_is_monotone_in_conductance() {
 /// structural divergences (the tensor-less path moved states by tens of K),
 /// not discretization noise.
 fn per_class_arm_agrees_with_lumped_under_uniform_driving() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dt = 3600.0;
     let mut perclass = spec_model_night();
     for h in 0..4 {
         perclass.step_physics(h, 24.0, dt);
     }
     let mut lumped = spec_model_night();
-    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::set_var("FLX_R84_PERCLASS", "0");
     for h in 0..4 {
         lumped.step_physics(h, 24.0, dt);
     }
     std::env::remove_var("FLX_R84_PERCLASS");
-    drop(_env_guard);
     let a = perclass.mass.mass_temperatures[0];
     let b = lumped.mass.mass_temperatures[0];
     assert!(
         (a - b).abs() < 0.5,
         "per-class and lumped mass advances diverged under uniform driving: {a} vs {b}"
+    );
+}
+
+// =============================================================================
+// Blitz slice 2 (loop round 86) — night-vent coupling contract.
+//
+// Component input/output inventory (slice 2 scope): `hvac.night_ventilation`
+// (`NightVentilation`, fluxion-core; fan_capacity m³/h, operating_hours) →
+// per-step `h_ve_night = fan·ρ·cp/3600` (ρ=1.2, cp=1005 fixed) when
+// `is_active_at_hour` fires, routed at TWO sites on the 5R1C step: the
+// air-side conductance `h_ext += h_ve_night` (Issue #824, the ISO-13790
+// zone-air exchange ASHRAE 140 Table 5-160 specifies) and the mass-side
+// `h_vent_mass_zone` added to the sub-step h3 coupling partitioned by area
+// share w (Issues #1898/#1693 lineage; #821's own note records that setting
+// it to 0 "removes the double-counting"). These tests pin the routing as it
+// ships, per class and lumped; the magnitude audit lives in
+// docs/investigations (loop round 86). Window (18, 7) is inactive during
+// hours 7..=17; window (0, 0) is active every hour (start<=h||h<end).
+// =============================================================================
+
+/// Free-floating spec fixture: solar/loads neutralized AND HVAC disabled
+/// (setpoints outside any band, capacities 0) so the driving is the outdoor
+/// dry-bulb plus the night-vent routing alone — the run_blind_free_float
+/// fixture pattern.
+fn spec_model_free_float(
+    vent: Option<fluxion::validation::NightVentilation>,
+) -> ThermalModel<VectorField> {
+    let mut m = spec_model_night();
+    m.setpoints.heating_setpoint = -999.0;
+    m.setpoints.cooling_setpoint = 999.0;
+    m.hvac.hvac_heating_capacity = 0.0;
+    m.hvac.hvac_cooling_capacity = 0.0;
+    m.hvac.night_ventilation = vent;
+    m
+}
+
+#[test]
+/// Contract 5 — vent-off inertness: outside the schedule window (and at zero
+/// fan capacity inside it) the night-vent routing must contribute exactly
+/// nothing: both live coupling sites add 0, so the step must be numerically
+/// identical to a model with no night ventilation configured.
+fn night_vent_off_is_inert() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dt = 3600.0;
+    // (a) schedule (18,7): hours 8..=14 are inactive — every coupling zero.
+    let mut off = spec_model_free_float(None);
+    let mut scheduled = spec_model_free_float(Some(fluxion::validation::NightVentilation::new(
+        1400.0, 18, 7,
+    )));
+    for h in 8..=14 {
+        off.step_physics(h, 5.0, dt);
+        scheduled.step_physics(h, 5.0, dt);
+        let a = off.setpoints.temperatures[0];
+        let b = scheduled.setpoints.temperatures[0];
+        assert!(
+            a == b,
+            "inactive-window hour {h} must be inert (off={a}, scheduled={b})"
+        );
+        let ma = off.mass.mass_temperatures[0];
+        let mb = scheduled.mass.mass_temperatures[0];
+        assert!(
+            ma == mb,
+            "inactive-window hour {h} must leave the mass advance inert (off={ma}, scheduled={mb})"
+        );
+    }
+    // (b) zero fan capacity under an always-active window: h_ve_night = 0.
+    let mut zero_fan =
+        spec_model_free_float(Some(fluxion::validation::NightVentilation::new(0.0, 0, 0)));
+    let mut base = spec_model_free_float(None);
+    for h in 0..=6 {
+        base.step_physics(h, 5.0, dt);
+        zero_fan.step_physics(h, 5.0, dt);
+        assert!(
+            base.setpoints.temperatures[0] == zero_fan.setpoints.temperatures[0],
+            "zero-capacity hour {h} must be inert"
+        );
+    }
+}
+
+#[test]
+/// Contract 6 — vent-on monotone toward outdoor: with the fan running on a
+/// cold fixed night, the free-running zone must cool strictly faster than
+/// the identical model without ventilation, monotonically, and stay inside
+/// the outdoor-temperature hull (ventilation exchanges with outdoor air; no
+/// route may overshoot past it). Pins the sign of both live coupling sites
+/// through the real path.
+fn night_vent_on_pulls_toward_outdoor() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dt = 3600.0;
+    let mut vented = spec_model_free_float(Some(fluxion::validation::NightVentilation::new(
+        1400.0, 0, 0,
+    )));
+    let mut still = spec_model_free_float(None);
+    for h in 0..=3 {
+        vented.step_physics(h, 24.0, dt);
+        still.step_physics(h, 24.0, dt);
+    }
+    let mut prev_zone = vented.setpoints.temperatures[0];
+    let mut prev_mass = vented.mass.mass_temperatures[0];
+    for h in 4..=11 {
+        vented.step_physics(h, -10.0, dt);
+        still.step_physics(h, -10.0, dt);
+        let zone = vented.setpoints.temperatures[0];
+        let mass = vented.mass.mass_temperatures[0];
+        assert!(
+            zone <= prev_zone + 1e-9,
+            "vented zone must cool monotonically at hour {h} (prev={prev_zone}, now={zone})"
+        );
+        assert!(
+            mass <= prev_mass + 1e-9,
+            "vented mass must cool monotonically at hour {h} (prev={prev_mass}, now={mass})"
+        );
+        assert!(
+            zone >= -10.0 - 1e-6 && mass >= -10.0 - 1e-6,
+            "vent step left the outdoor hull at hour {h} (zone={zone}, mass={mass})"
+        );
+        let calm = still.setpoints.temperatures[0];
+        assert!(
+            zone < calm,
+            "vented zone must be strictly cooler than unventilated at hour {h} (vented={zone}, still={calm})"
+        );
+        prev_zone = zone;
+        prev_mass = mass;
+    }
+}
+
+#[test]
+/// Contract 7 — per-class vs lumped vent conservation: under live night-vent
+/// driving the per-class composite arm and the lumped sub-step advance must
+/// track the same state (the w-partition hands each class a share of the
+/// same total coupling, Σw = 1, so they discretize the same physics, not two
+/// models). Generous 0.5 K hourly tolerance — this catches structural
+/// divergence in the vent partition, not discretization noise. The strict
+/// Σw conservation identity itself is engine-internal (area shares); through
+/// the public seam it is observable as this agreement.
+fn per_class_arm_agrees_with_lumped_under_night_vent() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dt = 3600.0;
+    let mut perclass = spec_model_free_float(Some(fluxion::validation::NightVentilation::new(
+        1400.0, 0, 0,
+    )));
+    for h in 0..=2 {
+        perclass.step_physics(h, 10.0, dt);
+    }
+    let mut lumped = spec_model_free_float(Some(fluxion::validation::NightVentilation::new(
+        1400.0, 0, 0,
+    )));
+    std::env::set_var("FLX_R84_PERCLASS", "0");
+    for h in 0..=2 {
+        lumped.step_physics(h, 10.0, dt);
+    }
+    std::env::remove_var("FLX_R84_PERCLASS");
+    let mut worst_mass = 0.0_f64;
+    let mut worst_zone = 0.0_f64;
+    for h in 3..=8 {
+        perclass.step_physics(h, -10.0, dt);
+        lumped.step_physics(h, -10.0, dt);
+        let dm = (perclass.mass.mass_temperatures[0] - lumped.mass.mass_temperatures[0]).abs();
+        let dz = (perclass.setpoints.temperatures[0] - lumped.setpoints.temperatures[0]).abs();
+        worst_mass = worst_mass.max(dm);
+        worst_zone = worst_zone.max(dz);
+    }
+    assert!(
+        worst_mass < 0.5 && worst_zone < 0.5,
+        "per-class and lumped vent routing diverged: worst mass {worst_mass:.4} K, worst zone {worst_zone:.4} K"
     );
 }
