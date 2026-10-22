@@ -1361,15 +1361,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     rd88(&cond88.h_tr_ms_roof, i),
                     rd88(&cond88.h_tr_ms_floor, i),
                 );
-                match (
-                    cm_w,
-                    cm_r,
-                    cm_f,
-                    ms_w,
-                    ms_r,
-                    ms_f,
-                    r66_cls[i].as_ref(),
-                ) {
+                match (cm_w, cm_r, cm_f, ms_w, ms_r, ms_f, r66_cls[i].as_ref()) {
                     (
                         Some(_a),
                         Some(_b),

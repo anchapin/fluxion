@@ -455,13 +455,11 @@ fn r88_share_off_is_bit_identical() {
     let n88 = unset.hvac.num_zones;
     for z in 0..n88 {
         assert_eq!(
-            unset.mass.air_temperatures[z],
-            falsy.mass.air_temperatures[z],
+            unset.mass.air_temperatures[z], falsy.mass.air_temperatures[z],
             "flag-off air-node state differs between unset and falsy token (zone {z})"
         );
         assert_eq!(
-            unset.mass.mass_temperatures[z],
-            falsy.mass.mass_temperatures[z],
+            unset.mass.mass_temperatures[z], falsy.mass.mass_temperatures[z],
             "flag-off mass state differs between unset and falsy token (zone {z})"
         );
     }
