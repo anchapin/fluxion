@@ -193,7 +193,13 @@ fn analytical_path_eui_is_bit_identical_to_baseline() {
     // (`FLX_R91_SOL2ST`, §LIMIT-28 round-91 record) moves the analytical
     // harness EUI 84.03554103745084 -> 106.71692499332153 (+27.0 %), 134.65987299248584 -> 155.05408015184670 (+15.1 %),
     // 162.09418131388989 -> 182.35388767854468 (+12.5 %). Nothing tuned.
-    let golden = [106.71692499332153, 155.0540801518467, 182.35388767854468];
+    // Re-recorded 2026-10-23 (loop round 91, flip 3): the Table 5-138
+    // per-class solar routing default (`FLX_R91_T5138`, §LIMIT-28
+    // round-91 record) moves the analytical harness EUI
+    // 106.71692499332153 -> 45.72796364307019 (-57.2 %),
+    // 155.05408015184670 -> 115.14238843442617 (-25.7 %),
+    // 182.35388767854468 -> 152.66914454501180 (-16.3 %). Nothing tuned.
+    let golden = [45.72796364307019, 115.14238843442617, 152.6691445450118];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),
@@ -258,7 +264,15 @@ fn cpu_surrogate_mock_path_eui_is_bit_identical_to_baseline() {
     // (`FLX_R91_SOL2ST`, §LIMIT-28 round-91 record) moves the
     // CPU-surrogate harness EUI 238.29462509629130 -> 238.69405895505369 (+0.17 %), 253.05417431579534 ->
     // 253.18250365965369 (+0.05 %), 264.43970946521875 -> 264.44683902603862 (+0.003 %). Nothing tuned.
-    let golden = [238.6940589550537, 253.1825036596537, 264.4468390260386];
+    // Re-recorded 2026-10-23 (loop round 91, flip 3): the Table 5-138
+    // per-class solar routing default (`FLX_R91_T5138`, §LIMIT-28
+    // round-91 record) moves the CPU-surrogate harness EUI
+    // 238.69405895505369 -> 235.94384629199757 (-1.15 %),
+    // 253.18250365965369 -> 251.56469278055977 (-0.64 %),
+    // 264.44683902603862 -> 263.33598777423884 (-0.42 %) - the surrogate
+    // reads the lumped zone state, so the class-partition move reaches it
+    // only through the coupled air/mass feedback. Nothing tuned.
+    let golden = [235.94384629199757, 251.56469278055977, 263.33598777423884];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),

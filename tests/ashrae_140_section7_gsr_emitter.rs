@@ -1267,15 +1267,27 @@ fn section7_headline_value_pins() {
     // bands — recorded, not tuned. Values cross-check the re-recorded
     // strict_energy_gate_baseline.json (_doc_round91b).
     // 900/900FF/950FF unchanged (9R4C inert control).
+    // Re-recorded 2026-10-23 (loop round 91, flip 3): the Table 5-138
+    // per-class solar routing promoted to the engine default
+    // (`FLX_R91_T5138`, §5.2.1.12.2 constant interior-distribution
+    // fractions mapped to surface classes, renormalized over the 0.9664
+    // surface-row sum; §LIMIT-28 round-91 record) moved the 600-family
+    // rows: 600 6.915/2.444 -> 4.692/5.962 MWh (both re-enter their
+    // bands), 600FF -13.07/44.83 -> -12.22/55.06, 650FF -17.77/44.32 ->
+    // -17.16/54.04 (Tmin moves 0.43 K AWAY from the band edge flip 2
+    // left it 0.03 K from). 900/900FF/950FF unchanged (9R4C inert
+    // control). Values cross-check the re-recorded
+    // strict_energy_gate_baseline.json (_doc_round91c) and the re-emitted
+    // data/reference/section7/workflow_results.csv. Nothing tuned.
     let pins: &[(&str, fn(&Section7CaseResult) -> f64, f64)] = &[
-        ("600", |r| r.annual_heating_mwh, 6.915),
-        ("600", |r| r.annual_cooling_mwh, 2.444),
+        ("600", |r| r.annual_heating_mwh, 4.692),
+        ("600", |r| r.annual_cooling_mwh, 5.962),
         ("900", |r| r.annual_heating_mwh, 1.225),
         ("900", |r| r.annual_cooling_mwh, 2.249),
-        ("600FF", |r| r.min_temp_c, -13.07),
-        ("600FF", |r| r.max_temp_c, 44.83),
-        ("650FF", |r| r.min_temp_c, -17.77),
-        ("650FF", |r| r.max_temp_c, 44.32),
+        ("600FF", |r| r.min_temp_c, -12.22),
+        ("600FF", |r| r.max_temp_c, 55.06),
+        ("650FF", |r| r.min_temp_c, -17.16),
+        ("650FF", |r| r.max_temp_c, 54.04),
         ("900FF", |r| r.min_temp_c, -0.26),
         ("900FF", |r| r.max_temp_c, 43.28),
         ("950FF", |r| r.min_temp_c, -15.67),

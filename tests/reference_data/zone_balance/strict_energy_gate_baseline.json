@@ -19,9 +19,9 @@
         3.611,
         4.886
       ],
-      "value_mwh": 6.915,
-      "gap_pct_of_mid": 47.76,
-      "status": "known_fail"
+      "value_mwh": 4.692,
+      "gap_pct_of_mid": 0.00,
+      "status": "pass"
     },
     "case_600_cooling": {
       "published_range_mwh": [
@@ -32,9 +32,9 @@
         4.927,
         6.667
       ],
-      "value_mwh": 2.444,
-      "gap_pct_of_mid": 42.83,
-      "status": "known_fail"
+      "value_mwh": 5.962,
+      "gap_pct_of_mid": 0.00,
+      "status": "pass"
     },
     "case_800_heating": {
       "published_range_mwh": [
@@ -45,9 +45,9 @@
         4.381,
         5.928
       ],
-      "value_mwh": 6.915,
-      "gap_pct_of_mid": 19.15,
-      "status": "known_fail"
+      "value_mwh": 4.692,
+      "gap_pct_of_mid": 0.00,
+      "status": "pass"
     },
     "case_800_cooling": {
       "published_range_mwh": [
@@ -58,8 +58,8 @@
         0.321,
         0.434
       ],
-      "value_mwh": 2.444,
-      "gap_pct_of_mid": 532.45,
+      "value_mwh": 5.962,
+      "gap_pct_of_mid": 1464.37,
       "status": "known_fail"
     },
     "case_810_heating": {
@@ -111,7 +111,7 @@
         2.864
       ],
       "value_mwh": 2.249,
-      "gap_pct_of_mid": 0.0,
+      "gap_pct_of_mid": 0.00,
       "status": "pass"
     },
     "case_920_heating": {
@@ -149,8 +149,8 @@
         0.0,
         0.0
       ],
-      "value_mwh": 0.0,
-      "gap_pct_of_mid": 0.0,
+      "value_mwh": 0.000,
+      "gap_pct_of_mid": 0.00,
       "status": "pass"
     },
     "case_950_cooling": {
@@ -189,7 +189,7 @@
         1.0
       ],
       "value_mwh": 1.273,
-      "gap_pct_of_mid": 31.4,
+      "gap_pct_of_mid": 31.40,
       "status": "known_fail"
     },
     "case_970_heating": {
@@ -228,8 +228,8 @@
         3.68,
         4.978
       ],
-      "value_mwh": 7.592,
-      "gap_pct_of_mid": 60.38,
+      "value_mwh": 5.456,
+      "gap_pct_of_mid": 11.04,
       "status": "known_fail"
     },
     "case_610_cooling": {
@@ -241,8 +241,8 @@
         3.612,
         4.887
       ],
-      "value_mwh": 1.579,
-      "gap_pct_of_mid": 47.84,
+      "value_mwh": 3.475,
+      "gap_pct_of_mid": 3.22,
       "status": "known_fail"
     },
     "case_620_heating": {
@@ -254,8 +254,8 @@
         3.746,
         5.067
       ],
-      "value_mwh": 8.194,
-      "gap_pct_of_mid": 70.96,
+      "value_mwh": 6.411,
+      "gap_pct_of_mid": 30.50,
       "status": "known_fail"
     },
     "case_620_cooling": {
@@ -267,8 +267,8 @@
         3.504,
         4.741
       ],
-      "value_mwh": 2.405,
-      "gap_pct_of_mid": 26.66,
+      "value_mwh": 5.057,
+      "gap_pct_of_mid": 7.67,
       "status": "known_fail"
     },
     "case_630_heating": {
@@ -280,8 +280,8 @@
         4.035,
         5.46
       ],
-      "value_mwh": 8.715,
-      "gap_pct_of_mid": 68.56,
+      "value_mwh": 7.163,
+      "gap_pct_of_mid": 35.87,
       "status": "known_fail"
     },
     "case_630_cooling": {
@@ -293,8 +293,8 @@
         2.4,
         3.247
       ],
-      "value_mwh": 1.832,
-      "gap_pct_of_mid": 20.12,
+      "value_mwh": 3.653,
+      "gap_pct_of_mid": 14.38,
       "status": "known_fail"
     },
     "case_640_heating": {
@@ -306,9 +306,9 @@
         2.161,
         2.924
       ],
-      "value_mwh": 4.401,
-      "gap_pct_of_mid": 58.09,
-      "status": "known_fail"
+      "value_mwh": 2.699,
+      "gap_pct_of_mid": 0.00,
+      "status": "pass"
     },
     "case_640_cooling": {
       "published_range_mwh": [
@@ -319,9 +319,9 @@
         4.73,
         6.4
       ],
-      "value_mwh": 2.444,
-      "gap_pct_of_mid": 41.08,
-      "status": "known_fail"
+      "value_mwh": 5.962,
+      "gap_pct_of_mid": 0.00,
+      "status": "pass"
     },
     "case_650_heating": {
       "published_range_mwh": [
@@ -332,8 +332,8 @@
         0.0,
         0.0
       ],
-      "value_mwh": 0.0,
-      "gap_pct_of_mid": 0.0,
+      "value_mwh": 0.000,
+      "gap_pct_of_mid": 0.00,
       "status": "pass"
     },
     "case_650_cooling": {
@@ -345,9 +345,9 @@
         3.881,
         5.25
       ],
-      "value_mwh": 1.87,
-      "gap_pct_of_mid": 44.05,
-      "status": "known_fail"
+      "value_mwh": 4.368,
+      "gap_pct_of_mid": 0.00,
+      "status": "pass"
     },
     "case_910_heating": {
       "published_range_mwh": [
@@ -359,7 +359,7 @@
         2.191
       ],
       "value_mwh": 1.629,
-      "gap_pct_of_mid": 0.0,
+      "gap_pct_of_mid": 0.00,
       "status": "pass"
     },
     "case_910_cooling": {
@@ -372,7 +372,7 @@
         1.542
       ],
       "value_mwh": 1.514,
-      "gap_pct_of_mid": 0.0,
+      "gap_pct_of_mid": 0.00,
       "status": "pass"
     },
     "case_930_heating": {
@@ -398,7 +398,7 @@
         2.194
       ],
       "value_mwh": 1.883,
-      "gap_pct_of_mid": 0.0,
+      "gap_pct_of_mid": 0.00,
       "status": "pass"
     },
     "case_940_heating": {
@@ -424,7 +424,7 @@
         2.769
       ],
       "value_mwh": 2.236,
-      "gap_pct_of_mid": 0.0,
+      "gap_pct_of_mid": 0.00,
       "status": "pass"
     },
     "case_195_heating": {
@@ -437,7 +437,7 @@
         4.697
       ],
       "value_mwh": 4.467,
-      "gap_pct_of_mid": 0.0,
+      "gap_pct_of_mid": 0.00,
       "status": "pass"
     },
     "case_195_cooling": {
@@ -462,8 +462,8 @@
         -13.8,
         -9.9
       ],
-      "value_c": -13.07,
-      "gap_pct_of_mid": 0.0,
+      "value_c": -12.22,
+      "gap_pct_of_mid": 0.00,
       "status": "pass"
     },
     "ff_600ff_max": {
@@ -475,8 +475,8 @@
         62.4,
         68.4
       ],
-      "value_c": 44.83,
-      "gap_pct_of_mid": 31.45,
+      "value_c": 55.06,
+      "gap_pct_of_mid": 15.81,
       "status": "known_fail"
     },
     "ff_650ff_min": {
@@ -488,8 +488,8 @@
         -17.8,
         -16.7
       ],
-      "value_c": -17.77,
-      "gap_pct_of_mid": 0.0,
+      "value_c": -17.16,
+      "gap_pct_of_mid": 0.00,
       "status": "pass"
     },
     "ff_650ff_max": {
@@ -501,8 +501,8 @@
         61.1,
         66.8
       ],
-      "value_c": 44.32,
-      "gap_pct_of_mid": 30.7,
+      "value_c": 54.04,
+      "gap_pct_of_mid": 15.50,
       "status": "known_fail"
     },
     "ff_900ff_min": {
@@ -541,7 +541,7 @@
         -12.5
       ],
       "value_c": -15.67,
-      "gap_pct_of_mid": 21.0,
+      "gap_pct_of_mid": 21.00,
       "status": "known_fail"
     },
     "ff_950ff_max": {
@@ -586,5 +586,6 @@
   "_doc_round89b": "2026-10-22 (loop round 89b, item 2a): full re-record for the mass-node time-coverage fix promoted to the engine default (FLX_R89_MASS_DT_ALIGN; see the flip commit). The default mass advance now runs mass_sub composed CN applications at dt_m = dt_sub/mass_sub - full 3600 s/hour coverage at the established 25 s step accuracy; the composed affine pair is recorded so the checker mirror stays exact by construction. Premise was code-verified (one CN application per sub-step => 300 s of mass physics per hour, 1/12 of real time); the A/B/C decomposition (coarse single-step vs inner-loop coverage) showed the movement is coverage physics, not step-size numerics (contract 14). Honest outcome: both free-float Tmin rows ENTER their published bands for the first time (600FF -12.85 in [-13.80, -9.90]; 650FF -17.62 in [-17.80, -16.70]); FF Tmax gaps roughly halve; conditioned cooling converges strongly (600 C gap 31.10 -> 3.92, 640 C 28.86 -> 0.54, 650 C 36.01 -> 1.23; 620 C and 630 C enter); conditioned heating rows regress (600 H leaves, 610/620/630/640 H worsen, 800 C ~1128 -> ~1130) and are recorded, not tuned. High-mass rows byte-identical (9R4C inert). The falsy \"0\" token restores the legacy 1/12-coverage route, verified bit-identical to the round-89a record this round (strict checker 11/31/0, output-diff 42/42 green). Post-record tally: 12 pass / 30 known-fail.",
   "_doc_round90": "Loop round 90 flip: the R77 solar-lag filter is removed from the default route (FLX_R90_NO_LAG_FILTER default-on; falsy token restores the pre-round-90 filtered route). Premise: ISO 13790 C.3's surface node is algebraic - the reference formulation has no smoothing element on the air share of phi_st; with the air node dynamic (#1585) and the mass at full time coverage (round 89b) the filter added a delay the reference does not contain. Measured on 6d4c5263: 600FF Tmax 53.40->53.84 C (gap 18.35->17.68 pp), 650FF Tmax 52.79->53.09 C (17.45->16.98 pp), FF Tmin unchanged in-band, high-mass family byte-identical, 13/42 output-diff metrics moved (all low-mass family, <=1.36%). 800 cooling worsened 1130.07->1137.48 pp (GaugeSolver structural row, documented in KNOWN_ISSUES) - re-recorded here per the standing fidelity-first direction, never tuned away.",
   "_doc_round91a": "Loop round 91 flip 1: the ASHRAE 140 Table 5-138 window-loss solar sink goes default (FLX_R91_RETRANS; falsy token restores the x1.0 route). Premise (primary source, licensed 140-2017 text in docs/): 5.2.1.12.1 defines the interior distribution 'accounting for solar lost (transmitted solar radiation reflected by interior opaque surfaces and retransmitted back out the windows)'; Table 5-138's row carries 'Solar Lost through Windows 0.035'. The engine transmitted 100% (over-absorption disclosed rounds 81/83); the arm was left gated solely on band direction. Under the 2026-10-22 criteria (known+verifiable+tested; bands recorded not weighted) the spec sink goes default. Measured on a0446c26: 600/C 4.728->4.490 MWh, 610-650/C -3.8..-5.3%, 600/H 5.959->6.054 (+1.6%), 600FF Tmax 53.84->53.05 C, 650FF Tmax 53.09->52.25 C, FF minima stay in-band, no strict row changes state, high-mass byte-identical, 17/42 output-diff metrics moved (all low-mass family). Re-recorded honestly, never tuned.",
-  "_doc_round91b": "Loop round 91 flip 2: the incumbent density-driven solar split (to_air=0.30*(1-w_solar), beam_to_mass=0.30) is retired from the engine default (FLX_R91_SOL2ST; falsy token restores the incumbent split). Premise (primary sources, the licensed 140-2017 text in docs/; ISO 13790 Annex C): 5.2.1.12.1 + Table 5-138 distribute transmitted solar among interior surfaces only - nothing directly to zone air - and ISO 13790 C.1-C.3 route solar to the surface/mass pair by conductance share, with no fixed beam route; the incumbent's cited basis ('ASHRAE 140 Table B-12 F_m', attributed to #2359) does not exist in 140-2017, and #3961's refutation of retiring it was explicitly band-based, superseded by the standing 2026-10-22 criteria. Measured on 9e61b840: 600/H 6.054->6.915 MWh (+14.2%), 600/C 4.490->2.444 (-45.6%); 610-650/C -33.8..-49.1%; 610-630/H +8.9..+13.4%; 640/H 3.636->4.401 (+21.0%); 600FF Tmin -12.90->-13.07 and 650FF Tmin -17.65->-17.77 (both stay in band); FF Tmax 53.05->44.83 / 52.25->44.32; high-mass family (810/900/920/950/960/970/195) byte-identical; 620/C and 630/C honestly leave their bands (0.00 -> 26.66/20.12 pp) and 800/C improves 1074.44->532.45 pp - recorded, not tuned. Case 800 H/C and Case 640 cooling print Case 600's values by construction (the strict ideal-loads harness does not distinguish 800's HVAC from 600's, and 640 is heating-setback-only on the cooling leg) - same class as the 810==900 heating equality, see docs/investigations/limit-44-strict-equality-by-construction.md. Re-recorded honestly, never tuned."
+  "_doc_round91b": "Loop round 91 flip 2: the incumbent density-driven solar split (to_air=0.30*(1-w_solar), beam_to_mass=0.30) is retired from the engine default (FLX_R91_SOL2ST; falsy token restores the incumbent split). Premise (primary sources, the licensed 140-2017 text in docs/; ISO 13790 Annex C): 5.2.1.12.1 + Table 5-138 distribute transmitted solar among interior surfaces only - nothing directly to zone air - and ISO 13790 C.1-C.3 route solar to the surface/mass pair by conductance share, with no fixed beam route; the incumbent's cited basis ('ASHRAE 140 Table B-12 F_m', attributed to #2359) does not exist in 140-2017, and #3961's refutation of retiring it was explicitly band-based, superseded by the standing 2026-10-22 criteria. Measured on 9e61b840: 600/H 6.054->6.915 MWh (+14.2%), 600/C 4.490->2.444 (-45.6%); 610-650/C -33.8..-49.1%; 610-630/H +8.9..+13.4%; 640/H 3.636->4.401 (+21.0%); 600FF Tmin -12.90->-13.07 and 650FF Tmin -17.65->-17.77 (both stay in band); FF Tmax 53.05->44.83 / 52.25->44.32; high-mass family (810/900/920/950/960/970/195) byte-identical; 620/C and 630/C honestly leave their bands (0.00 -> 26.66/20.12 pp) and 800/C improves 1074.44->532.45 pp - recorded, not tuned. Case 800 H/C and Case 640 cooling print Case 600's values by construction (the strict ideal-loads harness does not distinguish 800's HVAC from 600's, and 640 is heating-setback-only on the cooling leg) - same class as the 810==900 heating equality, see docs/investigations/limit-44-strict-equality-by-construction.md. Re-recorded honestly, never tuned.",
+  "_doc_round91c": "Loop round 91 flip 3: the ASHRAE 140-2017 Table 5-138 constant interior-distribution fractions (floor 0.642, ceiling/roof 0.1678, walls E+W+N+S 0.1566, renormalized over the 0.9664 surface-row sum; the 0.035 window-loss row is the flip-1 retransmission sink already applied upstream) are promoted to the engine default at the step_5r1c class solar term (FLX_R91_T5138; falsy token restores the ISO 13790 C.3 conductance-share partition). Premise (primary source, licensed 140-2017 text in docs/): 5.2.1.12.2 sanctions exactly these constant fractions for programs that do not compute the interior distribution internally; internal-gain mass share (phi_m*w) untouched. The round-83 structural-inertness verdict was an artifact of the hourly per-class advance then being discarded by the coupled sub-step - the class drive binds the committed mass state since the round-84/85 per-class coupled sub-step default (#4531/#4533). Measured on 60491819 (flag-off FLX_R91_T5138=0 bit-identical to the round-91b record: strict checker 0 REGRESSION, output-diff 42/42 at +0.0000%): 600/H 6.915->4.692 MWh (47.76->0.00 pp, re-enters band), 600/C 2.444->5.962 (42.83->0.00, re-enters), 800/H 6.915->4.692 (19.15->0.00, re-enters; LIMIT-44 checksum), 640/H 4.401->2.699 (58.09->0.00, re-enters), 640/C 2.444->5.962 (41.08->0.00, re-enters), 650/C 1.870->4.368 (44.05->0.00, re-enters); 610-630 rows improve to 11.04/3.22/30.50/7.67/35.87/14.38 pp (all still known_fail); 800/C equality-checksum gap 532.45->1464.37 pp - the by-construction 800==600 equality HOLDS (5.962 prints exactly; LIMIT-44), the gap move is mechanical against 800 own published band, recorded not tuned; ff_600ff_max 44.83->55.06 C (31.45->15.81 pp) and ff_650ff_max 44.32->54.04 (30.70->15.50 pp) stay known_fail; ff_650ff_min -17.77->-17.16 moves 0.43 K away from the edge flip 2 left it 0.03 K from; 9R4C family and the inert families (810/920/930/940/195/960/970) byte-identical. Re-recorded honestly, never tuned."
 }
