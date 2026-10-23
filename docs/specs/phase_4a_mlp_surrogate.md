@@ -261,6 +261,17 @@ For a 100 K-sample dataset, that yields 70 K / 15 K / 15 K samples. The
 all three splits (they test the generalization gap on ASHRAE 140 Section 7
 reference buildings specifically).
 
+**Binding constraint (post-1.0 acceptance):** the split above is a
+*record-wise* split and therefore **does not** satisfy the surrogate
+acceptance gates. Per
+[`docs/SURROGATE_GOVERNANCE.md` § 4.5](../SURROGATE_GOVERNANCE.md), the
+train / validation / test split used for goal-3 (model selection) and
+goal-4 (deployment validation) evidence **must be grouped by building** —
+whole buildings assigned to a split, never individual records or timesteps
+— and record-wise cross-validation rankings must not be used to select a
+candidate surrogate. The evidence and the required protocol are stated in
+[`docs/SURROGATE_GOVERNANCE.md` § 4.5](../SURROGATE_GOVERNANCE.md).
+
 ### 6.3 Normalization
 
 | Target | Method | Fitted on |
@@ -443,11 +454,17 @@ Per `SURROGATE_GOVERNANCE.md` § 4.1.2 and `ARCHITECTURE.md` § Phase 3:
 
 | Metric | Threshold | Test data |
 |--------|-----------|-----------|
-| MAE | < 0.10 (relative) | Held-out 15 % test split |
-| RMSE | < 0.15 (relative) | Held-out 15 % test split |
-| R² | > 0.95 | Held-out 15 % test split |
-| Max error | < 0.50 (relative) | Held-out 15 % test split |
-| RMSE% (the ship gate) | **< 2 %** | Held-out 15 % test split |
+| MAE | < 0.10 (relative) | Building-grouped holdout (per governance § 4.5) |
+| RMSE | < 0.15 (relative) | Building-grouped holdout (per governance § 4.5) |
+| R² | > 0.95 | Building-grouped holdout (per governance § 4.5) |
+| Max error | < 0.50 (relative) | Building-grouped holdout (per governance § 4.5) |
+| RMSE% (the ship gate) | **< 2 %** | Building-grouped holdout (per governance § 4.5) |
+
+A record-wise holdout of 15 % of the test split is **not** admissible
+evidence for these gates — see
+[`docs/SURROGATE_GOVERNANCE.md` § 4.5](../SURROGATE_GOVERNANCE.md) for the
+building-held-out protocol that governs goal-3 (model selection) and
+goal-4 (deployment validation) acceptance.
 
 ### 9.2 ASHRAE 140 generalization check
 
@@ -500,6 +517,43 @@ fn mlp_surrogate_loads_and_runs() {
 - [ ] `validation_artifacts/surrogate_zone_v1.0.0/` populated per governance §4.2
 - [ ] Rust integration test §9.4 passes
 - [ ] ASHRAE 140 §9.2 pass rate ≥ 95 % on the 18-case holdout
+- [ ] Building-held-out evidence produced per `SURROGATE_GOVERNANCE.md` § 4.5 (split manifest, per-building MAE, aggregate MAE with CI)
+
+### 9.6 Building-Held-Out Evidence (post-1.0 scope)
+
+The three acceptance gates that govern goal 3 (model selection) and
+goal 4 (deployment validation) are stated in
+[`docs/SURROGATE_GOVERNANCE.md` § 4.5](../SURROGATE_GOVERNANCE.md), which is
+binding on this spec:
+
+1. **Split by building, never by record or timestep.** Whole buildings are
+   assigned to train / validation / test; no building contributes records to
+   more than one split.
+2. **Record-wise cross-validation rankings must not be trusted for model
+   selection.** The record-wise ranking is not admissible as goal-3
+   selection evidence and must not be quoted as corroboration.
+3. **Few-shot per-building calibration claims require held-out proof.**
+   Any per-building calibration benefit must be measured on held-out
+   buildings, reporting the label budget, the mean benefit, and the
+   fraction of buildings that worsened.
+
+Evidence base (cited in full in governance § 4.5): "Building-Held-Out
+Validation of Thermal-Sensation Prediction", *Buildings* **16**(20),
+2026-10-10, DOI
+[10.3390/buildings16204007](https://doi.org/10.3390/buildings16204007)
+(49,231 records / 554 buildings, ASHRAE Global Thermal Comfort Database
+II). Random record splits and building-held-out splits **reverse** the model
+ranking (Extra Trees wins record-wise; Histogram Gradient Boosting wins on
+held-out buildings); building-held-out MAE exceeds record-wise MAE by
+**0.061** (95 % CI 0.044 – 0.081); and few-shot per-building calibration
+with **1 – 5 labels per building** made error **worse**, while **20
+labels** gave only a modest mean benefit with a **majority of buildings
+worsening**.
+
+**Scope note:** this requirement is binding for acceptance gates evaluated
+after Fluxion 1.0 (post-1.0 scope). Pre-1.0 artifacts are not
+retroactively invalidated; re-validating them under § 4.5 is a post-1.0
+acceptance action.
 
 ---
 
@@ -536,7 +590,7 @@ fn mlp_surrogate_loads_and_runs() {
 | Document | Relationship |
 |----------|--------------|
 | `ARCHITECTURE.md` | Module boundaries; § Zone Balance, § Phase 3 validation |
-| `docs/SURROGATE_GOVERNANCE.md` | Binding governance policy; this spec implements § 1–5 |
+| `docs/SURROGATE_GOVERNANCE.md` | Binding governance policy; this spec implements § 1–5 and is bound by § 4.5 (building-held-out validation) |
 | `docs/ONNX_INFERENCE_PIPELINE.md` | Binding I/O baseline; this spec refines it for MLP |
 | `data/ashrae140_holdout.json` | 23-feature schema reference; LHC holdout specification |
 | `data/ashrae140_reference.json` | Acceptance thresholds (min/max/mean per case) |
