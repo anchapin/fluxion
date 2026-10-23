@@ -532,8 +532,38 @@ _doc_round91b, output-diff CSV, fabric 600 5r1c/9r4c + parity, §6/§7 pins +
 CSVs, hotloop both goldens, grid baseline); contracts 14/14; blind exact;
 clippy -D warnings clean (CI gate invocation); fmt clean. Nothing tuned.
 
-### Flip-3 (T5138) — next on the merged tip
+### Flip 3 (2026-10-23) — Table 5-138 per-class routing measured LIVE and flipped
+(`FLX_R91_T5138`, code commit 7620b68b, branch physics/r91-t5138)
 
-Pending: per-class Table 5-138 routing (FLX_R91_T5138) re-measured on the
-flip-2 tip per §5.2.1.12.2; battery + rubber-duck review + merge, then this
-section gets its measurement record.
+The round-83 verdict that per-class routing was structurally inert was an
+artifact of the recording-only D5 mass state it was measured under: since
+the round-84/85 per-class coupled sub-step default (#4531/#4533) the class
+drive binds the committed mass state, so §5.2.1.12.2's constant fractions
+(Floor 0.642/Ceiling 0.1678/E 0.038/W 0.038/N 0.053/S 0.0276, renormalized
+over the 0.9664 surface-row sum after flip 1's 0.035 window-loss sink) are
+live physics at the phi_c site. Internal gains untouched (phi_m·w); the C.3
+conductance-share partition stays reachable via the falsy token.
+
+Measured on 60491819, flag-off bit-identical to the round-91b record
+(strict checker 0 REGRESSION, output-diff 42/42 at +0.0000%):
+
+- 600/H 6.915 -> 4.692 MWh (47.76 -> 0.00 pp, RE-ENTERS band); 600/C
+  2.444 -> 5.962 (42.83 -> 0.00, RE-ENTERS); 640/H 4.401 -> 2.699
+  (58.09 -> 0.00, RE-ENTERS); 650/C 1.870 -> 4.368 (44.05 -> 0.00,
+  RE-ENTERS); 610-630 improve to 11.04/3.22/30.50/7.67/35.87/14.38 pp
+  (all still known_fail).
+- 800/C equality checksum 532.45 -> 1464.37 pp: the §LIMIT-44
+  by-construction equality HOLDS (800 prints 600's 5.962 exactly); the
+  gap move is mechanical against 800's own published band, recorded not
+  tuned.
+- Free-float: 600FF -12.22/55.06 (Tmin PASS holds; Tmax 31.45 -> 15.81
+  pp); 650FF -17.16/54.04 (Tmin moves 0.43 K AWAY from the edge, PASS;
+  Tmax 30.70 -> 15.50 pp); 900FF/950FF byte-identical (9R4C inert
+  control).
+- 39/42 output-diff metrics moved (all low-mass or FF).
+
+Full re-record battery green (strict JSON _doc_round91c, output-diff CSV
+repo_sha=7620b68b, fabric 600 5r1c 4.692/5.962 parity 0.7785/1.1965 +
+9r4c/900/950 unchanged, §6/§7 pins + CSVs, hotloop both goldens, grid
+baseline); contracts 14/14 across four default-parallelism runs; blind
+exact; formalized as §LIMIT-45. Nothing tuned.

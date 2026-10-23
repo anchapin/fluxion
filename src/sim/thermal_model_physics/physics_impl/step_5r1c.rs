@@ -1387,6 +1387,31 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // lag-filter route for A/B archaeology only; any other value behaves
         // as unset, i.e. the share-on default.]
         let r88_phist_share = crate::util::env_bool::env_bool("FLX_R88_PHIST_MASS_SHARE", true);
+        // [R91 FLIP 3 - Table 5-138 per-class solar routing is the engine
+        // default since loop round 91 (FLX_R91_T5138; bands-as-factor
+        // audit, Alex directive 2026-10-22 21:20 ET). PREMISE (primary
+        // sources, the licensed 140-2017 text in docs/): 5.2.1.12.2
+        // sanctions the Table 5-138 constant interior-distribution
+        // fractions for programs that do not compute the interior
+        // distribution internally - Floor 0.642, Ceiling 0.1678, E 0.038,
+        // W 0.038, N 0.053, S 0.0276, Solar Lost through Windows 0.035
+        // (the lost row is the round-91 flip-1 retransmission sink,
+        // FLX_R91_RETRANS). The round-83 discriminator measured this
+        // routing class STRUCTURALLY INERT only because the hourly
+        // per-class advance was then discarded by the coupled sub-step;
+        // since the round-84/85 per-class coupled sub-step default
+        // (#4531/#4533) the class drive at the phi_c site below BINDS the
+        // committed mass state, so the routing is live. The class solar
+        // partition changes from the ISO C.3 conductance share
+        // (s_c*w*phi_st) to the Table 5-138 surface fractions mapped to
+        // classes (floor/roof/wall), renormalized over the surface rows
+        // (sum 0.9664) so the class partition conserves phi_st exactly
+        // after the retransmission sink. Internal-gain mass share
+        // (phi_m*w) is untouched - Table 5-138 routes transmitted solar,
+        // not internal gains. A falsy token (0/false/no/off) restores the
+        // C.3 conductance-share partition for A/B archaeology only; any
+        // other value behaves as unset, i.e. the Table 5-138 default.]
+        let r91_t5138 = crate::util::env_bool::env_bool("FLX_R91_T5138", true);
         let mut r88_share_zone: Vec<f64> = Vec::new();
         if r88_phist_share {
             let n_z88 = self.0.hvac.num_zones;
@@ -2078,7 +2103,31 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                     // and the mass-side shares partition
                                     // phi_st. Flag off: phi_m·w unchanged,
                                     // bit-identical.]
-                                    let phi_c = if r88_phist_share {
+                                    // [R91 FLIP 3 - the class solar term
+                                    // carries the Table 5-138 surface
+                                    // fractions instead of the C.3
+                                    // conductance share: floor class
+                                    // 0.642/0.9664, roof class
+                                    // 0.1678/0.9664, wall class
+                                    // (E+W+N+S) 0.1566/0.9664. The
+                                    // renormalization absorbs the
+                                    // published table's rounding so
+                                    // sum_c phi_c = phi_m_i + phi_st
+                                    // exactly (energy-conserving by
+                                    // construction; the checker
+                                    // composite mirrors this drive
+                                    // through the affine maps below).
+                                    // Falsy FLX_R91_T5138 restores the
+                                    // s_c*w conductance-share partition
+                                    // (the R88 arm) bit-identically.]
+                                    let phi_c = if r91_t5138 {
+                                        let f_c_t5138 = match c {
+                                            2 => 0.642_f64,
+                                            1 => 0.1678,
+                                            _ => 0.1566,
+                                        };
+                                        phi_m_i * w + (f_c_t5138 / 0.9664) * phi_st.as_ref()[i]
+                                    } else if r88_phist_share {
                                         let h_is_c88 = h_is_i * w;
                                         let s_c88 = if h_ms_c + h_is_c88 > 0.0 {
                                             h_ms_c / (h_ms_c + h_is_c88)

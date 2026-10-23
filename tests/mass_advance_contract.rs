@@ -472,16 +472,22 @@ fn r88_share_default_is_bit_identical() {
 
 #[test]
 /// Contract 9 — flag-on non-inertness with the mass-side direction pin:
-/// under pure constant solar driving the flag-on mass is strictly warmer
-/// than flag-off (the mass share deposits solar in the mass), and the air
-/// state is not identical (it now receives only the air share through the
-/// lag filter). This is the existence proof that the share reaches the
-/// mass node on the real path; magnitudes are measurement, not bands.
+/// under pure constant solar driving the solar-routing default's mass is
+/// strictly warmer than the legacy route's (the routed fractions deposit
+/// solar in the mass), and the air state is not identical. This is the
+/// existence proof that routed solar reaches the mass node on the real
+/// path; magnitudes are measurement, not bands. Round-91 flip 3 update:
+/// unset now takes the Table 5-138 per-class default (FLX_R91_T5138),
+/// under which the R88 share flag is inert for tensor-ready zones — the
+/// legacy leg pins BOTH falsy tokens explicitly, mirroring the round-89
+/// note pattern.
 fn r88_share_reaches_mass() {
     let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let dt = 3600.0;
-    // Round-89 default flip: the flag-off leg pins the falsy token
-    // explicitly — unset now takes the share-on default path.
+    // Round-91 flip-3 default: the legacy leg pins both falsy tokens —
+    // unset now takes the Table 5-138 default path, and with it on the
+    // R88 share flag no longer selects anything for tensor-ready zones.
+    std::env::set_var("FLX_R91_T5138", "0");
     std::env::set_var("FLX_R88_PHIST_MASS_SHARE", "0");
     let mut off = spec_model_solar();
     off.solar.solar_gains = VectorField::from_scalar(R88_SOLAR_WM2, off.hvac.num_zones);
@@ -494,7 +500,8 @@ fn r88_share_reaches_mass() {
     for h in 0..24 {
         off.step_physics(h, 12.0, dt);
     }
-    std::env::set_var("FLX_R88_PHIST_MASS_SHARE", "1");
+    std::env::remove_var("FLX_R91_T5138");
+    std::env::remove_var("FLX_R88_PHIST_MASS_SHARE");
     let mut on = spec_model_solar();
     on.solar.solar_gains = VectorField::from_scalar(R88_SOLAR_WM2, on.hvac.num_zones);
     on.setpoints.heating_setpoint = -50.0;
