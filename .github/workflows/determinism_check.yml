@@ -489,6 +489,14 @@ jobs:
             output_values.json
             output_hash.txt
           retention-days: 7
+          # Issue #4545 (loop round 90): the default `warn` let a partial or
+          # empty match ship a green upload — the observed failure family is a
+          # green ubuntu leg whose artifact reached Compare Hashes without the
+          # contract files (output_hash.txt / output_values.json), which the
+          # compare guard correctly refuses as INCOMPLETE but nobody flagged
+          # at the source. Error here, at the only step that knows what the
+          # extract step promised.
+          if-no-files-found: error
 
   compare-hashes:
     name: Compare Hashes
@@ -502,9 +510,97 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Download all artifacts
+        id: download-artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           path: artifacts
+
+      # Issue #4545 (loop round 90): actions/download-artifact v8 reports a
+      # digest-mismatch as an annotation but does not fail the step, and the
+      # compare script below then (correctly) refuses the partial set as
+      # INCOMPLETE — with no recovery. Observed on run 39845087608
+      # (2026-10-22, develop 604aed86): the ubuntu leg uploaded all 5 files
+      # (digest recorded), the download step's served content failed its
+      # digest check, and the extracted artifact lacked output_hash.txt /
+      # output_values.json. Verify the contract files exist per expected
+      # platform immediately after download and retry the download once.
+      - name: Verify artifact completeness
+        id: verify-artifacts
+        env:
+          EXPECTED_PLATFORMS_JSON: ${{ needs.setup-matrix.outputs.matrix }}
+        run: |
+          python3 << 'EOF'
+          import json
+          import os
+          import sys
+
+          platforms = sorted(
+              (json.loads(os.environ.get('EXPECTED_PLATFORMS_JSON') or '{}') or {}).get('os', [])
+          )
+          if not platforms:
+              # Mirror the compare script's own refusal: no expected set, no
+              # verification possible (the compare step reports this too).
+              print("INCOMPLETE: setup-matrix output missing — cannot verify artifacts")
+              sys.exit(1)
+          missing = {}
+          for os_name in platforms:
+              d = f"artifacts/determinism-gate-output-{os_name}"
+              absent = [
+                  f"{d}/{f}" for f in ("output_hash.txt", "output_values.json")
+                  if not os.path.exists(f"{d}/{f}")
+              ]
+              if absent:
+                  missing[os_name] = absent
+          if missing:
+              for os_name, absent in missing.items():
+                  print(f"artifact incomplete: {os_name}: missing {absent}")
+              sys.exit(1)
+          print(f"artifact set complete for {len(platforms)} expected platform(s)")
+          EOF
+
+      - name: Clear corrupted artifact set (retry preparation)
+        if: steps.verify-artifacts.outcome == 'failure'
+        run: |
+          rm -rf artifacts
+
+      - name: Re-download all artifacts (retry 1)
+        id: redownload-artifacts
+        if: steps.verify-artifacts.outcome == 'failure'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          path: artifacts
+
+      - name: Re-verify artifact completeness
+        if: steps.verify-artifacts.outcome == 'failure'
+        env:
+          EXPECTED_PLATFORMS_JSON: ${{ needs.setup-matrix.outputs.matrix }}
+        run: |
+          python3 << 'EOF'
+          import json
+          import os
+          import sys
+
+          platforms = sorted(
+              (json.loads(os.environ.get('EXPECTED_PLATFORMS_JSON') or '{}') or {}).get('os', [])
+          )
+          if not platforms:
+              print("INCOMPLETE: setup-matrix output missing — cannot verify artifacts")
+              sys.exit(1)
+          missing = {}
+          for os_name in platforms:
+              d = f"artifacts/determinism-gate-output-{os_name}"
+              absent = [
+                  f"{d}/{f}" for f in ("output_hash.txt", "output_values.json")
+                  if not os.path.exists(f"{d}/{f}")
+              ]
+              if absent:
+                  missing[os_name] = absent
+          if missing:
+              for os_name, absent in missing.items():
+                  print(f"artifact still incomplete after retry: {os_name}: missing {absent}")
+              sys.exit(1)
+          print(f"artifact set complete after retry for {len(platforms)} expected platform(s)")
+          EOF
 
       - name: Compare hashes across platforms
         env:
@@ -675,6 +771,8 @@ jobs:
           name: determinism-comparison
           path: comparison_result.json
           retention-days: 30
+          # Issue #4545 (loop round 90): error, never a green empty upload.
+          if-no-files-found: error
 
       - name: Display summary
         run: |
