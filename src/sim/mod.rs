@@ -35,6 +35,7 @@ pub mod orchestrator;
 pub mod per_surface_conduction;
 pub mod profiles;
 pub mod schedule;
+pub mod sensor_node;
 pub mod shading;
 pub mod sky_radiation;
 pub mod solar;

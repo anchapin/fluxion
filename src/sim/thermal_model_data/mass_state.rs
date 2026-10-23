@@ -139,6 +139,15 @@ pub struct MassState<T: ContinuousTensor<f64>> {
     pub r70_ts_old_workspace: Option<Vec<f64>>,
     pub r70_ts_new_workspace: Option<Vec<f64>>,
 
+    /// [Issue #4555 — thermostat sensor node (TRV sensor temperature).]
+    /// Optional bank of grey-box sensor nodes (see
+    /// [`crate::sim::sensor_node::SensorNodeBank`]). The nodes are
+    /// *observational*: they read the zone air temperature and the radiator
+    /// activity and write only their own state, so they cannot change the
+    /// zone energy balance. `None` (the default) means no sensor node is
+    /// attached and the physics path is untouched.
+    pub sensor_nodes: Option<crate::sim::sensor_node::SensorNodeBank>,
+
     /// [Round 78 — coupled-scheme checker record (#3983 §64,
     /// checker-lags-integrator, #4504 class).] Per zone, the linear
     /// coefficients the coupled single-N mass advance consumed this step,
@@ -201,6 +210,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for MassState<T> {
             r70_ts_old_workspace: self.r70_ts_old_workspace.clone(),
             r70_ts_new_workspace: self.r70_ts_new_workspace.clone(),
             r77_mass_substep_coeffs: self.r77_mass_substep_coeffs.clone(),
+            sensor_nodes: self.sensor_nodes.clone(),
         }
     }
 }
