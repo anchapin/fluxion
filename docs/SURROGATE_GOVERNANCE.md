@@ -233,10 +233,15 @@ Before any surrogate model can be deployed, the following artifacts **must** be 
 
 | Metric | Required Threshold | Test Data |
 |--------|-------------------|-----------|
-| MAE | < 0.1 (relative) | Held-out 20% of training |
-| RMSE | < 0.15 (relative) | Held-out 20% of training |
-| R² | > 0.95 | Held-out 20% of training |
-| Max Error | < 0.5 (relative) | Held-out 20% of training |
+| MAE | < 0.1 (relative) | Building-grouped holdout (≥ 20 % of buildings — see §4.5) |
+| RMSE | < 0.15 (relative) | Building-grouped holdout (≥ 20 % of buildings — see §4.5) |
+| R² | > 0.95 | Building-grouped holdout (≥ 20 % of buildings — see §4.5) |
+| Max Error | < 0.5 (relative) | Building-grouped holdout (≥ 20 % of buildings — see §4.5) |
+
+The holdout is grouped **by building**, never by record or timestep. A
+record-wise random holdout is **not** acceptable evidence for these
+thresholds — see §4.5 (Building-Held-Out Validation Protocol), which is
+binding for the surrogate acceptance gates.
 
 #### 4.1.3 ASHRAE 140 Comparison
 
@@ -258,7 +263,8 @@ validation_artifacts/
 └── <model_name>/
     ├── metadata.json              # Model metadata (Section 3.2)
     ├── domain_coverage.html       # Visualization of training domain
-    ├── accuracy_metrics.json      # MAE, RMSE, R2, Max Error
+    ├── accuracy_metrics.json      # MAE, RMSE, R2, Max Error (building-held-out, see §4.5)
+    ├── building_split_manifest.json  # Building IDs per split + seed (see §4.5)
     ├── ashrae140_results.csv     # ASHRAE 140 test case results
     ├── uncertainty_calibration.json
     └── <model_file>.onnx         # The model itself
@@ -277,6 +283,107 @@ If validation metrics fall below thresholds:
 1. **Warning** (one metric below): Log warning, allow deployment with disclosure
 2. **Failure** (multiple metrics below): Block deployment, require model retraining
 3. **Critical** (domain extrapolation detected): Hard block, reject model
+
+### 4.5 Building-Held-Out Validation Protocol (REQUIRED)
+
+**Scope note (read first).** This protocol is **binding for the Fluxion
+surrogate acceptance gates — Goal 3 (model selection / candidate ranking)
+and Goal 4 (deployment validation of the selected surrogate)** — and it
+applies on the **post-1.0** line: any surrogate acceptance evidence
+submitted for a goal-3 or goal-4 gate **after** the 1.0 release must be
+produced under this protocol. Pre-1.0 surrogate artifacts are **not**
+retroactively invalidated by this section; they may remain in the registry
+with a disclosure that their holdout evidence was record-wise and therefore
+does **not** satisfy §4.5. Re-validating a pre-1.0 artifact against
+§4.5 is a post-1.0 acceptance action, not a blocker on the 1.0 release.
+
+**Why this section exists.** A record-wise (per-timestep, per-row random)
+holdout leaks building identity into the test set: the model is scored on
+records from buildings it has already seen during training, so the reported
+error measures *interpolation within known buildings*, not *generalization to
+unseen buildings*. The held-out evidence in the literature (see §4.5.4)
+shows that this leakage **reverses model rankings**: the model family that
+wins record-wise is not the model family that wins on held-out buildings.
+
+#### 4.5.1 The three acceptance gates
+
+| Gate | Requirement | Failure mode it blocks |
+|------|-------------|------------------------|
+| **G1 — Split by building, never by record or timestep** | Train / validation / test splits are formed by assigning **whole buildings** to a split (grouped / cluster split on building ID). Every record of a building lands in exactly one split. No record, timestep, or window of a building may appear in more than one split. | Inflated accuracy from building-identity leakage; a surrogate that memorizes one building's envelope and climate response is presented as a generalizable model. |
+| **G2 — Record-wise CV rankings must not be trusted for model selection** | A candidate-surrogate ranking derived from record-wise cross-validation is **not admissible** as goal-3 selection evidence. Rankings that decide which candidate ships must be re-derived on held-out **buildings**, and the record-wise ranking must not be quoted as corroboration. | Shipping the wrong model family: the record-wise winner is systematically the family that exploits per-building leakage. |
+| **G3 — Few-shot per-building calibration claims require held-out proof** | Any claim that per-building calibration (few-shot adaptation using a handful of labelled records from a target building) improves accuracy requires evidence measured on **held-out buildings**, i.e. buildings whose labels were never seen during training. The calibration budget (labels per building) and the per-building outcome distribution must be reported. | Advertising per-building calibration as a product feature when it does not generalize to unseen buildings. |
+
+These three gates are the **required** protocol for goal 3 and goal 4
+acceptance. A goal-3/goal-4 submission that omits any of them is
+**incomplete**, and the surrogate acceptance decision is deferred until the
+missing evidence is produced (see §4.4 Validation Failure Policy and §6.2
+Exceptions — exceptions to this section require written approval from the
+AI/ML Lead **and** the Physics Lead and must state which gate is waived).
+
+#### 4.5.2 Required protocol details
+
+- **Grouping key:** building ID (not zone ID, not timestep index, not
+  random row). If the training corpus has no building key, the dataset is
+  **not eligible** for goal-3/goal-4 acceptance evidence.
+- **Split granularity:** whole buildings, assigned to train / validation /
+  test. A building must not contribute records to more than one split.
+- **Reporting:** the validation artifact must include the building-ID
+  manifest per split, the split seed, per-building MAE, the aggregate MAE
+  with a confidence interval, and the record-wise metrics **labelled as
+  record-wise (non-admissible for selection)**.
+- **Comparisons:** when two or more candidate surrogates are compared, the
+  comparison is run on the same held-out building set, and the winner is
+  the one selected on held-out buildings — never the record-wise winner.
+- **Per-building calibration:** report the label budget per building, the
+  mean benefit, and the **fraction of buildings that got worse** — a mean
+  improvement that hides a majority of buildings degrading is not a pass.
+- **Disclosure:** validation artifacts produced under a record-wise split
+  must carry a disclosure stating that the holdout was record-wise and
+  therefore does **not** satisfy §4.5; such artifacts are excluded from
+  goal-3/goal-4 evidence.
+
+#### 4.5.3 Relationship to the existing thresholds
+
+§4.1.2 thresholds (MAE / RMSE / R² / Max Error) are unchanged in value,
+but their **test data** is now defined as a building-grouped holdout. The
+§4.1.3 ASHRAE 140 sweep and §4.1.4 uncertainty quantification remain
+additional, not substitutable, requirements: a surrogate that passes the
+building-held-out protocol still needs the ASHRAE 140 comparison and
+uncertainty bounds before deployment.
+
+#### 4.5.4 Evidence (held-out buildings)
+
+Source: **"Building-Held-Out Validation of Thermal-Sensation Prediction"**,
+*Buildings* **16**(20), published 2026-10-10, DOI
+[10.3390/buildings16204007](https://doi.org/10.3390/buildings16204007).
+Dataset: ASHRAE Global Thermal Comfort Database II — **49,231 records** from
+**554 buildings**.
+
+| Finding | Evidence |
+|---------|----------|
+| Splitting by building **reverses** the model ranking | Record-wise splitting ranks **Extra Trees** first; splitting by held-out buildings ranks **Histogram Gradient Boosting** first. |
+| Held-out (building) error is materially larger than record-wise error | Building-held-out MAE exceeds record-wise MAE by **0.061** (95 % CI **0.044 – 0.081**). |
+| Few-shot per-building calibration is not a free win | With **1 – 5 labels per building**, calibration made error **worse**; with **20 labels per building** the mean benefit was only **modest**, and a **majority of buildings worsened**. |
+
+Reading of the evidence for Fluxion: the magnitude of the reversal (a
+ranking flip, not a small metric delta) means record-wise cross-validation
+is not merely "less informative" for model selection — it is **actively
+misleading**, which is why G2 forbids using it for selection rather than
+merely deprioritizing it. Likewise, the calibration evidence (G3) shows
+that the "cheaply adapt a surrogate to a new building with a handful of
+labels" story does **not** hold on unseen buildings at 1–5 labels, and is
+not reliable at 20 labels.
+
+#### 4.5.5 What this protocol does **not** license
+
+- It does not license quoting record-wise CV rankings as "the model is
+  better" — that is G2.
+- It does not license per-building calibration as a documented product
+  feature on the strength of a few-label demonstration — that is G3.
+- It does not change any numerical threshold in §4.1.2; it changes which
+  data those thresholds are measured on.
+- It does not require re-running the ASHRAE 140 suite differently; §4.1.3
+  is unchanged.
 
 ---
 
@@ -325,3 +432,11 @@ Exceptions to this policy require:
 - [validation_reporting.md](./validation_reporting.md) - Validation reporting system
 - [PHYSICAL_CONSTANTS.md](./PHYSICAL_CONSTANTS.md) - Physical bounds reference
 - [ASHRAE 140 Validation](./ASHRAE140_VALIDATION.md) - ASHRAE compliance
+- [Phase 4a MLP Surrogate Architecture](./specs/phase_4a_mlp_surrogate.md) - Training strategy and ship gates (binding on §4.5)
+- [Surrogate Model Card](./surrogate_model_card.md) - Per-model performance metrics
+
+### 7.1 External References
+
+| Reference | Use |
+|-----------|-----|
+| "Building-Held-Out Validation of Thermal-Sensation Prediction", *Buildings* **16**(20), 2026-10-10, DOI [10.3390/buildings16204007](https://doi.org/10.3390/buildings16204007) | Evidence base for §4.5 (building-held-out protocol, ranking reversal, few-shot calibration findings) |

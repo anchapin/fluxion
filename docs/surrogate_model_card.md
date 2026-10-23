@@ -128,6 +128,12 @@ models/
 | Inference Time | < 1 ms | P95 single prediction |
 | ONNX Opset | ≥ 17 | Compatible with ort 2.0+ |
 
+> **Holdout protocol (binding):** the validation evidence behind these
+> criteria must be produced on **held-out buildings**, never on a
+> record/timestep-wise random split — see
+> [SURROGATE_GOVERNANCE.md § 4.5](SURROGATE_GOVERNANCE.md) (building-held-out
+> validation protocol, post-1.0 acceptance scope).
+
 ### Phase 4a Targets
 - [ ] RMSE < 2% for all components
 - [ ] Inference time < 1ms per prediction
