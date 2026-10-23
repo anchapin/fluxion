@@ -90,6 +90,19 @@ pub struct MassState<T: ContinuousTensor<f64>> {
     pub r71_air_driver_num_prev: T,
     pub r71_air_driver_den_prev: T,
 
+    /// [R90 HARNESS — §LIMIT-40 storage-release split discriminator
+    /// (`FLX_R90_PHIST_RAMP`): previous-hour gain drives (phi_st, phi_m),
+    /// persisted at the end of each step so the sub-step loop can ramp the
+    /// mass-node CN drive and the R77 lag-filter input across the hour at
+    /// the R71 midpoint fraction instead of freezing both at their
+    /// top-of-hour values. Zero-initialized; the first step detects zero
+    /// and seeds with the current values (no ramp on step 1, mirroring the
+    /// R71 zero-prev seed convention). The flag-off default never reads
+    /// these fields, so unconditional persistence keeps that build
+    /// bit-identical.]
+    pub r90_phi_st_prev: T,
+    pub r90_phi_m_prev: T,
+
     /// [R75 HARNESS — #3983 free-float structural question, round 75.
     /// `FLX_R75_VENT_RAMP`: previous-hour night-vent numerator term
     /// (`h_ve_night · T_outdoor`, 0 when the vent was inactive) and a
@@ -179,6 +192,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for MassState<T> {
             r70_surface_node_temperatures_prev: self.r70_surface_node_temperatures_prev.clone(),
             r71_air_driver_num_prev: self.r71_air_driver_num_prev.clone(),
             r71_air_driver_den_prev: self.r71_air_driver_den_prev.clone(),
+            r90_phi_st_prev: self.r90_phi_st_prev.clone(),
+            r90_phi_m_prev: self.r90_phi_m_prev.clone(),
             r75_vent_term_prev: self.r75_vent_term_prev.clone(),
             r75_vent_has_prev: self.r75_vent_has_prev,
             r76_sol_air_prev: self.r76_sol_air_prev.clone(),

@@ -177,7 +177,14 @@ fn analytical_path_eui_is_bit_identical_to_baseline() {
     // (+29 %/+18 %/+12 %) — the mass node now integrates the full hour
     // (coverage 300 s -> 3600 s/hour); deterministic across runs.
     // Nothing tuned.
-    let golden = [78.39195778347752, 128.81993774427215, 156.4015468093156];
+    // Re-recorded 2026-10-22 (loop round 90): the R77 solar-lag filter
+    // removed from the default route (`FLX_R90_NO_LAG_FILTER` default-on;
+    // ISO 13790 §C.3 algebraic surface node, §LIMIT-28 round-90 record).
+    // The analytical EUI moved
+    // [78.39195778347752, 128.81993774427215, 156.4015468093156] ->
+    // [80.56768592230117, 133.08315456372387, 160.64670886138663]
+    // (+2.8 %/+3.3 %/+2.7 %). Nothing tuned.
+    let golden = [80.56768592230117, 133.08315456372387, 160.64670886138663];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),
@@ -231,7 +238,13 @@ fn cpu_surrogate_mock_path_eui_is_bit_identical_to_baseline() {
     // time-coverage default flip):
     // [236.6238139068431, 252.05392915614644, 263.75261896509267] ->
     // [238.29500516989185, 253.05445617909788, 264.43994131835].
-    let golden = [238.29500516989185, 253.05445617909788, 264.43994131835];
+    // Re-recorded 2026-10-22 (loop round 90, R77 lag-filter removal
+    // default flip, `FLX_R90_NO_LAG_FILTER`, §LIMIT-28 round-90 record):
+    // surrogate/mock EUIs moved
+    // [238.29500516989185, 253.05445617909788, 264.43994131835] ->
+    // [238.2946250962913, 253.05417431579534, 264.43970946521875]
+    // (<= 0.0002 %). Nothing tuned.
+    let golden = [238.2946250962913, 253.05417431579534, 264.43970946521875];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),
