@@ -161,6 +161,13 @@ permits them, in debug or release builds alike (the escape hatch and release
 boot guard from Issue #2703 were removed in #3162). rumqttc handles automatic
 reconnection on transient disconnects.
 
+The `#[ignore]`d integration test `telemetry::mqtt::tests::test_mqtt_consumer_integration`
+needs a real TLS broker at `mqtts://localhost:8883`. It is **manual-only** by
+decision of Issue #4211 (no CI broker provisioning); the end-to-end recipe —
+self-signed CA + server certificate, mosquitto TLS config, the exact
+`cargo test … -- --ignored` invocation and teardown — lives in
+[docs/mqtt-manual-broker-setup.md](../../docs/mqtt-manual-broker-setup.md).
+
 ### Sample subscriber
 
 `connect` returns the consumer plus the receiving end of a bounded (capacity
