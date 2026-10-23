@@ -216,17 +216,6 @@ dispatch is removed, these tests can be deleted.
 | `src/sim/thermal_model_physics/physics_impl/mod.rs` | `scratch_pool_9r4c_*` | `structural` | #3599, #3291, LIMIT-21 | `unassigned` | Legacy 9R4C dispatch removed; GaugeSolver-only path verified | `pending` |
 | `src/sim/thermal_model_physics/physics_impl/mod.rs` | `scratch_pool_9r4c_*` (restored_on_free_float) | `structural` | #3599, #3291, LIMIT-21 | `unassigned` | Legacy 9R4C dispatch removed; GaugeSolver-only path verified | `pending` |
 | `src/sim/thermal_model_physics/physics_impl/step_9r4c.rs` | `scratch_pool_9r4c_*` | `structural` | #3599, #3291, LIMIT-21 | `unassigned` | Legacy 9R4C dispatch removed; GaugeSolver-only path verified | `pending` |
-| `fluxion-fluid/src/autodiff/components.rs` | `test_chiller_jacobian_accuracy` | `structural` | #4210 | `unassigned` | Analytical-vs-finite-diff Jacobians agree within tolerance at saturation points; resolve underlying Jacobian bugs | `pending` |
-| `fluxion-fluid/src/autodiff/components.rs` | `test_chiller_jacobian_at_saturation` | `structural` | #4210 | `unassigned` | Analytical and finite-difference Jacobians agree at saturation test inputs; resolve underlying Jacobian bugs | `pending` |
-| `fluxion-fluid/src/autodiff/components.rs` | `test_boiler_jacobian_accuracy` | `structural` | #4210 | `unassigned` | Analytical-vs-finite-diff Jacobians agree within tolerance at saturation points; resolve underlying Jacobian bugs | `pending` |
-| `fluxion-fluid/src/autodiff/components.rs` | `test_boiler_jacobian_at_saturation` | `structural` | #4210 | `unassigned` | Analytical and finite-difference Jacobians agree at saturation test inputs; resolve underlying Jacobian bugs | `pending` |
-| `fluxion-fluid/src/autodiff/components.rs` | `test_vav_box_jacobian_accuracy` | `structural` | #4210 | `unassigned` | Analytical-vs-finite-diff Jacobians agree within tolerance at saturation points; resolve underlying Jacobian bugs | `pending` |
-| `fluxion-fluid/src/autodiff/components.rs` | `test_vav_box_jacobian_at_saturation` | `structural` | #4210 | `unassigned` | Analytical and finite-difference Jacobians agree at saturation test inputs; resolve underlying Jacobian bugs | `pending` |
-| `fluxion-fluid/src/autodiff/components.rs` | `test_vav_box_gradient_descent_convergence` | `structural` | #4210 | `unassigned` | Gradient descent converges within 1e-2 tolerance; optimizer tuning | `pending` |
-| `fluxion-fluid/src/autodiff/components.rs` | `test_pump_jacobian_accuracy` | `structural` | #4210 | `unassigned` | Analytical-vs-finite-diff Jacobians agree within tolerance at saturation points; resolve underlying Jacobian bugs | `pending` |
-| `fluxion-fluid/src/autodiff/components.rs` | `test_pump_jacobian_at_saturation` | `structural` | #4210 | `unassigned` | Analytical and finite-difference Jacobians agree at saturation test inputs; resolve underlying Jacobian bugs | `pending` |
-| `fluxion-fluid/src/autodiff/components.rs` | `test_cooling_coil_jacobian_accuracy` | `structural` | #4210 | `unassigned` | Analytical-vs-finite-diff Jacobians agree within tolerance at saturation points; resolve underlying Jacobian bugs | `pending` |
-| `fluxion-fluid/src/autodiff/components.rs` | `test_cooling_coil_jacobian_at_saturation` | `structural` | #4210 | `unassigned` | Analytical and finite-difference Jacobians agree at saturation test inputs; resolve underlying Jacobian bugs | `pending` |
 
 > `src/` and workspace-member quarantines (like the Phase A8 rows above) are
 > covered by the audit invariant of this registry (Issues #3443 / #4178) —

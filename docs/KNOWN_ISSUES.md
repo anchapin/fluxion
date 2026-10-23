@@ -12,10 +12,10 @@
 | Model Limits (LIMIT) | 42 | 10 | 26 | 4 | 0 |
 | Reporting (REPORT) | 4 | 0 | 4 | 0 | 0 |
 | CI/Infrastructure (CI) | 4 | 2 | 2 | 0 | 0 |
-| fluxion-fluid (FLUID) | 2 | 0 | 2 | 0 | 0 |
+| fluxion-fluid (FLUID) | 2 | 1 | 1 | 0 | 0 |
 | FFD/CFD (FFD) | 2 | 1 | 1 | 0 | 0 |
 | Reference data (REF) | 1 | 1 | 0 | 0 | 0 |
-| **Total** | **73** | **24** | **40** | **5** | **0** |
+| **Total** | **73** | **25** | **39** | **5** | **0** |
 
 *Counts derived from the per-row catalog tables under each category section (`| **CATEGORY-NN** | ... |`) via `scripts/check_known_issues_summary.py`. Edit a row in place (or add a new row) and the table updates on the next regen. Status columns (`Fixed` / `Open` / `Partial` / `Won't Fix`) derive from each row's Status cell: `resolved` -> Fixed, `open` -> Open, `tracking only` -> Partial, `Won't Fix` -> Won't Fix. Rows without a recognized status are counted in the Total column but contribute 0 to the status columns. To regenerate: `python3 scripts/check_known_issues_summary.py --regen --in-place`.*
 
@@ -173,7 +173,7 @@ That registry, not this document, is canonical for quarantine state.
 
 | ID | Symptom | Current value vs band | Issue | Closes when | Status | History |
 |---|---|---|---|---|---|---|
-| **FLUID-01** | Analytical Jacobian Saturation/Clamping Errors | known limitation, open — analytical Jacobians for Chiller/Boiler/CoolingCoil/Pump/VavBox assume smooth functions; clamp()/max() saturation points make the analytical derivative diverge from finite-difference (zero derivative at clamps); fix requires subgradient or automatic differentiation (#2330); affected jacobian-accuracy tests still present in fluxion-fluid | — | subgradient or AD support in fluxion-fluid autodiff | open | [history](investigations/fluid-01-analytical-jacobian-saturation-clamping-errors.md) |
+| **FLUID-01** | Analytical Jacobian Saturation/Clamping Errors | resolved in #4210 — root causes were (1) Jacobians assembled with column-major `DMatrix::from_vec` fed row-major data, silently transposing every matrix; (2) saturation gates compared already-clamped values so they could never fire from outside the window; (3) Chiller COP floor tested on the scaled formula instead of the dimensionless factor, and its quotient-rule term dropped when saturated; (4) Boiler columns ordered t_enter before m_dot_hot with the fuel/m_dot partial missing. Jacobians now use `from_row_slice` with raw-input 0/1 saturation gates (one-sided subgradients); all 11 quarantined tests un-ignored and passing at the strict 1e-4 relative tolerance (worst saturation agreement < 6e-6) | #4210 | — | resolved | [history](investigations/fluid-01-analytical-jacobian-saturation-clamping-errors.md) |
 | **FLUID-02** | VAV Box Gradient Descent Test Input Size Mismatch | test-design bug, open — `test_vav_box_gradient_descent_convergence` passes a 1-element damper input to an API requiring 3 inputs ([damper, static_pressure, t_inlet]) → index-out-of-bounds in `jacobian_input` (test still present in fluxion-fluid, #2330); needs an all-3-input redesign or partial-input optimization support | — | test redesigned to pass all 3 inputs or partial-input API added | open | [history](investigations/fluid-02-vav-box-gradient-descent-test-input.md) |
 
 ## FFD/CFD co-simulation (FFD)

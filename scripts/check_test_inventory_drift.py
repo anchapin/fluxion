@@ -300,7 +300,7 @@ BASELINE_WORKSPACE_TESTS = 8940  # 2026-10-22 (loop round 89b): 8936 -> 8940 —
 # bumping the ratchet here keeps the nightly gauge soak's
 # ``scripts-tests.yml`` invocation green until a dedicated cleanup PR
 # can attribute them per-crate.
-BASELINE_WORKSPACE_IGNORED = 167  # 2026-10-10 (loop round 9 PR-c): 161 -> 167 — 6 gauge-routed 600-series metrics re-quarantined under the round-5 #[ignore=reason] convention pending PR-d re-pin. Prior: 161 (2026-10-09, #4170).
+BASELINE_WORKSPACE_IGNORED = 156  # 2026-10-23 (Issue #4210): 167 -> 156 — 11 FLUID-01 fluxion-fluid Jacobian tests un-ignored after the analytical Jacobians were fixed (from_row_slice orientation, raw-input saturation gates, Chiller COP-floor factor, Boiler column order). Prior: 167 (2026-10-10, loop round 9 PR-c): 161 -> 167 — 6 gauge-routed 600-series metrics re-quarantined under the round-5 #[ignore=reason] convention pending PR-d re-pin. Prior: 161 (2026-10-09, #4170).
                                   # round 5 quarantines the two Case 610 premise
                                   # tests (case_610::test_annual_heating / cooling)
                                   # that left the published Annex B ranges under
