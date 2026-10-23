@@ -506,3 +506,34 @@ Composite (all three): 600FF -13.13/44.93, 650FF Tmin -17.82 honestly leaves
 Nothing tuned. Each flip lands one PR (env-gated harness promoted to default,
 falsy-token archaeology opt-out) with the full re-record battery and old->new
 provenance.
+
+### Flip-2 measurement (SOL2ST, on 9e61b840, flag-off bit-identical 42/42)
+
+Measured on the merged flip-1 tip (9e61b840) — the preview numbers above were
+taken on a0446c26 pre-flip-1 and shift as predicted; actuals:
+
+Conditioned: 600 H 6.054 -> 6.915 MWh (gap 27.49 -> 47.76 pp), 600 C 4.490 ->
+2.444 (7.54 -> 42.83), 610 H 6.697 -> 7.592, 620 H 7.375 -> 8.194, 630 H
+8.001 -> 8.715 (heating +8.9..+13.4%), 610/C 2.633 -> 1.579, 620/C 3.785 ->
+2.405, 630/C 2.767 -> 1.832, 640/C 4.490 -> 2.444, 650/C 3.672 -> 1.870
+(cooling -33.8..-49.1%), 640 H 3.636 -> 4.401 (+21.0%). 620/C and 630/C
+honestly leave their bands (0.00 -> 26.66/20.12 pp, pass -> known_fail);
+800/C improves 1074.44 -> 532.45 pp.
+
+Free-float: 600FF Tmin -12.90 -> -13.07 (STAYS in band), Tmax 53.05 -> 44.83
+(gap 18.88 -> 31.45 pp); 650FF Tmin -17.65 -> -17.77 (STAYS in band, 0.03 K
+from the edge — the gate's closest in-band row), Tmax 52.25 -> 44.32 (18.30
+-> 30.70 pp); 900FF/950FF byte-identical (9R4C inert control).
+
+17/42 output-diff metrics moved, all low-mass family. The by-construction
+equalities surfaced by the move are formalized as §LIMIT-44 (800 H/C == 600
+H/C, 640 C == 600 C). Full re-record battery green (strict JSON
+_doc_round91b, output-diff CSV, fabric 600 5r1c/9r4c + parity, §6/§7 pins +
+CSVs, hotloop both goldens, grid baseline); contracts 14/14; blind exact;
+clippy -D warnings clean (CI gate invocation); fmt clean. Nothing tuned.
+
+### Flip-3 (T5138) — next on the merged tip
+
+Pending: per-class Table 5-138 routing (FLX_R91_T5138) re-measured on the
+flip-2 tip per §5.2.1.12.2; battery + rubber-duck review + merge, then this
+section gets its measurement record.

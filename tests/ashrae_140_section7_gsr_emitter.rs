@@ -1256,15 +1256,26 @@ fn section7_headline_value_pins() {
     // stay in band). Values cross-check the re-recorded
     // strict_energy_gate_baseline.json (_doc_round91a).
     // 900/900FF/950FF unchanged (9R4C inert control).
+    // Re-recorded 2026-10-23 (loop round 91, flip 2): the incumbent
+    // density-driven solar split retired from the engine default
+    // (`FLX_R91_SOL2ST`, §5.2.1.12 + ISO 13790 §C.1-C.3, §LIMIT-28
+    // round-91 record) moved the 600-family rows: 600 6.054/4.490 ->
+    // 6.915/2.444 MWh, 600FF -12.90/53.05 -> -13.07/44.83 (Tmin stays
+    // in band; Tmax gap 18.88 -> 31.45 pp), 650FF -17.65/52.25 ->
+    // -17.77/44.32 (Tmin stays in band, 0.03 K from the edge; Tmax
+    // gap 18.30 -> 30.70 pp). 620/630 cooling honestly leave their
+    // bands — recorded, not tuned. Values cross-check the re-recorded
+    // strict_energy_gate_baseline.json (_doc_round91b).
+    // 900/900FF/950FF unchanged (9R4C inert control).
     let pins: &[(&str, fn(&Section7CaseResult) -> f64, f64)] = &[
-        ("600", |r| r.annual_heating_mwh, 6.054),
-        ("600", |r| r.annual_cooling_mwh, 4.490),
+        ("600", |r| r.annual_heating_mwh, 6.915),
+        ("600", |r| r.annual_cooling_mwh, 2.444),
         ("900", |r| r.annual_heating_mwh, 1.225),
         ("900", |r| r.annual_cooling_mwh, 2.249),
-        ("600FF", |r| r.min_temp_c, -12.90),
-        ("600FF", |r| r.max_temp_c, 53.05),
-        ("650FF", |r| r.min_temp_c, -17.65),
-        ("650FF", |r| r.max_temp_c, 52.25),
+        ("600FF", |r| r.min_temp_c, -13.07),
+        ("600FF", |r| r.max_temp_c, 44.83),
+        ("650FF", |r| r.min_temp_c, -17.77),
+        ("650FF", |r| r.max_temp_c, 44.32),
         ("900FF", |r| r.min_temp_c, -0.26),
         ("900FF", |r| r.max_temp_c, 43.28),
         ("950FF", |r| r.min_temp_c, -15.67),

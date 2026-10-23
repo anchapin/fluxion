@@ -188,7 +188,12 @@ fn analytical_path_eui_is_bit_identical_to_baseline() {
     // (`FLX_R91_RETRANS`, §LIMIT-28 round-91 record) moves the analytical
     // harness EUI; surrogate golden unchanged.
     // (+2.8 %/+3.3 %/+2.7 %). Nothing tuned.
-    let golden = [84.03554103745084, 134.65987299248584, 162.0941813138899];
+    // Re-recorded 2026-10-23 (loop round 91, flip 2): the incumbent
+    // density-driven solar split retired from the default
+    // (`FLX_R91_SOL2ST`, §LIMIT-28 round-91 record) moves the analytical
+    // harness EUI 84.03554103745084 -> 106.71692499332153 (+27.0 %), 134.65987299248584 -> 155.05408015184670 (+15.1 %),
+    // 162.09418131388989 -> 182.35388767854468 (+12.5 %). Nothing tuned.
+    let golden = [106.71692499332153, 155.0540801518467, 182.35388767854468];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),
@@ -248,7 +253,12 @@ fn cpu_surrogate_mock_path_eui_is_bit_identical_to_baseline() {
     // [238.29500516989185, 253.05445617909788, 264.43994131835] ->
     // [238.2946250962913, 253.05417431579534, 264.43970946521875]
     // (<= 0.0002 %). Nothing tuned.
-    let golden = [238.2946250962913, 253.05417431579534, 264.43970946521875];
+    // Re-recorded 2026-10-23 (loop round 91, flip 2): the incumbent
+    // density-driven solar split retired from the default
+    // (`FLX_R91_SOL2ST`, §LIMIT-28 round-91 record) moves the
+    // CPU-surrogate harness EUI 238.29462509629130 -> 238.69405895505369 (+0.17 %), 253.05417431579534 ->
+    // 253.18250365965369 (+0.05 %), 264.43970946521875 -> 264.44683902603862 (+0.003 %). Nothing tuned.
+    let golden = [238.6940589550537, 253.1825036596537, 264.4468390260386];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),
