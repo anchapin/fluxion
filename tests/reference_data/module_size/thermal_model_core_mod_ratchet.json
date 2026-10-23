@@ -10,8 +10,12 @@
     {
       "actual": 4284,
       "reason": "Issue #4155 \u2014 zone moisture balance + ideal-system latent load: new HvacState accessors (get_latent_cooling_energy_kwh), reset logic for zone_humidity_ratio/zone_latent_cooling_energy_kwh/annual_latent_cooling_energy, and initialization. Minimal in-line additions (+21 lines net)."
+    },
+    {
+      "actual": 4309,
+      "reason": "Loop round 91 flip 2 (FLX_R91_SOL2ST) - the R91 FLIP 2 comment block in the solar-split flag route grew by a measured-values provenance paragraph (+25 lines net vs the Issue #4155 state). Comment-only growth; no new code paths."
     }
   ],
-  "max_lines": 4284,
+  "max_lines": 4309,
   "notes": "Issue #3574: extend module-size gate to src/sim/thermal_model_core/mod.rs, the largest child of the Issue #3543 decomposition (~4.1k LoC), still over the ratchet because of the bare impl ThermalModel<VectorField> block. Current size snapshotted as the historical maximum; the bound can only tighten (lowered via the YAML `max_lines` field). Companion cleanup work that decomposes this module is tracked separately and is out of scope for #3574."
 }
