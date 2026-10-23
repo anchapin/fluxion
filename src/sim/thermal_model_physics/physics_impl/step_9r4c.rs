@@ -1555,8 +1555,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         {
             // Disjoint field borrows: `mass` (sensor state) and `setpoints`
             // (zone air temperature) are separate fields of the model data.
-            let crate::sim::thermal_model_data::ThermalModelData { mass, setpoints, .. } =
-                &mut self.0;
+            let crate::sim::thermal_model_data::ThermalModelData {
+                mass, setpoints, ..
+            } = &mut self.0;
             if let Some(sensor_bank) = mass.sensor_nodes.as_mut() {
                 sensor_bank.step_watts(
                     dt,

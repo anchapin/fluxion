@@ -334,8 +334,8 @@ impl SensorNodeBank {
 // Simulation-layer wiring
 // ---------------------------------------------------------------------------
 
-use crate::physics::cta::ContinuousTensor;
 use crate::sim::thermal_model_core::ThermalModel;
+use crate::sim::thermal_model_data::ContinuousTensor;
 
 impl<T: ContinuousTensor<f64>> ThermalModel<T> {
     /// Attach a bank of thermostat sensor nodes to the model.
