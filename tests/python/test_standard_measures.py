@@ -1,11 +1,17 @@
-"""Pytest suite for the standard-library Fluxion measures (Issue #1815).
+"""Pytest suite for the standard-library Fluxion measures (Issues #1815, #3995).
 
 Issue #1815 — Phase 3 (Developer Experience & Ecosystem) of the Hybrid Measure
-Approach. Covers the three baseline measures shipped in ``measures/``:
+Approach. Covers the baseline measures shipped in ``measures/``:
 
 - ``SetWindowToWallRatio``
 - ``ReplaceHVACWithVAV``
 - ``IncreaseInsulationRValue``
+
+Issue #3995 grows the standard library past three with the two control-side
+measures:
+
+- ``SetThermostatSetpoints``
+- ``SwapSchedule``
 
 The suite is designed to run in two modes:
 
@@ -15,8 +21,12 @@ The suite is designed to run in two modes:
    provenance chain (Issue #1816) is recorded.
 2. **Without native bindings** (CI without a Rust toolchain): the pure-Python
    numerical helpers (``compute_window_area``, ``compute_insulated_u_value``,
-   ``build_vav_system``) are unit-tested directly. These tests do not need a
-   ``fluxion.Model``.
+   ``build_vav_system``, ``resolve_setpoint_pair``, ``build_hourly_profile``,
+   …) are unit-tested directly. These tests do not need a ``fluxion.Model``.
+   The two control-side measures are additionally exercised against
+   duck-typed stand-ins for ``fluxion.Model`` / ``fluxion.Zone``, which
+   implement the documented snapshot contract (``model.zones()`` -> mutate ->
+   push back) without the native extension.
 
 Numerical reasoning is done in code (per ``RULES.md``); the expected values in
 the pure-Python tests were verified with the helper scripts that accompany the
@@ -237,6 +247,29 @@ class TestArgumentDescriptors:
         dr = next(a for a in spec if a["name"] == "delta_r")
         assert dr["default"] == 2.0
 
+    def test_setpoint_arguments(self):
+        mod = _load_module("measures/SetThermostatSetpoints.py", "_setpoints_args")
+        spec = mod.SetThermostatSetpoints().arguments()
+        names = [a["name"] for a in spec]
+        assert "heating_delta" in names
+        assert "cooling_delta" in names
+        assert "heating_setpoint" in names
+        assert "cooling_setpoint" in names
+        heating_delta = next(a for a in spec if a["name"] == "heating_delta")
+        assert heating_delta["default"] == 0.0
+        absolute = next(a for a in spec if a["name"] == "heating_setpoint")
+        assert absolute["default"] is None
+
+    def test_schedule_arguments(self):
+        mod = _load_module("measures/SwapSchedule.py", "_schedule_args")
+        spec = mod.SwapSchedule().arguments()
+        names = [a["name"] for a in spec]
+        assert "schedule_name" in names
+        assert "profile" in names
+        profile = next(a for a in spec if a["name"] == "profile")
+        assert profile["default"] == mod.PROFILE_CONSTANT
+        assert set(profile["choices"]) == set(mod.PROFILES)
+
 
 # =============================================================================
 # Discovery — the standard-library measures are discoverable
@@ -255,6 +288,8 @@ class TestDiscovery:
             "SetWindowToWallRatio",
             "ReplaceHVACWithVAV",
             "IncreaseInsulationRValue",
+            "SetThermostatSetpoints",
+            "SwapSchedule",
         }.issubset(names), names
 
 
@@ -526,3 +561,513 @@ class TestStandardLibraryChain:
         assert "SetWindowToWallRatio" in names
         assert "ReplaceHVACWithVAV" in names
         assert "IncreaseInsulationRValue" in names
+
+
+# =============================================================================
+# Duck-typed stand-ins for fluxion.Model / fluxion.Zone
+# =============================================================================
+#
+# The measures are written against the *documented* snapshot contract
+# (``model.zones()`` -> mutate -> push back), so they can be exercised
+# without the native bindings by handing them a stand-in that implements the
+# same surface. This keeps the pure-Python mode of the suite meaningful for
+# the control-side measures, whose data the native ``fluxion.Model`` binding
+# does not (yet) expose a setter for.
+
+
+class _StubZone:
+    """Stand-in for the ``fluxion.Zone`` snapshot."""
+
+    def __init__(self, index, heating_setpoint=20.0, cooling_setpoint=24.0):
+        self.index = index
+        self.heating_setpoint = heating_setpoint
+        self.cooling_setpoint = cooling_setpoint
+
+
+class _StubModel:
+    """Stand-in for ``fluxion.Model`` exposing only the zone snapshot API."""
+
+    def __init__(self, zones, with_zone_setpoint_setter=False):
+        self._zones = zones
+        self.setpoint_calls = []
+        if with_zone_setpoint_setter:
+            self.set_zone_setpoints = self._set_zone_setpoints
+
+    def zones(self):
+        # Mirrors the PyO3 contract: a *fresh* list of owned snapshots.
+        return list(self._zones)
+
+    def _set_zone_setpoints(self, index, heating, cooling):
+        self.setpoint_calls.append((index, heating, cooling))
+
+
+class _StubSchedule:
+    """Stand-in for ``fluxion.HVACSchedule`` (hourly setpoint lookup)."""
+
+    def __init__(self, heating_values, cooling_values):
+        self._heating = list(heating_values)
+        self._cooling = list(cooling_values)
+
+    def heating_setpoint(self, hour):
+        return self._heating[hour % 24]
+
+    def cooling_setpoint(self, hour):
+        return self._cooling[hour % 24]
+
+
+# =============================================================================
+# SetThermostatSetpoints — pure-Python numerical helpers
+# =============================================================================
+
+
+class TestSetpointHelpers:
+    """Unit-test the setpoint arithmetic without native bindings."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module("measures/SetThermostatSetpoints.py", "_setpoints_mod")
+
+    def test_clamp_inside_range(self, mod):
+        assert mod.clamp(20.0, 15.0, 25.0) == pytest.approx(20.0)
+
+    def test_clamp_below_and_above(self, mod):
+        assert mod.clamp(10.0, 15.0, 25.0) == pytest.approx(15.0)
+        assert mod.clamp(30.0, 15.0, 25.0) == pytest.approx(25.0)
+
+    def test_clamp_normalizes_reversed_bounds(self, mod):
+        assert mod.clamp(30.0, 25.0, 15.0) == pytest.approx(25.0)
+        assert mod.clamp(10.0, 25.0, 15.0) == pytest.approx(15.0)
+
+    def test_shift_by_delta(self, mod):
+        assert mod.shift_setpoint(20.0, 1.5) == pytest.approx(21.5)
+        assert mod.shift_setpoint(20.0, -1.5) == pytest.approx(18.5)
+
+    def test_absolute_overrides_delta(self, mod):
+        assert mod.shift_setpoint(20.0, 5.0, absolute=18.0) == pytest.approx(18.0)
+
+    def test_shift_applies_bounds(self, mod):
+        assert mod.shift_setpoint(20.0, 10.0, minimum=15.0, maximum=25.0) == pytest.approx(
+            25.0
+        )
+
+    def test_resolve_pair_applies_deltas(self, mod):
+        heating, cooling = mod.resolve_setpoint_pair(20.0, 24.0, heating_delta=1.0)
+        assert heating == pytest.approx(21.0)
+        assert cooling == pytest.approx(24.0)
+
+    def test_resolve_pair_absolute_overrides_delta(self, mod):
+        heating, cooling = mod.resolve_setpoint_pair(
+            20.0, 24.0, heating_delta=5.0, cooling_setpoint=26.0
+        )
+        assert heating == pytest.approx(25.0)  # clamped to the engine bound
+        assert cooling == pytest.approx(26.0)
+
+    def test_resolve_pair_zero_delta_is_identity(self, mod):
+        heating, cooling = mod.resolve_setpoint_pair(20.0, 24.0)
+        assert heating == pytest.approx(20.0)
+        assert cooling == pytest.approx(24.0)
+
+    def test_resolve_pair_clamps_to_engine_bounds(self, mod):
+        heating, cooling = mod.resolve_setpoint_pair(
+            20.0, 24.0, heating_delta=10.0, cooling_delta=20.0
+        )
+        assert heating == pytest.approx(mod.MAX_HEATING_SETPOINT)
+        assert cooling == pytest.approx(mod.MAX_COOLING_SETPOINT)
+
+    def test_resolve_pair_clamps_to_minimums(self, mod):
+        heating, cooling = mod.resolve_setpoint_pair(
+            20.0, 24.0, heating_delta=-10.0, cooling_delta=-10.0
+        )
+        assert heating == pytest.approx(mod.MIN_HEATING_SETPOINT)
+        assert cooling == pytest.approx(mod.MIN_COOLING_SETPOINT)
+
+    def test_resolve_pair_without_clamping(self, mod):
+        # Without clamping the raw shifted values are kept — but the deadband
+        # is still enforced, so the cooling setpoint is raised to 31 °C.
+        heating, cooling = mod.resolve_setpoint_pair(
+            20.0, 24.0, heating_delta=10.0, clamp_to_bounds=False
+        )
+        assert heating == pytest.approx(30.0)
+        assert cooling == pytest.approx(31.0)
+
+    def test_resolve_pair_reopens_collapsed_deadband(self, mod):
+        # Heating + 1 K collapses the deadband (25 + 1 > 25), so the cooling
+        # setpoint is raised instead of letting the pair invert.
+        heating, cooling = mod.resolve_setpoint_pair(24.0, 25.0, heating_delta=1.0)
+        assert heating == pytest.approx(25.0)
+        assert cooling == pytest.approx(26.0)
+        assert cooling > heating
+
+    def test_resolve_pair_lowers_heating_when_cooling_is_capped(self, mod):
+        # The cooling setpoint is already at the (narrow) cap, so it cannot
+        # be raised: the heating setpoint is lowered instead.
+        heating, cooling = mod.resolve_setpoint_pair(
+            25.0,
+            25.0,
+            max_heating=25.0,
+            min_heating=15.0,
+            min_cooling=22.0,
+            max_cooling=25.0,
+        )
+        assert cooling == pytest.approx(25.0)
+        assert heating == pytest.approx(24.0)
+
+    def test_resolve_pair_keeps_valid_deadband(self, mod):
+        heating, cooling = mod.resolve_setpoint_pair(20.0, 24.0, heating_delta=2.0)
+        assert heating == pytest.approx(22.0)
+        assert cooling == pytest.approx(24.0)
+        assert cooling - heating >= mod.MIN_DEADBAND_K
+
+
+class TestApplySetpointSweep:
+    """Unit-test the zone sweep helper without native bindings."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module("measures/SetThermostatSetpoints.py", "_setpoints_mod")
+
+    def _zones(self):
+        return [
+            _StubZone(0, 20.0, 24.0),
+            _StubZone(1, 21.0, 25.0),
+        ]
+
+    def test_sweeps_every_zone(self, mod):
+        zones = self._zones()
+        records = mod.apply_setpoint_sweep(zones, heating_delta=1.0)
+        assert len(records) == 2
+        assert [z.heating_setpoint for z in zones] == pytest.approx([21.0, 22.0])
+        assert [z.cooling_setpoint for z in zones] == pytest.approx([24.0, 25.0])
+
+    def test_zone_index_filter(self, mod):
+        zones = self._zones()
+        records = mod.apply_setpoint_sweep(zones, zone_index=1, heating_delta=1.0)
+        assert len(records) == 1
+        assert records[0]["index"] == 1
+        assert zones[0].heating_setpoint == pytest.approx(20.0)
+        assert zones[1].heating_setpoint == pytest.approx(22.0)
+
+    def test_records_report_new_values(self, mod):
+        zones = self._zones()
+        records = mod.apply_setpoint_sweep(zones, cooling_setpoint=23.0)
+        assert records[0] == {
+            "index": 0,
+            "heating_setpoint": pytest.approx(20.0),
+            "cooling_setpoint": pytest.approx(23.0),
+        }
+
+    def test_unknown_zone_index_is_a_no_op(self, mod):
+        zones = self._zones()
+        records = mod.apply_setpoint_sweep(zones, zone_index=7, heating_delta=1.0)
+        assert records == []
+        assert zones[0].heating_setpoint == pytest.approx(20.0)
+
+
+# =============================================================================
+# SetThermostatSetpoints — measure behaviour (duck-typed model)
+# =============================================================================
+
+
+class TestSetThermostatSetpointsMeasure:
+    """Exercise the measure itself against a stand-in model."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module("measures/SetThermostatSetpoints.py", "_setpoints_mod")
+
+    def test_apply_uses_the_zone_setpoint_setter(self, mod):
+        model = _StubModel(
+            [_StubZone(0, 20.0, 24.0), _StubZone(1, 20.0, 24.0)],
+            with_zone_setpoint_setter=True,
+        )
+        measure = mod.SetThermostatSetpoints()
+        measure.apply(model, {"heating_delta": 1.0, "cooling_delta": -1.0})
+        assert model.setpoint_calls == [(0, 21.0, 23.0), (1, 21.0, 23.0)]
+
+    def test_apply_without_setter_still_sweeps_the_snapshots(self, mod):
+        model = _StubModel([_StubZone(0, 20.0, 24.0)])
+        measure = mod.SetThermostatSetpoints()
+        measure.apply(model, {"heating_delta": 1.0})
+        assert model.setpoint_calls == []
+        assert model.zones()[0].heating_setpoint == pytest.approx(21.0)
+
+    def test_apply_respects_zone_index(self, mod):
+        model = _StubModel(
+            [_StubZone(0, 20.0, 24.0), _StubZone(1, 20.0, 24.0)],
+            with_zone_setpoint_setter=True,
+        )
+        measure = mod.SetThermostatSetpoints()
+        measure.apply(model, {"heating_delta": 1.0, "zone_index": 1})
+        assert model.setpoint_calls == [(1, 21.0, 24.0)]
+
+    def test_apply_uses_declared_defaults(self, mod):
+        model = _StubModel([_StubZone(0, 20.0, 24.0)], with_zone_setpoint_setter=True)
+        measure = mod.SetThermostatSetpoints()
+        # ``parse_arguments`` fills the declared defaults (None for the
+        # optional absolute setpoints) — the measure must treat a None
+        # absolute value as "not specified".
+        args = measure.parse_arguments({})
+        measure.apply(model, args)
+        assert model.setpoint_calls == [(0, 20.0, 24.0)]
+
+    def test_provenance_chain_recorded(self, mod):
+        from fluxion.measures import SOURCE_PYTHON_MEASURE, apply_measures
+
+        model = _StubModel([_StubZone(0, 20.0, 24.0)])
+        chain: list[dict] = []
+        applied = apply_measures(
+            model,
+            [mod.SetThermostatSetpoints],
+            {"SetThermostatSetpoints": {"heating_delta": 1.0}},
+            applied_deltas=chain,
+        )
+        assert applied == ["SetThermostatSetpoints"]
+        assert len(chain) == 1
+        assert chain[0]["source"] == SOURCE_PYTHON_MEASURE
+        assert chain[0]["name"] == "SetThermostatSetpoints"
+
+
+# =============================================================================
+# SwapSchedule — pure-Python helpers
+# =============================================================================
+
+
+class TestScheduleHelpers:
+    """Unit-test the schedule profile arithmetic without native bindings."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module("measures/SwapSchedule.py", "_schedule_mod")
+
+    def test_fill_range_plain(self, mod):
+        values = mod.fill_range([0.0] * 24, 8, 12, 5.0)
+        assert values[8] == pytest.approx(5.0)
+        assert values[11] == pytest.approx(5.0)
+        assert values[12] == pytest.approx(0.0)
+        assert values[7] == pytest.approx(0.0)
+
+    def test_fill_range_wraps_midnight(self, mod):
+        values = mod.fill_range([0.0] * 24, 22, 6, 1.0)
+        assert values[22:24] == pytest.approx([1.0, 1.0])
+        assert values[0:6] == pytest.approx([1.0] * 6)
+        assert values[6] == pytest.approx(0.0)
+        assert values[21] == pytest.approx(0.0)
+
+    def test_fill_range_equal_bounds_fills_nothing(self, mod):
+        values = mod.fill_range([0.0] * 24, 8, 8, 5.0)
+        assert all(v == pytest.approx(0.0) for v in values)
+
+    def test_constant_profile(self, mod):
+        heating, cooling = mod.build_hourly_profile(mod.PROFILE_CONSTANT, 20.0, 24.0)
+        assert len(heating) == 24 and len(cooling) == 24
+        assert all(v == pytest.approx(20.0) for v in heating)
+        assert all(v == pytest.approx(24.0) for v in cooling)
+
+    def test_setback_profile(self, mod):
+        heating, cooling = mod.build_hourly_profile(
+            mod.PROFILE_SETBACK,
+            20.0,
+            24.0,
+            setback_heating_setpoint=15.0,
+            night_start_hour=22,
+            night_end_hour=6,
+        )
+        assert heating[10] == pytest.approx(20.0)
+        assert heating[23] == pytest.approx(15.0)
+        assert heating[2] == pytest.approx(15.0)
+        assert heating[12] == pytest.approx(20.0)
+        assert all(v == pytest.approx(24.0) for v in cooling)
+
+    def test_operating_hours_profile(self, mod):
+        heating, cooling = mod.build_hourly_profile(
+            mod.PROFILE_OPERATING_HOURS,
+            20.0,
+            24.0,
+            start_hour=8,
+            end_hour=18,
+        )
+        assert heating[10] == pytest.approx(20.0)
+        assert heating[2] == pytest.approx(mod.HEATING_OFF)
+        assert cooling[2] == pytest.approx(mod.COOLING_OFF)
+        assert heating[18] == pytest.approx(mod.HEATING_OFF)
+
+    def test_unknown_profile_raises(self, mod):
+        with pytest.raises(ValueError):
+            mod.build_hourly_profile("nope", 20.0, 24.0)
+
+    def test_occupied_setpoints_constant(self, mod):
+        heating, cooling = mod.build_hourly_profile(mod.PROFILE_CONSTANT, 20.0, 24.0)
+        assert mod.occupied_setpoints(heating, cooling) == pytest.approx((20.0, 24.0))
+
+    def test_occupied_setpoints_setback_uses_day_value(self, mod):
+        heating, cooling = mod.build_hourly_profile(
+            mod.PROFILE_SETBACK,
+            20.0,
+            24.0,
+            setback_heating_setpoint=15.0,
+            night_start_hour=22,
+            night_end_hour=6,
+        )
+        assert mod.occupied_setpoints(heating, cooling) == pytest.approx((20.0, 24.0))
+
+    def test_occupied_setpoints_operating_hours(self, mod):
+        heating, cooling = mod.build_hourly_profile(
+            mod.PROFILE_OPERATING_HOURS, 20.0, 24.0, start_hour=8, end_hour=18
+        )
+        assert mod.occupied_setpoints(heating, cooling) == pytest.approx((20.0, 24.0))
+
+    def test_swap_schedule_values_returns_replacement(self, mod):
+        current = [1.0] * 24
+        replacement = [2.0] * 24
+        assert mod.swap_schedule_values(current, replacement) == pytest.approx([2.0] * 24)
+
+    def test_swap_schedule_values_validates_length(self, mod):
+        with pytest.raises(ValueError):
+            mod.swap_schedule_values([1.0] * 24, [2.0] * 12)
+        with pytest.raises(ValueError):
+            mod.swap_schedule_values([1.0] * 12, [2.0] * 24)
+
+    def test_build_native_schedule_maps_profiles_to_constructors(self, mod):
+        calls = []
+
+        class _FakeHVACSchedule:
+            @staticmethod
+            def constant_schedule(heating_sp, cooling_sp):
+                calls.append(("constant", heating_sp, cooling_sp))
+                return "constant-schedule"
+
+            @staticmethod
+            def setback_schedule(day_heat, night_heat, cool_sp, night_start, night_end):
+                calls.append(
+                    ("setback", day_heat, night_heat, cool_sp, night_start, night_end)
+                )
+                return "setback-schedule"
+
+            @staticmethod
+            def with_operating_hours(heating_sp, cooling_sp, start_hour, end_hour):
+                calls.append(
+                    ("operating_hours", heating_sp, cooling_sp, start_hour, end_hour)
+                )
+                return "operating-schedule"
+
+        fake_fluxion = SimpleNamespace(HVACSchedule=_FakeHVACSchedule)
+
+        assert (
+            mod.build_native_schedule(
+                mod.PROFILE_CONSTANT, 20.0, 24.0, fluxion_module=fake_fluxion
+            )
+            == "constant-schedule"
+        )
+        assert (
+            mod.build_native_schedule(
+                mod.PROFILE_SETBACK,
+                20.0,
+                24.0,
+                setback_heating_setpoint=15.0,
+                night_start_hour=22,
+                night_end_hour=6,
+                fluxion_module=fake_fluxion,
+            )
+            == "setback-schedule"
+        )
+        assert (
+            mod.build_native_schedule(
+                mod.PROFILE_OPERATING_HOURS,
+                20.0,
+                24.0,
+                start_hour=8,
+                end_hour=18,
+                fluxion_module=fake_fluxion,
+            )
+            == "operating-schedule"
+        )
+        assert calls[0] == ("constant", 20.0, 24.0)
+        assert calls[1] == ("setback", 20.0, 15.0, 24.0, 22, 6)
+        assert calls[2] == ("operating_hours", 20.0, 24.0, 8, 18)
+
+
+# =============================================================================
+# SwapSchedule — measure behaviour (duck-typed model)
+# =============================================================================
+
+
+class TestSwapScheduleMeasure:
+    """Exercise the schedule swap against a stand-in model."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module("measures/SwapSchedule.py", "_schedule_mod")
+
+    def test_current_profile_falls_back_to_zone_setpoints(self, mod):
+        model = _StubModel([_StubZone(0, 20.0, 24.0)])
+        heating, cooling = mod.current_profile(model)
+        assert heating == pytest.approx([20.0] * 24)
+        assert cooling == pytest.approx([24.0] * 24)
+
+    def test_current_profile_reads_the_model_schedule(self, mod):
+        model = _StubModel([_StubZone(0, 20.0, 24.0)])
+        model.get_hvac_schedule = lambda: _StubSchedule([15.0] * 24, [26.0] * 24)
+        heating, cooling = mod.current_profile(model)
+        assert heating == pytest.approx([15.0] * 24)
+        assert cooling == pytest.approx([26.0] * 24)
+
+    def test_apply_collapses_to_occupied_setpoints(self, mod):
+        model = _StubModel([_StubZone(0, 20.0, 24.0)], with_zone_setpoint_setter=True)
+        measure = mod.SwapSchedule()
+        measure.apply(
+            model,
+            {
+                "profile": mod.PROFILE_OPERATING_HOURS,
+                "heating_setpoint": 21.0,
+                "cooling_setpoint": 25.0,
+                "start_hour": 8,
+                "end_hour": 18,
+            },
+        )
+        assert model.setpoint_calls == [(0, 21.0, 25.0)]
+
+    def test_apply_respects_zone_index(self, mod):
+        model = _StubModel(
+            [_StubZone(0, 20.0, 24.0), _StubZone(1, 20.0, 24.0)],
+            with_zone_setpoint_setter=True,
+        )
+        measure = mod.SwapSchedule()
+        measure.apply(
+            model,
+            {
+                "profile": mod.PROFILE_CONSTANT,
+                "heating_setpoint": 22.0,
+                "zone_index": 0,
+            },
+        )
+        assert model.setpoint_calls == [(0, 22.0, 24.0)]
+
+    def test_apply_without_setter_is_advisory(self, mod):
+        model = _StubModel([_StubZone(0, 20.0, 24.0)])
+        measure = mod.SwapSchedule()
+        # Must not raise even though the model exposes no schedule setter.
+        measure.apply(
+            model, {"profile": mod.PROFILE_CONSTANT, "heating_setpoint": 22.0}
+        )
+        assert model.setpoint_calls == []
+
+    def test_provenance_chain_recorded(self, mod):
+        from fluxion.measures import SOURCE_PYTHON_MEASURE, apply_measures
+
+        model = _StubModel([_StubZone(0, 20.0, 24.0)])
+        chain: list[dict] = []
+        applied = apply_measures(
+            model,
+            [mod.SwapSchedule],
+            {
+                "SwapSchedule": {
+                    "profile": mod.PROFILE_CONSTANT,
+                    "heating_setpoint": 22.0,
+                }
+            },
+            applied_deltas=chain,
+        )
+        assert applied == ["SwapSchedule"]
+        assert len(chain) == 1
+        assert chain[0]["source"] == SOURCE_PYTHON_MEASURE
+        assert chain[0]["name"] == "SwapSchedule"
