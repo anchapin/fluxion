@@ -3748,6 +3748,28 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             VectorField::from_smallvec(std::mem::take(&mut scratch.previous_temperatures));
         self.0.setpoints.temperatures = t_i_act;
 
+        // [Issue #4555 — thermostat sensor node (TRV sensor temperature).]
+        // Observational wiring: the sensor nodes READ the committed zone air
+        // temperature and the per-zone HVAC/radiator output and write ONLY
+        // their own state. They never feed back into the zone energy
+        // balance, so enabling them cannot change any simulation output.
+        // The bank is `None` by default, so this block is inert unless a
+        // caller attaches sensor nodes explicitly.
+        {
+            // Disjoint field borrows: `mass` (sensor state) and `setpoints`
+            // (zone air temperature) are separate fields of the model data.
+            let crate::sim::thermal_model_data::ThermalModelData { mass, setpoints, .. } =
+                &mut self.0;
+            if let Some(sensor_bank) = mass.sensor_nodes.as_mut() {
+                sensor_bank.step_watts(
+                    dt,
+                    setpoints.temperatures.as_ref(),
+                    hvac_output_raw.as_ref(),
+                    outdoor_temp,
+                );
+            }
+        }
+
         // Return HVAC energy (Plan 03-04: Use hvac_energy_for_step directly)
         // Thermal mass energy accounting removed - Ti_free calculation already includes thermal mass effects
         // No subtraction of mass energy change needed

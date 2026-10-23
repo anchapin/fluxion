@@ -1545,6 +1545,28 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Calculate and return total HVAC output (energy)
         let hvac_output = hvac_for_temp_calc;
 
+        // [Issue #4555 — thermostat sensor node (TRV sensor temperature).]
+        // Observational wiring: the sensor nodes READ the committed zone air
+        // temperature and the per-zone HVAC/radiator output and write ONLY
+        // their own state. They never feed back into the zone energy
+        // balance, so enabling them cannot change any simulation output.
+        // The bank is `None` by default, so this block is inert unless a
+        // caller attaches sensor nodes explicitly.
+        {
+            // Disjoint field borrows: `mass` (sensor state) and `setpoints`
+            // (zone air temperature) are separate fields of the model data.
+            let crate::sim::thermal_model_data::ThermalModelData { mass, setpoints, .. } =
+                &mut self.0;
+            if let Some(sensor_bank) = mass.sensor_nodes.as_mut() {
+                sensor_bank.step_watts(
+                    dt,
+                    setpoints.temperatures.as_ref(),
+                    hvac_output.as_ref(),
+                    outdoor_temp,
+                );
+            }
+        }
+
         // Issue #4500: input-envelope guard on the HVAC demand itself — the
         // ideal loads can overflow to ±inf for extreme-but-finite `dt` even
         // though every input passed the finite checks and the #4495
