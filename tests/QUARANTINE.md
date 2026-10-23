@@ -377,7 +377,7 @@ manually after legitimate changes.
 | `fluxion-behavior/src/occupancy.rs` | `test_statistical_validation_*` | `other` | #3705 (flaky: OS-seeded 10k-step Markov statistical assertion) | `unassigned` | Fixed-seed sampling or variance-aware tolerance; keep the distribution check live in CI. Closed: fixed seeds (`SmallRng::seed_from_u64`, distinct per Monte Carlo trajectory); `#[ignore]` removed; 5% relative-error assertion kept (resolves #3705, absorbs duplicate #3683) | `closed` |
 | `fluxion-wasm/tests/wasm_integration_tests.rs` | `wasm_run_full_annual_*` | `other` | #3703 (wasm step() toy model; #3595 smoke test) | `unassigned` | RESOLVED via #3624: `step()` now drives the embedded WD600 annual weather schedule (`weather: "ASHRAE_600"`), test un-ignored. Cooling asserts the published ±15% band (satisfied); heating asserts a recorded regression band — the toy single-node RC model has no solar aperture, so published heating-band parity still requires an engine-backed wasm surface | `closed (resolve #3624)` |
 | `tests/all_tests/energyplus_comparison_tests.rs` | `test_900_series_comprehensive_comparison` | `other` | Long-running | `unassigned` | Run explicitly when needed; not in CI | `pending` |
-| `crates/fluxion-twin/src/telemetry/mqtt.rs` | `test_mqtt_consumer_integration` | `other` | #4211 | `unassigned` | TLS MQTT broker provisioned at mqtts://localhost:8883 in the test environment, or documented manual broker setup | `pending` |
+| `crates/fluxion-twin/src/telemetry/mqtt.rs` | `test_mqtt_consumer_integration` | `other` | #4211 | `unassigned` | MANUAL-ONLY by decision of #4211: the test stays `#[ignore]`d — provisioning a TLS MQTT broker in CI (testcontainers/CI jobs/CA secrets) is out of scope for this issue. Run it by hand against a local mosquitto TLS broker per [docs/mqtt-manual-broker-setup.md](../docs/mqtt-manual-broker-setup.md) (cert generation, broker config, exact `cargo test … -- --ignored` invocation, teardown) | `pending` |
 
 ## Category: Strict-Energy-Gate & Structural Diagnostics (Issue #3443 reconciliation)
 
@@ -466,6 +466,15 @@ integration row (new tracking Issue #4211). The Issue #3443 ratchet is now a
 key-membership check with an empty freeze snapshot (`BASELINE_ORPHANED_IGNORES
 = 0`): any new orphan fails `--strict` until it is registered. Removed a
 stray `=======` conflict marker left in the Other section.
+
+2026-10-23 (Issue #4211): the TLS-MQTT integration row
+(`crates/fluxion-twin/src/telemetry/mqtt.rs::test_mqtt_consumer_integration`)
+is decided **MANUAL-ONLY** — the `#[ignore]` stays, no CI broker is
+provisioned (TLS broker provisioning in CI is out of scope for this issue) and
+no testcontainers/CI job was added. The row's Un-Ignore Criteria now points at
+the manual recipe — self-signed CA + `localhost` server certificate, mosquitto
+TLS config, the exact `cargo test … -- --ignored` invocation and teardown — in
+[docs/mqtt-manual-broker-setup.md](../docs/mqtt-manual-broker-setup.md).
 
 ---
 
