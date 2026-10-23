@@ -23,6 +23,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+use super::ashrae_140_validator::addendum_a::HourlyCaseReport;
 use std::io::Write;
 use std::path::Path;
 
@@ -616,6 +618,13 @@ pub struct DiagnosticReport {
     /// Populated only for FF cases; empty HashMap for non-FF runs.
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub hourly_temperature_profiles: HashMap<String, Vec<f64>>,
+    /// Issue #4268: Addendum a Table 6-1 hourly case reports for the fabric
+    /// cases (representative days Jan 4 / Jul 14). One entry per fabric case
+    /// run; missing hourly series are recorded as explicit known-fail rows
+    /// inside the case report rather than omitted. Empty for runs that do
+    /// not include fabric cases.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub addendum_a_hourly_cases: Vec<HourlyCaseReport>,
 }
 
 impl DiagnosticReport {
@@ -652,6 +661,11 @@ impl DiagnosticReport {
     /// Add comparison row
     pub fn add_comparison_row(&mut self, row: ComparisonRow) {
         self.comparison_rows.push(row);
+    }
+
+    /// Issue #4268: Record one fabric case's Addendum a hourly report.
+    pub fn add_addendum_a_hourly_case(&mut self, report: HourlyCaseReport) {
+        self.addendum_a_hourly_cases.push(report);
     }
 
     /// Issue #763: Add hourly zone temperature profile for a free-floating case.
@@ -717,6 +731,17 @@ impl DiagnosticReport {
                 output.push('\n');
             }
             output.push('\n');
+        }
+
+        // Issue #4268: Addendum a hourly time-series leg (fabric cases,
+        // representative days Jan 4 / Jul 14). Known-fail rows are rendered
+        // by HourlyCaseReport::to_markdown, never omitted.
+        if !self.addendum_a_hourly_cases.is_empty() {
+            output.push_str("## Addendum a Hourly Time-Series (Section 7 Fabric Cases)\n\n");
+            for case_report in &self.addendum_a_hourly_cases {
+                output.push_str(&case_report.to_markdown());
+                output.push_str("\n\n");
+            }
         }
 
         output

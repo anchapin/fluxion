@@ -23,6 +23,10 @@ use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::Path;
 
+pub mod addendum_a;
+
+pub use addendum_a::{HourlyBandRow, HourlyReport, HourlySeries};
+
 /// Validation mode for ASHRAE 140 testing.
 ///
 /// Determines whether corrections and calibrated values are applied.
@@ -262,6 +266,26 @@ pub fn wire_free_floating_conduction(model: &mut ThermalModel<VectorField>, spec
 
 pub fn validate_ashrae_140(spec: &CaseSpec) -> FreeFloatValidationResult {
     ASHRAE140Validator::validate_ashrae_140(spec)
+}
+
+/// Issue #4268: map an ASHRAE 140 case ID string (`"600"`, `"600FF"`, …) to the
+/// case enum variant so the Addendum a hourly leg can address cases by ID.
+///
+/// Free-float variants use their own `from_number` keys (601/651/901/951), so
+/// the `FF` suffix is mapped explicitly rather than stripped.
+pub fn fabric_case_from_id(case_id: &str) -> Option<ASHRAE140Case> {
+    let digits: String = case_id.chars().filter(char::is_ascii_digit).collect();
+    let base = ASHRAE140Case::from_number(digits.parse().ok()?)?;
+    if !case_id.ends_with("FF") {
+        return Some(base);
+    }
+    match base {
+        ASHRAE140Case::Case600 => Some(ASHRAE140Case::Case600FF),
+        ASHRAE140Case::Case650 => Some(ASHRAE140Case::Case650FF),
+        ASHRAE140Case::Case900 => Some(ASHRAE140Case::Case900FF),
+        ASHRAE140Case::Case950 => Some(ASHRAE140Case::Case950FF),
+        _ => None,
+    }
 }
 
 impl ASHRAE140Validator {
@@ -623,6 +647,18 @@ impl ASHRAE140Validator {
                 let (results, case_diagnostic) =
                     self.simulate_case_with_diagnostics(&spec, &weather, &case_id);
 
+                // Issue #4268: Addendum a Table 6-1 hourly output leg for the
+                // fabric cases (600-series low mass, 900-series high mass), on
+                // the representative days Jan 4 and Jul 14. Recorded for every
+                // fabric case so a missing hourly series shows up as an
+                // explicit known-fail row instead of being omitted.
+                if addendum_a::is_fabric_case(&case_id) {
+                    diagnostic_report.add_addendum_a_hourly_case(addendum_a::case_report(
+                        &case_id,
+                        results.addendum_a_hourly.as_ref(),
+                    ));
+                }
+
                 if spec.is_free_floating() {
                     if self.diagnostic_config.verbose {
                         tracing::info!(
@@ -981,6 +1017,13 @@ impl ASHRAE140Validator {
         } else {
             None
         };
+        // Issue #4268: Addendum a Table 6-1 hourly output series (fabric cases).
+        let mut addendum_a_hourly: Option<HourlySeries> =
+            if addendum_a::is_fabric_case(&spec.case_id) {
+                Some(HourlySeries::with_capacity(STEPS))
+            } else {
+                None
+            };
 
         for step in 0..STEPS {
             let hour_of_day = step % 24;
@@ -1104,7 +1147,14 @@ impl ASHRAE140Validator {
             }
 
             // Use model's step_physics to advance simulation
-            model.step_physics(step, dry_bulb_temp, 3600.0);
+            let hvac_kwh = model.step_physics(step, dry_bulb_temp, 3600.0);
+
+            // Issue #4268: Addendum a Table 6-1 hourly integrated outputs.
+            if let Some(series) = &mut addendum_a_hourly {
+                if let Some(&zone_0_temp) = model.setpoints.temperatures.as_slice().first() {
+                    series.push(zone_0_temp, hvac_kwh);
+                }
+            }
 
             if is_free_floating {
                 if let Some(&zone_0_temp) = model.setpoints.temperatures.as_slice().first() {
@@ -1149,6 +1199,8 @@ impl ASHRAE140Validator {
             },
             // Issue #827
             hourly_temperatures,
+            // Issue #4268: Addendum a Table 6-1 hourly output series.
+            addendum_a_hourly,
             // Issue #761: ASHRAE 140-2023 Section 8.2.2 peak timestamps
             peak_heating_timestamp: None,
             peak_cooling_timestamp: None,
@@ -1739,6 +1791,15 @@ impl ASHRAE140Validator {
         } else {
             None
         };
+        // Issue #4268: Addendum a Table 6-1 hourly output series for the fabric
+        // cases (600-series low mass, 900-series high mass), conditioned and
+        // free-float alike. Two 8760-entry f64 vectors ≈ 140 KB per case.
+        let mut addendum_a_hourly: Option<HourlySeries> =
+            if addendum_a::is_fabric_case(&spec.case_id) {
+                Some(HourlySeries::with_capacity(STEPS))
+            } else {
+                None
+            };
 
         // Issue #744: Run warm-up period to reach periodic steady state per ASHRAE 140 §B2
         // Warm-up uses wrapping weather data (hour % 8760) to simulate initial conditions
@@ -1952,6 +2013,17 @@ impl ASHRAE140Validator {
                     }
                 }
             }
+
+            // Issue #4268: Addendum a Table 6-1 hourly integrated zone air
+            // temperature + signed hourly integrated load (kWh) for the
+            // representative days (Jan 4, Jul 14). `hvac_kwh` is the energy
+            // `step_physics` integrated over this hour — the same quantity the
+            // annual accumulation below turns into MWh.
+            if let Some(series) = &mut addendum_a_hourly {
+                if let Some(&zone_0_temp) = model.setpoints.temperatures.as_slice().first() {
+                    series.push(zone_0_temp, hvac_kwh);
+                }
+            }
         }
 
         // SESSION 32: Use model's internally tracked (and corrected) annual energy
@@ -1978,10 +2050,51 @@ impl ASHRAE140Validator {
             },
             // Issue #827
             hourly_temperatures,
+            // Issue #4268: Addendum a Table 6-1 hourly output series.
+            addendum_a_hourly,
             // Issue #761: ASHRAE 140-2023 Section 8.2.2 peak timestamps
             peak_heating_timestamp: None,
             peak_cooling_timestamp: None,
         }
+    }
+
+    /// Issue #4268: Addendum a (ANSI/ASHRAE Standard 140-2017) daily hourly
+    /// output report for the Section 5.2.1 / 5.2.2 fabric cases.
+    ///
+    /// Runs the full annual simulation for each requested case (§6.2.1.8
+    /// forbids simulating only the representative days) and slices the hourly
+    /// series down to the Table 6-1 representative days — January 4 and
+    /// July 14 — producing 24 hourly integrated values per day (Table 6-1,
+    /// footnote a) of zone air temperature and signed hourly integrated
+    /// heating (+) / sensible cooling (−) load.
+    ///
+    /// Each case also carries its acceptance-band rows. Addendum a publishes
+    /// output *requirements* and not example-result bands in-repo, so the rows
+    /// are recorded as explicit known-fail (not-yet-banded) entries with their
+    /// per-metric source citations — never as invented numeric bands.
+    pub fn addendum_a_hourly_report(
+        &self,
+        weather: &EpwWeatherSource,
+        case_ids: &[&str],
+    ) -> addendum_a::HourlyReport {
+        let mut collected: Vec<(String, Option<HourlySeries>)> = Vec::with_capacity(case_ids.len());
+        for case_id in case_ids {
+            let series = fabric_case_from_id(case_id).map(|case| {
+                let spec = case.spec();
+                self.simulate_case(&spec, weather).addendum_a_hourly
+            });
+            collected.push((case_id.to_string(), series.flatten()));
+        }
+        addendum_a::report_from_series(collected)
+    }
+
+    /// Issue #4268: [`Self::addendum_a_hourly_report`] over the default fabric
+    /// case set ([`addendum_a::FABRIC_CASES`]).
+    pub fn addendum_a_hourly_report_default(
+        &self,
+        weather: &EpwWeatherSource,
+    ) -> addendum_a::HourlyReport {
+        self.addendum_a_hourly_report(weather, &addendum_a::FABRIC_CASES)
     }
 
     /// Simulates a case with diagnostic data collection.
@@ -2034,6 +2147,13 @@ impl ASHRAE140Validator {
         } else {
             None
         };
+        // Issue #4268: Addendum a Table 6-1 hourly output series (fabric cases).
+        let mut addendum_a_hourly: Option<HourlySeries> =
+            if addendum_a::is_fabric_case(&spec.case_id) {
+                Some(HourlySeries::with_capacity(STEPS))
+            } else {
+                None
+            };
 
         for step in 0..STEPS {
             let hour_of_day = step % 24;
@@ -2161,6 +2281,13 @@ impl ASHRAE140Validator {
                 }
             }
 
+            // Issue #4268: Addendum a Table 6-1 hourly integrated outputs.
+            if let Some(series) = &mut addendum_a_hourly {
+                if let Some(&zone_0_temp) = model.setpoints.temperatures.as_slice().first() {
+                    series.push(zone_0_temp, hvac_kwh);
+                }
+            }
+
             // Record hourly diagnostic data
             let mut hourly_data = HourlyData::new(step, num_zones);
             hourly_data.outdoor_temp = dry_bulb_temp;
@@ -2219,6 +2346,8 @@ impl ASHRAE140Validator {
             },
             // Issue #827
             hourly_temperatures,
+            // Issue #4268: Addendum a Table 6-1 hourly output series.
+            addendum_a_hourly,
             // Issue #761: ASHRAE 140-2023 Section 8.2.2 peak timestamps
             peak_heating_timestamp: None,
             peak_cooling_timestamp: None,
@@ -2246,6 +2375,15 @@ pub struct CaseResults {
     /// cases. Allocated once per FF case (~70 KB), so non-FF cases pay no
     /// allocation cost.
     pub hourly_temperatures: Option<Vec<f64>>,
+    /// Issue #4268: Addendum a (Standard 140-2017) Table 6-1 hourly output
+    /// series for the Section 5.2.1/5.2.2 fabric cases — 8760 hourly integrated
+    /// zone-0 air temperatures (°C) and 8760 signed hourly integrated loads
+    /// (kWh, `+` heating / `−` sensible cooling). `None` for non-fabric cases.
+    /// Sliced to the representative days (Jan 4, Jul 14) by
+    /// [`addendum_a::case_report`]; the series itself is always a full annual
+    /// run, as §6.2.1.8 requires ("Running the simulation for only the required
+    /// days ... shall be prohibited").
+    pub addendum_a_hourly: Option<HourlySeries>,
     /// Issue #761: Peak heating timestamp (month, day, hour) per ASHRAE 140-2023 Section 8.2.2.
     pub peak_heating_timestamp: Option<(u32, u32, u32)>,
     /// Issue #761: Peak cooling timestamp (month, day, hour) per ASHRAE 140-2023 Section 8.2.2.
@@ -2379,6 +2517,13 @@ impl ASHRAE140Validator {
 
         let is_free_floating = spec.is_free_floating();
         let mut diagnostic = CaseDiagnostic::new(case_id, num_zones);
+        // Issue #4268: Addendum a Table 6-1 hourly output series (fabric cases).
+        let mut addendum_a_hourly: Option<HourlySeries> =
+            if addendum_a::is_fabric_case(&spec.case_id) {
+                Some(HourlySeries::with_capacity(STEPS))
+            } else {
+                None
+            };
 
         if is_free_floating {
             model.setpoints.heating_setpoint = -999.0;
@@ -2634,6 +2779,13 @@ impl ASHRAE140Validator {
                 }
             }
 
+            // Issue #4268: Addendum a Table 6-1 hourly integrated outputs.
+            if let Some(series) = &mut addendum_a_hourly {
+                if let Some(&zone_0_temp) = model.setpoints.temperatures.as_slice().first() {
+                    series.push(zone_0_temp, hvac_kwh);
+                }
+            }
+
             // Collect hourly data if enabled
             if self.diagnostic_config.output_hourly {
                 let mut hourly = HourlyData::new(step, num_zones);
@@ -2719,6 +2871,8 @@ impl ASHRAE140Validator {
             },
             // Issue #827
             hourly_temperatures,
+            // Issue #4268: Addendum a Table 6-1 hourly output series.
+            addendum_a_hourly,
             // Issue #761: ASHRAE 140-2023 Section 8.2.2 peak timestamps
             peak_heating_timestamp,
             peak_cooling_timestamp,
