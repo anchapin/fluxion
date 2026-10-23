@@ -1634,24 +1634,39 @@ fn emit_section6_conformance() {
 // 10-05-13). Solar/sky columns did not move (weather-only path).
 // Re-emitted section6_workflow_results.csv and
 // section6_table61_daily_hourly.csv in the same commit; nothing tuned.
+// Re-recorded 2026-10-22 (loop round 91, flip 1): the ASHRAE 140 Table
+// 5-138 window-loss solar sink promoted to the engine default
+// (`FLX_R91_RETRANS`; §5.2.1.12.1 "accounting for solar lost ...
+// retransmitted back out the windows", Table 5-138 row "Solar Lost through
+// Windows 0.035"; round-83 arm left gated on band direction alone,
+// flipped under the 2026-10-22 criteria) moved the 5R1C load values on
+// the spec-built WD harness models. Old values (round 90): WD100
+// [6.1790, 3.7506, 4.7066, 3.9022], WD200 [2.8027, 4.4855, 3.9269,
+// 3.6817], WD300 [3.6514, 2.0936, 2.7238, 2.5986], WD400 [32.1487,
+// 0.1055, 8.2808, 2.5237], WD500 [0.3274, 13.3153, 1.5597, 5.2406],
+// WD600 [5.8104, 4.9806, 4.6855, 4.4303]. One peak occurrence moved
+// (WD600 C 10-01-13 -> 09-03-13); all others unchanged. Solar/sky
+// columns did not move (weather-only path). Re-emitted
+// section6_workflow_results.csv and section6_table61_daily_hourly.csv in
+// the same commit; nothing tuned.
 const SECTION6_VALUE_PINS: [(&str, f64, f64, f64, f64, &str, &str); 6] = [
     (
-        "WD100", 6.1790, 3.7506, 4.7066, 3.9022, "02-09-05", "10-01-13",
+        "WD100", 6.2703, 3.5553, 4.7108, 3.7685, "02-09-05", "10-01-13",
     ),
     (
-        "WD200", 2.8027, 4.4855, 3.9269, 3.6817, "02-12-07", "10-10-13",
+        "WD200", 2.8517, 4.2927, 3.9330, 3.5586, "02-12-07", "10-10-13",
     ),
     (
-        "WD300", 3.6514, 2.0936, 2.7238, 2.5986, "07-22-07", "12-15-14",
+        "WD300", 3.6853, 2.0267, 2.7261, 2.5568, "07-22-07", "12-15-14",
     ),
     (
-        "WD400", 32.1487, 0.1055, 8.2808, 2.5237, "01-26-16", "08-13-14",
+        "WD400", 32.3010, 0.0901, 8.2808, 2.3737, "01-26-16", "08-13-14",
     ),
     (
-        "WD500", 0.3274, 13.3153, 1.5597, 5.2406, "12-30-07", "10-05-13",
+        "WD500", 0.3399, 12.9727, 1.5750, 5.1219, "12-30-07", "10-05-13",
     ),
     (
-        "WD600", 5.8104, 4.9806, 4.6855, 4.4303, "02-09-05", "10-01-13",
+        "WD600", 5.9020, 4.7386, 4.6901, 4.2925, "02-09-05", "09-03-13",
     ),
 ];
 
@@ -1765,40 +1780,48 @@ const SECTION6_SOLAR_SKY_PINS: [(&str, [f64; 5], f64, f64, f64, f64, &str, &str)
 /// -29.9073], WD300 [-13.3412, -18.4369, 22.2585], WD400 [117.6887,
 /// 117.1189, 12.6272], WD500 [-6.6486, -17.9874, -27.2679], WD600
 /// [60.4531, 26.0563, -27.2438]. Nothing tuned.
+/// Load totals re-recorded 2026-10-22 (loop round 91, flip 1, Table 5-138
+/// window-loss sink default, `FLX_R91_RETRANS`, §LIMIT-28 round-91 record)
+/// from the regenerated `section6_table61_daily_hourly.csv`; solar/sky
+/// columns did not move (weather-only path). Round-90 load totals: WD100
+/// [61.9827, 29.6279, -18.5160], WD200 [22.1166, 32.6062, -29.9079], WD300
+/// [-13.3064, -18.3591, 22.2142], WD400 [117.6887, 117.1199, 13.0220],
+/// WD500 [-6.5828, -18.0433, -27.2594], WD600 [60.5784, 25.9177,
+/// -27.2402]. Nothing tuned.
 const SECTION6_TABLE61_DAY_PINS: [(&str, [f64; 3], [f64; 3], f64); 6] = [
     (
         "WD100",
-        [61.9827, 29.6279, -18.5160],
+        [62.4010, 31.3302, -18.1013],
         [-25.226, -1.577, 8.832],
         8823.6,
     ),
     (
         "WD200",
-        [22.1166, 32.6062, -29.9079],
+        [22.9641, 32.9039, -29.3351],
         [-1.514, 10.349, 19.353],
         6868.2,
     ),
     (
         "WD300",
-        [-13.3064, -18.3591, 22.2142],
+        [-12.8509, -17.9232, 22.3372],
         [8.897, -1.019, -5.611],
         3220.6,
     ),
     (
         "WD400",
-        [117.6887, 117.1199, 13.0220],
+        [117.6887, 117.1232, 13.6229],
         [-26.286, -32.833, -3.490],
         3756.7,
     ),
     (
         "WD500",
-        [-6.5828, -18.0433, -27.2594],
+        [-5.4717, -16.6809, -26.7636],
         [1.491, 23.641, 25.454],
         3107.4,
     ),
     (
         "WD600",
-        [60.5784, 25.9177, -27.2402],
+        [61.0308, 27.7137, -26.5968],
         [-25.226, -1.577, 8.832],
         8823.6,
     ),

@@ -86,6 +86,34 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let conv_frac = self.0.solar.convective_fraction;
         let rad_frac = 1.0 - conv_frac;
 
+        // [R91 FLIP — the ASHRAE 140 Table 5-138 window-loss solar sink is
+        // the engine default since loop round 91 (bands-as-factor audit;
+        // Alex directive 2026-10-22 21:20 ET: re-evaluate every decision
+        // previously taken on band movement under the standing 2026-10-22
+        // criteria — known, verifiable, tested physics; band movement is
+        // recorded, not weighted). PREMISE (primary source, the licensed
+        // 140-2017 text in docs/): §5.2.1.12.1 defines the interior solar
+        // distribution as "accounting for solar lost (transmitted solar
+        // radiation reflected by interior opaque surfaces and
+        // retransmitted back out the windows)"; Table 5-138's own row
+        // carries the value: "Solar Lost through Windows 0.035". The
+        // engine transmitted 100% of window solar into the zone
+        // distribution — the over-absorption rounds 81/83 disclosed. The
+        // round-83 retransmission arm (FLX_R83_RETRANS) was left gated
+        // solely on band direction; under the new criteria the spec sink
+        // is reference-conformant and goes default on its own merits.
+        // Measured on a0446c26 (arm battery, flag-off bit-identical to the
+        // round-90 record 42/42, FLX_R91_RETRANS=1): 600/C 4.728 -> 4.490
+        // MWh, 610-650/C -3.8..-5.3%, 600/H 5.959 -> 6.054 MWh (+1.6%),
+        // 600FF Tmax 53.84 -> 53.05 C, 650FF Tmax 53.09 -> 52.25 C, both
+        // FF minima stay in-band, no strict-gate row changes state
+        // (check_strict 0), high-mass family byte-identical; 17/42
+        // output-diff metrics moved, all low-mass family. A falsy token
+        // (0/false/no/off) restores the x1.0 route for A/B archaeology
+        // only; any other value behaves as unset, i.e. the retransmission
+        // default.]
+        let r91_retrans = crate::util::env_bool::env_bool("FLX_R91_RETRANS", true);
+
         // Internal radiative gains split per ISO 13790 Section C.4 Eq. C.5/C.6:
         // Eq. C.5 (radiative-to-surface): phi_st = (1 - F_sup) * phi_int_rad
         //   where F_sup = H_ms / (H_ms + H_is) — fraction to surface node
@@ -123,7 +151,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         for i in 0..self.0.hvac.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
-            let sol_w = solar_ref[i] * area_ref[i];
+            // [R91 — FLX_R91_RETRANS sink: transmitted solar x 0.965
+            // before the three-way split; the retransmitted fraction
+            // leaves through the glazing and is not distributed to any
+            // node (ASHRAE 140-2017 Table 5-138, "Solar Lost through
+            // Windows 0.035"). Flag-off is the pre-round-91 x1.0 route.]
+            let sol_w_raw = solar_ref[i] * area_ref[i];
+            let sol_w = if r91_retrans {
+                sol_w_raw * 0.965
+            } else {
+                sol_w_raw
+            };
             // opaque_sol_w: kept for potential debugging; it's included via t_sol_air now
             let _opaque_sol_w = opaque_solar_ref[i] * area_ref[i];
 

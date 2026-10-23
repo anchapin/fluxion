@@ -2,7 +2,7 @@
   "_doc": "Known structural-failure baseline for the ASHRAE 140 strict +/-15% annual-energy gate (issue #2506, extended in issue #3572 to cover the eight cases 600/800/810/900/920/950/960/970). The Case 600/900 annual COOLING physics gap is NOT yet fixed (tracked by the post-#1323 / #1213 / #1328 cooling-load chain); these two metrics are expected to FAIL the +/-15% band today. The strict-energy-gate workflow runs the eight `#[ignore]`'d strict tests with `--include-ignored`, parses the printed H/C values, computes each metric's gap as a percentage of the band midpoint, and compares against this baseline. The gate FAILS only when a metric REGRESSES beyond `regression_tolerance_pp` percentage points worse than its recorded `gap_pct_of_mid` (or when a previously-`pass` metric starts failing beyond the tolerance). When the physics is fixed and a cooling metric re-enters its band (gap == 0), lower its value here and eventually un-ignore the tests (issues #1333 / #2506 / #3572 acceptance). Do NOT raise a baseline gap to make a regression disappear (RULES.md: no parameter tuning). Updated 2026-09-29 by PR #4265 (Issue #4156): unified HVAC coefficient. Refreshed 2026-09-30 by the PR #4265 follow-up to also reflect the Case 900 H, Case 960 H, and the 13 other per-case measurements not covered by the original PR. The original PR's `value_mwh=3.144, gap_pct_of_mid=65.36` for Case 900 H was internally inconsistent (the gap did not correspond to the value under the standard band_pct_of_mid formula) and has been corrected to the measured 3.723/116.95 pair. Re-recorded 2026-10-12 (loop round 18, issue #4168, PR branch): the Case 800/810 published_range_mwh entries are now the transcribed ASHRAE 140-2023 Annex B8 \u00a7B8.1 inter-program envelope (Std140_TF_Results.pdf Tables B8-1..B8-4, pp. 8-11), replacing the synthetic-fitted ranges; engine values 7.039/3.591/1.680/1.684 re-measured unchanged on the round-18 branch (deterministic, byte-identical to the prior capture); gaps recomputed against the new band midpoints. Statuses remain known_fail \u2014 no gap was raised or lowered to hide anything; the 810 cooling gap FELL (46.73 -> 1.10) purely because the synthetic band it was measured against was itself unfit.",
   "_doc_issue3572": "Cases 800 / / 810 are tracked as `known_fail` here even though they lack a formal structural LIMIT entry in docs/KNOWN_ISSUES.md (as of 2026-10-12, loop round 19, they carry formal entries: 800 -> \u00a7LIMIT-25, 810 -> \u00a7LIMIT-26). Per RULES.md (\"never raise baselines to hide regressions\") we mark the current measured gap as `known_fail` rather than claiming pass; DONE 2026-10-12 (loop round 19): \u00a7LIMIT-25 / \u00a7LIMIT-26 entries were added to docs/KNOWN_ISSUES.md, co-locating the structural rationale with this failure record. Cases 920 / 950 / 960 / 970 each have a documented LIMIT entry (920 -> \u00a7LIMIT-05 UPDATE #2453 cohort, 950 -> -> \u00a7LIMIT-17 / \u00a7LIMIT-24, 960 -> \u00a7LIMIT-14, 970 -> \u00a7LIMIT-23).",
   "_rule": "Per AGENTS.md / RULES.md: this file records the KNOWN gap; it must never be loosened to hide a regression. Only lower a gap when the engine genuinely improved, and commit the improving change together with the baseline update.",
-  "captured_commit": "round 90 flip (scratch/r90-release-split, FLX_R90_NO_LAG_FILTER default-on)",
+  "captured_commit": "round 91 flip 1 (physics/r91-retrans, FLX_R91_RETRANS default-on)",
   "source_command": "cargo test --release --features ort --test all_tests _annual_energy_ashrae140_tolerance -- --include-ignored --nocapture",
   "source_path": "run_blind_annual_energy() in tests/zone_balance_eplus_isolation.rs (blind zone-balance path, NOT the Informed benchmark.rs path)",
   "tolerance_fraction": 0.15,
@@ -19,8 +19,8 @@
         3.611,
         4.886
       ],
-      "value_mwh": 5.959,
-      "gap_pct_of_mid": 25.26,
+      "value_mwh": 6.054,
+      "gap_pct_of_mid": 27.49,
       "status": "known_fail"
     },
     "case_600_cooling": {
@@ -32,8 +32,8 @@
         4.927,
         6.667
       ],
-      "value_mwh": 4.728,
-      "gap_pct_of_mid": 3.43,
+      "value_mwh": 4.49,
+      "gap_pct_of_mid": 7.54,
       "status": "known_fail"
     },
     "case_800_heating": {
@@ -45,8 +45,8 @@
         4.381,
         5.928
       ],
-      "value_mwh": 5.959,
-      "gap_pct_of_mid": 0.6,
+      "value_mwh": 6.054,
+      "gap_pct_of_mid": 2.44,
       "status": "known_fail"
     },
     "case_800_cooling": {
@@ -58,8 +58,8 @@
         0.321,
         0.434
       ],
-      "value_mwh": 4.728,
-      "gap_pct_of_mid": 1137.48,
+      "value_mwh": 4.49,
+      "gap_pct_of_mid": 1074.44,
       "status": "known_fail"
     },
     "case_810_heating": {
@@ -228,8 +228,8 @@
         3.68,
         4.978
       ],
-      "value_mwh": 6.607,
-      "gap_pct_of_mid": 37.63,
+      "value_mwh": 6.697,
+      "gap_pct_of_mid": 39.71,
       "status": "known_fail"
     },
     "case_610_cooling": {
@@ -241,8 +241,8 @@
         3.612,
         4.887
       ],
-      "value_mwh": 2.765,
-      "gap_pct_of_mid": 19.93,
+      "value_mwh": 2.633,
+      "gap_pct_of_mid": 23.04,
       "status": "known_fail"
     },
     "case_620_heating": {
@@ -254,8 +254,8 @@
         3.746,
         5.067
       ],
-      "value_mwh": 7.292,
-      "gap_pct_of_mid": 50.49,
+      "value_mwh": 7.375,
+      "gap_pct_of_mid": 52.38,
       "status": "known_fail"
     },
     "case_620_cooling": {
@@ -267,7 +267,7 @@
         3.504,
         4.741
       ],
-      "value_mwh": 3.945,
+      "value_mwh": 3.785,
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     },
@@ -280,8 +280,8 @@
         4.035,
         5.46
       ],
-      "value_mwh": 7.929,
-      "gap_pct_of_mid": 52.01,
+      "value_mwh": 8.001,
+      "gap_pct_of_mid": 53.52,
       "status": "known_fail"
     },
     "case_630_cooling": {
@@ -293,7 +293,7 @@
         2.4,
         3.247
       ],
-      "value_mwh": 2.876,
+      "value_mwh": 2.767,
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     },
@@ -306,8 +306,8 @@
         2.161,
         2.924
       ],
-      "value_mwh": 3.558,
-      "gap_pct_of_mid": 24.94,
+      "value_mwh": 3.636,
+      "gap_pct_of_mid": 28.0,
       "status": "known_fail"
     },
     "case_640_cooling": {
@@ -319,8 +319,8 @@
         4.73,
         6.4
       ],
-      "value_mwh": 4.728,
-      "gap_pct_of_mid": 0.04,
+      "value_mwh": 4.49,
+      "gap_pct_of_mid": 4.31,
       "status": "known_fail"
     },
     "case_650_heating": {
@@ -345,8 +345,8 @@
         3.881,
         5.25
       ],
-      "value_mwh": 3.877,
-      "gap_pct_of_mid": 0.09,
+      "value_mwh": 3.672,
+      "gap_pct_of_mid": 4.58,
       "status": "known_fail"
     },
     "case_910_heating": {
@@ -462,7 +462,7 @@
         -13.8,
         -9.9
       ],
-      "value_c": -12.87,
+      "value_c": -12.9,
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     },
@@ -475,8 +475,8 @@
         62.4,
         68.4
       ],
-      "value_c": 53.84,
-      "gap_pct_of_mid": 17.68,
+      "value_c": 53.05,
+      "gap_pct_of_mid": 18.88,
       "status": "known_fail"
     },
     "ff_650ff_min": {
@@ -488,7 +488,7 @@
         -17.8,
         -16.7
       ],
-      "value_c": -17.63,
+      "value_c": -17.65,
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     },
@@ -501,8 +501,8 @@
         61.1,
         66.8
       ],
-      "value_c": 53.09,
-      "gap_pct_of_mid": 16.98,
+      "value_c": 52.25,
+      "gap_pct_of_mid": 18.3,
       "status": "known_fail"
     },
     "ff_900ff_min": {
@@ -584,5 +584,6 @@
   "_doc_round85": "2026-10-21 (loop round 85): full re-record for the per-class coupled sub-step mass advance default flip (`FLX_R84_PERCLASS` promoted to the engine default, Alex-directed 2026-10-21 21:18 ET, #3983 \u00a765). Every value re-recorded from the corrected engine on the flipped default build; measured lines are identical to the round-84 \u00a764 env-gated flag-on measurement on e4278703, and the R85 tensor-presence guard (hand-rolled models keep the lumped sub-step advance) is output-neutral on spec models \u2014 sorted strict lines equal across the guard. Checker statuses re-derived honestly; no band crossings this round (same pass/known-fail partition as round 78); checker reports three gap improvements (ff_600ff_min 68.10->66.84 pp, case_650_cooling 59.03->58.15 pp, case_195_cooling 124.23->123.62 pp). Bands and the regression tolerance untouched. Nothing tuned. Bookkeeping repair carried in the same re-record: the ff_* rows carried a stale value_mwh key left behind by the round-73 recording script (value_c is the live key for temperature rows); the stale key is removed so future recording scripts cannot write into it. Re-recorded 2026-10-22 (loop round 87, vent-air-only flip, Alex-approved 2026-10-22 06:41 ET \"I approve the vent arm\"): the mass-side night-vent coupling on the 5R1C sub-step path (h_vent_i folded into h3, and the legacy hourly h_vent_mass_zone site) is now 0 by default (FLX_R86_VENT_AIR_ONLY falsy-token restore; double-count removal per #821's own note; ISO 13790 section C.4 Eq. C.10; 9R4C parity since LIMIT-17). Old -> new: case_650_cooling 1.226 -> 2.27 MWh (gap 58.15 -> 35.29 pp, improvement); ff_650ff_max 41.89 -> 46.11 C (gap 34.5 -> 27.9 pp, improvement); ff_650ff_min -17.41 -> -16.2 C LEAVES its band [-17.8, -16.7] upward (was pass at gap 0.0, now known_fail at 6.09 pp) - the honest cost of removing the artificial mass chilling (round-86 audit: the mass-side term stripped 3.1x the ISO air-side exchange and drove the mass below freezing overnight). Every other row byte-identical (output-diff 39/42 rows +0.0000 percent, incl. Cases 950/950FF: 9R4C auto-promote, inert control). Nothing tuned. See docs/investigations/limit-43-case-650ff-tmin-air-only-vent.md.",
   "_doc_round89": "2026-10-22 (loop round 89): full re-record for the surface-pool mass share default flip (`FLX_R88_PHIST_MASS_SHARE` promoted to the engine default, Alex-directed 2026-10-22 14:57 ET: correct spec-shaped physics goes to default on its own merits; band outcomes are a downstream check, not the optimization target). Every value re-recorded from the flipped default build; measured lines are verbatim-identical (sorted) to the round-88 env-gated flag-on measurement - the flip executes exactly the verified arm. Flag-off route (falsy \"0\" token) re-verified bit-identical to the pre-flip record: strict checker 9 pass / 33 known-fail / 0 regression, output-diff 42/42 at +0.0000 percent. Checker statuses re-derived honestly on the default: case_600_heating 5.271 -> 4.467 MWh and case_640_heating ENTER their bands (known_fail -> pass); conditioned 610/620/630 heating+cooling and 600/640 cooling gaps NARROW; case_650_cooling 35.29 -> 36.01 pp, case_800_cooling 663.58 -> 712.58 pp and ff_600ff_min 66.84 -> 78.40 pp WORSEN (free-float cohort drifts away from band on the current lag-filter + mass-coverage operator - recorded, not tuned; remaining candidates are the mass-node time coverage (dt_m, round-89 item 2a) and the lag-filter form). 17 of 42 output-diff metrics moved; output_diff_baseline.csv re-recorded in the same PR with dated provenance. Bands and the regression tolerance untouched. Nothing tuned. Post-record tally: 11 pass / 31 known-fail.",
   "_doc_round89b": "2026-10-22 (loop round 89b, item 2a): full re-record for the mass-node time-coverage fix promoted to the engine default (FLX_R89_MASS_DT_ALIGN; see the flip commit). The default mass advance now runs mass_sub composed CN applications at dt_m = dt_sub/mass_sub - full 3600 s/hour coverage at the established 25 s step accuracy; the composed affine pair is recorded so the checker mirror stays exact by construction. Premise was code-verified (one CN application per sub-step => 300 s of mass physics per hour, 1/12 of real time); the A/B/C decomposition (coarse single-step vs inner-loop coverage) showed the movement is coverage physics, not step-size numerics (contract 14). Honest outcome: both free-float Tmin rows ENTER their published bands for the first time (600FF -12.85 in [-13.80, -9.90]; 650FF -17.62 in [-17.80, -16.70]); FF Tmax gaps roughly halve; conditioned cooling converges strongly (600 C gap 31.10 -> 3.92, 640 C 28.86 -> 0.54, 650 C 36.01 -> 1.23; 620 C and 630 C enter); conditioned heating rows regress (600 H leaves, 610/620/630/640 H worsen, 800 C ~1128 -> ~1130) and are recorded, not tuned. High-mass rows byte-identical (9R4C inert). The falsy \"0\" token restores the legacy 1/12-coverage route, verified bit-identical to the round-89a record this round (strict checker 11/31/0, output-diff 42/42 green). Post-record tally: 12 pass / 30 known-fail.",
-  "_doc_round90": "Loop round 90 flip: the R77 solar-lag filter is removed from the default route (FLX_R90_NO_LAG_FILTER default-on; falsy token restores the pre-round-90 filtered route). Premise: ISO 13790 C.3's surface node is algebraic - the reference formulation has no smoothing element on the air share of phi_st; with the air node dynamic (#1585) and the mass at full time coverage (round 89b) the filter added a delay the reference does not contain. Measured on 6d4c5263: 600FF Tmax 53.40->53.84 C (gap 18.35->17.68 pp), 650FF Tmax 52.79->53.09 C (17.45->16.98 pp), FF Tmin unchanged in-band, high-mass family byte-identical, 13/42 output-diff metrics moved (all low-mass family, <=1.36%). 800 cooling worsened 1130.07->1137.48 pp (GaugeSolver structural row, documented in KNOWN_ISSUES) - re-recorded here per the standing fidelity-first direction, never tuned away."
+  "_doc_round90": "Loop round 90 flip: the R77 solar-lag filter is removed from the default route (FLX_R90_NO_LAG_FILTER default-on; falsy token restores the pre-round-90 filtered route). Premise: ISO 13790 C.3's surface node is algebraic - the reference formulation has no smoothing element on the air share of phi_st; with the air node dynamic (#1585) and the mass at full time coverage (round 89b) the filter added a delay the reference does not contain. Measured on 6d4c5263: 600FF Tmax 53.40->53.84 C (gap 18.35->17.68 pp), 650FF Tmax 52.79->53.09 C (17.45->16.98 pp), FF Tmin unchanged in-band, high-mass family byte-identical, 13/42 output-diff metrics moved (all low-mass family, <=1.36%). 800 cooling worsened 1130.07->1137.48 pp (GaugeSolver structural row, documented in KNOWN_ISSUES) - re-recorded here per the standing fidelity-first direction, never tuned away.",
+  "_doc_round91a": "Loop round 91 flip 1: the ASHRAE 140 Table 5-138 window-loss solar sink goes default (FLX_R91_RETRANS; falsy token restores the x1.0 route). Premise (primary source, licensed 140-2017 text in docs/): 5.2.1.12.1 defines the interior distribution 'accounting for solar lost (transmitted solar radiation reflected by interior opaque surfaces and retransmitted back out the windows)'; Table 5-138's row carries 'Solar Lost through Windows 0.035'. The engine transmitted 100% (over-absorption disclosed rounds 81/83); the arm was left gated solely on band direction. Under the 2026-10-22 criteria (known+verifiable+tested; bands recorded not weighted) the spec sink goes default. Measured on a0446c26: 600/C 4.728->4.490 MWh, 610-650/C -3.8..-5.3%, 600/H 5.959->6.054 (+1.6%), 600FF Tmax 53.84->53.05 C, 650FF Tmax 53.09->52.25 C, FF minima stay in-band, no strict row changes state, high-mass byte-identical, 17/42 output-diff metrics moved (all low-mass family). Re-recorded honestly, never tuned."
 }
