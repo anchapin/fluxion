@@ -19,6 +19,18 @@ for the full design rationale.
 | [`SetWindowToWallRatio.py`](SetWindowToWallRatio.py) | `SetWindowToWallRatio` | Resize exterior glazing to a target window-to-wall ratio, preserving sill height and glazing topology. |
 | [`ReplaceHVACWithVAV.py`](ReplaceHVACWithVAV.py) | `ReplaceHVACWithVAV` | Replace ideal-loads with an explicit VAV air system (economizer + cool-deck setpoint). |
 | [`IncreaseInsulationRValue.py`](IncreaseInsulationRValue.py) | `IncreaseInsulationRValue` | Add ΔR of insulation to the opaque envelope by lowering surface U-values. |
+| [`SetThermostatSetpoints.py`](SetThermostatSetpoints.py) | `SetThermostatSetpoints` | Sweep the heating / cooling thermostat setpoints by a delta or pin them to absolute values (clamped to the engine's admissible window, deadband preserved). |
+| [`SwapSchedule.py`](SwapSchedule.py) | `SwapSchedule` | Replace the thermostat schedule with an alternative profile — `constant`, `setback` or `operating_hours`. |
+
+> **Control-side persistence (Issue #3995).** `SetThermostatSetpoints` and
+> `SwapSchedule` act on the model's *control* data. The native
+> `fluxion.Model` binding does not expose a zone-setpoint or schedule setter
+> yet, so on today's bindings these two measures are **advisory**: the
+> transformed values are computed (and unit-tested) and logged, but they do
+> not round-trip into the serialized model. The measures push their result
+> back through `set_zone_setpoints` / `set_hvac_schedule` as soon as the
+> binding provides one — the same advisory-field pattern documented for
+> `ReplaceHVACWithVAV`.
 
 Reference / example measures live under [`examples/`](examples/):
 
