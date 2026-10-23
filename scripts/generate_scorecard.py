@@ -83,6 +83,15 @@ GATES_YAML = REPO / "release_gates.yaml"
 README_MD = REPO / "README.md"
 SCORECARD = REPO / "SCORECARD.md"
 
+# Issue #4275 / ADR-0026: every ASHRAE 140 number this generator publishes
+# must carry its section and class qualifier -- a bare percentage reads as a
+# claim about the whole standard. fluxion's committed validation suite
+# implements Section 7 (Class I) only: Building Thermal Envelope and Fabric
+# Load Tests. Section 12 is the envelope Class II re-run (in scope, blocked on
+# Section 7) and Section 6 is the weather-interpretation section; neither is
+# represented in these figures.
+SCOPE_140 = "ASHRAE 140 §7 (Class I)"
+
 
 @dataclass
 class Validation:
@@ -488,14 +497,14 @@ def render(
     p("| Metric | Current | Budget (gate) | Status | Source |")
     p("|--------|---------|---------------|--------|--------|")
     p(
-        f"| ASHRAE 140 pass rate | **{v.pass_rate:.1f}%** "
+        f"| ASHRAE 140 pass rate ({SCOPE_140} scope) | **{v.pass_rate:.1f}%** "
         f"({v.passed}/{v.total} metrics) | ref ≥ {g.min_pass_rate:.0f}% "
         f"(diagnostic, `validation.diagnostics.min_pass_rate` — not a gate, #4277) | "
         f"{_status(pass_ok, '📊 Diagnostic', '📊 Diagnostic')} | "
         f"{throughput_source} |"
     )
     p(
-        f"| Mean Absolute Error (MAE) | **{v.mae:.2f}%** | "
+        f"| Mean Absolute Error (MAE) — {SCOPE_140} | **{v.mae:.2f}%** | "
         f"ref ≤ {g.max_mae:.0f}% (diagnostic, `validation.diagnostics.max_mae` — not a gate, #4277) | "
         f"{_status(mae_ok, '📊 Diagnostic', '📊 Diagnostic')} | "
         f"{throughput_source} |"
@@ -523,7 +532,7 @@ def render(
     p("")
 
     # --- Pass rate ------------------------------------------------------
-    p("## ASHRAE 140 Pass Rate")
+    p(f"## {SCOPE_140} Pass Rate")
     p("")
     p(
         f"- **Overall (metric-level):** {v.pass_rate:.1f}% — "

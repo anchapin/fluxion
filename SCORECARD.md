@@ -14,13 +14,13 @@
 
 | Metric | Current | Budget (gate) | Status | Source |
 |--------|---------|---------------|--------|--------|
-| ASHRAE 140 pass rate | **6.0%** (5/84 metrics) | ref ≥ 60% (diagnostic, `validation.diagnostics.min_pass_rate` — not a gate, #4277) | 📊 Diagnostic | `validation/performance_history.latest.json` (latest run 2026-10-15) |
-| Mean Absolute Error (MAE) | **78.50%** | ref ≤ 50% (diagnostic, `validation.diagnostics.max_mae` — not a gate, #4277) | 📊 Diagnostic | `validation/performance_history.latest.json` (latest run 2026-10-15) |
+| ASHRAE 140 pass rate (ASHRAE 140 §7 (Class I) scope) | **6.0%** (5/84 metrics) | ref ≥ 60% (diagnostic, `validation.diagnostics.min_pass_rate` — not a gate, #4277) | 📊 Diagnostic | `validation/performance_history.latest.json` (latest run 2026-10-15) |
+| Mean Absolute Error (MAE) — ASHRAE 140 §7 (Class I) | **78.50%** | ref ≤ 50% (diagnostic, `validation.diagnostics.max_mae` — not a gate, #4277) | 📊 Diagnostic | `validation/performance_history.latest.json` (latest run 2026-10-15) |
 | BatchOracle throughput | **157 (CI) / 900 (release)** configs/sec | ≥ 150 (`benchmark.throughput.min_configs_per_sec`) | ✅ Pass | `release_gates.yaml` comment + `README.md` |
 | Validation-suite throughput | 90.76 cases/sec | (informational) | ℹ️ | `validation/performance_history.latest.json` (latest run 2026-10-15) |
 | Max single-case deviation | 964.17% | (ref: `individual.max_deviation` = 100%) | ℹ️ | `validation/performance_history.latest.json` (latest run 2026-10-15) |
 
-## ASHRAE 140 Pass Rate
+## ASHRAE 140 §7 (Class I) Pass Rate
 
 - **Overall (metric-level):** 6.0% — 5 PASS / 9 WARN / 70 FAIL of 84 results. -54.0 pp vs the 60% reference line (diagnostic, not a gate — #4277: Standard 140 defines no acceptance-criteria clause).
 - **Case-level:** 0/18 cases fully PASS (0.0%).

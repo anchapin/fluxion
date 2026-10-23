@@ -2,14 +2,14 @@
 
 **Fluxion** is a next-generation Building Energy Modeling (BEM) engine. It is designed to be differentiable, quantum-ready, and exponentially faster than legacy monolithic tools by utilizing a hybrid Neuro-Symbolic architecture.
 
-> **Status:** Fluxion is **in active development** — specifically mid-milestone on **v1.3 "Blind ASHRAE 140 Validation"** (physics-only, no calibration factors). It is **not** production-ready. The strict ±15% annual-energy gate on the current develop tip reads **9 PASS / 33 KNOWN-FAIL / 0 REGRESSION** (checker `scripts/check_strict_energy_gate_regression.py`, statuses in `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`, verified 2026-10-15 at commit `6c18425e`). Use it as a high-throughput research/oracle tool, not as a drop-in EnergyPlus replacement.
+> **Status:** Fluxion is **in active development** — specifically mid-milestone on **v1.3 "Blind ASHRAE 140 Validation"** (physics-only, no calibration factors). It is **not** production-ready. The strict ±15% annual-energy gate on the current develop tip reads **9 PASS / 33 KNOWN-FAIL / 0 REGRESSION** on the **ASHRAE 140 §7 (Class I)** envelope-and-fabric cases (600/900 series, 195, 800/810, 960/970 and the free-float variants) — the only ASHRAE 140 section fluxion implements today (checker `scripts/check_strict_energy_gate_regression.py`, statuses in `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`, verified 2026-10-15 at commit `6c18425e`). Use it as a high-throughput research/oracle tool, not as a drop-in EnergyPlus replacement.
 
 [![CI](https://github.com/anchapin/fluxion/actions/workflows/ci.yml/badge.svg)](https://github.com/anchapin/fluxion/actions/workflows/ci.yml)
 [![ASHRAE 140 Validation](https://github.com/anchapin/fluxion/actions/workflows/ashrae_140_validation.yml/badge.svg)](https://github.com/anchapin/fluxion/actions/workflows/ashrae_140_validation.yml)
 
 ### Why the low pass rate is the point
 
-The low numbers are real and they are *supposed* to look like that — both the stored metric-level snapshot (9.8%) and the live strict gate (9 of 42 case-metrics passing; 33 documented as KNOWN-FAIL). Every number the suite reports is checked against a **strict ±15% annual-energy-balance gate** and an honesty guard that asserts each recorded engine value sits in the ASHRAE-published band or in an explicit xfail for a documented structural gap. Fluxion has **never been tuned to pass**: no calibration factors, no case-type hints — fixes go into the underlying physics, and the known failures are tracked publicly in [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) as the roadmap, not hidden. A red suite that tells the truth is the deliverable of this milestone; [`scripts/ashrae_140_pipeline.py`](scripts/ashrae_140_pipeline.py) reproduces the whole check in one command (see [Run the validation pipeline](#run-the-validation-pipeline)).
+The low numbers are real and they are *supposed* to look like that — both the stored metric-level snapshot (9.8%, **ASHRAE 140 §7 Class I**) and the live strict gate (9 of 42 case-metrics passing; 33 documented as KNOWN-FAIL, **§7 Class I**). Every number the suite reports is checked against a **strict ±15% annual-energy-balance gate** and an honesty guard that asserts each recorded engine value sits in the ASHRAE-published band or in an explicit xfail for a documented structural gap. Fluxion has **never been tuned to pass**: no calibration factors, no case-type hints — fixes go into the underlying physics, and the known failures are tracked publicly in [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) as the roadmap, not hidden. A red suite that tells the truth is the deliverable of this milestone; [`scripts/ashrae_140_pipeline.py`](scripts/ashrae_140_pipeline.py) reproduces the whole check in one command (see [Run the validation pipeline](#run-the-validation-pipeline)).
 
 ## 🏗 Architecture
 
@@ -17,20 +17,20 @@ Fluxion separates the "heavy lifting" of physics (CFD/Radiation) into AI surroga
 
 ## Current Validation Status
 
-![ASHRAE 140 strict gate](https://img.shields.io/badge/ASHRAE140%20strict%20gate-9%20PASS%20%2F%2033%20KNOWN--FAIL%20%2F%200%20REGRESSION-red)
+![ASHRAE 140 §7 (Class I) strict gate](https://img.shields.io/badge/ASHRAE140%20%C2%A77%20Class%20I%20strict%20gate-9%20PASS%20%2F%2033%20KNOWN--FAIL%20%2F%200%20REGRESSION-red)
 ![Version](https://img.shields.io/badge/status-in--development-orange)
 
-Fluxion is **not yet ASHRAE 140-compliant**. The current strict ±15% annual-energy gate at the develop tip is **9 PASS / 33 KNOWN-FAIL / 0 REGRESSION** (verified 2026-10-15 at `ad88bfa9`; KNOWN-FAIL rows are the documented structural failures in [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md), not hidden regressions). The metric-level table below is the **live validator sweep regenerated 2026-10-15** at `ad88bfa9` (round 37; supersedes the stored 2026-09-26 snapshot) — see [`docs/ASHRAE140_RESULTS.md`](docs/ASHRAE140_RESULTS.md) for the full case-by-case breakdown and [`SCORECARD.md`](SCORECARD.md) for the consolidated, reproducible release-readiness view.
+Fluxion is **not yet ASHRAE 140-compliant**. The current strict ±15% annual-energy gate at the develop tip is **9 PASS / 33 KNOWN-FAIL / 0 REGRESSION** on the **ASHRAE 140 §7 (Class I)** envelope-and-fabric cases (verified 2026-10-15 at `ad88bfa9`; KNOWN-FAIL rows are the documented structural failures in [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md), not hidden regressions). The metric-level table below is the **live validator sweep regenerated 2026-10-15** at `ad88bfa9` (round 37; supersedes the stored 2026-09-26 snapshot) — **every figure below is ASHRAE 140 §7 (Class I) scope only**; §6, §8, §9, §10, §11 and §12 are separate sections, tracked in [`docs/compliance/section_coverage.md`](docs/compliance/section_coverage.md) — see [`docs/ASHRAE140_RESULTS.md`](docs/ASHRAE140_RESULTS.md) for the full case-by-case breakdown and [`SCORECARD.md`](SCORECARD.md) for the consolidated, reproducible release-readiness view.
 
 | Metric | Current | Target (release gate) | Status |
 |--------|---------|-----------------------|--------|
-| Strict ±15% annual-energy gate (live, 2026-10-15 @ `ad88bfa9`) | **9 PASS / 33 KNOWN-FAIL / 0 REGRESSION** | 0 REGRESSION sustained; KNOWN-FAIL count trending down | ℹ️ tracked |
-| Pass rate (metric-level) | **6.0%** (5/84) | ≥ 60% | ❌ Fail |
-| Mean Absolute Error (MAE) | **78.50%** | ≤ 50% | ❌ Fail |
-| Cases fully passing (stored snapshot) | 0/18 (0.0%) | — | ❌ |
-| Max single-case deviation | 964.17% | — | ℹ️ |
+| Strict ±15% annual-energy gate (live, 2026-10-15 @ `ad88bfa9`) — **ASHRAE 140 §7 (Class I)** | **9 PASS / 33 KNOWN-FAIL / 0 REGRESSION** | 0 REGRESSION sustained; KNOWN-FAIL count trending down | ℹ️ tracked |
+| Pass rate (metric-level) | **6.0%** (5/84 metrics, ASHRAE 140 §7 Class I envelope cases) | ≥ 60% | ❌ Fail |
+| Mean Absolute Error (MAE) | **78.50%** (ASHRAE 140 §7 Class I envelope cases) | ≤ 50% | ❌ Fail |
+| Cases fully passing (stored snapshot) — **ASHRAE 140 §7 (Class I)** | 0/18 (0.0%, §7 Class I envelope cases) | — | ❌ |
+| Max single-case deviation — **ASHRAE 140 §7 (Class I)** | 964.17% (§7 Class I envelope cases) | — | ℹ️ |
 
-*The four metric-level rows above are regenerated (generated 2026-10-15 from a live `fluxion validate` sweep at `ad88bfa9`, promoted into `validation/performance_history.latest.json`); the strict-gate row above them is the live regression gate. The metric-level regression vs the 2026-09-26 snapshot (9.8% → 6.0% pass, 45.27% → 78.50% MAE) reflects the round-26+ fidelity-first engine changes measured against the un-tuned validator reference bands — see the round-37 loop notes; no validator band or engine constant was adjusted to move these figures.*
+*The four metric-level rows above are regenerated (generated 2026-10-15 from a live `fluxion validate` sweep at `ad88bfa9`, promoted into `validation/performance_history.latest.json`); the strict-gate row above them is the live regression gate. All of these figures are **ASHRAE 140 §7 (Class I)** scope — envelope and fabric load tests only. The metric-level regression vs the 2026-09-26 snapshot (9.8% → 6.0% pass, 45.27% → 78.50% MAE, §7 Class I) reflects the round-26+ fidelity-first engine changes measured against the un-tuned validator reference bands — see the round-37 loop notes; no validator band or engine constant was adjusted to move these figures.*
 
 ### Run the validation pipeline
 
@@ -64,7 +64,7 @@ The current milestone removes all post-simulation correction factors and case-ty
 - **Phase A — Baseline Stripping:** Catalog and remove all correction infrastructure; measure the true physics-only baseline. **Phase A8 completed 2026-09-07** (Issue #3291 / PR #3482) — shipped the `ZoneSolverKind::Gauge` selector as the unconditional default. **Superseded by ADR-0017** (Issue #3978): the default thermal selector is now cfg-dependent and explicit in every build — `ZoneSolverKind::Gauge` with `--features gauge-solver`, explicit legacy `FiveROneC` (HighMass specs still auto-promote to 9R4C) in default builds; the silent fall-through was removed, and an explicit `Gauge` selector in a default build panics loudly at construction (canonical wording: `Cargo.toml:208-225`; `src/sim/thermal_selector.rs`). The unconditional-default flip is gated on the teacher validation suite (#3986).
 - **Phase B — Physics Fixes:** Solar distribution (ISO 13790), thermal-mass time constant, and free-floating temperature fixes. The GaugeSolver structural rework is the unblocker for the aggressive-baseline cohort tracked by Issue #3072 / ADR-0007; full peak accuracy runs through the equation-based DAE teacher path via the gauge arm — the β-soak gate (#3286) remains the nightly authority on that arm, the `gauge-solver` cfg-gate removal is tracked in #3290, and per ADR-0017 the unconditional-default flip is gated on the teacher validation suite (#3986, superseding the §LIMIT-21 closure plan).
 - **Phase C — Benchmark Correction:** Replace calibrated ranges with true EnergyPlus/ESP-r/TRNSYS reference values.
-- **Phase D — Blind Validation Pass:** Run the full blind suite targeting ≥80% pass.
+- **Phase D — Blind Validation Pass:** Run the full blind suite targeting ≥80% pass (ASHRAE 140 §7 Class I scope).
 - **Phase E — Sustained Validation:** CI gate + regression tracking to hold the pass rate as the codebase evolves.
 
 Historical phase planning documents (`.planning/`, including the ASHRAE 140 blind validation plan) were archived to the `archive/v1-experimental-sprawl` branch.
@@ -75,7 +75,7 @@ These are documented **structural failures** (also listed in `release_gates.yaml
 
 - **Baseline 600-series (low-mass):** All 6 cases FAIL. Simplified envelope model over-predicts peak loads (e.g. peak heating ~4.36 kW vs 2.80–3.80 kW reference band).
 - **High-mass 900-series:** All 6 cases FAIL. Heating is over-predicted by ~**200%** due to a 5R1C/CTF thermal-mass limitation (e.g. Case 900 annual heating 5,130 kWh vs 1,170–2,040 kWh reference band, per `docs/KNOWN_ISSUES.md` §LIMIT-05 UPDATE #2453).
-- **Overall accuracy:** 45.27% MAE, driven by the high-mass annual-energy deviation above.
+- **Overall accuracy:** 45.27% MAE (ASHRAE 140 §7 Class I scope), driven by the high-mass annual-energy deviation above.
 - **Peak load accuracy:** High-mass peak loads UNDER-estimated post-#1280 (Case 900 0.86 kW vs 2.10–3.50 kW reference band; full peak accuracy gated on the DAE teacher validation suite (#3986), which per ADR-0017 holds flip authority on the cfg-dependent default selector (superseding the §LIMIT-21 closure plan, Issue #3297).
 
 For the historical v0.8.0 snapshot (Peak Load & Free-Float Validation narrative), see [`docs/archive/ASHRAE140_RESULTS_v0.8.0.md`](docs/archive/ASHRAE140_RESULTS_v0.8.0.md) (archived; superseded by the current blind-validation figures above).
@@ -186,7 +186,7 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) (short form) and [`CONTRIBUTING.md`](CO
 
 Follow these steps to prepare and publish a new version of Fluxion.
 
-> **Note on validation gating:** ASHRAE 140 validation is **not** currently a release-passing check — the strict ±15% annual-energy gate applies only to cases that are not documented structural failures (see [Current Validation Status](#current-validation-status)). Baseline **Case 600** and high-mass **Case 900** are excluded as known structural failures; do **not** treat "Case 900 annual energy within reference ranges" as a pre-release verification step — it is a known FAIL (5,130 kWh vs the 1,170–2,040 kWh band, per `docs/KNOWN_ISSUES.md` §LIMIT-05 UPDATE #2453) being addressed by the v1.3 milestone.
+> **Note on validation gating:** ASHRAE 140 validation is **not** currently a release-passing check — the strict ±15% annual-energy gate applies only to the **§7 (Class I)** envelope-and-fabric cases that are not documented structural failures (see [Current Validation Status](#current-validation-status)); the other 140 sections are not implemented and are tracked in [`docs/compliance/section_coverage.md`](docs/compliance/section_coverage.md). Baseline **Case 600** and high-mass **Case 900** are excluded as known structural failures; do **not** treat "Case 900 annual energy within reference ranges" as a pre-release verification step — it is a known FAIL (5,130 kWh vs the 1,170–2,040 kWh band, per `docs/KNOWN_ISSUES.md` §LIMIT-05 UPDATE #2453) being addressed by the v1.3 milestone.
 
 ### 1. Version Bump
 Update the version number in both configuration files:
@@ -206,7 +206,7 @@ ls tests/ashrae_140*.rs
 # Run one ASHRAE 140 binary with visible output; repeat per binary as needed
 cargo test --test all_tests ashrae_140_validation:: -- --nocapture
 ```
-Check the current pass rate and known failures in [`docs/ASHRAE140_RESULTS.md`](docs/ASHRAE140_RESULTS.md) and [`SCORECARD.md`](SCORECARD.md). The suite is not purely informational: the strict ±15% annual-energy regression gate is enforced in CI (`.github/workflows/physics-pr.yml`, job: "ASHRAE 140 Strict Energy Gate (Issue #1333)"; Issues #2506 / #3572), excluding the documented structural failures noted above. Required branch-protection checks are listed in `release_gates.yaml → ci.required_checks`.
+Check the current pass rate and known failures in [`docs/ASHRAE140_RESULTS.md`](docs/ASHRAE140_RESULTS.md) and [`SCORECARD.md`](SCORECARD.md) — both report **ASHRAE 140 §7 (Class I)** scope only. The suite is not purely informational: the strict ±15% annual-energy regression gate is enforced in CI (`.github/workflows/physics-pr.yml`, job: "ASHRAE 140 Strict Energy Gate (Issue #1333)"; Issues #2506 / #3572), excluding the documented structural failures noted above. Required branch-protection checks are listed in `release_gates.yaml → ci.required_checks`.
 
 ### 3. Package Verification
 Verify the crate size and structure for crates.io:
