@@ -434,6 +434,7 @@ Exceptions to this policy require:
 - [ASHRAE 140 Validation](./ASHRAE140_VALIDATION.md) - ASHRAE compliance
 - [Phase 4a MLP Surrogate Architecture](./specs/phase_4a_mlp_surrogate.md) - Training strategy and ship gates (binding on §4.5)
 - [Surrogate Model Card](./surrogate_model_card.md) - Per-model performance metrics
+- [design/solar_shading_surrogate.md](./design/solar_shading_surrogate.md) - Feature-design findings for a future solar/shading surrogate (post-1.0 scope)
 
 ### 7.1 External References
 

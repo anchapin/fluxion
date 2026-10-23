@@ -30,3 +30,4 @@ historical worklogs and superseded plans are in
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common build/run failures and fixes |
 | [investigations/](investigations/) | Per-issue and per-limit root-cause investigations |
 | [archive/](archive/README.md) | Historical session notes, worklogs, superseded plans |
+| [design/solar_shading_surrogate.md](design/solar_shading_surrogate.md) | Feature design for a future solar/shading surrogate (post-1.0 scope) |

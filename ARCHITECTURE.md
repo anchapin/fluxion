@@ -1921,6 +1921,8 @@ Surrogates must match physics within 2% on held-out data. v3.0 surrogate trainin
 
 **Note on Solar trait**: The solar module exposes standalone functions rather than a trait because there is no ML surrogate swap point at the solar calculation layer — solar position/irradiance is deterministic physics. The per-surface results flow into `SurfaceHeatFluxProvider` and `ThermalModelTrait`, which are the swap points.
 
+**Solar/shading surrogate feature design (post-1.0 scope, issue #4557)**: `docs/design/solar_shading_surrogate.md` records the feature-design conclusions any future solar/shading surrogate must honour — average shading is the primary obstruction feature; explicit obstruction geometry must be shown to add value on Fluxion's own cases before it is included; surrogates pay off only in batch screening, so physics stays the single-query default (consistent with the swappable-surrogate architecture above); and geometry-representation fidelity is to be improved before ML model tuning. Documentation only — no swap point, model, or feature-schema change ships with it.
+
 **Recent corrections**: #1140 corrected ASHRAE 140 exterior film coefficient (29.3 → 18.3 W/m2K) and solar absorptance (0.6 → 0.7); #1142 corrected the weather reference data station mismatch; #1145 corrected sub-zero saturation vapor pressure (Magnus-Tetens → ASHRAE Hyland-Wexler ice equation) so psychrometrics match EnergyPlus below 0°C, refreshed the derived humidity-ratio reference column to match, and updated stale EPW field-validation expectations left by the #1142 station change.
 
 ---
