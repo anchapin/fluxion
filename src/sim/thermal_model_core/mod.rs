@@ -2488,10 +2488,58 @@ impl ThermalModel<VectorField> {
             //     work). Do NOT zero these constants without that work; the
             //     failing referee (solar_distribution_validation) tracks the
             //     gap (docs/KNOWN_ISSUES.md §LIMIT-30).
+            //
+            //     [SUPERSEDED 2026-10-22 (round-91 bands-as-factor audit): the
+            //     #3961 refutation above was explicitly band-based ("measured
+            //     against the strict +/-15% annual gate"). Under the standing
+            //     2026-10-22 criteria the retirement below is the engine
+            //     default; see the R91 FLIP 2 note at the split.]
+            // [R91 FLIP 2 - the incumbent density-driven solar split is
+            // retired as the engine default since loop round 91
+            // (FLX_R91_SOL2ST; bands-as-factor audit, Alex directive
+            // 2026-10-22 21:20 ET). PREMISE (primary sources, the licensed
+            // 140-2017 text in docs/; ISO 13790 Annex C): 5.2.1.12.1 +
+            // Table 5-138 distribute transmitted solar among interior
+            // surfaces only - nothing directly to zone air - and ISO 13790
+            // C.1-C.3 route solar to the surface/mass pair by conductance
+            // share, with no fixed beam route. The incumbent
+            // to_air = 0.30*(1-w_solar) is #1216-band-aid lineage (reduced
+            // from the 0.70 #1216 value by #2359); its cited basis ("ASHRAE
+            // 140 Table B-12 F_m", attributed to #2359) DOES NOT EXIST in
+            // 140-2017 - no Table B-12 exists there and #2359 cites none.
+            // #3961's refutation of retiring it was explicitly band-based
+            // ("measured against the strict +/-15% annual gate") and is
+            // superseded by the standing 2026-10-22 criteria; the structural
+            // rationale (air-node capacitance) is superseded by
+            // #1585/#4546/#4547. Default: to_air = 0, beam_to_mass = 0 -
+            // 100% of transmitted solar is absorbed at the surface node and
+            // reaches air/mass only through the C.1-C.3 conductance
+            // coupling (the round-91 flip-2 re-record is the provenance).
+            // Measured on 9e61b840 (battery, flag-off bit-identical to the
+            // round-91a record 42/42): 600/H 6.054 -> 6.915 MWh (+14.2%),
+            // 600/C 4.490 -> 2.444 (-45.6%), 610-650/C -33.8..-49.1%,
+            // 640/H +21.0%, 600FF Tmin -12.90 -> -13.07 and 650FF Tmin
+            // -17.65 -> -17.77 (both stay in band), FF Tmax 53.05 -> 44.83 /
+            // 52.25 -> 44.32, 620/630 cooling honestly leave their bands,
+            // 800/C gap improves 1074.44 -> 532.45 pp, high-mass family
+            // byte-identical, 17/42 output-diff metrics moved (all
+            // low-mass family).
+            // A falsy token (0/false/no/off) restores the incumbent split
+            // for A/B archaeology only; any other value behaves as unset,
+            // i.e. the retired-split default.]
+            let r91_sol2st = crate::util::env_bool::env_bool("FLX_R91_SOL2ST", true);
             let w_solar = fluxion_core::construction::massiveness_weight(
                 spec.construction.wall.thermal_capacitance_per_area(),
             );
-            let (air_frac, mass_frac_of_remaining): (f64, f64) = (0.30 * (1.0 - w_solar), 0.30);
+            let (air_frac, mass_frac_of_remaining): (f64, f64) = if r91_sol2st {
+                // ASHRAE 140 5.2.1.12 / ISO 13790 C.1-C.3 default: no
+                // direct-to-air term, no fixed beam term.
+                (0.0, 0.0)
+            } else {
+                // Legacy density-driven split - archaeology only (see the
+                // retraction above).
+                (0.30 * (1.0 - w_solar), 0.30)
+            };
             model.solar.solar_distribution_to_air = air_frac;
             model.solar.solar_beam_to_mass_fraction = mass_frac_of_remaining;
         }
