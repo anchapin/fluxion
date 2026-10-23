@@ -124,6 +124,33 @@ DEFAULTS: dict[str, Any] = {
 }
 
 
+# =============================================================================
+# ANNEX B8 SPREAD — DIAGNOSTIC CONTEXT ONLY (Issue #4277 D)
+# =============================================================================
+# Issue #4277 D: the Annex B8 §B8.1 example-result statistics are NOT an
+# acceptance criterion. The source tables carry this note verbatim:
+#
+#   "The statistics in the tables below are based on the listed example
+#    results. These statistics do not have any substantial importance and
+#    are not to be interpreted as acceptance criteria."
+#
+# So the min/max spread of the six reference programs is reported next to
+# each result as diagnostic context, explicitly labelled "not a criterion",
+# and never used as a pass/fail band.
+ANNEX_B8_STATISTICS_FILE = "data/reference/ashrae140/annex_b8_section7_statistics.json"
+SPREAD_NOT_A_CRITERION = (
+    "Annex B8 §B8.1 example-result spread — diagnostic context, NOT a criterion"
+)
+# Display label + unit for each Annex B8 statistics table.
+ANNEX_B8_METRIC_LABELS: dict[str, str] = {
+    "annual_heating_mwh": "annual heating (MWh)",
+    "annual_sensible_cooling_mwh": "annual sensible cooling (MWh)",
+    "peak_heating_kw": "peak heating (kW)",
+    "peak_sensible_cooling_kw": "peak sensible cooling (kW)",
+    "free_float_temperature_c": "free-float temperature (°C)",
+}
+
+
 @dataclass
 class GateResult:
     """Result of a single gate evaluation."""
@@ -803,6 +830,160 @@ class ReleaseGateChecker:
                 )
         return results
 
+    # ------------------------------------------------------------------
+    # Conformance checklist (Issue #4277 D)
+    # ------------------------------------------------------------------
+    def _load_annex_b8_statistics(self) -> dict:
+        """Load the Annex B8 §B8.1 example-result statistics (#4280).
+
+        Returns an empty dict when the reference file is absent — the
+        spread is optional diagnostic context and must never be a
+        hard dependency of the gate.
+        """
+        path = self.project_root / ANNEX_B8_STATISTICS_FILE
+        if not path.exists():
+            return {}
+        try:
+            with open(path) as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return {}
+        # Drop the provenance block (`_source`); the per-case tables remain.
+        return {k: v for k, v in data.items() if not k.startswith("_")}
+
+    @staticmethod
+    def _format_spread(metric: str, entry: dict) -> str:
+        """Render one Annex B8 table entry as ``min–max unit``.
+
+        The free-float table nests per-quantity (min/max/avg) spreads; it
+        is rendered as the min-temperature and max-temperature ranges.
+        """
+        if not isinstance(entry, dict):
+            return ""
+        label = ANNEX_B8_METRIC_LABELS.get(metric, metric)
+        if metric == "free_float_temperature_c":
+            parts = []
+            for key, short in (("min", "min temp"), ("max", "max temp")):
+                sub = entry.get(key)
+                if isinstance(sub, dict) and "min" in sub and "max" in sub:
+                    parts.append(f"{short} {sub['min']}–{sub['max']}")
+            return f"{label}: " + ", ".join(parts) if parts else ""
+        if "min" in entry and "max" in entry:
+            return f"{label}: {entry['min']}–{entry['max']}"
+        return ""
+
+    def conformance_checklist(self) -> list[dict]:
+        """Per-implemented-case conformance checklist (#4277 D).
+
+        The claim Standard 140 actually supports is per case: did fluxion
+        run the specified inputs and produce every output the section
+        requires? This returns one row per implemented case — a checklist,
+        never a score, and never a percentage.
+
+        Each row also carries the Annex B8 §B8.1 example-result spread for
+        that case, explicitly labelled as diagnostic context and NOT a
+        criterion (Annex B8 states the statistics are not to be interpreted
+        as acceptance criteria).
+        """
+        config = self.config.get("conformance", {})
+        artifacts = config.get(
+            "artifacts", DEFAULTS["conformance"]["artifacts"]
+        )
+        stats_by_metric = self._load_annex_b8_statistics()
+        rows: list[dict] = []
+
+        for artifact in artifacts:
+            rel_path = artifact["path"]
+            path = self.project_root / rel_path
+            if not path.exists():
+                continue
+            if "section6" in rel_path:
+                section = "§6"
+            elif "section7" in rel_path:
+                section = "§7"
+            else:
+                section = rel_path
+            with open(path, newline="") as f:
+                for raw in csv.DictReader(f):
+                    cells = {
+                        k: (v or "").strip()
+                        for k, v in raw.items()
+                        if k is not None
+                    }
+                    case = cells.get("case", "")
+                    if not case:
+                        continue
+                    # Requirement cells are the output-requirement columns;
+                    # `na` marks a requirement that does not apply to the
+                    # case family, so it is not counted as required.
+                    meta_cols = {"case", "status", "weather_file", "ran"}
+                    required = [
+                        k
+                        for k, v in cells.items()
+                        if k not in meta_cols and v != "na"
+                    ]
+                    reported = sum(1 for k in required if cells[k] == "report")
+                    partial = sum(1 for k in required if cells[k] == "partial")
+                    missing = sum(1 for k in required if cells[k] == "missing")
+                    status = cells.get("status", "")
+                    if "ran" in cells:
+                        ran = cells["ran"]
+                    elif status in ("conformant", "incomplete"):
+                        # The §7 table only lists cases that were executed
+                        # against the §7 workflow results.
+                        ran = "yes"
+                    else:
+                        ran = "not recorded"
+                    spread_parts = []
+                    for metric, per_case in stats_by_metric.items():
+                        if not isinstance(per_case, dict) or case not in per_case:
+                            continue
+                        part = self._format_spread(metric, per_case[case])
+                        if part:
+                            spread_parts.append(part)
+                    rows.append(
+                        {
+                            "section": section,
+                            "case": case,
+                            "status": status,
+                            "ran": ran,
+                            "outputs_required": len(required),
+                            "outputs_reported": reported,
+                            "outputs_partial": partial,
+                            "outputs_missing": missing,
+                            "annex_b8_spread": "; ".join(
+                                p for p in spread_parts if p
+                            ),
+                            "spread_note": SPREAD_NOT_A_CRITERION,
+                        }
+                    )
+        return rows
+
+    def format_conformance_checklist(self) -> list[str]:
+        """Render the conformance checklist as report lines."""
+        rows = self.conformance_checklist()
+        if not rows:
+            return []
+        lines = [
+            "-" * 60,
+            "ASHRAE 140 CONFORMANCE CHECKLIST (per implemented case — a "
+            "checklist, not a score; #4277)",
+            "-" * 60,
+        ]
+        for row in rows:
+            lines.append(
+                f"{row['section']} | case {row['case']} | status: {row['status']} "
+                f"| ran: {row['ran']} | outputs required: {row['outputs_required']} "
+                f"| reported: {row['outputs_reported']} "
+                f"| partial: {row['outputs_partial']} "
+                f"| missing: {row['outputs_missing']}"
+            )
+            if row["annex_b8_spread"]:
+                lines.append(
+                    f"    {row['spread_note']}: {row['annex_b8_spread']}"
+                )
+        return lines
+
     def check_analytical_gates(self) -> list[GateResult]:
         """Gate on the real quantitative anchors (#4280), fail-closed.
 
@@ -1430,7 +1611,7 @@ def load_crate_size_results(
     return None
 
 
-def generate_markdown_report(report: GateReport) -> str:
+def generate_markdown_report(report: GateReport, checklist: Optional[list] = None) -> str:
     """Generate markdown-formatted gate status report."""
     lines = [
         "# Release Gate Status",
@@ -1475,6 +1656,47 @@ def generate_markdown_report(report: GateReport) -> str:
 
     lines.append("---")
     lines.append("*Generated by release_gate_checker.py (Issue #505)*")
+
+    # Issue #4277 D: the conformance checklist — per implemented case, a
+    # checklist (not a score) with the Annex B8 spread shown next to each
+    # result as diagnostic context explicitly labelled "not a criterion".
+    if checklist:
+        lines.append("")
+        lines.append("## ASHRAE 140 Conformance Checklist")
+        lines.append("")
+        lines.append(
+            "Per implemented case: did fluxion run the specified inputs and "
+            "produce every output the section requires? A checklist, not a "
+            "score (Issue #4277)."
+        )
+        lines.append("")
+        lines.append(
+            "| Section | Case | Status | Ran | Outputs required | Reported | Partial | Missing |"
+        )
+        lines.append("|---|---|---|---|---|---|---|---|")
+        for row in checklist:
+            lines.append(
+                f"| {row['section']} | {row['case']} | {row['status']} | "
+                f"{row['ran']} | {row['outputs_required']} | "
+                f"{row['outputs_reported']} | {row['outputs_partial']} | "
+                f"{row['outputs_missing']} |"
+            )
+        lines.append("")
+        lines.append(
+            f"*{SPREAD_NOT_A_CRITERION}. The Annex B8 §B8.1 statistics are "
+            "based on the published example results and are not to be "
+            "interpreted as acceptance criteria; the spreads below are "
+            "diagnostic context only.*"
+        )
+        lines.append("")
+        lines.append("| Section | Case | Annex B8 example-result spread (diagnostic — NOT a criterion) |")
+        lines.append("|---|---|---|")
+        for row in checklist:
+            if not row["annex_b8_spread"]:
+                continue
+            lines.append(
+                f"| {row['section']} | {row['case']} | {row['annex_b8_spread']} |"
+            )
 
     return "\n".join(lines)
 
@@ -1608,6 +1830,10 @@ def main():
             json.dump(validation_results, f, indent=2)
         print(f"Updated baseline at {baseline_path}")
 
+    # Conformance checklist (#4277 D) — per implemented case, a checklist
+    # (not a score). Carried in every output mode.
+    conformance_checklist = checker.conformance_checklist()
+
     # Output
     output = None
     if args.json:
@@ -1616,6 +1842,7 @@ def main():
                 "timestamp": report.timestamp,
                 "overall_passed": report.overall_passed,
                 "summary": report.summary,
+                "conformance_checklist": conformance_checklist,
                 "gates": [
                     {
                         "name": r.name,
@@ -1631,7 +1858,7 @@ def main():
             indent=2,
         )
     elif args.markdown:
-        output = generate_markdown_report(report)
+        output = generate_markdown_report(report, conformance_checklist)
     else:
         lines = [
             "=" * 60,
@@ -1651,6 +1878,7 @@ def main():
                 f"{status} [{result.category.upper()}] {result.name}: {result.message}"
             )
 
+        lines.extend(checker.format_conformance_checklist())
         lines.append("-" * 60)
         output = "\n".join(lines)
 
