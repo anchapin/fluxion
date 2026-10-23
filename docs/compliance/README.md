@@ -4,7 +4,7 @@
 **Standard:** ASHRAE Standard 140-2023
 **Scope:** Building Thermal Envelope and Fabric Load Tests
 **Issue:** #750
-**Last Updated:** 2026-06-16
+**Last Updated:** 2026-10-23
 
 ---
 
@@ -153,6 +153,16 @@ Active register of all known deviations from ASHRAE 140-2023:
 - Artifacts: `validation_output.txt`, `validation_results.json`, `ASHRAE_140_VALIDATION_REPORT.md`
 - Required: versioned, timestamped execution log with git SHA
 
+### 7. section_coverage.md — Section Coverage Tracker (supplemental)
+
+Committed snapshot of the #4267 full-standard conformance tracker:
+
+- Per-section coverage for §6–§12 with the owning issue for each
+- Class scope per section (**§6** is the weather-interpretation suite; **§12** is the envelope
+  Class II re-run, not a weather section — ADR-0026)
+- Scope decisions and the critical path
+- Rule: every published 140 number carries its section and class qualifier
+
 ---
 
 ## Directory Structure
@@ -166,7 +176,8 @@ docs/compliance/
 ├── inter-program-comparison.md        # Inter-Program Comparison Charts
 ├── deviations-register.md              # Known Deviations Register
 ├── standards-roadmap.md               # Broader standards roadmap (supplemental)
-└── section8-output-gaps.md           # Section 8 output gaps (supplemental)
+├── section8-output-gaps.md           # Section 8 output gaps (supplemental)
+└── section_coverage.md               # Section coverage tracker (§6–§12), snapshot of #4267 (supplemental)
 ```
 
 ---

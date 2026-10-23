@@ -1,5 +1,7 @@
 # ASHRAE Standard 140 Validation Results
 
+> **Scope (ADR-0026 / Issue #4275):** every figure in this document is **ASHRAE 140 §7 (Class I)** — Building Thermal Envelope and Fabric Load Tests — the only section of the standard fluxion's committed validation suite implements today. §6 is the weather-interpretation section and §12 is the envelope Class II re-run (in scope, blocked on §7); neither is represented here. Full per-section coverage: [`docs/compliance/section_coverage.md`](compliance/section_coverage.md).
+
 *Generated: 2026-10-15 21:37 UTC* (live `fluxion validate` sweep at develop `ad88bfa9`, round 37 regeneration)
 
 > **Context (2026-10-15):** this document is now the live validator sweep, replacing the stored 2026-09-26 snapshot (9.78% pass / 45.27% MAE). The metric-level movement (6.0% pass / 78.50% MAE) reflects the round-26+ fidelity-first engine changes measured against the un-tuned ASHRAE 140 reference bands; the strict ±15% annual-energy gate at the same tip is 9 PASS / 33 KNOWN-FAIL / 0 REGRESSION with zero regressions vs `tests/reference_data/zone_balance/strict_energy_gate_baseline.json`. Per the standing fidelity direction, no validator band or engine constant was adjusted to move these figures.
