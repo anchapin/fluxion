@@ -89,6 +89,13 @@ pub fn load_ahri_coefficients(path: &str) -> Result<EfficiencyCurveConfig, Strin
 }
 
 /// Create default AHRI coefficients (placeholder values).
+///
+/// TODO(#3942): The coefficients returned here are **placeholders**, not
+/// calibrated AHRI-rated equipment data.  They must be replaced with
+/// AHRI-rated chiller / boiler / heat-pump reference points once the
+/// acquisition tracked by issue #3942 lands (see
+/// `docs/hvac_reference_data_acquisition.md`).  Do not treat these values
+/// as reference data until then.
 pub fn default_ahri_coefficients() -> EfficiencyCurveConfig {
     EfficiencyCurveConfig {
         heatpump_heating: CurveCoefficients {

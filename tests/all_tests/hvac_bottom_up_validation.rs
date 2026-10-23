@@ -29,10 +29,25 @@
 //!
 //! # What is NOT covered here (deferred to follow-up issues)
 //!
+//! TODO(#3942): Every deferred item below is tracked by issue #3942 —
+//! "TODO-linked HVAC reference-data acquisition".  Until that issue
+//! delivers real EnergyPlus / AHRI reference data, the chiller, boiler
+//! and heat-pump fixtures in this file are **placeholder** values and
+//! the assertions here validate the internal algebra of the physics
+//! formulas, *not* agreement with rated equipment data.
+//!
 //! - Real EnergyPlus CSV reference data for HVAC equipment (no reference data exists yet)
+//!   - TODO(#3942): acquire the E+ equipment reference outputs and commit
+//!     them under the reference-data directory with provenance; see
+//!     [docs/hvac_reference_data_acquisition.md](../../docs/hvac_reference_data_acquisition.md).
 //! - Chiller capacity vs OAT at design+part-load against E+ (requires IDF simulation)
+//!   - TODO(#3942): blocked on the E+ reference data acquired above.
 //! - Equipment cycling / transient thermal response vs E+ (requires longer simulation)
+//!   - TODO(#3942): blocked on the E+ reference data acquired above.
 //! - Calibrated AHRI coefficients (placeholder values in `default_ahri_coefficients()`)
+//!   - TODO(#3942): replace the placeholder coefficients with AHRI-rated
+//!     chiller/boiler/heat-pump points once the acquisition lands; the
+//!     definition site is `src/sim/hvac/efficiency_curves.rs`.
 
 use std::time::Instant;
 
