@@ -585,6 +585,8 @@ where
         // previous sample (`*_has_prev = false`).
         self.0.mass.r71_air_driver_num_prev = T::from(VectorField::from_scalar(0.0, n));
         self.0.mass.r71_air_driver_den_prev = T::from(VectorField::from_scalar(0.0, n));
+        self.0.mass.r90_phi_st_prev = T::from(VectorField::from_scalar(0.0, n));
+        self.0.mass.r90_phi_m_prev = T::from(VectorField::from_scalar(0.0, n));
         self.0.mass.r75_vent_term_prev = T::from(VectorField::from_scalar(0.0, n));
         self.0.mass.r75_vent_has_prev = false;
         self.0.mass.r76_sol_air_prev = T::from(VectorField::from_scalar(0.0, n));
@@ -4017,6 +4019,8 @@ impl ThermalModel<VectorField> {
                 r70_surface_node_temperatures_prev: None,
                 r71_air_driver_num_prev: VectorField::from_scalar(0.0, num_zones),
                 r71_air_driver_den_prev: VectorField::from_scalar(0.0, num_zones),
+                r90_phi_st_prev: VectorField::from_scalar(0.0, num_zones),
+                r90_phi_m_prev: VectorField::from_scalar(0.0, num_zones),
                 r75_vent_term_prev: VectorField::from_scalar(0.0, num_zones),
                 r75_vent_has_prev: false,
                 r76_sol_air_prev: VectorField::from_scalar(0.0, num_zones),

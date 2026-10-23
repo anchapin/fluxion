@@ -245,14 +245,23 @@ fn test_electrical_results_match_recorded_baseline() {
     // PV unchanged; the heavier January heating load now pins the
     // battery at its charge floor (charge 0, discharge 4.0, export 0);
     // SoC still 0.1. Genuine physics change, not a tuned constant.
-    const EXPECTED_THERMAL_KWH: f64 = 148.75919979557599504;
-    const EXPECTED_ELECTRICAL_LOAD_KWH: f64 = 49.58639993185867212;
+    // Re-recorded 2026-10-22 (loop round 90, R77 lag-filter removal
+    // default flip, `FLX_R90_NO_LAG_FILTER`, §LIMIT-28 round-90 record).
+    // Thermal 148.75919979557599504 -> 148.72623543486619724 kWh;
+    // electrical load 49.58639993185867212 -> 49.57541181162207522 kWh
+    // (thermal/3); grid import 36.82096414386504080 ->
+    // 36.80961168993702870 kWh; peak net demand 1.30003625310234994 ->
+    // 1.30001939788464482 kW. PV unchanged; battery still pinned at its
+    // charge floor (charge 0, discharge 4.0, export 0); SoC still 0.1.
+    // Genuine physics change, not a tuned constant.
+    const EXPECTED_THERMAL_KWH: f64 = 148.72623543486619724;
+    const EXPECTED_ELECTRICAL_LOAD_KWH: f64 = 49.57541181162207522;
     const EXPECTED_PV_KWH: f64 = 8.92391297937676597;
     const EXPECTED_BATTERY_CHARGE_KWH: f64 = 0.00000000000000000;
-    const EXPECTED_BATTERY_DISCHARGE_KWH: f64 = 3.99999999999999956;
-    const EXPECTED_GRID_IMPORT_KWH: f64 = 36.82096414386504080;
+    const EXPECTED_BATTERY_DISCHARGE_KWH: f64 = 4.00000000000000089;
+    const EXPECTED_GRID_IMPORT_KWH: f64 = 36.80961168993702870;
     const EXPECTED_GRID_EXPORT_KWH: f64 = 0.00000000000000000;
-    const EXPECTED_PEAK_NET_DEMAND_KW: f64 = 1.30003625310234994;
+    const EXPECTED_PEAK_NET_DEMAND_KW: f64 = 1.30001939788464482;
     const EXPECTED_FINAL_SOC_FRACTION: f64 = 0.1;
 
     let tol = 1e-9;

@@ -1236,15 +1236,24 @@ fn section7_headline_value_pins() {
     // [-17.80, -16.70] for the first time). Values cross-check the
     // re-recorded strict_energy_gate_baseline.json (_doc_round89b).
     // 900/900FF/950FF unchanged (9R4C inert control).
+    // Re-recorded 2026-10-22 (loop round 90): the R77 solar-lag filter
+    // removed from the default route (`FLX_R90_NO_LAG_FILTER` default-on,
+    // ISO 13790 §C.3 algebraic surface node, §LIMIT-28 round-90 record)
+    // moved the 600-family rows: 600 5.937/4.700 -> 5.959/4.728 MWh,
+    // 600FF -12.85/53.40 -> -12.87/53.84 (Tmax gap 18.35 -> 17.68 pp),
+    // 650FF -17.62/52.79 -> -17.63/53.09 (Tmax gap 17.45 -> 16.98 pp;
+    // both Tmin rows stay in band). Values cross-check the re-recorded
+    // strict_energy_gate_baseline.json (_doc_round90). 900/900FF/950FF
+    // unchanged (9R4C inert control).
     let pins: &[(&str, fn(&Section7CaseResult) -> f64, f64)] = &[
-        ("600", |r| r.annual_heating_mwh, 5.937),
-        ("600", |r| r.annual_cooling_mwh, 4.700),
+        ("600", |r| r.annual_heating_mwh, 5.959),
+        ("600", |r| r.annual_cooling_mwh, 4.728),
         ("900", |r| r.annual_heating_mwh, 1.225),
         ("900", |r| r.annual_cooling_mwh, 2.249),
-        ("600FF", |r| r.min_temp_c, -12.85),
-        ("600FF", |r| r.max_temp_c, 53.40),
-        ("650FF", |r| r.min_temp_c, -17.62),
-        ("650FF", |r| r.max_temp_c, 52.79),
+        ("600FF", |r| r.min_temp_c, -12.87),
+        ("600FF", |r| r.max_temp_c, 53.84),
+        ("650FF", |r| r.min_temp_c, -17.63),
+        ("650FF", |r| r.max_temp_c, 53.09),
         ("900FF", |r| r.min_temp_c, -0.26),
         ("900FF", |r| r.max_temp_c, 43.28),
         ("950FF", |r| r.min_temp_c, -15.67),

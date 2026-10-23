@@ -1410,6 +1410,55 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
         }
 
+        // [R90 DEFAULT FLIP — loop round 90, Item 2 (lag-filter form) /
+        // Item 1 (§LIMIT-40 storage-release split discriminator),
+        // Alex-directed standing rule 2026-10-22: "anything that can be
+        // verified to improve physics accuracy should be turned on by
+        // default" — correct physics goes to the default on its own
+        // merits, band outcomes being a downstream check. PREMISE
+        // (reference-verified): ISO 13790 §C.3's surface node is
+        // ALGEBRAIC — t_s solves the steady H_is/H_ms balance each
+        // instant and partitions phi_st with no smoothing element; the
+        // reference formulation contains no lag on the air share. The
+        // incumbent R77 first-order filter (tau_lag = sqrt(tau_air ·
+        // tau_mass) ≈ 2.0-2.1 h on an hourly-frozen input) is a synthetic
+        // stand-in for surface-node dynamics that the engine's operator
+        // already carries: the air node integrates with true C_air
+        // (#1585) and the mass node advances at full time coverage per
+        // class (round 89b), so the two-node network's continuous limit
+        // is the ISO §C.3 two-node system — the filter adds a delay the
+        // reference does not contain. NEW DEFAULT: the air share of
+        // phi_st enters the air ODE unfiltered (instant §C.3 partition);
+        // the lag STATE still advances (unchanged arithmetic) so the
+        // persisted solar-lag state stays consistent. Setting
+        // FLX_R90_NO_LAG_FILTER to a falsy token (0/false/no/off)
+        // restores the pre-round-90 R77 filtered route for A/B
+        // archaeology; any other value behaves as unset, i.e. the
+        // unfiltered default. VERIFIED (round-90 arm battery on
+        // 6d4c5263, flag-off arm bit-identical to the main-checkout
+        // battery): 600FF Tmax 53.40 -> 53.84 C (gap 18.35 -> 17.68 pp),
+        // 650FF Tmax 52.79 -> 53.09 C (17.45 -> 16.98 pp), FF Tmin rows
+        // unchanged in-band (-12.87 / -17.63), high-mass family
+        // byte-identical, 13 of 42 output-diff metrics moved (all
+        // low-mass family, <= 1.36%), one strict-tracked row worsened
+        // (800 cooling 1130.07 -> 1137.48 pp — the §LIMIT-14 GaugeSolver
+        // structural row), re-recorded honestly in the same PR with
+        // KNOWN_ISSUES documentation. (b) `FLX_R90_PHIST_RAMP` remains an
+        // env-gated measurement harness, default off: the sub-hour ramp
+        // of the gain drives is an interpolation assumption, not a
+        // reference requirement, and its measurement moved FF Tmax the
+        // WRONG way (600FF 53.40 -> 52.87, 650FF 52.79 -> 52.14) while
+        // improving four conditioned rows — honest verdict recorded, not
+        // adopted. NOSTORE arm (FLX_R88_PHIST_MASS_SHARE=0): the §C.3
+        // surface-pool mass share is load-bearing — removing it moved
+        // every target row the wrong way (600FF Tmax 53.40 -> 52.53,
+        // 650FF 52.79 -> 51.85, both FF Tmin colder) with broad
+        // conditioned regressions; refuted as a fix direction.]
+        let r90_no_lag_filter = crate::util::env_bool::env_bool("FLX_R90_NO_LAG_FILTER", true);
+        let r90_phist_ramp = crate::util::env_bool::env_bool("FLX_R90_PHIST_RAMP", false);
+        let r90_phi_st_prev_ref = self.0.mass.r90_phi_st_prev.as_ref();
+        let r90_phi_m_prev_ref = self.0.mass.r90_phi_m_prev.as_ref();
+
         for _step in 0..steps {
             // === Air-node ODE (exact exponential solution) ===
             // Issue #3370: scratch pool buffer instead of per-sub-step
@@ -1517,6 +1566,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         if r88_phist_share && term_rest_1_r77 > 0.0 {
                             lag_input_r77 *= 1.0 - r88_share_zone[i];
                         }
+                        // [R90 HARNESS (b)] ramp the filter input across
+                        // the hour at the R71 midpoint fraction; zero prev
+                        // phi_st = first step, seed with the current value.
+                        if r90_phist_ramp && term_rest_1_r77 > 0.0 {
+                            let phi_st_prev_r90 =
+                                r90_phi_st_prev_ref.get(i).copied().unwrap_or(0.0);
+                            if phi_st_prev_r90 != 0.0 {
+                                let f_r90 = (_step as f64 + 0.5) / steps as f64;
+                                let mut lag_input_prev_r90 = h_tr_is_for_ti_free.as_ref()[i]
+                                    * phi_st_prev_r90
+                                    / term_rest_1_r77;
+                                if r88_phist_share {
+                                    lag_input_prev_r90 *= 1.0 - r88_share_zone[i];
+                                }
+                                lag_input_r77 = lag_input_prev_r90
+                                    + f_r90 * (lag_input_r77 - lag_input_prev_r90);
+                            }
+                        }
                         let decay_r77 = if tau_lag_r77 > 0.0 && dt_sub > 0.0 {
                             (-dt_sub / tau_lag_r77).exp()
                         } else {
@@ -1532,7 +1599,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             lag_old_r77 * decay_half_r77 + lag_input_r77 * (1.0 - decay_half_r77);
                         scratch.air_node_solar_lag.as_mut()[i] =
                             lag_old_r77 * decay_r77 + lag_input_r77 * (1.0 - decay_r77);
-                        num_i += lag_mid_r77 * term_rest_1_r77;
+                        // [R90 DEFAULT FLIP] unfiltered ISO §C.3 air-share
+                        // drive by default; the falsy token restores the R77
+                        // filtered route for A/B archaeology.
+                        num_i += if r90_no_lag_filter {
+                            lag_input_r77
+                        } else {
+                            lag_mid_r77
+                        } * term_rest_1_r77;
                     }
                     let steady = num_i / den_i;
                     let c_air_i = c_air_ref[i];
@@ -1977,6 +2051,34 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                     } else {
                                         phi_m_i * w
                                     };
+                                    // [R90 HARNESS (b)] ramp the class mass
+                                    // drive across the hour at the R71
+                                    // midpoint fraction (same share algebra
+                                    // on the previous hour's gains; zero prev
+                                    // = seed, no ramp).
+                                    let phi_c = if r90_phist_ramp {
+                                        let phi_m_prev_r90 =
+                                            r90_phi_m_prev_ref.get(i).copied().unwrap_or(0.0);
+                                        let phi_st_prev_r90 =
+                                            r90_phi_st_prev_ref.get(i).copied().unwrap_or(0.0);
+                                        if phi_m_prev_r90 != 0.0 || phi_st_prev_r90 != 0.0 {
+                                            let f_r90m = (_step as f64 + 0.5) / steps as f64;
+                                            let h_is_c_r90 = h_is_i * w;
+                                            let s_c_prev_r90 =
+                                                if r88_phist_share && h_ms_c + h_is_c_r90 > 0.0 {
+                                                    h_ms_c / (h_ms_c + h_is_c_r90)
+                                                } else {
+                                                    0.0
+                                                };
+                                            let phi_c_prev_r90 = phi_m_prev_r90 * w
+                                                + s_c_prev_r90 * phi_st_prev_r90 * w;
+                                            phi_c_prev_r90 + f_r90m * (phi_c - phi_c_prev_r90)
+                                        } else {
+                                            phi_c
+                                        }
+                                    } else {
+                                        phi_c
+                                    };
                                     let cm_dt_c = cls_cm[c] / dt_m;
                                     let half_c = 0.5 * (h3_c + h_em_c);
                                     let den_c = cm_dt_c + half_c;
@@ -2179,6 +2281,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     };
                 }
                 self.0.mass.r75_vent_has_prev = true;
+            }
+            // [R90 HARNESS] persist this hour's gain drives as the next
+            // hour's ramp source. Unconditional write: the flag-off build
+            // never reads these fields, so it stays bit-identical.
+            {
+                let st_prev_r90 = self.0.mass.r90_phi_st_prev.as_mut();
+                let m_prev_r90 = self.0.mass.r90_phi_m_prev.as_mut();
+                let n = self.0.hvac.num_zones;
+                st_prev_r90[..n].copy_from_slice(&phi_st.as_ref()[..n]);
+                m_prev_r90[..n].copy_from_slice(&phi_m.as_ref()[..n]);
             }
         }
 
