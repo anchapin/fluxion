@@ -182,9 +182,13 @@ fn analytical_path_eui_is_bit_identical_to_baseline() {
     // ISO 13790 §C.3 algebraic surface node, §LIMIT-28 round-90 record).
     // The analytical EUI moved
     // [78.39195778347752, 128.81993774427215, 156.4015468093156] ->
-    // [80.56768592230117, 133.08315456372387, 160.64670886138663]
+    // Round-90 golden: [80.56768592230117, 133.08315456372387,
+    // 160.64670886138663]. Re-recorded 2026-10-22 (loop round 91, flip 1):
+    // the ASHRAE 140 Table 5-138 window-loss solar sink default
+    // (`FLX_R91_RETRANS`, §LIMIT-28 round-91 record) moves the analytical
+    // harness EUI; surrogate golden unchanged.
     // (+2.8 %/+3.3 %/+2.7 %). Nothing tuned.
-    let golden = [80.56768592230117, 133.08315456372387, 160.64670886138663];
+    let golden = [84.03554103745084, 134.65987299248584, 162.0941813138899];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),

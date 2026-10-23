@@ -454,3 +454,55 @@ is either refuted in direction, premise-verified passing, or (this
 round) structurally inert on the default route. Nothing tuned; scratch
 reverted before commit; no engine code landed; no re-record battery
 owed.
+
+
+## Round-91 bands-as-factor audit (2026-10-22, Alex directive 2026-10-22 21:20 ET)
+
+Directive: every round-66-90 decision that was rejected or gated primarily on
+unfavorable band movement is re-evaluated under the standing 2026-10-22 criteria
+(known, verifiable, tested physics; reference-conformant). Band movement is
+recorded for the record, never weighted. Premises verified in code on the current
+default (a0446c26) and against the primary sources (licensed 140-2017 text;
+ISO 13790 Annex C), not trusted from the loop history.
+
+### Decision inventory and verdicts
+
+| Item | Original band-factored decision | Premise re-verification | Verdict under 2026-10-22 criteria |
+|---|---|---|---|
+| Round-83 window retransmission (FLX_R83_RETRANS) | Left gated: "measured spec-correct-not-a-fix" (band-only) | 140-2017 sec 5.2.1.12.1 "accounting for solar lost ... retransmitted back out the windows"; Table 5-138 row "Solar Lost through Windows 0.035" | **FLIP** - default since this round (FLX_R91_RETRANS) |
+| Round-81 solar split arms A/B (to_air=0 / all-solar-to-surface) | Refuted in #3961 "against the strict +/-15% annual gate" | sec 5.2.1.12.1 + Table 5-138 distribute transmitted solar among interior surfaces only (nothing to air); ISO 13790 C.1-C.3 route solar to the surface/mass pair by conductance share, no fixed beam route; the incumbent to_air=0.30*(1-w_solar) is documented in-code as #1216-band-aid lineage; its cited basis ("ASHRAE 140 Table B-12 F_m", attributed to #2359) DOES NOT EXIST - no Table B-12 in 140-2017, #2359 (peak-cooling-OVER) cites none; #3961's refutation of retiring it was explicitly band-based ("measured against the strict +/-15% annual gate"); the structural rationale (air-node capacitance) is superseded by #1585/#4546/#4547 | **FLIP** - FLX_R91_SOL2ST default in this round's flip 2 |
+| Round-83 Table 5-138 per-class routing (FLX_R83_T5138) | Left gated after being measured "structurally inert" (the per-class mass advance was then discarded) | the per-class site binds the committed mass state since #4533/#4547 (round 84/89b); sec 5.2.1.12.2 sanctions Table 5-138 constant fractions for programs that do not compute interior distribution internally | **FLIP** - FLX_R91_T5138 default in this round's flip 3 |
+| FLX_R88_PHIST_MASS_SHARE | n/a - already default since #4546 | single read site, default true, falsy token A/B-only (verified in code) | SKIP - complete |
+| FLX_R86_VENT_AIR_ONLY | n/a - already default since #4538 | verified in code | SKIP - complete |
+| FLX_R90_PHIST_RAMP (sub-hour gain ramp) | Refuted round 90 | hour-constant gains ARE the reference convention; the ramp is an integration refinement the reference does not contain | **FAIL (re-affirmed, now on reference grounds)** - harness stays default-off |
+| Round-75 exact-ramp harness | Left ungated | same reference-convention finding as R90_RAMP | **FAIL** - harness-only |
+| #3961 third option (beam=1.0 all-solar-to-mass) | Not adopted (bands) | not reference-conformant: neither Table 5-138 nor ISO C.1-C.3 carries a fixed beam-swallow route | **FAIL** - correctly never adopted; reason corrected from band to reference |
+
+### Flip-1 measurement (RETRANS, on a0446c26, flag-off bit-identical 42/42)
+
+Conditioned: 600 C 4.728 -> 4.490 MWh, 610/C 2.765 -> 2.633, 620/C 3.945 ->
+3.785, 630/C 2.876 -> 2.767, 640/C 4.728 -> 4.490, 650/C 3.877 -> 3.672
+(-3.8..-5.3%); heating +1.1..+2.2% (600/H 5.959 -> 6.054). Free-float: 600FF
+Tmax 53.84 -> 53.05 C, 650FF Tmax 53.09 -> 52.25 C, minima -12.90/-17.65 stay
+in band; 900FF/950FF byte-identical. No strict-gate row changes state
+(check_strict 0). 17/42 output-diff metrics moved, all low-mass family.
+SS6/SS7 pins + CSVs, hotloop analytical golden re-recorded with provenance;
+contracts 14/14, blind exact, fabric PASS, grid green, clippy -D warnings
+clean (CI gate invocation), fmt clean.
+
+### Flip-2/3 measurement preview (arms on a0446c26; flips re-measure on the
+new tip)
+
+SOL2ST (to_air=0, beam=0): 600FF -13.05/45.24 (Tmin stays in band, Tmax gap
+17.68 -> ~31 pp), 650FF -17.76/44.73, 600 H 6.822 (gap 25.26 -> 45.57 pp),
+800 H gap 0.60 -> 17.34 pp, 800 C gap 1137.48 -> 562.12 pp. Regressions are
+recorded per the standing direction, not tuned away.
+T5138 (per-class routing): 600FF -12.90/53.92, 650FF -17.65/53.16, 600 C
+4.706 (-0.47%), 600 H 6.026 (+1.12%); no strict row changes state.
+Composite (all three): 600FF -13.13/44.93, 650FF Tmin -17.82 honestly leaves
+[-17.80, -16.70] (partition shift recorded in KNOWN_ISSUES), 600 H 7.049,
+600 C 2.402.
+
+Nothing tuned. Each flip lands one PR (env-gated harness promoted to default,
+falsy-token archaeology opt-out) with the full re-record battery and old->new
+provenance.

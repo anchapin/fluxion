@@ -1245,15 +1245,26 @@ fn section7_headline_value_pins() {
     // both Tmin rows stay in band). Values cross-check the re-recorded
     // strict_energy_gate_baseline.json (_doc_round90). 900/900FF/950FF
     // unchanged (9R4C inert control).
+    // Re-recorded 2026-10-22 (loop round 91, flip 1): the ASHRAE 140
+    // Table 5-138 window-loss solar sink promoted to the engine default
+    // (`FLX_R91_RETRANS`; §5.2.1.12.1 "accounting for solar lost ...
+    // retransmitted back out the windows", Table 5-138 row "Solar Lost
+    // through Windows 0.035"; round-83 arm left gated on band direction
+    // alone, flip under the 2026-10-22 criteria) moved the 600-family
+    // rows: 600 5.959/4.728 -> 6.054/4.490 MWh, 600FF -12.87/53.84 ->
+    // -12.90/53.05, 650FF -17.63/53.09 -> -17.65/52.25 (both Tmin rows
+    // stay in band). Values cross-check the re-recorded
+    // strict_energy_gate_baseline.json (_doc_round91a).
+    // 900/900FF/950FF unchanged (9R4C inert control).
     let pins: &[(&str, fn(&Section7CaseResult) -> f64, f64)] = &[
-        ("600", |r| r.annual_heating_mwh, 5.959),
-        ("600", |r| r.annual_cooling_mwh, 4.728),
+        ("600", |r| r.annual_heating_mwh, 6.054),
+        ("600", |r| r.annual_cooling_mwh, 4.490),
         ("900", |r| r.annual_heating_mwh, 1.225),
         ("900", |r| r.annual_cooling_mwh, 2.249),
-        ("600FF", |r| r.min_temp_c, -12.87),
-        ("600FF", |r| r.max_temp_c, 53.84),
-        ("650FF", |r| r.min_temp_c, -17.63),
-        ("650FF", |r| r.max_temp_c, 53.09),
+        ("600FF", |r| r.min_temp_c, -12.90),
+        ("600FF", |r| r.max_temp_c, 53.05),
+        ("650FF", |r| r.min_temp_c, -17.65),
+        ("650FF", |r| r.max_temp_c, 52.25),
         ("900FF", |r| r.min_temp_c, -0.26),
         ("900FF", |r| r.max_temp_c, 43.28),
         ("950FF", |r| r.min_temp_c, -15.67),
