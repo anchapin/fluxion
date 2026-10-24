@@ -787,7 +787,20 @@ describe('@fluxion/native', () => {
     // band is deliberately not widened (WINDOW-01); the pin stays a ±5%
     // regression guard around the recorded engine value (round-42/71/78
     // precedent).
-    const HEATING_RECORDED_KWH = 5791.80; // post-mass-coverage-flip engine value, 2026-10-22
+    // Re-pinned 2026-10-23 (physics loop round 91, three bands-as-factor-audit
+    // default flips landing in sequence — the Table 5-138 window-loss solar
+    // sink FLX_R91_RETRANS (PR #4566), the incumbent density-driven solar
+    // split retirement FLX_R91_SOL2ST, and the Table 5-138 per-class solar
+    // routing default FLX_R91_T5138 (PR #4570, merge 44716f5f)): the
+    // NAPI/WD600 Case 600 annual heating moves to 4580.90 kWh (measured on
+    // the merged develop tip 44716f5f, reproduced on two independent runs
+    // 2026-10-23; -20.9% vs the round-89b pin). Adopted per the
+    // fidelity-first direction (round-42/71/78/89 precedent); the ±5%
+    // regression guard moves with the recorded engine value — the published
+    // band is deliberately not widened (WINDOW-01). Strict-route context:
+    // KNOWN_ISSUES §LIMIT-28 (_doc_round91a/b/c) — Case 600 heating
+    // re-enters its published band (4.692 MWh) on the strict checker.
+    const HEATING_RECORDED_KWH = 4580.90; // post-round-91-flips engine value, 2026-10-23
     const HEATING_GUARD_PCT = 5.0;
     const HEATING_MIN_KWH = +(HEATING_RECORDED_KWH * (1 - HEATING_GUARD_PCT / 100)).toFixed(2);
     const HEATING_MAX_KWH = +(HEATING_RECORDED_KWH * (1 + HEATING_GUARD_PCT / 100)).toFixed(2);
@@ -820,7 +833,19 @@ describe('@fluxion/native', () => {
     // across the two flips). Published band deliberately not widened
     // (WINDOW-01); the pin stays a ±5% regression guard (round-42/71/78
     // precedent).
-    const COOLING_RECORDED_KWH = 4954.20; // post-mass-coverage-flip engine value, 2026-10-22
+    // Re-pinned 2026-10-23 (physics loop round 91, same three default flips
+    // as heating above): the NAPI/WD600 Case 600 annual cooling moves to
+    // 6258.28 kWh (measured on the merged develop tip 44716f5f in the same
+    // run as the heating value, 2026-10-23; +26.3% vs the round-89b pin).
+    // Same treatment as heating (round-42/71/78/89 precedent): correct
+    // physics over the published band; the pin becomes a ±5% regression
+    // guard around the recorded engine value, not a widened band.
+    // Strict-route context: KNOWN_ISSUES §LIMIT-28 (_doc_round91a/b/c) —
+    // Case 600 cooling re-enters its published band (5.962 MWh) on the
+    // strict checker. Both values came from one run this time, so the
+    // round-89b heating-asserts-first abort no longer masks the cooling
+    // guard.
+    const COOLING_RECORDED_KWH = 6258.28; // post-round-91-flips engine value, 2026-10-23
     const COOLING_GUARD_PCT = 5.0;
     const COOLING_MIN_KWH = +(COOLING_RECORDED_KWH * (1 - COOLING_GUARD_PCT / 100)).toFixed(2);
     const COOLING_MAX_KWH = +(COOLING_RECORDED_KWH * (1 + COOLING_GUARD_PCT / 100)).toFixed(2);
