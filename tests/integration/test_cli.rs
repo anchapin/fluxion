@@ -1122,3 +1122,116 @@ fn test_topology_lint_text_format_reports_clean() {
         "text body missing: {stdout}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Issue #3967 (slice 2) — `--model` rejects unsupported model formats loudly
+// ---------------------------------------------------------------------------
+//
+// `--model` accepts a serialized `CaseSpec` JSON document only. A real
+// OpenStudio (`.osm`) or GreenBuildingXML (`.xml`) export must be rejected
+// with a precise error naming the file, the detected format and what IS
+// supported — not with a generic JSON parse error.
+
+/// Writes a raw (non-CaseSpec) fixture file into `temp_dir` and returns its
+/// path as a string argument for the CLI.
+fn write_raw_model_fixture(temp_dir: &tempfile::TempDir, name: &str, contents: &str) -> String {
+    let path = temp_dir.path().join(name);
+    std::fs::write(&path, contents).expect("write model fixture");
+    path.to_string_lossy().into_owned()
+}
+
+/// Asserts that `stderr` carries the precise unsupported-format rejection.
+fn assert_unsupported_model_format_error(stderr: &str, file_name: &str, format_label: &str) {
+    assert!(
+        stderr.contains("unsupported model format"),
+        "error must state the model format is unsupported; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains(format_label),
+        "error must name the detected format ({format_label}); stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains(file_name),
+        "error must name the offending file ({file_name}); stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("CaseSpec"),
+        "error must state that only a serialized CaseSpec JSON document is supported; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("expected value"),
+        "error must not be a raw serde JSON parse error; stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn test_topology_export_model_rejects_opensstudio_osm() {
+    let temp_dir = tempdir().expect("tempdir");
+    let model = write_raw_model_fixture(&temp_dir, "building.osm", "<osm></osm>");
+    let (status, stdout, stderr) = run_fluxion(&["topology", "export", "--model", &model]);
+    assert!(
+        !status.success(),
+        "an OpenStudio .osm model must fail non-zero; stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert_unsupported_model_format_error(&stderr, "building.osm", "OpenStudio (.osm)");
+}
+
+#[test]
+fn test_topology_export_model_rejects_greenbuildingxml_xml() {
+    let temp_dir = tempdir().expect("tempdir");
+    let model = write_raw_model_fixture(&temp_dir, "building.xml", "<gbXML></gbXML>");
+    let (status, stdout, stderr) = run_fluxion(&["topology", "export", "--model", &model]);
+    assert!(
+        !status.success(),
+        "a GreenBuildingXML .xml model must fail non-zero; stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert_unsupported_model_format_error(&stderr, "building.xml", "GreenBuildingXML (.xml)");
+}
+
+#[test]
+fn test_topology_lint_model_rejects_opensstudio_osm() {
+    let temp_dir = tempdir().expect("tempdir");
+    let model = write_raw_model_fixture(&temp_dir, "building.osm", "<osm></osm>");
+    let (status, stdout, stderr) =
+        run_fluxion(&["topology", "lint", "--model", &model, "--format", "json"]);
+    assert!(
+        !status.success(),
+        "linting an OpenStudio .osm model must fail non-zero; stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert_unsupported_model_format_error(&stderr, "building.osm", "OpenStudio (.osm)");
+}
+
+#[test]
+fn test_topology_model_json_garbage_still_fails_as_parse_error() {
+    let temp_dir = tempdir().expect("tempdir");
+    let model = write_raw_model_fixture(&temp_dir, "garbage.json", "this is not json");
+    // Export path: a genuine JSON parse failure, NOT a format rejection.
+    let (status, stdout, stderr) = run_fluxion(&["topology", "export", "--model", &model]);
+    assert!(
+        !status.success(),
+        "a .json file with garbage contents must fail non-zero; stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("failed to parse CaseSpec"),
+        "expected the CaseSpec JSON parse error; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("unsupported model format"),
+        "the format gate must not fire for .json files; stderr:\n{stderr}"
+    );
+    // Lint path: same distinction.
+    let (status, stdout, stderr) =
+        run_fluxion(&["topology", "lint", "--model", &model, "--format", "json"]);
+    assert!(
+        !status.success(),
+        "a .json file with garbage contents must fail non-zero; stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("failed to parse CaseSpec"),
+        "expected the CaseSpec JSON parse error; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("unsupported model format"),
+        "the format gate must not fire for .json files; stderr:\n{stderr}"
+    );
+}
