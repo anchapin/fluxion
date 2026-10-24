@@ -94,3 +94,123 @@ pub(crate) fn compute_pmv_ppd_and_adaptive(
         is_adaptive_comfortable,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::compute_pmv_ppd_and_adaptive;
+
+    /// Round 95 (coverage remedy): comfort.rs was 0% covered (0/12 branch
+    /// targets) while sitting in the conduction_zone bucket. Reference
+    /// values below were computed independently in Python by replicating
+    /// the exact Fanger operation order (round-95 worklog); ±1e-9 is
+    /// cross-language libm ulp headroom, not a physics tolerance.
+    ///
+    /// Units note (recorded, unchanged): the 42.5 skin-diffusion constant
+    /// (mmHg in Fanger's formulation) meets p_a in Pa, so the evaporative
+    /// term is zero at any normal humidity and neutral PMV sits near
+    /// 28 °C at met 1.0 / clo 0.5 (textbook neutral is ~24-26 °C).
+
+    const TOL: f64 = 1e-9;
+
+    fn assert_close(actual: f64, expected: f64, what: &str) {
+        assert!(
+            (actual - expected).abs() < TOL,
+            "{what}: expected {expected}, got {actual}"
+        );
+    }
+
+    #[test]
+    fn fanger_neutral_point_yields_pmv_zero_and_ppd_five() {
+        // |l| <= 0.1 at the load-balance temperature -> pmv_raw takes the
+        // zero arm, pmv clamps to 0.0, PPD = 100 - 95·exp(0) = 5.0 exactly.
+        let m = compute_pmv_ppd_and_adaptive(28.018371323, 0.5, 0.1, 1.0, 0.5);
+        assert_close(m.pmv, 0.0, "neutral PMV");
+        assert_close(m.ppd, 5.0, "neutral PPD (Fanger lower bound)");
+        assert!(
+            m.is_adaptive_comfortable,
+            "operative {} must sit inside the adaptive band [{}, {}]",
+            m.operative_temp, m.adaptive_lower_limit, m.adaptive_upper_limit
+        );
+        // ASHRAE 55 adaptive-band bookkeeping: centre = 0.33·top + 18.83,
+        // upper = centre + 3.5 (Category II), lower = centre - 2.0.
+        let centre = 0.33 * m.operative_temp + 18.83;
+        assert_close(m.adaptive_upper_limit, centre + 3.5, "adaptive upper");
+        assert_close(m.adaptive_lower_limit, centre - 2.0, "adaptive lower");
+        assert_close(m.running_mean_temp, m.operative_temp, "running mean");
+        assert_close(m.relative_humidity, 0.5, "rh passthrough");
+    }
+
+    #[test]
+    fn fanger_still_air_band_is_monotone_and_pinned() {
+        // vel == 0.1 exactly -> the still-air convection arm
+        // h_c = 2.38·|ta - 35|^0.25.
+        let cool = compute_pmv_ppd_and_adaptive(27.0, 0.5, 0.1, 1.0, 0.5);
+        let warm = compute_pmv_ppd_and_adaptive(29.0, 0.5, 0.1, 1.0, 0.5);
+        assert_close(cool.pmv, -0.677805194, "still-air 27 C PMV");
+        assert_close(cool.ppd, 14.655821840, "still-air 27 C PPD");
+        assert_close(warm.pmv, 0.640079909, "still-air 29 C PMV");
+        assert_close(warm.ppd, 13.601133881, "still-air 29 C PPD");
+        assert!(
+            cool.pmv < warm.pmv,
+            "PMV must rise with operative temperature"
+        );
+        assert!(cool.ppd >= 5.0 && warm.ppd >= 5.0, "PPD >= 5% always");
+        let mid = compute_pmv_ppd_and_adaptive(26.0, 0.5, 0.1, 1.0, 0.5);
+        assert_close(mid.pmv, -1.355625930, "still-air 26 C PMV");
+        assert_close(mid.ppd, 43.162340557, "still-air 26 C PPD");
+    }
+
+    #[test]
+    fn fanger_moving_air_convection_correlation_engages() {
+        // vel > 0.1 -> h_c = 12.1·sqrt(vel); the raised convection
+        // coefficient drives the load past the lower clamp at 26 C.
+        let fan = compute_pmv_ppd_and_adaptive(26.0, 0.5, 0.8, 1.0, 0.5);
+        assert_close(fan.pmv, -4.0, "fan 26 C PMV (lower clamp arm)");
+        assert_close(fan.ppd, 99.999455805, "fan 26 C PPD at clamp");
+        let still = compute_pmv_ppd_and_adaptive(26.0, 0.5, 0.1, 1.0, 0.5);
+        assert!(
+            fan.pmv < still.pmv,
+            "moving air must cool the Fanger balance: fan {} vs still {}",
+            fan.pmv,
+            still.pmv
+        );
+    }
+
+    #[test]
+    fn fanger_dry_air_engages_the_evaporative_term() {
+        // p_a = rh·p_sat < 42.5 Pa only at extreme dryness (see the units
+        // note): both `d1 > 0` and `e_max > 0` hold, so the w_ratio branch
+        // takes its TRUE arm and evaporation pulls PMV down.
+        let dry = compute_pmv_ppd_and_adaptive(30.0, 0.0005, 0.1, 1.0, 0.5);
+        assert_close(dry.pmv, 0.061025518, "dry-air 30 C PMV");
+        // At normal humidity the same condition short-circuits on
+        // `e_max > 0` (p_a >> 42.5 Pa) and stays warmer.
+        let humid = compute_pmv_ppd_and_adaptive(30.0, 0.5, 0.1, 1.0, 0.5);
+        assert_close(humid.pmv, 1.276935183, "humid 30 C PMV (else arm)");
+        assert!(
+            dry.pmv < humid.pmv,
+            "the evaporative term must reduce PMV when it engages"
+        );
+    }
+
+    #[test]
+    fn fanger_extremes_clamp_pmv_and_break_adaptive_comfort() {
+        // Both clamp arms: pmv_raw beyond ±4 saturates, PPD is symmetric
+        // in pmv² so both extremes share the same PPD, and the adaptive
+        // band must reject both.
+        let hot = compute_pmv_ppd_and_adaptive(50.0, 0.9, 0.1, 2.0, 1.0);
+        assert_close(hot.pmv, 4.0, "hot PMV (upper clamp arm)");
+        assert_close(hot.ppd, 99.999455805, "hot PPD at clamp");
+        assert!(
+            !hot.is_adaptive_comfortable,
+            "operative 50 C exceeds the adaptive upper limit"
+        );
+        let cold = compute_pmv_ppd_and_adaptive(2.0, 0.3, 0.1, 1.0, 0.0);
+        assert_close(cold.pmv, -4.0, "cold PMV (lower clamp arm)");
+        assert_close(cold.ppd, 99.999455805, "cold PPD at clamp");
+        assert!(
+            !cold.is_adaptive_comfortable,
+            "operative 2 C is below the adaptive lower limit"
+        );
+    }
+}
