@@ -13,13 +13,18 @@
 //! (E001–E007 errors, W001–W002 warnings) and exits 0 clean / 1 findings /
 //! 2 usage or internal errors.
 //!
+//! `--model` accepts a serialized `CaseSpec` JSON document only. Known
+//! non-`CaseSpec` model formats (OpenStudio `.osm`, GreenBuildingXML
+//! `.xml`/`.gbxml`) are rejected with a precise error naming the file, the
+//! detected format, and what IS supported (Issue #3967).
+//!
 //! The handlers deliberately mirror the fail-loud CLI contract: mutually
 //! exclusive source flags are enforced, unknown case ids error out non-zero,
 //! and no path here silently succeeds (cf. issue #2947 stub policy).
 
 use std::fs;
 use std::io::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{Args, Subcommand, ValueEnum};
@@ -66,7 +71,10 @@ pub struct ExportArgs {
     pub case: Option<String>,
 
     /// Path to a serialized CaseSpec model document (JSON). Mutually
-    /// exclusive with --case.
+    /// exclusive with --case. Unsupported model formats (OpenStudio `.osm`,
+    /// GreenBuildingXML `.xml`/`.gbxml`) are rejected with a precise error
+    /// naming the detected format; only a serialized CaseSpec JSON document
+    /// is supported.
     #[arg(long, value_name = "PATH")]
     pub model: Option<PathBuf>,
 
@@ -104,6 +112,54 @@ pub fn dispatch(command: TopologyCommand) -> Result<()> {
     }
 }
 
+/// Model file formats that `--model` does NOT accept, keyed by lower-cased
+/// file extension (Issue #3967).
+///
+/// `--model` takes a *serialized `CaseSpec` JSON document*. Feeding it a
+/// real OpenStudio (`.osm`) or GreenBuildingXML (`.xml` / `.gbxml`) export
+/// used to surface as a raw serde JSON parse error, which told the user
+/// nothing about the actual problem: the format is not supported at all.
+/// The table below lets both model-loading paths (export and lint) reject
+/// those formats loudly, naming the file, the detected format, and what IS
+/// supported.
+const UNSUPPORTED_MODEL_FORMATS: &[(&str, &str)] = &[
+    ("osm", "OpenStudio (.osm)"),
+    ("xml", "GreenBuildingXML (.xml)"),
+    ("gbxml", "GreenBuildingXML (.gbxml)"),
+];
+
+/// Returns a human-readable label for a known non-`CaseSpec` model format
+/// detected from the file extension (case-insensitive), or `None` when the
+/// extension is unknown (e.g. `.json`, no extension) and the file should be
+/// parsed as a `CaseSpec` JSON document as before.
+fn detect_unsupported_model_format(path: &Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    UNSUPPORTED_MODEL_FORMATS
+        .iter()
+        .find(|(candidate, _)| *candidate == ext)
+        .map(|(_, label)| *label)
+}
+
+/// Reads a `--model` document, rejecting known unsupported model formats
+/// *before* any JSON parsing happens (Issue #3967).
+///
+/// Shared by the export and lint model-loading arms so both paths fail loud
+/// with the same precise message. Files whose extension is unknown (`.json`,
+/// no extension, ...) keep the previous behavior: they are read and parsed as
+/// a serialized `CaseSpec` JSON document.
+fn read_model_document(path: &Path) -> Result<String> {
+    if let Some(format_label) = detect_unsupported_model_format(path) {
+        bail!(
+            "unsupported model format for {}: detected {format_label}, which is not yet \
+             supported; `--model` only accepts a serialized CaseSpec JSON document \
+             (a JSON file)",
+            path.display()
+        );
+    }
+    fs::read_to_string(path)
+        .with_context(|| format!("failed to read model file {}", path.display()))
+}
+
 /// Builds and writes the topology export. Shared by `topology export` and the
 /// `export-topology` alias (identical behavior by construction: both call
 /// this function).
@@ -126,8 +182,7 @@ pub fn handle_export(args: ExportArgs) -> Result<()> {
             (spec, ctx)
         }
         (None, Some(path)) => {
-            let raw = fs::read_to_string(path)
-                .with_context(|| format!("failed to read model file {}", path.display()))?;
+            let raw = read_model_document(path)?;
             let spec: CaseSpec = serde_json::from_str(&raw).with_context(|| {
                 format!("failed to parse CaseSpec JSON from {}", path.display())
             })?;
@@ -232,6 +287,138 @@ mod tests {
         assert!(err.contains("unknown ASHRAE 140 case id"));
     }
 
+    // -------------------------------------------------------------------
+    // Issue #3967 — `--model` rejects unsupported model formats loudly
+    // -------------------------------------------------------------------
+
+    /// Writes a fixture file into `dir` and returns its path.
+    fn write_fixture(dir: &Path, name: &str, contents: &str) -> PathBuf {
+        let path = dir.join(name);
+        fs::write(&path, contents).expect("fixture file should be written");
+        path
+    }
+
+    /// A serialized `CaseSpec` JSON document (the only format `--model`
+    /// supports) built from the ASHRAE 140 registry.
+    fn casespec_json_fixture() -> String {
+        let case =
+            ASHRAE140Case::from_case_id("600").expect("Case 600 is in the ASHRAE 140 registry");
+        serde_json::to_string_pretty(&case.spec()).expect("CaseSpec serializes to JSON")
+    }
+
+    fn export_args_for_model(model: &Path, output: Option<PathBuf>) -> ExportArgs {
+        ExportArgs {
+            case: None,
+            model: Some(model.to_path_buf()),
+            output,
+            timestamp: None,
+            format: ExportFormat::Json,
+        }
+    }
+
+    /// An OpenStudio `.osm` export must be rejected with a precise error
+    /// (not a raw serde JSON parse error) that names the file, the detected
+    /// format, and the supported format.
+    #[test]
+    fn export_rejects_opensstudio_osm_model() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let model = write_fixture(dir.path(), "building.osm", "<osm></osm>");
+
+        let err = handle_export(export_args_for_model(&model, None))
+            .unwrap_err()
+            .to_string();
+
+        assert!(
+            err.contains("building.osm"),
+            "error must name the offending file (got: {err})"
+        );
+        assert!(
+            err.contains("OpenStudio (.osm)"),
+            "error must name the detected format (got: {err})"
+        );
+        assert!(
+            err.contains("not yet supported"),
+            "error must state the format is not supported (got: {err})"
+        );
+        assert!(
+            err.contains("CaseSpec"),
+            "error must state what IS supported (got: {err})"
+        );
+        assert!(
+            !err.contains("expected value"),
+            "error must not be a raw serde JSON parse error (got: {err})"
+        );
+    }
+
+    /// A GreenBuildingXML `.xml` export must be rejected the same way.
+    #[test]
+    fn export_rejects_greenbuildingxml_model() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let model = write_fixture(dir.path(), "building.xml", "<gbXML></gbXML>");
+
+        let err = handle_export(export_args_for_model(&model, None))
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("building.xml"), "got: {err}");
+        assert!(err.contains("GreenBuildingXML (.xml)"), "got: {err}");
+        assert!(err.contains("CaseSpec"), "got: {err}");
+    }
+
+    /// The extension check is case-insensitive: `.OSM` is an OpenStudio
+    /// export too.
+    #[test]
+    fn export_rejects_uppercase_osm_extension() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let model = write_fixture(dir.path(), "building.OSM", "<osm></osm>");
+
+        let err = handle_export(export_args_for_model(&model, None))
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("OpenStudio (.osm)"), "got: {err}");
+        assert!(err.contains("CaseSpec"), "got: {err}");
+    }
+
+    /// A valid serialized `CaseSpec` JSON document still loads through
+    /// `--model` (behavior unchanged by the format gate).
+    #[test]
+    fn export_accepts_valid_casespec_json_model() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let model = write_fixture(dir.path(), "casespec.json", &casespec_json_fixture());
+        let output = dir.path().join("topology.json");
+
+        handle_export(export_args_for_model(&model, Some(output.clone())))
+            .expect("valid CaseSpec JSON must export");
+
+        let exported = fs::read_to_string(&output).expect("export file written");
+        assert!(
+            exported.contains("\"nodes\""),
+            "export must be a topology document (got: {exported})"
+        );
+    }
+
+    /// A `.json` file that is not a `CaseSpec` still fails with the JSON
+    /// parse error — the format gate must not swallow it.
+    #[test]
+    fn export_reports_json_parse_error_for_invalid_casespec_json() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let model = write_fixture(dir.path(), "garbage.json", "this is not json");
+
+        let err = handle_export(export_args_for_model(&model, None))
+            .unwrap_err()
+            .to_string();
+
+        assert!(
+            err.contains("failed to parse CaseSpec JSON"),
+            "expected the JSON parse error (got: {err})"
+        );
+        assert!(
+            !err.contains("unsupported model format"),
+            "format gate must not fire for .json files (got: {err})"
+        );
+    }
+
     /// Issue #4115 acceptance: `--format toon` produces valid TOON that
     /// round-trips through the `fluxion-toon` crate parser. Serializes Case
     /// 600 (the canonical example in `docs/TOON_INTEGRATION.md`), confirms
@@ -302,7 +489,10 @@ pub struct LintArgs {
     pub case: Option<String>,
 
     /// Path to a serialized CaseSpec model document (JSON) to lint. Mutually
-    /// exclusive with --case and --input.
+    /// exclusive with --case and --input. Unsupported model formats
+    /// (OpenStudio `.osm`, GreenBuildingXML `.xml`/`.gbxml`) are rejected with
+    /// a precise error naming the detected format; only a serialized CaseSpec
+    /// JSON document is supported.
     #[arg(long, value_name = "PATH", conflicts_with_all = ["case", "input"])]
     pub model: Option<PathBuf>,
 
@@ -352,8 +542,7 @@ fn lint_graph_source(args: &LintArgs) -> Result<(TopologyGraph, String)> {
             Ok((graph, ctx.model_source))
         }
         (None, Some(path), None) => {
-            let raw = fs::read_to_string(path)
-                .with_context(|| format!("failed to read model file {}", path.display()))?;
+            let raw = read_model_document(path)?;
             let spec: CaseSpec = serde_json::from_str(&raw)
                 .with_context(|| format!("failed to parse CaseSpec document {}", path.display()))?;
             let ctx = TopologyContext {
@@ -508,6 +697,97 @@ mod lint_tests {
             report.is_clean(),
             "case 600 should lint clean, got {:?}",
             report.findings
+        );
+    }
+
+    // -------------------------------------------------------------------
+    // Issue #3967 — `--model` rejects unsupported model formats loudly
+    // -------------------------------------------------------------------
+
+    fn lint_args_for_model(model: &Path) -> LintArgs {
+        LintArgs {
+            case: None,
+            model: Some(model.to_path_buf()),
+            input: None,
+            strict: false,
+            format: LintFormat::Text,
+        }
+    }
+
+    fn write_fixture(dir: &Path, name: &str, contents: &str) -> PathBuf {
+        let path = dir.join(name);
+        fs::write(&path, contents).expect("fixture file should be written");
+        path
+    }
+
+    fn casespec_json_fixture() -> String {
+        let case =
+            ASHRAE140Case::from_case_id("600").expect("Case 600 is in the ASHRAE 140 registry");
+        serde_json::to_string_pretty(&case.spec()).expect("CaseSpec serializes to JSON")
+    }
+
+    /// The lint path shares the export path's format gate: an OpenStudio
+    /// `.osm` model is rejected with the same precise error.
+    #[test]
+    fn lint_rejects_opensstudio_osm_model() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let model = write_fixture(dir.path(), "building.osm", "<osm></osm>");
+
+        let err = lint_graph_source(&lint_args_for_model(&model))
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("building.osm"), "got: {err}");
+        assert!(err.contains("OpenStudio (.osm)"), "got: {err}");
+        assert!(err.contains("not yet supported"), "got: {err}");
+        assert!(err.contains("CaseSpec"), "got: {err}");
+        assert!(!err.contains("expected value"), "got: {err}");
+    }
+
+    /// A GreenBuildingXML `.xml` model is rejected on the lint path too.
+    #[test]
+    fn lint_rejects_greenbuildingxml_model() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let model = write_fixture(dir.path(), "building.xml", "<gbXML></gbXML>");
+
+        let err = lint_graph_source(&lint_args_for_model(&model))
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("GreenBuildingXML (.xml)"), "got: {err}");
+        assert!(err.contains("CaseSpec"), "got: {err}");
+    }
+
+    /// A valid serialized `CaseSpec` JSON document still lints through
+    /// `--model`.
+    #[test]
+    fn lint_accepts_valid_casespec_json_model() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let model = write_fixture(dir.path(), "casespec.json", &casespec_json_fixture());
+
+        let (graph, source) =
+            lint_graph_source(&lint_args_for_model(&model)).expect("valid CaseSpec JSON must lint");
+        assert_eq!(source, format!("model-file:{}", model.display()));
+        assert!(!graph.nodes.is_empty(), "linted graph should have nodes");
+    }
+
+    /// A `.json` file with garbage still surfaces the JSON parse error.
+    #[test]
+    fn lint_reports_json_parse_error_for_invalid_casespec_json() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let model = write_fixture(dir.path(), "garbage.json", "this is not json");
+
+        let err = lint_graph_source(&lint_args_for_model(&model))
+            .unwrap_err()
+            .to_string();
+
+        assert!(
+            err.contains("failed to parse CaseSpec document"),
+            "expected the JSON parse error (got: {err})"
+        );
+        assert!(
+            !err.contains("unsupported model format"),
+            "format gate must not fire for .json files (got: {err})"
         );
     }
 }
