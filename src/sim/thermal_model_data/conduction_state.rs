@@ -23,6 +23,18 @@ pub struct ConductionState<T: ContinuousTensor<f64>> {
     // Per-zone conductances (W/K).
     pub h_tr_w: T,
     pub h_ve: T,
+    /// Round 95 (#3985/#4578 follow-up): per-zone scheduled-ventilation ACH
+    /// published by the hybrid dispatcher's Branch 4 each step when
+    /// `use_surrogate_ventilation` is on (zeros otherwise). Branch 4 is the
+    /// single consultation site of the hybrid ventilation schedule; the
+    /// gauge dispatcher's `collect_gauge_inputs` reads this slot so the
+    /// `gauge-solver` build consumes the same scheduled-ventilation signal
+    /// the default 5R1C/9R4C path consumes via `h_ve`. Without it, flag
+    /// ON/OFF are bit-identical in the gauge build — the nightly β-soak
+    /// inequality-assertion red measured 2026-10-24 (run 40084399038).
+    /// Allocated once at construction; written in place on the flag-ON
+    /// path only (no per-step allocation, dhat zero-alloc gate intact).
+    pub scheduled_ventilation_ach: Vec<f64>,
     pub h_tr_floor: T,
     pub h_tr_iz: T,
     pub h_tr_iz_rad: T,
@@ -144,6 +156,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ConductionState<T> {
             backend: self.backend.clone(),
             h_tr_w: self.h_tr_w.clone(),
             h_ve: self.h_ve.clone(),
+            scheduled_ventilation_ach: self.scheduled_ventilation_ach.clone(),
             h_tr_floor: self.h_tr_floor.clone(),
             h_tr_iz: self.h_tr_iz.clone(),
             h_tr_iz_rad: self.h_tr_iz_rad.clone(),

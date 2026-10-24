@@ -981,9 +981,34 @@ mod tests {
     /// deterministic solve, default profile). Nothing tuned; the falsy
     /// FLX_R94_T5138_GAINS_C3 token restores the r93-composed route
     /// bit-identically.
+    /// Default-build pin (5R1C/9R4C dispatcher): measured, never tuned —
+    /// see the round-by-round provenance notes above.
+    #[cfg(not(feature = "gauge-solver"))]
     const PRE_CHANGE_FLAG_OFF_EUI: f64 = 0.5818220879638392;
-    /// Pre-#3985 baseline: final zone temperature of the same solve.
+    /// Gauge-build pin (`--features gauge-solver`): the same flag-OFF solve
+    /// dispatches through the ISO 13790 gauge solver — a different thermal
+    /// network (no thermal-mass dynamics), so the measured constant differs
+    /// from the default build. This is NOT a physics change: flag OFF never
+    /// consults the ventilation slot on either build, and the r95 gauge
+    /// wiring consumes the scratch slot only when it is non-zero.
+    /// Provenance: measured on the r95 tree (post-#4586, post-#4588,
+    /// gauge wiring fix applied — flag-OFF inputs untouched by it),
+    /// 2026-10-24; the 2026-10-24 nightly (run 40084399038) printed the
+    /// identical value on the pre-#4586 tree, so #4586's re-record moved
+    /// only the default-build constant.
+    #[cfg(feature = "gauge-solver")]
+    const PRE_CHANGE_FLAG_OFF_EUI: f64 = 1.938862643802115;
+    /// Default-build pin: final zone temperature (thermostat-pinned solve).
+    #[cfg(not(feature = "gauge-solver"))]
     const PRE_CHANGE_FLAG_OFF_ZONE_TEMP: f64 = 20.0;
+    /// Gauge-build pin: the gauge network's flag-OFF solve is NOT
+    /// setpoint-pinned the same way (different HVAC-response ledger), so
+    /// the final zone temperature is a different measured constant.
+    /// Provenance: measured on the r95 tree, 2026-10-24, same run as the
+    /// gauge-build EUI pin above (flag-OFF inputs untouched by the r95
+    /// wiring; the 2026-10-24 nightly red printed only the EUI leg).
+    #[cfg(feature = "gauge-solver")]
+    const PRE_CHANGE_FLAG_OFF_ZONE_TEMP: f64 = 20.91048688673169;
 
     #[test]
     fn hybrid_set_conduction_solver_swaps_slot() {

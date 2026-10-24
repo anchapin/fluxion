@@ -4082,6 +4082,10 @@ impl ThermalModel<VectorField> {
                 backend: ConductionBackend::default(),
                 h_tr_w: VectorField::from_scalar(0.0, num_zones),
                 h_ve: VectorField::from_scalar(0.0, num_zones),
+                // Round 95 (#3985/#4578 follow-up): Branch 4's scheduled-ACH
+                // scratch slot, consumed by the gauge dispatcher (see
+                // ConductionState::scheduled_ventilation_ach).
+                scheduled_ventilation_ach: vec![0.0; num_zones],
                 h_tr_floor: VectorField::from_scalar(0.0, num_zones),
                 ground_temperature: Box::new(crate::sim::boundary::ConstantGroundTemperature::new(
                     10.0,
