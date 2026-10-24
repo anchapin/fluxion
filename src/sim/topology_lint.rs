@@ -1,6 +1,6 @@
 //! Simulation topology validation linter (Issue #3964).
 //!
-//! Pure `&TopologyGraph` analysis: nine rules — seven errors (E-codes) and
+//! Pure `&TopologyGraph` analysis: ten rules — eight errors (E-codes) and
 //! two warnings (W-codes) — that flag structurally suspicious topologies
 //! before simulation. The linter is deliberately offline: it never touches
 //! the ASHRAE 140 registry or the model builder, so it can lint any
@@ -24,6 +24,9 @@
 //!   receiving interior-surface node in the zone
 //! - `E007_NON_POSITIVE_CAPACITY` — ZoneAir/InternalMass node with a
 //!   non-positive (or non-finite) thermal capacity
+//! - `E008_HVAC_DISCONNECTED` — HVAC system component that feeds no zone
+//!   HVAC terminal, or a zone HVAC terminal that carries HVAC data but is
+//!   not fed by any HVAC system component (Issue #3967 slice 1)
 //! - `W001_EXTREME_FILM_COEFFICIENT` — convection film coefficient
 //!   h_c = G/A outside (`FILM_COEFF_MIN_W_M2K`, `FILM_COEFF_MAX_W_M2K`)
 //! - `W002_HIGH_CONDUCTANCE_RATIO` — adjacent-edge conductance ratio at a
@@ -204,6 +207,7 @@ fn kind_label(kind: &TopologyNodeKind) -> &'static str {
         TopologyNodeKind::ZoneAir => "zone_air",
         TopologyNodeKind::InternalGain => "internal_gain",
         TopologyNodeKind::HvacTerminal => "hvac_terminal",
+        TopologyNodeKind::HvacSystem => "hvac_system",
     }
 }
 
@@ -220,6 +224,7 @@ pub fn lint_topology(graph: &TopologyGraph) -> LintReport {
     e005_invalid_split_fraction(graph, &incident, &mut findings);
     e006_unresolved_radiant_target(graph, &nodes, &mut findings);
     e007_non_positive_capacity(graph, &mut findings);
+    e008_hvac_disconnected(graph, &nodes, &incident, &mut findings);
     w001_extreme_film_coefficient(graph, &nodes, &mut findings);
     w002_high_conductance_ratio(graph, &incident, &mut findings);
 
@@ -531,6 +536,92 @@ fn e007_non_positive_capacity(graph: &TopologyGraph, findings: &mut Vec<LintFind
                     None,
                 ));
             }
+        }
+    }
+}
+
+/// E008: HVAC components and zone HVAC terminals must be coupled to each
+/// other.
+///
+/// A zone HVAC terminal that carries HVAC data (it is wired to its zone air
+/// by an `hvac_sensible` edge) but is not fed by an HVAC system component is
+/// a disconnected HVAC branch; symmetrically, an HVAC system component that
+/// feeds no zone HVAC terminal serves nothing.
+///
+/// The terminal-side check only applies to graphs that declare at least one
+/// HVAC system component: a case that models HVAC purely through per-zone
+/// schedules has no system to be disconnected from.
+///
+/// A free-floating zone (its terminal reports `efficiency == 0.0`, the
+/// `HvacSchedule::is_enabled` proxy written by the CaseSpec bridge) declares
+/// no HVAC at all and is therefore exempt.
+fn e008_hvac_disconnected(
+    graph: &TopologyGraph,
+    nodes: &HashMap<&str, &TopologyNode>,
+    incident: &HashMap<&str, Vec<IncidentEdge<'_>>>,
+    findings: &mut Vec<LintFinding>,
+) {
+    let has_system = graph
+        .nodes
+        .iter()
+        .any(|n| n.kind == TopologyNodeKind::HvacSystem);
+
+    for node in &graph.nodes {
+        let edges = incident
+            .get(node.id.as_str())
+            .map_or(&[][..], |v| v.as_slice());
+        match node.kind {
+            TopologyNodeKind::HvacSystem => {
+                let serves_terminal = edges.iter().any(|(e, is_src)| {
+                    e.coupling_type == TopologyEdgeKind::HvacSupply
+                        && other_end(nodes, e, *is_src)
+                            .is_some_and(|n| n.kind == TopologyNodeKind::HvacTerminal)
+                });
+                if !serves_terminal {
+                    findings.push(LintFinding::new(
+                        "E008_HVAC_DISCONNECTED",
+                        LintSeverity::Error,
+                        format!(
+                            "HVAC system component `{}` is not coupled to any zone HVAC terminal",
+                            node.id
+                        ),
+                        Some(node.id.clone()),
+                        None,
+                    ));
+                }
+            }
+            TopologyNodeKind::HvacTerminal if has_system => {
+                let has_hvac_data = edges.iter().any(|(e, is_src)| {
+                    e.coupling_type == TopologyEdgeKind::HvacSensible
+                        && other_end(nodes, e, *is_src)
+                            .is_some_and(|n| n.kind == TopologyNodeKind::ZoneAir)
+                });
+                // A free-floating terminal (`efficiency == 0.0`) carries no
+                // HVAC data: nothing to disconnect.
+                let free_floating = node.attributes.get("efficiency").is_some_and(|v| *v <= 0.0);
+                if !has_hvac_data || free_floating {
+                    continue;
+                }
+                let fed_by_system = edges.iter().any(|(e, is_src)| {
+                    e.coupling_type == TopologyEdgeKind::HvacSupply
+                        && other_end(nodes, e, *is_src)
+                            .is_some_and(|n| n.kind == TopologyNodeKind::HvacSystem)
+                });
+                if !fed_by_system {
+                    findings.push(LintFinding::new(
+                        "E008_HVAC_DISCONNECTED",
+                        LintSeverity::Error,
+                        format!(
+                            "zone HVAC terminal `{}` carries HVAC data but is not fed by any \
+                             HVAC system component",
+                            node.id
+                        ),
+                        Some(node.id.clone()),
+                        None,
+                    ));
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -955,5 +1046,111 @@ mod tests {
             .filter_map(|f| f.node_id.as_deref())
             .collect();
         assert_eq!(ids, vec!["zone-0:ghost-a", "zone-0:ghost-b"]);
+    }
+
+    // ---------------------------------------------------------------------
+    // E008 — HVAC disconnection (Issue #3967 slice 1)
+    // ---------------------------------------------------------------------
+
+    /// Adds an HVAC terminal wired to the zone air (the bridge's
+    /// `hvac_sensible` edge) plus, optionally, an HVAC system component
+    /// coupled to it with an `hvac_supply` edge.
+    fn hvac_graph(with_system: bool, couple_system: bool) -> TopologyGraph {
+        let mut g = clean_graph();
+        let mut terminal = node("zone-0:hvac", TopologyNodeKind::HvacTerminal);
+        terminal.attributes.insert("efficiency".to_string(), 1.0);
+        g.push_node(terminal);
+        g.push_edge(edge(
+            "zone-0:hvac",
+            "zone-0:air",
+            TopologyEdgeKind::HvacSensible,
+            None,
+        ));
+        if with_system {
+            let mut system = node("hvac-system:HP-1", TopologyNodeKind::HvacSystem);
+            system.zone_id = None;
+            g.push_node(system);
+            if couple_system {
+                g.push_edge(edge(
+                    "hvac-system:HP-1",
+                    "zone-0:hvac",
+                    TopologyEdgeKind::HvacSupply,
+                    None,
+                ));
+            }
+        }
+        g
+    }
+
+    #[test]
+    fn e008_fires_when_system_component_feeds_no_terminal() {
+        let g = hvac_graph(true, false);
+        let report = lint_topology(&g);
+        assert!(
+            codes(&report).contains(&"E008_HVAC_DISCONNECTED".to_string()),
+            "{:?}",
+            report.findings
+        );
+        let finding = report
+            .findings
+            .iter()
+            .find(|f| f.code == "E008_HVAC_DISCONNECTED")
+            .unwrap();
+        assert_eq!(finding.node_id.as_deref(), Some("hvac-system:HP-1"));
+    }
+
+    #[test]
+    fn e008_fires_when_terminal_is_not_fed_by_a_system() {
+        let g = hvac_graph(true, false);
+        let report = lint_topology(&g);
+        // The system component is reported as serving nothing; the terminal
+        // is reported as unfed as well (it carries HVAC data but no
+        // `hvac_supply` edge).
+        let e008: Vec<&str> = report
+            .findings
+            .iter()
+            .filter(|f| f.code == "E008_HVAC_DISCONNECTED")
+            .filter_map(|f| f.node_id.as_deref())
+            .collect();
+        assert!(e008.contains(&"zone-0:hvac"), "{e008:?}");
+    }
+
+    #[test]
+    fn e008_accepts_wired_hvac_system_and_terminal() {
+        let g = hvac_graph(true, true);
+        let report = lint_topology(&g);
+        assert!(report.is_clean(), "{:?}", report.findings);
+    }
+
+    #[test]
+    fn e008_ignores_terminals_when_no_system_is_declared() {
+        // A case that models HVAC purely through per-zone schedules has no
+        // system component: nothing to be disconnected from.
+        let g = hvac_graph(false, false);
+        let report = lint_topology(&g);
+        assert!(report.is_clean(), "{:?}", report.findings);
+    }
+
+    #[test]
+    fn e008_ignores_free_floating_terminals() {
+        let mut g = hvac_graph(true, false);
+        // Free-floating zone: the bridge writes `efficiency == 0.0`.
+        g.nodes
+            .iter_mut()
+            .find(|n| n.kind == TopologyNodeKind::HvacTerminal)
+            .unwrap()
+            .attributes
+            .insert("efficiency".to_string(), 0.0);
+        let report = lint_topology(&g);
+        let e008: Vec<&str> = report
+            .findings
+            .iter()
+            .filter(|f| f.code == "E008_HVAC_DISCONNECTED")
+            .filter_map(|f| f.node_id.as_deref())
+            .collect();
+        assert!(
+            !e008.contains(&"zone-0:hvac"),
+            "free-floating terminal must not be reported: {e008:?}"
+        );
     }
 }

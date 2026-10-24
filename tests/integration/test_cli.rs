@@ -917,6 +917,93 @@ fn test_topology_lint_input_detects_e005_bad_split() {
     );
 }
 
+/// Writes a CaseSpec document to a temp file and returns its path.
+fn write_model_file(
+    temp_dir: &tempfile::TempDir,
+    name: &str,
+    spec: &fluxion::validation::ashrae_140_cases::CaseSpec,
+) -> String {
+    let json = serde_json::to_string_pretty(spec).expect("CaseSpec serializes");
+    let path = temp_dir.path().join(name);
+    std::fs::write(&path, json).expect("write model file");
+    path.to_string_lossy().into_owned()
+}
+
+/// Two-zone ASHRAE 140 Case 960 spec with BOTH zones actively conditioned
+/// (the back zone is free-floating in the registry case).
+fn two_zone_conditioned_spec() -> fluxion::validation::ashrae_140_cases::CaseSpec {
+    use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, HvacSchedule};
+    let mut spec = ASHRAE140Case::Case960.spec();
+    for slot in spec.hvac.iter_mut() {
+        *slot = HvacSchedule::constant(20.0, 27.0);
+    }
+    spec
+}
+
+/// Issue #3967 slice 1: a zone that carries HVAC data but is not fed by any
+/// HVAC system component is a broken HVAC wiring and must be reported by the
+/// linter (`E008_HVAC_DISCONNECTED`).
+#[test]
+fn test_topology_lint_model_detects_e008_hvac_disconnected() {
+    use fluxion::ashrae_cases::EquipmentSelection;
+    let temp_dir = tempdir().expect("tempdir");
+    let mut spec = two_zone_conditioned_spec();
+    // Mis-wiring: a VAV terminal unit that serves zone 0 only, while zone 1
+    // also declares HVAC. Zone 1's terminal carries HVAC data but is not fed
+    // by the (single) system component.
+    spec.hvac_equipment = Some(EquipmentSelection::VavTerminal {
+        id: "VAV-1".to_string(),
+        zone_id: 0,
+        max_airflow_m3_per_s: 0.5,
+    });
+    let model = write_model_file(&temp_dir, "miswired_hvac_model.json", &spec);
+    let (status, stdout, stderr) =
+        run_fluxion(&["topology", "lint", "--model", &model, "--format", "json"]);
+    assert_eq!(status.code(), Some(1), "{stderr}\n{stdout}");
+    let codes = lint_finding_codes(&stdout);
+    assert!(
+        codes.contains(&"E008_HVAC_DISCONNECTED".to_string()),
+        "findings: {stdout}"
+    );
+    let doc: serde_json::Value = serde_json::from_str(&stdout).expect("json lint report");
+    let nodes: Vec<&str> = doc["findings"]
+        .as_array()
+        .expect("findings")
+        .iter()
+        .filter(|f| f["code"] == "E008_HVAC_DISCONNECTED")
+        .filter_map(|f| f["node"].as_str())
+        .collect();
+    assert!(
+        nodes.contains(&"zone-1:hvac"),
+        "the unfed zone terminal must be reported: {stdout}"
+    );
+}
+
+/// The correctly wired counterpart of the test above: a plant that serves
+/// every zone lints clean.
+#[test]
+fn test_topology_lint_model_correctly_wired_hvac_is_clean() {
+    use fluxion::ashrae_cases::EquipmentSelection;
+    let temp_dir = tempdir().expect("tempdir");
+    let mut spec = two_zone_conditioned_spec();
+    spec.hvac_equipment = Some(EquipmentSelection::HeatPump {
+        id: "HP-1".to_string(),
+        heating_capacity_w: 12000.0,
+        cooling_capacity_w: 10000.0,
+        heating_cop: 3.5,
+        cooling_eer: 3.0,
+        heating_curve: None,
+        cooling_curve: None,
+    });
+    let model = write_model_file(&temp_dir, "wired_hvac_model.json", &spec);
+    let (status, stdout, stderr) = run_fluxion(&[
+        "topology", "lint", "--model", &model, "--strict", "--format", "json",
+    ]);
+    assert_eq!(status.code(), Some(0), "{stderr}\n{stdout}");
+    let doc: serde_json::Value = serde_json::from_str(&stdout).expect("json lint report");
+    assert_eq!(doc["clean"], serde_json::json!(true), "{stdout}");
+}
+
 #[test]
 fn test_topology_lint_warning_promoted_by_strict() {
     let temp_dir = tempdir().expect("tempdir");

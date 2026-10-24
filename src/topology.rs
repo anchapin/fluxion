@@ -51,6 +51,9 @@ pub enum TopologyNodeKind {
     InternalGain,
     /// HVAC sensible injection/extraction terminal.
     HvacTerminal,
+    /// HVAC system component (plant / terminal unit) that serves one or
+    /// more zone HVAC terminals (Issue #3967 slice 1).
+    HvacSystem,
 }
 
 impl TopologyNodeKind {
@@ -66,6 +69,7 @@ impl TopologyNodeKind {
             Self::ZoneAir => "zone_air",
             Self::InternalGain => "internal_gain",
             Self::HvacTerminal => "hvac_terminal",
+            Self::HvacSystem => "hvac_system",
         }
     }
 }
@@ -93,6 +97,8 @@ pub enum TopologyEdgeKind {
     InternalGainSplit,
     /// HVAC sensible coupling (terminal ↔ zone air).
     HvacSensible,
+    /// HVAC supply coupling (system component → zone HVAC terminal).
+    HvacSupply,
 }
 
 impl TopologyEdgeKind {
@@ -108,6 +114,7 @@ impl TopologyEdgeKind {
             Self::AirExchange => "air_exchange",
             Self::InternalGainSplit => "internal_gain_split",
             Self::HvacSensible => "hvac_sensible",
+            Self::HvacSupply => "hvac_supply",
         }
     }
 }

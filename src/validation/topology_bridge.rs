@@ -32,7 +32,7 @@ use crate::topology::{
 };
 
 use crate::validation::ashrae_140_cases::{CaseSpec, CommonWall};
-use fluxion_core::ashrae_cases::{GeometrySpec, Orientation, WindowArea};
+use fluxion_core::ashrae_cases::{EquipmentSelection, GeometrySpec, Orientation, WindowArea};
 use fluxion_core::construction::Construction;
 
 /// Canonical exterior film coefficient (W/m²K).
@@ -43,6 +43,21 @@ pub const INTERIOR_FILM_COEFF_W_M2K: f64 = 8.29;
 pub const AIR_DENSITY_KG_M3: f64 = 1.2;
 /// Reference air specific heat (J/kg·K).
 pub const AIR_SPECIFIC_HEAT_J_KG_K: f64 = 1006.0;
+
+/// Numeric equipment-kind code for an air-to-air heat pump, carried in the
+/// `equipment_kind` attribute of an [`TopologyNodeKind::HvacSystem`] node.
+/// (The topology attribute map is numeric-only by schema, so the equipment
+/// type is encoded as a stable code; the human-readable type is in the node
+/// name.)
+pub const EQUIPMENT_KIND_HEAT_PUMP: f64 = 1.0;
+/// Numeric equipment-kind code for a chiller (cooling-only plant).
+pub const EQUIPMENT_KIND_CHILLER: f64 = 2.0;
+/// Numeric equipment-kind code for a boiler (heating-only plant).
+pub const EQUIPMENT_KIND_BOILER: f64 = 3.0;
+/// Numeric equipment-kind code for a VAV terminal unit.
+pub const EQUIPMENT_KIND_VAV_TERMINAL: f64 = 4.0;
+/// Numeric equipment-kind code for a CAV system.
+pub const EQUIPMENT_KIND_CAV_SYSTEM: f64 = 5.0;
 
 /// Compass azimuth (degrees clockwise from North) for a wall orientation.
 fn azimuth_deg(orientation: &Orientation) -> Option<f64> {
@@ -936,6 +951,156 @@ impl ToTopologyGraph for CaseSpec {
             }
         }
 
+        // HVAC equipment / system components (Issue #3967 slice 1).
+        //
+        // `CaseSpec::hvac_equipment` is the only HVAC information the input
+        // model carries that the per-zone `HvacSchedule` does not: the
+        // equipment component itself (its identifier, its type and its rated
+        // performance) and — for a VAV terminal unit — the zone it serves.
+        // The zone-to-system assignment is what makes a mis-wiring
+        // detectable: a zone terminal that carries HVAC data but is not fed
+        // by a system component (or a system component that feeds no zone
+        // terminal at all) is a broken HVAC wiring, reported by the linter as
+        // `E008_HVAC_DISCONNECTED`.
+        //
+        // Assignment rules (the input model carries at most one
+        // case-level equipment selection and no per-zone plant assignment):
+        //
+        // * `VavTerminal { zone_id }` names its served zone explicitly and is
+        //   coupled to that zone's HVAC terminal only. A `zone_id` outside the
+        //   case leaves the unit disconnected (lint error).
+        // * Plant equipment (`HeatPump`, `Chiller`, `Boiler`) and `CavSystem`
+        //   are case-level components: they serve the whole case and are
+        //   coupled to every zone's HVAC terminal.
+        if let Some(eq) = &self.hvac_equipment {
+            let (eq_id, eq_label, eq_kind_code, mut eq_attrs, served_zones) = match eq {
+                EquipmentSelection::HeatPump {
+                    id,
+                    heating_capacity_w,
+                    cooling_capacity_w,
+                    heating_cop,
+                    cooling_eer,
+                    ..
+                } => {
+                    let mut a = BTreeMap::new();
+                    a.insert("heating_capacity_w".to_string(), *heating_capacity_w);
+                    a.insert("cooling_capacity_w".to_string(), *cooling_capacity_w);
+                    a.insert("heating_cop".to_string(), *heating_cop);
+                    a.insert("cooling_eer".to_string(), *cooling_eer);
+                    (
+                        id.clone(),
+                        "heat pump",
+                        EQUIPMENT_KIND_HEAT_PUMP,
+                        a,
+                        (0..self.num_zones).collect::<Vec<usize>>(),
+                    )
+                }
+                EquipmentSelection::Chiller {
+                    id,
+                    cooling_capacity_w,
+                    cop,
+                    design_temp_c,
+                } => {
+                    let mut a = BTreeMap::new();
+                    a.insert("cooling_capacity_w".to_string(), *cooling_capacity_w);
+                    a.insert("cop".to_string(), *cop);
+                    a.insert("design_temp_c".to_string(), *design_temp_c);
+                    (
+                        id.clone(),
+                        "chiller",
+                        EQUIPMENT_KIND_CHILLER,
+                        a,
+                        (0..self.num_zones).collect::<Vec<usize>>(),
+                    )
+                }
+                EquipmentSelection::Boiler {
+                    id,
+                    heating_capacity_w,
+                    efficiency,
+                    design_temp_c,
+                } => {
+                    let mut a = BTreeMap::new();
+                    a.insert("heating_capacity_w".to_string(), *heating_capacity_w);
+                    a.insert("efficiency".to_string(), *efficiency);
+                    a.insert("design_temp_c".to_string(), *design_temp_c);
+                    (
+                        id.clone(),
+                        "boiler",
+                        EQUIPMENT_KIND_BOILER,
+                        a,
+                        (0..self.num_zones).collect::<Vec<usize>>(),
+                    )
+                }
+                EquipmentSelection::VavTerminal {
+                    id,
+                    zone_id,
+                    max_airflow_m3_per_s,
+                } => {
+                    let mut a = BTreeMap::new();
+                    a.insert("max_airflow_m3_per_s".to_string(), *max_airflow_m3_per_s);
+                    a.insert("served_zone_index".to_string(), *zone_id as f64);
+                    (
+                        id.clone(),
+                        "VAV terminal unit",
+                        EQUIPMENT_KIND_VAV_TERMINAL,
+                        a,
+                        if *zone_id < self.num_zones {
+                            vec![*zone_id]
+                        } else {
+                            Vec::new()
+                        },
+                    )
+                }
+                EquipmentSelection::CavSystem {
+                    id,
+                    design_airflow_m3_per_s,
+                } => {
+                    let mut a = BTreeMap::new();
+                    a.insert(
+                        "design_airflow_m3_per_s".to_string(),
+                        *design_airflow_m3_per_s,
+                    );
+                    (
+                        id.clone(),
+                        "CAV system",
+                        EQUIPMENT_KIND_CAV_SYSTEM,
+                        a,
+                        (0..self.num_zones).collect::<Vec<usize>>(),
+                    )
+                }
+            };
+
+            let system_id = format!("hvac-system:{eq_id}");
+            eq_attrs.insert("equipment_kind".to_string(), eq_kind_code);
+            graph.push_node(TopologyNode {
+                id: system_id.clone(),
+                kind: TopologyNodeKind::HvacSystem,
+                zone_id: None,
+                name: format!("HVAC {eq_label} {eq_id}"),
+                capacitance_j_per_k: None,
+                area_m2: None,
+                volume_m3: None,
+                azimuth_deg: None,
+                tilt_deg: None,
+                elevation_m: None,
+                attributes: eq_attrs,
+            });
+
+            for zi in served_zones {
+                let mut supply_attrs = BTreeMap::new();
+                supply_attrs.insert("served_zone_index".to_string(), zi as f64);
+                graph.push_edge(TopologyEdge {
+                    source_id: system_id.clone(),
+                    target_id: format!("zone-{zi}:hvac"),
+                    coupling_type: TopologyEdgeKind::HvacSupply,
+                    conductance_w_per_k: None,
+                    fraction: None,
+                    bidirectional: false,
+                    attributes: supply_attrs,
+                });
+            }
+        }
+
         // Night ventilation (whole-model, first zone schedule per spec).
         if let Some(nv) = &self.night_ventilation {
             for zi in 0..self.num_zones {
@@ -1329,6 +1494,96 @@ mod tests {
                 dist_sum
             );
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // Issue #3967 slice 1 — HVAC system components in the topology graph
+    // ---------------------------------------------------------------------
+
+    /// Builds a graph from `spec` (no finalize/validate — the bridge output
+    /// is inspected structurally).
+    fn raw_graph(spec: &CaseSpec) -> TopologyGraph {
+        spec.to_topology_graph(&TopologyContext::new(
+            format!("Case {}", spec.case_id),
+            format!("test:{}", spec.case_id),
+        ))
+    }
+
+    #[test]
+    fn hvac_equipment_bridges_system_node_and_supply_edge() {
+        let mut spec = ASHRAE140Case::Case600.spec();
+        spec.hvac_equipment = Some(EquipmentSelection::VavTerminal {
+            id: "VAV-1".to_string(),
+            zone_id: 0,
+            max_airflow_m3_per_s: 0.5,
+        });
+        let g = raw_graph(&spec);
+        let systems: Vec<&TopologyNode> = g
+            .nodes
+            .iter()
+            .filter(|n| n.kind == TopologyNodeKind::HvacSystem)
+            .collect();
+        assert_eq!(systems.len(), 1, "one HVAC system component is bridged");
+        assert_eq!(systems[0].id, "hvac-system:VAV-1");
+        assert_eq!(
+            systems[0].attributes.get("equipment_kind"),
+            Some(&EQUIPMENT_KIND_VAV_TERMINAL)
+        );
+        let supplies: Vec<&TopologyEdge> = g
+            .edges
+            .iter()
+            .filter(|e| e.coupling_type == TopologyEdgeKind::HvacSupply)
+            .collect();
+        assert_eq!(supplies.len(), 1);
+        assert_eq!(supplies[0].source_id, "hvac-system:VAV-1");
+        assert_eq!(supplies[0].target_id, "zone-0:hvac");
+    }
+
+    #[test]
+    fn plant_equipment_couples_every_zone_terminal() {
+        let mut spec = ASHRAE140Case::Case960.spec();
+        spec.hvac_equipment = Some(EquipmentSelection::HeatPump {
+            id: "HP-1".to_string(),
+            heating_capacity_w: 12000.0,
+            cooling_capacity_w: 10000.0,
+            heating_cop: 3.5,
+            cooling_eer: 3.0,
+            heating_curve: None,
+            cooling_curve: None,
+        });
+        let g = raw_graph(&spec);
+        let mut targets: Vec<&str> = g
+            .edges
+            .iter()
+            .filter(|e| e.coupling_type == TopologyEdgeKind::HvacSupply)
+            .map(|e| e.target_id.as_str())
+            .collect();
+        targets.sort();
+        assert_eq!(targets, vec!["zone-0:hvac", "zone-1:hvac"]);
+    }
+
+    #[test]
+    fn vav_terminal_for_unknown_zone_is_bridged_without_supply_edge() {
+        // A VAV unit that names a zone outside the case is a mis-wiring: the
+        // component is bridged, but it feeds no zone terminal (the linter
+        // reports E008_HVAC_DISCONNECTED for it).
+        let mut spec = ASHRAE140Case::Case600.spec();
+        spec.hvac_equipment = Some(EquipmentSelection::VavTerminal {
+            id: "VAV-GHOST".to_string(),
+            zone_id: 7,
+            max_airflow_m3_per_s: 0.5,
+        });
+        let g = raw_graph(&spec);
+        assert_eq!(count_nodes(&g, TopologyNodeKind::HvacSystem), 1);
+        assert_eq!(count_edges(&g, TopologyEdgeKind::HvacSupply), 0);
+    }
+
+    #[test]
+    fn case_without_hvac_equipment_bridges_no_system_node() {
+        let spec = ASHRAE140Case::Case600.spec();
+        let g = raw_graph(&spec);
+        assert_eq!(count_nodes(&g, TopologyNodeKind::HvacSystem), 0);
+        assert_eq!(count_edges(&g, TopologyEdgeKind::HvacSupply), 0);
     }
 }
 

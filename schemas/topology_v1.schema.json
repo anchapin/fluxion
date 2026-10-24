@@ -75,7 +75,8 @@
         "internal_mass",
         "zone_air",
         "internal_gain",
-        "hvac_terminal"
+        "hvac_terminal",
+        "hvac_system"
       ]
     },
     "edge_kind": {
@@ -89,7 +90,8 @@
         "shortwave_solar_diffuse",
         "air_exchange",
         "internal_gain_split",
-        "hvac_sensible"
+        "hvac_sensible",
+        "hvac_supply"
       ]
     },
     "node": {
