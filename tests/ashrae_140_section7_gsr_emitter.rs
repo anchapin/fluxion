@@ -1290,9 +1290,15 @@ fn section7_headline_value_pins() {
     // 900/900FF/950FF unchanged (9R4C inert control). Values cross-check the
     // re-recorded strict_energy_gate_baseline.json (_doc_round93) and the
     // re-emitted data/reference/section7/workflow_results.csv. Nothing tuned.
+    // Re-recorded 2026-10-24 (loop round 94, physics/r94-surface-pool):
+    // surface-pool component partition (transmitted solar keeps the Table
+    // 5-138 fractions; the internal-gain radiative component keeps the
+    // §C.3 conductance partition; strict baseline _doc_round94) moved the
+    // 600 row: 5.462/3.965 -> 5.566/3.879 MWh. FF rows and the 900 family
+    // unchanged (output-diff negative controls). Nothing tuned.
     let pins: &[(&str, fn(&Section7CaseResult) -> f64, f64)] = &[
-        ("600", |r| r.annual_heating_mwh, 5.462),
-        ("600", |r| r.annual_cooling_mwh, 3.965),
+        ("600", |r| r.annual_heating_mwh, 5.566),
+        ("600", |r| r.annual_cooling_mwh, 3.879),
         ("900", |r| r.annual_heating_mwh, 1.225),
         ("900", |r| r.annual_cooling_mwh, 2.249),
         ("600FF", |r| r.min_temp_c, -12.35),

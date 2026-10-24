@@ -284,14 +284,21 @@ fn test_electrical_results_match_recorded_baseline() {
     // FLUXION_PRINT_GRID_BASELINE=1). PV unchanged; battery still pinned at
     // its charge floor (charge 0, discharge 4.0, export 0); SoC still 0.1.
     // Genuine physics change, not a tuned constant.
-    const EXPECTED_THERMAL_KWH: f64 = 148.08443806665744091;
-    const EXPECTED_ELECTRICAL_LOAD_KWH: f64 = 49.36147935555248267;
+    // Re-recorded 2026-10-24 (loop round 94, physics/r94-surface-pool
+    // surface-pool component partition under the T5138 route): thermal
+    // 148.08443806665744091 -> 149.00055716995336752, electrical
+    // 49.36147935555248267 -> 49.66685238998446295, grid import
+    // 36.59605677268299928 -> 36.90089020695563704, peak
+    // 1.29411537792255760 -> 1.30254369998193242. PV/battery/SoC
+    // unchanged. Nothing tuned (FLUXION_PRINT_GRID_BASELINE=1).
+    const EXPECTED_THERMAL_KWH: f64 = 149.00055716995336752;
+    const EXPECTED_ELECTRICAL_LOAD_KWH: f64 = 49.66685238998446295;
     const EXPECTED_PV_KWH: f64 = 8.92391297937676597;
     const EXPECTED_BATTERY_CHARGE_KWH: f64 = 0.0;
     const EXPECTED_BATTERY_DISCHARGE_KWH: f64 = 4.0;
-    const EXPECTED_GRID_IMPORT_KWH: f64 = 36.59605677268299928;
+    const EXPECTED_GRID_IMPORT_KWH: f64 = 36.90089020695563704;
     const EXPECTED_GRID_EXPORT_KWH: f64 = 0.0;
-    const EXPECTED_PEAK_NET_DEMAND_KW: f64 = 1.29411537792255760;
+    const EXPECTED_PEAK_NET_DEMAND_KW: f64 = 1.30254369998193242;
     const EXPECTED_FINAL_SOC_FRACTION: f64 = 0.1;
 
     let tol = 1e-9;

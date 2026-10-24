@@ -75,3 +75,45 @@ bit-identically; nothing else keys on it.
    standing 2026-10-22 criteria (known, verifiable, tested); band movement
    recorded, not weighted. History: recorded-not-repaired in the round-92
    audit; verified + flipped 2026-10-24 (loop round 93).
+
+## UPDATE — loop round 94 (2026-10-24, item 1): the fractions' scope enforced — internal gains keep §C.3
+
+Premise correction verified against the same primary sources as the round-93 retirement
+(item 1b there; both primary sources re-checked this round): Table 5-138 distributes
+**transmitted solar** among interior surfaces (§5.2.1.12.2: "for cases where the
+interior distribution is not computed" — solar, not internal gains), while ISO 13790
+Annex C eq. C.1–C.3 feed Φst — the WHOLE source pool, internal gains included — to the
+algebraic surface node, which passes it to air and mass by conductance share. The
+r91-composed route therefore mis-scoped the fractions twice over: it carried the
+internal-gain radiative component (rad_frac·φ_int) into the mass classes at the solar
+fractions, and the r93 retirement then removed that component's §C.3 air share along
+with the solar component's (correctly retired for solar, wrongly for internal gains).
+
+The fix decomposes the pool at the §C.3 partition site (scratch phi_st_sol /
+phi_st_int, same expressions and order as the phi_st sum, conserving φst exactly):
+
+- class drive: only phi_st_sol follows the Table 5-138 fractions (renormalized over
+  0.9664, unchanged); phi_st_int keeps the per-class §C.3 share s_c·w — the same s_c
+  the r88 arm and the zone air-share sum consume, so air + mass = phi_st_int exactly
+  across the decomposition;
+- lag site: the internal component's air share (1 − s_share)·h_tr_is·phi_st_int stays
+  live under the T5138 route; the solar component's air share remains retired
+  (round 93);
+- falsy `FLX_R94_T5138_GAINS_C3` restores the r93-composed route bit-identically
+  (measured: 16/16 strict rows + output-diff 42/42 vs _doc_round93).
+
+Measured movement (fix tip 15466af4, strict re-record _doc_round94, checker 13 PASS /
+29 KNOWN-FAIL / 0 REGRESSION — same PASS set as r93): 600/H 5.462 → 5.566 MWh
+(13.56 → 16.01 pp), 600/C 3.965 → 3.879 (16.59 → 18.08); 610–630/640/650 conditioned
+low-mass gaps widen ~2–3 pp; 800/C checksum gap 935.36 → 912.58 pp (§LIMIT-44 equality
+holds exactly); 195 + 9R4C + FF family byte-identical (inert controls). 13/42
+output-diff metrics moved (all low-mass conditioned). Direction recorded, not weighted
+(bands are not a decision signal): the conditioned rows moved away from band while the
+re-partition is correct source-scoped physics — adopted on its own merits per the
+standing fidelity-first rule. Negative controls: solar/sky §6 columns byte-identical;
+9R4C fabric selector row (6.027/4.983) byte-identical.
+
+Slice-6 contracts (tests/mass_advance_contract.rs 20–22): internal-gain §C.3 partition
+live under the T5138 route (red pre-fix), solar route untouched by the decomposition,
+lumped-zone partition untouched.
+
