@@ -1,0 +1,14 @@
+# Falsy-archaeology token (loop round 94, 2026-10-24).
+#
+# The strict gate's "Falsy-archaeology attestation" step reads the first
+# NAME=value line of this file, re-runs the strict battery with that env
+# token set, and diffs the measured rows against the merge-base
+# output-diff baseline. The re-record is honest iff the falsy route
+# reproduces the old record exactly.
+#
+# Round 94: falsy FLX_R94_T5138_GAINS_C3 restores the r93-composed
+# surface-pool route bit-identically (see the round-94 physics commit,
+# "physics(r94): surface-pool component partition under the T5138 route").
+# Update this file in every round that moves a default route; remove the
+# NAME=value line when a round retires its token.
+FLX_R94_T5138_GAINS_C3=0
