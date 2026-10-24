@@ -222,9 +222,6 @@ def test_missing_required_output_is_incomplete_not_a_fabricated_value(
 ):
     """Drop a required output -> the case is ``incomplete`` and the cell empty."""
     source = repo_data / "data" / "reference" / "section7" / "workflow_results.csv"
-    lines = source.read_text(encoding="utf-8").splitlines()
-    header = lines[0]
-    rows = [line for line in lines[1:] if line.strip()]
 
     # Blank the Case 610 companion value (Section 6.2.1.3) and confirm the
     # case drops to ``incomplete`` with an empty report cell.
