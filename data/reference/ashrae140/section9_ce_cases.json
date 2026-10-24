@@ -8,6 +8,104 @@
     "note": "Upstream case-title typos (CE165 'Variatino fo', CE195 'Rato') corrected; numeric parameters transcribed unchanged"
   },
   "_units": "SI: W, degC",
+  "_annex_a2_surface_scope": {
+    "surface": "data/reference/ashrae140/section9_annex_a2.csv",
+    "generator": "scripts/generate_section9_annex_a2.py",
+    "in_scope": [
+      {
+        "case_id": "CE100",
+        "output_groups": [
+          "monthly-total",
+          "annual-total"
+        ]
+      },
+      {
+        "case_id": "CE110",
+        "output_groups": [
+          "monthly-total",
+          "annual-total"
+        ]
+      },
+      {
+        "case_id": "CE120",
+        "output_groups": [
+          "monthly-total",
+          "annual-total"
+        ]
+      },
+      {
+        "case_id": "CE130",
+        "output_groups": [
+          "monthly-total",
+          "annual-total"
+        ]
+      },
+      {
+        "case_id": "CE140",
+        "output_groups": [
+          "monthly-total",
+          "annual-total"
+        ]
+      },
+      {
+        "case_id": "CE150",
+        "output_groups": [
+          "monthly-total",
+          "annual-total"
+        ]
+      },
+      {
+        "case_id": "CE160",
+        "output_groups": [
+          "monthly-total",
+          "annual-total"
+        ]
+      },
+      {
+        "case_id": "CE165",
+        "output_groups": [
+          "monthly-total",
+          "annual-total"
+        ]
+      },
+      {
+        "case_id": "CE170",
+        "output_groups": [
+          "peak-day-hourly",
+          "monthly-total"
+        ]
+      },
+      {
+        "case_id": "CE180",
+        "output_groups": [
+          "peak-day-hourly",
+          "monthly-total"
+        ]
+      }
+    ],
+    "excluded": [
+      {
+        "case_id": "CE185",
+        "status": "out-of-scope",
+        "reason": "Transcribed case, but outside this slice's Annex A2 surface scope: no reference band for it is transcribed in-tree and its reporting requirements are not transcribed either. The row set is not invented; the case waits for the licensed 140-2023 §9 materials (Issue #4285)."
+      },
+      {
+        "case_id": "CE190",
+        "status": "excluded-pending-ambiguity-resolution",
+        "reason": "Excluded pending the resolution of the §9 mean-temperature-vs-COP ambiguity: the reporting requirement for this case is not yet unambiguous, so no band can be bound to it. The ambiguity is NOT resolved here — it needs the licensed 140-2023 §9 normative materials (Issue #4285)."
+      },
+      {
+        "case_id": "CE195",
+        "status": "excluded-pending-ambiguity-resolution",
+        "reason": "Excluded pending the resolution of the §9 mean-temperature-vs-COP ambiguity (see CE190). The case definition is still emitted; only its acceptance rows are withheld."
+      },
+      {
+        "case_id": "CE200",
+        "status": "excluded-pending-ambiguity-resolution",
+        "reason": "Excluded pending the resolution of the §9 mean-temperature-vs-COP ambiguity (see CE190). The case definition is still emitted and is dispatched by tests/validation/hvac_equipment_rated_performance/section9_ce.rs; only its acceptance rows are withheld."
+      }
+    ]
+  },
   "engine_coverage": {
     "cases_run": 0,
     "note": "No CE case is executed by the engine yet (KNOWN_ISSUES LIMIT-42); engine runs land in a follow-up change and must report honestly"
@@ -31,7 +129,7 @@
       },
       "acceptance": {
         "comparative": {
-          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier EE100)",
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E100)",
           "bounds": {
             "annual_cooling": [
               4.1,
@@ -68,7 +166,7 @@
       },
       "acceptance": {
         "comparative": {
-          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier EE110)",
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E110)",
           "bounds": {
             "annual_cooling": [
               4.0,
@@ -105,7 +203,7 @@
       },
       "acceptance": {
         "comparative": {
-          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier EE120)",
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E120)",
           "bounds": {
             "annual_cooling": [
               4.3,
@@ -142,7 +240,7 @@
       },
       "acceptance": {
         "comparative": {
-          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier EE130)",
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E130)",
           "bounds": {
             "annual_cooling": [
               3.95,
@@ -179,7 +277,7 @@
       },
       "acceptance": {
         "comparative": {
-          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier EE140)",
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E140)",
           "bounds": {
             "annual_cooling": [
               4.2,
@@ -216,7 +314,7 @@
       },
       "acceptance": {
         "comparative": {
-          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier EE150)",
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E150)",
           "bounds": {
             "annual_cooling": [
               5.4,
@@ -258,7 +356,7 @@
       },
       "acceptance": {
         "comparative": {
-          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier EE160)",
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E160)",
           "bounds": {
             "annual_cooling": [
               5.3,
@@ -317,7 +415,7 @@
       },
       "acceptance": {
         "comparative": {
-          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier EE170)",
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E170)",
           "bounds": {
             "annual_cooling": [
               5.55,
@@ -442,7 +540,7 @@
       },
       "acceptance": {
         "comparative": {
-          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier EE200)",
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E200)",
           "bounds": {
             "annual_cooling": [
               5.6,
