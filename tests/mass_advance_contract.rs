@@ -33,6 +33,30 @@
 //!   toward outdoor, and per-class-vs-lumped agreement under live vent
 //!   driving (see the slice-2 header below the slice-1 contracts).
 //!
+//! Slice 5 (loop round 92): the solar partition site and the retained
+//! lag-filter route.
+//!
+//! Blitz-slice verification against the tree at `ae66d514`:
+//! - The Table 5-138 per-class routing (`FLX_R91_T5138`, default since
+//!   round 91) is the live surface-pool mass route; the §C.3
+//!   conductance-share arm (`FLX_R88_PHIST_MASS_SHARE`) is retained
+//!   behind the falsy T5138 token. The route-choice consequence is
+//!   pinned by contract 17; the per-class fraction constants live
+//!   behind the per-step class-boundary aggregation, so their numeric
+//!   content is pinned through the strict-gate baseline, not at this
+//!   seam.
+//! - The partition site (step_5r1c's Eq. C.5/C.6 composition) carries
+//!   two public knobs retired to 0.0 by the round-91 flip-2 spec
+//!   default (`FLX_R91_SOL2ST`): `solar_distribution_to_air` and
+//!   `solar_beam_to_mass_fraction`. Contract 15 pins the defaults and
+//!   the three-way split's conservation, including the Table 5-138
+//!   window-loss sink (×0.965, `FLX_R91_RETRANS`).
+//! - The R77 solar-lag filter is off the default route since round 90
+//!   (`FLX_R90_NO_LAG_FILTER`); contract 18 pins the retained
+//!   falsy-token route's transient direction, DC parity, and the
+//!   persisted lag state, which advances with identical arithmetic in
+//!   both routes.
+//!
 //! These are record pins, not validator bands: a violation means the mass
 //! advance moved and must be re-examined, never tuned around.
 
@@ -727,5 +751,204 @@ fn r89_coverage_physics_dominates_step_size() {
     assert!(
         bc < 0.10 * lc,
         "coarse vs inner-loop gap not small relative to the coverage movement: B-C={bc:.6e} legacy-C={lc:.6e}"
+    );
+}
+
+// ===================================================================
+// Slice 5 (loop round 92): the solar partition site and the retained
+// lag-filter route. Contract numbering continues from slice 4.
+//
+// Route-map note for this slice: under the round-91 defaults the
+// surface pool's mass side is the Table 5-138 class fractions (sum 1
+// after renormalization) and the pool's air side is the §C.3 lag-site
+// term scaled by (1 − s_share); the §C.3 mass-share arm remains the
+// falsy-token archaeology route. The fraction constants themselves are
+// engine-private (per-step class-boundary aggregation), so their
+// numeric content is pinned through the strict-gate baseline, not at
+// this seam.
+
+#[test]
+/// Contract 15 — partition-site conservation under the round-91
+/// defaults. With loads neutralized and the spec model's retired split
+/// (both knobs 0.0, pinned below), the whole transmitted flux routes
+/// through the surface share, so the Table 5-138 window-loss sink
+/// (×0.965, `FLX_R91_RETRANS` default) must act as a pure input
+/// scaler: the default route at S and the falsy-token ×1.0 route at
+/// 0.965·S step to the same state. (The three-way `last_phi_*`
+/// diagnostics are `pr821-diag`-gated, so the split's internal
+/// conservation is pinned at this seam only through this scaler
+/// identity and the knob defaults.) Any change to the sink constant,
+/// its position relative to the split, or the retired knobs breaks
+/// this equality.
+fn solar_partition_conserves_with_retransmission_sink() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dt = 3600.0;
+
+    let mut sink = spec_model_solar();
+    sink.solar.solar_gains = VectorField::from_scalar(R88_SOLAR_WM2, sink.hvac.num_zones);
+    sink.setpoints.heating_setpoint = -50.0;
+    sink.setpoints.cooling_setpoint = 100.0;
+    // Retired-split defaults (round-91 flip 2, spec path): transmitted
+    // solar distributes among interior surfaces only.
+    assert_eq!(
+        sink.solar.solar_distribution_to_air, 0.0,
+        "spec model no longer carries a 0.0 solar_distribution_to_air default"
+    );
+    assert_eq!(
+        sink.solar.solar_beam_to_mass_fraction, 0.0,
+        "spec model no longer carries a 0.0 solar_beam_to_mass_fraction default"
+    );
+    for h in 0..24 {
+        sink.step_physics(h, 12.0, dt);
+    }
+
+    std::env::set_var("FLX_R91_RETRANS", "0");
+    let mut scaled = spec_model_solar();
+    let s_scaled = R88_SOLAR_WM2 * 0.965;
+    scaled.solar.solar_gains = VectorField::from_scalar(s_scaled, scaled.hvac.num_zones);
+    scaled.setpoints.heating_setpoint = -50.0;
+    scaled.setpoints.cooling_setpoint = 100.0;
+    for h in 0..24 {
+        scaled.step_physics(h, 12.0, dt);
+    }
+    std::env::remove_var("FLX_R91_RETRANS");
+
+    let d_air = (sink.mass.air_temperatures[0] - scaled.mass.air_temperatures[0]).abs();
+    let d_mass = (sink.mass.mass_temperatures[0] - scaled.mass.mass_temperatures[0]).abs();
+    assert!(
+        d_air < 1e-9 && d_mass < 1e-9,
+        "window-loss sink is not a pure input scaler: d_air={d_air:.3e} d_mass={d_mass:.3e}"
+    );
+}
+#[test]
+/// Contract 16 — T5138 default-token gate-leak bit-identity: unset and
+/// the truthy "1" token take the same Table 5-138 default route and
+/// step to bit-identical air and mass states (contract-8 pattern for
+/// the round-91 default; a visible difference means the flag gate
+/// leaks arithmetic into the default path).
+fn t5138_default_token_is_bit_identical() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dt = 3600.0;
+    let mut unset = spec_model_solar();
+    unset.solar.solar_gains = VectorField::from_scalar(R88_SOLAR_WM2, unset.hvac.num_zones);
+    unset.setpoints.heating_setpoint = -50.0;
+    unset.setpoints.cooling_setpoint = 100.0;
+    for h in 0..48 {
+        unset.step_physics(h, 12.0, dt);
+    }
+    std::env::set_var("FLX_R91_T5138", "1");
+    let mut truthy = spec_model_solar();
+    truthy.solar.solar_gains = VectorField::from_scalar(R88_SOLAR_WM2, truthy.hvac.num_zones);
+    truthy.setpoints.heating_setpoint = -50.0;
+    truthy.setpoints.cooling_setpoint = 100.0;
+    for h in 0..48 {
+        truthy.step_physics(h, 12.0, dt);
+    }
+    std::env::remove_var("FLX_R91_T5138");
+    for z in 0..unset.hvac.num_zones {
+        assert_eq!(
+            unset.mass.air_temperatures[z], truthy.mass.air_temperatures[z],
+            "T5138 unset vs truthy air states differ (zone {z})"
+        );
+        assert_eq!(
+            unset.mass.mass_temperatures[z], truthy.mass.mass_temperatures[z],
+            "T5138 unset vs truthy mass states differ (zone {z})"
+        );
+    }
+}
+
+#[test]
+/// Contract 17 — route-choice consequence: the Table 5-138 default
+/// deposits the full surface pool in the mass classes (the renormalized
+/// fractions sum to 1) while the §C.3 conductance-share arm
+/// (`FLX_R91_T5138` falsy, `FLX_R88_PHIST_MASS_SHARE` unset) deposits
+/// s = Σ w_c·h_ms_c/(h_ms_c + h_is_c·w) < 1 of the same pool flux.
+/// Under identical constant solar, free float, the default-route mass
+/// is therefore strictly warmer than the §C.3-arm mass, and the air
+/// states differ. Magnitudes are measurement, not bands.
+fn t5138_route_deposits_full_surface_share() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dt = 3600.0;
+    let mut t5138 = spec_model_solar();
+    t5138.solar.solar_gains = VectorField::from_scalar(R88_SOLAR_WM2, t5138.hvac.num_zones);
+    t5138.setpoints.heating_setpoint = -50.0;
+    t5138.setpoints.cooling_setpoint = 100.0;
+    for h in 0..24 {
+        t5138.step_physics(h, 12.0, dt);
+    }
+    std::env::set_var("FLX_R91_T5138", "0");
+    let mut c3 = spec_model_solar();
+    c3.solar.solar_gains = VectorField::from_scalar(R88_SOLAR_WM2, c3.hvac.num_zones);
+    c3.setpoints.heating_setpoint = -50.0;
+    c3.setpoints.cooling_setpoint = 100.0;
+    for h in 0..24 {
+        c3.step_physics(h, 12.0, dt);
+    }
+    std::env::remove_var("FLX_R91_T5138");
+    let m_t = t5138.mass.mass_temperatures[0];
+    let m_c = c3.mass.mass_temperatures[0];
+    assert!(
+        m_t > m_c + 1e-9,
+        "T5138 default-route mass not warmer than the §C.3 share arm: t5138={m_t:.6} c3={m_c:.6}"
+    );
+    let a_t = t5138.mass.air_temperatures[0];
+    let a_c = c3.mass.air_temperatures[0];
+    assert!(
+        (a_t - a_c).abs() > 1e-9,
+        "air states identical across the route choice: t5138={a_t:.6} c3={a_c:.6}"
+    );
+}
+
+#[test]
+/// Contract 18 — retained lag-filter route (`FLX_R90_NO_LAG_FILTER`
+/// falsy token restores the R77 first-order filter, tau_lag =
+/// sqrt(tau_air·tau_mass)). Under a step onset of constant solar, free
+/// float: (a) transient direction — the filtered route's air node is
+/// cooler during the rise (the filter delays the surface-pool air
+/// share); (b) DC parity — the filter's DC gain is 1, so at constant
+/// driving both routes converge to the same equilibrium (960 h
+/// horizon: the mass-side perturbation decays at the ~30 h mass time
+/// constant); (c) state parity — the persisted lag state advances with
+/// identical arithmetic in both routes (the round-90 flip changed only
+/// the drive site), so `mass.solar_lag` matches exactly.
+fn lag_filter_retained_route_direction_dc_and_state_parity() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dt = 3600.0;
+    let mut unfiltered = spec_model_solar();
+    unfiltered.solar.solar_gains =
+        VectorField::from_scalar(R88_SOLAR_WM2, unfiltered.hvac.num_zones);
+    unfiltered.setpoints.heating_setpoint = -50.0;
+    unfiltered.setpoints.cooling_setpoint = 100.0;
+    for h in 0..960 {
+        unfiltered.step_physics(h, 12.0, dt);
+    }
+    std::env::set_var("FLX_R90_NO_LAG_FILTER", "0");
+    let mut filtered = spec_model_solar();
+    filtered.solar.solar_gains = VectorField::from_scalar(R88_SOLAR_WM2, filtered.hvac.num_zones);
+    filtered.setpoints.heating_setpoint = -50.0;
+    filtered.setpoints.cooling_setpoint = 100.0;
+    let mut peak_gap = 0.0_f64;
+    for h in 0..960 {
+        filtered.step_physics(h, 12.0, dt);
+        if h < 6 {
+            let gap = unfiltered.mass.air_temperatures[0] - filtered.mass.air_temperatures[0];
+            peak_gap = peak_gap.max(gap);
+        }
+    }
+    std::env::remove_var("FLX_R90_NO_LAG_FILTER");
+    assert!(
+        peak_gap > 1e-6,
+        "filtered route not cooler than the unfiltered default during the rise (peak early gap {peak_gap:.6e} K)"
+    );
+    let d_air = (unfiltered.mass.air_temperatures[0] - filtered.mass.air_temperatures[0]).abs();
+    let d_mass = (unfiltered.mass.mass_temperatures[0] - filtered.mass.mass_temperatures[0]).abs();
+    assert!(
+        d_air < 1e-6 && d_mass < 1e-6,
+        "routes have not converged at constant driving: d_air={d_air:.3e} d_mass={d_mass:.3e}"
+    );
+    assert_eq!(
+        unfiltered.mass.solar_lag.as_ref()[0],
+        filtered.mass.solar_lag.as_ref()[0],
+        "persisted lag state differs across routes"
     );
 }
