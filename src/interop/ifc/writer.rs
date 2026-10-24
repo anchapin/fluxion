@@ -720,6 +720,7 @@ mod tests {
                 total_volume: 226.8,
                 number_of_floors: 1,
                 floor_height: 2.7,
+                surfaces: Vec::new(),
             },
             constructions: ConstructionSet::default(),
             schedules: crate::api::schema::ScheduleSet::default(),

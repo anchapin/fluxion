@@ -499,6 +499,7 @@ impl GbXmlReader {
             } else {
                 2.7
             },
+            surfaces: Vec::new(),
         };
 
         // Create default constructions (wall, roof, floor)

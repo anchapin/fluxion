@@ -171,6 +171,7 @@ fn build_geometry(zones: Vec<ZoneGeometry>) -> Geometry {
         total_volume,
         number_of_floors,
         floor_height,
+        surfaces: Vec::new(),
     }
 }
 

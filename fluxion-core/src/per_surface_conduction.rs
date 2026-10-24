@@ -64,6 +64,7 @@
 //! `src/sim/per_surface_conduction.rs` is now a thin re-export shim.
 
 use crate::ashrae_cases::Orientation;
+use serde::{Deserialize, Serialize};
 
 /// Surface type distinguishing walls, roofs, and floors.
 ///
@@ -71,7 +72,12 @@ use crate::ashrae_cases::Orientation;
 /// - **Wall**: Vertical orientation, convective/radiative heat transfer
 /// - **Roof**: Upward heat flow (ceiling), higher film coefficients
 /// - **Floor**: Downward heat flow, different film coefficients per ASHRAE 140
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Issue #3989 — the enum is `serde`-serialisable so the API schema
+/// (`fluxion::api::schema::SurfaceSpec`) can name the engine's own
+/// surface vocabulary in a `.flux` model instead of inventing a parallel
+/// one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SurfaceKind {
     Wall,
     Roof,

@@ -51,6 +51,7 @@ fn case_600_schema() -> SimulationSchemaV1 {
         total_volume: 129.6,
         number_of_floors: 1,
         floor_height: 2.7,
+        surfaces: Vec::new(),
     };
 
     let constructions = ConstructionSet::default();

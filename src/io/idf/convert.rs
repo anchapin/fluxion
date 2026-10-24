@@ -431,6 +431,7 @@ fn build_geometry(idf: &IdfFile) -> Result<Geometry, IdfError> {
         total_volume,
         number_of_floors,
         floor_height,
+        surfaces: Vec::new(),
     })
 }
 
@@ -873,6 +874,7 @@ fn build_controls(idf: &IdfFile, zone_name: &str) -> ControlSet {
             cooling_capacity: 100_000.0,
         },
         global_control: None,
+        hvac_system: None,
     }
 }
 
