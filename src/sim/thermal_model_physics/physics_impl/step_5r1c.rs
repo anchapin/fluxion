@@ -171,6 +171,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let remaining_sol = sol_w - sol_to_air;
             scratch.phi_ia[i] = load_w * conv_frac + sol_to_air;
             scratch.phi_st[i] = load_w * st_int_frac + remaining_sol * st_sol_frac;
+            // [R94 — surface-pool decomposition (loop round 94). The
+            // pool's two source components route by DIFFERENT references:
+            // `phi_st_int` (internal-gain radiative, `rad_frac·φ_int`)
+            // keeps the ISO 13790 §C.3 conductance partition everywhere
+            // (per-class mass share `s_c`, air share `(1 − s_share)` via
+            // the retained lag site), while `phi_st_sol` (transmitted
+            // solar) follows ASHRAE 140-2017 Table 5-138 through the
+            // per-class fractions — §5.2.1.12.2 scopes those constant
+            // fractions to transmitted solar only. Both components use
+            // the exact expressions and order of the `phi_st` sum above,
+            // so `phi_st_int + phi_st_sol == phi_st` up to the same FP
+            // rounding.]
+            scratch.phi_st_int[i] = load_w * st_int_frac;
+            scratch.phi_st_sol[i] = remaining_sol * st_sol_frac;
             // Issue #1527 fix: opaque solar gains are now included via the proper
             // sol-air temperature pathway (h_tr_em * (t_sol_air - T_mass)).
             // Previously opaque_sol_w was added directly to phi_m here, bypassing
@@ -185,6 +199,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         )));
         let phi_st = T::from(VectorField::from_smallvec(std::mem::take(
             &mut scratch.phi_st,
+        )));
+        let phi_st_sol = T::from(VectorField::from_smallvec(std::mem::take(
+            &mut scratch.phi_st_sol,
+        )));
+        let phi_st_int = T::from(VectorField::from_smallvec(std::mem::take(
+            &mut scratch.phi_st_int,
         )));
         let phi_m = T::from(VectorField::from_smallvec(std::mem::take(
             &mut scratch.phi_m,
@@ -210,10 +230,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     .join(",")
             };
             eprintln!(
-                "FFAUDIT_P {} phi_ia={} phi_st={} phi_m={}",
+                "FFAUDIT_P {} phi_ia={} phi_st={} phi_st_sol={} phi_st_int={} phi_m={}",
                 timestep,
                 fmt_slice(&phi_ia),
                 fmt_slice(&phi_st),
+                fmt_slice(&phi_st_sol),
+                fmt_slice(&phi_st_int),
                 fmt_slice(&phi_m)
             );
         }
@@ -1432,6 +1454,31 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // FLX_R91_T5138) restores the pre-r93 composed route
         // bit-identically.]
         let r93_airshare_legacy = crate::util::env_bool::env_bool("FLX_R93_T5138_AIRSHARE", false);
+        // [R94 — surface-pool component partition (loop round 94). The
+        // T5138 class route carries the whole `phi_st` pool at the Table
+        // 5-138 fractions, but those fractions are scoped to TRANSMITTED
+        // SOLAR (ASHRAE 140-2017 §5.2.1.12.2); the pool's internal-gain
+        // radiative component (`rad_frac·φ_int`) has no row in the table
+        // and keeps the ISO 13790 §C.3 conductance partition (per-class
+        // mass share `s_c`, air share `(1 − s_share)` through the lag
+        // site). PREMISE (verified against both primary sources, same
+        // standard as the round-93 retirement): §5.2.1.12.2's constant
+        // fractions distribute transmitted solar among interior surfaces
+        // only; §C.3's algebraic surface node passes its source to air
+        // and mass by conductance share — the r88 arm's partition, which
+        // stays the engine default on tensor-less zones. Under the
+        // pre-R94 composed route the class drive silently re-routed the
+        // internal-gain component with the solar fractions and retired
+        // its air share: a routing no primary source covers. NEW
+        // DEFAULT: at the class drive, only `phi_st_sol` follows the
+        // Table 5-138 fractions; `phi_st_int` follows `s_c·w` per class;
+        // at the lag site, the internal component's air share stays
+        // live under the T5138 route (the solar component's air share
+        // remains retired — round 93). Total pool deposition stays
+        // exactly `phi_st` (conserving by construction). Falsy
+        // FLX_R94_T5138_GAINS_C3 (0/false/no/off) restores the
+        // r93-composed route bit-identically for A/B archaeology.]
+        let r94_gains_c3 = crate::util::env_bool::env_bool("FLX_R94_T5138_GAINS_C3", true);
         let r93_perclass_on = crate::util::env_bool::env_bool("FLX_R84_PERCLASS", true);
         let mut r93_zone_t5138_live: Vec<bool> = vec![false; self.0.hvac.num_zones];
         if r91_t5138 && r93_perclass_on && ps_enabled && !r93_airshare_legacy {
@@ -1672,6 +1719,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             r93_zone_t5138_live.get(i).copied().unwrap_or(false);
                         let mut lag_input_r77 = if !r93_retire_airshare && term_rest_1_r77 > 0.0 {
                             h_tr_is_for_ti_free.as_ref()[i] * phi_st.as_ref()[i] / term_rest_1_r77
+                        } else if r94_gains_c3 && r93_retire_airshare && term_rest_1_r77 > 0.0 {
+                            // [R94] under the T5138 route the §C.3 air
+                            // share of the INTERNAL-GAIN surface
+                            // component stays live: Table 5-138 routes
+                            // transmitted solar only, so only the solar
+                            // component's air share retires here.
+                            h_tr_is_for_ti_free.as_ref()[i] * phi_st_int.as_ref()[i]
+                                / term_rest_1_r77
                         } else {
                             0.0
                         };
@@ -1679,8 +1734,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         // H_is/(H_ms + H_is) of the surface pool in the lag
                         // filter; the mass share enters the mass advance
                         // below (same share value, so air + mass = phi_st).
-                        // Flag off: never executes, bit-identical.]
-                        if r88_phist_share && !r93_retire_airshare && term_rest_1_r77 > 0.0 {
+                        // Flag off: never executes, bit-identical. R94:
+                        // the (1 − s_share) scaling applies to the
+                        // internal-gain component's air share on
+                        // T5138-live zones too — the per-class `s_c·w`
+                        // mass share uses the same zone share, so
+                        // air + mass = phi_st_int exactly.]
+                        if r88_phist_share
+                            && term_rest_1_r77 > 0.0
+                            && (!r93_retire_airshare || r94_gains_c3)
+                        {
                             lag_input_r77 *= 1.0 - r88_share_zone[i];
                         }
                         // [R90 HARNESS (b)] ramp the filter input across
@@ -2179,13 +2242,44 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                     // Falsy FLX_R91_T5138 restores the
                                     // s_c*w conductance-share partition
                                     // (the R88 arm) bit-identically.]
+                                    // [R94 — the §C.3 per-class share of
+                                    // the internal-gain surface
+                                    // component: `s_c = h_ms_c/(h_ms_c +
+                                    // h_is·w)`, the same share the r88
+                                    // arm and the zone air-share sum
+                                    // consume, so air + mass = phi_st_int
+                                    // exactly across the decomposition.]
+                                    let h_is_c94 = h_is_i * w;
+                                    let s_c94 = if h_ms_c + h_is_c94 > 0.0 {
+                                        h_ms_c / (h_ms_c + h_is_c94)
+                                    } else {
+                                        0.0
+                                    };
                                     let phi_c = if r91_t5138 {
                                         let f_c_t5138 = match c {
                                             2 => 0.642_f64,
                                             1 => 0.1678,
                                             _ => 0.1566,
                                         };
-                                        phi_m_i * w + (f_c_t5138 / 0.9664) * phi_st.as_ref()[i]
+                                        if r94_gains_c3 {
+                                            // [R94 DEFAULT — the Table
+                                            // 5-138 fractions carry the
+                                            // TRANSMITTED-SOLAR component
+                                            // only; the internal-gain
+                                            // radiative component keeps
+                                            // the §C.3 conductance
+                                            // partition (`s_c·w` here,
+                                            // `(1 − s_share)` at the lag
+                                            // site).]
+                                            phi_m_i * w
+                                                + (f_c_t5138 / 0.9664) * phi_st_sol.as_ref()[i]
+                                                + s_c94 * phi_st_int.as_ref()[i] * w
+                                        } else {
+                                            // Pre-R94 composed route
+                                            // (whole pool at the solar
+                                            // fractions) — archaeology.
+                                            phi_m_i * w + (f_c_t5138 / 0.9664) * phi_st.as_ref()[i]
+                                        }
                                     } else if r88_phist_share {
                                         let h_is_c88 = h_is_i * w;
                                         let s_c88 = if h_ms_c + h_is_c88 > 0.0 {
