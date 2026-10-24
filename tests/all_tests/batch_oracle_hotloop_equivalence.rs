@@ -199,7 +199,14 @@ fn analytical_path_eui_is_bit_identical_to_baseline() {
     // 106.71692499332153 -> 45.72796364307019 (-57.2 %),
     // 155.05408015184670 -> 115.14238843442617 (-25.7 %),
     // 182.35388767854468 -> 152.66914454501180 (-16.3 %). Nothing tuned.
-    let golden = [45.72796364307019, 115.14238843442617, 152.6691445450118];
+    // Re-recorded 2026-10-24 (loop round 93, physics/r93-t5138-airshare: the
+    // ISO 13790 .C3 lag-site air-share term retires under the T5138 class
+    // route, FLX_R93_T5138_AIRSHARE falsy-token restore) moves the analytical
+    // harness EUI
+    // 45.72796364307019 -> 64.34869112189999 (+40.7 %),
+    // 115.14238843442617 -> 138.55477627605464 (+20.3 %),
+    // 152.66914454501180 -> 180.72725491900600 (+18.4 %). Nothing tuned.
+    let golden = [64.34869112189999, 138.55477627605464, 180.727254919006];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),
@@ -272,7 +279,12 @@ fn cpu_surrogate_mock_path_eui_is_bit_identical_to_baseline() {
     // 264.44683902603862 -> 263.33598777423884 (-0.42 %) - the surrogate
     // reads the lumped zone state, so the class-partition move reaches it
     // only through the coupled air/mass feedback. Nothing tuned.
-    let golden = [235.94384629199757, 251.56469278055977, 263.33598777423884];
+    // Re-recorded 2026-10-24 (loop round 93, physics/r93-t5138-airshare) moves
+    // the CPU-surrogate harness EUI
+    // 235.94384629199757 -> 237.36014842317080 (+0.60 %),
+    // 251.56469278055977 -> 252.75249674400956 (+0.47 %),
+    // 263.33598777423884 -> 264.42093249323220 (+0.41 %). Nothing tuned.
+    let golden = [237.3601484231708, 252.75249674400956, 264.4209324932322];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),
