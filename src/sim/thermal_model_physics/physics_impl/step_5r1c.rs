@@ -1412,6 +1412,52 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // C.3 conductance-share partition for A/B archaeology only; any
         // other value behaves as unset, i.e. the Table 5-138 default.]
         let r91_t5138 = crate::util::env_bool::env_bool("FLX_R91_T5138", true);
+        // [R93 FIX — §C.3 lag-site air-share retirement under the T5138
+        // class route. The air-share term (1 − s_share)·h_tr_is·phi_st is
+        // the air side of the §C.3 partition whose mass side is
+        // s_share·phi_st (the r88 arm: air + mass = phi_st exactly). Under
+        // the Table 5-138 default the per-class drives already carry
+        // 1.0·phi_st (fractions renormalized over the 0.9664 surface-row
+        // sum), so keeping the air term over-subscribes the composed
+        // network by (1 − s_share)·phi_st with no primary-source basis:
+        // ASHRAE 140-2017 §5.2.1.12 / Table 5-138 distribute transmitted
+        // solar among interior surfaces plus the 0.035 window-loss row
+        // only (no air row), and ISO 13790 Annex C feeds Φst to the
+        // surface node with Φia = 0.5·Φint at the air node (eq. C.1 /
+        // C.10 / C.11). The term retires ONLY where the T5138 class route
+        // binds the mass advance (same structural conditions as the class
+        // drive site: per-class arm enabled, class tensors present at the
+        // zone, positive class areas); lumped zones keep the intact
+        // s_share partition. Falsy FLX_R93_T5138_AIRSHARE (or falsy
+        // FLX_R91_T5138) restores the pre-r93 composed route
+        // bit-identically.]
+        let r93_airshare_legacy = crate::util::env_bool::env_bool("FLX_R93_T5138_AIRSHARE", false);
+        let r93_perclass_on = crate::util::env_bool::env_bool("FLX_R84_PERCLASS", true);
+        let mut r93_zone_t5138_live: Vec<bool> = vec![false; self.0.hvac.num_zones];
+        if r91_t5138 && r93_perclass_on && ps_enabled && !r93_airshare_legacy {
+            for (i93, c93) in r66_cls.iter().enumerate() {
+                let Some((_g, _t, cls_area, _beam)) = c93.as_ref() else {
+                    continue;
+                };
+                if cls_area.iter().sum::<f64>() <= 1e-9 {
+                    continue;
+                }
+                let cond93 = &self.0.conduction;
+                let tensors93 = [
+                    &cond93.cm_wall,
+                    &cond93.cm_roof,
+                    &cond93.cm_floor,
+                    &cond93.h_tr_ms_wall,
+                    &cond93.h_tr_ms_roof,
+                    &cond93.h_tr_ms_floor,
+                ]
+                .iter()
+                .all(|o| o.as_ref().is_some_and(|v| v.as_ref().len() > i93));
+                if tensors93 {
+                    r93_zone_t5138_live[i93] = true;
+                }
+            }
+        }
         let mut r88_share_zone: Vec<f64> = Vec::new();
         if r88_phist_share {
             let n_z88 = self.0.hvac.num_zones;
@@ -1616,7 +1662,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             44000.0
                         };
                         let tau_lag_r77 = (tau_air_r77 * tau_mass_r77).sqrt();
-                        let mut lag_input_r77 = if term_rest_1_r77 > 0.0 {
+                        // [R93 FIX] the air-share lag input retires where
+                        // the T5138 class route carries the full pool: the
+                        // classes already deposit 1.0·phi_st on the mass
+                        // side, and Table 5-138 / ISO 13790 §C.3 route no
+                        // transmitted solar to zone air. Falsy
+                        // FLX_R93_T5138_AIRSHARE restores this term.
+                        let r93_retire_airshare =
+                            r93_zone_t5138_live.get(i).copied().unwrap_or(false);
+                        let mut lag_input_r77 = if !r93_retire_airshare && term_rest_1_r77 > 0.0 {
                             h_tr_is_for_ti_free.as_ref()[i] * phi_st.as_ref()[i] / term_rest_1_r77
                         } else {
                             0.0
@@ -1626,13 +1680,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         // filter; the mass share enters the mass advance
                         // below (same share value, so air + mass = phi_st).
                         // Flag off: never executes, bit-identical.]
-                        if r88_phist_share && term_rest_1_r77 > 0.0 {
+                        if r88_phist_share && !r93_retire_airshare && term_rest_1_r77 > 0.0 {
                             lag_input_r77 *= 1.0 - r88_share_zone[i];
                         }
                         // [R90 HARNESS (b)] ramp the filter input across
                         // the hour at the R71 midpoint fraction; zero prev
                         // phi_st = first step, seed with the current value.
-                        if r90_phist_ramp && term_rest_1_r77 > 0.0 {
+                        if r90_phist_ramp && !r93_retire_airshare && term_rest_1_r77 > 0.0 {
                             let phi_st_prev_r90 =
                                 r90_phi_st_prev_ref.get(i).copied().unwrap_or(0.0);
                             if phi_st_prev_r90 != 0.0 {
@@ -2117,6 +2171,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                     // construction; the checker
                                     // composite mirrors this drive
                                     // through the affine maps below).
+                                    // [R93] the §C.3 lag-site air-share
+                                    // term retires under this route (see
+                                    // FLX_R93_T5138_AIRSHARE) so the
+                                    // composed network deposits exactly
+                                    // phi_st.]
                                     // Falsy FLX_R91_T5138 restores the
                                     // s_c*w conductance-share partition
                                     // (the R88 arm) bit-identically.]
