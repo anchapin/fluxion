@@ -583,35 +583,45 @@ impl HybridThermalModel {
     }
 }
 
-impl ThermalModelTrait for HybridThermalModel {
-    fn num_zones(&self) -> usize {
-        self.inner.hvac.num_zones
+impl HybridThermalModel {
+    /// Issue #3985: solve with a caller-supplied outdoor-temperature series.
+    ///
+    /// Drives the hybrid run loop from real (caller-supplied) weather
+    /// instead of the synthetic `10 + 10*sin(hour)` outdoor-temperature
+    /// cycle the no-series path historically used. The supplied value for
+    /// timestep `t` feeds every outdoor-temperature consumer in the step:
+    /// the surrogate conduction slot's sol-air temperature, the ventilation
+    /// schedule lookup, and `step_physics`.
+    ///
+    /// Length behaviour: `outdoor_temps` must cover every requested step
+    /// (`outdoor_temps.len() >= steps`); extra trailing values are ignored.
+    /// A shorter series is a caller error and panics with a clear message —
+    /// silently substituting invented weather is exactly the behaviour this
+    /// method exists to remove.
+    pub fn solve_timesteps_with_outdoor_temps(
+        &mut self,
+        steps: usize,
+        surrogates: &SurrogateManager,
+        use_surrogates: bool,
+        outdoor_temps: &[f64],
+    ) -> f64 {
+        assert!(
+            outdoor_temps.len() >= steps,
+            "solve_timesteps_with_outdoor_temps: outdoor_temps series has {} values but {} steps were requested; supply one outdoor temperature per timestep (extra trailing values are ignored)",
+            outdoor_temps.len(),
+            steps
+        );
+        self.solve_timesteps_driven(steps, surrogates, use_surrogates, Some(outdoor_temps))
     }
 
-    fn get_temperatures(&self) -> Vec<f64> {
-        self.inner.get_temperatures()
-    }
-
-    fn set_temperatures(&mut self, temperatures: &[f64]) {
-        self.inner.setpoints.temperatures =
-            crate::physics::cta::VectorField::new(temperatures.to_vec());
-    }
-
-    fn mode(&self) -> ThermalModelMode {
-        ThermalModelMode::Hybrid
-    }
-
-    fn set_mode(&mut self, _mode: ThermalModelMode) {
-        // Hybrid mode is intrinsic to this struct; ignore reassignment.
-        // Callers that want a different mode should construct the
-        // appropriate concrete model (Physics / Surrogate / Unified).
-    }
-
-    fn solve_timesteps(
+    /// Shared run loop. `outdoor_temps == None` keeps the historical
+    /// synthetic outdoor-temperature cycle bit-identical.
+    fn solve_timesteps_driven(
         &mut self,
         steps: usize,
         surrogates: &SurrogateManager,
         _use_surrogates: bool,
+        outdoor_temps: Option<&[f64]>,
     ) -> f64 {
         self.reset_counters();
 
@@ -788,9 +798,20 @@ impl ThermalModelTrait for HybridThermalModel {
                 }
 
                 let hour_of_day = t % 24;
-                let daily_cycle =
-                    (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
-                let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+                // Issue #3985: when the caller supplied an outdoor-temperature
+                // series, drive EVERY consumer in this step (surrogate
+                // conduction t_sol_air, ventilation schedule, step_physics)
+                // from it — never from the synthetic cycle. The synthetic
+                // sine remains only as the no-series default, bit-identical
+                // to the historical behaviour.
+                let outdoor_temp = match outdoor_temps {
+                    Some(series) => series[t],
+                    None => {
+                        let daily_cycle =
+                            (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+                        10.0 + 10.0 * daily_cycle
+                    }
+                };
 
                 // Issue #2457: Branch 3 — surrogate conduction dispatch.
                 //
@@ -1000,6 +1021,40 @@ impl ThermalModelTrait for HybridThermalModel {
         } else {
             0.0
         }
+    }
+}
+
+impl ThermalModelTrait for HybridThermalModel {
+    fn num_zones(&self) -> usize {
+        self.inner.hvac.num_zones
+    }
+
+    fn get_temperatures(&self) -> Vec<f64> {
+        self.inner.get_temperatures()
+    }
+
+    fn set_temperatures(&mut self, temperatures: &[f64]) {
+        self.inner.setpoints.temperatures =
+            crate::physics::cta::VectorField::new(temperatures.to_vec());
+    }
+
+    fn mode(&self) -> ThermalModelMode {
+        ThermalModelMode::Hybrid
+    }
+
+    fn set_mode(&mut self, _mode: ThermalModelMode) {
+        // Hybrid mode is intrinsic to this struct; ignore reassignment.
+        // Callers that want a different mode should construct the
+        // appropriate concrete model (Physics / Surrogate / Unified).
+    }
+
+    fn solve_timesteps(
+        &mut self,
+        steps: usize,
+        surrogates: &SurrogateManager,
+        _use_surrogates: bool,
+    ) -> f64 {
+        self.solve_timesteps_driven(steps, surrogates, _use_surrogates, None)
     }
 
     fn apply_parameters(&mut self, params: &[f64]) {
