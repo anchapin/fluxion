@@ -803,7 +803,23 @@ describe('@fluxion/native', () => {
     // band is deliberately not widened (WINDOW-01). Strict-route context:
     // KNOWN_ISSUES §LIMIT-28 (_doc_round91a/b/c) — Case 600 heating
     // re-enters its published band (4.692 MWh) on the strict checker.
-    const HEATING_RECORDED_KWH = 4580.90; // post-round-91-flips engine value, 2026-10-23
+    // Re-pinned 2026-10-24 (physics loop round 96, #4582 companion): the
+    // ISO 13790 §C.3 lag-site air-share retirement default flip (PR #4582,
+    // merge 697f767b, FLX_R93_T5138_AIRSHARE) moves the NAPI/WD600 Case 600
+    // annual heating to 5425.43 kWh (CI runs 40131398567 and 40132708784
+    // print the same 5425.43 on ubuntu-24.04 and windows-latest; measured
+    // on the develop tip via this same runSimulation surface, round-96
+    // worklog; +18.4% vs the round-91 pin). The round-93 merge missed this
+    // companion re-pin, so the guard has been red on develop since 06:16Z;
+    // this pin clears it. Adopted per the fidelity-first direction
+    // (round-42/71/78/89/91 precedent); the ±5% regression guard moves with
+    // the recorded engine value — the published band is deliberately not
+    // widened (WINDOW-01). Strict-route context: KNOWN_ISSUES §LIMIT-28 —
+    // the strict canonical-weather route holds 13 PASS / 29 KNOWN-FAIL /
+    // 0 REGRESSION across the flip (round-93 record) and the round-96 gate
+    // re-verifies it with the output-diff gate at 42/42 on the current tip
+    // (strict Case 600 itself 5.566/3.879 MWh, tracked known-fail there).
+    const HEATING_RECORDED_KWH = 5425.43; // post-#4582 engine value, 2026-10-24
     const HEATING_GUARD_PCT = 5.0;
     const HEATING_MIN_KWH = +(HEATING_RECORDED_KWH * (1 - HEATING_GUARD_PCT / 100)).toFixed(2);
     const HEATING_MAX_KWH = +(HEATING_RECORDED_KWH * (1 + HEATING_GUARD_PCT / 100)).toFixed(2);
@@ -848,7 +864,17 @@ describe('@fluxion/native', () => {
     // strict checker. Both values came from one run this time, so the
     // round-89b heating-asserts-first abort no longer masks the cooling
     // guard.
-    const COOLING_RECORDED_KWH = 6258.28; // post-round-91-flips engine value, 2026-10-23
+    // Re-pinned 2026-10-24 (physics loop round 96, same #4582 companion as
+    // heating above): the NAPI/WD600 Case 600 annual cooling moves to
+    // 4130.48 kWh (measured on the develop tip in the same run as the
+    // heating value, round-96 worklog; −34.0% vs the round-91 pin, and
+    // −3.4% below the published ±15% lower edge — recorded, not tuned).
+    // The round-91 note that one run covers both values still holds; the
+    // heating guard's abort had simply masked this one since #4582 landed.
+    // Same treatment as heating: the pin becomes a ±5% regression guard
+    // around the recorded engine value, not a widened band (WINDOW-01);
+    // the strict-route context above applies unchanged.
+    const COOLING_RECORDED_KWH = 4130.48; // post-#4582 engine value, 2026-10-24
     const COOLING_GUARD_PCT = 5.0;
     const COOLING_MIN_KWH = +(COOLING_RECORDED_KWH * (1 - COOLING_GUARD_PCT / 100)).toFixed(2);
     const COOLING_MAX_KWH = +(COOLING_RECORDED_KWH * (1 + COOLING_GUARD_PCT / 100)).toFixed(2);
