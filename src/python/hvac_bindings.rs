@@ -426,6 +426,7 @@ pub enum PyHVACSystemType {
     VAV,
     CAV,
     HeatPump,
+    DOASFanCoil,
     Ideal,
 }
 
@@ -436,6 +437,7 @@ impl From<HVACSystemType> for PyHVACSystemType {
             HVACSystemType::VAV => PyHVACSystemType::VAV,
             HVACSystemType::CAV => PyHVACSystemType::CAV,
             HVACSystemType::HeatPump => PyHVACSystemType::HeatPump,
+            HVACSystemType::DOASFanCoil => PyHVACSystemType::DOASFanCoil,
             HVACSystemType::Ideal => PyHVACSystemType::Ideal,
         }
     }
@@ -448,6 +450,7 @@ impl From<PyHVACSystemType> for HVACSystemType {
             PyHVACSystemType::VAV => HVACSystemType::VAV,
             PyHVACSystemType::CAV => HVACSystemType::CAV,
             PyHVACSystemType::HeatPump => HVACSystemType::HeatPump,
+            PyHVACSystemType::DOASFanCoil => HVACSystemType::DOASFanCoil,
             PyHVACSystemType::Ideal => HVACSystemType::Ideal,
         }
     }
@@ -1344,6 +1347,7 @@ mod tests {
             HVACSystemType::VAV,
             HVACSystemType::CAV,
             HVACSystemType::HeatPump,
+            HVACSystemType::DOASFanCoil,
             HVACSystemType::Ideal,
         ];
         for v in variants {
