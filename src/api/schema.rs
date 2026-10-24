@@ -12,14 +12,68 @@
 //! The current schema version is `1.0`. All schema types are versioned to ensure
 //! backward compatibility and clear migration paths when the schema evolves.
 //!
+//! # Schema Revision 1.1 — per-surface geometry, fenestration and HVAC
+//! selection (Issue #3989)
+//!
+//! Revision 1.1 adds three capabilities that the zone-aggregate V1 shape
+//! could not express:
+//!
+//! 1. **Per-surface geometry** — [`SurfaceSpec`] (and [`SurfaceVertex`])
+//!    describe individual walls / roofs / floors with their own area,
+//!    orientation, tilt and optional vertex loop, instead of only the
+//!    lumped `Geometry::zones` aggregates.
+//! 2. **Per-surface / per-orientation fenestration** — [`WindowSpec`]
+//!    gained an optional window-to-wall ratio plus an optional surface id
+//!    and orientation, so "north WWR 20 %, south 60 %" is expressible.
+//! 3. **Named HVAC system selection** — [`ControlSet::hvac_system`]
+//!    selects one of the engine's own [`HVACSystemType`] templates
+//!    (`Simple`, `VAV`, `CAV`, `HeatPump`, `Ideal`).
+//!
+//! ## Versioning decision (why this is *inside* V1)
+//!
+//! The extension shipped **additively inside V1** (schema revision 1.1)
+//! rather than as a parallel `SimulationSchemaV2` payload:
+//!
+//! * Every new field is `#[serde(default)]` and is *omitted again* when
+//!   absent (`skip_serializing_if`), so a pre-#3989 V1 document still
+//!   deserialises — and re-serialises — byte-for-byte as before. No
+//!   existing `.flux` model, REST payload or fixture changes shape.
+//! * A parallel V2 struct would duplicate the entire ~1000-line schema
+//!   (geometry, constructions, schedules, weather, controls, output) for
+//!   no behavioural gain, and would force every consumer that matches on
+//!   [`SimulationSchema`] (the CLI `.flux` loader, the Python bindings)
+//!   to handle a second payload family.
+//! * The externally-tagged [`SimulationSchema`] container is the
+//!   forward-compatibility mechanism: a future `SimulationSchema::V2(..)`
+//!   variant can be added later without touching V1.
+//!
+//! [`SchemaVersion::V2`] is **reserved** for that next *breaking*
+//! revision and is rejected by [`SimulationSchemaV1::validate`] while no
+//! V2 payload exists, so a model cannot silently mislabel itself.
+//!
+//! ## Migration path
+//!
+//! * **V1 (pre-#3989) → V1.1** — automatic. Old documents load unchanged;
+//!   the new fields default to "no per-surface surfaces", "no per-surface
+//!   fenestration" and "no named HVAC system", which is exactly the old
+//!   aggregate behaviour.
+//! * **V1.1 → V2 (future)** — lossless by construction: every V1.1
+//!   addition is optional, so a V2 payload can be derived from a V1.1
+//!   payload by copying the aggregate fields and re-expressing the
+//!   per-surface block. When V2 lands it will be added as
+//!   `SimulationSchema::V2(SimulationSchemaV2)` plus a
+//!   `SimulationSchemaV2::from_v1` conversion helper; the V1 reader
+//!   stays available for the whole V1 series.
+//!
 //! # Core Types
 //!
 //! - [`SimulationSchema`]: Top-level container for all simulation data
-//! - [`Geometry`]: Building geometry (zones, dimensions)
+//! - [`Geometry`]: Building geometry (zones, dimensions, per-surface specs)
 //! - [`ConstructionSet`]: Building envelope constructions
+//! - [`SurfaceSpec`]: Per-surface geometry (area / orientation / tilt / vertices)
 //! - [`ScheduleSet`]: Time-based schedules for occupancy, lighting, HVAC
 //! - [`WeatherData`]: Weather data reference or inline data
-//! - [`ControlSet`]: HVAC control configurations
+//! - [`ControlSet`]: HVAC control configurations + named HVAC system
 //! - [`SimulationOutput`]: Simulation results
 //!
 //! # Example
@@ -47,7 +101,10 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::path::PathBuf;
 
 use crate::sim::construction::ConstructionLayer;
+use crate::sim::hvac::HVACSystemType;
+use crate::sim::per_surface_conduction::SurfaceKind;
 use crate::sim::schedule::{DailySchedule, HVACSchedule};
+use crate::validation::ashrae_140_cases::Orientation;
 use crate::weather::HourlyWeatherData;
 
 /// Custom deserializer for the `path` field of `WeatherData::EpwFile`.
@@ -67,9 +124,23 @@ where
 }
 
 /// Schema version for forward compatibility.
+///
+/// Issue #3989 — the enum keeps the `V1` wire tag for every payload this
+/// build accepts. The per-surface / fenestration / HVAC-system extension
+/// shipped **additively inside V1** (schema revision 1.1, see the module
+/// docs), so no existing document changes shape.
+///
+/// [`SchemaVersion::V2`] is reserved for the next *breaking* revision. No
+/// V2 payload exists yet, so [`SimulationSchemaV1::validate`] rejects a
+/// document that claims `"version": "V2"` with an actionable error instead
+/// of letting it mislabel itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SchemaVersion {
     V1,
+    /// Issue #3989 — reserved for the next breaking schema revision.
+    /// Not yet a loadable payload; see the module-level "Migration path"
+    /// section.
+    V2,
 }
 
 impl Default for SchemaVersion {
@@ -128,6 +199,20 @@ pub struct Geometry {
     pub total_volume: f64,
     pub number_of_floors: usize,
     pub floor_height: f64,
+    /// Issue #3989 — per-surface geometry.
+    ///
+    /// Empty (the default) keeps the historical zone-aggregate behaviour:
+    /// the simulation derives one lumped wall / roof / floor per zone from
+    /// `zones` and the `constructions` block. When populated, each entry
+    /// describes one physical surface (wall, roof or floor) with its own
+    /// area, orientation, tilt, optional vertex loop and optional
+    /// fenestration — enough to describe a 600-series-style case without
+    /// loss.
+    ///
+    /// Absent from the JSON when empty, so pre-#3989 documents keep their
+    /// exact wire shape.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub surfaces: Vec<SurfaceSpec>,
 }
 
 impl Default for Geometry {
@@ -138,16 +223,72 @@ impl Default for Geometry {
             total_volume: 129.6,
             number_of_floors: 1,
             floor_height: 2.7,
+            surfaces: Vec::new(),
         }
     }
 }
 
+impl Geometry {
+    /// Issue #3989 — look up a per-surface spec by its id.
+    pub fn surface(&self, id: &str) -> Option<&SurfaceSpec> {
+        self.surfaces.iter().find(|s| s.id == id)
+    }
+
+    /// Issue #3989 — all per-surface specs belonging to one zone.
+    pub fn surfaces_in_zone(&self, zone_index: usize) -> impl Iterator<Item = &SurfaceSpec> {
+        self.surfaces
+            .iter()
+            .filter(move |s| s.zone_index == zone_index)
+    }
+
+    /// Issue #3989 — every per-surface spec that faces the given
+    /// orientation (walls only; roofs and floors have no compass
+    /// orientation).
+    pub fn surfaces_with_orientation(
+        &self,
+        orientation: Orientation,
+    ) -> impl Iterator<Item = &SurfaceSpec> {
+        self.surfaces
+            .iter()
+            .filter(move |s| s.orientation == Some(orientation))
+    }
+}
+
 /// Window specification within a construction.
+///
+/// Issue #3989 — the aggregate V1 shape (a single area / U-value / SHGC
+/// triple for the whole wall construction) cannot express per-orientation
+/// glazing. Three optional fields make the placement explicit:
+///
+/// * [`WindowSpec::window_to_wall_ratio`] — the glazing fraction of the
+///   host surface ("south WWR 60 %").
+/// * [`WindowSpec::surface`] — the id of the [`SurfaceSpec`] the glazing
+///   sits on.
+/// * [`WindowSpec::orientation`] — the compass orientation the glazing
+///   faces, for models that place fenestration by orientation rather than
+///   by named surface.
+///
+/// All three are optional and omitted from the JSON when unset, so
+/// pre-#3989 documents keep their exact wire shape.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WindowSpec {
+    /// Glazing area in m². When `0.0` **and**
+    /// [`WindowSpec::window_to_wall_ratio`] is set, the area is derived
+    /// from the host surface area (see
+    /// [`WindowSpec::effective_area`]).
     pub window_area: f64,
     pub window_u_value: f64,
     pub window_shgc: f64,
+    /// Issue #3989 — glazing fraction of the host surface (0-1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_to_wall_ratio: Option<f64>,
+    /// Issue #3989 — id of the [`SurfaceSpec`] this glazing sits on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface: Option<String>,
+    /// Issue #3989 — compass orientation this glazing faces, when the
+    /// placement is given by orientation rather than by named surface.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orientation: Option<Orientation>,
 }
 
 impl Default for WindowSpec {
@@ -156,7 +297,150 @@ impl Default for WindowSpec {
             window_area: 12.0,
             window_u_value: 1.5,
             window_shgc: 0.3,
+            window_to_wall_ratio: None,
+            surface: None,
+            orientation: None,
         }
+    }
+}
+
+impl WindowSpec {
+    /// Issue #3989 — the glazing area actually used by the simulation.
+    ///
+    /// An explicit positive [`WindowSpec::window_area`] wins. Otherwise the
+    /// area is derived from the host surface area and
+    /// [`WindowSpec::window_to_wall_ratio`] (`host_area × wwr`), which is
+    /// how a per-orientation WWR is turned into an area. Returns `0.0`
+    /// when neither is usable.
+    pub fn effective_area(&self, host_area: f64) -> f64 {
+        if self.window_area > 0.0 {
+            self.window_area
+        } else {
+            self.window_to_wall_ratio.unwrap_or(0.0) * host_area.max(0.0)
+        }
+    }
+}
+
+/// Issue #3989 — one vertex of a [`SurfaceSpec`] vertex loop.
+///
+/// Coordinates are metres in a right-handed frame (`x` east, `y` north,
+/// `z` up). The loop is closed implicitly: the last vertex joins the
+/// first.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct SurfaceVertex {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+}
+
+/// Issue #3989 — a single building surface with its own geometry and
+/// optional fenestration.
+///
+/// The zone-aggregate V1 shape can only describe "one wall construction
+/// for the whole zone". A `SurfaceSpec` describes one physical surface
+/// (wall, roof or floor) so a model can state, for example, "the south
+/// wall is 16.2 m² of lightweight construction carrying 12 m² of
+/// double clear glazing" without losing anything.
+///
+/// The vocabulary is the engine's own, not a parallel one:
+///
+/// * [`SurfaceSpec::kind`] is the per-surface conduction solver's
+///   [`SurfaceKind`] (`Wall` / `Roof` / `Floor`).
+/// * [`SurfaceSpec::orientation`] is the solar/orientation enum
+///   [`Orientation`] (`North` / `East` / `South` / `West` / `Up` /
+///   `Down` / `Horizontal`).
+///
+/// A surface is described by an explicit `area`, by a `vertices` loop
+/// (from which the area is derived), or by both. The construction that
+/// applies to it is the one matching its `kind` in the `constructions`
+/// block (`wall` / `roof` / `floor`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SurfaceSpec {
+    /// Stable identifier, referenced by [`WindowSpec::surface`]. Must be
+    /// unique within the model.
+    pub id: String,
+    /// Index into [`Geometry::zones`] the surface bounds. Defaults to `0`
+    /// so single-zone models can omit it.
+    #[serde(default)]
+    pub zone_index: usize,
+    /// Wall / roof / floor classification.
+    pub kind: SurfaceKind,
+    /// Gross area of the surface in m². `None` means "derive it from
+    /// `vertices`".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub area: Option<f64>,
+    /// Compass orientation. `None` for surfaces described by `vertices`
+    /// only, or for tilted roofs that give `tilt_deg` instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orientation: Option<Orientation>,
+    /// Tilt from horizontal in degrees (0 = horizontal, 90 = vertical).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tilt_deg: Option<f64>,
+    /// Explicit vertex loop. When present the surface geometry is exact
+    /// rather than area + orientation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vertices: Option<Vec<SurfaceVertex>>,
+    /// Fenestration on this surface.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<WindowSpec>,
+}
+
+impl SurfaceSpec {
+    /// Issue #3989 — area of the `vertices` loop in m².
+    ///
+    /// Uses the polygon area vector (`½·Σ vᵢ × vᵢ₊₁`), which is exact
+    /// for a planar loop regardless of its orientation in space. Returns
+    /// `None` when there is no (or a degenerate) vertex loop.
+    pub fn polygon_area(&self) -> Option<f64> {
+        let verts = self.vertices.as_ref()?;
+        if verts.len() < 3 {
+            return None;
+        }
+        let (mut ax, mut ay, mut az) = (0.0_f64, 0.0_f64, 0.0_f64);
+        for i in 0..verts.len() {
+            let a = verts[i];
+            let b = verts[(i + 1) % verts.len()];
+            ax += a.y * b.z - a.z * b.y;
+            ay += a.z * b.x - a.x * b.z;
+            az += a.x * b.y - a.y * b.x;
+        }
+        let magnitude = (ax * ax + ay * ay + az * az).sqrt();
+        if magnitude <= 0.0 {
+            None
+        } else {
+            Some(0.5 * magnitude)
+        }
+    }
+
+    /// Issue #3989 — the area the simulation should use: the explicit
+    /// `area` when given, otherwise the area derived from `vertices`.
+    pub fn effective_area(&self) -> Option<f64> {
+        self.area.or_else(|| self.polygon_area())
+    }
+
+    /// Issue #3989 — glazing area on this surface in m² (0 when the
+    /// surface carries no glazing).
+    pub fn window_area(&self) -> f64 {
+        match &self.window {
+            Some(w) => w.effective_area(self.effective_area().unwrap_or(0.0)),
+            None => 0.0,
+        }
+    }
+
+    /// Issue #3989 — the glazing fraction of this surface: the explicit
+    /// window-to-wall ratio when given, otherwise the ratio implied by
+    /// the glazing area and the surface area.
+    pub fn window_to_wall_ratio(&self) -> Option<f64> {
+        if let Some(w) = &self.window {
+            if let Some(wwr) = w.window_to_wall_ratio {
+                return Some(wwr);
+            }
+        }
+        let area = self.effective_area()?;
+        if area <= 0.0 {
+            return None;
+        }
+        Some(self.window_area() / area)
     }
 }
 
@@ -478,6 +762,20 @@ impl Default for ControlConfig {
 pub struct ControlSet {
     pub zone_control: ControlConfig,
     pub global_control: Option<ControlConfig>,
+    /// Issue #3989 — named HVAC system selection.
+    ///
+    /// Selects one of the engine's own HVAC system templates
+    /// ([`HVACSystemType`]: `Simple`, `VAV`, `CAV`, `HeatPump`, `Ideal`).
+    /// `None` (the default) keeps the historical behaviour: the zone
+    /// setpoints and the heating / cooling capacities in
+    /// [`ControlConfig`] drive the simulation, and no system template is
+    /// named.
+    ///
+    /// The variant names are the engine's own
+    /// ([`crate::sim::hvac::HVACSystemType`]) — the schema does not
+    /// introduce a parallel vocabulary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hvac_system: Option<HVACSystemType>,
 }
 
 impl Default for ControlSet {
@@ -485,6 +783,7 @@ impl Default for ControlSet {
         ControlSet {
             zone_control: ControlConfig::default(),
             global_control: None,
+            hvac_system: None,
         }
     }
 }
@@ -818,6 +1117,63 @@ impl std::fmt::Display for ValidationError {
     }
 }
 
+/// Issue #3989 — shared validation for a [`WindowSpec`].
+///
+/// `base` is the JSON path of the window object (e.g.
+/// `geometry.surfaces[0].window` or `constructions.wall.window`).
+/// `known_surface_ids` lists the surface ids the model defines; when it is
+/// empty the surface cross-reference check is skipped (aggregate
+/// construction windows have no host surface).
+fn validate_window_spec(
+    window: &WindowSpec,
+    base: &str,
+    known_surface_ids: &[&str],
+) -> Vec<ValidationError> {
+    let mut errors = Vec::new();
+    // A zero area is only acceptable when the area is derived from a
+    // window-to-wall ratio against the host surface.
+    if window.window_area <= 0.0 && window.window_to_wall_ratio.is_none() {
+        errors.push(ValidationError::new(
+            format!("{base}.window_area"),
+            format!("must be > 0, got {}", window.window_area),
+            "set window_area to the total window area in m², or remove the window object for no glazing",
+        ));
+    }
+    if window.window_u_value <= 0.0 {
+        errors.push(ValidationError::new(
+            format!("{base}.window_u_value"),
+            format!("must be > 0, got {}", window.window_u_value),
+            "set window_u_value to the glazing U-value in W/m²·K (typical: 1.0–3.0)",
+        ));
+    }
+    if !(0.0 < window.window_shgc && window.window_shgc <= 1.0) {
+        errors.push(ValidationError::new(
+            format!("{base}.window_shgc"),
+            format!("must be in (0, 1], got {}", window.window_shgc),
+            "set window_shgc to the solar heat gain coefficient as a fraction (typical: 0.2–0.8)",
+        ));
+    }
+    if let Some(wwr) = window.window_to_wall_ratio {
+        if !(0.0 < wwr && wwr <= 1.0) {
+            errors.push(ValidationError::new(
+                format!("{base}.window_to_wall_ratio"),
+                format!("must be in (0, 1], got {wwr}"),
+                "set window_to_wall_ratio to the glazing fraction of the host surface (e.g. 0.2 for 20 % WWR)",
+            ));
+        }
+    }
+    if let Some(id) = &window.surface {
+        if !known_surface_ids.is_empty() && !known_surface_ids.contains(&id.as_str()) {
+            errors.push(ValidationError::new(
+                format!("{base}.surface"),
+                format!("references unknown surface id {id:?}"),
+                "point the window at one of the geometry.surfaces ids",
+            ));
+        }
+    }
+    errors
+}
+
 impl SimulationSchemaV1 {
     /// Validate the schema, returning every actionable error found.
     ///
@@ -826,6 +1182,24 @@ impl SimulationSchemaV1 {
     /// when this is non-empty rather than simulating with clamped values.
     pub fn validate(&self) -> Vec<ValidationError> {
         let mut errors = Vec::new();
+
+        // --- Schema version (Issue #3989) ---
+        //
+        // The #3989 extension shipped additively inside V1, so a V1
+        // payload must still declare V1. `SchemaVersion::V2` is reserved
+        // for the next breaking revision and has no payload yet, so a
+        // document claiming it is rejected here rather than silently
+        // mislabelled.
+        if self.version != SchemaVersion::V1 {
+            errors.push(ValidationError::new(
+                "version",
+                format!(
+                    "must be \"V1\" for a V1 payload, got {:?}",
+                    self.version
+                ),
+                "set version to \"V1\" — the per-surface extension (Issue #3989) is additive inside V1",
+            ));
+        }
 
         // --- Geometry ---
         if self.geometry.zones.is_empty() {
@@ -867,6 +1241,82 @@ impl SimulationSchemaV1 {
             ));
         }
 
+        // --- Per-surface geometry (Issue #3989) ---
+        let mut seen_surface_ids: Vec<&str> = Vec::new();
+        let all_surface_ids: Vec<&str> = self
+            .geometry
+            .surfaces
+            .iter()
+            .map(|s| s.id.as_str())
+            .collect();
+        for (i, surface) in self.geometry.surfaces.iter().enumerate() {
+            let base = format!("geometry.surfaces[{i}]");
+            if surface.id.trim().is_empty() {
+                errors.push(ValidationError::new(
+                    format!("{base}.id"),
+                    "must not be empty".to_string(),
+                    "give the surface a unique id (e.g. \"south_wall\") so fenestration can reference it",
+                ));
+            } else if seen_surface_ids.contains(&surface.id.as_str()) {
+                errors.push(ValidationError::new(
+                    format!("{base}.id"),
+                    format!("duplicate surface id {:?}", surface.id),
+                    "surface ids must be unique — rename one of the surfaces",
+                ));
+            } else {
+                seen_surface_ids.push(surface.id.as_str());
+            }
+            if surface.zone_index >= self.geometry.zones.len() {
+                errors.push(ValidationError::new(
+                    format!("{base}.zone_index"),
+                    format!(
+                        "must be < {} (the number of zones), got {}",
+                        self.geometry.zones.len(),
+                        surface.zone_index
+                    ),
+                    "point the surface at an existing zone index",
+                ));
+            }
+            match surface.effective_area() {
+                None => errors.push(ValidationError::new(
+                    format!("{base}.area"),
+                    "must be > 0, or given as a vertex loop of at least 3 points".to_string(),
+                    "set area to the gross surface area in m², or add a vertices loop",
+                )),
+                Some(area) if area <= 0.0 => errors.push(ValidationError::new(
+                    format!("{base}.area"),
+                    format!("must be > 0, got {area}"),
+                    "set area to the gross surface area in m²",
+                )),
+                Some(_) => {}
+            }
+            if let Some(tilt) = surface.tilt_deg {
+                if !(0.0..=90.0).contains(&tilt) {
+                    errors.push(ValidationError::new(
+                        format!("{base}.tilt_deg"),
+                        format!("must be in [0, 90], got {tilt}"),
+                        "set tilt_deg to the tilt from horizontal in degrees (0 = horizontal, 90 = vertical)",
+                    ));
+                }
+            }
+            if let Some(vertices) = &surface.vertices {
+                if vertices.len() < 3 {
+                    errors.push(ValidationError::new(
+                        format!("{base}.vertices"),
+                        format!("must contain at least 3 points, got {}", vertices.len()),
+                        "give the surface a closed vertex loop of at least 3 points",
+                    ));
+                }
+            }
+            if let Some(window) = &surface.window {
+                errors.extend(validate_window_spec(
+                    window,
+                    &format!("{base}.window"),
+                    &all_surface_ids,
+                ));
+            }
+        }
+
         // --- Constructions ---
         for (label, sc) in [
             ("wall", &self.constructions.wall),
@@ -902,28 +1352,7 @@ impl SimulationSchemaV1 {
                 }
             }
             if let Some(w) = &sc.window {
-                let wbase = format!("{base}.window");
-                if w.window_area <= 0.0 {
-                    errors.push(ValidationError::new(
-                        format!("{wbase}.window_area"),
-                        format!("must be > 0, got {}", w.window_area),
-                        "set window_area to the total window area in m², or remove the window object for no glazing",
-                    ));
-                }
-                if w.window_u_value <= 0.0 {
-                    errors.push(ValidationError::new(
-                        format!("{wbase}.window_u_value"),
-                        format!("must be > 0, got {}", w.window_u_value),
-                        "set window_u_value to the glazing U-value in W/m²·K (typical: 1.0–3.0)",
-                    ));
-                }
-                if !(0.0 < w.window_shgc && w.window_shgc <= 1.0) {
-                    errors.push(ValidationError::new(
-                        format!("{wbase}.window_shgc"),
-                        format!("must be in (0, 1], got {}", w.window_shgc),
-                        "set window_shgc to the solar heat gain coefficient as a fraction (typical: 0.2–0.8)",
-                    ));
-                }
+                errors.extend(validate_window_spec(w, &format!("{base}.window"), &[]));
             }
         }
 
@@ -1248,6 +1677,144 @@ mod tests {
         let json = serde_json::to_string(&schema).unwrap();
         let deserialized: SimulationSchema = serde_json::from_str(&json).unwrap();
         assert_eq!(schema, deserialized);
+    }
+
+    // ===== Issue #3989 — per-surface geometry / fenestration / HVAC =====
+
+    #[test]
+    fn test_per_surface_schema_roundtrip_3989() {
+        let mut inner = SimulationSchemaV1::default();
+        inner.geometry.surfaces = vec![
+            SurfaceSpec {
+                id: "south_wall".to_string(),
+                zone_index: 0,
+                kind: SurfaceKind::Wall,
+                area: Some(21.6),
+                orientation: Some(Orientation::South),
+                tilt_deg: Some(90.0),
+                vertices: None,
+                window: Some(WindowSpec {
+                    window_area: 12.0,
+                    window_u_value: 3.0,
+                    window_shgc: 0.79,
+                    window_to_wall_ratio: None,
+                    surface: Some("south_wall".to_string()),
+                    orientation: Some(Orientation::South),
+                }),
+            },
+            SurfaceSpec {
+                id: "north_wall".to_string(),
+                zone_index: 0,
+                kind: SurfaceKind::Wall,
+                area: Some(21.6),
+                orientation: Some(Orientation::North),
+                tilt_deg: Some(90.0),
+                vertices: None,
+                window: Some(WindowSpec {
+                    window_area: 0.0,
+                    window_u_value: 3.0,
+                    window_shgc: 0.79,
+                    window_to_wall_ratio: Some(0.2),
+                    surface: Some("north_wall".to_string()),
+                    orientation: Some(Orientation::North),
+                }),
+            },
+        ];
+        inner.controls.hvac_system = Some(HVACSystemType::Ideal);
+
+        let schema = SimulationSchema::V1(inner);
+        let json = serde_json::to_string(&schema).unwrap();
+        let deserialized: SimulationSchema = serde_json::from_str(&json).unwrap();
+        assert_eq!(schema, deserialized);
+
+        let SimulationSchema::V1(roundtripped) = deserialized;
+        let south = roundtripped.geometry.surface("south_wall").unwrap();
+        assert_eq!(south.window_area(), 12.0);
+        let north = roundtripped.geometry.surface("north_wall").unwrap();
+        // North glazing is expressed as a WWR only: 0.2 x 21.6 m2 = 4.32 m2.
+        assert!((north.window_area() - 4.32).abs() < 1e-9);
+        assert_eq!(
+            roundtripped
+                .geometry
+                .surfaces_with_orientation(Orientation::South)
+                .count(),
+            1
+        );
+        assert_eq!(
+            roundtripped.controls.hvac_system,
+            Some(HVACSystemType::Ideal)
+        );
+        let surface_errors: Vec<_> = roundtripped
+            .validate()
+            .into_iter()
+            .filter(|e| e.field.contains("surfaces") || e.field == "version")
+            .collect();
+        assert!(
+            surface_errors.is_empty(),
+            "unexpected per-surface validation errors: {surface_errors:?}"
+        );
+    }
+
+    #[test]
+    fn test_pre3989_v1_shapes_still_deserialise() {
+        // Pre-#3989 aggregate shapes carry none of the new fields; the
+        // serde defaults must fill them with the old behaviour.
+        let geometry: Geometry = serde_json::from_str(
+            r#"{"zones":[{"name":"Zone 1","floor_area":48.0,"volume":129.6,"height":2.7}],"total_floor_area":48.0,"total_volume":129.6,"number_of_floors":1,"floor_height":2.7}"#,
+        )
+        .unwrap();
+        assert!(geometry.surfaces.is_empty());
+
+        let controls: ControlSet = serde_json::from_str(
+            r#"{"zone_control":{"heating_setpoint":20.0,"cooling_setpoint":24.0,"deadband_tolerance":0.5,"heating_capacity":100000.0,"cooling_capacity":100000.0},"global_control":null}"#,
+        )
+        .unwrap();
+        assert_eq!(controls.hvac_system, None);
+
+        let window: WindowSpec =
+            serde_json::from_str(r#"{"window_area":12.0,"window_u_value":1.5,"window_shgc":0.3}"#)
+                .unwrap();
+        assert_eq!(window.window_to_wall_ratio, None);
+        assert_eq!(window.surface, None);
+
+        // The checked-in pre-#3989 example document still loads whole.
+        let raw = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/examples/minimal.flux"
+        ))
+        .unwrap();
+        let schema: SimulationSchema = serde_json::from_str(&raw).unwrap();
+        let SimulationSchema::V1(inner) = schema;
+        assert!(inner.geometry.surfaces.is_empty());
+        assert_eq!(inner.controls.hvac_system, None);
+    }
+
+    #[test]
+    fn test_example_case600_per_surface_flux_loads_3989() {
+        let raw = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/examples/case600_per_surface.flux"
+        ))
+        .unwrap();
+        let schema: SimulationSchema = serde_json::from_str(&raw).unwrap();
+        let SimulationSchema::V1(inner) = schema;
+        assert_eq!(inner.geometry.surfaces.len(), 6);
+        let south = inner.geometry.surface("south_wall").unwrap();
+        assert_eq!(south.window_area(), 12.0);
+        // The south wall also carries a vertex loop: 8 m x 2.7 m = 21.6 m2.
+        assert!((south.polygon_area().unwrap() - 21.6).abs() < 1e-9);
+        let north = inner.geometry.surface("north_wall").unwrap();
+        assert!((north.window_area() - 4.32).abs() < 1e-9);
+        assert_eq!(inner.controls.hvac_system, Some(HVACSystemType::Ideal));
+        let surface_errors: Vec<_> = inner
+            .validate()
+            .into_iter()
+            .filter(|e| e.field.contains("surfaces") || e.field == "version")
+            .collect();
+        assert!(
+            surface_errors.is_empty(),
+            "example .flux has per-surface validation errors: {surface_errors:?}"
+        );
     }
 
     #[test]

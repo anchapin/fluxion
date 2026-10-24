@@ -927,6 +927,7 @@ impl OsmReader {
             total_volume,
             number_of_floors,
             floor_height,
+            surfaces: Vec::new(),
         })
     }
 
@@ -1033,6 +1034,7 @@ impl OsmReader {
         Ok(ControlSet {
             zone_control,
             global_control: None,
+            hvac_system: None,
         })
     }
 }

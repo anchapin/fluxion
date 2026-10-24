@@ -490,6 +490,7 @@ mod tests {
                 total_volume: 270.0,
                 number_of_floors: 1,
                 floor_height: 2.7,
+                surfaces: Vec::new(),
             },
             constructions: ConstructionSet::default(),
             schedules: crate::api::schema::ScheduleSet::default(),
@@ -853,6 +854,7 @@ mod tests {
                 ..ControlConfig::default()
             },
             global_control: None,
+            hvac_system: None,
         };
 
         let re_parsed = roundtrip_schema(&schema);
@@ -910,6 +912,7 @@ mod tests {
                 ..ControlConfig::default()
             },
             global_control: None,
+            hvac_system: None,
         };
 
         // Spot-check the exported OSM contains the per-zone OS:Thermostat
