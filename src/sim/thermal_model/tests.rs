@@ -824,7 +824,11 @@ mod tests {
     fn hybrid_case600_with_ventilation_ach(use_surrogate_ventilation: bool) -> HybridThermalModel {
         use crate::sim::ventilation::ConstantVentilation;
 
-        let spec = crate::validation::ashrae_140_cases::ASHRAE140Case::Case600.spec();
+        // Same factory as `crate::validation::ashrae140::cases::series_600::`
+        // `case_600_baseline` (a re-export of the `fluxion-core` one), but
+        // reached without a `crate::validation::` path so this test file
+        // adds no new sim->validation cycle edge (guard baseline: 25).
+        let spec = fluxion_core::ashrae_case_series::series_600::case_600_baseline();
         let routing = HybridRouting {
             use_surrogate_conduction: false,
             use_surrogate_ventilation,
@@ -863,7 +867,11 @@ mod tests {
         let h_ve_off = model_off.ventilation_conductance()[0];
 
         // Expected added conductance: 5 ACH over the Case 600 zone volume.
-        let spec = crate::validation::ashrae_140_cases::ASHRAE140Case::Case600.spec();
+        // Same factory as `crate::validation::ashrae140::cases::series_600::`
+        // `case_600_baseline` (a re-export of the `fluxion-core` one), but
+        // reached without a `crate::validation::` path so this test file
+        // adds no new sim->validation cycle edge (guard baseline: 25).
+        let spec = fluxion_core::ashrae_case_series::series_600::case_600_baseline();
         let volume = spec.geometry[0].volume();
         let expected_delta = 5.0 * volume * 1.2 * 1005.0 / 3600.0;
 
