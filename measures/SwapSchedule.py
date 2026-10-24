@@ -7,12 +7,35 @@ schedule-swap family of measures.
 
 What this measure does
 ----------------------
-1. Reads the model's current schedule profile (24 hourly heating / cooling
+1. Resolves the named schedule against the schedules the model exposes — a
+   name that does not exist is a **loud failure**
+   (:class:`ScheduleNotFoundError`), never a silent no-op.
+2. Reads the model's current schedule profile (24 hourly heating / cooling
    setpoint values).
-2. Builds the replacement profile from the supplied arguments.
-3. Swaps the two — the replacement profile becomes the model's schedule.
-4. Pushes the result back into the model through whichever setter the
+3. Builds the replacement profile from the supplied arguments.
+4. Swaps the two — the replacement profile becomes the model's schedule.
+5. Pushes the result back into the model through whichever setter the
    binding exposes.
+
+Named schedules
+---------------
+The native ``fluxion.Model`` binding exposes **no named-schedule
+accessor** — the model carries a single, implicit thermostat schedule and
+there is no schedule registry to look a name up in. The measure therefore
+resolves the name as follows:
+
+* If the model exposes a schedule registry (``model.schedule_names()`` or
+  ``model.schedules()``), the requested name must be one of the registered
+  names — otherwise the measure raises :class:`ScheduleNotFoundError`.
+* Otherwise the only schedule that can be swapped is the implicit
+  thermostat schedule, whose canonical name is
+  :data:`IMPLICIT_SCHEDULE_NAME` (``"Thermostat"``). Any other name raises
+  :class:`ScheduleNotFoundError` with an explicit explanation, because the
+  binding cannot verify it.
+
+This is what keeps the measure honest: a parametric run that asks to swap a
+schedule the model does not have fails loudly instead of reporting a swap
+that never happened.
 
 Profiles
 --------
@@ -54,6 +77,11 @@ The schedule is pushed back through the first setter the binding exposes:
   logged but the current ``fluxion.Model`` binding exposes neither setter, so
   it does not round-trip into the serialized model. This mirrors the
   documented advisory fields of ``ReplaceHVACWithVAV``.
+
+Note that the binding exposes a *single* schedule slot per model, so even
+when the model carries a schedule registry the replacement profile is
+written to that one slot — the named lookup validates the request, it does
+not select among several writable schedules.
 
 Run with::
 
@@ -98,8 +126,24 @@ PROFILES: tuple[str, ...] = (PROFILE_CONSTANT, PROFILE_SETBACK, PROFILE_OPERATIN
 HEATING_OFF = -100.0
 COOLING_OFF = 100.0
 
+#: Name of the *implicit* thermostat schedule carried by a model that
+#: exposes no schedule registry. The current ``fluxion.Model`` binding has
+#: no named-schedule accessor at all — the model carries exactly one
+#: thermostat schedule, and this is its canonical name.
+IMPLICIT_SCHEDULE_NAME = "Thermostat"
+
 #: Number of hours in a daily schedule profile.
 HOURS_PER_DAY = 24
+
+
+class ScheduleNotFoundError(ValueError):
+    """Raised when the schedule to be swapped does not exist in the model.
+
+    A schedule swap that silently does nothing is worse than a loud
+    failure: a parametric run would report the swap as applied while the
+    model kept its original schedule, and the resulting energy numbers
+    would silently belong to the wrong configuration.
+    """
 
 
 def fill_range(
@@ -255,6 +299,88 @@ def current_profile(model: Any) -> tuple[list[float], list[float]]:
     return [0.0] * HOURS_PER_DAY, [0.0] * HOURS_PER_DAY
 
 
+def schedule_names(model: Any) -> list[str]:
+    """Return the names of the schedules the model exposes.
+
+    Two sources are probed, in order:
+
+    1. ``model.schedule_names()`` — a callable returning an iterable of
+       schedule names.
+    2. ``model.schedules()`` — a callable returning schedule objects that
+       carry a ``name`` attribute.
+
+    An **empty** list means the model exposes no schedule registry: it
+    carries a single implicit thermostat schedule (the current
+    ``fluxion.Model`` binding has no named-schedule accessor at all).
+
+    Pure function — unit-testable without the native bindings.
+    """
+    lister = getattr(model, "schedule_names", None)
+    if callable(lister):
+        try:
+            return [str(name) for name in lister()]
+        except (AttributeError, TypeError, NotImplementedError):
+            # The accessor exists but is not usable on this model — fall
+            # through to the next source (and, failing that, to the
+            # implicit thermostat schedule).
+            pass
+
+    schedules = getattr(model, "schedules", None)
+    if callable(schedules):
+        try:
+            found = list(schedules())
+        except (AttributeError, TypeError, NotImplementedError):
+            found = []
+        names: list[str] = []
+        for schedule in found:
+            name = getattr(schedule, "name", None)
+            if name is not None:
+                names.append(str(name))
+        return names
+
+    return []
+
+
+def resolve_schedule_name(model: Any, schedule_name: str) -> str:
+    """Resolve ``schedule_name`` against the schedules the model exposes.
+
+    Returns the resolved schedule name. Raises
+    :class:`ScheduleNotFoundError` when the named schedule does not
+    exist — the measure must never turn a missing schedule into a silent
+    no-op.
+
+    Two cases:
+
+    * The model exposes a schedule registry: the requested name must be one
+      of the registered names.
+    * The model exposes no registry (today's ``fluxion.Model`` binding):
+      the only schedule that can be swapped is the implicit thermostat
+      schedule :data:`IMPLICIT_SCHEDULE_NAME`.
+
+    Pure function — unit-testable without the native bindings.
+    """
+    requested = str(schedule_name)
+    names = schedule_names(model)
+
+    if names:
+        if requested in names:
+            return requested
+        raise ScheduleNotFoundError(
+            f"Schedule {requested!r} not found in the model; "
+            f"available schedules: {sorted(names)}"
+        )
+
+    if requested == IMPLICIT_SCHEDULE_NAME:
+        return requested
+
+    raise ScheduleNotFoundError(
+        f"Schedule {requested!r} not found: the model exposes no schedule "
+        f"registry (the native binding has no named-schedule accessor), so "
+        f"the only schedule that can be swapped is the implicit thermostat "
+        f"schedule {IMPLICIT_SCHEDULE_NAME!r}."
+    )
+
+
 def build_native_schedule(
     profile: str,
     heating_setpoint: float,
@@ -374,9 +500,10 @@ class SwapSchedule(FluxionMeasure):
     Parameters
     ----------
     schedule_name : str
-        Name of the schedule being replaced (e.g. ``"Thermostat"``). Recorded
-        in the measure log so a parametric run can be traced back to the
-        schedule it replaced. Default ``"Thermostat"``.
+        Name of the schedule being replaced (e.g. ``"Thermostat"``). The
+        name is resolved against the schedules the model exposes; a name
+        that does not exist raises ``ScheduleNotFoundError`` instead of
+        silently doing nothing. Default ``"Thermostat"``.
     profile : str
         Profile kind: ``"constant"``, ``"setback"`` or ``"operating_hours"``.
         Default ``"constant"``.
@@ -490,7 +617,10 @@ class SwapSchedule(FluxionMeasure):
         ]
 
     def apply(self, model: Any, arguments: dict[str, Any]) -> None:
-        schedule_name = str(arguments.get("schedule_name", "Thermostat"))
+        schedule_name = str(arguments.get("schedule_name", IMPLICIT_SCHEDULE_NAME))
+        # Loud failure: refuse to run when the named schedule is not in the
+        # model — a silent no-op would poison the parametric sweep.
+        resolve_schedule_name(model, schedule_name)
         profile = str(arguments.get("profile", PROFILE_CONSTANT))
         heating_setpoint = float(arguments.get("heating_setpoint", 20.0))
         cooling_setpoint = float(arguments.get("cooling_setpoint", 24.0))

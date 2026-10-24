@@ -50,12 +50,31 @@ MEASURES_DIR = REPO_ROOT / "measures"
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-fluxion_spec = importlib.util.find_spec("fluxion")
-HAS_FLUXION = fluxion_spec is not None
+def _native_bindings_available() -> bool:
+    """True when the compiled ``fluxion`` extension is importable.
+
+    The in-tree ``fluxion`` *wrapper* imports cleanly even when the
+    compiled extension is missing (Issue #2852), so the mere presence of
+    the wrapper module must not be mistaken for usable bindings — the
+    integration tests below would fail with ``ModuleNotFoundError: No
+    module named 'fluxion.fluxion'`` instead of skipping. ``
+    fluxion._NATIVE_IMPORT_ERROR`` is the documented sentinel: ``None``
+    when the extension loaded successfully (see ``tests/conftest.py``).
+    """
+    if importlib.util.find_spec("fluxion") is None:
+        return False
+    try:
+        import fluxion
+    except ImportError:
+        return False
+    return getattr(fluxion, "_NATIVE_IMPORT_ERROR", None) is None
+
+
+HAS_FLUXION = _native_bindings_available()
 
 requires_fluxion = pytest.mark.skipif(
     not HAS_FLUXION,
-    reason="fluxion Python bindings not available (run `maturin develop`)",
+    reason="fluxion native bindings not available (run `maturin develop`)",
 )
 
 
