@@ -891,6 +891,11 @@ impl ThermalModelTrait for HybridThermalModel {
                     let zone_temps: &[f64] = setpoints.temperatures.as_ref();
 
                     let h_ve = conduction.h_ve.as_mut_slice();
+                    // Round 95 (#3985/#4578 follow-up): publish the consulted
+                    // ACH per zone so the gauge dispatcher consumes the SAME
+                    // scheduled-ventilation signal (the scratch slot is the
+                    // hand-off; no re-derivation of the schedule call).
+                    let scheduled_ach = conduction.scheduled_ventilation_ach.as_mut_slice();
                     for (zone_idx, slot) in h_ve.iter_mut().enumerate() {
                         let volume = zone_volumes.get(zone_idx).copied().unwrap_or(0.0);
                         let zone_temp = zone_temps.get(zone_idx).copied().unwrap_or(20.0);
@@ -905,6 +910,9 @@ impl ThermalModelTrait for HybridThermalModel {
                         );
                         let conductance = ach_to_conductance(ach, volume, rho, cp).to_value();
                         *slot += conductance;
+                        if let Some(s) = scheduled_ach.get_mut(zone_idx) {
+                            *s = ach;
+                        }
                     }
 
                     // Keep the derived conductances in sync with the new

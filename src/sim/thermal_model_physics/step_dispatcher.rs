@@ -249,6 +249,12 @@ struct GaugeInputs {
     h_ext: f64,
     // Issue #3904: Ventilation ACH from night_ventilation schedule
     ventilation_ach: f64,
+    // Round 95 (#3985/#4578 follow-up): per-zone scheduled-ventilation ACH
+    // from the hybrid Branch 4 scratch slot (zeros when the surrogate-
+    // ventilation flag is off). Added to `ventilation_ach` at the gauge
+    // consumption sites so the gauge build responds to the scheduled slot
+    // exactly as the default path does via `h_ve`.
+    scheduled_ach: Vec<f64>,
     // PR-b: per-zone spec infiltration ACH (setpoints.infiltration_rate)
     infiltration_ach: Vec<f64>,
     // Issue #3918: Threading for solar lag correction (per-zone values)
@@ -388,6 +394,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             solar_gains,
             h_ext,
             ventilation_ach,
+            scheduled_ach: self.0.conduction.scheduled_ventilation_ach.clone(),
             infiltration_ach: self.0.setpoints.infiltration_rate.as_ref().to_vec(),
             h_tr_3,
             cm,
@@ -525,7 +532,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 0.0,
                 t_sky,
                 h_rad_sky,
-                inputs.ventilation_ach,
+                // Round 95 (#3985/#4578 follow-up): scheduled ventilation
+                // reaches the gauge air node (zone 0 on the single-zone arm).
+                inputs.ventilation_ach + inputs.scheduled_ach.first().copied().unwrap_or(0.0),
                 inputs.infiltration_ach.first().copied().unwrap_or(0.0),
                 // Issue #3918: Thread lag correction parameters (single-zone: use first element)
                 inputs.h_tr_3.first().copied().unwrap_or(0.0),
@@ -538,7 +547,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let t_air_free_final = gauge.T_air().to_value();
             // PR-c: self-consistent §C.3 coefficient from the gauge network.
             let h_coeff = gauge.air_node_conductance_WK(
-                inputs.ventilation_ach,
+                inputs.ventilation_ach + inputs.scheduled_ach.first().copied().unwrap_or(0.0),
                 inputs.infiltration_ach.first().copied().unwrap_or(0.0),
             );
             let (energy_out, t_air) = if r.is_err() || !is_conditioned {
@@ -783,7 +792,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                 .get(zone_idx)
                                 .copied()
                                 .unwrap_or(0.0),
-                            ventilation_ach: inputs.ventilation_ach, // Issue #3904
+                            // Round 95 (#3985/#4578 follow-up): per-zone
+                            // scheduled ACH added to the night-vent ACH.
+                            ventilation_ach: inputs.ventilation_ach
+                                + inputs.scheduled_ach.get(zone_idx).copied().unwrap_or(0.0), // Issue #3904
                             inter_zone_heat: 0.0,
                             t_sky,
                             h_rad_sky,
@@ -913,7 +925,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         .unwrap_or(inputs.default_cooling_sp);
                     let t_free = zone.T_air().to_value();
                     let h_coeff = zone.air_node_conductance_WK(
-                        inputs.ventilation_ach,
+                        inputs.ventilation_ach
+                            + inputs.scheduled_ach.get(zone_idx).copied().unwrap_or(0.0),
                         inputs
                             .infiltration_ach
                             .get(zone_idx)
@@ -1191,6 +1204,39 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 mod tests {
     use super::*;
     use crate::api::error::FluxionError;
+
+    /// Round 95 (#3985/#4578 follow-up) — the scheduled-ACH hand-off, pin
+    /// at the wiring level: `collect_gauge_inputs` must surface the hybrid
+    /// Branch 4 scratch slot verbatim, or the gauge build's flag ON/OFF are
+    /// bit-identical (the nightly β-soak red, 2026-10-24, run 40084399038).
+    /// The write side of the hand-off is pinned end-to-end by
+    /// `hybrid_ventilation_flag_plumbs_scheduled_ach_into_h_ve`'s EUI
+    /// inequality; this pins the read side directly.
+    #[cfg(feature = "gauge-solver")]
+    #[test]
+    fn test_r95_scheduled_ach_scratch_reaches_gauge_inputs() {
+        let mut model = ThermalModel::<VectorField>::new(2);
+        model.0.conduction.scheduled_ventilation_ach = vec![5.0, 3.25];
+
+        let inputs = model.collect_gauge_inputs(0);
+        assert_eq!(inputs.scheduled_ach.len(), 2);
+        assert!(
+            (inputs.scheduled_ach[0] - 5.0).abs() < 1e-12
+                && (inputs.scheduled_ach[1] - 3.25).abs() < 1e-12,
+            "gauge inputs must surface the Branch 4 scratch verbatim: {:?}",
+            inputs.scheduled_ach
+        );
+
+        // The default zeros must survive collection untouched so the
+        // flag-OFF route stays bit-identical.
+        let mut clean = ThermalModel::<VectorField>::new(2);
+        let inputs_clean = clean.collect_gauge_inputs(0);
+        assert!(
+            inputs_clean.scheduled_ach.iter().all(|&a| a == 0.0),
+            "an untouched scratch must collect as zeros: {:?}",
+            inputs_clean.scheduled_ach
+        );
+    }
 
     /// Issue #3638 acceptance criterion: feeding `dt = 0.0` to the engine
     /// returns a typed `FluxionError::Validation` instead of panicking.
