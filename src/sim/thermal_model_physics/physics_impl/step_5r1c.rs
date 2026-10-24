@@ -3719,7 +3719,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
             if ff_audit {
                 eprintln!(
-                    "FFAUDIT_Z {} {} t_out={:.6} t_sky={:.6} t_g={:.6} t_sol_air={:.6} h_tr_em={:.6} t_air={:.6} t_m_new={:.6} tm_start={:.6} cm={:.6} c_air={:.6} g_coeff={:.6} h_air_mass={:.6} h_ext={:.6} h_ve_night={:.6} nv={} h_vent_mass={:.6} phi_m={:.6} phi_st={:.6} lag={:.6} solar_gains={:.6} loads={:.6} term_rest_1={:.6}",
+                    "FFAUDIT_Z {} {} t_out={:.6} t_sky={:.6} t_g={:.6} t_sol_air={:.6} h_tr_em={:.6} t_air={:.6} t_m_new={:.6} tm_start={:.6} cm={:.6} c_air={:.6} g_coeff={:.6} h_air_mass={:.6} h_ext={:.6} h_ve_night={:.6} nv={} h_vent_mass={:.6} phi_m={:.6} phi_st={:.6} lag={:.6} solar_gains={:.6} loads={:.6} term_rest_1={:.6} h_tr_is={:.6} s_share={:.6}",
                     timestep, i,
                     outdoor_temp, sky_temp, t_g,
                     scratch.t_sol_air_zone.as_ref().get(i).copied().unwrap_or(f64::NAN),
@@ -3744,6 +3744,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     self.0.solar.solar_gains.as_ref().get(i).copied().unwrap_or(f64::NAN),
                     self.0.setpoints.loads.as_ref().get(i).copied().unwrap_or(f64::NAN),
                     self.0.conduction.derived_term_rest_1.as_ref().get(i).copied().unwrap_or(f64::NAN),
+                    // [R93 AUDIT] h_tr_is (the lag-site coupling actually
+                    // consumed by the air-share term) + s_share (the r88
+                    // mass share) let the harness compute the exact
+                    // air-side phi_st excess (1 − s_share)·h_tr_is·phi_st.
+                    h_tr_is_for_ti_free.as_ref().get(i).copied().unwrap_or(f64::NAN),
+                    r88_share_zone.get(i).copied().unwrap_or(f64::NAN),
                 );
             }
         }
