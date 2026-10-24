@@ -374,7 +374,7 @@ PROFILE_DAYS = (("0201", "Feb 1"), ("0504", "May 4"), ("0714", "Jul 14"))
 
 NOTES: list[str] = [
     "Case states are conformant / incomplete / not implemented. No aggregate "
-    "score, grade or pass/fail verdict is reported anywhere in these "
+    "grade or pass/fail verdict is reported anywhere in these "
     "artifacts: the standard defines no such quantity.",
     "Requirement cell states are report (required, produced), partial "
     "(required, produced for a subset), missing (required, not produced) and "
@@ -1157,7 +1157,7 @@ def render_conformance_markdown(cases: list[CaseData], annex: dict) -> str:
     )
     lines.append("")
     lines.append(
-        "**No aggregate score, grade or pass/fail verdict appears in this "
+        "**No aggregate grade or pass/fail verdict appears in this "
         "report.** The standard defines no such quantity; each case is "
         "classified individually as conformant, incomplete or not "
         "implemented."

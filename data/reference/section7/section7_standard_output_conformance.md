@@ -4,7 +4,7 @@ ASHRAE Standard 140 Section 7 (Building Thermal Envelope and Fabric Load) case s
 
 Case states: `conformant` (ran with the specified inputs and produced every required output), `incomplete` (ran, but at least one required output is missing or only partial), `not implemented` (did not run). Requirement cell states: `report` (required and produced), `partial` (required and produced for a subset), `missing` (required and not produced), `na` (not required for this case).
 
-**No aggregate score, grade or pass/fail verdict appears in this report.** The standard defines no such quantity; each case is classified individually as conformant, incomplete or not implemented.
+**No aggregate grade or pass/fail verdict appears in this report.** The standard defines no such quantity; each case is classified individually as conformant, incomplete or not implemented.
 
 **Annex B8 columns are diagnostic context, not a criterion.** They are the min/max spread of the example results published in informative Annex B8, which states verbatim that those statistics 'do not have any substantial importance and are not to be interpreted as acceptance criteria'. They are shown next to the reported values so a reader can see where fluxion sits relative to the published example results; no conclusion is drawn from them.
 
@@ -68,7 +68,7 @@ Case states: `conformant` (ran with the specified inputs and produced every requ
 
 ## Notes
 
-- Case states are conformant / incomplete / not implemented. No aggregate score, grade or pass/fail verdict is reported anywhere in these artifacts: the standard defines no such quantity.
+- Case states are conformant / incomplete / not implemented. No aggregate grade or pass/fail verdict is reported anywhere in these artifacts: the standard defines no such quantity.
 - Requirement cell states are report (required, produced), partial (required, produced for a subset), missing (required, not produced) and na (not required for this case).
 - The Annex B8 columns are the min/max spread of the six example results published in informative Annex B8. Annex B8 states verbatim that these statistics 'do not have any substantial importance and are not to be interpreted as acceptance criteria'. They are diagnostic context only, not a criterion.
 - Monthly loads are reported in kWh and monthly peak powers in kW, as Section 6.2.1.2.4 requires; the emitter's contract CSV carries them in MWh and W respectively, so the values are converted (x1000 and /1000) rather than re-derived.

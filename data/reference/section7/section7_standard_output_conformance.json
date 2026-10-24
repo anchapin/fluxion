@@ -44,7 +44,7 @@
     }
   ],
   "notes": [
-    "Case states are conformant / incomplete / not implemented. No aggregate score, grade or pass/fail verdict is reported anywhere in these artifacts: the standard defines no such quantity.",
+    "Case states are conformant / incomplete / not implemented. No aggregate grade or pass/fail verdict is reported anywhere in these artifacts: the standard defines no such quantity.",
     "Requirement cell states are report (required, produced), partial (required, produced for a subset), missing (required, not produced) and na (not required for this case).",
     "The Annex B8 columns are the min/max spread of the six example results published in informative Annex B8. Annex B8 states verbatim that these statistics 'do not have any substantial importance and are not to be interpreted as acceptance criteria'. They are diagnostic context only, not a criterion.",
     "Monthly loads are reported in kWh and monthly peak powers in kW, as Section 6.2.1.2.4 requires; the emitter's contract CSV carries them in MWh and W respectively, so the values are converted (x1000 and /1000) rather than re-derived.",

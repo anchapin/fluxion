@@ -140,8 +140,15 @@ def test_flat_csv_columns_are_one_per_reported_value(gen, repo_data):
     csv_text, _md, _json = _generate(gen, repo_data)
     header = next(csv.reader(csv_text.splitlines()))
     assert header[:3] == ["case_id", "case_title", "case_status"]
-    # Every requirement id appears in the column names.
+    # Every requirement id appears in the column names, except 6.2.1.1.5:
+    # it is a sign convention over the 6.2.1.1.1-6.2.1.1.4 loads ("entered
+    # as positive (>= 0) values"), not a reported value, so it has no
+    # column of its own; its conformance cell is derived from the signs
+    # of those columns (see test_requirement_cells_are_four_state and the
+    # conformance artifact consistency test).
     for requirement in gen.REQUIREMENT_IDS:
+        if requirement == "6.2.1.1.5":
+            continue
         assert any(column.startswith(requirement) for column in header), requirement
     # 12 monthly columns per monthly series, 90 temperature bins.
     monthly = [c for c in header if c.startswith("6.2.1.2.4_monthly_heating_kwh_")]
