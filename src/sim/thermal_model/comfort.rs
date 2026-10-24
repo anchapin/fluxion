@@ -57,7 +57,13 @@ pub(crate) fn compute_pmv_ppd_and_adaptive(
     let c_res = 0.0014 * m * (34.0 - ta);
     let e_res = 0.0000173 * m * (p_sat - p_a);
 
-    let e_max = 0.408 * (42.5 - p_a).max(0.0);
+    // Skin-diffusion evaporative capacity (round 96 units fix; ISO 7730:2005
+    // Annex D HL1): `3.05e-3·(5733 − 6.99·M − p_a)` W/m² with M in W/m² and
+    // p_a in Pa. Pre-fix this was `0.408·(42.5 − p_a)` — the mmHg-form
+    // coefficient/skin-saturation constant (NIST SP 491: E_dif =
+    // 0.408·[P_s − RH·P_a] W/m², mmHg; 42.5 mmHg = 5666 Pa) paired with
+    // p_a in Pa, which zeroed the term at any normal humidity.
+    let e_max = (3.05e-3 * (5733.0 - 6.99 * m - p_a)).max(0.0);
     let d1 = m - c_res - e_res - c - r;
     let w_ratio = if d1 > 0.0 && e_max > 0.0 {
         (0.06 + 0.94 * d1 / e_max).min(1.0)
@@ -101,14 +107,23 @@ mod tests {
 
     /// Round 95 (coverage remedy): comfort.rs was 0% covered (0/12 branch
     /// targets) while sitting in the conduction_zone bucket. Reference
-    /// values below were computed independently in Python by replicating
-    /// the exact Fanger operation order (round-95 worklog); ±1e-9 is
-    /// cross-language libm ulp headroom, not a physics tolerance.
+    /// values below are computed independently in Python by replicating
+    /// the exact Fanger operation order (round-96 worklog, r96_comfort_refs.py);
+    /// ±1e-9 is cross-language libm ulp headroom, not a physics tolerance.
     ///
-    /// Units note (recorded, unchanged): the 42.5 skin-diffusion constant
-    /// (mmHg in Fanger's formulation) meets p_a in Pa, so the evaporative
-    /// term is zero at any normal humidity and neutral PMV sits near
-    /// 28 °C at met 1.0 / clo 0.5 (textbook neutral is ~24-26 °C).
+    /// Units fix (round 96, the round-95 flagged decision): the pre-fix
+    /// skin-diffusion capacity `0.408·(42.5 − p_a)` paired the mmHg-form
+    /// coefficient/skin-saturation constant (NIST SP 491: E_dif =
+    /// 0.408·[P_s − RH·P_a] W/m², pressures in mmHg; 42.5 mmHg = 5666 Pa)
+    /// with p_a expressed in Pa, so the term was zero at any normal
+    /// humidity and neutral PMV sat at 28.018 °C (pre-fix pin). The
+    /// corrected capacity is ISO 7730:2005 Annex D HL1,
+    /// `3.05e-3·(5733 − 6.99·M − p_a)` W/m² with M in W/m² and p_a in Pa,
+    /// which engages at normal humidity. Known residual (recorded, not
+    /// fixed here): the dry c/r terms use t_sk against ta/tr instead of
+    /// ISO's t_cl form (the fluxion-behavior copy carries that #3165
+    /// correction), so neutral sits at ~29.0 °C rather than the textbook
+    /// ~25-26 °C window even with the evaporative term corrected.
 
     const TOL: f64 = 1e-9;
 
@@ -123,7 +138,13 @@ mod tests {
     fn fanger_neutral_point_yields_pmv_zero_and_ppd_five() {
         // |l| <= 0.1 at the load-balance temperature -> pmv_raw takes the
         // zero arm, pmv clamps to 0.0, PPD = 100 - 95·exp(0) = 5.0 exactly.
-        let m = compute_pmv_ppd_and_adaptive(28.018371323, 0.5, 0.1, 1.0, 0.5);
+        // Round 96: neutral moved 28.018371323 -> 29.033729242 °C when the
+        // evaporative capacity was corrected to the ISO 7730 Pa form — at
+        // normal humidity the term now removes ~10 W/m² at balance, so the
+        // neutral point shifts warmer (see the units-fix note above; the
+        // residual offset vs the textbook window is the dry c/r form,
+        // recorded, not fixed here).
+        let m = compute_pmv_ppd_and_adaptive(29.033729242, 0.5, 0.1, 1.0, 0.5);
         assert_close(m.pmv, 0.0, "neutral PMV");
         assert_close(m.ppd, 5.0, "neutral PPD (Fanger lower bound)");
         assert!(
@@ -146,18 +167,18 @@ mod tests {
         // h_c = 2.38·|ta - 35|^0.25.
         let cool = compute_pmv_ppd_and_adaptive(27.0, 0.5, 0.1, 1.0, 0.5);
         let warm = compute_pmv_ppd_and_adaptive(29.0, 0.5, 0.1, 1.0, 0.5);
-        assert_close(cool.pmv, -0.677805194, "still-air 27 C PMV");
-        assert_close(cool.ppd, 14.655821840, "still-air 27 C PPD");
-        assert_close(warm.pmv, 0.640079909, "still-air 29 C PMV");
-        assert_close(warm.ppd, 13.601133881, "still-air 29 C PPD");
+        assert_close(cool.pmv, -0.720193388, "still-air 27 C PMV");
+        assert_close(cool.ppd, 15.914313680, "still-air 27 C PPD");
+        assert_close(warm.pmv, 0.0, "still-air 29 C PMV (zero arm)");
+        assert_close(warm.ppd, 5.0, "still-air 29 C PPD (zero arm)");
         assert!(
             cool.pmv < warm.pmv,
             "PMV must rise with operative temperature"
         );
         assert!(cool.ppd >= 5.0 && warm.ppd >= 5.0, "PPD >= 5% always");
         let mid = compute_pmv_ppd_and_adaptive(26.0, 0.5, 0.1, 1.0, 0.5);
-        assert_close(mid.pmv, -1.355625930, "still-air 26 C PMV");
-        assert_close(mid.ppd, 43.162340557, "still-air 26 C PPD");
+        assert_close(mid.pmv, -1.399232952, "still-air 26 C PMV");
+        assert_close(mid.ppd, 45.470929237, "still-air 26 C PPD");
     }
 
     #[test]
@@ -178,18 +199,18 @@ mod tests {
 
     #[test]
     fn fanger_dry_air_engages_the_evaporative_term() {
-        // p_a = rh·p_sat < 42.5 Pa only at extreme dryness (see the units
-        // note): both `d1 > 0` and `e_max > 0` hold, so the w_ratio branch
-        // takes its TRUE arm and evaporation pulls PMV down.
+        // Round 96: with the ISO 7730 Pa-form capacity the term engages at
+        // BOTH humidities at 30 C (e_max 16.24 vs 9.78 W/m²), so the
+        // contract is the humidity monotonicity: drier air carries more
+        // evaporative capacity, the same load drives a larger loss, and
+        // PMV falls. (Pre-fix, the term was zero at 50 % rh entirely.)
         let dry = compute_pmv_ppd_and_adaptive(30.0, 0.0005, 0.1, 1.0, 0.5);
-        assert_close(dry.pmv, 0.061025518, "dry-air 30 C PMV");
-        // At normal humidity the same condition short-circuits on
-        // `e_max > 0` (p_a >> 42.5 Pa) and stays warmer.
+        assert_close(dry.pmv, 0.076398820, "dry-air 30 C PMV");
         let humid = compute_pmv_ppd_and_adaptive(30.0, 0.5, 0.1, 1.0, 0.5);
-        assert_close(humid.pmv, 1.276935183, "humid 30 C PMV (else arm)");
+        assert_close(humid.pmv, 0.637984379, "humid 30 C PMV");
         assert!(
             dry.pmv < humid.pmv,
-            "the evaporative term must reduce PMV when it engages"
+            "the evaporative term must reduce PMV as air dries"
         );
     }
 
@@ -197,7 +218,10 @@ mod tests {
     fn fanger_extremes_clamp_pmv_and_break_adaptive_comfort() {
         // Both clamp arms: pmv_raw beyond ±4 saturates, PPD is symmetric
         // in pmv² so both extremes share the same PPD, and the adaptive
-        // band must reject both.
+        // band must reject both. The hot case also pins the e_max clamp:
+        // at 50 C / 90 % rh p_a (11.1 kPa) exceeds the ISO capacity's
+        // zero-crossing, the term saturates to 0, and the wettedness
+        // regulator takes its 0.06 floor arm (same value pre-fix).
         let hot = compute_pmv_ppd_and_adaptive(50.0, 0.9, 0.1, 2.0, 1.0);
         assert_close(hot.pmv, 4.0, "hot PMV (upper clamp arm)");
         assert_close(hot.ppd, 99.999455805, "hot PPD at clamp");
