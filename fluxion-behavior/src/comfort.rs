@@ -128,7 +128,12 @@ impl PmvComfort {
         let c_res = 0.0014 * m * (34.0 - ta);
         let e_res = 0.0000173 * m * (p_sat - p_a);
 
-        let e_max = 0.408 * (42.5 - p_a).max(0.0);
+        // Skin-diffusion evaporative capacity (round 96 units fix; ISO
+        // 7730:2005 Annex D HL1): `3.05e-3·(5733 − 6.99·M − p_a)` W/m² with
+        // M in W/m² and p_a in Pa (work w = 0 here, so M = MW). Pre-fix this
+        // was `0.408·(42.5 − p_a)` — the mmHg-form constant paired with
+        // p_a in Pa, zero at any normal humidity.
+        let e_max = (3.05e-3 * (5733.0 - 6.99 * m - p_a)).max(0.0);
         let d1 = m - w - c_res - e_res - c - r;
         let w_ratio = if d1 > 0.0 && e_max > 0.0 {
             (0.06 + 0.94 * d1 / e_max).min(1.0)
@@ -419,6 +424,39 @@ mod tests {
     }
 
     #[test]
+    fn evaporative_capacity_uses_iso7730_pa_form_units() {
+        // Round 96 units fix (same defect as src/sim/thermal_model/comfort.rs):
+        // the skin-diffusion capacity was `0.408·(42.5 − p_a)` — a mmHg-form
+        // constant (NIST SP 491: E_dif = 0.408·[P_s − RH·P_a] W/m², mmHg;
+        // 42.5 mmHg = 5666 Pa) — fed p_a in Pa, so the term was zero at any
+        // normal humidity. Corrected to ISO 7730:2005 Annex D HL1,
+        // `3.05e-3·(5733 − 6.99·M − p_a)` W/m², p_a in Pa. Reference values
+        // computed independently in Python replicating this function's exact
+        // operation order (round-96 worklog); ±1e-9 is cross-language libm
+        // ulp headroom, not a physics tolerance.
+        let pmv_comfort = PmvComfort::new();
+        let dry = pmv_comfort.calculate_pmv(30.0, 30.0, 0.0005, 0.1, 1.0, 0.5);
+        let humid = pmv_comfort.calculate_pmv(30.0, 30.0, 0.5, 0.1, 1.0, 0.5);
+        let very_humid = pmv_comfort.calculate_pmv(30.0, 30.0, 0.9, 0.1, 1.0, 0.5);
+        assert!(
+            (dry - 1.475899979).abs() < 1e-9,
+            "dry-air 30 C PMV: got {dry}"
+        );
+        assert!(
+            (humid - 2.037485538).abs() < 1e-9,
+            "50 % rh 30 C PMV: got {humid}"
+        );
+        assert!(
+            (very_humid - 2.487203704).abs() < 1e-9,
+            "90 % rh 30 C PMV: got {very_humid}"
+        );
+        assert!(
+            dry < humid && humid < very_humid,
+            "PMV must rise with humidity once the evaporative term engages"
+        );
+    }
+
+    #[test]
     fn test_trigger_type_cold() {
         let metrics = ComfortMetrics {
             pmv: -1.5,
@@ -536,11 +574,15 @@ mod tests {
         let result = pmv_comfort
             .calculate_pmv_ppd(ta, tr, vel, rh, met, clo)
             .unwrap();
-        // With corrected t_cl in heat transfer (issue #3165): PMV ≈ 0.58 (slightly warm)
-        // Old buggy code using ta/tr instead of t_cl gave wrong result
+        // Round 96 units fix: with the ISO 7730 Pa-form evaporative
+        // capacity engaged at 50 % rh, PMV at 23 °C moves +0.58 -> -0.0120;
+        // this function's neutral point sits at ~23.6 °C. The pre-fix
+        // "slightly warm" reading (+0.58) was compensation from the broken
+        // zero-at-normal-humidity evaporative term. Pinned exactly
+        // (Python replication, round-96 worklog; ±1e-9 libm headroom).
         assert!(
-            result.pmv > 0.0,
-            "ASHRAE 55 Table 5.2.1: PMV at 23°C should be slightly warm, got {}",
+            (result.pmv - (-0.012019627)).abs() < 1e-9,
+            "ASHRAE 55 PMV at 23 °C (post-units-fix neutral): got {}",
             result.pmv
         );
     }
