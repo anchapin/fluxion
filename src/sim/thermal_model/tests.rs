@@ -966,7 +966,14 @@ mod tests {
     /// as no other step-path code writes `h_ve` — and Branch 4 remains
     /// flag-gated), so these values were captured from the flag-off
     /// solve itself and pin that identity against future drift.
-    const PRE_CHANGE_FLAG_OFF_EUI: f64 = 0.5769247001981789;
+    /// Re-recorded 2026-10-24 (loop round 93, #4582): the ISO 13790 §C.3
+    /// lag-site air-share term retired under the T5138 class route
+    /// (FLX_R93_T5138_AIRSHARE; strict re-record _doc_round93) moved the
+    /// default 5R1C air node, so this default-physics solve's EUI moved
+    /// 0.5769247001981789 -> 0.5800268115338965 (+0.54 %); the falsy
+    /// token restores the original value bit-identically. Recorded, not
+    /// tuned.
+    const PRE_CHANGE_FLAG_OFF_EUI: f64 = 0.5800268115338965;
     /// Pre-#3985 baseline: final zone temperature of the same solve.
     const PRE_CHANGE_FLAG_OFF_ZONE_TEMP: f64 = 20.0;
 
