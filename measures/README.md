@@ -20,7 +20,7 @@ for the full design rationale.
 | [`ReplaceHVACWithVAV.py`](ReplaceHVACWithVAV.py) | `ReplaceHVACWithVAV` | Replace ideal-loads with an explicit VAV air system (economizer + cool-deck setpoint). |
 | [`IncreaseInsulationRValue.py`](IncreaseInsulationRValue.py) | `IncreaseInsulationRValue` | Add ΔR of insulation to the opaque envelope by lowering surface U-values. |
 | [`SetThermostatSetpoints.py`](SetThermostatSetpoints.py) | `SetThermostatSetpoints` | Sweep the heating / cooling thermostat setpoints by a delta or pin them to absolute values (clamped to the engine's admissible window, deadband preserved). |
-| [`SwapSchedule.py`](SwapSchedule.py) | `SwapSchedule` | Replace the thermostat schedule with an alternative profile — `constant`, `setback` or `operating_hours`. |
+| [`SwapSchedule.py`](SwapSchedule.py) | `SwapSchedule` | Replace the thermostat schedule with an alternative profile — `constant`, `setback` or `operating_hours`. The named schedule must exist in the model, otherwise the measure fails loudly. |
 
 > **Control-side persistence (Issue #3995).** `SetThermostatSetpoints` and
 > `SwapSchedule` act on the model's *control* data. The native
@@ -31,6 +31,16 @@ for the full design rationale.
 > back through `set_zone_setpoints` / `set_hvac_schedule` as soon as the
 > binding provides one — the same advisory-field pattern documented for
 > `ReplaceHVACWithVAV`.
+
+> **Named schedules (Issue #3995).** `SwapSchedule` resolves its
+> `schedule_name` argument against the schedules the model exposes
+> (`model.schedule_names()` or `model.schedules()`; a model with neither
+> carries the single implicit thermostat schedule `"Thermostat"`). A name
+> that does not exist raises `ScheduleNotFoundError` — the measure fails
+> loudly rather than reporting a swap that never happened. Note that the
+> binding exposes a single schedule slot per model, so the named lookup
+> validates the request; it does not select among several writable
+> schedules.
 
 Reference / example measures live under [`examples/`](examples/):
 
@@ -89,7 +99,7 @@ Each standard-library measure additionally ships:
 - A **descriptor** — the `arguments()` method returns the argument spec,
   analogous to OpenStudio's `measure.xml`.
 - The **Python implementation** — `apply()`.
-- A **unit test** — see [`tests/python/test_standard_measures.py`](../tests/python/test_standard_measures.py).
+- A **unit test** — see [`tests/python/test_standard_measures.py`](../tests/python/test_standard_measures.py) and, for the control-side measures, [`tests/python/test_standard_measures_control.py`](../tests/python/test_standard_measures_control.py).
 
 ## Provenance (Issue #1816)
 
