@@ -952,3 +952,62 @@ fn lag_filter_retained_route_direction_dc_and_state_parity() {
         "persisted lag state differs across routes"
     );
 }
+
+#[test]
+/// Contract 19 — [R93 FIX] the §C.3 lag-site air-share term retires under
+/// the T5138 class route: the classes deposit the full transmitted pool on
+/// the mass side, so the air node's solar-lag input is identically zero and
+/// the lag state never charges. Both falsy tokens restore a live air term:
+/// `FLX_R91_T5138=0` (the §C.3 partition route) and
+/// `FLX_R93_T5138_AIRSHARE=1` (the pre-r93 composed route, whose
+/// bit-identity to the r92 record is proven by the flag-off battery). The
+/// default air state differs from both legacy routes.
+fn t5138_airshare_retired_default_and_falsy_restore() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dt = 3600.0;
+    let run24 = || -> (f64, f64, f64) {
+        let mut m = spec_model_solar();
+        m.solar.solar_gains = VectorField::from_scalar(R88_SOLAR_WM2, m.hvac.num_zones);
+        m.setpoints.heating_setpoint = -50.0;
+        m.setpoints.cooling_setpoint = 100.0;
+        for h in 0..24 {
+            m.step_physics(h, 12.0, dt);
+        }
+        (
+            m.mass.solar_lag.as_ref()[0],
+            m.mass.air_temperatures[0],
+            m.mass.mass_temperatures[0],
+        )
+    };
+    let (lag_def, air_def, mass_def) = run24();
+    assert_eq!(
+        lag_def, 0.0,
+        "air lag charged under the T5138 default — the §C.3 air-share term is still live"
+    );
+    std::env::set_var("FLX_R91_T5138", "0");
+    let (lag_c3, air_c3, mass_c3) = run24();
+    std::env::remove_var("FLX_R91_T5138");
+    assert!(
+        lag_c3 != 0.0,
+        "§C.3 partition route did not charge the air lag"
+    );
+    assert!(
+        (mass_def - mass_c3).abs() > 1e-9,
+        "mass states identical across the route choice"
+    );
+    std::env::set_var("FLX_R93_T5138_AIRSHARE", "1");
+    let (lag_leg, air_leg, _mass_leg) = run24();
+    std::env::remove_var("FLX_R93_T5138_AIRSHARE");
+    assert!(
+        lag_leg != 0.0,
+        "legacy token did not restore the air-share term"
+    );
+    assert!(
+        air_leg > air_def + 1e-9,
+        "legacy composed route air not warmer than the retired route: leg={air_leg:.6} def={air_def:.6}"
+    );
+    assert!(
+        (air_c3 - air_def).abs() > 1e-9,
+        "air states identical across §C.3 vs retired route"
+    );
+}

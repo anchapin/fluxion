@@ -1671,22 +1671,22 @@ fn emit_section6_conformance() {
 // Nothing tuned.
 const SECTION6_VALUE_PINS: [(&str, f64, f64, f64, f64, &str, &str); 6] = [
     (
-        "WD100", 4.9518, 4.7225, 4.5739, 4.2190, "02-09-05", "10-18-14",
+        "WD100", 5.7121, 3.0909, 4.6158, 3.2457, "02-09-05", "10-01-15",
     ),
     (
-        "WD200", 2.1325, 5.6454, 3.7531, 3.9942, "02-12-07", "11-11-15",
+        "WD200", 2.5463, 3.9915, 3.8032, 3.0300, "02-12-07", "08-18-16",
     ),
     (
-        "WD300", 3.1941, 2.6104, 2.6313, 2.8602, "07-22-07", "12-15-16",
+        "WD300", 3.5501, 2.0081, 2.6735, 2.5038, "07-22-08", "12-15-16",
     ),
     (
-        "WD400", 30.6301, 0.1578, 8.2370, 2.5344, "01-26-16", "08-07-16",
+        "WD400", 32.0393, 0.0466, 8.2613, 1.6245, "01-26-16", "08-07-17",
     ),
     (
-        "WD500", 0.1510, 15.8321, 1.3847, 5.5632, "01-01-07", "11-07-14",
+        "WD500", 0.2271, 12.8891, 1.4234, 4.6299, "12-28-07", "10-10-15",
     ),
     (
-        "WD600", 4.5815, 6.2588, 4.5427, 4.7227, "02-09-05", "10-18-14",
+        "WD600", 5.3235, 4.2200, 4.5866, 3.7307, "02-09-05", "09-04-15",
     ),
 ];
 
@@ -1699,6 +1699,7 @@ const SECTION6_PIN_TOLERANCE: f64 = 0.005; // ±0.5%
 // solar chain. Same ±0.5% discipline as SECTION6_VALUE_PINS; occurrences
 // exact. Provenance: harness extension only — the engine is untouched, so
 // these are recorded at the develop baseline.
+// Load totals re-recorded 2026-10-24 (loop round 93, physics/r93-t5138-airshare: the ISO 13790 .C3 lag-site air-share term retires under the T5138 class route, FLX_R93_T5138_AIRSHARE falsy-token restore; premise verified against ASHRAE 140-2017 Table 5-138 + ISO 13790 Annex C) from the regenerated `section6_table61_daily_hourly.csv`; solar/sky columns did not move (weather-only path). Round-91c pin values (heat/cool/peak_h): WD100 [4.9518, 4.7225, 4.5739]; WD200 [2.1325, 5.6454, 3.7531]; WD300 [3.1941, 2.6104, 2.6313]; WD400 [30.6301, 0.1578, 8.2370]; WD500 [0.1510, 15.8321, 1.3847]; WD600 [4.5815, 6.2588, 4.5427]. Nothing tuned.
 // ---------------------------------------------------------------------------
 /// (case, annual incident solar [H,N,E,S,W] kWh/m², annual unshaded
 /// transmitted south kWh/m², sky temp mean/min/max °C, sky min/max
@@ -1813,40 +1814,41 @@ const SECTION6_SOLAR_SKY_PINS: [(&str, [f64; 5], f64, f64, f64, f64, &str, &str)
 /// round-91 record) from the regenerated
 /// `section6_table61_daily_hourly.csv`; solar/sky columns did not move
 /// (weather-only path). Round-91a load totals: WD100 [62.4010, 31.3302, -18.1013], WD200 [22.9641, 32.9039, -29.3351], WD300 [-12.8509, -17.9232, 22.3372], WD400 [117.6887, 117.1232, 13.6229], WD500 [-5.4717, -16.6809, -26.7636], WD600 [61.0308, 27.7137, -26.5968]. Nothing tuned.
+/// Load totals re-recorded 2026-10-24 (loop round 93, physics/r93-t5138-airshare: the ISO 13790 .C3 lag-site air-share term retires under the T5138 class route, FLX_R93_T5138_AIRSHARE falsy-token restore) from the regenerated `section6_table61_daily_hourly.csv`; solar/sky columns did not move. Round-91c load totals: WD100 [59.1701, 32.7116, -17.9008]; WD200 [24.8527, 31.1463, -29.7561]; WD300 [-12.7172, -17.9007, 21.9047]; WD400 [117.2253, 116.6404, 10.5411]; WD500 [-5.6250, -14.9992, -27.5215]; WD600 [57.6893, 29.7205, -26.3013]. Nothing tuned.
 const SECTION6_TABLE61_DAY_PINS: [(&str, [f64; 3], [f64; 3], f64); 6] = [
     (
         "WD100",
-        [55.8270, 19.6465, -21.6609],
+        [59.1701, 32.7116, -17.9008],
         [-25.226, -1.577, 8.832],
         8823.6,
     ),
     (
         "WD200",
-        [18.0482, 28.4394, -34.9796],
+        [24.8527, 31.1463, -29.7561],
         [-1.514, 10.349, 19.353],
         6868.2,
     ),
     (
         "WD300",
-        [-16.6533, -21.5049, 20.4771],
+        [-12.7172, -17.9007, 21.9047],
         [8.897, -1.019, -5.611],
         3220.6,
     ),
     (
         "WD400",
-        [116.6428, 116.0363, 5.7998],
+        [117.2253, 116.6404, 10.5411],
         [-26.286, -32.833, -3.490],
         3756.7,
     ),
     (
         "WD500",
-        [-14.5134, -26.7393, -31.9841],
+        [-5.6250, -14.9992, -27.5215],
         [1.491, 23.641, 25.454],
         3107.4,
     ),
     (
         "WD600",
-        [54.1022, 15.5996, -32.1174],
+        [57.6893, 29.7205, -26.3013],
         [-25.226, -1.577, 8.832],
         8823.6,
     ),

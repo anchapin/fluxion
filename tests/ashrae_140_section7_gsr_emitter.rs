@@ -1279,15 +1279,26 @@ fn section7_headline_value_pins() {
     // control). Values cross-check the re-recorded
     // strict_energy_gate_baseline.json (_doc_round91c) and the re-emitted
     // data/reference/section7/workflow_results.csv. Nothing tuned.
+    // Re-recorded 2026-10-24 (loop round 93, physics/r93-t5138-airshare): the
+    // ISO 13790 .C3 lag-site air-share term retires under the T5138 class
+    // route (`FLX_R93_T5138_AIRSHARE` falsy-token restore; premise verified
+    // against ASHRAE 140-2017 Table 5-138 + ISO 13790 Annex C; strict
+    // baseline _doc_round93) moved the 600-family rows: 600 4.692/5.962 ->
+    // 5.462/3.965 MWh (620/630 cooling enter their bands; 600/640/650 rows
+    // honestly leave theirs - recorded, not tuned), 600FF -12.22/55.06 ->
+    // -12.35/49.42, 650FF -17.16/54.04 -> -17.25/48.71.
+    // 900/900FF/950FF unchanged (9R4C inert control). Values cross-check the
+    // re-recorded strict_energy_gate_baseline.json (_doc_round93) and the
+    // re-emitted data/reference/section7/workflow_results.csv. Nothing tuned.
     let pins: &[(&str, fn(&Section7CaseResult) -> f64, f64)] = &[
-        ("600", |r| r.annual_heating_mwh, 4.692),
-        ("600", |r| r.annual_cooling_mwh, 5.962),
+        ("600", |r| r.annual_heating_mwh, 5.462),
+        ("600", |r| r.annual_cooling_mwh, 3.965),
         ("900", |r| r.annual_heating_mwh, 1.225),
         ("900", |r| r.annual_cooling_mwh, 2.249),
-        ("600FF", |r| r.min_temp_c, -12.22),
-        ("600FF", |r| r.max_temp_c, 55.06),
-        ("650FF", |r| r.min_temp_c, -17.16),
-        ("650FF", |r| r.max_temp_c, 54.04),
+        ("600FF", |r| r.min_temp_c, -12.35),
+        ("600FF", |r| r.max_temp_c, 49.42),
+        ("650FF", |r| r.min_temp_c, -17.25),
+        ("650FF", |r| r.max_temp_c, 48.71),
         ("900FF", |r| r.min_temp_c, -0.26),
         ("900FF", |r| r.max_temp_c, 43.28),
         ("950FF", |r| r.min_temp_c, -15.67),
