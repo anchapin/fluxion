@@ -26,8 +26,19 @@
 //! # Out of scope (per design §10 and issue #1341)
 //!
 //! - epJSON parsing (design §4.2 follow-up).
-//! - HVAC, Schedule, Window/Door, `FenestrationSurface:Detailed` (design §10).
+//! - HVAC, Window/Door, `FenestrationSurface:Detailed` (design §10).
 //! - IDF export (design §10).
+//!
+//! # Schedules (issue #3991 — schedules slice)
+//!
+//! `Schedule:Compact`, `Schedule:Constant` and `ScheduleTypeLimits` are
+//! imported into the schema's existing schedule representation
+//! ([`crate::sim::schedule::DailySchedule`]) by [`schedule`] +
+//! [`convert::import_named_schedules`]. The imported schedules are carried
+//! in [`crate::api::schema::ScheduleSet::named_schedules`]; anything the
+//! target representation cannot express exactly is reported as an explicit
+//! loss note ([`schedule::ScheduleLoss`]) or rejected with an
+//! [`IdfError`].
 //!
 //! # Example
 //!
@@ -45,8 +56,12 @@ pub mod epjson;
 pub mod error;
 pub mod lexer;
 pub mod parser;
+pub mod schedule;
 
-pub use convert::{case_spec_from_idf, GroundTempMeta, RunPeriodMeta, SUPPORTED_VERSIONS};
+pub use convert::{
+    case_spec_from_idf, import_named_schedules, GroundTempMeta, RunPeriodMeta, SUPPORTED_VERSIONS,
+};
 pub use error::IdfError;
 pub use lexer::{tokenize, RawObject};
 pub use parser::{IdfFile, IdfObject, IdfParser, IdfValue};
+pub use schedule::{ImportedSchedule, NumericType, ScheduleLoss, ScheduleTypeLimits};
