@@ -24,7 +24,7 @@ use crate::sim::thermal_model_data::{
     HeatTransferCoefficient, Temperature, Time, ToF64, VectorField,
 };
 use crate::sim::thermal_selector::ThermalSelector;
-use crate::sim::ventilation::{ConstantVentilation, VentilationSchedule};
+use crate::sim::ventilation::{ach_to_conductance, ConstantVentilation, VentilationSchedule};
 // Issue #2523: per-timestep HybridThermalModel diagnostics were emitted
 // at `info!` level, producing up to 8.76M (5 branches × 8760 steps × 1
 // config) structured-log invocations per BatchOracle population even when
@@ -511,6 +511,15 @@ impl HybridThermalModel {
         self.surrogate_conduction_calls
     }
 
+    /// Current per-zone ventilation/infiltration conductance `h_ve` [W/K].
+    ///
+    /// Read-only accessor (Issue #3985) so callers and tests can verify
+    /// that the scheduled ventilation conductance returned by the
+    /// ventilation slot was actually plumbed into the zone balance.
+    pub fn ventilation_conductance(&self) -> &[f64] {
+        self.inner.conduction.h_ve.as_ref()
+    }
+
     /// Number of times the surrogate ventilation branch fired in the most
     /// recent (or cumulative) solve. Useful for wiring tests (Issue #1702).
     pub fn surrogate_ventilation_calls(&self) -> usize {
@@ -670,8 +679,37 @@ impl ThermalModelTrait for HybridThermalModel {
         // once here (returns a copied `f64`) to avoid re-borrowing
         // `self.inner` inside the `&mut self` closure body.
         let zone_area_m2 = self.inner.setpoints.zone_area.integrate();
+
+        // Issue #3985 — capture the base ventilation conductance `h_ve`
+        // ONCE, before the timestep loop.
+        //
+        // Branch 4 (surrogate ventilation) adds the scheduled ventilation
+        // conductance on top of the model's static infiltration
+        // conductance. Because `h_ve` is mutated in place, the unmodified
+        // base value must be restored on every step — otherwise the
+        // per-step additions would accumulate and the conductance would
+        // grow without bound across the run.
+        //
+        // This is a single per-solve copy (not a per-step allocation), so
+        // the steady-state allocation gate (`tests/dhat_hybrid_zero_alloc.rs`)
+        // is unaffected.
+        let base_h_ve: Vec<f64> = self.inner.conduction.h_ve.as_ref().to_vec();
+
         let total_energy_kwh: f64 = (0..steps)
             .map(|t| {
+                // Issue #3985 — restore the base ventilation conductance
+                // before Branch 4 adds anything on top of it. When the
+                // surrogate-ventilation flag is off this is a no-op
+                // (nothing else mutates `h_ve` inside the loop), so the
+                // default routing stays bit-identical to the pre-#3985
+                // behaviour.
+                {
+                    let h_ve = self.inner.conduction.h_ve.as_mut_slice();
+                    for (slot, &base) in h_ve.iter_mut().zip(base_h_ve.iter()) {
+                        *slot = base;
+                    }
+                }
+
                 // Branch 1: surrogate load prediction (only if policy says so).
                 if use_surrogate_loads {
                     // Issue #1892: OOD-aware routing — check bounds before surrogate inference.
@@ -820,28 +858,59 @@ impl ThermalModelTrait for HybridThermalModel {
                 // When `use_surrogate_ventilation` is `true`, the dispatcher
                 // consults `ventilation_schedule.get_ach(...)` so the
                 // schedule is actually exercised (not just a counter bump).
-                // Plumbing the returned ACH into the zone h_ve balance is
-                // the next step (future PR); for now the slot records the
-                // call and `step_physics` below still uses its internal
-                // ventilation when conduction stays on physics. When
-                // `use_surrogate_conduction` is also `true`, Branch 5 is
-                // skipped entirely and the slot is the sole route.
+                //
+                // Issue #3985 — the returned ACH is no longer discarded:
+                // it is converted to a ventilation conductance and ADDED
+                // to the zone `h_ve` balance (the model's static
+                // infiltration conductance), so the scheduled ventilation
+                // measurably changes the zone energy balance. The base
+                // `h_ve` is restored at the top of every step, so the
+                // addition never accumulates across the run.
+                //
+                // `update_optimization_cache` is called ONLY on this
+                // surrogate-ventilation path: it recomputes the derived
+                // conductances (`derived_h_ext`, `derived_den`, …) that
+                // depend on `h_ve`. Calling it unconditionally would add
+                // per-step allocations to the default (flag-off) hot loop
+                // and trip the steady-state allocation gate
+                // (`tests/dhat_hybrid_zero_alloc.rs`).
                 if use_surrogate_ventilation {
-                    let zone_temp = self
-                        .inner
-                        .setpoints
-                        .temperatures
-                        .as_ref()
-                        .first()
-                        .copied()
-                        .unwrap_or(20.0);
-                    let _ach = self.ventilation_schedule.get_ach(
-                        hour_of_day,
-                        outdoor_temp,
-                        zone_temp,
-                        0.0, // wind speed not retained on inner; placeholder
-                        0.0, // zone volume not retained on inner; placeholder
-                    );
+                    // Compute the scheduled conductance per zone and add it
+                    // to the (already restored) base `h_ve`.
+                    //
+                    // The borrows are split so that `conduction` (mutated)
+                    // and `setpoints` (read) do not overlap.
+                    let crate::sim::thermal_model_data::ThermalModelData {
+                        conduction,
+                        setpoints,
+                        ..
+                    } = &mut self.inner.0;
+                    let zone_volumes: &[f64] = setpoints.zone_volume.as_ref();
+                    let densities: &[f64] = setpoints.air_density.as_ref();
+                    let capacities: &[f64] = setpoints.heat_capacity.as_ref();
+                    let zone_temps: &[f64] = setpoints.temperatures.as_ref();
+
+                    let h_ve = conduction.h_ve.as_mut_slice();
+                    for (zone_idx, slot) in h_ve.iter_mut().enumerate() {
+                        let volume = zone_volumes.get(zone_idx).copied().unwrap_or(0.0);
+                        let zone_temp = zone_temps.get(zone_idx).copied().unwrap_or(20.0);
+                        let rho = densities.get(zone_idx).copied().unwrap_or(1.2);
+                        let cp = capacities.get(zone_idx).copied().unwrap_or(1005.0);
+                        let ach = self.ventilation_schedule.get_ach(
+                            hour_of_day,
+                            outdoor_temp,
+                            zone_temp,
+                            0.0, // wind speed not retained on inner; placeholder
+                            volume,
+                        );
+                        let conductance = ach_to_conductance(ach, volume, rho, cp).to_value();
+                        *slot += conductance;
+                    }
+
+                    // Keep the derived conductances in sync with the new
+                    // `h_ve` (only on this path — see the note above).
+                    self.inner.update_optimization_cache();
+
                     self.surrogate_ventilation_calls += 1;
                     trace!(
                         hybrid.surrogate_ventilation_calls =
