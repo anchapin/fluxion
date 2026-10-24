@@ -1769,6 +1769,38 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.0.hvac.current_hvac_output = None;
         }
 
+        // [R94 INSTRUMENTATION — loop round 94, item 2. Read-only
+        // FLX_R94_9R4C_AUDIT dump: one line per 9R4C dispatch with the
+        // vent-routing block's committed values (timestep, outdoor /
+        // ground / sky driving, night-vent active flag, ACH, h_ve_night)
+        // plus the step's committed node state (HVAC power, zone air
+        // temperatures, mass temperatures). Default off; zero cost when
+        // unset (one env read per step, the same pattern as the 5R1C
+        // FLX_FF_EB_AUDIT harness). Consume with --test-threads=1 so the
+        // audit lines interleave deterministically with the battery.]
+        let r94_audit_9r4c = crate::util::env_bool::env_bool("FLX_R94_9R4C_AUDIT", false);
+        if r94_audit_9r4c {
+            let fmt94 = |v: &[f64]| {
+                v.iter()
+                    .map(|x| format!("{x:.6}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            };
+            eprintln!(
+                "FFAUDIT_9R4C {} t_out={:.6} t_g={:.6} sky={:.6} nv_active={} ach_nv={:.6} h_ve_night={:.6} hvac_w={:.6} t_i=[{}] t_m=[{}]",
+                timestep,
+                outdoor_temp,
+                t_g,
+                sky_temp,
+                night_vent_active_now,
+                ach_night_vent,
+                h_ve_night,
+                hvac_power_watts,
+                fmt94(self.0.setpoints.temperatures.as_ref()),
+                fmt94(self.0.mass.mass_temperatures.as_ref()),
+            );
+        }
+
         // Issue #2756: restore the pooled scratch so the next timestep reuses
         // the same SmallVec capacity (zero steady-state allocation).
         self.0.hvac.scratch_pool.return_9r4c(scratch);

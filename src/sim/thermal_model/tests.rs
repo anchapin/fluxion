@@ -973,7 +973,15 @@ mod tests {
     /// 0.5769247001981789 -> 0.5800268115338965 (+0.54 %); the falsy
     /// token restores the original value bit-identically. Recorded, not
     /// tuned.
-    const PRE_CHANGE_FLAG_OFF_EUI: f64 = 0.5800268115338965;
+    /// Round 94 (2026-10-24, physics/r94-surface-pool): the surface-pool
+    /// component partition under the T5138 class route (transmitted solar
+    /// keeps the Table 5-138 fractions; the internal-gain radiative
+    /// component keeps the §C.3 conductance partition) moves the 24-step
+    /// flag-OFF EUI 0.5800268115338965 -> 0.5818220879638392 (same
+    /// deterministic solve, default profile). Nothing tuned; the falsy
+    /// FLX_R94_T5138_GAINS_C3 token restores the r93-composed route
+    /// bit-identically.
+    const PRE_CHANGE_FLAG_OFF_EUI: f64 = 0.5818220879638392;
     /// Pre-#3985 baseline: final zone temperature of the same solve.
     const PRE_CHANGE_FLAG_OFF_ZONE_TEMP: f64 = 20.0;
 

@@ -36,6 +36,14 @@ pub(crate) struct PhysicsScratch5r1c {
     pub num_zones: usize,
     pub phi_ia: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
     pub phi_st: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    /// Round 94: the surface pool's two source components, decomposed at
+    /// the §C.3 partition site. `phi_st_int` (internal-gain radiative)
+    /// keeps the ISO 13790 §C.3 conductance partition under the T5138
+    /// class route; `phi_st_sol` (transmitted solar) follows ASHRAE
+    /// 140-2017 Table 5-138 through the per-class fractions. The pair
+    /// sums to `phi_st` exactly (same expressions, same order).
+    pub phi_st_sol: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub phi_st_int: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
     pub phi_m: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
     pub t_i_act: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
     pub t_s_act: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
@@ -129,6 +137,8 @@ impl PhysicsScratch5r1c {
             num_zones,
             phi_ia: SmallVec::from_elem(0.0, num_zones),
             phi_st: SmallVec::from_elem(0.0, num_zones),
+            phi_st_sol: SmallVec::from_elem(0.0, num_zones),
+            phi_st_int: SmallVec::from_elem(0.0, num_zones),
             phi_m: SmallVec::from_elem(0.0, num_zones),
             t_i_act: SmallVec::from_elem(0.0, num_zones),
             t_s_act: SmallVec::from_elem(0.0, num_zones),
@@ -177,6 +187,8 @@ impl PhysicsScratch5r1c {
         self.boundary_surfaces.clear();
         self.phi_ia.resize(n, 0.0);
         self.phi_st.resize(n, 0.0);
+        self.phi_st_sol.resize(n, 0.0);
+        self.phi_st_int.resize(n, 0.0);
         self.phi_m.resize(n, 0.0);
         self.t_i_act.resize(n, 0.0);
         self.t_s_act.resize(n, 0.0);
@@ -206,6 +218,12 @@ impl PhysicsScratch5r1c {
             *v = 0.0;
         }
         for v in &mut self.phi_st {
+            *v = 0.0;
+        }
+        for v in &mut self.phi_st_sol {
+            *v = 0.0;
+        }
+        for v in &mut self.phi_st_int {
             *v = 0.0;
         }
         for v in &mut self.phi_m {

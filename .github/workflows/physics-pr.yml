@@ -302,7 +302,9 @@ jobs:
     needs: strict-precheck
     if: needs.strict-precheck.outputs.should_run == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # Loop round 94: 30 -> 90 — the falsy-archaeology attestation step
+    # below adds a second battery pass (warm target, run-time only).
+    timeout-minutes: 90
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -440,6 +442,66 @@ jobs:
           echo
           echo "=== Output-diff gate (issue #4281): reported values vs recorded baseline ==="
           python3 scripts/check_output_diff_gate.py /tmp/strict_gate_output.txt
+
+      # Round-94 attestation leg (loop round 94, item 3). A re-record
+      # PR's strict gate above is trivially self-consistent: the
+      # re-recorded baselines equal the engine by construction, so
+      # nothing on CI compares the change against the PRE-change engine.
+      # The falsy-archaeology token closes that gap. Every loop round
+      # that moves a default route ships one line `NAME=value` in
+      # `.github/physics_archaeology_token` — the env token documented in
+      # the round's physics commit that restores the pre-round route
+      # bit-identically. When the file exists, this leg re-runs the
+      # strict battery with the token set and diffs the measured rows
+      # against the merge-base output-diff baseline: the re-record is
+      # honest iff the falsy route reproduces the old record exactly
+      # (the same identity the round's local battery asserts).
+      # Attestation, not a gate: continues-on-error so no new required
+      # check enters release_gates.yaml; the step summary is the
+      # reviewer's evidence.
+      - name: Falsy-archaeology attestation (re-record honesty, non-blocking)
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          TOKEN_FILE=.github/physics_archaeology_token
+          if [ ! -f "$TOKEN_FILE" ]; then
+            echo "No archaeology token file ($TOKEN_FILE) — nothing to attest this PR."
+            exit 0
+          fi
+          TOKEN_LINE=$(grep -v '^\s*#' "$TOKEN_FILE" | grep -E '^[A-Z0-9_]+=' | head -1)
+          if [ -z "$TOKEN_LINE" ]; then
+            echo "Token file carries no NAME=value line — attestation skipped."
+            exit 0
+          fi
+          echo "Archaeology token: $TOKEN_LINE"
+          export "$TOKEN_LINE"
+          BASE="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$BASE" ]; then
+            echo "No PR base sha (push event) — attesting against the parent commit."
+            BASE="${{ github.sha }}^"
+          fi
+          git fetch --no-tags --depth=1 origin "$BASE" 2>/dev/null || true
+          if git cat-file -e "$BASE:data/reference/ashrae140/output_diff_baseline.csv" 2>/dev/null; then
+            git show "$BASE:data/reference/ashrae140/output_diff_baseline.csv" \
+              > /tmp/old_output_diff_baseline.csv
+          else
+            echo "No output-diff baseline at $BASE — attestation skipped."
+            exit 0
+          fi
+          set +e
+          cargo test --release --verbose \
+            --test all_tests _annual_energy_ashrae140_tolerance \
+            -- --include-ignored --nocapture \
+            2>&1 | tee /tmp/strict_archaeology.txt
+          cargo test --release --verbose \
+            --test all_tests free_float_strict_gate \
+            -- --include-ignored --nocapture \
+            2>&1 | tee -a /tmp/strict_archaeology.txt
+          set -e
+          sed -i 's/\x1b\[[0-9;]*m//g' /tmp/strict_archaeology.txt
+          echo "=== Falsy-archaeology attestation: token route vs merge-base baseline ==="
+          python3 scripts/check_output_diff_gate.py /tmp/strict_archaeology.txt \
+            --baseline /tmp/old_output_diff_baseline.csv
 
       - name: Upload strict-gate log
         if: always()

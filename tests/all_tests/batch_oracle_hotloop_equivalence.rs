@@ -206,7 +206,16 @@ fn analytical_path_eui_is_bit_identical_to_baseline() {
     // 45.72796364307019 -> 64.34869112189999 (+40.7 %),
     // 115.14238843442617 -> 138.55477627605464 (+20.3 %),
     // 152.66914454501180 -> 180.72725491900600 (+18.4 %). Nothing tuned.
-    let golden = [64.34869112189999, 138.55477627605464, 180.727254919006];
+    // Re-recorded 2026-10-24 (loop round 94, physics/r94-surface-pool: the
+    // surface pool decomposes at the §C.3 partition site — transmitted solar
+    // follows the Table 5-138 per-class fractions, the internal-gain
+    // radiative component keeps the §C.3 conductance partition, falsy
+    // FLX_R94_T5138_GAINS_C3 restores the r93-composed route) moves the
+    // analytical harness EUI
+    // 64.34869112189999 -> 67.6967522692556 (+5.2 %),
+    // 138.55477627605464 -> 140.04765587160048 (+1.1 %),
+    // 180.72725491900600 -> 180.81720815793938 (+0.05 %). Nothing tuned.
+    let golden = [67.6967522692556, 140.04765587160048, 180.81720815793938];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),
@@ -284,7 +293,12 @@ fn cpu_surrogate_mock_path_eui_is_bit_identical_to_baseline() {
     // 235.94384629199757 -> 237.36014842317080 (+0.60 %),
     // 251.56469278055977 -> 252.75249674400956 (+0.47 %),
     // 263.33598777423884 -> 264.42093249323220 (+0.41 %). Nothing tuned.
-    let golden = [237.3601484231708, 252.75249674400956, 264.4209324932322];
+    // Re-recorded 2026-10-24 (loop round 94, physics/r94-surface-pool
+    // surface-pool component partition) moves the CPU-surrogate harness EUI
+    // 237.36014842317080 -> 238.6940589550537 (+0.56 %),
+    // 252.75249674400956 -> 253.1825036596537 (+0.17 %),
+    // 264.42093249323220 -> 264.4468390260386 (+0.01 %). Nothing tuned.
+    let golden = [238.6940589550537, 253.1825036596537, 264.4468390260386];
     assert_eq!(
         results.as_slice(),
         golden.as_slice(),

@@ -57,6 +57,19 @@
 //!   persisted lag state, which advances with identical arithmetic in
 //!   both routes.
 //!
+//! Slice 6 (loop round 94): the surface-pool component contracts. The
+//! pool's two source components are routed by DIFFERENT references: the
+//! transmitted-solar component follows ASHRAE 140-2017 Table 5-138 through
+//! the per-class fractions (round-91 flip 3, air share retired round 93),
+//! while the internal-gain radiative component keeps the ISO 13790 §C.3
+//! conductance partition (mass share `s_c` per class, air share
+//! `(1 − s_share)` through the retained lag site) — §5.2.1.12.2 scopes the
+//! constant fractions to *transmitted solar*, and §C.3's algebraic surface
+//! node passes its source to air and mass by conductance share. Contract 20
+//! pins the internal-gain partition (the round-94 fix), contract 21 pins
+//! the solar route as untouched by that fix, contract 22 pins the lumped
+//! (tensor-less) zone's intact partition as untouched.
+//!
 //! These are record pins, not validator bands: a violation means the mass
 //! advance moved and must be re-examined, never tuned around.
 
@@ -1009,5 +1022,176 @@ fn t5138_airshare_retired_default_and_falsy_restore() {
     assert!(
         (air_c3 - air_def).abs() > 1e-9,
         "air states identical across §C.3 vs retired route"
+    );
+}
+
+#[test]
+/// Contract 20 — surface pool, internal-gain radiative component: the §C.3
+/// conductance partition stays live under the T5138 class route (round 94).
+///
+/// The Table 5-138 fractions are scoped to *transmitted solar*
+/// (ASHRAE 140-2017 §5.2.1.12.2), so the internal-gain surface component of
+/// `phi_st` (`rad_frac·φ_int`) must keep the §C.3 partition the r88 arm
+/// implements for the pool on lumped zones: mass share `s_c` per class, air
+/// share `(1 − s_share)` through the retained lag site. Under the
+/// pre-round-94 composed route the class drive carried the WHOLE `phi_st`
+/// at the solar fractions with the air share retired, silently re-routing
+/// the internal-gain component too — no primary source covers that. Pins:
+/// the lag state charges on internal-gains-only driving (default), scales
+/// linearly with the gain magnitude, and the falsy
+/// `FLX_R94_T5138_GAINS_C3` token restores the r93-composed route
+/// bit-identically (archaeology).
+fn surface_pool_internal_gains_keep_c3_partition_under_t5138() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dt = 3600.0;
+    let run24 = |load_wm2: f64| -> (f64, f64, f64) {
+        let mut m = spec_model_solar();
+        m.solar.solar_gains = VectorField::new(vec![0.0; m.hvac.num_zones]);
+        m.setpoints.loads = VectorField::from_scalar(load_wm2, m.hvac.num_zones);
+        m.setpoints.heating_setpoint = -50.0;
+        m.setpoints.cooling_setpoint = 100.0;
+        for h in 0..24 {
+            m.step_physics(h, 12.0, dt);
+        }
+        (
+            m.mass.solar_lag.as_ref()[0],
+            m.mass.air_temperatures[0],
+            m.mass.mass_temperatures[0],
+        )
+    };
+    let (lag_def, _air_def, mass_def) = run24(150.0);
+    assert!(
+        lag_def != 0.0,
+        "internal-gains-only driving left the air lag at zero under the \
+         T5138 default — the §C.3 air share of the internal-gain surface \
+         component is retired with the solar share"
+    );
+    let (lag_2x, _air_2x, _mass_2x) = run24(300.0);
+    assert!(
+        (lag_2x - 2.0 * lag_def).abs() <= 1e-9 * lag_2x.abs().max(1.0),
+        "the internal-gain air-share lag is not linear in the gain \
+         magnitude: {lag_def} vs {lag_2x}"
+    );
+    std::env::set_var("FLX_R94_T5138_GAINS_C3", "0");
+    let (lag_leg, _air_leg, mass_leg) = run24(150.0);
+    std::env::remove_var("FLX_R94_T5138_GAINS_C3");
+    assert_eq!(
+        lag_leg, 0.0,
+        "falsy FLX_R94_T5138_GAINS_C3 must restore the r93-composed route \
+         (air share retired for the whole pool)"
+    );
+    assert!(
+        (mass_leg - mass_def).abs() > 1e-9,
+        "mass states identical across the decomposition route choice — the \
+         internal-gain mass share did not move"
+    );
+}
+
+#[test]
+/// Contract 21 — surface pool, transmitted-solar component: the Table
+/// 5-138 class route is untouched by the round-94 internal-gain
+/// decomposition.
+///
+/// With solar-only driving the default (decomposed) route and the falsy
+/// `FLX_R94_T5138_GAINS_C3` archaeology route must step bit-identically —
+/// the fix moves only the internal-gain component's route — and the
+/// round-93 legacy token `FLX_R93_T5138_AIRSHARE=1` must still restore the
+/// solar air-share double-count (lag charges, air warmer).
+fn surface_pool_solar_component_route_untouched_by_gains_decomposition() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dt = 3600.0;
+    let run24 = || -> (f64, f64, f64) {
+        let mut m = spec_model_solar();
+        m.solar.solar_gains = VectorField::from_scalar(R88_SOLAR_WM2, m.hvac.num_zones);
+        m.setpoints.heating_setpoint = -50.0;
+        m.setpoints.cooling_setpoint = 100.0;
+        for h in 0..24 {
+            m.step_physics(h, 12.0, dt);
+        }
+        (
+            m.mass.solar_lag.as_ref()[0],
+            m.mass.air_temperatures[0],
+            m.mass.mass_temperatures[0],
+        )
+    };
+    let (lag_def, air_def, mass_def) = run24();
+    assert_eq!(
+        lag_def, 0.0,
+        "solar-only driving charged the air lag under the default — the \
+         round-93 retirement must hold for the solar component"
+    );
+    std::env::set_var("FLX_R94_T5138_GAINS_C3", "0");
+    let (lag_leg, air_leg, mass_leg) = run24();
+    std::env::remove_var("FLX_R94_T5138_GAINS_C3");
+    assert_eq!(
+        (lag_leg, air_leg, mass_leg),
+        (lag_def, air_def, mass_def),
+        "solar-only driving differs across the decomposition token — the \
+         fix leaked into the Table 5-138 solar route"
+    );
+    std::env::set_var("FLX_R93_T5138_AIRSHARE", "1");
+    let (lag_r93, air_r93, _mass_r93) = run24();
+    std::env::remove_var("FLX_R93_T5138_AIRSHARE");
+    assert!(
+        lag_r93 != 0.0,
+        "legacy FLX_R93_T5138_AIRSHARE=1 did not restore the solar air \
+         share under solar-only driving"
+    );
+    assert!(
+        air_r93 > air_def + 1e-9,
+        "legacy composed route air not warmer than the retired route under \
+         solar-only driving: {air_r93:.6} vs {air_def:.6}"
+    );
+}
+
+#[test]
+/// Contract 22 — surface pool, lumped (tensor-less) zone: the intact §C.3
+/// partition is untouched by the round-94 decomposition.
+///
+/// A zone without per-class construction tensors never binds the T5138
+/// class route, so its §C.3 partition (air share through the lag site,
+/// r88 `(1 − s_share)` scaling) must be bit-identical across the
+/// `FLX_R94_T5138_GAINS_C3` and `FLX_R91_T5138` tokens under
+/// internal-gains-only driving, with the lag charging in all three runs.
+fn surface_pool_lumped_zone_partition_untouched() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dt = 3600.0;
+    let run24 = || -> (f64, f64, f64) {
+        let mut m = hand_rolled_model();
+        m.setpoints.loads = VectorField::from_scalar(100.0, m.hvac.num_zones);
+        m.setpoints.heating_setpoint = -50.0;
+        m.setpoints.cooling_setpoint = 100.0;
+        for h in 0..24 {
+            m.step_physics(h, 12.0, dt);
+        }
+        (
+            m.mass.solar_lag.as_ref()[0],
+            m.mass.air_temperatures[0],
+            m.mass.mass_temperatures[0],
+        )
+    };
+    let (lag_def, air_def, mass_def) = run24();
+    assert!(
+        lag_def != 0.0,
+        "lumped zone did not charge the air lag on internal-gains-only \
+         driving — the §C.3 partition is broken"
+    );
+    std::env::set_var("FLX_R94_T5138_GAINS_C3", "0");
+    let r94 = run24();
+    std::env::remove_var("FLX_R94_T5138_GAINS_C3");
+    assert_eq!(
+        r94,
+        (lag_def, air_def, mass_def),
+        "lumped zone state moved across FLX_R94_T5138_GAINS_C3 — the fix \
+         leaked into the lumped §C.3 partition"
+    );
+    std::env::set_var("FLX_R91_T5138", "0");
+    let r91 = run24();
+    std::env::remove_var("FLX_R91_T5138");
+    assert_eq!(
+        r91,
+        (lag_def, air_def, mass_def),
+        "lumped zone state moved across FLX_R91_T5138 — the lumped route \
+         must not key on the T5138 token"
     );
 }
