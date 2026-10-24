@@ -48,8 +48,8 @@ composable scripts.
 
 Fluxion ships a **standard library** of baseline measures in
 [`measures/`](../../measures/), including `SetWindowToWallRatio`,
-`ReplaceHVACWithVAV`, and `IncreaseInsulationRValue`. This tutorial shows you
-how to write your own.
+`ReplaceHVACWithVAV`, `IncreaseInsulationRValue`, `SetThermostatSetpoints`,
+and `SwapSchedule`. This tutorial shows you how to write your own.
 
 ## The AOT-Only Rule
 
@@ -281,7 +281,8 @@ pytest tests/python/test_standard_measures.py -v
 ## Next Steps
 
 - Browse the standard library in [`measures/`](../../measures/) for real-world
-  patterns (`SetWindowToWallRatio`, `ReplaceHVACWithVAV`).
+  patterns (`SetWindowToWallRatio`, `ReplaceHVACWithVAV`,
+  `SetThermostatSetpoints`, `SwapSchedule`).
 - Read [`docs/measures.md`](../measures.md) for the full reference (serialization
   formats, memory-safety recap, provenance schema).
 - Read [`docs/bindings.md`](../bindings.md) for the PyO3 ownership story.
