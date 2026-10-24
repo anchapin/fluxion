@@ -25,9 +25,16 @@
 //! - `GlobalGeometryRules`
 //! - `Site:GroundTemperature:BuildingSurface`
 //!
-//! Out of scope (design §10): HVAC, Schedule, Window/Door,
+//! Out of scope (design §10): HVAC, Window/Door,
 //! `FenestrationSurface:Detailed`, IDF export, and the
 //! `TryFrom<IdfFile> for SimulationSchema` conversion (design §4.3).
+//!
+//! `Schedule:Compact`, `Schedule:Constant` and `ScheduleTypeLimits`
+//! objects are captured like every other object type and exposed through
+//! the typed accessors [`IdfFile::schedule_compacts`],
+//! [`IdfFile::schedule_constants`] and [`IdfFile::schedule_type_limits`];
+//! their conversion into the schema schedule representation lives in
+//! [`super::schedule`] and [`super::convert`] (issue #3991).
 
 use std::str::FromStr;
 
@@ -205,6 +212,28 @@ impl IdfFile {
         self.objects
             .iter()
             .filter(|o| o.object_type.eq_ignore_ascii_case("WindowMaterial:Glazing"))
+    }
+
+    /// All `Schedule:Compact` objects.
+    ///
+    /// Alias of [`IdfFile::schedules`], kept for symmetry with the other
+    /// typed accessors (issue #3991).
+    pub fn schedule_compacts(&self) -> impl Iterator<Item = &IdfObject> {
+        self.schedules()
+    }
+
+    /// All `Schedule:Constant` objects (issue #3991).
+    pub fn schedule_constants(&self) -> impl Iterator<Item = &IdfObject> {
+        self.objects
+            .iter()
+            .filter(|o| o.object_type.eq_ignore_ascii_case("Schedule:Constant"))
+    }
+
+    /// All `ScheduleTypeLimits` objects (issue #3991).
+    pub fn schedule_type_limits(&self) -> impl Iterator<Item = &IdfObject> {
+        self.objects
+            .iter()
+            .filter(|o| o.object_type.eq_ignore_ascii_case("ScheduleTypeLimits"))
     }
 
     /// All `ZoneInfiltration:DesignFlowRate` objects.

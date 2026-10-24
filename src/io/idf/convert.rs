@@ -44,7 +44,6 @@
 //! ```ignore
 //! use fluxion::io::idf::{IdfParser, IdfFile};
 //! use fluxion::api::schema::SimulationSchemaV1;
-//! use std::convert::TryFrom;
 //!
 //! let src = std::fs::read_to_string("tests/reference_data/energyplus_models/ashrae_140_case_600.idf").unwrap();
 //! let idf: IdfFile = IdfParser::from_str(&src).expect("parses");
@@ -53,6 +52,7 @@
 //! assert!((schema.geometry.zones[0].floor_area - 48.0).abs() < 1e-6);
 //! ```
 
+use std::collections::{BTreeMap, HashMap};
 use std::convert::TryFrom;
 
 use crate::api::schema::{
@@ -68,6 +68,10 @@ use crate::validation::ashrae_140_cases::{CaseSpec, ConstructionType, GeometrySp
 
 use super::error::IdfError;
 use super::parser::{IdfFile, IdfObject, IdfValue};
+use super::schedule::{
+    import_schedule_compact, import_schedule_constant, parse_schedule_type_limits,
+    referenced_limits_name, ScheduleLoss, ScheduleTypeLimits,
+};
 
 /// Allowed `Version` values. EnergyPlus versions other than these are
 /// rejected with [`IdfError::UnsupportedVersion`] per design §4.3.
@@ -174,9 +178,13 @@ impl TryFrom<&IdfFile> for SimulationSchemaV1 {
             .and_then(|z| z.fields.first().and_then(|v| v.to_display_string()))
             .unwrap_or_else(|| "ZONE1".to_string());
 
-        // 6. Build schedules and controls from IDF objects.
-        let schedules = build_schedules(idf, &zone_name);
-        let controls = build_controls(idf, &zone_name);
+        // 6. Build schedules and controls from IDF objects. Every
+        //    `Schedule:Compact` / `Schedule:Constant` object is imported
+        //    into the schema's named-schedule map (issue #3991); a
+        //    malformed schedule is a hard error (fail loud, never drop).
+        let (imported_schedules, _schedule_losses) = import_named_schedules(idf)?;
+        let schedules = build_schedules(idf, &zone_name, &imported_schedules);
+        let controls = build_controls(idf, &zone_name, &imported_schedules);
 
         // 7. Wire metadata.run_period into the metadata struct via the
         //    description field (the schema has no first-class run_period
@@ -760,9 +768,19 @@ fn geometry_spec_from_idf(idf: &IdfFile, zone_name: &str) -> GeometrySpec {
     spec
 }
 
-/// Extract the heating / cooling setpoints (°C) from `Schedule:Compact` +
-/// `ThermostatSetpoint:DualSetpoint` linked by `ZoneControl:Thermostat`.
-fn extract_setpoints(idf: &IdfFile, zone_name: &str) -> Option<(f64, f64)> {
+/// Extract the heating / cooling setpoints (°C) from the thermostat
+/// setpoint schedules linked by `ZoneControl:Thermostat` +
+/// `ThermostatSetpoint:DualSetpoint`.
+///
+/// The schedule values are taken from the imported schedules (issue #3991)
+/// — the value in effect at midnight (`hour 0`) — and fall back to the
+/// legacy "last numeric field" heuristic when the referenced schedule is
+/// not importable.
+fn extract_setpoints(
+    idf: &IdfFile,
+    zone_name: &str,
+    imported: &BTreeMap<String, DailySchedule>,
+) -> Option<(f64, f64)> {
     // 1. Find the ZoneControl:Thermostat that references this zone.
     let mut dualsp: Option<String> = None;
     for obj in &idf.objects {
@@ -809,10 +827,23 @@ fn extract_setpoints(idf: &IdfFile, zone_name: &str) -> Option<(f64, f64)> {
     }
     let heat_name = heat_sp?;
     let cool_name = cool_sp?;
-    // 3. Find the heat / cool Schedule:Compact values (the last numeric
-    //    field of each object, e.g. "Until: 24:00, 20.0").
-    let mut heat_val: Option<f64> = None;
-    let mut cool_val: Option<f64> = None;
+    // 3. Resolve the heat / cool setpoint values. The imported schedules
+    //    (issue #3991) win; the legacy heuristic below is the fallback for
+    //    schedules that are not importable (e.g. an unknown day type).
+    let heat_val = imported
+        .get(&heat_name)
+        .map(|s| s.value(0))
+        .or_else(|| legacy_schedule_value(idf, &heat_name));
+    let cool_val = imported
+        .get(&cool_name)
+        .map(|s| s.value(0))
+        .or_else(|| legacy_schedule_value(idf, &cool_name));
+    Some((heat_val?, cool_val?))
+}
+
+/// Legacy schedule-value heuristic: the last numeric field of the
+/// `Schedule:Compact` object with the given name (e.g. "Until: 24:00, 20.0").
+fn legacy_schedule_value(idf: &IdfFile, schedule_name: &str) -> Option<f64> {
     for obj in &idf.objects {
         if !obj.object_type.eq_ignore_ascii_case("Schedule:Compact") {
             continue;
@@ -822,30 +853,82 @@ fn extract_setpoints(idf: &IdfFile, zone_name: &str) -> Option<(f64, f64)> {
             .first()
             .and_then(|v| v.to_display_string())
             .unwrap_or_default();
-        if name == heat_name {
-            heat_val = obj.fields.iter().rev().find_map(|v| match v {
-                IdfValue::Real(f) => Some(*f),
-                IdfValue::Integer(i) => Some(*i as f64),
-                _ => None,
-            });
-        } else if name == cool_name {
-            cool_val = obj.fields.iter().rev().find_map(|v| match v {
+        if name == schedule_name {
+            return obj.fields.iter().rev().find_map(|v| match v {
                 IdfValue::Real(f) => Some(*f),
                 IdfValue::Integer(i) => Some(*i as f64),
                 _ => None,
             });
         }
     }
-    Some((heat_val?, cool_val?))
+    None
+}
+
+/// Import every IDF schedule (`Schedule:Compact`, `Schedule:Constant`) into
+/// the schema's named-schedule map.
+///
+/// Returns the imported schedules keyed by name together with the explicit
+/// loss notes for everything the target representation could not express
+/// exactly (annual date structure, sub-hourly boundaries, design-day day
+/// types). Nothing is dropped silently: anything that cannot be mapped at
+/// all is reported as an [`IdfError`].
+///
+/// # Errors
+///
+/// Returns [`IdfError::Conversion`] when a schedule is malformed or holds
+/// values outside the range declared by its `ScheduleTypeLimits`.
+pub fn import_named_schedules(
+    idf: &IdfFile,
+) -> Result<(BTreeMap<String, DailySchedule>, Vec<ScheduleLoss>), IdfError> {
+    let mut limits: HashMap<String, ScheduleTypeLimits> = HashMap::new();
+    for obj in idf.schedule_type_limits() {
+        let limits_obj = parse_schedule_type_limits(obj)?;
+        limits.insert(limits_obj.name.clone(), limits_obj);
+    }
+
+    let mut schedules: BTreeMap<String, DailySchedule> = BTreeMap::new();
+    let mut losses: Vec<ScheduleLoss> = Vec::new();
+
+    for obj in idf.schedule_compacts() {
+        let referenced = referenced_limits_name(obj);
+        let limits_obj = referenced.as_ref().and_then(|name| limits.get(name));
+        let imported = import_schedule_compact(obj, limits_obj)?;
+        losses.extend(imported.losses.iter().cloned());
+        schedules.insert(imported.name.clone(), imported.schedule);
+    }
+
+    for obj in idf.schedule_constants() {
+        let referenced = referenced_limits_name(obj);
+        let limits_obj = referenced.as_ref().and_then(|name| limits.get(name));
+        let imported = import_schedule_constant(obj, limits_obj)?;
+        losses.extend(imported.losses.iter().cloned());
+        schedules.insert(imported.name.clone(), imported.schedule);
+    }
+
+    for loss in &losses {
+        tracing::warn!(
+            schedule = %loss.schedule,
+            detail = %loss.detail,
+            "IDF schedule import is lossy for this schedule"
+        );
+    }
+
+    Ok((schedules, losses))
 }
 
 /// Build a `ScheduleSet` from an IDF by extracting schedule objects.
 ///
 /// Returns a `ScheduleSet` with HVAC setpoints extracted from
 /// `ZoneControl:Thermostat` + `ThermostatSetpoint:DualSetpoint` +
-/// `Schedule:Compact` objects, or defaults if not found.
-fn build_schedules(idf: &IdfFile, zone_name: &str) -> ScheduleSet {
-    let (heat_sp, cool_sp) = extract_setpoints(idf, zone_name).unwrap_or((20.0, 24.0));
+/// schedule objects, or defaults if not found. Every imported IDF schedule
+/// is additionally carried in `named_schedules` (issue #3991) so that no
+/// schedule value is dropped.
+fn build_schedules(
+    idf: &IdfFile,
+    zone_name: &str,
+    imported: &BTreeMap<String, DailySchedule>,
+) -> ScheduleSet {
+    let (heat_sp, cool_sp) = extract_setpoints(idf, zone_name, imported).unwrap_or((20.0, 24.0));
     ScheduleSet {
         occupancy: DailySchedule::weekly("Occupancy".to_string()),
         lighting: DailySchedule::weekly("Lighting".to_string()),
@@ -855,6 +938,8 @@ fn build_schedules(idf: &IdfFile, zone_name: &str) -> ScheduleSet {
         // Issue #4101: no IDF-sourced lighting density or equipment yet.
         lighting_power_density_w_m2: None,
         equipment: Vec::new(),
+        // Issue #3991: every imported schedule, keyed by name.
+        named_schedules: imported.clone(),
     }
 }
 
@@ -863,8 +948,12 @@ fn build_schedules(idf: &IdfFile, zone_name: &str) -> ScheduleSet {
 /// Returns a `ControlSet` with zone control setpoints extracted from
 /// `ZoneControl:Thermostat` + `ThermostatSetpoint:DualSetpoint` objects,
 /// or defaults if not found.
-fn build_controls(idf: &IdfFile, zone_name: &str) -> ControlSet {
-    let (heat_sp, cool_sp) = extract_setpoints(idf, zone_name).unwrap_or((20.0, 24.0));
+fn build_controls(
+    idf: &IdfFile,
+    zone_name: &str,
+    imported: &BTreeMap<String, DailySchedule>,
+) -> ControlSet {
+    let (heat_sp, cool_sp) = extract_setpoints(idf, zone_name, imported).unwrap_or((20.0, 24.0));
     ControlSet {
         zone_control: ControlConfig {
             heating_setpoint: heat_sp,
@@ -1097,7 +1186,9 @@ pub fn case_spec_from_idf(idf: &IdfFile, case_id: &str) -> Result<CaseSpec, IdfE
         vec![vec![]]
     };
 
-    let (heat_sp, cool_sp) = extract_setpoints(idf, &zone_name).unwrap_or((20.0, 27.0));
+    let (heat_sp, cool_sp) =
+        extract_setpoints(idf, &zone_name, &schema_view.schedules.named_schedules)
+            .unwrap_or((20.0, 27.0));
     let hvac = vec![HvacSchedule::constant(heat_sp, cool_sp)];
 
     let internal_loads = vec![Some(InternalLoads::new(0.0, 0.6, 0.4))];
@@ -1350,6 +1441,75 @@ FenestrationSurface:Detailed, SouthWindow, Window, DblWin, SouthWall, , , 0.0, O
         let idf =
             IdfFile::try_from(path.as_path()).expect("IdfFile::try_from(path) parses Case 600 IDF");
         assert_eq!(idf.version.as_deref(), Some("25.2"));
+    }
+
+    #[test]
+    fn imports_schedules_into_the_schema_named_schedule_map() {
+        // Issue #3991 (schedules slice): the imported schedule values must
+        // survive the conversion — not just parse.
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("idf")
+            .join("schedules.idf");
+        let idf = IdfParser::from_path(&path).expect("IDF parses");
+        let schema = SimulationSchemaV1::try_from(&idf).expect("IDF converts to schema");
+
+        let named = &schema.schedules.named_schedules;
+        assert_eq!(named.len(), 2, "expected both schedules, got {named:?}");
+
+        let occupancy = named.get("Occupancy").expect("Occupancy imported");
+        match &occupancy.values {
+            crate::sim::schedule::ScheduleValues::Weekly(week) => {
+                // Monday (weekday profile).
+                assert!((week[0][0] - 0.1).abs() < 1e-9, "hour 0 = {}", week[0][0]);
+                assert!((week[0][8] - 0.9).abs() < 1e-9, "hour 8 = {}", week[0][8]);
+                assert!(
+                    (week[0][18] - 0.2).abs() < 1e-9,
+                    "hour 18 = {}",
+                    week[0][18]
+                );
+                // Saturday (weekend profile).
+                assert!((week[5][0] - 0.5).abs() < 1e-9, "hour 0 = {}", week[5][0]);
+                assert!(
+                    (week[5][23] - 0.5).abs() < 1e-9,
+                    "hour 23 = {}",
+                    week[5][23]
+                );
+            }
+            other => panic!("expected a weekly schedule, got {other:?}"),
+        }
+
+        let always_on = named.get("AlwaysOn").expect("AlwaysOn imported");
+        assert_eq!(
+            always_on.schedule_type,
+            crate::sim::schedule::ScheduleType::Constant
+        );
+        assert!((always_on.value(0) - 1.0).abs() < 1e-9);
+        assert!((always_on.value(23) - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn malformed_schedule_fails_the_conversion_loudly() {
+        // A malformed schedule must produce a precise error, not a panic
+        // and not a silently dropped schedule.
+        let src = "\
+Version, 25.2;\n\
+Building, TestBldg, 0.0, City, 0.04, 0.4, FullExterior, 25;\n\
+Zone, Z1, 0, 0, 0, 0, 1, 2.7, 129.6, 48.0, ;\n\
+Material, Mat1, MediumRough, 0.1, 1.0, 2000, 800;\n\
+Construction, Wall1, Mat1;\n\
+Site:GroundTemperature:BuildingSurface, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10;\n\
+Schedule:Compact, Broken, Fraction, For: AllDays, Until: 24:00;\n";
+        let idf = IdfParser::from_str(src).unwrap();
+        let err = SimulationSchemaV1::try_from(&idf).expect_err("malformed schedule is rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Broken")
+                && (msg.contains("expected a numeric value")
+                    || msg.contains("missing value after")),
+            "error should name the schedule and the problem, got: {msg}"
+        );
     }
 
     #[test]

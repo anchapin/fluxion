@@ -506,6 +506,20 @@ pub struct ScheduleSet {
     /// [`crate::sim::equipment::Equipment`] via [`EquipmentSpec::build`].
     #[serde(default)]
     pub equipment: Vec<EquipmentSpec>,
+    /// Named schedules imported from an external model, keyed by schedule
+    /// name.
+    ///
+    /// Issue #3991 (IDF schedules slice): the IDF importer fills this map
+    /// from `Schedule:Compact` / `Schedule:Constant` objects so that
+    /// schedule values are never dropped on the floor — the fixed
+    /// `occupancy` / `lighting` / `hvac` / `infiltration` slots above only
+    /// cover the roles the simulation engine consumes directly.
+    ///
+    /// The values are plain [`crate::sim::schedule::DailySchedule`]s, i.e.
+    /// the same representation the rest of the schema uses; no parallel
+    /// schedule type is introduced.
+    #[serde(default)]
+    pub named_schedules: std::collections::BTreeMap<String, DailySchedule>,
 }
 
 impl Default for ScheduleSet {
@@ -518,6 +532,7 @@ impl Default for ScheduleSet {
             infiltration: None,
             lighting_power_density_w_m2: None,
             equipment: Vec::new(),
+            named_schedules: std::collections::BTreeMap::new(),
         }
     }
 }
