@@ -19,6 +19,10 @@ and then the load / plant measures:
 - ``SetHVACEfficiency``
 - ``SetEquipmentPowerDensity``
 
+and then the shading measure:
+
+- ``AddOverhang``
+
 The suite is designed to run in two modes:
 
 1. **With native bindings** (``maturin develop``): full integration coverage
@@ -315,6 +319,28 @@ class TestArgumentDescriptors:
         assert density["min"] == mod.MIN_EQUIPMENT_POWER_DENSITY_W_M2
         assert density["max"] == mod.MAX_EQUIPMENT_POWER_DENSITY_W_M2
 
+    def test_overhang_arguments(self):
+        mod = _load_module("measures/AddOverhang.py", "_overhang_args")
+        spec = mod.AddOverhang().arguments()
+        names = [a["name"] for a in spec]
+        assert "depth" in names
+        assert "height" in names
+        assert "orientation" in names
+        assert "only_with_windows" in names
+        depth = next(a for a in spec if a["name"] == "depth")
+        assert depth["default"] == mod.DEFAULT_OVERHANG_DEPTH_M
+        assert depth["min"] == mod.MIN_OVERHANG_DEPTH_M
+        assert depth["max"] == mod.MAX_OVERHANG_DEPTH_M
+        height = next(a for a in spec if a["name"] == "height")
+        assert height["default"] == mod.DEFAULT_OVERHANG_HEIGHT_M
+        assert height["min"] == mod.MIN_OVERHANG_HEIGHT_M
+        assert height["max"] == mod.MAX_OVERHANG_HEIGHT_M
+        orientation = next(a for a in spec if a["name"] == "orientation")
+        assert orientation["default"] == mod.DEFAULT_ORIENTATION
+        assert set(orientation["choices"]) == set(mod.ORIENTATION_CHOICES)
+        only_windows = next(a for a in spec if a["name"] == "only_with_windows")
+        assert only_windows["default"] is False
+
     def test_hvac_efficiency_arguments(self):
         mod = _load_module("measures/SetHVACEfficiency.py", "_cop_args")
         spec = mod.SetHVACEfficiency().arguments()
@@ -351,6 +377,7 @@ class TestDiscovery:
             "SetLightingPowerDensity",
             "SetHVACEfficiency",
             "SetEquipmentPowerDensity",
+            "AddOverhang",
         }.issubset(names), names
 
 
@@ -1905,3 +1932,353 @@ class TestSetEquipmentPowerDensityIntegration:
         model = fluxion.Model(num_zones=1)
         with pytest.raises(mod.EquipmentNotFoundError):
             self._import_measure().apply(model, {"power_density_w_m2": 6.0})
+
+
+# =============================================================================
+# AddOverhang — duck-typed stand-ins
+# =============================================================================
+
+
+class _StubOrientation:
+    """Stand-in for the native ``fluxion.Orientation`` enum member.
+
+    The native enum exposes ``.name`` (``"South"``) and a ``repr`` of
+    ``"Orientation.South"``; both spellings are exercised.
+    """
+
+    def __init__(self, name):
+        self.name = name
+
+    def __repr__(self):
+        return f"Orientation.{self.name}"
+
+
+class _StubOrientationReprOnly:
+    """Stand-in exposing only the ``repr`` spelling of an orientation."""
+
+    def __init__(self, name):
+        self._name = name
+
+    def __repr__(self):
+        return f"Orientation.{self._name}"
+
+
+class _StubSurface:
+    """Stand-in for the native ``fluxion.Surface`` snapshot."""
+
+    def __init__(self, orientation="South", window_area=0.0, area=10.0):
+        self.orientation = orientation
+        self.window_area = window_area
+        self.area = area
+        self.u_value = 0.5
+        self.overhang_depth = None
+        self.overhang_height = None
+        self.overhang_calls = []
+
+    def add_overhang(self, depth, height):
+        # Mirrors the native helper: sets the shorthand fields and
+        # appends a shading device.
+        self.overhang_depth = depth
+        self.overhang_height = height
+        self.overhang_calls.append((depth, height))
+
+
+class _StubSurfaceModel:
+    """Stand-in for ``fluxion.Model`` exposing the surface snapshots."""
+
+    def __init__(self, surfaces, with_setter=True):
+        self._surfaces = list(surfaces)
+        self.surface_writes = []
+        if with_setter:
+            self.set_surfaces = self._set_surfaces
+
+    def surfaces(self):
+        # Mirrors the PyO3 contract: an owned snapshot handed to the
+        # caller.
+        return list(self._surfaces)
+
+    def _set_surfaces(self, surfaces):
+        self.surface_writes.append(list(surfaces))
+        self._surfaces = list(surfaces)
+
+
+class _StubSurfaceModelWithoutSurfaces:
+    """Stand-in for a model that exposes no surfaces accessor at all."""
+
+
+def _overhang_model():
+    """A model with one surface per cardinal orientation."""
+    return _StubSurfaceModel(
+        [
+            _StubSurface("North", window_area=5.0),
+            _StubSurface("East", window_area=5.0),
+            _StubSurface("South", window_area=5.0),
+            _StubSurface("West", window_area=0.0),
+            _StubSurface("Up", window_area=0.0),
+        ]
+    )
+
+
+# =============================================================================
+# AddOverhang — pure-Python helpers (no native bindings needed)
+# =============================================================================
+
+
+class TestAddOverhangHelpers:
+    """Unit-test the geometry / filter helpers without native bindings."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module("measures/AddOverhang.py", "_overhang_mod")
+
+    def test_valid_depth_is_returned(self, mod):
+        assert mod.validate_depth(1.0) == pytest.approx(1.0)
+
+    def test_depth_below_minimum_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_depth(-0.1)
+        assert "depth" in str(excinfo.value)
+        assert ">=" in str(excinfo.value)
+
+    def test_depth_above_maximum_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_depth(mod.MAX_OVERHANG_DEPTH_M + 0.1)
+        assert "<=" in str(excinfo.value)
+
+    def test_height_bounds_are_enforced(self, mod):
+        assert mod.validate_height(mod.MAX_OVERHANG_HEIGHT_M) == pytest.approx(
+            mod.MAX_OVERHANG_HEIGHT_M
+        )
+        with pytest.raises(ValueError):
+            mod.validate_height(mod.MAX_OVERHANG_HEIGHT_M + 1.0)
+        with pytest.raises(ValueError):
+            mod.validate_height(-1.0)
+
+    def test_nan_and_infinity_are_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_depth(float("nan"))
+        with pytest.raises(ValueError):
+            mod.validate_height(float("inf"))
+
+    def test_non_numeric_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_depth("wide")
+
+    def test_bounds_are_ordered(self, mod):
+        assert (
+            mod.MIN_OVERHANG_DEPTH_M
+            <= mod.DEFAULT_OVERHANG_DEPTH_M
+            <= mod.MAX_OVERHANG_DEPTH_M
+        )
+        assert (
+            mod.MIN_OVERHANG_HEIGHT_M
+            <= mod.DEFAULT_OVERHANG_HEIGHT_M
+            <= mod.MAX_OVERHANG_HEIGHT_M
+        )
+
+    def test_orientation_name_reads_the_enum_name(self, mod):
+        assert mod.orientation_name(_StubOrientation("South")) == "south"
+
+    def test_orientation_name_reads_the_repr(self, mod):
+        assert mod.orientation_name(_StubOrientationReprOnly("West")) == "west"
+
+    def test_orientation_name_accepts_plain_strings(self, mod):
+        assert mod.orientation_name("North") == "north"
+
+    def test_normalize_orientation_is_case_insensitive(self, mod):
+        assert mod.normalize_orientation("south") == "south"
+        assert mod.normalize_orientation("SOUTH") == "south"
+        assert mod.normalize_orientation("  West  ") == "west"
+
+    def test_normalize_orientation_accepts_enum_values(self, mod):
+        assert mod.normalize_orientation(_StubOrientation("East")) == "east"
+
+    def test_normalize_orientation_accepts_the_all_aliases(self, mod):
+        assert mod.normalize_orientation("all") == mod.ORIENTATION_ALL
+        assert mod.normalize_orientation("all exterior") == mod.ORIENTATION_ALL
+        assert mod.normalize_orientation("all_exterior") == mod.ORIENTATION_ALL
+
+    def test_normalize_orientation_rejects_unknown_spellings(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.normalize_orientation("sideways")
+        assert "south" in str(excinfo.value)
+
+    def test_roofs_and_floors_are_not_vertical_orientations(self, mod):
+        assert "up" not in mod.VERTICAL_ORIENTATIONS
+        assert "down" not in mod.VERTICAL_ORIENTATIONS
+        assert "horizontal" not in mod.VERTICAL_ORIENTATIONS
+
+    def test_matches_orientation_matches_the_named_facade(self, mod):
+        assert mod.matches_orientation("South", "south") is True
+        assert mod.matches_orientation("North", "south") is False
+
+    def test_matches_orientation_all_covers_every_cardinal_facade(self, mod):
+        for name in ("North", "East", "South", "West"):
+            assert mod.matches_orientation(name, mod.ORIENTATION_ALL) is True
+        for name in ("Up", "Down", "Horizontal"):
+            assert mod.matches_orientation(name, mod.ORIENTATION_ALL) is False
+
+    def test_is_eligible_respects_the_window_filter(self, mod):
+        glazed = _StubSurface("South", window_area=4.0)
+        opaque = _StubSurface("South", window_area=0.0)
+        assert mod.is_eligible(glazed, "south", False) is True
+        assert mod.is_eligible(opaque, "south", False) is True
+        assert mod.is_eligible(glazed, "south", True) is True
+        assert mod.is_eligible(opaque, "south", True) is False
+
+    def test_is_eligible_respects_the_orientation(self, mod):
+        north = _StubSurface("North", window_area=4.0)
+        assert mod.is_eligible(north, "south", True) is False
+        assert mod.is_eligible(north, "north", True) is True
+
+    def test_select_eligible_returns_the_matching_surfaces(self, mod):
+        surfaces = [
+            _StubSurface("North", window_area=5.0),
+            _StubSurface("South", window_area=5.0),
+            _StubSurface("South", window_area=0.0),
+        ]
+        selected = mod.select_eligible(surfaces, "south", False)
+        assert len(selected) == 2
+        assert all(s.orientation == "South" for s in selected)
+
+        glazed_only = mod.select_eligible(surfaces, "south", True)
+        assert len(glazed_only) == 1
+        assert glazed_only[0].window_area == pytest.approx(5.0)
+
+
+# =============================================================================
+# AddOverhang — measure behaviour (duck-typed model)
+# =============================================================================
+
+
+class TestAddOverhangMeasure:
+    """Exercise the shading measure against stand-in models."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module("measures/AddOverhang.py", "_overhang_measure")
+
+    def test_error_is_a_value_error(self, mod):
+        assert issubclass(mod.NoEligibleSurfaceError, ValueError)
+
+    def test_apply_shadows_the_south_facade_by_default(self, mod):
+        model = _overhang_model()
+        mod.AddOverhang().apply(model, {})
+        shaded = [s for s in model.surfaces() if s.overhang_calls]
+        assert len(shaded) == 1
+        assert shaded[0].orientation == "South"
+        assert shaded[0].overhang_depth == pytest.approx(
+            mod.DEFAULT_OVERHANG_DEPTH_M
+        )
+        assert shaded[0].overhang_height == pytest.approx(
+            mod.DEFAULT_OVERHANG_HEIGHT_M
+        )
+
+    def test_apply_pushes_the_surfaces_back(self, mod):
+        model = _overhang_model()
+        mod.AddOverhang().apply(model, {"depth": 0.75, "height": 3.0})
+        assert len(model.surface_writes) == 1
+        written = model.surface_writes[0]
+        assert len(written) == 5
+        assert any(s.overhang_depth == pytest.approx(0.75) for s in written)
+
+    def test_apply_honours_the_orientation_argument(self, mod):
+        model = _overhang_model()
+        mod.AddOverhang().apply(model, {"orientation": "north"})
+        shaded = [s for s in model.surfaces() if s.overhang_calls]
+        assert len(shaded) == 1
+        assert shaded[0].orientation == "North"
+
+    def test_apply_all_covers_every_cardinal_facade(self, mod):
+        model = _overhang_model()
+        mod.AddOverhang().apply(model, {"orientation": "all"})
+        shaded = [s for s in model.surfaces() if s.overhang_calls]
+        # North, East, South, West — the roof is never eligible.
+        assert len(shaded) == 4
+        assert all(s.orientation != "Up" for s in shaded)
+
+    def test_apply_honours_only_with_windows(self, mod):
+        model = _overhang_model()
+        mod.AddOverhang().apply(
+            model, {"orientation": "all", "only_with_windows": True}
+        )
+        shaded = [s for s in model.surfaces() if s.overhang_calls]
+        assert len(shaded) == 3
+        assert all(s.window_area > 0.0 for s in shaded)
+
+    def test_apply_raises_when_no_surface_is_eligible(self, mod):
+        model = _StubSurfaceModel([_StubSurface("North", window_area=2.0)])
+        with pytest.raises(mod.NoEligibleSurfaceError) as excinfo:
+            mod.AddOverhang().apply(model, {"orientation": "south"})
+        assert "eligible" in str(excinfo.value)
+        # The model must be untouched.
+        assert model.surface_writes == []
+        assert all(not s.overhang_calls for s in model.surfaces())
+
+    def test_apply_raises_when_no_glazed_surface_is_eligible(self, mod):
+        model = _StubSurfaceModel([_StubSurface("South", window_area=0.0)])
+        with pytest.raises(mod.NoEligibleSurfaceError):
+            mod.AddOverhang().apply(model, {"only_with_windows": True})
+        assert model.surface_writes == []
+
+    def test_apply_rejects_an_out_of_range_depth(self, mod):
+        model = _overhang_model()
+        with pytest.raises(ValueError):
+            mod.AddOverhang().apply(model, {"depth": -1.0})
+        assert model.surface_writes == []
+        assert all(not s.overhang_calls for s in model.surfaces())
+
+    def test_apply_rejects_an_out_of_range_height(self, mod):
+        model = _overhang_model()
+        with pytest.raises(ValueError):
+            mod.AddOverhang().apply(
+                model, {"height": mod.MAX_OVERHANG_HEIGHT_M + 1.0}
+            )
+        assert model.surface_writes == []
+
+    def test_apply_rejects_an_unknown_orientation(self, mod):
+        model = _overhang_model()
+        with pytest.raises(ValueError):
+            mod.AddOverhang().apply(model, {"orientation": "diagonal"})
+        assert model.surface_writes == []
+        assert all(not s.overhang_calls for s in model.surfaces())
+
+    def test_apply_without_a_surfaces_accessor_fails_loudly(self, mod):
+        with pytest.raises(mod.NoEligibleSurfaceError):
+            mod.AddOverhang().apply(_StubSurfaceModelWithoutSurfaces(), {})
+
+    def test_apply_without_a_setter_is_advisory(self, mod):
+        model = _StubSurfaceModel(
+            [
+                _StubSurface("South", window_area=2.0),
+                _StubSurface("North", window_area=2.0),
+            ],
+            with_setter=False,
+        )
+        mod.AddOverhang().apply(model, {})
+        # No push-back is possible, but the snapshot itself carries the
+        # overhang (the advisory pattern of the sibling measures).
+        assert model.surface_writes == []
+        assert model._surfaces[0].overhang_depth == pytest.approx(
+            mod.DEFAULT_OVERHANG_DEPTH_M
+        )
+        assert model._surfaces[1].overhang_calls == []
+
+    def test_measure_runs_through_the_aot_runner(self, mod):
+        from fluxion.measures import SOURCE_PYTHON_MEASURE, apply_measures
+
+        model = _overhang_model()
+        chain: list[dict] = []
+        applied = apply_measures(
+            model,
+            [mod.AddOverhang],
+            {"AddOverhang": {"depth": 1.5, "orientation": "south"}},
+            applied_deltas=chain,
+        )
+        assert applied == ["AddOverhang"]
+        assert len(chain) == 1
+        assert chain[0]["source"] == SOURCE_PYTHON_MEASURE
+        assert chain[0]["name"] == "AddOverhang"
+        shaded = [s for s in model.surfaces() if s.overhang_calls]
+        assert len(shaded) == 1
+        assert shaded[0].overhang_depth == pytest.approx(1.5)

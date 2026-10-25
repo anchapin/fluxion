@@ -49,8 +49,8 @@ composable scripts.
 Fluxion ships a **standard library** of baseline measures in
 [`measures/`](../../measures/), including `SetWindowToWallRatio`,
 `ReplaceHVACWithVAV`, `IncreaseInsulationRValue`, `SetThermostatSetpoints`,
-`SwapSchedule`, `SetLightingPowerDensity`, `SetHVACEfficiency`, and
-`SetEquipmentPowerDensity`. This
+`SwapSchedule`, `SetLightingPowerDensity`, `SetHVACEfficiency`,
+`SetEquipmentPowerDensity`, and `AddOverhang`. This
 tutorial shows you how to write your own.
 
 ## The AOT-Only Rule
@@ -285,7 +285,7 @@ pytest tests/python/test_standard_measures.py -v
 - Browse the standard library in [`measures/`](../../measures/) for real-world
   patterns (`SetWindowToWallRatio`, `ReplaceHVACWithVAV`,
   `SetThermostatSetpoints`, `SwapSchedule`, `SetLightingPowerDensity`,
-  `SetHVACEfficiency`, `SetEquipmentPowerDensity`).
+  `SetHVACEfficiency`, `SetEquipmentPowerDensity`, `AddOverhang`).
 - Read [`docs/measures.md`](../measures.md) for the full reference (serialization
   formats, memory-safety recap, provenance schema).
 - Read [`docs/bindings.md`](../bindings.md) for the PyO3 ownership story.
