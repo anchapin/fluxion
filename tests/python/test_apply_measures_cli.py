@@ -42,6 +42,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MEASURES_DIR = REPO_ROOT / "measures" / "examples"
+STDLIB_MEASURES_DIR = REPO_ROOT / "measures"
 
 
 # ---------------------------------------------------------------------------
@@ -671,6 +672,96 @@ class TestApplyMeasuresCLI:
         assert south and all(s.overhang_depth == 2.0 for s in south)
         assert m2.hvac_system().heating_capacity == pytest.approx(99999.0, rel=1e-9)
         assert m2.hvac_system().cooling_capacity == pytest.approx(88888.0, rel=1e-9)
+
+    def test_measure_filter_runs_only_the_named_measure(self, tmp_path):
+        """``--measure NAME`` selects a subset of the discovered measures."""
+        fluxion_mod = importlib.import_module("fluxion")
+        from fluxion.measures import save_model
+
+        base = fluxion_mod.Model(num_zones=1)
+        base_path = tmp_path / "base.json"
+        save_model(base, base_path)
+
+        out_path = tmp_path / "out.json"
+        result = self._run_cli(
+            "apply-measures",
+            "--model", str(base_path),
+            "--measures", str(MEASURES_DIR),
+            "--measure", "AddSouthOverhang",
+            "--output", str(out_path),
+        )
+        assert result.returncode == 0, result.stderr
+
+        summary = json.loads(result.stdout)
+        assert summary["applied"] == ["AddSouthOverhang"]
+
+        from fluxion.measures import load_model
+
+        m2 = load_model(out_path)
+        south = [
+            s for s in m2.surfaces() if s.orientation == fluxion_mod.Orientation.South
+        ]
+        assert south and all(s.overhang_depth == 1.0 for s in south)
+        # SetHVACCOP was filtered out — the default capacity is untouched.
+        assert m2.hvac_system().heating_capacity == pytest.approx(100000.0, rel=1e-9)
+
+    def test_unknown_measure_name_is_rejected(self, tmp_path):
+        fluxion_mod = importlib.import_module("fluxion")
+        from fluxion.measures import save_model
+
+        base = fluxion_mod.Model(num_zones=1)
+        base_path = tmp_path / "base.json"
+        save_model(base, base_path)
+
+        result = self._run_cli(
+            "apply-measures",
+            "--model", str(base_path),
+            "--measures", str(MEASURES_DIR),
+            "--measure", "NoSuchMeasure",
+            "--output", str(tmp_path / "out.json"),
+        )
+        assert result.returncode != 0
+        assert "NoSuchMeasure" in result.stderr
+        assert not (tmp_path / "out.json").exists()
+
+    def test_standard_library_measure_mutates_the_model(self, tmp_path):
+        """A stdlib measure selected from ``measures/`` mutates the model."""
+        fluxion_mod = importlib.import_module("fluxion")
+        from fluxion.measures import save_model
+
+        base = fluxion_mod.Model(num_zones=1)
+        base_path = tmp_path / "base.json"
+        save_model(base, base_path)
+
+        out_path = tmp_path / "out.json"
+        result = self._run_cli(
+            "apply-measures",
+            "--model", str(base_path),
+            "--measures", str(STDLIB_MEASURES_DIR),
+            "--measure", "SetWindowToWallRatio",
+            "--output", str(out_path),
+        )
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout)["applied"] == ["SetWindowToWallRatio"]
+
+        payload = json.loads(out_path.read_text())
+        assert payload["surfaces"]
+        assert all(s["window_area"] > 0.0 for s in payload["surfaces"])
+        assert "SetWindowToWallRatio" in [
+            d["name"] for d in payload["applied_deltas"]
+        ]
+
+    def test_module_entry_point(self):
+        """``python -m fluxion`` exposes the same CLI as the console script."""
+        result = subprocess.run(
+            [sys.executable, "-m", "fluxion", "apply-measures", "--help"],
+            capture_output=True,
+            text=True,
+            cwd=str(REPO_ROOT),
+        )
+        assert result.returncode == 0, result.stderr
+        assert "--model" in result.stdout
+        assert "--measures" in result.stdout
 
 
 # ---------------------------------------------------------------------------

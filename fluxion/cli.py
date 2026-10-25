@@ -98,6 +98,17 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     apply_p.add_argument(
+        "--measure",
+        action="append",
+        dest="measure_names",
+        default=None,
+        metavar="NAME",
+        help=(
+            "Only run the measure with this class name (repeatable). "
+            "Without it, every discovered measure runs."
+        ),
+    )
+    apply_p.add_argument(
         "--dry-run",
         action="store_true",
         help="Discover measures and report what would run, but do not mutate or write.",
@@ -115,6 +126,36 @@ def _build_parser() -> argparse.ArgumentParser:
 # =============================================================================
 # Subcommand handlers
 # =============================================================================
+
+
+def _filter_measure_classes(
+    measure_classes: list[type[FluxionMeasure]],
+    names: list[str] | None,
+) -> tuple[list[type[FluxionMeasure]], list[str]]:
+    """Select the measure classes named by ``names``.
+
+    A measure matches when its class name equals the requested name or when
+    it declares that name in its ``name`` class attribute (the OpenStudio-style
+    measure name used by ``--measure-args``).
+
+    Returns the selected classes (in discovery order) and the requested names
+    that matched nothing.
+    """
+    if not names:
+        return list(measure_classes), []
+
+    selected: list[type[FluxionMeasure]] = []
+    matched: set[str] = set()
+    for requested in names:
+        for cls in measure_classes:
+            declared = getattr(cls, "name", "") or ""
+            if requested in (cls.__name__, declared):
+                if cls not in selected:
+                    selected.append(cls)
+                matched.add(requested)
+                break
+    unknown = [n for n in names if n not in matched]
+    return selected, unknown
 
 
 def _handle_apply_measures(args: argparse.Namespace) -> int:
@@ -139,6 +180,18 @@ def _handle_apply_measures(args: argparse.Namespace) -> int:
         return 2
     else:
         logger.error("--measures must be a directory, got file: %s", args.measures)
+        return 2
+
+    # Optional ``--measure NAME`` filter — run only the named measures.
+    measure_classes, unknown = _filter_measure_classes(
+        measure_classes, getattr(args, "measure_names", None)
+    )
+    if unknown:
+        logger.error(
+            "Unknown measure name(s): %s. Use --list to see the discovered "
+            "measures.",
+            ", ".join(unknown),
+        )
         return 2
 
     if args.list_only:
