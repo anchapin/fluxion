@@ -23,6 +23,7 @@ for the full design rationale.
 | [`SwapSchedule.py`](SwapSchedule.py) | `SwapSchedule` | Replace the thermostat schedule with an alternative profile — `constant`, `setback` or `operating_hours`. The named schedule must exist in the model, otherwise the measure fails loudly. |
 | [`SetLightingPowerDensity.py`](SetLightingPowerDensity.py) | `SetLightingPowerDensity` | Set the lighting power density (W/m²) of the model's lighting / internal-load inputs. The density must be positive and bounded; a model with no lighting object fails loudly. |
 | [`SetHVACEfficiency.py`](SetHVACEfficiency.py) | `SetHVACEfficiency` | Set the heating / cooling coefficient of performance (COP) of the model's HVAC plant. A model with no HVAC system fails loudly. |
+| [`SetEquipmentPowerDensity.py`](SetEquipmentPowerDensity.py) | `SetEquipmentPowerDensity` | Set the equipment / plug-load power density (W/m²) of the model's equipment inputs. The density must be positive and bounded; a model with no equipment object fails loudly. |
 
 > **Control-side persistence (Issue #3995).** `SetThermostatSetpoints` and
 > `SwapSchedule` act on the model's *control* data. The native
@@ -49,6 +50,22 @@ for the full design rationale.
 > the lighting measure fails loudly and the COP change is **advisory**
 > (visible on the HVAC snapshot and preserved by the Python
 > save/load round-trip, but not consumed by the Rust simulation).
+
+> **Equipment densities (Issue #3995).** `SetEquipmentPowerDensity` is the
+> equipment-side twin of `SetLightingPowerDensity`: it sets the plug /
+> process-equipment power density (W/m²). It probes the model for the
+> equipment / internal-loads object that carries the density — accepting
+> both the canonical `equipment_power_density_w_m2` (the Rust `ScheduleSet`
+> naming for a W/m² density) and the `equipment_power_density` alias used
+> by the BEM checker (`src/validation/copilot/checker.rs`) — and raises
+> `EquipmentNotFoundError` when the model exposes none, so an equipment
+> study against a model without equipment fails loudly rather than report
+> a change that never happened. Its bounds (0.1-200 W/m²) live in the
+> measure: the lower floor rejects "no equipment" (a deletion), the upper
+> bound sits above the checker's 30 W/m² "high for an office" warning so
+> dense server rooms stay modellable. As with the lighting measure, the
+> native `fluxion.Model` binding exposes no equipment accessor, so on
+> today's bindings the measure fails loudly on a native model.
 
 > **Named schedules (Issue #3995).** `SwapSchedule` resolves its
 > `schedule_name` argument against the schedules the model exposes

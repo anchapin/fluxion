@@ -13,10 +13,11 @@ control-side measures:
 - ``SetThermostatSetpoints``
 - ``SwapSchedule``
 
-and then the two load / plant measures:
+and then the load / plant measures:
 
 - ``SetLightingPowerDensity``
 - ``SetHVACEfficiency``
+- ``SetEquipmentPowerDensity``
 
 The suite is designed to run in two modes:
 
@@ -304,6 +305,16 @@ class TestArgumentDescriptors:
         assert density["min"] == mod.MIN_LIGHTING_POWER_DENSITY_W_M2
         assert density["max"] == mod.MAX_LIGHTING_POWER_DENSITY_W_M2
 
+    def test_equipment_arguments(self):
+        mod = _load_module("measures/SetEquipmentPowerDensity.py", "_epd_args")
+        spec = mod.SetEquipmentPowerDensity().arguments()
+        names = [a["name"] for a in spec]
+        assert "power_density_w_m2" in names
+        density = next(a for a in spec if a["name"] == "power_density_w_m2")
+        assert density["default"] == mod.DEFAULT_EQUIPMENT_POWER_DENSITY_W_M2
+        assert density["min"] == mod.MIN_EQUIPMENT_POWER_DENSITY_W_M2
+        assert density["max"] == mod.MAX_EQUIPMENT_POWER_DENSITY_W_M2
+
     def test_hvac_efficiency_arguments(self):
         mod = _load_module("measures/SetHVACEfficiency.py", "_cop_args")
         spec = mod.SetHVACEfficiency().arguments()
@@ -339,6 +350,7 @@ class TestDiscovery:
             "SwapSchedule",
             "SetLightingPowerDensity",
             "SetHVACEfficiency",
+            "SetEquipmentPowerDensity",
         }.issubset(names), names
 
 
@@ -1342,6 +1354,313 @@ class TestSetLightingPowerDensityMeasure:
 
 
 # =============================================================================
+# SetEquipmentPowerDensity — duck-typed stand-ins
+# =============================================================================
+
+
+class _StubEquipment:
+    """Stand-in for an equipment snapshot (canonical field name)."""
+
+    def __init__(self, power_density_w_m2=10.0):
+        self.equipment_power_density_w_m2 = power_density_w_m2
+
+
+class _StubEquipmentAlias:
+    """Stand-in carrying the ``equipment_power_density`` alias field."""
+
+    def __init__(self, power_density=10.0):
+        self.equipment_power_density = power_density
+
+
+class _StubEquipmentModel:
+    """Stand-in for ``fluxion.Model`` exposing an equipment snapshot."""
+
+    def __init__(self, power_density_w_m2=10.0, with_setter=True):
+        self._equipment = _StubEquipment(power_density_w_m2)
+        self.equipment_writes = []
+        if with_setter:
+            self.set_equipment = self._set_equipment
+
+    def equipment(self):
+        # Mirrors the PyO3 contract: an owned snapshot handed to the caller.
+        return self._equipment
+
+    def _set_equipment(self, equipment):
+        self.equipment_writes.append(equipment)
+
+
+class _StubEquipmentInternalLoadsModel:
+    """Stand-in for a model whose internal loads carry the EPD."""
+
+    def __init__(self, power_density_w_m2=10.0):
+        self._loads = _StubEquipment(power_density_w_m2)
+        self.internal_load_writes = []
+
+    def internal_loads(self):
+        return self._loads
+
+    def set_internal_loads(self, loads):
+        self.internal_load_writes.append(loads)
+
+
+class _StubModelWithoutEquipment:
+    """Stand-in for a model that exposes no equipment object at all."""
+
+
+# =============================================================================
+# SetEquipmentPowerDensity — argument validation
+# =============================================================================
+
+
+class TestEquipmentPowerDensityValidation:
+    """The equipment density must be a positive, bounded number."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module(
+            "measures/SetEquipmentPowerDensity.py", "_epd_mod"
+        )
+
+    def test_valid_density_is_returned(self, mod):
+        assert mod.validate_power_density(8.0) == pytest.approx(8.0)
+
+    def test_zero_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_power_density(0.0)
+        assert "> 0" in str(excinfo.value)
+
+    def test_negative_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_power_density(-1.0)
+
+    def test_above_maximum_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_power_density(mod.MAX_EQUIPMENT_POWER_DENSITY_W_M2 + 1.0)
+        assert "<=" in str(excinfo.value)
+
+    def test_below_minimum_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_power_density(
+                mod.MIN_EQUIPMENT_POWER_DENSITY_W_M2 / 2.0
+            )
+        assert ">=" in str(excinfo.value)
+
+    def test_nan_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_power_density(float("nan"))
+
+    def test_infinity_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_power_density(float("inf"))
+
+    def test_non_numeric_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_power_density("pluggy")
+
+    def test_bounds_are_ordered(self, mod):
+        assert (
+            mod.MIN_EQUIPMENT_POWER_DENSITY_W_M2
+            < mod.DEFAULT_EQUIPMENT_POWER_DENSITY_W_M2
+            < mod.MAX_EQUIPMENT_POWER_DENSITY_W_M2
+        )
+
+    def test_upper_bound_exceeds_the_lighting_bound(self, mod):
+        # Equipment / plug densities are typically larger than lighting
+        # densities, so the equipment bound must not clip lighting-scale
+        # studies.
+        lighting = _load_module(
+            "measures/SetLightingPowerDensity.py", "_lpd_bound"
+        )
+        assert (
+            mod.MAX_EQUIPMENT_POWER_DENSITY_W_M2
+            > lighting.MAX_LIGHTING_POWER_DENSITY_W_M2
+        )
+
+
+# =============================================================================
+# SetEquipmentPowerDensity — measure behaviour (duck-typed model)
+# =============================================================================
+
+
+class TestSetEquipmentPowerDensityMeasure:
+    """Exercise the equipment measure against stand-in models."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module(
+            "measures/SetEquipmentPowerDensity.py", "_epd_measure"
+        )
+
+    def test_resolve_finds_the_equipment_object(self, mod):
+        model = _StubEquipmentModel()
+        target, attribute, path = mod.resolve_equipment_target(model)
+        assert target is model._equipment
+        assert attribute == "equipment_power_density_w_m2"
+        assert path == "equipment"
+
+    def test_resolve_accepts_the_alias_field(self, mod):
+        class _AliasModel:
+            def __init__(self):
+                self._equipment = _StubEquipmentAlias(10.0)
+
+            def equipment(self):
+                return self._equipment
+
+        target, attribute, path = mod.resolve_equipment_target(_AliasModel())
+        assert attribute == "equipment_power_density"
+        assert path == "equipment"
+
+    def test_resolve_falls_back_to_internal_loads(self, mod):
+        model = _StubEquipmentInternalLoadsModel()
+        target, attribute, path = mod.resolve_equipment_target(model)
+        assert target is model._loads
+        assert attribute == "equipment_power_density_w_m2"
+        assert path == "internal_loads"
+
+    def test_resolve_falls_back_to_a_model_attribute(self, mod):
+        class _AttributeModel:
+            equipment_power_density_w_m2 = 10.0
+
+        target, attribute, path = mod.resolve_equipment_target(_AttributeModel())
+        assert attribute == "equipment_power_density_w_m2"
+        assert path == "model_attribute"
+
+    def test_resolve_falls_back_to_the_alias_model_attribute(self, mod):
+        class _AliasAttributeModel:
+            equipment_power_density = 10.0
+
+        target, attribute, path = mod.resolve_equipment_target(
+            _AliasAttributeModel()
+        )
+        assert attribute == "equipment_power_density"
+        assert path == "model_attribute"
+
+    def test_resolve_raises_when_the_model_has_no_equipment(self, mod):
+        with pytest.raises(mod.EquipmentNotFoundError) as excinfo:
+            mod.resolve_equipment_target(_StubModelWithoutEquipment())
+        assert "no equipment object" in str(excinfo.value)
+
+    def test_resolve_raises_when_only_lighting_is_present(self, mod):
+        class _LightingOnlyModel:
+            def __init__(self):
+                self._lighting = _StubLighting(10.0)
+
+            def lighting(self):
+                return self._lighting
+
+        with pytest.raises(mod.EquipmentNotFoundError):
+            mod.resolve_equipment_target(_LightingOnlyModel())
+
+    def test_error_is_a_value_error(self, mod):
+        assert issubclass(mod.EquipmentNotFoundError, ValueError)
+
+    def test_apply_mutates_and_persists_the_equipment(self, mod):
+        model = _StubEquipmentModel(power_density_w_m2=10.0)
+        mod.SetEquipmentPowerDensity().apply(model, {"power_density_w_m2": 6.5})
+        assert model._equipment.equipment_power_density_w_m2 == pytest.approx(6.5)
+        assert len(model.equipment_writes) == 1
+        assert (
+            model.equipment_writes[0].equipment_power_density_w_m2
+            == pytest.approx(6.5)
+        )
+
+    def test_apply_mutates_the_internal_loads_object(self, mod):
+        model = _StubEquipmentInternalLoadsModel(power_density_w_m2=10.0)
+        mod.SetEquipmentPowerDensity().apply(model, {"power_density_w_m2": 4.0})
+        assert model._loads.equipment_power_density_w_m2 == pytest.approx(4.0)
+        assert len(model.internal_load_writes) == 1
+
+    def test_apply_writes_the_alias_field(self, mod):
+        class _AliasModel:
+            def __init__(self):
+                self._equipment = _StubEquipmentAlias(10.0)
+                self.equipment_writes = []
+
+            def equipment(self):
+                return self._equipment
+
+            def set_equipment(self, equipment):
+                self.equipment_writes.append(equipment)
+
+        model = _AliasModel()
+        mod.SetEquipmentPowerDensity().apply(model, {"power_density_w_m2": 3.0})
+        assert model._equipment.equipment_power_density == pytest.approx(3.0)
+        assert len(model.equipment_writes) == 1
+
+    def test_apply_writes_a_mapping_shaped_target(self, mod):
+        class _MappingModel:
+            def __init__(self):
+                self._equipment = {"equipment_power_density_w_m2": 10.0}
+
+            def equipment(self):
+                return self._equipment
+
+        model = _MappingModel()
+        mod.SetEquipmentPowerDensity().apply(model, {"power_density_w_m2": 9.0})
+        assert model._equipment["equipment_power_density_w_m2"] == pytest.approx(9.0)
+
+    def test_apply_sets_a_model_attribute_in_place(self, mod):
+        class _AttributeModel:
+            equipment_power_density_w_m2 = 10.0
+
+        model = _AttributeModel()
+        mod.SetEquipmentPowerDensity().apply(model, {"power_density_w_m2": 7.0})
+        assert model.equipment_power_density_w_m2 == pytest.approx(7.0)
+
+    def test_apply_without_a_setter_is_advisory(self, mod):
+        model = _StubEquipmentModel(power_density_w_m2=10.0, with_setter=False)
+        # Must not raise even though the model exposes no equipment setter.
+        mod.SetEquipmentPowerDensity().apply(model, {"power_density_w_m2": 5.0})
+        assert model.equipment_writes == []
+        assert model._equipment.equipment_power_density_w_m2 == pytest.approx(5.0)
+
+    def test_apply_fails_loudly_without_an_equipment_object(self, mod):
+        model = _StubModelWithoutEquipment()
+        with pytest.raises(mod.EquipmentNotFoundError):
+            mod.SetEquipmentPowerDensity().apply(model, {"power_density_w_m2": 6.0})
+
+    def test_failed_run_does_not_touch_the_model(self, mod):
+        model = _StubEquipmentModel(power_density_w_m2=10.0)
+        with pytest.raises(ValueError):
+            # An invalid density is rejected before the model is touched.
+            mod.SetEquipmentPowerDensity().apply(model, {"power_density_w_m2": 0.0})
+        assert model._equipment.equipment_power_density_w_m2 == pytest.approx(10.0)
+        assert model.equipment_writes == []
+
+    def test_apply_rejects_an_invalid_density(self, mod):
+        model = _StubEquipmentModel(power_density_w_m2=10.0)
+        with pytest.raises(ValueError):
+            mod.SetEquipmentPowerDensity().apply(model, {"power_density_w_m2": -3.0})
+        assert model.equipment_writes == []
+
+    def test_default_density_is_applied(self, mod):
+        model = _StubEquipmentModel(power_density_w_m2=10.0)
+        measure = mod.SetEquipmentPowerDensity()
+        args = measure.parse_arguments({})
+        measure.apply(model, args)
+        assert (
+            model._equipment.equipment_power_density_w_m2
+            == pytest.approx(mod.DEFAULT_EQUIPMENT_POWER_DENSITY_W_M2)
+        )
+
+    def test_provenance_chain_recorded(self, mod):
+        from fluxion.measures import SOURCE_PYTHON_MEASURE, apply_measures
+
+        model = _StubEquipmentModel(power_density_w_m2=10.0)
+        chain: list[dict] = []
+        applied = apply_measures(
+            model,
+            [mod.SetEquipmentPowerDensity],
+            {"SetEquipmentPowerDensity": {"power_density_w_m2": 6.0}},
+            applied_deltas=chain,
+        )
+        assert applied == ["SetEquipmentPowerDensity"]
+        assert len(chain) == 1
+        assert chain[0]["source"] == SOURCE_PYTHON_MEASURE
+        assert chain[0]["name"] == "SetEquipmentPowerDensity"
+
+
+# =============================================================================
 # SetHVACEfficiency — duck-typed stand-ins
 # =============================================================================
 
@@ -1567,4 +1886,22 @@ class TestSetLightingPowerDensityIntegration:
         mod = _load_module("measures/SetLightingPowerDensity.py", "_lpd_int2")
         model = fluxion.Model(num_zones=1)
         with pytest.raises(mod.LightingNotFoundError):
+            self._import_measure().apply(model, {"power_density_w_m2": 6.0})
+
+
+@requires_fluxion
+class TestSetEquipmentPowerDensityIntegration:
+    """The native model exposes no equipment object — the measure says so."""
+
+    def _import_measure(self):
+        return _load_module(
+            "measures/SetEquipmentPowerDensity.py", "_epd_int"
+        ).SetEquipmentPowerDensity
+
+    def test_native_model_fails_loudly(self):
+        import fluxion
+
+        mod = _load_module("measures/SetEquipmentPowerDensity.py", "_epd_int2")
+        model = fluxion.Model(num_zones=1)
+        with pytest.raises(mod.EquipmentNotFoundError):
             self._import_measure().apply(model, {"power_density_w_m2": 6.0})
