@@ -74,10 +74,18 @@ fluxion apply-measures
     --measures DIR          Directory containing FluxionMeasure subclasses
     --output PATH           Output file (default: model.applied.json)
     --measure-args PATH     Optional JSON: {measure_name: {arg: value}}
+    --measure NAME          Only run this measure (repeatable)
     --dry-run               Print the plan (measure name, class, args) and exit
     --list                  List discovered measure classes and exit
     -v / -vv                Verbosity (warning, info, debug)
 ```
+
+Two entry points reach the same runner:
+
+| Invocation | Notes |
+|------------|-------|
+| `fluxion apply-measures ...` | Console script declared in `pyproject.toml` (`[project.scripts] fluxion = "fluxion.cli:main"`). Installed by `maturin develop` / `pip install fluxion`. |
+| `python -m fluxion apply-measures ...` | Module entry point (`fluxion/__main__.py`) — runnable straight from a source checkout, no install required. `python -m fluxion.cli ...` is equivalent. |
 
 Discovery rules:
 
@@ -85,6 +93,15 @@ Discovery rules:
 - Skips files starting with `_` (e.g. `__init__.py`, `_helpers.py`).
 - Imports each file in a uniquely-named module and collects concrete `FluxionMeasure` subclasses declared in that file.
 - Stable alphabetical order on output.
+
+`--measure NAME` (repeatable) restricts the run to the named measures. The
+name matches either the class name or the `name` class attribute of the
+measure. This is how a single measure is picked out of a directory that holds
+the whole standard library — without it, *every* discovered measure runs, and
+a measure that fails loudly on the given model (for example
+`SetLightingPowerDensity` on a model that exposes no lighting object) aborts
+the run before any output is written. An unknown `--measure` name is rejected
+with exit code 2 and the list of discovered measures is printed by `--list`.
 
 ## Model Serialization
 
