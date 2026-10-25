@@ -476,16 +476,14 @@ impl StandardReportContext {
 /// mismatch with the report.
 fn canonical_series_text(series: [Option<&Vec<f64>>; 4]) -> String {
     let mut text = String::new();
-    for s in series {
-        if let Some(values) = s {
-            for v in values {
-                // Fixed precision, one value per line; a non-finite value is
-                // impossible here (the engine never records NaN energy), but
-                // fall back to a canonical zero rather than panicking.
-                let value = if v.is_finite() { *v } else { 0.0 };
-                text.push_str(&format_fixed(value).unwrap_or_else(|_| "0.000000".to_string()));
-                text.push('\n');
-            }
+    for values in series.into_iter().flatten() {
+        for v in values {
+            // Fixed precision, one value per line; a non-finite value is
+            // impossible here (the engine never records NaN energy), but
+            // fall back to a canonical zero rather than panicking.
+            let value = if v.is_finite() { *v } else { 0.0 };
+            text.push_str(&format_fixed(value).unwrap_or_else(|_| "0.000000".to_string()));
+            text.push('\n');
         }
     }
     text
