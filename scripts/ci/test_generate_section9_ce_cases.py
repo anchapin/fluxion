@@ -85,6 +85,24 @@ def test_ce200_ahri_conditions() -> None:
     assert ce200["weather_file"] == "CE200A"
 
 
-def test_engine_coverage_still_zero() -> None:
+def test_engine_coverage_matches_the_engine_run() -> None:
+    """The §9 engine-run harness (#4296) dispatches every CE case.
+
+    The claim in the generated file must match the case table and point at
+    the harness that produces it; the recorded per-case rows live in
+    ``tests/validation/hvac_equipment_rated_performance/data/
+    section9_engine_run_results.json``.
+    """
     doc = _doc()
-    assert doc["engine_coverage"]["cases_run"] == 0
+    coverage = doc["engine_coverage"]
+    assert coverage["cases_run"] == len(doc["cases"]) == 14
+    assert "section9_engine_run.rs" in coverage["note"]
+    assert "section9_engine_run_results.json" in coverage["note"]
+
+
+def test_analytical_slot_still_null_after_the_harness_landed() -> None:
+    """The harness scores the comparative slot; the analytical slot stays null
+    until the licensed 140-2023 §9 materials are transcribed (#4285)."""
+    doc = _doc()
+    for case in doc["cases"]:
+        assert case["acceptance"]["analytical"] is None
