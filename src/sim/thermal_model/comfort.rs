@@ -61,7 +61,15 @@ pub(crate) fn compute_pmv_ppd_and_adaptive(
     let c = f_cl * h_c * (t_cl - ta);
     let r = 3.96e-8 * f_cl * ((t_cl + 273.0).powi(4) - (tr + 273.0).powi(4));
     let c_res = 0.0014 * m * (34.0 - ta);
-    let e_res = 0.0000173 * m * (p_sat - p_a);
+    // Latent respiration (round 97; ISO 7730:2005 HL3): 1.7e-5·M·(5867 − p_a)
+    // W/m² with p_a in Pa. 5867 Pa is the saturated water-vapour pressure of
+    // the EXHALED air (the ISO 7730 Basic program carries the same constant;
+    // EnergyPlus prints 0.000017·M·(5867 − VapPress)). Pre-fix this was
+    // 1.73e-5·M·(p_sat − p_a) — the Fanger-family coefficient paired with the
+    // ambient-air saturation pressure instead of the exhaled-air constant,
+    // which roughly halved the term at room temperatures (1.59 vs 4.23 W/m²
+    // at 25 °C / 50 % rh).
+    let e_res = 0.000017 * m * (5867.0 - p_a);
 
     // Skin-diffusion evaporative capacity (round 96 units fix; ISO 7730:2005
     // Annex D HL1): `3.05e-3·(5733 − 6.99·M − p_a)` W/m² with M in W/m² and
@@ -129,7 +137,9 @@ mod tests {
     /// terms moved from t_sk against ta/tr to ISO 7730:2005's
     /// clothing-surface form — `f_cl·h_c·(t_cl − t_a)` and the radiative
     /// quartic `3.96e-8·f_cl·[(t_cl+273)⁴ − (t_r+273)⁴]` — the residual
-    /// flagged above; neutral came down 29.033729242 -> 25.580475167 °C.
+    /// flagged above; neutral came down 29.033729242 -> 25.580475167 °C
+    /// (dry terms), then to 26.009076839 °C (respiration to the 5867 Pa
+    /// exhaled-air form), inside the textbook window.
     /// Known residual (recorded, not fixed here): the evaporative model is
     /// a wettedness regulator (`w·e_max`, w from 0.06 to 1) rather than
     /// ISO's fixed HL1 diffusion + sweating split, which reads warm on the
@@ -152,8 +162,9 @@ mod tests {
         // capacity to the ISO 7730 Pa form). Round 97 stage 1 moves it to
         // 25.580475167 °C as the dry c/r terms move to ISO's
         // clothing-surface t_cl form (bisection of the exact operation
-        // order, r97_comfort_refs.py).
-        let m = compute_pmv_ppd_and_adaptive(25.580475167, 0.5, 0.1, 1.0, 0.5);
+        // order, r97_comfort_refs.py). Stage 2 (respiration to the 5867 Pa
+        // exhaled-air form) lands it at 26.009076839 °C — the pinned value.
+        let m = compute_pmv_ppd_and_adaptive(26.009076839, 0.5, 0.1, 1.0, 0.5);
         assert_close(m.pmv, 0.0, "neutral PMV");
         assert_close(m.ppd, 5.0, "neutral PPD (Fanger lower bound)");
         assert!(
@@ -176,18 +187,22 @@ mod tests {
         // h_c = 2.38·|ta - 35|^0.25.
         let cool = compute_pmv_ppd_and_adaptive(27.0, 0.5, 0.1, 1.0, 0.5);
         let warm = compute_pmv_ppd_and_adaptive(29.0, 0.5, 0.1, 1.0, 0.5);
-        assert_close(cool.pmv, 0.529313271, "still-air 27 C PMV");
-        assert_close(cool.ppd, 10.861146768, "still-air 27 C PPD");
-        assert_close(warm.pmv, 1.272445895, "still-air 29 C PMV");
-        assert_close(warm.ppd, 38.859740659, "still-air 29 C PPD");
+        assert_close(cool.pmv, 0.382578260, "still-air 27 C PMV");
+        assert_close(cool.ppd, 8.048119849, "still-air 27 C PPD");
+        assert_close(warm.pmv, 1.154399049, "still-air 29 C PMV");
+        assert_close(warm.ppd, 33.049831077, "still-air 29 C PPD");
         assert!(
             cool.pmv < warm.pmv,
             "PMV must rise with operative temperature"
         );
         assert!(cool.ppd >= 5.0 && warm.ppd >= 5.0, "PPD >= 5% always");
         let mid = compute_pmv_ppd_and_adaptive(26.0, 0.5, 0.1, 1.0, 0.5);
-        assert_close(mid.pmv, 0.156515871, "still-air 26 C PMV");
-        assert_close(mid.ppd, 5.507654989, "still-air 26 C PPD");
+        assert_close(
+            mid.pmv,
+            0.0,
+            "still-air 26 C PMV (zero arm at the corrected neutral)",
+        );
+        assert_close(mid.ppd, 5.0, "still-air 26 C PPD (Fanger lower bound)");
     }
 
     #[test]
@@ -197,8 +212,8 @@ mod tests {
         // clamped at the -4 arm; the corrected dry terms leave it mid-band.
         // The clamp arms are pinned in the extremes test.)
         let fan = compute_pmv_ppd_and_adaptive(26.0, 0.5, 0.8, 1.0, 0.5);
-        assert_close(fan.pmv, -0.138293519, "fan 26 C PMV");
-        assert_close(fan.ppd, 5.396235550, "fan 26 C PPD");
+        assert_close(fan.pmv, -0.298312723, "fan 26 C PMV");
+        assert_close(fan.ppd, 6.849139800, "fan 26 C PPD");
         let still = compute_pmv_ppd_and_adaptive(26.0, 0.5, 0.1, 1.0, 0.5);
         assert!(
             fan.pmv < still.pmv,
@@ -216,9 +231,9 @@ mod tests {
         // evaporative capacity, the same load drives a larger loss, and
         // PMV falls. (Pre-fix, the term was zero at 50 % rh entirely.)
         let dry = compute_pmv_ppd_and_adaptive(30.0, 0.0005, 0.1, 1.0, 0.5);
-        assert_close(dry.pmv, 1.080145889, "dry-air 30 C PMV");
+        assert_close(dry.pmv, 0.979980337, "dry-air 30 C PMV");
         let humid = compute_pmv_ppd_and_adaptive(30.0, 0.5, 0.1, 1.0, 0.5);
-        assert_close(humid.pmv, 1.641731448, "humid 30 C PMV");
+        assert_close(humid.pmv, 1.539150494, "humid 30 C PMV");
         assert!(
             dry.pmv < humid.pmv,
             "the evaporative term must reduce PMV as air dries"
