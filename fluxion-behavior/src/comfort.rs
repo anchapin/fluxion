@@ -139,19 +139,38 @@ impl PmvComfort {
         // the loss at room temperatures (1.59 vs 4.23 W/m² at 25 °C / 50 % rh).
         let e_res = 0.000017 * m * (5867.0 - p_a);
 
-        // Skin-diffusion evaporative capacity (round 96 units fix; ISO
-        // 7730:2005 Annex D HL1): `3.05e-3·(5733 − 6.99·M − p_a)` W/m² with
-        // M in W/m² and p_a in Pa (work w = 0 here, so M = MW). Pre-fix this
-        // was `0.408·(42.5 − p_a)` — the mmHg-form constant paired with
-        // p_a in Pa, zero at any normal humidity.
-        let e_max = (3.05e-3 * (5733.0 - 6.99 * m - p_a)).max(0.0);
-        let d1 = m - w - c_res - e_res - c - r;
-        let w_ratio = if d1 > 0.0 && e_max > 0.0 {
-            (0.06 + 0.94 * d1 / e_max).min(1.0)
-        } else {
-            0.06
-        };
-        let e = w_ratio * e_max;
+        // Evaporative heat loss from the skin (round 98, Issue #4598): ISO
+        // 7730:2005's FIXED split — E_dif + E_rsw — replaces the
+        // load-proportional wettedness regulator
+        // (`w·e_max`, w = clamp(0.06 + 0.94·d1/e_max, 0.06, 1.0)) this copy
+        // carried since the round-96 units fix:
+        //
+        //   HL1 — diffusion through the skin, always present, unclamped as
+        //         in the ISO Basic program and EnergyPlus
+        //         (EvapHeatLossDiff = 0.00305·(5733 − 6.99·H − P_a)):
+        //         E_dif = 3.05e-3·(5733 − 6.99·M − p_a) W/m², M in W/m²,
+        //         p_a in Pa (work w = 0 here, so M = MW). The same bracket
+        //         arrived in round 96 as the e_max capacity (itself
+        //         replacing the mmHg-form `0.408·(42.5 − p_a)` that zeroed
+        //         at any normal humidity).
+        //   Sweating — E_rsw = 0.42·max(M − 58.15, 0) W/m², active only
+        //         above the comfort metabolic state 58.15 W/m² (1 met;
+        //         EnergyPlus guards the same way: E_rsw = 0.42·(H − 58.2)
+        //         for H > 58.2, else 0).
+        //
+        // Premise (verified 2026-10-25 against the EnergyPlus Engineering
+        // Reference Fanger section and the ISO 7730:2005 equation set): the
+        // Fanger/ISO PMV carries NO wettedness feedback — skin wettedness
+        // is a two-node-model (Pierce/KSU) construct. The regulator floored
+        // the cold side at 6 % of capacity (~0.8 W/m² where E_dif ≈ 13.1
+        // W/m² at 18 °C / clo 1.0 — reads warm) and saturated at e_max on
+        // the warm side, never crediting sweating above 1 met. Beyond the
+        // ISO validity domain (hot-humid extremes) the unclamped E_dif
+        // bracket goes negative; ISO's reference program computes it
+        // unclamped and the PMV ±4 clamp absorbs that regime.
+        let e_dif = 3.05e-3 * (5733.0 - 6.99 * m - p_a);
+        let e_rsw = 0.42 * (m - 58.15).max(0.0);
+        let e = e_dif + e_rsw;
 
         let l = m - w - c_res - e_res - c - r - e;
 
@@ -351,8 +370,12 @@ mod tests {
         // respiration form, 25 °C / clo 0.5 / 50 % rh is essentially
         // neutral (PMV ≈ -0.023); the pre-round-97 `pmv > 0` expectation
         // encoded the (t_sk − t_cl) deviation.
+        // Round 98 (Issue #4598, fixed ISO 7730 evaporative split): 25 °C
+        // sits below the balance, where the regulator scaled the diffusive
+        // loss below capacity; the fixed E_dif restores it.
+        // -0.023355613 -> -0.389260211.
         assert!(
-            (result.pmv - (-0.023355613)).abs() < 1e-9,
+            (result.pmv - (-0.389260211)).abs() < 1e-9,
             "PMV for 25°C typical office should sit at the corrected pin, got {}",
             result.pmv
         );
@@ -373,10 +396,15 @@ mod tests {
             .unwrap();
 
         // Round 97 corrected pins: slightly cool, not the pre-fix cold
-        // reading (the cold-side offset vs published Fanger tables is the
-        // recorded wettedness-regulator residual, not part of this fix).
-        assert!((result.pmv - (-0.612278191)).abs() < 1e-9);
-        assert!((result.ppd - 12.863375212).abs() < 1e-9);
+        // reading. Round 98 (Issue #4598) then replaced the recorded
+        // wettedness-regulator residual itself with ISO's fixed split —
+        // see the re-pinned values below.
+        // Round 98 (Issue #4598): fixed-split values. The regulator's 6 %
+        // floor carried e ≈ 0.786 W/m² here where ISO's E_dif is
+        // ≈ 13.099 W/m² (+12.31 W/m² restored, the issue's reading-warm
+        // defect): -0.612278191 -> -1.416959230.
+        assert!((result.pmv - (-1.416959230)).abs() < 1e-9);
+        assert!((result.ppd - 46.417718088).abs() < 1e-9);
     }
 
     #[test]
@@ -393,9 +421,12 @@ mod tests {
             .calculate_pmv_ppd(ta, tr, vel, rh, met, clo)
             .unwrap();
 
-        // Round 97 corrected pin.
-        assert!((result.pmv - 1.734916701).abs() < 1e-9);
-        assert!((result.ppd - 63.611979256).abs() < 1e-9);
+        // Round 98 (Issue #4598): at met 1.2 the ISO sweating term
+        // 0.42·(69.78 − 58.15) = 4.885 W/m² engages (the regulator
+        // saturated at e_max and never credited it):
+        // 1.734916701 -> 1.478118082.
+        assert!((result.pmv - 1.478118082).abs() < 1e-9);
+        assert!((result.ppd - 49.713006628).abs() < 1e-9);
     }
 
     #[test]
@@ -435,8 +466,11 @@ mod tests {
 
         // Round 97 corrected pins: 20 °C with clo 1.5 is ~neutral in the
         // corrected model.
-        assert!((result.pmv - (-0.009075675)).abs() < 1e-9);
-        assert!((result.ppd - 5.001705063).abs() < 1e-9);
+        // Round 98 (Issue #4598, fixed split): the d1-proportional
+        // regulator sat just below capacity here; the fixed E_dif moves
+        // the pin -0.009075675 -> -0.151261250.
+        assert!((result.pmv - (-0.151261250)).abs() < 1e-9);
+        assert!((result.ppd - 5.474107248).abs() < 1e-9);
     }
 
     #[test]
@@ -486,14 +520,18 @@ mod tests {
         // roughly halved the loss at room temperatures (1.59 vs 4.23 W/m²
         // at 25 °C / 50 % rh). Scenario at met 1.5 doubles the respiration
         // flux so the bracket difference is ~2x the met=1 effect:
-        // PMV 1.448437078 (pre-fix) -> 1.297428735. Reference values
-        // computed independently in Python replicating this function's
-        // exact operation order (r97_comfort_refs.py); ±1e-9 is
-        // cross-language libm ulp headroom, not a physics tolerance.
+        // PMV 1.448437078 (pre-r97) -> 1.297428735 (r97). Round 98
+        // (Issue #4598) moves it again, to 0.795372740: at met 1.5 the
+        // fixed split's sweating term 0.42·(87.23 − 58.15) = 12.21 W/m²
+        // engages (the regulator saturated at e_max instead). Reference
+        // values computed independently in Python replicating this
+        // function's exact operation order (r97/r98_comfort_refs.py);
+        // ±1e-9 is cross-language libm ulp headroom, not a physics
+        // tolerance.
         let pmv_comfort = PmvComfort::new();
         let pmv = pmv_comfort.calculate_pmv(26.0, 26.0, 0.5, 0.1, 1.5, 0.5);
         assert!(
-            (pmv - 1.297428735).abs() < 1e-9,
+            (pmv - 0.795372740).abs() < 1e-9,
             "respiration 5867 Pa form at 26 C / met 1.5: got {pmv}"
         );
         // Fix direction: more respiration loss must read cooler, and
@@ -501,7 +539,7 @@ mod tests {
         assert!(pmv < 1.448437078, "fix direction: got {pmv}");
         let humid = pmv_comfort.calculate_pmv(26.0, 26.0, 0.9, 0.1, 1.5, 0.5);
         assert!(
-            (humid - 1.547921509).abs() < 1e-9 && humid > pmv,
+            (humid - 1.045865513).abs() < 1e-9 && humid > pmv,
             "humidity must warm: {humid} vs {pmv}"
         );
     }
@@ -630,12 +668,14 @@ mod tests {
         // evaporative term). Round 97 moves it again, to -0.424073441 (dry
         // c/r terms to ISO's clothing-surface t_cl form, then respiration
         // to the 5867 Pa exhaled-air form); this function's neutral point
-        // now sits at ~26.0 °C. Pinned
-        // exactly (Python replication, r97_comfort_refs.py; ±1e-9 libm
-        // headroom).
+        // now sits at ~26.0 °C. Round 98 (Issue #4598, fixed evaporative
+        // split) moves it to -1.158944320: at 23 °C the d1-proportional
+        // regulator held the diffusive loss below ISO's fixed E_dif.
+        // Pinned exactly (Python replication, r97/r98_comfort_refs.py;
+        // ±1e-9 libm headroom).
         assert!(
-            (result.pmv - (-0.424073441)).abs() < 1e-9,
-            "ASHRAE 55 PMV at 23 °C (round-97 comfort fixes): got {}",
+            (result.pmv - (-1.158944320)).abs() < 1e-9,
+            "ASHRAE 55 PMV at 23 °C (round-97/98 comfort fixes): got {}",
             result.pmv
         );
     }
@@ -786,6 +826,29 @@ mod tests {
             "ASHRAE 55: PPD should be symmetric around PMV=0: +1={}, -1={}",
             ppd_pos,
             ppd_neg
+        );
+    }
+
+    #[test]
+    fn evaporative_split_is_fixed_iso7730_not_load_regulated() {
+        // Round 98 (Issue #4598): the wettedness regulator
+        // (w = clamp(0.06 + 0.94·d1/e_max, 0.06, 1.0); e = w·e_max) is
+        // replaced by ISO 7730:2005's fixed split E = E_dif + E_rsw — the
+        // diffusion term is always present (unclamped, as in the ISO Basic
+        // program and EnergyPlus's EvapHeatLossDiff) and sweating engages
+        // only above 58.15 W/m² (1 met; EnergyPlus guards the same way:
+        // E_rsw = 0.42·(H − 58.2) for H > 58.2, else 0). The regulator
+        // floored this 14 °C / clo 1.0 scenario near 6 % of capacity
+        // (PMV -1.623601745 pre-fix); the fixed diffusion restores the
+        // loss (PMV -2.471865351). Reference values from Python
+        // replication of this function's exact operation order
+        // (r98_comfort_refs.py); ±1e-9 is cross-language libm ulp
+        // headroom, not a physics tolerance.
+        let pmv_comfort = PmvComfort::new();
+        let pmv = pmv_comfort.calculate_pmv(14.0, 14.0, 0.5, 0.1, 1.0, 1.0);
+        assert!(
+            (pmv - (-2.471865351)).abs() < 1e-9,
+            "fixed ISO evaporative split at 14 C / clo 1.0: got {pmv}"
         );
     }
 }
