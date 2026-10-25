@@ -184,10 +184,19 @@ def build() -> dict:
         "_parameter_source": PARAM_SOURCE,
         "_units": "SI: W, degC",
         "engine_coverage": {
-            "cases_run": 0,
+            "cases_run": len(cases),
             "note": (
-                "No CE case is executed by the engine yet (KNOWN_ISSUES LIMIT-42); "
-                "engine runs land in a follow-up change and must report honestly"
+                "Every CE case is dispatched through the DX performance map by the "
+                "§9 engine-run harness "
+                "(tests/validation/hvac_equipment_rated_performance/section9_engine_run.rs); "
+                "the per-case band rows (comparative, Task-22 ensemble bounds) and "
+                "their known-fail status are recorded in "
+                "tests/validation/hvac_equipment_rated_performance/data/"
+                "section9_engine_run_results.json (KNOWN_ISSUES LIMIT-42). The "
+                "analytical §9.2 acceptance slot stays null (the 140-2023 §9 "
+                "normative materials are licensed, Issue #4285) and the normative CE "
+                "weather files are not committed (Issue #4285 / methodology F1), so the "
+                "annual band metrics are not reproducible from the steady-state run"
             ),
         },
         "cases": cases,
