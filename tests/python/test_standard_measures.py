@@ -354,6 +354,19 @@ class TestArgumentDescriptors:
         assert heating["min"] == mod.MIN_COP
         assert cooling["max"] == mod.MAX_COP
 
+    def test_window_properties_arguments(self):
+        mod = _load_module("measures/SetWindowProperties.py", "_wp_args")
+        spec = mod.SetWindowProperties().arguments()
+        names = [a["name"] for a in spec]
+        assert "u_value_w_m2k" in names
+        assert "shgc" in names
+        u_value = next(a for a in spec if a["name"] == "u_value_w_m2k")
+        shgc = next(a for a in spec if a["name"] == "shgc")
+        assert u_value["default"] is None
+        assert shgc["default"] is None
+        assert u_value["max"] == mod.MAX_WINDOW_U_VALUE_W_M2K
+        assert shgc["max"] == mod.MAX_WINDOW_SHGC
+
 
 # =============================================================================
 # Discovery — the standard-library measures are discoverable
@@ -378,6 +391,7 @@ class TestDiscovery:
             "SetHVACEfficiency",
             "SetEquipmentPowerDensity",
             "AddOverhang",
+            "SetWindowProperties",
         }.issubset(names), names
 
 
@@ -2282,3 +2296,390 @@ class TestAddOverhangMeasure:
         shaded = [s for s in model.surfaces() if s.overhang_calls]
         assert len(shaded) == 1
         assert shaded[0].overhang_depth == pytest.approx(1.5)
+
+
+# =============================================================================
+# SetWindowProperties — duck-typed stand-ins
+# =============================================================================
+
+
+class _StubWindowSpec:
+    """Stand-in for a Rust ``WindowSpec`` (``src/api/schema.rs``)."""
+
+    def __init__(self, u_value=5.8, shgc=0.86):
+        self.window_u_value = u_value
+        self.window_shgc = shgc
+
+
+class _StubWindowSpecModel:
+    """Stand-in for a model exposing a window-spec collection."""
+
+    def __init__(self, specs=None, with_setter=True):
+        self._specs = list(specs) if specs is not None else [_StubWindowSpec()]
+        self.window_writes = []
+        if with_setter:
+            self.set_window_specs = self._set_window_specs
+
+    def window_specs(self):
+        # Mirrors the PyO3 contract: an owned snapshot handed to the
+        # caller. The elements are shared, so an in-place mutation of a
+        # spec is visible on the model.
+        return list(self._specs)
+
+    def _set_window_specs(self, specs):
+        self.window_writes.append(list(specs))
+        self._specs = list(specs)
+
+
+class _StubPartialWindowSpec:
+    """Stand-in for a window spec that carries only the U-value."""
+
+    def __init__(self, u_value=5.8):
+        self.window_u_value = u_value
+
+
+class _StubWindowsAliasModel:
+    """Stand-in exposing the shorter ``windows()`` accessor."""
+
+    def __init__(self, specs=None, with_setter=True):
+        self._specs = list(specs) if specs is not None else [_StubWindowSpec()]
+        self.window_writes = []
+        if with_setter:
+            self.set_windows = self._set_windows
+
+    def windows(self):
+        return list(self._specs)
+
+    def _set_windows(self, specs):
+        self.window_writes.append(list(specs))
+        self._specs = list(specs)
+
+
+class _StubGlazedSurface:
+    """Stand-in for a schema-shaped surface nesting its window spec."""
+
+    def __init__(self, u_value=5.8, shgc=0.86):
+        self.window = _StubWindowSpec(u_value, shgc)
+
+
+class _StubSurfaceWithWindowModel:
+    """Stand-in whose surfaces carry the glazing fields."""
+
+    def __init__(self, surfaces, with_setter=True):
+        self._surfaces = list(surfaces)
+        self.surface_writes = []
+        if with_setter:
+            self.set_surfaces = self._set_surfaces
+
+    def surfaces(self):
+        return list(self._surfaces)
+
+    def _set_surfaces(self, surfaces):
+        self.surface_writes.append(list(surfaces))
+        self._surfaces = list(surfaces)
+
+
+class _StubModelWithWindowFields:
+    """Stand-in whose model object holds the glazing fields itself."""
+
+    def __init__(self, u_value=5.8, shgc=0.86):
+        self.window_u_value = u_value
+        self.window_shgc = shgc
+
+
+class _StubModelWithoutWindows:
+    """Stand-in for a model that exposes no window spec at all."""
+
+
+# =============================================================================
+# SetWindowProperties — pure validators (no native bindings needed)
+# =============================================================================
+
+
+class TestSetWindowPropertiesValidation:
+    """The glazing U-value and SHGC must be valid numbers."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module(
+            "measures/SetWindowProperties.py", "_window_props_mod"
+        )
+
+    def test_valid_u_value_is_returned(self, mod):
+        assert mod.validate_u_value(1.7) == pytest.approx(1.7)
+
+    def test_u_value_cap_is_accepted(self, mod):
+        assert mod.validate_u_value(mod.MAX_WINDOW_U_VALUE_W_M2K) == pytest.approx(
+            mod.MAX_WINDOW_U_VALUE_W_M2K
+        )
+
+    def test_zero_u_value_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_u_value(0.0)
+        assert "> 0" in str(excinfo.value)
+
+    def test_negative_u_value_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_u_value(-1.0)
+
+    def test_u_value_above_the_cap_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_u_value(mod.MAX_WINDOW_U_VALUE_W_M2K + 0.1)
+        assert "<=" in str(excinfo.value)
+
+    def test_u_value_nan_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_u_value(float("nan"))
+
+    def test_u_value_infinity_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_u_value(float("inf"))
+
+    def test_non_numeric_u_value_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_u_value("single pane")
+
+    def test_valid_shgc_is_returned(self, mod):
+        assert mod.validate_shgc(0.35) == pytest.approx(0.35)
+
+    def test_shgc_of_one_is_valid(self, mod):
+        assert mod.validate_shgc(1.0) == pytest.approx(1.0)
+
+    def test_zero_shgc_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_shgc(0.0)
+        assert "> 0" in str(excinfo.value)
+
+    def test_negative_shgc_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_shgc(-0.2)
+
+    def test_shgc_above_one_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_shgc(1.5)
+        assert "<= 1" in str(excinfo.value)
+
+    def test_shgc_nan_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_shgc(float("nan"))
+
+    def test_shgc_infinity_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_shgc(float("inf"))
+
+    def test_non_numeric_shgc_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_shgc("low-e")
+
+    def test_bounds_match_the_rust_validator(self, mod):
+        # The Rust validator requires window_u_value > 0 and
+        # 0 < window_shgc <= 1 (src/api/schema.rs).
+        assert mod.MAX_WINDOW_SHGC == pytest.approx(1.0)
+        assert mod.U_VALUE_FIELD == "window_u_value"
+        assert mod.SHGC_FIELD == "window_shgc"
+
+    def test_u_value_cap_is_generous(self, mod):
+        # Single-pane clear glass is ≈ 5.8 W/m²·K — the cap must sit
+        # above it, so a real single-pane upgrade stays modellable.
+        assert mod.MAX_WINDOW_U_VALUE_W_M2K > 5.8
+
+
+# =============================================================================
+# SetWindowProperties — measure behaviour (duck-typed model)
+# =============================================================================
+
+
+class TestSetWindowPropertiesMeasure:
+    """Exercise the glazing measure against stand-in models."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module(
+            "measures/SetWindowProperties.py", "_window_props_measure"
+        )
+
+    def test_error_is_a_value_error(self, mod):
+        assert issubclass(mod.WindowNotFoundError, ValueError)
+
+    def test_resolve_finds_the_window_spec_collection(self, mod):
+        model = _StubWindowSpecModel()
+        groups = mod.resolve_window_specs(model)
+        assert len(groups) == 1
+        assert groups[0].path == "window_specs"
+        assert groups[0].specs == [model._specs[0]]
+
+    def test_resolve_finds_the_windows_alias(self, mod):
+        model = _StubWindowsAliasModel()
+        groups = mod.resolve_window_specs(model)
+        assert groups[0].path == "windows"
+
+    def test_resolve_finds_surfaces_carrying_the_window_fields(self, mod):
+        model = _StubSurfaceWithWindowModel([_StubGlazedSurface()])
+        groups = mod.resolve_window_specs(model)
+        assert groups[0].path == "surfaces"
+        assert groups[0].specs[0].window_u_value == pytest.approx(5.8)
+
+    def test_resolve_finds_the_model_attributes(self, mod):
+        model = _StubModelWithWindowFields()
+        groups = mod.resolve_window_specs(model)
+        assert groups[0].path == "model_attribute"
+        assert groups[0].specs == [model]
+
+    def test_resolve_raises_when_the_model_has_no_window_spec(self, mod):
+        with pytest.raises(mod.WindowNotFoundError) as excinfo:
+            mod.resolve_window_specs(_StubModelWithoutWindows())
+        assert "no window spec" in str(excinfo.value)
+
+    def test_apply_sets_both_glazing_properties(self, mod):
+        model = _StubWindowSpecModel()
+        mod.SetWindowProperties().apply(
+            model, {"u_value_w_m2k": 1.7, "shgc": 0.35}
+        )
+        spec = model._specs[0]
+        assert spec.window_u_value == pytest.approx(1.7)
+        assert spec.window_shgc == pytest.approx(0.35)
+
+    def test_apply_with_only_a_u_value_leaves_the_shgc_untouched(self, mod):
+        model = _StubWindowSpecModel([_StubWindowSpec(5.8, 0.86)])
+        mod.SetWindowProperties().apply(model, {"u_value_w_m2k": 1.7})
+        spec = model._specs[0]
+        assert spec.window_u_value == pytest.approx(1.7)
+        assert spec.window_shgc == pytest.approx(0.86)
+
+    def test_apply_with_only_an_shgc_leaves_the_u_value_untouched(self, mod):
+        model = _StubWindowSpecModel([_StubWindowSpec(5.8, 0.86)])
+        mod.SetWindowProperties().apply(model, {"shgc": 0.35})
+        spec = model._specs[0]
+        assert spec.window_shgc == pytest.approx(0.35)
+        assert spec.window_u_value == pytest.approx(5.8)
+
+    def test_apply_mutates_every_window_spec(self, mod):
+        model = _StubWindowSpecModel(
+            [_StubWindowSpec(), _StubWindowSpec(), _StubWindowSpec()]
+        )
+        mod.SetWindowProperties().apply(
+            model, {"u_value_w_m2k": 1.7, "shgc": 0.35}
+        )
+        assert len(model._specs) == 3
+        for spec in model._specs:
+            assert spec.window_u_value == pytest.approx(1.7)
+            assert spec.window_shgc == pytest.approx(0.35)
+
+    def test_apply_pushes_the_window_specs_back(self, mod):
+        model = _StubWindowSpecModel()
+        mod.SetWindowProperties().apply(model, {"u_value_w_m2k": 1.7})
+        assert len(model.window_writes) == 1
+        written = model.window_writes[0]
+        assert written[0].window_u_value == pytest.approx(1.7)
+
+    def test_apply_mutates_surfaces_carrying_the_window_fields(self, mod):
+        model = _StubSurfaceWithWindowModel(
+            [_StubGlazedSurface(), _StubGlazedSurface()]
+        )
+        mod.SetWindowProperties().apply(
+            model, {"u_value_w_m2k": 1.7, "shgc": 0.35}
+        )
+        for surface in model._surfaces:
+            assert surface.window.window_u_value == pytest.approx(1.7)
+            assert surface.window.window_shgc == pytest.approx(0.35)
+        assert len(model.surface_writes) == 1
+
+    def test_apply_sets_the_model_attributes_in_place(self, mod):
+        model = _StubModelWithWindowFields()
+        mod.SetWindowProperties().apply(model, {"shgc": 0.35})
+        assert model.window_shgc == pytest.approx(0.35)
+        assert model.window_u_value == pytest.approx(5.8)
+
+    def test_apply_without_a_setter_is_advisory(self, mod):
+        model = _StubWindowSpecModel(with_setter=False)
+        # Must not raise even though the model exposes no window setter.
+        mod.SetWindowProperties().apply(model, {"u_value_w_m2k": 1.7})
+        assert model.window_writes == []
+        assert model._specs[0].window_u_value == pytest.approx(1.7)
+
+    def test_apply_rejects_a_spec_that_cannot_take_the_field(self, mod):
+        class _PartialModel:
+            def __init__(self):
+                self._specs = [
+                    _StubWindowSpec(5.8, 0.86),
+                    _StubPartialWindowSpec(5.8),
+                ]
+                self.window_writes = []
+
+            def window_specs(self):
+                return list(self._specs)
+
+            def set_window_specs(self, specs):
+                self.window_writes.append(list(specs))
+
+        model = _PartialModel()
+        with pytest.raises(ValueError) as excinfo:
+            mod.SetWindowProperties().apply(model, {"shgc": 0.35})
+        assert "window_shgc" in str(excinfo.value)
+        # The first spec must not have been mutated before the failure.
+        assert model._specs[0].window_shgc == pytest.approx(0.86)
+        assert model.window_writes == []
+
+    def test_apply_fails_loudly_without_a_window_spec(self, mod):
+        model = _StubModelWithoutWindows()
+        with pytest.raises(mod.WindowNotFoundError):
+            mod.SetWindowProperties().apply(model, {"u_value_w_m2k": 1.7})
+
+    def test_apply_requires_at_least_one_property(self, mod):
+        model = _StubWindowSpecModel()
+        with pytest.raises(ValueError) as excinfo:
+            mod.SetWindowProperties().apply(model, {})
+        assert "at least one" in str(excinfo.value)
+        assert model._specs[0].window_u_value == pytest.approx(5.8)
+        assert model.window_writes == []
+
+    def test_apply_rejects_an_invalid_u_value_before_mutating(self, mod):
+        model = _StubWindowSpecModel([_StubWindowSpec(5.8, 0.86)])
+        with pytest.raises(ValueError):
+            mod.SetWindowProperties().apply(model, {"u_value_w_m2k": 0.0})
+        assert model._specs[0].window_u_value == pytest.approx(5.8)
+        assert model._specs[0].window_shgc == pytest.approx(0.86)
+        assert model.window_writes == []
+
+    def test_apply_rejects_an_invalid_shgc_before_mutating(self, mod):
+        model = _StubWindowSpecModel([_StubWindowSpec(5.8, 0.86)])
+        with pytest.raises(ValueError):
+            mod.SetWindowProperties().apply(model, {"shgc": 1.5})
+        assert model._specs[0].window_u_value == pytest.approx(5.8)
+        assert model._specs[0].window_shgc == pytest.approx(0.86)
+        assert model.window_writes == []
+
+    def test_apply_rejects_a_non_numeric_u_value_before_mutating(self, mod):
+        model = _StubWindowSpecModel([_StubWindowSpec(5.8, 0.86)])
+        with pytest.raises(ValueError):
+            mod.SetWindowProperties().apply(model, {"u_value_w_m2k": "single"})
+        assert model.window_writes == []
+
+    def test_arguments_are_optional_and_independent(self, mod):
+        spec = mod.SetWindowProperties().arguments()
+        names = [a["name"] for a in spec]
+        assert names == ["u_value_w_m2k", "shgc"]
+        u_value = next(a for a in spec if a["name"] == "u_value_w_m2k")
+        shgc = next(a for a in spec if a["name"] == "shgc")
+        assert u_value["default"] is None
+        assert shgc["default"] is None
+        assert u_value["max"] == mod.MAX_WINDOW_U_VALUE_W_M2K
+        assert shgc["max"] == mod.MAX_WINDOW_SHGC
+
+    def test_measure_runs_through_the_aot_runner(self, mod):
+        from fluxion.measures import SOURCE_PYTHON_MEASURE, apply_measures
+
+        model = _StubWindowSpecModel()
+        chain: list[dict] = []
+        applied = apply_measures(
+            model,
+            [mod.SetWindowProperties],
+            {"SetWindowProperties": {"u_value_w_m2k": 1.7, "shgc": 0.35}},
+            applied_deltas=chain,
+        )
+        assert applied == ["SetWindowProperties"]
+        assert len(chain) == 1
+        assert chain[0]["source"] == SOURCE_PYTHON_MEASURE
+        assert chain[0]["name"] == "SetWindowProperties"
+        assert model._specs[0].window_u_value == pytest.approx(1.7)
+        assert model._specs[0].window_shgc == pytest.approx(0.35)

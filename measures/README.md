@@ -25,6 +25,7 @@ for the full design rationale.
 | [`SetHVACEfficiency.py`](SetHVACEfficiency.py) | `SetHVACEfficiency` | Set the heating / cooling coefficient of performance (COP) of the model's HVAC plant. A model with no HVAC system fails loudly. |
 | [`SetEquipmentPowerDensity.py`](SetEquipmentPowerDensity.py) | `SetEquipmentPowerDensity` | Set the equipment / plug-load power density (W/m²) of the model's equipment inputs. The density must be positive and bounded; a model with no equipment object fails loudly. |
 | [`AddOverhang.py`](AddOverhang.py) | `AddOverhang` | Attach a horizontal overhang (depth / mounting height, per façade orientation) to the model's exterior façades. A model with no eligible façade fails loudly. |
+| [`SetWindowProperties.py`](SetWindowProperties.py) | `SetWindowProperties` | Set the glazing U-value (W/m²·K) and/or the solar heat gain coefficient (SHGC) of the model's window specs — the single-pane → low-e double-pane upgrade study. A model with no window spec fails loudly. |
 
 > **Control-side persistence (Issue #3995).** `SetThermostatSetpoints` and
 > `SwapSchedule` act on the model's *control* data. The native
@@ -80,6 +81,27 @@ for the full design rationale.
 > The overhangs are attached to the surface snapshots and pushed back
 > through `model.set_surfaces(...)`; on a model without that setter the
 > change is **advisory**.
+
+> **Glazing properties (Issue #3995).** `SetWindowProperties` is the
+> glazing-*property* sibling of `SetWindowToWallRatio` (which changes the
+> glazing *area* only): it sets the `window_u_value` (W/m²·K) and/or the
+> `window_shgc` (the solar heat gain coefficient) of the model's window
+> specs — the canonical single-pane → low-e double-pane upgrade study.
+> Both arguments are optional and independent (setting one leaves the
+> other untouched); at least one must be given. The U-value must be
+> `> 0` (the Rust rule in `src/api/schema.rs`) and `<= 10` W/m²·K (a
+> measure-side sanity cap — single-pane clear glass is ≈ 5.8), the SHGC
+> must be in `(0, 1]` (exactly the Rust validator's rule). Both are
+> validated *before* the model is touched, so an invalid request never
+> leaves a half-mutated model. The measure probes the model for its
+> window specs — a `window_specs()` / `windows()` accessor, then the
+> surfaces / zones carrying the glazing fields (directly or in a nested
+> `window` attribute), then the fields held on the model itself — mutates
+> **all** of them, and pushes the mutated collection back through the
+> matching setter. A model that exposes no window spec fails loudly with
+> `WindowNotFoundError`; the native `fluxion.Model` binding exposes no
+> window-spec accessor today, so on a native model the measure fails
+> loudly rather than reporting an upgrade that never happened.
 
 > **Named schedules (Issue #3995).** `SwapSchedule` resolves its
 > `schedule_name` argument against the schedules the model exposes
