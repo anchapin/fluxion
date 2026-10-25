@@ -135,7 +135,7 @@ jobs:
             zone_balance_eplus_isolation:: \
             > criterion-2-output.log 2>&1 || true
           echo "Criterion 2 log size: $(wc -l < criterion-2-output.log) lines"
-          echo "(the §LIMIT-21 cohort's red is by design — see docs/agents/beta-soak-criterion-2-tracker.md)"
+          echo "(the §LIMIT-21 cohort went green 2026-10-25 at run 40184928129 after #4591; the drift detector (#3744) now guards it empty — see docs/agents/beta-soak-criterion-2-tracker.md)"
 
       # ADR-0007 criterion 3 — CLI behaviour / stub guards (includes the
       # Issue #3283 --zone-solver / --conduction-solver flag tests).

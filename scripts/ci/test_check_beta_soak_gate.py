@@ -456,33 +456,42 @@ def test_criterion_2_failures_returns_v1_payload(checker):
     assert summary["limit_owner_issue"] == "#3297"
 
 
-def test_criterion_2_failures_lists_both_nightly_failures(checker):
-    """Both nightly Criterion 2 failures are listed verbatim."""
+def test_criterion_2_failures_empty_after_2026_10_25_resolution(checker):
+    """The canonical cohort is empty since the 2026-10-25 resolution.
+
+    The two-test §LIMIT-21 criterion-2 cohort went green under
+    gauge-solver at soak run 40184928129 after #4591 (hybrid
+    scheduled-ACH slot in the gauge dispatcher); the drift detector
+    (#3744) flagged the shrinkage and this docs/PR update is the
+    deliberate re-pin. Re-adding entries means the cohort regressed.
+    """
     summary = checker.criterion_2_failures()
-    names = [f["name"] for f in summary["failures"]]
-    assert (
-        "test_physics_thermal_model_eplus_case_600_reference_csv" in names
-    ), "Case 600 oscillation test must be in the canonical list"
-    assert "test_free_floating_case_900ff_isolation" in names, (
-        "Case 900FF divergence test must be in the canonical list"
+    assert summary["failures"] == [], (
+        "failures must stay empty after the 2026-10-25 resolution; a "
+        "re-addition is a cohort regression and needs its own docs/PR "
+        "update with provenance"
     )
-    assert len(summary["failures"]) == 2, (
-        "Only the 2 nightly Criterion 2 failures are tracked here "
-        "(the wider §LIMIT-21 cohort is enumerated in §LIMIT-21 itself)"
+    steps = summary["recovery_steps"]
+    assert any("40184928129" in s for s in steps), (
+        "the resolution run id must stay recorded in the payload"
     )
 
 
-def test_criterion_2_failures_includes_panic_sites(checker):
-    """The panic sites match the verbatim sources in Issue #3359."""
+def test_criterion_2_failures_schema_keys_stable(checker):
+    """The v1 payload keys survive the resolution (artifact consumers)."""
     summary = checker.criterion_2_failures()
-    by_name = {f["name"]: f for f in summary["failures"]}
-    case_600 = by_name["test_physics_thermal_model_eplus_case_600_reference_csv"]
-    assert case_600["panic_site"] == "tests/zone_balance_eplus_isolation.rs:298:5"
-    assert case_600["file"] == "tests/zone_balance_eplus_isolation.rs"
-    assert "34.007" in case_600["symptom"]
-    case_900ff = by_name["test_free_floating_case_900ff_isolation"]
-    assert case_900ff["panic_site"] == "tests/zone_balance_eplus_isolation.rs:445:5"
-    assert "is_finite" in case_900ff["symptom"]
+    for key in (
+        "schema_version",
+        "tracker_doc",
+        "limit_ref",
+        "limit_owner_issue",
+        "cross_references",
+        "escape_hatch",
+        "failures",
+        "recovery_steps",
+        "definition_of_done",
+    ):
+        assert key in summary, f"v1 key {key} missing after resolution"
 
 
 def test_criterion_2_failures_cross_references_include_parent_issues(checker):
@@ -555,7 +564,9 @@ def test_cli_criterion_2_failures_independent_of_state(checker, monkeypatch, tmp
     )
     assert rc == 0, "criterion-2 summary must work independent of state validity"
     payload = json.loads(out)
-    assert len(payload["failures"]) == 2
+    assert payload["failures"] == [], (
+        "the canonical cohort is empty since the 2026-10-25 resolution"
+    )
 
 
 def test_cli_criterion_2_failures_short_circuits_other_flags(

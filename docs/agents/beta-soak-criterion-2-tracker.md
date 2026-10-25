@@ -8,18 +8,57 @@
 > **Summary 6/7:** The β-soak escape hatch (`docs/agents/beta-soak-escape-hatch.md`, Issue #3285, dormant by design) is the operational safety valve for follow-up PRs that need to merge a structural gauge change while §LIMIT-21 is still open — NOT a way to weaken the gate or reset the streak.
 > **Summary 7/7:** Recovery steps: close §LIMIT-21 by landing the air-trajectory fidelity program (#1465 / #1462 / #3059 — NOT a constant or baseline change); once the 2 nightly Criterion 2 tests pass for 30 consecutive nights, the streak reaches `30/30` and the gauge default-flip is unblocked via the `beta-soak-gate (enforce)` step in CI.
 
+## UPDATE 2026-10-25 — cohort resolved green (physics loop round 99)
+
+The two-test cohort went **green** under gauge-solver at soak run
+[40184928129](https://github.com/anchapin/fluxion/actions/runs/40184928129)
+(head `00e19545`, 2026-10-25): Criterion 2 measured **19 passed /
+0 failed / 21 ignored**. The structural fix that landed is **#4591**
+(`12f75688`, merged 2026-10-24) — round 95's hybrid scheduled-ACH slot
+plumbed into the gauge dispatcher (#3985/#4578 follow-up). Both tests
+still exist, un-ignored, at
+`tests/all_tests/zone_balance_eplus_isolation.rs:188` and `:432`
+(the #3764 binary-consolidation move) — they pass legitimately; no
+quarantine was involved and no baseline was touched.
+
+The cohort-drift detector (#3744) flagged the shrinkage that night
+(`removed` = both names) — this document's designed re-pin trigger. In
+the re-pin PR:
+
+- `scripts/check_beta_soak_gate.py::criterion_2_failures()` —
+  `failures` is now `[]` (dated comment in place); any future
+  Criterion 2 failure is a fresh regression signal.
+- The Status table below reflects the resolution; the historical
+  failing-tests table is retained unchanged for provenance.
+- Criterion 4's ADR-0025 tracked cohort re-pin (the two members that
+  turned green, `case_650::test_annual_cooling` and
+  `case_650ff::test_min_temperature`, join the hard tier) lands in
+  `tests/reference_data/gauge_soak/criterion4_tracked_cohort_baseline.csv`.
+- `docs/KNOWN_ISSUES.md` §LIMIT-21 carries the dated status update;
+  the wider §LIMIT-21 program and flip authority are unchanged —
+  #3986 teacher validation suite.
+
+Streak: still **0/30** — that same night failed the verdict on the
+Criterion 4 re-pin-required bookkeeping; the streak accumulates from
+the first all-green night after this PR.
+
 ## Status
 
 | Field | Value |
 |-------|-------|
 | Streak | `0/30` |
-| Last-run criterion 2 | ❌ red (energy conservation) |
+| Last-run criterion 2 | ✅ green (run 40184928129: 19 passed / 0 failed / 21 ignored, after #4591 — 2026-10-25) |
 | Criteria 1, 7 | ✅ green |
 | Criteria 3–6 | ⏭ skipped (abort on Criterion 2 failure — `set -euo pipefail`) |
 | Counter | not manually reset (stateless workflow computation) |
 | Tracker doc | this file (`docs/agents/beta-soak-criterion-2-tracker.md`) |
 
 ## Failing tests (canonical list)
+
+> **RESOLVED 2026-10-25** (see UPDATE above): the canonical cohort
+> emitted by `check_beta_soak_gate.criterion_2_failures()` is now
+> **empty**; the table below is the retained historical record of the
+> resolved cohort.
 
 The structured failure list is also emitted by
 `python3 scripts/check_beta_soak_gate.py --criterion-2-failures` (a
@@ -58,6 +97,11 @@ tolerance change. The 2 nightly Criterion 2 tests above remain red
 because the underlying physics gap (§LIMIT-21) is still open. The
 streak `0/30` is therefore the **correct** current state and the gate
 must stay closed.
+
+**UPDATE 2026-10-25:** the two tests pass as of run 40184928129 (see
+the UPDATE above); the canonical cohort is empty, and the gate's
+remaining closure condition is the 30-consecutive-green-night streak
+under #3986's flip authority.
 
 ## Recovery steps
 

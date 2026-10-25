@@ -450,6 +450,16 @@ def gate_open(state: BetaSoakState) -> bool:
 # canonical list IS the source of truth — any change must land as a
 # docs/PR update, not a code edit in isolation.
 #
+# RESOLUTION (2026-10-25, physics loop round 99): the two-test cohort
+# went GREEN under gauge-solver at soak run 40184928129 (head 00e19545)
+# after #4591 (12f75688) plumbed the hybrid scheduled-ACH slot into the
+# gauge dispatcher. The drift detector (#3744) flagged the shrinkage
+# that night as designed; this docs/PR update is that deliberate
+# re-pin — `failures` is now EMPTY, and any future criterion-2 failure
+# is a fresh regression signal. The historical members and symptoms
+# are retained in docs/agents/beta-soak-criterion-2-tracker.md and the
+# git history of this file.
+#
 # Tracker doc: ``docs/agents/beta-soak-criterion-2-tracker.md``
 # Parent issue: #3359 / #3354 (gate-failure diagnostic)
 
@@ -511,37 +521,24 @@ def criterion_2_failures() -> dict[str, Any]:
             ),
         },
         "failures": [
-            {
-                "name": "test_physics_thermal_model_eplus_case_600_reference_csv",
-                "file": "tests/zone_balance_eplus_isolation.rs",
-                "fn_line": 187,
-                "panic_site": "tests/zone_balance_eplus_isolation.rs:298:5",
-                "symptom": (
-                    "Wild step-to-step oscillation, max ΔT = 34.007 °C; "
-                    "stdout: T_zone mean=-12.59°C, T_zone min=-32.52°C, "
-                    "T_zone max=7.15°C, |mean-20|=32.594°C"
-                ),
-                "case": "ASHRAE 140 Case 600 (low-mass conditioned)",
-                "known_issues": CRITERION_2_LIMIT_REF,
-            },
-            {
-                "name": "test_free_floating_case_900ff_isolation",
-                "file": "tests/zone_balance_eplus_isolation.rs",
-                "fn_line": 430,
-                "panic_site": "tests/zone_balance_eplus_isolation.rs:445:5",
-                "symptom": (
-                    "Numerical divergence to non-finite "
-                    "(T_min = −∞, T_max = +∞); "
-                    "assertion: min_900.is_finite() && max_900.is_finite()"
-                ),
-                "case": "ASHRAE 140 Case 900FF (high-mass free-floating)",
-                "known_issues": CRITERION_2_LIMIT_REF,
-            },
+            # Empty since the 2026-10-25 resolution (soak run 40184928129:
+            # 19 passed / 0 failed / 21 ignored under gauge-solver, after
+            # #4591's hybrid scheduled-ACH slot). The two historical
+            # members — test_physics_thermal_model_eplus_case_600_reference_csv
+            # (Case 600 oscillation, max ΔT = 34.007 °C) and
+            # test_free_floating_case_900ff_isolation (divergence to
+            # non-finite) — are preserved in the tracker doc and this
+            # file's git history. An empty canonical set means the drift
+            # detector (#3744) treats ANY criterion-2 failure as a fresh
+            # regression; re-populate this list only via a docs/PR update.
         ],
         "recovery_steps": [
             "Close §LIMIT-21 by landing the air-trajectory fidelity "
             "program (Issue #1465 / #1462 / #3059 — NOT a constant or "
-            "baseline change).",
+            "baseline change). DONE 2026-10-25: #4591 (12f75688) landed "
+            "the hybrid scheduled-ACH slot in the gauge dispatcher and "
+            "the criterion-2 cohort went green (soak run 40184928129; "
+            "tracker doc + this payload re-pinned).",
             "Verify nightly Criterion 2 goes green: cargo test --locked "
             "--features gauge-solver --test all_tests zone_balance_eplus_isolation::",
             "Wait for 30 consecutive green nightly runs; the workflow "
