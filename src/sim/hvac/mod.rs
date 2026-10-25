@@ -20,6 +20,7 @@ pub mod ideal_loads;
 pub mod modes;
 pub mod part_load_curves;
 pub mod plant;
+pub mod pressure_air_loop;
 pub mod refrigeration;
 pub mod vav_terminal;
 pub mod zone_equipment;
@@ -62,6 +63,11 @@ pub use plant::{
     check_energy_balance, water_cp, water_density, CoolingTowerSingleSpeed, FluidState,
     PlantComponent, PlantComponentResult, PlantLoop, PlantLoopResult, PlantMode, Pump,
     PumpConstantSpeed, PumpVariableSpeed, WATER_CP_J_PER_KG_K, WATER_DENSITY_KG_PER_M3,
+};
+pub use pressure_air_loop::{
+    AirLoopElement, AirLoopError, AirLoopNetwork, AirLoopSolution, AirLoopStepResult, FanCurve,
+    PressureDrivenAirLoop, ThermostatCommand, ThermostatState, ZoneAirNode, ZoneThermostat,
+    DRY_AIR_SPECIFIC_HEAT_J_PER_KG_K, LOOP_RESIDUAL_TOLERANCE_PA,
 };
 pub use refrigeration::{
     AirCooledCondenser, CompressorRack, RefrigerationMode, RefrigerationSystem, WalkInCooler,
