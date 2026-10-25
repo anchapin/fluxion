@@ -516,6 +516,14 @@ pub struct Cli {
     #[arg(short = 'r', long = "readvars")]
     pub readvars: bool,
 
+    /// Write the versioned standard results report (Issue #4104).
+    ///
+    /// Emits `{prefix}_report.json` next to `{prefix}_results.json` — the
+    /// byte-deterministic document described by
+    /// `schemas/results_v1.schema.json`.
+    #[arg(long = "report")]
+    pub report: bool,
+
     /// Zone solver for direct simulation (Issue #3283).
     ///
     /// One of `gauge` (default) | `5r1c` | `9r4c`. The experimental
@@ -912,6 +920,7 @@ pub fn run_direct_simulation(
     annual: bool,
     jobs: Option<usize>,
     readvars: bool,
+    report: bool,
     selector: crate::sim::thermal_selector::ThermalSelector,
 ) -> Result<()> {
     // Validate required arguments
@@ -1146,6 +1155,44 @@ pub fn run_direct_simulation(
         .map_err(|e| anyhow!("Failed to serialize results: {}", e))?;
     std::fs::write(&results_path, results_json)?;
 
+    // Issue #4104: the versioned standard results report. Built by the one
+    // `StandardReport::from_simulation` constructor that the REST and Python
+    // surfaces also use, so the three surfaces cannot drift apart.
+    if report {
+        use crate::api::report::{StandardReport, StandardReportContext};
+
+        let zone_names: Vec<String> = schema_v1
+            .geometry
+            .zones
+            .iter()
+            .map(|z| z.name.clone())
+            .collect();
+        let ctx = StandardReportContext::new(
+            schema_v1.metadata.name.clone(),
+            format!("model-file:{}", input_path.display()),
+        )
+        .with_floor_area(schema_v1.geometry.total_floor_area)
+        .with_zones(schema_v1.geometry.zones.len(), zone_names)
+        .with_timestep(3600.0, 1)
+        .with_setpoints(
+            schema_v1.controls.zone_control.heating_setpoint,
+            schema_v1.controls.zone_control.cooling_setpoint,
+        )
+        .with_occupancy(schema_v1.schedules.occupancy.clone())
+        .with_run_period(if design_day { "design-day" } else { "annual" }, None, None)
+        .with_unmet_hours_tolerance(schema_v1.controls.zone_control.deadband_tolerance);
+
+        let report_path = output_dir.join(format!("{}_report.json", prefix));
+        let report_json = StandardReport::from_simulation(&output, &ctx)
+            .to_json_string_terminated()
+            .map_err(|e| anyhow!("Failed to serialize results report: {}", e))?;
+        std::fs::write(&report_path, report_json)?;
+        println!(
+            "Standard results report written to: {}",
+            report_path.display()
+        );
+    }
+
     println!("\nSimulation complete.");
     println!("Heating energy: {:.1} kWh", total_heating_kwh);
     println!("Cooling energy: {:.1} kWh", total_cooling_kwh);
@@ -1299,6 +1346,7 @@ pub fn run_cli() -> Result<()> {
             cli.annual,
             cli.jobs,
             cli.readvars,
+            cli.report,
             selector,
         );
     }

@@ -114,6 +114,12 @@ pub async fn batch_simulate(
                 .map(|output| SimulateResponse {
                     schema_id: None,
                     output,
+                    // Issue #4104 — the batch surface returns the raw
+                    // simulation output; the standard report is produced by
+                    // the single constructor (see `StandardReport::
+                    // from_simulation`) and is opt-in on `POST
+                    // /v1/simulate`.
+                    report: None,
                 })
                 .map_err(|e| e.to_string())
             })

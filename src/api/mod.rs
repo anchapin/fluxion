@@ -11,6 +11,7 @@ pub mod email_notification;
 pub mod error;
 pub mod metrics;
 pub mod parameters;
+pub mod report;
 pub mod schema;
 pub mod security;
 pub mod server;
@@ -22,6 +23,12 @@ pub use schema::{
     ConstructionSet, ControlConfig, ControlSet, Geometry, SchemaMetadata, SchemaVersion,
     SimulationOutput, SimulationSchema, SimulationSchemaV1, SurfaceConstruction, WeatherData,
     WindowSpec, ZoneGeometry,
+};
+// Re-export the versioned standard results report (Issue #4104).
+pub use report::{
+    AnnualSection, EndUseEnergy, EndUsePeak, HourlyReference, MonthlyMonth, ReportMetadata,
+    RunPeriod, StandardReport, StandardReportContext, UnmetHoursSection, UnmetPair, UnmetZone,
+    RESULTS_SCHEMA_VERSION,
 };
 // Re-export REST server entrypoints (Issue #1342)
 pub use server::{
