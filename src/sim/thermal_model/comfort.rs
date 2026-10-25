@@ -71,20 +71,36 @@ pub(crate) fn compute_pmv_ppd_and_adaptive(
     // at 25 °C / 50 % rh).
     let e_res = 0.000017 * m * (5867.0 - p_a);
 
-    // Skin-diffusion evaporative capacity (round 96 units fix; ISO 7730:2005
-    // Annex D HL1): `3.05e-3·(5733 − 6.99·M − p_a)` W/m² with M in W/m² and
-    // p_a in Pa. Pre-fix this was `0.408·(42.5 − p_a)` — the mmHg-form
-    // coefficient/skin-saturation constant (NIST SP 491: E_dif =
-    // 0.408·[P_s − RH·P_a] W/m², mmHg; 42.5 mmHg = 5666 Pa) paired with
-    // p_a in Pa, which zeroed the term at any normal humidity.
-    let e_max = (3.05e-3 * (5733.0 - 6.99 * m - p_a)).max(0.0);
-    let d1 = m - c_res - e_res - c - r;
-    let w_ratio = if d1 > 0.0 && e_max > 0.0 {
-        (0.06 + 0.94 * d1 / e_max).min(1.0)
-    } else {
-        0.06
-    };
-    let e = w_ratio * e_max;
+    // Evaporative heat loss from the skin (round 98, Issue #4598): ISO
+    // 7730:2005's FIXED split — E_dif + E_rsw — replaces the wettedness
+    // regulator (`w·e_max`, w = clamp(0.06 + 0.94·d1/e_max, 0.06, 1.0)) this
+    // copy carried since the round-96 units fix:
+    //
+    //   HL1 — diffusion through the skin, always present, unclamped as in
+    //         the ISO Basic program and EnergyPlus
+    //         (EvapHeatLossDiff = 0.00305·(5733 − 6.99·H − P_a)):
+    //         E_dif = 3.05e-3·(5733 − 6.99·M − p_a) W/m², M in W/m², p_a in
+    //         Pa (work w = 0 here, so M = MW). This same bracket arrived in
+    //         round 96 as the e_max capacity (itself replacing the mmHg-form
+    //         `0.408·(42.5 − p_a)` that zeroed at any normal humidity).
+    //   Sweating — E_rsw = 0.42·max(M − 58.15, 0) W/m², active only above
+    //         the comfort metabolic state 58.15 W/m² (1 met; EnergyPlus
+    //         guards the same way: E_rsw = 0.42·(H − 58.2) for H > 58.2,
+    //         else 0).
+    //
+    // Premise (verified 2026-10-25 against the EnergyPlus Engineering
+    // Reference Fanger section and the ISO 7730:2005 equation set): the
+    // Fanger/ISO PMV carries NO wettedness feedback — skin wettedness is a
+    // two-node-model (Pierce/KSU) construct. The regulator floored the cold
+    // side at 6 % of capacity (~0.8 W/m² where E_dif ≈ 13.1 W/m² at
+    // 18 °C / clo 1.0 — reads warm) and saturated at e_max on the warm side,
+    // never crediting sweating above 1 met. Beyond the ISO validity domain
+    // (hot-humid extremes) the unclamped E_dif bracket goes negative;
+    // ISO's reference program computes it unclamped and the PMV ±4 clamp
+    // absorbs that regime.
+    let e_dif = 3.05e-3 * (5733.0 - 6.99 * m - p_a);
+    let e_rsw = 0.42 * (m - 58.15).max(0.0);
+    let e = e_dif + e_rsw;
 
     let l = m - c_res - e_res - c - r - e;
 
@@ -140,10 +156,13 @@ mod tests {
     /// flagged above; neutral came down 29.033729242 -> 25.580475167 °C
     /// (dry terms), then to 26.009076839 °C (respiration to the 5867 Pa
     /// exhaled-air form), inside the textbook window.
-    /// Known residual (recorded, not fixed here): the evaporative model is
-    /// a wettedness regulator (`w·e_max`, w from 0.06 to 1) rather than
-    /// ISO's fixed HL1 diffusion + sweating split, which reads warm on the
-    /// cold side; recorded for a following round.
+    /// Round 98 (2026-10-25, Issue #4598): the residual above is fixed —
+    /// the evaporative model is now ISO 7730:2005's fixed HL1 diffusion +
+    /// sweating split (E_dif always present, unclamped; E_rsw =
+    /// 0.42·max(M − 58.15, 0)), replacing the wettedness regulator
+    /// (`w·e_max`, w from 0.06 to 1) that floored the cold side at 6 % of
+    /// capacity (~12.3 W/m² of missing diffusion at 18 °C) and never
+    /// credited sweating above 1 met.
 
     const TOL: f64 = 1e-9;
 
@@ -164,6 +183,9 @@ mod tests {
         // clothing-surface t_cl form (bisection of the exact operation
         // order, r97_comfort_refs.py). Stage 2 (respiration to the 5867 Pa
         // exhaled-air form) lands it at 26.009076839 °C — the pinned value.
+        // Round 98 (#4598 fixed evaporative split) leaves it bit-identical:
+        // at met 1.0 near neutral the regulator already sat at full
+        // diffusive capacity, so the fixed E_dif crosses the same balance.
         let m = compute_pmv_ppd_and_adaptive(26.009076839, 0.5, 0.1, 1.0, 0.5);
         assert_close(m.pmv, 0.0, "neutral PMV");
         assert_close(m.ppd, 5.0, "neutral PPD (Fanger lower bound)");
@@ -212,8 +234,12 @@ mod tests {
         // clamped at the -4 arm; the corrected dry terms leave it mid-band.
         // The clamp arms are pinned in the extremes test.)
         let fan = compute_pmv_ppd_and_adaptive(26.0, 0.5, 0.8, 1.0, 0.5);
-        assert_close(fan.pmv, -0.298312723, "fan 26 C PMV");
-        assert_close(fan.ppd, 6.849139800, "fan 26 C PPD");
+        // Round 98 (Issue #4598, fixed ISO 7730 evaporative split): the
+        // raised convection puts this scenario below the balance, where
+        // the wettedness regulator floored the diffusive loss; the fixed
+        // E_dif restores it. -0.298312723 -> -0.981489399.
+        assert_close(fan.pmv, -0.981489399, "fan 26 C PMV");
+        assert_close(fan.ppd, 25.346776419, "fan 26 C PPD");
         let still = compute_pmv_ppd_and_adaptive(26.0, 0.5, 0.1, 1.0, 0.5);
         assert!(
             fan.pmv < still.pmv,
@@ -244,10 +270,14 @@ mod tests {
     fn fanger_extremes_clamp_pmv_and_break_adaptive_comfort() {
         // Both clamp arms: pmv_raw beyond ±4 saturates, PPD is symmetric
         // in pmv² so both extremes share the same PPD, and the adaptive
-        // band must reject both. The hot case also pins the e_max clamp:
-        // at 50 C / 90 % rh p_a (11.1 kPa) exceeds the ISO capacity's
-        // zero-crossing, the term saturates to 0, and the wettedness
-        // regulator takes its 0.06 floor arm (same value pre-fix).
+        // band must reject both. Round 98 (Issue #4598, fixed split): at
+        // 50 C / 90 % rh p_a (11.1 kPa) lies far outside the ISO validity
+        // domain, the unclamped E_dif bracket goes negative (as in the ISO
+        // Basic program / EnergyPlus EvapHeatLossDiff) and met-2 sweating
+        // adds 24.42 W/m² — L stays ≈ +198 W/m² and the +4 clamp arm
+        // holds. On the cold arm the fixed E_dif (16.0 W/m² vs the old
+        // regulator's 0.06 floor) deepens L to ≈ −243; the −4 clamp arm
+        // holds.
         let hot = compute_pmv_ppd_and_adaptive(50.0, 0.9, 0.1, 2.0, 1.0);
         assert_close(hot.pmv, 4.0, "hot PMV (upper clamp arm)");
         assert_close(hot.ppd, 99.999455805, "hot PPD at clamp");
@@ -261,6 +291,37 @@ mod tests {
         assert!(
             !cold.is_adaptive_comfortable,
             "operative 2 C is below the adaptive lower limit"
+        );
+    }
+
+    #[test]
+    fn fanger_iso7730_fixed_evaporative_split_cold_side_and_sweating() {
+        // Round 98 (Issue #4598): the evaporative model is ISO 7730:2005's
+        // FIXED split — E_dif (always present) + 0.42·max(M − 58.15, 0)
+        // (sweating above 1 met) — replacing the wettedness regulator
+        // (w = clamp(0.06 + 0.94·d1/e_max, 0.06, 1.0); e = w·e_max). The
+        // regulator floored the cold side at 6 % of capacity: at
+        // 18 °C / clo 1.0 / 50 % rh it carried e ≈ 0.786 W/m² where ISO's
+        // fixed E_dif is ≈ 13.099 W/m² (+12.31 W/m² of restored diffusive
+        // loss — the issue's reading-warm defect). Sweating case: at
+        // met 1.2 the ISO sweating term credits 0.42·(69.78 − 58.15) =
+        // 4.885 W/m² the regulator never credited (it saturated at e_max).
+        // Reference values from Python replication of the exact operation
+        // order (r98_comfort_refs.py); ±1e-9 is cross-language libm ulp
+        // headroom, not a physics tolerance.
+        let cold = compute_pmv_ppd_and_adaptive(18.0, 0.5, 0.1, 1.0, 1.0);
+        assert_close(cold.pmv, -1.416959230, "fixed split 18 C PMV");
+        assert_close(cold.ppd, 46.417718088, "fixed split 18 C PPD");
+        let sweat = compute_pmv_ppd_and_adaptive(30.0, 0.5, 0.1, 1.2, 0.5);
+        assert_close(
+            sweat.pmv,
+            1.651473783,
+            "fixed split met-1.2 sweating 30 C PMV",
+        );
+        assert_close(
+            sweat.ppd,
+            59.139238541,
+            "fixed split met-1.2 sweating 30 C PPD",
         );
     }
 }
