@@ -2683,3 +2683,289 @@ class TestSetWindowPropertiesMeasure:
         assert chain[0]["name"] == "SetWindowProperties"
         assert model._specs[0].window_u_value == pytest.approx(1.7)
         assert model._specs[0].window_shgc == pytest.approx(0.35)
+
+
+# =============================================================================
+# SetInfiltrationRate — duck-typed stand-ins
+# =============================================================================
+
+
+class _StubDailySchedule:
+    """Stand-in for a Rust ``DailySchedule`` (``src/sim/schedule.rs``)."""
+
+    def __init__(self, name="Infiltration", values=None):
+        self.name = name
+        self.values = list(values) if values is not None else [0.5] * 24
+
+
+class _StubScheduleSet:
+    """Stand-in for the Rust ``ScheduleSet`` (``src/api/schema.rs``)."""
+
+    def __init__(self, infiltration=None):
+        # ``ScheduleSet.infiltration`` is an ``Option<DailySchedule>``.
+        self.infiltration = infiltration
+
+
+class _StubScheduleSetModel:
+    """Stand-in for a model exposing a schedule set."""
+
+    def __init__(self, schedule_set=None, with_setter=True):
+        self._schedule_set = (
+            schedule_set if schedule_set is not None else _StubScheduleSet()
+        )
+        self.schedule_set_writes = []
+        if with_setter:
+            self.set_schedule_set = self._set_schedule_set
+
+    def schedule_set(self):
+        return self._schedule_set
+
+    def _set_schedule_set(self, schedule_set):
+        self.schedule_set_writes.append(schedule_set)
+        self._schedule_set = schedule_set
+
+
+class _StubSetpoints:
+    """Stand-in for the engine's ``SetpointState``."""
+
+    def __init__(self, infiltration_rate=None):
+        self.infiltration_rate = infiltration_rate
+
+
+class _StubSetpointsModel:
+    """Stand-in for a model exposing the per-zone infiltration rate."""
+
+    def __init__(self, rates=None):
+        self.setpoints = _StubSetpoints(list(rates) if rates is not None else [0.5, 0.5])
+
+
+class _StubModelWithInfiltrationField:
+    """Stand-in whose model object holds the infiltration rate itself."""
+
+    def __init__(self, rate=0.5):
+        self.infiltration_ach = rate
+
+
+class _StubModelWithoutInfiltration:
+    """Stand-in for a model that exposes no infiltration representation."""
+
+
+# =============================================================================
+# SetInfiltrationRate — pure validators (no native bindings needed)
+# =============================================================================
+
+
+class TestSetInfiltrationRateValidation:
+    """The infiltration rate must be a valid ACH value."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module(
+            "measures/SetInfiltrationRate.py", "_set_infiltration_mod"
+        )
+
+    def test_valid_rate_is_returned(self, mod):
+        assert mod.validate_infiltration_rate(0.2) == pytest.approx(0.2)
+
+    def test_zero_rate_is_accepted(self, mod):
+        # A sealed-envelope study is legitimate — zero is not a deletion.
+        assert mod.validate_infiltration_rate(0.0) == pytest.approx(0.0)
+
+    def test_negative_rate_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_infiltration_rate(-0.1)
+        assert ">= 0" in str(excinfo.value)
+
+    def test_rate_above_the_cap_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_infiltration_rate(mod.MAX_INFILTRATION_ACH + 0.1)
+        assert "<=" in str(excinfo.value)
+
+    def test_rate_at_the_cap_is_accepted(self, mod):
+        assert mod.validate_infiltration_rate(mod.MAX_INFILTRATION_ACH) == pytest.approx(
+            mod.MAX_INFILTRATION_ACH
+        )
+
+    def test_rate_nan_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_infiltration_rate(float("nan"))
+
+    def test_rate_infinity_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_infiltration_rate(float("inf"))
+
+    def test_non_numeric_rate_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_infiltration_rate("tight")
+
+    def test_bounds_are_the_documented_ones(self, mod):
+        assert mod.MIN_INFILTRATION_ACH == pytest.approx(0.0)
+        assert mod.MAX_INFILTRATION_ACH == pytest.approx(20.0)
+
+    def test_cap_sits_above_the_extreme_in_repo_fixture(self, mod):
+        # The most extreme envelope-leakage fixture in the repository is
+        # 10 ACH (ventilation_denver_10ach.idf) — the cap must stay above
+        # it so a real leakage study remains modellable.
+        assert mod.MAX_INFILTRATION_ACH > 10.0
+
+    def test_default_matches_the_engine_default(self, mod):
+        # DEFAULT_INFILTRATION_ACH = 0.5 (src/api/server/simulate.rs).
+        assert mod.DEFAULT_INFILTRATION_ACH == pytest.approx(0.5)
+
+    def test_flat_daily_schedule_is_24_constant_hours(self, mod):
+        profile = mod.flat_daily_schedule(0.2)
+        assert len(profile) == 24
+        assert all(value == pytest.approx(0.2) for value in profile)
+
+    def test_field_names_match_the_schema_and_the_engine(self, mod):
+        # ScheduleSet.infiltration (src/api/schema.rs) and
+        # SetpointState.infiltration_rate (setpoint_state.rs).
+        assert mod.INFILTRATION_FIELD == "infiltration"
+        assert mod.INFILTRATION_RATE_FIELD == "infiltration_rate"
+
+
+# =============================================================================
+# SetInfiltrationRate — measure behaviour (duck-typed model)
+# =============================================================================
+
+
+class TestSetInfiltrationRateMeasure:
+    """Exercise the infiltration measure against stand-in models."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module(
+            "measures/SetInfiltrationRate.py", "_set_infiltration_measure"
+        )
+
+    def test_error_is_a_value_error(self, mod):
+        assert issubclass(mod.InfiltrationNotFoundError, ValueError)
+
+    def test_resolve_finds_the_schedule_set_infiltration(self, mod):
+        schedule = _StubDailySchedule()
+        model = _StubScheduleSetModel(_StubScheduleSet(schedule))
+        targets = mod.resolve_infiltration_targets(model)
+        assert len(targets) == 1
+        assert targets[0].path == "schedule_set"
+        assert targets[0].kind == "schedule"
+
+    def test_resolve_finds_the_per_zone_rate(self, mod):
+        model = _StubSetpointsModel([0.5, 0.4])
+        targets = mod.resolve_infiltration_targets(model)
+        assert len(targets) == 1
+        assert targets[0].path == "setpoints"
+        assert targets[0].kind == "vector"
+        assert targets[0].values == [pytest.approx(0.5), pytest.approx(0.4)]
+
+    def test_resolve_finds_the_model_level_rate(self, mod):
+        model = _StubModelWithInfiltrationField(0.5)
+        targets = mod.resolve_infiltration_targets(model)
+        assert len(targets) == 1
+        assert targets[0].path == "model_field"
+        assert targets[0].kind == "scalar"
+
+    def test_resolve_raises_when_the_model_has_no_infiltration(self, mod):
+        with pytest.raises(mod.InfiltrationNotFoundError) as excinfo:
+            mod.resolve_infiltration_targets(_StubModelWithoutInfiltration())
+        assert "infiltration" in str(excinfo.value).lower()
+
+    def test_resolve_raises_when_the_schedule_set_has_no_schedule(self, mod):
+        # ``ScheduleSet::default()`` carries ``infiltration: None`` — the
+        # measure must not invent one.
+        model = _StubScheduleSetModel(_StubScheduleSet(None))
+        with pytest.raises(mod.InfiltrationNotFoundError):
+            mod.resolve_infiltration_targets(model)
+
+    def test_apply_writes_a_flat_daily_schedule(self, mod):
+        schedule = _StubDailySchedule()
+        model = _StubScheduleSetModel(_StubScheduleSet(schedule))
+        mod.SetInfiltrationRate().apply(model, {"infiltration_ach": 0.2})
+        assert schedule.values == [pytest.approx(0.2)] * 24
+
+    def test_apply_pushes_the_schedule_set_back(self, mod):
+        schedule = _StubDailySchedule()
+        model = _StubScheduleSetModel(_StubScheduleSet(schedule))
+        mod.SetInfiltrationRate().apply(model, {"infiltration_ach": 0.1})
+        assert model.schedule_set_writes == [model._schedule_set]
+
+    def test_apply_writes_every_zone_of_the_rate_vector(self, mod):
+        model = _StubSetpointsModel([0.5, 0.5, 0.5])
+        mod.SetInfiltrationRate().apply(model, {"infiltration_ach": 0.0})
+        assert model.setpoints.infiltration_rate == [pytest.approx(0.0)] * 3
+
+    def test_apply_writes_the_model_level_rate(self, mod):
+        model = _StubModelWithInfiltrationField(0.5)
+        mod.SetInfiltrationRate().apply(model, {"infiltration_ach": 0.25})
+        assert model.infiltration_ach == pytest.approx(0.25)
+
+    def test_apply_validates_before_touching_the_model(self, mod):
+        schedule = _StubDailySchedule()
+        model = _StubScheduleSetModel(_StubScheduleSet(schedule))
+        with pytest.raises(ValueError):
+            mod.SetInfiltrationRate().apply(model, {"infiltration_ach": 999.0})
+        assert schedule.values == [pytest.approx(0.5)] * 24
+        assert model.schedule_set_writes == []
+
+    def test_apply_rejects_a_non_numeric_rate_before_touching_the_model(self, mod):
+        schedule = _StubDailySchedule()
+        model = _StubScheduleSetModel(_StubScheduleSet(schedule))
+        with pytest.raises(ValueError):
+            mod.SetInfiltrationRate().apply(model, {"infiltration_ach": "tight"})
+        assert schedule.values == [pytest.approx(0.5)] * 24
+
+    def test_apply_fails_loudly_without_an_infiltration_representation(self, mod):
+        model = _StubModelWithoutInfiltration()
+        with pytest.raises(mod.InfiltrationNotFoundError):
+            mod.SetInfiltrationRate().apply(model, {"infiltration_ach": 0.2})
+
+    def test_apply_updates_every_representation_the_model_exposes(self, mod):
+        schedule = _StubDailySchedule()
+        model = _StubScheduleSetModel(_StubScheduleSet(schedule))
+        model.setpoints = _StubSetpoints([0.5, 0.5])
+        mod.SetInfiltrationRate().apply(model, {"infiltration_ach": 0.2})
+        assert schedule.values == [pytest.approx(0.2)] * 24
+        assert model.setpoints.infiltration_rate == [pytest.approx(0.2)] * 2
+
+    def test_arguments_declare_the_ach_argument(self, mod):
+        spec = mod.SetInfiltrationRate().arguments()
+        assert [a["name"] for a in spec] == ["infiltration_ach"]
+        argument = spec[0]
+        assert argument["type"] == "double"
+        assert argument["default"] == pytest.approx(mod.DEFAULT_INFILTRATION_ACH)
+        assert argument["min"] == pytest.approx(mod.MIN_INFILTRATION_ACH)
+        assert argument["max"] == pytest.approx(mod.MAX_INFILTRATION_ACH)
+
+    def test_measure_runs_through_the_aot_runner(self, mod):
+        from fluxion.measures import SOURCE_PYTHON_MEASURE, apply_measures
+
+        schedule = _StubDailySchedule()
+        model = _StubScheduleSetModel(_StubScheduleSet(schedule))
+        chain: list[dict] = []
+        applied = apply_measures(
+            model,
+            [mod.SetInfiltrationRate],
+            {"SetInfiltrationRate": {"infiltration_ach": 0.2}},
+            applied_deltas=chain,
+        )
+        assert applied == ["SetInfiltrationRate"]
+        assert len(chain) == 1
+        assert chain[0]["source"] == SOURCE_PYTHON_MEASURE
+        assert chain[0]["name"] == "SetInfiltrationRate"
+        assert schedule.values == [pytest.approx(0.2)] * 24
+
+    def test_resolve_finds_the_infiltration_of_a_dict_shaped_model(self, mod):
+        # The schema model is JSON-shaped: ``schedules.infiltration``.
+        model = {"schedules": {"infiltration": {"name": "Infiltration",
+                                                "values": [0.5] * 24}}}
+        targets = mod.resolve_infiltration_targets(model)
+        assert len(targets) == 1
+        assert targets[0].path == "schedules"
+        assert targets[0].kind == "schedule"
+
+    def test_apply_writes_the_infiltration_of_a_dict_shaped_model(self, mod):
+        model = {"schedules": {"infiltration": {"name": "Infiltration",
+                                                "values": [0.5] * 24}}}
+        mod.SetInfiltrationRate().apply(model, {"infiltration_ach": 0.2})
+        assert model["schedules"]["infiltration"]["values"] == [
+            pytest.approx(0.2)
+        ] * 24
