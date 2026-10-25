@@ -122,9 +122,15 @@ impl PmvComfort {
             t_cl = t_cl_new;
         }
 
-        let t_sk = 35.7 - 0.028 * m;
-        let c = f_cl * h_c * (t_sk - t_cl);
-        let r = f_cl * h_r * (t_sk - t_cl);
+        // Dry c/r terms (round 97; ISO 7730:2005): convection from the
+        // clothing surface `f_cl·h_c·(t_cl − t_a)` plus the radiative
+        // quartic `3.96e-8·f_cl·[(t_cl+273)⁴ − (t_r+273)⁴]` — the intent of
+        // the #3165 correction. Pre-fix both terms used (t_sk − t_cl), the
+        // across-clothing difference, against the film coefficients — not
+        // an ISO term (the across-clothing flux is the conduction
+        // K = (t_sk − t_cl)/I_cl, already embedded in the t_cl solution).
+        let c = f_cl * h_c * (t_cl - ta);
+        let r = 3.96e-8 * f_cl * ((t_cl + 273.0).powi(4) - (tr + 273.0).powi(4));
         let c_res = 0.0014 * m * (34.0 - ta);
         let e_res = 0.0000173 * m * (p_sat - p_a);
 
@@ -336,11 +342,12 @@ mod tests {
             .calculate_pmv_ppd(ta, tr, vel, rh, met, clo)
             .unwrap();
 
-        // With corrected t_cl in heat transfer (issue #3165): PMV should be positive (warm)
-        // Old buggy code using ta/tr instead of t_cl gave wrong PMV and PPD
+        // Round 97: with ISO's clothing-surface dry terms, 25 °C / clo 0.5 /
+        // 50 % rh is essentially neutral (PMV ≈ -0.013); the pre-round-97
+        // `pmv > 0` expectation encoded the (t_sk − t_cl) deviation.
         assert!(
-            result.pmv > 0.0,
-            "PMV should be warm-positive for 25°C typical office, got {}",
+            (result.pmv - (-0.012997430)).abs() < 1e-9,
+            "PMV for 25°C typical office should sit at the corrected pin, got {}",
             result.pmv
         );
     }
@@ -359,8 +366,11 @@ mod tests {
             .calculate_pmv_ppd(ta, tr, vel, rh, met, clo)
             .unwrap();
 
-        assert!(result.pmv < -2.0);
-        assert!(result.ppd > 90.0);
+        // Round 97 corrected pins: slightly cool, not the pre-fix cold
+        // reading (the cold-side offset vs published Fanger tables is the
+        // recorded wettedness-regulator residual, not part of this fix).
+        assert!((result.pmv - (-0.367729542)).abs() < 1e-9);
+        assert!((result.ppd - 7.814925324).abs() < 1e-9);
     }
 
     #[test]
@@ -377,8 +387,9 @@ mod tests {
             .calculate_pmv_ppd(ta, tr, vel, rh, met, clo)
             .unwrap();
 
-        assert!(result.pmv > 1.0);
-        assert!(result.ppd > 50.0);
+        // Round 97 corrected pin.
+        assert!((result.pmv - 1.833946545).abs() < 1e-9);
+        assert!((result.ppd - 68.759884194).abs() < 1e-9);
     }
 
     #[test]
@@ -395,14 +406,11 @@ mod tests {
             .calculate_pmv_ppd(ta, tr, vel, rh, met, clo)
             .unwrap();
 
-        // With corrected t_cl in heat transfer (issue #3165): PMV ≈ 2.3 (hot)
-        // Old buggy code using ta/tr instead of t_cl was wrong
-        assert!(
-            result.pmv > 1.0,
-            "PMV should be hot for 28°C light clothing summer, got {}",
-            result.pmv
-        );
-        assert!(result.ppd > 50.0);
+        // Round 97 corrected pins: warm-leaning (PMV ≈ 0.33), not the
+        // pre-fix hot reading; the `pmv > 1` expectation encoded the
+        // (t_sk − t_cl) deviation.
+        assert!((result.pmv - 0.328859688).abs() < 1e-9);
+        assert!((result.ppd - 7.248940975).abs() < 1e-9);
     }
 
     #[test]
@@ -419,8 +427,10 @@ mod tests {
             .calculate_pmv_ppd(ta, tr, vel, rh, met, clo)
             .unwrap();
 
-        assert!(result.pmv < -2.0);
-        assert!(result.ppd > 90.0);
+        // Round 97 corrected pins: 20 °C with clo 1.5 is ~neutral in the
+        // corrected model.
+        assert!((result.pmv - 0.075150673).abs() < 1e-9);
+        assert!((result.ppd - 5.116938202).abs() < 1e-9);
     }
 
     #[test]
@@ -432,22 +442,24 @@ mod tests {
         // normal humidity. Corrected to ISO 7730:2005 Annex D HL1,
         // `3.05e-3·(5733 − 6.99·M − p_a)` W/m², p_a in Pa. Reference values
         // computed independently in Python replicating this function's exact
-        // operation order (round-96 worklog); ±1e-9 is cross-language libm
+        // operation order (round-96 worklog; re-pinned round 97 when the dry
+        // c/r terms moved to ISO 7730's clothing-surface form, worklog
+        // r97_comfort_refs.py); ±1e-9 is cross-language libm
         // ulp headroom, not a physics tolerance.
         let pmv_comfort = PmvComfort::new();
         let dry = pmv_comfort.calculate_pmv(30.0, 30.0, 0.0005, 0.1, 1.0, 0.5);
         let humid = pmv_comfort.calculate_pmv(30.0, 30.0, 0.5, 0.1, 1.0, 0.5);
         let very_humid = pmv_comfort.calculate_pmv(30.0, 30.0, 0.9, 0.1, 1.0, 0.5);
         assert!(
-            (dry - 1.475899979).abs() < 1e-9,
+            (dry - 1.080145889).abs() < 1e-9,
             "dry-air 30 C PMV: got {dry}"
         );
         assert!(
-            (humid - 2.037485538).abs() < 1e-9,
+            (humid - 1.641731448).abs() < 1e-9,
             "50 % rh 30 C PMV: got {humid}"
         );
         assert!(
-            (very_humid - 2.487203704).abs() < 1e-9,
+            (very_humid - 2.091449614).abs() < 1e-9,
             "90 % rh 30 C PMV: got {very_humid}"
         );
         assert!(
@@ -574,15 +586,17 @@ mod tests {
         let result = pmv_comfort
             .calculate_pmv_ppd(ta, tr, vel, rh, met, clo)
             .unwrap();
-        // Round 96 units fix: with the ISO 7730 Pa-form evaporative
-        // capacity engaged at 50 % rh, PMV at 23 °C moves +0.58 -> -0.0120;
-        // this function's neutral point sits at ~23.6 °C. The pre-fix
-        // "slightly warm" reading (+0.58) was compensation from the broken
-        // zero-at-normal-humidity evaporative term. Pinned exactly
-        // (Python replication, round-96 worklog; ±1e-9 libm headroom).
+        // Round 96 moved PMV at 23 °C +0.58 -> -0.0120 (ISO 7730 Pa-form
+        // evaporative capacity engaged at 50 % rh; the pre-fix "slightly
+        // warm" +0.58 was compensation from the zero-at-normal-humidity
+        // evaporative term). Round 97 moves it again, to -0.228091065, as
+        // the dry c/r terms move to ISO's clothing-surface t_cl form; this
+        // function's neutral point now sits at ~25.6 °C (stage 1). Pinned
+        // exactly (Python replication, r97_comfort_refs.py; ±1e-9 libm
+        // headroom).
         assert!(
-            (result.pmv - (-0.012019627)).abs() < 1e-9,
-            "ASHRAE 55 PMV at 23 °C (post-units-fix neutral): got {}",
+            (result.pmv - (-0.228091065)).abs() < 1e-9,
+            "ASHRAE 55 PMV at 23 °C (round-97 dry-term fix): got {}",
             result.pmv
         );
     }
