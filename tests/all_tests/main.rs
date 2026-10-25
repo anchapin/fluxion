@@ -139,6 +139,7 @@ mod hybrid_clone_preserves_dispatch_counters;
 mod hybrid_hotloop_tracing_no_info;
 mod hybrid_perf_regression;
 mod idf_ashrae_140_acceptance;
+mod idf_export_roundtrip;
 mod idf_parser_tests;
 mod idf_to_schema;
 mod ifc_import_tests;
