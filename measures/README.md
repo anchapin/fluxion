@@ -26,6 +26,7 @@ for the full design rationale.
 | [`SetEquipmentPowerDensity.py`](SetEquipmentPowerDensity.py) | `SetEquipmentPowerDensity` | Set the equipment / plug-load power density (W/m²) of the model's equipment inputs. The density must be positive and bounded; a model with no equipment object fails loudly. |
 | [`AddOverhang.py`](AddOverhang.py) | `AddOverhang` | Attach a horizontal overhang (depth / mounting height, per façade orientation) to the model's exterior façades. A model with no eligible façade fails loudly. |
 | [`SetWindowProperties.py`](SetWindowProperties.py) | `SetWindowProperties` | Set the glazing U-value (W/m²·K) and/or the solar heat gain coefficient (SHGC) of the model's window specs — the single-pane → low-e double-pane upgrade study. A model with no window spec fails loudly. |
+| [`SetInfiltrationRate.py`](SetInfiltrationRate.py) | `SetInfiltrationRate` | Set the model's infiltration / air-leakage rate (ACH) to a constant target — the envelope-tightening study. The rate must be in `[0, 20]` ACH (0 is a sealed-envelope study). A model with no infiltration representation fails loudly. |
 
 > **Control-side persistence (Issue #3995).** `SetThermostatSetpoints` and
 > `SwapSchedule` act on the model's *control* data. The native
@@ -102,6 +103,33 @@ for the full design rationale.
 > `WindowNotFoundError`; the native `fluxion.Model` binding exposes no
 > window-spec accessor today, so on a native model the measure fails
 > loudly rather than reporting an upgrade that never happened.
+
+> **Infiltration (Issue #3995).** `SetInfiltrationRate` is the envelope-
+> leakage member of the standard library: it sets the model's infiltration
+> rate to a constant target in **ACH (air changes per hour, 1/h)** — the
+> unit the engine itself uses (`h_ve = infiltration_rate · V · ρ · c_p /
+> 3600`, with `infiltration_rate` in ACH,
+> `src/sim/thermal_model_physics/dispatch_state.rs`) and the unit the
+> importers produce (`extract_infiltration_ach`,
+> `src/io/idf/convert.rs`). The rate is validated **before** the model is
+> touched: it must be `>= 0` (a sealed-envelope study is legitimate — the
+> engine models a zero rate itself) and `<= 20` ACH, a generous ceiling
+> above the most extreme envelope-leakage fixture in the repository
+> (10 ACH, `ventilation_denver_10ach.idf`). The measure probes the model
+> for every infiltration representation it exposes and writes the *same*
+> rate into each: the schema's `ScheduleSet.infiltration` daily schedule
+> (written as a flat 24-hour profile), the engine's per-zone
+> `setpoints.infiltration_rate`, and the rate held directly on the model.
+> A model that exposes none of them fails loudly with
+> `InfiltrationNotFoundError` — the measure never materialises an
+> infiltration schedule the model does not have (`ScheduleSet::default()`
+> sets `infiltration: None`, and the engine defines no default schedule
+> for it). On today's native `fluxion.Model` binding the measure therefore
+> fails loudly: the binding exposes neither a schedule-set accessor nor a
+> setpoints accessor, so a native model exposes no infiltration
+> representation at all. Where a binding does expose the representation but
+> no setter, the change is **advisory** — the new rate is visible on the
+> snapshot but does not round-trip into the serialized model.
 
 > **Named schedules (Issue #3995).** `SwapSchedule` resolves its
 > `schedule_name` argument against the schedules the model exposes
