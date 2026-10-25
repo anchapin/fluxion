@@ -7,11 +7,16 @@ Approach. Covers the baseline measures shipped in ``measures/``:
 - ``ReplaceHVACWithVAV``
 - ``IncreaseInsulationRValue``
 
-Issue #3995 grows the standard library past three with the two control-side
-measures:
+Issue #3995 grows the standard library past three. First the two
+control-side measures:
 
 - ``SetThermostatSetpoints``
 - ``SwapSchedule``
+
+and then the two load / plant measures:
+
+- ``SetLightingPowerDensity``
+- ``SetHVACEfficiency``
 
 The suite is designed to run in two modes:
 
@@ -289,6 +294,29 @@ class TestArgumentDescriptors:
         assert profile["default"] == mod.PROFILE_CONSTANT
         assert set(profile["choices"]) == set(mod.PROFILES)
 
+    def test_lighting_arguments(self):
+        mod = _load_module("measures/SetLightingPowerDensity.py", "_lpd_args")
+        spec = mod.SetLightingPowerDensity().arguments()
+        names = [a["name"] for a in spec]
+        assert "power_density_w_m2" in names
+        density = next(a for a in spec if a["name"] == "power_density_w_m2")
+        assert density["default"] == mod.DEFAULT_LIGHTING_POWER_DENSITY_W_M2
+        assert density["min"] == mod.MIN_LIGHTING_POWER_DENSITY_W_M2
+        assert density["max"] == mod.MAX_LIGHTING_POWER_DENSITY_W_M2
+
+    def test_hvac_efficiency_arguments(self):
+        mod = _load_module("measures/SetHVACEfficiency.py", "_cop_args")
+        spec = mod.SetHVACEfficiency().arguments()
+        names = [a["name"] for a in spec]
+        assert "cop_heating" in names
+        assert "cop_cooling" in names
+        heating = next(a for a in spec if a["name"] == "cop_heating")
+        cooling = next(a for a in spec if a["name"] == "cop_cooling")
+        assert heating["default"] is None
+        assert cooling["default"] is None
+        assert heating["min"] == mod.MIN_COP
+        assert cooling["max"] == mod.MAX_COP
+
 
 # =============================================================================
 # Discovery — the standard-library measures are discoverable
@@ -309,6 +337,8 @@ class TestDiscovery:
             "IncreaseInsulationRValue",
             "SetThermostatSetpoints",
             "SwapSchedule",
+            "SetLightingPowerDensity",
+            "SetHVACEfficiency",
         }.issubset(names), names
 
 
@@ -1090,3 +1120,451 @@ class TestSwapScheduleMeasure:
         assert len(chain) == 1
         assert chain[0]["source"] == SOURCE_PYTHON_MEASURE
         assert chain[0]["name"] == "SwapSchedule"
+
+
+# =============================================================================
+# SetLightingPowerDensity — duck-typed stand-ins
+# =============================================================================
+
+
+class _StubLighting:
+    """Stand-in for a lighting / internal-loads snapshot."""
+
+    def __init__(self, power_density_w_m2=10.0):
+        self.lighting_power_density_w_m2 = power_density_w_m2
+
+
+class _StubLightingModel:
+    """Stand-in for ``fluxion.Model`` exposing a lighting snapshot."""
+
+    def __init__(self, power_density_w_m2=10.0, with_setter=True):
+        self._lighting = _StubLighting(power_density_w_m2)
+        self.lighting_writes = []
+        if with_setter:
+            self.set_lighting = self._set_lighting
+
+    def lighting(self):
+        # Mirrors the PyO3 contract: an owned snapshot handed to the caller.
+        return self._lighting
+
+    def _set_lighting(self, lighting):
+        self.lighting_writes.append(lighting)
+
+
+class _StubInternalLoadsModel:
+    """Stand-in for a model whose internal loads carry the LPD."""
+
+    def __init__(self, power_density_w_m2=10.0):
+        self._loads = _StubLighting(power_density_w_m2)
+        self.internal_load_writes = []
+
+    def internal_loads(self):
+        return self._loads
+
+    def set_internal_loads(self, loads):
+        self.internal_load_writes.append(loads)
+
+
+class _StubModelWithoutLighting:
+    """Stand-in for a model that exposes no lighting object at all."""
+
+
+# =============================================================================
+# SetLightingPowerDensity — argument validation
+# =============================================================================
+
+
+class TestLightingPowerDensityValidation:
+    """The lighting density must be a positive, bounded number."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module("measures/SetLightingPowerDensity.py", "_lpd_mod")
+
+    def test_valid_density_is_returned(self, mod):
+        assert mod.validate_power_density(8.0) == pytest.approx(8.0)
+
+    def test_zero_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_power_density(0.0)
+        assert "> 0" in str(excinfo.value)
+
+    def test_negative_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_power_density(-1.0)
+
+    def test_above_maximum_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_power_density(mod.MAX_LIGHTING_POWER_DENSITY_W_M2 + 1.0)
+        assert "<=" in str(excinfo.value)
+
+    def test_below_minimum_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_power_density(mod.MIN_LIGHTING_POWER_DENSITY_W_M2 / 2.0)
+        assert ">=" in str(excinfo.value)
+
+    def test_nan_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_power_density(float("nan"))
+
+    def test_infinity_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_power_density(float("inf"))
+
+    def test_non_numeric_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_power_density("bright")
+
+    def test_bounds_are_ordered(self, mod):
+        assert (
+            mod.MIN_LIGHTING_POWER_DENSITY_W_M2
+            < mod.DEFAULT_LIGHTING_POWER_DENSITY_W_M2
+            < mod.MAX_LIGHTING_POWER_DENSITY_W_M2
+        )
+
+
+# =============================================================================
+# SetLightingPowerDensity — measure behaviour (duck-typed model)
+# =============================================================================
+
+
+class TestSetLightingPowerDensityMeasure:
+    """Exercise the lighting measure against stand-in models."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module("measures/SetLightingPowerDensity.py", "_lpd_measure")
+
+    def test_resolve_finds_the_lighting_object(self, mod):
+        model = _StubLightingModel()
+        target, attribute, path = mod.resolve_lighting_target(model)
+        assert target is model._lighting
+        assert attribute == "lighting_power_density_w_m2"
+        assert path == "lighting"
+
+    def test_resolve_falls_back_to_internal_loads(self, mod):
+        model = _StubInternalLoadsModel()
+        target, attribute, path = mod.resolve_lighting_target(model)
+        assert target is model._loads
+        assert attribute == "lighting_power_density_w_m2"
+        assert path == "internal_loads"
+
+    def test_resolve_falls_back_to_a_model_attribute(self, mod):
+        class _AttributeModel:
+            lighting_power_density_w_m2 = 10.0
+
+        target, attribute, path = mod.resolve_lighting_target(_AttributeModel())
+        assert attribute == "lighting_power_density_w_m2"
+        assert path == "model_attribute"
+
+    def test_resolve_raises_when_the_model_has_no_lighting(self, mod):
+        with pytest.raises(mod.LightingNotFoundError) as excinfo:
+            mod.resolve_lighting_target(_StubModelWithoutLighting())
+        assert "no lighting object" in str(excinfo.value)
+
+    def test_error_is_a_value_error(self, mod):
+        assert issubclass(mod.LightingNotFoundError, ValueError)
+
+    def test_apply_mutates_and_persists_the_lighting(self, mod):
+        model = _StubLightingModel(power_density_w_m2=10.0)
+        mod.SetLightingPowerDensity().apply(model, {"power_density_w_m2": 6.5})
+        assert model._lighting.lighting_power_density_w_m2 == pytest.approx(6.5)
+        assert len(model.lighting_writes) == 1
+        assert (
+            model.lighting_writes[0].lighting_power_density_w_m2 == pytest.approx(6.5)
+        )
+
+    def test_apply_mutates_the_internal_loads_object(self, mod):
+        model = _StubInternalLoadsModel(power_density_w_m2=10.0)
+        mod.SetLightingPowerDensity().apply(model, {"power_density_w_m2": 4.0})
+        assert model._loads.lighting_power_density_w_m2 == pytest.approx(4.0)
+        assert len(model.internal_load_writes) == 1
+
+    def test_apply_sets_a_model_attribute_in_place(self, mod):
+        class _AttributeModel:
+            lighting_power_density_w_m2 = 10.0
+
+        model = _AttributeModel()
+        mod.SetLightingPowerDensity().apply(model, {"power_density_w_m2": 7.0})
+        assert model.lighting_power_density_w_m2 == pytest.approx(7.0)
+
+    def test_apply_without_a_setter_is_advisory(self, mod):
+        model = _StubLightingModel(power_density_w_m2=10.0, with_setter=False)
+        # Must not raise even though the model exposes no lighting setter.
+        mod.SetLightingPowerDensity().apply(model, {"power_density_w_m2": 5.0})
+        assert model.lighting_writes == []
+        assert model._lighting.lighting_power_density_w_m2 == pytest.approx(5.0)
+
+    def test_apply_fails_loudly_without_a_lighting_object(self, mod):
+        model = _StubModelWithoutLighting()
+        with pytest.raises(mod.LightingNotFoundError):
+            mod.SetLightingPowerDensity().apply(model, {"power_density_w_m2": 6.0})
+
+    def test_failed_run_does_not_touch_the_model(self, mod):
+        model = _StubLightingModel(power_density_w_m2=10.0)
+        with pytest.raises(ValueError):
+            # An invalid density is rejected before the model is touched.
+            mod.SetLightingPowerDensity().apply(model, {"power_density_w_m2": 0.0})
+        assert model._lighting.lighting_power_density_w_m2 == pytest.approx(10.0)
+        assert model.lighting_writes == []
+
+    def test_apply_rejects_an_invalid_density(self, mod):
+        model = _StubLightingModel(power_density_w_m2=10.0)
+        with pytest.raises(ValueError):
+            mod.SetLightingPowerDensity().apply(model, {"power_density_w_m2": -3.0})
+        assert model.lighting_writes == []
+
+    def test_default_density_is_applied(self, mod):
+        model = _StubLightingModel(power_density_w_m2=10.0)
+        measure = mod.SetLightingPowerDensity()
+        args = measure.parse_arguments({})
+        measure.apply(model, args)
+        assert (
+            model._lighting.lighting_power_density_w_m2
+            == pytest.approx(mod.DEFAULT_LIGHTING_POWER_DENSITY_W_M2)
+        )
+
+    def test_provenance_chain_recorded(self, mod):
+        from fluxion.measures import SOURCE_PYTHON_MEASURE, apply_measures
+
+        model = _StubLightingModel(power_density_w_m2=10.0)
+        chain: list[dict] = []
+        applied = apply_measures(
+            model,
+            [mod.SetLightingPowerDensity],
+            {"SetLightingPowerDensity": {"power_density_w_m2": 6.0}},
+            applied_deltas=chain,
+        )
+        assert applied == ["SetLightingPowerDensity"]
+        assert len(chain) == 1
+        assert chain[0]["source"] == SOURCE_PYTHON_MEASURE
+        assert chain[0]["name"] == "SetLightingPowerDensity"
+
+
+# =============================================================================
+# SetHVACEfficiency — duck-typed stand-ins
+# =============================================================================
+
+
+class _StubHVAC:
+    """Stand-in for the ``fluxion.HVACSystem`` snapshot."""
+
+    def __init__(self, cop_heating=3.0, cop_cooling=3.2):
+        self.heating_capacity = 10000.0
+        self.cooling_capacity = 8000.0
+        self.cop_heating = cop_heating
+        self.cop_cooling = cop_cooling
+
+
+class _StubHVACModel:
+    """Stand-in for ``fluxion.Model`` exposing the HVAC snapshot."""
+
+    def __init__(self, cop_heating=3.0, cop_cooling=3.2, with_setter=True):
+        self._hvac = _StubHVAC(cop_heating, cop_cooling)
+        self.hvac_writes = []
+        if with_setter:
+            self.set_hvac_system = self._set_hvac_system
+
+    def hvac_system(self):
+        return self._hvac
+
+    def _set_hvac_system(self, hvac):
+        self.hvac_writes.append(hvac)
+
+
+class _StubModelWithoutHVAC:
+    """Stand-in for a model that exposes no HVAC system at all."""
+
+
+# =============================================================================
+# SetHVACEfficiency — argument validation
+# =============================================================================
+
+
+class TestHVACEfficiencyValidation:
+    """The COP must be a positive, bounded number."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module("measures/SetHVACEfficiency.py", "_cop_mod")
+
+    def test_valid_cop_is_returned(self, mod):
+        assert mod.validate_cop(3.5) == pytest.approx(3.5)
+
+    def test_zero_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_cop(0.0, name="cop_heating")
+        assert "cop_heating" in str(excinfo.value)
+        assert "> 0" in str(excinfo.value)
+
+    def test_negative_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_cop(-2.0)
+
+    def test_above_maximum_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_cop(mod.MAX_COP + 1.0, name="cop_cooling")
+        assert "cop_cooling" in str(excinfo.value)
+        assert "<=" in str(excinfo.value)
+
+    def test_below_minimum_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_cop(mod.MIN_COP / 2.0)
+
+    def test_nan_and_infinity_are_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_cop(float("nan"))
+        with pytest.raises(ValueError):
+            mod.validate_cop(float("inf"))
+
+    def test_non_numeric_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_cop("efficient")
+
+    def test_bounds_are_ordered(self, mod):
+        assert 0.0 < mod.MIN_COP < mod.MAX_COP
+
+
+# =============================================================================
+# SetHVACEfficiency — measure behaviour (duck-typed model)
+# =============================================================================
+
+
+class TestSetHVACEfficiencyMeasure:
+    """Exercise the plant-efficiency measure against stand-in models."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module("measures/SetHVACEfficiency.py", "_cop_measure")
+
+    def test_resolve_returns_the_hvac_snapshot(self, mod):
+        model = _StubHVACModel()
+        assert mod.resolve_hvac_snapshot(model) is model._hvac
+
+    def test_resolve_raises_without_an_hvac_system(self, mod):
+        with pytest.raises(mod.HVACSystemNotFoundError) as excinfo:
+            mod.resolve_hvac_snapshot(_StubModelWithoutHVAC())
+        assert "no HVAC system" in str(excinfo.value)
+
+    def test_resolve_raises_when_the_snapshot_has_no_cop_fields(self, mod):
+        class _BareSnapshot:
+            heating_capacity = 10000.0
+
+        class _BareModel:
+            def hvac_system(self):
+                return _BareSnapshot()
+
+        with pytest.raises(mod.HVACSystemNotFoundError):
+            mod.resolve_hvac_snapshot(_BareModel())
+
+    def test_error_is_a_value_error(self, mod):
+        assert issubclass(mod.HVACSystemNotFoundError, ValueError)
+
+    def test_apply_sets_both_cops_and_pushes_back(self, mod):
+        model = _StubHVACModel(cop_heating=3.0, cop_cooling=3.2)
+        mod.SetHVACEfficiency().apply(
+            model, {"cop_heating": 4.0, "cop_cooling": 4.5}
+        )
+        assert model._hvac.cop_heating == pytest.approx(4.0)
+        assert model._hvac.cop_cooling == pytest.approx(4.5)
+        assert len(model.hvac_writes) == 1
+        assert model.hvac_writes[0].cop_heating == pytest.approx(4.0)
+
+    def test_apply_preserves_the_unspecified_cop(self, mod):
+        model = _StubHVACModel(cop_heating=3.0, cop_cooling=3.2)
+        mod.SetHVACEfficiency().apply(model, {"cop_heating": 4.0})
+        assert model._hvac.cop_heating == pytest.approx(4.0)
+        assert model._hvac.cop_cooling == pytest.approx(3.2)
+
+    def test_apply_without_arguments_is_a_no_op(self, mod):
+        model = _StubHVACModel(cop_heating=3.0, cop_cooling=3.2)
+        measure = mod.SetHVACEfficiency()
+        measure.apply(model, measure.parse_arguments({}))
+        assert model._hvac.cop_heating == pytest.approx(3.0)
+        assert model._hvac.cop_cooling == pytest.approx(3.2)
+
+    def test_apply_without_a_setter_is_advisory(self, mod):
+        model = _StubHVACModel(cop_heating=3.0, cop_cooling=3.2, with_setter=False)
+        mod.SetHVACEfficiency().apply(model, {"cop_heating": 4.0})
+        assert model.hvac_writes == []
+        assert model._hvac.cop_heating == pytest.approx(4.0)
+
+    def test_apply_fails_loudly_without_an_hvac_system(self, mod):
+        with pytest.raises(mod.HVACSystemNotFoundError):
+            mod.SetHVACEfficiency().apply(
+                _StubModelWithoutHVAC(), {"cop_heating": 4.0}
+            )
+
+    def test_apply_rejects_an_invalid_cop_without_mutating(self, mod):
+        model = _StubHVACModel(cop_heating=3.0, cop_cooling=3.2)
+        with pytest.raises(ValueError):
+            mod.SetHVACEfficiency().apply(model, {"cop_heating": 0.0})
+        assert model._hvac.cop_heating == pytest.approx(3.0)
+        assert model.hvac_writes == []
+
+    def test_provenance_chain_recorded(self, mod):
+        from fluxion.measures import SOURCE_PYTHON_MEASURE, apply_measures
+
+        model = _StubHVACModel()
+        chain: list[dict] = []
+        applied = apply_measures(
+            model,
+            [mod.SetHVACEfficiency],
+            {"SetHVACEfficiency": {"cop_heating": 4.0, "cop_cooling": 4.5}},
+            applied_deltas=chain,
+        )
+        assert applied == ["SetHVACEfficiency"]
+        assert len(chain) == 1
+        assert chain[0]["source"] == SOURCE_PYTHON_MEASURE
+        assert chain[0]["name"] == "SetHVACEfficiency"
+
+
+# =============================================================================
+# Integration — native bindings
+# =============================================================================
+
+
+@requires_fluxion
+class TestSetHVACEfficiencyIntegration:
+    """End-to-end plant-efficiency mutation on a real fluxion.Model."""
+
+    def _import_measure(self):
+        return _load_module(
+            "measures/SetHVACEfficiency.py", "_cop_int"
+        ).SetHVACEfficiency
+
+    def test_cops_are_written_on_the_hvac_snapshot(self):
+        import fluxion
+
+        model = fluxion.Model(num_zones=1)
+        self._import_measure().apply(
+            model, {"cop_heating": 4.0, "cop_cooling": 4.5}
+        )
+        hvac = model.hvac_system()
+        assert hvac.cop_heating == pytest.approx(4.0)
+        assert hvac.cop_cooling == pytest.approx(4.5)
+
+    def test_invalid_cop_is_rejected(self):
+        import fluxion
+
+        model = fluxion.Model(num_zones=1)
+        with pytest.raises(ValueError):
+            self._import_measure().apply(model, {"cop_heating": -1.0})
+
+
+@requires_fluxion
+class TestSetLightingPowerDensityIntegration:
+    """The native model exposes no lighting object — the measure says so."""
+
+    def _import_measure(self):
+        return _load_module(
+            "measures/SetLightingPowerDensity.py", "_lpd_int"
+        ).SetLightingPowerDensity
+
+    def test_native_model_fails_loudly(self):
+        import fluxion
+
+        mod = _load_module("measures/SetLightingPowerDensity.py", "_lpd_int2")
+        model = fluxion.Model(num_zones=1)
+        with pytest.raises(mod.LightingNotFoundError):
+            self._import_measure().apply(model, {"power_density_w_m2": 6.0})
