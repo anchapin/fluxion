@@ -24,6 +24,7 @@ for the full design rationale.
 | [`SetLightingPowerDensity.py`](SetLightingPowerDensity.py) | `SetLightingPowerDensity` | Set the lighting power density (W/m²) of the model's lighting / internal-load inputs. The density must be positive and bounded; a model with no lighting object fails loudly. |
 | [`SetHVACEfficiency.py`](SetHVACEfficiency.py) | `SetHVACEfficiency` | Set the heating / cooling coefficient of performance (COP) of the model's HVAC plant. A model with no HVAC system fails loudly. |
 | [`SetEquipmentPowerDensity.py`](SetEquipmentPowerDensity.py) | `SetEquipmentPowerDensity` | Set the equipment / plug-load power density (W/m²) of the model's equipment inputs. The density must be positive and bounded; a model with no equipment object fails loudly. |
+| [`AddOverhang.py`](AddOverhang.py) | `AddOverhang` | Attach a horizontal overhang (depth / mounting height, per façade orientation) to the model's exterior façades. A model with no eligible façade fails loudly. |
 
 > **Control-side persistence (Issue #3995).** `SetThermostatSetpoints` and
 > `SwapSchedule` act on the model's *control* data. The native
@@ -66,6 +67,19 @@ for the full design rationale.
 > dense server rooms stay modellable. As with the lighting measure, the
 > native `fluxion.Model` binding exposes no equipment accessor, so on
 > today's bindings the measure fails loudly on a native model.
+
+> **Shading (Issue #3995).** `AddOverhang` is the shading member of the
+> standard library: it attaches a horizontal overhang (projection `depth`,
+> mounting `height`) to every façade of the requested `orientation`
+> (`north` / `east` / `south` / `west`, or `all` for every cardinal
+> vertical façade — the native `Orientation` enum has no "all exterior"
+> variant), optionally restricted to glazed surfaces with
+> `only_with_windows`. It validates the depth / height bounds *before*
+> touching the model and raises `NoEligibleSurfaceError` when no façade is
+> eligible, so a shading study never reports a change that never happened.
+> The overhangs are attached to the surface snapshots and pushed back
+> through `model.set_surfaces(...)`; on a model without that setter the
+> change is **advisory**.
 
 > **Named schedules (Issue #3995).** `SwapSchedule` resolves its
 > `schedule_name` argument against the schedules the model exposes
