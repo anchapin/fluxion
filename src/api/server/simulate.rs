@@ -70,6 +70,14 @@ pub struct SimulateOptions {
     /// `GET /v1/schema/{id}`.
     #[serde(default)]
     pub store_as: Option<String>,
+    /// Issue #4104 — request the versioned standard results report.
+    ///
+    /// When `true` the response carries the `report` object produced by the
+    /// single [`crate::api::report::StandardReport::from_simulation`]
+    /// constructor — the same document the CLI writes to
+    /// `{prefix}_report.json` and the Python binding returns.
+    #[serde(default)]
+    pub report: bool,
 }
 
 impl Default for SimulateOptions {
@@ -80,6 +88,7 @@ impl Default for SimulateOptions {
             zone_solver: None,
             conduction_solver: None,
             store_as: None,
+            report: false,
         }
     }
 }
@@ -209,6 +218,13 @@ where
 pub struct SimulateResponse {
     pub schema_id: Option<String>,
     pub output: SimulationOutput,
+    /// Issue #4104 — the versioned standard results report.
+    ///
+    /// Present only when the request asked for it (`options.report = true`).
+    /// Built by [`crate::api::report::StandardReport::from_simulation`] —
+    /// the same constructor the CLI and Python surfaces use.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub report: Option<crate::api::report::StandardReport>,
 }
 
 /// Build a [`ThermalModel`] from a [`SimulationSchemaV1`], mirroring the
@@ -773,6 +789,16 @@ pub async fn simulate(
     );
     let output = result?;
 
+    // Issue #4104 — the versioned standard results report (opt-in via
+    // `options.report`). The REST surface holds no report logic of its own:
+    // it only fills in the run context and calls the single shared
+    // constructor.
+    let report = if options.report {
+        Some(build_standard_report(&output, &schema, years))
+    } else {
+        None
+    };
+
     let schema_id = if let Some(id) = options.store_as.clone() {
         state.schemas.write().insert(id.clone(), schema);
         Some(id)
@@ -780,7 +806,51 @@ pub async fn simulate(
         Some(state.store(schema).await)
     };
 
-    Ok(Json(SimulateResponse { schema_id, output }))
+    Ok(Json(SimulateResponse {
+        schema_id,
+        output,
+        report,
+    }))
+}
+
+/// Issue #4104 — build the standard results report for a REST simulation.
+///
+/// A thin pass-through to [`crate::api::report::StandardReport::from_simulation`]:
+/// the REST surface only assembles the run context (model identity, geometry,
+/// setpoints, occupancy) and hands the finished simulation to the shared
+/// constructor, so REST, CLI and Python cannot drift apart.
+fn build_standard_report(
+    output: &SimulationOutput,
+    schema: &SimulationSchemaV1,
+    years: u32,
+) -> crate::api::report::StandardReport {
+    use crate::api::report::{StandardReport, StandardReportContext};
+
+    // The same model the simulation used, so the report's timestep matches
+    // the one the monthly summaries were derived with.
+    let timestep_seconds = build_model_from_schema(schema).calculate_timestep_seconds();
+    let zone_names: Vec<String> = schema
+        .geometry
+        .zones
+        .iter()
+        .map(|z| z.name.clone())
+        .collect();
+    let ctx = StandardReportContext::new(
+        schema.metadata.name.clone(),
+        format!("rest:{}", schema_audit_hash(schema)),
+    )
+    .with_floor_area(schema.geometry.total_floor_area)
+    .with_zones(schema.geometry.zones.len(), zone_names)
+    .with_timestep(timestep_seconds, years as usize)
+    .with_setpoints(
+        schema.controls.zone_control.heating_setpoint,
+        schema.controls.zone_control.cooling_setpoint,
+    )
+    .with_occupancy(schema.schedules.occupancy.clone())
+    .with_run_period("annual", None, None)
+    .with_unmet_hours_tolerance(schema.controls.zone_control.deadband_tolerance);
+
+    StandardReport::from_simulation(output, &ctx)
 }
 
 /// SSE event payload for per-timestep zone temperatures (used by

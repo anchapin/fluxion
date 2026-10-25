@@ -570,6 +570,152 @@ impl PyMultiZoneThermalModel {
         Ok((occ_h, occ_c, all_h, all_c))
     }
 
+    /// Issue #4104 — the versioned standard results report as canonical JSON.
+    ///
+    /// Thin pass-through to the shared
+    /// [`crate::api::report::StandardReport::from_simulation`] constructor:
+    /// the Python surface only assembles the run context and hands over the
+    /// finished simulation, so Python, REST and CLI emit the same document
+    /// (schema: `schemas/results_v1.schema.json`).
+    ///
+    /// # Arguments
+    /// * `occupancy` - 24-element daily occupancy profile (0.0-1.0); an hour
+    ///   counts as occupied when its value exceeds 0.05.
+    /// * `heating_setpoint` - heating setpoint in °C (default 20.0).
+    /// * `cooling_setpoint` - cooling setpoint in °C (default 24.0).
+    /// * `tolerance` - setpoint tolerance in °C; defaults to 0.2 °C when
+    ///   `None`.
+    /// * `model_name` - model name recorded in the report metadata.
+    /// * `model_source` - model provenance recorded in the report metadata.
+    ///
+    /// # Returns
+    /// The canonical JSON document (sorted keys, fixed float formatting) of
+    /// the standard results report, newline-terminated.
+    ///
+    /// # Example
+    /// ```python
+    /// model = fluxion.MultiZoneThermalModel(1)
+    /// model.simulate(1, False)
+    /// report = model.get_standard_report([1.0] * 8 + [0.0] * 16)
+    /// ```
+    #[pyo3(signature = (occupancy, heating_setpoint=20.0, cooling_setpoint=24.0, tolerance=None, model_name=None, model_source=None))]
+    pub fn get_standard_report(
+        &self,
+        occupancy: Vec<f64>,
+        heating_setpoint: f64,
+        cooling_setpoint: f64,
+        tolerance: Option<f64>,
+        model_name: Option<String>,
+        model_source: Option<String>,
+    ) -> PyResult<String> {
+        use crate::api::report::{StandardReport, StandardReportContext};
+        use crate::api::schema::SimulationOutput;
+
+        let mut sched = crate::sim::schedule::DailySchedule::new();
+        for (hour, &value) in occupancy.iter().enumerate().take(24) {
+            sched
+                .set_hour(hour, value)
+                .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        }
+        let tolerance = tolerance.unwrap_or(crate::api::schema::UNMET_HOURS_TOLERANCE_DEFAULT_C);
+
+        let hourly_temps = self.inner.get_hourly_temperatures();
+        let heating_kwh = self.inner.get_hourly_heating_kwh();
+        let cooling_kwh = self.inner.get_hourly_cooling_kwh();
+        let lighting_kwh = self.inner.get_hourly_lighting_kwh();
+        let equipment_kwh = self.inner.get_hourly_equipment_kwh();
+
+        let heating_energy = self.inner.get_heating_energy_kwh();
+        let cooling_energy = self.inner.get_cooling_energy_kwh();
+        let total_energy = heating_energy + cooling_energy;
+        let zone_area = &self.inner.setpoints.zone_area;
+        let floor_area: f64 = zone_area.iter().sum::<f64>().max(1.0);
+        let timestep_seconds = self.inner.calculate_timestep_seconds();
+
+        // Same unmet-hours helpers the REST and CLI surfaces use.
+        let (occ_h, occ_c) = hourly_temps
+            .as_deref()
+            .map(|temps| {
+                SimulationOutput::unmet_hours(
+                    temps,
+                    &sched,
+                    heating_setpoint,
+                    cooling_setpoint,
+                    tolerance,
+                )
+            })
+            .unwrap_or((0.0, 0.0));
+        let (all_h, all_c) = hourly_temps
+            .as_deref()
+            .map(|temps| {
+                SimulationOutput::unmet_hours_all_hours(
+                    temps,
+                    heating_setpoint,
+                    cooling_setpoint,
+                    tolerance,
+                )
+            })
+            .unwrap_or((0.0, 0.0));
+
+        // Issue #4102 monthly summaries, derived from the #4101 series.
+        let monthly = SimulationOutput::monthly_end_use_summary(
+            heating_kwh.clone(),
+            cooling_kwh.clone(),
+            lighting_kwh.clone(),
+            equipment_kwh.clone(),
+            timestep_seconds,
+        );
+
+        let output = SimulationOutput {
+            eui: total_energy / floor_area,
+            total_energy,
+            peak_heating_load: self.inner.get_peak_heating_power_kw() * 1000.0,
+            peak_cooling_load: self.inner.get_peak_cooling_power_kw() * 1000.0,
+            heating_energy,
+            cooling_energy,
+            zone_temperatures: None,
+            hourly_zone_temperatures: hourly_temps,
+            effective_solver: Some(self.inner.effective_zone_solver().as_str().to_string()),
+            unmet_heating_hours: occ_h,
+            unmet_cooling_hours: occ_c,
+            unmet_heating_hours_all_hours: all_h,
+            unmet_cooling_hours_all_hours: all_c,
+            hourly_heating_kwh: heating_kwh,
+            hourly_cooling_kwh: cooling_kwh,
+            hourly_lighting_kwh: lighting_kwh,
+            hourly_equipment_kwh: equipment_kwh,
+            monthly_heating_kwh: monthly.as_ref().map(|m| m.kwh[0].clone()),
+            monthly_heating_peak_kw: monthly.as_ref().map(|m| m.peak_kw[0].clone()),
+            monthly_cooling_kwh: monthly.as_ref().map(|m| m.kwh[1].clone()),
+            monthly_cooling_peak_kw: monthly.as_ref().map(|m| m.peak_kw[1].clone()),
+            monthly_lighting_kwh: monthly.as_ref().map(|m| m.kwh[2].clone()),
+            monthly_lighting_peak_kw: monthly.as_ref().map(|m| m.peak_kw[2].clone()),
+            monthly_equipment_kwh: monthly.as_ref().map(|m| m.kwh[3].clone()),
+            monthly_equipment_peak_kw: monthly.as_ref().map(|m| m.peak_kw[3].clone()),
+        };
+
+        let zone_names: Vec<String> = (0..zone_area.len()).map(|i| format!("zone-{i}")).collect();
+        let ctx = StandardReportContext::new(
+            model_name.unwrap_or_else(|| "python-model".to_string()),
+            model_source.unwrap_or_else(|| "python:MultiZoneThermalModel".to_string()),
+        )
+        .with_floor_area(floor_area)
+        .with_zones(zone_area.len(), zone_names)
+        .with_timestep(timestep_seconds, 1)
+        .with_setpoints(heating_setpoint, cooling_setpoint)
+        .with_occupancy(sched)
+        .with_run_period("annual", None, None)
+        .with_unmet_hours_tolerance(tolerance);
+
+        StandardReport::from_simulation(&output, &ctx)
+            .to_json_string_terminated()
+            .map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!(
+                    "failed to serialize results report: {e}"
+                ))
+            })
+    }
+
     /// Get hourly temperatures as zero-copy numpy arrays for ML training.
     ///
     /// This method provides direct access to the underlying temperature data

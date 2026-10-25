@@ -87,6 +87,7 @@ Every active gate is wired into a workflow job, a pre-commit (manual) hook, or i
 | `check_teacher_validation_suite.py` | Teacher Validation Suite umbrella gate — ASHRAE 140 fabric + 1052-RP + PCM test-box (#3986 / #4116) | teacher_validation_suite.yml |
 | `check_thermal_selector_default_claim.py` | Thermal selector default-claim drift gate — validates `default()` parity across selector variants | operator diagnostic |
 | `check_topology_drift.py` | Topology artifact drift gate — byte-compares regenerated reference topologies + Mermaid/SVG vs. committed tree (#3966) | topology_visualizer.yml |
+| `check_results_report_drift.py` | Standard results-report drift gate — regenerates the committed `results_v1` reference report from fixture inputs and byte-compares it vs. the tree (#4104) | proposed results_report_drift.yml (wiring pending; run locally) |
 | `check_trivy_scan_target.py` | Trivy `scan-type: 'fs'` drift guard — every trivy step must scan the built image (#4186) | scripts-tests.yml |
 | `check_workflow_dup_keys.py` | Reject duplicate YAML mapping keys in `.github/workflows/*.yml` (#4068) | scripts-tests.yml |
 | `check_gate_inventory_sync.py` | Gate-inventory sync detector — every `scripts/check_*.py` basename must appear in the AGENTS.md gate table and this catalog (#4181) | scripts-tests.yml |

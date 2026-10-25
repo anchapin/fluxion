@@ -1,0 +1,294 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fluxion.dev/schemas/results_v1.schema.json",
+  "title": "Fluxion standard results report (v1)",
+  "description": "Versioned, byte-deterministic standard results report emitted by the Fluxion engine (Issue #4104, closes #3988). The document is generated from the timestep-indexed end-use series (Issue #4101), the monthly end-use summaries (Issue #4102) and the unmet-hours accounting (Issue #3988/#4103) through the single `StandardReport::from_simulation` constructor, so the REST, CLI and Python surfaces emit the same document. Object keys are sorted, floats are rendered with a fixed number of decimals and zone-indexed arrays are ordered by zone index, so identical inputs yield byte-identical JSON.",
+  "type": "object",
+  "required": ["metadata", "annual", "monthly", "unmet_hours", "hourly"],
+  "additionalProperties": false,
+  "properties": {
+    "metadata": { "$ref": "#/$defs/metadata" },
+    "annual": { "$ref": "#/$defs/annual" },
+    "monthly": {
+      "type": "array",
+      "description": "Twelve calendar-month bins (January first), aggregated over the whole run period.",
+      "minItems": 12,
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/monthly_month" }
+    },
+    "unmet_hours": { "$ref": "#/$defs/unmet_hours" },
+    "hourly": { "$ref": "#/$defs/hourly_reference" }
+  },
+  "$defs": {
+    "metadata": {
+      "type": "object",
+      "description": "Document metadata block: schema/tool version, model identity and run period.",
+      "required": ["schema_version", "tool_version", "model_name", "model_source", "run_period"],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "1.0.0",
+          "description": "Results-report schema version (semver). Minor = additive, major = breaking."
+        },
+        "tool_version": {
+          "type": "string",
+          "description": "Version of the emitting engine (CARGO_PKG_VERSION).",
+          "minLength": 1
+        },
+        "model_name": {
+          "type": "string",
+          "description": "Name of the simulated model (e.g. 'ASHRAE 140 Case 600').",
+          "minLength": 1
+        },
+        "model_source": {
+          "type": "string",
+          "description": "Model provenance, e.g. 'ashrae-140-registry:600' or 'model-file:path/to/model.flux'.",
+          "minLength": 1
+        },
+        "run_period": { "$ref": "#/$defs/run_period" }
+      }
+    },
+    "run_period": {
+      "type": "object",
+      "description": "Simulated period description. Deterministic: no wall-clock timestamps are emitted unless the caller supplies them explicitly.",
+      "required": ["label", "years", "timesteps", "timestep_seconds"],
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "description": "Human-readable period label (e.g. 'annual', 'design-day').",
+          "minLength": 1
+        },
+        "years": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of simulated years covered by the report."
+        },
+        "timesteps": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of timesteps in the referenced hourly series."
+        },
+        "timestep_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Timestep duration in seconds."
+        },
+        "start": {
+          "type": "string",
+          "description": "Optional ISO-8601 UTC start of the run period (omitted when unknown, so exports stay deterministic)."
+        },
+        "end": {
+          "type": "string",
+          "description": "Optional ISO-8601 UTC end of the run period (omitted when unknown)."
+        }
+      }
+    },
+    "end_use_energy": {
+      "type": "object",
+      "description": "End-use energy keyed by end use. Keys are sorted lexicographically in the serialized document.",
+      "required": ["cooling", "equipment", "heating", "lighting"],
+      "additionalProperties": false,
+      "properties": {
+        "heating": { "type": "number", "minimum": 0, "description": "Heating energy in kWh." },
+        "cooling": { "type": "number", "minimum": 0, "description": "Cooling energy in kWh." },
+        "lighting": { "type": "number", "minimum": 0, "description": "Lighting electric energy in kWh." },
+        "equipment": { "type": "number", "minimum": 0, "description": "Equipment electric energy in kWh." }
+      }
+    },
+    "end_use_peak": {
+      "type": "object",
+      "description": "Peak end-use demand keyed by end use. Values are timestep-average kW.",
+      "required": ["cooling", "equipment", "heating", "lighting"],
+      "additionalProperties": false,
+      "properties": {
+        "heating": { "type": "number", "minimum": 0, "description": "Peak heating demand in kW." },
+        "cooling": { "type": "number", "minimum": 0, "description": "Peak cooling demand in kW." },
+        "lighting": { "type": "number", "minimum": 0, "description": "Peak lighting demand in kW." },
+        "equipment": { "type": "number", "minimum": 0, "description": "Peak equipment demand in kW." }
+      }
+    },
+    "annual": {
+      "type": "object",
+      "description": "Annual (whole run period) summary: end-use energy, EUI and peak demand.",
+      "required": [
+        "end_use_kwh",
+        "eui_kwh_per_m2",
+        "floor_area_m2",
+        "peaks",
+        "total_energy_kwh",
+        "zone_count"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "end_use_kwh": { "$ref": "#/$defs/end_use_energy" },
+        "total_energy_kwh": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Sum of the four end-use energies in kWh."
+        },
+        "eui_kwh_per_m2": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Energy use intensity in kWh per square metre of conditioned floor area."
+        },
+        "floor_area_m2": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Conditioned floor area in square metres used for the EUI denominator."
+        },
+        "peaks": { "$ref": "#/$defs/end_use_peak" },
+        "zone_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of zones in the simulated model."
+        }
+      }
+    },
+    "monthly_month": {
+      "type": "object",
+      "description": "One calendar month of the run period.",
+      "required": ["month", "name", "end_use_kwh", "end_use_peak_kw"],
+      "additionalProperties": false,
+      "properties": {
+        "month": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Calendar month number, January = 1."
+        },
+        "name": {
+          "type": "string",
+          "enum": [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December"
+          ],
+          "description": "Calendar month name."
+        },
+        "end_use_kwh": { "$ref": "#/$defs/end_use_energy" },
+        "end_use_peak_kw": { "$ref": "#/$defs/end_use_peak" }
+      }
+    },
+    "unmet_hours": {
+      "type": "object",
+      "description": "Unmet heating/cooling hours under both reporting conventions.",
+      "required": ["occupied", "all_hours", "tolerance_c", "by_zone"],
+      "additionalProperties": false,
+      "properties": {
+        "occupied": { "$ref": "#/$defs/unmet_pair" },
+        "all_hours": { "$ref": "#/$defs/unmet_pair" },
+        "tolerance_c": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Setpoint tolerance in degrees Celsius used for the setpoint-deviation test (0.2 C by default, EnergyPlus 'Time Setpoint Not Met' parity)."
+        },
+        "by_zone": {
+          "type": "array",
+          "description": "Per-zone unmet hours, ordered by zone index (0-based). Empty when the run recorded no hourly zone temperature trace.",
+          "items": { "$ref": "#/$defs/unmet_zone" }
+        }
+      }
+    },
+    "unmet_pair": {
+      "type": "object",
+      "description": "Unmet heating and cooling hours.",
+      "required": ["cooling", "heating"],
+      "additionalProperties": false,
+      "properties": {
+        "heating": { "type": "number", "minimum": 0, "description": "Unmet heating hours." },
+        "cooling": { "type": "number", "minimum": 0, "description": "Unmet cooling hours." }
+      }
+    },
+    "unmet_zone": {
+      "type": "object",
+      "description": "Unmet hours for a single zone.",
+      "required": ["index", "name", "occupied", "all_hours"],
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Zero-based zone index (zones are reported in index order)."
+        },
+        "name": {
+          "type": "string",
+          "description": "Zone name; falls back to 'zone-<index>' when the model does not name the zone.",
+          "minLength": 1
+        },
+        "occupied": { "$ref": "#/$defs/unmet_pair" },
+        "all_hours": { "$ref": "#/$defs/unmet_pair" }
+      }
+    },
+    "hourly_reference": {
+      "type": "object",
+      "description": "Reference to the timestep-indexed end-use series. The series itself is NOT embedded in the report; the checksum lets a consumer verify the series it fetched against the report.",
+      "required": [
+        "series_id",
+        "checksum",
+        "timesteps",
+        "timestep_seconds",
+        "end_uses",
+        "columns"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "series_id": {
+          "type": "string",
+          "const": "hourly-end-use",
+          "description": "Stable identifier of the referenced series."
+        },
+        "checksum": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "SHA-256 (hex) of the canonical series text: end uses in heating/cooling/lighting/equipment order, timesteps in order, one fixed-precision value per line."
+        },
+        "timesteps": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of timesteps in the referenced series."
+        },
+        "timestep_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Timestep duration in seconds of the referenced series."
+        },
+        "end_uses": {
+          "type": "array",
+          "description": "End uses carried by the referenced series, in series order.",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "enum": ["heating", "cooling", "lighting", "equipment"]
+          }
+        },
+        "columns": {
+          "type": "array",
+          "description": "Column names of the referenced series, in series order.",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "enum": [
+              "heating_kwh",
+              "cooling_kwh",
+              "lighting_kwh",
+              "equipment_kwh"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

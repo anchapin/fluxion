@@ -15,7 +15,7 @@ Fluxion is a Rust-first building-energy-modeling engine with Python and Node bin
 ## Commands That Are Easy to Guess Wrong
 
 
-> **Workspace-scope rule (Issue #3587)** — The root crate is also workspace package `fluxion` with `default-members = ["."]`. The bare `cargo test` therefore runs the root crate ONLY (4,307 lib tests + the root `[[test]]` entries) and silently SKIPS the remaining 4,702 sibling-crate tests. **Always use the workspace form below** unless you have a deliberate reason to scope to one crate. See `docs/agents/workspace-scope.md` for the full rationale and `.githooks/pre-push` for the opt-in pre-push gate. Numbers in this section are sourced from `tests/test_inventory.json::totals` (lib_tests_root, workspace_tests, workspace_ignored, test_binaries); when the live counts move, regenerate that JSON with `python3 scripts/generate_test_inventory.py` and the drift gate (`scripts/check_test_inventory_drift.py`) will fail any PR that does not refresh AGENTS.md to match.
+> **Workspace-scope rule (Issue #3587)** — The root crate is also workspace package `fluxion` with `default-members = ["."]`. The bare `cargo test` therefore runs the root crate ONLY (4,317 lib tests + the root `[[test]]` entries) and silently SKIPS the remaining 4,702 sibling-crate tests. **Always use the workspace form below** unless you have a deliberate reason to scope to one crate. See `docs/agents/workspace-scope.md` for the full rationale and `.githooks/pre-push` for the opt-in pre-push gate. Numbers in this section are sourced from `tests/test_inventory.json::totals` (lib_tests_root, workspace_tests, workspace_ignored, test_binaries); when the live counts move, regenerate that JSON with `python3 scripts/generate_test_inventory.py` and the drift gate (`scripts/check_test_inventory_drift.py`) will fail any PR that does not refresh AGENTS.md to match.
 
 
 
@@ -59,8 +59,8 @@ The hook invokes `cargo test --workspace --exclude fluxion-tauri --no-fail-fast`
 | Source | Suite | Tests | Ignored | Notes |
 |---|---|---|---|---|
 
-| `cargo test --lib` | root crate unit tests | 4,307 | 8 | matches `tests/test_inventory.json::totals.lib_tests_root` (cargo-verified live count via `--verify`; the AST-regex snapshot for this crate is in `tests/reference_data/test_inventory_baseline.json::by_crate.fluxion.lib_tests`) |
-| `cargo test --workspace --exclude fluxion-tauri` | full workspace (lib + integration + bin) | 9,009 | 156 | `tests/test_inventory.json::totals.workspace_tests` / `workspace_ignored` (cargo-verified via `--verify`; the AST-regex snapshot is in `tests/reference_data/test_inventory_baseline.json::metrics_ast`) |
+| `cargo test --lib` | root crate unit tests | 4,317 | 8 | matches `tests/test_inventory.json::totals.lib_tests_root` (cargo-verified live count via `--verify`; the AST-regex snapshot for this crate is in `tests/reference_data/test_inventory_baseline.json::by_crate.fluxion.lib_tests`) |
+| `cargo test --workspace --exclude fluxion-tauri` | full workspace (lib + integration + bin) | 9,019 | 156 | `tests/test_inventory.json::totals.workspace_tests` / `workspace_ignored` (cargo-verified via `--verify`; the AST-regex snapshot is in `tests/reference_data/test_inventory_baseline.json::metrics_ast`) |
 | `AST-regex inventory | committed in `tests/reference_data/test_inventory_baseline.json::metrics_ast` | 9,000 | 156 | non-runtime snapshot, used by the drift gate (`--no-verify`); AST counts vs cargo-verified because the regex doesn't track `cfg(test)` boundaries |
 
 
@@ -163,6 +163,7 @@ Every active gate under `scripts/check_*.py` (55 scripts at head) is wired into 
 | `scripts/check_physics_sim_cycle.py` | `physics ↔ sim` cycle edge-count guard (#2463) | `rust-tests.yml` | #5 |
 | `scripts/check_pyi_drift.py` | `fluxion.pyi` stub ↔ `#[pyclass]` / `#[pyfunction]` drift (#2509) | run locally before editing Python bindings | #6 |
 | `scripts/check_required_checks_sync.py` | `release_gates.yaml::ci.required_checks` ↔ live `develop` branch protection (#2866 / #3116 / #3123 / #3441) | `scripts-tests.yml`, `required-checks-sync-cron.yml` | #6 |
+| `scripts/check_results_report_drift.py` | Standard results-report drift gate — regenerates the committed `results_v1` reference report from fixture inputs and byte-compares it vs. the tree (#4104) | proposed `results_report_drift.yml` (workflow wiring pending; run locally until it lands) | #6 |
 | `scripts/check_root_hygiene.py` | Root-level transient-file hygiene (widened from `.md`-only; Issue #3438) | invoked through its back-compat alias `check_root_md_policy.py` in `docs-hygiene.yml` | #6 |
 | `scripts/check_root_md_policy.py` | Back-compat alias for `check_root_hygiene.py` (keeps historical filename alive) | `docs-hygiene.yml`, pre-commit (`manual`) | #6 |
 | `scripts/check_rumqttc_upstream.py` | rumqttc / rustls-webpki security-cluster upstream watch (#2853) | `rumqttc-upstream.yml` | #6 |
