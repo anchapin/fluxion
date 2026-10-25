@@ -21,6 +21,8 @@ for the full design rationale.
 | [`IncreaseInsulationRValue.py`](IncreaseInsulationRValue.py) | `IncreaseInsulationRValue` | Add ΔR of insulation to the opaque envelope by lowering surface U-values. |
 | [`SetThermostatSetpoints.py`](SetThermostatSetpoints.py) | `SetThermostatSetpoints` | Sweep the heating / cooling thermostat setpoints by a delta or pin them to absolute values (clamped to the engine's admissible window, deadband preserved). |
 | [`SwapSchedule.py`](SwapSchedule.py) | `SwapSchedule` | Replace the thermostat schedule with an alternative profile — `constant`, `setback` or `operating_hours`. The named schedule must exist in the model, otherwise the measure fails loudly. |
+| [`SetLightingPowerDensity.py`](SetLightingPowerDensity.py) | `SetLightingPowerDensity` | Set the lighting power density (W/m²) of the model's lighting / internal-load inputs. The density must be positive and bounded; a model with no lighting object fails loudly. |
+| [`SetHVACEfficiency.py`](SetHVACEfficiency.py) | `SetHVACEfficiency` | Set the heating / cooling coefficient of performance (COP) of the model's HVAC plant. A model with no HVAC system fails loudly. |
 
 > **Control-side persistence (Issue #3995).** `SetThermostatSetpoints` and
 > `SwapSchedule` act on the model's *control* data. The native
@@ -31,6 +33,22 @@ for the full design rationale.
 > back through `set_zone_setpoints` / `set_hvac_schedule` as soon as the
 > binding provides one — the same advisory-field pattern documented for
 > `ReplaceHVACWithVAV`.
+
+> **Load / plant measures (Issue #3995).** `SetLightingPowerDensity` and
+> `SetHVACEfficiency` are the load-side and plant-side members of the
+> standard library. `SetLightingPowerDensity` probes the model for the
+> lighting / internal-loads object that carries the density
+> (`lighting_power_density_w_m2`, the field name of the Rust
+> `ScheduleSet`) and raises `LightingNotFoundError` when the model
+> exposes none — a lighting study against a model without lighting must
+> fail loudly rather than report a change that never happened.
+> `SetHVACEfficiency` writes the `cop_heating` / `cop_cooling` fields of
+> the HVAC snapshot and raises `HVACSystemNotFoundError` when the model
+> carries no HVAC system. The native `fluxion.Model` binding exposes
+> neither a lighting accessor nor a COP setter, so on today's bindings
+> the lighting measure fails loudly and the COP change is **advisory**
+> (visible on the HVAC snapshot and preserved by the Python
+> save/load round-trip, but not consumed by the Rust simulation).
 
 > **Named schedules (Issue #3995).** `SwapSchedule` resolves its
 > `schedule_name` argument against the schedules the model exposes
