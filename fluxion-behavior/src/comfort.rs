@@ -94,33 +94,56 @@ impl PmvComfort {
     ) -> f64 {
         let ta = air_temp;
         let tr = radiant_temp;
-        let vel = air_velocity.max(0.1);
-
         let m = metabolic_rate * 58.15;
         let w = 0.0;
-        let f_cl = 1.0 + 0.15 * clothing_level;
-        let i_cl = (0.155 * clothing_level).max(0.01);
 
-        let h_c = if vel > 0.1 {
-            12.1 * vel.sqrt()
+        // Round 99 (ISO 7730:2005 residuals sweep): the clothing model
+        // moves to the ISO 7730:2005 Annex D reference-program forms,
+        // cross-checked against EnergyPlus ThermalComfort.cc
+        // `CalcFangerPMV` ("based on ANSI/ASHRAE Standard 55-2020 and
+        // ISO 7730:2005"). Removed non-ISO constructs: f_cl = 1.0 +
+        // 0.15·clo (ASHRAE-Handbook linearization), the t_cl solve
+        // linearized at h_r = 4.7 W/m²K, the h_c selection keyed on
+        // `vel > 0.1` at |ta − 35|, and the 0.1 m/s velocity floor.
+        let i_cl = 0.155 * clothing_level;
+        let f_cl = if i_cl < 0.078 {
+            1.0 + 1.29 * i_cl
         } else {
-            2.38 * (ta - 35.0).abs().powf(0.25)
+            1.05 + 0.645 * i_cl
         };
-        let h_r = 4.7;
+        let clo_insul = i_cl * f_cl; // ISO: I_cl·f_cl
+
+        // t_cl: implicit clothing-surface balance with the radiative
+        // quartic inside, fixed-point iteration in the P1..P4 scaled
+        // forms (ISO Annex D program; E+ parameters MaxIter 150,
+        // StopIterCrit 0.00015), h_c re-evaluated each pass as
+        // max(12.1·√v, 2.38·|t_cl − ta|^0.25). Absolute-offset convention
+        // +273.0 per the ISO Annex D program, uniform with the round-97
+        // quartic below (E+ converts at 273.15 — recorded choice).
+        let p2 = clo_insul * 3.96;
+        let p3 = clo_insul * 100.0;
+        let p1 = clo_insul * (ta + 273.0);
+        let t_tr = (tr + 273.0) / 100.0;
+        let p4 = 308.7 - 0.028 * m + p2 * (t_tr * t_tr * t_tr * t_tr);
+        let abs_air = ta + 273.0;
+        let mut xn = (abs_air + (35.5 - ta) / (3.5 * i_cl + 0.1)) / 100.0;
+        let hc_for = 12.1 * air_velocity.sqrt();
+        let mut hc = hc_for;
+        let mut xf = xn;
+        let mut it = 0;
 
         let p_sat = 610.6 * (17.27 * ta / (ta + 237.3)).exp();
         let p_a = rel_humidity * p_sat;
 
-        let mut t_cl = ta + 1.0;
-        for _ in 0..10 {
-            let t_cl_new = (f_cl * h_c * ta + f_cl * h_r * tr + (35.7 - 0.028 * m) / i_cl)
-                / (f_cl * h_c + f_cl * h_r + 1.0 / i_cl);
-            if (t_cl_new - t_cl).abs() < 0.01 {
-                t_cl = t_cl_new;
-                break;
-            }
-            t_cl = t_cl_new;
+        while ((xn - xf).abs() > 0.00015 || it == 0) && it < 150 {
+            xf = (xf + xn) / 2.0;
+            let hc_nat = 2.38 * (100.0 * xf - abs_air).abs().powf(0.25);
+            hc = hc_for.max(hc_nat);
+            xn = (p4 + p1 * hc - p2 * (xf * xf * xf * xf)) / (100.0 + p3 * hc);
+            it += 1;
         }
+        let t_cl = 100.0 * xn - 273.0;
+        let h_c = hc;
 
         // Dry c/r terms (round 97; ISO 7730:2005): convection from the
         // clothing surface `f_cl·h_c·(t_cl − t_a)` plus the radiative
@@ -174,13 +197,13 @@ impl PmvComfort {
 
         let l = m - w - c_res - e_res - c - r - e;
 
-        let pmv = if l.abs() > 0.1 {
-            (0.303 * (-0.036 * m).exp() + 0.028) * l
-        } else {
-            0.0
-        };
-
-        pmv.max(-4.0).min(4.0)
+        // Round 99: PMV computed unconditionally — ISO 7730:2005 and the
+        // E+ reference carry no zero arm near neutral (the removed
+        // |L| <= 0.1 gate quantized the neutral region). The max/min
+        // chain keeps the NaN -> -4.0 edge semantics documented above.
+        ((0.303 * (-0.036 * m).exp() + 0.028) * l)
+            .max(-4.0)
+            .min(4.0)
     }
 
     pub fn calculate_ppd(&self, pmv: f64) -> f64 {
@@ -373,9 +396,11 @@ mod tests {
         // Round 98 (Issue #4598, fixed ISO 7730 evaporative split): 25 °C
         // sits below the balance, where the regulator scaled the diffusive
         // loss below capacity; the fixed E_dif restores it.
-        // -0.023355613 -> -0.389260211.
+        // -0.023355613 -> -0.389260211 (round 98). Round 99 (ISO clothing
+        // model: piecewise f_cl, implicit-quartic t_cl, in-iteration
+        // h_c): -0.389260211 -> -0.401646093.
         assert!(
-            (result.pmv - (-0.389260211)).abs() < 1e-9,
+            (result.pmv - (-0.401646093)).abs() < 1e-9,
             "PMV for 25°C typical office should sit at the corrected pin, got {}",
             result.pmv
         );
@@ -399,12 +424,11 @@ mod tests {
         // reading. Round 98 (Issue #4598) then replaced the recorded
         // wettedness-regulator residual itself with ISO's fixed split —
         // see the re-pinned values below.
-        // Round 98 (Issue #4598): fixed-split values. The regulator's 6 %
-        // floor carried e ≈ 0.786 W/m² here where ISO's E_dif is
-        // ≈ 13.099 W/m² (+12.31 W/m² restored, the issue's reading-warm
-        // defect): -0.612278191 -> -1.416959230.
-        assert!((result.pmv - (-1.416959230)).abs() < 1e-9);
-        assert!((result.ppd - 46.417718088).abs() < 1e-9);
+        // Round 98 (Issue #4598) fixed-split values: -0.612278191 ->
+        // -1.416959230. Round 99 (ISO clothing model): -1.416959230 ->
+        // -1.407963263.
+        assert!((result.pmv - (-1.407963263)).abs() < 1e-9);
+        assert!((result.ppd - 45.936682908).abs() < 1e-9);
     }
 
     #[test]
@@ -422,11 +446,11 @@ mod tests {
             .unwrap();
 
         // Round 98 (Issue #4598): at met 1.2 the ISO sweating term
-        // 0.42·(69.78 − 58.15) = 4.885 W/m² engages (the regulator
-        // saturated at e_max and never credited it):
-        // 1.734916701 -> 1.478118082.
-        assert!((result.pmv - 1.478118082).abs() < 1e-9);
-        assert!((result.ppd - 49.713006628).abs() < 1e-9);
+        // 0.42·(69.78 − 58.15) = 4.885 W/m² engages: 1.734916701 ->
+        // 1.478118082. Round 99 (ISO clothing model): 1.478118082 ->
+        // 1.428325186.
+        assert!((result.pmv - 1.428325186).abs() < 1e-9);
+        assert!((result.ppd - 47.026996319).abs() < 1e-9);
     }
 
     #[test]
@@ -443,11 +467,11 @@ mod tests {
             .calculate_pmv_ppd(ta, tr, vel, rh, met, clo)
             .unwrap();
 
-        // Round 97 corrected pins: warm-leaning (PMV ≈ 0.33), not the
-        // pre-fix hot reading; the `pmv > 1` expectation encoded the
-        // (t_sk − t_cl) deviation.
-        assert!((result.pmv - 0.195674534).abs() < 1e-9);
-        assert!((result.ppd - 5.793925275).abs() < 1e-9);
+        // Round 97 corrected pins: warm-leaning, not the pre-fix hot
+        // reading. Round 99 (ISO clothing model): 0.195674534 ->
+        // 0.143714899.
+        assert!((result.pmv - 0.143714899).abs() < 1e-9);
+        assert!((result.ppd - 5.427939622).abs() < 1e-9);
     }
 
     #[test]
@@ -464,13 +488,11 @@ mod tests {
             .calculate_pmv_ppd(ta, tr, vel, rh, met, clo)
             .unwrap();
 
-        // Round 97 corrected pins: 20 °C with clo 1.5 is ~neutral in the
-        // corrected model.
-        // Round 98 (Issue #4598, fixed split): the d1-proportional
-        // regulator sat just below capacity here; the fixed E_dif moves
-        // the pin -0.009075675 -> -0.151261250.
-        assert!((result.pmv - (-0.151261250)).abs() < 1e-9);
-        assert!((result.ppd - 5.474107248).abs() < 1e-9);
+        // Round 98 (Issue #4598, fixed split): -0.009075675 ->
+        // -0.151261250. Round 99 (ISO clothing model): -0.151261250 ->
+        // -0.187107459.
+        assert!((result.pmv - (-0.187107459)).abs() < 1e-9);
+        assert!((result.ppd - 5.725825125).abs() < 1e-9);
     }
 
     #[test]
@@ -492,15 +514,15 @@ mod tests {
         let humid = pmv_comfort.calculate_pmv(30.0, 30.0, 0.5, 0.1, 1.0, 0.5);
         let very_humid = pmv_comfort.calculate_pmv(30.0, 30.0, 0.9, 0.1, 1.0, 0.5);
         assert!(
-            (dry - 0.979980337).abs() < 1e-9,
+            (dry - 0.918966774).abs() < 1e-9,
             "dry-air 30 C PMV: got {dry}"
         );
         assert!(
-            (humid - 1.539150494).abs() < 1e-9,
+            (humid - 1.478136931).abs() < 1e-9,
             "50 % rh 30 C PMV: got {humid}"
         );
         assert!(
-            (very_humid - 1.986934403).abs() < 1e-9,
+            (very_humid - 1.925920840).abs() < 1e-9,
             "90 % rh 30 C PMV: got {very_humid}"
         );
         assert!(
@@ -525,13 +547,14 @@ mod tests {
         // fixed split's sweating term 0.42·(87.23 − 58.15) = 12.21 W/m²
         // engages (the regulator saturated at e_max instead). Reference
         // values computed independently in Python replicating this
-        // function's exact operation order (r97/r98_comfort_refs.py);
+        // function's exact operation order (r97/r98/r99_comfort_refs.py);
         // ±1e-9 is cross-language libm ulp headroom, not a physics
-        // tolerance.
+        // tolerance. Round 99 (ISO clothing model): 0.795372740 ->
+        // 0.778813182.
         let pmv_comfort = PmvComfort::new();
         let pmv = pmv_comfort.calculate_pmv(26.0, 26.0, 0.5, 0.1, 1.5, 0.5);
         assert!(
-            (pmv - 0.795372740).abs() < 1e-9,
+            (pmv - 0.778813182).abs() < 1e-9,
             "respiration 5867 Pa form at 26 C / met 1.5: got {pmv}"
         );
         // Fix direction: more respiration loss must read cooler, and
@@ -539,7 +562,7 @@ mod tests {
         assert!(pmv < 1.448437078, "fix direction: got {pmv}");
         let humid = pmv_comfort.calculate_pmv(26.0, 26.0, 0.9, 0.1, 1.5, 0.5);
         assert!(
-            (humid - 1.045865513).abs() < 1e-9 && humid > pmv,
+            (humid - 1.029305956).abs() < 1e-9 && humid > pmv,
             "humidity must warm: {humid} vs {pmv}"
         );
     }
@@ -671,11 +694,12 @@ mod tests {
         // now sits at ~26.0 °C. Round 98 (Issue #4598, fixed evaporative
         // split) moves it to -1.158944320: at 23 °C the d1-proportional
         // regulator held the diffusive loss below ISO's fixed E_dif.
-        // Pinned exactly (Python replication, r97/r98_comfort_refs.py;
-        // ±1e-9 libm headroom).
+        // Pinned exactly (Python replication, r97/r98/r99_comfort_refs.py;
+        // ±1e-9 libm headroom). Round 99 (ISO clothing model):
+        // -1.158944320 -> -1.133427674.
         assert!(
-            (result.pmv - (-1.158944320)).abs() < 1e-9,
-            "ASHRAE 55 PMV at 23 °C (round-97/98 comfort fixes): got {}",
+            (result.pmv - (-1.133427674)).abs() < 1e-9,
+            "ASHRAE 55 PMV at 23 °C (round-97/98/99 comfort fixes): got {}",
             result.pmv
         );
     }
@@ -840,14 +864,15 @@ mod tests {
         // E_rsw = 0.42·(H − 58.2) for H > 58.2, else 0). The regulator
         // floored this 14 °C / clo 1.0 scenario near 6 % of capacity
         // (PMV -1.623601745 pre-fix); the fixed diffusion restores the
-        // loss (PMV -2.471865351). Reference values from Python
+        // loss (PMV -2.471865351). Round 99 (ISO clothing model):
+        // -2.471865351 -> -2.496170958. Reference values from Python
         // replication of this function's exact operation order
-        // (r98_comfort_refs.py); ±1e-9 is cross-language libm ulp
+        // (r98/r99_comfort_refs.py); ±1e-9 is cross-language libm ulp
         // headroom, not a physics tolerance.
         let pmv_comfort = PmvComfort::new();
         let pmv = pmv_comfort.calculate_pmv(14.0, 14.0, 0.5, 0.1, 1.0, 1.0);
         assert!(
-            (pmv - (-2.471865351)).abs() < 1e-9,
+            (pmv - (-2.496170958)).abs() < 1e-9,
             "fixed ISO evaporative split at 14 C / clo 1.0: got {pmv}"
         );
     }
