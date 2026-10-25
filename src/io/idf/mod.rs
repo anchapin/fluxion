@@ -23,11 +23,18 @@
 //! callers can inspect or forward them, but no typed accessor is provided
 //! and they are ignored by [`IdfFile::materials`], [`IdfFile::zones`], etc.
 //!
+//! # IDF export (issue #3991)
+//!
+//! [`export`] serialises a parsed [`IdfFile`] (or a `CaseSpec` envelope)
+//! back to IDF text that re-parses into an equal [`IdfFile`]. See the
+//! [`export`] module header for the determinism / idempotence guarantees
+//! and for the documented scope of the `CaseSpec` export.
+//!
 //! # Out of scope (per design §10 and issue #1341)
 //!
 //! - epJSON parsing (design §4.2 follow-up).
 //! - HVAC, Schedule, Window/Door, `FenestrationSurface:Detailed` (design §10).
-//! - IDF export (design §10).
+//! - HVAC / systems export (issue #3991, later slice) and glazing export.
 //!
 //! # Example
 //!
@@ -43,10 +50,12 @@
 pub mod convert;
 pub mod epjson;
 pub mod error;
+pub mod export;
 pub mod lexer;
 pub mod parser;
 
 pub use convert::{case_spec_from_idf, GroundTempMeta, RunPeriodMeta, SUPPORTED_VERSIONS};
 pub use error::IdfError;
+pub use export::{export_case_spec_envelope, export_idf, export_idf_to_writer};
 pub use lexer::{tokenize, RawObject};
 pub use parser::{IdfFile, IdfObject, IdfParser, IdfValue};
