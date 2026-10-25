@@ -450,6 +450,57 @@ mod tests {
     }
 
     #[test]
+    fn test_hybrid_solve_with_outdoor_temps_series_is_used() {
+        // Issue #3985: a caller-supplied outdoor-temperature series must
+        // actually drive the hybrid run loop. A constant very cold series
+        // and a constant very warm series must produce measurably
+        // different results, with the warm-driven run's zone temperatures
+        // higher on average (physically expected direction).
+        use crate::ai::surrogate::SurrogateManager;
+
+        let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+        let steps = 48;
+
+        let mut cold = HybridThermalModel::new(1, HybridRouting::default());
+        let cold_eui =
+            cold.solve_timesteps_with_outdoor_temps(steps, &surrogates, false, &vec![-20.0; steps]);
+        let cold_temps = cold.get_hourly_temperatures().expect("hourly temps");
+
+        let mut warm = HybridThermalModel::new(1, HybridRouting::default());
+        let warm_eui =
+            warm.solve_timesteps_with_outdoor_temps(steps, &surrogates, false, &vec![35.0; steps]);
+        let warm_temps = warm.get_hourly_temperatures().expect("hourly temps");
+
+        assert!(cold_eui.is_finite() && warm_eui.is_finite());
+        let mean = |t: &Vec<Vec<f64>>| {
+            let flat: Vec<f64> = t.iter().flatten().copied().collect();
+            flat.iter().sum::<f64>() / flat.len() as f64
+        };
+        assert!(
+            mean(&warm_temps) > mean(&cold_temps),
+            "warm series must yield warmer zone temps: warm={} cold={}",
+            mean(&warm_temps),
+            mean(&cold_temps)
+        );
+        assert!(
+            (cold_eui - warm_eui).abs() > 1e-9,
+            "supplied series must change the result: cold_eui={cold_eui} warm_eui={warm_eui}"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "outdoor_temps series has")]
+    fn test_hybrid_solve_with_outdoor_temps_short_series_panics() {
+        // Issue #3985: a series shorter than the requested steps is a
+        // caller error — fail loudly instead of inventing weather.
+        use crate::ai::surrogate::SurrogateManager;
+
+        let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+        let mut model = HybridThermalModel::new(1, HybridRouting::default());
+        let _ = model.solve_timesteps_with_outdoor_temps(24, &surrogates, false, &[10.0; 4]);
+    }
+
+    #[test]
     fn test_hybrid_thermal_model_solve_physics_only_policy() {
         // With loads routed back to physics, the surrogate branch must NOT fire.
         use crate::ai::surrogate::SurrogateManager;
