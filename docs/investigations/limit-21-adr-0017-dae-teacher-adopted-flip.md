@@ -2,7 +2,7 @@
 
 Narrative history for **LIMIT-21**, moved verbatim out of `docs/KNOWN_ISSUES.md` by Issue #4278. The current state of this limitation is the `LIMIT-21` row in that document's status table; this file is the provenance behind it.
 
-Blocks preserved: 5. No wording was changed, softened or deleted.
+Blocks preserved: 6. No wording was changed, softened or deleted.
 
 ---
 
@@ -293,3 +293,40 @@ cases/metrics, GitHub issue links, and resolution status.
    tracked in §LIMIT-30 / Issue #3797 B1b follow-up (PR #3847).
    Phase 5 is therefore complete: the sky radiative implementation
    is correct and the remaining gap is a separate structural issue.
+
+#### LIMIT-21 UPDATE (2026-10-25, physics loop round 99): criterion-2 residual pair green — tracker cohort re-pinned empty
+
+**What moved:** the §LIMIT-21 criterion-2 residual pair —
+`test_physics_thermal_model_eplus_case_600_reference_csv` (Case 600
+oscillation, max ΔT = 34.007 °C) and
+`test_free_floating_case_900ff_isolation` (900FF divergence to
+non-finite) — went **green** under gauge-solver at soak run
+40184928129 (head `00e19545`, 2026-10-25): criterion 2 measured
+19 passed / 0 failed / 21 ignored. The structural fix that landed is
+**#4591** (`12f75688`, merged 2026-10-24): round 95's hybrid
+scheduled-ACH slot plumbed into the gauge dispatcher (#3985/#4578
+follow-up) — an air-trajectory fidelity change, not a constant or
+baseline change. Both tests still exist un-ignored at
+`tests/all_tests/zone_balance_eplus_isolation.rs:188/:432` (the #3764
+consolidation move); they pass legitimately — no quarantine, no
+baseline edit.
+
+**Bookkeeping the drift detector forced (its designed re-pin trigger,
+#3744):** `scripts/check_beta_soak_gate.py::criterion_2_failures()` —
+`failures` now `[]`; any future criterion-2 failure is a fresh
+regression signal (docs/agents/beta-soak-criterion-2-tracker.md
+carries the full UPDATE). Criterion 4's ADR-0025 tracked cohort
+re-pin: the members that turned green the same night
+(`case_650::test_annual_cooling`, `case_650ff::test_min_temperature`)
+left the tracked tier and joined the hard tier in
+tests/reference_data/gauge_soak/criterion4_tracked_cohort_baseline.csv.
+The KNOWN_ISSUES §LIMIT-21 row carries the dated status.
+
+**What did NOT close:** the wider §LIMIT-21 program. Flip authority
+remains #3986's teacher validation suite (ADR-0017, 2026-09-25 UPDATE
+above), criteria 4/5 tracked tiers still carry known-gap members, and
+the β-soak streak is 0/30 — it accumulates only from the first
+all-green night after the re-pin PR. The 2026-09-20 'no tunable fix'
+conclusion stands as history for the pre-#4591 solver state; the
+scheduled-ACH slot is the fidelity program #1465/#1462 pointed at,
+landing in pieces.

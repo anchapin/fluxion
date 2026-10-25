@@ -56,12 +56,12 @@ Case 640 Annual Cooling: 6.83 MWh (Ref: 5.24-5.89)
 test ashrae_140_case_600_series::case_640::test_annual_heating ... ignored, physics gap
 test ashrae_140_case_600_series::case_640::test_peak_heating ... ignored, physics gap
 test ashrae_140_case_600_series::case_640::test_peak_cooling ... ignored, physics gap
-test ashrae_140_case_600_series::case_650::test_annual_cooling ... FAILED
+test ashrae_140_case_600_series::case_650::test_annual_cooling ... ok
 Case 650 Annual Cooling: 3.85 MWh (Ref: 4.19-4.95)
 test ashrae_140_case_600_series::case_650::test_peak_cooling ... FAILED
 Case 650 Peak Cooling: 14.57 kW (Ref: 5.04-6.29)
 test ashrae_140_case_600_series::case_650::test_annual_heating_near_zero ... ok
-test ashrae_140_case_600_series::case_650ff::test_min_temperature ... FAILED
+test ashrae_140_case_600_series::case_650ff::test_min_temperature ... ok
 Case 650FF Min Temp: -17.89°C (Ref: -17.80 to -16.70)
 test ashrae_140_case_600_series::case_650ff::test_max_temperature ... FAILED
 Case 650FF Max Temp: 43.33°C (Ref: 61.10 to 66.80)
@@ -73,24 +73,28 @@ test other_suite::case_a::test_b ... ok
 """
 
 # Compact log: only the cohort members (subset fixture for drift edits).
+# 2026-10-25 re-pin (loop round 99): case_650::test_annual_cooling and
+# case_650ff::test_min_temperature joined the hard tier as pass — they
+# appear `ok` here and are absent from TRACKED below.
 TRACKED = {
     "ashrae_140_case_600_series::case_600ff::test_max_temperature": "43.93",
     "ashrae_140_case_600_series::case_630::test_annual_heating": "29.23",
     "ashrae_140_case_600_series::case_630::test_annual_cooling": "6.44",
     "ashrae_140_case_600_series::case_630::test_peak_cooling": "13.43",
     "ashrae_140_case_600_series::case_640::test_annual_cooling": "6.83",
-    "ashrae_140_case_600_series::case_650::test_annual_cooling": "3.85",
     "ashrae_140_case_600_series::case_650::test_peak_cooling": "14.57",
-    "ashrae_140_case_600_series::case_650ff::test_min_temperature": "-17.89",
     "ashrae_140_case_600_series::case_650ff::test_max_temperature": "43.33",
 }
 
 
 def test_baseline_csv_is_parseable_and_complete():
     values, meta, hard = mod.parse_baseline(BASELINE)
-    assert len(values) == 9
-    assert len(hard) == 18
-    assert sum(1 for s in hard.values() if s == "pass") == 6
+    # 2026-10-25 re-pin (loop round 99): 7 tracked members remain; the
+    # two re-pinned members joined the hard tier as pass (8 pass + 12
+    # ignored = 20 hard rows).
+    assert len(values) == 7
+    assert len(hard) == 20
+    assert sum(1 for s in hard.values() if s == "pass") == 8
     assert sum(1 for s in hard.values() if s == "ignored") == 12
     for name, m in meta.items():
         assert m["unit"] in {"degC", "MWh", "kW"}
@@ -134,9 +138,12 @@ def test_tracked_value_drift_fails_night():
 
 
 def test_tracked_test_turning_green_requires_repin():
+    # case_650::test_annual_cooling already re-pinned to the hard tier
+    # (2026-10-25); the re-pin path is exercised on a member that is
+    # still tracked.
     flipped = GREEN_LOG.replace(
-        "test ashrae_140_case_600_series::case_650::test_annual_cooling ... FAILED",
-        "test ashrae_140_case_600_series::case_650::test_annual_cooling ... ok",
+        "test ashrae_140_case_600_series::case_650::test_peak_cooling ... FAILED",
+        "test ashrae_140_case_600_series::case_650::test_peak_cooling ... ok",
     )
     baseline, meta, hard = mod.parse_baseline(BASELINE)
     verdict = mod.evaluate(
@@ -144,7 +151,7 @@ def test_tracked_test_turning_green_requires_repin():
     )
     assert verdict.verdict == "re-pin-required"
     assert verdict.re_pins == [
-        "ashrae_140_case_600_series::case_650::test_annual_cooling"
+        "ashrae_140_case_600_series::case_650::test_peak_cooling"
     ]
 
 
