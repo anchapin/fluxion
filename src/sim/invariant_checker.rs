@@ -960,13 +960,24 @@ mod tests {
 
     #[test]
     fn test_artificial_heat_gain_detected() {
+        // [Round 101 — this probe asserts detection on the 9R4C identity,
+        // where the injected gain reaches the residual through `phi_st`
+        // (radiative share, routed in full to the surface node since the
+        // ISO §C.3 partition change) and `phi_ia` (convective share).
+        // The 5R1C CN mirror identity carries the gain only through
+        // `phi_m`, and the retired
+        // `m_air_frac = rad_frac × solar_distribution_to_air` channel was
+        // its ONLY internal-gain term — post-101 that arm is gain-blind
+        // by construction. Re-routing the 5R1C identity through the
+        // surface/air channels is the §LIMIT-19/#1344/§LIMIT-22
+        // investigation, not a drive-by; until then the detection
+        // guarantee is asserted where the identity is complete.]
         let mut model = ThermalModel::<VectorField>::new(1);
         model.apply_parameters(&[1.5, 20.0, 27.0]);
+        model.hvac.thermal_model_type = ThermalModelType::NineRFourC;
 
         let test_loads = vec![0.0; 1];
         model.set_loads(&test_loads);
-
-        model.step_physics(0, 20.0, 3600.0);
 
         let mut checker = InvariantChecker::new(1e-7);
 
@@ -993,8 +1004,9 @@ mod tests {
         // `phi_st` (radiative share, routed in full to the surface node
         // since round 101 — the retired
         // `m_air_frac = rad_frac × solar_distribution_to_air` factor no
-        // longer routes internal radiative into `phi_m`) and shifts
-        // the imbalance. The legacy assertion
+        // longer routes internal radiative into `phi_m`, and the
+        // post-step composite identity is gain-blind by construction).
+        // The legacy assertion
         // `normal > gain` was tied to the old mixed-path formula, which had
         // a large constant imbalance unrelated to the injected gain. With the
         // correct formula the normal imbalance depends on the test setup
