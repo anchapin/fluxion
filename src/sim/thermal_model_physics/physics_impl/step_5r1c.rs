@@ -1280,10 +1280,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // (checker-lags-integrator, #4504 class). When the coupled
         // single-N scheme advances the mass node, record per zone the
         // linear coefficients the sub-step CN advances actually consumed,
-        // `[a_0, b_0, a_1, b_1, …, a_{N−1}, b_{N−1}, denom_final]`, so
-        // `invariant_checker` can mirror the composite sub-step identity
-        // exactly (the hourly identity no longer matches a dt/N-mapped
-        // mass advance). Pooled buffer; cleared each step, capacity kept.]
+        // `[a_0, b_0, d_0, bl_0, a_1, b_1, d_1, bl_1, …, a_{N−1},
+        // b_{N−1}, d_{N−1}, bl_{N−1}]` — four entries per sub-step, where
+        // `d_k` is that sub-step's CN denominator in W/K (the last one
+        // scales the composite residual to W) and — loop round 103,
+        // §LIMIT-22 rebuild — `bl_k` is the load-linear coefficient of
+        // `b_k` (db/d(load_w)): the checker can rebuild the composite at
+        // a perturbed load through the engine's own share algebra while
+        // the zero-delta replay stays bit-exact. Pooled buffer; cleared
+        // each step, capacity kept.]
         let mut r77_coeffs: Vec<Vec<f64>> = self
             .0
             .mass
@@ -2091,7 +2096,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // FLX_R84_PERCLASS to a falsy token measures the pre-85
                     // lumped sub-step path (bit-identical to the round-84
                     // flag-off state).]
-                    let mut perclass_coeffs: Option<(f64, f64, f64)> = None;
+                    let mut perclass_coeffs: Option<(f64, f64, f64, f64)> = None;
                     // [R85 GUARD — the per-class advance requires real
                     // per-class construction state for this zone. The class
                     // tensors (cm_wall/cm_roof/cm_floor,
@@ -2130,7 +2135,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // below consumes the same value so the persisted
                     // affine record mirrors the committed state exactly.
                     // Flag off: phi_m only, bit-identical.]
-                    let phi_lumped_88 = if r88_phist_share {
+                    // [Round 103 — the lumped drive's load coefficient
+                    // travels with it: only the phi_st term carries the
+                    // load (dphi_st/d(load_w) = rad_frac at the gains
+                    // site).]
+                    let (phi_lumped_88, dphi_lumped_88_dload) = if r88_phist_share {
                         let h_is_i88 = h_is_all.get(i).copied().unwrap_or(0.0);
                         let h_ms_i88 = h_ms_all.get(i).copied().unwrap_or(0.0);
                         let s88 = if h_ms_i88 + h_is_i88 > 0.0 {
@@ -2138,9 +2147,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         } else {
                             0.0
                         };
-                        phi_m_ref_early[i] + s88 * phi_st.as_ref()[i]
+                        (
+                            phi_m_ref_early[i] + s88 * phi_st.as_ref()[i],
+                            s88 * rad_frac,
+                        )
                     } else {
-                        phi_m_ref_early[i]
+                        (phi_m_ref_early[i], 0.0)
                     };
                     let tm_new = if r84_perclass && ps_enabled && cls_tensors_ready {
                         match r66_cls[i] {
@@ -2154,6 +2166,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                 let mut a_sum = 0.0;
                                 let mut b_sum = 0.0;
                                 let mut d_sum = 0.0;
+                                let mut bl_sum = 0.0;
                                 let cond = &self.0.conduction;
                                 let grab = |o: &Option<T>| {
                                     o.as_ref().and_then(|v| v.as_ref().get(i).copied())
@@ -2255,7 +2268,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                     } else {
                                         0.0
                                     };
-                                    let phi_c = if r91_t5138 {
+                                    // [Loop round 103 — the checker-record
+                                    // gains the load-linear coefficient of
+                                    // the class drive: d(phi_c)/d(load_w)
+                                    // alongside phi_c, from the same share
+                                    // algebra (only the internal-gain
+                                    // radiative component carries the
+                                    // load: phi_st_int = load·rad_frac;
+                                    // phi_m and phi_st_sol are
+                                    // load-independent). Recorded per
+                                    // sub-step so the checker's composite
+                                    // mirror can rebuild b at a perturbed
+                                    // load — §LIMIT-22 rebuild.]
+                                    let (phi_c, dphi_c_dload) = if r91_t5138 {
                                         let f_c_t5138 = match c {
                                             2 => 0.642_f64,
                                             1 => 0.1678,
@@ -2271,14 +2296,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                             // partition (`s_c·w` here,
                                             // `(1 − s_share)` at the lag
                                             // site).]
-                                            phi_m_i * w
-                                                + (f_c_t5138 / 0.9664) * phi_st_sol.as_ref()[i]
-                                                + s_c94 * phi_st_int.as_ref()[i] * w
+                                            (
+                                                phi_m_i * w
+                                                    + (f_c_t5138 / 0.9664) * phi_st_sol.as_ref()[i]
+                                                    + s_c94 * phi_st_int.as_ref()[i] * w,
+                                                s_c94 * rad_frac * w,
+                                            )
                                         } else {
                                             // Pre-R94 composed route
                                             // (whole pool at the solar
                                             // fractions) — archaeology.
-                                            phi_m_i * w + (f_c_t5138 / 0.9664) * phi_st.as_ref()[i]
+                                            (
+                                                phi_m_i * w
+                                                    + (f_c_t5138 / 0.9664) * phi_st.as_ref()[i],
+                                                (f_c_t5138 / 0.9664) * rad_frac,
+                                            )
                                         }
                                     } else if r88_phist_share {
                                         let h_is_c88 = h_is_i * w;
@@ -2287,16 +2319,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                         } else {
                                             0.0
                                         };
-                                        phi_m_i * w + s_c88 * phi_st.as_ref()[i] * w
+                                        (
+                                            phi_m_i * w + s_c88 * phi_st.as_ref()[i] * w,
+                                            s_c88 * rad_frac * w,
+                                        )
                                     } else {
-                                        phi_m_i * w
+                                        (phi_m_i * w, 0.0)
                                     };
                                     // [R90 HARNESS (b)] ramp the class mass
                                     // drive across the hour at the R71
                                     // midpoint fraction (same share algebra
                                     // on the previous hour's gains; zero prev
-                                    // = seed, no ramp).
-                                    let phi_c = if r90_phist_ramp {
+                                    // = seed, no ramp). Round 103: the load
+                                    // derivative ramps by the same f_r90m —
+                                    // the previous hour's gains are persisted
+                                    // history, not load-dependent.
+                                    let (phi_c, dphi_c_dload) = if r90_phist_ramp {
                                         let phi_m_prev_r90 =
                                             r90_phi_m_prev_ref.get(i).copied().unwrap_or(0.0);
                                         let phi_st_prev_r90 =
@@ -2312,17 +2350,32 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                                 };
                                             let phi_c_prev_r90 = phi_m_prev_r90 * w
                                                 + s_c_prev_r90 * phi_st_prev_r90 * w;
-                                            phi_c_prev_r90 + f_r90m * (phi_c - phi_c_prev_r90)
+                                            (
+                                                phi_c_prev_r90 + f_r90m * (phi_c - phi_c_prev_r90),
+                                                f_r90m * dphi_c_dload,
+                                            )
                                         } else {
-                                            phi_c
+                                            (phi_c, dphi_c_dload)
                                         }
                                     } else {
-                                        phi_c
+                                        (phi_c, dphi_c_dload)
                                     };
                                     let cm_dt_c = cls_cm[c] / dt_m;
                                     let half_c = 0.5 * (h3_c + h_em_c);
                                     let den_c = cm_dt_c + half_c;
                                     let numer_rest_c = h_em_c * t_ext_c + h3_c * t_i_sub + phi_c;
+                                    // [Round 103] b is affine in the zone load
+                                    // through phi_c alone, so the load-linear
+                                    // coefficient is exact: db_c/d(load_w) =
+                                    // dphi_c/d(load_w) / den_c (CN) or
+                                    // dphi_c/d(load_w) · inv (forward-Euler
+                                    // fallback), the same branch b took.
+                                    let db_c_dload = if den_c > 0.0 {
+                                        dphi_c_dload / den_c
+                                    } else {
+                                        let inv = dt_m / cls_cm[c];
+                                        dphi_c_dload * inv
+                                    };
                                     let (a_c, b_c) = if den_c > 0.0 {
                                         ((cm_dt_c - half_c) / den_c, numer_rest_c / den_c)
                                     } else {
@@ -2339,6 +2392,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                     a_sum += w_cap * a_c;
                                     b_sum += w_cap * b_c;
                                     d_sum += w_cap * den_c;
+                                    bl_sum += w_cap * db_c_dload;
                                     let tm_c_new = crank_nicolson_iso13790(
                                         r76_mass[i],
                                         dt_m,
@@ -2360,7 +2414,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                     }
                                     tm_w += w_cap * tm_c_new;
                                 }
-                                perclass_coeffs = Some((a_sum, b_sum, d_sum));
+                                perclass_coeffs = Some((a_sum, b_sum, d_sum, bl_sum));
                                 tm_w
                             }
                             _ => crank_nicolson_iso13790(
@@ -2398,47 +2452,71 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // construction (checker-lags-integrator, #4504 class).
                     let mut applied_inner = false;
                     if r77_coupled {
-                        let (a, b, denom_m) = if let Some((a_s, b_s, d_s)) = perclass_coeffs {
-                            (a_s, b_s, d_s)
-                        } else {
-                            let cm_dt_m = cm_ref[i] / dt_m;
-                            let half_cond = 0.5 * (h_tr3_arg_i + h_tr_em_i);
-                            let denom_m = cm_dt_m + half_cond;
-                            let numer_rest =
-                                h_tr_em_i * t_ext + h_tr3_arg_i * t_i_sub + phi_lumped_88;
-                            let (a, b) = if denom_m > 0.0 {
-                                ((cm_dt_m - half_cond) / denom_m, numer_rest / denom_m)
+                        // [Round 103 — the fourth recorded entry is the
+                        // load-linear coefficient of b (db/d(load_w), W per
+                        // W), taken from the same branch b came from:
+                        // per-class composite or lumped drive, CN or its
+                        // forward-Euler fallback. At a zero load delta the
+                        // checker's replay consumes b unchanged (bit-exact
+                        // — the #3297 residual-zero property is untouched);
+                        // at the artificial-gain probe's delta the checker
+                        // rebuilds b at the perturbed load through the
+                        // engine's own share algebra.]
+                        let (a, b, denom_m, b_load) =
+                            if let Some((a_s, b_s, d_s, bl_s)) = perclass_coeffs {
+                                (a_s, b_s, d_s, bl_s)
                             } else {
-                                let inv = dt_m / cm_ref[i];
-                                (1.0 - inv * (h_tr3_arg_i + h_tr_em_i), inv * numer_rest)
+                                let cm_dt_m = cm_ref[i] / dt_m;
+                                let half_cond = 0.5 * (h_tr3_arg_i + h_tr_em_i);
+                                let denom_m = cm_dt_m + half_cond;
+                                let numer_rest =
+                                    h_tr_em_i * t_ext + h_tr3_arg_i * t_i_sub + phi_lumped_88;
+                                let b_load = if denom_m > 0.0 {
+                                    dphi_lumped_88_dload / denom_m
+                                } else {
+                                    let inv = dt_m / cm_ref[i];
+                                    dphi_lumped_88_dload * inv
+                                };
+                                let (a, b) = if denom_m > 0.0 {
+                                    ((cm_dt_m - half_cond) / denom_m, numer_rest / denom_m)
+                                } else {
+                                    let inv = dt_m / cm_ref[i];
+                                    (1.0 - inv * (h_tr3_arg_i + h_tr_em_i), inv * numer_rest)
+                                };
+                                (a, b, denom_m, b_load)
                             };
-                            (a, b, denom_m)
-                        };
                         let c = &mut r77_coeffs[i];
                         // [R89 mode "2": compose the affine map N times. The
                         // driving is held constant across the sub-step, so the
                         // per-sub-step map f(tm) = a*tm + b iterated N times is
                         // the affine map (a^N, b*(1-a^N)/(1-a)); recording the
                         // composed pair keeps the checker mirror exact by
-                        // construction (same formula both sides).]
+                        // construction (same formula both sides). a and the
+                        // load coefficient are load-independent, so the
+                        // composed b_load scales by the same factor.]
                         if r89_inner_n > 1 {
                             let n = r89_inner_n;
                             let an = a.powi(n as i32);
                             let one_minus_an = 1.0 - an;
-                            let b_eff = if (1.0 - a).abs() < 1e-15 {
-                                b * n as f64
+                            let (b_eff, bl_eff) = if (1.0 - a).abs() < 1e-15 {
+                                (b * n as f64, b_load * n as f64)
                             } else {
-                                b * one_minus_an / (1.0 - a)
+                                (
+                                    b * one_minus_an / (1.0 - a),
+                                    b_load * one_minus_an / (1.0 - a),
+                                )
                             };
                             c.push(an);
                             c.push(b_eff);
                             c.push(denom_m);
+                            c.push(bl_eff);
                             r76_mass[i] = an * r76_mass[i] + b_eff;
                             applied_inner = true;
                         } else {
                             c.push(a);
                             c.push(b);
                             c.push(denom_m);
+                            c.push(b_load);
                         }
                     }
                     if !applied_inner {

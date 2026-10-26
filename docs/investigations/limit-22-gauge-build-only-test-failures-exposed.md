@@ -130,3 +130,55 @@ Blocks preserved: 2. No wording was changed, softened or deleted.
 - **Interim product surface:** unchanged — the integrated-flux
   `EnergyBalanceValidator` (#1344) remains the documented diagnostic;
   this stays in the §LIMIT-19 / #3103 family pending that investigation.
+
+### 2026-10-26 (loop round 103) — rebuilt: the R77 composite arm carries the load delta
+
+**What landed.** The R77 composite-coefficient arm's persisted record gains a fourth
+entry per sub-step: the load-linear coefficient of `b` (`db/d(load_w)`), computed
+engine-side on the same branch `b` itself comes from — the R94 per-class partition
+(`s_c·w` share of `phi_st_int = load·rad_frac`), the R88 lumped share (`s`), their
+flag-gated archaeology variants, and the R90 midpoint-ramp scaling when the harness
+flag is on. The checker's replay rebuilds `b` at the caller's load
+(`b_eff = b + bl·Δ` when `Δ ≠ 0`, `b` verbatim at `Δ = 0`), so the composite mirror
+now routes the artificial-gain probe's load delta through the engine's own
+per-class φ_st share algebra and sub-step affine composition
+(checker-lags-integrator, #4504 class).
+
+**Scope, stated honestly.** This is a single-site drive rebuild: the mass-drive
+site of the committed composite operator. The air-node feedback term (a perturbed
+load also moves `t_i_sub` through the air ODE, feeding back into the mass advance)
+is not mirrored — the same single-site scope as the 9R4C arm, which evaluates its
+rebuilt `t_s` at the committed air state. The per-class t_s-first mirror (round 73)
+and the legacy lumped identity (gauge-proxy states without an R77 record) remain
+load-blind; they stay owned by the §LIMIT-19/#1344 family.
+
+**Evidence.**
+- TDD red-first: `test_r77_composite_gain_probe_leverages_5r1c_state` (new, explicit
+  `ThermalSelector::legacy()` so both builds take the 5R1C path) failed pre-rebuild
+  with probe response exactly 0 W (rc=101); post-rebuild the 1 kW probe response is
+  8687.616234633788 W with the no-gain residual exactly 0, and the response is
+  affine in the delta (2 kW → 17375.232469267445 W). Bit-identical on the gauge
+  build (`--features gauge-solver`).
+- Python replication (round workspace, `r103_composite_replication.py`): zero-delta
+  replay exactly reproduces the committed mass state; the response matches the
+  closed form `d_last·Σ_k (Π_{j=k+1..N-1} a_j)·bl_k·Δ`; affine scaling exact on
+  synthetic N=12 coefficient sets.
+- No-tuning check: full battery at the changed tree — strict 13 PASS / 29 KNOWN-FAIL (tracked) / 0 REGRESSION with unchanged per-case values (600/H 5.566, 970/H 1.594, 950FF/Tmax 39.010 — identical to the pre-change run); output-diff 42/42 bit-identical (all +0.0000%, the two from-zero rows 0 → 0.000000); §6 2/2, §7 emit 2/2 + conformance 1/1, hotloop 6, grid 3, GC10a 3, §11 anchors 5 — all rc=0 (run 2026-10-26T22:45:20Z–22:48:06Z at the changed tree).
+
+**Un-quarantine (criterion 3).** `test_different_zones_respond_differently_to_targeted_gain`'s
+gauge-build `cfg_attr` quarantine is lifted. The quarantine's stated cause no longer
+holds for this test state: since the #3817 heavyweight-spec promotion, Case 900
+auto-promotes to the 9R4C FD network under the Gauge selector too, so both builds
+dispatch it to the leveraged 9R4C arm (verified 2026-10-26 at b8b14e06: bit-identical
+pass on both builds, zone-0 response −0.10620833931898233 W to the 10 W gain, zones
+1–2 residual exactly 0 — their identity is load-free by construction). For
+record-bearing 5R1C states the leverage is restored by this round's rebuild.
+
+**β-soak correlation (same night).** The deferred post-merge develop dispatch
+(run 40408376011) failed criterion 3 on an unrelated #4640 follow-up: the
+`validate-case` stub guard (`test_cli_validate_case_range_returns_not_implemented`,
+tests/integration/test_cli.rs:164) still expects "not implemented" after #4640
+implemented the diagnostic ranges (the command now exits 0 with a range summary).
+Also recorded: the run's state-validation step reported `beta-soak-state.json`
+missing, and the workflow auto-posted a "streak resets to 0" verdict to #3286 from
+this non-scheduled dispatch. Not physics defects; recorded for the soak verdict.

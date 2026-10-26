@@ -415,31 +415,52 @@ impl InvariantChecker {
                     .as_ref()
                     .and_then(|v| v.get(i));
                 if let Some(c) = r77_rec {
-                    // Record layout: `[a_0, b_0, d_0, a_1, b_1, d_1, …]` —
-                    // three entries per sub-step (`d_k` is that sub-step's
-                    // CN denominator in W/K; the last one scales the
-                    // composite residual to W).
-                    if c.len() >= 3 && c.len() % 3 == 0 {
+                    // Record layout: `[a_0, b_0, d_0, bl_0, a_1, b_1, d_1,
+                    // bl_1, …]` — four entries per sub-step (`d_k` is that
+                    // sub-step's CN denominator in W/K; the last sub-step's
+                    // `d` scales the composite residual to W). [Loop round
+                    // 103 — §LIMIT-22 rebuild: `bl_k` is the load-linear
+                    // coefficient of `b_k` (db/d(load_w), W per W), recorded
+                    // engine-side on the same branch `b_k` came from (the
+                    // per-class φ_st share algebra — R94 `s_c·w` partition,
+                    // R88 lumped `s` share, their archaeology variants — and
+                    // the R77 sub-step affine maps). The replay rebuilds
+                    // `b` at the caller's load: at the committed load the
+                    // delta is zero and `b` is consumed unchanged, so the
+                    // composite stays bit-exact and the `fd7ef13` /
+                    // Issue #3297 strict-gate residual-zero property is
+                    // untouched; under the artificial-gain probe the
+                    // rebuild routes the load delta through the engine's
+                    // own surface→mass share algebra, restoring the probe
+                    // leverage this arm lost by construction after round
+                    // 101's internal-gain re-routing.]
+                    if c.len() >= 4 && c.len() % 4 == 0 {
+                        let load_committed = model
+                            .setpoints
+                            .loads
+                            .as_ref()
+                            .get(i)
+                            .copied()
+                            .unwrap_or(0.0)
+                            * model
+                                .setpoints
+                                .zone_area
+                                .as_ref()
+                                .get(i)
+                                .copied()
+                                .unwrap_or(0.0);
+                        let load_delta = load_w - load_committed;
                         let mut t_comp = t_mass_prev;
-                        let mut it = c.iter();
-                        while let (Some(&a), Some(&b), Some(&_d)) =
-                            (it.next(), it.next(), it.next())
-                        {
-                            t_comp = a * t_comp + b;
+                        for [a, b, _d, bl] in c.as_chunks::<4>().0 {
+                            let b_eff = if load_delta == 0.0 {
+                                *b
+                            } else {
+                                *b + *bl * load_delta
+                            };
+                            t_comp = a * t_comp + b_eff;
                         }
-                        let denom_final = c[c.len() - 1];
+                        let denom_final = c[c.len() - 2];
                         let r = (t_mass - t_comp) * denom_final;
-                        // The persisted coefficients encode the engine's own
-                        // phi_m for the committed hour. When the caller
-                        // supplies a modified load (the artificial-gain
-                        // probe), the load delta's phi_m share is
-                        // structurally ZERO since round 101: internal-gain
-                        // radiative routes to the surface pool in full (the
-                        // retired m_air_frac factor no longer feeds phi_m),
-                        // so a load delta never enters the mass ODE
-                        // directly. The probe's residual leverage lives in
-                        // the live mirror arms (phi_ia / phi_st), not in
-                        // this composite-coefficient identity.
                         return r;
                     }
                 }
