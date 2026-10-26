@@ -450,7 +450,6 @@ fn hybrid_with_surrogate_conduction(flux_wm2: f64) -> HybridThermalModel {
         use_surrogate_conduction: true,
         use_surrogate_ventilation: false,
         use_surrogate_loads: false,
-        use_surrogate_hvac: false,
         use_ood_fallback: false,
     };
     let mut model = HybridThermalModel::new(1, routing);

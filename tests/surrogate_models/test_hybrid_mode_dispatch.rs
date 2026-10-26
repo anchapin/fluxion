@@ -156,7 +156,6 @@ fn hybrid_loads_only_policy_keeps_load_branch_active() {
         use_surrogate_conduction: false,
         use_surrogate_ventilation: false,
         use_surrogate_loads: true,
-        use_surrogate_hvac: false,
         use_ood_fallback: false,
     };
     let mut hybrid = HybridThermalModel::from_spec_with_routing(&spec, routing);

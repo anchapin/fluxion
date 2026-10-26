@@ -57,9 +57,10 @@ use tracing::trace;
 /// # Default policy
 ///
 /// [`HybridThermalModel`] is constructed with a default policy that routes
-/// **load prediction only** to the surrogate and keeps conduction,
-/// ventilation, and HVAC on physics. This is the highest-value / lowest-
-/// risk split per Issue #1431 acceptance criteria.
+/// **load prediction only** to the surrogate and keeps conduction and
+/// ventilation on physics. HVAC power demand is always computed by the
+/// analytical path (no HVAC surrogate exists). This is the highest-value /
+/// lowest-risk split per Issue #1431 acceptance criteria.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HybridRouting {
     /// Route conduction (5R1C / 9R4C thermal network solve) to the surrogate.
@@ -68,8 +69,6 @@ pub struct HybridRouting {
     pub use_surrogate_ventilation: bool,
     /// Route internal/external load prediction to the surrogate.
     pub use_surrogate_loads: bool,
-    /// Route HVAC power demand to the surrogate.
-    pub use_surrogate_hvac: bool,
     /// When `true`, check inputs against training bounds before surrogate
     /// inference and fall back to the physics solver when OOD is detected
     /// (Issue #1892). When `false` (default), no OOD check is performed.
@@ -82,7 +81,6 @@ impl Default for HybridRouting {
             use_surrogate_conduction: false,
             use_surrogate_ventilation: false,
             use_surrogate_loads: true,
-            use_surrogate_hvac: false,
             use_ood_fallback: false,
         }
     }
@@ -95,7 +93,6 @@ impl HybridRouting {
             use_surrogate_conduction: false,
             use_surrogate_ventilation: false,
             use_surrogate_loads: false,
-            use_surrogate_hvac: false,
             use_ood_fallback: false,
         }
     }
@@ -106,7 +103,6 @@ impl HybridRouting {
             use_surrogate_conduction: true,
             use_surrogate_ventilation: true,
             use_surrogate_loads: true,
-            use_surrogate_hvac: true,
             use_ood_fallback: false,
         }
     }
@@ -120,7 +116,6 @@ impl HybridRouting {
             use_surrogate_conduction: false,
             use_surrogate_ventilation: false,
             use_surrogate_loads: true,
-            use_surrogate_hvac: false,
             use_ood_fallback: true,
         }
     }
