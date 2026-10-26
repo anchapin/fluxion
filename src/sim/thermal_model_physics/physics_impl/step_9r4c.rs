@@ -2007,7 +2007,11 @@ mod night_vent_surface_coupling_tests {
     //! still applies the #1279/#2871 forced-convection multiplier.
 
     use super::*;
-    use crate::physics::multi_node_solver::MultiNodeSolver;
+    // MultiNodeSolver is referenced fully-qualified below: this file already
+    // holds the `crate::physics::multi_node_solver` edge (top-of-file
+    // `SurfaceExteriorTemperatures` import), and a fresh `use crate::physics::`
+    // line here would add an 83rd sim→physics edge past the #2766 baseline
+    // (see the same pattern at the implicit_iz_tests VectorField note).
     use crate::sim::construction::WallSurface;
     use crate::sim::solar::WindowProperties;
     use crate::weather::HourlyWeatherData;
@@ -2045,7 +2049,7 @@ mod night_vent_surface_coupling_tests {
         let roof = ThermalMassNode::new(22.0, 2.0e7, 40.0, 15.0);
         let floor = ThermalMassNode::new(20.0, 3.0e7, 60.0, 10.0);
         let internal = ThermalMassNode::new(20.0, 1.0e7, 10.0, 5.0);
-        let solver = MultiNodeSolver::new_with_mode(
+        let solver = crate::physics::multi_node_solver::MultiNodeSolver::new_with_mode(
             120.0,
             wall,
             roof,
