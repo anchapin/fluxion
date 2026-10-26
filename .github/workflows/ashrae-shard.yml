@@ -185,6 +185,21 @@ jobs:
       - uses: ./.github/actions/setup-rust-python-env
         with:
           python-version: '3.10'
+      # Loop round 100 (2026-10-26): the zone-balance shard is the only one of
+      # the six whose tests bind the canonical git-ignored DRYCOLD EPW (round
+      # 41 weather binding, #4443). On the workflow_run path no step supplied
+      # the asset, so test_case_600/900_blind_energy_infrastructure panicked
+      # "EPW weather file must be present in assets/weather/" every time the
+      # shard actually ran (e.g. run 40235308471 job 121304291459, and the
+      # pre-#4609 family in runs 40224030752 / 40222876634 / 40219327349).
+      # Fetch deterministically here, same pattern as physics-pr.yml. Gated
+      # to this shard so a fetch outage cannot newly red the other five.
+      - name: Fetch ASHRAE 140 weather assets (zone-balance EPW tests)
+        if: matrix.id == 'zone-balance'
+        run: |
+          python3 scripts/fetch_ashrae140_weather.py --skip-download || python3 scripts/fetch_ashrae140_weather.py
+          python3 scripts/convert_tmy3_to_epw.py
+
       - name: "Run ${{ matrix.name }} tests (warm sccache)"
         run: "cargo test --test all_tests ${{ matrix.filter }} --release"
 

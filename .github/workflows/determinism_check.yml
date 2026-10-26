@@ -571,6 +571,7 @@ jobs:
           path: artifacts
 
       - name: Re-verify artifact completeness
+        id: reverify-artifacts
         if: steps.verify-artifacts.outcome == 'failure'
         env:
           EXPECTED_PLATFORMS_JSON: ${{ needs.setup-matrix.outputs.matrix }}
@@ -600,6 +601,72 @@ jobs:
                   print(f"artifact still incomplete after retry: {os_name}: missing {absent}")
               sys.exit(1)
           print(f"artifact set complete after retry for {len(platforms)} expected platform(s)")
+          EOF
+
+      # Loop round 100 (2026-10-26, run 40235308494 on develop bccb3ebb): the
+      # digest check PASSED and the stored zip was verified complete via the
+      # API (5 files at zip root, fetched locally with `gh api .../zip`),
+      # yet the toolkit extraction delivered only the FIRST 3 entries —
+      # output_values.json / output_hash.txt (the last 2 entries) were
+      # missing — reproducibly across the original run AND a failed-jobs
+      # re-run. Retry 1 above reuses the same toolkit extraction, so it
+      # reproduced the same truncation. Retry 2 re-fetches the artifact
+      # zip over `gh api` and extracts it with python zipfile — a different
+      # implementation end to end — before the compare step makes the final
+      # loud INCOMPLETE call.
+      - name: Re-fetch contract files via gh api + python zipfile (retry 2)
+        id: ghfetch-artifacts
+        if: steps.reverify-artifacts.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_PLATFORMS_JSON: ${{ needs.setup-matrix.outputs.matrix }}
+        run: |
+          python3 << 'EOF'
+          import io
+          import json
+          import os
+          import subprocess
+          import sys
+          import zipfile
+
+          platforms = sorted(
+              (json.loads(os.environ.get('EXPECTED_PLATFORMS_JSON') or '{}') or {}).get('os', [])
+          )
+          if not platforms:
+              print("retry 2: setup-matrix output missing — cannot re-fetch")
+              sys.exit(1)
+          repo = os.environ['GITHUB_REPOSITORY']
+          run_id = os.environ['GITHUB_RUN_ID']
+          listing = subprocess.run(
+              ['gh', 'api', f'repos/{repo}/actions/runs/{run_id}/artifacts', '--paginate'],
+              capture_output=True, text=True,
+          )
+          if listing.returncode != 0:
+              print(f"retry 2: artifact listing failed: {listing.stderr}")
+              sys.exit(1)
+          arts = json.loads(listing.stdout).get('artifacts', [])
+          failed = False
+          for os_name in platforms:
+              name = f'determinism-gate-output-{os_name}'
+              ids = [a['id'] for a in arts if a.get('name') == name]
+              if len(ids) != 1:
+                  print(f"retry 2: expected exactly one artifact named {name}, found {len(ids)}")
+                  failed = True
+                  continue
+              dest = f'artifacts/{name}'
+              os.makedirs(dest, exist_ok=True)
+              z = subprocess.run(
+                  ['gh', 'api', f'repos/{repo}/actions/artifacts/{ids[0]}/zip'],
+                  capture_output=True,
+              )
+              if z.returncode != 0:
+                  print(f"retry 2: download failed for {name}: {z.stderr.decode(errors='replace')}")
+                  failed = True
+                  continue
+              with zipfile.ZipFile(io.BytesIO(z.stdout)) as zf:
+                  zf.extractall(dest)
+              print(f"retry 2: extracted {name} via python zipfile")
+          sys.exit(1 if failed else 0)
           EOF
 
       - name: Compare hashes across platforms
