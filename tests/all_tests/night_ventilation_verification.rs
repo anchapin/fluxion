@@ -22,20 +22,20 @@
 //! | Parameter | Case 600/900 | Case 650/950 |
 //! |-----------|--------------|---------------|
 //! | Infiltration | 0.5 ACH | 0.5 ACH |
-//! | Night Vent | None | 1703.16 m³/h (~13.14 ACH) |
+//! | Night Vent | None | 1400 m³/h (~10.80 ACH) |
 //! | Night Hours | N/A | 18:00–07:00 |
 //!
 //! Zone volume = 8.0 × 6.0 × 2.7 = 129.6 m³
-//! Night ventilation ACH = 1703.16 / 129.6 ≈ 13.14 ACH
+//! Night ventilation ACH = 1400 / 129.6 ≈ 10.80 ACH
+//! (1400 m³/h = Table 5-160 / Annex B3.1 fixed-sea-level route of the
+//! 1703.16 m³/h specified capacity; round-26 correction, commit f8ca3532.)
 //!
 //! Reference: ASHRAE 140-2017 §7.3, NREL/TP-472-6231 Table 3-2
 
 use std::time::Instant;
 
 use fluxion::physics::units::ToF64;
-use fluxion::sim::ventilation::{
-    ach_to_conductance, h_tr_is_ach_multiplier, AIR_DENSITY, AIR_SPECIFIC_HEAT,
-};
+use fluxion::sim::ventilation::{ach_to_conductance, AIR_DENSITY, AIR_SPECIFIC_HEAT};
 use fluxion_core::ashrae_cases::NightVentilation;
 
 // ============================================================================
@@ -48,8 +48,11 @@ const ZONE_VOLUME_M3: f64 = 129.6;
 /// ASHRAE 140 default infiltration rate (0.5 ACH for all cases).
 const INFILTRATION_ACH: f64 = 0.5;
 
-/// Case 650/950 night ventilation fan capacity (m³/h) per ASHRAE 140 spec.
-const NIGHT_VENT_FAN_CAPACITY_M3_H: f64 = 1703.16;
+/// Case 650/950 night ventilation fan capacity (m³/h) — ASHRAE 140-2017
+/// Table 5-160 / Annex B3.1 fixed-sea-level route of the 1703.16 m³/h
+/// specified capacity (round-26 correction; matches
+/// `NightVentilation::case_650()` and the validator case builders).
+const NIGHT_VENT_FAN_CAPACITY_M3_H: f64 = 1400.0;
 
 /// Case 650/950 night ventilation ACH = fan_capacity / zone_volume.
 const NIGHT_VENT_ACH: f64 = NIGHT_VENT_FAN_CAPACITY_M3_H / ZONE_VOLUME_M3;
@@ -310,62 +313,6 @@ fn test_night_ventilation_conductance() {
         ratio > 20.0,
         "Night ventilation h_ve ratio ({:.1}x) must be > 20x for meaningful cooling",
         ratio
-    );
-}
-
-// ============================================================================
-// Test: h_tr_is Multiplier from Night Ventilation ACH
-// ============================================================================
-
-/// Verifies the interior surface heat transfer coefficient multiplier.
-///
-/// The forced-convection correlation:
-///   h_c = h_c_still + 0.84 × ACH^0.8 [W/m²K]
-///
-/// At 13.14 ACH: multiplier ≈ 2.91× (vs still air h_c = 3.45 W/m²K)
-#[test]
-fn test_night_ventilation_h_tr_is_multiplier() {
-    let start = Instant::now();
-
-    let multiplier = h_tr_is_ach_multiplier(NIGHT_VENT_ACH);
-    let baseline_multiplier = h_tr_is_ach_multiplier(INFILTRATION_ACH);
-
-    // Expected multiplier at 13.14 ACH ≈ 2.91
-    let expected_multiplier: f64 = 2.91;
-    let tolerance: f64 = 0.03;
-
-    eprintln!("=== Night Ventilation h_tr_is Multiplier ===");
-    eprintln!("Night vent ACH      : {:.2}", NIGHT_VENT_ACH);
-    eprintln!("h_tr_is multiplier  : {:.4}", multiplier);
-    eprintln!(
-        "Baseline multiplier : {:.4} (at 0.5 ACH)",
-        baseline_multiplier
-    );
-    eprintln!(
-        "Expected multiplier : {:.2} ± {:.2}",
-        expected_multiplier, tolerance
-    );
-    eprintln!(
-        "h_c_forced          : {:.2} W/m²K (vs still 3.45 W/m²K)",
-        3.45 * multiplier
-    );
-    eprintln!("Elapsed: {:.2?}", start.elapsed());
-
-    // Check multiplier is within tolerance
-    assert!(
-        (multiplier - expected_multiplier).abs() < tolerance,
-        "h_tr_is multiplier ({:.4}) must be {:.2} ± {:.2}",
-        multiplier,
-        expected_multiplier,
-        tolerance
-    );
-
-    // Night vent multiplier must be at least 2× baseline
-    assert!(
-        multiplier > baseline_multiplier * 2.0,
-        "Night vent multiplier ({:.2}) must be > 2× baseline ({:.2})",
-        multiplier,
-        baseline_multiplier
     );
 }
 

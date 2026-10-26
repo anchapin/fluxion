@@ -13,7 +13,6 @@ use crate::sim::solar::{calculate_hourly_solar_from_pos, WindowProperties};
 use crate::sim::thermal_model_core::{get_daily_cycle, ThermalModel};
 use crate::sim::thermal_model_data::IncidentSolarAccumulator;
 use crate::sim::timestep_solver::StepParameters;
-use crate::sim::ventilation::capped_h_tr_is_ach_multiplier;
 use crate::weather::HourlyWeatherData;
 #[cfg(test)]
 use fluxion_core::ashrae_cases::GeometrySpec;
@@ -598,10 +597,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // (positive gains) and the cool-side (negative gains) routing. The
         // sign of `radiative_gain_watts` is preserved through the split, so
         // the same fraction of any (signed) radiative gain is routed to the
-        // surface vs the mass node. The cool-side cap (preventing mass-node
-        // pulsed charging dump) is enforced by
-        // `MAX_CONVECTIVE_TO_AIR_MULTIPLIER` in `ventilation.rs` and applied
-        // in `calculate_free_float_temperature` below.
+        // surface vs the mass node.
         let cooling_mode_governor = self.0.solar.solar_distribution_to_air;
         let get_split = |gain: f64| -> (f64, f64) {
             (
@@ -1017,7 +1013,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // (calculate_free_float_temperature), leaving Cases 600FF/650FF
         // behaviourally identical and causing the morning ramp in the conditioned
         // (Case 650) path to dump the night-charged mass into still-cool air via
-        // the unbounded `h_tr_is_ach_multiplier`. We now apply the night-vent
+        // the then-unbounded `h_tr_is_ach_multiplier` (removed in round 100). We now apply the night-vent
         // ACH directly as a mass-side cooling sink:
         //
         //     Q_vent_mass = ρ·Cp·ACH·V · (T_outdoor − T_zone) / 3600
@@ -1025,25 +1021,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // routed onto phi_m. We do NOT touch h_ext (Issue #824 keeps night-vent
         // out of h_ext) — the air-side path is still carried by phi_ia below.
         //
-        // The forced-convection contribution to h_tr_is is applied via the
-        // capped multiplier `capped_h_tr_is_ach_multiplier(ach_night_vent)` —
-        // see Issue #2871 cap. When the natural multiplier (e.g. 2.91× at the
-        // Case 650 spec ACH=10.80 after the round-26 Table 5-160 sea-level
-        // capacity correction) exceeds `MAX_CONVECTIVE_TO_AIR_MULTIPLIER
-        // = 2.0×`, the cap engages and the morning ramp can no longer
-        // pulsed-charge the air node through the surface coupling.
-        let mut ach_night_vent: f64 = 0.0;
+        // Round 100 (ASHRAE 140-2017 §5.2.1.10.1): the companion
+        // forced-convection h_tr_is multiplier (#1279/#2871) was REMOVED from
+        // the 9R4C route — the mechanical system must not affect the interior
+        // surface convective regime. This validator-route phi_m sink is
+        // recorded separately as a vent-slice residual.
         if let Some(ref night_vent) = self.0.hvac.night_ventilation {
             if night_vent.is_active_at_hour(hour_of_day) {
-                let zone_vol = self
-                    .0
-                    .setpoints
-                    .zone_volume
-                    .as_ref()
-                    .first()
-                    .copied()
-                    .unwrap_or(129.6);
-                ach_night_vent = night_vent.fan_capacity / zone_vol;
                 let rho = self
                     .0
                     .setpoints
@@ -1080,8 +1064,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 pm[0] += q_vent;
             }
         }
-        let _ = capped_h_tr_is_ach_multiplier(ach_night_vent); // touch to keep import warm
-
         let den = self.0.conduction.derived_den.clone();
 
         // Use mass_temperatures to match step_physics_5r1c

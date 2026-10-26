@@ -9,7 +9,6 @@ use crate::sim::moisture::step_zone_moisture;
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::calculate_surface_irradiance;
 use crate::sim::thermal_model_core::ThermalModel;
-use crate::sim::ventilation::capped_h_tr_is_ach_multiplier;
 use fluxion_core::weather::psychrometrics::{
     calculate_humidity_ratio, STANDARD_ATMOSPHERIC_PRESSURE_Pa,
 };
@@ -79,20 +78,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .map(|w| w.sky_temperature())
             .unwrap_or(outdoor_temp - 15.0);
 
-        // === Issue #1279: Night ventilation forced convection (ACH-dependent) ===
-        // When night ventilation fans are active, the natural convection
-        // h_tr_is coefficient is insufficient to represent FORCED convection.
-        //
-        // We compute the ACH from fan_capacity and zone_volume, then apply the
-        // ASHRAE/EnergyPlus empirical correlation for forced convection:
-        //   h_c = h_c_still + 0.84 * ACH^0.8
-        //   multiplier = h_c_forced / h_c_still
-        //
-        // This replaces the prior hardcoded 4× multiplier which was not ACH-accurate.
-        //
-        // References:
-        // - ASHRAE Handbook — Fundamentals (ch. 4) for forced convection correlation
-        // - EnergyPlus Engineering Reference for interior surface coefficients
+        // Round-100 vent-slice contract (ASHRAE 140-2017 §5.2.1.10.1, normative):
+        // "Operation of the specified ideal mechanical system ... shall have no
+        // effect on the interior surface convective heat transfer flow regime."
+        // The night-ventilation fan (§5.2.2.1.5.2: air-side input, waste heat 0,
+        // in addition to infiltration) therefore couples to the zone AIR node
+        // only — h_ve_night below — and h_tr_is keeps its built value during
+        // vent hours. The former #1279/#2871 forced-convection multiplier on
+        // h_tr_is violated §5.2.1.10.1 and was inconsistent with the 5R1C route
+        // (650/650FF, where the same boost was rejected in #921) despite the
+        // identical mechanical spec of §5.2.2.3.5.1 → §5.2.2.3.2.1. ISO 13790
+        // §C.4/C.10 likewise routes ventilation on the air node only.
         let hour_of_day = (timestep % 24) as u8;
         let mut night_vent_active_now = false;
         let mut ach_night_vent: f64 = 0.0; // ACH of night ventilation (for h_tr_is scaling)
@@ -591,44 +587,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             };
             let phi_ia_val = phi_ia_with_iz.as_ref()[zone_idx];
 
-            // Issue #1279: Temporarily boost h_tr_is for compute_zone_air_temperature
-            // during night ventilation (same boost used for step_with_gains).
-            // This ensures t_air_mn_pre uses the ASHRAE/EnergyPlus forced convection
-            // correlation, consistent with how step_with_gains and compute_zone_air_temperature
-            // are called after the main loop.
-            // Issue #2871: cap the multiplier at MAX_CONVECTIVE_TO_AIR_MULTIPLIER
-            // to prevent mass-node pulsed-charging dump during the morning ramp.
-            let h_tr_is_multiplier_pre = if night_vent_active_now {
-                capped_h_tr_is_ach_multiplier(ach_night_vent)
-            } else {
-                1.0
-            };
-            // The `!= 1.0` guard is a sentinel check on a value that is
-            // either the literal `1.0` (no night ventilation) or a value
-            // returned by `capped_h_tr_is_ach_multiplier` — under
-            // `fast-math` reassociation the latter could be a few ulp
-            // away from `1.0` even at low `ach`, which is the *intended*
-            // behaviour: when the multiplier is non-trivially different
-            // from `1.0`, apply it. The exact-equality comparison is
-            // therefore the correct semantic here, not a fast-math bug.
-            // See Issue #3357.
-            #[allow(clippy::float_cmp)]
-            if h_tr_is_multiplier_pre != 1.0 {
-                solver.h_tr_is *= h_tr_is_multiplier_pre;
-            }
             let t_air_mn_pre = solver.compute_zone_air_temperature(
                 outdoor_temp,
                 h_ve_val,
                 h_ve_night_zone,
                 phi_ia_val,
             );
-            // Restore h_tr_is - the main boost/restore block at lines ~2720 will handle it for step_with_gains.
-            // Sentinel `!= 1.0` guard mirroring the boost check above;
-            // see comment on the boost site (Issue #3357).
-            #[allow(clippy::float_cmp)]
-            if h_tr_is_multiplier_pre != 1.0 {
-                solver.h_tr_is /= h_tr_is_multiplier_pre;
-            }
 
             // §LIMIT-35 §9 (issue #4332): couple the multi-node mass network to
             // the CONDITIONED zone air. Previously the solver's internal air
@@ -793,29 +757,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             scratch.pm_roof_mut()[zone_idx] = solar_gains.phi_m_roof;
             scratch.pm_floor_mut()[zone_idx] = solar_gains.phi_m_floor;
 
-            // Issue #1279: Boost h_tr_is for forced convection during night ventilation.
-            // Use ACH-dependent multiplier (ASHRAE/EnergyPlus correlation) instead of
-            // the prior hardcoded 4× which was not ACH-accurate.
-            // Issue #2871: cap the multiplier at MAX_CONVECTIVE_TO_AIR_MULTIPLIER
-            // to prevent mass-node pulsed-charging dump during the morning ramp.
-            // IMPORTANT: Restore h_tr_is after step to avoid persisting the boost to daytime.
-            let h_tr_is_multiplier = if night_vent_active_now {
-                capped_h_tr_is_ach_multiplier(ach_night_vent)
-            } else {
-                1.0
-            };
-            // Sentinel `!= 1.0` guard on a value that is either the literal `1.0`
-            // (no night ventilation) or a value returned by
-            // `capped_h_tr_is_ach_multiplier`. See comment on the boost
-            // site above for the full justification (Issue #3357).
-            #[allow(clippy::float_cmp)]
-            let original_h_tr_is = if h_tr_is_multiplier != 1.0 {
-                let original = solver.h_tr_is;
-                solver.h_tr_is *= h_tr_is_multiplier;
-                Some((original, h_tr_is_multiplier))
-            } else {
-                None
-            };
             // Issue #1898: Pass night ventilation parameters to step_with_gains so the
             // 9R4C mass nodes are cooled by night ventilation (not just the air node).
             solver.step_with_gains(
@@ -827,21 +768,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 h_ve_night_zone,
                 outdoor_temp,
             );
-            if let Some((original, _)) = original_h_tr_is {
-                solver.h_tr_is = original;
-            }
-        }
-
-        // Issue #1279: Apply ACH-dependent forced convection boost to h_tr_is when calling
-        // compute_zone_air_temperature during night ventilation. This ensures
-        // the zone air temperature calculation uses the enhanced surface-to-air
-        // heat transfer from the ASHRAE/EnergyPlus forced convection correlation.
-        // Issue #2871: cap the multiplier at MAX_CONVECTIVE_TO_AIR_MULTIPLIER.
-        if night_vent_active_now {
-            let multiplier = capped_h_tr_is_ach_multiplier(ach_night_vent);
-            for solver in &mut self.0.conduction.backend.multi_node_solvers {
-                solver.h_tr_is *= multiplier;
-            }
         }
 
         // (#872) Compute zone air temperature from multi-node solver.
@@ -968,15 +894,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 }
             }
             t_i_free_mn = T::from(VectorField::new(v));
-        }
-
-        // Issue #1279: Restore h_tr_is to original value after computing zone air temperature.
-        // Issue #2871: must divide by the SAME (capped) multiplier that was applied above.
-        if night_vent_active_now {
-            let multiplier = capped_h_tr_is_ach_multiplier(ach_night_vent);
-            for solver in &mut self.0.conduction.backend.multi_node_solvers {
-                solver.h_tr_is /= multiplier;
-            }
         }
 
         // (#872) Do NOT write multi-node mass temperatures back to self.0.
@@ -2057,6 +1974,129 @@ mod implicit_iz_tests {
         assert!(
             net.abs() < 1e-9,
             "net inter-zone exchange must sum to zero, got {net}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod night_vent_surface_coupling_tests {
+    //! Round-100 vent-slice contract (free-float blitz slice "vent").
+    //!
+    //! ASHRAE 140-2017 §5.2.1.10.1 (normative): "Operation of the specified
+    //! ideal mechanical system (see Section 5.2.1.13) shall have no effect on
+    //! the interior surface convective heat transfer flow regime." The
+    //! night-ventilation fan (§5.2.2.1.5.2: air-side input, waste heat 0, in
+    //! addition to infiltration) therefore couples to the zone AIR node only —
+    //! `h_ve_night` in `compute_zone_air_temperature` — and the interior film
+    //! coefficient `h_tr_is` stays at its built value during vent hours.
+    //! (ISO 13790 §C.4/C.10 routes ventilation on the air node only, matching
+    //! the 5R1C route's `h_vent_mass_zone = 0` pattern and the #921 rejection
+    //! of the forced-convection boost on that route.)
+    //!
+    //! Replication: the step's free-float boundary temperature is
+    //! `t_air_mn_pre` from `compute_zone_air_temperature` on the
+    //! ParallelResistance path (9R4C default, #1859):
+    //!
+    //! ```text
+    //! h_path_k = h_ms_k·h_tr_is/(h_ms_k + h_tr_is)
+    //! T_air = (Σ h_path_k·T_m_k + (h_ve + h_ve_night)·T_out + φ_ia)
+    //!         / (Σ h_path_k + h_ve + h_ve_night)
+    //! ```
+    //!
+    //! evaluated with the BUILT `h_tr_is`. This test fails while the step
+    //! still applies the #1279/#2871 forced-convection multiplier.
+
+    use super::*;
+    // MultiNodeSolver is referenced fully-qualified below: this file already
+    // holds the `crate::physics::multi_node_solver` edge (top-of-file
+    // `SurfaceExteriorTemperatures` import), and a fresh `use crate::physics::`
+    // line here would add an 83rd sim→physics edge past the #2766 baseline
+    // (see the same pattern at the implicit_iz_tests VectorField note).
+    use crate::sim::construction::WallSurface;
+    use crate::sim::solar::WindowProperties;
+    use crate::weather::HourlyWeatherData;
+    use fluxion_core::ashrae_cases::{NightVentilation, Orientation};
+    use fluxion_core::multi_node::{MassAirCouplingMode, ThermalMassNode};
+
+    fn vent_model() -> ThermalModel<VectorField> {
+        let mut model = ThermalModel::<VectorField>::new(1);
+        model.setpoints.heating_setpoint = -50.0;
+        model.setpoints.cooling_setpoint = 100.0;
+        model.setpoints.temperatures = VectorField::from_scalar(20.0, 1);
+        model.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
+        model.setpoints.zone_area = VectorField::from_scalar(48.0, 1);
+        model.setpoints.zone_volume = VectorField::from_scalar(129.6, 1);
+        model.0.hvac.free_float = true;
+        // Table 5-160 / Annex B3.1 fixed-sea-level route of the 1703.16 m³/h
+        // specified capacity: 1400 m³/h (round-26, commit f8ca3532). Active
+        // hours 18:00–07:00 = engine hours 18..24 ∪ 0..7 (0-based), §5.2.2.1.5.1.1.
+        model.0.hvac.night_ventilation = Some(NightVentilation::new(1400.0, 18, 7));
+        let wp = WindowProperties::double_clear(8.0);
+        model.solar.window_properties = vec![wp; 1];
+        model.solar.surfaces = vec![vec![
+            WallSurface::new(10.0, 0.5, Orientation::North).with_window(2.0),
+            WallSurface::new(10.0, 0.5, Orientation::South).with_window(2.0),
+            WallSurface::new(24.0, 0.3, Orientation::Up),
+        ]];
+        // Zero-irradiance weather: no solar gains (φ_ia = 0, φ_st = 0) and
+        // t_sol_air = outdoor dry-bulb.
+        model.solar.weather = Some(HourlyWeatherData::new(15.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0));
+        model.update_derived_parameters();
+        model.update_optimization_cache();
+        // One 9R4C solver; ParallelResistance is the 9R4C default (#1859).
+        // Distinct node temperatures make the weighted h_path terms observable.
+        let wall = ThermalMassNode::new(18.0, 4.0e7, 50.0, 20.0);
+        let roof = ThermalMassNode::new(22.0, 2.0e7, 40.0, 15.0);
+        let floor = ThermalMassNode::new(20.0, 3.0e7, 60.0, 10.0);
+        let internal = ThermalMassNode::new(20.0, 1.0e7, 10.0, 5.0);
+        let solver = crate::physics::multi_node_solver::MultiNodeSolver::new_with_mode(
+            120.0,
+            wall,
+            roof,
+            floor,
+            internal,
+            MassAirCouplingMode::ParallelResistance,
+        );
+        model.0.conduction.backend.multi_node_solvers = vec![solver];
+        model
+    }
+
+    #[test]
+    fn night_vent_routes_air_side_only_h_tr_is_stays_built() {
+        let mut model = vent_model();
+        let solver0 = &model.0.conduction.backend.multi_node_solvers[0];
+        let h_tr_is_built = solver0.h_tr_is;
+        let (h_ms_w, h_ms_r, h_ms_f) = (
+            solver0.mass.wall.h_tr_ms,
+            solver0.mass.roof.h_tr_ms,
+            solver0.mass.floor.h_tr_ms,
+        );
+        let (t_w, t_r, t_f) = (
+            solver0.mass.wall.temperature,
+            solver0.mass.roof.temperature,
+            solver0.mass.floor.temperature,
+        );
+        let h_ve = model.0.conduction.h_ve.as_ref()[0];
+        // 1400 m³/h × ρ·cp (1.2 × 1005) / 3600 s = 469.0 W/K on zone 0.
+        let h_ve_night = 1400.0_f64 * 1.2 * 1005.0 / 3600.0;
+        let t_out = 15.0;
+
+        let hs = |h_ms: f64| h_ms * h_tr_is_built / (h_ms + h_tr_is_built);
+        let h_path_total = hs(h_ms_w) + hs(h_ms_r) + hs(h_ms_f);
+        let expected =
+            (hs(h_ms_w) * t_w + hs(h_ms_r) * t_r + hs(h_ms_f) * t_f + (h_ve + h_ve_night) * t_out)
+                / (h_path_total + h_ve + h_ve_night);
+
+        // Timestep 20 → hour_of_day 20 (18:00–19:00 = spec Hour 19): vent ON.
+        model.step_physics_9r4c(20, t_out, 3600.0);
+
+        let got = model.0.conduction.backend.multi_node_solvers[0].zone_temperature;
+        assert!(
+            (got - expected).abs() < 1e-9,
+            "night-vent zone air must route air-side only (§5.2.1.10.1: the \
+             mechanical system shall have no effect on the interior surface \
+             convective heat transfer flow regime); got {got:.12}, expected \
+             {expected:.12} (built h_tr_is = {h_tr_is_built})"
         );
     }
 }

@@ -5,10 +5,12 @@
 //! bound). The §LIMIT-17 / #3058 companion Case 950FF night-vent free-floating
 //! min temperature gap is −23.92 °C vs [−20.20, −17.80] °C band (3.72 °C
 //! outside). The two signatures are **bidirectionally coupled** — no parameter
-//! adjustment to `h_ve_night`, `MAX_CONVECTIVE_TO_AIR_MULTIPLIER`, or
-//! `solar_distribution_to_air` can close both at once without violating
-//! AGENTS.md / RULES.md / ADR-0001 ("no parameter tuning", "fix the underlying
-//! math"). Per-case parameter tuning is explicitly out of scope.
+//! adjustment to `h_ve_night` or `solar_distribution_to_air` can close both at
+//! once without violating AGENTS.md / RULES.md / ADR-0001 ("no parameter
+//! tuning", "fix the underlying math"). Per-case parameter tuning is
+//! explicitly out of scope. (Round 100, 2026-10-25: the forced-convection
+//! h_tr_is multiplier named here earlier was removed entirely per ASHRAE
+//! 140-2017 §5.2.1.10.1 rather than tuned.)
 //!
 //! This diagnostic is the placeholder wiring for the Issue #3551 acceptance
 //! criterion: "Per-month attribution test (`#[ignore]`-quarantined, runs
