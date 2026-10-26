@@ -14,14 +14,20 @@
 //! | [`solver_core`] | Top-level annual solver, timestep sizing, load accessors | `solve_timesteps`, `solve_timesteps_with_dt`, `calculate_timestep_seconds`, `estimate_time_constant_hours`, `get_temperatures`, `get_hourly_temperatures`, `calculate_analytical_loads`, `set_loads`, `set_weather` |
 //! | [`step_dispatcher`] | Dispatcher routing to the correct physics model | `step_physics` |
 //! | [`physics_impl`] | Physics step implementations (5R1C/6R2C/9R4C) via submodules | `step_physics_5r1c`, `step_physics_6r2c`, `step_physics_9r4c` |
+//! | [`zone_balance`] | Zone heat balance — the complete 5R1C `dT_air/dt` implementation (Issue #3994) | `step_physics_5r1c` |
 //!
 //! ### physics_impl submodules (Issue #3220)
 //!
 //! | File | Responsibility |
 //! |------|----------------|
 //! | [`physics_impl::step_common`] | Shared helpers like `step_wall_surface_ode` |
-//! | [`physics_impl::step_5r1c`] | 5R1C single thermal mass node model |
 //! | [`physics_impl::step_9r4c`] | 9R4C four thermal mass node model |
+//!
+//! Issue #3994: the 5R1C zone heat balance was hoisted out of the
+//! `physics_impl` layered stack into the sibling module [`zone_balance`]
+//! (`src/sim/thermal_model_physics/zone_balance.rs`) so it can be read as one
+//! navigable file. The move stays inside `src/sim` — the physics→sim import
+//! guard forbids relocating it into `src/physics/`.
 //!
 //! Issue #4174: `step_6r2c` was deleted (no production callers).
 //!
@@ -50,3 +56,4 @@ mod hvac;
 mod physics_impl;
 mod solver_core;
 mod step_dispatcher;
+mod zone_balance;

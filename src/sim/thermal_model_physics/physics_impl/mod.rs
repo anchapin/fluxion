@@ -2,9 +2,15 @@
 //!
 //! Issue #3220: This file has been refactored to extract each physics step
 //! variant into its own module under `src/sim/thermal_model_physics/`:
-//! - [`step_5r1c`] — 5R1C single mass node implementation (~1700 lines)
 //! - [`step_9r4c`] — 9R4C four mass node implementation (~1486 lines)
 //! - [`step_common`] — Shared helpers like `step_wall_surface_ode`
+//!
+//! Issue #3994: the 5R1C single mass node implementation
+//! (`step_physics_5r1c`) was hoisted out of this layered stack into
+//! [`super::zone_balance`] (`src/sim/thermal_model_physics/zone_balance.rs`)
+//! so the whole zone heat balance lives in one navigable file. It was NOT
+//! moved into `src/physics/` — the physics→sim import guard forbids that
+//! direction — so the file stays inside `src/sim`.
 //!
 //! Issue #4174: `step_6r2c` (6R2C two mass node) was deleted — it had no
 //! production callers (unreachable physics step).
@@ -15,9 +21,8 @@
 #[allow(unused_imports)]
 use crate::physics::cta::VectorField;
 
-mod step_5r1c;
 mod step_9r4c;
-mod step_common;
+pub(super) mod step_common;
 
 #[cfg(test)]
 mod scratch_pool_tests {
