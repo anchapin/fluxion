@@ -361,7 +361,6 @@ mod tests {
         assert!(!r.use_surrogate_conduction);
         assert!(!r.use_surrogate_ventilation);
         assert!(r.use_surrogate_loads, "default routes loads to surrogate");
-        assert!(!r.use_surrogate_hvac);
     }
 
     #[test]
@@ -370,13 +369,11 @@ mod tests {
         assert!(!p.use_surrogate_conduction);
         assert!(!p.use_surrogate_ventilation);
         assert!(!p.use_surrogate_loads);
-        assert!(!p.use_surrogate_hvac);
 
         let s = HybridRouting::all_surrogate();
         assert!(s.use_surrogate_conduction);
         assert!(s.use_surrogate_ventilation);
         assert!(s.use_surrogate_loads);
-        assert!(s.use_surrogate_hvac);
     }
 
     #[test]
@@ -396,7 +393,6 @@ mod tests {
             use_surrogate_conduction: true,
             use_surrogate_ventilation: false,
             use_surrogate_loads: true,
-            use_surrogate_hvac: false,
             use_ood_fallback: false,
         };
         model.set_routing(custom);
@@ -594,7 +590,6 @@ mod tests {
             use_surrogate_conduction: true,
             use_surrogate_ventilation: false,
             use_surrogate_loads: false,
-            use_surrogate_hvac: false,
             use_ood_fallback: false,
         };
         let mut model = HybridThermalModel::new(1, routing);
@@ -631,7 +626,6 @@ mod tests {
             use_surrogate_conduction: false,
             use_surrogate_ventilation: true,
             use_surrogate_loads: false,
-            use_surrogate_hvac: false,
             use_ood_fallback: false,
         };
         let mut model = HybridThermalModel::new(1, routing);
@@ -704,7 +698,6 @@ mod tests {
             use_surrogate_conduction: true,
             use_surrogate_ventilation: false,
             use_surrogate_loads: false,
-            use_surrogate_hvac: false,
             use_ood_fallback: false,
         };
         let mut model = HybridThermalModel::new(1, routing);
@@ -786,7 +779,6 @@ mod tests {
             use_surrogate_conduction: true,
             use_surrogate_ventilation: false,
             use_surrogate_loads: false,
-            use_surrogate_hvac: false,
             use_ood_fallback: false,
         };
         let mut model = HybridThermalModel::new(1, routing);
@@ -831,7 +823,6 @@ mod tests {
             use_surrogate_conduction: false,
             use_surrogate_ventilation: true,
             use_surrogate_loads: false,
-            use_surrogate_hvac: false,
             use_ood_fallback: false,
         };
         let mut model = HybridThermalModel::new(1, routing);
@@ -884,7 +875,6 @@ mod tests {
             use_surrogate_conduction: false,
             use_surrogate_ventilation,
             use_surrogate_loads: true,
-            use_surrogate_hvac: false,
             use_ood_fallback: false,
         };
         let mut model = HybridThermalModel::from_spec_with_routing(&spec, routing);
