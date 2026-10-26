@@ -205,6 +205,41 @@ const DEFAULT_ATMOSPHERIC_PRESSURE: f64 = 101325.0;
 #[allow(dead_code)] // used in tests; will be needed when HourlyWeatherData gains a precipitation field
 const EPW_PRECIPITATION_SENTINEL: f64 = 999.0;
 
+/// EPW missing-data sentinel for ground albedo (EPW field 33, 0-indexed 32).
+///
+/// Albedo is a fraction in 0..1, so any value at or above the sentinel means
+/// "not measured". The EnergyPlus Weather Converter writes `999` for a
+/// missing albedo in TMY3-converted files (see
+/// `assets/weather/USA_FL_Miami.Intl.AP.722020_TMY3.epw`), and the older
+/// EPW convention used `9999`; both are covered by the `>=` comparison in
+/// [`is_epw_sentinel`].
+const EPW_ALBEDO_SENTINEL: f64 = 999.0;
+
+/// Parses EPW field 33 (0-indexed 32), the ground albedo.
+///
+/// Returns `None` — "the file does not report a usable albedo", so the
+/// caller falls back to the 0.2 default the ASHRAE 140 fabric cohort
+/// assumes — when the field is empty, unparsable, negative, or carries a
+/// missing-data sentinel (999 / 9999). An authored `0.0` is a real value and
+/// is kept as `Some(0.0)`: the ASHRAE 140 §6 WD100 weather-driver file
+/// reports it deliberately (Issue #4269).
+///
+/// Both EPW row-parse sites ([`decode_epw_record`] and
+/// [`EpwWeatherSource::parse_data_line`]) go through this helper so the two
+/// decoders can never disagree about the field.
+fn parse_albedo_field(field: Option<&str>) -> Option<f64> {
+    let raw = field?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let value = raw.parse::<f64>().ok()?;
+    if value.is_nan() || value < 0.0 || is_epw_sentinel(value, EPW_ALBEDO_SENTINEL) {
+        None
+    } else {
+        Some(value)
+    }
+}
+
 /// Helper function to parse fields that may have missing data.
 ///
 /// Returns the parsed value or the default if the field is empty or invalid.
@@ -374,18 +409,11 @@ pub fn decode_epw_record(fields: &[&str]) -> Result<HourlyRecord, WeatherError> 
         snow_cover: None,
         present_weather: None,
         present_weather_code: None,
-        // Ground albedo (0-indexed field 32, Issue #4269): 9999 missing-data
-        // sentinel or unparsable → None; a reported value (including an
-        // authored 0.0 in the §6 WD files) is kept.
-        albedo: {
-            let raw = fields.get(32).copied().unwrap_or("");
-            let val = parse_optional_field(raw, f64::NAN);
-            if raw.is_empty() || val.is_nan() || val < 0.0 {
-                None
-            } else {
-                Some(val)
-            }
-        },
+        // Ground albedo (0-indexed field 32, Issue #4269): a missing-data
+        // sentinel (999 / 9999), an empty or unparsable field → None so the
+        // caller falls back to the 0.2 default; a reported value (including
+        // an authored 0.0 in the §6 WD files) is kept.
+        albedo: parse_albedo_field(fields.get(32).copied()),
     })
 }
 
@@ -1051,19 +1079,12 @@ impl EpwWeatherSource {
         // Ground albedo (field 33 in 0-indexed array). ASHRAE 140 §6 (Issue
         // #4269): the WD100/WD600 weather-driver pair differs in this field
         // only, so it must be read per hour, never from a config constant.
-        // 9999 (missing-data sentinel) or an unparsable value → None.
-        // A reported 0.0 is kept: for the WD files it is an authored test
-        // value (WD100), not missing data.
-        let albedo = if fields.len() > 32 {
-            let val = parse_optional_field(fields[32], f64::NAN);
-            if val.is_nan() || val < 0.0 {
-                None
-            } else {
-                Some(val)
-            }
-        } else {
-            None
-        };
+        // A missing-data sentinel (999 in the EnergyPlus-converted TMY3
+        // files, 9999 in the older convention), an empty/unparsable field or
+        // a negative value → None (the caller falls back to the 0.2
+        // default). A reported 0.0 is kept: for the WD files it is an
+        // authored test value (WD100), not missing data.
+        let albedo = parse_albedo_field(fields.get(32).copied());
 
         Ok(HourlyWeatherData {
             dry_bulb_temp,
@@ -1380,6 +1401,102 @@ mod tests {
     }
 
     // ── End Issue #1415 tests ────────────────────────────────────────────────
+
+    // ── Issue #4269: ground albedo (EPW field 33, 0-indexed 32) ─────────────
+    //
+    // Two row-parse sites exist and both must agree:
+    //   * `decode_epw_record` — the shared decoder behind `parse_epw_v3`,
+    //     `parse_epw_amy` and `parse_epw_iwec` (→ `HourlyRecord`).
+    //   * `EpwWeatherSource::parse_data_line` — the live path behind
+    //     `EpwWeatherSource::from_file` (→ `HourlyWeatherData`).
+    //
+    // The rules: an authored value is kept (including an explicit 0.0, which
+    // the §6 WD100 weather-driver file reports), the 9999 missing-data
+    // sentinel and unparsable/negative values become `None` so callers fall
+    // back to the 0.2 default.
+
+    /// Builds a 35-field EPW data line whose field 33 (0-indexed 32) holds
+    /// the given albedo token.
+    fn make_data_line_with_albedo(albedo: &str) -> String {
+        let fields: Vec<String> = make_data_line("900", "800", "100", "300")
+            .split(',')
+            .map(|s| s.to_string())
+            .collect();
+        let mut fields = fields;
+        fields[32] = albedo.to_string();
+        fields.join(",")
+    }
+
+    #[test]
+    fn test_parse_data_line_reads_albedo_field() {
+        let result =
+            EpwWeatherSource::parse_data_line(&make_data_line_with_albedo("0.2"), 0).unwrap();
+        assert_eq!(
+            result.albedo,
+            Some(0.2),
+            "EPW field 33 (0-indexed 32) must be read as ground albedo"
+        );
+    }
+
+    #[test]
+    fn test_parse_data_line_keeps_authored_zero_albedo() {
+        let result =
+            EpwWeatherSource::parse_data_line(&make_data_line_with_albedo("0"), 0).unwrap();
+        assert_eq!(
+            result.albedo,
+            Some(0.0),
+            "an authored 0.0 albedo must be kept, not treated as missing data"
+        );
+    }
+
+    #[test]
+    fn test_parse_data_line_missing_albedo_is_none() {
+        for token in ["999", "9999", "", "abc"] {
+            let result =
+                EpwWeatherSource::parse_data_line(&make_data_line_with_albedo(token), 0).unwrap();
+            assert_eq!(
+                result.albedo, None,
+                "albedo token {token:?} must map to None (caller falls back to 0.2)"
+            );
+        }
+    }
+
+    #[test]
+    fn test_decode_epw_record_reads_albedo_field() {
+        let line = make_data_line_with_albedo("0.2");
+        let fields: Vec<&str> = line.split(',').collect();
+        let record = decode_epw_record(&fields).unwrap();
+        assert_eq!(
+            record.albedo,
+            Some(0.2),
+            "the shared EPW decoder must read ground albedo from field 33"
+        );
+    }
+
+    #[test]
+    fn test_decode_epw_record_keeps_authored_zero_albedo() {
+        let line = make_data_line_with_albedo("0");
+        let fields: Vec<&str> = line.split(',').collect();
+        let record = decode_epw_record(&fields).unwrap();
+        assert_eq!(
+            record.albedo,
+            Some(0.0),
+            "the shared EPW decoder must keep an authored 0.0 albedo"
+        );
+    }
+
+    #[test]
+    fn test_decode_epw_record_missing_albedo_is_none() {
+        for token in ["999", "9999", "", "abc"] {
+            let line = make_data_line_with_albedo(token);
+            let fields: Vec<&str> = line.split(',').collect();
+            let record = decode_epw_record(&fields).unwrap();
+            assert_eq!(
+                record.albedo, None,
+                "albedo token {token:?} must map to None in the shared decoder"
+            );
+        }
+    }
 
     #[test]
     fn test_parse_complete_epw() {
