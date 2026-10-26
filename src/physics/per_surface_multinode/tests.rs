@@ -122,7 +122,7 @@ struct LumpedFiveR1C {
 }
 
 impl LumpedFiveR1C {
-    fn new(specs: &[SurfaceSpec]) -> Self {
+    fn new(specs: &[SurfaceSpec], t_init: f64) -> Self {
         let h_em: f64 = specs.iter().map(|s| s.h_tr_em).sum();
         let h_ms: f64 = specs.iter().map(|s| s.h_tr_ms).sum();
         let h_is: f64 = specs.iter().map(|s| s.h_tr_is).sum();
@@ -134,13 +134,30 @@ impl LumpedFiveR1C {
             h_is,
             c_air: C_AIR,
             h_ve: H_VE,
-            t_mass: 20.0,
-            t_air: 20.0,
+            t_mass: t_init,
+            t_air: t_init,
         }
     }
 
-    /// Implicit 5R1C step; returns the new zone air temperature.
-    fn step(&mut self, dt: f64, t_out: f64, absorbed_total: f64) -> f64 {
+    /// Conditioned 5R1C step: the zone air is held at `t_air_set` by an
+    /// ideal thermostat; returns the HVAC load [W] the zone must meet
+    /// (positive = the zone must be cooled).
+    ///
+    /// The algebraic surface node of the 5R1C network is
+    /// `T_s = alpha * T_air + beta * T_m` with
+    /// `alpha = h_is / (h_is + h_ms)` and `beta = h_ms / (h_is + h_ms)`.
+    /// Substituting it into the mass-node balance
+    /// `C_m (T_m' - T_m)/dt = h_ms (T_s - T_m') + h_em (T_solair - T_m')`
+    /// gives
+    ///
+    /// ```text
+    /// (C_m/dt + h_em + h_ms * alpha) T_m'
+    ///     = C_m/dt * T_m + h_em * T_solair + h_ms * alpha * T_air'
+    /// ```
+    ///
+    /// — the mass node's coupling to the air enters as `h_ms * alpha`
+    /// (because `1 - beta = alpha`), **not** as `h_ms * beta`.
+    fn step_clamped(&mut self, dt: f64, t_out: f64, absorbed_total: f64, t_air_set: f64) -> f64 {
         let alpha = self.h_is / (self.h_is + self.h_ms);
         let beta = self.h_ms / (self.h_is + self.h_ms);
         let solair = if self.h_em > 0.0 {
@@ -150,60 +167,65 @@ impl LumpedFiveR1C {
         };
         // Mass node, eliminated against the algebraic surface node.
         let r1 = self.c_mass / dt * self.t_mass + self.h_em * solair;
-        let d1 = self.c_mass / dt + self.h_em + self.h_ms * beta;
-        // Zone air node.
-        let denom = self.c_air / dt
-            + self.h_ve
-            + self.h_is * (1.0 - alpha)
-            - self.h_is * beta * self.h_ms * alpha / d1;
-        let numer =
-            self.c_air / dt * self.t_air + self.h_is * beta * r1 / d1 + self.h_ve * t_out;
-        let t_air_new = numer / denom;
-        self.t_mass = (r1 + self.h_ms * alpha * t_air_new) / d1;
-        self.t_air = t_air_new;
-        t_air_new
+        let d1 = self.c_mass / dt + self.h_em + self.h_ms * alpha;
+        self.t_mass = (r1 + self.h_ms * alpha * t_air_set) / d1;
+        // The zone load the thermostat must meet: the envelope's heat flow
+        // into the (held) air node plus the ventilation path.
+        let t_surface = alpha * t_air_set + beta * self.t_mass;
+        self.t_air = t_air_set;
+        self.h_is * (t_surface - t_air_set) + self.h_ve * (t_out - t_air_set)
     }
 }
 
-/// Peak-load metrics evaluated on a free-float zone-air trajectory.
+/// Peak-load metrics of a **conditioned** (thermostat-clamped) run.
 ///
-/// * `peak_cooling` — the largest cooling load the zone would need to hold
-///   the cooling setpoint [W];
-/// * `peak_heating` — the largest heating load the zone would need to hold
-///   the heating setpoint [W].
+/// * `peak_cooling` — the largest cooling load the zone must meet to hold the
+///   cooling setpoint [W] (positive);
+/// * `peak_heating` — the largest heating load the zone must meet to hold the
+///   heating setpoint [W] (positive).
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct PeakMetrics {
     peak_cooling: f64,
     peak_heating: f64,
-    t_min: f64,
-    t_max: f64,
 }
 
-fn peak_metrics(air_temps: &[f64], h_is_total: f64) -> PeakMetrics {
-    let gain = h_is_total + H_VE;
-    let mut peak_cooling = 0.0f64;
-    let mut peak_heating = 0.0f64;
-    for &t in air_temps {
-        peak_cooling = peak_cooling.max((t - T_COOL).max(0.0) * gain);
-        peak_heating = peak_heating.max((T_HEAT - t).max(0.0) * gain);
-    }
+/// The peak-load metrics of a conditioned run: the largest HVAC load of the
+/// cooling run and the largest HVAC load of the heating run.
+///
+/// The loads are the ones an ideal thermostat has to meet, i.e. the heat
+/// flow the envelope and the ventilation path deliver into the zone while
+/// the air is held at the setpoint (positive = the zone must be cooled).
+///
+/// The first version of this suite evaluated a `(T_air - T_set) * gain`
+/// proxy on the **free-float** trajectory instead. That proxy is not a load
+/// — it ignores both the envelope's own surface temperature and the
+/// ventilation path — and it *saturates*: on the synthetic case below the
+/// free-float zone air never reaches the cooling setpoint, so the per-surface
+/// cooling-peak metric was identically zero (0.0 W against the lumped
+/// reference's 17.2 kW) and the comparison carried no information at all.
+/// The conditioned protocol removes the saturation: both formulations are
+/// evaluated at the setpoint they have to hold.
+fn peak_metrics(cooling_loads: &[f64], heating_loads: &[f64]) -> PeakMetrics {
     PeakMetrics {
-        peak_cooling,
-        peak_heating,
-        t_min: air_temps.iter().cloned().fold(f64::INFINITY, f64::min),
-        t_max: air_temps.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
+        peak_cooling: cooling_loads
+            .iter()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max),
+        peak_heating: -heating_loads.iter().copied().fold(f64::INFINITY, f64::min),
     }
 }
 
-/// Run the per-surface formulation over the synthetic case.
-fn run_per_surface(specs: &[SurfaceSpec]) -> (Vec<f64>, PerSurfaceMultiNodeConduction) {
+/// Run the per-surface formulation over the synthetic case with the zone air
+/// **held** at `t_set` by an ideal thermostat; returns the HVAC load trace
+/// [W] (positive = the zone must be cooled).
+fn run_per_surface_clamped(specs: &[SurfaceSpec], t_set: f64) -> Vec<f64> {
     let mut model = PerSurfaceMultiNodeConduction::new(
         specs.to_vec(),
         ZoneAirSpec::new(C_AIR, H_VE),
-        20.0,
+        t_set,
     );
-    let mut temps = Vec::with_capacity(HOURS);
     let n = specs.len();
+    let mut loads = Vec::with_capacity(HOURS);
     for t in 0..HOURS {
         let (t_out, _, _) = synthetic_weather(t);
         let irr = synthetic_irradiance(t);
@@ -221,15 +243,16 @@ fn run_per_surface(specs: &[SurfaceSpec]) -> (Vec<f64>, PerSurfaceMultiNodeCondu
             absorbed_solar: &absorbed,
             transmitted_solar: &transmitted,
         };
-        temps.push(model.step(DT, &inputs));
+        loads.push(model.step_clamped(DT, &inputs, t_set));
     }
-    (temps, model)
+    loads
 }
 
-/// Run the lumped 5R1C reference over the same synthetic case.
-fn run_lumped(specs: &[SurfaceSpec]) -> Vec<f64> {
-    let mut model = LumpedFiveR1C::new(specs);
-    let mut temps = Vec::with_capacity(HOURS);
+/// Run the lumped 5R1C reference over the same synthetic case with the zone
+/// air held at `t_set`; returns the HVAC load trace [W].
+fn run_lumped_clamped(specs: &[SurfaceSpec], t_set: f64) -> Vec<f64> {
+    let mut model = LumpedFiveR1C::new(specs, t_set);
+    let mut loads = Vec::with_capacity(HOURS);
     for t in 0..HOURS {
         let (t_out, _, _) = synthetic_weather(t);
         let irr = synthetic_irradiance(t);
@@ -238,9 +261,9 @@ fn run_lumped(specs: &[SurfaceSpec]) -> Vec<f64> {
             .zip(irr.iter())
             .map(|(s, i)| absorbed_flux(s, *i))
             .sum();
-        temps.push(model.step(DT, t_out, absorbed_total));
+        loads.push(model.step_clamped(DT, t_out, absorbed_total, t_set));
     }
-    temps
+    loads
 }
 
 // ---------------------------------------------------------------------------
@@ -614,12 +637,15 @@ fn test_steady_state_matches_the_analytic_network_solution() {
 #[test]
 fn test_bidirectional_peak_signature_versus_lumped_5r1c() {
     let specs = synthetic_surfaces();
-    let h_is_total: f64 = specs.iter().map(|s| s.h_tr_is).sum();
 
-    let (per_surface_temps, _) = run_per_surface(&specs);
-    let lumped_temps = run_lumped(&specs);
-    let per_surface = peak_metrics(&per_surface_temps, h_is_total);
-    let lumped = peak_metrics(&lumped_temps, h_is_total);
+    let per_surface = peak_metrics(
+        &run_per_surface_clamped(&specs, T_COOL),
+        &run_per_surface_clamped(&specs, T_HEAT),
+    );
+    let lumped = peak_metrics(
+        &run_lumped_clamped(&specs, T_COOL),
+        &run_lumped_clamped(&specs, T_HEAT),
+    );
 
     assert!(
         per_surface.peak_cooling > lumped.peak_cooling,
@@ -636,13 +662,13 @@ fn test_bidirectional_peak_signature_versus_lumped_5r1c() {
         lumped.peak_heating
     );
 
-    // The synthetic case must stay physically plausible (a free-floating
-    // zone on a winter day), otherwise the comparison would be vacuous.
+    // The conditioned loads must be real, positive quantities on this
+    // case, otherwise the comparison would be vacuous.
     assert!(
-        per_surface.t_max < 45.0 && per_surface.t_min > 0.0,
-        "implausible free-float excursion: Tmin={}, Tmax={}",
-        per_surface.t_min,
-        per_surface.t_max
+        per_surface.peak_cooling > 0.0 && per_surface.peak_heating > 0.0,
+        "implausible conditioned peaks: cooling={:.1} W, heating={:.1} W",
+        per_surface.peak_cooling,
+        per_surface.peak_heating
     );
 }
 
@@ -654,7 +680,6 @@ fn test_bidirectional_peak_signature_versus_lumped_5r1c() {
 #[test]
 fn test_lumped_metrics_are_locked_while_per_surface_metrics_are_not() {
     let specs = synthetic_surfaces();
-    let h_is_total: f64 = specs.iter().map(|s| s.h_tr_is).sum();
 
     // --- Lumped reference: scaling the envelope capacitance.
     let mut lumped_metrics = Vec::new();
@@ -668,7 +693,10 @@ fn test_lumped_metrics_are_locked_while_per_surface_metrics_are_not() {
                 s
             })
             .collect();
-        lumped_metrics.push(peak_metrics(&run_lumped(&scaled), h_is_total));
+        lumped_metrics.push(peak_metrics(
+            &run_lumped_clamped(&scaled, T_COOL),
+            &run_lumped_clamped(&scaled, T_HEAT),
+        ));
     }
     let lumped_down = lumped_metrics[0];
     let lumped_base = lumped_metrics[1];
@@ -699,8 +727,8 @@ fn test_lumped_metrics_are_locked_while_per_surface_metrics_are_not() {
             })
             .collect();
         per_surface_metrics.push(peak_metrics(
-            &run_per_surface(&redistributed).0,
-            h_is_total,
+            &run_per_surface_clamped(&redistributed, T_COOL),
+            &run_per_surface_clamped(&redistributed, T_HEAT),
         ));
     }
     let ps_low = per_surface_metrics[0];

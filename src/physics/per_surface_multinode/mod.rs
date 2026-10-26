@@ -282,6 +282,14 @@ pub struct EnergyLedger {
     pub envelope_storage: f64,
     /// Rate of energy stored in the zone air node [W] (positive = charging).
     pub air_storage: f64,
+    /// Heat delivered to the zone by the HVAC [W] (positive = into the zone).
+    ///
+    /// Zero for a free-float step. For a step whose air node is *prescribed*
+    /// ([`PerSurfaceMultiNodeConduction::step_clamped`]) it carries the
+    /// thermostat's heat flow, so that the first-law residual of the step
+    /// stays zero: the air node's balance becomes
+    /// `surface_to_air + ventilation + internal + hvac = 0`.
+    pub hvac: f64,
 }
 
 impl EnergyLedger {
@@ -290,7 +298,8 @@ impl EnergyLedger {
         let inflow = self.exterior_to_envelope
             + self.transmitted_solar
             + self.ventilation
-            + self.internal;
+            + self.internal
+            + self.hvac;
         let storage = self.envelope_storage + self.air_storage;
         inflow - storage
     }
@@ -405,6 +414,34 @@ impl PerSurfaceMultiNodeConduction {
     /// solar enters at the **exterior face** of that surface, which is where
     /// it is physically absorbed.
     pub fn step(&mut self, dt: f64, inputs: &StepInputs<'_>) -> f64 {
+        self.advance(dt, inputs, None).0
+    }
+
+    /// Advance the formulation by one implicit step with the **zone air node
+    /// prescribed** at `t_air_clamped` (an ideal thermostat), and return the
+    /// instantaneous HVAC load [W] the zone needs.
+    ///
+    /// The load is positive when the envelope and the ventilation path
+    /// deliver more heat to the zone than the setpoint can absorb — i.e. when
+    /// the zone must be **cooled** — and negative when the zone must be
+    /// **heated**. It is the standard *conditioned* peak-load quantity: the
+    /// envelope is advanced with the air node held at the setpoint, and the
+    /// thermostat's heat flow is read off the air node's balance.
+    ///
+    /// The envelope states evolve exactly as in [`Self::step`]; only the air
+    /// node is replaced by the prescribed temperature, so the zone's thermal
+    /// mass no longer participates in the step.
+    pub fn step_clamped(&mut self, dt: f64, inputs: &StepInputs<'_>, t_air_clamped: f64) -> f64 {
+        self.advance(dt, inputs, Some(t_air_clamped)).1
+    }
+
+    /// Shared stepping kernel.
+    ///
+    /// `clamped` = `None` advances the zone air node implicitly (a
+    /// free-float step); `clamped` = `Some(t_air)` prescribes it (a
+    /// conditioned step). Returns `(zone air temperature, HVAC load [W])`;
+    /// the load is zero for a free-float step.
+    fn advance(&mut self, dt: f64, inputs: &StepInputs<'_>, clamped: Option<f64>) -> (f64, f64) {
         assert!(dt > 0.0, "step requires a positive timestep, got {dt}");
         let n = self.surfaces.len();
 
@@ -480,7 +517,10 @@ impl PerSurfaceMultiNodeConduction {
             denom += h_is * (1.0 - kappa[k]);
             numer += h_is * b[k];
         }
-        let t_air_new = if denom > 1e-12 { numer / denom } else { t_air_old };
+        let t_air_solved = if denom > 1e-12 { numer / denom } else { t_air_old };
+        // A prescribed air node replaces the solved one; the thermostat
+        // carries the imbalance (see `step_clamped`).
+        let t_air_new = clamped.unwrap_or(t_air_solved);
 
         // Back-substitution: update the two node states of every surface.
         let mut surface_to_air = 0.0;
@@ -533,7 +573,22 @@ impl PerSurfaceMultiNodeConduction {
         }
 
         let ventilation = h_ve * (inputs.t_outdoor - t_air_new);
-        let air_storage = c_air / dt * (t_air_new - t_air_old);
+        // A prescribed air node stores no energy: the thermostat's heat flow
+        // takes its place in the air node's balance, so the first-law
+        // residual of the step stays zero.
+        let air_storage = if clamped.is_some() {
+            0.0
+        } else {
+            c_air / dt * (t_air_new - t_air_old)
+        };
+        let hvac = if clamped.is_some() {
+            -(surface_to_air + ventilation + inputs.phi_ia)
+        } else {
+            0.0
+        };
+        // The load the thermostat must meet (positive = the zone must be
+        // cooled); zero for a free-float step.
+        let load = -hvac;
         let transmitted_total: f64 = phi_tr.iter().sum();
 
         self.ledger = EnergyLedger {
@@ -544,9 +599,10 @@ impl PerSurfaceMultiNodeConduction {
             transmitted_solar: transmitted_total,
             envelope_storage,
             air_storage,
+            hvac,
         };
         self.t_air = t_air_new;
         self.dt_last = dt;
-        t_air_new
+        (t_air_new, load)
     }
 }
