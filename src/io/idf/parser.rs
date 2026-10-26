@@ -25,7 +25,9 @@
 //! - `GlobalGeometryRules`
 //! - `Site:GroundTemperature:BuildingSurface`
 //!
-//! Out of scope (design §10): HVAC, Schedule, Window/Door,
+//! Out of scope (design §10): full HVAC modelling (only the basic
+//! `ZoneHVAC:IdealLoadsAirSystem` detection of issue #3991 is supported
+//! at conversion level), Schedule, Window/Door,
 //! `FenestrationSurface:Detailed`, IDF export, and the
 //! `TryFrom<IdfFile> for SimulationSchema` conversion (design §4.3).
 
@@ -183,6 +185,16 @@ impl IdfFile {
             o.object_type
                 .eq_ignore_ascii_case("ZoneHVAC:EquipmentConnections")
         })
+    }
+
+    /// All `ZoneHVAC:EquipmentList` objects.
+    ///
+    /// These name the zone equipment served through a
+    /// `ZoneHVAC:EquipmentConnections` object (issue #3991).
+    pub fn zone_hvac_equipment_lists(&self) -> impl Iterator<Item = &IdfObject> {
+        self.objects
+            .iter()
+            .filter(|o| o.object_type.eq_ignore_ascii_case("ZoneHVAC:EquipmentList"))
     }
 
     /// All `ThermostatSetpoint:DualSetpoint` objects.
