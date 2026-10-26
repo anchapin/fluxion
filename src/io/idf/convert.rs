@@ -27,14 +27,16 @@
 //! | `Construction` | `constructions.{wall,roof,floor}` |
 //! | `BuildingSurface:Detailed` | `geometry.zones[i].floor_area` + `volume` |
 //! | `Site:GroundTemperature:BuildingSurface` | `metadata.run_period.ground_temperature` |
+//! | `ZoneHVAC:EquipmentConnections` + `ZoneHVAC:EquipmentList` + `ZoneHVAC:IdealLoadsAirSystem` | `controls.hvac_system = Some(HVACSystemType::Ideal)` (issue #3991) |
 //!
 //! Both [`TryFrom<&IdfFile> for SimulationSchemaV1`] and
 //! [`TryFrom<&IdfFile> for SimulationSchema`] are implemented here.
 //!
 //! All other object types (`Schedule:Compact`, `FenestrationSurface:Detailed`,
-//! `ZoneInfiltration:DesignFlowRate`, HVAC, etc.) are **out of scope** per
-//! design §10 — they remain available as raw [`super::parser::IdfObject`]s in
-//! the source [`IdfFile`] for callers that need them. The companion
+//! `ZoneInfiltration:DesignFlowRate`, other HVAC types, etc.) are **out of
+//! scope** per design §10 — they remain available as raw
+//! [`super::parser::IdfObject`]s in the source [`IdfFile`] for callers
+//! that need them. The companion
 //! [`case_spec_from_idf`] helper bridges the gap for ASHRAE 140 acceptance
 //! tests by reading those out-of-scope objects directly from the same
 //! [`IdfFile`] and producing a `CaseSpec` for [`crate::sim::engine`].
@@ -63,6 +65,7 @@ use crate::api::schema::{
 use crate::ashrae_cases::Orientation;
 use crate::sim::boundary::{GroundTemperature, MonthlyGroundTemperature};
 use crate::sim::construction::ConstructionLayer;
+use crate::sim::hvac::HVACSystemType;
 use crate::sim::schedule::{DailySchedule, HVACSchedule};
 use crate::validation::ashrae_140_cases::{CaseSpec, ConstructionType, GeometrySpec};
 
@@ -683,6 +686,18 @@ fn field_uint(obj: &IdfObject, idx: usize) -> Option<u32> {
     }
 }
 
+/// Name-like value of a single field.
+///
+/// Only [`IdfValue::String`] fields carry names in IDF (object names,
+/// zone names, node names, object types); numeric fields are never
+/// compared against a name.
+fn field_name(value: &IdfValue) -> Option<&str> {
+    match value {
+        IdfValue::String(s) if !s.is_empty() => Some(s.as_str()),
+        _ => None,
+    }
+}
+
 // -----------------------------------------------------------------------------
 // ASHRAE 140 bridge — reads out-of-scope IDF objects to build a CaseSpec
 // -----------------------------------------------------------------------------
@@ -874,6 +889,12 @@ fn build_schedules(idf: &IdfFile, zone_name: &str) -> ScheduleSet {
 /// Returns a `ControlSet` with zone control setpoints extracted from
 /// `ZoneControl:Thermostat` + `ThermostatSetpoint:DualSetpoint` objects,
 /// or defaults if not found.
+///
+/// Issue #3991 — the HVAC system serving the zone is also detected:
+/// a zone whose equipment chain reaches a
+/// `ZoneHVAC:IdealLoadsAirSystem` gets
+/// [`HVACSystemType::Ideal`]; zones without any `ZoneHVAC:*` objects
+/// keep `hvac_system: None` (the historical behaviour).
 fn build_controls(idf: &IdfFile, zone_name: &str) -> ControlSet {
     let (heat_sp, cool_sp) = extract_setpoints(idf, zone_name).unwrap_or((20.0, 24.0));
     ControlSet {
@@ -885,8 +906,150 @@ fn build_controls(idf: &IdfFile, zone_name: &str) -> ControlSet {
             cooling_capacity: 100_000.0,
         },
         global_control: None,
-        hvac_system: None,
+        hvac_system: zone_hvac_system(idf, zone_name),
     }
+}
+
+/// Detect the HVAC system serving `zone_name` (issue #3991).
+///
+/// Only the basic slice is implemented: a zone is served by an
+/// [`HVACSystemType::Ideal`] system when its equipment chain reaches a
+/// `ZoneHVAC:IdealLoadsAirSystem` object. The chain that is resolved is
+///
+/// ```text
+/// ZoneHVAC:EquipmentConnections   (zone name → equipment list name)
+///   → ZoneHVAC:EquipmentList      (object type + name entries)
+///     → ZoneHVAC:IdealLoadsAirSystem
+/// ```
+///
+/// The simpler *direct* case is handled as well: an
+/// `ZoneHVAC:IdealLoadsAirSystem` object that names the zone itself
+/// (its own zone-name field) serves that zone.
+///
+/// Returns `None` when the zone has no HVAC equipment at all (or the
+/// chain cannot be resolved), preserving the previous behaviour.
+fn zone_hvac_system(idf: &IdfFile, zone_name: &str) -> Option<HVACSystemType> {
+    if zone_served_by_ideal_loads(idf, zone_name) {
+        Some(HVACSystemType::Ideal)
+    } else {
+        None
+    }
+}
+
+/// True when `zone_name` is served by a `ZoneHVAC:IdealLoadsAirSystem`.
+fn zone_served_by_ideal_loads(idf: &IdfFile, zone_name: &str) -> bool {
+    let ideal_loads: Vec<&IdfObject> = idf.zone_hvac_ideal_loads().collect();
+    if ideal_loads.is_empty() {
+        return false;
+    }
+
+    // Direct case: the IdealLoads object names the zone itself. The
+    // object's own name field (index 0) is skipped so that an object
+    // merely *named* after the zone is not mistaken for a zone link.
+    for il in &ideal_loads {
+        if il
+            .fields
+            .iter()
+            .skip(1)
+            .any(|v| field_name(v) == Some(zone_name))
+        {
+            return true;
+        }
+    }
+
+    // Chained case: ZoneHVAC:EquipmentConnections → ZoneHVAC:EquipmentList
+    // → ZoneHVAC:IdealLoadsAirSystem.
+    let ideal_names: Vec<&str> = ideal_loads
+        .iter()
+        .filter_map(|il| il.fields.first().and_then(field_name))
+        .collect();
+    if ideal_names.is_empty() {
+        return false;
+    }
+
+    for conn in idf.zone_hvac_equipment_connections() {
+        if !connection_serves_zone(conn, zone_name) {
+            continue;
+        }
+        // The connection names the equipment list it uses (IDD field
+        // "Zone Conditioning Equipment List Name"; index 2). Hand-written
+        // IDFs may order the fields differently, so any field naming one
+        // of the equipment lists is accepted as well.
+        for list in idf.zone_hvac_equipment_lists() {
+            let Some(this_list_name) = list.fields.first().and_then(field_name) else {
+                continue;
+            };
+            let referenced = conn
+                .fields
+                .get(2)
+                .and_then(field_name)
+                .map(|n| n.eq_ignore_ascii_case(this_list_name))
+                .unwrap_or(false)
+                || conn.fields.iter().skip(1).any(|v| {
+                    field_name(v)
+                        .map(|n| n.eq_ignore_ascii_case(this_list_name))
+                        .unwrap_or(false)
+                });
+            if !referenced {
+                continue;
+            }
+            if equipment_list_has_ideal_loads(list, &ideal_names) {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+/// True when a `ZoneHVAC:EquipmentConnections` object serves `zone_name`.
+///
+/// The full EnergyPlus IDD layout is
+/// `Name, Zone Name, Zone Conditioning Equipment List Name, …`, so the
+/// zone name sits at index 1. Some hand-written models (including the
+/// reference models under `tests/reference_data/energyplus_models/`)
+/// omit the dedicated zone-name field and use the object name for it,
+/// so the object name is accepted as well.
+fn connection_serves_zone(conn: &IdfObject, zone_name: &str) -> bool {
+    conn.fields.get(1).and_then(field_name) == Some(zone_name)
+        || conn.fields.first().and_then(field_name) == Some(zone_name)
+}
+
+/// True when a `ZoneHVAC:EquipmentList` object lists one of the given
+/// `ZoneHVAC:IdealLoadsAirSystem` object names.
+///
+/// The structured EnergyPlus layout groups the equipment entries in
+/// blocks of four fields — object type, object name, cooling sequence,
+/// heating sequence — starting after the object name (index 0) and the
+/// load distribution scheme (index 1). When the structured layout does
+/// not match (a hand-written IDF), the list is also scanned for a
+/// reference to one of the IdealLoads object names.
+fn equipment_list_has_ideal_loads(list: &IdfObject, ideal_names: &[&str]) -> bool {
+    let mut entry = 0usize;
+    loop {
+        let type_idx = 2 + 4 * entry;
+        let name_idx = 3 + 4 * entry;
+        if name_idx >= list.fields.len() {
+            break;
+        }
+        let obj_type = field_name(&list.fields[type_idx]);
+        let obj_name = field_name(&list.fields[name_idx]);
+        if let (Some(t), Some(n)) = (obj_type, obj_name) {
+            if t.eq_ignore_ascii_case("ZoneHVAC:IdealLoadsAirSystem")
+                && ideal_names.iter().any(|i| i.eq_ignore_ascii_case(n))
+            {
+                return true;
+            }
+        }
+        entry += 1;
+    }
+
+    // Fallback: the list mentions an IdealLoads object by name.
+    list.fields.iter().any(|v| {
+        field_name(v)
+            .map(|s| ideal_names.iter().any(|i| i.eq_ignore_ascii_case(s)))
+            .unwrap_or(false)
+    })
 }
 
 /// Extract infiltration ACH from `ZoneInfiltration:DesignFlowRate`.
@@ -1691,5 +1854,115 @@ FenestrationSurface:Detailed, EastWindow, Window, WinConstr, EastWall, , , 0.0, 
         let default = crate::ashrae_cases::WindowSpec::double_clear_glass();
         assert_eq!(spec.window_properties.u_value, default.u_value);
         assert_eq!(spec.window_properties.shgc, default.shgc);
+    }
+
+    // ----- Issue #3991: basic HVAC import (ZoneHVAC:IdealLoadsAirSystem) -----
+
+    /// IDF with two zones; only `ZONE1` is served by an IdealLoads system
+    /// through the EnergyPlus chain
+    /// `ZoneHVAC:EquipmentConnections` → `ZoneHVAC:EquipmentList` →
+    /// `ZoneHVAC:IdealLoadsAirSystem`.
+    fn idf_with_ideal_loads_chain() -> String {
+        "\
+Version, 25.2;\n\
+Building, TestBldg, 0.0, City, 0.04, 0.4, FullExterior, 25;\n\
+Zone, ZONE1, 0, 0, 0, 0, 1, 2.7, , , , ;\n\
+Zone, ZONE2, 0, 0, 0, 0, 1, 2.7, , , , ;\n\
+ZoneHVAC:EquipmentConnections,\n\
+  ZONE1 Connections,\n\
+  ZONE1,\n\
+  ZONE1 Equip List,\n\
+  ZONE1 Supply Node,\n\
+  ,\n\
+  ,\n\
+  ;\n\
+ZoneHVAC:EquipmentList,\n\
+  ZONE1 Equip List,\n\
+  SequentialLoad,\n\
+  ZoneHVAC:IdealLoadsAirSystem,\n\
+  ZONE1 IdealLoads,\n\
+  , , , ;\n\
+ZoneHVAC:IdealLoadsAirSystem,\n\
+  ZONE1 IdealLoads,\n\
+  ,\n\
+  ZONE1 Supply Node,\n\
+  ZONE1 Exhaust Node,\n\
+  ;\n"
+        .to_string()
+    }
+
+    #[test]
+    fn zone_with_ideal_loads_chain_is_marked_as_ideal_hvac() {
+        let idf = IdfParser::from_str(&idf_with_ideal_loads_chain()).unwrap();
+        let controls = build_controls(&idf, "ZONE1");
+        assert_eq!(controls.hvac_system, Some(HVACSystemType::Ideal));
+    }
+
+    #[test]
+    fn imported_schema_reports_ideal_hvac_for_ideal_loads_zone() {
+        let idf = IdfParser::from_str(&idf_with_ideal_loads_chain()).unwrap();
+        let schema = SimulationSchemaV1::try_from(&idf).unwrap();
+        assert_eq!(schema.controls.hvac_system, Some(HVACSystemType::Ideal));
+    }
+
+    #[test]
+    fn zone_without_any_zonehvac_objects_has_no_hvac_system() {
+        let src = "\
+Version, 25.2;\n\
+Building, TestBldg, 0.0, City, 0.04, 0.4, FullExterior, 25;\n\
+Zone, ZONE1, 0, 0, 0, 0, 1, 2.7, , , , ;\n";
+        let idf = IdfParser::from_str(src).unwrap();
+        let controls = build_controls(&idf, "ZONE1");
+        assert_eq!(controls.hvac_system, None);
+    }
+
+    #[test]
+    fn second_zone_without_equipment_is_not_marked_as_ideal_hvac() {
+        let idf = IdfParser::from_str(&idf_with_ideal_loads_chain()).unwrap();
+        assert_eq!(
+            build_controls(&idf, "ZONE2").hvac_system,
+            None,
+            "only the zone served by the IdealLoads chain may be marked"
+        );
+    }
+
+    #[test]
+    fn ideal_loads_object_naming_the_zone_directly_is_detected() {
+        // No EquipmentConnections / EquipmentList: the IdealLoads object
+        // names the zone itself.
+        let src = "\
+Version, 25.2;\n\
+Building, TestBldg, 0.0, City, 0.04, 0.4, FullExterior, 25;\n\
+Zone, ZONE3, 0, 0, 0, 0, 1, 2.7, , , , ;\n\
+ZoneHVAC:IdealLoadsAirSystem,\n\
+  ZONE3 IdealLoads,\n\
+  ,\n\
+  ZONE3,\n\
+  ZONE3 Supply Node,\n\
+  ZONE3 Exhaust Node,\n\
+  ;\n";
+        let idf = IdfParser::from_str(src).unwrap();
+        assert_eq!(
+            build_controls(&idf, "ZONE3").hvac_system,
+            Some(HVACSystemType::Ideal)
+        );
+        assert_eq!(build_controls(&idf, "ZONE1").hvac_system, None);
+    }
+
+    #[test]
+    fn reference_model_zone_served_by_ideal_loads_is_marked() {
+        // `ashrae_140_case_600.idf` carries the full chain:
+        // `ZoneHVAC:EquipmentConnections` → `ZoneHVAC:EquipmentList` →
+        // `ZoneHVAC:IdealLoadsAirSystem`.
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("reference_data")
+            .join("energyplus_models")
+            .join("ashrae_140_case_600.idf");
+        let idf = IdfFile::try_from(path.as_path()).expect("IDF parses");
+        assert_eq!(
+            build_controls(&idf, "ZONE1").hvac_system,
+            Some(HVACSystemType::Ideal)
+        );
     }
 }

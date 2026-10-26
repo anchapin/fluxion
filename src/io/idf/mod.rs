@@ -26,7 +26,11 @@
 //! # Out of scope (per design §10 and issue #1341)
 //!
 //! - epJSON parsing (design §4.2 follow-up).
-//! - HVAC, Schedule, Window/Door, `FenestrationSurface:Detailed` (design §10).
+//! - Full HVAC modelling (issue #3991 covers only the basic case: a zone
+//!   served by a `ZoneHVAC:IdealLoadsAirSystem` is imported with
+//!   `hvac_system = Some(HVACSystemType::Ideal)` — see
+//!   [`convert::build_controls`]; other HVAC types are still ignored).
+//! - Schedule, Window/Door, `FenestrationSurface:Detailed` (design §10).
 //! - IDF export (design §10).
 //!
 //! # Example
