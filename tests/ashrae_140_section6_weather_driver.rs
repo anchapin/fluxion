@@ -19,6 +19,7 @@ use fluxion::sim::solar::{calculate_window_solar_gain, WindowProperties};
 use fluxion::solar::solar_position::{calculate_day_of_year, calculate_solar_position};
 use fluxion::solar::surface_irradiance::{calculate_surface_irradiance, Orientation};
 use fluxion::weather::epw::EpwWeatherSource;
+use fluxion::weather::psychrometrics::{calculate_dew_point, calculate_humidity_ratio};
 use fluxion::weather::WeatherSource;
 use std::path::PathBuf;
 
@@ -504,6 +505,300 @@ fn wd400_polar_night_and_day_irradiance_finite_nonnegative() {
     assert!(
         polar_day_hours >= 24 * 28,
         "WD400 must have polar-day hours in June, got {polar_day_hours}"
+    );
+}
+
+/// Field `idx` (comma-split) of a WD file's own `LOCATION` header row.
+///
+/// Header row layout: `LOCATION, city, state, country, source, WMO,
+/// latitude, longitude, UTC offset, elevation`. Used for the *context* of a
+/// file (which station a file is) — never as a substitute for the file's
+/// hourly records.
+fn wd_header_field(name: &str, idx: usize) -> String {
+    let text = std::fs::read_to_string(wd_path(name)).unwrap_or_else(|e| panic!("{name}: {e}"));
+    let line = text
+        .lines()
+        .next()
+        .unwrap_or_else(|| panic!("{name}: file is empty"));
+    assert!(
+        line.starts_with("LOCATION,"),
+        "{name}: first row must be the LOCATION header, got {line}"
+    );
+    let f: Vec<&str> = line.split(',').collect();
+    f.get(idx)
+        .unwrap_or_else(|| panic!("{name}: LOCATION header has no field {idx}"))
+        .trim()
+        .to_string()
+}
+
+/// One hourly data record of a WD file, read from the file's own EPW row.
+///
+/// EPW hourly fields (0-indexed): 6 = dry bulb (°C), 7 = dew point (°C),
+/// 8 = relative humidity (%), 9 = atmospheric pressure (Pa). The engine's
+/// parsed hourly record carries dry bulb and humidity but neither station
+/// pressure nor dew point, so those two columns are read here straight from
+/// the file's data rows; the test cross-checks the dry bulb and humidity
+/// against the engine's parsed record so the two views stay row-aligned.
+#[derive(Debug, Clone, Copy)]
+struct WdHourlyRecord {
+    dry_bulb_c: f64,
+    dew_point_c: f64,
+    humidity_pct: f64,
+    station_pressure_pa: f64,
+}
+
+/// Every hourly data record of a WD file, in file order.
+fn wd_hourly_records(name: &str) -> Vec<WdHourlyRecord> {
+    let text = std::fs::read_to_string(wd_path(name)).unwrap_or_else(|e| panic!("{name}: {e}"));
+    let mut rows = Vec::new();
+    for line in text.lines() {
+        let f: Vec<&str> = line.split(',').collect();
+        if f.len() < 35 {
+            continue;
+        }
+        let Ok(_year) = f[0].trim().parse::<u16>() else {
+            continue;
+        };
+        let Ok(hour) = f[3].trim().parse::<u8>() else {
+            continue;
+        };
+        if !(1..=24).contains(&hour) {
+            continue;
+        }
+        rows.push(WdHourlyRecord {
+            dry_bulb_c: f[6].trim().parse().expect("EPW dry bulb temperature"),
+            dew_point_c: f[7].trim().parse().expect("EPW dew point temperature"),
+            humidity_pct: f[8].trim().parse().expect("EPW relative humidity"),
+            station_pressure_pa: f[9].trim().parse().expect("EPW station pressure"),
+        });
+    }
+    rows
+}
+
+/// §6 acceptance: WD200 (Atlanta, 308 m, humid) must be told apart from
+/// WD100 (Denver, 1650 m, dry) by the *records* of their own weather files.
+///
+/// The two files are the §6 pressure/dew-point contrast: a near-sea-level,
+/// humid site against a high-altitude, dry one. An interpretation that read
+/// Denver's station pressure (or dropped station pressure entirely) for every
+/// weather file would still pass the rest of the §6 suite, so this test pins
+/// the contrast itself — the annual mean station pressure, the peak summer
+/// dew point and the humidity ratio derived from the hourly records.
+#[test]
+fn wd200_station_pressure_and_dewpoint_discriminate_from_wd100() {
+    /// Stated margins of the WD200-over-WD100 contrast.
+    const DEWPOINT_MARGIN_C: f64 = 5.0;
+    const HUMIDITY_RATIO_MARGIN_KG_PER_KG: f64 = 0.002;
+
+    let wd200 = wd_source("WD200.epw");
+    let wd100 = wd_source("WD100.epw");
+
+    // Sites come from each file's own LOCATION header.
+    let (lat200, lon200, _) = wd_site("WD200.epw");
+    assert!(
+        (lat200 - 33.633).abs() < 1e-2,
+        "WD200 must be Atlanta, got lat {lat200}"
+    );
+    assert!(
+        (lon200 + 84.433).abs() < 1e-2,
+        "WD200 must be Atlanta, got lon {lon200}"
+    );
+    let (lat100, lon100, _) = wd_site("WD100.epw");
+    assert!(
+        (lat100 - 39.833).abs() < 1e-2,
+        "WD100 must be Denver, got lat {lat100}"
+    );
+    assert!(
+        (lon100 + 104.650).abs() < 1e-2,
+        "WD100 must be Denver, got lon {lon100}"
+    );
+
+    // Header metadata: which station each file is, and its elevation. This
+    // is context only — every quantitative assertion below comes from the
+    // files' hourly records.
+    assert_eq!(
+        wd_header_field("WD200.epw", 5),
+        "722190",
+        "WD200 must be Atlanta Hartsfield-Jackson (WMO 722190)"
+    );
+    assert_eq!(
+        wd_header_field("WD100.epw", 5),
+        "725650",
+        "WD100 must be Denver Intl (WMO 725650)"
+    );
+    let elev200: f64 = wd_header_field("WD200.epw", 9)
+        .parse()
+        .expect("WD200 header elevation");
+    let elev100: f64 = wd_header_field("WD100.epw", 9)
+        .parse()
+        .expect("WD100 header elevation");
+    assert!(
+        (elev200 - 308.0).abs() < 1.0,
+        "WD200 must sit at 308 m, got {elev200}"
+    );
+    assert!(
+        (elev100 - 1650.0).abs() < 1.0,
+        "WD100 must sit at 1650 m, got {elev100}"
+    );
+
+    // The hourly records of each file, read from the files' own data rows.
+    let recs200 = wd_hourly_records("WD200.epw");
+    let recs100 = wd_hourly_records("WD100.epw");
+    assert_eq!(recs200.len(), 8760, "WD200: expected 8760 data rows");
+    assert_eq!(recs100.len(), 8760, "WD100: expected 8760 data rows");
+
+    // Anchor the record read to the engine's parsed hourly records: the dry
+    // bulb and humidity the engine parsed must be the file's own, so the
+    // pressure and dew-point columns below belong to the same rows.
+    for i in 0..8760 {
+        let e200 = wd200.get_hourly_data(i).expect("WD200 data row");
+        assert!(
+            (e200.dry_bulb_temp - recs200[i].dry_bulb_c).abs() < 1e-9,
+            "WD200 hour {i}: parsed dry bulb must match the file's own record"
+        );
+        assert!(
+            (e200.humidity - recs200[i].humidity_pct).abs() < 1e-9,
+            "WD200 hour {i}: parsed humidity must match the file's own record"
+        );
+        let e100 = wd100.get_hourly_data(i).expect("WD100 data row");
+        assert!(
+            (e100.dry_bulb_temp - recs100[i].dry_bulb_c).abs() < 1e-9,
+            "WD100 hour {i}: parsed dry bulb must match the file's own record"
+        );
+        assert!(
+            (e100.humidity - recs100[i].humidity_pct).abs() < 1e-9,
+            "WD100 hour {i}: parsed humidity must match the file's own record"
+        );
+    }
+
+    // Annual mean station pressure, computed from the parsed hourly records.
+    let mean_station_pressure = |recs: &[WdHourlyRecord]| -> f64 {
+        recs.iter().map(|r| r.station_pressure_pa).sum::<f64>() / recs.len() as f64
+    };
+    let mean_p200 = mean_station_pressure(&recs200);
+    let mean_p100 = mean_station_pressure(&recs100);
+    assert!(
+        mean_p200 > 98_000.0,
+        "WD200 (308 m, near sea level) annual mean station pressure must \
+         exceed 98 kPa, got {mean_p200:.1} Pa"
+    );
+    assert!(
+        mean_p100 < 85_000.0,
+        "WD100 (1650 m) annual mean station pressure must be below 85 kPa, \
+         got {mean_p100:.1} Pa"
+    );
+    assert!(
+        mean_p200 - mean_p100 > 10_000.0,
+        "WD200 and WD100 annual mean station pressures must differ by more \
+         than 10 kPa, got {mean_p200:.1} Pa vs {mean_p100:.1} Pa"
+    );
+    // The lower-elevation station must be the higher-pressure one: a reading
+    // that swapped the two files' pressures would break this.
+    assert!(
+        elev200 < elev100 && mean_p200 > mean_p100,
+        "the lower-elevation file must carry the higher station pressure \
+         (elev {elev200} vs {elev100} m, pressure {mean_p200:.1} vs {mean_p100:.1} Pa)"
+    );
+
+    // Peak summer dew point: Atlanta's humid summer against Denver's dry one.
+    let cal200 = wd_calendar("WD200.epw");
+    let cal100 = wd_calendar("WD100.epw");
+    assert_eq!(cal200.len(), 8760, "WD200: expected 8760 calendar rows");
+    assert_eq!(cal100.len(), 8760, "WD100: expected 8760 calendar rows");
+    let is_summer = |month: u8| (6..=8).contains(&month);
+    let summer_peak = |recs: &[WdHourlyRecord], cal: &[(u16, u8, u8, u8)]| -> f64 {
+        recs.iter()
+            .zip(cal.iter())
+            .filter_map(|(r, c)| {
+                if is_summer(c.1) {
+                    Some(r.dew_point_c)
+                } else {
+                    None
+                }
+            })
+            .fold(f64::MIN, f64::max)
+    };
+    let dp200 = summer_peak(&recs200, &cal200);
+    let dp100 = summer_peak(&recs100, &cal100);
+    assert!(
+        dp200 - dp100 >= DEWPOINT_MARGIN_C,
+        "WD200's peak summer dew point must exceed WD100's by at least \
+         {DEWPOINT_MARGIN_C} °C, got {dp200} °C vs {dp100} °C"
+    );
+
+    // The dew point the engine derives from each file's own parsed dry bulb,
+    // humidity and station pressure must show the same contrast.
+    let derived_summer_peak = |recs: &[WdHourlyRecord], cal: &[(u16, u8, u8, u8)]| -> f64 {
+        recs.iter()
+            .zip(cal.iter())
+            .filter_map(|(r, c)| {
+                if is_summer(c.1) {
+                    Some(calculate_dew_point(
+                        r.dry_bulb_c,
+                        r.humidity_pct,
+                        r.station_pressure_pa,
+                    ))
+                } else {
+                    None
+                }
+            })
+            .fold(f64::MIN, f64::max)
+    };
+    let derived200 = derived_summer_peak(&recs200, &cal200);
+    let derived100 = derived_summer_peak(&recs100, &cal100);
+    assert!(
+        derived200 - derived100 >= DEWPOINT_MARGIN_C,
+        "the derived peak summer dew point must differ by at least \
+         {DEWPOINT_MARGIN_C} °C, got {derived200} °C vs {derived100} °C"
+    );
+
+    // Humidity ratio: derived from every one of the 8760 hours of both
+    // files, from the humidity ratio implied by the relative humidity and
+    // by the dew point. Both must stay finite and non-negative, and the
+    // summer peaks must show the humid/dry contrast.
+    let mut peak_w200 = f64::MIN;
+    let mut peak_w100 = f64::MIN;
+    let mut peak_wd200 = f64::MIN;
+    let mut peak_wd100 = f64::MIN;
+    for i in 0..8760 {
+        for (recs, cal, peak_w, peak_wd) in [
+            (&recs200, &cal200, &mut peak_w200, &mut peak_wd200),
+            (&recs100, &cal100, &mut peak_w100, &mut peak_wd100),
+        ] {
+            let r = recs[i];
+            let p = r.station_pressure_pa;
+            assert!(
+                p > 0.0 && p.is_finite(),
+                "station pressure must be positive and finite, got {p}"
+            );
+            let w = calculate_humidity_ratio(r.dry_bulb_c, r.humidity_pct, p);
+            assert!(
+                w.is_finite() && w >= 0.0,
+                "humidity ratio must be finite and non-negative, got {w}"
+            );
+            // Humidity ratio implied by the dew point of the same record.
+            let pv = 0.62198 * 611.21 * ((17.502 * r.dew_point_c) / (r.dew_point_c + 243.12)).exp();
+            let w_dewpoint = 0.62198 * pv / (p - pv);
+            assert!(
+                w_dewpoint.is_finite() && w_dewpoint >= 0.0,
+                "dew-point humidity ratio must be finite and non-negative, got {w_dewpoint}"
+            );
+            if is_summer(cal[i].1) {
+                *peak_w = peak_w.max(w);
+                *peak_wd = peak_wd.max(w_dewpoint);
+            }
+        }
+    }
+    assert!(
+        peak_w200 - peak_w100 >= HUMIDITY_RATIO_MARGIN_KG_PER_KG,
+        "WD200's peak summer humidity ratio must exceed WD100's by at least \
+         {HUMIDITY_RATIO_MARGIN_KG_PER_KG} kg/kg, got {peak_w200} vs {peak_w100}"
+    );
+    assert!(
+        peak_wd200 - peak_wd100 >= HUMIDITY_RATIO_MARGIN_KG_PER_KG,
+        "WD200's peak summer dew-point humidity ratio must exceed WD100's \
+         by at least {HUMIDITY_RATIO_MARGIN_KG_PER_KG} kg/kg, got \
+         {peak_wd200} vs {peak_wd100}"
     );
 }
 
