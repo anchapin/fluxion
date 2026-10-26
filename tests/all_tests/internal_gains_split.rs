@@ -236,10 +236,16 @@ fn test_set_loads_preserves_convective_fraction() {
 // 5. Conservation check: φ_ia + φ_st + φ_m = total internal gain
 // ---------------------------------------------------------------------------
 
-/// Reproduce the per-zone split that `step_physics_5r1c` applies
-/// (`src/sim/thermal_model_physics/physics_impl.rs:~226-244`) and verify the
-/// three terms account for 100% of the internal-gain energy for any
-/// `convective_fraction` ∈ [0, 1] and any `solar_distribution_to_air` ∈ [0, 1].
+/// Reproduce the per-zone split that `step_physics_5r1c` applies and verify
+/// the three terms account for 100% of the internal-gain energy for any
+/// `convective_fraction` ∈ [0, 1]. Since round 101 the radiative share
+/// enters the surface pool in FULL and the mass node takes no direct
+/// internal term (the mass receives the pool's ISO 13790 §C.3 conductance
+/// share downstream), so the split conserves the load independently of
+/// `solar_distribution_to_air` — the retired solar-fraction factors
+/// (`st_int_frac = rad_frac·(1−s2a)` / `m_air_frac = rad_frac·s2a`) no
+/// longer participate (ASHRAE 140-2017 §5.2.1.12.2 scopes those fractions
+/// to transmitted solar only).
 ///
 /// This is a structural invariant: if a future change accidentally routes the
 /// radiative portion entirely to the air node (the pre-#2892 bug), the sum
@@ -247,54 +253,116 @@ fn test_set_loads_preserves_convective_fraction() {
 #[test]
 fn test_split_conserves_total_internal_gain() {
     for conv_frac in [0.0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0] {
-        for sol_dist_to_air in [0.0, 0.1, 0.3, 0.5, 1.0] {
-            let rad_frac = 1.0 - conv_frac;
-            let st_int_frac = rad_frac * (1.0 - sol_dist_to_air);
-            let m_air_frac = rad_frac * sol_dist_to_air;
+        let rad_frac = 1.0 - conv_frac;
 
-            let phi_ia: f64 = conv_frac; // × load
-            let phi_st: f64 = st_int_frac;
-            let phi_m: f64 = m_air_frac;
-            let total: f64 = phi_ia + phi_st + phi_m;
+        let phi_ia: f64 = conv_frac; // × load
+        let phi_st: f64 = rad_frac;
+        let phi_m: f64 = 0.0; // mass share arrives via the pool's §C.3 decomposition
+        let total: f64 = phi_ia + phi_st + phi_m;
 
-            assert!(
-                (total - 1.0).abs() < 1.0e-12,
-                "split must conserve: conv={conv_frac}, sol_to_air={sol_dist_to_air} \
-                 -> phi_ia={phi_ia:.3} + phi_st={phi_st:.3} + phi_m={phi_m:.3} = {total:.3}"
-            );
-        }
+        assert!(
+            (total - 1.0).abs() < 1.0e-12,
+            "split must conserve: conv={conv_frac} \
+             -> phi_ia={phi_ia:.3} + phi_st={phi_st:.3} + phi_m={phi_m:.3} = {total:.3}"
+        );
     }
 }
 
 /// Verify the §6.5 residential split distributes the radiative portion to
-/// surface + mass/air-routing — i.e. NOT zero on either side. This is the
-/// "bypass surface phi_st" failure mode the issue describes.
+/// the surface pool — i.e. NOT routed entirely to the air node. This is the
+/// "bypass surface phi_st" failure mode the issue describes. Since round 101
+/// the FULL radiative share reaches the surface pool regardless of the
+/// solar-distribution parameter; the mass share comes from the pool's
+/// ISO 13790 §C.3 conductance decomposition (`s_c > 0` for any real
+/// construction), not from a direct `phi_m` term.
 #[test]
 fn test_s65_split_does_not_bypass_surface_phi_st() {
     let conv = ASHRAE140_S65_RESIDENTIAL_CONVECTIVE;
     let rad = ASHRAE140_S65_RESIDENTIAL_RADIATIVE;
 
-    // For all reasonable ASHRAE 140 solar-distribution-to-air values
-    // (LowMass=0.30, HighMass=0.0, Special=0.10 per Issue #2359/#2444) the
-    // radiative portion must split between phi_st and phi_m, neither of which
-    // is zero.
-    for (label, sol_dist_to_air) in [("LowMass", 0.30), ("HighMass", 0.0), ("Special", 0.10)] {
-        let st_int_frac = rad * (1.0 - sol_dist_to_air);
-        let m_air_frac = rad * sol_dist_to_air;
+    // The retired st_int_frac = rad·(1−sol_dist_to_air) factor no longer
+    // scales the surface share: the pool takes the radiative portion in
+    // full for any configured solar_distribution_to_air.
+    let st_int_frac = rad;
 
-        assert!(
-            st_int_frac > 0.0,
-            "{label}: st_int_frac must be > 0 (got {st_int_frac})"
-        );
-        assert!(
-            st_int_frac <= rad,
-            "{label}: st_int_frac = {st_int_frac} must be <= radiative={rad}"
-        );
-        // Conservation
-        assert!(
-            (conv + st_int_frac + m_air_frac - 1.0).abs() < 1.0e-12,
-            "{label}: split must conserve (got {})",
-            conv + st_int_frac + m_air_frac
-        );
+    assert!(
+        st_int_frac > 0.0,
+        "st_int_frac must be > 0 (got {st_int_frac})"
+    );
+    assert!(
+        st_int_frac <= rad,
+        "st_int_frac = {st_int_frac} must be <= radiative={rad}"
+    );
+    // Conservation
+    assert!(
+        (conv + st_int_frac - 1.0).abs() < 1.0e-12,
+        "split must conserve (got {})",
+        conv + st_int_frac
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 6. Round 101 — internal-gain radiative is independent of the solar
+//    distribution parameter when the zone has no transmitted solar
+// ---------------------------------------------------------------------------
+
+/// ASHRAE 140-2017 §5.2.1.12.2 scopes the interior solar-distribution
+/// fractions (`solar_distribution_to_air` / `solar_beam_to_mass_fraction`)
+/// to TRANSMITTED SOLAR only; ISO 13790 §C.1–C.3 route the radiative half
+/// of the internal gains to the surface node in full (the mass receives it
+/// through the surface→mass conductance share). Internal gains therefore
+/// must not depend on `solar_distribution_to_air` at all.
+///
+/// Discriminating experiment (engine-backed, both routes): two identical
+/// Case 600 (5R1C) / Case 900 (9R4C) models with ZERO transmitted solar and
+/// a fixed internal load must commit BIT-IDENTICAL state regardless of the
+/// configured `solar_distribution_to_air`. Pre-round-101 code routed
+/// `rad_frac · solar_distribution_to_air` of the internal gains straight to
+/// the mass node (the `m_air_frac` factor), so the two models diverged.
+#[test]
+fn internal_radiative_state_independent_of_solar_distribution_when_solar_zero() {
+    for case_id in [ASHRAE140Case::Case600, ASHRAE140Case::Case900] {
+        let spec = case_id.spec();
+        let mut model_a = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
+        let mut model_b = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("default selector must initialize");
+
+        let n = model_a.hvac.num_zones.max(1);
+        // Nonzero solar_distribution_to_air on model A: the pre-101 internal
+        // split scaled with this parameter even with zero solar on the zone.
+        model_a.solar.solar_distribution_to_air = 0.3;
+        model_b.solar.solar_distribution_to_air = 0.0;
+
+        // Zero transmitted solar for both models; internal loads identical.
+        model_a.solar.solar_gains = VectorField::from_scalar(0.0, n);
+        model_b.solar.solar_gains = VectorField::from_scalar(0.0, n);
+        let loads: Vec<f64> = vec![5.0; n];
+        model_a.set_loads(&loads);
+        model_b.set_loads(&loads);
+
+        let outdoor_temp = 10.0;
+        for step in 0..24 {
+            model_a.step_physics(step, outdoor_temp, 3600.0);
+            model_b.step_physics(step, outdoor_temp, 3600.0);
+        }
+
+        let a_mass = model_a.mass.mass_temperatures.as_ref();
+        let b_mass = model_b.mass.mass_temperatures.as_ref();
+        for i in 0..n {
+            assert_eq!(
+                a_mass[i], b_mass[i],
+                "case {} zone {i}: mass temperature must not depend on \
+                 solar_distribution_to_air when transmitted solar is zero \
+                 (internal-gain radiative must not route by the solar fractions)",
+                spec.case_id
+            );
+        }
     }
 }

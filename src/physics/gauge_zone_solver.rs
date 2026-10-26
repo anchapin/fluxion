@@ -1060,10 +1060,15 @@ impl GaugeZoneSolver {
         let phi_ia_int = Q_internal_w * convective_fraction;
         let phi_int_rad = Q_internal_w - phi_ia_int;
         let st_sol_frac = 1.0 - solar_beam_to_mass_fraction;
-        let surface_pool =
-            remaining_sol * st_sol_frac + phi_int_rad * (1.0 - solar_distribution_to_air);
-        let mass_pool =
-            remaining_sol * solar_beam_to_mass_fraction + phi_int_rad * solar_distribution_to_air;
+        // [Round 101 — internal-gain radiative routes by the ISO 13790
+        // Annex C partition: phi_int_rad enters the surface pool in full
+        // and reaches the mass only through the pool's conductance share;
+        // the solar fractions no longer scale the internal split (same
+        // decision as the step_5r1c / step_9r4c / iterative gains sites;
+        // ASHRAE 140-2017 §5.2.1.12.2 scopes those fractions to
+        // transmitted solar only).]
+        let surface_pool = remaining_sol * st_sol_frac + phi_int_rad;
+        let mass_pool = remaining_sol * solar_beam_to_mass_fraction;
         // Solar-only pool portions for the per-surface absorption telemetry.
         let solar_surface_pool = remaining_sol * st_sol_frac;
         let solar_mass_pool = remaining_sol * solar_beam_to_mass_fraction;
@@ -1360,10 +1365,15 @@ impl GaugeZoneSolver {
         let phi_ia_int = bc.Q_internal_w * bc.convective_fraction;
         let phi_int_rad = bc.Q_internal_w - phi_ia_int;
         let st_sol_frac = 1.0 - bc.solar_beam_to_mass_fraction;
-        let surface_pool =
-            remaining_sol * st_sol_frac + phi_int_rad * (1.0 - bc.solar_distribution_to_air);
-        let mass_pool = remaining_sol * bc.solar_beam_to_mass_fraction
-            + phi_int_rad * bc.solar_distribution_to_air;
+        // [Round 101 — internal-gain radiative routes by the ISO 13790
+        // Annex C partition: phi_int_rad enters the surface pool in full
+        // and reaches the mass only through the pool's conductance share;
+        // the solar fractions no longer scale the internal split (same
+        // decision as the step_5r1c / step_9r4c / iterative gains sites;
+        // ASHRAE 140-2017 §5.2.1.12.2 scopes those fractions to
+        // transmitted solar only).]
+        let surface_pool = remaining_sol * st_sol_frac + phi_int_rad;
+        let mass_pool = remaining_sol * bc.solar_beam_to_mass_fraction;
         // Solar-only pool portions for the per-surface absorption telemetry.
         let solar_surface_pool = remaining_sol * st_sol_frac;
         let solar_mass_pool = remaining_sol * bc.solar_beam_to_mass_fraction;
