@@ -839,12 +839,192 @@ pub fn handle_automation_command(command: &AutomationSubcommand) -> Result<()> {
     Ok(())
 }
 
+/// Every case id understood by [`case_id_to_spec`].
+///
+/// The `FF` entries are the free-float variants (`600FF`, `650FF`, `900FF`,
+/// `950FF`). They are reachable only as *single-case* invocations and are
+/// deliberately excluded from range expansion (see [`expand_case_range`]).
+///
+/// The unit test `registry_ids_all_map_to_a_spec` in this module keeps the
+/// list in sync with `case_id_to_spec`.
+pub const REGISTRY_CASE_IDS: &[&str] = &[
+    "195", "600", "610", "620", "630", "640", "650", "800", "801", "802", "803", "804", "805",
+    "806", "807", "808", "809", "810", "900", "910", "920", "930", "940", "950", "960", "600FF",
+    "650FF", "900FF", "950FF",
+];
+
+/// Parse a case-range specification of the form `lo-hi` (e.g. `"195-470"`).
+///
+/// Returns `None` when `spec` is not a range at all, or when it is malformed:
+/// non-numeric bounds, more than one `-` separator, or reversed bounds
+/// (`lo > hi`). Malformed ranges are reported to the user through the regular
+/// "unknown case specification" usage block, never silently accepted.
+pub fn parse_case_range(spec: &str) -> Option<(u32, u32)> {
+    let mut parts = spec.split('-');
+    let lo = parts.next()?.trim().parse::<u32>().ok()?;
+    let hi = parts.next()?.trim().parse::<u32>().ok()?;
+    if parts.next().is_some() {
+        // More than one separator (e.g. "195-470-800").
+        return None;
+    }
+    if lo > hi {
+        // Reversed bounds (e.g. "810-800").
+        return None;
+    }
+    Some((lo, hi))
+}
+
+/// Expand an inclusive numeric range into the registry-supported case ids it
+/// contains, in ascending order.
+///
+/// Only *plain numeric* ids are returned. The free-float (`FF`) variants are
+/// single-case only, so they never take part in a range expansion.
+pub fn expand_case_range(lo: u32, hi: u32) -> Vec<String> {
+    let mut ids: Vec<u32> = REGISTRY_CASE_IDS
+        .iter()
+        // Exclude the `FF` (free-float) variants: only plain numeric ids
+        // participate in range expansion.
+        .filter(|id| id.chars().all(|c| c.is_ascii_digit()))
+        .filter_map(|id| id.parse::<u32>().ok())
+        .filter(|n| *n >= lo && *n <= hi)
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids.into_iter().map(|n| n.to_string()).collect()
+}
+
+/// Numeric ids inside the inclusive range `lo..=hi` that the case registry
+/// does **not** support.
+///
+/// These are reported explicitly (never silently dropped) so a range run can
+/// never look like a complete run when only part of the range is implemented.
+pub fn unsupported_case_ids(lo: u32, hi: u32) -> Vec<u32> {
+    let supported: std::collections::HashSet<u32> = expand_case_range(lo, hi)
+        .iter()
+        .filter_map(|id| id.parse::<u32>().ok())
+        .collect();
+    (lo..=hi).filter(|n| !supported.contains(n)).collect()
+}
+
+/// Render a sorted list of ids as compact inclusive segments (`196-470`).
+fn format_id_segments(ids: &[u32]) -> String {
+    let mut segments: Vec<String> = Vec::new();
+    let mut start: Option<u32> = None;
+    let mut prev: Option<u32> = None;
+    for &id in ids {
+        match start {
+            None => start = Some(id),
+            Some(s) => {
+                if let Some(p) = prev {
+                    if id != p + 1 {
+                        segments.push(if s == p {
+                            format!("{}", s)
+                        } else {
+                            format!("{}-{}", s, p)
+                        });
+                        start = Some(id);
+                    }
+                } else {
+                    start = Some(id);
+                }
+            }
+        }
+        prev = Some(id);
+    }
+    if let Some(s) = start {
+        let p = prev.unwrap_or(s);
+        segments.push(if s == p {
+            format!("{}", s)
+        } else {
+            format!("{}-{}", s, p)
+        });
+    }
+    segments.join(", ")
+}
+
+/// Print the shared usage block for an invalid case specification and build
+/// the matching error.
+///
+/// Both the single-case path and the range path use this so a malformed
+/// range fails with exactly the same message as an unknown case id.
+fn invalid_case_spec(case_spec: &str) -> anyhow::Error {
+    eprintln!("Unknown case specification: {}", case_spec);
+    eprintln!("Valid options:");
+    eprintln!("  Single cases: 800, 801, ..., 810");
+    eprintln!("  Case ranges: 195-470, 800-810");
+    anyhow!("Invalid case specification: {}", case_spec)
+}
+
+/// Run every registry-supported case inside an inclusive range.
+///
+/// The per-case work reuses the exact same diagnostics path as the
+/// single-case invocation (`case_id_to_spec` ->
+/// `ASHRAE140Validator::simulate_case_with_diagnostics`), so a range run and
+/// a single-case run produce identical numbers for the same case.
+///
+/// Ids inside the range that the registry does not support are reported
+/// explicitly ("skipped, not supported") so a partially-implemented range can
+/// never masquerade as a complete one.
+fn run_diagnostic_case_range(case_spec: &str) -> Result<()> {
+    let (lo, hi) = match parse_case_range(case_spec) {
+        Some(bounds) => bounds,
+        // Malformed range (non-numeric or reversed bounds): fail loudly with
+        // the regular usage message and a non-zero exit code.
+        None => return Err(invalid_case_spec(case_spec)),
+    };
+
+    let supported = expand_case_range(lo, hi);
+    let unsupported = unsupported_case_ids(lo, hi);
+
+    // Run the supported cases through the single-case diagnostics path.
+    let validator = ASHRAE140Validator::new();
+    let weather = EpwWeatherSource::from_file(bundled_denver_epw_path())
+        .expect("Failed to load EPW weather data");
+    for id in &supported {
+        let spec = case_id_to_spec(id).ok_or_else(|| anyhow!("Unknown case ID: {}", id))?;
+        let (results, _) = validator.simulate_case_with_diagnostics(&spec, &weather, id);
+        println!(
+            "Case {} result: {:.2} MWh heating, {:.2} MWh cooling",
+            id, results.annual_heating_mwh, results.annual_cooling_mwh
+        );
+    }
+
+    // Report the remainder of the range explicitly - never silently.
+    if !unsupported.is_empty() {
+        println!(
+            "Skipped, not supported: {} case id(s) in range {}-{} ({}).",
+            unsupported.len(),
+            lo,
+            hi,
+            format_id_segments(&unsupported)
+        );
+    }
+
+    println!(
+        "Completed range {}: {} case(s) run, {} skipped, not supported.",
+        case_spec,
+        supported.len(),
+        unsupported.len()
+    );
+    Ok(())
+}
+
 /// Validates a specific diagnostic case or range.
 ///
 /// Handles explicit diagnostic case invocation via the `validate-case`
 /// subcommand, supporting individual cases (e.g., "800") and case ranges
-/// (e.g., "195-470", "800-810"). The ranges are documented but fail loudly
-/// with `#2947` (originally #2711) until they are wired in.
+/// (e.g., "195-470", "800-810").
+///
+/// Ranges are expanded against the case registry ([`case_id_to_spec`]) and
+/// each supported case is run through the *same* diagnostics path as the
+/// single-case invocation. Range ids that the registry does not support are
+/// reported explicitly as "skipped, not supported" - a range never fails
+/// silently and never partially succeeds without saying so.
+///
+/// Issue #2947 (originally #2711) used to stub the ranges out with a
+/// `not_yet_implemented` error. The ranges are wired in now; the remaining
+/// `#2947` stubs in this module (measure execution, workflow execution) are
+/// unchanged.
 ///
 /// # Example
 ///
@@ -854,6 +1034,10 @@ pub fn handle_automation_command(command: &AutomationSubcommand) -> Result<()> {
 /// fluxion validate-case 800-810
 /// ```
 pub fn validate_diagnostic_case(case_spec: &str) -> Result<()> {
+    // Range form: "lo-hi" (e.g. "195-470", "800-810").
+    if case_spec.contains('-') {
+        return run_diagnostic_case_range(case_spec);
+    }
     match case_spec {
         // Single HVAC equipment cases (800-810)
         "800" | "801" | "802" | "803" | "804" | "805" | "806" | "807" | "808" | "809" | "810" => {
@@ -872,21 +1056,8 @@ pub fn validate_diagnostic_case(case_spec: &str) -> Result<()> {
                 case_spec, results.annual_heating_mwh, results.annual_cooling_mwh
             );
         }
-        // Diagnostic ranges - not yet implemented (issue #2947, originally
-        // #2711). Kept in the match so usage/`--help` documents the option,
-        // but fail loudly.
-        "195-470" => {
-            return Err(not_yet_implemented("diagnostic case range 195-470"));
-        }
-        "800-810" => {
-            return Err(not_yet_implemented("diagnostic case range 800-810"));
-        }
         _ => {
-            eprintln!("Unknown case specification: {}", case_spec);
-            eprintln!("Valid options:");
-            eprintln!("  Single cases: 800, 801, 802, ..., 810");
-            eprintln!("  Case ranges: 195-470, 800-810");
-            anyhow::bail!("Invalid case specification: {}", case_spec);
+            return Err(invalid_case_spec(case_spec));
         }
     }
     Ok(())
@@ -1969,4 +2140,74 @@ pub fn run_cli() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn registry_ids_all_map_to_a_spec() {
+        for id in REGISTRY_CASE_IDS {
+            assert!(
+                case_id_to_spec(id).is_some(),
+                "registry id {id} must map to a spec"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_case_range_accepts_valid_ranges() {
+        assert_eq!(parse_case_range("800-810"), Some((800, 810)));
+        assert_eq!(parse_case_range("195-470"), Some((195, 470)));
+    }
+
+    #[test]
+    fn parse_case_range_rejects_malformed_ranges() {
+        assert_eq!(parse_case_range("810-800"), None, "reversed bounds");
+        assert_eq!(parse_case_range("abc-def"), None, "non-numeric");
+        assert_eq!(parse_case_range("195-470-800"), None, "extra separator");
+        assert_eq!(parse_case_range("800"), None, "not a range");
+    }
+
+    #[test]
+    fn expand_800_810_covers_all_eleven_cases() {
+        let ids = expand_case_range(800, 810);
+        assert_eq!(ids.len(), 11);
+        assert_eq!(ids.first().map(String::as_str), Some("800"));
+        assert_eq!(ids.last().map(String::as_str), Some("810"));
+    }
+
+    #[test]
+    fn expand_195_470_yields_only_supported_subset() {
+        assert_eq!(expand_case_range(195, 470), vec!["195".to_string()]);
+        let unsupported = unsupported_case_ids(195, 470);
+        assert_eq!(unsupported.len(), 470 - 195 + 1 - 1);
+        assert!(!unsupported.contains(&195));
+    }
+
+    #[test]
+    fn expand_excludes_ff_variants() {
+        // 600-650 spans 600FF/650FF in the registry; ranges must exclude them.
+        let ids = expand_case_range(600, 650);
+        assert!(ids.iter().all(|id| !id.contains("FF")));
+        assert_eq!(
+            ids,
+            vec!["600", "610", "620", "630", "640", "650"]
+                .into_iter()
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        );
+        assert!(expand_case_range(900, 960)
+            .iter()
+            .all(|id| !id.contains("FF")));
+    }
+
+    #[test]
+    fn malformed_range_errors_with_usage() {
+        let err = validate_diagnostic_case("810-800").unwrap_err();
+        assert!(err.to_string().contains("Invalid case specification"));
+        let err = validate_diagnostic_case("abc-def").unwrap_err();
+        assert!(err.to_string().contains("Invalid case specification"));
+    }
 }
