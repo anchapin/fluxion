@@ -1,6 +1,6 @@
-# repo_sha=bfdb18ecede1438fda8791204a24fdc902e01725
-# recorded_utc=2026-10-24T16:31:28Z
-# source=strict-gate log strict_gate_output.txt
+# repo_sha=bccb3ebbda7cdc801cf3a61c5dd9eec5d752cad6
+# recorded_utc=2026-10-26T01:47:32Z
+# source=round 100 vent-slice physics/r100-vent-no-forced-convection (tip bccb3ebb; case_950/950FF/900FF rows moved by the ASHRAE 140-2017 5.2.1.10.1 h_tr_is multiplier removal)
 # Epsilon policy: 0.1% relative (issue #4281); intentional physics
 # changes re-record this file in the same PR via --update-baseline.
 case,metric,value,unit
@@ -38,10 +38,10 @@ case,metric,value,unit
 930,H,2.615000,MWh
 940,C,2.236000,MWh
 940,H,0.766000,MWh
-950,C,0.918000,MWh
+950,C,0.961000,MWh
 950,H,0.000000,MWh
-950FF,Tmax,38.780000,C
-950FF,Tmin,-15.670000,C
+950FF,Tmax,39.010000,C
+950FF,Tmin,-15.960000,C
 960,C,1.273000,MWh
 960,H,2.111000,MWh
 970,C,1.292000,MWh

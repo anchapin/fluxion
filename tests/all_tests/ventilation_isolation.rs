@@ -28,7 +28,7 @@ use uom::si::thermal_conductance::watt_per_kelvin;
 
 use fluxion::sim::ventilation::{
     ach_to_conductance, calculate_combined_infiltration_ach, calculate_stack_infiltration_ach,
-    calculate_wind_infiltration_ach, h_tr_is_ach_multiplier, AIR_DENSITY, AIR_SPECIFIC_HEAT,
+    calculate_wind_infiltration_ach, AIR_DENSITY, AIR_SPECIFIC_HEAT,
 };
 use fluxion::sim::ventilation::{
     ScheduledVentilation, VentilationSchedule, WeatherDependentVentilation,
@@ -642,63 +642,6 @@ fn test_night_ventilation_delivers_cooling_benefit() {
         night_h_ve,
         baseline_h_ve,
         heat_transfer_ratio
-    );
-}
-
-/// Case 650/950 spec: ACH=13.14 (night flush fan) → h_tr_is multiplier ≈ 2.91×.
-///
-/// The forced-convection interior surface heat transfer correlation:
-///   h_c = h_c_still + 0.84 × ACH^0.8   [W/m²K]
-/// gives ~10.0 W/m²K at ACH=13.14, vs 3.45 W/m²K still air.
-/// Ratio = 10.0 / 3.45 ≈ 2.91×.
-///
-/// This multiplier boosts the interior surface heat transfer coefficient during
-/// night flush, increasing heat loss from the zone mass at night — part of the
-/// mechanism that delivers the morning cooling benefit validated above.
-///
-/// Reference: ASHRAE Handbook — Fundamentals ch. 4, EnergyPlus Engineering Reference.
-#[test]
-fn test_h_tr_is_ach_multiplier_night_flush() {
-    let start = Instant::now();
-
-    // Case 650/950 spec night flush ACH
-    let night_flush_ach: f64 = 13.14;
-    let expected_multiplier: f64 = 2.91;
-    let tolerance: f64 = 0.02;
-
-    let multiplier = h_tr_is_ach_multiplier(night_flush_ach);
-    let drift = (multiplier - expected_multiplier).abs();
-
-    eprintln!("\n=== h_tr_is_ach_multiplier night flush (Issue #1680 / SOLAR-04) ===");
-    eprintln!("Night flush ACH             : {}", night_flush_ach);
-    eprintln!("Expected multiplier          : {:.2}", expected_multiplier);
-    eprintln!("Actual multiplier           : {:.6}", multiplier);
-    eprintln!("Drift                      : {:.6}", drift);
-    eprintln!("Tolerance                  : ±{:.2}", tolerance);
-    eprintln!(
-        "h_c_forced                  : {:.2} W/m²K (vs still 3.45 W/m²K)",
-        3.45 * multiplier
-    );
-    eprintln!("Elapsed                     : {:.2?}", start.elapsed());
-
-    assert!(
-        drift < tolerance,
-        "h_tr_is_ach_multiplier({:.2}) must be {:.2} ± {:.2}; got {:.6} (drift {:.6})",
-        night_flush_ach,
-        expected_multiplier,
-        tolerance,
-        multiplier,
-        drift
-    );
-
-    // Also verify it's substantially above baseline (1.14× at ACH=0.5)
-    let baseline_multiplier = h_tr_is_ach_multiplier(0.5);
-    assert!(
-        multiplier > baseline_multiplier * 2.0,
-        "Night flush multiplier ({:.2}) must be > 2× baseline ({:.2}); got {:.2}",
-        multiplier,
-        baseline_multiplier,
-        multiplier / baseline_multiplier
     );
 }
 

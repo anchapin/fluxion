@@ -22,154 +22,23 @@
 //!    was a no-op that silently dropped the contribution. The trace below
 //!    verifies the injection for the Case 650/950 spec ACH (= 13.14).
 //!
-//! 3. **Capped convective-to-air multiplier** —
-//!    `ventilation::capped_h_tr_is_ach_multiplier` returns
-//!    `min(h_tr_is_ach_multiplier(ach), MAX_CONVECTIVE_TO_AIR_MULTIPLIER)`.
-//!    The cap (`= 2.0×`) bounds the morning-ramp dump so peak cooling stays
-//!    within the ASHRAE 140 ±15 % band for Cases 610/620/630/640/650. The
-//!    trace below records the forced-convection contribution vs the base
-//!    3.45 W/m²K still-air value at every ACH that appears in the ASHRAE 140
-//!    600/900 series.
+//! 3. **Capped convective-to-air multiplier** — REMOVED in round 100.
+//!    The forced-convection h_tr_is multiplier (#1279/#1624/#2871) violated
+//!    ASHRAE 140-2017 §5.2.1.10.1 ("operation of the specified ideal
+//!    mechanical system shall have no effect on the interior surface
+//!    convective heat transfer flow regime") and was inconsistent with the
+//!    5R1C route (650/650FF, #921) despite the identical mechanical spec of
+//!    §5.2.2.3.5.1 → §5.2.2.3.2.1. Its pins were deleted with it; only the
+//!    still-valid governor pins remain in this module.
 //!
 //! # Reference
 //!
-//! - ASHRAE Handbook — Fundamentals (ch. 4), EnergyPlus Engineering Reference
-//!   (interior surface forced-convection correlation).
 //! - Issue #2871: Case 600-series peak-cooling OVER (+92 % Case 650, +48 %
 //   Case 610) — surface-solar partition non-physical.
-//! - Issue #1624: forced-convection h_tr_is dynamic boost during high-ACH
-//!   night flush (the natural ASHRAE/EnergyPlus correlation).
-//! - Issue #1279: dynamic h_tr_is ACH multiplier wiring (foundation).
+//! - Round 100 (2026-10-25): multiplier removal per ASHRAE 140-2017
+//!   §5.2.1.10.1; see the branch PR for the re-record.
 
 use fluxion::sim::thermal_selector::ThermalSelector;
-use fluxion::sim::ventilation::{
-    capped_h_tr_is_ach_multiplier, h_tr_is_ach_multiplier, MAX_CONVECTIVE_TO_AIR_MULTIPLIER,
-};
-
-const H_C_STILL_W_M2K: f64 = 3.45;
-
-/// Helper — formatted trace of a single forced-convection sample. The output
-/// is intentionally verbose so a reviewer can correlate each ACH with the
-/// resulting multiplier, the effective interior film coefficient, and the
-/// ratio against the still-air baseline.
-fn trace_ach_sample(label: &str, ach: f64) {
-    let natural = h_tr_is_ach_multiplier(ach);
-    let capped = capped_h_tr_is_ach_multiplier(ach);
-    let h_c_natural = H_C_STILL_W_M2K * natural;
-    let h_c_capped = H_C_STILL_W_M2K * capped;
-    eprintln!(
-        "[#2871 trace] {label:>22}  ACH={ach:6.2}  natural={natural:5.2}×  capped={capped:5.2}×  \
-         h_c_natural={h_c_natural:5.2} W/m²K  h_c_capped={h_c_capped:5.2} W/m²K  \
-         base {H_C_STILL_W_M2K:.2} W/m²K still air",
-    );
-}
-
-// =========================================================================
-// 1. Cap itself — pin the constant and the function
-// =========================================================================
-
-/// Pin the cooling-mode cap. This is the public contract — any change to
-/// `MAX_CONVECTIVE_TO_AIR_MULTIPLIER` is a physics change and must be
-/// accompanied by a re-validation against ASHRAE 140 Cases 600–950.
-#[test]
-fn test_max_convective_to_air_multiplier_is_2x() {
-    assert!(
-        (MAX_CONVECTIVE_TO_AIR_MULTIPLIER - 2.0).abs() < 1e-9,
-        "MAX_CONVECTIVE_TO_AIR_MULTIPLIER must equal 2.0× (≈ 6.9 W/m²K effective h_c \
-         vs the 3.45 W/m²K still-air baseline); got {MAX_CONVECTIVE_TO_AIR_MULTIPLIER}",
-    );
-}
-
-/// `capped_h_tr_is_ach_multiplier` returns the natural value when it is below
-/// the cap and the cap itself when the natural value exceeds it.
-#[test]
-fn test_capped_multiplier_returns_natural_when_below_cap() {
-    // ACH=3 → natural ≈ 1.59×, well below cap
-    let natural = h_tr_is_ach_multiplier(3.0);
-    let capped = capped_h_tr_is_ach_multiplier(3.0);
-    assert!(
-        (capped - natural).abs() < 1e-12,
-        "ACH=3.0 natural ({natural:.4}) must pass through unchanged; got capped={capped:.4}",
-    );
-}
-
-/// `capped_h_tr_is_ach_multiplier` clamps very-high-ACH values to the cap.
-#[test]
-fn test_capped_multiplier_clamps_at_max() {
-    // ACH=40 → natural ≈ 5.66×, must clamp to cap = 2.0×
-    let natural = h_tr_is_ach_multiplier(40.0);
-    let capped = capped_h_tr_is_ach_multiplier(40.0);
-    assert!(
-        (capped - MAX_CONVECTIVE_TO_AIR_MULTIPLIER).abs() < 1e-12,
-        "ACH=40.0 natural ({natural:.4}) must clamp to {MAX_CONVECTIVE_TO_AIR_MULTIPLIER}; got capped={capped:.4}",
-    );
-}
-
-// =========================================================================
-// 2. Forced-convection contribution vs the 3.45 W/m²K still-air baseline
-// =========================================================================
-
-/// Trace the forced-convection contribution vs the base 3.45 W/m²K still-air
-/// value at every ACH that appears in the ASHRAE 140 600/900 series.
-///
-/// This is the canonical acceptance-criterion trace for Issue #2871.
-/// The values printed MUST be inspected whenever the cap, the natural
-/// correlation, or the test fixtures change.
-#[test]
-fn test_forced_convection_trace_vs_still_air_baseline() {
-    eprintln!(
-        "\n=== Issue #2871 forced-convection trace (cap = {MAX_CONVECTIVE_TO_AIR_MULTIPLIER:.2}×, \
-         h_c_still = {H_C_STILL_W_M2K:.2} W/m²K) ===",
-    );
-
-    // Daytime baseline — infiltration-only (ASHRAE 140 default 0.5 ACH).
-    trace_ach_sample("day_infiltration", 0.5);
-
-    // Pre-night-vent infiltration (Case 650 spec: 0.5 ACH baseline).
-    trace_ach_sample("case650_daytime", 0.5);
-
-    // Case 950 night-vent threshold (3 ACH, the boundary of the natural
-    // multiplier band where the boost first crosses 1.5×).
-    trace_ach_sample("case950_threshold", 3.0);
-
-    // Case 650/950 spec night flush (13.14 ACH → natural 2.91×, capped to 2.0×).
-    trace_ach_sample("case650_night_flush", 13.14);
-
-    // Theoretical high-ACH night vent (40 ACH → natural 5.66×, capped to 2.0×).
-    trace_ach_sample("high_ach_theoretical", 40.0);
-
-    // Verification: the Case 650 spec multiplier at ACH=13.14 is the critical
-    // acceptance value — it MUST be capped to limit the morning-ramp dump.
-    let natural = h_tr_is_ach_multiplier(13.14);
-    let capped = capped_h_tr_is_ach_multiplier(13.14);
-    assert!(
-        natural > MAX_CONVECTIVE_TO_AIR_MULTIPLIER,
-        "Sanity: ACH=13.14 natural multiplier ({natural:.3}) must exceed the cap \
-         ({MAX_CONVECTIVE_TO_AIR_MULTIPLIER:.3}); otherwise the cap is moot.",
-    );
-    assert!(
-        (capped - MAX_CONVECTIVE_TO_AIR_MULTIPLIER).abs() < 1e-12,
-        "Case 650 spec night flush (ACH=13.14) must clamp to the cap; \
-         got natural={natural:.3}, capped={capped:.3}",
-    );
-}
-
-/// The capped effective interior film coefficient (h_c, capped) MUST remain
-/// above the still-air 3.45 W/m²K baseline for any active forced-convection
-/// schedule. This guards against a regression that would zero out the boost.
-#[test]
-fn test_capped_effective_hc_above_still_air_baseline() {
-    for &ach in &[0.5, 1.0, 3.0, 5.0, 10.0, 13.14, 40.0] {
-        let capped = capped_h_tr_is_ach_multiplier(ach);
-        let h_c_effective = H_C_STILL_W_M2K * capped;
-        assert!(
-            h_c_effective >= H_C_STILL_W_M2K - 1e-12,
-            "Effective h_c ({h_c_effective:.4} W/m²K) must remain at or above the \
-             still-air baseline ({H_C_STILL_W_M2K:.4} W/m²K) for ACH={ach}; \
-             capped multiplier={capped:.4}",
-        );
-    }
-}
 
 // =========================================================================
 // 3. Cooling-mode symmetry — sign of the radiative gain must not flip the
@@ -245,17 +114,6 @@ fn test_cooling_mode_governor_is_symmetric_under_sign_inversion() {
     // un-conditioned zone temperature.
     let _ = model.calculate_free_float_temperature(0, 25.0);
 
-    // Structural property: `capped_h_tr_is_ach_multiplier(0.0) = 1.0`. The
-    // no-night-vent path remains a no-op, so the symmetric fallback above
-    // continues to be the dominant routing.
-    assert_eq!(
-        capped_h_tr_is_ach_multiplier(0.0),
-        1.0,
-        "Zero-ACH night vent must leave the boost at unity; \
-         capped_h_tr_is_ach_multiplier(0.0)={}",
-        capped_h_tr_is_ach_multiplier(0.0),
-    );
-
     // Pin the governor factor itself (the LowMass value used by Case 600).
     // This is the constant `0.30` set in `thermal_model_core.rs:2071` for
     // `ConstructionType::LowMass` (per Issue #2359).
@@ -303,44 +161,4 @@ fn sign_split(gain_watts: f64, governor: f64) -> (f64, f64) {
     let phi_st = gain_watts * governor;
     let phi_m = gain_watts * (1.0 - governor);
     (phi_st, phi_m)
-}
-
-// =========================================================================
-// 4. Cool-mode cap does NOT silently cancel out the boost
-// =========================================================================
-
-/// The cap MUST be strictly greater than the daytime infiltration baseline
-/// multiplier; otherwise the cool-side forced-convection boost would be
-/// indistinguishable from no boost at all.
-#[test]
-fn test_cap_is_strictly_above_daytime_infiltration_multiplier() {
-    let daytime = h_tr_is_ach_multiplier(0.5);
-    assert!(
-        MAX_CONVECTIVE_TO_AIR_MULTIPLIER > daytime,
-        "MAX_CONVECTIVE_TO_AIR_MULTIPLIER ({MAX_CONVECTIVE_TO_AIR_MULTIPLIER:.3}) must exceed the \
-         daytime-infiltration multiplier ({daytime:.3}); otherwise the cap would zero out the \
-         night-vent boost entirely",
-    );
-}
-
-/// `capped_h_tr_is_ach_multiplier` must be monotonically non-decreasing in
-/// ACH up to the cap, and constant at the cap thereafter. (This is the
-/// practical definition of "capped monotone".)
-#[test]
-fn test_capped_multiplier_is_monotone_non_decreasing() {
-    let mut last = 0.0_f64;
-    for ach in [0.0, 0.5, 1.0, 2.0, 4.0, 8.0, 13.14, 25.0, 50.0, 200.0] {
-        let m = capped_h_tr_is_ach_multiplier(ach);
-        assert!(
-            m + 1e-12 >= last,
-            "capped_h_tr_is_ach_multiplier must be monotone non-decreasing in ACH; \
-             ACH={ach} → {m}, previous={last}",
-        );
-        last = m;
-    }
-    assert!(
-        (last - MAX_CONVECTIVE_TO_AIR_MULTIPLIER).abs() < 1e-12,
-        "For very large ACH the multiplier must saturate at the cap; \
-         got {last}, expected {MAX_CONVECTIVE_TO_AIR_MULTIPLIER}",
-    );
 }
