@@ -1,0 +1,136 @@
+! Fixture for issue #4631 — IDF internal-gain import (Lights + ElectricEquipment).
+! Single zone Z1, 6 m x 8 m (48 m2) floor, one wall for the enclosure.
+!
+! Expected import:
+!   Lights "Z1 Lights"        Watts/Area 10.0 W/m2 -> lighting_power_density_w_m2 = 10.0
+!   ElectricEquipment "Z1 Plugs"   Watts/Area 5.0 W/m2 -> 5.0 * 48 m2 = 240 W
+!   ElectricEquipment "Z1 Server"  EquipmentLevel 150 W  -> 150 W
+
+Version, 25.2;
+
+Building,
+  GainsBldg,       !- Name
+  0.0,             !- North Axis {deg}
+  Suburbs,         !- Terrain
+  0.04,            !- Loads Convergence Tolerance Value
+  0.4,             !- Temperature Convergence Tolerance Value {deltaC}
+  FullExterior,    !- Solar Distribution
+  25;              !- Maximum Number of Warmup Days
+
+Zone,
+  Z1,              !- Name
+  0.0,             !- Direction of Relative North {deg}
+  0.0,             !- X Origin {m}
+  0.0,             !- Y Origin {m}
+  0.0,             !- Z Origin {m}
+  1,               !- Type
+  2.7,             !- Ceiling Height {m}
+  129.6,           !- Volume {m3}
+  48.0;            !- Floor Area {m2}
+
+Material,
+  MatWall,         !- Name
+  MediumRough,     !- Roughness
+  0.1,             !- Thickness {m}
+  1.0,             !- Conductivity {W/m-K}
+  2000,            !- Density {kg/m3}
+  800;             !- Specific Heat {J/kg-K}
+
+Construction,
+  Wall1,           !- Name
+  MatWall;         !- Outside Layer
+
+GlobalGeometryRules,
+  UpperLeftCorner, !- Starting Vertex Position
+  CounterClockWise,!- Vertex Entry Direction
+  World;           !- Coordinate System
+
+BuildingSurface:Detailed,
+  SouthWall,       !- Name
+  Wall,            !- Surface Type
+  Wall1,           !- Construction Name
+  Z1,              !- Zone Name
+  ,                !- Space Name
+  Outdoors,        !- Outside Boundary Condition
+  ,                !- Outside Boundary Condition Object
+  SunExposed,      !- Sun Exposure
+  WindExposed,     !- Wind Exposure
+  ,                !- View Factor to Ground
+  4,               !- Number of Vertices
+  0.0, 0.0, 2.7,   !- X,Y,Z ==> Vertex 1 {m}
+  6.0, 0.0, 2.7,   !- X,Y,Z ==> Vertex 2 {m}
+  6.0, 0.0, 0.0,   !- X,Y,Z ==> Vertex 3 {m}
+  0.0, 0.0, 0.0;   !- X,Y,Z ==> Vertex 4 {m}
+
+BuildingSurface:Detailed,
+  Z1 Floor,        !- Name
+  Floor,           !- Surface Type
+  Wall1,           !- Construction Name
+  Z1,              !- Zone Name
+  ,                !- Space Name
+  Ground,          !- Outside Boundary Condition
+  ,                !- Outside Boundary Condition Object
+  NoSun,           !- Sun Exposure
+  NoWind,          !- Wind Exposure
+  ,                !- View Factor to Ground
+  4,               !- Number of Vertices
+  0.0, 0.0, 0.0,   !- X,Y,Z ==> Vertex 1 {m}
+  6.0, 0.0, 0.0,   !- X,Y,Z ==> Vertex 2 {m}
+  6.0, 8.0, 0.0,   !- X,Y,Z ==> Vertex 3 {m}
+  0.0, 8.0, 0.0;   !- X,Y,Z ==> Vertex 4 {m}
+
+Lights,
+  Z1 Lights,       !- Name
+  Z1,              !- Zone or ZoneList Name
+  ALWAYS ON,       !- Schedule Name
+  Watts/Area,      !- Design Level Calculation Method
+  ,                !- Lighting Level {W}
+  10.0,            !- Watts per Zone Floor Area {W/m2}
+  0.0,             !- Watts per Person {W/person}
+  0.0,             !- Return Air Fraction
+  0.0,             !- Fraction Radiant
+  0.59,            !- Fraction Visible
+  0.0,             !- Fraction Replaceable
+  GeneralLighting; !- End-Use Subcategory
+
+ElectricEquipment,
+  Z1 Plugs,        !- Name
+  Z1,              !- Zone or ZoneList Name
+  ALWAYS ON,       !- Schedule Name
+  Watts/Area,      !- Design Level Calculation Method
+  ,                !- Design Level {W}
+  5.0,             !- Watts per Zone Floor Area {W/m2}
+  0.0,             !- Watts per Person {W/person}
+  0.0,             !- Fraction Latent
+  0.3,             !- Fraction Radiant
+  0.0,             !- Fraction Lost
+  0.0,             !- CO2 Generation Rate
+  PlugLoads;       !- End-Use Subcategory
+
+ElectricEquipment,
+  Z1 Server,       !- Name
+  Z1,              !- Zone or ZoneList Name
+  ALWAYS ON,       !- Schedule Name
+  EquipmentLevel,  !- Design Level Calculation Method
+  150.0,           !- Design Level {W}
+  ,                !- Watts per Zone Floor Area {W/m2}
+  0.0,             !- Watts per Person {W/person}
+  0.0,             !- Fraction Latent
+  0.3,             !- Fraction Radiant
+  0.0,             !- Fraction Lost
+  0.0,             !- CO2 Generation Rate
+  PlugLoads;       !- End-Use Subcategory
+
+Site:GroundTemperature:BuildingSurface,
+  18.0,            !- January {C}
+  18.0,            !- February {C}
+  18.0,            !- March {C}
+  18.0,            !- April {C}
+  18.0,            !- May {C}
+  18.0,            !- June {C}
+  18.0,            !- July {C}
+  18.0,            !- August {C}
+  18.0,            !- September {C}
+  18.0,            !- October {C}
+  18.0,            !- November {C}
+  18.0;            !- December {C}

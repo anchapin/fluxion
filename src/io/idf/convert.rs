@@ -27,6 +27,26 @@
 //! | `Construction` | `constructions.{wall,roof,floor}` |
 //! | `BuildingSurface:Detailed` | `geometry.zones[i].floor_area` + `volume` |
 //! | `Site:GroundTemperature:BuildingSurface` | `metadata.run_period.ground_temperature` |
+//! | `Lights` | `schedules.lighting_power_density_w_m2` (issue #4631) |
+//! | `ElectricEquipment` | `schedules.equipment[]` (issue #4631) |
+//!
+//! # Internal gains (issue #4631)
+//!
+//! `Lights` and `ElectricEquipment` objects are imported into the
+//! schedule set instead of being silently dropped:
+//!
+//! - A `Lights` object with the `Watts/Area` design level method sets
+//!   `schedules.lighting_power_density_w_m2` to exactly that value; the
+//!   `LightingLevel` method is converted through the zone's floor area.
+//! - Every `ElectricEquipment` object becomes one `EquipmentSpec` whose
+//!   `rated_power_w` matches the object's total rated power.
+//!
+//! **Known limitation.** The imported equipment specs are always-on:
+//! their `hourly_fractions` are 1.0 for every hour because the IDF's
+//! per-object `Schedule Name` is not mapped onto the schema's hourly
+//! utilization profile (the `Schedule:*` import is separate work). The
+//! lighting density is imported, but the shape of the
+//! `schedules.lighting` profile is not.
 //!
 //! Both [`TryFrom<&IdfFile> for SimulationSchemaV1`] and
 //! [`TryFrom<&IdfFile> for SimulationSchema`] are implemented here.
@@ -56,9 +76,9 @@
 use std::convert::TryFrom;
 
 use crate::api::schema::{
-    ConstructionSet, ControlConfig, ControlSet, Geometry, ScheduleSet, SchemaMetadata,
-    SchemaVersion, SimulationSchema, SimulationSchemaV1, SurfaceConstruction, WindowSpec,
-    ZoneGeometry,
+    ConstructionSet, ControlConfig, ControlSet, EquipmentSpec, Geometry, ScheduleSet,
+    SchemaMetadata, SchemaVersion, SimulationSchema, SimulationSchemaV1, SurfaceConstruction,
+    WindowSpec, ZoneGeometry,
 };
 use crate::ashrae_cases::Orientation;
 use crate::sim::boundary::{GroundTemperature, MonthlyGroundTemperature};
@@ -175,7 +195,7 @@ impl TryFrom<&IdfFile> for SimulationSchemaV1 {
             .unwrap_or_else(|| "ZONE1".to_string());
 
         // 6. Build schedules and controls from IDF objects.
-        let schedules = build_schedules(idf, &zone_name);
+        let schedules = build_schedules(idf, &zone_name, &geometry.zones)?;
         let controls = build_controls(idf, &zone_name);
 
         // 7. Wire metadata.run_period into the metadata struct via the
@@ -855,18 +875,259 @@ fn extract_setpoints(idf: &IdfFile, zone_name: &str) -> Option<(f64, f64)> {
 /// Returns a `ScheduleSet` with HVAC setpoints extracted from
 /// `ZoneControl:Thermostat` + `ThermostatSetpoint:DualSetpoint` +
 /// `Schedule:Compact` objects, or defaults if not found.
-fn build_schedules(idf: &IdfFile, zone_name: &str) -> ScheduleSet {
+///
+/// Issue #4631: the internal gains (`Lights` / `ElectricEquipment`) are
+/// extracted here as well and are **not** silently dropped — an
+/// unsupported design-level method or an unknown zone reference is
+/// reported as a precise [`IdfError::Conversion`] instead.
+fn build_schedules(
+    idf: &IdfFile,
+    zone_name: &str,
+    zones: &[ZoneGeometry],
+) -> Result<ScheduleSet, IdfError> {
     let (heat_sp, cool_sp) = extract_setpoints(idf, zone_name).unwrap_or((20.0, 24.0));
-    ScheduleSet {
+    let (lighting_power_density_w_m2, equipment) = extract_internal_gains(idf, zones)?;
+    Ok(ScheduleSet {
         occupancy: DailySchedule::weekly("Occupancy".to_string()),
         lighting: DailySchedule::weekly("Lighting".to_string()),
         hvac: HVACSchedule::constant_schedule(heat_sp, cool_sp)
             .expect("constant_schedule on fresh daily schedules cannot fail"),
         infiltration: None,
-        // Issue #4101: no IDF-sourced lighting density or equipment yet.
-        lighting_power_density_w_m2: None,
-        equipment: Vec::new(),
+        // Issue #4631: IDF-sourced lighting density / equipment.
+        lighting_power_density_w_m2,
+        equipment,
+    })
+}
+
+// -----------------------------------------------------------------------------
+// Internal gains (issue #4631)
+// -----------------------------------------------------------------------------
+
+/// Per-zone accumulator for `Lights` objects.
+#[derive(Debug, Clone, Copy, Default)]
+struct LightingZoneAcc {
+    /// Floor area of the zone (m²).
+    area: f64,
+    /// Sum of the `Watts/Area` design levels (W/m²).
+    watts_per_area: f64,
+    /// Sum of the `LightingLevel` design levels (W).
+    level_watts: f64,
+}
+
+/// Look up the floor area of `zone_name` in the converted geometry.
+///
+/// Returns `None` when the zone is unknown to the IDF's `Zone` objects
+/// (or has no usable floor area) — the caller turns that into a precise
+/// [`IdfError::Conversion`] rather than dropping the load.
+fn zone_floor_area(zones: &[ZoneGeometry], zone_name: &str) -> Option<f64> {
+    zones
+        .iter()
+        .find(|z| z.name == zone_name)
+        .or_else(|| {
+            zones
+                .iter()
+                .find(|z| z.name.eq_ignore_ascii_case(zone_name))
+        })
+        .map(|z| z.floor_area)
+}
+
+/// Extract the internal gains of an IDF: the lighting power density
+/// (W/m²) and the plug/process equipment specs.
+///
+/// # `Lights`
+///
+/// The EnergyPlus `Lights` object states its design level with the
+/// "Design Level Calculation Method" field:
+///
+/// - `Watts/Area` — the "Watts per Zone Floor Area" field *is* the
+///   lighting power density and is carried over **exactly**.
+/// - `LightingLevel` — the "Lighting Level" field is the total installed
+///   lighting power (W) of the zone; it is converted to W/m² through the
+///   zone's floor area.
+///
+/// Any other method (e.g. `Watts/Person`) is rejected with a precise
+/// [`IdfError::Conversion`], and so is a `Lights` object that names a
+/// zone which does not exist in the IDF.
+///
+/// When several zones carry lighting, the reported density is the
+/// floor-area-weighted mean of the per-zone densities.
+///
+/// # `ElectricEquipment`
+///
+/// Each `ElectricEquipment` object yields exactly one
+/// [`EquipmentSpec`] with `equipment_type: "generic"`, `count: 1` and a
+/// `rated_power_w` equal to the object's total rated power:
+///
+/// - `Watts/Area` — watts per zone floor area × the zone's floor area.
+/// - `EquipmentLevel` — the "Design Level" field (W).
+///
+/// The remaining design-level method (`Watts/Person`) and unknown zone
+/// references are rejected with a precise [`IdfError::Conversion`].
+///
+/// # Known limitation (documented per issue #4631)
+///
+/// The `hourly_fractions` of the emitted equipment specs are always-on
+/// (1.0 for every hour): the IDF's per-object `Schedule Name` is not
+/// imported into the schema's hourly utilization profile (that is the
+/// subject of the separate `Schedule:*` import work). The same applies
+/// to the lighting profile — the density is imported, the shape of
+/// `schedules.lighting` is not.
+fn extract_internal_gains(
+    idf: &IdfFile,
+    zones: &[ZoneGeometry],
+) -> Result<(Option<f64>, Vec<EquipmentSpec>), IdfError> {
+    let density = extract_lighting_power_density(idf, zones)?;
+    let equipment = extract_equipment_specs(idf, zones)?;
+    Ok((density, equipment))
+}
+
+/// Extract the lighting power density (W/m²) from the `Lights` objects.
+fn extract_lighting_power_density(
+    idf: &IdfFile,
+    zones: &[ZoneGeometry],
+) -> Result<Option<f64>, IdfError> {
+    let mut accs: std::collections::BTreeMap<String, LightingZoneAcc> =
+        std::collections::BTreeMap::new();
+
+    for obj in idf.lights() {
+        let obj_name = object_name(obj);
+        let zone_name = obj
+            .fields
+            .get(1)
+            .and_then(|v| v.to_display_string())
+            .ok_or_else(|| {
+                IdfError::conversion_error(format!(
+                    "Lights object {obj_name:?} has no Zone or ZoneList Name field"
+                ))
+            })?;
+        let area = zone_floor_area(zones, &zone_name).ok_or_else(|| {
+            IdfError::conversion_error(format!(
+                "Lights object {obj_name:?} references unknown zone {zone_name:?}"
+            ))
+        })?;
+        let method = obj
+            .fields
+            .get(3)
+            .and_then(|v| v.to_display_string())
+            .unwrap_or_default();
+        let acc = accs.entry(zone_name.clone()).or_insert(LightingZoneAcc {
+            area,
+            ..Default::default()
+        });
+        if method.eq_ignore_ascii_case("Watts/Area") {
+            // Field 6 (1-indexed): Watts per Zone Floor Area (W/m²).
+            acc.watts_per_area += field_real(obj, 5).unwrap_or(0.0);
+        } else if method.eq_ignore_ascii_case("LightingLevel") {
+            // Field 5 (1-indexed): Lighting Level (W) for the whole zone.
+            acc.level_watts += field_real(obj, 4).unwrap_or(0.0);
+        } else {
+            return Err(IdfError::conversion_error(format!(
+                "Lights object {obj_name:?} uses unsupported design level calculation method \
+                 {method:?}; supported methods are Watts/Area and LightingLevel"
+            )));
+        }
     }
+
+    if accs.is_empty() {
+        return Ok(None);
+    }
+
+    // Per-zone density: the `Watts/Area` part is exact, the
+    // `LightingLevel` part is converted through the zone's floor area.
+    let mut densities: Vec<(f64, f64)> = Vec::new(); // (density W/m², area m²)
+    for (zone_name, acc) in &accs {
+        let mut density = acc.watts_per_area;
+        if acc.level_watts != 0.0 {
+            if acc.area <= 0.0 {
+                return Err(IdfError::conversion_error(format!(
+                    "Lights object in zone {zone_name:?} uses the LightingLevel design level \
+                     method but the zone has no floor area to convert it to W/m²"
+                )));
+            }
+            density += acc.level_watts / acc.area;
+        }
+        densities.push((density, acc.area));
+    }
+
+    let density = if densities.len() == 1 {
+        // Single zone: report the zone density verbatim (no float
+        // round-trip through the weighted mean).
+        densities[0].0
+    } else {
+        let total_area: f64 = densities.iter().map(|(_, a)| *a).sum();
+        if total_area <= 0.0 {
+            return Err(IdfError::conversion_error(
+                "Lights objects reference zones without floor area; cannot derive a lighting \
+                 power density in W/m²",
+            ));
+        }
+        densities.iter().map(|(d, a)| d * a).sum::<f64>() / total_area
+    };
+
+    Ok(Some(density))
+}
+
+/// Extract one [`EquipmentSpec`] per `ElectricEquipment` object.
+fn extract_equipment_specs(
+    idf: &IdfFile,
+    zones: &[ZoneGeometry],
+) -> Result<Vec<EquipmentSpec>, IdfError> {
+    let mut specs: Vec<EquipmentSpec> = Vec::new();
+    for obj in idf.electric_equipment() {
+        let obj_name = object_name(obj);
+        let zone_name = obj
+            .fields
+            .get(1)
+            .and_then(|v| v.to_display_string())
+            .ok_or_else(|| {
+                IdfError::conversion_error(format!(
+                    "ElectricEquipment object {obj_name:?} has no Zone or ZoneList Name field"
+                ))
+            })?;
+        let area = zone_floor_area(zones, &zone_name).ok_or_else(|| {
+            IdfError::conversion_error(format!(
+                "ElectricEquipment object {obj_name:?} references unknown zone {zone_name:?}"
+            ))
+        })?;
+        let method = obj
+            .fields
+            .get(3)
+            .and_then(|v| v.to_display_string())
+            .unwrap_or_default();
+        let rated_power_w = if method.eq_ignore_ascii_case("Watts/Area") {
+            // Field 6 (1-indexed): Watts per Zone Floor Area (W/m²).
+            field_real(obj, 5).unwrap_or(0.0) * area
+        } else if method.eq_ignore_ascii_case("EquipmentLevel") {
+            // Field 5 (1-indexed): Design Level (W) for the whole zone.
+            field_real(obj, 4).unwrap_or(0.0)
+        } else {
+            return Err(IdfError::conversion_error(format!(
+                "ElectricEquipment object {obj_name:?} uses unsupported design level calculation \
+                 method {method:?}; supported methods are Watts/Area and EquipmentLevel"
+            )));
+        };
+        specs.push(EquipmentSpec {
+            equipment_type: "generic".to_string(),
+            rated_power_w,
+            count: 1,
+            // Known limitation (issue #4631): the IDF schedule name of the
+            // object is not imported, so the load is always-on.
+            hourly_fractions: [1.0; 24],
+            radiative_fraction: 0.3,
+            convective_fraction: 0.7,
+            mass_coupling_factor: 0.2,
+        });
+    }
+    Ok(specs)
+}
+
+/// The name of an IDF object (field 1), or `"<unnamed>"` when absent.
+fn object_name(obj: &IdfObject) -> String {
+    obj.fields
+        .first()
+        .and_then(|v| v.to_display_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "<unnamed>".to_string())
 }
 
 /// Build a `ControlSet` from an IDF by extracting thermostat objects.
@@ -1691,5 +1952,190 @@ FenestrationSurface:Detailed, EastWindow, Window, WinConstr, EastWall, , , 0.0, 
         let default = crate::ashrae_cases::WindowSpec::double_clear_glass();
         assert_eq!(spec.window_properties.u_value, default.u_value);
         assert_eq!(spec.window_properties.shgc, default.shgc);
+    }
+
+    // ---------------------------------------------------------------------
+    // Issue #4631 — internal gains (`Lights` / `ElectricEquipment`)
+    // ---------------------------------------------------------------------
+
+    /// Minimal IDF with a 6 m x 8 m (48 m²) zone `Z1` plus the supplied
+    /// extra objects (e.g. a `Lights` / `ElectricEquipment` block).
+    fn gains_idf(extra: &str) -> String {
+        format!(
+            "\
+Version, 25.2;\n\
+Building, TestBldg, 0.0, City, 0.04, 0.4, FullExterior, 25;\n\
+Zone, Z1, 0, 0, 0, 0, 1, 2.7, 129.6, 48.0, ;\n\
+Material, Mat1, MediumRough, 0.1, 1.0, 2000, 800;\n\
+Construction, Wall1, Mat1;\n\
+Site:GroundTemperature:BuildingSurface, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18;\n\
+{extra}"
+        )
+    }
+
+    #[test]
+    fn lights_watts_per_area_sets_lighting_power_density_exactly() {
+        let src = gains_idf(
+            "Lights, Z1 Lights, Z1, ALWAYS ON, Watts/Area, , 10.0, 0.0, 0.0, 0.0, 0.59, 0.0;\n",
+        );
+        let idf = IdfParser::from_str(&src).unwrap();
+        let schema = SimulationSchemaV1::try_from(&idf).expect("IDF converts to schema");
+        assert_eq!(
+            schema.schedules.lighting_power_density_w_m2,
+            Some(10.0),
+            "Watts/Area must be carried over exactly"
+        );
+    }
+
+    #[test]
+    fn lights_lighting_level_converts_via_zone_floor_area() {
+        // 960 W over a 48 m² zone => 20 W/m².
+        let src = gains_idf(
+            "Lights, Z1 Lights, Z1, ALWAYS ON, LightingLevel, 960.0, , 0.0, 0.0, 0.0, 0.59, 0.0;\n",
+        );
+        let idf = IdfParser::from_str(&src).unwrap();
+        let schema = SimulationSchemaV1::try_from(&idf).expect("IDF converts to schema");
+        let density = schema
+            .schedules
+            .lighting_power_density_w_m2
+            .expect("lighting density imported");
+        assert!(
+            (density - 20.0).abs() < 1e-9,
+            "expected 20 W/m², got {density}"
+        );
+    }
+
+    #[test]
+    fn lights_unsupported_design_level_method_is_an_error() {
+        let src = gains_idf(
+            "Lights, Z1 Lights, Z1, ALWAYS ON, Watts/Person, , , 100.0, 0.0, 0.0, 0.59, 0.0;\n",
+        );
+        let idf = IdfParser::from_str(&src).unwrap();
+        let err = SimulationSchemaV1::try_from(&idf).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unsupported design level calculation method"),
+            "unexpected error: {msg}"
+        );
+        assert!(msg.contains("Z1 Lights"), "unexpected error: {msg}");
+    }
+
+    #[test]
+    fn lights_unknown_zone_is_an_error() {
+        let src = gains_idf(
+            "Lights, Z1 Lights, Z9, ALWAYS ON, Watts/Area, , 10.0, 0.0, 0.0, 0.0, 0.59, 0.0;\n",
+        );
+        let idf = IdfParser::from_str(&src).unwrap();
+        let err = SimulationSchemaV1::try_from(&idf).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("unknown zone"), "unexpected error: {msg}");
+        assert!(msg.contains("Z9"), "unexpected error: {msg}");
+    }
+
+    #[test]
+    fn electric_equipment_watts_per_area_total_power_matches_idf() {
+        // 5 W/m² over a 48 m² zone => 240 W of rated power.
+        let src = gains_idf(
+            "ElectricEquipment, Z1 Plugs, Z1, ALWAYS ON, Watts/Area, , 5.0, 0.0, 0.0, 0.3, 0.0, 0.0, PlugLoads;\n",
+        );
+        let idf = IdfParser::from_str(&src).unwrap();
+        let schema = SimulationSchemaV1::try_from(&idf).expect("IDF converts to schema");
+        assert_eq!(schema.schedules.equipment.len(), 1);
+        let spec = &schema.schedules.equipment[0];
+        assert_eq!(spec.equipment_type, "generic");
+        assert_eq!(spec.count, 1);
+        assert!(
+            (spec.rated_power_w - 240.0).abs() < 1e-9,
+            "expected 240 W, got {}",
+            spec.rated_power_w
+        );
+        assert!(
+            (spec.rated_power_w * spec.count as f64 - 240.0).abs() < 1e-9,
+            "total rated power must match the IDF object"
+        );
+        // Known limitation (issue #4631): always-on hourly fractions.
+        assert_eq!(spec.hourly_fractions, [1.0; 24]);
+    }
+
+    #[test]
+    fn electric_equipment_level_total_power_matches_idf() {
+        let src = gains_idf(
+            "ElectricEquipment, Z1 Server, Z1, ALWAYS ON, EquipmentLevel, 150.0, , 0.0, 0.0, 0.3, 0.0, 0.0, PlugLoads;\n",
+        );
+        let idf = IdfParser::from_str(&src).unwrap();
+        let schema = SimulationSchemaV1::try_from(&idf).expect("IDF converts to schema");
+        assert_eq!(schema.schedules.equipment.len(), 1);
+        let spec = &schema.schedules.equipment[0];
+        assert_eq!(spec.equipment_type, "generic");
+        assert_eq!(spec.count, 1);
+        assert!(
+            (spec.rated_power_w - 150.0).abs() < 1e-9,
+            "expected 150 W, got {}",
+            spec.rated_power_w
+        );
+    }
+
+    #[test]
+    fn electric_equipment_unsupported_design_level_method_is_an_error() {
+        let src = gains_idf(
+            "ElectricEquipment, Z1 Plugs, Z1, ALWAYS ON, Watts/Person, , , 100.0, 0.0, 0.3, 0.0, 0.0, PlugLoads;\n",
+        );
+        let idf = IdfParser::from_str(&src).unwrap();
+        let err = SimulationSchemaV1::try_from(&idf).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unsupported design level calculation method"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    fn electric_equipment_unknown_zone_is_an_error() {
+        let src = gains_idf(
+            "ElectricEquipment, Z1 Plugs, Z9, ALWAYS ON, Watts/Area, , 5.0, 0.0, 0.0, 0.3, 0.0, 0.0, PlugLoads;\n",
+        );
+        let idf = IdfParser::from_str(&src).unwrap();
+        let err = SimulationSchemaV1::try_from(&idf).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("unknown zone"), "unexpected error: {msg}");
+    }
+
+    #[test]
+    fn idf_without_internal_gains_keeps_defaults() {
+        let src = gains_idf("");
+        let idf = IdfParser::from_str(&src).unwrap();
+        let schema = SimulationSchemaV1::try_from(&idf).expect("IDF converts to schema");
+        assert_eq!(schema.schedules.lighting_power_density_w_m2, None);
+        assert!(schema.schedules.equipment.is_empty());
+    }
+
+    #[test]
+    fn internal_gains_fixture_converts_end_to_end() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("idf")
+            .join("internal_gains.idf");
+        let idf = IdfParser::from_path(&path).expect("IDF parses");
+        let schema = SimulationSchemaV1::try_from(&idf).expect("IDF converts to schema");
+
+        // Zone geometry underpinning the conversions.
+        assert_eq!(schema.geometry.zones.len(), 1);
+        assert!((schema.geometry.zones[0].floor_area - 48.0).abs() < 1e-6);
+
+        // Lighting: 10 W/m² straight from the IDF.
+        assert_eq!(schema.schedules.lighting_power_density_w_m2, Some(10.0));
+
+        // Equipment: 5 W/m² * 48 m² = 240 W and a 150 W EquipmentLevel.
+        assert_eq!(schema.schedules.equipment.len(), 2);
+        let plugs = &schema.schedules.equipment[0];
+        assert_eq!(plugs.equipment_type, "generic");
+        assert_eq!(plugs.count, 1);
+        assert!((plugs.rated_power_w - 240.0).abs() < 1e-9);
+        let server = &schema.schedules.equipment[1];
+        assert_eq!(server.equipment_type, "generic");
+        assert_eq!(server.count, 1);
+        assert!((server.rated_power_w - 150.0).abs() < 1e-9);
+        assert_eq!(server.hourly_fractions, [1.0; 24]);
     }
 }

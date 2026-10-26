@@ -225,6 +225,20 @@ impl IdfFile {
                 .eq_ignore_ascii_case("ZoneInfiltration:DesignFlowRate")
         })
     }
+
+    /// All `Lights` objects (issue #4631 — internal lighting gains).
+    pub fn lights(&self) -> impl Iterator<Item = &IdfObject> {
+        self.objects
+            .iter()
+            .filter(|o| o.object_type.eq_ignore_ascii_case("Lights"))
+    }
+
+    /// All `ElectricEquipment` objects (issue #4631 — plug/process loads).
+    pub fn electric_equipment(&self) -> impl Iterator<Item = &IdfObject> {
+        self.objects
+            .iter()
+            .filter(|o| o.object_type.eq_ignore_ascii_case("ElectricEquipment"))
+    }
 }
 
 /// Entry point for parsing IDF documents.
