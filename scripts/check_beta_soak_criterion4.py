@@ -9,7 +9,8 @@ Implements the two-tier Criterion 4 semantics Alex approved on
   green and the twelve quarantined ``#[ignore]``d tests must stay
   ignored. Any new failure, any unexpected execution set, or any
   forced-out-of-quarantine run is an infrastructure-grade failure.
-* **Tracked tier** — the nine known-gap tests run every night; their
+* **Tracked tier** — the seven tracked members (re-pinned 2026-10-26,
+  loop round 102; was "nine" at the 2026-10-18 record) run every night; their
   measured values (the ``Case NNN ...`` lines the tests print under
   ``--nocapture``) are diffed against the provenance-stamped baseline
   ``tests/reference_data/gauge_soak/criterion4_tracked_cohort_baseline.csv``

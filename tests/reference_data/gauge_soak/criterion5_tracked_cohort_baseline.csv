@@ -23,18 +23,28 @@
 # Membership is machine-checked by scripts/check_beta_soak_criterion5.py
 # against the log; the test leaves the tracked cohort only by passing
 # (re-pin required), never by drift.
+# re-pin 2026-10-26 (physics loop round 102): ALL fourteen tracked
+# metrics re-measured after physics rounds 93-95 moved the gauge-route
+# engine (merge list in the criterion-4 CSV header). Values are the
+# nightly's own CI measurements (soak run 40319152757, head 9baadcd8,
+# WD600 route); alex-system reproduced every value bit-identically at
+# tip 3d1f6224 (/tmp/r102-gauge-c5.log, 2026-10-26). Cohort membership
+# unchanged: the tracker test still fails on the remaining out-of-band
+# gaps (640 annual cooling moved INTO its 140 band at 7.89; 650 annual
+# cooling moved further below its band at 4.38; the rest stay out).
+# Original record below unchanged.
 case,metric,measured_value,unit
-610,peak_heating,24.34,kW
-610,peak_cooling,13.26,kW
-620,annual_cooling,8.17,MWh
-620,peak_cooling,16.94,kW
-630,peak_heating,23.63,kW
-630,peak_cooling,13.43,kW
-640,annual_heating,16.38,MWh
-640,annual_cooling,6.83,MWh
-640,peak_heating,22.80,kW
-640,peak_cooling,15.98,kW
-650,annual_cooling,3.85,MWh
-650,peak_cooling,14.57,kW
-600FF,min_free_float,-12.01,degC
-650FF,min_free_float,-17.89,degC
+610,peak_heating,23.71,kW
+610,peak_cooling,12.65,kW
+620,annual_cooling,7.87,MWh
+620,peak_cooling,16.43,kW
+630,peak_heating,23.26,kW
+630,peak_cooling,14.27,kW
+640,annual_heating,14.91,MWh
+640,annual_cooling,7.89,MWh
+640,peak_heating,22.02,kW
+640,peak_cooling,16.96,kW
+650,annual_cooling,4.38,MWh
+650,peak_cooling,15.28,kW
+600FF,min_free_float,-11.89,degC
+650FF,min_free_float,-17.79,degC
