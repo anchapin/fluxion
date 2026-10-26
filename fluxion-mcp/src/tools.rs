@@ -429,7 +429,6 @@ fn run_simulation(state: &mut McpState, args: &serde_json::Map<String, Value>) -
         .unwrap_or(false);
 
     let step_params = StepParameters {
-        use_ai: false,
         surrogates: None,
         use_analytical_gains: true,
         lighting: None,

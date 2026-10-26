@@ -10,6 +10,14 @@ use std::sync::Arc;
 
 /// Per-timestep parameters passed by `&` into the inner physics step.
 ///
+/// # Path selection (Issue #3985)
+///
+/// The presence of the [`StepParameters::surrogates`] slot is the *single*
+/// selector for the physics path: `Some(manager)` runs the surrogate
+/// prediction path (with the analytical fallback handled by the surrogate
+/// manager), `None` runs the pure analytical path. There is no separate
+/// boolean flag to keep in sync with the slot.
+///
 /// # Threading note (Issue #1437)
 ///
 /// `equipment: Option<Vec<Box<dyn Equipment>>>` makes this type `!Send + !Sync`
@@ -19,7 +27,8 @@ use std::sync::Arc;
 /// Sync>`). Per-worker construction via [`StepParameters::build_analytical`]
 /// skips the surrogate reference entirely on the analytical path.
 pub struct StepParameters {
-    pub use_ai: bool,
+    /// Surrogate manager slot. `Some` selects the surrogate prediction path,
+    /// `None` selects the analytical path (Issue #3985).
     pub surrogates: Option<Arc<SurrogateManager>>,
     pub use_analytical_gains: bool,
     pub lighting: Option<LightingSchedule>,
@@ -30,7 +39,6 @@ pub struct StepParameters {
 impl Default for StepParameters {
     fn default() -> Self {
         Self {
-            use_ai: false,
             surrogates: None,
             use_analytical_gains: false,
             lighting: None,
@@ -43,7 +51,6 @@ impl Default for StepParameters {
 impl StepParameters {
     pub fn clone_for_test(&self) -> Self {
         Self {
-            use_ai: self.use_ai,
             surrogates: self.surrogates.clone(),
             use_analytical_gains: self.use_analytical_gains,
             lighting: self.lighting.clone(),
@@ -56,7 +63,6 @@ impl StepParameters {
 impl StepParameters {
     pub fn new() -> Self {
         Self {
-            use_ai: false,
             surrogates: None,
             use_analytical_gains: false,
             lighting: None,
@@ -67,16 +73,15 @@ impl StepParameters {
 
     /// Build a `StepParameters` configured for analytical (non-ML) evaluation.
     ///
-    /// `use_ai` is forced to `false`, `use_analytical_gains` to `true`, and
-    /// `lighting` / `equipment` / `occupancy` are `None` — matching the
-    /// historical behavior of `BatchOracle::evaluate_population` with
-    /// `use_surrogates = false` (Issue #901 / #1437).
+    /// The surrogate slot is left empty (`None`), `use_analytical_gains` is
+    /// `true`, and `lighting` / `equipment` / `occupancy` are `None` —
+    /// matching the historical behavior of `BatchOracle::evaluate_population`
+    /// with `use_surrogates = false` (Issue #901 / #1437).
     ///
-    /// No surrogate reference is retained because `use_ai` is false and the
-    /// analytical timestep path never invokes surrogate inference.
+    /// No surrogate reference is retained because the surrogate slot is empty
+    /// and the analytical timestep path never invokes surrogate inference.
     pub fn build_analytical() -> Self {
         Self {
-            use_ai: false,
             surrogates: None,
             use_analytical_gains: true,
             lighting: None,
@@ -90,11 +95,12 @@ impl StepParameters {
 mod tests {
     use super::StepParameters;
 
+    /// The analytical parameter builder must leave the surrogate slot empty —
+    /// the slot (not a boolean flag) is what selects the physics path.
     #[test]
-    fn analytical_parameters_do_not_retain_surrogate_manager() {
+    fn analytical_parameters_have_no_surrogate_manager() {
         let parameters = StepParameters::build_analytical();
 
-        assert!(!parameters.use_ai);
         assert!(parameters.surrogates.is_none());
     }
 }

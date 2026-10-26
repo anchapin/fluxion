@@ -310,7 +310,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // validation baselines (strict energy gate). Only caller-supplied
         // equipment reaches the thermal path and the metering below.
         let step_params = StepParameters {
-            use_ai,
             surrogates: use_ai.then(|| Arc::new(surrogates.clone())),
             use_analytical_gains: true,
             lighting: lighting_ref.cloned(),

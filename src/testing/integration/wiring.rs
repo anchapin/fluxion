@@ -1,7 +1,9 @@
 //! Runtime tracing for wiring validation
 //!
 //! Provides instrumentation to verify that modules are correctly wired together.
-//! Catches issues like solve_timesteps() never calling predict_loads() when use_ai=true.
+//! Catches issues like solve_timesteps() never calling predict_loads() when the
+//! surrogate slot is populated (Issue #3985 — slot presence is the single path
+//! selector; there is no separate boolean flag).
 
 use std::sync::{Arc, Mutex};
 

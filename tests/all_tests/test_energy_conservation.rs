@@ -33,7 +33,7 @@ fn test_energy_conservation() {
             .expect("default selector must initialize");
 
     // Run a short simulation (24 hours) to verify energy conservation
-    // Use analytical physics path (use_ai=false)
+    // Use analytical physics path (no surrogate slot)
     let surrogates = fluxion::ai::surrogate::SurrogateManager::new().unwrap();
     let energy = model.solve_timesteps(24, &surrogates, false, None, None, None);
 
