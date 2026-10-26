@@ -109,14 +109,12 @@ mod tests {
     fn test_step_physics_consistency_with_solve_single_step() {
         let mut model1 = ThermalModel::<VectorField>::new(10);
         let mut model2 = ThermalModel::<VectorField>::new(10);
-        let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
         model1.apply_parameters(&[1.5, 21.0]);
         model2.apply_parameters(&[1.5, 21.0]);
 
         let step_params = StepParameters {
-            use_ai: false,
-            surrogates: Some(std::sync::Arc::new(surrogates.clone())),
+            surrogates: None,
             use_analytical_gains: true,
             lighting: None,
             equipment: None,
@@ -361,13 +359,11 @@ mod tests {
 
     mod validation {
         use super::*;
-        use crate::ai::surrogate::SurrogateManager;
         use crate::physics::cta::VectorField;
 
         #[test]
         fn steady_state_heat_transfer_matches_analytical() {
             let mut model = ThermalModel::<VectorField>::new(1);
-            let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
             let h_tr_em = model.conduction.h_tr_em[0];
             let h_tr_ms = model.conduction.h_tr_ms[0];
@@ -401,8 +397,7 @@ mod tests {
 
             for step in 0..num_timesteps {
                 let step_params = StepParameters {
-                    use_ai: false,
-                    surrogates: Some(std::sync::Arc::new(surrogates.clone())),
+                    surrogates: None,
                     use_analytical_gains: false,
                     lighting: None,
                     equipment: None,
@@ -428,7 +423,6 @@ mod tests {
         #[test]
         fn zero_load_when_no_temperature_difference() {
             let mut model = ThermalModel::<VectorField>::new(1);
-            let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
             let outdoor_temp = 20.0;
             model.setpoints.heating_setpoint = 18.0;
@@ -441,8 +435,7 @@ mod tests {
             model.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
 
             let step_params = StepParameters {
-                use_ai: false,
-                surrogates: Some(std::sync::Arc::new(surrogates.clone())),
+                surrogates: None,
                 use_analytical_gains: false,
                 lighting: None,
                 equipment: None,
@@ -464,7 +457,6 @@ mod tests {
             // each phase now gets a fresh model — restoring the test's
             // original "isolated phase" premise without touching the
             // engine or tuning any output.]
-            let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
             // Fresh models with a physically initialized 1-zone network
             // (loop round 78): bare `new(1)` models never initialize the
             // conduction/mass network and diverge on both branches; the
@@ -497,8 +489,7 @@ mod tests {
 
             let outdoor_temp_cold = 10.0;
             let step_params = StepParameters {
-                use_ai: false,
-                surrogates: Some(std::sync::Arc::new(surrogates.clone())),
+                surrogates: None,
                 use_analytical_gains: false,
                 lighting: None,
                 equipment: None,
@@ -520,8 +511,7 @@ mod tests {
             model.mass.mass_temperatures = VectorField::from_scalar(28.0, 1);
             let outdoor_temp_hot = 35.0;
             let step_params = StepParameters {
-                use_ai: false,
-                surrogates: Some(std::sync::Arc::new(surrogates.clone())),
+                surrogates: None,
                 use_analytical_gains: false,
                 lighting: None,
                 equipment: None,
@@ -541,8 +531,7 @@ mod tests {
             model.setpoints.temperatures = VectorField::from_scalar(23.5, 1);
             model.mass.mass_temperatures = VectorField::from_scalar(23.5, 1);
             let step_params_2 = StepParameters {
-                use_ai: false,
-                surrogates: Some(std::sync::Arc::new(surrogates.clone())),
+                surrogates: None,
                 use_analytical_gains: false,
                 lighting: None,
                 equipment: None,
@@ -561,7 +550,6 @@ mod tests {
 
     mod ground_boundary {
         use super::*;
-        use crate::ai::surrogate::SurrogateManager;
         use crate::physics::cta::VectorField;
         use crate::sim::boundary::ConstantGroundTemperature;
         use crate::sim::timestep_solver::StepParameters;
@@ -628,7 +616,6 @@ mod tests {
             // of check_ashrae_cases_cycle.py unchanged) with a ground-
             // coupled floor, so the comparison is between two real
             // solutions differing only in T_ground.
-            let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
             let init_zone = |model: &mut ThermalModel<VectorField>| {
                 model.conduction.h_tr_w = VectorField::from_scalar(60.0, 1);
                 model.conduction.h_tr_em = VectorField::from_scalar(60.0, 1);
@@ -652,8 +639,7 @@ mod tests {
 
             for t in 0..24 {
                 let step_params = StepParameters {
-                    use_ai: false,
-                    surrogates: Some(std::sync::Arc::new(surrogates.clone())),
+                    surrogates: None,
                     use_analytical_gains: false,
                     lighting: None,
                     equipment: None,
@@ -710,7 +696,6 @@ mod tests {
         #[test]
         fn test_ground_heat_transfer_contribution() {
             let model = ThermalModel::<VectorField>::new(1);
-            let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
             const EPSILON: f64 = 1e-6;
             assert!((model.conduction.h_tr_floor[0] - 0.78).abs() < EPSILON);
@@ -725,8 +710,7 @@ mod tests {
 
             let outdoor_temp = 15.0;
             let step_params = StepParameters {
-                use_ai: false,
-                surrogates: Some(std::sync::Arc::new(surrogates.clone())),
+                surrogates: None,
                 use_analytical_gains: false,
                 lighting: None,
                 equipment: None,

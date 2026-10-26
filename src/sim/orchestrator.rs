@@ -210,8 +210,8 @@ pub trait BatchOrchestrator: Send + Sync {
     }
 
     /// Evaluate `configs` (already validated and parameter-applied) on the
-    /// CPU using the **analytical** physics path — i.e. with
-    /// `use_ai = false` and `use_analytical_gains = true`, no surrogate
+    /// CPU using the **analytical** physics path — i.e. with an empty
+    /// surrogate slot and `use_analytical_gains = true`, no surrogate
     /// inference (Issue #2769).
     ///
     /// This is the orchestrator entry point for the `use_surrogates = false`

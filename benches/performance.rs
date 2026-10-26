@@ -23,7 +23,7 @@ pub fn benchmark_thermal_solver(c: &mut Criterion) {
 
     // Issue #901 — benchmark the actual hot path called out in the issue
     // (annual 8760-step loop) to measure the StepParameters-clone reduction.
-    // Analytical mode (use_ai=false) to avoid the costly ONNX session load.
+    // Analytical mode (no surrogate slot) to avoid the costly ONNX session load.
     c.bench_function("solve_timesteps_8760_analytical", |b| {
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
         b.iter(|| {

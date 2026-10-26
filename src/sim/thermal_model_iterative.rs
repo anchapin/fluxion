@@ -103,7 +103,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         dt_seconds: f64,
     ) -> f64 {
         // 1. Calculate External Loads
-        if step_params.use_ai {
+        //
+        // Issue #3985: the surrogate slot is the single path selector — a
+        // populated slot runs the surrogate path, an empty slot runs the
+        // analytical path. There is no separate boolean flag to keep in sync.
+        if let Some(surrogates) = step_params.surrogates.as_deref() {
             // Record call for wiring validation (Plan 21-10)
             #[cfg(feature = "wiring-tracing")]
             if let Some(ref tracer) = self.0.hvac.tracer {
@@ -111,12 +115,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
 
             // Try ONNX with fallback to analytical mode
-            match step_params
-                .surrogates
-                .as_deref()
-                .expect("use_ai requires a SurrogateManager")
-                .predict_loads_with_fallback(self.0.setpoints.temperatures.as_ref())
-            {
+            match surrogates.predict_loads_with_fallback(self.0.setpoints.temperatures.as_ref()) {
                 Ok(pred) => {
                     self.0.setpoints.loads = T::from(VectorField::new(pred));
                 }
@@ -1482,7 +1481,6 @@ mod tests {
         model.set_ground_temp(10.0);
         let mut clone = model.clone();
         let step_params = StepParameters {
-            use_ai: false,
             surrogates: None,
             use_analytical_gains: false,
             lighting: None,

@@ -2,7 +2,8 @@
 //!
 //! Tests verify that modules are correctly wired together and integration points
 //! work as expected. Uses runtime tracing to detect issues like solve_timesteps()
-//! never calling predict_loads() when use_ai=true.
+//! never calling predict_loads() when the surrogate slot is populated
+//! (Issue #3985 — slot presence is the single path selector).
 
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::testing::integration::{BuildingScenario, WiringTracer};
