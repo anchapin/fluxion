@@ -37,6 +37,56 @@ fn wd_source(name: &str) -> EpwWeatherSource {
     .unwrap_or_else(|e| panic!("failed to parse {name}: {e:?}"))
 }
 
+/// Site metadata of a WD file, read from its own EPW LOCATION header:
+/// (latitude °, longitude °, UTC offset in decimal hours).
+///
+/// The §6 smoke tests must take the site from the file under test — a
+/// hard-coded latitude would pass even if the parser stopped reading the
+/// header (the exact failure the WD set is designed to expose).
+fn wd_site(name: &str) -> (f64, f64, Option<f64>) {
+    let src = wd_source(name);
+    let site = src
+        .location_struct()
+        .unwrap_or_else(|| panic!("{name}: EPW header carries no structured location"));
+    (
+        site.latitude_deg()
+            .unwrap_or_else(|| panic!("{name}: EPW header carries no latitude")),
+        site.longitude_deg()
+            .unwrap_or_else(|| panic!("{name}: EPW header carries no longitude")),
+        site.utc_offset_hours,
+    )
+}
+
+/// Calendar stamp (year, month, day, hour) of every data row of a WD file,
+/// read straight from the file so the smoke tests walk the file's own 8760
+/// hours instead of a re-derived calendar.
+///
+/// Only rows whose first field is a 4-digit year and whose fourth field is
+/// an hour in 1..=24 are data rows; the eight EPW header rows are skipped.
+fn wd_calendar(name: &str) -> Vec<(u16, u8, u8, u8)> {
+    let text = std::fs::read_to_string(wd_path(name)).unwrap_or_else(|e| panic!("{name}: {e}"));
+    let mut rows = Vec::new();
+    for line in text.lines() {
+        let f: Vec<&str> = line.split(',').collect();
+        if f.len() < 35 {
+            continue;
+        }
+        let Ok(year) = f[0].trim().parse::<u16>() else {
+            continue;
+        };
+        let Ok(hour) = f[3].trim().parse::<u8>() else {
+            continue;
+        };
+        if hour < 1 || hour > 24 {
+            continue;
+        }
+        let month = f[1].trim().parse::<u8>().expect("EPW month");
+        let day = f[2].trim().parse::<u8>().expect("EPW day");
+        rows.push((year, month, day, hour));
+    }
+    rows
+}
+
 /// §6 acceptance: albedo is read per hour from EPW field 33 (0-indexed 32)
 /// and drives ground-reflected shortwave. WD100 and WD600 are byte-identical
 /// except that field (0 vs 0.2), so any difference in ground-reflected
@@ -83,6 +133,54 @@ fn wd100_wd600_albedo_discriminates_ground_reflected() {
         rho0.ground_reflected_wm2.abs() < 1e-9,
         "WD100 albedo 0 must give zero ground-reflected shortwave"
     );
+
+    // The whole year, each file with its own per-hour albedo: WD100 must
+    // reflect nothing off the ground, WD600 must reflect a measurable
+    // amount. This is the "the pair produces measurably different
+    // ground-reflected irradiance" half of the §6 acceptance, driven by
+    // the engine's own irradiance chain over the file's own 8760 hours.
+    let annual_ground_reflected = |name: &str| -> f64 {
+        let src = wd_source(name);
+        let (lat, lon, utc) = wd_site(name);
+        let cal = wd_calendar(name);
+        assert_eq!(cal.len(), 8760, "{name}: expected 8760 data rows");
+        let mut total = 0.0_f64;
+        for (i, &(year, month, day, hour)) in cal.iter().enumerate() {
+            let rec = src.get_hourly_data(i).expect("WD data row");
+            let sun = calculate_solar_position(
+                lat,
+                lon,
+                year as i32,
+                month as u32,
+                day as u32,
+                (hour - 1) as f64,
+                utc,
+            );
+            let doy = calculate_day_of_year(year as i32, month as u32, day as u32);
+            let irr = calculate_surface_irradiance(
+                &sun,
+                rec.dni,
+                rec.dhi,
+                Some(rec.ghi),
+                Orientation::South,
+                rec.albedo.unwrap_or(0.2),
+                doy,
+            );
+            total += irr.ground_reflected_wm2;
+        }
+        total
+    };
+    let g100 = annual_ground_reflected("WD100.epw");
+    let g600 = annual_ground_reflected("WD600.epw");
+    assert!(
+        g100.abs() < 1e-9,
+        "WD100 (albedo 0) must reflect no ground-reflected shortwave, got {g100}"
+    );
+    assert!(
+        g600 > 100.0,
+        "WD600 (albedo 0.2) must reflect a measurable ground-reflected \
+         shortwave over the year, got {g600} W/m²·h"
+    );
 }
 
 /// §6 acceptance: solar position accepts non-integer UTC offsets. WD500 is
@@ -92,8 +190,23 @@ fn wd100_wd600_albedo_discriminates_ground_reflected() {
 /// the truncated offset must be measurably worse.
 #[test]
 fn wd500_halfhour_utc_offset_peaks_at_solar_noon() {
-    let lat = 28.567_f64;
-    let lon = 77.103_f64;
+    // Site and UTC offset come from the file's own LOCATION header: the
+    // offset must survive the parser as an f64 fraction, not be truncated
+    // to an integer number of hours.
+    let (lat, lon, utc_offset) = wd_site("WD500.epw");
+    assert!(
+        (lat - 28.567).abs() < 1e-2,
+        "WD500 must be New Delhi, got lat {lat}"
+    );
+    assert!(
+        (lon - 77.103).abs() < 1e-2,
+        "WD500 must be New Delhi, got lon {lon}"
+    );
+    let utc_offset = utc_offset.expect("WD500 header carries a UTC offset");
+    assert_eq!(
+        utc_offset, 5.5,
+        "WD500's +5.5 h offset must survive parsing as an exact f64"
+    );
     let day = (2023, 4, 15);
 
     fn peak_error_near_noon(
@@ -138,8 +251,13 @@ fn wd500_halfhour_utc_offset_peaks_at_solar_noon() {
 /// elevation and south — the failure mode this test pins.
 #[test]
 fn wd300_southern_hemisphere_december_noon_sun_is_north() {
-    let lat = -33.393_f64;
-    let lon = -70.786_f64;
+    // Site from the file's own LOCATION header.
+    let (lat, lon, utc) = wd_site("WD300.epw");
+    assert!(
+        lat < -33.0 && lat > -34.0,
+        "WD300 must be a southern-hemisphere site (Santiago), got {lat}"
+    );
+    let utc = Some(utc.expect("WD300 header carries a UTC offset"));
 
     fn noon_state(lat: f64, lon: f64, month: u32, day: u32) -> (f64, f64) {
         // Scan 10:00–14:00 local at 5-minute steps; return the altitude and
@@ -170,6 +288,87 @@ fn wd300_southern_hemisphere_december_noon_sun_is_north() {
     assert!(
         alt_jun < alt_dec - 30.0,
         "June solar-noon sun must be far lower than December's (got {alt_jun} vs {alt_dec})"
+    );
+
+    // The file's own data must show the southern warm season: the warmest
+    // calendar month of WD300 is December or January, and the coldest is in
+    // the June–August half of the year. A northern-hemisphere reading of
+    // this file inverts both.
+    let src = wd_source("WD300.epw");
+    let cal = wd_calendar("WD300.epw");
+    assert_eq!(cal.len(), 8760, "WD300: expected 8760 data rows");
+    let mut month_sum = [0.0_f64; 12];
+    let mut month_count = [0_usize; 12];
+    for (i, &(_year, month, _day, _hour)) in cal.iter().enumerate() {
+        let rec = src.get_hourly_data(i).expect("WD300 data row");
+        month_sum[month as usize - 1] += rec.dry_bulb_temp;
+        month_count[month as usize - 1] += 1;
+    }
+    let month_mean: Vec<f64> = (0..12)
+        .map(|m| month_sum[m] / month_count[m] as f64)
+        .collect();
+    let warmest = (0..12)
+        .max_by(|&a, &b| month_mean[a].partial_cmp(&month_mean[b]).unwrap())
+        .unwrap();
+    let coldest = (0..12)
+        .min_by(|&a, &b| month_mean[a].partial_cmp(&month_mean[b]).unwrap())
+        .unwrap();
+    assert!(
+        warmest == 11 || warmest == 0,
+        "WD300's warm season must be Dec/Jan, warmest month is {} ({:.1} °C)",
+        warmest + 1,
+        month_mean[warmest]
+    );
+    assert!(
+        (5..=7).contains(&coldest),
+        "WD300's cold season must be Jun-Aug, coldest month is {} ({:.1} °C)",
+        coldest + 1,
+        month_mean[coldest]
+    );
+
+    // The sun rides in the northern sky, so the *north-facing* surface must
+    // collect more annual incident solar than the south-facing one at this
+    // site — the orientation check, run over the file's own 8760 hours.
+    let mut north_kwh = 0.0_f64;
+    let mut south_kwh = 0.0_f64;
+    for (i, &(year, month, day, hour)) in cal.iter().enumerate() {
+        let rec = src.get_hourly_data(i).expect("WD300 data row");
+        let sun = calculate_solar_position(
+            lat,
+            lon,
+            year as i32,
+            month as u32,
+            day as u32,
+            (hour - 1) as f64,
+            utc,
+        );
+        let doy = calculate_day_of_year(year as i32, month as u32, day as u32);
+        let albedo = rec.albedo.unwrap_or(0.2);
+        let north = calculate_surface_irradiance(
+            &sun,
+            rec.dni,
+            rec.dhi,
+            Some(rec.ghi),
+            Orientation::North,
+            albedo,
+            doy,
+        );
+        let south = calculate_surface_irradiance(
+            &sun,
+            rec.dni,
+            rec.dhi,
+            Some(rec.ghi),
+            Orientation::South,
+            albedo,
+            doy,
+        );
+        north_kwh += north.total_wm2;
+        south_kwh += south.total_wm2;
+    }
+    assert!(
+        north_kwh > south_kwh,
+        "WD300's peak solar must land on north-facing surfaces: \
+         north {north_kwh} vs south {south_kwh} W/m²·h"
     );
 }
 
@@ -233,6 +432,79 @@ fn wd400_polar_night_and_day_irradiance_finite_nonnegative() {
             }
         }
     }
+
+    // The full year, every one of the file's 8760 hours: irradiance must
+    // stay finite and non-negative through polar night and polar day. The
+    // site comes from the file's own LOCATION header and the calendar from
+    // the file's own rows, so this walks Barrow's real weather.
+    let (lat_file, lon_file, utc_file) = wd_site("WD400.epw");
+    assert!(
+        (lat_file - 71.286).abs() < 1e-2,
+        "WD400 must be Barrow, got lat {lat_file}"
+    );
+    assert!(
+        (lon_file - (-156.767)).abs() < 1e-2,
+        "WD400 must be Barrow, got lon {lon_file}"
+    );
+    let cal = wd_calendar("WD400.epw");
+    assert_eq!(cal.len(), 8760, "WD400: expected 8760 data rows");
+    let mut polar_night_hours = 0_usize;
+    let mut polar_day_hours = 0_usize;
+    for (i, &(year, month, day, hour)) in cal.iter().enumerate() {
+        let rec = wd400.get_hourly_data(i).expect("WD400 data row");
+        let sun = calculate_solar_position(
+            lat_file,
+            lon_file,
+            year as i32,
+            month as u32,
+            day as u32,
+            (hour - 1) as f64,
+            utc_file,
+        );
+        assert!(
+            sun.altitude_deg.is_finite() && sun.azimuth_deg.is_finite(),
+            "non-finite solar position at WD400 hour {i}"
+        );
+        let doy = calculate_day_of_year(year as i32, month as u32, day as u32);
+        let irr = calculate_surface_irradiance(
+            &sun,
+            rec.dni,
+            rec.dhi,
+            Some(rec.ghi),
+            Orientation::Horizontal,
+            rec.albedo.unwrap_or(0.2),
+            doy,
+        );
+        for v in [
+            irr.beam_wm2,
+            irr.diffuse_wm2,
+            irr.ground_reflected_wm2,
+            irr.total_wm2,
+        ] {
+            assert!(v.is_finite(), "non-finite irradiance at WD400 hour {i}");
+            assert!(v >= -1e-9, "negative irradiance {v} at WD400 hour {i}");
+        }
+        if !sun.is_above_horizon() {
+            assert!(
+                irr.total_wm2.abs() < 1e-9,
+                "sun below horizon must give zero irradiance at WD400 hour {i}"
+            );
+            if month == 12 {
+                polar_night_hours += 1;
+            }
+        }
+        if month == 6 && sun.is_above_horizon() {
+            polar_day_hours += 1;
+        }
+    }
+    assert!(
+        polar_night_hours > 0,
+        "WD400 must have polar-night hours with the sun below the horizon"
+    );
+    assert!(
+        polar_day_hours >= 24 * 28,
+        "WD400 must have polar-day hours in June, got {polar_day_hours}"
+    );
 }
 
 fn days_before(month: u32) -> usize {
