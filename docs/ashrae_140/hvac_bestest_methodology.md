@@ -50,7 +50,7 @@ where they exist), not whether it should copy OpenBSE's code.
 Fluxion already holds a *case-definition* layer for §9a:
 `scripts/generate_section9_ce_cases.py` emits
 `data/reference/ashrae140/section9_ce_cases.json` with the 14 CE100–CE200 case definitions
-(`scripts/generate_section9_ce_cases.py:1-3`, `:19`, `:98`). The gap the issue exposes is not
+(`scripts/generate_section9_ce_cases.py:1-3`, `:9-20`, `:86-118`). The gap the issue exposes is not
 the case table; it is the *acceptance criterion* and the *engine run*.
 
 ### 1.4 What could NOT be inspected
@@ -61,7 +61,7 @@ the case table; it is the *acceptance criterion* and the *engine run*.
 - The ASHRAE 140-2023 normative materials (§9 tables, the per-case quasi-analytical solution
   values, and the normative weather files) are **licensed** and are not present in this tree;
   fluxion tracks that licensing gate as issue #4285
-  (`scripts/generate_section9_ce_cases.py:144-148`;
+  (`scripts/generate_section9_ce_cases.py:245-250`;
   `fluxion-core/src/weather/tm2.rs:12-20`).
 - Consequently this document cannot verify OpenBSE's ±5 % numbers, cannot diff OpenBSE's case
   generator against `scripts/generate_section9_ce_cases.py`, and cannot confirm which specific
@@ -112,18 +112,18 @@ and the §9 case artifact itself records `"cases_run": 0`
 | §7 / §5.2 envelope (600…970) | **Inter-program min/max** (EnergyPlus, ESP-r, TRNSYS, DOE2) from ASHRAE 140-2023 Annex B8, widened to a ±15 %-of-midpoint gate | comparative, diagnostic | `src/validation/benchmark.rs:115-118` ("Reference data is from ASHRAE Standard 140-2023 and EnergyPlus BESTEST reports. Values are the min/max across reference programs"); per-case CSV mirrors at `tests/reference_data/zone_balance/case_*_energy_reference.csv`, parsed at `src/validation/benchmark.rs:1808-1820`; in-band flag at `src/validation/ashrae_140_validator/mod.rs:1384-1400` |
 | §8 GC10a | **Closed-form analytical** 2433 W, proposed tolerance ≤ 0.5 % | true analytical | `data/reference/ashrae140/analytical_acceptance_criteria.json` → `section_8_ground_coupled.analytical_solution`; engine oracle `fluxion-core/src/ground_coupling.rs` |
 | §11 air-side | **Quasi-analytical** QASv2 reimplementation | true analytical | `fluxion-core/src/qas_airside.rs:1-3`; targets `data/reference/ashrae140/section11_qas_targets.json`; checked by `scripts/release_gate_checker.py:1076-1088` |
-| §9a CE100–CE200 | **Comparative Task-22 ensemble bands only**; the analytical slot is `null` | comparative, explicitly "evidence range (ensemble min/max), not a pass/fail criterion" | `data/reference/ashrae140/section9_ce_cases.json` per case (`acceptance.comparative.role`); bands in `tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv`; analytical slot `null` at `:49`, `:86`, `:123`, `:160`, `:197`, `:239`, `:276`, `:298`, `:335`, `:357`, `:379`, `:401`, `:423`, `:460`; generator writes `None` + note at `scripts/generate_section9_ce_cases.py:143-148` |
+| §9a CE100–CE200 | **Comparative Task-22 ensemble bands only**; the analytical slot is `null` | comparative, explicitly "evidence range (ensemble min/max), not a pass/fail criterion" | `data/reference/ashrae140/section9_ce_cases.json` per case (`acceptance.comparative.role`); bands in `tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv`; analytical slot `null` at `:119`, `:176`, `:233`, `:290`, `:347`, `:409`, `:466`, `:508`, `:565`, `:607`, `:649`, `:691`, `:733`, `:790`; generator writes `None` + note at `scripts/generate_section9_ce_cases.py:245-250` |
 
 So fluxion already runs the *dual* model it is being asked to extend: comparative bands where
 nothing better exists (§7), analytical/quasi-analytical targets where they do exist (§8 GC10a,
 §11 QASv2). §9a is currently the only 140 test set that has **neither**: it has comparative
-bands for 10 of 14 cases and no criterion at all.
+bands for 9 of 14 cases and no criterion at all.
 
 ### 2.3 §9 / CE material already in this tree
 
 | Artifact | What it is | Citation |
 |---|---|---|
-| Case generator | Python generator for the CE100–CE200 table; `--check` mode verifies the committed JSON is up to date | `scripts/generate_section9_ce_cases.py:1-3`, `:36`, `:197-208` |
+| Case generator | Python generator for the CE100–CE200 table; `--check` mode verifies the committed JSON is up to date; it also validates the 24-point CE100 performance map (6 ODB rows x 4 EWB columns) and the reconciled ARI rating point before emitting the table | `scripts/generate_section9_ce_cases.py:1-3`, `:50-53`, `:134-193`, `:345-362` |
 | Case table | 14 cases: CE100, CE110, CE120, CE130, CE140 (dry), CE150, CE160, CE165, CE170, CE180, CE185, CE190, CE195 (wet), CE200 (full-load) | `data/reference/ashrae140/section9_ce_cases.json:15-460` |
 | Performance map | CE100 map (Tables 9-5…9-10) transcribed from `CE100MAP.xls` | `data/reference/ashrae140/section9_ce100_performance_map.json:2-3` |
 | Engine-side map | `CePerformanceMap` / `CeTable` / `DxMapEvaluation` with `evaluate()`, ARI rating-point accessors | `src/sim/hvac/dx_performance_map.rs:2`, `:56`, `:120`, `:131`, `:273`, `:324-349` |
@@ -139,8 +139,8 @@ bands for 10 of 14 cases and no criterion at all.
 | # | Gap | Evidence |
 |---|---|---|
 | G1 | Zero §9 cases are executed by the engine | `data/reference/ashrae140/section9_ce_cases.json:12`; `docs/compliance/section_coverage.md:59` |
-| G2 | No acceptance criterion for §9a: comparative bands are labelled evidence, not criteria; analytical slots are `null` | `scripts/generate_section9_ce_cases.py:138`, `:143-148`; `tests/validation/hvac_equipment_rated_performance/section9_ce.rs:33-37` |
-| G3 | 4 of 14 cases have no comparative band either (CE165, CE180, CE185, CE195 — the wet-coil high-latent corners) | `data/reference/ashrae140/section9_ce_cases.json` — no `acceptance.comparative` key for the CE165 entry (`:281`), CE180 (`:340`), CE185 (`:362`) and CE195 (`:406`); the bounds CSV lists only CE100–CE140, CE150, CE160, CE170, CE200 (`.../comparative_bounds_ce100_ce200.csv:29-47`) |
+| G2 | No acceptance criterion for §9a: comparative bands are labelled evidence, not criteria; analytical slots are `null` | `scripts/generate_section9_ce_cases.py:215`, `:245-250`; `tests/validation/hvac_equipment_rated_performance/section9_ce.rs:33-37` |
+| G3 | 5 of 14 cases have no comparative band either (CE165, CE180, CE185, CE190, CE195 — the wet-coil high-latent corners); each now carries an explicit `acceptance.comparative_note` naming the missing source instead of a silent `null` | `data/reference/ashrae140/section9_ce_cases.json` — `acceptance.comparative` is `null` for the CE165 entry (`:506`), CE180 (`:605`), CE185 (`:647`), CE190 (`:689`) and CE195 (`:731`); the bounds CSV lists only CE100–CE140, CE150, CE160, CE170, CE200 (`.../comparative_bounds_ce100_ce200.csv:29-47`) |
 | G4 | The §9 weather inputs are neither committed nor fetchable by the current tooling | `fluxion-core/src/weather/tm2.rs:12-20`; `scripts/fetch_ashrae140_weather.py:46-55` (only two TF members are extracted) |
 | G5 | 13 of 14 cases cannot even be dispatched because their entering wet-bulb is not transcribed | `tests/validation/hvac_equipment_rated_performance/section9_ce.rs:13-20` |
 | G6 | §9a is not in the strict gate and cannot be until it produces per-case monthly outputs | `scripts/check_strict_energy_gate_regression.py:60-104` |
@@ -162,7 +162,7 @@ fluxion did for §8 (closed-form → criterion) and §11 (QASv2 → criterion).
 
 | Case type | Cases | Analytic reference exists? | **Recommendation** | Rationale |
 |---|---|---|---|---|
-| **§9a dry-coil analytical verification** | CE100, CE110, CE120, CE130, CE140 | Yes — §9.2.1 is by definition the *analytical* verification series; the per-case quasi-analytical solution ships in the licensed 140-2023 §9 normative materials (`scripts/generate_section9_ce_cases.py:145-147`) | **Adopt quasi-analytical as the primary criterion** (proposed ±5 % on the quasi-analytical monthly/annual totals, mirroring OpenBSE's tolerance *per issue #4239*), and demote the Task-22 comparative bands to a secondary diagnostic | A dry-coil CE case has a closed-form-ish steady-state answer that a correct DX model must reproduce; where an analytic reference exists, a comparative band is strictly weaker and would hide a real defect |
+| **§9a dry-coil analytical verification** | CE100, CE110, CE120, CE130, CE140 | Yes — §9.2.1 is by definition the *analytical* verification series; the per-case quasi-analytical solution ships in the licensed 140-2023 §9 normative materials (`scripts/generate_section9_ce_cases.py:245-250`) | **Adopt quasi-analytical as the primary criterion** (proposed ±5 % on the quasi-analytical monthly/annual totals, mirroring OpenBSE's tolerance *per issue #4239*), and demote the Task-22 comparative bands to a secondary diagnostic | A dry-coil CE case has a closed-form-ish steady-state answer that a correct DX model must reproduce; where an analytic reference exists, a comparative band is strictly weaker and would hide a real defect |
 | **§9a wet-coil / latent series** | CE150, CE160, CE165, CE170, CE180, CE185, CE190, CE195 | Yes for the §9.2.2 series (same licensed materials), but the latent component is where a *simulation* (psychrometrics, coil latent capacity, dehumidification) can legitimately differ | **Adopt quasi-analytical as primary on sensible+total cooling energy** (per the analytic solution's own metric definition); keep the comparative band as a **co-gate** for the cases that have one, and for CE150's `max_zone_temp` use the comparative range as the *only* available criterion (flag it as such) | Latent handling is the part most likely to differ across implementations, so dual criteria are defensible here in a way they are not for the dry series |
 | **§9a cases with no comparative band** | CE165, CE180, CE185, CE195 | Yes (same licensed materials) | **Quasi-analytical only.** Do not let a case enter the suite without *any* criterion; the comparative gap is a transcription gap, not a licence to invent a band | Precedent: fluxion refuses to invent bands — see the "nothing invented" rule quoted in `tests/validation/hvac_equipment_rated_performance/section9_ce.rs:20` and the `null` analytical slots |
 | **§9a "full-load rating-point" case** | CE200 | Yes (but the case's own conditions *are* the map's ARI rating point — the assertion is cross-provenance, not numeric) | **Keep the cross-provenance assertion** (case conditions vs map rating point) as the criterion for CE200; do not wrap it in a ±5 % band against a reference that is the map itself | `tests/validation/hvac_equipment_rated_performance/section9_ce.rs:13-18` |
@@ -191,9 +191,9 @@ Fluxion already has the right pattern for the *case table*; it does not yet have
   case parameters (`:60+`, `CASES` list), reads the performance map
   (`data/reference/ashrae140/section9_ce100_performance_map.json`), reads the comparative bounds
   CSV (`tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv`),
-  and writes the machine-readable table (`scripts/generate_section9_ce_cases.py:41-58`).
+  and writes the machine-readable table (`scripts/generate_section9_ce_cases.py:86-118`).
 - It ships a **`--check` mode** that fails when the committed JSON drifts from the generator
-  (`scripts/generate_section9_ce_cases.py:36`, `:197-208`; the file's own header states
+  (`scripts/generate_section9_ce_cases.py:50-53`, `:345-362`; the file's own header states
   "hand edits to the output file are prohibited — regenerate instead").
 - The output file is self-describing: `_purpose`, `_standard_scope`, `_parameter_source`,
   `_units`, and `engine_coverage` (`data/reference/ashrae140/section9_ce_cases.json:1-14`).
@@ -215,14 +215,14 @@ extend its own to the next layer.
    `acceptance` block in three slots — `analytical` (target value + tolerance + provenance),
    `comparative` (evidence range), `diagnostics` (physics identities: e.g. the
    load-balance identity the current dispatch already asserts). Today only the middle slot is
-   populated, and the first slot is hard-coded `None` (`scripts/generate_section9_ce_cases.py:143`).
+   populated, and the first slot is hard-coded `None` (`scripts/generate_section9_ce_cases.py:245`).
 3. **Emit the per-case run manifest from the same generator** so the strict-gate checker can
    discover cases, tolerances and provenance the way it does today for the envelope cohort
    (`scripts/check_strict_energy_gate_regression.py:60-104` reads a fixed case tuple plus a
    baseline JSON).
 4. **Make the generator the single place where the CE identifiers live.** The E1xx→CE1xx
    rename (#4296) had to touch the CSV, the manifest, the loaders and the docs — a generator
-   with an identifier mapping table (`scripts/generate_section9_ce_cases.py:130-136` already
+   with an identifier mapping table (`scripts/generate_section9_ce_cases.py:224-226` already
    emits the `"identifier E" + c["id"][1:]` cross-reference) removes that class of drift.
 
 ### 4.3 Consumers of this recommendation
@@ -250,7 +250,7 @@ Each §9a case is bound to a normative TMY2 weather file: the case table records
 (`data/reference/ashrae140/section9_ce_cases.json:26`, `:63`, `:290`, `:437`), and the
 generator documents that this is "the ASHRAE supplemental TMY2 file the standard binds the case
 to (never committed to this repo … see `fluxion-core/src/weather/tm2.rs` for the reader and the
-licensing note)" (`scripts/generate_section9_ce_cases.py:56-58`). Four distinct weather files
+licensing note)" (`scripts/generate_section9_ce_cases.py:84-85`). Four distinct weather files
 cover the 14 cases.
 
 ### 5.2 What fluxion's weather pipeline already supports
@@ -277,7 +277,7 @@ cover the 14 cases.
   CE_a normative materials live in the same free package
   (`140-2023-AccompanyingFiles.zip` — the §9 map transcription cites
   `Std140_CE_a_Files/Normative Materials`, `data/reference/ashrae140/section9_ce100_performance_map.json:2`,
-  and the generator cites the same package, `scripts/generate_section9_ce_cases.py:19`), then the
+  and the generator cites the same package, `scripts/generate_section9_ce_cases.py:9-20`), then the
   §9 weather problem is a *fetch-and-verify extension*, not a licensing blocker. **That is an
   assumption this evaluation could not verify**: the zip's member list was not enumerated
   offline.
@@ -302,7 +302,7 @@ cover the 14 cases.
 |---|---|---|
 | F1 | Enumerate and hash-verify the §9 CE_a normative weather files from the 140-2023 supplemental package | List the `Std140_CE_a_Files/Normative Materials` members of `140-2023-AccompanyingFiles.zip`, extract `CE100A/CE110A/CE165A/CE200A` TM2 files, and pin their SHA-256 in `tests/reference_data/weather/ashrae140_canonical_checksums.json` (extending `scripts/fetch_ashrae140_weather.py:46-55`) — no licensed analytical values involved. |
 | F2 | Transcribe the §9a quasi-analytical acceptance targets into `data/reference/ashrae140/section9_analytical_targets.json` | Blocked on #4285: transcribe the 140-2023 §9.2.1/§9.2.2 per-case analytic solutions with provenance, in the shape of `data/reference/ashrae140/section11_qas_targets.json` (owned by #4271). |
-| F3 | Extend `scripts/generate_section9_ce_cases.py` to emit the three-slot acceptance block | Generate `analytical` (value + tolerance + provenance), `comparative` (evidence range) and `diagnostics` per case instead of the hard-coded `analytical: None` at `scripts/generate_section9_ce_cases.py:143`, and keep `--check` green in CI. |
+| F3 | Extend `scripts/generate_section9_ce_cases.py` to emit the three-slot acceptance block | Generate `analytical` (value + tolerance + provenance), `comparative` (evidence range) and `diagnostics` per case instead of the hard-coded `analytical: None` at `scripts/generate_section9_ce_cases.py:245`, and keep `--check` green in CI. |
 | F4 | Transcribe the entering wet-bulb (EWB) condition for the 13 un-dispatchable CE cases | Add the EWB slot per case with provenance so `dispatch_ce_steady_state()` can evaluate CE100–CE195 instead of refusing them (`tests/validation/hvac_equipment_rated_performance/section9_ce.rs:13-20`); source is the licensed §9 materials (#4285). |
 | F5 | §9a monthly-output emitter on the BESTEST-GSR output contract | Emit the per-case monthly totals (and the February min/max columns) in the GSR CSV contract shape used by §7 (`data/reference/ashrae140/bestest_gsr_csv_contract.json`), with program identity in the header — the failure mode OpenBSE hit (`docs/ashrae_140/submission_pipeline_lessons.md:35-52`). |
 | F6 | Extend the strict-gate regression checker to a second cohort (CE cases) | Generalise `scripts/check_strict_energy_gate_regression.py:60-104` so a §9a cohort can be observed with the same PASS / KNOWN-FAIL / REGRESSION verdict model and a non-raisable baseline, once F2/F4/F5 land. |
@@ -321,7 +321,7 @@ the analytic metric is defined), the **quasi-analytical reference is the criteri
 documented tolerance (proposed ±5 % on the analytic monthly/annual totals, the OpenBSE
 tolerance *per issue #4239*, to be justified against fluxion's own resolution), and the
 Task-22 comparative bands demoted to **secondary diagnostic context** — the role the tree
-already assigns them (`scripts/generate_section9_ce_cases.py:138`). This is not a new idea for
+already assigns them (`scripts/generate_section9_ce_cases.py:215`). This is not a new idea for
 fluxion: it is the §11 QASv2 pattern (`fluxion-core/src/qas_airside.rs:1-3`) applied to §9a,
 and it is the same conclusion the repo already reached for §8 GC10a
 (`data/reference/ashrae140/analytical_acceptance_criteria.json`).

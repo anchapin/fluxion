@@ -8,6 +8,56 @@
     "note": "Upstream case-title typos (CE165 'Variatino fo', CE195 'Rato') corrected; numeric parameters transcribed unchanged"
   },
   "_units": "SI: W, degC",
+  "performance_map": {
+    "source": "data/reference/ashrae140/section9_ce100_performance_map.json",
+    "source_sha256": "c9911f33b33dd3ac5656c56aee45b513092d9e4443c24460899f925dffbe1013",
+    "tables": [
+      "adjusted_net_Table_26e",
+      "gross_Table_26c",
+      "net_Table_26a"
+    ],
+    "scoring_table": "adjusted_net_Table_26e",
+    "odb_columns_C": [
+      29.4,
+      32.2,
+      35.0,
+      37.8,
+      40.6,
+      46.1
+    ],
+    "ewb_columns_C": [
+      15.0,
+      17.2,
+      19.4,
+      21.7
+    ],
+    "point_count": 24,
+    "point_count_note": "6 ODB rows x 4 EWB columns per transcribed table",
+    "ari_rating_point": {
+      "conditions": {
+        "EDB_C": 26.7,
+        "EWB_C": 19.4,
+        "ODB_C": 35.0
+      },
+      "net_total_capacity_W": 7852,
+      "gross_total_capacity_W": 8181,
+      "adjusted_net_total_capacity_W": 7951,
+      "airflow_m3_s": 0.425,
+      "apparatus_dew_point_C": 13.8,
+      "compressor_power_W": 1858,
+      "indoor_fan_power_W": 230,
+      "outdoor_fan_power_W": 108,
+      "COP": 3.62,
+      "COP_SEER": 3.78
+    },
+    "fan_heat": {
+      "manufacturer_default_W": 329,
+      "actual_W": 230,
+      "net_definition": "gross capacities with the manufacturer default fan heat of 329 W deducted",
+      "adjusted_net_definition": "gross capacities with the actual fan heat of 230 W deducted"
+    }
+  },
+  "acceptance_policy": "Each case carries two explicitly labelled band slots: 'analytical' (the §9.2 quasi-analytical criterion - null today, the 140-2023 §9 normative materials are licensed, Issue #4285) and 'comparative' (the IEA SHC Task 22 ensemble evidence range, read per case from tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv). Every band records its own source; no band is fitted to the engine output, no band is widened, and no flat percentage is applied across cases.",
   "engine_coverage": {
     "cases_run": 14,
     "note": "Every CE case is dispatched through the DX performance map by the §9 engine-run harness (tests/validation/hvac_equipment_rated_performance/section9_engine_run.rs); the per-case band rows (comparative, Task-22 ensemble bounds) and their known-fail status are recorded in tests/validation/hvac_equipment_rated_performance/data/section9_engine_run_results.json (KNOWN_ISSUES LIMIT-42). The analytical §9.2 acceptance slot stays null (the 140-2023 §9 normative materials are licensed, Issue #4285) and the normative CE weather files are not committed (Issue #4285 / methodology F1), so the annual band metrics are not reproducible from the steady-state run"
@@ -27,11 +77,30 @@
       "equipment_performance": {
         "source": "data/reference/ashrae140/section9_ce100_performance_map.json",
         "source_sha256": "c9911f33b33dd3ac5656c56aee45b513092d9e4443c24460899f925dffbe1013",
-        "tables": "Tables 9-5 through 9-10 of 140-2023"
+        "tables": "Tables 9-5 through 9-10 of 140-2023",
+        "map_point_count": 24,
+        "map_table": "adjusted_net_Table_26e",
+        "map_odb_columns_C": [
+          29.4,
+          32.2,
+          35.0,
+          37.8,
+          40.6,
+          46.1
+        ],
+        "map_ewb_columns_C": [
+          15.0,
+          17.2,
+          19.4,
+          21.7
+        ],
+        "case_odb_is_tabulated": true,
+        "entering_wet_bulb_C": null,
+        "entering_wet_bulb_note": "the per-case entering wet-bulb is not transcribed (the 140-2023 §9 input specification is licensed, Issue #4285); the engine harness dispatches the case at every tabulated EWB column and reports the envelope"
       },
       "acceptance": {
         "comparative": {
-          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier EE100)",
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E100)",
           "bounds": {
             "annual_cooling": [
               4.1,
@@ -46,6 +115,7 @@
           },
           "role": "evidence range (ensemble min/max), not a pass/fail criterion"
         },
+        "comparative_note": null,
         "analytical": null,
         "analytical_note": "The 140-2023 Section 9 quasi-analytical acceptance criterion requires the licensed supplemental materials (Issue #4285); recorded here only once transcribed with provenance"
       }
@@ -64,11 +134,30 @@
       "equipment_performance": {
         "source": "data/reference/ashrae140/section9_ce100_performance_map.json",
         "source_sha256": "c9911f33b33dd3ac5656c56aee45b513092d9e4443c24460899f925dffbe1013",
-        "tables": "Tables 9-5 through 9-10 of 140-2023"
+        "tables": "Tables 9-5 through 9-10 of 140-2023",
+        "map_point_count": 24,
+        "map_table": "adjusted_net_Table_26e",
+        "map_odb_columns_C": [
+          29.4,
+          32.2,
+          35.0,
+          37.8,
+          40.6,
+          46.1
+        ],
+        "map_ewb_columns_C": [
+          15.0,
+          17.2,
+          19.4,
+          21.7
+        ],
+        "case_odb_is_tabulated": true,
+        "entering_wet_bulb_C": null,
+        "entering_wet_bulb_note": "the per-case entering wet-bulb is not transcribed (the 140-2023 §9 input specification is licensed, Issue #4285); the engine harness dispatches the case at every tabulated EWB column and reports the envelope"
       },
       "acceptance": {
         "comparative": {
-          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier EE110)",
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E110)",
           "bounds": {
             "annual_cooling": [
               4.0,
@@ -83,6 +172,7 @@
           },
           "role": "evidence range (ensemble min/max), not a pass/fail criterion"
         },
+        "comparative_note": null,
         "analytical": null,
         "analytical_note": "The 140-2023 Section 9 quasi-analytical acceptance criterion requires the licensed supplemental materials (Issue #4285); recorded here only once transcribed with provenance"
       }
@@ -101,11 +191,30 @@
       "equipment_performance": {
         "source": "data/reference/ashrae140/section9_ce100_performance_map.json",
         "source_sha256": "c9911f33b33dd3ac5656c56aee45b513092d9e4443c24460899f925dffbe1013",
-        "tables": "Tables 9-5 through 9-10 of 140-2023"
+        "tables": "Tables 9-5 through 9-10 of 140-2023",
+        "map_point_count": 24,
+        "map_table": "adjusted_net_Table_26e",
+        "map_odb_columns_C": [
+          29.4,
+          32.2,
+          35.0,
+          37.8,
+          40.6,
+          46.1
+        ],
+        "map_ewb_columns_C": [
+          15.0,
+          17.2,
+          19.4,
+          21.7
+        ],
+        "case_odb_is_tabulated": true,
+        "entering_wet_bulb_C": null,
+        "entering_wet_bulb_note": "the per-case entering wet-bulb is not transcribed (the 140-2023 §9 input specification is licensed, Issue #4285); the engine harness dispatches the case at every tabulated EWB column and reports the envelope"
       },
       "acceptance": {
         "comparative": {
-          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier EE120)",
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E120)",
           "bounds": {
             "annual_cooling": [
               4.3,
@@ -120,6 +229,7 @@
           },
           "role": "evidence range (ensemble min/max), not a pass/fail criterion"
         },
+        "comparative_note": null,
         "analytical": null,
         "analytical_note": "The 140-2023 Section 9 quasi-analytical acceptance criterion requires the licensed supplemental materials (Issue #4285); recorded here only once transcribed with provenance"
       }
@@ -138,11 +248,30 @@
       "equipment_performance": {
         "source": "data/reference/ashrae140/section9_ce100_performance_map.json",
         "source_sha256": "c9911f33b33dd3ac5656c56aee45b513092d9e4443c24460899f925dffbe1013",
-        "tables": "Tables 9-5 through 9-10 of 140-2023"
+        "tables": "Tables 9-5 through 9-10 of 140-2023",
+        "map_point_count": 24,
+        "map_table": "adjusted_net_Table_26e",
+        "map_odb_columns_C": [
+          29.4,
+          32.2,
+          35.0,
+          37.8,
+          40.6,
+          46.1
+        ],
+        "map_ewb_columns_C": [
+          15.0,
+          17.2,
+          19.4,
+          21.7
+        ],
+        "case_odb_is_tabulated": true,
+        "entering_wet_bulb_C": null,
+        "entering_wet_bulb_note": "the per-case entering wet-bulb is not transcribed (the 140-2023 §9 input specification is licensed, Issue #4285); the engine harness dispatches the case at every tabulated EWB column and reports the envelope"
       },
       "acceptance": {
         "comparative": {
-          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier EE130)",
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E130)",
           "bounds": {
             "annual_cooling": [
               3.95,
@@ -157,6 +286,7 @@
           },
           "role": "evidence range (ensemble min/max), not a pass/fail criterion"
         },
+        "comparative_note": null,
         "analytical": null,
         "analytical_note": "The 140-2023 Section 9 quasi-analytical acceptance criterion requires the licensed supplemental materials (Issue #4285); recorded here only once transcribed with provenance"
       }
@@ -175,11 +305,30 @@
       "equipment_performance": {
         "source": "data/reference/ashrae140/section9_ce100_performance_map.json",
         "source_sha256": "c9911f33b33dd3ac5656c56aee45b513092d9e4443c24460899f925dffbe1013",
-        "tables": "Tables 9-5 through 9-10 of 140-2023"
+        "tables": "Tables 9-5 through 9-10 of 140-2023",
+        "map_point_count": 24,
+        "map_table": "adjusted_net_Table_26e",
+        "map_odb_columns_C": [
+          29.4,
+          32.2,
+          35.0,
+          37.8,
+          40.6,
+          46.1
+        ],
+        "map_ewb_columns_C": [
+          15.0,
+          17.2,
+          19.4,
+          21.7
+        ],
+        "case_odb_is_tabulated": true,
+        "entering_wet_bulb_C": null,
+        "entering_wet_bulb_note": "the per-case entering wet-bulb is not transcribed (the 140-2023 §9 input specification is licensed, Issue #4285); the engine harness dispatches the case at every tabulated EWB column and reports the envelope"
       },
       "acceptance": {
         "comparative": {
-          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier EE140)",
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E140)",
           "bounds": {
             "annual_cooling": [
               4.2,
@@ -194,6 +343,7 @@
           },
           "role": "evidence range (ensemble min/max), not a pass/fail criterion"
         },
+        "comparative_note": null,
         "analytical": null,
         "analytical_note": "The 140-2023 Section 9 quasi-analytical acceptance criterion requires the licensed supplemental materials (Issue #4285); recorded here only once transcribed with provenance"
       }
@@ -212,11 +362,30 @@
       "equipment_performance": {
         "source": "data/reference/ashrae140/section9_ce100_performance_map.json",
         "source_sha256": "c9911f33b33dd3ac5656c56aee45b513092d9e4443c24460899f925dffbe1013",
-        "tables": "Tables 9-5 through 9-10 of 140-2023"
+        "tables": "Tables 9-5 through 9-10 of 140-2023",
+        "map_point_count": 24,
+        "map_table": "adjusted_net_Table_26e",
+        "map_odb_columns_C": [
+          29.4,
+          32.2,
+          35.0,
+          37.8,
+          40.6,
+          46.1
+        ],
+        "map_ewb_columns_C": [
+          15.0,
+          17.2,
+          19.4,
+          21.7
+        ],
+        "case_odb_is_tabulated": true,
+        "entering_wet_bulb_C": null,
+        "entering_wet_bulb_note": "the per-case entering wet-bulb is not transcribed (the 140-2023 §9 input specification is licensed, Issue #4285); the engine harness dispatches the case at every tabulated EWB column and reports the envelope"
       },
       "acceptance": {
         "comparative": {
-          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier EE150)",
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E150)",
           "bounds": {
             "annual_cooling": [
               5.4,
@@ -236,6 +405,7 @@
           },
           "role": "evidence range (ensemble min/max), not a pass/fail criterion"
         },
+        "comparative_note": null,
         "analytical": null,
         "analytical_note": "The 140-2023 Section 9 quasi-analytical acceptance criterion requires the licensed supplemental materials (Issue #4285); recorded here only once transcribed with provenance"
       }
@@ -254,11 +424,30 @@
       "equipment_performance": {
         "source": "data/reference/ashrae140/section9_ce100_performance_map.json",
         "source_sha256": "c9911f33b33dd3ac5656c56aee45b513092d9e4443c24460899f925dffbe1013",
-        "tables": "Tables 9-5 through 9-10 of 140-2023"
+        "tables": "Tables 9-5 through 9-10 of 140-2023",
+        "map_point_count": 24,
+        "map_table": "adjusted_net_Table_26e",
+        "map_odb_columns_C": [
+          29.4,
+          32.2,
+          35.0,
+          37.8,
+          40.6,
+          46.1
+        ],
+        "map_ewb_columns_C": [
+          15.0,
+          17.2,
+          19.4,
+          21.7
+        ],
+        "case_odb_is_tabulated": true,
+        "entering_wet_bulb_C": null,
+        "entering_wet_bulb_note": "the per-case entering wet-bulb is not transcribed (the 140-2023 §9 input specification is licensed, Issue #4285); the engine harness dispatches the case at every tabulated EWB column and reports the envelope"
       },
       "acceptance": {
         "comparative": {
-          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier EE160)",
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E160)",
           "bounds": {
             "annual_cooling": [
               5.3,
@@ -273,6 +462,7 @@
           },
           "role": "evidence range (ensemble min/max), not a pass/fail criterion"
         },
+        "comparative_note": null,
         "analytical": null,
         "analytical_note": "The 140-2023 Section 9 quasi-analytical acceptance criterion requires the licensed supplemental materials (Issue #4285); recorded here only once transcribed with provenance"
       }
@@ -291,10 +481,30 @@
       "equipment_performance": {
         "source": "data/reference/ashrae140/section9_ce100_performance_map.json",
         "source_sha256": "c9911f33b33dd3ac5656c56aee45b513092d9e4443c24460899f925dffbe1013",
-        "tables": "Tables 9-5 through 9-10 of 140-2023"
+        "tables": "Tables 9-5 through 9-10 of 140-2023",
+        "map_point_count": 24,
+        "map_table": "adjusted_net_Table_26e",
+        "map_odb_columns_C": [
+          29.4,
+          32.2,
+          35.0,
+          37.8,
+          40.6,
+          46.1
+        ],
+        "map_ewb_columns_C": [
+          15.0,
+          17.2,
+          19.4,
+          21.7
+        ],
+        "case_odb_is_tabulated": true,
+        "entering_wet_bulb_C": null,
+        "entering_wet_bulb_note": "the per-case entering wet-bulb is not transcribed (the 140-2023 §9 input specification is licensed, Issue #4285); the engine harness dispatches the case at every tabulated EWB column and reports the envelope"
       },
       "acceptance": {
         "comparative": null,
+        "comparative_note": "no comparative band recorded: this case has no transcribed row in tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (that file covers CE100, CE110, CE120, CE130, CE140, CE150, CE160, CE170, CE200). No band is invented and no flat percentage is applied.",
         "analytical": null,
         "analytical_note": "The 140-2023 Section 9 quasi-analytical acceptance criterion requires the licensed supplemental materials (Issue #4285); recorded here only once transcribed with provenance"
       }
@@ -313,11 +523,30 @@
       "equipment_performance": {
         "source": "data/reference/ashrae140/section9_ce100_performance_map.json",
         "source_sha256": "c9911f33b33dd3ac5656c56aee45b513092d9e4443c24460899f925dffbe1013",
-        "tables": "Tables 9-5 through 9-10 of 140-2023"
+        "tables": "Tables 9-5 through 9-10 of 140-2023",
+        "map_point_count": 24,
+        "map_table": "adjusted_net_Table_26e",
+        "map_odb_columns_C": [
+          29.4,
+          32.2,
+          35.0,
+          37.8,
+          40.6,
+          46.1
+        ],
+        "map_ewb_columns_C": [
+          15.0,
+          17.2,
+          19.4,
+          21.7
+        ],
+        "case_odb_is_tabulated": true,
+        "entering_wet_bulb_C": null,
+        "entering_wet_bulb_note": "the per-case entering wet-bulb is not transcribed (the 140-2023 §9 input specification is licensed, Issue #4285); the engine harness dispatches the case at every tabulated EWB column and reports the envelope"
       },
       "acceptance": {
         "comparative": {
-          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier EE170)",
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E170)",
           "bounds": {
             "annual_cooling": [
               5.55,
@@ -332,6 +561,7 @@
           },
           "role": "evidence range (ensemble min/max), not a pass/fail criterion"
         },
+        "comparative_note": null,
         "analytical": null,
         "analytical_note": "The 140-2023 Section 9 quasi-analytical acceptance criterion requires the licensed supplemental materials (Issue #4285); recorded here only once transcribed with provenance"
       }
@@ -350,10 +580,30 @@
       "equipment_performance": {
         "source": "data/reference/ashrae140/section9_ce100_performance_map.json",
         "source_sha256": "c9911f33b33dd3ac5656c56aee45b513092d9e4443c24460899f925dffbe1013",
-        "tables": "Tables 9-5 through 9-10 of 140-2023"
+        "tables": "Tables 9-5 through 9-10 of 140-2023",
+        "map_point_count": 24,
+        "map_table": "adjusted_net_Table_26e",
+        "map_odb_columns_C": [
+          29.4,
+          32.2,
+          35.0,
+          37.8,
+          40.6,
+          46.1
+        ],
+        "map_ewb_columns_C": [
+          15.0,
+          17.2,
+          19.4,
+          21.7
+        ],
+        "case_odb_is_tabulated": true,
+        "entering_wet_bulb_C": null,
+        "entering_wet_bulb_note": "the per-case entering wet-bulb is not transcribed (the 140-2023 §9 input specification is licensed, Issue #4285); the engine harness dispatches the case at every tabulated EWB column and reports the envelope"
       },
       "acceptance": {
         "comparative": null,
+        "comparative_note": "no comparative band recorded: this case has no transcribed row in tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (that file covers CE100, CE110, CE120, CE130, CE140, CE150, CE160, CE170, CE200). No band is invented and no flat percentage is applied.",
         "analytical": null,
         "analytical_note": "The 140-2023 Section 9 quasi-analytical acceptance criterion requires the licensed supplemental materials (Issue #4285); recorded here only once transcribed with provenance"
       }
@@ -372,10 +622,30 @@
       "equipment_performance": {
         "source": "data/reference/ashrae140/section9_ce100_performance_map.json",
         "source_sha256": "c9911f33b33dd3ac5656c56aee45b513092d9e4443c24460899f925dffbe1013",
-        "tables": "Tables 9-5 through 9-10 of 140-2023"
+        "tables": "Tables 9-5 through 9-10 of 140-2023",
+        "map_point_count": 24,
+        "map_table": "adjusted_net_Table_26e",
+        "map_odb_columns_C": [
+          29.4,
+          32.2,
+          35.0,
+          37.8,
+          40.6,
+          46.1
+        ],
+        "map_ewb_columns_C": [
+          15.0,
+          17.2,
+          19.4,
+          21.7
+        ],
+        "case_odb_is_tabulated": true,
+        "entering_wet_bulb_C": null,
+        "entering_wet_bulb_note": "the per-case entering wet-bulb is not transcribed (the 140-2023 §9 input specification is licensed, Issue #4285); the engine harness dispatches the case at every tabulated EWB column and reports the envelope"
       },
       "acceptance": {
         "comparative": null,
+        "comparative_note": "no comparative band recorded: this case has no transcribed row in tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (that file covers CE100, CE110, CE120, CE130, CE140, CE150, CE160, CE170, CE200). No band is invented and no flat percentage is applied.",
         "analytical": null,
         "analytical_note": "The 140-2023 Section 9 quasi-analytical acceptance criterion requires the licensed supplemental materials (Issue #4285); recorded here only once transcribed with provenance"
       }
@@ -394,10 +664,30 @@
       "equipment_performance": {
         "source": "data/reference/ashrae140/section9_ce100_performance_map.json",
         "source_sha256": "c9911f33b33dd3ac5656c56aee45b513092d9e4443c24460899f925dffbe1013",
-        "tables": "Tables 9-5 through 9-10 of 140-2023"
+        "tables": "Tables 9-5 through 9-10 of 140-2023",
+        "map_point_count": 24,
+        "map_table": "adjusted_net_Table_26e",
+        "map_odb_columns_C": [
+          29.4,
+          32.2,
+          35.0,
+          37.8,
+          40.6,
+          46.1
+        ],
+        "map_ewb_columns_C": [
+          15.0,
+          17.2,
+          19.4,
+          21.7
+        ],
+        "case_odb_is_tabulated": true,
+        "entering_wet_bulb_C": null,
+        "entering_wet_bulb_note": "the per-case entering wet-bulb is not transcribed (the 140-2023 §9 input specification is licensed, Issue #4285); the engine harness dispatches the case at every tabulated EWB column and reports the envelope"
       },
       "acceptance": {
         "comparative": null,
+        "comparative_note": "no comparative band recorded: this case has no transcribed row in tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (that file covers CE100, CE110, CE120, CE130, CE140, CE150, CE160, CE170, CE200). No band is invented and no flat percentage is applied.",
         "analytical": null,
         "analytical_note": "The 140-2023 Section 9 quasi-analytical acceptance criterion requires the licensed supplemental materials (Issue #4285); recorded here only once transcribed with provenance"
       }
@@ -416,10 +706,30 @@
       "equipment_performance": {
         "source": "data/reference/ashrae140/section9_ce100_performance_map.json",
         "source_sha256": "c9911f33b33dd3ac5656c56aee45b513092d9e4443c24460899f925dffbe1013",
-        "tables": "Tables 9-5 through 9-10 of 140-2023"
+        "tables": "Tables 9-5 through 9-10 of 140-2023",
+        "map_point_count": 24,
+        "map_table": "adjusted_net_Table_26e",
+        "map_odb_columns_C": [
+          29.4,
+          32.2,
+          35.0,
+          37.8,
+          40.6,
+          46.1
+        ],
+        "map_ewb_columns_C": [
+          15.0,
+          17.2,
+          19.4,
+          21.7
+        ],
+        "case_odb_is_tabulated": true,
+        "entering_wet_bulb_C": null,
+        "entering_wet_bulb_note": "the per-case entering wet-bulb is not transcribed (the 140-2023 §9 input specification is licensed, Issue #4285); the engine harness dispatches the case at every tabulated EWB column and reports the envelope"
       },
       "acceptance": {
         "comparative": null,
+        "comparative_note": "no comparative band recorded: this case has no transcribed row in tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (that file covers CE100, CE110, CE120, CE130, CE140, CE150, CE160, CE170, CE200). No band is invented and no flat percentage is applied.",
         "analytical": null,
         "analytical_note": "The 140-2023 Section 9 quasi-analytical acceptance criterion requires the licensed supplemental materials (Issue #4285); recorded here only once transcribed with provenance"
       }
@@ -438,11 +748,30 @@
       "equipment_performance": {
         "source": "data/reference/ashrae140/section9_ce100_performance_map.json",
         "source_sha256": "c9911f33b33dd3ac5656c56aee45b513092d9e4443c24460899f925dffbe1013",
-        "tables": "Tables 9-5 through 9-10 of 140-2023"
+        "tables": "Tables 9-5 through 9-10 of 140-2023",
+        "map_point_count": 24,
+        "map_table": "adjusted_net_Table_26e",
+        "map_odb_columns_C": [
+          29.4,
+          32.2,
+          35.0,
+          37.8,
+          40.6,
+          46.1
+        ],
+        "map_ewb_columns_C": [
+          15.0,
+          17.2,
+          19.4,
+          21.7
+        ],
+        "case_odb_is_tabulated": true,
+        "entering_wet_bulb_C": null,
+        "entering_wet_bulb_note": "the per-case entering wet-bulb is not transcribed (the 140-2023 §9 input specification is licensed, Issue #4285); the engine harness dispatches the case at every tabulated EWB column and reports the envelope"
       },
       "acceptance": {
         "comparative": {
-          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier EE200)",
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E200)",
           "bounds": {
             "annual_cooling": [
               5.6,
@@ -457,6 +786,7 @@
           },
           "role": "evidence range (ensemble min/max), not a pass/fail criterion"
         },
+        "comparative_note": null,
         "analytical": null,
         "analytical_note": "The 140-2023 Section 9 quasi-analytical acceptance criterion requires the licensed supplemental materials (Issue #4285); recorded here only once transcribed with provenance"
       }

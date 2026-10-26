@@ -947,3 +947,155 @@ fn test_section9_scored_rows_carry_real_numbers_against_their_own_band() {
         "at least one §9 case must be scored against its own band"
     );
 }
+
+/// The generated §9 case table wires the CE100 performance map through every
+/// case and states each case's acceptance-band status explicitly (Issue
+/// #4296).
+///
+/// * The root `performance_map` block must describe the map artefact the
+///   engine actually dispatches against: 24 tabulated points (6 ODB rows x 4
+///   EWB columns) and the same ODB/EWB columns the map artefact exposes.
+/// * Every case must repeat that wiring, so a case can never claim a
+///   performance basis the map does not tabulate.
+/// * Every case must name its band kinds explicitly: the `analytical` slot
+///   (null today, with its reason) and the `comparative` slot (the Task-22
+///   ensemble band with its source, or an explicit note naming the missing
+///   source for the cases the bounds CSV does not cover).
+#[test]
+fn test_section9_case_table_wires_the_performance_map_and_states_its_bands() {
+    let root: Value = serde_json::from_str(SECTION9_CASES_JSON).expect("parse §9 CE cases");
+
+    // --- the performance-map wiring -------------------------------------
+    let map_meta = &root["performance_map"];
+    assert_eq!(
+        map_meta["point_count"].as_u64(),
+        Some(24),
+        "the CE100 performance map tabulates 24 points per table (6 ODB rows x 4 EWB columns)"
+    );
+    assert_eq!(
+        map_meta["scoring_table"].as_str(),
+        Some("adjusted_net_Table_26e"),
+        "the case table must name the map table the engine scores against"
+    );
+
+    let map_table = &map_json()["tables"]["adjusted_net_Table_26e"];
+    let mut map_odb: Vec<f64> = map_table
+        .as_object()
+        .expect("adjusted-net table object")
+        .keys()
+        .filter_map(|k| k.parse::<f64>().ok())
+        .collect();
+    map_odb.sort_by(|a, b| a.partial_cmp(b).expect("finite ODB"));
+    let table_odb: Vec<f64> = map_meta["odb_columns_C"]
+        .as_array()
+        .expect("odb_columns_C array")
+        .iter()
+        .map(|v| v.as_f64().expect("ODB column"))
+        .collect();
+    assert_eq!(
+        table_odb, map_odb,
+        "the case table's ODB columns must be the map artefact's ODB columns"
+    );
+    let table_ewb: Vec<f64> = map_meta["ewb_columns_C"]
+        .as_array()
+        .expect("ewb_columns_C array")
+        .iter()
+        .map(|v| v.as_f64().expect("EWB column"))
+        .collect();
+    assert_eq!(
+        table_ewb,
+        map_ewb_columns(),
+        "the case table's EWB columns must be the map artefact's EWB columns"
+    );
+
+    // --- per-case wiring and band status -------------------------------
+    let cases = root["cases"].as_array().expect("cases array");
+    for case in cases {
+        let case_id = case["case_id"].as_str().expect("case_id");
+        let perf = &case["equipment_performance"];
+        assert_eq!(
+            perf["map_point_count"].as_u64(),
+            Some(24),
+            "case {case_id}: the case must be wired to the 24-point performance map"
+        );
+        assert_eq!(
+            perf["source"].as_str(),
+            Some("data/reference/ashrae140/section9_ce100_performance_map.json"),
+            "case {case_id}: the case must name the performance-map artefact it dispatches against"
+        );
+        assert!(
+            !perf["source_sha256"].as_str().unwrap_or("").is_empty(),
+            "case {case_id}: the performance-map source must be pinned by digest"
+        );
+        let case_odb: Vec<f64> = perf["map_odb_columns_C"]
+            .as_array()
+            .expect("map_odb_columns_C array")
+            .iter()
+            .map(|v| v.as_f64().expect("ODB column"))
+            .collect();
+        assert_eq!(
+            case_odb, map_odb,
+            "case {case_id}: the case must be wired to the map's ODB columns"
+        );
+        assert_eq!(
+            perf["case_odb_is_tabulated"].as_bool(),
+            Some(true),
+            "case {case_id}: the case's outdoor dry-bulb must be a tabulated map row"
+        );
+        assert!(
+            perf["entering_wet_bulb_C"].is_null(),
+            "case {case_id}: the per-case entering wet-bulb is not transcribed — it must stay \
+             explicitly null rather than be invented"
+        );
+
+        // Band kinds are explicit for every case.
+        let acceptance = &case["acceptance"];
+        assert!(
+            acceptance["analytical"].is_null(),
+            "case {case_id}: the §9.2 quasi-analytical slot must stay null until the licensed \
+             140-2023 §9 materials are transcribed (#4285)"
+        );
+        assert!(
+            !acceptance["analytical_note"]
+                .as_str()
+                .unwrap_or("")
+                .trim()
+                .is_empty(),
+            "case {case_id}: the null analytical slot must carry its reason"
+        );
+        if acceptance["comparative"].is_null() {
+            assert!(
+                !acceptance["comparative_note"]
+                    .as_str()
+                    .unwrap_or("")
+                    .trim()
+                    .is_empty(),
+                "case {case_id}: a case with no comparative band must say so explicitly and name \
+                 the missing source"
+            );
+        } else {
+            let comparative = &acceptance["comparative"];
+            let source = comparative["source"].as_str().expect("comparative source");
+            assert!(
+                source.contains("comparative_bounds_ce100_ce200.csv"),
+                "case {case_id}: the comparative band must name the bounds file it was read from"
+            );
+            // The Task-22 identifier quoted in the source string is the
+            // published one ("E100"), not a doubled "EE100".
+            let task22_id = format!("identifier {}", &case_id[1..]);
+            assert!(
+                source.contains(&task22_id),
+                "case {case_id}: the band source must quote the published Task-22 identifier \
+                 {task22_id}"
+            );
+            assert!(
+                !comparative["bounds"].as_object().expect("bounds object").is_empty(),
+                "case {case_id}: a comparative band must carry its bounds"
+            );
+            assert!(
+                !comparative["role"].as_str().unwrap_or("").trim().is_empty(),
+                "case {case_id}: a comparative band must state its role"
+            );
+        }
+    }
+}
