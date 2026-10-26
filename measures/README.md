@@ -28,6 +28,7 @@ for the full design rationale.
 | [`SetWindowProperties.py`](SetWindowProperties.py) | `SetWindowProperties` | Set the glazing U-value (W/m²·K) and/or the solar heat gain coefficient (SHGC) of the model's window specs — the single-pane → low-e double-pane upgrade study. A model with no window spec fails loudly. |
 | [`SetInfiltrationRate.py`](SetInfiltrationRate.py) | `SetInfiltrationRate` | Set the model's infiltration / air-leakage rate (ACH) to a constant target — the envelope-tightening study. The rate must be in `[0, 20]` ACH (0 is a sealed-envelope study). A model with no infiltration representation fails loudly. |
 | [`SetOccupancyDensity.py`](SetOccupancyDensity.py) | `SetOccupancyDensity` | Set the occupancy density (persons/m²) of the model's occupancy / internal-load inputs. The density must be positive and bounded; a model with no occupancy object fails loudly. |
+| [`ReplaceHVACWithHeatPump.py`](ReplaceHVACWithHeatPump.py) | `ReplaceHVACWithHeatPump` | Replace the model's HVAC system with an air-source heat pump (heating / cooling COP, optional plant capacity and outdoor operating envelope). The COPs must be positive and bounded; a model with no HVAC system fails loudly. |
 
 > **Control-side persistence (Issue #3995).** `SetThermostatSetpoints` and
 > `SwapSchedule` act on the model's *control* data. The native
@@ -93,6 +94,34 @@ for the full design rationale.
 > with the lighting and equipment measures, the native `fluxion.Model`
 > binding exposes no occupancy accessor, so on today's bindings the
 > measure fails loudly on a native model.
+
+> **HVAC electrification (Issue #3995).** `ReplaceHVACWithHeatPump` is the
+> electrification member of the standard library: it replaces the model's
+> HVAC system with an air-source heat pump — the canonical "what does the
+> bill look like once the boiler becomes a heat pump?" study, and the
+> plant-side sibling of `ReplaceHVACWithVAV` (which electrifies the air
+> side). It writes the heat-pump COP onto the HVAC snapshot
+> (`cop_heating` / `cop_cooling`, default 3.0 / 3.5) and, optionally, the
+> plant capacities and the outdoor operating envelope of the unit
+> (`min_outdoor_temp` / `max_outdoor_temp`). The COP bounds (0.1-20) are
+> the ones `SetHVACEfficiency` already uses — the measure reuses them
+> rather than inventing new ones — and they are validated *before* the
+> model is touched, so an invalid request never leaves a half-mutated
+> model behind. A model that carries no HVAC system fails loudly with
+> `HVACSystemNotFoundError`, exactly like `SetHVACEfficiency`.
+>
+> The repo does know about heat pumps — the Rust engine has the
+> `HVACSystemType::HeatPump` variant and a full `HeatPump` struct
+> (`src/sim/hvac/mod.rs`), the Python binding exposes
+> `fluxion.HVACSystemType.HeatPump` (`src/python/hvac_bindings.rs`), and
+> the JSON schema accepts the type through `controls.hvac_system`
+> (`src/api/schema.rs`). The *measure-facing* HVAC snapshot, however,
+> carries no system-type field (`PyHVACSystem`,
+> `src/python/model_bindings/hvac.rs`), so on today's bindings the
+> measure sets the heat-pump **COP** (an advisory field, as documented for
+> `ReplaceHVACWithVAV` and `SetHVACEfficiency`) and records the system
+> type only where the model's representation can carry one — it never
+> claims a system-type change that did not happen.
 
 > **Shading (Issue #3995).** `AddOverhang` is the shading member of the
 > standard library: it attaches a horizontal overhang (projection `depth`,
