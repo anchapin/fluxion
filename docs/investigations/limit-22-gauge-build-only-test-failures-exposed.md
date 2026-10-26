@@ -2,7 +2,7 @@
 
 Narrative history for **LIMIT-22**, moved verbatim out of `docs/KNOWN_ISSUES.md` by Issue #4278. The current state of this limitation is the `LIMIT-22` row in that document's status table; this file is the provenance behind it.
 
-Blocks preserved: 1. No wording was changed, softened or deleted.
+Blocks preserved: 2. No wording was changed, softened or deleted.
 
 ---
 
@@ -78,3 +78,55 @@ Blocks preserved: 1. No wording was changed, softened or deleted.
   and routed to the GaugeSolver program.** Per AGENTS.md / RULES.md /
   ADR-0001, no test threshold was relaxed and no constant tuned — the
   assertions are retained verbatim under the quarantine markers.
+
+
+---
+
+#### 2026-10-26 (physics loop round 102): scoping the φ_st-through-t_s arm — the 5R1C checker mirror is probe-gain-blind by construction post-#4582 (r101)
+
+- **Premise verified in code (this entry's item 3; the #3103/#3066
+  family).** Since round 101 the engine routes internal-gain radiative
+  to the surface node in full (`step_5r1c.rs` φ_st/φ_st_int partition
+  at the §C.3 site), and the checker's 9R4C arm mirrors that: it
+  rebuilds `t_s = (h_tr_ms·T_m_prev + h_tr_is·T_air + φ_st) /
+  (h_tr_ms + h_tr_is + h_tr_me)` with the full radiative term
+  (`invariant_checker.rs`, `NineRFourC` branch), so the artificial-gain
+  probe has leverage there. The 5R1C arms do not: the R77
+  composite-coefficient arm replays persisted `(a_k, b_k)` sub-step
+  coefficients that encode the engine's own committed-hour drive (the
+  checker records that the load delta's φ_m share is structurally zero
+  since round 101); the per-class t_s-first mirror's mass-drive numer
+  carries only φ_m; the legacy lumped identity likewise.
+  `check_invariant_with_artificial_gain` on a 5R1C state therefore
+  compares two identical residuals — zero leverage by construction.
+  The engine reaches the mass through the surface layer (the composite
+  coefficients encode the `h_tr_ms·t_s` path); the mirror simply does
+  not rebuild that path from a perturbed load. This is an instrument
+  blind spot, not an engine gain-routing defect.
+- **Should the mirror carry φ_st through t_s? Yes, in principle.** For
+  the probe to have 5R1C leverage the mirror must rebuild the per-class
+  surface algebra from the perturbed load exactly as the engine's
+  t_s-first layer does (per-class φ_st shares, the R77 sub-step φ
+  ramping, then the surface→mass path), keeping the without-gain
+  residual bit-zero — the 9R4C arm is the worked pattern (rebuild `t_s`
+  analytically from the same scalars the integrator consumed).
+- **Why scoped, not attempted this round:** the 5R1C t_s-first layer is
+  sub-stepped (R77 coupled-N, default 12 sub-steps, per-class sol-air
+  and ramped drives), and the composite-coefficient arm exists
+  precisely because a closed hourly form stopped matching the composite
+  advance (#3983 §64). A correct rebuild re-derives the composite
+  sub-step algebra inside the checker (checker-lags-integrator class,
+  #4504 precedent) with bit-exactness against the persisted-coefficient
+  route, and the strict-gate residual-exactly-zero property (`fd7ef13`,
+  #3297) must survive it. That is a multi-day instrumentation project,
+  not a drive-by; this block records the verdict and the acceptance
+  shape.
+- **Un-quarantine implication (criterion 3 of this entry):** once the
+  mirror carries the load delta through a rebuilt surface path,
+  `test_different_zones_respond_differently_to_targeted_gain`'s
+  structural zero-leverage cause is removed; the gauge-build quarantine
+  on that test can be re-evaluated then (its assertion may still fail
+  on trajectory grounds — separate gaps, criteria 1-2).
+- **Interim product surface:** unchanged — the integrated-flux
+  `EnergyBalanceValidator` (#1344) remains the documented diagnostic;
+  this stays in the §LIMIT-19 / #3103 family pending that investigation.

@@ -144,7 +144,8 @@ jobs:
 
       # ADR-0007 criterion 4 — Case 600 series (ADR-0025 Option C).
       # Alex's decision, 2026-10-18: hard tier on currently-green tests +
-      # drift-checked tracked tier on the 9 known-gap tests. The cargo
+      # drift-checked tracked tier on the known-gap tests (7 tracked as of
+      # the 2026-10-26 re-pin, loop round 102). The cargo
       # step is always allowed to exit non-zero (the tracked tier IS
       # red); the verdict step below enforces the two tiers. --nocapture
       # is added so the tests' measured-value lines are parseable by
@@ -157,10 +158,11 @@ jobs:
             > criterion-4-output.log 2>&1 || true
           echo "Criterion 4 log size: $(wc -l < criterion-4-output.log) lines"
 
-      # ADR-0025 Option C — Criterion 4 verdict. Hard tier: the six
+      # ADR-0025 Option C — Criterion 4 verdict. Hard tier: the eight
       # passing tests must stay green and the twelve quarantined tests
-      # must stay ignored (fail-closed on either deviation). Tracked
-      # tier: the 9 known-gap tests' measured values are diffed against
+      # must stay ignored (fail-closed on either deviation; tier counts
+      # as of the 2026-10-26 re-pin, loop round 102). Tracked
+      # tier: the 7 tracked members' measured values are diffed against
       # tests/reference_data/gauge_soak/criterion4_tracked_cohort_baseline.csv
       # at the #4281 gate's 0.1% relative epsilon. A tracked drift or a
       # cohort member turning green (re-pin required) is recorded in

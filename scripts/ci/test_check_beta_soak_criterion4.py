@@ -33,7 +33,7 @@ def _names(log_text: str) -> list[mod.TestOutcome]:
 
 GREEN_LOG = """\
 test ashrae_140_case_600_series::case_600ff::test_max_temperature ... FAILED
-Case 600FF Max Temp: 43.93°C (Ref: 62.40 to 68.40)
+Case 600FF Max Temp: 45.05°C (Ref: 62.40 to 68.40)
 test ashrae_140_case_600_series::case_600ff::test_min_temperature ... ok
 Case 600FF Min Temp: -12.01°C (Ref: -13.80 to -9.90)
 test ashrae_140_case_600_series::case_610::test_annual_heating ... ignored, physics gap
@@ -45,26 +45,26 @@ test ashrae_140_case_600_series::case_620::test_annual_cooling ... ignored, phys
 test ashrae_140_case_600_series::case_620::test_peak_heating ... ignored, physics gap
 test ashrae_140_case_600_series::case_620::test_peak_cooling ... ignored, physics gap
 test ashrae_140_case_600_series::case_630::test_annual_heating ... FAILED
-Case 630 Annual Heating: 29.23 MWh (Ref: 4.36-5.14)
+Case 630 Annual Heating: 28.76 MWh (Ref: 4.36-5.14)
 test ashrae_140_case_600_series::case_630::test_annual_cooling ... FAILED
-Case 630 Annual Cooling: 6.44 MWh (Ref: 2.57-3.07)
+Case 630 Annual Cooling: 6.12 MWh (Ref: 2.57-3.07)
 test ashrae_140_case_600_series::case_630::test_peak_cooling ... FAILED
-Case 630 Peak Cooling: 13.43 kW (Ref: 3.53-4.21)
+Case 630 Peak Cooling: 14.27 kW (Ref: 3.53-4.21)
 test ashrae_140_case_600_series::case_630::test_peak_heating ... ignored, physics gap
 test ashrae_140_case_600_series::case_640::test_annual_cooling ... FAILED
-Case 640 Annual Cooling: 6.83 MWh (Ref: 5.24-5.89)
+Case 640 Annual Cooling: 7.89 MWh (Ref: 5.24-5.89)
 test ashrae_140_case_600_series::case_640::test_annual_heating ... ignored, physics gap
 test ashrae_140_case_600_series::case_640::test_peak_heating ... ignored, physics gap
 test ashrae_140_case_600_series::case_640::test_peak_cooling ... ignored, physics gap
 test ashrae_140_case_600_series::case_650::test_annual_cooling ... ok
 Case 650 Annual Cooling: 3.85 MWh (Ref: 4.19-4.95)
 test ashrae_140_case_600_series::case_650::test_peak_cooling ... FAILED
-Case 650 Peak Cooling: 14.57 kW (Ref: 5.04-6.29)
+Case 650 Peak Cooling: 15.28 kW (Ref: 5.04-6.29)
 test ashrae_140_case_600_series::case_650::test_annual_heating_near_zero ... ok
 test ashrae_140_case_600_series::case_650ff::test_min_temperature ... ok
 Case 650FF Min Temp: -17.89°C (Ref: -17.80 to -16.70)
 test ashrae_140_case_600_series::case_650ff::test_max_temperature ... FAILED
-Case 650FF Max Temp: 43.33°C (Ref: 61.10 to 66.80)
+Case 650FF Max Temp: 42.67°C (Ref: 61.10 to 66.80)
 test ashrae_140_case_600_series::free_float_hvac_guard::builders_match_free_float_classification ... ok
 test ashrae_140_case_600_series::free_float_hvac_guard::case_600ff_zero_hvac_energy ... ok
 test ashrae_140_case_600_series::free_float_hvac_guard::case_650ff_zero_hvac_energy ... ok
@@ -76,14 +76,17 @@ test other_suite::case_a::test_b ... ok
 # 2026-10-25 re-pin (loop round 99): case_650::test_annual_cooling and
 # case_650ff::test_min_temperature joined the hard tier as pass — they
 # appear `ok` here and are absent from TRACKED below.
+# 2026-10-26 re-pin (loop round 102): all seven tracked values
+# re-measured from soak run 40319152757 (CI anchor) after physics
+# rounds 93-95; the values below mirror the committed CSV.
 TRACKED = {
-    "ashrae_140_case_600_series::case_600ff::test_max_temperature": "43.93",
-    "ashrae_140_case_600_series::case_630::test_annual_heating": "29.23",
-    "ashrae_140_case_600_series::case_630::test_annual_cooling": "6.44",
-    "ashrae_140_case_600_series::case_630::test_peak_cooling": "13.43",
-    "ashrae_140_case_600_series::case_640::test_annual_cooling": "6.83",
-    "ashrae_140_case_600_series::case_650::test_peak_cooling": "14.57",
-    "ashrae_140_case_600_series::case_650ff::test_max_temperature": "43.33",
+    "ashrae_140_case_600_series::case_600ff::test_max_temperature": "45.05",
+    "ashrae_140_case_600_series::case_630::test_annual_heating": "28.76",
+    "ashrae_140_case_600_series::case_630::test_annual_cooling": "6.12",
+    "ashrae_140_case_600_series::case_630::test_peak_cooling": "14.27",
+    "ashrae_140_case_600_series::case_640::test_annual_cooling": "7.89",
+    "ashrae_140_case_600_series::case_650::test_peak_cooling": "15.28",
+    "ashrae_140_case_600_series::case_650ff::test_max_temperature": "42.67",
 }
 
 
@@ -102,10 +105,10 @@ def test_baseline_csv_is_parseable_and_complete():
 
 def test_value_line_regex_parses_all_units():
     v = mod.parse_measured_values(GREEN_LOG)
-    assert v[("600FF", "Max Temp")] == 43.93
+    assert v[("600FF", "Max Temp")] == 45.05
     assert v[("650FF", "Min Temp")] == -17.89
-    assert v[("630", "Annual Heating")] == 29.23
-    assert v[("650", "Peak Cooling")] == 14.57
+    assert v[("630", "Annual Heating")] == 28.76
+    assert v[("650", "Peak Cooling")] == 15.28
 
 
 def test_green_log_yields_green():
@@ -117,7 +120,7 @@ def test_green_log_yields_green():
 
 
 def test_tracked_value_drift_fails_night():
-    drifted = GREEN_LOG.replace("29.23 MWh", "30.00 MWh")
+    drifted = GREEN_LOG.replace("28.76 MWh", "30.00 MWh")
     outcomes = _names(drifted)
     baseline, meta, hard = mod.parse_baseline(BASELINE)
     measured = mod.parse_measured_values(drifted)
@@ -125,8 +128,8 @@ def test_tracked_value_drift_fails_night():
     assert verdict.verdict == "tracked-drift"
     assert verdict.drift[0]["test"].endswith("case_630::test_annual_heating")
     # A change inside epsilon does NOT drift.
-    inside = GREEN_LOG.replace("29.23 MWh", "29.26 MWh")  # 0.103% -> drift
-    inside_ok = GREEN_LOG.replace("29.23 MWh", "29.25 MWh")  # 0.0685% -> ok
+    inside = GREEN_LOG.replace("28.76 MWh", "28.79 MWh")  # 0.104% -> drift
+    inside_ok = GREEN_LOG.replace("28.76 MWh", "28.78 MWh")  # 0.070% -> ok
     v_in = mod.evaluate(
         _names(inside), mod.parse_measured_values(inside), baseline, meta, hard
     )
