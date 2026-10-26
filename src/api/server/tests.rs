@@ -137,6 +137,144 @@ fn run_simulation_rejects_empty_geometry() {
     assert!(matches!(err, ApiError::InvalidSchema(_)));
 }
 
+// -------------------------------------------------------------------------
+// Issue #4632 (Refs #3997; depends on #3984) — named HVAC templates.
+//
+// `controls.hvac_system` names one of the engine's HVAC templates, but the
+// production simulation path only implements the ideal-loads engine. Any
+// other template must be rejected explicitly (4xx) instead of being
+// silently simulated as ideal loads.
+// -------------------------------------------------------------------------
+
+/// Every named HVAC template that the production path does **not** implement
+/// must be rejected by `run_simulation` before any simulation work happens.
+#[test]
+fn run_simulation_rejects_non_ideal_hvac_templates() {
+    use crate::sim::hvac::HVACSystemType;
+
+    let rejected = [
+        HVACSystemType::Simple,
+        HVACSystemType::VAV,
+        HVACSystemType::CAV,
+        HVACSystemType::HeatPump,
+    ];
+
+    for template in rejected {
+        let mut schema = default_schema_v1();
+        schema.controls.hvac_system = Some(template);
+
+        let err = run_simulation(&schema, 1, false, ThermalSelector::default(), "test")
+            .expect_err("a non-Ideal HVAC template must be rejected, not silently simulated");
+
+        let ApiError::InvalidSchema(msg) = err else {
+            panic!("expected ApiError::InvalidSchema for template {template:?}");
+        };
+        // The message must name the requested template and state that it is
+        // not wired to the production path yet (with the tracking refs).
+        assert!(
+            msg.contains(&format!("{template:?}")),
+            "rejection message must name the requested template: {msg}"
+        );
+        assert!(
+            msg.contains("not yet wired to the production simulation path"),
+            "rejection message must state the template is not wired yet: {msg}"
+        );
+        assert!(msg.contains("#3997"), "rejection message must cite #3997: {msg}");
+        assert!(msg.contains("#3984"), "rejection message must cite #3984: {msg}");
+    }
+}
+
+/// The `Ideal` template is the one named template the production path
+/// implements — it must be accepted and behave exactly like an absent
+/// template (ideal loads), i.e. byte-identical results.
+#[test]
+fn run_simulation_accepts_ideal_hvac_template() {
+    use crate::sim::hvac::HVACSystemType;
+
+    let mut ideal = default_schema_v1();
+    ideal.controls.hvac_system = Some(HVACSystemType::Ideal);
+    let mut absent = default_schema_v1();
+    absent.controls.hvac_system = None;
+
+    let ideal_out =
+        run_simulation(&ideal, 1, false, ThermalSelector::default(), "test").expect("Ideal accepted");
+    let absent_out =
+        run_simulation(&absent, 1, false, ThermalSelector::default(), "test").expect("None accepted");
+
+    // Byte-identical behaviour: the named `Ideal` template and the absent
+    // template produce exactly the same numbers.
+    assert_eq!(ideal_out.total_energy, absent_out.total_energy);
+    assert_eq!(ideal_out.heating_energy, absent_out.heating_energy);
+    assert_eq!(ideal_out.cooling_energy, absent_out.cooling_energy);
+    assert_eq!(ideal_out.eui, absent_out.eui);
+    assert_eq!(ideal_out.peak_heating_load, absent_out.peak_heating_load);
+    assert_eq!(ideal_out.peak_cooling_load, absent_out.peak_cooling_load);
+    assert_eq!(ideal_out.zone_temperatures, absent_out.zone_temperatures);
+}
+
+/// An absent `controls.hvac_system` keeps working exactly as before
+/// (the historical ideal-loads behaviour).
+#[test]
+fn run_simulation_accepts_absent_hvac_template() {
+    let mut schema = default_schema_v1();
+    schema.controls.hvac_system = None;
+
+    let result = run_simulation(&schema, 1, false, ThermalSelector::default(), "test");
+    match result {
+        Ok(_) => {}
+        // A divergence failure is unrelated to the HVAC-template guard; the
+        // point of the test is that the run is not rejected as an invalid
+        // schema.
+        Err(ApiError::SimulationFailed(_, _)) => {}
+        Err(other) => panic!("unexpected error for an absent HVAC template: {other:?}"),
+    }
+}
+
+/// End-to-end: the REST surface must answer with a 4xx for a named HVAC
+/// template that is not wired to the production path.
+#[tokio::test]
+async fn simulate_endpoint_rejects_non_ideal_hvac_template_with_4xx() {
+    use crate::sim::hvac::HVACSystemType;
+
+    let state = AppState::default();
+    let router = router(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+
+    let mut schema = default_schema_v1();
+    schema.controls.hvac_system = Some(HVACSystemType::VAV);
+    let body = serde_json::to_value(&schema).unwrap();
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("http://{addr}/v1/simulate"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+
+    let status = resp.status();
+    let payload: serde_json::Value = resp.json().await.unwrap();
+    handle.abort();
+
+    assert!(
+        status.is_client_error(),
+        "expected a 4xx for an unsupported HVAC template, got {status}"
+    );
+    let message = payload["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("VAV"),
+        "error message must name the requested template: {payload}"
+    );
+    assert!(
+        message.contains("#3997"),
+        "error message must cite #3997: {payload}"
+    );
+}
+
 #[test]
 fn simulate_options_default_years_is_valid() {
     let opts: SimulateOptions = serde_json::from_str("{}").unwrap();

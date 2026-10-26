@@ -33,6 +33,7 @@ use crate::api::server::state::AppState;
 // Issue #4164: canonical H_SI from fluxion-core::physics_constants.
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
+use crate::sim::hvac::HVACSystemType;
 use crate::sim::thermal_selector::ThermalSelector;
 use crate::util::sha256_hex::sha256_hex;
 use fluxion_core::physics_constants::H_SI;
@@ -238,6 +239,16 @@ pub struct SimulateResponse {
 pub(crate) fn build_model_from_schema(schema: &SimulationSchemaV1) -> ThermalModel<VectorField> {
     use crate::sim::construction::{Construction, SurfaceType};
 
+    // Issue #4632 (Refs #3997; depends on #3984) — this builder is also the
+    // CLI's entry point (it has no `Result` channel), so a named HVAC
+    // template that the production path does not implement must not be
+    // silently reduced to ideal loads here either. The REST paths reject it
+    // earlier with a 4xx via `ensure_supported_hvac_template`; this is the
+    // defensive backstop for callers that reach the builder directly.
+    if let Err(err) = ensure_supported_hvac_template(schema) {
+        panic!("{err}");
+    }
+
     let num_zones = schema.geometry.zones.len().max(1);
     let mut model = ThermalModel::<VectorField>::new(num_zones);
 
@@ -430,6 +441,37 @@ pub(crate) fn build_model_from_schema(schema: &SimulationSchemaV1) -> ThermalMod
     model
 }
 
+/// Guard for the named-HVAC-template selection (`controls.hvac_system`).
+///
+/// Issue #4632 (Refs #3997; depends on #3984) — the schema may name an HVAC
+/// template, but the production simulation path only ever runs the ideal-loads
+/// engine. Until the pressure-driven air loop of #3984 lands (and the
+/// dispatch wiring of #3997), every other template is *accepted by the
+/// schema but silently ignored by the simulator*, which is worse than an
+/// explicit failure: the caller gets ideal-loads numbers back under a
+/// `VAV` / `HeatPump` label.
+///
+/// This guard turns that silent substitution into a fast, explicit 4xx
+/// (`ApiError::InvalidSchema` → HTTP 400) before any simulation work runs.
+/// Only `Ideal` and an absent value are accepted; the rejection message names
+/// the requested template but deliberately does **not** enumerate the
+/// rejected variants (a further variant is landing separately), so the guard
+/// stays correct as the enum grows.
+fn ensure_supported_hvac_template(schema: &SimulationSchemaV1) -> Result<(), ApiError> {
+    match schema.controls.hvac_system {
+        // Absent ⇒ the historical ideal-loads behaviour (unchanged).
+        None => Ok(()),
+        // The one template the production path actually implements.
+        Some(HVACSystemType::Ideal) => Ok(()),
+        // Any other named template is not wired to the production path yet.
+        Some(other) => Err(ApiError::InvalidSchema(format!(
+            "unsupported HVAC template '{other:?}': controls.hvac_system is not yet \
+             wired to the production simulation path (Refs #3997; depends on #3984) — \
+             use the 'Ideal' template or omit controls.hvac_system"
+        ))),
+    }
+}
+
 /// Run a simulation synchronously and return the structured output.
 #[tracing::instrument(
     skip(schema),
@@ -442,6 +484,11 @@ pub fn run_simulation(
     selector: ThermalSelector,
     request_id: &str,
 ) -> Result<SimulationOutput, ApiError> {
+    // Issue #4632 (Refs #3997; depends on #3984): reject named HVAC
+    // templates that the production path does not implement *before* any
+    // simulation work runs, instead of silently simulating ideal loads.
+    ensure_supported_hvac_template(schema)?;
+
     // Issue #3993: full schema validation with actionable errors, replacing
     // the previous ad-hoc setpoint/zones checks and the silent `.max(1.0)`
     // clamping downstream.
@@ -869,6 +916,12 @@ pub async fn simulate_stream(
 ) -> Result<Response, ApiError> {
     let schema = req.schema.into_v1();
     let options = req.options;
+
+    // Issue #4632 (Refs #3997; depends on #3984): same named-HVAC-template
+    // guard as the synchronous path — the stream handler builds the model
+    // itself, so it must reject unsupported templates explicitly instead of
+    // silently streaming ideal-loads results.
+    ensure_supported_hvac_template(&schema)?;
 
     // Issue #3993: full schema validation with actionable errors, replacing
     // the previous ad-hoc setpoint/zones checks and the silent `.max(1.0)`
