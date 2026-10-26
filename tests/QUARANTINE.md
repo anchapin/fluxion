@@ -198,7 +198,6 @@ quarantined — it is the #3286 β-soak gate signal.)
 | `tests/all_tests/ashrae_140_blind_validation.rs` | `test_case_950_mass_temperature_precooled_issue_1422` | `structural` | #3297, LIMIT-22 | `unassigned` | Gauge air trajectory matches legacy night-flush pre-cool (τ_mass ≈ 61 h CN node swings +1.09 °C vs legacy +2.41 °C), or #1422 re-derives the band with maintainer sign-off | `pending` |
 | `tests/all_tests/ashrae_140_case_960_sunspace.rs` | `test_case_960_inter_zone_heat_transfer_analysis` | `structural` | #3297, LIMIT-22 | `unassigned` | Gauge multi-zone integration stability lands for Case 960-class configs (±140 °C step ΔT spikes around the fail-closed guard) | `pending` |
 | `tests/all_tests/ashrae_140_case_960_sunspace.rs` | `test_case_960_comprehensive_energy_validation` | `structural` | #3392, LIMIT-22, #273 (inter-zone radiation / condensation 20× over reference) | `unassigned` | Inter-zone radiation / condensation coupling that drives the 20× cooling gap is resolved (tracked under the GaugeSolver cohort #1465/#1462, #3297). When the underlying 5R1C/9R4C trajectory holds for the sunspace config, the comprehensive test can assert all 4 metrics without the documented cooling acceptance. | `pending` |
-| `tests/all_tests/invariant_checker_test.rs` | `test_different_zones_respond_differently_to_targeted_gain` | `structural` | #3297, LIMIT-22 (§LIMIT-19/#3103 sibling) | `unassigned` | §LIMIT-19 / #1344 investigation resolves the checker's zero-leverage artificial-gain formula (gain enters the 5R1C residual only through φm·m_air_frac). [r101 note 2026-10-26: the m_air_frac factor was retired — internal radiative now routes in full to the surface node, so an artificial gain reaches the residual through φ_ia/φ_st; the gauge-proxy quarantine itself is unchanged and stays until §LIMIT-22 re-evaluates it on the new formula.] | `pending` |
 
 ### Phase A8 / Issue #3599 — 9R4C legacy solver scratch pool (Issue #3291 / §LIMIT-21)
 
@@ -324,6 +323,8 @@ the real film), but the ~96-row reference datasets cannot spin up multi-day ther
 states (concrete tau ~ 29 h) and the E+ interior-film composition is undocumented.
 
 The 6 FD step-response cohort rows that previously lived here were un-ignored by PR #4111 / commit 8903331 (closes #4058). They are now live tests; their rows were removed from the registry in PR #4111 follow-up commits once the tests were confirmed passing (`test_inventory.json` reflects the new ignored count).
+
+The `tests/all_tests/invariant_checker_test.rs :: test_different_zones_respond_differently_to_targeted_gain` row (structural, #3297 / LIMIT-22 gauge-build cohort) was removed in PR #4644 (loop round 103, §LIMIT-22 rebuild): the gauge-build `cfg_attr` quarantine is lifted — since the #3817 heavyweight-spec promotion Case 900 auto-promotes to the 9R4C FD network under the Gauge selector too, so both builds dispatch it to the checker's leveraged 9R4C arm (verified bit-identical pass on both builds at b8b14e06: zone-0 response −0.10620833931898233 W per 10 W gain, zones 1–2 residual exactly 0). The test is live on all builds; `test_inventory.json` reflects the unchanged statically-counted ignored total.
 
 ---
 

@@ -217,10 +217,19 @@ fn test_invariant_tolerance_affects_violation_flag() {
 /// InvariantChecker artificial-gain confusion family, alongside
 /// §MULTI-03 / #3066). Default-build (legacy 5R1C integrator) coverage
 /// is unchanged and stays live.
-#[cfg_attr(
-    feature = "gauge-solver",
-    ignore = "Gauge build only (Issue #3297 / KNOWN_ISSUES §LIMIT-22): the exact-CN mass-state proxy makes the 5R1C residual 0 and the artificial gain's leverage is structurally 0 when m_air_frac = 0 (§LIMIT-19/#3103 sibling). Default build keeps this test live."
-)]
+///
+/// Loop round 103 — gauge-build quarantine LIFTED. The quarantine's cause
+/// no longer holds for this test state: since the #3817 heavyweight-spec
+/// promotion, Case 900 auto-promotes to the 9R4C FD network under the
+/// Gauge selector too, so both builds dispatch it to the checker's 9R4C
+/// arm, which has real probe leverage (verified 2026-10-26 at b8b14e06:
+/// bit-identical pass on both builds, zone-0 response
+/// −0.10620833931898233 W to the 10 W gain, zones 1–2 residual exactly 0
+/// — their identity is load-free by construction). For record-bearing
+/// 5R1C states the leverage is restored by the round-103 R77 composite
+/// rebuild (`test_r77_composite_gain_probe_leverages_5r1c_state`);
+/// gauge-proxy states without an R77 record remain on the legacy arm
+/// documented under §LIMIT-19 / #1344.
 #[test]
 fn test_different_zones_respond_differently_to_targeted_gain() {
     let spec = ASHRAE140Case::Case900.spec();
@@ -272,5 +281,73 @@ fn test_different_zones_respond_differently_to_targeted_gain() {
     assert!(
         max_imbalance > 0.0,
         "At least one zone should have non-zero imbalance"
+    );
+}
+
+/// Loop round 103 (§LIMIT-22 item-3 rebuild) — the R77 composite-coefficient
+/// arm of the 5R1C CN-mirror must give the artificial-gain probe real
+/// leverage on a live 5R1C state, and the unperturbed residual must stay
+/// exactly zero (the `fd7ef13` / Issue #3297 strict-gate residual-zero
+/// property survives the rebuild by construction).
+///
+/// Red-first contract (loop round 103): before the rebuild the R77 arm
+/// replays the persisted `(a_k, b_k)` record verbatim, so the probe's load
+/// delta never reaches the residual — the response below is exactly 0 and
+/// this test fails. After the rebuild (per-sub-step load-linear `b`
+/// coefficient recorded engine-side on the same branch the integrator
+/// took) the response is the engine's own share algebra
+/// (per-class φ_st shares → sub-step affine maps → surface→mass path)
+/// evaluated at the perturbed load.
+#[test]
+fn test_r77_composite_gain_probe_leverages_5r1c_state() {
+    // Case 600 is LowMass, and the explicit legacy selector pins the 5R1C
+    // network on both builds (the gauge build's `Gauge` default selector
+    // would route this spec through the gauge dispatch's mass-state proxy,
+    // which carries no R77 record — the proxy state's blind arm is the
+    // documented §LIMIT-22 gap for gauge states, not this contract).
+    let spec = ASHRAE140Case::Case600.spec();
+    let mut model = ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::legacy())
+        .expect("legacy 5R1C selector must initialize");
+    let outdoor_temp = 10.0;
+
+    model.step_physics(0, outdoor_temp, 3600.0);
+
+    let mut checker = InvariantChecker::new(1e-3);
+
+    let no_gain = checker.check_invariant(&model, 3600.0, outdoor_temp);
+    println!("no-gain balance: {}", no_gain.balance);
+
+    let with_gain =
+        checker.check_invariant_with_artificial_gain(&model, 3600.0, outdoor_temp, 1000.0, 0);
+    println!("with-gain (1 kW, zone 0) balance: {}", with_gain.balance);
+
+    // #3297 property: the unperturbed composite replay is bit-exact, so
+    // the no-gain residual carries no baseline error.
+    assert!(
+        no_gain.balance.abs() < 1e-9,
+        "unperturbed 5R1C composite residual must stay exactly zero (Issue #3297), got {}",
+        no_gain.balance
+    );
+
+    // Leverage: the probe response must be non-zero — the load delta
+    // reaches the residual through the rebuilt surface→mass path.
+    let response = (with_gain.balance - no_gain.balance).abs();
+    println!("probe response to 1 kW gain: {response} W");
+    assert!(
+        response > 1e-6,
+        "R77 composite arm is gain-blind: probe response to a 1 kW gain was {response} W \
+         (§LIMIT-22 rebuild, loop round 103)"
+    );
+
+    // Affine-model contract: the recorded bload is a load-linear
+    // coefficient of the sub-step b's, so the response must scale exactly
+    // with the gain (the composition is affine in the load delta).
+    let with_gain_2k =
+        checker.check_invariant_with_artificial_gain(&model, 3600.0, outdoor_temp, 2000.0, 0);
+    let response_2k = (with_gain_2k.balance - no_gain.balance).abs();
+    println!("probe response to 2 kW gain: {response_2k} W");
+    assert!(
+        (response_2k - 2.0 * response).abs() <= 1e-6 * response_2k,
+        "probe response must be affine in the load delta: 1 kW {response} W vs 2 kW {response_2k} W"
     );
 }
