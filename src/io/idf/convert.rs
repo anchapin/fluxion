@@ -571,12 +571,23 @@ fn default_surface() -> SurfaceConstruction {
 /// Works for both `BuildingSurface:Detailed` and `FenestrationSurface:Detailed`
 /// — the two have different IDD field counts before `Number of Vertices`:
 /// - BuildingSurface:Detailed → Number of Vertices at field 10, vertices at 11+
-/// - FenestrationSurface:Detailed → Number of Vertices at field 8, vertices at 9+
+/// - FenestrationSurface:Detailed → Number of Vertices at field 6, vertices at 7+
+///   (the IDD layout) or at field 8 / vertices at 9+ (the layout used by the
+///   reference EnergyPlus fixtures in this repository, which carry two extra
+///   fields — Outside Boundary Condition Object and View Factor to Ground —
+///   before the vertex count)
 ///
-/// We probe both positions and pick whichever parses a reasonable vertex
-/// count (≥ 3).
+/// We probe the positions in the order that matches the object's type and
+/// pick whichever parses a reasonable vertex count (≥ 3).
 fn parse_surface_polygon(surf: &IdfObject) -> Result<Vec<(f64, f64, f64)>, IdfError> {
-    let candidates = [(10_usize, 11_usize), (8, 9)];
+    let candidates: [(usize, usize); 3] = if surf
+        .object_type
+        .eq_ignore_ascii_case("FenestrationSurface:Detailed")
+    {
+        [(6, 7), (8, 9), (10, 11)]
+    } else {
+        [(10, 11), (8, 9), (6, 7)]
+    };
     let mut chosen: Option<(usize, usize)> = None;
     for (count_idx, start_idx) in candidates {
         if let Some(n) = field_uint(surf, count_idx) {
@@ -927,39 +938,61 @@ fn extract_infiltration_ach(idf: &IdfFile, zone_name: &str, volume: f64) -> f64 
     0.5
 }
 
-/// Extract the largest fenestration surface in `zone_name` and return its
-/// area + orientation. Returns `None` if no fenestration surfaces are
-/// present (e.g. simple Mass-class cases).
-fn extract_window(idf: &IdfFile, zone_name: &str) -> Option<(f64, Orientation, f64, f64)> {
-    let mut best: Option<(f64, Orientation, f64, f64)> = None;
+/// A `FenestrationSurface:Detailed` surface resolved against the
+/// building surface that hosts it.
+#[derive(Debug, Clone)]
+struct FenestrationWindow {
+    /// Glazed area (m²).
+    area: f64,
+    /// Orientation inherited from the parent building surface.
+    orientation: Orientation,
+    /// Height (m) — vertical extent of the fenestration polygon.
+    height: f64,
+    /// Construction name (field 2) that carries the glazing properties.
+    construction_name: String,
+}
+
+/// Extract **every** `FenestrationSurface:Detailed` surface belonging to
+/// `zone_name` (windows and glazed doors).
+///
+/// The previous implementation returned only the single largest surface
+/// of the zone, silently dropping all the others. `CaseSpec` carries a
+/// single [`crate::ashrae_cases::WindowSpec`] for the whole case but does
+/// support one [`WindowArea`] per orientation, so the caller aggregates
+/// the returned surfaces per orientation (see `case_spec_from_idf`).
+///
+/// Surfaces whose parent building surface cannot be resolved, or whose
+/// vertex list cannot be parsed, are skipped instead of aborting the
+/// whole extraction.
+fn extract_windows(idf: &IdfFile, zone_name: &str) -> Vec<FenestrationWindow> {
     // Build a name → orientation index from BuildingSurface:Detailed.
     let mut parent_orientation: std::collections::HashMap<String, Orientation> =
         std::collections::HashMap::new();
     for surf in idf.building_surfaces() {
-        let name = surf.fields.first()?.to_display_string()?;
-        let polygon = parse_surface_polygon(surf).ok()?;
+        let Some(name) = surf.fields.first().and_then(|v| v.to_display_string()) else {
+            continue;
+        };
+        let Ok(polygon) = parse_surface_polygon(surf) else {
+            continue;
+        };
         let orientation = classify_surface_orientation(&polygon);
         parent_orientation.insert(name, orientation);
     }
-    for obj in &idf.objects {
-        if !obj
-            .object_type
-            .eq_ignore_ascii_case("FenestrationSurface:Detailed")
-        {
-            continue;
-        }
+
+    let mut windows: Vec<FenestrationWindow> = Vec::new();
+    for obj in idf.fenestration_surfaces() {
         // 0: name, 1: surface_type, 2: construction_name, 3: building_surface_name, ...
-        let building_surface = obj.fields.get(3).and_then(|v| v.to_display_string())?;
-        let parent = idf.building_surfaces().find(|s| {
+        let Some(building_surface) = obj.fields.get(3).and_then(|v| v.to_display_string()) else {
+            continue;
+        };
+        let Some(parent_obj) = idf.building_surfaces().find(|s| {
             s.fields
                 .first()
                 .and_then(|v| v.to_display_string())
                 .map(|n| n == building_surface)
                 .unwrap_or(false)
-        });
-        let parent_obj = match parent {
-            Some(p) => p,
-            None => continue,
+        }) else {
+            continue;
         };
         // Parent zone name is field 3 of BuildingSurface:Detailed.
         let parent_zone = parent_obj
@@ -970,24 +1003,148 @@ fn extract_window(idf: &IdfFile, zone_name: &str) -> Option<(f64, Orientation, f
         if parent_zone != zone_name {
             continue;
         }
-        let polygon = parse_surface_polygon(obj).ok()?;
+        let Ok(polygon) = parse_surface_polygon(obj) else {
+            continue;
+        };
         let area = polygon_area(&polygon);
         let orientation = parent_orientation
             .get(&building_surface)
             .copied()
             .unwrap_or(Orientation::South);
-        let height = polygon
+        let z_max = polygon
             .iter()
             .map(|p| p.2)
-            .fold(f64::NEG_INFINITY, f64::max)
-            - polygon.iter().map(|p| p.2).fold(f64::INFINITY, f64::min);
-        let width = (area / height).max(0.0);
-        match best {
-            Some((a, _, _, _)) if a >= area => {}
-            _ => best = Some((area, orientation, width.max(0.0), height.max(0.0))),
+            .fold(f64::NEG_INFINITY, f64::max);
+        let z_min = polygon.iter().map(|p| p.2).fold(f64::INFINITY, f64::min);
+        let height = (z_max - z_min).max(0.0);
+        let construction_name = obj
+            .fields
+            .get(2)
+            .and_then(|v| v.to_display_string())
+            .unwrap_or_default();
+        windows.push(FenestrationWindow {
+            area,
+            orientation,
+            height,
+            construction_name,
+        });
+    }
+    windows
+}
+
+/// Resolve the glazing properties of a window construction.
+///
+/// EnergyPlus only stores an explicit U-factor and SHGC in
+/// `WindowMaterial:SimpleGlazingSystem` (IDD fields: A1 Name, A2 U-Factor
+/// in W/m²K, A3 SHGC, A4 Conductivity). A `WindowMaterial:Glazing` object
+/// carries *material* data only (thickness, solar/visible transmittance
+/// and reflectance, IR emissivity, conductivity) — there is no U-factor
+/// and no SHGC in it, and no defensible way to derive a centre-of-glass
+/// U-value or an SHGC from spectral data alone. A construction built only
+/// from `WindowMaterial:Glazing` therefore yields `None` and the caller
+/// keeps the ASHRAE 140 default glazing properties.
+///
+/// `WindowMaterial:SimpleGlazingSystem` is accepted either as a layer of
+/// the window `Construction` (the usual EnergyPlus usage) or, as a
+/// fallback, referenced directly by the surface's construction name.
+fn window_spec_from_construction(
+    idf: &IdfFile,
+    construction_name: &str,
+) -> Option<crate::ashrae_cases::WindowSpec> {
+    if construction_name.is_empty() {
+        return None;
+    }
+
+    // Layer names of the construction (field 0 is the construction name).
+    let layers: Vec<String> = idf
+        .constructions()
+        .find(|c| {
+            c.fields
+                .first()
+                .and_then(|v| v.to_display_string())
+                .map(|n| n == construction_name)
+                .unwrap_or(false)
+        })
+        .map(|c| {
+            c.fields
+                .iter()
+                .skip(1)
+                .filter_map(|v| v.to_display_string())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut system: Option<&IdfObject> = None;
+    for layer in &layers {
+        if let Some(obj) = idf.simple_glazing_systems().find(|o| {
+            o.fields
+                .first()
+                .and_then(|v| v.to_display_string())
+                .as_deref()
+                == Some(layer.as_str())
+        }) {
+            system = Some(obj);
+            break;
         }
     }
-    best
+    if system.is_none() {
+        system = idf.simple_glazing_systems().find(|o| {
+            o.fields
+                .first()
+                .and_then(|v| v.to_display_string())
+                .as_deref()
+                == Some(construction_name)
+        });
+    }
+    let system = system?;
+
+    // IDD: A1 Name, A2 U-Factor (W/m²K), A3 SHGC, A4 Conductivity.
+    let u_value = field_real(system, 1)?;
+    let shgc = field_real(system, 2)?;
+    if u_value <= 0.0 {
+        return None;
+    }
+
+    // Start from the ASHRAE 140 double-clear-glass defaults so that the
+    // frame / emissivity parameters keep their canonical values, then
+    // override the two properties the IDF states explicitly. The normal
+    // transmittance is not part of `WindowMaterial:SimpleGlazingSystem`
+    // and therefore keeps its default value.
+    let mut spec = crate::ashrae_cases::WindowSpec::double_clear_glass();
+    spec.u_value = u_value;
+    spec.shgc = shgc;
+    Some(spec)
+}
+
+/// Pick the glazing properties for a zone's fenestration.
+///
+/// `CaseSpec` carries a single `WindowSpec` for the whole case, so when
+/// the zone mixes several window constructions the properties of the
+/// construction covering the largest glazed area are used (the dominant
+/// glazing governs the solar / conductive gains). Falls back to the
+/// ASHRAE 140 default glazing when no explicit glazing data is present.
+fn resolve_window_properties(
+    idf: &IdfFile,
+    windows: &[FenestrationWindow],
+) -> crate::ashrae_cases::WindowSpec {
+    // Aggregate the glazed area per construction name.
+    let mut area_by_construction: std::collections::HashMap<&str, f64> =
+        std::collections::HashMap::new();
+    for window in windows {
+        *area_by_construction
+            .entry(window.construction_name.as_str())
+            .or_insert(0.0) += window.area;
+    }
+    let dominant = area_by_construction
+        .into_iter()
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(name, _area)| name);
+
+    match dominant {
+        Some(name) => window_spec_from_construction(idf, name)
+            .unwrap_or_else(crate::ashrae_cases::WindowSpec::double_clear_glass),
+        None => crate::ashrae_cases::WindowSpec::double_clear_glass(),
+    }
 }
 
 /// Classify a 3D polygon as one of the standard [`Orientation`] variants
@@ -1048,7 +1205,6 @@ fn classify_surface_orientation(pts: &[(f64, f64, f64)]) -> Orientation {
 pub fn case_spec_from_idf(idf: &IdfFile, case_id: &str) -> Result<CaseSpec, IdfError> {
     use crate::ashrae_cases::{
         BuildingType, HvacSchedule, InternalLoads, ShadingDevice, WindowArea,
-        WindowSpec as AshraeWindowSpec,
     };
     use crate::validation::ashrae_140_cases::{CommonWall, ConstructionSpec};
 
@@ -1085,17 +1241,40 @@ pub fn case_spec_from_idf(idf: &IdfFile, case_id: &str) -> Result<CaseSpec, IdfE
     let roof = crate::sim::construction::Construction::new(schema_view.constructions.roof.layers);
     let floor = crate::sim::construction::Construction::new(schema_view.constructions.floor.layers);
 
-    // Window: ASHRAE 140 default properties (U=2.10, SHGC=0.77).
-    let window_properties = AshraeWindowSpec::double_clear_glass();
-    let windows = if let Some((area, orientation, width, height)) = extract_window(idf, &zone_name)
-    {
-        let mut w = WindowArea::new(area, orientation);
-        w.width = width;
-        w.height = height;
-        vec![vec![w]]
-    } else {
-        vec![vec![]]
-    };
+    // Window geometry: every fenestration surface of the zone is taken into
+    // account and aggregated per orientation. `CaseSpec` carries a single
+    // `WindowSpec` for the whole case (not one per orientation), so the
+    // surfaces facing the same way are merged into a single `WindowArea`
+    // whose area is the sum of the individual surfaces. Windows with
+    // different orientations stay separate entries so that the solar
+    // gains keep their azimuth.
+    let fenestration = extract_windows(idf, &zone_name);
+    let mut area_by_orientation: std::collections::BTreeMap<Orientation, (f64, f64)> =
+        std::collections::BTreeMap::new();
+    for window in &fenestration {
+        let entry = area_by_orientation
+            .entry(window.orientation)
+            .or_insert((0.0, 0.0));
+        entry.0 += window.area;
+        entry.1 = entry.1.max(window.height);
+    }
+    let window_areas: Vec<WindowArea> = area_by_orientation
+        .iter()
+        .map(|(orientation, (area, height))| {
+            let mut w = WindowArea::new(*area, *orientation);
+            if *height > 0.0 {
+                w.height = *height;
+                w.width = *area / *height;
+            }
+            w
+        })
+        .collect();
+    let windows = vec![window_areas];
+
+    // Window properties: taken from the glazing system referenced by the
+    // window construction when the IDF provides one (explicit U-factor /
+    // SHGC); otherwise the ASHRAE 140 default glazing is kept.
+    let window_properties = resolve_window_properties(idf, &fenestration);
 
     let (heat_sp, cool_sp) = extract_setpoints(idf, &zone_name).unwrap_or((20.0, 27.0));
     let hvac = vec![HvacSchedule::constant(heat_sp, cool_sp)];
@@ -1370,5 +1549,147 @@ FenestrationSurface:Detailed, SouthWindow, Window, DblWin, SouthWall, , , 0.0, O
                 assert_eq!(v1.controls.zone_control.cooling_setpoint, 27.0);
             }
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Issue #3991 — glazing-aware, multi-surface IDF fenestration import
+    // -------------------------------------------------------------------------
+
+    /// Inline IDF fixture with three `FenestrationSurface:Detailed` surfaces
+    /// (two on the south wall, one on the east wall) referencing a window
+    /// construction built from `layer_name`.
+    ///
+    /// The south windows use the EnergyPlus IDD layout (vertex count at
+    /// field 6), the east window uses the layout of the reference fixtures
+    /// in this repository (vertex count at field 8).
+    fn multi_window_idf(glazing_object: &str, layer_name: &str) -> String {
+        format!(
+            "\
+Version, 25.2;\n\
+Building, TestBldg, 0.0, City, 0.04, 0.4, FullExterior, 25;\n\
+Zone, Z1, 0, 0, 0, 0, 1, 2.7, 48.0, 129.6, ;\n\
+Material, Mat1, MediumRough, 0.1, 1.0, 2000, 800;\n\
+Construction, Wall1, Mat1;\n\
+{glazing_object}\
+Construction, WinConstr, {layer_name};\n\
+Site:GroundTemperature:BuildingSurface, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18;\n\
+GlobalGeometryRules, UpperLeftCorner, ClockWise, World;\n\
+BuildingSurface:Detailed, SouthWall, Wall, Wall1, Z1, , Outdoors, , SunExposed, WindExposed, ,\n\
+  4,\n\
+  0, 0, 2.7,\n\
+  8, 0, 2.7,\n\
+  8, 0, 0,\n\
+  0, 0, 0;\n\
+BuildingSurface:Detailed, EastWall, Wall, Wall1, Z1, , Outdoors, , SunExposed, WindExposed, ,\n\
+  4,\n\
+  8, 0, 2.7,\n\
+  8, 6, 2.7,\n\
+  8, 6, 0,\n\
+  8, 0, 0;\n\
+BuildingSurface:Detailed, Floor, Floor, Wall1, Z1, , Ground, , NoSun, NoWind, ,\n\
+  4,\n\
+  0, 0, 0,\n\
+  8, 0, 0,\n\
+  8, 6, 0,\n\
+  0, 6, 0;\n\
+FenestrationSurface:Detailed, SouthWindowA, Window, WinConstr, SouthWall, , 1, 4,\n\
+  0.5, 0.0, 2.0,\n\
+  5.5, 0.0, 2.0,\n\
+  5.5, 0.0, 0.0,\n\
+  0.5, 0.0, 0.0;\n\
+FenestrationSurface:Detailed, SouthWindowB, Window, WinConstr, SouthWall, , 1, 4,\n\
+  6.0, 0.0, 2.0,\n\
+  7.5, 0.0, 2.0,\n\
+  7.5, 0.0, 0.0,\n\
+  6.0, 0.0, 0.0;\n\
+FenestrationSurface:Detailed, EastWindow, Window, WinConstr, EastWall, , , 0.0, Outside, 4,\n\
+  8, 1.0, 2.0,\n\
+  8, 4.0, 2.0,\n\
+  8, 4.0, 0.0,\n\
+  8, 1.0, 0.0;\n"
+        )
+    }
+
+    #[test]
+    fn case_spec_accounts_for_all_fenestration_surfaces() {
+        // Glazing without an explicit U-factor / SHGC — the geometry
+        // aggregation must still cover every surface of the zone.
+        let src = multi_window_idf(
+            "WindowMaterial:Glazing, DblClear, SpectralAverage, 0.003, 0.837, 0.075, 0.075, 0.837, 0.075, 0.075, 0.0, 0.84, 0.84, 0.9;\n",
+            "DblClear",
+        );
+        let idf = IdfParser::from_str(&src).unwrap();
+        let spec = super::case_spec_from_idf(&idf, "IDF:test").expect("CaseSpec builds from IDF");
+
+        assert_eq!(spec.windows.len(), 1, "one zone");
+        // Three surfaces → one aggregated window per orientation
+        // (two south-facing surfaces merged, one east-facing surface).
+        assert_eq!(
+            spec.windows[0].len(),
+            2,
+            "all fenestration surfaces must be accounted for (per orientation)"
+        );
+
+        let south = spec.windows[0]
+            .iter()
+            .find(|w| w.orientation == Orientation::South)
+            .expect("south-facing window");
+        let east = spec.windows[0]
+            .iter()
+            .find(|w| w.orientation == Orientation::East)
+            .expect("east-facing window");
+
+        // South: 10 m² + 3 m², East: 6 m².
+        assert!(
+            (south.area - 13.0).abs() < 1e-6,
+            "south area = {}",
+            south.area
+        );
+        assert!((east.area - 6.0).abs() < 1e-6, "east area = {}", east.area);
+
+        let total: f64 = spec.windows[0].iter().map(|w| w.area).sum();
+        assert!(
+            (total - 19.0).abs() < 1e-6,
+            "total fenestration area = {total} (expected 19 m²)"
+        );
+    }
+
+    #[test]
+    fn case_spec_uses_simple_glazing_system_properties() {
+        // `WindowMaterial:SimpleGlazingSystem` states an explicit U-factor
+        // and SHGC — those must reach the imported `WindowSpec`.
+        let src = multi_window_idf(
+            "WindowMaterial:SimpleGlazingSystem, CustomGlazing, 1.45, 0.42, 0.9;\n",
+            "CustomGlazing",
+        );
+        let idf = IdfParser::from_str(&src).unwrap();
+        let spec = super::case_spec_from_idf(&idf, "IDF:test").expect("CaseSpec builds from IDF");
+
+        assert!(
+            (spec.window_properties.u_value - 1.45).abs() < 1e-9,
+            "u_value = {}",
+            spec.window_properties.u_value
+        );
+        assert!(
+            (spec.window_properties.shgc - 0.42).abs() < 1e-9,
+            "shgc = {}",
+            spec.window_properties.shgc
+        );
+    }
+
+    #[test]
+    fn case_spec_keeps_default_glazing_without_explicit_u_factor() {
+        // `WindowMaterial:Glazing` carries spectral data only (no U-factor,
+        // no SHGC) — the ASHRAE 140 default glazing must be preserved.
+        let src = multi_window_idf(
+            "WindowMaterial:Glazing, DblClear, SpectralAverage, 0.003, 0.837, 0.075, 0.075, 0.837, 0.075, 0.075, 0.0, 0.84, 0.84, 0.9;\n",
+            "DblClear",
+        );
+        let idf = IdfParser::from_str(&src).unwrap();
+        let spec = super::case_spec_from_idf(&idf, "IDF:test").expect("CaseSpec builds from IDF");
+
+        let default = crate::ashrae_cases::WindowSpec::double_clear_glass();
+        assert_eq!(spec.window_properties.u_value, default.u_value);
+        assert_eq!(spec.window_properties.shgc, default.shgc);
     }
 }
