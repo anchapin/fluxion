@@ -31,13 +31,15 @@ for the full design rationale.
 | [`ReplaceHVACWithHeatPump.py`](ReplaceHVACWithHeatPump.py) | `ReplaceHVACWithHeatPump` | Replace the model's HVAC system with an air-source heat pump (heating / cooling COP, optional plant capacity and outdoor operating envelope). The COPs must be positive and bounded; a model with no HVAC system fails loudly. |
 
 > **Control-side persistence (Issue #3995).** `SetThermostatSetpoints` and
-> `SwapSchedule` act on the model's *control* data. The native
-> `fluxion.Model` binding does not expose a zone-setpoint or schedule setter
-> yet, so on today's bindings these two measures are **advisory**: the
-> transformed values are computed (and unit-tested) and logged, but they do
-> not round-trip into the serialized model. The measures push their result
-> back through `set_zone_setpoints` / `set_hvac_schedule` as soon as the
-> binding provides one — the same advisory-field pattern documented for
+> `SwapSchedule` act on the model's *control* data. Since Issue #4633 the
+> native `fluxion.Model` binding exposes `set_zone_setpoints`, so
+> `SetThermostatSetpoints` is **persistent**: the swept setpoints are pushed
+> back through the setter and round-trip into the serialized model
+> (`zone_setpoints` in `fluxion/measures.py`). `SwapSchedule` remains
+> **advisory**: no schedule holder / `set_hvac_schedule` setter exists on
+> the single-zone model yet, so its transformed values are computed (and
+> unit-tested) and logged, but they do not round-trip into the serialized
+> model — the same advisory-field pattern documented for
 > `ReplaceHVACWithVAV`.
 
 > **Load / plant measures (Issue #3995).** `SetLightingPowerDensity` and
