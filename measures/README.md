@@ -27,6 +27,7 @@ for the full design rationale.
 | [`AddOverhang.py`](AddOverhang.py) | `AddOverhang` | Attach a horizontal overhang (depth / mounting height, per façade orientation) to the model's exterior façades. A model with no eligible façade fails loudly. |
 | [`SetWindowProperties.py`](SetWindowProperties.py) | `SetWindowProperties` | Set the glazing U-value (W/m²·K) and/or the solar heat gain coefficient (SHGC) of the model's window specs — the single-pane → low-e double-pane upgrade study. A model with no window spec fails loudly. |
 | [`SetInfiltrationRate.py`](SetInfiltrationRate.py) | `SetInfiltrationRate` | Set the model's infiltration / air-leakage rate (ACH) to a constant target — the envelope-tightening study. The rate must be in `[0, 20]` ACH (0 is a sealed-envelope study). A model with no infiltration representation fails loudly. |
+| [`SetOccupancyDensity.py`](SetOccupancyDensity.py) | `SetOccupancyDensity` | Set the occupancy density (persons/m²) of the model's occupancy / internal-load inputs. The density must be positive and bounded; a model with no occupancy object fails loudly. |
 
 > **Control-side persistence (Issue #3995).** `SetThermostatSetpoints` and
 > `SwapSchedule` act on the model's *control* data. The native
@@ -69,6 +70,29 @@ for the full design rationale.
 > dense server rooms stay modellable. As with the lighting measure, the
 > native `fluxion.Model` binding exposes no equipment accessor, so on
 > today's bindings the measure fails loudly on a native model.
+
+> **Occupancy density (Issue #3995).** `SetOccupancyDensity` is the
+> people-side member of the standard library: it sets the occupancy
+> density (persons/m² — the unit the repo uses everywhere, from the BEM
+> checker's `occupancy_density` key in
+> `src/validation/copilot/checker.rs` to the `people_per_area`
+> OpenStudio-interop field in `src/interop/osm/types.rs`). The Rust
+> model carries the occupancy *schedule* (`ScheduleSet.occupancy`,
+> `src/api/schema.rs`) but no occupancy-density field, so the measure
+> probes the model for the occupancy / internal-loads object that carries
+> the density — accepting `occupancy_density`, `occupant_density` and
+> `people_per_area` — and raises `OccupancyNotFoundError` when the model
+> exposes none, so an occupancy study against a model without occupancy
+> fails loudly rather than report a change that never happened. Its
+> bounds (0.01-10 persons/m²) live in the measure: the lower floor
+> rejects "nobody is ever here" (a deletion — the BEM checker treats a
+> non-positive occupancy density as an error), the upper bound is the
+> declared occupancy validity range (0 to 10 persons/m²,
+> `docs/SURROGATE_GOVERNANCE.md`) and sits above the checker's 1.0
+> persons/m² "very high" warning so dense spaces stay modellable. As
+> with the lighting and equipment measures, the native `fluxion.Model`
+> binding exposes no occupancy accessor, so on today's bindings the
+> measure fails loudly on a native model.
 
 > **Shading (Issue #3995).** `AddOverhang` is the shading member of the
 > standard library: it attaches a horizontal overhang (projection `depth`,
