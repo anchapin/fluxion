@@ -1,0 +1,1828 @@
+{
+  "schema_version": "1",
+  "scope": {
+    "standard": "ANSI/ASHRAE Standard 140",
+    "section": "Section 9 -- Space-Cooling Equipment Performance",
+    "case_set": "CE100-CE200 (140-2023 Section 9.2 analytical verification)",
+    "output_requirements": "derived from the case definitions and the performance map; the 140-2023 Section 9 output requirements are in the licensed normative materials (Issue #4285)"
+  },
+  "states": {
+    "case": [
+      "conformant",
+      "incomplete",
+      "not implemented"
+    ],
+    "requirement": [
+      "report",
+      "partial",
+      "missing",
+      "na"
+    ]
+  },
+  "sources": {
+    "case_table": "data/reference/ashrae140/section9_ce_cases.json",
+    "performance_map": "data/reference/ashrae140/section9_ce100_performance_map.json",
+    "engine_run_results": "tests/validation/hvac_equipment_rated_performance/data/section9_engine_run_results.json",
+    "flat_report_csv": "data/reference/section9/section9_standard_output_report.csv"
+  },
+  "reference_roles": {
+    "map_tables": "analytical reference -- the standard's own rating tables (Tables 9-5 through 9-10 of 140-2023), shown next to the reported value; not a criterion",
+    "comparative_bounds": "diagnostic context -- the IEA SHC Task 22 ensemble evidence range (min/max), carried verbatim from the case table; not a criterion"
+  },
+  "derivation": "The 140-2023 Section 9 output requirements live in the licensed normative materials (Issue #4285), so this repository carries no explicit Section 9 required-output list. The required-output list used here is therefore DERIVED from the two committed Section 9 source artefacts -- the case definitions (data/reference/ashrae140/section9_ce_cases.json) and the performance map (data/reference/ashrae140/section9_ce100_performance_map.json) -- by the following rule. (1) INPUTS: every case definition names the case's input conditions (internal sensible gains, internal latent gains, cooling setpoint, outdoor dry-bulb temperature) and the weather file the case binds, so the case inputs are required outputs of the case record. (2) ENTERING CONDITIONS: the performance map tabulates the entering dry-bulb and entering wet-bulb columns of the rating tables, so the entering conditions are required outputs. (3) RATED AND DISPATCHED PERFORMANCE: the performance map tabulates the rated total capacity, sensible capacity, latent capacity and compressor power at each (outdoor dry-bulb, entering wet-bulb, entering dry-bulb) point, and the steady-state dispatch of a case reports the delivered capacity and power, the coefficient of performance, the part load ratio, the sensible heat ratio, the peak cooling power, the required cooling load and the capacity shortfall at that point, so all of them are required outputs. (4) ANNUAL CASE OUTPUTS: every case definition binds an annual TMY2 weather file and the case table names the annual_cooling metric (MWh) for the case, and for CE150 also the max_zone_temp metric (degC), so those are required outputs as well. The derived requirement ids below are this report's own labels -- they are NOT clause numbers of the standard, which are not transcribed in this repository.",
+  "unit_conversions": [
+    {
+      "field": "cooling capacities, compressor power, delivered capacity and power, required cooling load",
+      "source": "section9_engine_run_results.json runs (\u2026_w fields)",
+      "source_unit": "W",
+      "reported_unit": "kW",
+      "factor": "/1000"
+    }
+  ],
+  "notes": [
+    "Case states are conformant / incomplete / not implemented. No aggregate grade, rate or pass/fail verdict is reported anywhere in these artifacts: the standard defines no such quantity.",
+    "Requirement cell states are report (required, produced), partial (required, produced for a subset), missing (required, not produced) and na (not required for this case).",
+    "The 140-2023 Section 9 output requirements live in the licensed normative materials (Issue #4285), so this repository carries no explicit Section 9 required-output list. The required-output list used here is therefore DERIVED from the two committed Section 9 source artefacts -- the case definitions (data/reference/ashrae140/section9_ce_cases.json) and the performance map (data/reference/ashrae140/section9_ce100_performance_map.json) -- by the following rule. (1) INPUTS: every case definition names the case's input conditions (internal sensible gains, internal latent gains, cooling setpoint, outdoor dry-bulb temperature) and the weather file the case binds, so the case inputs are required outputs of the case record. (2) ENTERING CONDITIONS: the performance map tabulates the entering dry-bulb and entering wet-bulb columns of the rating tables, so the entering conditions are required outputs. (3) RATED AND DISPATCHED PERFORMANCE: the performance map tabulates the rated total capacity, sensible capacity, latent capacity and compressor power at each (outdoor dry-bulb, entering wet-bulb, entering dry-bulb) point, and the steady-state dispatch of a case reports the delivered capacity and power, the coefficient of performance, the part load ratio, the sensible heat ratio, the peak cooling power, the required cooling load and the capacity shortfall at that point, so all of them are required outputs. (4) ANNUAL CASE OUTPUTS: every case definition binds an annual TMY2 weather file and the case table names the annual_cooling metric (MWh) for the case, and for CE150 also the max_zone_temp metric (degC), so those are required outputs as well. The derived requirement ids below are this report's own labels -- they are NOT clause numbers of the standard, which are not transcribed in this repository.",
+    "The per-case entering wet-bulb is not transcribed for any CE case: the 140-2023 Section 9 input specification is licensed (Issue #4285). The engine harness therefore dispatches every case at every entering wet-bulb column the performance map tabulates (15.0 / 17.2 / 19.4 / 21.7 degC) and reports the envelope; the entering wet-bulb requirement is therefore 'partial' for every case (the envelope is reported, the case's own entering condition is not transcribed).",
+    "The annual case outputs (annual cooling energy, maximum zone temperature) are not produced by this tree: the normative CE weather files (CE100A, CE110A, CE165A, CE200A) are licensed ASHRAE supplemental material that is never committed, and the steady-state equipment dispatch has no duty cycle and no zone-temperature trajectory. The affected requirement cells are 'missing' and the corresponding report cells are empty -- no value is invented.",
+    "The performance-map columns are the analytical reference: Tables 9-5 through 9-10 of 140-2023 are the standard's own rating tables, and the engine evaluates the same map, so the reference value and the engine value coincide. They are shown next to the reported values as the analytical reference; no acceptance criterion is derived from them.",
+    "The comparative columns are the IEA SHC Task 22 ensemble evidence ranges, transcribed per case from tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv and carried in the case table. They are diagnostic context, not a criterion; the five cases the bounds file does not cover (CE165, CE180, CE185, CE190, CE195) carry no range and no range is invented for them.",
+    "The engine-run results file records its own per-case band bookkeeping (band kind, band edges, direction, gap, band status). That bookkeeping is deliberately NOT carried into this report: this report classifies conformance of the reported outputs only, and carries the reference ranges themselves, without any verdict attached to them.",
+    "Powers and capacities are reported in kW; the engine records them in W, so the values are divided by 1000 rather than re-derived. The capacity shortfall is reported in W, as the engine records it. Reported values carry six decimal places.",
+    "A case that did not run carries no value at all in the flat CSV -- not even its input conditions -- so an empty cell can never be read as a produced value.",
+    "The Section 9b comparative test series is not implemented in this tree and is not part of the CE100-CE200 catalog reported here."
+  ],
+  "coverage": {
+    "role": "counts of cases per cell state -- coverage bookkeeping, not a rate",
+    "case_status_counts": {
+      "conformant": 0,
+      "incomplete": 14,
+      "not implemented": 0
+    },
+    "by_requirement": [
+      {
+        "requirement": "9a.case_inputs",
+        "title": "Case input conditions: internal sensible gains, internal latent gains, cooling setpoint and outdoor dry-bulb temperature",
+        "unit": "mixed",
+        "counts": {
+          "report": 14,
+          "partial": 0,
+          "missing": 0,
+          "na": 0
+        }
+      },
+      {
+        "requirement": "9a.entering_dry_bulb",
+        "title": "Entering dry-bulb temperature (the case cooling setpoint)",
+        "unit": "degC",
+        "counts": {
+          "report": 14,
+          "partial": 0,
+          "missing": 0,
+          "na": 0
+        }
+      },
+      {
+        "requirement": "9a.entering_wet_bulb",
+        "title": "Entering wet-bulb temperature",
+        "unit": "degC",
+        "counts": {
+          "report": 0,
+          "partial": 14,
+          "missing": 0,
+          "na": 0
+        }
+      },
+      {
+        "requirement": "9a.total_capacity",
+        "title": "Total cooling capacity at the case condition",
+        "unit": "kW",
+        "counts": {
+          "report": 14,
+          "partial": 0,
+          "missing": 0,
+          "na": 0
+        }
+      },
+      {
+        "requirement": "9a.sensible_capacity",
+        "title": "Sensible cooling capacity at the case condition",
+        "unit": "kW",
+        "counts": {
+          "report": 14,
+          "partial": 0,
+          "missing": 0,
+          "na": 0
+        }
+      },
+      {
+        "requirement": "9a.latent_capacity",
+        "title": "Latent cooling capacity at the case condition",
+        "unit": "kW",
+        "counts": {
+          "report": 14,
+          "partial": 0,
+          "missing": 0,
+          "na": 0
+        }
+      },
+      {
+        "requirement": "9a.compressor_power",
+        "title": "Compressor power at the case condition",
+        "unit": "kW",
+        "counts": {
+          "report": 14,
+          "partial": 0,
+          "missing": 0,
+          "na": 0
+        }
+      },
+      {
+        "requirement": "9a.delivered_capacity",
+        "title": "Delivered cooling capacity at the operating point",
+        "unit": "kW",
+        "counts": {
+          "report": 14,
+          "partial": 0,
+          "missing": 0,
+          "na": 0
+        }
+      },
+      {
+        "requirement": "9a.delivered_power",
+        "title": "Delivered compressor power at the operating point",
+        "unit": "kW",
+        "counts": {
+          "report": 14,
+          "partial": 0,
+          "missing": 0,
+          "na": 0
+        }
+      },
+      {
+        "requirement": "9a.cop",
+        "title": "Coefficient of performance at the operating point (total capacity divided by compressor plus indoor fan power)",
+        "unit": "-",
+        "counts": {
+          "report": 14,
+          "partial": 0,
+          "missing": 0,
+          "na": 0
+        }
+      },
+      {
+        "requirement": "9a.plr",
+        "title": "Part load ratio at the operating point",
+        "unit": "-",
+        "counts": {
+          "report": 14,
+          "partial": 0,
+          "missing": 0,
+          "na": 0
+        }
+      },
+      {
+        "requirement": "9a.shr",
+        "title": "Sensible heat ratio at the operating point",
+        "unit": "-",
+        "counts": {
+          "report": 14,
+          "partial": 0,
+          "missing": 0,
+          "na": 0
+        }
+      },
+      {
+        "requirement": "9a.peak_cooling_power",
+        "title": "Peak cooling power at the case condition (compressor power plus the map's indoor fan heat, adjusted-net basis)",
+        "unit": "kW",
+        "counts": {
+          "report": 14,
+          "partial": 0,
+          "missing": 0,
+          "na": 0
+        }
+      },
+      {
+        "requirement": "9a.required_load",
+        "title": "Required cooling load of the case (internal sensible plus latent gains)",
+        "unit": "kW",
+        "counts": {
+          "report": 14,
+          "partial": 0,
+          "missing": 0,
+          "na": 0
+        }
+      },
+      {
+        "requirement": "9a.capacity_shortfall",
+        "title": "Capacity shortfall of the delivered load against the required load",
+        "unit": "W",
+        "counts": {
+          "report": 14,
+          "partial": 0,
+          "missing": 0,
+          "na": 0
+        }
+      },
+      {
+        "requirement": "9a.annual_cooling",
+        "title": "Annual cooling energy of the case",
+        "unit": "MWh",
+        "counts": {
+          "report": 0,
+          "partial": 0,
+          "missing": 14,
+          "na": 0
+        }
+      },
+      {
+        "requirement": "9a.max_zone_temp",
+        "title": "Maximum zone temperature of the case",
+        "unit": "degC",
+        "counts": {
+          "report": 0,
+          "partial": 0,
+          "missing": 0,
+          "na": 14
+        }
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "id": "9a.case_inputs",
+      "title": "Case input conditions: internal sensible gains, internal latent gains, cooling setpoint and outdoor dry-bulb temperature",
+      "unit": "mixed",
+      "basis": "case definition (section9_ce_cases.json -> conditions)"
+    },
+    {
+      "id": "9a.entering_dry_bulb",
+      "title": "Entering dry-bulb temperature (the case cooling setpoint)",
+      "unit": "degC",
+      "basis": "case definition (cooling setpoint) and engine-run result"
+    },
+    {
+      "id": "9a.entering_wet_bulb",
+      "title": "Entering wet-bulb temperature",
+      "unit": "degC",
+      "basis": "performance map entering-condition columns (engine run)"
+    },
+    {
+      "id": "9a.total_capacity",
+      "title": "Total cooling capacity at the case condition",
+      "unit": "kW",
+      "basis": "engine dispatch (performance-map rating at the condition)"
+    },
+    {
+      "id": "9a.sensible_capacity",
+      "title": "Sensible cooling capacity at the case condition",
+      "unit": "kW",
+      "basis": "engine dispatch (performance-map rating at the condition)"
+    },
+    {
+      "id": "9a.latent_capacity",
+      "title": "Latent cooling capacity at the case condition",
+      "unit": "kW",
+      "basis": "engine dispatch (total minus sensible capacity)"
+    },
+    {
+      "id": "9a.compressor_power",
+      "title": "Compressor power at the case condition",
+      "unit": "kW",
+      "basis": "engine dispatch (performance-map rating at the condition)"
+    },
+    {
+      "id": "9a.delivered_capacity",
+      "title": "Delivered cooling capacity at the operating point",
+      "unit": "kW",
+      "basis": "engine dispatch (steady-state delivery at the case load)"
+    },
+    {
+      "id": "9a.delivered_power",
+      "title": "Delivered compressor power at the operating point",
+      "unit": "kW",
+      "basis": "engine dispatch (steady-state delivery at the case load)"
+    },
+    {
+      "id": "9a.cop",
+      "title": "Coefficient of performance at the operating point (total capacity divided by compressor plus indoor fan power)",
+      "unit": "-",
+      "basis": "engine dispatch"
+    },
+    {
+      "id": "9a.plr",
+      "title": "Part load ratio at the operating point",
+      "unit": "-",
+      "basis": "engine dispatch (load balance)"
+    },
+    {
+      "id": "9a.shr",
+      "title": "Sensible heat ratio at the operating point",
+      "unit": "-",
+      "basis": "engine dispatch"
+    },
+    {
+      "id": "9a.peak_cooling_power",
+      "title": "Peak cooling power at the case condition (compressor power plus the map's indoor fan heat, adjusted-net basis)",
+      "unit": "kW",
+      "basis": "engine dispatch"
+    },
+    {
+      "id": "9a.required_load",
+      "title": "Required cooling load of the case (internal sensible plus latent gains)",
+      "unit": "kW",
+      "basis": "engine dispatch (case load balance)"
+    },
+    {
+      "id": "9a.capacity_shortfall",
+      "title": "Capacity shortfall of the delivered load against the required load",
+      "unit": "W",
+      "basis": "engine dispatch (load balance)"
+    },
+    {
+      "id": "9a.annual_cooling",
+      "title": "Annual cooling energy of the case",
+      "unit": "MWh",
+      "basis": "case definition: the case binds an annual weather file and the case table names the annual_cooling metric for the case"
+    },
+    {
+      "id": "9a.max_zone_temp",
+      "title": "Maximum zone temperature of the case",
+      "unit": "degC",
+      "basis": "case definition: the case table names the max_zone_temp metric for the case (CE150 only)"
+    }
+  ],
+  "cases": [
+    {
+      "case": "CE100",
+      "title": "Base-Case Building and Mechanical System",
+      "series": "dry",
+      "weather_file": "CE100A",
+      "status": "incomplete",
+      "ran": true,
+      "conditions": {
+        "internal_sensible_gains_W": 5400.0,
+        "internal_latent_gains_W": 0.0,
+        "cooling_setpoint_C": 22.2,
+        "outdoor_dry_bulb_C": 46.1
+      },
+      "entering_wet_bulb_sweep_C": [
+        15.0,
+        17.2,
+        19.4,
+        21.7
+      ],
+      "requirements": {
+        "9a.case_inputs": "report",
+        "9a.entering_dry_bulb": "report",
+        "9a.entering_wet_bulb": "partial",
+        "9a.total_capacity": "report",
+        "9a.sensible_capacity": "report",
+        "9a.latent_capacity": "report",
+        "9a.compressor_power": "report",
+        "9a.delivered_capacity": "report",
+        "9a.delivered_power": "report",
+        "9a.cop": "report",
+        "9a.plr": "report",
+        "9a.shr": "report",
+        "9a.peak_cooling_power": "report",
+        "9a.required_load": "report",
+        "9a.capacity_shortfall": "report",
+        "9a.annual_cooling": "missing",
+        "9a.max_zone_temp": "na"
+      },
+      "reference_diagnostic": {
+        "map": {
+          "table": "adjusted_net_Table_26e",
+          "table_source": "CE100MAP.xls (Aug 7, 2007), ASHRAE 140-2023 Std140_CE_a_Files/Normative Materials; Tables 9-5 through 9-10 of the standard",
+          "outdoor_dry_bulb_C": 46.1,
+          "entering_dry_bulb_C": 22.2,
+          "points": [
+            {
+              "entering_wet_bulb_C": 15.0,
+              "total_capacity_kW": 6.02,
+              "compressor_power_kW": 2.11,
+              "apparatus_dew_point_C": 10.0,
+              "sensible_capacity_kW": 5.81
+            },
+            {
+              "entering_wet_bulb_C": 17.2,
+              "total_capacity_kW": 6.49,
+              "compressor_power_kW": 2.14,
+              "apparatus_dew_point_C": 12.2,
+              "sensible_capacity_kW": 4.76
+            },
+            {
+              "entering_wet_bulb_C": 19.4,
+              "total_capacity_kW": 6.98,
+              "compressor_power_kW": 2.18,
+              "apparatus_dew_point_C": 14.6,
+              "sensible_capacity_kW": 3.59
+            },
+            {
+              "entering_wet_bulb_C": 21.7,
+              "total_capacity_kW": 7.48,
+              "compressor_power_kW": 2.21,
+              "apparatus_dew_point_C": 16.9,
+              "sensible_capacity_kW": 2.41
+            }
+          ],
+          "ari_rating_point": {
+            "conditions": {
+              "EDB_C": 26.7,
+              "EWB_C": 19.4,
+              "ODB_C": 35.0
+            },
+            "net_total_capacity_W": 7852,
+            "gross_total_capacity_W": 8181,
+            "adjusted_net_total_capacity_W": 7951,
+            "airflow_m3_s": 0.425,
+            "apparatus_dew_point_C": 13.8,
+            "compressor_power_W": 1858,
+            "indoor_fan_power_W": 230,
+            "outdoor_fan_power_W": 108,
+            "COP": 3.62,
+            "COP_SEER": 3.78
+          }
+        },
+        "comparative": {
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E100)",
+          "role": "evidence range (ensemble min/max), not a pass/fail criterion",
+          "bounds": {
+            "annual_cooling": [
+              4.1,
+              4.9,
+              "MWh"
+            ],
+            "peak_cooling": [
+              2.7,
+              3.2,
+              "kW"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "case": "CE110",
+      "title": "Reduced Outdoor Dry-Bulb Temperature",
+      "series": "dry",
+      "weather_file": "CE110A",
+      "status": "incomplete",
+      "ran": true,
+      "conditions": {
+        "internal_sensible_gains_W": 5400.0,
+        "internal_latent_gains_W": 0.0,
+        "cooling_setpoint_C": 22.2,
+        "outdoor_dry_bulb_C": 29.4
+      },
+      "entering_wet_bulb_sweep_C": [
+        15.0,
+        17.2,
+        19.4,
+        21.7
+      ],
+      "requirements": {
+        "9a.case_inputs": "report",
+        "9a.entering_dry_bulb": "report",
+        "9a.entering_wet_bulb": "partial",
+        "9a.total_capacity": "report",
+        "9a.sensible_capacity": "report",
+        "9a.latent_capacity": "report",
+        "9a.compressor_power": "report",
+        "9a.delivered_capacity": "report",
+        "9a.delivered_power": "report",
+        "9a.cop": "report",
+        "9a.plr": "report",
+        "9a.shr": "report",
+        "9a.peak_cooling_power": "report",
+        "9a.required_load": "report",
+        "9a.capacity_shortfall": "report",
+        "9a.annual_cooling": "missing",
+        "9a.max_zone_temp": "na"
+      },
+      "reference_diagnostic": {
+        "map": {
+          "table": "adjusted_net_Table_26e",
+          "table_source": "CE100MAP.xls (Aug 7, 2007), ASHRAE 140-2023 Std140_CE_a_Files/Normative Materials; Tables 9-5 through 9-10 of the standard",
+          "outdoor_dry_bulb_C": 29.4,
+          "entering_dry_bulb_C": 22.2,
+          "points": [
+            {
+              "entering_wet_bulb_C": 15.0,
+              "total_capacity_kW": 7.19,
+              "compressor_power_kW": 1.62,
+              "apparatus_dew_point_C": 8.9,
+              "sensible_capacity_kW": 6.31
+            },
+            {
+              "entering_wet_bulb_C": 17.2,
+              "total_capacity_kW": 7.78,
+              "compressor_power_kW": 1.66,
+              "apparatus_dew_point_C": 11.1,
+              "sensible_capacity_kW": 5.26
+            },
+            {
+              "entering_wet_bulb_C": 19.4,
+              "total_capacity_kW": 8.42,
+              "compressor_power_kW": 1.71,
+              "apparatus_dew_point_C": 13.4,
+              "sensible_capacity_kW": 4.11
+            },
+            {
+              "entering_wet_bulb_C": 21.7,
+              "total_capacity_kW": 9.06,
+              "compressor_power_kW": 1.76,
+              "apparatus_dew_point_C": 15.8,
+              "sensible_capacity_kW": 2.97
+            }
+          ],
+          "ari_rating_point": {
+            "conditions": {
+              "EDB_C": 26.7,
+              "EWB_C": 19.4,
+              "ODB_C": 35.0
+            },
+            "net_total_capacity_W": 7852,
+            "gross_total_capacity_W": 8181,
+            "adjusted_net_total_capacity_W": 7951,
+            "airflow_m3_s": 0.425,
+            "apparatus_dew_point_C": 13.8,
+            "compressor_power_W": 1858,
+            "indoor_fan_power_W": 230,
+            "outdoor_fan_power_W": 108,
+            "COP": 3.62,
+            "COP_SEER": 3.78
+          }
+        },
+        "comparative": {
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E110)",
+          "role": "evidence range (ensemble min/max), not a pass/fail criterion",
+          "bounds": {
+            "annual_cooling": [
+              4.0,
+              4.8,
+              "MWh"
+            ],
+            "peak_cooling": [
+              2.65,
+              3.15,
+              "kW"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "case": "CE120",
+      "title": "Increased Thermostat Setpoint",
+      "series": "dry",
+      "weather_file": "CE110A",
+      "status": "incomplete",
+      "ran": true,
+      "conditions": {
+        "internal_sensible_gains_W": 5400.0,
+        "internal_latent_gains_W": 0.0,
+        "cooling_setpoint_C": 26.7,
+        "outdoor_dry_bulb_C": 29.4
+      },
+      "entering_wet_bulb_sweep_C": [
+        15.0,
+        17.2,
+        19.4,
+        21.7
+      ],
+      "requirements": {
+        "9a.case_inputs": "report",
+        "9a.entering_dry_bulb": "report",
+        "9a.entering_wet_bulb": "partial",
+        "9a.total_capacity": "report",
+        "9a.sensible_capacity": "report",
+        "9a.latent_capacity": "report",
+        "9a.compressor_power": "report",
+        "9a.delivered_capacity": "report",
+        "9a.delivered_power": "report",
+        "9a.cop": "report",
+        "9a.plr": "report",
+        "9a.shr": "report",
+        "9a.peak_cooling_power": "report",
+        "9a.required_load": "report",
+        "9a.capacity_shortfall": "report",
+        "9a.annual_cooling": "missing",
+        "9a.max_zone_temp": "na"
+      },
+      "reference_diagnostic": {
+        "map": {
+          "table": "adjusted_net_Table_26e",
+          "table_source": "CE100MAP.xls (Aug 7, 2007), ASHRAE 140-2023 Std140_CE_a_Files/Normative Materials; Tables 9-5 through 9-10 of the standard",
+          "outdoor_dry_bulb_C": 29.4,
+          "entering_dry_bulb_C": 26.7,
+          "points": [
+            {
+              "entering_wet_bulb_C": 15.0,
+              "total_capacity_kW": 7.19,
+              "compressor_power_kW": 1.62,
+              "apparatus_dew_point_C": 8.9,
+              "sensible_capacity_kW": 7.66
+            },
+            {
+              "entering_wet_bulb_C": 17.2,
+              "total_capacity_kW": 7.78,
+              "compressor_power_kW": 1.66,
+              "apparatus_dew_point_C": 11.1,
+              "sensible_capacity_kW": 7.45
+            },
+            {
+              "entering_wet_bulb_C": 19.4,
+              "total_capacity_kW": 8.42,
+              "compressor_power_kW": 1.71,
+              "apparatus_dew_point_C": 13.4,
+              "sensible_capacity_kW": 6.31
+            },
+            {
+              "entering_wet_bulb_C": 21.7,
+              "total_capacity_kW": 9.06,
+              "compressor_power_kW": 1.76,
+              "apparatus_dew_point_C": 15.8,
+              "sensible_capacity_kW": 5.14
+            }
+          ],
+          "ari_rating_point": {
+            "conditions": {
+              "EDB_C": 26.7,
+              "EWB_C": 19.4,
+              "ODB_C": 35.0
+            },
+            "net_total_capacity_W": 7852,
+            "gross_total_capacity_W": 8181,
+            "adjusted_net_total_capacity_W": 7951,
+            "airflow_m3_s": 0.425,
+            "apparatus_dew_point_C": 13.8,
+            "compressor_power_W": 1858,
+            "indoor_fan_power_W": 230,
+            "outdoor_fan_power_W": 108,
+            "COP": 3.62,
+            "COP_SEER": 3.78
+          }
+        },
+        "comparative": {
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E120)",
+          "role": "evidence range (ensemble min/max), not a pass/fail criterion",
+          "bounds": {
+            "annual_cooling": [
+              4.3,
+              5.15,
+              "MWh"
+            ],
+            "peak_cooling": [
+              2.8,
+              3.3,
+              "kW"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "case": "CE130",
+      "title": "Low Part-Load Ratio",
+      "series": "dry",
+      "weather_file": "CE100A",
+      "status": "incomplete",
+      "ran": true,
+      "conditions": {
+        "internal_sensible_gains_W": 270.0,
+        "internal_latent_gains_W": 0.0,
+        "cooling_setpoint_C": 22.2,
+        "outdoor_dry_bulb_C": 46.1
+      },
+      "entering_wet_bulb_sweep_C": [
+        15.0,
+        17.2,
+        19.4,
+        21.7
+      ],
+      "requirements": {
+        "9a.case_inputs": "report",
+        "9a.entering_dry_bulb": "report",
+        "9a.entering_wet_bulb": "partial",
+        "9a.total_capacity": "report",
+        "9a.sensible_capacity": "report",
+        "9a.latent_capacity": "report",
+        "9a.compressor_power": "report",
+        "9a.delivered_capacity": "report",
+        "9a.delivered_power": "report",
+        "9a.cop": "report",
+        "9a.plr": "report",
+        "9a.shr": "report",
+        "9a.peak_cooling_power": "report",
+        "9a.required_load": "report",
+        "9a.capacity_shortfall": "report",
+        "9a.annual_cooling": "missing",
+        "9a.max_zone_temp": "na"
+      },
+      "reference_diagnostic": {
+        "map": {
+          "table": "adjusted_net_Table_26e",
+          "table_source": "CE100MAP.xls (Aug 7, 2007), ASHRAE 140-2023 Std140_CE_a_Files/Normative Materials; Tables 9-5 through 9-10 of the standard",
+          "outdoor_dry_bulb_C": 46.1,
+          "entering_dry_bulb_C": 22.2,
+          "points": [
+            {
+              "entering_wet_bulb_C": 15.0,
+              "total_capacity_kW": 6.02,
+              "compressor_power_kW": 2.11,
+              "apparatus_dew_point_C": 10.0,
+              "sensible_capacity_kW": 5.81
+            },
+            {
+              "entering_wet_bulb_C": 17.2,
+              "total_capacity_kW": 6.49,
+              "compressor_power_kW": 2.14,
+              "apparatus_dew_point_C": 12.2,
+              "sensible_capacity_kW": 4.76
+            },
+            {
+              "entering_wet_bulb_C": 19.4,
+              "total_capacity_kW": 6.98,
+              "compressor_power_kW": 2.18,
+              "apparatus_dew_point_C": 14.6,
+              "sensible_capacity_kW": 3.59
+            },
+            {
+              "entering_wet_bulb_C": 21.7,
+              "total_capacity_kW": 7.48,
+              "compressor_power_kW": 2.21,
+              "apparatus_dew_point_C": 16.9,
+              "sensible_capacity_kW": 2.41
+            }
+          ],
+          "ari_rating_point": {
+            "conditions": {
+              "EDB_C": 26.7,
+              "EWB_C": 19.4,
+              "ODB_C": 35.0
+            },
+            "net_total_capacity_W": 7852,
+            "gross_total_capacity_W": 8181,
+            "adjusted_net_total_capacity_W": 7951,
+            "airflow_m3_s": 0.425,
+            "apparatus_dew_point_C": 13.8,
+            "compressor_power_W": 1858,
+            "indoor_fan_power_W": 230,
+            "outdoor_fan_power_W": 108,
+            "COP": 3.62,
+            "COP_SEER": 3.78
+          }
+        },
+        "comparative": {
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E130)",
+          "role": "evidence range (ensemble min/max), not a pass/fail criterion",
+          "bounds": {
+            "annual_cooling": [
+              3.95,
+              4.7,
+              "MWh"
+            ],
+            "peak_cooling": [
+              2.6,
+              3.1,
+              "kW"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "case": "CE140",
+      "title": "Reduced Outdoor Dry-Bulb Temperature at Low Part-Load Ratio",
+      "series": "dry",
+      "weather_file": "CE110A",
+      "status": "incomplete",
+      "ran": true,
+      "conditions": {
+        "internal_sensible_gains_W": 270.0,
+        "internal_latent_gains_W": 0.0,
+        "cooling_setpoint_C": 22.2,
+        "outdoor_dry_bulb_C": 29.4
+      },
+      "entering_wet_bulb_sweep_C": [
+        15.0,
+        17.2,
+        19.4,
+        21.7
+      ],
+      "requirements": {
+        "9a.case_inputs": "report",
+        "9a.entering_dry_bulb": "report",
+        "9a.entering_wet_bulb": "partial",
+        "9a.total_capacity": "report",
+        "9a.sensible_capacity": "report",
+        "9a.latent_capacity": "report",
+        "9a.compressor_power": "report",
+        "9a.delivered_capacity": "report",
+        "9a.delivered_power": "report",
+        "9a.cop": "report",
+        "9a.plr": "report",
+        "9a.shr": "report",
+        "9a.peak_cooling_power": "report",
+        "9a.required_load": "report",
+        "9a.capacity_shortfall": "report",
+        "9a.annual_cooling": "missing",
+        "9a.max_zone_temp": "na"
+      },
+      "reference_diagnostic": {
+        "map": {
+          "table": "adjusted_net_Table_26e",
+          "table_source": "CE100MAP.xls (Aug 7, 2007), ASHRAE 140-2023 Std140_CE_a_Files/Normative Materials; Tables 9-5 through 9-10 of the standard",
+          "outdoor_dry_bulb_C": 29.4,
+          "entering_dry_bulb_C": 22.2,
+          "points": [
+            {
+              "entering_wet_bulb_C": 15.0,
+              "total_capacity_kW": 7.19,
+              "compressor_power_kW": 1.62,
+              "apparatus_dew_point_C": 8.9,
+              "sensible_capacity_kW": 6.31
+            },
+            {
+              "entering_wet_bulb_C": 17.2,
+              "total_capacity_kW": 7.78,
+              "compressor_power_kW": 1.66,
+              "apparatus_dew_point_C": 11.1,
+              "sensible_capacity_kW": 5.26
+            },
+            {
+              "entering_wet_bulb_C": 19.4,
+              "total_capacity_kW": 8.42,
+              "compressor_power_kW": 1.71,
+              "apparatus_dew_point_C": 13.4,
+              "sensible_capacity_kW": 4.11
+            },
+            {
+              "entering_wet_bulb_C": 21.7,
+              "total_capacity_kW": 9.06,
+              "compressor_power_kW": 1.76,
+              "apparatus_dew_point_C": 15.8,
+              "sensible_capacity_kW": 2.97
+            }
+          ],
+          "ari_rating_point": {
+            "conditions": {
+              "EDB_C": 26.7,
+              "EWB_C": 19.4,
+              "ODB_C": 35.0
+            },
+            "net_total_capacity_W": 7852,
+            "gross_total_capacity_W": 8181,
+            "adjusted_net_total_capacity_W": 7951,
+            "airflow_m3_s": 0.425,
+            "apparatus_dew_point_C": 13.8,
+            "compressor_power_W": 1858,
+            "indoor_fan_power_W": 230,
+            "outdoor_fan_power_W": 108,
+            "COP": 3.62,
+            "COP_SEER": 3.78
+          }
+        },
+        "comparative": {
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E140)",
+          "role": "evidence range (ensemble min/max), not a pass/fail criterion",
+          "bounds": {
+            "annual_cooling": [
+              4.2,
+              5.0,
+              "MWh"
+            ],
+            "peak_cooling": [
+              2.75,
+              3.25,
+              "kW"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "case": "CE150",
+      "title": "Latent Load at High Sensible Heat Ratio",
+      "series": "wet",
+      "weather_file": "CE110A",
+      "status": "incomplete",
+      "ran": true,
+      "conditions": {
+        "internal_sensible_gains_W": 5400.0,
+        "internal_latent_gains_W": 1100.0,
+        "cooling_setpoint_C": 22.2,
+        "outdoor_dry_bulb_C": 29.4
+      },
+      "entering_wet_bulb_sweep_C": [
+        15.0,
+        17.2,
+        19.4,
+        21.7
+      ],
+      "requirements": {
+        "9a.case_inputs": "report",
+        "9a.entering_dry_bulb": "report",
+        "9a.entering_wet_bulb": "partial",
+        "9a.total_capacity": "report",
+        "9a.sensible_capacity": "report",
+        "9a.latent_capacity": "report",
+        "9a.compressor_power": "report",
+        "9a.delivered_capacity": "report",
+        "9a.delivered_power": "report",
+        "9a.cop": "report",
+        "9a.plr": "report",
+        "9a.shr": "report",
+        "9a.peak_cooling_power": "report",
+        "9a.required_load": "report",
+        "9a.capacity_shortfall": "report",
+        "9a.annual_cooling": "missing",
+        "9a.max_zone_temp": "na"
+      },
+      "reference_diagnostic": {
+        "map": {
+          "table": "adjusted_net_Table_26e",
+          "table_source": "CE100MAP.xls (Aug 7, 2007), ASHRAE 140-2023 Std140_CE_a_Files/Normative Materials; Tables 9-5 through 9-10 of the standard",
+          "outdoor_dry_bulb_C": 29.4,
+          "entering_dry_bulb_C": 22.2,
+          "points": [
+            {
+              "entering_wet_bulb_C": 15.0,
+              "total_capacity_kW": 7.19,
+              "compressor_power_kW": 1.62,
+              "apparatus_dew_point_C": 8.9,
+              "sensible_capacity_kW": 6.31
+            },
+            {
+              "entering_wet_bulb_C": 17.2,
+              "total_capacity_kW": 7.78,
+              "compressor_power_kW": 1.66,
+              "apparatus_dew_point_C": 11.1,
+              "sensible_capacity_kW": 5.26
+            },
+            {
+              "entering_wet_bulb_C": 19.4,
+              "total_capacity_kW": 8.42,
+              "compressor_power_kW": 1.71,
+              "apparatus_dew_point_C": 13.4,
+              "sensible_capacity_kW": 4.11
+            },
+            {
+              "entering_wet_bulb_C": 21.7,
+              "total_capacity_kW": 9.06,
+              "compressor_power_kW": 1.76,
+              "apparatus_dew_point_C": 15.8,
+              "sensible_capacity_kW": 2.97
+            }
+          ],
+          "ari_rating_point": {
+            "conditions": {
+              "EDB_C": 26.7,
+              "EWB_C": 19.4,
+              "ODB_C": 35.0
+            },
+            "net_total_capacity_W": 7852,
+            "gross_total_capacity_W": 8181,
+            "adjusted_net_total_capacity_W": 7951,
+            "airflow_m3_s": 0.425,
+            "apparatus_dew_point_C": 13.8,
+            "compressor_power_W": 1858,
+            "indoor_fan_power_W": 230,
+            "outdoor_fan_power_W": 108,
+            "COP": 3.62,
+            "COP_SEER": 3.78
+          }
+        },
+        "comparative": {
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E150)",
+          "role": "evidence range (ensemble min/max), not a pass/fail criterion",
+          "bounds": {
+            "annual_cooling": [
+              5.4,
+              6.45,
+              "MWh"
+            ],
+            "peak_cooling": [
+              3.1,
+              3.7,
+              "kW"
+            ],
+            "max_zone_temp": [
+              25.5,
+              27.5,
+              "C"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "case": "CE160",
+      "title": "Increased Thermostat Setpoint at High Sensible Heat Ratio",
+      "series": "wet",
+      "weather_file": "CE110A",
+      "status": "incomplete",
+      "ran": true,
+      "conditions": {
+        "internal_sensible_gains_W": 5400.0,
+        "internal_latent_gains_W": 1100.0,
+        "cooling_setpoint_C": 26.7,
+        "outdoor_dry_bulb_C": 29.4
+      },
+      "entering_wet_bulb_sweep_C": [
+        15.0,
+        17.2,
+        19.4,
+        21.7
+      ],
+      "requirements": {
+        "9a.case_inputs": "report",
+        "9a.entering_dry_bulb": "report",
+        "9a.entering_wet_bulb": "partial",
+        "9a.total_capacity": "report",
+        "9a.sensible_capacity": "report",
+        "9a.latent_capacity": "report",
+        "9a.compressor_power": "report",
+        "9a.delivered_capacity": "report",
+        "9a.delivered_power": "report",
+        "9a.cop": "report",
+        "9a.plr": "report",
+        "9a.shr": "report",
+        "9a.peak_cooling_power": "report",
+        "9a.required_load": "report",
+        "9a.capacity_shortfall": "report",
+        "9a.annual_cooling": "missing",
+        "9a.max_zone_temp": "na"
+      },
+      "reference_diagnostic": {
+        "map": {
+          "table": "adjusted_net_Table_26e",
+          "table_source": "CE100MAP.xls (Aug 7, 2007), ASHRAE 140-2023 Std140_CE_a_Files/Normative Materials; Tables 9-5 through 9-10 of the standard",
+          "outdoor_dry_bulb_C": 29.4,
+          "entering_dry_bulb_C": 26.7,
+          "points": [
+            {
+              "entering_wet_bulb_C": 15.0,
+              "total_capacity_kW": 7.19,
+              "compressor_power_kW": 1.62,
+              "apparatus_dew_point_C": 8.9,
+              "sensible_capacity_kW": 7.66
+            },
+            {
+              "entering_wet_bulb_C": 17.2,
+              "total_capacity_kW": 7.78,
+              "compressor_power_kW": 1.66,
+              "apparatus_dew_point_C": 11.1,
+              "sensible_capacity_kW": 7.45
+            },
+            {
+              "entering_wet_bulb_C": 19.4,
+              "total_capacity_kW": 8.42,
+              "compressor_power_kW": 1.71,
+              "apparatus_dew_point_C": 13.4,
+              "sensible_capacity_kW": 6.31
+            },
+            {
+              "entering_wet_bulb_C": 21.7,
+              "total_capacity_kW": 9.06,
+              "compressor_power_kW": 1.76,
+              "apparatus_dew_point_C": 15.8,
+              "sensible_capacity_kW": 5.14
+            }
+          ],
+          "ari_rating_point": {
+            "conditions": {
+              "EDB_C": 26.7,
+              "EWB_C": 19.4,
+              "ODB_C": 35.0
+            },
+            "net_total_capacity_W": 7852,
+            "gross_total_capacity_W": 8181,
+            "adjusted_net_total_capacity_W": 7951,
+            "airflow_m3_s": 0.425,
+            "apparatus_dew_point_C": 13.8,
+            "compressor_power_W": 1858,
+            "indoor_fan_power_W": 230,
+            "outdoor_fan_power_W": 108,
+            "COP": 3.62,
+            "COP_SEER": 3.78
+          }
+        },
+        "comparative": {
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E160)",
+          "role": "evidence range (ensemble min/max), not a pass/fail criterion",
+          "bounds": {
+            "annual_cooling": [
+              5.3,
+              6.3,
+              "MWh"
+            ],
+            "peak_cooling": [
+              3.05,
+              3.65,
+              "kW"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "case": "CE165",
+      "title": "Variation of Thermostat Setpoint and Outdoor Dry-Bulb Temperature at High Sensible Heat Ratio",
+      "series": "wet",
+      "weather_file": "CE165A",
+      "status": "incomplete",
+      "ran": true,
+      "conditions": {
+        "internal_sensible_gains_W": 5400.0,
+        "internal_latent_gains_W": 1100.0,
+        "cooling_setpoint_C": 23.3,
+        "outdoor_dry_bulb_C": 40.6
+      },
+      "entering_wet_bulb_sweep_C": [
+        15.0,
+        17.2,
+        19.4,
+        21.7
+      ],
+      "requirements": {
+        "9a.case_inputs": "report",
+        "9a.entering_dry_bulb": "report",
+        "9a.entering_wet_bulb": "partial",
+        "9a.total_capacity": "report",
+        "9a.sensible_capacity": "report",
+        "9a.latent_capacity": "report",
+        "9a.compressor_power": "report",
+        "9a.delivered_capacity": "report",
+        "9a.delivered_power": "report",
+        "9a.cop": "report",
+        "9a.plr": "report",
+        "9a.shr": "report",
+        "9a.peak_cooling_power": "report",
+        "9a.required_load": "report",
+        "9a.capacity_shortfall": "report",
+        "9a.annual_cooling": "missing",
+        "9a.max_zone_temp": "na"
+      },
+      "reference_diagnostic": {
+        "map": {
+          "table": "adjusted_net_Table_26e",
+          "table_source": "CE100MAP.xls (Aug 7, 2007), ASHRAE 140-2023 Std140_CE_a_Files/Normative Materials; Tables 9-5 through 9-10 of the standard",
+          "outdoor_dry_bulb_C": 40.6,
+          "entering_dry_bulb_C": 23.3,
+          "points": [
+            {
+              "entering_wet_bulb_C": 15.0,
+              "total_capacity_kW": 6.43,
+              "compressor_power_kW": 1.94,
+              "apparatus_dew_point_C": 9.6,
+              "sensible_capacity_kW": 6.49
+            },
+            {
+              "entering_wet_bulb_C": 17.2,
+              "total_capacity_kW": 6.93,
+              "compressor_power_kW": 1.98,
+              "apparatus_dew_point_C": 11.8,
+              "sensible_capacity_kW": 5.46
+            },
+            {
+              "entering_wet_bulb_C": 19.4,
+              "total_capacity_kW": 7.45,
+              "compressor_power_kW": 2.02,
+              "apparatus_dew_point_C": 14.2,
+              "sensible_capacity_kW": 4.32
+            },
+            {
+              "entering_wet_bulb_C": 21.7,
+              "total_capacity_kW": 8.01,
+              "compressor_power_kW": 2.06,
+              "apparatus_dew_point_C": 16.6,
+              "sensible_capacity_kW": 3.12
+            }
+          ],
+          "ari_rating_point": {
+            "conditions": {
+              "EDB_C": 26.7,
+              "EWB_C": 19.4,
+              "ODB_C": 35.0
+            },
+            "net_total_capacity_W": 7852,
+            "gross_total_capacity_W": 8181,
+            "adjusted_net_total_capacity_W": 7951,
+            "airflow_m3_s": 0.425,
+            "apparatus_dew_point_C": 13.8,
+            "compressor_power_W": 1858,
+            "indoor_fan_power_W": 230,
+            "outdoor_fan_power_W": 108,
+            "COP": 3.62,
+            "COP_SEER": 3.78
+          }
+        },
+        "comparative": {}
+      }
+    },
+    {
+      "case": "CE170",
+      "title": "Reduced Sensible Load",
+      "series": "wet",
+      "weather_file": "CE110A",
+      "status": "incomplete",
+      "ran": true,
+      "conditions": {
+        "internal_sensible_gains_W": 2100.0,
+        "internal_latent_gains_W": 1100.0,
+        "cooling_setpoint_C": 22.2,
+        "outdoor_dry_bulb_C": 29.4
+      },
+      "entering_wet_bulb_sweep_C": [
+        15.0,
+        17.2,
+        19.4,
+        21.7
+      ],
+      "requirements": {
+        "9a.case_inputs": "report",
+        "9a.entering_dry_bulb": "report",
+        "9a.entering_wet_bulb": "partial",
+        "9a.total_capacity": "report",
+        "9a.sensible_capacity": "report",
+        "9a.latent_capacity": "report",
+        "9a.compressor_power": "report",
+        "9a.delivered_capacity": "report",
+        "9a.delivered_power": "report",
+        "9a.cop": "report",
+        "9a.plr": "report",
+        "9a.shr": "report",
+        "9a.peak_cooling_power": "report",
+        "9a.required_load": "report",
+        "9a.capacity_shortfall": "report",
+        "9a.annual_cooling": "missing",
+        "9a.max_zone_temp": "na"
+      },
+      "reference_diagnostic": {
+        "map": {
+          "table": "adjusted_net_Table_26e",
+          "table_source": "CE100MAP.xls (Aug 7, 2007), ASHRAE 140-2023 Std140_CE_a_Files/Normative Materials; Tables 9-5 through 9-10 of the standard",
+          "outdoor_dry_bulb_C": 29.4,
+          "entering_dry_bulb_C": 22.2,
+          "points": [
+            {
+              "entering_wet_bulb_C": 15.0,
+              "total_capacity_kW": 7.19,
+              "compressor_power_kW": 1.62,
+              "apparatus_dew_point_C": 8.9,
+              "sensible_capacity_kW": 6.31
+            },
+            {
+              "entering_wet_bulb_C": 17.2,
+              "total_capacity_kW": 7.78,
+              "compressor_power_kW": 1.66,
+              "apparatus_dew_point_C": 11.1,
+              "sensible_capacity_kW": 5.26
+            },
+            {
+              "entering_wet_bulb_C": 19.4,
+              "total_capacity_kW": 8.42,
+              "compressor_power_kW": 1.71,
+              "apparatus_dew_point_C": 13.4,
+              "sensible_capacity_kW": 4.11
+            },
+            {
+              "entering_wet_bulb_C": 21.7,
+              "total_capacity_kW": 9.06,
+              "compressor_power_kW": 1.76,
+              "apparatus_dew_point_C": 15.8,
+              "sensible_capacity_kW": 2.97
+            }
+          ],
+          "ari_rating_point": {
+            "conditions": {
+              "EDB_C": 26.7,
+              "EWB_C": 19.4,
+              "ODB_C": 35.0
+            },
+            "net_total_capacity_W": 7852,
+            "gross_total_capacity_W": 8181,
+            "adjusted_net_total_capacity_W": 7951,
+            "airflow_m3_s": 0.425,
+            "apparatus_dew_point_C": 13.8,
+            "compressor_power_W": 1858,
+            "indoor_fan_power_W": 230,
+            "outdoor_fan_power_W": 108,
+            "COP": 3.62,
+            "COP_SEER": 3.78
+          }
+        },
+        "comparative": {
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E170)",
+          "role": "evidence range (ensemble min/max), not a pass/fail criterion",
+          "bounds": {
+            "annual_cooling": [
+              5.55,
+              6.6,
+              "MWh"
+            ],
+            "peak_cooling": [
+              3.15,
+              3.75,
+              "kW"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "case": "CE180",
+      "title": "Increased Latent Load",
+      "series": "wet",
+      "weather_file": "CE110A",
+      "status": "incomplete",
+      "ran": true,
+      "conditions": {
+        "internal_sensible_gains_W": 2100.0,
+        "internal_latent_gains_W": 4400.0,
+        "cooling_setpoint_C": 22.2,
+        "outdoor_dry_bulb_C": 29.4
+      },
+      "entering_wet_bulb_sweep_C": [
+        15.0,
+        17.2,
+        19.4,
+        21.7
+      ],
+      "requirements": {
+        "9a.case_inputs": "report",
+        "9a.entering_dry_bulb": "report",
+        "9a.entering_wet_bulb": "partial",
+        "9a.total_capacity": "report",
+        "9a.sensible_capacity": "report",
+        "9a.latent_capacity": "report",
+        "9a.compressor_power": "report",
+        "9a.delivered_capacity": "report",
+        "9a.delivered_power": "report",
+        "9a.cop": "report",
+        "9a.plr": "report",
+        "9a.shr": "report",
+        "9a.peak_cooling_power": "report",
+        "9a.required_load": "report",
+        "9a.capacity_shortfall": "report",
+        "9a.annual_cooling": "missing",
+        "9a.max_zone_temp": "na"
+      },
+      "reference_diagnostic": {
+        "map": {
+          "table": "adjusted_net_Table_26e",
+          "table_source": "CE100MAP.xls (Aug 7, 2007), ASHRAE 140-2023 Std140_CE_a_Files/Normative Materials; Tables 9-5 through 9-10 of the standard",
+          "outdoor_dry_bulb_C": 29.4,
+          "entering_dry_bulb_C": 22.2,
+          "points": [
+            {
+              "entering_wet_bulb_C": 15.0,
+              "total_capacity_kW": 7.19,
+              "compressor_power_kW": 1.62,
+              "apparatus_dew_point_C": 8.9,
+              "sensible_capacity_kW": 6.31
+            },
+            {
+              "entering_wet_bulb_C": 17.2,
+              "total_capacity_kW": 7.78,
+              "compressor_power_kW": 1.66,
+              "apparatus_dew_point_C": 11.1,
+              "sensible_capacity_kW": 5.26
+            },
+            {
+              "entering_wet_bulb_C": 19.4,
+              "total_capacity_kW": 8.42,
+              "compressor_power_kW": 1.71,
+              "apparatus_dew_point_C": 13.4,
+              "sensible_capacity_kW": 4.11
+            },
+            {
+              "entering_wet_bulb_C": 21.7,
+              "total_capacity_kW": 9.06,
+              "compressor_power_kW": 1.76,
+              "apparatus_dew_point_C": 15.8,
+              "sensible_capacity_kW": 2.97
+            }
+          ],
+          "ari_rating_point": {
+            "conditions": {
+              "EDB_C": 26.7,
+              "EWB_C": 19.4,
+              "ODB_C": 35.0
+            },
+            "net_total_capacity_W": 7852,
+            "gross_total_capacity_W": 8181,
+            "adjusted_net_total_capacity_W": 7951,
+            "airflow_m3_s": 0.425,
+            "apparatus_dew_point_C": 13.8,
+            "compressor_power_W": 1858,
+            "indoor_fan_power_W": 230,
+            "outdoor_fan_power_W": 108,
+            "COP": 3.62,
+            "COP_SEER": 3.78
+          }
+        },
+        "comparative": {}
+      }
+    },
+    {
+      "case": "CE185",
+      "title": "Increased Outdoor Dry-Bulb Temperature at Low Sensible Heat Ratio",
+      "series": "wet",
+      "weather_file": "CE100A",
+      "status": "incomplete",
+      "ran": true,
+      "conditions": {
+        "internal_sensible_gains_W": 2100.0,
+        "internal_latent_gains_W": 4400.0,
+        "cooling_setpoint_C": 22.2,
+        "outdoor_dry_bulb_C": 46.1
+      },
+      "entering_wet_bulb_sweep_C": [
+        15.0,
+        17.2,
+        19.4,
+        21.7
+      ],
+      "requirements": {
+        "9a.case_inputs": "report",
+        "9a.entering_dry_bulb": "report",
+        "9a.entering_wet_bulb": "partial",
+        "9a.total_capacity": "report",
+        "9a.sensible_capacity": "report",
+        "9a.latent_capacity": "report",
+        "9a.compressor_power": "report",
+        "9a.delivered_capacity": "report",
+        "9a.delivered_power": "report",
+        "9a.cop": "report",
+        "9a.plr": "report",
+        "9a.shr": "report",
+        "9a.peak_cooling_power": "report",
+        "9a.required_load": "report",
+        "9a.capacity_shortfall": "report",
+        "9a.annual_cooling": "missing",
+        "9a.max_zone_temp": "na"
+      },
+      "reference_diagnostic": {
+        "map": {
+          "table": "adjusted_net_Table_26e",
+          "table_source": "CE100MAP.xls (Aug 7, 2007), ASHRAE 140-2023 Std140_CE_a_Files/Normative Materials; Tables 9-5 through 9-10 of the standard",
+          "outdoor_dry_bulb_C": 46.1,
+          "entering_dry_bulb_C": 22.2,
+          "points": [
+            {
+              "entering_wet_bulb_C": 15.0,
+              "total_capacity_kW": 6.02,
+              "compressor_power_kW": 2.11,
+              "apparatus_dew_point_C": 10.0,
+              "sensible_capacity_kW": 5.81
+            },
+            {
+              "entering_wet_bulb_C": 17.2,
+              "total_capacity_kW": 6.49,
+              "compressor_power_kW": 2.14,
+              "apparatus_dew_point_C": 12.2,
+              "sensible_capacity_kW": 4.76
+            },
+            {
+              "entering_wet_bulb_C": 19.4,
+              "total_capacity_kW": 6.98,
+              "compressor_power_kW": 2.18,
+              "apparatus_dew_point_C": 14.6,
+              "sensible_capacity_kW": 3.59
+            },
+            {
+              "entering_wet_bulb_C": 21.7,
+              "total_capacity_kW": 7.48,
+              "compressor_power_kW": 2.21,
+              "apparatus_dew_point_C": 16.9,
+              "sensible_capacity_kW": 2.41
+            }
+          ],
+          "ari_rating_point": {
+            "conditions": {
+              "EDB_C": 26.7,
+              "EWB_C": 19.4,
+              "ODB_C": 35.0
+            },
+            "net_total_capacity_W": 7852,
+            "gross_total_capacity_W": 8181,
+            "adjusted_net_total_capacity_W": 7951,
+            "airflow_m3_s": 0.425,
+            "apparatus_dew_point_C": 13.8,
+            "compressor_power_W": 1858,
+            "indoor_fan_power_W": 230,
+            "outdoor_fan_power_W": 108,
+            "COP": 3.62,
+            "COP_SEER": 3.78
+          }
+        },
+        "comparative": {}
+      }
+    },
+    {
+      "case": "CE190",
+      "title": "Low Part-Load Ratio at Low Sensible Heat Ratio",
+      "series": "wet",
+      "weather_file": "CE110A",
+      "status": "incomplete",
+      "ran": true,
+      "conditions": {
+        "internal_sensible_gains_W": 270.0,
+        "internal_latent_gains_W": 550.0,
+        "cooling_setpoint_C": 22.2,
+        "outdoor_dry_bulb_C": 29.4
+      },
+      "entering_wet_bulb_sweep_C": [
+        15.0,
+        17.2,
+        19.4,
+        21.7
+      ],
+      "requirements": {
+        "9a.case_inputs": "report",
+        "9a.entering_dry_bulb": "report",
+        "9a.entering_wet_bulb": "partial",
+        "9a.total_capacity": "report",
+        "9a.sensible_capacity": "report",
+        "9a.latent_capacity": "report",
+        "9a.compressor_power": "report",
+        "9a.delivered_capacity": "report",
+        "9a.delivered_power": "report",
+        "9a.cop": "report",
+        "9a.plr": "report",
+        "9a.shr": "report",
+        "9a.peak_cooling_power": "report",
+        "9a.required_load": "report",
+        "9a.capacity_shortfall": "report",
+        "9a.annual_cooling": "missing",
+        "9a.max_zone_temp": "na"
+      },
+      "reference_diagnostic": {
+        "map": {
+          "table": "adjusted_net_Table_26e",
+          "table_source": "CE100MAP.xls (Aug 7, 2007), ASHRAE 140-2023 Std140_CE_a_Files/Normative Materials; Tables 9-5 through 9-10 of the standard",
+          "outdoor_dry_bulb_C": 29.4,
+          "entering_dry_bulb_C": 22.2,
+          "points": [
+            {
+              "entering_wet_bulb_C": 15.0,
+              "total_capacity_kW": 7.19,
+              "compressor_power_kW": 1.62,
+              "apparatus_dew_point_C": 8.9,
+              "sensible_capacity_kW": 6.31
+            },
+            {
+              "entering_wet_bulb_C": 17.2,
+              "total_capacity_kW": 7.78,
+              "compressor_power_kW": 1.66,
+              "apparatus_dew_point_C": 11.1,
+              "sensible_capacity_kW": 5.26
+            },
+            {
+              "entering_wet_bulb_C": 19.4,
+              "total_capacity_kW": 8.42,
+              "compressor_power_kW": 1.71,
+              "apparatus_dew_point_C": 13.4,
+              "sensible_capacity_kW": 4.11
+            },
+            {
+              "entering_wet_bulb_C": 21.7,
+              "total_capacity_kW": 9.06,
+              "compressor_power_kW": 1.76,
+              "apparatus_dew_point_C": 15.8,
+              "sensible_capacity_kW": 2.97
+            }
+          ],
+          "ari_rating_point": {
+            "conditions": {
+              "EDB_C": 26.7,
+              "EWB_C": 19.4,
+              "ODB_C": 35.0
+            },
+            "net_total_capacity_W": 7852,
+            "gross_total_capacity_W": 8181,
+            "adjusted_net_total_capacity_W": 7951,
+            "airflow_m3_s": 0.425,
+            "apparatus_dew_point_C": 13.8,
+            "compressor_power_W": 1858,
+            "indoor_fan_power_W": 230,
+            "outdoor_fan_power_W": 108,
+            "COP": 3.62,
+            "COP_SEER": 3.78
+          }
+        },
+        "comparative": {}
+      }
+    },
+    {
+      "case": "CE195",
+      "title": "Increased Outdoor Dry-Bulb Temperature at Low Sensible Heat Ratio and Low Part-Load Ratio",
+      "series": "wet",
+      "weather_file": "CE100A",
+      "status": "incomplete",
+      "ran": true,
+      "conditions": {
+        "internal_sensible_gains_W": 270.0,
+        "internal_latent_gains_W": 550.0,
+        "cooling_setpoint_C": 22.2,
+        "outdoor_dry_bulb_C": 46.1
+      },
+      "entering_wet_bulb_sweep_C": [
+        15.0,
+        17.2,
+        19.4,
+        21.7
+      ],
+      "requirements": {
+        "9a.case_inputs": "report",
+        "9a.entering_dry_bulb": "report",
+        "9a.entering_wet_bulb": "partial",
+        "9a.total_capacity": "report",
+        "9a.sensible_capacity": "report",
+        "9a.latent_capacity": "report",
+        "9a.compressor_power": "report",
+        "9a.delivered_capacity": "report",
+        "9a.delivered_power": "report",
+        "9a.cop": "report",
+        "9a.plr": "report",
+        "9a.shr": "report",
+        "9a.peak_cooling_power": "report",
+        "9a.required_load": "report",
+        "9a.capacity_shortfall": "report",
+        "9a.annual_cooling": "missing",
+        "9a.max_zone_temp": "na"
+      },
+      "reference_diagnostic": {
+        "map": {
+          "table": "adjusted_net_Table_26e",
+          "table_source": "CE100MAP.xls (Aug 7, 2007), ASHRAE 140-2023 Std140_CE_a_Files/Normative Materials; Tables 9-5 through 9-10 of the standard",
+          "outdoor_dry_bulb_C": 46.1,
+          "entering_dry_bulb_C": 22.2,
+          "points": [
+            {
+              "entering_wet_bulb_C": 15.0,
+              "total_capacity_kW": 6.02,
+              "compressor_power_kW": 2.11,
+              "apparatus_dew_point_C": 10.0,
+              "sensible_capacity_kW": 5.81
+            },
+            {
+              "entering_wet_bulb_C": 17.2,
+              "total_capacity_kW": 6.49,
+              "compressor_power_kW": 2.14,
+              "apparatus_dew_point_C": 12.2,
+              "sensible_capacity_kW": 4.76
+            },
+            {
+              "entering_wet_bulb_C": 19.4,
+              "total_capacity_kW": 6.98,
+              "compressor_power_kW": 2.18,
+              "apparatus_dew_point_C": 14.6,
+              "sensible_capacity_kW": 3.59
+            },
+            {
+              "entering_wet_bulb_C": 21.7,
+              "total_capacity_kW": 7.48,
+              "compressor_power_kW": 2.21,
+              "apparatus_dew_point_C": 16.9,
+              "sensible_capacity_kW": 2.41
+            }
+          ],
+          "ari_rating_point": {
+            "conditions": {
+              "EDB_C": 26.7,
+              "EWB_C": 19.4,
+              "ODB_C": 35.0
+            },
+            "net_total_capacity_W": 7852,
+            "gross_total_capacity_W": 8181,
+            "adjusted_net_total_capacity_W": 7951,
+            "airflow_m3_s": 0.425,
+            "apparatus_dew_point_C": 13.8,
+            "compressor_power_W": 1858,
+            "indoor_fan_power_W": 230,
+            "outdoor_fan_power_W": 108,
+            "COP": 3.62,
+            "COP_SEER": 3.78
+          }
+        },
+        "comparative": {}
+      }
+    },
+    {
+      "case": "CE200",
+      "title": "Full-Load Test at AHRI Conditions",
+      "series": "full-load",
+      "weather_file": "CE200A",
+      "status": "incomplete",
+      "ran": true,
+      "conditions": {
+        "internal_sensible_gains_W": 6120.0,
+        "internal_latent_gains_W": 1817.0,
+        "cooling_setpoint_C": 26.7,
+        "outdoor_dry_bulb_C": 35.0
+      },
+      "entering_wet_bulb_sweep_C": [
+        15.0,
+        17.2,
+        19.4,
+        21.7
+      ],
+      "requirements": {
+        "9a.case_inputs": "report",
+        "9a.entering_dry_bulb": "report",
+        "9a.entering_wet_bulb": "partial",
+        "9a.total_capacity": "report",
+        "9a.sensible_capacity": "report",
+        "9a.latent_capacity": "report",
+        "9a.compressor_power": "report",
+        "9a.delivered_capacity": "report",
+        "9a.delivered_power": "report",
+        "9a.cop": "report",
+        "9a.plr": "report",
+        "9a.shr": "report",
+        "9a.peak_cooling_power": "report",
+        "9a.required_load": "report",
+        "9a.capacity_shortfall": "report",
+        "9a.annual_cooling": "missing",
+        "9a.max_zone_temp": "na"
+      },
+      "reference_diagnostic": {
+        "map": {
+          "table": "adjusted_net_Table_26e",
+          "table_source": "CE100MAP.xls (Aug 7, 2007), ASHRAE 140-2023 Std140_CE_a_Files/Normative Materials; Tables 9-5 through 9-10 of the standard",
+          "outdoor_dry_bulb_C": 35.0,
+          "entering_dry_bulb_C": 26.7,
+          "points": [
+            {
+              "entering_wet_bulb_C": 15.0,
+              "total_capacity_kW": 6.81,
+              "compressor_power_kW": 1.77,
+              "apparatus_dew_point_C": 9.3,
+              "sensible_capacity_kW": 7.34
+            },
+            {
+              "entering_wet_bulb_C": 17.2,
+              "total_capacity_kW": 7.37,
+              "compressor_power_kW": 1.81,
+              "apparatus_dew_point_C": 11.4,
+              "sensible_capacity_kW": 7.28
+            },
+            {
+              "entering_wet_bulb_C": 19.4,
+              "total_capacity_kW": 7.95,
+              "compressor_power_kW": 1.86,
+              "apparatus_dew_point_C": 13.8,
+              "sensible_capacity_kW": 6.13
+            },
+            {
+              "entering_wet_bulb_C": 21.7,
+              "total_capacity_kW": 8.57,
+              "compressor_power_kW": 1.91,
+              "apparatus_dew_point_C": 16.2,
+              "sensible_capacity_kW": 4.96
+            }
+          ],
+          "ari_rating_point": {
+            "conditions": {
+              "EDB_C": 26.7,
+              "EWB_C": 19.4,
+              "ODB_C": 35.0
+            },
+            "net_total_capacity_W": 7852,
+            "gross_total_capacity_W": 8181,
+            "adjusted_net_total_capacity_W": 7951,
+            "airflow_m3_s": 0.425,
+            "apparatus_dew_point_C": 13.8,
+            "compressor_power_W": 1858,
+            "indoor_fan_power_W": 230,
+            "outdoor_fan_power_W": 108,
+            "COP": 3.62,
+            "COP_SEER": 3.78
+          }
+        },
+        "comparative": {
+          "source": "tests/validation/hvac_equipment_rated_performance/data/comparative_bounds_ce100_ce200.csv (IEA SHC Task 22 ensemble bounds; originally published as task-22 identifier E200)",
+          "role": "evidence range (ensemble min/max), not a pass/fail criterion",
+          "bounds": {
+            "annual_cooling": [
+              5.6,
+              6.7,
+              "MWh"
+            ],
+            "peak_cooling": [
+              3.2,
+              3.8,
+              "kW"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
