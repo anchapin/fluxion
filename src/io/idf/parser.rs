@@ -207,6 +207,17 @@ impl IdfFile {
             .filter(|o| o.object_type.eq_ignore_ascii_case("WindowMaterial:Glazing"))
     }
 
+    /// All `WindowMaterial:SimpleGlazingSystem` objects.
+    ///
+    /// These are the only EnergyPlus window materials that state an
+    /// explicit U-factor and SHGC (IDD fields A2 / A3).
+    pub fn simple_glazing_systems(&self) -> impl Iterator<Item = &IdfObject> {
+        self.objects.iter().filter(|o| {
+            o.object_type
+                .eq_ignore_ascii_case("WindowMaterial:SimpleGlazingSystem")
+        })
+    }
+
     /// All `ZoneInfiltration:DesignFlowRate` objects.
     pub fn infiltration(&self) -> impl Iterator<Item = &IdfObject> {
         self.objects.iter().filter(|o| {
