@@ -23,6 +23,10 @@ and then the shading measure:
 
 - ``AddOverhang``
 
+and then the occupancy-density measure:
+
+- ``SetOccupancyDensity``
+
 The suite is designed to run in two modes:
 
 1. **With native bindings** (``maturin develop``): full integration coverage
@@ -354,6 +358,18 @@ class TestArgumentDescriptors:
         assert heating["min"] == mod.MIN_COP
         assert cooling["max"] == mod.MAX_COP
 
+    def test_occupancy_arguments(self):
+        mod = _load_module("measures/SetOccupancyDensity.py", "_occ_args")
+        spec = mod.SetOccupancyDensity().arguments()
+        names = [a["name"] for a in spec]
+        assert "occupancy_density_persons_per_m2" in names
+        density = next(
+            a for a in spec if a["name"] == "occupancy_density_persons_per_m2"
+        )
+        assert density["default"] == mod.DEFAULT_OCCUPANCY_DENSITY_PERSONS_PER_M2
+        assert density["min"] == mod.MIN_OCCUPANCY_DENSITY_PERSONS_PER_M2
+        assert density["max"] == mod.MAX_OCCUPANCY_DENSITY_PERSONS_PER_M2
+
     def test_window_properties_arguments(self):
         mod = _load_module("measures/SetWindowProperties.py", "_wp_args")
         spec = mod.SetWindowProperties().arguments()
@@ -392,6 +408,7 @@ class TestDiscovery:
             "SetEquipmentPowerDensity",
             "AddOverhang",
             "SetWindowProperties",
+            "SetOccupancyDensity",
         }.issubset(names), names
 
 
@@ -1699,6 +1716,156 @@ class TestSetEquipmentPowerDensityMeasure:
         assert len(chain) == 1
         assert chain[0]["source"] == SOURCE_PYTHON_MEASURE
         assert chain[0]["name"] == "SetEquipmentPowerDensity"
+
+
+# =============================================================================
+# SetOccupancyDensity — duck-typed stand-ins
+# =============================================================================
+
+
+class _StubOccupancy:
+    """Stand-in for an occupancy snapshot (canonical field name)."""
+
+    def __init__(self, occupancy_density=0.1):
+        self.occupancy_density = occupancy_density
+
+
+class _StubOccupancyModel:
+    """Stand-in for ``fluxion.Model`` exposing an occupancy snapshot."""
+
+    def __init__(self, occupancy_density=0.1, with_setter=True):
+        self._occupancy = _StubOccupancy(occupancy_density)
+        self.occupancy_writes = []
+        if with_setter:
+            self.set_occupancy = self._set_occupancy
+
+    def occupancy(self):
+        return self._occupancy
+
+    def _set_occupancy(self, occupancy):
+        self.occupancy_writes.append(occupancy)
+
+
+class _StubModelWithoutOccupancy:
+    """Stand-in for a model that exposes no occupancy object at all."""
+
+
+# =============================================================================
+# SetOccupancyDensity — argument validation
+# =============================================================================
+
+
+class TestOccupancyDensityValidation:
+    """The occupancy density must be a positive, bounded number."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module(
+            "measures/SetOccupancyDensity.py", "_occ_validation"
+        )
+
+    def test_valid_density_is_returned(self, mod):
+        assert mod.validate_occupancy_density(0.1) == pytest.approx(0.1)
+
+    def test_zero_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_occupancy_density(0.0)
+        assert "> 0" in str(excinfo.value)
+
+    def test_negative_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_occupancy_density(-0.5)
+
+    def test_below_minimum_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_occupancy_density(
+                mod.MIN_OCCUPANCY_DENSITY_PERSONS_PER_M2 / 2.0
+            )
+        assert ">=" in str(excinfo.value)
+
+    def test_above_maximum_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_occupancy_density(
+                mod.MAX_OCCUPANCY_DENSITY_PERSONS_PER_M2 + 1.0
+            )
+        assert "<=" in str(excinfo.value)
+
+    def test_nan_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_occupancy_density(float("nan"))
+
+    def test_non_numeric_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_occupancy_density("crowded")
+
+    def test_bounds_are_ordered(self, mod):
+        assert (
+            mod.MIN_OCCUPANCY_DENSITY_PERSONS_PER_M2
+            < mod.DEFAULT_OCCUPANCY_DENSITY_PERSONS_PER_M2
+            < mod.MAX_OCCUPANCY_DENSITY_PERSONS_PER_M2
+        )
+
+
+# =============================================================================
+# SetOccupancyDensity — measure behaviour (duck-typed model)
+# =============================================================================
+
+
+class TestSetOccupancyDensityMeasure:
+    """Exercise the occupancy measure against stand-in models."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module("measures/SetOccupancyDensity.py", "_occ_measure")
+
+    def test_resolve_finds_the_occupancy_object(self, mod):
+        model = _StubOccupancyModel()
+        target, attribute, path = mod.resolve_occupancy_target(model)
+        assert target is model._occupancy
+        assert attribute == "occupancy_density"
+        assert path == "occupancy"
+
+    def test_resolve_raises_when_the_model_has_no_occupancy(self, mod):
+        with pytest.raises(mod.OccupancyNotFoundError):
+            mod.resolve_occupancy_target(_StubModelWithoutOccupancy())
+
+    def test_apply_mutates_and_persists_the_occupancy(self, mod):
+        model = _StubOccupancyModel()
+        mod.SetOccupancyDensity().apply(
+            model, {"occupancy_density_persons_per_m2": 0.05}
+        )
+        assert model._occupancy.occupancy_density == pytest.approx(0.05)
+        assert model.occupancy_writes == [model._occupancy]
+
+    def test_apply_without_a_setter_is_advisory(self, mod):
+        model = _StubOccupancyModel(with_setter=False)
+        mod.SetOccupancyDensity().apply(
+            model, {"occupancy_density_persons_per_m2": 0.2}
+        )
+        assert model._occupancy.occupancy_density == pytest.approx(0.2)
+
+    def test_apply_fails_loudly_without_an_occupancy_object(self, mod):
+        with pytest.raises(mod.OccupancyNotFoundError):
+            mod.SetOccupancyDensity().apply(
+                _StubModelWithoutOccupancy(),
+                {"occupancy_density_persons_per_m2": 0.1},
+            )
+
+    def test_apply_rejects_an_invalid_density(self, mod):
+        model = _StubOccupancyModel()
+        with pytest.raises(ValueError):
+            mod.SetOccupancyDensity().apply(
+                model, {"occupancy_density_persons_per_m2": 0.0}
+            )
+        assert model._occupancy.occupancy_density == pytest.approx(0.1)
+        assert model.occupancy_writes == []
+
+    def test_default_density_is_applied(self, mod):
+        model = _StubOccupancyModel(occupancy_density=0.5)
+        mod.SetOccupancyDensity().apply(model, {})
+        assert model._occupancy.occupancy_density == pytest.approx(
+            mod.DEFAULT_OCCUPANCY_DENSITY_PERSONS_PER_M2
+        )
 
 
 # =============================================================================
