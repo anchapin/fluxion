@@ -1089,7 +1089,10 @@ fn test_section9_case_table_wires_the_performance_map_and_states_its_bands() {
                  {task22_id}"
             );
             assert!(
-                !comparative["bounds"].as_object().expect("bounds object").is_empty(),
+                !comparative["bounds"]
+                    .as_object()
+                    .expect("bounds object")
+                    .is_empty(),
                 "case {case_id}: a comparative band must carry its bounds"
             );
             assert!(
