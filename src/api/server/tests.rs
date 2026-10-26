@@ -179,8 +179,14 @@ fn run_simulation_rejects_non_ideal_hvac_templates() {
             msg.contains("not yet wired to the production simulation path"),
             "rejection message must state the template is not wired yet: {msg}"
         );
-        assert!(msg.contains("#3997"), "rejection message must cite #3997: {msg}");
-        assert!(msg.contains("#3984"), "rejection message must cite #3984: {msg}");
+        assert!(
+            msg.contains("#3997"),
+            "rejection message must cite #3997: {msg}"
+        );
+        assert!(
+            msg.contains("#3984"),
+            "rejection message must cite #3984: {msg}"
+        );
     }
 }
 
@@ -196,10 +202,10 @@ fn run_simulation_accepts_ideal_hvac_template() {
     let mut absent = default_schema_v1();
     absent.controls.hvac_system = None;
 
-    let ideal_out =
-        run_simulation(&ideal, 1, false, ThermalSelector::default(), "test").expect("Ideal accepted");
-    let absent_out =
-        run_simulation(&absent, 1, false, ThermalSelector::default(), "test").expect("None accepted");
+    let ideal_out = run_simulation(&ideal, 1, false, ThermalSelector::default(), "test")
+        .expect("Ideal accepted");
+    let absent_out = run_simulation(&absent, 1, false, ThermalSelector::default(), "test")
+        .expect("None accepted");
 
     // Byte-identical behaviour: the named `Ideal` template and the absent
     // template produce exactly the same numbers.
@@ -264,7 +270,14 @@ async fn simulate_endpoint_rejects_non_ideal_hvac_template_with_4xx() {
         status.is_client_error(),
         "expected a 4xx for an unsupported HVAC template, got {status}"
     );
-    let message = payload["message"].as_str().unwrap_or_default();
+    // The REST error envelope is `{"error": {"kind": ..., "message": ...}}`,
+    // so the human-readable message lives under `error`, not at the top
+    // level. Fall back to the top-level field for robustness, but prefer
+    // the nested one.
+    let message = payload["error"]["message"]
+        .as_str()
+        .or_else(|| payload["message"].as_str())
+        .unwrap_or_default();
     assert!(
         message.contains("VAV"),
         "error message must name the requested template: {payload}"
@@ -272,6 +285,10 @@ async fn simulate_endpoint_rejects_non_ideal_hvac_template_with_4xx() {
     assert!(
         message.contains("#3997"),
         "error message must cite #3997: {payload}"
+    );
+    assert!(
+        message.contains("#3984"),
+        "error message must cite #3984: {payload}"
     );
 }
 
