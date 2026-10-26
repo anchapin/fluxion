@@ -123,7 +123,7 @@ jobs:
       # `--all-features` cache from `bench-all-features` cannot poison
       # the default-features cache and vice versa.
       - name: Cache cargo (default features)
-        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31  # v2
         with:
           shared-key: perf-dashboard-default
           cache-on-failure: true
@@ -247,7 +247,7 @@ jobs:
           command: rustup toolchain install stable --profile default
 
       - name: Cache cargo (default features)
-        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31  # v2
         with:
           shared-key: perf-dashboard-default
           cache-on-failure: true
@@ -375,7 +375,7 @@ jobs:
       # Separate cache namespace so the heavy `--all-features` build does
       # not evict or get evicted by the default-features cache.
       - name: Cache cargo (all features)
-        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31  # v2
         with:
           shared-key: perf-dashboard-all-features
           cache-on-failure: true
@@ -749,7 +749,7 @@ jobs:
           command: rustup toolchain install stable --profile default
 
       - name: Cache cargo (absolute-perf-gate)
-        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31  # v2
         with:
           shared-key: perf-dashboard-default
           cache-on-failure: true
@@ -966,7 +966,7 @@ jobs:
           command: rustup toolchain install stable --profile default
 
       - name: Cache cargo (multi-zone-perf-gate)
-        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31  # v2
         with:
           shared-key: perf-dashboard-default
           cache-on-failure: true
@@ -1160,7 +1160,7 @@ jobs:
           command: rustup toolchain install stable --profile default
 
       - name: Cache cargo (hybrid-perf-gate)
-        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31  # v2
         with:
           shared-key: perf-dashboard-default
           cache-on-failure: true
@@ -1398,7 +1398,7 @@ jobs:
       # `cache-on-failure: true` ensures a partial cold-cache build still
       # populates the cache for the next run.
       - name: Cache cargo (warm cold-start build, ort feature)
-        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31  # v2
         with:
           shared-key: ort-cold-start-build
           cache-on-failure: true
@@ -1530,7 +1530,7 @@ jobs:
       # `multi-zone-perf-gate` / `hybrid-perf-gate`, so it stays in its
       # own namespace.
       - name: Cache cargo (cold-start-gate, ort feature, warm pre-built)
-        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31  # v2
         with:
           shared-key: ort-cold-start-build
           cache-on-failure: true
@@ -1782,7 +1782,7 @@ jobs:
           command: rustup toolchain install stable --profile default
 
       - name: Cache cargo (dhat)
-        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31  # v2
         with:
           shared-key: perf-dhat-alloc-budget
           cache-on-failure: true
