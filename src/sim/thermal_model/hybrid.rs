@@ -25,6 +25,8 @@ use crate::sim::thermal_model_data::{
 };
 use crate::sim::thermal_selector::ThermalSelector;
 use crate::sim::ventilation::{ach_to_conductance, ConstantVentilation, VentilationSchedule};
+use crate::weather::HourlyWeatherData;
+use std::sync::Arc;
 // Issue #2523: per-timestep HybridThermalModel diagnostics were emitted
 // at `info!` level, producing up to 8.76M (5 branches × 8760 steps × 1
 // config) structured-log invocations per BatchOracle population even when
@@ -227,6 +229,25 @@ pub struct HybridThermalModel {
     /// lifecycle. See `ARCHITECTURE.md` §Thermal Model Trait Hierarchy.
     conduction_solver: Box<dyn HeatConductionSolver>,
     ventilation_schedule: Box<dyn VentilationSchedule>,
+    /// Per-timestep weather series the hybrid run loop drives from
+    /// (Issue #3985).
+    ///
+    /// `None` (the default) means "no weather loaded": the loop then falls
+    /// back to the documented no-weather default (see
+    /// [`no_weather_default_outdoor_temp`]). `Some(series)` means the model
+    /// carries real weather — one [`HourlyWeatherData`] per timestep — and
+    /// the loop takes the outdoor dry-bulb temperature for timestep `t`
+    /// from `series[t]`, exactly like the sibling annual loops do
+    /// (`src/sim/warmup.rs` and
+    /// `src/sim/thermal_model_iterative.rs` both iterate a weather series,
+    /// install the current hour into `solar.weather`, and drive
+    /// `step_physics` with that hour's `dry_bulb_temp`).
+    ///
+    /// The series is stored behind an `Arc` so that cloning the model
+    /// (Issue #2539 clone contract) is O(1) and preserves the weather —
+    /// a clone taken *before* `solve_timesteps` solves against the same
+    /// weather as its source.
+    weather_series: Option<Arc<Vec<HourlyWeatherData>>>,
     /// Number of times the surrogate load predictor was consulted.
     /// Tracked independently of the inner model's instrumentation so
     /// callers (and tests) can verify the surrogate branch actually fired.
@@ -306,6 +327,11 @@ impl Clone for HybridThermalModel {
             routing: self.routing,
             conduction_solver: default_conduction_solver(),
             ventilation_schedule: default_ventilation_schedule(),
+            // Issue #3985: the weather series is *data*, not a solver slot —
+            // it round-trips across clones (an `Arc` clone, O(1)) so a clone
+            // taken before `solve_timesteps` solves against the same real
+            // weather as its source.
+            weather_series: self.weather_series.clone(),
             surrogate_load_calls: self.surrogate_load_calls,
             physics_conduction_calls: self.physics_conduction_calls,
             surrogate_conduction_calls: self.surrogate_conduction_calls,
@@ -367,6 +393,22 @@ pub(crate) fn default_ventilation_schedule() -> Box<dyn VentilationSchedule> {
     Box::new(ConstantVentilation::new(0.5))
 }
 
+/// Issue #3985: the **documented no-weather default** outdoor temperature.
+///
+/// This is NOT a weather model — it is the historical synthetic cycle
+/// (`10 °C ± 10 °C`, `sin(2π·hour_of_day/24)`) that the hybrid run loop
+/// used unconditionally before Issue #3985. It is now reached ONLY when the
+/// model has no weather at all for the requested timestep, i.e. when
+/// neither a caller-supplied outdoor-temperature series nor a per-timestep
+/// weather series (see [`HybridThermalModel::set_weather_series`]) is
+/// available. Keeping it preserves the bit-identical numbers of
+/// weather-less runs (the ASHRAE 140 / BatchOracle smoke paths), while
+/// every weather-carrying run is driven by real weather.
+fn no_weather_default_outdoor_temp(hour_of_day: usize) -> f64 {
+    let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+    10.0 + 10.0 * daily_cycle
+}
+
 impl HybridThermalModel {
     /// Build a fresh `HybridThermalModel` with the supplied routing policy.
     pub fn new(num_zones: usize, routing: HybridRouting) -> Self {
@@ -375,6 +417,10 @@ impl HybridThermalModel {
             routing,
             conduction_solver: default_conduction_solver(),
             ventilation_schedule: default_ventilation_schedule(),
+            // Issue #3985: no weather loaded by default — the loop falls back
+            // to the documented no-weather default until the caller installs
+            // a per-timestep weather series.
+            weather_series: None,
             surrogate_load_calls: 0,
             physics_conduction_calls: 0,
             surrogate_conduction_calls: 0,
@@ -404,6 +450,10 @@ impl HybridThermalModel {
             routing: HybridRouting::default(),
             conduction_solver: default_conduction_solver(),
             ventilation_schedule: default_ventilation_schedule(),
+            // Issue #3985: no weather loaded by default — the loop falls back
+            // to the documented no-weather default until the caller installs
+            // a per-timestep weather series.
+            weather_series: None,
             surrogate_load_calls: 0,
             physics_conduction_calls: 0,
             surrogate_conduction_calls: 0,
@@ -429,6 +479,10 @@ impl HybridThermalModel {
             routing,
             conduction_solver: default_conduction_solver(),
             ventilation_schedule: default_ventilation_schedule(),
+            // Issue #3985: no weather loaded by default — the loop falls back
+            // to the documented no-weather default until the caller installs
+            // a per-timestep weather series.
+            weather_series: None,
             surrogate_load_calls: 0,
             physics_conduction_calls: 0,
             surrogate_conduction_calls: 0,
@@ -584,6 +638,40 @@ impl HybridThermalModel {
 }
 
 impl HybridThermalModel {
+    /// Issue #3985: install the per-timestep weather series the hybrid run
+    /// loop drives from.
+    ///
+    /// The series carries one [`HourlyWeatherData`] per timestep. For
+    /// timestep `t` the loop takes the outdoor dry-bulb temperature from
+    /// `series[t]` and installs the same hour's weather on the inner model
+    /// (mirroring the sibling annual loops in `src/sim/warmup.rs` and
+    /// `src/sim/thermal_model_iterative.rs`, which iterate a weather series
+    /// and drive `step_physics` with the current hour's `dry_bulb_temp`).
+    ///
+    /// A series shorter than the requested step count is a caller error:
+    /// the steps beyond the series fall back to the documented no-weather
+    /// default (see [`no_weather_default_outdoor_temp`]) rather than
+    /// inventing weather.
+    pub fn set_weather_series(&mut self, series: &[HourlyWeatherData]) {
+        self.weather_series = Some(Arc::new(series.to_vec()));
+    }
+
+    /// Returns the per-timestep weather series currently installed on the
+    /// model, if any (Issue #3985).
+    pub fn weather_series(&self) -> Option<&[HourlyWeatherData]> {
+        self.weather_series.as_ref().map(|s| s.as_slice())
+    }
+
+    /// Returns the weather currently installed on the inner thermal model
+    /// (Issue #3985).
+    ///
+    /// After a solve this is the weather of the LAST simulated timestep —
+    /// the loop installs each timestep's weather before driving the step,
+    /// so this accessor proves which weather the loop actually used.
+    pub fn current_weather(&self) -> Option<&HourlyWeatherData> {
+        self.inner.solar.weather.as_ref()
+    }
+
     /// Issue #3985: solve with a caller-supplied outdoor-temperature series.
     ///
     /// Drives the hybrid run loop from real (caller-supplied) weather
@@ -798,19 +886,34 @@ impl HybridThermalModel {
                 }
 
                 let hour_of_day = t % 24;
-                // Issue #3985: when the caller supplied an outdoor-temperature
-                // series, drive EVERY consumer in this step (surrogate
-                // conduction t_sol_air, ventilation schedule, step_physics)
-                // from it — never from the synthetic cycle. The synthetic
-                // sine remains only as the no-series default, bit-identical
-                // to the historical behaviour.
+                // Issue #3985: the loop's outdoor temperature comes from the
+                // model's real weather for THIS timestep. Precedence:
+                //   1. the caller-supplied outdoor-temperature series
+                //      (`solve_timesteps_with_outdoor_temps`),
+                //   2. the model's own per-timestep weather series
+                //      (`set_weather_series`) — the real weather-file
+                //      dry-bulb for timestep `t`,
+                //   3. the documented no-weather default (only when no
+                //      weather is loaded at all).
+                // Every consumer in this step (surrogate conduction
+                // t_sol_air, ventilation schedule, step_physics) is driven
+                // from the resolved value.
                 let outdoor_temp = match outdoor_temps {
                     Some(series) => series[t],
-                    None => {
-                        let daily_cycle =
-                            (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
-                        10.0 + 10.0 * daily_cycle
-                    }
+                    None => match self.weather_series.as_ref().and_then(|s| s.get(t)).cloned() {
+                        Some(weather) => {
+                            // Mirror the sibling annual-loop seam
+                            // (`src/sim/warmup.rs`): install THIS timestep's
+                            // weather on the inner model so the humidity /
+                            // wind / sky-temperature consumers inside
+                            // `step_physics` see the same weather as the
+                            // outdoor dry-bulb resolved above.
+                            let dry_bulb_temp = weather.dry_bulb_temp;
+                            self.inner.solar.weather = Some(weather);
+                            dry_bulb_temp
+                        }
+                        None => no_weather_default_outdoor_temp(hour_of_day),
+                    },
                 };
 
                 // Issue #2457: Branch 3 — surrogate conduction dispatch.

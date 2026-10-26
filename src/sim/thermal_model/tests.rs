@@ -489,6 +489,82 @@ mod tests {
     }
 
     #[test]
+    fn test_hybrid_loop_follows_model_weather_series() {
+        // Issue #3985: the hybrid run loop must take its outdoor
+        // temperature from the model's REAL per-timestep weather, not from
+        // the synthetic `10 + 10·sin(...)` cycle. The distinctive weather
+        // installed on the model must drive the step: a very cold series
+        // must leave the zone colder than a very warm one, and the model
+        // must end the run holding the LAST simulated timestep's weather
+        // (the per-timestep seam the outdoor dry-bulb came from).
+        use crate::ai::surrogate::SurrogateManager;
+        use crate::weather::HourlyWeatherData;
+
+        let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+        let steps = 24;
+
+        // One hour of weather per timestep, all at the same dry-bulb.
+        let series = |dry_bulb: f64| -> Vec<HourlyWeatherData> {
+            (0..steps)
+                .map(|h| HourlyWeatherData::new(dry_bulb, 0.0, 0.0, 0.0, 3.0, 50.0, h))
+                .collect()
+        };
+
+        let mut cold = HybridThermalModel::new(1, HybridRouting::default());
+        cold.set_weather_series(&series(-20.0));
+        let cold_eui = cold.solve_timesteps(steps, &surrogates, false);
+        let cold_temps = cold.get_hourly_temperatures().expect("hourly temps");
+
+        let mut warm = HybridThermalModel::new(1, HybridRouting::default());
+        warm.set_weather_series(&series(35.0));
+        let warm_eui = warm.solve_timesteps(steps, &surrogates, false);
+        let warm_temps = warm.get_hourly_temperatures().expect("hourly temps");
+
+        // No weather at all → the documented no-weather default is used.
+        let mut no_weather = HybridThermalModel::new(1, HybridRouting::default());
+        let no_weather_eui = no_weather.solve_timesteps(steps, &surrogates, false);
+
+        // The loop installed the weather of the timestep it just simulated.
+        let warm_weather = warm.current_weather().expect("loop installed the weather");
+        assert!(
+            (warm_weather.dry_bulb_temp - 35.0).abs() < 1e-12,
+            "loop must use the supplied dry-bulb, got {}",
+            warm_weather.dry_bulb_temp
+        );
+        assert_eq!(
+            warm_weather.hour_of_year,
+            steps - 1,
+            "the installed weather must be the last simulated timestep's"
+        );
+        let cold_weather = cold.current_weather().expect("loop installed the weather");
+        assert!(
+            (cold_weather.dry_bulb_temp + 20.0).abs() < 1e-12,
+            "loop must use the supplied dry-bulb, got {}",
+            cold_weather.dry_bulb_temp
+        );
+
+        let mean = |t: &Vec<Vec<f64>>| {
+            let flat: Vec<f64> = t.iter().flatten().copied().collect();
+            flat.iter().sum::<f64>() / flat.len() as f64
+        };
+        assert!(
+            mean(&warm_temps) > mean(&cold_temps),
+            "warm weather must yield warmer zone temps: warm={} cold={}",
+            mean(&warm_temps),
+            mean(&cold_temps)
+        );
+        assert!(
+            (cold_eui - warm_eui).abs() > 1e-9,
+            "supplied weather must change the result: cold_eui={cold_eui} warm_eui={warm_eui}"
+        );
+        assert!(
+            (no_weather_eui - cold_eui).abs() > 1e-6,
+            "the weather-driven run must differ from the no-weather default: \
+             no_weather_eui={no_weather_eui} cold_eui={cold_eui}"
+        );
+    }
+
+    #[test]
     #[should_panic(expected = "outdoor_temps series has")]
     fn test_hybrid_solve_with_outdoor_temps_short_series_panics() {
         // Issue #3985: a series shorter than the requested steps is a

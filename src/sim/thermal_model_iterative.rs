@@ -253,8 +253,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let window_props: WindowProperties = if zone_idx < self.0.solar.window_properties.len() {
             self.0.solar.window_properties[zone_idx]
         } else {
-            // Fallback to first zone if not specified
-            self.0.solar.window_properties[0]
+            // Fallback to first zone if not specified. A model with no
+            // window properties at all (e.g. a weather-carrying hybrid
+            // model before a building is loaded, #3985) gets a zero-area
+            // window — no glazing, no solar gain — instead of panicking
+            // on window_properties[0].
+            self.0
+                .solar
+                .window_properties
+                .first()
+                .copied()
+                .unwrap_or(WindowProperties {
+                    area: 0.0,
+                    shgc: 0.0,
+                    normal_transmittance: 0.0,
+                    frame_u_value: 0.0,
+                    frame_area_fraction: 0.0,
+                    frame_perimeter: 0.0,
+                })
         };
 
         // Convert timestep to date
