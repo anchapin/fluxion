@@ -327,6 +327,64 @@ class TestScheduleHelperEdges:
 
 
 @requires_native
+class TestSetZoneSetpointsNativeIntegration:
+    """Issue #4633 — ``fluxion.Model`` exposes a real zone-setpoint setter."""
+
+    def test_set_and_get_zone_setpoints(self):
+        import fluxion
+
+        model = fluxion.Model(num_zones=1)
+        model.set_zone_setpoints(0, 18.0, 26.0)
+        assert model.get_zone_setpoints() == [(18.0, 26.0)]
+        zone = model.zones()[0]
+        assert zone.heating_setpoint == 18.0
+        assert zone.cooling_setpoint == 26.0
+
+    def test_set_zone_setpoints_validation(self):
+        import fluxion
+
+        model = fluxion.Model(num_zones=1)
+        with pytest.raises(ValueError):
+            model.set_zone_setpoints(1, 18.0, 26.0)
+        with pytest.raises(ValueError):
+            model.set_zone_setpoints(0, 26.0, 18.0)
+        with pytest.raises(ValueError):
+            model.set_zone_setpoints(0, 22.0, 22.0)
+
+    def test_setpoints_change_simulated_energy(self):
+        import fluxion
+
+        energies = []
+        for heating, cooling in [(18.0, 26.0), (23.0, 27.0)]:
+            model = fluxion.Model(num_zones=1)
+            model.set_zone_setpoints(0, heating, cooling)
+            energies.append(model.simulate(1, False))
+        assert energies[0] != energies[1]
+
+    def test_measure_persists_through_save_load_round_trip(self, tmp_path):
+        import fluxion
+        from fluxion.measures import apply_measures, load_model, save_model
+
+        module = _load_module(
+            "measures/SetThermostatSetpoints.py", "_setpoints_native_4633"
+        )
+        model = fluxion.Model(num_zones=1)
+        before = model.get_zone_setpoints()
+        applied = apply_measures(
+            model,
+            [module.SetThermostatSetpoints],
+            {"SetThermostatSetpoints": {"heating_delta": 1.0, "cooling_delta": 1.0}},
+        )
+        assert applied == ["SetThermostatSetpoints"]
+        after = model.get_zone_setpoints()
+        assert after != before
+        path = tmp_path / "model.json"
+        save_model(model, path)
+        loaded = load_model(path)
+        assert loaded.get_zone_setpoints() == after
+
+
+@requires_native
 class TestSwapScheduleNativeIntegration:
     """The measure runs against a real ``fluxion.Model``."""
 
