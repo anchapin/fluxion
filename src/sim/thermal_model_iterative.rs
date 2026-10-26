@@ -937,26 +937,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Combine fractions to avoid multiple intermediate VectorField allocations
         let conv_frac = self.0.solar.convective_fraction;
         let rad_frac = 1.0 - conv_frac;
-        // Internal radiative gains split per ISO 13790 Section C.4 Eq. C.5/C.6:
-        // Eq. C.5 (radiative-to-surface): phi_st = (1 - F_sup) * phi_int_rad
-        //   where F_sup = H_ms / (H_ms + H_is) — fraction to surface node
-        //   st_int_frac = rad_frac * (1 - solar_distribution_to_air) = rad_frac * F_sup
-        //   Note: F_sup is the fraction from internal radiative gains going to surface
-        //   per ISO 13790 C.4 Eq. C.5 (internal radiative → surface node).
-        //
-        // Eq. C.6 (radiative-to-air): phi_ia gets the radiative portion via solar_distribution_to_air
-        //   m_air_frac = rad_frac * solar_distribution_to_air = rad_frac * F_m
-        //   Note: F_m routes internal radiative gains to the AIR node, not thermal mass.
-        //   Per ISO 13790 C.4 Eq. C.6, the mass-air node receives radiative gains.
-        //
-        // The naming reflects ISO 13790 Section C.4:
-        //   st_int_frac = fraction of internal radiative gains to SURFACE node (phi_st)
-        //   m_air_frac  = fraction of internal radiative gains to AIR node (phi_ia via routing)
-        //
-        // st_sol_frac: Solar gains to surface (fraction of solar that goes to surface)
-        // m_sol_frac: Solar gains to mass (fraction of solar that goes to mass)
-        let st_int_frac = rad_frac * (1.0 - self.0.solar.solar_distribution_to_air);
-        let m_air_frac = rad_frac * self.0.solar.solar_distribution_to_air;
+        // [Round 101 — internal-gain radiative routes by the ISO 13790
+        // Annex C partition, never by the solar fractions (same decision
+        // as the step_5r1c / step_9r4c gains sites): the radiative half
+        // enters the surface pool in full and reaches the mass through the
+        // pool's conductance share; solar_distribution_to_air keeps
+        // routing transmitted solar only (ASHRAE 140-2017 §5.2.1.12.2).]
         let st_sol_frac = 1.0 - self.0.solar.solar_beam_to_mass_fraction;
         let m_sol_frac = self.0.solar.solar_beam_to_mass_fraction;
 
@@ -978,8 +964,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let remaining_sol = sol_w - sol_to_air;
 
             phi_ia_data.push(load_w * conv_frac + sol_to_air);
-            phi_st_data.push(load_w * st_int_frac + remaining_sol * st_sol_frac);
-            phi_m_data.push(load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w);
+            phi_st_data.push(load_w * rad_frac + remaining_sol * st_sol_frac);
+            phi_m_data.push(remaining_sol * m_sol_frac + opaque_sol_w);
         }
 
         let phi_ia = T::from(VectorField::new(phi_ia_data));

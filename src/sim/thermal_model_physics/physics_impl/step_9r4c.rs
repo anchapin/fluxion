@@ -164,17 +164,25 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let conv_frac = self.0.solar.convective_fraction;
         let rad_frac = 1.0 - conv_frac;
 
-        // Solar gain distribution fractions
-        // Internal radiative gains split per ISO 13790 Section C.4 Eq. C.5/C.6:
-        // Eq. C.5 (radiative-to-surface): phi_st = (1 - F_sup) * phi_int_rad
-        //   where F_sup = H_ms / (H_ms + H_is) — fraction to surface node
-        //   st_int_frac = rad_frac * (1 - solar_distribution_to_air) = rad_frac * F_sup
-        //
-        // Eq. C.6 (radiative-to-air): phi_ia gets the radiative portion via solar_distribution_to_air
-        //   m_air_frac = rad_frac * solar_distribution_to_air = rad_frac * F_m
-        //
-        let st_int_frac = rad_frac * (1.0 - self.0.solar.solar_distribution_to_air);
-        let m_air_frac = rad_frac * self.0.solar.solar_distribution_to_air;
+        // [Round 101 — internal-gain radiative routes by the ISO 13790
+        // Annex C partition, never by the solar fractions. The radiative
+        // half of the internal gains (rad_frac·φ_int) enters the surface
+        // node in full (phi_st) and reaches the mass only through the
+        // surface→mass conductance share; the convective half stays on the
+        // air node (ISO 13790 §C.1–C.3: φ_ia = convective internal;
+        // radiative internal + solar split to surface/mass by a share
+        // rule). ASHRAE 140-2017 §5.2.1.12.2 scopes the interior
+        // solar-distribution fractions to TRANSMITTED SOLAR only, so
+        // solar_distribution_to_air keeps routing transmitted solar and no
+        // longer scales the internal split (the retired st_int_frac /
+        // m_air_frac factors routed internal gains at a solar fraction —
+        // the round-94 settled reading names that the defect). The
+        // from-spec 140 path runs solar_distribution_to_air = 0.0 since
+        // round 91 (FLX_R91_SOL2ST), where the retired factors degenerated
+        // to ×1.0 / ×0.0 and the strict battery stays bit-identical; the
+        // factors were live only on the legacy archaeology split and on
+        // models with an explicitly nonzero solar_distribution_to_air
+        // (e.g. ThermalModel::new's 0.1).]
         let st_sol_frac = 1.0 - self.0.solar.solar_beam_to_mass_fraction;
         let m_sol_frac = self.0.solar.solar_beam_to_mass_fraction;
 
@@ -205,8 +213,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let sol_to_air = sol_w * self.0.solar.solar_distribution_to_air;
             let remaining_sol = sol_w - sol_to_air;
             scratch.phi_ia[i] = load_w * conv_frac + sol_to_air;
-            scratch.phi_st[i] = load_w * st_int_frac + remaining_sol * st_sol_frac;
-            scratch.phi_m[i] = load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w;
+            scratch.phi_st[i] = load_w * rad_frac + remaining_sol * st_sol_frac;
+            scratch.phi_m[i] = remaining_sol * m_sol_frac + opaque_sol_w;
         }
 
         // (#872) Save raw gain data for multi-node solver before moving into tensors.

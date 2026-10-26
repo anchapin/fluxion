@@ -339,7 +339,6 @@ impl InvariantChecker {
         let sol_dist_to_air = model.solar.solar_distribution_to_air;
         let solar_beam_to_mass = model.solar.solar_beam_to_mass_fraction;
 
-        let m_air_frac = rad_frac * sol_dist_to_air;
         let m_sol_frac = solar_beam_to_mass;
 
         let sol_to_air = solar_w * sol_dist_to_air;
@@ -349,11 +348,14 @@ impl InvariantChecker {
         // includes it via the proper sol-air temperature pathway
         // (h_tr_em * (t_sol_air - T_mass_avg)). The InvariantChecker must mirror
         // this distinction exactly.
+        // [Round 101 — mirror of the gains-site decision: internal-gain
+        // radiative no longer routes by solar_distribution_to_air (the
+        // retired m_air_frac factor); it enters the surface node in full
+        // and reaches the mass through the surface→mass conductance share,
+        // so the checker's phi_m mirror drops the internal term.]
         let phi_m = match model.hvac.thermal_model_type {
-            ThermalModelType::NineRFourC => {
-                load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w
-            }
-            _ => load_w * m_air_frac + remaining_sol * m_sol_frac,
+            ThermalModelType::NineRFourC => remaining_sol * m_sol_frac + opaque_sol_w,
+            _ => remaining_sol * m_sol_frac,
         };
 
         let storage = cm * (t_mass - t_mass_prev) / dt_seconds;
@@ -369,9 +371,11 @@ impl InvariantChecker {
                 // phi_st is rebuilt from the same scalars the integrator used.
                 let h_tr_is = model.conduction.h_tr_is[i];
                 let h_tr_me = model.mass.h_tr_me[i];
-                let st_int_frac = rad_frac * (1.0 - sol_dist_to_air);
                 let st_sol_frac = 1.0 - solar_beam_to_mass;
-                let phi_st = load_w * st_int_frac + remaining_sol * st_sol_frac;
+                // [Round 101 — internal radiative in full (retired
+                // st_int_frac solar-fraction factor); mirror of the
+                // engine's gains site.]
+                let phi_st = load_w * rad_frac + remaining_sol * st_sol_frac;
 
                 let ts_den = h_tr_ms + h_tr_is + h_tr_me;
                 let t_s = if ts_den > 1e-12 {
@@ -424,17 +428,18 @@ impl InvariantChecker {
                             t_comp = a * t_comp + b;
                         }
                         let denom_final = c[c.len() - 1];
-                        let mut r = (t_mass - t_comp) * denom_final;
+                        let r = (t_mass - t_comp) * denom_final;
                         // The persisted coefficients encode the engine's own
                         // phi_m for the committed hour. When the caller
                         // supplies a modified load (the artificial-gain
-                        // probe), add the load delta's phi_m share
-                        // (`m_air_frac`, the same composition the mirror
-                        // identity below uses) so the probe sees the shift
-                        // instead of the mirror's exact zero.
-                        let engine_load_w = model.setpoints.loads.as_ref()[i]
-                            * model.setpoints.zone_area.as_ref()[i];
-                        r += (load_w - engine_load_w) * m_air_frac;
+                        // probe), the load delta's phi_m share is
+                        // structurally ZERO since round 101: internal-gain
+                        // radiative routes to the surface pool in full (the
+                        // retired m_air_frac factor no longer feeds phi_m),
+                        // so a load delta never enters the mass ODE
+                        // directly. The probe's residual leverage lives in
+                        // the live mirror arms (phi_ia / phi_st), not in
+                        // this composite-coefficient identity.
                         return r;
                     }
                 }
@@ -586,9 +591,11 @@ impl InvariantChecker {
                         1.0
                     };
                     let t_i = (1.0 - alpha) * t_i_free + alpha * t_air;
-                    let st_int_frac = rad_frac * (1.0 - sol_dist_to_air);
                     let st_sol_frac = 1.0 - solar_beam_to_mass;
-                    let phi_st = load_w * st_int_frac + remaining_sol * st_sol_frac;
+                    // [Round 101 — internal radiative in full (retired
+                    // st_int_frac solar-fraction factor); mirror of the
+                    // engine's gains site.]
+                    let phi_st = load_w * rad_frac + remaining_sol * st_sol_frac;
                     let denom = cm_dt + half_cond;
                     let numer = t_mass_prev * (cm_dt - half_cond)
                         + h_tr_em * t_sol_air_zone
@@ -981,10 +988,13 @@ mod tests {
             result_with_gain.balance, gain_balance
         );
 
-        // With the corrected mass-node balance formula, an injected artificial
-        // gain appears in `phi_m` (after ISO 13790 §C.4 distribution by
-        // `m_air_frac = rad_frac × solar_distribution_to_air`) and shifts
-        // the mass-node imbalance. The legacy assertion
+        // With the corrected balance formula, an injected artificial
+        // gain enters the residual through `phi_ia` (convective share) and
+        // `phi_st` (radiative share, routed in full to the surface node
+        // since round 101 — the retired
+        // `m_air_frac = rad_frac × solar_distribution_to_air` factor no
+        // longer routes internal radiative into `phi_m`) and shifts
+        // the imbalance. The legacy assertion
         // `normal > gain` was tied to the old mixed-path formula, which had
         // a large constant imbalance unrelated to the injected gain. With the
         // correct formula the normal imbalance depends on the test setup

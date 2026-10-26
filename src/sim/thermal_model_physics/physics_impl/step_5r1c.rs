@@ -114,27 +114,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // default.]
         let r91_retrans = crate::util::env_bool::env_bool("FLX_R91_RETRANS", true);
 
-        // Internal radiative gains split per ISO 13790 Section C.4 Eq. C.5/C.6:
-        // Eq. C.5 (radiative-to-surface): phi_st = (1 - F_sup) * phi_int_rad
-        //   where F_sup = H_ms / (H_ms + H_is) — fraction to surface node
-        //   st_int_frac = rad_frac * (1 - solar_distribution_to_air) = rad_frac * F_sup
-        //   Note: F_sup is the fraction from internal radiative gains going to surface
-        //   per ISO 13790 C.4 Eq. C.5 (internal radiative → surface node).
-        //
-        // Eq. C.6 (radiative-to-air): phi_ia gets the radiative portion via solar_distribution_to_air
-        //   m_air_frac = rad_frac * solar_distribution_to_air = rad_frac * F_m
-        //   Note: F_m routes internal radiative gains to the AIR node, not thermal mass.
-        //   Per ISO 13790 C.4 Eq. C.6, the mass-air node receives radiative gains.
-        //
-        // The naming reflects ISO 13790 Section C.4:
-        //   st_int_frac = fraction of internal radiative gains to SURFACE node (phi_st)
-        //   m_air_frac  = fraction of internal radiative gains to AIR node (phi_ia via routing)
-        //
-        // st_sol_frac: Solar gains to surface (fraction of solar that goes to surface)
-        // m_sol_frac: Solar gains to mass (fraction of solar that goes to mass)
-        // Note: solar_distribution_to_air controls how much solar goes directly to zone air
-        let st_int_frac = rad_frac * (1.0 - self.0.solar.solar_distribution_to_air);
-        let m_air_frac = rad_frac * self.0.solar.solar_distribution_to_air;
+        // [Round 101 — internal-gain radiative routes by the ISO 13790
+        // Annex C partition, never by the solar fractions. The radiative
+        // half of the internal gains (rad_frac·φ_int) enters the surface
+        // pool in full (phi_st / phi_st_int) and reaches the mass only
+        // through the pool's ISO §C.3 conductance decomposition
+        // (per-class `s_c` mass share + live air share at the retained
+        // sites); the convective half stays on the air node (ISO 13790
+        // §C.1–C.3: φ_ia = convective internal; radiative internal + solar
+        // split to surface/mass by a share rule). ASHRAE 140-2017
+        // §5.2.1.12.2 scopes the interior solar-distribution fractions to
+        // TRANSMITTED SOLAR only, so solar_distribution_to_air keeps
+        // routing transmitted solar and no longer scales the internal
+        // split (the retired st_int_frac / m_air_frac factors routed
+        // internal gains at a solar fraction — the round-94 settled
+        // reading names that the defect). The from-spec 140 path runs
+        // solar_distribution_to_air = 0.0 since round 91 (FLX_R91_SOL2ST),
+        // where the retired factors degenerated to ×1.0 / ×0.0 and the
+        // strict battery stays bit-identical; the factors were live only
+        // on the legacy archaeology split and on models with an explicitly
+        // nonzero solar_distribution_to_air.]
         let st_sol_frac = 1.0 - self.0.solar.solar_beam_to_mass_fraction;
         let m_sol_frac = self.0.solar.solar_beam_to_mass_fraction;
 
@@ -165,12 +164,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // opaque_sol_w: kept for potential debugging; it's included via t_sol_air now
             let _opaque_sol_w = opaque_solar_ref[i] * area_ref[i];
 
-            // Internal gains: convective to air, radiative split between surface and mass
-            // Solar distribution must conserve energy (sum to 1.0)
+            // Internal gains: convective to air, radiative to the surface
+            // pool in full (the pool's §C.3 decomposition routes the mass
+            // share). Solar distribution must conserve energy (sum to 1.0).
             let sol_to_air = sol_w * self.0.solar.solar_distribution_to_air;
             let remaining_sol = sol_w - sol_to_air;
             scratch.phi_ia[i] = load_w * conv_frac + sol_to_air;
-            scratch.phi_st[i] = load_w * st_int_frac + remaining_sol * st_sol_frac;
+            scratch.phi_st[i] = load_w * rad_frac + remaining_sol * st_sol_frac;
             // [R94 — surface-pool decomposition (loop round 94). The
             // pool's two source components route by DIFFERENT references:
             // `phi_st_int` (internal-gain radiative, `rad_frac·φ_int`)
@@ -183,7 +183,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // the exact expressions and order of the `phi_st` sum above,
             // so `phi_st_int + phi_st_sol == phi_st` up to the same FP
             // rounding.]
-            scratch.phi_st_int[i] = load_w * st_int_frac;
+            scratch.phi_st_int[i] = load_w * rad_frac;
             scratch.phi_st_sol[i] = remaining_sol * st_sol_frac;
             // Issue #1527 fix: opaque solar gains are now included via the proper
             // sol-air temperature pathway (h_tr_em * (t_sol_air - T_mass)).
@@ -191,7 +191,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // the thermal lag through the envelope conductance — causing peak cooling
             // over-prediction (Case 610) and peak heating under-prediction (Case 640).
             // Remove it here; the envelope pathway will handle it correctly.
-            scratch.phi_m[i] = load_w * m_air_frac + remaining_sol * m_sol_frac;
+            scratch.phi_m[i] = remaining_sol * m_sol_frac;
         }
 
         let phi_ia = T::from(VectorField::from_smallvec(std::mem::take(

@@ -390,16 +390,18 @@ impl EnergyBalanceValidator {
             let opaque_sol_w = opaque_solar_gains[i] * area[i];
 
             // ISO 13790 §C.3 internal-gain split (same as `step_physics_5r1c`).
+            // [Round 101 — mirror of the gains-site decision: internal
+            // radiative no longer routes by solar_distribution_to_air; it
+            // enters the surface node in full (the retired st_int_frac /
+            // m_air_frac solar-fraction factors).]
             let sol_to_air = solar_w * sol_dist_to_air;
             let remaining_sol = solar_w - sol_to_air;
-            let st_int_frac = rad_frac * (1.0 - sol_dist_to_air);
-            let m_air_frac = rad_frac * sol_dist_to_air;
             let st_sol_frac = 1.0 - solar_beam_to_mass;
             let m_sol_frac = solar_beam_to_mass;
 
             let phi_ia = load_w * conv_frac + sol_to_air;
-            let phi_st = load_w * st_int_frac + remaining_sol * st_sol_frac;
-            let phi_m = load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w;
+            let phi_st = load_w * rad_frac + remaining_sol * st_sol_frac;
+            let phi_m = remaining_sol * m_sol_frac + opaque_sol_w;
 
             // 5R1C heat flows (matching `step_physics_5r1c`).
             let q_em = thermal_model.conduction.h_tr_em[i] * (t_mass - outdoor_temp);
