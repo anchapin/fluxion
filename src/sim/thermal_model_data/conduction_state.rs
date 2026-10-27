@@ -146,6 +146,18 @@ pub struct Applied5R1CClassBoundary {
     pub phi_m_zone: f64,
     /// Zone surface-node heat gain [W].
     pub phi_st_zone: f64,
+    /// [Loop round 104 — §LIMIT-22 per-class rebuild] Load-linear
+    /// coefficient of `phi_st_zone` (`dphi_st_zone/d(load_w)`, W per W),
+    /// recorded engine-side on the same branch `phi_st_zone` came from
+    /// (the gains site: `phi_st = load_w·rad_frac +
+    /// remaining_sol·st_sol_frac`, so the coefficient is `rad_frac`). The
+    /// checker's round-73 per-class mirror rebuilds `phi_st_c` at the
+    /// caller's load: at the committed load the delta is zero and the
+    /// committed value is consumed verbatim (bit-exact zero-delta replay);
+    /// under the artificial-gain probe the rebuild routes the load delta
+    /// through the engine's own gains algebra, giving the per-class
+    /// t_s-first mirror the probe leverage it lacked by construction.
+    pub phi_st_zone_load_coef: f64,
     /// Night-vent mass conductance [W/K] (0 when inactive).
     pub h_vent_mass_zone: f64,
 }

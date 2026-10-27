@@ -3942,6 +3942,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             t_i,
                             phi_m_zone,
                             phi_st_zone: phi_st_ref[i],
+                            // [Loop round 104 — §LIMIT-22 per-class
+                            // rebuild: the same-branch load-linear
+                            // coefficient of `phi_st_zone` (round-103
+                            // `bload` pattern one site over).]
+                            phi_st_zone_load_coef: rad_frac,
                             h_vent_mass_zone,
                         },
                     ));

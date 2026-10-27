@@ -182,3 +182,83 @@ implemented the diagnostic ranges (the command now exits 0 with a range summary)
 Also recorded: the run's state-validation step reported `beta-soak-state.json`
 missing, and the workflow auto-posted a "streak resets to 0" verdict to #3286 from
 this non-scheduled dispatch. Not physics defects; recorded for the soak verdict.
+
+### 2026-10-27 (loop round 104) — the per-class t_s-first mirror carries the load delta; air-borne arms scoped multi-day
+
+**What landed.** The round-73 per-class boundary record
+(`Applied5R1CClassBoundary`) gains `phi_st_zone_load_coef` — the
+load-linear coefficient of `phi_st_zone` (`dphi_st_zone/d(load_w)`, W per
+W), recorded engine-side on the same branch the value came from: the gains
+site `phi_st = load_w·rad_frac + remaining_sol·st_sol_frac`, so the
+coefficient is `rad_frac`, written at the applied-boundary record site. The
+checker's per-class mirror rebuilds `phi_st_c` at the caller's load
+(`phi_st_c = phi_st_zone·w + coef·Δ·w` when Δ ≠ 0, verbatim at Δ = 0), so
+the artificial-gain probe's delta routes through the engine's own gains
+algebra on the arm's fall-through states (checker-lags-integrator, #4504
+class; the round-103 `bload` pattern one record over).
+
+**Evidence.**
+- TDD red-first:
+  `test_perclass_ts_mirror_gain_probe_leverages_5r1c_state` (explicit
+  `ThermalSelector::legacy()`, Case 600; the zone's R77 sub-step record
+  surgically cleared so the checker falls through to the per-class arm
+  with the boundary + t_s records live from the real step) failed
+  pre-rebuild with probe response exactly 0 W (rc=101; both balances
+  186.66586081708164 — identical). Post-rebuild the 1 kW probe response is
+  400.0000000000003 W — the closed form `rad_frac·Δ` = 400 W (`rad_frac`
+  0.4, Case 600 `conv_frac` 0.6) — affine in the delta (2 kW →
+  799.9999999999995 W). The no-gain residual is bit-identical to the red
+  run (186.66586081708164): the Δ = 0 branch consumes the committed value
+  verbatim.
+- Baseline note (honesty): on the surgical state the absolute per-class
+  residual is non-zero (186.67 W) because the committed mass state came
+  from the coupled sub-step advance while the per-class mirror reproduces
+  the hourly decomposition — the response contract cancels that offset,
+  and the Python replication confirms the response is exact under
+  arbitrary stored-`t_s` baseline mismatches. On a genuine fall-through
+  state (boundary record without a composite record from the same step)
+  the aggregation identity matches the advance it mirrors.
+- Round-103 contract regression: `test_r77_composite_gain_probe_leverages_5r1c_state`
+  still green with unchanged values (0 → 8687.616234633788 W per 1 kW;
+  2 kW → 17375.232469267445 W). Bit-identical on the gauge build
+  (`--features gauge-solver`): per-class 400.0000000000003 W, R77
+  8687.616234633788 W — 2 passed on both builds.
+- Python replication (loop scratch, `r104_perclass_replication.py`): the
+  mirror algebra's response is exactly `coef·Δ` for arbitrary per-class
+  configs and deltas (the sub-step denominator cancels through the surface
+  identity; the aggregation identity is load-free — it recomputes from the
+  stored per-class `t_s`), zero-delta replay verbatim, affine scaling
+  exact.
+- No-tuning battery at the changed tree: strict 13 PASS / 29 KNOWN-FAIL
+  (tracked) / 0 REGRESSION with unchanged per-case values; output-diff
+  42/42 all +0.0000% (from-zero rows 0 → 0.000000); §6 2/2, §7 emit 2/2 +
+  conformance 1/1, hotloop, grid, GC10a 3, §11 anchors 5 — all rc=0
+  (2026-10-27 r104b gate log, tree = this block's commit).
+
+**Scoping verdict for the remaining blind arms — both multi-day, same root
+cause.**
+- *Air-node feedback term* (R77 arm; also the 9R4C arm's committed-air
+  basis): a perturbed load also moves `t_i_sub` through the air ODE,
+  feeding back into the mass advance through the sub-step maps. Mirroring
+  it requires rebuilding the sub-step air-node ODE inside the checker (CN
+  and forward-Euler forms, per-class variants, vent and inter-zone
+  couplings) with a bit-exact zero-delta replay — a multi-day
+  instrumentation project, not a drive-by. The committed-air single-site
+  convention is deliberate and shared with the 9R4C arm (round-103 scope
+  note).
+- *Gauge-proxy legacy arm*: the legacy lumped identity's only route for
+  the load is `h_tr_3·t_i` (the committed air blend — the identity's
+  `phi_st` local is computed from `load_w` but consumed by nothing except
+  the debug print). Its load leverage IS the air-node feedback; with
+  committed air states the zero leverage is structural, not a recording
+  gap. Same multi-day verdict, same project.
+- Both stay owned by the §LIMIT-19/#1344 family; the unblocking project is
+  the checker air-node mirror (adjacent to the GaugeSolver program's
+  un-blockers #3291/#1465/#1462).
+
+**Reachability, stated honestly.** The R77 record write is unconditional
+per sub-step under the always-on coupled scheme, so live fall-through
+entry states are: per-zone records whose layout predates the round-103
+fourth entry (`len % 4 != 0`), zones the mass-advance block skipped, and
+surgical/test isolations like this round's contract test. The fix
+completes the mirror contract for every state the arm can be entered on.

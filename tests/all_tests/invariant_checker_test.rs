@@ -351,3 +351,104 @@ fn test_r77_composite_gain_probe_leverages_5r1c_state() {
         "probe response must be affine in the load delta: 1 kW {response} W vs 2 kW {response_2k} W"
     );
 }
+
+/// Loop round 104 (§LIMIT-22 — per-class t_s-first mirror arm) — the
+/// round-73 per-class mirror of the 5R1C advance must give the
+/// artificial-gain probe real leverage on a live 5R1C state whose R77
+/// composite record is absent (empty per-zone record: the mirror's
+/// documented fall-through), and the unperturbed residual must stay
+/// exactly zero (the mirror is exact by construction).
+///
+/// Red-first contract (loop round 104): before the rebuild the per-class
+/// arm partitions the COMMITTED `phi_st_zone` (the boundary record carries
+/// no load-linear coefficient), so the probe's load delta never reaches
+/// the residual — the response below is exactly 0 and this test fails.
+/// After the rebuild (engine-side `dphi_st_zone/d(load_w)` recorded on the
+/// same branch the integrator took, consumed by the checker at the probe's
+/// load) the response is the mirror's own surface-identity algebra: the
+/// load delta moves each class surface drive by `rad_frac·w·Δ` and the
+/// residual by exactly `rad_frac·Δ` — the aggregation identity is load-free
+/// by construction (it recomputes from the stored per-class `t_s`).
+///
+/// Baseline note (loop round 104 red run): on this surgical state the
+/// unperturbed per-class residual is NOT zero — the committed mass state
+/// came from the coupled sub-step advance while the per-class mirror
+/// reproduces the hourly decomposition, so the aggregation identity
+/// carries that offset (186.67 W observed). The arm's zero-delta exactness
+/// contract is against the advance it mirrors, and this test's contract is
+/// the probe RESPONSE (difference), which the offset cancels out of; the
+/// Δ = 0 verbatim-branch bit-exactness is proven by the round battery
+/// (strict + output-diff bit-identity), not here.
+#[test]
+fn test_perclass_ts_mirror_gain_probe_leverages_5r1c_state() {
+    // Same harness as the round-103 R77 contract: Case 600 (LowMass) under
+    // the explicit legacy selector pins the 5R1C network on both builds
+    // (the gauge build's `Gauge` default selector would route this spec
+    // through the gauge dispatch's mass-state proxy, whose blind arm is
+    // the documented §LIMIT-19/#1344 gap, not this contract).
+    let spec = ASHRAE140Case::Case600.spec();
+    let mut model = ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::legacy())
+        .expect("legacy 5R1C selector must initialize");
+    let outdoor_temp = 10.0;
+
+    model.step_physics(0, outdoor_temp, 3600.0);
+
+    // Surgical arm isolation: clear zone 0's R77 sub-step record so the
+    // checker falls through to the round-73 per-class t_s-first mirror
+    // (the per-class boundary and t_s records stay live from the real
+    // step). A boundary record without a composite record is the arm's
+    // documented entry condition (pre-first-step states, record layouts
+    // from before the round-103 fourth entry, zones the mass block
+    // skipped).
+    let r77 = model
+        .mass
+        .r77_mass_substep_coeffs
+        .as_mut()
+        .expect("a live 5R1C step must persist the R77 record");
+    assert!(
+        !r77[0].is_empty(),
+        "precondition: zone 0 carries a composite record before the surgery"
+    );
+    r77[0].clear();
+
+    let mut checker = InvariantChecker::new(1e-3);
+
+    let no_gain = checker.check_invariant(&model, 3600.0, outdoor_temp);
+    println!("no-gain balance: {}", no_gain.balance);
+
+    let with_gain =
+        checker.check_invariant_with_artificial_gain(&model, 3600.0, outdoor_temp, 1000.0, 0);
+    println!("with-gain (1 kW, zone 0) balance: {}", with_gain.balance);
+
+    // Leverage + closed form: the response must equal `rad_frac·Δ` — the
+    // surface identity is linear in `phi_st_c` and the aggregation
+    // identity is load-free (it recomputes from the stored per-class
+    // `t_s`).
+    let rad_frac = 1.0 - model.solar.convective_fraction;
+    let response = (with_gain.balance - no_gain.balance).abs();
+    println!(
+        "probe response to 1 kW gain: {response} W (closed form rad_frac·Δ = {} W)",
+        rad_frac * 1000.0
+    );
+    assert!(
+        response > 1e-6,
+        "per-class t_s-first mirror arm is gain-blind: probe response to a 1 kW gain was \
+         {response} W (§LIMIT-22 per-class rebuild, loop round 104)"
+    );
+    assert!(
+        (response - rad_frac * 1000.0).abs() <= 1e-6 * response,
+        "probe response must equal the closed form rad_frac·Δ: got {response} W, expected {} W",
+        rad_frac * 1000.0
+    );
+
+    // Affine-model contract: the recorded coefficient is load-linear, so
+    // the response must scale exactly with the gain.
+    let with_gain_2k =
+        checker.check_invariant_with_artificial_gain(&model, 3600.0, outdoor_temp, 2000.0, 0);
+    let response_2k = (with_gain_2k.balance - no_gain.balance).abs();
+    println!("probe response to 2 kW gain: {response_2k} W");
+    assert!(
+        (response_2k - 2.0 * response).abs() <= 1e-6 * response_2k,
+        "probe response must be affine in the load delta: 1 kW {response} W vs 2 kW {response_2k} W"
+    );
+}
