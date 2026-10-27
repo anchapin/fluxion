@@ -10,9 +10,13 @@
 //! module wires a real annual outdoor-temperature schedule into the step
 //! loop.
 //!
-//! The schedule is the WD600 (ASHRAE 140 Section B2) synthetic annual
-//! weather — the same drive the engine-side Case 600 validation tests use
-//! (`tests/ashrae_140_case_600_series.rs` loads `assets/weather/WD600.epw`).
+//! The schedule is the WD600 (ASHRAE 140 Section 6, Weather Driver Tests)
+//! annual weather — the same drive the engine-side Case 600 validation tests
+//! use (`tests/ashrae_140_case_600_series.rs` loads `assets/weather/WD600.epw`).
+//! WD600 is **not** synthetic and is **not** from Annex B: it is real Denver
+//! Intl AP TMY3 data (WMO 725650, 39.833 N, 104.650 W, UTC-7, elevation
+//! 1650 m), byte-identical to WD100 in every EPW field except field 32
+//! (albedo 0.2 here vs 0 in WD100).
 //! The full 8760-hour dry-bulb series is embedded in
 //! [`crate::wd600_data::WD600_DRY_BULB_C`] because `fluxion-core` (and the
 //! filesystem-backed `EpwWeatherSource`) is deliberately unavailable on
@@ -83,7 +87,8 @@ mod tests {
         let sched = wd600_dry_bulb();
         assert_eq!(sched.len(), 8760, "WD600 must cover one full year");
         assert!(sched.iter().all(|v| v.is_finite()));
-        // Physical sanity for the ASHRAE 140 synthetic drive: never below
+        // Physical sanity for the ASHRAE 140 Section 6 (Weather Driver Tests)
+        // drive: never below
         // -40 °C or above +45 °C.
         let min = sched.iter().fold(f64::INFINITY, |a, &b| a.min(b));
         let max = sched.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
