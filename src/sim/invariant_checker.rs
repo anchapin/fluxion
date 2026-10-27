@@ -528,6 +528,29 @@ impl InvariantChecker {
                     let h_is_zone = model.conduction.h_tr_is[i];
                     let total_area: f64 = rec.cls_area.iter().sum();
                     let degen = h_tr_3 <= 0.0;
+                    // [Loop round 104 — §LIMIT-22 per-class rebuild: the
+                    // caller's load delta against the committed load, the
+                    // same plumbing the R77 composite arm uses. At the
+                    // committed load the delta is zero and `phi_st_c` is
+                    // consumed verbatim (bit-exact zero-delta replay);
+                    // under the artificial-gain probe the recorded
+                    // load-linear coefficient routes the delta through the
+                    // engine's own gains algebra.]
+                    let load_committed = model
+                        .setpoints
+                        .loads
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(0.0)
+                        * model
+                            .setpoints
+                            .zone_area
+                            .as_ref()
+                            .get(i)
+                            .copied()
+                            .unwrap_or(0.0);
+                    let load_delta = load_w - load_committed;
                     let mut residual = 0.0f64;
                     let mut tm_w = 0.0f64;
                     for c in 0..3 {
@@ -546,7 +569,11 @@ impl InvariantChecker {
                         // env-gated harness (FLX_R68_BEAM_PHIST); the
                         // production route runs with the area-only
                         // partition, which is what is mirrored here.
-                        let phi_st_c = rec.phi_st_zone * w;
+                        let phi_st_c = if load_delta == 0.0 {
+                            rec.phi_st_zone * w
+                        } else {
+                            rec.phi_st_zone * w + rec.phi_st_zone_load_coef * load_delta * w
+                        };
                         let (h_am_c, _t_s_c) = if h_ms_c + h_is_c > 0.0 {
                             (
                                 h_ms_c * h_is_c / (h_ms_c + h_is_c),
