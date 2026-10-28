@@ -298,6 +298,21 @@ fn test_different_zones_respond_differently_to_targeted_gain() {
 /// took) the response is the engine's own share algebra
 /// (per-class φ_st shares → sub-step affine maps → surface→mass path)
 /// evaluated at the perturbed load.
+///
+/// Loop round 106 (§LIMIT-22 air-node mirror, increment B) re-pin: the arm
+/// consumes the paired air-node record (`MassState::r77_air_substep_coeffs`,
+/// landed write-only in round 105), so the response re-pins from the
+/// round-103 direct-share-only value (8687.616234633788 W per 1 kW) to the
+/// COMPOSED closed form of the coupled recurrence (plan §2): the balance
+/// response is −(r_m_N·Δ·d_last) with both response updates consuming the
+/// previous sub-step's state pair. The expected value is computed from the
+/// same records the arm consumes; the round-105 increment-A contract
+/// (`test_r77_air_record_composes_engine_counterfactual`) independently
+/// ties that recurrence to the engine's own counterfactual at
+/// N = 1/2/12/96. Red-first (loop round 106): on the pre-B tree the arm
+/// replays the mass record alone, so the signed response stays at the
+/// round-103 direct share while the composed closed form is larger — the
+/// assertion below fails rc=101.
 #[test]
 fn test_r77_composite_gain_probe_leverages_5r1c_state() {
     // Case 600 is LowMass, and the explicit legacy selector pins the 5R1C
@@ -349,6 +364,54 @@ fn test_r77_composite_gain_probe_leverages_5r1c_state() {
     assert!(
         (response_2k - 2.0 * response).abs() <= 1e-6 * response_2k,
         "probe response must be affine in the load delta: 1 kW {response} W vs 2 kW {response_2k} W"
+    );
+
+    // [Loop round 106 — §LIMIT-22 air-node mirror, increment B re-pin.]
+    // Composed closed form (plan §2): per-unit-load response pair advanced
+    // on the engine's staggered data flow (both updates consume the
+    // PREVIOUS sub-step's state pair), then the balance response is
+    // −(r_m_N·Δ·d_last).
+    let air_rec = model
+        .mass
+        .r77_air_substep_coeffs
+        .as_ref()
+        .expect("a live coupled 5R1C step must persist the air-node record");
+    let mass_rec = model
+        .mass
+        .r77_mass_substep_coeffs
+        .as_ref()
+        .expect("a live coupled 5R1C step must persist the mass record");
+    assert_eq!(
+        air_rec[0].len() / 5,
+        mass_rec[0].len() / 4,
+        "air and mass records must carry the same sub-step count"
+    );
+    let n = mass_rec[0].len() / 4;
+    let (mut r_air, mut r_m) = (0.0f64, 0.0f64);
+    for k in 0..n {
+        let d = air_rec[0][5 * k];
+        let m_coef = air_rec[0][5 * k + 1];
+        let w_coef = air_rec[0][5 * k + 2];
+        let h3od = air_rec[0][5 * k + 4];
+        let a_m = mass_rec[0][4 * k];
+        let bl = mass_rec[0][4 * k + 3];
+        let (ra, rm) = (r_air, r_m);
+        r_air = d * ra + m_coef * rm + w_coef;
+        r_m = a_m * rm + h3od * ra + bl;
+    }
+    let d_last = mass_rec[0][mass_rec[0].len() - 2];
+    let expected_signed = -r_m * 1000.0 * d_last;
+    let response_signed = with_gain.balance - no_gain.balance;
+    println!(
+        "composed closed form (round 106): r_air_N {r_air:.9} per W, r_m_N {r_m:.9} per W, d_last {d_last} W/K"
+    );
+    println!(
+        "probe response signed {response_signed} W vs composed closed form {expected_signed} W"
+    );
+    assert!(
+        (response_signed - expected_signed).abs() <= 1e-9 * expected_signed.abs(),
+        "probe response must equal the composed closed form (§2 recurrence, round 106): \
+         got {response_signed} W, expected {expected_signed} W"
     );
 }
 
