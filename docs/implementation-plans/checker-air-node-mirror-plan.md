@@ -36,10 +36,10 @@ Response recurrence per sub-step k (default route; `r_lag ≡ 0` because the unf
 
 ```text
 r_air' = D_k·r_air + M_k·r_m + W_k
-r_m'   = a_k·r_m + (h_tr_3,k/d_k)·r_air' + bl_k
+r_m'   = a_k·r_m + h3od_k·r_air + bl_k
 ```
 
-with `D_k = exp(−dt_sub/τ_air)` (or the consumed branch's relax factor), `M_k = (1−D_k)·coef_tm/den_k` where `coef_tm = derived_h_ms_is_prod[i]` on the refresh route (0 under the R76-no-refresh harness), and `W_k = (1−D_k)·c_load/den_k` with `c_load = ramp_f·conv_frac + h_tr_is·(1 − s_share)·rad_frac` — the ramp factor only on the R71-ramped branch (seed hours drop it), the lag-route term computed on the branch that produced it (T5138-live via `phi_st_int`, lumped via `phi_st`; the R88-off archaeology variant drops `(1 − s_share)`). Branches not covered here keep the committed-air fall-through, documented per increment.
+with `D_k = exp(−dt_sub/τ_air)` (or the consumed branch's relax factor), `M_k = (1−D_k)·coef_tm/den_k` where `coef_tm = derived_h_ms_is_prod[i]` on the refresh route (0 under the R76-no-refresh harness), and `W_k = (1−D_k)·c_load/den_k` with `c_load = ramp_f·term_rest_1·conv_frac + h_tr_is·(1 − s_share)·rad_frac` — the num works in the `term_rest_1`-scaled basis (#1585: `num_rest` is `mul_assign`'d by `term_rest_1`, so the `phi_ia` load coefficient enters scaled; the lag add's own `term_rest_1` cancels against `lag_input`'s division and must not reappear), the ramp factor only on the R71-ramped branch (seed hours drop it), the lag-route term computed on the branch that produced it (T5138-live via `phi_st_int`, lumped via `phi_st`; the R88-off archaeology variant drops `(1 − s_share)`). `h3od_k` is the mass advance's air-route response coefficient — `Σ_c w_cap·h3_c/den_c` on the per-class branch (each class couples through its own `h3_c = h_am_c + h_vent_i·w` over its own `den_c`; the lumped `h_tr3_arg_i/denom_m` is NOT the per-class route), `h_tr3_arg_i/denom_m` lumped. Both updates consume the PREVIOUS sub-step's state pair: the fresh air value is swapped into `air_node_t_air` only after the mass block reads `t_i_sub` (engine data flow), so the air→mass route carries `r_air` from the prior sub-step, which starts at 0 (hour-start committed). Branches not covered here keep the committed-air fall-through, documented per increment.
 
 ## 3. TDD approach
 
@@ -50,13 +50,13 @@ with `D_k = exp(−dt_sub/τ_air)` (or the consumed branch's relax factor), `M_k
 
 ## 4. Record design (increment A)
 
-New pooled buffer `MassState::r77_air_substep_coeffs: Option<Vec<Vec<f64>>>` (clone-alongside `r77_mass_substep_coeffs`), written only on the coupled default route, on the same branches the air advance executes. Per zone, five entries per sub-step, layout `[D_0, M_0, W_0, den_0, h_tr_3_0, …]`, guarded `len % 5 == 0`:
+New pooled buffer `MassState::r77_air_substep_coeffs: Option<Vec<Vec<f64>>>` (clone-alongside `r77_mass_substep_coeffs`), written only on the coupled default route, on the same branches the air advance executes. Per zone, five entries per sub-step, layout `[D_0, M_0, W_0, den_0, h3od_0, …]`, guarded `len % 5 == 0`:
 
 - `D_k` — the relax factor the air advance consumed (exact-exponential decay; the `c_air = 0`/degenerate branch records the consumed steady-relax form).
 - `M_k` — mass-refresh response coefficient `(1−D_k)·coef_tm/den_k`.
 - `W_k` — load response coefficient `(1−D_k)·c_load/den_k` on the consumed ramp/branch combination.
 - `den_k` — the ramped denominator actually consumed (pairs with the next entry).
-- `h_tr_3,k` — the conductance the mass CN consumed toward `t_i_sub` (the argument at the `crank_nicolson_iso13790` call site; no new algebra).
+- `h3od_k` — the mass advance's air-route response coefficient on the consumed branch: `Σ_c w_cap·h3_c/den_c` per-class, `h_tr3_arg_i/denom_m` lumped (see §2 — the plan's original raw-conductance slot was corrected by the increment-A contract, which showed the per-class composite is the only coefficient that composes the engine's true response; the N=1 fixture passes under both forms, the N=2 fixture discriminates them).
 
 The existing 4-tuple record and its `len % 4` guard are untouched; the air record pairs with it by sub-step count (equal lengths asserted checker-side when both are present).
 
