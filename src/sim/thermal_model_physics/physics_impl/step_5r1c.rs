@@ -1937,8 +1937,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     buf[i] = t_i_free_i;
                     // [Round 105 — air-node record: the consumed affine map
                     // `(relax, mass-refresh coef, load coef, den)` for this
-                    // sub-step, carried to the mass block where `h_tr_3`
-                    // completes the 5-tuple.]
+                    // sub-step, carried to the mass block where the mass
+                    // advance completes the 7-tuple (h3od + a + bl,
+                    // round 107).]
                     if r77_air_record {
                         air_map_scratch[i] = [
                             air_relax,
@@ -2621,7 +2622,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         // construction (same formula both sides). a and the
                         // load coefficient are load-independent, so the
                         // composed b_load scales by the same factor.]
-                        if r89_inner_n > 1 {
+                        let (a_push, bl_push) = if r89_inner_n > 1 {
                             let n = r89_inner_n;
                             let an = a.powi(n as i32);
                             let one_minus_an = 1.0 - an;
@@ -2641,20 +2642,31 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             r76_mass[i] = an * r76_mass[i] + b_eff;
                             applied_inner = true;
                             h3od = h3od_eff;
+                            (an, bl_eff)
                         } else {
                             c.push(a);
                             c.push(b);
                             c.push(denom_m);
                             c.push(b_load);
-                        }
-                        // [Round 105 — air-node record: complete the 5-tuple
-                        // with the consumed mass air-route response
-                        // coefficient (`h3od`: Σ_c w_cap·h3_c/den_c
-                        // per-class, h_tr3_arg_i/denom_m lumped — the gain
-                        // from the `t_i_sub` response to the mass response,
-                        // on the same branch the CN took), pushed in
-                        // lockstep with the 4-tuple above (same sub-step,
-                        // same zone).]
+                            (a, b_load)
+                        };
+                        // [Round 105 — air-node record: the consumed mass
+                        // air-route response coefficient (`h3od`:
+                        // Σ_c w_cap·h3_c/den_c per-class,
+                        // h_tr3_arg_i/denom_m lumped — the gain from the
+                        // `t_i_sub` response to the mass response, on the
+                        // same branch the CN took), pushed in lockstep with
+                        // the 4-tuple above (same sub-step, same zone).
+                        // Round 107 — the tuple is completed to SEVEN
+                        // entries with the mass advance's own consumed
+                        // coefficients `(a, bl)` (the same values the mass
+                        // 4-tuple carries this sub-step), so the response
+                        // pair composes from the air record alone: the
+                        // checker arms that engage precisely when the mass
+                        // record is absent (the per-class t_s-first mirror,
+                        // the gauge-proxy legacy identity) still need both
+                        // streams. Same branch, same push, zero
+                        // re-derivation (plan Z4).]
                         if r77_air_record {
                             let am = air_map_scratch[i];
                             let ca = &mut r77_air_coeffs[i];
@@ -2663,6 +2675,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             ca.push(am[2]);
                             ca.push(am[3]);
                             ca.push(h3od);
+                            ca.push(a_push);
+                            ca.push(bl_push);
                         }
                     }
                     if !applied_inner {

@@ -1,6 +1,6 @@
 # Checker Air-Node Mirror — Implementation Plan
 
-**Status:** ACTIVE (round 105; increment A landed round 105 — PR #4649; increment B landed round 106 — the R77 arm consumes the air record, response re-pinned to the composed closed form; C/D pending). Scoping verdict: §LIMIT-22 history, round-104 dated block (both blind arms air-borne, multi-day; B restores the composite arm's share via the record). Ownership: §LIMIT-19 / #1344 family; adjacent to GaugeSolver un-blockers #3291/#1465/#1462.
+**Status:** ACTIVE (round 105; increment A landed round 105 — PR #4649; increment B landed round 106 — PR #4653, the R77 arm consumes the air record, response re-pinned to the composed closed form; increment C landed round 107 — the per-class t_s-first mirror's `t_i` route consumes the record via the self-contained seven-entry layout; D pending). Scoping verdict: §LIMIT-22 history, round-104 dated block (both blind arms air-borne, multi-day; B restores the composite arm's share via the record). Ownership: §LIMIT-19 / #1344 family; adjacent to GaugeSolver un-blockers #3291/#1465/#1462.
 **Goal:** restore the artificial-gain probe's leverage on the two arms that lost it to the committed-air convention (the R77 composite arm's air route, the gauge-proxy legacy arm's `h_tr_3·t_i` route), by recording the sub-stepped air-node composite's affine coefficients engine-side and recomputing the probe response checker-side.
 **Ceiling:** unchanged — every identity this plan touches stays in the 1e-5 W residual class.
 **Method:** TDD with Python replication of each closed form before any code; red-first contract tests; full battery bit-identity at zero delta on every increment; no option plumbing (records are unconditional on the coupled default route, exactly like the round-78 `[a, b, d, bl]` record).
@@ -50,21 +50,22 @@ with `D_k = exp(−dt_sub/τ_air)` (or the consumed branch's relax factor), `M_k
 
 ## 4. Record design (increment A)
 
-New pooled buffer `MassState::r77_air_substep_coeffs: Option<Vec<Vec<f64>>>` (clone-alongside `r77_mass_substep_coeffs`), written only on the coupled default route, on the same branches the air advance executes. Per zone, five entries per sub-step, layout `[D_0, M_0, W_0, den_0, h3od_0, …]`, guarded `len % 5 == 0`:
+New pooled buffer `MassState::r77_air_substep_coeffs: Option<Vec<Vec<f64>>>` (clone-alongside `r77_mass_substep_coeffs`), written only on the coupled default route, on the same branches the air advance executes. Per zone, SEVEN entries per sub-step, layout `[D_0, M_0, W_0, den_0, h3od_0, a_0, bl_0, …]`, guarded `len % 7 == 0` [round 107 — the round-105 five-tuple was completed by the mass advance's own consumed `(a, bl)` — the same values the mass 4-tuple carries, pushed in the same lockstep — because the consumers that need the response pair are precisely the arms that engage when the mass record is absent (the per-class t_s-first mirror; the gauge-proxy legacy identity); the increment-C contract forced this extension the same way the increment-A contract forced the h3od slot]:
 
 - `D_k` — the relax factor the air advance consumed (exact-exponential decay; the `c_air = 0`/degenerate branch records the consumed steady-relax form).
 - `M_k` — mass-refresh response coefficient `(1−D_k)·coef_tm/den_k`.
 - `W_k` — load response coefficient `(1−D_k)·c_load/den_k` on the consumed ramp/branch combination.
 - `den_k` — the ramped denominator actually consumed (pairs with the next entry).
 - `h3od_k` — the mass advance's air-route response coefficient on the consumed branch: `Σ_c w_cap·h3_c/den_c` per-class, `h_tr3_arg_i/denom_m` lumped (see §2 — the plan's original raw-conductance slot was corrected by the increment-A contract, which showed the per-class composite is the only coefficient that composes the engine's true response; the N=1 fixture passes under both forms, the N=2 fixture discriminates them).
+- `a_k`, `bl_k` — the mass advance's own consumed affine coefficients (round 107; identical to the mass 4-tuple's first/fourth entries for the same sub-step, including the R89 composed form), so the §2 recurrence composes from this record alone.
 
-The existing 4-tuple record and its `len % 4` guard are untouched; the air record pairs with it by sub-step count (equal lengths asserted checker-side when both are present).
+The existing 4-tuple record and its `len % 4` guard are untouched; the air record pairs with it by sub-step count (equal lengths asserted checker-side when both are present). [Round 107: the air record is self-contained — the pairing assert remains as a shape check where the mass record is present.]
 
 ## 5. Increment boundaries
 
 - **A — engine record (this round's landable increment):** add the buffer + write sites + the record-shape/value contract test (Python-replicated coefficients on a synthetic coupled step). Battery-inert at Δ=0; no re-record, bit-identity proven by the run.
 - **B — R77 composite arm consumes the air record:** the replay gains the response recurrence; the arm's gain-probe contract re-pins from the direct-share-only value (8687.616… W per 1 kW, round-103 record) to the composed closed form. Red-first; provenance to the code sha.
-- **C — per-class t_s-first mirror consumes:** the surface identities' `t_i` route picks up the air response; per-class contract values re-pin with the same discipline.
+- **C — per-class t_s-first mirror consumes (landed round 107):** the surface identities' `t_i` route picks up the air response — `t_i + r_air_N·Δ` under the probe, committed air verbatim at Δ = 0 and on absent/stale-layout records; per-class contract values re-pinned with the same discipline (the round-104 closed form `rad_frac·Δ` gains `h_is_zone·r_air_N·Δ`).
 - **D — gauge-proxy legacy arm re-anchor:** its only load route `h_tr_3·t_i` becomes live through the same recurrence; the arm's blind-probe verdict (§LIMIT-22) closes when its response equals the composed closed form.
 - **Explicitly out of scope (bounded later, not silently):** inter-zone cross-responses (Case 960 family — a single-zone probe's neighbor-side response needs a per-zone response vector, not a scalar); the R74/R75/R90-filtered archaeology routes (they fall through to the committed-air convention, same as today); the 9R4C arm's committed-air basis (§LIMIT-19 adjacency; interacts with ADR-0011, which stays Alex's call); HVAC-masked zones (probe fixtures use free-float setpoints).
 
