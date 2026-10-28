@@ -20,7 +20,7 @@
 //! ```text
 //!                 Φ_abs,k (α_k · I_k · A_k, per surface)
 //!                            │
-//!                            ▼  (sol-air offset ΔT = Φ_abs,k / h_tr_em,k)
+//!                            ▼  (sol-air offset ΔT = Φ_abs,k / h_ext_film,k)
 //!   T_ext,k ──[h_tr_em,k]──▶ M_k ──[h_tr_ms,k]──▶ S_k ──[h_tr_is,k]──▶ T_air
 //!   (exterior)             (depth node)         (surface node)
 //!                                               ▲
@@ -80,6 +80,25 @@
 //! unconditionally stable and **energy conserving to machine precision**
 //! (see [`EnergyLedger::residual`]).
 //!
+//! # The sol-air temperature
+//!
+//! The absorbed solar is injected at the **exterior face** of its own
+//! surface through the ISO 13790 §C.3.2 sol-air temperature
+//!
+//! ```text
+//! T_solair,k = T_ext,k + Φ_abs,k / h_ext_film,k = T_ext,k + α_k · I_k / h_se
+//! ```
+//!
+//! — the exterior face is lifted above the ambient by the absorbed flux
+//! divided by the exterior **film** conductance `h_se`, and the remaining
+//! construction resistance (`R_se + R_1`) then carries that heat inward.
+//! The offset is deliberately *not* taken over the combined
+//! exterior-to-depth-node conductance `h_tr_em = 1/(R_se + R_1)`: that
+//! would push the whole absorbed flux through the construction and
+//! inflate the interior solar gain by `(R_se + R_1) / R_se` (≈ 80× for a
+//! well-insulated construction), driving the depth node to physically
+//! impossible temperatures. See [`SurfaceSpec::sol_air_temperature`].
+//!
 //! # References
 //!
 //! * ISO 13790:2008 §C — 5R1C network, half-insulation rule, sol-air
@@ -120,6 +139,23 @@ pub struct SurfaceSpec {
     /// Exterior ↔ depth-node conductance [W/K] (exterior film `R_se` plus
     /// the exterior half of the construction resistance `R_1`).
     pub h_tr_em: f64,
+    /// Exterior **film** conductance [W/K] (`h_se · area`).
+    ///
+    /// This is the ISO 13790 §C.3.2 `h_se` — the surface heat-transfer
+    /// coefficient by long-wave radiation and convection — and *not* the
+    /// combined exterior-to-depth-node conductance
+    /// [`SurfaceSpec::h_tr_em`]. It sets the sol-air temperature: the
+    /// absorbed solar heats the exterior face by `Φ_abs / h_ext_film`, and
+    /// the remaining construction resistance (`R_se + R_1`) then carries
+    /// that heat inward.
+    ///
+    /// Dividing the absorbed flux by `h_tr_em` instead would push the
+    /// *whole* absorbed flux through the construction and inflate the
+    /// interior solar gain by the factor `(R_se + R_1) / R_se` (≈ 80× for
+    /// a well-insulated construction), which drives the depth node to
+    /// physically impossible temperatures. See
+    /// [`SurfaceSpec::sol_air_temperature`].
+    pub h_ext_film: f64,
     /// Depth-node ↔ surface-node conductance [W/K] (the interior half of the
     /// construction resistance `R_2`).
     pub h_tr_ms: f64,
@@ -163,13 +199,25 @@ impl SurfaceSpec {
         absorptance: f64,
     ) -> Self {
         let r_total = if u_value > 0.0 { 1.0 / u_value } else { 0.0 };
-        let r_se = if h_exterior > 0.0 { 1.0 / h_exterior } else { 0.0 };
-        let r_si = if h_interior > 0.0 { 1.0 / h_interior } else { 0.0 };
+        let r_se = if h_exterior > 0.0 {
+            1.0 / h_exterior
+        } else {
+            0.0
+        };
+        let r_si = if h_interior > 0.0 {
+            1.0 / h_interior
+        } else {
+            0.0
+        };
         let r_material = (r_total - r_se - r_si).max(0.0);
         let r_1 = 0.5 * r_material;
         let r_2 = 0.5 * r_material;
 
-        let h_tr_em = if r_se + r_1 > 0.0 { 1.0 / (r_se + r_1) } else { 0.0 };
+        let h_tr_em = if r_se + r_1 > 0.0 {
+            1.0 / (r_se + r_1)
+        } else {
+            0.0
+        };
         let h_tr_ms = if r_2 > 0.0 { 1.0 / r_2 } else { 0.0 };
         let h_tr_is = if r_si > 0.0 { 1.0 / r_si } else { 0.0 };
 
@@ -183,6 +231,7 @@ impl SurfaceSpec {
             h_tr_em: h_tr_em * area,
             h_tr_ms: h_tr_ms * area,
             h_tr_is: h_tr_is * area,
+            h_ext_film: h_exterior * area,
             c_surface: 0.5 * c_total,
             c_mass: 0.5 * c_total,
         }
@@ -193,6 +242,37 @@ impl SurfaceSpec {
     pub fn with_interior_absorptance(mut self, alpha_int: f64) -> Self {
         self.interior_absorptance = alpha_int;
         self
+    }
+
+    /// The ISO 13790 §C.3.2 **sol-air temperature** of this surface [°C].
+    ///
+    /// ```text
+    /// T_solair = T_ext + Φ_abs / h_ext_film
+    ///          = T_ext + α_k · I_k / h_se
+    /// ```
+    ///
+    /// The absorbed solar is absorbed at the **exterior face** of the
+    /// construction, so the exterior face is lifted above the ambient air
+    /// by `α_k · I_k / h_se` (the exterior surface's own rejection
+    /// capacity); the remaining construction resistance (`R_se + R_1`)
+    /// then carries that heat inward to the depth node.
+    ///
+    /// The denominator is the exterior **film** conductance
+    /// ([`SurfaceSpec::h_ext_film`]), *not* the combined
+    /// exterior-to-depth-node conductance ([`SurfaceSpec::h_tr_em`]):
+    /// dividing by `h_tr_em` would inject the whole absorbed flux into
+    /// the construction and inflate the interior solar gain by
+    /// `(R_se + R_1) / R_se`.
+    ///
+    /// A surface without an exterior film conductance (`h_ext_film <= 0`)
+    /// receives no sol-air offset: its absorbed flux cannot be rejected
+    /// by a surface that does not exist.
+    pub fn sol_air_temperature(&self, t_ext: f64, phi_abs: f64) -> f64 {
+        if self.h_ext_film > 0.0 {
+            t_ext + phi_abs / self.h_ext_film
+        } else {
+            t_ext
+        }
     }
 }
 
@@ -410,9 +490,11 @@ impl PerSurfaceMultiNodeConduction {
     /// ```
     ///
     /// with the per-surface sol-air temperature
-    /// `T_solair,k = T_ext,k + Φ_abs,k / h_tr_em,k` — i.e. the absorbed
-    /// solar enters at the **exterior face** of that surface, which is where
-    /// it is physically absorbed.
+    /// `T_solair,k = T_ext,k + Φ_abs,k / h_ext_film,k` (ISO 13790 §C.3.2:
+    /// `T_ext,k + α_k · I_k / h_se`) — i.e. the absorbed solar enters at
+    /// the **exterior face** of that surface, which is where it is
+    /// physically absorbed, and is rejected there by the exterior film
+    /// before the construction resistance carries the remainder inward.
     pub fn step(&mut self, dt: f64, inputs: &StepInputs<'_>) -> f64 {
         self.advance(dt, inputs, None).0
     }
@@ -476,7 +558,14 @@ impl PerSurfaceMultiNodeConduction {
             phi_tr[k] = phi_t;
 
             // Sol-air offset: the absorbed solar enters at the exterior face.
-            let solair = if h_em > 0.0 { t_ext + phi_abs / h_em } else { t_ext };
+            //
+            // ISO 13790 §C.3.2 — `T_solair = T_ext + α_k · I_k / h_se`: the
+            // absorbed flux heats the exterior *surface* (which rejects it
+            // through the exterior film `h_se`), and the rest of the
+            // construction resistance carries it inward. The offset is
+            // therefore taken over the exterior film conductance, not over
+            // the combined exterior-to-depth-node conductance.
+            let solair = spec.sol_air_temperature(t_ext, phi_abs);
             coef_solair[k] = solair;
 
             // 2x2 system  [[A, −h_ms], [−h_ms, Cc]] · [T_m, T_s]ᵀ = [rhs1, rhs2]ᵀ
@@ -517,7 +606,11 @@ impl PerSurfaceMultiNodeConduction {
             denom += h_is * (1.0 - kappa[k]);
             numer += h_is * b[k];
         }
-        let t_air_solved = if denom > 1e-12 { numer / denom } else { t_air_old };
+        let t_air_solved = if denom > 1e-12 {
+            numer / denom
+        } else {
+            t_air_old
+        };
         // A prescribed air node replaces the solved one; the thermostat
         // carries the imbalance (see `step_clamped`).
         let t_air_new = clamped.unwrap_or(t_air_solved);
