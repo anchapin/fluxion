@@ -308,3 +308,55 @@ write-only), not by this test.
 Next: increment B — the checker's R77-arm air-route mirror consuming
 this record (recurrence as verified here), then the gauge-proxy legacy
 arm re-anchor (increment D).
+
+## 2026-10-28 — loop round 106, increment B: the R77 composite arm consumes the air record
+
+Second bounded increment of the checker air-node mirror project
+(`docs/implementation-plans/checker-air-node-mirror-plan.md` §5 B). The
+R77 composite arm's replay now advances the plan-§2 staggered response
+pair alongside the committed-path composite: per sub-step, the mass
+replay carries `h3od_k·r_air_prev·Δ` (the counterfactual air state the
+mass block actually reads — the PREVIOUS sub-step's, per the engine data
+flow the round-105 contract pinned), and the per-W response pair
+`(r_air, r_m)` advances on the same recurrence the record contract
+proved against the engine's own counterfactual. The probe response
+re-pins from the round-103 direct-share-only value to the composed
+closed form; the mass-only replay below the paired branch keeps the
+committed-air fall-through for absent/stale-layout air records
+(archaeology routes).
+
+**Python replication first** (dev-time evidence, 2000 synthetic configs,
+N ∈ {1, 2, 3, 12}): the composed recurrence equals the explicit
+two-trajectory counterfactual to 1e-9 relative; the in-loop `t_comp`
+form equals `committed_composite + r_m_N·Δ`; the balance response is
+`−(r_m_N·Δ·d_last)`; and the Δ = 0 in-loop form is BIT-exact to the
+committed replay (the h3od term never enters — explicit zero-delta
+branch).
+
+**Red-first contract** (`test_r77_composite_gain_probe_leverages_5r1c_state`,
+round-106 re-pin): on the pre-B tree the arm replays the mass record
+alone — probe response −8687.616234633788 W (the round-103 direct share,
+verbatim) against the composed closed form −20776.574489044437 W, rc=101.
+Post-change the measured response is −20776.57448904463 W against the
+closed form −20776.574489044437 W (1.9e-10 relative, within the 1e-9
+contract bar), no-gain residual exactly 0, response exactly affine
+(2 kW → 2×, 41553.148978088604 W). The composed per-W responses read off
+the records — r_air_N 0.004909700, r_m_N 0.000564264 (d_last
+36820.66871596761 W/K) — give Δt_air ≈ 4.91 K and Δt_m ≈ 0.564 K per
+1 kW, matching the round-105 record contract's engine counterfactual on
+the same fixture family.
+
+**Zero-delta bit-identity** is proven by the round battery at the
+changed tree, not by this test: strict 13 PASS / 29 KNOWN-FAIL /
+0 REGRESSION with unchanged per-case values, output-diff 42/42 all
++0.0000%, §6/§7 pins + GC10a/§11 anchors all rc=0 (2026-10-28 gate log
+at the changed tree). Sibling contracts green on the same build:
+`test_r77_air_record_composes_engine_counterfactual` (round 105) and
+`test_perclass_ts_mirror_gain_probe_leverages_5r1c_state` (round 104).
+
+**Scope, stated honestly:** this restores leverage on the R77 composite
+arm only. The per-class t_s-first mirror's `t_i` route (plan increment
+C) and the gauge-proxy legacy identity (increment D) keep their
+committed-air fall-throughs; D stays owned by §LIMIT-19/#1344.
+Inter-zone cross-responses remain explicitly out of scope (plan §5).
+

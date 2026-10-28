@@ -1,6 +1,6 @@
 # Checker Air-Node Mirror — Implementation Plan
 
-**Status:** ACTIVE (round 105). Scoping verdict: §LIMIT-22 history, round-104 dated block (both blind arms air-borne, multi-day). Ownership: §LIMIT-19 / #1344 family; adjacent to GaugeSolver un-blockers #3291/#1465/#1462.
+**Status:** ACTIVE (round 105; increment A landed round 105 — PR #4649; increment B landed round 106 — the R77 arm consumes the air record, response re-pinned to the composed closed form; C/D pending). Scoping verdict: §LIMIT-22 history, round-104 dated block (both blind arms air-borne, multi-day; B restores the composite arm's share via the record). Ownership: §LIMIT-19 / #1344 family; adjacent to GaugeSolver un-blockers #3291/#1465/#1462.
 **Goal:** restore the artificial-gain probe's leverage on the two arms that lost it to the committed-air convention (the R77 composite arm's air route, the gauge-proxy legacy arm's `h_tr_3·t_i` route), by recording the sub-stepped air-node composite's affine coefficients engine-side and recomputing the probe response checker-side.
 **Ceiling:** unchanged — every identity this plan touches stays in the 1e-5 W residual class.
 **Method:** TDD with Python replication of each closed form before any code; red-first contract tests; full battery bit-identity at zero delta on every increment; no option plumbing (records are unconditional on the coupled default route, exactly like the round-78 `[a, b, d, bl]` record).

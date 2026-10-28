@@ -450,6 +450,52 @@ impl InvariantChecker {
                                 .copied()
                                 .unwrap_or(0.0);
                         let load_delta = load_w - load_committed;
+                        // [Loop round 106 — §LIMIT-22 air-node mirror,
+                        // increment B: paired air-node record consumer. When
+                        // the step also persisted the air-node affine record
+                        // (round 105, written only on the default integrator
+                        // route), the composite replay gains the air-borne
+                        // share: per sub-step the mass block reads the
+                        // PREVIOUS sub-step's air state (engine data flow),
+                        // so the counterfactual composite composes
+                        // `t_comp ← a·t_comp + (b + bl·Δ) + h3od_k·r_air_prev·Δ`
+                        // with the per-W response pair advanced on the same
+                        // staggered recurrence the plan's §2 states and the
+                        // round-105 record contract proved against the
+                        // engine's own counterfactual. At Δ = 0 the h3od term
+                        // is skipped by the explicit zero-delta branch and
+                        // the replay is bit-exact to the mass-only form (the
+                        // #3297 residual-zero property). An absent or
+                        // stale-layout air record keeps the mass-only replay
+                        // below (the committed-air fall-through the plan
+                        // documents for the archaeology routes).]
+                        let n = c.len() / 4;
+                        if let Some(air) = model
+                            .mass
+                            .r77_air_substep_coeffs
+                            .as_ref()
+                            .and_then(|v| v.get(i))
+                            .filter(|air| air.len() == n * 5)
+                        {
+                            let mut t_comp = t_mass_prev;
+                            let mut r_air = 0.0f64;
+                            let mut r_m = 0.0f64;
+                            for (k, [a, b, _d, bl]) in c.as_chunks::<4>().0.iter().enumerate() {
+                                let (ra, rm) = (r_air, r_m);
+                                if load_delta == 0.0 {
+                                    t_comp = a * t_comp + *b;
+                                } else {
+                                    t_comp = a * t_comp
+                                        + (*b + *bl * load_delta)
+                                        + air[5 * k + 4] * ra * load_delta;
+                                }
+                                r_air = air[5 * k] * ra + air[5 * k + 1] * rm + air[5 * k + 2];
+                                r_m = a * rm + air[5 * k + 4] * ra + *bl;
+                            }
+                            let denom_final = c[c.len() - 2];
+                            let r = (t_mass - t_comp) * denom_final;
+                            return r;
+                        }
                         let mut t_comp = t_mass_prev;
                         for [a, b, _d, bl] in c.as_chunks::<4>().0 {
                             let b_eff = if load_delta == 0.0 {
