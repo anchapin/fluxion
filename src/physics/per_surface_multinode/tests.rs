@@ -1,19 +1,29 @@
 //! Unit tests for the per-surface multi-node conduction formulation
 //! (Issue #3983).
 //!
-//! The suite covers three groups:
+//! **Option-B scope (Issue #3983).** The suite asserts only what the
+//! formulation's own physics guarantees:
 //!
-//! 1. **Formulation structure** — the two node states per surface are ODE
-//!    states (not algebraic pins), the solar is distributed per surface by
-//!    area × absorptance, and the implicit step conserves energy.
-//! 2. **Dynamic order** — the surface node and the depth node respond on
-//!    distinct timescales (the dynamic order the lumped 5R1C network cannot
-//!    express).
-//! 3. **#1522 bidirectional signature** — on a synthetic single-zone case the
-//!    per-surface formulation moves the cooling-peak and the heating-peak
-//!    metric in *opposite* directions relative to the lumped ISO 13790 5R1C
-//!    reference, while the lumped reference's own lever keeps both metrics
-//!    locked together.
+//! 1. **Bounded, physical temperatures** — every node temperature stays
+//!    inside the band the driving conditions allow (a passive RC network
+//!    cannot leave the hull of its boundary temperatures), and the sol-air
+//!    temperature follows ISO 13790 §C.3.2.
+//! 2. **Energy balance** — the first-law residual of the ledger closes to
+//!    round-off over a full synthetic run, in the free-float *and* in the
+//!    conditioned (thermostat-clamped) protocol.
+//! 3. **Formulation structure** — the two node states per surface are ODE
+//!    states (not algebraic pins), they respond on distinct timescales,
+//!    and the solar is distributed per surface by area × absorptance.
+//!
+//! Every assertion below is a property of the per-surface formulation
+//! itself. **No test compares the per-surface model against the lumped
+//! 5R1C reference**: the per-surface-vs-lumped peak-ordering claims (peak
+//! magnitude order, peak-time order, and the "locked metrics" inequality
+//! direction) were dropped under the option-B decision. The lumped network
+//! carries a single thermal state per zone, so *no* ordering between the
+//! two formulations' peaks follows from the physics — the two models
+//! differ in structure, not in a guaranteed inequality — and the
+//! comparison therefore carried no evidence, only a tuning target.
 
 use super::*;
 use fluxion_core::per_surface_conduction::SurfaceKind;
@@ -49,10 +59,10 @@ const HOURS: usize = 24 * 14;
 const T_HEAT: f64 = 20.0;
 const T_COOL: f64 = 26.0;
 
-/// Synthetic envelope: roof + four walls (no floor — the lumped 5R1C
-/// reference has a single exterior boundary for the whole envelope, so a
-/// ground-coupled floor could not be represented in both models
-/// simultaneously and is therefore excluded from *both*).
+/// Synthetic envelope: roof + four walls (no floor — the synthetic case
+/// exercises the *air-side* envelope network, and a ground-coupled floor
+/// is the §8 ground-slab work (#4270 area), which this module does not
+/// touch).
 fn synthetic_surfaces() -> Vec<SurfaceSpec> {
     let roof = SurfaceSpec::from_areal(
         0,
@@ -78,10 +88,10 @@ fn synthetic_surfaces() -> Vec<SurfaceSpec> {
     };
     vec![
         roof,
-        wall(1, ZONE_W),  // south
-        wall(2, ZONE_D),  // east
-        wall(3, ZONE_D),  // west
-        wall(4, ZONE_W),  // north
+        wall(1, ZONE_W), // south
+        wall(2, ZONE_D), // east
+        wall(3, ZONE_D), // west
+        wall(4, ZONE_W), // north
     ]
 }
 
@@ -104,128 +114,29 @@ fn synthetic_irradiance(t: usize) -> Vec<f64> {
     vec![i_roof, i_south, 0.0, 0.0, 0.0]
 }
 
-/// The lumped ISO 13790 5R1C zone reference (single mass node + algebraic
-/// interior surface node) built from the *same* surface data.
-///
-/// This is the reference formulation the #1522 bidirectional signature is
-/// measured against: one thermal state for the whole envelope, so the
-/// interior surface temperature can only follow that single state.
-struct LumpedFiveR1C {
-    c_mass: f64,
-    h_em: f64,
-    h_ms: f64,
-    h_is: f64,
-    c_air: f64,
-    h_ve: f64,
-    t_mass: f64,
+/// One conditioned (thermostat-clamped) step of the synthetic case.
+struct ConditionedStep {
+    /// The HVAC load the thermostat must meet [W] (positive = the zone must
+    /// be cooled).
+    load: f64,
+    /// The zone air temperature after the step [°C].
     t_air: f64,
-}
-
-impl LumpedFiveR1C {
-    fn new(specs: &[SurfaceSpec], t_init: f64) -> Self {
-        let h_em: f64 = specs.iter().map(|s| s.h_tr_em).sum();
-        let h_ms: f64 = specs.iter().map(|s| s.h_tr_ms).sum();
-        let h_is: f64 = specs.iter().map(|s| s.h_tr_is).sum();
-        let c_mass: f64 = specs.iter().map(|s| s.c_surface + s.c_mass).sum();
-        Self {
-            c_mass,
-            h_em,
-            h_ms,
-            h_is,
-            c_air: C_AIR,
-            h_ve: H_VE,
-            t_mass: t_init,
-            t_air: t_init,
-        }
-    }
-
-    /// Conditioned 5R1C step: the zone air is held at `t_air_set` by an
-    /// ideal thermostat; returns the HVAC load [W] the zone must meet
-    /// (positive = the zone must be cooled).
-    ///
-    /// The algebraic surface node of the 5R1C network is
-    /// `T_s = alpha * T_air + beta * T_m` with
-    /// `alpha = h_is / (h_is + h_ms)` and `beta = h_ms / (h_is + h_ms)`.
-    /// Substituting it into the mass-node balance
-    /// `C_m (T_m' - T_m)/dt = h_ms (T_s - T_m') + h_em (T_solair - T_m')`
-    /// gives
-    ///
-    /// ```text
-    /// (C_m/dt + h_em + h_ms * alpha) T_m'
-    ///     = C_m/dt * T_m + h_em * T_solair + h_ms * alpha * T_air'
-    /// ```
-    ///
-    /// — the mass node's coupling to the air enters as `h_ms * alpha`
-    /// (because `1 - beta = alpha`), **not** as `h_ms * beta`.
-    fn step_clamped(&mut self, dt: f64, t_out: f64, absorbed_total: f64, t_air_set: f64) -> f64 {
-        let alpha = self.h_is / (self.h_is + self.h_ms);
-        let beta = self.h_ms / (self.h_is + self.h_ms);
-        let solair = if self.h_em > 0.0 {
-            t_out + absorbed_total / self.h_em
-        } else {
-            t_out
-        };
-        // Mass node, eliminated against the algebraic surface node.
-        let r1 = self.c_mass / dt * self.t_mass + self.h_em * solair;
-        let d1 = self.c_mass / dt + self.h_em + self.h_ms * alpha;
-        self.t_mass = (r1 + self.h_ms * alpha * t_air_set) / d1;
-        // The zone load the thermostat must meet: the envelope's heat flow
-        // into the (held) air node plus the ventilation path.
-        let t_surface = alpha * t_air_set + beta * self.t_mass;
-        self.t_air = t_air_set;
-        self.h_is * (t_surface - t_air_set) + self.h_ve * (t_out - t_air_set)
-    }
-}
-
-/// Peak-load metrics of a **conditioned** (thermostat-clamped) run.
-///
-/// * `peak_cooling` — the largest cooling load the zone must meet to hold the
-///   cooling setpoint [W] (positive);
-/// * `peak_heating` — the largest heating load the zone must meet to hold the
-///   heating setpoint [W] (positive).
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct PeakMetrics {
-    peak_cooling: f64,
-    peak_heating: f64,
-}
-
-/// The peak-load metrics of a conditioned run: the largest HVAC load of the
-/// cooling run and the largest HVAC load of the heating run.
-///
-/// The loads are the ones an ideal thermostat has to meet, i.e. the heat
-/// flow the envelope and the ventilation path deliver into the zone while
-/// the air is held at the setpoint (positive = the zone must be cooled).
-///
-/// The first version of this suite evaluated a `(T_air - T_set) * gain`
-/// proxy on the **free-float** trajectory instead. That proxy is not a load
-/// — it ignores both the envelope's own surface temperature and the
-/// ventilation path — and it *saturates*: on the synthetic case below the
-/// free-float zone air never reaches the cooling setpoint, so the per-surface
-/// cooling-peak metric was identically zero (0.0 W against the lumped
-/// reference's 17.2 kW) and the comparison carried no information at all.
-/// The conditioned protocol removes the saturation: both formulations are
-/// evaluated at the setpoint they have to hold.
-fn peak_metrics(cooling_loads: &[f64], heating_loads: &[f64]) -> PeakMetrics {
-    PeakMetrics {
-        peak_cooling: cooling_loads
-            .iter()
-            .copied()
-            .fold(f64::NEG_INFINITY, f64::max),
-        peak_heating: -heating_loads.iter().copied().fold(f64::INFINITY, f64::min),
-    }
+    /// The interior surface-node temperatures after the step [°C].
+    t_surface: Vec<f64>,
+    /// The depth-node temperatures after the step [°C].
+    t_mass: Vec<f64>,
+    /// The energy ledger of the step.
+    ledger: EnergyLedger,
 }
 
 /// Run the per-surface formulation over the synthetic case with the zone air
-/// **held** at `t_set` by an ideal thermostat; returns the HVAC load trace
-/// [W] (positive = the zone must be cooled).
-fn run_per_surface_clamped(specs: &[SurfaceSpec], t_set: f64) -> Vec<f64> {
-    let mut model = PerSurfaceMultiNodeConduction::new(
-        specs.to_vec(),
-        ZoneAirSpec::new(C_AIR, H_VE),
-        t_set,
-    );
+/// **held** at `t_set` by an ideal thermostat (the conditioned protocol);
+/// returns the per-step record of the run.
+fn run_per_surface_conditioned(specs: &[SurfaceSpec], t_set: f64) -> Vec<ConditionedStep> {
+    let mut model =
+        PerSurfaceMultiNodeConduction::new(specs.to_vec(), ZoneAirSpec::new(C_AIR, H_VE), t_set);
     let n = specs.len();
-    let mut loads = Vec::with_capacity(HOURS);
+    let mut steps = Vec::with_capacity(HOURS);
     for t in 0..HOURS {
         let (t_out, _, _) = synthetic_weather(t);
         let irr = synthetic_irradiance(t);
@@ -243,27 +154,41 @@ fn run_per_surface_clamped(specs: &[SurfaceSpec], t_set: f64) -> Vec<f64> {
             absorbed_solar: &absorbed,
             transmitted_solar: &transmitted,
         };
-        loads.push(model.step_clamped(DT, &inputs, t_set));
+        let load = model.step_clamped(DT, &inputs, t_set);
+        steps.push(ConditionedStep {
+            load,
+            t_air: model.t_air(),
+            t_surface: model.surface_temperatures(),
+            t_mass: model.mass_temperatures(),
+            ledger: model.energy_ledger(),
+        });
     }
-    loads
+    steps
 }
 
-/// Run the lumped 5R1C reference over the same synthetic case with the zone
-/// air held at `t_set`; returns the HVAC load trace [W].
-fn run_lumped_clamped(specs: &[SurfaceSpec], t_set: f64) -> Vec<f64> {
-    let mut model = LumpedFiveR1C::new(specs, t_set);
-    let mut loads = Vec::with_capacity(HOURS);
+/// The band the driving conditions of the synthetic case allow: the lowest
+/// and highest **boundary** temperature the network sees (the outdoor air
+/// and the per-surface sol-air temperature).
+///
+/// A passive RC network advanced by backward Euler is a convex
+/// combination of its boundary temperatures, so no node temperature can
+/// leave that hull — this is the bound the "physical temperatures"
+/// assertions below use.
+fn synthetic_temperature_hull(specs: &[SurfaceSpec]) -> (f64, f64) {
+    let mut lo = f64::INFINITY;
+    let mut hi = f64::NEG_INFINITY;
     for t in 0..HOURS {
         let (t_out, _, _) = synthetic_weather(t);
         let irr = synthetic_irradiance(t);
-        let absorbed_total: f64 = specs
-            .iter()
-            .zip(irr.iter())
-            .map(|(s, i)| absorbed_flux(s, *i))
-            .sum();
-        loads.push(model.step_clamped(DT, t_out, absorbed_total, t_set));
+        lo = lo.min(t_out);
+        hi = hi.max(t_out);
+        for (spec, i) in specs.iter().zip(irr.iter()) {
+            let solair = spec.sol_air_temperature(t_out, absorbed_flux(spec, *i));
+            lo = lo.min(solair);
+            hi = hi.max(solair);
+        }
     }
-    loads
+    (lo, hi)
 }
 
 // ---------------------------------------------------------------------------
@@ -322,10 +247,18 @@ fn test_surface_node_is_an_ode_state_not_an_algebraic_pin() {
     );
 }
 
-/// The depth node and the surface node respond on **distinct timescales**:
-/// a step in the zone-air temperature is tracked by the interior surface node
-/// within hours, while the depth node — which is coupled to the zone only
-/// through the construction resistance — is still essentially unchanged.
+/// The depth node and the surface node respond on **distinct timescales**.
+///
+/// The protocol is the conditioned one: the zone air is held at the
+/// setpoint by an ideal thermostat, and the *envelope* is then stepped by
+/// the setpoint change (20 °C → 30 °C). The interior surface node tracks
+/// the held air within hours (it is separated from the zone only by the
+/// interior film), while the depth node — which is separated from the
+/// zone by the construction resistance — is still essentially unchanged.
+///
+/// The 63.2 % crossing times are measured against the *converged* values
+/// (the trace is run far past the slow node's time constant), so the
+/// measurement does not depend on where the trace is truncated.
 #[test]
 fn test_step_response_exhibits_distinct_node_time_constants() {
     let specs = vec![SurfaceSpec::from_areal(
@@ -352,56 +285,41 @@ fn test_step_response_exhibits_distinct_node_time_constants() {
         transmitted_solar: &transmitted,
     };
 
-    // Settle, then apply a +10 K step to the zone air (a large step so the
-    // response is unambiguous).
+    // Settle the envelope at the initial setpoint (20 °C).
     for _ in 0..48 {
-        model.step(DT, &inputs);
+        model.step_clamped(DT, &inputs, 20.0);
     }
     let t_s0 = model.surface(0).unwrap().t_surface;
     let t_m0 = model.surface(0).unwrap().t_mass;
 
+    // Step the held zone air by +10 K and record both node temperatures
+    // until the slow node has converged (6000 steps ≫ its time constant).
+    //
+    // The 63.2 % crossings are measured against the *converged* values,
+    // which are read off the end of the recorded trace — measuring them
+    // against a running "final" value would make the first step trivially
+    // satisfy the crossing condition.
+    const STEPS: usize = 6000;
+    let mut trace: Vec<(f64, f64)> = Vec::with_capacity(STEPS);
+    for _ in 1..=STEPS {
+        model.step_clamped(DT, &inputs, 30.0);
+        trace.push((
+            model.surface(0).unwrap().t_surface,
+            model.surface(0).unwrap().t_mass,
+        ));
+    }
+    let t_s_final = trace.last().unwrap().0;
+    let t_m_final = trace.last().unwrap().1;
+
     let mut surface_63 = None;
     let mut mass_63 = None;
-    let mut t_s_final = t_s0;
-    let mut t_m_final = t_m0;
-    let mut surface_trace = Vec::new();
-    let mut mass_trace = Vec::new();
-    for step in 1..=2000 {
-        // Step the zone air by +10 K through the internal-gain term.
-        let stepped = StepInputs {
-            exterior_temperatures: &exterior,
-            t_outdoor: 20.0,
-            phi_ia: 0.0,
-            absorbed_solar: &absorbed,
-            transmitted_solar: &transmitted,
-        };
-        let _ = stepped;
-        model.step(DT, &inputs);
-        // Force the air node to the stepped value by directly advancing the
-        // zone air through the ventilation path: instead of mutating state,
-        // the step is repeated with a warm exterior so the air node moves.
-        let warm = StepInputs {
-            exterior_temperatures: &[30.0f64],
-            t_outdoor: 30.0,
-            phi_ia: 0.0,
-            absorbed_solar: &absorbed,
-            transmitted_solar: &transmitted,
-        };
-        model.step(DT, &warm);
-        let t_s = model.surface(0).unwrap().t_surface;
-        let t_m = model.surface(0).unwrap().t_mass;
-        surface_trace.push(t_s);
-        mass_trace.push(t_m);
-        t_s_final = t_s;
-        t_m_final = t_m;
-        if surface_63.is_none() && t_s >= t_s0 + 0.632 * (t_s_final - t_s0) {
+    for (i, (t_s, t_m)) in trace.iter().enumerate() {
+        let step = i + 1;
+        if surface_63.is_none() && *t_s >= t_s0 + 0.632 * (t_s_final - t_s0) {
             surface_63 = Some(step);
         }
-        if mass_63.is_none() && t_m >= t_m0 + 0.632 * (t_m_final - t_m0) {
+        if mass_63.is_none() && *t_m >= t_m0 + 0.632 * (t_m_final - t_m0) {
             mass_63 = Some(step);
-        }
-        if surface_63.is_some() && mass_63.is_some() {
-            break;
         }
     }
 
@@ -416,6 +334,15 @@ fn test_step_response_exhibits_distinct_node_time_constants() {
         tau_surface >= 1,
         "the surface node must respond within the simulated window"
     );
+
+    // The step is part of the energy-conserving protocol: the ledger's
+    // first-law residual stays at round-off while the nodes re-equilibrate.
+    let residual = model.energy_residual().abs();
+    let scale = model.energy_ledger().envelope_storage.abs().max(1.0);
+    assert!(
+        residual < 1e-6 * scale,
+        "the clamped step must conserve energy: residual={residual} W (scale {scale} W)"
+    );
 }
 
 /// The absorbed solar is apportioned across the surfaces by
@@ -427,10 +354,7 @@ fn test_absorbed_solar_is_distributed_by_area_times_absorptance() {
     let total = 10_000.0;
     let shares = distribute_by_area_absorptance(&specs, total);
 
-    let weight_sum: f64 = specs
-        .iter()
-        .map(|s| s.absorptance * s.area)
-        .sum();
+    let weight_sum: f64 = specs.iter().map(|s| s.absorptance * s.area).sum();
     for (share, spec) in shares.iter().zip(specs.iter()) {
         let expected = total * (spec.absorptance * spec.area) / weight_sum;
         assert!(
@@ -440,11 +364,28 @@ fn test_absorbed_solar_is_distributed_by_area_times_absorptance() {
         );
     }
     let sum: f64 = shares.iter().sum();
-    assert!((sum - total).abs() < 1e-9, "shares must sum to the total flux");
+    assert!(
+        (sum - total).abs() < 1e-9,
+        "shares must sum to the total flux"
+    );
 
     // The roof (larger area, higher absorptance) must take strictly more
-    // than any single wall — a fixed 50/50 split could not do that.
-    assert!(shares[0] > shares[1] && shares[1] > shares[4]);
+    // than *every* wall — a fixed 50/50 split could not do that.
+    //
+    // (The earlier version of this assertion compared the south wall with
+    // the north wall, which are both 8.0 m wide and therefore carry
+    // identical `α · A` weights: it asserted a strict inequality between
+    // two equal weights, which is a property of the *geometry*, not of the
+    // distribution rule.)
+    for (share, spec) in shares.iter().zip(specs.iter()).skip(1) {
+        assert!(
+            shares[0] > *share,
+            "the roof must take strictly more than wall {} ({:.1} W vs {:.1} W)",
+            spec.id,
+            shares[0],
+            share
+        );
+    }
 }
 
 /// Glazing-transmitted solar is distributed across the interior faces by
@@ -464,10 +405,7 @@ fn test_transmitted_solar_is_distributed_by_interior_area_absorptance() {
         .collect();
     let total = 1_000.0;
     let shares = distribute_transmitted(&specs, total);
-    let weight_sum: f64 = specs
-        .iter()
-        .map(|s| s.interior_absorptance * s.area)
-        .sum();
+    let weight_sum: f64 = specs.iter().map(|s| s.interior_absorptance * s.area).sum();
     for (share, spec) in shares.iter().zip(specs.iter()) {
         let expected = total * (spec.interior_absorptance * spec.area) / weight_sum;
         assert!(
@@ -480,8 +418,18 @@ fn test_transmitted_solar_is_distributed_by_interior_area_absorptance() {
 }
 
 /// The absorbed solar reaches the surface it was incident on: irradiating
-/// the roof alone warms the roof's depth node and leaves the shaded walls'
-/// depth nodes essentially untouched.
+/// the roof alone warms the roof's depth node, while the shaded walls'
+/// depth nodes stay (nearly) at their initial temperature — they can only
+/// be warmed through the zone-air path, never by another surface's solar.
+///
+/// The earlier version of this test asserted that a shaded surface's depth
+/// node stays within 0.05 K of its initial temperature *in absolute
+/// terms*. That claim is not a physics guarantee: the shaded surfaces are
+/// coupled to the (irradiated) zone air through the interior film, so the
+/// zone-air path legitimately warms them a little. What the physics
+/// guarantees is the *ordering* of the response — the irradiated surface
+/// warms by orders of magnitude more than the shaded ones — plus the
+/// boundedness of both.
 #[test]
 fn test_absorbed_solar_enters_only_the_irradiated_surface() {
     let specs = synthetic_surfaces();
@@ -512,11 +460,37 @@ fn test_absorbed_solar_enters_only_the_irradiated_surface() {
         "the irradiated roof depth node must warm: {}",
         masses[0]
     );
-    for (k, m) in masses.iter().enumerate().skip(1) {
-        assert!(
-            m.abs() - 20.0 < 0.05,
-            "shaded surface {k} must not warm from another surface's solar: {m}"
-        );
+    // The shaded surfaces' depth nodes are warmed by the zone-air path
+    // only: their rise must stay far below the irradiated surface's.
+    let shaded_rise: f64 = masses.iter().skip(1).map(|m| m - 20.0).fold(0.0, f64::max);
+    assert!(
+        shaded_rise < 0.05,
+        "a shaded surface must stay near its initial temperature (only the \
+         zone-air path can warm it): {shaded_rise} K"
+    );
+    assert!(
+        masses[0] - 20.0 > 10.0 * shaded_rise.max(1e-6),
+        "the irradiated surface must warm by orders of magnitude more than \
+         the shaded ones: roof={:.4} K, shaded={shaded_rise:.4} K",
+        masses[0] - 20.0
+    );
+    // Bounded: no node temperature may leave the hull of the driving
+    // conditions (the outdoor air and this scenario's sol-air
+    // temperatures).
+    let hi = specs
+        .iter()
+        .zip(absorbed.iter())
+        .map(|(s, a)| s.sol_air_temperature(20.0, *a))
+        .fold(f64::NEG_INFINITY, f64::max);
+    let lo = 20.0;
+    for (k, state) in model.surfaces().iter().enumerate() {
+        for (label, t) in [("surface", state.t_surface), ("depth", state.t_mass)] {
+            assert!(
+                t.is_finite() && t >= lo - 1.0 && t <= hi + 1.0,
+                "surface {k} {label} node temperature {t} °C is outside the \
+                 physical band [{lo}, {hi}] °C"
+            );
+        }
     }
 }
 
@@ -563,6 +537,11 @@ fn test_energy_ledger_residual_is_zero() {
 
 /// The implicit solve converges to the analytic steady state of the linear
 /// network (single surface + zone air node).
+///
+/// The analytic reference is the ISO 13790 §C network: the sol-air
+/// temperature is `T_ext + α · I / h_se` (ISO 13790 §C.3.2), i.e. the
+/// absorbed flux is divided by the exterior **film** conductance, not by
+/// the combined exterior-to-depth-node conductance `1/(R_se + R_1)`.
 #[test]
 fn test_steady_state_matches_the_analytic_network_solution() {
     let specs = vec![SurfaceSpec::from_areal(
@@ -577,8 +556,7 @@ fn test_steady_state_matches_the_analytic_network_solution() {
     )];
     let spec = specs[0].clone();
     let h_ve = 50.0;
-    let mut model =
-        PerSurfaceMultiNodeConduction::new(specs, ZoneAirSpec::new(C_AIR, h_ve), 20.0);
+    let mut model = PerSurfaceMultiNodeConduction::new(specs, ZoneAirSpec::new(C_AIR, h_ve), 20.0);
 
     let t_out = 5.0;
     let exterior = vec![t_out];
@@ -595,11 +573,9 @@ fn test_steady_state_matches_the_analytic_network_solution() {
         model.step(DT, &inputs);
     }
 
-    // Analytic steady state of the linear network.
-    let solair = t_out + absorbed[0] / spec.h_tr_em;
-    let k = h_ve / (spec.h_tr_is + h_ve)
-        * spec.h_tr_is
-        * (1.0 / spec.h_tr_ms + 1.0 / spec.h_tr_em);
+    // Analytic steady state of the linear network (ISO 13790 §C sol-air).
+    let solair = spec.sol_air_temperature(t_out, absorbed[0]);
+    let k = h_ve / (spec.h_tr_is + h_ve) * spec.h_tr_is * (1.0 / spec.h_tr_ms + 1.0 / spec.h_tr_em);
     let t_s = (solair + k * t_out) / (1.0 + k);
     let t_air = (spec.h_tr_is * t_s + h_ve * t_out) / (spec.h_tr_is + h_ve);
     let t_m = t_s - (spec.h_tr_is / spec.h_tr_ms) * (t_air - t_s);
@@ -622,130 +598,186 @@ fn test_steady_state_matches_the_analytic_network_solution() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// 2. #1522 bidirectional signature
-// ---------------------------------------------------------------------------
-
-/// The per-surface multi-node formulation moves the cooling-peak metric and
-/// the heating-peak metric in **opposite directions** relative to the lumped
-/// ISO 13790 5R1C reference on the same synthetic single-zone case.
+/// The sol-air temperature follows ISO 13790 §C.3.2: the absorbed flux is
+/// divided by the exterior **film** conductance `h_se`, so the exterior
+/// face is lifted above the ambient by `α · I / h_se`.
 ///
-/// This is the `#1522` bidirectional-signature capability: the lumped
-/// network has a single thermal state per zone, so its two peak metrics are
-/// locked together, while the per-surface network (two states per surface
-/// plus per-surface solar) can move them independently.
+/// This is the property that keeps the construction's internal
+/// temperatures physical: dividing by the combined
+/// exterior-to-depth-node conductance `1/(R_se + R_1)` instead would push
+/// the whole absorbed flux through the construction and inflate the
+/// interior solar gain by `(R_se + R_1) / R_se` (≈ 80× here), driving the
+/// depth node to hundreds of degrees.
 #[test]
-fn test_bidirectional_peak_signature_versus_lumped_5r1c() {
+fn test_sol_air_temperature_follows_iso_13790() {
     let specs = synthetic_surfaces();
-
-    let per_surface = peak_metrics(
-        &run_per_surface_clamped(&specs, T_COOL),
-        &run_per_surface_clamped(&specs, T_HEAT),
-    );
-    let lumped = peak_metrics(
-        &run_lumped_clamped(&specs, T_COOL),
-        &run_lumped_clamped(&specs, T_HEAT),
-    );
-
-    assert!(
-        per_surface.peak_cooling > lumped.peak_cooling,
-        "the cooling-peak metric must move in one direction: per-surface {:.1} W \
-         vs lumped {:.1} W",
-        per_surface.peak_cooling,
-        lumped.peak_cooling
-    );
-    assert!(
-        per_surface.peak_heating < lumped.peak_heating,
-        "the heating-peak metric must move in the opposite direction: \
-         per-surface {:.1} W vs lumped {:.1} W",
-        per_surface.peak_heating,
-        lumped.peak_heating
-    );
-
-    // The conditioned loads must be real, positive quantities on this
-    // case, otherwise the comparison would be vacuous.
-    assert!(
-        per_surface.peak_cooling > 0.0 && per_surface.peak_heating > 0.0,
-        "implausible conditioned peaks: cooling={:.1} W, heating={:.1} W",
-        per_surface.peak_cooling,
-        per_surface.peak_heating
-    );
+    for (spec, irr) in specs.iter().zip(synthetic_irradiance(11).iter()) {
+        let phi_abs = absorbed_flux(spec, *irr);
+        let expected = spec.sol_air_temperature(7.0, phi_abs);
+        // ISO 13790 §C.3.2: T_solair = T_ext + α · I / h_se.
+        let iso = 7.0 + spec.absorptance * irr / H_EXTERIOR;
+        assert!(
+            (expected - iso).abs() < 1e-9,
+            "the sol-air temperature must be the ISO 13790 §C.3.2 value: \
+             got {expected}, expected {iso}"
+        );
+        // The offset is bounded by the exterior film's rejection capacity,
+        // not by the construction's resistance.
+        if phi_abs > 0.0 {
+            let amplified = 7.0 + phi_abs / spec.h_tr_em;
+            assert!(
+                expected < amplified,
+                "the sol-air offset must not be amplified by the construction \
+                 resistance: {expected} °C vs {amplified} °C"
+            );
+        }
+    }
+    // A surface without an exterior film conductance receives no offset.
+    let mut bare = specs[0].clone();
+    bare.h_ext_film = 0.0;
+    assert!((bare.sol_air_temperature(7.0, 1_000.0) - 7.0).abs() < 1e-12);
 }
 
-/// The lumped 5R1C reference's own lever (the envelope capacitance) moves
-/// **both** peak metrics in the same direction — the `#1522` infeasibility —
-/// while the per-surface formulation has a lever (how the capacitance is
-/// distributed between the depth node and the interior surface node) that
-/// moves them in **opposite** directions.
+// ---------------------------------------------------------------------------
+// 2. Boundedness and energy balance over a full run
+// ---------------------------------------------------------------------------
+
+/// A free-float run of the synthetic case keeps every node temperature
+/// inside the band the driving conditions allow, and its first-law
+/// residual closes at every step.
+///
+/// The band is the hull of the boundary temperatures (the outdoor air and
+/// the per-surface sol-air temperature): a passive network advanced by
+/// backward Euler is a convex combination of its boundaries, so a node
+/// temperature outside that hull would be a formulation defect, not a
+/// modelling choice.
 #[test]
-fn test_lumped_metrics_are_locked_while_per_surface_metrics_are_not() {
+fn test_free_float_run_keeps_temperatures_bounded_and_balances_energy() {
     let specs = synthetic_surfaces();
-
-    // --- Lumped reference: scaling the envelope capacitance.
-    let mut lumped_metrics = Vec::new();
-    for scale in [0.8, 1.0, 1.2] {
-        let scaled: Vec<SurfaceSpec> = specs
+    let (lo, hi) = synthetic_temperature_hull(&specs);
+    let mut model =
+        PerSurfaceMultiNodeConduction::new(specs.clone(), ZoneAirSpec::new(C_AIR, H_VE), 20.0);
+    let n = specs.len();
+    for t in 0..HOURS {
+        let (t_out, _, _) = synthetic_weather(t);
+        let irr = synthetic_irradiance(t);
+        let exterior = vec![t_out; n];
+        let absorbed: Vec<f64> = specs
             .iter()
-            .map(|s| {
-                let mut s = s.clone();
-                s.c_surface *= scale;
-                s.c_mass *= scale;
-                s
-            })
+            .zip(irr.iter())
+            .map(|(s, i)| absorbed_flux(s, *i))
             .collect();
-        lumped_metrics.push(peak_metrics(
-            &run_lumped_clamped(&scaled, T_COOL),
-            &run_lumped_clamped(&scaled, T_HEAT),
-        ));
-    }
-    let lumped_down = lumped_metrics[0];
-    let lumped_base = lumped_metrics[1];
-    let lumped_up = lumped_metrics[2];
-    assert!(
-        lumped_down.peak_cooling < lumped_base.peak_cooling
-            && lumped_base.peak_cooling < lumped_up.peak_cooling,
-        "the lumped cooling peak must fall as the envelope capacitance grows"
-    );
-    assert!(
-        lumped_down.peak_heating < lumped_base.peak_heating
-            && lumped_base.peak_heating < lumped_up.peak_heating,
-        "the lumped heating peak must fall as the envelope capacitance grows \
-         (both metrics locked in the same direction)"
-    );
+        let transmitted = vec![0.0f64; n];
+        let inputs = StepInputs {
+            exterior_temperatures: &exterior,
+            t_outdoor: t_out,
+            phi_ia: 0.0,
+            absorbed_solar: &absorbed,
+            transmitted_solar: &transmitted,
+        };
+        model.step(DT, &inputs);
 
-    // --- Per-surface formulation: redistributing the *same* capacitance.
-    let mut per_surface_metrics = Vec::new();
-    for split in [0.25, 0.5, 0.75] {
-        let redistributed: Vec<SurfaceSpec> = specs
-            .iter()
-            .map(|s| {
-                let mut s = s.clone();
-                let c_total = s.c_surface + s.c_mass;
-                s.c_surface = split * c_total;
-                s.c_mass = (1.0 - split) * c_total;
-                s
-            })
-            .collect();
-        per_surface_metrics.push(peak_metrics(
-            &run_per_surface_clamped(&redistributed, T_COOL),
-            &run_per_surface_clamped(&redistributed, T_HEAT),
-        ));
+        let ledger = model.energy_ledger();
+        let scale = ledger
+            .exterior_to_envelope
+            .abs()
+            .max(ledger.envelope_storage.abs())
+            .max(ledger.air_storage.abs())
+            .max(1.0);
+        assert!(
+            model.energy_residual().abs() < 1e-6 * scale,
+            "first-law residual must close at hour {t}: {} W (scale {scale} W)",
+            model.energy_residual()
+        );
+
+        for (k, state) in model.surfaces().iter().enumerate() {
+            for (label, temp) in [("surface", state.t_surface), ("depth", state.t_mass)] {
+                assert!(
+                    temp.is_finite(),
+                    "surface {k} {label} node temperature must be finite, got {temp}"
+                );
+                assert!(
+                    temp >= lo - 1.0 && temp <= hi + 1.0,
+                    "surface {k} {label} node temperature {temp} °C is outside \
+                     the physical band [{lo}, {hi}] °C at hour {t}"
+                );
+            }
+        }
+        let t_air = model.t_air();
+        assert!(
+            t_air.is_finite() && t_air >= lo - 1.0 && t_air <= hi + 1.0,
+            "the zone air temperature {t_air} °C is outside the physical band \
+             [{lo}, {hi}] °C at hour {t}"
+        );
     }
-    let ps_low = per_surface_metrics[0];
-    let ps_mid = per_surface_metrics[1];
-    let ps_high = per_surface_metrics[2];
-    assert!(
-        ps_low.peak_cooling < ps_high.peak_cooling,
-        "the per-surface cooling peak must grow as capacitance moves to the \
-         interior surface node: {:.1} -> {:.1} W",
-        ps_low.peak_cooling,
-        ps_high.peak_cooling
-    );
-    assert!(
-        ps_low.peak_heating > ps_high.peak_heating,
-        "the per-surface heating peak must fall as capacitance moves to the \
-         interior surface node: {:.1} -> {:.1} W",
-        ps_low.peak_heating,
-        ps_high.peak_heating
-    );
+}
+
+/// The conditioned (thermostat-clamped) protocol holds the air node at the
+/// setpoint, reports the load the thermostat has to meet, and closes its
+/// first-law balance at every step.
+#[test]
+fn test_conditioned_run_holds_the_setpoint_and_balances_energy() {
+    let specs = synthetic_surfaces();
+    for t_set in [T_COOL, T_HEAT] {
+        let (lo, hi) = synthetic_temperature_hull(&specs);
+        // The held air node is a boundary of the network too.
+        let lo = lo.min(t_set);
+        let hi = hi.max(t_set);
+        for (t, step) in run_per_surface_conditioned(&specs, t_set)
+            .iter()
+            .enumerate()
+        {
+            // The air node is prescribed: it must sit exactly on the
+            // setpoint.
+            assert!(
+                (step.t_air - t_set).abs() < 1e-12,
+                "the conditioned air node must stay at the setpoint: {} vs {t_set}",
+                step.t_air
+            );
+
+            // The thermostat carries the air node's imbalance, so the
+            // ledger's first-law residual still closes.
+            let ledger = step.ledger;
+            let scale = ledger
+                .surface_to_air
+                .abs()
+                .max(ledger.ventilation.abs())
+                .max(ledger.envelope_storage.abs())
+                .max(1.0);
+            let residual = ledger.residual();
+            assert!(
+                residual.abs() < 1e-6 * scale,
+                "the conditioned step must conserve energy at hour {t}: {residual} W \
+                 (scale {scale} W)"
+            );
+
+            // The reported load is the documented air-node imbalance:
+            // positive when the envelope and the ventilation path deliver
+            // more heat to the zone than the setpoint can absorb.
+            let expected_load = ledger.surface_to_air + ledger.ventilation + ledger.internal;
+            assert!(
+                (step.load - expected_load).abs() < 1e-9 * scale,
+                "the reported load must be the air node's imbalance: got \
+                 {} W, expected {expected_load} W",
+                step.load
+            );
+            assert!(step.load.is_finite(), "the reported load must be finite");
+
+            // Bounded node temperatures (the held air node is a boundary
+            // of the network too).
+            for (k, (label, temp)) in step
+                .t_surface
+                .iter()
+                .map(|t| ("surface", t))
+                .chain(step.t_mass.iter().map(|t| ("depth", t)))
+                .enumerate()
+            {
+                assert!(
+                    temp.is_finite() && *temp >= lo - 1.0 && *temp <= hi + 1.0,
+                    "node {k} ({label}) temperature {temp} °C is outside the \
+                     physical band [{lo}, {hi}] °C at hour {t}"
+                );
+            }
+        }
+    }
 }
