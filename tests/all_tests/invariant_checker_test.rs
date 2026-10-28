@@ -381,18 +381,23 @@ fn test_r77_composite_gain_probe_leverages_5r1c_state() {
         .r77_mass_substep_coeffs
         .as_ref()
         .expect("a live coupled 5R1C step must persist the mass record");
+    // [Round 107 re-pin — increment C layout: the air record carries
+    // SEVEN entries per sub-step (the round-105 five-tuple completed by
+    // the mass advance's own (a, bl)); this contract still composes the
+    // pair exactly as the composite arm consumes it (mass-record a/bl,
+    // air D/M/W/h3od), so only the stride changes.]
     assert_eq!(
-        air_rec[0].len() / 5,
+        air_rec[0].len() / 7,
         mass_rec[0].len() / 4,
         "air and mass records must carry the same sub-step count"
     );
     let n = mass_rec[0].len() / 4;
     let (mut r_air, mut r_m) = (0.0f64, 0.0f64);
     for k in 0..n {
-        let d = air_rec[0][5 * k];
-        let m_coef = air_rec[0][5 * k + 1];
-        let w_coef = air_rec[0][5 * k + 2];
-        let h3od = air_rec[0][5 * k + 4];
+        let d = air_rec[0][7 * k];
+        let m_coef = air_rec[0][7 * k + 1];
+        let w_coef = air_rec[0][7 * k + 2];
+        let h3od = air_rec[0][7 * k + 4];
         let a_m = mass_rec[0][4 * k];
         let bl = mass_rec[0][4 * k + 3];
         let (ra, rm) = (r_air, r_m);
@@ -429,9 +434,15 @@ fn test_r77_composite_gain_probe_leverages_5r1c_state() {
 /// After the rebuild (engine-side `dphi_st_zone/d(load_w)` recorded on the
 /// same branch the integrator took, consumed by the checker at the probe's
 /// load) the response is the mirror's own surface-identity algebra: the
-/// load delta moves each class surface drive by `rad_frac·w·Δ` and the
-/// residual by exactly `rad_frac·Δ` — the aggregation identity is load-free
-/// by construction (it recomputes from the stored per-class `t_s`).
+/// by `rad_frac·w·Δ` and the residual by exactly `rad_frac·Δ` — the
+/// aggregation identity is load-free by construction (it recomputes from
+/// the stored per-class `t_s`).
+///
+/// [Round 107 re-pin — increment C: the t_i route consumes the air-node
+/// record, so the closed form gains the air-borne share
+/// `h_is_zone·r_air_N·Δ` on top of `rad_frac·Δ`; the red-first contract
+/// for that route is
+/// `test_perclass_ti_route_consumes_air_record` below.]
 ///
 /// Baseline note (loop round 104 red run): on this surgical state the
 /// unperturbed per-class residual is NOT zero — the committed mass state
@@ -483,15 +494,31 @@ fn test_perclass_ts_mirror_gain_probe_leverages_5r1c_state() {
         checker.check_invariant_with_artificial_gain(&model, 3600.0, outdoor_temp, 1000.0, 0);
     println!("with-gain (1 kW, zone 0) balance: {}", with_gain.balance);
 
-    // Leverage + closed form: the response must equal `rad_frac·Δ` — the
-    // surface identity is linear in `phi_st_c` and the aggregation
-    // identity is load-free (it recomputes from the stored per-class
-    // `t_s`).
+    // Leverage + closed form. [Round 107 re-pin — increment C: the t_i
+    // route now consumes the air-node record, so the response is the
+    // round-104 direct share `rad_frac·Δ` plus the air-borne share
+    // `h_is_zone·r_air_N·Δ` (each class's denom_s cancels; the class
+    // shares w sum to 1; the aggregation identity stays load-free). The
+    // air response composes from the record's seven-entry layout exactly
+    // as the plan-§2 recurrence states.]
     let rad_frac = 1.0 - model.solar.convective_fraction;
+    let air_rec = model
+        .mass
+        .r77_air_substep_coeffs
+        .as_ref()
+        .expect("the surgical state keeps the air-node record live");
+    let mut r_air_n = 0.0f64;
+    let mut r_m_n = 0.0f64;
+    for k in 0..air_rec[0].len() / 7 {
+        let (ra, rm) = (r_air_n, r_m_n);
+        r_air_n = air_rec[0][7 * k] * ra + air_rec[0][7 * k + 1] * rm + air_rec[0][7 * k + 2];
+        r_m_n = air_rec[0][7 * k + 5] * rm + air_rec[0][7 * k + 4] * ra + air_rec[0][7 * k + 6];
+    }
+    let h_is_zone = model.conduction.h_tr_is.as_ref()[0];
+    let expected = (rad_frac + h_is_zone * r_air_n) * 1000.0;
     let response = (with_gain.balance - no_gain.balance).abs();
     println!(
-        "probe response to 1 kW gain: {response} W (closed form rad_frac·Δ = {} W)",
-        rad_frac * 1000.0
+        "probe response to 1 kW gain: {response} W (closed form (rad_frac + h_is_zone·r_air_N)·Δ = {expected} W, r_air_N {r_air_n:.9} per W)"
     );
     assert!(
         response > 1e-6,
@@ -499,9 +526,8 @@ fn test_perclass_ts_mirror_gain_probe_leverages_5r1c_state() {
          {response} W (§LIMIT-22 per-class rebuild, loop round 104)"
     );
     assert!(
-        (response - rad_frac * 1000.0).abs() <= 1e-6 * response,
-        "probe response must equal the closed form rad_frac·Δ: got {response} W, expected {} W",
-        rad_frac * 1000.0
+        (response - expected).abs() <= 1e-6 * response,
+        "probe response must equal the closed form (rad_frac + h_is_zone·r_air_N)·Δ: got {response} W, expected {expected} W"
     );
 
     // Affine-model contract: the recorded coefficient is load-linear, so
@@ -578,12 +604,14 @@ fn test_r77_air_record_composes_engine_counterfactual() {
         .as_ref()
         .expect("a live coupled 5R1C step must persist the mass record");
     assert!(
-        !air_rec[0].is_empty() && air_rec[0].len() % 5 == 0,
-        "air record must carry 5 entries per sub-step, got len {}",
+        !air_rec[0].is_empty() && air_rec[0].len() % 7 == 0,
+        "air record must carry 7 entries per sub-step (round-107 layout: \
+         the mass advance's consumed (a, bl) complete the round-105 \
+         five-tuple), got len {}",
         air_rec[0].len()
     );
     assert_eq!(
-        air_rec[0].len() / 5,
+        air_rec[0].len() / 7,
         mass_rec[0].len() / 4,
         "air and mass records must carry the same sub-step count"
     );
@@ -594,15 +622,19 @@ fn test_r77_air_record_composes_engine_counterfactual() {
     // swapped into `air_node_t_air` only after the mass block reads
     // `t_i_sub` (engine data flow), so the air→mass route carries r_air
     // from the prior sub-step — which starts at 0 (hour-start committed).
-    let n = mass_rec[0].len() / 4;
+    // [Round 107 re-pin: the record is self-contained — the mass advance's
+    // consumed (a, bl) ride in slots 5/6 — so the composition no longer
+    // reads the mass record (the pairing assert above stays as the shape
+    // check). Same recurrence, same values, single stride.]
+    let n = air_rec[0].len() / 7;
     let (mut r_air, mut r_m) = (0.0f64, 0.0f64);
     for k in 0..n {
-        let d = air_rec[0][5 * k];
-        let m_coef = air_rec[0][5 * k + 1];
-        let w_coef = air_rec[0][5 * k + 2];
-        let h3od = air_rec[0][5 * k + 4];
-        let a_m = mass_rec[0][4 * k];
-        let bl = mass_rec[0][4 * k + 3];
+        let d = air_rec[0][7 * k];
+        let m_coef = air_rec[0][7 * k + 1];
+        let w_coef = air_rec[0][7 * k + 2];
+        let h3od = air_rec[0][7 * k + 4];
+        let a_m = air_rec[0][7 * k + 5];
+        let bl = air_rec[0][7 * k + 6];
         // Both updates consume the previous sub-step's state pair.
         let (ra, rm) = (r_air, r_m);
         r_air = d * ra + m_coef * rm + w_coef;
@@ -636,5 +668,145 @@ fn test_r77_air_record_composes_engine_counterfactual() {
         rel(predicted_mass, actual_mass) <= 1e-9,
         "mass response must equal the composed record prediction: predicted \
          {predicted_mass} K, got {actual_mass} K"
+    );
+}
+
+/// Loop round 107 (§LIMIT-22 air-node mirror, increment C) — the per-class
+/// t_s-first mirror's `t_i` route consumes the air-node record: under the
+/// artificial-gain probe the surface identity's air input responds with the
+/// composed air response `r_air_N·Δ` (the plan-§2 staggered recurrence),
+/// on top of the round-104 direct surface share `rad_frac·Δ`.
+///
+/// The air record must compose SELF-CONTAINED: the per-class arm's entry
+/// condition is precisely that the zone's R77 mass record is absent (the
+/// composite arm takes precedence otherwise), so the mass-advance
+/// coefficients `a_k`/`bl_k` the response recurrence needs ride in the air
+/// record's own sixth/seventh slots — recorded in the same lockstep push,
+/// on the same branch the values were consumed (round-107 layout
+/// extension of the round-105 five-tuple; plan Z4).
+///
+/// Red-first (loop round 107): on the pre-C tree the record is five-slot
+/// (no mass coefficients to compose from) and the t_i route is the
+/// committed-air fall-through, so the shape precondition below fails
+/// (rc=101) and the arm's probe response stays at the round-104 closed
+/// form `rad_frac·Δ` (400.0000000000003 W on this fixture).
+///
+/// Zero-delta behavior is untouched by construction — the Δ = 0 branch
+/// consumes the committed air verbatim and never reads the record (the
+/// #3297 residual-zero property); the round battery proves the
+/// bit-identity, not this test.
+#[test]
+fn test_perclass_ti_route_consumes_air_record() {
+    // Same harness as the round-103/104/105 contracts: Case 600 (LowMass)
+    // under the explicit legacy selector pins the 5R1C network (the gauge
+    // build's `Gauge` default selector routes this spec through the gauge
+    // dispatch's mass-state proxy — the increment-D arm, not this
+    // contract).
+    let spec = ASHRAE140Case::Case600.spec();
+    let mut model = ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::legacy())
+        .expect("legacy 5R1C selector must initialize");
+    let outdoor_temp = 10.0;
+
+    model.step_physics(0, outdoor_temp, 3600.0);
+
+    // Surgical arm isolation (the round-104 entry condition): clear zone
+    // 0's R77 mass record so the checker falls through to the per-class
+    // mirror. The AIR record stays live — it is exactly what the t_i
+    // route consumes.
+    let r77 = model
+        .mass
+        .r77_mass_substep_coeffs
+        .as_mut()
+        .expect("a live 5R1C step must persist the R77 record");
+    assert!(
+        !r77[0].is_empty(),
+        "precondition: zone 0 carries a composite record before the surgery"
+    );
+    r77[0].clear();
+
+    // Record shape (round-107 layout): seven entries per sub-step — the
+    // round-105 five-tuple [D, M, W, den, h3od] completed by the mass
+    // advance's own consumed coefficients [a, bl].
+    let air_rec = model
+        .mass
+        .r77_air_substep_coeffs
+        .as_ref()
+        .expect("a live coupled 5R1C step must persist the air-node record");
+    assert!(
+        air_rec[0].len() >= 7 && air_rec[0].len() % 7 == 0,
+        "the air record must carry 7 entries per sub-step (round-107 layout \
+         with the mass-advance coefficients) so the per-class t_i route can \
+         compose the plan-§2 response without the mass record — got len {}",
+        air_rec[0].len()
+    );
+    // Composed air response (plan §2): both updates consume the PREVIOUS
+    // sub-step's state pair.
+    let mut r_air_n = 0.0f64;
+    let mut r_m_n = 0.0f64;
+    for k in 0..air_rec[0].len() / 7 {
+        let (ra, rm) = (r_air_n, r_m_n);
+        r_air_n = air_rec[0][7 * k] * ra + air_rec[0][7 * k + 1] * rm + air_rec[0][7 * k + 2];
+        r_m_n = air_rec[0][7 * k + 5] * rm + air_rec[0][7 * k + 4] * ra + air_rec[0][7 * k + 6];
+    }
+    assert!(
+        r_air_n.abs() > 1e-12,
+        "the composed air response must be non-zero, got {r_air_n}"
+    );
+
+    let mut checker = InvariantChecker::new(1e-3);
+    let no_gain = checker.check_invariant(&model, 3600.0, outdoor_temp);
+    println!("no-gain balance: {}", no_gain.balance);
+
+    let with_gain =
+        checker.check_invariant_with_artificial_gain(&model, 3600.0, outdoor_temp, 1000.0, 0);
+
+    // Closed form (plan §2 + the round-104 surface identity): the phi_st
+    // route contributes `rad_frac·Δ`; the t_i route contributes
+    // `h_is_zone·r_air_N·Δ` (each class's denom_s cancels; the class
+    // shares w sum to 1); the aggregation identity stays load-free.
+    let rad_frac = 1.0 - model.solar.convective_fraction;
+    let h_is_zone = model.conduction.h_tr_is.as_ref()[0];
+    let expected = (rad_frac + h_is_zone * r_air_n) * 1000.0;
+    let response = with_gain.balance - no_gain.balance;
+    println!(
+        "probe response signed {response} W vs composed closed form {expected} W (rad_frac {rad_frac}, h_is_zone {h_is_zone}, r_air_N {r_air_n:.9} per W, r_m_N {r_m_n:.9} per W)"
+    );
+    assert!(
+        (response - expected).abs() <= 1e-9 * expected.abs(),
+        "per-class t_i route must consume the composed air response (§2 recurrence, round 107): \
+         got {response} W, expected {expected} W"
+    );
+
+    // Affine in the load delta.
+    let with_gain_2k =
+        checker.check_invariant_with_artificial_gain(&model, 3600.0, outdoor_temp, 2000.0, 0);
+    let response_2k = with_gain_2k.balance - no_gain.balance;
+    println!("probe response to 2 kW gain: {response_2k} W");
+    assert!(
+        (response_2k - 2.0 * response).abs() <= 1e-6 * response_2k.abs(),
+        "probe response must be affine in the load delta: 1 kW {response} W vs 2 kW {response_2k} W"
+    );
+
+    // Fall-through discriminator: with the air record cleared the t_i
+    // route keeps the committed air and the response returns to the
+    // round-104 closed form `rad_frac·Δ` verbatim.
+    model
+        .mass
+        .r77_air_substep_coeffs
+        .as_mut()
+        .expect("air record present before the fall-through surgery")[0]
+        .clear();
+    let with_gain_noair =
+        checker.check_invariant_with_artificial_gain(&model, 3600.0, outdoor_temp, 1000.0, 0);
+    let response_noair = with_gain_noair.balance - no_gain.balance;
+    println!(
+        "fall-through response {response_noair} W vs round-104 closed form {} W",
+        rad_frac * 1000.0
+    );
+    assert!(
+        (response_noair - rad_frac * 1000.0).abs() <= 1e-6 * response_noair.abs(),
+        "with the air record absent the t_i route must keep the committed air: \
+         got {response_noair} W, expected {} W",
+        rad_frac * 1000.0
     );
 }

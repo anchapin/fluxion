@@ -475,7 +475,11 @@ impl InvariantChecker {
                             .r77_air_substep_coeffs
                             .as_ref()
                             .and_then(|v| v.get(i))
-                            .filter(|air| air.len() == n * 5)
+                            // [Round 107 — the air record carries SEVEN
+                            // entries per sub-step: the mass advance's
+                            // consumed (a, bl) complete the round-105
+                            // five-tuple (slots 5/6).]
+                            .filter(|air| air.len() == n * 7)
                         {
                             let mut t_comp = t_mass_prev;
                             let mut r_air = 0.0f64;
@@ -487,10 +491,10 @@ impl InvariantChecker {
                                 } else {
                                     t_comp = a * t_comp
                                         + (*b + *bl * load_delta)
-                                        + air[5 * k + 4] * ra * load_delta;
+                                        + air[7 * k + 4] * ra * load_delta;
                                 }
-                                r_air = air[5 * k] * ra + air[5 * k + 1] * rm + air[5 * k + 2];
-                                r_m = a * rm + air[5 * k + 4] * ra + *bl;
+                                r_air = air[7 * k] * ra + air[7 * k + 1] * rm + air[7 * k + 2];
+                                r_m = a * rm + air[7 * k + 4] * ra + *bl;
                             }
                             let denom_final = c[c.len() - 2];
                             let r = (t_mass - t_comp) * denom_final;
@@ -597,6 +601,45 @@ impl InvariantChecker {
                             .copied()
                             .unwrap_or(0.0);
                     let load_delta = load_w - load_committed;
+                    // [Loop round 107 — §LIMIT-22 air-node mirror, increment
+                    // C: the surface identities' `t_i` route consumes the
+                    // air-node record. The per-class arm engages precisely
+                    // when the zone's R77 mass record is absent (the
+                    // composite arm above takes precedence otherwise), so
+                    // the response pair composes from the air record's own
+                    // seven-entry layout — the mass advance's consumed
+                    // `(a, bl)` ride in slots 5/6 of the same lockstep push.
+                    // Under the artificial-gain probe the surface
+                    // identity's air input responds with the composed air
+                    // response `r_air_N·Δ` (plan §2 staggered recurrence,
+                    // both updates consuming the previous sub-step's state
+                    // pair); at Δ = 0 the route never engages and the
+                    // committed air is consumed verbatim (the #3297
+                    // residual-zero property); an absent or stale-layout
+                    // record keeps the committed-air fall-through (the
+                    // archaeology-route convention).]
+                    let t_i_route = if load_delta == 0.0 {
+                        rec.t_i
+                    } else {
+                        let air_response = model
+                            .mass
+                            .r77_air_substep_coeffs
+                            .as_ref()
+                            .and_then(|v| v.get(i))
+                            .filter(|air| air.len() >= 7 && air.len() % 7 == 0)
+                            .map(|air| {
+                                let mut r_air = 0.0f64;
+                                let mut r_m = 0.0f64;
+                                for k in 0..air.len() / 7 {
+                                    let (ra, rm) = (r_air, r_m);
+                                    r_air = air[7 * k] * ra + air[7 * k + 1] * rm + air[7 * k + 2];
+                                    r_m =
+                                        air[7 * k + 5] * rm + air[7 * k + 4] * ra + air[7 * k + 6];
+                                }
+                                r_air
+                            });
+                        rec.t_i + air_response.unwrap_or(0.0) * load_delta
+                    };
                     let mut residual = 0.0f64;
                     let mut tm_w = 0.0f64;
                     for c in 0..3 {
@@ -639,7 +682,7 @@ impl InvariantChecker {
                         // equal the stored post-step value exactly.
                         if denom_s > 0.0 {
                             let t_s_hat = (cs_dt * tso.as_ref()[idx]
-                                + h_is_c * rec.t_i
+                                + h_is_c * t_i_route
                                 + h_ms_c * t_mass_prev
                                 + phi_st_c)
                                 / denom_s;

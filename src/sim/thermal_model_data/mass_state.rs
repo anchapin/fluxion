@@ -163,10 +163,15 @@ pub struct MassState<T: ContinuousTensor<f64>> {
     /// air-node mirror; plan:
     /// docs/implementation-plans/checker-air-node-mirror-plan.md §4).]
     /// Per zone, the affine coefficients the coupled single-N AIR-node
-    /// advance consumed this step, five entries per sub-step,
-    /// `[D_0, M_0, W_0, den_0, h3od_0, …, h3od_{N−1}]`, pushed in
+    /// advance consumed this step, seven entries per sub-step,
+    /// `[D_0, M_0, W_0, den_0, h3od_0, a_0, bl_0, …, bl_{N−1}]`, pushed in
     /// lockstep with `r77_mass_substep_coeffs` (equal per-zone sub-step
-    /// counts; `len % 5 == 0`). `D` is the consumed relax factor,
+    /// counts; `len % 7 == 0`). [Round 107 — the round-105 five-tuple was
+    /// completed by the mass advance's own consumed `(a, bl)` so the
+    /// response pair composes from this record alone: the checker arms
+    /// that engage precisely when the mass record is absent (the
+    /// per-class t_s-first mirror, the gauge-proxy legacy identity) still
+    /// need both streams.] `D` is the consumed relax factor,
     /// `M`/`W` the mass-refresh/load response coefficients
     /// `(1−D)·coef/den` (`coef` read on the branch that produced it:
     /// R76 refresh, R71 ramp, R93/R94 lag-route share with the R88
@@ -178,8 +183,9 @@ pub struct MassState<T: ContinuousTensor<f64>> {
     /// route; the record carries the consumed composite).
     /// Write-only for the engine — the zero-delta checker replay
     /// consumes committed states (the #3297 residual-zero property is
-    /// untouched); the checker's air-route mirror consumes the record in
-    /// a later increment. `None` on any step that did not run the
+    /// untouched); the checker's composite arm (round 106) and per-class
+    /// t_i route (round 107) consume the record's response recurrence
+    /// under the artificial-gain probe. `None` on any step that did not run the
     /// coupled scheme on the default integrator route: the R74
     /// ramped-forcing and R90 filtered-lag archaeology arms have map
     /// shapes this tuple cannot express and keep the committed-air

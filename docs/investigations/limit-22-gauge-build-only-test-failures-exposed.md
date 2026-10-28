@@ -360,3 +360,46 @@ C) and the gauge-proxy legacy identity (increment D) keep their
 committed-air fall-throughs; D stays owned by §LIMIT-19/#1344.
 Inter-zone cross-responses remain explicitly out of scope (plan §5).
 
+## 2026-10-28 — loop round 107, increment C: the per-class t_i route consumes the air record
+
+Third bounded increment of the checker air-node mirror project
+(`docs/implementation-plans/checker-air-node-mirror-plan.md` §5 C). The
+per-class t_s-first mirror's surface identity now consumes the air-node
+record's composed air response under the artificial-gain probe: the
+identity's air input moves by `r_air_N·Δ` (plan §2 staggered recurrence,
+both updates consuming the previous sub-step's state pair), on top of the
+round-104 direct share `rad_frac·Δ`. At Δ = 0 the route never engages
+(the #3297 residual-zero property); an absent or stale-layout record keeps
+the committed-air fall-through.
+
+**Layout extension (the increment-C contract forced it):** the per-class
+arm's entry condition is precisely that the zone's R77 mass record is
+absent — the composite arm takes precedence otherwise — so the response
+pair must compose from the AIR record alone. The round-105 five-tuple is
+completed to seven entries with the mass advance's own consumed `(a, bl)`
+(same lockstep push, same values the mass 4-tuple carries, including the
+R89 composed form). Python replication first (2000+2000 synthetic
+configs): the 7-slot composition equals the explicit two-trajectory
+counterfactual to 1e-9 relative and equals the round-106 paired 5+4
+composition slot-for-slot; the per-class surface-identity response
+closes to exactly `(rad_frac + h_is_zone·r_air_N)·Δ`, affine in Δ, with
+the Δ = 0 route record-free.
+
+**Red-first** (`test_perclass_ti_route_consumes_air_record`): on the
+pre-C tree the shape precondition fails (`got len 60` — five-slot record,
+no mass coefficients to compose from) and the re-pinned r104/r105/r106
+contracts fail on the same five-slot layouts; rc=101 with the
+`--include-ignored` module run also sweeping the quarantined #3103
+known-fail (expected in that mode, not a regression).
+
+**Zero-delta bit-identity** is proven by the round battery at the changed
+tree, not by this test: strict 13 PASS / 29 KNOWN-FAIL / 0 REGRESSION
+with unchanged per-case values, output-diff 42/42 (40 rows +0.0000% + 2
+from-zero rows), §6/§7 pins + GC10a/§11 anchors all rc=0 (2026-10-28 gate
+log at the changed tree).
+
+**Scope, stated honestly:** this restores leverage on the per-class
+t_s-first arm only. The gauge-proxy legacy identity (increment D) keeps
+its committed-air fall-through; D stays owned by §LIMIT-19/#1344 and its
+composition now has the self-contained record it needs. Inter-zone
+cross-responses remain explicitly out of scope (plan §5).
