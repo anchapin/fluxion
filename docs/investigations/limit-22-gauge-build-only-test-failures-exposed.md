@@ -338,8 +338,8 @@ round-106 re-pin): on the pre-B tree the arm replays the mass record
 alone — probe response −8687.616234633788 W (the round-103 direct share,
 verbatim) against the composed closed form −20776.574489044437 W, rc=101.
 Post-change the measured response is −20776.57448904463 W against the
-closed form −20776.574489044437 W (1.9e-10 relative, within the 1e-9
-contract bar), no-gain residual exactly 0, response exactly affine
+closed form −20776.574489044437 W (1.9e-10 absolute, ≈9.3e-15 relative —
+the 1e-9 contract bar), no-gain residual exactly 0, response exactly affine
 (2 kW → 2×, 41553.148978088604 W). The composed per-W responses read off
 the records — r_air_N 0.004909700, r_m_N 0.000564264 (d_last
 36820.66871596761 W/K) — give Δt_air ≈ 4.91 K and Δt_m ≈ 0.564 K per
