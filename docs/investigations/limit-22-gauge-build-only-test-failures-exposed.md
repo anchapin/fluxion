@@ -262,3 +262,49 @@ entry states are: per-zone records whose layout predates the round-103
 fourth entry (`len % 4 != 0`), zones the mass-advance block skipped, and
 surgical/test isolations like this round's contract test. The fix
 completes the mirror contract for every state the arm can be entered on.
+
+## 2026-10-28 — loop round 105, increment A: the air-node affine record lands
+
+First bounded increment of the checker air-node mirror project (plan:
+`docs/implementation-plans/checker-air-node-mirror-plan.md`, PR #4648).
+`MassState::r77_air_substep_coeffs` records, per zone and sub-step, the
+five coefficients the coupled air advance actually consumed —
+`[D_k, M_k, W_k, den_k, h3od_k]` — pushed in lockstep with the mass
+4-tuple, write-only (zero consumers; the Δ=0 replay is untouched by
+construction), and only on the default integrator route: the R74
+ramped-forcing and R90 filtered-lag archaeology arms have map shapes the
+tuple cannot express and keep the committed-air convention.
+
+**The contract caught three plan errors before they became checker
+bugs.** The red-first contract
+(`test_r77_air_record_composes_engine_counterfactual`) re-runs the engine
+with a +1 kW zone-0 load delta (free-float fixture, HVAC fully disabled)
+and demands the records compose to the committed response. N=1 passes
+under several candidate forms; N=2 discriminates them:
+1. The `phi_ia` load coefficient enters the `term_rest_1`-scaled basis
+   (#1585 `mul_assign`), so the raw `conv_frac` under-records by
+   `term_rest_1` — while the lag route's own `term_rest_1` cancels
+   against `lag_input`'s division and must NOT reappear (a bare
+   `lag_dload · term_rest_1` over-records ~57×; the first N=12 run
+   predicted 287 K where the engine moved 4.9 K).
+2. The mass advance reads `t_i_sub` BEFORE the fresh air value is
+   swapped into `air_node_t_air`, so both maps consume the previous
+   sub-step's state pair — the air→mass route carries `r_air` from the
+   prior sub-step (which starts at 0, hour-start committed), not the
+   same-step fresh value.
+3. Per-class zones couple through per-class `h3_c/den_c`, not the lumped
+   `h_tr3_arg_i/denom_m` (N=2 needs gain 0.0504, lumped gives 0.0414) —
+   the record's fifth slot carries the consumed composite
+   `Σ_c w_cap·h3_c/den_c` itself.
+
+**Exactness evidence:** the composed recurrence equals the engine's
+committed response on both states to the 1e-9-relative contract bar at
+N=2, N=12 (default) and N=96 (`FLX_R77_COUPLED_N`), Δt_air ≈ 4.9 K and
+Δt_m ≈ 0.56 K per 1 kW. Red demonstrated by stubbing the record-write
+site (test fails on the record precondition); green on the restored
+site. Zero-delta bit-identity is proven by the round battery (record is
+write-only), not by this test.
+
+Next: increment B — the checker's R77-arm air-route mirror consuming
+this record (recurrence as verified here), then the gauge-proxy legacy
+arm re-anchor (increment D).
