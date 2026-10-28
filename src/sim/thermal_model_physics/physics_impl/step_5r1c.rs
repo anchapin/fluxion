@@ -1304,6 +1304,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 v.clear();
             }
         }
+        // [Round 105 — air-node affine record, sibling pooled buffer of
+        // `r77_coeffs` (same take/clear/restore contract; written only on
+        // the default integrator route — see `r77_air_record` below).]
+        let mut r77_air_coeffs: Vec<Vec<f64>> = self
+            .0
+            .mass
+            .r77_air_substep_coeffs
+            .take()
+            .unwrap_or_default();
+        if r77_coupled {
+            if r77_air_coeffs.len() != self.0.hvac.num_zones {
+                r77_air_coeffs.clear();
+                r77_air_coeffs.resize_with(self.0.hvac.num_zones, Vec::new);
+            }
+            for v in r77_air_coeffs.iter_mut() {
+                v.clear();
+            }
+        }
         let r76_sol_air_prev_ref = self.0.mass.r76_sol_air_prev.as_ref();
         let r76_has_prev = self.0.mass.r76_has_prev;
         let mut r76_final: Option<Vec<f64>> = None;
@@ -1620,6 +1638,27 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let r90_phi_st_prev_ref = self.0.mass.r90_phi_st_prev.as_ref();
         let r90_phi_m_prev_ref = self.0.mass.r90_phi_m_prev.as_ref();
 
+        // [Round 105 — air-node affine record enable. The record's
+        // `[D, M, W, den, h_tr_3]` tuple expresses the default route's
+        // affine map exactly; the two archaeology arms whose map shape
+        // differs are excluded here so they keep the committed-air
+        // convention (no record — the checker's documented fall-through):
+        // `FLX_R74_RAMP_EXACT` integrates a ramped-forcing solution with a
+        // different affine form, and the R90 filtered lag route feeds the
+        // lag STATE back into the numerator within the hour, which the
+        // state-free response recurrence does not carry. R75 vent-ramp
+        // (load-independent constant) and R76-no-refresh (on-branch `M`)
+        // are form-invariant and need no exclusion.]
+        let r77_air_record = r77_coupled && !r74_ramp_exact && r90_no_lag_filter;
+        let mut air_map_scratch: Vec<[f64; 4]> = vec![
+            [0.0; 4];
+            if r77_air_record {
+                self.0.hvac.num_zones
+            } else {
+                0
+            }
+        ];
+
         for _step in 0..steps {
             // === Air-node ODE (exact exponential solution) ===
             // Issue #3370: scratch pool buffer instead of per-sub-step
@@ -1638,6 +1677,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     } else {
                         num_tm_ref[i] + num_rest_ref[i]
                     };
+                    // [Round 105 — air-node record coefficient capture. The
+                    // mass-refresh coefficient is the same product on both
+                    // refresh branches (the frozen `num_tm_ref` differs only
+                    // in the state it multiplies, which is committed); the
+                    // load coefficient starts at `phi_ia`'s load-linear part
+                    // (`load_w·conv_frac`, line-site above) and gains the
+                    // lag route below.]
+                    let mut air_load_coef = 0.0f64;
+                    let mut air_mass_coef = self.0.conduction.derived_h_ms_is_prod.as_ref()[i];
                     {
                         // [R71 HARNESS -> default, round 73] sub-hour driver
                         // ramp: midpoint-fraction linear interpolation
@@ -1648,6 +1696,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         if num_prev != 0.0 {
                             num_i = num_prev + f * (num_i - num_prev);
                         }
+                        // [Round 105 — air-node record: the R71 ramp scales
+                        // BOTH pre-ramp num components (mass refresh +
+                        // num_rest); the vent and lag adds below are
+                        // post-ramp, so only these two coefficients take the
+                        // factor. Seed hours (num_prev == 0) skip the ramp.
+                        // The num works in the term_rest_1-scaled basis
+                        // (#1585): `num_rest` is mul_assign'd by
+                        // term_rest_1 after the phi_ia composition, so the
+                        // phi_ia load coefficient enters scaled.]
+                        let air_ramp_f = if num_prev != 0.0 { f } else { 1.0 };
+                        air_mass_coef *= air_ramp_f;
+                        air_load_coef += air_ramp_f * conv_frac * term_rest_1_ref[i];
                     }
                     // LIMIT-17 fix: night ventilation removes heat from the zone proportional
                     // to (T_zone - T_outdoor). The h_ve_night term was added to h_ext (den)
@@ -1792,6 +1852,36 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         } else {
                             lag_mid_r77
                         } * term_rest_1_r77;
+                        // [Round 105 — air-node record: the lag route's load
+                        // coefficient, computed on the same branches the
+                        // input value took. Both live input branches carry
+                        // the same load-linear part `h_tr_is·rad_frac`
+                        // (R88 lumped: `phi_st = load_w·rad_frac + solar`;
+                        // R94 T5138-live: `phi_st_int = load_w·rad_frac`),
+                        // scaled by the R88 `(1 − s_share)` share under the
+                        // same conditions as the value, and by the R90
+                        // midpoint fraction when the prev-ramp branch ran
+                        // (the prev value is committed — no response). The
+                        // R90 prev and the lag STATE carry no within-hour
+                        // response on the default unfiltered route.]
+                        if term_rest_1_r77 > 0.0 {
+                            let mut lag_dload = h_tr_is_for_ti_free.as_ref()[i] * rad_frac;
+                            if r88_phist_share && (!r93_retire_airshare || r94_gains_c3) {
+                                lag_dload *= 1.0 - r88_share_zone[i];
+                            }
+                            if r90_phist_ramp && !r93_retire_airshare {
+                                let phi_st_prev_r90_c =
+                                    r90_phi_st_prev_ref.get(i).copied().unwrap_or(0.0);
+                                if phi_st_prev_r90_c != 0.0 {
+                                    lag_dload *= (_step as f64 + 0.5) / steps as f64;
+                                }
+                            }
+                            air_load_coef += if r90_no_lag_filter {
+                                lag_dload
+                            } else {
+                                lag_dload * (1.0 - decay_half_r77)
+                            };
+                        }
                     }
                     let steady = num_i / den_i;
                     let c_air_i = c_air_ref[i];
@@ -1801,6 +1891,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     } else {
                         f64::INFINITY
                     };
+                    let mut air_relax = 0.0f64;
                     let t_i_free_i = if c_air_i > 0.0 && tau_air.is_finite() && dt_sub > 0.0 {
                         if r74_ramp_exact {
                             // [R74 HARNESS] exact ramped-forcing solution;
@@ -1837,12 +1928,25 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             s1 - tau_air * g + (t_air_old_i - s0 + tau_air * g) * exponent.exp()
                         } else {
                             let exponent = -dt_sub / tau_air;
-                            steady + (t_air_old_i - steady) * exponent.exp()
+                            air_relax = exponent.exp();
+                            steady + (t_air_old_i - steady) * air_relax
                         }
                     } else {
                         steady
                     };
                     buf[i] = t_i_free_i;
+                    // [Round 105 — air-node record: the consumed affine map
+                    // `(relax, mass-refresh coef, load coef, den)` for this
+                    // sub-step, carried to the mass block where `h_tr_3`
+                    // completes the 5-tuple.]
+                    if r77_air_record {
+                        air_map_scratch[i] = [
+                            air_relax,
+                            (1.0 - air_relax) * air_mass_coef / den_i,
+                            (1.0 - air_relax) * air_load_coef / den_i,
+                            den_i,
+                        ];
+                    }
                 }
             }
 
@@ -2096,7 +2200,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // FLX_R84_PERCLASS to a falsy token measures the pre-85
                     // lumped sub-step path (bit-identical to the round-84
                     // flag-off state).]
-                    let mut perclass_coeffs: Option<(f64, f64, f64, f64)> = None;
+                    let mut perclass_coeffs: Option<(f64, f64, f64, f64, f64)> = None;
                     // [R85 GUARD — the per-class advance requires real
                     // per-class construction state for this zone. The class
                     // tensors (cm_wall/cm_roof/cm_floor,
@@ -2167,6 +2271,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                 let mut b_sum = 0.0;
                                 let mut d_sum = 0.0;
                                 let mut bl_sum = 0.0;
+                                // [Round 105 — air-node record: the class
+                                // composite of the air-route response
+                                // coefficient `h3_c/den_c` (the gain from the
+                                // `t_i_sub` response to this sub-step's mass
+                                // response). The lumped advance's
+                                // `h_tr3_arg_i/denom_m` is NOT the per-class
+                                // route: each class couples through its own
+                                // `h3_c = h_am_c + h_vent_i·w` over its own
+                                // `den_c`, so the record carries the consumed
+                                // composite itself.]
+                                let mut h3od_sum = 0.0;
                                 let cond = &self.0.conduction;
                                 let grab = |o: &Option<T>| {
                                     o.as_ref().and_then(|v| v.as_ref().get(i).copied())
@@ -2393,6 +2508,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                     b_sum += w_cap * b_c;
                                     d_sum += w_cap * den_c;
                                     bl_sum += w_cap * db_c_dload;
+                                    h3od_sum += w_cap
+                                        * if den_c > 0.0 {
+                                            h3_c / den_c
+                                        } else {
+                                            let inv = dt_m / cls_cm[c];
+                                            h3_c * inv
+                                        };
                                     let tm_c_new = crank_nicolson_iso13790(
                                         r76_mass[i],
                                         dt_m,
@@ -2414,7 +2536,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                     }
                                     tm_w += w_cap * tm_c_new;
                                 }
-                                perclass_coeffs = Some((a_sum, b_sum, d_sum, bl_sum));
+                                perclass_coeffs = Some((a_sum, b_sum, d_sum, bl_sum, h3od_sum));
                                 tm_w
                             }
                             _ => crank_nicolson_iso13790(
@@ -2462,9 +2584,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         // at the artificial-gain probe's delta the checker
                         // rebuilds b at the perturbed load through the
                         // engine's own share algebra.]
-                        let (a, b, denom_m, b_load) =
-                            if let Some((a_s, b_s, d_s, bl_s)) = perclass_coeffs {
-                                (a_s, b_s, d_s, bl_s)
+                        let (a, b, denom_m, b_load, mut h3od) =
+                            if let Some((a_s, b_s, d_s, bl_s, h3od_s)) = perclass_coeffs {
+                                (a_s, b_s, d_s, bl_s, h3od_s)
                             } else {
                                 let cm_dt_m = cm_ref[i] / dt_m;
                                 let half_cond = 0.5 * (h_tr3_arg_i + h_tr_em_i);
@@ -2483,7 +2605,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                     let inv = dt_m / cm_ref[i];
                                     (1.0 - inv * (h_tr3_arg_i + h_tr_em_i), inv * numer_rest)
                                 };
-                                (a, b, denom_m, b_load)
+                                let h3od = if denom_m > 0.0 {
+                                    h_tr3_arg_i / denom_m
+                                } else {
+                                    h_tr3_arg_i * dt_m / cm_ref[i]
+                                };
+                                (a, b, denom_m, b_load, h3od)
                             };
                         let c = &mut r77_coeffs[i];
                         // [R89 mode "2": compose the affine map N times. The
@@ -2498,12 +2625,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             let n = r89_inner_n;
                             let an = a.powi(n as i32);
                             let one_minus_an = 1.0 - an;
-                            let (b_eff, bl_eff) = if (1.0 - a).abs() < 1e-15 {
-                                (b * n as f64, b_load * n as f64)
+                            let (b_eff, bl_eff, h3od_eff) = if (1.0 - a).abs() < 1e-15 {
+                                (b * n as f64, b_load * n as f64, h3od * n as f64)
                             } else {
                                 (
                                     b * one_minus_an / (1.0 - a),
                                     b_load * one_minus_an / (1.0 - a),
+                                    h3od * one_minus_an / (1.0 - a),
                                 )
                             };
                             c.push(an);
@@ -2512,11 +2640,29 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             c.push(bl_eff);
                             r76_mass[i] = an * r76_mass[i] + b_eff;
                             applied_inner = true;
+                            h3od = h3od_eff;
                         } else {
                             c.push(a);
                             c.push(b);
                             c.push(denom_m);
                             c.push(b_load);
+                        }
+                        // [Round 105 — air-node record: complete the 5-tuple
+                        // with the consumed mass air-route response
+                        // coefficient (`h3od`: Σ_c w_cap·h3_c/den_c
+                        // per-class, h_tr3_arg_i/denom_m lumped — the gain
+                        // from the `t_i_sub` response to the mass response,
+                        // on the same branch the CN took), pushed in
+                        // lockstep with the 4-tuple above (same sub-step,
+                        // same zone).]
+                        if r77_air_record {
+                            let am = air_map_scratch[i];
+                            let ca = &mut r77_air_coeffs[i];
+                            ca.push(am[0]);
+                            ca.push(am[1]);
+                            ca.push(am[2]);
+                            ca.push(am[3]);
+                            ca.push(h3od);
                         }
                     }
                     if !applied_inner {
@@ -3995,6 +4141,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // above (a rejected step leaves state untouched, so it must also
         // leave no record for the checker to mirror).
         self.0.mass.r77_mass_substep_coeffs = if r77_coupled { Some(r77_coeffs) } else { None };
+        self.0.mass.r77_air_substep_coeffs = if r77_air_record {
+            Some(r77_air_coeffs)
+        } else {
+            None
+        };
         // [Round 78 (#4512): return the per-class tuple scratch to the model.]
         self.0.conduction.r66_cls_workspace = Some(r66_cls);
 

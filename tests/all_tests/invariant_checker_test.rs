@@ -452,3 +452,126 @@ fn test_perclass_ts_mirror_gain_probe_leverages_5r1c_state() {
         "probe response must be affine in the load delta: 1 kW {response} W vs 2 kW {response_2k} W"
     );
 }
+
+/// Loop round 105 (§LIMIT-19/#1344 checker air-node mirror, increment A) —
+/// the coupled scheme's per-sub-step AIR-node affine record
+/// (`MassState::r77_air_substep_coeffs`) must compose, together with the
+/// round-78/103/104 mass records, to the engine's own counterfactual
+/// response: re-running the same step with the zone load perturbed by Δ
+/// must move the committed air and mass states by exactly the response the
+/// records predict (the composed recurrence of
+/// docs/implementation-plans/checker-air-node-mirror-plan.md §2/§4).
+///
+/// This is the record-exactness contract the checker's air-route mirror
+/// (increment B) consumes. Zero-delta behavior is untouched by
+/// construction — the record is write-only and the Δ = 0 replay consumes
+/// committed states (the #3297 residual-zero property); the round battery
+/// proves the bit-identity, not this test.
+///
+/// Red-first (loop round 105): before the engine-side record write this
+/// test fails on the record precondition (field `None` after a live
+/// coupled step). The probe re-runs the ENGINE, so the fixture must route
+/// nothing through HVAC: free-float mode plus ±999 setpoints (the
+/// blind-validation convention) make the air node load-driven only — the
+/// same HVAC-masking lesson the round-103/104 probe fixtures encoded.
+#[test]
+fn test_r77_air_record_composes_engine_counterfactual() {
+    // Case 600 under the explicit legacy selector pins the 5R1C network
+    // (same harness as the round-103/104 contracts; single-zone, so the
+    // inter-zone response route is out of scope by construction).
+    let spec = ASHRAE140Case::Case600.spec();
+    let build = || -> ThermalModel<fluxion::physics::cta::VectorField> {
+        let mut m = ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::legacy())
+            .expect("legacy 5R1C selector must initialize");
+        m.hvac.free_float = true;
+        m.setpoints.heating_setpoint = -999.0;
+        m.setpoints.cooling_setpoint = 999.0;
+        m
+    };
+    let mut model_a = build();
+    let mut model_b = build();
+    let outdoor_temp = 10.0;
+
+    // Probe: +1 kW at zone 0 (the round-103/104 probe magnitude), routed
+    // through the engine's own load input (loads are W/m²; load_w =
+    // loads[i]·zone_area[i]).
+    let delta_w = 1000.0f64;
+    let area = model_a.setpoints.zone_area.as_ref()[0];
+    model_b.setpoints.loads.as_mut()[0] += delta_w / area;
+
+    model_a.step_physics(0, outdoor_temp, 3600.0);
+    model_b.step_physics(0, outdoor_temp, 3600.0);
+
+    // Record shape: five entries per sub-step, in lockstep with the
+    // 4-entry mass record.
+    let air_rec = model_a
+        .mass
+        .r77_air_substep_coeffs
+        .as_ref()
+        .expect("a live coupled 5R1C step must persist the air-node record");
+    let mass_rec = model_a
+        .mass
+        .r77_mass_substep_coeffs
+        .as_ref()
+        .expect("a live coupled 5R1C step must persist the mass record");
+    assert!(
+        !air_rec[0].is_empty() && air_rec[0].len() % 5 == 0,
+        "air record must carry 5 entries per sub-step, got len {}",
+        air_rec[0].len()
+    );
+    assert_eq!(
+        air_rec[0].len() / 5,
+        mass_rec[0].len() / 4,
+        "air and mass records must carry the same sub-step count"
+    );
+
+    // Composed response recurrence (plan §2): the per-unit-load_w probe
+    // response through the air and mass sub-step affine maps. Both maps
+    // consume the PREVIOUS sub-step's state pair: the fresh air value is
+    // swapped into `air_node_t_air` only after the mass block reads
+    // `t_i_sub` (engine data flow), so the air→mass route carries r_air
+    // from the prior sub-step — which starts at 0 (hour-start committed).
+    let n = mass_rec[0].len() / 4;
+    let (mut r_air, mut r_m) = (0.0f64, 0.0f64);
+    for k in 0..n {
+        let d = air_rec[0][5 * k];
+        let m_coef = air_rec[0][5 * k + 1];
+        let w_coef = air_rec[0][5 * k + 2];
+        let h3od = air_rec[0][5 * k + 4];
+        let a_m = mass_rec[0][4 * k];
+        let bl = mass_rec[0][4 * k + 3];
+        // Both updates consume the previous sub-step's state pair.
+        let (ra, rm) = (r_air, r_m);
+        r_air = d * ra + m_coef * rm + w_coef;
+        r_m = a_m * rm + h3od * ra + bl;
+    }
+
+    let realized_delta_w =
+        (model_b.setpoints.loads.as_ref()[0] - model_a.setpoints.loads.as_ref()[0]) * area;
+    let predicted_air = r_air * realized_delta_w;
+    let predicted_mass = r_m * realized_delta_w;
+    let actual_air =
+        model_b.mass.air_temperatures.as_ref()[0] - model_a.mass.air_temperatures.as_ref()[0];
+    let actual_mass =
+        model_b.mass.mass_temperatures.as_ref()[0] - model_a.mass.mass_temperatures.as_ref()[0];
+
+    println!("predicted Δt_air {predicted_air:.9} K, actual {actual_air:.9} K");
+    println!("predicted Δt_m   {predicted_mass:.9} K, actual {actual_mass:.9} K");
+
+    assert!(
+        actual_air.abs() > 1e-9 && actual_mass.abs() > 1e-9,
+        "the probe must move both committed states for this contract to bind \
+         (air {actual_air} K, mass {actual_mass} K)"
+    );
+    let rel = |pred: f64, act: f64| (pred - act).abs() / act.abs().max(1e-300);
+    assert!(
+        rel(predicted_air, actual_air) <= 1e-9,
+        "air response must equal the composed record prediction: predicted \
+         {predicted_air} K, got {actual_air} K"
+    );
+    assert!(
+        rel(predicted_mass, actual_mass) <= 1e-9,
+        "mass response must equal the composed record prediction: predicted \
+         {predicted_mass} K, got {actual_mass} K"
+    );
+}

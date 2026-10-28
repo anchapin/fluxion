@@ -7,9 +7,8 @@ use std::sync::OnceLock;
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::physics::solver_trait::{PhysicsError, PhysicsResult};
-// Issue #3871 — `ZoneCountPolicy` hoisted out of `crate::physics` into the
-// `fluxion-core` dependency-light leaf crate to close the residual sim→physics
-// edge admitted by PR #3869 for the typed wrapper import.
+// Issue #3871 — `ZoneCountPolicy` hoisted to this dependency-light leaf crate
+// (closes the residual sim→physics edge admitted by PR #3869; typed wrapper import).
 use crate::sim::adaptive_timestep::TimestepMode;
 use crate::sim::construction::{SurfaceType, WallSurface};
 use crate::sim::hvac::{CyclingTracker, EconomizerMode, IdealLoadsSystem, PredictiveController};
@@ -4076,6 +4075,7 @@ impl ThermalModel<VectorField> {
                 r70_ts_old_workspace: None,
                 r70_ts_new_workspace: None,
                 r77_mass_substep_coeffs: None,
+                r77_air_substep_coeffs: None,
                 sensor_nodes: None,
             },
             conduction: ConductionState {
