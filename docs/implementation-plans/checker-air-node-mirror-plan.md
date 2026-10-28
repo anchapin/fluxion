@@ -71,3 +71,11 @@ The existing 4-tuple record and its `len % 4` guard are untouched; the air recor
 ## 6. Verification per increment
 
 Every increment runs the full battery at its own tree (strict 13 PASS / 29 KNOWN-FAIL / 0 REGRESSION expected unchanged at A; B–D move only the probe-response contract values, never the strict per-case numbers), plus the doc gates when `docs/` changes. A verdict of "exact" is claimed only with the Python replication attached and the red-first evidence recorded. The checker-lags-integrator rule (#4504 class) applies to every mirror: same branch, same values, no algebra the engine did not execute.
+
+## 7. What this project feeds next (blitz queue, FREE_FLOAT_BRAINSTORM_R85.md rank-1 remainder)
+
+The round-105 increment-A contract work sharpened the blitz's remaining slices; the surface-pool slice is next after B–D:
+
+- **Surface pools' remaining contracts** (next blitz slice): pin per class `c` — (i) the sol-air composition (`t_sol_air_c` = t_ext + the α/ε₀ radiative correction from the class's absorbed fluxes), (ii) the transmittance/absorption split per surface orientation into `phi_st_sol`'s per-class fractions (Table 5-138 renormalization 0.9664), (iii) the `t_s` advance contract per class (the r70 surface-node workspace's input→output map: absorbed flux + conduction coupling → next `t_s`), (iv) the longwave exchange term between pools. Each as a red-first contract against Python-replicated closed forms, mirroring the round-85 mass-node suite's shape.
+- **Lag filter**: the R90/R93/R94 site algebra is now fully recorded (rounds 103–105); its blitz slice shrinks to pinning the persisted-state transitions (the lag state's own carry contract), which increment B's mirror makes observable for free.
+- **Solar partition** (LIMIT-30 0.30/0.30/0.30 split sites) and **vent** contracts stay as originally scoped — unaffected by this project except that the h3od record now documents the exact air↔mass coupling the vent terms ride on.
