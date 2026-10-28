@@ -83,10 +83,21 @@ The chain lives in `data/reference/ashrae140/provenance.json`. Obtain the archiv
 from [data.ashrae.org/standard140](https://data.ashrae.org/standard140/accompany.html);
 the Section 6 files are in `\Std140_WD_Files\Normative Materials`.
 
-**The files currently committed here have no recorded publisher hash.** They predate
-this record and their origin was never documented, so `verify` fails until someone
-holding a licensed copy runs `record`. Treat them as usable for development and not
-citable as evidence. See #4284.
+**Publisher hashes for all twelve WD files are recorded, and the committed bytes
+were verified against the publisher's own package on 2026-10-28** — every committed
+file is byte-identical to the file ASHRAE publishes in
+`140-2023-AccompanyingFiles.zip`. The full chain, including the archive hash and
+the record/verify workflow, is in
+[`PROVENANCE.md`](PROVENANCE.md), with the machine-readable form in
+[`provenance-manifest.json`](provenance-manifest.json). Re-check the committed
+files against the record with:
+
+```
+python3 scripts/verify_weather_provenance.py
+```
+
+Whether these bytes may be redistributed in a public repository is a separate
+question from provenance and remains **unconfirmed** — see #4285.
 
 ## Other weather files
 
