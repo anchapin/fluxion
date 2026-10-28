@@ -953,6 +953,64 @@ mod tests {
     }
 
     #[test]
+    fn hybrid_ventilation_invalid_ach_is_ignored_not_poisoning_h_ve() {
+        // Issue #3985 (validation slice): the ventilation slot is a
+        // user-supplied trait object, so its ACH is untrusted input.
+        // Before this guard, a NaN / infinite / negative ACH flowed
+        // straight into `ach_to_conductance` and poisoned `h_ve` (and
+        // every derived conductance) for the rest of the run. The
+        // dispatcher now zeroes an invalid ACH: the scheduled
+        // contribution is ignored, the base `h_ve` is kept, and the
+        // solve stays finite.
+        use crate::ai::surrogate::SurrogateManager;
+        use crate::sim::ventilation::ConstantVentilation;
+
+        let surrogates = SurrogateManager::new().expect("SurrogateManager::new");
+
+        // Base conductance: a fresh flag-OFF model never consults the
+        // slot, so its `h_ve` is the base infiltration conductance.
+        let fresh = hybrid_case600_with_ventilation_ach(false);
+        let base_h_ve = fresh.ventilation_conductance()[0];
+
+        // The #3985 accessors expose the retained per-zone air
+        // properties the ACH -> conductance conversion consumes.
+        let spec = fluxion_core::ashrae_case_series::series_600::case_600_baseline();
+        assert!(
+            (fresh.zone_volume()[0] - spec.geometry[0].volume()).abs() < 1e-9,
+            "zone_volume accessor must return the retained zone volume; got {}",
+            fresh.zone_volume()[0]
+        );
+        assert!(fresh.air_density()[0].is_finite() && fresh.air_density()[0] > 0.0);
+        assert!(fresh.heat_capacity()[0].is_finite() && fresh.heat_capacity()[0] > 0.0);
+
+        for bad_ach in [f64::NAN, f64::INFINITY, -3.0] {
+            let mut model = hybrid_case600_with_ventilation_ach(true);
+            model.set_ventilation_schedule(Box::new(ConstantVentilation::new(bad_ach)));
+
+            let eui = model.solve_timesteps(24, &surrogates, false);
+            assert!(
+                eui.is_finite(),
+                "EUI must stay finite for invalid ACH {bad_ach}; got {eui}"
+            );
+            assert_eq!(
+                model.surrogate_ventilation_calls(),
+                24,
+                "the slot is still consulted every step for ACH {bad_ach}"
+            );
+            let h_ve = model.ventilation_conductance()[0];
+            assert!(
+                h_ve.is_finite(),
+                "h_ve must stay finite for invalid ACH {bad_ach}; got {h_ve}"
+            );
+            assert!(
+                (h_ve - base_h_ve).abs() < 1e-12,
+                "invalid ACH {bad_ach} must contribute nothing: h_ve must stay \
+                 at the base conductance {base_h_ve}; got {h_ve}"
+            );
+        }
+    }
+
+    #[test]
     fn hybrid_ventilation_flag_off_matches_pre_change_behaviour() {
         // Issue #3985 acceptance criterion 2: with the
         // `use_surrogate_ventilation` flag OFF the behaviour must be

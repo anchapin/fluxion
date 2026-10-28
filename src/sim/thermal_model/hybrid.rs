@@ -520,6 +520,34 @@ impl HybridThermalModel {
         self.inner.conduction.h_ve.as_ref()
     }
 
+    /// Per-zone air volume [m³] retained on the inner model.
+    ///
+    /// Read-only accessor (Issue #3985) so callers and tests can verify
+    /// that the ventilation slot was consulted with the *real* zone
+    /// volume (the ACH → conductance conversion needs it) instead of a
+    /// placeholder.
+    pub fn zone_volume(&self) -> &[f64] {
+        self.inner.setpoints.zone_volume.as_ref()
+    }
+
+    /// Per-zone air density [kg/m³] retained on the inner model.
+    ///
+    /// Read-only accessor (Issue #3985) — companion of
+    /// [`Self::zone_volume`] for the ACH → `h_ve` conversion
+    /// (`h_ve = ACH × V × ρ × cp / 3600`).
+    pub fn air_density(&self) -> &[f64] {
+        self.inner.setpoints.air_density.as_ref()
+    }
+
+    /// Per-zone air heat capacity [J/kg·K] retained on the inner model.
+    ///
+    /// Read-only accessor (Issue #3985) — companion of
+    /// [`Self::zone_volume`] for the ACH → `h_ve` conversion
+    /// (`h_ve = ACH × V × ρ × cp / 3600`).
+    pub fn heat_capacity(&self) -> &[f64] {
+        self.inner.setpoints.heat_capacity.as_ref()
+    }
+
     /// Number of times the surrogate ventilation branch fired in the most
     /// recent (or cumulative) solve. Useful for wiring tests (Issue #1702).
     pub fn surrogate_ventilation_calls(&self) -> usize {
@@ -888,6 +916,15 @@ impl HybridThermalModel {
                 // `h_ve` is restored at the top of every step, so the
                 // addition never accumulates across the run.
                 //
+                // Scoping: `get_ach` is a single-zone call, so it is
+                // invoked once per zone with that zone's own volume /
+                // density / heat capacity / temperature. Zone 0 — the zone
+                // the surrogate path is specified against — is therefore
+                // covered by the same loop (and by the same
+                // `ach_to_conductance` conversion) as every other zone;
+                // the per-zone loop is a strict superset of a zone-0-only
+                // wiring.
+                //
                 // `update_optimization_cache` is called ONLY on this
                 // surrogate-ventilation path: it recomputes the derived
                 // conductances (`derived_h_ext`, `derived_den`, …) that
@@ -922,13 +959,33 @@ impl HybridThermalModel {
                         let zone_temp = zone_temps.get(zone_idx).copied().unwrap_or(20.0);
                         let rho = densities.get(zone_idx).copied().unwrap_or(1.2);
                         let cp = capacities.get(zone_idx).copied().unwrap_or(1005.0);
-                        let ach = self.ventilation_schedule.get_ach(
+                        let mut ach = self.ventilation_schedule.get_ach(
                             hour_of_day,
                             outdoor_temp,
                             zone_temp,
                             0.0, // wind speed not retained on inner; placeholder
                             volume,
                         );
+                        // Issue #3985 (this slice): the ventilation slot is a
+                        // user-supplied trait object, so its ACH is
+                        // untrusted input. A non-finite or negative ACH
+                        // would poison `h_ve` (and every derived
+                        // conductance cache) for the rest of the run, so
+                        // it is validated defensively — the same way the
+                        // model validates `h_ve >= 0` at construction
+                        // (`thermal_model_core`: "h_ve must be
+                        // non-negative"). An invalid ACH contributes
+                        // nothing (the base `h_ve` is kept) and the
+                        // published slot is zeroed so the gauge
+                        // dispatcher never consumes a NaN.
+                        if !(ach.is_finite() && ach >= 0.0) {
+                            log::warn!(
+                                "HybridThermalModel: ventilation schedule returned an \
+                                 invalid ACH ({ach}) for zone {zone_idx} at timestep {t}; \
+                                 ignoring the scheduled ventilation contribution"
+                            );
+                            ach = 0.0;
+                        }
                         let conductance = ach_to_conductance(ach, volume, rho, cp).to_value();
                         *slot += conductance;
                         if let Some(s) = scheduled_ach.get_mut(zone_idx) {
