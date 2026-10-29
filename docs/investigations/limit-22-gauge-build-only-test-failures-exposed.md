@@ -403,3 +403,50 @@ t_s-first arm only. The gauge-proxy legacy identity (increment D) keeps
 its committed-air fall-through; D stays owned by §LIMIT-19/#1344 and its
 composition now has the self-contained record it needs. Inter-zone
 cross-responses remain explicitly out of scope (plan §5).
+
+## 2026-10-29 — loop round 108, increment D: the gauge-proxy legacy identity consumes the air record
+
+Fourth bounded increment of the checker air-node mirror project
+(`docs/implementation-plans/checker-air-node-mirror-plan.md` §5 D). The
+legacy (gauge-proxy) lumped identity's only load route `h_tr_3·t_i`
+consumes the air-node record: under the artificial-gain probe the
+identity's committed air blend responds with the composed air response
+`r_air_N·Δ` (plan §2 staggered recurrence), so the residual response
+closes to `−h_tr_3·r_air_N·Δ` — α-independent, because the blend weights
+sum to 1 (both inputs are committed views of the same air node). At Δ = 0
+the route never engages (the #3297 residual-zero property); an absent or
+stale-layout record keeps the committed-air fall-through. The re-anchor
+lands on BOTH legacy sites (the identical-construction fallback and the
+no-per-class-state else branch) through one shared helper
+(`composed_air_route_shift`), with the arm-level load delta hoisted so all
+three 5R1C consumers share one computation.
+
+**Python replication first** (dev-time evidence, 4000 synthetic configs,
+0 failures): the re-anchored response equals the explicit two-trajectory
+counterfactual to 8.3e-12 relative, α-independent (five random blend
+weights per config, same spread), Δ = 0 residual verbatim, affine 2×
+exact, absent-record fall-through response exactly 0.
+
+**Red-first** (`test_legacy_identity_air_route_consumes_air_record`): on
+the pre-D tree rc=101 with the probe response exactly **0 W** (both
+balances 35.19047278083417 — the round-104 blind verdict verbatim)
+against the composed closed form −210.5495525168603 W.
+
+**Post-change:** measured **−210.54955251686079 W** vs composed closed
+form **−210.5495525168603 W** per 1 kW (≈2.3e-15 relative; h_tr_3
+42.88440451366867 W/K, r_air_N 0.004909700 per W — the same composed
+response rounds 105–107 consumed), affine (2 kW → −421.09910503372157 W),
+and the fall-through discriminator returns the pre-D blind value **0 W**
+verbatim when the air record is cleared. Sibling contracts byte-identical
+on the same build: r104 direct share 400.0000000000003 W, r106
+−20776.57448904463 W, r107 1213.0462878569015 W.
+
+**Blind-arm list status.** The round-104 scoping verdict's two blind arms
+are both closed where the record exists: the R77 composite arm (round
+106) and the gauge-proxy legacy identity (this increment). On gauge-route
+states the identity still keeps the committed-air fall-through — the
+gauge dispatch's mass-state proxy persists no sub-step record (the gauge
+solver computes no air-node response to record), so the fall-through
+there is the documented absent-record convention, and the gauge-route
+response itself stays owned by §LIMIT-19/#1344. Inter-zone
+cross-responses remain explicitly out of scope (plan §5).

@@ -409,6 +409,30 @@ impl InvariantChecker {
                 // d_last` in W. Ceiling unchanged (1e-5 W class);
                 // the mirror is exact by construction (same branch and
                 // values the integrator consumed).]
+                // [Loop round 108 — the caller's load delta against the
+                // committed load, hoisted to the arm level so all three 5R1C
+                // consumers (the R77 composite arm, the per-class t_s-first
+                // mirror, the legacy gauge-proxy identity) share one
+                // computation. At the committed load the delta is zero and
+                // every arm consumes its committed values verbatim (the
+                // #3297 residual-zero property); under the artificial-gain
+                // probe the delta routes through each arm's own recorded
+                // share algebra.]
+                let load_committed = model
+                    .setpoints
+                    .loads
+                    .as_ref()
+                    .get(i)
+                    .copied()
+                    .unwrap_or(0.0)
+                    * model
+                        .setpoints
+                        .zone_area
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(0.0);
+                let load_delta = load_w - load_committed;
                 let r77_rec = model
                     .mass
                     .r77_mass_substep_coeffs
@@ -435,21 +459,6 @@ impl InvariantChecker {
                     // leverage this arm lost by construction after round
                     // 101's internal-gain re-routing.]
                     if c.len() >= 4 && c.len() % 4 == 0 {
-                        let load_committed = model
-                            .setpoints
-                            .loads
-                            .as_ref()
-                            .get(i)
-                            .copied()
-                            .unwrap_or(0.0)
-                            * model
-                                .setpoints
-                                .zone_area
-                                .as_ref()
-                                .get(i)
-                                .copied()
-                                .unwrap_or(0.0);
-                        let load_delta = load_w - load_committed;
                         // [Loop round 106 — §LIMIT-22 air-node mirror,
                         // increment B: paired air-node record consumer. When
                         // the step also persisted the air-node affine record
@@ -561,6 +570,17 @@ impl InvariantChecker {
                         // t_s-first layer; no persisted t_s identity to
                         // mirror — keep the legacy lumped identity below.
                         let t_i_free = model.mass.air_temperatures.as_ref()[i];
+                        // [Loop round 108 — §LIMIT-22 air-node mirror,
+                        // increment D: the identity's only load route
+                        // `h_tr_3·t_i` consumes the air-node record. Both
+                        // blend inputs are committed views of the same air
+                        // node, so under the artificial-gain probe each
+                        // moves by the composed response `r_air_N·Δ` and
+                        // the blend follows with unit weight (the α-weights
+                        // sum to 1); at Δ = 0 the route never engages and
+                        // an absent or stale-layout record keeps the
+                        // committed-air fall-through.]
+                        let air_shift = self.composed_air_route_shift(model, i, load_delta);
                         return self.legacy_5r1c_residual(
                             cm,
                             h_tr_3,
@@ -569,8 +589,8 @@ impl InvariantChecker {
                             t_mass,
                             t_mass_prev,
                             t_sol_air_zone,
-                            t_air,
-                            t_i_free,
+                            t_air + air_shift,
+                            t_i_free + air_shift,
                             phi_m,
                         );
                     }
@@ -579,28 +599,14 @@ impl InvariantChecker {
                     let total_area: f64 = rec.cls_area.iter().sum();
                     let degen = h_tr_3 <= 0.0;
                     // [Loop round 104 — §LIMIT-22 per-class rebuild: the
-                    // caller's load delta against the committed load, the
-                    // same plumbing the R77 composite arm uses. At the
-                    // committed load the delta is zero and `phi_st_c` is
-                    // consumed verbatim (bit-exact zero-delta replay);
+                    // caller's load delta against the committed load (the
+                    // arm-level computation above since round 108 — one
+                    // decision, one site for all three 5R1C consumers). At
+                    // the committed load the delta is zero and `phi_st_c`
+                    // is consumed verbatim (bit-exact zero-delta replay);
                     // under the artificial-gain probe the recorded
                     // load-linear coefficient routes the delta through the
                     // engine's own gains algebra.]
-                    let load_committed = model
-                        .setpoints
-                        .loads
-                        .as_ref()
-                        .get(i)
-                        .copied()
-                        .unwrap_or(0.0)
-                        * model
-                            .setpoints
-                            .zone_area
-                            .as_ref()
-                            .get(i)
-                            .copied()
-                            .unwrap_or(0.0);
-                    let load_delta = load_w - load_committed;
                     // [Loop round 107 — §LIMIT-22 air-node mirror, increment
                     // C: the surface identities' `t_i` route consumes the
                     // air-node record. The per-class arm engages precisely
@@ -727,7 +733,24 @@ impl InvariantChecker {
                     } else {
                         1.0
                     };
-                    let t_i = (1.0 - alpha) * t_i_free + alpha * t_air;
+                    // [Loop round 108 — §LIMIT-22 air-node mirror,
+                    // increment D: the gauge-proxy legacy identity's only
+                    // load route `h_tr_3·t_i` consumes the air-node record
+                    // (the `phi_st` local below stays consumed by nothing
+                    // except this debug print — the round-104 verdict). The
+                    // blend's inputs are committed views of the same air
+                    // node, so under the artificial-gain probe each moves
+                    // by the composed response `r_air_N·Δ` (plan §2
+                    // staggered recurrence) and the blend follows with unit
+                    // weight — the residual response is `−h_tr_3·r_air_N·Δ`,
+                    // α-independent. At Δ = 0 the route never engages (the
+                    // #3297 residual-zero property); an absent or
+                    // stale-layout record keeps the committed-air
+                    // fall-through (gauge-route proxy states never persist
+                    // a record — the documented convention).]
+                    let t_i = (1.0 - alpha) * t_i_free
+                        + alpha * t_air
+                        + self.composed_air_route_shift(model, i, load_delta);
                     let st_sol_frac = 1.0 - solar_beam_to_mass;
                     // [Round 101 — internal radiative in full (retired
                     // st_int_frac solar-fraction factor); mirror of the
@@ -753,6 +776,46 @@ impl InvariantChecker {
                     - (phi_m + h_tr_3 * (t_air - t_m_avg) + h_tr_em * (t_sol_air_zone - t_m_avg))
             }
         }
+    }
+
+    /// [Loop round 108 — §LIMIT-22 air-node mirror, increment D.] The
+    /// composed air-node response `r_air_N` per W, scaled by the caller's
+    /// load delta, from the zone's seven-entry air record (plan §2
+    /// staggered recurrence, both updates consuming the previous sub-step's
+    /// state pair). Consumer: the legacy (gauge-proxy) identity's only load
+    /// route `h_tr_3·t_i`. At a zero delta the route never engages (the
+    /// #3297 residual-zero property); an absent or stale-layout record
+    /// keeps the committed-air fall-through (the archaeology-route
+    /// convention — gauge-route proxy states never persist a record).
+    fn composed_air_route_shift<T>(&self, model: &ThermalModel<T>, i: usize, load_delta: f64) -> f64
+    where
+        T: ContinuousTensor<f64>
+            + From<VectorField>
+            + AsRef<[f64]>
+            + AsMut<[f64]>
+            + Index<usize, Output = f64>,
+    {
+        if load_delta == 0.0 {
+            return 0.0;
+        }
+        model
+            .mass
+            .r77_air_substep_coeffs
+            .as_ref()
+            .and_then(|v| v.get(i))
+            .filter(|air| air.len() >= 7 && air.len() % 7 == 0)
+            .map(|air| {
+                let mut r_air = 0.0f64;
+                let mut r_m = 0.0f64;
+                for k in 0..air.len() / 7 {
+                    let (ra, rm) = (r_air, r_m);
+                    r_air = air[7 * k] * ra + air[7 * k + 1] * rm + air[7 * k + 2];
+                    r_m = air[7 * k + 5] * rm + air[7 * k + 4] * ra + air[7 * k + 6];
+                }
+                r_air
+            })
+            .unwrap_or(0.0)
+            * load_delta
     }
 
     /// Legacy pre-D5 lumped Crank–Nicolson 5R1C identity, extracted so the

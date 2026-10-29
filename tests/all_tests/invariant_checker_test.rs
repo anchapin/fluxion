@@ -810,3 +810,154 @@ fn test_perclass_ti_route_consumes_air_record() {
         rad_frac * 1000.0
     );
 }
+
+/// Loop round 108 (§LIMIT-22 air-node mirror, increment D) — the legacy
+/// (gauge-proxy) lumped identity's only load route `h_tr_3·t_i` consumes
+/// the air-node record: under the artificial-gain probe the identity's
+/// committed air blend responds with the composed air response `r_air_N·Δ`
+/// (the plan-§2 staggered recurrence), so the residual response closes to
+/// `−h_tr_3·r_air_N·Δ` — α-independent, because the blend weights sum to 1
+/// (both inputs are committed views of the same air node).
+///
+/// The legacy arm engages precisely when BOTH the zone's R77 mass record
+/// (the composite arm takes precedence otherwise) and the per-class
+/// boundary/t_s states (the per-class mirror takes precedence otherwise)
+/// are absent — the gauge-proxy entry class of the round-104 scoping
+/// verdict, whose zero leverage was structural with committed air. The
+/// round-107 seven-slot self-contained record is exactly what hands this
+/// arm its response pair.
+///
+/// Red-first (loop round 108): on the pre-D tree the legacy identity keeps
+/// the committed air blend, so the probe response is exactly 0 W (both
+/// balances identical — the round-104 blind verdict) against the composed
+/// closed form.
+///
+/// Zero-delta behavior is untouched by construction — the Δ = 0 branch
+/// consumes the committed air verbatim and never reads the record (the
+/// #3297 residual-zero property); the round battery proves the
+/// bit-identity, not this test.
+#[test]
+fn test_legacy_identity_air_route_consumes_air_record() {
+    // Same harness as the round-103/104/105/107 contracts: Case 600
+    // (LowMass) under the explicit legacy selector pins the 5R1C network
+    // (the gauge build's `Gauge` default selector routes this spec through
+    // the gauge dispatch's mass-state proxy, which writes no records — the
+    // absent-record fall-through this contract documents from the other
+    // side).
+    let spec = ASHRAE140Case::Case600.spec();
+    let mut model = ThermalModel::from_spec_with_selector(&spec, &ThermalSelector::legacy())
+        .expect("legacy 5R1C selector must initialize");
+    let outdoor_temp = 10.0;
+
+    model.step_physics(0, outdoor_temp, 3600.0);
+
+    // Surgical arm isolation, extended to the legacy arm's entry class:
+    // clear zone 0's R77 mass record (composite-arm precedence out) AND
+    // the per-class boundary/t_s states (per-class-mirror precedence out),
+    // so the checker falls through to the legacy identity. The AIR record
+    // stays live — it is exactly what the `h_tr_3·t_i` route consumes.
+    let r77 = model
+        .mass
+        .r77_mass_substep_coeffs
+        .as_mut()
+        .expect("a live 5R1C step must persist the R77 record");
+    assert!(
+        !r77[0].is_empty(),
+        "precondition: zone 0 carries a composite record before the surgery"
+    );
+    r77[0].clear();
+    if let Some(recs) = model.conduction.applied_5r1c_class_boundary.as_mut() {
+        if !recs.is_empty() {
+            recs[0] = None;
+        }
+    }
+    model.mass.r70_surface_node_temperatures = None;
+    model.mass.r70_surface_node_temperatures_prev = None;
+
+    // Record shape (round-107 layout): seven entries per sub-step — the
+    // response pair composes from the air record alone.
+    let air_rec = model
+        .mass
+        .r77_air_substep_coeffs
+        .as_ref()
+        .expect("a live coupled 5R1C step must persist the air-node record");
+    assert!(
+        air_rec[0].len() >= 7 && air_rec[0].len() % 7 == 0,
+        "the air record must carry 7 entries per sub-step (round-107 layout) \
+         so the legacy h_tr_3·t_i route can compose the plan-§2 response — \
+         got len {}",
+        air_rec[0].len()
+    );
+    // Composed air response (plan §2): both updates consume the PREVIOUS
+    // sub-step's state pair.
+    let mut r_air_n = 0.0f64;
+    let mut r_m_n = 0.0f64;
+    for k in 0..air_rec[0].len() / 7 {
+        let (ra, rm) = (r_air_n, r_m_n);
+        r_air_n = air_rec[0][7 * k] * ra + air_rec[0][7 * k + 1] * rm + air_rec[0][7 * k + 2];
+        r_m_n = air_rec[0][7 * k + 5] * rm + air_rec[0][7 * k + 4] * ra + air_rec[0][7 * k + 6];
+    }
+    assert!(
+        r_air_n.abs() > 1e-12,
+        "the composed air response must be non-zero, got {r_air_n}"
+    );
+
+    // The identity's only load route: h_tr_3·t_i (the phi_st local is
+    // consumed by nothing except the debug print — round-104 verdict), so
+    // the response is −h_tr_3·r_air_N·Δ exactly.
+    let h_tr_ms0 = model.conduction.h_tr_ms.as_ref()[0];
+    let h_tr_3 = *model
+        .conduction
+        .derived_h_tr_3
+        .as_ref()
+        .get(0)
+        .unwrap_or(&h_tr_ms0);
+
+    let mut checker = InvariantChecker::new(1e-3);
+    let no_gain = checker.check_invariant(&model, 3600.0, outdoor_temp);
+    println!("no-gain balance: {}", no_gain.balance);
+
+    let with_gain =
+        checker.check_invariant_with_artificial_gain(&model, 3600.0, outdoor_temp, 1000.0, 0);
+
+    let expected = -h_tr_3 * r_air_n * 1000.0;
+    let response = with_gain.balance - no_gain.balance;
+    println!(
+        "probe response signed {response} W vs composed closed form {expected} W \
+         (h_tr_3 {h_tr_3}, r_air_N {r_air_n:.9} per W, r_m_N {r_m_n:.9} per W)"
+    );
+    assert!(
+        (response - expected).abs() <= 1e-9 * expected.abs(),
+        "legacy h_tr_3·t_i route must consume the composed air response \
+         (§2 recurrence, round 108): got {response} W, expected {expected} W"
+    );
+
+    // Affine in the load delta.
+    let with_gain_2k =
+        checker.check_invariant_with_artificial_gain(&model, 3600.0, outdoor_temp, 2000.0, 0);
+    let response_2k = with_gain_2k.balance - no_gain.balance;
+    println!("probe response to 2 kW gain: {response_2k} W");
+    assert!(
+        (response_2k - 2.0 * response).abs() <= 1e-6 * response_2k.abs(),
+        "probe response must be affine in the load delta: 1 kW {response} W vs 2 kW {response_2k} W"
+    );
+
+    // Fall-through discriminator: with the air record cleared the identity
+    // keeps the committed air blend and the response returns to the
+    // pre-D blind value 0 W verbatim (the round-104 structural verdict).
+    model
+        .mass
+        .r77_air_substep_coeffs
+        .as_mut()
+        .expect("air record present before the fall-through surgery")[0]
+        .clear();
+    let with_gain_noair =
+        checker.check_invariant_with_artificial_gain(&model, 3600.0, outdoor_temp, 1000.0, 0);
+    let response_noair = with_gain_noair.balance - no_gain.balance;
+    println!("fall-through response {response_noair} W (pre-D blind value 0 W)");
+    assert!(
+        response_noair == 0.0,
+        "with the air record absent the legacy identity must keep the committed air: \
+         got {response_noair} W, expected exactly 0 W"
+    );
+}
