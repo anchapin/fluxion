@@ -1191,7 +1191,10 @@ fn json_diff(live: &Value, recorded: &Value, path: &str) -> Vec<String> {
                 b.as_f64().unwrap_or(f64::NAN),
             );
             let tol = RECORDED_ATOL + RECORDED_RTOL * a.abs().max(b.abs());
-            if !((a - b).abs() <= tol) {
+            // NaN compares unequal to every tolerance: a non-finite live or
+            // recorded value is a diff, not a match.
+            let within_tolerance = (a - b).abs() <= tol;
+            if !within_tolerance {
                 diffs.push(format!("{path}: live {a} vs recorded {b}"));
             }
         }
@@ -1479,10 +1482,10 @@ fn test_section11_case_one_anchor_is_reproduced_by_the_engine_dispatch() {
 /// return) and design efficiency (70 %).
 #[test]
 fn test_section11_fan_configuration_matches_the_qas_workbook() {
-    assert_eq!(SFPR_IN_WG, 2.0);
-    assert_eq!(RFPR_IN_WG, 1.0);
+    assert!((SFPR_IN_WG - 2.0).abs() < 1e-12);
+    assert!((RFPR_IN_WG - 1.0).abs() < 1e-12);
     assert!((DFE - 0.70).abs() < 1e-12);
-    assert_eq!(SASP_F, 55.0);
-    assert_eq!(PHSP_F, 45.0);
-    assert_eq!(NSCFM, 1300.0);
+    assert!((SASP_F - 55.0).abs() < 1e-12);
+    assert!((PHSP_F - 45.0).abs() < 1e-12);
+    assert!((NSCFM - 1300.0).abs() < 1e-12);
 }
