@@ -30,5 +30,6 @@ mod comparative;
 mod ha00x;
 mod reference_data;
 mod runner;
+mod section11_engine_run;
 mod section9_ce;
 mod section9_engine_run;
