@@ -15,6 +15,7 @@ pub mod economizer;
 pub mod efficiency_curves;
 pub mod equipment;
 pub mod fan;
+pub mod furnace;
 pub mod heating_coil;
 pub mod ideal_loads;
 pub mod modes;
@@ -49,6 +50,9 @@ pub use efficiency_curves::{
 };
 pub use equipment::{AnyEquipment, Boiler, Chiller, HVACMode, VariableCapacityEquipment};
 pub use fan::{Fan, FanComponent, STANDARD_AIR_DENSITY_KG_PER_M3};
+pub use furnace::{
+    Furnace, FurnaceEnergyTotals, FurnaceError, FurnaceEvaluation, PartLoadEfficiency, PilotMode,
+};
 pub use heating_coil::{HeatingCoil, HeatingCoilComponent, HeatingCoilControl, HeatingCoilResult};
 pub use humidifier::{Humidifier, HumidifierComponent, HumidifierControl, HumidifierResult};
 pub use ideal_loads::IdealLoadsSystem;
