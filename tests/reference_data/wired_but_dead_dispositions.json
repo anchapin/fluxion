@@ -234,6 +234,13 @@
       "issue": 4173,
       "owner": "anchapin",
       "rationale": "validation::config (validate_assembly assembly-validation API): its only in-workspace callers were the ThermalModel validation-gated constructors deleted in #4173. Retained as tested public API; re-wire or delete in a follow-up. (ai::sweeps::config has live callers and is unaffected.)"
+    },
+    {
+      "module": "ground_conduction",
+      "disposition": "wire-pending",
+      "issue": 4270,
+      "owner": "anchapin",
+      "rationale": "physics::ground_conduction (2-D ground-conduction domain for the ASHRAE 140 §8 ground-coupled slab cases): added standalone on purpose — §8 verifies the ground domain before it is wired back into the Section 7 floor boundary, which is the follow-up that drops this entry."
     }
   ]
 }

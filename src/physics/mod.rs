@@ -61,6 +61,11 @@ pub mod fp_algebraic;
 pub mod gauge_solver;
 pub mod gauge_zone_solver;
 pub mod geometry_tensor;
+// Issue #4270 — 2-D ground-conduction domain model underpinning the ASHRAE
+// 140 §8 ground-coupled slab-on-grade analytical verification cases. The
+// module is standalone on purpose: it is not wired into the Section 7 floor
+// boundary or the main simulation loop yet.
+pub mod ground_conduction;
 pub mod method_selector;
 pub mod state_space_ctf;
 pub mod thermal_mass;

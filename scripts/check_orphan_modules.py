@@ -339,6 +339,11 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
         # ``config`` is unambiguous here: ``ai::sweeps::config`` has live
         # callers and is not wired-but-dead.)
         "config",
+        # [wire-pending] Issue #4270 — ground_conduction was added
+        # standalone on purpose: the ASHRAE 140 §8 steady-state cases
+        # verify the ground domain before it is wired into the Section 7
+        # floor boundary. The follow-up wiring drops this entry.
+        "ground_conduction",
     }
 )
 
@@ -372,7 +377,11 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
 #     ``validation_hybrid_empirical_test`` target) — the module is no
 #     longer wired-but-dead, so its allowlist entry and its Issue
 #     #3748 disposition row are dropped in the same PR.
-BASELINE_WIRED_BUT_DEAD = 33  # raised 19 → 32 in PR for fluxion-#4197: corrected;
+BASELINE_WIRED_BUT_DEAD = 34  # raised 33 → 34 in PR for fluxion-#4270:
+#   ground_conduction added standalone for the ASHRAE 140 §8 steady-state
+#   verification cases (wire-pending on the Section 7 floor-boundary
+#   wiring that follows the §8 validation);
+#   previously raised 19 → 32 in PR for fluxion-#4197: corrected;
 #   raised 32 → 33 in PR for fluxion-#4173: validation::config lost its
 #   only in-workspace callers when the validation-gated ThermalModel
 #   constructors were deleted; tracked as keep-dead cleanup backlog
