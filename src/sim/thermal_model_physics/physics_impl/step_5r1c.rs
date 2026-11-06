@@ -1650,8 +1650,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // (load-independent constant) and R76-no-refresh (on-branch `M`)
         // are form-invariant and need no exclusion.]
         let r77_air_record = r77_coupled && !r74_ramp_exact && r90_no_lag_filter;
-        let mut air_map_scratch: Vec<[f64; 4]> = vec![
-            [0.0; 4];
+        let mut air_map_scratch: Vec<[f64; 5]> = vec![
+            [0.0; 5];
             if r77_air_record {
                 self.0.hvac.num_zones
             } else {
@@ -1686,6 +1686,27 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // lag route below.]
                     let mut air_load_coef = 0.0f64;
                     let mut air_mass_coef = self.0.conduction.derived_h_ms_is_prod.as_ref()[i];
+                    // [Round 113 — inter-zone cross-response coefficient
+                    // capture (plan §5 increment E): the num-side slope of
+                    // this zone's iz term against a NEIGHBOR's committed
+                    // hour-start air temperature, `ramp_f · term_rest_1[i] ·
+                    // h_tr_iz[i]`. The iz block above adds
+                    // `q_iz_net[i] = h_tr_iz[i]·(Σ_j T[j] − N·T[i])` to
+                    // `phi_ia_with_iz` from the COMMITTED hour-start states,
+                    // and `num_rest` is mul_assign'd by `term_rest_1` (#1585),
+                    // so each neighbor's state enters the num with exactly
+                    // this slope (the own state with `−(N−1)` times it) when
+                    // the iz block is live — the same `num_zones > 1` and
+                    // `h_tr_iz[i] > 0.0` gates the block applies. Zero
+                    // otherwise: a single-zone or uncoupled zone consumes no
+                    // iz term, and the slot must record the coefficient the
+                    // engine actually consumed (Z4). The ramp factor rides
+                    // here (the iz term is inside `num_rest`, which the R71
+                    // ramp scales like the load coefficient), and the
+                    // `(1−relax)/den` normalization is applied at the
+                    // `air_map_scratch` write below, where `air_relax` and
+                    // the ramped `den_i` are final.]
+                    let mut air_iz_coef = 0.0f64;
                     {
                         // [R71 HARNESS -> default, round 73] sub-hour driver
                         // ramp: midpoint-fraction linear interpolation
@@ -1708,6 +1729,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         let air_ramp_f = if num_prev != 0.0 { f } else { 1.0 };
                         air_mass_coef *= air_ramp_f;
                         air_load_coef += air_ramp_f * conv_frac * term_rest_1_ref[i];
+                        // [Round 113 — the iz cross-response slope takes the
+                        // same ramp factor: the iz term rides inside
+                        // `num_rest`, one of the two pre-ramp num components.
+                        // Same gates as the iz block above (`num_zones > 1`,
+                        // `h_tr_iz[i] > 0.0`) so the slot is exactly the
+                        // coefficient the engine consumed, or zero.]
+                        if self.0.hvac.num_zones > 1 {
+                            let h_iz_i = self.0.conduction.h_tr_iz.as_ref()[i];
+                            if h_iz_i > 0.0 {
+                                air_iz_coef = air_ramp_f * term_rest_1_ref[i] * h_iz_i;
+                            }
+                        }
                     }
                     // LIMIT-17 fix: night ventilation removes heat from the zone proportional
                     // to (T_zone - T_outdoor). The h_ve_night term was added to h_ext (den)
@@ -1946,6 +1979,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             (1.0 - air_relax) * air_mass_coef / den_i,
                             (1.0 - air_relax) * air_load_coef / den_i,
                             den_i,
+                            // [Round 113 — slot 8 (index 7): the consumed
+                            // inter-zone cross-response coefficient,
+                            // `(1−relax)·air_iz_coef/den_i` — the response of
+                            // this sub-step's committed air to a neighbor's
+                            // hour-start committed-air shift, on the same
+                            // branch and with the same `(1−relax)/den`
+                            // normalization as the load slot. Pushed in
+                            // lockstep at the mass block below.]
+                            (1.0 - air_relax) * air_iz_coef / den_i,
                         ];
                     }
                 }
@@ -2677,6 +2719,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             ca.push(h3od);
                             ca.push(a_push);
                             ca.push(bl_push);
+                            // [Round 113 — the iz cross-response slot (index
+                            // 7, the record's EIGHTH entry), pushed in the
+                            // same lockstep as the seven-entry tuple: same
+                            // sub-step, same zone, same branch the air
+                            // advance executed (plan Z4). The checker's
+                            // neighbor-side cross-response composes from this
+                            // slot plus the previously committed air response
+                            // vector — see
+                            // `InvariantChecker::composed_cross_response_vector`.]
+                            ca.push(am[4]);
                         }
                     }
                     if !applied_inner {

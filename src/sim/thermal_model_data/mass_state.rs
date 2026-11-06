@@ -181,6 +181,20 @@ pub struct MassState<T: ContinuousTensor<f64>> {
     /// lumped — the gain from the `t_i_sub` response to the mass
     /// response (the lumped conductance ratio is NOT the per-class
     /// route; the record carries the consumed composite).
+    /// [Round 113 — the record's EIGHTH entry per sub-step: `C`, the
+    /// inter-zone cross-response coefficient
+    /// `(1−D)·ramp_f·term_rest_1[i]·h_tr_iz[i]/den` (zero when the iz
+    /// block is not live: single-zone or `h_tr_iz[i] == 0`), the num-side
+    /// slope of this zone's `q_iz_net` inter-zone term against a
+    /// NEIGHBOR's committed hour-start air temperature. The checker's
+    /// neighbor-side cross-response composes
+    /// `C·(Σ_j r_j − N·r_own)` per sub-step over the previously
+    /// committed air-response vector — exact for a zone whose own
+    /// committed states did not respond in the previous hour (the
+    /// plan-§5 increment-E scope; a probe zone's own next-hour response
+    /// carries additional channels — the R71 ramp-source persistence,
+    /// the R90 lag state on non-record routes, the hour-boundary state
+    /// seeds — documented as the bounded-later remainder).]
     /// Write-only for the engine — the zero-delta checker replay
     /// consumes committed states (the #3297 residual-zero property is
     /// untouched); the checker's composite arm (round 106) and per-class

@@ -450,3 +450,58 @@ solver computes no air-node response to record), so the fall-through
 there is the documented absent-record convention, and the gauge-route
 response itself stays owned by §LIMIT-19/#1344. Inter-zone
 cross-responses remain explicitly out of scope (plan §5).
+
+## 2026-11-05 — loop round 113: the inter-zone cross-response (plan §5
+## increment E; the record's eighth slot)
+
+The plan §5 out-of-scope list's first item — "inter-zone cross-responses
+(Case 960 family — a single-zone probe's neighbor-side response needs a
+per-zone response vector, not a scalar)" — scoped and landed on the
+NEIGHBOR side. The engine's iz block adds
+`q_iz_net[i] = h_tr_iz[i]·(Σ_j T[j] − N·T[i])` to `phi_ia` from the
+COMMITTED hour-start air states, and `num_rest` is mul_assign'd by
+`term_rest_1` (#1585), so a neighbor's committed state enters the num
+with slope exactly `ramp_f·term_rest_1[i]·h_tr_iz[i]` — never recorded
+before this round, hence invisible to every probe arm.
+
+**Landed:** the air-node record's EIGHTH entry per sub-step,
+`C = (1−D)·ramp_f·term_rest_1[i]·h_tr_iz[i]/den`, pushed in the same
+lockstep (gated by the iz block's own `num_zones > 1` and
+`h_tr_iz[i] > 0.0` conditions — a single-zone model's slot is exactly
+0.0), plus the checker's `composed_cross_response_vector` composing
+`r_air' = D·r_air + M·r_m + W·Δ_j + C·(Σ_i prev_i − N·prev_j)` per
+sub-step over the previously committed air-response vector with zero
+hour-boundary seeds.
+
+**Python replication first** (`/tmp/r113_replication.py`, dev-time
+evidence, all scenarios PASS): the neighbor's first-crossed-hour
+response composes exactly (≤1.5e-11 relative across symmetric,
+asymmetric-iz, reversed-probe, N=1 and N=96 fixtures); the hour-1 self
+response stays exact (1.4e-13, the round-105 property); the
+iz-source-only perturbation reproduces the full numeric neighbor
+response (the other channels are provably inert for the neighbor); and
+the boundary is quantified — the probe zone's own hour-2 response
+misses by the carry channels (records-only −0.0022 K/W vs numeric
++0.209 K/W on the synthetic twin), closing to 8.7e-14 with the
+hour-boundary seeds + the R71 ramp-source response channel added.
+
+**Red-first** (round-105 stub precedent): the C-slot push stubbed →
+contracts {1,2,3,4} fail for the recorded reasons (stale 7-wide layout
+"got 84"; response exactly 0) with contract 5 green, rc=101; restored →
+green ×3. **Teeth ×3:** the iz-sign flip fails exactly {3} (prediction
+{2,3} missed — within a probe hour the iz term is probe-independent, so
+the sign only manifests at the crossed hour; disclosed), the
+ramp-factor drop fails exactly {1,3}.
+
+**Post-change:** the fixture's flagship contract asserts the composed
+hour-2 neighbor response against the engine counterfactual
+(single-hour probe, load reverted) at ≤1e-9 relative; the probe zone's
+own hour-2 divergence is pinned, not tuned (composed −0.056 K vs
+measured +0.275 K per 1 kW — the bounded-later carry channels, named in
+the plan §5 amendment: the R71 ramp-source persistence response, the
+hour-boundary air/mass state seeds, the R90 lag state on non-record
+routes). Battery bit-identity proven at the changed tree — the slot is
+write-only-pooled and every Δ=0 path is untouched, so no re-record is
+owed. The held r109–r112 suites pin the seven-entry layout in their
+helpers; updating them is a disclosed landing-time rebase step for the
+merge train (#4672 → #4673 → #4674 → #4675, then this PR).
