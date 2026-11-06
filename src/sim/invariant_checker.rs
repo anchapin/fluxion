@@ -877,7 +877,7 @@ impl InvariantChecker {
         let mut out = vec![0.0f64; n];
         let prev_sum: f64 = prev_end_air_response.iter().take(n).sum();
         let air_record = model.mass.r77_air_substep_coeffs.as_ref();
-        for j in 0..n {
+        for (j, slot) in out.iter_mut().enumerate() {
             let d_j = if j == probe_zone { load_delta_w } else { 0.0 };
             let prev_j = prev_end_air_response.get(j).copied().unwrap_or(0.0);
             let cross_source = prev_sum - (n as f64) * prev_j;
@@ -897,7 +897,7 @@ impl InvariantChecker {
                         + air[8 * k + 7] * cross_source;
                     r_m = air[8 * k + 5] * rm + air[8 * k + 4] * ra + air[8 * k + 6] * d_j;
                 }
-                out[j] = r_air;
+                *slot = r_air;
             }
         }
         out

@@ -161,10 +161,18 @@ fn cross_slot_record_shape_and_closed_forms() {
 
     let tr1 = m.conduction.derived_term_rest_1.as_ref();
     assert_eq!(tr1[0], 1069.0, "fixture premise: zone 0 term_rest_1");
-    assert_eq!(tr1[1], 869.0, "fixture premise: zone 1 term_rest_1 (asymmetric)");
+    assert_eq!(
+        tr1[1], 869.0,
+        "fixture premise: zone 1 term_rest_1 (asymmetric)"
+    );
     // Snapshot the (construction-static) conductances as owned values so the
     // mutable step below can run.
-    let (tr1_0, tr1_1, h_iz_0, h_iz_1) = (tr1[0], tr1[1], m.conduction.h_tr_iz.as_ref()[0], m.conduction.h_tr_iz.as_ref()[1]);
+    let (tr1_0, tr1_1, h_iz_0, h_iz_1) = (
+        tr1[0],
+        tr1[1],
+        m.conduction.h_tr_iz.as_ref()[0],
+        m.conduction.h_tr_iz.as_ref()[1],
+    );
     let h_iz = [h_iz_0, h_iz_1];
     let tr1s = [tr1_0, tr1_1];
 
@@ -196,7 +204,11 @@ fn cross_slot_record_shape_and_closed_forms() {
     // Ramped hour: air_ramp_f == f_k, the engine's op order is
     // ((f_k·term_rest_1)·h_tr_iz), then (1−D)·coef/den.
     m.step_physics(1, -10.0, DT);
-    let rec2 = m.mass.r77_air_substep_coeffs.as_ref().expect("air record h2");
+    let rec2 = m
+        .mass
+        .r77_air_substep_coeffs
+        .as_ref()
+        .expect("air record h2");
     let (_, c0_h2) = air_record(&m, 0);
     let (_, c1_h2) = air_record(&m, 1);
     for (j, c_seq) in [c0_h2, c1_h2].iter().enumerate() {
@@ -273,7 +285,10 @@ fn first_probe_hour_vector_self_only_exact() {
 
     let d_t0 = cf.mass.air_temperatures.as_ref()[0] - base.mass.air_temperatures.as_ref()[0];
     let d_t1 = cf.mass.air_temperatures.as_ref()[1] - base.mass.air_temperatures.as_ref()[1];
-    assert!(d_t0.abs() > 1e-6, "fixture premise: the probe zone moves (ΔT_0 = {d_t0})");
+    assert!(
+        d_t0.abs() > 1e-6,
+        "fixture premise: the probe zone moves (ΔT_0 = {d_t0})"
+    );
     assert_eq!(
         d_t1, 0.0,
         "fixture premise: hour-1 neighbor shift is exactly zero (one-step lag)"
@@ -391,17 +406,26 @@ fn zero_coupling_leaves_neighbor_exactly_zero() {
     let (_, c0) = air_record(&base, 0);
     let (_, c1) = air_record(&base, 1);
     for (k, &c) in c0.iter().enumerate() {
-        assert_eq!(c, 0.0, "hour 1 zone 0 sub-step {k}: h_tr_iz = 0 must leave the C slot exactly 0.0");
+        assert_eq!(
+            c, 0.0,
+            "hour 1 zone 0 sub-step {k}: h_tr_iz = 0 must leave the C slot exactly 0.0"
+        );
     }
     for (k, &c) in c1.iter().enumerate() {
-        assert_eq!(c, 0.0, "hour 1 zone 1 sub-step {k}: h_tr_iz = 0 must leave the C slot exactly 0.0");
+        assert_eq!(
+            c, 0.0,
+            "hour 1 zone 1 sub-step {k}: h_tr_iz = 0 must leave the C slot exactly 0.0"
+        );
     }
 
     let checker = InvariantChecker::default();
     let zeros = vec![0.0f64; 2];
     let v1 = checker.composed_cross_response_vector(&base, 0, GAIN_W, &zeros);
     assert_eq!(v1[1], 0.0, "hour-1 neighbor entry exactly zero");
-    assert!(v1[0] != 0.0, "hour-1 probe-zone entry carries its own load response");
+    assert!(
+        v1[0] != 0.0,
+        "hour-1 probe-zone entry carries its own load response"
+    );
 
     base.step_physics(1, -10.0, DT);
     cf.step_physics(1, -10.0, DT);
