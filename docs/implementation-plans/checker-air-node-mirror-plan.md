@@ -1,6 +1,6 @@
 # Checker Air-Node Mirror — Implementation Plan
 
-**Status:** ACTIVE (round 105; increment A landed round 105 — PR #4649; increment B landed round 106 — PR #4653, the R77 arm consumes the air record, response re-pinned to the composed closed form; increment C landed round 107 — the per-class t_s-first mirror's `t_i` route consumes the record via the self-contained seven-entry layout; increment D landed round 108 — the gauge-proxy legacy identity's `h_tr_3·t_i` route consumes the record through the shared `composed_air_route_shift` helper on both legacy sites; the §5 B–D sequence is complete, closing the round-104 scoping verdict's blind-arm list on record-carrying states — the gauge-route response itself stays owned by §LIMIT-19/#1344; the §7 surface-pool blitz queue is next; rounds 110–112 closed the blitz's remaining slices (lag-carry #4673, solar-split #4674, multi-zone vent #4675) and round 113 landed increment E — the inter-zone cross-response, PR #4676). Scoping verdict: §LIMIT-22 history, round-104 dated block (both blind arms air-borne, multi-day; B restores the composite arm's share via the record); the §5 out-of-scope list's inter-zone item is disposed by the round-113 dated block — the neighbor side landed, the self-response continuation re-bounded with its carry channels named. Ownership: §LIMIT-19 / #1344 family; adjacent to GaugeSolver un-blockers #3291/#1465/#1462.
+**Status:** ACTIVE (round 105; increment A landed round 105 — PR #4649; increment B landed round 106 — PR #4653, the R77 arm consumes the air record, response re-pinned to the composed closed form; increment C landed round 107 — the per-class t_s-first mirror's `t_i` route consumes the record via the self-contained seven-entry layout; increment D landed round 108 — the gauge-proxy legacy identity's `h_tr_3·t_i` route consumes the record through the shared `composed_air_route_shift` helper on both legacy sites; the §5 B–D sequence is complete, closing the round-104 scoping verdict's blind-arm list on record-carrying states — the gauge-route response itself stays owned by §LIMIT-19/#1344; the §7 surface-pool blitz queue is next; rounds 110–112 closed the blitz's remaining slices (lag-carry #4673, solar-split #4674, multi-zone vent #4675) and round 113 landed increment E — the inter-zone cross-response, PR #4676; round 115 landed increment F — the sustained-probe self-response continuation (the record's ninth np slot + the seeded checker API)). Scoping verdict: §LIMIT-22 history, round-104 dated block (both blind arms air-borne, multi-day; B restores the composite arm's share via the record); the §5 out-of-scope list's inter-zone item is disposed by the round-113 dated block — the neighbor side landed, the self-response continuation landed round 115 (increment F: the np persistence slot + the seeded API — the R90-lag channel stays structurally absent on the recorded route). Ownership: §LIMIT-19 / #1344 family; adjacent to GaugeSolver un-blockers #3291/#1465/#1462.
 **Goal:** restore the artificial-gain probe's leverage on the two arms that lost it to the committed-air convention (the R77 composite arm's air route, the gauge-proxy legacy arm's `h_tr_3·t_i` route), by recording the sub-stepped air-node composite's affine coefficients engine-side and recomputing the probe response checker-side.
 **Ceiling:** unchanged — every identity this plan touches stays in the 1e-5 W residual class.
 **Method:** TDD with Python replication of each closed form before any code; red-first contract tests; full battery bit-identity at zero delta on every increment; no option plumbing (records are unconditional on the coupled default route, exactly like the round-78 `[a, b, d, bl]` record).
@@ -61,6 +61,20 @@ New pooled buffer `MassState::r77_air_substep_coeffs: Option<Vec<Vec<f64>>>` (cl
 
 The existing 4-tuple record and its `len % 4` guard are untouched; the air record pairs with it by sub-step count (equal lengths asserted checker-side when both are present). [Round 107: the air record is self-contained — the pairing assert remains as a shape check where the mass record is present.] [Round 113 (increment E): the record's EIGHTH entry per sub-step — `C`, the inter-zone cross-response coefficient `(1−D)·ramp_f·term_rest_1[i]·h_tr_iz[i]/den`, pushed in the same lockstep as the seven-entry tuple. It records the num-side slope a NEIGHBOR's committed hour-start air temperature gains through the iz block (`q_iz_net[i] = h_tr_iz[i]·(Σ_j T[j] − N·T[i])` added to `phi_ia`, then term_rest_1-scaled by the #1585 mul_assign), gated by the same conditions the block applies (`num_zones > 1`, `h_tr_iz[i] > 0.0` — zero otherwise, so a single-zone model's slot is exactly 0.0), with the R71 ramp factor riding on it (the iz term is inside `num_rest`, one of the two pre-ramp num components) and the same `(1−D)/den` normalization as the `M`/`W` slots. The `len % 7 == 0` guard and every `7·k` stride become `8·k`; a seven-entry buffer is stale layout and keeps the documented committed-air fall-through. The held r109–r112 suites pin the seven-entry layout in their helpers and assert it at landing rebase — one bounded landing-time update disclosed in the PR.]
 
+[Round 115 (increment F): the record's NINTH entry per sub-step — `NP`, the
+ramp-source persistence response `(1−relax)·(1−f_k)·num_prev_load_slope/den`,
+pushed in the same lockstep, exactly 0.0 on seed hours (`num_prev == 0`: the
+R71 interpolation consumes no `num_prev` term there). `num_prev_load_slope`
+is a new per-zone persisted field (`MassState::r71_num_prev_load_slope`),
+written at the R71 freeze site next to the drivers:
+`conv_frac·term_rest_1[i]` — the freeze (`num_tm + num_rest`, both hour-start
+arrays) carries the hour's load ONLY through `num_rest`'s convective share:
+the lag route is post-ramp and the `FLX_R90_PHIST_RAMP` prev-ramp branch is
+off on the recorded route, so this is the freeze's whole load slope (Z4).
+The `len % 8 == 0` guard and every `8·k` stride become `9·k`; an
+eight-entry buffer is stale layout and keeps the documented committed-air
+fall-through.]
+
 ## 5. Increment boundaries
 
 - **A — engine record (this round's landable increment):** add the buffer + write sites + the record-shape/value contract test (Python-replicated coefficients on a synthetic coupled step). Battery-inert at Δ=0; no re-record, bit-identity proven by the run.
@@ -68,7 +82,36 @@ The existing 4-tuple record and its `len % 4` guard are untouched; the air recor
 - **C — per-class t_s-first mirror consumes (landed round 107):** the surface identities' `t_i` route picks up the air response — `t_i + r_air_N·Δ` under the probe, committed air verbatim at Δ = 0 and on absent/stale-layout records; per-class contract values re-pinned with the same discipline (the round-104 closed form `rad_frac·Δ` gains `h_is_zone·r_air_N·Δ`).
 - **D — gauge-proxy legacy arm re-anchor (landed round 108):** its only load route `h_tr_3·t_i` becomes live through the same recurrence; the arm's blind-probe verdict (§LIMIT-22) closes when its response equals the composed closed form. Landed as `−h_tr_3·r_air_N·Δ` (α-independent — the blend weights sum to 1) on both legacy sites via the shared `composed_air_route_shift` helper; gauge-route proxy states persist no record and keep the documented committed-air fall-through.
 - **E — inter-zone cross-response (landed round 113):** the plan §7 blitz's closure left this §5 item as the named next slice; the round-113 scoping pass bounded the NEIGHBOR side and landed it: the record's eighth entry `C` (§4 amendment) + the checker's `composed_cross_response_vector`, composing `r_air' = D·r_air + M·r_m + W·Δ_j + C·(Σ_i prev_i − N·prev_j)` per sub-step over the previously committed air-response vector with zero hour-boundary seeds. Exact for a zone whose own committed states did not respond in the previous hour — the neighbor of a first probe hour — because its own load, lag state and mass are probe-independent there (each inertness pinned byte-exact by `tests/multizone_cross_response_contract.rs` contract 5; the flagship contract asserts the engine-counterfactual agreement at ≤1e-9 relative). Red-first evidence per the round-105 precedent: the C-slot push stubbed → contracts {1,2,3,4} fail for the recorded reasons (stale 7-wide layout "got 84"; response exactly 0) with contract 5 green, rc=101; restored → green ×3. Teeth ×3: the iz-sign flip fails exactly {3} (prediction {2,3} — C2 stays green because within a probe hour the iz term is probe-independent; disclosed), the ramp-factor drop fails exactly {1,3}, the stub round above. Battery bit-identity proven at the changed tree (write-only slot, Δ=0 paths untouched) — test-only, no re-record owed.
-- **Explicitly out of scope (bounded later, not silently):** the SUSTAINED-PROBE SELF-RESPONSE continuation — a probe zone's own next-hour response carries three channels the record does not capture (the R71 ramp-source persistence response — `num_prev` persists the frozen hour-start `num_rest`, which is load-dependent; the hour-boundary air/mass state seeds — the committed states themselves shift; the R90 lag state on non-record routes). The round-113 Python replication quantifies it: on the synthetic twin the records-only composition misses the probe zone's hour-2 response by ~1.5× (composed −0.0022 K/W vs numeric +0.209 K/W) and closes to 8.7e-14 with the seeds + np channel added — the fixture's own gap is printed by contract 3 (composed −0.056 K vs measured +0.275 K per 1 kW). Bounded later, not silently: landing it needs the np-response slot (or slots) and a seed-taking API extension, NOT this record's silent reuse. Still out of scope: the R74/R75/R90-filtered archaeology routes (they fall through to the committed-air convention, same as today); the 9R4C arm's committed-air basis (§LIMIT-19 adjacency; interacts with ADR-0011, which stays Alex's call); HVAC-masked zones (probe fixtures use free-float setpoints).
+- **F — sustained-probe self-response continuation (landed round 115):** the
+  r113 amendment's re-bounded remainder. The engine records the persistence
+  response (the ninth slot `NP`, §4 amendment, fed by the new
+  `r71_num_prev_load_slope` freeze field), and the checker gains
+  `composed_cross_response_vector_seeded` — the seed-taking API extension
+  (`seed_air` / `seed_mass` = the committed hour-boundary shifts, i.e. the
+  previous hour's own composed end pair; `prev_load_delta_w` = the previous
+  hour's probe that the frozen `num_prev` carries). The zero-seed round-113
+  form keeps its semantics bit-for-bit (it delegates with zero seeds and no
+  persistence delta; contract 3 pins both its remaining discrimination gap
+  and the seeded match — the r113 duck note N1 tripwire re-pinned in the
+  same landing). Python replication `/tmp/r115_replication.py` (dev-time
+  evidence): the seeds+np composition closes to 5.0e-14 air / 1.8e-12 mass
+  on the synthetic two-zone twin (the np channel carries 2.19 of the 5.00
+  K/W response; seeds-only misses at 2.81); the real fixture's seeded pair
+  matches the engine counterfactual ≤1e-9 relative on both zones and both
+  state pairs (contract 3), and with zero iz coupling the seeds+np pair
+  alone closes it (contract 6). Red-first: the slot stubbed to 0.0 →
+  contracts {1, 3, 4, 6} fail for the recorded reasons (NP closed-form got
+  0.0; seeded composed 0.1190 vs measured 0.2745 K — the seeds-only value),
+  {2, 5} green, rc=101; restored → green ×3. Teeth ×3, each failing
+  exactly its prediction: the `(1−f)` weight dropped → {1, 3, 6}; the
+  persistence delta routed un-gated to every zone → {3, 6}; the stub above
+  → {1, 3, 4, 6}. Still out of scope: the R74/R75/R90-filtered archaeology
+  routes (they fall through to the committed-air convention, same as
+  today); the R90 lag channel on non-record routes (structurally absent
+  where the record exists — `r77_air_record` requires
+  `r90_no_lag_filter`); the 9R4C arm's committed-air basis (§LIMIT-19
+  adjacency; interacts with ADR-0011, which stays Alex's call); HVAC-masked
+  zones (probe fixtures use free-float setpoints).
 
 ## 6. Verification per increment
 

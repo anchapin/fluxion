@@ -505,3 +505,24 @@ write-only-pooled and every Δ=0 path is untouched, so no re-record is
 owed. The held r109–r112 suites pin the seven-entry layout in their
 helpers; updating them is a disclosed landing-time rebase step for the
 merge train (#4672 → #4673 → #4674 → #4675, then this PR).
+
+## Round 115 — increment F, the self-response carry channels (2026-11-07)
+
+The r113 re-bounded remainder landed: the air record's NINTH per-sub-step
+entry records the R71 ramp-source persistence response
+(`NP_k = (1−relax)·(1−f_k)·num_prev_load_slope/den`, exactly 0.0 on seed
+hours), fed by a new per-zone freeze-site field
+(`MassState::r71_num_prev_load_slope = conv_frac·term_rest_1` — the frozen
+`num_tm + num_rest`'s whole load slope on the recorded route: the lag route
+is post-ramp and the FLX_R90_PHIST_RAMP prev-ramp branch is off where the
+record exists). The checker gains `composed_cross_response_vector_seeded`
+(seed-taking API: hour-boundary air/mass seeds + the previous hour's probe
+delta); the zero-seed round-113 form delegates bit-for-bit and its
+discrimination gap stays pinned. Python replication: seeds+np closes to
+5.0e-14 air / 1.8e-12 mass on the synthetic twin. The real fixture's seeded
+pair matches the engine counterfactual ≤1e-9 relative on both zones and
+both state pairs (contract 3 re-pin, duck note N1 honored); contract 6
+closes the continuation with zero iz coupling (seeds + persistence alone).
+Red-first stub → {1,3,4,6} rc=101; teeth: (1−f) drop → {1,3,6}, un-gated
+routing → {3,6}. Battery bit-identity at the changed tree — the slot is
+write-only and the freeze field is record-only, so no re-record is owed.
