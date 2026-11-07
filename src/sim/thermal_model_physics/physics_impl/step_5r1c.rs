@@ -1345,6 +1345,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // (no ramp on the seed hour).]
         let r71_num_prev_ref = self.0.mass.r71_air_driver_num_prev.as_ref();
         let r71_den_prev_ref = self.0.mass.r71_air_driver_den_prev.as_ref();
+        let r71_np_slope_prev_ref = self.0.mass.r71_num_prev_load_slope.as_ref();
         let r75_vent_term_prev_ref = self.0.mass.r75_vent_term_prev.as_ref();
         let r75_vent_has_prev = self.0.mass.r75_vent_has_prev;
 
@@ -1650,8 +1651,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // (load-independent constant) and R76-no-refresh (on-branch `M`)
         // are form-invariant and need no exclusion.]
         let r77_air_record = r77_coupled && !r74_ramp_exact && r90_no_lag_filter;
-        let mut air_map_scratch: Vec<[f64; 4]> = vec![
-            [0.0; 4];
+        let mut air_map_scratch: Vec<[f64; 6]> = vec![
+            [0.0; 6];
             if r77_air_record {
                 self.0.hvac.num_zones
             } else {
@@ -1686,6 +1687,35 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // lag route below.]
                     let mut air_load_coef = 0.0f64;
                     let mut air_mass_coef = self.0.conduction.derived_h_ms_is_prod.as_ref()[i];
+                    // [Round 113 — inter-zone cross-response coefficient
+                    // capture (plan §5 increment E): the num-side slope of
+                    // this zone's iz term against a NEIGHBOR's committed
+                    // hour-start air temperature, `ramp_f · term_rest_1[i] ·
+                    // h_tr_iz[i]`. The iz block above adds
+                    // `q_iz_net[i] = h_tr_iz[i]·(Σ_j T[j] − N·T[i])` to
+                    // `phi_ia_with_iz` from the COMMITTED hour-start states,
+                    // and `num_rest` is mul_assign'd by `term_rest_1` (#1585),
+                    // so each neighbor's state enters the num with exactly
+                    // this slope (the own state with `−(N−1)` times it) when
+                    // the iz block is live — the same `num_zones > 1` and
+                    // `h_tr_iz[i] > 0.0` gates the block applies. Zero
+                    // otherwise: a single-zone or uncoupled zone consumes no
+                    // iz term, and the slot must record the coefficient the
+                    // engine actually consumed (Z4). The ramp factor rides
+                    // here (the iz term is inside `num_rest`, which the R71
+                    // ramp scales like the load coefficient), and the
+                    // `(1−relax)/den` normalization is applied at the
+                    // `air_map_scratch` write below, where `air_relax` and
+                    // the ramped `den_i` are final.]
+                    let mut air_iz_coef = 0.0f64;
+                    // [Round 115 -- ramp-source persistence response: the
+                    // num-side slope the frozen `num_prev` carries against
+                    // the PREVIOUS hour's probe load, times the `(1 - f)`
+                    // weight the R71 interpolation puts on `num_prev`.
+                    // Assigned in the ramp block below where `f` and the
+                    // seed gate live; normalized at the `air_map_scratch`
+                    // write like the M/W/C slots.]
+                    let mut air_np_coef = 0.0f64;
                     {
                         // [R71 HARNESS -> default, round 73] sub-hour driver
                         // ramp: midpoint-fraction linear interpolation
@@ -1708,6 +1738,36 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         let air_ramp_f = if num_prev != 0.0 { f } else { 1.0 };
                         air_mass_coef *= air_ramp_f;
                         air_load_coef += air_ramp_f * conv_frac * term_rest_1_ref[i];
+                        // [Round 113 — the iz cross-response slope takes the
+                        // same ramp factor: the iz term rides inside
+                        // `num_rest`, one of the two pre-ramp num components.
+                        // Same gates as the iz block above (`num_zones > 1`,
+                        // `h_tr_iz[i] > 0.0`) so the slot is exactly the
+                        // coefficient the engine consumed, or zero.]
+                        if self.0.hvac.num_zones > 1 {
+                            let h_iz_i = self.0.conduction.h_tr_iz.as_ref()[i];
+                            if h_iz_i > 0.0 {
+                                air_iz_coef = air_ramp_f * term_rest_1_ref[i] * h_iz_i;
+                            }
+                        }
+                        // [Round 115 -- the persistence slope: `num_prev`
+                        // was frozen at the previous step's end as
+                        // `num_tm + num_rest` (hour-start arrays), and its
+                        // `num_rest` part carried that hour's load through
+                        // the convective share -- slope
+                        // `conv_frac * term_rest_1`, persisted in
+                        // `r71_num_prev_load_slope` at the freeze site (the
+                        // lag route is post-ramp and the
+                        // FLX_R90_PHIST_RAMP prev-ramp branch is off on the
+                        // recorded route, so this is the freeze's whole
+                        // load slope). The interpolated num weighs
+                        // `num_prev` with `(1 - f)`; seed hours
+                        // (`num_prev == 0`) consume no `num_prev` term at
+                        // all, so the coefficient stays exactly 0.0 there
+                        // (Z4).]
+                        if num_prev != 0.0 {
+                            air_np_coef = (1.0 - f) * r71_np_slope_prev_ref[i];
+                        }
                     }
                     // LIMIT-17 fix: night ventilation removes heat from the zone proportional
                     // to (T_zone - T_outdoor). The h_ve_night term was added to h_ext (den)
@@ -1946,6 +2006,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             (1.0 - air_relax) * air_mass_coef / den_i,
                             (1.0 - air_relax) * air_load_coef / den_i,
                             den_i,
+                            // [Round 113 — slot 8 (index 7): the consumed
+                            // inter-zone cross-response coefficient,
+                            // `(1−relax)·air_iz_coef/den_i` — the response of
+                            // this sub-step's committed air to a neighbor's
+                            // hour-start committed-air shift, on the same
+                            // branch and with the same `(1−relax)/den`
+                            // normalization as the load slot. Pushed in
+                            // lockstep at the mass block below.]
+                            (1.0 - air_relax) * air_iz_coef / den_i,
+                            // [Round 115 -- the ramp-source persistence
+                            // response coefficient (the record's NINTH
+                            // entry, index 8): this sub-step's consumed
+                            // response to the previous hour's probe
+                            // arriving through the frozen `num_prev`,
+                            // same branch normalization as the M/W/C
+                            // slots.]
+                            (1.0 - air_relax) * air_np_coef / den_i,
                         ];
                     }
                 }
@@ -2677,6 +2754,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             ca.push(h3od);
                             ca.push(a_push);
                             ca.push(bl_push);
+                            // [Round 113 — the iz cross-response slot (index
+                            // 7, the record's EIGHTH entry), pushed in the
+                            // same lockstep as the seven-entry tuple: same
+                            // sub-step, same zone, same branch the air
+                            // advance executed (plan Z4). The checker's
+                            // neighbor-side cross-response composes from this
+                            // slot plus the previously committed air response
+                            // vector — see
+                            // `InvariantChecker::composed_cross_response_vector`.]
+                            ca.push(am[4]);
+                            // [Round 115 -- the ramp-source persistence
+                            // slot (index 8, the record's NINTH entry),
+                            // pushed in the same lockstep: same sub-step,
+                            // same zone, same branch the air advance
+                            // executed (plan Z4). The checker's
+                            // self-response continuation composes this
+                            // slot against the previous hour's probe
+                            // delta -- see
+                            // `InvariantChecker::composed_cross_response_vector_seeded`.]
+                            ca.push(am[5]);
                         }
                     }
                     if !applied_inner {
@@ -2742,9 +2839,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         {
             let num_prev = self.0.mass.r71_air_driver_num_prev.as_mut();
             let den_prev = self.0.mass.r71_air_driver_den_prev.as_mut();
+            let np_slope = self.0.mass.r71_num_prev_load_slope.as_mut();
             for i in 0..self.0.hvac.num_zones {
                 num_prev[i] = num_tm_ref[i] + num_rest_ref[i];
                 den_prev[i] = den_ref[i];
+                // [Round 115 -- persist the frozen value's load slope
+                // alongside it: `num_rest`'s convective share is the whole
+                // freeze's load coefficient on the recorded route, so the
+                // next hour's record can carry the persistence response
+                // without re-deriving it (Z4).]
+                np_slope[i] = conv_frac * term_rest_1_ref[i];
             }
             // [R75 HARNESS] persist this hour's night-vent term as the next
             // hour's ramp source; the seed flag flips after the first step

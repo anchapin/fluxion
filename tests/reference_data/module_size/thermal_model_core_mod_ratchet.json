@@ -22,8 +22,12 @@
     {
       "actual": 4314,
       "reason": "Loop round 95 (#3985/#4578 follow-up) - the ThermalModelData::new ConductionState literal gains the scheduled_ventilation_ach scratch-slot initialiser (+1 line) with its provenance comment (+3 lines). No new code paths; the slot is written only on the hybrid flag-ON path and read only by the gauge dispatcher."
+    },
+    {
+      "actual": 4316,
+      "reason": "Loop round 115 (plan section 5 increment F) - the R71 freeze-site persistence-slope field r71_num_prev_load_slope: MassState field declaration + doc (+12 lines in mass_state.rs are separate), and in mod.rs the constructor literal + the reset-fn initialisers (+2 lines net). No new code paths; the field is record-only (consumed by the air record's ninth slot)."
     }
   ],
-  "max_lines": 4314,
+  "max_lines": 4316,
   "notes": "Issue #3574: extend module-size gate to src/sim/thermal_model_core/mod.rs, the largest child of the Issue #3543 decomposition (~4.1k LoC), still over the ratchet because of the bare impl ThermalModel<VectorField> block. Current size snapshotted as the historical maximum; the bound can only tighten (lowered via the YAML `max_lines` field). Companion cleanup work that decomposes this module is tracked separately and is out of scope for #3574."
 }
