@@ -84,18 +84,184 @@ pub use fluid_adapter::{
 
 use serde::{Deserialize, Serialize};
 
-/// HVAC system types supported by the simulation
+/// HVAC system templates supported by the simulation.
+///
+/// This enum is the **single vocabulary** of named HVAC templates in
+/// Fluxion. It is re-exported by the input schema
+/// ([`crate::api::schema::ControlSet::hvac_system`], issue #3997) and
+/// mirrored for Python by [`crate::python::hvac_bindings::PyHVACSystemType`],
+/// so a template name means exactly the same thing in a `.flux` document,
+/// in Rust and in Python.
+///
+/// # Template catalogue (issue #3997)
+///
+/// Each variant below is a **named template** and documents its modelling
+/// assumptions and its limits. The same per-template documentation is
+/// summarised in the input-schema module docs (`src/api/schema.rs`) so that
+/// a modeler reading only the schema finds it in the same place.
+///
+/// | Template | Air side | Zone sensible | Zone latent | Ventilation |
+/// |---|---|---|---|---|
+/// | [`Simple`](HVACSystemType::Simple) | none (on/off, fixed capacity) | met by capacity | not modelled | not modelled |
+/// | [`VAV`](HVACSystemType::VAV) | packaged VAV terminal | met by airflow + reheat | not modelled | not modelled |
+/// | [`CAV`](HVACSystemType::CAV) | packaged CAV terminal | met by fixed airflow | not modelled | not modelled |
+/// | [`HeatPump`](HVACSystemType::HeatPump) | none (unitary / DX) | met by capacity | not modelled | not modelled |
+/// | [`DOASFanCoil`](HVACSystemType::DOASFanCoil) | DOAS + four-pipe fan coil | met by fan-coil water side | removed at the DOAS | met by the DOAS (100 % OA) |
+/// | [`Ideal`](HVACSystemType::Ideal) | ideal loads | met exactly | not modelled | not modelled |
+///
+/// # Serialization
+///
+/// The serde representation is the plain variant name (`"Simple"`, `"VAV"`,
+/// `"CAV"`, `"HeatPump"`, `"DOASFanCoil"`, `"Ideal"`), so a schema document
+/// selects a template as
+/// `"hvac_system": "DOASFanCoil"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HVACSystemType {
-    /// Simple on/off HVAC with fixed capacity
+    /// **Simple** — on/off system with fixed capacity.
+    ///
+    /// *Modelling assumptions*
+    ///
+    /// - The zone is served by a single on/off heating and cooling capacity
+    ///   (the `heating_capacity` / `cooling_capacity` of the schema's
+    ///   [`crate::api::schema::ControlConfig`]).
+    /// - Control is binary with a deadband: the full capacity is delivered
+    ///   whenever the zone leaves the deadband; there is no part-load
+    ///   modulation and no cycling penalty.
+    /// - The template is purely sensible: no airflow, no coil, no humidity
+    ///   removal and no ventilation air are modelled.
+    ///
+    /// *Limits*
+    ///
+    /// - Cannot represent a load that exceeds the fixed capacity (the zone
+    ///   simply cannot be held at setpoint).
+    /// - No energy / fan power modelling beyond the schema capacities.
+    /// - Not suitable for latent or ventilation-driven design questions.
     Simple,
-    /// Variable Air Volume system with terminal reheat
+    /// **VAV** — packaged variable-air-volume terminal with reheat.
+    ///
+    /// *Modelling assumptions*
+    ///
+    /// - The zone sensible load is met by a packaged VAV terminal unit
+    ///   ([`VavTerminalUnit`]): supply fan, cooling coil and an optional
+    ///   hot-water reheat coil.
+    /// - Airflow is modulated between the terminal's minimum airflow ratio
+    ///   (30 % of rated flow by default) and its rated flow; the reheat
+    ///   coil picks up the residual sensible load below the minimum flow.
+    /// - Fan electrical power follows the ASHRAE 90.1-2016
+    ///   SPR-compensated fan-power curve
+    ///   ([`FanPowerCurve::with_spr_compensation`]).
+    /// - The template is sensible-only: no humidity removal at the terminal
+    ///   and **no outdoor-air ventilation path** (a VAV system that serves
+    ///   ventilation air needs a DOAS or an outdoor-air mixer on top).
+    ///
+    /// *Limits*
+    ///
+    /// - Zone latent load is not met by the terminal — pair with
+    ///   [`DOASFanCoil`](HVACSystemType::DOASFanCoil) when latent control
+    ///   matters.
+    /// - Reheat energy is charged whenever the zone is below setpoint and
+    ///   the minimum airflow has been reached.
     VAV,
-    /// Constant Air Volume system with fixed airflow
+    /// **CAV** — packaged constant-air-volume terminal.
+    ///
+    /// *Modelling assumptions*
+    ///
+    /// - The zone is served at a **fixed** design airflow
+    ///   ([`CAVSystem`]) with a cooling coil (rated SHR 0.75, bypass factor
+    ///   0.15 by default) and a heating coil.
+    /// - Coil capacity modulates with the load, but the airflow (and hence
+    ///   the fan power) does not: the fan runs whenever the system is on.
+    /// - The template is sensible-only: no humidity removal at the terminal
+    ///   and no outdoor-air ventilation path.
+    ///
+    /// *Limits*
+    ///
+    /// - Part-load efficiency is poor by construction (constant airflow at
+    ///   low load), which is exactly the behaviour the template is meant to
+    ///   expose.
+    /// - The zone load is met only if the fixed airflow is sufficient; a
+    ///   larger load cannot be met without more flow.
     CAV,
-    /// Heat pump system with COP curves
+    /// **HeatPump** — air-source heat pump with rated COP and efficiency curves.
+    ///
+    /// *Modelling assumptions*
+    ///
+    /// - Zone sensible load is met by a single reversible unit
+    ///   ([`HeatPump`]) with rated heating / cooling capacity, rated heating
+    ///   COP and rated cooling COP (EER) at the design outdoor temperatures
+    ///   (−5 °C heating, 35 °C cooling by default).
+    /// - Capacity degrades with outdoor temperature; **COP is held constant
+    ///   at its rated value** (no temperature-dependent COP degradation).
+    /// - Heating and cooling each have a polynomial efficiency curve, seeded
+    ///   from the default AHRI coefficients
+    ///   ([`efficiency_curves::default_ahri_coefficients`]).
+    /// - The template is sensible-only: no airflow, no humidity removal and
+    ///   no ventilation air.
+    ///
+    /// *Limits*
+    ///
+    /// - No defrost, no auxiliary / backup resistance heat and no
+    ///   simultaneous heating-and-cooling.
+    /// - No latent removal: the unit is modelled on a dry-bulb basis.
     HeatPump,
-    /// Ideal air loads system with infinite capacity (for ASHRAE 140 validation)
+    /// **DOAS + fan coil** — decoupled outdoor-air system serving a
+    /// four-pipe fan-coil unit.
+    ///
+    /// *Modelling assumptions*
+    ///
+    /// - The ventilation load is met by a **constant-volume dedicated
+    ///   outdoor air system** ([`DoasUnit`]) that conditions **100 %
+    ///   outdoor air**: the cooling coil drives the leaving humidity ratio to
+    ///   the target dew point (`w_sat(T_dp,target)`), a neutral reheat coil
+    ///   restores the sensible capacity at constant humidity ratio, and an
+    ///   optional adiabatic humidifier restores a minimum indoor humidity
+    ///   ratio in cold, dry climates.
+    /// - The **zone sensible load** is met by a four-pipe fan-coil unit
+    ///   ([`FourPipeFanCoil`]) on hot / chilled water. The fan coil is
+    ///   sensible-only; it never removes moisture.
+    /// - Because the supply dew point is held constant, the **zone latent
+    ///   load is removed at the DOAS**, not at the zone terminal — this is
+    ///   the sensible/latent decoupling the template exists for.
+    /// - Ventilation air and the zone air are decoupled: the DOAS carries
+    ///   the outdoor air, the fan coil circulates the zone air.
+    ///
+    /// *Limits*
+    ///
+    /// - If the DOAS cooling capacity is insufficient, the achieved
+    ///   dew point exceeds the target (the leaving state is interpolated
+    ///   towards the entering air) — the model reports this rather than
+    ///   silently meeting the target.
+    /// - The fan coil model is coarse: fixed rated water and air flow
+    ///   rates, a clamped part-load ratio (0.2–1.0) and a linear
+    ///   water-side capacity relation; no coil frosting, no condensate
+    ///   recovery and no fan-coil fan speed modulation.
+    /// - The template does not model a central plant (chiller / boiler)
+    ///   or its part-load curves — the water side is an ideal source at the
+    ///   supplied water temperatures.
+    /// - Requires the DOAS to be sized for the ventilation airflow; no
+    ///   automatic sizing is performed by the template.
+    DOASFanCoil,
+    /// **Ideal loads** — infinite-capacity ideal air system
+    /// (for ASHRAE 140 validation).
+    ///
+    /// *Modelling assumptions*
+    ///
+    /// - The zone load is met **exactly**: the ideal system has infinite
+    ///   capacity and always delivers air at the ideal supply temperature
+    ///   (13 °C cooling, 40 °C heating by default).
+    /// - The reported energy is the ideal (thermodynamic minimum) energy:
+    ///   no fan power, no part-load curve, no cycling and no equipment
+    ///   efficiency penalties are applied.
+    /// - The template exists for **ASHRAE 140 validation**, where the point
+    ///   is to test the building/zone heat-balance model, not the HVAC
+    ///   equipment model.
+    ///
+    /// *Limits*
+    ///
+    /// - Not a design tool: the results say nothing about the equipment
+    ///   needed to serve the load.
+    /// - No humidity removal, no ventilation air and no economizer are
+    ///   modelled — the latent load is simply not met.
     Ideal,
 }
 
