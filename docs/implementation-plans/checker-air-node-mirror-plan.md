@@ -1,6 +1,6 @@
 # Checker Air-Node Mirror — Implementation Plan
 
-**Status:** ACTIVE (round 105; increment A landed round 105 — PR #4649; increment B landed round 106 — PR #4653, the R77 arm consumes the air record, response re-pinned to the composed closed form; increment C landed round 107 — the per-class t_s-first mirror's `t_i` route consumes the record via the self-contained seven-entry layout; increment D landed round 108 — the gauge-proxy legacy identity's `h_tr_3·t_i` route consumes the record through the shared `composed_air_route_shift` helper on both legacy sites; the §5 B–D sequence is complete, closing the round-104 scoping verdict's blind-arm list on record-carrying states — the gauge-route response itself stays owned by §LIMIT-19/#1344; the §7 surface-pool blitz queue is next; rounds 110–112 closed the blitz's remaining slices (lag-carry #4673, solar-split #4674, multi-zone vent #4675) and round 113 landed increment E — the inter-zone cross-response, PR #4676; round 115 landed increment F — the sustained-probe self-response continuation (the record's ninth np slot + the seeded checker API); round 116 pinned the record gate's archaeology-route contracts — R74/R90-filtered suppression + consumer fall-throughs, R75 form-invariance precision (the scoping correction of the §5 increment-F parenthetical)). Scoping verdict: §LIMIT-22 history, round-104 dated block (both blind arms air-borne, multi-day; B restores the composite arm's share via the record); the §5 out-of-scope list's inter-zone item is disposed by the round-113 dated block — the neighbor side landed, the self-response continuation landed round 115 (increment F: the np persistence slot + the seeded API — the R90-lag channel stays structurally absent on the recorded route). Ownership: §LIMIT-19 / #1344 family; adjacent to GaugeSolver un-blockers #3291/#1465/#1462.
+**Status:** ACTIVE (round 105; increment A landed round 105 — PR #4649; increment B landed round 106 — PR #4653, the R77 arm consumes the air record, response re-pinned to the composed closed form; increment C landed round 107 — the per-class t_s-first mirror's `t_i` route consumes the record via the self-contained seven-entry layout; increment D landed round 108 — the gauge-proxy legacy identity's `h_tr_3·t_i` route consumes the record through the shared `composed_air_route_shift` helper on both legacy sites; the §5 B–D sequence is complete, closing the round-104 scoping verdict's blind-arm list on record-carrying states — the gauge-route response itself stays owned by §LIMIT-19/#1344; the §7 surface-pool blitz queue is next; rounds 110–112 closed the blitz's remaining slices (lag-carry #4673, solar-split #4674, multi-zone vent #4675) and round 113 landed increment E — the inter-zone cross-response, PR #4676; round 115 landed increment F — the sustained-probe self-response continuation (the record's ninth np slot + the seeded checker API); round 116 pinned the record gate's archaeology-route contracts — R74/R90-filtered suppression + consumer fall-throughs, R75 form-invariance precision (the scoping correction of the §5 increment-F parenthetical); round 117 closed the r113 amendment's last carry channel — the R90 lag state on non-record routes (structurally absent on the recorded route, exactly characterized on the filtered one; contracts + docs only)). Scoping verdict: §LIMIT-22 history, round-104 dated block (both blind arms air-borne, multi-day; B restores the composite arm's share via the record); the §5 out-of-scope list's inter-zone item is disposed by the round-113 dated block — the neighbor side landed, the self-response continuation landed round 115 (increment F: the np persistence slot + the seeded API — the R90-lag channel stays structurally absent on the recorded route). Ownership: §LIMIT-19 / #1344 family; adjacent to GaugeSolver un-blockers #3291/#1465/#1462.
 **Goal:** restore the artificial-gain probe's leverage on the two arms that lost it to the committed-air convention (the R77 composite arm's air route, the gauge-proxy legacy arm's `h_tr_3·t_i` route), by recording the sub-stepped air-node composite's affine coefficients engine-side and recomputing the probe response checker-side.
 **Ceiling:** unchanged — every identity this plan touches stays in the 1e-5 W residual class.
 **Method:** TDD with Python replication of each closed form before any code; red-first contract tests; full battery bit-identity at zero delta on every increment; no option plumbing (records are unconditional on the coupled default route, exactly like the round-78 `[a, b, d, bl]` record).
@@ -172,6 +172,59 @@ fall-through.]
   (the QAS + GC anchors' home).
   Still out of scope after G: the R90 lag channel on non-record routes;
   the 9R4C arm's committed-air basis (§LIMIT-19/ADR-0011, Alex's);
+  HVAC-masked zones.
+- **H — the R90 lag channel's closure pins (landed round 117):** the §5
+  remainder named above — the r113 amendment's last carry channel —
+  bounded and closed as contracts + docs only (no engine change; held on
+  the ASHRAE weather wall in the merge train). The channel splits by
+  route. On the RECORDED route the lag state is consumed by nothing (the
+  num takes the unfiltered input; the mass advance never reads it), so
+  the round-113 amendment's "structurally absent on the recorded route"
+  becomes a measured contract: `tests/r90_lag_channel_contract.rs`
+  contract 1 pins the committed lag-state charge EXACTLY — the affine
+  decay chain `rl ← decay·rl + dlag_in·(1−decay)` with
+  `dlag_in = h_tr_is·rad_frac·(1−s88)/term_rest_1` (2.1e-16 hour 1,
+  1.0e-15 hour 2 on the 2-zone lumped fixture; zone 0 charging 0.5413
+  → 1.0347 lag units under a sustained 1 kW probe, the neighbor exactly
+  0) — while the seeded continuation (slots + air/mass seeds + NP + the
+  iz committed source, NO lag term) still closes against the engine
+  counterfactual at ≤1e-9 (2.7e-16 … 8.2e-14 across both zones, both
+  state pairs, both hours). Any future `solar_lag` consumer on this
+  route breaks the closure. On the FILTERED route (record suppressed)
+  the channel is live and now exactly characterized: the response is the
+  recorded-form recurrence with the W slot replaced per sub-step by
+  `(1−D)·(coef_rest + lag_dload·(1−decay_half) +
+  term_rest_1·decay_half·rl_unit)/den`, coef_rest recovered from the
+  recorded twin's slot with the seed-hour provenance pinned
+  (`coef_rest = conv·term_rest_1`), closing against the engine at
+  ≤1e-9 (5.5e-16 hour 1, 3.8e-16 hour 2) — hour 2 closes ONLY with the
+  committed lag seed (the no-seed form misses by 1.02e-3 relative,
+  pinned), and the recorded-form composition mis-mirrors the filtered
+  engine by 5.1e-3 / 3.7e-3 (the round-116 exclusion is load-bearing,
+  both hours pinned). Scope findings recorded in-suite: the channel is
+  probed-zone-local (the neighbor's iz-committed response is
+  route-W-insensitive — the iz term enters only from hour-start
+  committed states, measured 5.3e-15); at `c_air = 0` the channel
+  vanishes entirely (decay 0, `lag_mid → input` — the fixture carries
+  physical air capacitance V·ρ·cp); the lag STATE itself is
+  byte-identical across routes at the same hour (contract 18's parity,
+  re-observed). Python replication `/tmp/r117_replication.py` (dev-time
+  evidence, ALL CLAIMS OK) verified against the engine dump (a 4-run
+  × 2-hour probe harness). Characterization, not red-first — no engine
+  change (the r109–r116 contracts precedent); teeth ×3 on the clean
+  tree, each failing exactly its predicted set: a fake `+ lag_old_r77`
+  consumer added to the default num → contract 1 fails at the hour-1
+  continuation (8.9e-4; the within-hour charge makes the state
+  consumable from sub-step 1 — predicted hour-2, disclosed), {2,3}
+  green; the midpoint form corrupted (decay_half → decay on the
+  lag_old term) → {2,3} fail, 1 green; the state charge clamped (the
+  input term dropped from the advance) → {1 at the charge pin
+  (5.41e-1 vs 0.0), 2, 3} fail — proving the charge pin observes the
+  real charge and the continuation pin observes consumption. Rider
+  landed: the round-74 note's "seed steps stay bit-identical" corrected
+  in place (the R76 refresh postdates it; the round-116 measurement
+  cited), closing duck note N2-r116. Still out of scope after H: the
+  9R4C arm's committed-air basis (§LIMIT-19/ADR-0011, Alex's);
   HVAC-masked zones.
 
 ## 6. Verification per increment

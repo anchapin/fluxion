@@ -526,3 +526,47 @@ closes the continuation with zero iz coupling (seeds + persistence alone).
 Red-first stub → {1,3,4,6} rc=101; teeth: (1−f) drop → {1,3,6}, un-gated
 routing → {3,6}. Battery bit-identity at the changed tree — the slot is
 write-only and the freeze field is record-only, so no re-record is owed.
+
+## Round 117 — the R90 lag channel's closure (2026-11-08)
+
+The r113 amendment's third carry channel — "the R90 lag state on
+non-record routes", the last un-disposed item after round 115 landed the
+ramp-source persistence and the hour-boundary seeds — is bounded and
+closed as contracts + docs only (no engine change). The channel splits by
+route:
+
+- **Recorded route — structurally absent, now a measured contract.** The
+  committed lag state CHARGES under a sustained probe (the input
+  `h_tr_is·phi_st/term_rest_1·(1−s88)` is load-linear): its response is
+  exactly the affine decay chain `rl ← decay·rl + dlag_in·(1−decay)`
+  (2.1e-16 / 1.0e-15 across the two hours; zone 0: 0.5413 → 1.0347 lag
+  units under 1 kW; the neighbor exactly 0). Nothing consumes it: the
+  seeded continuation (nine-slot record + air/mass seeds + NP + the iz
+  committed source, no lag term) closes against the engine counterfactual
+  at ≤1e-9 on both zones, both state pairs, both hours (2.7e-16 …
+  8.2e-14). Any future `solar_lag` consumer on this route breaks the
+  contract.
+- **Filtered route — live, exactly characterized.** With
+  `FLX_R90_NO_LAG_FILTER=0` the num consumes the MIDPOINT lag value, and
+  the probe response is the recorded-form recurrence with the W slot
+  replaced per sub-step by the lag-channel form (state term
+  `term_rest_1·decay_half·rl_unit`, coef_rest recovered from the
+  recorded twin's slot with the seed-hour provenance
+  `coef_rest = conv·term_rest_1` pinned): closes at ≤1e-9 against the
+  engine (5.5e-16 / 3.8e-16), hour 2 ONLY with the committed lag seed
+  (no-seed miss 1.02e-3, pinned); the recorded-form composition
+  mis-mirrors by 5.1e-3 / 3.7e-3 — the round-116 suppression is
+  load-bearing. The route keeps its documented fall-through.
+
+Scope findings: the channel is probed-zone-local (the neighbor's
+iz-committed response is route-W-insensitive, 5.3e-15); at `c_air = 0`
+the channel vanishes (decay 0 — fixtures need physical air capacitance);
+the lag STATE is byte-identical across routes at the same hour (contract
+18's parity, re-observed). Python replication `/tmp/r117_replication.py`
+(ALL CLAIMS OK) against a 4-run × 2-hour engine probe dump. Teeth ×3 on
+the clean tree, each failing exactly its predicted set (fake state
+consumer → contract 1's continuation; midpoint corruption → {2,3};
+charge clamp → the charge pin + {2,3}). Battery bit-identity at the
+changed tree — contracts + a comment only, no re-record owed. The
+round-74 "seed steps stay bit-identical" comment is corrected in place
+(the R76 refresh postdates it), closing duck note N2-r116.
