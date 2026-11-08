@@ -1307,8 +1307,18 @@ fn section7_headline_value_pins() {
         ("650FF", |r| r.max_temp_c, 48.71),
         ("900FF", |r| r.min_temp_c, -0.26),
         ("900FF", |r| r.max_temp_c, 43.28),
-        ("950FF", |r| r.min_temp_c, -15.67),
-        ("950FF", |r| r.max_temp_c, 38.78),
+        // Re-pinned 2026-11-08 (loop round 121, Alex-approved 16:46 ET
+        // "I approve the 950FF headline pin"): loop r100's ASHRAE 140-2017
+        // §5.2.1.10.1 night-vent h_tr_is forced-convection multiplier removal
+        // (commit edba335a, PR #4612) re-emitted the committed CSV row
+        // (−15.67/38.78 → −15.96/39.01) but missed these pins — they have
+        // failed on every tree since (first surfaced r119; no CI workflow
+        // runs this test binary, so CI never went red). The pins carry the
+        // committed-CSV / current-engine reading (both artifact byte-identity
+        // gates green at 368a1847; local engine reads −15.955180496761546 °C).
+        // Tolerance stays ±0.5%; nothing tuned.
+        ("950FF", |r| r.min_temp_c, -15.96),
+        ("950FF", |r| r.max_temp_c, 39.01),
     ];
     for (id, get, expected) in pins {
         pin_check(id, get(by_id(id)), *expected);

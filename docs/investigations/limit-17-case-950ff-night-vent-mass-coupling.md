@@ -354,3 +354,25 @@ Blocks preserved: 1. No wording was changed, softened or deleted.
     (controlled-delta baseline pattern).
   - `ADR-0009` — wind-dependent `h_tr_em` tracking stub.
   - `ADR-0010` — Case 940 CTF setback-recovery overshoot tracking stub.
+
+
+## Addendum 2026-11-08 (loop round 121) — the r100 movement surfaces in the §7 headline pins
+
+Loop r100's §5.2.1.10.1 night-vent `h_tr_is` forced-convection multiplier
+removal (commit `edba335a`, PR #4612) moved the 950FF free-float pair
+−15.67/38.78 → −15.96/39.01 °C in the committed §7 CSV and re-recorded
+`case_950_cooling` (0.918 → 0.961 MWh) but missed the §7 headline pins
+(`section7_headline_value_pins`), which kept the r94-era −15.67/38.78 and
+have failed on every tree since 2026-10-25. The failure surfaced in r119
+(§7 transmitted-solar work), was verified pre-existing at the clean train
+base, and held for Alex's word on the pin's provenance; the r121 premise
+re-verified the same full-precision reading (−15.955180496761546 °C) at
+develop 368a1847. No CI workflow executes the §7 emitter binary, so CI
+never carried a conflicting reading for this pin — the "(CI green)" framing
+in the r119/r120 records refers to the shared engine's strict-gate rows,
+not to this test. Alex approved the re-pin on 2026-11-08 16:46 ET ("I
+approve the 950FF headline pin"); the pins now carry the committed-CSV /
+current-engine reading at the unchanged ±0.5% tolerance. The strict-gate
+`ff_950ff_min/max` rows still record the r100-prior values (−15.67/38.78,
+gaps 21.00/5.96 vs measured ≈23.2/6.6) within the regression tolerance —
+gate green, left untouched this round as outside the approved scope.
