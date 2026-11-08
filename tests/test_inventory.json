@@ -18,7 +18,7 @@
     "fluxion": {
       "lib_ignored": 8,
       "lib_tests": 4331,
-      "test_binaries": 45
+      "test_binaries": 46
     },
     "fluxion-behavior": {
       "lib_ignored": 0,
@@ -66,8 +66,8 @@
       "test_binaries": 1
     }
   },
-  "generated_at": "2026-11-08T04:35:11.654197+00:00",
-  "repo_root": "8f1d37ad8cb8423434110b51e374574ced80f4b4",
+  "generated_at": "2026-11-08T07:07:41.264329+00:00",
+  "repo_root": "e787f7a5303075a515c5f96a1712d0fbf55de367",
   "schema_version": 1,
   "scope": {
     "workspace_exclude": [
@@ -78,13 +78,13 @@
     "doc_tests": 0,
     "lib_ignored_root": 8,
     "lib_tests_root": 4331,
-    "test_binaries": 61,
-    "test_source_files": 393,
+    "test_binaries": 62,
+    "test_source_files": 394,
     "workspace_ignored": 156,
     "workspace_integration_ignored": 147,
-    "workspace_integration_tests": 3574,
+    "workspace_integration_tests": 3579,
     "workspace_lib_ignored": 9,
     "workspace_lib_tests": 5490,
-    "workspace_tests": 9064
+    "workspace_tests": 9069
   }
 }

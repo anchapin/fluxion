@@ -18,7 +18,7 @@
     "fluxion": {
       "lib_ignored": 8,
       "lib_tests": 4330,
-      "test_binaries": 45
+      "test_binaries": 46
     },
     "fluxion-behavior": {
       "lib_ignored": 0,
@@ -71,16 +71,16 @@
   "metrics": {
     "lib_ignored": 8,
     "lib_tests": 4330,
-    "test_binaries": 61,
+    "test_binaries": 62,
     "workspace_ignored": 156,
-    "workspace_tests": 9042
+    "workspace_tests": 9047
   },
   "metrics_ast": {
     "lib_ignored": 8,
     "lib_tests": 4330,
-    "test_binaries": 61,
+    "test_binaries": 62,
     "workspace_ignored": 156,
-    "workspace_tests": 9042
+    "workspace_tests": 9047
   },
   "ratchet": {
     "BASELINE_LIB_IGNORED": 9,
