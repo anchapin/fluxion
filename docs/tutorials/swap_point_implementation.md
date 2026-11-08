@@ -314,7 +314,6 @@ pub struct HybridRouting {
     pub use_surrogate_conduction: bool,   // 5R1C / 9R4C thermal network solve
     pub use_surrogate_ventilation: bool,  // Ventilation h_ve
     pub use_surrogate_loads: bool,        // Internal / external load prediction
-    pub use_surrogate_hvac: bool,         // HVAC power demand
     pub use_ood_fallback: bool,           // Out-of-distribution detection
 }
 ```
