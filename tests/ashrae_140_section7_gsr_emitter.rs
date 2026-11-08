@@ -419,9 +419,11 @@ pub fn run_section7_case(def: &Section7CaseDef) -> Result<Section7CaseResult, St
 
     // Section 6.2.1.3/.4/.5 case-window route (round 62): the case's own
     // window at its spec area/orientation, shaded per the engine's own
-    // spec-to-shading conversion (`from_spec_with_selector`, the post-
-    // LIMIT-39 wiring): overhang mounted at the window top
-    // (distance_above 0, "infinite" extension 10 m), fins at both window
+    // spec-to-shading conversion (`from_spec_with_selector`, round-119
+    // wiring): overhang mounted at the roof edge, gap = mounting height
+    // above the window head (0.5 m for the 140 geometry — Figure 5-32 +
+    // the UM reference inputs; the engine site carries the full
+    // provenance), "infinite" extension 10 m, fins at both window
     // edges spanning the full window height. Requirements (in-repo
     // standard, verified 2026-10-18): 6.2.1.3.1 (Case 610) annual
     // transmitted through the shaded south window with horizontal
@@ -461,8 +463,15 @@ pub fn run_section7_case(def: &Section7CaseDef) -> Result<Section7CaseResult, St
         })
         .map(|s| Overhang {
             depth: s.overhang_depth,
-            distance_above: 0.0,
-            extension: 10.0, // "Infinite" (engine wiring, LIMIT-39)
+            // Mirror of the engine's spec-to-surface gap (loop round 119;
+            // round 4 had carried the engine's 0 here and the §6.2.1.3/.5
+            // transmitted-solar rows inherited the over-shade): the 140
+            // overhang mounts at the roof edge, so the gap is the mounting
+            // height above the window head (sill + height), clamped at 0.
+            distance_above: case_window_geom
+                .map(|g| (s.mounting_height - (g.sill_height + g.height)).max(0.0))
+                .unwrap_or(0.0),
+            extension: 10.0, // "Infinite" (engine wiring)
         });
     let case_fins: Vec<ShadeFin> = match spec.shading.as_ref() {
         Some(s)
@@ -1470,7 +1479,12 @@ fn section621_value_pins() {
         by_id("610")
             .req_6213_shaded_south_transmitted_kwh_m2
             .unwrap(),
-        529.44,
+        // Re-pinned loop round 119 (2026-11-08): the overhang-gap fix
+        // (spec-true roof-edge mounting, 0.5 m above the 2.2 m head —
+        // Figure 5-32 + the UM reference inputs) un-shades the head strip,
+        // raising the transmitted figure 529.44 → 643.03 kWh/m². Was
+        // 529.44 (recorded 2026-10-18, loop round 62).
+        643.03,
     );
     pin_check(
         "620",
@@ -1482,7 +1496,10 @@ fn section621_value_pins() {
         by_id("630")
             .req_6215_shaded_west_transmitted_kwh_m2
             .unwrap(),
-        324.44,
+        // Re-pinned loop round 119 (2026-11-08): same overhang-gap fix —
+        // the E/W overhang mounts at the roof edge (0.5 m gap), raising
+        // transmitted 324.44 → 365.88 kWh/m². Was 324.44 (round 62).
+        365.88,
     );
     // Cross-checks against the round-48/53 reference quantities: the
     // shaded-south figure must sit below the 6.2.1.2.2 unshaded south
