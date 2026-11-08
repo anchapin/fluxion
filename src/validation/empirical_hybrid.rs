@@ -125,7 +125,7 @@ pub struct HybridEmpiricalReport {
     /// Case id (mirrors `HybridEmpiricalCase::id`).
     pub case_id: String,
     /// Routing policy summary, e.g.
-    /// `"loads=surrogate, conduction=physics, ventilation=physics, hvac=physics"`.
+    /// `"loads=surrogate, conduction=physics, ventilation=physics"`.
     pub routing_summary: String,
     /// Description of the source facility (mirrors `MonitoredDataSource::name`).
     pub facility: String,
@@ -230,7 +230,7 @@ impl HybridEmpiricalCaseRegistry {
 /// grep. Stable across runs.
 pub fn routing_summary(routing: &HybridRouting) -> String {
     format!(
-        "loads={}, conduction={}, ventilation={}, hvac={}",
+        "loads={}, conduction={}, ventilation={}",
         if routing.use_surrogate_loads {
             "surrogate"
         } else {
@@ -242,11 +242,6 @@ pub fn routing_summary(routing: &HybridRouting) -> String {
             "physics"
         },
         if routing.use_surrogate_ventilation {
-            "surrogate"
-        } else {
-            "physics"
-        },
-        if routing.use_surrogate_hvac {
             "surrogate"
         } else {
             "physics"
@@ -476,7 +471,6 @@ mod tests {
         assert!(summary.contains("loads=surrogate"));
         assert!(summary.contains("conduction=physics"));
         assert!(summary.contains("ventilation=physics"));
-        assert!(summary.contains("hvac=physics"));
     }
 
     #[test]
@@ -485,7 +479,6 @@ mod tests {
         assert!(summary.contains("loads=physics"));
         assert!(summary.contains("conduction=physics"));
         assert!(summary.contains("ventilation=physics"));
-        assert!(summary.contains("hvac=physics"));
     }
 
     #[test]
@@ -494,7 +487,6 @@ mod tests {
         assert!(summary.contains("loads=surrogate"));
         assert!(summary.contains("conduction=surrogate"));
         assert!(summary.contains("ventilation=surrogate"));
-        assert!(summary.contains("hvac=surrogate"));
     }
 
     #[test]
