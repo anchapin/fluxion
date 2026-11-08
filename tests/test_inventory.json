@@ -66,8 +66,8 @@
       "test_binaries": 1
     }
   },
-  "generated_at": "2026-11-08T07:07:41.264329+00:00",
-  "repo_root": "e787f7a5303075a515c5f96a1712d0fbf55de367",
+  "generated_at": "2026-11-08T17:27:27.011025+00:00",
+  "repo_root": "unknown",
   "schema_version": 1,
   "scope": {
     "workspace_exclude": [
@@ -82,9 +82,24 @@
     "test_source_files": 394,
     "workspace_ignored": 156,
     "workspace_integration_ignored": 147,
-    "workspace_integration_tests": 3579,
+    "workspace_integration_tests": 3586,
     "workspace_lib_ignored": 9,
     "workspace_lib_tests": 5490,
-    "workspace_tests": 9069
+    "workspace_tests": 9076
+  },
+  "verify": {
+    "command": [
+      "cargo",
+      "test",
+      "--workspace",
+      "--exclude",
+      "fluxion-tauri",
+      "--",
+      "--list"
+    ],
+    "error": "cargo returned exit 101",
+    "executed_at": "2026-11-08T17:29:57.775415+00:00",
+    "matched": false,
+    "stderr_tail": "supplied\n   --> examples/test_diffuse_shgc.rs:26:16\n    |\n 26 |       let gain = calculate_window_solar_gain(\n    |  ________________^^^^^^^^^^^^^^^^^^^^^^^^^^^-\n 27 | |         &irradiance,\n 28 | |         &window,\n 29 | |         None,\n...   |\n 33 | |         Orientation::South,\n 34 | |     );\n    | |_____- argument #8 of type `f64` is missing\n    |\nnote: function defined here\n   --> src/sim/solar.rs:247:8\n    |\n247 | pub fn calculate_window_solar_gain(\n    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^\nhelp: provide the argument\n    |\n 26 |     let gain = calculate_window_solar_gain(\n...\n 33 |         Orientation::South,\n 34 ~         /* f64 */,\n 35 ~     );\n    |\n\nFor more information about this error, try `rustc --explain E0061`.\nerror: could not compile `fluxion` (example \"test_diffuse_shgc\") due to 1 previous error\nwarning: build failed, waiting for other jobs to finish...\nwarning: `fluxion` (lib test) generated 4 warnings (run `cargo fix --lib -p fluxion --tests` to apply 4 suggestions)\n"
   }
 }
