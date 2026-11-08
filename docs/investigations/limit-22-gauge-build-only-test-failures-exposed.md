@@ -570,3 +570,44 @@ charge clamp → the charge pin + {2,3}). Battery bit-identity at the
 changed tree — contracts + a comment only, no re-record owed. The
 round-74 "seed steps stay bit-identical" comment is corrected in place
 (the R76 refresh postdates it), closing duck note N2-r116.
+
+## Round 118 — the HVAC-masked probe fixtures (2026-11-08)
+
+The §5 out-of-scope list's last un-disposed item after round 117 —
+"HVAC-masked zones (probe fixtures use free-float setpoints)" — is bounded
+and closed as contracts + docs only (no engine change). Every probe
+fixture the plan landed through H pins `free_float = true` plus ±999
+setpoints, so the probe surface had no measured statement about zones
+under ACTIVE setpoint control. Round 118 bounds it: the controlled
+commit (LIMIT-33 Option A, #4314) plus the capacity-clamped ideal loads
+(#4241/#2826) create exactly three routes, pinned by
+`tests/hvac_masked_probe_contract.rs` (five contracts, per-model branch
+preconditions recomputed in-test):
+
+- **Unclamped ideal — the mask.** The committed controlled state
+  (`setpoints.temperatures`, the array the checker's probe reads) is the
+  setpoint VERBATIM in both probe arms: the controlled response is
+  exactly 0 while the free advance composes from the record
+  (r_air/r_m, ≤1e-9) and stays BIT-IDENTICAL to a free-float twin. Any
+  future probe fixture with active HVAC and headroom therefore measures
+  the controlled-state routes, not the free advance — the committed-air
+  basis itself stops moving (checker-blind by construction, the
+  convention the LIMIT-33 comment documents).
+- **Capacity-clamped — pass-through.** The clamp pins Q at ±cap
+  (load-independent), so `t_i_act = t_free + Q/den_true` passes the free
+  response through UNSCALED and the level closes from the record's final
+  den slot (`den_true = den/term_rest_1`, the #2868 form).
+- **Deadband — parity.** Demand 0 commits the free state verbatim.
+
+The coupled advance is response- and HVAC-blind on every route: the
+committed air AND mass records are bit-identical across the three routes
+and the free-float control, and the record persists with the full
+nine-slot/twelve-sub-step r113/r115 layout under active control — the
+composition contracts from rounds 105–117 compose the same values under
+setpoint control. Python replication `/tmp/r118_replicate.py` (ALL CLAIMS
+OK 19/19) against a six-run engine dump; teeth ×3 each failing exactly
+its predicted set (mask-site commit swap → the mask contract only;
+clamped divisor → the clamped route only, pass-through
+divisor-independent; clamp removal → the clamped route only, Q
+load-dependent). Battery bit-identity at the changed tree — contracts +
+docs only, no re-record owed.
