@@ -1208,28 +1208,17 @@ impl ThermalModel<VectorField> {
                     match shading.shading_type {
                         ShadingType::Overhang | ShadingType::OverhangAndFins if win_area > 0.0 => {
                             // ASHRAE 140 mounts the overhang at the ROOF EDGE,
-                            // above the window head — Figure 5-32 (Case 610): a
-                            // 1.0 m projection 0.5 m above the 2.2 m head (head
-                            // = sill 0.2 + height 2.0, wall top 2.7 m, Figure
-                            // 5-1); the standard's own reference inputs agree
-                            // (User's Manual §7.2.2.1.1 worked example: the E+
-                            // file's four overhang vertices sit at Z = 2.700000,
-                            // the CSE file carries ohDistUp = 1.64042 ft = 0.5 m
-                            // exactly). The E/W devices (Cases 630/930) reuse
-                            // the same mounting (§5.2.2.1.2.1: the windows are
-                            // "exactly as in Case 600" other than orientation).
-                            // Loop round 4 (2026-10-09) set gap 0 citing
-                            // Case-630 wording ("at the top of the window") that
-                            // exists in neither primary source — that shaded the
-                            // head strip at every sub-horizon profile angle and
-                            // over-shaded every shaded case (the quarantined
-                            // 610 rows carried the signature: H far over / C far
-                            // under). Fixed loop round 119 (2026-11-08): the gap
-                            // is the mounting height above the window head,
-                            // computed from the spec's own window dims and
-                            // clamped at 0 for low synthetic devices; pinned by
-                            // tests/shading_geometry_contract.rs (red-first:
-                            // got 0.0, want 0.5, pre-fix).
+                            // 0.5 m above the 2.2 m window head (Figure 5-32;
+                            // head = sill 0.2 + height 2.0, wall top 2.7 m,
+                            // Figure 5-1). The standard's reference inputs
+                            // agree: UM E+ vertices Z = 2.700000, CSE
+                            // ohDistUp = 1.64042 ft = 0.5 m; the E/W devices
+                            // (Cases 630/930) reuse it (§5.2.2.1.2.1). Round 4
+                            // set gap 0 citing wording absent from both
+                            // sources — over-shading every shaded case; fixed
+                            // round 119, pinned by
+                            // tests/shading_geometry_contract.rs (full record:
+                            // limit-35 doc §65). Red-first got 0.0, want 0.5.
                             let spec_gap = spec
                                 .windows
                                 .get(zone_idx)
