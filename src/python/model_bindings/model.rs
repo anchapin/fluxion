@@ -647,12 +647,31 @@ pub fn zone_from_model(model: &ThermalModel<VectorField>, idx: usize) -> PyZone 
         true
     };
 
+    // Per-zone setpoints (Issue #4633): the per-zone vectors are the
+    // authoritative values (they are what the solver reads and what
+    // `Model::set_zone_setpoints` writes); the scalar fields are the
+    // fallback for a zone beyond the end of a short vector.
+    let heating_setpoint = model
+        .setpoints
+        .heating_setpoints
+        .as_slice()
+        .get(idx)
+        .copied()
+        .unwrap_or(model.setpoints.heating_setpoint);
+    let cooling_setpoint = model
+        .setpoints
+        .cooling_setpoints
+        .as_slice()
+        .get(idx)
+        .copied()
+        .unwrap_or(model.setpoints.cooling_setpoint);
+
     PyZone {
         index: idx,
         temperature: temp,
         area,
-        heating_setpoint: model.setpoints.heating_setpoint,
-        cooling_setpoint: model.setpoints.cooling_setpoint,
+        heating_setpoint,
+        cooling_setpoint,
         hvac_enabled,
         surfaces,
     }
@@ -1587,6 +1606,84 @@ impl Model {
         crate::python::model_bindings::apply_hvac_system_to_model(&mut self.inner, &hvac);
     }
 
+    /// Set zone-specific heating and cooling setpoints (Issue #4633).
+    ///
+    /// Mirrors the multi-zone binding
+    /// (`PyMultiZoneThermalModel::set_zone_setpoints`,
+    /// `src/python/bindings.rs`) exactly:
+    ///
+    /// * an out-of-range zone index raises `ValueError` with the same
+    ///   message,
+    /// * a heating setpoint that is not strictly below the cooling setpoint
+    ///   raises `ValueError` with the same message,
+    /// * the per-zone `heating_setpoints` / `cooling_setpoints` vectors are
+    ///   written — these are the fields the solver actually reads
+    ///   (Issue #2826), so the change reaches the simulated energy.
+    ///
+    /// For a single-zone model the scalar `heating_setpoint` /
+    /// `cooling_setpoint` fields are kept consistent with the per-zone
+    /// vectors so that scalar-driven consumers (and the `zones()` snapshot)
+    /// report the same values.
+    ///
+    /// # Arguments
+    /// * `zone_idx` - Zero-based zone index.
+    /// * `heating` - Heating setpoint (°C).
+    /// * `cooling` - Cooling setpoint (°C), must be greater than `heating`.
+    fn set_zone_setpoints(&mut self, zone_idx: usize, heating: f64, cooling: f64) -> PyResult<()> {
+        if zone_idx >= self.inner.hvac.num_zones {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Zone index {} out of range (0-{})",
+                zone_idx,
+                self.inner.hvac.num_zones - 1
+            )));
+        }
+
+        if heating >= cooling {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "Heating setpoint must be less than cooling setpoint",
+            ));
+        }
+
+        self.inner.setpoints.heating_setpoints.as_mut_slice()[zone_idx] = heating;
+        self.inner.setpoints.cooling_setpoints.as_mut_slice()[zone_idx] = cooling;
+
+        // Keep the scalar fields consistent for the single-zone case: with
+        // one zone the scalar IS that zone's setpoint, and the scalar is the
+        // fallback the solver uses when a per-zone vector is too short.
+        if self.inner.hvac.num_zones == 1 {
+            self.inner.setpoints.heating_setpoint = heating;
+            self.inner.setpoints.cooling_setpoint = cooling;
+        }
+
+        Ok(())
+    }
+
+    /// Get the per-zone `(heating, cooling)` setpoint pairs (Issue #4633).
+    ///
+    /// The values are read from the per-zone `heating_setpoints` /
+    /// `cooling_setpoints` vectors — the same fields
+    /// [`Self::set_zone_setpoints`] writes and the same fields the solver
+    /// consumes. The list is ordered by zone index and has one entry per
+    /// zone.
+    fn get_zone_setpoints(&self) -> Vec<(f64, f64)> {
+        let heating = self.inner.setpoints.heating_setpoints.as_slice();
+        let cooling = self.inner.setpoints.cooling_setpoints.as_slice();
+        (0..self.inner.hvac.num_zones)
+            .map(|i| {
+                (
+                    heating
+                        .get(i)
+                        .copied()
+                        .unwrap_or(self.inner.setpoints.heating_setpoint),
+                    cooling
+                        .get(i)
+                        .copied()
+                        .unwrap_or(self.inner.setpoints.cooling_setpoint),
+                )
+            })
+            .collect()
+    }
+
     /// Debug-friendly `__repr__` (Issue #2548).
     ///
     /// Exposes the stable `simulation_id` (so users can grep tracing/metrics
@@ -2220,6 +2317,75 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ========================================================================
+    // Issue #4633 — `Model.set_zone_setpoints` (single-zone) must write the
+    // per-zone vectors, validate like the multi-zone binding, and drive
+    // simulated energy (the #2826 pattern, through the new method itself).
+    // ========================================================================
+
+    #[test]
+    fn model_set_zone_setpoints_writes_vectors_and_validates_issue_4633() {
+        let mut model = Model::new(1).expect("default Model builds");
+        model
+            .set_zone_setpoints(0, 18.0, 26.0)
+            .expect("valid setpoints accepted");
+        assert_eq!(model.get_zone_setpoints(), vec![(18.0, 26.0)]);
+        // Single-zone: scalar fields stay consistent with the vectors.
+        assert_eq!(model.inner.setpoints.heating_setpoint, 18.0);
+        assert_eq!(model.inner.setpoints.cooling_setpoint, 26.0);
+        // Same validation errors as the multi-zone binding.
+        assert!(model.set_zone_setpoints(1, 18.0, 26.0).is_err());
+        assert!(model.set_zone_setpoints(0, 26.0, 18.0).is_err());
+        assert!(model.set_zone_setpoints(0, 22.0, 22.0).is_err());
+    }
+
+    #[test]
+    fn model_set_zone_setpoints_drives_energy_issue_4633() {
+        use crate::ai::surrogate::SurrogateManager;
+        use crate::sim::lighting::LightingSchedule;
+
+        let pairs: [(f64, f64); 2] = [(20.0, 24.0), (15.0, 30.0)];
+        let mut energies: Vec<f64> = Vec::with_capacity(pairs.len());
+        for (heat, cool) in pairs {
+            let mut model = Model::new(1).expect("default Model builds");
+            model
+                .set_zone_setpoints(0, heat, cool)
+                .expect("valid setpoints accepted");
+            let surrogates = SurrogateManager::new().expect("SurrogateManager");
+            model.inner.reset_heating_cooling_energy();
+            let zone_area = model
+                .inner
+                .setpoints
+                .zone_area
+                .as_slice()
+                .iter()
+                .sum::<f64>()
+                .max(1.0);
+            let empty_lighting = LightingSchedule::new(0.0, zone_area);
+            let _eui = model.inner.solve_timesteps(
+                24 * 30,
+                &surrogates,
+                false,
+                Some(&empty_lighting),
+                None,
+                None,
+            );
+            energies
+                .push(model.inner.get_heating_energy_kwh() + model.inner.get_cooling_energy_kwh());
+        }
+        for (i, e) in energies.iter().enumerate() {
+            assert!(e.is_finite(), "energy[{i}] = {e} must be finite");
+        }
+        let lo = energies[0].min(energies[1]);
+        let hi = energies[0].max(energies[1]);
+        let tol = (lo.abs() * 5e-3).max(1e-3);
+        assert!(
+            (hi - lo) > tol,
+            "Issue #4633 regression: setpoints {pairs:?} produced \
+             nearly-identical energies ({energies:?}); (tol = {tol})"
+        );
     }
 
     // ========================================================================
