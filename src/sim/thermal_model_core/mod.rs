@@ -1235,11 +1235,45 @@ impl ThermalModel<VectorField> {
                                     (shading.mounting_height - (w.sill_height + w.height)).max(0.0)
                                 })
                                 .unwrap_or(0.0); // no spec dims: legacy gap-0 fallback
-                            surface.overhang = Some(Overhang {
+                            let overhang = Overhang {
                                 depth: shading.overhang_depth,
                                 distance_above: spec_gap,
                                 extension: 10.0, // "Infinite"
-                            });
+                            };
+                            // Loop round 120 (SOLAR-03): the sky-diffuse
+                            // visible-sky share is time-invariant device
+                            // geometry — computed ONCE here at wiring and
+                            // stored on the surface; the per-timestep solar
+                            // loop only reads it. (The quadrature must never
+                            // sit in the hourly path: 8760 steps x ~17M ops
+                            // per orientation adds minutes per annual sim —
+                            // caught by the stalled r120 battery before any
+                            // re-record.) Geometry: the surface's own spec
+                            // dims (the same entry the gap above reads); the
+                            // engine's area-heuristic fallback replicated
+                            // when absent, so the stored share always matches
+                            // the geometry the shaded-fraction path builds.
+                            let (w_dim, h_dim, sill_dim) = match surface.window_dims {
+                                Some(d) => (d.width, d.height, d.sill_height),
+                                None => {
+                                    let w0 = (win_area / 1.5_f64).sqrt();
+                                    (w0, win_area / w0, 0.8)
+                                }
+                            };
+                            let shade_geom = fluxion_core::ashrae_cases::WindowArea {
+                                area: win_area,
+                                orientation,
+                                height: h_dim,
+                                width: w_dim,
+                                sill_height: sill_dim,
+                                left_offset: 0.0,
+                            };
+                            surface.sky_diffuse_view_factor =
+                                crate::sim::shading::overhang_sky_diffuse_fraction(
+                                    &shade_geom,
+                                    &overhang,
+                                );
+                            surface.overhang = Some(overhang);
                         }
                         _ => {}
                     }

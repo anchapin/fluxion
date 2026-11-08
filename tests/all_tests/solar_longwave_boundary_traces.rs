@@ -106,6 +106,7 @@ fn generate_solar_trace(
             orientation,
             Some(GROUND_REFLECTANCE),
             None,
+            1.0, // no device (unshaded trace)
         );
 
         let sky_temp = SkyRadiationExchange::sky_temperature_from_emissivity(25.0, 0.8);

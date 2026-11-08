@@ -26,12 +26,16 @@
 //! geometry. Fixed round 119: gap = (mounting_height − (sill + height)).max(0)
 //! computed from the spec's own window dims (0.5 m for every 140 shaded case).
 //!
-//! Known, recorded simplification (NOT re-litigated here): the shaded
-//! fraction multiplies the BEAM component only; sky-diffuse passes unshaded.
-//! The reference engines reduce diffuse through the shading geometry too (E+
-//! shadowing; the CSE input carries the post-shade `wnVfSkyDf = 0.3936`);
-//! engine-side diffuse view-factor reduction is the scoped remainder
-//! (LOOP119.md, dated).
+//! Known, recorded simplification — SUPERSEDED in part, loop round 120: the
+//! shaded fraction multiplies the BEAM component; through r119 sky-diffuse
+//! passed unshaded (the deliberate beam-only simplification recorded here and
+//! in LOOP119.md). Round 120 lands the overhang-scope sky-diffuse view-factor
+//! reduction (`overhang_sky_diffuse_fraction` + the hoisted share threaded
+//! through the solar-gain entry points; contracts below). Fins' lateral
+//! diffuse bands remain open (no in-repo primary anchor — the UM Part I
+//! carries only the 610 CSE SHADE block), and ground-reflected needs no
+//! reduction under a horizontal device (its rays travel downward and never
+//! intersect the device plane).
 //!
 //! Python replication: `/tmp/r119_replicate.py` (dev-time evidence; predicts
 //! every pinned value below, including the pre-fix red gots).
@@ -42,6 +46,7 @@
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::sim::shading::{calculate_shaded_fraction, LocalSolarPosition, Overhang, ShadeFin};
+use fluxion::sim::solar::{SolarPosition, SurfaceIrradiance, WindowProperties};
 use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion_core::ashrae_cases::{Orientation, WindowArea};
@@ -382,5 +387,296 @@ fn overhang_gap_clamps_at_zero_for_low_mounting_height() {
         (overhang.distance_above - 0.0).abs() <= 1e-12,
         "mounting 1.5 m < head 2.2 m must clamp to gap 0, got {}",
         overhang.distance_above
+    );
+}
+
+// =====================================================================
+// Loop round 120 — the sky-diffuse view-factor reduction (the LOOP119
+// scoped remainder, KNOWN_ISSUES SOLAR-03).
+//
+// Premise (primary source): the User's Manual 140-2023 §7.2.2.1.1 CSE
+// worked example carries the post-shade sky view factor
+// `wnVfSkyDf = 0.39363710370433924` for the Case-610 device (ohDepth
+// 1.0 m, ohDistUp 0.5 m, ohExL/ohExR 0.5/4.5 m, per 3 m x 2 m window).
+//
+// Recorded, NOT tuned: CSE's constant is NOT the isotropic geometric
+// value (0.43981 for that same window), and no natural weighting law
+// reproduces it (isotropic 0.43981 / CIE-overcast 0.41480 / no-side-
+// escape 0.4105–0.4367 / zenith-weighting family reaching 0.3936 only
+// at unnatural k — the full sweep is in LOOP120.md). CSE's engine
+// source sits in the 403-blocked 140-2023 accompanying files, so the
+// weighting law is unattributable today. These contracts pin the
+// radiometric (isotropic) convention — the physics that IS known and
+// verifiable — and the residual stays recorded in KNOWN_ISSUES
+// SOLAR-03 round-120 for the day the accompanying files are fetchable.
+//
+// Python twin (pin source): /tmp/r120_svf_twin.py — composite Simpson
+// 4096 azimuth intervals x 64x64 midpoint area grid, mirrored exactly
+// by `overhang_sky_diffuse_fraction`. Scheme-vs-continuum bound vs a
+// GL-2048 x 512x512 reference: 8e-6. Pin tolerance 1e-9 (same-scheme
+// determinism).
+//
+// Red-first evidence (this file against the stub body returning the
+// no-device share): CSE-window pin got 1.0, want 0.44246590150138188;
+// aggregate pin got 1.0, want 0.43680912770685504; monotonicity got
+// 1.0/1.0/1.0 (strict < fails). The zero-depth and bit-identity pins
+// are invariants (green against the stub by construction). The
+// application-fold contract feeds the pinned constant directly, so it
+// exercises the fold arithmetic itself; its failure mode is the
+// revert-tooth (fold removed), recorded in LOOP120.md alongside the
+// other teeth.
+// =====================================================================
+
+/// The CSE Case-610 window dims (3 m x 2 m, gap 0.5 m = ohDistUp, depth 1.0 m
+/// = ohDepth) under the isotropic convention with a SYMMETRIC extension: the
+/// engine's `Overhang` carries one symmetric `extension`, while CSE's
+/// per-window SHADE block decomposes the full-wall deck asymmetrically
+/// (ohExL/ohExR 0.5/4.5 m, mirrored per window). The asymmetric twin values
+/// stay in the record: CSE-window asymmetric 0.43981370961229560,
+/// deck-equivalent aggregate (6x2, .5/4.5) 0.43847584765447256, vs this
+/// symmetric-infinite aggregate 0.43680912770685504 — the symmetric-infinite
+/// wiring costs 0.0017 of sky share (bounded, recorded in KNOWN_ISSUES
+/// SOLAR-03 round-120 alongside the weighting residual).
+#[test]
+fn r120_cse_window_view_factor_matches_python_twin() {
+    let window = WindowArea {
+        area: 6.0,
+        orientation: Orientation::South,
+        height: 2.0,
+        width: 3.0,
+        sill_height: 0.2,
+        left_offset: 0.0,
+    };
+    let oh = Overhang {
+        depth: 1.0,
+        distance_above: 0.5,
+        extension: 0.5,
+    };
+    let got = fluxion::sim::shading::overhang_sky_diffuse_fraction(&window, &oh);
+    let want = 0.44246590150138188_f64;
+    assert!(
+        (got - want).abs() < 1e-9,
+        "CSE-window (symmetric ext) isotropic visible-sky share drifted: got {got}, want {want}"
+    );
+}
+
+/// The engine's aggregate south window for the 140 shaded cases: width 6.0
+/// (3+3 summed per-orientation widths), height 2.0, gap 0.5 (the r119
+/// computed gap), depth 1.0, extension 10.0 ("Infinite", the spec wiring).
+#[test]
+fn r120_fluxion_aggregate_view_factor_matches_python_twin() {
+    let window = WindowArea {
+        area: 12.0,
+        orientation: Orientation::South,
+        height: 2.0,
+        width: 6.0,
+        sill_height: 0.2,
+        left_offset: 0.0,
+    };
+    let oh = Overhang {
+        depth: 1.0,
+        distance_above: 0.5,
+        extension: 10.0,
+    };
+    let got = fluxion::sim::shading::overhang_sky_diffuse_fraction(&window, &oh);
+    let want = 0.43680912770685504_f64;
+    assert!(
+        (got - want).abs() < 1e-9,
+        "aggregate isotropic visible-sky share drifted: got {got}, want {want}"
+    );
+}
+
+/// A zero-depth device projects nothing: no plane to intersect, share
+/// exactly 1.0.
+#[test]
+fn r120_view_factor_zero_depth_is_full_sky() {
+    let window = WindowArea {
+        area: 12.0,
+        orientation: Orientation::South,
+        height: 2.0,
+        width: 6.0,
+        sill_height: 0.2,
+        left_offset: 0.0,
+    };
+    let oh = Overhang {
+        depth: 0.0,
+        distance_above: 0.5,
+        extension: 10.0,
+    };
+    let got = fluxion::sim::shading::overhang_sky_diffuse_fraction(&window, &oh);
+    assert!(
+        (got - 1.0).abs() <= 1e-12,
+        "zero-depth device must leave the full sky, got {got}"
+    );
+}
+
+/// Deeper devices block more sky: the share strictly decreases in depth
+/// (0.5 -> 1.0 -> 2.0 m on the aggregate geometry).
+#[test]
+fn r120_view_factor_monotone_in_depth() {
+    let window = WindowArea {
+        area: 12.0,
+        orientation: Orientation::South,
+        height: 2.0,
+        width: 6.0,
+        sill_height: 0.2,
+        left_offset: 0.0,
+    };
+    let rho = |depth: f64| {
+        fluxion::sim::shading::overhang_sky_diffuse_fraction(
+            &window,
+            &Overhang {
+                depth,
+                distance_above: 0.5,
+                extension: 10.0,
+            },
+        )
+    };
+    let d05 = rho(0.5);
+    let d10 = rho(1.0);
+    let d20 = rho(2.0);
+    assert!(
+        d20 < d10 && d10 < d05,
+        "share must strictly decrease with depth: rho(0.5)={d05}, rho(1.0)={d10}, rho(2.0)={d20}"
+    );
+}
+
+/// Application contract: `calculate_window_solar_gain` scales the
+/// sky-diffuse term by the share EXACTLY (the fold into `diffuse_shgc`),
+/// with ground-reflected untouched (no reduction under a horizontal
+/// device). Beam keeps its own geometric shaded-fraction path.
+#[test]
+fn r120_window_solar_gain_diffuse_scaled_by_view_factor() {
+    let window = WindowProperties::double_clear(12.0);
+    let sun_pos = SolarPosition {
+        altitude_deg: 40.0,
+        azimuth_deg: 180.0,
+        zenith_deg: 50.0,
+    };
+    let irradiance = SurfaceIrradiance::new(600.0, 150.0, 25.0);
+    let geom = WindowArea {
+        area: 12.0,
+        orientation: Orientation::South,
+        height: 2.0,
+        width: 6.0,
+        sill_height: 0.2,
+        left_offset: 0.0,
+    };
+    let oh = Overhang {
+        depth: 1.0,
+        distance_above: 0.5,
+        extension: 10.0,
+    };
+    let rho = 0.43680912770685504_f64; // pinned twin value (test 2 cross-checks the function)
+    let gain = fluxion::sim::solar::calculate_window_solar_gain(
+        &irradiance,
+        &window,
+        Some(&geom),
+        Some(&oh),
+        &[],
+        &sun_pos,
+        Orientation::South,
+        rho,
+    );
+    let diffuse_want = 12.0 * 150.0 * (window.shgc * 0.9 * rho);
+    assert_eq!(
+        gain.diffuse_gain_w.to_bits(),
+        diffuse_want.to_bits(),
+        "diffuse gain must fold the share exactly: got {}, want {diffuse_want}",
+        gain.diffuse_gain_w
+    );
+    let ground_want = 12.0 * 25.0 * (window.shgc * 0.85);
+    assert_eq!(
+        gain.ground_reflected_gain_w.to_bits(),
+        ground_want.to_bits(),
+        "ground-reflected must carry no reduction"
+    );
+}
+
+/// Unshaded bit-identity: with share 1.0 the diffuse and ground terms are
+/// bitwise identical to the pre-r120 expressions (multiplying by 1.0 is an
+/// exact IEEE identity) — the guarantee behind "all unshaded rows
+/// byte-identical" in the battery re-record.
+#[test]
+fn r120_unshaded_gains_bit_identical_at_full_sky() {
+    let window = WindowProperties::double_clear(12.0);
+    let sun_pos = SolarPosition {
+        altitude_deg: 40.0,
+        azimuth_deg: 180.0,
+        zenith_deg: 50.0,
+    };
+    let irradiance = SurfaceIrradiance::new(600.0, 150.0, 25.0);
+    let gain = fluxion::sim::solar::calculate_window_solar_gain(
+        &irradiance,
+        &window,
+        None,
+        None,
+        &[],
+        &sun_pos,
+        Orientation::South,
+        1.0,
+    );
+    let diffuse_want = 12.0 * 150.0 * (window.shgc * 0.9);
+    assert_eq!(
+        gain.diffuse_gain_w.to_bits(),
+        diffuse_want.to_bits(),
+        "share 1.0 must be an exact identity for the diffuse term"
+    );
+    let ground_want = 12.0 * 25.0 * (window.shgc * 0.85);
+    assert_eq!(
+        gain.ground_reflected_gain_w.to_bits(),
+        ground_want.to_bits(),
+        "share 1.0 must be an exact identity for the ground term"
+    );
+}
+
+/// Engine-attached wiring: the Case-610 south surface carries the STORED
+/// share, computed once at spec-to-surface wiring from the spec's own
+/// aggregate dims (6x2, gap 0.5 via r119, depth 1.0, extension 10) — the
+/// same value the aggregate pin above holds — while the unshaded Case-600
+/// south surface reads the constructor default exactly. Red-first against
+/// the unwired field (constructor default): shaded got 1.0, want
+/// 0.43680912770685504.
+#[test]
+fn r120_engine_attached_surface_carries_view_factor() {
+    let spec = ASHRAE140Case::Case610.spec();
+    let model =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("spec builds");
+    let south = model
+        .0
+        .solar
+        .surfaces
+        .first()
+        .expect("zone 0 surfaces")
+        .iter()
+        .find(|s| s.orientation == Orientation::South)
+        .expect("south surface exists");
+    assert!(south.overhang.is_some(), "610 south carries the overhang");
+    let got = south.sky_diffuse_view_factor;
+    let want = 0.43680912770685504_f64;
+    assert!(
+        (got - want).abs() < 1e-9,
+        "engine-attached share drifted: got {got}, want {want}"
+    );
+
+    let spec600 = ASHRAE140Case::Case600.spec();
+    let model600 =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec600, &ThermalSelector::default())
+            .expect("spec builds");
+    let south600 = model600
+        .0
+        .solar
+        .surfaces
+        .first()
+        .expect("zone 0 surfaces")
+        .iter()
+        .find(|s| s.orientation == Orientation::South)
+        .expect("south surface exists");
+    assert!(south600.overhang.is_none(), "600 south carries no device");
+    assert_eq!(
+        south600.sky_diffuse_view_factor.to_bits(),
+        1.0_f64.to_bits(),
+        "unshaded surface must carry the exact no-device share"
     );
 }

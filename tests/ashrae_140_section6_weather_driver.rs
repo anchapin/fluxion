@@ -934,6 +934,7 @@ pub fn run_section6_case(def: &Section6CaseDef) -> Result<Section6CaseResult, St
             &[],
             &sun,
             Orientation::South.into(),
+            1.0, // unshaded reference window
         );
         annual_transmitted_south_kwh_m2 += gain_s.total_gain_w / 1000.0;
         let sky_temp_c =
@@ -984,6 +985,7 @@ pub fn run_section6_case(def: &Section6CaseDef) -> Result<Section6CaseResult, St
                 &[],
                 &sun,
                 Orientation::South.into(),
+                1.0, // unshaded reference window
             );
             d.transmitted_south_wh_m2[h] = gain.total_gain_w;
             d.sky_temp_c[h] = sky_temp_c;

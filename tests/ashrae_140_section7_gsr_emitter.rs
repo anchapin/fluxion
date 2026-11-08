@@ -498,6 +498,15 @@ pub fn run_section7_case(def: &Section7CaseDef) -> Result<Section7CaseResult, St
         }
         _ => Vec::new(),
     };
+    // Loop round 120 (SOLAR-03): hoisted sky-diffuse view-factor share for the
+    // shaded-case transmitted rows (§6.2.1.3/.5) — same device geometry as the
+    // engine (spec gap r119, "Infinite" extension), overhang scope, isotropic
+    // radiometric convention. Time-invariant device geometry, so it computes
+    // once per case (the #1212/#1385 hoisting pattern).
+    let case_sky_vf = match (case_window_geom.as_ref(), case_overhang.as_ref()) {
+        (Some(g), Some(oh)) => fluxion::sim::shading::overhang_sky_diffuse_fraction(g, oh),
+        _ => 1.0,
+    };
     let mut case_transmitted_kwh_m2 = 0.0_f64;
 
     // Case 960 sun-zone free-float stats (zone index 1, sunspace). The
@@ -646,6 +655,7 @@ pub fn run_section7_case(def: &Section7CaseDef) -> Result<Section7CaseResult, St
             &[],
             &sun,
             Orientation::South.into(),
+            1.0, // unshaded reference window
         );
         annual_transmitted_south_kwh_m2 += gain_s.total_gain_w / 1000.0;
         if let (Some(g), Some(props), Some((_, ori))) =
@@ -664,6 +674,7 @@ pub fn run_section7_case(def: &Section7CaseDef) -> Result<Section7CaseResult, St
                 &case_fins,
                 &sun,
                 ori.into(),
+                case_sky_vf,
             );
             // Requirement form is kWh/m² of glazing (6.2.1.3.1/.4.1/.5.1);
             // the engine gain is area-scaled watts, so normalise by the
@@ -710,6 +721,7 @@ pub fn run_section7_case(def: &Section7CaseDef) -> Result<Section7CaseResult, St
                 &[],
                 &sun,
                 Orientation::South.into(),
+                1.0, // unshaded reference window
             );
             d.transmitted_south_wh_m2[h] = gain.total_gain_w;
             d.sky_temp_c[h] = sky_temp_c;

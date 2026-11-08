@@ -425,6 +425,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     None
                 };
 
+                // Loop round 120 (SOLAR-03): the sky-diffuse share is computed
+                // ONCE at spec-to-surface wiring and stored on the surface —
+                // this per-timestep path only reads it. First shaded surface
+                // wins, mirroring the `overhang` lookup above; 1.0 when the
+                // orientation carries no device (an exact IEEE identity, so
+                // unshaded orientations stay bit-identical).
+                let sky_diffuse_view_factor = zone_surfaces
+                    .iter()
+                    .filter(|s| s.orientation == orientation)
+                    .find(|s| s.overhang.is_some())
+                    .map(|s| s.sky_diffuse_view_factor)
+                    .unwrap_or(1.0);
+
                 // Use solar module to calculate irradiance for this orientation.
                 // Issue #1385: `sun_pos` is hoisted above the loop (pure function of
                 // time+location only), so we pass the pre-computed position directly.
@@ -460,6 +473,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         }
                         .unwrap_or(0.2),
                     ), // Ground reflectance
+                    sky_diffuse_view_factor,
                 );
 
                 // Issue #4166: stash per-orientation irradiance for the 5R1C
