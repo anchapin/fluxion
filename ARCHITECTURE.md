@@ -890,8 +890,6 @@ pub struct HybridRouting {
     pub use_surrogate_ventilation: bool,
     /// Route internal/external load prediction to the surrogate.
     pub use_surrogate_loads: bool,
-    /// Route HVAC power demand to the surrogate.
-    pub use_surrogate_hvac: bool,
     /// When `true`, check inputs against training bounds before surrogate
     /// inference and fall back to physics when OOD is detected (Issue #1892).
     pub use_ood_fallback: bool,
