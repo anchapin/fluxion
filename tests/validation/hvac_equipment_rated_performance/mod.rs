@@ -33,3 +33,4 @@ mod runner;
 mod section11_engine_run;
 mod section9_ce;
 mod section9_engine_run;
+mod section9_peak_cooling_diagnosis;
