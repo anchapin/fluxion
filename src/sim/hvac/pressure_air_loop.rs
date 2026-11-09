@@ -3653,6 +3653,8 @@ mod tests {
             .supply_temperature_for_target(temperature_after, 0.0, supply_flow_m3_per_s, None)
             .expect("the inverse query is valid");
         assert!((unchanged - temperature_after).abs() < 1.0e-12);
+    }
+
     // -----------------------------------------------------------------------
     // Two-zone split topology and commandable VAV flow interface (#4706)
     // -----------------------------------------------------------------------
