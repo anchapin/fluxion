@@ -109,6 +109,40 @@ pub const LOOP_RESIDUAL_TOLERANCE_PA: f64 = 1.0e-9;
 /// Maximum number of Newton iterations used by the loop solve.
 const MAX_SOLVE_ITERATIONS: usize = 200;
 
+/// Default (total) fan efficiency, `shaft power / air power` [-].
+///
+/// The default of 1.0 makes the shaft power equal to the air power, so the
+/// default **preserves the behaviour of the existing API**: the air power
+/// reported by [`AirLoopSolution::fan_air_power_w`] is unchanged, and the
+/// shaft power and the fan temperature rise derived from it are the air
+/// power and the air temperature rise of the pre-existing model.
+pub const DEFAULT_FAN_EFFICIENCY: f64 = 1.0;
+
+/// Serde default for [`FanCurve::efficiency`].
+fn default_fan_efficiency() -> f64 {
+    DEFAULT_FAN_EFFICIENCY
+}
+
+/// Air density used to convert a volumetric flow into a mass flow
+/// [kg/m³].
+///
+/// `moist_air_density_kg_per_m3` is the density of the humid-air state at
+/// the point of interest **when a humidity state is available**. The
+/// humidity model itself belongs to split A (issue #4705) and is *not*
+/// part of this module, so the only thing this helper needs from a
+/// humidity state is its density; the **standard dry-air density is the
+/// fallback** and is what runs when no humidity state is supplied (i.e. on
+/// this base).
+///
+/// A non-finite or non-positive density is treated as "no humidity state
+/// available" and falls back to the standard density.
+pub fn air_density_kg_per_m3(moist_air_density_kg_per_m3: Option<f64>) -> f64 {
+    match moist_air_density_kg_per_m3 {
+        Some(density) if density.is_finite() && density > 0.0 => density,
+        _ => STANDARD_AIR_DENSITY_KG_PER_M3,
+    }
+}
+
 /// Relative bracket width at which the safeguarded Newton iteration stops.
 const BRACKET_RELATIVE_TOLERANCE: f64 = 1.0e-13;
 
@@ -167,6 +201,14 @@ pub struct FanCurve {
     pub static_pressure_pa: f64,
     /// Curve coefficient `c` in `ΔP = static_pressure − c·Q²` [Pa·s²/m⁶].
     pub curve_coefficient_pa_s2_per_m6: f64,
+    /// Total fan efficiency, `shaft power / air power` [-].
+    ///
+    /// The default is [`DEFAULT_FAN_EFFICIENCY`] (1.0), which makes the
+    /// shaft power identical to the air power and therefore leaves every
+    /// pre-existing result unchanged. A realistic value (e.g. 0.70) is what
+    /// the shaft-power and fan-temperature-rise reporting uses.
+    #[serde(default = "default_fan_efficiency")]
+    pub efficiency: f64,
 }
 
 impl FanCurve {
@@ -192,7 +234,75 @@ impl FanCurve {
         Ok(Self {
             static_pressure_pa,
             curve_coefficient_pa_s2_per_m6,
+            efficiency: DEFAULT_FAN_EFFICIENCY,
         })
+    }
+
+    /// Construct a fan curve with an explicit fan efficiency.
+    ///
+    /// The efficiency is the total fan efficiency, `shaft power / air
+    /// power` [-]; it must lie in `(0, 1]`.
+    pub fn with_efficiency(
+        static_pressure_pa: f64,
+        curve_coefficient_pa_s2_per_m6: f64,
+        efficiency: f64,
+    ) -> Result<Self, AirLoopError> {
+        let mut curve = Self::new(static_pressure_pa, curve_coefficient_pa_s2_per_m6)?;
+        curve.set_efficiency(efficiency)?;
+        Ok(curve)
+    }
+
+    /// Set the fan efficiency, `shaft power / air power` [-].
+    pub fn set_efficiency(&mut self, efficiency: f64) -> Result<(), AirLoopError> {
+        if !efficiency.is_finite() || efficiency <= 0.0 || efficiency > 1.0 {
+            return Err(AirLoopError::InvalidParameter {
+                field: "efficiency",
+                requirement: "finite and within (0, 1]",
+                value: efficiency,
+            });
+        }
+        self.efficiency = efficiency;
+        Ok(())
+    }
+
+    /// The fan efficiency, `shaft power / air power` [-].
+    pub fn efficiency(&self) -> f64 {
+        self.efficiency
+    }
+
+    /// Shaft power drawn by the fan for a given air power [W].
+    ///
+    /// `shaft power = air power / efficiency`. With the default efficiency
+    /// of 1.0 the shaft power equals the air power, which is the
+    /// pre-existing behaviour.
+    pub fn shaft_power_w(&self, air_power_w: f64) -> f64 {
+        if !air_power_w.is_finite() {
+            return f64::NAN;
+        }
+        air_power_w / self.efficiency
+    }
+
+    /// Fan air temperature rise implied by a shaft power [K].
+    ///
+    /// `ΔT = shaft power / (ṁ·c_p)`. The mass flow must be positive; a
+    /// non-positive mass flow carries no energy and reports a zero rise.
+    pub fn temperature_rise_k(&self, shaft_power_w: f64, mass_flow_kg_per_s: f64) -> f64 {
+        if !shaft_power_w.is_finite() || !mass_flow_kg_per_s.is_finite() {
+            return f64::NAN;
+        }
+        if mass_flow_kg_per_s <= 0.0 {
+            return 0.0;
+        }
+        shaft_power_w / (mass_flow_kg_per_s * DRY_AIR_SPECIFIC_HEAT_J_PER_KG_K)
+    }
+
+    /// Fan air temperature rise implied by an air power [K].
+    ///
+    /// Convenience wrapper: the air power is first converted to the shaft
+    /// power with [`FanCurve::shaft_power_w`], then the rise is computed
+    /// from the shaft power.
+    pub fn air_temperature_rise_k(&self, air_power_w: f64, mass_flow_kg_per_s: f64) -> f64 {
+        self.temperature_rise_k(self.shaft_power_w(air_power_w), mass_flow_kg_per_s)
     }
 
     /// Construct a fan curve from a rated operating point at full speed.
@@ -426,6 +536,18 @@ pub struct AirLoopSolution {
     pub fan_pressure_rise_pa: f64,
     /// Air power delivered to the airstream by the fan [W].
     pub fan_air_power_w: f64,
+    /// Shaft power drawn by the fan [W].
+    ///
+    /// `shaft power = air power / fan efficiency`. With the default
+    /// efficiency of 1.0 this equals [`AirLoopSolution::fan_air_power_w`].
+    #[serde(default)]
+    pub fan_shaft_power_w: f64,
+    /// Fan air temperature rise implied by the shaft power [K].
+    ///
+    /// `ΔT = shaft power / (ṁ·c_p)`, with the mass flow evaluated at the
+    /// standard air density (no humidity state is available on this path).
+    #[serde(default)]
+    pub fan_temperature_rise_k: f64,
     /// Residual of the loop pressure balance at the operating point [Pa].
     pub loop_residual_pa: f64,
     /// Residual of the pressure walk around the closed loop [Pa].
@@ -440,6 +562,8 @@ impl AirLoopSolution {
         self.flow_m3_per_s.is_finite()
             && self.fan_pressure_rise_pa.is_finite()
             && self.fan_air_power_w.is_finite()
+            && self.fan_shaft_power_w.is_finite()
+            && self.fan_temperature_rise_k.is_finite()
             && self.loop_residual_pa.is_finite()
             && self.pressure_closure_residual_pa.is_finite()
             && self.node_mass_balance_residual_m3_per_s.is_finite()
@@ -449,6 +573,138 @@ impl AirLoopSolution {
                 .element_pressure_changes_pa
                 .iter()
                 .all(|dp| dp.is_finite())
+    }
+}
+
+/// The solved state of a loop driven in **specified-flow** mode.
+///
+/// In this mode the design mass flow and the fan pressure rise are *given*
+/// (the QAS shape) instead of being solved from a fitted duct resistance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SpecifiedFlowSolution {
+    /// The prescribed design mass flow [kg/s].
+    pub mass_flow_kg_per_s: f64,
+    /// The design volumetric flow at the reporting density [m³/s].
+    pub volumetric_flow_m3_per_s: f64,
+    /// The density used for the mass/volumetric conversion [kg/m³].
+    pub density_kg_per_m3: f64,
+    /// The prescribed fan pressure rise [Pa].
+    pub pressure_rise_pa: f64,
+    /// Air power delivered to the airstream by the fan [W].
+    pub fan_air_power_w: f64,
+    /// Shaft power drawn by the fan [W].
+    pub fan_shaft_power_w: f64,
+    /// Fan air temperature rise implied by the shaft power [K].
+    pub fan_temperature_rise_k: f64,
+}
+
+impl SpecifiedFlowSolution {
+    /// `true` when every reported quantity is finite.
+    pub fn is_finite(&self) -> bool {
+        self.mass_flow_kg_per_s.is_finite()
+            && self.volumetric_flow_m3_per_s.is_finite()
+            && self.density_kg_per_m3.is_finite()
+            && self.pressure_rise_pa.is_finite()
+            && self.fan_air_power_w.is_finite()
+            && self.fan_shaft_power_w.is_finite()
+            && self.fan_temperature_rise_k.is_finite()
+    }
+}
+
+/// A loop driven in **specified-flow** mode.
+///
+/// The design mass flow and the fan pressure rise are prescribed; **no duct
+/// resistance is fitted and none is needed**, because the operating point is
+/// given rather than solved. The mode reports the powers and the fan
+/// temperature rise implied by the specified operating point.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct SpecifiedFlowLoop {
+    fan_curve: FanCurve,
+    mass_flow_kg_per_s: f64,
+    pressure_rise_pa: f64,
+}
+
+impl SpecifiedFlowLoop {
+    /// Build a specified-flow loop from a fan curve and the design point.
+    ///
+    /// `mass_flow_kg_per_s` must be finite and positive and
+    /// `pressure_rise_pa` must be finite and non-negative.
+    pub fn new(
+        fan_curve: FanCurve,
+        mass_flow_kg_per_s: f64,
+        pressure_rise_pa: f64,
+    ) -> Result<Self, AirLoopError> {
+        if !mass_flow_kg_per_s.is_finite() || mass_flow_kg_per_s <= 0.0 {
+            return Err(AirLoopError::InvalidParameter {
+                field: "mass_flow_kg_per_s",
+                requirement: "finite and > 0",
+                value: mass_flow_kg_per_s,
+            });
+        }
+        if !pressure_rise_pa.is_finite() || pressure_rise_pa < 0.0 {
+            return Err(AirLoopError::InvalidParameter {
+                field: "pressure_rise_pa",
+                requirement: "finite and >= 0",
+                value: pressure_rise_pa,
+            });
+        }
+        Ok(Self {
+            fan_curve,
+            mass_flow_kg_per_s,
+            pressure_rise_pa,
+        })
+    }
+
+    /// The fan curve of the loop.
+    pub fn fan_curve(&self) -> &FanCurve {
+        &self.fan_curve
+    }
+
+    /// The prescribed design mass flow [kg/s].
+    pub fn mass_flow_kg_per_s(&self) -> f64 {
+        self.mass_flow_kg_per_s
+    }
+
+    /// The prescribed fan pressure rise [Pa].
+    pub fn pressure_rise_pa(&self) -> f64 {
+        self.pressure_rise_pa
+    }
+
+    /// Solve the specified-flow operating point.
+    ///
+    /// `moist_air_density_kg_per_m3` is the density of the humid-air state
+    /// at the point of interest when one is available; the standard
+    /// dry-air density is the fallback (see [`air_density_kg_per_m3`]).
+    ///
+    /// The prescribed mass flow is reproduced exactly: it is an input of the
+    /// mode, not a solved quantity.
+    pub fn solve(
+        &self,
+        moist_air_density_kg_per_m3: Option<f64>,
+    ) -> Result<SpecifiedFlowSolution, AirLoopError> {
+        let density = air_density_kg_per_m3(moist_air_density_kg_per_m3);
+        let volumetric_flow_m3_per_s = self.mass_flow_kg_per_s / density;
+        let fan_air_power_w = volumetric_flow_m3_per_s * self.pressure_rise_pa;
+        let fan_shaft_power_w = self.fan_curve.shaft_power_w(fan_air_power_w);
+        let fan_temperature_rise_k = self
+            .fan_curve
+            .temperature_rise_k(fan_shaft_power_w, self.mass_flow_kg_per_s);
+
+        let solution = SpecifiedFlowSolution {
+            mass_flow_kg_per_s: self.mass_flow_kg_per_s,
+            volumetric_flow_m3_per_s,
+            density_kg_per_m3: density,
+            pressure_rise_pa: self.pressure_rise_pa,
+            fan_air_power_w,
+            fan_shaft_power_w,
+            fan_temperature_rise_k,
+        };
+        if !solution.is_finite() {
+            return Err(AirLoopError::NonFiniteResult {
+                field: "specified_flow_solution",
+            });
+        }
+        Ok(solution)
     }
 }
 
@@ -631,6 +887,28 @@ impl AirLoopNetwork {
         }
     }
 
+    /// Build the **specified-flow** view of this loop.
+    ///
+    /// The design mass flow and the fan pressure rise are prescribed, so the
+    /// duct resistances of the network are *not* used and none has to be
+    /// fitted. The fan curve (and therefore the fan efficiency) is taken
+    /// from the fan element of the network.
+    pub fn specified_flow_loop(
+        &self,
+        mass_flow_kg_per_s: f64,
+        pressure_rise_pa: f64,
+    ) -> Result<SpecifiedFlowLoop, AirLoopError> {
+        let fan_curve = self
+            .elements
+            .iter()
+            .find_map(|element| match element {
+                AirLoopElement::Fan { curve, .. } => Some(*curve),
+                _ => None,
+            })
+            .expect("the topology is validated to contain exactly one fan");
+        SpecifiedFlowLoop::new(fan_curve, mass_flow_kg_per_s, pressure_rise_pa)
+    }
+
     /// Total series resistance of the loop [Pa·s²/m⁶].
     ///
     /// `f64::INFINITY` when the path is fully blocked (a shut damper).
@@ -704,13 +982,30 @@ impl AirLoopNetwork {
         let fan_pressure_rise_pa = element_pressure_changes_pa[fan_index];
         let closure = element_pressure_changes_pa.iter().sum::<f64>();
 
+        // Air power, shaft power and the fan temperature rise. The air
+        // power is the flow times the pressure rise (unchanged behaviour);
+        // the shaft power divides it by the fan efficiency of the fan
+        // element (1.0 by default, so the shaft power equals the air power
+        // on the pre-existing path).
+        let fan_air_power_w = flow * fan_pressure_rise_pa;
+        let fan_curve = match &self.elements[fan_index] {
+            AirLoopElement::Fan { curve, .. } => *curve,
+            _ => unreachable!("the fan index points at the fan element"),
+        };
+        let fan_shaft_power_w = fan_curve.shaft_power_w(fan_air_power_w);
+        let fan_mass_flow_kg_per_s = air_density_kg_per_m3(None) * flow;
+        let fan_temperature_rise_k =
+            fan_curve.temperature_rise_k(fan_shaft_power_w, fan_mass_flow_kg_per_s);
+
         let solution = AirLoopSolution {
             flow_m3_per_s: flow,
             node_pressures_pa,
             element_flows_m3_per_s,
             element_pressure_changes_pa,
             fan_pressure_rise_pa,
-            fan_air_power_w: flow * fan_pressure_rise_pa,
+            fan_air_power_w,
+            fan_shaft_power_w,
+            fan_temperature_rise_k,
             loop_residual_pa: self.loop_pressure_residual_pa(flow),
             pressure_closure_residual_pa: closure.abs(),
             node_mass_balance_residual_m3_per_s,
@@ -1041,6 +1336,76 @@ impl ZoneAirNode {
     /// Heat capacity of the zone air node [J/K].
     pub fn heat_capacity_j_per_k(&self) -> f64 {
         STANDARD_AIR_DENSITY_KG_PER_M3 * self.volume_m3 * DRY_AIR_SPECIFIC_HEAT_J_PER_KG_K
+    }
+
+    /// Mass flow of the supply stream [kg/s].
+    ///
+    /// `moist_air_density_kg_per_m3` is the density of the humid-air state
+    /// at the supply condition when one is available; the standard dry-air
+    /// density is the fallback (see [`air_density_kg_per_m3`]).
+    pub fn supply_mass_flow_kg_per_s(
+        &self,
+        supply_flow_m3_per_s: f64,
+        moist_air_density_kg_per_m3: Option<f64>,
+    ) -> f64 {
+        air_density_kg_per_m3(moist_air_density_kg_per_m3) * supply_flow_m3_per_s
+    }
+
+    /// Inverse zone-node query: the supply air temperature required to hold
+    /// the zone at `target_temperature_c` while the supply stream removes
+    /// `load_w` from the zone.
+    ///
+    /// The forward node step takes the supply temperature as an input and
+    /// returns the zone temperature; this query is its algebraic inverse:
+    ///
+    /// ```text
+    /// ṁ·c_p·(t_supply − t_zone) = −q   ⟹   t_supply = t_zone − q / (ṁ·c_p)
+    /// ```
+    ///
+    /// `load_w` is the sensible load removed from the zone by the supply
+    /// stream (positive for a cooling load), `supply_flow_m3_per_s` is the
+    /// supply volumetric flow and `moist_air_density_kg_per_m3` is the
+    /// density of the humid-air state when one is available (the standard
+    /// dry-air density is the fallback).
+    pub fn supply_temperature_for_target(
+        &self,
+        target_temperature_c: f64,
+        load_w: f64,
+        supply_flow_m3_per_s: f64,
+        moist_air_density_kg_per_m3: Option<f64>,
+    ) -> Result<f64, AirLoopError> {
+        if !target_temperature_c.is_finite() {
+            return Err(AirLoopError::InvalidParameter {
+                field: "target_temperature_c",
+                requirement: "finite",
+                value: target_temperature_c,
+            });
+        }
+        if !load_w.is_finite() {
+            return Err(AirLoopError::InvalidParameter {
+                field: "load_w",
+                requirement: "finite",
+                value: load_w,
+            });
+        }
+        if !supply_flow_m3_per_s.is_finite() || supply_flow_m3_per_s <= 0.0 {
+            return Err(AirLoopError::InvalidParameter {
+                field: "supply_flow_m3_per_s",
+                requirement: "finite and > 0",
+                value: supply_flow_m3_per_s,
+            });
+        }
+        let mass_flow_capacitance = self
+            .supply_mass_flow_kg_per_s(supply_flow_m3_per_s, moist_air_density_kg_per_m3)
+            * DRY_AIR_SPECIFIC_HEAT_J_PER_KG_K;
+        if mass_flow_capacitance <= 0.0 {
+            return Err(AirLoopError::InvalidParameter {
+                field: "supply_flow_m3_per_s",
+                requirement: "finite and > 0",
+                value: supply_flow_m3_per_s,
+            });
+        }
+        Ok(target_temperature_c - load_w / mass_flow_capacitance)
     }
 
     /// Advance the zone air node by `dt_s` with the given supply stream.
@@ -1586,5 +1951,163 @@ mod tests {
         let cooling = cooling_flow.expect("the cooling state was visited");
         let idle = idle_flow.expect("the idle state was visited");
         assert!(cooling > idle);
+    }
+
+    #[test]
+    fn fan_temperature_rise_matches_the_analytic_value_at_a_stated_efficiency() {
+        // A fan stated at 70 % total efficiency (the QAS convention).
+        let efficiency = 0.70;
+        let curve =
+            FanCurve::with_efficiency(300.0, 600.0, efficiency).expect("the fan curve is valid");
+        assert_eq!(curve.efficiency(), efficiency);
+
+        let flow_m3_per_s = 0.5;
+        let pressure_rise_pa = 150.0;
+        let mass_flow_kg_per_s = 0.60;
+
+        // The analytic chain: air power -> shaft power -> temperature rise.
+        let air_power_w = flow_m3_per_s * pressure_rise_pa;
+        let shaft_power_w = air_power_w / efficiency;
+        let expected_rise_k =
+            shaft_power_w / (mass_flow_kg_per_s * DRY_AIR_SPECIFIC_HEAT_J_PER_KG_K);
+
+        assert!((curve.shaft_power_w(air_power_w) - shaft_power_w).abs() < 1.0e-12);
+        assert!(
+            (curve.temperature_rise_k(shaft_power_w, mass_flow_kg_per_s) - expected_rise_k).abs()
+                < 1.0e-12
+        );
+        assert!(
+            (curve.air_temperature_rise_k(air_power_w, mass_flow_kg_per_s) - expected_rise_k).abs()
+                < 1.0e-12
+        );
+        // The value itself: 107.14 W of shaft power over 0.6 kg/s of air.
+        assert!(expected_rise_k > 0.17 && expected_rise_k < 0.19);
+    }
+
+    #[test]
+    fn the_default_fan_efficiency_preserves_the_pre_existing_air_power_results() {
+        let curve = reference_curve();
+        assert_eq!(curve.efficiency(), DEFAULT_FAN_EFFICIENCY);
+
+        let network = reference_network();
+        let solution = network.solve().expect("the reference loop solves");
+
+        // The air power is untouched ...
+        assert!(
+            (solution.fan_air_power_w - solution.flow_m3_per_s * solution.fan_pressure_rise_pa)
+                .abs()
+                < 1.0e-12
+        );
+        // ... and the shaft power equals it at the default efficiency.
+        assert_eq!(solution.fan_shaft_power_w, solution.fan_air_power_w);
+        let mass_flow_kg_per_s = STANDARD_AIR_DENSITY_KG_PER_M3 * solution.flow_m3_per_s;
+        let expected_rise_k =
+            solution.fan_shaft_power_w / (mass_flow_kg_per_s * DRY_AIR_SPECIFIC_HEAT_J_PER_KG_K);
+        assert!((solution.fan_temperature_rise_k - expected_rise_k).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn specified_flow_mode_reproduces_the_design_mass_flow_without_a_fitted_resistance() {
+        let efficiency = 0.70;
+        let curve =
+            FanCurve::with_efficiency(300.0, 600.0, efficiency).expect("the fan curve is valid");
+        let design_mass_flow_kg_per_s = 0.60;
+        let design_pressure_rise_pa = 250.0;
+
+        // The specified-flow mode carries no duct resistance at all: the
+        // design flow and the design pressure rise are given.
+        let specified =
+            SpecifiedFlowLoop::new(curve, design_mass_flow_kg_per_s, design_pressure_rise_pa)
+                .expect("the specified-flow loop is valid");
+        let solution = specified
+            .solve(None)
+            .expect("the specified-flow loop solves");
+
+        // The design mass flow is reproduced exactly.
+        assert_eq!(solution.mass_flow_kg_per_s, design_mass_flow_kg_per_s);
+        assert_eq!(solution.pressure_rise_pa, design_pressure_rise_pa);
+        assert!(solution.is_finite());
+
+        // No humidity state is available on this base, so the standard
+        // density is the fallback that runs.
+        assert_eq!(solution.density_kg_per_m3, STANDARD_AIR_DENSITY_KG_PER_M3);
+        assert_eq!(
+            solution.volumetric_flow_m3_per_s,
+            design_mass_flow_kg_per_s / STANDARD_AIR_DENSITY_KG_PER_M3
+        );
+
+        let expected_air_power_w = solution.volumetric_flow_m3_per_s * design_pressure_rise_pa;
+        assert!((solution.fan_air_power_w - expected_air_power_w).abs() < 1.0e-12);
+        let expected_shaft_power_w = expected_air_power_w / efficiency;
+        assert!((solution.fan_shaft_power_w - expected_shaft_power_w).abs() < 1.0e-12);
+        let expected_rise_k =
+            expected_shaft_power_w / (design_mass_flow_kg_per_s * DRY_AIR_SPECIFIC_HEAT_J_PER_KG_K);
+        assert!((solution.fan_temperature_rise_k - expected_rise_k).abs() < 1.0e-12);
+
+        // The same mode reached from a network ignores the duct resistances
+        // of that network entirely: the specified flow is not fitted.
+        let network = reference_network();
+        let from_network = network
+            .specified_flow_loop(design_mass_flow_kg_per_s, design_pressure_rise_pa)
+            .expect("the network yields a specified-flow loop");
+        let network_solution = from_network.solve(None).expect("the loop solves");
+        assert_eq!(
+            network_solution.mass_flow_kg_per_s,
+            design_mass_flow_kg_per_s
+        );
+        // The efficiency-independent operating point is identical too (the
+        // reference network's fan carries the default efficiency 1.0, so its
+        // shaft power and rise legitimately differ from the 0.70 loop above).
+        assert_eq!(
+            network_solution.volumetric_flow_m3_per_s,
+            solution.volumetric_flow_m3_per_s
+        );
+        assert_eq!(network_solution.fan_air_power_w, solution.fan_air_power_w);
+        assert_eq!(
+            network_solution.fan_shaft_power_w,
+            network_solution.fan_air_power_w
+        );
+    }
+
+    #[test]
+    fn inverse_zone_node_query_round_trips_the_forward_step() {
+        let mut zone = reference_zone();
+        let dt = 60.0;
+        let supply_flow_m3_per_s = 0.4;
+        let supply_temperature_c = 13.0;
+
+        // Forward step: supply temperature in, zone temperature out.
+        let temperature_before = zone.temperature_c;
+        let temperature_after = zone.step(dt, supply_flow_m3_per_s, supply_temperature_c);
+
+        // The load the supply stream removed from the zone, read off the
+        // forward step's energy balance (an independent quantity):
+        //   C/Δt·(T_new − T_old) = G·(T_out − T_new) + q_int + ṁ·c_p·(t_s − T_new)
+        let capacitance = zone.heat_capacity_j_per_k();
+        let mass_flow_capacitance = STANDARD_AIR_DENSITY_KG_PER_M3
+            * supply_flow_m3_per_s
+            * DRY_AIR_SPECIFIC_HEAT_J_PER_KG_K;
+        // (The stream's removed load is the negative of the heat the stream
+        // added, ṁ·c_p·(t_s − T_new) — the sign the inverse query's contract
+        // takes: `t_supply = t_zone − q_removed / (ṁ·c_p)`.)
+        let load_w = -(capacitance / dt * (temperature_after - temperature_before)
+            - zone.envelope_conductance_w_per_k * (zone.outdoor_temperature_c - temperature_after)
+            - zone.internal_gain_w);
+
+        // Inverse query: the supply temperature that holds the zone at the
+        // temperature the forward step produced.
+        let required = zone
+            .supply_temperature_for_target(temperature_after, load_w, supply_flow_m3_per_s, None)
+            .expect("the inverse query is valid");
+        assert!(
+            (required - supply_temperature_c).abs() < 1.0e-9,
+            "expected the supply temperature {supply_temperature_c}, got {required}"
+        );
+
+        // A loadless query returns the target temperature itself.
+        let unchanged = zone
+            .supply_temperature_for_target(temperature_after, 0.0, supply_flow_m3_per_s, None)
+            .expect("the inverse query is valid");
+        assert!((unchanged - temperature_after).abs() < 1.0e-12);
     }
 }
