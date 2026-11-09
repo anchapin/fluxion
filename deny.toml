@@ -104,6 +104,18 @@ ignore = [
     # #2681: both unsound advisories are patch-fixed in Cargo.lock (anyhow
     # 1.0.104, rand 0.8.7 + 0.9.5) via `cargo update -p anyhow -p rand@*`.
     # Do not re-add ignores for advisories that a routine `cargo update` clears.
+    # RUSTSEC-2026-0459 (libsqlite3-sys via C SQLite CVE-2026-119375) — added
+    # 2026-11-09 (loop r124), mirrored from `.cargo/audit.toml`, which carries
+    # the full provenance and removal condition. libsqlite3-sys 0.38.2 arrives
+    # via rusqlite 0.40 ("bundled"); the patched libsqlite3-sys (>= 0.39.0,
+    # SQLite 3.54.x) ships only with rusqlite 0.41, so no routine
+    # `cargo update` clears it — the remediation is the rusqlite 0.40 -> 0.41
+    # dependency bump. This is a live-detected advisory (not
+    # advisory-not-detected noise): cargo-deny's default vulnerability deny
+    # would fail every develop push until the bump lands.
+    # >>> REMOVE together with the `.cargo/audit.toml` entry once rusqlite
+    # >>> >= 0.41 lands (Cargo.lock resolving libsqlite3-sys >= 0.39.0).
+    "RUSTSEC-2026-0459",
 ]
 
 # -----------------------------------------------------------------------------

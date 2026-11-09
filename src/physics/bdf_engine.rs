@@ -38,6 +38,74 @@ pub type BdfResult<T> = Result<T, BdfError>;
 pub const MAX_BDF_ORDER: usize = 6;
 pub const MIN_BDF_ORDER: usize = 1;
 
+// ---------------------------------------------------------------------------
+// Issue #4692 — flag-gated linear warm-start predictor for the Newton solve.
+//
+// The predictor replaces the Newton initial guess with the linear
+// extrapolation `x_prev + (x_prev - x_prev2)` of the last two accepted
+// states. It is **default OFF**: with the flag unset the solver takes
+// exactly the code path it took before this change.
+//
+// The flag is read **once, at construction** (`BdfTimeStepper::new` /
+// `BdfDriver::new`), never per step — the #4688 annual profile showed
+// per-step `getenv` reads of `FLX_*` feature flags to be the single
+// largest avoidable cost of the year (762 121 calls per annual run).
+// ---------------------------------------------------------------------------
+
+/// Environment variable that enables the Issue #4692 warm-start
+/// predictor. Unset (or any value other than `1` / `true` / `yes` /
+/// `on`) means **OFF**.
+pub const WARM_START_PREDICTOR_ENV: &str = "FLUXION_BDF_WARM_START_PREDICTOR";
+
+/// Parse the warm-start flag value.
+///
+/// Pure function on purpose: the rules are unit-tested without
+/// mutating the process environment, which would be racy under
+/// `cargo test`'s parallel threads (every `BdfTimeStepper::new` in
+/// the same process reads the same environment variable).
+pub fn warm_start_flag_enabled(value: Option<&str>) -> bool {
+    match value {
+        Some(raw) => {
+            let v = raw.trim();
+            v == "1"
+                || v.eq_ignore_ascii_case("true")
+                || v.eq_ignore_ascii_case("yes")
+                || v.eq_ignore_ascii_case("on")
+        }
+        None => false,
+    }
+}
+
+/// Issue #4692 — the linear warm-start predictor.
+///
+/// `out[i] = x_prev[i] + (x_prev[i] - x_prev2[i])`, optionally clamped
+/// to `bounds = Some((lo, hi))` (element-wise; `lo`/`hi` may be given
+/// in either order). A non-finite extrapolation falls back to
+/// `x_prev[i]` so the Newton solve never starts from NaN/Inf.
+pub fn warm_start_predict(
+    x_prev: &[f64],
+    x_prev2: &[f64],
+    bounds: Option<(&[f64], &[f64])>,
+) -> Vec<f64> {
+    let n = x_prev.len().min(x_prev2.len());
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        let mut guess = x_prev[i] + (x_prev[i] - x_prev2[i]);
+        if !guess.is_finite() {
+            guess = x_prev[i];
+        }
+        if let Some((lo, hi)) = bounds {
+            if i < lo.len() && i < hi.len() {
+                let lower = lo[i].min(hi[i]);
+                let upper = lo[i].max(hi[i]);
+                guess = guess.clamp(lower, upper);
+            }
+        }
+        out.push(guess);
+    }
+    out
+}
+
 pub mod coefficients {
     //! BDF Coefficients for orders 1-6
 
@@ -711,7 +779,8 @@ pub mod time_stepping {
         adaptive_step::{AdaptiveStepConfig, AdaptiveStepController, StepSize},
         coefficients::{get_coefficients, BdfCoefficients},
         newton_raphson::{NewtonRaphsonConfig, NewtonRaphsonSolver, ResidualFunction},
-        BdfError, BdfResult, MAX_BDF_ORDER,
+        warm_start_flag_enabled, warm_start_predict, BdfError, BdfResult, MAX_BDF_ORDER,
+        WARM_START_PREDICTOR_ENV,
     };
 
     #[derive(Debug, Clone, Copy, PartialEq)]
@@ -792,6 +861,21 @@ pub mod time_stepping {
     pub trait DaeSystem<T> {
         fn residual(&self, t: T, y: &[T], yp: &[T], r: &mut [T]);
         fn dimension(&self) -> usize;
+
+        /// Issue #4692 — optional physical bounds on the state vector
+        /// (`(lower, upper)`, element-wise).
+        ///
+        /// The BDF engine itself enforces **no** bounds on the state;
+        /// the default implementation therefore returns `None` and the
+        /// warm-start predictor runs unbounded. A DAE system that knows
+        /// its own physical limits (temperatures, masses, …) can
+        /// declare them here so the Issue #4692 warm-start predictor
+        /// clamps its extrapolated initial guess to the same limits.
+        /// The method is defaulted, so existing implementors are
+        /// unaffected.
+        fn state_bounds(&self) -> Option<(Vec<T>, Vec<T>)> {
+            None
+        }
     }
 
     pub struct BdfTimeStepper {
@@ -806,10 +890,33 @@ pub mod time_stepping {
         last_newton_iterations: usize,
         last_final_residual: f64,
         last_error_estimate: f64,
+        // Issue #4692 — warm-start predictor state.
+        //
+        // `warm_start` is read **once** at construction (never per
+        // step). `accepted_steps` counts the accepted steps since the
+        // last `initialize`, which gates the "first two steps"
+        // fallback, and `last_step_rejected` records that the previous
+        // step was rejected, which gates the post-rejection fallback.
+        warm_start: bool,
+        accepted_steps: usize,
+        last_step_rejected: bool,
     }
 
     impl BdfTimeStepper {
         pub fn new(config: TimeSteppingConfig) -> Self {
+            // Issue #4692 — the environment flag is read exactly once,
+            // here at construction time. Never per step (see the
+            // #4688 profile: per-step `getenv` reads dominated the
+            // annual run).
+            let warm_start =
+                warm_start_flag_enabled(std::env::var(WARM_START_PREDICTOR_ENV).ok().as_deref());
+            Self::new_with_warm_start(config, warm_start)
+        }
+
+        /// Issue #4692 — construct a stepper with an explicit
+        /// warm-start setting (used by the unit tests and by
+        /// measurement harnesses that cannot set the environment).
+        pub fn new_with_warm_start(config: TimeSteppingConfig, warm_start: bool) -> Self {
             Self {
                 config,
                 history: Vec::new(),
@@ -818,7 +925,15 @@ pub mod time_stepping {
                 last_newton_iterations: 0,
                 last_final_residual: 0.0,
                 last_error_estimate: 0.0,
+                warm_start,
+                accepted_steps: 0,
+                last_step_rejected: false,
             }
+        }
+
+        /// Issue #4692 — whether the warm-start predictor is active.
+        pub fn warm_start_enabled(&self) -> bool {
+            self.warm_start
         }
 
         pub fn with_default_config() -> Self {
@@ -842,6 +957,10 @@ pub mod time_stepping {
             self.last_newton_iterations = 0;
             self.last_final_residual = 0.0;
             self.last_error_estimate = 0.0;
+            // Issue #4692 — a fresh initial condition restarts the
+            // warm-start predictor's fallback bookkeeping.
+            self.accepted_steps = 0;
+            self.last_step_rejected = false;
             Ok(())
         }
 
@@ -876,6 +995,23 @@ pub mod time_stepping {
             let mut y_new = vec![0.0; n];
             self.predict(&mut y_new);
 
+            // Issue #4692 — flag-gated warm-start predictor (default
+            // OFF). When enabled, the Newton initial guess is the
+            // linear extrapolation `x_prev + (x_prev - x_prev2)` of
+            // the last two accepted states, clamped to the physical
+            // bounds the DAE system declares. The legacy BDF-coefficient
+            // guess is kept on the first two steps and on the step
+            // right after a rejected step (see `warm_start_guess`).
+            if self.warm_start {
+                let bounds = system.state_bounds();
+                let clamped = bounds
+                    .as_ref()
+                    .map(|(lower, upper)| (lower.as_slice(), upper.as_slice()));
+                if let Some(guess) = self.warm_start_guess(clamped) {
+                    y_new.copy_from_slice(&guess);
+                }
+            }
+
             // Issue #3339: construct the Newton solver from the
             // configured `bdf_config` so the new `DampingPolicy` (and
             // any user-tuned `damping_factor`) actually flows
@@ -895,9 +1031,19 @@ pub mod time_stepping {
                 n,
             };
 
-            let (solution, nr_stats) = solver.solve(&y_new, &bdf_residual)?;
+            let (solution, nr_stats) = match solver.solve(&y_new, &bdf_residual) {
+                Ok(out) => out,
+                Err(err) => {
+                    // Issue #4692 — a failed step invalidates the
+                    // warm-start history: the next attempt must fall
+                    // back to the legacy initial guess.
+                    self.last_step_rejected = true;
+                    return Err(err);
+                }
+            };
 
             if !nr_stats.converged {
+                self.last_step_rejected = true;
                 return Err(BdfError::ConvergenceFailed(
                     nr_stats.iterations,
                     nr_stats.final_residual,
@@ -917,6 +1063,12 @@ pub mod time_stepping {
 
             self.correct(&solution, t_new);
 
+            // Issue #4692 — an accepted step refreshes the warm-start
+            // bookkeeping (the predictor becomes eligible once two
+            // accepted states exist and no rejection is pending).
+            self.accepted_steps += 1;
+            self.last_step_rejected = false;
+
             y_new[..n].copy_from_slice(&solution[..n]);
 
             Ok((
@@ -929,6 +1081,33 @@ pub mod time_stepping {
                     last_newton_iterations: nr_stats.iterations,
                     last_final_residual: nr_stats.final_residual,
                 },
+            ))
+        }
+
+        /// Issue #4692 — the warm-start initial guess, or `None` when
+        /// the legacy (BDF-coefficient) guess must be kept.
+        ///
+        /// `None` is returned when
+        ///  * fewer than two steps have been accepted since the last
+        ///    `initialize` (the "first two steps" fallback: there are
+        ///    not yet two real accepted states to extrapolate from), or
+        ///  * the previous step was rejected (the "post-rejection"
+        ///    fallback: the extrapolation is built from states that
+        ///    precede a failed attempt).
+        fn warm_start_guess(&self, bounds: Option<(&[f64], &[f64])>) -> Option<Vec<f64>> {
+            if self.accepted_steps < 2 {
+                return None;
+            }
+            if self.last_step_rejected {
+                return None;
+            }
+            if self.history.len() < 2 {
+                return None;
+            }
+            Some(warm_start_predict(
+                &self.history[0],
+                &self.history[1],
+                bounds,
             ))
         }
 
@@ -1029,8 +1208,22 @@ pub mod time_stepping {
 
     impl BdfDriver {
         pub fn new(config: TimeSteppingConfig) -> Self {
+            // Issue #4692 — `BdfTimeStepper::new` reads the
+            // warm-start environment flag exactly once, here.
             let adaptive = AdaptiveStepController::new(config.step_config);
             let stepper = BdfTimeStepper::new(config);
+            Self {
+                config,
+                adaptive,
+                stepper,
+            }
+        }
+
+        /// Issue #4692 — construct a driver with an explicit
+        /// warm-start setting (bypasses the environment flag).
+        pub fn new_with_warm_start(config: TimeSteppingConfig, warm_start: bool) -> Self {
+            let adaptive = AdaptiveStepController::new(config.step_config);
+            let stepper = BdfTimeStepper::new_with_warm_start(config, warm_start);
             Self {
                 config,
                 adaptive,
@@ -1164,6 +1357,178 @@ pub mod time_stepping {
             let system = SimpleOscillator;
             let result = stepper.step(0.01, &system);
             assert!(result.is_ok());
+        }
+
+        // -----------------------------------------------------------------
+        // Issue #4692 — warm-start predictor (flag-gated, default OFF).
+        // -----------------------------------------------------------------
+
+        /// A DAE system that declares physical state bounds, used by
+        /// the clamping test.
+        #[cfg(test)]
+        struct BoundedOscillator;
+
+        #[cfg(test)]
+        impl DaeSystem<f64> for BoundedOscillator {
+            fn residual(&self, _t: f64, y: &[f64], yp: &[f64], r: &mut [f64]) {
+                r[0] = yp[0] - y[1];
+                r[1] = yp[1] + y[0];
+            }
+
+            fn dimension(&self) -> usize {
+                2
+            }
+
+            fn state_bounds(&self) -> Option<(Vec<f64>, Vec<f64>)> {
+                Some((vec![-10.0, -10.0], vec![0.5, 0.5]))
+            }
+        }
+
+        #[test]
+        fn issue_4692_warm_start_flag_defaults_off() {
+            // The environment flag is unset in the test process, so
+            // the predictor must be inactive by default.
+            assert!(!BdfTimeStepper::with_default_config().warm_start_enabled());
+            assert!(!warm_start_flag_enabled(None));
+            assert!(warm_start_flag_enabled(Some("1")));
+            assert!(warm_start_flag_enabled(Some("true")));
+            assert!(warm_start_flag_enabled(Some("ON")));
+            assert!(!warm_start_flag_enabled(Some("0")));
+            assert!(!warm_start_flag_enabled(Some("")));
+            assert!(!warm_start_flag_enabled(Some("maybe")));
+        }
+
+        #[test]
+        fn issue_4692_warm_start_predict_math() {
+            // x_prev + (x_prev - x_prev2)
+            let got = warm_start_predict(&[1.0, 2.0], &[0.5, 1.5], None);
+            assert_eq!(got, vec![1.5, 2.5]);
+
+            // A flat history extrapolates to the same value.
+            let flat = warm_start_predict(&[3.0], &[3.0], None);
+            assert_eq!(flat, vec![3.0]);
+
+            // A decreasing history extrapolates downwards.
+            let down = warm_start_predict(&[1.0], &[2.0], None);
+            assert_eq!(down, vec![0.0]);
+        }
+
+        #[test]
+        fn issue_4692_warm_start_first_two_steps_fallback() {
+            let mut stepper =
+                BdfTimeStepper::new_with_warm_start(TimeSteppingConfig::default(), true);
+            stepper.initialize(0.0, &[1.0, 0.0]).unwrap();
+
+            // No accepted step yet → no extrapolatable history.
+            assert!(stepper.warm_start_guess(None).is_none());
+
+            let system = SimpleOscillator;
+            stepper.step(0.01, &system).unwrap();
+            // One accepted step → still the "first two steps" fallback.
+            assert!(stepper.warm_start_guess(None).is_none());
+
+            stepper.step(0.01, &system).unwrap();
+            // Two accepted steps → the predictor is eligible.
+            let guess = stepper.warm_start_guess(None).expect("predictor eligible");
+            let x_prev = &stepper.history[0];
+            let x_prev2 = &stepper.history[1];
+            for i in 0..guess.len() {
+                let expected = x_prev[i] + (x_prev[i] - x_prev2[i]);
+                assert_eq!(guess[i], expected);
+            }
+        }
+
+        #[test]
+        fn issue_4692_warm_start_post_rejection_fallback() {
+            let mut stepper =
+                BdfTimeStepper::new_with_warm_start(TimeSteppingConfig::default(), true);
+            stepper.initialize(0.0, &[1.0, 0.0]).unwrap();
+
+            let system = SimpleOscillator;
+            stepper.step(0.01, &system).unwrap();
+            stepper.step(0.01, &system).unwrap();
+            assert!(stepper.warm_start_guess(None).is_some());
+
+            // A rejected step invalidates the extrapolation.
+            stepper.last_step_rejected = true;
+            assert!(stepper.warm_start_guess(None).is_none());
+
+            // The next accepted step re-enables it.
+            stepper.last_step_rejected = false;
+            assert!(stepper.warm_start_guess(None).is_some());
+        }
+
+        #[test]
+        fn issue_4692_failed_step_marks_rejection() {
+            // A Newton solve that cannot converge (max_iterations = 1
+            // with a non-zero initial guess) must mark the step as
+            // rejected so the predictor falls back on the retry.
+            let mut config = TimeSteppingConfig::default();
+            config.bdf_config.max_iterations = 1;
+            let mut stepper = BdfTimeStepper::new_with_warm_start(config, true);
+            stepper.initialize(0.0, &[1.0, 0.0]).unwrap();
+
+            let system = SimpleOscillator;
+            let outcome = stepper.step(0.01, &system);
+            assert!(outcome.is_err(), "step must fail with max_iterations = 1");
+            assert!(stepper.last_step_rejected);
+            assert!(stepper.warm_start_guess(None).is_none());
+        }
+
+        #[test]
+        fn issue_4692_warm_start_clamps_to_declared_bounds() {
+            // Unbounded: the raw extrapolation is used.
+            let raw = warm_start_predict(&[10.0], &[0.0], None);
+            assert_eq!(raw, vec![20.0]);
+
+            // Bounded: the extrapolation is clamped to the declared
+            // physical limits.
+            let clamped = warm_start_predict(&[10.0], &[0.0], Some((&[-5.0], &[2.0])));
+            assert_eq!(clamped, vec![2.0]);
+
+            // Reversed bounds are normalised, not panicked on.
+            let reversed = warm_start_predict(&[10.0], &[0.0], Some((&[2.0], &[-5.0])));
+            assert_eq!(reversed, vec![2.0]);
+
+            // The stepper path uses the bounds declared by the system.
+            let mut stepper =
+                BdfTimeStepper::new_with_warm_start(TimeSteppingConfig::default(), true);
+            stepper.initialize(0.0, &[1.0, 0.0]).unwrap();
+            let system = BoundedOscillator;
+            stepper.step(0.01, &system).unwrap();
+            stepper.step(0.01, &system).unwrap();
+            let bounds = system.state_bounds().unwrap();
+            let guess = stepper
+                .warm_start_guess(Some((bounds.0.as_slice(), bounds.1.as_slice())))
+                .expect("predictor eligible");
+            for value in guess {
+                assert!(
+                    (-10.0..=0.5).contains(&value),
+                    "clamped guess {value} outside declared bounds"
+                );
+            }
+        }
+
+        #[test]
+        fn issue_4692_flag_off_is_bit_identical() {
+            // The flag-off path must produce exactly the legacy trace.
+            let mut legacy =
+                BdfTimeStepper::new_with_warm_start(TimeSteppingConfig::default(), false);
+            let mut explicit_off = BdfTimeStepper::new(TimeSteppingConfig::default());
+            assert!(!explicit_off.warm_start_enabled());
+
+            let system = SimpleOscillator;
+            legacy.initialize(0.0, &[1.0, 0.0]).unwrap();
+            explicit_off.initialize(0.0, &[1.0, 0.0]).unwrap();
+
+            for _ in 0..5 {
+                let a = legacy.step(0.01, &system).unwrap();
+                let b = explicit_off.step(0.01, &system).unwrap();
+                assert_eq!(a.0, b.0);
+                assert_eq!(a.1.last_newton_iterations, b.1.last_newton_iterations);
+                assert_eq!(a.1.last_final_residual, b.1.last_final_residual);
+                assert_eq!(a.1.final_time, b.1.final_time);
+            }
         }
     }
 }
