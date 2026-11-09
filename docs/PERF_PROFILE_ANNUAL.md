@@ -135,7 +135,7 @@ reads `FLX_*` feature-flag env vars per timestep instead of caching them.
 
 | Area | Share of annual run | Measured value | How it was obtained |
 |---|---|---|---|
-| **`getenv` env-flag reads (`FLX_*`)** | **≈50 ms net of a ~89–98 ms quiet-machine run (roughly half; method-sensitive, see §7)** | **762,121 calls per annual run (≈87/step)**; raw total 85.40 ms, clock-pair overhead 46.52 ns/call, **net 49.95 ms** | `getenv_timing.txt`, `getenv_8760.txt` (interposer counts + timing) |
+| **`getenv` env-flag reads (`FLX_*`)** | **≈22–50 ms net of a ~89–98 ms quiet-machine run (roughly a quarter to a half; method-sensitive, see §7)** | **762,121 calls per annual run (≈87/step)**; two interposer variants measured raw totals 57.2 / 85.40 ms, clock-pair overhead ~46 ns/call, **net 22.27 / 49.95 ms** | `getenv_timing.txt`, `getenv_8760.txt` (interposer counts + timing, second variant); worker's first-variant figures from its run log |
 | Physics step (everything else in the step loop) | essentially all remaining marginal time | marginal 0.0101 ms/step total; gains application ≈ 0 (within noise, −1.3%) | `attrib2_runs.log` decomposition: full solve 88.776 ms ≈ manual-with-gains 88.304 ms ≈ manual-no-gains 89.431 ms |
 | Fixed setup (model construction etc.) | ~0.02% | ~0.015 ms | 100-step vs 8760-step decomposition |
 
@@ -148,8 +148,8 @@ Top `getenv` callers per annual run (`getenv_8760.txt`): `FLX_R89_MASS_DT_ALIGN`
 
 **Per-timestep environment-variable flag reads.** One annual run makes
 762,121 `getenv` calls (~87 per timestep) re-reading `FLX_*` feature flags
-in the hot loop; direct interposer timing attributes ≈49.95 ms net
-(85.40 ms raw) to those calls, against a quiet-machine annual wall clock
+in the hot loop; direct interposer timing attributes ≈22–50 ms net
+(57–85 ms raw, two variants) to those calls, against a quiet-machine annual wall clock
 of 88.8–98.0 ms. No other single area comes close: the gains application
 is unmeasurable (≈0) and fixed setup is ~0.02%. The obvious follow-up
 candidate for the perf-spike series is caching flag reads at model
@@ -162,10 +162,12 @@ this measurement-only run, and no production code was changed.
   ranged 88.8 ms (quiet) to 186.9 ms (loaded). Only min/median statistics
   and same-run ratios should be quoted; the getenv share is stated
   against the quiet-machine wall clock and would shrink under load.
-- **Interposer method:** the net getenv figure subtracts a measured
-  clock-pair overhead (46.52 ns/call) from the raw total; the raw total
-  (85.40 ms) is the hard upper bound and the net (49.95 ms) depends on
-  that subtraction being right. The call count (762,121) is exact.
+- **Interposer method:** the net getenv figures subtract a measured
+  clock-pair overhead (~46 ns/call) from the raw totals; the raw totals
+  (57.2 / 85.40 ms across two interposer variants) are the hard upper
+  bounds and the nets (22.27 / 49.95 ms) depend on that subtraction being
+  right — the spread between variants is itself the method uncertainty.
+  The call count (762,121) is exact.
 - **Bench model ≠ Case 600:** workload 1 as executed is the bench
   harness's own single-zone model (see §3, §4.3). The DAE/BDF path is not
   exercised at all — it is workload 2, not measured.
