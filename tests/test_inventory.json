@@ -18,7 +18,7 @@
     "fluxion": {
       "lib_ignored": 8,
       "lib_tests": 4401,
-      "test_binaries": 42
+      "test_binaries": 43
     },
     "fluxion-behavior": {
       "lib_ignored": 0,
