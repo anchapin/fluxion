@@ -35,6 +35,131 @@ pub enum BdfError {
 
 pub type BdfResult<T> = Result<T, BdfError>;
 
+/// Issue #4691 — instrumentation counters for the BDF/Newton inner loop.
+///
+/// These counters are *always* live (one relaxed atomic increment per
+/// event) so a perf spike can measure the baseline Jacobian-assembly /
+/// factorisation / Newton-iteration cost without touching any solver
+/// behaviour. They are pure instrumentation: no tolerance, default,
+/// convergence criterion or release gate depends on them.
+pub mod counters {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    /// Number of numerical Jacobian assemblies (one per `compute_numerical_jacobian`).
+    pub static JACOBIAN_ASSEMBLIES: AtomicU64 = AtomicU64::new(0);
+    /// Number of matrix factorisations (one per `solve_linear_system` call in the
+    /// baseline path, one per LU factorisation in the frozen-Jacobian path).
+    pub static FACTORIZATIONS: AtomicU64 = AtomicU64::new(0);
+    /// Number of Newton iterations entered (one residual evaluation each).
+    pub static NEWTON_ITERATIONS: AtomicU64 = AtomicU64::new(0);
+    /// Number of times a cached (frozen) Jacobian was reused instead of re-assembled.
+    pub static JACOBIAN_REUSES: AtomicU64 = AtomicU64::new(0);
+    /// Number of driver-level step rejections.
+    pub static STEP_REJECTIONS: AtomicU64 = AtomicU64::new(0);
+    /// Number of Newton solves started (one per BDF step attempt).
+    pub static SOLVE_CALLS: AtomicU64 = AtomicU64::new(0);
+    /// Number of forced-refresh retries (a failed frozen solve retried with a
+    /// freshly assembled Jacobian).
+    pub static FORCED_REFRESH_RETRIES: AtomicU64 = AtomicU64::new(0);
+
+    /// Immutable snapshot of the counters above.
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+    pub struct CountersSnapshot {
+        pub jacobian_assemblies: u64,
+        pub factorizations: u64,
+        pub newton_iterations: u64,
+        pub jacobian_reuses: u64,
+        pub step_rejections: u64,
+        pub solve_calls: u64,
+        pub forced_refresh_retries: u64,
+    }
+
+    /// Read the current counter values.
+    pub fn snapshot() -> CountersSnapshot {
+        CountersSnapshot {
+            jacobian_assemblies: JACOBIAN_ASSEMBLIES.load(Ordering::Relaxed),
+            factorizations: FACTORIZATIONS.load(Ordering::Relaxed),
+            newton_iterations: NEWTON_ITERATIONS.load(Ordering::Relaxed),
+            jacobian_reuses: JACOBIAN_REUSES.load(Ordering::Relaxed),
+            step_rejections: STEP_REJECTIONS.load(Ordering::Relaxed),
+            solve_calls: SOLVE_CALLS.load(Ordering::Relaxed),
+            forced_refresh_retries: FORCED_REFRESH_RETRIES.load(Ordering::Relaxed),
+        }
+    }
+
+    /// Reset every counter to zero (used by the spike harness to isolate
+    /// one workload's contribution).
+    pub fn reset() {
+        JACOBIAN_ASSEMBLIES.store(0, Ordering::Relaxed);
+        FACTORIZATIONS.store(0, Ordering::Relaxed);
+        NEWTON_ITERATIONS.store(0, Ordering::Relaxed);
+        JACOBIAN_REUSES.store(0, Ordering::Relaxed);
+        STEP_REJECTIONS.store(0, Ordering::Relaxed);
+        SOLVE_CALLS.store(0, Ordering::Relaxed);
+        FORCED_REFRESH_RETRIES.store(0, Ordering::Relaxed);
+    }
+}
+
+/// Issue #4691 — flag-gated frozen-Jacobian prototype (**default OFF**).
+///
+/// The prototype keeps the numerically-computed Jacobian (and its LU
+/// factorisation) alive across Newton iterations *and* across
+/// consecutive BDF timesteps, refreshing it only when
+///
+/// 1. the residual stops decreasing monotonically (stall),
+/// 2. the step is rejected, or
+/// 3. the reuse budget `N` is exhausted.
+///
+/// Nothing in the production default path changes: with the flag unset
+/// (`FLX_BDF_FREEZE_JACOBIAN` absent / falsy) the solver takes exactly
+/// the legacy branch — one Jacobian assembly and one elimination per
+/// Newton iteration.
+pub mod freeze {
+    /// Env flag enabling the frozen-Jacobian prototype (default: OFF).
+    pub const ENV_FREEZE_JACOBIAN: &str = "FLX_BDF_FREEZE_JACOBIAN";
+    /// Env var selecting the reuse budget `N` (number of times a frozen
+    /// Jacobian may be used before it is refreshed).
+    pub const ENV_FREEZE_MAX_REUSE: &str = "FLX_BDF_FREEZE_MAX_REUSE";
+    /// Default reuse budget when `FLX_BDF_FREEZE_MAX_REUSE` is unset or
+    /// unparsable.
+    pub const DEFAULT_MAX_REUSE: usize = 8;
+
+    /// The refresh policy in force for one Newton solve.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct FrozenJacobianPolicy {
+        /// Whether the frozen-Jacobian prototype is active.
+        pub enabled: bool,
+        /// Reuse budget `N`: how many times a frozen Jacobian may be used
+        /// before it must be refreshed.
+        pub max_reuses: usize,
+    }
+
+    impl Default for FrozenJacobianPolicy {
+        fn default() -> Self {
+            Self {
+                enabled: false,
+                max_reuses: DEFAULT_MAX_REUSE,
+            }
+        }
+    }
+
+    impl FrozenJacobianPolicy {
+        /// Read the policy from the environment (repo-standard `FLX_*`
+        /// conventions; booleans go through `util::env_bool::env_bool`).
+        pub fn from_env() -> Self {
+            let enabled = crate::util::env_bool::env_bool(ENV_FREEZE_JACOBIAN, false);
+            let max_reuses = std::env::var(ENV_FREEZE_MAX_REUSE)
+                .ok()
+                .and_then(|raw| raw.trim().parse::<usize>().ok())
+                .unwrap_or(DEFAULT_MAX_REUSE);
+            Self {
+                enabled,
+                max_reuses,
+            }
+        }
+    }
+}
+
 pub const MAX_BDF_ORDER: usize = 6;
 pub const MIN_BDF_ORDER: usize = 1;
 
@@ -346,6 +471,158 @@ pub mod newton_raphson {
         fn eval(&self, x: &[T], residual: &mut [T]);
     }
 
+    /// Issue #4691 — LU factorisation with partial pivoting.
+    ///
+    /// Used by the flag-gated frozen-Jacobian prototype so a frozen
+    /// Jacobian can be *factorised once* and reused for every subsequent
+    /// Newton iteration (O(n²) triangular solves) instead of being
+    /// re-eliminated (O(n³)) on every iteration.
+    #[derive(Debug, Clone, Default)]
+    pub struct LuFactors {
+        n: usize,
+        /// Combined L\U storage (row-major, `n*n`), unit lower triangle.
+        lu: Vec<f64>,
+        /// Row permutation: `perm[i]` is the original row now at row `i`.
+        perm: Vec<usize>,
+        singular: bool,
+    }
+
+    impl LuFactors {
+        /// Factorise the row-major `n*n` matrix `a` (copied, not mutated).
+        pub fn factorize(a: &[f64], n: usize) -> Self {
+            let mut lu = a[..n * n].to_vec();
+            let mut perm: Vec<usize> = (0..n).collect();
+            let mut singular = false;
+
+            for k in 0..n {
+                let mut pivot_row = k;
+                let mut max_val = lu[k * n + k].abs();
+                for i in (k + 1)..n {
+                    let val = lu[i * n + k].abs();
+                    if val > max_val {
+                        max_val = val;
+                        pivot_row = i;
+                    }
+                }
+                if max_val < 1e-14 {
+                    singular = true;
+                    break;
+                }
+                if pivot_row != k {
+                    // Swap the full rows: the already-computed L part must
+                    // travel with the row (standard PA = LU layout).
+                    for j in 0..n {
+                        lu.swap(k * n + j, pivot_row * n + j);
+                    }
+                    perm.swap(k, pivot_row);
+                }
+                let pivot = lu[k * n + k];
+                for i in (k + 1)..n {
+                    let factor = lu[i * n + k] / pivot;
+                    lu[i * n + k] = factor;
+                    for j in (k + 1)..n {
+                        lu[i * n + j] -= factor * lu[k * n + j];
+                    }
+                }
+            }
+
+            Self {
+                n,
+                lu,
+                perm,
+                singular,
+            }
+        }
+
+        /// True when the factorisation hit a (near-)zero pivot.
+        pub fn is_singular(&self) -> bool {
+            self.singular
+        }
+
+        /// Solve `A x = b` with the stored factors.
+        pub fn solve(&self, b: &[f64], out: &mut [f64]) {
+            let n = self.n;
+            if n == 0 {
+                return;
+            }
+            if self.singular {
+                // Degenerate Jacobian: mirror the legacy solver's
+                // "no elimination performed" behaviour (solution = rhs).
+                let m = n.min(b.len()).min(out.len());
+                out[..m].copy_from_slice(&b[..m]);
+                return;
+            }
+
+            let mut y = vec![0.0; n];
+            for i in 0..n {
+                y[i] = b[self.perm[i]];
+            }
+            // Forward substitution (unit lower triangle).
+            for i in 1..n {
+                let sum: f64 = self.lu[i * n..i * n + i]
+                    .iter()
+                    .zip(y[..i].iter())
+                    .map(|(a, b)| a * b)
+                    .sum();
+                y[i] -= sum;
+            }
+            // Back substitution.
+            let mut x = vec![0.0; n];
+            for i in (0..n).rev() {
+                let sum: f64 = self.lu[i * n + i + 1..i * n + n]
+                    .iter()
+                    .zip(x[i + 1..].iter())
+                    .map(|(a, b)| a * b)
+                    .sum();
+                x[i] = (y[i] - sum) / self.lu[i * n + i];
+            }
+            out.copy_from_slice(&x);
+        }
+    }
+
+    /// Issue #4691 — Jacobian cache shared by the Newton iterations of one
+    /// BDF step and, when the frozen-Jacobian prototype is enabled, by
+    /// consecutive BDF steps.
+    #[derive(Debug, Clone, Default)]
+    pub struct NewtonJacobianCache {
+        lu: LuFactors,
+        has_jacobian: bool,
+        /// Number of times the cached Jacobian has been used since the last
+        /// assembly (counts uses, i.e. solve iterations, across steps).
+        reuse_count: usize,
+        /// Residual norm of the *first* iteration of the previous solve —
+        /// the cross-step stall probe (same role in the sequence, so the
+        /// two residuals are scale-comparable).
+        prev_first_residual: Option<f64>,
+        /// Residual norm at convergence of the previous solve.
+        prev_final_residual: Option<f64>,
+    }
+
+    impl NewtonJacobianCache {
+        /// Drop the cached Jacobian; the next solve must re-assemble it.
+        pub fn invalidate(&mut self) {
+            self.has_jacobian = false;
+            self.reuse_count = 0;
+            self.lu = LuFactors::default();
+        }
+
+        /// Whether a usable Jacobian is currently cached.
+        pub fn has_jacobian(&self) -> bool {
+            self.has_jacobian
+        }
+
+        /// How many times the cached Jacobian has been used since the last
+        /// assembly.
+        pub fn reuse_count(&self) -> usize {
+            self.reuse_count
+        }
+
+        /// Residual norm at convergence of the previous solve.
+        pub fn prev_final_residual(&self) -> Option<f64> {
+            self.prev_final_residual
+        }
+    }
+
     pub struct NewtonRaphsonSolver {
         config: NewtonRaphsonConfig,
     }
@@ -359,7 +636,36 @@ pub mod newton_raphson {
             Self::new(NewtonRaphsonConfig::default())
         }
 
+        /// Solve the system with a throw-away Jacobian cache.
+        ///
+        /// Byte-identical to the pre-#4691 implementation when the
+        /// frozen-Jacobian prototype is disabled (the default).
         pub fn solve<R>(&self, x0: &[f64], func: &R) -> BdfResult<(Vec<f64>, NewtonRaphsonStats)>
+        where
+            R: ResidualFunction<f64>,
+        {
+            let mut cache = NewtonJacobianCache::default();
+            self.solve_with_cache(x0, func, &mut cache)
+        }
+
+        /// Solve the system, reusing the Jacobian (and its LU factorisation)
+        /// held in `cache` when the frozen-Jacobian prototype is enabled.
+        ///
+        /// Refresh policy (Issue #4691):
+        ///
+        /// * reuse the cached Jacobian while the residual decreases
+        ///   monotonically;
+        /// * refresh it when the residual stalls (fails to decrease), when
+        ///   the reuse budget `N` is exhausted, or when no Jacobian is
+        ///   cached yet;
+        /// * the cache is carried across BDF steps; the caller invalidates
+        ///   it when a step is rejected.
+        pub fn solve_with_cache<R>(
+            &self,
+            x0: &[f64],
+            func: &R,
+            cache: &mut NewtonJacobianCache,
+        ) -> BdfResult<(Vec<f64>, NewtonRaphsonStats)>
         where
             R: ResidualFunction<f64>,
         {
@@ -380,12 +686,40 @@ pub mod newton_raphson {
             let history_window = self.config.damping.history_window.max(1);
             let mut residual_history = Vec::with_capacity(history_window);
 
+            // Issue #4691: the frozen-Jacobian prototype is opt-in and off
+            // by default; with it off the legacy branch below runs and the
+            // numerics are unchanged.
+            let policy = super::freeze::FrozenJacobianPolicy::from_env();
+            let frozen = policy.enabled;
+
+            // Stall probe: the residual of the previous Newton iteration.
+            // Inside a step that is the previous iteration of the same solve;
+            // for the first iteration of a step it is the *first-iteration*
+            // residual of the previous step (same role → scale-comparable).
+            let mut stall_probe: Option<f64> = if frozen {
+                cache.prev_first_residual
+            } else {
+                None
+            };
+            let mut first_residual: Option<f64> = None;
+
+            super::counters::SOLVE_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
             for iter in 0..self.config.max_iterations {
                 func.eval(&x, &mut residual);
 
                 let residual_norm = norm(&residual);
+                super::counters::NEWTON_ITERATIONS
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if first_residual.is_none() {
+                    first_residual = Some(residual_norm);
+                }
 
                 if residual_norm < self.config.residual_tolerance {
+                    if frozen {
+                        cache.prev_first_residual = first_residual;
+                        cache.prev_final_residual = Some(residual_norm);
+                    }
                     return Ok((
                         x.clone(),
                         NewtonRaphsonStats {
@@ -396,12 +730,49 @@ pub mod newton_raphson {
                     ));
                 }
 
-                compute_numerical_jacobian(&x, &residual, func, &mut jacobian);
-                solve_linear_system(&jacobian, &residual, &mut update);
+                if frozen {
+                    // Refresh decision: reuse while the residual decreases
+                    // monotonically; refresh on stall, on budget
+                    // exhaustion, or when nothing is cached.
+                    let stalled = match stall_probe {
+                        // Not strictly decreasing (incl. NaN) counts as a stall.
+                        Some(prev) => {
+                            residual_norm.partial_cmp(&prev) != Some(std::cmp::Ordering::Less)
+                        }
+                        None => false,
+                    };
+                    let budget_exhausted = cache.reuse_count >= policy.max_reuses;
+                    if !cache.has_jacobian || stalled || budget_exhausted {
+                        compute_numerical_jacobian(&x, &residual, func, &mut jacobian);
+                        super::counters::JACOBIAN_ASSEMBLIES
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        cache.lu = LuFactors::factorize(&jacobian, n);
+                        super::counters::FACTORIZATIONS
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        cache.has_jacobian = true;
+                        cache.reuse_count = 0;
+                    } else {
+                        super::counters::JACOBIAN_REUSES
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    cache.reuse_count += 1;
+                    cache.lu.solve(&residual, &mut update);
+                } else {
+                    compute_numerical_jacobian(&x, &residual, func, &mut jacobian);
+                    super::counters::JACOBIAN_ASSEMBLIES
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    solve_linear_system(&jacobian, &residual, &mut update);
+                    super::counters::FACTORIZATIONS
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
 
                 let update_norm = norm(&update);
 
                 if update_norm < self.config.update_tolerance {
+                    if frozen {
+                        cache.prev_first_residual = first_residual;
+                        cache.prev_final_residual = Some(residual_norm);
+                    }
                     return Ok((
                         x.clone(),
                         NewtonRaphsonStats {
@@ -429,6 +800,7 @@ pub mod newton_raphson {
                     x[i] -= damping_factor * update[i];
                 }
 
+                stall_probe = Some(residual_norm);
                 prev_residual_norm = residual_norm;
                 if self.config.damping.mode != 0 {
                     residual_history.push(residual_norm);
@@ -440,6 +812,10 @@ pub mod newton_raphson {
 
             func.eval(&x, &mut residual);
             let final_residual = norm(&residual);
+            if frozen {
+                cache.prev_first_residual = first_residual;
+                cache.prev_final_residual = None;
+            }
 
             Err(BdfError::ConvergenceFailed(
                 self.config.max_iterations,
@@ -778,7 +1154,9 @@ pub mod time_stepping {
     use crate::physics::bdf_engine::{
         adaptive_step::{AdaptiveStepConfig, AdaptiveStepController, StepSize},
         coefficients::{get_coefficients, BdfCoefficients},
-        newton_raphson::{NewtonRaphsonConfig, NewtonRaphsonSolver, ResidualFunction},
+        newton_raphson::{
+            NewtonJacobianCache, NewtonRaphsonConfig, NewtonRaphsonSolver, ResidualFunction,
+        },
         warm_start_flag_enabled, warm_start_predict, BdfError, BdfResult, MAX_BDF_ORDER,
         WARM_START_PREDICTOR_ENV,
     };
@@ -900,6 +1278,10 @@ pub mod time_stepping {
         warm_start: bool,
         accepted_steps: usize,
         last_step_rejected: bool,
+        // Issue #4691: Jacobian (and LU factorisation) cache shared by the
+        // Newton iterations of consecutive steps when the frozen-Jacobian
+        // prototype is enabled. It is inert in the default (flag-off) path.
+        jacobian_cache: NewtonJacobianCache,
     }
 
     impl BdfTimeStepper {
@@ -928,6 +1310,7 @@ pub mod time_stepping {
                 warm_start,
                 accepted_steps: 0,
                 last_step_rejected: false,
+                jacobian_cache: NewtonJacobianCache::default(),
             }
         }
 
@@ -983,6 +1366,14 @@ pub mod time_stepping {
             self.last_error_estimate
         }
 
+        /// Issue #4691: drop the cached Jacobian (and its factorisation).
+        ///
+        /// Called by the driver when a step is rejected so the next attempt
+        /// re-assembles the Jacobian from scratch.
+        pub fn invalidate_jacobian_cache(&mut self) {
+            self.jacobian_cache.invalidate();
+        }
+
         pub fn step<S>(&mut self, dt: f64, system: &S) -> BdfResult<(Vec<f64>, TimeSteppingStats)>
         where
             S: DaeSystem<f64>,
@@ -1031,14 +1422,40 @@ pub mod time_stepping {
                 n,
             };
 
-            let (solution, nr_stats) = match solver.solve(&y_new, &bdf_residual) {
+            let (solution, nr_stats) = match solver.solve_with_cache(
+                &y_new,
+                &bdf_residual,
+                &mut self.jacobian_cache,
+            ) {
                 Ok(out) => out,
                 Err(err) => {
-                    // Issue #4692 — a failed step invalidates the
-                    // warm-start history: the next attempt must fall
-                    // back to the legacy initial guess.
-                    self.last_step_rejected = true;
-                    return Err(err);
+                    // Issue #4691: with the frozen-Jacobian prototype on, a
+                    // failure of a frozen solve is retried once with a
+                    // freshly assembled Jacobian (the frozen Jacobian was
+                    // stale) before the step is rejected. With the prototype
+                    // off this is exactly the legacy behaviour.
+                    let frozen =
+                        crate::physics::bdf_engine::freeze::FrozenJacobianPolicy::from_env();
+                    if !frozen.enabled || !self.jacobian_cache.has_jacobian() {
+                        self.jacobian_cache.invalidate();
+                        // Issue #4692 — a failed step invalidates the
+                        // warm-start history: the next attempt must fall
+                        // back to the legacy initial guess.
+                        self.last_step_rejected = true;
+                        return Err(err);
+                    }
+                    crate::physics::bdf_engine::counters::FORCED_REFRESH_RETRIES
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    self.jacobian_cache.invalidate();
+                    match solver.solve_with_cache(&y_new, &bdf_residual, &mut self.jacobian_cache)
+                    {
+                        Ok(out) => out,
+                        Err(err) => {
+                            // Issue #4692 — warm-start invalidation, as above.
+                            self.last_step_rejected = true;
+                            return Err(err);
+                        }
+                    }
                 }
             };
 
@@ -1301,6 +1718,11 @@ pub mod time_stepping {
                     Err(_) => {
                         // Newton failed or step below floor — halve and retry.
                         stats.steps_rejected += 1;
+                        // Issue #4691: a rejected step invalidates the frozen
+                        // Jacobian — the next attempt re-assembles it.
+                        self.stepper.invalidate_jacobian_cache();
+                        crate::physics::bdf_engine::counters::STEP_REJECTIONS
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         dt *= 0.5;
                         if dt < step_cfg.min_dt {
                             // Floor hit: keep trying once more at min_dt,
