@@ -238,13 +238,14 @@ def persist_setpoints(model: Any, zones: Any, records: list[dict[str, Any]]) -> 
     Returns the name of the persistence path that was taken:
 
     * ``"zone_setpoints"`` — the model exposes
-      ``set_zone_setpoints(zone_index, heating, cooling)`` (the
-      ``fluxion.MultiZoneThermalModel`` binding does).
+      ``set_zone_setpoints(zone_index, heating, cooling)`` (both the
+      ``fluxion.MultiZoneThermalModel`` binding and, since Issue #4633,
+      the single-zone ``fluxion.Model`` binding do). This is the
+      persistent path: the swept values reach the solver and round-trip
+      through the serialized model.
     * ``"zones"`` — the model exposes ``set_zones(zones)``.
     * ``"advisory"`` — neither setter exists, so the change stays on the
-      mutated zone snapshots. The current ``fluxion.Model`` binding is in
-      this situation: it exposes no zone-setpoint setter, so the sweep is
-      advisory until the binding grows one.
+      mutated zone snapshots.
     """
     zone_setter = getattr(model, "set_zone_setpoints", None)
     if callable(zone_setter):

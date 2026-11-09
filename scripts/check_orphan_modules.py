@@ -339,6 +339,13 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
         # ``config`` is unambiguous here: ``ai::sweeps::config`` has live
         # callers and is not wired-but-dead.)
         "config",
+        # [wire-pending] Issue #3991 (PR #4611) staged ``src/io/idf/export.rs``
+        # as a wired-but-dead ``pub mod export;``: the IDF export surface is
+        # tested but has no production caller yet. The production wiring
+        # (glazing + IdealLoads export) lands in the follow-up issue filed
+        # when PR #4611 merges; wire it up or delete it there, dropping this
+        # entry and its registry row in the same PR.
+        "export",
     }
 )
 
@@ -372,7 +379,11 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
 #     ``validation_hybrid_empirical_test`` target) — the module is no
 #     longer wired-but-dead, so its allowlist entry and its Issue
 #     #3748 disposition row are dropped in the same PR.
-BASELINE_WIRED_BUT_DEAD = 33  # raised 19 → 32 in PR for fluxion-#4197: corrected;
+BASELINE_WIRED_BUT_DEAD = 34  # raised 19 → 32 in PR for fluxion-#4197: corrected;
+#   raised 33 → 34 in PR for fluxion-#4611: io::idf::export staged by Issue
+#   #3991 with no production caller yet; wire-pending disposition in the
+#   #3748 registry, production wiring tracked in the follow-up issue filed
+#   when #4611 merges.
 #   raised 32 → 33 in PR for fluxion-#4173: validation::config lost its
 #   only in-workspace callers when the validation-gated ThermalModel
 #   constructors were deleted; tracked as keep-dead cleanup backlog

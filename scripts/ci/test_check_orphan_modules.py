@@ -693,4 +693,8 @@ def test_disposition_gate_passes_on_real_allowlist(checker, capsys):
     assert rc == 0, f"expected PASS on real repo, got rc={rc}\noutput:\n{out}"
     assert "Rows missing for live modules: 0" in out
     assert "Stale rows (module no longer wired-but-dead): 0" in out
-    assert "Disposition registry in lock-step (33 row(s)" in out
+    # 34 rows: #4611's landing registered io::idf::export wire-pending
+    # (8bc8d1f1, 2026-11-08); the checker's own lock-step print is the
+    # source of truth for the count, asserted literally per the
+    # fixture's original convention.
+    assert "Disposition registry in lock-step (34 row(s)" in out

@@ -231,7 +231,7 @@ the helpers reduce to `+`, `*`, `-`, `/` when the `fast-math` feature
 is off, and the import exists only so the same kernel source compiles
 unchanged under `--features fast-math`), minus 3 edges removed by
 PR #4222 / issue #4166 (the obsolete `h_tr_em_wind_dependent` helper
-and its five tests were deleted from `src/sim/thermal_model_physics/physics_impl/step_5r1c.rs`;
+and its five tests were deleted from `src/sim/thermal_model_physics/zone_balance.rs`;
 the per-surface `ExteriorBoundarySurface::h_tr_em` keeps the
 caller-owned exterior_convection import). The CI
 listener `Physics-Sim-Cycle-Check` (in `.github/workflows/rust-tests.yml`)
@@ -353,7 +353,7 @@ Issue #3063 itself],
 2026-09-28 −1 for #4158's deletion of the thermal_model_solvers module,
 2026-09-28 −3 for #4166's deletion of the obsolete
 `h_tr_em_wind_dependent` helper and its five tests from
-`src/sim/thermal_model_physics/physics_impl/step_5r1c.rs`);
+`src/sim/thermal_model_physics/zone_balance.rs`);
 the script exits
 non-zero only on regression
 (a count grows above its baseline). Wired into CI as the
@@ -890,8 +890,6 @@ pub struct HybridRouting {
     pub use_surrogate_ventilation: bool,
     /// Route internal/external load prediction to the surrogate.
     pub use_surrogate_loads: bool,
-    /// Route HVAC power demand to the surrogate.
-    pub use_surrogate_hvac: bool,
     /// When `true`, check inputs against training bounds before surrogate
     /// inference and fall back to physics when OOD is detected (Issue #1892).
     pub use_ood_fallback: bool,

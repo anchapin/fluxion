@@ -27,7 +27,23 @@
 //!    and orientation, so "north WWR 20 %, south 60 %" is expressible.
 //! 3. **Named HVAC system selection** — [`ControlSet::hvac_system`]
 //!    selects one of the engine's own [`HVACSystemType`] templates
-//!    (`Simple`, `VAV`, `CAV`, `HeatPump`, `Ideal`).
+//!    (`Simple`, `VAV`, `CAV`, `HeatPump`, `DOASFanCoil`, `Ideal`).
+//!
+//!    The named templates (issue #3997) are, with their modelling
+//!    assumptions and limits:
+//!
+//!    | Template | Air side | Zone sensible load | Zone latent load | Ventilation |
+//!    |---|---|---|---|---|
+//!    | `Simple` | none (on/off, fixed capacity) | met by capacity | not modelled | not modelled |
+//!    | `VAV` | packaged VAV terminal | met by airflow + reheat | not modelled | not modelled |
+//!    | `CAV` | packaged CAV terminal | met by fixed airflow | not modelled | not modelled |
+//!    | `HeatPump` | none (unitary / DX) | met by capacity | not modelled | not modelled |
+//!    | `DOASFanCoil` | DOAS + four-pipe fan coil | met by the fan-coil water side | removed at the DOAS | met by the DOAS (100 % outdoor air) |
+//!    | `Ideal` | ideal loads | met exactly | not modelled | not modelled |
+//!
+//!    The authoritative per-template documentation lives on the engine enum
+//!    ([`crate::sim::hvac::HVACSystemType`]); the [`ControlSet::hvac_system`]
+//!    field docs repeat the same table for modelers reading the schema.
 //!
 //! ## Versioning decision (why this is *inside* V1)
 //!
@@ -765,7 +781,8 @@ pub struct ControlSet {
     /// Issue #3989 — named HVAC system selection.
     ///
     /// Selects one of the engine's own HVAC system templates
-    /// ([`HVACSystemType`]: `Simple`, `VAV`, `CAV`, `HeatPump`, `Ideal`).
+    /// ([`HVACSystemType`]: `Simple`, `VAV`, `CAV`, `HeatPump`,
+    /// `DOASFanCoil`, `Ideal`).
     /// `None` (the default) keeps the historical behaviour: the zone
     /// setpoints and the heating / cooling capacities in
     /// [`ControlConfig`] drive the simulation, and no system template is
@@ -773,7 +790,53 @@ pub struct ControlSet {
     ///
     /// The variant names are the engine's own
     /// ([`crate::sim::hvac::HVACSystemType`]) — the schema does not
-    /// introduce a parallel vocabulary.
+    /// introduce a parallel vocabulary. The serde representation is the
+    /// plain variant name, e.g.
+    /// `"hvac_system": "DOASFanCoil"`.
+    ///
+    /// # Template catalogue — modelling assumptions and limits
+    ///
+    /// The table below summarises each selectable template; the
+    /// authoritative, fully detailed documentation lives on the engine enum
+    /// ([`crate::sim::hvac::HVACSystemType`]) and is kept in sync with this
+    /// table.
+    ///
+    /// | Template | Air side | Zone sensible load | Zone latent load | Ventilation |
+    /// |---|---|---|---|---|
+    /// | `Simple` | none (on/off, fixed capacity) | met by capacity | not modelled | not modelled |
+    /// | `VAV` | packaged VAV terminal | met by airflow + reheat | not modelled | not modelled |
+    /// | `CAV` | packaged CAV terminal | met by fixed airflow | not modelled | not modelled |
+    /// | `HeatPump` | none (unitary / DX) | met by capacity | not modelled | not modelled |
+    /// | `DOASFanCoil` | DOAS + four-pipe fan coil | met by the fan-coil water side | removed at the DOAS | met by the DOAS (100 % outdoor air) |
+    /// | `Ideal` | ideal loads | met exactly | not modelled | not modelled |
+    ///
+    /// In short:
+    ///
+    /// - `Simple` — binary on/off with fixed heating / cooling capacity and
+    ///   no airflow, humidity or ventilation modelling; a load above the
+    ///   fixed capacity cannot be met.
+    /// - `VAV` — packaged variable-air-volume terminal (fan, cooling coil,
+    ///   optional reheat) with a minimum airflow of 30 % of rated flow and
+    ///   an SPR-compensated fan-power curve; sensible-only, so it needs a
+    ///   separate ventilation path.
+    /// - `CAV` — packaged constant-air-volume terminal; the airflow and the
+    ///   fan power are constant whenever the system runs, which is
+    ///   deliberately poor at part load; sensible-only.
+    /// - `HeatPump` — single reversible unit with rated COP / EER and
+    ///   polynomial efficiency curves; capacity degrades with outdoor
+    ///   temperature but COP is held constant; no defrost, no backup heat,
+    ///   no latent removal.
+    /// - `DOASFanCoil` — constant-volume dedicated outdoor air system
+    ///   (cooling coil to a target dew point + neutral reheat + optional
+    ///   adiabatic humidification) serving a four-pipe fan-coil unit that
+    ///   handles the zone sensible load; the zone latent load is removed at
+    ///   the DOAS and the ventilation air comes entirely from the DOAS. The
+    ///   DOAS reports a missed dew-point target when its cooling capacity is
+    ///   exceeded, and the fan-coil model is coarse (fixed rated flows,
+    ///   clamped part-load ratio, no central plant).
+    /// - `Ideal` — infinite-capacity ideal air loads, used for ASHRAE 140
+    ///   validation; the load is met exactly and the reported energy is the
+    ///   thermodynamic minimum, so it must not be used for design.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hvac_system: Option<HVACSystemType>,
 }
@@ -1753,6 +1816,99 @@ mod tests {
             surface_errors.is_empty(),
             "unexpected per-surface validation errors: {surface_errors:?}"
         );
+    }
+
+    // ===== Issue #3997 — named HVAC system templates =====
+
+    /// The named templates selectable through `controls.hvac_system`,
+    /// together with the JSON name each one serialises to.
+    const NAMED_HVAC_TEMPLATES: [(&str, HVACSystemType); 6] = [
+        ("Simple", HVACSystemType::Simple),
+        ("VAV", HVACSystemType::VAV),
+        ("CAV", HVACSystemType::CAV),
+        ("HeatPump", HVACSystemType::HeatPump),
+        ("DOASFanCoil", HVACSystemType::DOASFanCoil),
+        ("Ideal", HVACSystemType::Ideal),
+    ];
+
+    #[test]
+    fn test_named_hvac_templates_deserialise_and_round_trip_3997() {
+        // Every named template must parse from its documented JSON name
+        // and re-serialise to exactly that name.
+        for (name, expected) in NAMED_HVAC_TEMPLATES {
+            let json = format!(
+                r#"{{"zone_control":{{"heating_setpoint":20.0,"cooling_setpoint":24.0,"heating_capacity":100000.0,"cooling_capacity":100000.0}},"global_control":null,"hvac_system":"{name}"}}"#
+            );
+            let controls: ControlSet = serde_json::from_str(&json)
+                .unwrap_or_else(|e| panic!("template {name} failed to deserialise: {e}"));
+            assert_eq!(
+                controls.hvac_system,
+                Some(expected),
+                "template {name} did not deserialise to the expected variant"
+            );
+
+            let serialised = serde_json::to_string(&controls).unwrap();
+            let value: serde_json::Value = serde_json::from_str(&serialised).unwrap();
+            assert_eq!(
+                value["hvac_system"],
+                serde_json::json!(name),
+                "template {name} did not re-serialise under its own name"
+            );
+
+            let reparsed: ControlSet = serde_json::from_str(&serialised).unwrap();
+            assert_eq!(
+                reparsed, controls,
+                "template {name} lost data on round-trip"
+            );
+        }
+    }
+
+    #[test]
+    fn test_named_hvac_templates_validate_in_full_schema_3997() {
+        // A schema that names a template must still validate (no control
+        // errors) and survive a full-document round-trip.
+        for (name, expected) in NAMED_HVAC_TEMPLATES {
+            let mut inner = SimulationSchemaV1::default();
+            inner.controls.hvac_system = Some(expected);
+            let schema = SimulationSchema::V1(inner);
+            let json = serde_json::to_string(&schema).unwrap();
+            assert!(
+                json.contains(&format!("\"hvac_system\":\"{name}\"")),
+                "template {name} missing from the serialised document: {json}"
+            );
+
+            let reparsed: SimulationSchema = serde_json::from_str(&json)
+                .unwrap_or_else(|e| panic!("template {name} broke the document: {e}"));
+            assert_eq!(schema, reparsed, "template {name} changed the document");
+
+            let SimulationSchema::V1(v1) = reparsed;
+            assert_eq!(v1.controls.hvac_system, Some(expected));
+            let control_errors: Vec<_> = v1
+                .validate()
+                .into_iter()
+                .filter(|e| e.field.starts_with("controls"))
+                .collect();
+            assert!(
+                control_errors.is_empty(),
+                "template {name} produced control validation errors: {control_errors:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_unknown_hvac_template_name_is_rejected_3997() {
+        // The template vocabulary is the engine's own enum: an unknown
+        // (or differently spelled) name must fail loudly rather than
+        // silently falling back to a default.
+        for bad in ["DOAS_FanCoil", "DoasFanCoil", "doas+fan-coil", "DOAS"] {
+            let json = format!(
+                r#"{{"zone_control":{{"heating_setpoint":20.0,"cooling_setpoint":24.0,"heating_capacity":100000.0,"cooling_capacity":100000.0}},"global_control":null,"hvac_system":"{bad}"}}"#
+            );
+            assert!(
+                serde_json::from_str::<ControlSet>(&json).is_err(),
+                "unknown template name {bad:?} was accepted"
+            );
+        }
     }
 
     #[test]

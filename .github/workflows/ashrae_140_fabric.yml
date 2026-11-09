@@ -118,6 +118,14 @@ jobs:
         with:
           path: assets/weather/ashrae140
           key: ashrae140-weather-${{ hashFiles('tests/reference_data/weather/ashrae140_canonical_checksums.json') }}
+          # Loop r114 (released 2026-11-06): nearest-prefix fallback so a
+          # slightly stale cached weather set still restores when the exact
+          # key misses (e.g. after an LRU eviction of the weather caches).
+          # Primary key unchanged so fresh saves still supersede; no gate
+          # criterion or threshold changes, and check_ashrae140_weather.py
+          # still re-verifies whatever restores.
+          restore-keys: |
+            ashrae140-weather-
 
       - name: Fetch + convert + verify canonical ASHRAE 140 weather (round 41)
         run: |
