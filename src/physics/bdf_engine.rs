@@ -1422,42 +1422,42 @@ pub mod time_stepping {
                 n,
             };
 
-            let (solution, nr_stats) = match solver.solve_with_cache(
-                &y_new,
-                &bdf_residual,
-                &mut self.jacobian_cache,
-            ) {
-                Ok(out) => out,
-                Err(err) => {
-                    // Issue #4691: with the frozen-Jacobian prototype on, a
-                    // failure of a frozen solve is retried once with a
-                    // freshly assembled Jacobian (the frozen Jacobian was
-                    // stale) before the step is rejected. With the prototype
-                    // off this is exactly the legacy behaviour.
-                    let frozen =
-                        crate::physics::bdf_engine::freeze::FrozenJacobianPolicy::from_env();
-                    if !frozen.enabled || !self.jacobian_cache.has_jacobian() {
-                        self.jacobian_cache.invalidate();
-                        // Issue #4692 — a failed step invalidates the
-                        // warm-start history: the next attempt must fall
-                        // back to the legacy initial guess.
-                        self.last_step_rejected = true;
-                        return Err(err);
-                    }
-                    crate::physics::bdf_engine::counters::FORCED_REFRESH_RETRIES
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    self.jacobian_cache.invalidate();
-                    match solver.solve_with_cache(&y_new, &bdf_residual, &mut self.jacobian_cache)
-                    {
-                        Ok(out) => out,
-                        Err(err) => {
-                            // Issue #4692 — warm-start invalidation, as above.
+            let (solution, nr_stats) =
+                match solver.solve_with_cache(&y_new, &bdf_residual, &mut self.jacobian_cache) {
+                    Ok(out) => out,
+                    Err(err) => {
+                        // Issue #4691: with the frozen-Jacobian prototype on, a
+                        // failure of a frozen solve is retried once with a
+                        // freshly assembled Jacobian (the frozen Jacobian was
+                        // stale) before the step is rejected. With the prototype
+                        // off this is exactly the legacy behaviour.
+                        let frozen =
+                            crate::physics::bdf_engine::freeze::FrozenJacobianPolicy::from_env();
+                        if !frozen.enabled || !self.jacobian_cache.has_jacobian() {
+                            self.jacobian_cache.invalidate();
+                            // Issue #4692 — a failed step invalidates the
+                            // warm-start history: the next attempt must fall
+                            // back to the legacy initial guess.
                             self.last_step_rejected = true;
                             return Err(err);
                         }
+                        crate::physics::bdf_engine::counters::FORCED_REFRESH_RETRIES
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        self.jacobian_cache.invalidate();
+                        match solver.solve_with_cache(
+                            &y_new,
+                            &bdf_residual,
+                            &mut self.jacobian_cache,
+                        ) {
+                            Ok(out) => out,
+                            Err(err) => {
+                                // Issue #4692 — warm-start invalidation, as above.
+                                self.last_step_rejected = true;
+                                return Err(err);
+                            }
+                        }
                     }
-                }
-            };
+                };
 
             if !nr_stats.converged {
                 self.last_step_rejected = true;
