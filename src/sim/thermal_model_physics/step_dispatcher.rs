@@ -452,7 +452,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .solar
             .weather
             .as_ref()
-            .map(|w| w.sky_temperature())
+            .map(|w| {
+                // Issue #4689 audit: count sky-temperature computations (no
+                // value change; the counter is off by default).
+                crate::sim::boundary_counters::count(
+                    crate::sim::boundary_counters::BoundaryQuantity::SkyTemperature,
+                );
+                w.sky_temperature()
+            })
             .unwrap_or(outdoor_temp - 15.0);
 
         // h_rad_sky is the linearized sky-radiative conductance [W/m²K].
@@ -721,7 +728,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .solar
             .weather
             .as_ref()
-            .map(|w| w.sky_temperature())
+            .map(|w| {
+                // Issue #4689 audit: count sky-temperature computations (no
+                // value change; the counter is off by default).
+                crate::sim::boundary_counters::count(
+                    crate::sim::boundary_counters::BoundaryQuantity::SkyTemperature,
+                );
+                w.sky_temperature()
+            })
             .unwrap_or(outdoor_temp - 15.0);
 
         // h_rad_sky is the linearized sky-radiative conductance [W/m²K].

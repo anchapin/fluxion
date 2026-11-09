@@ -137,6 +137,11 @@ pub fn h_c_ext_wind_dependent(
     surface_direction: ExteriorSurfaceDirection,
     v_wind_at_building_height: f64,
 ) -> f64 {
+    // Issue #4689 audit: count exterior convection coefficient computations
+    // (no value change; the counter is off by default).
+    crate::sim::boundary_counters::count(
+        crate::sim::boundary_counters::BoundaryQuantity::ExteriorConvection,
+    );
     let (a, b) = surface_direction.ashrae_140_coefficients();
     let v = v_wind_at_building_height.max(0.0);
     a + b * v

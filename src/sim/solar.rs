@@ -33,6 +33,11 @@ pub fn calculate_surface_irradiance(
     ground_reflectance: f64,
     day_of_year: usize,
 ) -> SurfaceIrradiance {
+    // Issue #4689 audit: count solar incident-irradiance computations (no
+    // value change; the counter is off by default).
+    crate::sim::boundary_counters::count(
+        crate::sim::boundary_counters::BoundaryQuantity::SolarIncident,
+    );
     crate::solar::surface_irradiance::calculate_surface_irradiance(
         sun_pos,
         dni,

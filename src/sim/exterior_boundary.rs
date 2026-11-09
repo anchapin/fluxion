@@ -102,6 +102,11 @@ impl ExteriorBoundarySurface {
     /// `SkyRadiationExchange::tilted_surface` (`sky_radiation.rs`) and
     /// ISO 13790 §12.3.2. Tilt 0° (roof) → 1.0; tilt 90° (wall) → 0.5.
     pub fn sky_view_factor_from_tilt(tilt_deg: f64) -> f64 {
+        // Issue #4689 audit: count longwave view-factor coefficient
+        // computations (no value change; the counter is off by default).
+        crate::sim::boundary_counters::count(
+            crate::sim::boundary_counters::BoundaryQuantity::LongwaveCoefficient,
+        );
         let tilt_rad = tilt_deg.to_radians();
         ((1.0 + tilt_rad.cos()) / 2.0).clamp(0.0, 1.0)
     }
