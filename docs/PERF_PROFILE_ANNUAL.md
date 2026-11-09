@@ -199,3 +199,118 @@ cd ~/workspace/fixtrees/fluxion-worker-4688
 cargo bench --bench benchmark_8760_timesteps -- 'single_config_8760' --quick
 git status --porcelain   # must show ONLY docs/PERF_PROFILE_ANNUAL.md
 ```
+
+---
+
+# Workload 2 — DAE/BDF high-mass annual run, sub-hourly steps (fluxion #4688)
+
+> **Scope:** workload 2 only. Workload 1 (above) is already complete and is
+> **not** redone here. This section profiles the **high-mass (Case 900 family)
+> annual run on the DAE/BDF path at sub-hourly steps** (6-minute steps =
+> 87,600 steps/year), and reports (a) solver counters aggregated over the run
+> and (b) a wall-clock breakdown by area.
+>
+> Every number below is **this VM's number** for the machine/build named in
+> §10.1–10.2 and is not a general claim about fluxion's performance.
+
+## 10. Base commit, machine and build profile (workload 2)
+
+### 10.1 Base commit and branch
+
+| Item | Value |
+|---|---|
+| Repository | `fluxion` (anchapin/fluxion) |
+| Branch | `worker/4688-workload2-profile` |
+| Base commit | `711cbbf7982b8a38e0d54f71ce5dd672d3104744` |
+| Base commit subject | `Merge pull request #4721 from anchapin/worker/4691-frozen-jacobian` |
+| Base commit date | `2026-11-09 10:22:44 -0500` |
+| Upstream base | `origin/develop @ 711cbbf7` |
+| Working-tree changes | `docs/PERF_PROFILE_ANNUAL.md` only (this report). No production code changes. |
+
+### 10.2 Machine and build profile (this VM)
+
+| Item | Value |
+|---|---|
+| CPU | AMD EPYC 9D25 126-Core Processor (as reported by `/proc/cpuinfo`; the container is limited to 4 CPUs) |
+| Cores visible to the run | 4 (`nproc`) |
+| RAM | 8 124 908 kB total (≈7.75 GiB) |
+| OS | Ubuntu 24.04.5 LTS, Linux 7.0.0-43-generic x86_64 |
+| Kernel | `7.0.0-43-generic` |
+| Toolchain | rustc 1.98.0 (88d9e12ae 2026-08-18), cargo 1.98.0 (797e8a9bc 2026-08-05) |
+| Toolchain pin | `rust-toolchain.toml` → `channel = "1.98.0"` |
+| Cargo profile used | `release` (`opt-level = 3`, `lto = "thin"`, `codegen-units = 4`, `split-debuginfo = "packed"`, `strip = true`) |
+| Profiling tools | **None installed** (no `perf`, no flamegraph, no sampler). Wall-clock timing + the engine's own counters only. |
+
+### 10.3 Method (workload 2)
+
+A temporary integration-test harness (deleted at collection; it is not
+part of this diff) drove the shipped `BdfTimeStepper` directly on the
+Case-900-family DAE (33 states) at fixed 6-minute steps for a full
+87,600-step year-equivalent, reading the engine's own per-step counters
+(Newton iterations, Jacobian assemblies/factorizations, accepted and
+rejected steps, final residual — the Issue #3339 counter set). A second,
+instrumented arm intended to split wall clock by area (solar, longwave,
+conduction, zone balance, HVAC, other) did not complete before the
+worker run reached its step cap; §12 records that gap instead of
+inventing the split.
+
+## 11. Results — workload 2 solver counters
+
+Full 87,600-step run, shipped BDF stepper, release build, this VM:
+
+| Counter | Value |
+|---|---|
+| Steps accepted | 87,600 |
+| Steps rejected | 0 (rejected-step fraction 0.0) |
+| Newton iterations, total | 87,602 |
+| Newton iterations / step | 1.00002 (87,599 steps converged in 1 iteration; 1 step took 3) |
+| Jacobian assemblies | 2 |
+| Jacobian factorizations | 2 |
+| Solve calls | 87,600 |
+| Final residual | 3.04e-23 |
+| Stepper wall clock | 123.4 ms for the full 87,600 steps |
+
+Headline: on this workload the Newton solve is already effectively
+free — one iteration per step, and the Jacobian is assembled and
+factorised only twice in a full year of sub-hourly steps (the cached /
+frozen-Jacobian behaviour is already what the shipped path does). Any
+spike premised on Newton iteration cost on this path (frozen-Jacobian
+reuse, warm-start predictors, tolerance ladders) has almost nothing to
+win here; that matches the #4690 KILL (the premise of an expensive
+iterative solve on the annual path did not hold).
+
+## 12. Results — workload 2 wall-clock breakdown by area
+
+NOT MEASURED in this slice. The instrumented area-split arm did not
+complete (see §13). The one defensible wall-clock statement is §11's:
+the DAE stepper itself accounts for ~123 ms over a full sub-hourly
+year on this VM, so for a full production run the wall clock must be
+dominated by everything around the stepper (envelope/solar/weather/
+output work in the production step), not by the BDF Newton solve. A
+future slice that wants the area split should instrument the
+production `step_physics` path directly rather than the stepper.
+
+## 13. Failures, deviations and honest limits (workload 2)
+
+- The harness drove the shipped `BdfTimeStepper` on the Case-900 DAE
+  directly; it did NOT run the full production binary end-to-end. The
+  counters are the engine's own and are exact for the stepper path;
+  they do not by themselves characterise a production annual run.
+- The area-breakdown arm (§12) is incomplete — the worker run hit its
+  60-step cap while extending the instrumentation. No area percentages
+  are claimed.
+- Wall-clock figures are this VM's (4 visible CPUs, shared host) and
+  are stated only as this VM's numbers.
+- Sections 10.3–14 were completed by the supervisor at collection from
+  the worker's logged test output (raw counter line preserved in the
+  run transcript); the temporary harness file was deleted and never
+  formed part of the diff. Worker run: fluxion-4688 (balanced,
+  MiniMax-M2.7, 60/60 steps).
+
+## 14. Reproduction (workload 2)
+
+The harness was temporary and is not in the tree. To re-measure: write
+a test that constructs the Case-900 DAE residual used by the shipped
+`BdfTimeStepper`, steps it 87,600 times at dt = 360 s, and prints the
+stepper's Issue #3339 counters (`newton_iterations`, assemblies,
+factorizations, accepted/rejected steps, `last_final_residual`).
