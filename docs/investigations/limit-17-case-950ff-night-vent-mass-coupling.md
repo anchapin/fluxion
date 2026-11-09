@@ -354,3 +354,32 @@ Blocks preserved: 1. No wording was changed, softened or deleted.
     (controlled-delta baseline pattern).
   - `ADR-0009` — wind-dependent `h_tr_em` tracking stub.
   - `ADR-0010` — Case 940 CTF setback-recovery overshoot tracking stub.
+
+
+## Update — 2026-11-09 (loop round 122): strict-gate baseline rows re-recorded to the r100-state engine reading
+
+Not an engine event: the pair −15.96 / 39.01 °C is what the engine has printed
+since `edba335a` (2026-10-25, round-100 vent-slice, §5.2.1.10.1 `h_tr_is`
+multiplier removal). The r100 re-record updated
+`data/reference/ashrae140/output_diff_baseline.csv` (rows
+`950FF,Tmin,-15.960000` / `950FF,Tmax,39.010000` at `bccb3ebb`) and the strict
+baseline's `case_950_cooling`, but missed the `ff_950ff_min` / `ff_950ff_max`
+rows, which kept the round-94-prior −15.67 / 38.78 with gaps 21.00 / 5.96
+%-of-mid. The strict gate stayed green only inside its 5 pp regression
+tolerance (measured 23.24 / 6.58). Nothing guarded the rows: no CI workflow
+runs the §7 emitter binary (whose `section7_headline_value_pins` carries the
+same pair at ±0.5% — re-pinned by PR #4687 on Alex's 2026-11-08 16:46 ET
+approval), and the loop battery's §7 legs ran only `--ignored` until round
+122 item 2a made the full emitter file a first-class battery leg.
+
+Re-recorded 2026-11-09 (branch physics/r122-950ff-strict-rerecord, base
+368a1847, Alex-approved 2026-11-08 21:54 ET "Yes, proceed"): `value_c`
+−15.67 → −15.96 and 38.78 → 39.01 (the engine's printed reading on DRYCOLD,
+re-measured at base before the edit, byte-identical to the r100 anchor);
+gaps 21.00 → 23.24 and 5.96 → 6.58. Statuses stay `known_fail`; bands
+[−13.4, −12.5] / [36.1, 37.1] and `regression_tolerance_pp` 5.0 untouched;
+nothing tuned; engine untouched (data/docs-only PR). Adjacent surface
+recorded, not bundled: the 610/630 annual rows moved in the 2026-11-08 merge
+wave (610 H 5.821→6.375, C 2.818→2.312; 630 H 7.789→7.964, C 3.005→2.657 vs
+the r119 battery log) and several annual rows sit 1–3 pp above their recorded
+gaps — all inside tolerance; a broad strict re-record awaits Alex's word.
