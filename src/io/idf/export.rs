@@ -853,8 +853,8 @@ pub fn export_schema(schema: &SimulationSchemaV1) -> String {
         }
         Some(other) => {
             losses.push(format!(
-                "HVAC template {} — only the Ideal template maps to an IDF ZoneHVAC equipment chain; no HVAC objects were written",
-                format!("{:?}", other)
+                "HVAC template {:?} — only the Ideal template maps to an IDF ZoneHVAC equipment chain; no HVAC objects were written",
+                other
             ));
         }
         None => {}
@@ -1311,10 +1311,7 @@ fn surface_object(surface: &ExportedSurface, construction: &str) -> IdfObject {
 
 /// The host surface of an aggregate (construction-level) window: the first
 /// surface of the requested kind that carries no explicit window.
-fn aggregate_host<'a>(
-    surfaces: &'a [ExportedSurface],
-    kind: SurfaceKind,
-) -> Option<&'a ExportedSurface> {
+fn aggregate_host(surfaces: &[ExportedSurface], kind: SurfaceKind) -> Option<&ExportedSurface> {
     surfaces.iter().find(|s| s.kind == kind && !s.has_window)
 }
 
