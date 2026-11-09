@@ -13,3 +13,7 @@ serde_json = "1.0"
 [[bin]]
 name = "ashrae_case_demo"
 path = "ashrae_case_demo.rs"
+
+[[bin]]
+name = "adaptive_timestep_spike"
+path = "adaptive_timestep_spike.rs"

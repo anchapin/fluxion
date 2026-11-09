@@ -35,6 +35,40 @@ pub enum BdfError {
 
 pub type BdfResult<T> = Result<T, BdfError>;
 
+/// Issue #4693 — the error-controlled step-size law, extracted so that the
+/// BDF engine and the simulation-side controller share one implementation.
+///
+/// This is the exact arithmetic that used to live in the private
+/// `adaptive_step::AdaptiveStepController::compute_step_size` method
+/// (see `src/physics/bdf_engine.rs`); the method now delegates here, so the
+/// BDF path is bit-identical to before while `crate::sim::adaptive_timestep`
+/// can reuse the same law without reaching into a private method.
+///
+/// * `dt` — current step size (s)
+/// * `error` — local error estimate for the last accepted step
+/// * `tolerance` — local error tolerance
+/// * `order` — BDF order of the integrator
+/// * `safety_factor` — multiplicative safety factor applied to the growth ratio
+///
+/// Returns the *unclamped* candidate step size (s). Callers apply their own
+/// min/max clamps.
+pub(crate) fn error_controlled_step_size(
+    dt: f64,
+    error: f64,
+    tolerance: f64,
+    order: usize,
+    safety_factor: f64,
+) -> f64 {
+    if error < tolerance {
+        return dt * 2.0;
+    }
+
+    let exponent = 1.0 / (order as f64 + 1.0);
+    let factor = (tolerance / error).powf(exponent) * safety_factor;
+
+    dt * factor.clamp(0.1, 2.0)
+}
+
 /// Issue #4691 — instrumentation counters for the BDF/Newton inner loop.
 ///
 /// These counters are *always* live (one relaxed atomic increment per
@@ -1095,14 +1129,17 @@ pub mod adaptive_step {
         }
 
         fn compute_step_size(&self, dt: f64, error: f64, tolerance: f64, order: usize) -> f64 {
-            if error < tolerance {
-                return dt * 2.0;
-            }
-
-            let exponent = 1.0 / (order as f64 + 1.0);
-            let factor = (tolerance / error).powf(exponent) * self.config.safety_factor;
-
-            dt * factor.clamp(0.1, 2.0)
+            // Issue #4693: the law itself lives in the crate-level helper
+            // `error_controlled_step_size` so the simulation-side controller
+            // (`crate::sim::adaptive_timestep`) can share it. The arithmetic
+            // is unchanged — this path stays bit-identical to before.
+            crate::physics::bdf_engine::error_controlled_step_size(
+                dt,
+                error,
+                tolerance,
+                order,
+                self.config.safety_factor,
+            )
         }
 
         pub fn suggest_order(&self, current: StepSize, errors: &[f64]) -> usize {
