@@ -496,6 +496,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .first()
                 .copied()
                 .unwrap_or(inputs.default_cooling_sp);
+            // Issue #3982 — spec infiltration ACH (zone 0 on the single-zone
+            // arm) and the infiltration heat flow derived from it. BOTH the
+            // conductance (`h_inf`, formed inside the gauge solver from the
+            // same ACH) and the heat flow (the ledger term passed below)
+            // come from this one input, so the two cannot disagree.
+            let infiltration_ach: f64 = inputs.infiltration_ach.first().copied().unwrap_or(0.0);
+            let q_infiltration_w = gauge.infiltration_heat_flow_W(outdoor_temp, infiltration_ach);
             // Issue #3918 Fix B — ISO 13790 §C.3 load form. The previous
             // scheme forced T_air to the setpoint BEFORE/AFTER the gauge
             // step and read the HVAC load from the gauge's −net_power
@@ -526,16 +533,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // gauge solver splits window solar the same way the 5R1C model does.
                 self.0.solar.solar_distribution_to_air,
                 q_internal_w,
-                // PR-b: the infiltration PHYSICS is the ACH conductance
-                // threaded below (the gauge solver forms h_inf from it);
-                // no separate W-flux term is used, so this stays 0.0.
-                0.0,
+                // Issue #3982 — the infiltration heat flow is DERIVED from
+                // the SAME infiltration ACH the gauge solver uses to form
+                // `h_inf` (rho·cp·(ACH/3600)·V_zone), so the ACH input
+                // physically reaches the ventilation/infiltration heat-flow
+                // path instead of being discarded as the former 0.0
+                // placeholder. The term is a LEDGER contribution (the air
+                // node already carries the infiltration through `h_total`),
+                // so it cannot double-count the state update.
+                q_infiltration_w,
                 t_sky,
                 h_rad_sky,
                 // Round 95 (#3985/#4578 follow-up): scheduled ventilation
                 // reaches the gauge air node (zone 0 on the single-zone arm).
                 inputs.ventilation_ach + inputs.scheduled_ach.first().copied().unwrap_or(0.0),
-                inputs.infiltration_ach.first().copied().unwrap_or(0.0),
+                infiltration_ach,
                 // Issue #3918: Thread lag correction parameters (single-zone: use first element)
                 inputs.h_tr_3.first().copied().unwrap_or(0.0),
                 inputs.cm.first().copied().unwrap_or(0.0),
@@ -548,7 +560,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // PR-c: self-consistent §C.3 coefficient from the gauge network.
             let h_coeff = gauge.air_node_conductance_WK(
                 inputs.ventilation_ach + inputs.scheduled_ach.first().copied().unwrap_or(0.0),
-                inputs.infiltration_ach.first().copied().unwrap_or(0.0),
+                infiltration_ach,
             );
             let (energy_out, t_air) = if r.is_err() || !is_conditioned {
                 // Step failed (fall through to legacy per the β-gate) or the
@@ -772,6 +784,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // term_rest_1 = h_tr_ms + h_tr_is per Issue #3928
                     let term_rest_1 = h_tr_ms + h_tr_is_gauge;
 
+                    // PR-b / Issue #3982: per-zone spec infiltration ACH
+                    // threaded from setpoints.infiltration_rate (was a 0.5
+                    // hardcode; per-zone wiring is #3280) together with
+                    // the infiltration heat flow DERIVED from that same
+                    // ACH — the W-flux term is no longer a discarded 0.0
+                    // placeholder, so the ACH input physically reaches the
+                    // ventilation/infiltration heat-flow path.
+                    let infiltration_ach: f64 = inputs
+                        .infiltration_ach
+                        .get(zone_idx)
+                        .copied()
+                        .unwrap_or(0.0);
+                    let q_infiltration_w = multi_zone
+                        .get_zone(zone_idx)
+                        .map(|z| z.infiltration_heat_flow_W(outdoor_temp, infiltration_ach))
+                        .unwrap_or(0.0);
+
                     boundary_conditions.insert(
                         zone_idx,
                         ZoneBoundaryConditions {
@@ -783,15 +812,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                 .copied()
                                 .unwrap_or(0.0),
                             Q_internal_w: q_internal,
-                            Q_infiltration_w: 0.0,
+                            Q_infiltration_w: q_infiltration_w,
                             // PR-b: per-zone spec infiltration ACH threaded
                             // from setpoints.infiltration_rate (was 0.5
                             // hardcoded; per-zone wiring is #3280)
-                            infiltration_ach: inputs
-                                .infiltration_ach
-                                .get(zone_idx)
-                                .copied()
-                                .unwrap_or(0.0),
+                            infiltration_ach,
                             // Round 95 (#3985/#4578 follow-up): per-zone
                             // scheduled ACH added to the night-vent ACH.
                             ventilation_ach: inputs.ventilation_ach
@@ -1413,6 +1438,217 @@ mod tests {
         assert!(
             (energy - expected_energy).abs() < 1e-6,
             "metered energy {energy} != §C.3 closed form {expected_energy} (t_free={t_free:?})"
+        );
+    }
+
+    /// Issue #3982 (defect 1) — build a single-zone gauge backend with a
+    /// heavyweight-but-stable envelope and the given HVAC state.
+    ///
+    /// Vehicle: a synthetic single-zone gauge backend (the `floor_slab`
+    /// construction — stable at an hourly dt, see the #3817 stability
+    /// analysis in `gauge_zone_solver`) hand-wired onto a
+    /// `ThermalModel::new(1)`. Deliberately NOT the ASHRAE 140 Case 600
+    /// spec: this test pins the SETPOINT ROUTING, not the envelope.
+    #[cfg(feature = "gauge-solver")]
+    fn gauge_single_zone_model(
+        h_sp: f64,
+        c_sp: f64,
+        loads_w_per_m2: f64,
+    ) -> ThermalModel<VectorField> {
+        use crate::physics::gauge_zone_solver::{GaugeZoneSolver, SurfaceType};
+        use crate::physics::wall_spec::WallSpec;
+
+        let mut model = ThermalModel::<VectorField>::new(1);
+        let wall = WallSpec::single_layer("floor_slab", 0.203, 1.31, 2243.0, 837.0);
+        let mut gauge = GaugeZoneSolver::new(48.0, 2.7);
+        gauge
+            .add_opaque_surface(&wall, 48.0, SurfaceType::Roof, 0.0, 0.0)
+            .unwrap();
+        gauge
+            .add_opaque_surface(&wall, 48.0, SurfaceType::Floor, 0.0, 180.0)
+            .unwrap();
+        for azimuth in [0.0, 90.0, 180.0, 270.0] {
+            gauge
+                .add_opaque_surface(&wall, 12.0, SurfaceType::Wall, azimuth, 90.0)
+                .unwrap();
+        }
+        gauge.initialize().unwrap();
+        model.0.conduction.backend.gauge_zone_solver = Some(gauge);
+        // Supervisor fix: ThermalModel::new leaves the legacy FiveROneC
+        // selector in place, so without this line the dispatcher silently
+        // runs the 5R1C arm and these tests pin the wrong solver. Opt
+        // explicitly into the gauge arm under test.
+        model.0.hvac.thermal_selector.zone_solver =
+            crate::sim::thermal_selector::ZoneSolverKind::Gauge;
+        model.0.hvac.hvac_enabled = VectorField::from_scalar(1.0, 1);
+        model.0.setpoints.heating_setpoints = VectorField::from_scalar(h_sp, 1);
+        model.0.setpoints.cooling_setpoints = VectorField::from_scalar(c_sp, 1);
+        model.0.hvac.hvac_heating_capacity = 1.0e9;
+        model.0.hvac.hvac_cooling_capacity = 1.0e9;
+        model.0.setpoints.zone_area = VectorField::from_scalar(48.0, 1);
+        model.0.setpoints.loads = VectorField::from_scalar(loads_w_per_m2, 1);
+        model
+    }
+
+    /// Issue #3982 (defect 1) — the conditioned air temperature fed to the
+    /// gauge path must follow the ACTIVE mode setpoint: the COOLING
+    /// setpoint while the free-float air temperature sits above it (the
+    /// cooling season), the HEATING setpoint while it sits below.
+    ///
+    /// The pre-fix code forced the HEATING setpoint onto the gauge air node
+    /// in EVERY conditioned case (the Case 650 gauge blowup: 85.57 MWh vs
+    /// the 4.82-7.06 MWh band). The gauge path now meters the §C.3
+    /// demand from the free-float temperature against BOTH setpoints, so
+    /// the cooling season lands on the cooling setpoint.
+    #[cfg(feature = "gauge-solver")]
+    #[test]
+    fn issue_3982_gauge_cooling_season_uses_the_cooling_setpoint() {
+        const H_SP: f64 = 20.0;
+        const C_SP: f64 = 24.0;
+
+        // Free-float twin: identical physics, no conditioning. Its final
+        // temperature proves the cooling mode was the active one.
+        // Supervisor fix: the helper's heavyweight floor_slab envelope
+        // barely moves in 12 hourly steps (the twin stayed at exactly
+        // 20 °C), so 12 steps cannot establish the cooling mode. 72
+        // steps at 30 °C give the mass time to warm past the setpoint.
+        let mut free = gauge_single_zone_model(H_SP, C_SP, 0.0);
+        free.0.hvac.hvac_enabled = VectorField::from_scalar(0.0, 1);
+        for step in 0..72 {
+            free.try_step_physics(step, 30.0, 3600.0)
+                .expect("free-float gauge step must succeed");
+        }
+        let t_free = free.0.setpoints.temperatures.as_ref()[0];
+        assert!(
+            t_free > C_SP,
+            "the free-float twin must sit above the cooling setpoint {C_SP} (got {t_free})"
+        );
+
+        // Supervisor fix: the original conditioned twin started at the
+        // 20 °C initial state, so step 0's §C.3 free-float temperature
+        // was 20 °C — the HEATING branch, not cooling — and the test
+        // failed on its own premise before it could test anything.
+        // Warm-start both twins to 30 °C (above the 24 °C cooling
+        // setpoint) so step 0 genuinely is a cooling-mode step: the
+        // free twin then stays above C_SP, and the conditioned twin
+        // must pin to C_SP from step 0. The free twin above already
+        // proves the zone warms past C_SP from a cold start given 72
+        // steps; this warm start isolates the routing assertion.
+        let mut model = gauge_single_zone_model(H_SP, C_SP, 0.0);
+        model.0.setpoints.temperatures = VectorField::from_scalar(30.0, 1);
+        model
+            .0
+            .conduction
+            .backend
+            .gauge_zone_solver
+            .as_mut()
+            .unwrap()
+            .set_T_air(30.0);
+        let mut energy = 0.0;
+        for step in 0..12 {
+            energy = model
+                .try_step_physics(step, 30.0, 3600.0)
+                .expect("conditioned gauge step must succeed");
+            let t_air = model.0.setpoints.temperatures.as_ref()[0];
+            assert!(
+                (t_air - C_SP).abs() < 1e-6,
+                "step {step}: the gauge air must follow the COOLING setpoint {C_SP}, got {t_air}"
+            );
+            assert!(
+                (t_air - H_SP).abs() > 1.0,
+                "step {step}: regression — the HEATING setpoint {H_SP} was forced onto the gauge air"
+            );
+            // Supervisor fix: meter the cooling load only at step 0. The
+            // warm start leaves the envelope mass at its 20 °C initial
+            // state while the air starts at 30 °C, so later steps' net
+            // load mixes air-to-mass transfer with outdoor gain and can
+            // legitimately read exactly -0.0 once pinned; asserting a
+            // strict sign on every step would pin an artifact of the
+            // inconsistent warm start, not the routing. The routing
+            // assertions above (C_SP, not H_SP) carry every step.
+            if step == 0 {
+                assert!(
+                    energy < 0.0,
+                    "step {step}: the cooling season must meter cooling (negative energy), got {energy}"
+                );
+            }
+        }
+        assert_eq!(
+            model.0.hvac.effective_zone_solver,
+            crate::sim::thermal_selector::ZoneSolverKind::Gauge,
+            "the gauge arm must have run"
+        );
+    }
+
+    /// Issue #3982 (defect 1) — the mirror of the cooling-season pin: while
+    /// the free-float air temperature sits BELOW the heating setpoint, the
+    /// gauge air must land on the HEATING setpoint (and meter heating).
+    #[cfg(feature = "gauge-solver")]
+    #[test]
+    fn issue_3982_gauge_heating_season_uses_the_heating_setpoint() {
+        const H_SP: f64 = 20.0;
+        const C_SP: f64 = 24.0;
+
+        let mut free = gauge_single_zone_model(H_SP, C_SP, 0.0);
+        free.0.hvac.hvac_enabled = VectorField::from_scalar(0.0, 1);
+        free.try_step_physics(0, -10.0, 3600.0)
+            .expect("free-float gauge step must succeed");
+        let t_free = free.0.setpoints.temperatures.as_ref()[0];
+        assert!(
+            t_free < H_SP,
+            "the free-float twin must sit below the heating setpoint {H_SP} (got {t_free})"
+        );
+
+        let mut model = gauge_single_zone_model(H_SP, C_SP, 0.0);
+        let energy = model
+            .try_step_physics(0, -10.0, 3600.0)
+            .expect("conditioned gauge step must succeed");
+        let t_air = model.0.setpoints.temperatures.as_ref()[0];
+        assert!(
+            (t_air - H_SP).abs() < 1e-6,
+            "the gauge air must follow the HEATING setpoint {H_SP}, got {t_air}"
+        );
+        assert!(
+            energy > 0.0,
+            "the heating season must meter heating (positive energy), got {energy}"
+        );
+    }
+
+    /// Issue #3982 (defect 3) — the spec infiltration ACH must physically
+    /// reach the gauge path's ventilation/infiltration heat flow.
+    /// Supervisor fix: the original metric was unsound — it compared the
+    /// LAST step's returned energy, whose sign flips as the zone cools
+    /// (measured -3.73 vs +3.81), so it cannot show the ACH effect. The
+    /// sound metric is the free-float air temperature itself: with cold
+    /// (-10 °C) outdoor air, infiltration must pull the zone colder than
+    /// the same zone without it. (That the ledger carries the term is
+    /// already pinned at gauge level by
+    /// `issue_3982_single_zone_ledger_carries_the_infiltration_heat_flow`.)
+    #[cfg(feature = "gauge-solver")]
+    #[test]
+    fn issue_3982_gauge_infiltration_ach_reaches_the_ventilation_path() {
+        const H_SP: f64 = 20.0;
+        const C_SP: f64 = 24.0;
+
+        let run = |infiltration_ach: f64| -> f64 {
+            let mut model = gauge_single_zone_model(H_SP, C_SP, 0.0);
+            // Free-float: no conditioning, so the air temperature is set
+            // by the physics alone, including any infiltration coupling.
+            model.0.hvac.hvac_enabled = VectorField::from_scalar(0.0, 1);
+            model.0.setpoints.infiltration_rate = VectorField::from_scalar(infiltration_ach, 1);
+            for step in 0..6 {
+                model
+                    .try_step_physics(step, -10.0, 3600.0)
+                    .expect("free-float gauge step must succeed");
+            }
+            model.0.setpoints.temperatures.as_ref()[0]
+        };
+
+        let t_no_infiltration = run(0.0);
+        let t_with_infiltration = run(2.0);
+        assert!(
+            t_with_infiltration < t_no_infiltration,
+            "cold-air infiltration must pull the free-float zone colder: {t_with_infiltration} >= {t_no_infiltration}"
         );
     }
 

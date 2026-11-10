@@ -1,4 +1,49 @@
-//! 5R1C physics step implementation for `ThermalModel`.
+//! Zone heat balance — the complete 5R1C `dT_air/dt` implementation in one
+//! file (Issue #3994).
+//!
+//! This module is the single navigable home of the zone air heat balance:
+//! `ThermalModel::step_physics_5r1c` below is the whole equation, end to end,
+//! with no part of the balance hidden behind the dispatcher/scratch layers
+//! (those only route here and lend buffers). It was moved here unchanged
+//! from `physics_impl/step_5r1c.rs`; behaviour is bit-identical.
+//!
+//! # The equation (ISO 13790 5R1C network, per zone)
+//!
+//! Nodes: zone air `T_air`, interior surface `T_s`, thermal mass `T_m`.
+//! Conductances [W/K]: `h_tr_is` (air↔surface), `h_tr_ms` (surface↔mass),
+//! `h_tr_em`/`h_ext` (mass/air↔outside: envelope + windows + `h_ve`
+//! ventilation/infiltration, incl. the night-ventilation `h_ve_night` term),
+//! `h_tr_floor` (floor↔ground), `h_tr_iz` (inter-zone).
+//!
+//! Heat-flow terms [W], assembled at the top of the step:
+//! - `phi_ia` — gains delivered directly to the AIR node: convective
+//!   fraction of internal gains + the `solar_distribution_to_air` share of
+//!   transmitted solar (Eq. C.6 routing).
+//! - `phi_st` — gains delivered to the SURFACE node: radiative fraction of
+//!   internal gains (`phi_st_int`) + transmitted solar routed to surfaces
+//!   (`phi_st_sol`) (Eq. C.5).
+//! - `phi_m` — gains delivered to the MASS node: the remaining transmitted
+//!   solar share after the air/surface splits.
+//! - Ground: `Q_ground = h_tr_floor · (T_ground − T_surface)`.
+//! - Inter-zone: `q_iz_net[i] = h_tr_iz[i] · Σ_{j≠i} (T[j] − T[i])`.
+//!
+//! Solve order inside the step (bottom-up: weather → solar → conduction →
+//! ventilation → zone balance):
+//! 1. Sol-air temperatures per surface (sky temperature, wind-dependent
+//!    exterior film) and CTF/FD wall fluxes are prepared first.
+//! 2. The algebraic air/surface temperatures are formed as
+//!    `t_i_free = num / den`, where `den` collects
+//!    `h_tr_ms·h_tr_is + (h_tr_ms + h_tr_is)·(h_ext + h_iz + h_iz_rad)`
+//!    plus the ground coefficient, and `num` collects the matching
+//!    `phi_st`, `phi_m`, outdoor, ground and inter-zone contributions.
+//!    `den` is rebuilt per step whenever `h_ve` changes.
+//! 3. The mass node `T_m` is advanced in time with the ISO 13790
+//!    Crank–Nicolson integrator (`crank_nicolson_iso13790`, via
+//!    `select_integration_method`) — the only true state integration in
+//!    the 5R1C network.
+//! 4. HVAC demand is computed against the heating/cooling setpoints from
+//!    the solved air temperature, and the zone moisture balance is stepped
+//!    (`step_zone_moisture`) alongside the thermal balance.
 
 use crate::api::error::FluxionError;
 use crate::physics::cta::{ContinuousTensor, VectorField};
@@ -15,7 +60,7 @@ use fluxion_core::weather::psychrometrics::{
 };
 use smallvec::SmallVec;
 
-use super::step_common::step_wall_surface_ode;
+use super::physics_impl::step_common::step_wall_surface_ode;
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
     pub(crate) fn step_physics_5r1c(
