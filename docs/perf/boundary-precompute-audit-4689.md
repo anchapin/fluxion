@@ -1,5 +1,14 @@
 # Boundary-condition precompute audit (fluxion #4689, spike)
 
+> **Landing note (2026-11-09):** this report lands as a pure KILL
+> record. The counter instrumentation described below was stripped
+> before merge (owner decision, 2026-11-09): its
+> `physics → sim::boundary_counters` call edges tripped the
+> Physics-Sim-Cycle-Check, and a measurement harness for a killed
+> prototype does not belong in the production tree. The instrumented
+> code is preserved in this PR's history (commit `3e3e08a0`,
+> pre-strip) if the counters are ever needed again.
+
 > Summary: audit instrument for the boundary-precompute spike —
 > relaxed-atomic recomputation counters in `src/sim/boundary_counters.rs`
 > (off by default, counting only, bit-identical outputs on/off),

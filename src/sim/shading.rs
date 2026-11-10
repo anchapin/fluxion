@@ -160,11 +160,6 @@ pub fn calculate_shaded_fraction(
     solar: &LocalSolarPosition,
     vegetation_transmittance: Option<f64>,
 ) -> f64 {
-    // Issue #4689 audit: count shading-factor computations (no value change;
-    // the counter is off by default).
-    crate::sim::boundary_counters::count(
-        crate::sim::boundary_counters::BoundaryQuantity::ShadingFactor,
-    );
     if solar.altitude <= 0.0 {
         return 1.0; // Sun below horizon
     }

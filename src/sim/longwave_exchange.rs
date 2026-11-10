@@ -142,11 +142,6 @@ impl InteriorSurfaceNetwork {
     /// * `wall_area` — Gross wall area (m²)
     /// * `emissivity` — Interior surface emissivity (0–1)
     pub fn from_areas(floor_area: f64, ceiling_area: f64, wall_area: f64, emissivity: f64) -> Self {
-        // Issue #4689 audit: count longwave view-factor coefficient
-        // computations (no value change; the counter is off by default).
-        crate::sim::boundary_counters::count(
-            crate::sim::boundary_counters::BoundaryQuantity::LongwaveCoefficient,
-        );
         let f_floor_wall = if floor_area + wall_area > 0.0 {
             wall_area / (floor_area + wall_area)
         } else {
@@ -330,11 +325,6 @@ impl InteriorSurfaceNetwork {
     /// 3-term cross-surface reduction routed through `algebraic_add`
     /// (Issue #3324). Default-feature builds stay bit-identical.
     pub fn total_net_lw(&self, t_floor_c: f64, t_ceiling_c: f64, t_wall_c: f64) -> f64 {
-        // Issue #4689 audit: count longwave network evaluations (no value
-        // change; the counter is off by default).
-        crate::sim::boundary_counters::count(
-            crate::sim::boundary_counters::BoundaryQuantity::LongwaveNetwork,
-        );
         algebraic_add(
             algebraic_add(
                 self.net_lw_floor(t_floor_c, t_ceiling_c, t_wall_c),
@@ -376,11 +366,6 @@ impl InteriorSurfaceState {
     /// Returns `(floor, ceiling, wall)` net LW heat gains (sum = 0 by
     /// reciprocity).
     pub fn net_lw_split(&self, network: &InteriorSurfaceNetwork) -> (f64, f64, f64) {
-        // Issue #4689 audit: count longwave network evaluations (no value
-        // change; the counter is off by default).
-        crate::sim::boundary_counters::count(
-            crate::sim::boundary_counters::BoundaryQuantity::LongwaveNetwork,
-        );
         let floor = network.net_lw_floor(self.t_floor, self.t_ceiling, self.t_wall);
         let ceiling = network.net_lw_ceiling(self.t_floor, self.t_ceiling, self.t_wall);
         let wall = network.net_lw_wall(self.t_floor, self.t_ceiling, self.t_wall);

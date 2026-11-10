@@ -47,14 +47,7 @@ pub(crate) fn five_r_one_c_roof_sol_air(
         return fallback;
     }
 
-    let sky_temp = {
-        // Issue #4689 audit: count sky-temperature computations (no value
-        // change; the counter is off by default).
-        crate::sim::boundary_counters::count(
-            crate::sim::boundary_counters::BoundaryQuantity::SkyTemperature,
-        );
-        weather.sky_temperature()
-    };
+    let sky_temp = weather.sky_temperature();
     // Issue #2891: replicate step_physics_5r1c's wind-dependent
     // h_c_ext calculation (ASHRAE 140 §5.2.6: roofs 5.8 + 3.8·V) so the
     // invariant check sums to a residual of ~0 even when the wind is

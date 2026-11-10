@@ -75,14 +75,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .solar
             .weather
             .as_ref()
-            .map(|w| {
-                // Issue #4689 audit: count sky-temperature computations (no
-                // value change; the counter is off by default).
-                crate::sim::boundary_counters::count(
-                    crate::sim::boundary_counters::BoundaryQuantity::SkyTemperature,
-                );
-                w.sky_temperature()
-            })
+            .map(|w| w.sky_temperature())
             .unwrap_or(outdoor_temp - 15.0);
 
         // Round-100 vent-slice contract (ASHRAE 140-2017 §5.2.1.10.1, normative):
