@@ -375,6 +375,17 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
         # no wire-or-delete decision was ever recorded for it; tracked
         # separately now, decision pending a follow-up.
         "validation::export",
+        # [wire-pending] Issue #3983 (PR #4652) adds
+        # ``src/physics/per_surface_multinode/`` — the per-surface
+        # multinode physics core and its solar submodule. Both are
+        # exercised by the PR's per-class free-float tests but have no
+        # production caller yet: the production dispatch integration is
+        # the follow-up wiring step for #3983. Registration approved by
+        # the repo owner 2026-11-09 (same pattern as io::idf::export in
+        # PR #4611); wire them up or delete them there, dropping these
+        # entries and their registry rows in the same PR.
+        "physics::per_surface_multinode",
+        "physics::per_surface_multinode::solar",
     }
 )
 
@@ -408,7 +419,11 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
 #     ``validation_hybrid_empirical_test`` target) — the module is no
 #     longer wired-but-dead, so its allowlist entry and its Issue
 #     #3748 disposition row are dropped in the same PR.
-BASELINE_WIRED_BUT_DEAD = 41  # raised 34 → 41 in PR for fluxion-#4702
+BASELINE_WIRED_BUT_DEAD = 43  # raised 41 → 43 in PR for fluxion-#4652
+#   (2026-11-09): physics::per_surface_multinode +
+#   physics::per_surface_multinode::solar registered wire-pending for
+#   Issue #3983 (owner-approved; production dispatch wiring follows).
+#   raised 34 → 41 in PR for fluxion-#4702
 #   (2026-11-09): allowlist + registry keying corrected from bare leaf
 #   names to qualified module paths. Same-leaf modules in different
 #   subtrees are now counted individually (export ×2, writer ×3,

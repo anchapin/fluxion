@@ -2,7 +2,7 @@
   "schema_version": 1,
   "description": "Per-module disposition registry for the wired-but-dead pub mods allowlisted in scripts/check_orphan_modules.py::WIRED_BUT_DEAD (Issue #3748). Every allowlist entry must carry exactly one row with an owner-assigned wire-or-delete decision; the registry must stay in lock-step with the live wired-but-dead set. Resolving a module (wiring it up or deleting it) requires dropping its row AND lowering BASELINE_WIRED_BUT_DEAD by one in the same PR.",
   "governing_issue": 3748,
-  "module_count": 41,
+  "module_count": 43,
   "modules": [
     {
       "module": "sim::ems",
@@ -290,6 +290,20 @@
       "issue": 3748,
       "owner": "anchapin",
       "rationale": "Validation export surface with no production caller. Until the Issue #4702 path-keying migration it was silently covered by the shared leaf entry 'export' (whose wire-pending disposition belongs to io::idf::export), so no wire-or-delete decision was ever recorded for it; keep-dead until a follow-up decides."
+    },
+    {
+      "module": "physics::per_surface_multinode",
+      "disposition": "wire-pending",
+      "issue": 3983,
+      "owner": "anchapin",
+      "rationale": "Per-surface multinode physics core added by PR #4652 (Issue #3983, option-B free-float assertions). Exercised by the PR's per-class free-float tests; production dispatch integration is the follow-up wiring step. Wire it up or delete it there, dropping this row in the same PR. Registration approved by the repo owner 2026-11-09."
+    },
+    {
+      "module": "physics::per_surface_multinode::solar",
+      "disposition": "wire-pending",
+      "issue": 3983,
+      "owner": "anchapin",
+      "rationale": "Solar submodule of the per-surface multinode core added by PR #4652 (Issue #3983). No production caller yet; wires in with its parent module's production dispatch integration. Registration approved by the repo owner 2026-11-09."
     }
   ]
 }
