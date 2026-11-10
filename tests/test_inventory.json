@@ -18,7 +18,7 @@
     "fluxion": {
       "lib_ignored": 8,
       "lib_tests": 4441,
-      "test_binaries": 47
+      "test_binaries": 48
     },
     "fluxion-behavior": {
       "lib_ignored": 0,
@@ -78,13 +78,13 @@
     "doc_tests": 0,
     "lib_ignored_root": 8,
     "lib_tests_root": 4441,
-    "test_binaries": 63,
-    "test_source_files": 399,
+    "test_binaries": 64,
+    "test_source_files": 400,
     "workspace_ignored": 156,
     "workspace_integration_ignored": 147,
-    "workspace_integration_tests": 3613,
+    "workspace_integration_tests": 3617,
     "workspace_lib_ignored": 9,
     "workspace_lib_tests": 5600,
-    "workspace_tests": 9213
+    "workspace_tests": 9217
   }
 }
