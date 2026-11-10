@@ -1,6 +1,6 @@
 # Checker Air-Node Mirror — Implementation Plan
 
-**Status:** ACTIVE (round 105; increment A landed round 105 — PR #4649; increment B landed round 106 — PR #4653, the R77 arm consumes the air record, response re-pinned to the composed closed form; increment C landed round 107 — the per-class t_s-first mirror's `t_i` route consumes the record via the self-contained seven-entry layout; increment D landed round 108 — the gauge-proxy legacy identity's `h_tr_3·t_i` route consumes the record through the shared `composed_air_route_shift` helper on both legacy sites; the §5 B–D sequence is complete, closing the round-104 scoping verdict's blind-arm list on record-carrying states — the gauge-route response itself stays owned by §LIMIT-19/#1344; the §7 surface-pool blitz queue is next; rounds 110–112 closed the blitz's remaining slices (lag-carry #4673, solar-split #4674, multi-zone vent #4675) and round 113 landed increment E — the inter-zone cross-response, PR #4676; round 115 landed increment F — the sustained-probe self-response continuation (the record's ninth np slot + the seeded checker API); round 116 pinned the record gate's archaeology-route contracts — R74/R90-filtered suppression + consumer fall-throughs, R75 form-invariance precision (the scoping correction of the §5 increment-F parenthetical); round 117 closed the r113 amendment's last carry channel — the R90 lag state on non-record routes (structurally absent on the recorded route, exactly characterized on the filtered one; contracts + docs only)). Scoping verdict: §LIMIT-22 history, round-104 dated block (both blind arms air-borne, multi-day; B restores the composite arm's share via the record); the §5 out-of-scope list's inter-zone item is disposed by the round-113 dated block — the neighbor side landed, the self-response continuation landed round 115 (increment F: the np persistence slot + the seeded API — the R90-lag channel stays structurally absent on the recorded route). Ownership: §LIMIT-19 / #1344 family; adjacent to GaugeSolver un-blockers #3291/#1465/#1462.
+**Status:** ACTIVE (round 105; increment A landed round 105 — PR #4649; increment B landed round 106 — PR #4653, the R77 arm consumes the air record, response re-pinned to the composed closed form; increment C landed round 107 — the per-class t_s-first mirror's `t_i` route consumes the record via the self-contained seven-entry layout; increment D landed round 108 — the gauge-proxy legacy identity's `h_tr_3·t_i` route consumes the record through the shared `composed_air_route_shift` helper on both legacy sites; the §5 B–D sequence is complete, closing the round-104 scoping verdict's blind-arm list on record-carrying states — the gauge-route response itself stays owned by §LIMIT-19/#1344; the §7 surface-pool blitz queue is next; rounds 110–112 closed the blitz's remaining slices (lag-carry #4673, solar-split #4674, multi-zone vent #4675) and round 113 landed increment E — the inter-zone cross-response, PR #4676; round 115 landed increment F — the sustained-probe self-response continuation (the record's ninth np slot + the seeded checker API); round 116 pinned the record gate's archaeology-route contracts — R74/R90-filtered suppression + consumer fall-throughs, R75 form-invariance precision (the scoping correction of the §5 increment-F parenthetical); round 117 closed the r113 amendment's last carry channel — the R90 lag state on non-record routes (structurally absent on the recorded route, exactly characterized on the filtered one; contracts + docs only); round 118 disposed the §5 list's last item — the HVAC-masked probe fixtures (the three setpoint-control routes bounded as contracts + docs only, held on the ASHRAE weather wall in the merge train)). Scoping verdict: §LIMIT-22 history, round-104 dated block (both blind arms air-borne, multi-day; B restores the composite arm's share via the record); the §5 out-of-scope list's inter-zone item is disposed by the round-113 dated block — the neighbor side landed, the self-response continuation landed round 115 (increment F: the np persistence slot + the seeded API — the R90-lag channel stays structurally absent on the recorded route) — and the HVAC-masked item is disposed by the round-118 block (increment I). Ownership: §LIMIT-19 / #1344 family; adjacent to GaugeSolver un-blockers #3291/#1465/#1462.
 **Goal:** restore the artificial-gain probe's leverage on the two arms that lost it to the committed-air convention (the R77 composite arm's air route, the gauge-proxy legacy arm's `h_tr_3·t_i` route), by recording the sub-stepped air-node composite's affine coefficients engine-side and recomputing the probe response checker-side.
 **Ceiling:** unchanged — every identity this plan touches stays in the 1e-5 W residual class.
 **Method:** TDD with Python replication of each closed form before any code; red-first contract tests; full battery bit-identity at zero delta on every increment; no option plumbing (records are unconditional on the coupled default route, exactly like the round-78 `[a, b, d, bl]` record).
@@ -226,6 +226,45 @@ fall-through.]
   cited), closing duck note N2-r116. Still out of scope after H: the
   9R4C arm's committed-air basis (§LIMIT-19/ADR-0011, Alex's);
   HVAC-masked zones.
+- **I — the HVAC-masked probe fixtures (landed round 118):** the §5
+  out-of-scope list's last un-disposed item — every probe fixture the plan
+  landed through H pins `free_float = true` plus ±999 setpoints (the
+  round-103/104 "nothing through HVAC" convention) — bounded and closed as
+  contracts + docs only (no engine change; held on the ASHRAE weather wall
+  in the merge train as the ninth car). `tests/hvac_masked_probe_contract.rs`
+  (new binary, five contracts) pins the three setpoint-control routes the
+  LIMIT-33 Option-A commit (#4314, the `t_i_act` site) and the
+  capacity-clamped ideal loads (#4241/#2826) create, each with its
+  per-model branch precondition recomputed from committed values in-test
+  (the #4156 unified conductance + the #4241 residual form). UNCLAMPED
+  IDEAL: the committed controlled state is the setpoint VERBATIM in both
+  probe arms, so the controlled response is exactly 0 (the mask) while the
+  free advance is untouched — the free-air/mass deltas compose from the
+  committed nine-slot record (r_air/r_m, ≤1e-9) and are BIT-IDENTICAL to a
+  free-float twin under the same load. CAPACITY-CLAMPED: the clamp pins Q
+  at ±cap (load-independent), so the residual commit passes the free
+  response through UNSCALED (Δctrl = r_air·Δ) and the level closes as
+  `t_free + cap/den_true` with `den_true = den/term_rest_1` recomputed
+  from the record's final den slot and `derived_term_rest_1` (the #2868
+  form); the free advance stays bit-identical to the unclamped route's.
+  DEADBAND: demand 0 by the load-sign rule commits the free state
+  verbatim (ctrl == free, exactly). Under every route the coupled advance
+  — and therefore the committed air AND mass records — is HVAC-blind
+  (bit-identical across all three routes and the free-float control), and
+  the record persists with the full nine-slot/twelve-sub-step layout (the
+  r113/r115 stride), pinning the write's HVAC-independence. Python
+  replication `/tmp/r118_replicate.py` (dev-time evidence, ALL CLAIMS OK
+  19/19) against a six-run engine dump. Teeth ×3 on the clean tree, each
+  failing exactly its predicted set: the unclamped commit returning
+  `t_free` → exactly the mask contract; the clamped divisor switched to
+  `h_tr_is` (the pre-#2868 form) → exactly the clamped route (its
+  pass-through is divisor-independent and stays green); the capacity clamp
+  removed → exactly the clamped route (the `t_i_act` site's own
+  demand ≥ capacity check keeps the route selected, but Q goes
+  load-dependent — `r_air·Δ·(1 − h_coeff/den_true)` — failing the
+  pass-through and level pins). Battery bit-identity at the changed tree —
+  contracts + docs only, no re-record owed. Still out of scope after I:
+  the 9R4C arm's committed-air basis (§LIMIT-19/ADR-0011, Alex's).
 
 ## 6. Verification per increment
 
