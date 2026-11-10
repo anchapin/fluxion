@@ -1,0 +1,127 @@
+# ashrae140-weather-seed.yml — on-demand seeding of the canonical ASHRAE 140
+# weather cache (loop round 124, Alex-approved 2026-11-09 "Release the seed
+# dispatch job").
+#
+# Why this file exists
+# --------------------
+# ASHRAE's supplemental-files host has served GitHub runners a Cloudflare
+# challenge (HTTP 403, `cf-mitigated: challenge`) since 2026-10-30, so the
+# canonical fetch step (scripts/fetch_ashrae140_weather.py) cannot download
+# the 704 MB package from its default PACKAGE_URL on CI, and the cache store
+# holds zero `ashrae140-weather-` keys since the 2026-11-03 LRU eviction.
+# Every weather-consuming workflow (physics-pr.yml strict gate, the nightly
+# β-soak, the Fabric Harness Gate) stays red on its weather step until one
+# develop-scoped fetch succeeds.
+#
+# This workflow fetches the byte-identical package from the repository
+# owner's own release asset instead:
+#
+#   tag:   ashrae140-weather-seed-20261106
+#   asset: 140-2023-AccompanyingFiles.zip
+#
+# and then runs the canonical chain verbatim (extract via the canonical
+# module's own member paths + sha256 guard, convert_tmy3_to_epw.py,
+# check_ashrae140_weather.py), so the saved cache layout is exactly what the
+# canonical cache steps produce and consume. The in-repo provenance guard
+# tests/reference_data/weather/ashrae140_canonical_checksums.json still
+# verifies every extracted file — only the download source differs, and the
+# guard makes that safe. No fetch script, gate, or workflow outside this
+# file is changed.
+#
+# Scope contract (the r115 lesson): caches saved during PR runs land in the
+# PR's merge-ref scope and are unreachable once the PR merges. This workflow
+# must be dispatched on `develop` so the save lands in the develop scope,
+# where every subsequent PR / nightly restore can hit it.
+#
+# Trigger: `workflow_dispatch` ONLY. No push, pull_request, or schedule
+# trigger — the workflow can never run except when a human dispatches it.
+
+name: ASHRAE 140 Weather Seed (manual dispatch)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: >-
+    ashrae140-weather-seed-
+    ${{
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
+env:
+  # Byte-identical mirror of
+  # https://xp20.ashrae.org/supplementalfiles/140-2023-AccompanyingFiles.zip
+  # uploaded by Alex on 2026-11-06 (release ashrae140-weather-seed-20261106).
+  # The canonical sha256 guard verifies the extracted members, so the
+  # download source itself needs no separate pin.
+  SEED_PACKAGE_URL: https://github.com/anchapin/fluxion/releases/download/ashrae140-weather-seed-20261106/140-2023-AccompanyingFiles.zip
+
+jobs:
+  seed:
+    name: Seed ashrae140-weather cache (develop scope)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Restore canonical weather cache if the exact key already exists
+        id: weather-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          # Byte-identical to the canonical cache steps in physics-pr.yml /
+          # nightly-ashrae-140-gauge.yml / ashrae_140_fabric.yml: same path,
+          # same exact primary key. A re-dispatch after a successful seed is
+          # therefore a verified no-op (restore hits, fetch verifies, the
+          # post-save is skipped because the key already exists).
+          path: assets/weather/ashrae140
+          key: ashrae140-weather-${{ hashFiles('tests/reference_data/weather/ashrae140_canonical_checksums.json') }}
+          restore-keys: |
+            ashrae140-weather-
+
+      - name: Seed-fetch from the release mirror + convert + verify (canonical chain)
+        run: |
+          python3 - <<'PY'
+          import os
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, str(Path("scripts").resolve()))
+          import fetch_ashrae140_weather as canonical
+
+          # The canonical module the CI fetch step runs — same DEST_DIR,
+          # same ZIP_MEMBERS member paths, same sha256 guard. Only the
+          # download source is redirected to Alex's release mirror.
+          canonical.PACKAGE_URL = os.environ["SEED_PACKAGE_URL"]
+
+          # Same flow as the canonical step's `--skip-download || full
+          # fetch`: verify first (cache-restore path), download only if the
+          # guard reports missing or mismatched files, verify again after.
+          problems = canonical.verify_installed()
+          if problems:
+              canonical.fetch()
+              problems = canonical.verify_installed()
+          for problem in problems:
+              print(f"PROBLEM: {problem}", file=sys.stderr)
+          if problems:
+              raise SystemExit(1)
+          print("canonical ASHRAE 140 weather files present and sha256-verified")
+          PY
+          python3 scripts/convert_tmy3_to_epw.py
+          python3 scripts/check_ashrae140_weather.py
+
+      - name: Report the saved cache key and installed layout
+        run: |
+          KEY="ashrae140-weather-$(sha256sum tests/reference_data/weather/ashrae140_canonical_checksums.json | cut -d' ' -f1)"
+          echo "primary key: $KEY"
+          echo "restored-from-cache step outcome: ${{ steps.weather-cache.outputs.cache-hit || 'miss (seeded fresh)' }}"
+          ls -la assets/weather/ashrae140/
