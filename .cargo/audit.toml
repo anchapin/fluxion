@@ -156,4 +156,34 @@ ignore = [
     # RUSTSEC-2024-0429 (glib unsound: Iterator impls for VariantStrIter)
     # deny-scope-exempt (transitive-unmaintained)
     "RUSTSEC-2024-0429",
+    # RUSTSEC-2026-0459 (libsqlite3-sys via C SQLite CVE-2026-119375,
+    # GHSA-72w2-rjgg-q729) — surfaced 9 Nov 2026 when the RustSec DB issued
+    # the advisory; first observed failing the Cargo Audit gate on loop
+    # round 124's PRs (#4719/#4720) with no dependency changes in the
+    # diffs (pre-existing Cargo.lock drift: libsqlite3-sys 0.38.2 via
+    # rusqlite 0.40 "bundled"). The advisory flags bundled SQLite
+    # 3.13.0..3.53.2 (libsqlite3-sys 0.6.0..=0.38.2): a crafted database
+    # file opened together with a sibling -wal file of a different page
+    # size can leak uninitialized page-cache memory into ordinary query
+    # results — CVSS 4.0 6.8 MEDIUM, strictly LOCAL attack vector,
+    # requiring the victim to open the attacker-crafted file pair.
+    # Workspace exposure is narrow: rusqlite's only consumer is the
+    # validation-report SQL aggregation (src/validation/reporting/
+    # aggregation.rs), which opens databases fluxion itself creates; no
+    # untrusted-file open path exists in the workspace's own usage.
+    # Remediation shape: the patched libsqlite3-sys (>= 0.39.0, bundling
+    # SQLite 3.54.x) ships exclusively with rusqlite 0.41 (Rust 1.89
+    # minimum, under the 1.98 MSRV), so NO lock-only
+    # `cargo update -p libsqlite3-sys --precise` exists under the
+    # manifest's rusqlite = "0.40" requirement — the fix is the rusqlite
+    # 0.40 -> 0.41 dependency bump, owned by the dependency-sync process,
+    # not this loop. deny.toml mirrors this entry (same advisory ID):
+    # cargo-deny denies vulnerabilities for all crates by default and
+    # scans develop pushes unconditionally, so it fails identically until
+    # the bump lands; mirrored entries need no deny-scope-exempt marker
+    # (#3654 contract).
+    # >>> REMOVE this entry (together with its deny.toml mirror) once
+    # >>> rusqlite is bumped to >= 0.41 in Cargo.toml and Cargo.lock
+    # >>> resolves libsqlite3-sys >= 0.39.0 (SQLite >= 3.54.0).
+    "RUSTSEC-2026-0459",
 ]
