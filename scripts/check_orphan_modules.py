@@ -362,13 +362,11 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
         # (``ai::sweeps::config`` is a distinct module with live callers
         # and is not wired-but-dead.)
         "validation::config",
-        # [wire-pending] Issue #3991 (PR #4611) staged ``src/io/idf/export.rs``
-        # as a wired-but-dead ``pub mod export;``: the IDF export surface is
-        # tested but has no production caller yet. The production wiring
-        # (glazing + IdealLoads export) lands in Issue #4702; wire it up or
-        # delete it there, dropping this entry and its registry row in the
-        # same PR.
-        "io::idf::export",
+        # (Resolved 2026-11-09 in PR #4709: ``io::idf::export`` gained
+        # compiled test callers via the Issue #4702 export_schema
+        # integration tests and is no longer wired-but-dead — its
+        # allowlist entry and registry row were dropped in lock-step
+        # there, lowering BASELINE_WIRED_BUT_DEAD 41 → 40.)
         # [keep-dead] ``src/validation/export.rs`` has no production caller
         # either. Until the Issue #4702 path-keying migration it was
         # silently covered by the shared leaf ``export`` entry above, so
@@ -419,7 +417,11 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
 #     ``validation_hybrid_empirical_test`` target) — the module is no
 #     longer wired-but-dead, so its allowlist entry and its Issue
 #     #3748 disposition row are dropped in the same PR.
-BASELINE_WIRED_BUT_DEAD = 43  # raised 41 → 43 in PR for fluxion-#4652
+BASELINE_WIRED_BUT_DEAD = 42  # lowered 43 → 42 in PR #4709 (2026-11-10):
+#   io::idf::export resolved — the Issue #4702 export_schema work gave
+#   it compiled test callers, so it is no longer wired-but-dead; entry
+#   and registry row dropped in lock-step in that PR. Prior:
+#   raised 41 → 43 in PR for fluxion-#4652
 #   (2026-11-09): physics::per_surface_multinode +
 #   physics::per_surface_multinode::solar registered wire-pending for
 #   Issue #3983 (owner-approved; production dispatch wiring follows).
