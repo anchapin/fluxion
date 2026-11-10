@@ -1402,8 +1402,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // that constant. The exact solution of dT/dt = (s(t) - T)/tau with
         // s(t) linear across the sub-step (s0 -> s1) is
         //   T(dt) = s1 - tau*g + (T0 - s0 + tau*g) * exp(-dt/tau),
-        // g = (s1 - s0)/dt_sub; it reduces to the default form when g = 0
-        // (constant drivers, seed hours), so seed steps stay bit-identical.
+        // g = (s1 - s0)/dt_sub; at g = 0 the closed form reduces to the
+        // default's relax-toward-steady SHAPE, but the arm is NOT
+        // bit-identical to the default on seed hours: this site integrates
+        // the ramp from the hour-start frozen num (`num_tm_ref +
+        // num_rest_ref`) while the default route refreshes the num per
+        // sub-step with the mutating mass — the round-76 refresh postdates
+        // this round-74 note (measured, loop round 116:
+        // tests/air_record_route_contract.rs contract 2; the
+        // round-116/117 record gate excludes this route for the same
+        // num-basis reason).
         // tau is evaluated at the same ramped-midpoint den as the default,
         // isolating only the forcing-shape change. Harness arm: default
         // build is untouched until measured evidence AND an explicit
