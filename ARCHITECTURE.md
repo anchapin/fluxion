@@ -206,8 +206,8 @@ and `fluxion_core::ashrae_cases::Orientation` for its data fields.
 **Regression guard**: `scripts/check_physics_sim_cycle.py` enforces a
 zero-edge physics→sim baseline (`BASELINE_PHYSICS_TO_SIM = 0`) and — since
 Issue #2766 extended Phase 2 coverage from the 2 originally-guarded files to
-ALL of `src/sim/**/*.rs` — an 82-edge sim→physics baseline
-(`BASELINE_SIM_TO_PHYSICS = 82`; 84 pre-existing `use crate::physics::`
+ALL of `src/sim/**/*.rs` — an 84-edge sim→physics baseline
+(`BASELINE_SIM_TO_PHYSICS = 84`; 84 pre-existing `use crate::physics::`
 imports across 26 sim files that the pre-#2766 guard never scanned, minus
 1 edge removed by PR #3020 / issue #2896 (doc-only stub deletion), plus
 2 new `use crate::physics::exterior_convection::{...}` edges added by
@@ -231,7 +231,7 @@ the helpers reduce to `+`, `*`, `-`, `/` when the `fast-math` feature
 is off, and the import exists only so the same kernel source compiles
 unchanged under `--features fast-math`), minus 3 edges removed by
 PR #4222 / issue #4166 (the obsolete `h_tr_em_wind_dependent` helper
-and its five tests were deleted from `src/sim/thermal_model_physics/physics_impl/step_5r1c.rs`;
+and its five tests were deleted from `src/sim/thermal_model_physics/zone_balance.rs`;
 the per-surface `ExteriorBoundarySurface::h_tr_em` keeps the
 caller-owned exterior_convection import). The CI
 listener `Physics-Sim-Cycle-Check` (in `.github/workflows/rust-tests.yml`)
@@ -335,8 +335,8 @@ that those 2 files were just 2 of 26 sim files importing `crate::physics::`
 — 84 pre-existing `use crate::physics::` edges across `thermal_model.rs`,
 `engine.rs`, `ventilation.rs`, and 23 others were completely unguarded —
 and extended Phase 2 to ALL of `src/sim/**`, snapshotting the 84 edges as
-the new baseline. The documented baseline is now **0+82 edges** (0
-physics→sim + 82 sim→physics) after the subsequent companion-cycle-work
+the new baseline. The documented baseline is now **0+84 edges** (0
+physics→sim + 84 sim→physics) after the subsequent companion-cycle-work
 adjustments (#2896 −1, #2891 +2, #2878 −6, #3324 +4, 2026-10-11 +2 for
 #4371's gauge exterior-film correlation imports under
 `src/sim/thermal_model_physics/step_dispatcher.rs`, 2026-09-11 −3 for
@@ -353,7 +353,11 @@ Issue #3063 itself],
 2026-09-28 −1 for #4158's deletion of the thermal_model_solvers module,
 2026-09-28 −3 for #4166's deletion of the obsolete
 `h_tr_em_wind_dependent` helper and its five tests from
-`src/sim/thermal_model_physics/physics_impl/step_5r1c.rs`);
+`src/sim/thermal_model_physics/zone_balance.rs`,
+2026-11-09 +2 for #3982's zonal-air DAE imports
+(`physics::gauge_zone_solver`, `physics::wall_spec`) under
+`src/sim/thermal_model_physics/step_dispatcher.rs` [PR #4651,
+owner-approved baseline raise]);
 the script exits
 non-zero only on regression
 (a count grows above its baseline). Wired into CI as the
@@ -890,8 +894,6 @@ pub struct HybridRouting {
     pub use_surrogate_ventilation: bool,
     /// Route internal/external load prediction to the surrogate.
     pub use_surrogate_loads: bool,
-    /// Route HVAC power demand to the surrogate.
-    pub use_surrogate_hvac: bool,
     /// When `true`, check inputs against training bounds before surrogate
     /// inference and fall back to physics when OOD is detected (Issue #1892).
     pub use_ood_fallback: bool,
