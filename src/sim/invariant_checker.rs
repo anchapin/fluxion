@@ -487,8 +487,19 @@ impl InvariantChecker {
                             // [Round 107 — the air record carries SEVEN
                             // entries per sub-step: the mass advance's
                             // consumed (a, bl) complete the round-105
-                            // five-tuple (slots 5/6).]
-                            .filter(|air| air.len() == n * 7)
+                            // five-tuple (slots 5/6). Round 113 — an
+                            // EIGHTH entry (index 7, the inter-zone
+                            // cross-response coefficient C) joins the
+                            // lockstep push; the slots above keep their
+                            // indices and the stride becomes eight.
+                            // Round 115 -- a NINTH entry (index 8, the
+                            // ramp-source persistence response) joins
+                            // the same push and the stride becomes
+                            // nine. A seven- or eight-entry record (a
+                            // pre-r115 buffer) is stale layout and
+                            // falls through to the mass-only replay
+                            // below.]
+                            .filter(|air| air.len() == n * 9)
                         {
                             let mut t_comp = t_mass_prev;
                             let mut r_air = 0.0f64;
@@ -500,10 +511,10 @@ impl InvariantChecker {
                                 } else {
                                     t_comp = a * t_comp
                                         + (*b + *bl * load_delta)
-                                        + air[7 * k + 4] * ra * load_delta;
+                                        + air[9 * k + 4] * ra * load_delta;
                                 }
-                                r_air = air[7 * k] * ra + air[7 * k + 1] * rm + air[7 * k + 2];
-                                r_m = a * rm + air[7 * k + 4] * ra + *bl;
+                                r_air = air[9 * k] * ra + air[9 * k + 1] * rm + air[9 * k + 2];
+                                r_m = a * rm + air[9 * k + 4] * ra + *bl;
                             }
                             let denom_final = c[c.len() - 2];
                             let r = (t_mass - t_comp) * denom_final;
@@ -632,15 +643,15 @@ impl InvariantChecker {
                             .r77_air_substep_coeffs
                             .as_ref()
                             .and_then(|v| v.get(i))
-                            .filter(|air| air.len() >= 7 && air.len() % 7 == 0)
+                            .filter(|air| air.len() >= 9 && air.len() % 9 == 0)
                             .map(|air| {
                                 let mut r_air = 0.0f64;
                                 let mut r_m = 0.0f64;
-                                for k in 0..air.len() / 7 {
+                                for k in 0..air.len() / 9 {
                                     let (ra, rm) = (r_air, r_m);
-                                    r_air = air[7 * k] * ra + air[7 * k + 1] * rm + air[7 * k + 2];
+                                    r_air = air[9 * k] * ra + air[9 * k + 1] * rm + air[9 * k + 2];
                                     r_m =
-                                        air[7 * k + 5] * rm + air[7 * k + 4] * ra + air[7 * k + 6];
+                                        air[9 * k + 5] * rm + air[9 * k + 4] * ra + air[9 * k + 6];
                                 }
                                 r_air
                             });
@@ -803,19 +814,175 @@ impl InvariantChecker {
             .r77_air_substep_coeffs
             .as_ref()
             .and_then(|v| v.get(i))
-            .filter(|air| air.len() >= 7 && air.len() % 7 == 0)
+            .filter(|air| air.len() >= 9 && air.len() % 9 == 0)
             .map(|air| {
                 let mut r_air = 0.0f64;
                 let mut r_m = 0.0f64;
-                for k in 0..air.len() / 7 {
+                for k in 0..air.len() / 9 {
                     let (ra, rm) = (r_air, r_m);
-                    r_air = air[7 * k] * ra + air[7 * k + 1] * rm + air[7 * k + 2];
-                    r_m = air[7 * k + 5] * rm + air[7 * k + 4] * ra + air[7 * k + 6];
+                    r_air = air[9 * k] * ra + air[9 * k + 1] * rm + air[9 * k + 2];
+                    r_m = air[9 * k + 5] * rm + air[9 * k + 4] * ra + air[9 * k + 6];
                 }
                 r_air
             })
             .unwrap_or(0.0)
             * load_delta
+    }
+
+    /// Round 113 -- inter-zone cross-response vector (plan section 5
+    /// increment E, the "bounded later" item of the round-104 scoping
+    /// verdict). Round 115 keeps its semantics bit-for-bit (zero seeds, no
+    /// persistence term) and delegates to
+    /// `composed_cross_response_vector_seeded`; a sustained probe's OWN
+    /// continuation is exact only through the seeded form.
+    ///
+    /// Composes, per zone, the END-OF-HOUR committed air response to a
+    /// load probe of `probe_zone` at THIS hour's step, from the step's
+    /// own sub-step record:
+    ///
+    /// - the probe zone's own entry routes the load delta through the
+    ///   recorded response recurrence exactly as the R77 composite arm
+    ///   does (`W_k*delta` with the `M_k`/`h3od_k` staggered pair), with
+    ///   the inter-zone source at zero -- at a first probe hour the
+    ///   committed hour-start states are unshifted, so `C*(sum r -
+    ///   N*r_own)` is zero and this entry equals
+    ///   `composed_air_route_shift`'s value;
+    /// - every other zone's entry composes the recorded inter-zone
+    ///   cross-response slot (index 7, round 113) against
+    ///   `prev_end_air_response` (the committed hour-start state shift)
+    ///   with zero hour-boundary seeds.
+    ///
+    /// EXACT for a zone whose own committed air/mass states did not
+    /// respond in the previous hour -- the neighbor of a first probe
+    /// hour. A zone that DID respond carries additional channels this
+    /// zero-seed form does not capture; use
+    /// `composed_cross_response_vector_seeded` there.
+    ///
+    /// Zero-delta property: `load_delta_w == 0.0` with an all-zero
+    /// `prev` returns exact zeros (the #3297 residual-zero property).
+    pub fn composed_cross_response_vector<T>(
+        &self,
+        model: &ThermalModel<T>,
+        probe_zone: usize,
+        load_delta_w: f64,
+        prev_end_air_response: &[f64],
+    ) -> Vec<f64>
+    where
+        T: ContinuousTensor<f64>
+            + From<VectorField>
+            + AsRef<[f64]>
+            + AsMut<[f64]>
+            + Index<usize, Output = f64>,
+    {
+        self.composed_cross_response_vector_seeded(
+            model,
+            probe_zone,
+            load_delta_w,
+            0.0,
+            prev_end_air_response,
+            &[],
+            &[],
+        )
+        .0
+    }
+
+    /// Round 115 -- the seeded self-response continuation (plan section 5
+    /// increment F: the r113 amendment's "bounded later" remainder
+    /// landed). Composes, per zone, the END-OF-HOUR air AND mass
+    /// responses of this hour's step to a probe of `probe_zone`, from the
+    /// step's own sub-step record (nine entries per sub-step), carrying
+    /// the channels the zero-seed vector form cannot:
+    ///
+    /// - `seed_air_response` / `seed_mass_response`: the committed
+    ///   hour-boundary state shifts -- the previous hour's own composed
+    ///   end responses, which the recurrence starts from instead of
+    ///   zero. For a sustained probe the caller passes the same vector
+    ///   as `prev_end_air_response` (the committed hour-start shift is
+    ///   both the iz source and the recurrence seed);
+    /// - `prev_load_delta_w`: the previous hour's probe whose freeze the
+    ///   R71 ramp source carries. The ninth record slot (`NP_k =
+    ///   (1-relax)*(1-f)*num_prev_load_slope/den`, pushed on ramped
+    ///   sub-steps, exactly 0.0 on seed hours, from the
+    ///   `r71_num_prev_load_slope` the freeze site persists) is
+    ///   multiplied by it and routed to the probe zone's entry like the
+    ///   current delta;
+    /// - the inter-zone source joins through slot 7 against
+    ///   `prev_end_air_response` exactly as the zero-seed form composes
+    ///   it.
+    ///
+    /// EXACT (engine counterfactual, <=1e-9 relative, pinned by
+    /// `tests/multizone_cross_response_contract.rs`) for a sustained
+    /// probe's own continuation on the recorded route: the R71
+    /// ramp-source persistence (slot 8), the hour-boundary air/mass
+    /// seeds and the iz committed-state source are the whole channel set
+    /// there -- the lag route is post-ramp and the R90 phi_st prev-ramp
+    /// branch is off on the recorded route, and `r77_air_record` itself
+    /// requires `r90_no_lag_filter`.
+    ///
+    /// Zero-delta property: all-zero deltas and seeds return exact
+    /// zeros (the #3297 residual-zero property).
+    // House precedent for this signature class (cf. `legacy_5r1c_residual`):
+    // every parameter is semantically distinct (probe zone, current and
+    // previous deltas, the iz source vector, two seed vectors) -- collapsing
+    // them into a struct would be API churn without information gained.
+    #[allow(clippy::too_many_arguments)]
+    pub fn composed_cross_response_vector_seeded<T>(
+        &self,
+        model: &ThermalModel<T>,
+        probe_zone: usize,
+        load_delta_w: f64,
+        prev_load_delta_w: f64,
+        prev_end_air_response: &[f64],
+        seed_air_response: &[f64],
+        seed_mass_response: &[f64],
+    ) -> (Vec<f64>, Vec<f64>)
+    where
+        T: ContinuousTensor<f64>
+            + From<VectorField>
+            + AsRef<[f64]>
+            + AsMut<[f64]>
+            + Index<usize, Output = f64>,
+    {
+        let n = model.hvac.num_zones;
+        let mut out_air = vec![0.0f64; n];
+        let mut out_mass = vec![0.0f64; n];
+        let prev_sum: f64 = prev_end_air_response.iter().take(n).sum();
+        let air_record = model.mass.r77_air_substep_coeffs.as_ref();
+        for j in 0..n {
+            let d_j = if j == probe_zone { load_delta_w } else { 0.0 };
+            let np_d_j = if j == probe_zone {
+                prev_load_delta_w
+            } else {
+                0.0
+            };
+            let prev_j = prev_end_air_response.get(j).copied().unwrap_or(0.0);
+            let seed_air_j = seed_air_response.get(j).copied().unwrap_or(0.0);
+            let seed_mass_j = seed_mass_response.get(j).copied().unwrap_or(0.0);
+            let cross_source = prev_sum - (n as f64) * prev_j;
+            if let Some(air) = air_record
+                .and_then(|v| v.get(j))
+                .filter(|air| air.len() >= 9 && air.len() % 9 == 0)
+            {
+                let mut r_air = seed_air_j;
+                let mut r_m = seed_mass_j;
+                for k in 0..air.len() / 9 {
+                    let (ra, rm) = (r_air, r_m);
+                    // Same update pair as the composite arm (slots 0/1/2,
+                    // 4/5/6), with the cross source (slot 7) joining the
+                    // load term and the persistence slot (8) joining
+                    // against the previous hour's delta.
+                    r_air = air[9 * k] * ra
+                        + air[9 * k + 1] * rm
+                        + air[9 * k + 2] * d_j
+                        + air[9 * k + 7] * cross_source
+                        + air[9 * k + 8] * np_d_j;
+                    r_m = air[9 * k + 5] * rm + air[9 * k + 4] * ra + air[9 * k + 6] * d_j;
+                }
+                out_air[j] = r_air;
+                out_mass[j] = r_m;
+            }
+        }
+        (out_air, out_mass)
     }
 
     /// Legacy pre-D5 lumped Crank–Nicolson 5R1C identity, extracted so the

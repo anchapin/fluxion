@@ -90,6 +90,19 @@ pub struct MassState<T: ContinuousTensor<f64>> {
     pub r71_air_driver_num_prev: T,
     pub r71_air_driver_den_prev: T,
 
+    /// [Round 115 -- the ramp-source persistence response slope: the load
+    /// coefficient of the `num_prev` value frozen at the end of each step
+    /// (`num_tm + num_rest`, both hour-start arrays -- the R71 persistence
+    /// block in `step_5r1c.rs`). `num_rest` carries the hour's load through
+    /// its convective share `conv_frac * term_rest_1` (the lag route is
+    /// post-ramp and the `FLX_R90_PHIST_RAMP` prev-ramp branch is off on
+    /// the recorded route), so this is exactly the per-watt shift the NEXT
+    /// hour's R71 ramp consumes through its `(1 - f)` weight on
+    /// `num_prev`. Persisted alongside the drivers; consumed only by the
+    /// air record's ninth entry (the checker's self-response
+    /// continuation). Zero-initialized.]
+    pub r71_num_prev_load_slope: T,
+
     /// [R90 HARNESS — §LIMIT-40 storage-release split discriminator
     /// (`FLX_R90_PHIST_RAMP`): previous-hour gain drives (phi_st, phi_m),
     /// persisted at the end of each step so the sub-step loop can ramp the
@@ -181,6 +194,20 @@ pub struct MassState<T: ContinuousTensor<f64>> {
     /// lumped — the gain from the `t_i_sub` response to the mass
     /// response (the lumped conductance ratio is NOT the per-class
     /// route; the record carries the consumed composite).
+    /// [Round 113 — the record's EIGHTH entry per sub-step: `C`, the
+    /// inter-zone cross-response coefficient
+    /// `(1−D)·ramp_f·term_rest_1[i]·h_tr_iz[i]/den` (zero when the iz
+    /// block is not live: single-zone or `h_tr_iz[i] == 0`), the num-side
+    /// slope of this zone's `q_iz_net` inter-zone term against a
+    /// NEIGHBOR's committed hour-start air temperature. The checker's
+    /// neighbor-side cross-response composes
+    /// `C·(Σ_j r_j − N·r_own)` per sub-step over the previously
+    /// committed air-response vector — exact for a zone whose own
+    /// committed states did not respond in the previous hour (the
+    /// plan-§5 increment-E scope; a probe zone's own next-hour response
+    /// carries additional channels — the R71 ramp-source persistence,
+    /// the R90 lag state on non-record routes, the hour-boundary state
+    /// seeds — documented as the bounded-later remainder).]
     /// Write-only for the engine — the zero-delta checker replay
     /// consumes committed states (the #3297 residual-zero property is
     /// untouched); the checker's composite arm (round 106) and per-class
@@ -234,6 +261,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for MassState<T> {
             r70_surface_node_temperatures_prev: self.r70_surface_node_temperatures_prev.clone(),
             r71_air_driver_num_prev: self.r71_air_driver_num_prev.clone(),
             r71_air_driver_den_prev: self.r71_air_driver_den_prev.clone(),
+            r71_num_prev_load_slope: self.r71_num_prev_load_slope.clone(),
             r90_phi_st_prev: self.r90_phi_st_prev.clone(),
             r90_phi_m_prev: self.r90_phi_m_prev.clone(),
             r75_vent_term_prev: self.r75_vent_term_prev.clone(),

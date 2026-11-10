@@ -140,6 +140,7 @@ impl Case600CZ3Model {
                 window_orientation,
                 Some(0.2),
                 None,
+                1.0, // sky-diffuse view factor (unshaded driver: no device)
             );
 
             let internal_gains = 200.0;

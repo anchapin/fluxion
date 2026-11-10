@@ -227,6 +227,7 @@ impl Case600Model {
                 window_orientation,
                 Some(0.2), // Ground reflectance (typical grass)
                 None,      // UTC offset (use default)
+                1.0,       // sky-diffuse view factor (unshaded driver: no device)
             );
 
             // Calculate total internal loads (W)

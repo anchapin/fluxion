@@ -140,9 +140,23 @@ pub struct ZoneBoundaryConditions {
     pub solar_irradiance_wm2: f64,
     /// Internal heat gains (W)
     pub Q_internal_w: f64,
-    /// Infiltration heat gain/loss (W)
+    /// Infiltration heat gain/loss (W).
+    ///
+    /// Issue #3982: this is the ACH-DERIVED infiltration heat flow
+    /// ([`GaugeZoneSolver::infiltration_heat_flow_W`]), threaded by the
+    /// gauge dispatcher from the same `infiltration_ach` the solver uses
+    /// for `h_inf`. It used to be a hardcoded 0.0 placeholder that the
+    /// multi-zone path dropped entirely.
     pub Q_infiltration_w: f64,
     /// Air changes per hour for infiltration
+    ///
+    /// Issue #3982: the former `0.5` default was a magic constant (the
+    /// ASHRAE 140 Case 600 baseline) applied to EVERY zone that did not
+    /// thread an explicit value — including the zones the multi-zone
+    /// dispatcher finds missing from its boundary-condition map (they fall
+    /// back to `Default::default()`). The default is now "no infiltration"
+    /// (0 ACH); the real input is the spec's infiltration rate, threaded by
+    /// the gauge dispatcher (`setpoints.infiltration_rate`).
     pub infiltration_ach: f64,
     /// Ventilation ACH from night_ventilation schedule (Issue #3904)
     pub ventilation_ach: f64,
@@ -178,7 +192,8 @@ impl Default for ZoneBoundaryConditions {
             solar_irradiance_wm2: 0.0,
             Q_internal_w: 0.0,
             Q_infiltration_w: 0.0,
-            infiltration_ach: 0.5,
+            // Issue #3982: no phantom infiltration (was a hardcoded 0.5 ACH).
+            infiltration_ach: 0.0,
             ventilation_ach: 0.0, // Issue #3904: default no ventilation
             inter_zone_heat: 0.0,
             t_sky: 0.0,
@@ -209,7 +224,8 @@ impl ZoneBoundaryConditions {
             solar_irradiance_wm2,
             Q_internal_w: 0.0,
             Q_infiltration_w: 0.0,
-            infiltration_ach: 0.5,
+            // Issue #3982: no phantom infiltration (was a hardcoded 0.5 ACH).
+            infiltration_ach: 0.0,
             ventilation_ach: 0.0, // Issue #3904: default no ventilation
             inter_zone_heat: 0.0,
             t_sky: 0.0,
@@ -901,7 +917,12 @@ impl GaugeZoneSolver {
     /// * `solar_irradiance_wm2` - Total solar irradiance on horizontal plane (W/m²)
     /// * `solar_distribution_to_air` - Fraction of window solar that goes directly to zone air
     /// * `Q_internal_w` - Internal heat gains (W)
-    /// * `Q_infiltration_w` - Infiltration heat gain/loss (W)
+    /// * `Q_infiltration_w` - Infiltration heat gain/loss (W). Issue #3982:
+    ///   the gauge dispatcher now derives this from the same infiltration
+    ///   ACH the solver uses for `h_inf`
+    ///   ([`GaugeZoneSolver::infiltration_heat_flow_W`]) instead of
+    ///   passing a discarded 0.0 placeholder. Ledger term only — the air
+    ///   node carries the infiltration through `h_total`.
     /// * `t_sky` - Night-sky radiative temperature (°C)
     /// * `h_rad_sky` - Linearized sky-radiative conductance [W/m²·K]
     /// * `h_tr_3` - Combined air-to-mass conductance for lag [W/K] (Issue #3918)
@@ -1470,6 +1491,16 @@ impl GaugeZoneSolver {
         }
         self.T_air = T_air_current;
 
+        // Issue #3982 — the infiltration heat flow (ACH-derived by the
+        // gauge dispatcher and threaded through `bc.Q_infiltration_w`)
+        // joins the zone's net-power ledger, exactly as the single-zone
+        // `step()` path does. Before this the field was silently DROPPED
+        // here, so the multi-zone ledger omitted the infiltration term
+        // altogether while the single-zone arm carried it. Ledger-only:
+        // the air node already carries the infiltration through `h_total`
+        // above, so this cannot double-count the state update.
+        net_power_watts += bc.Q_infiltration_w;
+
         // Return net energy in kWh
         let energy_kwh = -(net_power_watts * dt_seconds) / 3_600_000.0;
         Ok(energy_kwh)
@@ -1578,6 +1609,27 @@ impl GaugeZoneSolver {
             * air_constants::CP_AIR
             * (infiltration_ach / 3600.0)
             * self.zone_volume
+    }
+
+    /// Issue #3982 — infiltration heat flow [W] for the zone's current state.
+    ///
+    /// Sign convention: positive = heat GAINED by the zone air from the
+    /// outdoor air (outdoor warmer than the zone air), negative = heat
+    /// LOST to the outdoor air — the same "gain/loss" convention the
+    /// `Q_infiltration_w` boundary field and the `step()` parameter use.
+    ///
+    /// The flow is derived from the SAME `infiltration_ach` input that
+    /// forms the infiltration conductance
+    /// ([`GaugeZoneSolver::infiltration_conductance_WK`]), so the ACH input
+    /// reaches the ventilation/infiltration heat-flow path and the
+    /// conductance and the heat flow can never disagree.
+    ///
+    /// The air node already carries the infiltration through `h_total`
+    /// (`h_inf · (T_exterior − T_air)`) in its energy balance; this value
+    /// is the matching LEDGER term only — it must NOT be added to the
+    /// air-node driving numerator as well (that would double-count).
+    pub fn infiltration_heat_flow_W(&self, t_exterior_c: f64, infiltration_ach: f64) -> f64 {
+        self.infiltration_conductance_WK(infiltration_ach) * (t_exterior_c - self.T_air)
     }
 
     /// Issue #3911 — Total surface-to-air conductance [W/K] from the most recent step.
@@ -3662,6 +3714,234 @@ mod tests {
             "original zone[0].T_air must remain at 28.0 (independence guarantee)"
         );
         assert!(mz.is_initialized());
+    }
+
+    // ===== Issue #3982 — infiltration / ventilation wiring =====
+
+    /// Issue #3982 (defect 2) — the `ZoneBoundaryConditions` default must
+    /// NOT smuggle a magic 0.5 ACH into every zone that does not thread an
+    /// explicit value: the multi-zone dispatcher falls back to
+    /// `Default::default()` for a zone missing from its boundary-condition
+    /// map, so the old default silently gave that zone the ASHRAE 140
+    /// Case 600 infiltration rate. The default is now "no infiltration";
+    /// the real input is the spec's infiltration rate, threaded by the
+    /// gauge dispatcher (`setpoints.infiltration_rate`).
+    #[test]
+    fn issue_3982_default_boundary_conditions_carry_no_phantom_infiltration() {
+        let bc = ZoneBoundaryConditions::default();
+        assert_eq!(
+            bc.infiltration_ach, 0.0,
+            "the default must not invent an infiltration rate"
+        );
+        let bc_new = ZoneBoundaryConditions::new(
+            Temperature::from_value(20.0),
+            HeatTransferCoefficient::from_value(25.0),
+            0.0,
+            0.0,
+        );
+        assert_eq!(
+            bc_new.infiltration_ach, 0.0,
+            "the constructor must not invent an infiltration rate"
+        );
+        // The explicit threading path still works.
+        let threaded = bc_new.with_infiltration(-120.0, 1.25);
+        assert_eq!(threaded.infiltration_ach, 1.25);
+        assert_eq!(threaded.Q_infiltration_w, -120.0);
+    }
+
+    /// Issue #3982 (defect 3) — the infiltration heat flow is DERIVED from
+    /// the infiltration ACH: `q_inf = h_inf · (T_ext − T_air)` with the
+    /// SAME `h_inf` the air-node balance uses. Sign convention: positive =
+    /// heat gained by the zone (outdoor warmer than the zone air),
+    /// negative = heat lost.
+    #[test]
+    fn issue_3982_infiltration_heat_flow_is_derived_from_the_ach() {
+        let mut zone = GaugeZoneSolver::new(48.0, 2.7);
+        zone.add_opaque_surface(&insulated_wall(), 48.0, SurfaceType::Wall, 0.0, 90.0)
+            .unwrap();
+        zone.initialize().unwrap();
+        zone.set_T_air(20.0);
+
+        let ach = 2.0;
+        let h_inf = zone.infiltration_conductance_WK(ach);
+        assert!(
+            h_inf > 0.0,
+            "a positive ACH must give a positive infiltration conductance"
+        );
+
+        let q_cold = zone.infiltration_heat_flow_W(-10.0, ach);
+        assert!(
+            (q_cold - h_inf * (-10.0 - 20.0)).abs() < 1e-9,
+            "infiltration heat flow {q_cold} != h_inf·(T_ext − T_air) {}",
+            h_inf * (-30.0)
+        );
+        assert!(
+            q_cold < 0.0,
+            "a cold exterior must be an infiltration heat LOSS, got {q_cold}"
+        );
+
+        let q_warm = zone.infiltration_heat_flow_W(30.0, ach);
+        assert!(
+            q_warm > 0.0,
+            "a warm exterior must be an infiltration heat GAIN, got {q_warm}"
+        );
+
+        // No ACH → no infiltration flow at all (no magic baseline rate).
+        assert_eq!(zone.infiltration_heat_flow_W(-10.0, 0.0), 0.0);
+    }
+
+    /// Issue #3982 (defect 3) — the single-zone ledger carries the
+    /// infiltration heat flow. With the SAME infiltration ACH (hence the
+    /// SAME air-node trajectory) the returned energy differs by exactly
+    /// −ΔQ_infiltration·Δt/3.6e6: the ACH input reaches the
+    /// ventilation/infiltration heat-flow path instead of being dropped.
+    #[test]
+    fn issue_3982_single_zone_ledger_carries_the_infiltration_heat_flow() {
+        let run = |q_infiltration_w: f64| -> f64 {
+            let mut zone = GaugeZoneSolver::new(48.0, 2.7);
+            zone.add_opaque_surface(&insulated_wall(), 48.0, SurfaceType::Wall, 0.0, 90.0)
+                .unwrap();
+            zone.initialize().unwrap();
+            zone.step(
+                0,
+                3600.0,
+                Temperature::from_value(-10.0),
+                HeatTransferCoefficient::from_value(25.0),
+                0.0, // solar_irradiance_wm2
+                0.0, // solar_distribution_to_air
+                0.0, // Q_internal_w
+                q_infiltration_w,
+                -10.0, // t_sky
+                0.0,   // h_rad_sky
+                0.0,   // ventilation_ach
+                0.5,   // infiltration_ach (identical in both runs)
+                0.0,   // h_tr_3
+                0.0,   // cm
+                0.0,   // h_tr_is
+                0.0,   // term_rest_1
+                0.0,   // convective_fraction
+                0.0,   // solar_beam_to_mass_fraction
+            )
+            .unwrap()
+        };
+
+        let q = -1234.5;
+        let e_zero = run(0.0);
+        let e_q = run(q);
+        let expected = e_zero - q * 3600.0 / 3_600_000.0;
+        assert!(
+            (e_q - expected).abs() < 1e-12,
+            "the single-zone ledger must carry the infiltration heat flow: {e_q} != {expected} (e_zero={e_zero})"
+        );
+        assert!(
+            e_q > e_zero,
+            "an infiltration heat LOSS must raise the reported heating demand: {e_q} <= {e_zero}"
+        );
+    }
+
+    /// Issue #3982 (defect 3) — the multi-zone arm must not DROP the
+    /// infiltration heat flow: `bc.Q_infiltration_w` was a dead field
+    /// (silently ignored by `step_with_coupling`), so the multi-zone
+    /// ledger omitted the infiltration term the single-zone arm carried.
+    #[test]
+    fn issue_3982_multi_zone_ledger_carries_the_infiltration_heat_flow() {
+        let run = |q_infiltration_w: f64| -> f64 {
+            let mut mz = MultiZoneGaugeSolver::new();
+            mz.add_zone(0, 48.0, 2.7);
+            mz.add_opaque_surface_to_zone(0, &insulated_wall(), 48.0, SurfaceType::Wall, 0.0, 90.0)
+                .unwrap();
+            mz.initialize().unwrap();
+            let mut bc = ZoneBoundaryConditions::new(
+                Temperature::from_value(-10.0),
+                HeatTransferCoefficient::from_value(25.0),
+                0.0,
+                0.0,
+            );
+            bc.infiltration_ach = 0.5;
+            bc.Q_infiltration_w = q_infiltration_w;
+            let mut map: HashMap<usize, ZoneBoundaryConditions> = HashMap::new();
+            map.insert(0usize, bc);
+            mz.step(3600.0, &map).unwrap()[&0]
+        };
+
+        let q = -1234.5;
+        let e_zero = run(0.0);
+        let e_q = run(q);
+        let expected = e_zero - q * 3600.0 / 3_600_000.0;
+        assert!(
+            (e_q - expected).abs() < 1e-12,
+            "the multi-zone ledger must carry the infiltration heat flow: {e_q} != {expected} (e_zero={e_zero})"
+        );
+        assert!(
+            e_q > e_zero,
+            "an infiltration heat LOSS must raise the reported heating demand: {e_q} <= {e_zero}"
+        );
+    }
+
+    /// Issue #3982 — the gauge MASS node feeds back into the result.
+    ///
+    /// Evidence for the maintainer's later fix-vs-retire decision on the
+    /// gauge path: the construction's heat capacity is not a passive
+    /// annotation — it changes the zone air temperature. Two zones with the
+    /// SAME envelope resistance but a 10x areal heat capacity receive the
+    /// same solar pulse; the heavy construction stores more of the pulse in
+    /// its mass node and releases less of it to the air, so its air
+    /// temperature rises less and its interior surface node sits closer to
+    /// the (unchanged) zone air.
+    ///
+    /// Note on the ISO 13790 mass node: the gauge solver derives its time
+    /// constants from the PER-SURFACE construction capacity
+    /// (`C_i = A_i · c_mass,i` — the FD stack's distributed capacity), not
+    /// from the scalar `cm` / `h_tr_ms` inputs (those `step()` parameters
+    /// are retained for API stability and are NOT read). The demonstration
+    /// below therefore exercises the mass node the gauge actually has.
+    #[test]
+    fn issue_3982_gauge_mass_node_feeds_back_into_the_result() {
+        let run = |density: f64| -> (f64, f64) {
+            // Same resistance (0.1 m / 0.5 W/mK = 0.2 m2K/W), 10x the areal
+            // heat capacity between the two probes.
+            let wall = WallSpec::single_layer("MassProbe", 0.1, 0.5, density, 1000.0);
+            let mut zone = GaugeZoneSolver::new(48.0, 2.7);
+            zone.add_opaque_surface(&wall, 48.0, SurfaceType::Wall, 0.0, 90.0)
+                .unwrap();
+            zone.initialize().unwrap();
+            zone.step(
+                0,
+                3600.0,
+                Temperature::from_value(20.0),
+                HeatTransferCoefficient::from_value(25.0),
+                50.0, // solar_irradiance_wm2 [W/m2 of floor area]
+                0.0,  // solar_distribution_to_air (all solar to the surface pool)
+                0.0,  // Q_internal_w
+                0.0,  // Q_infiltration_w
+                20.0, // t_sky (= T_exterior: no sky forcing)
+                0.0,  // h_rad_sky
+                0.0,  // ventilation_ach
+                0.0,  // infiltration_ach
+                0.0,  // h_tr_3
+                0.0,  // cm
+                0.0,  // h_tr_is
+                0.0,  // term_rest_1
+                0.0,  // convective_fraction
+                0.0,  // solar_beam_to_mass_fraction
+            )
+            .unwrap();
+            (
+                zone.T_air().to_value(),
+                zone.surface_interior_temperatures()[0],
+            )
+        };
+
+        let (t_air_light, t_surf_light) = run(300.0);
+        let (t_air_heavy, t_surf_heavy) = run(3000.0);
+        assert!(
+            t_air_heavy < t_air_light - 1e-3,
+            "the heavy mass node must damp the zone air response: {t_air_heavy} vs {t_air_light}"
+        );
+        assert!(
+            t_surf_heavy < t_surf_light,
+            "the heavy mass node must absorb more of the pulse (cooler face rise): {t_surf_heavy} vs {t_surf_light}"
+        );
     }
 
     /// Round 10 (ground coupling): the Annex B §B3.3 boundary threaded by

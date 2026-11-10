@@ -85,6 +85,8 @@ jobs:
           # post-save is skipped because the key already exists).
           path: assets/weather/ashrae140
           key: ashrae140-weather-${{ hashFiles('tests/reference_data/weather/ashrae140_canonical_checksums.json') }}
+          restore-keys: |
+            ashrae140-weather-
 
       - name: Seed-fetch from the release mirror + convert + verify (canonical chain)
         run: |
