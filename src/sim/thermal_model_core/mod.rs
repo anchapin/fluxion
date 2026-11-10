@@ -1207,18 +1207,37 @@ impl ThermalModel<VectorField> {
                 if let Some(shading) = &spec.shading {
                     match shading.shading_type {
                         ShadingType::Overhang | ShadingType::OverhangAndFins if win_area > 0.0 => {
-                            // ASHRAE 140 mounts the overhang AT the top of the
-                            // window (Case 630/930 spec: "1 m horizontal overhang,
-                            // projection from the plane of the glass, at the top of
-                            // the window"; Case 610/910 same south overhang) — gap 0.
-                            // The old `(mounting_height - window_top).max(0)` with
-                            // mounting_height = wall height (2.7) vs window top
-                            // (sill 0.2 + height 2.0 = 2.2) invented a phantom
-                            // 0.5 m gap that under-shaded every shaded case
-                            // (§LIMIT-39 loop round 4, 2026-10-09).
+                            // ASHRAE 140 mounts the overhang at the ROOF EDGE,
+                            // 0.5 m above the 2.2 m window head (Figure 5-32;
+                            // head = sill 0.2 + height 2.0, wall top 2.7 m,
+                            // Figure 5-1). The standard's reference inputs
+                            // agree: UM E+ vertices Z = 2.700000, CSE
+                            // ohDistUp = 1.64042 ft = 0.5 m; the E/W devices
+                            // (Cases 630/930) reuse it (§5.2.2.1.2.1). Round 4
+                            // set gap 0 citing wording absent from both
+                            // sources — over-shading every shaded case; fixed
+                            // round 119, pinned by
+                            // tests/shading_geometry_contract.rs (full record:
+                            // limit-35 doc §65). Red-first got 0.0, want 0.5.
+                            let spec_gap = spec
+                                .windows
+                                .get(zone_idx)
+                                .and_then(|ws| ws.iter().find(|w| w.orientation == orientation))
+                                .or_else(|| {
+                                    // Multi-zone cases store windows only on
+                                    // zone 0 in some builders — same fallback
+                                    // as the window-dims threading above.
+                                    spec.windows.first().and_then(|ws| {
+                                        ws.iter().find(|w| w.orientation == orientation)
+                                    })
+                                })
+                                .map(|w| {
+                                    (shading.mounting_height - (w.sill_height + w.height)).max(0.0)
+                                })
+                                .unwrap_or(0.0); // no spec dims: legacy gap-0 fallback
                             surface.overhang = Some(Overhang {
                                 depth: shading.overhang_depth,
-                                distance_above: 0.0,
+                                distance_above: spec_gap,
                                 extension: 10.0, // "Infinite"
                             });
                         }
