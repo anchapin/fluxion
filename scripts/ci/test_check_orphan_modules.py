@@ -518,9 +518,9 @@ def test_disposition_gate_passes_in_lockstep(
     row, every allowlist entry has a row, no stale rows, and each row
     carries a valid disposition / issue / owner / rationale.
     """
-    names = ["ems", "topsis"]
+    names = ["sim::ems", "analysis::topsis"]
     rows = [r for r in _real_registry_rows() if r["module"] in set(names)]
-    assert len(rows) == 2, "seed rows for ems/topsis must exist"
+    assert len(rows) == 2, "seed rows for sim::ems/analysis::topsis must exist"
     monkeypatch.setattr(checker, "WIRED_BUT_DEAD", frozenset(names))
     monkeypatch.setattr(
         checker, "WIRED_BUT_DEAD_DISPOSITIONS_PATH", _write_registry(tmp_path, rows)
@@ -543,19 +543,21 @@ def test_disposition_gate_fails_when_row_missing(
     detection) without an owner-assigned wire-or-delete disposition is
     exactly the drift the ratchet alone could not stop.
     """
-    rows = [r for r in _real_registry_rows() if r["module"] == "ems"]
-    monkeypatch.setattr(checker, "WIRED_BUT_DEAD", frozenset({"ems", "topsis"}))
+    rows = [r for r in _real_registry_rows() if r["module"] == "sim::ems"]
+    monkeypatch.setattr(
+        checker, "WIRED_BUT_DEAD", frozenset({"sim::ems", "analysis::topsis"})
+    )
     monkeypatch.setattr(
         checker, "WIRED_BUT_DEAD_DISPOSITIONS_PATH", _write_registry(tmp_path, rows)
     )
     _scrub_argv(monkeypatch)
 
-    rc = checker._check_wired_but_dead_dispositions(["ems", "topsis"])
+    rc = checker._check_wired_but_dead_dispositions(["sim::ems", "analysis::topsis"])
     out = capsys.readouterr().out
 
     assert rc == 1, f"expected FAIL (missing row), got rc={rc}\noutput:\n{out}"
     assert "MISSING DISPOSITION ROWS DETECTED" in out
-    assert "topsis" in out
+    assert "analysis::topsis" in out
 
 
 def test_disposition_gate_fails_on_stale_row(
@@ -693,4 +695,10 @@ def test_disposition_gate_passes_on_real_allowlist(checker, capsys):
     assert rc == 0, f"expected PASS on real repo, got rc={rc}\noutput:\n{out}"
     assert "Rows missing for live modules: 0" in out
     assert "Stale rows (module no longer wired-but-dead): 0" in out
-    assert "Disposition registry in lock-step (33 row(s)" in out
+    # 43 rows: the Issue #4702 path-keying migration (2026-11-09)
+    # expanded the 34 leaf-keyed rows to 41 qualified-path rows, and
+    # PR #4652 registered physics::per_surface_multinode (+ its solar
+    # submodule) wire-pending for Issue #3983 (+2); the checker's own
+    # lock-step print is the source of truth for the count, asserted
+    # literally per the fixture's original convention.
+    assert "Disposition registry in lock-step (43 row(s)" in out

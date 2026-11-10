@@ -13,7 +13,7 @@
 //! |---------|----------|
 //! | [`ThermalModelMode::Physics`][pm] | Full analytical 5R1C / 9R4C thermal network. Default. |
 //! | [`ThermalModelMode::Surrogate`][sm] | Neural-network inference via [`SurrogateManager`]. |
-//! | [`ThermalModelMode::Hybrid`][hm] | Per-subsystem routing via [`HybridRouting`]; the default policy routes loads to the surrogate and keeps conduction / ventilation / HVAC on physics. |
+//! | [`ThermalModelMode::Hybrid`][hm] | Per-subsystem routing via [`HybridRouting`]; the default policy routes loads to the surrogate and keeps conduction / ventilation on physics (HVAC power demand is always analytical). |
 //!
 //! [pm]: ThermalModelMode::Physics
 //! [sm]: ThermalModelMode::Surrogate
@@ -27,7 +27,9 @@
 //! - **`use_surrogate_conduction`** — 5R1C / 9R4C thermal network solve
 //! - **`use_surrogate_ventilation`** — ventilation heat transfer coefficient `h_ve`
 //! - **`use_surrogate_loads`** — internal / external load prediction  *(default: `true`)*
-//! - **`use_surrogate_hvac`** — HVAC power demand
+//!
+//! HVAC power demand has no surrogate entry point and is therefore always
+//! computed by the analytical path; there is no HVAC routing flag.
 //!
 //! The default policy is the highest-value / lowest-risk split: only load
 //! prediction runs on the surrogate; all other subsystems remain on the analytical

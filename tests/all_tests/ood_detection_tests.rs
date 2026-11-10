@@ -235,7 +235,6 @@ fn test_hybrid_routing_ood_fallback_helper() {
     assert!(routing.use_ood_fallback);
     assert!(!routing.use_surrogate_conduction);
     assert!(!routing.use_surrogate_ventilation);
-    assert!(!routing.use_surrogate_hvac);
 }
 
 #[test]
@@ -313,7 +312,6 @@ fn test_hybrid_thermal_model_no_ood_check_when_disabled() {
         use_surrogate_loads: true,
         use_surrogate_conduction: false,
         use_surrogate_ventilation: false,
-        use_surrogate_hvac: false,
         use_ood_fallback: false,
     };
     let mut model = HybridThermalModel::from_spec_with_routing(&spec, routing_no_ood);
