@@ -11,10 +11,15 @@
 //!
 //! The §9 CE100–CE200 coverage lives in the sibling modules of this same
 //! target: `section9_ce.rs` (the steady-state dispatch through the CE100
-//! performance map) and `section9_engine_run.rs` (the engine-run harness —
+//! performance map), `section9_engine_run.rs` (the engine-run harness —
 //! every CE case dispatched and scored against its own sourced band, with the
 //! known-fail rows recorded in `data/section9_engine_run_results.json`; see
-//! `docs/KNOWN_ISSUES.md` §LIMIT-42).
+//! `docs/KNOWN_ISSUES.md` §LIMIT-42) and `section9b_engine_run.rs` (the §9b
+//! comparative harness — every CE case executed through the same equipment
+//! dispatch and scored against the committed §9b comparative case table, with
+//! the per-case rows recorded in `data/section9b_engine_run_results.json`; the
+//! five cases the Task-22 bounds file does not cover stay explicitly
+//! unbanded).
 //!
 //! The old name read as §9 coverage that does not exist; renamed per #4294
 //! so no CI target implies §9 work. `data/` is kept intact under the new
@@ -34,3 +39,4 @@ mod section11_engine_run;
 mod section9_ce;
 mod section9_engine_run;
 mod section9_peak_cooling_diagnosis;
+mod section9b_engine_run;

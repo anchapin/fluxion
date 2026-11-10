@@ -243,6 +243,7 @@ fn ashrae_140_window_shgc_ratio(angle_deg: f64) -> f64 {
     1.0
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn calculate_window_solar_gain(
     irradiance: &SurfaceIrradiance,
     window: &WindowProperties,
@@ -251,6 +252,7 @@ pub fn calculate_window_solar_gain(
     fins: &[ShadeFin],
     sun_pos: &SolarPosition,
     orientation: Orientation,
+    sky_diffuse_view_factor: f64,
 ) -> SolarGain {
     if irradiance.total_wm2 <= 0.0 {
         return SolarGain::zero();
@@ -291,7 +293,15 @@ pub fn calculate_window_solar_gain(
     // Issue #1271: ground-reflected radiation arrives from below the window at different
     // angles than sky diffuse; EnergyPlus treats these separately. Use 0.85 for ground-
     // reflected vs 0.90 for sky diffuse (ASHRAE 140 / ISO 13790 anisotropic sky correction).
-    let diffuse_shgc = window.shgc * 0.9;
+    //
+    // Loop round 120 (SOLAR-03): the shading device reduces the SKY-DIFFUSE
+    // component by the visible-sky share `sky_diffuse_view_factor` (isotropic
+    // radiometric convention, overhang scope — see
+    // `shading::overhang_sky_diffuse_fraction`). `1.0` (no device) is an exact
+    // IEEE identity, so unshaded rows stay bit-identical. Beam keeps its
+    // geometric shaded fraction; ground-reflected needs no reduction under a
+    // horizontal device (its rays travel downward and never intersect it).
+    let diffuse_shgc = window.shgc * 0.9 * sky_diffuse_view_factor;
     let ground_reflected_shgc = window.shgc * 0.85;
     let effective_beam_wm2 = irradiance.beam_wm2 * (1.0 - shaded_fraction);
 
@@ -313,6 +323,7 @@ pub fn calculate_window_solar_gain_with_diagnostics(
     fins: &[ShadeFin],
     sun_pos: &SolarPosition,
     orientation: Orientation,
+    sky_diffuse_view_factor: f64,
     month: u32,
     day: u32,
     hour: f64,
@@ -356,7 +367,9 @@ pub fn calculate_window_solar_gain_with_diagnostics(
     // Issue #1271: ground-reflected radiation arrives from below the window at different
     // angles than sky diffuse; EnergyPlus treats these separately. Use 0.85 for ground-
     // reflected vs 0.90 for sky diffuse (ASHRAE 140 / ISO 13790 anisotropic sky correction).
-    let diffuse_shgc = window.shgc * 0.9;
+    // Loop round 120: sky-diffuse scaled by the hoisted visible-sky share
+    // (same fold as `calculate_window_solar_gain`; 1.0 exact identity).
+    let diffuse_shgc = window.shgc * 0.9 * sky_diffuse_view_factor;
     let ground_reflected_shgc = window.shgc * 0.85;
     let effective_beam_wm2 = irradiance.beam_wm2 * (1.0 - shaded_fraction);
 
@@ -413,6 +426,7 @@ pub fn calculate_hourly_solar(
     orientation: Orientation,
     ground_reflectance: Option<f64>,
     utc_offset_hours: Option<f64>,
+    sky_diffuse_view_factor: f64,
 ) -> (SolarPosition, SurfaceIrradiance, SolarGain) {
     let sun_pos = calculate_solar_position(
         latitude_deg,
@@ -441,6 +455,7 @@ pub fn calculate_hourly_solar(
         fins,
         &sun_pos,
         orientation,
+        sky_diffuse_view_factor,
     );
 
     (sun_pos, irradiance, solar_gain)
@@ -470,6 +485,7 @@ pub fn calculate_hourly_solar_from_pos(
     fins: &[ShadeFin],
     orientation: Orientation,
     ground_reflectance: Option<f64>,
+    sky_diffuse_view_factor: f64,
 ) -> (SurfaceIrradiance, SolarGain) {
     let day_of_year = calculate_day_of_year(year, month, day);
     let irradiance = calculate_surface_irradiance(
@@ -489,6 +505,7 @@ pub fn calculate_hourly_solar_from_pos(
         fins,
         sun_pos,
         orientation,
+        sky_diffuse_view_factor,
     );
     (irradiance, solar_gain)
 }
@@ -603,6 +620,7 @@ mod tests {
                 &[],
                 &sun_pos,
                 Orientation::South,
+                1.0, // no device (unshaded test)
             );
             assert!(gain.total_gain_w > 0.0);
             let max_gain = window.area * irradiance.total_wm2 * window.shgc;
@@ -626,6 +644,7 @@ mod tests {
                 &[],
                 &sun_pos,
                 Orientation::South,
+                1.0, // no device (unshaded test)
             );
             assert_eq!(gain.total_gain_w, 0.0);
         }
@@ -659,6 +678,7 @@ mod tests {
                     &[],
                     &sun_pos,
                     Orientation::South,
+                    1.0, // no device (unshaded test)
                 );
                 if sun_pos.is_above_horizon() {
                     assert!(gain.total_gain_w >= 0.0);
@@ -700,6 +720,7 @@ mod tests {
                 &[],
                 &sun_pos,
                 Orientation::South,
+                1.0, // no device (unshaded test)
             );
             let gain_west = calculate_window_solar_gain(
                 &irr_west,
@@ -709,6 +730,7 @@ mod tests {
                 &[],
                 &sun_pos,
                 Orientation::West,
+                1.0, // no device (unshaded test)
             );
             assert!(gain_west.total_gain_w > gain_south.total_gain_w);
         }
@@ -1049,6 +1071,7 @@ mod tests {
             Orientation::South,
             Some(0.2),
             None,
+            1.0, // no device (unshaded test)
         );
         assert!(sun_pos.altitude_deg > 0.0);
         assert!(irr.total_wm2 > 0.0);
@@ -1100,6 +1123,7 @@ mod tests {
                 orientation,
                 GROUND_REFLECTANCE,
                 None,
+                1.0, // no device (unshaded test)
             );
 
             // New path: caller pre-computes sun_pos once and reuses it for each
@@ -1117,6 +1141,7 @@ mod tests {
                 &[],
                 orientation,
                 GROUND_REFLECTANCE,
+                1.0, // no device (unshaded test)
             );
 
             assert!(
@@ -1183,6 +1208,7 @@ mod tests {
             &[],
             &sun_pos,
             Orientation::South,
+            1.0, // no device (unshaded test)
             6,
             21,
             12.0,

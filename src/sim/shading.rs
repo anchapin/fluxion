@@ -297,6 +297,107 @@ fn calculate_fin_shadow_area(
     shaded_width * fin.height
 }
 
+/// Isotropic-sky visible-sky share for a window under a horizontal overhang
+/// (loop round 120 — the sky-diffuse view-factor reduction, the scoped
+/// remainder recorded in LOOP119.md and KNOWN_ISSUES SOLAR-03).
+///
+/// Physics: under uniform (isotropic) sky radiance the sky-diffuse irradiance
+/// reaching glazing scales with the visible solid-angle-weighted share of the
+/// sky hemisphere. A sky ray at elevation beta, azimuth gamma from a window
+/// point crosses the overhang plane (height `a = distance_above + (height − y)`
+/// above the point) at horizontal travel `t_a = a / tan(beta)`; it is blocked
+/// iff `t_a <= depth` and the crossing lands within the device's lateral
+/// extent. The blocked elevation band per azimuth is therefore
+/// `[max(alpha1, atan(a·|tan g|/E_dir)), pi/2)` with `alpha1 = atan2(a, depth)`:
+/// high-elevation rays hit the plane close-in, low-elevation rays pass beyond
+/// the outer edge, and steep-azimuth rays escape past the device's side edge
+/// (`beta_side -> pi/2` empties the band).
+///
+/// Numerics (mirrored exactly by `/tmp/r120_svf_twin.py`, the pin source):
+/// composite Simpson with 4096 azimuth intervals, window area-average on a
+/// 64x64 midpoint grid. Scheme-vs-continuum bound vs a Gauss-Legendre 2048 x
+/// 512x512 reference: 8e-6 (LOOP120.md). Time-invariant device geometry —
+/// hoisted out of the hourly loops by every caller (#1212/#1385 pattern).
+///
+/// Recorded, NOT tuned (KNOWN_ISSUES SOLAR-03 round-120 block): CSE's own
+/// anchor `wnVfSkyDf = 0.39363710370433924` (User's Manual 140-2023 §7.2.2.1.1,
+/// the Case-610 device: ohDepth 1.0 m, ohDistUp 0.5 m, ohExL/R 0.5/4.5 m)
+/// implies a sky-radiance weighting brighter toward the zenith than uniform —
+/// isotropic geometry gives 0.43981 for that window, CIE-overcast 0.41480,
+/// and no natural reading reproduces the CSE constant (zenith-weighting
+/// family sweep in LOOP120.md). CSE's engine source sits in the 403-blocked
+/// 140-2023 accompanying files, so the exact weighting law is unattributable
+/// today; this implementation pins the radiometric (isotropic) convention and
+/// records the residual for the day the accompanying files are fetchable.
+///
+/// Scope: overhang only — fins' lateral diffuse bands are a named follow-up;
+/// ground-reflected needs no reduction under a horizontal device (its rays
+/// travel downward and never intersect the device plane).
+pub fn overhang_sky_diffuse_fraction(window: &WindowArea, oh: &Overhang) -> f64 {
+    if oh.depth <= 0.0 {
+        return 1.0;
+    }
+    // Numerics mirror /tmp/r120_svf_twin.py exactly (Simpson 4096 azimuth
+    // intervals x 64x64 midpoint area grid; scheme-vs-continuum bound 8e-6
+    // vs GL-2048 x 512x512 — LOOP120.md). Time-invariant device geometry:
+    // callers hoist this out of the hourly loops (#1212/#1385 pattern), so
+    // the quadrature runs once per simulated orientation, never per hour.
+    const SIMPSON_N: usize = 4096;
+    const GRID: usize = 64;
+    let f_prim = |b: f64| -> f64 { b / 2.0 + (2.0 * b).sin() / 4.0 };
+    let f_pi2 = f_prim(std::f64::consts::FRAC_PI_2);
+    let pi = std::f64::consts::PI;
+    let frac_pi_2 = std::f64::consts::FRAC_PI_2;
+    let step = pi / (SIMPSON_N as f64);
+    let x_l = -(window.width / 2.0 + oh.extension);
+    let x_r = window.width / 2.0 + oh.extension;
+    let mut sum = 0.0;
+    for i in 0..GRID {
+        let x0 = -window.width / 2.0 + window.width * (i as f64 + 0.5) / (GRID as f64);
+        for j in 0..GRID {
+            let y = window.height * (j as f64 + 0.5) / (GRID as f64);
+            let a = oh.distance_above + (window.height - y);
+            let alpha1 = a.atan2(oh.depth);
+            let e_r = x_r - x0;
+            let e_l = x0 - x_l;
+            let mut total = 0.0;
+            for k in 0..=SIMPSON_N {
+                let g = -frac_pi_2 + (k as f64) * step;
+                let w = if k == 0 || k == SIMPSON_N {
+                    1.0
+                } else if k % 2 == 1 {
+                    4.0
+                } else {
+                    2.0
+                };
+                let cg = g.cos();
+                if cg <= 0.0 {
+                    continue;
+                }
+                let e = if g > 0.0 {
+                    e_r
+                } else if g < 0.0 {
+                    e_l
+                } else {
+                    e_r.min(e_l)
+                };
+                let tg = g.tan();
+                let tb = if tg.abs() > 0.0 {
+                    a * tg.abs() / e
+                } else {
+                    0.0
+                };
+                let lo = alpha1.max(tb.atan());
+                let band = f_pi2 - f_prim(lo);
+                total += w * cg * band;
+            }
+            let blocked = total * step / 3.0;
+            sum += 0.5 - blocked / pi;
+        }
+    }
+    sum / ((GRID * GRID) as f64)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

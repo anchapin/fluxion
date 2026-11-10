@@ -254,6 +254,49 @@ pub fn calculate_shaded_fraction(
 ) -> f64  // Returns 0.0 (fully unshaded) to 1.0 (fully shaded)
 ```
 
+### 5.6 Sky-Diffuse View-Factor Reduction (loop round 120)
+
+Beam shading is the hourly geometric fraction above. The shading device
+also reduces the SKY-DIFFUSE component: under isotropic sky radiance the
+transmitted diffuse scales with the window-area-averaged visible
+solid-angle share of the sky hemisphere.
+
+For a window point at height `y` above the sill and an overhang plane
+`a = distance_above + (height − y)` above that point, a sky ray at
+elevation β and azimuth γ crosses the device plane at horizontal travel
+`t_a = a / tan β`; it is blocked iff `t_a ≤ depth` and the crossing
+lands within the device's lateral extent `[−(W/2 + ext), W/2 + ext]`.
+The blocked elevation band per azimuth is therefore
+`[max(α1, β_side), π/2)` with `α1 = atan2(a, depth)` — high-elevation
+rays hit the plane close-in, low-elevation rays pass beyond the outer
+edge, and steep-azimuth rays escape past the device's side edges
+(`β_side = atan(a·|tan γ|/E_dir)`).
+
+```rust
+pub fn overhang_sky_diffuse_fraction(window: &WindowArea, oh: &Overhang) -> f64
+// Visible-sky share ρ ∈ (0, 1]; composite Simpson 4096 azimuth intervals
+// x 64x64 midpoint area grid. Time-invariant device geometry: computed
+// once at spec-to-surface wiring (from_spec_with_selector), stored on
+// `WallSurface::sky_diffuse_view_factor`, read per timestep.
+```
+
+`calculate_window_solar_gain` folds the share into the diffuse term
+(`diffuse_shgc = SHGC × 0.9 × ρ`); ρ = 1.0 (no device) is an exact IEEE
+identity, so unshaded results are byte-identical. Beam keeps its own
+hourly shaded fraction; ground-reflected needs no reduction under a
+horizontal device (its rays travel downward and never intersect the
+plane). Scope: overhang only — fins' lateral diffuse bands are a named
+follow-up.
+
+Recorded residual (KNOWN_ISSUES §SOLAR-03, loop round 120): the ASHRAE
+140-2023 CSE reference carries the post-shade sky view factor
+`wnVfSkyDf = 0.39363710370433924` for the Case-610 device; the isotropic
+geometric value for that window is 0.4398 and CIE-overcast weighting
+gives 0.4148 — CSE's exact sky-radiance weighting law is unattributable
+while its engine source sits in the 403-blocked 140-2023 accompanying
+files. The radiometric isotropic convention is pinned and the residual
+recorded, not tuned.
+
 ---
 
 ## 6. HVAC Ideal Loads Model

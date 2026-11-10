@@ -35,8 +35,235 @@ pub enum BdfError {
 
 pub type BdfResult<T> = Result<T, BdfError>;
 
+/// Issue #4693 — the error-controlled step-size law, extracted so that the
+/// BDF engine and the simulation-side controller share one implementation.
+///
+/// This is the exact arithmetic that used to live in the private
+/// `adaptive_step::AdaptiveStepController::compute_step_size` method
+/// (see `src/physics/bdf_engine.rs`); the method now delegates here, so the
+/// BDF path is bit-identical to before while `crate::sim::adaptive_timestep`
+/// can reuse the same law without reaching into a private method.
+///
+/// * `dt` — current step size (s)
+/// * `error` — local error estimate for the last accepted step
+/// * `tolerance` — local error tolerance
+/// * `order` — BDF order of the integrator
+/// * `safety_factor` — multiplicative safety factor applied to the growth ratio
+///
+/// Returns the *unclamped* candidate step size (s). Callers apply their own
+/// min/max clamps.
+pub(crate) fn error_controlled_step_size(
+    dt: f64,
+    error: f64,
+    tolerance: f64,
+    order: usize,
+    safety_factor: f64,
+) -> f64 {
+    if error < tolerance {
+        return dt * 2.0;
+    }
+
+    let exponent = 1.0 / (order as f64 + 1.0);
+    let factor = (tolerance / error).powf(exponent) * safety_factor;
+
+    dt * factor.clamp(0.1, 2.0)
+}
+
+/// Issue #4691 — instrumentation counters for the BDF/Newton inner loop.
+///
+/// These counters are *always* live (one relaxed atomic increment per
+/// event) so a perf spike can measure the baseline Jacobian-assembly /
+/// factorisation / Newton-iteration cost without touching any solver
+/// behaviour. They are pure instrumentation: no tolerance, default,
+/// convergence criterion or release gate depends on them.
+pub mod counters {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    /// Number of numerical Jacobian assemblies (one per `compute_numerical_jacobian`).
+    pub static JACOBIAN_ASSEMBLIES: AtomicU64 = AtomicU64::new(0);
+    /// Number of matrix factorisations (one per `solve_linear_system` call in the
+    /// baseline path, one per LU factorisation in the frozen-Jacobian path).
+    pub static FACTORIZATIONS: AtomicU64 = AtomicU64::new(0);
+    /// Number of Newton iterations entered (one residual evaluation each).
+    pub static NEWTON_ITERATIONS: AtomicU64 = AtomicU64::new(0);
+    /// Number of times a cached (frozen) Jacobian was reused instead of re-assembled.
+    pub static JACOBIAN_REUSES: AtomicU64 = AtomicU64::new(0);
+    /// Number of driver-level step rejections.
+    pub static STEP_REJECTIONS: AtomicU64 = AtomicU64::new(0);
+    /// Number of Newton solves started (one per BDF step attempt).
+    pub static SOLVE_CALLS: AtomicU64 = AtomicU64::new(0);
+    /// Number of forced-refresh retries (a failed frozen solve retried with a
+    /// freshly assembled Jacobian).
+    pub static FORCED_REFRESH_RETRIES: AtomicU64 = AtomicU64::new(0);
+
+    /// Immutable snapshot of the counters above.
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+    pub struct CountersSnapshot {
+        pub jacobian_assemblies: u64,
+        pub factorizations: u64,
+        pub newton_iterations: u64,
+        pub jacobian_reuses: u64,
+        pub step_rejections: u64,
+        pub solve_calls: u64,
+        pub forced_refresh_retries: u64,
+    }
+
+    /// Read the current counter values.
+    pub fn snapshot() -> CountersSnapshot {
+        CountersSnapshot {
+            jacobian_assemblies: JACOBIAN_ASSEMBLIES.load(Ordering::Relaxed),
+            factorizations: FACTORIZATIONS.load(Ordering::Relaxed),
+            newton_iterations: NEWTON_ITERATIONS.load(Ordering::Relaxed),
+            jacobian_reuses: JACOBIAN_REUSES.load(Ordering::Relaxed),
+            step_rejections: STEP_REJECTIONS.load(Ordering::Relaxed),
+            solve_calls: SOLVE_CALLS.load(Ordering::Relaxed),
+            forced_refresh_retries: FORCED_REFRESH_RETRIES.load(Ordering::Relaxed),
+        }
+    }
+
+    /// Reset every counter to zero (used by the spike harness to isolate
+    /// one workload's contribution).
+    pub fn reset() {
+        JACOBIAN_ASSEMBLIES.store(0, Ordering::Relaxed);
+        FACTORIZATIONS.store(0, Ordering::Relaxed);
+        NEWTON_ITERATIONS.store(0, Ordering::Relaxed);
+        JACOBIAN_REUSES.store(0, Ordering::Relaxed);
+        STEP_REJECTIONS.store(0, Ordering::Relaxed);
+        SOLVE_CALLS.store(0, Ordering::Relaxed);
+        FORCED_REFRESH_RETRIES.store(0, Ordering::Relaxed);
+    }
+}
+
+/// Issue #4691 — flag-gated frozen-Jacobian prototype (**default OFF**).
+///
+/// The prototype keeps the numerically-computed Jacobian (and its LU
+/// factorisation) alive across Newton iterations *and* across
+/// consecutive BDF timesteps, refreshing it only when
+///
+/// 1. the residual stops decreasing monotonically (stall),
+/// 2. the step is rejected, or
+/// 3. the reuse budget `N` is exhausted.
+///
+/// Nothing in the production default path changes: with the flag unset
+/// (`FLX_BDF_FREEZE_JACOBIAN` absent / falsy) the solver takes exactly
+/// the legacy branch — one Jacobian assembly and one elimination per
+/// Newton iteration.
+pub mod freeze {
+    /// Env flag enabling the frozen-Jacobian prototype (default: OFF).
+    pub const ENV_FREEZE_JACOBIAN: &str = "FLX_BDF_FREEZE_JACOBIAN";
+    /// Env var selecting the reuse budget `N` (number of times a frozen
+    /// Jacobian may be used before it is refreshed).
+    pub const ENV_FREEZE_MAX_REUSE: &str = "FLX_BDF_FREEZE_MAX_REUSE";
+    /// Default reuse budget when `FLX_BDF_FREEZE_MAX_REUSE` is unset or
+    /// unparsable.
+    pub const DEFAULT_MAX_REUSE: usize = 8;
+
+    /// The refresh policy in force for one Newton solve.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct FrozenJacobianPolicy {
+        /// Whether the frozen-Jacobian prototype is active.
+        pub enabled: bool,
+        /// Reuse budget `N`: how many times a frozen Jacobian may be used
+        /// before it must be refreshed.
+        pub max_reuses: usize,
+    }
+
+    impl Default for FrozenJacobianPolicy {
+        fn default() -> Self {
+            Self {
+                enabled: false,
+                max_reuses: DEFAULT_MAX_REUSE,
+            }
+        }
+    }
+
+    impl FrozenJacobianPolicy {
+        /// Read the policy from the environment (repo-standard `FLX_*`
+        /// conventions; booleans go through `util::env_bool::env_bool`).
+        pub fn from_env() -> Self {
+            let enabled = crate::util::env_bool::env_bool(ENV_FREEZE_JACOBIAN, false);
+            let max_reuses = std::env::var(ENV_FREEZE_MAX_REUSE)
+                .ok()
+                .and_then(|raw| raw.trim().parse::<usize>().ok())
+                .unwrap_or(DEFAULT_MAX_REUSE);
+            Self {
+                enabled,
+                max_reuses,
+            }
+        }
+    }
+}
+
 pub const MAX_BDF_ORDER: usize = 6;
 pub const MIN_BDF_ORDER: usize = 1;
+
+// ---------------------------------------------------------------------------
+// Issue #4692 — flag-gated linear warm-start predictor for the Newton solve.
+//
+// The predictor replaces the Newton initial guess with the linear
+// extrapolation `x_prev + (x_prev - x_prev2)` of the last two accepted
+// states. It is **default OFF**: with the flag unset the solver takes
+// exactly the code path it took before this change.
+//
+// The flag is read **once, at construction** (`BdfTimeStepper::new` /
+// `BdfDriver::new`), never per step — the #4688 annual profile showed
+// per-step `getenv` reads of `FLX_*` feature flags to be the single
+// largest avoidable cost of the year (762 121 calls per annual run).
+// ---------------------------------------------------------------------------
+
+/// Environment variable that enables the Issue #4692 warm-start
+/// predictor. Unset (or any value other than `1` / `true` / `yes` /
+/// `on`) means **OFF**.
+pub const WARM_START_PREDICTOR_ENV: &str = "FLUXION_BDF_WARM_START_PREDICTOR";
+
+/// Parse the warm-start flag value.
+///
+/// Pure function on purpose: the rules are unit-tested without
+/// mutating the process environment, which would be racy under
+/// `cargo test`'s parallel threads (every `BdfTimeStepper::new` in
+/// the same process reads the same environment variable).
+pub fn warm_start_flag_enabled(value: Option<&str>) -> bool {
+    match value {
+        Some(raw) => {
+            let v = raw.trim();
+            v == "1"
+                || v.eq_ignore_ascii_case("true")
+                || v.eq_ignore_ascii_case("yes")
+                || v.eq_ignore_ascii_case("on")
+        }
+        None => false,
+    }
+}
+
+/// Issue #4692 — the linear warm-start predictor.
+///
+/// `out[i] = x_prev[i] + (x_prev[i] - x_prev2[i])`, optionally clamped
+/// to `bounds = Some((lo, hi))` (element-wise; `lo`/`hi` may be given
+/// in either order). A non-finite extrapolation falls back to
+/// `x_prev[i]` so the Newton solve never starts from NaN/Inf.
+pub fn warm_start_predict(
+    x_prev: &[f64],
+    x_prev2: &[f64],
+    bounds: Option<(&[f64], &[f64])>,
+) -> Vec<f64> {
+    let n = x_prev.len().min(x_prev2.len());
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        let mut guess = x_prev[i] + (x_prev[i] - x_prev2[i]);
+        if !guess.is_finite() {
+            guess = x_prev[i];
+        }
+        if let Some((lo, hi)) = bounds {
+            if i < lo.len() && i < hi.len() {
+                let lower = lo[i].min(hi[i]);
+                let upper = lo[i].max(hi[i]);
+                guess = guess.clamp(lower, upper);
+            }
+        }
+        out.push(guess);
+    }
+    out
+}
 
 pub mod coefficients {
     //! BDF Coefficients for orders 1-6
@@ -278,6 +505,158 @@ pub mod newton_raphson {
         fn eval(&self, x: &[T], residual: &mut [T]);
     }
 
+    /// Issue #4691 — LU factorisation with partial pivoting.
+    ///
+    /// Used by the flag-gated frozen-Jacobian prototype so a frozen
+    /// Jacobian can be *factorised once* and reused for every subsequent
+    /// Newton iteration (O(n²) triangular solves) instead of being
+    /// re-eliminated (O(n³)) on every iteration.
+    #[derive(Debug, Clone, Default)]
+    pub struct LuFactors {
+        n: usize,
+        /// Combined L\U storage (row-major, `n*n`), unit lower triangle.
+        lu: Vec<f64>,
+        /// Row permutation: `perm[i]` is the original row now at row `i`.
+        perm: Vec<usize>,
+        singular: bool,
+    }
+
+    impl LuFactors {
+        /// Factorise the row-major `n*n` matrix `a` (copied, not mutated).
+        pub fn factorize(a: &[f64], n: usize) -> Self {
+            let mut lu = a[..n * n].to_vec();
+            let mut perm: Vec<usize> = (0..n).collect();
+            let mut singular = false;
+
+            for k in 0..n {
+                let mut pivot_row = k;
+                let mut max_val = lu[k * n + k].abs();
+                for i in (k + 1)..n {
+                    let val = lu[i * n + k].abs();
+                    if val > max_val {
+                        max_val = val;
+                        pivot_row = i;
+                    }
+                }
+                if max_val < 1e-14 {
+                    singular = true;
+                    break;
+                }
+                if pivot_row != k {
+                    // Swap the full rows: the already-computed L part must
+                    // travel with the row (standard PA = LU layout).
+                    for j in 0..n {
+                        lu.swap(k * n + j, pivot_row * n + j);
+                    }
+                    perm.swap(k, pivot_row);
+                }
+                let pivot = lu[k * n + k];
+                for i in (k + 1)..n {
+                    let factor = lu[i * n + k] / pivot;
+                    lu[i * n + k] = factor;
+                    for j in (k + 1)..n {
+                        lu[i * n + j] -= factor * lu[k * n + j];
+                    }
+                }
+            }
+
+            Self {
+                n,
+                lu,
+                perm,
+                singular,
+            }
+        }
+
+        /// True when the factorisation hit a (near-)zero pivot.
+        pub fn is_singular(&self) -> bool {
+            self.singular
+        }
+
+        /// Solve `A x = b` with the stored factors.
+        pub fn solve(&self, b: &[f64], out: &mut [f64]) {
+            let n = self.n;
+            if n == 0 {
+                return;
+            }
+            if self.singular {
+                // Degenerate Jacobian: mirror the legacy solver's
+                // "no elimination performed" behaviour (solution = rhs).
+                let m = n.min(b.len()).min(out.len());
+                out[..m].copy_from_slice(&b[..m]);
+                return;
+            }
+
+            let mut y = vec![0.0; n];
+            for i in 0..n {
+                y[i] = b[self.perm[i]];
+            }
+            // Forward substitution (unit lower triangle).
+            for i in 1..n {
+                let sum: f64 = self.lu[i * n..i * n + i]
+                    .iter()
+                    .zip(y[..i].iter())
+                    .map(|(a, b)| a * b)
+                    .sum();
+                y[i] -= sum;
+            }
+            // Back substitution.
+            let mut x = vec![0.0; n];
+            for i in (0..n).rev() {
+                let sum: f64 = self.lu[i * n + i + 1..i * n + n]
+                    .iter()
+                    .zip(x[i + 1..].iter())
+                    .map(|(a, b)| a * b)
+                    .sum();
+                x[i] = (y[i] - sum) / self.lu[i * n + i];
+            }
+            out.copy_from_slice(&x);
+        }
+    }
+
+    /// Issue #4691 — Jacobian cache shared by the Newton iterations of one
+    /// BDF step and, when the frozen-Jacobian prototype is enabled, by
+    /// consecutive BDF steps.
+    #[derive(Debug, Clone, Default)]
+    pub struct NewtonJacobianCache {
+        lu: LuFactors,
+        has_jacobian: bool,
+        /// Number of times the cached Jacobian has been used since the last
+        /// assembly (counts uses, i.e. solve iterations, across steps).
+        reuse_count: usize,
+        /// Residual norm of the *first* iteration of the previous solve —
+        /// the cross-step stall probe (same role in the sequence, so the
+        /// two residuals are scale-comparable).
+        prev_first_residual: Option<f64>,
+        /// Residual norm at convergence of the previous solve.
+        prev_final_residual: Option<f64>,
+    }
+
+    impl NewtonJacobianCache {
+        /// Drop the cached Jacobian; the next solve must re-assemble it.
+        pub fn invalidate(&mut self) {
+            self.has_jacobian = false;
+            self.reuse_count = 0;
+            self.lu = LuFactors::default();
+        }
+
+        /// Whether a usable Jacobian is currently cached.
+        pub fn has_jacobian(&self) -> bool {
+            self.has_jacobian
+        }
+
+        /// How many times the cached Jacobian has been used since the last
+        /// assembly.
+        pub fn reuse_count(&self) -> usize {
+            self.reuse_count
+        }
+
+        /// Residual norm at convergence of the previous solve.
+        pub fn prev_final_residual(&self) -> Option<f64> {
+            self.prev_final_residual
+        }
+    }
+
     pub struct NewtonRaphsonSolver {
         config: NewtonRaphsonConfig,
     }
@@ -291,7 +670,36 @@ pub mod newton_raphson {
             Self::new(NewtonRaphsonConfig::default())
         }
 
+        /// Solve the system with a throw-away Jacobian cache.
+        ///
+        /// Byte-identical to the pre-#4691 implementation when the
+        /// frozen-Jacobian prototype is disabled (the default).
         pub fn solve<R>(&self, x0: &[f64], func: &R) -> BdfResult<(Vec<f64>, NewtonRaphsonStats)>
+        where
+            R: ResidualFunction<f64>,
+        {
+            let mut cache = NewtonJacobianCache::default();
+            self.solve_with_cache(x0, func, &mut cache)
+        }
+
+        /// Solve the system, reusing the Jacobian (and its LU factorisation)
+        /// held in `cache` when the frozen-Jacobian prototype is enabled.
+        ///
+        /// Refresh policy (Issue #4691):
+        ///
+        /// * reuse the cached Jacobian while the residual decreases
+        ///   monotonically;
+        /// * refresh it when the residual stalls (fails to decrease), when
+        ///   the reuse budget `N` is exhausted, or when no Jacobian is
+        ///   cached yet;
+        /// * the cache is carried across BDF steps; the caller invalidates
+        ///   it when a step is rejected.
+        pub fn solve_with_cache<R>(
+            &self,
+            x0: &[f64],
+            func: &R,
+            cache: &mut NewtonJacobianCache,
+        ) -> BdfResult<(Vec<f64>, NewtonRaphsonStats)>
         where
             R: ResidualFunction<f64>,
         {
@@ -312,12 +720,40 @@ pub mod newton_raphson {
             let history_window = self.config.damping.history_window.max(1);
             let mut residual_history = Vec::with_capacity(history_window);
 
+            // Issue #4691: the frozen-Jacobian prototype is opt-in and off
+            // by default; with it off the legacy branch below runs and the
+            // numerics are unchanged.
+            let policy = super::freeze::FrozenJacobianPolicy::from_env();
+            let frozen = policy.enabled;
+
+            // Stall probe: the residual of the previous Newton iteration.
+            // Inside a step that is the previous iteration of the same solve;
+            // for the first iteration of a step it is the *first-iteration*
+            // residual of the previous step (same role → scale-comparable).
+            let mut stall_probe: Option<f64> = if frozen {
+                cache.prev_first_residual
+            } else {
+                None
+            };
+            let mut first_residual: Option<f64> = None;
+
+            super::counters::SOLVE_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
             for iter in 0..self.config.max_iterations {
                 func.eval(&x, &mut residual);
 
                 let residual_norm = norm(&residual);
+                super::counters::NEWTON_ITERATIONS
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if first_residual.is_none() {
+                    first_residual = Some(residual_norm);
+                }
 
                 if residual_norm < self.config.residual_tolerance {
+                    if frozen {
+                        cache.prev_first_residual = first_residual;
+                        cache.prev_final_residual = Some(residual_norm);
+                    }
                     return Ok((
                         x.clone(),
                         NewtonRaphsonStats {
@@ -328,12 +764,49 @@ pub mod newton_raphson {
                     ));
                 }
 
-                compute_numerical_jacobian(&x, &residual, func, &mut jacobian);
-                solve_linear_system(&jacobian, &residual, &mut update);
+                if frozen {
+                    // Refresh decision: reuse while the residual decreases
+                    // monotonically; refresh on stall, on budget
+                    // exhaustion, or when nothing is cached.
+                    let stalled = match stall_probe {
+                        // Not strictly decreasing (incl. NaN) counts as a stall.
+                        Some(prev) => {
+                            residual_norm.partial_cmp(&prev) != Some(std::cmp::Ordering::Less)
+                        }
+                        None => false,
+                    };
+                    let budget_exhausted = cache.reuse_count >= policy.max_reuses;
+                    if !cache.has_jacobian || stalled || budget_exhausted {
+                        compute_numerical_jacobian(&x, &residual, func, &mut jacobian);
+                        super::counters::JACOBIAN_ASSEMBLIES
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        cache.lu = LuFactors::factorize(&jacobian, n);
+                        super::counters::FACTORIZATIONS
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        cache.has_jacobian = true;
+                        cache.reuse_count = 0;
+                    } else {
+                        super::counters::JACOBIAN_REUSES
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    cache.reuse_count += 1;
+                    cache.lu.solve(&residual, &mut update);
+                } else {
+                    compute_numerical_jacobian(&x, &residual, func, &mut jacobian);
+                    super::counters::JACOBIAN_ASSEMBLIES
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    solve_linear_system(&jacobian, &residual, &mut update);
+                    super::counters::FACTORIZATIONS
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
 
                 let update_norm = norm(&update);
 
                 if update_norm < self.config.update_tolerance {
+                    if frozen {
+                        cache.prev_first_residual = first_residual;
+                        cache.prev_final_residual = Some(residual_norm);
+                    }
                     return Ok((
                         x.clone(),
                         NewtonRaphsonStats {
@@ -361,6 +834,7 @@ pub mod newton_raphson {
                     x[i] -= damping_factor * update[i];
                 }
 
+                stall_probe = Some(residual_norm);
                 prev_residual_norm = residual_norm;
                 if self.config.damping.mode != 0 {
                     residual_history.push(residual_norm);
@@ -372,6 +846,10 @@ pub mod newton_raphson {
 
             func.eval(&x, &mut residual);
             let final_residual = norm(&residual);
+            if frozen {
+                cache.prev_first_residual = first_residual;
+                cache.prev_final_residual = None;
+            }
 
             Err(BdfError::ConvergenceFailed(
                 self.config.max_iterations,
@@ -651,14 +1129,17 @@ pub mod adaptive_step {
         }
 
         fn compute_step_size(&self, dt: f64, error: f64, tolerance: f64, order: usize) -> f64 {
-            if error < tolerance {
-                return dt * 2.0;
-            }
-
-            let exponent = 1.0 / (order as f64 + 1.0);
-            let factor = (tolerance / error).powf(exponent) * self.config.safety_factor;
-
-            dt * factor.clamp(0.1, 2.0)
+            // Issue #4693: the law itself lives in the crate-level helper
+            // `error_controlled_step_size` so the simulation-side controller
+            // (`crate::sim::adaptive_timestep`) can share it. The arithmetic
+            // is unchanged — this path stays bit-identical to before.
+            crate::physics::bdf_engine::error_controlled_step_size(
+                dt,
+                error,
+                tolerance,
+                order,
+                self.config.safety_factor,
+            )
         }
 
         pub fn suggest_order(&self, current: StepSize, errors: &[f64]) -> usize {
@@ -710,8 +1191,11 @@ pub mod time_stepping {
     use crate::physics::bdf_engine::{
         adaptive_step::{AdaptiveStepConfig, AdaptiveStepController, StepSize},
         coefficients::{get_coefficients, BdfCoefficients},
-        newton_raphson::{NewtonRaphsonConfig, NewtonRaphsonSolver, ResidualFunction},
-        BdfError, BdfResult, MAX_BDF_ORDER,
+        newton_raphson::{
+            NewtonJacobianCache, NewtonRaphsonConfig, NewtonRaphsonSolver, ResidualFunction,
+        },
+        warm_start_flag_enabled, warm_start_predict, BdfError, BdfResult, MAX_BDF_ORDER,
+        WARM_START_PREDICTOR_ENV,
     };
 
     #[derive(Debug, Clone, Copy, PartialEq)]
@@ -792,6 +1276,21 @@ pub mod time_stepping {
     pub trait DaeSystem<T> {
         fn residual(&self, t: T, y: &[T], yp: &[T], r: &mut [T]);
         fn dimension(&self) -> usize;
+
+        /// Issue #4692 — optional physical bounds on the state vector
+        /// (`(lower, upper)`, element-wise).
+        ///
+        /// The BDF engine itself enforces **no** bounds on the state;
+        /// the default implementation therefore returns `None` and the
+        /// warm-start predictor runs unbounded. A DAE system that knows
+        /// its own physical limits (temperatures, masses, …) can
+        /// declare them here so the Issue #4692 warm-start predictor
+        /// clamps its extrapolated initial guess to the same limits.
+        /// The method is defaulted, so existing implementors are
+        /// unaffected.
+        fn state_bounds(&self) -> Option<(Vec<T>, Vec<T>)> {
+            None
+        }
     }
 
     pub struct BdfTimeStepper {
@@ -806,10 +1305,37 @@ pub mod time_stepping {
         last_newton_iterations: usize,
         last_final_residual: f64,
         last_error_estimate: f64,
+        // Issue #4692 — warm-start predictor state.
+        //
+        // `warm_start` is read **once** at construction (never per
+        // step). `accepted_steps` counts the accepted steps since the
+        // last `initialize`, which gates the "first two steps"
+        // fallback, and `last_step_rejected` records that the previous
+        // step was rejected, which gates the post-rejection fallback.
+        warm_start: bool,
+        accepted_steps: usize,
+        last_step_rejected: bool,
+        // Issue #4691: Jacobian (and LU factorisation) cache shared by the
+        // Newton iterations of consecutive steps when the frozen-Jacobian
+        // prototype is enabled. It is inert in the default (flag-off) path.
+        jacobian_cache: NewtonJacobianCache,
     }
 
     impl BdfTimeStepper {
         pub fn new(config: TimeSteppingConfig) -> Self {
+            // Issue #4692 — the environment flag is read exactly once,
+            // here at construction time. Never per step (see the
+            // #4688 profile: per-step `getenv` reads dominated the
+            // annual run).
+            let warm_start =
+                warm_start_flag_enabled(std::env::var(WARM_START_PREDICTOR_ENV).ok().as_deref());
+            Self::new_with_warm_start(config, warm_start)
+        }
+
+        /// Issue #4692 — construct a stepper with an explicit
+        /// warm-start setting (used by the unit tests and by
+        /// measurement harnesses that cannot set the environment).
+        pub fn new_with_warm_start(config: TimeSteppingConfig, warm_start: bool) -> Self {
             Self {
                 config,
                 history: Vec::new(),
@@ -818,7 +1344,16 @@ pub mod time_stepping {
                 last_newton_iterations: 0,
                 last_final_residual: 0.0,
                 last_error_estimate: 0.0,
+                warm_start,
+                accepted_steps: 0,
+                last_step_rejected: false,
+                jacobian_cache: NewtonJacobianCache::default(),
             }
+        }
+
+        /// Issue #4692 — whether the warm-start predictor is active.
+        pub fn warm_start_enabled(&self) -> bool {
+            self.warm_start
         }
 
         pub fn with_default_config() -> Self {
@@ -842,6 +1377,10 @@ pub mod time_stepping {
             self.last_newton_iterations = 0;
             self.last_final_residual = 0.0;
             self.last_error_estimate = 0.0;
+            // Issue #4692 — a fresh initial condition restarts the
+            // warm-start predictor's fallback bookkeeping.
+            self.accepted_steps = 0;
+            self.last_step_rejected = false;
             Ok(())
         }
 
@@ -864,6 +1403,14 @@ pub mod time_stepping {
             self.last_error_estimate
         }
 
+        /// Issue #4691: drop the cached Jacobian (and its factorisation).
+        ///
+        /// Called by the driver when a step is rejected so the next attempt
+        /// re-assembles the Jacobian from scratch.
+        pub fn invalidate_jacobian_cache(&mut self) {
+            self.jacobian_cache.invalidate();
+        }
+
         pub fn step<S>(&mut self, dt: f64, system: &S) -> BdfResult<(Vec<f64>, TimeSteppingStats)>
         where
             S: DaeSystem<f64>,
@@ -875,6 +1422,23 @@ pub mod time_stepping {
 
             let mut y_new = vec![0.0; n];
             self.predict(&mut y_new);
+
+            // Issue #4692 — flag-gated warm-start predictor (default
+            // OFF). When enabled, the Newton initial guess is the
+            // linear extrapolation `x_prev + (x_prev - x_prev2)` of
+            // the last two accepted states, clamped to the physical
+            // bounds the DAE system declares. The legacy BDF-coefficient
+            // guess is kept on the first two steps and on the step
+            // right after a rejected step (see `warm_start_guess`).
+            if self.warm_start {
+                let bounds = system.state_bounds();
+                let clamped = bounds
+                    .as_ref()
+                    .map(|(lower, upper)| (lower.as_slice(), upper.as_slice()));
+                if let Some(guess) = self.warm_start_guess(clamped) {
+                    y_new.copy_from_slice(&guess);
+                }
+            }
 
             // Issue #3339: construct the Newton solver from the
             // configured `bdf_config` so the new `DampingPolicy` (and
@@ -895,9 +1459,45 @@ pub mod time_stepping {
                 n,
             };
 
-            let (solution, nr_stats) = solver.solve(&y_new, &bdf_residual)?;
+            let (solution, nr_stats) =
+                match solver.solve_with_cache(&y_new, &bdf_residual, &mut self.jacobian_cache) {
+                    Ok(out) => out,
+                    Err(err) => {
+                        // Issue #4691: with the frozen-Jacobian prototype on, a
+                        // failure of a frozen solve is retried once with a
+                        // freshly assembled Jacobian (the frozen Jacobian was
+                        // stale) before the step is rejected. With the prototype
+                        // off this is exactly the legacy behaviour.
+                        let frozen =
+                            crate::physics::bdf_engine::freeze::FrozenJacobianPolicy::from_env();
+                        if !frozen.enabled || !self.jacobian_cache.has_jacobian() {
+                            self.jacobian_cache.invalidate();
+                            // Issue #4692 — a failed step invalidates the
+                            // warm-start history: the next attempt must fall
+                            // back to the legacy initial guess.
+                            self.last_step_rejected = true;
+                            return Err(err);
+                        }
+                        crate::physics::bdf_engine::counters::FORCED_REFRESH_RETRIES
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        self.jacobian_cache.invalidate();
+                        match solver.solve_with_cache(
+                            &y_new,
+                            &bdf_residual,
+                            &mut self.jacobian_cache,
+                        ) {
+                            Ok(out) => out,
+                            Err(err) => {
+                                // Issue #4692 — warm-start invalidation, as above.
+                                self.last_step_rejected = true;
+                                return Err(err);
+                            }
+                        }
+                    }
+                };
 
             if !nr_stats.converged {
+                self.last_step_rejected = true;
                 return Err(BdfError::ConvergenceFailed(
                     nr_stats.iterations,
                     nr_stats.final_residual,
@@ -917,6 +1517,12 @@ pub mod time_stepping {
 
             self.correct(&solution, t_new);
 
+            // Issue #4692 — an accepted step refreshes the warm-start
+            // bookkeeping (the predictor becomes eligible once two
+            // accepted states exist and no rejection is pending).
+            self.accepted_steps += 1;
+            self.last_step_rejected = false;
+
             y_new[..n].copy_from_slice(&solution[..n]);
 
             Ok((
@@ -929,6 +1535,33 @@ pub mod time_stepping {
                     last_newton_iterations: nr_stats.iterations,
                     last_final_residual: nr_stats.final_residual,
                 },
+            ))
+        }
+
+        /// Issue #4692 — the warm-start initial guess, or `None` when
+        /// the legacy (BDF-coefficient) guess must be kept.
+        ///
+        /// `None` is returned when
+        ///  * fewer than two steps have been accepted since the last
+        ///    `initialize` (the "first two steps" fallback: there are
+        ///    not yet two real accepted states to extrapolate from), or
+        ///  * the previous step was rejected (the "post-rejection"
+        ///    fallback: the extrapolation is built from states that
+        ///    precede a failed attempt).
+        fn warm_start_guess(&self, bounds: Option<(&[f64], &[f64])>) -> Option<Vec<f64>> {
+            if self.accepted_steps < 2 {
+                return None;
+            }
+            if self.last_step_rejected {
+                return None;
+            }
+            if self.history.len() < 2 {
+                return None;
+            }
+            Some(warm_start_predict(
+                &self.history[0],
+                &self.history[1],
+                bounds,
             ))
         }
 
@@ -1029,8 +1662,22 @@ pub mod time_stepping {
 
     impl BdfDriver {
         pub fn new(config: TimeSteppingConfig) -> Self {
+            // Issue #4692 — `BdfTimeStepper::new` reads the
+            // warm-start environment flag exactly once, here.
             let adaptive = AdaptiveStepController::new(config.step_config);
             let stepper = BdfTimeStepper::new(config);
+            Self {
+                config,
+                adaptive,
+                stepper,
+            }
+        }
+
+        /// Issue #4692 — construct a driver with an explicit
+        /// warm-start setting (bypasses the environment flag).
+        pub fn new_with_warm_start(config: TimeSteppingConfig, warm_start: bool) -> Self {
+            let adaptive = AdaptiveStepController::new(config.step_config);
+            let stepper = BdfTimeStepper::new_with_warm_start(config, warm_start);
             Self {
                 config,
                 adaptive,
@@ -1108,6 +1755,11 @@ pub mod time_stepping {
                     Err(_) => {
                         // Newton failed or step below floor — halve and retry.
                         stats.steps_rejected += 1;
+                        // Issue #4691: a rejected step invalidates the frozen
+                        // Jacobian — the next attempt re-assembles it.
+                        self.stepper.invalidate_jacobian_cache();
+                        crate::physics::bdf_engine::counters::STEP_REJECTIONS
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         dt *= 0.5;
                         if dt < step_cfg.min_dt {
                             // Floor hit: keep trying once more at min_dt,
@@ -1164,6 +1816,178 @@ pub mod time_stepping {
             let system = SimpleOscillator;
             let result = stepper.step(0.01, &system);
             assert!(result.is_ok());
+        }
+
+        // -----------------------------------------------------------------
+        // Issue #4692 — warm-start predictor (flag-gated, default OFF).
+        // -----------------------------------------------------------------
+
+        /// A DAE system that declares physical state bounds, used by
+        /// the clamping test.
+        #[cfg(test)]
+        struct BoundedOscillator;
+
+        #[cfg(test)]
+        impl DaeSystem<f64> for BoundedOscillator {
+            fn residual(&self, _t: f64, y: &[f64], yp: &[f64], r: &mut [f64]) {
+                r[0] = yp[0] - y[1];
+                r[1] = yp[1] + y[0];
+            }
+
+            fn dimension(&self) -> usize {
+                2
+            }
+
+            fn state_bounds(&self) -> Option<(Vec<f64>, Vec<f64>)> {
+                Some((vec![-10.0, -10.0], vec![0.5, 0.5]))
+            }
+        }
+
+        #[test]
+        fn issue_4692_warm_start_flag_defaults_off() {
+            // The environment flag is unset in the test process, so
+            // the predictor must be inactive by default.
+            assert!(!BdfTimeStepper::with_default_config().warm_start_enabled());
+            assert!(!warm_start_flag_enabled(None));
+            assert!(warm_start_flag_enabled(Some("1")));
+            assert!(warm_start_flag_enabled(Some("true")));
+            assert!(warm_start_flag_enabled(Some("ON")));
+            assert!(!warm_start_flag_enabled(Some("0")));
+            assert!(!warm_start_flag_enabled(Some("")));
+            assert!(!warm_start_flag_enabled(Some("maybe")));
+        }
+
+        #[test]
+        fn issue_4692_warm_start_predict_math() {
+            // x_prev + (x_prev - x_prev2)
+            let got = warm_start_predict(&[1.0, 2.0], &[0.5, 1.5], None);
+            assert_eq!(got, vec![1.5, 2.5]);
+
+            // A flat history extrapolates to the same value.
+            let flat = warm_start_predict(&[3.0], &[3.0], None);
+            assert_eq!(flat, vec![3.0]);
+
+            // A decreasing history extrapolates downwards.
+            let down = warm_start_predict(&[1.0], &[2.0], None);
+            assert_eq!(down, vec![0.0]);
+        }
+
+        #[test]
+        fn issue_4692_warm_start_first_two_steps_fallback() {
+            let mut stepper =
+                BdfTimeStepper::new_with_warm_start(TimeSteppingConfig::default(), true);
+            stepper.initialize(0.0, &[1.0, 0.0]).unwrap();
+
+            // No accepted step yet → no extrapolatable history.
+            assert!(stepper.warm_start_guess(None).is_none());
+
+            let system = SimpleOscillator;
+            stepper.step(0.01, &system).unwrap();
+            // One accepted step → still the "first two steps" fallback.
+            assert!(stepper.warm_start_guess(None).is_none());
+
+            stepper.step(0.01, &system).unwrap();
+            // Two accepted steps → the predictor is eligible.
+            let guess = stepper.warm_start_guess(None).expect("predictor eligible");
+            let x_prev = &stepper.history[0];
+            let x_prev2 = &stepper.history[1];
+            for i in 0..guess.len() {
+                let expected = x_prev[i] + (x_prev[i] - x_prev2[i]);
+                assert_eq!(guess[i], expected);
+            }
+        }
+
+        #[test]
+        fn issue_4692_warm_start_post_rejection_fallback() {
+            let mut stepper =
+                BdfTimeStepper::new_with_warm_start(TimeSteppingConfig::default(), true);
+            stepper.initialize(0.0, &[1.0, 0.0]).unwrap();
+
+            let system = SimpleOscillator;
+            stepper.step(0.01, &system).unwrap();
+            stepper.step(0.01, &system).unwrap();
+            assert!(stepper.warm_start_guess(None).is_some());
+
+            // A rejected step invalidates the extrapolation.
+            stepper.last_step_rejected = true;
+            assert!(stepper.warm_start_guess(None).is_none());
+
+            // The next accepted step re-enables it.
+            stepper.last_step_rejected = false;
+            assert!(stepper.warm_start_guess(None).is_some());
+        }
+
+        #[test]
+        fn issue_4692_failed_step_marks_rejection() {
+            // A Newton solve that cannot converge (max_iterations = 1
+            // with a non-zero initial guess) must mark the step as
+            // rejected so the predictor falls back on the retry.
+            let mut config = TimeSteppingConfig::default();
+            config.bdf_config.max_iterations = 1;
+            let mut stepper = BdfTimeStepper::new_with_warm_start(config, true);
+            stepper.initialize(0.0, &[1.0, 0.0]).unwrap();
+
+            let system = SimpleOscillator;
+            let outcome = stepper.step(0.01, &system);
+            assert!(outcome.is_err(), "step must fail with max_iterations = 1");
+            assert!(stepper.last_step_rejected);
+            assert!(stepper.warm_start_guess(None).is_none());
+        }
+
+        #[test]
+        fn issue_4692_warm_start_clamps_to_declared_bounds() {
+            // Unbounded: the raw extrapolation is used.
+            let raw = warm_start_predict(&[10.0], &[0.0], None);
+            assert_eq!(raw, vec![20.0]);
+
+            // Bounded: the extrapolation is clamped to the declared
+            // physical limits.
+            let clamped = warm_start_predict(&[10.0], &[0.0], Some((&[-5.0], &[2.0])));
+            assert_eq!(clamped, vec![2.0]);
+
+            // Reversed bounds are normalised, not panicked on.
+            let reversed = warm_start_predict(&[10.0], &[0.0], Some((&[2.0], &[-5.0])));
+            assert_eq!(reversed, vec![2.0]);
+
+            // The stepper path uses the bounds declared by the system.
+            let mut stepper =
+                BdfTimeStepper::new_with_warm_start(TimeSteppingConfig::default(), true);
+            stepper.initialize(0.0, &[1.0, 0.0]).unwrap();
+            let system = BoundedOscillator;
+            stepper.step(0.01, &system).unwrap();
+            stepper.step(0.01, &system).unwrap();
+            let bounds = system.state_bounds().unwrap();
+            let guess = stepper
+                .warm_start_guess(Some((bounds.0.as_slice(), bounds.1.as_slice())))
+                .expect("predictor eligible");
+            for value in guess {
+                assert!(
+                    (-10.0..=0.5).contains(&value),
+                    "clamped guess {value} outside declared bounds"
+                );
+            }
+        }
+
+        #[test]
+        fn issue_4692_flag_off_is_bit_identical() {
+            // The flag-off path must produce exactly the legacy trace.
+            let mut legacy =
+                BdfTimeStepper::new_with_warm_start(TimeSteppingConfig::default(), false);
+            let mut explicit_off = BdfTimeStepper::new(TimeSteppingConfig::default());
+            assert!(!explicit_off.warm_start_enabled());
+
+            let system = SimpleOscillator;
+            legacy.initialize(0.0, &[1.0, 0.0]).unwrap();
+            explicit_off.initialize(0.0, &[1.0, 0.0]).unwrap();
+
+            for _ in 0..5 {
+                let a = legacy.step(0.01, &system).unwrap();
+                let b = explicit_off.step(0.01, &system).unwrap();
+                assert_eq!(a.0, b.0);
+                assert_eq!(a.1.last_newton_iterations, b.1.last_newton_iterations);
+                assert_eq!(a.1.last_final_residual, b.1.last_final_residual);
+                assert_eq!(a.1.final_time, b.1.final_time);
+            }
         }
     }
 }

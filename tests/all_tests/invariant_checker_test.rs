@@ -381,23 +381,25 @@ fn test_r77_composite_gain_probe_leverages_5r1c_state() {
         .r77_mass_substep_coeffs
         .as_ref()
         .expect("a live coupled 5R1C step must persist the mass record");
-    // [Round 107 re-pin — increment C layout: the air record carries
-    // SEVEN entries per sub-step (the round-105 five-tuple completed by
-    // the mass advance's own (a, bl)); this contract still composes the
-    // pair exactly as the composite arm consumes it (mass-record a/bl,
-    // air D/M/W/h3od), so only the stride changes.]
+    // [Round 115 re-pin — increment F layout: the air record carries
+    // NINE entries per sub-step (the round-107 seven-tuple, the r113 C
+    // slot, the round-115 np persistence slot); this contract still
+    // composes the pair exactly as the composite arm consumes it
+    // (mass-record a/bl, air D/M/W/h3od) — only the stride changed; the
+    // seven/eight-wide helpers predate this landing (the disclosed
+    // landing-time step of the r113 train).]
     assert_eq!(
-        air_rec[0].len() / 7,
+        air_rec[0].len() / 9,
         mass_rec[0].len() / 4,
         "air and mass records must carry the same sub-step count"
     );
     let n = mass_rec[0].len() / 4;
     let (mut r_air, mut r_m) = (0.0f64, 0.0f64);
     for k in 0..n {
-        let d = air_rec[0][7 * k];
-        let m_coef = air_rec[0][7 * k + 1];
-        let w_coef = air_rec[0][7 * k + 2];
-        let h3od = air_rec[0][7 * k + 4];
+        let d = air_rec[0][9 * k];
+        let m_coef = air_rec[0][9 * k + 1];
+        let w_coef = air_rec[0][9 * k + 2];
+        let h3od = air_rec[0][9 * k + 4];
         let a_m = mass_rec[0][4 * k];
         let bl = mass_rec[0][4 * k + 3];
         let (ra, rm) = (r_air, r_m);
@@ -499,7 +501,7 @@ fn test_perclass_ts_mirror_gain_probe_leverages_5r1c_state() {
     // round-104 direct share `rad_frac·Δ` plus the air-borne share
     // `h_is_zone·r_air_N·Δ` (each class's denom_s cancels; the class
     // shares w sum to 1; the aggregation identity stays load-free). The
-    // air response composes from the record's seven-entry layout exactly
+    // air response composes from the record's nine-entry layout exactly
     // as the plan-§2 recurrence states.]
     let rad_frac = 1.0 - model.solar.convective_fraction;
     let air_rec = model
@@ -509,10 +511,10 @@ fn test_perclass_ts_mirror_gain_probe_leverages_5r1c_state() {
         .expect("the surgical state keeps the air-node record live");
     let mut r_air_n = 0.0f64;
     let mut r_m_n = 0.0f64;
-    for k in 0..air_rec[0].len() / 7 {
+    for k in 0..air_rec[0].len() / 9 {
         let (ra, rm) = (r_air_n, r_m_n);
-        r_air_n = air_rec[0][7 * k] * ra + air_rec[0][7 * k + 1] * rm + air_rec[0][7 * k + 2];
-        r_m_n = air_rec[0][7 * k + 5] * rm + air_rec[0][7 * k + 4] * ra + air_rec[0][7 * k + 6];
+        r_air_n = air_rec[0][9 * k] * ra + air_rec[0][9 * k + 1] * rm + air_rec[0][9 * k + 2];
+        r_m_n = air_rec[0][9 * k + 5] * rm + air_rec[0][9 * k + 4] * ra + air_rec[0][9 * k + 6];
     }
     let h_is_zone = model.conduction.h_tr_is.as_ref()[0];
     let expected = (rad_frac + h_is_zone * r_air_n) * 1000.0;
@@ -604,14 +606,14 @@ fn test_r77_air_record_composes_engine_counterfactual() {
         .as_ref()
         .expect("a live coupled 5R1C step must persist the mass record");
     assert!(
-        !air_rec[0].is_empty() && air_rec[0].len() % 7 == 0,
-        "air record must carry 7 entries per sub-step (round-107 layout: \
+        !air_rec[0].is_empty() && air_rec[0].len() % 9 == 0,
+        "air record must carry 9 entries per sub-step (round-115 layout: \
          the mass advance's consumed (a, bl) complete the round-105 \
          five-tuple), got len {}",
         air_rec[0].len()
     );
     assert_eq!(
-        air_rec[0].len() / 7,
+        air_rec[0].len() / 9,
         mass_rec[0].len() / 4,
         "air and mass records must carry the same sub-step count"
     );
@@ -626,15 +628,15 @@ fn test_r77_air_record_composes_engine_counterfactual() {
     // consumed (a, bl) ride in slots 5/6 — so the composition no longer
     // reads the mass record (the pairing assert above stays as the shape
     // check). Same recurrence, same values, single stride.]
-    let n = air_rec[0].len() / 7;
+    let n = air_rec[0].len() / 9;
     let (mut r_air, mut r_m) = (0.0f64, 0.0f64);
     for k in 0..n {
-        let d = air_rec[0][7 * k];
-        let m_coef = air_rec[0][7 * k + 1];
-        let w_coef = air_rec[0][7 * k + 2];
-        let h3od = air_rec[0][7 * k + 4];
-        let a_m = air_rec[0][7 * k + 5];
-        let bl = air_rec[0][7 * k + 6];
+        let d = air_rec[0][9 * k];
+        let m_coef = air_rec[0][9 * k + 1];
+        let w_coef = air_rec[0][9 * k + 2];
+        let h3od = air_rec[0][9 * k + 4];
+        let a_m = air_rec[0][9 * k + 5];
+        let bl = air_rec[0][9 * k + 6];
         // Both updates consume the previous sub-step's state pair.
         let (ra, rm) = (r_air, r_m);
         r_air = d * ra + m_coef * rm + w_coef;
@@ -733,8 +735,8 @@ fn test_perclass_ti_route_consumes_air_record() {
         .as_ref()
         .expect("a live coupled 5R1C step must persist the air-node record");
     assert!(
-        air_rec[0].len() >= 7 && air_rec[0].len() % 7 == 0,
-        "the air record must carry 7 entries per sub-step (round-107 layout \
+        air_rec[0].len() >= 9 && air_rec[0].len() % 9 == 0,
+        "the air record must carry 9 entries per sub-step (round-115 layout \
          with the mass-advance coefficients) so the per-class t_i route can \
          compose the plan-§2 response without the mass record — got len {}",
         air_rec[0].len()
@@ -743,10 +745,10 @@ fn test_perclass_ti_route_consumes_air_record() {
     // sub-step's state pair.
     let mut r_air_n = 0.0f64;
     let mut r_m_n = 0.0f64;
-    for k in 0..air_rec[0].len() / 7 {
+    for k in 0..air_rec[0].len() / 9 {
         let (ra, rm) = (r_air_n, r_m_n);
-        r_air_n = air_rec[0][7 * k] * ra + air_rec[0][7 * k + 1] * rm + air_rec[0][7 * k + 2];
-        r_m_n = air_rec[0][7 * k + 5] * rm + air_rec[0][7 * k + 4] * ra + air_rec[0][7 * k + 6];
+        r_air_n = air_rec[0][9 * k] * ra + air_rec[0][9 * k + 1] * rm + air_rec[0][9 * k + 2];
+        r_m_n = air_rec[0][9 * k + 5] * rm + air_rec[0][9 * k + 4] * ra + air_rec[0][9 * k + 6];
     }
     assert!(
         r_air_n.abs() > 1e-12,
@@ -882,8 +884,8 @@ fn test_legacy_identity_air_route_consumes_air_record() {
         .as_ref()
         .expect("a live coupled 5R1C step must persist the air-node record");
     assert!(
-        air_rec[0].len() >= 7 && air_rec[0].len() % 7 == 0,
-        "the air record must carry 7 entries per sub-step (round-107 layout) \
+        air_rec[0].len() >= 9 && air_rec[0].len() % 9 == 0,
+        "the air record must carry 9 entries per sub-step (round-115 layout) \
          so the legacy h_tr_3·t_i route can compose the plan-§2 response — \
          got len {}",
         air_rec[0].len()
@@ -892,10 +894,10 @@ fn test_legacy_identity_air_route_consumes_air_record() {
     // sub-step's state pair.
     let mut r_air_n = 0.0f64;
     let mut r_m_n = 0.0f64;
-    for k in 0..air_rec[0].len() / 7 {
+    for k in 0..air_rec[0].len() / 9 {
         let (ra, rm) = (r_air_n, r_m_n);
-        r_air_n = air_rec[0][7 * k] * ra + air_rec[0][7 * k + 1] * rm + air_rec[0][7 * k + 2];
-        r_m_n = air_rec[0][7 * k + 5] * rm + air_rec[0][7 * k + 4] * ra + air_rec[0][7 * k + 6];
+        r_air_n = air_rec[0][9 * k] * ra + air_rec[0][9 * k + 1] * rm + air_rec[0][9 * k + 2];
+        r_m_n = air_rec[0][9 * k + 5] * rm + air_rec[0][9 * k + 4] * ra + air_rec[0][9 * k + 6];
     }
     assert!(
         r_air_n.abs() > 1e-12,

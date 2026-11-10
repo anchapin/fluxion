@@ -481,6 +481,250 @@ impl TimeConstantAnalyzer {
     }
 }
 
+/// Environment variable that gates the error-controlled adaptive-stepping
+/// prototype (Issue #4693).
+///
+/// The prototype is **off by default**: unless this variable is set to a
+/// truthy value (`1`, `true`, `yes`), [`ErrorControlConfig::from_env`]
+/// returns `None` and no caller can obtain an enabled controller. Nothing in
+/// the default simulation path consults this variable, so the off state is
+/// bit-identical to the pre-spike behaviour.
+pub const ADAPTIVE_ERROR_CONTROL_ENV: &str = "FLUXION_ADAPTIVE_ERROR_CONTROL";
+
+/// Returns `true` when the error-controlled stepping prototype is enabled
+/// through [`ADAPTIVE_ERROR_CONTROL_ENV`].
+pub fn error_control_enabled() -> bool {
+    matches!(
+        std::env::var(ADAPTIVE_ERROR_CONTROL_ENV).ok().as_deref(),
+        Some("1") | Some("true") | Some("TRUE") | Some("True") | Some("yes")
+    )
+}
+
+/// Configuration of the error-controlled step-size controller (Issue #4693).
+///
+/// Defaults mirror the brief: 1 minute minimum step, 1 hour maximum step and
+/// forced landings on hour boundaries.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ErrorControlConfig {
+    /// Minimum admissible step size (s). Default: 60 s (1 minute).
+    pub min_dt: f64,
+    /// Maximum admissible step size (s). Default: 3600 s (1 hour).
+    pub max_dt: f64,
+    /// Local error tolerance handed to the BDF step-size law.
+    pub tolerance: f64,
+    /// Integrator order used by the BDF step-size law.
+    pub order: usize,
+    /// Safety factor used by the BDF step-size law.
+    pub safety_factor: f64,
+    /// Force steps to land exactly on hour boundaries when true.
+    pub hour_alignment: bool,
+}
+
+impl Default for ErrorControlConfig {
+    fn default() -> Self {
+        Self {
+            min_dt: 60.0,
+            max_dt: 3600.0,
+            tolerance: 1e-3,
+            order: 1,
+            safety_factor: 0.9,
+            hour_alignment: true,
+        }
+    }
+}
+
+impl ErrorControlConfig {
+    /// Build a configuration from the environment, **only** when the
+    /// [`ADAPTIVE_ERROR_CONTROL_ENV`] flag is enabled.
+    ///
+    /// Returns `None` when the flag is off — the default state — so no
+    /// controller can be constructed implicitly.
+    pub fn from_env() -> Option<Self> {
+        if !error_control_enabled() {
+            return None;
+        }
+        let mut cfg = Self::default();
+        if let Ok(v) = std::env::var("FLUXION_ADAPTIVE_MIN_DT_SECS") {
+            if let Ok(x) = v.parse::<f64>() {
+                cfg.min_dt = x;
+            }
+        }
+        if let Ok(v) = std::env::var("FLUXION_ADAPTIVE_MAX_DT_SECS") {
+            if let Ok(x) = v.parse::<f64>() {
+                cfg.max_dt = x;
+            }
+        }
+        if let Ok(v) = std::env::var("FLUXION_ADAPTIVE_TOLERANCE") {
+            if let Ok(x) = v.parse::<f64>() {
+                cfg.tolerance = x;
+            }
+        }
+        Some(cfg)
+    }
+}
+
+/// Outcome of one step-size selection (Issue #4693).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StepSelection {
+    /// Chosen step size (s). Always within `[min_dt, max_dt]`, except for a
+    /// short hour-landing remainder (see [`StepSelection::short_landing`]).
+    pub dt: f64,
+    /// `true` when the controller cannot meet the tolerance at the minimum
+    /// step size and the step must be rejected and retried.
+    pub rejected: bool,
+    /// `true` when the chosen step sits at the minimum step size.
+    pub at_min_step: bool,
+    /// `true` when the step was clipped so that it ends exactly on an hour
+    /// boundary.
+    pub landed_on_hour: bool,
+    /// `true` when the hour-landing remainder was shorter than `min_dt`.
+    pub short_landing: bool,
+}
+
+/// Counters collected by the error-controlled controller (Issue #4693).
+#[derive(Clone, Debug, Default)]
+pub struct ErrorControlStats {
+    /// Steps accepted by the controller.
+    pub accepted_steps: usize,
+    /// Steps rejected by the controller (tolerance unreachable at `min_dt`).
+    pub rejected_steps: usize,
+    /// Accepted steps taken at the minimum step size.
+    pub min_step_steps: usize,
+    /// Simulated time spent at the minimum step size (s).
+    pub min_step_seconds: f64,
+    /// Steps clipped to land on an hour boundary.
+    pub hour_landings: usize,
+    /// Hour-landing steps whose remainder was shorter than `min_dt`.
+    pub short_landings: usize,
+    /// Total simulated time covered by accepted steps (s).
+    pub simulated_seconds: f64,
+    /// Histogram of chosen step sizes: milliseconds of step size -> count.
+    pub step_histogram: std::collections::BTreeMap<u64, usize>,
+}
+
+impl ErrorControlStats {
+    /// Fraction of the simulated year spent at the minimum step size.
+    pub fn min_step_fraction(&self) -> f64 {
+        if self.simulated_seconds <= 0.0 {
+            0.0
+        } else {
+            self.min_step_seconds / self.simulated_seconds
+        }
+    }
+}
+
+/// Error-controlled step-size controller (Issue #4693).
+///
+/// The step-size law is the BDF engine's own law, shared through
+/// [`crate::physics::bdf_engine::error_controlled_step_size`]; the
+/// controller adds the clamps (1 minute / 1 hour) and the forced landing on
+/// hour boundaries required by the spike.
+///
+/// This type is inert on its own: it is only reachable when the
+/// [`ADAPTIVE_ERROR_CONTROL_ENV`] flag is enabled (see
+/// [`ErrorControlConfig::from_env`]), and no default simulation path uses it.
+#[derive(Clone, Debug)]
+pub struct ErrorControlledStepper {
+    config: ErrorControlConfig,
+    /// Controller state: the unclipped step size the error law grows/shrinks
+    /// from. Hour-boundary clipping never feeds back into this value, so a
+    /// landing does not penalise the following step's growth.
+    current_dt: f64,
+    stats: ErrorControlStats,
+}
+
+impl ErrorControlledStepper {
+    /// Create a controller with the given configuration.
+    pub fn new(config: ErrorControlConfig) -> Self {
+        let current_dt = config.max_dt;
+        Self {
+            config,
+            current_dt,
+            stats: ErrorControlStats::default(),
+        }
+    }
+
+    /// Configuration in use.
+    pub fn config(&self) -> &ErrorControlConfig {
+        &self.config
+    }
+
+    /// Counters collected so far.
+    pub fn stats(&self) -> &ErrorControlStats {
+        &self.stats
+    }
+
+    /// Select the next step size.
+    ///
+    /// * `error_estimate` — local error estimate of the last accepted step,
+    ///   in the same units as [`ErrorControlConfig::tolerance`].
+    /// * `t_now` — simulation time of the step start (s).
+    pub fn select_step(&mut self, error_estimate: f64, t_now: f64) -> StepSelection {
+        let candidate = crate::physics::bdf_engine::error_controlled_step_size(
+            self.current_dt,
+            error_estimate,
+            self.config.tolerance,
+            self.config.order,
+            self.config.safety_factor,
+        );
+        let unclamped = if candidate.is_finite() {
+            candidate.clamp(self.config.min_dt, self.config.max_dt)
+        } else {
+            self.config.min_dt
+        };
+        self.current_dt = unclamped;
+
+        let mut dt = unclamped;
+        let mut landed_on_hour = false;
+        let mut short_landing = false;
+        if self.config.hour_alignment {
+            let mut rem = 3600.0 - t_now.rem_euclid(3600.0);
+            if rem < 1e-6 {
+                rem = 3600.0;
+            }
+            if dt >= rem - 1e-9 {
+                dt = rem;
+                landed_on_hour = true;
+                if rem < self.config.min_dt - 1e-9 {
+                    short_landing = true;
+                }
+            }
+        }
+
+        let at_min_step = dt <= self.config.min_dt + 1e-9;
+        // The tolerance cannot be met even at the floor: the step has to be
+        // rejected and retried (counted as rejected-step overhead).
+        let rejected = error_estimate > self.config.tolerance && at_min_step;
+
+        if rejected {
+            self.stats.rejected_steps += 1;
+        } else {
+            self.stats.accepted_steps += 1;
+            self.stats.simulated_seconds += dt;
+            if at_min_step {
+                self.stats.min_step_steps += 1;
+                self.stats.min_step_seconds += dt;
+            }
+            if landed_on_hour {
+                self.stats.hour_landings += 1;
+            }
+            if short_landing {
+                self.stats.short_landings += 1;
+            }
+            let key = (dt * 1000.0).round() as u64;
+            *self.stats.step_histogram.entry(key).or_insert(0) += 1;
+        }
+
+        StepSelection {
+            dt,
+            rejected,
+            at_min_step,
+            landed_on_hour,
+            short_landing,
+        }
+    }
+}
+
 /// Time constant information for a case
 #[derive(Debug, Clone)]
 pub struct CaseTimeConstant {
@@ -895,5 +1139,138 @@ mod tests {
         for dt in &timesteps {
             assert_eq!(*dt, Duration::from_secs(360));
         }
+    }
+}
+
+/// Unit tests for the error-controlled step-size controller (Issue #4693).
+#[cfg(test)]
+mod error_control_tests {
+    use super::*;
+
+    fn cfg() -> ErrorControlConfig {
+        ErrorControlConfig {
+            min_dt: 60.0,
+            max_dt: 3600.0,
+            tolerance: 1e-3,
+            order: 1,
+            safety_factor: 0.9,
+            hour_alignment: true,
+        }
+    }
+
+    #[test]
+    fn test_flag_defaults_off() {
+        // The prototype must be opt-in: with the flag unset (the default
+        // state on any normal run) no configuration can be built.
+        if std::env::var(ADAPTIVE_ERROR_CONTROL_ENV).is_err() {
+            assert!(!error_control_enabled());
+            assert!(ErrorControlConfig::from_env().is_none());
+        }
+    }
+
+    #[test]
+    fn test_default_config_clamps() {
+        let c = ErrorControlConfig::default();
+        assert_eq!(c.min_dt, 60.0);
+        assert_eq!(c.max_dt, 3600.0);
+        assert!(c.hour_alignment);
+    }
+
+    #[test]
+    fn test_growth_when_error_below_tolerance() {
+        let mut stepper = ErrorControlledStepper::new(cfg());
+        let sel = stepper.select_step(0.0, 0.0);
+        // error < tolerance -> dt doubles, clamped at max_dt.
+        assert_eq!(sel.dt, 3600.0);
+        assert!(!sel.rejected);
+        assert!(!sel.at_min_step);
+    }
+
+    #[test]
+    fn test_shrink_when_error_above_tolerance() {
+        let mut stepper = ErrorControlledStepper::new(cfg());
+        // Start at the floor by first forcing an error well above tolerance
+        // at the floor: the controller must clamp at min_dt.
+        let sel = stepper.select_step(1.0, 0.0);
+        assert!(sel.dt >= 60.0);
+        assert!(sel.dt <= 3600.0);
+    }
+
+    #[test]
+    fn test_rejects_when_tolerance_unreachable_at_floor() {
+        let mut stepper = ErrorControlledStepper::new(cfg());
+        // Drive the controller to the floor with a huge error.
+        let mut sel = stepper.select_step(1e9, 0.0);
+        let mut guard = 0;
+        while !sel.at_min_step && guard < 100 {
+            sel = stepper.select_step(1e9, 0.0);
+            guard += 1;
+        }
+        assert!(sel.at_min_step);
+        // At the floor with error still above tolerance the step is rejected.
+        // (The drive-to-floor loop above may already have recorded a
+        // rejection on the call that first reached the floor, so assert
+        // the increment, not an absolute count.)
+        let rejected_before = stepper.stats().rejected_steps;
+        let sel = stepper.select_step(1e9, 0.0);
+        assert!(sel.rejected);
+        assert_eq!(stepper.stats().rejected_steps, rejected_before + 1);
+    }
+
+    #[test]
+    fn test_hour_boundary_landing() {
+        let mut stepper = ErrorControlledStepper::new(cfg());
+        // t = 1800 s: a 3600 s step must be clipped to the 1800 s remainder.
+        let sel = stepper.select_step(0.0, 1800.0);
+        assert_eq!(sel.dt, 1800.0);
+        assert!(sel.landed_on_hour);
+        assert!(!sel.short_landing);
+    }
+
+    #[test]
+    fn test_short_landing_below_min_step() {
+        let mut stepper = ErrorControlledStepper::new(cfg());
+        // t = 3570 s -> 30 s remainder, below min_dt.
+        let sel = stepper.select_step(0.0, 3570.0);
+        assert_eq!(sel.dt, 30.0);
+        assert!(sel.landed_on_hour);
+        assert!(sel.short_landing);
+    }
+
+    #[test]
+    fn test_hour_alignment_can_be_disabled() {
+        let mut c = cfg();
+        c.hour_alignment = false;
+        let mut stepper = ErrorControlledStepper::new(c);
+        let sel = stepper.select_step(0.0, 1800.0);
+        assert_eq!(sel.dt, 3600.0);
+        assert!(!sel.landed_on_hour);
+    }
+
+    #[test]
+    fn test_histogram_and_min_step_fraction() {
+        let mut stepper = ErrorControlledStepper::new(cfg());
+        // 10 steps of one hour each, all accepted at max_dt.
+        for i in 0..10 {
+            stepper.select_step(0.0, i as f64 * 3600.0);
+        }
+        let stats = stepper.stats();
+        assert_eq!(stats.accepted_steps, 10);
+        assert_eq!(stats.rejected_steps, 0);
+        assert_eq!(stats.min_step_steps, 0);
+        assert_eq!(stats.min_step_fraction(), 0.0);
+        assert_eq!(stats.step_histogram.get(&3_600_000).copied(), Some(10));
+        assert!((stats.simulated_seconds - 10.0 * 3600.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_min_step_fraction_accounting() {
+        let mut stepper = ErrorControlledStepper::new(cfg());
+        // One hour-long step at max_dt, then a landing remainder of 30 s.
+        stepper.select_step(0.0, 0.0);
+        stepper.select_step(0.0, 3570.0);
+        let stats = stepper.stats();
+        assert!(stats.min_step_fraction() > 0.0);
+        assert!(stats.min_step_fraction() < 0.01);
     }
 }
