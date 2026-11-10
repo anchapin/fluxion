@@ -117,3 +117,37 @@ Slice-6 contracts (tests/mass_advance_contract.rs 20–22): internal-gain §C.3 
 live under the T5138 route (red pre-fix), solar route untouched by the decomposition,
 lumped-zone partition untouched.
 
+## UPDATE — loop round 123 (2026-11-09): the strict-gate sibling rows re-recorded
+
+Not an engine event. The r94 battery message records the scope exactly:
+"output_diff_baseline.csv: --update-baseline, 42 metrics, 13 moved (all
+low-mass conditioned)" — the CSV, fabric baseline, §7 headline pins and grid
+goldens were all re-recorded from the fix build (15466af4), but
+strict_energy_gate_baseline.json received only the 800_cooling GAP row
+(935.36 -> 912.58 pp; its value was completed by r102's CI-feedback commit
+2893310a). The other 12 sibling rows kept their r93-era values and gaps
+while the engine has printed today's readings since r94 — every moved value
+-S-pins to 8633dd15 in the CSV — so the strict gate held green only inside
+its 5 pp regression tolerance for fifteen rounds. The same miss-class as
+r100's ff_950ff rows (PR #4700).
+
+Re-recorded 2026-11-09 (branch physics/r123-broad-strict-rerecord, base
+da17d65d; Alex-approved 2026-11-08 23:33 ET "Do the re-record. Take on the
+new spike perf series for me"): 600/H 5.462->5.566 (gap 13.56->16.01), 600/C
+3.965->3.879 (16.59->18.08), 610/H 6.258->6.375 (29.57->32.27), 610/C
+2.379->2.312 (29.02->30.59), 620/H 7.159->7.281 (47.48->50.24), 620/C
+3.689->3.614 (0->0, pass holds), 630/H 7.833->7.964 (49.98->52.74), 630/C
+2.722->2.657 (0->0, pass holds), 640/H 3.366->3.443 (17.38->20.41), 640/C
+3.965->3.879 (13.75->15.29), 650/C 2.701->2.654 (25.85->26.88), 800/H
+5.462->5.566 (0->0, pass holds). Re-measured on canonical DRYCOLD at
+da17d65d before the edit (CI-verbatim battery r123): checker 13 PASS / 29
+KNOWN-FAIL / 0 REGRESSION — counts and PASS set unchanged, no row changes
+state, max worsening +3.03 pp (640/H). Statuses, bands,
+regression_tolerance_pp untouched; nothing tuned; engine untouched
+(data/docs-only PR). ff_950ff rows excluded — owned by PR #4700 (r100's
+byte-anchored re-record). Byte-stability across the Nov 8 merge wave
+(#4638/#4660/#4671/#4597/#4611 and ten more, 9fe6688d -> da17d65d):
+unshaded rows byte-identical (r118-capture anchored), 9R4C family
+byte-identical — the wave moved no strict row.
+
+
