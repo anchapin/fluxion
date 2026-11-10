@@ -1,0 +1,80 @@
+# Standard Results Report Drift Gate (Issue #4104)
+#
+# Regenerates the committed standard results report
+# (tests/reference_data/results_v1/standard_report.json — produced by the
+# `StandardReport::from_simulation` constructor via `fluxion --report`) into a
+# temp directory and byte-compares it against the committed tree. Any change
+# that alters the published report must regenerate + commit the reference in
+# the same PR; this gate fails the PR otherwise.
+#
+# Mirrors the topology drift gate (scripts/check_topology_drift.py, Issue
+# #3966). See docs/results_standard_report.md.
+
+name: Results Report Drift Gate (Issue #4104)
+
+on:
+  pull_request:
+    paths:
+      - 'src/api/report.rs'
+      - 'src/api/schema.rs'
+      - 'src/cli/**'
+      - 'schemas/results_v1.schema.json'
+      - 'scripts/check_results_report_drift.py'
+      - 'tests/reference_data/results_v1/**'
+      - 'examples/minimal.flux'
+      - '.github/workflows/results_report_drift.yml'
+  push:
+    branches: [main, develop]
+    paths:
+      - 'src/api/report.rs'
+      - 'src/api/schema.rs'
+      - 'src/cli/**'
+      - 'schemas/results_v1.schema.json'
+      - 'scripts/check_results_report_drift.py'
+      - 'tests/reference_data/results_v1/**'
+      - 'examples/minimal.flux'
+      - '.github/workflows/results_report_drift.yml'
+  workflow_dispatch:
+
+# Per-head_sha concurrency so sibling pushes of the same PR requeue in
+# parallel (so feature branches don't queue behind main).
+concurrency:
+  group: >-
+    ${{
+      github.workflow }}-
+      ${{ github.event.pull_request.head.sha
+      || github.ref
+    }}
+  cancel-in-progress: >-
+    ${{
+      github.event_name == 'push'
+      && contains('refs/heads/main,refs/heads/develop', github.ref)
+    }}
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  PYO3_USE_ABI3_FORWARD_COMPATIBILITY: 1
+
+jobs:
+  results-report-drift-gate:
+    name: "Standard Results Report Drift Gate (Issue #4104)"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+
+      - name: Build fluxion CLI (debug profile)
+        run: cargo build -p fluxion
+
+      - name: Run results-report drift gate (regenerate + byte-compare)
+        run: python3 scripts/check_results_report_drift.py --write-summary "$GITHUB_STEP_SUMMARY"
