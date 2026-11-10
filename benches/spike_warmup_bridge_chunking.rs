@@ -143,7 +143,7 @@ fn step_hour(
         Orientation::South,
         Some(0.2), // ground reflectance
         None,      // UTC offset
-        1.0, // full sky view — the spike is unshaded (sky-diffuse view factor, r120)
+        1.0,       // full sky view — the spike is unshaded (sky-diffuse view factor, r120)
     );
 
     let total_loads = 200.0 + solar_gain.total_gain_w; // 200 W internal + solar
