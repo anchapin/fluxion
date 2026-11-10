@@ -498,6 +498,15 @@ pub fn run_section7_case(def: &Section7CaseDef) -> Result<Section7CaseResult, St
         }
         _ => Vec::new(),
     };
+    // Loop round 120 (SOLAR-03): hoisted sky-diffuse view-factor share for the
+    // shaded-case transmitted rows (§6.2.1.3/.5) — same device geometry as the
+    // engine (spec gap r119, "Infinite" extension), overhang scope, isotropic
+    // radiometric convention. Time-invariant device geometry, so it computes
+    // once per case (the #1212/#1385 hoisting pattern).
+    let case_sky_vf = match (case_window_geom.as_ref(), case_overhang.as_ref()) {
+        (Some(g), Some(oh)) => fluxion::sim::shading::overhang_sky_diffuse_fraction(g, oh),
+        _ => 1.0,
+    };
     let mut case_transmitted_kwh_m2 = 0.0_f64;
 
     // Case 960 sun-zone free-float stats (zone index 1, sunspace). The
@@ -646,6 +655,7 @@ pub fn run_section7_case(def: &Section7CaseDef) -> Result<Section7CaseResult, St
             &[],
             &sun,
             Orientation::South.into(),
+            1.0, // unshaded reference window
         );
         annual_transmitted_south_kwh_m2 += gain_s.total_gain_w / 1000.0;
         if let (Some(g), Some(props), Some((_, ori))) =
@@ -664,6 +674,7 @@ pub fn run_section7_case(def: &Section7CaseDef) -> Result<Section7CaseResult, St
                 &case_fins,
                 &sun,
                 ori.into(),
+                case_sky_vf,
             );
             // Requirement form is kWh/m² of glazing (6.2.1.3.1/.4.1/.5.1);
             // the engine gain is area-scaled watts, so normalise by the
@@ -710,6 +721,7 @@ pub fn run_section7_case(def: &Section7CaseDef) -> Result<Section7CaseResult, St
                 &[],
                 &sun,
                 Orientation::South.into(),
+                1.0, // unshaded reference window
             );
             d.transmitted_south_wh_m2[h] = gain.total_gain_w;
             d.sky_temp_c[h] = sky_temp_c;
@@ -1479,12 +1491,14 @@ fn section621_value_pins() {
         by_id("610")
             .req_6213_shaded_south_transmitted_kwh_m2
             .unwrap(),
-        // Re-pinned loop round 119 (2026-11-08): the overhang-gap fix
-        // (spec-true roof-edge mounting, 0.5 m above the 2.2 m head —
-        // Figure 5-32 + the UM reference inputs) un-shades the head strip,
-        // raising the transmitted figure 529.44 → 643.03 kWh/m². Was
-        // 529.44 (recorded 2026-10-18, loop round 62).
-        643.03,
+        // Re-pinned loop round 120 (2026-11-08): the sky-diffuse view-factor
+        // reduction (SOLAR-03 round-119 scoped remainder) scales the diffuse
+        // component by the window-area-averaged isotropic visible-sky share
+        // (overhang scope; CSE's wnVfSkyDf = 0.3936 primary-source anchor),
+        // lowering the shaded-south transmitted 643.03 → 504.59 kWh/m².
+        // Was 643.03 (re-pinned loop round 119, the overhang-gap fix, from
+        // 529.44 recorded 2026-10-18, loop round 62).
+        504.59,
     );
     pin_check(
         "620",
@@ -1496,10 +1510,11 @@ fn section621_value_pins() {
         by_id("630")
             .req_6215_shaded_west_transmitted_kwh_m2
             .unwrap(),
-        // Re-pinned loop round 119 (2026-11-08): same overhang-gap fix —
-        // the E/W overhang mounts at the roof edge (0.5 m gap), raising
-        // transmitted 324.44 → 365.88 kWh/m². Was 324.44 (round 62).
-        365.88,
+        // Re-pinned loop round 120 (2026-11-08): same sky-diffuse
+        // view-factor reduction on the E/W device — transmitted
+        // 365.88 → 253.63 kWh/m². Was 365.88 (re-pinned loop round 119,
+        // the overhang-gap fix, from 324.44 recorded round 62).
+        253.63,
     );
     // Cross-checks against the round-48/53 reference quantities: the
     // shaded-south figure must sit below the 6.2.1.2.2 unshaded south

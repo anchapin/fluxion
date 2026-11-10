@@ -1,5 +1,5 @@
 {
-  "_doc": "Known structural-failure baseline for the ASHRAE 140 strict +/-15% annual-energy gate (issue #2506, extended in issue #3572 to cover the eight cases 600/800/810/900/920/950/960/970). The Case 600/900 annual COOLING physics gap is NOT yet fixed (tracked by the post-#1323 / #1213 / #1328 cooling-load chain); these two metrics are expected to FAIL the +/-15% band today. The strict-energy-gate workflow runs the eight `#[ignore]`'d strict tests with `--include-ignored`, parses the printed H/C values, computes each metric's gap as a percentage of the band midpoint, and compares against this baseline. The gate FAILS only when a metric REGRESSES beyond `regression_tolerance_pp` percentage points worse than its recorded `gap_pct_of_mid` (or when a previously-`pass` metric starts failing beyond the tolerance). When the physics is fixed and a cooling metric re-enters its band (gap == 0), lower its value here and eventually un-ignore the tests (issues #1333 / #2506 / #3572 acceptance). Do NOT raise a baseline gap to make a regression disappear (RULES.md: no parameter tuning). Updated 2026-09-29 by PR #4265 (Issue #4156): unified HVAC coefficient. Refreshed 2026-09-30 by the PR #4265 follow-up to also reflect the Case 900 H, Case 960 H, and the 13 other per-case measurements not covered by the original PR. The original PR's `value_mwh=3.144, gap_pct_of_mid=65.36` for Case 900 H was internally inconsistent (the gap did not correspond to the value under the standard band_pct_of_mid formula) and has been corrected to the measured 3.723/116.95 pair. Re-recorded 2026-10-12 (loop round 18, issue #4168, PR branch): the Case 800/810 published_range_mwh entries are now the transcribed ASHRAE 140-2023 Annex B8 \u00a7B8.1 inter-program envelope (Std140_TF_Results.pdf Tables B8-1..B8-4, pp. 8-11), replacing the synthetic-fitted ranges; engine values 7.039/3.591/1.680/1.684 re-measured unchanged on the round-18 branch (deterministic, byte-identical to the prior capture); gaps recomputed against the new band midpoints. Statuses remain known_fail \u2014 no gap was raised or lowered to hide anything; the 810 cooling gap FELL (46.73 -> 1.10) purely because the synthetic band it was measured against was itself unfit. Re-recorded 2026-11-08 (loop round 119, the overhang roof-edge mounting fix): the four shaded-case entries (610/630/910/930, H and C) re-measured on the spec-true geometry \u2014 the ASHRAE 140 overhang mounts at the roof edge, 0.5 m above the 2.2 m window head (Figure 5-32; the standard's own reference inputs: UM E+ vertices Z=2.700000, CSE ohDistUp=0.5 m) \u2014 replacing loop round 4's gap-0 wiring, which cited Case-630 wording absent from both primary sources and over-shaded every shaded case. All 30 unshaded entries re-measured byte-identical to the round-118 capture. No gap raised or lowered to hide anything: the 910 heating/cooling gaps rise from 0.00 to 15.22/11.19 because the physics-correct geometry moves Case 910 out of its recorded band positions (heating below, cooling above) \u2014 statuses pass -> known_fail on those two rows, recorded not tuned per the fidelity-first direction; 630 cooling and 930 cooling hold PASS at their new values; the quarantined 610/630/930 heating rows narrow. Contracts: tests/shading_geometry_contract.rs (red-first got 0.0/want 0.5; teeth x3; Python-replicated closed forms).",
+  "_doc": "Known structural-failure baseline for the ASHRAE 140 strict +/-15% annual-energy gate (issue #2506, extended in issue #3572 to cover the eight cases 600/800/810/900/920/950/960/970). The Case 600/900 annual COOLING physics gap is NOT yet fixed (tracked by the post-#1323 / #1213 / #1328 cooling-load chain); these two metrics are expected to FAIL the +/-15% band today. The strict-energy-gate workflow runs the eight `#[ignore]`'d strict tests with `--include-ignored`, parses the printed H/C values, computes each metric's gap as a percentage of the band midpoint, and compares against this baseline. The gate FAILS only when a metric REGRESSES beyond `regression_tolerance_pp` percentage points worse than its recorded `gap_pct_of_mid` (or when a previously-`pass` metric starts failing beyond the tolerance). When the physics is fixed and a cooling metric re-enters its band (gap == 0), lower its value here and eventually un-ignore the tests (issues #1333 / #2506 / #3572 acceptance). Do NOT raise a baseline gap to make a regression disappear (RULES.md: no parameter tuning). Updated 2026-09-29 by PR #4265 (Issue #4156): unified HVAC coefficient. Refreshed 2026-09-30 by the PR #4265 follow-up to also reflect the Case 900 H, Case 960 H, and the 13 other per-case measurements not covered by the original PR. The original PR's `value_mwh=3.144, gap_pct_of_mid=65.36` for Case 900 H was internally inconsistent (the gap did not correspond to the value under the standard band_pct_of_mid formula) and has been corrected to the measured 3.723/116.95 pair. Re-recorded 2026-10-12 (loop round 18, issue #4168, PR branch): the Case 800/810 published_range_mwh entries are now the transcribed ASHRAE 140-2023 Annex B8 \u00a7B8.1 inter-program envelope (Std140_TF_Results.pdf Tables B8-1..B8-4, pp. 8-11), replacing the synthetic-fitted ranges; engine values 7.039/3.591/1.680/1.684 re-measured unchanged on the round-18 branch (deterministic, byte-identical to the prior capture); gaps recomputed against the new band midpoints. Statuses remain known_fail \u2014 no gap was raised or lowered to hide anything; the 810 cooling gap FELL (46.73 -> 1.10) purely because the synthetic band it was measured against was itself unfit. Re-recorded 2026-11-08 (loop round 119, the overhang roof-edge mounting fix): the four shaded-case entries (610/630/910/930, H and C) re-measured on the spec-true geometry \u2014 the ASHRAE 140 overhang mounts at the roof edge, 0.5 m above the 2.2 m window head (Figure 5-32; the standard's own reference inputs: UM E+ vertices Z=2.700000, CSE ohDistUp=0.5 m) \u2014 replacing loop round 4's gap-0 wiring, which cited Case-630 wording absent from both primary sources and over-shaded every shaded case. All 30 unshaded entries re-measured byte-identical to the round-118 capture. No gap raised or lowered to hide anything: the 910 heating/cooling gaps rise from 0.00 to 15.22/11.19 because the physics-correct geometry moves Case 910 out of its recorded band positions (heating below, cooling above) \u2014 statuses pass -> known_fail on those two rows, recorded not tuned per the fidelity-first direction; 630 cooling and 930 cooling hold PASS at their new values; the quarantined 610/630/930 heating rows narrow. Contracts: tests/shading_geometry_contract.rs (red-first got 0.0/want 0.5; teeth x3; Python-replicated closed forms). Re-recorded 2026-11-08 (loop round 120, the sky-diffuse view-factor reduction, SOLAR-03 scoped remainder from round 119): the shading device now reduces the SKY-DIFFUSE component by the window-area-averaged isotropic visible-sky share (overhang_sky_diffuse_fraction: Simpson-4096 azimuth x 64x64 midpoint grid, Python-twin pinned, scheme-vs-continuum bound 8e-6; computed once at spec-to-surface wiring and stored on WallSurface), replacing the beam-only pass-through recorded since round 4. Primary-source premise: the UM 140-2023 7.2.2.1.1 CSE worked example carries wnVfSkyDf = 0.39363710370433924 for the Case-610 device; CSE's exact weighting law is unattributable while its engine source sits in the 403-blocked 140-2023 accompanying files (isotropic geometric value for the same window: 0.4398 asymmetric twin; CIE-overcast 0.4148; zenith-k sweep in LOOP120.md) - the radiometric isotropic convention is pinned and the residual recorded, not tuned. All 34 unshaded entries re-measured byte-identical (1.0 is an exact IEEE identity in the diffuse fold; 950FF Tmin -15.96 unchanged - the pre-existing round-113-era drift stays as recorded, Alex's call). Shaded-case movement (battery values, physics-directional throughout: less diffuse through the device, heating rises, cooling falls): 610 H 5.821 -> 6.365 (gap 19.47 -> 32.04), 610 C 2.818 -> 2.071 (18.68 -> 36.26), 630 H 7.789 -> 8.313 (49.06 -> 60.09), 630 C 3.005 -> 2.394 (PASS -> known_fail at 0.21pp, 0.006 MWh below the band edge), 910 H 1.330 -> 1.570 (15.22 -> 2.62), 910 C 1.692 -> 1.271 (RE-ENTERS the band: known_fail -> pass at 0.00), 930 H 2.537 -> 2.772 (20.84 -> 14.90), 930 C 2.082 -> 1.714 (PASS held at 0.00). No gap raised or lowered to hide anything - the movements are the recorded cost and benefit of the physics-correct diffuse reduction, per the fidelity-first direction. Contracts: tests/shading_geometry_contract.rs (+7; teeth x3; wiring pin stash-verified red).",
   "_doc_issue3572": "Cases 800 / / 810 are tracked as `known_fail` here even though they lack a formal structural LIMIT entry in docs/KNOWN_ISSUES.md (as of 2026-10-12, loop round 19, they carry formal entries: 800 -> \u00a7LIMIT-25, 810 -> \u00a7LIMIT-26). Per RULES.md (\"never raise baselines to hide regressions\") we mark the current measured gap as `known_fail` rather than claiming pass; DONE 2026-10-12 (loop round 19): \u00a7LIMIT-25 / \u00a7LIMIT-26 entries were added to docs/KNOWN_ISSUES.md, co-locating the structural rationale with this failure record. Cases 920 / 950 / 960 / 970 each have a documented LIMIT entry (920 -> \u00a7LIMIT-05 UPDATE #2453 cohort, 950 -> -> \u00a7LIMIT-17 / \u00a7LIMIT-24, 960 -> \u00a7LIMIT-14, 970 -> \u00a7LIMIT-23).",
   "_rule": "Per AGENTS.md / RULES.md: this file records the KNOWN gap; it must never be loosened to hide a regression. Only lower a gap when the engine genuinely improved, and commit the improving change together with the baseline update.",
   "captured_commit": "round 100 vent-slice (physics/r100-vent-no-forced-convection, tip bccb3ebb: #1279/#2871/#1624 forced-convection h_tr_is multiplier removed per ASHRAE 140-2017 section 5.2.1.10.1; case_950_cooling 0.918 MWh / 27.07 pp (round-93 record) -> 0.961 MWh / 33.72 pp; other 41 metrics unchanged, local battery r100c; known_fail kept, nothing tuned)",
@@ -228,8 +228,8 @@
         3.68,
         4.978
       ],
-      "value_mwh": 5.821,
-      "gap_pct_of_mid": 19.47,
+      "value_mwh": 6.365,
+      "gap_pct_of_mid": 32.04,
       "status": "known_fail"
     },
     "case_610_cooling": {
@@ -241,8 +241,8 @@
         3.612,
         4.887
       ],
-      "value_mwh": 2.818,
-      "gap_pct_of_mid": 18.68,
+      "value_mwh": 2.071,
+      "gap_pct_of_mid": 36.26,
       "status": "known_fail"
     },
     "case_620_heating": {
@@ -280,8 +280,8 @@
         4.035,
         5.46
       ],
-      "value_mwh": 7.789,
-      "gap_pct_of_mid": 49.06,
+      "value_mwh": 8.313,
+      "gap_pct_of_mid": 60.09,
       "status": "known_fail"
     },
     "case_630_cooling": {
@@ -293,9 +293,9 @@
         2.4,
         3.247
       ],
-      "value_mwh": 3.005,
-      "gap_pct_of_mid": 0.0,
-      "status": "pass"
+      "value_mwh": 2.394,
+      "gap_pct_of_mid": 0.21,
+      "status": "known_fail"
     },
     "case_640_heating": {
       "published_range_mwh": [
@@ -358,8 +358,8 @@
         1.62,
         2.191
       ],
-      "value_mwh": 1.33,
-      "gap_pct_of_mid": 15.22,
+      "value_mwh": 1.57,
+      "gap_pct_of_mid": 2.62,
       "status": "known_fail"
     },
     "case_910_cooling": {
@@ -371,9 +371,9 @@
         1.139,
         1.542
       ],
-      "value_mwh": 1.692,
-      "gap_pct_of_mid": 11.19,
-      "status": "known_fail"
+      "value_mwh": 1.271,
+      "gap_pct_of_mid": 0.0,
+      "status": "pass"
     },
     "case_930_heating": {
       "published_range_mwh": [
@@ -384,8 +384,8 @@
         3.361,
         4.547
       ],
-      "value_mwh": 2.537,
-      "gap_pct_of_mid": 20.84,
+      "value_mwh": 2.772,
+      "gap_pct_of_mid": 14.9,
       "status": "known_fail"
     },
     "case_930_cooling": {
@@ -397,7 +397,7 @@
         1.621,
         2.194
       ],
-      "value_mwh": 2.082,
+      "value_mwh": 1.714,
       "gap_pct_of_mid": 0.0,
       "status": "pass"
     },

@@ -4016,3 +4016,90 @@ reference engines shade diffuse through the device too (E+ shadowing; the CSE
 input carries the post-shade `wnVfSkyDf = 0.3936`). Engine-side diffuse
 view-factor reduction is the scoped remainder (LOOP119.md) — a design-sized
 change with its own premise work, not bundled here.
+
+## §66 — Round 120: the sky-diffuse view-factor reduction — the §65 scoped remainder landed
+
+**Premise (primary source, re-verified this round):** the User's Manual
+140-2023 §7.2.2.1.1 CSE worked example carries the post-shade sky view
+factor `wnVfSkyDf = 0.39363710370433924` for the Case-610 device
+(`ohDepth = 3.28084 ft = 1.0 m`, `ohDistUp = 1.64042 ft = 0.5 m`,
+`ohExL/ohExR = 1.64042/14.76378 ft = 0.5/4.5 m`, mirrored per window) —
+the reference engines shade SKY-DIFFUSE through the device too, while
+fluxion applied shading to the beam component only since round 4.
+
+**Formulation premise work (Python-first, `/tmp/r120_svf_twin.py` +
+`/tmp/r120_variants.py`):** under isotropic sky radiance the transmitted
+sky-diffuse scales with the window-area-averaged visible solid-angle
+share. The blocked elevation band per azimuth is
+[max(α1, β_side), π/2), α1 = atan2(a, depth): high-elevation rays hit
+the plane close-in (the premise-work inversion of this band was caught
+by the Monte-Carlo crossing test — closed form 0.060193 vs MC 0.060016
+blocked after the fix), low-elevation rays pass beyond the outer edge,
+and steep-azimuth rays escape past the device's side edges. Numerics:
+composite Simpson 4096 azimuth intervals × 64×64 midpoint area grid;
+scheme-vs-continuum bound 8e-6 vs a Gauss–Legendre 2048 × 512×512
+reference. **Recorded, NOT tuned:** CSE's constant is NOT the isotropic
+geometric value — isotropic gives 0.4398 for the CSE window (asymmetric
+twin), CIE-overcast 0.4148, no-side-escape 0.4105–0.4367, single points
+0.22–0.48, and the zenith-weighting family L ∝ (1+k·sinβ)/(1+k) reaches
+0.3936 only at unnatural k — CSE's engine source sits in the
+403-blocked 140-2023 accompanying files, so the weighting law is
+unattributable today. The radiometric (isotropic) convention is pinned
+and the residual recorded; the symmetric-infinite extension wiring
+costs 0.0017 of sky share vs the deck-equivalent asymmetric aggregate
+(0.43681 vs 0.43848) — both recorded in KNOWN_ISSUES §SOLAR-03.
+
+**Fix architecture:** the share is time-invariant device geometry —
+computed ONCE at spec-to-surface wiring (`from_spec_with_selector`,
+next to the §65 gap computation, from the surface's own spec dims with
+the area-heuristic fallback replicated) and stored on
+`WallSurface::sky_diffuse_view_factor` (default 1.0); the per-timestep
+solar loop only reads it (first shaded surface per orientation,
+mirroring the overhang lookup). The fold into
+`calculate_window_solar_gain`/`_with_diagnostics` multiplies
+`diffuse_shgc` by the share; 1.0 is an exact IEEE identity, so unshaded
+rows stay byte-identical. **The first cut hoisted the quadrature inside
+the per-timestep zone-solar call instead: 8760 steps × ~17M ops per
+orientation stalled the annual sims minutes each and the battery was
+killed before any re-record — no recorded value ever came from the slow
+shape** (caught before landing; the wiring-time storage is the fix).
+Scope: overhang only — fins' lateral diffuse bands stay open (the UM
+Part I carries only the 610 CSE SHADE block; no fin anchor in-repo);
+ground-reflected needs no reduction under a horizontal device (its rays
+travel downward and never intersect the plane).
+
+**TDD chain:** contracts +7 in `tests/shading_geometry_contract.rs` —
+CSE-window (symmetric-extension) pin 0.44246590150138188, aggregate pin
+0.43680912770685504 (both Python-twin values, 1e-9), zero-depth
+full-sky, depth monotonicity, application fold (pinned constant),
+unshaded bit-identity, engine-attached wiring (shaded 610 carries the
+stored share; unshaded 600 carries exactly 1.0). Red-first: quadrature
+pins got 1.0 against the stub body returning the old pass-through
+share; the wiring pin got 1.0 against the unwired field
+(stash-verified). Teeth ×3, each failing exactly its predicted set: T1
+band inversion {both pins + monotonicity}, T2 center-point {both pins},
+T3 fold revert {application}. Honest value-blind spots recorded: the
+g=0 side tie and the cos γ ≤ 0 skip are structural (never fire at the
+pinned geometries). One contract false-start, corrected before landing:
+the CSE-window pin was first taken at the asymmetric twin geometry
+(0.4398) while the engine's `Overhang` carries one symmetric extension
+— the pin now pins the symmetric case with the asymmetric values
+recorded here and in §SOLAR-03.
+
+**Movement (battery, canonical DRYCOLD, CI-verbatim; exactly the 8
+shaded rows moved, all unshaded rows byte-identical):** 610 H 5.821 →
+6.365 (gap 19.47 → 32.04) / C 2.818 → 2.071 (18.68 → 36.26); 630 H
+7.789 → 8.313 (49.06 → 60.09) / C 3.005 → 2.394 (leaves its band,
+0.21pp); 910 H 1.330 → 1.570 (15.22 → 2.62) / C 1.692 → 1.271
+(RE-ENTERS its band — known_fail → pass); 930 H 2.537 → 2.772 (20.84 →
+14.90) / C 2.082 → 1.714 (PASS held). Physics-directional throughout:
+the device shades sky-diffuse, so shaded-case heating rises and cooling
+falls. Verdict after re-record: 11 PASS / 31 KNOWN-FAIL (tracked) / 0
+REGRESSION. Output-diff re-recorded (42 metrics; only shaded rows
+beyond epsilon; 950FF Tmin −15.96 unchanged — the §65-recorded
+pre-existing environmental drift stays pending Alex's word). §7
+transmitted-solar re-pins: 610 643.03 → 504.59, 630 365.88 → 253.63
+kWh/m² (620 unshaded west unchanged 457.30); both CSVs re-emitted;
+QUARANTINE 910 row updated (C re-enters, H improved, row stays
+`pending` until both hold). Commits: increment `f66743c1`, re-record
+`71050647`. Attribution: claude (OS3 physics loop r120).

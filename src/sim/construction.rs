@@ -65,6 +65,13 @@ pub struct WallSurface {
     /// shading-geometry call. Populated by `from_spec_with_selector` from the
     /// case's `windows` list; `None` falls back to the area heuristic.
     pub window_dims: Option<WindowDims>,
+    /// Sky-diffuse visible-sky share for the attached overhang (loop round
+    /// 120, SOLAR-03): the window-area-averaged isotropic-sky view factor
+    /// through the device, in (0, 1]. Time-invariant device geometry —
+    /// computed ONCE at spec-to-surface wiring (`from_spec_with_selector`)
+    /// and only READ by the per-timestep solar loop; 1.0 = no device (an
+    /// exact IEEE identity in the diffuse fold).
+    pub sky_diffuse_view_factor: f64,
     /// Optional multi-layer wall specification (Issue #3272 / umbrella #3291).
     ///
     /// `None` preserves the existing single-U-value behaviour used by the
@@ -101,6 +108,7 @@ impl WallSurface {
             overhang: None,
             fins: Vec::new(),
             window_dims: None,
+            sky_diffuse_view_factor: 1.0,
             wall_spec: None,
         }
     }
