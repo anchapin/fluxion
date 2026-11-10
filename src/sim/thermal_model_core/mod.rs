@@ -584,6 +584,7 @@ where
         // previous sample (`*_has_prev = false`).
         self.0.mass.r71_air_driver_num_prev = T::from(VectorField::from_scalar(0.0, n));
         self.0.mass.r71_air_driver_den_prev = T::from(VectorField::from_scalar(0.0, n));
+        self.0.mass.r71_num_prev_load_slope = T::from(VectorField::from_scalar(0.0, n));
         self.0.mass.r90_phi_st_prev = T::from(VectorField::from_scalar(0.0, n));
         self.0.mass.r90_phi_m_prev = T::from(VectorField::from_scalar(0.0, n));
         self.0.mass.r75_vent_term_prev = T::from(VectorField::from_scalar(0.0, n));
@@ -1206,20 +1207,73 @@ impl ThermalModel<VectorField> {
                 if let Some(shading) = &spec.shading {
                     match shading.shading_type {
                         ShadingType::Overhang | ShadingType::OverhangAndFins if win_area > 0.0 => {
-                            // ASHRAE 140 mounts the overhang AT the top of the
-                            // window (Case 630/930 spec: "1 m horizontal overhang,
-                            // projection from the plane of the glass, at the top of
-                            // the window"; Case 610/910 same south overhang) — gap 0.
-                            // The old `(mounting_height - window_top).max(0)` with
-                            // mounting_height = wall height (2.7) vs window top
-                            // (sill 0.2 + height 2.0 = 2.2) invented a phantom
-                            // 0.5 m gap that under-shaded every shaded case
-                            // (§LIMIT-39 loop round 4, 2026-10-09).
-                            surface.overhang = Some(Overhang {
+                            // ASHRAE 140 mounts the overhang at the ROOF EDGE,
+                            // 0.5 m above the 2.2 m window head (Figure 5-32;
+                            // head = sill 0.2 + height 2.0, wall top 2.7 m,
+                            // Figure 5-1). The standard's reference inputs
+                            // agree: UM E+ vertices Z = 2.700000, CSE
+                            // ohDistUp = 1.64042 ft = 0.5 m; the E/W devices
+                            // (Cases 630/930) reuse it (§5.2.2.1.2.1). Round 4
+                            // set gap 0 citing wording absent from both
+                            // sources — over-shading every shaded case; fixed
+                            // round 119, pinned by
+                            // tests/shading_geometry_contract.rs (full record:
+                            // limit-35 doc §65). Red-first got 0.0, want 0.5.
+                            let spec_gap = spec
+                                .windows
+                                .get(zone_idx)
+                                .and_then(|ws| ws.iter().find(|w| w.orientation == orientation))
+                                .or_else(|| {
+                                    // Multi-zone cases store windows only on
+                                    // zone 0 in some builders — same fallback
+                                    // as the window-dims threading above.
+                                    spec.windows.first().and_then(|ws| {
+                                        ws.iter().find(|w| w.orientation == orientation)
+                                    })
+                                })
+                                .map(|w| {
+                                    (shading.mounting_height - (w.sill_height + w.height)).max(0.0)
+                                })
+                                .unwrap_or(0.0); // no spec dims: legacy gap-0 fallback
+                            let overhang = Overhang {
                                 depth: shading.overhang_depth,
-                                distance_above: 0.0,
+                                distance_above: spec_gap,
                                 extension: 10.0, // "Infinite"
-                            });
+                            };
+                            // Loop round 120 (SOLAR-03): the sky-diffuse
+                            // visible-sky share is time-invariant device
+                            // geometry — computed ONCE here at wiring and
+                            // stored on the surface; the per-timestep solar
+                            // loop only reads it. (The quadrature must never
+                            // sit in the hourly path: 8760 steps x ~17M ops
+                            // per orientation adds minutes per annual sim —
+                            // caught by the stalled r120 battery before any
+                            // re-record.) Geometry: the surface's own spec
+                            // dims (the same entry the gap above reads); the
+                            // engine's area-heuristic fallback replicated
+                            // when absent, so the stored share always matches
+                            // the geometry the shaded-fraction path builds.
+                            let (w_dim, h_dim, sill_dim) = match surface.window_dims {
+                                Some(d) => (d.width, d.height, d.sill_height),
+                                None => {
+                                    let w0 = (win_area / 1.5_f64).sqrt();
+                                    (w0, win_area / w0, 0.8)
+                                }
+                            };
+                            let shade_geom = fluxion_core::ashrae_cases::WindowArea {
+                                area: win_area,
+                                orientation,
+                                height: h_dim,
+                                width: w_dim,
+                                sill_height: sill_dim,
+                                left_offset: 0.0,
+                            };
+                            surface.sky_diffuse_view_factor =
+                                crate::sim::shading::overhang_sky_diffuse_fraction(
+                                    &shade_geom,
+                                    &overhang,
+                                );
+                            surface.overhang = Some(overhang);
                         }
                         _ => {}
                     }
@@ -4066,6 +4120,7 @@ impl ThermalModel<VectorField> {
                 r70_surface_node_temperatures_prev: None,
                 r71_air_driver_num_prev: VectorField::from_scalar(0.0, num_zones),
                 r71_air_driver_den_prev: VectorField::from_scalar(0.0, num_zones),
+                r71_num_prev_load_slope: VectorField::from_scalar(0.0, num_zones),
                 r90_phi_st_prev: VectorField::from_scalar(0.0, num_zones),
                 r90_phi_m_prev: VectorField::from_scalar(0.0, num_zones),
                 r75_vent_term_prev: VectorField::from_scalar(0.0, num_zones),

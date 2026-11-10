@@ -18,6 +18,14 @@
 //!   [`CaseSpec`] (the "`.flux`" model): Version, Timestep, RunPeriod,
 //!   Building, Zone, Material, Construction, BuildingSurface:Detailed,
 //!   GlobalGeometryRules and Site:GroundTemperature:BuildingSurface.
+//! - [`export_schema`] — full standalone export of a
+//!   [`crate::api::schema::SimulationSchemaV1`] model (issue #4702):
+//!   zones, envelope surfaces, glazing
+//!   (`FenestrationSurface:Detailed` + `WindowMaterial:Glazing` /
+//!   `WindowMaterial:SimpleGlazingSystem`) and — for the `Ideal`
+//!   template — the `ZoneHVAC` equipment chain. Anything the export
+//!   cannot represent is reported as an explicit `! LOSS: …` note in
+//!   the exported text.
 //!
 //! # Determinism / idempotence
 //!
@@ -85,6 +93,12 @@
 //!   loads) — those are the subject of a later export slice; the
 //!   `CaseSpec` fields that carry them are not written out here.
 //!
+//! The exclusions above are scoped to [`export_case_spec_envelope`]
+//! only. The **schema** export ([`export_schema`]) *does* write glazing
+//! and — for the `Ideal` template — the HVAC equipment chain, because the
+//! [`crate::api::schema::SimulationSchemaV1`] model carries the data
+//! those objects need.
+//!
 //! # Surface field layout
 //!
 //! `BuildingSurface:Detailed` is emitted with the **same field layout
@@ -110,7 +124,11 @@
 
 use std::io::{self, Write};
 
+use crate::api::schema::{SimulationSchemaV1, WindowSpec};
 use crate::ashrae_cases::CaseSpec;
+use crate::sim::hvac::HVACSystemType;
+use crate::sim::per_surface_conduction::SurfaceKind;
+use crate::validation::ashrae_140_cases::Orientation;
 
 use super::parser::{IdfFile, IdfObject, IdfValue};
 
@@ -543,6 +561,943 @@ fn value_int(value: i64) -> IdfValue {
 
 fn value_empty() -> IdfValue {
     IdfValue::Empty
+}
+
+// ---------------------------------------------------------------------------
+// Schema (SimulationSchemaV1) export — issue #4702
+// ---------------------------------------------------------------------------
+
+/// Prefix of every loss note written by [`export_schema`].
+///
+/// A loss note is a **comment line** in the exported IDF text:
+///
+/// ```text
+/// ! LOSS: <object/feature dropped> — <reason>
+/// ```
+///
+/// Exactly one note is written per dropped feature, so a reader of the
+/// exported file can see what the export could not represent. Nothing is
+/// ever dropped silently.
+const LOSS_NOTE_PREFIX: &str = "! LOSS: ";
+
+/// Conductivity (W/m·K) written into the emitted
+/// `WindowMaterial:SimpleGlazingSystem` objects.
+const GLAZING_CONDUCTIVITY: f64 = 0.9;
+
+/// Ground temperature (°C) written by [`export_schema`].
+///
+/// The simulation schema carries no ground-temperature field, so a flat
+/// ASHRAE 140 default is written for every month.
+const SCHEMA_GROUND_TEMPERATURE_C: f64 = 18.0;
+
+/// Export a [`SimulationSchemaV1`] model to a **standalone** IDF file.
+///
+/// The emitted text is a complete EnergyPlus input file — it carries its
+/// own `Version`, `Timestep`, `RunPeriod`, `Building`, `Zone`,
+/// `Material` / `Construction`, `BuildingSurface:Detailed` envelope,
+/// glazing and HVAC objects. It is *not* a set of fragments to append to
+/// another file.
+///
+/// # What is emitted
+///
+/// - **Envelope** — one `BuildingSurface:Detailed` per zone surface.
+///   When the model declares per-surface geometry
+///   ([`crate::api::schema::Geometry::surfaces`]) those surfaces are
+///   exported verbatim (their vertex loop when present); otherwise a
+///   rectangular box is synthesised from the zone's floor area, volume
+///   and height.
+/// - **Glazing** — every [`WindowSpec`] becomes a
+///   `FenestrationSurface:Detailed` whose parent is a
+///   `BuildingSurface:Detailed` **emitted by the same export** (the
+///   importer silently skips a window whose parent cannot be resolved,
+///   so an exportable window always has a parent). The glazing
+///   properties are written as a `WindowMaterial:SimpleGlazingSystem`
+///   (Name, U-Factor, SHGC, Conductivity) — the only EnergyPlus window
+///   material that carries an explicit U-factor and SHGC — plus a
+///   `WindowMaterial:Glazing` object holding the spectral material data.
+///   The window `Construction` references the
+///   `WindowMaterial:SimpleGlazingSystem` layer, because a construction
+///   built only from `WindowMaterial:Glazing` yields no U-value at all
+///   (see `super::convert::window_spec_from_construction`).
+/// - **HVAC** — when [`crate::api::schema::ControlSet::hvac_system`] is
+///   [`HVACSystemType::Ideal`], a
+///   `ZoneHVAC:EquipmentConnections` → `ZoneHVAC:EquipmentList` →
+///   `ZoneHVAC:IdealLoadsAirSystem` chain is emitted for **every** zone,
+///   so the re-imported schema recovers
+///   `controls.hvac_system == Some(HVACSystemType::Ideal)`. Any other
+///   template has no IDF equipment-chain mapping and is reported as a
+///   loss note.
+///
+/// # Loss notes
+///
+/// A feature that cannot be represented in IDF is **never dropped
+/// silently**: one comment line of the form
+///
+/// ```text
+/// ! LOSS: <object/feature dropped> — <reason>
+/// ```
+///
+/// is written into the exported text (at the end of the file), one per
+/// dropped feature. The currently documented loss notes are:
+///
+/// | Dropped feature | Note text (after the `! LOSS: ` prefix) |
+/// |---|---|
+/// | a non-`Ideal` HVAC template | `HVAC template {name} — only the Ideal template maps to an IDF ZoneHVAC equipment chain; no HVAC objects were written` |
+/// | a window with an undetermined glazing area | `window on {parent} — the glazing area is zero or undetermined (window_area <= 0 and no window_to_wall_ratio)` |
+/// | a window larger than its host surface | `window on {parent} — the glazing area {area} m² exceeds the host surface area {host} m²` |
+/// | a window with a non-positive U-value | `window on {parent} — the glazing U-value {u} W/m²K is not positive, so no glazing system was written` |
+/// | a window whose host surface was not exported | `window on surface {id} — the host surface was not exported, so the window has no parent` |
+/// | a surface with an unknown area | `surface {id} — the area is unknown (neither an area nor a vertex loop was given)` |
+/// | glazing on the floor construction | `window on the floor construction — floor glazing is not representable in an IDF` |
+///
+/// # Round-trip guarantees
+///
+/// The exported text re-imports through the merged importers:
+///
+/// - the **window area and U-value** through the `CaseSpec` importer
+///   path (`super::convert::case_spec_from_idf`, which derives the area
+///   from the fenestration polygon and the U-value from the
+///   construction's `WindowMaterial:SimpleGlazingSystem`), and
+/// - the **HVAC assignment** through the schema importer path
+///   (`TryFrom<&IdfFile> for SimulationSchemaV1`), which reads the
+///   `ZoneHVAC:IdealLoadsAirSystem` chain of the first zone.
+pub fn export_schema(schema: &SimulationSchemaV1) -> String {
+    let mut out = String::new();
+    let mut losses: Vec<String> = Vec::new();
+
+    // --- Site-level objects --------------------------------------------
+    write_object(
+        &mut out,
+        &object("Version", vec![value_string(EXPORT_VERSION)]),
+    );
+    write_object(
+        &mut out,
+        &object("Timestep", vec![value_int(EXPORT_TIMESTEP)]),
+    );
+    write_object(
+        &mut out,
+        &object(
+            "RunPeriod",
+            vec![
+                value_string("AnnualRun"),
+                value_int(1),  // begin month
+                value_int(1),  // begin day
+                value_empty(), // begin year
+                value_int(12), // end month
+                value_int(31), // end day
+                value_empty(), // end year
+                value_string("Tuesday"),
+                value_string("No"),
+                value_string("No"),
+                value_string("No"),
+                value_string("No"),
+                value_string("No"),
+            ],
+        ),
+    );
+    let building_name = if schema.metadata.name.trim().is_empty() {
+        "FluxionModel".to_string()
+    } else {
+        schema.metadata.name.clone()
+    };
+    write_object(
+        &mut out,
+        &object(
+            "Building",
+            vec![
+                value_string(&building_name),
+                value_real(0.0), // north axis
+                value_string("City"),
+                value_real(0.04),
+                value_real(0.4),
+                value_string("FullExterior"),
+                value_int(25),
+            ],
+        ),
+    );
+
+    // --- Zones -----------------------------------------------------------
+    for (index, zone) in schema.geometry.zones.iter().enumerate() {
+        write_object(&mut out, &zone_object(index, zone));
+    }
+
+    // --- Materials and constructions ------------------------------------
+    let mut materials: Vec<IdfObject> = Vec::new();
+    let mut material_names: Vec<String> = Vec::new();
+    for (name, construction) in schema_constructions(schema) {
+        for layer in &construction.layers {
+            if material_names.iter().any(|m| m == &layer.name) {
+                continue;
+            }
+            material_names.push(layer.name.clone());
+            materials.push(object(
+                "Material",
+                vec![
+                    value_string(&layer.name),
+                    value_string("MediumRough"),
+                    value_real(layer.thickness),
+                    value_real(layer.conductivity),
+                    value_real(layer.density),
+                    value_real(layer.specific_heat),
+                ],
+            ));
+        }
+        let mut fields = vec![value_string(&name)];
+        for layer in &construction.layers {
+            fields.push(value_string(&layer.name));
+        }
+        write_object(&mut out, &object("Construction", fields));
+    }
+    for material in materials {
+        write_object(&mut out, &material);
+    }
+
+    // --- Envelope surfaces ------------------------------------------------
+    let mut surfaces: Vec<ExportedSurface> = Vec::new();
+    for (index, zone) in schema.geometry.zones.iter().enumerate() {
+        let zone_name = zone_name(index, zone);
+        let declared: Vec<&crate::api::schema::SurfaceSpec> = schema
+            .geometry
+            .surfaces
+            .iter()
+            .filter(|s| s.zone_index == index)
+            .collect();
+        let built: Vec<ExportedSurface> = if declared.is_empty() {
+            synthesized_box(index, zone, &mut losses)
+        } else {
+            declared
+                .iter()
+                .filter_map(|spec| build_declared_surface(spec, zone, &zone_name, &mut losses))
+                .collect()
+        };
+        for surface in &built {
+            write_object(
+                &mut out,
+                &surface_object(surface, &construction_name(schema, surface.kind)),
+            );
+        }
+        surfaces.extend(built);
+    }
+
+    // --- Glazing -----------------------------------------------------------
+    let mut window_index = 0usize;
+    for spec in &schema.geometry.surfaces {
+        let Some(window) = &spec.window else {
+            continue;
+        };
+        let Some(parent) = surfaces.iter().find(|s| s.name == spec.id) else {
+            losses.push(format!(
+                "window on surface {} — the host surface was not exported, so the window has no parent",
+                spec.id
+            ));
+            continue;
+        };
+        emit_window(
+            &mut out,
+            &mut losses,
+            &mut window_index,
+            window,
+            parent,
+            &parent.name,
+        );
+    }
+    // The aggregate (construction-level) glazing: the schema's wall
+    // construction carries the model's wall glazing, the roof
+    // construction the skylights, and the floor construction nothing
+    // representable.
+    if let Some(window) = &schema.constructions.wall.window {
+        match aggregate_host(&surfaces, SurfaceKind::Wall) {
+            Some(parent) => emit_window(
+                &mut out,
+                &mut losses,
+                &mut window_index,
+                window,
+                parent,
+                &parent.name,
+            ),
+            None => losses.push(
+                "aggregate wall glazing — no exported wall surface is available to host it"
+                    .to_string(),
+            ),
+        }
+    }
+    if let Some(window) = &schema.constructions.roof.window {
+        match aggregate_host(&surfaces, SurfaceKind::Roof) {
+            Some(parent) => emit_window(
+                &mut out,
+                &mut losses,
+                &mut window_index,
+                window,
+                parent,
+                &parent.name,
+            ),
+            None => losses.push(
+                "aggregate roof glazing — no exported roof surface is available to host it"
+                    .to_string(),
+            ),
+        }
+    }
+    if schema.constructions.floor.window.is_some() {
+        losses.push(
+            "window on the floor construction — floor glazing is not representable in an IDF"
+                .to_string(),
+        );
+    }
+
+    // --- HVAC ---------------------------------------------------------------
+    match schema.controls.hvac_system {
+        Some(HVACSystemType::Ideal) => {
+            for (index, zone) in schema.geometry.zones.iter().enumerate() {
+                write_hvac_chain(&mut out, &zone_name(index, zone));
+            }
+        }
+        Some(other) => {
+            losses.push(format!(
+                "HVAC template {:?} — only the Ideal template maps to an IDF ZoneHVAC equipment chain; no HVAC objects were written",
+                other
+            ));
+        }
+        None => {}
+    }
+
+    // --- Geometry rules and ground temperature ------------------------------
+    write_object(
+        &mut out,
+        &object(
+            "GlobalGeometryRules",
+            vec![
+                value_string("UpperLeftCorner"),
+                value_string("ClockWise"),
+                value_string("World"),
+            ],
+        ),
+    );
+    write_object(
+        &mut out,
+        &object(
+            "Site:GroundTemperature:BuildingSurface",
+            (0..12)
+                .map(|_| value_real(SCHEMA_GROUND_TEMPERATURE_C))
+                .collect(),
+        ),
+    );
+
+    // --- Loss notes ----------------------------------------------------------
+    for loss in &losses {
+        out.push_str(LOSS_NOTE_PREFIX);
+        out.push_str(loss);
+        out.push('\n');
+    }
+
+    out
+}
+
+/// The axis a surface polygon is constant in.
+#[derive(Debug, Clone, Copy)]
+enum PlaneAxis {
+    X,
+    Y,
+    Z,
+}
+
+/// The plane an exported surface polygon lies in.
+///
+/// The `u` / `v` coordinates are the two free axes of the plane; the
+/// `constant` coordinate is the axis the plane is orthogonal to. Fenestration
+/// is placed in the same plane as its host surface.
+#[derive(Debug, Clone, Copy)]
+struct Plane {
+    axis: PlaneAxis,
+    constant: f64,
+    u0: f64,
+    u1: f64,
+    v0: f64,
+    v1: f64,
+}
+
+impl Plane {
+    /// The 3D point at the plane coordinates `(u, v)`.
+    fn point(&self, u: f64, v: f64) -> (f64, f64, f64) {
+        match self.axis {
+            PlaneAxis::X => (self.constant, u, v),
+            PlaneAxis::Y => (u, self.constant, v),
+            PlaneAxis::Z => (u, v, self.constant),
+        }
+    }
+
+    /// The plane's axis-aligned extent (m²).
+    fn area(&self) -> f64 {
+        (self.u1 - self.u0) * (self.v1 - self.v0)
+    }
+
+    /// The rectangle covering the plane, as four vertices.
+    fn vertices(&self) -> Vec<(f64, f64, f64)> {
+        vec![
+            self.point(self.u0, self.v1),
+            self.point(self.u1, self.v1),
+            self.point(self.u1, self.v0),
+            self.point(self.u0, self.v0),
+        ]
+    }
+}
+
+/// One exported envelope surface.
+#[derive(Debug, Clone)]
+struct ExportedSurface {
+    /// The `BuildingSurface:Detailed` object name.
+    name: String,
+    /// Wall / roof / floor classification.
+    kind: SurfaceKind,
+    /// The zone the surface belongs to.
+    zone: String,
+    /// The plane the surface polygon lies in.
+    plane: Plane,
+    /// True when the surface already carries an explicit per-surface window.
+    has_window: bool,
+}
+
+/// The name of the `Zone` object for a zone of the schema.
+fn zone_name(index: usize, zone: &crate::api::schema::ZoneGeometry) -> String {
+    if zone.name.trim().is_empty() {
+        format!("ZONE{}", index + 1)
+    } else {
+        zone.name.clone()
+    }
+}
+
+/// The `Zone` object of one zone.
+///
+/// The field layout is the one the **importer** reads (see
+/// `super::convert::build_geometry`, which reads the ceiling height, the
+/// volume and the floor area from fields 6, 7 and 8) — the same choice
+/// the `BuildingSurface:Detailed` layout makes (see the module header).
+fn zone_object(index: usize, zone: &crate::api::schema::ZoneGeometry) -> IdfObject {
+    object(
+        "Zone",
+        vec![
+            value_string(&zone_name(index, zone)),
+            value_real(0.0),             // direction of relative north
+            value_real(0.0),             // x origin
+            value_real(0.0),             // y origin
+            value_real(0.0),             // z origin
+            value_int(1),                // type
+            value_real(zone.height),     // ceiling height
+            value_real(zone.volume),     // volume
+            value_real(zone.floor_area), // floor area
+        ],
+    )
+}
+
+/// The `(name, construction)` pairs of the schema's construction set.
+fn schema_constructions(
+    schema: &SimulationSchemaV1,
+) -> Vec<(String, &crate::api::schema::SurfaceConstruction)> {
+    vec![
+        (
+            construction_name(schema, SurfaceKind::Wall),
+            &schema.constructions.wall,
+        ),
+        (
+            construction_name(schema, SurfaceKind::Roof),
+            &schema.constructions.roof,
+        ),
+        (
+            construction_name(schema, SurfaceKind::Floor),
+            &schema.constructions.floor,
+        ),
+    ]
+}
+
+/// The `Construction` object name used for a surface kind.
+fn construction_name(schema: &SimulationSchemaV1, kind: SurfaceKind) -> String {
+    let (name, fallback) = match kind {
+        SurfaceKind::Wall => (&schema.constructions.wall.name, "FluxionWall"),
+        SurfaceKind::Roof => (&schema.constructions.roof.name, "FluxionRoof"),
+        SurfaceKind::Floor => (&schema.constructions.floor.name, "FluxionFloor"),
+    };
+    if name.trim().is_empty() {
+        fallback.to_string()
+    } else {
+        name.clone()
+    }
+}
+
+/// The rectangular box synthesised for a zone without declared surfaces.
+fn synthesized_box(
+    index: usize,
+    zone: &crate::api::schema::ZoneGeometry,
+    losses: &mut Vec<String>,
+) -> Vec<ExportedSurface> {
+    let name = zone_name(index, zone);
+    let width = zone.floor_area.max(0.0).sqrt();
+    let depth = width;
+    let height = zone.height.max(0.0);
+    if width <= 0.0 || height <= 0.0 {
+        losses.push(format!(
+            "zone {name} — the floor area and the height are not positive, so no envelope surfaces were exported"
+        ));
+        return Vec::new();
+    }
+    let wall = |kind: SurfaceKind, surface_name: String, plane: Plane| ExportedSurface {
+        name: surface_name,
+        kind,
+        zone: name.clone(),
+        plane,
+        has_window: false,
+    };
+    vec![
+        wall(
+            SurfaceKind::Floor,
+            format!("{name}-Floor"),
+            Plane {
+                axis: PlaneAxis::Z,
+                constant: 0.0,
+                u0: 0.0,
+                u1: width,
+                v0: 0.0,
+                v1: depth,
+            },
+        ),
+        wall(
+            SurfaceKind::Roof,
+            format!("{name}-Roof"),
+            Plane {
+                axis: PlaneAxis::Z,
+                constant: height,
+                u0: 0.0,
+                u1: width,
+                v0: 0.0,
+                v1: depth,
+            },
+        ),
+        wall(
+            SurfaceKind::Wall,
+            format!("{name}-Wall-South"),
+            Plane {
+                axis: PlaneAxis::Y,
+                constant: 0.0,
+                u0: 0.0,
+                u1: width,
+                v0: 0.0,
+                v1: height,
+            },
+        ),
+        wall(
+            SurfaceKind::Wall,
+            format!("{name}-Wall-North"),
+            Plane {
+                axis: PlaneAxis::Y,
+                constant: depth,
+                u0: 0.0,
+                u1: width,
+                v0: 0.0,
+                v1: height,
+            },
+        ),
+        wall(
+            SurfaceKind::Wall,
+            format!("{name}-Wall-East"),
+            Plane {
+                axis: PlaneAxis::X,
+                constant: width,
+                u0: 0.0,
+                u1: depth,
+                v0: 0.0,
+                v1: height,
+            },
+        ),
+        wall(
+            SurfaceKind::Wall,
+            format!("{name}-Wall-West"),
+            Plane {
+                axis: PlaneAxis::X,
+                constant: 0.0,
+                u0: 0.0,
+                u1: depth,
+                v0: 0.0,
+                v1: height,
+            },
+        ),
+    ]
+}
+
+/// Build the exported surface of a declared
+/// [`crate::api::schema::SurfaceSpec`].
+fn build_declared_surface(
+    spec: &crate::api::schema::SurfaceSpec,
+    zone: &crate::api::schema::ZoneGeometry,
+    zone_name: &str,
+    losses: &mut Vec<String>,
+) -> Option<ExportedSurface> {
+    let Some(area) = spec.effective_area() else {
+        losses.push(format!(
+            "surface {} — the area is unknown (neither an area nor a vertex loop was given)",
+            spec.id
+        ));
+        return None;
+    };
+    if area <= 0.0 {
+        losses.push(format!(
+            "surface {} — the area is not positive, so the surface was not exported",
+            spec.id
+        ));
+        return None;
+    }
+    let plane = match &spec.vertices {
+        Some(vertices) if vertices.len() >= 3 => {
+            let points: Vec<(f64, f64, f64)> = vertices.iter().map(|v| (v.x, v.y, v.z)).collect();
+            plane_from_vertices(&points)
+        }
+        Some(_) => {
+            losses.push(format!(
+                "surface {} — the vertex loop has fewer than three vertices, so the surface was not exported",
+                spec.id
+            ));
+            return None;
+        }
+        None => Some(synthesized_plane(spec, zone, area)),
+    };
+    let plane = plane?;
+    Some(ExportedSurface {
+        name: spec.id.clone(),
+        kind: spec.kind,
+        zone: zone_name.to_string(),
+        plane,
+        has_window: spec.window.is_some(),
+    })
+}
+
+/// The plane of a declared surface that has no vertex loop.
+fn synthesized_plane(
+    spec: &crate::api::schema::SurfaceSpec,
+    zone: &crate::api::schema::ZoneGeometry,
+    area: f64,
+) -> Plane {
+    let width = zone.floor_area.max(0.0).sqrt();
+    let depth = width;
+    let height = zone.height.max(0.0);
+    match spec.kind {
+        SurfaceKind::Wall => {
+            let wall_width = if height > 0.0 { area / height } else { area };
+            match spec.orientation.unwrap_or(Orientation::South) {
+                Orientation::North => Plane {
+                    axis: PlaneAxis::Y,
+                    constant: depth,
+                    u0: 0.0,
+                    u1: wall_width,
+                    v0: 0.0,
+                    v1: height,
+                },
+                Orientation::East => Plane {
+                    axis: PlaneAxis::X,
+                    constant: width,
+                    u0: 0.0,
+                    u1: wall_width,
+                    v0: 0.0,
+                    v1: height,
+                },
+                Orientation::West => Plane {
+                    axis: PlaneAxis::X,
+                    constant: 0.0,
+                    u0: 0.0,
+                    u1: wall_width,
+                    v0: 0.0,
+                    v1: height,
+                },
+                _ => Plane {
+                    axis: PlaneAxis::Y,
+                    constant: 0.0,
+                    u0: 0.0,
+                    u1: wall_width,
+                    v0: 0.0,
+                    v1: height,
+                },
+            }
+        }
+        SurfaceKind::Roof | SurfaceKind::Floor => {
+            let span = if width > 0.0 { area / width } else { area };
+            Plane {
+                axis: PlaneAxis::Z,
+                constant: if spec.kind == SurfaceKind::Roof {
+                    height
+                } else {
+                    0.0
+                },
+                u0: 0.0,
+                u1: width,
+                v0: 0.0,
+                v1: span,
+            }
+        }
+    }
+}
+
+/// The plane of an arbitrary polygon: the axis it is most constant in.
+fn plane_from_vertices(points: &[(f64, f64, f64)]) -> Option<Plane> {
+    if points.len() < 3 {
+        return None;
+    }
+    let (mut min_x, mut max_x) = (f64::INFINITY, f64::NEG_INFINITY);
+    let (mut min_y, mut max_y) = (f64::INFINITY, f64::NEG_INFINITY);
+    let (mut min_z, mut max_z) = (f64::INFINITY, f64::NEG_INFINITY);
+    for p in points {
+        min_x = min_x.min(p.0);
+        max_x = max_x.max(p.0);
+        min_y = min_y.min(p.1);
+        max_y = max_y.max(p.1);
+        min_z = min_z.min(p.2);
+        max_z = max_z.max(p.2);
+    }
+    let dx = max_x - min_x;
+    let dy = max_y - min_y;
+    let dz = max_z - min_z;
+    if dz <= dy && dz <= dx {
+        Some(Plane {
+            axis: PlaneAxis::Z,
+            constant: min_z,
+            u0: min_x,
+            u1: max_x,
+            v0: min_y,
+            v1: max_y,
+        })
+    } else if dy <= dx && dy <= dz {
+        Some(Plane {
+            axis: PlaneAxis::Y,
+            constant: min_y,
+            u0: min_x,
+            u1: max_x,
+            v0: min_z,
+            v1: max_z,
+        })
+    } else {
+        Some(Plane {
+            axis: PlaneAxis::X,
+            constant: min_x,
+            u0: min_y,
+            u1: max_y,
+            v0: min_z,
+            v1: max_z,
+        })
+    }
+}
+
+/// The `BuildingSurface:Detailed` object of an exported surface.
+fn surface_object(surface: &ExportedSurface, construction: &str) -> IdfObject {
+    let (surface_type, boundary, sun, wind) = match surface.kind {
+        SurfaceKind::Wall => ("Wall", "Outdoors", "SunExposed", "WindExposed"),
+        SurfaceKind::Roof => ("Roof", "Outdoors", "SunExposed", "WindExposed"),
+        SurfaceKind::Floor => ("Floor", "Ground", "NoSun", "NoWind"),
+    };
+    let mut fields = vec![
+        value_string(&surface.name),
+        value_string(surface_type),
+        value_string(construction),
+        value_string(&surface.zone),
+        value_empty(), // outside boundary condition object
+        value_string(boundary),
+        value_empty(),
+        value_string(sun),
+        value_string(wind),
+        value_empty(), // view factor to ground
+        value_int(surface.plane.vertices().len() as i64),
+    ];
+    for (x, y, z) in surface.plane.vertices() {
+        fields.push(value_real(x));
+        fields.push(value_real(y));
+        fields.push(value_real(z));
+    }
+    object("BuildingSurface:Detailed", fields)
+}
+
+/// The host surface of an aggregate (construction-level) window: the first
+/// surface of the requested kind that carries no explicit window.
+fn aggregate_host(surfaces: &[ExportedSurface], kind: SurfaceKind) -> Option<&ExportedSurface> {
+    surfaces.iter().find(|s| s.kind == kind && !s.has_window)
+}
+
+/// The rectangle of a window of `area` m² placed on `host`.
+///
+/// The window spans the full width of the host surface and is centred
+/// vertically; its height is `area / width`, so the polygon's area equals
+/// the requested area exactly. `None` when the window does not fit.
+fn window_vertices(host: &Plane, area: f64) -> Option<Vec<(f64, f64, f64)>> {
+    let width = host.u1 - host.u0;
+    let span = host.v1 - host.v0;
+    if width <= 0.0 || span <= 0.0 {
+        return None;
+    }
+    let height = area / width;
+    if height > span + 1e-9 {
+        return None;
+    }
+    let v0 = host.v0 + (span - height) / 2.0;
+    let v1 = v0 + height;
+    Some(vec![
+        host.point(host.u0, v0),
+        host.point(host.u0, v1),
+        host.point(host.u1, v1),
+        host.point(host.u1, v0),
+    ])
+}
+
+/// Emit the glazing objects of one window.
+fn emit_window(
+    out: &mut String,
+    losses: &mut Vec<String>,
+    index: &mut usize,
+    window: &WindowSpec,
+    host: &ExportedSurface,
+    host_name: &str,
+) {
+    let area = window.effective_area(host.plane.area());
+    if area <= 0.0 {
+        losses.push(format!(
+            "window on {host_name} — the glazing area is zero or undetermined (window_area <= 0 and no window_to_wall_ratio)"
+        ));
+        return;
+    }
+    if window.window_u_value <= 0.0 {
+        losses.push(format!(
+            "window on {host_name} — the glazing U-value {} W/m²K is not positive, so no glazing system was written",
+            window.window_u_value
+        ));
+        return;
+    }
+    let Some(vertices) = window_vertices(&host.plane, area) else {
+        losses.push(format!(
+            "window on {host_name} — the glazing area {area} m² exceeds the host surface area {} m²",
+            host.plane.area()
+        ));
+        return;
+    };
+
+    let n = *index;
+    *index += 1;
+    let glazing_name = format!("FluxionGlazing{n}");
+    let system_name = format!("FluxionGlazingSystem{n}");
+    let construction_name = format!("FluxionWindowConstruction{n}");
+    let window_name = format!("FluxionWindow{n}");
+
+    // Material data of the glazing (spectral properties).
+    write_object(
+        out,
+        &object(
+            "WindowMaterial:Glazing",
+            vec![
+                value_string(&glazing_name),
+                value_string("SpectralAverage"),
+                value_real(0.003), // thickness
+                value_real(0.837), // solar transmittance at normal incidence
+                value_real(0.075), // front side solar reflectance
+                value_real(0.075), // back side solar reflectance
+                value_real(0.837), // visible transmittance
+                value_real(0.075), // front side visible reflectance
+                value_real(0.075), // back side visible reflectance
+                value_real(0.0),   // infrared transmittance
+                value_real(0.84),  // front side infrared hemispherical emissivity
+                value_real(0.84),  // back side infrared hemispherical emissivity
+                value_real(GLAZING_CONDUCTIVITY),
+            ],
+        ),
+    );
+    // The U-factor / SHGC carrier: `WindowMaterial:Glazing` carries
+    // neither, so the construction must reference the simple glazing
+    // system for the U-value to survive the round-trip.
+    write_object(
+        out,
+        &object(
+            "WindowMaterial:SimpleGlazingSystem",
+            vec![
+                value_string(&system_name),
+                value_real(window.window_u_value),
+                value_real(window.window_shgc),
+                value_real(GLAZING_CONDUCTIVITY),
+            ],
+        ),
+    );
+    write_object(
+        out,
+        &object(
+            "Construction",
+            vec![value_string(&construction_name), value_string(&system_name)],
+        ),
+    );
+
+    // `FenestrationSurface:Detailed` — the field layout is the one the
+    // importer reads (number of vertices at field 8, vertices from 9).
+    let mut fields = vec![
+        value_string(&window_name),
+        value_string("Window"),
+        value_string(&construction_name),
+        value_string(host_name),
+        value_empty(), // outside boundary condition object
+        value_empty(), // view factor to ground
+        value_empty(), // frame and divider name
+        value_empty(), // multiplier
+        value_int(vertices.len() as i64),
+    ];
+    for (x, y, z) in &vertices {
+        fields.push(value_real(*x));
+        fields.push(value_real(*y));
+        fields.push(value_real(*z));
+    }
+    write_object(out, &object("FenestrationSurface:Detailed", fields));
+}
+
+/// The `ZoneHVAC` equipment chain of one zone (ideal loads).
+fn write_hvac_chain(out: &mut String, zone: &str) {
+    write_object(
+        out,
+        &object(
+            "ZoneHVAC:EquipmentConnections",
+            vec![
+                value_string(&format!("{zone}_EquipmentConnections")),
+                value_string(zone),
+                value_string(&format!("{zone}_EquipmentList")),
+                value_string(&format!("{zone}_Inlet Node")),
+                value_string(&format!("{zone}_Exhaust Node")),
+                value_string(&format!("{zone}_Zone Air Node")),
+                value_string(&format!("{zone}_Return Air Node")),
+            ],
+        ),
+    );
+    write_object(
+        out,
+        &object(
+            "ZoneHVAC:EquipmentList",
+            vec![
+                value_string(&format!("{zone}_EquipmentList")),
+                value_string("SequentialLoad"),
+                value_string("ZoneHVAC:IdealLoadsAirSystem"),
+                value_string(&format!("{zone}_IdealLoads")),
+                value_int(1), // cooling sequence
+                value_int(1), // heating sequence
+            ],
+        ),
+    );
+    write_object(
+        out,
+        &object(
+            "ZoneHVAC:IdealLoadsAirSystem",
+            vec![
+                value_string(&format!("{zone}_IdealLoads")),
+                value_string(&format!("{zone}_Supply Inlet Node")),
+                value_string(&format!("{zone}_Exhaust Node")),
+                value_string(&format!("{zone}_Supply Air Node")),
+                value_real(50.0),        // maximum heating supply air temperature
+                value_real(13.0),        // minimum cooling supply air temperature
+                value_real(0.0156),      // maximum heating supply air humidity ratio
+                value_real(0.0077),      // minimum cooling supply air humidity ratio
+                value_string("NoLimit"), // heating limit
+                value_string("NoLimit"), // cooling limit
+                value_string("ConstantSupplyHumidityRatio"),
+                value_real(0.7), // cooling sensible heat ratio
+                value_empty(),
+                value_empty(),
+                value_string("None"), // outdoor economizer type
+            ],
+        ),
+    );
 }
 
 // ---------------------------------------------------------------------------
