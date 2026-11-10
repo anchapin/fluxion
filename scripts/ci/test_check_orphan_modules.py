@@ -695,10 +695,12 @@ def test_disposition_gate_passes_on_real_allowlist(checker, capsys):
     assert rc == 0, f"expected PASS on real repo, got rc={rc}\noutput:\n{out}"
     assert "Rows missing for live modules: 0" in out
     assert "Stale rows (module no longer wired-but-dead): 0" in out
-    # 43 rows: the Issue #4702 path-keying migration (2026-11-09)
-    # expanded the 34 leaf-keyed rows to 41 qualified-path rows, and
+    # 42 rows: the Issue #4702 path-keying migration (2026-11-09)
+    # expanded the 34 leaf-keyed rows to 41 qualified-path rows,
     # PR #4652 registered physics::per_surface_multinode (+ its solar
-    # submodule) wire-pending for Issue #3983 (+2); the checker's own
-    # lock-step print is the source of truth for the count, asserted
-    # literally per the fixture's original convention.
-    assert "Disposition registry in lock-step (43 row(s)" in out
+    # submodule) wire-pending for Issue #3983 (+2 -> 43), and PR #4709
+    # then resolved io::idf::export (compiled test callers), dropping
+    # its row in lock-step (43 -> 42); the checker's own lock-step
+    # print is the source of truth for the count, asserted literally
+    # per the fixture's original convention.
+    assert "Disposition registry in lock-step (42 row(s)" in out

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "description": "Per-module disposition registry for the wired-but-dead pub mods allowlisted in scripts/check_orphan_modules.py::WIRED_BUT_DEAD (Issue #3748). Every allowlist entry must carry exactly one row with an owner-assigned wire-or-delete decision; the registry must stay in lock-step with the live wired-but-dead set. Resolving a module (wiring it up or deleting it) requires dropping its row AND lowering BASELINE_WIRED_BUT_DEAD by one in the same PR.",
   "governing_issue": 3748,
-  "module_count": 43,
+  "module_count": 42,
   "modules": [
     {
       "module": "sim::ems",
@@ -276,13 +276,6 @@
       "issue": 4173,
       "owner": "anchapin",
       "rationale": "validation::config (validate_assembly assembly-validation API): its only in-workspace callers were the ThermalModel validation-gated constructors deleted in #4173. Retained as tested public API; re-wire or delete in a follow-up. (ai::sweeps::config has live callers and is unaffected.)"
-    },
-    {
-      "module": "io::idf::export",
-      "disposition": "wire-pending",
-      "issue": 3991,
-      "owner": "anchapin",
-      "rationale": "IDF export module (src/io/idf/export.rs) staged by PR #4611 for Issue #3991; tested but no production caller yet. Production wiring (glazing + IdealLoads export) lands in the follow-up issue filed when #4611 merges; drop this row and the allowlist entry in that PR."
     },
     {
       "module": "validation::export",
