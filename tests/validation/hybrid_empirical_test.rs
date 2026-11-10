@@ -137,7 +137,7 @@ fn test_hybrid_empirical_mae_within_10pct_of_physics() {
     let hybrid = HybridThermalModel::from_spec(&spec);
     assert_eq!(
         routing_summary(&hybrid.routing()),
-        "loads=surrogate, conduction=physics, ventilation=physics, hvac=physics",
+        "loads=surrogate, conduction=physics, ventilation=physics",
         "HybridRouting::default() must produce the documented policy"
     );
 
@@ -350,21 +350,21 @@ fn test_hybrid_all_physics_matches_physics_baseline() {
     assert!(report.passes_tolerance);
 }
 
-/// Test: routing summary is deterministic and includes all four
-/// subsystem flags. CI greps the routing string; stability matters.
+/// Test: routing summary is deterministic and includes all three
+/// routable subsystem flags. CI greps the routing string; stability matters.
 #[test]
 fn test_routing_summary_is_stable() {
     assert_eq!(
         routing_summary(&HybridRouting::default()),
-        "loads=surrogate, conduction=physics, ventilation=physics, hvac=physics"
+        "loads=surrogate, conduction=physics, ventilation=physics"
     );
     assert_eq!(
         routing_summary(&HybridRouting::all_physics()),
-        "loads=physics, conduction=physics, ventilation=physics, hvac=physics"
+        "loads=physics, conduction=physics, ventilation=physics"
     );
     assert_eq!(
         routing_summary(&HybridRouting::all_surrogate()),
-        "loads=surrogate, conduction=surrogate, ventilation=surrogate, hvac=surrogate"
+        "loads=surrogate, conduction=surrogate, ventilation=surrogate"
     );
 }
 

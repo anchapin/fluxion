@@ -23,6 +23,21 @@
 //! callers can inspect or forward them, but no typed accessor is provided
 //! and they are ignored by [`IdfFile::materials`], [`IdfFile::zones`], etc.
 //!
+//! # IDF export (issue #3991)
+//!
+//! [`export`] serialises a parsed [`IdfFile`] (or a `CaseSpec` envelope)
+//! back to IDF text that re-parses into an equal [`IdfFile`]. See the
+//! [`export`] module header for the determinism / idempotence guarantees
+//! and for the documented scope of the `CaseSpec` export.
+//!
+//! [`export_schema`] (issue #4702) exports a whole
+//! [`crate::api::schema::SimulationSchemaV1`] model as a **standalone**
+//! IDF file: its own zones, envelope surfaces, glazing
+//! (`FenestrationSurface:Detailed` + `WindowMaterial:SimpleGlazingSystem`)
+//! and — for the `Ideal` template — the `ZoneHVAC` equipment chain.
+//! Anything the export cannot represent is reported as an explicit
+//! `! LOSS: …` note in the exported text, never dropped silently.
+//!
 //! # Out of scope (per design §10 and issue #1341)
 //!
 //! - epJSON parsing (design §4.2 follow-up).
@@ -30,8 +45,11 @@
 //!   served by a `ZoneHVAC:IdealLoadsAirSystem` is imported with
 //!   `hvac_system = Some(HVACSystemType::Ideal)` — see
 //!   [`convert::build_controls`]; other HVAC types are still ignored).
-//! - Schedule, Window/Door, `FenestrationSurface:Detailed` (design §10).
-//! - IDF export (design §10).
+//! - Schedule, Window/Door import (design §10) — the *export* side does
+//!   write `FenestrationSurface:Detailed` glazing, but the importer does
+//!   not read windows back into the schema's `WindowSpec`.
+//! - HVAC templates other than `Ideal`: they have no IDF equipment-chain
+//!   mapping and are reported as a loss note by [`export_schema`].
 //!
 //! # Example
 //!
@@ -47,10 +65,12 @@
 pub mod convert;
 pub mod epjson;
 pub mod error;
+pub mod export;
 pub mod lexer;
 pub mod parser;
 
 pub use convert::{case_spec_from_idf, GroundTempMeta, RunPeriodMeta, SUPPORTED_VERSIONS};
 pub use error::IdfError;
+pub use export::{export_case_spec_envelope, export_idf, export_idf_to_writer, export_schema};
 pub use lexer::{tokenize, RawObject};
 pub use parser::{IdfFile, IdfObject, IdfParser, IdfValue};
