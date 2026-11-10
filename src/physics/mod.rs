@@ -68,6 +68,11 @@ pub mod zero_copy_matrix;
 
 pub mod multi_node_solver;
 pub mod nine_r4c_nodal_trace;
+// Issue #3983 (D5 slice 1 of the ADR-0017 conduction-first migration):
+// standalone, NON-DEFAULT per-surface multi-node conduction formulation with
+// per-surface (area × absorptance weighted) distributed solar absorption.
+// Not wired into the solver dispatch — production wiring is a later slice.
+pub mod per_surface_multinode;
 // Phase-Change Material test-box skeleton (Refs #3986 / #4118, BLOCKER branch).
 // Nominal Rubitherm RT27 properties + a one-zone test-box harness; the
 // experimental solid-fraction-vs-time curve is deferred to PR-B+1 (see
