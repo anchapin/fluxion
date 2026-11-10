@@ -2,245 +2,294 @@
   "schema_version": 1,
   "description": "Per-module disposition registry for the wired-but-dead pub mods allowlisted in scripts/check_orphan_modules.py::WIRED_BUT_DEAD (Issue #3748). Every allowlist entry must carry exactly one row with an owner-assigned wire-or-delete decision; the registry must stay in lock-step with the live wired-but-dead set. Resolving a module (wiring it up or deleting it) requires dropping its row AND lowering BASELINE_WIRED_BUT_DEAD by one in the same PR.",
   "governing_issue": 3748,
-  "module_count": 34,
+  "module_count": 41,
   "modules": [
     {
-      "module": "ems",
+      "module": "sim::ems",
       "disposition": "keep-dead",
       "issue": 3748,
       "owner": "anchapin",
       "rationale": "EnergyPlus-parity EMS framework (sensors/actuators/programs); parked until the simulation loop integrates it. Decision documented in src/sim/ems.rs."
     },
     {
-      "module": "hvac_sizing",
+      "module": "sim::hvac_sizing",
       "disposition": "keep-dead",
       "issue": 3748,
       "owner": "anchapin",
       "rationale": "Design-day HVAC sizing utility; parked until a CLI or reporting consumer exists. Decision documented in src/sim/hvac_sizing.rs."
     },
     {
-      "module": "assembly_library",
+      "module": "validation::assembly_library",
       "disposition": "wire-pending",
       "issue": 3748,
       "owner": "anchapin",
       "rationale": "Assembly-variant validation library; wire into the validation suite or delete in the #3748 burn-down."
     },
     {
-      "module": "batch_inference",
+      "module": "ai::batch_inference",
       "disposition": "wire-pending",
       "issue": 3748,
       "owner": "anchapin",
       "rationale": "Dynamic ONNX batching for surrogate throughput; wire into an ort-feature consumer or delete."
     },
     {
-      "module": "benchmarking",
+      "module": "performance::benchmarking",
       "disposition": "wire-pending",
       "issue": 3748,
       "owner": "anchapin",
       "rationale": "Performance measurement utilities; benches/ is excluded from caller scope by design, so wire a production consumer or delete."
     },
     {
-      "module": "context_aware",
+      "module": "ai::context_aware",
       "disposition": "wire-pending",
       "issue": 3748,
       "owner": "anchapin",
       "rationale": "Quantum state-space parameter initializer; wire into the quantum path or delete."
     },
     {
-      "module": "coupled_solver",
+      "module": "thermal::coupled_solver",
       "disposition": "wire-pending",
       "issue": 3748,
       "owner": "anchapin",
       "rationale": "Implicit multi-zone ODE solver reserved as an alternative integration path; wire into a consumer or delete."
     },
     {
-      "module": "distributed",
+      "module": "ai::distributed",
       "disposition": "wire-pending",
       "issue": 3748,
       "owner": "anchapin",
       "rationale": "Distributed inference scaffold; wire into a multi-node consumer or delete."
     },
     {
-      "module": "doe_reference",
+      "module": "testing::integration::doe_reference",
       "disposition": "wire-pending",
       "issue": 3748,
       "owner": "anchapin",
       "rationale": "DOE Commercial Reference Building configurations; wire into the validation suite or delete."
     },
     {
-      "module": "epjson",
+      "module": "io::idf::epjson",
       "disposition": "wire-pending",
       "issue": 3748,
       "owner": "anchapin",
       "rationale": "epJSON (EnergyPlus JSON) parser; wire into an input-format consumer or delete."
     },
     {
-      "module": "fdd",
+      "module": "validation::fdd",
       "disposition": "wire-pending",
       "issue": 3748,
       "owner": "anchapin",
       "rationale": "Fault detection and diagnostics surface; wire into validation/twin reporting or delete."
     },
     {
-      "module": "flexlab_weather",
+      "module": "validation::flexlab_weather",
       "disposition": "wire-pending",
       "issue": 3748,
       "owner": "anchapin",
       "rationale": "FLEXLAB measured-weather loader; wire into the empirical validation datasets or delete."
     },
     {
-      "module": "inter_zone",
+      "module": "thermal::inter_zone",
       "disposition": "wire-pending",
       "issue": 3748,
       "owner": "anchapin",
       "rationale": "Inter-zone conductance functions; wire into a multi-zone coupling consumer or delete."
     },
     {
-      "module": "parallel",
+      "module": "performance::parallel",
       "disposition": "wire-pending",
       "issue": 3748,
       "owner": "anchapin",
       "rationale": "Parallel execution infrastructure; wire into a population-scale batch path or delete (BatchOracle remains the only sanctioned parallelism)."
     },
     {
-      "module": "rom",
+      "module": "performance::parallel::validation",
+      "disposition": "wire-pending",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "Parallel execution infrastructure; wire into a population-scale batch path or delete (BatchOracle remains the only sanctioned parallelism). (Split out by the Issue #4702 path-keying migration: previously covered by the shared leaf entry 'parallel'.)"
+    },
+    {
+      "module": "thermal::rom",
       "disposition": "wire-pending",
       "issue": 3748,
       "owner": "anchapin",
       "rationale": "Reduced-order-model intermediary fidelity layer; wire into a multi-zone consumer or delete."
     },
     {
-      "module": "sweeps",
+      "module": "ai::sweeps",
       "disposition": "wire-pending",
       "issue": 3748,
       "owner": "anchapin",
       "rationale": "Monte Carlo sweep infrastructure for Phase 2 ML data generation (#1776); wire a driver or delete."
     },
     {
-      "module": "tdd",
+      "module": "testing::tdd",
       "disposition": "keep-dead",
       "issue": 3748,
       "owner": "anchapin",
       "rationale": "Test-helper surface for tests/<subdir>/ harnesses, which are not Cargo targets and are excluded from caller scope by design."
     },
     {
-      "module": "topsis",
+      "module": "analysis::topsis",
       "disposition": "wire-pending",
       "issue": 3748,
       "owner": "anchapin",
       "rationale": "TOPSIS multi-criteria selection for Pareto optimization; wire into an optimization consumer or delete."
     },
     {
-      "module": "ashrae_copilot",
+      "module": "validation::ashrae_copilot",
       "disposition": "wire-pending",
       "issue": 3930,
       "owner": "anchapin",
       "rationale": "Diagnostic heuristics for SystematicIssue::Unknown ASHRAE failures; wire into the issue classifier or delete."
     },
     {
-      "module": "diagnostics",
+      "module": "sim::diagnostics",
       "disposition": "keep-dead",
       "issue": 4197,
       "owner": "anchapin",
       "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
     },
     {
-      "module": "error",
+      "module": "io::idf::error",
       "disposition": "keep-dead",
       "issue": 4197,
       "owner": "anchapin",
       "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
     },
     {
-      "module": "geometry",
+      "module": "physics::geometry_tensor::geometry",
       "disposition": "keep-dead",
       "issue": 4197,
       "owner": "anchapin",
       "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
     },
     {
-      "module": "integration",
+      "module": "interop::ifc::geometry",
+      "disposition": "keep-dead",
+      "issue": 4197,
+      "owner": "anchapin",
+      "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up. (Split out by the Issue #4702 path-keying migration: previously covered by the shared leaf entry 'geometry'.)"
+    },
+    {
+      "module": "validation::performance::integration",
       "disposition": "keep-dead",
       "issue": 4197,
       "owner": "anchapin",
       "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
     },
     {
-      "module": "parser",
+      "module": "interop::osm::parser",
       "disposition": "keep-dead",
       "issue": 4197,
       "owner": "anchapin",
       "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
     },
     {
-      "module": "performance",
+      "module": "cli::performance",
       "disposition": "keep-dead",
       "issue": 4197,
       "owner": "anchapin",
       "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
     },
     {
-      "module": "reference_data",
+      "module": "testing::reference_data",
       "disposition": "keep-dead",
       "issue": 4197,
       "owner": "anchapin",
       "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
     },
     {
-      "module": "reporting",
+      "module": "validation::reference_data",
+      "disposition": "keep-dead",
+      "issue": 4197,
+      "owner": "anchapin",
+      "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up. (Split out by the Issue #4702 path-keying migration: previously covered by the shared leaf entry 'reference_data'.)"
+    },
+    {
+      "module": "validation::reporting",
       "disposition": "keep-dead",
       "issue": 4197,
       "owner": "anchapin",
       "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
     },
     {
-      "module": "thermal_mass",
+      "module": "validation::hvac_bestest::reporting",
+      "disposition": "keep-dead",
+      "issue": 4197,
+      "owner": "anchapin",
+      "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up. (Split out by the Issue #4702 path-keying migration: previously covered by the shared leaf entry 'reporting'.)"
+    },
+    {
+      "module": "validation::thermal_mass",
       "disposition": "keep-dead",
       "issue": 4197,
       "owner": "anchapin",
       "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
     },
     {
-      "module": "thermal_model_iterative",
+      "module": "sim::thermal_model_iterative",
       "disposition": "keep-dead",
       "issue": 4197,
       "owner": "anchapin",
       "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
     },
     {
-      "module": "ukf",
+      "module": "ai::ukf",
       "disposition": "keep-dead",
       "issue": 4197,
       "owner": "anchapin",
       "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
     },
     {
-      "module": "validation",
+      "module": "cli::validation",
       "disposition": "keep-dead",
       "issue": 4197,
       "owner": "anchapin",
       "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
     },
     {
-      "module": "writer",
+      "module": "interop::gbxml::writer",
       "disposition": "keep-dead",
       "issue": 4197,
       "owner": "anchapin",
       "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up."
     },
     {
-      "module": "config",
+      "module": "interop::ifc::writer",
+      "disposition": "keep-dead",
+      "issue": 4197,
+      "owner": "anchapin",
+      "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up. (Split out by the Issue #4702 path-keying migration: previously covered by the shared leaf entry 'writer'.)"
+    },
+    {
+      "module": "interop::osm::writer",
+      "disposition": "keep-dead",
+      "issue": 4197,
+      "owner": "anchapin",
+      "rationale": "Surfaced by the corrected qualified-path-aware detector (Issue #4197). No callers in production code; tracked for cleanup or wiring in a follow-up. (Split out by the Issue #4702 path-keying migration: previously covered by the shared leaf entry 'writer'.)"
+    },
+    {
+      "module": "validation::config",
       "disposition": "keep-dead",
       "issue": 4173,
       "owner": "anchapin",
       "rationale": "validation::config (validate_assembly assembly-validation API): its only in-workspace callers were the ThermalModel validation-gated constructors deleted in #4173. Retained as tested public API; re-wire or delete in a follow-up. (ai::sweeps::config has live callers and is unaffected.)"
     },
     {
-      "module": "export",
+      "module": "io::idf::export",
       "disposition": "wire-pending",
       "issue": 3991,
       "owner": "anchapin",
       "rationale": "IDF export module (src/io/idf/export.rs) staged by PR #4611 for Issue #3991; tested but no production caller yet. Production wiring (glazing + IdealLoads export) lands in the follow-up issue filed when #4611 merges; drop this row and the allowlist entry in that PR."
+    },
+    {
+      "module": "validation::export",
+      "disposition": "keep-dead",
+      "issue": 3748,
+      "owner": "anchapin",
+      "rationale": "Validation export surface with no production caller. Until the Issue #4702 path-keying migration it was silently covered by the shared leaf entry 'export' (whose wire-pending disposition belongs to io::idf::export), so no wire-or-delete decision was ever recorded for it; keep-dead until a follow-up decides."
     }
   ]
 }

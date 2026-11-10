@@ -248,13 +248,20 @@ KNOWN_ORPHANS: frozenset[str] = frozenset(
 # ---------------------------------------------------------------------------
 # Wired-but-dead allowlist (Issue #3458).
 #
-# Each entry is the module NAME (the bare identifier appearing in
-# ``pub mod <name>;``) of a ``src/**/mod.rs`` declaration that exists on disk,
-# is wired into the module graph, and currently has zero callers in
-# production code (other src/ files, top-level tests/*.rs Cargo targets, or
-# examples/). The orphan detector above cannot catch these because ``pub
-# mod`` makes them reachable from ``src/lib.rs`` — but they ARE dead weight
-# for the same reason an orphan is.
+# Each entry is the module's QUALIFIED PATH (e.g. ``io::idf::export``)
+# for a ``src/**/mod.rs`` declaration that exists on disk, is wired into
+# the module graph, and currently has zero callers in production code
+# (other src/ files, top-level tests/*.rs Cargo targets, or examples/).
+# The orphan detector above cannot catch these because ``pub mod`` makes
+# them reachable from ``src/lib.rs`` — but they ARE dead weight for the
+# same reason an orphan is.
+#
+# Entries were keyed by bare leaf NAME until 2026-11-09 (Issue #4702):
+# one leaf entry silently covered every same-named module in different
+# subtrees — ``export`` covered both ``io::idf::export`` and
+# ``validation::export``, so resolving one could never drop the entry.
+# Keying by qualified path makes each module individually resolvable:
+# wiring or deleting one module drops exactly its own entry and row.
 #
 # Categories are tracked in comments so the future cleanup backlog is
 # visible at a glance:
@@ -275,14 +282,14 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
         # tests/*.rs imports ``crate::sim::ems::...`` (the only ``EmsManager``
         # / ``EmsSensorType`` / ``EmsActuatorType`` references are inside
         # ``ems.rs``'s own doctest block). Tracked for a follow-up issue.
-        "ems",
+        "sim::ems",
         # [pending-removal] Issue #3458 audit surfaced
         # ``src/sim/hvac_sizing.rs`` as a wired-but-dead ``pub mod
         # hvac_sizing;``: no consumer in src/ or top-level tests/*.rs imports
         # ``crate::sim::hvac_sizing::...`` (the only ``HvacSizer`` /
         # ``HvacSizingResult`` references are inside the module's own tests).
         # Tracked for a follow-up issue.
-        "hvac_sizing",
+        "sim::hvac_sizing",
         # [pending-removal] Wired-but-dead surface detected by the
         # Issue #3458 check. The module compiles into the crate but has
         # no callers in src/ or top-level tests/*.rs (the only references
@@ -295,57 +302,79 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
         # (`continuous`, `nd_array`, `fd_surface_balance`, `ffd_solver`,
         # `simd_kernels`, `ensemble`, `xdt_export`, `shared_memory_buffer`,
         # `optimal_start_stop`, `zonenet_hvac_bridge`, `import`).
-        "assembly_library",
-        "batch_inference",
-        "benchmarking",
-        "context_aware",
-        "coupled_solver",
-        "distributed",
-        "doe_reference",
-        "epjson",
-        "fdd",
-        "flexlab_weather",
-        "inter_zone",
-        "parallel",
-        "rom",
-        "sweeps",
-        "tdd",
-        "topsis",
+        "validation::assembly_library",
+        "ai::batch_inference",
+        "performance::benchmarking",
+        "ai::context_aware",
+        "thermal::coupled_solver",
+        "ai::distributed",
+        "testing::integration::doe_reference",
+        "io::idf::epjson",
+        "validation::fdd",
+        "validation::flexlab_weather",
+        "thermal::inter_zone",
+        "performance::parallel",
+        # Path-keying migration (Issue #4702): previously hidden under the
+        # shared leaf ``parallel`` entry above.
+        "performance::parallel::validation",
+        "thermal::rom",
+        "ai::sweeps",
+        "testing::tdd",
+        "analysis::topsis",
         # Issue #3930 — new diagnostic module, intentionally added, callers will be added in follow-up
-        "ashrae_copilot",
+        "validation::ashrae_copilot",
         # Issue #4197 — corrected detector (qualified-path-aware, comment-
         # stripping) surfaced 13 additional wired-but-dead modules that the
         # old bare-name/comment-sensitive detector missed. All confirmed
         # dead per qualified-path caller scans; tracked here as a documented
         # correction (baseline 19 → 32). Companion cleanup PRs are expected
         # to drop one entry each as these modules are deleted or wired in.
-        "diagnostics",
-        "error",
-        "geometry",
-        "integration",
-        "parser",
-        "performance",
-        "reference_data",
-        "reporting",
-        "thermal_mass",
-        "thermal_model_iterative",
-        "ukf",
-        "validation",
-        "writer",
+        "sim::diagnostics",
+        "io::idf::error",
+        "physics::geometry_tensor::geometry",
+        # Path-keying migration (Issue #4702): previously hidden under the
+        # shared leaf ``geometry`` entry above.
+        "interop::ifc::geometry",
+        "validation::performance::integration",
+        "interop::osm::parser",
+        "cli::performance",
+        "testing::reference_data",
+        # Path-keying migration (Issue #4702): previously hidden under the
+        # shared leaf ``reference_data`` entry above.
+        "validation::reference_data",
+        "validation::hvac_bestest::reporting",
+        # Path-keying migration (Issue #4702): previously hidden under the
+        # shared leaf ``reporting`` entry above.
+        "validation::reporting",
+        "validation::thermal_mass",
+        "sim::thermal_model_iterative",
+        "ai::ukf",
+        "cli::validation",
+        "interop::gbxml::writer",
+        # Path-keying migration (Issue #4702): previously hidden under the
+        # shared leaf ``writer`` entry above (three distinct writers).
+        "interop::ifc::writer",
+        "interop::osm::writer",
         # [keep-dead] Issue #4173 deleted the ThermalModel validation-gated
         # constructors, which were the sole in-workspace callers of
         # ``validation::config`` (validate_assembly). The module is retained
-        # as tested public API; re-wire or delete in a follow-up. (Leaf name
-        # ``config`` is unambiguous here: ``ai::sweeps::config`` has live
-        # callers and is not wired-but-dead.)
-        "config",
+        # as tested public API; re-wire or delete in a follow-up.
+        # (``ai::sweeps::config`` is a distinct module with live callers
+        # and is not wired-but-dead.)
+        "validation::config",
         # [wire-pending] Issue #3991 (PR #4611) staged ``src/io/idf/export.rs``
         # as a wired-but-dead ``pub mod export;``: the IDF export surface is
         # tested but has no production caller yet. The production wiring
-        # (glazing + IdealLoads export) lands in the follow-up issue filed
-        # when PR #4611 merges; wire it up or delete it there, dropping this
-        # entry and its registry row in the same PR.
-        "export",
+        # (glazing + IdealLoads export) lands in Issue #4702; wire it up or
+        # delete it there, dropping this entry and its registry row in the
+        # same PR.
+        "io::idf::export",
+        # [keep-dead] ``src/validation/export.rs`` has no production caller
+        # either. Until the Issue #4702 path-keying migration it was
+        # silently covered by the shared leaf ``export`` entry above, so
+        # no wire-or-delete decision was ever recorded for it; tracked
+        # separately now, decision pending a follow-up.
+        "validation::export",
     }
 )
 
@@ -379,7 +408,13 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
 #     ``validation_hybrid_empirical_test`` target) — the module is no
 #     longer wired-but-dead, so its allowlist entry and its Issue
 #     #3748 disposition row are dropped in the same PR.
-BASELINE_WIRED_BUT_DEAD = 34  # raised 19 → 32 in PR for fluxion-#4197: corrected;
+BASELINE_WIRED_BUT_DEAD = 41  # raised 34 → 41 in PR for fluxion-#4702
+#   (2026-11-09): allowlist + registry keying corrected from bare leaf
+#   names to qualified module paths. Same-leaf modules in different
+#   subtrees are now counted individually (export ×2, writer ×3,
+#   geometry ×2, parallel ×2, reference_data ×2, reporting ×2 = +7).
+#   No new dead modules — a counting correction, like #4197's 19 → 32.
+#   raised 19 → 32 in PR for fluxion-#4197: corrected;
 #   raised 33 → 34 in PR for fluxion-#4611: io::idf::export staged by Issue
 #   #3991 with no production caller yet; wire-pending disposition in the
 #   #3748 registry, production wiring tracked in the follow-up issue filed
@@ -1062,11 +1097,13 @@ def _find_wired_but_dead() -> tuple[list[str], list[str]]:
             break
         has_caller[qualified] = external_hit
 
-    # Report by leaf name for back-compat with the WIRED_BUT_DEAD
-    # allowlist (which uses leaf names). If multiple qualified paths
-    # share a leaf and any is wired-but-dead, report the leaf once.
-    raw_qualified = sorted(q for q in hits_by_module if not has_caller[q])
-    raw = sorted({q.split("::")[-1] for q in raw_qualified})
+    # Report by qualified path: the WIRED_BUT_DEAD allowlist and the
+    # Issue #3748 disposition registry are keyed by qualified module
+    # path (Issue #4702), so two modules sharing a leaf name in
+    # different subtrees are tracked — and can be resolved —
+    # independently. (Pre-#4702 this collapsed to leaf names, which
+    # let one allowlist entry cover several distinct modules.)
+    raw = sorted(q for q in hits_by_module if not has_caller[q])
     new = [m for m in raw if m not in WIRED_BUT_DEAD]
     return raw, new
 
@@ -1454,7 +1491,7 @@ def _check_wired_but_dead_dispositions(raw_wired_but_dead: list[str]) -> int:
             "MISSING DISPOSITION ROWS DETECTED (CI FAILURE — Issue #3748):"
         )
         for name in sorted(set(missing_live) | set(missing_allowlist)):
-            print(f"  pub mod {name}; — no registry row")
+            print(f"  {name} — no registry row")
         print()
         print(
             "Every wired-but-dead module needs an owner-assigned\n"
@@ -1651,7 +1688,7 @@ def main() -> int:
             "NEW WIRED-BUT-DEAD MODULES DETECTED (CI FAILURE — Issue #3458):"
         )
         for mod_name in new_wired_but_dead:
-            print(f"  pub mod {mod_name};")
+            print(f"  {mod_name}")
         print()
         print(
             "These ``pub mod`` declarations are wired into src/lib.rs but\n"
@@ -1661,8 +1698,8 @@ def main() -> int:
             "weight for the same reason an orphan is.\n"
             "\n"
             "Either delete the module + remove the ``pub mod`` line, or\n"
-            "(if intentional and out of scope) add the module name to\n"
-            "WIRED_BUT_DEAD in scripts/check_orphan_modules.py with a\n"
+            "(if intentional and out of scope) add the module's qualified\n"
+            "path to WIRED_BUT_DEAD in scripts/check_orphan_modules.py with a\n"
             "justifying comment AND raise BASELINE_WIRED_BUT_DEAD with a\n"
             "tracking issue reference."
         )
