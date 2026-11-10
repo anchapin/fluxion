@@ -131,6 +131,34 @@
 //! The re-record path is explicit and opt-in; the ordinary test run always
 //! compares the live engine run against the committed file.
 //!
+//! # Issue #4665 — the `PressureDrivenAirLoop` dispatch was attempted and blocked
+//!
+//! Issue #4665 asked for the four §11 systems to be dispatched through the
+//! engine's real pressure-driven air loop
+//! (`src/sim/hvac/pressure_air_loop.rs`) instead of the harness-side
+//! mixing / flow-split / zone-balance code documented above.
+//!
+//! The attempt was made against the **existing public API only** (the brief
+//! forbids extending it) and it was **stopped**, because that API cannot
+//! express any of the four §11 configurations. The gaps, with the API
+//! evidence, are:
+//!
+//! | §11 quantity | harness-side function | air-loop dispatch | why it does not exist |
+//! |---|---|---|---|
+//! | `mixed_air_temp` (all 24 cells) | `mix_streams` | none | `AirLoopElement` has only `Fan` / `Duct` / `Damper` (`pressure_air_loop.rs:282`): the loop has no outdoor-air inlet and no mixing element, and `AirLoopNetwork` is a single closed ring (one path, one solved flow), so the outdoor/return mixture every §11 coil sees cannot be formed |
+//! | `cooling_latent` (all 24 cells) | zone humidity-ratio balance | none | the air-loop module carries no humidity at all (`grep -i humid src/sim/hvac/pressure_air_loop.rs` → 0 hits): `ZoneAirNode` (`:981`) has temperatures, a volume, an envelope conductance and a scalar internal gain, and `AirLoopSolution` (`:416`) has flow/pressure/power only — the zone latent load (`r1_ql`, `r2_ql`) and the return-air humidity ratio have no representation |
+//! | CAV/VAV `supply_mass_flow`, `zone1_supply_temp`, `zone2_supply_temp`, `zone1_reheat`, `zone2_reheat`, `total_reheat`, `total_heat` | `dispatch_two_zone` flow split and zone balances | none | `PressureDrivenAirLoop` holds one `ZoneAirNode`, one `ZoneThermostat` and one damper (`:1102`); the QAS CAV/VAV topology is a central AHU whose single supply flow **splits** between two zones, with a second (return) fan downstream of the merge — the ring topology accepts exactly one fan (`:505`) and has no branch nodes |
+//! | VAV flow rule | `load_flow.max(m_exh)` | none | the damper position is commanded by the hysteretic on/off `ZoneThermostat` (`:863`) from two fixed positions; the QAS VAV rule (the minimum flow that meets the zone sensible load at the AHU discharge temperature, floored by the exhaust flow) is not commandable through the loop |
+//! | fan air-temperature rise | `fan_temperature_rise` | partial | `AirLoopSolution::fan_air_power_w` is the **air** power (flow × pressure rise, `:713`); the QAS workbook's convention is shaft power / (ṁ·cp) at 70 % fan efficiency, and `FanCurve` carries no efficiency — a harness-side efficiency factor would be needed |
+//! | `supply_mass_flow` (FC/SZ) | design flow × density | partial | the loop *solves* the flow from a quadratic fan curve plus series resistances, while the QAS *specifies* the flow and a constant pressure rise; reproducing the specified flow would mean choosing a duct resistance to hit it (a fitted value), and `AirLoopStepResult::supply_mass_flow_kg_per_s` uses the constant `STANDARD_AIR_DENSITY_KG_PER_M3 = 1.2` rather than the moist-air density at the coil leaving state |
+//! | `zone1_supply_temp` / `zone2_supply_temp` | `t_zone - q/(ṁ·cp)` | none | `ZoneAirNode` takes the supply temperature as an *input* and returns the zone temperature after a transient step; the inverse the QAS asks for (the supply temperature that holds the given zone temperature under the given load) is not exposed, so it would have to be inverted in harness code — the very zone balance the issue asks to remove |
+//!
+//! The full mapping, the evidence and the smallest API extension that would
+//! unblock the dispatch are recorded in `WORKER_REPORT.md`. Until that API
+//! exists the harness keeps its documented system-level glue, and every
+//! affected row keeps saying so in its `method` field; nothing here is
+//! hidden.
+//!
 //! # Determinism
 //!
 //! No weather file, no randomness, no wall-clock dependence: every input is

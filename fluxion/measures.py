@@ -391,6 +391,13 @@ def model_to_dict(
         "temperatures": list(model.get_temperatures()),
         "zones": zones,
         "surfaces": flat_surfaces,
+        # Issue #4633 — the per-zone thermostat setpoints are part of the
+        # model's control state and must survive the round-trip. They are
+        # stored separately from the ``zones`` entries because the zone
+        # snapshots are derived views (temperatures, areas) whereas the
+        # setpoints are the *authoritative* per-zone control values the
+        # solver consumes.
+        "zone_setpoints": _zone_setpoints_to_dict(model),
         "hvac_system": {
             "heating_capacity": hvac.heating_capacity,
             "cooling_capacity": hvac.cooling_capacity,
@@ -421,7 +428,42 @@ def dict_to_model(payload: dict[str, Any]) -> Any:
         model.set_surfaces(flat)
     if "hvac_system" in payload:
         model.set_hvac_system(_dict_to_hvac(payload["hvac_system"]))
+    # Issue #4633 — restore the per-zone thermostat setpoints. The setter is
+    # used when the binding exposes it (the native ``fluxion.Model`` binding
+    # does since #4633); otherwise the values are advisory and only carried
+    # in the payload.
+    zone_setter = getattr(model, "set_zone_setpoints", None)
+    if callable(zone_setter):
+        for entry in payload.get("zone_setpoints", []) or []:
+            zone_setter(
+                int(entry["index"]),
+                float(entry["heating"]),
+                float(entry["cooling"]),
+            )
     return model
+
+
+def _zone_setpoints_to_dict(model: Any) -> list[dict[str, Any]]:
+    """Return the model's per-zone setpoints as a JSON-friendly list.
+
+    Issue #4633. The native ``fluxion.Model`` binding exposes
+    ``get_zone_setpoints()`` (a list of ``(heating, cooling)`` pairs per
+    zone). When the binding does not expose it, the per-zone values are read
+    from the zone snapshots instead, so duck-typed models still round-trip.
+    """
+    getter = getattr(model, "get_zone_setpoints", None)
+    if callable(getter):
+        pairs = list(getter())
+    else:
+        pairs = [(z.heating_setpoint, z.cooling_setpoint) for z in model.zones()]
+    return [
+        {
+            "index": index,
+            "heating": float(heating),
+            "cooling": float(cooling),
+        }
+        for index, (heating, cooling) in enumerate(pairs)
+    ]
 
 
 def _enum_name(value: Any) -> str:
