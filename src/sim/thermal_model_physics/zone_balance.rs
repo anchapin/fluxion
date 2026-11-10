@@ -327,7 +327,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         //
         // Now: t_sol_air includes solar via the sol-air formula using opaque irradiance.
         // opaque_sol_w has been removed from phi_m to avoid double-counting.
-        // The sol-air formula: T_sol_air = T_out + α*I_opaque/h_ext - ε*σ*(T_out-T_sky)^4/h_ext
+        // The sol-air formula, per surface (ExteriorBoundarySurface::sol_air_temperature):
+        // T_sol_air = T_out + α·(I_bd + I_gr)/h_c − F_sky·ε·σ·(T_out⁴ − T_sky⁴)/h_c
+        // — the ASHRAE ΔR direction (a cold sky LOWERS sol-air, Issue #4224), with
+        // F_sky = (1 + cos tilt)/2 (ISO 13790 §12.3.2). Pinned bit-exactly by
+        // tests/sol_air_composition_contract.rs (loop round 126).
         //
         // Issue #2891: h_ext used to be the time-invariant `EXTERIOR_FILM_COEFF_DEFAULT
         // = 18.3 W/m²·K` (~3.4 m/s wind), which over-estimated convection in winter
