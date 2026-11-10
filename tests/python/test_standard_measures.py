@@ -27,6 +27,10 @@ and then the occupancy-density measure:
 
 - ``SetOccupancyDensity``
 
+and then the HVAC-electrification measure:
+
+- ``ReplaceHVACWithHeatPump``
+
 The suite is designed to run in two modes:
 
 1. **With native bindings** (``maturin develop``): full integration coverage
@@ -409,6 +413,7 @@ class TestDiscovery:
             "AddOverhang",
             "SetWindowProperties",
             "SetOccupancyDensity",
+            "ReplaceHVACWithHeatPump",
         }.issubset(names), names
 
 
@@ -3136,3 +3141,373 @@ class TestSetInfiltrationRateMeasure:
         assert model["schedules"]["infiltration"]["values"] == [
             pytest.approx(0.2)
         ] * 24
+
+
+# =============================================================================
+# ReplaceHVACWithHeatPump — duck-typed stand-ins
+# =============================================================================
+
+
+class _StubHeatPumpHVAC:
+    """Stand-in for the ``fluxion.HVACSystem`` snapshot.
+
+    ``with_system_type`` adds the ``system_type`` attribute the current
+    native snapshot does *not* carry — it stands in for a binding that can
+    describe the HVAC system type (the schema's ``controls.hvac_system``).
+    """
+
+    def __init__(self, cop_heating=3.0, cop_cooling=3.2, with_system_type=False):
+        self.heating_capacity = 10000.0
+        self.cooling_capacity = 8000.0
+        self.cop_heating = cop_heating
+        self.cop_cooling = cop_cooling
+        self.stages = 1
+        self.min_outdoor_temp = -10.0
+        self.max_outdoor_temp = 40.0
+        if with_system_type:
+            self.system_type = "Ideal"
+
+
+class _StubHeatPumpModel:
+    """Stand-in for ``fluxion.Model`` exposing the HVAC snapshot."""
+
+    def __init__(self, with_setter=True, with_system_type=False):
+        self._hvac = _StubHeatPumpHVAC(with_system_type=with_system_type)
+        self.hvac_writes = []
+        if with_setter:
+            self.set_hvac_system = self._set_hvac_system
+
+    def hvac_system(self):
+        return self._hvac
+
+    def _set_hvac_system(self, hvac):
+        self.hvac_writes.append(hvac)
+
+
+class _StubModelWithoutHVAC:
+    """Stand-in for a model that exposes no HVAC system at all."""
+
+
+class _StubHeatPumpObject:
+    """Stand-in for the Rust ``HeatPump`` struct (``src/sim/hvac/mod.rs``)."""
+
+    def __init__(self):
+        self.heating_cop = 3.0
+        self.cooling_cop = 3.2
+        self.heating_capacity = 10000.0
+        self.cooling_capacity = 8000.0
+
+
+class _StubModelWithHeatPumpObject(_StubHeatPumpModel):
+    """Stand-in for a model exposing a dedicated heat-pump object."""
+
+    def __init__(self):
+        super().__init__()
+        self._heat_pump = _StubHeatPumpObject()
+        self.heat_pump_writes = []
+        self.set_heat_pump = self._set_heat_pump
+
+    def heat_pump(self):
+        return self._heat_pump
+
+    def _set_heat_pump(self, heat_pump):
+        self.heat_pump_writes.append(heat_pump)
+
+
+# =============================================================================
+# ReplaceHVACWithHeatPump — argument validation
+# =============================================================================
+
+
+class TestReplaceHVACWithHeatPumpValidation:
+    """The COPs must be positive, bounded numbers — as in SetHVACEfficiency."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module(
+            "measures/ReplaceHVACWithHeatPump.py", "_hp_mod"
+        )
+
+    def test_valid_cop_is_returned(self, mod):
+        assert mod.validate_cop(3.5) == pytest.approx(3.5)
+
+    def test_zero_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_cop(0.0, name="cop_heating")
+        assert "cop_heating" in str(excinfo.value)
+        assert "> 0" in str(excinfo.value)
+
+    def test_negative_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_cop(-2.0)
+
+    def test_above_maximum_is_rejected(self, mod):
+        with pytest.raises(ValueError) as excinfo:
+            mod.validate_cop(mod.MAX_COP + 1.0, name="cop_cooling")
+        assert "cop_cooling" in str(excinfo.value)
+        assert "<=" in str(excinfo.value)
+
+    def test_below_minimum_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_cop(mod.MIN_COP / 2.0)
+
+    def test_nan_and_infinity_are_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_cop(float("nan"))
+        with pytest.raises(ValueError):
+            mod.validate_cop(float("inf"))
+
+    def test_non_numeric_is_rejected(self, mod):
+        with pytest.raises(ValueError):
+            mod.validate_cop("efficient")
+
+    def test_bounds_are_ordered(self, mod):
+        assert 0.0 < mod.MIN_COP < mod.MAX_COP
+
+    def test_bounds_match_the_set_hvac_efficiency_measure(self, mod):
+        # The heat-pump measure reuses the plant-efficiency bounds rather
+        # than inventing new ones.
+        efficiency = _load_module(
+            "measures/SetHVACEfficiency.py", "_cop_bounds"
+        )
+        assert mod.MIN_COP == efficiency.MIN_COP
+        assert mod.MAX_COP == efficiency.MAX_COP
+
+    def test_capacity_must_be_positive(self, mod):
+        assert mod.validate_capacity(18000.0, "heating_capacity") == (
+            pytest.approx(18000.0)
+        )
+        with pytest.raises(ValueError):
+            mod.validate_capacity(0.0, "heating_capacity")
+        with pytest.raises(ValueError):
+            mod.validate_capacity(-1.0, "cooling_capacity")
+
+    def test_temperature_must_be_finite(self, mod):
+        assert mod.validate_temperature(-12.0, "min_outdoor_temp") == (
+            pytest.approx(-12.0)
+        )
+        with pytest.raises(ValueError):
+            mod.validate_temperature(float("nan"), "min_outdoor_temp")
+        with pytest.raises(ValueError):
+            mod.validate_temperature("cold", "max_outdoor_temp")
+
+
+# =============================================================================
+# ReplaceHVACWithHeatPump — measure behaviour (duck-typed model)
+# =============================================================================
+
+
+class TestReplaceHVACWithHeatPumpMeasure:
+    """Exercise the electrification measure against stand-in models."""
+
+    @pytest.fixture(scope="class")
+    def mod(self):
+        return _load_module(
+            "measures/ReplaceHVACWithHeatPump.py", "_hp_measure"
+        )
+
+    def test_resolve_returns_the_hvac_snapshot(self, mod):
+        model = _StubHeatPumpModel()
+        assert mod.resolve_hvac_snapshot(model) is model._hvac
+
+    def test_resolve_raises_without_an_hvac_system(self, mod):
+        with pytest.raises(mod.HVACSystemNotFoundError) as excinfo:
+            mod.resolve_hvac_snapshot(_StubModelWithoutHVAC())
+        assert "no HVAC system" in str(excinfo.value)
+
+    def test_resolve_raises_when_the_snapshot_has_no_cop_fields(self, mod):
+        class _BareSnapshot:
+            heating_capacity = 10000.0
+
+        class _BareModel:
+            def hvac_system(self):
+                return _BareSnapshot()
+
+        with pytest.raises(mod.HVACSystemNotFoundError):
+            mod.resolve_hvac_snapshot(_BareModel())
+
+    def test_error_is_a_value_error(self, mod):
+        assert issubclass(mod.HVACSystemNotFoundError, ValueError)
+
+    def test_apply_sets_both_cops_and_pushes_back(self, mod):
+        model = _StubHeatPumpModel()
+        mod.ReplaceHVACWithHeatPump().apply(
+            model, {"cop_heating": 3.2, "cop_cooling": 4.0}
+        )
+        assert model._hvac.cop_heating == pytest.approx(3.2)
+        assert model._hvac.cop_cooling == pytest.approx(4.0)
+        assert len(model.hvac_writes) == 1
+        assert model.hvac_writes[0].cop_heating == pytest.approx(3.2)
+
+    def test_apply_uses_the_declared_defaults(self, mod):
+        model = _StubHeatPumpModel()
+        measure = mod.ReplaceHVACWithHeatPump()
+        measure.apply(model, measure.parse_arguments({}))
+        assert model._hvac.cop_heating == pytest.approx(mod.DEFAULT_HEATING_COP)
+        assert model._hvac.cop_cooling == pytest.approx(mod.DEFAULT_COOLING_COP)
+
+    def test_apply_preserves_the_capacities_by_default(self, mod):
+        model = _StubHeatPumpModel()
+        mod.ReplaceHVACWithHeatPump().apply(model, {"cop_heating": 3.0})
+        assert model._hvac.heating_capacity == pytest.approx(10000.0)
+        assert model._hvac.cooling_capacity == pytest.approx(8000.0)
+
+    def test_apply_overrides_the_capacities_when_asked(self, mod):
+        model = _StubHeatPumpModel()
+        mod.ReplaceHVACWithHeatPump().apply(
+            model,
+            {
+                "cop_heating": 3.0,
+                "cop_cooling": 3.5,
+                "heating_capacity": 18000.0,
+                "cooling_capacity": 15000.0,
+            },
+        )
+        assert model._hvac.heating_capacity == pytest.approx(18000.0)
+        assert model._hvac.cooling_capacity == pytest.approx(15000.0)
+
+    def test_apply_sets_the_operating_envelope_when_asked(self, mod):
+        model = _StubHeatPumpModel()
+        mod.ReplaceHVACWithHeatPump().apply(
+            model,
+            {
+                "cop_heating": 3.0,
+                "cop_cooling": 3.5,
+                "min_outdoor_temp": -12.0,
+                "max_outdoor_temp": 35.0,
+            },
+        )
+        assert model._hvac.min_outdoor_temp == pytest.approx(-12.0)
+        assert model._hvac.max_outdoor_temp == pytest.approx(35.0)
+
+    def test_apply_sets_the_heat_pump_system_type_when_the_model_carries_one(
+        self, mod
+    ):
+        model = _StubHeatPumpModel(with_system_type=True)
+        mod.ReplaceHVACWithHeatPump().apply(model, {"cop_heating": 3.0})
+        assert "HeatPump" in str(model._hvac.system_type)
+
+    def test_apply_is_advisory_when_no_system_type_field_exists(self, mod):
+        # The native HVAC snapshot carries no system type — the measure must
+        # not crash and must not claim a type change.
+        model = _StubHeatPumpModel(with_system_type=False)
+        mod.ReplaceHVACWithHeatPump().apply(model, {"cop_heating": 3.0})
+        assert model._hvac.cop_heating == pytest.approx(3.0)
+        assert not hasattr(model._hvac, "system_type")
+
+    def test_apply_updates_a_dedicated_heat_pump_object(self, mod):
+        model = _StubModelWithHeatPumpObject()
+        mod.ReplaceHVACWithHeatPump().apply(
+            model, {"cop_heating": 3.4, "cop_cooling": 4.1}
+        )
+        assert model._heat_pump.heating_cop == pytest.approx(3.4)
+        assert model._heat_pump.cooling_cop == pytest.approx(4.1)
+        assert len(model.heat_pump_writes) == 1
+
+    def test_apply_without_a_setter_is_advisory(self, mod):
+        model = _StubHeatPumpModel(with_setter=False)
+        mod.ReplaceHVACWithHeatPump().apply(model, {"cop_heating": 3.0})
+        assert model.hvac_writes == []
+        assert model._hvac.cop_heating == pytest.approx(3.0)
+
+    def test_apply_fails_loudly_without_an_hvac_system(self, mod):
+        with pytest.raises(mod.HVACSystemNotFoundError):
+            mod.ReplaceHVACWithHeatPump().apply(
+                _StubModelWithoutHVAC(), {"cop_heating": 3.0}
+            )
+
+    def test_apply_rejects_an_invalid_cop_without_mutating(self, mod):
+        model = _StubHeatPumpModel()
+        with pytest.raises(ValueError):
+            mod.ReplaceHVACWithHeatPump().apply(model, {"cop_heating": 0.0})
+        assert model._hvac.cop_heating == pytest.approx(3.0)
+        assert model._hvac.cop_cooling == pytest.approx(3.2)
+        assert model.hvac_writes == []
+
+    def test_apply_rejects_an_out_of_range_cop_without_mutating(self, mod):
+        model = _StubHeatPumpModel()
+        with pytest.raises(ValueError):
+            mod.ReplaceHVACWithHeatPump().apply(
+                model, {"cop_cooling": mod.MAX_COP + 1.0}
+            )
+        assert model._hvac.cop_cooling == pytest.approx(3.2)
+        assert model.hvac_writes == []
+
+    def test_apply_rejects_an_invalid_capacity_without_mutating(self, mod):
+        model = _StubHeatPumpModel()
+        with pytest.raises(ValueError):
+            mod.ReplaceHVACWithHeatPump().apply(
+                model, {"cop_heating": 3.0, "heating_capacity": -5.0}
+            )
+        assert model._hvac.cop_heating == pytest.approx(3.0)
+        assert model.hvac_writes == []
+
+    def test_arguments_declare_the_heat_pump_arguments(self, mod):
+        spec = mod.ReplaceHVACWithHeatPump().arguments()
+        names = [a["name"] for a in spec]
+        assert names == [
+            "cop_heating",
+            "cop_cooling",
+            "heating_capacity",
+            "cooling_capacity",
+            "min_outdoor_temp",
+            "max_outdoor_temp",
+        ]
+        heating = spec[0]
+        cooling = spec[1]
+        assert heating["min"] == pytest.approx(mod.MIN_COP)
+        assert heating["max"] == pytest.approx(mod.MAX_COP)
+        assert heating["default"] == pytest.approx(mod.DEFAULT_HEATING_COP)
+        assert cooling["min"] == pytest.approx(mod.MIN_COP)
+        assert cooling["max"] == pytest.approx(mod.MAX_COP)
+        assert cooling["default"] == pytest.approx(mod.DEFAULT_COOLING_COP)
+
+    def test_provenance_chain_recorded(self, mod):
+        from fluxion.measures import SOURCE_PYTHON_MEASURE, apply_measures
+
+        model = _StubHeatPumpModel()
+        chain: list[dict] = []
+        applied = apply_measures(
+            model,
+            [mod.ReplaceHVACWithHeatPump],
+            {"ReplaceHVACWithHeatPump": {"cop_heating": 3.4, "cop_cooling": 4.0}},
+            applied_deltas=chain,
+        )
+        assert applied == ["ReplaceHVACWithHeatPump"]
+        assert len(chain) == 1
+        assert chain[0]["source"] == SOURCE_PYTHON_MEASURE
+        assert chain[0]["name"] == "ReplaceHVACWithHeatPump"
+        assert model._hvac.cop_heating == pytest.approx(3.4)
+
+
+# =============================================================================
+# Integration — native bindings
+# =============================================================================
+
+
+@requires_fluxion
+class TestReplaceHVACWithHeatPumpIntegration:
+    """End-to-end electrification on a real fluxion.Model."""
+
+    def _import_measure(self):
+        return _load_module(
+            "measures/ReplaceHVACWithHeatPump.py", "_hp_int"
+        ).ReplaceHVACWithHeatPump
+
+    def test_cops_are_written_on_the_hvac_snapshot(self):
+        import fluxion
+
+        model = fluxion.Model(num_zones=1)
+        self._import_measure().apply(
+            model, {"cop_heating": 3.4, "cop_cooling": 4.0}
+        )
+        hvac = model.hvac_system()
+        assert hvac.cop_heating == pytest.approx(3.4)
+        assert hvac.cop_cooling == pytest.approx(4.0)
+
+    def test_invalid_cop_is_rejected(self):
+        import fluxion
+
+        model = fluxion.Model(num_zones=1)
+        with pytest.raises(ValueError):
+            self._import_measure().apply(model, {"cop_heating": -1.0})
