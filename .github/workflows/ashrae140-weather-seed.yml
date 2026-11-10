@@ -80,11 +80,21 @@ jobs:
         with:
           # Byte-identical to the canonical cache steps in physics-pr.yml /
           # nightly-ashrae-140-gauge.yml / ashrae_140_fabric.yml: same path,
-          # same exact primary key. A re-dispatch after a successful seed is
-          # therefore a verified no-op (restore hits, fetch verifies, the
-          # post-save is skipped because the key already exists).
+          # same exact primary key, and the same restore-keys fallback — the
+          # last one is NOT optional: actions/cache versions a cache entry by
+          # a hash of the action ref + path + restore-keys, so a save made
+          # without the restore-keys input lands under a version the
+          # canonical steps (which carry it) can never restore. The r124
+          # first seed saved without this input and was invisible to every
+          # canonical restore (nightly probe: "Cache not found" for the
+          # exact key on develop itself, 2026-11-10 00:34Z). A re-dispatch
+          # after a successful seed is a verified no-op (restore hits, fetch
+          # verifies, the post-save is skipped because the key already
+          # exists).
           path: assets/weather/ashrae140
           key: ashrae140-weather-${{ hashFiles('tests/reference_data/weather/ashrae140_canonical_checksums.json') }}
+          restore-keys: |
+            ashrae140-weather-
 
       - name: Seed-fetch from the release mirror + convert + verify (canonical chain)
         run: |
