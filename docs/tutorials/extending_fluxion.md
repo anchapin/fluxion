@@ -344,7 +344,6 @@ let routing = HybridRouting {
     use_surrogate_conduction: false,  // Physics 5R1C/9R4C
     use_surrogate_ventilation: false,  // ConstantVentilation
     use_surrogate_loads: true,        // ONNX surrogate (default)
-    use_surrogate_hvac: false,        // Physics HVAC
     use_ood_fallback: false,
 };
 
