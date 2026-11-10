@@ -46,7 +46,7 @@ Exit codes:
   2 — script error
 
 The script reports ``BASELINE_PHYSICS_TO_SIM = 0`` and
-``BASELINE_SIM_TO_PHYSICS = 82`` documented edges as the *current state*.
+``BASELINE_SIM_TO_PHYSICS = 84`` documented edges as the *current state*.
 A future PR that adds a *new* ``use crate::sim::`` import under
 ``src/physics/**`` (or a *new* ``use crate::physics::`` import under any
 ``src/sim/**/*.rs`` file) — pushing the count *above* the documented
@@ -144,7 +144,19 @@ BASELINE_PHYSICS_TO_SIM = 0
 # that hoisted them to `fluxion-core` would also have to move the
 # helpers themselves. Companion cycle-removal work stays open under
 # the #2462 phase-3 sim->physics edge elision.
-BASELINE_SIM_TO_PHYSICS = 82  # was 80 (round 12, PR #4371): +2 for the gauge
+# Issue #3982 (PR #4651, baseline raise approved 2026-11-09): +2
+# sim->physics edges in `src/sim/thermal_model_physics/step_dispatcher.rs`
+# for the zonal-air DAE step — `use crate::physics::gauge_zone_solver::
+# {GaugeZoneSolver, SurfaceType}` and `use crate::physics::wall_spec::
+# WallSpec`. The dispatcher needs the gauge zone solver and the wall
+# spec types to assemble the coupled zonal-air system; homing either in
+# sim would duplicate physics-owned types. Companion cycle-removal work
+# stays open under the #2462 phase-3 sim->physics edge elision.
+BASELINE_SIM_TO_PHYSICS = 84  # was 82 (PR #4651 / Issue #3982, 2026-11-09):
+                              # +2 for the zonal-air DAE step's gauge-zone
+                              # solver + wall-spec imports in
+                              # step_dispatcher.rs — see the Issue #3982
+                              # block above. Prior step: was 80 (round 12, PR #4371): +2 for the gauge
                               # exterior-film fix's two `use crate::physics::
                               # exterior_convection::{...}` edges in
                               # step_dispatcher.rs (production + test) — the same

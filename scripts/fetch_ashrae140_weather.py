@@ -41,7 +41,7 @@ CHECKSUM_FILE = (
     / "ashrae140_canonical_checksums.json"
 )
 DEST_DIR = REPO_ROOT / "assets" / "weather" / "ashrae140"
-PACKAGE_URL = "https://xp20.ashrae.org/supplementalfiles/140-2023-AccompanyingFiles.zip"
+PACKAGE_URL = "https://github.com/anchapin/fluxion/releases/download/ashrae140-weather-seed-20261106/140-2023-AccompanyingFiles.zip"
 
 # Member paths inside 140-2023-AccompanyingFiles.zip (note the upstream
 # directory typo "FIles" — verbatim from the archive).
