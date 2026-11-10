@@ -90,6 +90,19 @@ pub struct MassState<T: ContinuousTensor<f64>> {
     pub r71_air_driver_num_prev: T,
     pub r71_air_driver_den_prev: T,
 
+    /// [Round 115 -- the ramp-source persistence response slope: the load
+    /// coefficient of the `num_prev` value frozen at the end of each step
+    /// (`num_tm + num_rest`, both hour-start arrays -- the R71 persistence
+    /// block in `step_5r1c.rs`). `num_rest` carries the hour's load through
+    /// its convective share `conv_frac * term_rest_1` (the lag route is
+    /// post-ramp and the `FLX_R90_PHIST_RAMP` prev-ramp branch is off on
+    /// the recorded route), so this is exactly the per-watt shift the NEXT
+    /// hour's R71 ramp consumes through its `(1 - f)` weight on
+    /// `num_prev`. Persisted alongside the drivers; consumed only by the
+    /// air record's ninth entry (the checker's self-response
+    /// continuation). Zero-initialized.]
+    pub r71_num_prev_load_slope: T,
+
     /// [R90 HARNESS — §LIMIT-40 storage-release split discriminator
     /// (`FLX_R90_PHIST_RAMP`): previous-hour gain drives (phi_st, phi_m),
     /// persisted at the end of each step so the sub-step loop can ramp the
@@ -248,6 +261,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for MassState<T> {
             r70_surface_node_temperatures_prev: self.r70_surface_node_temperatures_prev.clone(),
             r71_air_driver_num_prev: self.r71_air_driver_num_prev.clone(),
             r71_air_driver_den_prev: self.r71_air_driver_den_prev.clone(),
+            r71_num_prev_load_slope: self.r71_num_prev_load_slope.clone(),
             r90_phi_st_prev: self.r90_phi_st_prev.clone(),
             r90_phi_m_prev: self.r90_phi_m_prev.clone(),
             r75_vent_term_prev: self.r75_vent_term_prev.clone(),

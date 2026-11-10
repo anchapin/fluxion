@@ -1,12 +1,14 @@
-//! Inter-zone cross-response contracts (loop round 113) — the checker's
+//! Inter-zone cross-response contracts (loop rounds 113/115) — the checker's
 //! NEIGHBOR-side response to a single-zone load probe, the
 //! checker-air-node-mirror plan §5's explicitly-bounded-later item
 //! ("inter-zone cross-responses (Case 960 family — a single-zone probe's
 //! neighbor-side response needs a per-zone response vector, not a scalar)").
 //!
 //! Component under contract: the recorded inter-zone cross-response slot
-//! (the air-node record's EIGHTH entry, round 113) and the checker's
-//! `composed_cross_response_vector` over it. The engine's iz block adds
+//! (the air-node record's EIGHTH entry, round 113), the ramp-source
+//! persistence slot (the NINTH entry, round 115), and the checker's
+//! `composed_cross_response_vector` / `composed_cross_response_vector_seeded`
+//! over them. The engine's iz block adds
 //! `q_iz_net[i] = h_tr_iz[i]·(Σ_j T[j] − N·T[i])` to `phi_ia` from the
 //! COMMITTED hour-start air states, and `num_rest` is mul_assign'd by
 //! `term_rest_1` (#1585), so a neighbor's committed state enters the num
@@ -23,14 +25,21 @@
 //! because its own load, lag state and mass are probe-independent there,
 //! so the iz source is the only live channel (verified: the iz-source-only
 //! perturbation reproduces the full numeric response to 1.4e-13). A zone
-//! that DID respond in the previous hour (a sustained probe's own
-//! continuation) carries three further channels this record does not
-//! capture — the R71 ramp-source persistence response (`num_prev` is the
-//! frozen hour-start num_rest, load-dependent; the synthetic engine's gap
-//! closes to 8.7e-14 with the seeds + np channel added), the hour-boundary
-//! air/mass state seeds, and the R90 lag state on non-record routes — the
-//! plan's re-scoped remainder, documented in the plan §5 amendment and
-//! quantified by contract 3's divergence pin, never claimed exact.
+//! A zone that DID respond in the previous hour (a sustained probe's own
+//! continuation) carries its carry channels too: the R71 ramp-source
+//! persistence response, the hour-boundary air/mass state seeds, and the
+//! R90 lag state on non-record routes. Round 115 lands the first two: the
+//! air record's NINTH entry (index 8) records the persistence response
+//! (the freeze slope `conv_frac*term_rest_1`, persisted in
+//! `r71_num_prev_load_slope` at the R71 freeze site, enters the next
+//! hour's ramped sub-steps with the `(1-f)` weight), and
+//! `composed_cross_response_vector_seeded` takes the hour-boundary seeds
+//! and the previous hour's delta (Python replication
+//! `/tmp/r115_replication.py`: the seeds+np composition closes to 5.0e-14
+//! air / 1.8e-12 mass on the synthetic twin; the NP channel carries 2.19
+//! of the 5.00 K/W response). The zero-seed round-113 form keeps its
+//! semantics bit-for-bit -- contract 3 pins both its remaining
+//! discrimination gap and the seeded match.
 //!
 //! Fixture: the round-112 hand-rolled 2-zone lumped 5R1C pattern
 //! (`ThermalModel::new(2)`, CZ3 hand-built, asymmetric zones, symmetric
@@ -124,10 +133,11 @@ fn probed(gain: Option<f64>) -> ThermalModel<VectorField> {
     m
 }
 
-/// The air record for one zone: (sub-step count, the C-slot sequence).
-/// EIGHT entries per sub-step `[D, M, W, den, h3od, a, bl, C]` (round-113
-/// layout; C at index 7).
-fn air_record(m: &ThermalModel<VectorField>, zone: usize) -> (usize, Vec<f64>) {
+/// The air record for one zone: (sub-step count, the C-slot sequence, the
+/// NP-slot sequence). NINE entries per sub-step `[D, M, W, den, h3od, a,
+/// bl, C, NP]` (round-115 layout; C at index 7, the round-115 ramp-source
+/// persistence slot at index 8).
+fn air_record(m: &ThermalModel<VectorField>, zone: usize) -> (usize, Vec<f64>, Vec<f64>) {
     let rec = m
         .mass
         .r77_air_substep_coeffs
@@ -135,25 +145,31 @@ fn air_record(m: &ThermalModel<VectorField>, zone: usize) -> (usize, Vec<f64>) {
         .expect("a live coupled 5R1C step must persist the air-node record");
     let row = &rec[zone];
     assert!(
-        !row.is_empty() && row.len() % 8 == 0,
-        "air record must carry 8 entries per sub-step, got {}",
+        !row.is_empty() && row.len() % 9 == 0,
+        "air record must carry 9 entries per sub-step, got {}",
         row.len()
     );
-    let n = row.len() / 8;
-    let c_seq = (0..n).map(|k| row[8 * k + 7]).collect::<Vec<f64>>();
-    (n, c_seq)
+    let n = row.len() / 9;
+    let c_seq = (0..n).map(|k| row[9 * k + 7]).collect::<Vec<f64>>();
+    let np_seq = (0..n).map(|k| row[9 * k + 8]).collect::<Vec<f64>>();
+    (n, c_seq, np_seq)
 }
 
 #[test]
-/// Contract 1 — the record's EIGHTH entry: shape and the consumed closed
-/// form. On every sub-step of a seeded hour the C slot must equal
-/// `(1−D)·(term_rest_1[i]·h_tr_iz[i])/den` bit-exactly (air_ramp_f = 1.0),
-/// and on every sub-step of a ramped hour `(1−D)·((f_k·term_rest_1)·h_tr_iz)/den`
-/// bit-exactly, with `D` and `den` read from the record's own slots 0/3 and
-/// `term_rest_1`/`h_tr_iz` from the model — the same operands the engine
-/// consumed, in the engine's op order (Z4: no algebra the engine did not
-/// execute). The single-zone model consumes no iz term (`num_zones > 1`
-/// gate), so its C slot is exactly 0.0.
+/// Contract 1 -- the record's EIGHTH and NINTH entries: shape and the
+/// consumed closed forms (rounds 113/115). On every sub-step of a seeded
+/// hour the C slot must equal `(1-D)*(term_rest_1[i]*h_tr_iz[i])/den`
+/// bit-exactly (air_ramp_f = 1.0), and on every sub-step of a ramped hour
+/// `(1-D)*((f_k*term_rest_1)*h_tr_iz)/den` bit-exactly, with `D` and `den`
+/// read from the record's own slots 0/3 -- the same operands the engine
+/// consumed, in the engine's op order (Z4). The NINTH entry (round 115)
+/// carries the ramp-source persistence response: exactly 0.0 on a seed
+/// hour (no num_prev term is consumed), and
+/// `(1-D)*((1-f_k)*num_prev_load_slope)/den` on a ramped hour, the slope
+/// read from the `r71_num_prev_load_slope` the freeze site persisted. The
+/// single-zone model consumes no iz term, so its C slot is exactly 0.0
+/// while its NP slot follows the same closed form -- the persistence
+/// channel is per-zone, iz-independent.
 fn cross_slot_record_shape_and_closed_forms() {
     let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut m = multizone_model();
@@ -176,8 +192,8 @@ fn cross_slot_record_shape_and_closed_forms() {
     let h_iz = [h_iz_0, h_iz_1];
     let tr1s = [tr1_0, tr1_1];
 
-    let (n0, c0) = air_record(&m, 0);
-    let (n1, c1) = air_record(&m, 1);
+    let (n0, c0, np0) = air_record(&m, 0);
+    let (n1, c1, np1) = air_record(&m, 1);
     assert_eq!(n0, n1, "same coupled scheme, same sub-step count");
     assert_eq!(n0, 12, "fixture premise: the default coupled N");
 
@@ -185,8 +201,8 @@ fn cross_slot_record_shape_and_closed_forms() {
     let rec = m.mass.r77_air_substep_coeffs.as_ref().expect("air record");
     for (j, c_seq) in [c0.clone(), c1.clone()].iter().enumerate() {
         for (k, &c) in c_seq.iter().enumerate() {
-            let d = rec[j][8 * k];
-            let den = rec[j][8 * k + 3];
+            let d = rec[j][9 * k];
+            let den = rec[j][9 * k + 3];
             let expected = (1.0 - d) * (tr1s[j] * h_iz[j]) / den;
             assert_eq!(
                 c, expected,
@@ -201,6 +217,31 @@ fn cross_slot_record_shape_and_closed_forms() {
         }
     }
 
+    // [Round 115 -- the NINTH entry: the ramp-source persistence response.
+    // Seed hour (num_prev == 0 for both zones on the first step): the R71
+    // ramp never runs, no num_prev term is consumed, and the slot must be
+    // exactly 0.0. The freeze also persists the consumed load slope --
+    // pinned at its site: conv_frac * term_rest_1, bit-exactly.]
+    let conv_frac = m.solar.convective_fraction;
+    let slope_h1 = m.mass.r71_num_prev_load_slope.as_ref().to_vec();
+    for (j, &s) in slope_h1.iter().enumerate() {
+        let expected = conv_frac * tr1s[j];
+        assert_eq!(
+            s, expected,
+            "zone {j}: the persisted ramp-source load slope must equal \
+             conv_frac * term_rest_1 bit-exactly (the freeze-site closed form)"
+        );
+    }
+    for (j, np_seq) in [np0.clone(), np1.clone()].iter().enumerate() {
+        for (k, &np) in np_seq.iter().enumerate() {
+            assert_eq!(
+                np, 0.0,
+                "hour 1 zone {j} sub-step {k}: a seed hour consumes no \
+                 num_prev term, the NP slot must be exactly 0.0"
+            );
+        }
+    }
+
     // Ramped hour: air_ramp_f == f_k, the engine's op order is
     // ((f_k·term_rest_1)·h_tr_iz), then (1−D)·coef/den.
     m.step_physics(1, -10.0, DT);
@@ -209,19 +250,45 @@ fn cross_slot_record_shape_and_closed_forms() {
         .r77_air_substep_coeffs
         .as_ref()
         .expect("air record h2");
-    let (_, c0_h2) = air_record(&m, 0);
-    let (_, c1_h2) = air_record(&m, 1);
+    let (_, c0_h2, _) = air_record(&m, 0);
+    let (_, c1_h2, _) = air_record(&m, 1);
     for (j, c_seq) in [c0_h2, c1_h2].iter().enumerate() {
         for (k, &c) in c_seq.iter().enumerate() {
             let f_k = (k as f64 + 0.5) / 12.0;
-            let d = rec2[j][8 * k];
-            let den = rec2[j][8 * k + 3];
+            let d = rec2[j][9 * k];
+            let den = rec2[j][9 * k + 3];
             let aiz = (f_k * tr1s[j]) * h_iz[j];
             let expected = (1.0 - d) * aiz / den;
             assert_eq!(
                 c, expected,
                 "hour 2 zone {j} sub-step {k}: the C slot must carry the ramped \
                  iz slope bit-exactly"
+            );
+        }
+    }
+
+    // [Round 115 -- ramped hour: the NP slot carries the persisted hour-1
+    // slope through the (1-f) weight and the same branch normalization,
+    // bit-exactly in the engine's op order ((1-f)*slope, then
+    // (1-relax)*coef/den). The slope consumed at hour 2 is hour 1's freeze
+    // (snapshotted above), not the current hour's array (Z4).]
+    let (_, _, np0_h2) = air_record(&m, 0);
+    let (_, _, np1_h2) = air_record(&m, 1);
+    for (j, np_seq) in [np0_h2, np1_h2].iter().enumerate() {
+        for (k, &np) in np_seq.iter().enumerate() {
+            let f_k = (k as f64 + 0.5) / 12.0;
+            let d = rec2[j][9 * k];
+            let den = rec2[j][9 * k + 3];
+            let expected = (1.0 - d) * ((1.0 - f_k) * slope_h1[j]) / den;
+            assert_eq!(
+                np, expected,
+                "hour 2 zone {j} sub-step {k}: the NP slot must carry the \
+                 ramp-source persistence response bit-exactly"
+            );
+            assert!(
+                np > 0.0,
+                "hour 2 zone {j} sub-step {k}: a ramped hour must record a \
+                 nonzero persistence response (conv_frac * term_rest_1 > 0)"
             );
         }
     }
@@ -251,13 +318,52 @@ fn cross_slot_record_shape_and_closed_forms() {
     m1.hvac.hvac_cooling_capacity = 0.0;
     m1.update_optimization_cache();
     m1.step_physics(0, -10.0, DT);
-    let (n1z, c1z) = air_record(&m1, 0);
+    let (n1z, c1z, np1z) = air_record(&m1, 0);
+    for (k, &np) in np1z.iter().enumerate() {
+        assert_eq!(
+            np, 0.0,
+            "single-zone seed-hour sub-step {k}: no num_prev term is consumed, \
+             the NP slot must be exactly 0.0"
+        );
+    }
     assert_eq!(n1z, 12, "single-zone fixture premise");
     for (k, &c) in c1z.iter().enumerate() {
         assert_eq!(
             c, 0.0,
             "single-zone sub-step {k}: no iz block ran, the C slot must be \
              exactly 0.0 (Z4 — the slot records what the engine consumed)"
+        );
+    }
+    // [Round 115 -- the ramped single-zone hour pins the persistence
+    // channel's iz-independence: the NP slot follows the same closed form
+    // with no iz block in the model at all (num_prev != 0 gates the slot,
+    // num_zones does not).]
+    m1.step_physics(1, -10.0, DT);
+    let (_, _, np1z_h2) = air_record(&m1, 0);
+    let slope_1z = m1.mass.r71_num_prev_load_slope.as_ref()[0];
+    // Construction-static fixture: the slope consumed at hour 2 (hour 1's
+    // freeze) equals hour 2's freeze -- pinned against the same closed form.
+    let expected_slope =
+        m1.solar.convective_fraction * m1.conduction.derived_term_rest_1.as_ref()[0];
+    assert_eq!(
+        slope_1z, expected_slope,
+        "single-zone: the persisted persistence slope must equal its \
+         freeze-site closed form"
+    );
+    let rec1z = m1
+        .mass
+        .r77_air_substep_coeffs
+        .as_ref()
+        .expect("air record h2 1z");
+    for (k, &np) in np1z_h2.iter().enumerate() {
+        let f_k = (k as f64 + 0.5) / 12.0;
+        let d = rec1z[0][9 * k];
+        let den = rec1z[0][9 * k + 3];
+        let expected = (1.0 - d) * ((1.0 - f_k) * slope_1z) / den;
+        assert_eq!(
+            np, expected,
+            "single-zone ramped sub-step {k}: the NP slot follows the same \
+             closed form with no iz block"
         );
     }
 }
@@ -313,17 +419,19 @@ fn first_probe_hour_vector_self_only_exact() {
 }
 
 #[test]
-/// Contract 3 — the FLAGSHIP: the neighbor's first crossed hour. Probe hour
-/// 1 only (the counterfactual's load reverts), plain hour 2; the composed
-/// hour-2 neighbor entry (from the hour-1 vector as `prev`, zero seeds,
-/// delta 0) must equal the engine counterfactual's measured hour-2 neighbor
-/// shift to ≤1e-9 relative — the exactness the plan-§5 increment-E scope
-/// claims, because the neighbor's own load, lag state and mass are
+/// Contract 3 -- the FLAGSHIP: the neighbor's first crossed hour, re-pinned
+/// at round 115 (the r113 duck review's tripwire note). Probe hour 1 only
+/// (the counterfactual's load reverts), plain hour 2. The composed hour-2
+/// neighbor entry (from the hour-1 vector as `prev`, zero seeds, delta 0)
+/// must equal the engine counterfactual's measured hour-2 neighbor shift to
+/// <=1e-9 relative: the neighbor's own load, lag state and mass are
 /// probe-independent at that hour and the iz source is the only live
-/// channel. The probe zone's OWN hour-2 entry is NOT claimed exact (the
-/// carry-channel remainder: R71 ramp-source persistence, hour-boundary
-/// seeds, lag state) — the divergence is pinned, numerically documented,
-/// never tuned around.
+/// channel. The probe zone's OWN hour-2 entry is closed by the seeded
+/// continuation (`composed_cross_response_vector_seeded`, plan section 5
+/// increment F: the R71 ramp-source persistence slot + the hour-boundary
+/// air/mass seeds); the zero-seed round-113 form keeps its semantics and
+/// its remaining discrimination gap at that entry is still pinned, never
+/// tuned around.
 fn neighbor_first_crossed_hour_matches_engine_counterfactual() {
     let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut base = multizone_model();
@@ -335,6 +443,19 @@ fn neighbor_first_crossed_hour_matches_engine_counterfactual() {
     let checker = InvariantChecker::default();
     let zeros = vec![0.0f64; 2];
     let v1 = checker.composed_cross_response_vector(&base, 0, GAIN_W, &zeros);
+
+    // [Round 115 -- the seeded hour-1 pair, composed from the HOUR-1 record
+    // (before hour 2's step overwrites it): the seeded form must equal the
+    // zero-seed form bit-for-bit here (seed hour: NP slots exactly 0.0,
+    // seeds zero), and the mass entry is the hour-boundary mass seed the
+    // continuation consumes.]
+    let (v1s_air, v1s_mass) = checker
+        .composed_cross_response_vector_seeded(&base, 0, GAIN_W, 0.0, &zeros, &zeros, &zeros);
+    assert_eq!(
+        v1s_air, v1,
+        "seeded hour-1 air vector must equal the zero-seed form (seed hour: \
+         NP slots exactly 0.0, seeds zero)"
+    );
 
     // The single-hour probe: revert the counterfactual's load for hour 2.
     let cf_loads = cf.setpoints.loads.as_ref().to_vec();
@@ -360,24 +481,60 @@ fn neighbor_first_crossed_hour_matches_engine_counterfactual() {
         v2[1]
     );
 
-    // The documented remainder: the probe zone's own hour-2 response carries
-    // the carry channels (R71 ramp-source persistence, hour-boundary seeds),
-    // so the records-only composition must NOT match there — pinned as a
-    // nonzero, order-visible divergence (replication: composed −0.0022 K/W
-    // vs numeric +0.209 K/W on the synthetic twin; the fixture's own numbers
-    // are printed for the record).
+    // The zero-seed round-113 form keeps its exact semantics (it delegates
+    // with zero seeds and no persistence delta), so its own entry still
+    // misses the carry channels -- the discrimination gap stays pinned as a
+    // nonzero, order-visible divergence (the fixture's own numbers are
+    // printed for the record).
     let d_t0 = cf.mass.air_temperatures.as_ref()[0] - base.mass.air_temperatures.as_ref()[0];
     let gap = (v2[0] - d_t0).abs();
     println!(
-        "remainder at the probe zone (hour 2): composed {} K vs measured {d_t0} K, gap {gap} K",
+        "zero-seed form at the probe zone (hour 2): composed {} K vs measured {d_t0} K, gap {gap} K",
         v2[0]
     );
     assert!(
         gap > 1e-6,
-        "the probe zone's own hour-2 composition is expected to diverge from \
-         the counterfactual (the bounded-later carry channels) — a match here \
-         would mean the fixture lost its discrimination (composed {} vs {d_t0})",
+        "the zero-seed form must still miss the probe zone's own hour-2 \
+         continuation (its discrimination against the seeded form) - \
+         composed {} vs {d_t0}",
         v2[0]
+    );
+
+    // [Round 115 re-pin -- the seeded self-response continuation (plan
+    // section 5 increment F). The seeded hour-1 call also returns the
+    // hour-1 MASS response vector, which no earlier API exposed; feeding
+    // the hour-1 pair back as seeds with the hour-1 probe as the
+    // persistence delta must close the probe zone's own hour-2 entries on
+    // BOTH state pairs to <=1e-9 relative (Python replication
+    // /tmp/r115_replication.py: closure 5.0e-14 air / 1.8e-12 mass on the
+    // synthetic twin).]
+    let (v2s_air, v2s_mass) = checker
+        .composed_cross_response_vector_seeded(&base, 0, 0.0, GAIN_W, &v1, &v1s_air, &v1s_mass);
+    let d_m0 = cf.mass.mass_temperatures.as_ref()[0] - base.mass.mass_temperatures.as_ref()[0];
+    let d_m1 = cf.mass.mass_temperatures.as_ref()[1] - base.mass.mass_temperatures.as_ref()[1];
+    assert!(
+        (v2s_air[0] - d_t0).abs() <= 1e-9 * d_t0.abs(),
+        "hour-2 probe-zone AIR entry must equal the engine counterfactual \
+         through the seeded continuation (composed {} vs measured {d_t0})",
+        v2s_air[0]
+    );
+    assert!(
+        (v2s_air[1] - d_t1).abs() <= 1e-9 * d_t1.abs(),
+        "hour-2 neighbor AIR entry stays exact through the seeded form \
+         (composed {} vs measured {d_t1})",
+        v2s_air[1]
+    );
+    assert!(
+        (v2s_mass[0] - d_m0).abs() <= 1e-9 * d_m0.abs(),
+        "hour-2 probe-zone MASS entry must equal the engine counterfactual \
+         through the seeded continuation (composed {} vs measured {d_m0})",
+        v2s_mass[0]
+    );
+    assert!(
+        (v2s_mass[1] - d_m1).abs() <= 1e-9 * d_m1.abs(),
+        "hour-2 neighbor MASS entry must equal the engine counterfactual \
+         (composed {} vs measured {d_m1})",
+        v2s_mass[1]
     );
 }
 
@@ -403,8 +560,8 @@ fn zero_coupling_leaves_neighbor_exactly_zero() {
     base.step_physics(0, -10.0, DT);
     cf.step_physics(0, -10.0, DT);
 
-    let (_, c0) = air_record(&base, 0);
-    let (_, c1) = air_record(&base, 1);
+    let (_, c0, _) = air_record(&base, 0);
+    let (_, c1, _) = air_record(&base, 1);
     for (k, &c) in c0.iter().enumerate() {
         assert_eq!(
             c, 0.0,
@@ -440,6 +597,27 @@ fn zero_coupling_leaves_neighbor_exactly_zero() {
         "the counterfactual's hour-2 neighbor shift must be exactly zero \
          without coupling (a fully independent zone)"
     );
+
+    // [Round 115 -- the persistence channel is per-zone and iz-independent:
+    // with zero coupling the hour-2 C slots stay exactly 0.0 while the NP
+    // slots go strictly positive (num_prev != 0 and
+    // conv_frac * term_rest_1 > 0 on a ramped hour).]
+    let (_, c_h2_0, np_h2_0) = air_record(&base, 0);
+    for (k, &c) in c_h2_0.iter().enumerate() {
+        assert_eq!(
+            c, 0.0,
+            "hour 2 zone 0 sub-step {k}: h_tr_iz = 0 must leave the C slot \
+             exactly 0.0"
+        );
+    }
+    for (k, &np) in np_h2_0.iter().enumerate() {
+        assert!(
+            np > 0.0,
+            "hour 2 zone 0 sub-step {k}: the persistence slot must be \
+             strictly positive on a ramped hour even without coupling \
+             (iz-independent channel)"
+        );
+    }
 }
 
 #[test]
@@ -505,5 +683,129 @@ fn neighbor_channels_inert_at_first_crossed_hour() {
         cf.mass.r71_air_driver_den_prev.as_ref()[1],
         "hour 1: the neighbor's persisted R71 den ramp source must be \
          byte-identical (conductances are probe-independent)"
+    );
+    // [Round 115 -- the persistence slope joins the inertness pin: the
+    // freeze writes conv_frac * term_rest_1 (construction-static), so it
+    // must be byte-identical probe-on/off, and the neighbor's whole air
+    // record stays byte-identical through the crossed hour 2 (its own
+    // coefficients still never saw the probe; the iz source is a VALUE
+    // entering phi_ia, not a coefficient in the record).]
+    let cf_loads5 = cf.setpoints.loads.as_ref().to_vec();
+    cf.setpoints.loads = VectorField::new(vec![
+        cf_loads5[0] - GAIN_W / cf.setpoints.zone_area.as_ref()[0],
+        cf_loads5[1],
+    ]);
+    base.step_physics(1, -10.0, DT);
+    cf.step_physics(1, -10.0, DT);
+    assert_eq!(
+        base.mass.r71_num_prev_load_slope.as_ref().to_vec(),
+        cf.mass.r71_num_prev_load_slope.as_ref().to_vec(),
+        "the persisted persistence slope must be byte-identical probe-on/off \
+         (conv_frac * term_rest_1 is construction-static)"
+    );
+    assert_eq!(
+        base.mass
+            .r77_air_substep_coeffs
+            .as_ref()
+            .expect("air record h2 base")[1],
+        cf.mass
+            .r77_air_substep_coeffs
+            .as_ref()
+            .expect("air record h2 cf")[1],
+        "hour 2: the neighbor's whole air record must stay byte-identical \
+         probe-on/off through the crossed hour"
+    );
+}
+
+#[test]
+/// Contract 6 -- the sustained-probe self-continuation WITHOUT coupling
+/// (round 115): with `h_tr_iz = 0` the iz source is dead, so the seeded
+/// continuation's exactness at the probe zone's own second hour rests on
+/// the two non-iz carry channels alone -- the hour-boundary air/mass seeds
+/// and the R71 ramp-source persistence slot. Sustained probe (both hours),
+/// plain base; the seeded hour-2 pair must equal the engine counterfactual
+/// to <=1e-9 relative on the probe zone's air and mass entries, the
+/// neighbor's entries must be exactly zero on both state pairs, and every
+/// C slot must be exactly 0.0. The persistence channel is what closes a
+/// response the seeds-only composition misses (replication: seeds-only
+/// 2.81 vs numeric 5.00 K/W on the synthetic twin; seeds+NP closes).
+fn sustained_probe_self_continuation_without_coupling() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut base = with_coupling(0.0);
+    let mut cf = {
+        let mut m = with_coupling(0.0);
+        let loads = m.setpoints.loads.as_ref().to_vec();
+        m.setpoints.loads = VectorField::new(vec![
+            loads[0] + GAIN_W / m.setpoints.zone_area.as_ref()[0],
+            loads[1],
+        ]);
+        m
+    };
+
+    base.step_physics(0, -10.0, DT);
+    cf.step_physics(0, -10.0, DT);
+
+    let checker = InvariantChecker::default();
+    let zeros = vec![0.0f64; 2];
+    let (v1a, v1m) = checker
+        .composed_cross_response_vector_seeded(&base, 0, GAIN_W, 0.0, &zeros, &zeros, &zeros);
+    assert!(
+        v1a[0] != 0.0,
+        "hour-1 probe-zone entry carries its own response"
+    );
+    assert_eq!(v1a[1], 0.0, "hour-1 neighbor entry exactly zero");
+    assert_eq!(v1m[1], 0.0, "hour-1 neighbor mass entry exactly zero");
+
+    // Sustained: hour 2 keeps the probe (no load revert) on the
+    // counterfactual.
+    base.step_physics(1, -10.0, DT);
+    cf.step_physics(1, -10.0, DT);
+
+    let (v2a, v2m) =
+        checker.composed_cross_response_vector_seeded(&base, 0, GAIN_W, GAIN_W, &v1a, &v1a, &v1m);
+
+    // Every C slot exactly 0.0; every hour-2 NP slot strictly positive (the
+    // persistence channel is live in this fixture).
+    let (_, c0_h2, np0_h2) = air_record(&base, 0);
+    for (k, &c) in c0_h2.iter().enumerate() {
+        assert_eq!(
+            c, 0.0,
+            "hour 2 zone 0 sub-step {k}: zero coupling must leave the C slot \
+             exactly 0.0"
+        );
+    }
+    for (k, &np) in np0_h2.iter().enumerate() {
+        assert!(
+            np > 0.0,
+            "hour 2 zone 0 sub-step {k}: the persistence slot must be live \
+             on a ramped hour"
+        );
+    }
+
+    let d_t0 = cf.mass.air_temperatures.as_ref()[0] - base.mass.air_temperatures.as_ref()[0];
+    let d_m0 = cf.mass.mass_temperatures.as_ref()[0] - base.mass.mass_temperatures.as_ref()[0];
+    assert!(
+        d_t0.abs() > 1e-6,
+        "fixture premise: the sustained probe moves the zone"
+    );
+    assert!(
+        (v2a[0] - d_t0).abs() <= 1e-9 * d_t0.abs(),
+        "sustained hour-2 AIR entry must equal the engine counterfactual \
+         through seeds + persistence alone (composed {} vs measured {d_t0})",
+        v2a[0]
+    );
+    assert!(
+        (v2m[0] - d_m0).abs() <= 1e-9 * d_m0.abs(),
+        "sustained hour-2 MASS entry must equal the engine counterfactual \
+         (composed {} vs measured {d_m0})",
+        v2m[0]
+    );
+    assert_eq!(
+        v2a[1], 0.0,
+        "hour-2 neighbor AIR entry must be exactly zero without coupling"
+    );
+    assert_eq!(
+        v2m[1], 0.0,
+        "hour-2 neighbor MASS entry must be exactly zero without coupling"
     );
 }
