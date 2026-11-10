@@ -450,3 +450,164 @@ solver computes no air-node response to record), so the fall-through
 there is the documented absent-record convention, and the gauge-route
 response itself stays owned by §LIMIT-19/#1344. Inter-zone
 cross-responses remain explicitly out of scope (plan §5).
+
+## 2026-11-05 — loop round 113: the inter-zone cross-response (plan §5
+## increment E; the record's eighth slot)
+
+The plan §5 out-of-scope list's first item — "inter-zone cross-responses
+(Case 960 family — a single-zone probe's neighbor-side response needs a
+per-zone response vector, not a scalar)" — scoped and landed on the
+NEIGHBOR side. The engine's iz block adds
+`q_iz_net[i] = h_tr_iz[i]·(Σ_j T[j] − N·T[i])` to `phi_ia` from the
+COMMITTED hour-start air states, and `num_rest` is mul_assign'd by
+`term_rest_1` (#1585), so a neighbor's committed state enters the num
+with slope exactly `ramp_f·term_rest_1[i]·h_tr_iz[i]` — never recorded
+before this round, hence invisible to every probe arm.
+
+**Landed:** the air-node record's EIGHTH entry per sub-step,
+`C = (1−D)·ramp_f·term_rest_1[i]·h_tr_iz[i]/den`, pushed in the same
+lockstep (gated by the iz block's own `num_zones > 1` and
+`h_tr_iz[i] > 0.0` conditions — a single-zone model's slot is exactly
+0.0), plus the checker's `composed_cross_response_vector` composing
+`r_air' = D·r_air + M·r_m + W·Δ_j + C·(Σ_i prev_i − N·prev_j)` per
+sub-step over the previously committed air-response vector with zero
+hour-boundary seeds.
+
+**Python replication first** (`/tmp/r113_replication.py`, dev-time
+evidence, all scenarios PASS): the neighbor's first-crossed-hour
+response composes exactly (≤1.5e-11 relative across symmetric,
+asymmetric-iz, reversed-probe, N=1 and N=96 fixtures); the hour-1 self
+response stays exact (1.4e-13, the round-105 property); the
+iz-source-only perturbation reproduces the full numeric neighbor
+response (the other channels are provably inert for the neighbor); and
+the boundary is quantified — the probe zone's own hour-2 response
+misses by the carry channels (records-only −0.0022 K/W vs numeric
++0.209 K/W on the synthetic twin), closing to 8.7e-14 with the
+hour-boundary seeds + the R71 ramp-source response channel added.
+
+**Red-first** (round-105 stub precedent): the C-slot push stubbed →
+contracts {1,2,3,4} fail for the recorded reasons (stale 7-wide layout
+"got 84"; response exactly 0) with contract 5 green, rc=101; restored →
+green ×3. **Teeth ×3:** the iz-sign flip fails exactly {3} (prediction
+{2,3} missed — within a probe hour the iz term is probe-independent, so
+the sign only manifests at the crossed hour; disclosed), the
+ramp-factor drop fails exactly {1,3}.
+
+**Post-change:** the fixture's flagship contract asserts the composed
+hour-2 neighbor response against the engine counterfactual
+(single-hour probe, load reverted) at ≤1e-9 relative; the probe zone's
+own hour-2 divergence is pinned, not tuned (composed −0.056 K vs
+measured +0.275 K per 1 kW — the bounded-later carry channels, named in
+the plan §5 amendment: the R71 ramp-source persistence response, the
+hour-boundary air/mass state seeds, the R90 lag state on non-record
+routes). Battery bit-identity proven at the changed tree — the slot is
+write-only-pooled and every Δ=0 path is untouched, so no re-record is
+owed. The held r109–r112 suites pin the seven-entry layout in their
+helpers; updating them is a disclosed landing-time rebase step for the
+merge train (#4672 → #4673 → #4674 → #4675, then this PR).
+
+## Round 115 — increment F, the self-response carry channels (2026-11-07)
+
+The r113 re-bounded remainder landed: the air record's NINTH per-sub-step
+entry records the R71 ramp-source persistence response
+(`NP_k = (1−relax)·(1−f_k)·num_prev_load_slope/den`, exactly 0.0 on seed
+hours), fed by a new per-zone freeze-site field
+(`MassState::r71_num_prev_load_slope = conv_frac·term_rest_1` — the frozen
+`num_tm + num_rest`'s whole load slope on the recorded route: the lag route
+is post-ramp and the FLX_R90_PHIST_RAMP prev-ramp branch is off where the
+record exists). The checker gains `composed_cross_response_vector_seeded`
+(seed-taking API: hour-boundary air/mass seeds + the previous hour's probe
+delta); the zero-seed round-113 form delegates bit-for-bit and its
+discrimination gap stays pinned. Python replication: seeds+np closes to
+5.0e-14 air / 1.8e-12 mass on the synthetic twin. The real fixture's seeded
+pair matches the engine counterfactual ≤1e-9 relative on both zones and
+both state pairs (contract 3 re-pin, duck note N1 honored); contract 6
+closes the continuation with zero iz coupling (seeds + persistence alone).
+Red-first stub → {1,3,4,6} rc=101; teeth: (1−f) drop → {1,3,6}, un-gated
+routing → {3,6}. Battery bit-identity at the changed tree — the slot is
+write-only and the freeze field is record-only, so no re-record is owed.
+
+## Round 117 — the R90 lag channel's closure (2026-11-08)
+
+The r113 amendment's third carry channel — "the R90 lag state on
+non-record routes", the last un-disposed item after round 115 landed the
+ramp-source persistence and the hour-boundary seeds — is bounded and
+closed as contracts + docs only (no engine change). The channel splits by
+route:
+
+- **Recorded route — structurally absent, now a measured contract.** The
+  committed lag state CHARGES under a sustained probe (the input
+  `h_tr_is·phi_st/term_rest_1·(1−s88)` is load-linear): its response is
+  exactly the affine decay chain `rl ← decay·rl + dlag_in·(1−decay)`
+  (2.1e-16 / 1.0e-15 across the two hours; zone 0: 0.5413 → 1.0347 lag
+  units under 1 kW; the neighbor exactly 0). Nothing consumes it: the
+  seeded continuation (nine-slot record + air/mass seeds + NP + the iz
+  committed source, no lag term) closes against the engine counterfactual
+  at ≤1e-9 on both zones, both state pairs, both hours (2.7e-16 …
+  8.2e-14). Any future `solar_lag` consumer on this route breaks the
+  contract.
+- **Filtered route — live, exactly characterized.** With
+  `FLX_R90_NO_LAG_FILTER=0` the num consumes the MIDPOINT lag value, and
+  the probe response is the recorded-form recurrence with the W slot
+  replaced per sub-step by the lag-channel form (state term
+  `term_rest_1·decay_half·rl_unit`, coef_rest recovered from the
+  recorded twin's slot with the seed-hour provenance
+  `coef_rest = conv·term_rest_1` pinned): closes at ≤1e-9 against the
+  engine (5.5e-16 / 3.8e-16), hour 2 ONLY with the committed lag seed
+  (no-seed miss 1.02e-3, pinned); the recorded-form composition
+  mis-mirrors by 5.1e-3 / 3.7e-3 — the round-116 suppression is
+  load-bearing. The route keeps its documented fall-through.
+
+Scope findings: the channel is probed-zone-local (the neighbor's
+iz-committed response is route-W-insensitive, 5.3e-15); at `c_air = 0`
+the channel vanishes (decay 0 — fixtures need physical air capacitance);
+the lag STATE is byte-identical across routes at the same hour (contract
+18's parity, re-observed). Python replication `/tmp/r117_replication.py`
+(ALL CLAIMS OK) against a 4-run × 2-hour engine probe dump. Teeth ×3 on
+the clean tree, each failing exactly its predicted set (fake state
+consumer → contract 1's continuation; midpoint corruption → {2,3};
+charge clamp → the charge pin + {2,3}). Battery bit-identity at the
+changed tree — contracts + a comment only, no re-record owed. The
+round-74 "seed steps stay bit-identical" comment is corrected in place
+(the R76 refresh postdates it), closing duck note N2-r116.
+
+## Round 118 — the HVAC-masked probe fixtures (2026-11-08)
+
+The §5 out-of-scope list's last un-disposed item after round 117 —
+"HVAC-masked zones (probe fixtures use free-float setpoints)" — is bounded
+and closed as contracts + docs only (no engine change). Every probe
+fixture the plan landed through H pins `free_float = true` plus ±999
+setpoints, so the probe surface had no measured statement about zones
+under ACTIVE setpoint control. Round 118 bounds it: the controlled
+commit (LIMIT-33 Option A, #4314) plus the capacity-clamped ideal loads
+(#4241/#2826) create exactly three routes, pinned by
+`tests/hvac_masked_probe_contract.rs` (five contracts, per-model branch
+preconditions recomputed in-test):
+
+- **Unclamped ideal — the mask.** The committed controlled state
+  (`setpoints.temperatures`, the array the checker's probe reads) is the
+  setpoint VERBATIM in both probe arms: the controlled response is
+  exactly 0 while the free advance composes from the record
+  (r_air/r_m, ≤1e-9) and stays BIT-IDENTICAL to a free-float twin. Any
+  future probe fixture with active HVAC and headroom therefore measures
+  the controlled-state routes, not the free advance — the committed-air
+  basis itself stops moving (checker-blind by construction, the
+  convention the LIMIT-33 comment documents).
+- **Capacity-clamped — pass-through.** The clamp pins Q at ±cap
+  (load-independent), so `t_i_act = t_free + Q/den_true` passes the free
+  response through UNSCALED and the level closes from the record's final
+  den slot (`den_true = den/term_rest_1`, the #2868 form).
+- **Deadband — parity.** Demand 0 commits the free state verbatim.
+
+The coupled advance is response- and HVAC-blind on every route: the
+committed air AND mass records are bit-identical across the three routes
+and the free-float control, and the record persists with the full
+nine-slot/twelve-sub-step r113/r115 layout under active control — the
+composition contracts from rounds 105–117 compose the same values under
+setpoint control. Python replication `/tmp/r118_replicate.py` (ALL CLAIMS
+OK 19/19) against a six-run engine dump; teeth ×3 each failing exactly
+its predicted set (mask-site commit swap → the mask contract only;
+clamped divisor → the clamped route only, pass-through
+divisor-independent; clamp removal → the clamped route only, Q
+load-dependent). Battery bit-identity at the changed tree — contracts +
+docs only, no re-record owed.

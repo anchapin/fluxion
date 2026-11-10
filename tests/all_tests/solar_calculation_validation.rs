@@ -177,6 +177,7 @@ fn test_shgc_applied_in_solar_gains() {
         &[],
         &sun_pos,
         Orientation::South,
+        1.0, // no device (unshaded test)
     );
 
     // Verify that SHGC is applied: gain should be less than irradiance * area
@@ -295,6 +296,7 @@ fn test_hourly_solar_full_day() {
             Orientation::South,
             None,
             None,
+            1.0, // no device (unshaded test)
         );
 
         total_gain += gain.total_gain_w;
@@ -342,6 +344,7 @@ fn test_solar_gain_at_night() {
         Orientation::South,
         None,
         None,
+        1.0, // no device (unshaded test)
     );
 
     // At night, solar gains should be zero
