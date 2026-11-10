@@ -37,6 +37,16 @@
 //! * [`PressureDrivenAirLoop`] — the composition of the three: thermostat →
 //!   damper position → **pressure-driven network solve** → supply flow →
 //!   zone air node.
+//! * [`MoistAirStream`] / [`OutdoorAirMixer`] — the **outdoor-air and
+//!   mixing capability**: a mixing box combines the outdoor-air stream with
+//!   the return stream of the loop (on a dry-air mass basis) and forms the
+//!   mixed supply state — temperature *and* humidity ratio — that the supply
+//!   path and the zone air node consume.
+//! * **Humidity state** — the zone air node carries a humidity ratio and a
+//!   latent internal gain, and the loop step integrates the zone moisture
+//!   balance (backward Euler, the humidity counterpart of the thermal
+//!   balance) so that the latent duty of a dehumidifying coil is a
+//!   representable quantity.
 //!
 //! ## What this slice is **not**
 //!
@@ -98,6 +108,32 @@ use super::fan::STANDARD_AIR_DENSITY_KG_PER_M3;
 /// Standard value used by the airside coupling layer for dry-air energy
 /// balances.
 pub const DRY_AIR_SPECIFIC_HEAT_J_PER_KG_K: f64 = 1005.0;
+
+/// Specific heat of dry air at constant pressure [kJ/(kg·K)].
+///
+/// ASHRAE Handbook—Fundamentals (2021), Ch. 1 (Psychrometrics). The
+/// psychrometric value (1.006 kJ/(kg·K)) differs slightly from the
+/// dry-air energy-balance value used by the thermal path
+/// ([`DRY_AIR_SPECIFIC_HEAT_J_PER_KG_K`]); the psychrometric one is used
+/// only for the moist-air enthalpy of the mixing balance.
+pub const SPECIFIC_HEAT_DRY_AIR_KJ_PER_KG_K: f64 = 1.006;
+
+/// Specific heat of water vapour at constant pressure [kJ/(kg·K)].
+///
+/// ASHRAE Handbook—Fundamentals (2021), Ch. 1 (Psychrometrics).
+pub const SPECIFIC_HEAT_WATER_VAPOR_KJ_PER_KG_K: f64 = 1.86;
+
+/// Latent heat of vaporization of water at 0 °C [kJ/kg].
+///
+/// ASHRAE Handbook—Fundamentals (2021), Ch. 1 (Psychrometrics).
+pub const LATENT_HEAT_VAPORIZATION_0C_KJ_PER_KG: f64 = 2501.0;
+
+/// Latent heat of vaporization of water at 0 °C [J/kg].
+///
+/// The same latent heat as [`LATENT_HEAT_VAPORIZATION_0C_KJ_PER_KG`], in the
+/// unit system of the zone energy balance; it converts a latent heat load
+/// [W] into a water-vapour mass flow [kg/s].
+pub const LATENT_HEAT_VAPORIZATION_0C_J_PER_KG: f64 = 2_501_000.0;
 
 /// Absolute tolerance on the loop pressure-balance residual [Pa].
 ///
@@ -387,6 +423,178 @@ impl FanCurve {
     }
 }
 
+/// A moist-air stream: dry-bulb temperature plus humidity ratio.
+///
+/// The stream state is the minimum the air loop needs to carry the humidity
+/// of the airstream: the dry-bulb temperature [°C] and the humidity ratio
+/// `W` (mass of water vapour per mass of dry air) [kg/kg]. The
+/// psychrometric enthalpy of the stream follows from the two
+/// (ASHRAE Handbook—Fundamentals, 2021, Ch. 1):
+///
+/// ```text
+/// h = c_pa·T + W·(h_fg,0 + c_pv·T)      [kJ/kg dry air]
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct MoistAirStream {
+    /// Dry-bulb temperature [°C].
+    pub temperature_c: f64,
+    /// Humidity ratio [kg water vapour/kg dry air].
+    pub humidity_ratio_kg_per_kg_dry_air: f64,
+}
+
+impl MoistAirStream {
+    /// Construct a moist-air stream.
+    ///
+    /// Non-finite temperatures and negative humidity ratios are rejected.
+    pub fn new(
+        temperature_c: f64,
+        humidity_ratio_kg_per_kg_dry_air: f64,
+    ) -> Result<Self, AirLoopError> {
+        if !temperature_c.is_finite() {
+            return Err(AirLoopError::InvalidParameter {
+                field: "temperature_c",
+                requirement: "finite",
+                value: temperature_c,
+            });
+        }
+        if !humidity_ratio_kg_per_kg_dry_air.is_finite() || humidity_ratio_kg_per_kg_dry_air < 0.0 {
+            return Err(AirLoopError::InvalidParameter {
+                field: "humidity_ratio_kg_per_kg_dry_air",
+                requirement: "finite and >= 0",
+                value: humidity_ratio_kg_per_kg_dry_air,
+            });
+        }
+        Ok(Self {
+            temperature_c,
+            humidity_ratio_kg_per_kg_dry_air,
+        })
+    }
+
+    /// Specific enthalpy of the stream [kJ/kg dry air].
+    pub fn enthalpy_kj_per_kg_dry_air(&self) -> f64 {
+        SPECIFIC_HEAT_DRY_AIR_KJ_PER_KG_K * self.temperature_c
+            + self.humidity_ratio_kg_per_kg_dry_air
+                * (LATENT_HEAT_VAPORIZATION_0C_KJ_PER_KG
+                    + SPECIFIC_HEAT_WATER_VAPOR_KJ_PER_KG_K * self.temperature_c)
+    }
+
+    /// Mix two streams on a dry-air mass basis.
+    ///
+    /// `outdoor_air_fraction` is the fraction of the mixed dry-air mass
+    /// flow drawn from `outdoor_air`; the remainder comes from
+    /// `return_air`. The moisture balance is exact
+    /// (`W_mix = f·W_oa + (1 − f)·W_ret`) and the enthalpy balance
+    /// (`h_mix = f·h_oa + (1 − f)·h_ret`) is closed on the mixed humidity
+    /// ratio:
+    ///
+    /// ```text
+    /// T_mix = (h_mix − h_fg,0·W_mix) / (c_pa + c_pv·W_mix)
+    /// ```
+    pub fn mix(
+        outdoor_air: &Self,
+        return_air: &Self,
+        outdoor_air_fraction: f64,
+    ) -> Result<Self, AirLoopError> {
+        if !outdoor_air_fraction.is_finite() || !(0.0..=1.0).contains(&outdoor_air_fraction) {
+            return Err(AirLoopError::InvalidParameter {
+                field: "outdoor_air_fraction",
+                requirement: "finite and within [0, 1]",
+                value: outdoor_air_fraction,
+            });
+        }
+        let fraction = outdoor_air_fraction;
+        let humidity_ratio = fraction * outdoor_air.humidity_ratio_kg_per_kg_dry_air
+            + (1.0 - fraction) * return_air.humidity_ratio_kg_per_kg_dry_air;
+        let enthalpy = fraction * outdoor_air.enthalpy_kj_per_kg_dry_air()
+            + (1.0 - fraction) * return_air.enthalpy_kj_per_kg_dry_air();
+        let temperature = (enthalpy - LATENT_HEAT_VAPORIZATION_0C_KJ_PER_KG * humidity_ratio)
+            / (SPECIFIC_HEAT_DRY_AIR_KJ_PER_KG_K
+                + SPECIFIC_HEAT_WATER_VAPOR_KJ_PER_KG_K * humidity_ratio);
+        Self::new(temperature, humidity_ratio)
+    }
+
+    /// Mix two streams given their volumetric flow rates [m³/s].
+    ///
+    /// The dry-air mass-flow split is taken from the volumetric split — the
+    /// same constant-density approximation the zone air node uses for its
+    /// dry-air mass — so the result is the fraction-based mixture of the two
+    /// streams. Flows must be finite and non-negative; if both flows are
+    /// zero the mixture is the return stream.
+    pub fn mix_by_flow(
+        outdoor_air: &Self,
+        return_air: &Self,
+        outdoor_air_flow_m3_per_s: f64,
+        return_air_flow_m3_per_s: f64,
+    ) -> Result<Self, AirLoopError> {
+        for (field, value) in [
+            ("outdoor_air_flow_m3_per_s", outdoor_air_flow_m3_per_s),
+            ("return_air_flow_m3_per_s", return_air_flow_m3_per_s),
+        ] {
+            if !value.is_finite() || value < 0.0 {
+                return Err(AirLoopError::InvalidParameter {
+                    field,
+                    requirement: "finite and >= 0",
+                    value,
+                });
+            }
+        }
+        let total_flow = outdoor_air_flow_m3_per_s + return_air_flow_m3_per_s;
+        let fraction = if total_flow > 0.0 {
+            outdoor_air_flow_m3_per_s / total_flow
+        } else {
+            0.0
+        };
+        Self::mix(outdoor_air, return_air, fraction)
+    }
+}
+
+/// An outdoor-air mixing box: the outdoor-air inlet of the air path.
+///
+/// The mixer combines the outdoor-air stream with the return stream of the
+/// loop and produces the **mixed supply air** — temperature *and* humidity
+/// ratio — that the supply path and the zone air node consume. It is
+/// attached to the loop with
+/// [`AirLoopNetwork::with_outdoor_air_mixer`]; without it the loop keeps
+/// its historical behaviour (the supply stream is the return stream).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct OutdoorAirMixer {
+    /// Fraction of the mixed supply stream drawn from the outdoor air
+    /// [0..1].
+    pub outdoor_air_fraction: f64,
+    /// State of the outdoor-air stream.
+    pub outdoor_air: MoistAirStream,
+}
+
+impl OutdoorAirMixer {
+    /// Construct an outdoor-air mixing box.
+    ///
+    /// The outdoor-air fraction must be finite and within `[0, 1]`.
+    pub fn new(
+        outdoor_air: MoistAirStream,
+        outdoor_air_fraction: f64,
+    ) -> Result<Self, AirLoopError> {
+        if !outdoor_air_fraction.is_finite() || !(0.0..=1.0).contains(&outdoor_air_fraction) {
+            return Err(AirLoopError::InvalidParameter {
+                field: "outdoor_air_fraction",
+                requirement: "finite and within [0, 1]",
+                value: outdoor_air_fraction,
+            });
+        }
+        Ok(Self {
+            outdoor_air_fraction,
+            outdoor_air,
+        })
+    }
+
+    /// Mix the outdoor air with the return stream.
+    ///
+    /// The result is the mixed supply state (temperature and humidity
+    /// ratio) of the mixing box.
+    pub fn mix(&self, return_air: &MoistAirStream) -> Result<MoistAirStream, AirLoopError> {
+        MoistAirStream::mix(&self.outdoor_air, return_air, self.outdoor_air_fraction)
+    }
+}
+
 /// One element of the duct network.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AirLoopElement {
@@ -554,6 +762,16 @@ pub struct AirLoopSolution {
     pub pressure_closure_residual_pa: f64,
     /// Largest node mass-balance residual `|inflow − outflow|` [m³/s].
     pub node_mass_balance_residual_m3_per_s: f64,
+    /// Humidity ratio of the air delivered to the zone supply path
+    /// [kg water vapour/kg dry air].
+    ///
+    /// `0.0` when the loop was solved without a return-stream humidity
+    /// ratio ([`AirLoopNetwork::solve`]). When a return humidity ratio is
+    /// supplied ([`AirLoopNetwork::solve_with_return_humidity_ratio`]) the
+    /// value is the mixed supply humidity ratio if an outdoor-air mixing
+    /// box is configured, and the return humidity ratio otherwise.
+    #[serde(default)]
+    pub supply_humidity_ratio_kg_per_kg_dry_air: f64,
 }
 
 impl AirLoopSolution {
@@ -567,6 +785,7 @@ impl AirLoopSolution {
             && self.loop_residual_pa.is_finite()
             && self.pressure_closure_residual_pa.is_finite()
             && self.node_mass_balance_residual_m3_per_s.is_finite()
+            && self.supply_humidity_ratio_kg_per_kg_dry_air.is_finite()
             && self.node_pressures_pa.iter().all(|p| p.is_finite())
             && self.element_flows_m3_per_s.iter().all(|q| q.is_finite())
             && self
@@ -720,6 +939,7 @@ pub struct AirLoopNetwork {
     nodes: Vec<String>,
     elements: Vec<AirLoopElement>,
     reference_pressure_pa: f64,
+    outdoor_air_mixer: Option<OutdoorAirMixer>,
 }
 
 impl AirLoopNetwork {
@@ -814,7 +1034,24 @@ impl AirLoopNetwork {
             nodes,
             elements,
             reference_pressure_pa,
+            outdoor_air_mixer: None,
         })
+    }
+
+    /// Attach an outdoor-air mixing box to the loop.
+    ///
+    /// The mixing box forms the mixed supply air (the outdoor-air stream
+    /// combined with the return stream of the loop) that the supply path
+    /// delivers to the zone. Without a mixing box the loop keeps its
+    /// historical behaviour: the supply stream is the return stream.
+    pub fn with_outdoor_air_mixer(mut self, mixer: OutdoorAirMixer) -> Self {
+        self.outdoor_air_mixer = Some(mixer);
+        self
+    }
+
+    /// The outdoor-air mixing box of the loop, if one is configured.
+    pub fn outdoor_air_mixer(&self) -> Option<&OutdoorAirMixer> {
+        self.outdoor_air_mixer.as_ref()
     }
 
     /// Node identifiers, in path order (node 0 is the reference node).
@@ -1009,11 +1246,45 @@ impl AirLoopNetwork {
             loop_residual_pa: self.loop_pressure_residual_pa(flow),
             pressure_closure_residual_pa: closure.abs(),
             node_mass_balance_residual_m3_per_s,
+            supply_humidity_ratio_kg_per_kg_dry_air: 0.0,
         };
 
         if !solution.is_finite() {
             return Err(AirLoopError::NonFiniteResult { field: "solution" });
         }
+        Ok(solution)
+    }
+
+    /// Solve the loop balance and report the humidity ratio of the supply air.
+    ///
+    /// `return_humidity_ratio_kg_per_kg_dry_air` is the humidity ratio of
+    /// the return stream of the loop (the zone air is the return stream of
+    /// the supply path). With an outdoor-air mixing box configured, the
+    /// reported supply humidity ratio is the exact moisture balance of the
+    /// mixture, `W_supply = f·W_oa + (1 − f)·W_return`; without a mixing box
+    /// it is the return humidity ratio itself.
+    pub fn solve_with_return_humidity_ratio(
+        &self,
+        return_humidity_ratio_kg_per_kg_dry_air: f64,
+    ) -> Result<AirLoopSolution, AirLoopError> {
+        if !return_humidity_ratio_kg_per_kg_dry_air.is_finite()
+            || return_humidity_ratio_kg_per_kg_dry_air < 0.0
+        {
+            return Err(AirLoopError::InvalidParameter {
+                field: "return_humidity_ratio_kg_per_kg_dry_air",
+                requirement: "finite and >= 0",
+                value: return_humidity_ratio_kg_per_kg_dry_air,
+            });
+        }
+        let mut solution = self.solve()?;
+        solution.supply_humidity_ratio_kg_per_kg_dry_air = match &self.outdoor_air_mixer {
+            Some(mixer) => {
+                let fraction = mixer.outdoor_air_fraction;
+                fraction * mixer.outdoor_air.humidity_ratio_kg_per_kg_dry_air
+                    + (1.0 - fraction) * return_humidity_ratio_kg_per_kg_dry_air
+            }
+            None => return_humidity_ratio_kg_per_kg_dry_air,
+        };
         Ok(solution)
     }
 
@@ -1288,6 +1559,32 @@ pub struct ZoneAirNode {
     pub conditioned_supply_temperature_c: f64,
     /// Supply air temperature when the coil is off (unconditioned air) [°C].
     pub unconditioned_supply_temperature_c: f64,
+    /// Zone air humidity ratio [kg water vapour/kg dry air].
+    ///
+    /// Defaults to `0.0` (a dry zone); the humidity state is only
+    /// transported when the loop is stepped with a humidity-carrying supply
+    /// stream (see [`ZoneAirNode::step_humidity`]).
+    #[serde(default)]
+    pub humidity_ratio_kg_per_kg_dry_air: f64,
+    /// Latent internal heat gain released into the zone air [W].
+    ///
+    /// A positive value adds water vapour to the zone air (occupants,
+    /// appliances, wet surfaces): the latent heat is converted into a
+    /// water-vapour mass flow with the latent heat of vaporization at 0 °C
+    /// ([`LATENT_HEAT_VAPORIZATION_0C_J_PER_KG`]). A negative value removes
+    /// moisture (an internal dehumidifier).
+    #[serde(default)]
+    pub latent_internal_gain_w: f64,
+    /// Humidity ratio of the air leaving the cooling coil
+    /// [kg water vapour/kg dry air], when the coil dehumidifies.
+    ///
+    /// `None` (the default) means the coil is *sensible only*: the supply
+    /// air keeps the humidity ratio of the mixed supply stream. When it is
+    /// set, the coil removes the moisture between the mixed stream and this
+    /// value, and the corresponding latent duty is reported as the coil
+    /// latent load of the loop step.
+    #[serde(default)]
+    pub conditioned_supply_humidity_ratio: Option<f64>,
 }
 
 impl ZoneAirNode {
@@ -1330,7 +1627,84 @@ impl ZoneAirNode {
             internal_gain_w,
             conditioned_supply_temperature_c,
             unconditioned_supply_temperature_c,
+            humidity_ratio_kg_per_kg_dry_air: 0.0,
+            latent_internal_gain_w: 0.0,
+            conditioned_supply_humidity_ratio: None,
         })
+    }
+
+    /// Set the humidity ratio of the air leaving the cooling coil.
+    ///
+    /// The humidity ratio must be finite and non-negative.
+    pub fn with_conditioned_supply_humidity_ratio(
+        mut self,
+        humidity_ratio_kg_per_kg_dry_air: f64,
+    ) -> Result<Self, AirLoopError> {
+        if !humidity_ratio_kg_per_kg_dry_air.is_finite() || humidity_ratio_kg_per_kg_dry_air < 0.0 {
+            return Err(AirLoopError::InvalidParameter {
+                field: "conditioned_supply_humidity_ratio",
+                requirement: "finite and >= 0",
+                value: humidity_ratio_kg_per_kg_dry_air,
+            });
+        }
+        self.conditioned_supply_humidity_ratio = Some(humidity_ratio_kg_per_kg_dry_air);
+        Ok(self)
+    }
+
+    /// Set the zone air humidity ratio.
+    ///
+    /// The humidity ratio must be finite and non-negative.
+    pub fn with_humidity_ratio(
+        mut self,
+        humidity_ratio_kg_per_kg_dry_air: f64,
+    ) -> Result<Self, AirLoopError> {
+        if !humidity_ratio_kg_per_kg_dry_air.is_finite() || humidity_ratio_kg_per_kg_dry_air < 0.0 {
+            return Err(AirLoopError::InvalidParameter {
+                field: "humidity_ratio_kg_per_kg_dry_air",
+                requirement: "finite and >= 0",
+                value: humidity_ratio_kg_per_kg_dry_air,
+            });
+        }
+        self.humidity_ratio_kg_per_kg_dry_air = humidity_ratio_kg_per_kg_dry_air;
+        Ok(self)
+    }
+
+    /// Set the latent internal heat gain of the zone.
+    ///
+    /// The latent gain must be finite; a positive value adds water vapour
+    /// to the zone air, a negative value removes it.
+    pub fn with_latent_internal_gain(
+        mut self,
+        latent_internal_gain_w: f64,
+    ) -> Result<Self, AirLoopError> {
+        if !latent_internal_gain_w.is_finite() {
+            return Err(AirLoopError::InvalidParameter {
+                field: "latent_internal_gain_w",
+                requirement: "finite",
+                value: latent_internal_gain_w,
+            });
+        }
+        self.latent_internal_gain_w = latent_internal_gain_w;
+        Ok(self)
+    }
+
+    /// Mass of dry air in the zone [kg].
+    ///
+    /// The constant-density approximation of the thermal balance is used
+    /// here as well, so the moisture balance and the energy balance see the
+    /// same dry-air mass.
+    pub fn dry_air_mass_kg(&self) -> f64 {
+        STANDARD_AIR_DENSITY_KG_PER_M3 * self.volume_m3
+    }
+
+    /// Mass of water vapour currently held in the zone air [kg].
+    pub fn water_vapour_mass_kg(&self) -> f64 {
+        self.dry_air_mass_kg() * self.humidity_ratio_kg_per_kg_dry_air
+    }
+
+    /// Water-vapour mass flow of the latent internal gain [kg/s].
+    pub fn latent_water_vapour_mass_flow_kg_per_s(&self) -> f64 {
+        self.latent_internal_gain_w / LATENT_HEAT_VAPORIZATION_0C_J_PER_KG
     }
 
     /// Heat capacity of the zone air node [J/K].
@@ -1434,6 +1808,62 @@ impl ZoneAirNode {
         self.temperature_c = numerator / denominator;
         self.temperature_c
     }
+
+    /// Advance the zone humidity state by `dt_s` for the given supply stream.
+    ///
+    /// The zone moisture balance is the humidity counterpart of the thermal
+    /// balance of [`ZoneAirNode::step`] and is integrated with the same
+    /// backward-Euler scheme:
+    ///
+    /// ```text
+    /// m_da·(W_new − W_old)/dt = ṁ_sup·(W_sup − W_new) + W_latent/h_fg
+    /// ```
+    ///
+    /// where `m_da` is the dry-air mass of the zone, `ṁ_sup` the dry-air
+    /// mass flow of the supply stream, `W_sup` the humidity ratio of the
+    /// supply air and `W_latent/h_fg` the water-vapour mass flow of the
+    /// latent internal gain. Returns the new zone humidity ratio [kg/kg].
+    pub fn step_humidity(
+        &mut self,
+        dt_s: f64,
+        supply_flow_m3_per_s: f64,
+        supply_humidity_ratio_kg_per_kg_dry_air: f64,
+    ) -> Result<f64, AirLoopError> {
+        if !dt_s.is_finite() || dt_s <= 0.0 {
+            return Err(AirLoopError::InvalidParameter {
+                field: "dt_s",
+                requirement: "finite and > 0",
+                value: dt_s,
+            });
+        }
+        if !supply_flow_m3_per_s.is_finite() || supply_flow_m3_per_s < 0.0 {
+            return Err(AirLoopError::InvalidParameter {
+                field: "supply_flow_m3_per_s",
+                requirement: "finite and >= 0",
+                value: supply_flow_m3_per_s,
+            });
+        }
+        if !supply_humidity_ratio_kg_per_kg_dry_air.is_finite()
+            || supply_humidity_ratio_kg_per_kg_dry_air < 0.0
+        {
+            return Err(AirLoopError::InvalidParameter {
+                field: "supply_humidity_ratio_kg_per_kg_dry_air",
+                requirement: "finite and >= 0",
+                value: supply_humidity_ratio_kg_per_kg_dry_air,
+            });
+        }
+        let dry_air_mass = self.dry_air_mass_kg();
+        let supply_dry_air_mass_flow = STANDARD_AIR_DENSITY_KG_PER_M3 * supply_flow_m3_per_s;
+        let denominator = dry_air_mass / dt_s + supply_dry_air_mass_flow;
+        if denominator <= 0.0 {
+            return Ok(self.humidity_ratio_kg_per_kg_dry_air);
+        }
+        let numerator = dry_air_mass / dt_s * self.humidity_ratio_kg_per_kg_dry_air
+            + supply_dry_air_mass_flow * supply_humidity_ratio_kg_per_kg_dry_air
+            + self.latent_water_vapour_mass_flow_kg_per_s();
+        self.humidity_ratio_kg_per_kg_dry_air = numerator / denominator;
+        Ok(self.humidity_ratio_kg_per_kg_dry_air)
+    }
 }
 
 /// State of the air loop after one coupled step.
@@ -1455,6 +1885,22 @@ pub struct AirLoopStepResult {
     pub actuation_count: u64,
     /// The pressure-driven solution of this step.
     pub solution: AirLoopSolution,
+    /// Zone air humidity ratio after the step [kg water vapour/kg dry air].
+    pub zone_humidity_ratio_kg_per_kg_dry_air: f64,
+    /// Humidity ratio of the air delivered to the zone in this step
+    /// [kg water vapour/kg dry air].
+    ///
+    /// This is the humidity ratio of the mixed supply stream after the
+    /// coil (a dehumidifying coil lowers it).
+    pub supply_humidity_ratio_kg_per_kg_dry_air: f64,
+    /// The mixed outdoor-air/return supply state, when the loop has an
+    /// outdoor-air mixing box configured.
+    pub mixed_supply_state: Option<MoistAirStream>,
+    /// Latent load of the supply path [W].
+    ///
+    /// Positive when the supply air is drier than the zone air (the latent
+    /// duty the coil has to remove); zero when the coil is off.
+    pub coil_latent_load_w: f64,
 }
 
 /// One zone served by a pressure-driven air loop.
@@ -1547,7 +1993,20 @@ impl PressureDrivenAirLoop {
         let command = self.thermostat.update(self.zone.temperature_c);
         self.network
             .set_damper_position(self.damper_index, command.damper_position)?;
-        let solution = self.network.solve()?;
+        // The return stream of the loop is the zone air; the outdoor-air
+        // mixing box combines it with the outdoor air to form the mixed
+        // supply state.
+        let return_stream = MoistAirStream::new(
+            self.zone.temperature_c,
+            self.zone.humidity_ratio_kg_per_kg_dry_air,
+        )?;
+        let mixed_supply_state = match self.network.outdoor_air_mixer() {
+            Some(mixer) => Some(mixer.mix(&return_stream)?),
+            None => None,
+        };
+        let solution = self
+            .network
+            .solve_with_return_humidity_ratio(self.zone.humidity_ratio_kg_per_kg_dry_air)?;
         let supply_temperature = if command.coil_on {
             self.zone.conditioned_supply_temperature_c
         } else {
@@ -1557,6 +2016,30 @@ impl PressureDrivenAirLoop {
             .zone
             .step(dt_s, solution.flow_m3_per_s, supply_temperature);
         let supply_mass_flow_kg_per_s = STANDARD_AIR_DENSITY_KG_PER_M3 * solution.flow_m3_per_s;
+        // The humidity ratio of the mixed supply stream (the outdoor-air /
+        // return mixture, or the return stream itself when the loop has no
+        // mixing box).
+        let mixed_humidity_ratio = solution.supply_humidity_ratio_kg_per_kg_dry_air;
+        // A dehumidifying coil delivers drier air than the mixed stream.
+        let supply_humidity_ratio = if command.coil_on {
+            self.zone
+                .conditioned_supply_humidity_ratio
+                .unwrap_or(mixed_humidity_ratio)
+        } else {
+            mixed_humidity_ratio
+        };
+        let zone_humidity_ratio =
+            self.zone
+                .step_humidity(dt_s, solution.flow_m3_per_s, supply_humidity_ratio)?;
+        // The coil-side latent duty: the moisture the (running) coil takes
+        // out of the mixed supply stream.
+        let coil_latent_load_w = if command.coil_on {
+            supply_mass_flow_kg_per_s
+                * (mixed_humidity_ratio - supply_humidity_ratio)
+                * LATENT_HEAT_VAPORIZATION_0C_J_PER_KG
+        } else {
+            0.0
+        };
         self.last_solution = Some(solution.clone());
         Ok(AirLoopStepResult {
             zone_temperature_c: zone_temperature,
@@ -1567,6 +2050,10 @@ impl PressureDrivenAirLoop {
             thermostat_state: command.state,
             actuation_count: self.thermostat.actuations(),
             solution,
+            zone_humidity_ratio_kg_per_kg_dry_air: zone_humidity_ratio,
+            supply_humidity_ratio_kg_per_kg_dry_air: supply_humidity_ratio,
+            mixed_supply_state,
+            coil_latent_load_w,
         })
     }
 }
@@ -2109,5 +2596,239 @@ mod tests {
             .supply_temperature_for_target(temperature_after, 0.0, supply_flow_m3_per_s, None)
             .expect("the inverse query is valid");
         assert!((unchanged - temperature_after).abs() < 1.0e-12);
+    }
+
+    /// A loop with an outdoor-air mixing box: the outdoor air (12 °C,
+    /// `W = 0.004 kg/kg`) is mixed with the return air at 25 % of the
+    /// supply dry-air mass flow.
+    fn mixing_network() -> AirLoopNetwork {
+        let outdoor_air = MoistAirStream::new(12.0, 0.004).expect("the outdoor-air state is valid");
+        let mixer = OutdoorAirMixer::new(outdoor_air, 0.25).expect("the mixing box is valid");
+        reference_network().with_outdoor_air_mixer(mixer)
+    }
+
+    /// A zone that sits above the thermostat band, so the coil runs and the
+    /// terminal damper is fully open (`Q = √(300/(600 + 800)) m³/s`).
+    fn cooling_zone() -> ZoneAirNode {
+        ZoneAirNode::new(23.0, 300.0, 200.0, 35.0, 500.0, 13.0, 35.0)
+            .expect("the cooling zone is valid")
+    }
+
+    #[test]
+    fn outdoor_air_mixer_forms_the_analytic_mixed_state() {
+        // Outdoor air 10 °C / 0.003 kg/kg, return air 24 °C / 0.009 kg/kg,
+        // mixed at 30 % of the outdoor air.
+        let outdoor_air = MoistAirStream::new(10.0, 0.003).expect("the outdoor air is valid");
+        let return_air = MoistAirStream::new(24.0, 0.009).expect("the return air is valid");
+        let mixer = OutdoorAirMixer::new(outdoor_air, 0.3).expect("the mixing box is valid");
+
+        let mixed = mixer.mix(&return_air).expect("the mixture is formed");
+
+        // Analytic moisture balance: W_mix = 0.3·0.003 + 0.7·0.009 = 0.0072.
+        assert!((mixed.humidity_ratio_kg_per_kg_dry_air - 0.0072).abs() < 1.0e-12);
+        // Analytic enthalpy balance:
+        //   h_oa  = 1.006·10 + 0.003·(2501 + 1.86·10) = 17.6188 kJ/kg
+        //   h_ret = 1.006·24 + 0.009·(2501 + 1.86·24) = 47.05476 kJ/kg
+        //   h_mix = 0.3·h_oa + 0.7·h_ret = 38.223972 kJ/kg
+        //   T_mix = (h_mix − 2501·W_mix)/(1.006 + 1.86·W_mix) = 19.832186244349572 °C
+        let expected_temperature_c = 19.832_186_244_349_572;
+        assert!(
+            (mixed.temperature_c - expected_temperature_c).abs() < 1.0e-12,
+            "expected {expected_temperature_c} °C, got {}",
+            mixed.temperature_c
+        );
+        // The mixture lies between the two streams in temperature.
+        assert!(mixed.temperature_c > outdoor_air.temperature_c);
+        assert!(mixed.temperature_c < return_air.temperature_c);
+
+        // The end points of the mixing range reproduce the streams.
+        let all_outdoor = OutdoorAirMixer::new(outdoor_air, 1.0)
+            .expect("the mixing box is valid")
+            .mix(&return_air)
+            .expect("the mixture is formed");
+        assert!((all_outdoor.temperature_c - outdoor_air.temperature_c).abs() < 1.0e-12);
+        assert!(
+            (all_outdoor.humidity_ratio_kg_per_kg_dry_air
+                - outdoor_air.humidity_ratio_kg_per_kg_dry_air)
+                .abs()
+                < 1.0e-12
+        );
+        let all_return = OutdoorAirMixer::new(outdoor_air, 0.0)
+            .expect("the mixing box is valid")
+            .mix(&return_air)
+            .expect("the mixture is formed");
+        assert!((all_return.temperature_c - return_air.temperature_c).abs() < 1.0e-12);
+        assert!(
+            (all_return.humidity_ratio_kg_per_kg_dry_air
+                - return_air.humidity_ratio_kg_per_kg_dry_air)
+                .abs()
+                < 1.0e-12
+        );
+
+        // A flow-based mixture is the fraction-based mixture of the same
+        // split (constant-density dry-air mass approximation).
+        let by_flow = MoistAirStream::mix_by_flow(&outdoor_air, &return_air, 0.3, 0.7)
+            .expect("the mixture is formed");
+        assert!((by_flow.temperature_c - mixed.temperature_c).abs() < 1.0e-12);
+        assert!(
+            (by_flow.humidity_ratio_kg_per_kg_dry_air - mixed.humidity_ratio_kg_per_kg_dry_air)
+                .abs()
+                < 1.0e-12
+        );
+    }
+
+    #[test]
+    fn zone_humidity_state_evolves_and_closes_the_moisture_balance() {
+        // The zone starts at 23 °C (above the thermostat band), so the coil
+        // runs and the terminal damper is fully open.
+        let thermostat = ZoneThermostat::new(22.0, 1.0, 1.0, 0.2).expect("the thermostat is valid");
+        let zone = cooling_zone()
+            .with_humidity_ratio(0.009)
+            .expect("the humidity ratio is valid")
+            .with_latent_internal_gain(2000.0)
+            .expect("the latent gain is valid");
+        let mut air_loop =
+            PressureDrivenAirLoop::new(mixing_network(), thermostat, zone, "terminal_damper")
+                .expect("the air loop assembles");
+
+        let dt = 60.0;
+        let humidity_before = air_loop.zone().humidity_ratio_kg_per_kg_dry_air;
+        let result = air_loop.step(dt).expect("the loop steps");
+
+        // The supply stream is the outdoor-air/return mixture:
+        // W_supply = 0.25·0.004 + 0.75·0.009 = 0.00775 kg/kg.
+        assert!(
+            (result.supply_humidity_ratio_kg_per_kg_dry_air - 0.00775).abs() < 1.0e-12,
+            "expected 0.00775 kg/kg, got {}",
+            result.supply_humidity_ratio_kg_per_kg_dry_air
+        );
+        // The mixed supply state carries both the temperature and the
+        // humidity ratio of the mixture.
+        let mixed = result
+            .mixed_supply_state
+            .expect("the loop reports the mixed supply state");
+        assert!((mixed.humidity_ratio_kg_per_kg_dry_air - 0.00775).abs() < 1.0e-12);
+        assert!(mixed.temperature_c > 12.0 && mixed.temperature_c < 23.0);
+
+        // Analytic backward-Euler solution of the zone moisture balance:
+        //   m_da = 1.2·300 = 360 kg, ṁ_sup = 1.2·Q, Q = √(300/(600+800))
+        //   W_new = (m_da/dt·W_old + ṁ_sup·W_sup + W_latent/h_fg)/(m_da/dt + ṁ_sup)
+        //        = 0.009016065163706656 kg/kg.
+        assert!(
+            (result.zone_humidity_ratio_kg_per_kg_dry_air - 0.009_016_065_163_706_656).abs()
+                < 1.0e-12,
+            "expected 0.009016065163706656 kg/kg, got {}",
+            result.zone_humidity_ratio_kg_per_kg_dry_air
+        );
+
+        // The moisture balance closes: the accumulation of water vapour in
+        // the zone equals the moisture carried in by the supply stream plus
+        // the latent internal gain, minus the moisture carried out.
+        let dry_air_mass = air_loop.zone().dry_air_mass_kg();
+        let supply_dry_air_mass_flow = STANDARD_AIR_DENSITY_KG_PER_M3 * result.supply_flow_m3_per_s;
+        let latent_mass_flow = 2000.0 / LATENT_HEAT_VAPORIZATION_0C_J_PER_KG;
+        let accumulation =
+            dry_air_mass * (result.zone_humidity_ratio_kg_per_kg_dry_air - humidity_before) / dt;
+        let net = supply_dry_air_mass_flow * result.supply_humidity_ratio_kg_per_kg_dry_air
+            - supply_dry_air_mass_flow * result.zone_humidity_ratio_kg_per_kg_dry_air
+            + latent_mass_flow;
+        assert!(
+            (accumulation - net).abs() < 1.0e-12,
+            "moisture balance residual {} kg/s",
+            (accumulation - net).abs()
+        );
+
+        // The zone humidity state is carried by the node and by the zone
+        // object of the loop.
+        assert!(
+            (air_loop.zone().humidity_ratio_kg_per_kg_dry_air
+                - result.zone_humidity_ratio_kg_per_kg_dry_air)
+                .abs()
+                < 1.0e-15
+        );
+    }
+
+    #[test]
+    fn latent_internal_gain_moistens_the_zone_without_outdoor_air() {
+        // Without a mixing box the supply stream is the return stream, so
+        // the only moisture source is the latent internal gain.
+        let thermostat = ZoneThermostat::new(22.0, 1.0, 1.0, 0.2).expect("the thermostat is valid");
+        let zone = reference_zone()
+            .with_humidity_ratio(0.009)
+            .expect("the humidity ratio is valid")
+            .with_latent_internal_gain(2000.0)
+            .expect("the latent gain is valid");
+        let mut air_loop =
+            PressureDrivenAirLoop::new(reference_network(), thermostat, zone, "terminal_damper")
+                .expect("the air loop assembles");
+
+        let dt = 60.0;
+        let humidity_before = air_loop.zone().humidity_ratio_kg_per_kg_dry_air;
+        let result = air_loop.step(dt).expect("the loop steps");
+
+        // The supply stream carries the humidity of the return stream.
+        assert!((result.supply_humidity_ratio_kg_per_kg_dry_air - humidity_before).abs() < 1.0e-15);
+        // The latent gain raises the zone humidity:
+        //   W_new = (m_da/dt·W_old + ṁ·W_old + W_latent/h_fg)/(m_da/dt + ṁ)
+        //        = 0.009127663572925932 kg/kg.
+        assert!(
+            (result.zone_humidity_ratio_kg_per_kg_dry_air - 0.009_127_663_572_925_932).abs()
+                < 1.0e-12,
+            "expected 0.009127663572925932 kg/kg, got {}",
+            result.zone_humidity_ratio_kg_per_kg_dry_air
+        );
+        assert!(result.zone_humidity_ratio_kg_per_kg_dry_air > humidity_before);
+    }
+
+    #[test]
+    fn a_dehumidifying_coil_reports_a_coil_side_latent_load() {
+        let thermostat = ZoneThermostat::new(22.0, 1.0, 1.0, 0.2).expect("the thermostat is valid");
+        let zone = cooling_zone()
+            .with_humidity_ratio(0.009)
+            .expect("the humidity ratio is valid")
+            .with_conditioned_supply_humidity_ratio(0.005)
+            .expect("the coil humidity ratio is valid");
+        let mut air_loop =
+            PressureDrivenAirLoop::new(mixing_network(), thermostat, zone, "terminal_damper")
+                .expect("the air loop assembles");
+
+        let result = air_loop.step(60.0).expect("the loop steps");
+
+        // The coil delivers drier air than the mixed stream.
+        assert!((result.supply_humidity_ratio_kg_per_kg_dry_air - 0.005).abs() < 1.0e-12);
+        // The coil-side latent duty is the moisture it removes from the
+        // mixed stream: ṁ·(W_mixed − W_supply)·h_fg.
+        let expected_latent_load_w = STANDARD_AIR_DENSITY_KG_PER_M3
+            * result.supply_flow_m3_per_s
+            * (0.00775 - 0.005)
+            * LATENT_HEAT_VAPORIZATION_0C_J_PER_KG;
+        assert!(
+            (result.coil_latent_load_w - expected_latent_load_w).abs() < 1.0e-9,
+            "expected {expected_latent_load_w} W, got {}",
+            result.coil_latent_load_w
+        );
+        assert!(result.coil_latent_load_w > 0.0);
+    }
+
+    #[test]
+    fn a_loop_without_a_mixing_box_leaves_the_zone_humidity_unchanged() {
+        // The historical behaviour is preserved: without a mixing box and
+        // without a latent gain the zone humidity state does not move.
+        let thermostat = ZoneThermostat::new(22.0, 1.0, 1.0, 0.2).expect("the thermostat is valid");
+        let zone = reference_zone()
+            .with_humidity_ratio(0.009)
+            .expect("the humidity ratio is valid");
+        let mut air_loop =
+            PressureDrivenAirLoop::new(reference_network(), thermostat, zone, "terminal_damper")
+                .expect("the air loop assembles");
+
+        let result = air_loop.step(60.0).expect("the loop steps");
+        assert!(
+            (result.zone_humidity_ratio_kg_per_kg_dry_air - 0.009).abs() < 1.0e-15,
+            "expected the zone humidity to be unchanged, got {}",
+            result.zone_humidity_ratio_kg_per_kg_dry_air
+        );
+        assert!(result.mixed_supply_state.is_none());
+        assert!(result.coil_latent_load_w == 0.0);
     }
 }
