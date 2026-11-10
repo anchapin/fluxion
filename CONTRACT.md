@@ -3,7 +3,7 @@
 Canonical source for every line: this repo at `develop` a0ca7fde (2026-11-10), or Alex's standing
 directives (operator record). A worker reads this instead of
 re-deriving ground rules per brief. Citations are checked by
-the plan-coder harness drift check (`bin/contract_check.py`);
+the plan-coder harness drift check;
 a line whose source disappears is stale and must be repaired.
 
 ## Never regress
