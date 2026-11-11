@@ -182,8 +182,10 @@ this measurement-only run, and no production code was changed.
 
 - **Workload 2 — DAE / BDF sub-hourly annual run: NOT MEASURED.** No timing, no
   breakdown, no ranking for this workload in this run.
-- **Workload 3 — multi-zone / BatchOracle annual run: NOT MEASURED.** No timing,
-  no breakdown, no ranking for this workload in this run.
+- **Workload 3 — multi-zone / BatchOracle annual run: NOT MEASURED** *in the
+  workload-1 run above* (this section was written before workload 3 was
+  measured). Workload 3 is measured in **§§15–19** below, and the closing
+  cross-workload ranking is **§20**.
 
 **Issue #4688 therefore remains OPEN after this run.** The full spike
 (ranking *all* the performance spikes) is **not** complete: only workload 1 of
@@ -314,3 +316,230 @@ a test that constructs the Case-900 DAE residual used by the shipped
 `BdfTimeStepper`, steps it 87,600 times at dt = 360 s, and prints the
 stepper's Issue #3339 counters (`newton_iterations`, assemblies,
 factorizations, accepted/rejected steps, `last_final_residual`).
+
+---
+
+# Workload 3 — Multi-zone (10 zones) + BatchOracle population context (fluxion #4688)
+
+> **Scope:** workload 3 only. Workload 1 (§§1–9) and workload 2 (§§10–14) are
+> already complete and are **not** redone here; §20 cites them.
+>
+> Every number below is **this VM's number** for the machine/build named in
+> §15.2 and is stated only as this VM's measurement, never as a general claim
+> about fluxion's performance.
+
+## 15. Base commit, machine and build profile (workload 3)
+
+### 15.1 Base commit and branch
+
+| Item | Value |
+|---|---|
+| Repository | `fluxion` (anchapin/fluxion) |
+| Branch | `worker/4688-profile-workload3` |
+| Base commit | `3e66c9b1ff4513aac7856b79bad29811f8934c37` |
+| Base commit subject | `Merge pull request #4735 from anchapin/docs/repo-contract` |
+| Base commit date | `2026-11-10 06:39:23 -0700` |
+| Working-tree changes | `docs/PERF_PROFILE_ANNUAL.md` only (this report). No production code changes. |
+
+Commands:
+
+```sh
+git rev-parse HEAD
+git log -1 --format='%H%n%ci%n%s'
+git status --porcelain
+```
+
+### 15.2 Machine and build profile (this VM)
+
+| Item | Value |
+|---|---|
+| CPU | AMD EPYC 9D25 126-Core Processor (`/proc/cpuinfo`; container limited to 4 CPUs) |
+| Cores visible to the run | 4 (`nproc`) |
+| RAM | 8 124 900 kB total (≈7.75 GiB); heavily shared host — only ≈0.5 GiB available at build time |
+| OS | Ubuntu 24.04.5 LTS, Linux 7.0.0-44-generic x86_64 |
+| Kernel | `7.0.0-44-generic` |
+| Toolchain | rustc 1.98.0 (88d9e12ae 2026-08-18), cargo 1.98.0 (797e8a9bc 2026-08-05) |
+| Toolchain pin | `rust-toolchain.toml` → `channel = "1.98.0"` |
+| Cargo profile used | `bench` profile (inherits `release`): `opt-level = 3`, `lto = "thin"`, `codegen-units = 4`, `split-debuginfo = "packed"`, `strip = true` |
+| Criterion | `criterion = "0.8"` (workspace dev-dependency); `--quick` mode used to shorten the measurement window |
+| Profiling tools | **None installed.** Wall-clock timing + the repo's own criterion harnesses only. |
+
+### 15.3 Method (workload 3)
+
+**Workload 3a — multi-zone throughput.** The repo's own criterion benchmark
+`benches/multi_zone_throughput.rs` (Issue #2522) is used. What it actually
+constructs (read from the source):
+
+- a **10-zone** `ThermalModel<VectorField>` (`ZONE_COUNT = 10`, matching the
+  `multi_zone.zones: 10` release-gate setting);
+- one `BatchOracle::from_model(base_model)` wrapper;
+- a synthetic population of configurations
+  `[u_value, heating_setpoint, cooling_setpoint]` (StdRng, seed 42) of size
+  `{10, 100, 1000, 10 000}`;
+- per iteration: clone the population and call
+  `BatchOracle::evaluate_population(pop, false)` (analytical mode, no ONNX).
+
+**This is a population-throughput proxy, NOT a full 8760-step annual
+multi-zone simulation.** The bench never runs a timestep loop; it measures
+how many *configurations* per second the batch oracle can evaluate against
+one 10-zone model. It is therefore reported throughout as
+"10-zone batch-population throughput (bench harness)", not as an annual
+multi-zone run. `sample_size(10)` is set by the bench for the larger
+populations to bound wall time; criterion `Throughput::Elements(size)`
+reports configs/sec directly, the same metric the
+`multi_zone.min_configs_per_sec: 10` release gate uses.
+
+**Workload 3b — BatchOracle population context.** The repo's own criterion
+benchmark `benches/batch_oracle_bench.rs` (Issue #4696) is used. It measures
+the same `BatchOracle::evaluate_population` call on a 10-zone `ThermalModel`
+over populations `{100, 200, 500, 1000}` in two modes — `analytical`
+(`use_surrogates = false`) and `surrogates` (`use_surrogates = true`) — plus
+three "output materialisation ceiling" sub-benchmarks (API-boundary output
+per config, counterfactual full-hourly output, per-config model clone) that
+bound what any aggregate-only output mode could save.
+
+**Exact commands (workload 3):**
+
+```sh
+export PATH="$HOME/.cargo/bin:$PATH"
+cd ~/workspace/fixtrees/fluxion-worker-4688
+
+# (1) Build the multi-zone bench (release, bench profile). Requires the
+#     `multi-zone` feature (Cargo.toml: required-features = ["multi-zone"]).
+cargo bench --bench multi_zone_throughput --features multi-zone --no-run
+
+# (2) Build the BatchOracle bench.
+cargo bench --bench batch_oracle_bench --no-run
+
+# (3) Workload 3a — shortened criterion window (one bench binary at a time).
+cargo bench --bench multi_zone_throughput --features multi-zone -- 'population_100' --quick
+
+# (4) Workload 3b — shortened criterion window.
+cargo bench --bench batch_oracle_bench -- 'batch_oracle_analytical' --quick
+```
+
+## 16. Results — workload 3a wall clock (10-zone batch population throughput)
+
+Measured by the supervisor at collection (the worker run was killed by a
+runtime restart at step 28/60 during the bench build; the build was finished
+and the benches run by the supervisor from the worker's method in §15.3,
+exactly as for workloads 1 and 2). Command: `cargo bench --bench
+multi_zone_throughput --features multi-zone -- --quick`, bench profile, this
+VM (shared host, ~1.5 effective CPU — see §15.2).
+
+| Sub-benchmark | Criterion time / iteration | Throughput | Per-config cost |
+|---|---|---|---|
+| `multi_zone_throughput_10_zones/population_10` | [3.2660 s, **3.2676 s**, 3.2739 s] | [**3.0604 elem/s**] | ~327 ms |
+| `multi_zone_throughput_10_zones/population_100` | **63.660 s** (single-sample estimate as printed) | **1.5709 elem/s** | ~637 ms |
+| `multi_zone_throughput_10_zones/population_1000` | NOT COMPLETED — see below | — | — |
+| `multi_zone_throughput_10_zones/population_10000` | NOT COMPLETED — see below | — | — |
+
+The run was stopped by the supervisor after `population_100`: at the
+measured ~0.64 s/config, a single `population_1000` iteration would take
+~640 s and `population_10000` ~6,400 s (extrapolation from the measured
+per-config cost, labelled as such — not a measurement). Two defensible
+points are recorded instead of two extrapolated ones.
+
+Context, with the comparison the issue asks for: the release gate the bench
+encodes is `multi_zone.min_configs_per_sec: 10` on CI hardware; this VM
+measured 1.57–3.06 elem/s. This VM is a heavily shared host and these are
+this VM's numbers only — they do not show the gate failing on CI hardware.
+
+## 17. Results — workload 3b (BatchOracle population context)
+
+Same collection circumstances as §16. Commands: `cargo bench --bench
+batch_oracle_bench --no-run` (build), then filtered `--quick` runs.
+
+| Sub-benchmark | Criterion time / iteration | Derived |
+|---|---|---|
+| `batch_oracle_analytical/100` | **58.494 s** (single-sample estimate as printed) | 1.71 configs/s; ~585 ms/config |
+| `batch_oracle_analytical/1000` | NOT COMPLETED — started, did not finish inside a 600 s cap | consistent with ~0.59 s/config extrapolation |
+| `batch_oracle_surrogates/*` | NOT RUN — the analytical points already fix the per-config cost scale on this VM; surrogate mode is #3987's subject, not this profile's | — |
+
+The `batch_oracle_analytical/100` figure (58.494 s) independently
+corroborates §16's `population_100` figure (63.660 s) for the same
+underlying call (`BatchOracle::evaluate_population`, 10-zone model,
+analytical mode) through a second bench harness: ~0.59–0.64 s/config on
+this VM.
+
+The issue's context figures (~157 configs/sec CI throughput gate vs a 150
+floor, ~900/sec release per SCORECARD) are for the single-zone BatchOracle
+path on CI/release hardware. The 10-zone per-config cost measured here is
+not comparable to them beyond showing that per-config evaluation — not
+population plumbing — is where the time is (§18).
+
+## 18. Attribution — workload 3 top area
+
+**Top area: the per-config evaluation compute inside
+`BatchOracle::evaluate_population` itself — essentially 100% of the
+population-path wall clock on this VM.** The two candidate overheads the
+bench suite was built to bound were both measured and are negligible:
+
+| Candidate overhead | Measured | Share of ~585–637 ms/config |
+|---|---|---|
+| Per-config base-model clone (`batch_oracle_per_config_model_clone/100`: [763.18 µs, **765.92 µs**, 776.86 µs] per 100 clones; `/1000`: [30.232 ms, **30.442 ms**, 31.284 ms] per 1000) | ~7.7 µs/config (pop 100); ~30 µs/config (pop 1000) | <0.01% |
+| API-boundary output materialisation (`batch_oracle_api_boundary_output/100`: ~**130 ns**; `/1000`: ~**1.42 µs**) | ~1.3 ns/config | ~0% |
+| **Per-config evaluation (residual: total minus the above)** | **~585–637 ms/config** | **>99.99%** |
+
+So on the population path there is no plumbing win to be had: cloning,
+output materialisation, and population management are noise. Any speedup
+must come from the per-config analytical evaluation itself — which is the
+same physics step whose single-zone cost workload 1 profiled (§§4–6),
+plus the 10-zone model size.
+
+A finer split *inside* per-config evaluation (solar / conduction / zone
+balance / gains) is **NOT MEASURED** for workload 3: no sampling profiler
+is installed on this VM, and the workload-1 decomposition method (manual
+loop with/without gains) was built around the single-zone bench harness,
+not the BatchOracle population path. Recorded as a gap, not filled in.
+
+## 19. Failures, deviations and honest limits (workload 3)
+
+- The worker run (`fluxion-4688-1794321818`, balanced, MiniMax-M2.7) was
+  killed by a runtime restart at step 28/60 while the multi-zone bench was
+  still compiling. Its method sections (§15) and report skeleton survived
+  in the worktree; the supervisor finished the builds and ran every
+  measurement in §§16–18, and no number above comes from the worker's
+  prose. This is the same supervisor-completion pattern as workloads 1
+  and 2.
+- Workload 3 as the repo's benches define it is a **population-throughput
+  proxy, not a literal 10-zone 8760-step annual simulation** (§15.3). No
+  bench in the repo runs a multi-zone annual timestep loop; that workload
+  does not exist to be measured without writing a new harness, which this
+  measurement-only spike does not do.
+- `population_1000` / `population_10000` (3a) and
+  `batch_oracle_analytical/1000` (3b) were not completed — wall-time on
+  this shared VM, recorded openly in §§16–17 rather than extrapolated
+  into print as results.
+- The allocation profile from the issue's spike design (allocations and
+  bytes per timestep by module) was not produced for any workload; no
+  allocation profiler is installed on this VM. Still an open gap in
+  #4688's design, alongside the §12 workload-2 area split.
+- All figures are this VM's (4 visible CPUs on a heavily shared host,
+  ~1.5 effective CPU, bench profile at base commit `3e66c9b1`). They rank
+  areas; they are not release or CI numbers.
+
+## 20. Closing summary — cross-workload ranking (workloads 1, 2, 3)
+
+The ranking table #4688 exists to produce — top area per workload, each
+row citing the sections that measured it. All figures are the named
+harnesses' numbers on the VMs that ran them; see each row's sections for
+machine and commit.
+
+| Workload | Top area | Quantified | Source |
+|---|---|---|---|
+| 1 — single-zone annual, hourly (8760-step bench harness) | Per-timestep `FLX_*` environment-flag reads (`getenv`) | 762,121 calls/run (~87/step); net ~22–50 ms of a ~89–98 ms quiet-machine annual run — roughly a quarter to a half | §§5–6 |
+| 2 — high-mass DAE/BDF annual, sub-hourly (87,600 steps) | NOT the Newton solve: the BDF stepper totals 123.4 ms/year at ~1.0 Newton iter/step, Jacobian assembled/factorised 2×/year — the wall clock must sit in the production work around the stepper; its area split is NOT MEASURED | Stepper ~123.4 ms per 87,600-step year | §11; gap at §12 |
+| 3 — 10-zone BatchOracle population (throughput proxy) | Per-config evaluation compute inside `evaluate_population` | ~0.59–0.64 s/config on this VM (1.57–3.06 elem/s); per-config clone ~7.7–30 µs and output materialisation ~ns — <0.01% combined | §§16–18 |
+
+What this ranking does to the sibling spikes, stated once, from the
+measurements above and the kills already on record: anything premised on
+Newton-iteration cost on the DAE path (frozen-Jacobian reuse #4691,
+warm-start #4692, tolerance ladder #4690 — killed) has almost nothing to
+win on workload 2 (§11). The two measured, quantified wins available are
+(1) workload 1's per-step env-flag reads — a caching fix, not a solver
+change — and (2) whatever dominates per-config evaluation on the
+population path, which needs the finer intra-evaluation split that no
+workload has yet measured (§18) before a spike can be aimed at it.
+Remaining #4688 gaps, honestly open: the §12 workload-2 area split, the
+§18 intra-evaluation split, and the allocation profile (§19).
