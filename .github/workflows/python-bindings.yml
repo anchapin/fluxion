@@ -73,7 +73,7 @@ jobs:
 
       # Issue #4018: cargo caching for the maturin build.
       - name: Cache cargo workspace
-        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31  # v2
 
       - name: Cache ONNX Runtime binaries
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -159,7 +159,7 @@ jobs:
 
       # Issue #4018: cargo caching for the maturin build.
       - name: Cache cargo workspace
-        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16  # v2
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31  # v2
 
       - name: Install maturin + test deps
         # Deliberately NOT installing requirements-dev.txt here: it pulls the
