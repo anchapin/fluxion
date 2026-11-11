@@ -45,11 +45,11 @@ test ashrae_140_case_600_series::case_620::test_annual_cooling ... ignored, phys
 test ashrae_140_case_600_series::case_620::test_peak_heating ... ignored, physics gap
 test ashrae_140_case_600_series::case_620::test_peak_cooling ... ignored, physics gap
 test ashrae_140_case_600_series::case_630::test_annual_heating ... FAILED
-Case 630 Annual Heating: 28.76 MWh (Ref: 4.36-5.14)
+Case 630 Annual Heating: 29.92 MWh (Ref: 4.36-5.14)
 test ashrae_140_case_600_series::case_630::test_annual_cooling ... FAILED
-Case 630 Annual Cooling: 6.12 MWh (Ref: 2.57-3.07)
+Case 630 Annual Cooling: 5.64 MWh (Ref: 2.57-3.07)
 test ashrae_140_case_600_series::case_630::test_peak_cooling ... FAILED
-Case 630 Peak Cooling: 14.27 kW (Ref: 3.53-4.21)
+Case 630 Peak Cooling: 14.4 kW (Ref: 3.53-4.21)
 test ashrae_140_case_600_series::case_630::test_peak_heating ... ignored, physics gap
 test ashrae_140_case_600_series::case_640::test_annual_cooling ... FAILED
 Case 640 Annual Cooling: 7.89 MWh (Ref: 5.24-5.89)
@@ -79,11 +79,17 @@ test other_suite::case_a::test_b ... ok
 # 2026-10-26 re-pin (loop round 102): all seven tracked values
 # re-measured from soak run 40319152757 (CI anchor) after physics
 # rounds 93-95; the values below mirror the committed CSV.
+# 2026-11-11 re-pin (loop round 128): the three case_630 values
+# re-measured from soak run 42962211921 (CI anchor) after the physics
+# window rounds 113-126 (known drivers r119 #4684 overhang geometry,
+# r120 #4686 sky-diffuse shading); the other four held within epsilon
+# on the same run and keep their r102 values. The values below mirror
+# the committed CSV.
 TRACKED = {
     "ashrae_140_case_600_series::case_600ff::test_max_temperature": "45.05",
-    "ashrae_140_case_600_series::case_630::test_annual_heating": "28.76",
-    "ashrae_140_case_600_series::case_630::test_annual_cooling": "6.12",
-    "ashrae_140_case_600_series::case_630::test_peak_cooling": "14.27",
+    "ashrae_140_case_600_series::case_630::test_annual_heating": "29.92",
+    "ashrae_140_case_600_series::case_630::test_annual_cooling": "5.64",
+    "ashrae_140_case_600_series::case_630::test_peak_cooling": "14.4",
     "ashrae_140_case_600_series::case_640::test_annual_cooling": "7.89",
     "ashrae_140_case_600_series::case_650::test_peak_cooling": "15.28",
     "ashrae_140_case_600_series::case_650ff::test_max_temperature": "42.67",
@@ -107,7 +113,7 @@ def test_value_line_regex_parses_all_units():
     v = mod.parse_measured_values(GREEN_LOG)
     assert v[("600FF", "Max Temp")] == 45.05
     assert v[("650FF", "Min Temp")] == -17.89
-    assert v[("630", "Annual Heating")] == 28.76
+    assert v[("630", "Annual Heating")] == 29.92
     assert v[("650", "Peak Cooling")] == 15.28
 
 
@@ -120,7 +126,7 @@ def test_green_log_yields_green():
 
 
 def test_tracked_value_drift_fails_night():
-    drifted = GREEN_LOG.replace("28.76 MWh", "30.00 MWh")
+    drifted = GREEN_LOG.replace("29.92 MWh", "31.00 MWh")
     outcomes = _names(drifted)
     baseline, meta, hard = mod.parse_baseline(BASELINE)
     measured = mod.parse_measured_values(drifted)
@@ -128,8 +134,8 @@ def test_tracked_value_drift_fails_night():
     assert verdict.verdict == "tracked-drift"
     assert verdict.drift[0]["test"].endswith("case_630::test_annual_heating")
     # A change inside epsilon does NOT drift.
-    inside = GREEN_LOG.replace("28.76 MWh", "28.79 MWh")  # 0.104% -> drift
-    inside_ok = GREEN_LOG.replace("28.76 MWh", "28.78 MWh")  # 0.070% -> ok
+    inside = GREEN_LOG.replace("29.92 MWh", "29.95 MWh")  # 0.1003% -> drift
+    inside_ok = GREEN_LOG.replace("29.92 MWh", "29.94 MWh")  # 0.0668% -> ok
     v_in = mod.evaluate(
         _names(inside), mod.parse_measured_values(inside), baseline, meta, hard
     )

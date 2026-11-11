@@ -34,11 +34,44 @@
 # build (round-61 finding — the soak cohort and the strict-gate cohort do not coincide).
 # Membership is machine-checked by scripts/check_beta_soak_criterion4.py against the log;
 # a test leaves the tracked cohort only by passing (re-pin required), never by drift.
+# re-pin 2026-11-11 (physics loop round 128): the tracked cohort
+# re-pinned on Alex's 2026-11-11 release ("Re-pin c4/c5"), answering
+# the fresh tracked-drift verdict from the first C4/C5 evaluation since
+# the weather wall (soak run 42962211921, head e98399b7 — every earlier
+# red run aborted at Criterion 3 before these verdict steps). Three of
+# seven tracked values moved and re-pin from that run's own verdict
+# measurements (CI-as-anchor):
+#   case_630 annual_cooling 6.12 -> 5.64 (measured drift 7.84%)
+#   case_630 annual_heating 28.76 -> 29.92 (measured drift 4.03%)
+#   case_630 peak_cooling 14.27 -> 14.4 (measured drift 0.91%)
+# The four held rows (600ff max temp, 640 annual cooling, 650 peak
+# cooling, 650ff max temp) were re-measured by the same run's checker
+# and held within the 0.001 epsilon; their recorded values stand (the
+# criterion-4 output log is not uploaded as an artifact, so the held
+# rows' exact prints are not republished — the run's own green
+# comparison on them is the CI confirmation). Detector exonerated
+# first per this file's re-pin route: both verdict JSONs parse, the
+# two routes agree with each other (630 peak cooling 14.4 kW measured
+# in both C4 and C5), the hard tier held (8 pass + 12 ignored, verdict
+# hard_tier_size 20) and the set census held (27 executed = 7 tracked
+# + 20 hard), re_pin_required empty. Drivers: the physics window since
+# the r102 record (rounds 113-126, landed 2026-11-09/10); the known
+# drivers of these rows are r119 #4684 (overhang geometry) and r120
+# #4686 (sky-diffuse shading), movements recorded in KNOWN_ISSUES
+# (§LIMIT-39 / §SOLAR-03). Gate unchanged: no ceiling widened, no
+# criterion dropped, epsilon 0.001 untouched, membership unchanged.
+# Local cross-check: alex-system reproduced all seven printed values
+# on the nightly's verbatim dev-profile route at this tip
+# (/tmp/r128_gauge_c4.log, 2026-11-11): the three re-pinned rows match
+# the verdict bit-identically (5.64, 29.92, 14.4) and the four held
+# rows match their recorded values exactly (45.05, 7.89, 15.28,
+# 42.67); the real checker returns verdict green on that log
+# (executed 27, tracked 7, hard 20).
 test_name,metric,measured_value,unit
 ashrae_140_case_600_series::case_600ff::test_max_temperature,max_free_float_temp,45.05,degC
-ashrae_140_case_600_series::case_630::test_annual_heating,annual_heating,28.76,MWh
-ashrae_140_case_600_series::case_630::test_annual_cooling,annual_cooling,6.12,MWh
-ashrae_140_case_600_series::case_630::test_peak_cooling,peak_cooling,14.27,kW
+ashrae_140_case_600_series::case_630::test_annual_heating,annual_heating,29.92,MWh
+ashrae_140_case_600_series::case_630::test_annual_cooling,annual_cooling,5.64,MWh
+ashrae_140_case_600_series::case_630::test_peak_cooling,peak_cooling,14.4,kW
 ashrae_140_case_600_series::case_640::test_annual_cooling,annual_cooling,7.89,MWh
 ashrae_140_case_600_series::case_650::test_peak_cooling,peak_cooling,15.28,kW
 ashrae_140_case_600_series::case_650ff::test_max_temperature,max_free_float_temp,42.67,degC
