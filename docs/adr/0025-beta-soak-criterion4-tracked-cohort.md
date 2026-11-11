@@ -141,3 +141,53 @@ Round 64's §Application above names "#3251 Phase 3, production path not yet wir
 - Provenance: the new values are the nightly's own CI measurements (the CI-as-anchor rule — a tracked-cohort baseline never takes local-only values). alex-system then reproduced every value bit-identically at the post-#4630 tip `3d1f6224` (criterion-4 and criterion-5 routes, 2026-10-26), which also confirms the three later merges inert for both routes: #4627 (EPW albedo sentinel — DRYCOLD carries none and WD600's `999` fields are radiation/snow fields, not albedo field 32), #4629 (IDF HVAC import), #4630 (`StepParameters.use_ai` retirement; slot-population behavior identical through `solver_core`).
 - Band note for the record only (not a decision signal): 640 annual cooling moved inside its 140 reference band (7.89 in [5.95, 8.10]) and 650 annual cooling moved further below its band (4.38 vs [4.82, 7.06]); the #1457 tracker test still fails on the remaining out-of-band gaps, so its cohort membership is unchanged.
 - The re-pinned cohorts validate on the first scheduled soak after this lands.
+
+## Round 128 (2026-11-11): partial tracked-cohort re-pin — the first C4/C5 evaluation since the weather wall
+
+The round-102 baselines never got a post-wall C4/C5 evaluation until the
+round-127 dispatch: every nightly from 2026-10-27 through 2026-11-10
+aborted at Criterion 3 (the stale #2947 guard trip, re-pinned that
+round) before the verdict steps ran. The round-127 dispatch (run
+42962211921, head `e98399b7`) was the first evaluation since the wall:
+Criteria 1–3 green, Criterion 4 and Criterion 5 both `tracked-drift`
+against the round-102-era values. Alex released the re-pin on
+2026-11-11 ("Re-pin c4/c5"), and this lands it by the round-102
+playbook, adjusted for a partial (not wholesale) drift.
+
+- Detector exonerated first (this ADR's own re-pin order): both verdict
+  JSONs parse; the two routes agree with each other (630 peak cooling
+  14.4 kW measured by both, identical 0.91% relative drift); the
+  Criterion-4 hard tier held (8 pass + 12 ignored, `hard_tier_size`
+  20, no hard-fail); the set censuses held (Criterion 4: 27 executed =
+  7 tracked + 20 hard; Criterion 5: 1 executed, the tracker still
+  failing by construction); `re_pin_required` empty on both sides —
+  no member turned green, membership unchanged.
+- The drift is partial, not wholesale (unlike round 102): 3 of 7
+  Criterion-4 tracked values and 4 of 14 Criterion-5 metrics moved —
+  the case_630 family plus the 610 pair. Known drivers: r119 #4684
+  (overhang geometry) and r120 #4686 (sky-diffuse shading) inside the
+  rounds-113–126 window since the round-102 record; the movements are
+  recorded in KNOWN_ISSUES (§LIMIT-39 / §SOLAR-03). The 19.84%
+  610 peak-cooling row is the r120 diffuse-fix movement against its
+  pre-r120 baseline.
+- Re-pinned values are the run's own verdict measurements
+  (CI-as-anchor, never local-only). The ten held rows were re-measured
+  by the same run's checker and held within the 0.001 epsilon; the
+  criterion-4/5 output logs are not uploaded as artifacts, so the held
+  rows' exact prints are not republished — the recorded values stand,
+  and each CSV says so. alex-system reproduced all seven re-pinned
+  rows' printed values on the nightly's verbatim routes at this tip
+  (criterion-4 log: three re-pinned rows bit-identical, four held
+  rows exact, real checker green (executed 27, tracked 7, hard 20);
+  criterion-5 log: four bit-identical, ten held exact, real checker
+  green (executed 1, tracked 14); both on the nightly's verbatim
+  dev-profile routes, 2026-11-11)), re-confirming local/CI agreement for the route.
+- Gate unchanged: no ceiling widened, no criterion dropped, the 0.001
+  epsilon untouched, tier membership unchanged (the workflow's
+  tier-count comments from round 102 are still exact against this
+  run). Band movement is recorded for the record only per the standing
+  fidelity-first direction — it is not a decision signal.
+- Validation route: the branch soak dispatch on this commit must
+  return Criteria 4/5 green before merge (run-tail evidence in the PR),
+  and the streak resumes counting on the first post-merge night that
+  concludes success.
