@@ -25,7 +25,7 @@ parallel = ["rayon"]
 
 [dev-dependencies]
 criterion = "0.8"
-sysinfo = "0.39"
+sysinfo = "0.40"
 
 [[bench]]
 name = "parallel_harness"

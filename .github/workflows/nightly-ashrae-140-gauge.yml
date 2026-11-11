@@ -277,6 +277,11 @@ jobs:
       # run history. Count consecutive successful runs going back from now.
       - name: Compute β-soak streak
         id: streak
+        # if: always() (loop round 127, 2026-11-10, Alex-approved): the
+        # state file must be written on every completed run - a criterion
+        # failure must not skip the streak write and strand the always()-on
+        # state-validate step with "state file missing".
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

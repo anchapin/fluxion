@@ -327,7 +327,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         //
         // Now: t_sol_air includes solar via the sol-air formula using opaque irradiance.
         // opaque_sol_w has been removed from phi_m to avoid double-counting.
-        // The sol-air formula: T_sol_air = T_out + α*I_opaque/h_ext - ε*σ*(T_out-T_sky)^4/h_ext
+        // The sol-air formula, per surface (ExteriorBoundarySurface::sol_air_temperature):
+        // T_sol_air = T_out + α·(I_bd + I_gr)/h_c − F_sky·ε·σ·(T_out⁴ − T_sky⁴)/h_c
+        // — the ASHRAE ΔR direction (a cold sky LOWERS sol-air, Issue #4224), with
+        // F_sky = (1 + cos tilt)/2 (ISO 13790 §12.3.2). Pinned bit-exactly by
+        // tests/sol_air_composition_contract.rs (loop round 126).
         //
         // Issue #2891: h_ext used to be the time-invariant `EXTERIOR_FILM_COEFF_DEFAULT
         // = 18.3 W/m²·K` (~3.4 m/s wind), which over-estimated convection in winter
@@ -436,6 +440,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // clears it on checkout so the semantics (empty at loop start) are
         // unchanged; the capacity persists across steps.
         let boundary_surfaces = &mut scratch.boundary_surfaces;
+        // Issue #4697 audit: this timer covers only the sequential per-surface
+        // exterior-boundary construction/evaluation loop. It does not feed
+        // any thermal result.
+        let audit_started = std::time::Instant::now();
         #[allow(clippy::needless_range_loop)]
         // i indexes several parallel zone vectors, not just r66_cls
         for i in 0..num_zones {
@@ -552,6 +560,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             scratch.t_sol_air_zone[i] = t_sol_air_i;
             scratch.h_tr_em_zone[i] = h_tr_em;
         }
+        let audit = &mut self.0.conduction.per_surface_phase_audit;
+        audit.boundary_ns += audit_started.elapsed().as_nanos() as u64;
+        audit.boundary_steps += 1;
         // Strict-energy premise refresh: persist the applied per-zone
         // boundary so `invariant_checker` reconstructs the mass-node
         // identity from the same wind-dependent aggregated values this

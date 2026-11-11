@@ -256,6 +256,10 @@ where
         use crate::physics::exterior_convection::{
             h_c_ext_wind_dependent, wind_at_building_height_from_10m, ExteriorSurfaceDirection,
         };
+        // Issue #4697 audit: measure the sequential conduction/sol-air
+        // preparation separately from the coupled zone solve. This counter
+        // never feeds a thermal result.
+        let audit_started = std::time::Instant::now();
         let solar_ref = self.0.solar.solar_gains.as_ref();
         let alpha = SOLAR_ABSORPTANCE_DEFAULT;
         let emissivity = 0.9; // Surface emissivity for longwave
@@ -384,7 +388,11 @@ where
             None
         };
 
-        (ctf_flux_w, fd_flux_w, ctf_surface_temps)
+        let result = (ctf_flux_w, fd_flux_w, ctf_surface_temps);
+        let audit = &mut self.0.conduction.per_surface_phase_audit;
+        audit.preparation_ns += audit_started.elapsed().as_nanos() as u64;
+        audit.preparation_steps += 1;
+        result
     }
 
     /// Get or compute solar position for a given hour of year.
@@ -518,6 +526,20 @@ where
         &self,
     ) -> &std::collections::BTreeMap<String, IncidentSolarAccumulator> {
         &self.0.diagnostics_state.incident_solar_per_surface
+    }
+
+    /// Return issue #4697 audit counters as
+    /// `(preparation_ns, boundary_ns, preparation_steps, boundary_steps)`.
+    ///
+    /// These counters are measurement-only and do not affect physics.
+    pub fn per_surface_phase_audit(&self) -> (u64, u64, u64, u64) {
+        let audit = self.0.conduction.per_surface_phase_audit;
+        (
+            audit.preparation_ns,
+            audit.boundary_ns,
+            audit.preparation_steps,
+            audit.boundary_steps,
+        )
     }
 
     /// Reset heating and cooling energy tracking (Plan 03-08d)
@@ -4183,6 +4205,7 @@ impl ThermalModel<VectorField> {
                 applied_5r1c_boundary: None,
                 applied_5r1c_class_boundary: None,
                 r66_cls_workspace: None,
+                per_surface_phase_audit: Default::default(),
             },
             diagnostics_state: DiagnosticsState::default(),
         });
