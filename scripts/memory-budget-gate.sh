@@ -186,7 +186,13 @@ fi
 
 trap - INT TERM
 
-MAX_RSS_GB=$(echo "scale=2; $MAX_RSS_KB / 1024 / 1024" | bc)
+# Convert the peak RSS from KB to GB with two decimals, using exact
+# integer arithmetic only (no external calculator binary needed):
+# 1 GB = 1024 * 1024 KB = 1048576 KB, so the hundredths of a GB are
+# floor(MAX_RSS_KB * 100 / 1048576). Integer division truncates, which
+# matches the previous scale-2 conversion.
+MAX_RSS_HUNDREDTHS=$((MAX_RSS_KB * 100 / 1048576))
+MAX_RSS_GB=$(printf '%d.%02d' $((MAX_RSS_HUNDREDTHS / 100)) $((MAX_RSS_HUNDREDTHS % 100)))
 echo ""
 echo "Peak RSS: ${MAX_RSS_GB} GB"
 if [[ "$CHILD_STATUS" -ne 0 ]]; then
