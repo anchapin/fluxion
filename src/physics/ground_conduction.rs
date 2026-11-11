@@ -928,12 +928,12 @@ fn compute_heat_flows(
     let mut flows = BoundaryHeatFlows::default();
 
     // Top surface: slab footprint and exterior ground surface.
-    for i in 0..nx {
+    for (i, &surface_temp) in temperature_c.iter().enumerate().take(nx) {
         let k = k_of(i, 0);
         let half = (grid.z.widths[0] / 2.0) / (k * grid.x.widths[i]);
         let area = grid.x.widths[i] * UNIT_OUT_OF_PLANE_LENGTH_M;
         if let Some(face) = top_boundary_face(config, grid, i, area, half) {
-            let q = face.conductance * (face.temperature - temperature_c[i]);
+            let q = face.conductance * (face.temperature - surface_temp);
             let under_slab =
                 grid.x.centers[i] >= grid.slab_x0_m && grid.x.centers[i] <= grid.slab_x1_m;
             if under_slab {
