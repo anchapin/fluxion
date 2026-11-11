@@ -363,23 +363,79 @@ fn test_cli_help_marks_unimplemented_paths() {
     }
 }
 
-/// `fluxion validate-case 195-470` and `800-810` must also fail loudly with
-/// #2947 (the same pattern as the workflow commands). This guards the
-/// diagnostic stub paths that the previous #2711 fix gated.
+/// The `validate-case` diagnostic ranges are WIRED IN (commit `fecbadc0`,
+/// 2026-10-26): supported ids run through the diagnostics path, unsupported
+/// ids are reported explicitly, and the range completes with exit 0 - a
+/// range never fails silently and never partially succeeds without saying
+/// so (the #2947 no-silent-success intent, satisfied by explicit reporting).
+///
+/// Re-pinned 2026-11-10 (loop round 127, Alex-approved) from the retired
+/// stub contract ("not yet implemented") to this implemented contract; the
+/// nightly had tripped Criterion 3 on the stale assertion since the ranges
+/// landed. Loud failure stays guarded on malformed ranges (reversed
+/// bounds) below; the still-stubbed #2947 paths keep their own guards above.
 #[test]
-fn test_cli_validate_case_range_returns_not_implemented() {
-    let result = run_fluxion(&["validate-case", "195-470"]);
-    assert_unimplemented_failure(
-        "fluxion validate-case 195-470",
-        &result,
-        "diagnostic case range 195-470",
+fn test_cli_validate_case_range_runs_and_reports() {
+    // 195-470: case 195 runs; the other 275 ids are reported explicitly.
+    let (status, stdout, _stderr) = run_fluxion(&["validate-case", "195-470"]);
+    assert!(
+        status.success(),
+        "validate-case 195-470 should exit 0 with explicit reporting; got: {stdout}"
+    );
+    assert!(
+        stdout.contains("Case 195 result:"),
+        "range 195-470 should run case 195 and print its result; got: {stdout}"
+    );
+    assert!(
+        stdout.contains("Skipped, not supported: 275 case id(s) in range 195-470 (196-470)."),
+        "range 195-470 should report its 275 unsupported ids explicitly; got: {stdout}"
+    );
+    assert!(
+        stdout.contains("Completed range 195-470: 1 case(s) run, 275 skipped, not supported."),
+        "range 195-470 should complete with an explicit summary; got: {stdout}"
     );
 
-    let result = run_fluxion(&["validate-case", "800-810"]);
-    assert_unimplemented_failure(
-        "fluxion validate-case 800-810",
-        &result,
-        "diagnostic case range 800-810",
+    // 800-810: all eleven HVAC equipment cases run; none skipped.
+    let (status, stdout, _stderr) = run_fluxion(&["validate-case", "800-810"]);
+    assert!(
+        status.success(),
+        "validate-case 800-810 should exit 0; got: {stdout}"
+    );
+    assert!(
+        stdout.contains("Case 800 result:") && stdout.contains("Case 810 result:"),
+        "range 800-810 should run the HVAC cases and print their results; got: {stdout}"
+    );
+    assert!(
+        stdout.contains("Completed range 800-810: 11 case(s) run, 0 skipped, not supported."),
+        "range 800-810 should complete with an explicit summary; got: {stdout}"
+    );
+
+    // An all-unsupported range completes with exit 0 and says so
+    // explicitly: zero cases run is reported, never silently swallowed.
+    let (status, stdout, _stderr) = run_fluxion(&["validate-case", "500-505"]);
+    assert!(
+        status.success(),
+        "validate-case 500-505 should exit 0 with explicit reporting; got: {stdout}"
+    );
+    assert!(
+        stdout.contains("Skipped, not supported: 6 case id(s) in range 500-505 (500-505)."),
+        "all-unsupported range should report every id as skipped; got: {stdout}"
+    );
+    assert!(
+        stdout.contains("Completed range 500-505: 0 case(s) run, 6 skipped, not supported."),
+        "all-unsupported range should complete with an explicit summary; got: {stdout}"
+    );
+
+    // A malformed range (reversed bounds) still fails loudly - the
+    // no-silent-success behaviour on genuinely-invalid input is unchanged.
+    let (status, _stdout, stderr) = run_fluxion(&["validate-case", "810-800"]);
+    assert!(
+        !status.success(),
+        "reversed range 810-800 must fail loudly, got success"
+    );
+    assert!(
+        stderr.contains("Invalid case specification"),
+        "reversed range should fail with the invalid-spec message; got: {stderr}"
     );
 }
 
