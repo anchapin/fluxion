@@ -292,12 +292,29 @@ mod tests {
     }
 
     #[test]
-    fn test_diagnostic_case_range_is_gated() {
-        // `fluxion validate-case 195-470` must return a non-silent error.
-        let err = validate_diagnostic_case("195-470").unwrap_err();
+    fn test_diagnostic_case_range_is_wired_and_reports() {
+        // The `validate-case` ranges are wired in (commit `fecbadc0`,
+        // 2026-10-26): a supported range completes `Ok` with explicit skip
+        // reporting, and invalid specifications still fail loudly
+        // (#2947's never-silently-succeed rule on the error paths).
+        // Re-pinned 2026-11-10 (loop round 127, Alex-approved) from the
+        // retired stub contract ("not yet implemented").
+        assert!(
+            validate_diagnostic_case("195-470").is_ok(),
+            "range 195-470 is wired in (runs case 195, reports 275 skips explicitly)"
+        );
+        let err = validate_diagnostic_case("810-800").unwrap_err();
         let msg = format!("{err}");
-        assert!(msg.contains("not yet implemented"), "got: {msg}");
-        assert!(msg.contains("#2947"), "should reference #2947: {msg}");
+        assert!(
+            msg.contains("Invalid case specification"),
+            "reversed range must fail loudly: {msg}"
+        );
+        let err = validate_diagnostic_case("999").unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("Invalid case specification"),
+            "unsupported single case must fail loudly: {msg}"
+        );
     }
 
     // Note: direct simulation (`fluxion -w weather.epw input.flux`) is harder
