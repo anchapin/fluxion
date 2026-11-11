@@ -1,15 +1,17 @@
-# #4699 parallel-in-time spike — warm-up-as-state-bridge measurement, LOW-MASS class only
+# #4699 parallel-in-time spike — warm-up-as-state-bridge measurement, LOW-MASS and HIGH-MASS classes
 > Summary: measurement-only spike for issue #4699 (parallel-in-time
 > annual simulation): whether a warm-up on real preceding weather
 > bridges the month-boundary state for the low-mass class (Case 600).
 > At 14 days the bridge passes both win bands at every measured
 > boundary vs the periodic reference; the N-vs-2N self-check is
-> validated as conservative. High-mass and ground-coupled classes
-> are NOT MEASURED here. Harness: benches/spike_warmup_bridge_chunking.rs.
+> validated as conservative. The high-mass class (Case 900) was
+> measured in the #4744 addendum below — the 14-day standard holds
+> there too. The ground-coupled class is NOT MEASURED here.
+> Harness: benches/spike_warmup_bridge_chunking.rs.
 
-**Status: measured for the low-mass case class (ASHRAE 140 Case 600). High-mass
-(Case 900) and ground-coupled classes: NOT MEASURED in this run — no claim is
-made about them. All chunked-mode numbers below are labelled chunked-mode;
+**Status: measured for the low-mass case class (ASHRAE 140 Case 600) and, in
+the #4744 addendum, the high-mass class (Case 900). The ground-coupled class
+is NOT MEASURED — no claim is made about it. All chunked-mode numbers below are labelled chunked-mode;
 nothing here is a sequential-run result presented as one, and no production
 code, default, baseline, or tolerance was changed.**
 
@@ -108,10 +110,10 @@ Reading of the table:
   win bands at every boundary measured, provided the comparison reference
   is the warmed-up/periodic sequential run. 30 days is exact to printed
   precision.
-- **High-mass (Case 900): NOT MEASURED.** Thermal time constants are longer;
-  the 14-day result must not be extrapolated. The conservative self-check
-  is the tool designed for exactly this class and is validated above as
-  safe-direction.
+- **High-mass (Case 900): WIN — measured in the #4744 addendum below.**
+  The 14-day bridge meets the low-mass accuracy standard (worst seam
+  0.0003 °C, worst monthly drift 0.001%); the self-check stays
+  conservative for this class and converges only at 30 days.
 - **Ground-coupled: NOT MEASURED.** Still the expected hardest class
   (ground state converges over weeks–months); the self-check at least
   gives a production-usable "warm-up too short" signal, and the missing
@@ -128,7 +130,72 @@ checkpoint/restore API in any case. No follow-up is filed by this spike;
 whether to measure Case 900 / ground-coupled next, or to design a
 production chunked mode, is a physics call for Alex from this report.
 
+## Addendum (#4744): high-mass class measured
+
+Method: identical harness and protocol as the low-mass section (same
+boundaries, warm-up lengths, embedded Denver TMY weather, observables);
+only the model construction differs — Case 900 is built from the
+production `CaseSpec` via `ThermalModel::from_spec_with_selector` (the
+ASHRAE 140 validator's entry point; the HighMass construction
+auto-promotes to the 9R4C multi-node network). No production
+`simulate_year()` exists for Case 900 on the embedded Denver TMY
+weather, so reference A is the spec-driven sequential run itself and
+there is no separate cross-check. Reference A annual totals: heating
+2.6067 MWh, cooling 6.9893 MWh (0.023 s for 8,760 steps); reference B:
+2.6169 MWh / 6.9854 MWh (B − A: +0.0102 / −0.0039 MWh).
+
+Worst case over the measured boundaries at each warm-up length:
+
+| Warm-up | Worst seam 24–72 h, Apr/Jul/Oct (vs A = vs B) | Worst \|energy drift\|, Apr/Jul/Oct | January vs B: seam 24–72 h / drift | January vs A: seam 24–72 h / drift | Worst N-vs-2N self-check Δ |
+|---|---|---|---|---|---|
+| 7 d  | 0.0027 °C (PASS) | 0.019% (PASS) | 0.0000 °C / 0.003% (PASS) | 0.0138 °C / 0.645% (drift FAIL) | 1.5221 °C — NOT CONVERGED |
+| 14 d | 0.0003 °C (PASS) | 0.001% (PASS) | 0.0000 °C / 0.000% (PASS) | 0.0138 °C / 0.643% (drift FAIL) | 0.3084 °C — NOT CONVERGED |
+| 30 d | 0.0000 °C (PASS) | 0.000% (PASS) | 0.0000 °C / 0.000% (PASS) | 0.0138 °C / 0.643% (drift FAIL) | 0.0053 °C — CONVERGED |
+
+Reading of the table:
+
+1. **The 14-day bridge standard holds for high-mass.** At N = 14 the
+   worst seam error is 0.0003 °C (standard: ≤ 0.01 °C) and the worst
+   monthly heating/cooling drift is 0.001% (standard: ≤ 0.05%) — the
+   low-mass accuracy standard is met with two orders of magnitude to
+   spare. The Apr/Jul/Oct boundaries in fact meet the standard already
+   at 7 d (seam 0.0027 °C; worst monthly drifts 0.022% heating,
+   0.019% cooling).
+2. **January vs reference A "fails" on drift at every warm-up length
+   (0.643–0.645%) — the same reference artifact as the low-mass
+   class.** Reference A's January is its own cold-start transient;
+   against the periodic reference B the same January chunks pass at
+   every N (drift ≤ 0.003%, seam 0.0000 °C). January's seam vs A is
+   0.0138 °C at all N — inside the 0.2 °C win band.
+3. **The self-check is far more conservative for high-mass.** It
+   reports NOT CONVERGED at 7 d (Δ = 1.5221 °C) and at 14 d
+   (Δ = 0.3084 °C) even though every measured seam and drift passes:
+   the mass node's temperature keeps moving between the N-day and
+   2N-day warm-ups long after the setpoint-clamped zone temperatures
+   stop showing it. It converges at 30 d (Δ = 0.0053 °C). The
+   safe-direction behaviour validated on low-mass holds here, more
+   strongly — a production sufficiency gate driven by the self-check
+   would choose 30 days for this class even though 14 days already
+   meets the accuracy standard.
+4. **Speedup arithmetic is unchanged in normalized terms:** a 14-day
+   warm-up costs 12 × (30 + 14)/365 = ×1.447 sequential-years of total
+   work (ideal ×5.53 on 8 workers), as for low-mass.
+
+This closes the Case 900 half of the question the original report
+left open. The ground-coupled class remains NOT MEASURED — it is
+gated on the 2-D ground-conduction work (PR #4647).
+
 ## Provenance
+
+Addendum (#4744): two worker runs failed (60/60 steps mid compile-fix,
+then SIGTERM at 43/60) leaving the bench extension unverified; the main
+agent completed it — fixed one compile error (the reference-A energy
+totals were scoped inside the per-class report branches; hoisted to the
+shared scope), ran `cargo bench --bench spike_warmup_bridge_chunking`
+on 2026-11-11, and transcribed the high-mass table from that run's
+output. The same run reproduced every low-mass number in this report
+exactly (14 d: seam 0.0080 °C, drift 0.011%, self-check 0.0966 °C),
+confirming the harness refactor changed no low-mass behaviour.
 
 Worker run `fluxion-4699-1794263910` (balanced, MiniMax-M2.7, 60/60 steps)
 built the harness and produced the measurements; it hit the step cap while

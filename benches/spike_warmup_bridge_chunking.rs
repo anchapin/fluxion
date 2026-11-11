@@ -1,5 +1,12 @@
 //! Spike harness for fluxion issue #4699 — warm-up bridge for chunked (parallel-in-time)
-//! annual simulation, LOW-MASS case class only (ASHRAE 140 Case 600).
+//! annual simulation, LOW-MASS case class (ASHRAE 140 Case 600) and HIGH-MASS case class
+//! (ASHRAE 140 Case 900).
+//!
+//! The measurement protocol is IDENTICAL for both case classes: same month
+//! boundaries, same warm-up lengths, same embedded Denver TMY weather, same
+//! observables. Only the model construction differs (Case 600 via the
+//! production `Case600Model::new()`; Case 900 via the production
+//! `CaseSpec` -> `ThermalModel::from_spec_with_selector` path).
 //!
 //! WHAT THIS MEASURES (measurement only; no production code is touched):
 //!   1. A sequential Case 600 annual run (the reference, exactly the production
@@ -27,6 +34,8 @@ use fluxion::ashrae_cases::Orientation;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::sim::solar::{calculate_hourly_solar, WindowProperties};
+use fluxion::sim::thermal_selector::ThermalSelector;
+use fluxion::validation::ashrae140::cases::series_900::case_900_baseline;
 use fluxion::validation::ashrae140::Case600Model;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
@@ -104,10 +113,43 @@ impl Trace {
     }
 }
 
-/// Fresh Case 600 model (identical construction to the production
-/// `Case600Model::new()`), used for every independent run.
-fn fresh_model() -> ThermalModel<VectorField> {
-    Case600Model::new().model
+/// The case class under measurement. The measurement protocol is IDENTICAL
+/// for both classes (same boundaries, same warm-up lengths, same weather,
+/// same observables); only the model construction differs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CaseClass {
+    /// ASHRAE 140 Case 600 — low-mass (lightweight construction).
+    LowMass600,
+    /// ASHRAE 140 Case 900 — high-mass (concrete construction).
+    HighMass900,
+}
+
+impl CaseClass {
+    /// Header label for the printed section.
+    fn label(self) -> &'static str {
+        match self {
+            CaseClass::LowMass600 => "LOW-MASS case class (ASHRAE 140 Case 600)",
+            CaseClass::HighMass900 => "HIGH-MASS case class (ASHRAE 140 Case 900)",
+        }
+    }
+
+    /// Fresh model for one independent run of this case class.
+    ///
+    /// Case 600 uses the production `Case600Model::new()` construction. The
+    /// high-mass Case 900 model is built from the production `CaseSpec`
+    /// through `ThermalModel::from_spec_with_selector` — the same public
+    /// entry point the ASHRAE 140 validator uses; a HighMass construction
+    /// auto-promotes to the 9R4C multi-node network there.
+    fn fresh_model(self) -> ThermalModel<VectorField> {
+        match self {
+            CaseClass::LowMass600 => Case600Model::new().model,
+            CaseClass::HighMass900 => ThermalModel::<VectorField>::from_spec_with_selector(
+                &case_900_baseline(),
+                &ThermalSelector::default(),
+            )
+            .expect("Case 900 spec must build a thermal model"),
+        }
+    }
 }
 
 /// Advance the model by one hour on the weather of absolute hour `hour`.
@@ -222,6 +264,10 @@ const SEAM_BAND_C: f64 = 0.2;
 const ENERGY_BAND_PCT: f64 = 0.5;
 /// Tolerance for the N-vs-2N end-of-warm-up state self-check.
 const SELF_CHECK_TOL_C: f64 = 0.05;
+/// The low-mass accuracy standard the 14-day low-mass bridge met: worst seam
+/// error <= 0.01 °C and worst monthly energy drift <= 0.05 %.
+const LOW_MASS_STANDARD_SEAM_C: f64 = 0.01;
+const LOW_MASS_STANDARD_DRIFT_PCT: f64 = 0.05;
 
 fn band_seam(v: f64) -> &'static str {
     if v < SEAM_BAND_C {
@@ -241,54 +287,72 @@ fn band_energy(v: f64) -> &'static str {
     }
 }
 
-fn main() {
-    let weather = DenverTmyWeather::new();
-
+fn run_case_class(class: CaseClass, weather: &DenverTmyWeather) {
     // ------------------------------------------------------------------
     // Reference A: the production sequential annual run, as-is (one pass).
     // ------------------------------------------------------------------
     println!(
-        "=== fluxion #4699 warm-up-bridge spike — LOW-MASS case class (ASHRAE 140 Case 600) ==="
+        "=== fluxion #4699 warm-up-bridge spike — {} ===",
+        class.label()
     );
     println!("mode: chunked-mode (measurement only; no production code changed)");
     println!();
 
-    let mut model_a = fresh_model();
+    let mut model_a = class.fresh_model();
     let hours: Vec<usize> = (0..HOURS_PER_YEAR).collect();
     let t0 = Instant::now();
     let ref_a = run_segment(&mut model_a, &weather, &hours);
     let ref_a_secs = t0.elapsed().as_secs_f64();
+    let (ref_a_heat, ref_a_cool) = ref_a.month_energy_kwh(0, HOURS_PER_YEAR);
 
     // Cross-check against the production `Case600Model::simulate_year()`:
     // the harness reference must reproduce it (annual MWh and hourly temps).
-    let mut prod = Case600Model::new();
-    let prod_result = prod.simulate_year();
-    let prod_heat_kwh = prod_result.annual_heating_mwh * 1000.0;
-    let prod_cool_kwh = prod_result.annual_cooling_mwh * 1000.0;
-    let (ref_a_heat, ref_a_cool) = ref_a.month_energy_kwh(0, HOURS_PER_YEAR);
-    let max_temp_diff = ref_a
-        .temps
-        .iter()
-        .zip(prod_result.hourly_temperatures.iter())
-        .map(|(a, b)| (a - b).abs())
-        .fold(0.0_f64, f64::max);
-    println!("--- reference A: sequential annual run, as-is (1 pass) ---");
-    println!("elapsed: {:.3} s for {} steps", ref_a_secs, HOURS_PER_YEAR);
-    println!(
-        "annual heating: {:.4} MWh (harness) vs {:.4} MWh (Case600Model::simulate_year)",
-        ref_a_heat / 1000.0,
-        prod_heat_kwh / 1000.0
-    );
-    println!(
-        "annual cooling: {:.4} MWh (harness) vs {:.4} MWh (Case600Model::simulate_year)",
-        ref_a_cool / 1000.0,
-        prod_cool_kwh / 1000.0
-    );
-    println!(
-        "max |zone temp difference| harness vs production: {:.3e} °C",
-        max_temp_diff
-    );
-    println!();
+    // Only the low-mass class has such a production entry point; the
+    // high-mass class has no separate `simulate_year()` on the embedded
+    // Denver TMY weather (the ASHRAE 140 validator path uses the EPW file),
+    // so for Case 900 reference A IS the production spec-driven sequential
+    // run and there is nothing to cross-check it against.
+    if class == CaseClass::LowMass600 {
+        let mut prod = Case600Model::new();
+        let prod_result = prod.simulate_year();
+        let prod_heat_kwh = prod_result.annual_heating_mwh * 1000.0;
+        let prod_cool_kwh = prod_result.annual_cooling_mwh * 1000.0;
+        let max_temp_diff = ref_a
+            .temps
+            .iter()
+            .zip(prod_result.hourly_temperatures.iter())
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f64, f64::max);
+        println!("--- reference A: sequential annual run, as-is (1 pass) ---");
+        println!("elapsed: {:.3} s for {} steps", ref_a_secs, HOURS_PER_YEAR);
+        println!(
+            "annual heating: {:.4} MWh (harness) vs {:.4} MWh (Case600Model::simulate_year)",
+            ref_a_heat / 1000.0,
+            prod_heat_kwh / 1000.0
+        );
+        println!(
+            "annual cooling: {:.4} MWh (harness) vs {:.4} MWh (Case600Model::simulate_year)",
+            ref_a_cool / 1000.0,
+            prod_cool_kwh / 1000.0
+        );
+        println!(
+            "max |zone temp difference| harness vs production: {:.3e} °C",
+            max_temp_diff
+        );
+        println!();
+    } else {
+        println!("--- reference A: sequential annual run, as-is (1 pass) ---");
+        println!("elapsed: {:.3} s for {} steps", ref_a_secs, HOURS_PER_YEAR);
+        println!(
+            "annual heating: {:.4} MWh, annual cooling: {:.4} MWh (spec-driven Case 900 model)",
+            ref_a_heat / 1000.0,
+            ref_a_cool / 1000.0
+        );
+        println!(
+            "cross-check vs a separate production entry point: N/A (no Case 900 `simulate_year()` exists on the embedded Denver TMY weather)"
+        );
+        println!();
+    }
 
     // ------------------------------------------------------------------
     // Reference B: a second consecutive annual pass (periodic-steady
@@ -335,7 +399,7 @@ fn main() {
                 .collect();
             let month: Vec<usize> = (start..start + len).collect();
 
-            let mut chunk_model = fresh_model();
+            let mut chunk_model = class.fresh_model();
             let t0 = Instant::now();
             let _ = run_segment(&mut chunk_model, &weather, &warm);
             let state_n = StateSnapshot::of(&chunk_model);
@@ -347,7 +411,7 @@ fn main() {
             let warm2: Vec<usize> = (0..2 * warmup_hours)
                 .map(|k| (start + HOURS_PER_YEAR - 2 * warmup_hours + k) % HOURS_PER_YEAR)
                 .collect();
-            let mut chunk2_model = fresh_model();
+            let mut chunk2_model = class.fresh_model();
             let _ = run_segment(&mut chunk2_model, &weather, &warm2);
             let state_2n = StateSnapshot::of(&chunk2_model);
 
@@ -468,20 +532,26 @@ fn main() {
         let mut worst_self_check = 0.0_f64;
         let mut jan_drift_a = f64::NAN;
         let mut jan_seam_a = f64::NAN;
+        let mut jan_drift_b = f64::NAN;
+        let mut jan_seam_b = f64::NAN;
+        let mut worst_heat_drift_a = 0.0_f64;
+        let mut worst_cool_drift_a = 0.0_f64;
+        let mut worst_heat_drift_b = 0.0_f64;
+        let mut worst_cool_drift_b = 0.0_f64;
         for (start, len, _label) in BOUNDARIES {
             let warmup_hours = n_days * HOURS_PER_DAY;
             let warm: Vec<usize> = (0..warmup_hours)
                 .map(|k| (start + HOURS_PER_YEAR - warmup_hours + k) % HOURS_PER_YEAR)
                 .collect();
             let month: Vec<usize> = (start..start + len).collect();
-            let mut m = fresh_model();
+            let mut m = class.fresh_model();
             let _ = run_segment(&mut m, &weather, &warm);
             let state_n = StateSnapshot::of(&m);
             let chunk = run_segment(&mut m, &weather, &month);
             let warm2: Vec<usize> = (0..2 * warmup_hours)
                 .map(|k| (start + HOURS_PER_YEAR - 2 * warmup_hours + k) % HOURS_PER_YEAR)
                 .collect();
-            let mut m2 = fresh_model();
+            let mut m2 = class.fresh_model();
             let _ = run_segment(&mut m2, &weather, &warm2);
             let state_2n = StateSnapshot::of(&m2);
 
@@ -493,16 +563,33 @@ fn main() {
             let da = pct(ch + cc, ah + ac).abs();
             let db = pct(ch + cc, bh + bc).abs();
             let sc = state_n.max_abs_delta(state_2n);
+            // Monthly heating / cooling drift, tracked separately.
+            let dha = pct(ch, ah).abs();
+            let dca = pct(cc, ac).abs();
+            let dhb = pct(ch, bh).abs();
+            let dcb = pct(cc, bc).abs();
 
             if start == 0 {
                 jan_drift_a = da;
                 jan_seam_a = seam_a.max_abs_after_24h;
+                jan_drift_b = db;
+                jan_seam_b = seam_b.max_abs_after_24h;
             } else {
                 worst_seam_a = worst_seam_a.max(seam_a.max_abs_after_24h);
                 worst_seam_b = worst_seam_b.max(seam_b.max_abs_after_24h);
                 worst_drift_a = worst_drift_a.max(da);
                 worst_drift_b = worst_drift_b.max(db);
                 worst_self_check = worst_self_check.max(sc);
+                for (v, w) in [
+                    (dha, &mut worst_heat_drift_a),
+                    (dca, &mut worst_cool_drift_a),
+                    (dhb, &mut worst_heat_drift_b),
+                    (dcb, &mut worst_cool_drift_b),
+                ] {
+                    if !v.is_nan() && v > *w {
+                        *w = v;
+                    }
+                }
             }
         }
         println!(
@@ -522,6 +609,31 @@ fn main() {
             band_energy(jan_drift_a),
             jan_seam_a,
             band_seam(jan_seam_a),
+        );
+        // Low-mass accuracy standard (the standard the 14-day low-mass run
+        // met): seam error <= 0.01 °C and monthly energy drift <= 0.05 %.
+        // Evaluated over the warm boundaries (vs A and vs B) and over
+        // January against the periodic reference B.
+        let std_seam = worst_seam_a.max(worst_seam_b).max(jan_seam_b);
+        let std_drift = worst_drift_a.max(worst_drift_b).max(jan_drift_b);
+        let std_met =
+            std_seam <= LOW_MASS_STANDARD_SEAM_C && std_drift <= LOW_MASS_STANDARD_DRIFT_PCT;
+        println!(
+            "warm-up {:2} d | worst monthly heating drift over Apr/Jul/Oct: vs A {:.3}% ({}), vs B {:.3}% ({}) | worst monthly cooling drift: vs A {:.3}% ({}), vs B {:.3}% ({}) | January vs B: drift {:.3}% ({}) seam {:.4} C ({}) | low-mass accuracy standard (seam <= 0.01 C, monthly drift <= 0.05%): {}",
+            n_days,
+            worst_heat_drift_a,
+            band_energy(worst_heat_drift_a),
+            worst_heat_drift_b,
+            band_energy(worst_heat_drift_b),
+            worst_cool_drift_a,
+            band_energy(worst_cool_drift_a),
+            worst_cool_drift_b,
+            band_energy(worst_cool_drift_b),
+            jan_drift_b,
+            band_energy(jan_drift_b),
+            jan_seam_b,
+            band_seam(jan_seam_b),
+            if std_met { "MET" } else { "NOT MET" },
         );
     }
     println!();
@@ -562,5 +674,13 @@ fn main() {
         }
     }
     println!();
-    println!("high-mass (Case 900) and ground-coupled case classes: NOT MEASURED in this run.");
+    println!("ground-coupled case class: NOT MEASURED in this run.");
+}
+
+/// Run the identical warm-up-bridge protocol for each measured case class.
+fn main() {
+    let weather = DenverTmyWeather::new();
+    for class in [CaseClass::LowMass600, CaseClass::HighMass900] {
+        run_case_class(class, &weather);
+    }
 }
