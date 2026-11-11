@@ -23,8 +23,6 @@ use crate::api::parameters::BuildingParameters;
 #[cfg(feature = "python-bindings")]
 use crate::batch_oracle::BatchOracle;
 #[cfg(feature = "python-bindings")]
-use crate::physics::cta::VectorField;
-#[cfg(feature = "python-bindings")]
 #[cfg(feature = "python-bindings")]
 use std::time::Instant;
 
