@@ -169,8 +169,8 @@ pub fn h_c_ext_from_10m(
 /// Formula: `V(z) / V_10 = (z / 10)^α` with `α = 0.15` for open-terrain
 /// exposure (ASHRAE Handbook of Fundamentals chapter 16). For a 2.7 m
 /// tall ASHRAE 140 reference building the conversion factor is
-/// `(2.7 / 10.0)^0.15 ≈ 0.8154`, so a 3.4 m/s 10 m wind becomes
-/// ≈2.77 m/s at 2.7 m — inside the 5 % FD-solver consistency band
+/// `(2.7 / 10.0)^0.15 ≈ 0.8217`, so a 3.4 m/s 10 m wind becomes
+/// ≈2.79 m/s at 2.7 m — inside the 5 % FD-solver consistency band
 /// required by issue #2891.
 ///
 /// Negative or non-finite inputs are clamped to 0.0 to keep the returned

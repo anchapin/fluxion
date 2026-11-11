@@ -17,6 +17,21 @@ use super::conduction_backend::ConductionBackend;
 /// over the wall/roof/floor classes.
 pub type R66ClassTuples = ([f64; 3], [f64; 3], [f64; 3], [f64; 3]);
 
+/// Monotonic nanosecond counters for the issue #4697 per-surface audit.
+///
+/// `preparation_ns` covers the per-timestep conduction/sol-air preparation in
+/// `ThermalModel::prepare_solvers_and_sol_air`; `boundary_ns` covers the
+/// 5R1C per-surface exterior-boundary evaluation loop. Separate counters are
+/// retained so the report can distinguish the parallelisable surface phase
+/// from the coupled zone solve. The counters do not feed any physics result.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PerSurfacePhaseAudit {
+    pub preparation_ns: u64,
+    pub boundary_ns: u64,
+    pub preparation_steps: u64,
+    pub boundary_steps: u64,
+}
+
 pub struct ConductionState<T: ContinuousTensor<f64>> {
     // Concrete solver backend (CTF / FD / MultiNode / SolverManager / Gauge).
     pub backend: ConductionBackend,
@@ -123,6 +138,8 @@ pub struct ConductionState<T: ContinuousTensor<f64>> {
     /// heap allocation per timestep, #4512). `None` until the first step.
     /// Engine-private scratch; contents never read before overwrite.
     pub r66_cls_workspace: Option<Vec<Option<R66ClassTuples>>>,
+    /// Issue #4697 audit-only timing counters. They never affect physics.
+    pub per_surface_phase_audit: PerSurfacePhaseAudit,
 }
 
 /// Per-zone record of [`ConductionState::applied_5r1c_class_boundary`]
@@ -205,6 +222,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ConductionState<T> {
             applied_5r1c_boundary: self.applied_5r1c_boundary.clone(),
             applied_5r1c_class_boundary: self.applied_5r1c_class_boundary.clone(),
             r66_cls_workspace: self.r66_cls_workspace.clone(),
+            per_surface_phase_audit: self.per_surface_phase_audit,
         }
     }
 }

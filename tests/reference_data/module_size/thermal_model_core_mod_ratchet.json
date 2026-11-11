@@ -34,8 +34,12 @@
     {
       "actual": 4369,
       "reason": "Loop round 124 landing union of PR #4686 (loop r120 sky-diffuse view-factor reduction): the union of #4684's overhang computed-gap lookup (4335, loop r119) with r120's sky-diffuse share threading through this module nets +34 lines over the r119 ratchet. Dated at landing; further decomposition tracked separately."
+    },
+    {
+      "actual": 4392,
+      "reason": "PR #4723 (Issue #4697 per-surface parallelism spike, KILL verdict) — measurement instrumentation retained at landing per owner decision 2026-11-10: phase-timing fields and step hooks in the bare impl block (+23 lines net over the round-124 ratchet). No new production code paths; the spike verdict is KILL, the bench + report carry the evidence. Further decomposition tracked separately."
     }
   ],
-  "max_lines": 4369,
+  "max_lines": 4392,
   "notes": "Issue #3574: extend module-size gate to src/sim/thermal_model_core/mod.rs, the largest child of the Issue #3543 decomposition (~4.1k LoC), still over the ratchet because of the bare impl ThermalModel<VectorField> block. Current size snapshotted as the historical maximum; the bound can only tighten (lowered via the YAML `max_lines` field). Companion cleanup work that decomposes this module is tracked separately and is out of scope for #3574."
 }
