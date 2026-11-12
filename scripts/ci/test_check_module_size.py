@@ -21,6 +21,7 @@ The script's ``LIMITS`` table is computed at import time using
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -679,3 +680,116 @@ def test_write_baseline_updates_baseline_section(checker, tmp_path, monkeypatch)
     assert updated["baseline"]["count"] == 2
     assert updated["baseline"]["paths"] == ["src/a.rs", "src/b.rs"]
     assert "Issue #4243 test" in updated["history"][-1]["action"]
+
+
+# ---------------------------------------------------------------------------
+# Issue #4753 — the three largest ungated source files get ratchet entries.
+#
+# src/sim/thermal_model_physics/zone_balance.rs (4421 lines, largest file in
+# src/), src/sim/hvac/pressure_air_loop.rs (4312 lines) and
+# src/physics/gauge_zone_solver.rs (4001 lines) had no module-size ratchet
+# at all. They are now gated per the Issue #3574 admission protocol:
+# ceiling = current size + max(+5%, +100 lines).
+# ---------------------------------------------------------------------------
+
+# path -> (current size, ratchet basename, expected ceiling)
+ISSUE_4753_ENTRIES = {
+    "src/sim/thermal_model_physics/zone_balance.rs": (
+        4421,
+        "zone_balance_ratchet.json",
+        4643,
+    ),
+    "src/sim/hvac/pressure_air_loop.rs": (
+        4312,
+        "pressure_air_loop_ratchet.json",
+        4528,
+    ),
+    "src/physics/gauge_zone_solver.rs": (
+        4001,
+        "gauge_zone_solver_ratchet.json",
+        4202,
+    ),
+}
+
+
+def _protocol_ceiling(actual: int) -> int:
+    """Issue #3574 admission-protocol ceiling: size + max(+5%, +100 lines)."""
+    return actual + max(-(-actual * 5 // 100), 100)
+
+
+def test_issue_4753_entries_present_in_shipped_limits(checker, repo_root):
+    """The shipped LIMITS table must gate the three previously-ungated files."""
+    data = checker._load_limits_file(repo_root / "scripts" / "data" / "module_size_limits.json")
+    assert data is not None
+    by_path = {entry["path"]: entry for entry in data["limits"]}
+    for path, (_actual, ratchet_basename, ceiling) in ISSUE_4753_ENTRIES.items():
+        assert path in by_path, f"{path} is not gated by the module-size table"
+        entry = by_path[path]
+        assert entry["max_lines"] == ceiling
+        assert entry["ratchet_basename"] == ratchet_basename
+        # The documenting reason must name the tracking issue.
+        assert "#4753" in entry["reason"], (
+            f"reason for {path} does not name the tracking issue: {entry['reason']}"
+        )
+
+
+def test_issue_4753_ceilings_follow_3574_buffer_protocol(checker, repo_root):
+    """Each new ceiling must be the file's real size + the #3574 buffer."""
+    data = checker._load_limits_file(repo_root / "scripts" / "data" / "module_size_limits.json")
+    by_path = {entry["path"]: entry for entry in data["limits"]}
+    for path, (_actual, _ratchet, _ceiling) in ISSUE_4753_ENTRIES.items():
+        actual = checker.count_lines(repo_root / path)
+        assert actual > 1000, f"{path} unexpectedly small ({actual} lines)"
+        assert by_path[path]["max_lines"] == _protocol_ceiling(actual), (
+            f"{path}: ceiling {by_path[path]['max_lines']} != protocol "
+            f"{_protocol_ceiling(actual)} (actual {actual})"
+        )
+        # The entry must pass on a clean tree.
+        assert actual <= by_path[path]["max_lines"]
+
+
+def test_issue_4753_ratchet_files_seed_historical_max(checker, repo_root):
+    """Each new entry's ratchet JSON records the file's current size."""
+    ratchet_dir = repo_root / "tests" / "reference_data" / "module_size"
+    for path, (actual, ratchet_basename, _ceiling) in ISSUE_4753_ENTRIES.items():
+        ratchet = ratchet_dir / ratchet_basename
+        assert ratchet.exists(), f"missing ratchet reference data: {ratchet}"
+        data = json.loads(ratchet.read_text(encoding="utf-8"))
+        assert data["max_lines"] == actual
+        assert data["history"][-1]["actual"] == actual
+        # The ratchet must never loosen the active ceiling.
+        assert actual <= _protocol_ceiling(actual)
+
+
+def test_issue_4753_new_entry_passes_at_ceiling_and_fails_above(checker, tmp_path):
+    """Hermetic per-entry behaviour: at/under the ceiling passes, above fails."""
+    for path, (actual, _ratchet, ceiling) in ISSUE_4753_ENTRIES.items():
+        rel = Path(path)
+        source = tmp_path / rel
+        _write_source(source, actual)
+        limit = checker.Limit(
+            path=source,
+            max_lines=ceiling,
+            ratchet_path=None,
+            reason="Issue #4753 synthetic entry.",
+        )
+        result = checker.check(limit)
+        assert result.passed, f"{path}: {result.actual} lines vs ceiling {result.max}"
+        assert result.actual == actual
+        assert result.max == ceiling
+        # One line over the ceiling must fail the entry.
+        _write_source(source, ceiling + 1)
+        over = checker.check(limit)
+        assert not over.passed
+        assert over.actual == ceiling + 1
+
+
+def test_issue_4753_shipped_baseline_counts_three_new_entries(checker, repo_root):
+    """The baseline section must count the three new entries (10 -> 13)."""
+    data = checker._load_limits_file(repo_root / "scripts" / "data" / "module_size_limits.json")
+    baseline = data["baseline"]
+    assert baseline["count"] == len(data["limits"]) == 13
+    for path in ISSUE_4753_ENTRIES:
+        assert path in baseline["paths"]
+    # The documenting history entry must name the tracking issue.
+    assert any("#4753" in entry.get("action", "") for entry in data["history"])
