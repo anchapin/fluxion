@@ -6,9 +6,10 @@ code, tests, and docs — by humans and by agent workers alike.
 Definitions are traced to the code and docs on `develop`
 (`ARCHITECTURE.md`, `CODEBASE_MAP.md`, `AGENTS.md`, `RULES.md`,
 `CONTRACT.md`, `docs/ASHRAE140_TERMINOLOGY.md`, `docs/KNOWN_ISSUES.md`).
-Terms that could not be traced to a source are in **Open questions**,
+Terms that could not be traced to a source go in **Open questions**,
 not in the glossary — resolve them there rather than inventing a
-definition in a brief.
+definition in a brief. (None open at this revision; see Resolved
+questions.)
 
 **How to use it:** One name per concept, used the same way in briefs,
 issues, code, tests, and docs. If you mean the thing, use its word here.
@@ -71,6 +72,30 @@ contexts (e.g. *model* in Simulation core vs. Surrogate) is two terms.
   synonym for ventilation in general.
 - **Infiltration** — Uncontrolled air leakage. Distinct from
   ventilation, which is intentional/scheduled.
+- **Warm-up** — The pre-conditioning period of an annual simulation,
+  per ASHRAE 140 §B2 (`src/sim/warmup.rs`, `WarmupConfig`, enabled by
+  default): the model runs until it reaches periodic steady state
+  *before* results are recorded, so the arbitrary initial condition
+  (all zones at 20 °C) does not bias early timesteps — worst in
+  free-float cases. Two modes: **fixed-duration** (default 14 days,
+  `DEFAULT_WARMUP_DAYS`; weather wraps periodically, hour % 8760) and
+  **convergence-based** (full-year iterations until max ΔT < 0.01 °C,
+  max 4 iterations). Warm-up output is never recorded results.
+- **Warm-up bridge** — The parallel-in-time use of warm-up (Issue
+  #4699): a month chunk is simulated as [N preceding days on the
+  *real preceding weather*, Dec→Jan wrap] + [the month], warm-up
+  output discarded (overlap-and-discard). The 14-day standard is
+  measured, not assumed: it holds for low-mass (Case 600, #4728) and
+  high-mass (Case 900, #4750) against the periodic reference. The
+  N-vs-2N self-check stays conservative — it declares convergence
+  only at 30 days for high-mass — so a self-check-driven gate picks
+  30 even though 14 measurably suffices.
+- **Model (usage rule)** — Bare "the model" in a brief means the
+  assembled `ThermalModel` for a case (what topology export shows).
+  Every other use carries its qualifier: *thermal model* (anything
+  implementing `ThermalModelTrait` — Physics / Mock / Surrogate /
+  Hybrid / Unified), *surrogate model*, *sky model*
+  (`PerezSkyModel`), *input model* (`FluxionModel` / CaseSpec).
 
 ## Physics / conduction
 
@@ -161,6 +186,19 @@ contexts (e.g. *model* in Simulation core vs. Surrogate) is two terms.
   crate is **`fluxion-fluid/`**. It is *not* `fluxion-core/src/fluid/`
   (which does not own this meaning). Briefs that say "the fluid
   module" without the crate name are ambiguous.
+- **Design day** — A 24-hour extreme-weather day used for sizing.
+  Two sources, do not conflate them: a **DDY design day**
+  (`DesignDaySpec`, parsed from EnergyPlus `.ddy` files —
+  `SizingPeriod:DesignDay`, Winter/SummerDesignDay, with max
+  dry-bulb, daily range, and humidity condition) and a **selected
+  design day** (`DesignDaySelector`, deriving the heating day =
+  lowest average dry-bulb and cooling day = highest average
+  dry-bulb from TMY hourly data, per ASHRAE Fundamentals Ch. 14).
+  The CLI run period is "design-day" vs "annual."
+- **Sizing** — Determining equipment capacity from design-day peak
+  loads, × a safety factor (typically 1.1–1.2). Sizing is the
+  *purpose* of a design day; there is no "sizing day" — that phrase
+  is external shorthand and is not used in briefs.
 - **Sensible vs. latent load** — Sensible = temperature change;
   latent = moisture. Judge latent-load/moisture work against humid
   climates (e.g. Baltimore, MD) — Denver is too dry to show its value.
@@ -250,15 +288,23 @@ contexts (e.g. *model* in Simulation core vs. Surrogate) is two terms.
 | fluid module | `fluxion-fluid/` crate | Two different locations could claim it |
 | test count (from memory) | the count in `tests/test_inventory.json` | It is the canonical citation; counts drift weekly |
 | Case600 | Case 600 (prose) | Spaced in prose, unspaced only in code ids |
+| sizing day | design day (for sizing) | "Sizing day" appears nowhere in the repo; design day is the term, sizing is its purpose |
+| the model (unqualified, non-case sense) | thermal / surrogate / sky / input model | Bare "the model" is reserved for the assembled ThermalModel of a case |
 
-## Open questions for Alex
+## Resolved questions (2026-11-11, operator's verdict)
 
-1. **Warm-up** — used in hallway language ("14-day warm-up bridge")
-   but I found no single canonical definition in the docs I traced.
-   Pin: warm-up period = pre-simulation days discarded before
-   accounting starts?
-2. **Sizing day / design day** — appears in NLR work language; is it
-   a Fluxion term of art (peak-load sizing condition) or borrowed
-   EnergyPlus language to keep out of briefs?
-3. **Model** — `ThermalModel`, surrogate model, and "the model" in
-   topology export are three uses. Worth a rule, or is context enough?
+The first draft's open questions, resolved on Alex's word after
+research against develop — the full definitions live in the sections
+above; this is the decision record:
+
+1. **Warm-up** — pinned as glossed (Simulation core), including the
+   distinct **warm-up bridge** sub-term from Issue #4699.
+2. **Design day / sizing day** — design day is a Fluxion term of
+   art (DDY-specified and selector-derived senses); sizing is its
+   purpose. "Sizing day" is not used.
+3. **Model** — the usage rule in Simulation core applies: bare
+   "the model" = the assembled `ThermalModel`; all other uses are
+   qualified. No renames.
+
+No open questions at this revision. New untraced terms go here as
+questions, not into the glossary as invented definitions.
