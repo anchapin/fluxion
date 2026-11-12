@@ -51,6 +51,11 @@ contexts (e.g. *model* in Simulation core vs. Surrogate) is two terms.
   one zone, and one open space can span zones.
 - **Timestep** — One simulation step (1 hour in ASHRAE 140 work). Loads
   are rates over a timestep; energies are loads integrated over it.
+- **Thermal model** — The engine object that advances zones through
+  timesteps (`ThermalModel`); the trait hierarchy rooted at
+  `ThermalModelTrait` is what Physics / Mock / Surrogate / Hybrid /
+  Unified implementations plug into. See also the *Model (usage
+  rule)* entry below.
 - **Energy balance** — The invariant that must hold for any zone:
   conduction + convection + radiation + solar + HVAC sum to zero.
   (CONTRACT.md, from RULES.md §Must-Always 1.) A balance failure is a
@@ -67,7 +72,7 @@ contexts (e.g. *model* in Simulation core vs. Surrogate) is two terms.
   *internal loads* for the scheduled input, *gains* when talking about
   the heat actually entering the balance.
 - **Ventilation** — Outdoor-air exchange with the zone, via
-  `VentilationSchedule` (a named swap point). **Night ventilation** is
+  **VentilationSchedule** (a named swap point). **Night ventilation** is
   the scheduled night-flush variant (`NightVentilation`), not a
   synonym for ventilation in general.
 - **Infiltration** — Uncontrolled air leakage. Distinct from
@@ -144,7 +149,8 @@ contexts (e.g. *model* in Simulation core vs. Surrogate) is two terms.
   with an orientation, a construction, and an area. Fluxion's topology
   export is a zone / surface / construction / HVAC graph.
 - **Construction** — The layered build-up assigned to a surface
-  (`Construction`, `ConstructionLayer` in `fluxion-core`).
+  (`Construction` in `fluxion-core`). One homogeneous layer inside
+  it is a **construction layer** (`ConstructionLayer`).
 - **Material layer / MaterialLayer** — One homogeneous layer inside a
   construction (part of `BuildingAssembly` / `AssemblyBuilder`).
 - **Assembly / BuildingAssembly** — A named, reusable set of
@@ -211,6 +217,12 @@ contexts (e.g. *model* in Simulation core vs. Surrogate) is two terms.
   *Case 600*, *Case 900*, *Case 600FF*; code/ids are unspaced.
   600 = low-mass baseline family, 900 = high-mass family; FF = the
   free-float variant of the same case, not a different building.
+- **CaseSpec leaf types** — The pure-data spec types a case is built
+  from, in `fluxion_core::ashrae_cases`: `WindowSpec`, `GlassType`,
+  `BuildingType`, `GeometrySpec`, `ConstructionType`, `ShadingType`,
+  `Orientation`, `InternalLoads`, `NightVentilation`. They are leaf
+  types (no upward dependencies) — in briefs, name the specific leaf
+  type, not "the case's window/glass/geometry settings."
 - **Reference band** — The ASHRAE-published min–max range a result
   must fall in. Bands belong to the standard, not to Fluxion.
 - **Load vs. energy (validation sense)** — Fluxion reports *thermal
@@ -308,3 +320,48 @@ above; this is the decision record:
 
 No open questions at this revision. New untraced terms go here as
 questions, not into the glossary as invented definitions.
+
+---
+
+## Core terms (machine-checked)
+
+The curated core of this glossary — the terms a brief may rely on
+without re-defining them. Checked by plan-coder's
+`bin/glossary_check.py` (run in the weekly harness-tune pass,
+report-only): each row's **Symbol** must still exist at its
+**Source**, and each **Term** must still have a glossary entry
+above. This is a ratchet on a curated set, *not* a coverage target —
+the repo has hundreds of public types that are implementation
+detail, not domain language, and they do not belong here.
+
+Adding a core term = adding a row here plus its entry above.
+Renaming or deleting a core symbol = updating its row in the same
+PR, per the rename rule in *How to use it*.
+
+| Term | Symbol | Source |
+|---|---|---|
+| Zone | Zone | src/sim |
+| Surface | Surface | src/sim |
+| Construction | Construction | fluxion-core/src/construction.rs |
+| Construction layer | ConstructionLayer | fluxion-core/src/construction.rs |
+| Material layer | MaterialLayer | fluxion-core/src/assembly.rs |
+| Assembly | BuildingAssembly | fluxion-core/src/assembly.rs |
+| Mass class | MassClass | fluxion-core/src/construction.rs |
+| Surface type | SurfaceType | fluxion-core/src/construction.rs |
+| Film coefficient | EXTERIOR_FILM_COEFF | fluxion-core/src/construction.rs |
+| Orientation | Orientation | fluxion-core/src/ashrae_cases.rs |
+| CaseSpec leaf types | WindowSpec | fluxion-core/src/ashrae_cases.rs |
+| Internal loads | InternalLoads | fluxion-core/src/ashrae_cases.rs |
+| Night ventilation | NightVentilation | fluxion-core/src/ashrae_cases.rs |
+| Thermal model | ThermalModel | src/sim |
+| Thermal selector | ThermalSelector | src/sim/thermal_selector.rs |
+| Heat conduction solver | HeatConductionSolver | src/physics/solver_trait.rs |
+| Ventilation schedule | VentilationSchedule | src/sim/ventilation.rs |
+| Warm-up | WarmupConfig | src/sim/warmup.rs |
+| Warm-up bridge | — | docs/perf/parallel-in-time-4699.md |
+| Design day | DesignDaySpec | fluxion-core/src/weather/ddy.rs |
+| Selected design day | DesignDaySelector | fluxion-core/src/weather/design_day_selector.rs |
+| Equipment | AnyEquipment | src/sim |
+| ASHRAE 140 case | CaseSpec | src/validation |
+| Surrogate | SurrogateManager | src/ai/surrogate.rs |
+| BatchOracle | BatchOracle | src/napi |
