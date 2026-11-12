@@ -238,22 +238,30 @@ def test_check_fails_when_over_ceiling(checker, tmp_path, monkeypatch):
     assert result.actual == 250
 
 
-def test_check_returns_none_for_missing_file(checker, tmp_path, monkeypatch):
-    """The mod.rs form is a no-op when the file form exists and vice versa."""
+def test_check_fails_for_missing_file(checker, tmp_path, monkeypatch):
+    """Issue #4752: a LIMITS entry whose path does not exist is a FAILURE,
+    not a silent skip — the ceiling cannot be enforced on a missing file."""
     _redirect(checker, tmp_path, monkeypatch)
-    # Only the file form exists; mod.rs entry should return None.
+    # Only the file form exists; the mod.rs entry must fail as missing.
     src = tmp_path / "src" / "sim" / "thermal_model_data.rs"
     _write_source(src, 100)
     result = checker.check(checker.LIMITS[1])
-    assert result is None
+    assert result is not None
+    assert result.passed is False
+    assert result.missing is True
+    assert result.actual == 0
 
 
-def test_check_returns_none_when_neither_form_exists(checker, tmp_path, monkeypatch):
-    """Both forms missing → both ``check()`` calls return None (gate is a
-    no-op after the god-struct has been decomposed into sub-modules)."""
+def test_check_fails_when_neither_form_exists(checker, tmp_path, monkeypatch):
+    """Issue #4752: both forms missing → both ``check()`` calls return a
+    failed missing-path result (previously both returned None and the gate
+    silently skipped the entries)."""
     _redirect(checker, tmp_path, monkeypatch)
-    assert checker.check(checker.LIMITS[0]) is None
-    assert checker.check(checker.LIMITS[1]) is None
+    for limit in (checker.LIMITS[0], checker.LIMITS[1]):
+        result = checker.check(limit)
+        assert result is not None
+        assert result.passed is False
+        assert result.missing is True
 
 
 # ---------------------------------------------------------------------------

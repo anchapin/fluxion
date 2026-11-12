@@ -1,0 +1,10 @@
+{
+  "history": [
+    {
+      "actual": 2320,
+      "reason": "Issue #4752: the module-size entry was re-pointed from the removed flat src/api/security.rs to its successor src/api/security/mod.rs (the flat file was decomposed into the src/api/security/ directory). The successor's current size is snapshotted as the historical maximum."
+    }
+  ],
+  "max_lines": 2320,
+  "notes": "Issue #4752 re-point: the gate entry for the API security module now targets src/api/security/mod.rs (the flat src/api/security.rs no longer exists — its ceiling was silently skipped by the gate, which returned None for missing paths). The active ceiling lives in scripts/data/module_size_limits.json (2436 = 2320 + max(+5%, +100) buffer, per the Issue #3574 admission protocol); this file records the historical maximum observed for the successor and only raises the effective ceiling if the file legitimately grows past it. The pre-decomposition flat-file history is preserved in api_security_ratchet.json."
+}

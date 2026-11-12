@@ -82,16 +82,6 @@ RATCHET_DIR = REPO_ROOT / "tests" / "reference_data" / "module_size"
 # Fallback default LIMITS (Issue #4243: replaced by data file).
 _DEFAULT_LIMITS: list[dict] = [
     {
-        "path": "src/sim/thermal_model_data.rs",
-        "max_lines": 200,
-        "ratchet_basename": "thermal_model_data_ratchet.json",
-        "reason": (
-            "Issue #2878 acceptance: drop ThermalModelData below 200 lines "
-            "so the god-struct (~140 fields, 145-line Clone impl) does not "
-            "regress. Per-config clone must touch ≤6 fields."
-        ),
-    },
-    {
         "path": "src/sim/thermal_model_data/mod.rs",
         "max_lines": 200,
         "ratchet_basename": "thermal_model_data_ratchet.json",
@@ -126,14 +116,16 @@ _DEFAULT_LIMITS: list[dict] = [
         ),
     },
     {
-        "path": "src/api/security.rs",
-        "max_lines": 2199,
-        "ratchet_basename": "api_security_ratchet.json",
+        "path": "src/api/security/mod.rs",
+        "max_lines": 2436,
+        "ratchet_basename": "api_security_mod_ratchet.json",
         "reason": (
-            "Issue #3574: ``src/api/security.rs`` crossed the smallest "
-            "ratcheted threshold (~2000 LoC) after the Issue #3543 "
-            "decomposition. Ratcheted at current size + buffer (max of "
-            "+5% or +100 lines = 2199); decomposition tracked separately."
+            "Issue #3574 (re-pointed by Issue #4752): the flat "
+            "``src/api/security.rs`` was decomposed into the "
+            "``src/api/security/`` directory, so the entry now points at "
+            "the successor ``src/api/security/mod.rs``. Ratcheted at the "
+            "successor's current size 2320 lines + buffer (max of +5% or "
+            "+100 lines = 2436); decomposition tracked separately."
         ),
     },
     {
@@ -161,15 +153,17 @@ _DEFAULT_LIMITS: list[dict] = [
         ),
     },
     {
-        "path": "src/physics/geometry_tensor.rs",
-        "max_lines": 2932,
-        "ratchet_basename": "geometry_tensor_ratchet.json",
+        "path": "src/physics/geometry_tensor/mod.rs",
+        "max_lines": 1540,
+        "ratchet_basename": "geometry_tensor_mod_ratchet.json",
         "reason": (
-            "Issue #3574: ``src/physics/geometry_tensor.rs`` crossed the "
-            "smallest ratcheted threshold after Issue #3543. Ratcheted at "
-            "current size 2792 lines + buffer (2932; raised from 2486/2610 "
-            "by #3731's typed ZoneCountPolicy wrapper); decomposition "
-            "tracked separately."
+            "Issue #3574 (re-pointed by Issue #4752): the flat "
+            "``src/physics/geometry_tensor.rs`` was decomposed into the "
+            "``src/physics/geometry_tensor/`` directory, so the entry now "
+            "points at the successor ``src/physics/geometry_tensor/mod.rs``. "
+            "Ratcheted at the successor's current size 1440 lines + buffer "
+            "(max of +5% or +100 lines = 1540); decomposition tracked "
+            "separately."
         ),
     },
     {
@@ -322,6 +316,10 @@ class Result:
     max: int
     passed: bool
     reason: str = ""
+    # True when the gated path does not exist on disk. A missing path is a
+    # FAILURE (Issue #4752), not a skip: the entry exists to gate a concrete
+    # file, so an unresolvable path means the ceiling is not enforced at all.
+    missing: bool = False
 
 
 def count_lines(path: Path) -> int:
@@ -330,30 +328,55 @@ def count_lines(path: Path) -> int:
     return sum(1 for _ in path.open(encoding="utf-8"))
 
 
-def check(limit: Limit) -> Result | None:
-    if not limit.path.exists():
-        return None
-    actual = count_lines(limit.path)
+def _rel(path: Path) -> str:
+    """Repo-relative rendering of ``path`` (absolute fallback for outside paths)."""
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def check(limit: Limit) -> Result:
+    """Evaluate a single LIMITS entry.
+
+    Issue #4752: a missing path used to yield ``None`` and the entry was
+    then skipped silently by the caller, so a decomposed/renamed file dropped
+    out of the gate without anybody noticing (3 of the 11 entries were dead
+    on develop). A missing path is now a FAILURE: the ceiling cannot be
+    enforced on a file that does not exist, so the gate must go red until
+    the entry is re-pointed at its successor (or removed).
+    """
     ceiling = limit.effective_max()
+    if not limit.path.exists():
+        return Result(
+            path=limit.path,
+            actual=0,
+            max=ceiling,
+            passed=False,
+            reason=limit.reason,
+            missing=True,
+        )
+    actual = count_lines(limit.path)
     return Result(
         path=limit.path,
         actual=actual,
         max=ceiling,
         passed=actual <= ceiling,
         reason=limit.reason,
+        missing=False,
     )
 
 
-def update_ratchet(result: Result) -> None:
+def update_ratchet(result: Result, limits: list["Limit"] | None = None) -> None:
     """Tighten the ratchet if a new minimum is below the historical max."""
     if not result.path.exists():
         return
-    rel = result.path.relative_to(REPO_ROOT)
-    candidates = [
-        lim
-        for lim in LIMITS
-        if lim.path.relative_to(REPO_ROOT) == rel or lim.path.name == result.path.name
-    ]
+    if limits is None:
+        limits = LIMITS
+    rel = _rel(result.path)
+    # Match on the repo-relative path only. A bare file-name match would
+    # let every ``.../mod.rs`` entry write into the same ratchet JSON.
+    candidates = [lim for lim in limits if _rel(lim.path) == rel]
     for limit in candidates:
         if limit.ratchet_path is None:
             continue
@@ -477,7 +500,9 @@ def write_baseline_file(
     })
     existing["history"] = history[-10:]  # keep last 10
 
-    output = json.dumps(existing, indent=2, sort_keys=True) + "\n"
+    # ``ensure_ascii=False`` keeps the non-ASCII glyphs (≤, →, —) that the
+    # hand-written reasons use readable instead of escaping them to \uXXXX.
+    output = json.dumps(existing, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
     if dry_run:
         print(f"[dry-run] Would write {len(output)} bytes to {limits_file}:")
@@ -615,12 +640,31 @@ def main() -> int:
         return 0
 
     # Normal gate operation
-    drift_messages = check_baseline_drift()
-    results: list[Result] = []
-    for limit in LIMITS:
-        result = check(limit)
-        if result is not None:
-            results.append(result)
+    #
+    # ``--limits-file`` also selects the LIMITS table used by the gate run
+    # itself (not just the write paths), so a hermetic test can point the
+    # gate at a synthetic data file and observe its exit code.
+    limits_data, limits_file = _get_limits_data(args.limits_file or DEFAULT_LIMITS_FILE)
+    if args.limits_file is not None and args.limits_file.resolve() != DEFAULT_LIMITS_FILE.resolve():
+        limits = _build_limits(limits_data, REPO_ROOT)
+        stored = (_load_limits_file(args.limits_file) or {}).get("baseline") or {}
+        baseline_count = int(stored.get("count", len(limits)))
+        freeze_set = frozenset(
+            stored.get("paths", [entry["path"] for entry in limits_data])
+        )
+    else:
+        limits = LIMITS
+        baseline_count = BASELINE_MODULE_SIZE_LIMITS
+        freeze_set = _BASELINE_MODULE_SIZE_LIMITS_SET
+
+    drift_messages = check_baseline_drift(
+        limits=limits,
+        freeze_set=freeze_set,
+        baseline_count=baseline_count,
+    )
+    # Issue #4752: every LIMITS entry is reported, including entries whose
+    # path no longer exists (those fail — they are not skipped).
+    results: list[Result] = [check(limit) for limit in limits]
 
     if args.write_ratchet:
         for result in results:
@@ -636,13 +680,14 @@ def main() -> int:
                     "actual": r.actual,
                     "max": r.max,
                     "passed": r.passed,
+                    "missing": r.missing,
                     "reason": r.reason,
                 }
                 for r in results
             ],
             "baseline": {
-                "max_limits": BASELINE_MODULE_SIZE_LIMITS,
-                "observed": len(LIMITS),
+                "max_limits": baseline_count,
+                "observed": len(limits),
                 "drift": drift_messages,
             },
         }
@@ -650,7 +695,7 @@ def main() -> int:
     else:
         print("=== Fluxion module-size gate (Issues #2878, #3457) ===")
         print(f"Repo: {REPO_ROOT}")
-        print(f"LIMITS data file: {DEFAULT_LIMITS_FILE.relative_to(REPO_ROOT)}")
+        print(f"LIMITS data file: {limits_file.relative_to(REPO_ROOT)}")
         print()
         if drift_messages:
             print("BASELINE DRIFT (PR-blocking unless baseline is raised):")
@@ -658,12 +703,19 @@ def main() -> int:
                 print(f"  - {msg}")
             print()
         if not results:
-            print("No matching files found — gate is a no-op.")
+            print("No LIMITS entries found — gate is a no-op.")
             return 0 if not drift_messages else 1
         for result in results:
             rel = result.path.relative_to(REPO_ROOT)
-            verdict = "PASS" if result.passed else "FAIL"
-            print(f"  [{verdict}] {rel}: {result.actual} lines (max {result.max})")
+            if result.missing:
+                verdict = "FAIL (missing)"
+                print(
+                    f"  [{verdict}] {rel}: file does not exist "
+                    f"(ceiling {result.max} not enforced)"
+                )
+            else:
+                verdict = "PASS" if result.passed else "FAIL"
+                print(f"  [{verdict}] {rel}: {result.actual} lines (max {result.max})")
             print(f"      {result.reason}")
         print()
         if all_passed:
