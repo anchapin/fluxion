@@ -42,7 +42,7 @@ Every active gate is wired into a workflow job, a pre-commit (manual) hook, or i
 | `check_beta_soak_criterion5.py` | β-soak Criterion 5 tracked-cohort gate — #1457 tracker set census + 0.1% drift check (ADR-0025 applied, round 64) | nightly-ashrae-140-gauge.yml |
 | `check_bestest_csv.py` | Section 7 BESTEST-GSV output contract: detect malformed timestamps, packed arrays, headers, and duplicate case keys in the CSV `fluxion validate --report` emits (Refs #4276); round 53: also gates the committed `data/reference/section7/workflow_results.csv` (#4283) | scripts-tests.yml, docs-hygiene.yml |
 | `check_branch_protection_diff.py` | `develop` branch-protection diagnostic vs. `release_gates.yaml` (#3383); never applies PUTs | operator diagnostic (pair with `apply_branch_protection.py`) |
-| `check_cli_doc_stubs.py` | `fluxion` CLI stub-path fail-loud contract per issue #2947 (#3550) | docs-hygiene.yml, pre-commit (manual) |
+| `check_cli_doc_stubs.py` | `fluxion` CLI stub-path fail-loud contract per issue #3550 | docs-hygiene.yml, pre-commit (manual) |
 | `check_concurrency_keys.py` | ADR-0015 per-`head_sha` concurrency block on every workflow (#3366 / #3444) | scripts-tests.yml |
 | `check_benchmark_band_provenance.py` | Scorecard-band provenance — citations, identical-peak-tuple justification, strict-baseline byte-equality, synthetic provenance (#4168) | `.github/workflows/benchmark-band-provenance.yml` |
 | `check_cycle_downward_trend.py` | `sim ↔ validation` coupling must shrink toward zero, not stay frozen (#2768) | rust-tests.yml |

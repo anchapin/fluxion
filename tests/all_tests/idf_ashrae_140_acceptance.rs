@@ -32,9 +32,10 @@
 //! 2. The simulation runs end-to-end on the IDF-derived schema without
 //!    panicking, producing a finite annual heating value.
 //! 3. The annual heating value is *reported* (printed); the strict
-//!    ±15 % band check is `#[ignore]`-gated so it can be re-enabled
-//!    when the engine's ASHRAE 140 Case 600 path is closed
-//!    (Module 2 / Module 5 follow-ups per ARCHITECTURE.md §5).
+//!    ±15 % band check runs as a live CI gate (un-quarantined in
+//!    #4755 once the #1577 develop-CI blocker was closed). It measures
+//!    5.379 MWh against the 4.314–5.836 MWh reference band on
+//!    `develop` @ 0672e98b.
 
 use std::path::Path;
 
@@ -152,9 +153,11 @@ fn idf_case_600_simulation_runs_and_reports_energy() {
     );
 }
 
-/// Strict ±15 % band check — re-enabled per #1527 (parent fix).
+/// Strict ±15 % band check — live as of #4755 (the #1577 develop-CI
+/// blocker that kept this quarantined is closed, so the gate runs in CI
+/// again). Measured on `develop` @ 0672e98b: 5.379 MWh annual heating,
+/// inside the 4.314–5.836 MWh reference band.
 #[test]
-#[ignore = "blocked by #1577 (develop CI broken — cannot run tests to verify)"]
 fn idf_case_600_annual_heating_within_15_percent_strict() {
     let idf = IdfParser::from_path(Path::new(CASE_600_IDF)).expect("IDF parses");
     let spec = case_spec_from_idf(&idf, "IDF:case_600").expect("CaseSpec builds from IDF");
