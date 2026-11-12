@@ -20,7 +20,7 @@
 //!    CLI non-zero exit on an unknown case spec).
 //!
 //! The CLI surface uses `fluxion validate-case 800` (the only single-case
-//! subcommand that actually executes today per AGENTS.md / #2947), which
+//! subcommand that actually executes today per AGENTS.md / the CLI stub policy), which
 //! emits `Case 800 result: X MWh heating, Y MWh cooling`. We parse that
 //! line and project it into the contract envelope. Python and Node bind
 //! into the same `BatchOracle::validate_parameters` function, so their
@@ -41,7 +41,7 @@ use serde_json::{json, Value};
 /// Synthetic small ASHRAE 140 case used for the contract round-trip.
 ///
 /// Case 800 is the only single-case CLI subcommand that is implemented
-/// (per AGENTS.md / issue #2947 — `195-470` / `800-810` ranges are gated).
+/// (per AGENTS.md / the CLI stub policy — `195-470` / `800-810` ranges are gated).
 const SYNTHETIC_CASE_ID: &str = "800";
 
 /// Schema version stamped on every contract envelope so a future bump is

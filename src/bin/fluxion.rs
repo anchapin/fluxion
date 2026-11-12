@@ -205,13 +205,13 @@ mod tests {
         }
     }
 
-    // --- Issue #2947 (originally #2711): stubbed workflows must fail loudly,
+    // --- CLI stub policy: stubbed workflows must fail loudly,
     // not silently succeed ---
 
     #[test]
     fn test_workflow_execution_is_gated_non_silent() {
         // The workflow runner parses the file but must NOT return Ok(()) for
-        // the unimplemented execution path (issue #2947, originally #2711).
+        // the unimplemented execution path (CLI stub-note).
         use std::io::Write;
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
         writeln!(tmp, "{{\"name\": \"stub\", \"steps\": []}}").unwrap();
@@ -219,8 +219,8 @@ mod tests {
         let msg = format!("{err}");
         assert!(msg.contains("not yet implemented"), "got: {msg}");
         assert!(
-            msg.contains("#2947"),
-            "error should reference the tracking issue #2947: {msg}"
+            msg.contains("stub-note"),
+            "error should carry the CLI stub-note marker: {msg}"
         );
     }
 
@@ -230,7 +230,7 @@ mod tests {
         let err = run_workflow(Some(Path::new("dummy.fwf")), false, true, false).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("not yet implemented"), "got: {msg}");
-        assert!(msg.contains("#2947"), "should reference #2947: {msg}");
+        assert!(msg.contains("stub-note"), "should carry the stub-note marker: {msg}");
     }
 
     #[test]
@@ -239,7 +239,7 @@ mod tests {
         let err = run_workflow(Some(Path::new("dummy.fwf")), false, false, true).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("not yet implemented"), "got: {msg}");
-        assert!(msg.contains("#2947"), "should reference #2947: {msg}");
+        assert!(msg.contains("stub-note"), "should carry the stub-note marker: {msg}");
     }
 
     #[test]
@@ -251,7 +251,7 @@ mod tests {
         let err = run_measure_command(&cmd).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("not yet implemented"), "got: {msg}");
-        assert!(msg.contains("#2947"), "should reference #2947: {msg}");
+        assert!(msg.contains("stub-note"), "should carry the stub-note marker: {msg}");
     }
 
     #[test]
@@ -263,7 +263,7 @@ mod tests {
         let err = run_measure_command(&cmd).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("not yet implemented"), "got: {msg}");
-        assert!(msg.contains("#2947"), "should reference #2947: {msg}");
+        assert!(msg.contains("stub-note"), "should carry the stub-note marker: {msg}");
     }
 
     #[test]
@@ -276,7 +276,7 @@ mod tests {
         let err = run_measure_command(&cmd).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("not yet implemented"), "got: {msg}");
-        assert!(msg.contains("#2947"), "should reference #2947: {msg}");
+        assert!(msg.contains("stub-note"), "should carry the stub-note marker: {msg}");
     }
 
     #[test]
@@ -288,7 +288,7 @@ mod tests {
         let err = run_measure_command(&cmd).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("not yet implemented"), "got: {msg}");
-        assert!(msg.contains("#2947"), "should reference #2947: {msg}");
+        assert!(msg.contains("stub-note"), "should carry the stub-note marker: {msg}");
     }
 
     #[test]
@@ -296,7 +296,7 @@ mod tests {
         // The `validate-case` ranges are wired in (commit `fecbadc0`,
         // 2026-10-26): a supported range completes `Ok` with explicit skip
         // reporting, and invalid specifications still fail loudly
-        // (#2947's never-silently-succeed rule on the error paths).
+        // (the stub policy's never-silently-succeed rule on the error paths).
         // Re-pinned 2026-11-10 (loop round 127, Alex-approved) from the
         // retired stub contract ("not yet implemented").
         assert!(
@@ -329,7 +329,7 @@ mod tests {
     // wiring so a future refactor cannot silently re-stub it: the lib's
     // `src/cli/mod.rs` must NOT contain the old `not_yet_implemented` call
     // for `run_direct_simulation`, and must contain the annual-loop marker.
-    // (The `fluxion run` workflow path stays stubbed by #2947; see the
+    // (The `fluxion run` workflow path stays stubbed per the CLI stub policy; see the
     // gating tests above.)
     #[test]
     fn test_direct_simulation_is_wired_not_stubbed() {

@@ -143,12 +143,13 @@ pub enum ReferenceCommands {
 }
 
 /// Measure subcommands. All paths under here are documented but fail loudly
-/// with `#2947` (originally #2711) until measure execution is wired in.
+/// with a `not yet implemented` error (carrying the descriptive `stub-note`
+/// marker) until measure execution is wired in.
 #[derive(Subcommand, Debug)]
 pub enum MeasureSubcommand {
     /// Update measure.xml and README for a measure directory.
     #[command(
-        long_about = "Update measure.xml and README for a measure directory.\n\n[NOT YET IMPLEMENTED, see #2947]: this command will return a non-zero exit code with a 'not yet implemented' error rather than silently succeeding. Originally tracked by #2711."
+        long_about = "Update measure.xml and README for a measure directory.\n\n[NOT YET IMPLEMENTED: CLI stub-note]: this command will return a non-zero exit code with a 'not yet implemented' error rather than silently succeeding."
     )]
     Update {
         /// Path to measure directory
@@ -158,7 +159,7 @@ pub enum MeasureSubcommand {
 
     /// Update all measures in a directory.
     #[command(
-        long_about = "Update all measures in a directory.\n\n[NOT YET IMPLEMENTED, see #2947]: this command will return a non-zero exit code with a 'not yet implemented' error rather than silently succeeding. Originally tracked by #2711."
+        long_about = "Update all measures in a directory.\n\n[NOT YET IMPLEMENTED: CLI stub-note]: this command will return a non-zero exit code with a 'not yet implemented' error rather than silently succeeding."
     )]
     UpdateAll {
         /// Path to measures directory
@@ -168,7 +169,7 @@ pub enum MeasureSubcommand {
 
     /// Compute arguments for a measure.
     #[command(
-        long_about = "Compute arguments for a measure.\n\n[NOT YET IMPLEMENTED, see #2947]: this command will return a non-zero exit code with a 'not yet implemented' error rather than silently succeeding. Originally tracked by #2711."
+        long_about = "Compute arguments for a measure.\n\n[NOT YET IMPLEMENTED: CLI stub-note]: this command will return a non-zero exit code with a 'not yet implemented' error rather than silently succeeding."
     )]
     ComputeArguments {
         /// Path to model file (.flux)
@@ -182,7 +183,7 @@ pub enum MeasureSubcommand {
 
     /// Run tests for measures in a directory.
     #[command(
-        long_about = "Run tests for measures in a directory.\n\n[NOT YET IMPLEMENTED, see #2947]: this command will return a non-zero exit code with a 'not yet implemented' error rather than silently succeeding. Originally tracked by #2711."
+        long_about = "Run tests for measures in a directory.\n\n[NOT YET IMPLEMENTED: CLI stub-note]: this command will return a non-zero exit code with a 'not yet implemented' error rather than silently succeeding."
     )]
     RunTests {
         /// Path to measures directory
@@ -401,7 +402,7 @@ pub enum Commands {
 
     /// Run a simulation workflow (OpenStudio-compatible).
     #[command(
-        long_about = "Run a simulation workflow (OpenStudio-compatible).\n\n[NOT YET IMPLEMENTED, see #2947]: the workflow file is parsed and its steps are listed, but measure execution is pending. Calling this command will return a non-zero exit code with a 'not yet implemented' error rather than silently succeeding. Originally tracked by #2711."
+        long_about = "Run a simulation workflow (OpenStudio-compatible).\n\n[NOT YET IMPLEMENTED: CLI stub-note]: the workflow file is parsed and its steps are listed, but measure execution is pending. Calling this command will return a non-zero exit code with a 'not yet implemented' error rather than silently succeeding."
     )]
     Run {
         /// Workflow file path (.fwf format)
@@ -412,11 +413,11 @@ pub enum Commands {
         #[arg(long)]
         debug: bool,
 
-        /// Run only measures (skip EnergyPlus simulation) [NOT YET IMPLEMENTED, see #2947]
+        /// Run only measures (skip EnergyPlus simulation) [NOT YET IMPLEMENTED: CLI stub-note]
         #[arg(short = 'm', long = "measures-only")]
         measures_only: bool,
 
-        /// Run only post-processing (use existing results) [NOT YET IMPLEMENTED, see #2947]
+        /// Run only post-processing (use existing results) [NOT YET IMPLEMENTED: CLI stub-note]
         #[arg(short = 'p', long = "postprocess-only")]
         postprocess_only: bool,
     },
@@ -1021,9 +1022,9 @@ fn run_diagnostic_case_range(case_spec: &str) -> Result<()> {
 /// reported explicitly as "skipped, not supported" - a range never fails
 /// silently and never partially succeeds without saying so.
 ///
-/// Issue #2947 (originally #2711) used to stub the ranges out with a
+/// The diagnostic case ranges used to be stubbed out with a
 /// `not_yet_implemented` error. The ranges are wired in now; the remaining
-/// `#2947` stubs in this module (measure execution, workflow execution) are
+/// stubs in this module (measure execution, workflow execution) are
 /// unchanged.
 ///
 /// # Example
@@ -1067,10 +1068,11 @@ pub fn validate_diagnostic_case(case_spec: &str) -> Result<()> {
 ///
 /// These code paths are kept in the CLI surface so `--help` documents them, but
 /// they do not execute yet. They must fail loudly with a non-zero exit code
-/// rather than silently succeeding. Tracked by issue #2947 (originally #2711).
+/// rather than silently succeeding. The error carries a descriptive stub note
+/// (no tracking issue is cited — see `docs/cli_design.md` for the policy).
 pub fn not_yet_implemented(feature: &str) -> anyhow::Error {
     anyhow!(
-        "'{}' is not yet implemented (see issue #2947, originally #2711); this CLI path is documented but does not execute yet",
+        "'{}' is not yet implemented (CLI stub-note: see docs/cli_design.md); this CLI path is documented but does not execute yet",
         feature
     )
 }
@@ -1144,7 +1146,7 @@ pub fn run_direct_simulation(
     }
 
     // Issue #3283 — surface the selected solver stack. When the direct
-    // simulation path is wired (#2947), this selector feeds
+    // simulation path is wired, this selector feeds
     // `ThermalModel::from_spec_with_selector`; until then it is validated
     // (see `run_cli`) and echoed here for diagnosability.
     println!(
@@ -1395,12 +1397,12 @@ pub fn run_workflow(
     }
 
     if measures_only {
-        // TODO(#2947): Implement measures-only workflow. Originally tracked by #2711.
+        // TODO(cli-stub): implement measures-only workflow — not yet implemented.
         return Err(not_yet_implemented("measures-only workflow"));
     }
 
     if postprocess_only {
-        // TODO(#2947): Implement postprocess-only workflow. Originally tracked by #2711.
+        // TODO(cli-stub): implement postprocess-only workflow — not yet implemented.
         return Err(not_yet_implemented("postprocess-only workflow"));
     }
 
@@ -1436,10 +1438,10 @@ pub fn run_workflow(
         }
     }
 
-    // TODO(#2947): Implement actual workflow execution. The workflow file is
+    // TODO(cli-stub): implement actual workflow execution. The workflow file is
     // parsed and its steps are listed above, but measure execution is pending.
-    // Fail loudly rather than silently report success. Originally tracked by #2711.
-    eprintln!("error: workflow execution is not yet implemented (see issue #2947)");
+    // Fail loudly rather than silently report success.
+    eprintln!("error: workflow execution is not yet implemented (CLI stub-note: see docs/cli_design.md)");
     Err(not_yet_implemented("workflow execution"))
 }
 
@@ -1448,24 +1450,24 @@ pub fn run_measure_command(command: &MeasureSubcommand) -> Result<()> {
     match command {
         MeasureSubcommand::Update { measure_dir } => {
             println!("Updating measure at: {}", measure_dir.display());
-            // TODO(#2947): Implement measure update. Originally tracked by #2711.
+            // TODO(cli-stub): implement measure update — not yet implemented.
             Err(not_yet_implemented("measure update"))
         }
         MeasureSubcommand::UpdateAll { measures_dir } => {
             println!("Updating all measures in: {}", measures_dir.display());
-            // TODO(#2947): Implement measure update --all. Originally tracked by #2711.
+            // TODO(cli-stub): implement measure update --all — not yet implemented.
             Err(not_yet_implemented("measure update --all"))
         }
         MeasureSubcommand::ComputeArguments { model, measure_dir } => {
             println!("Computing arguments for measure:");
             println!("  Model: {}", model.display());
             println!("  Measure: {}", measure_dir.display());
-            // TODO(#2947): Implement measure compute-args. Originally tracked by #2711.
+            // TODO(cli-stub): implement measure compute-args — not yet implemented.
             Err(not_yet_implemented("measure compute-args"))
         }
         MeasureSubcommand::RunTests { measures_dir } => {
             println!("Running tests for measures in: {}", measures_dir.display());
-            // TODO(#2947): Implement measure tests. Originally tracked by #2711.
+            // TODO(cli-stub): implement measure tests — not yet implemented.
             Err(not_yet_implemented("measure tests"))
         }
     }

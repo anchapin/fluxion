@@ -131,9 +131,9 @@ fn test_cli_binary_exists() {
 }
 
 // =====================================================================
-// Issue #2947 (originally #2711): stubbed workflow commands must fail
+// CLI stub policy: stubbed workflow commands must fail
 // loudly with a non-zero exit code and a "not yet implemented" message
-// referencing #2947 — never silently succeed (the pre-#2711 behaviour).
+// referencing the stub-note marker — never silently succeed.
 // =====================================================================
 
 /// Run `cargo run --bin fluxion -- <args>` and return (status, stdout, stderr).
@@ -154,7 +154,7 @@ fn run_fluxion(args: &[&str]) -> (std::process::ExitStatus, String, String) {
 }
 
 /// Assert that a (status, stdout, stderr) triple represents a loud (non-zero)
-/// failure with a "not yet implemented" error referencing #2947.
+/// failure with a "not yet implemented" error carrying the stub-note marker.
 fn assert_unimplemented_failure(
     label: &str,
     result: &(std::process::ExitStatus, String, String),
@@ -173,8 +173,8 @@ fn assert_unimplemented_failure(
         "[{label}] expected 'not yet implemented' message in output, got:\n{combined}"
     );
     assert!(
-        combined.contains("#2947"),
-        "[{label}] expected output to reference tracking issue #2947, got:\n{combined}"
+        combined.contains("stub-note"),
+        "[{label}] expected output to carry the CLI stub-note marker, got:\n{combined}"
     );
     assert!(
         combined.contains(expected_substring),
@@ -182,7 +182,7 @@ fn assert_unimplemented_failure(
     );
 }
 
-/// `fluxion run -w <empty workflow>` must fail loudly with #2947.
+/// `fluxion run -w <empty workflow>` must fail loudly with the stub-note error.
 #[test]
 fn test_cli_workflow_run_returns_not_implemented() {
     let temp_dir = tempdir().expect("Failed to create temp dir");
@@ -200,7 +200,7 @@ fn test_cli_workflow_run_returns_not_implemented() {
     assert_unimplemented_failure("fluxion run -w <file>", &result, "workflow execution");
 }
 
-/// `fluxion run -w <file> --measures-only` must fail loudly with #2947.
+/// `fluxion run -w <file> --measures-only` must fail loudly with the stub-note error.
 #[test]
 fn test_cli_workflow_run_measures_only_returns_not_implemented() {
     let temp_dir = tempdir().expect("Failed to create temp dir");
@@ -222,7 +222,7 @@ fn test_cli_workflow_run_measures_only_returns_not_implemented() {
     );
 }
 
-/// `fluxion run -w <file> --postprocess-only` must fail loudly with #2947.
+/// `fluxion run -w <file> --postprocess-only` must fail loudly with the stub-note error.
 #[test]
 fn test_cli_workflow_run_postprocess_only_returns_not_implemented() {
     let temp_dir = tempdir().expect("Failed to create temp dir");
@@ -244,7 +244,7 @@ fn test_cli_workflow_run_postprocess_only_returns_not_implemented() {
     );
 }
 
-/// `fluxion measure update <dir>` must fail loudly with #2947.
+/// `fluxion measure update <dir>` must fail loudly with the stub-note error.
 #[test]
 fn test_cli_measure_update_returns_not_implemented() {
     let temp_dir = tempdir().expect("Failed to create temp dir");
@@ -261,7 +261,7 @@ fn test_cli_measure_update_returns_not_implemented() {
     assert_unimplemented_failure("fluxion measure update", &result, "measure update");
 }
 
-/// `fluxion measure update-all <dir>` must fail loudly with #2947.
+/// `fluxion measure update-all <dir>` must fail loudly with the stub-note error.
 #[test]
 fn test_cli_measure_update_all_returns_not_implemented() {
     let temp_dir = tempdir().expect("Failed to create temp dir");
@@ -282,7 +282,7 @@ fn test_cli_measure_update_all_returns_not_implemented() {
     );
 }
 
-/// `fluxion measure compute-arguments <model> <measure>` must fail loudly with #2947.
+/// `fluxion measure compute-arguments <model> <measure>` must fail loudly with the stub-note error.
 #[test]
 fn test_cli_measure_compute_args_returns_not_implemented() {
     let temp_dir = tempdir().expect("Failed to create temp dir");
@@ -306,7 +306,7 @@ fn test_cli_measure_compute_args_returns_not_implemented() {
     );
 }
 
-/// `fluxion measure run-tests <dir>` must fail loudly with #2947.
+/// `fluxion measure run-tests <dir>` must fail loudly with the stub-note error.
 #[test]
 fn test_cli_measure_run_tests_returns_not_implemented() {
     let temp_dir = tempdir().expect("Failed to create temp dir");
@@ -324,7 +324,7 @@ fn test_cli_measure_run_tests_returns_not_implemented() {
 }
 
 /// The `fluxion run --help` and `fluxion measure <sub> --help` outputs must
-/// mark every unimplemented path as "[NOT YET IMPLEMENTED, see #2947]" so the
+/// mark every unimplemented path as "[NOT YET IMPLEMENTED: CLI stub-note]" so the
 /// silent-success trap is visible at the help layer as well as at runtime.
 #[test]
 fn test_cli_help_marks_unimplemented_paths() {
@@ -332,7 +332,7 @@ fn test_cli_help_marks_unimplemented_paths() {
     let (status, stdout, _stderr) = run_fluxion(&["run", "--help"]);
     assert!(status.success(), "fluxion run --help should exit 0");
     assert!(
-        stdout.contains("[NOT YET IMPLEMENTED, see #2947]"),
+        stdout.contains("[NOT YET IMPLEMENTED: CLI stub-note]"),
         "fluxion run --help should mark itself unimplemented; got:\n{stdout}"
     );
     assert!(
@@ -357,7 +357,7 @@ fn test_cli_help_marks_unimplemented_paths() {
             "fluxion measure {sub} --help should exit 0"
         );
         assert!(
-            stdout.contains("[NOT YET IMPLEMENTED, see #2947]"),
+            stdout.contains("[NOT YET IMPLEMENTED: CLI stub-note]"),
             "fluxion measure {sub} --help should mark itself unimplemented; got:\n{stdout}"
         );
     }
@@ -367,13 +367,13 @@ fn test_cli_help_marks_unimplemented_paths() {
 /// 2026-10-26): supported ids run through the diagnostics path, unsupported
 /// ids are reported explicitly, and the range completes with exit 0 - a
 /// range never fails silently and never partially succeeds without saying
-/// so (the #2947 no-silent-success intent, satisfied by explicit reporting).
+/// so (the stub policy's no-silent-success intent, satisfied by explicit reporting).
 ///
 /// Re-pinned 2026-11-10 (loop round 127, Alex-approved) from the retired
 /// stub contract ("not yet implemented") to this implemented contract; the
 /// nightly had tripped Criterion 3 on the stale assertion since the ranges
 /// landed. Loud failure stays guarded on malformed ranges (reversed
-/// bounds) below; the still-stubbed #2947 paths keep their own guards above.
+/// bounds) below; the still-stubbed paths keep their own guards above.
 #[test]
 fn test_cli_validate_case_range_runs_and_reports() {
     // 195-470: case 195 runs; the other 275 ids are reported explicitly.

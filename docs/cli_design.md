@@ -105,16 +105,16 @@ Direct Simulation Mode (EnergyPlus-compatible):
   fluxion -w weather.epw -d output/ input.flux
   fluxion --annual -w weather.epw input.flux
 
-# #2947 stub-note: the workflow / measure paths below are intentionally
+# stub-note: the workflow / measure paths below are intentionally
 # stubbed in this release. They fail non-zero with a reference to issue
-# #2947, by policy (AGENTS.md "Physics and Validation Guardrails",
+# stub-note, by policy (AGENTS.md "Physics and Validation Guardrails",
 # enforced by `test_workflow_execution_is_gated_non_silent` in
 # `src/bin/fluxion.rs`). They are documented here for design-record
 # purposes only — do not interpret them as runnable commands.
 
-Workflow Mode (OpenStudio-compatible) — intentionally stubbed per issue #2947:
-  fluxion run -w workflow.fwf                 # intentionally stubbed per issue #2947
-  fluxion measure --update /path/to/measures/ # intentionally stubbed per issue #2947
+Workflow Mode (OpenStudio-compatible) — intentionally stubbed per the CLI stub policy:
+  fluxion run -w workflow.fwf                 # intentionally stubbed per the CLI stub policy
+  fluxion measure --update /path/to/measures/ # intentionally stubbed per the CLI stub policy
 
 Analysis Commands (existing, preserved):
   fluxion validate [--case 600]
@@ -122,11 +122,11 @@ Analysis Commands (existing, preserved):
   fluxion delta --config delta.yaml
 ```
 
-> **Fail-loud contract for the workflow / measure paths** (issue #2947):
+> **Fail-loud contract for the workflow / measure paths** (CLI stub policy):
 >
 > ```bash
 > $ fluxion run -w some.workflow.fwf
-> error: workflow execution path is intentionally stubbed; see issue #2947
+> error: workflow execution is not yet implemented (CLI stub-note: see docs/cli_design.md)
 > ```
 >
 > If you want a CLI surface that runs end-to-end, use `fluxion-rest`
@@ -211,21 +211,21 @@ Add support for:
 ### Phase 2: Workflow Support
 
 - Define FWF JSON schema
-- ~~Implement `fluxion run -w workflow.fwf`~~ — **SUPERSEDED per issue #2947** (intentionally stubbed; do not implement). The fail-loud contract is enforced by `test_workflow_execution_is_gated_non_silent` in `src/bin/fluxion.rs`.
-- ~~Support for measure steps~~ — **SUPERSEDED per issue #2947** (intentionally stubbed; do not implement)
+- ~~Implement `fluxion run -w workflow.fwf`~~ — **SUPERSEDED per the CLI stub policy** (intentionally stubbed; do not implement). The fail-loud contract is enforced by `test_workflow_execution_is_gated_non_silent` in `src/bin/fluxion.rs`.
+- ~~Support for measure steps~~ — **SUPERSEDED per the CLI stub policy** (intentionally stubbed; do not implement)
 
 ### Phase 3: Measure Management
 
-- ~~`fluxion measure --update <dir>`~~ — **SUPERSEDED per issue #2947** (intentionally stubbed; do not implement)
-- ~~`fluxion measure --compute_arguments <model> <measure>`~~ — **SUPERSEDED per issue #2947** (intentionally stubbed; do not implement)
-- ~~`fluxion measure --run_tests <dir>`~~ — **SUPERSEDED per issue #2947** (intentionally stubbed; do not implement)
+- ~~`fluxion measure --update <dir>`~~ — **SUPERSEDED per the CLI stub policy** (intentionally stubbed; do not implement)
+- ~~`fluxion measure --compute_arguments <model> <measure>`~~ — **SUPERSEDED per the CLI stub policy** (intentionally stubbed; do not implement)
+- ~~`fluxion measure --run_tests <dir>`~~ — **SUPERSEDED per the CLI stub policy** (intentionally stubbed; do not implement)
 
-> #2947 stub-note: Phases 2 and 3 were superseded when issue #2947
+> stub-note: Phases 2 and 3 were superseded when the CLI stub policy
 > converted these CLI paths into fail-loud stubs. They remain in this
 > design doc for historical / planning record only. Re-implementing
-> any of these deliverables requires first reopening issue #2947 to
+> any of these deliverables requires first lifting the CLI stub policy to
 > remove the stub policy — until then, the binary must keep emitting
-> the `intentionally stubbed; see issue #2947` error.
+> the `not yet implemented (CLI stub-note: see docs/cli_design.md)` error.
 
 ## Example Usage
 
@@ -244,10 +244,10 @@ fluxion -w Denver_TMY.epw -D building.flux
 
 ### Workflow-based (OpenStudio-style)
 
-> #2947 stub-note: every invocation in this section is **intentionally
-> stubbed per issue #2947**. The `fluxion run` / `fluxion measure`
+> stub-note: every invocation in this section is **intentionally
+> stubbed per the CLI stub policy**. The `fluxion run` / `fluxion measure`
 > paths are not runnable in this release — they fail non-zero with a
-> reference to issue #2947 (enforced by
+> stub-note marker (enforced by
 > `test_workflow_execution_is_gated_non_silent` in `src/bin/fluxion.rs`,
 > AGENTS.md "Physics and Validation Guardrails"). The examples below
 > demonstrate the fail-loud contract; the repo does **not** ship any
@@ -263,19 +263,19 @@ fluxion -w Denver_TMY.epw -D building.flux
 
 # Run complete workflow
 $ fluxion run -w baseline.fwf
-error: workflow execution path is intentionally stubbed; see issue #2947
+error: workflow execution is not yet implemented (CLI stub-note: see docs/cli_design.md)
 
 # Debug workflow (keep temp files)
 $ fluxion run --debug -w baseline.fwf
-error: workflow execution path is intentionally stubbed; see issue #2947
+error: workflow execution is not yet implemented (CLI stub-note: see docs/cli_design.md)
 
 # Measures only (don't run simulation)
 $ fluxion run --measures_only -w baseline.fwf
-error: workflow execution path is intentionally stubbed; see issue #2947
+error: workflow execution is not yet implemented (CLI stub-note: see docs/cli_design.md)
 
 # Post-process only (use existing results)
 $ fluxion run --postprocess_only -w baseline.fwf
-error: workflow execution path is intentionally stubbed; see issue #2947
+error: workflow execution is not yet implemented (CLI stub-note: see docs/cli_design.md)
 ```
 
 ### Traditional Analysis Commands
