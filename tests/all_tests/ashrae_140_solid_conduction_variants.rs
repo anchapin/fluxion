@@ -33,30 +33,23 @@ fn simulate_year(model: &mut ThermalModel<VectorField>) -> f64 {
 /// Validates that high thermal mass reduces peak loads and shifts thermal response.
 /// High-mass walls store more heat, reducing peak heating/cooling demands.
 ///
-/// **`#[ignore]`'d as of Issue #3064** (pre-existing zero-energy assertion
-/// failure observed on unmodified `develop`; verified by sub-agents on #3044
-/// and the originating #2868 wave). The assertion
-/// `high_mass_energy.abs() > 0.0` fails because the high-mass variant of
-/// Case 195 returns `0.00 kWh` (baseline `-18.21 kWh`) — likely the mass-node
-/// initial temperature isn't matched to the zone setpoint at steady state, so
-/// the no-loads / no-solar envelope has no thermal driving force. PR #3044
-/// fixed the low-mass variant (t_i_act divisor, H_tr,3 degenerate-to-0,
-/// hard-coded ε_ext=0.9) but did not address the high-mass mass-node
-/// initialisation. Per AGENTS.md / RULES.md "no parameter tuning" and "fix
-/// the underlying math", this is **out of scope** for a parallel sub-agent.
+/// **Re-enabled (Issue #4759).** The quarantine recorded in Issue #3064 was a
+/// zero-energy assertion failure: the high-mass variant of Case 195 used to
+/// return `0.00 kWh` against a baseline of `-18.21 kWh`, because the
+/// mass-node initial temperature was not matched to the zone setpoint, so the
+/// no-loads / no-solar envelope had no thermal driving force. PR #3044 fixed
+/// the low-mass variant but left the high-mass mass-node initialisation
+/// untouched, so the test was `#[ignore]`'d pending the structural work
+/// tracked by #3059 / #3064 and the GaugeSolver rework #1465 / #1462.
 ///
-/// Tracked by:
-/// - Issue #3064 (this entry — quarantine)
-/// - Issue #2868 (origin: PR #3044 partial fix)
-/// - Issue #3044 (the PR that did not address high-mass variant)
-/// - Issue #3059 (5R1C/9R4C air-mass distribution limitation; unblocker)
-/// - Issues #1465 / #1462 (long-term structural fix — GaugeSolver rework
-///   treats solar as geometric curvature rather than per-timestep energy
-///   injection; once it lands, this test should be re-enabled and re-verified)
-///
-/// See `docs/KNOWN_ISSUES.md` §LIMIT-11 for the full diagnostic.
+/// All of those blockers are now closed, so the test was re-run on
+/// `develop` (base `767dadfd`) with
+/// `cargo test --test all_tests test_case_195_high_mass_walls -- --ignored
+/// --nocapture`: the high-mass variant now reports `-18.13 kWh` annual
+/// energy (baseline `-18.22 kWh`), so the
+/// `high_mass_energy.abs() > 0.0` assertion passes and the test is live
+/// again in the ordinary (non-ignored) run.
 #[test]
-#[ignore = "Pre-existing zero-energy assertion failure; tracked in #3064, blocked by GaugeSolver structural rework #1465/#1462; once #3059 lands, re-test"]
 fn test_case_195_high_mass_walls() {
     println!("\n=== ASHRAE 140 Case 195: High-Mass Walls Variant ===");
 

@@ -165,7 +165,6 @@ value was changed.
 
 | Test File | Test Name | Category | Blocking Issue | Owner | Un-Ignore Criteria | Status |
 |-----------|-----------|----------|----------------|-------|-------------------|--------|
-| `tests/all_tests/ashrae_140_solid_conduction_variants.rs` | `test_case_195_high_mass_walls` | `structural` | #3064, LIMIT-11, #1465/#1462 | `unassigned` | GaugeSolver ships; zero-energy assertion closes | `pending` |
 | `tests/all_tests/ashrae_140_solid_conduction_variants.rs` | `test_solid_conduction_variants_integration` | `structural` | LIMIT-20, #3218, LIMIT-11, #3064, #1465/#1462 | `unassigned` | GaugeSolver ships; HighMass variant integration closes | `pending` |
 | `tests/all_tests/gauge_validation_case_900.rs` | `test_case_900_gauge_fiver1c_diurnal_parity` | `structural` | #1669 | `unassigned` | GaugeSolver thermal mass implementation lands (Option A) | `pending` |
 
@@ -441,14 +440,14 @@ the new band for triage.
 | Category | Count | Status |
 |----------|-------|--------|
 | Diagnostic tests (#2536) | 22 | `pending` |
-| Structural gaps (LIMIT-*) | 88 pending + 1 closed (3 9R4C legacy pool, Issue #3599; 7 strict-energy-gate / Case 970 cohort, Issue #3572 / #3585; 4 Case 620 BENCH-01 narrower-band cohort, Issue #3803; 11 fluxion-fluid Jacobian cohort, Issue #4210) | `pending` |
+| Structural gaps (LIMIT-*) | 87 pending + 1 closed (3 9R4C legacy pool, Issue #3599; 7 strict-energy-gate / Case 970 cohort, Issue #3572 / #3585; 4 Case 620 BENCH-01 narrower-band cohort, Issue #3803; 11 fluxion-fluid Jacobian cohort, Issue #4210) | `pending` |
 | Performance/memory (dhat + BDF + batch) | 17 (10 pending + 7 migrated to perf_lane.yml, Issue #3957) | `pending` / `migrated` |
 | Hardware-dependent (GPU) | 4 (1 parity + 3 ONNX EP hardware probes, Issue #3313) | `pending` |
 | Calibration/pending data | 12 (incl. 3 pending reference CSVs #1331/#1168; 2 Perez F1 source-data rows, Issue #1695) | `pending` |
 | CI infrastructure | 0 (the single #1577 row was closed in #4755 — test un-ignored, measured 5.379 MWh inside the 4.314–5.836 MWh band) | `closed` |
 | Manual baseline regen | 2 | `pending` |
 | Other/unclassified | 11 pending + 3 closed (1 TLS-MQTT integration row, Issue #4211) | `pending` |
-| **Total** | **160** | |
+| **Total** | **159** | |
 
 (82 orphan entries were triaged into this registry by Issue #3443; the totals
 above include the 23 pre-existing entries and the 82 newly-added ones. The 3
@@ -465,6 +464,17 @@ assertions validate the validator, not the engine band, and it passes).
 — Phase C1 BENCH-01 migration from 5R1C-calibrated to raw ASHRAE 140-2023
 Annex B narrower inter-program range (Issue #3803); see
 `tests/reference_data/zone_balance/PROVENANCE.md` for the full provenance.
+
+2026-11-12 (Issue #4759): `test_case_195_high_mass_walls`
+(`tests/all_tests/ashrae_140_solid_conduction_variants.rs`) re-tested on
+`develop` (base `767dadfd`) after its original blockers closed
+(#3059 / #3064 / #1465 / #1462) and **un-ignored** — its registry row is
+removed (the strict audit treats a row without a matching `#[ignore]` as a
+ghost). Measured result: the high-mass Case 195 variant now reports
+`-18.13 kWh` annual energy against a `-18.22 kWh` baseline, so the
+zero-energy assertion `high_mass_energy.abs() > 0.0` passes. The sibling
+`test_solid_conduction_variants_integration` row (LIMIT-20 / #3218) is
+untouched.
 
 2026-09-28 (Issues #4178 / #4179): audit scan widened beyond `tests/` to
 `src/` and every workspace member's `src/` / `tests/`; registry schema
