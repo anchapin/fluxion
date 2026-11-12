@@ -1081,8 +1081,10 @@ fn test_blind_mode_case_900_infrastructure() {
 // These tests are wiring checks (not physics checks). They assert that
 // `benchmark::get_all_benchmark_data_blind()` returns populated, well-formed
 // entries for the new case IDs, and that the bands satisfy the issue's
-// acceptance criteria. Physics-level ±15% checks for these cases are
-// `#[ignore]`'d pending the missing reference CSVs (see issue #1331 / #1168).
+// acceptance criteria. Physics-level band checks for these cases are
+// `#[ignore]`'d on the measured engine-side gap (the per-case reference CSVs
+// have landed — see issue #1331 / #1168 — so the remaining blocker is the
+// physics, not the missing reference data).
 
 /// Helper: assert a Blind entry exists for `case_id` and its bands are
 /// well-formed (max ≥ min). Returns a clone of the entry so the caller can
@@ -1216,15 +1218,27 @@ fn test_blind_mode_case_960_infrastructure() {
 //   (a) the simulation completes without panic, and
 //   (b) the simulated annual/peak energy falls within the Blind band.
 //
-// They are `#[ignore]`'d because the per-case hourly reference CSV
-// (e.g. `tests/reference_data/zone_balance/case_800_energy_reference.csv`)
-// does not yet exist on main — that data is being generated upstream by
-// the EnergyPlus regeneration work tracked in #1331 / #1168. Run them
-// locally with `cargo test --test ashrae_140_blind_validation -- --ignored`
-// once the CSVs land.
+// They are `#[ignore]`'d on the measured engine-side gap. The per-case
+// reference CSVs (e.g.
+// `tests/reference_data/zone_balance/case_800_energy_reference.csv`) have
+// landed — the EnergyPlus regeneration work tracked in #1331 / #1168 is
+// closed — so the CSV-pending reason no longer applies. Re-running each
+// test with `--ignored` (issue #4758) shows the blind-mode annual energy
+// still misses the ASHRAE 140-2023 Annex B8 blind band; each `#[ignore]`
+// note below records the measured value and the structural reason.
+//
+// Run them locally with
+// `cargo test --test all_tests -- --ignored blind_mode_case_800` (etc.).
 
+#[ignore = "Case 800 reference CSV (PR #1331) is now in place; the blind-mode band \
+            check still fails on the engine side: annual cooling 3.952 MWh vs the \
+            ASHRAE 140-2023 Annex B8 blind band [0.282, 0.473] MWh (annual heating \
+            4.963 MWh is inside [4.906, 5.403]). Case 800 has no structural LIMIT \
+            entry in docs/KNOWN_ISSUES.md; the same engine gap is recorded on the \
+            informed path by the strict-energy-gate cohort (#3572). Re-evaluate when \
+            the blind-mode HVAC-layer energy model reproduces the Annex B8 envelope \
+            (issue #4758)."]
 #[test]
-#[ignore = "Pending case_800_energy_reference.csv (EnergyPlus regeneration tracked in #1331/#1168)"]
 fn test_blind_mode_case_800_annual_energy_within_band() {
     let case_id = "800";
     let spec = ASHRAE140Case::Case800.spec();
@@ -1260,8 +1274,15 @@ fn test_blind_mode_case_800_annual_energy_within_band() {
     );
 }
 
+#[ignore = "Case 810 reference CSV (PR #1331) is now in place; the blind-mode band \
+            check still fails on the engine side: annual heating 0.776 MWh vs the \
+            ASHRAE 140-2023 Annex B8 blind band [2.038, 2.610] MWh and annual \
+            cooling 3.100 MWh vs [1.295, 1.606] MWh. Case 810 has no structural \
+            LIMIT entry in docs/KNOWN_ISSUES.md; the same engine gap is recorded \
+            on the informed path by the strict-energy-gate cohort (#3572). \
+            Re-evaluate when the blind-mode HVAC-layer energy model reproduces \
+            the Annex B8 envelope (issue #4758)."]
 #[test]
-#[ignore = "Pending case_810_energy_reference.csv (EnergyPlus regeneration tracked in #1331/#1168)"]
 fn test_blind_mode_case_810_annual_energy_within_band() {
     let case_id = "810";
     let spec = ASHRAE140Case::Case810.spec();
@@ -1369,8 +1390,15 @@ fn test_blind_mode_case_950_annual_energy_within_band() {
     );
 }
 
+#[ignore = "Case 960 reference CSV (PR #1331) is now in place; the blind-mode band \
+            check still fails on the engine side: annual heating 1.933 MWh vs the \
+            ASHRAE 140-2023 Annex B8 blind band [2.522, 2.860] MWh and annual \
+            cooling 1.754 MWh vs [0.789, 0.950] MWh. Structural: §LIMIT-18 \
+            (#3104, 5R1C single-lumped-mass-node blind limitation) and §LIMIT-14 \
+            (#3061, sunspace air-mass distribution), unblocked by the GaugeSolver \
+            rework (#1465/#1462). Re-evaluate when the blind-mode Case 960 energy \
+            closes on the Annex B8 envelope (issue #4758)."]
 #[test]
-#[ignore = "Pending case_960_energy_reference.csv (EnergyPlus regeneration tracked in #1331/#1168)"]
 fn test_blind_mode_case_960_annual_energy_within_band() {
     let case_id = "960";
     let spec = ASHRAE140Case::Case960.spec();
