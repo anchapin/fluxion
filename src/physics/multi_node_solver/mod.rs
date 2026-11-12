@@ -492,6 +492,34 @@ impl MultiNodeSolver {
         }
     }
 
+    /// The committed-air balance of [`compute_zone_air_temperature`] together
+    /// with the denominator that balance was divided by.
+    ///
+    /// `(t_air, denom)` with `t_air` bit-identical to
+    /// [`compute_zone_air_temperature`] (the same dispatched arithmetic) and
+    /// `denom` mode-consistent: the parallel-balance `Σh_path_k + h_ve_total
+    /// [+ h_rad_sky]` in `ParallelResistance` mode, the film-conductance sum
+    /// in `AdditiveSum` mode. Consumed by the step-level implicit inter-zone
+    /// solve so the stashed system `t_i·(diag + Σw) − Σw·t_j = rhs` closes
+    /// the same balance the uncoupled value closed (loop r133 diag-seam fix;
+    /// the r132 pin suite recorded the previous film-conductance stash as a
+    /// fidelity finding).
+    pub fn committed_air_balance(
+        &self,
+        t_outdoor: f64,
+        h_ve: f64,
+        h_ve_night: f64,
+        phi_ia: f64,
+    ) -> (f64, f64) {
+        match self.coupling_mode {
+            MassAirCouplingMode::AdditiveSum => {
+                self.additive_balance_parts(t_outdoor, h_ve, h_ve_night, phi_ia, 0.0, 0.0)
+            }
+            MassAirCouplingMode::ParallelResistance => self
+                .parallel_resistance_balance_parts(t_outdoor, h_ve, h_ve_night, phi_ia, 0.0, 0.0),
+        }
+    }
+
     /// Compute the free-floating zone air temperature with an explicit
     /// sky-radiative conductance on the air node (Issue #1858).
     ///
@@ -574,6 +602,25 @@ impl MultiNodeSolver {
         t_sky: f64,
         h_rad_sky: f64,
     ) -> f64 {
+        self.additive_balance_parts(t_outdoor, h_ve, h_ve_night, phi_ia, t_sky, h_rad_sky)
+            .0
+    }
+
+    /// The additive air balance together with the denominator its value was
+    /// divided by (`h_tr_is + h_ve + h_ve_night + h_rad_sky`; `1.0` on the
+    /// degenerate fallback, whose value is returned directly). Bit-identical
+    /// value to [`compute_zone_air_temperature_additive_with_sky`]; consumed
+    /// by the step-level implicit inter-zone solve's diag/rhs stash (loop
+    /// r133 diag-seam fix).
+    fn additive_balance_parts(
+        &self,
+        t_outdoor: f64,
+        h_ve: f64,
+        h_ve_night: f64,
+        phi_ia: f64,
+        t_sky: f64,
+        h_rad_sky: f64,
+    ) -> (f64, f64) {
         // Conductance-weighted surface temperature from envelope nodes
         let h_ms_w = self.mass.wall.h_tr_ms;
         let h_ms_r = self.mass.roof.h_tr_ms;
@@ -597,10 +644,13 @@ impl MultiNodeSolver {
         let denom = self.h_tr_is + h_ve_total + h_rad_sky;
         if denom < 1e-6 {
             // Near-zero ventilation + interior film — return surface temp as best estimate
-            return t_surface;
+            return (t_surface, 1.0);
         }
 
-        (self.h_tr_is * t_surface + h_ve_total * t_outdoor + h_rad_sky * t_sky + phi_ia) / denom
+        let t_air =
+            (self.h_tr_is * t_surface + h_ve_total * t_outdoor + h_rad_sky * t_sky + phi_ia)
+                / denom;
+        (t_air, denom)
     }
 
     /// Parallel-resistance formulation (Issue #1281).
@@ -676,6 +726,34 @@ impl MultiNodeSolver {
         t_sky: f64,
         h_rad_sky: f64,
     ) -> f64 {
+        self.parallel_resistance_balance_parts(
+            t_outdoor, h_ve, h_ve_night, phi_ia, t_sky, h_rad_sky,
+        )
+        .0
+    }
+
+    /// The parallel-resistance air balance together with the denominator its
+    /// value was divided by.
+    ///
+    /// Returns `(t_air, denom)` with `t_air` bit-identical to
+    /// [`compute_zone_air_temperature_parallel_resistance_with_sky`] — the
+    /// split shares this method's exact arithmetic — and `denom` the same
+    /// quantity the value closed: `Σh_path_k + h_ve + h_ve_night + h_rad_sky`
+    /// (the degenerate fallback's clamped mass-conductance sum otherwise).
+    /// The step-level implicit inter-zone solve stashes `rhs = t_air · denom`
+    /// and `diag = denom` so the coupled system closes the SAME balance the
+    /// uncoupled value closed (loop r133 diag-seam fix; the r132 pin suite
+    /// recorded the previous film-conductance stash as a fidelity finding —
+    /// uncoupled limit exact, coupled dissipation mis-scaled).
+    fn parallel_resistance_balance_parts(
+        &self,
+        t_outdoor: f64,
+        h_ve: f64,
+        h_ve_night: f64,
+        phi_ia: f64,
+        t_sky: f64,
+        h_rad_sky: f64,
+    ) -> (f64, f64) {
         let h_ms_w = self.mass.wall.h_tr_ms;
         let h_ms_r = self.mass.roof.h_tr_ms;
         let h_ms_f = self.mass.floor.h_tr_ms;
@@ -691,19 +769,22 @@ impl MultiNodeSolver {
         let denom = h_path_total + h_ve_total + h_rad_sky;
         if denom < 1e-6 {
             // Degenerate — fall back to conductance-weighted average of mass temps
-            return (h_ms_w * self.mass.wall.temperature
+            let denom_fallback = (h_ms_w + h_ms_r + h_ms_f).max(1e-6);
+            let t_fallback = (h_ms_w * self.mass.wall.temperature
                 + h_ms_r * self.mass.roof.temperature
                 + h_ms_f * self.mass.floor.temperature)
-                / (h_ms_w + h_ms_r + h_ms_f).max(1e-6);
+                / denom_fallback;
+            return (t_fallback, denom_fallback);
         }
 
-        (h_path_w * self.mass.wall.temperature
+        let t_air = (h_path_w * self.mass.wall.temperature
             + h_path_r * self.mass.roof.temperature
             + h_path_f * self.mass.floor.temperature
             + h_ve_total * t_outdoor
             + h_rad_sky * t_sky
             + phi_ia)
-            / denom
+            / denom;
+        (t_air, denom)
     }
 
     /// Compute ideal HVAC power demand to maintain setpoints.
