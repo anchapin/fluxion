@@ -623,6 +623,26 @@ impl GroundTransientState {
     pub fn cell_temperature(&self, i: usize, j: usize) -> f64 {
         self.temperature_c[j * self.grid.x.len() + i]
     }
+
+    /// Bilinearly interpolated temperature at `(x, z)` [°C].
+    ///
+    /// Coordinates outside the domain are clamped to the domain bounds. This
+    /// mirrors [`GroundSolution::temperature_at`] so a caller can read the
+    /// temperature at a physical location (e.g. the coupling plane of the
+    /// Section 7 floor boundary, Issue #4775) from a marched state.
+    pub fn temperature_at(&self, x: f64, z: f64) -> f64 {
+        let xc = &self.grid.x.centers;
+        let zc = &self.grid.z.centers;
+        let (i0, i1, fx) = bracket(xc, x);
+        let (j0, j1, fz) = bracket(zc, z);
+        let t00 = self.cell_temperature(i0, j0);
+        let t10 = self.cell_temperature(i1, j0);
+        let t01 = self.cell_temperature(i0, j1);
+        let t11 = self.cell_temperature(i1, j1);
+        let top = t00 + (t10 - t00) * fx;
+        let bottom = t01 + (t11 - t01) * fx;
+        top + (bottom - top) * fz
+    }
 }
 
 impl GroundSolution {

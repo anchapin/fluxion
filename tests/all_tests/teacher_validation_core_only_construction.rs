@@ -64,6 +64,7 @@ fn core_only_case_spec() -> CaseSpec {
         epw_path: None,
         hvac_equipment: None,
         ground_temperature_c: None,
+        ground_coupled_floor: None,
         floor_u_value_override: None,
         window_u_value_override: None,
         building_type: BuildingType::Residential,

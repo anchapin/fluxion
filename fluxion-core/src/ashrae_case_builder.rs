@@ -58,6 +58,9 @@ pub struct CaseBuilder {
     /// Ground temperature boundary condition (°C) for floor slab (Issue #746).
     /// Per ASHRAE 140-2023 Annex B §B3.3: T_ground = 9.4°C.
     ground_temperature_c: Option<f64>,
+    /// Ground-coupled floor configuration (Issue #4775, Refs #4270).
+    /// `Some` opts the case into the ground-coupled floor path.
+    ground_coupled_floor: Option<GroundCoupledFloorSpec>,
     /// Optional override for the floor U-value (W/m²K) used in ground coupling.
     /// When `Some`, replaces the construction-derived floor U-value in both
     /// `setpoints.floor_u_value` and the `h_tr_floor` conductance. Used for
@@ -101,6 +104,7 @@ impl CaseBuilder {
             door_area: None,
             epw_path: None,
             ground_temperature_c: None,
+            ground_coupled_floor: None,
             floor_u_value_override: None,
             window_u_value_override: None,
             building_type: BuildingType::default(),
@@ -433,6 +437,17 @@ impl CaseBuilder {
         self
     }
 
+    /// Sets the ground-coupled floor configuration (Issue #4775, Refs #4270).
+    ///
+    /// Opts the case into the ground-coupled Section 7 floor boundary: the
+    /// floor boundary temperature is produced by the 2-D ground-conduction
+    /// domain instead of the constant ground temperature. Cases without this
+    /// configuration keep the Issue #746 constant-temperature path.
+    pub fn with_ground_coupled_floor(mut self, spec: GroundCoupledFloorSpec) -> Self {
+        self.ground_coupled_floor = Some(spec);
+        self
+    }
+
     /// Sets per-zone construction assemblies (round 24, §LIMIT-14).
     ///
     /// When set, length must equal `num_zones`; each zone then builds from its
@@ -522,6 +537,7 @@ impl CaseBuilder {
             epw_path: self.epw_path.clone(),
             hvac_equipment: None,
             ground_temperature_c: self.ground_temperature_c,
+            ground_coupled_floor: self.ground_coupled_floor,
             floor_u_value_override: self.floor_u_value_override,
             window_u_value_override: self.window_u_value_override,
             building_type: self.building_type,

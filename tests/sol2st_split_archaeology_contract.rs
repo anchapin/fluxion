@@ -122,6 +122,7 @@ fn spec_with_wall_kappa(kappa_target: f64, rho: f64, label: &str) -> CaseSpec {
         epw_path: None,
         hvac_equipment: None,
         ground_temperature_c: None,
+        ground_coupled_floor: None,
         floor_u_value_override: None,
         window_u_value_override: None,
         building_type: BuildingType::Residential,

@@ -487,6 +487,328 @@ pub fn distribute_radiative_gains(
     }
 }
 
+// === Issue #4775: ground-coupled Section 7 floor boundary (Refs #4270) ===
+
+/// Hours in a (non-leap) year — the period of the annual ground-surface
+/// temperature cycle driven into the ground domain.
+const HOURS_PER_YEAR: f64 = 8760.0;
+
+/// Lateral cells across the ground domain (the 2-D cross-section under the
+/// building footprint).
+const GROUND_LATERAL_CELLS: usize = 8;
+
+/// Target cell size of the fine top layer of the ground domain [m].
+const GROUND_TOP_CELL_M: f64 = 0.1;
+
+/// First cell size of the graded part of the ground domain [m].
+const GROUND_GRADED_FIRST_CELL_M: f64 = 0.2;
+
+/// Growth ratio of the graded part of the ground domain.
+const GROUND_GRADED_GROWTH: f64 = 1.2;
+
+/// Largest cell size of the graded part of the ground domain [m].
+const GROUND_GRADED_MAX_CELL_M: f64 = 1.0;
+
+/// Time step of the ground-domain transient march [s] (one hour).
+const GROUND_TIME_STEP_S: f64 = 3600.0;
+
+/// Maximum conjugate-gradient iterations per ground-domain step.
+const GROUND_MAX_ITERATIONS: usize = 20_000;
+
+/// Target relative residual per ground-domain step.
+const GROUND_TOLERANCE: f64 = 1.0e-9;
+
+/// The transient state of the ground domain, advanced together with the hour
+/// it represents.
+#[derive(Debug, Clone)]
+struct GroundCoupledFloorState {
+    /// The ground-domain transient state.
+    transient: crate::physics::ground_conduction::GroundTransientState,
+    /// The hour of the year the state currently represents.
+    hour: usize,
+}
+
+/// Ground-coupled floor boundary (Issue #4775, Refs #4270).
+///
+/// This is the Section 7 floor boundary's ground-side counterpart of
+/// [`ConstantGroundTemperature`]: instead of a constant temperature it drives
+/// the floor boundary from the 2-D ground-conduction domain
+/// (`crate::physics::ground_conduction`), the standalone ASHRAE 140 §8 ground
+/// model that Issue #4270 landed and that Issue #4774 extended with
+/// transient stepping.
+///
+/// # Model
+///
+/// The ground domain is the soil column below the building footprint:
+///
+/// * the top surface follows an annual ground-surface temperature (mean plus
+///   cosine amplitude, both from the case specification) through a soil
+///   surface film,
+/// * the deep and lateral far-field boundaries hold the undisturbed ground
+///   temperature,
+/// * the soil's transient response damps and lags that surface forcing,
+/// * the floor boundary reads the resulting soil temperature at the coupling
+///   depth below the underside of the floor construction.
+///
+/// The coupling is one-way — the soil is driven by the ground-surface
+/// temperature, not by the zone floor temperature — because the
+/// [`GroundTemperature`] interface only exposes the hour of the year. A later
+/// issue can thread the zone-side feedback through the same object.
+///
+/// # State
+///
+/// The ground domain is marched forward in time as the simulation clock
+/// advances; the march is idempotent per hour (asking twice for the same
+/// hour returns the same value) and wraps around at the end of the year.
+///
+/// Cloning the boundary copies the marched state, so a cloned model starts
+/// from the same ground state as its original (the clone does not share the
+/// march with the original).
+#[derive(Debug)]
+pub struct GroundCoupledFloorBoundary {
+    /// The ground-domain solver (configuration only — the solver itself is
+    /// stateless; the march lives in `state`).
+    solver: crate::physics::ground_conduction::GroundSolver,
+    /// The marched ground-domain state.
+    state: std::sync::Mutex<GroundCoupledFloorState>,
+    /// Lateral extent of the ground domain [m] (the building footprint width).
+    domain_length_m: f64,
+    /// Lateral position the ground temperature is read at [m].
+    readout_x_m: f64,
+    /// Depth below the floor underside the ground temperature is read at [m].
+    readout_depth_m: f64,
+    /// Soil surface film coefficient towards the ground-surface temperature
+    /// [W/(m²·K)].
+    surface_film_w_m2k: f64,
+    /// Annual mean ground-surface temperature [°C].
+    surface_mean_c: f64,
+    /// Annual amplitude of the ground-surface temperature [°C].
+    surface_amplitude_c: f64,
+    /// Phase of the annual ground-surface temperature cycle [h].
+    surface_phase_hours: f64,
+    /// Undisturbed deep-ground temperature [°C] — the fallback value when the
+    /// ground solve fails.
+    fallback_temperature_c: f64,
+}
+
+impl Clone for GroundCoupledFloorBoundary {
+    fn clone(&self) -> Self {
+        let state = match self.state.lock() {
+            Ok(guard) => guard.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        };
+        Self {
+            solver: self.solver.clone(),
+            state: std::sync::Mutex::new(state),
+            domain_length_m: self.domain_length_m,
+            readout_x_m: self.readout_x_m,
+            readout_depth_m: self.readout_depth_m,
+            surface_film_w_m2k: self.surface_film_w_m2k,
+            surface_mean_c: self.surface_mean_c,
+            surface_amplitude_c: self.surface_amplitude_c,
+            surface_phase_hours: self.surface_phase_hours,
+            fallback_temperature_c: self.fallback_temperature_c,
+        }
+    }
+}
+
+impl GroundCoupledFloorBoundary {
+    /// Build a ground-coupled floor boundary for a footprint of
+    /// `footprint_width_m` metres.
+    ///
+    /// # Errors
+    ///
+    /// Returns the ground-domain configuration error when the specification
+    /// does not describe a solvable domain (non-positive conductivities,
+    /// coupling depth outside the domain, ...).
+    pub fn new(
+        spec: &fluxion_core::ashrae_cases::GroundCoupledFloorSpec,
+        footprint_width_m: f64,
+    ) -> Result<Self, crate::physics::ground_conduction::GroundError> {
+        use crate::physics::ground_conduction::{
+            GridSegment, GroundDomainConfig, GroundSolver, SurfaceCondition, TopCondition,
+            TopSegment,
+        };
+
+        let domain_length_m = footprint_width_m;
+        let coupling_depth_m = spec.coupling_depth_m;
+        let domain_depth_m = spec.domain_depth_m;
+
+        // The coupling depth must be a vertical cell edge: the top layer is
+        // uniform up to it, the graded layer runs from it to the domain
+        // bottom.
+        let top_cells = ((coupling_depth_m / GROUND_TOP_CELL_M).ceil() as usize).max(2);
+        let lateral_segments = vec![GridSegment::Uniform {
+            start_m: 0.0,
+            end_m: domain_length_m,
+            cells: GROUND_LATERAL_CELLS,
+        }];
+        let vertical_segments = vec![
+            GridSegment::Uniform {
+                start_m: 0.0,
+                end_m: coupling_depth_m,
+                cells: top_cells,
+            },
+            GridSegment::Geometric {
+                start_m: coupling_depth_m,
+                end_m: domain_depth_m,
+                first_cell_m: GROUND_GRADED_FIRST_CELL_M,
+                growth: GROUND_GRADED_GROWTH,
+                max_cell_m: GROUND_GRADED_MAX_CELL_M,
+            },
+        ];
+        let top_segments = vec![TopSegment {
+            x_start_m: 0.0,
+            x_end_m: domain_length_m,
+            condition: TopCondition::Robin {
+                film_coefficient_w_m2k: spec.surface_film_coefficient_w_m2k,
+                ambient_temperature_c: spec.surface_temperature_mean_c,
+            },
+        }];
+
+        let config = GroundDomainConfig {
+            domain_length_m,
+            domain_depth_m,
+            // The domain carries the soil only: the floor construction stays
+            // in the zone model, so the "slab" layer of the ground domain is
+            // the soil layer between the floor underside and the coupling
+            // depth (same material on both sides — the interface is
+            // invisible to the temperature field).
+            slab_x0_m: 0.0,
+            slab_x1_m: domain_length_m,
+            slab_thickness_m: coupling_depth_m,
+            slab_conductivity_w_mk: spec.soil_conductivity_w_mk,
+            ground_conductivity_w_mk: spec.soil_conductivity_w_mk,
+            slab_volumetric_heat_capacity_j_m3k: spec.soil_volumetric_heat_capacity_j_m3k,
+            ground_volumetric_heat_capacity_j_m3k: spec.soil_volumetric_heat_capacity_j_m3k,
+            lateral_segments,
+            vertical_segments,
+            top_segments,
+            deep_ground: SurfaceCondition::Dirichlet(spec.deep_ground_temperature_c),
+            lateral_boundary: SurfaceCondition::Dirichlet(spec.lateral_far_field_temperature_c),
+            max_iterations: GROUND_MAX_ITERATIONS,
+            tolerance: GROUND_TOLERANCE,
+        };
+
+        let solver = GroundSolver::new(config)?;
+        let transient = solver.initial_transient_state(spec.surface_temperature_mean_c)?;
+        let state = GroundCoupledFloorState { transient, hour: 0 };
+
+        Ok(Self {
+            solver,
+            state: std::sync::Mutex::new(state),
+            domain_length_m,
+            readout_x_m: 0.5 * domain_length_m,
+            readout_depth_m: coupling_depth_m,
+            surface_film_w_m2k: spec.surface_film_coefficient_w_m2k,
+            surface_mean_c: spec.surface_temperature_mean_c,
+            surface_amplitude_c: spec.surface_temperature_amplitude_c,
+            surface_phase_hours: spec.surface_temperature_phase_hours,
+            fallback_temperature_c: spec.deep_ground_temperature_c,
+        })
+    }
+
+    /// The ground-surface temperature of the annual cycle at `hour` [°C].
+    pub fn surface_temperature_c(&self, hour: usize) -> f64 {
+        let phase = 2.0 * PI * (hour as f64 - self.surface_phase_hours) / HOURS_PER_YEAR;
+        self.surface_mean_c + self.surface_amplitude_c * phase.cos()
+    }
+
+    /// The top-surface boundary the ground domain sees at `hour`.
+    fn top_segments(&self, hour: usize) -> Vec<crate::physics::ground_conduction::TopSegment> {
+        use crate::physics::ground_conduction::{TopCondition, TopSegment};
+        vec![TopSegment {
+            x_start_m: 0.0,
+            x_end_m: self.domain_length_m,
+            condition: TopCondition::Robin {
+                film_coefficient_w_m2k: self.surface_film_w_m2k,
+                ambient_temperature_c: self.surface_temperature_c(hour),
+            },
+        }]
+    }
+
+    /// The soil temperature at the coupling plane [°C] for the marched state.
+    fn coupled_temperature_c(&self, state: &GroundCoupledFloorState) -> f64 {
+        state
+            .transient
+            .temperature_at(self.readout_x_m, self.readout_depth_m)
+    }
+
+    /// March the ground domain to `hour`, restarting at the beginning of the
+    /// year when the clock wraps around.
+    fn advance_to(&self, state: &mut GroundCoupledFloorState, hour: usize) -> bool {
+        if hour < state.hour {
+            // The clock wrapped around (multi-year run): restart from the
+            // initial state and march again.
+            match self.solver.initial_transient_state(self.surface_mean_c) {
+                Ok(transient) => {
+                    state.transient = transient;
+                    state.hour = 0;
+                }
+                Err(_) => return false,
+            }
+        }
+        while state.hour < hour {
+            let top = self.top_segments(state.hour);
+            if self
+                .solver
+                .step_transient_with_top(&mut state.transient, GROUND_TIME_STEP_S, &top)
+                .is_err()
+            {
+                return false;
+            }
+            state.hour += 1;
+        }
+        true
+    }
+}
+
+impl GroundTemperature for GroundCoupledFloorBoundary {
+    fn clone_box(&self) -> Box<dyn GroundTemperature> {
+        Box::new(self.clone())
+    }
+
+    fn ground_temperature(&self, hour_of_year: usize) -> f64 {
+        let hour = hour_of_year % (HOURS_PER_YEAR as usize);
+        let mut state = match self.state.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if !self.advance_to(&mut state, hour) {
+            // The ground solve failed: fall back to the undisturbed ground
+            // temperature rather than corrupting the zone balance.
+            return self.fallback_temperature_c;
+        }
+        self.coupled_temperature_c(&state)
+    }
+}
+
+/// Build the Section 7 floor boundary of a case specification.
+///
+/// * A case that opts into the ground-coupled floor path
+///   (`CaseSpec::ground_coupled_floor`) gets a [`GroundCoupledFloorBoundary`]
+///   driven by the 2-D ground-conduction domain.
+/// * Every other case keeps the Issue #746 behaviour: the constant ground
+///   temperature of `CaseSpec::ground_temperature_c`, and no boundary at all
+///   when the case carries no ground temperature (the model default then
+///   applies).
+///
+/// The ground-coupled path falls back to the constant-temperature boundary
+/// when the ground-domain configuration is invalid, so a malformed
+/// specification degrades to the legacy behaviour instead of failing the run.
+pub fn floor_ground_boundary(
+    spec: &fluxion_core::ashrae_cases::CaseSpec,
+) -> Option<Box<dyn GroundTemperature>> {
+    if let Some(coupled) = spec.ground_coupled_floor.as_ref() {
+        let footprint_width_m = spec.geometry.first().map(|g| g.width).unwrap_or(0.0);
+        if let Ok(boundary) = GroundCoupledFloorBoundary::new(coupled, footprint_width_m) {
+            return Some(Box::new(boundary));
+        }
+    }
+    spec.ground_temperature_c
+        .map(|t| Box::new(ConstantGroundTemperature::new(t)) as Box<dyn GroundTemperature>)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -753,6 +1075,127 @@ mod tests {
         assert!(result.phi_m_wall.abs() < 1e-10);
         assert!(result.phi_m_roof.abs() < 1e-10);
         assert!(result.phi_m_floor.abs() < 1e-10);
+    }
+
+    // === Issue #4775: ground-coupled Section 7 floor boundary ===
+
+    /// Soil and surface conditions of the ground-coupled floor acceptance
+    /// tests below.
+    ///
+    /// The values are representative mid-latitude soil (k = 1 W/(m·K),
+    /// rho*c = 2 MJ/(m³·K)) and a ground surface with a 10 K annual swing
+    /// peaking in mid-July (hour 4400 of the year). The undisturbed deep and
+    /// lateral far-field ground is 10 °C.
+    fn ground_coupled_floor_spec() -> fluxion_core::ashrae_cases::GroundCoupledFloorSpec {
+        fluxion_core::ashrae_cases::GroundCoupledFloorSpec {
+            soil_conductivity_w_mk: 1.0,
+            soil_volumetric_heat_capacity_j_m3k: 2.0e6,
+            domain_depth_m: 10.0,
+            coupling_depth_m: 3.0,
+            deep_ground_temperature_c: 10.0,
+            lateral_far_field_temperature_c: 10.0,
+            surface_film_coefficient_w_m2k: 10.0,
+            surface_temperature_mean_c: 10.0,
+            surface_temperature_amplitude_c: 10.0,
+            surface_temperature_phase_hours: 4400.0,
+        }
+    }
+
+    /// A minimal Section 7 case specification (8 m x 6 m footprint, one zone)
+    /// with the ASHRAE 140 constant ground temperature of 9.4 °C.
+    fn section_7_case_spec() -> fluxion_core::ashrae_cases::CaseSpec {
+        use fluxion_core::ashrae_case_builder::CaseBuilder;
+        CaseBuilder::new()
+            .with_dimensions(8.0, 6.0, 2.7)
+            .with_ground_temperature(9.4)
+            .build()
+            .expect("Section 7 case specification must build")
+    }
+
+    /// Acceptance test A (Issue #4775): a case that opts into the
+    /// ground-coupled floor boundary gets a floor boundary temperature that
+    /// is driven by the ground domain — it varies over the year and differs
+    /// from the constant-temperature path.
+    #[test]
+    fn test_ground_coupled_floor_boundary_is_ground_driven() {
+        use fluxion_core::ashrae_case_builder::CaseBuilder;
+
+        let mut spec = section_7_case_spec();
+        spec.ground_coupled_floor = Some(ground_coupled_floor_spec());
+
+        let boundary = floor_ground_boundary(&spec).expect("floor boundary must exist");
+        let constant = ConstantGroundTemperature::new(9.4);
+
+        // Sample the year every 24 h. The hours are strictly increasing, so
+        // the ground-domain march never has to wrap around.
+        let mut series = Vec::new();
+        let mut differs_from_constant = false;
+        for hour in (0..8760).step_by(24) {
+            let t = boundary.ground_temperature(hour);
+            if (t - constant.ground_temperature(hour)).abs() > 1.0e-6 {
+                differs_from_constant = true;
+            }
+            series.push(t);
+        }
+
+        let min = series.iter().copied().fold(f64::INFINITY, f64::min);
+        let max = series.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        assert!(
+            max - min > 0.5,
+            "ground-coupled floor boundary must vary over the year \
+             (min {min:.3} °C, max {max:.3} °C)"
+        );
+        assert!(
+            differs_from_constant,
+            "ground-coupled floor boundary must differ from the constant-temperature path"
+        );
+
+        // The opt-in must be what selects the ground-driven boundary: the
+        // same case without the opt-in keeps the constant path.
+        let mut constant_spec = spec.clone();
+        constant_spec.ground_coupled_floor = None;
+        let constant_boundary =
+            floor_ground_boundary(&constant_spec).expect("floor boundary must exist");
+        assert_eq!(
+            constant_boundary.ground_temperature(0),
+            constant.ground_temperature(0)
+        );
+        assert_ne!(
+            constant_boundary.ground_temperature(0),
+            boundary.ground_temperature(0)
+        );
+
+        // Sanity: the builder carries the opt-in into the specification.
+        let built = CaseBuilder::new()
+            .with_dimensions(8.0, 6.0, 2.7)
+            .with_ground_temperature(9.4)
+            .with_ground_coupled_floor(ground_coupled_floor_spec())
+            .build()
+            .expect("Section 7 case specification must build");
+        assert!(built.ground_coupled_floor.is_some());
+    }
+
+    /// Acceptance test B (Issue #4775): a case that does NOT opt into the
+    /// ground-coupled floor path produces exactly the same floor ground
+    /// temperature as the constant-temperature boundary — bit for bit.
+    #[test]
+    fn test_floor_ground_boundary_without_opt_in_is_bit_identical() {
+        let spec = section_7_case_spec();
+        assert!(
+            spec.ground_coupled_floor.is_none(),
+            "the default case must not opt into the ground-coupled floor path"
+        );
+
+        let boundary = floor_ground_boundary(&spec).expect("floor boundary must exist");
+        let constant = ConstantGroundTemperature::new(9.4);
+
+        for hour in [0usize, 1, 24, 500, 1000, 4380, 8000, 8759] {
+            assert_eq!(
+                boundary.ground_temperature(hour),
+                constant.ground_temperature(hour),
+                "floor ground temperature must be bit-identical at hour {hour}"
+            );
+        }
     }
 
     #[test]

@@ -894,12 +894,12 @@ impl ThermalModel<VectorField> {
                 .u_value(Some(crate::sim::construction::SurfaceType::Floor), None)
         });
 
-        // Issue #746: Apply ground temperature boundary condition per ASHRAE 140-2023 Annex B §B3.3.
-        // T_ground = 9.4°C (annual mean Denver air temperature) for all cases with floor slab.
-        if let Some(ground_temp) = spec.ground_temperature_c {
-            model.conduction.ground_temperature = Box::new(
-                crate::sim::boundary::ConstantGroundTemperature::new(ground_temp),
-            );
+        // Issue #746 / Issue #4775: the Section 7 floor boundary is driven by
+        // the constant ground temperature (ASHRAE 140-2023 Annex B §B3.3,
+        // T_ground = 9.4°C) unless the case opts into the ground-coupled
+        // floor path, where the ground domain produces the boundary value.
+        if let Some(ground) = crate::sim::boundary::floor_ground_boundary(spec) {
+            model.conduction.ground_temperature = ground;
         }
 
         // Access first HVAC schedule

@@ -152,7 +152,13 @@ BASELINE_PHYSICS_TO_SIM = 0
 # spec types to assemble the coupled zonal-air system; homing either in
 # sim would duplicate physics-owned types. Companion cycle-removal work
 # stays open under the #2462 phase-3 sim->physics edge elision.
-BASELINE_SIM_TO_PHYSICS = 84  # was 82 (PR #4651 / Issue #3982, 2026-11-09):
+BASELINE_SIM_TO_PHYSICS = 86  # was 84 (PR #4785 / Issue #4775, 2026-11-12):
+                              # +2 for the ground-coupled floor boundary's
+                              # two `use crate::physics::ground_conduction::{...}`
+                              # edges in src/sim/boundary.rs — the Section 7
+                              # floor boundary consumes the physics-owned 2-D
+                              # ground domain; homing it in sim would duplicate
+                              # physics-owned types. Prior step: was 82 (PR #4651 / Issue #3982, 2026-11-09):
                               # +2 for the zonal-air DAE step's gauge-zone
                               # solver + wall-spec imports in
                               # step_dispatcher.rs — see the Issue #3982
