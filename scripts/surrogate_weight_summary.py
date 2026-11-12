@@ -10,7 +10,7 @@ ONNX model (the kind produced by ``scripts/train_surrogate.py::export_to_onnx``:
 opset 17, weights stored as ONNX initializers, producer ``fluxion.surrogate``)
 and prints a **path-weighted first-layer summary**:
 
-  * the path score ``s1 = W1 @ W2`` (hidden layer -> output),
+  * the path score ``s1 = W1 @ W2 @ ...`` (hidden layer -> output),
   * the effective input influence ``eff = W0 @ s1`` (input -> output),
   * per-input sign, per-std effect and first-layer norm,
   * the input profiles of the top path-strength hidden units.
@@ -463,8 +463,12 @@ def compute_summary(
     Conventions (exported-ONNX / scikit-learn layout, ``W_i`` has shape
     ``(n_in_i, n_out_i)``, forward pass ``x @ W_i + b_i``):
 
-      * path score              ``s1  = W1 @ W2``        (hidden -> output)
+      * path score              ``s1  = W1 @ W2 @ ...`` (hidden -> output)
       * effective input influence ``eff = W0 @ s1``       (input  -> output)
+
+    The path score is the chain product over the hidden weight matrices
+    ``weights[1:]``: with a single hidden layer (two matrices) it is ``W1``
+    alone; with two or more hidden layers it is ``W1 @ W2 @ ...``.
 
     ``eff`` is expressed in the *training-standardised* input units: the output
     change caused by a +1 standard-deviation move of that input when the ReLU gating
@@ -488,13 +492,26 @@ def compute_summary(
         eff = w0 @ path_score
         last_hidden = None
     else:
-        w1 = weights.weights[1]
-        w_last = weights.weights[-1]
-        # s1 = W1 @ W_last : (n_hidden, n_outputs)
-        path_score = w1 @ w_last
+        # The path score is the chain product over the *hidden* weights
+        # weights[1:], i.e. the hidden->output path:
+        #
+        #   2 matrices (one hidden layer): s1 = W1              (n_hidden, n_outputs)
+        #   3+ matrices:                   s1 = W1 @ W2 @ ...  (n_hidden, n_outputs)
+        #
+        # For the two-matrix case W1 *is* the last weight matrix, so the
+        # chain product is W1 alone -- computing W1 @ W1 would either raise
+        # (n_hidden != n_outputs) or silently return nonsense
+        # (n_hidden == n_outputs).
+        path_score = weights.weights[1]
+        for w in weights.weights[2:]:
+            path_score = path_score @ w
         # eff = W0 @ s1 : (n_features, n_outputs)
         eff = w0 @ path_score
-        last_hidden = w_last
+        # The last hidden layer is the one feeding the output layer; its
+        # weight matrix is weights[-1] in every case (for a single hidden
+        # layer that is W1 itself), and its rows index the hidden units whose
+        # input profile is computed below.
+        last_hidden = weights.weights[-1]
 
     std_arr = np.asarray(feature_std, dtype=np.float64).reshape(-1)
     std_arr = np.where(std_arr > 0, std_arr, 1.0)
