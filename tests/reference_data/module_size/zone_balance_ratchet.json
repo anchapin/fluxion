@@ -1,0 +1,10 @@
+{
+  "history": [
+    {
+      "actual": 4421,
+      "reason": "Issue #4753: the module-size entry was added for src/sim/thermal_model_physics/zone_balance.rs, the largest file in src/, which previously had no ratchet at all. The file's current size (4421 lines) is snapshotted as the historical maximum."
+    }
+  ],
+  "max_lines": 4421,
+  "notes": "Issue #4753: extend the module-size gate to src/sim/thermal_model_physics/zone_balance.rs, the largest file in src/ (4421 lines), which was ungated despite the Issue #3574 admission protocol for files crossing ~2000 lines. Current size snapshotted as the historical maximum; the active ceiling lives in scripts/data/module_size_limits.json (4643 = 4421 + max(+5%, +100) buffer = 4421 + 222, per the Issue #3574 admission protocol). Decomposition of this module is tracked separately."
+}

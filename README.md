@@ -197,7 +197,8 @@ Update the version number in both configuration files:
 Ensure all physics and integration tests pass before proceeding:
 ```bash
 # Run the full workspace suite (canonical — bare `cargo test` runs the ROOT crate only:
-# `default-members = ["."]` silently skips ~4,400 sibling-crate tests while reporting green)
+# `default-members = ["."]` silently skips 4,837 sibling-crate tests while reporting green;
+# that count = `workspace_tests` − `lib_tests_root` per `tests/test_inventory.json::totals`)
 cargo test --workspace --exclude fluxion-tauri --no-fail-fast
 
 # List the ASHRAE 140 validation binaries (the suite spans multiple `--test` binaries)

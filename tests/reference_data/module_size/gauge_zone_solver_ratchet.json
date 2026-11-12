@@ -1,0 +1,10 @@
+{
+  "history": [
+    {
+      "actual": 4001,
+      "reason": "Issue #4753: the module-size entry was added for src/physics/gauge_zone_solver.rs, one of the three largest ungated source files in src/, which previously had no ratchet at all. The file's current size (4001 lines) is snapshotted as the historical maximum."
+    }
+  ],
+  "max_lines": 4001,
+  "notes": "Issue #4753: extend the module-size gate to src/physics/gauge_zone_solver.rs (4001 lines), one of the three largest ungated source files in src/ at the time of filing. Current size snapshotted as the historical maximum; the active ceiling lives in scripts/data/module_size_limits.json (4202 = 4001 + max(+5%, +100) buffer = 4001 + 201, per the Issue #3574 admission protocol). Decomposition of this module is tracked separately."
+}
