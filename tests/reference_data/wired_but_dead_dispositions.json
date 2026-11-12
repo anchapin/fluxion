@@ -2,7 +2,7 @@
   "schema_version": 1,
   "description": "Per-module disposition registry for the wired-but-dead pub mods allowlisted in scripts/check_orphan_modules.py::WIRED_BUT_DEAD (Issue #3748). Every allowlist entry must carry exactly one row with an owner-assigned wire-or-delete decision; the registry must stay in lock-step with the live wired-but-dead set. Resolving a module (wiring it up or deleting it) requires dropping its row AND lowering BASELINE_WIRED_BUT_DEAD by one in the same PR.",
   "governing_issue": 3748,
-  "module_count": 42,
+  "module_count": 43,
   "modules": [
     {
       "module": "sim::ems",
@@ -297,6 +297,13 @@
       "issue": 3983,
       "owner": "anchapin",
       "rationale": "Solar submodule of the per-surface multinode core added by PR #4652 (Issue #3983). No production caller yet; wires in with its parent module's production dispatch integration. Registration approved by the repo owner 2026-11-09."
+    },
+    {
+      "module": "physics::ground_conduction",
+      "disposition": "wire-pending",
+      "issue": 4270,
+      "owner": "anchapin",
+      "rationale": "physics::ground_conduction (2-D ground-conduction domain for the ASHRAE 140 \u00a78 ground-coupled slab cases): added standalone on purpose \u2014 \u00a78 verifies the ground domain before it is wired back into the Section 7 floor boundary, which is the follow-up that drops this entry. Registered under its qualified path in PR #4647's 2026-11-11 rebase (the original branch registration used the bare leaf name, predating the Issue #4702 path-keying migration)."
     }
   ]
 }
