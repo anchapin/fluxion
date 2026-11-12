@@ -132,6 +132,23 @@ in #4226 — not a LIMIT-* gap, a recorded specification deviation.
 | `tests/all_tests/ashrae_140_blind_validation.rs` | `test_blind_mode_case_950_annual_energy_within_band` | `structural` | #1323, #1347 AC2 | `unassigned` | Roof-solar / high-mass cooling physics fix (#1323) lands; Case 950 strict band closes | `pending` |
 | `tests/all_tests/ashrae_140_blind_validation.rs` | `test_case_950_5r1c_free_float_uses_night_vent_overrides_issue_1422` | `structural` | #3071, #1422, #1465/#1462 | `unassigned` | GaugeSolver mass trajectory matches legacy night-flush pre-cool | `pending` |
 
+### Case 800 / 810 / 960 blind-mode band cohort (Issue #4758 — reference CSVs landed)
+
+The per-case reference CSVs (`case_800_energy_reference.csv`,
+`case_810_energy_reference.csv`, `case_960_energy_reference.csv`) are committed
+and #1331 / #1168 are closed, so the former "pending reference CSV" reason no
+longer applies. Re-running each test with `--ignored` (issue #4758) shows the
+blind-mode annual energy still misses the ASHRAE 140-2023 Annex B8 blind band
+(`benchmark::get_all_benchmark_data_blind()`); the rows below record the
+measured values and the structural reason. No tolerance band or reference
+value was changed.
+
+| Test File | Test Name | Category | Blocking Issue | Owner | Un-Ignore Criteria | Status |
+|-----------|-----------|----------|----------------|-------|-------------------|--------|
+| `tests/all_tests/ashrae_140_blind_validation.rs` | `test_blind_mode_case_800_annual_energy_within_band` | `structural` | #3572, #4758 | `unassigned` | Engine blind-mode annual cooling 3.952 MWh re-enters the Annex B8 band [0.282, 0.473] MWh (annual heating 4.963 MWh is already inside [4.906, 5.403]); same gap tracked on the informed path by the strict-energy-gate cohort (#3572) | `pending` |
+| `tests/all_tests/ashrae_140_blind_validation.rs` | `test_blind_mode_case_810_annual_energy_within_band` | `structural` | #3572, #4758 | `unassigned` | Engine blind-mode annual heating 0.776 MWh re-enters [2.038, 2.610] MWh and annual cooling 3.100 MWh re-enters [1.295, 1.606] MWh (Annex B8); same gap tracked on the informed path by the strict-energy-gate cohort (#3572) | `pending` |
+| `tests/all_tests/ashrae_140_blind_validation.rs` | `test_blind_mode_case_960_annual_energy_within_band` | `structural` | LIMIT-14, LIMIT-18, #3061, #1465/#1462, #4758 | `unassigned` | Engine blind-mode annual heating 1.933 MWh re-enters [2.522, 2.860] MWh and annual cooling 1.754 MWh re-enters [0.789, 0.950] MWh (Annex B8); GaugeSolver rework (#1465/#1462) lands | `pending` |
+
 ### Ashrae 140 Case 900 / 920 paired-comparison cohort (Issue #2490 / LIMIT-05)
 
 | Test File | Test Name | Category | Blocking Issue | Owner | Un-Ignore Criteria | Status |
@@ -306,11 +323,13 @@ These tests are `#[ignore]` because they await external calibration data or veri
 
 ### Pending reference CSVs (Issue #1331 / #1168 / #1166)
 
+The three ASHRAE 140 blind-validation rows that used to sit here (Cases
+800 / 810 / 960) moved to the structural cohort above in issue #4758: their
+reference CSVs have landed and the remaining blocker is the measured
+engine-side physics gap, not the missing data.
+
 | Test File | Test Name | Category | Blocking Issue | Owner | Un-Ignore Criteria | Status |
 |-----------|-----------|----------|----------------|-------|-------------------|--------|
-| `tests/all_tests/ashrae_140_blind_validation.rs` | `test_blind_mode_case_800_annual_energy_within_band` | `calibration` | #1331, #1168 | `unassigned` | `case_800_energy_reference.csv` regenerated from EnergyPlus | `pending` |
-| `tests/all_tests/ashrae_140_blind_validation.rs` | `test_blind_mode_case_810_annual_energy_within_band` | `calibration` | #1331, #1168 | `unassigned` | `case_810_energy_reference.csv` regenerated from EnergyPlus | `pending` |
-| `tests/all_tests/ashrae_140_blind_validation.rs` | `test_blind_mode_case_960_annual_energy_within_band` | `calibration` | #1331, #1168 | `unassigned` | `case_960_energy_reference.csv` regenerated from EnergyPlus | `pending` |
 | `src/solar/surface_irradiance.rs` | `test_perez_f1_coefficients_monotonic_non_decreasing` | `calibration` | #1695 | `unassigned` | Perez Table 3 source-data correction (F1 monotonicity at bin 5/6); #1695 scope excludes coefficient changes — separate data-correction effort | `pending` |
 | `src/solar/surface_irradiance.rs` | `test_perez_f1_increases_at_each_sky_clearness_transition` | `calibration` | #1695 | `unassigned` | Perez Table 3 source-data correction (F1 monotonicity at epsilon=4.5 transition); #1695 scope excludes coefficient changes — separate data-correction effort | `pending` |
 
