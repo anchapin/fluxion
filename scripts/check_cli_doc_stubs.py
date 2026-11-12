@@ -3,7 +3,7 @@
 CLI doc-stub consistency gate for Fluxion (Issue #3550).
 
 The Fluxion `fluxion` binary ships three CLI path families that are
-intentionally stubbed per issue #2947 (originally issue #2711):
+intentionally stubbed:
 `fluxion run -w ...`, `fluxion measure ...`, and the diagnostic
 case-range paths (`fluxion validate-case` / `fluxion diagnose ...`).
 The fail-loud contract is enforced in source by
@@ -13,17 +13,16 @@ The fail-loud contract is enforced in source by
 
     The `fluxion` help includes intentionally stubbed paths (direct
     simulation, workflow/measure execution, and diagnostic case ranges).
-    They must fail non-zero with issue `#2947`; do not turn them into
-    silent success.
+    They must fail non-zero; do not turn them into silent success.
 
 Issue #3534 corrected QUICKSTART.md §6 to match. Issue #3550 corrects
 `docs/cli_design.md` to match. This script closes the gap so a future
 docs patch cannot quietly re-introduce the contradiction: every
 `fluxion run -w ...` / `fluxion measure ...` / `fluxion diagnose ...`
-invocation in `docs/**/*.md` MUST carry an explicit issue `#2947`
-annotation in its surrounding context, OR be inside a clearly-marked
-historical / planning section that begins with the `#2947 stub-note`
-sentinel.
+invocation in `docs/**/*.md` MUST be explicitly marked as a
+not-yet-implemented stub in its surrounding context, OR be inside a
+clearly-marked historical / planning section that begins with the
+`stub-note` sentinel.
 
 Detection logic
 ---------------
@@ -35,21 +34,21 @@ one of:
                                 inside the command flag)
   - ``fluxion measure``        (measure management)
   - ``fluxion diagnose``       (diagnostic case range)
-  - ``fluxion validate-case``  (diagnostic case range; same #2947 gate)
+  - ``fluxion validate-case``  (diagnostic case range; same stub gate)
 
 For each hit the script builds a ``±WINDOW`` line context window
 (default ``WINDOW = 12``) and checks that *at least one* line in that
-window mentions issue ``#2947`` or the original-issue alias ``#2711``,
-OR carries the literal ``stub-note`` / ``stubbed`` / ``fail-loud`` /
-``SUPERSEDED`` sentinel. Hits that lack any annotation fail.
+window carries the literal ``stub-note`` / ``stubbed`` / ``fail-loud`` /
+``SUPERSEDED`` / ``not yet implemented`` sentinel. Hits that lack any
+annotation fail.
 
 Allowed-exception patterns (not flagged):
 
   1. A line whose content is a *historical* / *planning* section
      inside a clearly-marked historical block whose first
-     `#2947 stub-note` sentinel sits within the same window.
+     `stub-note` sentinel sits within the same window.
   2. A reference inside a fenced code block (```` ``` ````) that is
-     itself preceded by a `#2947` / `stub-note` / `fail-loud` /
+     itself preceded by a `stub-note` / `fail-loud` /
      `SUPERSEDED` line in the surrounding prose.
 
 Scope
@@ -68,8 +67,8 @@ Usage::
 Exit codes:
 
     0 — every CLI stub reference in `docs/**/*.md` carries a
-        `#2947` annotation (PASS).
-    1 — one or more CLI stub references lack a `#2947` annotation
+        not-yet-implemented stub annotation (PASS).
+    1 — one or more CLI stub references lack such an annotation
         (FAIL); see stdout for `file:line` locations.
     2 — script error (e.g. IO failure walking the tree).
 
@@ -87,17 +86,17 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCS_ROOT = REPO_ROOT / "docs"
 
 # ---------------------------------------------------------------------------
-# Tunables. WINDOW is the ± line-context used when checking for a #2947
-# annotation around each stub reference. 12 is large enough to cover a
-# preceding `#2947 stub-note:` block + a fenced code block + a closing
-# disclaimer (the worst-case shape in `cli_design.md` after #3550 lands),
-# and small enough that an annotation in an unrelated section does not
-# silently rescue a runnable-looking reference.
+# Tunables. WINDOW is the ± line-context used when checking for a
+# not-yet-implemented stub annotation around each stub reference. 12 is
+# large enough to cover a preceding `stub-note:` block + a fenced code
+# block + a closing disclaimer (the worst-case shape in `cli_design.md`
+# after #3550 lands), and small enough that an annotation in an unrelated
+# section does not silently rescue a runnable-looking reference.
 # ---------------------------------------------------------------------------
 WINDOW = 12
 
 # Stubbed CLI path families per AGENTS.md "Physics and Validation
-# Guardrails" and src/bin/fluxion.rs gates (issues #2947 / #2711).
+# Guardrails" and src/bin/fluxion.rs gates.
 # Each entry is a regex that matches a *runnable-looking* invocation
 # on the line — i.e. the lowercase binary name `fluxion` (the binary
 # is always invoked lowercase; capitalized "Fluxion" in prose refers
@@ -112,12 +111,12 @@ STUBBED_INVOCATION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bfluxion\s+validate-case\s+(?:--?[A-Za-z][\w-]*|\d)"),
 )
 
-# An annotation may be either:
-#   1. An explicit issue reference (`#2947` or the original `#2711`), or
-#   2. One of the documented stub-policy sentinel words (case-insensitive).
+# A stub reference is properly annotated when its surrounding context
+# explicitly marks it as a not-yet-implemented stub. The anchor is the
+# stub-policy wording itself (`stub-note` / `stubbed` / `fail-loud` /
+# `SUPERSEDED` / "not yet implemented") — no issue number is required,
+# so a closed tracking issue can never become a stale live anchor again.
 ANNOTATION_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"#2947\b"),
-    re.compile(r"#2711\b"),
     re.compile(r"\bstub-note\b", re.IGNORECASE),
     re.compile(r"\bstubbed\b", re.IGNORECASE),
     re.compile(r"\bfail[\s-]?loud\b", re.IGNORECASE),
@@ -127,9 +126,8 @@ ANNOTATION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bnot\s+runnable\b", re.IGNORECASE),
 )
 
-# Issue link aliases — these are the ONLY references that count as
-# proper annotations (the gate is policy-traceable to #2947). Anything
-# else (e.g. "#1234 stubbed") is rejected so a stale-issue callout
+# These are the ONLY references that count as proper annotations. A bare
+# issue number (e.g. "#1234 stubbed") is rejected so a stale-issue callout
 # cannot accidentally satisfy the gate.
 
 # ---------------------------------------------------------------------------
@@ -174,10 +172,10 @@ def has_annotation_in_window(lines: list[str], hit_idx: int) -> bool:
     """Return True if any line in ±WINDOW around `hit_idx` carries an annotation.
 
     The window is bounded to the same fenced-code block as the hit when
-    possible (so a fenced `#2947 stub-note` prologue to a fenced runnable
+    possible (so a fenced `stub-note` prologue to a fenced runnable
     block satisfies the gate, but a distant section's annotation does
     not). If the hit is outside any fenced block, the window is the
-    full file (so a `#2947 stub-note` header line higher up still counts
+    full file (so a `stub-note` header line higher up still counts
     when the runnable-looking block lives below it in the same section).
     """
     block_start, block_end = enclosing_fenced_block(lines, hit_idx)
@@ -252,10 +250,16 @@ def main() -> int:
                 findings.append((rel, hit_idx + 1, lines[hit_idx].strip()))
 
     if not findings:
-        print("PASS: every CLI stub reference in `docs/**/*.md` carries a #2947 annotation.")
+        print(
+            "PASS: every CLI stub reference in `docs/**/*.md` carries a "
+            "not-yet-implemented stub annotation."
+        )
         return 0
 
-    print(f"FAIL: {len(findings)} CLI stub reference(s) without a #2947 annotation:")
+    print(
+        f"FAIL: {len(findings)} CLI stub reference(s) without a "
+        "not-yet-implemented stub annotation:"
+    )
     print()
     for rel, lineno, content in findings:
         print(f"  - {rel}:{lineno}")
@@ -264,9 +268,9 @@ def main() -> int:
     print(
         "Each of these `fluxion run -w ...` / `fluxion measure ...` /\n"
         "`fluxion diagnose ...` / `fluxion validate-case ...` references\n"
-        "needs an explicit `#2947` / `stub-note` / `fail-loud` /\n"
-        "`SUPERSEDED` annotation within ±{} lines (issue #3550\n"
-        "acceptance criterion #3; cross-reference issue #2947 and\n"
+        "needs an explicit `stub-note` / `stubbed` / `fail-loud` /\n"
+        "`SUPERSEDED` / `not yet implemented` annotation within ±{} lines\n"
+        "(issue #3550 acceptance criterion #3; cross-reference\n"
         "AGENTS.md 'Physics and Validation Guardrails').".format(WINDOW)
     )
     return 1

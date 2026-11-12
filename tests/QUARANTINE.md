@@ -350,9 +350,12 @@ The `tests/all_tests/invariant_checker_test.rs :: test_different_zones_respond_d
 
 These tests are `#[ignore]` because CI is broken, not because the test logic is wrong.
 
-| Test File | Test Name | Category | Blocking Issue | Owner | Un-Ignore Criteria | Status |
-|-----------|-----------|----------|----------------|-------|-------------------|--------|
-| `tests/all_tests/idf_ashrae_140_acceptance.rs` | `idf_case_600_annual_heating_within_15_percent_strict` | `ci-broken` | #1577 | `unassigned` | CI fixed; develop CI can run tests to verify | `pending` |
+_Empty as of #4755_: the last row in this category —
+`tests/all_tests/idf_ashrae_140_acceptance.rs :: idf_case_600_annual_heating_within_15_percent_strict`
+(`ci-broken`, #1577) — was un-ignored and re-enabled. #1577 (develop CI broken) is
+closed, so its un-ignore criterion ("CI fixed; develop CI can run tests to verify")
+is met; the test was run on `develop` @ 0672e98b and measured **5.379 MWh** annual
+heating, inside the ±15 % reference band 4.314–5.836 MWh. It now runs as a live CI gate.
 
 ---
 
@@ -442,10 +445,10 @@ the new band for triage.
 | Performance/memory (dhat + BDF + batch) | 17 (10 pending + 7 migrated to perf_lane.yml, Issue #3957) | `pending` / `migrated` |
 | Hardware-dependent (GPU) | 4 (1 parity + 3 ONNX EP hardware probes, Issue #3313) | `pending` |
 | Calibration/pending data | 12 (incl. 3 pending reference CSVs #1331/#1168; 2 Perez F1 source-data rows, Issue #1695) | `pending` |
-| CI infrastructure | 1 | `pending` |
+| CI infrastructure | 0 (the single #1577 row was closed in #4755 — test un-ignored, measured 5.379 MWh inside the 4.314–5.836 MWh band) | `closed` |
 | Manual baseline regen | 2 | `pending` |
 | Other/unclassified | 11 pending + 3 closed (1 TLS-MQTT integration row, Issue #4211) | `pending` |
-| **Total** | **161** | |
+| **Total** | **160** | |
 
 (82 orphan entries were triaged into this registry by Issue #3443; the totals
 above include the 23 pre-existing entries and the 82 newly-added ones. The 3
