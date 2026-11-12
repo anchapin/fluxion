@@ -1,14 +1,13 @@
 {
   "baseline": {
-    "count": 11,
+    "count": 10,
     "paths": [
       "fluxion-city/src/lib.rs",
       "fluxion-mcp/src/tools.rs",
-      "src/api/security.rs",
-      "src/physics/geometry_tensor.rs",
+      "src/api/security/mod.rs",
+      "src/physics/geometry_tensor/mod.rs",
       "src/sim/thermal_model/mod.rs",
       "src/sim/thermal_model_core/mod.rs",
-      "src/sim/thermal_model_data.rs",
       "src/sim/thermal_model_data/mod.rs",
       "src/validation/ashrae_140_cases.rs",
       "src/validation/ashrae_140_validator/mod.rs",
@@ -16,7 +15,7 @@
     ]
   },
   "description": "Canonical LIMITS table for the module-size gate. Source of truth for max_lines per path. Ratchet JSONs track historical maxima; this file tracks active ceilings.",
-  "generated_at": "2026-09-29T15:18:30.783427+00:00",
+  "generated_at": "2026-11-12T03:12:13.586076+00:00",
   "history": [
     {
       "action": "seed from check_module_size.py LIMITS table (Issue #4243 refactor)",
@@ -27,15 +26,14 @@
       "action": "updated via --write-baseline: Issue #4243 refactor: seed baseline section from LIMITS table",
       "at": "2026-09-29",
       "len": 11
+    },
+    {
+      "action": "updated via --write-baseline: Issue #4752: re-point security/geometry entries to mod.rs successors, remove dead thermal_model_data.rs duplicate (baseline 11 -> 10)",
+      "at": "2026-11-12",
+      "len": 10
     }
   ],
   "limits": [
-    {
-      "max_lines": 200,
-      "path": "src/sim/thermal_model_data.rs",
-      "ratchet_basename": "thermal_model_data_ratchet.json",
-      "reason": "Issue #2878 acceptance: drop ThermalModelData below 200 lines so the god-struct (~140 fields, 145-line Clone impl) does not regress. Per-config clone must touch ≤6 fields."
-    },
     {
       "max_lines": 200,
       "path": "src/sim/thermal_model_data/mod.rs",
@@ -55,10 +53,10 @@
       "reason": "Issue #3457 (originally) → Issue #3789 (decomposed via PR #3843): the 3061-line single-file src/sim/thermal_model.rs was split into a thermal_model/ directory; the original ceiling (3061) is preserved as the ratchet for the new mod.rs so the audit thread keeps firing on growth in this concern. Hosts the ThermalModelTrait swap point the gauge dispatcher work keeps touching; zero-headroom entry (Issue #3747)."
     },
     {
-      "max_lines": 2199,
-      "path": "src/api/security.rs",
-      "ratchet_basename": "api_security_ratchet.json",
-      "reason": "Issue #3574: src/api/security.rs crossed the smallest ratcheted threshold (~2000 LoC) after the Issue #3543 decomposition of src/api/server.rs. Ratcheted at current size 2094 lines + buffer (max of +5% or +100 lines = 2199); decomposition tracked separately."
+      "max_lines": 2436,
+      "path": "src/api/security/mod.rs",
+      "ratchet_basename": "api_security_mod_ratchet.json",
+      "reason": "Issue #3574 (re-pointed by Issue #4752): the flat src/api/security.rs was decomposed into the src/api/security/ directory (PR #3688), so the entry now points at the successor src/api/security/mod.rs. Ratcheted at the successor's current size 2320 lines + buffer (max of +5% or +100 lines = 2436); decomposition tracked separately."
     },
     {
       "max_lines": 4392,
@@ -73,10 +71,10 @@
       "reason": "Issue #3574: src/validation/ashrae_140_validator/mod.rs is the largest child of the Issue #3543 decomposition. Ratcheted at current size 3092 lines + buffer (max of +5% or +100 lines = 3247). Raised from 3247/3247 to 3254/3416 by issue #4167's report/diagnostic parity fix (+38 lines: 950 warm-up exception mirroring #2363, post-warmup bookkeeping reset, comments; loop round 15) — buffer recomputed as max of +5% or +100 lines = 3416. Further decomposition tracked separately."
     },
     {
-      "max_lines": 2932,
-      "path": "src/physics/geometry_tensor.rs",
-      "ratchet_basename": "geometry_tensor_ratchet.json",
-      "reason": "Issue #3574: src/physics/geometry_tensor.rs crossed the smallest ratcheted threshold after Issue #3543. Ratcheted at current size 2792 lines + buffer (max of +5% or +100 lines = 2932; raised from 2486/2610 by #3731's typed ZoneCountPolicy wrapper which added a struct + impl + doc + 5 unit tests, +306 lines / +12.3%); decomposition tracked separately."
+      "max_lines": 1540,
+      "path": "src/physics/geometry_tensor/mod.rs",
+      "ratchet_basename": "geometry_tensor_mod_ratchet.json",
+      "reason": "Issue #3574 (re-pointed by Issue #4752): the flat src/physics/geometry_tensor.rs was decomposed into the src/physics/geometry_tensor/ directory (Issue #3870), so the entry now points at the successor src/physics/geometry_tensor/mod.rs. Ratcheted at the successor's current size 1440 lines + buffer (max of +5% or +100 lines = 1540); the sibling children (manifold.rs, geometry.rs, qubo.rs) are tracked separately; decomposition tracked separately."
     },
     {
       "max_lines": 2292,
