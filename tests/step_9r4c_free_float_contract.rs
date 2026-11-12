@@ -1635,3 +1635,819 @@ fn boundary_compaction_closed_form_matches_the_engine() {
         "zone 2 keeps its estimate verbatim — the known-boundary premise"
     );
 }
+
+// ============================================================================
+// Round 134 — the AdditiveSum coupling-mode arm (the r133 remainder), with
+// the per-surface channel's first explicit pin
+// ============================================================================
+//
+// The r131–r133 contracts pin the 9R4C committed-temperature chain at the
+// ParallelResistance production mode (#1859/#1281). The solver's OTHER
+// coupling mode — `MassAirCouplingMode::AdditiveSum`, the constructor
+// DEFAULT (`MultiNodeSolver::new`) and the mode every future construction
+// site silently gets — had no step-level coverage: its mass Euler
+// (`step_backward_euler_with_gains`, the shared-T_s operand), its air
+// balance (`additive_balance_parts`, the film-conductance sum denominator),
+// and its implicit-iz stash arm were all unpinned. Production AdditiveSum
+// exposure is real: `src/python/multi_node_bindings.rs` constructs
+// `PyMultiNodeSolver` with plain `new` (→ AdditiveSum) and the step-level
+// committed-air twin is mode-consistent since r133. This section flips the
+// r131 single-zone and r132 two-zone fixtures to AdditiveSum (one field)
+// and pins the mode-dispatched arms bit-exactly:
+//
+// - (A1) the additive premises and the mode seam: the committed air is the
+//   additive closed form on the POST-step mass nodes — `t_surface`
+//   recomputed from the mass temps (NOT the solver's stored
+//   `surface_temperature` field), `(h_tr_is·T_s + h_ve_total·T_out +
+//   h_rad_sky·T_sky + φ_ia)/(h_tr_is + h_ve_total + h_rad_sky)` — with the
+//   film-sum denominators 141.6 / 610.6 (vent-on) where ParallelResistance
+//   would produce 126.89411764705883 / 595.8941176470588 (M9's literals:
+//   the mode seam is observable). The degenerate fallback (denom < 1e-6 →
+//   `(t_surface, 1.0)`) is pinned at the solver API with an in-test
+//   zero-conductance construction;
+// - (A2) the additive mass Euler: every envelope node consumes the
+//   EXTERNALLY-SET shared surface temperature (the step's opening block
+//   re-derives it from the PRE-step mass temps and sets it before the
+//   advance — the value consumed is the mass-derived 19.866666666666667,
+//   not the prior per-surface write-back), the gains are
+//   (φ_st + φ_m)·h_tr_ms-fraction per node (the LIMIT-35 §12 routing),
+//   and the internal node composes through its own `h_tr_me` (100.0)
+//   exactly as in r131 — now under the additive operand. The night-vent
+//   fan reaches the mass ONLY through `t_i =` the pre-air (the internal
+//   node shifts, w/r/f do not — LIMIT-17's air-side-only at this site);
+// - (A3) the committed-air chain across both steps, both vent arms, with
+//   the `zone_temperature` hand-off (zt(step N) == the pre-air == the
+//   prior committed at uncoupled single-zone);
+// - (A4) the additive implicit-iz stash and solve at the two-zone fixture
+//   (the M4 additive counterpart): `diag =` the film-sum denominators
+//   141.6 / 153.5, `rhs = t_unc·diag`, SEAMLESS weights
+//   `w_ij = 0.5·(h_iz_i + h_iz_j)`, the inline partial-pivot elimination
+//   AND THEN `solve_linear_system` — committed airs
+//   33.37271758164313 / 27.41145662036934 vent-off,
+//   0.3703605371244691 / 26.16998864377302 vent-on; the 5R1C estimate
+//   solve stays mode-invariant (r132's M2 literals recomputed here);
+// - (A5) the per-surface channel's FIRST EXPLICIT PIN (mode-blind code —
+//   identical in both modes; r131 proved PR-inertness by composition
+//   only): `step_per_surface` builds a per-surface solver from the
+//   POST-advance mass temps, drives each surface with the PRE-GAIN mass
+//   temperature (`q_ms = h_ms·(pg − T_s)`), the per-surface exterior
+//   temperature, and the `distribute_opaque_solar_gains` split of φ_m —
+//   whose areas are the fixture's CONSTRUCTOR-DEFAULT area setpoints
+//   (wall 53.665631459994955 = perimeter·3.0 over the sqrt(20) default
+//   geometry; roof/floor 20.0; zero irradiance → the area-fraction
+//   branch), giving pm 7315.413047462013 / 2726.293476268993 / 2726.293476268993
+//   per zone 0 — and writes the conductance-weighted per-surface average
+//   back to `surface_temperature` (81.09607259126786 at step 0).
+//   FINDING (recorded, pinned as-is, routed to the physics queue):
+//   `fluxion-core`'s `SurfaceNode::update` and every doc around it claim
+//   "backward Euler"; the code is the EXPLICIT forward-Euler recurrence
+//   `T' = T + dt·(q_ms − q_em + φ_m)/C` (C = 230,000 J from
+//   `add_surface_from_params`). The value is the recurrence; the docs are
+//   wrong about the scheme;
+// - (A6) the clobber chain: the write-back IS the observable
+//   `surface_temperature` after each step — and it is DEAD at this
+//   production path: the next step's opening block re-derives from the
+//   mass temps (20.67786979440258 = the #862 value) before the mass Euler
+//   consumes it, so step 1's node literals compose from the mass-derived
+//   operand, never the write-back (the LIMIT-35 §12 note, now pinned for
+//   BOTH modes — r131 proved the PR side by composition, this pin names
+//   the clobber sites (a)/(d#862)/(f)/(g));
+// - (A7) the two-step composition and the mode-invariant chains: every
+//   step-1 state composes bit-exactly from the step-0 committed state;
+//   the 5R1C estimate and lumped mass are mode-INVARIANT (r131's
+//   PR-mode literals 29.428271397080522 / 26.149556909916907 and
+//   26.10141928940402 recomputed on the additive fixture — the chains
+//   ride `t_i_free_5r1c`, which never dispatches on coupling mode);
+// - (A8) the #4495 input-envelope guard at additive mode: a NaN outdoor
+//   temperature rejects the step (0.0 kWh), the commits stay untouched,
+//   the solver's own nodes HAVE advanced into NaN — pinned as-is (the
+//   guard's scope is the commit, not the solver), the r131 contract-8
+//   shape under the additive arms.
+//
+// Fixture: the r131 single-zone / r132 two-zone hand-rolled recipes
+// verbatim with `coupling_mode` flipped to `AdditiveSum` (the public
+// field; `new_with_mode(…, ParallelResistance)` is what the production
+// step constructs). Provenance: Python replication
+// `/tmp/r134_replication.py` + engine probe log `/tmp/r134_probe1.log`
+// (dev-time evidence, tip `bd2b411f`); every literal was produced by the
+// replication and matched the engine bit-for-bit across BOTH vent arms,
+// both fixtures, all four nodes + internal + the pre-airs + the
+// per-surface channel + the write-backs before the suite was written.
+// Suite shape unchanged: characterization pins with bit-exact teeth, no
+// engine change, no re-record owed. A violation means the additive chain
+// moved and must be re-examined, never tuned around.
+
+/// The additive fixture: the r131 recipe with the coupling mode flipped.
+fn fixture_9r4c_additive(vent: Option<NightVentilation>) -> ThermalModel<VectorField> {
+    let mut m = fixture_9r4c(vent);
+    assert_eq!(
+        m.conduction.backend.multi_node_solvers[0].coupling_mode,
+        MassAirCouplingMode::ParallelResistance,
+        "premise: the r131 recipe constructs ParallelResistance"
+    );
+    m.conduction.backend.multi_node_solvers[0].coupling_mode = MassAirCouplingMode::AdditiveSum;
+    m
+}
+
+/// The additive two-zone fixture: the r132 recipe with both modes flipped.
+fn fixture_9r4c_2z_additive(vent: Option<NightVentilation>) -> ThermalModel<VectorField> {
+    let mut v = fixture_9r4c_2z(vent);
+    for s in &mut v.conduction.backend.multi_node_solvers {
+        s.coupling_mode = MassAirCouplingMode::AdditiveSum;
+    }
+    v
+}
+
+/// The additive committed-air closed form (additive_balance_parts,
+/// h_rad_sky = 0), op-for-op: the mass-derived weighted t_surface, the
+/// film-sum denominator, the degenerate fallback untouched at this fixture.
+fn additive_balance_z(
+    h_ms: [f64; 3],
+    his: f64,
+    temps: [f64; 3],
+    h_ve: f64,
+    hvn: f64,
+    phi_ia: f64,
+) -> (f64, f64, f64) {
+    let h_ms_total = (h_ms[0] + h_ms[1]) + h_ms[2];
+    let num_ts = (h_ms[0] * temps[0] + h_ms[1] * temps[1]) + h_ms[2] * temps[2];
+    let t_surface = num_ts / h_ms_total;
+    let h_ve_total = h_ve + hvn;
+    let denom = (his + h_ve_total) + 0.0;
+    let num = (his * t_surface + h_ve_total * T_OUT) + 0.0 * 0.0;
+    let t_air = (num + phi_ia) / denom;
+    (t_air, denom, t_surface)
+}
+
+/// The additive mass Euler for one envelope node (the shared-T_s operand),
+/// op-for-op with step_backward_euler_with_gains' per-node block.
+fn additive_node_euler(
+    c: f64,
+    t_old: f64,
+    h_em: f64,
+    t_ext: f64,
+    h_ms: f64,
+    t_s: f64,
+    g: f64,
+) -> f64 {
+    let c_dt = c / DT;
+    let numer = ((c_dt * t_old + h_em * t_ext) + h_ms * t_s) + g;
+    let denom = (c_dt + h_em) + h_ms;
+    if denom > 1e-10 {
+        numer / denom
+    } else {
+        t_old
+    }
+}
+
+/// The additive implicit-iz committed-air solve at the two-zone fixture
+/// (both zones carry solvers): diag = the film sums, rhs = t_unc·diag,
+/// seamless w01, inline elimination AND THEN solve_linear_system_2.
+fn additive_committed_solved_2z(t_unc: [f64; 2]) -> (f64, f64) {
+    let his = [120.0, 140.0];
+    let h_ve = [21.6, h_ve_z1()];
+    let hiz = [5.0, 7.0];
+    let mut diag = [0.0; 2];
+    let mut rhs = [0.0; 2];
+    for i in 0..2 {
+        diag[i] = (his[i] + h_ve[i]) + 0.0;
+        rhs[i] = t_unc[i] * diag[i];
+    }
+    let w01 = 0.5 * (hiz[0] + hiz[1]);
+    let mut wsum0 = 0.0;
+    wsum0 += w01;
+    let mut wsum1 = 0.0;
+    wsum1 += w01;
+    let mut a = [[diag[0] + wsum0, -w01], [-w01, diag[1] + wsum1]];
+    let mut b = [rhs[0], rhs[1]];
+    elim_pass_2(&mut a, &mut b);
+    solve_linear_system_2(&mut a, &mut b)
+}
+
+/// The per-surface forward-Euler recurrence (SurfaceNode::update), op-for-op:
+/// q_ms from the PRE-GAIN mass temperature, q_em from the per-surface
+/// exterior, φ_m added, C = 230,000 J (add_surface_from_params, area 1.0).
+fn per_surface_update(t_s: f64, h_ms: f64, h_em: f64, pg: f64, t_ext: f64, phi_m: f64) -> f64 {
+    let q_ms = h_ms * (pg - t_s);
+    let q_em = h_em * (t_s - t_ext);
+    let heat = (q_ms - q_em) + phi_m;
+    t_s + DT * heat / 230_000.0
+}
+
+#[test]
+/// Contract A1 — the additive premises, the mode seam, and the degenerate
+/// fallback: the flipped mode, the committed air == the additive closed
+/// form on the post-step nodes (bit-exact 33.62531338508693, den 141.6 ==
+/// the film sum 120.0 + 21.6), provably distinct from the PR-mode commit
+/// 35.204524659159546 at the same fixture recipe (the mode seam is
+/// observable); the twin `(t, den)` == the recomposition; the vent-on arm
+/// (0.11684306473683184 / 610.6); free-float returns exactly 0.0 kWh; the
+/// `zone_temperature` set premise (the pre-air 32.93785310734464 == the
+/// additive balance on the PRE-step nodes); and the degenerate fallback at
+/// the solver API (h_tr_is 0.0 → `(t_surface, 1.0)`).
+fn additive_premises_mode_seam_and_degenerate_fallback() {
+    let mut m = fixture_9r4c_additive(None);
+    assert_eq!(
+        m.conduction.backend.multi_node_solvers[0].coupling_mode,
+        MassAirCouplingMode::AdditiveSum,
+        "premise: the fixture flipped to AdditiveSum"
+    );
+    let kwh = m.step_physics(0, T_OUT, DT);
+    assert_eq!(kwh, 0.0, "free-float returns exactly 0.0 kWh");
+    let s = &m.conduction.backend.multi_node_solvers[0];
+    // The additive closed form on the post-step nodes, op-for-op.
+    let (t_ref, den_ref, _ts) = additive_balance_z(
+        [50.0, 40.0, 60.0],
+        120.0,
+        [
+            s.mass.wall.temperature,
+            s.mass.roof.temperature,
+            s.mass.floor.temperature,
+        ],
+        21.6,
+        0.0,
+        2496.0,
+    );
+    let committed = m.setpoints.temperatures.as_ref()[0];
+    assert_eq!(
+        committed, t_ref,
+        "committed air == the additive closed form (bit-exact)"
+    );
+    assert_eq!(
+        committed, 33.62531338508693,
+        "the additive committed literal (engine + replication)"
+    );
+    assert_ne!(
+        committed, 35.204524659159546,
+        "the mode seam: ParallelResistance would commit 35.204524659159546 (M9 verbatim)"
+    );
+    assert_eq!(den_ref, 141.6, "the film-sum denominator == 120.0 + 21.6");
+    // The twin returns (t, den) — both bit-exact vs the recomposition.
+    let (t_bal, den_bal) = s.committed_air_balance(T_OUT, 21.6, 0.0, 2496.0);
+    assert_eq!(t_bal, t_ref, "twin value == the additive closed form");
+    assert_eq!(den_bal, den_ref, "twin denominator == the film sum");
+    assert_eq!(den_bal, 141.6, "den literal");
+    // The pre-air set premise: zone_temperature == the additive balance on
+    // the PRE-step nodes (the replication's step-0 pre-air literal).
+    assert_eq!(
+        s.zone_temperature, 32.93785310734464,
+        "zt == the pre-air (the additive balance on the initial nodes)"
+    );
+    // Vent-on: the fan lands in h_ve_total on both num and den.
+    let mut v = fixture_9r4c_additive(Some(NightVentilation::new(FAN_M3_H, 18, 7)));
+    let hv = h_ve_night_engine_read(&v);
+    assert_eq!(hv, H_VE_NIGHT, "premise: the vent conductance (r112 pin)");
+    v.step_physics(0, T_OUT, DT);
+    let vs = &v.conduction.backend.multi_node_solvers[0];
+    let (vt, vden) = vs.committed_air_balance(T_OUT, 21.6, hv, 2496.0);
+    let (vt_ref, vden_ref, _) = additive_balance_z(
+        [50.0, 40.0, 60.0],
+        120.0,
+        [
+            vs.mass.wall.temperature,
+            vs.mass.roof.temperature,
+            vs.mass.floor.temperature,
+        ],
+        21.6,
+        hv,
+        2496.0,
+    );
+    assert_eq!(vt, vt_ref, "vent-on twin value == the closed form");
+    assert_eq!(vt, 0.11684306473683184, "vent-on committed literal");
+    assert_eq!(
+        vden, vden_ref,
+        "vent-on twin denominator == the film sum + h_ve_night"
+    );
+    assert_eq!(
+        vden, 610.6,
+        "vent-on den == (120.0 + 21.6) + 469.0 (the film sum carries the fan)"
+    );
+    // The degenerate fallback: h_tr_is = 0.0 → denom < 1e-6 → (t_surface, 1.0).
+    let wall = ThermalMassNode::new(18.0, 4.0e7, 50.0, 20.0);
+    let roof = ThermalMassNode::new(22.0, 2.0e7, 40.0, 15.0);
+    let floor = ThermalMassNode::new(20.0, 3.0e7, 60.0, 10.0);
+    let internal = ThermalMassNode::new(20.0, 1.0e7, 10.0, 5.0);
+    let degenerate = MultiNodeSolver::new_with_mode(
+        0.0,
+        wall,
+        roof,
+        floor,
+        internal,
+        MassAirCouplingMode::AdditiveSum,
+    );
+    let (dt_fallback, den_fallback) = degenerate.committed_air_balance(T_OUT, 0.0, 0.0, 0.0);
+    assert_eq!(
+        den_fallback, 1.0,
+        "the degenerate denominator is 1.0 (the value is returned directly)"
+    );
+    assert_eq!(
+        dt_fallback, 19.866666666666667,
+        "the degenerate value is the weighted surface temperature itself"
+    );
+}
+
+#[test]
+/// Contract A2 — the additive mass Euler consumes the EXTERNALLY-SET shared
+/// surface temperature: all four step-0 node literals bit-exact
+/// (wall 18.570724436052867, roof 22.875682740865432, floor 20.968615628718762,
+/// internal 20.541671075618552), each composed in-test from the shared-T_s
+/// closed form with T_s = 19.866666666666667 (the opening block's weighted
+/// PRE-step mass value — NOT the solver's stored 20.0, NOT the prior
+/// write-back), gains (φ_st + φ_m)·h_tr_ms-fraction, the internal node
+/// through its own h_tr_me (100.0) — and provably distinct from the PR-mode
+/// wall literal 18.614397156250497 (r131 contract 3). The vent arm: the fan
+/// shifts ONLY the internal node (t_i = the pre-air carries h_ve_night;
+/// w/r/f stay at the vent-off literals — the mass Euler has no h_ve operand,
+/// LIMIT-17's air-side-only at this site).
+fn additive_mass_euler_consumes_the_shared_surface_temperature() {
+    let mut m = fixture_9r4c_additive(None);
+    m.step_physics(0, T_OUT, DT);
+    let s = &m.conduction.backend.multi_node_solvers[0];
+    // The shared T_s the advance consumed: the opening block's weighted
+    // PRE-step mass value (50·18 + 40·22 + 60·20)/150.
+    // Compose it exactly as the engine's opening block does (op order).
+    let t_s_shared = ((50.0 * 18.0 + 40.0 * 22.0) + 60.0 * 20.0) / ((50.0 + 40.0) + 60.0);
+    assert_eq!(
+        t_s_shared, 19.866666666666667,
+        "the consumed shared surface temperature (the weighted PRE-step value)"
+    );
+    assert_ne!(
+        t_s_shared, 20.0,
+        "the solver's stored surface_temperature starts at 20.0 and is overwritten"
+    );
+    // φ_st and φ_m (mode-invariant, r131 contract 1's decomposition).
+    let (phi_ia, phi_st, phi_m) = (2496.0_f64, 7776.0_f64, 12768.0_f64);
+    assert_eq!(phi_ia + phi_st + phi_m, 1440.0 + 19200.0 + 2400.0);
+    let wall_frac = 50.0 / 150.0;
+    let roof_frac = 40.0 / 150.0;
+    let floor_frac = 60.0 / 150.0;
+    let w = additive_node_euler(
+        4.0e7,
+        18.0,
+        20.0,
+        T_OUT,
+        50.0,
+        t_s_shared,
+        phi_st * wall_frac + phi_m * wall_frac,
+    );
+    let r = additive_node_euler(
+        2.0e7,
+        22.0,
+        15.0,
+        T_OUT,
+        40.0,
+        t_s_shared,
+        phi_st * roof_frac + phi_m * roof_frac,
+    );
+    let f = additive_node_euler(
+        3.0e7,
+        20.0,
+        10.0,
+        T_G,
+        60.0,
+        t_s_shared,
+        phi_st * floor_frac + phi_m * floor_frac,
+    );
+    assert_eq!(w, 18.570724436052867, "additive wall node (bit-exact)");
+    assert_eq!(r, 22.875682740865432, "additive roof node");
+    assert_eq!(f, 20.968615628718762, "additive floor node");
+    assert_ne!(
+        w, 18.614397156250497,
+        "the PR-mode wall literal (r131 contract 3) — the mode seam"
+    );
+    // Internal node: own h_tr_me (100.0) through the envelope average of the
+    // POST-update w/r/f, t_i = the pre-air.
+    let hmw = (50.0 * 100.0) / (50.0 + 100.0);
+    let hmr = (40.0 * 100.0) / (40.0 + 100.0);
+    let hmf = (60.0 * 100.0) / (60.0 + 100.0);
+    let t_env = (hmw * w + hmr * r + hmf * f) / (hmw + hmr + hmf);
+    let c_dt = 1.0e7 / DT;
+    let i =
+        ((c_dt * 20.0 + 120.0 * 32.93785310734464) + 100.0 * t_env + 0.0) / (c_dt + 120.0 + 100.0);
+    assert_eq!(
+        i, 20.541671075618552,
+        "additive internal node (own h_tr_me seam)"
+    );
+    assert_eq!(
+        s.mass.internal.temperature, i,
+        "the engine's internal node == the closed form"
+    );
+    // Vent arm: only the internal node moves (the pre-air carries the fan).
+    let mut v = fixture_9r4c_additive(Some(NightVentilation::new(FAN_M3_H, 18, 7)));
+    v.step_physics(0, T_OUT, DT);
+    let vs = &v.conduction.backend.multi_node_solvers[0];
+    assert_eq!(
+        vs.mass.wall.temperature, 18.570724436052867,
+        "vent-on wall == the vent-off literal (the fan never touches the mass)"
+    );
+    assert_eq!(
+        vs.mass.roof.temperature, 22.875682740865432,
+        "vent-on roof == vent-off"
+    );
+    assert_eq!(
+        vs.mass.floor.temperature, 20.968615628718762,
+        "vent-on floor == vent-off"
+    );
+    assert_eq!(
+        vs.mass.internal.temperature, 19.221475786176054,
+        "vent-on internal shifted via t_i = the vent pre-air"
+    );
+    // (the vent pre-air itself is A3's -0.04258106780216181)
+}
+
+#[test]
+/// Contract A3 — the committed-air chain across two steps, both vent arms,
+/// with the zone_temperature hand-off: step-1 committed air == the additive
+/// balance on the step-0 POST nodes (33.62531338508693 → 34.31138437180818
+/// vent-off; 0.11684306473683184 → 0.27594501645600783 vent-on); zt(step 1)
+/// == the prior committed (the uncoupled hand-off); the pre-airs
+/// −0.04258106780216181 vent-on step 0 and 33.62531338508693 vent-off
+/// step 1 pinned via zt.
+fn additive_committed_chain_two_steps_both_vent_arms() {
+    // Vent-off.
+    let mut m = fixture_9r4c_additive(None);
+    m.step_physics(0, T_OUT, DT);
+    m.step_physics(1, T_OUT, DT);
+    let s = &m.conduction.backend.multi_node_solvers[0];
+    assert_eq!(
+        s.zone_temperature, 33.62531338508693,
+        "zt(step 1) == the step-0 committed air (the pre-air hand-off)"
+    );
+    let (t1, d1) = s.committed_air_balance(T_OUT, 21.6, 0.0, 2496.0);
+    assert_eq!(
+        m.setpoints.temperatures.as_ref()[0],
+        34.31138437180818,
+        "step-1 committed literal (vent-off)"
+    );
+    assert_eq!(t1, 34.31138437180818, "the twin agrees at step 1");
+    assert_eq!(d1, 141.6, "the film sum is temperature-independent");
+    // Vent-on.
+    let mut v = fixture_9r4c_additive(Some(NightVentilation::new(FAN_M3_H, 18, 7)));
+    v.step_physics(0, T_OUT, DT);
+    let vs = &v.conduction.backend.multi_node_solvers[0];
+    assert_eq!(
+        vs.zone_temperature, -0.04258106780216181,
+        "the vent-on pre-air (the additive balance with h_ve_night in h_ve_total)"
+    );
+    v.step_physics(1, T_OUT, DT);
+    let vs = &v.conduction.backend.multi_node_solvers[0];
+    assert_eq!(
+        vs.zone_temperature, 0.11684306473683184,
+        "vent-on hand-off: zt(step 1) == the step-0 committed air"
+    );
+    assert_eq!(
+        v.setpoints.temperatures.as_ref()[0],
+        0.27594501645600783,
+        "step-1 committed literal (vent-on)"
+    );
+}
+
+#[test]
+/// Contract A4 — the additive implicit-iz stash and solve at the two-zone
+/// fixture (the M4 additive counterpart): the stashes carry the FILM-SUM
+/// denominators 141.6 / 153.5 (ParallelResistance would carry
+/// 126.89411764705883 / 115.04123354123354 — the mode seam on the stash),
+/// rhs = t_unc·diag, seamless w01 = 6.0, the inline elimination AND THEN
+/// solve_linear_system_2; committed 33.37271758164313 / 27.41145662036934
+/// vent-off and 0.3703605371244691 / 26.16998864377302 vent-on; the 5R1C
+/// estimate solve stays mode-invariant (r132's M2 literals).
+fn additive_implicit_iz_stash_and_solve() {
+    // Vent-off.
+    let mut m = fixture_9r4c_2z_additive(None);
+    m.step_physics(0, T_OUT, DT);
+    let s0 = &m.conduction.backend.multi_node_solvers[0];
+    let s1 = &m.conduction.backend.multi_node_solvers[1];
+    let (t0, d0) = s0.committed_air_balance(T_OUT, 21.6, 0.0, 2496.0);
+    let (t1, d1) = s1.committed_air_balance(T_OUT, h_ve_z1(), 0.0, 1520.0);
+    assert_eq!(t0, 33.62531338508693, "zone-0 uncoupled (the stash input)");
+    assert_eq!(t1, 27.178443162599674, "zone-1 uncoupled (the stash input)");
+    assert_eq!(d0, 141.6, "zone-0 film-sum stash denominator");
+    assert_eq!(
+        d1, 153.5,
+        "zone-1 film-sum stash denominator (140.0 + 13.5)"
+    );
+    let (c0, c1) = additive_committed_solved_2z([t0, t1]);
+    assert_eq!(
+        m.setpoints.temperatures.as_ref()[0],
+        c0,
+        "the engine's committed zone-0 air == the in-test solve"
+    );
+    assert_eq!(c0, 33.37271758164313, "the solved zone-0 literal");
+    assert_eq!(c1, 27.41145662036934, "the solved zone-1 literal");
+    // The lumped mass rides the mode-invariant estimate chain (the
+    // probe-verified 2-zone additive value; the estimate solve itself is
+    // r132's M2 literals recomputed above).
+    assert_eq!(
+        m.mass.mass_temperatures.as_ref()[0],
+        26.146946251858456,
+        "the 2-zone lumped literal (mode-invariant chain)"
+    );
+    // Vent-on.
+    let mut v = fixture_9r4c_2z_additive(Some(NightVentilation::new(FAN_M3_H, 18, 7)));
+    v.step_physics(0, T_OUT, DT);
+    assert_eq!(
+        v.setpoints.temperatures.as_ref()[0],
+        0.3703605371244691,
+        "vent-on solved zone-0 literal"
+    );
+    assert_eq!(
+        v.setpoints.temperatures.as_ref()[1],
+        26.16998864377302,
+        "vent-on solved zone-1 literal"
+    );
+}
+
+#[test]
+/// Contract A5 — the per-surface channel's first explicit pin (mode-blind
+/// code, identical in both modes): the engine's post-step
+/// `surface_temperature` == the conductance-weighted per-surface average
+/// 81.09607259126786, and the per-surface temperatures recompose through
+/// the engine's own `build_per_surface_solver` + `update_surface` API with
+/// the pinned operands — the POST-advance mass temps as the surface seeds,
+/// the PRE-GAIN mass temps in q_ms, the per-surface exterior temperatures,
+/// and the area-fraction φ_m split over the CONSTRUCTOR-DEFAULT area
+/// setpoints (wall 53.665631459994955, roof/floor 20.0 — the fixture never
+/// sets them). FINDING (recorded here, routed to the physics queue):
+/// `SurfaceNode::update` is documented "backward Euler" but performs the
+/// EXPLICIT forward-Euler recurrence — pinned as-is; the value IS the
+/// recurrence the docs misdescribe.
+fn per_surface_channel_recurrence_and_area_default_pm() {
+    let mut m = fixture_9r4c_additive(None);
+    // The area-setpoint premise: constructor defaults, never overridden.
+    assert_eq!(
+        m.setpoints.wall_area.as_ref()[0],
+        53.665631459994955,
+        "the default wall area (perimeter·3.0 over the sqrt(20) geometry)"
+    );
+    assert_eq!(
+        m.setpoints.roof_area.as_ref()[0],
+        20.0,
+        "the default roof area (the flat-roof assumption)"
+    );
+    assert_eq!(
+        m.setpoints.floor_area.as_ref()[0],
+        20.0,
+        "the default floor area (zone_area at construction = 20.0)"
+    );
+    // The φ_m split (zero irradiance → the area-fraction branch).
+    let total_area = (53.665631459994955 + 20.0) + 20.0;
+    let pm_w = 12768.0 * 53.665631459994955 / total_area;
+    let pm_r = 12768.0 * 20.0 / total_area;
+    let pm_f = 12768.0 * 20.0 / total_area;
+    assert_eq!(pm_w, 7315.413047462013, "pm wall (bit-exact)");
+    assert_eq!(pm_r, 2726.293476268993, "pm roof");
+    assert_eq!(pm_f, 2726.293476268993, "pm floor");
+    m.step_physics(0, T_OUT, DT);
+    let s = &m.conduction.backend.multi_node_solvers[0];
+    // The write-back: the weighted per-surface average, bit-exact.
+    assert_eq!(
+        s.surface_temperature, 81.09607259126786,
+        "the post-step surface_temperature == the per-surface write-back"
+    );
+    // The per-surface temperatures recompose through the engine's own API
+    // with the step's operands (the solver is rebuilt from the POST-advance
+    // mass temps exactly as the step does; q_ms uses the PRE-GAIN temps).
+    let mut ps = s.build_per_surface_solver();
+    ps.update_surface(0, DT, 18.0, T_OUT, pm_w);
+    ps.update_surface(1, DT, 22.0, T_OUT, pm_r);
+    ps.update_surface(2, DT, 20.0, T_G, pm_f);
+    let temps = ps.surface_temperatures();
+    assert_eq!(temps[0], 123.68230884030473, "per-surface wall");
+    assert_eq!(temps[1], 57.28121027076551, "per-surface roof");
+    assert_eq!(temps[2], 61.48411726407201, "per-surface floor");
+    // And the in-test recurrence composes the same values op-for-op.
+    let w = per_surface_update(s.mass.wall.temperature, 50.0, 20.0, 18.0, T_OUT, pm_w);
+    assert_eq!(
+        w, 123.68230884030473,
+        "the in-test recurrence == the engine API"
+    );
+    let wb = ((50.0 * temps[0] + 40.0 * temps[1]) + 60.0 * temps[2]) / 150.0;
+    assert_eq!(wb, 81.09607259126786, "the write-back closed form");
+    // The two-zone arm (zone 1's own conductances 45/35/55, its own solve).
+    let mut v = fixture_9r4c_2z_additive(None);
+    v.step_physics(0, T_OUT, DT);
+    let s1 = &v.conduction.backend.multi_node_solvers[1];
+    let pm_w1 = 7680.0 * 53.665631459994955 / total_area;
+    let pm_r1 = 7680.0 * 20.0 / total_area;
+    assert_eq!(pm_w1, 4400.248449601211, "zone-1 pm wall");
+    assert_eq!(pm_r1, 1639.8757751993942, "zone-1 pm roof (== pm floor)");
+    assert_eq!(
+        s1.surface_temperature, 55.01190364405396,
+        "zone-1 write-back literal"
+    );
+}
+
+#[test]
+/// Contract A6 — the clobber chain: the write-back IS the observable
+/// `surface_temperature` after each step (81.09607259126786 → 81.73223419947382)
+/// and is DEAD at this production path — step 1's mass advance consumes the
+/// mass-derived 20.67786979440258 (the #862 value, == the opening block's
+/// re-derive), never the write-back: the step-1 node literals compose
+/// bit-exactly from the consumed mass-derived operand, and provably NOT
+/// from the write-back (the write-back-as-operand closed form lands
+/// elsewhere). The write-back is overwritten again at step 1 (a fresh
+/// 81.73223419947382 from the step-1 state) — the LIMIT-35 §12 clobber,
+/// now pinned for both modes with the sites named.
+fn writeback_clobbered_next_step_consumes_the_mass_derived_value() {
+    let mut m = fixture_9r4c_additive(None);
+    m.step_physics(0, T_OUT, DT);
+    let s = &m.conduction.backend.multi_node_solvers[0];
+    assert_eq!(
+        s.surface_temperature, 81.09607259126786,
+        "the write-back observable after step 0"
+    );
+    let ts862 = ((50.0 * s.mass.wall.temperature + 40.0 * s.mass.roof.temperature)
+        + 60.0 * s.mass.floor.temperature)
+        / 150.0;
+    assert_eq!(
+        ts862, 20.67786979440258,
+        "the #862 weighted value the NEXT step consumes"
+    );
+    // Step-1's PRE-advance mass temps == step-0's POST-advance literals.
+    let w_pre = s.mass.wall.temperature;
+    assert_eq!(w_pre, 18.570724436052867, "the step-1 pre wall temp");
+    m.step_physics(1, T_OUT, DT);
+    let s = &m.conduction.backend.multi_node_solvers[0];
+    // Step-1 nodes composed from the CONSUMED mass-derived operand.
+    let (phi_st, phi_m) = (7776.0_f64, 12768.0_f64);
+    let w = additive_node_euler(
+        4.0e7,
+        w_pre,
+        20.0,
+        T_OUT,
+        50.0,
+        20.67786979440258,
+        phi_st * (50.0 / 150.0) + phi_m * (50.0 / 150.0),
+    );
+    assert_eq!(
+        w, 19.14150337884098,
+        "step-1 wall literal composes from the mass-derived operand"
+    );
+    // ...and provably NOT from the write-back (that operand lands elsewhere).
+    let w_wrong = additive_node_euler(
+        4.0e7,
+        w_pre,
+        20.0,
+        T_OUT,
+        50.0,
+        81.09607259126786,
+        phi_st * (50.0 / 150.0) + phi_m * (50.0 / 150.0),
+    );
+    assert_ne!(
+        w_wrong, 19.14150337884098,
+        "the write-back-as-operand closed form does not produce the engine value"
+    );
+    // The write-back was refreshed from the step-1 state.
+    assert_eq!(
+        s.surface_temperature, 81.73223419947382,
+        "the fresh write-back after step 1"
+    );
+    assert_ne!(
+        s.surface_temperature, ts862,
+        "the write-back overwrites the #862 value every step"
+    );
+}
+
+#[test]
+/// Contract A7 — the two-step composition and the mode-invariant chains:
+/// step 1 composes bit-exactly from the step-0 committed state (the
+/// committed air via the additive balance on the step-0 post nodes, the
+/// hand-off via zt, the lumped via the mode-invariant estimate); the 5R1C
+/// estimate and lumped chains reproduce r131's PR-mode literals ON THE
+/// ADDITIVE FIXTURE (29.428271397080522 step-0 estimate via the lumped
+/// composition; 26.149556909916907 step-0 lumped; 26.10141928940402
+/// vent-on step-0 lumped — the chains never dispatch on coupling mode).
+fn additive_two_step_composition_and_mode_invariant_chains() {
+    let mut m = fixture_9r4c_additive(None);
+    m.step_physics(0, T_OUT, DT);
+    let lumped0 = m.mass.mass_temperatures.as_ref()[0];
+    assert_eq!(
+        lumped0, 26.149556909916907,
+        "the step-0 lumped literal == r131's PR-mode value (mode-invariant chain)"
+    );
+    // The lumped composes from the mode-invariant estimate (r131's contract-4
+    // literal as the t_i operand).
+    let ts_den = 1069.0_f64;
+    let t_s_lumped = (1000.0 * 20.0 + 69.0 * 29.428271397080522 + 7776.0) / ts_den;
+    let cm_dt = 48.0 * 150_000.0 / DT;
+    let h3 = {
+        let h1 = (21.6 * 69.0) / (21.6 + 69.0);
+        let h2 = h1 + 36.0;
+        (h2 * 1000.0) / (h2 + 1000.0)
+    };
+    let numer = ((cm_dt * 20.0 + 15.36 * T_OUT) + h3 * t_s_lumped) + 12768.0;
+    let lumped = numer / ((cm_dt + 15.36) + h3);
+    assert_eq!(
+        lumped, lumped0,
+        "the lumped composes from the mode-invariant estimate"
+    );
+    m.step_physics(1, T_OUT, DT);
+    assert_eq!(
+        m.mass.mass_temperatures.as_ref()[0],
+        32.24857751084929,
+        "the step-1 lumped literal"
+    );
+    // Vent-on step 0: the r131 contract-6 lumped literal recomputed.
+    let mut v = fixture_9r4c_additive(Some(NightVentilation::new(FAN_M3_H, 18, 7)));
+    v.step_physics(0, T_OUT, DT);
+    assert_eq!(
+        v.mass.mass_temperatures.as_ref()[0],
+        26.10141928940402,
+        "the vent-on step-0 lumped == r131's value (the fan rides the estimate only)"
+    );
+    v.step_physics(1, T_OUT, DT);
+    assert_eq!(
+        v.mass.mass_temperatures.as_ref()[0],
+        32.148980580323496,
+        "the vent-on step-1 lumped literal"
+    );
+}
+
+#[test]
+/// Contract A9 — the #4495 input-envelope guard at additive mode at the
+/// two-zone fixture: a NaN outdoor temperature rejects the step (0.0 kWh)
+/// while the solver's own nodes HAVE advanced into NaN inside the additive
+/// Euler (committed before the guard) — pinned as-is; the guard's "state
+/// untouched" scope is the commit, not the solver (the r131 contract-8
+/// shape, additive arms, both zones advanced).
+fn guard_nan_rejects_the_additive_step_2z() {
+    let mut v = fixture_9r4c_2z_additive(None);
+    v.step_physics(0, T_OUT, DT);
+    v.step_physics(1, T_OUT, DT);
+    let kwh = v.step_physics(0, f64::NAN, DT);
+    assert_eq!(kwh, 0.0, "the rejected step returns exactly 0.0 kWh");
+    let s0 = &v.conduction.backend.multi_node_solvers[0];
+    assert!(
+        s0.mass.wall.temperature.is_nan()
+            && s0.mass.roof.temperature.is_nan()
+            && s0.mass.internal.temperature.is_nan(),
+        "w/r/internal advanced into NaN before the guard — pinned as-is"
+    );
+    assert!(
+        !s0.mass.floor.temperature.is_nan(),
+        "the ground-coupled floor advances finitely (the additive shared-T_s operand)"
+    );
+}
+
+#[test]
+/// Contract A8 — the #4495 input-envelope guard at additive mode
+/// (single-zone): a NaN outdoor temperature rejects the step (0.0 kWh)
+/// with the zone-air and lumped-mass commits untouched. FINDING (recorded
+/// here, pinned as-is, routed to the physics queue): the additive-mode
+/// solver state advances NON-UNIFORMLY before the guard — wall/roof go NaN
+/// through their NaN outdoor boundary, internal through the envelope
+/// average of w/r, `zone_temperature`/`surface_temperature` through the
+/// NaN air balance — but the FLOOR advances FINITELY (22.899024388751087):
+/// its exterior is the ground (13.0), and its consumed shared T_s is the
+/// opening block's MASS-DERIVED weighted value, not a blend against the
+/// NaN pre-air (the PR-mode contract 8 pins floor == NaN through exactly
+/// that blend — the mode contrast is the observable). The guard's "state
+/// untouched" scope is the commit, not the solver.
+fn guard_nan_rejects_the_additive_step() {
+    let mut m = fixture_9r4c_additive(None);
+    m.step_physics(0, T_OUT, DT);
+    m.step_physics(1, T_OUT, DT);
+    let kwh = m.step_physics(0, f64::NAN, DT);
+    assert_eq!(kwh, 0.0, "the rejected step returns exactly 0.0 kWh");
+    assert_eq!(
+        m.setpoints.temperatures.as_ref()[0],
+        34.31138437180818,
+        "the zone-air commit is untouched by the rejected step"
+    );
+    assert_eq!(
+        m.mass.mass_temperatures.as_ref()[0],
+        32.24857751084929,
+        "the lumped-mass commit is untouched by the rejected step"
+    );
+    let s = &m.conduction.backend.multi_node_solvers[0];
+    assert!(
+        s.mass.wall.temperature.is_nan()
+            && s.mass.roof.temperature.is_nan()
+            && s.mass.internal.temperature.is_nan()
+            && s.zone_temperature.is_nan()
+            && s.surface_temperature.is_nan(),
+        "w/r/internal + zt + surf advanced into NaN before the guard"
+    );
+    // The floor advanced FINITELY on its ground boundary and the mass-derived
+    // shared T_s: compose its closed form from the step-1 literals.
+    let ts_step2 = ((50.0 * 19.14150337884098 + 40.0 * 23.748564613709405)
+        + 60.0 * 21.934954671993715)
+        / 150.0;
+    let floor = additive_node_euler(
+        3.0e7,
+        21.934954671993715,
+        10.0,
+        T_G,
+        60.0,
+        ts_step2,
+        (7776.0 + 12768.0) * (60.0 / 150.0),
+    );
+    assert_eq!(
+        floor, 22.899024388751087,
+        "the floor advanced finitely through the rejected step (engine probe)"
+    );
+    assert_eq!(
+        s.mass.floor.temperature, floor,
+        "the engine's floor == the closed form"
+    );
+}
