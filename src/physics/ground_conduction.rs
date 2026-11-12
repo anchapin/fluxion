@@ -972,7 +972,7 @@ fn assemble_system(
         let k = k_of(i, 0);
         let half = (grid.z.widths[0] / 2.0) / (k * grid.x.widths[i]);
         let area = grid.x.widths[i] * UNIT_OUT_OF_PLANE_LENGTH_M;
-        if let Some(face) = top_boundary_face(top_segments, &grid, i, area, half) {
+        if let Some(face) = top_boundary_face(top_segments, grid, i, area, half) {
             let idx = i;
             diagonal[idx] += face.conductance;
             rhs[idx] += face.conductance * face.temperature;
