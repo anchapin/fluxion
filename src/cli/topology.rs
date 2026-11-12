@@ -20,7 +20,7 @@
 //!
 //! The handlers deliberately mirror the fail-loud CLI contract: mutually
 //! exclusive source flags are enforced, unknown case ids error out non-zero,
-//! and no path here silently succeeds (cf. issue #2947 stub policy).
+//! and no path here silently succeeds (cf. the CLI fail-loud stub policy).
 
 use std::fs;
 use std::io::Write as _;
