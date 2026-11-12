@@ -160,7 +160,6 @@ value was changed.
 | `tests/all_tests/ashrae_140_case_900.rs` | `test_case_600ff_vs_900ff_paired_comparison` | `structural` | LIMIT-05, #2490, #1465/#1462 | `unassigned` | GaugeSolver ships; 900FF paired-comparison closes | `pending` |
 | `tests/all_tests/ashrae_140_case_900.rs` | `test_900_series_regression` | `structural` | Test-pollution (superceded by individual case tests) | `unassigned` | Investigate; either un-ignore after pollution fix or delete | `pending` |
 | `tests/all_tests/ashrae_140_integration.rs` | `test_case_600_full_reference_tolerance` | `structural` | #2683, SOLAR-02, LIMIT-05, #1465/#1462 | `unassigned` | All four Case 600 metrics re-enter reference bands | `pending` |
-| `tests/all_tests/ashrae_140_integration.rs` | `test_case_610_shading` | `structural` | #62 | `unassigned` | Issue #62 merges; shading test wired into strict gate | `pending` |
 
 ### Case 195 / solid conduction cohort (Issue #3064 / LIMIT-20 / #3218)
 
