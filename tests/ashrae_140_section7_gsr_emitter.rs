@@ -1546,10 +1546,16 @@ fn section621_value_pins() {
         "630 shaded west must be below 620 unshaded west"
     );
     // Case 960 sun zone (°C, 8760-index occurrences).
+    // Re-recorded 2026-11-12 (loop r133): min 5.42 -> 4.76, max 50.23 ->
+    // 48.99, mean 29.51 -> 28.40 — the mn implicit-iz committed-air
+    // diag-seam fix (the r132 finding) changes the coupled sunspace/zone
+    // dissipation on every num_zones > 1 case, moving the free-floating
+    // sunspace's annual swing (the extremes' 8760-index occurrences stay
+    // 941/6086); nothing tuned. Provenance: strict JSON _doc_round133.
     let sun = by_id("960").sun_zone.as_ref().unwrap();
-    pin_check("960", sun.min_temp_c, 5.42);
-    pin_check("960", sun.max_temp_c, 50.23);
-    pin_check("960", sun.mean_temp_c, 29.51);
+    pin_check("960", sun.min_temp_c, 4.76);
+    pin_check("960", sun.max_temp_c, 49.00);
+    pin_check("960", sun.mean_temp_c, 28.40);
     assert_eq!(sun.min_index, 941);
     assert_eq!(sun.max_index, 6086);
 }

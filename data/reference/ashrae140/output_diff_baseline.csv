@@ -1,6 +1,6 @@
-# repo_sha=f66743c187423ee6c999652164d5c7ab33e25f3d
-# recorded_utc=2026-11-08T17:18:48Z
-# source=strict-gate log r120_strict.txt
+# repo_sha=b6f879f084325997873e4cffefbc0524c9538919
+# recorded_utc=2026-11-12T14:40:42Z
+# source=loop r133: mn committed-air diag-seam fix — the four multi-zone sunspace rows moved (960/970, num_zones > 1); the 38 other metrics byte-identical; statuses/bands untouched, nothing tuned
 # Epsilon policy: 0.1% relative (issue #4281); intentional physics
 # changes re-record this file in the same PR via --update-baseline.
 case,metric,value,unit
@@ -42,7 +42,7 @@ case,metric,value,unit
 950,H,0.000000,MWh
 950FF,Tmax,39.010000,C
 950FF,Tmin,-15.960000,C
-960,C,1.273000,MWh
-960,H,2.111000,MWh
-970,C,1.292000,MWh
-970,H,1.594000,MWh
+960,C,1.397000,MWh
+960,H,1.896000,MWh
+970,C,1.188000,MWh
+970,H,1.710000,MWh

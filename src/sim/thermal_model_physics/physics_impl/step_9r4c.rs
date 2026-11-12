@@ -811,7 +811,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 } else {
                     0.0
                 };
-                let t_air_mn = solver.compute_zone_air_temperature(
+                let (t_air_mn, den_air) = solver.committed_air_balance(
                     outdoor_temp,
                     h_ve_val,
                     h_ve_night_zone,
@@ -823,10 +823,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 if solve_implicit_iz {
                     // Stash the uncoupled air-balance terms so the implicit
                     // inter-zone solve below can close the system: the uncoupled
-                    // balance is t_air * diag = rhs by construction.
-                    let diag = solver.h_tr_is + h_ve_val + h_ve_night_zone;
-                    mn_diag[zone_idx] = diag;
-                    mn_rhs[zone_idx] = t_air_mn * diag;
+                    // balance is t_air * den_air = rhs by construction, with
+                    // den_air the SAME denominator the balance above divided by
+                    // (the parallel-balance Σh_path + h_ve_total in
+                    // ParallelResistance mode). The previous film-conductance
+                    // stash (h_tr_is + h_ve + h_ve_night) left the uncoupled
+                    // limit exact but mis-scaled the coupled dissipation — the
+                    // r132 pinned finding, fixed in loop r133.
+                    mn_diag[zone_idx] = den_air;
+                    mn_rhs[zone_idx] = t_air_mn * den_air;
                     mn_has[zone_idx] = true;
                 }
             } else {
@@ -847,30 +852,42 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let h_iz_vec = self.0.conduction.h_tr_iz.as_ref();
             let t5 = t_i_free_5r1c.as_ref();
             let w_ij = |i: usize, j: usize| 0.5 * (h_iz_vec[i] + h_iz_vec[j]);
-            let mut a = vec![vec![0.0f64; n]; n];
-            let mut b = vec![0.0f64; n];
-            for i in 0..n {
-                if !mn_has[i] {
-                    continue;
-                }
+            // Compact over solver zones only: zones without a multi-node
+            // solver enter as KNOWN boundary temperatures (their 5R1C value
+            // on the rhs) and keep it as their committed air. A previous
+            // draft left their all-zero rows in the matrix — the elimination
+            // divided 0/0 on them and NaN-poisoned every solver zone, so the
+            // #4495 guard rejected whole steps that had already half-applied
+            // (the r132 pinned finding, fixed in loop r133; the in-code
+            // comment's claimed boundary behavior is what executes now).
+            let solver_zones: Vec<usize> = (0..n).filter(|&i| mn_has[i]).collect();
+            let k = solver_zones.len();
+            let mut a = vec![vec![0.0f64; k]; k];
+            let mut b = vec![0.0f64; k];
+            for (row, &i) in solver_zones.iter().enumerate() {
                 let mut wsum = 0.0;
-                b[i] = mn_rhs[i];
-                for j in 0..n {
+                b[row] = mn_rhs[i];
+                let h_iz_i = h_iz_vec.get(i).copied().unwrap_or(0.0);
+                for (j, &has_j) in mn_has.iter().enumerate() {
                     if i == j {
                         continue;
                     }
-                    let w = if mn_has[j] { w_ij(i, j) } else { h_iz_vec[i] };
-                    if mn_has[j] {
-                        a[i][j] = -w;
+                    let w = if has_j { w_ij(i, j) } else { h_iz_i };
+                    if has_j {
+                        let col = solver_zones
+                            .iter()
+                            .position(|&z| z == j)
+                            .expect("solver zone indexed in solver_zones");
+                        a[row][col] = -w;
                     } else {
-                        b[i] += w * t5.get(j).copied().unwrap_or(20.0);
+                        b[row] += w * t5.get(j).copied().unwrap_or(20.0);
                     }
                     wsum += w;
                 }
-                a[i][i] = mn_diag[i] + wsum;
+                a[row][row] = mn_diag[i] + wsum;
             }
-            for col in 0..n {
-                let piv = (col..n).fold(col, |best, r| {
+            for col in 0..k {
+                let piv = (col..k).fold(col, |best, r| {
                     if a[r][col].abs() > a[best][col].abs() {
                         r
                     } else {
@@ -882,12 +899,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     b.swap(piv, col);
                 }
                 let inv = 1.0 / a[col][col];
-                for r in (col + 1)..n {
+                for r in (col + 1)..k {
                     let f = a[r][col] * inv;
                     if f != 0.0 {
                         // Pivot row copied out (n is tiny; keeps the borrow trivial).
-                        let pivot_row: Vec<f64> = a[col][col..n].to_vec();
-                        for (rc, pc) in a[r][col..n].iter_mut().zip(pivot_row.iter()) {
+                        let pivot_row: Vec<f64> = a[col][col..k].to_vec();
+                        for (rc, pc) in a[r][col..k].iter_mut().zip(pivot_row.iter()) {
                             *rc -= f * pc;
                         }
                         b[r] -= f * b[col];
@@ -896,10 +913,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
             let x = solve_linear_system(&mut a, &mut b);
             let mut v: Vec<f64> = t_i_free_mn.as_ref().to_vec();
-            for i in 0..n {
-                if mn_has[i] {
-                    v[i] = x[i];
-                }
+            for (row, &i) in solver_zones.iter().enumerate() {
+                v[i] = x[row];
             }
             t_i_free_mn = T::from(VectorField::new(v));
         }
