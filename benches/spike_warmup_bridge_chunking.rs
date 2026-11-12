@@ -1,12 +1,14 @@
 //! Spike harness for fluxion issue #4699 — warm-up bridge for chunked (parallel-in-time)
-//! annual simulation, LOW-MASS case class (ASHRAE 140 Case 600) and HIGH-MASS case class
-//! (ASHRAE 140 Case 900).
+//! annual simulation, LOW-MASS case class (ASHRAE 140 Case 600), HIGH-MASS case class
+//! (ASHRAE 140 Case 900) and GROUND-COUPLED case class (Case 900 construction with the
+//! Issue #4775 ground-coupled Section 7 floor boundary).
 //!
-//! The measurement protocol is IDENTICAL for both case classes: same month
+//! The measurement protocol is IDENTICAL for all three case classes: same month
 //! boundaries, same warm-up lengths, same embedded Denver TMY weather, same
 //! observables. Only the model construction differs (Case 600 via the
-//! production `Case600Model::new()`; Case 900 via the production
-//! `CaseSpec` -> `ThermalModel::from_spec_with_selector` path).
+//! production `Case600Model::new()`; Case 900 and the ground-coupled class via
+//! the production `CaseSpec` -> `ThermalModel::from_spec_with_selector` path,
+//! the latter with the Issue #4775 `CaseSpec::ground_coupled_floor` opt-in set).
 //!
 //! WHAT THIS MEASURES (measurement only; no production code is touched):
 //!   1. A sequential Case 600 annual run (the reference, exactly the production
@@ -122,6 +124,46 @@ enum CaseClass {
     LowMass600,
     /// ASHRAE 140 Case 900 — high-mass (concrete construction).
     HighMass900,
+    /// Ground-coupled floor — the Case 900 construction with the Issue #4775
+    /// ground-coupled Section 7 floor boundary (2-D ground conduction) in
+    /// place of the constant ground temperature.
+    GroundCoupled,
+}
+
+/// The Issue #4775 ground-coupled floor specification used by the
+/// ground-coupled case class.
+///
+/// The values are the representative mid-latitude soil of the
+/// `src/sim/boundary.rs` acceptance tests: k = 1 W/(m·K),
+/// rho*c = 2 MJ/(m³·K), a 10 m deep domain read at 3 m below the floor
+/// underside, an undisturbed deep/lateral far-field ground of 10 °C, and a
+/// ground surface with a 10 K annual swing peaking in mid-July (hour 4400).
+fn ground_coupled_floor_spec() -> fluxion::ashrae_cases::GroundCoupledFloorSpec {
+    fluxion::ashrae_cases::GroundCoupledFloorSpec {
+        soil_conductivity_w_mk: 1.0,
+        soil_volumetric_heat_capacity_j_m3k: 2.0e6,
+        domain_depth_m: 10.0,
+        coupling_depth_m: 3.0,
+        deep_ground_temperature_c: 10.0,
+        lateral_far_field_temperature_c: 10.0,
+        surface_film_coefficient_w_m2k: 10.0,
+        surface_temperature_mean_c: 10.0,
+        surface_temperature_amplitude_c: 10.0,
+        surface_temperature_phase_hours: 4400.0,
+    }
+}
+
+/// The Case 900 specification with the ground-coupled floor opt-in set.
+///
+/// The base construction is the production `case_900_baseline()` spec, so the
+/// ground-coupled class differs from the high-mass class ONLY in the floor
+/// boundary: the constant `ground_temperature_c` is replaced by the marched
+/// 2-D ground domain of `GroundCoupledFloorBoundary` (the wiring landed in
+/// Issue #4775 / PR #4785).
+fn ground_coupled_case_spec() -> fluxion::ashrae_cases::CaseSpec {
+    let mut spec = case_900_baseline();
+    spec.ground_coupled_floor = Some(ground_coupled_floor_spec());
+    spec
 }
 
 impl CaseClass {
@@ -130,6 +172,9 @@ impl CaseClass {
         match self {
             CaseClass::LowMass600 => "LOW-MASS case class (ASHRAE 140 Case 600)",
             CaseClass::HighMass900 => "HIGH-MASS case class (ASHRAE 140 Case 900)",
+            CaseClass::GroundCoupled => {
+                "GROUND-COUPLED case class (Case 900 construction + Issue #4775 ground-coupled floor)"
+            }
         }
     }
 
@@ -148,6 +193,11 @@ impl CaseClass {
                 &ThermalSelector::default(),
             )
             .expect("Case 900 spec must build a thermal model"),
+            CaseClass::GroundCoupled => ThermalModel::<VectorField>::from_spec_with_selector(
+                &ground_coupled_case_spec(),
+                &ThermalSelector::default(),
+            )
+            .expect("ground-coupled floor spec must build a thermal model"),
         }
     }
 }
@@ -264,8 +314,9 @@ const SEAM_BAND_C: f64 = 0.2;
 const ENERGY_BAND_PCT: f64 = 0.5;
 /// Tolerance for the N-vs-2N end-of-warm-up state self-check.
 const SELF_CHECK_TOL_C: f64 = 0.05;
-/// The low-mass accuracy standard the 14-day low-mass bridge met: worst seam
-/// error <= 0.01 °C and worst monthly energy drift <= 0.05 %.
+/// The accuracy standard the 14-day low-mass bridge met (applied to every
+/// measured case class): worst seam error <= 0.01 °C and worst monthly
+/// energy drift <= 0.05 %.
 const LOW_MASS_STANDARD_SEAM_C: f64 = 0.01;
 const LOW_MASS_STANDARD_DRIFT_PCT: f64 = 0.05;
 
@@ -344,12 +395,12 @@ fn run_case_class(class: CaseClass, weather: &DenverTmyWeather) {
         println!("--- reference A: sequential annual run, as-is (1 pass) ---");
         println!("elapsed: {:.3} s for {} steps", ref_a_secs, HOURS_PER_YEAR);
         println!(
-            "annual heating: {:.4} MWh, annual cooling: {:.4} MWh (spec-driven Case 900 model)",
+            "annual heating: {:.4} MWh, annual cooling: {:.4} MWh (spec-driven model)",
             ref_a_heat / 1000.0,
             ref_a_cool / 1000.0
         );
         println!(
-            "cross-check vs a separate production entry point: N/A (no Case 900 `simulate_year()` exists on the embedded Denver TMY weather)"
+            "cross-check vs a separate production entry point: N/A (no `simulate_year()` exists on the embedded Denver TMY weather for this spec-driven class)"
         );
         println!();
     }
@@ -610,8 +661,9 @@ fn run_case_class(class: CaseClass, weather: &DenverTmyWeather) {
             jan_seam_a,
             band_seam(jan_seam_a),
         );
-        // Low-mass accuracy standard (the standard the 14-day low-mass run
-        // met): seam error <= 0.01 °C and monthly energy drift <= 0.05 %.
+        // Accuracy standard (the standard the 14-day low-mass run met, and
+        // the one every measured case class is reported against): seam error
+        // <= 0.01 °C and monthly energy drift <= 0.05 %.
         // Evaluated over the warm boundaries (vs A and vs B) and over
         // January against the periodic reference B.
         let std_seam = worst_seam_a.max(worst_seam_b).max(jan_seam_b);
@@ -619,7 +671,7 @@ fn run_case_class(class: CaseClass, weather: &DenverTmyWeather) {
         let std_met =
             std_seam <= LOW_MASS_STANDARD_SEAM_C && std_drift <= LOW_MASS_STANDARD_DRIFT_PCT;
         println!(
-            "warm-up {:2} d | worst monthly heating drift over Apr/Jul/Oct: vs A {:.3}% ({}), vs B {:.3}% ({}) | worst monthly cooling drift: vs A {:.3}% ({}), vs B {:.3}% ({}) | January vs B: drift {:.3}% ({}) seam {:.4} C ({}) | low-mass accuracy standard (seam <= 0.01 C, monthly drift <= 0.05%): {}",
+            "warm-up {:2} d | worst monthly heating drift over Apr/Jul/Oct: vs A {:.3}% ({}), vs B {:.3}% ({}) | worst monthly cooling drift: vs A {:.3}% ({}), vs B {:.3}% ({}) | January vs B: drift {:.3}% ({}) seam {:.4} C ({}) | accuracy standard (seam <= 0.01 C, monthly drift <= 0.05%): {}",
             n_days,
             worst_heat_drift_a,
             band_energy(worst_heat_drift_a),
@@ -674,13 +726,16 @@ fn run_case_class(class: CaseClass, weather: &DenverTmyWeather) {
         }
     }
     println!();
-    println!("ground-coupled case class: NOT MEASURED in this run.");
 }
 
 /// Run the identical warm-up-bridge protocol for each measured case class.
 fn main() {
     let weather = DenverTmyWeather::new();
-    for class in [CaseClass::LowMass600, CaseClass::HighMass900] {
+    for class in [
+        CaseClass::LowMass600,
+        CaseClass::HighMass900,
+        CaseClass::GroundCoupled,
+    ] {
         run_case_class(class, &weather);
     }
 }
