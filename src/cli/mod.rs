@@ -1441,7 +1441,9 @@ pub fn run_workflow(
     // TODO(cli-stub): implement actual workflow execution. The workflow file is
     // parsed and its steps are listed above, but measure execution is pending.
     // Fail loudly rather than silently report success.
-    eprintln!("error: workflow execution is not yet implemented (CLI stub-note: see docs/cli_design.md)");
+    eprintln!(
+        "error: workflow execution is not yet implemented (CLI stub-note: see docs/cli_design.md)"
+    );
     Err(not_yet_implemented("workflow execution"))
 }
 

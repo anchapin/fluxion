@@ -230,7 +230,10 @@ mod tests {
         let err = run_workflow(Some(Path::new("dummy.fwf")), false, true, false).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("not yet implemented"), "got: {msg}");
-        assert!(msg.contains("stub-note"), "should carry the stub-note marker: {msg}");
+        assert!(
+            msg.contains("stub-note"),
+            "should carry the stub-note marker: {msg}"
+        );
     }
 
     #[test]
@@ -239,7 +242,10 @@ mod tests {
         let err = run_workflow(Some(Path::new("dummy.fwf")), false, false, true).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("not yet implemented"), "got: {msg}");
-        assert!(msg.contains("stub-note"), "should carry the stub-note marker: {msg}");
+        assert!(
+            msg.contains("stub-note"),
+            "should carry the stub-note marker: {msg}"
+        );
     }
 
     #[test]
@@ -251,7 +257,10 @@ mod tests {
         let err = run_measure_command(&cmd).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("not yet implemented"), "got: {msg}");
-        assert!(msg.contains("stub-note"), "should carry the stub-note marker: {msg}");
+        assert!(
+            msg.contains("stub-note"),
+            "should carry the stub-note marker: {msg}"
+        );
     }
 
     #[test]
@@ -263,7 +272,10 @@ mod tests {
         let err = run_measure_command(&cmd).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("not yet implemented"), "got: {msg}");
-        assert!(msg.contains("stub-note"), "should carry the stub-note marker: {msg}");
+        assert!(
+            msg.contains("stub-note"),
+            "should carry the stub-note marker: {msg}"
+        );
     }
 
     #[test]
@@ -276,7 +288,10 @@ mod tests {
         let err = run_measure_command(&cmd).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("not yet implemented"), "got: {msg}");
-        assert!(msg.contains("stub-note"), "should carry the stub-note marker: {msg}");
+        assert!(
+            msg.contains("stub-note"),
+            "should carry the stub-note marker: {msg}"
+        );
     }
 
     #[test]
@@ -288,7 +303,10 @@ mod tests {
         let err = run_measure_command(&cmd).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("not yet implemented"), "got: {msg}");
-        assert!(msg.contains("stub-note"), "should carry the stub-note marker: {msg}");
+        assert!(
+            msg.contains("stub-note"),
+            "should carry the stub-note marker: {msg}"
+        );
     }
 
     #[test]
