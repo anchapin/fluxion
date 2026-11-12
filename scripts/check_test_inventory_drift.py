@@ -55,6 +55,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -562,8 +563,6 @@ def _check_agents_md_citations(
 
     Returns a list of failure messages (empty == all citations match).
     """
-    import re
-
     failures: list[str] = []
 
     try:
@@ -694,6 +693,109 @@ def _check_agents_md_citations(
     return failures
 
 
+# ---------------------------------------------------------------------------
+# Prose citation sites — Issue #4754.
+#
+# The AGENTS.md gate-inventory table rows are covered by the table-row
+# checks above; the *prose* citations (the inline comment on the
+# workspace command, the "bare `cargo test` skips N sibling-crate
+# tests" line, and the README quick-start comment) were NOT scanned by
+# any gate, so they silently drifted away from the canonical inventory
+# (Issue #4754: "8,865 / 143 ignored / 4,158 / ~4,400" vs. the
+# inventory's 9,266 / 156 / 4,825).
+#
+# The patterns below are deliberately tolerant: a site that is not
+# present is not a failure here (the synthetic-tree unit tests build
+# minimal AGENTS.md fixtures). Presence is enforced separately by
+# ``scripts/ci/test_test_inventory_prose_citations.py``, which asserts
+# that every citation site exists *and* carries the right number.
+# ---------------------------------------------------------------------------
+_PROSE_WORKSPACE_COUNT_RE = re.compile(
+    r"full workspace \(([\d,]+) cargo-listed tests / ([\d,]+) ignored\)"
+)
+_PROSE_AGENTS_SIBLING_RE = re.compile(
+    r"bare `cargo test` skip(?:s)? the ([\d,]+) sibling-crate tests"
+)
+_PROSE_README_SIBLING_RE = re.compile(
+    r"skips (~?[\d,]+) sibling-crate tests"
+)
+
+
+def _check_prose_citations(repo_root: Path, live_totals: dict) -> list[str]:
+    """Verify the prose test-count citations in AGENTS.md / README.md.
+
+    Issue #4754 — the inline prose figures (as opposed to the
+    AGENTS.md gate-inventory table rows) were never checked by the
+    drift gate, so they drifted to stale values. Each citation site is
+    compared against the live inventory:
+
+    * AGENTS.md — the workspace command comment
+      ``(N cargo-listed tests / M ignored)`` must cite
+      ``workspace_tests`` / ``workspace_ignored``.
+    * AGENTS.md — the bare ``cargo test`` line must cite
+      ``workspace_tests - lib_tests_root`` sibling-crate tests.
+    * README.md — the quick-start comment must cite the same
+      sibling-crate count (same definition: workspace tests minus the
+      root crate's lib tests).
+
+    A citation site that is absent from the file is skipped (not a
+    failure) so that synthetic-tree fixtures stay valid; presence is
+    asserted by the dedicated prose-citation test.
+
+    Returns a list of failure messages (empty == all citations match).
+    """
+    failures: list[str] = []
+
+    live_workspace = live_totals.get("workspace_tests", 0)
+    live_ignored = live_totals.get("workspace_ignored", 0)
+    live_lib = live_totals.get("lib_tests_root", 0)
+    live_sibling = live_workspace - live_lib
+
+    def _read(path: Path) -> str | None:
+        try:
+            return path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return None
+
+    agents_text = _read(repo_root / "AGENTS.md")
+    if agents_text is not None:
+        for match in _PROSE_WORKSPACE_COUNT_RE.finditer(agents_text):
+            cited_tests = int(match.group(1).replace(",", ""))
+            cited_ignored = int(match.group(2).replace(",", ""))
+            if cited_tests != live_workspace:
+                failures.append(
+                    f"  AGENTS.md workspace_tests (prose): cited={cited_tests}, "
+                    f"inventory={live_workspace} "
+                    f"(diff {cited_tests - live_workspace:+,d})"
+                )
+            if cited_ignored != live_ignored:
+                failures.append(
+                    f"  AGENTS.md workspace_ignored (prose): "
+                    f"cited={cited_ignored}, inventory={live_ignored}"
+                )
+        for match in _PROSE_AGENTS_SIBLING_RE.finditer(agents_text):
+            cited_sibling = int(match.group(1).replace(",", ""))
+            if cited_sibling != live_sibling:
+                failures.append(
+                    f"  AGENTS.md sibling_crate_tests (prose): "
+                    f"cited={cited_sibling}, inventory={live_sibling} "
+                    f"(diff {cited_sibling - live_sibling:+,d})"
+                )
+
+    readme_text = _read(repo_root / "README.md")
+    if readme_text is not None:
+        for match in _PROSE_README_SIBLING_RE.finditer(readme_text):
+            cited_sibling = int(match.group(1).replace("~", "").replace(",", ""))
+            if cited_sibling != live_sibling:
+                failures.append(
+                    f"  README.md sibling_crate_tests (prose): "
+                    f"cited={cited_sibling}, inventory={live_sibling} "
+                    f"(diff {cited_sibling - live_sibling:+,d})"
+                )
+
+    return failures
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Test-inventory drift gate (Issue #3442)."
@@ -787,6 +889,20 @@ def main() -> int:
         )
         return 1
 
+    # Stage 0b (Issue #4754): prose citation check (AGENTS.md inline
+    # comments + README quick-start comment). The gate-inventory table
+    # rows are covered by Stage 0; the *prose* figures were not scanned
+    # by any gate and drifted (Issue #4754).
+    prose_failures = _check_prose_citations(REPO_ROOT, totals)
+    if prose_failures:
+        for line in prose_failures:
+            print(line, file=sys.stderr)
+        print(
+            "Prose test-count citations do not match tests/test_inventory.json. "
+            "Refresh the cited figures in AGENTS.md / README.md before submitting.",
+            file=sys.stderr,
+        )
+        return 1
 
     # Stage 2: baseline. For --update-baseline, skip the comparison
     # entirely and rewrite the file with the live snapshot. Both the
