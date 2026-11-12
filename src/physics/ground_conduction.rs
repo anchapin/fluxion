@@ -24,8 +24,14 @@
 //! Nothing here changes an existing physics result.
 //!
 //! The steady-state analytical verification cases live in
-//! `tests/ashrae_140/ground_slab_steady_state.rs`; the transient / periodic
-//! §8 cases remain open on #4270.
+//! `tests/ashrae_140/ground_slab_steady_state.rs`. Transient stepping
+//! (backward Euler over the same finite-volume grid, with soil/slab
+//! volumetric heat capacities) is verified against the closed-form
+//! semi-infinite step response in
+//! `tests/ashrae_140/ground_transient.rs` (Issue #4774). The periodic
+//! §8 cases and the named b-series cases (GC10b/GC30/GC60 — their
+//! boundary specifications are not derivable from in-repo sources)
+//! remain open on #4270.
 //!
 //! # Discretisation
 //!
@@ -338,6 +344,16 @@ pub struct GroundDomainConfig {
     pub slab_conductivity_w_mk: f64,
     /// Soil conductivity [W/(m·K)].
     pub ground_conductivity_w_mk: f64,
+    /// Volumetric heat capacity of the slab material [J/(m³·K)].
+    ///
+    /// Only the transient stepping ([`GroundSolver::step_transient`])
+    /// reads this field; the steady solve does not use it.
+    pub slab_volumetric_heat_capacity_j_m3k: f64,
+    /// Volumetric heat capacity of the soil [J/(m³·K)].
+    ///
+    /// Only the transient stepping ([`GroundSolver::step_transient`])
+    /// reads this field; the steady solve does not use it.
+    pub ground_volumetric_heat_capacity_j_m3k: f64,
     /// Lateral grid segmentation (must tile `[0, domain_length_m]`).
     pub lateral_segments: Vec<GridSegment>,
     /// Vertical grid segmentation (must tile `[0, domain_depth_m]`).
@@ -362,6 +378,14 @@ impl GroundDomainConfig {
             ("domain_depth_m", self.domain_depth_m),
             ("slab_conductivity_w_mk", self.slab_conductivity_w_mk),
             ("ground_conductivity_w_mk", self.ground_conductivity_w_mk),
+            (
+                "slab_volumetric_heat_capacity_j_m3k",
+                self.slab_volumetric_heat_capacity_j_m3k,
+            ),
+            (
+                "ground_volumetric_heat_capacity_j_m3k",
+                self.ground_volumetric_heat_capacity_j_m3k,
+            ),
         ];
         for (name, value) in positive {
             if !(value.is_finite() && value > 0.0) {
@@ -537,6 +561,36 @@ impl GroundGrid {
             config.ground_conductivity_w_mk
         }
     }
+
+    /// Volumetric heat capacity of the cell at column `i`, row `j`
+    /// [J/(m³·K)].
+    ///
+    /// The slab material exists only under the footprint and above the
+    /// slab/soil interface, exactly as for [`Self::cell_conductivity`].
+    pub fn cell_volumetric_heat_capacity(
+        &self,
+        config: &GroundDomainConfig,
+        i: usize,
+        j: usize,
+    ) -> f64 {
+        let x = self.x.centers[i];
+        let z = self.z.centers[j];
+        let under_slab = x >= self.slab_x0_m && x <= self.slab_x1_m;
+        if under_slab && z < self.slab_thickness_m {
+            config.slab_volumetric_heat_capacity_j_m3k
+        } else {
+            config.ground_volumetric_heat_capacity_j_m3k
+        }
+    }
+
+    /// Heat capacity of the cell at column `i`, row `j` [J/K per m of
+    /// out-of-plane length].
+    pub fn cell_heat_capacity(&self, config: &GroundDomainConfig, i: usize, j: usize) -> f64 {
+        self.cell_volumetric_heat_capacity(config, i, j)
+            * self.x.widths[i]
+            * self.z.widths[j]
+            * UNIT_OUT_OF_PLANE_LENGTH_M
+    }
 }
 
 /// The steady-state solution of a ground domain.
@@ -550,6 +604,25 @@ pub struct GroundSolution {
     pub iterations: usize,
     /// Final relative residual `||A x - b|| / ||b||`.
     pub relative_residual: f64,
+}
+
+/// The transient state of a ground domain, advanced step by step with
+/// [`GroundSolver::step_transient`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct GroundTransientState {
+    /// Cell-centre temperatures [°C], indexed as `j * nx + i`.
+    pub temperature_c: Vec<f64>,
+    /// The grid the state was built on (the solver's grid).
+    pub grid: GroundGrid,
+    /// Elapsed simulated time [s].
+    pub time_s: f64,
+}
+
+impl GroundTransientState {
+    /// Cell-centre temperature at column `i`, row `j` [°C].
+    pub fn cell_temperature(&self, i: usize, j: usize) -> f64 {
+        self.temperature_c[j * self.grid.x.len() + i]
+    }
 }
 
 impl GroundSolution {
@@ -695,90 +768,10 @@ impl GroundSolver {
     pub fn solve(&self) -> Result<GroundSolution, GroundError> {
         let config = &self.config;
         let grid = GroundGrid::build(config)?;
-        let nx = grid.x.len();
-        let nz = grid.z.len();
-        let n = nx * nz;
-
-        // Per-cell assembly: diagonal, off-diagonal couplings and the RHS.
-        let mut diagonal = vec![0.0_f64; n];
-        let mut rhs = vec![0.0_f64; n];
-        let mut couplings: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n];
-
-        let k_of = |i: usize, j: usize| grid.cell_conductivity(config, i, j);
-
-        // Interior faces (x direction).
-        for j in 0..nz {
-            for i in 0..nx.saturating_sub(1) {
-                let half_i = (grid.x.widths[i] / 2.0) / k_of(i, j);
-                let half_ip = (grid.x.widths[i + 1] / 2.0) / k_of(i + 1, j);
-                let area = grid.z.widths[j] * UNIT_OUT_OF_PLANE_LENGTH_M;
-                let g = area / (half_i + half_ip);
-                let a = j * nx + i;
-                let b = j * nx + i + 1;
-                diagonal[a] += g;
-                diagonal[b] += g;
-                couplings[a].push((b, g));
-                couplings[b].push((a, g));
-            }
-        }
-
-        // Interior faces (z direction).
-        for j in 0..nz.saturating_sub(1) {
-            for i in 0..nx {
-                let half_j = (grid.z.widths[j] / 2.0) / k_of(i, j);
-                let half_jp = (grid.z.widths[j + 1] / 2.0) / k_of(i, j + 1);
-                let area = grid.x.widths[i] * UNIT_OUT_OF_PLANE_LENGTH_M;
-                let g = area / (half_j + half_jp);
-                let a = j * nx + i;
-                let b = (j + 1) * nx + i;
-                diagonal[a] += g;
-                diagonal[b] += g;
-                couplings[a].push((b, g));
-                couplings[b].push((a, g));
-            }
-        }
-
-        // Top boundary: the prescribed condition of the top segment that
-        // contains the cell.
-        for i in 0..nx {
-            let k = k_of(i, 0);
-            let half = (grid.z.widths[0] / 2.0) / (k * grid.x.widths[i]);
-            let area = grid.x.widths[i] * UNIT_OUT_OF_PLANE_LENGTH_M;
-            if let Some(face) = top_boundary_face(config, &grid, i, area, half) {
-                let idx = i;
-                diagonal[idx] += face.conductance;
-                rhs[idx] += face.conductance * face.temperature;
-            }
-        }
-
-        // Deep-ground boundary.
-        {
-            let j = nz - 1;
-            for i in 0..nx {
-                let k = k_of(i, j);
-                let half = (grid.z.widths[j] / 2.0) / (k * grid.x.widths[i]);
-                let area = grid.x.widths[i] * UNIT_OUT_OF_PLANE_LENGTH_M;
-                if let Some(face) = boundary_face(config.deep_ground, area, half) {
-                    let idx = j * nx + i;
-                    diagonal[idx] += face.conductance;
-                    rhs[idx] += face.conductance * face.temperature;
-                }
-            }
-        }
-
-        // Lateral far-field boundaries.
-        for j in 0..nz {
-            for i in [0usize, nx - 1] {
-                let k = k_of(i, j);
-                let half = (grid.x.widths[i] / 2.0) / (k * grid.z.widths[j]);
-                let area = grid.z.widths[j] * UNIT_OUT_OF_PLANE_LENGTH_M;
-                if let Some(face) = boundary_face(config.lateral_boundary, area, half) {
-                    let idx = j * nx + i;
-                    diagonal[idx] += face.conductance;
-                    rhs[idx] += face.conductance * face.temperature;
-                }
-            }
-        }
+        let assembly = assemble_system(config, &grid, &config.top_segments);
+        let diagonal = assembly.diagonal;
+        let couplings = assembly.couplings;
+        let rhs = assembly.rhs;
 
         if diagonal.iter().all(|d| *d == 0.0) {
             return Err(GroundError::SingularSystem(
@@ -801,18 +794,237 @@ impl GroundSolver {
             relative_residual,
         })
     }
+
+    /// Build the initial transient state of the domain: every cell at the
+    /// same temperature.
+    ///
+    /// The returned state carries the grid the solver assembles, so a
+    /// later [`Self::step_transient`] reuses exactly the same
+    /// discretisation as the steady solve.
+    pub fn initial_transient_state(
+        &self,
+        initial_temperature_c: f64,
+    ) -> Result<GroundTransientState, GroundError> {
+        if !initial_temperature_c.is_finite() {
+            return Err(GroundError::InvalidConfiguration(format!(
+                "initial temperature must be finite, got {initial_temperature_c}"
+            )));
+        }
+        let grid = GroundGrid::build(&self.config)?;
+        let cells = grid.x.len() * grid.z.len();
+        Ok(GroundTransientState {
+            temperature_c: vec![initial_temperature_c; cells],
+            grid,
+            time_s: 0.0,
+        })
+    }
+
+    /// Advance the transient state by `dt_s` with the backward (implicit)
+    /// Euler scheme, using the boundary conditions of the configuration.
+    ///
+    /// The step solves
+    ///
+    /// ```text
+    /// (C/dt + A) T^{n+1} = (C/dt) T^n + b
+    /// ```
+    ///
+    /// with `A` the steady conduction operator (the same assembly the
+    /// steady solve uses), `b` its boundary right-hand side and `C` the
+    /// diagonal cell heat capacity built from the soil / slab volumetric
+    /// heat capacities of the configuration. The scheme is
+    /// unconditionally stable and first-order accurate in time.
+    pub fn step_transient(
+        &self,
+        state: &mut GroundTransientState,
+        dt_s: f64,
+    ) -> Result<(), GroundError> {
+        self.step_transient_with_top(state, dt_s, &self.config.top_segments)
+    }
+
+    /// Advance the transient state by `dt_s` with the backward (implicit)
+    /// Euler scheme and an explicit top-surface boundary condition.
+    ///
+    /// This is the same step as [`Self::step_transient`], but the
+    /// top-surface segmentation is supplied by the caller, so a
+    /// time-varying surface condition (a ramp, a diurnal swing) can be
+    /// imposed step by step. The other boundaries (deep ground, lateral
+    /// far field) stay as configured.
+    pub fn step_transient_with_top(
+        &self,
+        state: &mut GroundTransientState,
+        dt_s: f64,
+        top_segments: &[TopSegment],
+    ) -> Result<(), GroundError> {
+        if !(dt_s.is_finite() && dt_s > 0.0) {
+            return Err(GroundError::InvalidConfiguration(format!(
+                "transient time step must be finite and positive, got {dt_s}"
+            )));
+        }
+        let config = &self.config;
+        let grid = GroundGrid::build(config)?;
+        if state.grid.x.len() != grid.x.len() || state.grid.z.len() != grid.z.len() {
+            return Err(GroundError::InvalidConfiguration(
+                "the transient state grid does not match the solver grid".to_string(),
+            ));
+        }
+        if state.temperature_c.len() != grid.x.len() * grid.z.len() {
+            return Err(GroundError::InvalidConfiguration(
+                "the transient state does not carry one temperature per cell".to_string(),
+            ));
+        }
+
+        let assembly = assemble_system(config, &grid, top_segments);
+        let nx = grid.x.len();
+        let nz = grid.z.len();
+        let mut diagonal = assembly.diagonal;
+        let mut rhs = assembly.rhs;
+
+        // Backward Euler: add the capacity term C/dt to the diagonal and
+        // the previous state to the right-hand side.
+        for j in 0..nz {
+            for i in 0..nx {
+                let index = j * nx + i;
+                let weight = grid.cell_heat_capacity(config, i, j) / dt_s;
+                diagonal[index] += weight;
+                rhs[index] += weight * state.temperature_c[index];
+            }
+        }
+
+        let (temperature_c, _iterations, _relative_residual) = conjugate_gradient(
+            &diagonal,
+            &assembly.couplings,
+            &rhs,
+            config.tolerance,
+            config.max_iterations,
+        )?;
+
+        state.temperature_c = temperature_c;
+        state.time_s += dt_s;
+        Ok(())
+    }
+}
+
+/// The assembled steady conduction system: `A T = rhs` with `A` split
+/// into its diagonal and its off-diagonal couplings (stored as positive
+/// conductances, subtracted in the operator application).
+struct Assembly {
+    diagonal: Vec<f64>,
+    couplings: Vec<Vec<(usize, f64)>>,
+    rhs: Vec<f64>,
+}
+
+/// Assemble the steady conduction system for a grid, with the top
+/// surface segmentation supplied explicitly (the steady solve passes
+/// the configuration's own segments; the transient step may pass a
+/// time-varying segmentation instead). This is exactly the assembly the
+/// steady solve performed inline before the transient work — the
+/// steady results are unchanged by the extraction.
+fn assemble_system(
+    config: &GroundDomainConfig,
+    grid: &GroundGrid,
+    top_segments: &[TopSegment],
+) -> Assembly {
+    let nx = grid.x.len();
+    let nz = grid.z.len();
+    let n = nx * nz;
+
+    let mut diagonal = vec![0.0_f64; n];
+    let mut rhs = vec![0.0_f64; n];
+    let mut couplings: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n];
+
+    let k_of = |i: usize, j: usize| grid.cell_conductivity(config, i, j);
+
+    // Interior faces (x direction).
+    for j in 0..nz {
+        for i in 0..nx.saturating_sub(1) {
+            let half_i = (grid.x.widths[i] / 2.0) / k_of(i, j);
+            let half_ip = (grid.x.widths[i + 1] / 2.0) / k_of(i + 1, j);
+            let area = grid.z.widths[j] * UNIT_OUT_OF_PLANE_LENGTH_M;
+            let g = area / (half_i + half_ip);
+            let a = j * nx + i;
+            let b = j * nx + i + 1;
+            diagonal[a] += g;
+            diagonal[b] += g;
+            couplings[a].push((b, g));
+            couplings[b].push((a, g));
+        }
+    }
+
+    // Interior faces (z direction).
+    for j in 0..nz.saturating_sub(1) {
+        for i in 0..nx {
+            let half_j = (grid.z.widths[j] / 2.0) / k_of(i, j);
+            let half_jp = (grid.z.widths[j + 1] / 2.0) / k_of(i, j + 1);
+            let area = grid.x.widths[i] * UNIT_OUT_OF_PLANE_LENGTH_M;
+            let g = area / (half_j + half_jp);
+            let a = j * nx + i;
+            let b = (j + 1) * nx + i;
+            diagonal[a] += g;
+            diagonal[b] += g;
+            couplings[a].push((b, g));
+            couplings[b].push((a, g));
+        }
+    }
+
+    // Top boundary: the prescribed condition of the top segment that
+    // contains the cell.
+    for i in 0..nx {
+        let k = k_of(i, 0);
+        let half = (grid.z.widths[0] / 2.0) / (k * grid.x.widths[i]);
+        let area = grid.x.widths[i] * UNIT_OUT_OF_PLANE_LENGTH_M;
+        if let Some(face) = top_boundary_face(top_segments, &grid, i, area, half) {
+            let idx = i;
+            diagonal[idx] += face.conductance;
+            rhs[idx] += face.conductance * face.temperature;
+        }
+    }
+
+    // Deep-ground boundary.
+    {
+        let j = nz - 1;
+        for i in 0..nx {
+            let k = k_of(i, j);
+            let half = (grid.z.widths[j] / 2.0) / (k * grid.x.widths[i]);
+            let area = grid.x.widths[i] * UNIT_OUT_OF_PLANE_LENGTH_M;
+            if let Some(face) = boundary_face(config.deep_ground, area, half) {
+                let idx = j * nx + i;
+                diagonal[idx] += face.conductance;
+                rhs[idx] += face.conductance * face.temperature;
+            }
+        }
+    }
+
+    // Lateral far-field boundaries.
+    for j in 0..nz {
+        for i in [0usize, nx - 1] {
+            let k = k_of(i, j);
+            let half = (grid.x.widths[i] / 2.0) / (k * grid.z.widths[j]);
+            let area = grid.z.widths[j] * UNIT_OUT_OF_PLANE_LENGTH_M;
+            if let Some(face) = boundary_face(config.lateral_boundary, area, half) {
+                let idx = j * nx + i;
+                diagonal[idx] += face.conductance;
+                rhs[idx] += face.conductance * face.temperature;
+            }
+        }
+    }
+
+    Assembly {
+        diagonal,
+        couplings,
+        rhs,
+    }
 }
 
 /// Boundary face of the top surface for the cell at column `i`.
 fn top_boundary_face(
-    config: &GroundDomainConfig,
+    top_segments: &[TopSegment],
     grid: &GroundGrid,
     i: usize,
     area: f64,
     half_resistance: f64,
 ) -> Option<BoundaryFace> {
     let x_center = grid.x.centers[i];
-    let segment = config.top_segments.iter().find(|segment| {
+    let segment = top_segments.iter().find(|segment| {
         x_center >= segment.x_start_m - 1.0e-9 && x_center <= segment.x_end_m + 1.0e-9
     })?;
     match segment.condition {
@@ -932,7 +1144,7 @@ fn compute_heat_flows(
         let k = k_of(i, 0);
         let half = (grid.z.widths[0] / 2.0) / (k * grid.x.widths[i]);
         let area = grid.x.widths[i] * UNIT_OUT_OF_PLANE_LENGTH_M;
-        if let Some(face) = top_boundary_face(config, grid, i, area, half) {
+        if let Some(face) = top_boundary_face(&config.top_segments, grid, i, area, half) {
             let q = face.conductance * (face.temperature - surface_temp);
             let under_slab =
                 grid.x.centers[i] >= grid.slab_x0_m && grid.x.centers[i] <= grid.slab_x1_m;
@@ -1017,6 +1229,8 @@ mod tests {
             slab_thickness_m: 0.2,
             slab_conductivity_w_mk: 1.4,
             ground_conductivity_w_mk: 1.9,
+            slab_volumetric_heat_capacity_j_m3k: 2_000_000.0,
+            ground_volumetric_heat_capacity_j_m3k: 2_000_000.0,
             lateral_segments: vec![GridSegment::Uniform {
                 start_m: 0.0,
                 end_m: 4.0,
