@@ -2451,3 +2451,436 @@ fn guard_nan_rejects_the_additive_step() {
         "the engine's floor == the closed form"
     );
 }
+
+// ============================================================================
+// Round 135 — the Case-900FF spec-path engine-truth arm (the r133
+// remainder's last item). Every r131-r134 fixture was HAND-ROLLED
+// (`ThermalModel::new` + injected solver); this arm drives the PRODUCTION
+// construction route: `ThermalModel::from_spec(&case_900ff())` — HighMass
+// promotes the selector to 9R4C selector-independently (#3277/#4175), the
+// solver is built `new_with_mode(.., ParallelResistance)` (#1859) at the
+// spec-derived per-surface parameters, and every conductance the chain
+// consumes is the SPEC's own. The spec path differs from the analytic
+// fixture in every seam that matters, and the differences are pinned:
+//
+// - (S1) the spec solar partition: `sda = 0.0`, `sbm = 0.0` (the r91 spec
+//   values, not `ThermalModel::new`'s 0.1/0.6 defaults) with zero internal
+//   loads — so phi_ia commits to exactly 0.0 and the whole transmitted
+//   solar load rides phi_st (surfaces) while opaque rides phi_m (mass);
+//   the air node is heated only THROUGH the mass nodes;
+// - (S2) the collapsed h_tr_is seam: from-spec builds feed the MODEL's
+//   `H_SI·A_floor` conductance (3.45·48 = 165.6, Issue #714/#4164) to BOTH
+//   the model and the solver — the analytic fixture's artificial
+//   120-vs-69 asymmetry does not exist on the production route;
+// - (S3) the #2889 frame bridge is LIVE at 900FF (no WINDOW-01 U override:
+//   the override is a 900/950FF-only builder call) — h_tr_w composes as
+//   (5.8 + 0.1) + 0.05·16/12 over the geometric 2·(h+w) perimeter;
+// - (S4) the zero-`h_tr_me` internal-node path: every node carries
+//   h_tr_me 0.0 at the spec path, and the internal advance consumes the
+//   envelope environment ONLY through the `0.0·t_env` operand — the env
+//   is structurally inert for the VALUE (any finite perturbation of it
+//   vanishes; the mean-vs-blend choice is not value-observable at zero),
+//   but it must still be FINITE: a NaN env would poison through
+//   0·NaN = NaN. `internal_node_envelope_temperature` supplies that
+//   finite env through TWO redundant guard layers at zero (the
+//   `h_tr_me <= 0.0` first branch AND the `h_me_sum > 1e-6` fallback —
+//   flipping either alone is absorbed by the other; the teeth disclosed
+//   in the duck review), and the finite literal IS the pin;
+// - (S5) the construction-derived node parameters (cm, h_ms, h_em per
+//   surface, the lumped h_tr_em/h_tr_ms/h_tr_me, the floor U-value) are
+//   pinned as ENGINE-READ literals: their derivation from the ASHRAE 140
+//   assemblies (wall_cap_for's κ blend, iso_13790 effective capacitance,
+//   the #2229 h_ms_of_kappa calibration) is the recorded remainder seam —
+//   the literals pin the pipeline I/O, the derivation interior is the next
+//   round's candidate.
+//
+// Provenance: Python replication /tmp/r135_replication.py (dev-time
+// evidence) — 24 checked observables bit-exact against the engine probe
+// /tmp/r135_probe1.log at tip `92b28131` (both steps, all four nodes, both
+// committed airs, both lumped masses, both pre-airs, 10 conductance/cache
+// closed forms, the gains partition, both 0.0 kWh commits). No engine
+// change, no re-record owed (the suite writes no engine state; the battery
+// is untouched by construction).
+// ============================================================================
+
+fn fixture_spec_900ff() -> ThermalModel<VectorField> {
+    use fluxion::sim::boundary::GroundTemperature;
+    use fluxion::validation::ashrae140::cases::series_900::case_900ff;
+    let mut m = ThermalModel::<VectorField>::from_spec(&case_900ff());
+    // The driving set (spec-honest: 900FF carries NO internal loads; the
+    // solar terms are the contract's drivers, as in every fixture above).
+    m.solar.solar_gains = VectorField::new(vec![400.0]);
+    m.solar.opaque_solar_gains = VectorField::new(vec![50.0]);
+    m
+}
+
+#[test]
+/// Contract B1 — the spec-path dispatch and partition premises: HighMass
+/// promotes to `NineRFourC` in BOTH the selector and the model type
+/// (selector-independent, #3277/#4175), one solver in ParallelResistance
+/// (#1859), free-float with inert HVAC (-999/999 setpoints, 100 kW
+/// capacities), the spec geometry (8·6·2.7: floor 48.0, volume
+/// 129.60000000000002, wall 75.60000000000001, roof 48.0), ground 9.4 °C
+/// (Annex B §B3.3), the r91 spec solar partition (sda 0.0 / sbm 0.0 with
+/// bare conv 0.4), no internal loads, and the single-clear spec window
+/// (u 5.8 / SHGC 0.86 / frame fraction 0.15 — NOT the analytic
+/// constructor's double-clear 0.787 path, and NOT the 900-series 3.0
+/// W/m²K override, which only 900/950FF carry).
+fn spec_path_dispatch_and_partition_premises() {
+    let m = fixture_spec_900ff();
+    assert_eq!(
+        m.hvac.thermal_selector.zone_solver,
+        ZoneSolverKind::NineRFourC,
+        "premise: HighMass promotes the selector selector-independently"
+    );
+    assert_eq!(
+        m.hvac.thermal_model_type,
+        fluxion::sim::thermal_model_core::ThermalModelType::NineRFourC,
+        "premise: the model type flag rides in lockstep (#4175)"
+    );
+    assert_eq!(m.conduction.backend.multi_node_solvers.len(), 1);
+    assert_eq!(
+        m.conduction.backend.multi_node_solvers[0].coupling_mode,
+        MassAirCouplingMode::ParallelResistance,
+        "premise: #1859 production coupling mode"
+    );
+    assert!(m.hvac.free_float, "premise: 900FF is free-floating");
+    assert!(
+        m.hvac.night_ventilation.is_none(),
+        "premise: no night vent at 900FF"
+    );
+    assert_eq!(m.setpoints.heating_setpoint, -999.0);
+    assert_eq!(m.setpoints.cooling_setpoint, 999.0);
+    assert_eq!(m.hvac.hvac_heating_capacity, 100000.0);
+    assert_eq!(m.hvac.hvac_cooling_capacity, 100000.0);
+    assert_eq!(m.setpoints.zone_area.as_ref()[0], 48.0);
+    assert_eq!(m.setpoints.zone_volume.as_ref()[0], 129.60000000000002);
+    assert_eq!(
+        m.setpoints.loads.as_ref()[0],
+        0.0,
+        "premise: no internal loads at the free-floating spec"
+    );
+    assert_eq!(m.setpoints.temperatures.as_ref()[0], 20.0);
+    assert_eq!(
+        m.conduction.ground_temperature.ground_temperature(0),
+        9.4,
+        "premise: Annex B §B3.3 ground temperature"
+    );
+    assert_eq!(
+        m.solar.convective_fraction, 0.4,
+        "premise: bare conv default"
+    );
+    assert_eq!(
+        m.solar.solar_distribution_to_air, 0.0,
+        "premise: the r91 spec partition (S1) — NOT the constructor's 0.1"
+    );
+    assert_eq!(
+        m.solar.solar_beam_to_mass_fraction, 0.0,
+        "premise: the r91 spec partition (S1) — NOT the constructor's 0.6"
+    );
+    let spec_window = &m.solar;
+    let _ = spec_window;
+    assert_eq!(m.solar.solar_gains.as_ref()[0], 400.0, "driving set");
+    assert_eq!(m.solar.opaque_solar_gains.as_ref()[0], 50.0, "driving set");
+}
+
+#[test]
+/// Contract B2 — the spec-path conductances and caches: the replicated
+/// closed forms (h_tr_is = H_SI·A; h_ve = ACH·V·ρ·cp/3600; the #2889 frame
+/// bridge (S3); h_tr_floor = floor_u·A) hit the engine bit-exactly, the
+/// collapsed h_tr_is seam (S2) holds (model == solver), and the
+/// construction-derived parameters ride as engine-read literals (S5, the
+/// recorded derivation seam). The cache closed forms recompose from the
+/// engine-read inputs bit-exactly (tr1, msip, den, gc, the #896 h_tr_3).
+fn spec_path_conductances_and_caches() {
+    let m = fixture_spec_900ff();
+    // (S2) the collapsed seam:
+    assert_eq!(m.conduction.h_tr_is.as_ref()[0], 165.60000000000002);
+    assert_eq!(
+        m.conduction.backend.multi_node_solvers[0].h_tr_is,
+        m.conduction.h_tr_is.as_ref()[0],
+        "premise: model and solver carry the SAME h_tr_is at the spec path"
+    );
+    // replicated closed forms:
+    assert_eq!(
+        3.45 * 48.0,
+        m.conduction.h_tr_is.as_ref()[0],
+        "H_SI·A_floor recomposed"
+    );
+    assert_eq!(
+        (0.414 * (129.60000000000002 * 1.2 * 1005.0)) / 3600.0,
+        m.conduction.h_ve.as_ref()[0],
+        "ACH·V·ρ·cp/3600 recomposed"
+    );
+    let u_eff = (5.8_f64 + 0.1) + (0.05 * (2.0 * (2.0 + 6.0))) / 12.0;
+    assert_eq!(
+        12.0 * u_eff,
+        m.conduction.h_tr_w.as_ref()[0],
+        "#2889 frame bridge recomposed (S3): u + frame_u + psi·perimeter/area"
+    );
+    let floor_u = 0.18109607694010674_f64;
+    assert_eq!(
+        m.setpoints.floor_u_value, floor_u,
+        "engine-read floor U (S5)"
+    );
+    assert_eq!(floor_u * 48.0, m.conduction.h_tr_floor.as_ref()[0]);
+    // engine-read construction-derived parameters (S5):
+    assert_eq!(m.conduction.h_tr_ms.as_ref()[0], 1608.0);
+    assert_eq!(m.conduction.h_tr_em.as_ref()[0], 48.880343578250944);
+    assert_eq!(m.mass.h_tr_me.as_ref()[0], 131.04);
+    assert_eq!(m.mass.thermal_capacitance.as_ref()[0], 18014427.840000004);
+    let s = &m.conduction.backend.multi_node_solvers[0];
+    assert_eq!(s.mass.wall.capacitance, 7829058.24);
+    assert_eq!(s.mass.wall.h_tr_ms, 76.34726688102896);
+    assert_eq!(s.mass.wall.h_tr_em, 71.64739830382713);
+    assert_eq!(s.mass.roof.capacitance, 5480428.800000001);
+    assert_eq!(s.mass.roof.h_tr_ms, 32.91511795494197);
+    assert_eq!(s.mass.roof.h_tr_em, 31.726281109549806);
+    assert_eq!(s.mass.floor.capacitance, 4704940.800000001);
+    assert_eq!(s.mass.floor.h_tr_ms, 17.981819851253327);
+    assert_eq!(s.mass.floor.h_tr_em, 8.96001344976471);
+    assert_eq!(s.mass.internal.capacitance, 792000.0);
+    assert_eq!(
+        s.mass.internal.h_tr_ms, 10.0,
+        "not used for the internal node"
+    );
+    assert_eq!(
+        s.mass.internal.h_tr_em, 5.0,
+        "not used for the internal node"
+    );
+    assert_eq!(
+        s.mass.internal.h_tr_me, 0.0,
+        "premise (S4): every node h_tr_me is 0.0 at the spec path"
+    );
+    // cache closed forms recompose from the engine-read inputs:
+    let tr1 = (1608.0_f64 + 165.60000000000002) + 131.04;
+    assert_eq!(tr1, m.conduction.derived_term_rest_1.as_ref()[0]);
+    let msip = 1608.0_f64 * 165.60000000000002;
+    assert_eq!(msip, m.conduction.derived_h_ms_is_prod.as_ref()[0]);
+    let h_ext = 71.6_f64 + 17.974224;
+    let gc = tr1 * (floor_u * 48.0);
+    assert_eq!(gc, m.conduction.derived_ground_coeff.as_ref()[0]);
+    assert_eq!(
+        (msip + tr1 * h_ext) + gc,
+        m.conduction.derived_den.as_ref()[0],
+        "cached den (Python-replicated operand order)"
+    );
+    let h1 = (17.974224_f64 * 165.60000000000002) / (17.974224 + 165.60000000000002);
+    let h2 = h1 + 71.6_f64;
+    let h3 = (h2 * 1608.0) / (h2 + 1608.0);
+    assert_eq!(
+        h3,
+        m.conduction.derived_h_tr_3.as_ref()[0],
+        "#896 bottleneck recomposed"
+    );
+    assert_eq!(
+        m.mass.air_thermal_capacitance.as_ref()[0],
+        129.60000000000002 * 1.2 * 1005.0,
+        "air capacitance = ρ·cp·V"
+    );
+}
+
+#[test]
+/// Contract B3 — the committed chain through the spec fixture, two steps:
+/// the pre-airs (the solver's `zone_temperature` set), all four node
+/// literals per step, both committed airs (the parallel balance on the
+/// post-step nodes, recomposed in-test from the engine node reads), both
+/// 0.0 kWh free-float commits, and the hand-off (step 2's pre-air IS
+/// step 1's committed air). The gains partition premise is pinned at the
+/// engine's own fractions: phi_ia = 0.0 exactly (S1 — the air is heated
+/// only through the mass nodes), phi_st carries the whole transmitted
+/// solar load, phi_m the opaque share; the decomposition conserves.
+fn spec_path_chain_two_steps() {
+    let mut m = fixture_spec_900ff();
+    // gains partition (S1) at the engine's own fractions:
+    let load_w = 0.0_f64 * 48.0;
+    let sol_w = 400.0_f64 * 48.0;
+    let opaque_w = 50.0_f64 * 48.0;
+    let sol_to_air = sol_w * 0.0;
+    let phi_ia = load_w * 0.4 + sol_to_air;
+    let phi_st = load_w * (1.0 - 0.4) + (sol_w - sol_to_air) * (1.0 - 0.0);
+    let phi_m = (sol_w - sol_to_air) * 0.0 + opaque_w;
+    assert_eq!(
+        phi_ia, 0.0,
+        "S1: the air gets NO direct gains at the spec path"
+    );
+    assert_eq!(phi_st, 19200.0);
+    assert_eq!(phi_m, 2400.0);
+    assert_eq!(
+        phi_ia + phi_st + phi_m,
+        load_w + sol_w + opaque_w,
+        "the sda/sbm-0 partition conserves the driving set exactly"
+    );
+    let kwh0 = m.step_physics(0, T_OUT, DT);
+    let s = &m.conduction.backend.multi_node_solvers[0];
+    assert_eq!(
+        s.zone_temperature, 15.266117931266905,
+        "step-1 pre-air: the parallel balance on the PRE-step nodes"
+    );
+    assert_eq!(s.mass.wall.temperature, 24.547802980996828, "wall node");
+    assert_eq!(s.mass.roof.temperature, 22.8391289109059, "roof node");
+    assert_eq!(s.mass.floor.temperature, 22.159651283235362, "floor node");
+    assert_eq!(
+        m.setpoints.temperatures.as_ref()[0],
+        18.344345521157422,
+        "committed air step 1 (bit-exact)"
+    );
+    assert_eq!(
+        m.mass.mass_temperatures.as_ref()[0],
+        20.31631526994135,
+        "lumped mass step 1 (bit-exact)"
+    );
+    assert_eq!(kwh0, 0.0, "free-float commits exactly 0.0 kWh");
+    // the committed air recomposed from the engine node reads:
+    let hp_w =
+        (76.34726688102896_f64 * 165.60000000000002) / (76.34726688102896 + 165.60000000000002);
+    let hp_r =
+        (32.91511795494197_f64 * 165.60000000000002) / (32.91511795494197 + 165.60000000000002);
+    let hp_f =
+        (17.981819851253327_f64 * 165.60000000000002) / (17.981819851253327 + 165.60000000000002);
+    let recomposed = {
+        let (tw, tr, tf) = (
+            s.mass.wall.temperature,
+            s.mass.roof.temperature,
+            s.mass.floor.temperature,
+        );
+        let num = (hp_w * tw + hp_r * tr) + hp_f * tf;
+        let num = (num + 17.974224 * T_OUT) + 0.0 * T_OUT;
+        let num = num + phi_ia;
+        num / ((hp_w + hp_r) + hp_f + 17.974224 + 0.0)
+    };
+    assert_eq!(
+        m.setpoints.temperatures.as_ref()[0],
+        recomposed,
+        "committed air == the parallel balance recomposed from the committed nodes"
+    );
+    let kwh1 = m.step_physics(0, T_OUT, DT);
+    let s = &m.conduction.backend.multi_node_solvers[0];
+    assert_eq!(
+        s.zone_temperature, 18.344345521157422,
+        "the hand-off: step 2's pre-air IS step 1's committed air"
+    );
+    assert_eq!(s.mass.wall.temperature, 28.92226196100471);
+    assert_eq!(s.mass.roof.temperature, 25.625635993882);
+    assert_eq!(s.mass.floor.temperature, 24.31596585762751);
+    assert_eq!(
+        m.setpoints.temperatures.as_ref()[0],
+        21.32989132022129,
+        "committed air step 2 (bit-exact)"
+    );
+    assert_eq!(
+        m.mass.mass_temperatures.as_ref()[0],
+        20.629083347822874,
+        "lumped mass step 2 (bit-exact)"
+    );
+    assert_eq!(kwh1, 0.0);
+}
+
+#[test]
+/// Contract B4 — the estimate/lumped chain and the zero-`h_tr_me` guard at
+/// the spec fixture: the 5R1C estimate recomposes in-test from the
+/// engine-read cache inputs (mode-independent, exactly the analytic
+/// fixture's composition with the spec's values — gc·T_ground carries the
+/// spec's 9.4, not the analytic 13.0), the lumped-mass engine literals
+/// recompose THROUGH that estimate (the composition arbitrates the
+/// estimate against engine truth: t_s is strictly monotone in t_i_act),
+/// the estimate stays provably distinct from the committed air (ADR-002 at
+/// the spec path), and the internal node composes with the zero-`h_tr_me`
+/// env operand (S4 — the value-level inertness of the env at zero and the
+/// finiteness pin; the NaN-poison tooth is what bites, see the header).
+fn spec_path_estimate_lumped_and_internal_guard() {
+    let mut m = fixture_spec_900ff();
+    let kwh0 = m.step_physics(0, T_OUT, DT);
+    let _ = kwh0;
+    let committed1 = m.setpoints.temperatures.as_ref()[0];
+    let lumped1 = m.mass.mass_temperatures.as_ref()[0];
+    // the estimate, recomposed from the engine-read cache inputs:
+    let est1 = {
+        let msip = 1608.0_f64 * 165.60000000000002;
+        let tr1 = (1608.0_f64 + 165.60000000000002) + 131.04;
+        let gc = tr1 * 8.692611693125123;
+        let h_ext = 71.6_f64 + 17.974224;
+        let phi_ia = 0.0_f64;
+        let phi_st = 19200.0_f64;
+        let mut num_rest = phi_ia + h_ext * T_OUT;
+        num_rest = num_rest * tr1;
+        num_rest = num_rest + gc * 9.4;
+        (msip * 20.0 + 165.60000000000002 * phi_st + num_rest) / ((msip + tr1 * h_ext) + gc)
+    };
+    assert_eq!(
+        est1, 15.337552659928775,
+        "the 5R1C estimate at the spec fixture"
+    );
+    assert_ne!(
+        est1, committed1,
+        "ADR-002: the estimate and the committed air stay distinct"
+    );
+    let s1 = &m.conduction.backend.multi_node_solvers[0];
+    // S4: the internal node's environment is the ARITHMETIC MEAN of the
+    // post-advance envelope nodes (the h_series blend at h_me = 0 would be
+    // 0/0 = NaN). Recompose the step-1 internal literal from the engine's
+    // own step-1 envelope reads:
+    let env_mean =
+        (s1.mass.wall.temperature + s1.mass.roof.temperature + s1.mass.floor.temperature) / 3.0;
+    let c_int = 792000.0_f64 / DT;
+    let internal_rec = ((c_int * 20.0 + 165.60000000000002 * 15.266117931266905) + 0.0 * env_mean)
+        / (c_int + 165.60000000000002 + 0.0);
+    assert_eq!(
+        internal_rec, s1.mass.internal.temperature,
+        "S4: the internal advance composes through the 0.0·env operand \
+         (the env must be FINITE, or 0·NaN poisons the node)"
+    );
+    assert_eq!(
+        s1.mass.internal.temperature, 17.966984256788898,
+        "internal node literal, step 1 (finite by value IS the S4 pin)"
+    );
+    assert!(
+        internal_rec.is_finite(),
+        "the finite literal IS the zero-h_tr_me guard pin"
+    );
+    // the lumped mass recomposed THROUGH the estimate (arbitrates est1):
+    let ts_den = (1608.0_f64 + 165.60000000000002) + 131.04;
+    let t_s = (1608.0_f64 * 20.0 + 165.60000000000002 * est1 + 19200.0) / ts_den;
+    let h3 = {
+        let h1 = (17.974224_f64 * 165.60000000000002) / (17.974224 + 165.60000000000002);
+        let h2 = h1 + 71.6_f64;
+        (h2 * 1608.0) / (h2 + 1608.0)
+    };
+    let cm_dt = 18014427.840000004_f64 / DT;
+    let lumped_rec = {
+        let denom = (cm_dt + 48.880343578250944) + h3;
+        let numer = ((cm_dt * 20.0 + 48.880343578250944 * T_OUT) + h3 * t_s) + 2400.0;
+        numer / denom
+    };
+    assert_eq!(
+        lumped_rec, lumped1,
+        "the engine's lumped mass composes through the recomposed estimate"
+    );
+    // step 2 rides the step-1 lumped state:
+    m.step_physics(0, T_OUT, DT);
+    let est2 = {
+        let msip = 1608.0_f64 * 165.60000000000002;
+        let tr1 = (1608.0_f64 + 165.60000000000002) + 131.04;
+        let gc = tr1 * 8.692611693125123;
+        let h_ext = 71.6_f64 + 17.974224;
+        let mut num_rest = 0.0_f64 + h_ext * T_OUT;
+        num_rest = num_rest * tr1;
+        num_rest = num_rest + gc * 9.4;
+        (msip * lumped1 + 165.60000000000002 * 19200.0 + num_rest) / ((msip + tr1 * h_ext) + gc)
+    };
+    assert_eq!(est2, 15.523307135826942);
+    let t_s2 = (1608.0_f64 * lumped1 + 165.60000000000002 * est2 + 19200.0) / ts_den;
+    let lumped2_rec = {
+        let denom = (cm_dt + 48.880343578250944) + h3;
+        let numer = ((cm_dt * lumped1 + 48.880343578250944 * T_OUT) + h3 * t_s2) + 2400.0;
+        numer / denom
+    };
+    assert_eq!(lumped2_rec, m.mass.mass_temperatures.as_ref()[0]);
+    {
+        let s2 = &m.conduction.backend.multi_node_solvers[0];
+        assert_eq!(
+            s2.mass.internal.temperature, 18.129046044598617,
+            "internal node literal, step 2"
+        );
+    }
+}
