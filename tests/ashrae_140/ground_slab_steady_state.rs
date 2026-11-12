@@ -272,6 +272,8 @@ fn one_dimensional_config() -> GroundDomainConfig {
         slab_thickness_m: 0.2,
         slab_conductivity_w_mk: 1.4,
         ground_conductivity_w_mk: 1.9,
+        slab_volumetric_heat_capacity_j_m3k: 2_000_000.0,
+        ground_volumetric_heat_capacity_j_m3k: 2_000_000.0,
         lateral_segments: vec![GridSegment::Uniform {
             start_m: 0.0,
             end_m: 4.0,
@@ -369,6 +371,8 @@ fn two_dimensional_config(scale: usize) -> GroundDomainConfig {
         // GC10a: slab and soil conductivity are equal.
         slab_conductivity_w_mk: gc10a::CONDUCTIVITY_W_MK,
         ground_conductivity_w_mk: gc10a::CONDUCTIVITY_W_MK,
+        slab_volumetric_heat_capacity_j_m3k: 2_000_000.0,
+        ground_volumetric_heat_capacity_j_m3k: 2_000_000.0,
         lateral_segments: lateral_segments(scale),
         vertical_segments: vec![
             GridSegment::Uniform {
