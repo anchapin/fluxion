@@ -256,11 +256,3 @@ fn test_case_600_full_reference_tolerance() {
         );
     }
 }
-
-mod phase2 {
-    #[test]
-    #[ignore = "Issue #62 pending merge"]
-    fn test_case_610_shading() {
-        // ...
-    }
-}
