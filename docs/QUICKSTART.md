@@ -241,8 +241,8 @@ a starter model with `cargo run --example gen_minimal_flux`, or hand-write
 one matching `fluxion::api::schema::SimulationSchemaV1`.
 
 Note: the OpenStudio-style workflow path (`fluxion run -w some.workflow.fwf`)
-is still intentionally stubbed — it fails non-zero with a reference to
-issue `#2947`, by policy (`test_workflow_execution_is_gated_non_silent`
+is still intentionally stubbed — it fails non-zero with a
+'not yet implemented' error, by policy (`test_workflow_execution_is_gated_non_silent`
 in `src/bin/fluxion.rs`). The direct-simulation path above is the runnable
 CLI surface.
 
