@@ -681,7 +681,6 @@ mod additional_regressions {
     /// Severity: High
     /// Hypothesis: Case 195 configuration error or validation bug
     #[test]
-    #[ignore = "Issue #532: Case 195 zero annual energy investigation"]
     fn test_issue532_case195_energy_regression() {
         let validator = ASHRAE140Validator::new();
         let report = validator.validate_analytical_engine();
