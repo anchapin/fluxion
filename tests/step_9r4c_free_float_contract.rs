@@ -89,10 +89,78 @@
 //! no engine change, no re-record owed (battery bit-identity holds at
 //! Δ = 0 — the suite writes no engine state). A violation means the 9R4C
 //! chain moved and must be re-examined, never tuned around.
+//!
+//! ============================================================================
+//! Round 132 — the multi-zone implicit-iz air solves (the r131 remainder)
+//! ============================================================================
+//!
+//! The r131 fixture was single-zone, so `solve_implicit_iz`
+//! (`num_zones > 1`, step_9r4c.rs:369) never engaged: the two implicit
+//! inter-zone air-node solves were unpinned. This section pins them at a
+//! two-zone hand-rolled fixture (zone 0 = the r131 fixture verbatim; zone 1
+//! asymmetric in every pinned operand; `h_tr_iz` [5.0, 7.0],
+//! `h_tr_iz_rad` [2.0, 3.0]):
+//!
+//! - (M1) the multi-zone derived-cache premise: for `num_zones > 1` the
+//!   cached `h_total` carries `h_tr_iz + h_tr_iz_rad`
+//!   (dispatch_state.rs:149–165), so `den` moves from the single-zone
+//!   138271.2 to 145754.19999999998 / 108562.5 — bit-exact;
+//! - (M2) the 5R1C ESTIMATE implicit solve: `w_ij =
+//!   0.5·(term_rest_1_i·h_iz_i + term_rest_1_j·h_iz_j)`, dense Gaussian
+//!   with partial pivoting replacing the uncoupled `num/den` division —
+//!   the solved estimates 27.75219681595207 / 23.55286728703152 are
+//!   provably distinct from the uncoupled values;
+//! - (M3) the mass chain stays iz-free (the coupling lives on the air
+//!   nodes only): all eight solver node literals + per-zone pre-airs
+//!   bit-exact;
+//! - (M4) the mn COMMITTED-air implicit solve: uncoupled balance stash
+//!   (`diag = solver h_tr_is + h_ve [+ h_ve_night]`, `rhs = t_unc·diag`)
+//!   with SEAMLESS weights `w_ij = 0.5·(h_iz_i + h_iz_j)` (no
+//!   term_rest_1), the inline partial-pivot elimination AND THEN
+//!   `solve_linear_system` on the result — both passes transcribed.
+//!   Disclosed seam, pinned as-is: the stash diag is the film conductance
+//!   `h_tr_is + h_ve`, NOT the parallel-balance denominator
+//!   `Σh_path + h_ve` the uncoupled value divided by — the uncoupled limit
+//!   recovers exactly (rhs is built from the true balance), but the
+//!   coupled dissipation is scaled by the wrong conductance; latent
+//!   fidelity finding for the physics queue, not fixed here;
+//! - (M5) the lumped mass rides the SOLVED estimate (`t_i_free_5r1c` is
+//!   cloned post-solve) — pinned by the value itself: Euler-on-solved is
+//!   bit-exact, Euler-on-uncoupled is provably distinct;
+//! - (M6) the multi-zone vent den rebuild carries `h_iz + h_iz_rad` too
+//!   (step_9r4c.rs:299–318) while the vent fans zone 0 only;
+//! - (M7) the two-step composition (both zones; vent step 1 included) +
+//!   the #4495 guard scope — and a PREMISE CORRECTION to the r131
+//!   reading: `zone_temperature` tracks the UNCOUPLED pre-air (the
+//!   `set_zone_temperature(t_air_mn_pre)` value, which at step N+1 equals
+//!   the step-N uncoupled committed-air value), NOT the r131
+//!   "prior committed" — in single-zone the two coincide, so the r131
+//!   wording was the uncoupled/committed coincidence; multi-zone
+//!   separates them (35.2045… uncoupled vs 34.9897… committed);
+//! - (M8) the boundary finding (pinned as-is, dated 2026-11-12): a model
+//!   with `num_zones > multi_node_solvers.len()` (3 zones, 2 solvers)
+//!   never builds the `!mn_has` row, so the back-substitution divides
+//!   0/0 on it — `x[boundary] = NaN`, and `0.0·NaN` poisons x for EVERY
+//!   solver zone — the #4495 commit guard then rejects the whole commit
+//!   (setpoints stay at the PRE-step values, 0.0 kWh) while the lumped
+//!   masses and solver nodes HAVE already advanced: every step is
+//!   half-applied. The in-code comment's claimed "known boundary
+//!   temperatures" behavior is not what executes. Latent-only: the
+//!   from-spec constructor builds one solver per zone, so no production
+//!   path constructs the shape today. Routed to the physics queue.
+//!
+//! Provenance: Python replication `/tmp/r132_replication.py`
+//! (dev-time evidence), transcribed operation-for-operation from tip
+//! `0672e98b`; verified bit-for-bit against the engine scratch probe
+//! before authoring — 57/60 engine observables exact (both vent arms,
+//! two steps, all eight nodes, committed + lumped + den anchors); the 3
+//! remaining are the boundary commits, where the engine's #4495 guard
+//! rejects the NaN the replication transcribes (the guard is the pinned
+//! behavior, the NaN its mechanism).
 
 use fluxion::physics::cta::VectorField;
 use fluxion::physics::multi_node_solver::MultiNodeSolver;
-use fluxion::sim::boundary::{ConstantGroundTemperature, GroundTemperature};
+use fluxion::sim::boundary::ConstantGroundTemperature;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::sim::multi_node_thermal::{MassAirCouplingMode, ThermalMassNode};
 use fluxion::sim::thermal_selector::ZoneSolverKind;
@@ -541,5 +609,748 @@ fn two_step_composition_and_the_nan_guard() {
             && s.mass.roof.temperature.is_nan()
             && s.mass.floor.temperature.is_nan(),
         "the solver nodes advanced into NaN before the guard — pinned as-is"
+    );
+}
+
+// ============================================================================
+// Round 132 — multi-zone implicit-iz contracts (M1–M8)
+// ============================================================================
+
+/// The replication's multi-zone derived denominators (iz-inclusive
+/// `h_total`, dispatch_state.rs:149–165) and boundary-zone anchor.
+const DEN_MZ_0: f64 = 145754.19999999998;
+const DEN_MZ_1: f64 = 108562.5;
+const DEN_BND_2: f64 = 46800.0;
+
+/// Zone 1's #896 bottleneck (the air-side lumped mass conductance).
+const H_TR_3_Z1: f64 = 33.93722992026942;
+
+/// The replication's solved-estimate literals (the engine sees them
+/// through the lumped mass, M5 — cloned post-solve into `t_i_free_5r1c`).
+const EST_MZ_OFF: [f64; 2] = [27.75219681595207, 23.55286728703152];
+const EST_MZ_ON: [f64; 2] = [-1.2526584770581457, 22.097517475308482];
+
+/// The zone-1 `h_ve` expression (op order mirrors the fixture assignment;
+/// the value is deliberately not a clean decimal so a transcription that
+/// recomputes it differently cannot pass).
+fn h_ve_z1() -> f64 {
+    0.9 * 1000.0 * (0.5 * (40.0 * 2.7) / 3600.0)
+}
+
+/// One Gaussian elimination pass with partial pivoting at n = 2
+/// (step_9r4c.rs 872–896 op-for-op, and the col-0 shape of
+/// `solve_linear_system` 21–54).
+fn elim_pass_2(a: &mut [[f64; 2]; 2], b: &mut [f64; 2]) {
+    let mut best = 0usize;
+    for r in 0..2 {
+        if a[r][0].abs() > a[best][0].abs() {
+            best = r;
+        }
+    }
+    if best != 0 {
+        a.swap(0, 1);
+        b.swap(0, 1);
+    }
+    let inv = 1.0 / a[0][0];
+    let f = a[1][0] * inv;
+    if f != 0.0 {
+        let pivot_row = [a[0][0], a[0][1]];
+        a[1][0] -= f * pivot_row[0];
+        a[1][1] -= f * pivot_row[1];
+        b[1] -= f * b[0];
+    }
+}
+
+/// `solve_linear_system` (21–54) at n = 2, op-for-op: elimination, then the
+/// reverse back-substitution (the inner sum over the empty tail range is
+/// 0.0 exactly, as the Rust `(r+1..n).map(..).sum()` produces).
+fn solve_linear_system_2(a: &mut [[f64; 2]; 2], b: &mut [f64; 2]) -> (f64, f64) {
+    elim_pass_2(a, b);
+    let x1 = (b[1] - 0.0) / a[1][1];
+    let sm0 = a[0][1] * x1;
+    let x0 = (b[0] - sm0) / a[0][0];
+    (x0, x1)
+}
+
+/// The multi-zone derived denominators, op-for-op (the cached composition
+/// when `h_ve_night = 0.0`; the vent-active-hour rebuild's operand order
+/// otherwise — they agree bit-for-bit at the same operands, M6).
+fn den_2z(h_ve_night: f64) -> [f64; 2] {
+    let hiz = [5.0, 7.0];
+    let hizrad = [2.0, 3.0];
+    let tr1 = [1069.0, 875.0];
+    let msip = [69000.0, 60000.0];
+    let gc = [7696.799999999999, 7000.0];
+    let h_ext = [57.6, 24.0 + h_ve_z1()];
+    let mut den = [0.0; 2];
+    for i in 0..2 {
+        let h_ext_eff = if i == 0 {
+            h_ext[i] + h_ve_night
+        } else {
+            h_ext[i]
+        };
+        let h_total = (h_ext_eff + hiz[i]) + hizrad[i];
+        den[i] = (msip[i] + tr1[i] * h_total) + gc[i];
+    }
+    den
+}
+
+/// The 5R1C estimate implicit solve, op-for-op: per-zone numerator, the
+/// term_rest_1-weighted pair conductances, the 2×2 Gaussian solve.
+/// Returns (zone 0, zone 1) solved estimates.
+fn estimate_solved_2z(h_ve_night: f64) -> (f64, f64) {
+    let den = den_2z(h_ve_night);
+    let tr1 = [1069.0, 875.0];
+    let msip = [69000.0, 60000.0];
+    let gc = [7696.799999999999, 7000.0];
+    let h_ext = [57.6, 24.0 + h_ve_z1()];
+    let t5r1c = [69.0, 75.0];
+    let tm = [20.0, 18.0];
+    let phi_st = [7776.0, 4800.0];
+    let phi_ia = [2496.0, 1520.0];
+    let hiz = [5.0, 7.0];
+    let mut num = [0.0; 2];
+    for i in 0..2 {
+        let h_ext_eff = if i == 0 {
+            h_ext[i] + h_ve_night
+        } else {
+            h_ext[i]
+        };
+        let ntm = msip[i] * tm[i];
+        let nst = t5r1c[i] * phi_st[i];
+        let mut nr = phi_ia[i] + h_ext_eff * T_OUT;
+        nr = nr * tr1[i];
+        nr = nr + gc[i] * T_G;
+        num[i] = (ntm + nst) + nr;
+    }
+    let w01 = 0.5 * (tr1[0] * hiz[0] + tr1[1] * hiz[1]);
+    let mut a = [[den[0] + w01, -w01], [-w01, den[1] + w01]];
+    solve_linear_system_2(&mut a, &mut num)
+}
+
+/// The uncoupled parallel-resistance balance recomposed from given mass
+/// nodes (the getter-recompose: engine state in, closed form in-test).
+fn parallel_balance_z(
+    h_ms: [f64; 3],
+    h_is: f64,
+    nodes: [f64; 3],
+    h_ve: f64,
+    h_ve_night: f64,
+    phi_ia: f64,
+) -> f64 {
+    let hs_w = (h_ms[0] * h_is) / (h_ms[0] + h_is);
+    let hs_r = (h_ms[1] * h_is) / (h_ms[1] + h_is);
+    let hs_f = (h_ms[2] * h_is) / (h_ms[2] + h_is);
+    let total = (hs_w + hs_r) + hs_f;
+    let h_ve_total = h_ve + h_ve_night;
+    let num = ((((hs_w * nodes[0] + hs_r * nodes[1]) + hs_f * nodes[2]) + h_ve_total * T_OUT)
+        + 0.0 * 0.0)
+        + phi_ia;
+    num / ((total + h_ve_total) + 0.0)
+}
+
+/// The mn committed-air implicit solve, op-for-op: uncoupled stash
+/// (`diag = h_tr_is + h_ve [+ h_ve_night]`, `rhs = t_unc·diag`), seamless
+/// weights `0.5·(h_iz_i + h_iz_j)`, the inline elimination AND THEN
+/// `solve_linear_system` — both passes mirrored (the second pass re-runs
+/// on the once-eliminated matrix, including its ~ulp residual row entry).
+fn committed_solved_2z(t_unc: [f64; 2], h_ve_night: f64) -> (f64, f64) {
+    let his = [120.0, 140.0];
+    let h_ve = [21.6, h_ve_z1()];
+    let hiz = [5.0, 7.0];
+    let mut diag = [0.0; 2];
+    let mut rhs = [0.0; 2];
+    for i in 0..2 {
+        let hvn = if i == 0 { h_ve_night } else { 0.0 };
+        diag[i] = (his[i] + h_ve[i]) + hvn;
+        rhs[i] = t_unc[i] * diag[i];
+    }
+    let w01 = 0.5 * (hiz[0] + hiz[1]);
+    let mut a = [[diag[0] + w01, -w01], [-w01, diag[1] + w01]];
+    let mut b = rhs;
+    elim_pass_2(&mut a, &mut b); // the inline elimination (872–896)
+    solve_linear_system_2(&mut a, &mut b) // then solve_linear_system (897)
+}
+
+/// The two-zone 9R4C free-float fixture: zone 0 is the r131 fixture
+/// verbatim; zone 1 asymmetric in every pinned operand (area/volume/
+/// loads/solar/conductances/mass nodes/solver `h_tr_is` 140.0/model
+/// `h_tr_is` 75.0). `h_tr_iz` [5.0, 7.0] and `h_tr_iz_rad` [2.0, 3.0]
+/// engage `solve_implicit_iz` (`num_zones > 1`).
+fn fixture_9r4c_2z(vent: Option<NightVentilation>) -> ThermalModel<VectorField> {
+    let mut m = ThermalModel::<VectorField>::new(2);
+    m.setpoints.zone_area = VectorField::new(vec![48.0, 40.0]);
+    m.setpoints.zone_volume = VectorField::new(vec![129.6, 108.0]);
+    m.setpoints.heating_setpoint = -50.0;
+    m.setpoints.cooling_setpoint = 100.0;
+    m.setpoints.temperatures = VectorField::new(vec![20.0, 18.0]);
+    m.setpoints.air_density = VectorField::from_scalar(1.2, 2);
+    m.setpoints.heat_capacity = VectorField::from_scalar(1005.0, 2);
+    m.hvac.free_float = true;
+    m.hvac.night_ventilation = vent;
+    m.conduction.h_tr_em = VectorField::new(vec![0.32 * 48.0, 0.25 * 40.0]);
+    m.conduction.h_tr_w = VectorField::new(vec![3.0 * 12.0, 24.0]);
+    m.conduction.h_tr_floor = VectorField::new(vec![0.15 * 48.0, 0.2 * 40.0]);
+    m.conduction.h_ve = VectorField::new(vec![
+        1.2 * 1000.0 * (0.5 * (48.0 * 2.7) / 3600.0),
+        h_ve_z1(),
+    ]);
+    m.conduction.h_tr_ms = VectorField::new(vec![1000.0, 800.0]);
+    m.conduction.h_tr_is = VectorField::new(vec![69.0, 75.0]);
+    m.conduction.h_tr_iz = VectorField::new(vec![5.0, 7.0]);
+    m.conduction.h_tr_iz_rad = VectorField::new(vec![2.0, 3.0]);
+    m.mass.thermal_capacitance = VectorField::new(vec![48.0 * 150_000.0, 40.0 * 150_000.0]);
+    m.mass.mass_temperatures = VectorField::new(vec![20.0, 18.0]);
+    m.setpoints.loads = VectorField::new(vec![30.0, 20.0]);
+    m.solar.solar_gains = VectorField::new(vec![400.0, 300.0]);
+    m.solar.opaque_solar_gains = VectorField::new(vec![50.0, 30.0]);
+    m.hvac.hvac_heating_capacity = 0.0;
+    m.hvac.hvac_cooling_capacity = 0.0;
+    m.hvac.thermal_selector.zone_solver = ZoneSolverKind::NineRFourC;
+    m.conduction.ground_temperature = Box::new(ConstantGroundTemperature::new(T_G));
+    m.update_optimization_cache();
+    let wall0 = ThermalMassNode::new(18.0, 4.0e7, 50.0, 20.0);
+    let roof0 = ThermalMassNode::new(22.0, 2.0e7, 40.0, 15.0);
+    let floor0 = ThermalMassNode::new(20.0, 3.0e7, 60.0, 10.0);
+    let internal0 = ThermalMassNode::new(20.0, 1.0e7, 10.0, 5.0).with_h_tr_me(100.0);
+    let s0 = MultiNodeSolver::new_with_mode(
+        120.0,
+        wall0,
+        roof0,
+        floor0,
+        internal0,
+        MassAirCouplingMode::ParallelResistance,
+    );
+    let wall1 = ThermalMassNode::new(16.0, 3.0e7, 45.0, 18.0);
+    let roof1 = ThermalMassNode::new(24.0, 1.5e7, 35.0, 12.0);
+    let floor1 = ThermalMassNode::new(19.0, 2.5e7, 55.0, 8.0);
+    let internal1 = ThermalMassNode::new(19.0, 1.2e7, 12.0, 4.0).with_h_tr_me(80.0);
+    let s1 = MultiNodeSolver::new_with_mode(
+        140.0,
+        wall1,
+        roof1,
+        floor1,
+        internal1,
+        MassAirCouplingMode::ParallelResistance,
+    );
+    m.conduction.backend.multi_node_solvers = vec![s0, s1];
+    m
+}
+
+#[test]
+/// Contract M1 — the multi-zone cache premises and per-zone gains
+/// conservation: `h_total` carries `h_tr_iz + h_tr_iz_rad` when
+/// `num_zones > 1` (den 145754.19999999998 / 108562.5 vs the single-zone
+/// 138271.19999999998), per-zone `term_rest_1`/`h_ms_is_prod`/ground
+/// coeff/`h_tr_3` anchors, the iz vectors as set, and the gains
+/// decomposition identity holding per zone (2496+7776+12768 = 23040 W and
+/// 1520+4800+7680 = 14000 W).
+fn multizone_premises_caches_and_gains_conservation() {
+    let m = fixture_9r4c_2z(None);
+    assert_eq!(
+        m.conduction.h_tr_iz.as_ref(),
+        [5.0, 7.0],
+        "premise: the iz conductances as set"
+    );
+    assert_eq!(
+        m.conduction.h_tr_iz_rad.as_ref(),
+        [2.0, 3.0],
+        "premise: the radiative iz conductances as set"
+    );
+    assert_eq!(
+        m.conduction.h_tr_is.as_ref(),
+        [69.0, 75.0],
+        "premise: model h_tr_is"
+    );
+    assert_eq!(
+        m.mass.h_tr_me.as_ref(),
+        [0.0, 0.0],
+        "premise: model h_tr_me"
+    );
+    assert_eq!(
+        m.conduction.derived_term_rest_1.as_ref(),
+        [1069.0, 875.0],
+        "per-zone term_rest_1"
+    );
+    assert_eq!(
+        m.conduction.derived_h_ms_is_prod.as_ref(),
+        [69000.0, 60000.0],
+        "per-zone h_ms_is_prod"
+    );
+    assert_eq!(
+        m.conduction.derived_ground_coeff.as_ref(),
+        [7696.799999999999, 7000.0],
+        "per-zone ground coefficient"
+    );
+    assert_eq!(
+        m.conduction.derived_den.as_ref(),
+        [DEN_MZ_0, DEN_MZ_1],
+        "multi-zone den: h_total carries h_tr_iz + h_tr_iz_rad (bit-exact)"
+    );
+    assert_eq!(
+        m.conduction.derived_h_tr_3.as_ref(),
+        [49.83639567077775, H_TR_3_Z1],
+        "per-zone #896 bottleneck"
+    );
+    // Zone 1 gains: 20 W/m²·40 m² = 800 W load, 300·40 = 12000 W solar,
+    // 30·40 = 1200 W opaque over the same conv/sda/sbm split.
+    let (load1, sol1, opaq1) = (800.0_f64, 12000.0_f64, 1200.0_f64);
+    let sol_to_air1 = sol1 * 0.1;
+    let phi_ia1 = load1 * 0.4 + sol_to_air1;
+    let phi_st1 = load1 * 0.6 + (sol1 - sol_to_air1) * 0.4;
+    let phi_m1 = (sol1 - sol_to_air1) * 0.6 + opaq1;
+    assert_eq!(phi_ia1, 1520.0);
+    assert_eq!(phi_st1, 4800.0);
+    assert_eq!(phi_m1, 7680.0);
+    assert_eq!(
+        phi_ia1 + phi_st1 + phi_m1,
+        load1 + sol1 + opaq1,
+        "the sda split conserves zone 1's driving set exactly"
+    );
+}
+
+#[test]
+/// Contract M2 — the 5R1C estimate implicit solve engages and is provably
+/// distinct from the uncoupled division: the in-test transcription (pair
+/// weights `0.5·(tr1_i·h_iz_i + tr1_j·h_iz_j)` = 5735.0, the diagonal
+/// `den + Σw`, the 2×2 Gaussian solve) reproduces the replication's
+/// 27.75219681595207 / 23.55286728703152 exactly, while the uncoupled
+/// `num/den` values (27.917428108418147 / 23.331030512377662 — den is
+/// already iz-inclusive, so the uncoupled limit differs from the r131
+/// single-zone 29.428271397080522) differ — the solve moved BOTH
+/// estimates toward each other (heat flowing from the warmer to the
+/// colder zone's estimate network). The engine-truth for the solved
+/// values rides M5's lumped literals (`t_i_free_5r1c` is cloned
+/// POST-solve, step_9r4c.rs:530).
+fn estimate_implicit_solve_engages_multizone() {
+    let (est0, est1) = estimate_solved_2z(0.0);
+    assert_eq!(est0, EST_MZ_OFF[0], "zone-0 solved estimate (bit-exact)");
+    assert_eq!(est1, EST_MZ_OFF[1], "zone-1 solved estimate (bit-exact)");
+    // The uncoupled division, for the discriminator (the iz-inclusive den).
+    let den = den_2z(0.0);
+    let unc0 = {
+        let mut nr = 2496.0_f64 + 57.6 * T_OUT;
+        nr = nr * 1069.0;
+        nr = nr + 7696.799999999999 * T_G;
+        (69000.0 * 20.0 + 69.0 * 7776.0 + nr) / den[0]
+    };
+    let unc1 = {
+        let mut nr = 1520.0_f64 + (24.0 + h_ve_z1()) * T_OUT;
+        nr = nr * 875.0;
+        nr = nr + 7000.0 * T_G;
+        (60000.0 * 18.0 + 75.0 * 4800.0 + nr) / den[1]
+    };
+    assert_eq!(
+        unc0, 27.917428108418147,
+        "zone-0 uncoupled estimate literal"
+    );
+    assert_eq!(
+        unc1, 23.331030512377662,
+        "zone-1 uncoupled estimate literal"
+    );
+    assert_ne!(
+        est0, unc0,
+        "the implicit solve must move the zone-0 estimate off the uncoupled value"
+    );
+    assert_ne!(
+        est1, unc1,
+        "the implicit solve must move the zone-1 estimate off the uncoupled value"
+    );
+}
+
+#[test]
+/// Contract M3 — the mass chain stays iz-free: the coupling lives on the
+/// air nodes only, so both zones' four solver node literals and per-zone
+/// pre-airs (`zone_temperature`, the `set_zone_temperature(t_air_mn_pre)`
+/// premise) match the replication bit-exactly — zone 0's are the r131
+/// single-zone literals verbatim (18.614397156250497 / 22.957622892533212
+/// / 21.038492096759924 / 20.605551422826654, pre-air 34.47988132764695),
+/// zone 1's are the new asymmetric set (16.493002926758464 /
+/// 24.705189070341486 / 19.77585810503555 / 19.42360679206089, pre-air
+/// 29.1384329942863).
+fn multizone_mass_chain_stays_iz_free() {
+    let mut m = fixture_9r4c_2z(None);
+    let kwh = m.step_physics(0, T_OUT, DT);
+    assert_eq!(kwh, 0.0, "free-float returns exactly 0.0 kWh");
+    let s0 = &m.conduction.backend.multi_node_solvers[0];
+    let s1 = &m.conduction.backend.multi_node_solvers[1];
+    assert_eq!(
+        s0.zone_temperature, 34.47988132764695,
+        "zone-0 pre-air (r131 verbatim)"
+    );
+    assert_eq!(s1.zone_temperature, 29.1384329942863, "zone-1 pre-air");
+    assert_eq!(s0.mass.wall.temperature, 18.614397156250497);
+    assert_eq!(s0.mass.roof.temperature, 22.957622892533212);
+    assert_eq!(s0.mass.floor.temperature, 21.038492096759924);
+    assert_eq!(s0.mass.internal.temperature, 20.605551422826654);
+    assert_eq!(s1.mass.wall.temperature, 16.493002926758464);
+    assert_eq!(s1.mass.roof.temperature, 24.705189070341486);
+    assert_eq!(s1.mass.floor.temperature, 19.77585810503555);
+    assert_eq!(s1.mass.internal.temperature, 19.42360679206089);
+}
+
+#[test]
+/// Contract M4 — the mn committed-air implicit solve: the uncoupled
+/// balances recomposed from the POST-step nodes (35.204524659159546 /
+/// 29.72231486401823 — zone 0's is the r131 single-zone committed value
+/// verbatim, its mass chain being iz-free), stashed as
+/// `rhs = t_unc·diag` with `diag = h_tr_is + h_ve` (141.6 / 153.5),
+/// then the seamless-weight (`0.5·(h_iz_i + h_iz_j)` = 6.0) implicit
+/// solve — DOUBLE elimination (the inline partial-pivot pass 872–896 and
+/// then `solve_linear_system` 897 on the once-eliminated matrix) —
+/// reproduces the committed 34.989725362747315 / 29.9204619674187
+/// bit-exactly. Disclosed seam, pinned as-is: the stash diag is the film
+/// conductance `h_tr_is + h_ve`, NOT the parallel-balance denominator
+/// `Σh_path + h_ve` (105.29411764705883 + 21.6 = 126.89411764705883 for
+/// zone 0) the uncoupled value was divided by — the uncoupled limit
+/// recovers exactly (rhs is built from the true balance), but the
+/// coupled dissipation is scaled by the film conductance instead; latent
+/// fidelity finding for the physics queue, not fixed in a contracts PR.
+fn committed_air_implicit_solve_multizone() {
+    let mut m = fixture_9r4c_2z(None);
+    m.step_physics(0, T_OUT, DT);
+    let s0 = &m.conduction.backend.multi_node_solvers[0];
+    let s1 = &m.conduction.backend.multi_node_solvers[1];
+    // The uncoupled balances on the post-step nodes (getter-recompose).
+    let t_unc0 = parallel_balance_z(
+        [50.0, 40.0, 60.0],
+        120.0,
+        [
+            s0.mass.wall.temperature,
+            s0.mass.roof.temperature,
+            s0.mass.floor.temperature,
+        ],
+        21.6,
+        0.0,
+        2496.0,
+    );
+    let t_unc1 = parallel_balance_z(
+        [45.0, 35.0, 55.0],
+        140.0,
+        [
+            s1.mass.wall.temperature,
+            s1.mass.roof.temperature,
+            s1.mass.floor.temperature,
+        ],
+        h_ve_z1(),
+        0.0,
+        1520.0,
+    );
+    assert_eq!(
+        t_unc0, 35.204524659159546,
+        "zone-0 uncoupled committed air (r131 verbatim)"
+    );
+    assert_eq!(t_unc1, 29.72231486401823, "zone-1 uncoupled committed air");
+    // The committed values: the implicit solve over the stash.
+    let (c0, c1) = committed_solved_2z([t_unc0, t_unc1], 0.0);
+    assert_eq!(c0, 34.989725362747315, "zone-0 committed air (bit-exact)");
+    assert_eq!(c1, 29.9204619674187, "zone-1 committed air (bit-exact)");
+    assert_eq!(
+        m.setpoints.temperatures.as_ref()[0],
+        c0,
+        "the commit takes the solved value"
+    );
+    assert_eq!(m.setpoints.temperatures.as_ref()[1], c1);
+    // The diag-seam discriminator: had the solve stashed the true balance
+    // denominator, the committed values would differ.
+    let path_den0 = 105.29411764705883 + 21.6;
+    assert_ne!(
+        120.0 + 21.6,
+        path_den0,
+        "the film-conductance stash and the balance denominator are distinct in this fixture"
+    );
+}
+
+#[test]
+/// Contract M5 — the lumped mass rides the SOLVED estimate: the Euler
+/// recomposed on the solved estimates (27.75219681595207 /
+/// 23.55286728703152) reproduces 26.146946251858456 / 22.444233248805922
+/// bit-exactly, while the same Euler on the UNCOUPLED estimates
+/// (27.917428108418147 / 23.331030512377662) lands elsewhere — the
+/// ADR-002 self-consistency premise, now with the solve in the loop: the
+/// lumped mass sees the implicit-iz-coupled estimate, provably by value.
+fn lumped_mass_rides_the_solved_estimate_multizone() {
+    let mut m = fixture_9r4c_2z(None);
+    m.step_physics(0, T_OUT, DT);
+    assert_eq!(
+        m.mass.mass_temperatures.as_ref()[0],
+        26.146946251858456,
+        "zone-0 lumped mass (bit-exact)"
+    );
+    assert_eq!(
+        m.mass.mass_temperatures.as_ref()[1],
+        22.444233248805922,
+        "zone-1 lumped mass (bit-exact)"
+    );
+    let euler = |tm_old: f64,
+                 t_i: f64,
+                 phi_st: f64,
+                 phi_m: f64,
+                 h_tr_ms: f64,
+                 h_is: f64,
+                 h_me: f64,
+                 h_em: f64,
+                 cm: f64,
+                 h_tr_3: f64|
+     -> f64 {
+        let ts_den = h_tr_ms + h_is + h_me;
+        let t_s = (h_tr_ms * tm_old + h_is * t_i + phi_st) / ts_den;
+        let cm_dt = cm / DT;
+        let numer = ((cm_dt * tm_old + h_em * T_OUT) + h_tr_3 * t_s) + phi_m;
+        numer / ((cm_dt + h_em) + h_tr_3)
+    };
+    // On the solved estimates — must reproduce the engine bit-exactly.
+    let on_solved0 = euler(
+        20.0,
+        EST_MZ_OFF[0],
+        7776.0,
+        12768.0,
+        1000.0,
+        69.0,
+        0.0,
+        15.36,
+        7.2e6,
+        49.83639567077775,
+    );
+    assert_eq!(
+        on_solved0, 26.146946251858456,
+        "Euler-on-solved-estimate == engine (the premise, by value)"
+    );
+    let on_solved1 = euler(
+        18.0,
+        EST_MZ_OFF[1],
+        4800.0,
+        7680.0,
+        800.0,
+        75.0,
+        0.0,
+        10.0,
+        6.0e6,
+        H_TR_3_Z1,
+    );
+    assert_eq!(on_solved1, 22.444233248805922);
+    // On the uncoupled estimates — must land elsewhere (the discriminator).
+    let on_unc0 = euler(
+        20.0,
+        27.917428108418147,
+        7776.0,
+        12768.0,
+        1000.0,
+        69.0,
+        0.0,
+        15.36,
+        7.2e6,
+        49.83639567077775,
+    );
+    assert_ne!(
+        on_unc0, 26.146946251858456,
+        "Euler-on-uncoupled must NOT reproduce the engine — the lumped mass rides the solved estimate"
+    );
+}
+
+#[test]
+/// Contract M6 — the multi-zone vent den rebuild carries the iz terms:
+/// `den = h_ms_is_prod + tr1·((h_ext + h_ve_night) + h_iz + h_iz_rad) + gc`
+/// (step_9r4c.rs:299–318 — the fan add lands zone-0-only inside
+/// `h_ext_for_free_float`), and the vent solves move both zones' estimates
+/// (−1.2526584770581457 / 22.097517475308482), committed airs
+/// (−0.11876799092171716 / 28.599766292672527) and lumped masses
+/// (26.10176821499925 / 22.441758406461478) bit-exactly against the
+/// replication — zone 1 couples to zone 0 ONLY through the implicit
+/// systems (the fan conductance itself never enters zone 1's rows: its
+/// pre-air stays 29.1384329942863, the vent-free literal).
+fn multizone_vent_den_carries_the_iz_terms() {
+    let mut m = fixture_9r4c_2z(Some(NightVentilation::new(FAN_M3_H, 0, 0)));
+    let hv = h_ve_night_engine_read(&m);
+    assert_eq!(hv, H_VE_NIGHT, "premise: the vent conductance (r112 pin)");
+    // The vent den rebuild, recomposed in-test (the rebuild's operand order).
+    let den_on = den_2z(hv);
+    assert_ne!(
+        den_on,
+        den_2z(0.0),
+        "the vent rebuild shifts the denominators"
+    );
+    let (est0, est1) = estimate_solved_2z(hv);
+    assert_eq!(
+        est0, EST_MZ_ON[0],
+        "vent-on zone-0 solved estimate (bit-exact)"
+    );
+    assert_eq!(
+        est1, EST_MZ_ON[1],
+        "vent-on zone-1 solved estimate (bit-exact)"
+    );
+    let kwh = m.step_physics(0, T_OUT, DT);
+    assert_eq!(kwh, 0.0);
+    assert_eq!(
+        m.setpoints.temperatures.as_ref()[0],
+        -0.11876799092171716,
+        "vent-on zone-0 committed air (bit-exact)"
+    );
+    assert_eq!(
+        m.setpoints.temperatures.as_ref()[1],
+        28.599766292672527,
+        "vent-on zone-1 committed air (bit-exact)"
+    );
+    assert_eq!(m.mass.mass_temperatures.as_ref()[0], 26.10176821499925);
+    assert_eq!(m.mass.mass_temperatures.as_ref()[1], 22.441758406461478);
+    let s0 = &m.conduction.backend.multi_node_solvers[0];
+    let s1 = &m.conduction.backend.multi_node_solvers[1];
+    assert_eq!(
+        s0.zone_temperature, -0.5281238277625315,
+        "vent-on zone-0 pre-air"
+    );
+    assert_eq!(
+        s1.zone_temperature, 29.1384329942863,
+        "the fan never enters zone 1's pre-air (air-side, zone-0-gated)"
+    );
+}
+
+#[test]
+/// Contract M7 — the two-step composition, the vent step 1, the
+/// zone_temperature PREMISE CORRECTION, and the #4495 guard scope: every
+/// step-1 state composes bit-exactly from the step-0 committed state
+/// (committed 35.70690021004182 / 30.507852737459846, lumped
+/// 32.243106892784546 / 26.859142690792257); `zone_temperature` at step 1
+/// is 35.204524659159546 — the UNCOUPLED pre-air, NOT the prior committed
+/// 34.989725362747315: in multi-zone the set_zone_temperature premise and
+/// the committed value separate, and r131's single-zone wording ("prior
+/// committed") was the uncoupled/committed coincidence. The vent fixture
+/// composes too (0.01195042258131936 / 29.165096005643147, lumped
+/// 32.149686954689734 / 26.854019373663057). Then a NaN outdoor
+/// temperature rejects the step: 0.0 kWh, BOTH zone commits untouched,
+/// solver nodes NaN'd as-is (the r131 guard scope, now multi-zone).
+fn multizone_two_step_composition_vent_and_guard() {
+    let mut m = fixture_9r4c_2z(None);
+    m.step_physics(0, T_OUT, DT);
+    let kwh1 = m.step_physics(1, T_OUT, DT);
+    assert_eq!(kwh1, 0.0);
+    assert_eq!(
+        m.setpoints.temperatures.as_ref()[0],
+        35.70690021004182,
+        "step-1 zone-0 committed air (bit-exact)"
+    );
+    assert_eq!(m.setpoints.temperatures.as_ref()[1], 30.507852737459846);
+    assert_eq!(m.mass.mass_temperatures.as_ref()[0], 32.243106892784546);
+    assert_eq!(m.mass.mass_temperatures.as_ref()[1], 26.859142690792257);
+    let s0 = &m.conduction.backend.multi_node_solvers[0];
+    let s1 = &m.conduction.backend.multi_node_solvers[1];
+    assert_eq!(
+        s0.zone_temperature, 35.204524659159546,
+        "zone_temperature == the step-1 UNCOUPLED pre-air (== step-0 uncoupled committed)"
+    );
+    assert_ne!(
+        s0.zone_temperature,
+        m.setpoints.temperatures.as_ref()[0],
+        "the premise correction: zone_temperature is NOT the prior committed value in multi-zone"
+    );
+    assert_eq!(s1.zone_temperature, 29.72231486401823);
+    // The vent arm composes across steps too.
+    let mut v = fixture_9r4c_2z(Some(NightVentilation::new(FAN_M3_H, 0, 0)));
+    v.step_physics(0, T_OUT, DT);
+    v.step_physics(1, T_OUT, DT);
+    assert_eq!(
+        v.setpoints.temperatures.as_ref()[0],
+        0.01195042258131936,
+        "vent step-1 zone-0 committed air (bit-exact)"
+    );
+    assert_eq!(v.setpoints.temperatures.as_ref()[1], 29.165096005643147);
+    assert_eq!(v.mass.mass_temperatures.as_ref()[0], 32.149686954689734);
+    assert_eq!(v.mass.mass_temperatures.as_ref()[1], 26.854019373663057);
+    // The guard: a NaN driving temperature rejects the step; BOTH commits
+    // stay untouched while the solver nodes advance into NaN (pinned as-is).
+    let kwh_nan = v.step_physics(2, f64::NAN, DT);
+    assert_eq!(kwh_nan, 0.0, "the rejected step returns 0.0 kWh");
+    assert_eq!(
+        v.setpoints.temperatures.as_ref()[0],
+        0.01195042258131936,
+        "zone-0 commit untouched"
+    );
+    assert_eq!(
+        v.setpoints.temperatures.as_ref()[1],
+        29.165096005643147,
+        "zone-1 commit untouched"
+    );
+    let vs = &v.conduction.backend.multi_node_solvers[0];
+    assert!(
+        vs.mass.wall.temperature.is_nan() && vs.mass.roof.temperature.is_nan(),
+        "the solver nodes advanced into NaN before the guard — pinned as-is"
+    );
+}
+
+/// The boundary fixture: the two-zone model grown to three zones with only
+/// two solvers — the shape the mn solve's `!mn_has` branch claims to
+/// support ("zones without a multi-node solver enter as known boundary
+/// temperatures", step_9r4c.rs:844–845) but cannot (contract M8).
+fn fixture_9r4c_boundary() -> ThermalModel<VectorField> {
+    let mut m = fixture_9r4c_2z(None);
+    m.setpoints.zone_area = VectorField::new(vec![48.0, 40.0, 30.0]);
+    m.setpoints.zone_volume = VectorField::new(vec![129.6, 108.0, 90.0]);
+    m.setpoints.temperatures = VectorField::new(vec![20.0, 18.0, 15.0]);
+    m.setpoints.loads = VectorField::new(vec![30.0, 20.0, 0.0]);
+    m.solar.solar_gains = VectorField::new(vec![400.0, 300.0, 0.0]);
+    m.solar.opaque_solar_gains = VectorField::new(vec![50.0, 30.0, 0.0]);
+    m.conduction.h_tr_em = VectorField::new(vec![15.36, 10.0, 5.0]);
+    m.conduction.h_tr_w = VectorField::new(vec![36.0, 24.0, 12.0]);
+    m.conduction.h_tr_floor = VectorField::new(vec![7.2, 8.0, 3.0]);
+    m.conduction.h_ve = VectorField::new(vec![
+        1.2 * 1000.0 * (0.5 * (48.0 * 2.7) / 3600.0),
+        h_ve_z1(),
+        10.0,
+    ]);
+    m.conduction.h_tr_ms = VectorField::new(vec![1000.0, 800.0, 500.0]);
+    m.conduction.h_tr_is = VectorField::new(vec![69.0, 75.0, 60.0]);
+    m.conduction.h_tr_iz = VectorField::new(vec![5.0, 7.0, 4.0]);
+    m.conduction.h_tr_iz_rad = VectorField::new(vec![2.0, 3.0, 1.0]);
+    m.mass.thermal_capacitance = VectorField::new(vec![7.2e6, 6.0e6, 4.5e6]);
+    m.mass.mass_temperatures = VectorField::new(vec![20.0, 18.0, 15.0]);
+    m.mass.h_tr_me = VectorField::new(vec![0.0, 0.0, 0.0]);
+    m.hvac.num_zones = 3;
+    m.update_optimization_cache();
+    m
+}
+
+#[test]
+/// Contract M8 — the boundary finding (2026-11-12, pinned as-is): with a
+/// solver-less zone in the model, the mn implicit solve never builds the
+/// `!mn_has` row (its matrix row stays all-zero), so the back-substitution
+/// divides 0/0 on it — `x[boundary] = NaN`, and `0.0·NaN` propagates
+/// through the solver-zone columns, poisoning x for EVERY zone with a
+/// solver. The #4495 commit guard then rejects the whole commit (0.0 kWh,
+/// setpoints stay at the PRE-step values 20.0/18.0/15.0) — while the
+/// lumped masses (26.146242764178844 / 22.443383416886824 /
+/// 14.893664424659514, riding the finite 3×3 estimate solve) and the
+/// solver nodes (18.614397156250497) HAVE already advanced: every step is
+/// half-applied, the air commits frozen. The in-code comment's claimed
+/// known-boundary behavior is not what executes. Latent-only: the
+/// from-spec constructor builds one solver per zone
+/// (thermal_model_core/mod.rs:2296), so no production path constructs
+/// this shape today. Routed to the physics queue — never tuned around.
+fn boundary_solver_less_zone_poisons_the_commit() {
+    let mut m = fixture_9r4c_boundary();
+    assert_eq!(
+        m.conduction.derived_den.as_ref()[2],
+        DEN_BND_2,
+        "zone-2 den anchor (the 3×3 cache composes fine)"
+    );
+    let kwh = m.step_physics(0, T_OUT, DT);
+    assert_eq!(kwh, 0.0, "the guard's degraded-step return");
+    assert_eq!(
+        m.setpoints.temperatures.as_ref(),
+        [20.0, 18.0, 15.0],
+        "the commits stay at the PRE-step values — the NaN commit was rejected whole"
+    );
+    assert_eq!(
+        m.mass.mass_temperatures.as_ref(),
+        [26.146242764178844, 22.443383416886824, 14.893664424659514],
+        "the lumped masses HAVE advanced (finite estimate chain), bit-exact"
+    );
+    let s0 = &m.conduction.backend.multi_node_solvers[0];
+    assert_eq!(
+        s0.zone_temperature, 34.47988132764695,
+        "zone-0 pre-air composed normally before the solve"
+    );
+    assert_eq!(
+        s0.mass.wall.temperature, 18.614397156250497,
+        "zone-0 mass node advanced normally"
     );
 }
