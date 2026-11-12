@@ -1058,6 +1058,60 @@ impl ZoneOrigin {
     }
 }
 
+/// Ground-coupled floor configuration (Issue #4775, Refs #4270).
+///
+/// Opt-in switch for the Section 7 floor boundary: when a case carries this
+/// configuration, the floor boundary temperature is produced by the 2-D
+/// ground-conduction domain (`fluxion::physics::ground_conduction`) instead
+/// of the constant ground temperature of Issue #746. Cases that do not opt in
+/// keep the constant-temperature path bit-identically.
+///
+/// The configuration is pure data (no upward dependencies), so it lives in
+/// `fluxion-core` next to [`CaseSpec`]; the solver that consumes it lives in
+/// `fluxion::sim::boundary`.
+///
+/// # Physical model
+///
+/// The ground domain is the soil column below the building footprint: its
+/// top surface follows an annual ground-surface temperature (mean plus
+/// cosine amplitude), the deep and lateral far-field boundaries hold the
+/// undisturbed ground temperature, and the soil's transient response damps
+/// and lags that surface forcing. The floor boundary reads the resulting soil
+/// temperature at [`Self::coupling_depth_m`] below the underside of the floor
+/// construction — the same "ground side" face the floor U-value's ground
+/// coupling resistance terminates on.
+///
+/// The coupling is one-way (the soil is driven by the ground-surface
+/// temperature, not by the zone floor temperature); a later issue can thread
+/// the zone-side feedback through the same boundary object.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GroundCoupledFloorSpec {
+    /// Soil thermal conductivity [W/(m·K)].
+    pub soil_conductivity_w_mk: f64,
+    /// Soil volumetric heat capacity [J/(m³·K)].
+    pub soil_volumetric_heat_capacity_j_m3k: f64,
+    /// Depth of the ground domain below the underside of the floor
+    /// construction [m].
+    pub domain_depth_m: f64,
+    /// Depth below the underside of the floor construction at which the
+    /// ground temperature is read for the floor boundary [m].
+    pub coupling_depth_m: f64,
+    /// Undisturbed deep-ground temperature [°C].
+    pub deep_ground_temperature_c: f64,
+    /// Lateral far-field (footprint edge) temperature [°C].
+    pub lateral_far_field_temperature_c: f64,
+    /// Soil surface film coefficient towards the ground-surface temperature
+    /// [W/(m²·K)].
+    pub surface_film_coefficient_w_m2k: f64,
+    /// Annual mean ground-surface temperature [°C].
+    pub surface_temperature_mean_c: f64,
+    /// Annual amplitude of the ground-surface temperature [°C].
+    pub surface_temperature_amplitude_c: f64,
+    /// Phase of the annual ground-surface temperature cycle [h from the start
+    /// of the year]; 0 puts the annual maximum at 1 January, 00:00.
+    pub surface_temperature_phase_hours: f64,
+}
+
 /// Complete case specification for an ASHRAE 140 test case.
 ///
 /// This struct contains all the information needed to configure a ThermalModel
@@ -1145,6 +1199,15 @@ pub struct CaseSpec {
     /// Per ASHRAE 140-2023 Annex B §B3.3: T_ground = 9.4°C for all cases with floor slab.
     /// When `None`, the model default (10.0°C) is used for backward compatibility.
     pub ground_temperature_c: Option<f64>,
+    /// Ground-coupled floor configuration (Issue #4775, Refs #4270).
+    ///
+    /// `Some` opts the case into the ground-coupled floor path: the Section 7
+    /// floor boundary temperature is produced by the 2-D ground-conduction
+    /// domain (`fluxion::physics::ground_conduction`) instead of the constant
+    /// `ground_temperature_c` value. `None` (the default for every case) keeps
+    /// the Issue #746 constant-temperature path bit-identically.
+    #[serde(default)]
+    pub ground_coupled_floor: Option<GroundCoupledFloorSpec>,
     /// Optional override for the floor U-value (W/m²K) used in ground coupling.
     /// When `Some`, replaces the construction-derived floor U-value in both
     /// `setpoints.floor_u_value` and the `h_tr_floor` conductance. Used for

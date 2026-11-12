@@ -1734,6 +1734,7 @@ pub fn case_spec_from_idf(idf: &IdfFile, case_id: &str) -> Result<CaseSpec, IdfE
         epw_path: None,
         hvac_equipment: None,
         ground_temperature_c,
+        ground_coupled_floor: None,
         floor_u_value_override: None,
         window_u_value_override: None,
         building_type: BuildingType::Residential,

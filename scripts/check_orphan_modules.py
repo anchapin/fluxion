@@ -384,15 +384,14 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
         # entries and their registry rows in the same PR.
         "physics::per_surface_multinode",
         "physics::per_surface_multinode::solar",
-        # [wire-pending] Issue #4270 (PR #4647) adds
+        # (Resolved 2026-11-12 in the Issue #4775 work: Issue #4270's
         # ``src/physics/ground_conduction.rs`` — the 2-D ground-conduction
-        # domain for the ASHRAE 140 §8 ground-coupled slab cases. Added
-        # standalone on purpose: §8 verifies the ground domain before it is
-        # wired back into the Section 7 floor boundary, which is the
-        # follow-up that drops this entry. Keyed by qualified path per the
-        # Issue #4702 path-keying migration (the branch originally
-        # registered the bare leaf ``ground_conduction``).
-        "physics::ground_conduction",
+        # domain for the ASHRAE 140 §8 ground-coupled slab cases — now has
+        # a production caller: the ground-coupled Section 7 floor boundary
+        # (``src/sim/boundary.rs::GroundCoupledFloorBoundary``) drives the
+        # floor boundary temperature from the ground domain. Its allowlist
+        # entry and registry row were dropped in lock-step there, lowering
+        # BASELINE_WIRED_BUT_DEAD 43 → 42.)
     }
 )
 
@@ -426,7 +425,13 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
 #     ``validation_hybrid_empirical_test`` target) — the module is no
 #     longer wired-but-dead, so its allowlist entry and its Issue
 #     #3748 disposition row are dropped in the same PR.
-BASELINE_WIRED_BUT_DEAD = 43  # raised 42 → 43 in PR #4647 (2026-11-11):
+BASELINE_WIRED_BUT_DEAD = 42  # lowered 43 → 42 in the Issue #4775 work
+#   (2026-11-12): physics::ground_conduction resolved — the ground-coupled
+#   Section 7 floor boundary (``src/sim/boundary.rs``) wires the Issue
+#   #4270 2-D ground-conduction domain into the floor boundary, so the
+#   module has a production caller and is no longer wired-but-dead; its
+#   allowlist entry and registry row were dropped in lock-step there.
+#   Prior: raised 42 → 43 in PR #4647 (2026-11-11):
 #   physics::ground_conduction registered wire-pending for Issue #4270
 #   (2-D ground-conduction domain, ASHRAE 140 §8 cases; qualified-path
 #   key per the Issue #4702 migration — the branch's original bare-leaf
