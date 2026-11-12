@@ -1,21 +1,24 @@
 {
   "baseline": {
-    "count": 10,
+    "count": 13,
     "paths": [
       "fluxion-city/src/lib.rs",
       "fluxion-mcp/src/tools.rs",
       "src/api/security/mod.rs",
+      "src/physics/gauge_zone_solver.rs",
       "src/physics/geometry_tensor/mod.rs",
+      "src/sim/hvac/pressure_air_loop.rs",
       "src/sim/thermal_model/mod.rs",
       "src/sim/thermal_model_core/mod.rs",
       "src/sim/thermal_model_data/mod.rs",
+      "src/sim/thermal_model_physics/zone_balance.rs",
       "src/validation/ashrae_140_cases.rs",
       "src/validation/ashrae_140_validator/mod.rs",
       "src/validation/reporter.rs"
     ]
   },
   "description": "Canonical LIMITS table for the module-size gate. Source of truth for max_lines per path. Ratchet JSONs track historical maxima; this file tracks active ceilings.",
-  "generated_at": "2026-11-12T03:12:13.586076+00:00",
+  "generated_at": "2026-11-12T03:36:13.954434+00:00",
   "history": [
     {
       "action": "seed from check_module_size.py LIMITS table (Issue #4243 refactor)",
@@ -31,6 +34,11 @@
       "action": "updated via --write-baseline: Issue #4752: re-point security/geometry entries to mod.rs successors, remove dead thermal_model_data.rs duplicate (baseline 11 -> 10)",
       "at": "2026-11-12",
       "len": 10
+    },
+    {
+      "action": "updated via --write-baseline: Issue #4753: gate the three largest ungated source files (src/sim/thermal_model_physics/zone_balance.rs 4421 lines, src/sim/hvac/pressure_air_loop.rs 4312 lines, src/physics/gauge_zone_solver.rs 4001 lines) per the Issue #3574 admission protocol; baseline 10 -> 13",
+      "at": "2026-11-12",
+      "len": 13
     }
   ],
   "limits": [
@@ -93,6 +101,24 @@
       "path": "fluxion-mcp/src/tools.rs",
       "ratchet_basename": "fluxion_mcp_tools_ratchet.json",
       "reason": "Issue #3574: workspace sibling fluxion-mcp/src/tools.rs crossed the smallest ratcheted threshold after Issue #3543. Ratcheted at current size 1648 lines + buffer (max of +5% or +100 lines = 1748); decomposition tracked separately."
+    },
+    {
+      "max_lines": 4643,
+      "path": "src/sim/thermal_model_physics/zone_balance.rs",
+      "ratchet_basename": "zone_balance_ratchet.json",
+      "reason": "Issue #4753: src/sim/thermal_model_physics/zone_balance.rs is the largest file in src/ (4421 lines) and had no module-size ratchet at all, despite the Issue #3574 admission protocol for files crossing ~2000 lines. Ratcheted at current size 4421 lines + buffer (max of +5% or +100 lines = 222) = 4643 per the Issue #3574 admission protocol; decomposition tracked separately."
+    },
+    {
+      "max_lines": 4528,
+      "path": "src/sim/hvac/pressure_air_loop.rs",
+      "ratchet_basename": "pressure_air_loop_ratchet.json",
+      "reason": "Issue #4753: src/sim/hvac/pressure_air_loop.rs (4312 lines) is one of the three largest ungated source files in src/ and had no module-size ratchet at all. Ratcheted at current size 4312 lines + buffer (max of +5% or +100 lines = 216) = 4528 per the Issue #3574 admission protocol; decomposition tracked separately."
+    },
+    {
+      "max_lines": 4202,
+      "path": "src/physics/gauge_zone_solver.rs",
+      "ratchet_basename": "gauge_zone_solver_ratchet.json",
+      "reason": "Issue #4753: src/physics/gauge_zone_solver.rs (4001 lines) is one of the three largest ungated source files in src/ and had no module-size ratchet at all. Ratcheted at current size 4001 lines + buffer (max of +5% or +100 lines = 201) = 4202 per the Issue #3574 admission protocol; decomposition tracked separately."
     }
   ],
   "ratchet_dir": "tests/reference_data/module_size",
