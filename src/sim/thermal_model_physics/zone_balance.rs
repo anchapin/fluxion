@@ -2902,8 +2902,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         )));
 
         // Persist final solar-lag state
-        self.0.mass.solar_lag.as_mut()[..self.0.hvac.num_zones]
-            .copy_from_slice(&scratch.air_node_solar_lag.as_ref()[..self.0.hvac.num_zones]);
+        // [R140 — moved to the commit zone below every rejection path (the
+        // LOOP137 seam: this write previously sat between the air-node and
+        // demand/mass guards, so a demand- or mass-guard rejection advanced
+        // the solar-lag ODE state with the rejected step's drivers — the
+        // next step's seed). The commit-zone write consumes the same
+        // `scratch.air_node_solar_lag` final values.]
 
         // Issue #1585: step the air-node ODE state forward for the next
         // timestep.  t_i_free (the new zone-air temperature) becomes
@@ -2914,11 +2918,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .air_node_t_i_free_slice
             .as_mut()
             .copy_from_slice(t_i_free.as_ref());
-        self.0
-            .mass
-            .air_temperatures
-            .as_mut()
-            .copy_from_slice(&scratch.air_node_t_i_free_slice.as_ref()[..self.0.hvac.num_zones]);
+        // [R140 — the committed zone-air write moved to the commit zone
+        // below every rejection path, discovered by the twin contract: this
+        // write previously sat above the demand and mass-node guards, so a
+        // demand- or mass-guard rejection left `mass.air_temperatures` at
+        // the REJECTED step's air state (measured on the twin fixture:
+        // 25.435599885680944 K vs B's 25.351535872630695 K) while the
+        // guards' messages claimed "state untouched" — the same
+        // r134/r136/r137 verdict class, one more site. The demand path
+        // between the old and new sites consumes the LOCAL `t_i_free` (the
+        // `compute_zone_hvac_load` call), never this field (verified by
+        // line-addressed grep at the tip: the only other reference is the
+        // env-gated FFAUDIT print, which reads the identical value), so
+        // accepted steps commit identical bytes — proven by the battery
+        // output-diff riding this PR.]
 
         // The wall-surface state contributes to the air-node numerator through
         // the transient surface flux correction applied above.
@@ -3617,6 +3630,39 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             Option<crate::sim::thermal_model_data::Applied5R1CClassBoundary>,
         > = std::mem::take(&mut self.0.conduction.applied_5r1c_class_boundary).unwrap_or_default();
         applied_class_buf.clear();
+        // [R140 — the r70 t_s vectors hoisted out of the per-zone class arm
+        // to one build per step, so the model writes can move to the commit
+        // zone below every rejection path (the LOOP137 seam fix riding this
+        // PR). The class advance consumes only its own zone's slice indices
+        // `3*i + c` (verified by line-addressed grep at the tip), so one
+        // pre-step build is byte-identical to the per-zone take/clear cycle
+        // it replaces: each zone read its own still-pre-step slice either
+        // way, and the per-zone model writes were redundant full-vector
+        // stores whose final content this commit zone reproduces exactly.]
+        let r70_ts_on = true;
+        let n_z70 = self.0.hvac.num_zones;
+        // [Round 78 (#4512): the per-step `to_vec` + `clone` pair the D5
+        // default flip made here (~2 heap allocations per timestep,
+        // breached #4512's budget while the dashboard dhat job was skipped)
+        // is pooled in `MassState` workspaces and reused. Values identical
+        // (clear + extend/resize reuses the allocation; contents equal the
+        // old copies).]
+        let mut r70_ts_old: Vec<f64> = self.0.mass.r70_ts_old_workspace.take().unwrap_or_default();
+        r70_ts_old.clear();
+        match self.0.mass.r70_surface_node_temperatures.as_ref() {
+            Some(v) if v.as_ref().len() >= 3 * n_z70 => {
+                r70_ts_old.extend_from_slice(&v.as_ref()[..3 * n_z70])
+            }
+            _ => r70_ts_old.resize(3 * n_z70, 20.0),
+        }
+        let mut r70_ts_new: Vec<f64> = self.0.mass.r70_ts_new_workspace.take().unwrap_or_default();
+        r70_ts_new.clear();
+        r70_ts_new.extend_from_slice(&r70_ts_old);
+        // [R140] The commit zone writes the model pair only when at least
+        // one zone actually ran the per-class arm (the pre-fix writes were
+        // per-class-arm events; a fallback-only step left both fields
+        // untouched and must keep doing so).
+        let mut r70_any_class = false;
         let phi_m_ref = phi_m.as_ref();
         let h_tr_3_ref_2 = self.0.conduction.derived_h_tr_3.as_ref();
         let h_tr_is_ref_2 = self.0.conduction.h_tr_is.as_ref();
@@ -3936,28 +3982,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         // mass advance consumes that t_s. Disclosed structural
                         // assumption carried from the round-70 record: the
                         // interior surface layer capacitance C_s_c = 0.1·cm_c.]
-                        let r70_ts_on = true;
-                        let n_z70 = self.0.hvac.num_zones;
-                        // [Round 78 (#4512): the per-step `to_vec` + `clone`
-                        // pair the D5 default flip made here (~2 heap
-                        // allocations per timestep, breached #4512's budget
-                        // while the dashboard dhat job was skipped) is pooled
-                        // in `MassState` workspaces and reused. Values
-                        // identical (clear + extend/resize reuses the
-                        // allocation; contents equal the old copies).]
-                        let mut r70_ts_old: Vec<f64> =
-                            self.0.mass.r70_ts_old_workspace.take().unwrap_or_default();
-                        r70_ts_old.clear();
-                        match self.0.mass.r70_surface_node_temperatures.as_ref() {
-                            Some(v) if v.as_ref().len() >= 3 * n_z70 => {
-                                r70_ts_old.extend_from_slice(&v.as_ref()[..3 * n_z70])
-                            }
-                            _ => r70_ts_old.resize(3 * n_z70, 20.0),
-                        }
-                        let mut r70_ts_new: Vec<f64> =
-                            self.0.mass.r70_ts_new_workspace.take().unwrap_or_default();
-                        r70_ts_new.clear();
-                        r70_ts_new.extend_from_slice(&r70_ts_old);
+                        // [R140 — the per-step t_s vector build moved above
+                        // the zone loop and the per-zone model writes moved
+                        // to the commit zone below every rejection path;
+                        // this arm now only marks that the pair must be
+                        // written and advances its own `3*i + c` slices.]
+                        r70_any_class = true;
                         // [Round 138 — #2890-followup routing: the inter-pool
                         // longwave network enters the production per-class
                         // t_s advance. The pairwise Stefan–Boltzmann net
@@ -4179,23 +4209,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         }
                         // [D5 DEFAULT — write the advanced per-class
                         // surface-node state back (see the t_s-first note).]
-                        if r70_ts_on {
-                            let mut sv = smallvec::SmallVec::new();
-                            sv.extend_from_slice(&r70_ts_new);
-                            let v = T::from(VectorField::from_smallvec(sv));
-                            self.0.mass.r70_surface_node_temperatures = Some(v);
-                            // [Round 73 (#1522/#4504)] Persist the `t_s_old`
-                            // snapshot this advance consumed so the checker
-                            // can recompute the surface-node identity
-                            // exactly. Write-only for the engine.
-                            let mut svp = smallvec::SmallVec::new();
-                            svp.extend_from_slice(&r70_ts_old);
-                            self.0.mass.r70_surface_node_temperatures_prev =
-                                Some(T::from(VectorField::from_smallvec(svp)));
-                        }
-                        // [Round 78 (#4512): return the t_s workspaces.]
-                        self.0.mass.r70_ts_old_workspace = Some(r70_ts_old);
-                        self.0.mass.r70_ts_new_workspace = Some(r70_ts_new);
+                        // [R140 — the model writes and workspace returns for
+                        // the t_s pair moved to the commit zone below every
+                        // rejection path; the vectors above are the same
+                        // per-step build, mutated in place by this arm's own
+                        // `3*i + c` slices exactly as before.]
                         tm_w
                     }
                     _ => advance_node(
@@ -4363,17 +4381,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 );
             }
         }
-        self.0.conduction.applied_5r1c_class_boundary = Some(applied_class_buf);
-        // [Round 78] the checker record persists only for a step that
-        // ran the coupled advance AND passed both input-envelope guards
-        // above (a rejected step leaves state untouched, so it must also
-        // leave no record for the checker to mirror).
-        self.0.mass.r77_mass_substep_coeffs = if r77_coupled { Some(r77_coeffs) } else { None };
-        self.0.mass.r77_air_substep_coeffs = if r77_air_record {
-            Some(r77_air_coeffs)
-        } else {
-            None
-        };
+        // [Round 78 → R140] the checker records persist only for a step that
+        // ran the coupled advance AND passed every input-envelope guard —
+        // the installs moved to the commit zone below the mass-node guard,
+        // making this comment true at every guard for the first time (a
+        // rejected step leaves no record for the checker to mirror).]
         // [Round 78 (#4512): return the per-class tuple scratch to the model.]
         self.0.conduction.r66_cls_workspace = Some(r66_cls);
 
@@ -4385,6 +4397,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // the state untouched.
         for (i, &t) in scratch.new_mass.iter().enumerate() {
             if !t.is_finite() {
+                // [R140 — the hoisted r70 t_s vectors return to their
+                // workspaces on this rejection path (the Issue #2756
+                // no-leak contract). The applied-class build buffer is
+                // intentionally NOT reinstalled: the Round-78 no-record
+                // convention now holds at every guard, so the rejected
+                // step leaves the field None (its next allocation is the
+                // one-time class-buffer rebuild on the next step).]
+                self.0.mass.r70_ts_old_workspace = Some(r70_ts_old);
+                self.0.mass.r70_ts_new_workspace = Some(r70_ts_new);
                 // Same pooled-scratch restoration as the air-node guard above.
                 self.0.hvac.scratch_pool.return_5r1c(scratch);
                 return Err(FluxionError::Validation(format!(
@@ -4403,6 +4424,61 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Mass energy change tracking removed - Ti_free already includes thermal mass effects
         self.0.mass.previous_mass_temperatures =
             std::mem::replace(&mut self.0.mass.mass_temperatures, new_mass_temps_vf);
+
+        // [R140 — checker-record + lag-state persistence relocated below
+        // every rejection path (the issue #4495 air-node guard, the issue
+        // #4500 demand guard, and the issue #4495 mass-node guard above).
+        // The LOOP137 routed finding: the solar-lag persist and the r77/r70
+        // checker records previously ran above the mass-node guard, so a
+        // mass-guard rejection advanced them with the rejected step's
+        // drivers while the guards' messages claimed "state untouched" —
+        // the same disease class r136/r137 fixed for the ramp-source
+        // blocks, here extended to the remaining plain-write families. The
+        // r137 verdict applies verbatim: a rejected step advances NOTHING.
+        // Write order (solar lag, then the r70 t_s pair + workspace
+        // returns, then the per-class boundary record, then the R77
+        // sub-step records) preserves the pre-move relative order, values
+        // are unchanged, and nothing reads these fields between the old
+        // and new sites (verified by line-addressed grep at the tip; the
+        // class advance consumes only its own zone's `3*i + c` slices, so
+        // the hoisted per-step t_s build is byte-identical to the per-zone
+        // take/clear cycle) — accepted steps persist identical bytes,
+        // proven by the battery output-diff riding this PR.]
+        // Persist final solar-lag state (moved from the sub-step-loop exit).
+        self.0.mass.solar_lag.as_mut()[..self.0.hvac.num_zones]
+            .copy_from_slice(&scratch.air_node_solar_lag.as_ref()[..self.0.hvac.num_zones]);
+        // The committed zone-air write (moved from above the demand guard;
+        // the scratch slice copy stays at its original site).
+        self.0
+            .mass
+            .air_temperatures
+            .as_mut()
+            .copy_from_slice(&scratch.air_node_t_i_free_slice.as_ref()[..self.0.hvac.num_zones]);
+        // [Round 73 (#1522/#4504)] The r70 t_s checker pair, written once
+        // per step from the hoisted per-step vectors (was: per zone,
+        // inside the class arm). `_prev` is the `t_s_old` snapshot this
+        // advance consumed so the checker can recompute the surface-node
+        // identity exactly; write-only for the engine.
+        if r70_ts_on && r70_any_class {
+            let mut sv = smallvec::SmallVec::new();
+            sv.extend_from_slice(&r70_ts_new);
+            let v = T::from(VectorField::from_smallvec(sv));
+            self.0.mass.r70_surface_node_temperatures = Some(v);
+            let mut svp = smallvec::SmallVec::new();
+            svp.extend_from_slice(&r70_ts_old);
+            self.0.mass.r70_surface_node_temperatures_prev =
+                Some(T::from(VectorField::from_smallvec(svp)));
+        }
+        // [Round 78 (#4512): return the t_s workspaces.]
+        self.0.mass.r70_ts_old_workspace = Some(r70_ts_old);
+        self.0.mass.r70_ts_new_workspace = Some(r70_ts_new);
+        self.0.conduction.applied_5r1c_class_boundary = Some(applied_class_buf);
+        self.0.mass.r77_mass_substep_coeffs = if r77_coupled { Some(r77_coeffs) } else { None };
+        self.0.mass.r77_air_substep_coeffs = if r77_air_record {
+            Some(r77_air_coeffs)
+        } else {
+            None
+        };
 
         // [R137 — ramp-source persistence relocated below every rejection
         // path (the issue #4495 air-node guard, the issue #4500 demand

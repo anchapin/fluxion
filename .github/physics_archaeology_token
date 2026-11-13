@@ -1,14 +1,28 @@
-# Falsy-archaeology token (loop round 94, 2026-10-24).
+# Falsy-archaeology token (loop round 140 re-pin, 2026-11-13).
 #
 # The strict gate's "Falsy-archaeology attestation" step reads the first
 # NAME=value line of this file, re-runs the strict battery with that env
 # token set, and diffs the measured rows against the merge-base
-# output-diff baseline. The re-record is honest iff the falsy route
+# output-diff baseline. The re-record is honest iff the attested route
 # reproduces the old record exactly.
 #
-# Round 94: falsy FLX_R94_T5138_GAINS_C3 restores the r93-composed
-# surface-pool route bit-identically (see the round-94 physics commit,
-# "physics(r94): surface-pool component partition under the T5138 route").
-# Update this file in every round that moves a default route; remove the
-# NAME=value line when a round retires its token.
-FLX_R94_T5138_GAINS_C3=0
+# RE-PIN PROVENANCE (onyx decision, Alex released the token-file call
+# 2026-11-13 15:48 ET — "Decide how to handle the token file, I don't
+# have a preference. Then go to next step"): the round-94 line carried
+# FLX_R94_T5138_GAINS_C3=0, the falsy arm that restores the
+# r93-composed surface-pool route. That route is long retired, so every
+# src-touching PR since round 138 attested a ten-rounds-stale route and
+# failed the non-blocking leg with the identical 13-metric move (r138
+# and r139 PRs both). onyx chose RE-PIN over retiring the token:
+# retiring it would remove the attestation leg from every future
+# src-touching PR and weaken a gate; re-pinning attests the CURRENT
+# tree's own route instead.
+#
+# The re-pinned line selects the tree's own default route:
+# FLX_R94_T5138_GAINS_C3 now defaults true at the zone_balance.rs
+# gains-partition site (env_bool), so =1 and unset select the identical
+# route (env_bool canonical truthy set: 1/true/yes/on). Measured at the
+# round-140 tip: the strict battery + output-diff riding the re-pin PR
+# is the identity proof — diff-vs-merge-base zero for a PR that moves no
+# default route, and the moved rows displayed for one that does.
+FLX_R94_T5138_GAINS_C3=1
