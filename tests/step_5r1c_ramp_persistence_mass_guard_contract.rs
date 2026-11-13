@@ -33,11 +33,18 @@ use fluxion::sim::boundary::ConstantGroundTemperature;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::sim::invariant_checker::InvariantChecker;
 
+// [Loop round 140 CI fix — the three R140 sections were separate #[test]
+// fns; the process-global env arm races across parallel test threads (one
+// test's remove_var pulls the arm out from under another's step, so a
+// step that must reject at the mass guard can reject at the air guard
+// instead). Merged into the single test fn this binary always required:
+// one env set/remove, three sequential sections, identical asserts.]
+
 #[test]
 /// C5 — the mass-guard rejection seam: every ramp family stays at init
 /// through a mass-node rejection. The env arm is set for this process
 /// only (single test per binary, no parallel readers).
-fn mass_guard_rejection_leaves_every_ramp_family_at_init() {
+fn mass_guard_rejection_sections() {
     std::env::set_var("FLX_R76_NO_NUM_REFRESH", "1");
 
     let mut m = ThermalModel::<VectorField>::new(1);
@@ -162,28 +169,7 @@ fn mass_guard_rejection_leaves_every_ramp_family_at_init() {
         "the mass-guard rejection must leave no r70 t_s_old snapshot"
     );
 
-    std::env::remove_var("FLX_R76_NO_NUM_REFRESH");
-}
-
-/// R140 recovery twins — the engine-facing half of the seam. A and B are
-/// built identically and step identically except that A takes one extra
-/// mass-guard-rejected step between them (the C5 degenerate-cm recipe,
-/// env-armed). Pre-fix the rejection advanced solar_lag (the next step's
-/// seed) and the r70 t_s state, and the checker mirrored the rejected
-/// step's records; post-fix the contract is:
-///   - every plain-write family (solar lag, r70 t_s pair, committed
-///     air/mass/prev) is bit-identical between A and B;
-///   - the take-shaped record fields (R77 mass/air, per-class boundary —
-///     their pooled buffers are `.take()`n at step start, so a step that
-///     never reaches the install can only leave them empty) present NO
-///     record on A: the Round-78 no-record convention, now true at every
-///     guard;
-///   - consequently the checker at A's state must read exactly what it
-///     reads at B's state with the records surgically absent — the
-///     documented absent-record fall-through, bit-exact.
-#[test]
-fn mass_guard_rejection_twin_states_stay_bit_identical() {
-    std::env::set_var("FLX_R76_NO_NUM_REFRESH", "1");
+    // ---- R140 recovery-twin section ----
 
     let build = || {
         let mut m = ThermalModel::<VectorField>::new(1);
@@ -305,18 +291,7 @@ fn mass_guard_rejection_twin_states_stay_bit_identical() {
         );
     }
 
-    std::env::remove_var("FLX_R76_NO_NUM_REFRESH");
-}
-
-/// R140 accepted-step pin — the relocation's inertness guard on the same
-/// fixture the twins use. An ACCEPTED step must persist the lag state and
-/// every checker record exactly as before the relocation (values measured
-/// at the unfixed tip; bit-exact literals). Any accepted-step byte movement
-/// turns this pin red — the over-relocation discriminator complementing the
-/// battery output-diff.
-#[test]
-fn accepted_step_persists_records_and_lag_bit_exact() {
-    std::env::set_var("FLX_R76_NO_NUM_REFRESH", "1");
+    // ---- R140 accepted-step pin section ----
 
     let mut m = ThermalModel::<VectorField>::new(1);
     m.setpoints.zone_area = VectorField::from_scalar(48.0, 1);
@@ -365,8 +340,7 @@ fn accepted_step_persists_records_and_lag_bit_exact() {
         assert_eq!(mass_rec[0][2], 14400032.146629825, "d_0");
         assert_eq!(mass_rec[0][3], 0.00000046771431787824033, "bl_0");
         assert_eq!(
-            mass_rec[0][46],
-            14400032.146629825,
+            mass_rec[0][46], 14400032.146629825,
             "d_last (the composite residual scaler)"
         );
     }
@@ -385,9 +359,7 @@ fn accepted_step_persists_records_and_lag_bit_exact() {
         .applied_5r1c_class_boundary
         .as_ref()
         .expect("the accepted step must persist the per-class boundary record");
-    let c0 = cls[0]
-        .as_ref()
-        .expect("zone 0 must carry its class record");
+    let c0 = cls[0].as_ref().expect("zone 0 must carry its class record");
     #[allow(clippy::float_cmp)]
     {
         assert_eq!(c0.t_i, 25.27103326464767, "committed t_i");
