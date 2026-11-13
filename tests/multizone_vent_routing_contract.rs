@@ -173,8 +173,14 @@ fn with_coupling(iz: f64) -> ThermalModel<VectorField> {
     m
 }
 
-/// The air record for one zone: (sub-step count, den sequence). 7 entries per
-/// sub-step `[D, M, W, den, h3od, a, bl]` (round-107 layout).
+/// The air record for one zone: (sub-step count, den sequence). 9 entries per
+/// sub-step `[D, M, W, den, h3od, a, bl, C, np]` — the round-107 seven-entry
+/// layout extended in lockstep by round 113 (slot `C`, the inter-zone
+/// cross-response) and round 115 (slot `np`, the ramp-source slope).
+/// Re-pinned 2026-11-13 (loop round 139): the stride assert still counted the
+/// round-107 seven-entry layout and failed on the live 12x9 = 108-entry record
+/// (proven pre-existing at the base tip in round 138); `den` stays index 3 and
+/// the vent trio stays slots 4-6 of each sub-step block.
 fn air_record(m: &ThermalModel<VectorField>, zone: usize) -> (usize, Vec<f64>) {
     let rec = m
         .mass
@@ -183,12 +189,12 @@ fn air_record(m: &ThermalModel<VectorField>, zone: usize) -> (usize, Vec<f64>) {
         .expect("a live coupled 5R1C step must persist the air-node record");
     let row = &rec[zone];
     assert!(
-        !row.is_empty() && row.len() % 7 == 0,
-        "air record must carry 7 entries per sub-step, got {}",
+        !row.is_empty() && row.len() % 9 == 0,
+        "air record must carry 9 entries per sub-step, got {}",
         row.len()
     );
-    let n = row.len() / 7;
-    let den_seq = (0..n).map(|k| row[7 * k + 3]).collect::<Vec<f64>>();
+    let n = row.len() / 9;
+    let den_seq = (0..n).map(|k| row[9 * k + 3]).collect::<Vec<f64>>();
     (n, den_seq)
 }
 
@@ -432,12 +438,12 @@ fn zone0_mass_record_slots_identical_except_the_live_air_b() {
         .r77_air_substep_coeffs
         .as_ref()
         .expect("air record (off)");
-    let n = air_on[0].len() / 7;
+    let n = air_on[0].len() / 9;
     for k in 0..n {
         for slot in [4_usize, 5, 6] {
             assert_eq!(
-                air_on[0][7 * k + slot],
-                air_off[0][7 * k + slot],
+                air_on[0][9 * k + slot],
+                air_off[0][9 * k + slot],
                 "sub-step {k} slot {slot}: zone 0's mass-route trio moved under vent-on"
             );
         }
