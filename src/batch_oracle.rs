@@ -100,6 +100,48 @@ fn inject_surrogate_new_failure(msg: &str) {
     INJECTED_SURROGATE_FAILURE.with(|slot| *slot.borrow_mut() = Some(msg.to_string()));
 }
 
+/// Which surrogate execution path a population slice is dispatched to.
+///
+/// Issue #4791: the GPU path blocks on a per-timestep response channel
+/// (`resp_rx.recv()` in the GPU worker loop) and therefore *requires* a
+/// usable model to answer on that channel. Selecting it purely on
+/// `gpu_supported()` (a backend/capability query) let a surrogate manager
+/// with **no model loaded** enter the GPU path, where the request/response
+/// rendezvous never completes — the call blocked indefinitely instead of
+/// falling back the way the CPU path does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SurrogatePath {
+    /// GPU path — batched inference through `SharedBatchInferenceService`.
+    /// Only selected when a model is actually loaded.
+    GpuBatched,
+    /// CPU path with a real model — batched ONNX inference
+    /// (`run_cpu_surrogate_batched`).
+    CpuBatched,
+    /// CPU path without a model — mock / analytical fallback
+    /// (`run_cpu_surrogate`).
+    CpuFallback,
+}
+
+/// Issue #4791: decide the surrogate execution path for a population slice.
+///
+/// * A loaded model keeps its current behaviour: GPU-backed batched
+///   inference when the backend supports it, CPU batched ONNX otherwise.
+/// * **No model loaded** always takes the CPU mock/analytical fallback,
+///   independently of the backend — the same semantics the CPU path
+///   already had. The GPU path is never entered without a model, so the
+///   worker loop can no longer block forever on `resp_rx.recv()`.
+///
+/// Pure function so the decision is unit-testable on every backend (the
+/// GPU branch itself is only compiled in CUDA builds).
+pub(crate) fn select_surrogate_path(gpu_supported: bool, model_loaded: bool) -> SurrogatePath {
+    match (model_loaded, gpu_supported) {
+        (true, true) => SurrogatePath::GpuBatched,
+        (true, false) => SurrogatePath::CpuBatched,
+        // Issue #4791: no model → CPU fallback on every backend.
+        (false, _) => SurrogatePath::CpuFallback,
+    }
+}
+
 impl BatchOracle {
     // Physical constraints for optimization parameters
     pub(crate) const MIN_U_VALUE: f64 = 0.1; // Minimum realistic U-value (W/m²K)
@@ -394,8 +436,15 @@ impl BatchOracle {
         use crate::physics::cta::ContinuousTensor;
 
         if use_surrogates && !valid_configs.is_empty() {
+            // Issue #4791: the dispatch decision now also considers whether a
+            // model is actually loaded. The GPU path blocks on a per-timestep
+            // response channel, so it is only safe (and only meaningful)
+            // when there is a model to answer the request; without one we
+            // take the CPU mock/analytical fallback — the same semantics the
+            // CPU path already had — instead of blocking forever.
             let use_gpu = self.surrogates.gpu_supported();
-            if use_gpu {
+            let path = select_surrogate_path(use_gpu, self.surrogates.model_loaded);
+            if path == SurrogatePath::GpuBatched {
                 // GPU path with SharedBatchInferenceService
                 use crate::ai::shared_batch_service::{
                     DynamicBatchConfig, SharedBatchInferenceService,
@@ -582,8 +631,30 @@ impl BatchOracle {
 
 #[cfg(test)]
 mod tests {
+    use super::{select_surrogate_path, SurrogatePath};
+
     #[cfg(feature = "python-bindings")]
     use crate::BatchOracle;
+
+    #[test]
+    fn test_select_surrogate_path_requires_loaded_model_for_gpu() {
+        // Issue #4791: no model loaded -> CPU fallback on EVERY backend, so
+        // the GPU response channel can never block forever.
+        assert_eq!(
+            select_surrogate_path(true, false),
+            SurrogatePath::CpuFallback
+        );
+        assert_eq!(
+            select_surrogate_path(false, false),
+            SurrogatePath::CpuFallback
+        );
+        // A loaded model keeps its previous behaviour on both backends.
+        assert_eq!(select_surrogate_path(true, true), SurrogatePath::GpuBatched);
+        assert_eq!(
+            select_surrogate_path(false, true),
+            SurrogatePath::CpuBatched
+        );
+    }
 
     #[cfg(feature = "python-bindings")]
     #[test]
