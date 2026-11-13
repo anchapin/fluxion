@@ -1600,8 +1600,8 @@ mod tests {
             .iter()
             .map(|l| l.r_value())
             .sum();
-        let expected = (1.0 / (r_si + r_materials
-            + fluxion_core::construction::GROUND_COUPLING_RESISTANCE_M2K_W))
+        let expected = (1.0
+            / (r_si + r_materials + fluxion_core::construction::GROUND_COUPLING_RESISTANCE_M2K_W))
             * floor_area;
 
         assert_eq!(

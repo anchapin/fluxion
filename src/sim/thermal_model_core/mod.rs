@@ -903,9 +903,9 @@ impl ThermalModel<VectorField> {
         // and ground coupling resistance in floor U-value calculation.
         // Issue #4789: the opt-in ground-coupled floor path drops the lumped
         // ground-coupling resistance (the ground domain carries it).
-        model.setpoints.floor_u_value = spec.floor_u_value_override.unwrap_or_else(|| {
-            floor_u_value_of(&spec.construction.floor)
-        });
+        model.setpoints.floor_u_value = spec
+            .floor_u_value_override
+            .unwrap_or_else(|| floor_u_value_of(&spec.construction.floor));
 
         // Issue #746 / Issue #4775: the Section 7 floor boundary is driven by
         // the constant ground temperature (ASHRAE 140-2023 Annex B §B3.3,
