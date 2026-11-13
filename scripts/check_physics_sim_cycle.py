@@ -152,7 +152,7 @@ BASELINE_PHYSICS_TO_SIM = 0
 # spec types to assemble the coupled zonal-air system; homing either in
 # sim would duplicate physics-owned types. Companion cycle-removal work
 # stays open under the #2462 phase-3 sim->physics edge elision.
-BASELINE_SIM_TO_PHYSICS = 87  # was 86 (PR #4799 / Issue #4794, 2026-11-12):
+BASELINE_SIM_TO_PHYSICS = 89  # was 87 (PR #4803 / Issue #4789 merge-update, 2026-11-12): +2 edges from the branch in src/sim/boundary.rs (the production ground-coupled import and the analytic series test-module import of TopCondition/TopSegment — the test pins the R_g double-count fix) on top of develop’s 87. Prior: was 86 (PR #4799 / Issue #4794, 2026-11-12):
                               # +1 for the year-wrap soil-state carry's
                               # `use crate::physics::ground_conduction::{TopCondition, TopSegment}`
                               # edge in src/sim/boundary.rs — the ground-coupled

@@ -71,6 +71,25 @@ pub const INTERIOR_FILM_COEFF_FLOOR: f64 = 5.88;
 /// **Value:** 18.3 W/m²K
 pub const EXTERIOR_FILM_COEFF_DEFAULT: f64 = 18.3;
 
+/// Effective ground-coupling resistance of a slab-on-grade floor
+/// (Issue #588).
+///
+/// **Value:** 0.17 m²K/W (≈ a 6 W/m²K film coefficient)
+///
+/// This is the *exterior* resistance a floor carries in
+/// [`Construction::r_value_total`] instead of the wind film: the exterior
+/// boundary of a slab-on-grade floor is the ground, not ambient air. The
+/// value is the ASHRAE HOAFM effective ground-coupling resistance and
+/// **includes soil resistance**.
+///
+/// A floor whose ground-side resistance is resolved *explicitly* — by the
+/// ground-conduction domain of the opt-in ground-coupled floor path, which
+/// models the soil between the floor underside and the coupling depth — must
+/// not carry this lumped resistance as well: the two would count the same
+/// soil resistance twice (Issue #4789). Use
+/// [`Construction::u_value_without_ground_resistance`] for that path.
+pub const GROUND_COUPLING_RESISTANCE_M2K_W: f64 = 0.17;
+
 /// Air density at sea level under standard conditions.
 /// **Value:** 1.225 kg/m³
 pub const AIR_DENSITY_SEA_LEVEL: f64 = 1.225;
@@ -416,12 +435,50 @@ impl Construction {
         let r_exterior = if surface_type == Some(SurfaceType::Floor) {
             // Ground coupling resistance for slab-on-grade
             // Approximate value: R_g = 0.17 m²K/W (includes soil resistance)
-            0.17
+            GROUND_COUPLING_RESISTANCE_M2K_W
         } else {
             r_film_ext
         };
 
         r_film_int + r_materials + r_exterior
+    }
+
+    /// Calculates the total thermal resistance (R-value) of the construction
+    /// **without** the lumped ground-coupling resistance of a slab-on-grade
+    /// floor.
+    ///
+    /// [`Construction::r_value_total`] gives a floor the exterior resistance
+    /// `R_g = 0.17 m²K/W` (Issue #588), an effective ground-coupling
+    /// resistance that *includes soil resistance*, because the floor's
+    /// exterior boundary is the ground. When that ground-side resistance is
+    /// resolved explicitly instead — the opt-in ground-coupled floor path,
+    /// whose ground-conduction domain models the soil between the floor
+    /// underside and the coupling depth — the lumped `R_g` counts the same
+    /// soil resistance a second time (Issue #4789), and this variant is the
+    /// series without it:
+    ///
+    /// ```text
+    /// R_total = R_film_int + Σ(δ/k)
+    /// ```
+    ///
+    /// # Arguments
+    /// * `surface_type` - Optional surface type for ASHRAE 140 surface-type-specific
+    ///   interior film coefficient. If None, uses default INTERIOR_FILM_COEFF.
+    ///
+    /// # Returns
+    /// Total thermal resistance in m²K/W, without the ground-coupling resistance
+    pub fn r_value_total_without_ground_resistance(
+        &self,
+        surface_type: Option<SurfaceType>,
+    ) -> f64 {
+        let h_int = surface_type
+            .map(SurfaceType::interior_film_coeff)
+            .unwrap_or_else(interior_film_coeff);
+
+        let r_film_int = 1.0 / h_int;
+        let r_materials: f64 = self.layers.iter().map(|l| l.r_value()).sum();
+
+        r_film_int + r_materials
     }
 
     /// Calculates the thermal transmittance (U-value) of the construction.
@@ -445,6 +502,29 @@ impl Construction {
         exterior_wind_speed: Option<f64>,
     ) -> f64 {
         let r_total = self.r_value_total(surface_type, exterior_wind_speed);
+        assert!(r_total > 0.0, "Total R-value must be positive");
+        1.0 / r_total
+    }
+
+    /// Calculates the thermal transmittance (U-value) of the construction
+    /// **without** the lumped ground-coupling resistance of a slab-on-grade
+    /// floor.
+    ///
+    /// See [`Construction::r_value_total_without_ground_resistance`] for the
+    /// physics: the ground-side resistance of a slab-on-grade floor is
+    /// carried either by the lumped `R_g` of
+    /// [`Construction::u_value`] (constant-temperature ground path) or by an
+    /// explicit ground domain (opt-in ground-coupled floor path) — never by
+    /// both (Issue #4789).
+    ///
+    /// # Arguments
+    /// * `surface_type` - Optional surface type for ASHRAE 140 surface-type-specific
+    ///   interior film coefficient. If None, uses default INTERIOR_FILM_COEFF.
+    ///
+    /// # Returns
+    /// Thermal transmittance in W/m²K
+    pub fn u_value_without_ground_resistance(&self, surface_type: Option<SurfaceType>) -> f64 {
+        let r_total = self.r_value_total_without_ground_resistance(surface_type);
         assert!(r_total > 0.0, "Total R-value must be positive");
         1.0 / r_total
     }
