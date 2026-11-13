@@ -49,7 +49,16 @@ on:
   schedule:
     # 08:00 UTC daily — after the 06:00/07:00 nightly cluster, off-peak US/EU.
     - cron: '0 8 * * *'
-  workflow_dispatch: {}  # manual trigger for on-demand perf runs
+  workflow_dispatch:
+    # Manual trigger for on-demand perf runs. `ref` lets an operator (or a
+    # PR author) dispatch the lane against a branch other than `develop`;
+    # the default keeps the scheduled behaviour bit-identical.
+    inputs:
+      ref:
+        description: 'Branch/tag/SHA to check out (default: develop)'
+        required: false
+        default: 'develop'
+        type: string
 
 concurrency:
   group: >-
@@ -81,7 +90,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          ref: develop
+          # Scheduled runs have no `inputs.ref` → `develop` (unchanged
+          # behaviour); a manual dispatch can target another ref.
+          ref: ${{ inputs.ref || 'develop' }}
           fetch-depth: 0
 
       - name: Install system dependencies
@@ -150,6 +161,26 @@ jobs:
             --run-ignored=all \
             --test-threads=1 \
             --no-fail-fast 2>&1 | tee -a perf-lane-run.log
+
+      - name: Run BatchOracle population cohort (release, ignore-stripped)
+        # Issue #4792: the four slow `lib_batch_oracle` population tests
+        # (`test_evaluate_population_u_value_impact`,
+        # `test_evaluate_population_setpoint_impact`,
+        # `test_evaluate_population_with_large_population`,
+        # `test_evaluate_population_parallel_execution`) are `#[ignore]`d
+        # out of every other lane, so before this step nothing in CI ever
+        # executed them. They are correctness (not timing) assertions, so
+        # they need no absolute thresholds — they just need a home that
+        # runs them in release mode. This step is that home: a dedicated
+        # invocation, lane-exact (`-p fluxion --test all_tests`,
+        # `--run-ignored=all`, `--test-threads=2`).
+        run: |
+          set -o pipefail
+          cargo nextest run --release \
+            -p fluxion --test all_tests \
+            -E 'test(lib_batch_oracle::test_evaluate_population_u_value_impact) | test(lib_batch_oracle::test_evaluate_population_setpoint_impact) | test(lib_batch_oracle::test_evaluate_population_with_large_population) | test(lib_batch_oracle::test_evaluate_population_parallel_execution)' \
+            --run-ignored=all \
+            --test-threads=2 2>&1 | tee -a perf-lane-run.log
 
       - name: Upload results
         if: always()

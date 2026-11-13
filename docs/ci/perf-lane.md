@@ -27,7 +27,10 @@ class (`ubuntu-24.04` pinned, never `ubuntu-latest`).
 
 ## What runs
 
-`cargo nextest run --release -p fluxion --test all_tests` with:
+The lane runs **two cohorts**, both as `cargo nextest run --release -p
+fluxion --test all_tests` invocations.
+
+**First cohort — TIMING modules (Issue #3957).** With:
 
 - `-E 'test(<module>::) | ...'` over the 7 TIMING modules:
   `performance_regression_test`,
@@ -40,6 +43,24 @@ class (`ubuntu-24.04` pinned, never `ubuntu-latest`).
   `test_performance_regression` via `-- --ignored`.)
 - `--test-threads=2` (ADR-0014; matches the #3952 evidence runs)
 - `--no-fail-fast` so every module reports
+
+**Second cohort — BatchOracle population tests (Issue #4792).** The lane
+also runs a dedicated invocation for the four slow `lib_batch_oracle`
+population tests — `test_evaluate_population_u_value_impact`,
+`test_evaluate_population_setpoint_impact`,
+`test_evaluate_population_with_large_population` and
+`test_evaluate_population_parallel_execution`:
+
+```
+cargo nextest run --release -p fluxion --test all_tests \
+  -E 'test(lib_batch_oracle::test_evaluate_population_u_value_impact) | test(lib_batch_oracle::test_evaluate_population_setpoint_impact) | test(lib_batch_oracle::test_evaluate_population_with_large_population) | test(lib_batch_oracle::test_evaluate_population_parallel_execution)' \
+  --run-ignored=all --test-threads=2
+```
+
+They are correctness assertions (no absolute throughput/latency
+thresholds), so they need no release-mode calibration — only a lane that
+runs them. Before #4792 no CI lane executed them at all; they are now
+covered by this nightly step.
 
 The 2 contention-sensitive tests
 (`api_concurrent_throughput::concurrent_throughput_smoke`,

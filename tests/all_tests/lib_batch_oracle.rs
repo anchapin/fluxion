@@ -30,7 +30,7 @@ fn test_batch_oracle_from_model_multiple_zones() {
 }
 
 #[test]
-#[ignore = "slow: full year simulation"]
+#[ignore = "slow: full year simulation — runs nightly in the Perf Lane (perf_lane.yml)"]
 fn test_evaluate_population_u_value_impact() {
     let oracle = create_test_oracle();
     // Lower U-value (better insulation) should generally result in lower EUI
@@ -51,7 +51,7 @@ fn test_evaluate_population_u_value_impact() {
 }
 
 #[test]
-#[ignore = "slow: full year simulation"]
+#[ignore = "slow: full year simulation — runs nightly in the Perf Lane (perf_lane.yml)"]
 fn test_evaluate_population_setpoint_impact() {
     let oracle = create_test_oracle();
     // Narrower setpoint range (heating 22, cooling 24) vs wider (heating 18, cooling 28)
@@ -81,7 +81,7 @@ fn test_evaluate_population_single_config() {
 }
 
 #[test]
-#[ignore = "slow: full year simulation"]
+#[ignore = "slow: full year simulation — runs nightly in the Perf Lane (perf_lane.yml)"]
 fn test_evaluate_population_with_large_population() {
     let oracle = create_test_oracle();
     // Test with 1000 configs to verify parallel execution works
@@ -136,7 +136,7 @@ fn test_evaluate_population_with_surrogates_no_model() {
 }
 
 #[test]
-#[ignore = "slow: full year simulation"]
+#[ignore = "slow: full year simulation — runs nightly in the Perf Lane (perf_lane.yml)"]
 fn test_evaluate_population_parallel_execution() {
     let oracle = create_test_oracle();
     // Large population should execute in parallel without issues
