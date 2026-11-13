@@ -62,10 +62,10 @@
 //!   (the committed air, the lumped mass, all four solver nodes, and the
 //!   5R1C estimate at step 1) — plus the #4495 input-envelope guard: a
 //!   NaN outdoor temperature rejects the step (0.0 kWh) with the zone air
-//!   and lumped mass commits untouched, while the multi-node solver's own
-//!   nodes HAVE advanced into NaN (committed inside `step_with_gains`
-//!   before the guard) and poison subsequent steps — pinned as-is, the
-//!   guard's "state untouched" scope being the commit, not the solver.
+//!   and lumped mass commits untouched, and since r136 the solver advances
+//!   nothing either (the step-level snapshot + rejection-path rollback;
+//!   the r131/r134 as-is NaN-advance pins are superseded by contract A8's
+//!   dated verdict).
 //!
 //! Fixture: hand-rolled single-zone model (`ThermalModel::new(1)`, the
 //! r112/mass_advance fixture recipe) with the selector set to
@@ -595,11 +595,13 @@ fn vent_couples_air_side_only_in_the_committed_chain() {
 /// 32.49701909569214; `zone_temperature` equals the prior committed air —
 /// the set_zone_temperature premise). Then a NaN outdoor temperature
 /// rejects the step: 0.0 kWh returned, the zone air and lumped mass
-/// commits untouched (both still the step-1 values) — while the
-/// multi-node solver's own nodes HAVE advanced into NaN (committed inside
-/// `step_with_gains` before the #4495 mass guard) and poison subsequent
-/// steps; pinned as-is — the guard's "state untouched" scope is the
-/// commit, not the solver.
+/// commits untouched (both still the step-1 values) — and since loop r136
+/// the SOLVER is untouched too: every node (floor included — the pre-air
+/// blend no longer fires) restores to its step-1 value. [Supersedes the
+/// r131 as-is pin, which recorded the solver advancing into NaN through
+/// `step_with_gains` and poisoning subsequent steps — the r134 finding,
+/// fixed in r136 by the step-level pre-step snapshot + rejection-path
+/// rollback; see contract A8 for the verdict.]
 fn two_step_composition_and_the_nan_guard() {
     let mut m = fixture_9r4c(None);
     m.step_physics(0, T_OUT, DT);
@@ -648,12 +650,14 @@ fn two_step_composition_and_the_nan_guard() {
         "the lumped-mass commit is untouched by the rejected step"
     );
     let s = &v.conduction.backend.multi_node_solvers[0];
-    assert!(
-        s.mass.wall.temperature.is_nan()
-            && s.mass.roof.temperature.is_nan()
-            && s.mass.floor.temperature.is_nan(),
-        "the solver nodes advanced into NaN before the guard — pinned as-is"
-    );
+    // [R136 rollback] the rejected step advances NOTHING at the solver:
+    // every node restores to its step-1 value (engine-probe literals).
+    assert_eq!(s.mass.wall.temperature, 19.005692363742437);
+    assert_eq!(s.mass.roof.temperature, 23.535366273033063);
+    assert_eq!(s.mass.floor.temperature, 21.739124592967357);
+    assert_eq!(s.mass.internal.temperature, 18.485860474480138);
+    assert_eq!(s.zone_temperature, -0.400967803731356);
+    assert_eq!(s.surface_temperature, 81.66479128963712);
 }
 
 // ============================================================================
@@ -1322,7 +1326,8 @@ fn multizone_two_step_composition_vent_and_guard() {
     assert_eq!(v.mass.mass_temperatures.as_ref()[0], 32.149686954689734);
     assert_eq!(v.mass.mass_temperatures.as_ref()[1], 26.854019373663057);
     // The guard: a NaN driving temperature rejects the step; BOTH commits
-    // stay untouched while the solver nodes advance into NaN (pinned as-is).
+    // stay untouched and — since r136 — both zones' solvers restore to
+    // their step-1 state (the rejection advances nothing).
     let kwh_nan = v.step_physics(2, f64::NAN, DT);
     assert_eq!(kwh_nan, 0.0, "the rejected step returns 0.0 kWh");
     assert_eq!(
@@ -1335,11 +1340,22 @@ fn multizone_two_step_composition_vent_and_guard() {
         28.803195996264588,
         "zone-1 commit untouched"
     );
-    let vs = &v.conduction.backend.multi_node_solvers[0];
-    assert!(
-        vs.mass.wall.temperature.is_nan() && vs.mass.roof.temperature.is_nan(),
-        "the solver nodes advanced into NaN before the guard — pinned as-is"
-    );
+    // [R136 rollback] both zones restore to their step-1 values
+    // (engine-probe literals; was: pinned advancing into NaN as-is).
+    let vs0 = &v.conduction.backend.multi_node_solvers[0];
+    assert_eq!(vs0.mass.wall.temperature, 19.005692363742437);
+    assert_eq!(vs0.mass.roof.temperature, 23.535366273033063);
+    assert_eq!(vs0.mass.floor.temperature, 21.739124592967357);
+    assert_eq!(vs0.mass.internal.temperature, 18.485860474480138);
+    assert_eq!(vs0.zone_temperature, -0.400967803731356);
+    assert_eq!(vs0.surface_temperature, 81.66479128963712);
+    let vs1 = &v.conduction.backend.multi_node_solvers[1];
+    assert_eq!(vs1.mass.wall.temperature, 16.985317546369533);
+    assert_eq!(vs1.mass.roof.temperature, 25.40756375800886);
+    assert_eq!(vs1.mass.floor.temperature, 20.54974866469699);
+    assert_eq!(vs1.mass.internal.temperature, 19.858828053437428);
+    assert_eq!(vs1.zone_temperature, 29.72231486401823);
+    assert_eq!(vs1.surface_temperature, 55.560222449881444);
 }
 
 /// The boundary fixture: the two-zone model grown to three zones with only
@@ -1698,12 +1714,11 @@ fn boundary_compaction_closed_form_matches_the_engine() {
 //   branch), giving pm 7315.413047462013 / 2726.293476268993 / 2726.293476268993
 //   per zone 0 — and writes the conductance-weighted per-surface average
 //   back to `surface_temperature` (81.09607259126786 at step 0).
-//   FINDING (recorded, pinned as-is, routed to the physics queue):
-//   `fluxion-core`'s `SurfaceNode::update` and every doc around it claim
-//   "backward Euler"; the code is the EXPLICIT forward-Euler recurrence
-//   `T' = T + dt·(q_ms − q_em + φ_m)/C` (C = 230,000 J from
-//   `add_surface_from_params`). The value is the recurrence; the docs are
-//   wrong about the scheme;
+//   RESOLVED (r136): the r134 finding recorded here — `fluxion-core`'s
+//   `SurfaceNode::update` and every doc around it claiming "backward
+//   Euler" while the code runs the EXPLICIT forward-Euler recurrence —
+//   is fixed by the dated doc corrections in the same round's PR; the
+//   VALUE was always the recurrence, the docs now say so;
 // - (A6) the clobber chain: the write-back IS the observable
 //   `surface_temperature` after each step — and it is DEAD at this
 //   production path: the next step's opening block re-derives from the
@@ -1719,10 +1734,13 @@ fn boundary_compaction_closed_form_matches_the_engine() {
 //   26.10141928940402 recomputed on the additive fixture — the chains
 //   ride `t_i_free_5r1c`, which never dispatches on coupling mode);
 // - (A8) the #4495 input-envelope guard at additive mode: a NaN outdoor
-//   temperature rejects the step (0.0 kWh), the commits stay untouched,
-//   the solver's own nodes HAVE advanced into NaN — pinned as-is (the
-//   guard's scope is the commit, not the solver), the r131 contract-8
-//   shape under the additive arms.
+//   temperature rejects the step (0.0 kWh), the commits stay untouched —
+//   and since r136 the SOLVER advances nothing (the step-level snapshot +
+//   rejection-path rollback). [Supersedes the r134 as-is pin ("the
+//   solver's own nodes HAVE advanced into NaN — the guard's scope is the
+//   commit, not the solver"): that behavior was the r134 finding, ruled a
+//   defect in r136 — it defeated #4495's own intent, permanently bricking
+//   the zone after one bad step; see contract A8's verdict.]
 //
 // Fixture: the r131 single-zone / r132 two-zone hand-rolled recipes
 // verbatim with `coupling_mode` flipped to `AdditiveSum` (the public
@@ -2167,10 +2185,10 @@ fn additive_implicit_iz_stash_and_solve() {
 /// the PRE-GAIN mass temps in q_ms, the per-surface exterior temperatures,
 /// and the area-fraction φ_m split over the CONSTRUCTOR-DEFAULT area
 /// setpoints (wall 53.665631459994955, roof/floor 20.0 — the fixture never
-/// sets them). FINDING (recorded here, routed to the physics queue):
-/// `SurfaceNode::update` is documented "backward Euler" but performs the
-/// EXPLICIT forward-Euler recurrence — pinned as-is; the value IS the
-/// recurrence the docs misdescribe.
+/// sets them). RESOLVED (r136): the r134 finding recorded here —
+/// `SurfaceNode::update` documented "backward Euler" while performing the
+/// EXPLICIT forward-Euler recurrence — is fixed by the round's dated doc
+/// corrections; the value IS the recurrence, the docs now say so.
 fn per_surface_channel_recurrence_and_area_default_pm() {
     let mut m = fixture_9r4c_additive(None);
     // The area-setpoint premise: constructor defaults, never overridden.
@@ -2365,44 +2383,66 @@ fn additive_two_step_composition_and_mode_invariant_chains() {
 
 #[test]
 /// Contract A9 — the #4495 input-envelope guard at additive mode at the
-/// two-zone fixture: a NaN outdoor temperature rejects the step (0.0 kWh)
-/// while the solver's own nodes HAVE advanced into NaN inside the additive
-/// Euler (committed before the guard) — pinned as-is; the guard's "state
-/// untouched" scope is the commit, not the solver (the r131 contract-8
-/// shape, additive arms, both zones advanced).
+/// two-zone fixture: a NaN outdoor temperature rejects the step (0.0 kWh),
+/// both zone-air and lumped-mass commits stay untouched, and since loop
+/// r136 BOTH zones' solvers restore to their step-1 state — the rejection
+/// advances nothing. [Supersedes the r134 as-is pin, which recorded both
+/// zones advancing into NaN inside the additive Euler (committed before
+/// the guard) with the guard's "state untouched" scope limited to the
+/// commit — the r134 finding, fixed in r136.]
 fn guard_nan_rejects_the_additive_step_2z() {
     let mut v = fixture_9r4c_2z_additive(None);
     v.step_physics(0, T_OUT, DT);
     v.step_physics(1, T_OUT, DT);
     let kwh = v.step_physics(0, f64::NAN, DT);
     assert_eq!(kwh, 0.0, "the rejected step returns exactly 0.0 kWh");
+    // [R136 rollback] both zones restore to their step-1 values
+    // (engine-probe literals; the r134 pins showed these going NaN).
     let s0 = &v.conduction.backend.multi_node_solvers[0];
-    assert!(
-        s0.mass.wall.temperature.is_nan()
-            && s0.mass.roof.temperature.is_nan()
-            && s0.mass.internal.temperature.is_nan(),
-        "w/r/internal advanced into NaN before the guard — pinned as-is"
-    );
-    assert!(
-        !s0.mass.floor.temperature.is_nan(),
-        "the ground-coupled floor advances finitely (the additive shared-T_s operand)"
-    );
+    assert_eq!(s0.mass.wall.temperature, 19.14150337884098);
+    assert_eq!(s0.mass.roof.temperature, 23.748564613709405);
+    assert_eq!(s0.mass.floor.temperature, 21.934954671993715);
+    assert_eq!(s0.mass.internal.temperature, 21.09802336491205);
+    assert_eq!(s0.zone_temperature, 33.62531338508693);
+    assert_eq!(s0.surface_temperature, 81.73223419947382);
+    let s1 = &v.conduction.backend.multi_node_solvers[1];
+    assert_eq!(s1.mass.wall.temperature, 16.914602166385745);
+    assert_eq!(s1.mass.roof.temperature, 25.261965385769624);
+    assert_eq!(s1.mass.floor.temperature, 20.44041225796746);
+    assert_eq!(s1.mass.internal.temperature, 19.662060370598887);
+    assert_eq!(s1.zone_temperature, 27.178443162599674);
+    assert_eq!(s1.surface_temperature, 55.51131295675001);
 }
 
 #[test]
 /// Contract A8 — the #4495 input-envelope guard at additive mode
-/// (single-zone): a NaN outdoor temperature rejects the step (0.0 kWh)
-/// with the zone-air and lumped-mass commits untouched. FINDING (recorded
-/// here, pinned as-is, routed to the physics queue): the additive-mode
-/// solver state advances NON-UNIFORMLY before the guard — wall/roof go NaN
-/// through their NaN outdoor boundary, internal through the envelope
+/// (single-zone): a NaN outdoor temperature rejects the step (0.0 kWh),
+/// the zone-air and lumped-mass commits stay untouched, and — the r136
+/// verdict on the r134 finding — the SOLVER advances nothing: every node
+/// restores to its step-1 value.
+///
+/// THE VERDICT (r136, superseding the r134 as-is pin): the pre-fix engine
+/// advanced the solver non-uniformly through a rejected step — wall/roof
+/// NaN through their NaN outdoor boundary, internal through the envelope
 /// average of w/r, `zone_temperature`/`surface_temperature` through the
-/// NaN air balance — but the FLOOR advances FINITELY (22.899024388751087):
-/// its exterior is the ground (13.0), and its consumed shared T_s is the
-/// opening block's MASS-DERIVED weighted value, not a blend against the
-/// NaN pre-air (the PR-mode contract 8 pins floor == NaN through exactly
-/// that blend — the mode contrast is the observable). The guard's "state
-/// untouched" scope is the commit, not the solver.
+/// NaN air balance, and the FLOOR finitely (22.899024388751087, closed
+/// form below in the r134 suite history) on its ground boundary and the
+/// mass-derived shared T_s, the mode contrast with PR's pre-air blend.
+/// That behavior is a defect, not semantics: it defeats #4495's own
+/// stated intent ("without this guard the non-finite value propagates
+/// into the committed zone state and corrupts every subsequent step") —
+/// the poisoned solver re-entered every later step's air balance, so one
+/// bad step bricked the zone permanently (every subsequent step rejected,
+/// 0.0 kWh, silently) — exactly the corruption the guard was built to
+/// prevent, one level down; and the r133 precedent (solver-less zones'
+/// half-applied steps) had already ruled "rejected steps that
+/// half-applied" a defect. Correct semantics: a rejected step advances
+/// NOTHING — enforced since r136 by the step-level pre-step snapshot
+/// (solver nodes, lumped-mass pair, controller previous zone temperature)
+/// restored verbatim on every #4495/#4500 rejection path of
+/// `step_physics_9r4c`. Accepted-step arithmetic is untouched (the
+/// battery is byte-identical — proven by the strict+output-diff run
+/// riding this PR), so only rejection-path observables move.
 fn guard_nan_rejects_the_additive_step() {
     let mut m = fixture_9r4c_additive(None);
     m.step_physics(0, T_OUT, DT);
@@ -2419,37 +2459,153 @@ fn guard_nan_rejects_the_additive_step() {
         32.24857751084929,
         "the lumped-mass commit is untouched by the rejected step"
     );
+    // [R136 rollback] the solver restores to its step-1 state
+    // (engine-probe literals; the floor's r134 finite-advance value
+    // 22.899024388751087 no longer occurs — nothing integrates).
     let s = &m.conduction.backend.multi_node_solvers[0];
+    assert_eq!(s.mass.wall.temperature, 19.14150337884098);
+    assert_eq!(s.mass.roof.temperature, 23.748564613709405);
+    assert_eq!(s.mass.floor.temperature, 21.934954671993715);
+    assert_eq!(s.mass.internal.temperature, 21.09802336491205);
+    assert_eq!(s.zone_temperature, 33.62531338508693);
+    assert_eq!(s.surface_temperature, 81.73223419947382);
+}
+
+#[test]
+/// Contract A8b — the rollback verdict's RECOVERY arm (additive): a
+/// #4495-rejected step leaves no trace, so the model resumes exactly as
+/// if the bad step never happened. Model A runs timesteps 0, 1, a NaN
+/// step at 2, then 3; model C skips the bad step entirely (0, 1, 3).
+/// Both compose timestep 3 from the identical post-step-1 state, so every
+/// durable field must agree bit-exactly. [Pre-fix, A's solver stayed
+/// NaN-poisoned and timestep 3 rejected with 0.0 kWh forever — the
+/// silent brick the #4495 guard was built to prevent.]
+fn rejected_step_leaves_no_trace_additive() {
+    let mut a = fixture_9r4c_additive(None);
+    a.step_physics(0, T_OUT, DT);
+    a.step_physics(1, T_OUT, DT);
+    let kwh_bad = a.step_physics(2, f64::NAN, DT);
+    assert_eq!(kwh_bad, 0.0, "the rejected step returns exactly 0.0 kWh");
+    let mut c = fixture_9r4c_additive(None);
+    c.step_physics(0, T_OUT, DT);
+    c.step_physics(1, T_OUT, DT);
+    c.step_physics(3, T_OUT, DT);
+    let kwh_a = a.step_physics(3, T_OUT, DT);
+    assert_eq!(
+        kwh_a, 0.0,
+        "timestep 3 integrates normally (the free-float success return)"
+    );
+    assert_eq!(
+        a.setpoints.temperatures.as_ref()[0],
+        c.setpoints.temperatures.as_ref()[0],
+        "the recovered committed air == the never-poisoned twin"
+    );
+    assert_ne!(
+        a.setpoints.temperatures.as_ref()[0],
+        34.31138437180818,
+        "timestep 3 actually integrated (a bricked model freezes at the step-1 commit)"
+    );
+    assert_eq!(
+        a.mass.mass_temperatures.as_ref()[0],
+        c.mass.mass_temperatures.as_ref()[0],
+        "the recovered lumped mass == the twin's"
+    );
+    let (sa, sc) = (
+        &a.conduction.backend.multi_node_solvers[0],
+        &c.conduction.backend.multi_node_solvers[0],
+    );
+    assert_eq!(sa.mass.wall.temperature, sc.mass.wall.temperature);
+    assert_eq!(sa.mass.roof.temperature, sc.mass.roof.temperature);
+    assert_eq!(sa.mass.floor.temperature, sc.mass.floor.temperature);
+    assert_eq!(sa.mass.internal.temperature, sc.mass.internal.temperature);
+    assert_eq!(sa.zone_temperature, sc.zone_temperature);
+    assert_eq!(sa.surface_temperature, sc.surface_temperature);
     assert!(
-        s.mass.wall.temperature.is_nan()
-            && s.mass.roof.temperature.is_nan()
-            && s.mass.internal.temperature.is_nan()
-            && s.zone_temperature.is_nan()
-            && s.surface_temperature.is_nan(),
-        "w/r/internal + zt + surf advanced into NaN before the guard"
+        sa.mass.wall.temperature.is_finite() && sa.zone_temperature.is_finite(),
+        "the recovered solver state is finite (the r134 NaN shape is gone)"
     );
-    // The floor advanced FINITELY on its ground boundary and the mass-derived
-    // shared T_s: compose its closed form from the step-1 literals.
-    let ts_step2 = ((50.0 * 19.14150337884098 + 40.0 * 23.748564613709405)
-        + 60.0 * 21.934954671993715)
-        / 150.0;
-    let floor = additive_node_euler(
-        3.0e7,
-        21.934954671993715,
-        10.0,
-        T_G,
-        60.0,
-        ts_step2,
-        (7776.0 + 12768.0) * (60.0 / 150.0),
+}
+
+#[test]
+/// Contract A8c — the recovery arm at the #1859 default (parallel
+/// resistance) coupling: same shape as A8b, PR mode. The PR pre-air
+/// blend NaNs the floor too (the r131 contract-8 shape), so pre-fix the
+/// brick was uniform; the rollback erases either shape identically.
+fn rejected_step_leaves_no_trace_parallel_resistance() {
+    let mut a = fixture_9r4c(None);
+    a.step_physics(0, T_OUT, DT);
+    a.step_physics(1, T_OUT, DT);
+    let kwh_bad = a.step_physics(2, f64::NAN, DT);
+    assert_eq!(kwh_bad, 0.0, "the rejected step returns exactly 0.0 kWh");
+    let mut c = fixture_9r4c(None);
+    c.step_physics(0, T_OUT, DT);
+    c.step_physics(1, T_OUT, DT);
+    c.step_physics(3, T_OUT, DT);
+    let kwh_a = a.step_physics(3, T_OUT, DT);
+    assert_eq!(
+        kwh_a, 0.0,
+        "timestep 3 integrates normally (the free-float success return)"
     );
     assert_eq!(
-        floor, 22.899024388751087,
-        "the floor advanced finitely through the rejected step (engine probe)"
+        a.setpoints.temperatures.as_ref()[0],
+        c.setpoints.temperatures.as_ref()[0],
+        "the recovered committed air == the never-poisoned twin"
+    );
+    assert_ne!(
+        a.setpoints.temperatures.as_ref()[0],
+        35.927198831761395,
+        "timestep 3 actually integrated (a bricked model freezes at the step-1 commit)"
     );
     assert_eq!(
-        s.mass.floor.temperature, floor,
-        "the engine's floor == the closed form"
+        a.mass.mass_temperatures.as_ref()[0],
+        c.mass.mass_temperatures.as_ref()[0],
+        "the recovered lumped mass == the twin's"
     );
+    let (sa, sc) = (
+        &a.conduction.backend.multi_node_solvers[0],
+        &c.conduction.backend.multi_node_solvers[0],
+    );
+    assert_eq!(sa.mass.wall.temperature, sc.mass.wall.temperature);
+    assert_eq!(sa.mass.roof.temperature, sc.mass.roof.temperature);
+    assert_eq!(sa.mass.floor.temperature, sc.mass.floor.temperature);
+    assert_eq!(sa.mass.internal.temperature, sc.mass.internal.temperature);
+    assert_eq!(sa.zone_temperature, sc.zone_temperature);
+    assert_eq!(sa.surface_temperature, sc.surface_temperature);
+}
+
+#[test]
+/// Contract A8d — the mass-commit rollback: a poison that reaches ONLY
+/// the multi-node air balance (NaN solver-side `h_tr_is`; the model's own
+/// 69.0 `h_tr_is` and the whole 5R1C chain stay finite) leaves the lumped
+/// mass advance finite, so the mass COMMITTED through the rejected step
+/// under the pre-fix behavior (the free-float air guard at step_9r4c.rs
+/// fires AFTER the mass commit) while the solver half-advanced (internal
+/// + zone_temperature NaN through the poisoned air). Post-fix the whole
+/// step rolls back: mass, commits and solver all at their step-1 values.
+fn air_rejected_step_rolls_back_the_mass_commit() {
+    let mut m = fixture_9r4c_additive(None);
+    m.step_physics(0, T_OUT, DT);
+    m.step_physics(1, T_OUT, DT);
+    m.conduction.backend.multi_node_solvers[0].h_tr_is = f64::NAN;
+    let kwh = m.step_physics(2, T_OUT, DT);
+    assert_eq!(kwh, 0.0, "the air-rejected step returns exactly 0.0 kWh");
+    assert_eq!(
+        m.mass.mass_temperatures.as_ref()[0],
+        32.24857751084929,
+        "the lumped mass rolls back to the step-1 commit (was: committed through the rejection)"
+    );
+    assert_eq!(
+        m.setpoints.temperatures.as_ref()[0],
+        34.31138437180818,
+        "the zone-air commit untouched"
+    );
+    let s = &m.conduction.backend.multi_node_solvers[0];
+    assert_eq!(s.mass.wall.temperature, 19.14150337884098);
+    assert_eq!(s.mass.roof.temperature, 23.748564613709405);
+    assert_eq!(s.mass.floor.temperature, 21.934954671993715);
+    assert_eq!(s.mass.internal.temperature, 21.09802336491205);
+    assert_eq!(s.zone_temperature, 33.62531338508693);
+    assert_eq!(s.surface_temperature, 81.73223419947382);
 }
 
 // ============================================================================

@@ -6,17 +6,20 @@
 //! # Overview
 //!
 //! Each building surface (wall, roof, floor) is modeled as an independent thermal
-//! node with its own temperature state, using backward Euler integration for
-//! numerical stability.
+//! node with its own temperature state, advanced by an explicit forward-Euler
+//! recurrence (this overview claimed backward Euler until loop r136 corrected
+//! it, the r134 finding — see [`SurfaceNode::update`]).
 //!
 //! # Physics
 //!
-//! ## Backward Euler Integration
+//! ## Surface Temperature Update (explicit forward Euler)
 //!
 //! Each surface tracks its own temperature state and updates independently:
 //! ```text
 //! T_new = T_old + dt * (Q_in - Q_out) / C_surface
 //! ```
+//! — fluxes evaluated at `T_old`, NOT the implicit scheme the heading used
+//! to claim.
 //!
 //! ## Mass Temperature Update (Issue #1003)
 //!
@@ -218,7 +221,8 @@ pub struct SurfaceNode {
     /// Conductance from exterior to mass node in W/K
     pub h_tr_em: f64,
     /// Thermal mass temperature in °C
-    /// Updated using backward Euler integration
+    /// (read-only state on this node: the per-surface update advances
+    /// `temperature` only — see [`SurfaceNode::update`])
     pub mass_temperature: f64,
     /// Net heat flow rate at the surface in W
     pub heat_flow: f64,
@@ -346,21 +350,27 @@ impl SurfaceNode {
         }
     }
 
-    /// Update surface temperature using backward Euler integration.
+    /// Update surface temperature with the explicit forward-Euler recurrence.
     ///
-    /// Backward Euler (fully implicit):
+    /// The fluxes are evaluated at the CURRENT (old) surface temperature —
+    /// explicit integration. This doc claimed "backward Euler (fully
+    /// implicit)" until loop r136 corrected it (the r134 finding): the code
+    /// has always performed
     /// ```text
-    /// T_new = T_old + dt * (Q_in - Q_out + phi_m) / C
+    /// Q_net = h_tr_ms·(T_mass − T_old) − h_tr_em·(T_old − T_ext) + phi_m
+    /// T_new = T_old + dt·Q_net / C
     /// ```
-    ///
-    /// For a surface node, Q_in comes from the mass node and Q_out goes to exterior.
-    /// Using h_tr_ms and h_tr_em as conductances:
+    /// i.e. forward Euler. A backward-Euler update would evaluate the
+    /// fluxes at `T_new`:
     /// ```text
-    /// Q_ms = h_tr_ms * (T_mass - T_surface)   // from mass to surface
-    /// Q_em = h_tr_em * (T_surface - T_exterior)  // from surface to exterior
-    /// Q_net = Q_ms - Q_em + phi_m_surface
-    /// T_new = T_old + dt * Q_net / C
+    /// T_new = (T_old + dt·(h_tr_ms·T_mass + h_tr_em·T_ext + phi_m)/C)
+    ///         / (1 + dt·(h_tr_ms + h_tr_em)/C)
     /// ```
+    /// Forward Euler is accurate for small dt/C ratios and is NOT
+    /// unconditionally stable — that property belongs to the implicit
+    /// scheme only (see the solver-level doc below, corrected in the same
+    /// round). Known, verifiable, tested: this documents what the code has
+    /// always done; no arithmetic changes.
     ///
     /// # Arguments
     /// * `dt` - Time step in seconds
@@ -381,7 +391,8 @@ impl SurfaceNode {
         // Net heat flow (positive = heat entering surface) + direct solar gain
         self.heat_flow = q_ms - q_em + phi_m_surface;
 
-        // Backward Euler update
+        // Explicit forward-Euler update (fluxes evaluated at the OLD
+        // temperature — see this method's doc and the r134/r136 finding).
         if self.capacitance > 0.0 {
             let t_new = self.temperature + dt * self.heat_flow / self.capacitance;
             self.temperature = t_new;
@@ -393,14 +404,20 @@ impl SurfaceNode {
 ///
 /// This solver manages a collection of independent SurfaceNodes, each representing
 /// a building surface (wall, roof, or floor). Each surface updates its temperature
-/// state independently using backward Euler integration.
+/// state independently using an explicit forward-Euler recurrence (fluxes
+/// evaluated at the old surface temperature — see [`SurfaceNode::update`];
+/// this doc claimed backward Euler until loop r136 corrected it, the r134
+/// finding).
 ///
 /// # Design Principles
 ///
 /// 1. **Independence**: No cross-coupling between surfaces — each surface's thermal
 ///    state depends only on its own properties and the shared mass node temperature.
-/// 2. **Numerical Stability**: Backward Euler integration ensures unconditional
-///    stability regardless of time step size.
+/// 2. **Numerical scheme**: explicit forward Euler — accurate for small dt/C
+///    ratios, NOT unconditionally stable; step sizes must respect each
+///    surface's stability limit (the implicit production paths in the 5R1C /
+///    9R4C engines carry the unconditional-stability property, not this
+///    per-surface refinement channel).
 /// 3. **Energy Conservation**: Heat flow at each surface is tracked for energy auditing.
 ///
 /// # Usage
@@ -562,7 +579,7 @@ impl PerSurfaceConductionSolver {
         }
     }
 
-    /// Update all surfaces using backward Euler integration.
+    /// Update all surfaces using the explicit forward-Euler recurrence.
     ///
     /// Each surface updates its temperature independently based on the shared
     /// mass temperature and exterior temperature.
@@ -953,7 +970,8 @@ mod tests {
         let imbalance = solver.energy_imbalance(mass_temp, exterior_temp);
 
         // Energy imbalance should be small relative to heat flow magnitudes
-        // A 1% tolerance is reasonable for backward Euler integration
+        // A 1% tolerance is reasonable for the explicit forward-Euler surface
+        // update (corrected from a stale backward-Euler reference, r136)
         let tolerance = 1.0; // 1 W/K tolerance
         assert!(
             imbalance < tolerance,

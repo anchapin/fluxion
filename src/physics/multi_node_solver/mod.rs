@@ -910,7 +910,8 @@ impl MultiNodeSolver {
         // Update each surface with pre-gain mass temperature and per-surface solar gain
         // Using pre-gain mass temperatures avoids double-counting gains that were
         // already applied via step_with_gains(). Gains are added directly to the
-        // surface node's backward Euler heat balance via phi_m_surface (Issue #864).
+        // surface node's explicit forward-Euler heat balance via phi_m_surface
+        // (Issue #864; the r134 doc finding corrected the scheme's name).
         solver.update_surface(0, dt, mass_temps.0, t_ext_wall, phi_m.0);
         solver.update_surface(1, dt, mass_temps.1, t_ext_roof, phi_m.1);
         solver.update_surface(2, dt, mass_temps.2, t_ext_floor, phi_m.2);
