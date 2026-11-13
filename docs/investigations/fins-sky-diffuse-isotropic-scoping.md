@@ -79,3 +79,39 @@ for the zip if Alex prefers the anchor first.
 Multi-day at r120's scale (engine + twin + teeth + full re-record battery
 + docs). Not landed this round; this scoping doc is the round's Item-2
 deliverable.
+
+## DECISION RECORDED (2026-11-12, Alex) — the overhang × fins composition call
+
+Alex released the r128 routed call ("Proceed based on your suggestions",
+2026-11-12 20:37 ET, answering onyx's recommendation summary):
+
+- **Beam factors compose multiplicatively**: fins shade first (they sit at
+  the window plane), the overhang second; the two beam attenuation factors
+  multiply. This resolves scoping question 2 (product vs minimum vs union)
+  in favor of the product, replacing the planar union + corner-overlap
+  composition in `calculate_shaded_fraction` for dual-device windows.
+- **Sky-diffuse keeps the r120 isotropic convention applied in turn**: each
+  element's isotropic visible fraction applies in turn (fin factor ×
+  overhang factor) once both exist.
+- Per fidelity-first, this lands on physics merits without needing band
+  movement.
+
+Status of the engine change (r137): **NOT landed this round — sequenced,
+not blocked.** The battery's own Case 630 carries a roof-edge overhang AND
+edge fins on its east/west surfaces, so the beam-composition change is NOT
+battery-inert: it moves Case 630's solar gains and owes the full re-record
+train (strict-gate re-record with dated old→new provenance, output-diff
+`--update-baseline`, §7 emitter re-emit, checker status re-derivation) —
+exactly the §SOLAR-03 r120 discipline. Single-device windows are unchanged
+by the product form (an absent device's factor is exactly 1.0), so every
+case without a dual-device window is byte-identical by construction; the
+re-record cost is confined to Case 630's rows. The change needs no CSE
+constants (the beam shadow geometry is in-tree; the blocked constant is
+only the fins SKY-DIFFUSE view factor). Sequenced deliberately after the
+#2890-followup routing round per the same released ordering.
+
+The fins sky-diffuse SLICE itself stays held: the CSE reference constant
+(`wnVfSkyDf = 0.39363710370433924`'s companion in
+`Std140-5-2-CSE-04152019-InputFiles.zip`) remains unreachable — fresh probe
+2026-11-13 02:46 UTC: `HTTP/2 403`, `cf-mitigated: challenge` (the
+seventh consecutive day of the challenge).
