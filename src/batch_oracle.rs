@@ -514,7 +514,11 @@ impl BatchOracle {
                                     .recv()
                                     .expect("Failed to receive loads from service");
                                 model.set_loads(&loads);
-                                energy += model.step_physics(t, outdoor_temp, 3600.0);
+                                // Gross-energy accumulation (Issue #4805):
+                                // step_physics returns signed energy (cooling
+                                // negative); see accumulate_gross_energy in
+                                // sim::orchestrator for the rationale.
+                                energy += model.step_physics(t, outdoor_temp, 3600.0).abs();
                                 // Recycle the received loads Vec as the next
                                 // timestep's temps buffer (ping-pong). The
                                 // reassignment is unconditional so the borrow
