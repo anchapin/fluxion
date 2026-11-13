@@ -697,13 +697,44 @@ impl InvariantChecker {
                         let idx = 3 * i + c;
                         // Surface-node identity: the recomputed t_s must
                         // equal the stored post-step value exactly.
+                        // [Round 138 — the mirror consumes the recorded
+                        // inter-pool terms `rec.cls_q_lw[c]` (exact T⁴ net
+                        // energy) and `rec.cls_lw_self_g[c]` (linearized
+                        // self-conductance) verbatim — the round-104
+                        // recorded-coefficient pattern: load-free, so the
+                        // probe response algebra is unchanged and the
+                        // identity stays exactly zero when the engine and
+                        // the mirror advance from the same records.]
                         if denom_s > 0.0 {
+                            // [Round 138 — the mirror consumes the recorded
+                            // inter-pool terms `rec.cls_q_lw[c]` (exact T⁴
+                            // net energy) and `rec.cls_lw_self_g[c]`
+                            // (linearized self-conductance) verbatim — the
+                            // round-104 recorded-coefficient pattern:
+                            // load-free, so the probe response algebra is
+                            // unchanged and the identity stays exactly zero
+                            // when the engine and the mirror advance from
+                            // the same records. The residual multiplier is
+                            // the advance's own denominator
+                            // `(denom_s + g_c)` (the t_s equation the
+                            // routed form actually solves): the probe
+                            // response then recomposes to the round-107
+                            // closed form `(rad_frac + h_is_zone·r_air_N)·Δ`
+                            // exactly — a `denom_s` multiplier here would
+                            // damp each class's share by
+                            // `denom_s/(denom_s + g_c)` and re-pin every
+                            // §LIMIT-22 probe contract for no diagnostic
+                            // gain (measured at the first sweep, this
+                            // round).]
+                            let residual_denom = denom_s + rec.cls_lw_self_g[c];
                             let t_s_hat = (cs_dt * tso.as_ref()[idx]
                                 + h_is_c * t_i_route
                                 + h_ms_c * t_mass_prev
-                                + phi_st_c)
-                                / denom_s;
-                            residual += denom_s * (t_s_hat - tsn.as_ref()[idx]);
+                                + phi_st_c
+                                + rec.cls_q_lw[c]
+                                + rec.cls_lw_self_g[c] * tso.as_ref()[idx])
+                                / residual_denom;
+                            residual += residual_denom * (t_s_hat - tsn.as_ref()[idx]);
                         }
                         // Mass-node identity: recompute the class state from
                         // the stored t_s (the per-class BE equation is
