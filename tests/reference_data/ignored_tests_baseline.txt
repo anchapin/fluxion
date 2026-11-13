@@ -101,10 +101,10 @@ tests/all_tests/known_issues_regression.rs:#[ignore = "LIMIT-05: Known 5R1C mode
 tests/all_tests/known_issues_regression.rs:#[ignore = "LIMIT-05: Known 5R1C model limitation for high-mass peak cooling (h_tr_ms additive issue)"]
 tests/all_tests/known_issues_regression.rs://! - Uses #[test] with #[ignore] to quarantine known failures
 tests/all_tests/known_issues_regression.rs:/// path as `tests/ashrae_140_case_600_series.rs`, and is `#[ignore]`-quarantined.
-tests/all_tests/lib_batch_oracle.rs:#[ignore = "slow: full year simulation"]
-tests/all_tests/lib_batch_oracle.rs:#[ignore = "slow: full year simulation"]
-tests/all_tests/lib_batch_oracle.rs:#[ignore = "slow: full year simulation"]
-tests/all_tests/lib_batch_oracle.rs:#[ignore = "slow: full year simulation"]
+tests/all_tests/lib_batch_oracle.rs:#[ignore = "slow: full year simulation — runs nightly in the Perf Lane (perf_lane.yml)"]
+tests/all_tests/lib_batch_oracle.rs:#[ignore = "slow: full year simulation — runs nightly in the Perf Lane (perf_lane.yml)"]
+tests/all_tests/lib_batch_oracle.rs:#[ignore = "slow: full year simulation — runs nightly in the Perf Lane (perf_lane.yml)"]
+tests/all_tests/lib_batch_oracle.rs:#[ignore = "slow: full year simulation — runs nightly in the Perf Lane (perf_lane.yml)"]
 tests/all_tests/limit_05_inversion_regression.rs:#[ignore = "LIMIT-05 inversion diagnostic — combined snapshot"]
 tests/all_tests/limit_05_inversion_regression.rs:#[ignore = "LIMIT-05 inversion diagnostic — locks in current (inverted) state for regression tracking"]
 tests/all_tests/limit_05_inversion_regression.rs:#[ignore = "LIMIT-05 inversion diagnostic — locks in current (inverted) state for regression tracking"]
