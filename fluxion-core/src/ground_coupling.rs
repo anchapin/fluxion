@@ -40,7 +40,11 @@
 //! convectively coupled surfaces (GC30b and later), layered or
 //! moisture-dependent soil, finite-thickness slabs, or any configuration
 //! where the ramp-ring/singularity mesh sensitivity has not been
-//! re-demonstrated. This module is the §8 measuring case only; the §11
+//! re-demonstrated. (Transient and periodic operation of the standalone
+//! 2-D ground domain — a different solver from this measuring case —
+//! are validated in `tests/ashrae_140/ground_transient.rs` and
+//! `tests/ashrae_140/ground_periodic.rs`, Issue #4774; this module's own
+//! validation scope is unchanged.) This module is the §8 measuring case only; the §11
 //! QASv2 anchors live in [`crate::qas_airside`] (Issue #4274). The §8
 //! b-series (GC10b transient, GC30/GC60 periodic and convectively-coupled
 //! variants) remains unimplemented: its boundary-condition specification is
