@@ -113,6 +113,7 @@ base:
   epw_path: null
   hvac_equipment: null
   ground_temperature_c: 9.4
+  ground_coupled_floor: null
   floor_u_value_override: null
   window_u_value_override: 3.0
   building_type: Residential
