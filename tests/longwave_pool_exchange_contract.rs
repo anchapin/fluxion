@@ -20,18 +20,25 @@
 //! duplicated here. This suite pins the unrouted math so the future routing
 //! lands on contract-grade closed forms.
 //!
-//! Dated finding (round 130, mirrored in the plan §7 UPDATE): the
-//! floor↔ceiling pair uses `F = 1.0` in BOTH directions without the
+//! Dated finding (round 130, mirrored in the plan §7 UPDATE), FIXED round
+//! 137 (Alex released the #2890-followup sequencing 2026-11-12: the
+//! reciprocity fix first, the routing itself as a dedicated later round):
+//! the floor↔ceiling pair used `F = 1.0` in BOTH directions without the
 //! reciprocity division, so for `from_areas` inputs with `A_floor ≠
-//! A_ceiling` the network's three net terms do NOT sum to zero — the
-//! contract `asymmetric_floor_ceiling_pair_breaks_conservation_as_documented`
-//! pins the break against its exact closed form
-//! `Σ = σ·ε·(A_f − A_c)·(T_c⁴ − T_f⁴)` (+ rounding). The rectangular
-//! construction (`from_rect_zone`, A_floor = A_ceiling) conserves, and the
-//! wall pair conserves by its derived reciprocity. No committed energy
-//! flows through the network today (dropped at the seam), so this is a
-//! latent defect in unrouted math that the #2890-followup routing must fix
-//! first — recorded here, never tuned around.
+//! A_ceiling` the network's three net terms did NOT sum to zero (pinned
+//! then at `Σ = σ·ε·(A_f − A_c)·(T_c⁴ − T_f⁴)` = +424.6827496865086 W at
+//! fixture B). The fix derives the ceiling-side factor at the consumption
+//! site the same way `net_lw_wall` already derives its reverse factors:
+//! `F_ceiling→floor = F_floor→ceiling · A_floor / A_ceiling`, guarded on
+//! `A_ceiling > 0`. Equal-area constructions divide 1.0/1.0 and stay
+//! bit-identical; the network is still unrouted (dropped at the seam), so
+//! committed energy is unchanged by construction — proven by the battery
+//! riding this PR. Contract 5 now pins the CONSERVATION (rounding-level
+//! residue), and the new zero-floor contract pins that a floorless
+//! network exchanges no phantom floor longwave (pre-fix fixture:
+//! `from_areas(0, 48, …)` falsely exchanged
+//! σ·ε·1·A_c·(T_f⁴ − T_c⁴) = −2446.172638194288 W with a nonexistent
+//! floor).
 //!
 //! Pin-tolerance policy (round-130 fold probe): Python `**4` and Rust
 //! `powi(4)` lowerings differ by ≤1 ULP on the K⁴ differences (probed:
@@ -108,6 +115,7 @@ fn transcription_net_lw_floor(
 fn transcription_net_lw_ceiling(
     eps: f64,
     f_fc: f64,
+    a_f: f64,
     f_cw: f64,
     a_c: f64,
     tf: f64,
@@ -120,7 +128,10 @@ fn transcription_net_lw_ceiling(
     let t_f_k = tf + 273.15;
     let t_c_k = tc + 273.15;
     let t_w_k = tw + 273.15;
-    let q_cf = SIGMA * eps * f_fc * a_c * (t_f_k.powi(4) - t_c_k.powi(4));
+    // The r137 reciprocity division, same as the engine's consumption-site
+    // derivation: F_ceiling→floor = F_floor→ceiling · A_floor / A_ceiling.
+    let f_cf = if a_c > 0.0 { f_fc * a_f / a_c } else { 0.0 };
+    let q_cf = SIGMA * eps * f_cf * a_c * (t_f_k.powi(4) - t_c_k.powi(4));
     let q_cw = SIGMA * eps * f_cw * a_c * (t_w_k.powi(4) - t_c_k.powi(4));
     q_cf + q_cw
 }
@@ -261,6 +272,7 @@ fn net_lw_ceiling_and_wall_reciprocity_matches_closed_forms() {
         transcription_net_lw_ceiling(
             na.emissivity,
             na.view_factor_floor_ceiling(),
+            na.floor_area,
             na.view_factor_ceiling_wall(),
             na.ceiling_area,
             T_FLOOR,
@@ -288,12 +300,30 @@ fn net_lw_ceiling_and_wall_reciprocity_matches_closed_forms() {
     );
 
     let nb = network_asymmetric();
-    // Python: B q_ceiling = -1256.791965990145, B q_wall = -0.6404120998084863
+    // Python (r137 post-fix, σ = 5.67e-8 the fluxion-core constant):
+    // B q_ceiling = -1681.4747156766548 — the reciprocity-derived
+    // F_cf = F_fc·A_f/A_c = 1.5 replaces the unguarded 1.0 (pre-fix pin:
+    // -1256.791965990145, the r130 as-is value).
     assert_close_rel(
         nb.net_lw_ceiling(T_FLOOR, T_CEILING, T_WALL),
-        -1256.791965990145,
+        -1681.4747156766548,
         1.0e-9,
         "B q_ceiling vs python",
+    );
+    assert_close_rel(
+        nb.net_lw_ceiling(T_FLOOR, T_CEILING, T_WALL),
+        transcription_net_lw_ceiling(
+            nb.emissivity,
+            nb.view_factor_floor_ceiling(),
+            nb.floor_area,
+            nb.view_factor_ceiling_wall(),
+            nb.ceiling_area,
+            T_FLOOR,
+            T_CEILING,
+            T_WALL,
+        ),
+        1.0e-12,
+        "B q_ceiling vs transcription",
     );
     assert_close_rel(
         nb.net_lw_wall(T_FLOOR, T_CEILING, T_WALL),
@@ -357,38 +387,67 @@ fn uniform_field_is_exact_zero_and_rect_construction_conserves() {
 }
 
 #[test]
-/// Contract 5 — the dated round-130 finding, pinned as-is: for asymmetric
-/// `from_areas` inputs the floor↔ceiling pair uses F = 1.0 in BOTH
-/// directions, so the three net terms do NOT sum to zero. The sum equals the
-/// missing-reciprocity closed form `σ·ε·(A_f − A_c)·(T_c⁴ − T_f⁴)` up to
-/// rounding — proof that the break is exactly the absent F_cf = F_fc·A_f/A_c
-/// division. Latent only (the network is unrouted, Issue #2890-followup);
-/// the #2890-followup routing must fix the pair before wiring it.
-fn asymmetric_floor_ceiling_pair_breaks_conservation_as_documented() {
+/// Contract 5 — the round-130 finding, FIXED round 137 (Alex released the
+/// fix-first sequencing 2026-11-12): for asymmetric `from_areas` inputs the
+/// ceiling side now derives `F_cf = F_fc·A_f/A_c` (the same consumption-site
+/// reciprocity the wall side always applied), so the three net terms sum to
+/// a rounding-level residue. The round-130 as-is pin recorded the break as
+/// exactly `Σ = σ·ε·(A_f − A_c)·(T_c⁴ − T_f⁴)` = +424.6827496865086 W at
+/// this fixture — that closed form is the proof this was THE missing
+/// division, kept here as provenance. Post-fix the per-pair identity
+/// `F_cf·A_c == F_fc·A_f` holds numerically (30.0 == 30.0 at fixture B).
+/// The network is still unrouted (Issue #2890-followup); committed energy
+/// is unchanged — the battery rides this PR.
+fn asymmetric_floor_ceiling_pair_conserves_after_r137_reciprocity_fix() {
     let nb = network_asymmetric();
     let q_floor = nb.net_lw_floor(T_FLOOR, T_CEILING, T_WALL);
     let q_ceiling = nb.net_lw_ceiling(T_FLOOR, T_CEILING, T_WALL);
     let q_wall = nb.net_lw_wall(T_FLOOR, T_CEILING, T_WALL);
     let total = q_floor + q_ceiling + q_wall;
-    // Python: B q_total = 424.6827496865086 (created, not conserved)
-    assert_close_rel(
-        total,
-        424.6827496865086,
-        1.0e-9,
-        "B non-conserving total vs python",
+    // Python (r137 post-fix): B q_total = -1.1368683772161603e-13 —
+    // rounding-level, the same residue class the rectangular construction
+    // has always shown (contract 4).
+    assert!(
+        total.abs() <= 1.0e-9 * q_ceiling.abs(),
+        "B conservation residue {total:e} must stay at rounding level after \
+         the r137 reciprocity fix"
     );
 
-    // The exact closed form of the break (wall pair cancels to rounding).
-    let t_f_k = T_FLOOR + 273.15;
-    let t_c_k = T_CEILING + 273.15;
-    let expected_break =
-        SIGMA * nb.emissivity * (nb.floor_area - nb.ceiling_area) * (t_c_k.powi(4) - t_f_k.powi(4));
+    // The per-pair reciprocity identity, verified through the values that
+    // produced the fix: F_cf = 1.0 · 30 / 20 = 1.5 at fixture B, so
+    // F_cf·A_c == F_fc·A_f (30.0). Expressed through the closed-form
+    // derivation the engine applies (divide, then consume).
+    let f_cf = if nb.ceiling_area > 0.0 {
+        nb.view_factor_floor_ceiling() * nb.floor_area / nb.ceiling_area
+    } else {
+        0.0
+    };
     assert_close_rel(
-        total,
-        expected_break,
-        1.0e-9,
-        "B total vs σ·ε·(A_f−A_c)·(Tc⁴−Tf⁴)",
+        f_cf * nb.ceiling_area,
+        nb.view_factor_floor_ceiling() * nb.floor_area,
+        1.0e-12,
+        "B F_cf·A_c == F_fc·A_f",
     );
+}
+
+#[test]
+/// Contract 5b — the phantom-exchange arm the same fix kills: a floorless
+/// network (`from_areas(0, 48, …)`) must not exchange floor longwave with
+/// a nonexistent floor. Pre-fix the ceiling term carried
+/// σ·ε·1·A_c·(T_f⁴ − T_c⁴) = −2446.172638194288 W against A_floor = 0
+/// (total −3313.3976725742805); post-fix F_cf = 0 and only the wall ring
+/// speaks (Python: nd2 q_ceiling = −867.2250343799926, bit-exact).
+fn zero_floor_network_exchanges_no_phantom_floor_lw() {
+    let nd2 = InteriorSurfaceNetwork::from_areas(0.0, 48.0, 75.6, 0.9);
+    assert_eq!(nd2.floor_area, 0.0);
+    assert_close_rel(
+        nd2.net_lw_ceiling(T_FLOOR, T_CEILING, T_WALL),
+        -867.2250343799926,
+        1.0e-9,
+        "nd2 q_ceiling: wall ring only, no phantom floor term",
+    );
+    // The floor side keeps its zero-area guard (exact 0.0, unchanged).
+    assert_eq!(nd2.net_lw_floor(T_FLOOR, T_CEILING, T_WALL), 0.0);
 }
 
 #[test]
