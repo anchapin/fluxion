@@ -708,7 +708,10 @@ impl GroundCoupledFloorBoundary {
 
         let solver = GroundSolver::new(config)?;
         let transient = solver.initial_transient_state(spec.surface_temperature_mean_c)?;
-        let state = GroundCoupledFloorState { transient, abs_hour: 0 };
+        let state = GroundCoupledFloorState {
+            transient,
+            abs_hour: 0,
+        };
 
         Ok(Self {
             solver,
@@ -1273,9 +1276,8 @@ mod tests {
                 .expect("ground-domain step must succeed");
             let represented = abs_hour + 1;
             if represented >= FIRST_HOUR && represented < LAST_HOUR {
-                reference.push(
-                    transient.temperature_at(boundary.readout_x_m, boundary.readout_depth_m),
-                );
+                reference
+                    .push(transient.temperature_at(boundary.readout_x_m, boundary.readout_depth_m));
             }
         }
 
