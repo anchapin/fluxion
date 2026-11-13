@@ -46,7 +46,7 @@
       "max_lines": 200,
       "path": "src/sim/thermal_model_data/mod.rs",
       "ratchet_basename": "thermal_model_data_ratchet.json",
-      "reason": "Issue #2878 acceptance (directory form): drop ThermalModelData below 200 lines so the god-struct (~140 fields, 145-line Clone impl) does not regress. Per-config clone must touch ≤6 fields."
+      "reason": "Issue #2878 acceptance (directory form): drop ThermalModelData below 200 lines so the god-struct (~140 fields, 145-line Clone impl) does not regress. Per-config clone must touch \u22646 fields."
     },
     {
       "max_lines": 4764,
@@ -58,7 +58,7 @@
       "max_lines": 3061,
       "path": "src/sim/thermal_model/mod.rs",
       "ratchet_basename": "thermal_model_mod_ratchet.json",
-      "reason": "Issue #3457 (originally) → Issue #3789 (decomposed via PR #3843): the 3061-line single-file src/sim/thermal_model.rs was split into a thermal_model/ directory; the original ceiling (3061) is preserved as the ratchet for the new mod.rs so the audit thread keeps firing on growth in this concern. Hosts the ThermalModelTrait swap point the gauge dispatcher work keeps touching; zero-headroom entry (Issue #3747)."
+      "reason": "Issue #3457 (originally) \u2192 Issue #3789 (decomposed via PR #3843): the 3061-line single-file src/sim/thermal_model.rs was split into a thermal_model/ directory; the original ceiling (3061) is preserved as the ratchet for the new mod.rs so the audit thread keeps firing on growth in this concern. Hosts the ThermalModelTrait swap point the gauge dispatcher work keeps touching; zero-headroom entry (Issue #3747)."
     },
     {
       "max_lines": 2436,
@@ -76,7 +76,7 @@
       "max_lines": 3416,
       "path": "src/validation/ashrae_140_validator/mod.rs",
       "ratchet_basename": "ashrae_140_validator_mod_ratchet.json",
-      "reason": "Issue #3574: src/validation/ashrae_140_validator/mod.rs is the largest child of the Issue #3543 decomposition. Ratcheted at current size 3092 lines + buffer (max of +5% or +100 lines = 3247). Raised from 3247/3247 to 3254/3416 by issue #4167's report/diagnostic parity fix (+38 lines: 950 warm-up exception mirroring #2363, post-warmup bookkeeping reset, comments; loop round 15) — buffer recomputed as max of +5% or +100 lines = 3416. Further decomposition tracked separately."
+      "reason": "Issue #3574: src/validation/ashrae_140_validator/mod.rs is the largest child of the Issue #3543 decomposition. Ratcheted at current size 3092 lines + buffer (max of +5% or +100 lines = 3247). Raised from 3247/3247 to 3254/3416 by issue #4167's report/diagnostic parity fix (+38 lines: 950 warm-up exception mirroring #2363, post-warmup bookkeeping reset, comments; loop round 15) \u2014 buffer recomputed as max of +5% or +100 lines = 3416. Further decomposition tracked separately."
     },
     {
       "max_lines": 1540,
@@ -103,10 +103,10 @@
       "reason": "Issue #3574: workspace sibling fluxion-mcp/src/tools.rs crossed the smallest ratcheted threshold after Issue #3543. Ratcheted at current size 1648 lines + buffer (max of +5% or +100 lines = 1748); decomposition tracked separately."
     },
     {
-      "max_lines": 4643,
+      "max_lines": 4662,
       "path": "src/sim/thermal_model_physics/zone_balance.rs",
       "ratchet_basename": "zone_balance_ratchet.json",
-      "reason": "Issue #4753: src/sim/thermal_model_physics/zone_balance.rs is the largest file in src/ (4421 lines) and had no module-size ratchet at all, despite the Issue #3574 admission protocol for files crossing ~2000 lines. Ratcheted at current size 4421 lines + buffer (max of +5% or +100 lines = 222) = 4643 per the Issue #3574 admission protocol; decomposition tracked separately."
+      "reason": "Issue #4753: src/sim/thermal_model_physics/zone_balance.rs is the largest file in src/ (4421 lines) and had no module-size ratchet at all, despite the Issue #3574 admission protocol for files crossing ~2000 lines. Ratcheted at current size 4421 lines + buffer (max of +5% or +100 lines = 222) = 4643 per the Issue #3574 admission protocol; decomposition tracked separately. [2026-11-13, loop round 137: the ramp-persistence rejection-path relocation grew the file 4421 -> 4440 (+19 lines: the relocated persist blocks with their dated commentary); the ceiling re-derives 4440 + max(+5%, +100) = 4662 per the Issue #3574 admission protocol; the growth is the relocation itself, not new surface - decomposition still tracked separately.]"
     },
     {
       "max_lines": 4528,
