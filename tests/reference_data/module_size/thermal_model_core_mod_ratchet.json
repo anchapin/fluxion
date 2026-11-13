@@ -5,11 +5,11 @@
     },
     {
       "actual": 4263,
-      "reason": "Issue #3063 — 5R1C wind-dependent h_tr_em fields (r_materials_wall/roof, opaque_wall_area, roof_area_zone) populated in from_spec_with_selector; minimal in-line additions (no helper extraction to avoid new sim->physics import)."
+      "reason": "Issue #3063 \u2014 5R1C wind-dependent h_tr_em fields (r_materials_wall/roof, opaque_wall_area, roof_area_zone) populated in from_spec_with_selector; minimal in-line additions (no helper extraction to avoid new sim->physics import)."
     },
     {
       "actual": 4284,
-      "reason": "Issue #4155 — zone moisture balance + ideal-system latent load: new HvacState accessors (get_latent_cooling_energy_kwh), reset logic for zone_humidity_ratio/zone_latent_cooling_energy_kwh/annual_latent_cooling_energy, and initialization. Minimal in-line additions (+21 lines net)."
+      "reason": "Issue #4155 \u2014 zone moisture balance + ideal-system latent load: new HvacState accessors (get_latent_cooling_energy_kwh), reset logic for zone_humidity_ratio/zone_latent_cooling_energy_kwh/annual_latent_cooling_energy, and initialization. Minimal in-line additions (+21 lines net)."
     },
     {
       "actual": 4309,
@@ -17,7 +17,7 @@
     },
     {
       "actual": 4310,
-      "reason": "Issue #4555 — thermostat sensor node for digital-twin calibration: the MassState construction in the bare impl ThermalModel<VectorField> block gains the sensor_nodes: None field initialiser (+1 line net). No new code paths."
+      "reason": "Issue #4555 \u2014 thermostat sensor node for digital-twin calibration: the MassState construction in the bare impl ThermalModel<VectorField> block gains the sensor_nodes: None field initialiser (+1 line net). No new code paths."
     },
     {
       "actual": 4314,
@@ -37,9 +37,13 @@
     },
     {
       "actual": 4392,
-      "reason": "PR #4723 (Issue #4697 per-surface parallelism spike, KILL verdict) — measurement instrumentation retained at landing per owner decision 2026-11-10: phase-timing fields and step hooks in the bare impl block (+23 lines net over the round-124 ratchet). No new production code paths; the spike verdict is KILL, the bench + report carry the evidence. Further decomposition tracked separately."
+      "reason": "PR #4723 (Issue #4697 per-surface parallelism spike, KILL verdict) \u2014 measurement instrumentation retained at landing per owner decision 2026-11-10: phase-timing fields and step hooks in the bare impl block (+23 lines net over the round-124 ratchet). No new production code paths; the spike verdict is KILL, the bench + report carry the evidence. Further decomposition tracked separately."
+    },
+    {
+      "actual": 4405,
+      "reason": "PR #4803 (Issue #4789) \u2014 ground-coupled floor R_g double-count fix: the opt-in path selects the construction U-value without the lumped ground resistance in the bare impl block (+13 lines net over the PR #4723 ratchet, including the merge with develop). No new production surface beyond the resistance-variant selection; decomposition tracked separately."
     }
   ],
-  "max_lines": 4392,
+  "max_lines": 4405,
   "notes": "Issue #3574: extend module-size gate to src/sim/thermal_model_core/mod.rs, the largest child of the Issue #3543 decomposition (~4.1k LoC), still over the ratchet because of the bare impl ThermalModel<VectorField> block. Current size snapshotted as the historical maximum; the bound can only tighten (lowered via the YAML `max_lines` field). Companion cleanup work that decomposes this module is tracked separately and is out of scope for #3574."
 }

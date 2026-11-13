@@ -27,6 +27,12 @@
 //!   (`src/sim/longwave_exchange.rs`); the network is deliberately NOT routed
 //!   into the 5R1C air balance yet (Issue #2890-followup), so the honest pin
 //!   is the steady estimate the step actually persists today (contract 8).
+//!   [2026-11-13, loop round 138 UPDATE: the #2890-followup routing LANDED —
+//!   the pairwise net terms + linearized self-conductance now enter the
+//!   per-class t_s advance (contracts 1/2/6 pin the routed form via the
+//!   helper's dated flip note); the routing contracts live in
+//!   `tests/interior_lw_routing_contract.rs`. Contract 8's steady estimates
+//!   stay valid — that seam was not touched by the routing.]
 //!
 //! Route discipline: contracts 1–4 and 8 run the default coupled route — the
 //! hourly per-class advance always executes and persists its records (the r70
@@ -106,9 +112,21 @@ fn flatten_class_tensors(m: &mut ThermalModel<VectorField>) {
 
 /// One t_s-first backward-Euler surface advance + per-class BE mass advance,
 /// replicated verbatim from the engine's operation order (see
-/// `/tmp/r109_ts_replication.py` for the independent Python derivation).
+/// `/tmp/r138_replication.py` for the independent Python derivation).
 /// Returns `(t_s_new_per_class, tm_w)`; classes the engine skips (area share
 /// ≤ 0) come back as `None` in the t_s vector.
+///
+/// [Round 138 FLIP — #2890-followup routing: the inter-pool longwave network
+/// now enters the production advance (the routed form: the exact T⁴ net
+/// exchange energy at the pre-step class state plus the linearized radiative
+/// self-conductance integrated implicitly — see
+/// `tests/interior_lw_routing_contract.rs` for the routing contracts and the
+/// stability finding that fixed the semi-implicit shape). This helper adds
+/// both recorded terms at the engine's operand positions, so contracts 1, 2
+/// and 6 pin the routed form bit-exactly. The pre-routing form this helper
+/// pinned was superseded, not silently re-pinned: the red run at the routed
+/// tree flipped all three contracts exactly as `/tmp/r138_replication.py`
+/// predicted.]
 #[allow(clippy::too_many_arguments)]
 fn replicate_per_class_advance(
     rec: &fluxion::sim::thermal_model_data::Applied5R1CClassBoundary,
@@ -119,9 +137,28 @@ fn replicate_per_class_advance(
     tm_old: f64,
     outdoor_temp: f64,
     t_s_old: &[f64; 3],
+    emissivity: f64,
 ) -> ([Option<f64>; 3], f64) {
+    use fluxion::sim::longwave_exchange::InteriorSurfaceNetwork;
     let total_area: f64 = rec.cls_area.iter().sum();
     let cm_sum: f64 = cls_cm.iter().sum();
+    let network = InteriorSurfaceNetwork::from_areas(
+        rec.cls_area[2],
+        rec.cls_area[1],
+        rec.cls_area[0],
+        emissivity,
+    );
+    let (t_f, t_c, t_w) = (t_s_old[2], t_s_old[1], t_s_old[0]);
+    let q_lw = [
+        network.net_lw_wall(t_f, t_c, t_w),
+        network.net_lw_ceiling(t_f, t_c, t_w),
+        network.net_lw_floor(t_f, t_c, t_w),
+    ];
+    let g_lw = [
+        network.net_lw_self_conductance_wall(t_w),
+        network.net_lw_self_conductance_ceiling(t_c),
+        network.net_lw_self_conductance_floor(t_f),
+    ];
     let mut t_s_new = [None; 3];
     let mut tm_w = 0.0;
     for c in 0..3 {
@@ -141,7 +178,13 @@ fn replicate_per_class_advance(
         let cs_dt = cs_c / DT;
         let denom_s = cs_dt + h_is_c + h_ms_c;
         let t_s_next = if denom_s > 0.0 {
-            (cs_dt * t_s_old[c] + h_is_c * rec.t_i + h_ms_c * tm_old + phi_st_c) / denom_s
+            (cs_dt * t_s_old[c]
+                + h_is_c * rec.t_i
+                + h_ms_c * tm_old
+                + phi_st_c
+                + q_lw[c]
+                + g_lw[c] * t_s_old[c])
+                / (denom_s + g_lw[c])
         } else {
             (h_ms_c * tm_old + h_is_c * rec.t_i + phi_st_c) / (h_ms_c + h_is_c)
         };
@@ -173,6 +216,10 @@ fn replicate_per_class_advance(
 /// arithmetic, so the assertion is bit-exact — any algebra drift anywhere in
 /// the surface advance (coefficients, operand order, the area-only phi_st
 /// partition, the floor class's zero exterior conductance) breaks it.
+///
+/// [Round 138 FLIP — the closed form gained the routed inter-pool longwave
+/// terms (see the helper's flip note); this contract now pins the routed
+/// form, red at the routing commit before the helper flip.]
 fn ts_first_surface_advance_matches_closed_form() {
     let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut m = spec_model_freefloat();
@@ -220,6 +267,7 @@ fn ts_first_surface_advance_matches_closed_form() {
         tm_old,
         12.0,
         &[tso.as_ref()[0], tso.as_ref()[1], tso.as_ref()[2]],
+        m.conduction.surface_emissivity.as_ref()[0],
     );
     for c in 0..3 {
         let Some(t_s_hat_c) = t_s_hat[c] else {
@@ -239,6 +287,8 @@ fn ts_first_surface_advance_matches_closed_form() {
 /// fill (no prior state); step 2's prev must equal step 1's new state
 /// bit-for-bit, and step 2's new state must equal the advance recomputed from
 /// it (the identity across two steps, not just the fresh-fill case).
+/// [Round 138 FLIP — the recomputed advance is the routed form (helper flip
+/// note); the lockstep property itself is unchanged.]
 fn ts_prev_snapshot_is_verbatim_and_lockstep() {
     let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut m = spec_model_freefloat();
@@ -306,6 +356,7 @@ fn ts_prev_snapshot_is_verbatim_and_lockstep() {
         tm_old,
         12.0,
         &kept,
+        m.conduction.surface_emissivity.as_ref()[0],
     );
     for c in 0..3 {
         assert_eq!(
@@ -483,6 +534,7 @@ fn committed_mass_is_the_coupled_composite() {
         tm_hour_start,
         12.0,
         &[tso.as_ref()[0], tso.as_ref()[1], tso.as_ref()[2]],
+        m.conduction.surface_emissivity.as_ref()[0],
     );
     assert!(
         tm_w_hourly != committed,
@@ -538,6 +590,9 @@ fn degenerate_zone_composite_routes_lumped_h_air_mass() {
         "the degenerate route must commit the recorded composite"
     );
     // The hourly shadow t_s advance persists under the degenerate closed form.
+    // [Round 138 FLIP — the shadow closed form is the routed form (helper flip
+    // note); the degenerate fixture's near-uniform state keeps the movement at
+    // the 4e-15 level observed in the red run.]
     let grab = |o: &Option<VectorField>| o.as_ref().and_then(|v| v.as_ref().first().copied());
     let cls_cm: [f64; 3] = [
         grab(&m.conduction.cm_wall).expect("cm_wall"),
@@ -568,6 +623,7 @@ fn degenerate_zone_composite_routes_lumped_h_air_mass() {
         tm_hour_start,
         12.0,
         &[tso.as_ref()[0], tso.as_ref()[1], tso.as_ref()[2]],
+        m.conduction.surface_emissivity.as_ref()[0],
     );
     for c in 0..3 {
         assert_eq!(

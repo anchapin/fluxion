@@ -33,7 +33,11 @@
 //!
 //! These are the standard closed-form Hottel view factors for a rectangular
 //! enclosure; the same geometry underlies `src/sim/view_factors.rs:53`. The
-//! floor ceiling pair is treated as parallel equal-area plates (F = 1.0);
+//! floor ceiling pair is treated as parallel equal-area plates
+//! (`F_fc = 1.0` floor→ceiling; the reverse `F_cf` is derived at the
+//! consumption site by the per-pair reciprocity division
+//! `F_cf = F_fc · A_floor / A_ceiling` — the round-130 asymmetry
+//! finding, fixed round 137);
 //! the floor/ceiling and wall-ring coupling is derived from the
 //! 2-D enclosure identity that the integrated view factor from a planar
 //! surface to the surrounding wall ring equals the wall-area-to-total-area
@@ -252,6 +256,15 @@ impl InteriorSurfaceNetwork {
     /// Net LW heat gain for the ceiling surface [W] (positive = heat into ceiling).
     ///
     /// Symmetric to [`Self::net_lw_floor`]: receives from floor and walls.
+    /// The floor↔ceiling pair applies the same consumption-site reciprocity
+    /// the wall side applies below: `F_ceiling→floor = F_floor→ceiling ·
+    /// A_floor / A_ceiling` (per-pair identity `F_cf·A_c == F_fc·A_f`).
+    /// Equal-area constructions divide 1.0/1.0 and stay bit-identical; the
+    /// round-130 asymmetry finding (the unguarded `F = 1.0` on both sides
+    /// breaking conservation for `A_floor ≠ A_ceiling`, pinned then at
+    /// `Σ = σ·ε·(A_f − A_c)·(T_c⁴ − T_f⁴)` = +424.6827496865086 W) is
+    /// fixed by this division — round 137, Alex-released fix-first
+    /// sequencing before the #2890-followup routing.
     pub fn net_lw_ceiling(&self, t_floor_c: f64, t_ceiling_c: f64, t_wall_c: f64) -> f64 {
         if self.ceiling_area <= 0.0 || self.emissivity <= 0.0 {
             return 0.0;
@@ -259,9 +272,18 @@ impl InteriorSurfaceNetwork {
         let t_f_k = t_floor_c + 273.15;
         let t_c_k = t_ceiling_c + 273.15;
         let t_w_k = t_wall_c + 273.15;
+        // F_ceiling→floor = F_floor→ceiling · A_floor / A_ceiling — the
+        // per-pair reciprocity division (the wall pair below derives its
+        // reverse factors the same way). Guards the degenerate
+        // `A_ceiling == 0` construction the same `else 0.0` way.
+        let f_ceiling_floor = if self.ceiling_area > 0.0 {
+            self.f_floor_ceiling * self.floor_area / self.ceiling_area
+        } else {
+            0.0
+        };
         let q_cf = STEFAN_BOLTZMANN
             * self.emissivity
-            * self.f_floor_ceiling
+            * f_ceiling_floor
             * self.ceiling_area
             * (t_f_k.powi(4) - t_c_k.powi(4));
         // F_ceiling→wall · A_ceiling (directional, not symmetric)
@@ -332,6 +354,68 @@ impl InteriorSurfaceNetwork {
             ),
             self.net_lw_wall(t_floor_c, t_ceiling_c, t_wall_c),
         )
+    }
+    /// Linearized radiative self-conductance for the wall surface [W/K]
+    /// (round-138 #2890-followup routing).
+    ///
+    /// The derivative magnitude of [`Self::net_lw_wall`] with respect to the
+    /// wall's own temperature at the given operating point —
+    /// `4·σ·ε·T_K³ · A_wall · (F_wall→floor + F_wall→ceiling)` — the same
+    /// reverse factors the net terms derive. The semi-implicit routing
+    /// integrates this self-coupling implicitly while the exact T⁴ net
+    /// energy rides the advance numerator; the naive fully-explicit add is
+    /// unstable at hourly dt (radiative time constant ~10²–10³ s vs
+    /// dt = 3600 s — measured round 138, see the routing contracts).
+    pub fn net_lw_self_conductance_wall(&self, t_wall_c: f64) -> f64 {
+        if self.wall_area <= 0.0 || self.emissivity <= 0.0 {
+            return 0.0;
+        }
+        let f_wall_floor = if self.wall_area > 0.0 {
+            self.f_floor_wall * self.floor_area / self.wall_area
+        } else {
+            0.0
+        };
+        let f_wall_ceiling = if self.wall_area > 0.0 {
+            self.f_ceiling_wall * self.ceiling_area / self.wall_area
+        } else {
+            0.0
+        };
+        4.0 * STEFAN_BOLTZMANN
+            * self.emissivity
+            * (t_wall_c + 273.15).powi(3)
+            * self.wall_area
+            * (f_wall_floor + f_wall_ceiling)
+    }
+
+    /// Linearized radiative self-conductance for the ceiling surface [W/K].
+    /// See [`Self::net_lw_self_conductance_wall`].
+    pub fn net_lw_self_conductance_ceiling(&self, t_ceiling_c: f64) -> f64 {
+        if self.ceiling_area <= 0.0 || self.emissivity <= 0.0 {
+            return 0.0;
+        }
+        let f_ceiling_floor = if self.ceiling_area > 0.0 {
+            self.f_floor_ceiling * self.floor_area / self.ceiling_area
+        } else {
+            0.0
+        };
+        4.0 * STEFAN_BOLTZMANN
+            * self.emissivity
+            * (t_ceiling_c + 273.15).powi(3)
+            * self.ceiling_area
+            * (f_ceiling_floor + self.f_ceiling_wall)
+    }
+
+    /// Linearized radiative self-conductance for the floor surface [W/K].
+    /// See [`Self::net_lw_self_conductance_wall`].
+    pub fn net_lw_self_conductance_floor(&self, t_floor_c: f64) -> f64 {
+        if self.floor_area <= 0.0 || self.emissivity <= 0.0 {
+            return 0.0;
+        }
+        4.0 * STEFAN_BOLTZMANN
+            * self.emissivity
+            * (t_floor_c + 273.15).powi(3)
+            * self.floor_area
+            * (self.f_floor_ceiling + self.f_floor_wall)
     }
 }
 

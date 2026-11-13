@@ -2852,13 +2852,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .copy_from_slice(scratch.air_node_corrected.as_ref());
         }
         if r76_n > 0 || r77_coupled {
-            // Persist the sol-air ramp source for the next hour and carry
-            // the end-of-hour mass state to the mass-advance block.
-            let sol_prev = self.0.mass.r76_sol_air_prev.as_mut();
-            for (i, slot) in sol_prev.iter_mut().take(self.0.hvac.num_zones).enumerate() {
-                *slot = t_sol_air[i];
-            }
-            self.0.mass.r76_has_prev = true;
+            // Carry the end-of-hour mass state to the mass-advance block.
+            // [R137] the sol-air ramp-source persist moved into the commit
+            // zone below every rejection path (issue #4495 air guard,
+            // issue #4500 demand guard, issue #4495 mass guard) — a
+            // rejected step advances nothing.
             r76_final = Some(r76_mass.clone());
         }
 
@@ -2891,52 +2889,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                      the step's inputs are outside the solver's finite envelope \
                      (issue #4495); step rejected, state untouched"
                 )));
-            }
-        }
-
-        // [R71 HARNESS] persist this hour's drivers as the next hour's ramp
-        // source. Stored without the night-vent term (the vent addition is
-        // re-applied at its current-hour value inside the sub-step loop).
-        // Write happens after the sub-step loop, where the immutable
-        // `self.0.mass` borrows above are dead — same placement contract as
-        // the `air_temperatures` commit below.
-        {
-            let num_prev = self.0.mass.r71_air_driver_num_prev.as_mut();
-            let den_prev = self.0.mass.r71_air_driver_den_prev.as_mut();
-            let np_slope = self.0.mass.r71_num_prev_load_slope.as_mut();
-            for i in 0..self.0.hvac.num_zones {
-                num_prev[i] = num_tm_ref[i] + num_rest_ref[i];
-                den_prev[i] = den_ref[i];
-                // [Round 115 -- persist the frozen value's load slope
-                // alongside it: `num_rest`'s convective share is the whole
-                // freeze's load coefficient on the recorded route, so the
-                // next hour's record can carry the persistence response
-                // without re-deriving it (Z4).]
-                np_slope[i] = conv_frac * term_rest_1_ref[i];
-            }
-            // [R75 HARNESS] persist this hour's night-vent term as the next
-            // hour's ramp source; the seed flag flips after the first step
-            // (mirrors the R71 zero-prev seed convention).
-            {
-                let vent_prev = self.0.mass.r75_vent_term_prev.as_mut();
-                for (i, slot) in vent_prev.iter_mut().take(self.0.hvac.num_zones).enumerate() {
-                    *slot = if night_vent_active_now && i == 0 {
-                        h_ve_night * outdoor_temp
-                    } else {
-                        0.0
-                    };
-                }
-                self.0.mass.r75_vent_has_prev = true;
-            }
-            // [R90 HARNESS] persist this hour's gain drives as the next
-            // hour's ramp source. Unconditional write: the flag-off build
-            // never reads these fields, so it stays bit-identical.
-            {
-                let st_prev_r90 = self.0.mass.r90_phi_st_prev.as_mut();
-                let m_prev_r90 = self.0.mass.r90_phi_m_prev.as_mut();
-                let n = self.0.hvac.num_zones;
-                st_prev_r90[..n].copy_from_slice(&phi_st.as_ref()[..n]);
-                m_prev_r90[..n].copy_from_slice(&phi_m.as_ref()[..n]);
             }
         }
 
@@ -3873,6 +3825,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     ),
                 }
             };
+            // [Round 138 — per-zone net-longwave triples for the routed t_s
+            // advance; filled inside the per-class arm when use_r67 runs,
+            // recorded on the applied class boundary below. `zone_q_lw` is
+            // the exact T⁴ net exchange energy; `zone_g_lw` the linearized
+            // radiative self-conductance the semi-implicit treatment
+            // integrates implicitly (the naive fully-explicit add is
+            // unstable at hourly dt — measured this round).]
+            let mut zone_q_lw = [0.0f64; 3];
+            let mut zone_g_lw = [0.0f64; 3];
             let tm_new = if ps_enabled {
                 match r66_cls[i] {
                     Some((cls_g, cls_t, cls_area, cls_beam))
@@ -3997,6 +3958,66 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             self.0.mass.r70_ts_new_workspace.take().unwrap_or_default();
                         r70_ts_new.clear();
                         r70_ts_new.extend_from_slice(&r70_ts_old);
+                        // [Round 138 — #2890-followup routing: the inter-pool
+                        // longwave network enters the production per-class
+                        // t_s advance. The pairwise Stefan–Boltzmann net
+                        // terms are evaluated at the PRE-STEP per-class
+                        // surface state and added to each class's
+                        // backward-Euler numerator (after phi_st_c): the
+                        // ASHRAE 140 §5.2.1.10.3(a)/§5.2.3.2.2(a)
+                        // time-step-varying interior infrared radiative
+                        // exchange (the constant combined film pair is the
+                        // documented alternative characterization). Class
+                        // order [wall, ceiling, floor] maps to the network's
+                        // (floor = cls_area[2], ceiling = cls_area[1],
+                        // wall = cls_area[0]). The film pair h_is is
+                        // UNCHANGED (ISO 13790 §12.2.2): the linearized h_ri
+                        // share stays in the air coupling and the pairwise
+                        // network adds the inter-surface redistribution the
+                        // linearized form approximates away — the overlap is
+                        // a disclosed structural simplification (KNOWN_ISSUES,
+                        // dated this round); the bounded alternative
+                        // (re-partitioning H_is across the whole 5R1C air
+                        // balance) is the full §5.2.1.10.3(a) film
+                        // restructure, scoped out. The Hottel crossed-string
+                        // view-factor machinery stays unrouted (#2890-followup
+                        // scope note). The terms are recorded on the applied
+                        // class boundary (cls_q_lw) so the checker mirror
+                        // consumes them verbatim (bit-exact, load-free).
+                        // Gated on use_r67: only zones whose t_s-first
+                        // advance actually runs record nonzero terms.]
+                        if use_r67 {
+                            let lw_emissivity = self
+                                .0
+                                .conduction
+                                .surface_emissivity
+                                .as_ref()
+                                .get(i)
+                                .copied()
+                                .unwrap_or(0.9);
+                            let lw_network =
+                                crate::sim::longwave_exchange::InteriorSurfaceNetwork::from_areas(
+                                    cls_area[2],
+                                    cls_area[1],
+                                    cls_area[0],
+                                    lw_emissivity,
+                                );
+                            let (lw_t_floor, lw_t_ceiling, lw_t_wall) = (
+                                r70_ts_old[3 * i + 2],
+                                r70_ts_old[3 * i + 1],
+                                r70_ts_old[3 * i],
+                            );
+                            zone_q_lw = [
+                                lw_network.net_lw_wall(lw_t_floor, lw_t_ceiling, lw_t_wall),
+                                lw_network.net_lw_ceiling(lw_t_floor, lw_t_ceiling, lw_t_wall),
+                                lw_network.net_lw_floor(lw_t_floor, lw_t_ceiling, lw_t_wall),
+                            ];
+                            zone_g_lw = [
+                                lw_network.net_lw_self_conductance_wall(lw_t_wall),
+                                lw_network.net_lw_self_conductance_ceiling(lw_t_ceiling),
+                                lw_network.net_lw_self_conductance_floor(lw_t_floor),
+                            ];
+                        }
                         for c in 0..3 {
                             let w = cls_area[c] / total_area;
                             if w <= 0.0 {
@@ -4091,11 +4112,29 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                     let cs_dt = cs_c / dt;
                                     let denom_s = cs_dt + h_is_c + h_ms_c;
                                     let t_s_new = if denom_s > 0.0 {
+                                        // [Round 138 — the routed numerator:
+                                        // the inter-pool net longwave term
+                                        // `zone_q_lw[c]` (exact T⁴ exchange
+                                        // energy at the pre-step class state)
+                                        // joins the heat balance after
+                                        // phi_st_c, and the linearized
+                                        // radiative self-conductance
+                                        // `zone_g_lw[c]` integrates
+                                        // implicitly (`+ g·t_old` in the
+                                        // numerator, `+ g` in the
+                                        // denominator) — the fully-explicit
+                                        // add oscillates divergently at
+                                        // hourly dt (τ_rad ~10²–10³ s; the
+                                        // amplified-chain evidence is in the
+                                        // round record). Contracts:
+                                        // tests/interior_lw_routing_contract.rs.]
                                         (cs_dt * t_s_old
                                             + h_is_c * t_i
                                             + h_ms_c * tm_old
-                                            + phi_st_c)
-                                            / denom_s
+                                            + phi_st_c
+                                            + zone_q_lw[c]
+                                            + zone_g_lw[c] * t_s_old)
+                                            / (denom_s + zone_g_lw[c])
                                     } else {
                                         t_s_c
                                     };
@@ -4275,6 +4314,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             // coefficient of `phi_st_zone` (round-103
                             // `bload` pattern one site over).]
                             phi_st_zone_load_coef: rad_frac,
+                            // [Round 138 — the routed inter-pool net
+                            // longwave terms the t_s-first advance
+                            // consumed (verbatim for the checker
+                            // mirror): the exact T⁴ exchange energy and
+                            // the linearized self-conductance.]
+                            cls_q_lw: zone_q_lw,
+                            cls_lw_self_g: zone_g_lw,
                             h_vent_mass_zone,
                         },
                     ));
@@ -4357,6 +4403,73 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Mass energy change tracking removed - Ti_free already includes thermal mass effects
         self.0.mass.previous_mass_temperatures =
             std::mem::replace(&mut self.0.mass.mass_temperatures, new_mass_temps_vf);
+
+        // [R137 — ramp-source persistence relocated below every rejection
+        // path (the issue #4495 air-node guard, the issue #4500 demand
+        // guard, and the issue #4495 mass-node guard above). The LOOP136
+        // routed finding: these blocks previously ran before those guards,
+        // so a rejected step left the recorded harness state advanced with
+        // the rejected step's drivers while the guards' messages claimed
+        // "state untouched". The r136 verdict extended to the 5R1C seam: a
+        // rejected step advances NOTHING. Write order (R76 first, then
+        // R71/R75/R90) and values are unchanged — nothing reads these
+        // fields between the old and new sites and every source local is
+        // stable below its old position (verified at the tip before the
+        // move) — so accepted steps persist identical bytes, proven by the
+        // battery output-diff riding this PR.]
+        if r76_n > 0 || r77_coupled {
+            // Persist the sol-air ramp source for the next hour.
+            let sol_prev = self.0.mass.r76_sol_air_prev.as_mut();
+            for (i, slot) in sol_prev.iter_mut().take(self.0.hvac.num_zones).enumerate() {
+                *slot = t_sol_air[i];
+            }
+            self.0.mass.r76_has_prev = true;
+        }
+        // [R71 HARNESS] persist this hour's drivers as the next hour's ramp
+        // source. Stored without the night-vent term (the vent addition is
+        // re-applied at its current-hour value inside the sub-step loop).
+        // Write happens in the commit zone, where the immutable
+        // `self.0.mass` borrows above are dead — the placement contract of
+        // every other commit in this function.
+        {
+            let num_prev = self.0.mass.r71_air_driver_num_prev.as_mut();
+            let den_prev = self.0.mass.r71_air_driver_den_prev.as_mut();
+            let np_slope = self.0.mass.r71_num_prev_load_slope.as_mut();
+            for i in 0..self.0.hvac.num_zones {
+                num_prev[i] = num_tm_ref[i] + num_rest_ref[i];
+                den_prev[i] = den_ref[i];
+                // [Round 115 -- persist the frozen value's load slope
+                // alongside it: `num_rest`'s convective share is the whole
+                // freeze's load coefficient on the recorded route, so the
+                // next hour's record can carry the persistence response
+                // without re-deriving it (Z4).]
+                np_slope[i] = conv_frac * term_rest_1_ref[i];
+            }
+            // [R75 HARNESS] persist this hour's night-vent term as the next
+            // hour's ramp source; the seed flag flips after the first step
+            // (mirrors the R71 zero-prev seed convention).
+            {
+                let vent_prev = self.0.mass.r75_vent_term_prev.as_mut();
+                for (i, slot) in vent_prev.iter_mut().take(self.0.hvac.num_zones).enumerate() {
+                    *slot = if night_vent_active_now && i == 0 {
+                        h_ve_night * outdoor_temp
+                    } else {
+                        0.0
+                    };
+                }
+                self.0.mass.r75_vent_has_prev = true;
+            }
+            // [R90 HARNESS] persist this hour's gain drives as the next
+            // hour's ramp source. Unconditional write: the flag-off build
+            // never reads these fields, so it stays bit-identical.
+            {
+                let st_prev_r90 = self.0.mass.r90_phi_st_prev.as_mut();
+                let m_prev_r90 = self.0.mass.r90_phi_m_prev.as_mut();
+                let n = self.0.hvac.num_zones;
+                st_prev_r90[..n].copy_from_slice(&phi_st.as_ref()[..n]);
+                m_prev_r90[..n].copy_from_slice(&phi_m.as_ref()[..n]);
+            }
+        }
 
         // Store previous temperatures for dT/dt calculation (Plan 15-04, 15-06)
         // Issue #3370: scratch pool buffer (`previous_temperatures`)

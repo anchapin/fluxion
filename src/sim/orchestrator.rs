@@ -108,6 +108,24 @@ pub fn recommended_chunk_size(n_population: usize) -> usize {
     chunk.min(n_population.max(1))
 }
 
+/// Accumulate one timestep of HVAC energy into a gross-energy total.
+///
+/// The physics step returns *signed* energy — heating positive, cooling
+/// negative — and each timestep is exclusively heating, cooling, or
+/// neither (the zone's free temperature sits on one side of the
+/// deadband or inside it), so a timestep's delivered energy is the
+/// magnitude of its signed value. EUI is gross delivered energy per m²:
+/// summing the signed values instead nets heating against cooling, and
+/// over a year a cooling-dominated config's total goes negative — the
+/// `.max(0.0)` EUI clamp then reported that config as using no energy
+/// at all (Issue #4805: analytical-path configs with window U ≤ 1.0
+/// W/m²K returned EUI exactly 0.0 despite thousands of heating and
+/// cooling steps). Every EUI accumulation site uses this helper so the
+/// sign convention lives in exactly one place.
+pub(crate) fn accumulate_gross_energy(total: &mut f64, step_energy_kwh: f64) {
+    *total += step_energy_kwh.abs();
+}
+
 /// A single CPU evaluation result: `(population_index, eui_kwh_per_m2_yr)`.
 ///
 /// The orchestrator returns these in an arbitrary order; the caller is
@@ -224,8 +242,11 @@ pub trait BatchOrchestrator: Send + Sync {
     ///
     /// The 8 760-step inner loop runs sequentially within each config —
     /// parallelism is across configs only — so each `(idx, eui)` is
-    /// bit-identical to the pre-#2769 serial loop given the same input
-    /// model. `StepParameters::build_analytical()` is constructed **per
+    /// bit-identical across the sequential and parallel implementations
+    /// given the same input model. (The pre-#2769 serial loop summed
+    /// signed step energy; both implementations now accumulate gross
+    /// energy per Issue #4805, so values differ from that historical
+    /// loop for cooling-bearing configs.) `StepParameters::build_analytical()` is constructed **per
     /// worker** because `StepParameters` is `!Send + !Sync` (its
     /// `equipment: Option<Vec<Box<dyn Equipment>>>` field makes the type
     /// auto-traits fail even when the analytical variant holds `None`
@@ -255,7 +276,10 @@ pub trait BatchOrchestrator: Send + Sync {
                 let hour_of_day = t % 24;
                 let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
                 let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                total_energy += model.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
+                accumulate_gross_energy(
+                    &mut total_energy,
+                    model.solve_single_step(t, outdoor_temp, &step_params, 3600.0),
+                );
             }
             let total_area = model.setpoints.zone_area.integrate();
             let eui = if total_area > 0.0 {
@@ -439,7 +463,10 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
                             &mut loads_buf,
                         );
                         model.set_loads(&loads_buf);
-                        energy_kwh += model.step_physics(t, outdoor_temp, 3600.0);
+                        accumulate_gross_energy(
+                            &mut energy_kwh,
+                            model.step_physics(t, outdoor_temp, 3600.0),
+                        );
                     }
 
                     let total_area = model.setpoints.zone_area.integrate();
@@ -620,7 +647,7 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
                             models.iter_mut().zip(loads.iter()).zip(energy.iter_mut())
                         {
                             model.set_loads(load);
-                            *e += model.step_physics(t, outdoor_temp, 3600.0);
+                            accumulate_gross_energy(e, model.step_physics(t, outdoor_temp, 3600.0));
                         }
 
                         // Recycle the received loads Vec as the next `msg`.
@@ -824,8 +851,10 @@ impl BatchOrchestrator for RayonChunksOrchestrator {
                         let daily_cycle =
                             (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
                         let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                        total_energy +=
-                            model.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
+                        accumulate_gross_energy(
+                            &mut total_energy,
+                            model.solve_single_step(t, outdoor_temp, &step_params, 3600.0),
+                        );
                     }
                     let total_area = model.setpoints.zone_area.integrate();
                     let eui = if total_area > 0.0 {
@@ -999,6 +1028,37 @@ mod tests {
         assert_eq!(result.len(), 64);
     }
 
+    /// Regression for Issue #4805: a cooling-dominated config must
+    /// report a positive (gross) EUI. With signed accumulation this
+    /// config's year nets negative (more cooling magnitude than
+    /// heating) and the `.max(0.0)` clamp reported EUI exactly 0.0.
+    #[test]
+    fn analytical_eui_counts_cooling_as_energy() {
+        use crate::sim::timestep_solver::StepParameters;
+
+        let mut model = ThermalModel::<VectorField>::new(1);
+        model.apply_parameters(&[0.5, 20.0, 27.0]);
+        let orchestrator = RayonChunksOrchestrator::with_chunk_size(1);
+        let result = orchestrator.run_cpu_analytical(vec![(0, model.clone())]);
+        assert_eq!(result.len(), 1);
+        let eui = result[0].1;
+        assert!(eui > 0.0, "cooling-dominated config reported EUI {eui}");
+
+        // Cross-check against a hand-rolled gross sum.
+        let step_params = StepParameters::build_analytical();
+        let mut gross = 0.0_f64;
+        for t in 0..8760 {
+            let hour_of_day = t % 24;
+            let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+            let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+            gross += model
+                .solve_single_step(t, outdoor_temp, &step_params, 3600.0)
+                .abs();
+        }
+        let area = model.setpoints.zone_area.integrate();
+        assert_eq!(eui, gross / area);
+    }
+
     /// Bit-identical numerical equivalence vs the pre-#2769 serial baseline.
     ///
     /// Re-implements the exact serial loop that lived in
@@ -1006,7 +1066,9 @@ mod tests {
     /// formula, same `StepParameters::build_analytical()`, same
     /// `solve_single_step` call order, same `eui.max(0.0)` clamp) and
     /// asserts the orchestrator's `par_chunks` path produces identical
-    /// f64 bytes for every population index.
+    /// f64 bytes for every population index. The mirror accumulates
+    /// gross energy via `accumulate_gross_energy`, matching production
+    /// since the Issue #4805 fix.
     ///
     /// The 8 760-step inner loop runs sequentially inside each chunk
     /// worker — parallelism is across configs only — so the per-config
@@ -1029,7 +1091,8 @@ mod tests {
             })
             .collect();
 
-        // Serial baseline (the pre-#2769 loop body, verbatim).
+        // Serial baseline (the pre-#2769 loop body, with the production
+        // gross-energy accumulation from Issue #4805).
         let step_params = StepParameters::build_analytical();
         let mut expected: Vec<f64> = vec![f64::NAN; pop.len()];
         for (idx, mut model) in pop.iter().cloned() {
@@ -1038,7 +1101,10 @@ mod tests {
                 let hour_of_day = t % 24;
                 let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
                 let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                total_energy += model.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
+                accumulate_gross_energy(
+                    &mut total_energy,
+                    model.solve_single_step(t, outdoor_temp, &step_params, 3600.0),
+                );
             }
             let total_area = model.setpoints.zone_area.integrate();
             let eui = if total_area > 0.0 {

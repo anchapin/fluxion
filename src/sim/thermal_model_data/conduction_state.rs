@@ -175,6 +175,29 @@ pub struct Applied5R1CClassBoundary {
     /// through the engine's own gains algebra, giving the per-class
     /// t_s-first mirror the probe leverage it lacked by construction.
     pub phi_st_zone_load_coef: f64,
+    /// [Loop round 138 — #2890-followup routing] The per-class net longwave
+    /// terms the t_s-first advance consumed this step [W], engine class
+    /// order [wall, ceiling, floor], evaluated at the pre-step per-class
+    /// surface state through the `InteriorSurfaceNetwork` closed forms
+    /// (contract-grade since round 130, floor↔ceiling reciprocity fixed
+    /// round 137). Recorded on the same branch the advance consumed them
+    /// so the checker's round-73 mirror consumes them verbatim (bit-exact
+    /// zero-delta replay, the round-104 recorded-coefficient pattern);
+    /// exactly `[0.0; 3]` for zones that did not run the routed advance
+    /// (identical-construction fallback, degenerate area partition) and at
+    /// uniform pre-step surface states (every T⁴ difference is exactly
+    /// 0.0). Load-free: the inter-surface radiative exchange does not
+    /// depend on the internal-gain load, so the mirror's probe response
+    /// algebra is unchanged.
+    pub cls_q_lw: [f64; 3],
+    /// [Loop round 138 — #2890-followup routing] The linearized radiative
+    /// self-conductance paired with [`Self::cls_q_lw`] [W/K], same class
+    /// order and operating point (`4·σ·ε·T_K³·A·Σ_p F_cp` at the pre-step
+    /// class temperature): the semi-implicit treatment integrates this
+    /// self-coupling implicitly (the naive fully-explicit add oscillates
+    /// divergently at hourly dt — the round-138 measured finding). Consumed
+    /// verbatim by the checker's mirror exactly as the engine consumed it.
+    pub cls_lw_self_g: [f64; 3],
     /// Night-vent mass conductance [W/K] (0 when inactive).
     pub h_vent_mass_zone: f64,
 }
