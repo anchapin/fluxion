@@ -288,6 +288,47 @@ def benchmark_inference(model_path: Path, n_iterations: int = 100) -> Dict:
     }
 
 
+def compute_affine_parameters(
+    scaler,
+    y_scaler=None,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Return the affine parameters baked into the exported ONNX graph.
+
+    The graph standardises the raw input and de-standardises the raw
+    output, so that the ONNX model consumes and produces *raw physical
+    units* (no Rust-side normalisation):
+
+        scaled_input = X * scale_in + bias_in = (X - mean_x) / std_x
+        Y            = mlp_out * scale_out + bias_out
+                    = mlp_out * std_y + mean_y
+
+    ``scaler`` is the *input* ``StandardScaler`` (``mean_``/``scale_``).
+    ``y_scaler`` is the optional *output* ``StandardScaler``.
+
+    Single-scaler semantics (the default): when no ``y_scaler`` is given,
+    the same scaler is assumed to have standardised both the inputs and
+    the targets, i.e. ``y_scaler is scaler``. The output side then uses
+    ``scale_out = std``, ``bias_out = mean`` -- the inverse of the
+    standardisation, exactly like ``StandardScaler.inverse_transform``.
+    That convention only makes sense when the input and output widths
+    agree; ``export_model`` rejects it otherwise and asks for an explicit
+    ``y_scaler``.
+
+    Issue #4790: the exporters used to write the *inverted* factors
+    (``scale_in = std_x``, ``bias_in = -mean_x * std_x``,
+    ``scale_out = 1 / std_y``), which made the exported graph disagree with
+    the scikit-learn pipeline it was trained from.
+    """
+    scale_in = 1.0 / np.asarray(scaler.scale_, dtype=np.float64)
+    bias_in = -np.asarray(scaler.mean_, dtype=np.float64) / np.asarray(
+        scaler.scale_, dtype=np.float64
+    )
+    out_scaler = scaler if y_scaler is None else y_scaler
+    scale_out = np.asarray(out_scaler.scale_, dtype=np.float64)
+    bias_out = np.asarray(out_scaler.mean_, dtype=np.float64)
+    return scale_in, bias_in, scale_out, bias_out
+
+
 def export_model(
     model,
     scaler,
@@ -295,8 +336,16 @@ def export_model(
     output_path: Path,
     hidden_layer_sizes: Tuple[int, ...],
     opset: int = 17,
+    y_scaler=None,
 ) -> bool:
-    """Export sklearn MLP model to ONNX format."""
+    """Export sklearn MLP model to ONNX format.
+
+    The graph embeds the input standardisation and the output
+    de-standardisation (see ``compute_affine_parameters``), so the ONNX
+    model consumes and produces raw physical units. ``y_scaler`` is the
+    optional output ``StandardScaler``; when omitted the single-scaler
+    semantics of ``compute_affine_parameters`` apply.
+    """
     import onnx
     from onnx import TensorProto, helper, numpy_helper
 
@@ -307,6 +356,15 @@ def export_model(
 
     n_features = schema["input_shape"][1]
     n_outputs = schema["output_shape"][1]
+
+    if y_scaler is None and len(np.asarray(scaler.scale_)) != n_outputs:
+        raise ValueError(
+            "export_model needs an output scaler for this component: the "
+            f"input scaler has {len(np.asarray(scaler.scale_))} entries but "
+            f"the component '{component}' has {n_outputs} output(s). Pass "
+            "y_scaler=... (or use a component whose input and output widths "
+            "agree, in which case the single-scaler convention applies)."
+        )
 
     input_tensor_name = schema["input_name"]
     output_tensor_name = schema["output_name"]
@@ -324,17 +382,21 @@ def export_model(
         output_tensor_name, TensorProto.FLOAT, [None, n_outputs]
     )
 
+    scale_in, bias_in, scale_out, bias_out = compute_affine_parameters(
+        scaler, y_scaler
+    )
+
     init_scale_in = numpy_helper.from_array(
-        scaler.scale_.astype(np.float32), scale_in_name
+        scale_in.astype(np.float32), scale_in_name
     )
     init_bias_in = numpy_helper.from_array(
-        (-scaler.mean_ * scaler.scale_).astype(np.float32), bias_in_name
+        bias_in.astype(np.float32), bias_in_name
     )
     init_scale_out = numpy_helper.from_array(
-        (1.0 / scaler.scale_).astype(np.float32), scale_out_name
+        scale_out.astype(np.float32), scale_out_name
     )
     init_bias_out = numpy_helper.from_array(
-        scaler.mean_.astype(np.float32), bias_out_name
+        bias_out.astype(np.float32), bias_out_name
     )
 
     nodes = []

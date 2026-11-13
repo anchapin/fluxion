@@ -55,9 +55,24 @@ from whatever the training pipeline emits:
   * ``--std a,b,c``     -- explicit per-feature standard deviations.
 
 When no standard deviations are supplied they are recovered from the ONNX
-``scale_in`` initializer (``std = 1 / scale_in``), which is exactly the
-inverse of the input standardisation that ``export_to_onnx`` bakes into the
-graph.
+``scale_in`` initializer (``std = 1 / scale_in``).
+
+CONVENTION (Issue #4790)
+------------------------
+The exporters (``scripts/train_surrogate.py::export_to_onnx`` and
+``scripts/export_onnx.py::export_model``) bake the *standardisation* into
+the graph, so the ONNX model consumes and produces raw physical units:
+
+    scaled_input = X * scale_in + bias_in = (X - mean_x) / std_x
+    Y            = mlp_out * scale_out + bias_out
+                = mlp_out * std_y + mean_y
+
+i.e. ``scale_in = 1 / std_x``, ``bias_in = -mean_x / std_x``,
+``scale_out = std_y`` and ``bias_out = mean_y``. Therefore the per-feature
+standard deviation is recovered from ``scale_in`` as ``std = 1 / scale_in``
+(the *multiplicative* factor of the standardisation), and the graph's
+output units are the raw target units, obtained by multiplying the
+model's standardised output by ``scale_out``.
 """
 
 from __future__ import annotations
