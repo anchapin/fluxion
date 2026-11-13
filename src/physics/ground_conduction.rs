@@ -28,10 +28,14 @@
 //! (backward Euler over the same finite-volume grid, with soil/slab
 //! volumetric heat capacities) is verified against the closed-form
 //! semi-infinite step response in
-//! `tests/ashrae_140/ground_transient.rs` (Issue #4774). The periodic
-//! §8 cases and the named b-series cases (GC10b/GC30/GC60 — their
-//! boundary specifications are not derivable from in-repo sources)
-//! remain open on #4270.
+//! `tests/ashrae_140/ground_transient.rs` (Issue #4774). Periodic
+//! driving (sinusoidal surface temperature) is verified against the
+//! closed-form periodic penetration-depth / phase-lag solution, plus a
+//! 2-D periodic steady-state cycle-mean check against the steady
+//! solver, in `tests/ashrae_140/ground_periodic.rs` (Issue #4774).
+//! The named b-series cases (GC10b/GC30/GC60 — their boundary
+//! specifications are not derivable from in-repo sources) remain
+//! open on #4270.
 //!
 //! # Discretisation
 //!
