@@ -695,9 +695,9 @@ def test_write_baseline_updates_baseline_section(checker, tmp_path, monkeypatch)
 # path -> (current size, ratchet basename, expected ceiling)
 ISSUE_4753_ENTRIES = {
     "src/sim/thermal_model_physics/zone_balance.rs": (
-        4440,
+        4530,
         "zone_balance_ratchet.json",
-        4662,
+        4757,
     ),
     "src/sim/hvac/pressure_air_loop.rs": (
         4312,
