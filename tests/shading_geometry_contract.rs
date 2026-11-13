@@ -37,8 +37,28 @@
 //! reduction under a horizontal device (its rays travel downward and never
 //! intersect the device plane).
 //!
-//! Python replication: `/tmp/r119_replicate.py` (dev-time evidence; predicts
-//! every pinned value below, including the pre-fix red gots).
+//! Loop round 139 — the overhang × fins BEAM composition (the Alex-approved
+//! decision recorded 2026-11-12 in
+//! `docs/investigations/fins-sky-diffuse-isotropic-scoping.md`, released
+//! 2026-11-13 "Go"): dual-device windows compose the two beam factors
+//! MULTIPLICATIVELY — the fin element shades first (it sits at the window
+//! plane), the overhang second, `shaded = 1 − (1 − f_overhang)·(1 − f_fins)`
+//! — superseding the planar union + corner-overlap composition for
+//! dual-device windows. The SKY-DIFFUSE route keeps the r120 isotropic
+//! convention applied IN TURN (fins' element first, then the overhang's);
+//! fins' element is the held CSE-slice identity 1.0 today, so the wired
+//! share stays the overhang element's value exactly (premise contract
+//! below). Algebraic note the replication surfaced: when the fins span the
+//! FULL window height (the Case 630/930 spec wiring), the retired overlap
+//! term EQUALS the product term, so the two routes agree in real arithmetic
+//! there and the spec-geometry pins hold their round-119 values; the routes
+//! genuinely diverge where fins do not span the height — that is where the
+//! red-first contracts sit. Single-device and no-device windows keep the
+//! retired body verbatim (byte-identical by construction).
+//!
+//! Python replication: `/tmp/r139_replication.py` (predicts every red got;
+//! `/tmp/r119_replicate.py` remains the round-119 evidence for the pins
+//! below, including the pre-fix red gots).
 //!
 //! env_bool: none — these contracts read the unconditional default route and
 //! need no ENV_LOCK.
@@ -105,40 +125,42 @@ fn closed_form_strip(alt_rad: f64, rel_az_rad: f64, gap: f64, window: &WindowAre
     ((shadow_y - gap).max(0.0)).min(window.height)
 }
 
-/// Engine combined closed form for overhang+fins with the overlap correction
-/// (transcribed from `calculate_shaded_fraction`; one fin shades — the one on
-/// the sun's side — and the overlap is the fin strip ∩ the overhang strip).
+/// Engine dual-device product closed form (round 139, transcribed from
+/// `calculate_shaded_fraction`'s multiplicative branch): per-element blocked
+/// fractions, `shaded = 1 − (1 − f_overhang)·(1 − f_fins)`, clamped [0,1].
+/// The retired planar-union + corner-overlap form this replaces agreed with
+/// the product in real arithmetic whenever the fins span the full window
+/// height (fin_height·width == area makes the overlap term equal the product
+/// term) — the Case 630/930 spec wiring — so those pins keep their values.
 fn closed_form_fraction(
     alt_rad: f64,
     rel_az_rad: f64,
     gap: f64,
     window: &WindowArea,
-    fin: Option<&ShadeFin>,
+    fins: &[ShadeFin],
 ) -> f64 {
     if alt_rad <= 0.0 {
         return 1.0; // below-horizon convention (beam is zero there)
     }
     let strip = closed_form_strip(alt_rad, rel_az_rad, gap, window);
-    let oh_area = strip * window.width;
-    let oh_height = strip;
+    let f_oh = strip * window.width / window.area;
     let mut fin_area = 0.0;
-    let mut overlap = 0.0;
-    if let Some(f) = fin {
-        let this_fin_shades = match f.side {
-            fluxion::sim::shading::Side::Left => rel_az_rad < 0.0,
-            fluxion::sim::shading::Side::Right => rel_az_rad > 0.0,
-        };
-        if this_fin_shades {
-            let shadow_x = f.depth * rel_az_rad.abs().tan();
-            let width = (shadow_x - f.distance_from_edge).max(0.0).min(window.width);
-            fin_area = width * f.height;
-            if oh_area > 0.0 {
-                overlap = width * f.height.min(oh_height);
+    if rel_az_rad.abs() < std::f64::consts::FRAC_PI_2 {
+        for f in fins {
+            let this_fin_shades = match f.side {
+                fluxion::sim::shading::Side::Left => rel_az_rad < 0.0,
+                fluxion::sim::shading::Side::Right => rel_az_rad > 0.0,
+            };
+            if this_fin_shades {
+                let shadow_x = f.depth * rel_az_rad.abs().tan();
+                let width = (shadow_x - f.distance_from_edge).max(0.0).min(window.width);
+                fin_area += width * f.height;
             }
         }
     }
-    let combined = oh_area + fin_area - overlap;
-    (combined / (window.height * window.width)).clamp(0.0, 1.0)
+    let f_fins = fin_area / window.area;
+    let transmitted = (1.0 - f_oh) * (1.0 - f_fins);
+    (1.0 - transmitted).clamp(0.0, 1.0)
 }
 
 /// Case 610: the attached south overhang carries the spec-true roof-edge gap.
@@ -319,12 +341,17 @@ fn shaded_fraction_matches_spec_geometry_closed_form() {
     }
 }
 
-/// Case 630 west surface: overhang + sun-side fin compose through the overlap
-/// correction (one fin shades — the one on the sun's side; the overlap is the
-/// fin strip ∩ the overhang strip, bounded by min(fin.height, strip)). At
-/// 60°/+30° with the spec gap: 0.7981125… (red-first pre-fix got ~1.0).
+/// Case 630 west surface: overhang + sun-side fin compose MULTIPLICATIVELY
+/// (round 139, the r137-recorded Alex-approved decision):
+/// `shaded = 1 − (1 − f_oh)·(1 − f_fin)`. At the spec geometry the fins span
+/// the full window height, so the retired union+overlap route agreed with
+/// this value in real arithmetic (the overlap term equals the product term)
+/// — the round-119 literal holds under both routes; the routes genuinely
+/// diverge where fins do not span the height
+/// (see `dual_device_composition_is_multiplicative_where_fins_dont_span_height`).
+/// Red-first history (round 119, pre-gap-fix): got ~1.0.
 #[test]
-fn case630_overlap_composition_matches_closed_form() {
+fn case630_composition_matches_multiplicative_closed_form() {
     let (overhang, fins, window) = attached_shading(ASHRAE140Case::Case630, Orientation::West);
     assert_eq!(fins.len(), 2);
     let combined_window = WindowArea::with_dimensions(
@@ -345,7 +372,7 @@ fn case630_overlap_composition_matches_closed_form() {
         sun.relative_azimuth,
         overhang.distance_above,
         &combined_window,
-        Some(&fins[1]),
+        &fins,
     );
     assert!(
         (engine - want).abs() <= 1e-12,
@@ -679,4 +706,232 @@ fn r120_engine_attached_surface_carries_view_factor() {
         1.0_f64.to_bits(),
         "unshaded surface must carry the exact no-device share"
     );
+}
+
+// =====================================================================
+// Loop round 139 — the dual-device (overhang × fins) beam composition.
+//
+// Decision (Alex, recorded 2026-11-12 in
+// docs/investigations/fins-sky-diffuse-isotropic-scoping.md, released
+// 2026-11-13): beam factors compose multiplicatively — fins shade first at
+// the window plane, the overhang second, shaded = 1 − (1−f_oh)(1−f_fins) —
+// superseding the planar union + corner-overlap route for dual-device
+// windows; sky-diffuse keeps the r120 isotropic convention applied in turn.
+//
+// Red-first evidence (this file at the unfixed tip, union route live):
+// `dual_device_composition_is_multiplicative_where_fins_dont_span_height`
+// got 0.5773502691896256 (the retired union value), want
+// 0.5976850138443166; `dual_device_product_closed_form_sweep` first failed
+// at 5°/−80° (got 0.48640824650375447, want 0.605464315683309). The
+// spec-geometry pins above keep their round-119 values because at
+// full-height fins the retired overlap term equals the product term.
+// Python replication: /tmp/r139_replication.py (FIX3/FIX3b).
+// =====================================================================
+
+/// The dual-device product pin at a geometry where the retired union route
+/// genuinely differs: fins at HALF the window height (1.0 m on the 2.0 m
+/// window) — the retired overlap term no longer equals the product term and
+/// the multiplicative composition blocks more beam than the union did.
+/// Python FIX3: product 0.5976850138443166, retired union
+/// 0.5773502691896256. RED at the unfixed tree (engine returned the union
+/// value).
+#[test]
+fn dual_device_composition_is_multiplicative_where_fins_dont_span_height() {
+    let window = WindowArea::with_dimensions(12.0, Orientation::West, 2.0, 6.0, 0.2, 0.0);
+    let overhang = Overhang {
+        depth: 1.0,
+        distance_above: 0.0,
+        extension: 10.0,
+    };
+    let fins = vec![
+        ShadeFin {
+            depth: 1.0,
+            distance_from_edge: 0.0,
+            side: fluxion::sim::shading::Side::Left,
+            height: 1.0,
+        },
+        ShadeFin {
+            depth: 1.0,
+            distance_from_edge: 0.0,
+            side: fluxion::sim::shading::Side::Right,
+            height: 1.0,
+        },
+    ];
+    let sun = LocalSolarPosition {
+        altitude: 45.0_f64.to_radians(),
+        relative_azimuth: 30.0_f64.to_radians(),
+    };
+    let engine = calculate_shaded_fraction(&window, Some(&overhang), &fins, &sun, None);
+    assert!(
+        (engine - 0.5976850138443166).abs() <= 1e-9,
+        "multiplicative composition (Python FIX3), got {engine}"
+    );
+    // Discriminator: explicitly NOT the retired union value.
+    assert!(
+        (engine - 0.5773502691896256).abs() > 1e-3,
+        "must not regress to the retired union value, got {engine}"
+    );
+}
+
+/// The multiplicative closed form holds across the solar grid at the
+/// divergent (half-height fin) fixture. 16 of the 35 Python FIX3b points
+/// genuinely separate the routes (the rest coincide at saturation, at
+/// due-front fin inactivity, or within fold noise). RED at the unfixed
+/// tree: first failure at 5°/−80° (got 0.48640824650375447, want
+/// 0.605464315683309).
+#[test]
+fn dual_device_product_closed_form_sweep() {
+    let window = WindowArea::with_dimensions(12.0, Orientation::West, 2.0, 6.0, 0.2, 0.0);
+    let overhang = Overhang {
+        depth: 1.0,
+        distance_above: 0.0,
+        extension: 10.0,
+    };
+    let fins = vec![
+        ShadeFin {
+            depth: 1.0,
+            distance_from_edge: 0.0,
+            side: fluxion::sim::shading::Side::Left,
+            height: 1.0,
+        },
+        ShadeFin {
+            depth: 1.0,
+            distance_from_edge: 0.0,
+            side: fluxion::sim::shading::Side::Right,
+            height: 1.0,
+        },
+    ];
+    let mut divergent_points = 0;
+    for alt_deg in [5.0_f64, 30.0, 45.0, 60.0, 80.0] {
+        for az_deg in [-80.0_f64, -45.0, -15.0, 0.0, 15.0, 45.0, 80.0] {
+            let sun = LocalSolarPosition {
+                altitude: alt_deg.to_radians(),
+                relative_azimuth: az_deg.to_radians(),
+            };
+            let engine = calculate_shaded_fraction(&window, Some(&overhang), &fins, &sun, None);
+            let want = closed_form_fraction(
+                sun.altitude,
+                sun.relative_azimuth,
+                overhang.distance_above,
+                &window,
+                &fins,
+            );
+            assert!(
+                (engine - want).abs() <= 1e-12,
+                "sweep {}°/{:+}°: engine {} != product closed form {}",
+                alt_deg,
+                az_deg,
+                engine,
+                want
+            );
+            // The retired union route at the same point (transcribed from the
+            // pre-r139 body) — count the genuinely divergent points the sweep
+            // covers, so this grid cannot silently degenerate into points
+            // where both routes agree.
+            let retired = retired_union_fraction(
+                sun.altitude,
+                sun.relative_azimuth,
+                overhang.distance_above,
+                &window,
+                &fins,
+            );
+            if (engine - retired).abs() > 1e-12 {
+                divergent_points += 1;
+            }
+        }
+    }
+    assert!(
+        divergent_points >= 16,
+        "the sweep must exercise the genuinely divergent points (Python FIX3b: 16), got {divergent_points}"
+    );
+}
+
+/// The RETIRED planar-union + corner-overlap composition (transcribed from
+/// the pre-r139 `calculate_shaded_fraction` body) — kept ONLY as the
+/// discriminator proving the sweep and the pin above sit on points where
+/// the multiplicative decision genuinely changes the value. Not engine
+/// truth anywhere anymore.
+fn retired_union_fraction(
+    alt_rad: f64,
+    rel_az_rad: f64,
+    gap: f64,
+    window: &WindowArea,
+    fins: &[ShadeFin],
+) -> f64 {
+    if alt_rad <= 0.0 {
+        return 1.0;
+    }
+    let strip = closed_form_strip(alt_rad, rel_az_rad, gap, window);
+    let oh_area = strip * window.width;
+    let oh_height = strip;
+    let mut fin_area = 0.0;
+    let mut overlap = 0.0;
+    if rel_az_rad.abs() < std::f64::consts::FRAC_PI_2 {
+        for f in fins {
+            let this_fin_shades = match f.side {
+                fluxion::sim::shading::Side::Left => rel_az_rad < 0.0,
+                fluxion::sim::shading::Side::Right => rel_az_rad > 0.0,
+            };
+            if this_fin_shades {
+                let shadow_x = f.depth * rel_az_rad.abs().tan();
+                let width = (shadow_x - f.distance_from_edge).max(0.0).min(window.width);
+                fin_area += width * f.height;
+                if oh_area > 0.0 {
+                    overlap += width * f.height.min(oh_height);
+                }
+            }
+        }
+    }
+    let combined = oh_area + fin_area - overlap;
+    (combined / window.area).clamp(0.0, 1.0)
+}
+
+/// Premise/convention pin (green on both routes — joins at the engine
+/// commit): the Case 630 E/W surfaces' STORED sky-diffuse share is the
+/// overhang element's r120 isotropic value, computed from the same window
+/// geometry the wiring builds — the fin element contributes its held
+/// identity 1.0 (the CSE-blocked fins sky-diffuse slice stays out), and the
+/// per-element shares compose IN TURN (fins first, then overhang; never a
+/// recomposed single union factor). This is the seam the held slice plugs
+/// into when the accompanying files become fetchable.
+#[test]
+fn case630_sky_diffuse_stays_per_element_r120_overhang_share() {
+    for orientation in [Orientation::East, Orientation::West] {
+        let (overhang, fins, window) = attached_shading(ASHRAE140Case::Case630, orientation);
+        assert_eq!(fins.len(), 2, "dual-device surface: overhang + fin pair");
+        let spec = ASHRAE140Case::Case630.spec();
+        let model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &ThermalSelector::default(),
+        )
+        .expect("spec builds");
+        let surface = model
+            .0
+            .solar
+            .surfaces
+            .first()
+            .expect("zone 0 surfaces")
+            .iter()
+            .find(|s| s.orientation == orientation)
+            .expect("surface for orientation exists");
+        let stored = surface.sky_diffuse_view_factor;
+        let shade_geom = WindowArea {
+            area: window.area,
+            orientation,
+            height: window.height,
+            width: window.width,
+            sill_height: window.sill_height,
+            left_offset: window.left_offset,
+        };
+        let want = fluxion::sim::shading::overhang_sky_diffuse_fraction(&shade_geom, &overhang);
+        assert_eq!(
+            stored.to_bits(),
+            want.to_bits(),
+            "{orientation:?}: stored share must be the overhang element's r120 value bit-exactly (fins' element is the held identity 1.0)"
+        );
+        assert!(
+            stored < 1.0,
+            "{orientation:?}: the overhang element must reduce the share below 1.0, got {stored}"
+        );
+    }
 }

@@ -145,6 +145,25 @@ pub struct LocalSolarPosition {
 ///
 /// Returns a value between 0.0 (fully unshaded) and 1.0 (fully shaded).
 ///
+/// Dual-device windows (an overhang AND fins attached) compose the two beam
+/// factors MULTIPLICATIVELY (loop round 139, the Alex-approved decision
+/// recorded 2026-11-12 in
+/// `docs/investigations/fins-sky-diffuse-isotropic-scoping.md`): the fin
+/// element shades first (it sits at the window plane), the overhang second,
+/// `shaded = 1 − (1 − f_overhang)·(1 − f_fins)`. This supersedes the planar
+/// union + corner-overlap composition for dual-device windows. Algebraic
+/// note: when the fins span the full window height (the Case 630/930 spec
+/// wiring, fin_height·width == area) the retired overlap term equals the
+/// product term, so the two routes agree in real arithmetic there; the
+/// routes genuinely diverge where fins do not span the height. The
+/// sky-diffuse route is separate and keeps the r120 isotropic convention
+/// applied in turn (each element's visible-sky share; the wiring in
+/// `thermal_model_core` feeds the overhang element's hoisted share — fins'
+/// element is the held CSE-slice identity 1.0).
+///
+/// Single-device and no-device windows keep the retired body verbatim below
+/// (byte-identical by construction).
+///
 /// When `vegetation_transmittance` is provided (0-1), multiplies the geometric
 /// blocked fraction by the transmittance. This models vegetation (trees) where:
 /// - transmittance = 1.0: bare branches, geometric shading fully effective
@@ -164,6 +183,29 @@ pub fn calculate_shaded_fraction(
         return 1.0; // Sun below horizon
     }
 
+    // Loop round 139: dual-device multiplicative composition (the r137
+    // scoping-record decision). Per-element blocked fractions, product form;
+    // the fin element is consumed first (window plane), then the overhang.
+    if let Some(oh) = overhang {
+        if !fins.is_empty() {
+            let oh_area = calculate_overhang_shadow_area(window, oh, solar);
+            let overhang_fraction = oh_area / window.area;
+            let mut fin_area = 0.0;
+            for fin in fins {
+                fin_area += calculate_fin_shadow_area(window, fin, solar);
+            }
+            let fins_fraction = fin_area / window.area;
+            let transmitted = (1.0 - overhang_fraction) * (1.0 - fins_fraction);
+            let geometric_shaded = (1.0 - transmitted).clamp(0.0, 1.0);
+            // Same vegetation fold as the retired single-device body below.
+            if let Some(transmittance) = vegetation_transmittance {
+                let t = transmittance.clamp(0.0, 1.0);
+                return geometric_shaded * (1.0 - t);
+            }
+            return geometric_shaded;
+        }
+    }
+
     let mut overhang_area = 0.0;
     let mut fin_area = 0.0;
 
@@ -177,43 +219,11 @@ pub fn calculate_shaded_fraction(
         fin_area += calculate_fin_shadow_area(window, fin, solar);
     }
 
-    // 3. Calculate overlap correction to avoid double-counting
-    // The overlap occurs at the corner where both overhang and fin shadows exist.
-    // Overhang shades a horizontal strip (full window width × overhang_height).
-    // Fin shades a vertical strip (fin_width × full window height).
-    // The overlap is their intersection: min(fin_width, window_width) × min(overhang_height, window_height).
-    let mut overlap_area = 0.0;
-    if overhang_area > 0.0 && fin_area > 0.0 {
-        let oh = overhang.unwrap();
-        let tan_profile = solar.altitude.tan() / solar.relative_azimuth.cos();
-        let shadow_y = oh.depth * tan_profile;
-        let overhang_height = (shadow_y - oh.distance_above).max(0.0).min(window.height);
-
-        for fin in fins {
-            let sun_az = solar.relative_azimuth;
-            let is_shaded = match fin.side {
-                Side::Left => sun_az < 0.0,
-                Side::Right => sun_az > 0.0,
-            };
-            if !is_shaded {
-                continue;
-            }
-
-            let shadow_x = fin.depth * sun_az.abs().tan();
-            let fin_width = (shadow_x - fin.distance_from_edge)
-                .max(0.0)
-                .min(window.width);
-
-            // Overlap is the intersection of the fin shadow strip and overhang shadow strip
-            // Fin shadow: vertical strip of width fin_width, height fin.height
-            // Overhang shadow: horizontal strip of height overhang_height, full window width
-            // Intersection: width = fin_width, height = min(fin.height, overhang_height)
-            // (the fin shadow is bounded by fin.height, so overlap is bounded by fin.height)
-            overlap_area += fin_width * fin.height.min(overhang_height);
-        }
-    }
-
-    let combined_shaded_area = overhang_area + fin_area - overlap_area;
+    // 3. Combined shaded area. Loop round 139: the retired corner-overlap
+    // correction (`overlap_area`) is superseded — dual-device windows now
+    // take the multiplicative branch above, so at most one device class
+    // reaches this body and the overlap term was identically 0.0.
+    let combined_shaded_area = overhang_area + fin_area;
 
     let geometric_shaded = (combined_shaded_area / window.area).clamp(0.0, 1.0);
 
@@ -452,8 +462,14 @@ mod tests {
     }
 
     #[test]
-    fn test_overhang_fin_overlap_correction() {
-        // Case 630/930: Overhang + fins together should not double-count overlap
+    fn test_overhang_fin_multiplicative_composition() {
+        // Case 630/930 geometry: overhang + fins compose multiplicatively
+        // (round 139, the r137-recorded decision). At full-height fins the
+        // retired union+overlap route coincided algebraically (its overlap
+        // term equals the product term), so this pin's value survives the
+        // route change: product fold 0.3228987681383928 vs retired union
+        // fold 0.32289876813839274 — 1 ULP apart, both inside the 1e-6
+        // tolerance of 0.322899.
         let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
         let overhang = Overhang {
             depth: 0.5,
@@ -496,12 +512,14 @@ mod tests {
 
         assert!(
             (shaded_combined - expected_fraction).abs() < 1e-6,
-            "Overlap correction failed: got {}, expected {}",
+            "Multiplicative composition failed: got {}, expected {}",
             shaded_combined,
             expected_fraction
         );
 
-        // Verify overlap correction actually reduces shaded area vs. double-counting
+        // Verify the composition blocks less than naive double-counting
+        // (both the multiplicative product and the retired union satisfy
+        // shaded ≤ f_oh + f_fins)
         // Double-counted would be: (3.464 + 0.577) / 12.0 = 0.3368
         let double_counted_fraction = (3.464102 + 0.577350) / 12.0;
         assert!(

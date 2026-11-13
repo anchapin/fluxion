@@ -115,3 +115,28 @@ The fins sky-diffuse SLICE itself stays held: the CSE reference constant
 `Std140-5-2-CSE-04152019-InputFiles.zip`) remains unreachable — fresh probe
 2026-11-13 02:46 UTC: `HTTP/2 403`, `cf-mitigated: challenge` (the
 seventh consecutive day of the challenge).
+
+## LANDED (2026-11-13, loop round 139)
+
+The beam composition decision above is implemented at develop (PR off
+`993a03f4`): `calculate_shaded_fraction` carries the multiplicative dual
+branch (per-element blocked fractions, fin element first, product form);
+the retired planar union + corner-overlap body remains verbatim for
+single-device and no-device windows (byte-identical by construction) and
+its corner-overlap block is superseded (identically 0.0 on the surviving
+inputs). The sky-diffuse route is unchanged: the r120 isotropic
+convention applied in turn, fins' element the held identity 1.0.
+
+The replication finding this landing records: at the Case 630/930 spec
+wiring (fins span the full window height) the retired overlap term equals
+the product term, so the two routes agree in real arithmetic there — the
+round's full battery proved the outputs byte-identical (42/42, strict
+partition 11/31/0 unchanged, §7 emitter byte-compare green), so NO
+re-record was owed. The routes genuinely diverge where fins do not span
+the height; the red-first contracts sit there
+(tests/shading_geometry_contract.rs: half-height-fin pin 0.5773502691896256
+→ 0.5976850138443166, 35-point sweep with 16 divergent points, and the
+per-element r120 sky-diffuse premise pin on the Case 630 E/W surfaces).
+
+The fins sky-diffuse SLICE itself stays held on the 403 wall (unchanged
+from the round-127/128 scoping): no CSE anchor, no fabricated constants.

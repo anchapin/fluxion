@@ -212,13 +212,19 @@ fn air_record<'a>(m: &'a ThermalModel<VectorField>, zone: usize) -> (usize, Vec<
         .as_ref()
         .expect("a live coupled 5R1C step must persist the air-node record");
     let row = &rec[zone];
+    // Re-pinned 2026-11-13 (loop round 139): stride 7 -> 9 — the round-107
+    // seven-entry layout carried [D, M, W, den, h3od, a, bl]; round 113 added
+    // slot `C` (inter-zone cross-response) and round 115 slot `np` (ramp-source
+    // slope) in the same push, so the live record is 9 per sub-step (the
+    // 12x9 = 108-entry failure is proven pre-existing at the base tip, round
+    // 138). `den` stays index 3 of each sub-step block.
     assert!(
-        !row.is_empty() && row.len() % 7 == 0,
-        "air record must carry 7 entries per sub-step, got {}",
+        !row.is_empty() && row.len() % 9 == 0,
+        "air record must carry 9 entries per sub-step, got {}",
         row.len()
     );
-    let n = row.len() / 7;
-    let den_seq = (0..n).map(|k| row[7 * k + 3]).collect::<Vec<f64>>();
+    let n = row.len() / 9;
+    let den_seq = (0..n).map(|k| row[9 * k + 3]).collect::<Vec<f64>>();
     (n, den_seq, row[0])
 }
 
@@ -418,8 +424,8 @@ fn zero_input_release_composes_bit_exact_and_pairs_with_the_record() {
         // sub-step (the lag's tau_air IS the air advance's).
         let rec = m.mass.r77_air_substep_coeffs.as_ref().expect("air record");
         for k in 0..n {
-            let d = rec[0][7 * k];
-            let den_k = rec[0][7 * k + 3];
+            let d = rec[0][9 * k];
+            let den_k = rec[0][9 * k + 3];
             let tau_air = c_air / (den_k / tr1);
             let d_pred = (-dt_sub / tau_air).exp();
             assert!(
@@ -532,8 +538,8 @@ fn night_vent_rides_the_air_den_only_record_identities() {
         // enters (a, bl, h3od) under the air-side-only default.
         for slot in [4_usize, 5, 6] {
             assert_eq!(
-                rec_on[0][7 * k + slot],
-                rec_off[0][7 * k + slot],
+                rec_on[0][9 * k + slot],
+                rec_off[0][9 * k + slot],
                 "sub-step {k} slot {slot}: the mass-route coefficient moved under vent-on"
             );
         }
@@ -595,10 +601,10 @@ fn r86_falsy_restores_the_mass_side_vent_record() {
         .r77_air_substep_coeffs
         .as_ref()
         .expect("air record (default)");
-    let moved = (0..rec_default[0].len() / 7).any(|k| {
+    let moved = (0..rec_default[0].len() / 9).any(|k| {
         [5_usize, 6]
             .iter()
-            .any(|slot| rec_restored[0][7 * k + slot] != rec_default[0][7 * k + slot])
+            .any(|slot| rec_restored[0][9 * k + slot] != rec_default[0][9 * k + slot])
     });
     assert!(
         moved,
