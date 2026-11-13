@@ -71,16 +71,16 @@
   "metrics": {
     "lib_ignored": 8,
     "lib_tests": 4450,
-    "test_binaries": 75,
+    "test_binaries": 76,
     "workspace_ignored": 151,
-    "workspace_tests": 9335
+    "workspace_tests": 9338
   },
   "metrics_ast": {
     "lib_ignored": 8,
     "lib_tests": 4450,
-    "test_binaries": 75,
+    "test_binaries": 76,
     "workspace_ignored": 151,
-    "workspace_tests": 9335
+    "workspace_tests": 9338
   },
   "ratchet": {
     "BASELINE_LIB_IGNORED": 9,
@@ -96,13 +96,13 @@
     "doc_tests": 0,
     "lib_ignored_root": 8,
     "lib_tests_root": 4450,
-    "test_binaries": 75,
-    "test_source_files": 415,
+    "test_binaries": 76,
+    "test_source_files": 416,
     "workspace_ignored": 151,
     "workspace_integration_ignored": 142,
-    "workspace_integration_tests": 3726,
+    "workspace_integration_tests": 3729,
     "workspace_lib_ignored": 9,
     "workspace_lib_tests": 5609,
-    "workspace_tests": 9335
+    "workspace_tests": 9338
   }
 }
