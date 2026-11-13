@@ -79,6 +79,10 @@ pub trait GroundTemperature: Send + Sync {
     ///
     /// - Hour values wrap around using modulo for year-to-year continuity
     /// - Implementations may ignore `hour_of_year` for constant models
+    /// - Implementations that carry an internal state (e.g. the
+    ///   ground-coupled floor boundary) march that state forward and keep it
+    ///   across the year wrap, so the returned temperature is continuous
+    ///   from one year into the next
     fn ground_temperature(&self, hour_of_year: usize) -> f64;
 }
 
@@ -524,8 +528,14 @@ const GROUND_TOLERANCE: f64 = 1.0e-9;
 struct GroundCoupledFloorState {
     /// The ground-domain transient state.
     transient: crate::physics::ground_conduction::GroundTransientState,
-    /// The hour of the year the state currently represents.
-    hour: usize,
+    /// The absolute hour of the marched clock: the number of hourly steps
+    /// taken since the initial state.
+    ///
+    /// The clock is monotonically increasing — it never rewinds and the soil
+    /// state is never reset — so the ground state carries across the year
+    /// boundary (Issue #4794). The hour of the year the state represents is
+    /// `abs_hour % 8760`.
+    abs_hour: u64,
 }
 
 /// Ground-coupled floor boundary (Issue #4775, Refs #4270).
@@ -679,7 +689,13 @@ struct GroundCoupledFloorState {
 ///
 /// The ground domain is marched forward in time as the simulation clock
 /// advances; the march is idempotent per hour (asking twice for the same
-/// hour returns the same value) and wraps around at the end of the year.
+/// hour returns the same value). The march is **forward only**: the soil
+/// state is never rewound and never reset, so crossing the end of the year
+/// continues the soil history instead of restarting the domain from a
+/// uniform field (Issue #4794). The annual ground-surface forcing is
+/// 8760-periodic and is sampled at `hour % 8760`, so every year drives the
+/// soil with the same forcing while the soil itself keeps accumulating
+/// history across the year boundary.
 ///
 /// Cloning the boundary copies the marched state, so a cloned model starts
 /// from the same ground state as its original (the clone does not share the
@@ -812,7 +828,10 @@ impl GroundCoupledFloorBoundary {
 
         let solver = GroundSolver::new(config)?;
         let transient = solver.initial_transient_state(spec.surface_temperature_mean_c)?;
-        let state = GroundCoupledFloorState { transient, hour: 0 };
+        let state = GroundCoupledFloorState {
+            transient,
+            abs_hour: 0,
+        };
 
         Ok(Self {
             solver,
@@ -854,22 +873,36 @@ impl GroundCoupledFloorBoundary {
             .temperature_at(self.readout_x_m, self.readout_depth_m)
     }
 
-    /// March the ground domain to `hour`, restarting at the beginning of the
-    /// year when the clock wraps around.
-    fn advance_to(&self, state: &mut GroundCoupledFloorState, hour: usize) -> bool {
-        if hour < state.hour {
-            // The clock wrapped around (multi-year run): restart from the
-            // initial state and march again.
-            match self.solver.initial_transient_state(self.surface_mean_c) {
-                Ok(transient) => {
-                    state.transient = transient;
-                    state.hour = 0;
-                }
-                Err(_) => return false,
-            }
-        }
-        while state.hour < hour {
-            let top = self.top_segments(state.hour);
+    /// March the ground domain to `hour_of_year`, keeping the soil state
+    /// across the year boundary (Issue #4794).
+    ///
+    /// The soil is marched **forward only**: the internal clock
+    /// ([`GroundCoupledFloorState::abs_hour`]) never rewinds and the
+    /// transient state is never reset, so a run that crosses the end of the
+    /// year keeps the ground history the soil has accumulated instead of
+    /// restarting from a uniform field.
+    ///
+    /// `hour_of_year` is an hour of the year (0-8759). The march stops at the
+    /// *next occurrence* of that hour, so a request that goes "backwards" —
+    /// the year wrap, or a genuinely out-of-order query — is served by
+    /// marching forward to the following occurrence of the same hour. The
+    /// old guard (a decreasing hour re-initialised the soil) is gone: it
+    /// conflated the year wrap with an out-of-order call and destroyed the
+    /// multi-year ground state.
+    ///
+    /// The annual ground-surface forcing is 8760-periodic, so the drive is
+    /// sampled at `abs_hour % 8760` and the same forcing sequence repeats
+    /// every year while the soil keeps its own history.
+    fn advance_to(&self, state: &mut GroundCoupledFloorState, hour_of_year: usize) -> bool {
+        let hours_per_year = HOURS_PER_YEAR as usize;
+        let current_hour = (state.abs_hour % hours_per_year as u64) as usize;
+        // Forward distance to the next occurrence of `hour_of_year`.
+        let steps = (hour_of_year + hours_per_year - current_hour) % hours_per_year;
+        for _ in 0..steps {
+            // The step from `abs_hour` to `abs_hour + 1` is driven by the
+            // ground-surface temperature of the hour it starts at.
+            let drive_hour = (state.abs_hour % hours_per_year as u64) as usize;
+            let top = self.top_segments(drive_hour);
             if self
                 .solver
                 .step_transient_with_top(&mut state.transient, GROUND_TIME_STEP_S, &top)
@@ -877,7 +910,7 @@ impl GroundCoupledFloorBoundary {
             {
                 return false;
             }
-            state.hour += 1;
+            state.abs_hour += 1;
         }
         true
     }
@@ -888,6 +921,12 @@ impl GroundTemperature for GroundCoupledFloorBoundary {
         Box::new(self.clone())
     }
 
+    /// Ground temperature at the coupling plane [°C].
+    ///
+    /// `hour_of_year` is an hour of the year; the annual cycle wraps with the
+    /// modulo below, so a multi-year driver may hand over the absolute hour
+    /// (8760 is the first hour of the second year). The soil state is
+    /// marched forward across that wrap and never reset (Issue #4794).
     fn ground_temperature(&self, hour_of_year: usize) -> f64 {
         let hour = hour_of_year % (HOURS_PER_YEAR as usize);
         let mut state = match self.state.lock() {
@@ -1266,7 +1305,9 @@ mod tests {
         let constant = ConstantGroundTemperature::new(9.4);
 
         // Sample the year every 24 h. The hours are strictly increasing, so
-        // the ground-domain march never has to wrap around.
+        // the ground-domain march never has to wrap around; the year wrap
+        // itself is covered by
+        // `test_ground_coupled_floor_boundary_keeps_soil_state_across_year_wrap`.
         let mut series = Vec::new();
         let mut differs_from_constant = false;
         for hour in (0..8760).step_by(24) {
@@ -1312,6 +1353,115 @@ mod tests {
             .build()
             .expect("Section 7 case specification must build");
         assert!(built.ground_coupled_floor.is_some());
+    }
+
+    /// Regression test (Issue #4794): the ground-coupled floor boundary keeps
+    /// its soil state across the year wrap.
+    ///
+    /// The boundary is driven through the absolute hours 8750..8770, which
+    /// crosses the 8760-hour year boundary, and the returned temperatures
+    /// are compared against the equivalent **unwrapped** continuous march:
+    /// the same solver, stepped from the initial state with the annual drive
+    /// sampled at `abs_hour % 8760`.
+    ///
+    /// Before the fix the boundary re-initialised the soil at the wrap
+    /// (`solver.initial_transient_state`), so the driven temperatures
+    /// restarted the year-one sequence instead of continuing the march, and
+    /// the multi-year ground state was destroyed.
+    #[test]
+    fn test_ground_coupled_floor_boundary_keeps_soil_state_across_year_wrap() {
+        use crate::physics::ground_conduction::{TopCondition, TopSegment};
+
+        /// First absolute hour driven by the test (the last ten hours of the
+        /// first year).
+        const FIRST_HOUR: usize = 8750;
+        /// Last absolute hour driven by the test, exclusive (the first ten
+        /// hours of the second year).
+        const LAST_HOUR: usize = 8770;
+
+        let spec = ground_coupled_floor_spec();
+        let boundary = GroundCoupledFloorBoundary::new(&spec, 8.0)
+            .expect("ground-coupled floor boundary must build");
+
+        // Drive the boundary across the wrap. The trait method reduces the
+        // argument to its hour of the year, so 8760 is the first hour of the
+        // second year.
+        let mut driven = Vec::new();
+        for hour in FIRST_HOUR..LAST_HOUR {
+            driven.push(boundary.ground_temperature(hour));
+        }
+
+        // Reference: the same continuous march without a year boundary — the
+        // soil is stepped from the initial state and the annual drive is
+        // sampled at `abs_hour % 8760`.
+        let mut transient = boundary
+            .solver
+            .initial_transient_state(spec.surface_temperature_mean_c)
+            .expect("initial transient state must build");
+        let mut reference = Vec::new();
+        for abs_hour in 0..LAST_HOUR {
+            let drive_hour = abs_hour % (HOURS_PER_YEAR as usize);
+            let top = vec![TopSegment {
+                x_start_m: 0.0,
+                x_end_m: boundary.domain_length_m,
+                condition: TopCondition::Robin {
+                    film_coefficient_w_m2k: boundary.surface_film_w_m2k,
+                    ambient_temperature_c: boundary.surface_temperature_c(drive_hour),
+                },
+            }];
+            boundary
+                .solver
+                .step_transient_with_top(&mut transient, GROUND_TIME_STEP_S, &top)
+                .expect("ground-domain step must succeed");
+            let represented = abs_hour + 1;
+            if represented >= FIRST_HOUR && represented < LAST_HOUR {
+                reference
+                    .push(transient.temperature_at(boundary.readout_x_m, boundary.readout_depth_m));
+            }
+        }
+
+        assert_eq!(
+            driven.len(),
+            reference.len(),
+            "the driven and the reference series must cover the same hours"
+        );
+        for (offset, (got, want)) in driven.iter().zip(reference.iter()).enumerate() {
+            let abs_hour = FIRST_HOUR + offset;
+            assert!(
+                (got - want).abs() < 1.0e-9,
+                "ground temperature at absolute hour {abs_hour} must match the \
+                 unwrapped continuous march (got {got:.9} °C, want {want:.9} °C)"
+            );
+        }
+
+        // The soil state must not be reset at the wrap: the first hour of
+        // the second year must not repeat the first hour of the first year
+        // (the pre-fix boundary re-initialised the soil, so both were the
+        // untouched initial field).
+        let year_one_start = GroundCoupledFloorBoundary::new(&spec, 8.0)
+            .expect("ground-coupled floor boundary must build")
+            .ground_temperature(0);
+        let year_two_start = driven[8760 - FIRST_HOUR];
+        assert!(
+            (year_two_start - year_one_start).abs() > 1.0e-3,
+            "the soil state must not be reset at the year wrap: hour 0 of the \
+             second year ({year_two_start:.6} °C) must differ from hour 0 of the \
+             first year ({year_one_start:.6} °C)"
+        );
+
+        // No state discontinuity at the wrap beyond the normal step-to-step
+        // change: the step across the boundary is of the same order as the
+        // neighbouring hourly steps.
+        let mut max_step = 0.0_f64;
+        for pair in driven.windows(2) {
+            max_step = max_step.max((pair[1] - pair[0]).abs());
+        }
+        let wrap_step = (driven[8760 - FIRST_HOUR] - driven[8759 - FIRST_HOUR]).abs();
+        assert!(
+            wrap_step <= 2.0 * max_step,
+            "the step across the year wrap ({wrap_step:.9} K) must stay in the \
+             range of the normal step-to-step change ({max_step:.9} K)"
+        );
     }
 
     /// Acceptance test B (Issue #4775): a case that does NOT opt into the
