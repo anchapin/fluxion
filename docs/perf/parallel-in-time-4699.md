@@ -1,4 +1,4 @@
-# #4699 parallel-in-time spike — warm-up-as-state-bridge measurement, LOW-MASS and HIGH-MASS classes
+# #4699 parallel-in-time spike — warm-up-as-state-bridge measurement, LOW-MASS, HIGH-MASS and GROUND-COUPLED classes
 > Summary: measurement-only spike for issue #4699 (parallel-in-time
 > annual simulation): whether a warm-up on real preceding weather
 > bridges the month-boundary state for the low-mass class (Case 600).
@@ -6,12 +6,16 @@
 > boundary vs the periodic reference; the N-vs-2N self-check is
 > validated as conservative. The high-mass class (Case 900) was
 > measured in the #4744 addendum below — the 14-day standard holds
-> there too. The ground-coupled class is NOT MEASURED here.
+> there too. The ground-coupled class was measured in the #4776
+> addendum below — the accuracy standard is met at every tested
+> warm-up (7/14/30 d) against the periodic reference, while the
+> N-vs-2N self-check converges only at 30 d.
 > Harness: benches/spike_warmup_bridge_chunking.rs.
 
-**Status: measured for the low-mass case class (ASHRAE 140 Case 600) and, in
-the #4744 addendum, the high-mass class (Case 900). The ground-coupled class
-is NOT MEASURED — no claim is made about it. All chunked-mode numbers below are labelled chunked-mode;
+**Status: measured for the low-mass case class (ASHRAE 140 Case 600), in
+the #4744 addendum the high-mass class (Case 900), and in the #4776
+addendum the ground-coupled class (Case 900 construction with the
+Issue #4775 ground-coupled floor boundary). All chunked-mode numbers below are labelled chunked-mode;
 nothing here is a sequential-run result presented as one, and no production
 code, default, baseline, or tolerance was changed.**
 
@@ -114,18 +118,21 @@ Reading of the table:
   The 14-day bridge meets the low-mass accuracy standard (worst seam
   0.0003 °C, worst monthly drift 0.001%); the self-check stays
   conservative for this class and converges only at 30 days.
-- **Ground-coupled: NOT MEASURED.** Still the expected hardest class
-  (ground state converges over weeks–months); the self-check at least
-  gives a production-usable "warm-up too short" signal, and the missing
-  checkpoint/restore API (audit finding above) is the blocker for any
-  explicit state hand-off design.
+- **Ground-coupled: WIN — measured in the #4776 addendum below.**
+  The accuracy standard is met at every tested warm-up (7/14/30 d)
+  against the periodic reference; the self-check stays the most
+  conservative signal of the three classes and converges only at
+  30 days (ground state converges over weeks–months, as expected).
+  The missing checkpoint/restore API (audit finding above) remains
+  the blocker for any explicit state hand-off design.
 
 ## Parareal fallback
 
 Not implemented and, for the low-mass class, not needed: the warm-up bridge
 already meets the win band, so waveform-relaxation iterations would buy
 nothing here. Parareal remains a design option only for classes where the
-bridge fails (candidate: ground-coupled), and it is blocked on the missing
+bridge fails (no measured class is such a candidate after the #4776
+addendum), and it is blocked on the missing
 checkpoint/restore API in any case. No follow-up is filed by this spike;
 whether to measure Case 900 / ground-coupled next, or to design a
 production chunked mode, is a physics call for Alex from this report.
@@ -185,6 +192,70 @@ This closes the Case 900 half of the question the original report
 left open. The ground-coupled class remains NOT MEASURED — it is
 gated on the 2-D ground-conduction work (PR #4647).
 
+## Addendum (#4776): ground-coupled class measured
+
+The gating work has since landed in sequence: the 2-D ground domain
+(PR #4647) and the floor-boundary wiring that puts a ground-coupled
+case into `ThermalModel` (Issue #4775, PR #4785). The bench now runs
+a third case class — the Case 900 construction with
+`CaseSpec::ground_coupled_floor` set to the representative
+mid-latitude soil of the `src/sim/boundary.rs` acceptance tests
+(k = 1 W/(m·K), rho*c = 2 MJ/(m³·K), 10 m domain read at 3 m,
+deep/lateral far field 10 °C, ground surface 10 °C mean with a 10 K
+annual swing peaking at hour 4400) — under the identical protocol.
+
+Reference runs (chunked-mode harness, sequential references):
+reference A (1 pass) elapsed 0.944 s for 8760 steps, annual heating
+2.5923 MWh, annual cooling 7.0200 MWh; reference B (2nd consecutive
+pass) annual heating 2.6026 MWh, annual cooling 7.0162 MWh
+(B − A: heating 0.0102 MWh, cooling −0.0039 MWh).
+
+Summary lines, transcribed verbatim from the bench output:
+
+```text
+warm-up  7 d | worst seam(24-72h) over Apr/Jul/Oct: vs A 0.0070 C (PASS), vs B 0.0070 C (PASS) | worst |energy drift|: vs A 0.020% (PASS), vs B 0.020% (PASS) | worst N-vs-2N self-check delta 1.5224 C (NOT CONVERGED) | January vs A: drift 0.648% (FAIL) seam 0.0304 C (PASS)
+warm-up  7 d | worst monthly heating drift over Apr/Jul/Oct: vs A 0.039% (PASS), vs B 0.039% (PASS) | worst monthly cooling drift: vs A 0.024% (PASS), vs B 0.024% (PASS) | January vs B: drift 0.003% (PASS) seam 0.0000 C (PASS) | accuracy standard (seam <= 0.01 C, monthly drift <= 0.05%): MET
+warm-up 14 d | worst seam(24-72h) over Apr/Jul/Oct: vs A 0.0005 C (PASS), vs B 0.0005 C (PASS) | worst |energy drift|: vs A 0.001% (PASS), vs B 0.001% (PASS) | worst N-vs-2N self-check delta 0.3084 C (NOT CONVERGED) | January vs A: drift 0.645% (FAIL) seam 0.0304 C (PASS)
+warm-up 14 d | worst monthly heating drift over Apr/Jul/Oct: vs A 0.001% (PASS), vs B 0.001% (PASS) | worst monthly cooling drift: vs A 0.002% (PASS), vs B 0.002% (PASS) | January vs B: drift 0.000% (PASS) seam 0.0000 C (PASS) | accuracy standard (seam <= 0.01 C, monthly drift <= 0.05%): MET
+warm-up 30 d | worst seam(24-72h) over Apr/Jul/Oct: vs A 0.0000 C (PASS), vs B 0.0000 C (PASS) | worst |energy drift|: vs A 0.000% (PASS), vs B 0.000% (PASS) | worst N-vs-2N self-check delta 0.0053 C (CONVERGED) | January vs A: drift 0.645% (FAIL) seam 0.0304 C (PASS)
+warm-up 30 d | worst monthly heating drift over Apr/Jul/Oct: vs A 0.000% (PASS), vs B 0.000% (PASS) | worst monthly cooling drift: vs A 0.000% (PASS), vs B 0.000% (PASS) | January vs B: drift 0.000% (PASS) seam 0.0000 C (PASS) | accuracy standard (seam <= 0.01 C, monthly drift <= 0.05%): MET
+```
+
+Findings:
+
+1. **The accuracy standard is met at every tested warm-up.** Against
+   the periodic reference B, the worst seam (24–72 h) over
+   Apr/Jul/Oct is 0.0070 / 0.0005 / 0.0000 °C and the worst monthly
+   energy drift 0.020 / 0.001 / 0.000 % at 7 / 14 / 30 d; January
+   vs B passes on both drift (0.003 / 0.000 / 0.000 %) and seam
+   (0.0000 °C). So even a 7-day warm-up bridges this class to the
+   standard — the ground-coupled floor does not, by itself, force
+   a longer warm-up than the high-mass class needed.
+2. **The N-vs-2N self-check tells the slower story, as predicted
+   for ground state.** It is NOT CONVERGED at 7 d (worst
+   Δ = 1.5224 °C, April) and at 14 d (0.3084 °C), and converges
+   only at 30 d (0.0053 °C) — the same safe-direction behaviour as
+   the high-mass class, stronger: a production sufficiency gate
+   driven by the self-check would choose 30 days for this class
+   even though 7 days already meets the accuracy standard. The
+   January boundary state shows why: the mass temperature is still
+   moving between N and 2N at 7 d (1.3993 °C vs −1.4269 °C) and
+   14 d (−1.4269 °C vs −1.9161 °C), settling by 30 d
+   (−1.9207 °C vs −1.9270 °C, Δ = 0.0063 °C).
+3. **January vs reference A fails on drift at every warm-up
+   (0.648 / 0.645 / 0.645 %)** — reference A is the cold-start
+   first pass (its own January is a start-up transient, per the
+   harness's summary note), so this is the known reference-A
+   artifact, not a bridge failure: against the periodic reference
+   B the same January chunks pass.
+
+Speedup arithmetic (chunk cost = (30 + warmup)/365 of a sequential
+year): 7 d → 12-chunk annual work ×1.216 (ideal ×6.58 on 8
+workers); 14 d → ×1.447 (×5.53); 30 d → ×1.973 (×4.06).
+
+This closes the last NOT MEASURED leg of the #4699 warm-up bridge
+question: all three case classes are now measured.
+
 ## Provenance
 
 Addendum (#4744): two worker runs failed (60/60 steps mid compile-fix,
@@ -204,3 +275,13 @@ worker's quoted harness output and verified it by independently re-running
 the harness binary (all numbers identical), `cargo fmt --check` (clean),
 and `python3 scripts/check_test_inventory_drift.py --no-verify` (exit 0;
 no tests added, no ratchet change).
+
+Addendum (#4776): worker run `fluxion-4776-1794521700` (balanced,
+MiniMax-M2.7, 60/60 steps) wrote the ground-coupled bench extension
+(the third case class and the removal of the NOT MEASURED line) but
+hit the step cap waiting on the release-profile compile, so the
+supervisor ran the compiled harness binary
+(`target/release/deps/spike_warmup_bridge_chunking-*`, the binary
+`cargo bench --bench spike_warmup_bridge_chunking` builds and runs)
+on 2026-11-12 and transcribed the ground-coupled summary lines above
+verbatim from that run's output.
