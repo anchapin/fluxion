@@ -2852,13 +2852,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .copy_from_slice(scratch.air_node_corrected.as_ref());
         }
         if r76_n > 0 || r77_coupled {
-            // Persist the sol-air ramp source for the next hour and carry
-            // the end-of-hour mass state to the mass-advance block.
-            let sol_prev = self.0.mass.r76_sol_air_prev.as_mut();
-            for (i, slot) in sol_prev.iter_mut().take(self.0.hvac.num_zones).enumerate() {
-                *slot = t_sol_air[i];
-            }
-            self.0.mass.r76_has_prev = true;
+            // Carry the end-of-hour mass state to the mass-advance block.
+            // [R137] the sol-air ramp-source persist moved into the commit
+            // zone below every rejection path (issue #4495 air guard,
+            // issue #4500 demand guard, issue #4495 mass guard) — a
+            // rejected step advances nothing.
             r76_final = Some(r76_mass.clone());
         }
 
@@ -2891,52 +2889,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                      the step's inputs are outside the solver's finite envelope \
                      (issue #4495); step rejected, state untouched"
                 )));
-            }
-        }
-
-        // [R71 HARNESS] persist this hour's drivers as the next hour's ramp
-        // source. Stored without the night-vent term (the vent addition is
-        // re-applied at its current-hour value inside the sub-step loop).
-        // Write happens after the sub-step loop, where the immutable
-        // `self.0.mass` borrows above are dead — same placement contract as
-        // the `air_temperatures` commit below.
-        {
-            let num_prev = self.0.mass.r71_air_driver_num_prev.as_mut();
-            let den_prev = self.0.mass.r71_air_driver_den_prev.as_mut();
-            let np_slope = self.0.mass.r71_num_prev_load_slope.as_mut();
-            for i in 0..self.0.hvac.num_zones {
-                num_prev[i] = num_tm_ref[i] + num_rest_ref[i];
-                den_prev[i] = den_ref[i];
-                // [Round 115 -- persist the frozen value's load slope
-                // alongside it: `num_rest`'s convective share is the whole
-                // freeze's load coefficient on the recorded route, so the
-                // next hour's record can carry the persistence response
-                // without re-deriving it (Z4).]
-                np_slope[i] = conv_frac * term_rest_1_ref[i];
-            }
-            // [R75 HARNESS] persist this hour's night-vent term as the next
-            // hour's ramp source; the seed flag flips after the first step
-            // (mirrors the R71 zero-prev seed convention).
-            {
-                let vent_prev = self.0.mass.r75_vent_term_prev.as_mut();
-                for (i, slot) in vent_prev.iter_mut().take(self.0.hvac.num_zones).enumerate() {
-                    *slot = if night_vent_active_now && i == 0 {
-                        h_ve_night * outdoor_temp
-                    } else {
-                        0.0
-                    };
-                }
-                self.0.mass.r75_vent_has_prev = true;
-            }
-            // [R90 HARNESS] persist this hour's gain drives as the next
-            // hour's ramp source. Unconditional write: the flag-off build
-            // never reads these fields, so it stays bit-identical.
-            {
-                let st_prev_r90 = self.0.mass.r90_phi_st_prev.as_mut();
-                let m_prev_r90 = self.0.mass.r90_phi_m_prev.as_mut();
-                let n = self.0.hvac.num_zones;
-                st_prev_r90[..n].copy_from_slice(&phi_st.as_ref()[..n]);
-                m_prev_r90[..n].copy_from_slice(&phi_m.as_ref()[..n]);
             }
         }
 
@@ -4357,6 +4309,73 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Mass energy change tracking removed - Ti_free already includes thermal mass effects
         self.0.mass.previous_mass_temperatures =
             std::mem::replace(&mut self.0.mass.mass_temperatures, new_mass_temps_vf);
+
+        // [R137 — ramp-source persistence relocated below every rejection
+        // path (the issue #4495 air-node guard, the issue #4500 demand
+        // guard, and the issue #4495 mass-node guard above). The LOOP136
+        // routed finding: these blocks previously ran before those guards,
+        // so a rejected step left the recorded harness state advanced with
+        // the rejected step's drivers while the guards' messages claimed
+        // "state untouched". The r136 verdict extended to the 5R1C seam: a
+        // rejected step advances NOTHING. Write order (R76 first, then
+        // R71/R75/R90) and values are unchanged — nothing reads these
+        // fields between the old and new sites and every source local is
+        // stable below its old position (verified at the tip before the
+        // move) — so accepted steps persist identical bytes, proven by the
+        // battery output-diff riding this PR.]
+        if r76_n > 0 || r77_coupled {
+            // Persist the sol-air ramp source for the next hour.
+            let sol_prev = self.0.mass.r76_sol_air_prev.as_mut();
+            for (i, slot) in sol_prev.iter_mut().take(self.0.hvac.num_zones).enumerate() {
+                *slot = t_sol_air[i];
+            }
+            self.0.mass.r76_has_prev = true;
+        }
+        // [R71 HARNESS] persist this hour's drivers as the next hour's ramp
+        // source. Stored without the night-vent term (the vent addition is
+        // re-applied at its current-hour value inside the sub-step loop).
+        // Write happens in the commit zone, where the immutable
+        // `self.0.mass` borrows above are dead — the placement contract of
+        // every other commit in this function.
+        {
+            let num_prev = self.0.mass.r71_air_driver_num_prev.as_mut();
+            let den_prev = self.0.mass.r71_air_driver_den_prev.as_mut();
+            let np_slope = self.0.mass.r71_num_prev_load_slope.as_mut();
+            for i in 0..self.0.hvac.num_zones {
+                num_prev[i] = num_tm_ref[i] + num_rest_ref[i];
+                den_prev[i] = den_ref[i];
+                // [Round 115 -- persist the frozen value's load slope
+                // alongside it: `num_rest`'s convective share is the whole
+                // freeze's load coefficient on the recorded route, so the
+                // next hour's record can carry the persistence response
+                // without re-deriving it (Z4).]
+                np_slope[i] = conv_frac * term_rest_1_ref[i];
+            }
+            // [R75 HARNESS] persist this hour's night-vent term as the next
+            // hour's ramp source; the seed flag flips after the first step
+            // (mirrors the R71 zero-prev seed convention).
+            {
+                let vent_prev = self.0.mass.r75_vent_term_prev.as_mut();
+                for (i, slot) in vent_prev.iter_mut().take(self.0.hvac.num_zones).enumerate() {
+                    *slot = if night_vent_active_now && i == 0 {
+                        h_ve_night * outdoor_temp
+                    } else {
+                        0.0
+                    };
+                }
+                self.0.mass.r75_vent_has_prev = true;
+            }
+            // [R90 HARNESS] persist this hour's gain drives as the next
+            // hour's ramp source. Unconditional write: the flag-off build
+            // never reads these fields, so it stays bit-identical.
+            {
+                let st_prev_r90 = self.0.mass.r90_phi_st_prev.as_mut();
+                let m_prev_r90 = self.0.mass.r90_phi_m_prev.as_mut();
+                let n = self.0.hvac.num_zones;
+                st_prev_r90[..n].copy_from_slice(&phi_st.as_ref()[..n]);
+                m_prev_r90[..n].copy_from_slice(&phi_m.as_ref()[..n]);
+            }
+        }
 
         // Store previous temperatures for dT/dt calculation (Plan 15-04, 15-06)
         // Issue #3370: scratch pool buffer (`previous_temperatures`)
