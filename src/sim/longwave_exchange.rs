@@ -355,6 +355,68 @@ impl InteriorSurfaceNetwork {
             self.net_lw_wall(t_floor_c, t_ceiling_c, t_wall_c),
         )
     }
+    /// Linearized radiative self-conductance for the wall surface [W/K]
+    /// (round-138 #2890-followup routing).
+    ///
+    /// The derivative magnitude of [`Self::net_lw_wall`] with respect to the
+    /// wall's own temperature at the given operating point —
+    /// `4·σ·ε·T_K³ · A_wall · (F_wall→floor + F_wall→ceiling)` — the same
+    /// reverse factors the net terms derive. The semi-implicit routing
+    /// integrates this self-coupling implicitly while the exact T⁴ net
+    /// energy rides the advance numerator; the naive fully-explicit add is
+    /// unstable at hourly dt (radiative time constant ~10²–10³ s vs
+    /// dt = 3600 s — measured round 138, see the routing contracts).
+    pub fn net_lw_self_conductance_wall(&self, t_wall_c: f64) -> f64 {
+        if self.wall_area <= 0.0 || self.emissivity <= 0.0 {
+            return 0.0;
+        }
+        let f_wall_floor = if self.wall_area > 0.0 {
+            self.f_floor_wall * self.floor_area / self.wall_area
+        } else {
+            0.0
+        };
+        let f_wall_ceiling = if self.wall_area > 0.0 {
+            self.f_ceiling_wall * self.ceiling_area / self.wall_area
+        } else {
+            0.0
+        };
+        4.0 * STEFAN_BOLTZMANN
+            * self.emissivity
+            * (t_wall_c + 273.15).powi(3)
+            * self.wall_area
+            * (f_wall_floor + f_wall_ceiling)
+    }
+
+    /// Linearized radiative self-conductance for the ceiling surface [W/K].
+    /// See [`Self::net_lw_self_conductance_wall`].
+    pub fn net_lw_self_conductance_ceiling(&self, t_ceiling_c: f64) -> f64 {
+        if self.ceiling_area <= 0.0 || self.emissivity <= 0.0 {
+            return 0.0;
+        }
+        let f_ceiling_floor = if self.ceiling_area > 0.0 {
+            self.f_floor_ceiling * self.floor_area / self.ceiling_area
+        } else {
+            0.0
+        };
+        4.0 * STEFAN_BOLTZMANN
+            * self.emissivity
+            * (t_ceiling_c + 273.15).powi(3)
+            * self.ceiling_area
+            * (f_ceiling_floor + self.f_ceiling_wall)
+    }
+
+    /// Linearized radiative self-conductance for the floor surface [W/K].
+    /// See [`Self::net_lw_self_conductance_wall`].
+    pub fn net_lw_self_conductance_floor(&self, t_floor_c: f64) -> f64 {
+        if self.floor_area <= 0.0 || self.emissivity <= 0.0 {
+            return 0.0;
+        }
+        4.0 * STEFAN_BOLTZMANN
+            * self.emissivity
+            * (t_floor_c + 273.15).powi(3)
+            * self.floor_area
+            * (self.f_floor_ceiling + self.f_floor_wall)
+    }
 }
 
 /// Per-zone interior surface state (Issue #2890).
