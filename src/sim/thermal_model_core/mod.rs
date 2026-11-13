@@ -865,13 +865,26 @@ impl ThermalModel<VectorField> {
                 .map(|i| zc(i).roof.u_value(None, None))
                 .collect::<Vec<f64>>(),
         );
+        // Issue #4789: the opt-in ground-coupled floor path resolves the
+        // ground-side (soil) resistance between the floor underside and the
+        // coupling depth inside the ground-conduction domain, so the lumped
+        // ground-coupling resistance R_g (Issue #588) inside the floor
+        // U-value would count the same soil resistance twice (see the
+        // resistance trace on `crate::sim::boundary::GroundCoupledFloorBoundary`).
+        // The opt-in path therefore uses the floor U-value *without* R_g;
+        // every other case keeps the Issue #588 value bit-identically.
+        let ground_coupled_floor = spec.ground_coupled_floor.is_some();
+        let floor_u_value_of = |floor: &crate::sim::construction::Construction| -> f64 {
+            if ground_coupled_floor {
+                floor.u_value_without_ground_resistance(Some(SurfaceType::Floor))
+            } else {
+                floor.u_value(Some(SurfaceType::Floor), None)
+            }
+        };
+
         model.setpoints.floor_u_values = VectorField::from_slice(
             &(0..num_zones)
-                .map(|i| {
-                    zc(i)
-                        .floor
-                        .u_value(Some(crate::sim::construction::SurfaceType::Floor), None)
-                })
+                .map(|i| floor_u_value_of(&zc(i).floor))
                 .collect::<Vec<f64>>(),
         );
 
@@ -888,10 +901,10 @@ impl ThermalModel<VectorField> {
         // no case_id check.
         // Issue #588: Use SurfaceType::Floor for correct film coefficients
         // and ground coupling resistance in floor U-value calculation.
+        // Issue #4789: the opt-in ground-coupled floor path drops the lumped
+        // ground-coupling resistance (the ground domain carries it).
         model.setpoints.floor_u_value = spec.floor_u_value_override.unwrap_or_else(|| {
-            spec.construction
-                .floor
-                .u_value(Some(crate::sim::construction::SurfaceType::Floor), None)
+            floor_u_value_of(&spec.construction.floor)
         });
 
         // Issue #746 / Issue #4775: the Section 7 floor boundary is driven by

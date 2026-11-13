@@ -555,6 +555,126 @@ struct GroundCoupledFloorState {
 /// [`GroundTemperature`] interface only exposes the hour of the year. A later
 /// issue can thread the zone-side feedback through the same object.
 ///
+/// # Resistance trace of the floor path (Issue #4789)
+///
+/// The zone model couples the floor to the ground with one conductance,
+/// `h_tr_floor` [W/K], applied between the zone's floor surface node `T_s`
+/// and the ground boundary temperature `T_g`:
+///
+/// ```text
+/// Q_floor  = h_tr_floor × (T_g − T_s)            (src/sim/diagnostics.rs:26)
+/// h_tr_floor = floor_u_value × floor_area         (src/sim/thermal_model_core/mod.rs:1541)
+/// floor_u_value = construction.floor
+///                 .u_value(Some(SurfaceType::Floor), None)
+///                                              (src/sim/thermal_model_core/mod.rs:891-895)
+/// ```
+///
+/// `Construction::u_value` is `1 / r_value_total`, and for a floor
+/// `r_value_total` (`fluxion-core/src/construction.rs:394-424`) is
+///
+/// ```text
+/// R_total = R_si + R_materials + R_exterior
+/// ```
+///
+/// with
+///
+/// * `R_si = 1 / SurfaceType::interior_film_coeff(Floor) = 1/5.88 =
+///   0.17007 m²K/W` — the interior (zone-side) film of the floor
+///   (`fluxion-core/src/construction.rs:68,108`);
+/// * `R_materials = Σ δ_i / k_i` — the floor construction layers
+///   (`fluxion-core/src/construction.rs:408`);
+/// * `R_exterior` — the *exterior* resistance of the floor. For a floor it is
+///   **not** the wind film: Issue #588 replaced it with the lumped
+///   ground-coupling resistance `R_g = 0.17 m²K/W`, commented
+///   *"Approximate value: R_g = 0.17 m²K/W (includes soil resistance)"*
+///   (`fluxion-core/src/construction.rs:410-424`).
+///
+/// ## Constant-temperature path (every shipped case)
+///
+/// `floor_ground_boundary` returns `ConstantGroundTemperature(ground_temperature_c)`
+/// (`src/sim/boundary.rs:799-812`), so `T_g` is prescribed and the whole
+/// series from the floor surface node to the ground is
+///
+/// ```text
+/// T_s ──[ R_si + R_materials + R_g ]──> T_g (prescribed)
+/// ```
+///
+/// `R_g` is the *only* representation of the ground-side (soil) resistance in
+/// this path — no soil is modelled anywhere else — so **nothing is counted
+/// twice** here.
+///
+/// ## Coupled path (opt-in, `CaseSpec::ground_coupled_floor`)
+///
+/// [`GroundCoupledFloorBoundary::new`] (`src/sim/boundary.rs:624-707`) builds
+/// the 2-D ground domain of `crate::physics::ground_conduction`:
+///
+/// * the domain's top surface (`z = 0`) is the **underside of the floor
+///   construction**: the "slab" layer of the domain is *soil*, not slab
+///   concrete — `slab_thickness_m = coupling_depth_m` and
+///   `slab_conductivity_w_mk = ground_conductivity_w_mk = soil_conductivity_w_mk`
+///   (`src/sim/boundary.rs:679-681`);
+/// * the top boundary is a Robin (film) condition towards the annual
+///   ground-surface temperature — the soil surface film
+///   `R_film_soil = 1 / spec.surface_film_coefficient_w_m2k`
+///   (`src/sim/boundary.rs:660-667`);
+/// * the deep and the lateral far-field boundaries hold the undisturbed ground
+///   temperature (Dirichlet);
+/// * the floor boundary reads the soil temperature at the **coupling depth**,
+///   i.e. *below* that soil layer (`readout_depth_m = coupling_depth_m`,
+///   `readout_x_m = L/2`; `src/sim/boundary.rs:701-702, 731-737`).
+///
+/// The ground-domain branch that produces `T_g` is therefore
+///
+/// ```text
+/// T_gs(h) ──[ R_film_soil ]──> soil(z=0) ──[ R_soil(0 → z_coupling) ]──> T_g
+///                                   │
+///                                   └──[ R_soil(z_coupling → z_bottom)
+///                                          + lateral far-field ]──> undisturbed ground
+/// ```
+///
+/// while the zone-side series stays
+///
+/// ```text
+/// T_s ──[ R_si + R_materials + R_g ]──> T_g
+/// ```
+///
+/// ## Conclusion: the ground resistance is counted twice on the coupled path
+///
+/// `R_g = 0.17 m²K/W` is documented as an *effective ground-coupling
+/// resistance that includes soil resistance* (Issue #588,
+/// `fluxion-core/src/construction.rs:410-424`): it stands for the soil
+/// resistance between the floor and the ground the zone sees. On the coupled
+/// path the very same ground resistance is *also* resolved explicitly by the
+/// ground domain — the soil layer between the floor underside (the domain's
+/// top surface, `z = 0`) and the coupling depth is a soil resistance, and
+/// `T_g` is read at the *bottom* of that layer. The ground resistance between
+/// the floor and the coupling plane is therefore represented twice: once as
+/// the lumped `R_g` inside `floor_u_value` → `h_tr_floor`, and once as the
+/// explicit soil layer of the ground domain that the boundary value is read
+/// through.
+///
+/// The soil-surface film `R_film_soil` and the soil *below* the coupling depth
+/// are **not** part of the zone's series path: they sit beyond the readout
+/// plane and only shape `T_g`.
+///
+/// Nuance (one-way coupling): because the coupling is one-way, the domain's
+/// soil column does not carry the zone's heat, so this is a *representation*
+/// double count — the same ground resistance appears in the zone conductance
+/// *and* in the ground domain that produces the boundary temperature — rather
+/// than two ground resistances multiplied into one denominator. Either way
+/// the series accounting is wrong: the zone's floor conductance must carry
+/// the ground-side resistance **once**, and on the coupled path the ground
+/// domain is what carries it.
+///
+/// Minimal correction (Issue #4789): on the opt-in path the floor U-value
+/// omits the lumped ground-coupling resistance `R_g`
+/// (`Construction::u_value_without_ground_resistance`,
+/// `fluxion-core/src/construction.rs`), because the ground domain carries the
+/// ground-side resistance; every non-opt-in case keeps the Issue #588 value
+/// bit-identically. The steady-state acceptance test lives in this module's
+/// `tests` submodule
+/// (`test_ground_coupled_floor_flux_matches_analytic_series`).
+///
 /// # State
 ///
 /// The ground domain is marched forward in time as the simulation clock
@@ -1101,6 +1221,25 @@ mod tests {
         }
     }
 
+    /// The same ground-coupled floor specification with *uniform* ground
+    /// temperatures: ground surface, deep ground and lateral far field all
+    /// at 10 °C and no annual swing, so the soil column stays uniform and
+    /// the boundary value read at the coupling depth is known analytically.
+    fn uniform_ground_coupled_floor_spec() -> fluxion_core::ashrae_cases::GroundCoupledFloorSpec {
+        fluxion_core::ashrae_cases::GroundCoupledFloorSpec {
+            soil_conductivity_w_mk: 1.0,
+            soil_volumetric_heat_capacity_j_m3k: 2.0e6,
+            domain_depth_m: 10.0,
+            coupling_depth_m: 3.0,
+            deep_ground_temperature_c: 10.0,
+            lateral_far_field_temperature_c: 10.0,
+            surface_film_coefficient_w_m2k: 10.0,
+            surface_temperature_mean_c: 10.0,
+            surface_temperature_amplitude_c: 0.0,
+            surface_temperature_phase_hours: 0.0,
+        }
+    }
+
     /// A minimal Section 7 case specification (8 m x 6 m footprint, one zone)
     /// with the ASHRAE 140 constant ground temperature of 9.4 °C.
     fn section_7_case_spec() -> fluxion_core::ashrae_cases::CaseSpec {
@@ -1196,6 +1335,130 @@ mod tests {
                 "floor ground temperature must be bit-identical at hour {hour}"
             );
         }
+    }
+
+    /// Acceptance test (Issue #4789): the steady-state floor heat flux of the
+    /// opt-in ground-coupled path equals the analytic series-resistance value
+    /// of the traced path.
+    ///
+    /// Uniform driving temperatures (ground surface, deep ground and lateral
+    /// far field all at 10 °C, no annual swing) leave the soil column
+    /// uniform, so the boundary temperature the coupled path reads at the
+    /// coupling depth is known analytically: `T_g = 10 °C`. The traced series
+    /// path of the coupled path is then
+    ///
+    /// ```text
+    /// T_s ──[ R_si + R_materials ]──> T_g
+    /// ```
+    ///
+    /// — the interior film plus the floor construction, with the ground
+    /// domain carrying the ground-side resistance — so the floor flux must be
+    /// `A_floor × (T_g − T_s) / (R_si + R_materials)`. A double-counted
+    /// ground resistance (the lumped `R_g = 0.17 m²K/W` of Issue #588 inside
+    /// the floor U-value) shrinks the flux by the factor
+    /// `(R_si + R_materials) / (R_si + R_materials + R_g)`, so this test
+    /// discriminates between the two accountings.
+    #[test]
+    fn test_ground_coupled_floor_flux_matches_analytic_series() {
+        use crate::physics::cta::VectorField;
+        use crate::sim::thermal_model_core::ThermalModel;
+
+        const T_GROUND_C: f64 = 10.0;
+        const T_SURFACE_C: f64 = 20.0;
+
+        let mut spec = section_7_case_spec();
+        spec.ground_coupled_floor = Some(uniform_ground_coupled_floor_spec());
+
+        let model = ThermalModel::<VectorField>::from_spec(&spec);
+
+        // The uniform ground forcing leaves the soil column uniform, so the
+        // value the coupled path reads at the coupling depth is the forcing
+        // temperature itself.
+        let t_ground = model.conduction.ground_temperature.ground_temperature(0);
+        assert!(
+            (t_ground - T_GROUND_C).abs() < 1.0e-9,
+            "uniform ground forcing must leave the soil uniform, got {t_ground} °C"
+        );
+
+        let floor_area = spec.geometry[0].floor_area();
+        let h_tr_floor = model.conduction.h_tr_floor[0];
+
+        // Analytic series value of the traced path: the interior film and the
+        // floor construction; the ground domain carries the ground-side
+        // resistance.
+        let r_si = 1.0
+            / fluxion_core::construction::SurfaceType::interior_film_coeff(
+                fluxion_core::construction::SurfaceType::Floor,
+            );
+        let r_materials: f64 = spec
+            .construction
+            .floor
+            .layers
+            .iter()
+            .map(|l| l.r_value())
+            .sum();
+        let q_analytic = floor_area * (t_ground - T_SURFACE_C) / (r_si + r_materials);
+
+        // The floor flux of the coupled path.
+        let q_model = h_tr_floor * (t_ground - T_SURFACE_C);
+
+        let tolerance = 1.0e-9 * q_analytic.abs();
+        assert!(
+            (q_model - q_analytic).abs() <= tolerance,
+            "ground-coupled floor flux must equal the analytic series value \
+             ({q_analytic} W); got {q_model} W (h_tr_floor {h_tr_floor} W/K)"
+        );
+
+        // The double-counted accounting would be lower by the factor
+        // (R_si + R_materials) / (R_si + R_materials + R_g) — make sure the
+        // test would actually catch it.
+        let q_double_counted = floor_area * (t_ground - T_SURFACE_C)
+            / (r_si + r_materials + fluxion_core::construction::GROUND_COUPLING_RESISTANCE_M2K_W);
+        assert!(
+            (q_model - q_double_counted).abs() > tolerance,
+            "the test must discriminate against the double-counted accounting \
+             ({q_double_counted} W)"
+        );
+    }
+
+    /// The constant-temperature path keeps the Issue #588 ground-coupling
+    /// resistance inside the floor U-value: the Issue #4789 correction is
+    /// confined to the opt-in ground-coupled path, so every non-opt-in case
+    /// stays bit-identical.
+    #[test]
+    fn test_constant_temperature_path_keeps_ground_coupling_resistance() {
+        use crate::physics::cta::VectorField;
+        use crate::sim::thermal_model_core::ThermalModel;
+
+        let spec = section_7_case_spec();
+        assert!(
+            spec.ground_coupled_floor.is_none(),
+            "the default case must not opt into the ground-coupled floor path"
+        );
+
+        let model = ThermalModel::<VectorField>::from_spec(&spec);
+
+        let floor_area = spec.geometry[0].floor_area();
+        let r_si = 1.0
+            / fluxion_core::construction::SurfaceType::interior_film_coeff(
+                fluxion_core::construction::SurfaceType::Floor,
+            );
+        let r_materials: f64 = spec
+            .construction
+            .floor
+            .layers
+            .iter()
+            .map(|l| l.r_value())
+            .sum();
+        let expected = (1.0 / (r_si + r_materials
+            + fluxion_core::construction::GROUND_COUPLING_RESISTANCE_M2K_W))
+            * floor_area;
+
+        assert_eq!(
+            model.conduction.h_tr_floor[0], expected,
+            "the constant-temperature path must keep the Issue #588 ground-coupling \
+             resistance inside the floor U-value"
+        );
     }
 
     #[test]
