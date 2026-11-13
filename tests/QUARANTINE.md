@@ -32,6 +32,24 @@ schema (Issue #4179): every row must carry non-empty `Category`,
 `Blocking Issue`, `Owner`, `Un-Ignore Criteria` and `Status` cells, and
 `Category` must be one of the values listed below.
 
+**Nightly `#[ignore]` census baseline (Issue #4793)**: the nightly gauge workflow's
+Criterion 7 telemetry compares the live `#[ignore]` census against
+`tests/reference_data/ignored_tests_baseline.txt`. The baseline is re-cut from the tree
+with `python3 scripts/refresh_ignored_tests_baseline.py`, which runs the workflow's exact
+census grep (`grep -rn "#\[ignore" tests/ src/ --include="*.rs"`) and stores every hit
+**normalised** as `path:attribute-text` — the line number is stripped, so a pure
+line-number drift (an unrelated edit that shifts a file) never registers as a removal.
+Re-cut it whenever a quarantine is added or lifted:
+
+- `python3 scripts/refresh_ignored_tests_baseline.py` — re-cut (write) the baseline.
+- `python3 scripts/refresh_ignored_tests_baseline.py --check` — compare only; exits 1 and
+  names the removed entries when a quarantine was lifted without a refresh.
+
+Any comparison against this baseline must normalise the live census the same way
+(`path:attribute-text`, line numbers stripped) before diffing; the `--check` mode above
+does exactly that. The nightly gauge workflow's Criterion 7 step is advisory
+(report-only) telemetry and gates nothing.
+
 ---
 
 ## Category: Diagnostic Tests (per #2536)
