@@ -53,6 +53,104 @@ fn solve_linear_system(a: &mut [Vec<f64>], b: &mut [f64]) -> Vec<f64> {
     x
 }
 
+/// [R136 rollback — the r134 additive finding fixed] Capture the pre-step
+/// durable state of `step_physics_9r4c`: every multi-node solver's node
+/// temperatures (incl. `zone_temperature` / `surface_temperature` / the
+/// per-surface exterior driving temperatures — the setters and the
+/// per-surface write-back mutate all of them), the lumped-mass pair, and
+/// the predictive controller's previous zone temperature. Written once per
+/// step before the solver loop; consumed only on a #4495/#4500 rejection
+/// path by [`restore_pre_step_state`]. Accepted steps never read the
+/// snapshot — one write-pass into pooled buffers, no allocation.
+fn snapshot_pre_step_state<T: ContinuousTensor<f64> + Clone + AsRef<[f64]>>(
+    data: &crate::sim::thermal_model_data::ThermalModelData<T>,
+    scratch: &mut crate::sim::thermal_model_scratch::PhysicsScratch9r4c,
+) {
+    const STRIDE: usize = crate::sim::thermal_model_scratch::PhysicsScratch9r4c::SNAPSHOT_STRIDE;
+    for (zone_idx, solver) in data
+        .conduction
+        .backend
+        .multi_node_solvers
+        .iter()
+        .enumerate()
+    {
+        let off = zone_idx * STRIDE;
+        scratch.solver_snap[off] = solver.mass.wall.temperature;
+        scratch.solver_snap[off + 1] = solver.mass.roof.temperature;
+        scratch.solver_snap[off + 2] = solver.mass.floor.temperature;
+        scratch.solver_snap[off + 3] = solver.mass.internal.temperature;
+        scratch.solver_snap[off + 4] = solver.zone_temperature;
+        scratch.solver_snap[off + 5] = solver.surface_temperature;
+        scratch.solver_snap[off + 6] = solver.exterior_temperatures.t_ext_wall;
+        scratch.solver_snap[off + 7] = solver.exterior_temperatures.t_ext_roof;
+        scratch.solver_snap[off + 8] = solver.exterior_temperatures.t_ext_floor;
+    }
+    // The mass pair's LENGTHS are part of the state: the commit below
+    // mem::replaces the fields with num_zones-sized builds, so a
+    // boundary-shaped model (fewer mass entries than zones) would come
+    // back from a rejection with the wrong vector length if only the
+    // contents were restored. The buffer is sized len0 + len1 (pool
+    // reuse keeps this allocation-free in steady state).
+    scratch.mass_snap_len0 = data.mass.mass_temperatures.as_ref().len();
+    scratch.mass_snap_len1 = data.mass.previous_mass_temperatures.as_ref().len();
+    scratch
+        .mass_snap
+        .resize(scratch.mass_snap_len0 + scratch.mass_snap_len1, 0.0);
+    scratch.mass_snap[..scratch.mass_snap_len0]
+        .copy_from_slice(&data.mass.mass_temperatures.as_ref()[..scratch.mass_snap_len0]);
+    scratch.mass_snap[scratch.mass_snap_len0..]
+        .copy_from_slice(&data.mass.previous_mass_temperatures.as_ref()[..scratch.mass_snap_len1]);
+    scratch.ctrl_prev_snap = data.hvac.predictive_controller.previous_zone_temp;
+}
+
+/// [R136 rollback] Restore the pre-step snapshot on a rejection path, so a
+/// rejected #4495/#4500 step advances NOTHING — the guard's "state
+/// untouched" claim holds at the solver scope, not just the commit scope.
+/// The r134 finding (the additive-mode solver advancing non-uniformly
+/// through a rejected step, permanently poisoning every subsequent step)
+/// is the defect this closes; the r133 half-applied-step precedent is the
+/// in-loop ruling it follows. Call before `return_9r4c` + `return 0.0`.
+fn restore_pre_step_state<
+    T: ContinuousTensor<f64> + Clone + AsRef<[f64]> + AsMut<[f64]> + From<VectorField>,
+>(
+    data: &mut crate::sim::thermal_model_data::ThermalModelData<T>,
+    scratch: &crate::sim::thermal_model_scratch::PhysicsScratch9r4c,
+) {
+    const STRIDE: usize = crate::sim::thermal_model_scratch::PhysicsScratch9r4c::SNAPSHOT_STRIDE;
+    for (zone_idx, solver) in data
+        .conduction
+        .backend
+        .multi_node_solvers
+        .iter_mut()
+        .enumerate()
+    {
+        let off = zone_idx * STRIDE;
+        solver.mass.wall.temperature = scratch.solver_snap[off];
+        solver.mass.roof.temperature = scratch.solver_snap[off + 1];
+        solver.mass.floor.temperature = scratch.solver_snap[off + 2];
+        solver.mass.internal.temperature = scratch.solver_snap[off + 3];
+        solver.zone_temperature = scratch.solver_snap[off + 4];
+        solver.surface_temperature = scratch.solver_snap[off + 5];
+        solver.exterior_temperatures = SurfaceExteriorTemperatures {
+            t_ext_wall: scratch.solver_snap[off + 6],
+            t_ext_roof: scratch.solver_snap[off + 7],
+            t_ext_floor: scratch.solver_snap[off + 8],
+        };
+    }
+    // Rebuild the mass pair at the PRE-STEP lengths (the commit may have
+    // mem::replaced them with num_zones-sized builds — see the snapshot
+    // side). Rebuilding is the honest rollback for both the contents and
+    // the length; it runs on the cold rejection path only.
+    let len0 = scratch.mass_snap_len0;
+    let restored_mass =
+        VectorField::from_smallvec(smallvec::SmallVec::from_slice(&scratch.mass_snap[..len0]));
+    data.mass.mass_temperatures = T::from(restored_mass);
+    let restored_prev =
+        VectorField::from_smallvec(smallvec::SmallVec::from_slice(&scratch.mass_snap[len0..]));
+    data.mass.previous_mass_temperatures = T::from(restored_prev);
+    data.hvac.predictive_controller.previous_zone_temp = scratch.ctrl_prev_snap;
+}
+
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
     pub(crate) fn step_physics_9r4c(
         &mut self,
@@ -529,9 +627,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // 1. Free-floating zone temperature (validated at 42.87°C for 900FF)
         let t_i_free_5r1c = t_i_free.clone();
 
+        // [R136 rollback] Snapshot the durable state before the solver loop
+        // (see `snapshot_pre_step_state`). Every #4495/#4500 rejection path
+        // below restores it: a rejected step advances nothing — solver
+        // nodes included (the r134 additive finding, the r133 precedent).
+        snapshot_pre_step_state(&self.0, &mut scratch);
+
         // Issue #864: Store pre-gain mass temperatures and per-surface gains for
         // step_per_surface(). Using pre-gain temperatures avoids double-counting
-        // gains that are added in SurfaceNode::update()'s backward Euler.
+        // gains that are added in SurfaceNode::update()'s explicit forward-Euler
+        // recurrence (the r134 doc finding; the scheme was never backward Euler).
         // (Issue #1524: these six read-back intermediates share the flat
         // `scratch.inter` backing buffer — 6 allocations collapsed to 0 here.)
 
@@ -957,7 +1062,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // balances use a more accurate boundary value.
         //
         // Issue #864: Pass pre-gain mass temperatures to avoid double-counting
-        // gains (gains are added in SurfaceNode::update()'s backward Euler).
+        // gains (gains are added in SurfaceNode::update()'s explicit
+        // forward-Euler recurrence — the r134 doc finding).
         // Also pass per-surface opaque solar gains for direct absorption.
         for zone_idx in 0..self.0.hvac.num_zones {
             if zone_idx >= self.0.conduction.backend.multi_node_solvers.len() {
@@ -1411,6 +1517,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                          non-finite ({t}) for zone {i} — inputs outside the solver's \
                          finite envelope; step degraded to 0.0 kWh, state untouched"
                     );
+                    // [R136 rollback] the solver loop already ran — restore
+                    // the pre-step state so the rejection advances nothing.
+                    restore_pre_step_state(&mut self.0, &scratch);
                     self.0.hvac.scratch_pool.return_9r4c(scratch);
                     return 0.0;
                 }
@@ -1445,6 +1554,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                          non-finite ({t}) for zone {i} — inputs outside the solver's \
                          finite envelope; step degraded to 0.0 kWh, state untouched"
                     );
+                    // [R136 rollback] the lumped mass COMMITTED above (its
+                    // own guard passed) and the solver loop ran — restore
+                    // both so the rejection advances nothing.
+                    restore_pre_step_state(&mut self.0, &scratch);
                     self.0.hvac.scratch_pool.return_9r4c(scratch);
                     return 0.0;
                 }
@@ -1470,6 +1583,47 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     "physics step rejected (issue #4495): controlled zone temperature \
                      non-finite ({t}) for zone {i} — inputs outside the solver's \
                      finite envelope; step degraded to 0.0 kWh, state untouched"
+                );
+                // [R136 rollback] the lumped mass committed above and the
+                // solver loop ran — restore both so the rejection advances
+                // nothing.
+                restore_pre_step_state(&mut self.0, &scratch);
+                self.0.hvac.scratch_pool.return_9r4c(scratch);
+                return 0.0;
+            }
+        }
+        // Issue #4500: input-envelope guard on the HVAC demand itself — the
+        // ideal loads can overflow to ±inf for extreme-but-finite `dt` even
+        // though every input passed the finite checks and the #4495
+        // temperature guards passed. Reject before any energy accumulation
+        // or state commit. `step_physics_9r4c` returns f64 (the typed
+        // envelope lives one level up in `try_step_physics`), so the
+        // rejection mirrors the legacy `step_physics` degradation contract
+        // (Issue #3638): log + 0.0 kWh for the step, state untouched.
+        // [R136] hoisted ABOVE the controlled-temperature commit and the
+        // sensor-node step: the guard's own contract says "reject before
+        // any ... state commit", and both of those wrote state ahead of it.
+        // Nothing restores here — the #4495 controlled-temperature guard
+        // above already restored on its rejection path, and nothing
+        // mutates between the two checks.
+        {
+            // The returned/accumulated energy scales with the SUM of the
+            // zone demands, not the per-zone max — bound the product with
+            // the zone count so a multi-zone sum cannot slip past the
+            // per-zone check (issue #4500, crash-5447b7a2).
+            let w_scale = hvac_for_temp_calc
+                .as_ref()
+                .iter()
+                .fold(0.0_f64, |m, &v| m.max(v.abs()));
+            let w_bound = w_scale * self.0.hvac.num_zones as f64;
+            if hvac_for_temp_calc.as_ref().iter().any(|&v| !v.is_finite())
+                || !(w_bound * dt).is_finite()
+            {
+                log::error!(
+                    "physics step rejected (issue #4500): HVAC demand non-finite \
+                     or overflows the step energy (max |W| = {w_scale}, dt = {dt} s) \
+                     — inputs outside the solver's finite envelope; step degraded \
+                     to 0.0 kWh, state untouched"
                 );
                 self.0.hvac.scratch_pool.return_9r4c(scratch);
                 return 0.0;
@@ -1508,35 +1662,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
         }
 
-        // Issue #4500: input-envelope guard on the HVAC demand itself — the
-        // ideal loads can overflow to ±inf for extreme-but-finite `dt` even
-        // though every input passed the finite checks and the #4495
-        // temperature guards passed. Reject before any energy accumulation
-        // or state commit. `step_physics_9r4c` returns f64 (the typed
-        // envelope lives one level up in `try_step_physics`), so the
-        // rejection mirrors the legacy `step_physics` degradation contract
-        // (Issue #3638): log + 0.0 kWh for the step, state untouched.
-        {
-            // The returned/accumulated energy scales with the SUM of the
-            // zone demands, not the per-zone max — bound the product with
-            // the zone count so a multi-zone sum cannot slip past the
-            // per-zone check (issue #4500, crash-5447b7a2).
-            let w_scale = hvac_output
-                .as_ref()
-                .iter()
-                .fold(0.0_f64, |m, &v| m.max(v.abs()));
-            let w_bound = w_scale * self.0.hvac.num_zones as f64;
-            if hvac_output.as_ref().iter().any(|&v| !v.is_finite()) || !(w_bound * dt).is_finite() {
-                log::error!(
-                    "physics step rejected (issue #4500): HVAC demand non-finite \
-                     or overflows the step energy (max |W| = {w_scale}, dt = {dt} s) \
-                     — inputs outside the solver's finite envelope; step degraded \
-                     to 0.0 kWh, state untouched"
-                );
-                self.0.hvac.scratch_pool.return_9r4c(scratch);
-                return 0.0;
-            }
-        }
+        // [R136] the #4500 HVAC-demand guard moved ABOVE the
+        // controlled-temperature commit and this sensor-node step (its own
+        // "reject before any state commit" contract): with the hoist, no
+        // rejection path can follow either write.
 
         // Accumulate annual energy and track peak power without cloning
         let mut hvac_power_watts = 0.0;

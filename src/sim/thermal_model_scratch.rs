@@ -314,10 +314,33 @@ pub(crate) struct PhysicsScratch9r4c {
     pub hvac: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
     pub t_i_act: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
     pub new_mass: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    /// [R136 rollback] per-solver pre-step snapshot, `SNAPSHOT_STRIDE` slots
+    /// per zone: (wall, roof, floor, internal) node temperatures,
+    /// `zone_temperature`, `surface_temperature`, and the three per-surface
+    /// exterior driving temperatures. Written once per step before the
+    /// solver loop; read only on a #4495/#4500 rejection path.
+    pub solver_snap: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    /// [R136 rollback] lumped-mass pre-step snapshot: the first `n` slots
+    /// hold `mass_temperatures`, the second `n` hold
+    /// `previous_mass_temperatures` (the commit at the mass block writes
+    /// both before the free-float / HVAC air guards can reject the step).
+    /// `mass_snap_len0/1` record the pre-step vector LENGTHS — the commit
+    /// `mem::replace`s the fields with num_zones-sized builds, so a
+    /// boundary-shaped model (fewer mass entries than zones) needs the
+    /// length restored too, not just the contents.
+    pub mass_snap: SmallVec<[f64; SCRATCH_INLINE_CAPACITY]>,
+    pub mass_snap_len0: usize,
+    pub mass_snap_len1: usize,
+    /// [R136 rollback] the predictive controller's `previous_zone_temp`,
+    /// which `calculate_modulation` updates before the controlled-air
+    /// guard can reject the step.
+    pub ctrl_prev_snap: f64,
 }
 
 impl PhysicsScratch9r4c {
     const NSLOTS: usize = 7;
+    /// [R136 rollback] slots per zone in `solver_snap`.
+    pub(crate) const SNAPSHOT_STRIDE: usize = 9;
 
     pub fn new(num_zones: usize) -> Self {
         Self {
@@ -330,6 +353,11 @@ impl PhysicsScratch9r4c {
             hvac: SmallVec::from_elem(0.0, num_zones),
             t_i_act: SmallVec::from_elem(0.0, num_zones),
             new_mass: SmallVec::from_elem(0.0, num_zones),
+            solver_snap: SmallVec::from_elem(0.0, num_zones * Self::SNAPSHOT_STRIDE),
+            mass_snap: SmallVec::from_elem(0.0, num_zones * 2),
+            mass_snap_len0: 0,
+            mass_snap_len1: 0,
+            ctrl_prev_snap: 0.0,
         }
     }
 
@@ -346,6 +374,11 @@ impl PhysicsScratch9r4c {
         self.hvac.resize(n, 0.0);
         self.t_i_act.resize(n, 0.0);
         self.new_mass.resize(n, 0.0);
+        self.solver_snap.resize(n * Self::SNAPSHOT_STRIDE, 0.0);
+        self.mass_snap.resize(n * 2, 0.0);
+        self.mass_snap_len0 = 0;
+        self.mass_snap_len1 = 0;
+        self.ctrl_prev_snap = 0.0;
         for v in &mut self.inter {
             *v = 0.0;
         }
@@ -368,6 +401,12 @@ impl PhysicsScratch9r4c {
             *v = 0.0;
         }
         for v in &mut self.new_mass {
+            *v = 0.0;
+        }
+        for v in &mut self.solver_snap {
+            *v = 0.0;
+        }
+        for v in &mut self.mass_snap {
             *v = 0.0;
         }
     }
