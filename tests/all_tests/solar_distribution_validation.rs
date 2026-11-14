@@ -16,7 +16,7 @@ mod tests {
     ///
     /// This test verifies the correction from ISO 13790 approach (Issue #745).
     #[test]
-    #[ignore = "LIMIT-30 (Issue #4078): failing referee tracking the structural solar-distribution gap — model intentionally routes 0.30 to air (load-bearing compensation for missing air-node capacitance, see #3961); zeroing it regresses Case 600/800 cooling ~20pp. Un-ignore when the GaugeSolver per-surface distribution rework (#1465/#1462) lands."]
+    #[ignore = "LIMIT-30 (Issue #4078): referee held for census stability; premise text corrected round 146 — it described the retired pre-r91 route (the 0.30-to-air density-driven split, removed from the engine default in round 91 flip 2, FLX_R91_SOL2ST; Table 5-138 routes transmitted solar to interior surfaces only). Un-ignore when the GaugeSolver per-surface distribution rework (#1465/#1462) lands — a deliberate call, not an automatic census change."]
     fn test_ashrae_140_solar_distribution_to_air_is_zero() {
         let low_spec = ASHRAE140Case::Case600.spec();
         let high_spec = ASHRAE140Case::Case900.spec();
@@ -58,7 +58,7 @@ mod tests {
 
     /// Verify solar_beam_to_mass_fraction follows ASHRAE 140 (100% to mass for simplified model).
     #[test]
-    #[ignore = "LIMIT-30 (Issue #4078): failing referee — model uses 0.30 beam-to-mass fraction (load-bearing per #3961); 1.0 collapses high-mass cooling (Case 960: 0.144 → 0.008 MWh). Un-ignore when the GaugeSolver per-surface distribution rework (#1465/#1462) lands."]
+    #[ignore = "LIMIT-30 (Issue #4078): referee held for census stability; premise text corrected round 146 — it described the retired pre-r91 route (the fixed 0.30 beam-to-mass fraction, retired with the density-driven split in round 91 flips 2–3; the default routes transmitted solar by the Table 5-138 per-class fractions since FLX_R91_T5138). Un-ignore when the GaugeSolver per-surface distribution rework (#1465/#1462) lands — a deliberate call, not an automatic census change."]
     fn test_ashrae_140_solar_beam_to_mass_fraction() {
         let low_spec = ASHRAE140Case::Case600.spec();
         let high_spec = ASHRAE140Case::Case900.spec();
@@ -110,7 +110,7 @@ mod tests {
     /// Verify that solar_distribution_to_air + solar_beam_to_mass_fraction = 1.0
     /// Per ASHRAE 140, all solar goes to opaque surfaces (mass).
     #[test]
-    #[ignore = "LIMIT-30 (Issue #4078): failing referee — fractions sum to 0.60 vs 1.0; the missing 0.40 is the structural distribution gap. Un-ignore when the GaugeSolver per-surface distribution rework (#1465/#1462) lands."]
+    #[ignore = "LIMIT-30 (Issue #4078): referee held for census stability; premise text corrected round 146 — it described the retired pre-r91 split (the 0.30 + 0.30 fractions and their 'missing 0.40' gap); the default has routed transmitted solar by the Table 5-138 fractions (0.9664-renormalized surface rows + the 0.035 window-loss sink) since round 91. Un-ignore when the GaugeSolver per-surface distribution rework (#1465/#1462) lands — a deliberate call, not an automatic census change."]
     fn test_solar_fractions_sum_to_one() {
         let low_spec = ASHRAE140Case::Case600.spec();
         let high_spec = ASHRAE140Case::Case900.spec();

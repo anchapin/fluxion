@@ -2620,26 +2620,36 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                     let mut d_res = 0.0f64;
                                     // [Round 144 — the sub-step t_s balance
                                     // deliberately carries NO inter-pool LW
-                                    // terms: the routed InteriorSurfaceNetwork
-                                    // carries the r130-documented
-                                    // non-conserving floor↔ceiling pair
-                                    // (F = 1.0 both directions, no reciprocity
-                                    // division — pinned against its exact
-                                    // closed form), whose fix is scoped to the
-                                    // #2890-followup routing decision, and at
+                                    // terms, on the dt_m stability finding
+                                    // alone (round-146 premise correction): at
                                     // dt_m the surface lane's inertia (sig
                                     // ~0.86 per inner step) turns the frozen
                                     // T⁴ term into a runaway (measured ±160 K
                                     // by step 3 with the hour-frozen form and
                                     // a 1-hour explosion with the per-sub-step
                                     // refresh; the hourly route's dt=3600
-                                    // relaxation masks it there). The
-                                    // redistribution stays on the hourly route
-                                    // for the default build; under the arm the
-                                    // committed surface balance omits it —
-                                    // disclosed in the plan amendment, the
-                                    // LW-under-the-arm slice rides the
-                                    // reciprocity fix.]
+                                    // relaxation masks it there). The note
+                                    // previously also blamed the r130
+                                    // non-conserving floor↔ceiling pair —
+                                    // STALE: the pair was fixed round 137 (PR
+                                    // #4800, `F_cf = F_fc·A_f/A_c` at the
+                                    // consumption site) BEFORE the round-138
+                                    // routing, so the routed hourly route has
+                                    // only ever consumed the
+                                    // reciprocity-cancelling forms (pinned:
+                                    // r130 suite contract 5 at the asymmetric
+                                    // fixture; routed C3
+                                    // recorded≡closed-forms, C4 Σ rounding
+                                    // level; Python closure Σ ~1.3e-13 W at
+                                    // fixture B), and the ±160 K measurement
+                                    // itself ran on the post-fix conserving
+                                    // forms. The redistribution stays on the
+                                    // hourly route for the default build;
+                                    // under the arm the committed surface
+                                    // balance omits it — disclosed in the
+                                    // plan amendment; the LW-under-the-arm
+                                    // slice carries a stability question
+                                    // only, not a conservation one.]
                                     let lw_q = [0.0f64; 3];
                                     let lw_g = [0.0f64; 3];
                                     for c in 0..3 {
