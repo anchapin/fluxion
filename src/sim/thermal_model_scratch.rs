@@ -335,6 +335,13 @@ pub(crate) struct PhysicsScratch9r4c {
     /// which `calculate_modulation` updates before the controlled-air
     /// guard can reject the step.
     pub ctrl_prev_snap: f64,
+    /// [R142 rollback] the HVAC equipment's part-load ratio at the
+    /// pre-step snapshot (`None` with no equipment attached). The
+    /// equipment dispatch runs `update_state` before every rejection
+    /// guard, so a rejected step must restore the fired (or NaN'd) PLR —
+    /// the r136 round documented this state as its out-of-scope bound;
+    /// closed in r142.
+    pub plr_snap: Option<f64>,
 }
 
 impl PhysicsScratch9r4c {
@@ -358,6 +365,7 @@ impl PhysicsScratch9r4c {
             mass_snap_len0: 0,
             mass_snap_len1: 0,
             ctrl_prev_snap: 0.0,
+            plr_snap: None,
         }
     }
 

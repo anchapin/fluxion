@@ -123,6 +123,22 @@ impl AnyEquipment {
             AnyEquipment::HeatPump(_) => 0.0, // HeatPump doesn't have design_airflow
         }
     }
+
+    /// [R142 rollback] Restore the pre-step part-load ratio on a
+    /// rejection path. `VariableCapacityEquipment::update_state` runs
+    /// inside `step_physics_9r4c` BEFORE the #4495/#4500 guards (the
+    /// r136 round documented the PLR as its out-of-scope rollback
+    /// bound), so a rejected step must not leave the fired — or NaN'd —
+    /// PLR behind: a rejected step advances nothing, period.
+    pub fn set_current_plr(&mut self, plr: f64) {
+        match self {
+            AnyEquipment::Chiller(e) => e.current_plr = plr,
+            AnyEquipment::Boiler(e) => e.current_plr = plr,
+            AnyEquipment::VAVTerminal(e) => e.current_plr = plr,
+            AnyEquipment::CAVSystem(e) => e.current_plr = plr,
+            AnyEquipment::HeatPump(e) => e.current_plr = plr,
+        }
+    }
 }
 
 /// Trait for variable-capacity HVAC equipment.
