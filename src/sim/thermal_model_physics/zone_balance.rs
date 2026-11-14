@@ -62,6 +62,56 @@ use smallvec::SmallVec;
 
 use super::physics_impl::step_common::step_wall_surface_ode;
 
+/// [Round 144 — rank-5 arm matrix helpers. The FLX_R144_TS_SUBSTATE sub-step
+/// t_s sub-state composes the r89 inner steps as a 4-d affine system over
+/// x = [t_m, t_s,0, t_s,1, t_s,2]: x_N = M^N·x + S·c with S = Σ_{k<N} M^k
+/// (drivers constant across inner steps). Direct matrix iteration, identical
+/// loop shape on the checker side per the r89 composed-form precedent
+/// (#3983 §64 lineage, checker-lags-integrator #4504 class).]
+fn r144_mat_mul4(a: &[[f64; 4]; 4], b: &[[f64; 4]; 4]) -> [[f64; 4]; 4] {
+    let mut out = [[0.0f64; 4]; 4];
+    for (i, row) in out.iter_mut().enumerate() {
+        for (j, cell) in row.iter_mut().enumerate() {
+            let mut acc = 0.0;
+            for k in 0..4 {
+                acc += a[i][k] * b[k][j];
+            }
+            *cell = acc;
+        }
+    }
+    out
+}
+
+fn r144_mat_add4(a: &[[f64; 4]; 4], b: &[[f64; 4]; 4]) -> [[f64; 4]; 4] {
+    let mut out = [[0.0f64; 4]; 4];
+    for i in 0..4 {
+        for j in 0..4 {
+            out[i][j] = a[i][j] + b[i][j];
+        }
+    }
+    out
+}
+
+fn r144_identity4() -> [[f64; 4]; 4] {
+    let mut out = [[0.0f64; 4]; 4];
+    for (d, row) in out.iter_mut().enumerate() {
+        row[d] = 1.0;
+    }
+    out
+}
+
+fn r144_mat_vec4(a: &[[f64; 4]; 4], v: [f64; 4]) -> [f64; 4] {
+    let mut out = [0.0f64; 4];
+    for (i, cell) in out.iter_mut().enumerate() {
+        let mut acc = 0.0;
+        for k in 0..4 {
+            acc += a[i][k] * v[k];
+        }
+        *cell = acc;
+    }
+    out
+}
+
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
     pub(crate) fn step_physics_5r1c(
         &mut self,
@@ -1724,6 +1774,84 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
         ];
 
+        // [Round 144 — rank-5 arm (FLX_R144_TS_SUBSTATE, loop round 144):
+        // the per-class coupled sub-step's interior coupling gains the same
+        // t_s-first surface-node sub-state the hourly D5 route (default
+        // since round 71, #3983 §57) carries, evaluated at dt_m with the
+        // sub-step's own drivers. The r85 per-class SUB-STEP (which commits
+        // the mass state on the coupled-N default) discloses the
+        // algebraic-series coupling with NO t_s sub-state — the
+        // massless-surface C_s→0 limit — while the hourly route advances a
+        // dynamic surface node (C_s = 0.1·cm_c, the disclosed structural
+        // extension toward #1522's dynamic order) whose committed state the
+        // engine carries in the r70 pair. This arm mirrors the D5 structure
+        // into the sub-step: per class, BE t_s consuming (t_i_sub, tm,
+        // phi_s_c) then BE mass consuming h_am_c·t_s_eff — the D5 hybrid
+        // form (no inter-pool LW terms, see the LW note below), with the
+        // sub-step's own T5138/R94 surface-pool partition
+        // RE-DESTINED to the surface node (the drive the mass CN consumed
+        // moves to t_s's balance; phi_m_i·w stays at the mass; the R90
+        // prev-ramp applies componentwise — the ramp is linear in the
+        // drive). Gated on the default recorded route (r91_t5138 &&
+        // r94_gains_c3 && r77_air_record) so the checker mirror stays
+        // exact where the records exist; archaeology combos keep the
+        // legacy advance bit-identically. Flag off (unset or any falsy
+        // token): the legacy CN path runs unchanged (byte-identical).
+        // CONSERVATION DISCLOSURE (r144 A/B): the D5 hybrid's surface↔air
+        // coupling is ONE-WAY — the surface balance consumes t_i_sub as a
+        // driver while the air node's own advance keeps its mass-series
+        // coupling and never sees the reciprocal h_is_c·(t_s − t_i) flux.
+        // D5 could carry that form since r71 only because its committed
+        // mass was discarded on the coupled default (round-83,
+        // records-only shadow); COMMITTED — which this arm makes it — the
+        // configuration is NOT zone-energy-conserving. The r144 A/B
+        // measured the flag-on state anyway (recorded, not adopted): the
+        // FF minima hold (600FF −13.28 in band; 650FF −17.81, 0.01 K
+        // out), both low-mass FF Tmax rows drop ~9.5 K further below
+        // their bands (600FF 49.42 → 39.95, 650FF 48.71 → 39.61 — the
+        // WRONG direction for the §LIMIT-28 Tmax undershoot), the
+        // conditioned low-mass family moves hard (600/640/800 C −73 %,
+        // 600/800 H +64 %), and the 900FF/950FF 9R4C family is
+        // byte-identical. The dated verdict: the t_s sub-state with the
+        // D5 hybrid form is refuted as the FF Tmax lever AND is not a
+        // conservation-correct committed candidate in this form; the
+        // conservation-correct sub-step surface node needs the air-side
+        // reciprocal coupling (the full coupled rewrite — the scoped
+        // remainder). The arm stays OFF; the record channel + contracts
+        // are the landed increment.]
+        let r144_ts_substate = crate::util::env_bool::env_bool("FLX_R144_TS_SUBSTATE", false)
+            && r91_t5138
+            && r94_gains_c3
+            && r77_air_record;
+        // [Round 144 — the r70 t_s pair build hoisted above the sub-step
+        // loop so the FLX_R144_TS_SUBSTATE arm can consume and advance the
+        // committed surface-node state inside the per-class sub-step. The
+        // build reads the same committed pair the pre-round-144 site read
+        // (nothing writes the model pair until the commit zone below every
+        // rejection path), so the flag-off contents are identical; the
+        // guards between this site and the commit zone (issue #4495 air
+        // guard, issue #4500 demand guard) now return the taken workspaces
+        // per the #2756 no-leak contract.]
+        let n_z70 = self.0.hvac.num_zones;
+        let mut r70_ts_old: Vec<f64> = self.0.mass.r70_ts_old_workspace.take().unwrap_or_default();
+        r70_ts_old.clear();
+        match self.0.mass.r70_surface_node_temperatures.as_ref() {
+            Some(v) if v.as_ref().len() >= 3 * n_z70 => {
+                r70_ts_old.extend_from_slice(&v.as_ref()[..3 * n_z70])
+            }
+            _ => r70_ts_old.resize(3 * n_z70, 20.0),
+        }
+        let mut r70_ts_new: Vec<f64> = self.0.mass.r70_ts_new_workspace.take().unwrap_or_default();
+        r70_ts_new.clear();
+        r70_ts_new.extend_from_slice(&r70_ts_old);
+        let mut r144_zone_arm: Vec<bool> = vec![false; if r144_ts_substate { n_z70 } else { 0 }];
+        // [Round 144 — the sub-step t_s balance carries NO inter-pool LW
+        // terms (see the arm block: the routed network's r130-documented
+        // non-conserving pair plus the dt_m lane inertia made the frozen
+        // T⁴ term run away; measured both forms before scoping it out).
+        // The redistribution stays on the hourly route; under the arm the
+        // omission is disclosed.]
+
         for _step in 0..steps {
             // === Air-node ODE (exact exponential solution) ===
             // Issue #3370: scratch pool buffer instead of per-sub-step
@@ -2332,6 +2460,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // simplifications vs. the hourly D5 route: the
                     // sub-step uses the algebraic-series interior
                     // coupling (no t_s-first surface-node sub-state),
+                    // [Round 144: the env-gated FLX_R144_TS_SUBSTATE arm
+                    // carries the t_s-first sub-state — see the arm block
+                    // in this match arm; the default route keeps the
+                    // algebraic series bit-identically],
                     // and the zone-level sol-air midpoint ramp source is
                     // not carried per class — class exterior temps are
                     // the current-hour cls_t values. The R77 folded
@@ -2343,6 +2475,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // lumped sub-step path (bit-identical to the round-84
                     // flag-off state).]
                     let mut perclass_coeffs: Option<(f64, f64, f64, f64, f64)> = None;
+                    // [Round 144 — the FLX_R144_TS_SUBSTATE arm's record
+                    // payload for this zone/sub-step: (22 composed slots,
+                    // the composed mass-row air gain for the air record's
+                    // h3od slot). None = the legacy CN advance ran.]
+                    let mut arm_slots_zone: Option<([f64; 22], f64)> = None;
                     // [R85 GUARD — the per-class advance requires real
                     // per-class construction state for this zone. The class
                     // tensors (cm_wall/cm_roof/cm_floor,
@@ -2452,233 +2589,462 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                 let cm_sum: f64 = cls_cm.iter().sum();
                                 let phi_m_i = phi_m_ref_early[i];
                                 let mut tm_w = 0.0;
-                                for c in 0..3 {
-                                    let w = cls_area[c] / total_area;
-                                    if w <= 0.0 {
-                                        continue;
-                                    }
-                                    let (h_em_c, t_ext_c) = if c == 2 {
-                                        (0.0, outdoor_temp)
-                                    } else {
-                                        (cls_g[c], cls_t_c[c])
-                                    };
-                                    let h_ms_c = cls_ms[c];
-                                    let h_is_c = h_is_i * w;
-                                    let h_am_c = if degenerate {
-                                        h_air_mass_i * w
-                                    } else if h_ms_c + h_is_c > 0.0 {
-                                        h_ms_c * h_is_c / (h_ms_c + h_is_c)
-                                    } else {
-                                        h_ms_c
-                                    };
-                                    // [R85] Bind the exact per-class CN
-                                    // arguments and derive this class's
-                                    // affine map from the same algebra the
-                                    // call below consumes (including its
-                                    // forward-Euler fallback), so the
-                                    // persisted composite mirrors the
-                                    // committed state exactly
-                                    // (checker-lags-integrator, #4504
-                                    // class).
-                                    let h3_c = h_am_c + h_vent_i * w;
-                                    // [R88 ARM — the class mass drive gains
-                                    // the ISO §C.3 mass share of the surface
-                                    // pool: s_c·phi_st·w with
-                                    // s_c = h_ms_c/(h_ms_c + h_is_i·w) —
-                                    // the same s_c the zone share sum above
-                                    // consumed, so the air-side (1 − Σ w·s_c)
-                                    // and the mass-side shares partition
-                                    // phi_st. Flag off: phi_m·w unchanged,
-                                    // bit-identical.]
-                                    // [R91 FLIP 3 - the class solar term
-                                    // carries the Table 5-138 surface
-                                    // fractions instead of the C.3
-                                    // conductance share: floor class
-                                    // 0.642/0.9664, roof class
-                                    // 0.1678/0.9664, wall class
-                                    // (E+W+N+S) 0.1566/0.9664. The
-                                    // renormalization absorbs the
-                                    // published table's rounding so
-                                    // sum_c phi_c = phi_m_i + phi_st
-                                    // exactly (energy-conserving by
-                                    // construction; the checker
-                                    // composite mirrors this drive
-                                    // through the affine maps below).
-                                    // [R93] the §C.3 lag-site air-share
-                                    // term retires under this route (see
-                                    // FLX_R93_T5138_AIRSHARE) so the
-                                    // composed network deposits exactly
-                                    // phi_st.]
-                                    // Falsy FLX_R91_T5138 restores the
-                                    // s_c*w conductance-share partition
-                                    // (the R88 arm) bit-identically.]
-                                    // [R94 — the §C.3 per-class share of
-                                    // the internal-gain surface
-                                    // component: `s_c = h_ms_c/(h_ms_c +
-                                    // h_is·w)`, the same share the r88
-                                    // arm and the zone air-share sum
-                                    // consume, so air + mass = phi_st_int
-                                    // exactly across the decomposition.]
-                                    let h_is_c94 = h_is_i * w;
-                                    let s_c94 = if h_ms_c + h_is_c94 > 0.0 {
-                                        h_ms_c / (h_ms_c + h_is_c94)
-                                    } else {
-                                        0.0
-                                    };
-                                    // [Loop round 103 — the checker-record
-                                    // gains the load-linear coefficient of
-                                    // the class drive: d(phi_c)/d(load_w)
-                                    // alongside phi_c, from the same share
-                                    // algebra (only the internal-gain
-                                    // radiative component carries the
-                                    // load: phi_st_int = load·rad_frac;
-                                    // phi_m and phi_st_sol are
-                                    // load-independent). Recorded per
-                                    // sub-step so the checker's composite
-                                    // mirror can rebuild b at a perturbed
-                                    // load — §LIMIT-22 rebuild.]
-                                    let (phi_c, dphi_c_dload) = if r91_t5138 {
+                                // [Round 144 — the FLX_R144_TS_SUBSTATE arm
+                                // (rank-5: the t_s-first surface-node
+                                // sub-state inside the per-class coupled
+                                // sub-step). Per class the drive splits:
+                                // phi_m_c = phi_m_i·w stays at the mass;
+                                // the R91/R94 surface-pool share the mass
+                                // CN consumed moves to the surface node's
+                                // BE balance; the R90 prev-ramp applies
+                                // componentwise (linear in the drive).
+                                // Inner-step maps compose as the 4-d
+                                // affine system x = [tm, ts_0..2],
+                                // x_N = M^N·x + S·c (S = Σ_{k<N} M^k,
+                                // drivers constant across inner steps);
+                                // the COMMITTED value evaluates the
+                                // composed slots with the same
+                                // left-to-right expressions the checker
+                                // replay uses (r89 precedent, bit-exact
+                                // at Δ=0). Python replication
+                                // /tmp/r144_ts_substate_replication.py:
+                                // composed-vs-sequential 4.0e-15 worst,
+                                // load/air channels vs finite difference
+                                // 3.5e-15/3.7e-15 over 400 configs.]
+                                let mut arm_ran_zone = false;
+                                if r144_ts_substate {
+                                    let mut m_mat = [[0.0f64; 4]; 4];
+                                    let mut c_vec = [0.0f64; 4];
+                                    let mut bl_vec = [0.0f64; 4];
+                                    let mut air_vec = [0.0f64; 4];
+                                    let mut d_res = 0.0f64;
+                                    // [Round 144 — the sub-step t_s balance
+                                    // deliberately carries NO inter-pool LW
+                                    // terms: the routed InteriorSurfaceNetwork
+                                    // carries the r130-documented
+                                    // non-conserving floor↔ceiling pair
+                                    // (F = 1.0 both directions, no reciprocity
+                                    // division — pinned against its exact
+                                    // closed form), whose fix is scoped to the
+                                    // #2890-followup routing decision, and at
+                                    // dt_m the surface lane's inertia (sig
+                                    // ~0.86 per inner step) turns the frozen
+                                    // T⁴ term into a runaway (measured ±160 K
+                                    // by step 3 with the hour-frozen form and
+                                    // a 1-hour explosion with the per-sub-step
+                                    // refresh; the hourly route's dt=3600
+                                    // relaxation masks it there). The
+                                    // redistribution stays on the hourly route
+                                    // for the default build; under the arm the
+                                    // committed surface balance omits it —
+                                    // disclosed in the plan amendment, the
+                                    // LW-under-the-arm slice rides the
+                                    // reciprocity fix.]
+                                    let lw_q = [0.0f64; 3];
+                                    let lw_g = [0.0f64; 3];
+                                    for c in 0..3 {
+                                        let w = cls_area[c] / total_area;
+                                        if w <= 0.0 {
+                                            continue;
+                                        }
+                                        let (h_em_c, t_ext_c) = if c == 2 {
+                                            (0.0, outdoor_temp)
+                                        } else {
+                                            (cls_g[c], cls_t_c[c])
+                                        };
+                                        let h_ms_c = cls_ms[c];
+                                        let h_is_c = h_is_i * w;
+                                        let h_am_c = if degenerate {
+                                            h_air_mass_i * w
+                                        } else if h_ms_c + h_is_c > 0.0 {
+                                            h_ms_c * h_is_c / (h_ms_c + h_is_c)
+                                        } else {
+                                            h_ms_c
+                                        };
+                                        let s_c94 = if h_ms_c + h_is_c > 0.0 {
+                                            h_ms_c / (h_ms_c + h_is_c)
+                                        } else {
+                                            0.0
+                                        };
                                         let f_c_t5138 = match c {
                                             2 => 0.642_f64,
                                             1 => 0.1678,
                                             _ => 0.1566,
                                         };
-                                        if r94_gains_c3 {
-                                            // [R94 DEFAULT — the Table
-                                            // 5-138 fractions carry the
-                                            // TRANSMITTED-SOLAR component
-                                            // only; the internal-gain
-                                            // radiative component keeps
-                                            // the §C.3 conductance
-                                            // partition (`s_c·w` here,
-                                            // `(1 − s_share)` at the lag
-                                            // site).]
+                                        let mut phi_m_c = phi_m_i * w;
+                                        let mut phi_s_c = (f_c_t5138 / 0.9664)
+                                            * phi_st_sol.as_ref()[i]
+                                            + s_c94 * phi_st_int.as_ref()[i] * w;
+                                        let mut dphi_s_c = s_c94 * rad_frac * w;
+                                        if r90_phist_ramp {
+                                            let phi_m_prev_r90 =
+                                                r90_phi_m_prev_ref.get(i).copied().unwrap_or(0.0);
+                                            let phi_st_prev_r90 =
+                                                r90_phi_st_prev_ref.get(i).copied().unwrap_or(0.0);
+                                            if phi_m_prev_r90 != 0.0 || phi_st_prev_r90 != 0.0 {
+                                                let f_r90m = (_step as f64 + 0.5) / steps as f64;
+                                                let phi_s_prev = s_c94 * phi_st_prev_r90 * w;
+                                                phi_s_c =
+                                                    phi_s_prev + f_r90m * (phi_s_c - phi_s_prev);
+                                                dphi_s_c *= f_r90m;
+                                                let phi_m_prev_c = phi_m_prev_r90 * w;
+                                                phi_m_c = phi_m_prev_c
+                                                    + f_r90m * (phi_m_c - phi_m_prev_c);
+                                            }
+                                        }
+                                        let cs_c = 0.1 * cls_cm[c];
+                                        let cs_dt = cs_c / dt_m;
+                                        let g_lw_c = lw_g[c];
+                                        let den_s = cs_dt + h_is_c + h_ms_c + g_lw_c;
+                                        let (sig_c, ups_c, tau_c, q_c, bls_c) = if den_s > 0.0 {
                                             (
-                                                phi_m_i * w
-                                                    + (f_c_t5138 / 0.9664) * phi_st_sol.as_ref()[i]
-                                                    + s_c94 * phi_st_int.as_ref()[i] * w,
-                                                s_c94 * rad_frac * w,
+                                                (cs_dt + g_lw_c) / den_s,
+                                                h_ms_c / den_s,
+                                                h_is_c / den_s,
+                                                (h_is_c * t_i_sub + phi_s_c + lw_q[c]) / den_s,
+                                                dphi_s_c / den_s,
+                                            )
+                                        } else if h_ms_c + h_is_c > 0.0 {
+                                            // [D5 degenerate convention: the
+                                            // algebraic surface node — the
+                                            // C_s→0 limit of the same
+                                            // balance.]
+                                            (
+                                                0.0,
+                                                h_ms_c / (h_ms_c + h_is_c),
+                                                h_is_c / (h_ms_c + h_is_c),
+                                                phi_s_c / (h_ms_c + h_is_c),
+                                                dphi_s_c / (h_ms_c + h_is_c),
                                             )
                                         } else {
-                                            // Pre-R94 composed route
-                                            // (whole pool at the solar
-                                            // fractions) — archaeology.
+                                            (0.0, 0.0, 0.0, 0.0, 0.0)
+                                        };
+                                        let vent_w = h_vent_i * w;
+                                        let cm_dt_c = cls_cm[c] / dt_m;
+                                        let den_m = cm_dt_c + h_em_c + h_am_c + vent_w;
+                                        let (alpha_c, beta_c, b_c) = if den_m > 0.0 {
                                             (
-                                                phi_m_i * w
-                                                    + (f_c_t5138 / 0.9664) * phi_st.as_ref()[i],
-                                                (f_c_t5138 / 0.9664) * rad_frac,
+                                                cm_dt_c / den_m,
+                                                h_am_c / den_m,
+                                                (h_em_c * t_ext_c
+                                                    + vent_w * outdoor_temp
+                                                    + phi_m_c)
+                                                    / den_m,
                                             )
+                                        } else {
+                                            // [Forward-Euler fallback — the
+                                            // legacy den_c ≤ 0 convention,
+                                            // same branch algebra.]
+                                            let inv = dt_m / cls_cm[c];
+                                            (
+                                                1.0 - inv * (h_am_c + h_em_c + vent_w),
+                                                inv * h_am_c,
+                                                inv * (h_em_c * t_ext_c
+                                                    + vent_w * outdoor_temp
+                                                    + phi_m_c),
+                                            )
+                                        };
+                                        let w_cap = cls_cm[c] / cm_sum;
+                                        m_mat[0][0] += w_cap * (alpha_c + beta_c * ups_c);
+                                        m_mat[0][c + 1] += w_cap * beta_c * sig_c;
+                                        m_mat[c + 1][0] = ups_c;
+                                        m_mat[c + 1][c + 1] = sig_c;
+                                        c_vec[0] += w_cap * (b_c + beta_c * q_c);
+                                        c_vec[c + 1] = q_c;
+                                        bl_vec[0] += w_cap * beta_c * bls_c;
+                                        bl_vec[c + 1] = bls_c;
+                                        air_vec[0] += w_cap * beta_c * tau_c;
+                                        air_vec[c + 1] = tau_c;
+                                        d_res += w_cap * den_m;
+                                    }
+                                    // Compose M^N and S = Σ_{k<N} M^k.
+                                    let mut smat = [[0.0f64; 4]; 4];
+                                    let mut p_mat = r144_identity4();
+                                    let mut mn = r144_identity4();
+                                    for _ in 0..(r89_inner_n as usize) {
+                                        smat = r144_mat_add4(&smat, &p_mat);
+                                        p_mat = r144_mat_mul4(&p_mat, &m_mat);
+                                        mn = r144_mat_mul4(&mn, &m_mat);
+                                    }
+                                    let x0 = [
+                                        r76_mass[i],
+                                        r70_ts_new[3 * i],
+                                        r70_ts_new[3 * i + 1],
+                                        r70_ts_new[3 * i + 2],
+                                    ];
+                                    let sc = r144_mat_vec4(&smat, c_vec);
+                                    let sbl = r144_mat_vec4(&smat, bl_vec);
+                                    let sair = r144_mat_vec4(&smat, air_vec);
+                                    // [Commit from the composed slots — the
+                                    // expression shape here and in the
+                                    // checker's arm replay must stay
+                                    // identical term-for-term.]
+                                    let tm_new_arm = mn[0][0] * x0[0]
+                                        + mn[0][1] * x0[1]
+                                        + mn[0][2] * x0[2]
+                                        + mn[0][3] * x0[3]
+                                        + sc[0];
+                                    for cc in 0..3 {
+                                        r70_ts_new[3 * i + cc] = mn[cc + 1][0] * x0[0]
+                                            + mn[cc + 1][cc + 1] * x0[cc + 1]
+                                            + sc[cc + 1];
+                                    }
+                                    r76_mass[i] = tm_new_arm;
+                                    tm_w = tm_new_arm;
+                                    let mut slots = [0.0f64; 22];
+                                    slots[0] = mn[0][0];
+                                    slots[1] = mn[0][1];
+                                    slots[2] = mn[0][2];
+                                    slots[3] = mn[0][3];
+                                    slots[4] = sc[0];
+                                    slots[5] = sbl[0];
+                                    slots[6] = d_res;
+                                    for cc in 0..3 {
+                                        let base = 7 + 5 * cc;
+                                        slots[base] = mn[cc + 1][0];
+                                        slots[base + 1] = mn[cc + 1][cc + 1];
+                                        slots[base + 2] = sc[cc + 1];
+                                        slots[base + 3] = sbl[cc + 1];
+                                        slots[base + 4] = sair[cc + 1];
+                                    }
+                                    arm_slots_zone = Some((slots, sair[0]));
+                                    arm_ran_zone = true;
+                                    r144_zone_arm[i] = true;
+                                }
+                                if !arm_ran_zone {
+                                    for c in 0..3 {
+                                        let w = cls_area[c] / total_area;
+                                        if w <= 0.0 {
+                                            continue;
                                         }
-                                    } else if r88_phist_share {
-                                        let h_is_c88 = h_is_i * w;
-                                        let s_c88 = if h_ms_c + h_is_c88 > 0.0 {
-                                            h_ms_c / (h_ms_c + h_is_c88)
+                                        let (h_em_c, t_ext_c) = if c == 2 {
+                                            (0.0, outdoor_temp)
+                                        } else {
+                                            (cls_g[c], cls_t_c[c])
+                                        };
+                                        let h_ms_c = cls_ms[c];
+                                        let h_is_c = h_is_i * w;
+                                        let h_am_c = if degenerate {
+                                            h_air_mass_i * w
+                                        } else if h_ms_c + h_is_c > 0.0 {
+                                            h_ms_c * h_is_c / (h_ms_c + h_is_c)
+                                        } else {
+                                            h_ms_c
+                                        };
+                                        // [R85] Bind the exact per-class CN
+                                        // arguments and derive this class's
+                                        // affine map from the same algebra the
+                                        // call below consumes (including its
+                                        // forward-Euler fallback), so the
+                                        // persisted composite mirrors the
+                                        // committed state exactly
+                                        // (checker-lags-integrator, #4504
+                                        // class).
+                                        let h3_c = h_am_c + h_vent_i * w;
+                                        // [R88 ARM — the class mass drive gains
+                                        // the ISO §C.3 mass share of the surface
+                                        // pool: s_c·phi_st·w with
+                                        // s_c = h_ms_c/(h_ms_c + h_is_i·w) —
+                                        // the same s_c the zone share sum above
+                                        // consumed, so the air-side (1 − Σ w·s_c)
+                                        // and the mass-side shares partition
+                                        // phi_st. Flag off: phi_m·w unchanged,
+                                        // bit-identical.]
+                                        // [R91 FLIP 3 - the class solar term
+                                        // carries the Table 5-138 surface
+                                        // fractions instead of the C.3
+                                        // conductance share: floor class
+                                        // 0.642/0.9664, roof class
+                                        // 0.1678/0.9664, wall class
+                                        // (E+W+N+S) 0.1566/0.9664. The
+                                        // renormalization absorbs the
+                                        // published table's rounding so
+                                        // sum_c phi_c = phi_m_i + phi_st
+                                        // exactly (energy-conserving by
+                                        // construction; the checker
+                                        // composite mirrors this drive
+                                        // through the affine maps below).
+                                        // [R93] the §C.3 lag-site air-share
+                                        // term retires under this route (see
+                                        // FLX_R93_T5138_AIRSHARE) so the
+                                        // composed network deposits exactly
+                                        // phi_st.]
+                                        // Falsy FLX_R91_T5138 restores the
+                                        // s_c*w conductance-share partition
+                                        // (the R88 arm) bit-identically.]
+                                        // [R94 — the §C.3 per-class share of
+                                        // the internal-gain surface
+                                        // component: `s_c = h_ms_c/(h_ms_c +
+                                        // h_is·w)`, the same share the r88
+                                        // arm and the zone air-share sum
+                                        // consume, so air + mass = phi_st_int
+                                        // exactly across the decomposition.]
+                                        let h_is_c94 = h_is_i * w;
+                                        let s_c94 = if h_ms_c + h_is_c94 > 0.0 {
+                                            h_ms_c / (h_ms_c + h_is_c94)
                                         } else {
                                             0.0
                                         };
-                                        (
-                                            phi_m_i * w + s_c88 * phi_st.as_ref()[i] * w,
-                                            s_c88 * rad_frac * w,
-                                        )
-                                    } else {
-                                        (phi_m_i * w, 0.0)
-                                    };
-                                    // [R90 HARNESS (b)] ramp the class mass
-                                    // drive across the hour at the R71
-                                    // midpoint fraction (same share algebra
-                                    // on the previous hour's gains; zero prev
-                                    // = seed, no ramp). Round 103: the load
-                                    // derivative ramps by the same f_r90m —
-                                    // the previous hour's gains are persisted
-                                    // history, not load-dependent.
-                                    let (phi_c, dphi_c_dload) = if r90_phist_ramp {
-                                        let phi_m_prev_r90 =
-                                            r90_phi_m_prev_ref.get(i).copied().unwrap_or(0.0);
-                                        let phi_st_prev_r90 =
-                                            r90_phi_st_prev_ref.get(i).copied().unwrap_or(0.0);
-                                        if phi_m_prev_r90 != 0.0 || phi_st_prev_r90 != 0.0 {
-                                            let f_r90m = (_step as f64 + 0.5) / steps as f64;
-                                            let h_is_c_r90 = h_is_i * w;
-                                            let s_c_prev_r90 =
-                                                if r88_phist_share && h_ms_c + h_is_c_r90 > 0.0 {
+                                        // [Loop round 103 — the checker-record
+                                        // gains the load-linear coefficient of
+                                        // the class drive: d(phi_c)/d(load_w)
+                                        // alongside phi_c, from the same share
+                                        // algebra (only the internal-gain
+                                        // radiative component carries the
+                                        // load: phi_st_int = load·rad_frac;
+                                        // phi_m and phi_st_sol are
+                                        // load-independent). Recorded per
+                                        // sub-step so the checker's composite
+                                        // mirror can rebuild b at a perturbed
+                                        // load — §LIMIT-22 rebuild.]
+                                        let (phi_c, dphi_c_dload) = if r91_t5138 {
+                                            let f_c_t5138 = match c {
+                                                2 => 0.642_f64,
+                                                1 => 0.1678,
+                                                _ => 0.1566,
+                                            };
+                                            if r94_gains_c3 {
+                                                // [R94 DEFAULT — the Table
+                                                // 5-138 fractions carry the
+                                                // TRANSMITTED-SOLAR component
+                                                // only; the internal-gain
+                                                // radiative component keeps
+                                                // the §C.3 conductance
+                                                // partition (`s_c·w` here,
+                                                // `(1 − s_share)` at the lag
+                                                // site).]
+                                                (
+                                                    phi_m_i * w
+                                                        + (f_c_t5138 / 0.9664)
+                                                            * phi_st_sol.as_ref()[i]
+                                                        + s_c94 * phi_st_int.as_ref()[i] * w,
+                                                    s_c94 * rad_frac * w,
+                                                )
+                                            } else {
+                                                // Pre-R94 composed route
+                                                // (whole pool at the solar
+                                                // fractions) — archaeology.
+                                                (
+                                                    phi_m_i * w
+                                                        + (f_c_t5138 / 0.9664) * phi_st.as_ref()[i],
+                                                    (f_c_t5138 / 0.9664) * rad_frac,
+                                                )
+                                            }
+                                        } else if r88_phist_share {
+                                            let h_is_c88 = h_is_i * w;
+                                            let s_c88 = if h_ms_c + h_is_c88 > 0.0 {
+                                                h_ms_c / (h_ms_c + h_is_c88)
+                                            } else {
+                                                0.0
+                                            };
+                                            (
+                                                phi_m_i * w + s_c88 * phi_st.as_ref()[i] * w,
+                                                s_c88 * rad_frac * w,
+                                            )
+                                        } else {
+                                            (phi_m_i * w, 0.0)
+                                        };
+                                        // [R90 HARNESS (b)] ramp the class mass
+                                        // drive across the hour at the R71
+                                        // midpoint fraction (same share algebra
+                                        // on the previous hour's gains; zero prev
+                                        // = seed, no ramp). Round 103: the load
+                                        // derivative ramps by the same f_r90m —
+                                        // the previous hour's gains are persisted
+                                        // history, not load-dependent.
+                                        let (phi_c, dphi_c_dload) = if r90_phist_ramp {
+                                            let phi_m_prev_r90 =
+                                                r90_phi_m_prev_ref.get(i).copied().unwrap_or(0.0);
+                                            let phi_st_prev_r90 =
+                                                r90_phi_st_prev_ref.get(i).copied().unwrap_or(0.0);
+                                            if phi_m_prev_r90 != 0.0 || phi_st_prev_r90 != 0.0 {
+                                                let f_r90m = (_step as f64 + 0.5) / steps as f64;
+                                                let h_is_c_r90 = h_is_i * w;
+                                                let s_c_prev_r90 = if r88_phist_share
+                                                    && h_ms_c + h_is_c_r90 > 0.0
+                                                {
                                                     h_ms_c / (h_ms_c + h_is_c_r90)
                                                 } else {
                                                     0.0
                                                 };
-                                            let phi_c_prev_r90 = phi_m_prev_r90 * w
-                                                + s_c_prev_r90 * phi_st_prev_r90 * w;
-                                            (
-                                                phi_c_prev_r90 + f_r90m * (phi_c - phi_c_prev_r90),
-                                                f_r90m * dphi_c_dload,
-                                            )
+                                                let phi_c_prev_r90 = phi_m_prev_r90 * w
+                                                    + s_c_prev_r90 * phi_st_prev_r90 * w;
+                                                (
+                                                    phi_c_prev_r90
+                                                        + f_r90m * (phi_c - phi_c_prev_r90),
+                                                    f_r90m * dphi_c_dload,
+                                                )
+                                            } else {
+                                                (phi_c, dphi_c_dload)
+                                            }
                                         } else {
                                             (phi_c, dphi_c_dload)
-                                        }
-                                    } else {
-                                        (phi_c, dphi_c_dload)
-                                    };
-                                    let cm_dt_c = cls_cm[c] / dt_m;
-                                    let half_c = 0.5 * (h3_c + h_em_c);
-                                    let den_c = cm_dt_c + half_c;
-                                    let numer_rest_c = h_em_c * t_ext_c + h3_c * t_i_sub + phi_c;
-                                    // [Round 103] b is affine in the zone load
-                                    // through phi_c alone, so the load-linear
-                                    // coefficient is exact: db_c/d(load_w) =
-                                    // dphi_c/d(load_w) / den_c (CN) or
-                                    // dphi_c/d(load_w) · inv (forward-Euler
-                                    // fallback), the same branch b took.
-                                    let db_c_dload = if den_c > 0.0 {
-                                        dphi_c_dload / den_c
-                                    } else {
-                                        let inv = dt_m / cls_cm[c];
-                                        dphi_c_dload * inv
-                                    };
-                                    let (a_c, b_c) = if den_c > 0.0 {
-                                        ((cm_dt_c - half_c) / den_c, numer_rest_c / den_c)
-                                    } else {
-                                        let inv = dt_m / cls_cm[c];
-                                        (1.0 - inv * (h3_c + h_em_c), inv * numer_rest_c)
-                                    };
-                                    if ff_audit && _step == steps - 1 {
-                                        eprintln!(
+                                        };
+                                        let cm_dt_c = cls_cm[c] / dt_m;
+                                        let half_c = 0.5 * (h3_c + h_em_c);
+                                        let den_c = cm_dt_c + half_c;
+                                        let numer_rest_c =
+                                            h_em_c * t_ext_c + h3_c * t_i_sub + phi_c;
+                                        // [Round 103] b is affine in the zone load
+                                        // through phi_c alone, so the load-linear
+                                        // coefficient is exact: db_c/d(load_w) =
+                                        // dphi_c/d(load_w) / den_c (CN) or
+                                        // dphi_c/d(load_w) · inv (forward-Euler
+                                        // fallback), the same branch b took.
+                                        let db_c_dload = if den_c > 0.0 {
+                                            dphi_c_dload / den_c
+                                        } else {
+                                            let inv = dt_m / cls_cm[c];
+                                            dphi_c_dload * inv
+                                        };
+                                        let (a_c, b_c) = if den_c > 0.0 {
+                                            ((cm_dt_c - half_c) / den_c, numer_rest_c / den_c)
+                                        } else {
+                                            let inv = dt_m / cls_cm[c];
+                                            (1.0 - inv * (h3_c + h_em_c), inv * numer_rest_c)
+                                        };
+                                        if ff_audit && _step == steps - 1 {
+                                            eprintln!(
                                             "FFAUDIT_C {} {} {} w={:.6} cm_c={:.6} a={:.6} b={:.6} h_am={:.6} h_em={:.6} h3={:.6} t_ext={:.6} phi={:.6} tm_prev={:.6}",
                                             timestep, i, c, w, cls_cm[c], a_c, b_c, h_am_c, h_em_c, h3_c, t_ext_c, phi_c, r76_mass[i]
                                         );
+                                        }
+                                        let w_cap = cls_cm[c] / cm_sum;
+                                        a_sum += w_cap * a_c;
+                                        b_sum += w_cap * b_c;
+                                        d_sum += w_cap * den_c;
+                                        bl_sum += w_cap * db_c_dload;
+                                        h3od_sum += w_cap
+                                            * if den_c > 0.0 {
+                                                h3_c / den_c
+                                            } else {
+                                                let inv = dt_m / cls_cm[c];
+                                                h3_c * inv
+                                            };
+                                        let tm_c_new = crank_nicolson_iso13790(
+                                            r76_mass[i],
+                                            dt_m,
+                                            cls_cm[c],
+                                            h3_c,
+                                            h_em_c,
+                                            t_ext_c,
+                                            t_i_sub,
+                                            phi_c,
+                                        )?;
+                                        if ff_audit {
+                                            eprintln!(
+                                                "FFAUDIT_D {} {} {} {:.9}",
+                                                timestep,
+                                                i,
+                                                c,
+                                                cls_cm[c] * (tm_c_new - r76_mass[i])
+                                            );
+                                        }
+                                        tm_w += w_cap * tm_c_new;
                                     }
-                                    let w_cap = cls_cm[c] / cm_sum;
-                                    a_sum += w_cap * a_c;
-                                    b_sum += w_cap * b_c;
-                                    d_sum += w_cap * den_c;
-                                    bl_sum += w_cap * db_c_dload;
-                                    h3od_sum += w_cap
-                                        * if den_c > 0.0 {
-                                            h3_c / den_c
-                                        } else {
-                                            let inv = dt_m / cls_cm[c];
-                                            h3_c * inv
-                                        };
-                                    let tm_c_new = crank_nicolson_iso13790(
-                                        r76_mass[i],
-                                        dt_m,
-                                        cls_cm[c],
-                                        h3_c,
-                                        h_em_c,
-                                        t_ext_c,
-                                        t_i_sub,
-                                        phi_c,
-                                    )?;
-                                    if ff_audit {
-                                        eprintln!(
-                                            "FFAUDIT_D {} {} {} {:.9}",
-                                            timestep,
-                                            i,
-                                            c,
-                                            cls_cm[c] * (tm_c_new - r76_mass[i])
-                                        );
-                                    }
-                                    tm_w += w_cap * tm_c_new;
-                                }
-                                perclass_coeffs = Some((a_sum, b_sum, d_sum, bl_sum, h3od_sum));
+                                    perclass_coeffs = Some((a_sum, b_sum, d_sum, bl_sum, h3od_sum));
+                                } // [Round 144 — the legacy class loop runs
+                                  // only when the arm did not take the zone.]
                                 tm_w
                             }
                             _ => crank_nicolson_iso13790(
@@ -2715,7 +3081,36 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // the checker's composite mirror stays exact by
                     // construction (checker-lags-integrator, #4504 class).
                     let mut applied_inner = false;
-                    if r77_coupled {
+                    if let (true, Some((slots, arm_h3od))) = (r77_coupled, arm_slots_zone) {
+                        // [Round 144 — the arm's record push: 22 composed
+                        // slots per outer sub-step on the mass record, the
+                        // usual 9-slot air push with the arm's composed
+                        // mass-row air gain in the h3od slot and the
+                        // composed (A, bl_m) pair in the (a, bl) slots. The
+                        // committed r76_mass[i] is already the
+                        // composed-form value, so applied_inner=true keeps
+                        // the legacy r89 composition below out of the way
+                        // (checker-lags-integrator, #4504 class: the
+                        // replay consumes these slots with the same
+                        // left-to-right expressions the commit used).]
+                        let c_arm = &mut r77_coeffs[i];
+                        c_arm.extend_from_slice(&slots);
+                        if r77_air_record {
+                            let am = air_map_scratch[i];
+                            let ca = &mut r77_air_coeffs[i];
+                            ca.push(am[0]);
+                            ca.push(am[1]);
+                            ca.push(am[2]);
+                            ca.push(am[3]);
+                            ca.push(arm_h3od);
+                            ca.push(slots[0]);
+                            ca.push(slots[5]);
+                            ca.push(am[4]);
+                            ca.push(am[5]);
+                        }
+                        applied_inner = true;
+                    }
+                    if r77_coupled && arm_slots_zone.is_none() {
                         // [Round 103 — the fourth recorded entry is the
                         // load-linear coefficient of b (db/d(load_w), W per
                         // W), taken from the same branch b came from:
@@ -2883,6 +3278,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // Issue #4495 rejection path must restore the pooled scratch
                 // (Issue #2756 contract): a leaked checkout empties the pool
                 // and the next step re-allocates (scratch_pool reuse gate).
+                // [Round 144 — the r70 pair workspaces are taken above the
+                // sub-step loop now, so this guard returns them too.]
+                self.0.mass.r70_ts_old_workspace = Some(r70_ts_old);
+                self.0.mass.r70_ts_new_workspace = Some(r70_ts_new);
                 self.0.hvac.scratch_pool.return_5r1c(scratch);
                 return Err(FluxionError::Validation(format!(
                     "Air-node temperature became non-finite ({t}) for zone {i}: \
@@ -3389,6 +3788,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let w_scale = hvac_vec.iter().fold(0.0_f64, |m, &v| m.max(v.abs()));
             let w_bound = w_scale * self.0.hvac.num_zones as f64;
             if hvac_vec.iter().any(|&v| !v.is_finite()) || !(w_bound * dt).is_finite() {
+                // [Round 144 — the r70 pair workspaces are taken above the
+                // sub-step loop now, so this guard returns them too.]
+                self.0.mass.r70_ts_old_workspace = Some(r70_ts_old);
+                self.0.mass.r70_ts_new_workspace = Some(r70_ts_new);
                 self.0.hvac.scratch_pool.return_5r1c(scratch);
                 return Err(FluxionError::Validation(format!(
                     "HVAC demand became non-finite or overflows the step energy \
@@ -3640,28 +4043,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // way, and the per-zone model writes were redundant full-vector
         // stores whose final content this commit zone reproduces exactly.]
         let r70_ts_on = true;
-        let n_z70 = self.0.hvac.num_zones;
+        // [Round 144 — n_z70 and the pair build live above the sub-step
+        // loop now (see the hoist note there).]
         // [Round 78 (#4512): the per-step `to_vec` + `clone` pair the D5
         // default flip made here (~2 heap allocations per timestep,
         // breached #4512's budget while the dashboard dhat job was skipped)
         // is pooled in `MassState` workspaces and reused. Values identical
         // (clear + extend/resize reuses the allocation; contents equal the
         // old copies).]
-        let mut r70_ts_old: Vec<f64> = self.0.mass.r70_ts_old_workspace.take().unwrap_or_default();
-        r70_ts_old.clear();
-        match self.0.mass.r70_surface_node_temperatures.as_ref() {
-            Some(v) if v.as_ref().len() >= 3 * n_z70 => {
-                r70_ts_old.extend_from_slice(&v.as_ref()[..3 * n_z70])
-            }
-            _ => r70_ts_old.resize(3 * n_z70, 20.0),
-        }
-        let mut r70_ts_new: Vec<f64> = self.0.mass.r70_ts_new_workspace.take().unwrap_or_default();
-        r70_ts_new.clear();
-        r70_ts_new.extend_from_slice(&r70_ts_old);
-        // [R140] The commit zone writes the model pair only when at least
+        // [R140 — the commit zone writes the model pair only when at least
         // one zone actually ran the per-class arm (the pre-fix writes were
         // per-class-arm events; a fallback-only step left both fields
-        // untouched and must keep doing so).
+        // untouched and must keep doing so).]
+        // [Round 144 — the r70 pair build itself moved above the sub-step
+        // loop (the FLX_R144_TS_SUBSTATE arm consumes and advances the
+        // committed surface state inside the per-class sub-step); the
+        // build's source and contents are unchanged, so this site keeps
+        // only the any-class flag and the hourly-loop references.]
         let mut r70_any_class = false;
         let phi_m_ref = phi_m.as_ref();
         let h_tr_3_ref_2 = self.0.conduction.derived_h_tr_3.as_ref();
@@ -4135,7 +4533,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                 // layer ≈ 10 % of construction capacitance); the class
                                 // mass integration switches to the BE form above so
                                 // T_s actually binds. Flag off = R67 arm unchanged.]
-                                let r70_ts_advance = r70_ts_on;
+                                let r70_ts_advance = r70_ts_on
+                                    && !(r144_ts_substate
+                                        && r144_zone_arm.get(i).copied().unwrap_or(false));
                                 let (t_s_eff, be_mass) = if r70_ts_advance {
                                     let cs_c = 0.1 * cm_c;
                                     let t_s_old = r70_ts_old[3 * i + c];
@@ -4459,7 +4859,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // inside the class arm). `_prev` is the `t_s_old` snapshot this
         // advance consumed so the checker can recompute the surface-node
         // identity exactly; write-only for the engine.
-        if r70_ts_on && r70_any_class {
+        // [Round 144 — the FLX_R144_TS_SUBSTATE arm's sub-step advance
+        // owns the pair for its zones (the hourly D5 t_s write is gated
+        // off there), so the commit condition accepts either owner; the
+        // written pair is the last sub-step's composed end state either
+        // way.]
+        if r70_ts_on && (r70_any_class || r144_zone_arm.iter().any(|&ran| ran)) {
             let mut sv = smallvec::SmallVec::new();
             sv.extend_from_slice(&r70_ts_new);
             let v = T::from(VectorField::from_smallvec(sv));
