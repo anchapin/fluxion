@@ -3042,6 +3042,453 @@ fn spec_path_estimate_lumped_and_internal_guard() {
 }
 
 // ============================================================================
+// Round 141 — the S5 remainder: the assembly→conductance derivation INTERIOR.
+//
+// Contract B2 above pins S5 as ENGINE-READ literals (cm, h_ms, h_em per
+// surface, the lumped h_tr_em/h_tr_ms/h_tr_me, the floor U-value). This
+// section closes the recorded remainder seam: it replicates the derivation
+// interior operation-for-operation — the ISO 13790 effective capacitance
+// (`iso_13790_effective_capacitance_per_area`: layers interior to AND
+// including the dominant-insulation layer, 100 mm active-thickness cap
+// checked before each layer), the `wall_cap_for` κ blend
+// (`massiveness_weight` smoothstep on the wall's FULL κ, 80k→100k edges),
+// the #2229 `h_ms_of_kappa` calibration (2.0 + 11.4·w), the A_m blend
+// (`a_m_blend_weight` smoothstep 165k→260k on the wall's EFFECTIVE κ), the
+// half-insulation h_ms walks (interior layers full, insulation half, 0.001
+// floor guard), the exterior-side h_tr_em walks, and the floor U-value
+// forms (film 5.88 + materials + ground 0.17 for the setpoints U; plain
+// 8.29/18.3 films for the builder's h_tr_em input) — all from the CASE
+// SPEC's own assembly data (`spec.construction.{wall,roof,floor}.layers`),
+// asserted bit-exact against the engine values.
+//
+// Exterior-walk transcription note (pin-what-IS): the builder's h_tr_em walk
+// iterates `enumerate()` computing `reverse_idx = len-1-idx`, so the FIRST
+// layer visited is `layers[0]` — which the `Construction` doc calls the
+// interior-most — and the loop breaks at the insulation. For this
+// middle-insulation stack the walk therefore rides the interior-side layer
+// at full R plus the insulation half over the exterior film, and the true
+// exterior layer never contributes; the interior-side h_ms walk adds the
+// same layer to the OTHER side. The asymmetry is observable through the
+// pinned h_tr_ms/h_tr_em pair and is pinned AS-IS (engine truth), not as
+// the walk's own comment describes it. Any re-derivation of that walk is an
+// engine-semantics change and routes as a finding, never as a pin edit.
+//
+// Teeth hygiene: every intermediate consumed by an asserted closed form is
+// recomposed IN-TEST from the spec layers — no engine-read intermediates —
+// so a mutation anywhere in the derivation interior flips the matching pin.
+//
+// Provenance: Python replication /tmp/r141_s5_replication.py — 16/16 targets
+// bit-exact against the engine-read literals at tip `e1a54a11` (loop round
+// 141 base), including the two 1-ULP-sensitive floor U-values (the
+// `r_value_total` association `r_film_int + r_materials + r_exterior`, with
+// `r_materials` as its own left-to-right sum, is load-bearing there; folding
+// the film into the layer sum flips the last digit). No engine change, no
+// re-record owed (tests-only; the battery is untouched by construction).
+// ============================================================================
+
+/// Layer R-value: δ / k (`ConstructionLayer::r_value`).
+fn s5_r_value(layer: &fluxion_core::construction::ConstructionLayer) -> f64 {
+    layer.thickness / layer.conductivity
+}
+
+/// Layer capacitance per area: ρ·δ·cp
+/// (`ConstructionLayer::thermal_capacitance_per_area`).
+fn s5_cap_per_area(layer: &fluxion_core::construction::ConstructionLayer) -> f64 {
+    layer.density * layer.thickness * layer.specific_heat
+}
+
+/// Dominant-insulation index: highest R, LAST max on ties (`Iterator::max_by`).
+fn s5_dominant_ins_idx(layers: &[fluxion_core::construction::ConstructionLayer]) -> usize {
+    let mut best = 0usize;
+    let mut best_r = s5_r_value(&layers[0]);
+    for (j, layer) in layers.iter().enumerate().skip(1) {
+        let r = s5_r_value(layer);
+        if r >= best_r {
+            best_r = r;
+            best = j;
+        }
+    }
+    best
+}
+
+/// ISO 13790 Annex C effective κ: interior-to-insulation (inclusive) layers,
+/// full ρ·c·δ each, the 100 mm active-thickness cap checked BEFORE each layer.
+fn s5_kappa_eff(layers: &[fluxion_core::construction::ConstructionLayer]) -> f64 {
+    let ins = s5_dominant_ins_idx(layers);
+    let mut total = 0.0;
+    let mut active = 0.0;
+    for (j, layer) in layers.iter().enumerate() {
+        if active >= 0.10 {
+            break;
+        }
+        if j <= ins {
+            total += s5_cap_per_area(layer);
+            active += layer.thickness;
+        }
+    }
+    total
+}
+
+/// Total κ: every layer's full ρ·c·δ, left-to-right sum.
+fn s5_kappa_full(layers: &[fluxion_core::construction::ConstructionLayer]) -> f64 {
+    let mut total = 0.0;
+    for layer in layers {
+        total += s5_cap_per_area(layer);
+    }
+    total
+}
+
+/// smoothstep01 as the engine writes it: clamp the linear term, then t²(3−2t).
+fn s5_smoothstep01(x: f64, edge0: f64, edge1: f64) -> f64 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// `massiveness_weight`: smoothstep on the FULL κ, 80k→100k edges.
+fn s5_massiveness_weight(kappa_wall_full: f64) -> f64 {
+    s5_smoothstep01(kappa_wall_full, 80_000.0, 100_000.0)
+}
+
+/// `wall_cap_for`: (1−w)·κ_eff·A + w·κ_full·A.
+fn s5_wall_cap_for(
+    layers: &[fluxion_core::construction::ConstructionLayer],
+    opaque_area: f64,
+) -> f64 {
+    let kappa_wall = s5_kappa_eff(layers);
+    let kappa_wall_full = s5_kappa_full(layers);
+    let w_mass = s5_massiveness_weight(kappa_wall_full);
+    let cap_low = kappa_wall * opaque_area;
+    let cap_high = kappa_wall_full * opaque_area;
+    (1.0 - w_mass) * cap_low + w_mass * cap_high
+}
+
+/// Interior→mass R walk: interior layers full, insulation half, no film.
+fn s5_r_interior_to_mass(layers: &[fluxion_core::construction::ConstructionLayer]) -> f64 {
+    let ins = s5_dominant_ins_idx(layers);
+    let mut r = 0.0;
+    for (idx, layer) in layers.iter().enumerate() {
+        let layer_r = s5_r_value(layer);
+        if idx < ins {
+            r += layer_r;
+        } else if idx == ins {
+            r += layer_r / 2.0;
+            break;
+        }
+    }
+    r
+}
+
+/// Exterior→mass R walk AS WRITTEN: `enumerate()` order with
+/// `reverse_idx = len−1−idx`; full R while `reverse_idx > ins`, half at it,
+/// break at the first layer inside. Visits `layers[0]` first — see the
+/// section comment.
+fn s5_r_exterior_to_mass(layers: &[fluxion_core::construction::ConstructionLayer]) -> f64 {
+    let ins = s5_dominant_ins_idx(layers);
+    let n = layers.len();
+    let mut r = 1.0 / 18.3; // EXTERIOR_FILM_COEFF_DEFAULT (the v2023 re-export)
+    for (idx, layer) in layers.iter().enumerate() {
+        let reverse_idx = n - 1 - idx;
+        let layer_r = s5_r_value(layer);
+        if reverse_idx > ins {
+            r += layer_r;
+        } else if reverse_idx == ins {
+            r += layer_r / 2.0;
+            break;
+        } else {
+            break;
+        }
+    }
+    r
+}
+
+/// `r_value_total` association: `r_film_int + r_materials + r_exterior`, with
+/// `r_materials` its own left-to-right sum (the 1-ULP-bearing shape).
+fn s5_r_total(
+    layers: &[fluxion_core::construction::ConstructionLayer],
+    film_int: f64,
+    exterior: f64,
+) -> f64 {
+    let r_film_int = 1.0 / film_int;
+    let mut r_materials = 0.0;
+    for layer in layers {
+        r_materials += s5_r_value(layer);
+    }
+    (r_film_int + r_materials) + exterior
+}
+
+/// `u_value(None, None)`: plain interior film 8.29 + materials + exterior
+/// film 18.3.
+fn s5_u_value_plain(layers: &[fluxion_core::construction::ConstructionLayer]) -> f64 {
+    1.0 / s5_r_total(layers, 8.29, 1.0 / 18.3)
+}
+
+/// `u_value(Some(Floor), None)`: floor interior film 5.88 + materials +
+/// ground coupling R 0.17.
+fn s5_u_value_floor(layers: &[fluxion_core::construction::ConstructionLayer]) -> f64 {
+    1.0 / s5_r_total(layers, 5.88, 0.17)
+}
+
+/// The 900FF spec's geometry-derived areas, composed exactly as the builder
+/// reads them: exterior faces [S, W, N, E] summed left-to-right, the south
+/// window from the spec, `opaque = (ext − window).max(0.0)`.
+fn s5_900ff_areas(spec: &fluxion_core::ashrae_cases::CaseSpec) -> (f64, f64, f64) {
+    use fluxion_core::ashrae_cases::Orientation;
+    let g = &spec.geometry[0];
+    let south = g.width * g.height;
+    let west = g.depth * g.height;
+    let north = g.width * g.height;
+    let east = g.depth * g.height;
+    let ext_area = ((south + west) + north) + east;
+    let window = spec.window_area_by_zone_and_orientation(0, Orientation::South);
+    let opaque_area = (ext_area - window).max(0.0);
+    (ext_area, window, opaque_area)
+}
+
+#[test]
+/// Contract S5a — the κ blend and the capacitances: the per-surface
+/// capacitances the 9R4C nodes carry recompose bit-exactly from the spec's
+/// own layers — wall via the `wall_cap_for` blend (weight 1.0 at
+/// κ_full 123,098.4 → the full side), roof and floor via the EFFECTIVE κ the
+/// builder multiplies by the floor area — and the lumped
+/// `thermal_capacitance` is their three-term sum in the builder's order
+/// (air cap stored separately since #1522).
+fn s5_interior_kappa_blend_and_capacitances() {
+    use fluxion::validation::ashrae140::cases::series_900::case_900ff;
+    let spec = case_900ff();
+    let m = fixture_spec_900ff();
+    let s = &m.conduction.backend.multi_node_solvers[0];
+    let (_ext_area, _window, opaque_area) = s5_900ff_areas(&spec);
+    let floor_area = spec.geometry[0].floor_area();
+
+    // Area seam: the recomposed opaque area IS the builder's input.
+    assert_eq!(
+        opaque_area,
+        m.conduction.opaque_wall_area.as_ref()[0],
+        "S5a premise: the recomposed opaque area (the spec geometry minus the south window)"
+    );
+    // Dominant-insulation seam: the middle layer (foam) on all three assemblies.
+    assert_eq!(
+        s5_dominant_ins_idx(&spec.construction.wall.layers),
+        1,
+        "S5a premise: wall insulation is the middle layer"
+    );
+    assert_eq!(
+        s5_dominant_ins_idx(&spec.construction.roof.layers),
+        1,
+        "S5a premise: roof insulation is the middle layer"
+    );
+    assert_eq!(
+        s5_dominant_ins_idx(&spec.construction.floor.layers),
+        1,
+        "S5a premise: floor insulation is the middle layer"
+    );
+    // The κ regime: the wall's full κ sits above the 100k edge.
+    let kappa_wall_full = s5_kappa_full(&spec.construction.wall.layers);
+    assert_eq!(
+        kappa_wall_full, 123098.4,
+        "S5a: the wall's full κ recomposed from the spec layers (all three ρ·δ·cp)"
+    );
+    assert_eq!(
+        s5_massiveness_weight(kappa_wall_full),
+        1.0,
+        "S5a premise: the #4072 blend weight is pinned at the heavyweight asymptote"
+    );
+
+    // The blend output: wall cap = κ_full·A (w=1), roof/floor = κ_eff·floor.
+    assert_eq!(
+        s.mass.wall.capacitance,
+        s5_wall_cap_for(&spec.construction.wall.layers, opaque_area),
+        "S5a: wall cm = the wall_cap_for blend of the spec's own layers"
+    );
+    assert_eq!(
+        s.mass.roof.capacitance,
+        s5_kappa_eff(&spec.construction.roof.layers) * floor_area,
+        "S5a: roof cm = the builder's EFFECTIVE-κ × floor-area form"
+    );
+    assert_eq!(
+        s.mass.floor.capacitance,
+        s5_kappa_eff(&spec.construction.floor.layers) * floor_area,
+        "S5a: floor cm = the builder's EFFECTIVE-κ × floor-area form"
+    );
+    assert_eq!(
+        m.mass.thermal_capacitance.as_ref()[0],
+        s5_wall_cap_for(&spec.construction.wall.layers, opaque_area)
+            + s5_kappa_eff(&spec.construction.roof.layers) * floor_area
+            + s5_kappa_eff(&spec.construction.floor.layers) * floor_area,
+        "S5a: the lumped C_m is the builder's wall+roof+floor sum in that order"
+    );
+}
+
+#[test]
+/// Contract S5b — the #2229 h_ms calibration and the A_m blend: the per-class
+/// h_tr_ms values are the half-insulation walks (interior layers full,
+/// insulation half, 0.001 floor guard) over the spec's own layers, and the
+/// lumped h_tr_ms is `h_ms_of_kappa(κ_wall_full)·A_m` with A_m on the
+/// simplified-Table-C.2 side of the blend (w_am 0 at κ_eff 5,498.4,
+/// A_m = 2.5·A_floor = 120).
+fn s5_interior_h_ms_calibration_and_am_blend() {
+    use fluxion::validation::ashrae140::cases::series_900::case_900ff;
+    let spec = case_900ff();
+    let m = fixture_spec_900ff();
+    let s = &m.conduction.backend.multi_node_solvers[0];
+    let (_ext_area, _window, opaque_area) = s5_900ff_areas(&spec);
+    let floor_area = spec.geometry[0].floor_area();
+
+    // Per-class walks:
+    assert_eq!(
+        s.mass.wall.h_tr_ms,
+        opaque_area / s5_r_interior_to_mass(&spec.construction.wall.layers).max(0.001),
+        "S5b: wall h_tr_ms = the half-insulation interior walk over the spec layers"
+    );
+    assert_eq!(
+        s.mass.roof.h_tr_ms,
+        floor_area / s5_r_interior_to_mass(&spec.construction.roof.layers).max(0.001),
+        "S5b: roof h_tr_ms = the half-insulation interior walk (the Phase 34-02 roof term)"
+    );
+    assert_eq!(
+        s.mass.floor.h_tr_ms,
+        floor_area / s5_r_interior_to_mass(&spec.construction.floor.layers).max(0.001),
+        "S5b: floor h_tr_ms = the half-insulation interior walk (the Phase 34-02 floor term)"
+    );
+
+    // The calibration + A_m blend, operation-for-operation:
+    let kappa_wall_eff = s5_kappa_eff(&spec.construction.wall.layers);
+    let kappa_roof_eff = s5_kappa_eff(&spec.construction.roof.layers);
+    let kappa_floor_eff = s5_kappa_eff(&spec.construction.floor.layers);
+    let kappa_wall_full = s5_kappa_full(&spec.construction.wall.layers);
+    let a_kappa_sum =
+        (opaque_area * kappa_wall_eff) + (floor_area * (kappa_roof_eff + kappa_floor_eff));
+    let a_kappa_sq_sum = (opaque_area * kappa_wall_eff * kappa_wall_eff)
+        + (floor_area * (kappa_roof_eff * kappa_roof_eff + kappa_floor_eff * kappa_floor_eff));
+    let a_m_table = 2.5 * floor_area;
+    let a_m_weighted = if a_kappa_sq_sum > 0.0 {
+        (a_kappa_sum * a_kappa_sum) / a_kappa_sq_sum
+    } else {
+        a_m_table
+    };
+    let w_am = s5_smoothstep01(kappa_wall_eff, 165_000.0, 260_000.0);
+    let a_m = (1.0 - w_am) * a_m_table + w_am * a_m_weighted;
+    let h_ms_coeff = 2.0 + (13.4 - 2.0) * s5_massiveness_weight(kappa_wall_full);
+    assert_eq!(
+        h_ms_coeff, 13.4,
+        "S5b premise: the #2229 calibration sits at its heavyweight endpoint"
+    );
+    assert_eq!(
+        w_am, 0.0,
+        "S5b premise: the A_m blend sits on the simplified side (κ_eff < 165k)"
+    );
+    assert_eq!(
+        m.conduction.h_tr_ms.as_ref()[0],
+        h_ms_coeff * a_m,
+        "S5b: the lumped h_tr_ms = h_ms_of_kappa(κ_full)·A_m recomposed (Issue #821 Probe A)"
+    );
+}
+
+#[test]
+/// Contract S5c — the h_tr_em walks and the floor U forms: the per-class
+/// exterior walks ride layers[0] full + insulation half over the 18.3 film
+/// (the as-written reversed-index convention — see the section comment), the
+/// floor's exterior coupling goes through the builder's own
+/// `u_value(None, None)` reciprocal, the setpoints floor U carries the
+/// floor-film/ground-resistance variant (5.88 + 0.17), and the lumped
+/// h_tr_em is the Issue #831 Eq. 64 series remainder 1/(1/h_op − 1/h_ms).
+fn s5_interior_h_em_walks_and_floor_u_forms() {
+    use fluxion::validation::ashrae140::cases::series_900::case_900ff;
+    let spec = case_900ff();
+    let m = fixture_spec_900ff();
+    let s = &m.conduction.backend.multi_node_solvers[0];
+    let (_ext_area, _window, opaque_area) = s5_900ff_areas(&spec);
+    let opaque_area_ext = opaque_area; // single zone, no partitions: same arithmetic
+    let floor_area = spec.geometry[0].floor_area();
+
+    assert_eq!(
+        s.mass.wall.h_tr_em,
+        opaque_area_ext / s5_r_exterior_to_mass(&spec.construction.wall.layers),
+        "S5c: wall h_tr_em = the as-written exterior walk over the spec layers"
+    );
+    assert_eq!(
+        s.mass.roof.h_tr_em,
+        floor_area / s5_r_exterior_to_mass(&spec.construction.roof.layers),
+        "S5c: roof h_tr_em = the as-written exterior walk"
+    );
+    // Floor: the builder divides by the reciprocal of the plain-film U:
+    // h = A / (1 / u_plain).
+    assert_eq!(
+        s.mass.floor.h_tr_em,
+        floor_area / (1.0 / s5_u_value_plain(&spec.construction.floor.layers)),
+        "S5c: floor h_tr_em = floor_area / (1 / u_value(None, None)) — the reciprocal form"
+    );
+    // The setpoints floor U: film 5.88 + materials + ground 0.17, and the
+    // h_tr_floor that consumes it:
+    assert_eq!(
+        m.setpoints.floor_u_value,
+        s5_u_value_floor(&spec.construction.floor.layers),
+        "S5c: setpoints floor U = u_value(Some(Floor), None) recomposed (Issue #588 ground coupling)"
+    );
+    assert_eq!(
+        m.conduction.h_tr_floor.as_ref()[0],
+        s5_u_value_floor(&spec.construction.floor.layers) * floor_area,
+        "S5c: h_tr_floor = the setpoints floor U × floor area"
+    );
+    // The lumped h_tr_em: Eq. 64 series remainder off the plain-film U pair,
+    // with h_ms_iso recomposed IN-TEST (not engine-read — teeth hygiene):
+    let h_op = (s5_u_value_plain(&spec.construction.wall.layers) * opaque_area_ext)
+        + (s5_u_value_plain(&spec.construction.roof.layers) * floor_area);
+    let h_ms_iso = {
+        let kw = s5_kappa_eff(&spec.construction.wall.layers);
+        let kr = s5_kappa_eff(&spec.construction.roof.layers);
+        let kf = s5_kappa_eff(&spec.construction.floor.layers);
+        let a_m = {
+            let a_kappa_sum = (opaque_area * kw) + (floor_area * (kr + kf));
+            let a_kappa_sq_sum = (opaque_area * kw * kw) + (floor_area * (kr * kr + kf * kf));
+            let table = 2.5 * floor_area;
+            let weighted = if a_kappa_sq_sum > 0.0 {
+                (a_kappa_sum * a_kappa_sum) / a_kappa_sq_sum
+            } else {
+                table
+            };
+            let w = s5_smoothstep01(kw, 165_000.0, 260_000.0);
+            (1.0 - w) * table + w * weighted
+        };
+        (2.0 + (13.4 - 2.0) * s5_massiveness_weight(s5_kappa_full(&spec.construction.wall.layers)))
+            * a_m
+    };
+    let h_em = if h_op > 0.0 && h_op < h_ms_iso {
+        1.0 / (1.0 / h_op - 1.0 / h_ms_iso)
+    } else {
+        0.0 // unreachable at this spec; the branch shape is transcribed verbatim
+    };
+    assert_eq!(
+        m.conduction.h_tr_em.as_ref()[0],
+        h_em.max(0.1),
+        "S5c: the lumped h_tr_em = the Issue #831 Eq. 64 series remainder (walls+roof h_op)"
+    );
+    // The internal node: furniture-factor derivation (the CaseBuilder default
+    // building type is Residential → 0.3), with the SOLVER node's own h_tr_me
+    // left at its default 0.0 — the 131.04 lands on the MODEL's mass vector
+    // only after the solvers are built (the B2/S4 stale-early-read seam).
+    assert_eq!(
+        spec.building_type,
+        fluxion_core::ashrae_cases::BuildingType::Residential,
+        "S5c premise: the CaseBuilder default building type"
+    );
+    let a_int = 0.3 * floor_area;
+    assert_eq!(
+        m.mass.h_tr_me.as_ref()[0],
+        9.1 * a_int,
+        "S5c: the model-level h_tr_me = 9.1·(f_furniture·floor_area) (Issue #1213 calibration)"
+    );
+    assert_eq!(
+        s.mass.internal.capacitance,
+        floor_area * 55_000.0 * 0.3,
+        "S5c: the internal node cm = A_floor·55,000·f_furniture (Issue #1 formula)"
+    );
+    assert_eq!(
+        s.mass.internal.h_tr_me, 0.0,
+        "S5c premise: the SOLVER's internal h_tr_me is the default 0.0 (read before the model vector is filled)"
+    );
+}
+// ============================================================================
 // Round 141 — the Case-950FF night-vent spec-path arm (the r135 Case-900FF
 // template applied to the vent case, the pin backlog's second item).
 //
