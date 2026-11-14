@@ -58,10 +58,15 @@ fn solve_linear_system(a: &mut [Vec<f64>], b: &mut [f64]) -> Vec<f64> {
 /// temperatures (incl. `zone_temperature` / `surface_temperature` / the
 /// per-surface exterior driving temperatures — the setters and the
 /// per-surface write-back mutate all of them), the lumped-mass pair, and
-/// the predictive controller's previous zone temperature. Written once per
-/// step before the solver loop; consumed only on a #4495/#4500 rejection
-/// path by [`restore_pre_step_state`]. Accepted steps never read the
-/// snapshot — one write-pass into pooled buffers, no allocation.
+/// the predictive controller's previous zone temperature. [R142] the HVAC
+/// equipment's part-load ratio joins the snapshot: `update_state` runs in
+/// the equipment dispatch block before every rejection guard, so the r136
+/// round's documented out-of-scope bound ("HVAC equipment PLR state isn't
+/// rolled back") is closed — a rejected step advances nothing, period.
+/// Written once per step before the solver loop; consumed only on a
+/// #4495/#4500 rejection path by [`restore_pre_step_state`]. Accepted
+/// steps never read the snapshot — one write-pass into pooled buffers, no
+/// allocation.
 fn snapshot_pre_step_state<T: ContinuousTensor<f64> + Clone + AsRef<[f64]>>(
     data: &crate::sim::thermal_model_data::ThermalModelData<T>,
     scratch: &mut crate::sim::thermal_model_scratch::PhysicsScratch9r4c,
@@ -101,6 +106,7 @@ fn snapshot_pre_step_state<T: ContinuousTensor<f64> + Clone + AsRef<[f64]>>(
     scratch.mass_snap[scratch.mass_snap_len0..]
         .copy_from_slice(&data.mass.previous_mass_temperatures.as_ref()[..scratch.mass_snap_len1]);
     scratch.ctrl_prev_snap = data.hvac.predictive_controller.previous_zone_temp;
+    scratch.plr_snap = data.hvac.hvac_equipment.as_ref().map(|e| e.current_plr());
 }
 
 /// [R136 rollback] Restore the pre-step snapshot on a rejection path, so a
@@ -109,7 +115,9 @@ fn snapshot_pre_step_state<T: ContinuousTensor<f64> + Clone + AsRef<[f64]>>(
 /// The r134 finding (the additive-mode solver advancing non-uniformly
 /// through a rejected step, permanently poisoning every subsequent step)
 /// is the defect this closes; the r133 half-applied-step precedent is the
-/// in-loop ruling it follows. Call before `return_9r4c` + `return 0.0`.
+/// in-loop ruling it follows. [R142] the equipment part-load ratio joins
+/// the restored state, closing the r136 round's documented out-of-scope
+/// bound. Call before `return_9r4c` + `return 0.0`.
 fn restore_pre_step_state<
     T: ContinuousTensor<f64> + Clone + AsRef<[f64]> + AsMut<[f64]> + From<VectorField>,
 >(
@@ -149,6 +157,11 @@ fn restore_pre_step_state<
         VectorField::from_smallvec(smallvec::SmallVec::from_slice(&scratch.mass_snap[len0..]));
     data.mass.previous_mass_temperatures = T::from(restored_prev);
     data.hvac.predictive_controller.previous_zone_temp = scratch.ctrl_prev_snap;
+    if let Some(plr) = scratch.plr_snap {
+        if let Some(equipment) = data.hvac.hvac_equipment.as_mut() {
+            equipment.set_current_plr(plr);
+        }
+    }
 }
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
@@ -1603,9 +1616,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // [R136] hoisted ABOVE the controlled-temperature commit and the
         // sensor-node step: the guard's own contract says "reject before
         // any ... state commit", and both of those wrote state ahead of it.
-        // Nothing restores here — the #4495 controlled-temperature guard
-        // above already restored on its rejection path, and nothing
-        // mutates between the two checks.
+        // [R142 rollback] this path now restores the pre-step snapshot
+        // itself: when it fires, the #4495 controlled-temperature guard
+        // above PASSED (so its own restore never ran), while the solver
+        // loop, the lumped-mass commit and the equipment PLR update all
+        // sit before it — the R136 comment claimed "nothing restores
+        // here ... and nothing mutates between the two checks", which is
+        // true only of the span between the two checks, not of the path
+        // (its rejection left the mass pair committed and the solver
+        // nodes advanced — contract H2's engine-probe literals).
         {
             // The returned/accumulated energy scales with the SUM of the
             // zone demands, not the per-zone max — bound the product with
@@ -1625,6 +1644,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                      — inputs outside the solver's finite envelope; step degraded \
                      to 0.0 kWh, state untouched"
                 );
+                // [R142 rollback] the solver loop, the lumped-mass commit
+                // and the equipment PLR update all ran before this guard;
+                // restore the pre-step snapshot so the rejection advances
+                // nothing (contract H1/H2).
+                restore_pre_step_state(&mut self.0, &scratch);
                 self.0.hvac.scratch_pool.return_9r4c(scratch);
                 return 0.0;
             }

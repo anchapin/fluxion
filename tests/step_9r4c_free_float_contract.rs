@@ -3776,3 +3776,309 @@ fn spec_path_950ff_vent_collapse_twins() {
     assert_eq!(c.mass.mass_temperatures.as_ref()[0], 20.269011527775067);
     assert_eq!(c.setpoints.temperatures.as_ref()[0], 18.344345521157422);
 }
+
+// ===== R142: the HVAC-mode rejection-path rollback family =====
+//
+// The r136 step-level transaction (#4795) snapshot/restore covers the
+// solver nodes, the lumped-mass pair and the predictive controller's
+// previous zone temperature, and its contracts (A7/A8/A8b/A8c above)
+// close the r134 additive-vs-PR contrast as history. Two seams remained
+// outside that rollback, both pinned here red-first at the r142 tip:
+//
+//   1. the #4500 demand-overflow rejection path restored NOTHING — the
+//      solver loop, the lumped-mass commit and the controller advance
+//      all persisted through the rejection while the guard's own log
+//      line claimed "state untouched" (its R136 hoist comment only
+//      justified not re-restoring BETWEEN the #4495 t_i_act check and
+//      this guard; everything before that check was never restored on
+//      this path);
+//   2. the equipment part-load ratio mutated inside the equipment
+//      dispatch block (`update_state`) BEFORE every guard, outside the
+//      r136 snapshot scope — the r136 round documented exactly this
+//      state as its stated bound ("HVAC equipment PLR state isn't
+//      rolled back (unreachable in the fixtures and under physical
+//      inputs)"). The bound closed in r142: under the guard family's
+//      own invalid-input domain the PLR advance is fixture-reachable,
+//      and the verdict semantics ("a rejected step advances nothing,
+//      period") put it inside the snapshot.
+
+use fluxion::sim::hvac::{AnyEquipment, Boiler, VariableCapacityEquipment};
+
+/// The r134-suite free-float fixture flipped to HVAC mode (`free_float =
+/// false`, per-zone setpoint vectors raised to 30/26 so the ideal-loads
+/// demand fires and the predictive controller leaves Off exactly once —
+/// the PLR-observable window; the demand branch reads the per-zone
+/// `heating_setpoints` VECTOR, not the scalar, so the scalar fallback at
+/// 22.0 is inert here). Same solver construction as `fixture_9r4c`:
+/// selector NineRFourC, ParallelResistance production default (#1859).
+fn fixture_9r4c_hvac(equipment: bool) -> ThermalModel<VectorField> {
+    let mut m = ThermalModel::<VectorField>::new(1);
+    m.setpoints.zone_area = VectorField::from_scalar(48.0, 1);
+    m.setpoints.zone_volume = VectorField::from_scalar(129.6, 1);
+    m.setpoints.heating_setpoint = 22.0;
+    m.setpoints.cooling_setpoint = 26.0;
+    m.setpoints.heating_setpoints = VectorField::from_scalar(30.0, 1);
+    m.setpoints.cooling_setpoints = VectorField::from_scalar(26.0, 1);
+    m.hvac.predictive_controller.heating_setpoint = 30.0;
+    m.hvac.predictive_controller.cooling_setpoint = 26.0;
+    m.setpoints.temperatures = VectorField::from_scalar(20.0, 1);
+    m.setpoints.air_density = VectorField::from_scalar(1.2, 1);
+    m.setpoints.heat_capacity = VectorField::from_scalar(1005.0, 1);
+    m.hvac.free_float = false;
+    m.conduction.h_tr_em = VectorField::new(vec![0.32 * 48.0]);
+    m.conduction.h_tr_w = VectorField::new(vec![3.0 * 12.0]);
+    m.conduction.h_tr_floor = VectorField::new(vec![0.15 * 48.0]);
+    m.conduction.h_ve = VectorField::new(vec![1.2 * 1000.0 * (0.5 * (48.0 * 2.7) / 3600.0)]);
+    m.conduction.h_tr_ms = VectorField::new(vec![1000.0]);
+    m.mass.thermal_capacitance = VectorField::new(vec![48.0 * 150_000.0]);
+    m.mass.mass_temperatures = VectorField::from_scalar(20.0, 1);
+    m.setpoints.loads = VectorField::from_scalar(0.0, 1);
+    m.solar.solar_gains = VectorField::new(vec![0.0]);
+    m.solar.opaque_solar_gains = VectorField::new(vec![0.0]);
+    m.hvac.hvac_heating_capacity = 5000.0;
+    m.hvac.hvac_cooling_capacity = 5000.0;
+    m.hvac.thermal_selector.zone_solver = ZoneSolverKind::NineRFourC;
+    m.conduction.ground_temperature = Box::new(ConstantGroundTemperature::new(T_G));
+    if equipment {
+        m.hvac.hvac_equipment = Some(AnyEquipment::Boiler(Boiler::new(
+            "r142-rollback-boiler".to_string(),
+            5000.0,
+            0.9,
+            0.0,
+        )));
+    }
+    m.update_optimization_cache();
+    let wall = ThermalMassNode::new(18.0, 4.0e7, 50.0, 20.0);
+    let roof = ThermalMassNode::new(22.0, 2.0e7, 40.0, 15.0);
+    let floor = ThermalMassNode::new(20.0, 3.0e7, 60.0, 10.0);
+    let internal = ThermalMassNode::new(20.0, 1.0e7, 10.0, 5.0).with_h_tr_me(100.0);
+    let solver = MultiNodeSolver::new_with_mode(
+        120.0,
+        wall,
+        roof,
+        floor,
+        internal,
+        MassAirCouplingMode::ParallelResistance,
+    );
+    m.conduction.backend.multi_node_solvers = vec![solver];
+    m
+}
+
+#[test]
+/// Contract H1 — the #4500 rejection advances NOTHING (HVAC mode). An
+/// extreme-but-finite `dt` — the guard's own stated envelope ("the ideal
+/// loads can overflow to ±inf for extreme-but-finite `dt` even though
+/// every input passed the finite checks and the #4495 temperature guards
+/// passed") — makes `w_bound * dt` overflow to inf, so the step is
+/// rejected with 0.0 kWh AFTER the solver loop ran and the lumped mass
+/// committed. [R142 rollback] every snapshot-scope durable field
+/// restores to its step-1 value (engine-probe literals). At the pre-fix
+/// tip this step left the mass committed at 13.130030240901489, the
+/// solver nodes at 15.531914911447066 / 16.66666667344683 /
+/// 26.59999805605751 / 25.469752620844055, and the solver's derived
+/// surface temperature overflowed to -inf — all persisting through the
+/// rejection under a log line that claimed "state untouched".
+fn rejected_dt_overflow_advances_nothing_hvac() {
+    let mut m = fixture_9r4c_hvac(false);
+    m.step_physics(0, T_OUT, DT);
+    m.step_physics(1, T_OUT, DT);
+    let kwh = m.step_physics(2, T_OUT, 1.0e306);
+    assert_eq!(kwh, 0.0, "the #4500-rejected step returns exactly 0.0 kWh");
+    assert_eq!(
+        m.mass.mass_temperatures.as_ref()[0],
+        19.586766041249877,
+        "the lumped-mass commit rolls back (pre-fix it stayed at the committed advance)"
+    );
+    assert_eq!(
+        m.mass.previous_mass_temperatures.as_ref()[0],
+        19.79244954670227,
+        "the mass pair rolls back verbatim (pre-fix the commit had shifted it)"
+    );
+    let s = &m.conduction.backend.multi_node_solvers[0];
+    assert_eq!(
+        s.mass.wall.temperature, 17.94423970468105,
+        "the solver wall node rolls back (pre-fix it stayed at the dt-poisoned advance)"
+    );
+    assert_eq!(s.mass.roof.temperature, 21.86174829383185);
+    assert_eq!(s.mass.floor.temperature, 20.030989666964107);
+    assert_eq!(s.mass.internal.temperature, 20.391173887693007);
+    assert_eq!(s.zone_temperature, 30.0);
+    assert_eq!(
+        s.surface_temperature, 14.468034357149172,
+        "the solver's derived surface temperature rolls back (pre-fix it overflowed to -inf)"
+    );
+    assert!(
+        s.surface_temperature.is_finite(),
+        "the restored solver state is finite"
+    );
+    assert_eq!(
+        m.hvac.predictive_controller.previous_zone_temp, 30.0,
+        "the controller's previous zone temperature rolls back"
+    );
+    assert_eq!(
+        m.setpoints.temperatures.as_ref()[0],
+        30.0,
+        "the committed zone air is untouched (it was written by step 1, not step 2)"
+    );
+}
+
+#[test]
+/// Contract H2 — the #4500 rollback's RECOVERY arm (HVAC mode): a
+/// demand-overflow-rejected step leaves no trace, so the model resumes
+/// exactly as if the bad step never happened. Model A runs steps 0, 1,
+/// the dt=1e306 rejection at 2, then 3; model C skips the bad step
+/// (0, 1, 3). Both compose step 3 from the identical post-step-1 state,
+/// so every durable field must agree bit-exactly. [Pre-fix, A carried
+/// step-2's committed mass and dt-poisoned solver nodes through: mass
+/// 12.984276208837787 vs the twin's 19.382932690163447, wall
+/// 15.531914911358891 vs 17.932309998359347, step-3 energy
+/// 1.8391507964573286 vs 1.860206... kWh — the zone kept integrating
+/// from poisoned state.]
+fn rejected_dt_overflow_leaves_no_trace_hvac() {
+    let mut a = fixture_9r4c_hvac(false);
+    a.step_physics(0, T_OUT, DT);
+    a.step_physics(1, T_OUT, DT);
+    assert_eq!(
+        a.step_physics(2, T_OUT, 1.0e306),
+        0.0,
+        "the rejected step returns exactly 0.0 kWh"
+    );
+    let kwh_a = a.step_physics(3, T_OUT, DT);
+    let mut c = fixture_9r4c_hvac(false);
+    c.step_physics(0, T_OUT, DT);
+    c.step_physics(1, T_OUT, DT);
+    let kwh_c = c.step_physics(3, T_OUT, DT);
+    // Twin literals (fix-independent: C never rejects).
+    assert_eq!(c.mass.mass_temperatures.as_ref()[0], 19.382932690163447);
+    assert_eq!(
+        c.mass.previous_mass_temperatures.as_ref()[0],
+        19.586766041249877
+    );
+    // Every durable field bit-exact.
+    assert_eq!(kwh_a, kwh_c, "step-3 energy composes identically");
+    assert_eq!(
+        a.mass.mass_temperatures.as_ref()[0],
+        c.mass.mass_temperatures.as_ref()[0],
+        "the recovered lumped mass == the never-poisoned twin's"
+    );
+    assert_eq!(
+        a.mass.previous_mass_temperatures.as_ref()[0],
+        c.mass.previous_mass_temperatures.as_ref()[0]
+    );
+    let (sa, sc) = (
+        &a.conduction.backend.multi_node_solvers[0],
+        &c.conduction.backend.multi_node_solvers[0],
+    );
+    assert_eq!(sa.mass.wall.temperature, sc.mass.wall.temperature);
+    assert_eq!(sa.mass.roof.temperature, sc.mass.roof.temperature);
+    assert_eq!(sa.mass.floor.temperature, sc.mass.floor.temperature);
+    assert_eq!(sa.mass.internal.temperature, sc.mass.internal.temperature);
+    assert_eq!(sa.zone_temperature, sc.zone_temperature);
+    assert_eq!(sa.surface_temperature, sc.surface_temperature);
+    assert_eq!(
+        a.hvac.predictive_controller.previous_zone_temp,
+        c.hvac.predictive_controller.previous_zone_temp
+    );
+    assert_eq!(
+        a.setpoints.temperatures.as_ref()[0],
+        c.setpoints.temperatures.as_ref()[0]
+    );
+}
+
+#[test]
+/// Contract H3 — the equipment PLR restores through a #4495 NaN-input
+/// rejection (HVAC mode with a Boiler). The equipment dispatch runs
+/// `update_state` BEFORE every guard; a NaN outdoor temperature drives
+/// the multi-node air balance non-finite (deadband comparison q = 0.0,
+/// t_act = the NaN free temperature), the #4495 mass-node guard rejects
+/// with the r136 rollback restoring the thermal fields — and the
+/// Off-mode `update_state` PLR zeroing (0.37575697542907543 -> 0.0)
+/// persisted through the rejection at the pre-fix tip. That is exactly
+/// the state r136 documented as its out-of-scope bound ("HVAC equipment
+/// PLR state isn't rolled back (unreachable in the fixtures and under
+/// physical inputs)"); this fixture reaches it under the guard family's
+/// own invalid-input domain, and the verdict semantics ("a rejected
+/// step advances nothing, period") put the PLR inside the snapshot.
+fn rejected_nan_input_restores_equipment_plr() {
+    let mut m = fixture_9r4c_hvac(true);
+    m.step_physics(0, T_OUT, DT);
+    // Step 0 fired the Boiler (Heating; the committed air sits at the
+    // 30 °C setpoint — the engine-probe literal below).
+    assert_eq!(
+        m.hvac.hvac_equipment.as_ref().map(|e| e.current_plr()),
+        Some(0.37575697542907543),
+        "step 0's Heating dispatch fired the Boiler (premise)"
+    );
+    let kwh = m.step_physics(1, f64::NAN, DT);
+    assert_eq!(kwh, 0.0, "the #4495-rejected step returns exactly 0.0 kWh");
+    assert_eq!(
+        m.mass.mass_temperatures.as_ref()[0],
+        19.79244954670227,
+        "the #4495 thermal rollback (green since r136)"
+    );
+    assert_eq!(
+        m.hvac.hvac_equipment.as_ref().map(|e| e.current_plr()),
+        Some(0.37575697542907543),
+        "the fired PLR restores — pre-fix it read 0.0 through the rejection"
+    );
+}
+
+#[test]
+/// Contract H4 — the equipment recovery twin: a NaN-rejected step
+/// leaves no trace in the thermal state AND the equipment state, so the
+/// model resumes exactly as if it never happened. [Green at the tip by
+/// construction: the #4495 rollback already restores the thermal fields,
+/// and the next accepted step's own Off-mode dispatch overwrites the
+/// PLR — this twin is the standing union guarantee, not a red-first
+/// witness; H3 carries the red.]
+fn rejected_nan_step_leaves_no_trace_with_equipment() {
+    let mut a = fixture_9r4c_hvac(true);
+    a.step_physics(0, T_OUT, DT);
+    assert_eq!(
+        a.step_physics(1, f64::NAN, DT),
+        0.0,
+        "the rejected step returns exactly 0.0 kWh"
+    );
+    a.step_physics(2, T_OUT, DT);
+    let mut c = fixture_9r4c_hvac(true);
+    c.step_physics(0, T_OUT, DT);
+    c.step_physics(2, T_OUT, DT);
+    // Twin literals (fix-independent: C never rejects).
+    assert_eq!(c.mass.mass_temperatures.as_ref()[0], 19.586766041249877);
+    assert_eq!(
+        c.mass.previous_mass_temperatures.as_ref()[0],
+        19.79244954670227
+    );
+    // Every durable field bit-exact — thermal and equipment.
+    assert_eq!(
+        a.mass.mass_temperatures.as_ref()[0],
+        c.mass.mass_temperatures.as_ref()[0]
+    );
+    assert_eq!(
+        a.mass.previous_mass_temperatures.as_ref()[0],
+        c.mass.previous_mass_temperatures.as_ref()[0]
+    );
+    let (sa, sc) = (
+        &a.conduction.backend.multi_node_solvers[0],
+        &c.conduction.backend.multi_node_solvers[0],
+    );
+    assert_eq!(sa.mass.wall.temperature, sc.mass.wall.temperature);
+    assert_eq!(sa.mass.roof.temperature, sc.mass.roof.temperature);
+    assert_eq!(sa.mass.floor.temperature, sc.mass.floor.temperature);
+    assert_eq!(sa.mass.internal.temperature, sc.mass.internal.temperature);
+    assert_eq!(sa.zone_temperature, sc.zone_temperature);
+    assert_eq!(sa.surface_temperature, sc.surface_temperature);
+    assert_eq!(
+        a.hvac.predictive_controller.previous_zone_temp,
+        c.hvac.predictive_controller.previous_zone_temp
+    );
+    assert_eq!(
+        a.setpoints.temperatures.as_ref()[0],
+        c.setpoints.temperatures.as_ref()[0]
+    );
+    assert_eq!(
+        a.hvac.hvac_equipment.as_ref().map(|e| e.current_plr()),
+        c.hvac.hvac_equipment.as_ref().map(|e| e.current_plr()),
+        "the recovered equipment PLR == the never-poisoned twin's"
+    );
+}
