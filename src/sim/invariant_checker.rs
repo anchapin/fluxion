@@ -439,6 +439,125 @@ impl InvariantChecker {
                     .as_ref()
                     .and_then(|v| v.get(i));
                 if let Some(c) = r77_rec {
+                    // [Round 144 — the FLX_R144_TS_SUBSTATE arm's 22-slot
+                    // layout: per outer sub-step `[A, B_0, B_1, B_2,
+                    // b_comp, bl_m_comp, d_res, ups_c, sig_c, q_c, bl_s_c,
+                    // tau_c (×3)]`. The sub-step mass advance ran the
+                    // t_s-first surface sub-state at dt_m (the hourly D5
+                    // structure), so the committed composite is the
+                    // composed 4-d affine map over x = [tm, ts_0..2]; the
+                    // replay carries the surface triple and composes the
+                    // mass/surface response recurrence under the probe.
+                    // At Δ = 0 the replay consumes the recorded slots
+                    // verbatim with the same left-to-right expressions the
+                    // commit used (residual-zero, #3297); under the
+                    // artificial-gain probe the load delta routes through
+                    // the recorded bl rows and the air response through
+                    // the recorded tau rows plus the air record's h3od
+                    // slot (the arm's composed mass-row air gain). Sub-step
+                    // count comes from the paired air record (n = len/9),
+                    // which the arm's gate guarantees present.]
+                    let n_air144 = model
+                        .mass
+                        .r77_air_substep_coeffs
+                        .as_ref()
+                        .and_then(|v| v.get(i))
+                        .filter(|air| air.len() % 9 == 0)
+                        .map(|air| air.len() / 9);
+                    if let Some(n) = n_air144 {
+                        if c.len() == n * 22 {
+                            let ts_prev144 = model.mass.r70_surface_node_temperatures_prev.as_ref();
+                            if let Some(tsp) = ts_prev144 {
+                                let tsp = tsp.as_ref();
+                                if tsp.len() >= 3 * i + 3 {
+                                    let air = model
+                                        .mass
+                                        .r77_air_substep_coeffs
+                                        .as_ref()
+                                        .and_then(|v| v.get(i))
+                                        .unwrap();
+                                    let mut t_comp = t_mass_prev;
+                                    let mut ts = [tsp[3 * i], tsp[3 * i + 1], tsp[3 * i + 2]];
+                                    let mut r_air = 0.0f64;
+                                    let mut r_m = 0.0f64;
+                                    let mut r_s = [0.0f64; 3];
+                                    for k in 0..n {
+                                        let base = 22 * k;
+                                        let a = c[base];
+                                        let b0 = c[base + 1];
+                                        let b1 = c[base + 2];
+                                        let b2 = c[base + 3];
+                                        let b_c = c[base + 4];
+                                        let bl_m = c[base + 5];
+                                        let (ra, rm) = (r_air, r_m);
+                                        if load_delta == 0.0 {
+                                            let tm_old_c = t_comp;
+                                            let ts_old_c = ts;
+                                            t_comp = a * tm_old_c
+                                                + b0 * ts_old_c[0]
+                                                + b1 * ts_old_c[1]
+                                                + b2 * ts_old_c[2]
+                                                + b_c;
+                                            for cc in 0..3 {
+                                                let sb = base + 7 + 5 * cc;
+                                                ts[cc] = c[sb] * tm_old_c
+                                                    + c[sb + 1] * ts_old_c[cc]
+                                                    + c[sb + 2];
+                                            }
+                                        } else {
+                                            // [The counterfactual trajectory
+                                            // composes the perturbed state;
+                                            // the response pair stays in
+                                            // per-watt units (the legacy
+                                            // convention: Δ enters only
+                                            // where a response feeds a
+                                            // state).]
+                                            let tm_old_c = t_comp;
+                                            let ts_old_c = ts;
+                                            t_comp = a * tm_old_c
+                                                + b0 * ts_old_c[0]
+                                                + b1 * ts_old_c[1]
+                                                + b2 * ts_old_c[2]
+                                                + b_c
+                                                + bl_m * load_delta
+                                                + air[9 * k + 4] * ra * load_delta;
+                                            for cc in 0..3 {
+                                                let sb = base + 7 + 5 * cc;
+                                                ts[cc] = c[sb] * tm_old_c
+                                                    + c[sb + 1] * ts_old_c[cc]
+                                                    + c[sb + 2]
+                                                    + c[sb + 3] * load_delta
+                                                    + c[sb + 4] * ra * load_delta;
+                                            }
+                                            let r_air_new = air[9 * k] * ra
+                                                + air[9 * k + 1] * rm
+                                                + air[9 * k + 2];
+                                            let r_m_new = a * rm
+                                                + b0 * r_s[0]
+                                                + b1 * r_s[1]
+                                                + b2 * r_s[2]
+                                                + bl_m
+                                                + air[9 * k + 4] * ra;
+                                            let mut r_s_new = [0.0f64; 3];
+                                            for cc in 0..3 {
+                                                let sb = base + 7 + 5 * cc;
+                                                r_s_new[cc] = c[sb] * rm
+                                                    + c[sb + 1] * r_s[cc]
+                                                    + c[sb + 3]
+                                                    + c[sb + 4] * ra;
+                                            }
+                                            r_air = r_air_new;
+                                            r_m = r_m_new;
+                                            r_s = r_s_new;
+                                        }
+                                    }
+                                    let denom_final = c[22 * (n - 1) + 6];
+                                    let r = (t_mass - t_comp) * denom_final;
+                                    return r;
+                                }
+                            }
+                        }
+                    }
                     // Record layout: `[a_0, b_0, d_0, bl_0, a_1, b_1, d_1,
                     // bl_1, …]` — four entries per sub-step (`d_k` is that
                     // sub-step's CN denominator in W/K; the last sub-step's
