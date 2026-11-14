@@ -567,3 +567,47 @@ repo_sha=7620b68b, fabric 600 5r1c 4.692/5.962 parity 0.7785/1.1965 +
 9r4c/900/950 unchanged, §6/§7 pins + CSVs, hotloop both goldens, grid
 baseline); contracts 14/14 across four default-parallelism runs; blind
 exact; formalized as §LIMIT-45. Nothing tuned.
+
+## Round 143 (2026-11-15) — the S5 exterior-walk correction (#2613 convention wired into the builder)
+
+The r141 S5 suite pinned the builder's as-written exterior-to-mass walk values
+as engine truth and routed any re-derivation as a finding. The finding landed
+this round (branch `physics/r143-s5-exterior-walk`, fix commit `f49a057e`): the
+`from_spec` builder's three inline `h_tr_em` walks (wall, roof, south wall)
+still carried the reversed-index visit issue #2613 fixed in
+`compute_r_exterior_to_mass` (commit `28cecde7`, PR #2653) — the loop enumerated
+`layers[idx]` in interior-first order while comparing `reverse_idx = n-1-idx`,
+so the interior-most layer's R folded into the exterior path and the true
+exterior layer never contributed. The fixed `pub` helper had no production
+caller; its own regression test pins the corrected Case 600 wall resistance
+0.943930 m²K/W vs the buggy 0.954645 on the helper alone. The builder walks now
+call the helper (single source of truth, ISO 13790 Annex C half-insulation
+rule).
+
+Per-assembly effect (Python replication `/tmp/r143_walk_replication.py`, both
+walks operation-for-operation on the `Materials`/`Assemblies` engine literals):
+600-series wall R 0.9546448087431695 → 0.9439305230288837, roof
+1.5146448087431694 → 1.587859094457455; 900-series wall R 0.8876805230288836 →
+1.0194732401157183 (~12.9 % less exterior-to-mass conductance), roof
+1.5129412689201605 → 1.577859094457455. The lumped Eq. 64 `h_tr_em` is
+u_value-composed and does not move; the low-mass per-class route does not
+consume these walks (the byte-identical low-mass rows are the non-interference
+proof).
+
+Movement (strict re-record `_doc_round143`, canonical DRYCOLD, CI-verbatim
+battery): ff_900ff_min/max RE-ENTER their bands (118.57/3.07 pp → 0.00 — 900FF
+in band on both ends for the first time; known_fail → pass); 9 conditioned
+high-mass rows regress beyond the 5 pp tolerance and are re-recorded honestly
+(810 H/C, 900 H, 910/920/930/940 H, 950 C, 960 C); tracked moves 960 H, 970 H,
+970 C improves, 950FF −15.96/39.01 → −15.85/39.11. Post-record checker: 14 PASS
+/ 28 KNOWN-FAIL / 0 REGRESSION (the new canonical partition). Nothing tuned —
+the movement is the recorded cost and benefit of the corrected half-insulation
+conductance, per the fidelity-first direction. Contracts
+`tests/s5_exterior_walk_correction_contract.rs` red-first at the unfixed tip
+(assert_ne guards against the as-written values); teeth ×3 each 4/4 red (film
+dropped / half-rule dropped / forward-iteration visit). Full battery green
+(strict JSON `_doc_round143`, output-diff CSV 21 rows, fabric 900/950 rows,
+§6/§7 pins + CSV re-emits, hotloop/grid goldens adjudicated). The r141
+exterior-walk pin-what-IS note is superseded (the asymmetry is closed); the
+rank-4/rank-5 scope-outs and the S5/one-watt scope verdicts are recorded in
+LOOP143.md.
