@@ -2614,6 +2614,14 @@ fn air_rejected_step_rolls_back_the_mass_commit() {
 // (`ThermalModel::new` + injected solver); this arm drives the PRODUCTION
 // construction route: `ThermalModel::from_spec(&case_900ff())` — HighMass
 // promotes the selector to 9R4C selector-independently (#3277/#4175), the
+// [Loop round 143 re-pin — the wall/roof exterior-walk correction (the
+// #2613 convention wired into the builder, see
+// tests/s5_exterior_walk_correction_contract.rs) moved the engine-read
+// literals this section pins; every moved literal was re-measured at the
+// corrected tip from the probe dump, bit-exact against the new contracts.
+// The floor node, the internal node at step 1, the lumped mass states, and
+// the B2 caches (tr1/msip/gc/den/h3) kept their values — they consume
+// walk-independent inputs (the Eq. 64 lumped h_tr_em is u_value-composed).]
 // solver is built `new_with_mode(.., ParallelResistance)` (#1859) at the
 // spec-derived per-surface parameters, and every conductance the chain
 // consumes is the SPEC's own. The spec path differs from the analytic
@@ -2788,10 +2796,10 @@ fn spec_path_conductances_and_caches() {
     let s = &m.conduction.backend.multi_node_solvers[0];
     assert_eq!(s.mass.wall.capacitance, 7829058.24);
     assert_eq!(s.mass.wall.h_tr_ms, 76.34726688102896);
-    assert_eq!(s.mass.wall.h_tr_em, 71.64739830382713);
+    assert_eq!(s.mass.wall.h_tr_em, 62.38515882259048);
     assert_eq!(s.mass.roof.capacitance, 5480428.800000001);
     assert_eq!(s.mass.roof.h_tr_ms, 32.91511795494197);
-    assert_eq!(s.mass.roof.h_tr_em, 31.726281109549806);
+    assert_eq!(s.mass.roof.h_tr_em, 30.420967352921167);
     assert_eq!(s.mass.floor.capacitance, 4704940.800000001);
     assert_eq!(s.mass.floor.h_tr_ms, 17.981819851253327);
     assert_eq!(s.mass.floor.h_tr_em, 8.96001344976471);
@@ -2873,12 +2881,12 @@ fn spec_path_chain_two_steps() {
         s.zone_temperature, 15.266117931266905,
         "step-1 pre-air: the parallel balance on the PRE-step nodes"
     );
-    assert_eq!(s.mass.wall.temperature, 24.547802980996828, "wall node");
-    assert_eq!(s.mass.roof.temperature, 22.8391289109059, "roof node");
+    assert_eq!(s.mass.wall.temperature, 24.68611897841739, "wall node");
+    assert_eq!(s.mass.roof.temperature, 22.866161752654907, "roof node");
     assert_eq!(s.mass.floor.temperature, 22.159651283235362, "floor node");
     assert_eq!(
         m.setpoints.temperatures.as_ref()[0],
-        18.344345521157422,
+        18.414314714311192,
         "committed air step 1 (bit-exact)"
     );
     assert_eq!(
@@ -2913,15 +2921,15 @@ fn spec_path_chain_two_steps() {
     let kwh1 = m.step_physics(0, T_OUT, DT);
     let s = &m.conduction.backend.multi_node_solvers[0];
     assert_eq!(
-        s.zone_temperature, 18.344345521157422,
+        s.zone_temperature, 18.414314714311192,
         "the hand-off: step 2's pre-air IS step 1's committed air"
     );
-    assert_eq!(s.mass.wall.temperature, 28.92226196100471);
-    assert_eq!(s.mass.roof.temperature, 25.625635993882);
-    assert_eq!(s.mass.floor.temperature, 24.31596585762751);
+    assert_eq!(s.mass.wall.temperature, 29.21113397003789);
+    assert_eq!(s.mass.roof.temperature, 25.68222036676119);
+    assert_eq!(s.mass.floor.temperature, 24.31681671686726);
     assert_eq!(
         m.setpoints.temperatures.as_ref()[0],
-        21.32989132022129,
+        21.476173146598466,
         "committed air step 2 (bit-exact)"
     );
     assert_eq!(
@@ -3035,7 +3043,7 @@ fn spec_path_estimate_lumped_and_internal_guard() {
     {
         let s2 = &m.conduction.backend.multi_node_solvers[0];
         assert_eq!(
-            s2.mass.internal.temperature, 18.129046044598617,
+            s2.mass.internal.temperature, 18.15909505493644,
             "internal node literal, step 2"
         );
     }
@@ -3061,7 +3069,17 @@ fn spec_path_estimate_lumped_and_internal_guard() {
 // SPEC's own assembly data (`spec.construction.{wall,roof,floor}.layers`),
 // asserted bit-exact against the engine values.
 //
-// Exterior-walk transcription note (pin-what-IS): the builder's h_tr_em walk
+// Exterior-walk transcription note (SUPERSEDED, loop round 143): the r141
+// note below documented the builder's as-written reversed-index visit as
+// engine truth and routed any re-derivation as a finding. The finding is
+// landed: the round-143 PR wires the #2613-corrected convention (commit
+// `28cecde7`, `compute_r_exterior_to_mass`) into the builder's wall/roof/
+// south walks, and `s5_r_exterior_to_mass` below now transcribes the
+// corrected walk (exterior-first, true exterior layers full, insulation
+// half) so these pins bind the corrected engine. The r141 values and the
+// asymmetry description are the superseded historical record.
+//
+// (r141, superseded) Exterior-walk transcription note (pin-what-IS): the builder's h_tr_em walk
 // iterates `enumerate()` computing `reverse_idx = len-1-idx`, so the FIRST
 // layer visited is `layers[0]` — which the `Construction` doc calls the
 // interior-most — and the loop breaks at the insulation. For this
@@ -3183,15 +3201,19 @@ fn s5_r_interior_to_mass(layers: &[fluxion_core::construction::ConstructionLayer
 /// break at the first layer inside. Visits `layers[0]` first — see the
 /// section comment.
 fn s5_r_exterior_to_mass(layers: &[fluxion_core::construction::ConstructionLayer]) -> f64 {
+    // [Loop round 143 — corrected to the #2613 convention (commit
+    // `28cecde7`, `compute_r_exterior_to_mass`): exterior-first visit, the
+    // true exterior layers full, the dominant insulation half. The r141
+    // shape transcribed the builder's as-written reversed-index visit; that
+    // finding landed as the round-143 engine fix and this helper follows
+    // the engine it pins.]
     let ins = s5_dominant_ins_idx(layers);
-    let n = layers.len();
     let mut r = 1.0 / 18.3; // EXTERIOR_FILM_COEFF_DEFAULT (the v2023 re-export)
-    for (idx, layer) in layers.iter().enumerate() {
-        let reverse_idx = n - 1 - idx;
-        let layer_r = s5_r_value(layer);
-        if reverse_idx > ins {
+    for idx in (0..layers.len()).rev() {
+        let layer_r = s5_r_value(&layers[idx]);
+        if idx > ins {
             r += layer_r;
-        } else if reverse_idx == ins {
+        } else if idx == ins {
             r += layer_r / 2.0;
             break;
         } else {
@@ -3386,8 +3408,9 @@ fn s5_interior_h_ms_calibration_and_am_blend() {
 
 #[test]
 /// Contract S5c — the h_tr_em walks and the floor U forms: the per-class
-/// exterior walks ride layers[0] full + insulation half over the 18.3 film
-/// (the as-written reversed-index convention — see the section comment), the
+/// exterior walks ride the true exterior layers full plus the insulation
+/// half over the 18.3 film (the #2613-corrected convention the round-143
+/// engine fix wired in — see the section comment), the
 /// floor's exterior coupling goes through the builder's own
 /// `u_value(None, None)` reciprocal, the setpoints floor U carries the
 /// floor-film/ground-resistance variant (5.88 + 0.17), and the lumped
@@ -3404,12 +3427,12 @@ fn s5_interior_h_em_walks_and_floor_u_forms() {
     assert_eq!(
         s.mass.wall.h_tr_em,
         opaque_area_ext / s5_r_exterior_to_mass(&spec.construction.wall.layers),
-        "S5c: wall h_tr_em = the as-written exterior walk over the spec layers"
+        "S5c: wall h_tr_em = the corrected (#2613) exterior walk over the spec layers"
     );
     assert_eq!(
         s.mass.roof.h_tr_em,
         floor_area / s5_r_exterior_to_mass(&spec.construction.roof.layers),
-        "S5c: roof h_tr_em = the as-written exterior walk"
+        "S5c: roof h_tr_em = the corrected (#2613) exterior walk"
     );
     // Floor: the builder divides by the reciprocal of the plain-film U:
     // h = A / (1 / u_plain).
@@ -3491,6 +3514,12 @@ fn s5_interior_h_em_walks_and_floor_u_forms() {
 // ============================================================================
 // Round 141 — the Case-950FF night-vent spec-path arm (the r135 Case-900FF
 // template applied to the vent case, the pin backlog's second item).
+//
+// [Loop round 143 re-pin — same exterior-walk correction as the Round-135
+// section note: the moved engine-read literals were re-measured at the
+// corrected tip; the fan-0 twin still collapses onto the inactive-hour
+// literals exactly (both sides re-pinned together), and the vent-active
+// assert_ne's inactive-hour reference moved with them.]
 //
 // The r100-era brief said the night-vent route multiplied h_tr_is; round
 // 100/#4612 removed that multiplier. This arm pins WHAT IS at tip
@@ -3660,7 +3689,7 @@ fn spec_path_950ff_premises_and_window_override() {
     let s = &m.conduction.backend.multi_node_solvers[0];
     assert_eq!(s.mass.wall.capacitance, 7829058.24);
     assert_eq!(s.mass.wall.h_tr_ms, 76.34726688102896);
-    assert_eq!(s.mass.wall.h_tr_em, 71.64739830382713);
+    assert_eq!(s.mass.wall.h_tr_em, 62.38515882259048);
     assert_eq!(s.mass.roof.h_tr_ms, 32.91511795494197);
     assert_eq!(s.mass.floor.h_tr_ms, 17.981819851253327);
     assert_eq!(s.mass.internal.capacitance, 792000.0);
@@ -3692,21 +3721,21 @@ fn spec_path_950ff_night_vent_active_hour_route() {
     {
         let s = &m.conduction.backend.multi_node_solvers[0];
         assert_eq!(s.zone_temperature, -5.062665818997672);
-        assert_eq!(s.surface_temperature, 6.800941271931854);
-        assert_eq!(s.mass.wall.temperature, 24.090456649161467);
-        assert_eq!(s.mass.roof.temperature, 22.487405434691762);
+        assert_eq!(s.surface_temperature, 9.842135149193238);
+        assert_eq!(s.mass.wall.temperature, 24.226941609335196);
+        assert_eq!(s.mass.roof.temperature, 22.51414874120073);
         assert_eq!(s.mass.floor.temperature, 21.912443437794053);
         assert_eq!(s.mass.internal.temperature, 9.236572978148303);
     }
     assert_eq!(m.mass.mass_temperatures.as_ref()[0], 20.251083026984688);
     assert_eq!(
         m.setpoints.temperatures.as_ref()[0],
-        -4.525585616481499,
+        -4.5120904935672534,
         "the committed zone air at the vent-active hour"
     );
     assert_ne!(
         m.setpoints.temperatures.as_ref()[0],
-        18.344345521157422,
+        18.414314714311192,
         "the vent-active air must NOT equal the inactive-hour value — the route is live"
     );
     // Step 2 rides the step-1 committed state, still inside the vent window:
@@ -3714,15 +3743,15 @@ fn spec_path_950ff_night_vent_active_hour_route() {
     assert_eq!(kwh2, 0.0);
     {
         let s = &m.conduction.backend.multi_node_solvers[0];
-        assert_eq!(s.zone_temperature, -4.525585616481499);
-        assert_eq!(s.surface_temperature, 7.219813856698825);
-        assert_eq!(s.mass.wall.temperature, 27.974796410976378);
-        assert_eq!(s.mass.roof.temperature, 24.89133968809225);
-        assert_eq!(s.mass.floor.temperature, 23.795315323152938);
-        assert_eq!(s.mass.internal.temperature, 3.326268353483637);
+        assert_eq!(s.zone_temperature, -4.5120904935672534);
+        assert_eq!(s.surface_temperature, 10.610769543167793);
+        assert_eq!(s.mass.wall.temperature, 28.256859222077576);
+        assert_eq!(s.mass.roof.temperature, 24.946062724226795);
+        assert_eq!(s.mass.floor.temperature, 23.795479430376496);
+        assert_eq!(s.mass.internal.temperature, 3.332063976809879);
     }
     assert_eq!(m.mass.mass_temperatures.as_ref()[0], 20.499418743655955);
-    assert_eq!(m.setpoints.temperatures.as_ref()[0], -4.01173781324285);
+    assert_eq!(m.setpoints.temperatures.as_ref()[0], -3.983869614298303);
 }
 
 #[test]
@@ -3745,14 +3774,14 @@ fn spec_path_950ff_vent_collapse_twins() {
             s.zone_temperature, 15.266117931266905,
             "the 900FF arm's step-1 zone pin — the vent-inactive arithmetic is identical"
         );
-        assert_eq!(s.surface_temperature, 6.45882803741936);
-        assert_eq!(s.mass.wall.temperature, 24.547802980996828);
-        assert_eq!(s.mass.roof.temperature, 22.8391289109059);
+        assert_eq!(s.surface_temperature, 9.540376854938225);
+        assert_eq!(s.mass.wall.temperature, 24.68611897841739);
+        assert_eq!(s.mass.roof.temperature, 22.866161752654907);
         assert_eq!(s.mass.floor.temperature, 22.159651283235362);
         assert_eq!(s.mass.internal.temperature, 17.966984256788898);
     }
     assert_eq!(b.mass.mass_temperatures.as_ref()[0], 20.269011527775067);
-    assert_eq!(b.setpoints.temperatures.as_ref()[0], 18.344345521157422);
+    assert_eq!(b.setpoints.temperatures.as_ref()[0], 18.414314714311192);
     // Twin C — fan_capacity 0.0 at the VENT-ACTIVE hour 20: night_vent is
     // `active_now` (the gate fires), but the conductance is exactly 0.0, so
     // `h_ext_for_free_float[0] = derived_h_ext[0] + 0.0` and the den rebuilt
@@ -3767,14 +3796,14 @@ fn spec_path_950ff_vent_collapse_twins() {
             s.zone_temperature, 15.266117931266905,
             "fan-0 collapse: the active-hour gate fires but 0.0·T_out and +0.0 are exact no-ops"
         );
-        assert_eq!(s.surface_temperature, 6.45882803741936);
-        assert_eq!(s.mass.wall.temperature, 24.547802980996828);
-        assert_eq!(s.mass.roof.temperature, 22.8391289109059);
+        assert_eq!(s.surface_temperature, 9.540376854938225);
+        assert_eq!(s.mass.wall.temperature, 24.68611897841739);
+        assert_eq!(s.mass.roof.temperature, 22.866161752654907);
         assert_eq!(s.mass.floor.temperature, 22.159651283235362);
         assert_eq!(s.mass.internal.temperature, 17.966984256788898);
     }
     assert_eq!(c.mass.mass_temperatures.as_ref()[0], 20.269011527775067);
-    assert_eq!(c.setpoints.temperatures.as_ref()[0], 18.344345521157422);
+    assert_eq!(c.setpoints.temperatures.as_ref()[0], 18.414314714311192);
 }
 
 // ===== R142: the HVAC-mode rejection-path rollback family =====
