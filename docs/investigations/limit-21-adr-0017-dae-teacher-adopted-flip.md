@@ -330,3 +330,83 @@ all-green night after the re-pin PR. The 2026-09-20 'no tunable fix'
 conclusion stands as history for the pre-#4591 solver state; the
 scheduled-ACH slot is the fidelity program #1465/#1462 pointed at,
 landing in pieces.
+
+#### LIMIT-21 UPDATE (2026-11-14, physics loop round 145): the rank-4 gate re-derived — released and re-scoped (Alex option B)
+
+**What was re-derived.** rank-4 (the per-surface solar distribution
+rework, scoped at loop round 143 as "the GaugeSolver production-path
+rework #1465/#1462, gated on §LIMIT-21 soak closure") was re-examined
+at the develop tip `e95b1725` (post-r143 corrected h_tr_em walks,
+post-r138 longwave routing, post-r144 sub-state arm OFF), per Alex's
+2026-11-14 option-B release. Verdict: **the gate's premise is stale for
+rank-4 as recorded — released and re-scoped; the entry itself remains
+open.** The four premises that moved:
+
+1. **The soak no longer sequences production work.** ADR-0017
+   (2026-09-25) moved the unconditional default flip's authority to the
+   #3986 teacher validation suite; the Cargo.toml canonical text at the
+   tip states it verbatim ("the unconditional default flip now lands
+   only when the equation-based DAE teacher passes the teacher
+   validation suite (#3986) — superseding the old 'β-soak-trips →
+   feature flips' plan (§LIMIT-21 / Issue #3297)"). The soak continues
+   as the nightly authority on the gauge prototype arm (streak 5/30 at
+   the round-145 read — state-file artifact from run 43596513326; the
+   Nov 14 fire infra-failed in setup on the weather wall before any
+   criterion ran), but "wait for soak closure" no longer gates any
+   production-path item, so it cannot sequence rank-4 either.
+2. **The distribution concern rank-4 targeted is covered on the default
+   build.** The T5138 per-class solar routing has been the engine
+   default since loop round 91 (`zone_balance.rs` R91 FLIP 3 note,
+   verified at the tip); the r93/r94 scoping bounds it to transmitted
+   solar with the internal-gain radiative component at the ISO 13790
+   §C.3 partition (r94, reaffirmed r101 `ae77fcad`); the r81/r82 arms
+   refuted the partitioning class as the free-float floor owner. The
+   three `solar_distribution_validation.rs` referees' ignore text still
+   describes the retired pre-r91 0.30-to-air route (a stale premise
+   against the r91b/c flips) and their un-ignore condition names the
+   same overtaken rework — re-scoping those referees against the T5138
+   route is a recorded follow-up, not part of this verdict.
+3. **The structural distribution work landed at the teacher level,
+   outside the gauge arm.** #3983 (per-surface multi-node conduction
+   with distributed solar — the ADR-0017 D5 conduction leg's
+   distribution item) closed 2026-11-10 under Alex's 2026-10-26 option
+   B, implemented by PR #4652: `src/physics/per_surface_multinode/`
+   (ODE-state surface nodes, per-surface area × absorptance solar, the
+   h_se sol-air fix per ISO 13790 §C.3.2), free-float testing kept,
+   peak-ordering claims dropped. The D5 conduction leg (#3979, #3980,
+   #3981, #3983) is complete; #3986 closed as the suite stand-up (the
+   suite *passing* remains the future flip condition).
+4. **The gauge arm's own fate rides #3982, not the soak.** ADR-0017 D3
+   routes the GaugeSolver to demonstrate-a-mass-node-or-retire under
+   #3982 (open; the zone-air leg); the last gauge-code change is the
+   2026-10-28 #3982 slice (`1afdb5aa`). A multi-round gauge-arm
+   distribution rework is premature before that decision, and its
+   product would feed the DAE assembly, not a soak-gated flip.
+
+**The underlying condition, re-measured at the tip (gauge build,
+canonical DRYCOLD, the nightly's own criteria and drift checkers,
+2026-11-14):** criterion 2 `zone_balance_eplus_isolation` 19 passed /
+0 failed / 21 ignored (the 2026-10-25 green state holds; the #3744
+drift cohort stays empty); criterion 4 `ashrae_140_case_600_series`
+8 passed / 7 failed / 12 ignored with the ADR-0025 checker verdict
+**green** (0 drift, 0 re-pin, 7-member tracked cohort + 20-member hard
+tier at 0.1 % relative epsilon); criterion 5 `issue_1457` the one
+expected gate-signal fail with its 14 tracked metric values matching
+the committed baseline (checker verdict **green**, 0 drift); criterion
+6 `gauge_validation_case_900` 9 passed / 0 failed / 1 ignored. The
+cohort is unmoved by r138–r144 — the nightly green nights (Nov 11–13,
+last at `c7814c13`) plus this tip re-measure bracket the current
+develop state, so the gate's residual signal is exactly the recorded
+known-gap members, with no new evidence demanding the rework.
+
+**Disposition.** rank-4 is released from the §LIMIT-21 soak-closure
+gate (naming Alex's 2026-11-14 option-B release) and **retired as a
+standalone queue item**: its distribution content is closed on the
+default build (T5138 + §C.3) and structurally owned at the teacher
+level (`per_surface_multinode`; #3983 closed). Any remaining
+gauge-arm distribution work belongs inside #3982's zone-air leg, taken
+up only if and when Alex's D3 decision keeps the gauge machinery alive.
+The §LIMIT-21 entry stays open with its current closure criterion
+(#3986 suite passes → default flip); the soak continues as the
+prototype arm's nightly authority; the recorded follow-ups are the
+referee re-scope and the #3982 decision.
