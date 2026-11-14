@@ -82,9 +82,9 @@
     "test_source_files": 416,
     "workspace_ignored": 151,
     "workspace_integration_ignored": 142,
-    "workspace_integration_tests": 3735,
+    "workspace_integration_tests": 3739,
     "workspace_lib_ignored": 9,
     "workspace_lib_tests": 5612,
-    "workspace_tests": 9347
+    "workspace_tests": 9351
   }
 }
