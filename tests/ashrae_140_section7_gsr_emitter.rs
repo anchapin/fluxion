@@ -1320,14 +1320,21 @@ fn section7_headline_value_pins() {
     let pins: &[(&str, fn(&Section7CaseResult) -> f64, f64)] = &[
         ("600", |r| r.annual_heating_mwh, 5.566),
         ("600", |r| r.annual_cooling_mwh, 3.879),
-        ("900", |r| r.annual_heating_mwh, 1.225),
-        ("900", |r| r.annual_cooling_mwh, 2.249),
+        // Re-recorded 2026-11-15 (loop round 143, physics/r143-s5-exterior-walk):
+        // the #2613-corrected exterior-to-mass walk wired into the builder's
+        // wall/roof/south walks (the r141 S5 pin's routed finding) moves the
+        // high-mass family's mass-node exterior coupling: 900 H 1.225 -> 1.017,
+        // 900 C 2.249 -> 2.428, 900FF min -0.26 -> 0.94, 900FF max 43.28 ->
+        // 43.99. Strict baseline _doc_round143; low-mass rows byte-identical
+        // (the per-class route does not consume these walks). Nothing tuned.
+        ("900", |r| r.annual_heating_mwh, 1.017),
+        ("900", |r| r.annual_cooling_mwh, 2.428),
         ("600FF", |r| r.min_temp_c, -12.35),
         ("600FF", |r| r.max_temp_c, 49.42),
         ("650FF", |r| r.min_temp_c, -17.25),
         ("650FF", |r| r.max_temp_c, 48.71),
-        ("900FF", |r| r.min_temp_c, -0.26),
-        ("900FF", |r| r.max_temp_c, 43.28),
+        ("900FF", |r| r.min_temp_c, 0.94),
+        ("900FF", |r| r.max_temp_c, 43.99),
         // Re-pinned 2026-11-08 (loop round 121, Alex-approved 16:46 ET
         // "I approve the 950FF headline pin"): loop r100's ASHRAE 140-2017
         // §5.2.1.10.1 night-vent h_tr_is forced-convection multiplier removal
@@ -1338,8 +1345,12 @@ fn section7_headline_value_pins() {
         // committed-CSV / current-engine reading (both artifact byte-identity
         // gates green at 368a1847; local engine reads −15.955180496761546 °C).
         // Tolerance stays ±0.5%; nothing tuned.
-        ("950FF", |r| r.min_temp_c, -15.96),
-        ("950FF", |r| r.max_temp_c, 39.01),
+        // Re-pinned 2026-11-15 (loop round 143, physics/r143-s5-exterior-walk):
+        // the #2613-corrected exterior walk moves the 950FF pair with the rest
+        // of the mass-node family: min −15.96 → −15.85, max 39.01 → 39.11
+        // (strict JSON _doc_round143; nothing tuned).
+        ("950FF", |r| r.min_temp_c, -15.85),
+        ("950FF", |r| r.max_temp_c, 39.11),
     ];
     for (id, get, expected) in pins {
         pin_check(id, get(by_id(id)), *expected);
@@ -1552,10 +1563,15 @@ fn section621_value_pins() {
     // dissipation on every num_zones > 1 case, moving the free-floating
     // sunspace's annual swing (the extremes' 8760-index occurrences stay
     // 941/6086); nothing tuned. Provenance: strict JSON _doc_round133.
+    // Re-recorded 2026-11-15 (loop round 143, physics/r143-s5-exterior-walk):
+    // the #2613-corrected exterior walk moves the sunspace's mass coupling:
+    // min 4.76 -> 5.76, max 49.00 -> 49.67, mean 28.40 -> 29.19 (the
+    // 8760-index occurrences stay 941/6086); strict JSON _doc_round143;
+    // nothing tuned.
     let sun = by_id("960").sun_zone.as_ref().unwrap();
-    pin_check("960", sun.min_temp_c, 4.76);
-    pin_check("960", sun.max_temp_c, 49.00);
-    pin_check("960", sun.mean_temp_c, 28.40);
+    pin_check("960", sun.min_temp_c, 5.76);
+    pin_check("960", sun.max_temp_c, 49.67);
+    pin_check("960", sun.mean_temp_c, 29.19);
     assert_eq!(sun.min_index, 941);
     assert_eq!(sun.max_index, 6086);
 }

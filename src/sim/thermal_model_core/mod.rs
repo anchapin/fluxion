@@ -1783,36 +1783,23 @@ impl ThermalModel<VectorField> {
 
             // Calculate h_tr_em from wall construction layers
             let wall_construction = &zc(zone_idx).wall;
-            let ins_idx = wall_construction.find_dominant_insulation_layer_index();
-
-            // Calculate resistance from exterior to mass node
-            // Start with exterior film resistance
-            let r_ext_film =
-                1.0 / crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF_DEFAULT;
-            let mut r_exterior_to_mass = r_ext_film;
-
-            // Add resistance of layers from exterior side up to (and including half of) insulation
-            let layers = &wall_construction.layers;
-            let num_layers = layers.len();
-
-            for (idx, layer) in layers.iter().enumerate() {
-                // Layers are ordered interior to exterior (index 0 = interior)
-                // So we iterate from exterior (high index) to interior
-                let reverse_idx = num_layers - 1 - idx;
-                let layer_r = layer.r_value();
-
-                if reverse_idx > ins_idx {
-                    // Layer is exterior to insulation - full contribution
-                    r_exterior_to_mass += layer_r;
-                } else if reverse_idx == ins_idx {
-                    // This is the insulation layer - half contribution (half-insulation rule)
-                    r_exterior_to_mass += layer_r / 2.0;
-                    break; // Stop at insulation
-                } else {
-                    // Layer is interior to insulation - don't include
-                    break;
-                }
-            }
+            // [Loop round 143 — the walk now calls the #2613-corrected helper
+            // (commit `28cecde7`, PR #2653). The inline loop it replaces
+            // enumerated `layers[idx]` in interior-first order while
+            // comparing `reverse_idx = n-1-idx`, so the interior-most layer's
+            // R folded into the exterior path and the true exterior layer
+            // never contributed — the r141 S5 pin's documented asymmetry
+            // (`tests/step_9r4c_free_float_contract.rs` S5 section comment),
+            // routed as a finding and landed here. Single source of truth:
+            // the helper its own regression test pins
+            // (`test_compute_r_exterior_to_mass_case600_wall_physical_value`),
+            // ISO 13790 Annex C half-insulation rule. Battery adjudication:
+            // this feeds `conduction.h_tr_em_wall` / `h_tr_em_roof` (the 9R4C
+            // mass nodes) — the high-mass family moves and the full
+            // re-record battery rides the same PR; the low-mass per-class
+            // route does not consume these walks.]
+            let r_exterior_to_mass =
+                compute_r_exterior_to_mass(wall_construction, SurfaceType::Wall, opaque_area_ext);
 
             // h_tr_em_base = opaque_area / R_exterior_to_mass
             let h_tr_em_base = opaque_area_ext / r_exterior_to_mass;
@@ -1820,36 +1807,15 @@ impl ThermalModel<VectorField> {
             // PHASE 34-02 FIX: Add roof contribution to h_tr_em
             // Roof construction also contributes to exterior-to-mass conductance
             let roof_construction = &zc(zone_idx).roof;
-            let roof_ins_idx = roof_construction.find_dominant_insulation_layer_index();
-
-            // Calculate resistance from exterior to mass node for roof
-            // Start with exterior film resistance
-            let r_ext_film_roof =
-                1.0 / crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF_DEFAULT;
-            let mut r_exterior_to_mass_roof = r_ext_film_roof;
-
-            // Add resistance of layers from exterior side up to (and including half of) insulation
-            let roof_layers = &roof_construction.layers;
-            let num_roof_layers = roof_layers.len();
-
-            for (idx, layer) in roof_layers.iter().enumerate() {
-                // Layers are ordered interior to exterior (index 0 = interior)
-                // So we iterate from exterior (high index) to interior
-                let reverse_idx = num_roof_layers - 1 - idx;
-                let layer_r = layer.r_value();
-
-                if reverse_idx > roof_ins_idx {
-                    // Layer is exterior to insulation - full contribution
-                    r_exterior_to_mass_roof += layer_r;
-                } else if reverse_idx == roof_ins_idx {
-                    // This is the insulation layer - half contribution (half-insulation rule)
-                    r_exterior_to_mass_roof += layer_r / 2.0;
-                    break; // Stop at insulation
-                } else {
-                    // Layer is interior to insulation - don't include
-                    break;
-                }
-            }
+            // [Loop round 143 — same #2613-corrected helper as the wall walk
+            // above; the inline reversed-index visit folded the interior roof
+            // layer (the plasterboard/concrete side) into the exterior path
+            // and never visited the true exterior layer (the roof deck).]
+            let r_exterior_to_mass_roof = compute_r_exterior_to_mass(
+                roof_construction,
+                SurfaceType::Ceiling,
+                zone_floor_area,
+            );
 
             // h_tr_em_roof = roof_area / R_exterior_to_mass_roof
             let h_tr_em_roof = zone_floor_area / r_exterior_to_mass_roof;
@@ -1960,25 +1926,12 @@ impl ThermalModel<VectorField> {
 
             // Compute R_exterior_to_mass for south wall (layers exterior to mass node)
             // Mass node is at the dominant insulation layer (ISO 13790 half-insulation rule)
-            let wall_construction = &zc(zone_idx).wall;
-            let ins_idx = wall_construction.find_dominant_insulation_layer_index();
-            let r_ext_film_south =
-                1.0 / crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF_DEFAULT;
-            let mut r_exterior_to_mass_south = r_ext_film_south;
-            let layers = &wall_construction.layers;
-            let num_layers = layers.len();
-            for (idx, layer) in layers.iter().enumerate() {
-                let reverse_idx = num_layers - 1 - idx;
-                let layer_r = layer.r_value();
-                if reverse_idx > ins_idx {
-                    r_exterior_to_mass_south += layer_r;
-                } else if reverse_idx == ins_idx {
-                    r_exterior_to_mass_south += layer_r / 2.0;
-                    break;
-                } else {
-                    break;
-                }
-            }
+            // [Loop round 143 — same #2613-corrected helper as the wall walk;
+            // the inline reversed-index visit here carried the same
+            // interior-folded shape. The site's own 0.001 resistance floor is
+            // kept at the division below, unchanged.]
+            let r_exterior_to_mass_south =
+                compute_r_exterior_to_mass(wall_construction, SurfaceType::Wall, south_opaque_area);
             let h_tr_em_south = south_opaque_area / r_exterior_to_mass_south.max(0.001);
 
             // ISSUE715 SOUTH WALL diagnostic — gated per #1967 (debug-physics feature).
