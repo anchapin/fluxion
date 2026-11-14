@@ -3488,3 +3488,291 @@ fn s5_interior_h_em_walks_and_floor_u_forms() {
         "S5c premise: the SOLVER's internal h_tr_me is the default 0.0 (read before the model vector is filled)"
     );
 }
+// ============================================================================
+// Round 141 — the Case-950FF night-vent spec-path arm (the r135 Case-900FF
+// template applied to the vent case, the pin backlog's second item).
+//
+// The r100-era brief said the night-vent route multiplied h_tr_is; round
+// 100/#4612 removed that multiplier. This arm pins WHAT IS at tip
+// `e1a54a11`, verified by reading the 9R4C route before authoring
+// (pin-what-IS, not the round-100-era brief). The 9R4C step carries its OWN
+// vent route (`physics_impl/step_9r4c.rs`), documented there as the
+// Round-100 vent-slice contract:
+//
+// - ASHRAE 140-2017 §5.2.1.10.1 (normative): operating the ideal mechanical
+//   system shall not affect the interior-surface convective flow regime —
+//   the fan couples to the zone AIR node only, and **h_tr_is keeps its
+//   built value during vent hours**; the former #1279/#2871 forced-
+//   convection multiplier was removed (contract V2 pins the built 165.6
+//   surviving a vent-hour step verbatim);
+// - the vent conductance is `h_ve_night = fan_capacity·ρ·cp/3600` with ρ/cp
+//   read from the builder-set per-zone `air_density`/`heat_capacity` (1.2 /
+//   1005.0 for the 900-series specs) — 1400·1.2·1005/3600 = 469.0 W/K
+//   exactly at the Case 650 fan (1400 m³/h, ASHRAE 140 Table 5-160
+//   sea-level route), gated by `is_active_at_hour(timestep % 24)` on the
+//   (18:00 → 07:00 wrap) window, zone 0 only;
+// - the LIVE default-route effect is Issue #1712's zone-0 h_ext add
+//   (`h_ext_for_free_float[0] = derived_h_ext[0] + h_ve_night`, the den
+//   rebuilt from it while active) — and it vanishes exactly when the fan
+//   is zero: the vent-active advance with `fan_capacity = 0.0` is
+//   BIT-IDENTICAL to the inactive-hour advance (contract V3 below collapses
+//   the twins on every committed observable; the `+0.0` add and the den
+//   rebuild are value-exact no-ops);
+// - the 5R1C-side retired route (`FLX_R86_VENT_AIR_ONLY`, default true at
+//   both of its sites) and the 5R1C `h_tr_is_for_ti_free` plain clone sit on
+//   the 5R1C path, structurally OFF this route — a default flip there moved
+//   nothing on the 9R4C arm (tooth measured all-green, prediction missed,
+//   disclosed in the duck review); the r112 multi-zone vent suite owns the
+//   5R1C sites.
+// - the WINDOW-01 spec U override (3.0 W/m²K, `ASHRAE140_WINDOW_U_VALUE`)
+//   REPLACES the #2889 frame bridge on the override route: h_tr_w =
+//   12·3.0 = 36.0 exactly — contrast with the 900FF arm's composed bridge
+//   (12·(5.8+0.1+0.05·16/12)).
+//
+// The derivation-interior forms are the 900FF arm's (same assemblies — the
+// S5 remainder closes those separately); the carryover literals re-pinned
+// here are witnesses that the 950FF spec derives identically.
+//
+// Provenance: temporary-probe capture (removed before commit, the r135
+// practice) at tip `e1a54a11` — three twins (fan 1400 @ hour 20/21, fan
+// 1400 @ hour 12, fan 0 @ hour 20), all printed observables transcribed
+// verbatim with `{:?}` shortest-round-trip literals. The inactive-hour twin
+// reproduces the 900FF arm's step-1 committed states bit-for-bit (identical
+// caches + absent vent term). Tests-only: no src delta, no re-record owed.
+// ============================================================================
+
+/// The 950FF spec-path fixture with the vent fan capacity under test: the
+/// production route (`from_spec(&case_950ff())`), the contract's solar
+/// driving set as in every fixture above, and the fan capacity the caller
+/// pins (1400.0 production, 0.0 the collapse twin).
+fn fixture_spec_950ff_with_fan(fan_capacity: f64) -> ThermalModel<VectorField> {
+    use fluxion::validation::ashrae140::cases::series_900::case_950ff;
+    let mut spec = case_950ff();
+    if let Some(night_vent) = spec.night_ventilation.as_mut() {
+        night_vent.fan_capacity = fan_capacity;
+    }
+    let mut m = ThermalModel::<VectorField>::from_spec(&spec);
+    m.solar.solar_gains = VectorField::new(vec![400.0]);
+    m.solar.opaque_solar_gains = VectorField::new(vec![50.0]);
+    m
+}
+
+fn fixture_spec_950ff() -> ThermalModel<VectorField> {
+    fixture_spec_950ff_with_fan(1400.0)
+}
+
+#[test]
+/// Contract V1 — the 950FF spec-path premises: the vent spec (fan 1400,
+/// hours 18→07 wrap, no added heat, the hour-gate truth table on the engine's
+/// own `is_active_at_hour`), the 9R4C dispatch / coupling / free-float /
+/// inert-HVAC frame, the r91 spec partition with zero loads, the builder-set
+/// ρ/cp the vent conductance consumes, the WINDOW-01 override REPLACING the
+/// frame bridge (h_tr_w = 12·3.0 = 36.0 exactly), and the derivation
+/// carryover witnesses (the 900FF-arm conductance set, bit-identical — same
+/// assemblies).
+fn spec_path_950ff_premises_and_window_override() {
+    let m = fixture_spec_950ff();
+    let spec_window_override = 3.0_f64; // ASHRAE140_WINDOW_U_VALUE
+    assert_eq!(
+        m.hvac.thermal_selector.zone_solver,
+        ZoneSolverKind::NineRFourC
+    );
+    assert_eq!(
+        m.conduction.backend.multi_node_solvers[0].coupling_mode,
+        MassAirCouplingMode::ParallelResistance
+    );
+    assert!(m.hvac.free_float, "premise: 950FF is free-floating");
+    // The vent spec, read from the model the builder built:
+    let nv = m
+        .hvac
+        .night_ventilation
+        .as_ref()
+        .expect("premise: 950FF carries night ventilation (the 900FF arm asserts None)");
+    assert_eq!(
+        nv.fan_capacity, 1400.0,
+        "ASHRAE 140 Table 5-160 sea-level fan"
+    );
+    assert_eq!(
+        nv.operating_hours,
+        (18, 7),
+        "18:00 → 07:00, wrapping midnight"
+    );
+    assert!(!nv.adds_heat, "the fan moves outdoor air, no heat added");
+    // The hour gate on the engine's own method (timestep % 24):
+    for (hour, active) in [
+        (0u8, true),
+        (6, true),
+        (7, false),
+        (12, false),
+        (17, false),
+        (18, true),
+        (23, true),
+    ] {
+        assert_eq!(
+            nv.is_active_at_hour(hour),
+            active,
+            "hour-gate truth at hour {hour}"
+        );
+    }
+    // Inert HVAC + zero loads + ground, as at 900FF:
+    assert_eq!(m.setpoints.heating_setpoint, -999.0);
+    assert_eq!(m.setpoints.cooling_setpoint, 999.0);
+    assert_eq!(m.setpoints.loads.as_ref()[0], 0.0);
+    assert_eq!(
+        m.conduction.ground_temperature.ground_temperature(0),
+        9.4,
+        "Annex B §B3.3 ground temperature"
+    );
+    assert_eq!(m.solar.convective_fraction, 0.4);
+    assert_eq!(m.solar.solar_distribution_to_air, 0.0, "r91 spec partition");
+    assert_eq!(
+        m.solar.solar_beam_to_mass_fraction, 0.0,
+        "r91 spec partition"
+    );
+    // The ρ/cp the vent route consumes (builder-set per-zone vectors):
+    assert_eq!(m.setpoints.air_density.as_ref()[0], 1.2);
+    assert_eq!(m.setpoints.heat_capacity.as_ref()[0], 1005.0);
+    // The vent conductance, recomposed in-test (engine truth: 469.0 exactly):
+    assert_eq!(
+        1400.0 * 1.2 * 1005.0 / 3600.0,
+        469.0,
+        "h_ve_night = fan_capacity·ρ·cp/3600 at the Case-650 fan"
+    );
+    // WINDOW-01 override replaces the #2889 bridge on the override route:
+    assert_eq!(
+        m.conduction.h_tr_w.as_ref()[0],
+        12.0 * spec_window_override,
+        "h_tr_w = area·override — NO bridge composition on the override route"
+    );
+    // Derivation carryover witnesses (same assemblies as 900FF):
+    assert_eq!(m.conduction.h_ve.as_ref()[0], 17.974224);
+    assert_eq!(m.conduction.h_tr_is.as_ref()[0], 165.60000000000002);
+    assert_eq!(
+        m.conduction.backend.multi_node_solvers[0].h_tr_is,
+        m.conduction.h_tr_is.as_ref()[0],
+        "the collapsed h_tr_is seam carries to 950FF"
+    );
+    assert_eq!(m.setpoints.floor_u_value, 0.18109607694010674);
+    assert_eq!(m.conduction.h_tr_floor.as_ref()[0], 8.692611693125123);
+    assert_eq!(m.conduction.h_tr_ms.as_ref()[0], 1608.0);
+    assert_eq!(m.conduction.h_tr_em.as_ref()[0], 48.880343578250944);
+    assert_eq!(m.mass.thermal_capacitance.as_ref()[0], 18014427.840000004);
+    let s = &m.conduction.backend.multi_node_solvers[0];
+    assert_eq!(s.mass.wall.capacitance, 7829058.24);
+    assert_eq!(s.mass.wall.h_tr_ms, 76.34726688102896);
+    assert_eq!(s.mass.wall.h_tr_em, 71.64739830382713);
+    assert_eq!(s.mass.roof.h_tr_ms, 32.91511795494197);
+    assert_eq!(s.mass.floor.h_tr_ms, 17.981819851253327);
+    assert_eq!(s.mass.internal.capacitance, 792000.0);
+}
+
+#[test]
+/// Contract V2 — the vent-ACTIVE committed route: two consecutive vent-hour
+/// steps (hours 20 → 21, T_OUT −10 °C, the contract's solar driving set).
+/// Every committed observable is an engine-read literal from the probe; the
+/// free-float commits stay exactly 0.0 kWh; and the active-hour advance is
+/// NON-INERT — the step-1 zone temperature sits far from the inactive-hour
+/// value (the fan pulls the air toward outdoor), the discriminator that the
+/// route is live on the default build.
+fn spec_path_950ff_night_vent_active_hour_route() {
+    let mut m = fixture_spec_950ff();
+    let kwh1 = m.step_physics(20, T_OUT, DT);
+    assert_eq!(
+        kwh1, 0.0,
+        "free-float commits exactly 0.0 kWh at the vent hour"
+    );
+    // The round-100 removal, pinned on the route: h_tr_is keeps its BUILT
+    // value through a vent-hour step — the former #1279/#2871 multiplier is
+    // gone (§5.2.1.10.1: the fan must not affect the surface flow regime).
+    assert_eq!(
+        m.conduction.h_tr_is.as_ref()[0],
+        165.60000000000002,
+        "h_tr_is keeps its built value during vent hours (r100/#4612)"
+    );
+    {
+        let s = &m.conduction.backend.multi_node_solvers[0];
+        assert_eq!(s.zone_temperature, -5.062665818997672);
+        assert_eq!(s.surface_temperature, 6.800941271931854);
+        assert_eq!(s.mass.wall.temperature, 24.090456649161467);
+        assert_eq!(s.mass.roof.temperature, 22.487405434691762);
+        assert_eq!(s.mass.floor.temperature, 21.912443437794053);
+        assert_eq!(s.mass.internal.temperature, 9.236572978148303);
+    }
+    assert_eq!(m.mass.mass_temperatures.as_ref()[0], 20.251083026984688);
+    assert_eq!(
+        m.setpoints.temperatures.as_ref()[0],
+        -4.525585616481499,
+        "the committed zone air at the vent-active hour"
+    );
+    assert_ne!(
+        m.setpoints.temperatures.as_ref()[0],
+        18.344345521157422,
+        "the vent-active air must NOT equal the inactive-hour value — the route is live"
+    );
+    // Step 2 rides the step-1 committed state, still inside the vent window:
+    let kwh2 = m.step_physics(21, T_OUT, DT);
+    assert_eq!(kwh2, 0.0);
+    {
+        let s = &m.conduction.backend.multi_node_solvers[0];
+        assert_eq!(s.zone_temperature, -4.525585616481499);
+        assert_eq!(s.surface_temperature, 7.219813856698825);
+        assert_eq!(s.mass.wall.temperature, 27.974796410976378);
+        assert_eq!(s.mass.roof.temperature, 24.89133968809225);
+        assert_eq!(s.mass.floor.temperature, 23.795315323152938);
+        assert_eq!(s.mass.internal.temperature, 3.326268353483637);
+    }
+    assert_eq!(m.mass.mass_temperatures.as_ref()[0], 20.499418743655955);
+    assert_eq!(m.setpoints.temperatures.as_ref()[0], -4.01173781324285);
+}
+
+#[test]
+/// Contract V3 — the collapse twins: the vent-INACTIVE hour (12) pins the
+/// no-vent advance — bit-identical to the 900FF arm's step-1 committed
+/// states (identical caches, absent vent term: the same arithmetic) — and
+/// the fan-0 twin at a VENT-ACTIVE hour (night_vent_active_now = true, the
+/// den rebuilt with +0.0 and the numerator carrying 0.0·T_out) collapses
+/// onto those same literals on every committed observable. The vent route's
+/// entire default-build effect is the h_ve_night term; zeroing the fan
+/// erases it exactly.
+fn spec_path_950ff_vent_collapse_twins() {
+    // Twin B — the inactive hour:
+    let mut b = fixture_spec_950ff();
+    let kwh_b = b.step_physics(12, T_OUT, DT);
+    assert_eq!(kwh_b, 0.0);
+    {
+        let s = &b.conduction.backend.multi_node_solvers[0];
+        assert_eq!(
+            s.zone_temperature, 15.266117931266905,
+            "the 900FF arm's step-1 zone pin — the vent-inactive arithmetic is identical"
+        );
+        assert_eq!(s.surface_temperature, 6.45882803741936);
+        assert_eq!(s.mass.wall.temperature, 24.547802980996828);
+        assert_eq!(s.mass.roof.temperature, 22.8391289109059);
+        assert_eq!(s.mass.floor.temperature, 22.159651283235362);
+        assert_eq!(s.mass.internal.temperature, 17.966984256788898);
+    }
+    assert_eq!(b.mass.mass_temperatures.as_ref()[0], 20.269011527775067);
+    assert_eq!(b.setpoints.temperatures.as_ref()[0], 18.344345521157422);
+    // Twin C — fan_capacity 0.0 at the VENT-ACTIVE hour 20: night_vent is
+    // `active_now` (the gate fires), but the conductance is exactly 0.0, so
+    // `h_ext_for_free_float[0] = derived_h_ext[0] + 0.0` and the den rebuilt
+    // from it are value-exact no-ops. Every committed observable collapses
+    // onto twin B:
+    let mut c = fixture_spec_950ff_with_fan(0.0);
+    let kwh_c = c.step_physics(20, T_OUT, DT);
+    assert_eq!(kwh_c, 0.0);
+    {
+        let s = &c.conduction.backend.multi_node_solvers[0];
+        assert_eq!(
+            s.zone_temperature, 15.266117931266905,
+            "fan-0 collapse: the active-hour gate fires but 0.0·T_out and +0.0 are exact no-ops"
+        );
+        assert_eq!(s.surface_temperature, 6.45882803741936);
+        assert_eq!(s.mass.wall.temperature, 24.547802980996828);
+        assert_eq!(s.mass.roof.temperature, 22.8391289109059);
+        assert_eq!(s.mass.floor.temperature, 22.159651283235362);
+        assert_eq!(s.mass.internal.temperature, 17.966984256788898);
+    }
+    assert_eq!(c.mass.mass_temperatures.as_ref()[0], 20.269011527775067);
+    assert_eq!(c.setpoints.temperatures.as_ref()[0], 18.344345521157422);
+}
