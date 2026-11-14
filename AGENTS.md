@@ -64,7 +64,7 @@ The hook invokes `cargo test --workspace --exclude fluxion-tauri --no-fail-fast`
 | `AST-regex inventory` | committed in `tests/reference_data/test_inventory_baseline.json::metrics_ast` | 9,307 | 153 | non-runtime snapshot, used by the drift gate (`--no-verify`); `metrics_ast.lib_tests` = 4,446 and `metrics_ast.workspace_tests` = 9,307 — AST counts vs cargo-verified because the regex doesn't track `cfg(test)` boundaries |
 
 
-| Cargo test binaries | root `tests/*.rs` keepers + consolidated `all_tests` runner + hand-wired `[[test]] path = "tests/<sub>/<foo>.rs"` + sibling-crate targets | 76 | n/a | matches `tests/test_inventory.json::totals.test_binaries` (273 standalone root binaries consolidated into `all_tests` in Issue #3764 + 13 standalone keepers + `grid_adapter_integration` in Issue #4005 + `ashrae_140_validator_selector_parity` in Issue #3986-A + `schedule_conformance` in Issue #4196) |
+| Cargo test binaries | root `tests/*.rs` keepers + consolidated `all_tests` runner + hand-wired `[[test]] path = "tests/<sub>/<foo>.rs"` + sibling-crate targets | 77 | n/a | matches `tests/test_inventory.json::totals.test_binaries` (273 standalone root binaries consolidated into `all_tests` in Issue #3764 + 13 standalone keepers + `grid_adapter_integration` in Issue #4005 + `ashrae_140_validator_selector_parity` in Issue #3986-A + `schedule_conformance` in Issue #4196; loop round 143 adds `s5_exterior_walk_correction_contract`) |
 
 Refreshing the canonical inventory (Issue #3442 acceptance): run `python3 scripts/generate_test_inventory.py --verify` locally and commit the regenerated `tests/test_inventory.json`. The drift gate (next section) will fail any test-adding PR that does not bump the baseline ratchet in the same PR.
 
