@@ -33,6 +33,17 @@ use fluxion::sim::boundary::ConstantGroundTemperature;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::sim::invariant_checker::InvariantChecker;
 
+use std::sync::Mutex;
+
+// [Loop round 151: the Issue #3453 env-serialization convention — a
+// file-local ENV_LOCK held around every env mutation. The r140 merge made
+// this binary internally race-free (one test fn, one arm), but the
+// check_env_setvar_serialized step enforces the convention mechanically
+// across all env-mutating test files; that step had been masked on develop
+// by the scripts-suite pytest abort ahead of it and surfaced once round
+// 151's suite fix let the job run to it.]
+static ENV_LOCK: Mutex<()> = Mutex::new(());
+
 // [Loop round 140 CI fix — the three R140 sections were separate #[test]
 // fns; the process-global env arm races across parallel test threads (one
 // test's remove_var pulls the arm out from under another's step, so a
@@ -45,6 +56,7 @@ use fluxion::sim::invariant_checker::InvariantChecker;
 /// through a mass-node rejection. The env arm is set for this process
 /// only (single test per binary, no parallel readers).
 fn mass_guard_rejection_sections() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::set_var("FLX_R76_NO_NUM_REFRESH", "1");
 
     let mut m = ThermalModel::<VectorField>::new(1);
