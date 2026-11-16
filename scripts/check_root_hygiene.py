@@ -76,6 +76,7 @@ ROOT_MD_ALLOWLIST: frozenset[str] = frozenset(
         "AGENTS.md",
         "SCORECARD.md",
         "CONTRACT.md",
+        "UBIQUITOUS_LANGUAGE.md",
     }
 )
 
