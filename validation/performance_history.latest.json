@@ -1,9 +1,9 @@
 {
-  "timestamp": "2026-10-15T21:37:16.254556818+00:00",
-  "mae": 78.50227758638856,
-  "max_deviation": 964.1656666426811,
-  "pass_rate": 5.952380952380952,
-  "validation_time_seconds": 0.231375763,
-  "throughput": 90.76145110324282,
+  "timestamp": "2026-11-16T03:27:32.971222830+00:00",
+  "mae": 77.46709223922204,
+  "max_deviation": 914.1503879610207,
+  "pass_rate": 8.333333333333332,
+  "validation_time_seconds": 4.520416433,
+  "throughput": 4.645589695386367,
   "git_sha": null
 }

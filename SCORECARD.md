@@ -4,8 +4,8 @@
 >
 > **Do not edit by hand** — regenerate with `python scripts/generate_scorecard.py`. CI fails on drift (`scorecard-drift` workflow).
 
-**Last Updated:** 2026-10-15  
-**Data source as of:** 2026-10-15 21:37:16 UTC  
+**Last Updated:** 2026-11-16  
+**Data source as of:** 2026-11-16 03:27:32 UTC  
 **Sources:** `validation/performance_history.latest.json`, `docs/ASHRAE140_RESULTS.md`, `release_gates.yaml`, `README.md`
 
 ---
@@ -14,15 +14,15 @@
 
 | Metric | Current | Budget (gate) | Status | Source |
 |--------|---------|---------------|--------|--------|
-| ASHRAE 140 pass rate (ASHRAE 140 §7 (Class I) scope) | **6.0%** (5/84 metrics) | ref ≥ 60% (diagnostic, `validation.diagnostics.min_pass_rate` — not a gate, #4277) | 📊 Diagnostic | `validation/performance_history.latest.json` (latest run 2026-10-15) |
-| Mean Absolute Error (MAE) — ASHRAE 140 §7 (Class I) | **78.50%** | ref ≤ 50% (diagnostic, `validation.diagnostics.max_mae` — not a gate, #4277) | 📊 Diagnostic | `validation/performance_history.latest.json` (latest run 2026-10-15) |
+| ASHRAE 140 pass rate (ASHRAE 140 §7 (Class I) scope) | **8.3%** (7/84 metrics) | ref ≥ 60% (diagnostic, `validation.diagnostics.min_pass_rate` — not a gate, #4277) | 📊 Diagnostic | `validation/performance_history.latest.json` (latest run 2026-11-16) |
+| Mean Absolute Error (MAE) — ASHRAE 140 §7 (Class I) | **77.47%** | ref ≤ 50% (diagnostic, `validation.diagnostics.max_mae` — not a gate, #4277) | 📊 Diagnostic | `validation/performance_history.latest.json` (latest run 2026-11-16) |
 | BatchOracle throughput | **157 (CI) / 900 (release)** configs/sec | ≥ 150 (`benchmark.throughput.min_configs_per_sec`) | ✅ Pass | `release_gates.yaml` comment + `README.md` |
-| Validation-suite throughput | 90.76 cases/sec | (informational) | ℹ️ | `validation/performance_history.latest.json` (latest run 2026-10-15) |
-| Max single-case deviation | 964.17% | (ref: `individual.max_deviation` = 100%) | ℹ️ | `validation/performance_history.latest.json` (latest run 2026-10-15) |
+| Validation-suite throughput | 4.65 cases/sec | (informational) | ℹ️ | `validation/performance_history.latest.json` (latest run 2026-11-16) |
+| Max single-case deviation | 914.15% | (ref: `individual.max_deviation` = 100%) | ℹ️ | `validation/performance_history.latest.json` (latest run 2026-11-16) |
 
 ## ASHRAE 140 §7 (Class I) Pass Rate
 
-- **Overall (metric-level):** 6.0% — 5 PASS / 9 WARN / 70 FAIL of 84 results. -54.0 pp vs the 60% reference line (diagnostic, not a gate — #4277: Standard 140 defines no acceptance-criteria clause).
+- **Overall (metric-level):** 8.3% — 7 PASS / 1 WARN / 76 FAIL of 84 results. -51.7 pp vs the 60% reference line (diagnostic, not a gate — #4277: Standard 140 defines no acceptance-criteria clause).
 - **Case-level:** 0/18 cases fully PASS (0.0%).
 
 ### Per-Series Breakdown (case-level)
@@ -34,19 +34,19 @@
 | Free-Floating Cases | 4 | 0 | 0 | 4 | 0.0% |
 | Special Cases | 2 | 0 | 0 | 2 | 0.0% |
 
-*Case-level = a case is PASS only if its aggregate row is ✅. Metric-level headline (6.0%) counts each reported metric individually; see `docs/ASHRAE140_RESULTS.md` Summary.*
+*Case-level = a case is PASS only if its aggregate row is ✅. Metric-level headline (8.3%) counts each reported metric individually; see `docs/ASHRAE140_RESULTS.md` Summary.*
 
 ## Throughput vs Budget
 
 - **Gate:** ≥ **150** configs/sec (`benchmark.throughput.min_configs_per_sec`); absolute floor 100; latency ≤ 10 ms/config.
 - **CI runner (Wave 1+1.5):** ~157 configs/sec — ✅ Pass (narrow margin; source: `release_gates.yaml` comment).
 - **Release mode (BatchOracle, rayon):** ~900 configs/sec — ✅ Pass (source: `README.md`).
-- **Validation-suite throughput:** 90.76 cases/sec — informational only; this is the test-runner cadence, not the BatchOracle benchmark (source: `validation/performance_history.latest.json` (latest run 2026-10-15)).
+- **Validation-suite throughput:** 4.65 cases/sec — informational only; this is the test-runner cadence, not the BatchOracle benchmark (source: `validation/performance_history.latest.json` (latest run 2026-11-16)).
 
 ## MAE vs Budget
 
 - **Reference line (diagnostic, not a gate — #4277):** ≤ **50%** (`validation.diagnostics.max_mae`).
-- **Current:** **78.50%** — +28.50 pp vs the reference line. Max single-case deviation 964.17%. The MAE number is a labelled diagnostic since #4277 D (Standard 140 defines no acceptance threshold); release-over-release movement is guarded by the drift gate, and the honest red anchor is the analytical-targets gate (§8 GC10a / §11 QASv2).
+- **Current:** **77.47%** — +27.47 pp vs the reference line. Max single-case deviation 914.15%. The MAE number is a labelled diagnostic since #4277 D (Standard 140 defines no acceptance threshold); release-over-release movement is guarded by the drift gate, and the honest red anchor is the analytical-targets gate (§8 GC10a / §11 QASv2).
 - *Driver:* high-mass annual-energy deviation (5R1C/CTF thermal-mass limitation; see Known Structural Failures).
 
 ## Known Structural Failures
