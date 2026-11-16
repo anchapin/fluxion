@@ -3547,8 +3547,10 @@ fn s5_interior_h_em_walks_and_floor_u_forms() {
 //   BIT-IDENTICAL to the inactive-hour advance (contract V3 below collapses
 //   the twins on every committed observable; the `+0.0` add and the den
 //   rebuild are value-exact no-ops);
-// - the 5R1C-side retired route (`FLX_R86_VENT_AIR_ONLY`, default true at
-//   both of its sites) and the 5R1C `h_tr_is_for_ti_free` plain clone sit on
+// - the 5R1C-side retired route (`FLX_R86_VENT_AIR_ONLY` — REMOVED from
+//   the engine 2026-11-17, loop round 152, Alex-released; both of its
+//   sites are air-only unconditionally now) and the 5R1C
+//   `h_tr_is_for_ti_free` plain clone sit on
 //   the 5R1C path, structurally OFF this route — a default flip there moved
 //   nothing on the 9R4C arm (tooth measured all-green, prediction missed,
 //   disclosed in the duck review); the r112 multi-zone vent suite owns the

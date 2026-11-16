@@ -28,8 +28,13 @@
 //!   rides ONLY the air node's consumed denominator (record Δden =
 //!   `term_rest_1·h_ve_night`) and never enters the mass record's
 //!   `(a, bl, h3od)` — the air↔mass coupling the §7 note names — with the
-//!   mass-side path retired (`h_vent_mass_zone = 0`, R86 default) and its
-//!   falsy archaeology token restoring it.
+//!   mass-side path retired (`h_vent_mass_zone = 0`). ROUND 152 UPDATE
+//!   (2026-11-17, Alex-released retirement): the `FLX_R86_VENT_AIR_ONLY`
+//!   falsy archaeology token and its restore arm are REMOVED from the
+//!   engine (the air-only route is unconditional); the former Contract 6
+//!   (falsy-token restore pin) was removed with the arm — its record lives
+//!   in docs/adr/0011-case-950ff-night-vent-split.md and KNOWN_ISSUES
+//!   §LIMIT-17/§LIMIT-43.
 //!
 //! Round-85/109 suite shape: Python replication first
 //! (`/tmp/r110_lag_replication.py`, dev-time evidence), record pins with
@@ -557,57 +562,5 @@ fn night_vent_rides_the_air_den_only_record_identities() {
     assert_eq!(
         applied.h_vent_mass_zone, 0.0,
         "the R86 default must keep the mass-side vent path retired"
-    );
-}
-
-#[test]
-/// Contract 6 — the R86 archaeology token: `FLX_R86_VENT_AIR_ONLY=0`
-/// restores the mass-side vent path through the real step — the applied
-/// record's `h_vent_mass_zone` leaves 0 and the mass record's coefficients
-/// move relative to the default run — so the retired route stays reachable
-/// and observable for A/B verification.
-fn r86_falsy_restores_the_mass_side_vent_record() {
-    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let mut restored = vent_model(Some(NightVentilation::new(1400.0, 0, 0)));
-    let mut default = vent_model(Some(NightVentilation::new(1400.0, 0, 0)));
-
-    std::env::set_var("FLX_R86_VENT_AIR_ONLY", "0");
-    restored.step_physics(0, -10.0, DT);
-    std::env::remove_var("FLX_R86_VENT_AIR_ONLY");
-    default.step_physics(0, -10.0, DT);
-
-    let h_vent_mass_restored = restored
-        .conduction
-        .applied_5r1c_class_boundary
-        .as_ref()
-        .expect("per-class record persisted")
-        .first()
-        .expect("zone 0 record")
-        .as_ref()
-        .expect("zone 0 ran the per-class path")
-        .h_vent_mass_zone;
-    assert!(
-        h_vent_mass_restored > 0.0,
-        "the falsy R86 token must restore a live mass-side vent coupling"
-    );
-
-    let rec_restored = restored
-        .mass
-        .r77_air_substep_coeffs
-        .as_ref()
-        .expect("air record (restored)");
-    let rec_default = default
-        .mass
-        .r77_air_substep_coeffs
-        .as_ref()
-        .expect("air record (default)");
-    let moved = (0..rec_default[0].len() / 9).any(|k| {
-        [5_usize, 6]
-            .iter()
-            .any(|slot| rec_restored[0][9 * k + slot] != rec_default[0][9 * k + slot])
-    });
-    assert!(
-        moved,
-        "the restored mass-side vent must move the mass record's (a, bl) coefficients"
     );
 }

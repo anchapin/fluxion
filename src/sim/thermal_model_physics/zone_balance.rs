@@ -2303,11 +2303,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // interior boundary = this sub-step's air temperature. When the
             // arm is off this block never runs (r76_n == 0).
             //
-            // [R87 FLIP (see the h_vent_i site below): the mass-side
-            // night-vent coupling on the live sub-step path is read here
-            // once per step; FLX_R86_VENT_AIR_ONLY=0 restores the
-            // pre-round-87 coupling.]
-            let vent_air_only = crate::util::env_bool::env_bool("FLX_R86_VENT_AIR_ONLY", true);
+            // [R152 RETIREMENT (2026-11-17, Alex-released): the
+            // FLX_R86_VENT_AIR_ONLY archaeology reader that stood here
+            // (falsy token restored the pre-round-87 mass-side coupling)
+            // is removed — the air-only route is unconditional. History
+            // and verdict evidence: docs/adr/0011-case-950ff-night-vent-split.md,
+            // KNOWN_ISSUES §LIMIT-17/§LIMIT-43, the round-86 audit doc.]
             let r76_no_mass = std::env::var("FLX_R76_NO_MASS").is_ok();
             if eff_mass_n > 0 && !r76_no_mass {
                 let mass_sub = eff_mass_n;
@@ -2406,36 +2407,28 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             h_ms
                         }
                     };
-                    // [R87 FLIP — mass-side night-vent coupling off by
-                    // default (Alex-approved 2026-10-22 06:41 ET: "I
-                    // approve the vent arm"). Night ventilation is an
-                    // air-side exchange: ASHRAE 140 §5.4 / Table 5-160
-                    // define the Case 650/950 night-vent fan as outdoor
-                    // air supplied to the ZONE, and ISO 13790 §C.4 Eq.
-                    // C.10 routes ventilation only through the air node —
-                    // the air-side h_ve_night conductance in h_ext
-                    // (Issue #824/#839) implements exactly that. This
-                    // h_vent_i term adds the same exchange a second time,
-                    // mass-side, folded into the h3 air↔mass coupling:
-                    // #821's own note records that setting the mass-side
-                    // term to 0 removes the double-counting, the 9R4C
-                    // path has run air-only since LIMIT-17
-                    // (multi_node_solver h_vent_mass_zone = 0 pattern),
-                    // and the round-86 audit measured it at 3.1x the
-                    // air-side exchange on 650FF (-20,469 vs -6,509
-                    // MJ/yr) while chilling the mass below freezing
-                    // overnight. FLX_R86_VENT_AIR_ONLY=0 restores the
-                    // pre-round-87 coupling for A/B verification only;
-                    // any other value behaves as unset, i.e. the
-                    // air-only default.]
-                    let h_vent_i = if night_vent_active_now && i == 0 && !vent_air_only {
-                        h_ve_night
-                    } else {
-                        0.0
-                    };
+                    // [R87 FLIP → R152 RETIREMENT (2026-11-17,
+                    // Alex-released): the mass-side night-vent coupling is
+                    // gone. The retired term was `h_vent_i = h_ve_night`
+                    // on a vent-active zone-0 hour under the
+                    // FLX_R86_VENT_AIR_ONLY falsy token, else 0.0 — the
+                    // r87 air-only default computed exactly this 0.0 on
+                    // every step, so removing the arm is
+                    // arithmetic-identical. Night ventilation is an
+                    // air-side exchange (ASHRAE 140 §5.4 / Table 5-160;
+                    // ISO 13790 §C.4 Eq. C.10; the air-side h_ve_night in
+                    // h_ext, #824/#839); the mass-side term double-counted
+                    // it (#821's own note; 9R4C air-only since LIMIT-17's
+                    // h_vent_mass_zone = 0 pattern; the round-86 audit
+                    // measured it at 3.1x the air-side exchange on 650FF,
+                    // -20,469 vs -6,509 MJ/yr, chilling the mass below
+                    // freezing overnight). Verdict evidence:
+                    // docs/adr/0011-case-950ff-night-vent-split.md,
+                    // KNOWN_ISSUES §LIMIT-17/§LIMIT-43,
+                    // docs/investigations/2026-10-22-free-float-energy-balance-audit-r86.md.]
                     let t_i_sub = scratch.air_node_t_air.as_ref()[i];
                     let h_tr_em_i = h_tr_em_zone.get(i).copied().unwrap_or(0.0);
-                    let h_tr3_arg_i = h_air_mass_i + h_vent_i;
+                    let h_tr3_arg_i = h_air_mass_i;
                     // [R84 HARNESS — per-class coupled sub-step mass
                     // advance (env-gated, FLX_R84_PERCLASS, loop round
                     // 84). Round 83 proved the hourly per-class mass
@@ -2558,7 +2551,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                 // `h_tr3_arg_i/denom_m` is NOT the per-class
                                 // route: each class couples through its own
                                 // `h3_c = h_am_c + h_vent_i·w` over its own
-                                // `den_c`, so the record carries the consumed
+                                // `den_c` (the h_vent_i·w term retired
+                                // 2026-11-17, round 152 — h3_c is now the
+                                // plain h_am_c), so the record carries the consumed
                                 // composite itself.]
                                 let mut h3od_sum = 0.0;
                                 let cond = &self.0.conduction;
@@ -2729,7 +2724,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                         } else {
                                             (0.0, 0.0, 0.0, 0.0, 0.0)
                                         };
-                                        let vent_w = h_vent_i * w;
+                                        // [R152: was h_vent_i * w — the retired R86 arm's constant-0 contribution.]
+                                        let vent_w = 0.0f64;
                                         let cm_dt_c = cls_cm[c] / dt_m;
                                         let den_m = cm_dt_c + h_em_c + h_am_c + vent_w;
                                         let (alpha_c, beta_c, b_c) = if den_m > 0.0 {
@@ -2850,7 +2846,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                         // committed state exactly
                                         // (checker-lags-integrator, #4504
                                         // class).
-                                        let h3_c = h_am_c + h_vent_i * w;
+                                        // [R152: was h_am_c + h_vent_i * w — the retired R86 arm's constant-0 contribution.]
+                                        let h3_c = h_am_c;
                                         // [R88 ARM — the class mass drive gains
                                         // the ISO §C.3 mass share of the surface
                                         // pool: s_c·phi_st·w with
@@ -4206,31 +4203,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // The air-side ventilation increase under night-vent is still routed
             // through `phi_m_with_vent`/`phi_ia_with_vent` further down (where the
             // outdoor-air enthalpy difference is applied via `h_ve` × ΔT).
-            // [R87 FLIP — night ventilation is an air-side exchange on the
-            // 5R1C path (Alex-approved 2026-10-22 06:41 ET: "I approve the
-            // vent arm"): the mass-side coupling h_vent_mass_zone is now 0 by
-            // default. ASHRAE 140 §5.4 / Table 5-160 define the Case 650/950
-            // night-vent fan as outdoor air supplied to the ZONE, and ISO
-            // 13790 §C.4 Eq. C.10 routes ventilation only through the air
-            // node — the air-side h_ve_night conductance in h_ext (Issue
-            // #824/#839) already implements exactly that. The mass-side term
-            // double-counts the same exchange: #821's own note ("setting
-            // h_vent_mass_zone = 0 removes the double-counting"), restored at
-            // full h_ve_night by 2674f00c (2026-07-17, #1693 lineage), and
-            // measured by the round-86 audit at 3.1x the air-side exchange on
-            // 650FF (-20,469 vs -6,509 MJ/yr) while chilling the mass below
-            // freezing overnight. The 9R4C path has run this same air-only
-            // routing since LIMIT-17 (multi_node_solver h_vent_mass_zone = 0
-            // pattern); this flip aligns 5R1C with it. FLX_R86_VENT_AIR_ONLY
-            // set to a falsy token (0/false/no/off) restores the pre-round-87
-            // mass coupling for A/B verification only; any other value
-            // behaves as unset, i.e. the air-only default.]
-            let vent_air_only = crate::util::env_bool::env_bool("FLX_R86_VENT_AIR_ONLY", true);
-            let h_vent_mass_zone = if night_vent_active_now && !vent_air_only {
-                h_ve_night
-            } else {
-                0.0
-            };
+            // [R87 FLIP → R152 RETIREMENT (2026-11-17, Alex-released):
+            // h_vent_mass_zone was `h_ve_night` on a vent-active hour
+            // under the FLX_R86_VENT_AIR_ONLY falsy token, else 0.0 —
+            // the r87 air-only default computed exactly this 0.0 on
+            // every step, so removing the arm is arithmetic-identical.
+            // Night ventilation is an air-side exchange (ASHRAE 140
+            // §5.4 / Table 5-160; ISO 13790 §C.4 Eq. C.10; the air-side
+            // h_ve_night in h_ext, #824/#839); the mass-side term
+            // double-counted it (#821's own note, "setting
+            // h_vent_mass_zone = 0 removes the double-counting", restored
+            // at full h_ve_night by 2674f00c, 2026-07-17, #1693 lineage);
+            // the 9R4C path has run the same air-only routing since
+            // LIMIT-17 (multi_node_solver h_vent_mass_zone = 0 pattern).
+            // Verdict evidence: docs/adr/0011-case-950ff-night-vent-split.md,
+            // KNOWN_ISSUES §LIMIT-17/§LIMIT-43,
+            // docs/investigations/2026-10-22-free-float-energy-balance-audit-r86.md.]
+            let h_vent_mass_zone = 0.0f64;
 
             // [R66 HARNESS — env-gated per-surface mass-node advance (scratch).
             // Each class node: capacitance cm·w, exterior conductance cls_g[c]
