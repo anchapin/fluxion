@@ -2,7 +2,7 @@
   "schema_version": 1,
   "description": "Per-module disposition registry for the wired-but-dead pub mods allowlisted in scripts/check_orphan_modules.py::WIRED_BUT_DEAD (Issue #3748). Every allowlist entry must carry exactly one row with an owner-assigned wire-or-delete decision; the registry must stay in lock-step with the live wired-but-dead set. Resolving a module (wiring it up or deleting it) requires dropping its row AND lowering BASELINE_WIRED_BUT_DEAD by one in the same PR.",
   "governing_issue": 3748,
-  "module_count": 42,
+  "module_count": 43,
   "modules": [
     {
       "module": "sim::ems",
@@ -297,6 +297,13 @@
       "issue": 3983,
       "owner": "anchapin",
       "rationale": "Solar submodule of the per-surface multinode core added by PR #4652 (Issue #3983). No production caller yet; wires in with its parent module's production dispatch integration. Registration approved by the repo owner 2026-11-09."
+    },
+    {
+      "module": "io::idf::schedule",
+      "disposition": "wire-pending",
+      "issue": 3991,
+      "owner": "anchapin",
+      "rationale": "IDF schedule-import API added by PR #4585 (issue #3991 schedules slice, r150 rebase union): consumed within the crate by convert.rs::import_named_schedules into the schema's named_schedules map; the re-exported surface awaits an external consumer (CLI/epJSON wiring). Wire it up or delete it in a follow-up, dropping this row in the same PR."
     }
   ]
 }
