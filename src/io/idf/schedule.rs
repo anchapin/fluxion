@@ -220,6 +220,11 @@ struct Segment {
     value: f64,
 }
 
+/// One `For:` day-type group of a `Schedule:Compact` block: the day-type
+/// context (`None` = all days) paired with the `(Until:, value)` data
+/// points that make up its 24-hour profile (clippy::type_complexity).
+type SegmentGroup = (Option<String>, Vec<(f64, f64)>);
+
 /// A `Through: <date>`-delimited block of a `Schedule:Compact`.
 #[derive(Debug, Clone, Default)]
 struct Block {
@@ -486,7 +491,7 @@ pub fn import_schedule_compact(
 
     for block in &blocks {
         // Group consecutive segments that share the same `For:` context.
-        let mut groups: Vec<(Option<String>, Vec<(f64, f64)>)> = Vec::new();
+        let mut groups: Vec<SegmentGroup> = Vec::new();
         for segment in &block.segments {
             if let Some(last) = groups.last_mut() {
                 if last.0 == segment.day_type {
