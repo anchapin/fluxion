@@ -2724,7 +2724,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                         } else {
                                             (0.0, 0.0, 0.0, 0.0, 0.0)
                                         };
-                                        let vent_w = 0.0f64; // [R152: was h_vent_i * w — the retired R86 arm's constant-0 contribution]
+                                        // [R152: was h_vent_i * w — the retired R86 arm's constant-0 contribution.]
+                                        let vent_w = 0.0f64;
                                         let cm_dt_c = cls_cm[c] / dt_m;
                                         let den_m = cm_dt_c + h_em_c + h_am_c + vent_w;
                                         let (alpha_c, beta_c, b_c) = if den_m > 0.0 {
@@ -2845,45 +2846,46 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                         // committed state exactly
                                         // (checker-lags-integrator, #4504
                                         // class).
-                                        let h3_c = h_am_c; // [R152: was h_am_c + h_vent_i * w — the retired R86 arm's constant-0 contribution]
-                                                           // [R88 ARM — the class mass drive gains
-                                                           // the ISO §C.3 mass share of the surface
-                                                           // pool: s_c·phi_st·w with
-                                                           // s_c = h_ms_c/(h_ms_c + h_is_i·w) —
-                                                           // the same s_c the zone share sum above
-                                                           // consumed, so the air-side (1 − Σ w·s_c)
-                                                           // and the mass-side shares partition
-                                                           // phi_st. Flag off: phi_m·w unchanged,
-                                                           // bit-identical.]
-                                                           // [R91 FLIP 3 - the class solar term
-                                                           // carries the Table 5-138 surface
-                                                           // fractions instead of the C.3
-                                                           // conductance share: floor class
-                                                           // 0.642/0.9664, roof class
-                                                           // 0.1678/0.9664, wall class
-                                                           // (E+W+N+S) 0.1566/0.9664. The
-                                                           // renormalization absorbs the
-                                                           // published table's rounding so
-                                                           // sum_c phi_c = phi_m_i + phi_st
-                                                           // exactly (energy-conserving by
-                                                           // construction; the checker
-                                                           // composite mirrors this drive
-                                                           // through the affine maps below).
-                                                           // [R93] the §C.3 lag-site air-share
-                                                           // term retires under this route (see
-                                                           // FLX_R93_T5138_AIRSHARE) so the
-                                                           // composed network deposits exactly
-                                                           // phi_st.]
-                                                           // Falsy FLX_R91_T5138 restores the
-                                                           // s_c*w conductance-share partition
-                                                           // (the R88 arm) bit-identically.]
-                                                           // [R94 — the §C.3 per-class share of
-                                                           // the internal-gain surface
-                                                           // component: `s_c = h_ms_c/(h_ms_c +
-                                                           // h_is·w)`, the same share the r88
-                                                           // arm and the zone air-share sum
-                                                           // consume, so air + mass = phi_st_int
-                                                           // exactly across the decomposition.]
+                                        // [R152: was h_am_c + h_vent_i * w — the retired R86 arm's constant-0 contribution.]
+                                        let h3_c = h_am_c;
+                                        // [R88 ARM — the class mass drive gains
+                                        // the ISO §C.3 mass share of the surface
+                                        // pool: s_c·phi_st·w with
+                                        // s_c = h_ms_c/(h_ms_c + h_is_i·w) —
+                                        // the same s_c the zone share sum above
+                                        // consumed, so the air-side (1 − Σ w·s_c)
+                                        // and the mass-side shares partition
+                                        // phi_st. Flag off: phi_m·w unchanged,
+                                        // bit-identical.]
+                                        // [R91 FLIP 3 - the class solar term
+                                        // carries the Table 5-138 surface
+                                        // fractions instead of the C.3
+                                        // conductance share: floor class
+                                        // 0.642/0.9664, roof class
+                                        // 0.1678/0.9664, wall class
+                                        // (E+W+N+S) 0.1566/0.9664. The
+                                        // renormalization absorbs the
+                                        // published table's rounding so
+                                        // sum_c phi_c = phi_m_i + phi_st
+                                        // exactly (energy-conserving by
+                                        // construction; the checker
+                                        // composite mirrors this drive
+                                        // through the affine maps below).
+                                        // [R93] the §C.3 lag-site air-share
+                                        // term retires under this route (see
+                                        // FLX_R93_T5138_AIRSHARE) so the
+                                        // composed network deposits exactly
+                                        // phi_st.]
+                                        // Falsy FLX_R91_T5138 restores the
+                                        // s_c*w conductance-share partition
+                                        // (the R88 arm) bit-identically.]
+                                        // [R94 — the §C.3 per-class share of
+                                        // the internal-gain surface
+                                        // component: `s_c = h_ms_c/(h_ms_c +
+                                        // h_is·w)`, the same share the r88
+                                        // arm and the zone air-share sum
+                                        // consume, so air + mass = phi_st_int
+                                        // exactly across the decomposition.]
                                         let h_is_c94 = h_is_i * w;
                                         let s_c94 = if h_ms_c + h_is_c94 > 0.0 {
                                             h_ms_c / (h_ms_c + h_is_c94)
