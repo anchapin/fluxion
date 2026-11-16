@@ -237,6 +237,75 @@ Any implementation PR must satisfy all of the following:
   underlying structural PR lands. If the GaugeSolver rework is cancelled
   or re-routed, this ADR will be superseded or marked `Rejected`.
 
+## UPDATE 2026-11-16 (loop round 150 — Alex's a/b/c release: "Which option is most accurate in physics basis? Pursue that one")
+
+**Verdict: option (c) — route `h_ve_night` through the air node only.**
+The derivation, on physics basis alone; per the 2026-10-22
+ignore-the-bands doctrine the band-based acceptance clauses in the Plan
+section below are recorded for the record and are **not** decision
+signals.
+
+1. **The standards' own coupling structure.** ASHRAE 140 defines night
+   ventilation per case as an airflow to the zone (650 §5.2.2.1.5,
+   950 §5.2.2.2.6, 650FF §5.2.2.3.2, 950FF §5.2.2.3.5): the fan exchanges
+   *zone* air with outdoor air. ISO 13790 §C.4 (Eq. C.10) routes
+   ventilation into the air node only; the mass node couples through
+   surfaces (H_ms to the interior surface node, H_em to the exterior).
+   No clause of either standard couples a ventilation conductance to a
+   mass node.
+2. **Energy-balance first principles.** The ventilation mass flow enters
+   the zone-air energy balance once. A direct mass-node term
+   `h_ve_night · (T_outdoor − T_mass)` re-applies the same exchange a
+   second time — the round-86 audit measured it at 3.1× the air-side
+   exchange on 650FF (−20,469 vs −6,509 MJ/yr) while chilling the mass
+   below freezing overnight — and, applied per envelope node with
+   `h_ve_night ≈ 570.8 W/K` against wall film ≈ 71.6 W/K, manufactures
+   ~8× phantom conductance per node. That double-count is the structural
+   defect this ADR recorded.
+3. **Options (a) and (b) rejected on physics basis.** (a) makes the
+   coupling topology case-dependent: one physical mechanism (a fan
+   exchanging air) cannot change coupling structure by case label, and
+   this ADR itself flags the case-conditional as borderline parameter
+   tuning (RULES.md / ADR-0001). (b) multiplies an air-exchange
+   conductance by a longwave sky view factor — two unrelated physical
+   mechanisms; no first-principles derivation connects them, so it is
+   tuning by another name.
+
+**Implementation state (this ADR's premise has moved).** Option (c) has
+been the DEFAULT build's behavior since the round-87 `FLX_R87` flip
+(Alex-approved 2026-10-22 06:41 ET, "I approve the vent arm"):
+`src/sim/thermal_model_physics/zone_balance.rs` runs the mass-side
+`h_vent_i` / `h_vent_mass_zone` terms at 0 on the default route in both
+the 9R4C and 5R1C advances, with `FLX_R86_VENT_AIR_ONLY=0` retained as
+the documented A/B archaeology route (pinned by
+`tests/multizone_vent_routing_contract.rs`, loop r112). The neighboring
+§5.2.1.10.1 night-vent `h_tr_is` multiplier was removed at loop r100
+(edba335a, PR #4612). The mass-coupling defect this ADR tracks is
+therefore **closed in the default build**; the pursuit of the verdict
+found the implementation already in place, with its receipts (the r86
+audit numbers above and the r87 flip approval).
+
+**Current measured state (recorded, not a decision signal).** 950FF
+min/max −15.85/39.11 °C vs the Annex B8 transcription
+[−13.4, −12.5]/[36.1, 37.1] °C (gaps 22.39/6.86 %-of-mid, known_fail,
+§LIMIT-17, the r143 state on canonical DRYCOLD weather); Case 950 (HVAC)
+annual cooling 671.17 kWh IN BAND [390, 920] (§LIMIT-24 RESOLVED) — the
+pre-cooling regression-avoidance clause is satisfied at the current tip,
+and the residual 950FF minimum-temperature gap carries under the
+GaugeSolver air-trajectory rework (#1465 / #1462, the §LIMIT-05 family),
+not under the mass-coupling defect.
+
+**Scope note.** The discretionary remainder — retiring the
+`FLX_R86_VENT_AIR_ONLY` A/B archaeology arm — is left to Alex: it is a
+deliberate, pinned, default-inert measurement route, and deleting it was
+not part of the release.
+
+**Status.** Remains **Proposed** per Alex's standing call, even though
+the implementation state above has landed; this UPDATE records the moved
+premises rather than flipping the status.
+
+---
+
 ## References
 
 - Issue #3058 — origin — Case 950FF night-vent mass coupling structural gap.
