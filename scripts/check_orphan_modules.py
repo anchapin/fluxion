@@ -310,6 +310,14 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
         "ai::distributed",
         "testing::integration::doe_reference",
         "io::idf::epjson",
+        # [wired-pending] PR #4585 (issue #3991 schedules slice, r150 rebase)
+        # adds ``src/io/idf/schedule.rs``: the schedule-import API consumed
+        # in-crate by ``convert::import_named_schedules`` (feeding the
+        # schema's ``named_schedules`` map); the re-exported surface awaits
+        # an external consumer (CLI/epJSON wiring) — wire or delete in a
+        # follow-up. Registered during the r150 rebase union under Alex's
+        # 2026-11-15 merge release.
+        "io::idf::schedule",
         "validation::fdd",
         "validation::flexlab_weather",
         "thermal::inter_zone",
@@ -425,7 +433,7 @@ WIRED_BUT_DEAD: frozenset[str] = frozenset(
 #     ``validation_hybrid_empirical_test`` target) — the module is no
 #     longer wired-but-dead, so its allowlist entry and its Issue
 #     #3748 disposition row are dropped in the same PR.
-BASELINE_WIRED_BUT_DEAD = 42  # lowered 43 → 42 in the Issue #4775 work
+BASELINE_WIRED_BUT_DEAD = 43  # raised 42 → 43 in PR #4585 (r150 rebase): io::idf::schedule registered wire-pending (issue #3991). Prior: lowered 43 → 42 in the Issue #4775 work
 #   (2026-11-12): physics::ground_conduction resolved — the ground-coupled
 #   Section 7 floor boundary (``src/sim/boundary.rs``) wires the Issue
 #   #4270 2-D ground-conduction domain into the floor boundary, so the

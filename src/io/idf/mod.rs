@@ -45,11 +45,22 @@
 //!   served by a `ZoneHVAC:IdealLoadsAirSystem` is imported with
 //!   `hvac_system = Some(HVACSystemType::Ideal)` — see
 //!   [`convert::build_controls`]; other HVAC types are still ignored).
-//! - Schedule, Window/Door import (design §10) — the *export* side does
+//! - Window/Door import (design §10) — the *export* side does
 //!   write `FenestrationSurface:Detailed` glazing, but the importer does
 //!   not read windows back into the schema's `WindowSpec`.
 //! - HVAC templates other than `Ideal`: they have no IDF equipment-chain
 //!   mapping and are reported as a loss note by [`export_schema`].
+//!
+//! # Schedules (issue #3991 — schedules slice)
+//!
+//! `Schedule:Compact`, `Schedule:Constant` and `ScheduleTypeLimits` are
+//! imported into the schema's existing schedule representation
+//! ([`crate::sim::schedule::DailySchedule`]) by [`schedule`] +
+//! [`convert::import_named_schedules`]. The imported schedules are carried
+//! in [`crate::api::schema::ScheduleSet::named_schedules`]; anything the
+//! target representation cannot express exactly is reported as an explicit
+//! loss note ([`schedule::ScheduleLoss`]) or rejected with an
+//! [`IdfError`].
 //!
 //! # Example
 //!
@@ -68,9 +79,13 @@ pub mod error;
 pub mod export;
 pub mod lexer;
 pub mod parser;
+pub mod schedule;
 
-pub use convert::{case_spec_from_idf, GroundTempMeta, RunPeriodMeta, SUPPORTED_VERSIONS};
+pub use convert::{
+    case_spec_from_idf, import_named_schedules, GroundTempMeta, RunPeriodMeta, SUPPORTED_VERSIONS,
+};
 pub use error::IdfError;
 pub use export::{export_case_spec_envelope, export_idf, export_idf_to_writer, export_schema};
 pub use lexer::{tokenize, RawObject};
 pub use parser::{IdfFile, IdfObject, IdfParser, IdfValue};
+pub use schedule::{ImportedSchedule, NumericType, ScheduleLoss, ScheduleTypeLimits};

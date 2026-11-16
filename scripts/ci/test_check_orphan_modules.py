@@ -704,6 +704,9 @@ def test_disposition_gate_passes_on_real_allowlist(checker, capsys):
     # domain, merged 2026-11-12) re-registered its module (+1 -> 43) —
     # the count is pre-existing at the develop tip this PR rebased onto
     # (verified: 43 at 0f955d76, 0 new wired-but-dead from this diff);
+    # PR #4775 then lowered the live set 43 -> 42 (fixture briefly stale
+    # against the live count), and PR #4585's r150 rebase re-registered
+    # io::idf::schedule (+1 -> 43) — live 43 again at the rebased tip;
     # the checker's own lock-step print is the source of truth for the
     # count, asserted literally per the fixture's original convention.
     assert "Disposition registry in lock-step (43 row(s)" in out
