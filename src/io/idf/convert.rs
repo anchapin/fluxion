@@ -931,6 +931,12 @@ pub fn import_named_schedules(
     let mut limits: HashMap<String, ScheduleTypeLimits> = HashMap::new();
     for obj in idf.schedule_type_limits() {
         let limits_obj = parse_schedule_type_limits(obj)?;
+        if limits.contains_key(&limits_obj.name) {
+            return Err(IdfError::conversion_error(format!(
+                "duplicate ScheduleTypeLimits name '{}' (two ScheduleTypeLimits objects share the name)",
+                limits_obj.name
+            )));
+        }
         limits.insert(limits_obj.name.clone(), limits_obj);
     }
 
@@ -942,6 +948,12 @@ pub fn import_named_schedules(
         let limits_obj = referenced.as_ref().and_then(|name| limits.get(name));
         let imported = import_schedule_compact(obj, limits_obj)?;
         losses.extend(imported.losses.iter().cloned());
+        if schedules.contains_key(&imported.name) {
+            return Err(IdfError::conversion_error(format!(
+                "duplicate schedule name '{}' (two Schedule:* objects share the name)",
+                imported.name
+            )));
+        }
         schedules.insert(imported.name.clone(), imported.schedule);
     }
 
@@ -950,6 +962,12 @@ pub fn import_named_schedules(
         let limits_obj = referenced.as_ref().and_then(|name| limits.get(name));
         let imported = import_schedule_constant(obj, limits_obj)?;
         losses.extend(imported.losses.iter().cloned());
+        if schedules.contains_key(&imported.name) {
+            return Err(IdfError::conversion_error(format!(
+                "duplicate schedule name '{}' (two Schedule:* objects share the name)",
+                imported.name
+            )));
+        }
         schedules.insert(imported.name.clone(), imported.schedule);
     }
 
@@ -2112,6 +2130,47 @@ Schedule:Compact, Broken, Fraction, For: AllDays, Until: 24:00;\n";
                 && (msg.contains("expected a numeric value")
                     || msg.contains("missing value after")),
             "error should name the schedule and the problem, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn duplicate_schedule_names_fail_the_import_loudly() {
+        // r150 review follow-up: two `Schedule:*` objects sharing a name
+        // must be a precise error, not a silent last-wins overwrite —
+        // this slice's own contract is "never silently drop".
+        let src = "\
+Version, 25.2;\n\
+Building, TestBldg, 0.0, City, 0.04, 0.4, FullExterior, 25;\n\
+Zone, Z1, 0, 0, 0, 0, 1, 2.7, 129.6, 48.0, ;\n\
+Material, Mat1, MediumRough, 0.1, 1.0, 2000, 800;\n\
+Construction, Wall1, Mat1;\n\
+Schedule:Constant, Twice, Fraction, 1.0;\n\
+Schedule:Constant, Twice, Fraction, 0.0;\n";
+        let idf = IdfParser::from_str(src).unwrap();
+        let err =
+            SimulationSchemaV1::try_from(&idf).expect_err("duplicate schedule name is rejected");
+        assert!(
+            err.to_string().contains("duplicate schedule name 'Twice'"),
+            "error should name the duplicate, got: {err}"
+        );
+    }
+
+    #[test]
+    fn duplicate_schedule_type_limits_names_fail_the_import_loudly() {
+        // Same class as the schedule-name duplicate: a repeated
+        // `ScheduleTypeLimits` name must not silently replace the first
+        // declared limits object.
+        let src = "\
+Version, 25.2;\n\
+ScheduleTypeLimits, Fraction, 0.0, 1.0, Continuous;\n\
+ScheduleTypeLimits, Fraction, 0.0, 1.0, Discrete;\n";
+        let idf = IdfParser::from_str(src).unwrap();
+        let err = import_named_schedules(&idf)
+            .expect_err("duplicate ScheduleTypeLimits name is rejected");
+        assert!(
+            err.to_string()
+                .contains("duplicate ScheduleTypeLimits name 'Fraction'"),
+            "error should name the duplicate, got: {err}"
         );
     }
 
