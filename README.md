@@ -9,7 +9,7 @@
 
 ### Why the low pass rate is the point
 
-The low numbers are real and they are *supposed* to look like that — both the stored metric-level snapshot (9.8%, **ASHRAE 140 §7 Class I**) and the live strict gate (9 of 42 case-metrics passing; 33 documented as KNOWN-FAIL, **§7 Class I**). Every number the suite reports is checked against a **strict ±15% annual-energy-balance gate** and an honesty guard that asserts each recorded engine value sits in the ASHRAE-published band or in an explicit xfail for a documented structural gap. Fluxion has **never been tuned to pass**: no calibration factors, no case-type hints — fixes go into the underlying physics, and the known failures are tracked publicly in [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) as the roadmap, not hidden. A red suite that tells the truth is the deliverable of this milestone; [`scripts/ashrae_140_pipeline.py`](scripts/ashrae_140_pipeline.py) reproduces the whole check in one command (see [Run the validation pipeline](#run-the-validation-pipeline)).
+The low numbers are real and they are *supposed* to look like that — both the stored metric-level snapshot (8.3%, **ASHRAE 140 §7 Class I**) and the live strict gate (14 of 42 case-metrics passing; 28 documented as KNOWN-FAIL, **§7 Class I**). Every number the suite reports is checked against a **strict ±15% annual-energy-balance gate** and an honesty guard that asserts each recorded engine value sits in the ASHRAE-published band or in an explicit xfail for a documented structural gap. Fluxion has **never been tuned to pass**: no calibration factors, no case-type hints — fixes go into the underlying physics, and the known failures are tracked publicly in [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) as the roadmap, not hidden. A red suite that tells the truth is the deliverable of this milestone; [`scripts/ashrae_140_pipeline.py`](scripts/ashrae_140_pipeline.py) reproduces the whole check in one command (see [Run the validation pipeline](#run-the-validation-pipeline)).
 
 ## 🏗 Architecture
 
@@ -24,13 +24,13 @@ Fluxion is **not yet ASHRAE 140-compliant**. The current strict ±15% annual-ene
 
 | Metric | Current | Target (release gate) | Status |
 |--------|---------|-----------------------|--------|
-| Strict ±15% annual-energy gate (live, 2026-10-15 @ `ad88bfa9`) — **ASHRAE 140 §7 (Class I)** | **9 PASS / 33 KNOWN-FAIL / 0 REGRESSION** | 0 REGRESSION sustained; KNOWN-FAIL count trending down | ℹ️ tracked |
-| Pass rate (metric-level) | **6.0%** (5/84 metrics, ASHRAE 140 §7 Class I envelope cases) | ≥ 60% | ❌ Fail |
-| Mean Absolute Error (MAE) | **78.50%** (ASHRAE 140 §7 Class I envelope cases) | ≤ 50% | ❌ Fail |
+| Strict ±15% annual-energy gate (live, 2026-11-16 @ `d3dc30a9`) — **ASHRAE 140 §7 (Class I)** | **14 PASS / 28 KNOWN-FAIL / 0 REGRESSION** | 0 REGRESSION sustained; KNOWN-FAIL count trending down | ℹ️ tracked |
+| Pass rate (metric-level) | **8.3%** (7/84 metrics, ASHRAE 140 §7 Class I envelope cases) | ≥ 60% | ❌ Fail |
+| Mean Absolute Error (MAE) | **77.47%** (ASHRAE 140 §7 Class I envelope cases) | ≤ 50% | ❌ Fail |
 | Cases fully passing (stored snapshot) — **ASHRAE 140 §7 (Class I)** | 0/18 (0.0%, §7 Class I envelope cases) | — | ❌ |
-| Max single-case deviation — **ASHRAE 140 §7 (Class I)** | 964.17% (§7 Class I envelope cases) | — | ℹ️ |
+| Max single-case deviation — **ASHRAE 140 §7 (Class I)** | 914.15% (§7 Class I envelope cases) | — | ℹ️ |
 
-*The four metric-level rows above are regenerated (generated 2026-10-15 from a live `fluxion validate` sweep at `ad88bfa9`, promoted into `validation/performance_history.latest.json`); the strict-gate row above them is the live regression gate. All of these figures are **ASHRAE 140 §7 (Class I)** scope — envelope and fabric load tests only. The metric-level regression vs the 2026-09-26 snapshot (9.8% → 6.0% pass, 45.27% → 78.50% MAE, §7 Class I) reflects the round-26+ fidelity-first engine changes measured against the un-tuned validator reference bands — see the round-37 loop notes; no validator band or engine constant was adjusted to move these figures.*
+*The four metric-level rows above are regenerated (generated 2026-11-16 from a live `fluxion validate` sweep at `ca7d33d2`, engine = develop `d3dc30a9`, promoted into `validation/performance_history.latest.json`); the strict-gate row above them is the live regression gate. All of these figures are **ASHRAE 140 §7 (Class I)** scope — envelope and fabric load tests only. The metric-level regression vs the 2026-09-26 snapshot (9.8% → 6.0% pass, 45.27% → 78.50% MAE, §7 Class I) reflects the round-26+ fidelity-first engine changes measured against the un-tuned validator reference bands — see the round-37 loop notes; the 2026-11-16 refresh (loop round 151) re-records the live sweep at 8.3% pass / 77.47% MAE as the round-38..150 program's recorded movement, with the drift gate's case-level criterion showing zero pass↔fail transitions (see `docs/ASHRAE140_RESULTS.md`); no validator band or engine constant was adjusted to move these figures.*
 
 ### Run the validation pipeline
 
@@ -75,7 +75,7 @@ These are documented **structural failures** (also listed in `release_gates.yaml
 
 - **Baseline 600-series (low-mass):** All 6 cases FAIL. Simplified envelope model over-predicts peak loads (e.g. peak heating ~4.36 kW vs 2.80–3.80 kW reference band).
 - **High-mass 900-series:** All 6 cases FAIL. Heating is over-predicted by ~**200%** due to a 5R1C/CTF thermal-mass limitation (e.g. Case 900 annual heating 5,130 kWh vs 1,170–2,040 kWh reference band, per `docs/KNOWN_ISSUES.md` §LIMIT-05 UPDATE #2453).
-- **Overall accuracy:** 45.27% MAE (ASHRAE 140 §7 Class I scope), driven by the high-mass annual-energy deviation above.
+- **Overall accuracy:** 77.47% MAE (ASHRAE 140 §7 Class I scope), driven by the high-mass annual-energy deviation above.
 - **Peak load accuracy:** High-mass peak loads UNDER-estimated post-#1280 (Case 900 0.86 kW vs 2.10–3.50 kW reference band; full peak accuracy gated on the DAE teacher validation suite (#3986), which per ADR-0017 holds flip authority on the cfg-dependent default selector (superseding the §LIMIT-21 closure plan, Issue #3297).
 
 For the historical v0.8.0 snapshot (Peak Load & Free-Float Validation narrative), see [`docs/archive/ASHRAE140_RESULTS_v0.8.0.md`](docs/archive/ASHRAE140_RESULTS_v0.8.0.md) (archived; superseded by the current blind-validation figures above).
