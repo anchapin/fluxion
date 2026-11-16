@@ -16,6 +16,14 @@
 //! (slice 2, loop round 86). The Tmin-band consequence is recorded as
 //! §LIMIT-43 (loop round 87).
 //!
+//! ROUND 152 UPDATE (2026-11-17, Alex-released retirement): the
+//! `FLX_R86_VENT_AIR_ONLY` falsy-restore arm is removed from the engine —
+//! both live sites (the sub-step `h_vent_i` folded into h3, and the
+//! legacy hourly `h_vent_mass_zone`) are air-only unconditionally, the
+//! token no longer exists, and the dedicated restore contract
+//! (solar_lag_carry_contract Contract 6) was removed with it. The ROUND
+//! 87 UPDATE above stands as history.
+//!
 //! Component input/output inventory (blitz slice 1 scope):
 //! - inputs: `tm_prev` (mass state), `cm` (mass capacitance; per class
 //!   `cm_wall/cm_roof/cm_floor` when present), exterior driving per class

@@ -300,9 +300,34 @@ not under the mass-coupling defect.
 deliberate, pinned, default-inert measurement route, and deleting it was
 not part of the release.
 
+**Retirement (2026-11-17, loop round 152).** On Alex's release ("do the
+arm retirement and scope the prime redesign", 2026-11-16 24:19 ET) the
+scope note above was executed: the `FLX_R86_VENT_AIR_ONLY` arm is
+retired. Premise verified at the tip before deletion: no reader anywhere
+in CI, workflows, scripts, or docs sets the token; both `env_bool`
+readers (`zone_balance.rs`, the sub-step `h_vent_i` site and the legacy
+hourly `h_vent_mass_zone` site) default true, so the falsy-restore
+branches were unreachable on the default build. Removed: both readers,
+both restore branches, and the dedicated falsy-restore pin
+(`tests/solar_lag_carry_contract.rs` Contract 6 — the token's actual
+pin; the ADR's earlier "pinned by tests/multizone_vent_routing_contract.rs"
+attribution named the r112 multi-zone routing suite, which does not
+reference the token). Kept: every measurement record — the round-86
+audit (docs/investigations/2026-10-22-free-float-energy-balance-audit-r86.md),
+the r87 flip record (KNOWN_ISSUES §LIMIT-43), this ADR's derivation and
+receipts, and the strict-baseline provenance sentences.
+`tests/solar_lag_carry_contract.rs` Contract 5 (the air-node-only
+vent-record identity pin) remains green against the constant-0 record
+field, and `h_vent_mass_zone` stays in the applied record for 9R4C
+parity (the multi_node_solver constant-0 pattern). The default build's
+behavior is byte-identical by construction (the r87 default computed
+0.0 on every step) and proven by the full battery on the retirement PR.
+
 **Status.** Remains **Proposed** per Alex's standing call, even though
 the implementation state above has landed; this UPDATE records the moved
-premises rather than flipping the status.
+premises rather than flipping the status. The round-152 retirement
+removes the arm this ADR's scope note carried; it does not change the
+status.
 
 ---
 
