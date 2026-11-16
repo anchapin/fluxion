@@ -37,3 +37,14 @@ tqdm>=4.65.0
 # this the py3.10 CI matrix job errors at import time. Keep aligned with the
 # tomli pin in `requirements-dev.txt`.
 tomli>=2.0.0; python_version < "3.11"
+
+# scikit-learn — required by `scripts/ci/test_surrogate_scaler_convention.py`:
+# `_make_scalers` and `_make_model` import `sklearn.preprocessing.StandardScaler`
+# and `sklearn.neural_network.MLPRegressor` unguarded, because the tests pin the
+# real scaler→ONNX affine convention (scale_in = 1/std, bias_in = −mean/…) and
+# must run against real sklearn, not a stub. Its absence in CI surfaced as
+# "ModuleNotFoundError: No module named 'sklearn'" in both `scripts-tests.yml`
+# and `python-tests.yml` (both install exactly this file) while local dev venvs
+# (requirements-dev.txt) had it — the standing scripts-suite red family.
+# Keep aligned with the scikit-learn>=1.3.0 pin in `requirements-dev.txt`.
+scikit-learn>=1.3.0
