@@ -194,6 +194,27 @@ jobs:
       # pre-#4609 family in runs 40224030752 / 40222876634 / 40219327349).
       # Fetch deterministically here, same pattern as physics-pr.yml. Gated
       # to this shard so a fetch outage cannot newly red the other five.
+      # Loop round 158 (2026-11-18, Alex-released "Wire the mirror into the
+      # fetch steps"): the fetch below now self-heals — the canonical ASHRAE
+      # download falls back to Alex's byte-identical release mirror inside
+      # scripts/fetch_ashrae140_weather.py (sha256 provenance guard unchanged
+      # and load-bearing) — so the standing Cloudflare-403 wall no longer reds
+      # this shard's weather step every run, and the restore step above the
+      # fetch lets a warm cache skip the ~704 MB download entirely.
+      - name: Restore canonical ASHRAE 140 weather cache (zone-balance EPW tests)
+        if: matrix.id == 'zone-balance'
+        id: weather-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          # Byte-identical path/key/restore-keys to the canonical cache
+          # steps in physics-pr.yml / nightly-ashrae-140-gauge.yml /
+          # ashrae_140_fabric.yml / ashrae140-weather-seed.yml, so a
+          # develop- (or merge-ref-) scoped save restores here unchanged.
+          path: assets/weather/ashrae140
+          key: ashrae140-weather-${{ hashFiles('tests/reference_data/weather/ashrae140_canonical_checksums.json') }}
+          restore-keys: |
+            ashrae140-weather-
+
       - name: Fetch ASHRAE 140 weather assets (zone-balance EPW tests)
         if: matrix.id == 'zone-balance'
         run: |

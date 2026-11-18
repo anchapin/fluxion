@@ -13,20 +13,22 @@
 # β-soak, the Fabric Harness Gate) stays red on its weather step until one
 # develop-scoped fetch succeeds.
 #
-# This workflow fetches the byte-identical package from the repository
-# owner's own release asset instead:
+# This workflow seeds the develop-scoped cache by running the canonical
+# chain verbatim (scripts/fetch_ashrae140_weather.py — which since round
+# 158 carries the URL chain itself: canonical ASHRAE URL first, Alex's
+# byte-identical release mirror
 #
 #   tag:   ashrae140-weather-seed-20261106
 #   asset: 140-2023-AccompanyingFiles.zip
 #
-# and then runs the canonical chain verbatim (extract via the canonical
-# module's own member paths + sha256 guard, convert_tmy3_to_epw.py,
-# check_ashrae140_weather.py), so the saved cache layout is exactly what the
+# as the download fallback), then convert_tmy3_to_epw.py and
+# check_ashrae140_weather.py, so the saved cache layout is exactly what the
 # canonical cache steps produce and consume. The in-repo provenance guard
-# tests/reference_data/weather/ashrae140_canonical_checksums.json still
-# verifies every extracted file — only the download source differs, and the
-# guard makes that safe. No fetch script, gate, or workflow outside this
-# file is changed.
+# tests/reference_data/weather/ashrae140_canonical_checksums.json verifies
+# every extracted file, whichever source served the bytes. Since round 158
+# the consumers self-heal from the mirror on a cache miss, so this dispatch
+# is the fallback playbook (forced re-warm of develop, mirror-outage
+# recovery) rather than the normal path.
 #
 # Scope contract (the r115 lesson): caches saved during PR runs land in the
 # PR's merge-ref scope and are unreachable once the PR merges. This workflow
@@ -58,14 +60,6 @@ concurrency:
       && contains('refs/heads/main,refs/heads/develop', github.ref)
     }}
 
-env:
-  # Byte-identical mirror of
-  # https://xp20.ashrae.org/supplementalfiles/140-2023-AccompanyingFiles.zip
-  # uploaded by Alex on 2026-11-06 (release ashrae140-weather-seed-20261106).
-  # The canonical sha256 guard verifies the extracted members, so the
-  # download source itself needs no separate pin.
-  SEED_PACKAGE_URL: https://github.com/anchapin/fluxion/releases/download/ashrae140-weather-seed-20261106/140-2023-AccompanyingFiles.zip
-
 jobs:
   seed:
     name: Seed ashrae140-weather cache (develop scope)
@@ -88,20 +82,19 @@ jobs:
           restore-keys: |
             ashrae140-weather-
 
-      - name: Seed-fetch from the release mirror + convert + verify (canonical chain)
+      - name: Seed-fetch (canonical chain with release-mirror fallback) + convert + verify
         run: |
           python3 - <<'PY'
-          import os
           import sys
           from pathlib import Path
 
           sys.path.insert(0, str(Path("scripts").resolve()))
           import fetch_ashrae140_weather as canonical
 
-          # The canonical module the CI fetch step runs — same DEST_DIR,
-          # same ZIP_MEMBERS member paths, same sha256 guard. Only the
-          # download source is redirected to Alex's release mirror.
-          canonical.PACKAGE_URL = os.environ["SEED_PACKAGE_URL"]
+          # The canonical module the CI fetch steps run — same DEST_DIR,
+          # same ZIP_MEMBERS member paths, same sha256 guard, same URL
+          # chain (ASHRAE canonical first, release-mirror fallback) as
+          # every consumer since round 158. No source override here.
 
           # Same flow as the canonical step's `--skip-download || full
           # fetch`: verify first (cache-restore path), download only if the

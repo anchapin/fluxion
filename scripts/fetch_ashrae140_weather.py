@@ -20,12 +20,24 @@ Usage:
 ``--skip-download`` re-verifies already-installed files (offline CI restore
 path); the download source is a 704 MB zip, so CI caches the extracted
 outputs keyed on the checksum file and re-verifies only.
+
+Since 2026-10-30 ASHRAE's supplemental-files host has served automated
+clients a Cloudflare challenge (HTTP 403, ``cf-mitigated: challenge``).
+Round 158 (Alex-released 2026-11-18, "Wire the mirror into the fetch
+steps") therefore gives ``fetch()`` a fallback source: on a download
+failure from the canonical URL it retries Alex's release mirror of the
+byte-identical package (release ``ashrae140-weather-seed-20261106``, the
+asset the manual seed dance has been dispatching since round 124). Only
+download failures advance the chain; a package whose members fail the
+in-repo sha256 provenance guard fails loudly (SystemExit) and is never
+silently accepted, retried elsewhere, or re-keyed.
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import sys
 import urllib.request
@@ -42,6 +54,19 @@ CHECKSUM_FILE = (
 )
 DEST_DIR = REPO_ROOT / "assets" / "weather" / "ashrae140"
 PACKAGE_URL = "https://xp20.ashrae.org/supplementalfiles/140-2023-AccompanyingFiles.zip"
+
+# Byte-identical mirror of PACKAGE_URL, uploaded by Alex on 2026-11-06
+# (release tag ashrae140-weather-seed-20261106, asset
+# 140-2023-AccompanyingFiles.zip) and used by the manual seed-dance
+# dispatch since round 124. Round 158 (2026-11-18, Alex-released "Wire
+# the mirror into the fetch steps") wired it into fetch() as the
+# fallback URL: a download failure on PACKAGE_URL (the Cloudflare
+# challenge) retries the mirror. The sha256 provenance guard below
+# stays load-bearing for BOTH sources.
+PACKAGE_URL_FALLBACK = (
+    "https://github.com/anchapin/fluxion/releases/download/"
+    "ashrae140-weather-seed-20261106/140-2023-AccompanyingFiles.zip"
+)
 
 # Member paths inside 140-2023-AccompanyingFiles.zip (note the upstream
 # directory typo "FIles" — verbatim from the archive).
@@ -76,17 +101,39 @@ def verify_installed() -> list[str]:
     return problems
 
 
-def fetch() -> None:
-    guard = json.loads(CHECKSUM_FILE.read_text())
-    DEST_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"downloading {PACKAGE_URL} (this is a ~704 MB package)...")
-    tmp = Path("/tmp/ashrae140-accompanying.zip")
-    with urllib.request.urlopen(PACKAGE_URL, timeout=600) as resp, open(tmp, "wb") as out:
+def _download(url: str, tmp: Path) -> None:
+    print(f"downloading {url} (this is a ~704 MB package)...")
+    with urllib.request.urlopen(url, timeout=600) as resp, open(tmp, "wb") as out:
         while True:
             chunk = resp.read(1 << 20)
             if not chunk:
                 break
             out.write(chunk)
+
+
+def fetch() -> None:
+    guard = json.loads(CHECKSUM_FILE.read_text())
+    DEST_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = Path("/tmp/ashrae140-accompanying.zip")
+    # Round-158 fallback chain: canonical ASHRAE URL first, then Alex's
+    # byte-identical release mirror. Only DOWNLOAD failures advance the
+    # chain (OSError covers URLError/HTTPError/timeouts; HTTPException
+    # covers mid-stream truncation). A package whose members fail the
+    # sha256 guard below is a provenance incident: it fails loudly and is
+    # never retried against the next source or silently re-keyed.
+    last_error: Exception | None = None
+    for url in (PACKAGE_URL, PACKAGE_URL_FALLBACK):
+        try:
+            _download(url, tmp)
+            break
+        except (OSError, http.client.HTTPException) as exc:
+            last_error = exc
+            print(f"download from {url} failed: {exc}", file=sys.stderr)
+    else:
+        raise SystemExit(
+            f"FATAL: every download source failed (last error: {last_error}); "
+            f"tried {PACKAGE_URL} and the release mirror {PACKAGE_URL_FALLBACK}"
+        )
     with zipfile.ZipFile(tmp) as zf:
         names = set(zf.namelist())
         for name, member in ZIP_MEMBERS.items():
