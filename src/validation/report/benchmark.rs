@@ -868,17 +868,15 @@ impl BenchmarkReport {
         }
     }
 
-    /// Emits a machine-readable summary via `tracing` for CI ingestion. (Issue #2500)
+    /// Builds the machine-readable CI summary as a JSON value. (Issue #2500)
     ///
-    /// The fields are recorded as structured tracing fields (and the full JSON
-    /// blob is attached) so that a JSON subscriber produces records ingestible
-    /// by CI scripts / Loki / Elastic without fragile regex parsing.
-    pub fn print_summary_json(&self) {
+    /// Single source for both the `tracing` emission in
+    /// [`BenchmarkReport::print_summary_json`] and the stdout emission the
+    /// CLI performs for `--ci-summary-json` (Issue #4838: the tracing-only
+    /// emission left stdout empty when no JSON tracing subscriber was
+    /// installed, so CI scripts capturing stdout got nothing).
+    pub fn summary_json(&self) -> serde_json::Value {
         use serde_json::json;
-
-        let passed_count = self.results.iter().filter(|r| r.passed()).count() as u32;
-        let warning_count = self.warning_count() as u32;
-        let fail_count = self.fail_count() as u32;
 
         let case_mae = self.case_mae_contributions();
         let case_mae_sorted: Vec<_> = {
@@ -887,28 +885,40 @@ impl BenchmarkReport {
             v.into_iter().map(|(k, v)| (k.clone(), *v)).collect()
         };
 
-        let summary = json!({
+        json!({
             "total_results": self.results.len() as u32,
             "pass_rate": self.pass_rate(),
-            "passed": passed_count,
-            "warnings": warning_count,
-            "failed": fail_count,
+            "passed": self.results.iter().filter(|r| r.passed()).count() as u32,
+            "warnings": self.warning_count() as u32,
+            "failed": self.fail_count() as u32,
             "mae": self.mae(),
             "max_deviation": self.max_deviation(),
             "duration_seconds": self.duration_seconds(),
             "case_mae_contributions": case_mae_sorted,
-        });
+        })
+    }
 
+    /// Serializes [`BenchmarkReport::summary_json`] to a JSON string.
+    pub fn summary_json_string(&self) -> String {
+        serde_json::to_string(&self.summary_json()).unwrap()
+    }
+
+    /// Emits a machine-readable summary via `tracing` for CI ingestion. (Issue #2500)
+    ///
+    /// The fields are recorded as structured tracing fields (and the full JSON
+    /// blob is attached) so that a JSON subscriber produces records ingestible
+    /// by CI scripts / Loki / Elastic without fragile regex parsing.
+    pub fn print_summary_json(&self) {
         tracing::info!(
             total_results = self.results.len() as u32,
             pass_rate = self.pass_rate(),
-            passed = passed_count,
-            warnings = warning_count,
-            failed = fail_count,
+            passed = self.results.iter().filter(|r| r.passed()).count() as u32,
+            warnings = self.warning_count() as u32,
+            failed = self.fail_count() as u32,
             mae = self.mae(),
             max_deviation = self.max_deviation(),
             duration_seconds = self.duration_seconds(),
-            json = %serde_json::to_string(&summary).unwrap(),
+            json = %self.summary_json_string(),
             "validation report summary (json)",
         );
     }

@@ -48,7 +48,35 @@ cargo nextest run --workspace --exclude fluxion-tauri --test-threads=2 --no-fail
 cargo test --workspace --exclude fluxion-tauri --no-fail-fast   # local-debug equivalent
 cargo clippy --lib -- -D warnings                               # RULES.md pre-commit form
 python3 scripts/check_test_inventory_drift.py                   # when tests moved
+fluxion validate --case 600 --ci                                # E2E smoke (Issue #4838): single-case ASHRAE 140 run; --ci exits non-zero when any selected-case check fails; add --ci-summary-json for the summary JSON on stdout
 ```
+
+- E2E smoke: run the `fluxion validate` entry for changes touching
+  simulation/validation paths. It needs a warm target/prebuilt
+  binary, since a cold build dwarfs the run (full suite measured 45.9 s
+  warm; plan-coder #94 Phase 0). Case 600 is a documented structural
+  failure (SCORECARD.md, Known Structural Failures), so a red smoke
+  is the known state on develop, not new signal. The signal is a
+  change in its report. (Issue #4838)
+
+## Feature map
+
+What the engine does, the validate case(s) that exercise it, and the
+expected result. Assembled from SCORECARD.md,
+docs/ASHRAE140_RESULTS.md (2026-11-16 sweep), and the
+`fluxion validate` case list (Issue #4838); the results doc is
+canonical for status; this table is a snapshot, not a second source.
+
+| Capability | Exercised by | Expected | Current (2026-11-16 sweep) |
+|---|---|---|---|
+| Low-mass envelope annual simulation | 600, 610, 620, 630, 640, 650 | Annual heating/cooling + peak loads inside the ASHRAE 140 reference bands | All FAIL |
+| High-mass (thermal-mass) annual simulation | 900, 910, 920, 930, 940, 950 | Same bands criterion | All FAIL (900 = documented structural failure, SCORECARD.md) |
+| Free-floating temperature response | 600FF, 650FF, 900FF, 950FF | Min/max zone temperatures inside the reference bands | All FAIL |
+| HVAC equipment variants of the 600/900 envelope | 800, 810 | Scored in the 84-metric sweep (annual + peak) | FAIL |
+| Multi-zone cross-coupling (5-zone) | 970 | Annual heating/cooling + peaks inside the bands | FAIL |
+| Special cases (960; solid-conduction base case) | 960, 195 | Annual heating/cooling + peaks inside the bands | FAIL |
+| Batch configuration throughput (BatchOracle) | Benchmark gate, not a validate case | ≥150 configs/sec (SCORECARD.md) | Pass (~157 CI / ~900 release) |
+| Validation-suite throughput | Full `fluxion validate` run | Informational: 4.65 cases/sec (SCORECARD.md) | Informational |
 
 ## Hard stops — flag, don't decide
 

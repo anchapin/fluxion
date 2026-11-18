@@ -17,7 +17,7 @@
     },
     "fluxion": {
       "lib_ignored": 8,
-      "lib_tests": 4468,
+      "lib_tests": 4471,
       "test_binaries": 62
     },
     "fluxion-behavior": {
@@ -66,7 +66,7 @@
       "test_binaries": 1
     }
   },
-  "generated_at": "2026-11-16T01:37:24.100498+00:00",
+  "generated_at": "2026-11-18T04:53:41.298122+00:00",
   "repo_root": "unknown",
   "schema_version": 1,
   "scope": {
@@ -77,14 +77,31 @@
   "totals": {
     "doc_tests": 0,
     "lib_ignored_root": 8,
-    "lib_tests_root": 4468,
+    "lib_tests_root": 4471,
     "test_binaries": 78,
     "test_source_files": 418,
     "workspace_ignored": 151,
     "workspace_integration_ignored": 142,
     "workspace_integration_tests": 3743,
     "workspace_lib_ignored": 9,
-    "workspace_lib_tests": 5627,
-    "workspace_tests": 9370
+    "workspace_lib_tests": 5630,
+    "workspace_tests": 9373
+  },
+  "verify": {
+    "command": [
+      "env",
+      "CARGO_TARGET_DIR=/home/hatch/workspace/fluxion/target",
+      "cargo",
+      "test",
+      "--workspace",
+      "--exclude",
+      "fluxion-tauri",
+      "--",
+      "--list"
+    ],
+    "error": "cargo returned exit 101",
+    "executed_at": "2026-11-18T05:12:49.306539+00:00",
+    "matched": false,
+    "stderr_tail": "et/debug/deps/libtungstenite-edba40358efaab1d.rlib --extern uom=/home/hatch/workspace/fluxion/target/debug/deps/libuom-f821ee77d75bf0a9.rlib --extern uuid=/home/hatch/workspace/fluxion/target/debug/deps/libuuid-ab65ec0ba3bc80d2.rlib --extern zip=/home/hatch/workspace/fluxion/target/debug/deps/libzip-99e35e4d129d6715.rlib -C split-debuginfo=unpacked -L native=/home/hatch/workspace/fluxion/target/debug/build/alloca-942a0ab70924094f/out -L native=/home/hatch/workspace/fluxion/target/debug/build/aws-lc-sys-443eff984b03f7ff/out -L native=/home/hatch/workspace/fluxion/target/debug/build/ring-4371240db08f0f17/out -L native=/home/hatch/workspace/fluxion/target/debug/build/libsqlite3-sys-d28e4b1650e459f9/out -L native=/usr/lib/x86_64-linux-gnu -L native=/usr/lib/x86_64-linux-gnu` (signal: 9, SIGKILL: kill)\nwarning: build failed, waiting for other jobs to finish...\nwarning: `fluxion` (test \"all_tests\") generated 28 warnings (run `cargo fix --test \"all_tests\" -p fluxion` to apply 22 suggestions)\n"
   }
 }

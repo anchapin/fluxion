@@ -26,6 +26,32 @@ mod tests {
     }
 
     #[test]
+    fn test_only_case_restricts_validation_run() {
+        // Issue #4838: `fluxion validate --case 600` must run case 600 only.
+        let mut validator = ASHRAE140Validator::new();
+        assert!(validator.only_case().is_none());
+        validator.set_only_case(crate::validation::ASHRAE140Case::Case600);
+        assert!(matches!(
+            validator.only_case(),
+            Some(crate::validation::ASHRAE140Case::Case600)
+        ));
+        let report = validator.validate_analytical_engine();
+        assert!(
+            !report.results.is_empty(),
+            "single-case run must produce results"
+        );
+        assert!(
+            report.results.iter().all(|r| r.case_id == "600"),
+            "single-case run must contain only case 600 results, got: {:?}",
+            report
+                .results
+                .iter()
+                .map(|r| &r.case_id)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn test_skip_baseline_cases() {
         let mut validator = ASHRAE140Validator::new();
         validator.skip_baseline_cases(true);

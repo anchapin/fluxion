@@ -185,6 +185,11 @@ pub struct ASHRAE140Validator {
     pub diagnostic_cases_added: Vec<String>,
     /// Skip baseline cases when running diagnostics only (Phase 18)
     skip_baseline_cases: bool,
+    /// Restrict `validate_analytical_engine` to a single case (Issue #4838).
+    /// Set via [`ASHRAE140Validator::set_only_case`] from the
+    /// `fluxion validate --case` CLI path; `None` keeps the historical
+    /// behaviour (full baseline list + registered diagnostic ranges).
+    only_case: Option<ASHRAE140Case>,
     /// Thermal selector used when constructing per-case thermal models (Refs #3986-A).
     /// ADR-0017 makes the selector explicit per build configuration; storing it on
     /// the validator lets fabric tests run the same case under multiple selectors
@@ -336,6 +341,7 @@ impl ASHRAE140Validator {
             multi_ref: None,
             diagnostic_cases_added: Vec::new(),
             skip_baseline_cases: false,
+            only_case: None,
             selector: ThermalSelector::default(),
         };
 
@@ -434,6 +440,7 @@ impl ASHRAE140Validator {
             multi_ref: None,
             diagnostic_cases_added: Vec::new(),
             skip_baseline_cases: false,
+            only_case: None,
             selector: ThermalSelector::default(),
         };
 
@@ -459,6 +466,7 @@ impl ASHRAE140Validator {
             multi_ref: None,
             diagnostic_cases_added: Vec::new(),
             skip_baseline_cases: false,
+            only_case: None,
             selector: ThermalSelector::default(),
         };
 
@@ -513,6 +521,22 @@ impl ASHRAE140Validator {
     /// to only run baseline cases (600-960).
     pub fn disable_diagnostics(&mut self) {
         self.diagnostic_cases_added.clear();
+    }
+
+    /// Restricts `validate_analytical_engine` to a single case (Issue #4838).
+    ///
+    /// Used by `fluxion validate --case <id>`: when set, the run simulates
+    /// exactly this case: the baseline list and every registered diagnostic
+    /// range are skipped, so the resulting report contains only this case's
+    /// results. The per-case simulation path is unchanged, so a restricted
+    /// run produces identical numbers for the case as a full run.
+    pub fn set_only_case(&mut self, case: ASHRAE140Case) {
+        self.only_case = Some(case);
+    }
+
+    /// Returns the single-case restriction, if one was set.
+    pub fn only_case(&self) -> Option<ASHRAE140Case> {
+        self.only_case
     }
 
     /// Expands a diagnostic case range string into actual ASHRAE140Case variants.
@@ -1426,7 +1450,11 @@ impl ASHRAE140Validator {
 
         // Cases to validate - baseline cases + diagnostic cases
         // Skip baseline cases if skip_baseline_cases is true (Phase 18)
-        let mut cases = if self.skip_baseline_cases {
+        // Issue #4838: a single-case restriction (fluxion validate --case)
+        // wins over both the baseline list and the diagnostic ranges.
+        let mut cases = if let Some(only) = self.only_case {
+            vec![only]
+        } else if self.skip_baseline_cases {
             vec![]
         } else {
             vec![
@@ -1465,9 +1493,12 @@ impl ASHRAE140Validator {
         };
 
         // Add diagnostic cases if any ranges registered
-        for range in &self.diagnostic_cases_added {
-            let diagnostic_cases = self.expand_diagnostic_range(range);
-            cases.extend(diagnostic_cases);
+        // (suppressed under a single-case restriction, Issue #4838)
+        if self.only_case.is_none() {
+            for range in &self.diagnostic_cases_added {
+                let diagnostic_cases = self.expand_diagnostic_range(range);
+                cases.extend(diagnostic_cases);
+            }
         }
 
         // Define a struct to hold partial results from each parallel task
@@ -1596,7 +1627,12 @@ impl ASHRAE140Validator {
         }
 
         // Process diagnostic cases if added (Phase 18)
+        // (suppressed under a single-case restriction, Issue #4838: the
+        // report must contain only the restricted case's results)
         for range in &self.diagnostic_cases_added {
+            if self.only_case.is_some() {
+                break;
+            }
             match range.as_str() {
                 "195-470" => {
                     // Note: Cases 195-470 diagnostic range validation
