@@ -19,10 +19,14 @@ inputs:
     default: ''
   sccache:
     description: |
-      Enable sccache compiler caching via GHA cache backend.
-      Sets RUSTC_WRAPPER=sccache and SCCACHE_GHA_ENABLED=true.
-      When true, the target/ directory is NOT cached separately
-      (sccache provides finer-grained content-addressed caching).
+      Enable sccache compiler caching via ONE rotating GitHub Actions cache
+      entry per day+OS (the local disk store archived by actions/cache —
+      round-153 redesign of the per-object GHA backend; design and measured
+      churn in docs/investigations/2026-11-17-sccache-prime-churn-redesign-scoping.md
+      §4.2, released by Alex 2026-11-17). Sets RUSTC_WRAPPER=sccache.
+      When true, the target/ directory is NOT cached separately (sccache
+      still provides content-addressed caching — one bulk archive instead
+      of ~2.8k per-object store entries per day).
     required: false
     default: 'true'
   nextest:
@@ -88,8 +92,10 @@ runs:
         targets: ${{ inputs.targets }}
         components: ${{ inputs.components }}
 
-    # sccache: content-addressed compiler cache backed by GHA cache API.
-    # Caches individual compilation units; no stale-cache issues on Cargo.lock changes.
+    # sccache: content-addressed compiler cache backed by ONE rotating GHA
+    # cache entry per day+OS (the local disk store archived below — the
+    # round-153 redesign; the per-object GHA backend minted ~2.8k store
+    # entries/day and rewrote them nightly while over cap).
     # mozilla-actions/sccache-action downloads the sccache binary, which is
     # likewise subject to transient download failures (#2813). Retry up to 3x.
     - name: Set up sccache (attempt 1/3)
@@ -108,12 +114,42 @@ runs:
       if: inputs.sccache == 'true' && steps.sccache_2.outcome == 'failure'
       uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba  # v0.0.11
 
-    - name: Enable sccache as rustc wrapper
+    - name: Compute the sccache archive rotation key (daily)
+      id: sccache_rotation
+      if: inputs.sccache == 'true'
+      shell: bash
+      run: echo "date=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
+    - name: Enable sccache as rustc wrapper (local archive backend)
       if: inputs.sccache == 'true'
       shell: bash
       run: |
         echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
-        echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+        # Local disk store, archived as one rotating entry by the actions/cache
+        # step below. The per-object GHA backend (SCCACHE_GHA_ENABLED) is
+        # deliberately NOT set — see the round-153 redesign note above.
+        echo "SCCACHE_DIR=${{ runner.temp }}/sccache-local-store" >> "$GITHUB_ENV"
+        # Bound the local store (and therefore the saved archive) so the
+        # entry stays ~pile-sized (the old per-object pile measured
+        # ~1.3 GiB; the cap admits headroom for a day's new compilations
+        # before sccache's own LRU trims the coldest objects).
+        echo "SCCACHE_CACHE_SIZE=3G" >> "$GITHUB_ENV"
+
+    # Restore the newest sccache archive (prefix match — yesterday's entry
+    # when today's exact key misses) and register today's save in this
+    # action's post phase (job end), exactly like the cargo-registry cache
+    # step below. One entry per day+OS replaces the per-object pile:
+    # a restored archive re-warms every compilation it contains in a single
+    # lookup, and same-day saves by later jobs deduplicate (first finisher
+    # wins; the content converges day over day through the prefix restore).
+    - name: Restore + save sccache local archive (one rotating entry per day+OS)
+      if: inputs.sccache == 'true'
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+      with:
+        path: ${{ runner.temp }}/sccache-local-store
+        key: sccache-archive-${{ runner.os }}-${{ steps.sccache_rotation.outputs.date }}
+        restore-keys: |
+          sccache-archive-${{ runner.os }}-
 
     # cargo-nextest: the canonical Rust next-generation test runner
     # (Issue #3366 / ADR-0014). Replaces the 7-line `cargo test` block in

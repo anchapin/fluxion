@@ -116,6 +116,18 @@ ignore = [
     # >>> REMOVE together with the `.cargo/audit.toml` entry once rusqlite
     # >>> >= 0.41 lands (Cargo.lock resolving libsqlite3-sys >= 0.39.0).
     "RUSTSEC-2026-0459",
+    # RUSTSEC-2026-0543 (chrono is unmaintained) — added 2026-11-18 (loop
+    # r153), mirrored from `.cargo/audit.toml`, which carries the full
+    # provenance and removal condition. chrono is a DIRECT workspace
+    # dependency, so this file's `unmaintained = "workspace"` scope detects
+    # it (not advisory-not-detected noise). rustsec type is `unmaintained`:
+    # no patched versions exist, so no routine `cargo update` clears it —
+    # the remediation is the workspace-wide migration off chrono to a
+    # maintained successor.
+    # >>> REMOVE together with the `.cargo/audit.toml` entry once the
+    # >>> workspace migrates off chrono, or the advisory is withdrawn on
+    # >>> resumed upstream maintenance.
+    "RUSTSEC-2026-0543",
 ]
 
 # -----------------------------------------------------------------------------
