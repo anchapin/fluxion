@@ -186,4 +186,20 @@ ignore = [
     # >>> rusqlite is bumped to >= 0.41 in Cargo.toml and Cargo.lock
     # >>> resolves libsqlite3-sys >= 0.39.0 (SQLite >= 3.54.0).
     "RUSTSEC-2026-0459",
+    # RUSTSEC-2026-0543 (chrono is unmaintained) — surfaced 18 Nov 2026 when
+    # the RustSec DB issued the advisory; first observed failing the Cargo
+    # Audit gate on loop round 153's PRs (#4834/#4835) with no dependency
+    # changes in the diffs (upstream advisory drift). rustsec type is
+    # `unmaintained`: no patched versions exist, so no lock-only
+    # `cargo update -p chrono` clears it. chrono is a DIRECT workspace
+    # dependency (root Cargo.toml: `chrono = { version = "0.4", features =
+    # ["serde"] }`), not transitive — cargo-deny's
+    # `unmaintained = "workspace"` scope detects it too, so deny.toml
+    # mirrors this entry (same advisory ID); mirrored entries need no
+    # deny-scope-exempt marker (#3654 contract).
+    # >>> REMOVE this entry (together with its deny.toml mirror) once the
+    # >>> workspace migrates off chrono to a maintained successor (e.g.
+    # >>> jiff or time), or the advisory is withdrawn on resumed upstream
+    # >>> maintenance.
+    "RUSTSEC-2026-0543",
 ]
