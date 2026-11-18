@@ -223,7 +223,9 @@ pub enum Commands {
         #[arg(long)]
         range: Option<String>,
 
-        /// Run a specific case (e.g., "600")
+        /// Run a specific case (e.g., "600"). When set, exactly this case
+        /// runs and the report contains only its results; takes precedence
+        /// over --all, --diagnostics, and --range (Issue #4838).
         #[arg(short, long)]
         case: Option<String>,
 
@@ -942,6 +944,16 @@ fn format_id_segments(ids: &[u32]) -> String {
     segments.join(", ")
 }
 
+/// Issue #4838: the explicit `--ci` exit-code rule for `fluxion validate`.
+///
+/// A CI run fails when the validation report contains at least one failed
+/// check. Kept as a pure predicate so both directions (a clean report exits
+/// zero, a failing report exits non-zero) are unit-testable without
+/// simulating a case.
+pub fn ci_checks_failed(fail_count: usize) -> bool {
+    fail_count > 0
+}
+
 /// Print the shared usage block for an invalid case specification and build
 /// the matching error.
 ///
@@ -1561,7 +1573,7 @@ pub fn run_cli() -> Result<()> {
             all,
             diagnostics,
             range,
-            case: _,
+            case,
             statistical,
             alpha,
             format,
@@ -1574,10 +1586,28 @@ pub fn run_cli() -> Result<()> {
                 anyhow::bail!("Alpha must be in range [0.0, 1.0], got: {}", alpha);
             }
 
+            // Issue #4838: --case used to be parsed and discarded, so
+            // `fluxion validate --case 600` silently ran the full suite.
+            // Resolve it against the case registry up front; an unknown id
+            // is a usage error (non-zero exit), never a silent full run.
+            let selected_case = match &case {
+                Some(case_id) => Some(
+                    ASHRAE140Case::from_case_id(case_id)
+                        .ok_or_else(|| invalid_case_spec(case_id))?,
+                ),
+                None => None,
+            };
+
             let mut validator = ASHRAE140Validator::new();
+            if let Some(selected) = selected_case {
+                validator.set_only_case(selected);
+            }
 
             // Handle diagnostic case options
-            if all {
+            // (a single-case selection takes precedence over all of these)
+            if selected_case.is_some() {
+                // --case wins: skip --all/--diagnostics/--range selection.
+            } else if all {
                 // Run complete validation (baseline + diagnostics)
                 validator.add_diagnostic_case_range("195-470".to_string());
                 validator.add_diagnostic_case_range("800-810".to_string());
@@ -1683,6 +1713,13 @@ pub fn run_cli() -> Result<()> {
                     }
                 }
 
+                // Issue #4838: a single-case selection overrides the
+                // baseline/diagnostic case assembly above.
+                if let Some(selected) = selected_case {
+                    cases.clear();
+                    cases.push(selected);
+                }
+
                 // Use statistical validation
                 let mut stat_validator = StatisticalValidator::with_alpha(alpha);
                 let stat_report = stat_validator.validate_with_statistics(&cases);
@@ -1698,9 +1735,21 @@ pub fn run_cli() -> Result<()> {
 
             // CI Summary JSON output - outputs machine-readable summary for CI parsing
             // This bypasses human-readable formatting and outputs JSON directly to avoid
-            // regex parsing issues with values like "inf%" in text output
+            // regex parsing issues with values like "inf%" in text output.
+            // Issue #4838: the summary used to be emitted only via `tracing`,
+            // so a caller capturing stdout (the documented CI usage) got
+            // nothing whenever no tracing subscriber was installed. Print it
+            // to stdout as well, and honour the explicit --ci exit code.
             if ci_summary_json {
                 report.print_summary_json();
+                println!("{}", report.summary_json_string());
+                if ci && ci_checks_failed(report.fail_count()) {
+                    eprintln!(
+                        "CI mode: {} validation check(s) failed",
+                        report.fail_count()
+                    );
+                    std::process::exit(1);
+                }
                 return Ok(());
             }
 
@@ -1845,6 +1894,22 @@ pub fn run_cli() -> Result<()> {
                         std::process::exit(1);
                     }
                 }
+            }
+
+            // Issue #4838: explicit --ci also fails the run when any
+            // validation check failed. Before this, the exit code depended
+            // solely on the guardrail baseline above, and with no baseline
+            // file present (docs/performance_baseline.json is not in the
+            // repo) a run reporting dozens of FAILs still exited 0. This is
+            // keyed to the explicit flag only, not the CI=true environment
+            // fallback above, so informational `fluxion validate` runs on CI
+            // runners (e.g. cross-validation.yml) keep their behaviour.
+            if ci && ci_checks_failed(report.fail_count()) {
+                eprintln!(
+                    "CI mode: {} validation check(s) failed",
+                    report.fail_count()
+                );
+                std::process::exit(1);
             }
         }
 
@@ -2200,6 +2265,14 @@ mod tests {
         assert!(expand_case_range(900, 960)
             .iter()
             .all(|id| !id.contains("FF")));
+    }
+
+    #[test]
+    fn ci_checks_failed_only_when_checks_fail() {
+        // Issue #4838: both directions of the --ci exit-code rule.
+        assert!(!ci_checks_failed(0), "a clean report must exit zero");
+        assert!(ci_checks_failed(1), "one failed check must fail the run");
+        assert!(ci_checks_failed(73), "many failed checks must fail the run");
     }
 
     #[test]

@@ -15,6 +15,26 @@ mod tests {
     }
 
     #[test]
+    fn test_summary_json_string_carries_ci_fields() {
+        // Issue #4838: --ci-summary-json prints this JSON to stdout; it must
+        // carry the counts a CI script needs without parsing prose.
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        report.add_result_simple("600", MetricType::AnnualCooling, 3.0, 4.30, 5.71);
+        let parsed: serde_json::Value =
+            serde_json::from_str(&report.summary_json_string()).expect("summary must be JSON");
+        assert_eq!(parsed["total_results"], 2);
+        assert_eq!(parsed["failed"], report.fail_count() as u64);
+        assert_eq!(
+            parsed["passed"],
+            report.results.iter().filter(|r| r.passed()).count() as u64
+        );
+        assert!(parsed["pass_rate"].is_number());
+        assert!(parsed["mae"].is_number());
+        assert!(parsed["case_mae_contributions"].is_array());
+    }
+
+    #[test]
     fn test_delta_report() {
         let mut report = DeltaReport::new();
         report.add_delta(DeltaResult {
