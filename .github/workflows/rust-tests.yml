@@ -661,7 +661,7 @@ jobs:
       # Workspace list mirrors `test::Cache cargo workspace` above so the
       # nextest job and this job share the same keyspace.
       - name: Cache cargo workspace
-        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31  # v2
+        uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266  # v2
         with:
           workspaces: |
             .
@@ -717,7 +717,7 @@ jobs:
         with:
           python-version: '3.10'
       - name: Cache cargo workspace
-        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31  # v2
+        uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266  # v2
         with:
           workspaces: |
             .
