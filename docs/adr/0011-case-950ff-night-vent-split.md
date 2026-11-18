@@ -4,11 +4,11 @@
 > **Summary 2/7:** Root cause is `h_ve_night ≈ 570.8 W/K` overwhelming `h_tr_em_wall ≈ 71.6 W/K` by ~8× in `src/physics/multi_node_solver.rs::step_with_gains`'s mass-node update.
 > **Summary 3/7:** The F_sky-weighted longwave correction is mathematically correct but effectively invisible against the dominant raw-outdoor forcing.
 > **Summary 4/7:** Three proposed directions are (a) split air-node / surface-node mass coupling, (b) reduce `h_ve_night` by F_sky, (c) route `h_ve_night` only through the air node — all require solver code changes.
-> **Summary 5/7:** This ADR is Proposed and records no implementation; per AGENTS.md / RULES.md / ADR-0001, no parameter tuning is permitted on `h_ve_night` to close the gap.
+> **Summary 5/7:** Accepted 2026-11-17: verdict (c) air-node-only (default since r87, arm retired r152); per AGENTS.md / RULES.md / ADR-0001, no parameter tuning is permitted on `h_ve_night` to close the gap.
 > **Summary 6/7:** The Case 950 (HVAC mode) annual cooling band (390–920 kWh) is the regression-avoidance clause for any future solver change.
 > **Summary 7/7:** The structural fix is routed to the GaugeSolver production-path work (#1465 / #1462) coordinated by Issue #3059.
 
-- **Status:** Proposed (tracking stub only — no implementation recorded)
+- **Status:** Accepted (2026-11-17, Alex's release "4. Accept it" — verdict (c) air-node-only; see UPDATE 2026-11-17 below)
 - **Date:** 2026-08-17
 - **Deciders:** Fluxion maintainers (TBD)
 - **Supersedes:** None
@@ -328,6 +328,27 @@ the implementation state above has landed; this UPDATE records the moved
 premises rather than flipping the status. The round-152 retirement
 removes the arm this ADR's scope note carried; it does not change the
 status.
+
+**Accepted (2026-11-17, loop round 153 — Alex's release "4. Accept it",
+2026-11-17 18:36 ET).** Status flips Proposed → **Accepted**, superseding
+the round-152 holding call. The accepted verdict is the round-150
+physics-basis choice: option (c), night ventilation routed through the
+air node only — a zone-air exchange per ASHRAE 140's own case airflow
+definitions and ISO 13790 §C.4, with mass nodes coupling through
+surfaces. It has been the default build's behavior since the r87 flip,
+and the round-152 arm retirement proved the default route carried it on
+every step byte-identically. Acceptance criteria are the round-150
+restatement in physics terms per the 2026-10-22 ignore-the-bands
+doctrine (the band-based clauses in Decision and Plan are stale as
+acceptance criteria — noted stale in the round-148 brief, recorded for
+the record only): the routing is known, verifiable, tested physics — the
+§C.4 coupling holds on every night-vent hour, Contract 5's air-node-only
+record pin stays green, the energy balance closes on every step, and the
+strict battery holds its recorded partition (14 PASS / 28 KNOWN-FAIL /
+0 REGRESSION, every row measuring == recorded). Band movement (Case
+950FF, direction) is recorded, never a decision signal. The residual
+950FF minimum-temperature gap rides the GaugeSolver air-trajectory
+rework (#1465 / #1462, the §LIMIT-05 family), not this ADR's defect.
 
 ---
 
