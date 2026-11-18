@@ -31,6 +31,7 @@ fn main() {
         &[],
         &sun_pos,
         Orientation::South,
+        1.0, // fully visible sky (unshaded demo)
     );
 
     println!(
