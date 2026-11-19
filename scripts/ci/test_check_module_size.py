@@ -693,11 +693,15 @@ def test_write_baseline_updates_baseline_section(checker, tmp_path, monkeypatch)
 # ---------------------------------------------------------------------------
 
 # path -> (current size, ratchet basename, expected ceiling)
+# Loop round 160 (2026-11-19): the COP site-metering block re-measured the
+# zone_balance tuple 5014/5265 -> 5021/5273 (the fmt reflow shrank the
+# initial 5022 measurement; ceiling = 5021 + max(ceil(5%), +100) = 5273 per
+# the Issue #3574 admission protocol).
 ISSUE_4753_ENTRIES = {
     "src/sim/thermal_model_physics/zone_balance.rs": (
-        5014,
+        5021,
         "zone_balance_ratchet.json",
-        5265,
+        5273,
     ),
     "src/sim/hvac/pressure_air_loop.rs": (
         4312,

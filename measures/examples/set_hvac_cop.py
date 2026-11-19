@@ -9,12 +9,13 @@ the round-trip pattern for HVAC snapshots:
 
 A note on field propagation
 ----------------------------
-Only ``heating_capacity`` and ``cooling_capacity`` are currently persisted by
-``Model.set_hvac_system()`` — fields like ``cop_heating``, ``cop_cooling``,
-``stages`` etc. are advisory and read-only snapshots. This example therefore
-mutates the capacities (which DO round-trip); COP mutations are still
-demonstrated to show the snapshot pattern but will not affect the underlying
-model. See ``src/python/model_bindings/model.rs`` for the full ownership story.
+UPDATE 2026-11-19 (loop round 160, ISO 13790 §10.4.5 option R): heating and
+cooling capacity **and** the plant COPs (``cop_heating`` / ``cop_cooling``)
+are persisted by ``Model.set_hvac_system()`` — the COPs are stored on the
+model and consumed by the site/electric metering (electric input =
+delivered thermal / COP; the delivered thermal rows are unchanged).
+``stages`` etc. remain advisory and read-only snapshots. See
+``src/python/model_bindings/model.rs`` for the full ownership story.
 
 Run with::
 
@@ -76,9 +77,9 @@ class SetHVACCOP(FluxionMeasure):
         hvac = model.hvac_system()
         hvac.heating_capacity = float(arguments.get("heating_capacity", 15000.0))
         hvac.cooling_capacity = float(arguments.get("cooling_capacity", 12000.0))
-        # Snapshot COP fields are advisory; mutate them to demonstrate the
-        # pattern but note they will not round-trip back to the model until
-        # the binding grows full HVAC persistence.
+        # Snapshot COP fields round-trip since loop round 160 (2026-11-19):
+        # they are stored on the model and consumed by the site/electric
+        # metering (input = delivered / COP).
         hvac.cop_heating = float(arguments.get("cop_heating", hvac.cop_heating))
         hvac.cop_cooling = float(arguments.get("cop_cooling", hvac.cop_cooling))
         model.set_hvac_system(hvac)

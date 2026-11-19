@@ -31,18 +31,26 @@ touched, so an invalid request never leaves the model half-mutated.
 
 A note on field propagation
 ----------------------------
-The measure mutates the ``cop_heating`` / ``cop_cooling`` fields of the
-model's HVAC snapshot (``model.hvac_system()``) and pushes the snapshot
-back through ``model.set_hvac_system(...)``. Only ``heating_capacity`` and
-``cooling_capacity`` currently round-trip into the underlying Rust
-``ThermalModel`` (``apply_hvac_system_to_model`` in
-``src/python/model_bindings/hvac.rs``); the COP fields are **advisory**
-snapshots. They survive the Python save/load round-trip
+UPDATE 2026-11-19 (loop round 160, scoping option R — ISO 13790 §10.4.5
+site/electric metering): the measure mutates the ``cop_heating`` /
+``cop_cooling`` fields of the model's HVAC snapshot
+(``model.hvac_system()``) and pushes the snapshot back through
+``model.set_hvac_system(...)``. Both the capacities **and the plant COPs**
+now round-trip into the underlying Rust ``ThermalModel``
+(``apply_hvac_system_to_model`` in ``src/python/model_bindings/hvac.rs``),
+and the stored COPs are **consumed**: the simulation meters site electric
+input energy (``heating_input_energy_kwh()`` / ``cooling_input_energy_kwh()``,
+plus the ``heating_input_energy`` / ``cooling_input_energy`` fields on the
+results/report JSON) as delivered thermal divided by the plant COP. The
+delivered thermal rows themselves never depend on COP (ISO 13790 §10.4.5:
+system energy use lives downstream of the zone need), so a measure run
+moves the electric outputs while every thermal figure holds. The COPs
+survive the Python save/load round-trip
 (:func:`fluxion.measures.save_model` / :func:`fluxion.measures.load_model`
-carry ``cop_heating`` / ``cop_cooling``) and record the modeller's intent,
-but the Rust simulation does not yet consume them. This mirrors the
-documented advisory fields of ``ReplaceHVACWithVAV`` and the note in the
-``SetHVACCOP`` example.
+carry ``cop_heating`` / ``cop_cooling``). ``stages`` and the remaining
+snapshot fields are still advisory. The historical advisory behaviour
+(this measure changing no simulated energy) held from Issue #3995 until
+the r160 flip.
 
 Loud failure
 ------------

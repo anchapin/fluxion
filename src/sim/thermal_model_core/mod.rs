@@ -490,6 +490,25 @@ where
         self.0.hvac.annual_electrical_energy
     }
 
+    /// Get cumulative site electric input energy for heating (kWh_e).
+    ///
+    /// Loop round 160 (scoping option R; ISO 13790 §10.4.5): the delivered
+    /// thermal heating total divided by the plant heating COP at the
+    /// metering sites. Additive output — the thermal
+    /// [`Self::get_heating_energy_kwh`] figure is untouched by it.
+    pub fn get_heating_input_energy_kwh(&self) -> f64 {
+        self.0.hvac.annual_heating_input_energy
+    }
+
+    /// Get cumulative site electric input energy for cooling (kWh_e).
+    ///
+    /// Loop round 160: the delivered thermal cooling total (sensible +
+    /// latent) divided by the plant cooling COP at the metering sites.
+    /// Additive output — [`Self::get_cooling_energy_kwh`] is untouched.
+    pub fn get_cooling_input_energy_kwh(&self) -> f64 {
+        self.0.hvac.annual_cooling_input_energy
+    }
+
     /// Get per-zone heating energy in kilowatt-hours (kWh)
     ///
     /// Returns a vector with heating energy for each zone.
@@ -548,6 +567,11 @@ where
         self.0.hvac.annual_cooling_energy = 0.0;
         // Issue #4155: latent cooling is part of the annual cooling total.
         self.0.hvac.annual_latent_cooling_energy = 0.0;
+        // Loop round 160 (option R): the site-electric input counters are
+        // accumulators like the thermal ones and reset with them. The plant
+        // COPs are set-once metadata (capacity-class) and survive.
+        self.0.hvac.annual_heating_input_energy = 0.0;
+        self.0.hvac.annual_cooling_input_energy = 0.0;
         // Reset per-zone energy tracking (Issue #1288)
         let heating_slice = self.0.hvac.zone_heating_energy_kwh.as_mut();
         let cooling_slice = self.0.hvac.zone_cooling_energy_kwh.as_mut();
@@ -4003,6 +4027,15 @@ impl ThermalModel<VectorField> {
                 zone_peak_cooling_timestep: vec![0usize; num_zones],
                 annual_heating_energy: 0.0,
                 annual_cooling_energy: 0.0,
+                // Loop round 160 (option R): site-electric input counters
+                // start empty; the plant COPs carry the repo's own
+                // `HVACSystem` default literals (3.0 / 3.2,
+                // src/validation/ashrae140/mod.rs) — engine literals, not
+                // textbook values.
+                annual_heating_input_energy: 0.0,
+                annual_cooling_input_energy: 0.0,
+                cop_heating: 3.0,
+                cop_cooling: 3.2,
                 annual_electrical_energy: 0.0,
                 annual_latent_cooling_energy: 0.0,
                 zone_heating_energy_kwh: VectorField::from_scalar(0.0, num_zones),
