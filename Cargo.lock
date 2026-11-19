@@ -1771,7 +1771,6 @@ dependencies = [
  "plotters",
  "proptest",
  "pyo3",
- "pyo3-build-config",
  "quick-xml",
  "rand 0.9.5",
  "rand_distr 0.5.1",
