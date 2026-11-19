@@ -154,14 +154,20 @@ impl PyHVACSystem {
         )
     }
 }
-/// Build a [`PyHVACSystem`] snapshot from a model's heating / cooling capacity
-/// and supply-air temperature.
+/// Build a [`PyHVACSystem`] snapshot from a model's heating / cooling
+/// capacity, stored plant COPs and supply-air temperature.
+///
+/// Loop round 160 (2026-11-19): the COP fields were hard-coded snapshot
+/// defaults (3.0 / 3.2, the r154 advisory contract). With the r160
+/// site/electric metering landed (ISO 13790 §10.4.5 option R), the plant
+/// COPs are stored on `ThermalModelData` and the snapshot reads them back;
+/// a fresh model still reports the same 3.0 / 3.2 engine literals.
 pub fn hvac_system_from_model(model: &ThermalModel<VectorField>) -> PyHVACSystem {
     PyHVACSystem {
         heating_capacity: model.hvac.hvac_heating_capacity,
         cooling_capacity: model.hvac.hvac_cooling_capacity,
-        cop_heating: 3.0,
-        cop_cooling: 3.2,
+        cop_heating: model.hvac.cop_heating,
+        cop_cooling: model.hvac.cop_cooling,
         stages: 1,
         min_outdoor_temp: -10.0,
         max_outdoor_temp: 40.0,
@@ -171,10 +177,18 @@ pub fn hvac_system_from_model(model: &ThermalModel<VectorField>) -> PyHVACSystem
     }
 }
 
-/// Apply a [`PyHVACSystem`] snapshot's heating/cooling capacity back to the model.
+/// Apply a [`PyHVACSystem`] snapshot's heating/cooling capacity and plant
+/// COPs back to the model.
+///
+/// Loop round 160 (2026-11-19): the plant COPs are stored on the model and
+/// consumed by the site/electric metering (input = delivered / COP; the
+/// thermal rows are unchanged). Stages and the remaining snapshot fields
+/// stay advisory.
 pub fn apply_hvac_system_to_model(model: &mut ThermalModel<VectorField>, hvac: &PyHVACSystem) {
     model.hvac.hvac_heating_capacity = hvac.heating_capacity;
     model.hvac.hvac_cooling_capacity = hvac.cooling_capacity;
+    model.hvac.cop_heating = hvac.cop_heating;
+    model.hvac.cop_cooling = hvac.cop_cooling;
 }
 
 #[cfg(all(test, feature = "python-bindings"))]

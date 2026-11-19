@@ -657,6 +657,10 @@ pub fn run_simulation(
             peak_cooling_load,
             heating_energy,
             cooling_energy,
+            // Loop round 160 (option R, ISO 13790 §10.4.5): site electric
+            // input energy alongside the delivered thermal totals.
+            heating_input_energy: model.get_heating_input_energy_kwh(),
+            cooling_input_energy: model.get_cooling_input_energy_kwh(),
             zone_temperatures: Some(zone_temperatures),
             hourly_zone_temperatures,
             effective_solver: Some(model.effective_zone_solver().as_str().to_string()),

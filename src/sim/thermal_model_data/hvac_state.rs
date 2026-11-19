@@ -78,6 +78,23 @@ pub struct HvacState<T: ContinuousTensor<f64>> {
     /// load is included here; the latent part is tracked separately in
     /// `annual_latent_cooling_energy`.
     pub annual_cooling_energy: f64,
+    /// Loop round 160 (scoping option R, ISO 13790 §10.4.5) — site electric
+    /// input energy for heating [kWh_e]: the delivered thermal total divided
+    /// by [`HvacState::cop_heating`] at the metering sites. Additive output:
+    /// nothing in the zone advance or the battery metrics reads it.
+    pub annual_heating_input_energy: f64,
+    /// Loop round 160 — site electric input energy for cooling [kWh_e]: the
+    /// delivered thermal total (sensible + latent) divided by
+    /// [`HvacState::cop_cooling`] at the metering sites. Additive output.
+    pub annual_cooling_input_energy: f64,
+    /// Loop round 160 — plant coefficient of performance, heating side
+    /// [W_th/W_e]. Set-once plant metadata like the capacity fields; read by
+    /// the site/electric metering, never by the zone advance. Default is the
+    /// repo's own `HVACSystem` default literal (3.0).
+    pub cop_heating: f64,
+    /// Loop round 160 — plant coefficient of performance, cooling side
+    /// [W_th/W_e]. Default 3.2 (the repo's `HVACSystem` default literal).
+    pub cop_cooling: f64,
     pub annual_electrical_energy: f64,
     /// Issue #4155 — annual latent cooling energy (kWh), the dehumidification
     /// part of `annual_cooling_energy`. This field carries the split.
@@ -150,6 +167,10 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for HvacState<T> {
             zone_peak_cooling_timestep: self.zone_peak_cooling_timestep.clone(),
             annual_heating_energy: self.annual_heating_energy,
             annual_cooling_energy: self.annual_cooling_energy,
+            annual_heating_input_energy: self.annual_heating_input_energy,
+            annual_cooling_input_energy: self.annual_cooling_input_energy,
+            cop_heating: self.cop_heating,
+            cop_cooling: self.cop_cooling,
             annual_electrical_energy: self.annual_electrical_energy,
             annual_latent_cooling_energy: self.annual_latent_cooling_energy,
             zone_heating_energy_kwh: self.zone_heating_energy_kwh.clone(),
@@ -166,6 +187,26 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for HvacState<T> {
 
             tracer: self.tracer.clone(),
             scratch_pool: PhysicsScratchPool::new(),
+        }
+    }
+}
+
+impl<T: ContinuousTensor<f64>> HvacState<T> {
+    /// Meter delivered thermal energy into site electric input energy (loop
+    /// round 160, scoping option R; ISO 13790 §10.4.5: system energy use
+    /// lives downstream of the zone need, so the zone advance never sees
+    /// COP). The caller passes the delivered totals it just accumulated
+    /// into `annual_heating_energy` / `annual_cooling_energy` (kWh;
+    /// cooling is the sensible + latent total); they convert at the plant
+    /// COPs. A non-finite or non-positive COP consumes nothing — the
+    /// electric counters stay finite at exactly 0.0 and the thermal
+    /// counters are untouched either way.
+    pub(crate) fn meter_input_energy(&mut self, heating_kwh: f64, cooling_kwh: f64) {
+        if self.cop_heating.is_finite() && self.cop_heating > 0.0 {
+            self.annual_heating_input_energy += heating_kwh / self.cop_heating;
+        }
+        if self.cop_cooling.is_finite() && self.cop_cooling > 0.0 {
+            self.annual_cooling_input_energy += cooling_kwh / self.cop_cooling;
         }
     }
 }

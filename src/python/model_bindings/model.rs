@@ -1596,14 +1596,35 @@ impl Model {
     }
 
     /// Apply a [`crate::python::model_bindings::PyHVACSystem`] snapshot's
-    /// heating/cooling capacity to the model. Used together with
-    /// [`Self::hvac_system`] for snapshot-then-commit mutation patterns.
+    /// heating/cooling capacity and plant COPs to the model. Used together
+    /// with [`Self::hvac_system`] for snapshot-then-commit mutation patterns.
     ///
-    /// Only heating/cooling capacity is propagated back; other HVACSystem
-    /// fields (COP, stages, etc.) are advisory and not stored on
-    /// `ThermalModelData`.
+    /// Heating/cooling capacity **and the plant COPs** propagate back onto
+    /// `ThermalModelData`. UPDATE 2026-11-19 (loop round 160, ISO 13790
+    /// §10.4.5 option R): the r154 advisory contract flipped deliberately —
+    /// the COPs are now stored and consumed by the site/electric metering
+    /// (electric input = delivered thermal / COP; the delivered thermal
+    /// rows and every battery metric are unchanged by construction). Stages
+    /// and the remaining HVACSystem fields are still advisory and not
+    /// stored.
     fn set_hvac_system(&mut self, hvac: crate::python::model_bindings::PyHVACSystem) {
         crate::python::model_bindings::apply_hvac_system_to_model(&mut self.inner, &hvac);
+    }
+
+    /// Cumulative site electric input energy for heating, kWh_e (loop
+    /// round 160, option R): the delivered thermal heating total divided by
+    /// the plant heating COP at the metering sites. The thermal
+    /// `simulate()` total never depends on it.
+    fn heating_input_energy_kwh(&self) -> f64 {
+        self.inner.get_heating_input_energy_kwh()
+    }
+
+    /// Cumulative site electric input energy for cooling, kWh_e (loop
+    /// round 160, option R): the delivered thermal cooling total
+    /// (sensible + latent) divided by the plant cooling COP at the
+    /// metering sites.
+    fn cooling_input_energy_kwh(&self) -> f64 {
+        self.inner.get_cooling_input_energy_kwh()
     }
 
     /// Set zone-specific heating and cooling setpoints (Issue #4633).

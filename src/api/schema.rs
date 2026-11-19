@@ -877,6 +877,17 @@ pub struct SimulationOutput {
     pub peak_cooling_load: f64,
     pub heating_energy: f64,
     pub cooling_energy: f64,
+    /// Loop round 160 (scoping option R; ISO 13790 §10.4.5) — site electric
+    /// input energy for heating, kWh_e: the delivered thermal total divided
+    /// by the plant heating COP at the metering sites. Additive output; the
+    /// thermal `heating_energy` above is untouched. `#[serde(default)]`
+    /// keeps older payloads deserialisable.
+    #[serde(default)]
+    pub heating_input_energy: f64,
+    /// Loop round 160 — site electric input energy for cooling, kWh_e:
+    /// delivered (sensible + latent) divided by the plant cooling COP.
+    #[serde(default)]
+    pub cooling_input_energy: f64,
     pub zone_temperatures: Option<Vec<f64>>,
     /// Issue #763 — full hourly zone temperature profiles.
     /// Format: [num_zones][8760] hourly temperatures in °C.
@@ -972,6 +983,8 @@ impl Default for SimulationOutput {
             peak_cooling_load: 0.0,
             heating_energy: 0.0,
             cooling_energy: 0.0,
+            heating_input_energy: 0.0,
+            cooling_input_energy: 0.0,
             zone_temperatures: None,
             hourly_zone_temperatures: None,
             effective_solver: None,

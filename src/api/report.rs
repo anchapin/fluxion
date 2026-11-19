@@ -823,6 +823,8 @@ mod tests {
             peak_cooling_load: 2_000.0,
             heating_energy: heating.iter().sum(),
             cooling_energy: cooling.iter().sum(),
+            heating_input_energy: 0.0,
+            cooling_input_energy: 0.0,
             zone_temperatures: None,
             hourly_zone_temperatures: Some(vec![vec![21.0; 12], vec![25.0; 12]]),
             effective_solver: Some("5r1c".to_string()),

@@ -502,11 +502,12 @@ class TestSetWindowToWallRatioIntegration:
 class TestReplaceHVACWithVAVIntegration:
     """End-to-end VAV retrofit on a real fluxion.Model.
 
-    Only ``heating_capacity`` / ``cooling_capacity`` currently round-trip into
-    the underlying Rust ``ThermalModel`` (see ``src/python/model_bindings/model.rs``).
-    The VAV / economizer / supply-air flags are advisory snapshots, matching
-    the documented limitation in the ``SetHVACCOP`` example and
-    ``docs/measures.md``. These tests assert the capacities + provenance.
+    ``heating_capacity`` / ``cooling_capacity`` round-trip into the
+    underlying Rust ``ThermalModel`` (and, since loop round 160 on
+    2026-11-19, the plant COPs do too). The VAV / economizer / supply-air
+    flags remain advisory snapshots, matching the documented limitation in
+    the ``SetHVACCOP`` example and ``docs/measures.md``. These tests assert
+    the capacities + provenance.
     """
 
     def _import_measure(self):
@@ -2093,19 +2094,24 @@ class TestSetHVACEfficiencyIntegration:
 
         model = fluxion.Model(num_zones=1)
         stored_before = model.hvac_system()
+        # Fresh-model snapshot defaults stay the engine's literals.
+        assert stored_before.cop_heating == pytest.approx(3.0)
+        assert stored_before.cop_cooling == pytest.approx(3.2)
         self._import_measure().apply(
             model, {"cop_heating": 4.0, "cop_cooling": 4.5}
         )
         # Engine contract (Model.set_hvac_system,
-        # src/python/model_bindings/model.rs): only heating/cooling
-        # capacity propagates back onto ThermalModelData — COP fields are
-        # advisory and not stored. A clean apply proves the
-        # resolve/validate/persist path runs against the real model; the
-        # stored capacities must be untouched and the re-derived snapshot
-        # carries the engine's snapshot defaults (hvac.rs #[new]
-        # literals: 3.0 / 3.2). If the engine ever starts storing COPs,
-        # this pin flips and the assertion should be updated to the
-        # richer contract.
+        # src/python/model_bindings/model.rs): heating/cooling capacity AND
+        # the plant COPs propagate back onto ThermalModelData. FLIPPED
+        # 2026-11-19 (loop round 160, PR: r160-cop-site-metering): the r154
+        # advisory pin above — "only capacity propagates; COP fields are
+        # advisory and not stored" — fired by design when the engine began
+        # storing COPs, and this pin moved deliberately to the richer
+        # contract as the flip's dated receipt (scoping doc 2026-11-18
+        # §Decision points 3-4; ISO 13790 §10.4.5 option R). The stored
+        # capacities must still be untouched, the re-derived snapshot must
+        # carry the applied COPs, and a fresh model still reports the
+        # engine's 3.0 / 3.2 literal defaults (asserted on stored_before).
         stored_after = model.hvac_system()
         assert stored_after.heating_capacity == pytest.approx(
             stored_before.heating_capacity
@@ -2113,8 +2119,8 @@ class TestSetHVACEfficiencyIntegration:
         assert stored_after.cooling_capacity == pytest.approx(
             stored_before.cooling_capacity
         )
-        assert stored_after.cop_heating == pytest.approx(3.0)
-        assert stored_after.cop_cooling == pytest.approx(3.2)
+        assert stored_after.cop_heating == pytest.approx(4.0)
+        assert stored_after.cop_cooling == pytest.approx(4.5)
 
     def test_invalid_cop_is_rejected(self):
         import fluxion
@@ -2122,6 +2128,41 @@ class TestSetHVACEfficiencyIntegration:
         model = fluxion.Model(num_zones=1)
         with pytest.raises(ValueError):
             self._import_measure().apply(model, {"cop_heating": -1.0})
+
+    def test_measure_cop_moves_electric_input_while_thermal_holds(self):
+        """The r160 consumption: stored COPs meter electric input energy.
+
+        Option R (scoping doc 2026-11-18, ISO 13790 §10.4.5): delivered
+        thermal energy is unchanged — the zone advance never sees COP —
+        while the new site-electric outputs convert delivered / COP. Two
+        identical models, the measure's COP on one, must agree on the
+        simulate() thermal total and disagree on the electric inputs by
+        exactly the COP ratio.
+        """
+        import fluxion
+
+        m_ref = fluxion.Model(num_zones=1)
+        m_eff = fluxion.Model(num_zones=1)
+        self._import_measure().apply(m_eff, {"cop_heating": 4.0, "cop_cooling": 4.5})
+
+        e_ref = m_ref.simulate(1, False)
+        e_eff = m_eff.simulate(1, False)
+
+        # Thermal delivered: identical (zone-inert).
+        assert e_eff == pytest.approx(e_ref, rel=1e-12)
+        # Electric input: delivered / COP on the heating carrier (the
+        # default single-zone envelope genuinely carries no cooling load —
+        # both cooling counters stay exactly 0.0; the bit-exact cooling
+        # conversion on the 5R1C and 9R4C production paths is pinned by the
+        # Rust contracts in tests/cop_site_metering_contract.rs).
+        ref_h = m_ref.heating_input_energy_kwh()
+        eff_h = m_eff.heating_input_energy_kwh()
+        assert ref_h > 0.0, "reference model must meter electric heating"
+        assert eff_h == pytest.approx(ref_h * 3.0 / 4.0, rel=1e-9)
+        ref_c = m_ref.cooling_input_energy_kwh()
+        eff_c = m_eff.cooling_input_energy_kwh()
+        assert ref_c == 0.0
+        assert eff_c == 0.0
 
 
 @requires_fluxion
@@ -3541,15 +3582,20 @@ class TestReplaceHVACWithHeatPumpIntegration:
 
         model = fluxion.Model(num_zones=1)
         stored_before = model.hvac_system()
+        # Fresh-model snapshot defaults stay the engine's literals.
+        assert stored_before.cop_heating == pytest.approx(3.0)
+        assert stored_before.cop_cooling == pytest.approx(3.2)
         self._import_measure().apply(
             model, {"cop_heating": 3.4, "cop_cooling": 4.0}
         )
         # Engine contract (Model.set_hvac_system): capacity propagates,
-        # COPs are advisory — the retrofit is recorded through the COP /
-        # capacity fields only, and only the capacities are stored. No
-        # capacity argument was passed, so the stored capacities must be
-        # untouched and the re-derived snapshot carries the engine's
-        # snapshot defaults (hvac.rs #[new] literals: 3.0 / 3.2).
+        # and since loop round 160 (2026-11-19, r160-cop-site-metering) the
+        # plant COPs do too — FLIPPED from the r154 advisory pin by design
+        # when the engine began storing COPs (dated verdict in the
+        # TestSetHVACEfficiencyIntegration twin above; ISO 13790 §10.4.5
+        # option R). No capacity argument was passed, so the stored
+        # capacities must be untouched and the re-derived snapshot must
+        # carry the applied COPs (3.4 / 4.0).
         stored_after = model.hvac_system()
         assert stored_after.heating_capacity == pytest.approx(
             stored_before.heating_capacity
@@ -3557,8 +3603,8 @@ class TestReplaceHVACWithHeatPumpIntegration:
         assert stored_after.cooling_capacity == pytest.approx(
             stored_before.cooling_capacity
         )
-        assert stored_after.cop_heating == pytest.approx(3.0)
-        assert stored_after.cop_cooling == pytest.approx(3.2)
+        assert stored_after.cop_heating == pytest.approx(3.4)
+        assert stored_after.cop_cooling == pytest.approx(4.0)
 
     def test_invalid_cop_is_rejected(self):
         import fluxion

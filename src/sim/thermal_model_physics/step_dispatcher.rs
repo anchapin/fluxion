@@ -625,6 +625,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         if is_conditioned && !self.0.hvac.free_float {
             if energy_kwh > 0.0 && self.0.hvac.hvac_heating_capacity > 0.0 {
                 self.0.hvac.annual_heating_energy += energy_kwh;
+                // Loop round 160 (option R, ISO 13790 §10.4.5): site
+                // electric metering mirrors the thermal conditioning gate.
+                self.0.hvac.meter_input_energy(energy_kwh, 0.0);
                 let zone_heating = self.0.hvac.zone_heating_energy_kwh.as_mut();
                 if !zone_heating.is_empty() {
                     zone_heating[0] += energy_kwh;
@@ -643,6 +646,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             } else if energy_kwh < 0.0 && self.0.hvac.hvac_cooling_capacity > 0.0 {
                 let cooling_kwh = -energy_kwh;
                 self.0.hvac.annual_cooling_energy += cooling_kwh;
+                // Loop round 160 (option R, ISO 13790 §10.4.5): site
+                // electric metering mirrors the thermal conditioning gate.
+                self.0.hvac.meter_input_energy(0.0, cooling_kwh);
                 let zone_cooling = self.0.hvac.zone_cooling_energy_kwh.as_mut();
                 if !zone_cooling.is_empty() {
                     zone_cooling[0] += cooling_kwh;
@@ -1007,6 +1013,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             for (zone_idx, energy_kwh) in per_zone_metered {
                 if energy_kwh > 0.0 && self.0.hvac.hvac_heating_capacity > 0.0 {
                     self.0.hvac.annual_heating_energy += energy_kwh;
+                    // Loop round 160 (option R, ISO 13790 §10.4.5): site
+                    // electric metering mirrors the thermal conditioning
+                    // gate (multi-zone arm of the single-zone mirror).
+                    self.0.hvac.meter_input_energy(energy_kwh, 0.0);
                     let zone_heating = self.0.hvac.zone_heating_energy_kwh.as_mut();
                     if let Some(slot) = zone_heating.as_mut().get_mut(zone_idx) {
                         *slot += energy_kwh;
@@ -1029,6 +1039,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 } else if energy_kwh < 0.0 && self.0.hvac.hvac_cooling_capacity > 0.0 {
                     let cooling_kwh = -energy_kwh;
                     self.0.hvac.annual_cooling_energy += cooling_kwh;
+                    // Loop round 160 (option R, ISO 13790 §10.4.5): site
+                    // electric metering mirrors the thermal conditioning
+                    // gate (multi-zone arm of the single-zone mirror).
+                    self.0.hvac.meter_input_energy(0.0, cooling_kwh);
                     let zone_cooling = self.0.hvac.zone_cooling_energy_kwh.as_mut();
                     if let Some(slot) = zone_cooling.as_mut().get_mut(zone_idx) {
                         *slot += cooling_kwh;

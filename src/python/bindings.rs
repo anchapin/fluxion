@@ -597,6 +597,20 @@ impl PyMultiZoneThermalModel {
     /// model = fluxion.MultiZoneThermalModel(1)
     /// model.simulate(1, False)
     /// report = model.get_standard_report([1.0] * 8 + [0.0] * 16)
+    /// Cumulative site electric input energy for heating, kWh_e (loop
+    /// round 160, option R; ISO 13790 §10.4.5): delivered thermal / plant
+    /// heating COP. Additive output; the thermal trackers are untouched.
+    pub fn heating_input_energy_kwh(&self) -> f64 {
+        self.inner.get_heating_input_energy_kwh()
+    }
+
+    /// Cumulative site electric input energy for cooling, kWh_e (loop
+    /// round 160, option R): delivered (sensible + latent) / plant
+    /// cooling COP.
+    pub fn cooling_input_energy_kwh(&self) -> f64 {
+        self.inner.get_cooling_input_energy_kwh()
+    }
+
     /// ```
     #[pyo3(signature = (occupancy, heating_setpoint=20.0, cooling_setpoint=24.0, tolerance=None, model_name=None, model_source=None))]
     pub fn get_standard_report(
@@ -673,6 +687,10 @@ impl PyMultiZoneThermalModel {
             peak_cooling_load: self.inner.get_peak_cooling_power_kw() * 1000.0,
             heating_energy,
             cooling_energy,
+            // Loop round 160 (option R, ISO 13790 §10.4.5): site electric
+            // input energy alongside the delivered thermal totals.
+            heating_input_energy: self.inner.get_heating_input_energy_kwh(),
+            cooling_input_energy: self.inner.get_cooling_input_energy_kwh(),
             zone_temperatures: None,
             hourly_zone_temperatures: hourly_temps,
             effective_solver: Some(self.inner.effective_zone_solver().as_str().to_string()),

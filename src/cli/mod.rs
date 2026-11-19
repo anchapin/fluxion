@@ -1309,6 +1309,10 @@ pub fn run_direct_simulation(
         peak_cooling_load: peak_cooling_kw * 1000.0,
         heating_energy: total_heating_kwh,
         cooling_energy: total_cooling_kwh,
+        // Loop round 160 (option R, ISO 13790 §10.4.5): site electric
+        // input energy alongside the delivered thermal totals.
+        heating_input_energy: model.hvac.annual_heating_input_energy,
+        cooling_input_energy: model.hvac.annual_cooling_input_energy,
         zone_temperatures: hourly_temps.last().cloned(),
         hourly_zone_temperatures: Some(hourly_temps),
         effective_solver: Some(model.effective_zone_solver().as_str().to_string()),
@@ -1378,6 +1382,14 @@ pub fn run_direct_simulation(
     println!("\nSimulation complete.");
     println!("Heating energy: {:.1} kWh", total_heating_kwh);
     println!("Cooling energy: {:.1} kWh", total_cooling_kwh);
+    println!(
+        "Heating input energy (electric): {:.1} kWh_e",
+        model.hvac.annual_heating_input_energy
+    );
+    println!(
+        "Cooling input energy (electric): {:.1} kWh_e",
+        model.hvac.annual_cooling_input_energy
+    );
     println!("Results written to: {}", results_path.display());
 
     if readvars {

@@ -1731,6 +1731,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             self.0.hvac.annual_heating_energy += heating_energy_joules / 3.6e6;
             self.0.hvac.annual_cooling_energy += cooling_energy_joules / 3.6e6;
+            // Loop round 160 (scoping option R; ISO 13790 §10.4.5): site
+            // electric metering on the 9R4C sensible total. Zone-inert by
+            // construction.
+            self.0.hvac.meter_input_energy(
+                heating_energy_joules / 3.6e6,
+                cooling_energy_joules / 3.6e6,
+            );
 
             // Per-zone energy accumulation (Issue #1288)
             // Use enabled-masked values for per-zone accumulation
@@ -1841,6 +1848,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // above; add the latent part so the reported annual
                     // cooling is the sensible + latent total.
                     self.0.hvac.annual_cooling_energy += latent_sum * dt / 3.6e6;
+                    // Loop round 160 (option R): the latent part is
+                    // delivered cooling like the sensible part, so it
+                    // meters into the electric input at the same plant COP.
+                    self.0.hvac.meter_input_energy(0.0, latent_sum * dt / 3.6e6);
                 }
             }
 
