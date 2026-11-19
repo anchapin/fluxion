@@ -29,8 +29,8 @@ use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::sim::thermal_selector::ThermalSelector;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
-use fluxion::weather::WeatherSource;
 use fluxion::weather::denver::DenverTmyWeather;
+use fluxion::weather::WeatherSource;
 
 /// Step `model` for `hours` hourly timesteps on the Denver TMY series,
 /// starting at `start_hour`, mirroring the case-runner harness
@@ -225,11 +225,9 @@ fn reset_clears_inputs_and_keeps_cops() {
 #[test]
 fn case900_9r4c_path_meters_sensible_plus_latent_cooling() {
     let spec = ASHRAE140Case::Case900.spec();
-    let mut winter = ThermalModel::<VectorField>::from_spec_with_selector(
-        &spec,
-        &ThermalSelector::default(),
-    )
-    .expect("default selector must initialize");
+    let mut winter =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     winter.hvac.cop_heating = 4.0;
     winter.hvac.cop_cooling = 8.0;
     step_case_model(&mut winter, 24 * 14);
@@ -238,7 +236,8 @@ fn case900_9r4c_path_meters_sensible_plus_latent_cooling() {
     let thermal_c = winter.hvac.annual_cooling_energy;
     assert!(thermal_h > 0.0, "Case900 January days must demand heating");
     assert_eq!(
-        winter.hvac.annual_heating_input_energy * 4.0, thermal_h,
+        winter.hvac.annual_heating_input_energy * 4.0,
+        thermal_h,
         "9R4C heating input bit-exact vs delivered"
     );
     assert_eq!(thermal_c, 0.0, "Case900 must not cool in January");
@@ -246,11 +245,9 @@ fn case900_9r4c_path_meters_sensible_plus_latent_cooling() {
 
     // July window: the cooling carrier (sensible + latent join).
     let spec = ASHRAE140Case::Case900.spec();
-    let mut summer = ThermalModel::<VectorField>::from_spec_with_selector(
-        &spec,
-        &ThermalSelector::default(),
-    )
-    .expect("default selector must initialize");
+    let mut summer =
+        ThermalModel::<VectorField>::from_spec_with_selector(&spec, &ThermalSelector::default())
+            .expect("default selector must initialize");
     summer.hvac.cop_heating = 4.0;
     summer.hvac.cop_cooling = 8.0;
     step_case_model_from(&mut summer, 24 * 183, 24 * 14);
@@ -261,7 +258,8 @@ fn case900_9r4c_path_meters_sensible_plus_latent_cooling() {
         "Case900 July days must demand cooling, got {thermal_c}"
     );
     assert_eq!(
-        summer.hvac.annual_cooling_input_energy * 8.0, thermal_c,
+        summer.hvac.annual_cooling_input_energy * 8.0,
+        thermal_c,
         "9R4C cooling input bit-exact vs the sensible+latent total"
     );
 }

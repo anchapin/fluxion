@@ -3936,10 +3936,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // electric metering — delivered / COP into the additive input
         // counters. Zone-inert by construction: nothing downstream of this
         // call reads the counters inside the advance.
-        self.0.hvac.meter_input_energy(
-            heating_energy_joules / 3.6e6,
-            cooling_energy_joules / 3.6e6,
-        );
+        self.0
+            .hvac
+            .meter_input_energy(heating_energy_joules / 3.6e6, cooling_energy_joules / 3.6e6);
 
         // hvac_energy_for_step returns total HVAC energy in JOULES (not kWh)
         // The test expects Joules and multiplies by 3.6e6
