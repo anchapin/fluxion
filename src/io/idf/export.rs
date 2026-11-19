@@ -89,9 +89,13 @@
 //!   a [`CaseSpec`] carries a window *area* and a glazing U-value/SHGC
 //!   pair, but no thickness/optical-property set that maps onto the
 //!   EnergyPlus window IDD without fabrication.
-//! - **Systems** (HVAC, schedules, thermostats, infiltration, internal
+//! - **Systems** (HVAC, thermostats, infiltration, internal
 //!   loads) — those are the subject of a later export slice; the
-//!   `CaseSpec` fields that carry them are not written out here.
+//!   `CaseSpec` fields that carry them are not written out here. The
+//!   **schema** export ([`export_schema`]) additionally writes the named
+//!   schedules ([`export_named_schedules`], issue #4667): weekly
+//!   schedules re-emit as `Schedule:Compact`, constant schedules as
+//!   `Schedule:Constant`.
 //!
 //! The exclusions above are scoped to [`export_case_spec_envelope`]
 //! only. The **schema** export ([`export_schema`]) *does* write glazing
@@ -122,15 +126,19 @@
 //! assert!(text.contains("Version, 25.2;"));
 //! ```
 
+use std::collections::BTreeMap;
 use std::io::{self, Write};
 
 use crate::api::schema::{SimulationSchemaV1, WindowSpec};
 use crate::ashrae_cases::CaseSpec;
 use crate::sim::hvac::HVACSystemType;
 use crate::sim::per_surface_conduction::SurfaceKind;
+use crate::sim::schedule::{DailySchedule, ScheduleType, ScheduleValues};
 use crate::validation::ashrae_140_cases::Orientation;
 
+use super::error::IdfError;
 use super::parser::{IdfFile, IdfObject, IdfValue};
+use super::schedule::{NumericType, ScheduleTypeLimits};
 
 /// Version string written by [`export_case_spec_envelope`].
 const EXPORT_VERSION: &str = "25.2";
@@ -277,6 +285,168 @@ fn needs_quoting(value: &str) -> bool {
     }
     // Would re-parse as a number → quote it so the field stays a string.
     value.parse::<f64>().is_ok() || value.parse::<i64>().is_ok()
+}
+
+// ---------------------------------------------------------------------------
+// Schedule export (issue #4667)
+// ---------------------------------------------------------------------------
+
+/// Weekday names in [`ScheduleValues::Weekly`] row order (Monday first).
+const WEEKLY_DAY_NAMES: [&str; 7] = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+];
+
+/// Render an hour boundary (1..=24) as the `Until: HH:00` label the
+/// schedule import parses.
+fn until_label(hour: usize) -> String {
+    format!("Until: {hour:02}:00")
+}
+
+/// Build the [`IdfObject`] for one named schedule of the schema.
+///
+/// Weekly schedules re-emit as `Schedule:Compact` (one `For:` block per
+/// weekday, `Until:` runs merged where consecutive hours carry the same
+/// value); constant schedules re-emit as `Schedule:Constant`. The
+/// `Schedule Type Limits Name` field is emitted **empty**: the schema's
+/// `named_schedules` map carries [`DailySchedule`] values only, and a
+/// [`DailySchedule`] does not know which `ScheduleTypeLimits` object (if
+/// any) it referenced at import time — that pairing lives in the import
+/// layer ([`super::convert::import_named_schedules`]) and is re-emitted
+/// separately by [`export_schedule_type_limits`] where the caller still
+/// knows it.
+///
+/// # Errors
+///
+/// Returns a precise [`IdfError`] (never panics, never drops silently)
+/// when the internal state is not representable as a schedule object:
+/// a non-uniform `Constant` schedule, a non-finite value, a map key that
+/// disagrees with the schedule's own name, or a schedule type the IDF
+/// schedule import never produces (`DailyCycle`, `Custom`).
+///
+/// The float comparisons below are exact **by contract**: the values
+/// being merged came out of the same parse, and byte-idempotence
+/// (`export(parse(export(x))) == export(x)`) requires merging only
+/// bit-identical values — an epsilon would merge distinct values and
+/// change the emitted text between runs.
+#[allow(clippy::float_cmp)]
+fn schedule_object(name: &str, schedule: &DailySchedule) -> Result<IdfObject, IdfError> {
+    if schedule.name.trim() != name {
+        return Err(IdfError::conversion_error(format!(
+            "schedule '{name}': the map key and the schedule's own name '{}' disagree",
+            schedule.name
+        )));
+    }
+    match (&schedule.schedule_type, &schedule.values) {
+        (ScheduleType::Constant, ScheduleValues::Daily(daily)) => {
+            let value = daily[0];
+            if !value.is_finite() {
+                return Err(IdfError::conversion_error(format!(
+                    "Schedule:Constant '{name}': non-finite constant value {value}"
+                )));
+            }
+            if let Some((&other, hour)) = daily
+                .iter()
+                .enumerate()
+                .find(|(_, v)| **v != value)
+                .map(|(h, v)| (v, h))
+            {
+                return Err(IdfError::conversion_error(format!(
+                    "Schedule:Constant '{name}': hour {hour} carries {other}, but a \
+                     Schedule:Constant can only express the uniform value {value}"
+                )));
+            }
+            Ok(object(
+                "Schedule:Constant",
+                vec![
+                    value_string(name),
+                    value_empty(), // Schedule Type Limits Name (not carried by the schema)
+                    value_real(value),
+                ],
+            ))
+        }
+        (ScheduleType::Weekly, ScheduleValues::Weekly(weekly)) => {
+            let mut fields = vec![value_string(name), value_empty()];
+            for (day_index, day_name) in WEEKLY_DAY_NAMES.iter().enumerate() {
+                fields.push(value_string(&format!("For: {day_name}")));
+                let mut hour = 0;
+                while hour < 24 {
+                    let value = weekly[day_index][hour];
+                    if !value.is_finite() {
+                        return Err(IdfError::conversion_error(format!(
+                            "Schedule:Compact '{name}': non-finite value {value} at {day_name} \
+                             hour {}",
+                            hour + 1
+                        )));
+                    }
+                    let mut end = hour + 1;
+                    while end < 24 && weekly[day_index][end] == value {
+                        end += 1;
+                    }
+                    fields.push(value_string(&until_label(end)));
+                    fields.push(value_real(value));
+                    hour = end;
+                }
+            }
+            Ok(object("Schedule:Compact", fields))
+        }
+        (schedule_type, _) => Err(IdfError::conversion_error(format!(
+            "schedule '{name}': {schedule_type:?} schedules are not produced by the IDF \
+             schedule import and have no IDF schedule export"
+        ))),
+    }
+}
+
+/// Export the named schedules of a schema back to IDF text.
+///
+/// Weekly schedules re-emit as `Schedule:Compact`, constant schedules as
+/// `Schedule:Constant`; the emitted objects re-parse into exactly the
+/// schedule representation they were exported from (the round-trip is
+/// byte-idempotent: `export(parse(export(x))) == export(x)` over the
+/// schedule objects).
+///
+/// # Errors
+///
+/// Returns a precise [`IdfError`] for the malformed internal states
+/// documented on [`schedule_object`].
+pub fn export_named_schedules(
+    schedules: &BTreeMap<String, DailySchedule>,
+) -> Result<String, IdfError> {
+    let mut out = String::new();
+    for (name, schedule) in schedules {
+        write_object(&mut out, &schedule_object(name, schedule)?);
+    }
+    Ok(out)
+}
+
+/// Re-emit a parsed [`ScheduleTypeLimits`] object.
+///
+/// The field layout mirrors the import (`Name, Lower Limit, Upper Limit,
+/// Numeric Type`); a limit that was not declared exports as an empty
+/// field. The unit-type field is not re-emitted because the import does
+/// not carry it.
+pub fn export_schedule_type_limits(limits: &ScheduleTypeLimits) -> String {
+    let mut fields = vec![value_string(&limits.name)];
+    match limits.lower_limit {
+        Some(value) => fields.push(value_real(value)),
+        None => fields.push(value_empty()),
+    }
+    match limits.upper_limit {
+        Some(value) => fields.push(value_real(value)),
+        None => fields.push(value_empty()),
+    }
+    fields.push(value_string(match limits.numeric_type {
+        NumericType::Continuous => "Continuous",
+        NumericType::Discrete => "Discrete",
+    }));
+    let mut out = String::new();
+    write_object(&mut out, &object("ScheduleTypeLimits", fields));
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -881,6 +1051,18 @@ pub fn export_schema(schema: &SimulationSchemaV1) -> String {
                 .collect(),
         ),
     );
+
+    // --- Named schedules (issue #4667) ---------------------------------------
+    // The typed re-emission of the schema's named schedules; a schedule
+    // whose internal state is not representable (a non-uniform constant,
+    // a non-finite value, a foreign schedule type) becomes an explicit
+    // loss note carrying the precise error — never a silent drop.
+    for (name, schedule) in &schema.schedules.named_schedules {
+        match schedule_object(name, schedule) {
+            Ok(schedule_idf) => write_object(&mut out, &schedule_idf),
+            Err(error) => losses.push(format!("schedule '{name}': {error}")),
+        }
+    }
 
     // --- Loss notes ----------------------------------------------------------
     for loss in &losses {
@@ -1556,5 +1738,255 @@ mod tests {
         let mut buffer: Vec<u8> = Vec::new();
         export_idf_to_writer(&idf, &mut buffer).unwrap();
         assert_eq!(String::from_utf8(buffer).unwrap(), export_idf(&idf));
+    }
+
+    // ------------------------------------------------------------------
+    // Schedule export (issue #4667)
+    // ------------------------------------------------------------------
+
+    use std::collections::BTreeMap;
+
+    use super::super::convert::import_named_schedules;
+    use super::super::schedule::{
+        import_schedule_compact, parse_schedule_type_limits, NumericType, ScheduleTypeLimits,
+    };
+    use crate::api::schema::SimulationSchemaV1;
+    use crate::sim::schedule::{ScheduleType, ScheduleValues};
+
+    /// The committed schedules fixture (issue #3991's schedules slice).
+    const SCHEDULES_FIXTURE: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/idf/schedules.idf"
+    ));
+
+    /// The weekly profile of a schedule (Monday first).
+    fn weekly(schedule: &DailySchedule) -> &[[f64; 24]; 7] {
+        match &schedule.values {
+            ScheduleValues::Weekly(weekly) => weekly,
+            other => panic!("expected a weekly schedule, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn schedules_fixture_round_trips_through_the_typed_export() {
+        let idf = IdfParser::from_str(SCHEDULES_FIXTURE).expect("fixture parses");
+        let (imported, losses) = import_named_schedules(&idf).expect("schedules import");
+        assert_eq!(imported.len(), 2, "fixture carries two schedules");
+        assert!(
+            !losses.is_empty(),
+            "the fixture's Through: date must produce the import loss note"
+        );
+
+        let exported = export_named_schedules(&imported).expect("schedules export");
+
+        // The exported text re-parses into exactly the schedule
+        // representation it was exported from.
+        let reparsed = IdfParser::from_str(&exported).expect("exported schedules parse");
+        let (reimported, reimport_losses) = import_named_schedules(&reparsed).expect("re-import");
+        assert_eq!(reimported, imported, "schedule-for-schedule round trip");
+        // The exported weekly objects are full-coverage (no Through:
+        // dates, no dropped day types): the second import carries no
+        // loss notes of its own.
+        assert!(
+            reimport_losses.is_empty(),
+            "the exported text must be loss-free: {reimport_losses:?}"
+        );
+
+        // Byte-idempotence: export(parse(export(x))) == export(x).
+        let reexported = export_named_schedules(&reimported).expect("re-export");
+        assert_eq!(reexported, exported, "schedule export is byte-idempotent");
+
+        // The profiles themselves survive: the Occupancy weekday ramp and
+        // the weekend value land back in the weekly rows.
+        let occupancy = reimported.get("Occupancy").expect("Occupancy survives");
+        let week = weekly(occupancy);
+        assert_eq!(week[0][7], 0.1, "hour 8 is the last hour of Until: 08:00");
+        assert_eq!(week[0][8], 0.9, "hour 9 is the first hour of Until: 18:00");
+        assert_eq!(week[0][0], 0.1, "weekday first hour");
+        assert_eq!(week[4][23], 0.2, "Friday last hour");
+        assert_eq!(week[5][0], 0.5, "Saturday all day");
+        assert_eq!(week[6][23], 0.5, "Sunday all day");
+    }
+
+    #[test]
+    fn schedule_constant_survives_the_typed_export() {
+        let idf = IdfParser::from_str(SCHEDULES_FIXTURE).expect("fixture parses");
+        let (imported, _) = import_named_schedules(&idf).expect("schedules import");
+        let always_on = imported.get("AlwaysOn").expect("AlwaysOn survives");
+        assert!(matches!(always_on.schedule_type, ScheduleType::Constant));
+        let exported = export_named_schedules(&imported).expect("export");
+        assert!(
+            exported.contains("Schedule:Constant"),
+            "text was: {exported}"
+        );
+        let reparsed = IdfParser::from_str(&exported).expect("reparse");
+        let (reimported, _) = import_named_schedules(&reparsed).expect("re-import");
+        assert_eq!(reimported.get("AlwaysOn"), Some(always_on));
+    }
+
+    #[test]
+    fn schedule_type_limits_round_trip() {
+        let idf = IdfParser::from_str(SCHEDULES_FIXTURE).expect("fixture parses");
+        let mut exported = String::new();
+        let expected: Vec<ScheduleTypeLimits> = idf
+            .schedule_type_limits()
+            .map(parse_schedule_type_limits)
+            .collect::<Result<_, _>>()
+            .expect("fixture limits parse");
+        assert_eq!(expected.len(), 2, "fixture carries two limits objects");
+        for limits in &expected {
+            exported.push_str(&export_schedule_type_limits(limits));
+        }
+        let reparsed = IdfParser::from_str(&exported).expect("limits re-parse");
+        let actual: Vec<ScheduleTypeLimits> = reparsed
+            .schedule_type_limits()
+            .map(parse_schedule_type_limits)
+            .collect::<Result<_, _>>()
+            .expect("re-exported limits parse");
+        assert_eq!(actual, expected, "limits round-trip");
+        let fraction = &actual[0];
+        assert_eq!(fraction.name, "Fraction");
+        assert_eq!(fraction.lower_limit, Some(0.0));
+        assert_eq!(fraction.upper_limit, Some(1.0));
+        assert_eq!(fraction.numeric_type, NumericType::Continuous);
+    }
+
+    #[test]
+    fn fixture_import_losses_are_preserved() {
+        // The #4585 loss semantics: the fixture's Through: date is an
+        // explicit, named loss — and stays one after this slice.
+        let idf = IdfParser::from_str(SCHEDULES_FIXTURE).expect("fixture parses");
+        let (_, losses) = import_named_schedules(&idf).expect("schedules import");
+        assert!(
+            losses
+                .iter()
+                .any(|loss| { loss.schedule == "Occupancy" && loss.detail.contains("Through:") }),
+            "the Through: loss note must survive: {losses:?}"
+        );
+    }
+
+    #[test]
+    fn malformed_schedules_export_as_precise_errors() {
+        let make = |schedule_type, values| DailySchedule {
+            name: "Test".to_string(),
+            schedule_type,
+            values,
+        };
+
+        // A non-uniform Constant schedule cannot be a Schedule:Constant.
+        let mut non_uniform = [1.0; 24];
+        non_uniform[13] = 2.0;
+        let error = export_named_schedules(&BTreeMap::from([(
+            "Test".to_string(),
+            make(ScheduleType::Constant, ScheduleValues::Daily(non_uniform)),
+        )]))
+        .expect_err("non-uniform constant must be a precise error");
+        let message = error.to_string();
+        assert!(
+            message.contains("'Test'") && message.contains("uniform"),
+            "error must name the schedule and the problem: {message}"
+        );
+
+        // A non-finite weekly value is rejected, not written as NaN.
+        let mut non_finite = [[0.0; 24]; 7];
+        non_finite[2][9] = f64::NAN;
+        let error = export_named_schedules(&BTreeMap::from([(
+            "Test".to_string(),
+            make(ScheduleType::Weekly, ScheduleValues::Weekly(non_finite)),
+        )]))
+        .expect_err("non-finite value must be a precise error");
+        assert!(
+            error.to_string().contains("non-finite"),
+            "error must name the problem: {error}"
+        );
+
+        // A schedule type the import never produces has no export.
+        let error = export_named_schedules(&BTreeMap::from([(
+            "Test".to_string(),
+            make(ScheduleType::DailyCycle, ScheduleValues::Daily([0.5; 24])),
+        )]))
+        .expect_err("DailyCycle must be a precise error");
+        assert!(
+            error.to_string().contains("DailyCycle"),
+            "error must name the schedule type: {error}"
+        );
+
+        // A map key that disagrees with the schedule's own name.
+        let error = export_named_schedules(&BTreeMap::from([(
+            "Key".to_string(),
+            make(ScheduleType::Constant, ScheduleValues::Daily([1.0; 24])),
+        )]))
+        .expect_err("key/name disagreement must be a precise error");
+        assert!(
+            error.to_string().contains("disagree"),
+            "error must name the disagreement: {error}"
+        );
+    }
+
+    #[test]
+    fn schema_envelope_emits_named_schedules() {
+        let mut week = [[0.0; 24]; 7];
+        for day in week.iter_mut() {
+            *day = [0.25; 24];
+        }
+        let mut schema = SimulationSchemaV1::default();
+        schema.schedules.named_schedules.insert(
+            "EnvelopeLoad".to_string(),
+            DailySchedule {
+                name: "EnvelopeLoad".to_string(),
+                schedule_type: ScheduleType::Weekly,
+                values: ScheduleValues::Weekly(week),
+            },
+        );
+        let text = export_schema(&schema);
+        assert!(
+            text.contains("Schedule:Compact, \"EnvelopeLoad\"")
+                || text.contains("Schedule:Compact, EnvelopeLoad"),
+            "the envelope must emit the typed schedule: {text}"
+        );
+        let reparsed = IdfParser::from_str(&text).expect("envelope re-parses");
+        let (reimported, _) = import_named_schedules(&reparsed).expect("schedules re-import");
+        assert!(reimported.contains_key("EnvelopeLoad"));
+        assert_eq!(weekly(&reimported["EnvelopeLoad"])[3][11], 0.25);
+
+        // A malformed schedule in the schema becomes an explicit loss
+        // note (never a panic, never a silent drop).
+        let mut non_uniform = [1.0; 24];
+        non_uniform[7] = 0.0;
+        schema
+            .schedules
+            .named_schedules
+            .insert("Broken".to_string(), {
+                DailySchedule {
+                    name: "Broken".to_string(),
+                    schedule_type: ScheduleType::Constant,
+                    values: ScheduleValues::Daily(non_uniform),
+                }
+            });
+        let text = export_schema(&schema);
+        assert!(
+            text.contains("schedule 'Broken'"),
+            "the malformed schedule must surface as a loss note: {text}"
+        );
+    }
+
+    #[test]
+    fn schedule_export_of_the_imported_compact_helper_matches_the_map_path() {
+        // The import helper and the pipeline agree: the same object
+        // imports to the same weekly state either way.
+        let obj = IdfParser::from_str(
+            "Schedule:Compact, Occ, Fraction, For: Weekdays, Until: 08:00, 0.1, \
+             Until: 24:00, 0.9, For: Weekends, Until: 24:00, 0.5;\n",
+        )
+        .expect("object parses");
+        let obj = obj.objects.into_iter().next().unwrap();
+        let imported = import_schedule_compact(&obj, None).expect("imports");
+        let mut map = BTreeMap::new();
+        map.insert(imported.name.clone(), imported.schedule.clone());
+        let exported = export_named_schedules(&map).expect("exports");
+        let reparsed = IdfParser::from_str(&exported).expect("re-parses");
+        let obj2 = reparsed.objects.into_iter().next().unwrap();
+        let reimported = import_schedule_compact(&obj2, None).expect("re-imports");
+        assert_eq!(reimported.schedule, imported.schedule);
     }
 }
