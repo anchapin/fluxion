@@ -16,9 +16,12 @@
 //!
 //! 1. Every QAS case (1–6) × system (FC, SZ, CAV, VAV) — all 24 cells — is
 //!    dispatched through fluxion's own air-side components
-//!    (`fluxion::sim::hvac::CoolingCoil`, `HeatingCoilComponent`,
-//!    `FanComponent`) and fluxion-core psychrometrics, in the QAS
-//!    configuration (economizer off, no return-duct heat gain).
+//!    (`fluxion::sim::hvac::CoolingCoil`, `HeatingCoilComponent`) and the
+//!    engine's `PressureDrivenAirLoop` public API
+//!    (`src/sim/hvac/pressure_air_loop.rs`: specified-flow fan states,
+//!    `OutdoorAirMixer`, `SplitAirLoopNetwork`, `VavFlowController`, the
+//!    inverse/humidity `ZoneAirNode`) in the QAS configuration (economizer
+//!    off, no return-duct heat gain).
 //! 2. Every quantity the QAS targets publish for that cell is scored
 //!    against the committed target value. Rows that fall outside the
 //!    comparison tolerance are recorded as **known-fail rows with the real
@@ -53,11 +56,11 @@
 //! | `zone1_reheat`, `zone2_reheat`, `total_reheat` (Btu/h) | – | – | ✓ | ✓ | `HeatingCoilComponent::compute_heating_capacity` (`LeavingTempSetpoint`) |
 //! | `total_heat` (Btu/h) | – | – | ✓ | ✓ | preheat + reheat coils (sum of the two above) |
 //! | `cooling_sensible`, `cooling_latent`, `cooling_total` (Btu/h) | ✓ | ✓ | ✓ | ✓ | `CoolingCoil::compute_cooling_capacity` (bypass-factor model) |
-//! | `mixed_air_temp` (degF) | ✓ | ✓ | ✓ | ✓ | *no dedicated fluxion mixing component exists* — harness-level dry-air mass / enthalpy balance over `MoistAirState` (see below) |
-//! | `supply_air_temp` (degF) | ✓ | ✓ | ✓ | ✓ | coil leaving state + `FanComponent::shaft_power` fan air-temperature rise |
-//! | `return_air_temp` (degF) | – | ✓ | – | – | `FanComponent::shaft_power` (return-fan rise over the zone state) |
-//! | `zone1_supply_temp`, `zone2_supply_temp` (degF) | – | – | ✓ | ✓ | zone load balance over the engine's supply mass flow + `MoistAirState` enthalpy |
-//! | `supply_mass_flow` (lbm/min) | ✓ | ✓ | – | – | `FanComponent::mass_flow_rate` / `MoistAirState` density |
+//! | `mixed_air_temp` (degF) | ✓ | ✓ | ✓ | ✓ | `OutdoorAirMixer::mix` — the engine's outdoor-air mixing box (issue #4705) |
+//! | `supply_air_temp` (degF) | ✓ | ✓ | ✓ | ✓ | coil leaving state + specified-flow fan shaft-power rise (`SpecifiedFlowLoop`, issue #4707) |
+//! | `return_air_temp` (degF) | – | ✓ | – | – | specified-flow return-fan shaft-power rise over the zone state (issue #4707) |
+//! | `zone1_supply_temp`, `zone2_supply_temp` (degF) | – | – | ✓ | ✓ | `ZoneAirNode::supply_temperature_for_target` — the engine's inverse zone node (issue #4707) over the split loop's branch flow |
+//! | `supply_mass_flow` (lbm/min) | ✓ | ✓ | – | – | `SpecifiedFlowLoop::solve` at the coil-leaving state density (issue #4707) |
 //!
 //! Component-by-component, from the Step-0 survey of `src/sim/hvac/`:
 //!
@@ -71,12 +74,13 @@
 //!   controlled to a leaving dry-bulb setpoint; it is the heating-coil,
 //!   preheat-coil and zone-reheat path (the QAS coils are sensible-only too:
 //!   the zone latent load is met by the zone air, not by the coil).
-//! * `fan.rs` — `FanComponent` gives flow, pressure rise and shaft power but
-//!   **no air temperature rise**. The QAS workbook's fan temperature rise is
-//!   `shaft power / (ṁ·cp)` (its `WORK2HEAT` constant carries the same
-//!   convention, and fluxion's own `cav_terminal.rs` documents "fan heat
-//!   added to the airstream (equals shaft power)"), so the harness derives
-//!   the rise from the fan's **shaft** power — the engine's own convention.
+//! * `fan.rs` — the `FanComponent` flow/power component is not on the §11
+//!   dispatch path any more: every fan *state* (mass flow, shaft power, air
+//!   temperature rise) is read in the engine's specified-flow mode
+//!   (`SpecifiedFlowLoop`, issue #4707), whose convention is the QAS
+//!   workbook's own — a prescribed design flow at a constant rated pressure
+//!   rise, with the rise `shaft power / (ṁ·c_p)` at the rated efficiency
+//!   (fluxion's `cav_terminal.rs` documents the same shaft-power convention).
 //! * `economizer.rs` — only a control predicate
 //!   (`is_economizer_active`) and a free-cooling capacity estimate; the QAS
 //!   cases are run with the economizer **off**, so this module is not on the
@@ -94,13 +98,15 @@
 //!   *transient* coupling to the envelope solver and produces no §11 steady
 //!   state, so it is not on the dispatch path.
 //!
-//! fluxion has **no** §11-shaped airside system object (no air-mixing
-//! component, no §11 system assembly). The harness therefore assembles the §11
-//! topology from fluxion's own components and fluxion-core psychrometrics,
-//! and the **system-level glue** (outdoor/return air mixing, flow splits, zone
-//! load balances) is harness code — it is flagged as such on every affected
-//! row (`method` field). The quantities that fluxion's components decide
-//! (coil loads, coil leaving states, fan rises) are the engine's own.
+//! The §11 system layer — outdoor/return air mixing, the flow split between
+//! zones, and the zone load/humidity balances — is dispatched through the
+//! engine's `PressureDrivenAirLoop` public API
+//! (`src/sim/hvac/pressure_air_loop.rs`), not through harness code: the
+//! quantities that decide the system state (mixed state, branch flows, zone
+//! supply temperatures, zone humidity ratios, fan shaft powers) are the
+//! engine's own, and the coil quantities remain the engine's coil
+//! components. The conventions that bind the QAS inputs to that API are
+//! documented in the "# Issue #4665" section below.
 //!
 //! # Comparison tolerances (declared up front, not fitted)
 //!
@@ -131,33 +137,57 @@
 //! The re-record path is explicit and opt-in; the ordinary test run always
 //! compares the live engine run against the committed file.
 //!
-//! # Issue #4665 — the `PressureDrivenAirLoop` dispatch was attempted and blocked
+//! # Issue #4665 — the dispatch goes through the `PressureDrivenAirLoop` API
 //!
 //! Issue #4665 asked for the four §11 systems to be dispatched through the
-//! engine's real pressure-driven air loop
-//! (`src/sim/hvac/pressure_air_loop.rs`) instead of the harness-side
-//! mixing / flow-split / zone-balance code documented above.
+//! engine's pressure-driven air loop (`src/sim/hvac/pressure_air_loop.rs`)
+//! instead of harness-side system code. The first attempt (recorded against
+//! the pre-extension API) was stopped because the loop could not express the
+//! §11 configurations; the gaps it proved were closed by the sequenced API
+//! extensions #4705/#4706/#4707 (PRs #4710/#4714/#4712), and this module now
+//! dispatches every system-level quantity through that API:
 //!
-//! The attempt was made against the **existing public API only** (the brief
-//! forbids extending it) and it was **stopped**, because that API cannot
-//! express any of the four §11 configurations. The gaps, with the API
-//! evidence, are:
+//! | §11 system function (old harness code) | `PressureDrivenAirLoop` dispatch |
+//! |---|---|
+//! | `mix_streams` (dry-air mass/enthalpy balance) | `OutdoorAirMixer::mix` / `MoistAirStream::mix` — the mixing box over the engine's `MoistAirStream` states |
+//! | zone humidity ratio `w = w_sup + q_lat/(ṁ·h_fg)` | `ZoneAirNode::with_latent_internal_gain` + `step_humidity` iterated to its steady state — the engine's zone moisture balance |
+//! | CAV/VAV flow split `m_i = ρ·v_i` | `SplitAirLoopNetwork` branch flows, commanded through `command_branch_flow_m3_per_s` (the engine's damper bisection) |
+//! | VAV flow rule `max(load flow, exhaust)` | `VavFlowController::commanded_flow_m3_per_s` — the engine's commandable VAV rule |
+//! | fan rises `shaft/(ṁ·cp)` | `SpecifiedFlowLoop::solve` — the engine's specified-flow fan state (shaft power and temperature rise at the rated efficiency) |
+//! | zone supply temp `t_zone − q/(ṁ·cp)` | `ZoneAirNode::supply_temperature_for_target` — the engine's inverse zone node |
 //!
-//! | §11 quantity | harness-side function | air-loop dispatch | why it does not exist |
-//! |---|---|---|---|
-//! | `mixed_air_temp` (all 24 cells) | `mix_streams` | none | `AirLoopElement` has only `Fan` / `Duct` / `Damper` (`pressure_air_loop.rs:282`): the loop has no outdoor-air inlet and no mixing element, and `AirLoopNetwork` is a single closed ring (one path, one solved flow), so the outdoor/return mixture every §11 coil sees cannot be formed |
-//! | `cooling_latent` (all 24 cells) | zone humidity-ratio balance | none | the air-loop module carries no humidity at all (`grep -i humid src/sim/hvac/pressure_air_loop.rs` → 0 hits): `ZoneAirNode` (`:981`) has temperatures, a volume, an envelope conductance and a scalar internal gain, and `AirLoopSolution` (`:416`) has flow/pressure/power only — the zone latent load (`r1_ql`, `r2_ql`) and the return-air humidity ratio have no representation |
-//! | CAV/VAV `supply_mass_flow`, `zone1_supply_temp`, `zone2_supply_temp`, `zone1_reheat`, `zone2_reheat`, `total_reheat`, `total_heat` | `dispatch_two_zone` flow split and zone balances | none | `PressureDrivenAirLoop` holds one `ZoneAirNode`, one `ZoneThermostat` and one damper (`:1102`); the QAS CAV/VAV topology is a central AHU whose single supply flow **splits** between two zones, with a second (return) fan downstream of the merge — the ring topology accepts exactly one fan (`:505`) and has no branch nodes |
-//! | VAV flow rule | `load_flow.max(m_exh)` | none | the damper position is commanded by the hysteretic on/off `ZoneThermostat` (`:863`) from two fixed positions; the QAS VAV rule (the minimum flow that meets the zone sensible load at the AHU discharge temperature, floored by the exhaust flow) is not commandable through the loop |
-//! | fan air-temperature rise | `fan_temperature_rise` | partial | `AirLoopSolution::fan_air_power_w` is the **air** power (flow × pressure rise, `:713`); the QAS workbook's convention is shaft power / (ṁ·cp) at 70 % fan efficiency, and `FanCurve` carries no efficiency — a harness-side efficiency factor would be needed |
-//! | `supply_mass_flow` (FC/SZ) | design flow × density | partial | the loop *solves* the flow from a quadratic fan curve plus series resistances, while the QAS *specifies* the flow and a constant pressure rise; reproducing the specified flow would mean choosing a duct resistance to hit it (a fitted value), and `AirLoopStepResult::supply_mass_flow_kg_per_s` uses the constant `STANDARD_AIR_DENSITY_KG_PER_M3 = 1.2` rather than the moist-air density at the coil leaving state |
-//! | `zone1_supply_temp` / `zone2_supply_temp` | `t_zone - q/(ṁ·cp)` | none | `ZoneAirNode` takes the supply temperature as an *input* and returns the zone temperature after a transient step; the inverse the QAS asks for (the supply temperature that holds the given zone temperature under the given load) is not exposed, so it would have to be inverted in harness code — the very zone balance the issue asks to remove |
+//! ## Binding conventions (stated, not fitted)
 //!
-//! The full mapping, the evidence and the smallest API extension that would
-//! unblock the dispatch are recorded in `WORKER_REPORT.md`. Until that API
-//! exists the harness keeps its documented system-level glue, and every
-//! affected row keeps saying so in its `method` field; nothing here is
-//! hidden.
+//! * **Fan curves.** The QAS workbook rates its fans at a point (flow,
+//!   constant pressure rise, 70 % efficiency), not with a curve. Every fan
+//!   *state* is read in `SpecifiedFlowLoop` mode, whose solve reads only the
+//!   curve's *efficiency* — the shape never enters a scored quantity. The
+//!   curves are built from the rating points with a shut-off head of
+//!   `FAN_SHUTOFF_HEAD_FACTOR ×` the rated rise; the contract test below
+//!   pins that different shut-off heads produce identical specified-flow
+//!   states.
+//! * **Branch dampers.** Each branch damper's full-open resistance is the
+//!   AHU rated rise at that zone's design flow (`ΔP_SFP / Q_design²`). The
+//!   commanded flows are met by the engine's damper bisection for any
+//!   positive resistance, so this only shapes the network the bisection
+//!   works on; both branch flows are commanded alternately until both hold,
+//!   and the *achieved* flows (the engine's split) are what the rows carry.
+//! * **Zone volume.** The §11 cases publish no zone volume. The steady
+//!   state of the zone node's moisture balance is volume-independent, so a
+//!   unit volume (`HUMIDITY_NODE_VOLUME_M3`) is used and the balance is
+//!   iterated to its fixed point.
+//! * **Mass conventions.** Mixing fractions are dry-air mass fractions (the
+//!   mixer's basis; the exhaust volume is expressed at the return
+//!   conditions, the QAS workbook's `roemf` convention). Fan mass flows and
+//!   the inverse zone node pass the stream's moist density to the engine's
+//!   density option — the engine's own conversion — and the engine's
+//!   specified-flow / inverse-node / moisture-balance conventions (`c_p` of
+//!   dry air, standard density, latent heat at 0 °C) decide those
+//!   quantities. The dispatch therefore answers with the engine's
+//!   conventions where the old harness answered with its own; every row
+//!   carries the real re-scored numbers against the unchanged committed
+//!   targets and tolerances, and each row names the route in
+//!   `dispatch_path`/`method`.
 //!
 //! # Determinism
 //!
@@ -168,15 +198,18 @@ use std::collections::BTreeMap;
 
 use serde_json::{json, Map, Value};
 
+use fluxion::sim::hvac::pressure_air_loop::{
+    air_density_kg_per_m3, AirLoopBranch, AirLoopElement, FanCurve, MoistAirStream,
+    OutdoorAirMixer, SpecifiedFlowLoop, SplitAirLoopNetwork, VavFlowController, ZoneAirNode,
+};
 use fluxion::sim::hvac::{
-    CoolingCoil, CoolingCoilBehavior, Fan, FanComponent, HeatingCoil, HeatingCoilComponent,
-    HeatingCoilControl, MoistAirState,
+    CoolingCoil, CoolingCoilBehavior, HeatingCoil, HeatingCoilComponent, HeatingCoilControl,
+    MoistAirState,
 };
 use fluxion_core::qas_airside::{Ambient, TEST_CASES};
 use fluxion_core::weather::psychrometrics::{
-    calculate_dew_point, calculate_humidity_ratio, latent_heat_vaporization,
-    partial_vapor_pressure, saturation_humidity_ratio, saturation_vapor_pressure,
-    STANDARD_ATMOSPHERIC_PRESSURE_Pa,
+    calculate_dew_point, calculate_humidity_ratio, partial_vapor_pressure,
+    saturation_humidity_ratio, saturation_vapor_pressure, STANDARD_ATMOSPHERIC_PRESSURE_Pa,
 };
 
 // ---------------------------------------------------------------------------
@@ -261,6 +294,96 @@ const DRY_COIL_NOTE: &str = "the QAS coil leaves the humidity ratio unchanged on
 const MAX_ITER: usize = 200;
 /// Fixed-point convergence tolerance.
 const SOLVE_TOL: f64 = 1e-9;
+
+// ---------------------------------------------------------------------------
+// PressureDrivenAirLoop dispatch conventions (issue #4665 — see the module
+// docs "Binding conventions" section for the full statement)
+// ---------------------------------------------------------------------------
+
+/// Shut-off head of the fan curves built from the QAS rating points, as a
+/// multiple of the rated pressure rise. The curve shape enters no scored
+/// quantity: fan states are read in specified-flow mode (whose solve reads
+/// only the efficiency) and the branch flows are commanded through the split
+/// network's damper bisection. Pinned by
+/// `test_section11_specified_flow_state_is_invariant_to_the_curve_shape`.
+const FAN_SHUTOFF_HEAD_FACTOR: f64 = 2.0;
+
+/// Zone volume for the humidity-carrying zone air nodes. The §11 case inputs
+/// publish no zone volume; the steady state of the node's moisture balance
+/// (the state the harness reads) is volume-independent, so a unit volume is
+/// used and the balance is iterated to its fixed point.
+const HUMIDITY_NODE_VOLUME_M3: f64 = 1.0;
+
+/// Build a QAS fan curve from the workbook's rating point: shut-off head
+/// `FAN_SHUTOFF_HEAD_FACTOR ×` the rated pressure rise, the rated point on
+/// the curve, and the QAS design efficiency `DFE`.
+fn qas_fan_curve_with_shutoff(
+    shutoff_head_factor: f64,
+    pressure_rise_pa: f64,
+    rated_flow_m3_per_s: f64,
+) -> FanCurve {
+    let mut curve = FanCurve::from_rated_point(
+        shutoff_head_factor * pressure_rise_pa,
+        rated_flow_m3_per_s,
+        pressure_rise_pa,
+    )
+    .expect("QAS fan curve from the rated point");
+    curve.set_efficiency(DFE).expect("QAS fan efficiency");
+    curve
+}
+
+/// The §11 fan curve convention (see `qas_fan_curve_with_shutoff`).
+fn qas_fan_curve(pressure_rise_pa: f64, rated_flow_m3_per_s: f64) -> FanCurve {
+    qas_fan_curve_with_shutoff(
+        FAN_SHUTOFF_HEAD_FACTOR,
+        pressure_rise_pa,
+        rated_flow_m3_per_s,
+    )
+}
+
+/// A §11 zone air node carrying the zone's latent gain, so the return-air
+/// humidity ratio comes from the engine's moisture balance.
+fn section11_zone_node(zone: &ZoneSpec) -> ZoneAirNode {
+    ZoneAirNode::new(
+        zone.t_c,
+        HUMIDITY_NODE_VOLUME_M3,
+        0.0,
+        zone.t_c,
+        0.0,
+        zone.t_c,
+        zone.t_c,
+    )
+    .expect("§11 zone air node")
+    .with_latent_internal_gain(zone.q_latent_w)
+    .expect("§11 zone latent gain")
+}
+
+/// Steady state of the zone node's moisture balance: iterate the engine's
+/// backward-Euler humidity step at a fixed supply state until the ratio
+/// stops moving. The fixed point is `W_supply + q_latent/(ρ_std·Q·h_fg,0)`,
+/// independent of the node volume and of the step size.
+fn zone_humidity_steady_state(
+    node: &mut ZoneAirNode,
+    supply_flow_m3_per_s: f64,
+    w_supply: f64,
+) -> f64 {
+    for _ in 0..MAX_ITER {
+        let before = node.humidity_ratio_kg_per_kg_dry_air;
+        let after = node
+            .step_humidity(1.0, supply_flow_m3_per_s, w_supply)
+            .expect("zone humidity step");
+        if (after - before).abs() < 1e-16 {
+            return after;
+        }
+    }
+    node.humidity_ratio_kg_per_kg_dry_air
+}
+
+/// The engine mass flow of a volumetric flow at a state density (the air
+/// loop's own density conversion, `air_density_kg_per_m3`).
+fn mass_flow_kg_per_s(density_kg_per_m3: f64, flow_m3_per_s: f64) -> f64 {
+    air_density_kg_per_m3(Some(density_kg_per_m3)) * flow_m3_per_s
+}
 
 // ---------------------------------------------------------------------------
 // Case inputs and the engine dispatch
@@ -391,12 +514,6 @@ fn c_to_f(c: f64) -> f64 {
 // Psychrometric helpers over the engine's own state type
 // ---------------------------------------------------------------------------
 
-/// Specific heat of moist air (J/(kg·K)), as the engine computes it
-/// (`src/sim/hvac/airside_state.rs`: `1000·(1.006 + 1.86·ω)`).
-fn cp_ma(w: f64) -> f64 {
-    1000.0 * (1.006 + 1.86 * w)
-}
-
 /// Dry-air density (kg/m³) of a moist-air state.
 fn dry_air_density(state: &MoistAirState) -> f64 {
     state.density_kg_per_m3 / (1.0 + state.humidity_ratio_kg_per_kg_dry_air)
@@ -418,42 +535,20 @@ fn outdoor_humidity_ratio(oadb_c: f64, oadp_c: f64) -> f64 {
     calculate_humidity_ratio(oadb_c, rh.clamp(0.0, 100.0), p)
 }
 
-/// Mix dry-air streams by mass and enthalpy (the harness-level air mixer;
-/// fluxion has no dedicated air-mixing component — see the module docs).
-fn mix_streams(streams: &[(f64, MoistAirState)]) -> MoistAirState {
-    // Zero-mass streams (a zone that carries no return air, e.g. the VAV
-    // minimum-flow case) drop out of the balance.
-    let streams: Vec<(f64, MoistAirState)> =
-        streams.iter().copied().filter(|(m, _)| *m > 0.0).collect();
-    let m_total: f64 = streams.iter().map(|(m, _)| *m).sum();
-    assert!(m_total > 0.0, "cannot mix a zero-mass stream set");
-    let h: f64 = streams
-        .iter()
-        .map(|(m, s)| m * s.enthalpy_kj_per_kg_dry_air)
-        .sum::<f64>()
-        / m_total;
-    let w: f64 = streams
-        .iter()
-        .map(|(m, s)| m * s.humidity_ratio_kg_per_kg_dry_air)
-        .sum::<f64>()
-        / m_total;
-    // Invert the engine's enthalpy relation h = 1.006·T + ω·(2501 + 1.86·T)
-    // (`fluxion-core/src/weather/psychrometrics.rs::calculate_enthalpy`).
-    let t_c = (h - w * 2501.0) / (1.006 + 1.86 * w);
-    state_from_w(t_c, w)
-}
-
-/// Fan air-temperature rise (degC) from the engine's `FanComponent`.
-///
-/// fluxion's fan is a flow/power component with no air-temperature-rise
-/// output; the QAS workbook's fan rise is `shaft power / (ṁ·cp)`, which is
-/// also fluxion's own convention (`cav_terminal.rs`: "fan heat added to the
-/// airstream (equals shaft power)"). The fan's rated density is set to the
-/// operating dry-air density because the QAS workbook specifies a *constant*
-/// fan pressure rise independent of density.
-fn fan_temperature_rise(fan: &FanComponent, phi: f64, rho_da: f64, m_dot: f64, w: f64) -> f64 {
-    let shaft_w = fan.shaft_power(phi, rho_da);
-    shaft_w / (m_dot * cp_ma(w))
+/// Fan air-temperature rise [K] in the engine's specified-flow mode: the
+/// prescribed design mass flow at the constant rated pressure rise (the QAS
+/// workbook's fan convention) reported by `SpecifiedFlowLoop::solve`.
+fn specified_flow_fan_state(
+    curve: &FanCurve,
+    mass_flow_kg_per_s: f64,
+    pressure_rise_pa: f64,
+    moist_air_density_kg_per_m3: f64,
+) -> f64 {
+    SpecifiedFlowLoop::new(*curve, mass_flow_kg_per_s, pressure_rise_pa)
+        .expect("specified-flow fan state")
+        .solve(Some(moist_air_density_kg_per_m3))
+        .expect("specified-flow fan solve")
+        .fan_temperature_rise_k
 }
 
 // ---------------------------------------------------------------------------
@@ -594,11 +689,21 @@ struct SystemResult {
 /// `with_return_fan` selects the SZ topology (a return fan raises the return
 /// air temperature before the outdoor/return mixing). The economizer is off
 /// (the QAS as-delivered configuration) and there is no return-duct heat gain.
+///
+/// Every system-level quantity is read through the `PressureDrivenAirLoop`
+/// public API: the supply/return fan states in specified-flow mode, the
+/// outdoor/return mixture through `OutdoorAirMixer`, the zone humidity ratio
+/// from the zone node's moisture balance, and the zone supply temperature
+/// from the inverse zone node.
 fn dispatch_fc_sz(spec: &CaseSpec, with_return_fan: bool) -> SystemResult {
-    let p = STANDARD_ATMOSPHERIC_PRESSURE_Pa;
     let zone = spec.zone1;
     let w_out = outdoor_humidity_ratio(spec.oadb_c, spec.oadp_c);
-    let outdoor = state_from_w(spec.oadb_c, w_out);
+    let outdoor_stream = MoistAirStream::new(spec.oadb_c, w_out).expect("outdoor stream");
+    let sfpr_pa = SFPR_IN_WG * PA_PER_IN_WG;
+    let rfpr_pa = RFPR_IN_WG * PA_PER_IN_WG;
+    let v_return_rated = zone.v_design_m3_s - zone.v_exhaust_m3_s;
+    let supply_curve = qas_fan_curve(sfpr_pa, zone.v_design_m3_s);
+    let return_curve = qas_fan_curve(rfpr_pa, v_return_rated);
 
     let mut t_coil_c = zone.t_c;
     let mut w_supply = w_out;
@@ -606,68 +711,58 @@ fn dispatch_fc_sz(spec: &CaseSpec, with_return_fan: bool) -> SystemResult {
 
     let mut result = SystemResult::default();
     for _ in 0..MAX_ITER {
-        // --- supply (coil leaving) state and dry-air mass flow ------------
+        // --- supply fan state: the engine's specified-flow mode at the
+        // coil-leaving state (the QAS prescribes the design flow and the
+        // constant rated pressure rise) ------------------------------
         let leaving = state_from_w(t_coil_c, w_supply);
-        let rho_da_leaving = dry_air_density(&leaving);
-        let m_total = rho_da_leaving * zone.v_design_m3_s;
-        let cp_supply = cp_ma(w_supply);
+        let m_total = mass_flow_kg_per_s(leaving.density_kg_per_m3, zone.v_design_m3_s);
+        let d_t_fan_supply =
+            specified_flow_fan_state(&supply_curve, m_total, sfpr_pa, leaving.density_kg_per_m3);
 
-        // --- zone humidity ratio from the zone latent load ----------------
-        let h_fg = latent_heat_vaporization(zone.t_c);
-        let w_zone = w_supply + zone.q_latent_w / (m_total * h_fg);
+        // --- zone humidity ratio from the engine's moisture balance ----
+        let mut zone_node = section11_zone_node(&zone);
+        let w_zone = zone_humidity_steady_state(&mut zone_node, zone.v_design_m3_s, w_supply);
+        let return_state = state_from_w(zone.t_c, w_zone);
 
-        // --- return air (and the SZ return fan) ---------------------------
-        let mut ret = state_from_w(zone.t_c, w_zone);
-        // The QAS workbook expresses the exhaust (outdoor) airflow at the
-        // *return* conditions (`roemf = r1_exh / rosv` in
-        // `fluxion-core/src/qas_airside.rs`), and the return flow is the
-        // supply mass flow less the exhaust mass flow. The harness mirrors
-        // that convention so that the comparison is between models and not
-        // between configurations.
-        let rho_da_ret = dry_air_density(&ret);
-        let m_exhaust = rho_da_ret * zone.v_exhaust_m3_s;
-        let m_ret = m_total - m_exhaust;
+        // --- return air (and the SZ return fan, specified-flow mode) ----
+        let mut ret_stream = MoistAirStream::new(zone.t_c, w_zone).expect("return stream");
         if with_return_fan {
             let v_return = zone.v_design_m3_s - zone.v_exhaust_m3_s;
-            let fan = FanComponent::with_motor(
-                "§11 return fan".to_string(),
-                v_return,
-                RFPR_IN_WG * PA_PER_IN_WG,
-                DFE,
-                1.0,
-                rho_da_ret,
-            );
-            // The return-fan flow ratio is the return volumetric flow (at the
-            // return conditions) over the fan's rated flow.
-            let phi = (m_ret / rho_da_ret) / v_return;
-            let d_t = fan_temperature_rise(
-                &fan,
-                phi,
-                rho_da_ret,
+            let m_ret = mass_flow_kg_per_s(return_state.density_kg_per_m3, v_return);
+            let d_t = specified_flow_fan_state(
+                &return_curve,
                 m_ret,
-                ret.humidity_ratio_kg_per_kg_dry_air,
+                rfpr_pa,
+                return_state.density_kg_per_m3,
             );
-            ret = state_from_w(ret.dry_bulb_c + d_t, ret.humidity_ratio_kg_per_kg_dry_air);
+            ret_stream = MoistAirStream::new(ret_stream.temperature_c + d_t, w_zone)
+                .expect("return stream after the return fan");
         }
 
-        // --- outdoor / return mixing (harness-level balance) --------------
-        let m_out = m_exhaust;
-        let mixed = mix_streams(&[(m_out, outdoor), (m_ret, ret)]);
-
-        // --- supply fan and the zone supply temperature -------------------
-        let fan = FanComponent::with_motor(
-            "§11 supply fan".to_string(),
-            zone.v_design_m3_s,
-            SFPR_IN_WG * PA_PER_IN_WG,
-            DFE,
-            1.0,
-            rho_da_leaving,
+        // --- outdoor / return mixing through the engine's mixing box -----
+        // The QAS expresses the exhaust volume at the return conditions
+        // (`roemf`); the mixing fraction is a dry-air mass fraction.
+        let m_da_exhaust = dry_air_density(&return_state) * zone.v_exhaust_m3_s;
+        let m_da_supply = dry_air_density(&leaving) * zone.v_design_m3_s;
+        let mixed_stream = OutdoorAirMixer::new(outdoor_stream, m_da_exhaust / m_da_supply)
+            .expect("§11 outdoor-air mixing box")
+            .mix(&ret_stream)
+            .expect("§11 mixed stream");
+        let mixed = state_from_w(
+            mixed_stream.temperature_c,
+            mixed_stream.humidity_ratio_kg_per_kg_dry_air,
         );
-        let d_t_fan = fan_temperature_rise(&fan, 1.0, rho_da_leaving, m_total, w_supply);
-        // The zone supply temperature that meets the zone sensible load
-        // (harness-level load balance over the engine's mass flow).
-        let t_zone_supply_c = zone.t_c - zone.q_sensible_w / (m_total * cp_supply);
-        let t_coil_new = t_zone_supply_c - d_t_fan;
+
+        // --- zone supply temperature: the engine's inverse zone node ----
+        let t_zone_supply_c = zone_node
+            .supply_temperature_for_target(
+                zone.t_c,
+                zone.q_sensible_w,
+                zone.v_design_m3_s,
+                Some(leaving.density_kg_per_m3),
+            )
+            .expect("inverse zone node");
+        let t_coil_new = t_zone_supply_c - d_t_fan_supply;
 
         // --- the coil ------------------------------------------------------
         let (heating_w, cooling, w_supply_new) = if t_coil_new >= mixed.dry_bulb_c {
@@ -697,7 +792,7 @@ fn dispatch_fc_sz(spec: &CaseSpec, with_return_fan: bool) -> SystemResult {
             mixed_air_c: mixed.dry_bulb_c,
             supply_air_c: t_zone_supply_c,
             return_air_c: if with_return_fan {
-                Some(ret.dry_bulb_c)
+                Some(ret_stream.temperature_c)
             } else {
                 None
             },
@@ -715,7 +810,6 @@ fn dispatch_fc_sz(spec: &CaseSpec, with_return_fan: bool) -> SystemResult {
             break;
         }
     }
-    let _ = p;
     result
 }
 
@@ -726,145 +820,188 @@ fn dispatch_fc_sz(spec: &CaseSpec, with_return_fan: bool) -> SystemResult {
 /// Dispatch the constant-volume (CAV) or variable-volume (VAV) reheat
 /// system: a central air-handling unit (preheat coil, cooling coil, supply
 /// fan) serving two zones, each with its own reheat coil.
+///
+/// Every system-level quantity is read through the `PressureDrivenAirLoop`
+/// public API: the branch flows through `SplitAirLoopNetwork` commanded
+/// dampers (VAV targets from `VavFlowController`), the zone humidity ratios
+/// from the zone nodes' moisture balances, the return/outdoor mixtures
+/// through the engine's stream mixing and `OutdoorAirMixer`, the AHU/return
+/// fan states in specified-flow mode, and the zone supply temperatures from
+/// the inverse zone nodes.
 fn dispatch_two_zone(spec: &CaseSpec, variable_volume: bool) -> SystemResult {
     let zone1 = spec.zone1;
     let zone2 = spec.zone2.expect("two-zone case");
     let w_out = outdoor_humidity_ratio(spec.oadb_c, spec.oadp_c);
-    let outdoor = state_from_w(spec.oadb_c, w_out);
+    let outdoor_stream = MoistAirStream::new(spec.oadb_c, w_out).expect("outdoor stream");
 
     let phsp_c = f_to_c(PHSP_F);
     let sasp_c = f_to_c(SASP_F);
+    let sfpr_pa = SFPR_IN_WG * PA_PER_IN_WG;
+    let rfpr_pa = RFPR_IN_WG * PA_PER_IN_WG;
     let v_total_design = NSCFM * M3_S_PER_CFM;
+    let v_return_rated = NRCFM * M3_S_PER_CFM;
+    let supply_curve = qas_fan_curve(sfpr_pa, v_total_design);
+    let return_curve = qas_fan_curve(rfpr_pa, v_return_rated);
+    // Branch damper convention: the full-open resistance is the AHU rated
+    // rise at the zone design flow. The commanded flows are met by the
+    // engine's damper bisection for any positive resistance, so this only
+    // shapes the network the bisection works on.
+    let branch_open_resistance =
+        |zone: &ZoneSpec| sfpr_pa / (zone.v_design_m3_s * zone.v_design_m3_s);
 
     let mut t_coil_c = phsp_c;
     let mut w_supply = w_out;
-    // Previous-iteration values, used where the §11 solve is circular (the
-    // zone humidity ratio needs the zone flow, and the VAV flow rule needs
-    // the AHU discharge temperature).
-    let mut m1_prev = zone1.v_design_m3_s * 1.2;
-    let mut m2_prev = zone2.v_design_m3_s * 1.2;
+    // Previous-iteration discharge temperature, used where the §11 solve is
+    // circular (the VAV flow rule needs the AHU discharge temperature).
     let mut t_discharge_prev = sasp_c;
     let mut coil_note: Option<String> = None;
 
     let mut result = SystemResult::default();
     for _ in 0..MAX_ITER {
-        // --- AHU leaving state and mass flow ------------------------------
         let leaving = state_from_w(t_coil_c, w_supply);
-        let rho_da_leaving = dry_air_density(&leaving);
-        let cp_supply = cp_ma(w_supply);
 
-        // --- zone humidity ratios from the zone latent loads ----------------
-        let h_fg1 = latent_heat_vaporization(zone1.t_c);
-        let h_fg2 = latent_heat_vaporization(zone2.t_c);
-        let w_zone1 = w_supply + zone1.q_latent_w / (m1_prev * h_fg1);
-        let w_zone2 = w_supply + zone2.q_latent_w / (m2_prev * h_fg2);
-
-        // --- zone return states and the exhaust flows -----------------------
-        // As in the FC/SZ dispatch, the QAS workbook expresses the exhaust
-        // airflow at the return conditions.
-        let ret1 = state_from_w(zone1.t_c, w_zone1);
-        let ret2 = state_from_w(zone2.t_c, w_zone2);
-        let m_exh1 = dry_air_density(&ret1) * zone1.v_exhaust_m3_s;
-        let m_exh2 = dry_air_density(&ret2) * zone2.v_exhaust_m3_s;
-
-        // --- zone mass flows ----------------------------------------------
-        // CAV: the fixed design volume per zone, at the AHU leaving density.
-        // VAV: the minimum flow that meets the zone sensible load at the AHU
-        // discharge temperature, floored by the exhaust flow (the QAS
-        // workbook's VAV flow rule).
-        let m1 = if variable_volume {
-            let load_flow = zone1.q_sensible_w / (cp_supply * (zone1.t_c - t_discharge_prev));
-            if load_flow.is_finite() {
-                load_flow.max(m_exh1)
+        // --- zone branch flow targets: the engine's commandable rule ------
+        // CAV: the fixed design volumes. VAV: the engine's VAV flow rule
+        // (the flow that meets the zone sensible load at the AHU discharge
+        // temperature, floored by the exhaust flow).
+        let branch_flow_target = |zone: &ZoneSpec| {
+            if variable_volume {
+                VavFlowController::new(
+                    zone.v_exhaust_m3_s,
+                    t_discharge_prev,
+                    zone.t_c,
+                    zone.q_sensible_w,
+                )
+                .expect("§11 VAV flow controller")
+                .commanded_flow_m3_per_s()
             } else {
-                m_exh1
+                zone.v_design_m3_s
             }
-        } else {
-            rho_da_leaving * zone1.v_design_m3_s
         };
-        let m2 = if variable_volume {
-            let load_flow = zone2.q_sensible_w / (cp_supply * (zone2.t_c - t_discharge_prev));
-            if load_flow.is_finite() {
-                load_flow.max(m_exh2)
-            } else {
-                m_exh2
+        let target1 = branch_flow_target(&zone1);
+        let target2 = branch_flow_target(&zone2);
+
+        // --- the split loop: command both branch flows through the
+        // engine's damper bisection, alternately, until both hold; the
+        // achieved flows are the engine's split --------------------------
+        let mut network = SplitAirLoopNetwork::new(
+            vec![AirLoopElement::Fan {
+                id: "§11 AHU supply fan".to_string(),
+                curve: supply_curve,
+                speed_fraction: 1.0,
+            }],
+            vec![
+                AirLoopBranch::new(
+                    "zone1",
+                    vec![AirLoopElement::Damper {
+                        id: "zone1 branch damper".to_string(),
+                        open_resistance_pa_s2_per_m6: branch_open_resistance(&zone1),
+                        position: 1.0,
+                    }],
+                )
+                .expect("zone 1 branch"),
+                AirLoopBranch::new(
+                    "zone2",
+                    vec![AirLoopElement::Damper {
+                        id: "zone2 branch damper".to_string(),
+                        open_resistance_pa_s2_per_m6: branch_open_resistance(&zone2),
+                        position: 1.0,
+                    }],
+                )
+                .expect("zone 2 branch"),
+            ],
+            vec![AirLoopElement::Fan {
+                id: "§11 return fan".to_string(),
+                curve: return_curve,
+                speed_fraction: 1.0,
+            }],
+        )
+        .expect("§11 split air loop");
+        let mut q1 = target1;
+        let mut q2 = target2;
+        for _ in 0..MAX_ITER {
+            q1 = network
+                .command_branch_flow_m3_per_s(0, target1)
+                .expect("zone 1 flow command");
+            q2 = network
+                .command_branch_flow_m3_per_s(1, target2)
+                .expect("zone 2 flow command");
+            if ((q1 - target1) / target1).abs() < 1e-9 && ((q2 - target2) / target2).abs() < 1e-9 {
+                break;
             }
-        } else {
-            rho_da_leaving * zone2.v_design_m3_s
-        };
+        }
+        let m1 = mass_flow_kg_per_s(leaving.density_kg_per_m3, q1);
+        let m2 = mass_flow_kg_per_s(leaving.density_kg_per_m3, q2);
         let m_total = m1 + m2;
 
-        // --- AHU supply fan rise and the discharge temperature -------------
-        let fan = FanComponent::with_motor(
-            "§11 AHU supply fan".to_string(),
-            v_total_design,
-            SFPR_IN_WG * PA_PER_IN_WG,
-            DFE,
-            1.0,
-            rho_da_leaving,
+        // --- zone humidity ratios from the engine's moisture balances ----
+        let mut zone_node1 = section11_zone_node(&zone1);
+        let mut zone_node2 = section11_zone_node(&zone2);
+        let w_zone1 = zone_humidity_steady_state(&mut zone_node1, q1, w_supply);
+        let w_zone2 = zone_humidity_steady_state(&mut zone_node2, q2, w_supply);
+        let ret_state1 = state_from_w(zone1.t_c, w_zone1);
+        let ret_state2 = state_from_w(zone2.t_c, w_zone2);
+        let ret_stream1 = MoistAirStream::new(zone1.t_c, w_zone1).expect("zone 1 return stream");
+        let ret_stream2 = MoistAirStream::new(zone2.t_c, w_zone2).expect("zone 2 return stream");
+
+        // --- return mixing, return fan, outdoor mixing ----------------------
+        // The QAS expresses the exhaust volumes at the return conditions
+        // (`roemf`); mixing fractions are dry-air mass fractions. The
+        // return fan (the QAS workbook's 1 in. w.g. / 800 cfm rating)
+        // raises the merged return stream in specified-flow mode before it
+        // meets the outdoor air.
+        let m_exh1 = dry_air_density(&ret_state1) * zone1.v_exhaust_m3_s;
+        let m_exh2 = dry_air_density(&ret_state2) * zone2.v_exhaust_m3_s;
+        // The dry-air mass returning from each zone is the supply dry-air
+        // mass delivered to the zone less the exhaust mass (steady-state
+        // conservation); the supply side carries the leaving-state density.
+        let m_da1 = dry_air_density(&leaving) * q1;
+        let m_da2 = dry_air_density(&leaving) * q2;
+        let m_da_ret_total = (m_da1 - m_exh1) + (m_da2 - m_exh2);
+        let mut ret_mixed_stream = if m_da1 + m_da2 > 0.0 {
+            MoistAirStream::mix(&ret_stream1, &ret_stream2, m_da1 / (m_da1 + m_da2))
+                .expect("§11 return mix")
+        } else {
+            ret_stream1
+        };
+        if m_da_ret_total > 0.0 {
+            let ret_mixed_state = state_from_w(
+                ret_mixed_stream.temperature_c,
+                ret_mixed_stream.humidity_ratio_kg_per_kg_dry_air,
+            );
+            let v_return = m_da_ret_total / dry_air_density(&ret_mixed_state);
+            let m_ret_total = mass_flow_kg_per_s(ret_mixed_state.density_kg_per_m3, v_return);
+            let d_t_ret_fan = specified_flow_fan_state(
+                &return_curve,
+                m_ret_total,
+                rfpr_pa,
+                ret_mixed_state.density_kg_per_m3,
+            );
+            let d_t = d_t_ret_fan;
+            ret_mixed_stream = MoistAirStream::new(
+                ret_mixed_stream.temperature_c + d_t,
+                ret_mixed_stream.humidity_ratio_kg_per_kg_dry_air,
+            )
+            .expect("return mix after the return fan");
+        }
+        let m_da_outdoor = m_exh1 + m_exh2;
+        let mixed_stream = OutdoorAirMixer::new(
+            outdoor_stream,
+            m_da_outdoor / (m_da_outdoor + m_da_ret_total),
+        )
+        .expect("§11 outdoor-air mixing box")
+        .mix(&ret_mixed_stream)
+        .expect("§11 mixed stream");
+        let mixed = state_from_w(
+            mixed_stream.temperature_c,
+            mixed_stream.humidity_ratio_kg_per_kg_dry_air,
         );
-        let phi = (m_total / rho_da_leaving) / v_total_design;
-        let d_t_fan = fan_temperature_rise(&fan, phi, rho_da_leaving, m_total, w_supply);
+
+        // --- AHU supply fan state and the discharge temperature -----------
+        let d_t_fan =
+            specified_flow_fan_state(&supply_curve, m_total, sfpr_pa, leaving.density_kg_per_m3);
         let t_discharge_c = t_coil_c + d_t_fan;
 
-        // --- outdoor / return mixing (harness-level balance) ---------------
-        // The CAV/VAV systems of the QAS workbook have a **return fan** (1 in.
-        // w.g., 800 cfm nominal, 70 % efficient) downstream of the zone return
-        // mixing: the mixed return air is raised by the fan's air-temperature
-        // rise before it meets the outdoor air.
-        let m_ret1 = m1 - m_exh1;
-        let m_ret2 = m2 - m_exh2;
-        let m_ret_total = m_ret1 + m_ret2;
-        let mut ret_mixed = if m_ret_total > 0.0 {
-            mix_streams(&[(m_ret1, ret1), (m_ret2, ret2)])
-        } else {
-            ret1
-        };
-        if m_ret_total > 0.0 {
-            let v_rated_return = NRCFM * M3_S_PER_CFM;
-            let rho_da_ret_mix = dry_air_density(&ret_mixed);
-            let fan = FanComponent::with_motor(
-                "§11 return fan".to_string(),
-                v_rated_return,
-                RFPR_IN_WG * PA_PER_IN_WG,
-                DFE,
-                1.0,
-                rho_da_ret_mix,
-            );
-            let phi = (m_ret_total / rho_da_ret_mix) / v_rated_return;
-            let d_t = fan_temperature_rise(
-                &fan,
-                phi,
-                rho_da_ret_mix,
-                m_ret_total,
-                ret_mixed.humidity_ratio_kg_per_kg_dry_air,
-            );
-            ret_mixed = state_from_w(
-                ret_mixed.dry_bulb_c + d_t,
-                ret_mixed.humidity_ratio_kg_per_kg_dry_air,
-            );
-        }
-        let m_out = (m_exh1 + m_exh2).max(m_total - m_ret_total);
-        let mixed = mix_streams(&[(m_out, outdoor), (m_ret_total, ret_mixed)]);
-
-        if std::env::var("FLUXION_SECTION11_DEBUG").is_ok() {
-            let oash = cp_ma(outdoor.humidity_ratio_kg_per_kg_dry_air);
-            let rash = cp_ma(ret1.humidity_ratio_kg_per_kg_dry_air);
-            let rtsh = cp_ma(ret2.humidity_ratio_kg_per_kg_dry_air);
-            let mrt =
-                (m_ret1 * zone1.t_c * rash + m_ret2 * zone2.t_c * rtsh) / (m_ret1 + m_ret2) / rash;
-            let w_mix = (m_ret1 * ret1.humidity_ratio_kg_per_kg_dry_air
-                + m_ret2 * ret2.humidity_ratio_kg_per_kg_dry_air
-                + m_out * outdoor.humidity_ratio_kg_per_kg_dry_air)
-                / m_total;
-            let mash = cp_ma(w_mix);
-            let mat_qas = (m_out * outdoor.dry_bulb_c * oash + (m_total - m_out) * mrt * rash)
-                / (m_total * mash);
-            println!(
-                "DBG two-zone: oadb={}F m_out={} m_ret1={} m_ret2={} m_total={} T_mix={}F T_mix_qas={}F w_mix={}",
-                c_to_f(spec.oadb_c), m_out, m_ret1, m_ret2, m_total, c_to_f(mixed.dry_bulb_c), c_to_f(mat_qas), w_mix
-            );
-        }
         // --- preheat coil ---------------------------------------------------
         let t_preheat_c = mixed.dry_bulb_c.max(phsp_c);
         let (preheat_w, preheated) = run_heating_coil(&mixed, m_total, t_preheat_c);
@@ -882,9 +1019,28 @@ fn dispatch_two_zone(spec: &CaseSpec, variable_volume: bool) -> SystemResult {
             (Some(run), w_leaving)
         };
 
-        // --- zone supply temperatures and reheat coils ----------------------
-        let t_zone1_supply_c = zone1.t_c - zone1.q_sensible_w / (m1 * cp_supply);
-        let t_zone2_supply_c = zone2.t_c - zone2.q_sensible_w / (m2 * cp_supply);
+        // --- zone supply temperatures: the engine's inverse zone nodes ----
+        // The inverse query closes at the same density pair its flow was
+        // computed with: a VAV branch flow comes from the engine's
+        // `VavFlowController`, whose rule is pinned to the standard density,
+        // so the VAV inverse reads the standard density too (and reheat
+        // vanishes by construction when the load rule binds, as the QAS's
+        // own rule implies); a CAV branch flow is a case design volume whose
+        // mass is the specified-flow mass at the leaving state, so the CAV
+        // inverse reads the leaving-state density.
+        let branch_density = if variable_volume {
+            None
+        } else {
+            Some(leaving.density_kg_per_m3)
+        };
+        let t_zone1_supply_c = zone_node1
+            .supply_temperature_for_target(zone1.t_c, zone1.q_sensible_w, q1, branch_density)
+            .expect("zone 1 inverse zone node");
+        let t_zone2_supply_c = zone_node2
+            .supply_temperature_for_target(zone2.t_c, zone2.q_sensible_w, q2, branch_density)
+            .expect("zone 2 inverse zone node");
+
+        // --- reheat coils ------------------------------------------------
         let discharge_state = state_from_w(t_discharge_c, w_supply);
         let (reheat1_w, _) = run_heating_coil(&discharge_state, m1, t_zone1_supply_c);
         let (reheat2_w, _) = run_heating_coil(&discharge_state, m2, t_zone2_supply_c);
@@ -910,8 +1066,6 @@ fn dispatch_two_zone(spec: &CaseSpec, variable_volume: bool) -> SystemResult {
             (t_coil_new - t_coil_c).abs() < SOLVE_TOL && (w_supply_new - w_supply).abs() < 1e-12;
         t_coil_c = t_coil_new;
         w_supply = w_supply_new;
-        m1_prev = m1;
-        m2_prev = m2;
         t_discharge_prev = t_discharge_c;
         if converged {
             break;
@@ -1000,31 +1154,32 @@ fn engine_value(
         (_, "cooling_total") => Some(load(result.cooling_total_w)),
         (_, "mixed_air_temp") => Some((
             c_to_f(result.mixed_air_c),
-            "harness-level dry-air mass/enthalpy mixing balance over the engine's MoistAirState \
-             (fluxion has no air-mixing component)",
+            "OutdoorAirMixer::mix — the PressureDrivenAirLoop mixing box over the engine's \
+             return and outdoor MoistAirStreams",
         )),
         (_, "supply_air_temp") => Some((
             c_to_f(result.supply_air_c),
-            "engine coil leaving state + FanComponent shaft-power fan rise; the zone supply \
-             temperature is the engine's load balance",
+            "engine coil leaving state + SpecifiedFlowLoop shaft-power fan rise (the \
+             PressureDrivenAirLoop specified-flow mode)",
         )),
         (System::Sz, "return_air_temp") => Some((
             c_to_f(result.return_air_c?),
-            "FanComponent shaft-power return-fan rise over the engine's zone state",
+            "SpecifiedFlowLoop shaft-power return-fan rise over the engine's zone stream",
         )),
         (System::Cav | System::Vav, "zone1_supply_temp") => Some((
             c_to_f(result.zone1_supply_c?),
-            "harness-level zone load balance over the engine's supply mass flow and MoistAirState \
-             enthalpy",
+            "ZoneAirNode::supply_temperature_for_target — the PressureDrivenAirLoop inverse \
+             zone node over the split loop's zone 1 branch flow",
         )),
         (System::Cav | System::Vav, "zone2_supply_temp") => Some((
             c_to_f(result.zone2_supply_c?),
-            "harness-level zone load balance over the engine's supply mass flow and MoistAirState \
-             enthalpy",
+            "ZoneAirNode::supply_temperature_for_target — the PressureDrivenAirLoop inverse \
+             zone node over the split loop's zone 2 branch flow",
         )),
         (System::Fc | System::Sz, "supply_mass_flow") => Some((
             result.supply_mass_flow_kg_s / KG_PER_LBM * 60.0,
-            "engine supply-flow state (FanComponent flow × MoistAirState dry-air density)",
+            "SpecifiedFlowLoop::solve — the PressureDrivenAirLoop specified-flow mass flow at \
+             the coil-leaving state density",
         )),
         _ => None,
     }
@@ -1039,6 +1194,25 @@ fn tolerance(unit: Unit, target: f64) -> f64 {
     }
 }
 
+/// The dispatch-path provenance recorded on every row of a system: the
+/// `PressureDrivenAirLoop` public-API routes the cell was dispatched through
+/// (issue #4665).
+fn dispatch_path(system: System) -> &'static str {
+    match system {
+        System::Fc | System::Sz => {
+            "PressureDrivenAirLoop API (pressure_air_loop): specified-flow fan states \
+             (SpecifiedFlowLoop), outdoor-air mixing (OutdoorAirMixer), inverse zone node and \
+             zone humidity state (ZoneAirNode); coils through the engine coil components"
+        }
+        System::Cav | System::Vav => {
+            "PressureDrivenAirLoop API (pressure_air_loop): two-zone split topology \
+             (SplitAirLoopNetwork with command_branch_flow_m3_per_s), VAV flow rule \
+             (VavFlowController), outdoor-air mixing (OutdoorAirMixer), inverse zone node and \
+             zone humidity state (ZoneAirNode); coils through the engine coil components"
+        }
+    }
+}
+
 /// Score one published quantity against its committed target.
 fn score_row(
     system: System,
@@ -1050,6 +1224,7 @@ fn score_row(
     let mut row = Map::new();
     row.insert("quantity".into(), json!(quantity));
     row.insert("unit".into(), json!(unit.label()));
+    row.insert("dispatch_path".into(), json!(dispatch_path(system)));
     row.insert("target".into(), json!(round6(target)));
     match engine_value(system, result, quantity) {
         Some((value, method)) => {
@@ -1088,11 +1263,9 @@ fn score_row(
             row.insert(
                 "reason".into(),
                 json!(format!(
-                    "no fluxion API produces `{quantity}` for the {} system: the air-side \
-                     component set in `src/sim/hvac/` (cooling_coil.rs, heating_coil.rs, fan.rs, \
-                     cav_terminal.rs, vav_terminal.rs, economizer.rs, airside_coupling.rs, \
-                     airside_state.rs) exposes no symbol that can deliver this quantity from the \
-                     §11 case inputs",
+                    "no fluxion API produces `{quantity}` for the {} system: neither the air-side \
+                     component set in `src/sim/hvac/` nor the PressureDrivenAirLoop public API \
+                     exposes a symbol that can deliver this quantity from the §11 case inputs",
                     system.key()
                 )),
             );
@@ -1185,12 +1358,15 @@ fn build_results() -> Value {
         "_targets": "data/reference/ashrae140/section11_qas_targets.json (QASv2.xlsm, merged \
                      quasi-analytical solution, ASHRAE RP-865; economizer off, zero return-duct \
                      heat gain)",
-        "_method": "Each case × system is dispatched through fluxion's own air-side components \
-                    (CoolingCoil, HeatingCoilComponent, FanComponent) and fluxion-core \
-                    psychrometrics in the QAS configuration; the system-level glue (outdoor/return \
-                    mixing, flow splits, zone load balances) is harness code and is flagged on \
-                    every affected row. The QAS targets are point values, not bands: no band is \
-                    fitted to the engine output.",
+        "_method": "Each case × system is dispatched through the engine's PressureDrivenAirLoop \
+                    public API (specified-flow fan states, OutdoorAirMixer, SplitAirLoopNetwork \
+                    commanded branch dampers, VavFlowController, the inverse/humidity ZoneAirNode) \
+                    plus the engine coil components (CoolingCoil, HeatingCoilComponent), in the QAS \
+                    configuration. No system-level glue is harness code; the binding conventions \
+                    (curve shut-off head, branch damper resistance, unit humidity-node volume, \
+                    dry-air mixing fractions, the engine's own cp/density/h_fg conventions) are \
+                    documented in the harness module docs. The QAS targets are point values, not \
+                    bands: no band is fitted to the engine output.",
         "_tolerances": {
             "load_Btu_per_h": format!("max({LOAD_RTOL} of |target|, {LOAD_ATOL_BTUH} Btu/h)"),
             "temp_degF": TEMP_ATOL_F,
@@ -1516,4 +1692,72 @@ fn test_section11_fan_configuration_matches_the_qas_workbook() {
     assert!((SASP_F - 55.0).abs() < 1e-12);
     assert!((PHSP_F - 45.0).abs() < 1e-12);
     assert!((NSCFM - 1300.0).abs() < 1e-12);
+}
+
+/// Every row of the recorded run names the `PressureDrivenAirLoop` dispatch
+/// path (issue #4665's provenance requirement).
+#[test]
+fn test_section11_rows_carry_the_air_loop_dispatch_path() {
+    let live = build_results();
+    for case in live["cases"].as_array().expect("cases array") {
+        let case_no = case["case"].as_u64().expect("case");
+        for system in case["systems"].as_array().expect("systems array") {
+            for row in system["rows"].as_array().expect("rows array") {
+                let path = row["dispatch_path"].as_str().unwrap_or_else(|| {
+                    panic!(
+                        "case {case_no} {} {}: no dispatch_path",
+                        system["system"].as_str().unwrap_or("?"),
+                        row["quantity"].as_str().unwrap_or("?")
+                    )
+                });
+                assert!(
+                    path.contains("PressureDrivenAirLoop"),
+                    "case {case_no} {} {}: the dispatch_path must name the air-loop dispatch",
+                    system["system"].as_str().unwrap_or("?"),
+                    row["quantity"].as_str().unwrap_or("?")
+                );
+            }
+        }
+    }
+}
+
+/// The decorative fan-curve shape enters no scored quantity: the specified
+/// flow mode reads only the curve's efficiency, so two curves that share the
+/// rating point and the efficiency but differ in shut-off head produce
+/// bit-identical fan states.
+#[test]
+fn test_section11_specified_flow_state_is_invariant_to_the_curve_shape() {
+    let rated_points = [
+        (SFPR_IN_WG * PA_PER_IN_WG, NSCFM * M3_S_PER_CFM),
+        (RFPR_IN_WG * PA_PER_IN_WG, NRCFM * M3_S_PER_CFM),
+    ];
+    for (rise_pa, rated_flow_m3_s) in rated_points {
+        let mass_flow_kg_per_s = 0.65; // kg/s — any positive prescribed flow
+        let density_kg_per_m3 = 1.18; // kg/m³ — any positive state density
+        let shallow = qas_fan_curve_with_shutoff(1.5, rise_pa, rated_flow_m3_s);
+        let steep = qas_fan_curve_with_shutoff(4.0, rise_pa, rated_flow_m3_s);
+        let a = SpecifiedFlowLoop::new(shallow, mass_flow_kg_per_s, rise_pa)
+            .expect("fan state")
+            .solve(Some(density_kg_per_m3))
+            .expect("specified-flow solve");
+        let b = SpecifiedFlowLoop::new(steep, mass_flow_kg_per_s, rise_pa)
+            .expect("fan state")
+            .solve(Some(density_kg_per_m3))
+            .expect("specified-flow solve");
+        assert_eq!(
+            a.fan_shaft_power_w.to_bits(),
+            b.fan_shaft_power_w.to_bits(),
+            "the shaft power must not depend on the curve shape"
+        );
+        assert_eq!(
+            a.fan_temperature_rise_k.to_bits(),
+            b.fan_temperature_rise_k.to_bits(),
+            "the fan air-temperature rise must not depend on the curve shape"
+        );
+        assert_eq!(
+            a.mass_flow_kg_per_s.to_bits(),
+            b.mass_flow_kg_per_s.to_bits(),
+            "the prescribed mass flow is the mode's input"
+        );
+    }
 }
