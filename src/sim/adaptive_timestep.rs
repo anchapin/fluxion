@@ -742,6 +742,7 @@ pub struct CaseTimeConstant {
 #[allow(deprecated)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_timestep_mode_fixed() {
@@ -968,34 +969,110 @@ mod tests {
         assert!(timesteps.is_empty());
     }
 
-    #[test]
-    fn test_calculate_time_constant() {
-        let tau = AdaptiveTimestepScheduler::calculate_time_constant(1.2e7, 650.0);
-        assert!((tau - 5.13).abs() < 0.1);
-        let tau = AdaptiveTimestepScheduler::calculate_time_constant(1.0e6, 0.0);
-        assert!(tau == f64::INFINITY);
-        let tau = AdaptiveTimestepScheduler::calculate_time_constant(1.0e6, -10.0);
-        assert!(tau == f64::INFINITY);
+    proptest! {
+        /// INVARIANT (converts `test_calculate_time_constant`, issue
+        /// #4808): the time constant tau = C/(3600*h) is +infinity
+        /// exactly when the heat-transfer coefficient is non-positive
+        /// (for any capacitance), finite and positive whenever both are
+        /// positive, and non-increasing in the coefficient; the hand-picked
+        /// calibration point (C = 1.2e7, h = 650 -> tau ~ 5.13 h) stays
+        /// pinned.
+        #[test]
+        fn prop_time_constant_is_infinite_for_nonpositive_coeff_and_monotone_in_coeff(
+            capacitance in 0.0_f64..1e9,
+            coeff in -1e4_f64..1e4,
+        ) {
+            prop_assume!(capacitance.is_finite() && coeff.is_finite());
+            let tau = AdaptiveTimestepScheduler::calculate_time_constant(capacitance, coeff);
+            if coeff <= 0.0 {
+                prop_assert_eq!(tau, f64::INFINITY);
+            } else {
+                prop_assert!(tau > 0.0 && tau.is_finite());
+                prop_assert!((tau - capacitance / (3600.0 * coeff)).abs() <= 1e-9 * tau.abs());
+                // Monotone: a larger coefficient never lengthens tau.
+                let tau_larger = AdaptiveTimestepScheduler::calculate_time_constant(capacitance, coeff * 2.0);
+                prop_assert!(tau_larger <= tau);
+            }
+            // The original calibration point.
+            let cal = AdaptiveTimestepScheduler::calculate_time_constant(1.2e7, 650.0);
+            prop_assert!((cal - 5.13).abs() < 0.1);
+            prop_assert_eq!(
+                AdaptiveTimestepScheduler::calculate_time_constant(1.0e6, 0.0),
+                f64::INFINITY
+            );
+            prop_assert_eq!(
+                AdaptiveTimestepScheduler::calculate_time_constant(1.0e6, -10.0),
+                f64::INFINITY
+            );
+        }
     }
 
-    #[test]
-    fn test_stability_criterion_edge_cases() {
-        let scheduler =
-            AdaptiveTimestepScheduler::new(TimestepMode::fixed(Duration::from_secs(3600)), 1.0);
-        assert!(!scheduler.is_stable(0.1));
-        assert!(scheduler.is_stable(10.0));
-        assert!(!scheduler.is_stable(0.5));
-        assert!(scheduler.is_stable(0.51));
+    proptest! {
+        /// INVARIANT (converts `test_stability_criterion_edge_cases`,
+        /// issue #4808): with a fixed 1 h step the stability criterion is
+        /// the threshold indicator `dt < 2*tau` — it is non-decreasing in
+        /// `tau` (once stable at some `tau`, stable at every larger one),
+        /// it agrees exactly with its own margin (`stability_margin < 1`
+        /// if and only if stable), and the hand-picked boundary examples
+        /// (tau = 0.1 / 0.5 / 0.51 / 10.0 at dt = 1 h) stay pinned.
+        #[test]
+        fn prop_stability_criterion_is_monotone_in_tau_and_agrees_with_its_margin(
+            tau_a in 1e-3_f64..1e6,
+            step in 0.5_f64..2.0,
+        ) {
+            prop_assume!(tau_a.is_finite());
+            let scheduler = AdaptiveTimestepScheduler::new(
+                TimestepMode::fixed(Duration::from_secs_f64(3600.0 * step)),
+                1.0,
+            );
+            let stable_a = scheduler.is_stable(tau_a);
+            // Margin agreement: stable exactly when the margin is < 1.
+            prop_assert_eq!(stable_a, scheduler.stability_margin(tau_a) < 1.0);
+            // Monotonicity: a larger tau never loses stability.
+            let tau_b = tau_a * 1.5;
+            if stable_a {
+                prop_assert!(scheduler.is_stable(tau_b));
+            }
+            // The original calibration points (dt = 1 h).
+            let cal =
+                AdaptiveTimestepScheduler::new(TimestepMode::fixed(Duration::from_secs(3600)), 1.0);
+            prop_assert!(!cal.is_stable(0.1));
+            prop_assert!(cal.is_stable(10.0));
+            prop_assert!(!cal.is_stable(0.5));
+            prop_assert!(cal.is_stable(0.51));
+        }
     }
 
-    #[test]
-    fn test_accuracy_criterion_edge_cases() {
-        let scheduler =
-            AdaptiveTimestepScheduler::new(TimestepMode::fixed(Duration::from_secs(3600)), 1.0);
-        assert!(!scheduler.is_accurate(1.0));
-        assert!(scheduler.is_accurate(100.0));
-        assert!(!scheduler.is_accurate(10.0));
-        assert!(scheduler.is_accurate(10.1));
+    proptest! {
+        /// INVARIANT (converts `test_accuracy_criterion_edge_cases`,
+        /// issue #4808): with a fixed 1 h step the accuracy criterion is
+        /// the threshold indicator `dt < tau/10` — non-decreasing in
+        /// `tau`, in exact agreement with its margin (`accuracy_margin <
+        /// 1` if and only if accurate), with the hand-picked boundary
+        /// examples (tau = 1.0 / 10.0 / 10.1 / 100.0 at dt = 1 h) pinned.
+        #[test]
+        fn prop_accuracy_criterion_is_monotone_in_tau_and_agrees_with_its_margin(
+            tau_a in 1e-3_f64..1e6,
+            step in 0.5_f64..2.0,
+        ) {
+            prop_assume!(tau_a.is_finite());
+            let scheduler = AdaptiveTimestepScheduler::new(
+                TimestepMode::fixed(Duration::from_secs_f64(3600.0 * step)),
+                1.0,
+            );
+            let accurate_a = scheduler.is_accurate(tau_a);
+            prop_assert_eq!(accurate_a, scheduler.accuracy_margin(tau_a) < 1.0);
+            let tau_b = tau_a * 1.5;
+            if accurate_a {
+                prop_assert!(scheduler.is_accurate(tau_b));
+            }
+            let cal =
+                AdaptiveTimestepScheduler::new(TimestepMode::fixed(Duration::from_secs(3600)), 1.0);
+            prop_assert!(!cal.is_accurate(1.0));
+            prop_assert!(cal.is_accurate(100.0));
+            prop_assert!(!cal.is_accurate(10.0));
+            prop_assert!(cal.is_accurate(10.1));
+        }
     }
 
     #[test]
@@ -1146,6 +1223,7 @@ mod tests {
 #[cfg(test)]
 mod error_control_tests {
     use super::*;
+    use proptest::prelude::*;
 
     fn cfg() -> ErrorControlConfig {
         ErrorControlConfig {
@@ -1196,35 +1274,91 @@ mod error_control_tests {
         assert!(sel.dt <= 3600.0);
     }
 
-    #[test]
-    fn test_rejects_when_tolerance_unreachable_at_floor() {
-        let mut stepper = ErrorControlledStepper::new(cfg());
-        // Drive the controller to the floor with a huge error.
-        let mut sel = stepper.select_step(1e9, 0.0);
-        let mut guard = 0;
-        while !sel.at_min_step && guard < 100 {
-            sel = stepper.select_step(1e9, 0.0);
-            guard += 1;
+    proptest! {
+        /// INVARIANT (converts `test_rejects_when_tolerance_unreachable_at_floor`,
+        /// issue #4808): every step selection stays inside the configured
+        /// bounds (`min_dt <= dt <= max_dt`) however the error sequence
+        /// oscillates, and a step is *rejected* only at the `min_dt`
+        /// floor with the error still above tolerance — where the
+        /// rejection is recorded exactly once. Driving the controller
+        /// with a huge error always reaches the floor within 100 steps
+        /// and the next selection rejects; the original calibration
+        /// drive (error 1e9 from t = 0) stays pinned.
+        #[test]
+        fn prop_step_selection_stays_in_bounds_and_rejects_only_at_the_min_step_floor(
+            errors in proptest::collection::vec(0.0_f64..1e6, 1..8),
+        ) {
+            let config = cfg();
+            let mut stepper = ErrorControlledStepper::new(config);
+            // Arbitrary error sequences from an hour boundary: bounded dt.
+            for (index, error) in errors.iter().enumerate() {
+                let sel = stepper.select_step(*error, (index as f64) * config.max_dt);
+                prop_assert!(sel.dt >= config.min_dt, "dt {} below the floor", sel.dt);
+                prop_assert!(sel.dt <= config.max_dt, "dt {} above the ceiling", sel.dt);
+                prop_assert!(
+                    !sel.rejected || (sel.dt == config.min_dt && sel.at_min_step),
+                    "a rejection away from the floor: {:?}",
+                    sel
+                );
+            }
+
+            // Drive to the floor with a huge error: always reachable,
+            // and the next selection rejects exactly once more.
+            let mut sel = stepper.select_step(1e9, 0.0);
+            let mut guard = 0;
+            while !sel.at_min_step && guard < 100 {
+                sel = stepper.select_step(1e9, 0.0);
+                guard += 1;
+            }
+            prop_assert!(sel.at_min_step);
+            let rejected_before = stepper.stats().rejected_steps;
+            let sel = stepper.select_step(1e9, 0.0);
+            prop_assert!(sel.rejected);
+            prop_assert_eq!(stepper.stats().rejected_steps, rejected_before + 1);
         }
-        assert!(sel.at_min_step);
-        // At the floor with error still above tolerance the step is rejected.
-        // (The drive-to-floor loop above may already have recorded a
-        // rejection on the call that first reached the floor, so assert
-        // the increment, not an absolute count.)
-        let rejected_before = stepper.stats().rejected_steps;
-        let sel = stepper.select_step(1e9, 0.0);
-        assert!(sel.rejected);
-        assert_eq!(stepper.stats().rejected_steps, rejected_before + 1);
     }
 
-    #[test]
-    fn test_hour_boundary_landing() {
-        let mut stepper = ErrorControlledStepper::new(cfg());
-        // t = 1800 s: a 3600 s step must be clipped to the 1800 s remainder.
-        let sel = stepper.select_step(0.0, 1800.0);
-        assert_eq!(sel.dt, 1800.0);
-        assert!(sel.landed_on_hour);
-        assert!(!sel.short_landing);
+    proptest! {
+        /// INVARIANT (converts `test_hour_boundary_landing`, issue
+        /// #4808): with hour alignment on and the error below tolerance
+        /// (the controller wants its maximum step), the selected step is
+        /// exactly the remainder to the next hour boundary
+        /// (`t + dt == 3600` in seconds), flagged `landed_on_hour`, with
+        /// `short_landing` exactly when the remainder falls below
+        /// `min_dt`; with alignment off the same fresh controller takes
+        /// its full maximum step and never lands. The hand-picked
+        /// calibration points (t = 1800 s -> dt 1800 s; t = 3570 s ->
+        /// dt 30 s short) stay pinned.
+        #[test]
+        fn prop_hour_alignment_lands_every_step_on_the_hour_boundary(
+            t_ms in 0_i64..3_600_000,
+        ) {
+            let t = t_ms as f64 / 1000.0;
+            let mut aligned = ErrorControlledStepper::new(cfg());
+            let sel = aligned.select_step(0.0, t);
+            prop_assert!(sel.landed_on_hour);
+            prop_assert_eq!(t + sel.dt, 3600.0);
+            prop_assert_eq!(sel.short_landing, sel.dt < cfg().min_dt);
+
+            let mut free = ErrorControlledStepper::new(cfg());
+            let mut free_cfg = cfg();
+            free_cfg.hour_alignment = false;
+            let mut free = ErrorControlledStepper::new(free_cfg);
+            let free_sel = free.select_step(0.0, t);
+            prop_assert!(!free_sel.landed_on_hour);
+            prop_assert_eq!(free_sel.dt, cfg().max_dt);
+
+            // The original calibration points.
+            let mut stepper = ErrorControlledStepper::new(cfg());
+            let sel = stepper.select_step(0.0, 1800.0);
+            prop_assert_eq!(sel.dt, 1800.0);
+            prop_assert!(sel.landed_on_hour);
+            prop_assert!(!sel.short_landing);
+            let mut short = ErrorControlledStepper::new(cfg());
+            let sel = short.select_step(0.0, 3570.0);
+            prop_assert_eq!(sel.dt, 30.0);
+            prop_assert!(sel.short_landing);
+        }
     }
 
     #[test]
