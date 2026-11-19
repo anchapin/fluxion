@@ -30,7 +30,7 @@
     },
     {
       "actual": 5022,
-      "reason": "2026-11-19 (loop round 160, the COP site/electric metering PR): Option R of the 2026-11-18 scoping doc (ISO 13790 \u00a710.4.5 site metering) grew the file 5014 -> 5022 (+8 lines: the hvac.meter_input_energy call immediately after the annual thermal accumulation pair in the 5R1C advance, with its dated provenance comment). The counters are additive outputs; the zone advance is untouched (byte-identity proven by the strict battery on the PR). The ceiling re-derives 5022 + max(+5%, +100) = 5274 in scripts/data/module_size_limits.json per the Issue #3574 admission protocol."
+      "reason": "2026-11-19 (loop round 160, the COP site/electric metering PR): Option R of the 2026-11-18 scoping doc (ISO 13790 \u00a710.4.5 site metering) grew the file 5014 -> 5022 (+8 lines: the hvac.meter_input_energy call immediately after the annual thermal accumulation pair in the 5R1C advance, with its dated provenance comment). The counters are additive outputs; the zone advance is untouched (byte-identity proven by the strict battery on the PR). The ceiling re-derives 5022 + max(+5%, +100) = 5274 in scripts/data/module_size_limits.json per the Issue #3574 admission protocol. [Same-round fmt amendment: `cargo fmt` re-flowed the metering chain and re-measured 5021; max_lines stays 5022 (historical maximum, bound tightens only), ceiling 5274 untouched.]"
     }
   ],
   "max_lines": 5022,
