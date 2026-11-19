@@ -146,7 +146,7 @@ default = []
 # Feature flag to enable Python bindings (disabled by default for pure Rust testing).
 # Links libpython so the resulting binary can initialize a Python interpreter
 # (needed for `cargo test --features python-bindings`).
-python-bindings = ["dep:pyo3", "dep:pyo3-build-config", "dep:numpy"]
+python-bindings = ["dep:pyo3", "dep:numpy"]
 # Build the crate as a Python extension module (no libpython link; the host
 # interpreter provides the CPython symbols at load time). Enable this in
 # addition to `python-bindings` when building the wheel with maturin. Issue #2532.
@@ -568,7 +568,6 @@ dhat = { version = "0.3", optional = true }
 fluxion-toon = { path = "crates/fluxion-toon", version = "0.1.0" }
 
 [build-dependencies]
-pyo3-build-config = { version = "0.30", optional = true }
 napi-build = { version = "2", optional = true }
 
 [dev-dependencies]
