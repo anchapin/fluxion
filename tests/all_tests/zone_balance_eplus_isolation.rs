@@ -1629,7 +1629,6 @@ fn test_case_650ff_free_float_strict_gate() {
     ff_gate_body(ASHRAE140Case::Case650FF, &FF_650_REF);
 }
 
-#[ignore = "Issue #4170: free-float gate; observed via --include-ignored; gap pinned in the gate baseline."]
 #[test]
 fn test_case_900ff_free_float_strict_gate() {
     ff_gate_body(ASHRAE140Case::Case900FF, &FF_900_REF);

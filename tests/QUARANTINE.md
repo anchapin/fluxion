@@ -214,7 +214,7 @@ Baseline gap is recorded in each `#[ignore]` reason.
 | `tests/all_tests/zone_balance_eplus_isolation.rs` | `test_case_195_annual_energy_ashrae140_tolerance` | `structural` | #4170, #4169 | `unassigned` | Heating re-enters the ±15% band (cooling already passes; the band itself is under reconciliation in #4169); lower the baseline gap when it does | `pending` |
 | `tests/all_tests/zone_balance_eplus_isolation.rs` | `test_case_600ff_free_float_strict_gate` | `structural` | #4170 | `unassigned` | Max free-float temperature re-enters the ±15% band (min already passes); lower the baseline gap when it does | `pending` |
 | `tests/all_tests/zone_balance_eplus_isolation.rs` | `test_case_650ff_free_float_strict_gate` | `structural` | #4170 | `unassigned` | Both min and max free-float temperatures re-enter their ±15% bands; lower the baseline gaps when they do | `pending` |
-| `tests/all_tests/zone_balance_eplus_isolation.rs` | `test_case_900ff_free_float_strict_gate` | `structural` | #4170, LIMIT-37 | `unassigned` | Min/max free-float temperatures re-enter their ±15% bands (5R1C mass-node damping, §LIMIT-37/#1465 family); lower the baseline gaps when they do | `pending` |
+| `tests/all_tests/zone_balance_eplus_isolation.rs` | `test_case_900ff_free_float_strict_gate*` | `structural` | #4170, LIMIT-37 | `unassigned` | Min/max free-float temperatures re-enter their ±15% bands (5R1C mass-node damping, §LIMIT-37/#1465 family); lower the baseline gaps when they do. RESOLVED (loop round 164, this PR): both ff_900ff rows re-entered their bands at gap 0.00 — loop round 143 (S5 exterior-walk correction, PR #4821, 2026-11-15) re-recorded `strict_energy_gate_baseline.json` (ff_900ff_min 118.57 → 0.00 pp, ff_900ff_max 3.07 → 0.00 pp, known_fail → pass on both rows, dated in the captured_commit provenance); fresh measurement at develop `6a745deb` (2026-11-20, release, canonical DRYCOLD): **Tmin 0.94 °C in [0.6, 2.2], Tmax 43.99 °C in [43.3, 46.0]** per the FF_900_REF published bands. `#[ignore]` removed, the test now runs live (it already ran green every battery via `--include-ignored`). Row kept as a closed record (wildcard form, as for the other closed rows) because the strict audit treats a row with no matching `#[ignore]` as a ghost | `closed (loop round 164)` |
 | `tests/all_tests/zone_balance_eplus_isolation.rs` | `test_case_950ff_free_float_strict_gate` | `structural` | #4170 | `unassigned` | Min free-float temperature re-enters the ±15% band (max already passes); lower the baseline gap when it does | `pending` |
 
 ### LIMIT-22 (gauge-build-only, `cfg_attr(feature = "gauge-solver", ignore)`, Issue #3297)
@@ -449,7 +449,7 @@ the new band for triage.
 | `tests/all_tests/ashrae_140_case_600_series.rs` | `test_annual_heating` | `structural` | #3803 | `unassigned` | Engine annual heating re-enters [4.094, 4.719] MWh | `pending` |
 | `tests/all_tests/ashrae_140_case_600_series.rs` | `test_annual_cooling` | `structural` | #3803 | `unassigned` | Engine annual cooling re-enters [3.841, 4.404] MWh | `pending` |
 | `tests/all_tests/ashrae_140_case_600_series.rs` | `test_peak_heating` | `structural` | #3803 | `unassigned` | Engine peak heating re-enters [3.038, 3.385] kW | `pending` |
-| `tests/all_tests/ashrae_140_case_600_series.rs` | `test_peak_cooling` | `structural` | #3803 | `unassigned` | Case 620 (mod `case_620`): engine peak cooling re-enters [3.955, 4.797] kW. Case 610 (mod `case_610`, quarantined round 33 by #4426): engine peak cooling re-enters the published [5.331, 6.432] kW band (measured 3.19 kW; same 600-series shading-family gap). The generator matches by file + fn name, so one row covers both same-named tests | `pending` |
+| `tests/all_tests/ashrae_140_case_600_series.rs` | `test_peak_cooling` | `structural` | #3803 | `unassigned` | Case 620 (mod `case_620`): engine peak cooling re-enters [3.955, 4.797] kW. Case 610 (mod `case_610`, quarantined round 33 by #4426): engine peak cooling re-enters the published [5.331, 6.432] kW band (measured 3.19 kW; same 600-series shading-family gap). The generator matches by file + fn name, so one row covers both same-named tests. UPDATE 2026-11-20 (loop round 164, measured at develop `6a745deb`): the Case 620 arm's value-based half is MET in the default build — fresh run **4.33 kW in [3.955, 4.797]** (was 3.69 kW below-band at the Issue #4777 measurement, `0f955d76`) — but the gauge-solver build (the nightly Criterion 4 route, which is this test file's CI) still fails it far out of band (**16.43 kW**), so per the registry protocol ("verify the test passes on CI") the `#[ignore]` stays until the gauge route closes too; un-ignoring it now would trip the ADR-0025 fail-closed hard tier on the first post-merge night. The Case 610 arm re-measured 2.82 kW vs [5.331, 6.432] and stays. | `pending` |
 
 ---
 
@@ -458,7 +458,7 @@ the new band for triage.
 | Category | Count | Status |
 |----------|-------|--------|
 | Diagnostic tests (#2536) | 22 | `pending` |
-| Structural gaps (LIMIT-*) | 86 pending + 2 closed (1 Case 195 zero-energy row closed in Issue #4777; 3 9R4C legacy pool, Issue #3599; 7 strict-energy-gate / Case 970 cohort, Issue #3572 / #3585; 4 Case 620 BENCH-01 narrower-band cohort, Issue #3803; 11 fluxion-fluid Jacobian cohort, Issue #4210) | `pending` |
+| Structural gaps (LIMIT-*) | 85 pending + 3 closed (1 Case 195 zero-energy row closed in Issue #4777; 1 #4170 900FF strict-gate row closed in loop round 164; 3 9R4C legacy pool, Issue #3599; 7 strict-energy-gate / Case 970 cohort, Issue #3572 / #3585; 4 Case 620 BENCH-01 narrower-band cohort, Issue #3803; 11 fluxion-fluid Jacobian cohort, Issue #4210) | `pending` |
 | Performance/memory (dhat + BDF + batch) | 17 (10 pending + 7 migrated to perf_lane.yml, Issue #3957) | `pending` / `migrated` |
 | Hardware-dependent (GPU) | 4 (1 parity + 3 ONNX EP hardware probes, Issue #3313) | `pending` |
 | Calibration/pending data | 12 (incl. 3 pending reference CSVs #1331/#1168; 2 Perez F1 source-data rows, Issue #1695) | `pending` |
@@ -493,6 +493,22 @@ ghost). Measured result: the high-mass Case 195 variant now reports
 zero-energy assertion `high_mass_energy.abs() > 0.0` passes. The sibling
 `test_solid_conduction_variants_integration` row (LIMIT-20 / #3218) is
 untouched.
+
+2026-11-20 (loop round 164, issue #1585 un-quarantine pass, on develop
+`6a745deb`): the 600-family quarantine census was re-measured end-to-end
+(default build, release, `--include-ignored`; gauge build via the
+criterion-4 route). One quarantine lifted:
+`test_case_900ff_free_float_strict_gate` — both ff_900ff rows re-entered
+their ±15% bands at gap 0.00 in loop round 143 (PR #4821), fresh run green
+at `6a745deb`; row kept as a closed record (wildcard form). The other
+600-series quarantines re-measured out-of-band and stay `pending`, with
+one two-build finding recorded on the Case 620 peak-cooling row: the
+DEFAULT build now sits INSIDE its published band at `6a745deb`, but the
+gauge-solver build (the nightly's Criterion 4 route) still fails far out
+of band, so per the registry protocol ("verify the test passes on CI")
+the `#[ignore]` stays until the gauge route closes too — un-ignoring it
+would trip the ADR-0025 fail-closed hard tier on the first post-merge
+night.
 
 2026-09-28 (Issues #4178 / #4179): audit scan widened beyond `tests/` to
 `src/` and every workspace member's `src/` / `tests/`; registry schema
