@@ -331,4 +331,4 @@ pytest scripts/ci/ -c scripts/pytest.ini            # python-tests.yml (coverage
 ./scripts/disk-space-check.sh && ./scripts/ci-local.sh
 ```
 
-Prerequisites: Python 3.10+, `pytest` + `pytest-asyncio` + `pytest-cov` (see `scripts/requirements-test.txt`), `gh` CLI for the PR/issue helpers, and the Rust toolchain for mutation/PGO scripts. AWS credentials are only needed for the cloud-campaign scripts (tests use hermetic fakes).
+Prerequisites: Python 3.11+, `pytest` + `pytest-asyncio` + `pytest-cov` (see `scripts/requirements-test.txt`), `gh` CLI for the PR/issue helpers, and the Rust toolchain for mutation/PGO scripts. AWS credentials are only needed for the cloud-campaign scripts (tests use hermetic fakes).

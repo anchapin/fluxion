@@ -20,7 +20,7 @@ Action: Use `gh pr create --base develop` for all changes; never push directly t
 ### Prerequisites
 
 - **Rust**: via `rustup` (latest stable), plus `rustfmt` and `clippy` components
-- **Python**: 3.10+
+- **Python**: 3.11+
 - **maturin**: `pip install maturin`
 
 ### First-Time Setup
