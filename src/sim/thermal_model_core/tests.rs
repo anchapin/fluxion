@@ -745,6 +745,81 @@ mod tests {
 
     #[cfg(feature = "gauge-solver")]
     #[test]
+    fn the_gauge_dispatch_routes_conditioned_steps_through_the_teacher_air_loop() {
+        // Issue #3984 — the teacher path's production air side. A
+        // conditioned single-zone case with capacity must dispatch its
+        // HVAC through the persisted PressureDrivenAirLoop assembly, meter
+        // real duty, and leave the thermostat's dead-band hysteresis audit
+        // trail on the backend.
+        let spec = crate::validation::ashrae_140_cases::ASHRAE140Case::Case610.spec();
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &crate::sim::thermal_selector::ThermalSelector {
+                zone_solver: crate::sim::thermal_selector::ZoneSolverKind::Gauge,
+                conduction_solver: crate::sim::thermal_selector::ConductionSolverKind::Default,
+            },
+        )
+        .expect("gauge selector must initialise");
+        // The route guard needs capacity on at least one side; set both
+        // explicitly so the test does not depend on the spec's defaults.
+        model.hvac.hvac_heating_capacity = 5000.0;
+        model.hvac.hvac_cooling_capacity = 4000.0;
+        model.hvac.free_float = false;
+
+        let mut total_energy_kwh = 0.0;
+        for timestep in 0..48 {
+            total_energy_kwh += model.step_physics(timestep, -5.0, 3600.0);
+        }
+
+        let backend = model.0.conduction.backend.gauge_zone_solver.as_ref();
+        let teacher = backend
+            .expect("gauge backend configured")
+            .teacher_air_loop
+            .as_ref();
+        let teacher = teacher.expect("the air-loop route must be live for conditioned gauge steps");
+        assert!(
+            total_energy_kwh > 0.0,
+            "heating duty must be metered through the loop route, got {total_energy_kwh}"
+        );
+        let actuations = teacher.actuations();
+        assert!(
+            actuations >= 1 && actuations < 48,
+            "the hysteresis must hold its state across the cold week (actuations {actuations})"
+        );
+    }
+
+    #[cfg(feature = "gauge-solver")]
+    #[test]
+    fn the_gauge_dispatch_keeps_free_float_off_the_air_loop_route() {
+        // Free-float setups (±999 setpoints, zero capacity) must keep the
+        // legacy route byte-identically: no loop assembly is built.
+        let spec = crate::validation::ashrae_140_cases::ASHRAE140Case::Case600.spec();
+        let mut model = ThermalModel::<VectorField>::from_spec_with_selector(
+            &spec,
+            &crate::sim::thermal_selector::ThermalSelector {
+                zone_solver: crate::sim::thermal_selector::ZoneSolverKind::Gauge,
+                conduction_solver: crate::sim::thermal_selector::ConductionSolverKind::Default,
+            },
+        )
+        .expect("gauge selector must initialise");
+        model.hvac.hvac_heating_capacity = 0.0;
+        model.hvac.hvac_cooling_capacity = 0.0;
+        for timestep in 0..24 {
+            model.step_physics(timestep, 10.0, 3600.0);
+        }
+        let backend = model.0.conduction.backend.gauge_zone_solver.as_ref();
+        let teacher = backend
+            .expect("gauge backend configured")
+            .teacher_air_loop
+            .as_ref();
+        assert!(
+            teacher.is_none(),
+            "a free-float / zero-capacity spec must never build the air-loop assembly"
+        );
+    }
+
+    #[cfg(feature = "gauge-solver")]
+    #[test]
     fn enable_gauge_solver_fail_fast_on_missing_wall_spec() {
         // A CaseSpec whose WallSurfaces have wall_spec = None must fail
         // gauge init with a diagnostic identifying the zone/orientation.

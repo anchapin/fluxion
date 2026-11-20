@@ -55,6 +55,7 @@ use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
 use crate::physics::units::FromF64;
 use crate::physics::units::{HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64};
 use crate::physics::wall_spec::WallSpec;
+use crate::sim::hvac::teacher_air_loop::TeacherAirLoop;
 use std::collections::HashMap;
 
 /// Surface classification for zone modeling.
@@ -630,6 +631,16 @@ pub struct GaugeZoneSolver {
     // Q_gauge_total = sum of q_flux * area for all surfaces. Stored for use
     // in subsequent timesteps to provide proper thermal coupling.
     previous_T_surface: f64,
+    /// Issue #3984 — the teacher path's production air loop (the
+    /// `PressureDrivenAirLoop` assembly), persisted across steps so the
+    /// thermostat's dead-band hysteresis state carries through the season.
+    /// `None` until the first conditioned step builds it from the zone's
+    /// own spec quantities; `None` on every default build (the route lives
+    /// in the gauge dispatcher only). Crate-visible: the gauge dispatcher
+    /// owns the lazy build. Default builds never dispatch the gauge arm,
+    /// so the field is write-only there.
+    #[cfg_attr(not(feature = "gauge-solver"), allow(dead_code))]
+    pub(crate) teacher_air_loop: Option<TeacherAirLoop>,
 }
 
 // Issue #3729 — hand-rolled `Clone` for `GaugeZoneSolver`.
@@ -656,6 +667,7 @@ impl Clone for GaugeZoneSolver {
             sub_hour_air_node_steps: self.sub_hour_air_node_steps, // preserved on clone
             t_ground_c: self.t_ground_c, // preserved on clone (boundary config)
             previous_T_surface: 0.0,     // RESET — see struct doc-comment.
+            teacher_air_loop: None,      // RESET — control state resets with the runtime state.
         }
     }
 }
@@ -700,6 +712,7 @@ impl GaugeZoneSolver {
             sub_hour_air_node_steps: 12, // per-air-substep network advance: N=12 measured stable, N=3 diverges (see LIMIT-35 §23)
             t_ground_c: None,            // threaded by the gauge dispatcher (see field docs)
             previous_T_surface: 0.0,     // Issue #3920: initialized to 0, computed each step
+            teacher_air_loop: None,      // Issue #3984: built lazily at the first conditioned step
         }
     }
 
