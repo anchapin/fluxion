@@ -169,9 +169,12 @@
 //! # Scope
 //!
 //! These are standalone verifications of the 2-D ground domain. The named
-//! §8 b-series cases (GC10b, GC30, GC60) are **not** transcribed here:
-//! their boundary specifications are not derivable from in-repo sources
-//! (they tie to #4285), so they stay open rather than being improvised.
+//! §8 cases beyond GC10a (steady GC30a/GC30b/GC30c/GC60b/GC65b and the
+//! steady-periodic annual GC40–GC80 family) are **not** transcribed here:
+//! their base case definitions are not derivable from in-repo sources
+//! (they tie to #4285; the in-repo Annex B8 fragments are the results
+//! tables in `data/reference/ashrae140/section8_ground_coupling_reference.json`),
+//! so they stay open rather than being improvised.
 
 use std::f64::consts::PI;
 use std::sync::OnceLock;
