@@ -81,7 +81,7 @@ Combine flags with commas: `cargo test --features ort,multi-zone,fluid`.
 - **Enables:** PyO3 entrypoints in `src/lib.rs` — `Model`, `BatchOracle`, the ASHRAE cases
   re-export, and the thermal-model traits. Pulls in `pyo3`, `pyo3-build-config`, and `numpy`.
 - **Build:** `cargo build --features python-bindings` then `maturin develop` (local install)
-  or `maturin build --release` (wheel). Python 3.10+.
+  or `maturin build --release` (wheel). Python 3.11+.
 - **CI implication:** Built by the Python wheel job; the default `cargo test` matrix
   variant (`no-default`) deliberately leaves it off for pure-Rust testing. CI sets
   `PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1` and `RUST_MIN_STACK=33554432` to avoid linker SIGSEGV.

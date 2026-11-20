@@ -125,7 +125,7 @@ The Node.js bindings provide high-performance native access to Fluxion with full
 
 ### Development Setup (recommended)
 
-Follow these steps on macOS / zsh to create an isolated Python environment, install developer tools, enable `pre-commit` hooks, and build the Python bindings. This project requires Python `3.10+` (see `pyproject.toml`).
+Follow these steps on macOS / zsh to create an isolated Python environment, install developer tools, enable `pre-commit` hooks, and build the Python bindings. This project requires Python `3.11+` (see `pyproject.toml`).
 
 ```bash
 # 1) Create & activate a venv

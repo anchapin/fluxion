@@ -33,7 +33,7 @@ export PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
 export RUST_MIN_STACK=33554432
 ```
 
-Python 3.10+ is required for `maturin develop`.
+Python 3.11+ is required for `maturin develop`.
 
 ### `cargo fmt --check` fails on `?` or `async` syntax
 

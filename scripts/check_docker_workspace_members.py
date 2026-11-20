@@ -39,10 +39,7 @@ import re
 import sys
 from pathlib import Path
 
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python 3.10 — tomllib is stdlib only from 3.11
-    import tomli as tomllib
+import tomllib
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CARGO_TOML = REPO_ROOT / "Cargo.toml"

@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "fluxion"
 version = "1.0.0"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
     {name = "Fluxion Team", email = "team@fluxion.org"},
     {name = "Alex Chapin", email = "a.n.chapin@gmail.com"},
@@ -20,7 +20,6 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Rust",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: Implementation :: CPython",
@@ -49,7 +48,7 @@ dev = [
     "pyasn1>=0.6.2",   # CVE-2026-23490: fix RELATIVE-OID memory exhaustion DoS
     "cbor2>=5.9.0",    # CVE-2026-26209: fix uncontrolled recursion DoS
     "jaraco-context>=6.1.0",  # CVE-2026-23949: fix Zip Slip path traversal
-    "pillow>=12.1.1",   # CVE-2026-25990: fix out-of-bounds write in PSD image loading
+    "pillow>=13.0.0",   # Pillow 13 requires Python >=3.11; CVE-2026-25990 fixed in >=12.1.1, and the Pillow 12.x line carries the Dependabot advisories cleared by this bump
     "brotli>=1.2.0",    # CVE-2025-6176: fix decompression bomb DoS in Scrapy
     "pygments>=2.20.0",  # CVE-2026-4539: fix ReDoS in AdlLexer
 ]
@@ -93,7 +92,7 @@ module-name = "fluxion.fluxion"
 
 [tool.black]
 line-length = 88
-target-version = ["py310"]
+target-version = ["py311"]
 
 [tool.ruff]
 line-length = 88
@@ -104,7 +103,7 @@ extend-select = ["E", "F", "I"]
 ignore = ["E501", "E402"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 ignore_missing_imports = true
 explicit_package_bases = true
 
