@@ -46,10 +46,13 @@
 //! `tests/ashrae_140/ground_periodic.rs`, Issue #4774; this module's own
 //! validation scope is unchanged.) This module is the §8 measuring case only; the §11
 //! QASv2 anchors live in [`crate::qas_airside`] (Issue #4274). The §8
-//! b-series (GC10b transient, GC30/GC60 periodic and convectively-coupled
-//! variants) remains unimplemented: its boundary-condition specification is
-//! not derivable from the in-repo sources, so those cases stay open on
-//! #4274 rather than improvised.
+//! named cases beyond GC10a — per the in-repo Annex B8 tables in
+//! `data/reference/ashrae140/section8_ground_coupling_reference.json`,
+//! steady GC30a/GC30b/GC30c/GC60b/GC65b and the steady-periodic annual
+//! GC40–GC80 family — remain unimplemented: their base case definitions
+//! are not derivable from the in-repo sources, so those cases stay open
+//! on #4270 (the licensed-source blocker itself is #4285) rather than
+//! improvised.
 
 use crate::error::FluxionError;
 

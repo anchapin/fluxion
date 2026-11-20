@@ -33,9 +33,13 @@
 //! closed-form periodic penetration-depth / phase-lag solution, plus a
 //! 2-D periodic steady-state cycle-mean check against the steady
 //! solver, in `tests/ashrae_140/ground_periodic.rs` (Issue #4774).
-//! The named b-series cases (GC10b/GC30/GC60 — their boundary
-//! specifications are not derivable from in-repo sources) remain
-//! open on #4270.
+//! The named §8 cases beyond GC10a (steady GC30a/GC30b/GC30c/GC60b/GC65b
+//! and the steady-periodic annual GC40–GC80 family — their base case
+//! definitions are not derivable from in-repo sources; the in-repo Annex
+//! B8 fragments are the results tables in
+//! `data/reference/ashrae140/section8_ground_coupling_reference.json`)
+//! remain open on #4270, with the licensed-source blocker tracked on
+//! #4285.
 //!
 //! # Discretisation
 //!
