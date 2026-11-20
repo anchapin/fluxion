@@ -107,7 +107,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: Run energy conservation tests
         run: |
           cargo test --test all_tests test_energy_conservation:: --verbose 2>&1 | tee /tmp/energy_test_output.txt
@@ -166,7 +166,7 @@ jobs:
       - uses: ./.github/actions/setup-rust-python-env
         with:
           rust-components: clippy
-          python-version: '3.10'
+          python-version: '3.12'
       - run: cargo clippy --lib -- -D warnings
 
   # -- Issue #1723: KNOWN_ISSUES.md stale check --------------------------------
@@ -234,7 +234,7 @@ jobs:
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: Cache ONNX Runtime binaries
         if: runner.os == 'macOS'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
@@ -273,7 +273,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       # Issue #2983: also build the workspace siblings in release mode so the
       # main-branch release smoke catches sibling regressions. The per-PR
       # `Workspace Check` job handles default-feature coverage; this step
@@ -307,7 +307,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: Run workspace check
         run: cargo check --workspace --verbose --exclude fluxion-tauri
       # Issue #3125: see `workspace-check-gh` for the rationale behind
@@ -333,7 +333,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: Run cycle check
         run: python3 scripts/check_ashrae_cases_cycle.py
 
@@ -368,7 +368,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: Run physics-sim cycle check
         run: python3 scripts/check_physics_sim_cycle.py
 
@@ -406,7 +406,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: "Run cycle downward-trend guard (nightly: R1 + R2 + R3)"
         run: python3 scripts/check_cycle_downward_trend.py --nightly
 
@@ -438,7 +438,7 @@ jobs:
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       # -- Issue #2962: skip the CUDA build on CPU-only runners ---------------
       # `cargo build --features cuda` requires nvcc + cudnn headers; on
       # GitHub-hosted CPU runners those are absent and the build fails with
@@ -498,7 +498,7 @@ jobs:
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       # -- Issue #2962: skip the CUDA build on CPU-only runners ---------------
       # See cuda-smoke job above for rationale. Detects nvcc and gates the
       # build + test steps so they are skipped (not failed) on runners that
@@ -568,7 +568,7 @@ jobs:
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: Run fluxion-grid integration tests
         run: |
           cargo test -p fluxion-grid --test grid_solver_integration --verbose
@@ -604,7 +604,7 @@ jobs:
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: Run fluxion-grid integration tests
         run: |
           cargo test -p fluxion-grid --test grid_solver_integration --verbose
@@ -655,7 +655,7 @@ jobs:
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       # Issue #3398: reuse Swatinem/rust-cache so the doctest cold-cache
       # PR cost stays inside the existing 15-30 min savings envelope.
       # Workspace list mirrors `test::Cache cargo workspace` above so the
@@ -715,7 +715,7 @@ jobs:
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: Cache cargo workspace
         uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266  # v2
         with:

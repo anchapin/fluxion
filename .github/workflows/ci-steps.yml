@@ -52,7 +52,7 @@ on:
       python-version:
         required: false
         type: string
-        default: "3.10"
+        default: "3.12"
         description: Python version for setup.
 
 # Least-privilege GITHUB_TOKEN grants (Issue #2526): reusable CI steps are read-only.

@@ -98,7 +98,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: "Run Tauri CSP gate (Issue #3727)"
         run: python3 scripts/check_tauri_csp.py
 
@@ -117,6 +117,6 @@ jobs:
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: Run fluxion-grid integration tests
         run: |
