@@ -37,9 +37,8 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-from pathlib import Path
-
 import tomllib
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CARGO_TOML = REPO_ROOT / "Cargo.toml"
