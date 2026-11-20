@@ -53,3 +53,19 @@ path = "fuzz_targets/epw_parser.rs"
 test = false
 doc = false
 bench = false
+
+# =============================================================================
+# Vendored [patch.crates-io] for the rumqttc -> rustls-webpki 0.102.8 cluster.
+# Identical to the patch in the root Cargo.toml (Issue #3451); this crate is
+# a standalone workspace root, so it does not inherit the root patch and
+# needs its own copy. The fork is the project owner's account
+# (github.com/anchapin/rumqtt), pinned by full commit SHA, and changes only
+# rumqttc's rustls-webpki requirement to >=0.103.13. Approved by Alex
+# 2026-11-20 to clear the remaining rustls-webpki 0.102.8 Dependabot alerts
+# in this lockfile. Removal: drop this patch from all three roots (root,
+# examples/, fuzz/) when upstream bytebeamio/rumqtt publishes a release
+# requiring rustls-webpki >= 0.103.13
+# (https://github.com/bytebeamio/rumqtt/pull/1037).
+# =============================================================================
+[patch.crates-io]
+rumqttc = { git = "https://github.com/anchapin/rumqtt.git", rev = "07a524e6c8358747492cbbd154bc34befad3672b" }
