@@ -93,7 +93,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: Run workspace check
         run: cargo check --workspace --verbose --exclude fluxion-tauri
       # Issue #3125: catch example drift. `--examples` is NOT included
@@ -120,7 +120,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: Run energy conservation tests
         run: |
           cargo test --test all_tests test_energy_conservation:: --verbose 2>&1 | tee /tmp/energy_test_output.txt
@@ -168,7 +168,7 @@ jobs:
       - uses: ./.github/actions/setup-rust-python-env
         with:
           rust-components: clippy
-          python-version: '3.10'
+          python-version: '3.12'
       - run: cargo clippy --lib -- -D warnings
 
   # ----------------------------------------------------------------
@@ -183,7 +183,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: Run cycle check
         run: python3 scripts/check_ashrae_cases_cycle.py
 
@@ -199,7 +199,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: Run physics-sim cycle check
         run: python3 scripts/check_physics_sim_cycle.py
 
@@ -219,7 +219,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: "Run cycle downward-trend guard (per-PR: R1 + R3)"
         run: python3 scripts/check_cycle_downward_trend.py
 
@@ -245,7 +245,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: Run curated nextest subset
         run: |
           cargo nextest run \
@@ -317,7 +317,7 @@ jobs:
 
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
 
       # Issue #3398: cargo cache for the PR-blocking gate. Keys entries
       # on the rustc invocation so feature-set changes cannot poison

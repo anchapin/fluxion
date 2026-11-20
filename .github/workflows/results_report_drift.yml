@@ -71,7 +71,7 @@ jobs:
 
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
 
       - name: Build fluxion CLI (debug profile)
         run: cargo build -p fluxion

@@ -44,11 +44,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, windows-latest, macos-latest]
-        python-version: ['3.10', '3.11', '3.12', '3.13']
+        python-version: ['3.11', '3.12', '3.13']
         exclude:
           # Exclude macOS on PRs (not in PR matrix)
-          - os: macos-latest
-            python-version: '3.10'
           - os: macos-latest
             python-version: '3.11'
           - os: macos-latest
@@ -105,8 +103,8 @@ jobs:
   # `import fluxion`. This job actually exercises the bindings with the
   # Python-side pytest suite and the Rust-side PyO3 / pyi-stub tests.
   #
-  # PRs            → ubuntu + windows × {3.10, 3.13}  (fast signal, 4 legs)
-  # main / dispatch → full 12-leg matrix (ubuntu + windows + macos × 3.10–3.13)
+  # PRs            → ubuntu + windows × {3.13}  (fast signal, 2 legs)
+  # main / dispatch → full 9-leg matrix (ubuntu + windows + macos × 3.11–3.13)
   #
   # NOTE on the dispatch job below: GitHub Actions does NOT expand the
   # `matrix` context until AFTER a job's `if:` is evaluated, so a job-level
@@ -129,11 +127,11 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            # Fast signal: ubuntu + windows × {3.10, 3.13}  (4 legs)
-            matrix='[{"os":"ubuntu-24.04","python-version":"3.10"},{"os":"ubuntu-24.04","python-version":"3.13"},{"os":"windows-latest","python-version":"3.10"},{"os":"windows-latest","python-version":"3.13"}]'
+            # Fast signal: ubuntu + windows × {3.13}  (2 legs)
+            matrix='[{"os":"ubuntu-24.04","python-version":"3.13"},{"os":"windows-latest","python-version":"3.13"}]'
           else
-            # Full matrix: ubuntu + windows + macos × {3.10, 3.11, 3.12, 3.13}  (12 legs)
-            matrix='[{"os":"ubuntu-24.04","python-version":"3.10"},{"os":"ubuntu-24.04","python-version":"3.11"},{"os":"ubuntu-24.04","python-version":"3.12"},{"os":"ubuntu-24.04","python-version":"3.13"},{"os":"windows-latest","python-version":"3.10"},{"os":"windows-latest","python-version":"3.11"},{"os":"windows-latest","python-version":"3.12"},{"os":"windows-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.10"},{"os":"macos-latest","python-version":"3.11"},{"os":"macos-latest","python-version":"3.12"},{"os":"macos-latest","python-version":"3.13"}]'
+            # Full matrix: ubuntu + windows + macos × {3.11, 3.12, 3.13}  (9 legs)
+            matrix='[{"os":"ubuntu-24.04","python-version":"3.11"},{"os":"ubuntu-24.04","python-version":"3.12"},{"os":"ubuntu-24.04","python-version":"3.13"},{"os":"windows-latest","python-version":"3.11"},{"os":"windows-latest","python-version":"3.12"},{"os":"windows-latest","python-version":"3.13"},{"os":"macos-latest","python-version":"3.11"},{"os":"macos-latest","python-version":"3.12"},{"os":"macos-latest","python-version":"3.13"}]'
           fi
           # Single-line JSON so the GITHUB_OUTPUT parse stays simple.
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"

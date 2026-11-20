@@ -87,7 +87,7 @@ jobs:
 
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
           sccache: 'false'
 
       - name: Cache cargo registry + build artifacts

@@ -69,7 +69,7 @@ jobs:
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: Build
         run: cargo build --release --features multi-zone
       # Issue #4189: the old inline polling sampled cargo's own RSS - the

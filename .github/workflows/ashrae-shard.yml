@@ -139,7 +139,7 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: Warm sccache (release build of test targets)
         run: cargo build --release --tests
 
@@ -184,7 +184,7 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       # Loop round 100 (2026-10-26): the zone-balance shard is the only one of
       # the six whose tests bind the canonical git-ignored DRYCOLD EPW (round
       # 41 weather binding, #4443). On the workflow_run path no step supplied
@@ -242,6 +242,6 @@ jobs:
           ref: develop
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: '3.10'
+          python-version: '3.12'
       - name: Prime sccache (release build of test targets)
         run: cargo build --release --tests
