@@ -494,13 +494,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Run the step inside a scoped mutable borrow so the result and
         // the post-step T_air can both be captured without re-borrowing.
         let (energy_kwh, new_t_air) = {
-            let gauge = self
-                .0
-                .conduction
-                .backend
+            let backend = &mut self.0.conduction.backend;
+            let gauge = backend
                 .gauge_zone_solver
                 .as_mut()
                 .expect("checked Some above");
+            // Issue #3984 — the persisted teacher air loop lives beside the
+            // gauge slot on the sim-side backend (a physics-side field typed
+            // on a sim class would be a physics->sim cycle edge; the #1441
+            // guard's baseline in that direction is 0).
+            let teacher_air_loop_slot = &mut backend.teacher_air_loop;
             // Round 10 (ground coupling): Annex B §B3.3 floor boundary.
             gauge.set_ground_temperature_c(inputs.t_ground_c);
             let h_sp: f64 = inputs
@@ -605,8 +608,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // gauge backend (`teacher_air_loop`), so the dead-band
                 // dwell is real stateful hysteresis, not a per-hour
                 // re-decision.
-                let assembly = gauge
-                    .teacher_air_loop
+                let assembly = teacher_air_loop_slot
                     .get_or_insert_with(|| {
                         TeacherAirLoop::from_config(TeacherAirLoopConfig {
                             heating_capacity_w: heat_cap,

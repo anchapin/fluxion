@@ -45,6 +45,8 @@ use super::{
 };
 #[cfg(feature = "gauge-solver")]
 use super::{GaugeZoneSolver, MultiZoneGaugeSolver};
+#[cfg(feature = "gauge-solver")]
+use crate::sim::hvac::teacher_air_loop::TeacherAirLoop;
 
 pub struct ConductionBackend {
     // --- CTF (Conduction Transfer Function) ---
@@ -68,6 +70,18 @@ pub struct ConductionBackend {
     // --- Gauge multi-zone solver (experimental, feature-gated, added #3273) ---
     #[cfg(feature = "gauge-solver")]
     pub gauge_multi_zone_solver: Option<MultiZoneGaugeSolver>,
+    // --- Teacher-path air loop (Issue #3984, feature-gated with the gauge arm) ---
+    //
+    // The `PressureDrivenAirLoop` assembly the gauge dispatcher's
+    // conditioned steps dispatch through, persisted ACROSS steps so the
+    // thermostat's dead-band hysteresis is real stateful control. Sim-side
+    // by design: a physics-side field typed on a sim class would be a
+    // physics->sim cycle edge (the #1441 guard's baseline there is 0).
+    // Clone resets it (`None`): the control state is runtime state, and
+    // the BatchOracle candidates must not inherit mid-season hysteresis —
+    // the same slot-reset contract the gauge slots follow (Issue #3729).
+    #[cfg(feature = "gauge-solver")]
+    pub teacher_air_loop: Option<TeacherAirLoop>,
 }
 
 impl Clone for ConductionBackend {
@@ -89,6 +103,9 @@ impl Clone for ConductionBackend {
             gauge_zone_solver: self.gauge_zone_solver.clone(),
             #[cfg(feature = "gauge-solver")]
             gauge_multi_zone_solver: self.gauge_multi_zone_solver.clone(),
+            // Issue #3984 — control state resets on clone (see field docs).
+            #[cfg(feature = "gauge-solver")]
+            teacher_air_loop: None,
         }
     }
 }
@@ -111,6 +128,8 @@ impl Default for ConductionBackend {
             gauge_zone_solver: None,
             #[cfg(feature = "gauge-solver")]
             gauge_multi_zone_solver: None,
+            #[cfg(feature = "gauge-solver")]
+            teacher_air_loop: None,
         }
     }
 }
