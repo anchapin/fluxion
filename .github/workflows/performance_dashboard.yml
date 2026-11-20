@@ -75,10 +75,11 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}
+          UPSTREAM_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         run: |
           if [ "$EVENT_NAME" = "workflow_run" ]; then
-            if [ "$UPSTREAM_EVENT" != "pull_request" ] || [ "$UPSTREAM_CONCLUSION" != "success" ]; then
+            if { [ "$UPSTREAM_EVENT" != "pull_request" ] && ! { [ "$UPSTREAM_EVENT" = "push" ] && [ "$UPSTREAM_HEAD_BRANCH" = "develop" ]; }; } || [ "$UPSTREAM_CONCLUSION" != "success" ]; then
               echo "should_run=false" >> "$GITHUB_OUTPUT"
               exit 0
             fi
