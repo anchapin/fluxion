@@ -697,6 +697,11 @@ def test_write_baseline_updates_baseline_section(checker, tmp_path, monkeypatch)
 # zone_balance tuple 5014/5265 -> 5021/5273 (the fmt reflow shrank the
 # initial 5022 measurement; ceiling = 5021 + max(ceil(5%), +100) = 5273 per
 # the Issue #3574 admission protocol).
+# Loop round 163 (2026-11-20): the #3984 teacher-path air-loop route
+# re-measured the pressure_air_loop tuple 4312/4528 -> 4613/4844 (+301
+# lines: the thermostat heating arm, the mut-accessor composition surface,
+# the heating-state supply selection; ceiling = 4613 + max(ceil(5%), +100)
+# = 4844 per the Issue #3574 admission protocol).
 ISSUE_4753_ENTRIES = {
     "src/sim/thermal_model_physics/zone_balance.rs": (
         5021,
@@ -704,9 +709,9 @@ ISSUE_4753_ENTRIES = {
         5273,
     ),
     "src/sim/hvac/pressure_air_loop.rs": (
-        4312,
+        4613,
         "pressure_air_loop_ratchet.json",
-        4528,
+        4844,
     ),
     "src/physics/gauge_zone_solver.rs": (
         4001,

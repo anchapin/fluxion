@@ -23,6 +23,7 @@ pub mod part_load_curves;
 pub mod plant;
 pub mod pressure_air_loop;
 pub mod refrigeration;
+pub mod teacher_air_loop;
 pub mod vav_terminal;
 pub mod zone_equipment;
 pub mod zones;

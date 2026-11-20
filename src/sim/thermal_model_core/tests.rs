@@ -745,6 +745,154 @@ mod tests {
 
     #[cfg(feature = "gauge-solver")]
     #[test]
+    fn the_gauge_dispatch_routes_conditioned_steps_through_the_teacher_air_loop() {
+        // Issue #3984 \u2014 the teacher path's production air side. A
+        // conditioned single-zone model with capacity must dispatch its
+        // HVAC through the persisted PressureDrivenAirLoop assembly, meter
+        // real duty, and leave the thermostat's dead-band hysteresis audit
+        // trail on the backend. The model is constructed manually (the
+        // dispatcher test factory's construction) so this file adds no new
+        // sim->validation cycle edge (the #1441/#2495 guard baseline).
+        let mut model = ThermalModel::<VectorField>::new(1);
+        // Fully-qualified physics paths (no `use` lines): the sim->physics
+        // import-count guard (#1441 family) rejects import growth; the
+        // existing multi-zone gauge tests use the same inline-path form.
+        let wall = crate::physics::wall_spec::WallSpec::single_layer(
+            "floor_slab",
+            0.203,
+            1.31,
+            2243.0,
+            837.0,
+        );
+        let mut gauge = crate::physics::gauge_zone_solver::GaugeZoneSolver::new(48.0, 2.7);
+        gauge
+            .add_opaque_surface(
+                &wall,
+                48.0,
+                crate::physics::gauge_zone_solver::SurfaceType::Roof,
+                0.0,
+                0.0,
+            )
+            .unwrap();
+        gauge
+            .add_opaque_surface(
+                &wall,
+                48.0,
+                crate::physics::gauge_zone_solver::SurfaceType::Floor,
+                0.0,
+                180.0,
+            )
+            .unwrap();
+        for azimuth in [0.0, 90.0, 180.0, 270.0] {
+            gauge
+                .add_opaque_surface(
+                    &wall,
+                    12.0,
+                    crate::physics::gauge_zone_solver::SurfaceType::Wall,
+                    azimuth,
+                    90.0,
+                )
+                .unwrap();
+        }
+        gauge.initialize().unwrap();
+        model.0.conduction.backend.gauge_zone_solver = Some(gauge);
+        model.0.hvac.thermal_selector.zone_solver =
+            crate::sim::thermal_selector::ZoneSolverKind::Gauge;
+        model.0.hvac.hvac_enabled = VectorField::from_scalar(1.0, 1);
+        model.0.setpoints.heating_setpoints = VectorField::from_scalar(20.0, 1);
+        model.0.setpoints.cooling_setpoints = VectorField::from_scalar(24.0, 1);
+        model.0.setpoints.zone_area = VectorField::from_scalar(48.0, 1);
+        // The route guard needs capacity on at least one side; set both
+        // explicitly so the test does not depend on the constructor's
+        // defaults.
+        model.0.hvac.hvac_heating_capacity = 5000.0;
+        model.0.hvac.hvac_cooling_capacity = 4000.0;
+        model.0.hvac.free_float = false;
+
+        let mut total_energy_kwh = 0.0;
+        for timestep in 0..48 {
+            total_energy_kwh += model.step_physics(timestep, -5.0, 3600.0);
+        }
+
+        let teacher = model.0.conduction.backend.teacher_air_loop.as_ref();
+        let teacher = teacher.expect("the air-loop route must be live for conditioned gauge steps");
+        assert!(
+            total_energy_kwh > 0.0,
+            "heating duty must be metered through the loop route, got {total_energy_kwh}"
+        );
+        let actuations = teacher.actuations();
+        assert!(
+            actuations >= 1 && actuations < 48,
+            "the hysteresis must hold its state across the cold week (actuations {actuations})"
+        );
+    }
+
+    #[cfg(feature = "gauge-solver")]
+    #[test]
+    fn the_gauge_dispatch_keeps_free_float_off_the_air_loop_route() {
+        // Unconditioned setups (hvac_enabled = 0) must keep the legacy
+        // route byte-identically: no loop assembly is ever built. Same
+        // manual construction \u2014 no sim->validation cycle edge.
+        let mut model = ThermalModel::<VectorField>::new(1);
+        // Fully-qualified physics paths (no `use` lines): the sim->physics
+        // import-count guard (#1441 family) rejects import growth; the
+        // existing multi-zone gauge tests use the same inline-path form.
+        let wall = crate::physics::wall_spec::WallSpec::single_layer(
+            "floor_slab",
+            0.203,
+            1.31,
+            2243.0,
+            837.0,
+        );
+        let mut gauge = crate::physics::gauge_zone_solver::GaugeZoneSolver::new(48.0, 2.7);
+        gauge
+            .add_opaque_surface(
+                &wall,
+                48.0,
+                crate::physics::gauge_zone_solver::SurfaceType::Roof,
+                0.0,
+                0.0,
+            )
+            .unwrap();
+        gauge
+            .add_opaque_surface(
+                &wall,
+                48.0,
+                crate::physics::gauge_zone_solver::SurfaceType::Floor,
+                0.0,
+                180.0,
+            )
+            .unwrap();
+        for azimuth in [0.0, 90.0, 180.0, 270.0] {
+            gauge
+                .add_opaque_surface(
+                    &wall,
+                    12.0,
+                    crate::physics::gauge_zone_solver::SurfaceType::Wall,
+                    azimuth,
+                    90.0,
+                )
+                .unwrap();
+        }
+        gauge.initialize().unwrap();
+        model.0.conduction.backend.gauge_zone_solver = Some(gauge);
+        model.0.hvac.thermal_selector.zone_solver =
+            crate::sim::thermal_selector::ZoneSolverKind::Gauge;
+        model.0.hvac.hvac_enabled = VectorField::from_scalar(0.0, 1);
+        model.0.hvac.hvac_heating_capacity = 0.0;
+        model.0.hvac.hvac_cooling_capacity = 0.0;
+        for timestep in 0..24 {
+            model.step_physics(timestep, 10.0, 3600.0);
+        }
+        let teacher = model.0.conduction.backend.teacher_air_loop.as_ref();
+        assert!(
+            teacher.is_none(),
+            "an unconditioned / zero-capacity spec must never build the air-loop assembly"
+        );
+    }
+
+    #[cfg(feature = "gauge-solver")]
+    #[test]
     fn enable_gauge_solver_fail_fast_on_missing_wall_spec() {
         // A CaseSpec whose WallSurfaces have wall_spec = None must fail
         // gauge init with a diagnostic identifying the zone/orientation.

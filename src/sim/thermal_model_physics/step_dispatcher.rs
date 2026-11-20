@@ -433,8 +433,25 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ) -> Option<f64> {
         use crate::physics::units::FromF64;
         use crate::physics::units::{HeatTransferCoefficient, Temperature, ToF64};
+        use crate::sim::hvac::teacher_air_loop::{TeacherAirLoop, TeacherAirLoopConfig};
 
         let is_conditioned = inputs.hvac_enabled.iter().any(|&e| e >= 0.5);
+
+        // Issue #3984 — the teacher path's production air-side route. When
+        // the zone is conditioned and the spec carries capacity, the
+        // HVAC duty is delivered by the `PressureDrivenAirLoop` (thermostat
+        // dead-band hysteresis → pressure-solved flow → sensible coil)
+        // instead of the imposed §C.3 ideal demand. The ventilation stays
+        // envelope-owned (`h_ve`) on both routes — this model's mechanical
+        // ventilation is zone-level air exchange, not AHU outdoor-air
+        // intake, so the loop attaches no mixing box and the two paths
+        // cannot double-count. Free-float setups and zero-capacity specs
+        // (the twin-correction energy-gate shapes) keep the legacy §C.3
+        // route byte-identically.
+        let heat_cap = self.0.hvac.hvac_heating_capacity;
+        let cool_cap = self.0.hvac.hvac_cooling_capacity;
+        let air_loop_route_live =
+            is_conditioned && !self.0.hvac.free_float && (heat_cap > 0.0 || cool_cap > 0.0);
 
         // Compute inputs outside the gauge borrow.
         let q_internal_w: f64 = {
@@ -477,13 +494,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Run the step inside a scoped mutable borrow so the result and
         // the post-step T_air can both be captured without re-borrowing.
         let (energy_kwh, new_t_air) = {
-            let gauge = self
-                .0
-                .conduction
-                .backend
+            let backend = &mut self.0.conduction.backend;
+            let gauge = backend
                 .gauge_zone_solver
                 .as_mut()
                 .expect("checked Some above");
+            // Issue #3984 — the persisted teacher air loop lives beside the
+            // gauge slot on the sim-side backend (a physics-side field typed
+            // on a sim class would be a physics->sim cycle edge; the #1441
+            // guard's baseline in that direction is 0).
+            let teacher_air_loop_slot = &mut backend.teacher_air_loop;
             // Round 10 (ground coupling): Annex B §B3.3 floor boundary.
             gauge.set_ground_temperature_c(inputs.t_ground_c);
             let h_sp: f64 = inputs
@@ -546,6 +566,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 h_rad_sky,
                 // Round 95 (#3985/#4578 follow-up): scheduled ventilation
                 // reaches the gauge air node (zone 0 on the single-zone arm).
+                // Issue #3984: the ventilation stays envelope-owned on the
+                // air-loop route too (zone-level air exchange, not AHU
+                // outdoor-air intake) — this argument is route-independent.
                 inputs.ventilation_ach + inputs.scheduled_ach.first().copied().unwrap_or(0.0),
                 infiltration_ach,
                 // Issue #3918: Thread lag correction parameters (single-zone: use first element)
@@ -557,7 +580,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 inputs.solar_beam_to_mass_fraction,
             );
             let t_air_free_final = gauge.T_air().to_value();
-            // PR-c: self-consistent §C.3 coefficient from the gauge network.
+            // PR-c: self-consistent §C.3 coefficient from the gauge network
+            // (route-independent — the ventilation conductance is part of
+            // the envelope on both routes).
             let h_coeff = gauge.air_node_conductance_WK(
                 inputs.ventilation_ach + inputs.scheduled_ach.first().copied().unwrap_or(0.0),
                 infiltration_ach,
@@ -568,6 +593,55 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // old path. Free-float setups (±999 setpoints) always land
                 // here via the deadband branch below — no forcing, no load.
                 (r.ok(), t_air_free_final)
+            } else if air_loop_route_live {
+                // Issue #3984 — the teacher path's production air side: the
+                // real `PressureDrivenAirLoop`. The thermostat's dead-band
+                // hysteresis (both arms) decides the mode, the VAV damper
+                // position is solved for the load-bearing flow, the
+                // pressure balance delivers the flow, and the sensible coil
+                // duty — the load estimate (the envelope's own air-node
+                // conductance times the setpoint error) clamped by the
+                // solved flow's carrying capacity at the design supply ΔT
+                // and then the spec capacity — is metered through the same
+                // ledger and closed-form propagation the §C.3 route used.
+                // The loop's control state persists across steps in the
+                // gauge backend (`teacher_air_loop`), so the dead-band
+                // dwell is real stateful hysteresis, not a per-hour
+                // re-decision.
+                let assembly = teacher_air_loop_slot
+                    .get_or_insert_with(|| {
+                        TeacherAirLoop::from_config(TeacherAirLoopConfig {
+                            heating_capacity_w: heat_cap,
+                            cooling_capacity_w: cool_cap,
+                        })
+                        .expect(
+                            "the teacher air loop assembles from finite spec capacities (the route guard validated them)",
+                        )
+                    });
+                let step_result = assembly.refresh_step_inputs(h_sp, c_sp).and_then(|()| {
+                    assembly.step_conditioned(t_air_free_final, h_coeff, dt_seconds)
+                });
+                // A loop solve failure is a loud `None` (the dispatcher's
+                // Phase-A8 convention): the envelope has already advanced
+                // this step, so a silent fall-through to the §C.3 form
+                // would double-book the hour.
+                let step = match step_result {
+                    Ok(step) => step,
+                    Err(_air_loop_error) => return None,
+                };
+                let q_hvac = step.delivered_duty_w;
+                let energy = step.energy_kwh;
+                // ISO §C.3 closed-form final air temperature with the
+                // loop's delivered duty — identical semantics to the §C.3
+                // arm: exact setpoint when unclamped, partial pull when
+                // clamped, the free response at zero duty.
+                let t_air_final = if h_coeff > 0.0 {
+                    t_air_free_final + q_hvac / h_coeff
+                } else {
+                    t_air_free_final
+                };
+                gauge.set_T_air(t_air_final);
+                (Some(energy), t_air_final)
             } else {
                 // §C.3 demand from the FREE-FLOAT final temperature (mirrors
                 // `compute_zone_hvac_load`: heating at/below h_sp, cooling
@@ -1595,36 +1669,82 @@ mod tests {
     }
 
     /// Issue #3982 (defect 1) — the mirror of the cooling-season pin: while
-    /// the free-float air temperature sits BELOW the heating setpoint, the
-    /// gauge air must land on the HEATING setpoint (and meter heating).
+    /// the free-float air temperature sits below the heating setpoint
+    /// (the §C.3 entry edge — the route engages AT the setpoint, not half
+    /// a band below it), the gauge air must land on the HEATING setpoint
+    /// (and meter heating).
+    ///
+    /// Dated contract note (Issue #3984, loop round 163): this pin
+    /// predated the air-loop route and assumed the §C.3 route's stateless
+    /// `T_free ≤ h_sp` entry with an immediate pull on the very next step.
+    /// The route keeps the §C.3 entry edge (engage at `h_sp`) but adds the
+    /// hysteresis the issue's acceptance criteria call for: the zone
+    /// FLOATS above the setpoint (zero duty, byte-identical to the
+    /// free-float response) and releases one hysteresis width (0.5 K)
+    /// above it once heating has engaged. Below the setpoint the pull
+    /// lands exactly on the setpoint (unclamped here: the factory carries
+    /// 1e9 W capacities).
     #[cfg(feature = "gauge-solver")]
     #[test]
     fn issue_3982_gauge_heating_season_uses_the_heating_setpoint() {
         const H_SP: f64 = 20.0;
         const C_SP: f64 = 24.0;
 
+        // The free-float twin sets the trajectory: run it at −10 °C until
+        // it crosses below the heating setpoint (the §C.3 entry edge).
         let mut free = gauge_single_zone_model(H_SP, C_SP, 0.0);
         free.0.hvac.hvac_enabled = VectorField::from_scalar(0.0, 1);
-        free.try_step_physics(0, -10.0, 3600.0)
-            .expect("free-float gauge step must succeed");
-        let t_free = free.0.setpoints.temperatures.as_ref()[0];
+        let mut free_trajectory: Vec<f64> = Vec::new();
+        let mut steps_to_edge = None;
+        for timestep in 0..48 {
+            free.try_step_physics(timestep, -10.0, 3600.0)
+                .expect("free-float gauge step must succeed");
+            let t_free = free.0.setpoints.temperatures.as_ref()[0];
+            free_trajectory.push(t_free);
+            if t_free < H_SP {
+                steps_to_edge = Some(timestep + 1);
+                break;
+            }
+        }
         assert!(
-            t_free < H_SP,
-            "the free-float twin must sit below the heating setpoint {H_SP} (got {t_free})"
+            steps_to_edge.is_some(),
+            "the free-float twin must cross the heating setpoint at −10 °C"
         );
+        let steps_to_edge = steps_to_edge.unwrap();
 
         let mut model = gauge_single_zone_model(H_SP, C_SP, 0.0);
-        let energy = model
-            .try_step_physics(0, -10.0, 3600.0)
-            .expect("conditioned gauge step must succeed");
-        let t_air = model.0.setpoints.temperatures.as_ref()[0];
-        assert!(
-            (t_air - H_SP).abs() < 1e-6,
-            "the gauge air must follow the HEATING setpoint {H_SP}, got {t_air}"
-        );
+        let mut heating_energy_and_air: Option<(f64, f64)> = None;
+        for timestep in 0..=steps_to_edge {
+            let energy = model
+                .try_step_physics(timestep, -10.0, 3600.0)
+                .expect("conditioned gauge step must succeed");
+            let t_air = model.0.setpoints.temperatures.as_ref()[0];
+            if energy > 0.0 {
+                heating_energy_and_air = Some((energy, t_air));
+                break;
+            }
+            // Dead-band dwell: above the setpoint the route floats — zero
+            // duty, byte-identical to the free twin's response at the same
+            // step.
+            assert_eq!(
+                energy, 0.0,
+                "above the heating setpoint the route must float, step {timestep}"
+            );
+            let t_free = free_trajectory[timestep];
+            assert!(
+                (t_air - t_free).abs() < 1.0e-9,
+                "the floating zone must track the free-float response: t_air {t_air} vs t_free {t_free}"
+            );
+        }
+        let (energy, t_air) =
+            heating_energy_and_air.expect("heating must engage once the zone crosses the setpoint");
         assert!(
             energy > 0.0,
             "the heating season must meter heating (positive energy), got {energy}"
+        );
+        assert!(
+            (t_air - H_SP).abs() < 1.0e-6,
+            "below the heating setpoint the gauge air must land on the HEATING setpoint {H_SP}, got {t_air}"
         );
     }
 

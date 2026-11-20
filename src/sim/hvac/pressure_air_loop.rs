@@ -1021,6 +1021,20 @@ impl AirLoopNetwork {
         self.outdoor_air_mixer.as_ref()
     }
 
+    /// Mutable access to the outdoor-air mixing box (the teacher path
+    /// refreshes the outdoor-air fraction per step — Issue #3984).
+    pub fn outdoor_air_mixer_mut(&mut self) -> Option<&mut OutdoorAirMixer> {
+        self.outdoor_air_mixer.as_mut()
+    }
+
+    /// Replace the outdoor-air stream state, leaving the fraction
+    /// unchanged.
+    pub fn set_outdoor_air_state(&mut self, outdoor_air: MoistAirStream) {
+        if let Some(mixer) = self.outdoor_air_mixer.as_mut() {
+            mixer.outdoor_air = outdoor_air;
+        }
+    }
+
     /// Node identifiers, in path order (node 0 is the reference node).
     pub fn nodes(&self) -> &[String] {
         &self.nodes
@@ -1353,10 +1367,14 @@ impl AirLoopNetwork {
 /// Operating state of the zone thermostat.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThermostatState {
-    /// The cooling coil is off; the supply path carries ventilation only.
+    /// The coils are off; the supply path carries ventilation only.
     Idle,
     /// The cooling coil is on.
     Cooling,
+    /// The heating coil is on (the heating arm, Issue #3984 — the teacher
+    /// path's conditioned steps need a mode command on both sides of the
+    /// dead band).
+    Heating,
 }
 
 /// The actuator command produced by the thermostat.
@@ -1368,6 +1386,10 @@ pub struct ThermostatCommand {
     pub damper_position: f64,
     /// Whether the cooling coil is active.
     pub coil_on: bool,
+    /// Whether the heating coil is active (always `false` on a
+    /// cooling-only thermostat — the legacy two-state behaviour is
+    /// unchanged).
+    pub heating_coil_on: bool,
 }
 
 /// Hysteretic (on/off) zone thermostat with a dead band.
@@ -1386,7 +1408,14 @@ pub struct ThermostatCommand {
 ///   variable sits in the band;
 /// * while cooling, the damper is driven to `cooling_damper_position` and
 ///   the coil runs; while idle, the damper drops to `idle_damper_position`
-///   (the minimum ventilation flow) and the coil is off.
+///   (the minimum ventilation flow) and the coil is off;
+/// * an optional **heating arm** (Issue #3984) mirrors the cooling
+///   hysteresis below the band: heating engages when the zone temperature
+///   falls below `heating_setpoint_c − dead_band_c / 2`, holds through the
+///   band, and releases above `heating_setpoint_c + dead_band_c / 2` (or
+///   switches straight over to cooling past the cooling entry edge). A
+///   cooling-only thermostat (`heating_setpoint_c == None`) has exactly
+///   the historical two-state behaviour.
 ///
 /// Because the switch can only occur at a discrete timestep and the zone
 /// has thermal mass, the cooling action overshoots past the setpoint: the
@@ -1402,6 +1431,11 @@ pub struct ZoneThermostat {
     pub cooling_damper_position: f64,
     /// Damper position commanded while idle (minimum ventilation).
     pub idle_damper_position: f64,
+    /// Heating setpoint [°C], when the heating arm is configured.
+    /// `None` is the cooling-only (legacy two-state) thermostat.
+    pub heating_setpoint_c: Option<f64>,
+    /// Damper position commanded while heating.
+    pub heating_damper_position: f64,
     state: ThermostatState,
     actuations: u64,
 }
@@ -1445,9 +1479,116 @@ impl ZoneThermostat {
             dead_band_c,
             cooling_damper_position,
             idle_damper_position,
+            heating_setpoint_c: None,
+            heating_damper_position: cooling_damper_position,
             state: ThermostatState::Idle,
             actuations: 0,
         })
+    }
+
+    /// Construct a thermostat with the heating arm configured
+    /// (Issue #3984).
+    ///
+    /// The heating setpoint must not sit above the cooling setpoint (the
+    /// arms must not cross); `dead_band_c` is the total band width, so the
+    /// hysteresis half-band applies to both arms.
+    pub fn with_heating_setpoints(
+        cooling_setpoint_c: f64,
+        heating_setpoint_c: f64,
+        dead_band_c: f64,
+        cooling_damper_position: f64,
+        heating_damper_position: f64,
+        idle_damper_position: f64,
+    ) -> Result<Self, AirLoopError> {
+        if !heating_setpoint_c.is_finite() {
+            return Err(AirLoopError::InvalidParameter {
+                field: "heating_setpoint_c",
+                requirement: "finite",
+                value: heating_setpoint_c,
+            });
+        }
+        if heating_setpoint_c > cooling_setpoint_c {
+            return Err(AirLoopError::InvalidParameter {
+                field: "heating_setpoint_c",
+                requirement: "<= cooling_setpoint_c (the arms must not cross)",
+                value: heating_setpoint_c,
+            });
+        }
+        let mut thermostat = Self::new(
+            cooling_setpoint_c,
+            dead_band_c,
+            cooling_damper_position,
+            idle_damper_position,
+        )?;
+        thermostat.heating_setpoint_c = Some(heating_setpoint_c);
+        thermostat.heating_damper_position = heating_damper_position;
+        Ok(thermostat)
+    }
+
+    /// Refresh the scheduled setpoints per step (the teacher path calls
+    /// this before every command so schedule-driven setpoints reach the
+    /// hysteresis).
+    ///
+    /// Passing `None` clears the heating arm (the cooling-only legacy
+    /// behaviour). The heating setpoint, when given, must not sit above
+    /// the cooling setpoint.
+    pub fn set_setpoints(
+        &mut self,
+        cooling_setpoint_c: f64,
+        heating_setpoint_c: Option<f64>,
+        dead_band_c: f64,
+    ) -> Result<(), AirLoopError> {
+        if !cooling_setpoint_c.is_finite() {
+            return Err(AirLoopError::InvalidParameter {
+                field: "cooling_setpoint_c",
+                requirement: "finite",
+                value: cooling_setpoint_c,
+            });
+        }
+        if !dead_band_c.is_finite() || dead_band_c < 0.0 {
+            return Err(AirLoopError::InvalidParameter {
+                field: "dead_band_c",
+                requirement: "finite and >= 0",
+                value: dead_band_c,
+            });
+        }
+        if let Some(heating) = heating_setpoint_c {
+            if !heating.is_finite() {
+                return Err(AirLoopError::InvalidParameter {
+                    field: "heating_setpoint_c",
+                    requirement: "finite",
+                    value: heating,
+                });
+            }
+            if heating > cooling_setpoint_c {
+                return Err(AirLoopError::InvalidParameter {
+                    field: "heating_setpoint_c",
+                    requirement: "<= cooling_setpoint_c (the arms must not cross)",
+                    value: heating,
+                });
+            }
+        }
+        self.cooling_setpoint_c = cooling_setpoint_c;
+        self.heating_setpoint_c = heating_setpoint_c;
+        self.dead_band_c = dead_band_c;
+        Ok(())
+    }
+
+    /// Refresh the idle damper position (the teacher path re-solves it per
+    /// step so an idle step delivers the scheduled ventilation flow).
+    pub fn set_idle_damper_position(
+        &mut self,
+        idle_damper_position: f64,
+    ) -> Result<(), AirLoopError> {
+        if !idle_damper_position.is_finite() || !(0.0..=1.0).contains(&idle_damper_position) {
+            return Err(AirLoopError::InvalidParameter {
+                field: "idle_damper_position",
+                requirement: "finite and within [0, 1]",
+                value: idle_damper_position,
+            });
+        }
+        self.idle_damper_position = idle_damper_position;
+        Ok(())
     }
 
     /// Current thermostat state.
@@ -1474,11 +1615,33 @@ impl ZoneThermostat {
             ThermostatState::Idle => {
                 if zone_temperature_c > self.cooling_setpoint_c + half_band {
                     self.state = ThermostatState::Cooling;
+                } else if self.heating_setpoint_c.is_some()
+                    && zone_temperature_c < self.heating_setpoint_c.unwrap_or(20.0) - half_band
+                {
+                    self.state = ThermostatState::Heating;
                 }
             }
             ThermostatState::Cooling => {
                 if zone_temperature_c < self.cooling_setpoint_c - half_band {
-                    self.state = ThermostatState::Idle;
+                    if self.heating_setpoint_c.is_some()
+                        && zone_temperature_c < self.heating_setpoint_c.unwrap_or(20.0) - half_band
+                    {
+                        // Straight switchover through both bands: the zone
+                        // is below the heating entry edge.
+                        self.state = ThermostatState::Heating;
+                    } else {
+                        self.state = ThermostatState::Idle;
+                    }
+                }
+            }
+            ThermostatState::Heating => {
+                if zone_temperature_c > self.heating_setpoint_c.unwrap_or(20.0) + half_band {
+                    if zone_temperature_c > self.cooling_setpoint_c + half_band {
+                        self.state = ThermostatState::Cooling;
+                    } else {
+                        // Back inside the band: dwell ends, the coil is off.
+                        self.state = ThermostatState::Idle;
+                    }
                 }
             }
         }
@@ -1490,14 +1653,16 @@ impl ZoneThermostat {
 
     /// The actuator command implied by the current state.
     pub fn command(&self) -> ThermostatCommand {
-        let (damper_position, coil_on) = match self.state {
-            ThermostatState::Idle => (self.idle_damper_position, false),
-            ThermostatState::Cooling => (self.cooling_damper_position, true),
+        let (damper_position, coil_on, heating_coil_on) = match self.state {
+            ThermostatState::Idle => (self.idle_damper_position, false, false),
+            ThermostatState::Cooling => (self.cooling_damper_position, true, false),
+            ThermostatState::Heating => (self.heating_damper_position, false, true),
         };
         ThermostatCommand {
             state: self.state,
             damper_position,
             coil_on,
+            heating_coil_on,
         }
     }
 }
@@ -1846,6 +2011,8 @@ pub struct AirLoopStepResult {
     pub damper_position: f64,
     /// Whether the cooling coil is running.
     pub coil_on: bool,
+    /// Whether the heating coil is running (the heating arm, Issue #3984).
+    pub heating_coil_on: bool,
     /// Thermostat state after the step.
     pub thermostat_state: ThermostatState,
     /// Number of thermostat actuations so far.
@@ -1923,9 +2090,31 @@ impl PressureDrivenAirLoop {
         &self.network
     }
 
+    /// Mutable access to the duct network (the teacher composition sets
+    /// the damper from its own command path and refreshes the mixing box
+    /// per step — Issue #3984).
+    pub fn network_mut(&mut self) -> &mut AirLoopNetwork {
+        &mut self.network
+    }
+
+    /// Set the thermostat-driven damper to `position` — the composition
+    /// path of [`Self::step`]'s internal update, exposed so a caller that
+    /// owns the command (the teacher composition) can drive the same
+    /// damper.
+    pub fn command_damper(&mut self, position: f64) -> Result<(), AirLoopError> {
+        self.network
+            .set_damper_position(self.damper_index, position)
+    }
+
     /// The thermostat.
     pub fn thermostat(&self) -> &ZoneThermostat {
         &self.thermostat
+    }
+
+    /// Mutable access to the thermostat (the teacher path refreshes the
+    /// scheduled setpoints per step — Issue #3984).
+    pub fn thermostat_mut(&mut self) -> &mut ZoneThermostat {
+        &mut self.thermostat
     }
 
     /// The zone air node.
@@ -1942,7 +2131,6 @@ impl PressureDrivenAirLoop {
     pub fn last_solution(&self) -> Option<&AirLoopSolution> {
         self.last_solution.as_ref()
     }
-
     /// Advance the coupled loop by `dt_s`.
     ///
     /// The thermostat is updated first (with the zone temperature at the
@@ -1974,7 +2162,7 @@ impl PressureDrivenAirLoop {
         let solution = self
             .network
             .solve_with_return_humidity_ratio(self.zone.humidity_ratio_kg_per_kg_dry_air)?;
-        let supply_temperature = if command.coil_on {
+        let supply_temperature = if command.coil_on || command.heating_coil_on {
             self.zone.conditioned_supply_temperature_c
         } else {
             self.zone.unconditioned_supply_temperature_c
@@ -2014,6 +2202,7 @@ impl PressureDrivenAirLoop {
             supply_mass_flow_kg_per_s,
             damper_position: command.damper_position,
             coil_on: command.coil_on,
+            heating_coil_on: command.heating_coil_on,
             thermostat_state: command.state,
             actuation_count: self.thermostat.actuations(),
             solution,
@@ -4308,5 +4497,117 @@ mod tests {
         );
         assert!(result.mixed_supply_state.is_none());
         assert!(result.coil_latent_load_w == 0.0);
+    }
+
+    // -----------------------------------------------------------------------
+    // Heating arm of the thermostat (Issue #3984 — the teacher path's
+    // conditioned steps need a mode command on both sides of the dead band).
+    // -----------------------------------------------------------------------
+
+    /// A heating-capable thermostat: heating setpoint 20 °C, cooling 24 °C,
+    /// so the dead band is 4 K and the hysteresis half-band is 2 K.
+    fn heating_thermostat() -> ZoneThermostat {
+        ZoneThermostat::with_heating_setpoints(24.0, 20.0, 4.0, 1.0, 1.0, 0.2)
+            .expect("the heating thermostat is valid")
+    }
+
+    #[test]
+    fn heating_arm_actuates_with_dead_band_hysteresis() {
+        let mut thermostat = heating_thermostat();
+        // Inside the dead band from above: no heating yet (the band edge is
+        // 20 − 2 = 18 °C).
+        assert_eq!(thermostat.update(21.0).state, ThermostatState::Idle);
+        assert_eq!(thermostat.update(18.5).state, ThermostatState::Idle);
+        // Below the edge: heating actuates.
+        assert_eq!(thermostat.update(17.0).state, ThermostatState::Heating);
+        assert_eq!(thermostat.actuations(), 1);
+        // Dead-band dwell: back inside the band, the heating state is HELD
+        // (the exit edge is 20 + 2 = 22 °C).
+        assert_eq!(thermostat.update(19.0).state, ThermostatState::Heating);
+        assert_eq!(thermostat.update(21.0).state, ThermostatState::Heating);
+        assert_eq!(thermostat.actuations(), 1);
+        // Past the exit edge: back to idle.
+        assert_eq!(thermostat.update(23.0).state, ThermostatState::Idle);
+        assert_eq!(thermostat.actuations(), 2);
+    }
+
+    #[test]
+    fn heating_arm_switches_over_to_cooling_through_the_dead_band_edge() {
+        let mut thermostat = heating_thermostat();
+        thermostat.update(17.0); // Heating
+                                 // Above the cooling entry edge (24 + 2 = 26 °C): straight to cooling.
+        assert_eq!(thermostat.update(27.0).state, ThermostatState::Cooling);
+        assert_eq!(thermostat.actuations(), 2);
+    }
+
+    #[test]
+    fn heating_command_carries_the_heating_coil_flag() {
+        let mut thermostat = heating_thermostat();
+        let idle = thermostat.update(22.0);
+        assert!(!idle.heating_coil_on);
+        assert!(!idle.coil_on);
+        let heating = thermostat.update(17.0);
+        assert!(heating.heating_coil_on);
+        assert!(!heating.coil_on);
+        let cooling = thermostat.update(27.0);
+        assert!(cooling.coil_on);
+        assert!(!cooling.heating_coil_on);
+    }
+
+    #[test]
+    fn cooling_only_constructor_keeps_the_legacy_two_state_behaviour() {
+        let mut thermostat =
+            ZoneThermostat::new(24.0, 4.0, 1.0, 0.2).expect("the cooling-only thermostat is valid");
+        // Far below the heating side: a cooling-only thermostat must stay
+        // idle (no heating arm exists to actuate).
+        assert_eq!(thermostat.update(10.0).state, ThermostatState::Idle);
+        assert!(!thermostat.command().heating_coil_on);
+        // The cooling hysteresis is untouched (entry at 26 °C, hold at
+        // 22, exit at 21 — and the exit is an actuation too).
+        assert_eq!(thermostat.update(27.0).state, ThermostatState::Cooling);
+        assert_eq!(thermostat.update(22.0).state, ThermostatState::Cooling);
+        assert_eq!(thermostat.update(21.0).state, ThermostatState::Idle);
+        assert_eq!(thermostat.actuations(), 2);
+    }
+
+    #[test]
+    fn setpoint_refresh_updates_both_arms_and_the_band() {
+        let mut thermostat = heating_thermostat();
+        thermostat
+            .set_setpoints(23.0, Some(19.0), 4.0)
+            .expect("the refreshed setpoints are valid");
+        // The new heating entry edge is 19 − 2 = 17 °C; the old 17 °C reading
+        // (a heating actuation under the old setpoints) now stays idle.
+        assert_eq!(thermostat.update(21.0).state, ThermostatState::Idle);
+        assert_eq!(thermostat.update(16.5).state, ThermostatState::Heating);
+        // Cooling-only refresh clears the heating arm.
+        thermostat
+            .set_setpoints(23.0, None, 4.0)
+            .expect("the cooling-only refresh is valid");
+        thermostat.update(23.0); // leave Heating
+        assert_eq!(thermostat.update(16.5).state, ThermostatState::Idle);
+    }
+
+    #[test]
+    fn setpoint_refresh_rejects_an_inverted_band() {
+        let mut thermostat = heating_thermostat();
+        assert!(thermostat.set_setpoints(20.0, Some(22.0), 4.0).is_err());
+    }
+
+    #[test]
+    fn the_loop_step_delivers_the_conditioned_supply_in_heating_state() {
+        // A cold zone with a heating thermostat: the loop steps in the
+        // Heating state and delivers the conditioned (warm) supply, so the
+        // zone air node warms instead of drifting to the outdoor air.
+        let thermostat = heating_thermostat();
+        let zone = ZoneAirNode::new(10.0, 300.0, 10.0, 0.0, 0.0, 45.0, 10.0)
+            .expect("the zone node is valid");
+        let mut air_loop =
+            PressureDrivenAirLoop::new(reference_network(), thermostat, zone, "terminal_damper")
+                .expect("the air loop assembles");
+        let result = air_loop.step(60.0).expect("the loop steps");
+        assert_eq!(result.thermostat_state, ThermostatState::Heating);
+        assert!(result.heating_coil_on);
+        assert!(result.zone_temperature_c > 10.0, "the zone must warm");
     }
 }
