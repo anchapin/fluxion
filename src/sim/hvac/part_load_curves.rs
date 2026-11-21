@@ -938,3 +938,130 @@ mod tests {
         assert_send_sync::<FanPowerCurve>();
     }
 }
+
+// ---------------------------------------------------------------------------
+// Issue #4859 coverage-floor tests (loop round 167).
+//
+// Targets the uncovered validator/rejection branches from coverage run
+// 44822633108: AshrStdCoeffs::evaluate's no-curve fallback (L117), the
+// ChillerPartLoadCurve negative-value rejection (L292), the
+// BoilerPartLoadCurve range rejections (L347 both arms), and the
+// FanPowerCurve range/positivity/monotonicity rejections (L407 both arms,
+// L415 both arms, L418).
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod r167_coverage_floor_tests {
+    use super::*;
+
+    fn coeffs(
+        a: f64,
+        b: f64,
+        c: f64,
+        curve_type: CurveType,
+        reference_value: f64,
+    ) -> AshrStdCoeffs {
+        AshrStdCoeffs {
+            curve_type,
+            biquadratic: Some(BiquadraticCoeffs {
+                a,
+                b,
+                c,
+                d: 0.0,
+                e: 0.0,
+                f: 0.0,
+            }),
+            quadratic: None,
+            min_plr: 0.0,
+            max_plr: 1.0,
+            reference_temperature: 20.0,
+            reference_value,
+        }
+    }
+
+    /// AshrStdCoeffs::evaluate with neither biquadratic nor quadratic curves
+    /// set falls back to the reference value unchanged (L117 else-arm,
+    /// Issue #4859).
+    #[test]
+    fn ashr_std_coeffs_without_curves_fall_back_to_reference_value() {
+        let mut fallback = coeffs(0.0, 0.0, 0.0, CurveType::FanPower, 0.87);
+        fallback.biquadratic = None;
+        assert_eq!(fallback.evaluate(0.5, 20.0), 0.87);
+        assert_eq!(fallback.evaluate(0.25, 35.0), 0.87);
+    }
+
+    /// ChillerPartLoadCurve validator's `value < 0.0` rejection arm (L292,
+    /// Issue #4859): a negative constant curve must fail validation.
+    #[test]
+    fn chiller_validator_rejects_negative_part_load_values() {
+        let bad = coeffs(-2.0, 0.0, 0.0, CurveType::ChillerPartLoad, 1.0);
+        let curve = ChillerPartLoadCurve::with_coeffs(bad);
+        assert!(!curve.validate_at_load_points());
+    }
+
+    /// BoilerPartLoadCurve validator's `value <= 0.0` arm (L347,
+    /// Issue #4859): an all-zero curve evaluates to 0.0 at every load point.
+    #[test]
+    fn boiler_validator_rejects_nonpositive_part_load_values() {
+        let zero = coeffs(0.0, 0.0, 0.0, CurveType::BoilerPartLoad, 1.0);
+        let curve = BoilerPartLoadCurve::with_coeffs(zero);
+        assert!(!curve.validate_at_load_points());
+    }
+
+    /// BoilerPartLoadCurve validator's `value > 1.5` arm (L347,
+    /// Issue #4859): an efficiency above 1.5 at every load point must fail.
+    #[test]
+    fn boiler_validator_rejects_overspec_part_load_values() {
+        let big = coeffs(2.0, 0.0, 0.0, CurveType::BoilerPartLoad, 1.0);
+        let curve = BoilerPartLoadCurve::with_coeffs(big);
+        assert!(!curve.validate_at_load_points());
+    }
+
+    /// FanPowerCurve validator's `value < 0.0` arm (L407, Issue #4859):
+    /// a negative power ratio at any load point must fail validation.
+    #[test]
+    fn fan_validator_rejects_negative_power_ratios() {
+        let bad = coeffs(-0.5, 0.0, 0.0, CurveType::FanPower, 1.0);
+        let curve = FanPowerCurve::with_coeffs(bad);
+        assert!(!curve.validate_at_load_points());
+    }
+
+    /// FanPowerCurve validator's `value > 1.5` arm (L407, Issue #4859):
+    /// a power ratio above 1.5 at any load point must fail validation.
+    #[test]
+    fn fan_validator_rejects_overspec_power_ratios() {
+        let big = coeffs(2.0, 0.0, 0.0, CurveType::FanPower, 1.0);
+        let curve = FanPowerCurve::with_coeffs(big);
+        assert!(!curve.validate_at_load_points());
+    }
+
+    /// FanPowerCurve validator's `flow_100 <= 0.0` arm (L415, Issue #4859):
+    /// q(x) = x - x² keeps every load point inside [0, 1.5] but lands exactly
+    /// on 0.0 at full flow, so the range loop passes and the positivity
+    /// check catches the zero full-flow ratio.
+    #[test]
+    fn fan_validator_rejects_zero_full_flow_ratio() {
+        let zero_at_full = coeffs(0.0, 1.0, -1.0, CurveType::FanPower, 1.0);
+        let curve = FanPowerCurve::with_coeffs(zero_at_full);
+        assert!(!curve.validate_at_load_points());
+    }
+
+    /// FanPowerCurve validator's `flow_50 <= 0.0` arm (L415, Issue #4859):
+    /// q(x) = (x - 0.5)² keeps every load point positive except the exact
+    /// zero at half flow, isolating the second positivity operand.
+    #[test]
+    fn fan_validator_rejects_zero_half_flow_ratio() {
+        let zero_at_half = coeffs(0.25, -1.0, 1.0, CurveType::FanPower, 1.0);
+        let curve = FanPowerCurve::with_coeffs(zero_at_half);
+        assert!(!curve.validate_at_load_points());
+    }
+
+    /// FanPowerCurve validator's `flow_50 >= flow_100` monotonicity arm
+    /// (L418, Issue #4859): a constant curve is in range everywhere and
+    /// strictly positive, but violates the expected fan-law rise.
+    #[test]
+    fn fan_validator_rejects_non_rising_flow_curve() {
+        let constant = coeffs(1.0, 0.0, 0.0, CurveType::FanPower, 1.0);
+        let curve = FanPowerCurve::with_coeffs(constant);
+        assert!(!curve.validate_at_load_points());
+    }
+}

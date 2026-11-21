@@ -907,3 +907,122 @@ mod apply_parameters_coverage_tests {
         model.apply_parameters(&[1.5, 21.0, 22.0]);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Issue #4859 coverage-floor tests (loop round 167).
+//
+// Targets uncovered arms from coverage run 44822633108: the
+// `configure_6r2c_model` h_tr_ms override None-arm (L246), the
+// `apply_parameters` empty-slice arms (L678 params.first() None and L715
+// !params.is_empty() false), the `enable_ctf_with_fd_fallback` invalid-
+// coefficient fallback arm (L620), and the never-executed FD/solver-manager
+// wiring accessors block (L456-L559: enable_fd_from_tuples, enable_fd,
+// disable_fd, fd_is_enabled, enable_solver_manager, get_solver_manager,
+// get_solver_manager_mut, disable_solver_manager,
+// solver_manager_is_enabled).
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod r167_coverage_floor_tests {
+    use super::*;
+
+    fn make_model() -> ThermalModel<VectorField> {
+        ThermalModel::<VectorField>::new(1)
+    }
+
+    /// configure_6r2c_model with no h_tr_ms override takes the None arm and
+    /// leaves the physics-set h_tr_ms untouched (L246, Issue #4859).
+    #[test]
+    fn configure_6r2c_without_override_keeps_physics_h_tr_ms() {
+        let mut model = make_model();
+        let before: f64 = model.conduction.h_tr_ms.as_ref()[0];
+        model.configure_6r2c_model(0.7, 100.0, None);
+        let after: f64 = model.conduction.h_tr_ms.as_ref()[0];
+        assert_eq!(before, after, "h_tr_ms must not be overwritten when None");
+        assert_eq!(
+            model.hvac.thermal_model_type,
+            ThermalModelType::SixRTwoC,
+            "the model must still switch to 6R2C"
+        );
+    }
+
+    /// apply_parameters with an empty slice skips every parameter (L678
+    /// params.first() None arm, L715 !params.is_empty() false arm,
+    /// Issue #4859) and must not panic.
+    #[test]
+    fn apply_parameters_empty_slice_is_a_no_op() {
+        let mut model = make_model();
+        model.apply_parameters(&[]);
+    }
+
+    /// enable_ctf_with_fd_fallback on degenerate wall layers produces
+    /// non-finite CTF coefficients, trips the validator, and falls back to
+    /// the FD solver returning false (L620 true arm, Issue #4859).
+    #[test]
+    fn enable_ctf_with_fd_fallback_falls_back_on_invalid_coefficients() {
+        let mut model = make_model();
+        let degenerate = [crate::physics::fd_discretization::MaterialLayer::new(
+            "degenerate",
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        )];
+        let enabled = model.enable_ctf_with_fd_fallback(&degenerate, 3600.0, 6, 8);
+        assert!(
+            !enabled,
+            "degenerate layers must fail CTF validation and report the fallback"
+        );
+    }
+
+    /// The FD wiring accessors round-trip: tuples build solvers, the
+    /// enabled flag tracks state, and disable clears it (L456-L513,
+    /// Issue #4859).
+    #[test]
+    fn fd_wiring_enable_query_disable_round_trip() {
+        let mut model = make_model();
+        assert!(!model.fd_is_enabled());
+
+        model.enable_fd_from_tuples(
+            &[("wall".to_string(), 0.2, 1.4, 2300.0, 880.0)],
+            3600.0,
+            8,
+            20.0,
+        );
+        assert!(model.fd_is_enabled(), "enable_fd_from_tuples must arm FD");
+
+        model.disable_fd();
+        assert!(!model.fd_is_enabled(), "disable_fd must clear FD");
+
+        let layers = [crate::physics::fd_discretization::MaterialLayer::new(
+            "wall", 0.2, 1.4, 2300.0, 880.0,
+        )];
+        model.enable_fd(&layers, 3600.0, 8, 20.0);
+        assert!(model.fd_is_enabled(), "enable_fd must arm FD again");
+    }
+
+    /// The solver-manager wiring accessors round-trip: enable stores the
+    /// manager, the accessors see it, and disable removes it (L526-L560,
+    /// Issue #4859). Types are fully qualified so the test module adds no
+    /// `use crate::physics::` edge under src/sim (the #2463 cycle guard).
+    #[test]
+    fn solver_manager_wiring_enable_query_disable_round_trip() {
+        let mut model = make_model();
+        assert!(model.get_solver_manager().is_none());
+        assert!(!model.solver_manager_is_enabled());
+
+        model.enable_solver_manager(
+            crate::physics::method_selector::SolverSelectionConfig::ForceMethod(
+                crate::physics::method_selector::ThermalMethod::FiniteDifference,
+            ),
+        );
+        assert!(model.solver_manager_is_enabled());
+        assert!(model.get_solver_manager().is_some());
+
+        let expected = model.get_solver_manager_mut().is_some();
+        assert!(expected, "mutable accessor must see the enabled manager");
+
+        model.disable_solver_manager();
+        assert!(model.get_solver_manager().is_none());
+        assert!(!model.solver_manager_is_enabled());
+    }
+}

@@ -733,3 +733,120 @@ mod tests {
         .is_err());
     }
 }
+
+// ---------------------------------------------------------------------------
+// Issue #4859 coverage-floor tests (loop round 167).
+//
+// Targets uncovered arms from coverage run 44822633108: the
+// TeacherAirLoopConfig capacity validation arms (L167 non-finite/negative,
+// L175 both-capacities-zero), the heating-only and cooling-only flow
+// derivations (L184/L192 else arms), the damper-position degenerate-flow
+// guard (L301), the refresh_step_inputs non-finite setpoint arm (L347), and
+// the step_conditioned input-validation arms (L383/L390/L397).
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod r167_coverage_floor_tests {
+    use super::*;
+
+    fn loop_from(capacities: (f64, f64)) -> Result<TeacherAirLoop, AirLoopError> {
+        TeacherAirLoop::from_config(TeacherAirLoopConfig {
+            heating_capacity_w: capacities.0,
+            cooling_capacity_w: capacities.1,
+        })
+    }
+
+    /// A negative capacity is rejected outright (L167, Issue #4859).
+    #[test]
+    fn from_config_rejects_negative_capacity() {
+        let err = loop_from((-100.0, 0.0)).expect_err("negative capacity must be rejected");
+        assert!(matches!(err, AirLoopError::InvalidParameter { .. }));
+    }
+
+    /// Two zero capacities leave no conditioned route and are rejected
+    /// (L175, Issue #4859).
+    #[test]
+    fn from_config_rejects_unconditioned_zone() {
+        let err = loop_from((0.0, 0.0)).expect_err("both-zero capacities must be rejected");
+        match err {
+            AirLoopError::InvalidParameter { field, .. } => {
+                assert!(field.contains("heating_capacity_w"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// A cooling-only loop derives zero heating flow via the else arm
+    /// (L184, Issue #4859).
+    #[test]
+    fn from_config_cooling_only_loop_assembles() {
+        let air_loop = loop_from((0.0, 30_000.0)).expect("cooling-only loop must assemble");
+        assert!(air_loop.design_supply_flow_m3_per_s() > 0.0);
+    }
+
+    /// A heating-only loop derives zero cooling flow via the else arm
+    /// (L192, Issue #4859).
+    #[test]
+    fn from_config_heating_only_loop_assembles() {
+        let air_loop = loop_from((30_000.0, 0.0)).expect("heating-only loop must assemble");
+        assert!(air_loop.design_supply_flow_m3_per_s() > 0.0);
+    }
+
+    /// The damper-position helper degrades non-finite or non-positive flow
+    /// requests to a fully-closed damper (L301, Issue #4859).
+    #[test]
+    fn damper_position_degrades_invalid_flow_requests() {
+        let curve = FanCurve::new(300.0, 600.0).expect("reference fan curve");
+        assert_eq!(
+            TeacherAirLoop::damper_position_for_flow(1.0, 10.0, &curve, 0.0),
+            0.0
+        );
+        assert_eq!(
+            TeacherAirLoop::damper_position_for_flow(1.0, 10.0, &curve, f64::NAN),
+            0.0
+        );
+    }
+
+    /// refresh_step_inputs rejects non-finite setpoints (L347, Issue #4859).
+    #[test]
+    fn refresh_step_inputs_rejects_non_finite_setpoints() {
+        let mut air_loop = loop_from((30_000.0, 30_000.0)).expect("valid loop");
+        let err = air_loop
+            .refresh_step_inputs(f64::NAN, 24.0)
+            .expect_err("NaN heating setpoint must be rejected");
+        assert!(
+            matches!(err, AirLoopError::InvalidParameter { field, .. } if field == "setpoints")
+        );
+    }
+
+    /// step_conditioned rejects a non-finite free-float air temperature
+    /// (L383, Issue #4859).
+    #[test]
+    fn step_conditioned_rejects_non_finite_air_temperature() {
+        let mut air_loop = loop_from((30_000.0, 30_000.0)).expect("valid loop");
+        let err = air_loop
+            .step_conditioned(f64::INFINITY, 50.0, 3600.0)
+            .expect_err("non-finite air temperature must be rejected");
+        assert!(matches!(err, AirLoopError::InvalidParameter { .. }));
+    }
+
+    /// step_conditioned rejects a negative or non-finite air-node
+    /// conductance (L390, Issue #4859).
+    #[test]
+    fn step_conditioned_rejects_invalid_h_coefficient() {
+        let mut air_loop = loop_from((30_000.0, 30_000.0)).expect("valid loop");
+        let err = air_loop
+            .step_conditioned(25.0, -1.0, 3600.0)
+            .expect_err("negative h coefficient must be rejected");
+        assert!(matches!(err, AirLoopError::InvalidParameter { .. }));
+    }
+
+    /// step_conditioned rejects a non-positive timestep (L397, Issue #4859).
+    #[test]
+    fn step_conditioned_rejects_invalid_timestep() {
+        let mut air_loop = loop_from((30_000.0, 30_000.0)).expect("valid loop");
+        let err = air_loop
+            .step_conditioned(25.0, 50.0, 0.0)
+            .expect_err("zero timestep must be rejected");
+        assert!(matches!(err, AirLoopError::InvalidParameter { .. }));
+    }
+}

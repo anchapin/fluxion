@@ -1423,3 +1423,492 @@ mod tests {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Issue #4859 coverage-floor tests (loop round 167).
+//
+// Targets the uncovered validation/error and classification branches from
+// coverage run 44822633108: the GroundError Display arms (L102-L113), the
+// TopCondition ramp interpolation and its degenerate-span guard (L169), the
+// GridAxis::from_segments rejection arms (L258/L263/L270/L291), the
+// GroundDomainConfig::validate rejection sweep (L399-L517), the slab/ground
+// heat-capacity classification (L586/L587), the cell-interval bracket
+// helper (L688/L693), and the Dirichlet boundary-face half-resistance guard
+// (L753). The L102-L177 never-executed line block is the Display impl plus
+// the SurfaceCondition/TopCondition enum helpers.
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod r167_coverage_floor_tests {
+    use super::*;
+
+    /// Valid 2D-ish configuration with distinct slab/ground heat capacities
+    /// so the under-slab classification is observable in assert values.
+    fn valid_config() -> GroundDomainConfig {
+        GroundDomainConfig {
+            domain_length_m: 4.0,
+            domain_depth_m: 4.0,
+            slab_x0_m: 0.0,
+            slab_x1_m: 2.0,
+            slab_thickness_m: 0.2,
+            slab_conductivity_w_mk: 1.4,
+            ground_conductivity_w_mk: 1.9,
+            slab_volumetric_heat_capacity_j_m3k: 2_000_000.0,
+            ground_volumetric_heat_capacity_j_m3k: 3_000_000.0,
+            lateral_segments: vec![GridSegment::Uniform {
+                start_m: 0.0,
+                end_m: 4.0,
+                cells: 8,
+            }],
+            vertical_segments: vec![
+                GridSegment::Uniform {
+                    start_m: 0.0,
+                    end_m: 0.2,
+                    cells: 2,
+                },
+                GridSegment::Geometric {
+                    start_m: 0.2,
+                    end_m: 4.0,
+                    first_cell_m: 0.05,
+                    growth: 1.15,
+                    max_cell_m: 0.4,
+                },
+            ],
+            top_segments: vec![TopSegment {
+                x_start_m: 0.0,
+                x_end_m: 4.0,
+                condition: TopCondition::Robin {
+                    film_coefficient_w_m2k: 8.29,
+                    ambient_temperature_c: 30.0,
+                },
+            }],
+            deep_ground: SurfaceCondition::Dirichlet(10.0),
+            lateral_boundary: SurfaceCondition::Adiabatic,
+            max_iterations: 20_000,
+            tolerance: 1.0e-12,
+        }
+    }
+
+    // ---- GroundError Display arms (L102-L113, Issue #4859) ----
+
+    #[test]
+    fn ground_error_display_covers_all_variants() {
+        let invalid = format!(
+            "{}",
+            GroundError::InvalidConfiguration("bad slab".to_string())
+        );
+        assert!(invalid.contains("invalid ground configuration: bad slab"));
+
+        let singular = format!("{}", GroundError::SingularSystem("zero row".to_string()));
+        assert!(singular.contains("singular ground system: zero row"));
+
+        let unconverged = format!(
+            "{}",
+            GroundError::NotConverged {
+                iterations: 12,
+                relative_residual: 1.5e-4,
+            }
+        );
+        assert!(unconverged.contains("did not converge in 12 iterations"));
+        assert!(unconverged.contains("1.500e-4"));
+    }
+
+    // ---- TopCondition::ramp_temperature (L169 arms, Issue #4859) ----
+
+    #[test]
+    fn ramp_temperature_interpolates_across_positive_span() {
+        let ramp = TopCondition::Ramp {
+            from_c: 10.0,
+            to_c: 20.0,
+        };
+        assert_eq!(ramp.ramp_temperature(0.0, 4.0, 0.0), Some(10.0));
+        assert_eq!(ramp.ramp_temperature(0.0, 4.0, 2.0), Some(15.0));
+        assert_eq!(ramp.ramp_temperature(0.0, 4.0, 5.0), Some(20.0)); // clamped
+        assert_eq!(ramp.ramp_temperature(0.0, 4.0, -1.0), Some(10.0));
+    }
+
+    #[test]
+    fn ramp_temperature_degenerate_span_returns_from_temperature() {
+        let ramp = TopCondition::Ramp {
+            from_c: 10.0,
+            to_c: 20.0,
+        };
+        assert_eq!(ramp.ramp_temperature(2.0, 2.0, 2.0), Some(10.0));
+        assert_eq!(ramp.ramp_temperature(3.0, 1.0, 2.0), Some(10.0));
+    }
+
+    #[test]
+    fn ramp_temperature_non_ramp_conditions_return_none() {
+        let dirichlet = TopCondition::Dirichlet(30.0);
+        let robin = TopCondition::Robin {
+            film_coefficient_w_m2k: 8.29,
+            ambient_temperature_c: 30.0,
+        };
+        assert_eq!(dirichlet.ramp_temperature(0.0, 4.0, 1.0), None);
+        assert_eq!(robin.ramp_temperature(0.0, 4.0, 1.0), None);
+    }
+
+    // ---- GridAxis::from_segments rejection arms (L258/L263/L270/L291) ----
+
+    #[test]
+    fn grid_axis_rejects_decreasing_segment() {
+        let err = GridAxis::from_segments(&[GridSegment::Uniform {
+            start_m: 2.0,
+            end_m: 1.0,
+            cells: 2,
+        }])
+        .expect_err("decreasing segment must be rejected");
+        assert!(err.to_string().contains("is not increasing"));
+    }
+
+    #[test]
+    fn grid_axis_rejects_non_contiguous_segments() {
+        let err = GridAxis::from_segments(&[
+            GridSegment::Uniform {
+                start_m: 0.0,
+                end_m: 1.0,
+                cells: 2,
+            },
+            GridSegment::Uniform {
+                start_m: 2.0,
+                end_m: 3.0,
+                cells: 2,
+            },
+        ])
+        .expect_err("gap between segments must be rejected");
+        assert!(err.to_string().contains("must be contiguous"));
+    }
+
+    #[test]
+    fn grid_axis_rejects_zero_cell_uniform_segment() {
+        let err = GridAxis::from_segments(&[GridSegment::Uniform {
+            start_m: 0.0,
+            end_m: 1.0,
+            cells: 0,
+        }])
+        .expect_err("cells == 0 must be rejected");
+        assert!(err.to_string().contains("at least one cell"));
+    }
+
+    #[test]
+    fn grid_axis_rejects_invalid_geometric_parameters() {
+        // first_cell_m <= 0 arm
+        let zero_first = GridAxis::from_segments(&[GridSegment::Geometric {
+            start_m: 0.0,
+            end_m: 4.0,
+            first_cell_m: 0.0,
+            growth: 1.2,
+            max_cell_m: 0.4,
+        }])
+        .expect_err("non-positive first cell must be rejected");
+        assert!(zero_first.to_string().contains("geometric grid segment"));
+
+        // growth < 1.0 arm
+        let shrinking = GridAxis::from_segments(&[GridSegment::Geometric {
+            start_m: 0.0,
+            end_m: 4.0,
+            first_cell_m: 0.05,
+            growth: 0.5,
+            max_cell_m: 0.4,
+        }])
+        .expect_err("sub-unity growth must be rejected");
+        assert!(shrinking.to_string().contains("geometric grid segment"));
+
+        // max_cell_m <= 0 arm
+        let zero_max = GridAxis::from_segments(&[GridSegment::Geometric {
+            start_m: 0.0,
+            end_m: 4.0,
+            first_cell_m: 0.05,
+            growth: 1.2,
+            max_cell_m: 0.0,
+        }])
+        .expect_err("non-positive max cell must be rejected");
+        assert!(zero_max.to_string().contains("geometric grid segment"));
+    }
+
+    // ---- GroundDomainConfig::validate rejection sweep (L399-L517) ----
+
+    fn assert_invalid(mutate: impl FnOnce(&mut GroundDomainConfig), needle: &str) {
+        let mut config = valid_config();
+        mutate(&mut config);
+        let err = config
+            .validate()
+            .expect_err("mutated configuration must be rejected");
+        assert!(
+            err.to_string().contains(needle),
+            "error {err} missing {needle:?}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_non_positive_or_non_finite_scalar_fields() {
+        // finite but non-positive (L399 arm 1)
+        assert_invalid(|c| c.domain_length_m = -1.0, "domain_length_m");
+        // non-finite (L399 arm 2)
+        assert_invalid(
+            |c| c.ground_conductivity_w_mk = f64::NAN,
+            "ground_conductivity_w_mk",
+        );
+    }
+
+    #[test]
+    fn validate_rejects_non_finite_slab_extent() {
+        assert_invalid(
+            |c| c.slab_x0_m = f64::NAN,
+            "slab footprint edges must be finite",
+        );
+        assert_invalid(
+            |c| c.slab_x1_m = f64::INFINITY,
+            "slab footprint edges must be finite",
+        );
+    }
+
+    #[test]
+    fn validate_rejects_slab_outside_domain() {
+        assert_invalid(|c| c.slab_x0_m = -0.5, "must lie inside");
+        assert_invalid(|c| c.slab_x1_m = c.domain_length_m + 1.0, "must lie inside");
+    }
+
+    #[test]
+    fn validate_rejects_degenerate_or_oversized_slab_thickness() {
+        assert_invalid(|c| c.slab_thickness_m = 0.0, "slab thickness");
+        assert_invalid(|c| c.slab_thickness_m = c.domain_depth_m, "slab thickness");
+    }
+
+    #[test]
+    fn validate_rejects_zero_max_iterations() {
+        assert_invalid(|c| c.max_iterations = 0, "max_iterations");
+    }
+
+    #[test]
+    fn validate_rejects_non_positive_or_non_finite_tolerance() {
+        assert_invalid(|c| c.tolerance = 0.0, "tolerance");
+        assert_invalid(|c| c.tolerance = f64::NAN, "tolerance");
+    }
+
+    #[test]
+    fn validate_rejects_lateral_grid_that_does_not_tile_the_domain() {
+        // The grid-edge alignment guards (L441/L442) sit behind validate()'s
+        // own tiling check and GroundGrid::build's contiguity enforcement,
+        // so a validate()-reachable configuration can only ever fail the
+        // tiling check — those two arms are defensive-dead. These calls pin
+        // the reachable rejections.
+        assert_invalid(
+            |c| {
+                c.lateral_segments = vec![GridSegment::Uniform {
+                    start_m: 0.5,
+                    end_m: 4.0,
+                    cells: 8,
+                }]
+            },
+            "grid segments must be contiguous",
+        );
+        assert_invalid(
+            |c| {
+                c.lateral_segments = vec![GridSegment::Uniform {
+                    start_m: 0.0,
+                    end_m: 3.0,
+                    cells: 6,
+                }]
+            },
+            "lateral segments must tile",
+        );
+    }
+
+    #[test]
+    fn validate_rejects_vertical_grid_that_does_not_tile_the_domain() {
+        // Same defensive-dead note as the lateral arm (L448/L449 behind the
+        // tiling check).
+        assert_invalid(
+            |c| {
+                c.vertical_segments = vec![GridSegment::Uniform {
+                    start_m: 0.5,
+                    end_m: 4.0,
+                    cells: 8,
+                }]
+            },
+            "grid segments must be contiguous",
+        );
+        assert_invalid(
+            |c| {
+                c.vertical_segments = vec![GridSegment::Uniform {
+                    start_m: 0.0,
+                    end_m: 3.5,
+                    cells: 7,
+                }]
+            },
+            "vertical segments must tile",
+        );
+    }
+
+    #[test]
+    fn validate_rejects_vertical_grid_missing_slab_thickness_edge() {
+        // uniform 3-cell grid has no edge at 0.2 (L466)
+        assert_invalid(
+            |c| {
+                c.vertical_segments = vec![GridSegment::Uniform {
+                    start_m: 0.0,
+                    end_m: 4.0,
+                    cells: 3,
+                }]
+            },
+            "must be a vertical cell edge",
+        );
+    }
+
+    #[test]
+    fn validate_rejects_missing_or_degenerate_top_segments() {
+        // empty top boundary (L472)
+        assert_invalid(|c| c.top_segments = vec![], "top");
+        // reversed segment (L478)
+        assert_invalid(
+            |c| {
+                c.top_segments = vec![TopSegment {
+                    x_start_m: 4.0,
+                    x_end_m: 0.0,
+                    condition: c.top_segments[0].condition,
+                }]
+            },
+            "top segment",
+        );
+    }
+
+    #[test]
+    fn validate_rejects_top_segments_off_grid_edges() {
+        // start off the lateral cell edges (L483)
+        assert_invalid(|c| c.top_segments[0].x_start_m = 0.25, "top segment");
+        // end off the lateral cell edges (L484)
+        assert_invalid(|c| c.top_segments[0].x_end_m = 3.75, "top segment");
+    }
+
+    #[test]
+    fn validate_rejects_robin_segment_with_invalid_film_coefficient() {
+        // finite but non-positive (L495 arm 1)
+        assert_invalid(
+            |c| {
+                c.top_segments[0].condition = TopCondition::Robin {
+                    film_coefficient_w_m2k: 0.0,
+                    ambient_temperature_c: 30.0,
+                };
+            },
+            "film",
+        );
+        // non-finite (L495 arm 2)
+        assert_invalid(
+            |c| {
+                c.top_segments[0].condition = TopCondition::Robin {
+                    film_coefficient_w_m2k: f64::NAN,
+                    ambient_temperature_c: 30.0,
+                };
+            },
+            "film",
+        );
+    }
+
+    #[test]
+    fn validate_accepts_dirichlet_top_segment_without_film_check() {
+        // A Dirichlet top segment skips the Robin film check entirely
+        // (L490 let-guard false arm) and validates cleanly.
+        let mut config = valid_config();
+        config.top_segments = vec![TopSegment {
+            x_start_m: 0.0,
+            x_end_m: 4.0,
+            condition: TopCondition::Dirichlet(30.0),
+        }];
+        config.deep_ground = SurfaceCondition::Dirichlet(10.0);
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_gapped_or_short_top_coverage() {
+        // consecutive top segments must be contiguous (L508)
+        assert_invalid(
+            |c| {
+                c.top_segments = vec![
+                    TopSegment {
+                        x_start_m: 0.0,
+                        x_end_m: 2.0,
+                        condition: TopCondition::Robin {
+                            film_coefficient_w_m2k: 8.29,
+                            ambient_temperature_c: 30.0,
+                        },
+                    },
+                    TopSegment {
+                        x_start_m: 2.5,
+                        x_end_m: 4.0,
+                        condition: TopCondition::Robin {
+                            film_coefficient_w_m2k: 8.29,
+                            ambient_temperature_c: 30.0,
+                        },
+                    },
+                ];
+            },
+            "contiguous",
+        );
+        // top segments must cover the full domain length (L517)
+        assert_invalid(
+            |c| c.top_segments[0].x_end_m = 3.0,
+            "top segments must tile",
+        );
+    }
+
+    // ---- Slab/ground classification (L586/L587, Issue #4859) ----
+
+    #[test]
+    fn cell_heat_capacity_classifies_slab_versus_ground() {
+        let config = valid_config();
+        let grid = GroundGrid::build(&config).expect("valid grid");
+
+        // Column i=0 centers at x=0.25 (under the slab), i=5 at x=2.75
+        // (outside the 0..2 slab). Row j=0 centers at z=0.05 (inside the
+        // 0.2 m slab), the deepest row is far below it.
+        let n_rows = grid.z.centers.len();
+        let slab_cell = grid.cell_volumetric_heat_capacity(&config, 0, 0);
+        let ground_below_slab = grid.cell_volumetric_heat_capacity(&config, 0, n_rows - 1);
+        let ground_beside_slab = grid.cell_volumetric_heat_capacity(&config, 5, 0);
+
+        assert_eq!(slab_cell, 2_000_000.0);
+        assert_eq!(ground_below_slab, 3_000_000.0);
+        assert_eq!(ground_beside_slab, 3_000_000.0);
+    }
+
+    // ---- bracket() interval helper (L688/L693, Issue #4859) ----
+
+    #[test]
+    fn bracket_handles_single_cell_and_interior_and_clamped_values() {
+        // n == 1 arm: interval degenerates with zero fraction
+        assert_eq!(bracket(&[5.0], 1.0), (0, 0, 0.0));
+
+        // interior value: the while-loop advances hi and spans across cells
+        let (lo, hi, f) = bracket(&[0.0, 1.0, 2.0], 1.5);
+        assert_eq!((lo, hi), (1, 2));
+        assert!((f - 0.5).abs() < 1e-12);
+
+        // value beyond the last coordinate clamps onto the final interval
+        let (lo, hi, f) = bracket(&[0.0, 1.0, 2.0], 9.0);
+        assert_eq!((lo, hi), (1, 2));
+        assert!((f - 1.0).abs() < 1e-12);
+
+        // value before the first coordinate clamps onto the first interval
+        let (lo, hi, f) = bracket(&[0.0, 1.0, 2.0], -3.0);
+        assert_eq!((lo, hi), (0, 1));
+        assert!((f - 0.0).abs() < 1e-12);
+    }
+
+    // ---- boundary_face half-resistance guard (L753, Issue #4859) ----
+
+    #[test]
+    fn dirichlet_boundary_face_rejects_non_positive_half_resistance() {
+        let face = boundary_face(SurfaceCondition::Dirichlet(10.0), 1.0, 0.0);
+        assert!(face.is_none(), "zero half-resistance must yield no face");
+
+        let face = boundary_face(SurfaceCondition::Dirichlet(10.0), 1.0, 0.5)
+            .expect("positive half-resistance must yield a face");
+        assert!((face.conductance - 2.0).abs() < 1e-12);
+        assert!((face.temperature - 10.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn adiabatic_boundary_face_is_never_built() {
+        assert!(boundary_face(SurfaceCondition::Adiabatic, 1.0, 0.5).is_none());
+    }
+}

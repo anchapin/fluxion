@@ -1343,3 +1343,147 @@ mod tests {
         assert!(result.q_air > 0.0);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Issue #4859 coverage-floor tests (loop round 167).
+//
+// Targets the uncovered thermostat-band and latent-factor arms from coverage
+// run 44822633108: BaseboardHeater's zone-too-hot arm (L291), the
+// HotWaterBaseboard no-heat/cooling-band condition (L423 both operands),
+// LowTemperatureRadiantSurface's effective-temperature condition (L583/L584),
+// PackagedTerminalAC's deadband/below-band/cooling arms and latent factor
+// (L724/L739/L765), PackagedTerminalHeatPump's cooling entry and latent
+// factor (L938/L951), and FourPipeFanCoil's cooling entry (L1100).
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod r167_coverage_floor_tests {
+    use super::*;
+
+    const DT: f64 = 3600.0;
+
+    /// BaseboardHeater with the zone above the cooling setpoint takes the
+    /// zone-too-hot arm: it cannot cool, so it injects nothing and reports
+    /// Deadband (L291, Issue #4859).
+    #[test]
+    fn baseboard_heater_above_cooling_band_injects_nothing() {
+        let mut heater = BaseboardHeater::with_efficiency("baseboard".to_string(), 5000.0, 0.98);
+        let sp = ZoneEquipmentSetpoints::new(20.0, 24.0, 26.0, 30.0);
+        let result = heater.step(&sp, DT);
+        assert_eq!(result.mode, ZoneEquipmentMode::Deadband);
+        assert_eq!(result.q_air, 0.0);
+        assert_eq!(result.q_surface_radiant, 0.0);
+    }
+
+    /// HotWaterBaseboard takes its no-heat early-return for in-band and
+    /// above-cooling zones and proceeds to heating below the band (L423
+    /// both operands' arms, Issue #4859).
+    #[test]
+    fn hot_water_baseboard_band_arms() {
+        let mut hydronic = HotWaterBaseboard::new("hwb".to_string(), 4000.0, 0.05);
+
+        // Below the heating band: neither early-return operand fires, so
+        // the hydronic coil heats.
+        let cold = ZoneEquipmentSetpoints::with_water(20.0, 24.0, 17.0, -5.0, 60.0, 40.0);
+        let heated = hydronic.step(&cold, DT);
+        assert!(heated.q_air > 0.0 || heated.q_water_side > 0.0);
+
+        // Inside the deadband: first operand true → decay early-return.
+        let mild = ZoneEquipmentSetpoints::with_water(20.0, 24.0, 22.0, 10.0, 60.0, 40.0);
+        let idle = hydronic.step(&mild, DT);
+        assert_eq!(idle.q_air, 0.0);
+
+        // Above the cooling setpoint: second operand true → decay early-return.
+        let hot = ZoneEquipmentSetpoints::with_water(20.0, 24.0, 26.0, 30.0, 60.0, 40.0);
+        let blocked = hydronic.step(&hot, DT);
+        assert_eq!(blocked.q_air, 0.0);
+    }
+
+    /// LowTemperatureRadiantSurface's effective-temperature condition
+    /// (0.5·t_zone + 0.5·mean_radiant) drives all three band outcomes
+    /// (L583/L584, Issue #4859).
+    #[test]
+    fn radiant_surface_effective_temperature_band_arms() {
+        let mut floor =
+            LowTemperatureRadiantSurface::new_floor("radiant".to_string(), 3000.0, 20.0);
+
+        // Effective temperature below the heating band → radiant heating.
+        let cold = ZoneEquipmentSetpoints::new(20.0, 24.0, 16.0, -5.0);
+        let heated = floor.step(&cold, DT);
+        assert!(heated.q_surface_radiant > 0.0 || heated.q_water_side > 0.0);
+
+        // Effective temperature inside the band → decay early-return.
+        let mild = ZoneEquipmentSetpoints::new(20.0, 24.0, 22.0, 10.0);
+        let idle = floor.step(&mild, DT);
+        assert_eq!(idle.q_surface_radiant, 0.0);
+
+        // Inverted setpoints (heating above cooling) isolate the second
+        // operand's true arm: effective temperature is below the (inverted)
+        // heating threshold yet above the cooling threshold. Defensive
+        // branch — documents the guard against inconsistent setpoints.
+        let inverted = ZoneEquipmentSetpoints::new(30.0, 20.0, 25.0, 10.0);
+        let guarded = floor.step(&inverted, DT);
+        assert_eq!(guarded.q_surface_radiant, 0.0);
+    }
+
+    /// PackagedTerminalAC deadband/below-band/cooling arms plus both latent
+    /// factor arms (L724/L739/L765, Issue #4859).
+    #[test]
+    fn packaged_terminal_ac_band_and_latent_arms() {
+        let mut ptac = PackagedTerminalAC::new("ptac".to_string(), 6000.0, 0.4);
+
+        // Inside the deadband → standby fan power, Deadband mode.
+        let mild = ZoneEquipmentSetpoints::with_humidity(20.0, 24.0, 22.0, 30.0, 0.010, 0.008);
+        let standby = ptac.step(&mild, DT);
+        assert_eq!(standby.mode, ZoneEquipmentMode::Deadband);
+        assert!(standby.electrical_power > 0.0);
+
+        // Below the heating band → the second deadband operand fails but the
+        // below-cooling check passes → Off.
+        let cold = ZoneEquipmentSetpoints::with_humidity(20.0, 24.0, 17.0, -5.0, 0.010, 0.008);
+        let off = ptac.step(&cold, DT);
+        assert_eq!(off.mode, ZoneEquipmentMode::Off);
+
+        // Above cooling with humid air → cooling with a nonzero latent term.
+        let hot_humid = ZoneEquipmentSetpoints::with_humidity(20.0, 24.0, 30.0, 35.0, 0.012, 0.008);
+        let cooling = ptac.step(&hot_humid, DT);
+        assert_eq!(cooling.mode, ZoneEquipmentMode::Cooling);
+        assert!(
+            cooling.q_latent > 0.0,
+            "humid supply air must drive latent removal"
+        );
+
+        // Above cooling with dry air → latent factor takes the zero arm.
+        let hot_dry = ZoneEquipmentSetpoints::with_humidity(20.0, 24.0, 30.0, 35.0, 0.006, 0.008);
+        let dry_cooling = ptac.step(&hot_dry, DT);
+        assert_eq!(dry_cooling.mode, ZoneEquipmentMode::Cooling);
+        assert_eq!(dry_cooling.q_latent, 0.0);
+    }
+
+    /// PackagedTerminalHeatPump's cooling entry arm and both latent arms
+    /// (L938/L951, Issue #4859).
+    #[test]
+    fn packaged_terminal_heat_pump_cooling_and_latent_arms() {
+        let mut pthp = PackagedTerminalHeatPump::new("pthp".to_string(), 6000.0, 5000.0, 0.4);
+
+        // Hot zone → the cooling-mode else-if arm engages.
+        let hot_humid = ZoneEquipmentSetpoints::with_humidity(20.0, 24.0, 30.0, 35.0, 0.012, 0.008);
+        let cooling = pthp.step(&hot_humid, DT);
+        assert_eq!(cooling.mode, ZoneEquipmentMode::Cooling);
+        assert!(cooling.q_latent > 0.0);
+
+        // Dry air above cooling → the latent factor zero arm.
+        let hot_dry = ZoneEquipmentSetpoints::with_humidity(20.0, 24.0, 30.0, 35.0, 0.006, 0.008);
+        let dry = pthp.step(&hot_dry, DT);
+        assert_eq!(dry.q_latent, 0.0);
+    }
+
+    /// FourPipeFanCoil's cooling entry arm (L1100, Issue #4859).
+    #[test]
+    fn four_pipe_fan_coil_cooling_mode_engages_above_band() {
+        let mut fan_coil = FourPipeFanCoil::new("fancoil".to_string(), 5000.0, 6000.0, 0.4);
+        let hot = ZoneEquipmentSetpoints::new(20.0, 24.0, 30.0, 35.0);
+        let cooling = fan_coil.step(&hot, DT);
+        assert_eq!(cooling.mode, ZoneEquipmentMode::Cooling);
+        assert!(cooling.q_air < 0.0 || cooling.q_water_side < 0.0);
+    }
+}
