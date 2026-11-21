@@ -713,7 +713,11 @@ fn surface_lw_estimates_match_steady_closed_form() {
     let mut m = spec_model_freefloat();
     let timestep = 3usize;
     let t_zone = m.setpoints.temperatures.as_ref()[0];
-    let t_g = m.conduction.ground_temperature.ground_temperature(timestep);
+    let t_g = m
+        .conduction
+        .ground_temperature
+        .ground_temperature(timestep)
+        .0;
     m.step_physics(timestep, 12.0, DT);
     let t_sol_air_zone = m
         .conduction

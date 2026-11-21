@@ -2726,7 +2726,7 @@ fn spec_path_dispatch_and_partition_premises() {
     );
     assert_eq!(m.setpoints.temperatures.as_ref()[0], 20.0);
     assert_eq!(
-        m.conduction.ground_temperature.ground_temperature(0),
+        m.conduction.ground_temperature.ground_temperature(0).0,
         9.4,
         "premise: Annex B §B3.3 ground temperature"
     );
@@ -3650,7 +3650,7 @@ fn spec_path_950ff_premises_and_window_override() {
     assert_eq!(m.setpoints.cooling_setpoint, 999.0);
     assert_eq!(m.setpoints.loads.as_ref()[0], 0.0);
     assert_eq!(
-        m.conduction.ground_temperature.ground_temperature(0),
+        m.conduction.ground_temperature.ground_temperature(0).0,
         9.4,
         "Annex B §B3.3 ground temperature"
     );
