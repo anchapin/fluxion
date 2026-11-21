@@ -1050,3 +1050,54 @@ mod tests {
         assert_eq!(ach, 0.0);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Issue #4859 coverage-floor tests (loop round 167).
+//
+// The push-triggered coverage run 44822633108 measured the weather_ventilation
+// bucket at 22/24 branches (91.67%) against the 91.93% ratchet floor. This
+// bucket holds exactly one file, so its denominator cannot shift; the only
+// reachable uncovered branch is `calculate_stack_infiltration_ach`'s
+// `flow_arg > 0.0` false-arm at L129, reached through NaN propagation: a NaN
+// temperature difference passes the `delta_t < 0.5` guard (NaN comparisons are
+// false) and then fails `flow_arg > 0.0`, so the function degrades to 0.0 ACH
+// instead of returning NaN.
+//
+// The file's other uncovered branch (`outdoor_temp_benefit`'s
+// `delta_t_out <= 0.0` arm) is unreachable by construction — both enclosing
+// guards require `start_temp < outdoor_temp < full_open_temp`, which implies
+// `delta_t_out > 0` — so 23/24 is the ceiling for tests-only work and clears
+// the floor.
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod r167_coverage_floor_tests {
+    use super::*;
+
+    /// NaN indoor temperature reaches the `flow_sqrt` else-arm (L129): the
+    /// function must return exactly 0.0 ACH, never NaN (Issue #4859).
+    #[test]
+    fn stack_infiltration_nan_indoor_temperature_returns_zero_ach() {
+        let ach = calculate_stack_infiltration_ach(f64::NAN, 10.0, 3.0, 1.0, 50.0);
+        assert_eq!(
+            ach, 0.0,
+            "NaN temperature input must degrade to 0.0 ACH, not propagate NaN"
+        );
+    }
+
+    /// NaN outdoor temperature takes the same guarded path (L129 false-arm)
+    /// and must also return 0.0 ACH (Issue #4859).
+    #[test]
+    fn stack_infiltration_nan_outdoor_temperature_returns_zero_ach() {
+        let ach = calculate_stack_infiltration_ach(20.0, f64::NAN, 3.0, 1.0, 50.0);
+        assert_eq!(ach, 0.0);
+    }
+
+    /// The positive-delta-t path still computes a finite stack ACH, so the
+    /// guard added above documents a degradation, not the function's result.
+    #[test]
+    fn stack_infiltration_finite_temperatures_stay_positive() {
+        let ach = calculate_stack_infiltration_ach(20.0, 10.0, 3.0, 1.0, 50.0);
+        assert!(ach > 0.0);
+        assert!(ach.is_finite());
+    }
+}

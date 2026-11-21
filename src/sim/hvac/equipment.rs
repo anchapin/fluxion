@@ -1353,3 +1353,182 @@ pub fn any_equipment_from_selection(
         } => AnyEquipment::CAVSystem(CAVSystem::new(id.clone(), *design_airflow_m3_per_s)),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Issue #4859 coverage-floor tests (loop round 167).
+//
+// Targets uncovered arms from coverage run 44822633108: the Chiller
+// COP-normalization guards (L314) and update_state mode/capacity arms
+// (L373/L379), the Boiler power-path arms (L475/L476/L480/L486), the
+// VAVTerminal mode/capacity/power arms (L517/L523/L554), the CAVSystem
+// capacity and Off-mode arms (L575/L611), the HeatPump update_state
+// capacity arm (L707), and the any_equipment_from_selection curve-None
+// arms (L1301/L1309). Zero rated capacities are the only way the
+// capacity>0 guards take their else arm — capacity_at_temperature floors
+// at 30%/50%, never zero — so these fixtures document the zero-capacity
+// guards explicitly.
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod r167_coverage_floor_tests {
+    use super::*;
+
+    /// Chiller::update_state ignores non-cooling modes and zeroes the PLR
+    /// (L373, Issue #4859).
+    #[test]
+    fn chiller_update_state_zeroes_plr_in_heating_mode() {
+        let mut chiller = Chiller::new("chiller".to_string(), 50_000.0, 3.0, 35.0);
+        VariableCapacityEquipment::update_state(&mut chiller, 20_000.0, 25.0, HVACMode::Heating);
+        assert_eq!(chiller.current_plr, 0.0);
+    }
+
+    /// A zero-rated chiller takes the capacity else-arm and lands at PLR 0
+    /// (L379, Issue #4859).
+    #[test]
+    fn chiller_update_state_zero_capacity_lands_at_zero_plr() {
+        let mut chiller = Chiller::new("dead_chiller".to_string(), 0.0, 3.0, 35.0);
+        VariableCapacityEquipment::update_state(&mut chiller, 20_000.0, 25.0, HVACMode::Cooling);
+        assert_eq!(chiller.current_plr, 0.0);
+    }
+
+    /// normalize_polynomial_cop returns the raw polynomial COP when the
+    /// rated COP is non-positive (L314 second operand, Issue #4859).
+    #[test]
+    fn cop_normalization_skips_scaling_for_nonpositive_rated_cop() {
+        let chiller = Chiller::new("chiller".to_string(), 50_000.0, 3.0, 35.0);
+        let curve = crate::sim::hvac::efficiency_curves::EfficiencyCurve::new(
+            [2.0, 0.0, 0.0, 0.0],
+            0.0,
+            35.0,
+        );
+        let cop = chiller.normalize_polynomial_cop(&curve, 0.5, 25.0, 35.0, 0.0);
+        let raw = curve.cop_at(0.5, 25.0);
+        assert_eq!(cop, raw, "non-positive rated COP must skip normalization");
+    }
+
+    /// normalize_polynomial_cop returns the raw polynomial COP when the
+    /// curve itself is zero at rated conditions (L314 first operand,
+    /// Issue #4859).
+    #[test]
+    fn cop_normalization_skips_scaling_for_zero_poly_cop_at_rated() {
+        let chiller = Chiller::new("chiller".to_string(), 50_000.0, 3.0, 35.0);
+        let flat_zero = crate::sim::hvac::efficiency_curves::EfficiencyCurve::new(
+            [0.0, 0.0, 0.0, 0.0],
+            0.0,
+            35.0,
+        );
+        let cop = chiller.normalize_polynomial_cop(&flat_zero, 0.5, 25.0, 35.0, 3.0);
+        assert_eq!(cop, 0.0, "zero curve must return its raw zero COP");
+    }
+
+    /// Boiler::calculate_power with zero load takes the load guard's false
+    /// arm (L475, Issue #4859).
+    #[test]
+    fn boiler_calculate_power_zero_load_returns_zero() {
+        let boiler = Boiler::new("boiler".to_string(), 40_000.0, 0.9, 20.0);
+        let power =
+            VariableCapacityEquipment::calculate_power(&boiler, 0.0, 10.0, HVACMode::Heating);
+        assert_eq!(power, 0.0);
+    }
+
+    /// Boiler::calculate_power with no committed PLR and a zero-rated
+    /// capacity walks the full degenerate chain: derive-from-capacity else
+    /// (L476), capacity else (L480), plr guard else (L486) → zero power
+    /// (Issue #4859).
+    #[test]
+    fn boiler_calculate_power_zero_capacity_chain_returns_zero() {
+        let mut boiler = Boiler::new("dead_boiler".to_string(), 0.0, 0.9, 20.0);
+        boiler.current_plr = 0.0;
+        let power =
+            VariableCapacityEquipment::calculate_power(&boiler, 5_000.0, 10.0, HVACMode::Heating);
+        assert_eq!(power, 0.0);
+    }
+
+    /// VAVTerminal::update_state in heating mode proceeds past the mode
+    /// guard (L517) and a zero reheat capacity takes the capacity else-arm
+    /// (L523) landing at PLR 0 (Issue #4859).
+    #[test]
+    fn vav_terminal_update_state_mode_and_zero_capacity_arms() {
+        let mut vav = VAVTerminal::new("vav".to_string(), 0, 1.0);
+
+        // Heating mode: the mode guard's proceed arm.
+        vav.reheat_capacity = 4000.0;
+        VariableCapacityEquipment::update_state(&mut vav, 2000.0, 20.0, HVACMode::Heating);
+        assert!(vav.current_plr > 0.0 && vav.current_plr <= 1.0);
+
+        // Zero reheat capacity: the capacity guard's else arm.
+        vav.reheat_capacity = 0.0;
+        VariableCapacityEquipment::update_state(&mut vav, 2000.0, 20.0, HVACMode::Heating);
+        assert_eq!(vav.current_plr, 0.0);
+
+        // Non-heating mode: the mode guard's early-return arm.
+        VariableCapacityEquipment::update_state(&mut vav, 2000.0, 20.0, HVACMode::Off);
+        assert_eq!(vav.current_plr, 0.0);
+    }
+
+    /// VAVTerminal::calculate_power in Off mode hits the zero-efficiency
+    /// else arm and returns zero power (L554, Issue #4859).
+    #[test]
+    fn vav_terminal_calculate_power_off_mode_returns_zero() {
+        let vav = VAVTerminal::new("vav".to_string(), 0, 1.0);
+        let power = VariableCapacityEquipment::calculate_power(&vav, 5000.0, 20.0, HVACMode::Off);
+        assert_eq!(power, 0.0);
+    }
+
+    /// CAVSystem::update_state with zero rated capacities takes the
+    /// capacity else-arm (L575, Issue #4859).
+    #[test]
+    fn cav_system_update_state_zero_capacity_lands_at_zero_plr() {
+        let mut cav = CAVSystem::new("cav".to_string(), 1.0);
+        cav.heating_capacity = 0.0;
+        cav.cooling_capacity = 0.0;
+        VariableCapacityEquipment::update_state(&mut cav, 5000.0, 20.0, HVACMode::Heating);
+        assert_eq!(cav.current_plr, 0.0);
+    }
+
+    /// CAVSystem::calculate_power in Off mode takes the zero-efficiency
+    /// else arm: thermal power drops out, leaving only the fan term
+    /// (L611, Issue #4859).
+    #[test]
+    fn cav_system_calculate_power_off_mode_leaves_fan_only() {
+        let cav = CAVSystem::new("cav".to_string(), 1.0);
+        let power = VariableCapacityEquipment::calculate_power(&cav, 5000.0, 20.0, HVACMode::Off);
+        let fan_only = cav.fan_power / cav.fan_efficiency;
+        assert!(
+            (power - fan_only).abs() < 1e-9,
+            "power {power} vs fan {fan_only}"
+        );
+    }
+
+    /// HeatPump::update_state with a zero-rated heating capacity takes the
+    /// capacity else-arm (L707, Issue #4859).
+    #[test]
+    fn heat_pump_update_state_zero_capacity_lands_at_zero_plr() {
+        let mut hp = HeatPump::new("dead_hp".to_string(), 0.0, 4000.0, 3.0, 12.0);
+        VariableCapacityEquipment::update_state(&mut hp, 3000.0, 5.0, HVACMode::Heating);
+        assert_eq!(hp.current_plr, 0.0);
+    }
+
+    /// any_equipment_from_selection with no curve overrides takes both
+    /// let-None arms and keeps the default AHRI curves (L1301/L1309,
+    /// Issue #4859).
+    #[test]
+    fn selection_without_curve_overrides_keeps_default_curves() {
+        use fluxion_core::ashrae_cases::EquipmentSelection as ES;
+
+        let selection = ES::HeatPump {
+            id: "hp".to_string(),
+            heating_capacity_w: 5000.0,
+            cooling_capacity_w: 4000.0,
+            heating_cop: 3.0,
+            cooling_eer: 12.0,
+            heating_curve: None,
+            cooling_curve: None,
+        };
+        let equipment = any_equipment_from_selection(&selection);
+        let AnyEquipment::HeatPump(hp) = equipment else {
+            panic!("selection must build a HeatPump");
+        };
+        assert_eq!(hp.heating_capacity, 5000.0);
+        assert_eq!(hp.cooling_capacity, 4000.0);
+    }
+}

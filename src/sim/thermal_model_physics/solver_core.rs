@@ -593,3 +593,187 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         self.0.solar.weather = Some(weather);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Issue #4859 coverage-floor tests (loop round 167).
+//
+// Targets the uncovered arms of `estimate_time_constant_hours` and
+// `calculate_timestep_seconds` from coverage run 44822633108: the adaptive
+// timestep threshold comparison (L103 both arms), the high-mass case-id
+// routing (L134), the derived-h_tr_3 fallback decision (L147), the inline
+// ISO 13790 H_tr_3 derivation chain and its degenerate-conductance guards
+// (L160 short-circuit arms, L163, L177 both arms), and the uninitialized-tau
+// sanity fallback (L185 both arms). The L125-L194 never-executed line block
+// is the body of `estimate_time_constant_hours` itself.
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod r167_tau_ladder_tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn make_model() -> ThermalModel<VectorField> {
+        ThermalModel::<VectorField>::new(1)
+    }
+
+    /// Pin the single-zone conductance pokes used below.
+    fn set_conductances(
+        model: &mut ThermalModel<VectorField>,
+        h_tr_ms: f64,
+        h_tr_is: f64,
+        h_ve: f64,
+        h_tr_w: f64,
+    ) {
+        model.conduction.h_tr_ms.as_mut()[0] = h_tr_ms;
+        model.conduction.h_tr_is.as_mut()[0] = h_tr_is;
+        model.conduction.h_ve.as_mut()[0] = h_ve;
+        model.conduction.h_tr_w.as_mut()[0] = h_tr_w;
+        model.mass.thermal_capacitance.as_mut()[0] = 40_000_000.0;
+    }
+
+    /// Standard (low-mass) case routes through h_tr_ms (L134 false-arm) and
+    /// a properly initialized capacitance yields the physical tau (L177
+    /// true-arm, L185 true-arm).
+    #[test]
+    fn standard_case_tau_derives_from_h_tr_ms() {
+        let mut model = make_model();
+        model.hvac.case_id = "600".to_string();
+        set_conductances(&mut model, 8.0, 6.0, 4.0, 2.0);
+        let tau = model.estimate_time_constant_hours();
+        let expected = 40_000_000.0 / 8.0 / 3600.0;
+        assert!((tau - expected).abs() < 1e-9, "tau {tau} vs {expected}");
+    }
+
+    /// Zero h_tr_ms leaves h_tr_sum degenerate and takes the 2-hour default
+    /// (L177 false-arm, Issue #4859).
+    #[test]
+    fn degenerate_h_tr_ms_falls_back_to_two_hours() {
+        let mut model = make_model();
+        model.hvac.case_id = "600".to_string();
+        set_conductances(&mut model, 0.0, 6.0, 4.0, 2.0);
+        assert_eq!(model.estimate_time_constant_hours(), 2.0);
+    }
+
+    /// A huge conductance against a tiny capacitance produces tau below the
+    /// 0.001 h sanity floor, taking the uninitialized-model default (L185
+    /// false-arm, Issue #4859).
+    #[test]
+    fn near_zero_tau_falls_back_to_two_hours() {
+        let mut model = make_model();
+        model.hvac.case_id = "600".to_string();
+        set_conductances(&mut model, 1.0e9, 6.0, 4.0, 2.0);
+        model.mass.thermal_capacitance.as_mut()[0] = 1.0;
+        assert_eq!(model.estimate_time_constant_hours(), 2.0);
+    }
+
+    /// High-mass case with derived_h_tr_3 already computed uses the derived
+    /// sum directly (L134 true-arm, L147 true-arm, Issue #4859).
+    #[test]
+    fn high_mass_uses_derived_h_tr_3_when_available() {
+        let mut model = make_model();
+        model.hvac.case_id = "900".to_string();
+        set_conductances(&mut model, 4.0, 6.0, 4.0, 2.0);
+        model.conduction.derived_h_tr_3.as_mut()[0] = 40.0;
+        let tau = model.estimate_time_constant_hours();
+        let expected = 40_000_000.0 / 40.0 / 3600.0;
+        assert!((tau - expected).abs() < 1e-9, "tau {tau} vs {expected}");
+    }
+
+    /// High-mass case with an uncomputed derived_h_tr_3 (all zeros) derives
+    /// H_tr_3 inline via the ISO 13790 series formula (L147 false-arm, L160
+    /// all-positive chain, L163 true-arm, Issue #4859).
+    #[test]
+    fn high_mass_derives_h_tr_3_inline_from_iso_series() {
+        let mut model = make_model();
+        model.hvac.case_id = "900".to_string();
+        set_conductances(&mut model, 4.0, 6.0, 4.0, 2.0);
+        model.conduction.derived_h_tr_3.as_mut()[0] = 0.0;
+        let tau = model.estimate_time_constant_hours();
+        // Inline derivation: H_tr_1 = ve·is/(ve+is) = 2.4, H_tr_2 = 1 + w = 4.4,
+        // H_tr_3 = 2·ms/(2+ms) = 4.4·4/8.4.
+        let h_tr_3 = 4.4 * 4.0 / 8.4;
+        let expected = 40_000_000.0 / h_tr_3 / 3600.0;
+        assert!((tau - expected).abs() < 1e-9, "tau {tau} vs {expected}");
+    }
+
+    /// Degenerate h_tr_ms short-circuits the inline derivation to the
+    /// h_tr_ms fallback (L160 first-operand false-arm, Issue #4859).
+    #[test]
+    fn high_mass_degenerate_h_tr_ms_takes_direct_fallback() {
+        let mut model = make_model();
+        model.hvac.case_id = "900".to_string();
+        set_conductances(&mut model, 0.0, 6.0, 4.0, 2.0);
+        model.conduction.derived_h_tr_3.as_mut()[0] = 0.0;
+        assert_eq!(model.estimate_time_constant_hours(), 2.0);
+    }
+
+    /// Degenerate h_tr_is short-circuits the inline derivation at the second
+    /// operand (L160 second-operand false-arm, Issue #4859); the fallback is
+    /// h_tr_ms itself.
+    #[test]
+    fn high_mass_degenerate_h_tr_is_takes_ms_fallback() {
+        let mut model = make_model();
+        model.hvac.case_id = "900".to_string();
+        set_conductances(&mut model, 4.0, 0.0, 4.0, 2.0);
+        model.conduction.derived_h_tr_3.as_mut()[0] = 0.0;
+        let tau = model.estimate_time_constant_hours();
+        let expected = 40_000_000.0 / 4.0 / 3600.0;
+        assert!((tau - expected).abs() < 1e-9, "tau {tau} vs {expected}");
+    }
+
+    /// Degenerate h_ve short-circuits the inline derivation at the third
+    /// operand (L160 third-operand false-arm, Issue #4859).
+    #[test]
+    fn high_mass_degenerate_h_ve_takes_ms_fallback() {
+        let mut model = make_model();
+        model.hvac.case_id = "900".to_string();
+        set_conductances(&mut model, 4.0, 6.0, 0.0, 2.0);
+        model.conduction.derived_h_tr_3.as_mut()[0] = 0.0;
+        let tau = model.estimate_time_constant_hours();
+        let expected = 40_000_000.0 / 4.0 / 3600.0;
+        assert!((tau - expected).abs() < 1e-9, "tau {tau} vs {expected}");
+    }
+
+    /// A negative h_tr_w can drive H_tr_2 non-positive; the guard falls back
+    /// to the raw h_tr_ms sum (L163 false-arm, Issue #4859). Unphysical
+    /// input by construction — this pins the defensive guard, not physics.
+    #[test]
+    fn high_mass_nonpositive_h_tr_2_guard_takes_ms_fallback() {
+        let mut model = make_model();
+        model.hvac.case_id = "900".to_string();
+        set_conductances(&mut model, 4.0, 6.0, 4.0, -3.0);
+        model.conduction.derived_h_tr_3.as_mut()[0] = 0.0;
+        let tau = model.estimate_time_constant_hours();
+        let expected = 40_000_000.0 / 4.0 / 3600.0;
+        assert!((tau - expected).abs() < 1e-9, "tau {tau} vs {expected}");
+    }
+
+    /// Adaptive mode with tau above the threshold uses the base timestep
+    /// (L103 true-arm, Issue #4859).
+    #[test]
+    fn adaptive_timestep_high_mass_building_uses_base_dt() {
+        let mut model = make_model();
+        model.hvac.case_id = "600".to_string();
+        set_conductances(&mut model, 8.0, 6.0, 4.0, 2.0);
+        model.hvac.timestep_mode = TimestepMode::Adaptive {
+            base_dt: Duration::from_secs(900),
+            min_dt: Duration::from_secs(60),
+            threshold_tau: 100.0, // tau ≈ 1389 h ≥ threshold
+        };
+        assert_eq!(model.calculate_timestep_seconds(), 900.0);
+    }
+
+    /// Adaptive mode with tau below the threshold falls back to the 1-hour
+    /// standard timestep (L103 false-arm, Issue #4859).
+    #[test]
+    fn adaptive_timestep_low_mass_building_uses_hourly_dt() {
+        let mut model = make_model();
+        model.hvac.case_id = "600".to_string();
+        set_conductances(&mut model, 8.0, 6.0, 4.0, 2.0);
+        model.hvac.timestep_mode = TimestepMode::Adaptive {
+            base_dt: Duration::from_secs(900),
+            min_dt: Duration::from_secs(60),
+            threshold_tau: 1.0e6, // tau ≈ 1389 h < threshold
+        };
+        assert_eq!(model.calculate_timestep_seconds(), 3600.0);
+    }
+}
