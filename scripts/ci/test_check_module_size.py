@@ -696,7 +696,12 @@ def test_write_baseline_updates_baseline_section(checker, tmp_path, monkeypatch)
 # Loop round 160 (2026-11-19): the COP site-metering block re-measured the
 # zone_balance tuple 5014/5265 -> 5021/5273 (the fmt reflow shrank the
 # initial 5022 measurement; ceiling = 5021 + max(ceil(5%), +100) = 5273 per
-# the Issue #3574 admission protocol).
+# the Issue #3574 admission protocol) -> 5022/5274 (2026-11-20, loop round
+# 166, the #4809 units/typestate pilot: the GroundTemperature face now
+# returns a Celsius newtype and the zone_balance consumer's trailing `.0`
+# unwrap re-flowed by cargo fmt, growing the file 5021 -> 5022 at the
+# post-fmt actual - the unwrap itself, not new surface; ceiling =
+# 5022 + max(ceil(5%), +100) = 5274 per the Issue #3574 admission protocol)..
 # Loop round 163 (2026-11-20): the #3984 teacher-path air-loop route
 # re-measured the pressure_air_loop tuple 4312/4528 -> 4613/4844 (+301
 # lines: the thermostat heating arm, the mut-accessor composition surface,
@@ -704,9 +709,9 @@ def test_write_baseline_updates_baseline_section(checker, tmp_path, monkeypatch)
 # = 4844 per the Issue #3574 admission protocol).
 ISSUE_4753_ENTRIES = {
     "src/sim/thermal_model_physics/zone_balance.rs": (
-        5021,
+        5022,
         "zone_balance_ratchet.json",
-        5273,
+        5274,
     ),
     "src/sim/hvac/pressure_air_loop.rs": (
         4613,
