@@ -1002,18 +1002,19 @@ mod r167_coverage_floor_tests {
 
     /// The solver-manager wiring accessors round-trip: enable stores the
     /// manager, the accessors see it, and disable removes it (L526-L560,
-    /// Issue #4859).
+    /// Issue #4859). Types are fully qualified so the test module adds no
+    /// `use crate::physics::` edge under src/sim (the #2463 cycle guard).
     #[test]
     fn solver_manager_wiring_enable_query_disable_round_trip() {
-        use crate::physics::method_selector::{SolverSelectionConfig, ThermalMethod};
-
         let mut model = make_model();
         assert!(model.get_solver_manager().is_none());
         assert!(!model.solver_manager_is_enabled());
 
-        model.enable_solver_manager(SolverSelectionConfig::ForceMethod(
-            ThermalMethod::FiniteDifference,
-        ));
+        model.enable_solver_manager(
+            crate::physics::method_selector::SolverSelectionConfig::ForceMethod(
+                crate::physics::method_selector::ThermalMethod::FiniteDifference,
+            ),
+        );
         assert!(model.solver_manager_is_enabled());
         assert!(model.get_solver_manager().is_some());
 
